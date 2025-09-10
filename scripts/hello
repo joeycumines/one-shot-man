@@ -1,0 +1,28 @@
+#!/bin/bash
+# Sample script command for one-shot-man
+# This demonstrates the script command functionality
+
+echo "Hello from one-shot-man script command!"
+echo "Arguments received: $*"
+
+if [ "$1" = "--wizard" ]; then
+    echo "Starting interactive wizard..."
+    echo -n "Enter your name: "
+    read name
+    echo "Hello, $name! Welcome to one-shot-man."
+elif [ "$1" = "--repl" ]; then
+    echo "Starting REPL mode..."
+    while true; do
+        echo -n "one-shot-man> "
+        read input
+        if [ "$input" = "exit" ] || [ "$input" = "quit" ]; then
+            echo "Goodbye!"
+            break
+        fi
+        echo "You entered: $input"
+    done
+else
+    echo "Usage: hello [--wizard|--repl] [args...]"
+    echo "  --wizard  Start interactive wizard"
+    echo "  --repl    Start REPL mode"
+fi

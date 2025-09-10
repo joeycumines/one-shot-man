@@ -20,6 +20,7 @@ type Engine struct {
 	stderr    io.Writer
 	globals   map[string]interface{}
 	testMode  bool
+	tuiManager *TUIManager
 }
 
 // Script represents a JavaScript script with metadata.
@@ -51,6 +52,9 @@ func NewEngine(ctx context.Context, stdout, stderr io.Writer) *Engine {
 		stderr:  stderr,
 		globals: make(map[string]interface{}),
 	}
+	
+	// Create TUI manager
+	engine.tuiManager = NewTUIManager(ctx, engine)
 	
 	// Set up the global context and APIs
 	engine.setupGlobals()
@@ -373,6 +377,18 @@ func (e *Engine) setupGlobals() {
 	e.vm.Set("env", func(key string) string {
 		return getEnv(key)
 	})
+	
+	// TUI and Mode management functions
+	e.vm.Set("tui", map[string]interface{}{
+		"registerMode":    e.tuiManager.jsRegisterMode,
+		"switchMode":      e.tuiManager.jsSwitchMode,
+		"getCurrentMode":  e.tuiManager.jsGetCurrentMode,
+		"setState":        e.tuiManager.jsSetState,
+		"getState":        e.tuiManager.jsGetState,
+		"registerCommand": e.tuiManager.jsRegisterCommand,
+		"listModes":       e.tuiManager.jsListModes,
+		"createPromptBuilder": e.jsCreatePromptBuilder,
+	})
 }
 
 // readFile reads a file and returns its content as a string.
@@ -387,6 +403,11 @@ func readFile(path string) (string, error) {
 // getEnv gets an environment variable.
 func getEnv(key string) string {
 	return os.Getenv(key)
+}
+
+// GetTUIManager returns the TUI manager for this engine.
+func (e *Engine) GetTUIManager() *TUIManager {
+	return e.tuiManager
 }
 
 // GetScripts returns all loaded scripts.

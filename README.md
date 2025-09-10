@@ -79,38 +79,37 @@ Script commands are discovered from these locations (in order):
 2. `~/.one-shot-man/scripts/` (user scripts)
 3. `./scripts/` (current directory scripts)
 
-#### Creating Script Commands
+#### JavaScript Scripting
 
-Create an executable script in one of the script directories:
+Create JavaScript scripts with the deferred/declarative API:
 
-```bash
-#!/bin/bash
-# File: ~/.one-shot-man/scripts/example
+```javascript
+// File: scripts/example.js
 
-echo "Hello from script command!"
+ctx.log("Starting example script");
 
-if [ "$1" = "--wizard" ]; then
-    echo "Starting interactive wizard..."
-    echo -n "Enter your name: "
-    read name
-    echo "Hello, $name!"
-elif [ "$1" = "--repl" ]; then
-    echo "Starting REPL mode..."
-    while true; do
-        echo -n "> "
-        read input
-        case "$input" in
-            "exit"|"quit") break ;;
-            *) echo "You entered: $input" ;;
-        esac
-    done
-fi
+// Demonstrate deferred execution (cleanup)
+ctx.defer(function() {
+    ctx.log("Cleaning up resources");
+});
+
+// Demonstrate sub-tests similar to testing.T.run()
+ctx.run("setup", function() {
+    ctx.log("Setting up test environment");
+    ctx.logf("Environment: %s", env("PATH") ? "defined" : "undefined");
+    
+    ctx.defer(function() {
+        ctx.log("Cleaning up test environment");
+    });
+});
+
+console.log("Script execution completed successfully");
 ```
 
-Make it executable:
+Execute the script:
 
 ```bash
-chmod +x ~/.one-shot-man/scripts/example
+./one-shot-man script scripts/example.js
 ```
 
 Now you can run it:

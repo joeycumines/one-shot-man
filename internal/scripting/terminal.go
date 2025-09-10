@@ -146,10 +146,10 @@ func (t *Terminal) showHelp() {
 	fmt.Println("  <javascript>         - Execute JavaScript code")
 	fmt.Println()
 	fmt.Println("JavaScript API:")
-	fmt.Println("  ctx.Run(name, fn)    - Run a sub-test")
-	fmt.Println("  ctx.Defer(fn)        - Defer function execution")
-	fmt.Println("  ctx.Log(...)         - Log a message")
-	fmt.Println("  ctx.Logf(fmt, ...)   - Log a formatted message")
+	fmt.Println("  ctx.run(name, fn)    - Run a sub-test")
+	fmt.Println("  ctx.defer(fn)        - Defer function execution")
+	fmt.Println("  ctx.log(...)         - Log a message")
+	fmt.Println("  ctx.logf(fmt, ...)   - Log a formatted message")
 	fmt.Println("  console.log(...)     - Console logging")
 	fmt.Println("  sleep(ms)            - Sleep for milliseconds")
 	fmt.Println("  env(key)             - Get environment variable")
@@ -181,10 +181,10 @@ func getDefaultSuggestions() []prompt.Suggest {
 		{Text: "run", Description: "Run a script"},
 		
 		// JavaScript API suggestions
-		{Text: "ctx.Run(", Description: "Run a sub-test"},
-		{Text: "ctx.Defer(", Description: "Defer function execution"},
-		{Text: "ctx.Log(", Description: "Log a message"},
-		{Text: "ctx.Logf(", Description: "Log a formatted message"},
+		{Text: "ctx.run(", Description: "Run a sub-test"},
+		{Text: "ctx.defer(", Description: "Defer function execution"},
+		{Text: "ctx.log(", Description: "Log a message"},
+		{Text: "ctx.logf(", Description: "Log a formatted message"},
 		{Text: "console.log(", Description: "Console logging"},
 		{Text: "sleep(", Description: "Sleep for milliseconds"},
 		{Text: "env(", Description: "Get environment variable"},

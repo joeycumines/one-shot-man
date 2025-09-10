@@ -109,8 +109,33 @@ func (e *Engine) ExecuteScript(script *Script) error {
 		name:   script.Name,	
 	}
 	
-	// Set up the execution context in JavaScript
-	e.vm.Set("ctx", ctx)
+	// Set up the execution context in JavaScript with both Go-style and JS-style methods
+	contextObj := map[string]interface{}{
+		// Go-style methods (PascalCase) for compatibility
+		"Run":   ctx.Run,
+		"Defer": ctx.Defer,
+		"Log":   ctx.Log,
+		"Logf":  ctx.Logf,
+		"Error": ctx.Error,
+		"Errorf": ctx.Errorf,
+		"Fatal": ctx.Fatal,
+		"Fatalf": ctx.Fatalf,
+		"Failed": ctx.Failed,
+		"Name":   ctx.Name,
+		
+		// JavaScript-style methods (camelCase)
+		"run":   ctx.Run,
+		"defer": ctx.Defer,
+		"log":   ctx.Log,
+		"logf":  ctx.Logf,
+		"error": ctx.Error,
+		"errorf": ctx.Errorf,
+		"fatal": ctx.Fatal,
+		"fatalf": ctx.Fatalf,
+		"failed": ctx.Failed,
+		"name":   ctx.Name,
+	}
+	e.vm.Set("ctx", contextObj)
 	
 	// Execute the script
 	_, err := e.vm.RunString(script.Content)
@@ -122,7 +147,7 @@ func (e *Engine) ExecuteScript(script *Script) error {
 	return ctx.runDeferred()
 }
 
-// Run executes a sub-test, similar to testing.T.Run().
+// Run executes a sub-test, similar to testing.T.Run() (Go-style method for internal use).
 func (ctx *ExecutionContext) Run(name string, fn goja.Callable) bool {
 	subCtx := &ExecutionContext{
 		engine: ctx.engine,
@@ -131,8 +156,33 @@ func (ctx *ExecutionContext) Run(name string, fn goja.Callable) bool {
 		parent: ctx,
 	}
 	
-	// Set up the sub-context in JavaScript
-	ctx.engine.vm.Set("ctx", subCtx)
+	// Set up the sub-context in JavaScript with both Go-style and JS-style methods
+	contextObj := map[string]interface{}{
+		// Go-style methods (PascalCase) for compatibility
+		"Run":   subCtx.Run,
+		"Defer": subCtx.Defer,
+		"Log":   subCtx.Log,
+		"Logf":  subCtx.Logf,
+		"Error": subCtx.Error,
+		"Errorf": subCtx.Errorf,
+		"Fatal": subCtx.Fatal,
+		"Fatalf": subCtx.Fatalf,
+		"Failed": subCtx.Failed,
+		"Name":   subCtx.Name,
+		
+		// JavaScript-style methods (camelCase)
+		"run":   subCtx.Run,
+		"defer": subCtx.Defer,
+		"log":   subCtx.Log,
+		"logf":  subCtx.Logf,
+		"error": subCtx.Error,
+		"errorf": subCtx.Errorf,
+		"fatal": subCtx.Fatal,
+		"fatalf": subCtx.Fatalf,
+		"failed": subCtx.Failed,
+		"name":   subCtx.Name,
+	}
+	ctx.engine.vm.Set("ctx", contextObj)
 	
 	// Execute the test function
 	_, err := fn(goja.Undefined())
@@ -149,9 +199,59 @@ func (ctx *ExecutionContext) Run(name string, fn goja.Callable) bool {
 	
 	// Restore parent context
 	if ctx.parent != nil {
-		ctx.engine.vm.Set("ctx", ctx.parent)
+		parentObj := map[string]interface{}{
+			// Go-style methods (PascalCase) for compatibility
+			"Run":   ctx.parent.Run,
+			"Defer": ctx.parent.Defer,
+			"Log":   ctx.parent.Log,
+			"Logf":  ctx.parent.Logf,
+			"Error": ctx.parent.Error,
+			"Errorf": ctx.parent.Errorf,
+			"Fatal": ctx.parent.Fatal,
+			"Fatalf": ctx.parent.Fatalf,
+			"Failed": ctx.parent.Failed,
+			"Name":   ctx.parent.Name,
+			
+			// JavaScript-style methods (camelCase)
+			"run":   ctx.parent.Run,
+			"defer": ctx.parent.Defer,
+			"log":   ctx.parent.Log,
+			"logf":  ctx.parent.Logf,
+			"error": ctx.parent.Error,
+			"errorf": ctx.parent.Errorf,
+			"fatal": ctx.parent.Fatal,
+			"fatalf": ctx.parent.Fatalf,
+			"failed": ctx.parent.Failed,
+			"name":   ctx.parent.Name,
+		}
+		ctx.engine.vm.Set("ctx", parentObj)
 	} else {
-		ctx.engine.vm.Set("ctx", ctx)
+		currentObj := map[string]interface{}{
+			// Go-style methods (PascalCase) for compatibility
+			"Run":   ctx.Run,
+			"Defer": ctx.Defer,
+			"Log":   ctx.Log,
+			"Logf":  ctx.Logf,
+			"Error": ctx.Error,
+			"Errorf": ctx.Errorf,
+			"Fatal": ctx.Fatal,
+			"Fatalf": ctx.Fatalf,
+			"Failed": ctx.Failed,
+			"Name":   ctx.Name,
+			
+			// JavaScript-style methods (camelCase)
+			"run":   ctx.Run,
+			"defer": ctx.Defer,
+			"log":   ctx.Log,
+			"logf":  ctx.Logf,
+			"error": ctx.Error,
+			"errorf": ctx.Errorf,
+			"fatal": ctx.Fatal,
+			"fatalf": ctx.Fatalf,
+			"failed": ctx.Failed,
+			"name":   ctx.Name,
+		}
+		ctx.engine.vm.Set("ctx", currentObj)
 	}
 	
 	// Report result
@@ -164,6 +264,8 @@ func (ctx *ExecutionContext) Run(name string, fn goja.Callable) bool {
 	return true
 }
 
+
+
 // Defer schedules a function to be executed when the current context completes.
 func (ctx *ExecutionContext) Defer(fn goja.Callable) {
 	ctx.deferred = append(ctx.deferred, func() {
@@ -174,7 +276,7 @@ func (ctx *ExecutionContext) Defer(fn goja.Callable) {
 	})
 }
 
-// Log logs a message to the test output.
+// Log logs a message to the test output (Go-style method for internal use).
 func (ctx *ExecutionContext) Log(args ...interface{}) {
 	fmt.Fprintf(&ctx.output, "[%s] %s\n", ctx.name, fmt.Sprint(args...))
 	if ctx.engine.testMode {
@@ -182,7 +284,7 @@ func (ctx *ExecutionContext) Log(args ...interface{}) {
 	}
 }
 
-// Logf logs a formatted message to the test output.
+// Logf logs a formatted message to the test output (Go-style method for internal use).
 func (ctx *ExecutionContext) Logf(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
 	fmt.Fprintf(&ctx.output, "[%s] %s\n", ctx.name, msg)
@@ -190,6 +292,8 @@ func (ctx *ExecutionContext) Logf(format string, args ...interface{}) {
 		fmt.Fprintf(ctx.engine.stdout, "[%s] %s\n", ctx.name, msg)
 	}
 }
+
+
 
 // Error marks the current test as failed and logs an error message.
 func (ctx *ExecutionContext) Error(args ...interface{}) {

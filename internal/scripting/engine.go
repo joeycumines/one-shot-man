@@ -1,0 +1,299 @@
+package scripting
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/dop251/goja"
+)
+
+// Engine represents a JavaScript scripting engine with deferred execution capabilities.
+type Engine struct {
+	vm        *goja.Runtime
+	scripts   []Script
+	ctx       context.Context
+	stdout    io.Writer
+	stderr    io.Writer
+	globals   map[string]interface{}
+	testMode  bool
+}
+
+// Script represents a JavaScript script with metadata.
+type Script struct {
+	Name        string
+	Path        string
+	Content     string
+	Description string
+	deferred    []func() error
+}
+
+// ExecutionContext provides the execution environment for scripts, similar to testing.T.
+type ExecutionContext struct {
+	engine   *Engine
+	script   *Script
+	name     string
+	parent   *ExecutionContext
+	failed   bool
+	output   strings.Builder
+	deferred []func()
+}
+
+// NewEngine creates a new JavaScript scripting engine.
+func NewEngine(ctx context.Context, stdout, stderr io.Writer) *Engine {
+	engine := &Engine{
+		vm:      goja.New(),
+		ctx:     ctx,
+		stdout:  stdout,
+		stderr:  stderr,
+		globals: make(map[string]interface{}),
+	}
+	
+	// Set up the global context and APIs
+	engine.setupGlobals()
+	
+	return engine
+}
+
+// SetTestMode enables test mode for the engine.
+func (e *Engine) SetTestMode(enabled bool) {
+	e.testMode = enabled
+}
+
+// SetGlobal sets a global variable in the JavaScript runtime.
+func (e *Engine) SetGlobal(name string, value interface{}) {
+	e.globals[name] = value
+	e.vm.Set(name, value)
+}
+
+// LoadScript loads a JavaScript script from a file.
+func (e *Engine) LoadScript(name, path string) (*Script, error) {
+	content, err := readFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read script %s: %w", name, err)
+	}
+	
+	script := &Script{
+		Name:     name,
+		Path:     path,
+		Content:  content,
+		deferred: make([]func() error, 0),
+	}
+	
+	e.scripts = append(e.scripts, *script)
+	return script, nil
+}
+
+// LoadScriptFromString loads a JavaScript script from a string.
+func (e *Engine) LoadScriptFromString(name, content string) *Script {
+	script := &Script{
+		Name:     name,
+		Path:     "<string>",
+		Content:  content,
+		deferred: make([]func() error, 0),
+	}
+	
+	e.scripts = append(e.scripts, *script)
+	return script
+}
+
+// ExecuteScript executes a script in the engine.
+func (e *Engine) ExecuteScript(script *Script) error {
+	// Create execution context for this script
+	ctx := &ExecutionContext{
+		engine: e,
+		script: script,
+		name:   script.Name,	
+	}
+	
+	// Set up the execution context in JavaScript
+	e.vm.Set("ctx", ctx)
+	
+	// Execute the script
+	_, err := e.vm.RunString(script.Content)
+	if err != nil {
+		return fmt.Errorf("script execution failed: %w", err)
+	}
+	
+	// Execute deferred functions
+	return ctx.runDeferred()
+}
+
+// Run executes a sub-test, similar to testing.T.Run().
+func (ctx *ExecutionContext) Run(name string, fn goja.Callable) bool {
+	subCtx := &ExecutionContext{
+		engine: ctx.engine,
+		script: ctx.script,
+		name:   fmt.Sprintf("%s/%s", ctx.name, name),
+		parent: ctx,
+	}
+	
+	// Set up the sub-context in JavaScript
+	ctx.engine.vm.Set("ctx", subCtx)
+	
+	// Execute the test function
+	_, err := fn(goja.Undefined())
+	if err != nil {
+		subCtx.failed = true
+		subCtx.Errorf("Test failed: %v", err)
+	}
+	
+	// Run deferred functions for sub-context
+	if err := subCtx.runDeferred(); err != nil {
+		subCtx.failed = true
+		subCtx.Errorf("Deferred function failed: %v", err)
+	}
+	
+	// Restore parent context
+	if ctx.parent != nil {
+		ctx.engine.vm.Set("ctx", ctx.parent)
+	} else {
+		ctx.engine.vm.Set("ctx", ctx)
+	}
+	
+	// Report result
+	if subCtx.failed {
+		ctx.Errorf("Sub-test %s failed", name)
+		return false
+	}
+	
+	ctx.Logf("Sub-test %s passed", name)
+	return true
+}
+
+// Defer schedules a function to be executed when the current context completes.
+func (ctx *ExecutionContext) Defer(fn goja.Callable) {
+	ctx.deferred = append(ctx.deferred, func() {
+		_, err := fn(goja.Undefined())
+		if err != nil {
+			ctx.Errorf("Deferred function failed: %v", err)
+		}
+	})
+}
+
+// Log logs a message to the test output.
+func (ctx *ExecutionContext) Log(args ...interface{}) {
+	fmt.Fprintf(&ctx.output, "[%s] %s\n", ctx.name, fmt.Sprint(args...))
+	if ctx.engine.testMode {
+		fmt.Fprintf(ctx.engine.stdout, "[%s] %s\n", ctx.name, fmt.Sprint(args...))
+	}
+}
+
+// Logf logs a formatted message to the test output.
+func (ctx *ExecutionContext) Logf(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	fmt.Fprintf(&ctx.output, "[%s] %s\n", ctx.name, msg)
+	if ctx.engine.testMode {
+		fmt.Fprintf(ctx.engine.stdout, "[%s] %s\n", ctx.name, msg)
+	}
+}
+
+// Error marks the current test as failed and logs an error message.
+func (ctx *ExecutionContext) Error(args ...interface{}) {
+	ctx.failed = true
+	msg := fmt.Sprint(args...)
+	fmt.Fprintf(&ctx.output, "[%s] ERROR: %s\n", ctx.name, msg)
+	fmt.Fprintf(ctx.engine.stderr, "[%s] ERROR: %s\n", ctx.name, msg)
+}
+
+// Errorf marks the current test as failed and logs a formatted error message.
+func (ctx *ExecutionContext) Errorf(format string, args ...interface{}) {
+	ctx.failed = true
+	msg := fmt.Sprintf(format, args...)
+	fmt.Fprintf(&ctx.output, "[%s] ERROR: %s\n", ctx.name, msg)
+	fmt.Fprintf(ctx.engine.stderr, "[%s] ERROR: %s\n", ctx.name, msg)
+}
+
+// Fatal marks the current test as failed and stops execution.
+func (ctx *ExecutionContext) Fatal(args ...interface{}) {
+	ctx.Error(args...)
+	panic("test failed")
+}
+
+// Fatalf marks the current test as failed and stops execution with a formatted message.
+func (ctx *ExecutionContext) Fatalf(format string, args ...interface{}) {
+	ctx.Errorf(format, args...)
+	panic("test failed")
+}
+
+// Failed reports whether the current test has failed.
+func (ctx *ExecutionContext) Failed() bool {
+	return ctx.failed
+}
+
+// Name returns the name of the current test.
+func (ctx *ExecutionContext) Name() string {
+	return ctx.name
+}
+
+// runDeferred executes all deferred functions for this context.
+func (ctx *ExecutionContext) runDeferred() error {
+	// Execute deferred functions in reverse order (LIFO)
+	for i := len(ctx.deferred) - 1; i >= 0; i-- {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					ctx.Errorf("Deferred function panicked: %v", r)
+				}
+			}()
+			ctx.deferred[i]()
+		}()
+	}
+	
+	if ctx.failed {
+		return fmt.Errorf("test context failed")
+	}
+	return nil
+}
+
+// setupGlobals sets up the global JavaScript environment.
+func (e *Engine) setupGlobals() {
+	// Console-like functions
+	e.vm.Set("console", map[string]interface{}{
+		"log": func(args ...interface{}) {
+			fmt.Fprintln(e.stdout, args...)
+		},
+		"error": func(args ...interface{}) {
+			fmt.Fprintln(e.stderr, args...)
+		},
+	})
+	
+	// Utility functions
+	e.vm.Set("sleep", func(ms int) {
+		time.Sleep(time.Duration(ms) * time.Millisecond)
+	})
+	
+	e.vm.Set("env", func(key string) string {
+		return getEnv(key)
+	})
+}
+
+// readFile reads a file and returns its content as a string.
+func readFile(path string) (string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+// getEnv gets an environment variable.
+func getEnv(key string) string {
+	return os.Getenv(key)
+}
+
+// GetScripts returns all loaded scripts.
+func (e *Engine) GetScripts() []Script {
+	return e.scripts
+}
+
+// Close cleans up the engine resources.
+func (e *Engine) Close() error {
+	// Clean up any resources
+	e.vm = nil
+	e.scripts = nil
+	return nil
+}

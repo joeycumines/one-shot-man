@@ -20,6 +20,13 @@ func main() {
 }
 
 func run() error {
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		// If config doesn't exist, create a new empty one
+		cfg = config.NewConfig()
+	}
+	
 	// Create command registry
 	registry := command.NewRegistry()
 	
@@ -45,8 +52,9 @@ func run() error {
 	helpCmd := command.NewHelpCommand(registry)
 	registry.Register(helpCmd)
 	registry.Register(command.NewVersionCommand(version))
-	registry.Register(command.NewConfigCommand())
+	registry.Register(command.NewConfigCommand(cfg))
 	registry.Register(command.NewInitCommand())
+	registry.Register(command.NewScriptingCommand())
 	
 	// Parse global flags and command
 	if len(os.Args) < 2 {

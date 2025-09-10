@@ -361,6 +361,12 @@ func (tm *TUIManager) showHelp() {
 		fmt.Println()
 	}
 	
+	// Show loaded scripts
+	scripts := tm.engine.GetScripts()
+	if len(scripts) > 0 {
+		fmt.Printf("Loaded scripts: %d\n", len(scripts))
+	}
+	
 	if tm.currentMode != nil {
 		fmt.Printf("Current mode: %s\n", tm.currentMode.Name)
 		fmt.Println("You can execute JavaScript code directly")

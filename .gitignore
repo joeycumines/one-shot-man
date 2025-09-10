@@ -33,3 +33,6 @@ go.work.sum
 
 # Built binaries
 one-shot-man
+
+# Makefile user configuration
+/config.mk

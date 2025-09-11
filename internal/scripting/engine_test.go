@@ -164,15 +164,16 @@ func TestEngine_GlobalVariables(t *testing.T) {
 	}
 }
 
-func TestEngine_ConsoleAPI(t *testing.T) {
+func TestEngine_OutputAPI(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 	
 	engine := NewEngine(ctx, &stdout, &stderr)
 	
-	script := engine.LoadScriptFromString("test_console", `
-		console.log("stdout message");
-		console.error("stderr message");
+	script := engine.LoadScriptFromString("test_output", `
+		output.print("stdout message");
+		log.error("error message");
+		output.printf("formatted: %s %d", "test", 42);
 	`)
 	
 	err := engine.ExecuteScript(script)
@@ -181,10 +182,16 @@ func TestEngine_ConsoleAPI(t *testing.T) {
 	}
 	
 	if !strings.Contains(stdout.String(), "stdout message") {
-		t.Errorf("Console.log output not found: %s", stdout.String())
+		t.Errorf("Output.print output not found: %s", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "stderr message") {
-		t.Errorf("Console.error output not found: %s", stderr.String())
+	if !strings.Contains(stdout.String(), "formatted: test 42") {
+		t.Errorf("Output.printf output not found: %s", stdout.String())
+	}
+	
+	// Check that logs were created
+	logs := engine.logger.GetLogs()
+	if len(logs) == 0 {
+		t.Error("Expected logs to be created, but got none")
 	}
 }
 

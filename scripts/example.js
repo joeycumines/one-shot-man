@@ -63,6 +63,6 @@ ctx.run("validation", function() {
 });
 
 // Demonstrate console API
-console.log("Script execution completed successfully");
+output.print("Script execution completed successfully");
 
 ctx.log("Example script finished");

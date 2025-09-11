@@ -14,21 +14,21 @@ tui.registerMode({
     },
     
     onEnter: function() {
-        console.log("Welcome to LLM Prompt Builder!");
-        console.log("This mode helps you build and refine prompts for LLM services.");
-        console.log("");
-        console.log("Available commands:");
-        console.log("  new <title>          - Create a new prompt");
-        console.log("  load <title>         - Load an existing prompt");
-        console.log("  template <text>      - Set the prompt template");
-        console.log("  var <key> <value>    - Set a template variable");
-        console.log("  build                - Build the current prompt");
-        console.log("  preview              - Preview the current prompt");
-        console.log("  save <notes>         - Save current version");
-        console.log("  versions             - List all versions");
-        console.log("  restore <version>    - Restore a specific version");
-        console.log("  export               - Export prompt data");
-        console.log("");
+        output.print("Welcome to LLM Prompt Builder!");
+        output.print("This mode helps you build and refine prompts for LLM services.");
+        output.print("");
+        output.print("Available commands:");
+        output.print("  new <title>          - Create a new prompt");
+        output.print("  load <title>         - Load an existing prompt");
+        output.print("  template <text>      - Set the prompt template");
+        output.print("  var <key> <value>    - Set a template variable");
+        output.print("  build                - Build the current prompt");
+        output.print("  preview              - Preview the current prompt");
+        output.print("  save <notes>         - Save current version");
+        output.print("  versions             - List all versions");
+        output.print("  restore <version>    - Restore a specific version");
+        output.print("  export               - Export prompt data");
+        output.print("");
         
         // Initialize empty state
         tui.setState("currentPrompt", null);
@@ -36,7 +36,7 @@ tui.registerMode({
     },
     
     onExit: function() {
-        console.log("Exiting LLM Prompt Builder mode. Goodbye!");
+        output.print("Exiting LLM Prompt Builder mode. Goodbye!");
     },
     
     commands: {
@@ -45,7 +45,7 @@ tui.registerMode({
             usage: "new <title> [description]",
             handler: function(args) {
                 if (args.length < 1) {
-                    console.log("Usage: new <title> [description]");
+                    output.print("Usage: new <title> [description]");
                     return;
                 }
                 
@@ -60,9 +60,9 @@ tui.registerMode({
                 prompts[title] = prompt;
                 tui.setState("prompts", prompts);
                 
-                console.log("Created new prompt: " + title);
-                console.log("Description: " + description);
-                console.log("Use 'template' to set the prompt template.");
+                output.print("Created new prompt: " + title);
+                output.print("Description: " + description);
+                output.print("Use 'template' to set the prompt template.");
             }
         },
         
@@ -71,7 +71,7 @@ tui.registerMode({
             usage: "load <title>",
             handler: function(args) {
                 if (args.length < 1) {
-                    console.log("Usage: load <title>");
+                    output.print("Usage: load <title>");
                     return;
                 }
                 
@@ -80,10 +80,10 @@ tui.registerMode({
                 
                 if (prompts[title]) {
                     tui.setState("currentPrompt", prompts[title]);
-                    console.log("Loaded prompt: " + title);
+                    output.print("Loaded prompt: " + title);
                 } else {
-                    console.log("Prompt not found: " + title);
-                    console.log("Available prompts: " + Object.keys(prompts).join(", "));
+                    output.print("Prompt not found: " + title);
+                    output.print("Available prompts: " + Object.keys(prompts).join(", "));
                 }
             }
         },
@@ -94,18 +94,18 @@ tui.registerMode({
             handler: function(args) {
                 var prompt = tui.getState("currentPrompt");
                 if (!prompt) {
-                    console.log("No active prompt. Use 'new' to create one.");
+                    output.print("No active prompt. Use 'new' to create one.");
                     return;
                 }
                 
                 var template = args.join(" ");
                 prompt.setTemplate(template);
                 
-                console.log("Template set:");
-                console.log(template);
-                console.log("");
-                console.log("Use variables like {{variable_name}} in your template.");
-                console.log("Set variables with: var <name> <value>");
+                output.print("Template set:");
+                output.print(template);
+                output.print("");
+                output.print("Use variables like {{variable_name}} in your template.");
+                output.print("Set variables with: var <name> <value>");
             }
         },
         
@@ -115,12 +115,12 @@ tui.registerMode({
             handler: function(args) {
                 var prompt = tui.getState("currentPrompt");
                 if (!prompt) {
-                    console.log("No active prompt. Use 'new' to create one.");
+                    output.print("No active prompt. Use 'new' to create one.");
                     return;
                 }
                 
                 if (args.length < 2) {
-                    console.log("Usage: var <key> <value>");
+                    output.print("Usage: var <key> <value>");
                     return;
                 }
                 
@@ -129,7 +129,7 @@ tui.registerMode({
                 
                 prompt.setVariable(key, value);
                 
-                console.log("Set variable: " + key + " = " + value);
+                output.print("Set variable: " + key + " = " + value);
             }
         },
         
@@ -138,15 +138,15 @@ tui.registerMode({
             handler: function(args) {
                 var prompt = tui.getState("currentPrompt");
                 if (!prompt) {
-                    console.log("No active prompt. Use 'new' to create one.");
+                    output.print("No active prompt. Use 'new' to create one.");
                     return;
                 }
                 
                 var built = prompt.build();
-                console.log("Built prompt:");
-                console.log("─".repeat(50));
-                console.log(built);
-                console.log("─".repeat(50));
+                output.print("Built prompt:");
+                output.print("─".repeat(50));
+                output.print(built);
+                output.print("─".repeat(50));
             }
         },
         
@@ -155,11 +155,11 @@ tui.registerMode({
             handler: function(args) {
                 var prompt = tui.getState("currentPrompt");
                 if (!prompt) {
-                    console.log("No active prompt. Use 'new' to create one.");
+                    output.print("No active prompt. Use 'new' to create one.");
                     return;
                 }
                 
-                console.log(prompt.preview());
+                output.print(prompt.preview());
             }
         },
         
@@ -169,7 +169,7 @@ tui.registerMode({
             handler: function(args) {
                 var prompt = tui.getState("currentPrompt");
                 if (!prompt) {
-                    console.log("No active prompt. Use 'new' to create one.");
+                    output.print("No active prompt. Use 'new' to create one.");
                     return;
                 }
                 
@@ -179,8 +179,8 @@ tui.registerMode({
                 prompt.saveVersion(notes, tags);
                 
                 var stats = prompt.stats();
-                console.log("Saved version " + stats.versions);
-                console.log("Notes: " + notes);
+                output.print("Saved version " + stats.versions);
+                output.print("Notes: " + notes);
             }
         },
         
@@ -189,22 +189,22 @@ tui.registerMode({
             handler: function(args) {
                 var prompt = tui.getState("currentPrompt");
                 if (!prompt) {
-                    console.log("No active prompt. Use 'new' to create one.");
+                    output.print("No active prompt. Use 'new' to create one.");
                     return;
                 }
                 
                 var versions = prompt.listVersions();
                 if (versions.length === 0) {
-                    console.log("No versions saved yet. Use 'save' to create a version.");
+                    output.print("No versions saved yet. Use 'save' to create a version.");
                     return;
                 }
                 
-                console.log("Prompt versions:");
+                output.print("Prompt versions:");
                 for (var i = 0; i < versions.length; i++) {
                     var v = versions[i];
-                    console.log("  v" + v.version + " - " + v.createdAt + " - " + v.notes);
+                    output.print("  v" + v.version + " - " + v.createdAt + " - " + v.notes);
                     if (v.tags && v.tags.length > 0) {
-                        console.log("    Tags: " + v.tags.join(", "));
+                        output.print("    Tags: " + v.tags.join(", "));
                     }
                 }
             }
@@ -216,26 +216,26 @@ tui.registerMode({
             handler: function(args) {
                 var prompt = tui.getState("currentPrompt");
                 if (!prompt) {
-                    console.log("No active prompt. Use 'new' to create one.");
+                    output.print("No active prompt. Use 'new' to create one.");
                     return;
                 }
                 
                 if (args.length < 1) {
-                    console.log("Usage: restore <version>");
+                    output.print("Usage: restore <version>");
                     return;
                 }
                 
                 var versionNum = parseInt(args[0]);
                 if (isNaN(versionNum)) {
-                    console.log("Invalid version number: " + args[0]);
+                    output.print("Invalid version number: " + args[0]);
                     return;
                 }
                 
                 try {
                     prompt.restoreVersion(versionNum);
-                    console.log("Restored to version " + versionNum);
+                    output.print("Restored to version " + versionNum);
                 } catch (e) {
-                    console.log("Error: " + e.message);
+                    output.print("Error: " + e.message);
                 }
             }
         },
@@ -245,13 +245,13 @@ tui.registerMode({
             handler: function(args) {
                 var prompt = tui.getState("currentPrompt");
                 if (!prompt) {
-                    console.log("No active prompt. Use 'new' to create one.");
+                    output.print("No active prompt. Use 'new' to create one.");
                     return;
                 }
                 
                 var data = prompt.export();
-                console.log("Prompt export:");
-                console.log(JSON.stringify(data, null, 2));
+                output.print("Prompt export:");
+                output.print(JSON.stringify(data, null, 2));
             }
         },
         
@@ -262,24 +262,20 @@ tui.registerMode({
                 var names = Object.keys(prompts);
                 
                 if (names.length === 0) {
-                    console.log("No prompts created yet. Use 'new' to create one.");
+                    output.print("No prompts created yet. Use 'new' to create one.");
                     return;
                 }
                 
-                console.log("Available prompts:");
+                output.print("Available prompts:");
                 for (var i = 0; i < names.length; i++) {
                     var name = names[i];
                     var prompt = prompts[name];
                     var stats = prompt.stats();
-                    console.log("  " + name + " - " + stats.description + " (" + stats.versions + " versions)");
+                    output.print("  " + name + " - " + stats.description + " (" + stats.versions + " versions)");
                 }
             }
         }
     }
 });
 
-// Switch to the LLM prompt builder mode
 tui.switchMode("llm-prompt-builder");
-
-ctx.log("LLM Prompt Builder mode registered and activated!");
-ctx.log("You are now in interactive mode. Type 'help' for available commands.");

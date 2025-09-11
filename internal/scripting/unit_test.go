@@ -191,8 +191,11 @@ func TestScriptModeExecution(t *testing.T) {
 		}
 
 		outputStr := string(output)
-		if !strings.Contains(outputStr, "LLM Prompt Builder mode registered and activated!") {
-			t.Fatalf("LLM prompt builder registration not found: %s", outputStr)
+		if !strings.Contains(outputStr, "Welcome to LLM Prompt Builder!") {
+			t.Fatalf("LLM prompt builder not found: %s", outputStr)
+		}
+		if !strings.Contains(outputStr, "Switched to mode: llm-prompt-builder") {
+			t.Fatalf("LLM prompt builder mode switch not found: %s", outputStr)
 		}
 	})
 

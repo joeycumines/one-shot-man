@@ -13,8 +13,8 @@ tui.registerMode({
     },
     
     onEnter: function() {
-        console.log("Entered demo mode!");
-        console.log("This is a simple demonstration of the mode system.");
+        output.print("Entered demo mode!");
+        output.print("This is a simple demonstration of the mode system.");
         
         // Initialize some state
         tui.setState("counter", 0);
@@ -22,9 +22,9 @@ tui.registerMode({
     },
     
     onExit: function() {
-        console.log("Leaving demo mode...");
+        output.print("Leaving demo mode...");
         var counter = tui.getState("counter");
-        console.log("Final counter value: " + counter);
+        output.print("Final counter value: " + counter);
     },
     
     commands: {
@@ -34,7 +34,7 @@ tui.registerMode({
                 var counter = tui.getState("counter") || 0;
                 counter++;
                 tui.setState("counter", counter);
-                console.log("Counter: " + counter);
+                output.print("Counter: " + counter);
             }
         },
         
@@ -43,7 +43,7 @@ tui.registerMode({
             usage: "message <text>",
             handler: function(args) {
                 if (args.length === 0) {
-                    console.log("Usage: message <text>");
+                    output.print("Usage: message <text>");
                     return;
                 }
                 
@@ -52,8 +52,8 @@ tui.registerMode({
                 messages.push(text);
                 tui.setState("messages", messages);
                 
-                console.log("Added message: " + text);
-                console.log("Total messages: " + messages.length);
+                output.print("Added message: " + text);
+                output.print("Total messages: " + messages.length);
             }
         },
         
@@ -63,14 +63,14 @@ tui.registerMode({
                 var counter = tui.getState("counter");
                 var messages = tui.getState("messages");
                 
-                console.log("Current state:");
-                console.log("  Counter: " + counter);
-                console.log("  Messages: " + messages.length);
+                output.print("Current state:");
+                output.print("  Counter: " + counter);
+                output.print("  Messages: " + messages.length);
                 
                 if (messages.length > 0) {
-                    console.log("  Recent messages:");
+                    output.print("  Recent messages:");
                     for (var i = Math.max(0, messages.length - 3); i < messages.length; i++) {
-                        console.log("    " + (i + 1) + ". " + messages[i]);
+                        output.print("    " + (i + 1) + ". " + messages[i]);
                     }
                 }
             }
@@ -81,8 +81,8 @@ tui.registerMode({
             usage: "js <code>",
             handler: function(args) {
                 if (args.length === 0) {
-                    console.log("Usage: js <code>");
-                    console.log("Example: js console.log('Hello from demo mode!')");
+                    output.print("Usage: js <code>");
+                    output.print("Example: js output.print('Hello from demo mode!')");
                     return;
                 }
                 
@@ -91,7 +91,7 @@ tui.registerMode({
                     // This would execute in the current JavaScript context
                     eval(code);
                 } catch (e) {
-                    console.log("Error: " + e.message);
+                    output.print("Error: " + e.message);
                 }
             }
         }
@@ -104,7 +104,7 @@ tui.registerCommand({
     description: "Echo the arguments",
     usage: "echo <text>",
     handler: function(args) {
-        console.log(args.join(" "));
+        output.print(args.join(" "));
     }
 });
 

@@ -13,14 +13,16 @@ import (
 
 // Engine represents a JavaScript scripting engine with deferred execution capabilities.
 type Engine struct {
-	vm        *goja.Runtime
-	scripts   []Script
-	ctx       context.Context
-	stdout    io.Writer
-	stderr    io.Writer
-	globals   map[string]interface{}
-	testMode  bool
-	tuiManager *TUIManager
+	vm             *goja.Runtime
+	scripts        []Script
+	ctx            context.Context
+	stdout         io.Writer
+	stderr         io.Writer
+	globals        map[string]interface{}
+	testMode       bool
+	tuiManager     *TUIManager
+	contextManager *ContextManager
+	logger         *TUILogger
 }
 
 // Script represents a JavaScript script with metadata.
@@ -45,12 +47,20 @@ type ExecutionContext struct {
 
 // NewEngine creates a new JavaScript scripting engine.
 func NewEngine(ctx context.Context, stdout, stderr io.Writer) *Engine {
+	// Get current working directory for context manager
+	workingDir, err := os.Getwd()
+	if err != nil {
+		workingDir = "."
+	}
+
 	engine := &Engine{
-		vm:      goja.New(),
-		ctx:     ctx,
-		stdout:  stdout,
-		stderr:  stderr,
-		globals: make(map[string]interface{}),
+		vm:             goja.New(),
+		ctx:            ctx,
+		stdout:         stdout,
+		stderr:         stderr,
+		globals:        make(map[string]interface{}),
+		contextManager: NewContextManager(workingDir),
+		logger:         NewTUILogger(stdout, 1000),
 	}
 	
 	// Create TUI manager
@@ -359,16 +369,6 @@ func (ctx *ExecutionContext) runDeferred() error {
 
 // setupGlobals sets up the global JavaScript environment.
 func (e *Engine) setupGlobals() {
-	// Console-like functions
-	e.vm.Set("console", map[string]interface{}{
-		"log": func(args ...interface{}) {
-			fmt.Fprintln(e.stdout, args...)
-		},
-		"error": func(args ...interface{}) {
-			fmt.Fprintln(e.stderr, args...)
-		},
-	})
-	
 	// Utility functions
 	e.vm.Set("sleep", func(ms int) {
 		time.Sleep(time.Duration(ms) * time.Millisecond)
@@ -376,6 +376,38 @@ func (e *Engine) setupGlobals() {
 	
 	e.vm.Set("env", func(key string) string {
 		return getEnv(key)
+	})
+	
+	// Context management functions  
+	e.vm.Set("context", map[string]interface{}{
+		"addPath":            e.jsContextAddPath,
+		"removePath":         e.jsContextRemovePath,
+		"listPaths":          e.jsContextListPaths,
+		"getPath":            e.jsContextGetPath,
+		"refreshPath":        e.jsContextRefreshPath,
+		"toTxtar":            e.jsContextToTxtar,
+		"fromTxtar":          e.jsContextFromTxtar,
+		"getStats":           e.jsContextGetStats,
+		"filterPaths":        e.jsContextFilterPaths,
+		"getFilesByExt":      e.jsContextGetFilesByExtension,
+	})
+	
+	// Logging functions (application logs)
+	e.vm.Set("log", map[string]interface{}{
+		"debug":   e.jsLogDebug,
+		"info":    e.jsLogInfo,
+		"warn":    e.jsLogWarn,
+		"error":   e.jsLogError,
+		"printf":  e.jsLogPrintf,
+		"getLogs": e.jsGetLogs,
+		"clearLogs": e.jsLogClear,
+		"searchLogs": e.jsLogSearch,
+	})
+	
+	// Terminal output functions (separate from logs)
+	e.vm.Set("output", map[string]interface{}{
+		"print":   e.jsOutputPrint,
+		"printf":  e.jsOutputPrintf,
 	})
 	
 	// TUI and Mode management functions
@@ -421,4 +453,117 @@ func (e *Engine) Close() error {
 	e.vm = nil
 	e.scripts = nil
 	return nil
+}
+
+// JavaScript API functions for context management
+
+// jsContextAddPath adds a path to the context manager.
+func (e *Engine) jsContextAddPath(path string) error {
+	return e.contextManager.AddPath(path)
+}
+
+// jsContextRemovePath removes a path from the context manager.
+func (e *Engine) jsContextRemovePath(path string) error {
+	return e.contextManager.RemovePath(path)
+}
+
+// jsContextListPaths returns all tracked paths.
+func (e *Engine) jsContextListPaths() []string {
+	return e.contextManager.ListPaths()
+}
+
+// jsContextGetPath returns information about a tracked path.
+func (e *Engine) jsContextGetPath(path string) interface{} {
+	contextPath, exists := e.contextManager.GetPath(path)
+	if !exists {
+		return nil
+	}
+	return contextPath
+}
+
+// jsContextRefreshPath refreshes a tracked path.
+func (e *Engine) jsContextRefreshPath(path string) error {
+	return e.contextManager.RefreshPath(path)
+}
+
+// jsContextToTxtar returns the context as a txtar-formatted string.
+func (e *Engine) jsContextToTxtar() string {
+	return e.contextManager.GetTxtarString()
+}
+
+// jsContextFromTxtar loads context from a txtar-formatted string.
+func (e *Engine) jsContextFromTxtar(data string) error {
+	return e.contextManager.LoadFromTxtarString(data)
+}
+
+// jsContextGetStats returns context statistics.
+func (e *Engine) jsContextGetStats() map[string]interface{} {
+	return e.contextManager.GetStats()
+}
+
+// jsContextFilterPaths returns paths matching a pattern.
+func (e *Engine) jsContextFilterPaths(pattern string) ([]string, error) {
+	return e.contextManager.FilterPaths(pattern)
+}
+
+// jsContextGetFilesByExtension returns files with a given extension.
+func (e *Engine) jsContextGetFilesByExtension(ext string) []string {
+	return e.contextManager.GetFilesByExtension(ext)
+}
+
+// JavaScript API functions for logging
+
+// jsLogDebug logs a debug message.
+func (e *Engine) jsLogDebug(msg string, attrs ...map[string]interface{}) {
+	e.logger.Debug(msg)
+}
+
+// jsLogInfo logs an info message.
+func (e *Engine) jsLogInfo(msg string, attrs ...map[string]interface{}) {
+	e.logger.Info(msg)
+}
+
+// jsLogWarn logs a warning message.
+func (e *Engine) jsLogWarn(msg string, attrs ...map[string]interface{}) {
+	e.logger.Warn(msg)
+}
+
+// jsLogError logs an error message.
+func (e *Engine) jsLogError(msg string, attrs ...map[string]interface{}) {
+	e.logger.Error(msg)
+}
+
+// jsLogPrintf logs a formatted message.
+func (e *Engine) jsLogPrintf(format string, args ...interface{}) {
+	e.logger.Printf(format, args...)
+}
+
+// jsGetLogs returns log entries.
+func (e *Engine) jsGetLogs(count ...int) interface{} {
+	if len(count) > 0 && count[0] > 0 {
+		return e.logger.GetRecentLogs(count[0])
+	}
+	return e.logger.GetLogs()
+}
+
+// jsLogClear clears all logs.
+func (e *Engine) jsLogClear() {
+	e.logger.ClearLogs()
+}
+
+// jsLogSearch searches logs for a query.
+func (e *Engine) jsLogSearch(query string) interface{} {
+	return e.logger.SearchLogs(query)
+}
+
+// JavaScript API functions for terminal output
+
+// jsOutputPrint prints to terminal output.
+func (e *Engine) jsOutputPrint(msg string) {
+	e.logger.PrintToTUI(msg)
+}
+
+// jsOutputPrintf prints formatted text to terminal output.
+func (e *Engine) jsOutputPrintf(format string, args ...interface{}) {
+	e.logger.PrintfToTUI(format, args...)
 }

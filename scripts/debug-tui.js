@@ -25,7 +25,7 @@ if (typeof tui !== 'undefined') {
                 name: "test",
                 description: "A test command",
                 handler: function(args) {
-                    console.log("Test command executed with args: " + args.join(" "));
+                    output.print("Test command executed with args: " + args.join(" "));
                 }
             });
             ctx.log("✓ Successfully registered test command");
@@ -48,7 +48,7 @@ if (typeof tui !== 'undefined') {
                     prompt: "[test]> "
                 },
                 onEnter: function() {
-                    console.log("Entered test mode");
+                    output.print("Entered test mode");
                 },
                 commands: {}
             });

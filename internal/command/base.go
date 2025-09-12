@@ -9,17 +9,17 @@ import (
 type Command interface {
 	// Name returns the command name.
 	Name() string
-	
+
 	// Description returns a short description of the command.
 	Description() string
-	
+
 	// Usage returns the usage string for the command.
 	Usage() string
-	
+
 	// SetupFlags configures the flag.FlagSet for this command.
 	// The FlagSet will be used to parse command-specific arguments.
 	SetupFlags(fs *flag.FlagSet)
-	
+
 	// Execute runs the command with the given arguments.
 	// args contains the arguments after flags have been parsed.
 	Execute(args []string, stdout, stderr io.Writer) error

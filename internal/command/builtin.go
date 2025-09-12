@@ -37,9 +37,9 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintln(stdout, "Usage: one-shot-man <command> [options] [args...]")
 		fmt.Fprintln(stdout, "")
 		fmt.Fprintln(stdout, "Available commands:")
-		
+
 		w := tabwriter.NewWriter(stdout, 0, 8, 2, ' ', 0)
-		
+
 		// List built-in commands
 		builtins := c.registry.ListBuiltin()
 		if len(builtins) > 0 {
@@ -51,7 +51,7 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 				}
 			}
 		}
-		
+
 		// List script commands
 		scripts := c.registry.ListScript()
 		if len(scripts) > 0 {
@@ -61,14 +61,14 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 				fmt.Fprintf(w, "  %s\t%s\n", name, "Script command")
 			}
 		}
-		
+
 		w.Flush()
-		
+
 		fmt.Fprintln(stdout, "")
 		fmt.Fprintln(stdout, "Use 'one-shot-man help <command>' for more information about a specific command.")
 		return nil
 	}
-	
+
 	// Show help for a specific command
 	cmdName := args[0]
 	cmd, err := c.registry.Get(cmdName)
@@ -76,11 +76,11 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintf(stderr, "Unknown command: %s\n", cmdName)
 		return err
 	}
-	
+
 	fmt.Fprintf(stdout, "Command: %s\n", cmd.Name())
 	fmt.Fprintf(stdout, "Description: %s\n", cmd.Description())
 	fmt.Fprintf(stdout, "Usage: %s\n", cmd.Usage())
-	
+
 	return nil
 }
 
@@ -168,7 +168,7 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 			return nil
 		}
 	}
-	
+
 	if len(args) == 1 {
 		// Get configuration value
 		key := args[0]
@@ -179,7 +179,7 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		}
 		return nil
 	}
-	
+
 	if len(args) == 2 {
 		// Set configuration value
 		key, value := args[0], args[1]
@@ -187,7 +187,7 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintf(stdout, "Set configuration: %s = %s\n", key, value)
 		return nil
 	}
-	
+
 	fmt.Fprintln(stderr, "Invalid number of arguments")
 	return fmt.Errorf("invalid arguments")
 }
@@ -221,19 +221,19 @@ func (c *InitCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("failed to get config path: %w", err)
 	}
-	
+
 	// Check if config already exists
 	if _, err := os.Stat(configPath); err == nil && !c.force {
 		fmt.Fprintf(stdout, "Configuration already exists at: %s\n", configPath)
 		fmt.Fprintln(stdout, "Use --force to overwrite existing configuration")
 		return nil
 	}
-	
+
 	// Ensure config directory exists
 	if err := config.EnsureConfigDir(); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
-	
+
 	// Create default configuration
 	defaultConfig := `# one-shot-man configuration file
 # Format: optionName remainingLineIsTheValue
@@ -250,11 +250,11 @@ pager less
 [version]
 format full
 `
-	
+
 	if err := os.WriteFile(configPath, []byte(defaultConfig), 0644); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
-	
+
 	// Load and test the configuration
 	testConfig, err := config.LoadFromPath(configPath)
 	if err != nil {
@@ -268,7 +268,7 @@ format full
 			fmt.Fprintf(stdout, "Help command will use pager: %s\n", pager)
 		}
 	}
-	
+
 	fmt.Fprintf(stdout, "Initialized one-shot-man configuration at: %s\n", configPath)
 	return nil
 }

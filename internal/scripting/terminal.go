@@ -24,4 +24,3 @@ func NewTerminal(ctx context.Context, engine *Engine) *Terminal {
 func (t *Terminal) Run() {
 	t.tuiManager.Run()
 }
-

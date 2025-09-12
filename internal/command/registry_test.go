@@ -76,18 +76,18 @@ func TestScriptCommand(t *testing.T) {
 	// Create temporary script file
 	tmpDir := t.TempDir()
 	scriptPath := filepath.Join(tmpDir, "testscript")
-	
+
 	scriptContent := `#!/bin/bash
 echo "Test script output"
 `
-	
+
 	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
 		t.Fatalf("Failed to create test script: %v", err)
 	}
 
 	// Test script command creation
 	scriptCmd := NewScriptCommand("testscript", scriptPath)
-	
+
 	if scriptCmd.Name() != "testscript" {
 		t.Errorf("Expected script name 'testscript', got '%s'", scriptCmd.Name())
 	}

@@ -14,9 +14,9 @@ import (
 // ContextManager handles tracking and managing file paths and content as context
 // for building LLM prompts.
 type ContextManager struct {
-	paths     map[string]*ContextPath
-	basePath  string
-	mutex     sync.RWMutex
+	paths    map[string]*ContextPath
+	basePath string
+	mutex    sync.RWMutex
 }
 
 // ContextPath represents a tracked file or directory with metadata.
@@ -241,10 +241,10 @@ func (cm *ContextManager) GetStats() map[string]interface{} {
 	defer cm.mutex.RUnlock()
 
 	stats := map[string]interface{}{
-		"totalPaths": len(cm.paths),
-		"files":      0,
+		"totalPaths":  len(cm.paths),
+		"files":       0,
 		"directories": 0,
-		"totalSize":  0,
+		"totalSize":   0,
 	}
 
 	for _, contextPath := range cm.paths {

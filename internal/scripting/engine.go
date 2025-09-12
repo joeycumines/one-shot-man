@@ -62,13 +62,13 @@ func NewEngine(ctx context.Context, stdout, stderr io.Writer) *Engine {
 		contextManager: NewContextManager(workingDir),
 		logger:         NewTUILogger(stdout, 1000),
 	}
-	
+
 	// Create TUI manager
 	engine.tuiManager = NewTUIManager(ctx, engine)
-	
+
 	// Set up the global context and APIs
 	engine.setupGlobals()
-	
+
 	return engine
 }
 
@@ -89,14 +89,14 @@ func (e *Engine) LoadScript(name, path string) (*Script, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read script %s: %w", name, err)
 	}
-	
+
 	script := &Script{
 		Name:     name,
 		Path:     path,
 		Content:  content,
 		deferred: make([]func() error, 0),
 	}
-	
+
 	e.scripts = append(e.scripts, *script)
 	return script, nil
 }
@@ -109,7 +109,7 @@ func (e *Engine) LoadScriptFromString(name, content string) *Script {
 		Content:  content,
 		deferred: make([]func() error, 0),
 	}
-	
+
 	e.scripts = append(e.scripts, *script)
 	return script
 }
@@ -120,43 +120,30 @@ func (e *Engine) ExecuteScript(script *Script) error {
 	ctx := &ExecutionContext{
 		engine: e,
 		script: script,
-		name:   script.Name,	
+		name:   script.Name,
 	}
-	
-	// Set up the execution context in JavaScript with both Go-style and JS-style methods
+
+	// Set up the execution context in JavaScript
 	contextObj := map[string]interface{}{
-		// Go-style methods (PascalCase) for compatibility
-		"Run":   ctx.Run,
-		"Defer": ctx.Defer,
-		"Log":   ctx.Log,
-		"Logf":  ctx.Logf,
-		"Error": ctx.Error,
-		"Errorf": ctx.Errorf,
-		"Fatal": ctx.Fatal,
-		"Fatalf": ctx.Fatalf,
-		"Failed": ctx.Failed,
-		"Name":   ctx.Name,
-		
-		// JavaScript-style methods (camelCase)
-		"run":   ctx.Run,
-		"defer": ctx.Defer,
-		"log":   ctx.Log,
-		"logf":  ctx.Logf,
-		"error": ctx.Error,
+		"run":    ctx.Run,
+		"defer":  ctx.Defer,
+		"log":    ctx.Log,
+		"logf":   ctx.Logf,
+		"error":  ctx.Error,
 		"errorf": ctx.Errorf,
-		"fatal": ctx.Fatal,
+		"fatal":  ctx.Fatal,
 		"fatalf": ctx.Fatalf,
 		"failed": ctx.Failed,
 		"name":   ctx.Name,
 	}
 	e.vm.Set("ctx", contextObj)
-	
+
 	// Execute the script
 	_, err := e.vm.RunString(script.Content)
 	if err != nil {
 		return fmt.Errorf("script execution failed: %w", err)
 	}
-	
+
 	// Execute deferred functions
 	return ctx.runDeferred()
 }
@@ -169,71 +156,47 @@ func (ctx *ExecutionContext) Run(name string, fn goja.Callable) bool {
 		name:   fmt.Sprintf("%s/%s", ctx.name, name),
 		parent: ctx,
 	}
-	
+
 	// Set up the sub-context in JavaScript with both Go-style and JS-style methods
 	contextObj := map[string]interface{}{
-		// Go-style methods (PascalCase) for compatibility
-		"Run":   subCtx.Run,
-		"Defer": subCtx.Defer,
-		"Log":   subCtx.Log,
-		"Logf":  subCtx.Logf,
-		"Error": subCtx.Error,
-		"Errorf": subCtx.Errorf,
-		"Fatal": subCtx.Fatal,
-		"Fatalf": subCtx.Fatalf,
-		"Failed": subCtx.Failed,
-		"Name":   subCtx.Name,
-		
 		// JavaScript-style methods (camelCase)
-		"run":   subCtx.Run,
-		"defer": subCtx.Defer,
-		"log":   subCtx.Log,
-		"logf":  subCtx.Logf,
-		"error": subCtx.Error,
+		"run":    subCtx.Run,
+		"defer":  subCtx.Defer,
+		"log":    subCtx.Log,
+		"logf":   subCtx.Logf,
+		"error":  subCtx.Error,
 		"errorf": subCtx.Errorf,
-		"fatal": subCtx.Fatal,
+		"fatal":  subCtx.Fatal,
 		"fatalf": subCtx.Fatalf,
 		"failed": subCtx.Failed,
 		"name":   subCtx.Name,
 	}
 	ctx.engine.vm.Set("ctx", contextObj)
-	
+
 	// Execute the test function
 	_, err := fn(goja.Undefined())
 	if err != nil {
 		subCtx.failed = true
 		subCtx.Errorf("Test failed: %v", err)
 	}
-	
+
 	// Run deferred functions for sub-context
 	if err := subCtx.runDeferred(); err != nil {
 		subCtx.failed = true
 		subCtx.Errorf("Deferred function failed: %v", err)
 	}
-	
+
 	// Restore parent context
 	if ctx.parent != nil {
 		parentObj := map[string]interface{}{
-			// Go-style methods (PascalCase) for compatibility
-			"Run":   ctx.parent.Run,
-			"Defer": ctx.parent.Defer,
-			"Log":   ctx.parent.Log,
-			"Logf":  ctx.parent.Logf,
-			"Error": ctx.parent.Error,
-			"Errorf": ctx.parent.Errorf,
-			"Fatal": ctx.parent.Fatal,
-			"Fatalf": ctx.parent.Fatalf,
-			"Failed": ctx.parent.Failed,
-			"Name":   ctx.parent.Name,
-			
 			// JavaScript-style methods (camelCase)
-			"run":   ctx.parent.Run,
-			"defer": ctx.parent.Defer,
-			"log":   ctx.parent.Log,
-			"logf":  ctx.parent.Logf,
-			"error": ctx.parent.Error,
+			"run":    ctx.parent.Run,
+			"defer":  ctx.parent.Defer,
+			"log":    ctx.parent.Log,
+			"logf":   ctx.parent.Logf,
+			"error":  ctx.parent.Error,
 			"errorf": ctx.parent.Errorf,
-			"fatal": ctx.parent.Fatal,
+			"fatal":  ctx.parent.Fatal,
 			"fatalf": ctx.parent.Fatalf,
 			"failed": ctx.parent.Failed,
 			"name":   ctx.parent.Name,
@@ -241,44 +204,30 @@ func (ctx *ExecutionContext) Run(name string, fn goja.Callable) bool {
 		ctx.engine.vm.Set("ctx", parentObj)
 	} else {
 		currentObj := map[string]interface{}{
-			// Go-style methods (PascalCase) for compatibility
-			"Run":   ctx.Run,
-			"Defer": ctx.Defer,
-			"Log":   ctx.Log,
-			"Logf":  ctx.Logf,
-			"Error": ctx.Error,
-			"Errorf": ctx.Errorf,
-			"Fatal": ctx.Fatal,
-			"Fatalf": ctx.Fatalf,
-			"Failed": ctx.Failed,
-			"Name":   ctx.Name,
-			
-			// JavaScript-style methods (camelCase)
-			"run":   ctx.Run,
-			"defer": ctx.Defer,
-			"log":   ctx.Log,
-			"logf":  ctx.Logf,
-			"error": ctx.Error,
+			// JavaScript-style methods
+			"run":    ctx.Run,
+			"defer":  ctx.Defer,
+			"log":    ctx.Log,
+			"logf":   ctx.Logf,
+			"error":  ctx.Error,
 			"errorf": ctx.Errorf,
-			"fatal": ctx.Fatal,
+			"fatal":  ctx.Fatal,
 			"fatalf": ctx.Fatalf,
 			"failed": ctx.Failed,
 			"name":   ctx.Name,
 		}
 		ctx.engine.vm.Set("ctx", currentObj)
 	}
-	
+
 	// Report result
 	if subCtx.failed {
 		ctx.Errorf("Sub-test %s failed", name)
 		return false
 	}
-	
+
 	ctx.Logf("Sub-test %s passed", name)
 	return true
 }
-
-
 
 // Defer schedules a function to be executed when the current context completes.
 func (ctx *ExecutionContext) Defer(fn goja.Callable) {
@@ -306,8 +255,6 @@ func (ctx *ExecutionContext) Logf(format string, args ...interface{}) {
 		fmt.Fprintf(ctx.engine.stdout, "[%s] %s\n", ctx.name, msg)
 	}
 }
-
-
 
 // Error marks the current test as failed and logs an error message.
 func (ctx *ExecutionContext) Error(args ...interface{}) {
@@ -360,7 +307,7 @@ func (ctx *ExecutionContext) runDeferred() error {
 			ctx.deferred[i]()
 		}()
 	}
-	
+
 	if ctx.failed {
 		return fmt.Errorf("test context failed")
 	}
@@ -373,52 +320,52 @@ func (e *Engine) setupGlobals() {
 	e.vm.Set("sleep", func(ms int) {
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 	})
-	
+
 	e.vm.Set("env", func(key string) string {
 		return getEnv(key)
 	})
-	
-	// Context management functions  
+
+	// Context management functions
 	e.vm.Set("context", map[string]interface{}{
-		"addPath":            e.jsContextAddPath,
-		"removePath":         e.jsContextRemovePath,
-		"listPaths":          e.jsContextListPaths,
-		"getPath":            e.jsContextGetPath,
-		"refreshPath":        e.jsContextRefreshPath,
-		"toTxtar":            e.jsContextToTxtar,
-		"fromTxtar":          e.jsContextFromTxtar,
-		"getStats":           e.jsContextGetStats,
-		"filterPaths":        e.jsContextFilterPaths,
-		"getFilesByExt":      e.jsContextGetFilesByExtension,
+		"addPath":       e.jsContextAddPath,
+		"removePath":    e.jsContextRemovePath,
+		"listPaths":     e.jsContextListPaths,
+		"getPath":       e.jsContextGetPath,
+		"refreshPath":   e.jsContextRefreshPath,
+		"toTxtar":       e.jsContextToTxtar,
+		"fromTxtar":     e.jsContextFromTxtar,
+		"getStats":      e.jsContextGetStats,
+		"filterPaths":   e.jsContextFilterPaths,
+		"getFilesByExt": e.jsContextGetFilesByExtension,
 	})
-	
+
 	// Logging functions (application logs)
 	e.vm.Set("log", map[string]interface{}{
-		"debug":   e.jsLogDebug,
-		"info":    e.jsLogInfo,
-		"warn":    e.jsLogWarn,
-		"error":   e.jsLogError,
-		"printf":  e.jsLogPrintf,
-		"getLogs": e.jsGetLogs,
-		"clearLogs": e.jsLogClear,
+		"debug":      e.jsLogDebug,
+		"info":       e.jsLogInfo,
+		"warn":       e.jsLogWarn,
+		"error":      e.jsLogError,
+		"printf":     e.jsLogPrintf,
+		"getLogs":    e.jsGetLogs,
+		"clearLogs":  e.jsLogClear,
 		"searchLogs": e.jsLogSearch,
 	})
-	
+
 	// Terminal output functions (separate from logs)
 	e.vm.Set("output", map[string]interface{}{
-		"print":   e.jsOutputPrint,
-		"printf":  e.jsOutputPrintf,
+		"print":  e.jsOutputPrint,
+		"printf": e.jsOutputPrintf,
 	})
-	
+
 	// TUI and Mode management functions
 	e.vm.Set("tui", map[string]interface{}{
-		"registerMode":    e.tuiManager.jsRegisterMode,
-		"switchMode":      e.tuiManager.jsSwitchMode,
-		"getCurrentMode":  e.tuiManager.jsGetCurrentMode,
-		"setState":        e.tuiManager.jsSetState,
-		"getState":        e.tuiManager.jsGetState,
-		"registerCommand": e.tuiManager.jsRegisterCommand,
-		"listModes":       e.tuiManager.jsListModes,
+		"registerMode":        e.tuiManager.jsRegisterMode,
+		"switchMode":          e.tuiManager.jsSwitchMode,
+		"getCurrentMode":      e.tuiManager.jsGetCurrentMode,
+		"setState":            e.tuiManager.jsSetState,
+		"getState":            e.tuiManager.jsGetState,
+		"registerCommand":     e.tuiManager.jsRegisterCommand,
+		"listModes":           e.tuiManager.jsListModes,
 		"createPromptBuilder": e.jsCreatePromptBuilder,
 	})
 }

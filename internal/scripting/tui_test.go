@@ -1,25 +1,15 @@
 package scripting
 
 import (
-	"context"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/ActiveState/termtest"
-	"github.com/ActiveState/termtest/expect"
 )
 
 // TestTUIInteractiveMode tests the rich TUI system using PTY-based testing
 func TestTUIInteractiveMode(t *testing.T) {
-	// Skip if we're in CI or don't have a terminal
-	if os.Getenv("CI") != "" {
-		t.Skip("Skipping interactive tests in CI environment")
-	}
-
 	// Build the binary for testing
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
@@ -48,30 +38,6 @@ func TestTUIInteractiveMode(t *testing.T) {
 	t.Run("LLMPromptBuilder", func(t *testing.T) {
 		testLLMPromptBuilder(t, binaryPath)
 	})
-}
-
-// buildTestBinary builds the one-shot-man binary for testing
-func buildTestBinary(t *testing.T) string {
-	t.Helper()
-
-	// Get the project root directory
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get working directory: %v", err)
-	}
-
-	// Navigate to project root
-	projectRoot := filepath.Join(wd, "..", "..")
-	tempBinary := filepath.Join(projectRoot, "one-shot-man-test")
-
-	// Build the binary
-	cmd := exec.Command("go", "build", "-o", tempBinary, "./cmd/one-shot-man")
-	cmd.Dir = projectRoot
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("Failed to build test binary: %v\nOutput: %s", err, output)
-	}
-
-	return tempBinary
 }
 
 // testInteractiveStartup tests basic interactive terminal startup
@@ -405,192 +371,4 @@ func testLLMPromptBuilder(t *testing.T, binaryPath string) {
 	}
 
 	cp.ExpectEOF()
-}
-
-// TestScriptModeExecution tests running scripts that define modes
-func TestScriptModeExecution(t *testing.T) {
-	// Test non-interactive execution of mode-defining scripts
-	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
-
-	t.Run("DemoModeScript", func(t *testing.T) {
-		cmd := exec.Command(binaryPath, "script", "--test", "scripts/demo-mode.js")
-		cmd.Dir = filepath.Dir(binaryPath)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("Demo mode script execution failed: %v\nOutput: %s", err, output)
-		}
-
-		outputStr := string(output)
-		if !strings.Contains(outputStr, "Demo mode registered!") {
-			t.Fatalf("Demo mode registration not found in output: %s", outputStr)
-		}
-
-		if !strings.Contains(outputStr, "Available modes: demo") {
-			t.Fatalf("Demo mode not in available modes: %s", outputStr)
-		}
-	})
-
-	t.Run("LLMPromptBuilderScript", func(t *testing.T) {
-		cmd := exec.Command(binaryPath, "script", "--test", "scripts/llm-prompt-builder.js")
-		cmd.Dir = filepath.Dir(binaryPath)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("LLM prompt builder script execution failed: %v\nOutput: %s", err, output)
-		}
-
-		outputStr := string(output)
-		if !strings.Contains(outputStr, "LLM Prompt Builder mode registered and activated!") {
-			t.Fatalf("LLM prompt builder registration not found: %s", outputStr)
-		}
-	})
-}
-
-// TestTUIManagerAPI tests the TUI manager JavaScript API
-func TestTUIManagerAPI(t *testing.T) {
-	ctx := context.Background()
-	engine := NewEngine(ctx, os.Stdout, os.Stderr)
-	defer engine.Close()
-
-	tuiManager := engine.GetTUIManager()
-	if tuiManager == nil {
-		t.Fatal("TUI manager not created")
-	}
-
-	// Test mode registration
-	modes := tuiManager.ListModes()
-	if len(modes) != 0 {
-		t.Fatalf("Expected 0 modes initially, got %d", len(modes))
-	}
-
-	// Test JavaScript API via script
-	script := engine.LoadScriptFromString("api-test", `
-		// Test mode registration
-		tui.registerMode({
-			name: "api-test-mode",
-			tui: {
-				title: "API Test Mode",
-				prompt: "[api-test]> "
-			},
-			commands: {
-				testcmd: {
-					description: "Test command",
-					handler: function(args) {
-						console.log("Test command executed");
-					}
-				}
-			}
-		});
-
-		// Test command registration
-		tui.registerCommand({
-			name: "global-test",
-			description: "Global test command", 
-			handler: function(args) {
-				console.log("Global test command executed");
-			}
-		});
-	`)
-
-	err := engine.ExecuteScript(script)
-	if err != nil {
-		t.Fatalf("Script execution failed: %v", err)
-	}
-
-	// Verify mode was registered
-	modes = tuiManager.ListModes()
-	if len(modes) != 1 {
-		t.Fatalf("Expected 1 mode after registration, got %d", len(modes))
-	}
-
-	if modes[0] != "api-test-mode" {
-		t.Fatalf("Expected 'api-test-mode', got '%s'", modes[0])
-	}
-
-	// Test mode switching
-	err = tuiManager.SwitchMode("api-test-mode")
-	if err != nil {
-		t.Fatalf("Mode switching failed: %v", err)
-	}
-
-	currentMode := tuiManager.GetCurrentMode()
-	if currentMode == nil {
-		t.Fatal("No current mode after switching")
-	}
-
-	if currentMode.Name != "api-test-mode" {
-		t.Fatalf("Expected current mode 'api-test-mode', got '%s'", currentMode.Name)
-	}
-
-	// Test state management
-	tuiManager.SetState("test-key", "test-value")
-	value := tuiManager.GetState("test-key")
-	if value != "test-value" {
-		t.Fatalf("Expected 'test-value', got '%v'", value)
-	}
-}
-
-// TestPromptBuilder tests the prompt builder functionality
-func TestPromptBuilder(t *testing.T) {
-	pb := NewPromptBuilder("Test Prompt", "A test prompt for unit testing")
-
-	// Test basic functionality
-	if pb.Title != "Test Prompt" {
-		t.Fatalf("Expected title 'Test Prompt', got '%s'", pb.Title)
-	}
-
-	// Test template and variable setting
-	pb.SetTemplate("Hello {{name}}, you are {{age}} years old.")
-	pb.SetVariable("name", "Alice")
-	pb.SetVariable("age", 30)
-
-	built := pb.Build()
-	expected := "Hello Alice, you are 30 years old."
-	if built != expected {
-		t.Fatalf("Expected '%s', got '%s'", expected, built)
-	}
-
-	// Test version saving
-	pb.SaveVersion("Initial version", []string{"test", "initial"})
-	versions := pb.ListVersions()
-	if len(versions) != 1 {
-		t.Fatalf("Expected 1 version, got %d", len(versions))
-	}
-
-	version := versions[0]
-	if version["notes"] != "Initial version" {
-		t.Fatalf("Expected notes 'Initial version', got '%v'", version["notes"])
-	}
-
-	if version["content"] != expected {
-		t.Fatalf("Expected content '%s', got '%v'", expected, version["content"])
-	}
-
-	// Test version restoration
-	pb.SetVariable("name", "Bob")
-	pb.SetVariable("age", 25)
-	newBuilt := pb.Build()
-	if newBuilt == built {
-		t.Fatal("Expected different content after variable change")
-	}
-
-	err := pb.RestoreVersion(1)
-	if err != nil {
-		t.Fatalf("Version restoration failed: %v", err)
-	}
-
-	restoredBuilt := pb.Build()
-	if restoredBuilt != expected {
-		t.Fatalf("Expected restored content '%s', got '%s'", expected, restoredBuilt)
-	}
-
-	// Test export
-	exported := pb.Export()
-	if exported["title"] != "Test Prompt" {
-		t.Fatalf("Expected exported title 'Test Prompt', got '%v'", exported["title"])
-	}
-
-	if exported["current"] != expected {
-		t.Fatalf("Expected exported current '%s', got '%v'", expected, exported["current"])
-	}
 }

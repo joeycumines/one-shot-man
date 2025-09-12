@@ -11,8 +11,8 @@ import (
 
 // Registry manages the collection of available commands.
 type Registry struct {
-	commands     map[string]Command
-	scriptPaths  []string
+	commands    map[string]Command
+	scriptPaths []string
 }
 
 // NewRegistry creates a new command registry.
@@ -46,29 +46,29 @@ func (r *Registry) Get(name string) (Command, error) {
 	if cmd, exists := r.commands[name]; exists {
 		return cmd, nil
 	}
-	
+
 	// Check script commands
 	scriptCmd, err := r.findScriptCommand(name)
 	if err != nil {
 		return nil, fmt.Errorf("command not found: %s", name)
 	}
-	
+
 	return scriptCmd, nil
 }
 
 // List returns all available commands (built-in and script).
 func (r *Registry) List() []string {
 	var names []string
-	
+
 	// Add built-in commands
 	for name := range r.commands {
 		names = append(names, name)
 	}
-	
+
 	// Add script commands
 	scriptNames := r.findScriptCommands()
 	names = append(names, scriptNames...)
-	
+
 	// Sort and deduplicate
 	sort.Strings(names)
 	return removeDuplicates(names)
@@ -95,7 +95,7 @@ func (r *Registry) ListScript() []string {
 func (r *Registry) findScriptCommand(name string) (Command, error) {
 	for _, dir := range r.scriptPaths {
 		scriptPath := filepath.Join(dir, name)
-		
+
 		// Check if the file exists and is executable
 		if info, err := os.Stat(scriptPath); err == nil && !info.IsDir() {
 			if isExecutable(info) {
@@ -103,20 +103,20 @@ func (r *Registry) findScriptCommand(name string) (Command, error) {
 			}
 		}
 	}
-	
+
 	return nil, fmt.Errorf("script command not found: %s", name)
 }
 
 // findScriptCommands returns all available script command names.
 func (r *Registry) findScriptCommands() []string {
 	var names []string
-	
+
 	for _, dir := range r.scriptPaths {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue // Skip directories that can't be read
 		}
-		
+
 		for _, entry := range entries {
 			if !entry.IsDir() {
 				info, err := entry.Info()
@@ -126,7 +126,7 @@ func (r *Registry) findScriptCommands() []string {
 			}
 		}
 	}
-	
+
 	return names
 }
 
@@ -141,16 +141,16 @@ func removeDuplicates(sorted []string) []string {
 	if len(sorted) <= 1 {
 		return sorted
 	}
-	
+
 	result := make([]string, 0, len(sorted))
 	result = append(result, sorted[0])
-	
+
 	for i := 1; i < len(sorted); i++ {
 		if sorted[i] != sorted[i-1] {
 			result = append(result, sorted[i])
 		}
 	}
-	
+
 	return result
 }
 
@@ -178,6 +178,6 @@ func (c *ScriptCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	cmd.Stdin = os.Stdin
-	
+
 	return cmd.Run()
 }

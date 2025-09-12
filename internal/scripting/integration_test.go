@@ -3,11 +3,537 @@ package scripting
 import (
 	"context"
 	"fmt"
+	"github.com/ActiveState/termtest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func requireExpect(t *testing.T, p *termtest.ConsoleProcess, value string, timeout ...time.Duration) {
+	t.Helper()
+	rawString, err := p.Expect(value, timeout...)
+	if err != nil {
+		t.Fatalf("Expected to find %q in output, but got error: %v\nRaw:\n%s\n", value, err, rawString)
+	}
+}
+
+func requireExpectExitCode(t *testing.T, p *termtest.ConsoleProcess, exitCode int, timeout ...time.Duration) {
+	t.Helper()
+	rawString, err := p.ExpectExitCode(exitCode, timeout...)
+	if err != nil {
+		t.Fatalf("Expected exit code %d, but got error: %v\nRaw:\n%s\n", exitCode, err, rawString)
+	}
+}
+
+// TestFullLLMWorkflow tests a complete LLM prompt building workflow
+func TestFullLLMWorkflow(t *testing.T) {
+	binaryPath := buildTestBinary(t)
+	defer os.Remove(binaryPath)
+
+	opts := termtest.Options{
+		CmdName:        binaryPath,
+		Args:           []string{"script", "-i", "scripts/llm-prompt-builder.js"},
+		DefaultTimeout: 5 * time.Second,
+	}
+
+	cp, err := termtest.NewTest(t, opts)
+	if err != nil {
+		t.Fatalf("Failed to create termtest: %v", err)
+	}
+	defer cp.Close()
+
+	// Wait for LLM prompt builder to be ready
+	requireExpect(t, cp, "Welcome to LLM Prompt Builder!")
+
+	// Complete workflow: Create prompt, refine it, save versions, export
+	testCompletePromptWorkflow(t, cp)
+}
+
+func testCompletePromptWorkflow(t *testing.T, cp *termtest.ConsoleProcess) {
+	// Create a customer service prompt
+	cp.SendLine("new customer-service A customer service assistant prompt")
+	requireExpect(t, cp, "Created new prompt: customer-service")
+
+	// Set initial template
+	cp.SendLine("template You are a {{role}} for {{company}}. You should be {{tone}} and {{helpful_level}}. Customer issue: {{issue}}")
+	requireExpect(t, cp, "Template set:")
+
+	// Set variables for first version
+	cp.SendLine("var role customer service representative")
+	cp.SendLine("var company TechCorp Inc")
+	cp.SendLine("var tone professional and friendly")
+	cp.SendLine("var helpful_level extremely helpful")
+	cp.SendLine("var issue I can't log into my account")
+
+	// Build and preview
+	cp.SendLine("build")
+	requireExpect(t, cp, "You are a customer service representative for TechCorp Inc.")
+	requireExpect(t, cp, "I can't log into my account")
+
+	// Save first version
+	cp.SendLine("save Initial customer service template")
+	requireExpect(t, cp, "Saved version 1")
+
+	// Refine the prompt - make it more specific
+	cp.SendLine("template You are a {{role}} for {{company}}. You should be {{tone}} and {{helpful_level}}. When handling customer issues, always:\n1. Acknowledge the customer's concern\n2. Ask clarifying questions if needed\n3. Provide step-by-step solutions\n4. Offer additional assistance\n\nCustomer issue: {{issue}}")
+	requireExpect(t, cp, "Template set:")
+
+	// Build the refined version
+	cp.SendLine("build")
+	requireExpect(t, cp, "1. Acknowledge the customer's concern")
+	requireExpect(t, cp, "2. Ask clarifying questions")
+
+	// Save refined version
+	cp.SendLine("save Added structured response format")
+	requireExpect(t, cp, "Saved version 2")
+
+	// Test different issue type
+	cp.SendLine("var issue My order hasn't arrived and it's been a week")
+	cp.SendLine("build")
+	requireExpect(t, cp, "My order hasn't arrived and it's been a week")
+
+	// Save version for different issue
+	cp.SendLine("save Shipping issue variant")
+	requireExpect(t, cp, "Saved version 3")
+
+	// List all versions
+	cp.SendLine("versions")
+	requireExpect(t, cp, "v1 -")
+	requireExpect(t, cp, "Initial customer service template")
+	requireExpect(t, cp, "v2 -")
+	requireExpect(t, cp, "Added structured response format")
+	requireExpect(t, cp, "v3 -")
+	requireExpect(t, cp, "Shipping issue variant")
+
+	// Test restoration
+	cp.SendLine("restore 1")
+	requireExpect(t, cp, "Restored to version 1")
+
+	cp.SendLine("build")
+
+	// Export the prompt data
+	cp.SendLine("export")
+	requireExpect(t, cp, "\"title\": \"customer-service\"")
+	requireExpect(t, cp, "\"versions\": 3")
+
+	// Create a second prompt to test multi-prompt management
+	cp.SendLine("new technical-support Technical support prompt")
+	requireExpect(t, cp, "Created new prompt: technical-support")
+
+	// List all prompts
+	cp.SendLine("list")
+	requireExpect(t, cp, "customer-service")
+	requireExpect(t, cp, "technical-support")
+
+	// Switch back to customer service
+	cp.SendLine("load customer-service")
+	requireExpect(t, cp, "Loaded prompt: customer-service")
+
+	cp.SendLine("exit")
+	requireExpectExitCode(t, cp, 0)
+}
+
+func TestMultiModeWorkflow(t *testing.T) {
+	// Create a script that registers multiple modes
+	multiModeScript := `
+// Multi-mode test script
+ctx.log("Registering multiple modes...");
+
+// Register a simple calculator mode
+tui.registerMode({
+    name: "calculator",
+    tui: {
+        title: "Simple Calculator",
+        prompt: "[calc]> "
+    },
+    onEnter: function() {
+        console.log("Calculator mode active");
+        tui.setState("result", 0);
+    },
+    commands: {
+        "add": {
+            description: "Add numbers",
+            usage: "add <num1> <num2>",
+            handler: function(args) {
+                if (args.length !== 2) {
+                    console.log("Usage: add <num1> <num2>");
+                    return;
+                }
+                var result = parseFloat(args[0]) + parseFloat(args[1]);
+                tui.setState("result", result);
+                console.log("Result: " + result);
+            }
+        },
+        "result": {
+            description: "Show current result",
+            handler: function(args) {
+                console.log("Current result: " + tui.getState("result"));
+            }
+        }
+    }
+});
+
+// Register a note-taking mode
+tui.registerMode({
+    name: "notes",
+    tui: {
+        title: "Note Taker",
+        prompt: "[notes]> "
+    },
+    onEnter: function() {
+        console.log("Note-taking mode active");
+        tui.setState("notes", []);
+    },
+    commands: {
+        "add": {
+            description: "Add a note",
+            usage: "add <note text>",
+            handler: function(args) {
+                var note = args.join(" ");
+                var notes = tui.getState("notes") || [];
+                notes.push(note);
+                tui.setState("notes", notes);
+                console.log("Added note: " + note);
+            }
+        },
+        "list": {
+            description: "List all notes",
+            handler: function(args) {
+                var notes = tui.getState("notes") || [];
+                if (notes.length === 0) {
+                    console.log("No notes yet");
+                    return;
+                }
+                console.log("Notes:");
+                for (var i = 0; i < notes.length; i++) {
+                    console.log("  " + (i + 1) + ". " + notes[i]);
+                }
+            }
+        }
+    }
+});
+
+ctx.log("Modes registered: calculator, notes");
+`
+
+	// Write the test script
+	scriptPath := "/tmp/multi-mode-test.js"
+	err := os.WriteFile(scriptPath, []byte(multiModeScript), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test script: %v", err)
+	}
+	defer os.Remove(scriptPath)
+
+	binaryPath := buildTestBinary(t)
+	defer os.Remove(binaryPath)
+
+	opts := termtest.Options{
+		CmdName:        binaryPath,
+		Args:           []string{"script", "-i", scriptPath},
+		DefaultTimeout: 5 * time.Second,
+	}
+
+	cp, err := termtest.NewTest(t, opts)
+	if err != nil {
+		t.Fatalf("Failed to create termtest: %v", err)
+	}
+	defer cp.Close()
+
+	// Wait for startup
+	requireExpect(t, cp, "Rich TUI Terminal")
+	requireExpect(t, cp, "Modes registered: calculator, notes")
+
+	// Test calculator mode
+	cp.SendLine("mode calculator")
+	requireExpect(t, cp, "Calculator mode active")
+
+	cp.SendLine("add 5 3")
+	requireExpect(t, cp, "Result: 8")
+
+	cp.SendLine("add 2 7")
+	requireExpect(t, cp, "Result: 9")
+
+	cp.SendLine("result")
+	requireExpect(t, cp, "Current result: 9")
+
+	// Switch to notes mode
+	cp.SendLine("mode notes")
+	requireExpect(t, cp, "Note-taking mode active")
+
+	cp.SendLine("add This is my first note")
+	requireExpect(t, cp, "Added note: This is my first note")
+
+	cp.SendLine("add Another important note")
+	requireExpect(t, cp, "Added note: Another important note")
+
+	cp.SendLine("list")
+	requireExpect(t, cp, "1. This is my first note")
+	requireExpect(t, cp, "2. Another important note")
+
+	// Switch back to calculator
+	cp.SendLine("mode calculator")
+	requireExpect(t, cp, "Calculator mode active")
+
+	// Previous result should still be there
+	cp.SendLine("result")
+	requireExpect(t, cp, "Current result: 9")
+
+	// Switch back to notes
+	cp.SendLine("mode notes")
+	requireExpect(t, cp, "Note-taking mode active")
+
+	// Notes should still be there
+	cp.SendLine("list")
+	requireExpect(t, cp, "1. This is my first note")
+	requireExpect(t, cp, "2. Another important note")
+
+	cp.SendLine("exit")
+	requireExpectExitCode(t, cp, 0)
+}
+
+// TestErrorHandling tests error conditions and edge cases
+func TestErrorHandling(t *testing.T) {
+	binaryPath := buildTestBinary(t)
+	defer os.Remove(binaryPath)
+
+	opts := termtest.Options{
+		CmdName:        binaryPath,
+		Args:           []string{"script", "-i", "scripts/demo-mode.js"},
+		DefaultTimeout: 5 * time.Second,
+	}
+
+	cp, err := termtest.NewTest(t, opts)
+	if err != nil {
+		t.Fatalf("Failed to create termtest: %v", err)
+	}
+	defer cp.Close()
+
+	// Wait for startup
+	requireExpect(t, cp, "Rich TUI Terminal")
+
+	// Test switching to non-existent mode
+	cp.SendLine("mode nonexistent")
+	requireExpect(t, cp, "mode nonexistent not found")
+
+	// Test unknown command
+	cp.SendLine("unknowncommand")
+	requireExpect(t, cp, "Command not found: unknowncommand")
+
+	// Switch to demo mode
+	cp.SendLine("mode demo")
+	requireExpect(t, cp, "Entered demo mode!")
+
+	// Test command with wrong usage
+	cp.SendLine("js")
+	requireExpect(t, cp, "Usage: js <code>")
+
+	// Test JavaScript syntax error
+	cp.SendLine("js this is not valid javascript syntax +++")
+	requireExpect(t, cp, "Error:")
+
+	cp.SendLine("exit")
+	requireExpectExitCode(t, cp, 0)
+}
+
+// TestConcurrentAccess tests the thread safety of the TUI system
+func TestConcurrentAccess(t *testing.T) {
+	ctx := context.Background()
+	engine := NewEngine(ctx, os.Stdout, os.Stderr)
+	defer engine.Close()
+
+	tuiManager := engine.GetTUIManager()
+
+	// Register a test mode
+	script := engine.LoadScriptFromString("concurrent-test", `
+		tui.registerMode({
+			name: "concurrent-test",
+			commands: {}
+		});
+	`)
+
+	err := engine.ExecuteScript(script)
+	if err != nil {
+		t.Fatalf("Script execution failed: %v", err)
+	}
+
+	// Test concurrent state access
+	done := make(chan bool, 10)
+
+	// Start multiple goroutines accessing state
+	for i := 0; i < 10; i++ {
+		go func(id int) {
+			defer func() { done <- true }()
+
+			// Switch to the mode
+			err := tuiManager.SwitchMode("concurrent-test")
+			if err != nil {
+				t.Errorf("Mode switching failed in goroutine %d: %v", id, err)
+				return
+			}
+
+			// Set and get state values
+			for j := 0; j < 100; j++ {
+				key := fmt.Sprintf("key-%d-%d", id, j)
+				value := fmt.Sprintf("value-%d-%d", id, j)
+
+				tuiManager.SetState(key, value)
+				retrieved := tuiManager.GetState(key)
+
+				if retrieved != value {
+					t.Errorf("State mismatch in goroutine %d: expected %s, got %v", id, value, retrieved)
+					return
+				}
+			}
+		}(i)
+	}
+
+	// Wait for all goroutines to complete
+	for i := 0; i < 10; i++ {
+		select {
+		case <-done:
+			// Goroutine completed
+		case <-time.After(10 * time.Second):
+			t.Fatal("Concurrent access test timed out")
+		}
+	}
+}
+
+// TestJavaScriptInteroperability tests complex JavaScript integration
+func TestJavaScriptInteroperability(t *testing.T) {
+	ctx := context.Background()
+	engine := NewEngine(ctx, os.Stdout, os.Stderr)
+	defer engine.Close()
+
+	// Test complex JavaScript integration with the TUI system
+	script := engine.LoadScriptFromString("interop-test", `
+		// Test complex object handling
+		var complexConfig = {
+			name: "complex-mode",
+			tui: {
+				title: "Complex Mode",
+				prompt: "[complex]> "
+			},
+			onEnter: function() {
+				console.log("Complex mode entered");
+				// Test object state storage
+				tui.setState("config", {
+					nested: {
+						value: 42,
+						array: [1, 2, 3],
+						func: function() { return "test"; }
+					}
+				});
+			},
+			commands: {
+				"test-object": {
+					description: "Test object handling",
+					handler: function(args) {
+						var config = tui.getState("config");
+						console.log("Nested value: " + config.nested.value);
+						console.log("Array length: " + config.nested.array.length);
+					}
+				},
+				"test-array": {
+					description: "Test array operations",
+					handler: function(args) {
+						var arr = tui.getState("testArray") || [];
+						arr.push(args.join(" "));
+						tui.setState("testArray", arr);
+						console.log("Array now has " + arr.length + " items");
+					}
+				}
+			}
+		};
+
+		// Register the complex mode
+		tui.registerMode(complexConfig);
+
+		// Test immediate switching and operation
+		tui.switchMode("complex-mode");
+	`)
+
+	err := engine.ExecuteScript(script)
+	if err != nil {
+		t.Fatalf("Complex JavaScript interop failed: %v", err)
+	}
+
+	// Verify the mode was created and switched to
+	tuiManager := engine.GetTUIManager()
+	currentMode := tuiManager.GetCurrentMode()
+	if currentMode == nil {
+		t.Fatal("No current mode after complex script execution")
+	}
+
+	if currentMode.Name != "complex-mode" {
+		t.Fatalf("Expected complex-mode, got %s", currentMode.Name)
+	}
+
+	// Test that complex state was set
+	config := tuiManager.GetState("config")
+	if config == nil {
+		t.Fatal("Complex config state not set")
+	}
+}
+
+// BenchmarkTUIPerformance benchmarks the TUI system performance
+func BenchmarkTUIPerformance(b *testing.B) {
+	ctx := context.Background()
+	engine := NewEngine(ctx, os.Stdout, os.Stderr)
+	defer engine.Close()
+
+	// Register a test mode
+	script := engine.LoadScriptFromString("perf-test", `
+		tui.registerMode({
+			name: "perf-test",
+			commands: {
+				"perf": {
+					description: "Performance test command",
+					handler: function(args) {
+						tui.setState("counter", (tui.getState("counter") || 0) + 1);
+					}
+				}
+			}
+		});
+	`)
+
+	err := engine.ExecuteScript(script)
+	if err != nil {
+		b.Fatalf("Script execution failed: %v", err)
+	}
+
+	tuiManager := engine.GetTUIManager()
+	err = tuiManager.SwitchMode("perf-test")
+	if err != nil {
+		b.Fatalf("Mode switching failed: %v", err)
+	}
+
+	b.ResetTimer()
+
+	// Benchmark command execution
+	b.Run("CommandExecution", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			err := tuiManager.ExecuteCommand("perf", []string{})
+			if err != nil {
+				b.Fatalf("Command execution failed: %v", err)
+			}
+		}
+	})
+
+	// Benchmark state operations
+	b.Run("StateOperations", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			key := fmt.Sprintf("key-%d", i)
+			value := fmt.Sprintf("value-%d", i)
+			tuiManager.SetState(key, value)
+			retrieved := tuiManager.GetState(key)
+			if retrieved != value {
+				b.Fatalf("State operation failed")
+			}
+		}
+	})
+}
 
 // TestContextManagement tests the context manager functionality
 func TestContextManagement(t *testing.T) {
@@ -19,26 +545,26 @@ func TestContextManagement(t *testing.T) {
 	testScript := engine.LoadScriptFromString("context-test", `
 		// Test context operations
 		log.info("Testing context management");
-		
+
 		// Add current directory to context
 		var err = context.addPath(".");
 		if (err) {
 			log.error("Failed to add path: " + err);
 			throw new Error("Failed to add path");
 		}
-		
+
 		// List paths
 		var paths = context.listPaths();
 		log.info("Tracked paths: " + paths.length);
-		
+
 		// Get stats
 		var stats = context.getStats();
 		log.info("Context stats: " + JSON.stringify(stats));
-		
+
 		// Generate txtar format
 		var txtar = context.toTxtar();
 		log.info("Generated txtar format (length: " + txtar.length + ")");
-		
+
 		output.print("Context test completed successfully");
 	`)
 
@@ -63,7 +589,7 @@ func TestContextManagement(t *testing.T) {
 // TestLoggingSystem tests the structured logging system
 func TestLoggingSystem(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Capture output
 	var logOutput strings.Builder
 	engine := NewEngine(ctx, &logOutput, &logOutput)
@@ -76,18 +602,18 @@ func TestLoggingSystem(t *testing.T) {
 		log.info("Info message");
 		log.warn("Warning message");
 		log.error("Error message");
-		
+
 		// Test formatted logging
 		log.printf("Formatted message: %s %d", "test", 42);
-		
+
 		// Test output (terminal output)
 		output.print("Terminal output message");
 		output.printf("Formatted terminal output: %s", "success");
-		
+
 		// Get logs
 		var logs = log.getLogs();
 		output.print("Total logs: " + logs.length);
-		
+
 		// Search logs
 		var searchResults = log.searchLogs("info");
 		output.print("Info logs found: " + searchResults.length);
@@ -156,16 +682,16 @@ func TestTUIModeSystem(t *testing.T) {
 				}
 			}
 		});
-		
+
 		// Switch to the test mode
 		tui.switchMode("test-mode");
-		
+
 		// Verify current mode
 		var currentMode = tui.getCurrentMode();
 		if (currentMode !== "test-mode") {
 			throw new Error("Expected test-mode, got: " + currentMode);
 		}
-		
+
 		output.print("TUI mode test completed successfully");
 	`)
 
@@ -200,7 +726,7 @@ func TestTUIModeSystem(t *testing.T) {
 // TestFullIntegration tests complete integration of all systems
 func TestFullIntegration(t *testing.T) {
 	ctx := context.Background()
-	
+
 	// Create a temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "osm-integration-test-*")
 	if err != nil {
@@ -211,12 +737,12 @@ func TestFullIntegration(t *testing.T) {
 	// Create test files
 	testFile1 := filepath.Join(tempDir, "test1.txt")
 	testFile2 := filepath.Join(tempDir, "test2.go")
-	
+
 	err = os.WriteFile(testFile1, []byte("This is test file 1"), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create test file 1: %v", err)
 	}
-	
+
 	err = os.WriteFile(testFile2, []byte("package main\nfunc main() { println(\"test\") }"), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create test file 2: %v", err)
@@ -230,7 +756,7 @@ func TestFullIntegration(t *testing.T) {
 	testScript := engine.LoadScriptFromString("full-integration", fmt.Sprintf(`
 		// Full integration test combining all systems
 		log.info("Starting full integration test");
-		
+
 		// Register a comprehensive mode
 		tui.registerMode({
 			name: "integration-mode",
@@ -240,14 +766,14 @@ func TestFullIntegration(t *testing.T) {
 			},
 			onEnter: function() {
 				log.info("Entered integration mode");
-				
+
 				// Add test files to context
 				context.addPath("%s");
 				context.addPath("%s");
-				
+
 				var paths = context.listPaths();
 				log.info("Added " + paths.length + " paths to context");
-				
+
 				// Initialize state
 				tui.setState("filesProcessed", 0);
 			},
@@ -257,13 +783,13 @@ func TestFullIntegration(t *testing.T) {
 					handler: function(args) {
 						var goFiles = context.getFilesByExt("go");
 						var txtFiles = context.getFilesByExt("txt");
-						
+
 						log.info("Found " + goFiles.length + " Go files");
 						log.info("Found " + txtFiles.length + " text files");
-						
+
 						var processed = tui.getState("filesProcessed") + goFiles.length + txtFiles.length;
 						tui.setState("filesProcessed", processed);
-						
+
 						output.print("Processed " + processed + " files total");
 					}
 				},
@@ -272,11 +798,11 @@ func TestFullIntegration(t *testing.T) {
 					handler: function(args) {
 						var txtar = context.toTxtar();
 						log.info("Generated txtar with " + txtar.length + " characters");
-						
+
 						// Test filtering
 						var goFiles = context.filterPaths("*.go");
 						log.info("Filtered " + goFiles.length + " Go files");
-						
+
 						output.print("Context exported successfully");
 					}
 				},
@@ -285,20 +811,20 @@ func TestFullIntegration(t *testing.T) {
 					handler: function(args) {
 						var contextStats = context.getStats();
 						var processed = tui.getState("filesProcessed");
-						
+
 						output.print("Context: " + contextStats.files + " files, " + contextStats.totalSize + " bytes");
 						output.print("Processed: " + processed + " files");
-						
+
 						var logs = log.getLogs(5);
 						output.print("Recent logs: " + logs.length + " entries");
 					}
 				}
 			}
 		});
-		
+
 		// Switch to the mode
 		tui.switchMode("integration-mode");
-		
+
 		log.info("Integration test setup completed");
 		output.print("Integration test ready");
 	`, testFile1, testFile2))
@@ -310,7 +836,7 @@ func TestFullIntegration(t *testing.T) {
 
 	// Test the registered commands
 	tuiManager := engine.GetTUIManager()
-	
+
 	// Test file processing
 	err = tuiManager.ExecuteCommand("process-files", []string{})
 	if err != nil {
@@ -357,7 +883,7 @@ func TestFullIntegration(t *testing.T) {
 // TestScriptCommandVerification tests script-defined commands work correctly
 func TestScriptCommandVerification(t *testing.T) {
 	ctx := context.Background()
-	
+
 	var output strings.Builder
 	engine := NewEngine(ctx, &output, &output)
 	defer engine.Close()
@@ -393,11 +919,11 @@ func TestScriptCommandVerification(t *testing.T) {
 							output.print("Usage: complex <action> [value]");
 							return;
 						}
-						
+
 						var action = args[0];
 						var value = args.length > 1 ? args[1] : "";
 						var state = tui.getState("complexState") || {};
-						
+
 						switch (action) {
 							case "set":
 								if (!value) {
@@ -422,7 +948,7 @@ func TestScriptCommandVerification(t *testing.T) {
 								output.print("Keys: " + keys.join(", "));
 								return;
 						}
-						
+
 						tui.setState("complexState", state);
 						output.print("Complex command " + action + " completed");
 					}
@@ -432,10 +958,10 @@ func TestScriptCommandVerification(t *testing.T) {
 					handler: function(args) {
 						var results = tui.getState("commandResults");
 						var complexState = tui.getState("complexState") || {};
-						
+
 						output.print("Command results: " + results.length + " simple commands executed");
 						output.print("Complex state keys: " + Object.keys(complexState).length);
-						
+
 						// Log verification
 						log.info("Command verification completed");
 						var logs = log.getLogs();
@@ -444,7 +970,7 @@ func TestScriptCommandVerification(t *testing.T) {
 				}
 			}
 		});
-		
+
 		tui.switchMode("command-test");
 		output.print("Command test mode ready");
 	`)
@@ -510,7 +1036,7 @@ func TestScriptCommandVerification(t *testing.T) {
 // TestScriptStateVerification tests script-defined state functionality
 func TestScriptStateVerification(t *testing.T) {
 	ctx := context.Background()
-	
+
 	var output strings.Builder
 	engine := NewEngine(ctx, &output, &output)
 	defer engine.Close()
@@ -571,11 +1097,11 @@ func TestScriptStateVerification(t *testing.T) {
 							output.print("Usage: update-config <key> <value>");
 							return;
 						}
-						
+
 						var config = tui.getState("config");
 						var key = args[0];
 						var value = args[1];
-						
+
 						// Handle nested updates
 						if (key.indexOf(".") !== -1) {
 							var parts = key.split(".");
@@ -590,7 +1116,7 @@ func TestScriptStateVerification(t *testing.T) {
 						} else {
 							config[key] = value;
 						}
-						
+
 						tui.setState("config", config);
 						output.print("Updated config." + key + " = " + value);
 					}
@@ -601,7 +1127,7 @@ func TestScriptStateVerification(t *testing.T) {
 						var counter = tui.getState("counter");
 						var messages = tui.getState("messages");
 						var config = tui.getState("config");
-						
+
 						output.print("=== State Summary ===");
 						output.print("Counter: " + counter);
 						output.print("Messages: " + messages.length + " items");
@@ -609,7 +1135,7 @@ func TestScriptStateVerification(t *testing.T) {
 						output.print("Config features: " + config.features.join(", "));
 						output.print("Config debug: " + config.settings.debug);
 						output.print("Config maxItems: " + config.settings.maxItems);
-						
+
 						if (messages.length > 0) {
 							output.print("Recent messages:");
 							var recent = messages.slice(-3);
@@ -621,7 +1147,7 @@ func TestScriptStateVerification(t *testing.T) {
 				}
 			}
 		});
-		
+
 		tui.switchMode("state-test");
 		output.print("State test mode ready");
 	`)
@@ -656,7 +1182,7 @@ func TestScriptStateVerification(t *testing.T) {
 		"settings.debug":    "false",
 		"settings.maxItems": "200",
 	}
-	
+
 	for key, value := range configUpdates {
 		err = tuiManager.ExecuteCommand("update-config", []string{key, value})
 		if err != nil {
@@ -684,7 +1210,7 @@ func TestScriptStateVerification(t *testing.T) {
 	default:
 		t.Fatalf("Expected counter to be numeric, got %T: %v", counter, counter)
 	}
-	
+
 	if counterInt != 5 {
 		t.Fatalf("Expected counter to be 5, got %v", counterInt)
 	}
@@ -714,4 +1240,3 @@ func TestScriptStateVerification(t *testing.T) {
 		t.Error("Expected config debug to be false in output")
 	}
 }
-

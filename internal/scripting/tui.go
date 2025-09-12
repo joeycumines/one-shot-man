@@ -23,15 +23,15 @@ type TUIManager struct {
 
 // ScriptMode represents a specific script mode with its own state and commands.
 type ScriptMode struct {
-	Name        string
-	Script      *Script
-	State       map[string]interface{}
-	Commands    map[string]Command
-	TUIConfig   *TUIConfig
-	OnEnter     goja.Callable
-	OnExit      goja.Callable
-	OnPrompt    goja.Callable
-	mu          sync.RWMutex
+	Name      string
+	Script    *Script
+	State     map[string]interface{}
+	Commands  map[string]Command
+	TUIConfig *TUIConfig
+	OnEnter   goja.Callable
+	OnExit    goja.Callable
+	OnPrompt  goja.Callable
+	mu        sync.RWMutex
 }
 
 // TUIConfig defines the configuration for a rich TUI interface.
@@ -62,10 +62,10 @@ func NewTUIManager(ctx context.Context, engine *Engine) *TUIManager {
 		modes:    make(map[string]*ScriptMode),
 		commands: make(map[string]Command),
 	}
-	
+
 	// Register built-in commands
 	manager.registerBuiltinCommands()
-	
+
 	return manager
 }
 
@@ -73,11 +73,11 @@ func NewTUIManager(ctx context.Context, engine *Engine) *TUIManager {
 func (tm *TUIManager) RegisterMode(mode *ScriptMode) error {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
-	
+
 	if _, exists := tm.modes[mode.Name]; exists {
 		return fmt.Errorf("mode %s already exists", mode.Name)
 	}
-	
+
 	tm.modes[mode.Name] = mode
 	return nil
 }
@@ -86,19 +86,19 @@ func (tm *TUIManager) RegisterMode(mode *ScriptMode) error {
 func (tm *TUIManager) SwitchMode(modeName string) error {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
-	
+
 	mode, exists := tm.modes[modeName]
 	if !exists {
 		return fmt.Errorf("mode %s not found", modeName)
 	}
-	
+
 	// Exit current mode
 	if tm.currentMode != nil && tm.currentMode.OnExit != nil {
 		if _, err := tm.currentMode.OnExit(goja.Undefined()); err != nil {
 			fmt.Printf("Error exiting mode %s: %v\n", tm.currentMode.Name, err)
 		}
 	}
-	
+
 	// Enter new mode
 	tm.currentMode = mode
 	if mode.OnEnter != nil {
@@ -106,7 +106,7 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 			fmt.Printf("Error entering mode %s: %v\n", mode.Name, err)
 		}
 	}
-	
+
 	fmt.Printf("Switched to mode: %s\n", mode.Name)
 	return nil
 }
@@ -128,7 +128,7 @@ func (tm *TUIManager) RegisterCommand(cmd Command) {
 // ExecuteCommand executes a command by name.
 func (tm *TUIManager) ExecuteCommand(name string, args []string) error {
 	tm.mu.RLock()
-	
+
 	// Check current mode commands first
 	if tm.currentMode != nil {
 		tm.currentMode.mu.RLock()
@@ -139,15 +139,15 @@ func (tm *TUIManager) ExecuteCommand(name string, args []string) error {
 		}
 		tm.currentMode.mu.RUnlock()
 	}
-	
+
 	// Check global commands
 	cmd, exists := tm.commands[name]
 	tm.mu.RUnlock()
-	
+
 	if !exists {
 		return fmt.Errorf("command %s not found", name)
 	}
-	
+
 	return tm.executeCommand(cmd, args)
 }
 
@@ -168,7 +168,7 @@ func (tm *TUIManager) executeCommand(cmd Command, args []string) error {
 		for i, arg := range args {
 			argsJS.Set(fmt.Sprintf("%d", i), arg)
 		}
-		
+
 		switch handler := cmd.Handler.(type) {
 		case goja.Callable:
 			_, err := handler(goja.Undefined(), argsJS)
@@ -200,10 +200,10 @@ func (tm *TUIManager) GetState(key string) interface{} {
 	if tm.currentMode == nil {
 		return nil
 	}
-	
+
 	tm.currentMode.mu.RLock()
 	defer tm.currentMode.mu.RUnlock()
-	
+
 	return tm.currentMode.State[key]
 }
 
@@ -212,14 +212,14 @@ func (tm *TUIManager) SetState(key string, value interface{}) {
 	if tm.currentMode == nil {
 		return
 	}
-	
+
 	tm.currentMode.mu.Lock()
 	defer tm.currentMode.mu.Unlock()
-	
+
 	if tm.currentMode.State == nil {
 		tm.currentMode.State = make(map[string]interface{})
 	}
-	
+
 	tm.currentMode.State[key] = value
 }
 
@@ -227,7 +227,7 @@ func (tm *TUIManager) SetState(key string, value interface{}) {
 func (tm *TUIManager) ListModes() []string {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
-	
+
 	modes := make([]string, 0, len(tm.modes))
 	for name := range tm.modes {
 		modes = append(modes, name)
@@ -239,12 +239,12 @@ func (tm *TUIManager) ListModes() []string {
 func (tm *TUIManager) ListCommands() []Command {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
-	
+
 	commands := make([]Command, 0, len(tm.commands))
 	for _, cmd := range tm.commands {
 		commands = append(commands, cmd)
 	}
-	
+
 	// Add current mode commands
 	if tm.currentMode != nil {
 		tm.currentMode.mu.RLock()
@@ -253,7 +253,7 @@ func (tm *TUIManager) ListCommands() []Command {
 		}
 		tm.currentMode.mu.RUnlock()
 	}
-	
+
 	return commands
 }
 
@@ -263,13 +263,13 @@ func (tm *TUIManager) Run() {
 	fmt.Println("Type 'help' for available commands, 'exit' to quit")
 	fmt.Printf("Available modes: %s\n", strings.Join(tm.ListModes(), ", "))
 	fmt.Println()
-	
+
 	// Create prompt with basic options for now
 	tm.prompt = prompt.New(
 		tm.executor,
 		prompt.WithTitle("one-shot-man rich TUI"),
 	)
-	
+
 	tm.prompt.Run()
 }
 
@@ -277,17 +277,17 @@ func (tm *TUIManager) Run() {
 func (tm *TUIManager) executor(input string) {
 	// Print the current prompt prefix
 	fmt.Print(tm.getPromptString())
-	
+
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return
 	}
-	
+
 	// Parse command and arguments
 	parts := strings.Fields(input)
 	cmdName := parts[0]
 	args := parts[1:]
-	
+
 	// Handle special cases
 	switch cmdName {
 	case "exit", "quit":
@@ -297,7 +297,7 @@ func (tm *TUIManager) executor(input string) {
 		tm.showHelp()
 		return
 	}
-	
+
 	// Try to execute command
 	if err := tm.ExecuteCommand(cmdName, args); err != nil {
 		// If not a command, try to execute as JavaScript in current mode
@@ -309,8 +309,6 @@ func (tm *TUIManager) executor(input string) {
 		}
 	}
 }
-
-
 
 // getPromptString returns the current prompt string.
 func (tm *TUIManager) getPromptString() string {
@@ -329,10 +327,10 @@ func (tm *TUIManager) executeJavaScript(code string) {
 		fmt.Println("No active mode for JavaScript execution")
 		return
 	}
-	
+
 	// Create a temporary script with the current mode's context
 	script := tm.engine.LoadScriptFromString(fmt.Sprintf("%s-repl", tm.currentMode.Name), code)
-	
+
 	// Execute with mode state available
 	if err := tm.engine.ExecuteScript(script); err != nil {
 		fmt.Printf("Error: %v\n", err)
@@ -348,7 +346,7 @@ func (tm *TUIManager) showHelp() {
 	fmt.Println("  modes                - List available modes")
 	fmt.Println("  state                - Show current mode state")
 	fmt.Println()
-	
+
 	commands := tm.ListCommands()
 	if len(commands) > 0 {
 		fmt.Println("Registered commands:")
@@ -360,13 +358,13 @@ func (tm *TUIManager) showHelp() {
 		}
 		fmt.Println()
 	}
-	
+
 	// Show loaded scripts
 	scripts := tm.engine.GetScripts()
 	if len(scripts) > 0 {
 		fmt.Printf("Loaded scripts: %d\n", len(scripts))
 	}
-	
+
 	if tm.currentMode != nil {
 		fmt.Printf("Current mode: %s\n", tm.currentMode.Name)
 		fmt.Println("You can execute JavaScript code directly")
@@ -397,7 +395,7 @@ func (tm *TUIManager) registerBuiltinCommands() {
 		},
 		IsGoCommand: true,
 	})
-	
+
 	// List modes command
 	tm.RegisterCommand(Command{
 		Name:        "modes",
@@ -416,7 +414,7 @@ func (tm *TUIManager) registerBuiltinCommands() {
 		},
 		IsGoCommand: true,
 	})
-	
+
 	// State command
 	tm.RegisterCommand(Command{
 		Name:        "state",
@@ -426,10 +424,10 @@ func (tm *TUIManager) registerBuiltinCommands() {
 				fmt.Println("No active mode")
 				return nil
 			}
-			
+
 			tm.currentMode.mu.RLock()
 			defer tm.currentMode.mu.RUnlock()
-			
+
 			fmt.Printf("Mode: %s\n", tm.currentMode.Name)
 			if len(tm.currentMode.State) == 0 {
 				fmt.Println("State: empty")
@@ -456,7 +454,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 			Commands: make(map[string]Command),
 			State:    make(map[string]interface{}),
 		}
-		
+
 		// Set up TUI config
 		if tuiConfigRaw, exists := configMap["tui"]; exists {
 			if tuiMap, ok := tuiConfigRaw.(map[string]interface{}); ok {
@@ -468,7 +466,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 				}
 			}
 		}
-		
+
 		// Set up callbacks - store them as interface{} and handle conversion during execution
 		if onEnter, exists := configMap["onEnter"]; exists {
 			if val := tm.engine.vm.ToValue(onEnter); val != nil {
@@ -477,7 +475,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 				}
 			}
 		}
-		
+
 		if onExit, exists := configMap["onExit"]; exists {
 			if val := tm.engine.vm.ToValue(onExit); val != nil {
 				if callable, ok := goja.AssertFunction(val); ok {
@@ -485,7 +483,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 				}
 			}
 		}
-		
+
 		if onPrompt, exists := configMap["onPrompt"]; exists {
 			if val := tm.engine.vm.ToValue(onPrompt); val != nil {
 				if callable, ok := goja.AssertFunction(val); ok {
@@ -493,7 +491,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 				}
 			}
 		}
-		
+
 		// Register commands
 		if commandsRaw, exists := configMap["commands"]; exists {
 			if commandsMap, ok := commandsRaw.(map[string]interface{}); ok {
@@ -505,7 +503,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 							Usage:       getString(cmdMap, "usage", ""),
 							IsGoCommand: false,
 						}
-						
+
 						if handler, exists := cmdMap["handler"]; exists {
 							cmd.Handler = handler
 							mode.Commands[cmdName] = cmd
@@ -514,10 +512,10 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 				}
 			}
 		}
-		
+
 		return tm.RegisterMode(mode)
 	}
-	
+
 	return fmt.Errorf("invalid mode configuration")
 }
 
@@ -553,17 +551,17 @@ func (tm *TUIManager) jsRegisterCommand(cmdConfig interface{}) error {
 			Usage:       getString(configMap, "usage", ""),
 			IsGoCommand: false,
 		}
-		
+
 		if handler, exists := configMap["handler"]; exists {
 			// Store the handler as-is, and handle the conversion during execution
 			cmd.Handler = handler
 			tm.RegisterCommand(cmd)
 			return nil
 		}
-		
+
 		return fmt.Errorf("command must have a handler function")
 	}
-	
+
 	return fmt.Errorf("invalid command configuration")
 }
 

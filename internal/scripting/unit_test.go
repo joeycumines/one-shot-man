@@ -225,24 +225,17 @@ func TestScriptModeExecution(t *testing.T) {
 // buildTestBinary builds the one-shot-man binary for testing
 func buildTestBinary(t *testing.T) string {
 	t.Helper()
-
-	// Get the project root directory
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
-
-	// Navigate to project root
 	projectRoot := filepath.Join(wd, "..", "..")
-	tempBinary := filepath.Join(projectRoot, "one-shot-man-test")
-
-	// Build the binary
+	tempBinary := filepath.Join(t.TempDir(), "one-shot-man")
 	cmd := exec.Command("go", "build", "-o", tempBinary, "./cmd/one-shot-man")
 	cmd.Dir = projectRoot
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("Failed to build test binary: %v\nOutput: %s", err, output)
 	}
-
 	return tempBinary
 }
 
@@ -407,15 +400,15 @@ func TestConcurrentSafety(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		go func(id int) {
 			defer func() { done <- true }()
-			
+
 			// Set and get state values
 			for j := 0; j < 100; j++ {
 				key := strings.Join([]string{"key", strings.Repeat("x", id), strings.Repeat("y", j)}, "-")
 				value := strings.Join([]string{"value", strings.Repeat("a", id), strings.Repeat("b", j)}, "-")
-				
+
 				tuiManager.SetState(key, value)
 				retrieved := tuiManager.GetState(key)
-				
+
 				if retrieved != value {
 					t.Errorf("State mismatch in goroutine %d: expected %s, got %v", id, value, retrieved)
 					return

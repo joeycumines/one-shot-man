@@ -54,14 +54,14 @@ func (pb *PromptBuilder) GetVariable(key string) interface{} {
 // Build builds the current prompt by replacing variables in the template.
 func (pb *PromptBuilder) Build() string {
 	content := pb.Template
-	
+
 	// Replace variables in the template
 	for key, value := range pb.Variables {
 		placeholder := fmt.Sprintf("{{%s}}", key)
 		replacement := fmt.Sprintf("%v", value)
 		content = strings.ReplaceAll(content, placeholder, replacement)
 	}
-	
+
 	return content
 }
 
@@ -75,12 +75,12 @@ func (pb *PromptBuilder) SaveVersion(notes string, tags []string) {
 		Notes:     notes,
 		Tags:      tags,
 	}
-	
+
 	// Copy current variables
 	for k, v := range pb.Variables {
 		version.Variables[k] = v
 	}
-	
+
 	pb.History = append(pb.History, version)
 	pb.Current = &version
 }
@@ -99,13 +99,13 @@ func (pb *PromptBuilder) RestoreVersion(versionNum int) error {
 	if version == nil {
 		return fmt.Errorf("version %d not found", versionNum)
 	}
-	
+
 	pb.Template = version.Content
 	pb.Variables = make(map[string]interface{})
 	for k, v := range version.Variables {
 		pb.Variables[k] = v
 	}
-	
+
 	pb.Current = version
 	return nil
 }
@@ -113,7 +113,7 @@ func (pb *PromptBuilder) RestoreVersion(versionNum int) error {
 // ListVersions returns information about all versions.
 func (pb *PromptBuilder) ListVersions() []map[string]interface{} {
 	versions := make([]map[string]interface{}, len(pb.History))
-	
+
 	for i, version := range pb.History {
 		versions[i] = map[string]interface{}{
 			"version":   version.Version,
@@ -123,7 +123,7 @@ func (pb *PromptBuilder) ListVersions() []map[string]interface{} {
 			"content":   version.Content,
 		}
 	}
-	
+
 	return versions
 }
 
@@ -142,43 +142,43 @@ func (pb *PromptBuilder) Export() map[string]interface{} {
 // JavaScript bridge function to create a prompt builder
 func (e *Engine) jsCreatePromptBuilder(title, description string) map[string]interface{} {
 	pb := NewPromptBuilder(title, description)
-	
+
 	return map[string]interface{}{
 		// Core methods
 		"setTemplate": pb.SetTemplate,
 		"setVariable": pb.SetVariable,
 		"getVariable": pb.GetVariable,
 		"build":       pb.Build,
-		
+
 		// Version management
 		"saveVersion":    pb.SaveVersion,
 		"getVersion":     pb.GetVersion,
 		"restoreVersion": pb.RestoreVersion,
 		"listVersions":   pb.ListVersions,
-		
+
 		// Export/Import
 		"export": pb.Export,
-		
+
 		// Properties (read-only)
-		"getTitle": func() string { return pb.Title },
+		"getTitle":       func() string { return pb.Title },
 		"getDescription": func() string { return pb.Description },
-		"getTemplate": func() string { return pb.Template },
-		"getVariables": func() map[string]interface{} { return pb.Variables },
-		
+		"getTemplate":    func() string { return pb.Template },
+		"getVariables":   func() map[string]interface{} { return pb.Variables },
+
 		// Utility methods
 		"preview": func() string {
-			return fmt.Sprintf("Title: %s\nDescription: %s\n\nCurrent Prompt:\n%s", 
+			return fmt.Sprintf("Title: %s\nDescription: %s\n\nCurrent Prompt:\n%s",
 				pb.Title, pb.Description, pb.Build())
 		},
-		
+
 		"stats": func() map[string]interface{} {
 			return map[string]interface{}{
-				"title":        pb.Title,
-				"description":  pb.Description,
-				"versions":     len(pb.History),
-				"variables":    len(pb.Variables),
-				"hasTemplate":  pb.Template != "",
-				"lastUpdated":  time.Now().Format(time.RFC3339),
+				"title":       pb.Title,
+				"description": pb.Description,
+				"versions":    len(pb.History),
+				"variables":   len(pb.Variables),
+				"hasTemplate": pb.Template != "",
+				"lastUpdated": time.Now().Format(time.RFC3339),
 			}
 		},
 	}

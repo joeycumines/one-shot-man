@@ -54,17 +54,17 @@ func LoadFromPath(path string) (*Config, error) {
 func LoadFromReader(r io.Reader) (*Config, error) {
 	config := NewConfig()
 	scanner := bufio.NewScanner(r)
-	
+
 	var currentCommand string
-	
+
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		
+
 		// Skip empty lines and comments
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		
+
 		// Check for command section header [command_name]
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			currentCommand = strings.Trim(line, "[]")
@@ -73,19 +73,19 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 			}
 			continue
 		}
-		
+
 		// Parse option line: optionName remainingLineIsTheValue
 		parts := strings.SplitN(line, " ", 2)
 		if len(parts) < 1 {
 			continue
 		}
-		
+
 		optionName := parts[0]
 		var value string
 		if len(parts) > 1 {
 			value = parts[1]
 		}
-		
+
 		// Store in appropriate section
 		if currentCommand == "" {
 			// Global option
@@ -95,11 +95,11 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 			config.Commands[currentCommand][optionName] = value
 		}
 	}
-	
+
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("error reading config: %w", err)
 	}
-	
+
 	return config, nil
 }
 
@@ -117,7 +117,7 @@ func (c *Config) GetCommandOption(command, name string) (string, bool) {
 			return value, true
 		}
 	}
-	
+
 	// Fall back to global options
 	return c.GetGlobalOption(name)
 }

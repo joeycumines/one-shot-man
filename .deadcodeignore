@@ -1,0 +1,9 @@
+# Deadcode ignore patterns
+# Patterns to exclude from deadcode analysis
+# See: https://pkg.go.dev/github.com/joeycumines/simple-command-output-filter
+
+# TUI Logger methods that may be used by JavaScript or future features
+internal/scripting/logging.go:148:21: unreachable func: TUILogger.WriteToTUI
+internal/scripting/logging.go:183:21: unreachable func: TUILogger.GetLogsByLevel
+internal/scripting/logging.go:247:21: unreachable func: TUILogger.GetLogStats
+internal/scripting/logging.go:276:21: unreachable func: TUILogger.FormatLogEntry

@@ -30,3 +30,9 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Built binaries
+/one-shot-man
+
+# Makefile user configuration
+/config.mk

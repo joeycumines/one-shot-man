@@ -229,7 +229,8 @@ func buildTestBinary(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
-	projectRoot := filepath.Join(wd, "..", "..")
+	// Correctly determine the project root relative to the test file's location
+	projectRoot := filepath.Clean(filepath.Join(wd, "..", ".."))
 	tempBinary := filepath.Join(t.TempDir(), "one-shot-man")
 	cmd := exec.Command("go", "build", "-o", tempBinary, "./cmd/one-shot-man")
 	cmd.Dir = projectRoot

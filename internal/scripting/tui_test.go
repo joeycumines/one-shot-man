@@ -43,8 +43,9 @@ func TestTUIInteractiveMode(t *testing.T) {
 // testInteractiveStartup tests basic interactive terminal startup
 func testInteractiveStartup(t *testing.T, binaryPath string) {
 	opts := termtest.Options{
-		CmdName: binaryPath,
-		Args:    []string{"script", "-i"},
+		CmdName:        binaryPath,
+		Args:           []string{"script", "-i"},
+		DefaultTimeout: 5 * time.Second,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -54,45 +55,28 @@ func testInteractiveStartup(t *testing.T, binaryPath string) {
 	defer cp.Close()
 
 	// Expect the welcome message
-	_, err = cp.Expect("one-shot-man Rich TUI Terminal", 10*time.Second)
-	if err != nil {
-		t.Fatalf("Expected welcome message not found: %v", err)
-	}
+	requireExpect(t, cp, "one-shot-man Rich TUI Terminal")
 
 	// Expect the help instruction
-	_, err = cp.Expect("Type 'help' for available commands", 5*time.Second)
-	if err != nil {
-		t.Fatalf("Expected help instruction not found: %v", err)
-	}
+	requireExpect(t, cp, "Type 'help' for available commands")
 
 	// Test help command
 	cp.SendLine("help")
-	_, err = cp.Expect("Available commands:", 5*time.Second)
-	if err != nil {
-		t.Fatalf("Expected help output not found: %v", err)
-	}
-
-	_, err = cp.Expect("mode <name>", 5*time.Second)
-	if err != nil {
-		t.Fatalf("Expected mode command in help not found: %v", err)
-	}
+	requireExpect(t, cp, "Available commands:")
+	requireExpect(t, cp, "mode <name>")
 
 	// Test exit
 	cp.SendLine("exit")
-	_, err = cp.Expect("Goodbye!", 5*time.Second)
-	if err != nil {
-		t.Fatalf("Expected goodbye message not found: %v", err)
-	}
-
-	// Wait for the process to finish
-	cp.Wait(5 * time.Second)
+	requireExpect(t, cp, "Goodbye!")
+	requireExpectExitCode(t, cp, 0)
 }
 
 // testModeRegistrationAndSwitching tests mode registration and switching
 func testModeRegistrationAndSwitching(t *testing.T, binaryPath string) {
 	opts := termtest.Options{
-		CmdName: binaryPath,
-		Args:    []string{"script", "-i", "scripts/demo-mode.js"},
+		CmdName:        binaryPath,
+		Args:           []string{"script", "-i", "scripts/demo-mode.js"},
+		DefaultTimeout: 5 * time.Second,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -102,136 +86,96 @@ func testModeRegistrationAndSwitching(t *testing.T, binaryPath string) {
 	defer cp.Close()
 
 	// Wait for startup
-	_, err = cp.Expect("Rich TUI Terminal", 10*time.Second)
-	if err != nil {
-		t.Fatalf("Terminal startup failed: %v", err)
-	}
+	requireExpect(t, cp, "Rich TUI Terminal")
+	requireExpect(t, cp, "Demo mode registered!")
 
 	// The demo-mode.js script should have registered a mode
 	cp.SendLine("modes")
-	_, err = cp.Expect("demo", 5*time.Second)
-	if err != nil {
-		t.Fatalf("Demo mode not found in modes list: %v", err)
-	}
+	requireExpect(t, cp, "demo")
 
 	// Switch to demo mode
 	cp.SendLine("mode demo")
-	_, err = cp.Expect("Switched to mode: demo", 5*time.Second)
-	if err != nil {
-		t.Fatalf("Mode switching failed: %v", err)
-	}
-
-	_, err = cp.Expect("Entered demo mode!", 5*time.Second)
-	if err != nil {
-		t.Fatalf("Demo mode onEnter callback not executed: %v", err)
-	}
+	requireExpect(t, cp, "Switched to mode: demo")
+	requireExpect(t, cp, "Entered demo mode!")
 
 	// Test mode-specific commands
 	cp.SendLine("count")
-	_, err = cp.Expect("Counter: 1", 5*time.Second)
-	if err != nil {
-		t.Fatalf("Count command failed: %v", err)
-	}
+	requireExpect(t, cp, "Counter: 1")
 
 	// Test message command
 	cp.SendLine("message Hello World")
-	_, err = cp.Expect("Added message: Hello World", 5*time.Second)
-	if err != nil {
-		t.Fatalf("Message command failed: %v", err)
-	}
+	requireExpect(t, cp, "Added message: Hello World")
 
 	// Test show command
 	cp.SendLine("show")
-	_, err = cp.Expect("Counter: 1", 5*time.Second)
-	if err != nil {
-		t.Fatalf("Show command failed: %v", err)
-	}
-
-	_, err = cp.Expect("Messages: 1", 5*time.Second)
-	if err != nil {
-		t.Fatalf("Show command messages count failed: %v", err)
-	}
+	requireExpect(t, cp, "Counter: 1")
+	requireExpect(t, cp, "Messages: 1")
 
 	// Exit
 	cp.SendLine("exit")
-	_, err = cp.Expect("Leaving demo mode...", 5*time.Second)
-	if err != nil {
-		t.Fatalf("Demo mode onExit callback not executed: %v", err)
-	}
-
-	_, err = cp.Expect("Final counter value: 1", 5*time.Second)
-	if err != nil {
-		t.Fatalf("Demo mode final state not shown: %v", err)
-	}
-
-	cp.Wait(5 * time.Second)
+	requireExpect(t, cp, "Leaving demo mode...")
+	requireExpect(t, cp, "Final counter value: 1")
+	requireExpectExitCode(t, cp, 0)
 }
 
 // testCommandExecutionInModes tests command execution within modes
 func testCommandExecutionInModes(t *testing.T, binaryPath string) {
-	opts := &termtest.Options{
-		CmdName: binaryPath,
-		Args:    []string{"script", "-i", "scripts/demo-mode.js"},
-		Timeout: 30 * time.Second,
+	opts := termtest.Options{
+		CmdName:        binaryPath,
+		Args:           []string{"script", "-i", "scripts/demo-mode.js"},
+		DefaultTimeout: 5 * time.Second,
 	}
 
-	cp, err := termtest.NewTest(opts)
+	cp, err := termtest.NewTest(t, opts)
 	if err != nil {
 		t.Fatalf("Failed to create termtest: %v", err)
 	}
 	defer cp.Close()
 
 	// Wait for startup and switch to demo mode
-	cp.ExpectString("Rich TUI Terminal")
+	requireExpect(t, cp, "Rich TUI Terminal")
+	requireExpect(t, cp, "Demo mode registered!")
 	cp.SendLine("mode demo")
-	cp.ExpectString("Entered demo mode!")
+	requireExpect(t, cp, "Entered demo mode!")
 
 	// Test JavaScript execution in mode context
 	cp.SendLine("js console.log('JavaScript execution test')")
-	err = cp.ExpectString("JavaScript execution test")
-	if err != nil {
-		t.Fatalf("JavaScript execution in mode failed: %v", err)
-	}
+	requireExpect(t, cp, "JavaScript execution test")
 
 	// Test global echo command (registered globally)
 	cp.SendLine("echo Test global command")
-	err = cp.ExpectString("Test global command")
-	if err != nil {
-		t.Fatalf("Global echo command failed: %v", err)
-	}
+	requireExpect(t, cp, "Test global command")
 
 	// Test multiple count commands
 	cp.SendLine("count")
 	cp.SendLine("count")
 	cp.SendLine("count")
 	cp.SendLine("show")
-	err = cp.ExpectString("Counter: 4") // Should be incremented from previous test + 3
-	if err != nil {
-		t.Fatalf("Multiple count commands failed: %v", err)
-	}
+	requireExpect(t, cp, "Counter: 4") // Should be incremented from previous test + 3
 
 	cp.SendLine("exit")
-	cp.ExpectEOF()
+	requireExpectExitCode(t, cp, 0)
 }
 
 // testStateManagement tests state management between commands
 func testStateManagement(t *testing.T, binaryPath string) {
-	opts := &termtest.Options{
-		CmdName: binaryPath,
-		Args:    []string{"script", "-i", "scripts/demo-mode.js"},
-		Timeout: 30 * time.Second,
+	opts := termtest.Options{
+		CmdName:        binaryPath,
+		Args:           []string{"script", "-i", "scripts/demo-mode.js"},
+		DefaultTimeout: 5 * time.Second,
 	}
 
-	cp, err := termtest.NewTest(opts)
+	cp, err := termtest.NewTest(t, opts)
 	if err != nil {
 		t.Fatalf("Failed to create termtest: %v", err)
 	}
 	defer cp.Close()
 
 	// Setup
-	cp.ExpectString("Rich TUI Terminal")
+	requireExpect(t, cp, "Rich TUI Terminal")
+	requireExpect(t, cp, "Demo mode registered!")
 	cp.SendLine("mode demo")
-	cp.ExpectString("Entered demo mode!")
+	requireExpect(t, cp, "Entered demo mode!")
 
 	// Test state persistence across multiple commands
 	cp.SendLine("message First message")
@@ -239,136 +183,79 @@ func testStateManagement(t *testing.T, binaryPath string) {
 	cp.SendLine("message Third message")
 
 	cp.SendLine("show")
-	err = cp.ExpectString("Messages: 3")
-	if err != nil {
-		t.Fatalf("State persistence failed: %v", err)
-	}
+	requireExpect(t, cp, "Messages: 3")
 
 	// Should show recent messages
-	err = cp.ExpectString("1. First message")
-	if err != nil {
-		t.Fatalf("First message not found in state: %v", err)
-	}
-
-	err = cp.ExpectString("2. Second message")
-	if err != nil {
-		t.Fatalf("Second message not found in state: %v", err)
-	}
-
-	err = cp.ExpectString("3. Third message")
-	if err != nil {
-		t.Fatalf("Third message not found in state: %v", err)
-	}
+	requireExpect(t, cp, "1. First message")
+	requireExpect(t, cp, "2. Second message")
+	requireExpect(t, cp, "3. Third message")
 
 	// Test global state command
 	cp.SendLine("state")
-	err = cp.ExpectString("Mode: demo")
-	if err != nil {
-		t.Fatalf("State command mode display failed: %v", err)
-	}
+	requireExpect(t, cp, "Mode: demo")
 
 	cp.SendLine("exit")
-	cp.ExpectEOF()
+	requireExpectExitCode(t, cp, 0)
 }
 
 // testLLMPromptBuilder tests the LLM prompt builder functionality
 func testLLMPromptBuilder(t *testing.T, binaryPath string) {
-	opts := &termtest.Options{
-		CmdName: binaryPath,
-		Args:    []string{"script", "-i", "scripts/llm-prompt-builder.js"},
-		Timeout: 30 * time.Second,
+	opts := termtest.Options{
+		CmdName:        binaryPath,
+		Args:           []string{"script", "-i", "scripts/llm-prompt-builder.js"},
+		DefaultTimeout: 30 * time.Second,
 	}
 
-	cp, err := termtest.NewTest(opts)
+	cp, err := termtest.NewTest(t, opts)
 	if err != nil {
 		t.Fatalf("Failed to create termtest: %v", err)
 	}
 	defer cp.Close()
 
 	// Wait for LLM prompt builder mode to be activated
-	err = cp.ExpectString("Welcome to LLM Prompt Builder!")
-	if err != nil {
-		t.Fatalf("LLM Prompt Builder welcome not found: %v", err)
-	}
+	requireExpect(t, cp, "Exiting LLM Prompt Builder mode")
+	requireExpect(t, cp, "Welcome to LLM Prompt Builder!")
 
 	// Test creating a new prompt
 	cp.SendLine("new test-prompt A test prompt for AI")
-	err = cp.ExpectString("Created new prompt: test-prompt")
-	if err != nil {
-		t.Fatalf("Prompt creation failed: %v", err)
-	}
+	requireExpect(t, cp, "Created new prompt: test-prompt")
 
 	// Test setting a template
 	cp.SendLine("template You are a helpful assistant. Answer the following question: {{question}}")
-	err = cp.ExpectString("Template set:")
-	if err != nil {
-		t.Fatalf("Template setting failed: %v", err)
-	}
+	requireExpect(t, cp, "Template set:")
 
 	// Test setting variables
 	cp.SendLine("var question What is the capital of France?")
-	err = cp.ExpectString("Set variable: question = What is the capital of France?")
-	if err != nil {
-		t.Fatalf("Variable setting failed: %v", err)
-	}
+	requireExpect(t, cp, "Set variable: question = What is the capital of France?")
 
 	// Test building the prompt
 	cp.SendLine("build")
-	err = cp.ExpectString("Built prompt:")
-	if err != nil {
-		t.Fatalf("Prompt building failed: %v", err)
-	}
+	requireExpect(t, cp, "Built prompt:")
 
-	err = cp.ExpectString("You are a helpful assistant. Answer the following question: What is the capital of France?")
-	if err != nil {
-		t.Fatalf("Variable substitution failed: %v", err)
-	}
+	requireExpect(t, cp, "You are a helpful assistant. Answer the following question: What is the capital of France?")
 
 	// Test saving a version
 	cp.SendLine("save Initial version with France question")
-	err = cp.ExpectString("Saved version 1")
-	if err != nil {
-		t.Fatalf("Version saving failed: %v", err)
-	}
+	requireExpect(t, cp, "Saved version 1")
 
 	// Test listing versions
 	cp.SendLine("versions")
-	err = cp.ExpectString("v1 -")
-	if err != nil {
-		t.Fatalf("Version listing failed: %v", err)
-	}
-
-	err = cp.ExpectString("Initial version with France question")
-	if err != nil {
-		t.Fatalf("Version notes not found: %v", err)
-	}
+	requireExpect(t, cp, "v1 -")
+	requireExpect(t, cp, "Initial version with France question")
 
 	// Test preview
 	cp.SendLine("preview")
-	err = cp.ExpectString("Title: test-prompt")
-	if err != nil {
-		t.Fatalf("Preview title failed: %v", err)
-	}
+	requireExpect(t, cp, "Title: test-prompt")
 
 	// Test export
 	cp.SendLine("export")
-	err = cp.ExpectString("Prompt export:")
-	if err != nil {
-		t.Fatalf("Export failed: %v", err)
-	}
+	requireExpect(t, cp, "Prompt export:")
 
 	// Test list command
 	cp.SendLine("list")
-	err = cp.ExpectString("test-prompt")
-	if err != nil {
-		t.Fatalf("List prompts failed: %v", err)
-	}
+	requireExpect(t, cp, "test-prompt")
 
 	cp.SendLine("exit")
-	err = cp.ExpectString("Exiting LLM Prompt Builder mode")
-	if err != nil {
-		t.Fatalf("LLM mode exit failed: %v", err)
-	}
-
-	cp.ExpectEOF()
+	requireExpect(t, cp, "Exiting LLM Prompt Builder mode")
+	requireExpectExitCode(t, cp, 0)
 }

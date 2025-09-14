@@ -54,6 +54,40 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	// Set up global variables
 	engine.SetGlobal("args", args)
 
+	// Load any script files passed as arguments
+	if len(args) > 0 {
+		for _, scriptFile := range args {
+			// Resolve script path
+			if !filepath.IsAbs(scriptFile) {
+				locations := []string{
+					scriptFile,
+					filepath.Join("scripts", scriptFile),
+				}
+				var found bool
+				for _, path := range locations {
+					if _, err := os.Stat(path); err == nil {
+						scriptFile = path
+						found = true
+						break
+					}
+				}
+				if !found {
+					return fmt.Errorf("script file not found: %s", scriptFile)
+				}
+			}
+
+			// Load and execute the script
+			scriptName := filepath.Base(scriptFile)
+			script, err := engine.LoadScript(scriptName, scriptFile)
+			if err != nil {
+				return fmt.Errorf("failed to load script %s: %w", scriptFile, err)
+			}
+			if err := engine.ExecuteScript(script); err != nil {
+				return fmt.Errorf("failed to execute script %s: %w", scriptFile, err)
+			}
+		}
+	}
+
 	// Interactive mode
 	if c.interactive {
 		terminal := scripting.NewTerminal(ctx, engine)
@@ -67,45 +101,11 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 		return engine.ExecuteScript(script)
 	}
 
-	// File-based script execution
-	if len(args) == 0 {
-		fmt.Fprintln(stderr, "No script file specified. Use -i for interactive mode or -e for direct execution.")
+	// If not in interactive mode and no script was provided, show an error.
+	if len(args) == 0 && c.script == "" {
+		fmt.Fprintln(stderr, "No script file specified. Use -i for interactive mode, -e for direct execution, or provide a script file.")
 		return fmt.Errorf("no script specified")
 	}
 
-	scriptFile := args[0]
-
-	// Resolve script path
-	if !filepath.IsAbs(scriptFile) {
-		// Look for script in common locations
-		locations := []string{
-			scriptFile,                           // Current directory
-			filepath.Join("scripts", scriptFile), // Local scripts directory
-		}
-
-		// Try to find the script
-		var found bool
-		for _, path := range locations {
-			if _, err := os.Stat(path); err == nil {
-				scriptFile = path
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			return fmt.Errorf("script file not found: %s", scriptFile)
-		}
-	}
-
-	// Load and execute the script
-	scriptName := filepath.Base(scriptFile)
-	script, err := engine.LoadScript(scriptName, scriptFile)
-	if err != nil {
-		return fmt.Errorf("failed to load script: %w", err)
-	}
-
-	script.Description = fmt.Sprintf("Script from %s", scriptFile)
-
-	return engine.ExecuteScript(script)
+	return nil
 }

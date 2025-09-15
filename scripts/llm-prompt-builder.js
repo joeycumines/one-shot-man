@@ -278,4 +278,4 @@ tui.registerMode({
     }
 });
 
-tui.switchMode("llm-prompt-builder");
+ctx.log("LLM Prompt Builder mode registered!");

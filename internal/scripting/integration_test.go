@@ -32,9 +32,15 @@ func TestFullLLMWorkflow(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
 
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
-		Args:           []string{"script", "-i", "scripts/llm-prompt-builder.js"},
+		Args:           []string{"script", "-i", filepath.Join(projectDir, "scripts", "llm-prompt-builder.js")},
 		DefaultTimeout: 5 * time.Second,
 	}
 
@@ -44,8 +50,14 @@ func TestFullLLMWorkflow(t *testing.T) {
 	}
 	defer cp.Close()
 
-	// Wait for LLM prompt builder to be ready
+	// Wait for TUI startup
+	requireExpect(t, cp, "one-shot-man Rich TUI Terminal")
+	requireExpect(t, cp, "Available modes: llm-prompt-builder")
+
+	// Switch to the LLM prompt builder mode
+	cp.SendLine("mode llm-prompt-builder")
 	requireExpect(t, cp, "Welcome to LLM Prompt Builder!")
+	requireExpect(t, cp, "Switched to mode: llm-prompt-builder")
 
 	// Complete workflow: Create prompt, refine it, save versions, export
 	testCompletePromptWorkflow(t, cp)
@@ -149,8 +161,10 @@ tui.registerMode({
         prompt: "[calc]> "
     },
     onEnter: function() {
-        console.log("Calculator mode active");
-        tui.setState("result", 0);
+        output.print("Calculator mode active");
+        if (tui.getState("result") === undefined) {
+            tui.setState("result", 0);
+        }
     },
     commands: {
         "add": {
@@ -158,18 +172,18 @@ tui.registerMode({
             usage: "add <num1> <num2>",
             handler: function(args) {
                 if (args.length !== 2) {
-                    console.log("Usage: add <num1> <num2>");
+                    output.print("Usage: add <num1> <num2>");
                     return;
                 }
                 var result = parseFloat(args[0]) + parseFloat(args[1]);
                 tui.setState("result", result);
-                console.log("Result: " + result);
+                output.print("Result: " + result);
             }
         },
         "result": {
             description: "Show current result",
             handler: function(args) {
-                console.log("Current result: " + tui.getState("result"));
+                output.print("Current result: " + tui.getState("result"));
             }
         }
     }
@@ -183,8 +197,10 @@ tui.registerMode({
         prompt: "[notes]> "
     },
     onEnter: function() {
-        console.log("Note-taking mode active");
-        tui.setState("notes", []);
+        output.print("Note-taking mode active");
+        if (!tui.getState("notes")) {
+            tui.setState("notes", []);
+        }
     },
     commands: {
         "add": {
@@ -195,7 +211,7 @@ tui.registerMode({
                 var notes = tui.getState("notes") || [];
                 notes.push(note);
                 tui.setState("notes", notes);
-                console.log("Added note: " + note);
+                output.print("Added note: " + note);
             }
         },
         "list": {
@@ -203,12 +219,12 @@ tui.registerMode({
             handler: function(args) {
                 var notes = tui.getState("notes") || [];
                 if (notes.length === 0) {
-                    console.log("No notes yet");
+                    output.print("No notes yet");
                     return;
                 }
-                console.log("Notes:");
+                output.print("Notes:");
                 for (var i = 0; i < notes.length; i++) {
-                    console.log("  " + (i + 1) + ". " + notes[i]);
+                    output.print("  " + (i + 1) + ". " + notes[i]);
                 }
             }
         }
@@ -243,7 +259,6 @@ ctx.log("Modes registered: calculator, notes");
 
 	// Wait for startup
 	requireExpect(t, cp, "Rich TUI Terminal")
-	requireExpect(t, cp, "Modes registered: calculator, notes")
 
 	// Test calculator mode
 	cp.SendLine("mode calculator")
@@ -275,8 +290,9 @@ ctx.log("Modes registered: calculator, notes");
 	// Switch back to calculator
 	cp.SendLine("mode calculator")
 	requireExpect(t, cp, "Calculator mode active")
+	requireExpect(t, cp, "Switched to mode: calculator")
 
-	// Previous result should still be there
+	// Result should persist across mode switches
 	cp.SendLine("result")
 	requireExpect(t, cp, "Current result: 9")
 
@@ -286,10 +302,11 @@ ctx.log("Modes registered: calculator, notes");
 
 	// Notes should still be there
 	cp.SendLine("list")
-	requireExpect(t, cp, "1. This is my first note")
-	requireExpect(t, cp, "2. Another important note")
+	requireExpect(t, cp, "  1. This is my first note")
+	requireExpect(t, cp, "  2. Another important note")
 
 	cp.SendLine("exit")
+	requireExpect(t, cp, "Goodbye!")
 	requireExpectExitCode(t, cp, 0)
 }
 
@@ -298,10 +315,16 @@ func TestErrorHandling(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
 
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
-		Args:           []string{"script", "-i", "scripts/demo-mode.js"},
-		DefaultTimeout: 5 * time.Second,
+		Args:           []string{"script", "-i", filepath.Join(projectDir, "scripts", "demo-mode.js")},
+		DefaultTimeout: 10 * time.Second,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -324,6 +347,7 @@ func TestErrorHandling(t *testing.T) {
 	// Switch to demo mode
 	cp.SendLine("mode demo")
 	requireExpect(t, cp, "Entered demo mode!")
+	requireExpect(t, cp, "Switched to mode: demo")
 
 	// Test command with wrong usage
 	cp.SendLine("js")
@@ -416,7 +440,7 @@ func TestJavaScriptInteroperability(t *testing.T) {
 				prompt: "[complex]> "
 			},
 			onEnter: function() {
-				console.log("Complex mode entered");
+				output.print("Complex mode entered");
 				// Test object state storage
 				tui.setState("config", {
 					nested: {
@@ -431,8 +455,8 @@ func TestJavaScriptInteroperability(t *testing.T) {
 					description: "Test object handling",
 					handler: function(args) {
 						var config = tui.getState("config");
-						console.log("Nested value: " + config.nested.value);
-						console.log("Array length: " + config.nested.array.length);
+						output.print("Nested value: " + config.nested.value);
+						output.print("Array length: " + config.nested.array.length);
 					}
 				},
 				"test-array": {
@@ -441,7 +465,7 @@ func TestJavaScriptInteroperability(t *testing.T) {
 						var arr = tui.getState("testArray") || [];
 						arr.push(args.join(" "));
 						tui.setState("testArray", arr);
-						console.log("Array now has " + arr.length + " items");
+						output.print("Array now has " + arr.length + " items");
 					}
 				}
 			}

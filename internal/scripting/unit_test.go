@@ -164,8 +164,14 @@ func TestScriptModeExecution(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
 
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+
 	t.Run("DemoModeScript", func(t *testing.T) {
-		cmd := exec.Command(binaryPath, "script", "--test", "scripts/demo-mode.js")
+		cmd := exec.Command(binaryPath, "script", "--test", filepath.Join(projectDir, "scripts", "demo-mode.js"))
 		cmd.Dir = filepath.Dir(binaryPath)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
@@ -183,7 +189,7 @@ func TestScriptModeExecution(t *testing.T) {
 	})
 
 	t.Run("LLMPromptBuilderScript", func(t *testing.T) {
-		cmd := exec.Command(binaryPath, "script", "--test", "scripts/llm-prompt-builder.js")
+		cmd := exec.Command(binaryPath, "script", "--test", filepath.Join(projectDir, "scripts", "llm-prompt-builder.js"))
 		cmd.Dir = filepath.Dir(binaryPath)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
@@ -191,16 +197,13 @@ func TestScriptModeExecution(t *testing.T) {
 		}
 
 		outputStr := string(output)
-		if !strings.Contains(outputStr, "Welcome to LLM Prompt Builder!") {
-			t.Fatalf("LLM prompt builder not found: %s", outputStr)
-		}
-		if !strings.Contains(outputStr, "Switched to mode: llm-prompt-builder") {
-			t.Fatalf("LLM prompt builder mode switch not found: %s", outputStr)
+		if !strings.Contains(outputStr, "LLM Prompt Builder mode registered!") {
+			t.Fatalf("LLM prompt builder registration not found: %s", outputStr)
 		}
 	})
 
 	t.Run("DebugTUIScript", func(t *testing.T) {
-		cmd := exec.Command(binaryPath, "script", "--test", "scripts/debug-tui.js")
+		cmd := exec.Command(binaryPath, "script", "--test", filepath.Join(projectDir, "scripts", "debug-tui.js"))
 		cmd.Dir = filepath.Dir(binaryPath)
 		output, err := cmd.CombinedOutput()
 		if err != nil {

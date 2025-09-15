@@ -54,6 +54,7 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	// Set up global variables
 	engine.SetGlobal("args", args)
 
+	// PHASE 1: Configuration - Evaluate all scripts to define modes and commands.
 	// Load any script files passed as arguments
 	if len(args) > 0 {
 		for _, scriptFile := range args {
@@ -83,25 +84,27 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 				return fmt.Errorf("failed to load script %s: %w", scriptFile, err)
 			}
 			if err := engine.ExecuteScript(script); err != nil {
-				return fmt.Errorf("failed to execute script %s: %w", scriptFile, err)
+				return fmt.Errorf("failed to evaluate script %s: %w", scriptFile, err)
 			}
 		}
 	}
 
-	// Interactive mode
+	// Execute script from -e flag AFTER file scripts.
+	if c.script != "" {
+		script := engine.LoadScriptFromString("command-line", c.script)
+		if err := engine.ExecuteScript(script); err != nil {
+			return err
+		}
+	}
+
+	// PHASE 2: Execution - If interactive, run the TUI with the configured state.
 	if c.interactive {
 		terminal := scripting.NewTerminal(ctx, engine)
 		terminal.Run()
 		return nil
 	}
 
-	// Direct script execution
-	if c.script != "" {
-		script := engine.LoadScriptFromString("command-line", c.script)
-		return engine.ExecuteScript(script)
-	}
-
-	// If not in interactive mode and no script was provided, show an error.
+	// If not interactive and no scripts were provided, it's an error.
 	if len(args) == 0 && c.script == "" {
 		fmt.Fprintln(stderr, "No script file specified. Use -i for interactive mode, -e for direct execution, or provide a script file.")
 		return fmt.Errorf("no script specified")

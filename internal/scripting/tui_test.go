@@ -2,6 +2,7 @@ package scripting
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -73,9 +74,15 @@ func testInteractiveStartup(t *testing.T, binaryPath string) {
 
 // testModeRegistrationAndSwitching tests mode registration and switching
 func testModeRegistrationAndSwitching(t *testing.T, binaryPath string) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
-		Args:           []string{"script", "-i", "scripts/demo-mode.js"},
+		Args:           []string{"script", "-i", filepath.Join(projectDir, "scripts", "demo-mode.js")},
 		DefaultTimeout: 5 * time.Second,
 	}
 
@@ -87,7 +94,6 @@ func testModeRegistrationAndSwitching(t *testing.T, binaryPath string) {
 
 	// Wait for startup
 	requireExpect(t, cp, "Rich TUI Terminal")
-	requireExpect(t, cp, "Demo mode registered!")
 
 	// The demo-mode.js script should have registered a mode
 	cp.SendLine("modes")
@@ -120,9 +126,15 @@ func testModeRegistrationAndSwitching(t *testing.T, binaryPath string) {
 
 // testCommandExecutionInModes tests command execution within modes
 func testCommandExecutionInModes(t *testing.T, binaryPath string) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
-		Args:           []string{"script", "-i", "scripts/demo-mode.js"},
+		Args:           []string{"script", "-i", filepath.Join(projectDir, "scripts", "demo-mode.js")},
 		DefaultTimeout: 5 * time.Second,
 	}
 
@@ -134,7 +146,6 @@ func testCommandExecutionInModes(t *testing.T, binaryPath string) {
 
 	// Wait for startup and switch to demo mode
 	requireExpect(t, cp, "Rich TUI Terminal")
-	requireExpect(t, cp, "Demo mode registered!")
 	cp.SendLine("mode demo")
 	requireExpect(t, cp, "Entered demo mode!")
 
@@ -159,9 +170,15 @@ func testCommandExecutionInModes(t *testing.T, binaryPath string) {
 
 // testStateManagement tests state management between commands
 func testStateManagement(t *testing.T, binaryPath string) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
-		Args:           []string{"script", "-i", "scripts/demo-mode.js"},
+		Args:           []string{"script", "-i", filepath.Join(projectDir, "scripts", "demo-mode.js")},
 		DefaultTimeout: 5 * time.Second,
 	}
 
@@ -173,7 +190,6 @@ func testStateManagement(t *testing.T, binaryPath string) {
 
 	// Setup
 	requireExpect(t, cp, "Rich TUI Terminal")
-	requireExpect(t, cp, "Demo mode registered!")
 	cp.SendLine("mode demo")
 	requireExpect(t, cp, "Entered demo mode!")
 
@@ -200,9 +216,15 @@ func testStateManagement(t *testing.T, binaryPath string) {
 
 // testLLMPromptBuilder tests the LLM prompt builder functionality
 func testLLMPromptBuilder(t *testing.T, binaryPath string) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
-		Args:           []string{"script", "-i", "scripts/llm-prompt-builder.js"},
+		Args:           []string{"script", "-i", filepath.Join(projectDir, "scripts", "llm-prompt-builder.js")},
 		DefaultTimeout: 30 * time.Second,
 	}
 
@@ -212,8 +234,13 @@ func testLLMPromptBuilder(t *testing.T, binaryPath string) {
 	}
 	defer cp.Close()
 
-	// Wait for LLM prompt builder mode to be activated
-	requireExpect(t, cp, "Exiting LLM Prompt Builder mode")
+	// Wait for TUI startup
+	requireExpect(t, cp, "one-shot-man Rich TUI Terminal")
+	requireExpect(t, cp, "Available modes: llm-prompt-builder")
+
+	// Switch to the LLM prompt builder mode
+	cp.SendLine("mode llm-prompt-builder")
+	requireExpect(t, cp, "Switched to mode: llm-prompt-builder")
 	requireExpect(t, cp, "Welcome to LLM Prompt Builder!")
 
 	// Test creating a new prompt

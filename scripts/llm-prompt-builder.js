@@ -144,9 +144,9 @@ tui.registerMode({
                 
                 var built = prompt.build();
                 output.print("Built prompt:");
-                output.print("─".repeat(50));
+                output.print("--------------------------------------------------");
                 output.print(built);
-                output.print("─".repeat(50));
+                output.print("--------------------------------------------------");
             }
         },
         

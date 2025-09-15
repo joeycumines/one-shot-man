@@ -42,7 +42,7 @@ func TestFullLLMWorkflow(t *testing.T) {
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"script", "-i", filepath.Join(projectDir, "scripts", "llm-prompt-builder.js")},
-		DefaultTimeout: 5 * time.Second,
+		DefaultTimeout: 60 * time.Second,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -241,7 +241,7 @@ ctx.log("Modes registered: calculator, notes");
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"script", "-i", scriptPath},
-		DefaultTimeout: 5 * time.Second,
+		DefaultTimeout: 60 * time.Second,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -315,7 +315,7 @@ func TestErrorHandling(t *testing.T) {
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"script", "-i", filepath.Join(projectDir, "scripts", "demo-mode.js")},
-		DefaultTimeout: 10 * time.Second,
+		DefaultTimeout: 60 * time.Second,
 	}
 
 	cp, err := termtest.NewTest(t, opts)

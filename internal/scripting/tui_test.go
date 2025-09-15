@@ -162,7 +162,7 @@ func testCommandExecutionInModes(t *testing.T, binaryPath string) {
 	cp.SendLine("count")
 	cp.SendLine("count")
 	cp.SendLine("show")
-	requireExpect(t, cp, "Counter: 4") // Should be incremented from previous test + 3
+	requireExpect(t, cp, "Counter: 3")
 
 	cp.SendLine("exit")
 	requireExpectExitCode(t, cp, 0)

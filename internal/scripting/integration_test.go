@@ -3,12 +3,13 @@ package scripting
 import (
 	"context"
 	"fmt"
-	"github.com/ActiveState/termtest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ActiveState/termtest"
 )
 
 func requireExpect(t *testing.T, p *termtest.ConsoleProcess, value string, timeout ...time.Duration) {

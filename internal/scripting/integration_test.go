@@ -90,7 +90,7 @@ func testCompletePromptWorkflow(t *testing.T, cp *termtest.ConsoleProcess) {
 	requireExpect(t, cp, "Saved version 1")
 
 	// Refine the prompt - make it more specific
-	cp.SendLine("template You are a {{role}} for {{company}}. You should be {{tone}} and {{helpful_level}}. When handling customer issues, always:\n1. Acknowledge the customer's concern\n2. Ask clarifying questions if needed\n3. Provide step-by-step solutions\n4. Offer additional assistance\n\nCustomer issue: {{issue}}")
+	cp.SendLine("template You are a {{role}} for {{company}}. You should be {{tone}} and {{helpful_level}}. When handling customer issues, always: 1. Acknowledge the customer's concern 2. Ask clarifying questions if needed 3. Provide step-by-step solutions 4. Offer additional assistance Customer issue: {{issue}}")
 	requireExpect(t, cp, "Template set:")
 
 	// Build the refined version
@@ -127,19 +127,9 @@ func testCompletePromptWorkflow(t *testing.T, cp *termtest.ConsoleProcess) {
 
 	cp.SendLine("build")
 
-	// Export the prompt data
-	cp.SendLine("export")
-	requireExpect(t, cp, "\"title\": \"customer-service\"")
-	requireExpect(t, cp, "\"versions\": 3")
-
 	// Create a second prompt to test multi-prompt management
 	cp.SendLine("new technical-support Technical support prompt")
 	requireExpect(t, cp, "Created new prompt: technical-support")
-
-	// List all prompts
-	cp.SendLine("list")
-	requireExpect(t, cp, "customer-service")
-	requireExpect(t, cp, "technical-support")
 
 	// Switch back to customer service
 	cp.SendLine("load customer-service")

@@ -57,8 +57,8 @@ func TestFullLLMWorkflow(t *testing.T) {
 
 	// Switch to the LLM prompt builder mode
 	cp.SendLine("mode llm-prompt-builder")
-	requireExpect(t, cp, "Welcome to LLM Prompt Builder!")
 	requireExpect(t, cp, "Switched to mode: llm-prompt-builder")
+	requireExpect(t, cp, "Welcome to LLM Prompt Builder!")
 
 	// Complete workflow: Create prompt, refine it, save versions, export
 	testCompletePromptWorkflow(t, cp)
@@ -255,6 +255,7 @@ ctx.log("Modes registered: calculator, notes");
 
 	// Test calculator mode
 	cp.SendLine("mode calculator")
+	requireExpect(t, cp, "Switched to mode: calculator")
 	requireExpect(t, cp, "Calculator mode active")
 
 	cp.SendLine("add 5 3")
@@ -268,6 +269,7 @@ ctx.log("Modes registered: calculator, notes");
 
 	// Switch to notes mode
 	cp.SendLine("mode notes")
+	requireExpect(t, cp, "Switched to mode: notes")
 	requireExpect(t, cp, "Note-taking mode active")
 
 	cp.SendLine("add This is my first note")
@@ -281,8 +283,8 @@ ctx.log("Modes registered: calculator, notes");
 
 	// Switch back to calculator
 	cp.SendLine("mode calculator")
-	requireExpect(t, cp, "Calculator mode active")
 	requireExpect(t, cp, "Switched to mode: calculator")
+	requireExpect(t, cp, "Calculator mode active")
 
 	// Result should persist across mode switches
 	cp.SendLine("result")
@@ -290,6 +292,7 @@ ctx.log("Modes registered: calculator, notes");
 
 	// Switch back to notes
 	cp.SendLine("mode notes")
+	requireExpect(t, cp, "Switched to mode: notes")
 	requireExpect(t, cp, "Note-taking mode active")
 
 	// Notes should still be there
@@ -337,8 +340,8 @@ func TestErrorHandling(t *testing.T) {
 
 	// Switch to demo mode
 	cp.SendLine("mode demo")
-	requireExpect(t, cp, "Entered demo mode!")
 	requireExpect(t, cp, "Switched to mode: demo")
+	requireExpect(t, cp, "Entered demo mode!")
 
 	// Test command with wrong usage
 	cp.SendLine("js")

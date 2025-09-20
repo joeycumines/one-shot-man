@@ -296,6 +296,11 @@ func (w *syncWriter) Write(p []byte) (n int, err error) {
 
 // runAdvancedPrompt runs the main prompt using go-prompt
 func (tm *TUIManager) runAdvancedPrompt() {
+	tm.runAdvancedPromptWithOptions()
+}
+
+// runAdvancedPromptWithOptions runs the prompt with custom reader/writer options
+func (tm *TUIManager) runAdvancedPromptWithOptions(options ...prompt.Option) {
 	// Create completer function that wraps the current mode's completion logic
 	completer := func(d prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber) {
 		suggestions := tm.getCompletions(d)
@@ -309,13 +314,13 @@ func (tm *TUIManager) runAdvancedPrompt() {
 	// Create executor function that processes commands
 	executor := func(input string) {
 		if !tm.processInputWithExit(input) {
-			os.Exit(0)
+			// Don't call os.Exit() directly in tests - let ExitChecker handle it
+			return
 		}
 	}
 
-	// Create the prompt with rich configuration - SINGLE MODE ONLY
-	p := prompt.New(
-		executor,
+	// Create default options
+	defaultOptions := []prompt.Option{
 		prompt.WithPrefix(tm.getPromptString()),
 		prompt.WithTitle("one-shot-man"),
 		prompt.WithCompleter(completer),
@@ -327,7 +332,18 @@ func (tm *TUIManager) runAdvancedPrompt() {
 			// Always execute on Enter, don't wait for more input
 			return 0, true
 		}),
-	)
+		prompt.WithExitChecker(func(in string, breakline bool) bool {
+			// Exit the prompt when exit command is received
+			trimmed := strings.TrimSpace(in)
+			return trimmed == "exit" || trimmed == "quit"
+		}),
+	}
+
+	// Combine default options with any custom options
+	allOptions := append(defaultOptions, options...)
+
+	// Create the prompt with rich configuration - SINGLE MODE ONLY
+	p := prompt.New(executor, allOptions...)
 	
 	tm.activePrompt = p
 	p.Run()

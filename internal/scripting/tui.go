@@ -302,37 +302,35 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		return suggestions, startChar, endChar
 	}
 
-	// Create options with basic configuration
-	options := []prompt.Option{
-		prompt.WithPrefix(tm.getPromptString()),
-		prompt.WithTitle("one-shot-man"),
-		prompt.WithHistory(tm.getHistory()),
-		prompt.WithPrefixTextColor(prompt.Cyan),
-		prompt.WithSuggestionTextColor(prompt.Blue),
-		prompt.WithSelectedSuggestionBGColor(prompt.LightGray),
-		prompt.WithSuggestionBGColor(prompt.DarkGray),
-		prompt.WithCompleter(completer),
-		prompt.WithExecuteOnEnterCallback(func(prompt *prompt.Prompt, indentSize int) (int, bool) {
-			// Always execute on Enter, don't wait for more input
-			return 0, true
-		}),
+	// Use the simpler Input approach instead of the persistent Run approach
+	for {
+		// Create options with basic configuration
+		options := []prompt.Option{
+			prompt.WithPrefix(tm.getPromptString()),
+			prompt.WithTitle("one-shot-man"),
+			prompt.WithHistory(tm.getHistory()),
+			prompt.WithPrefixTextColor(prompt.Cyan),
+			prompt.WithSuggestionTextColor(prompt.Blue),
+			prompt.WithSelectedSuggestionBGColor(prompt.LightGray),
+			prompt.WithSuggestionBGColor(prompt.DarkGray),
+			prompt.WithCompleter(completer),
+		}
+
+		// Get single input
+		input := prompt.Input(options...)
+		
+		// Process the input
+		if !tm.processInput(input) {
+			break
+		}
 	}
-
-	// Create and run the prompt
-	p := prompt.New(
-		tm.promptExecutor,
-		options...,
-	)
-
-	tm.activePrompt = p
-	p.Run()
 }
 
-// promptExecutor handles command execution from go-prompt
-func (tm *TUIManager) promptExecutor(input string) {
+// processInput processes a single input line and returns whether to continue
+func (tm *TUIManager) processInput(input string) bool {
 	input = strings.TrimSpace(input)
 	if input == "" {
-		return
+		return true
 	}
 
 	// Save to history if enabled
@@ -348,10 +346,10 @@ func (tm *TUIManager) promptExecutor(input string) {
 			}
 		}
 		fmt.Fprintln(tm.output, "Goodbye!")
-		os.Exit(0)
+		return false
 	case "help":
 		tm.showHelp()
-		return
+		return true
 	}
 
 	// Parse command and arguments
@@ -369,6 +367,7 @@ func (tm *TUIManager) promptExecutor(input string) {
 			fmt.Fprintln(tm.output, "Type 'help' for available commands or switch to a mode to execute JavaScript")
 		}
 	}
+	return true
 }
 
 // getCompletions provides completion suggestions for go-prompt
@@ -684,84 +683,14 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) string {
 		// Generate a unique name for this prompt
 		name := getString(configMap, "name", fmt.Sprintf("prompt-%d", len(tm.prompts)))
 		
-		// Create completer function if provided
-		var completer prompt.Completer
-		if completionFn, exists := configMap["completer"]; exists {
-			if val := tm.engine.vm.ToValue(completionFn); val != nil {
-				if callable, ok := goja.AssertFunction(val); ok {
-					completer = func(d prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber) {
-						// Create document object for JavaScript
-						docObj := tm.engine.vm.NewObject()
-						docObj.Set("getWordBeforeCursor", func() string { return d.GetWordBeforeCursor() })
-						docObj.Set("getText", func() string { return d.Text })
-						docObj.Set("getCurrentLine", func() string { return d.CurrentLine() })
-
-						// Call JavaScript completer
-						result, err := callable(goja.Undefined(), docObj)
-						if err != nil {
-							return []prompt.Suggest{}, 0, 0
-						}
-
-						// Convert result to suggestions
-						var suggestions []prompt.Suggest
-						if resultObj, ok := result.Export().([]interface{}); ok {
-							for _, item := range resultObj {
-								if itemMap, ok := item.(map[string]interface{}); ok {
-									suggestion := prompt.Suggest{
-										Text:        getString(itemMap, "text", ""),
-										Description: getString(itemMap, "description", ""),
-									}
-									if suggestion.Text != "" {
-										suggestions = append(suggestions, suggestion)
-									}
-								}
-							}
-						}
-						
-						// Simple word completion boundaries
-						word := d.GetWordBeforeCursor()
-						startChar := istrings.RuneNumber(len(d.TextBeforeCursor()) - len(word))
-						endChar := istrings.RuneNumber(len(d.TextBeforeCursor()))
-						return suggestions, startChar, endChar
-					}
-				}
-			}
-		}
-
-		// Create prompt options
-		options := []prompt.Option{
-			prompt.WithPrefix(getString(configMap, "prefix", ">>> ")),
-			prompt.WithTitle(getString(configMap, "title", "Advanced Prompt")),
-		}
-
-		// Add completer if provided
-		if completer != nil {
-			options = append(options, prompt.WithCompleter(completer))
-		}
-
-		// Add color options if provided
-		if colors, exists := configMap["colors"]; exists {
-			if colorMap, ok := colors.(map[string]interface{}); ok {
-				// Map color names to go-prompt colors (basic implementation)
-				if prefixColor := getString(colorMap, "prefix", ""); prefixColor != "" {
-					if color := tm.parseColor(prefixColor); color != prompt.DefaultColor {
-						options = append(options, prompt.WithPrefixTextColor(color))
-					}
-				}
-			}
-		}
-
-		// Create executor function
-		executor := func(input string) {
-			tm.promptExecutor(input)
-		}
-
-		// Create the prompt
-		p := prompt.New(executor, options...)
-
-		// Store the prompt
+		// For now, just store the config and return the name
+		// TODO: Implement full configuration when we have a more sophisticated prompt system
 		tm.mu.Lock()
-		tm.prompts[name] = p
+		if tm.prompts == nil {
+			tm.prompts = make(map[string]*prompt.Prompt)
+		}
+		// Store a placeholder for now
+		tm.prompts[name] = nil
 		tm.mu.Unlock()
 
 		return name
@@ -812,17 +741,12 @@ func (tm *TUIManager) parseColor(colorName string) prompt.Color {
 
 // jsRunPrompt runs a named prompt
 func (tm *TUIManager) jsRunPrompt(name string) string {
-	tm.mu.RLock()
-	p, exists := tm.prompts[name]
-	tm.mu.RUnlock()
-
-	if !exists {
-		return ""
-	}
-
-	// Set as active prompt and run
-	tm.activePrompt = p
-	return p.Input()
+	// For now, just use the default prompt.Input function
+	// TODO: Implement custom prompts with stored configurations
+	return prompt.Input(
+		prompt.WithPrefix(">>> "),
+		prompt.WithTitle("Advanced Prompt"),
+	)
 }
 
 // jsRegisterMode allows JavaScript to register a new mode.

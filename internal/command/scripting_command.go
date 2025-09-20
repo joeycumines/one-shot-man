@@ -7,7 +7,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 )
 
@@ -17,16 +19,18 @@ type ScriptingCommand struct {
 	interactive bool
 	script      string
 	testMode    bool
+	config      *config.Config
 }
 
 // NewScriptingCommand creates a new scripting command.
-func NewScriptingCommand() *ScriptingCommand {
+func NewScriptingCommand(cfg *config.Config) *ScriptingCommand {
 	return &ScriptingCommand{
 		BaseCommand: NewBaseCommand(
 			"script",
 			"Execute JavaScript scripts with deferred/declarative API",
 			"script [options] [script-file]",
 		),
+		config: cfg,
 	}
 }
 
@@ -99,6 +103,21 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 
 	// PHASE 2: Execution - If interactive, run the TUI with the configured state.
 	if c.interactive {
+		// Apply prompt color overrides from config if present
+		if c.config != nil {
+			colorMap := make(map[string]string)
+			for k, v := range c.config.Global {
+				if strings.HasPrefix(k, "prompt.color.") {
+					key := strings.TrimPrefix(k, "prompt.color.")
+					if key != "" {
+						colorMap[key] = v
+					}
+				}
+			}
+			if len(colorMap) > 0 {
+				engine.GetTUIManager().SetDefaultColorsFromStrings(colorMap)
+			}
+		}
 		terminal := scripting.NewTerminal(ctx, engine)
 		terminal.Run()
 		return nil

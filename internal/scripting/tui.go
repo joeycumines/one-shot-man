@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/dop251/goja"
 	"github.com/elk-language/go-prompt"
@@ -31,6 +30,10 @@ type TUIManager struct {
 	completers       map[string]goja.Callable  // JavaScript completion functions
 	keyBindings      map[string]goja.Callable  // JavaScript key binding handlers
 	promptCompleters map[string]string         // Maps prompt names to completer names
+	// defaultColors controls the default color scheme used when running prompts
+	// without explicit color configuration. It is initialized with sensible
+	// defaults and can be overridden by configuration (e.g., config file).
+	defaultColors PromptColors
 }
 
 // ScriptMode represents a specific script mode with its own state and commands.
@@ -78,6 +81,21 @@ func NewTUIManager(ctx context.Context, engine *Engine, input io.Reader, output 
 		completers:       make(map[string]goja.Callable),
 		keyBindings:      make(map[string]goja.Callable),
 		promptCompleters: make(map[string]string),
+		defaultColors: PromptColors{
+			// Choose a readable default for input that is not yellow/white-adjacent
+			InputText:               prompt.Green,
+			PrefixText:              prompt.Cyan,
+			SuggestionText:          prompt.Yellow,
+			SuggestionBG:            prompt.Black,
+			SelectedSuggestionText:  prompt.Black,
+			SelectedSuggestionBG:    prompt.Cyan,
+			DescriptionText:         prompt.White,
+			DescriptionBG:           prompt.Black,
+			SelectedDescriptionText: prompt.White,
+			SelectedDescriptionBG:   prompt.Blue,
+			ScrollbarThumb:          prompt.DarkGray,
+			ScrollbarBG:             prompt.Black,
+		},
 	}
 
 	// Register built-in commands
@@ -275,8 +293,12 @@ func (tm *TUIManager) ListCommands() []Command {
 
 // Run starts the TUI manager.
 func (tm *TUIManager) Run() {
-	time.Sleep(1 * time.Second)
 	writer := &syncWriter{tm.output}
+	// Prominent, unavoidable warning: this TUI is ephemeral and does not persist state
+	fmt.Fprintln(writer, "================================================================")
+	fmt.Fprintln(writer, "WARNING: EPHEMERAL SESSION - nothing is persisted. Your work will be lost on exit.")
+	fmt.Fprintln(writer, "Save or export anything you need BEFORE quitting.")
+	fmt.Fprintln(writer, "================================================================")
 	fmt.Fprintln(writer, "one-shot-man Rich TUI Terminal")
 	fmt.Fprintln(writer, "Type 'help' for available commands, 'exit' to quit")
 	modes := tm.ListModes()
@@ -307,19 +329,20 @@ func (tm *TUIManager) runAdvancedPrompt() {
 	}
 
 	// Configure prompt options - full configuration for go-prompt
+	colors := tm.defaultColors
 	options := []prompt.Option{
 		prompt.WithPrefix(tm.getPromptString()),
 		prompt.WithCompleter(completer),
-		prompt.WithInputTextColor(prompt.White),
-		prompt.WithPrefixTextColor(prompt.Cyan),
-		prompt.WithSuggestionTextColor(prompt.Yellow),
-		prompt.WithSuggestionBGColor(prompt.Black),
-		prompt.WithSelectedSuggestionTextColor(prompt.Black),
-		prompt.WithSelectedSuggestionBGColor(prompt.Cyan),
-		prompt.WithDescriptionTextColor(prompt.White),
-		prompt.WithDescriptionBGColor(prompt.Black),
-		prompt.WithSelectedDescriptionTextColor(prompt.White),
-		prompt.WithSelectedDescriptionBGColor(prompt.Blue),
+		prompt.WithInputTextColor(colors.InputText),
+		prompt.WithPrefixTextColor(colors.PrefixText),
+		prompt.WithSuggestionTextColor(colors.SuggestionText),
+		prompt.WithSuggestionBGColor(colors.SuggestionBG),
+		prompt.WithSelectedSuggestionTextColor(colors.SelectedSuggestionText),
+		prompt.WithSelectedSuggestionBGColor(colors.SelectedSuggestionBG),
+		prompt.WithDescriptionTextColor(colors.DescriptionText),
+		prompt.WithDescriptionBGColor(colors.DescriptionBG),
+		prompt.WithSelectedDescriptionTextColor(colors.SelectedDescriptionText),
+		prompt.WithSelectedDescriptionBGColor(colors.SelectedDescriptionBG),
 	}
 
 	// Add default history support
@@ -681,8 +704,13 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 	title := getString(configMap, "title", "Advanced Prompt")
 	prefix := getString(configMap, "prefix", ">>> ")
 
-	// Parse colors configuration
-	colors := parsePromptColors(configMap)
+	// Parse colors configuration, starting from manager defaults, then applying overrides
+	colors := tm.defaultColors
+	if colorsRaw, exists := configMap["colors"]; exists {
+		if colorMap, ok := colorsRaw.(map[string]interface{}); ok {
+			colors.ApplyFromInterfaceMap(colorMap)
+		}
+	}
 
 	// Parse history configuration
 	historyConfig := parseHistoryConfig(configMap)
@@ -996,42 +1024,86 @@ type HistoryConfig struct {
 	Size    int
 }
 
-// parsePromptColors parses color configuration from JavaScript config.
-func parsePromptColors(configMap map[string]interface{}) PromptColors {
-	colors := PromptColors{
-		InputText:               prompt.White,
-		PrefixText:              prompt.Cyan,
-		SuggestionText:          prompt.Yellow,
-		SuggestionBG:            prompt.Black,
-		SelectedSuggestionText:  prompt.Black,
-		SelectedSuggestionBG:    prompt.Cyan,
-		DescriptionText:         prompt.White,
-		DescriptionBG:           prompt.Black,
-		SelectedDescriptionText: prompt.White,
-		SelectedDescriptionBG:   prompt.Blue,
-		ScrollbarThumb:          prompt.DarkGray,
-		ScrollbarBG:             prompt.Black,
+// Unified helpers to apply color overrides without duplication.
+// applyFromGetter reads color overrides using a provided getter function.
+func (pc *PromptColors) applyFromGetter(get func(string) (string, bool)) {
+	if v, ok := get("input"); ok && v != "" {
+		pc.InputText = parseColor(v)
 	}
+	if v, ok := get("prefix"); ok && v != "" {
+		pc.PrefixText = parseColor(v)
+	}
+	if v, ok := get("suggestionText"); ok && v != "" {
+		pc.SuggestionText = parseColor(v)
+	}
+	if v, ok := get("suggestionBG"); ok && v != "" {
+		pc.SuggestionBG = parseColor(v)
+	}
+	if v, ok := get("selectedSuggestionText"); ok && v != "" {
+		pc.SelectedSuggestionText = parseColor(v)
+	}
+	if v, ok := get("selectedSuggestionBG"); ok && v != "" {
+		pc.SelectedSuggestionBG = parseColor(v)
+	}
+	if v, ok := get("descriptionText"); ok && v != "" {
+		pc.DescriptionText = parseColor(v)
+	}
+	if v, ok := get("descriptionBG"); ok && v != "" {
+		pc.DescriptionBG = parseColor(v)
+	}
+	if v, ok := get("selectedDescriptionText"); ok && v != "" {
+		pc.SelectedDescriptionText = parseColor(v)
+	}
+	if v, ok := get("selectedDescriptionBG"); ok && v != "" {
+		pc.SelectedDescriptionBG = parseColor(v)
+	}
+	if v, ok := get("scrollbarThumb"); ok && v != "" {
+		pc.ScrollbarThumb = parseColor(v)
+	}
+	if v, ok := get("scrollbarBG"); ok && v != "" {
+		pc.ScrollbarBG = parseColor(v)
+	}
+}
 
-	// Parse colors from config if provided
-	if colorsRaw, exists := configMap["colors"]; exists {
-		if colorMap, ok := colorsRaw.(map[string]interface{}); ok {
-			colors.InputText = parseColor(getString(colorMap, "input", "white"))
-			colors.PrefixText = parseColor(getString(colorMap, "prefix", "cyan"))
-			colors.SuggestionText = parseColor(getString(colorMap, "suggestionText", "yellow"))
-			colors.SuggestionBG = parseColor(getString(colorMap, "suggestionBG", "black"))
-			colors.SelectedSuggestionText = parseColor(getString(colorMap, "selectedSuggestionText", "black"))
-			colors.SelectedSuggestionBG = parseColor(getString(colorMap, "selectedSuggestionBG", "cyan"))
-			colors.DescriptionText = parseColor(getString(colorMap, "descriptionText", "white"))
-			colors.DescriptionBG = parseColor(getString(colorMap, "descriptionBG", "black"))
-			colors.SelectedDescriptionText = parseColor(getString(colorMap, "selectedDescriptionText", "white"))
-			colors.SelectedDescriptionBG = parseColor(getString(colorMap, "selectedDescriptionBG", "blue"))
-			colors.ScrollbarThumb = parseColor(getString(colorMap, "scrollbarThumb", "darkgray"))
-			colors.ScrollbarBG = parseColor(getString(colorMap, "scrollbarBG", "black"))
+// ApplyFromInterfaceMap applies overrides where values come from a JS map (map[string]interface{}).
+func (pc *PromptColors) ApplyFromInterfaceMap(m map[string]interface{}) {
+	if m == nil {
+		return
+	}
+	pc.applyFromGetter(func(k string) (string, bool) {
+		if v, ok := m[k]; ok {
+			if s, ok2 := v.(string); ok2 {
+				return s, true
+			}
 		}
-	}
+		return "", false
+	})
+}
 
-	return colors
+// ApplyFromStringMap applies overrides from a simple string map.
+func (pc *PromptColors) ApplyFromStringMap(m map[string]string) {
+	if m == nil {
+		return
+	}
+	pc.applyFromGetter(func(k string) (string, bool) {
+		v, ok := m[k]
+		return v, ok
+	})
+}
+
+// SetDefaultColorsFromStrings allows external config to override the default colors
+// using a simple map of name->colorString. Supported keys mirror PromptColors
+// with the following names: input, prefix, suggestionText, suggestionBG,
+// selectedSuggestionText, selectedSuggestionBG, descriptionText, descriptionBG,
+// selectedDescriptionText, selectedDescriptionBG, scrollbarThumb, scrollbarBG.
+func (tm *TUIManager) SetDefaultColorsFromStrings(m map[string]string) {
+	if m == nil {
+		return
+	}
+	// start from existing defaults
+	c := tm.defaultColors
+	c.ApplyFromStringMap(m)
+	tm.defaultColors = c
 }
 
 // parseHistoryConfig parses history configuration from JavaScript config.

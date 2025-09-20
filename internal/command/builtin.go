@@ -243,6 +243,23 @@ func (c *InitCommand) Execute(args []string, stdout, stderr io.Writer) error {
 verbose false
 color auto
 
+# Prompt color overrides (optional). Keys mirror go-prompt color roles.
+# Example values: black,darkred,darkgreen,brown,darkblue,purple,cyan,lightgray
+#                 darkgray,red,green,yellow,blue,fuchsia,turquoise,white
+# NOTE: Input defaults to green (for readability). Uncomment to customize.
+# prompt.color.input green
+# prompt.color.prefix cyan
+# prompt.color.suggestionText yellow
+# prompt.color.suggestionBG black
+# prompt.color.selectedSuggestionText black
+# prompt.color.selectedSuggestionBG cyan
+# prompt.color.descriptionText white
+# prompt.color.descriptionBG black
+# prompt.color.selectedDescriptionText white
+# prompt.color.selectedDescriptionBG blue
+# prompt.color.scrollbarThumb darkgray
+# prompt.color.scrollbarBG black
+
 # Example command-specific options
 [help]
 pager less

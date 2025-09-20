@@ -369,6 +369,10 @@ func (e *Engine) setupGlobals() {
 		"createPromptBuilder":   e.jsCreatePromptBuilder,
 		"createAdvancedPrompt":  e.tuiManager.jsCreateAdvancedPrompt,
 		"runPrompt":             e.tuiManager.jsRunPrompt,
+		// Phase 2: Interactive Features
+		"registerCompleter":     e.tuiManager.jsRegisterCompleter,
+		"setCompleter":          e.tuiManager.jsSetCompleter,
+		"registerKeyBinding":    e.tuiManager.jsRegisterKeyBinding,
 	})
 }
 

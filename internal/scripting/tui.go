@@ -24,8 +24,10 @@ type TUIManager struct {
 	commands     map[string]Command
 	mu           sync.RWMutex
 	output       io.Writer
-	prompts      map[string]*prompt.Prompt // Manages named prompt instances
-	activePrompt *prompt.Prompt            // Pointer to the currently active prompt
+	prompts      map[string]*prompt.Prompt   // Manages named prompt instances
+	activePrompt *prompt.Prompt              // Pointer to the currently active prompt
+	completers   map[string]goja.Callable    // JavaScript completers registry
+	keyBindings  map[string]goja.Callable    // Custom key bindings registry
 }
 
 // ScriptMode represents a specific script mode with its own state and commands.
@@ -65,10 +67,12 @@ func NewTUIManager(ctx context.Context, engine *Engine) *TUIManager {
 	manager := &TUIManager{
 		engine:   engine,
 		ctx:      ctx,
-		modes:    make(map[string]*ScriptMode),
-		commands: make(map[string]Command),
-		output:   engine.stdout,
-		prompts:  make(map[string]*prompt.Prompt),
+		modes:       make(map[string]*ScriptMode),
+		commands:    make(map[string]Command),
+		output:      engine.stdout,
+		prompts:     make(map[string]*prompt.Prompt),
+		completers:  make(map[string]goja.Callable),
+		keyBindings: make(map[string]goja.Callable),
 	}
 
 	// Register built-in commands
@@ -492,15 +496,11 @@ func (tm *TUIManager) callJavaScriptCompleter(d prompt.Document) []prompt.Sugges
 		return nil
 	}
 
-	// Create a document object for JavaScript
-	docObj := tm.engine.vm.NewObject()
-	docObj.Set("getWordBeforeCursor", func() string { return d.GetWordBeforeCursor() })
-	docObj.Set("getCurrentWord", func() string { return d.GetWordBeforeCursor() })
-	docObj.Set("getText", func() string { return d.Text })
-	docObj.Set("getCurrentLine", func() string { return d.CurrentLine() })
+	// Create a rich document object for JavaScript with full API access
+	docObj := tm.createDocumentObject(d)
 
 	// Call the JavaScript completer
-	result, err := tm.currentMode.TUIConfig.CompletionFn(goja.Undefined(), docObj)
+	result, err := tm.currentMode.TUIConfig.CompletionFn(goja.Undefined(), tm.engine.vm.ToValue(docObj))
 	if err != nil {
 		return nil
 	}
@@ -934,6 +934,106 @@ func (tm *TUIManager) jsRegisterCommand(cmdConfig interface{}) error {
 // jsListModes returns a list of available modes.
 func (tm *TUIManager) jsListModes() []string {
 	return tm.ListModes()
+}
+
+// Phase 2: Interactive Features JavaScript Bridge Methods
+
+// jsRegisterCompleter registers a JavaScript completer function
+func (tm *TUIManager) jsRegisterCompleter(name string, completer goja.Callable) error {
+	if name == "" {
+		return fmt.Errorf("completer name cannot be empty")
+	}
+	
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	
+	// Store the completer in a registry (add to TUIManager if not exists)
+	if tm.completers == nil {
+		tm.completers = make(map[string]goja.Callable)
+	}
+	tm.completers[name] = completer
+	
+	return nil
+}
+
+// jsSetCompleter sets the completer for a prompt or mode
+func (tm *TUIManager) jsSetCompleter(target string, completerName string) error {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	
+	if tm.completers == nil {
+		return fmt.Errorf("no completers registered")
+	}
+	
+	completer, exists := tm.completers[completerName]
+	if !exists {
+		return fmt.Errorf("completer %s not found", completerName)
+	}
+	
+	// If target is current mode, set the completer
+	if tm.currentMode != nil && (target == tm.currentMode.Name || target == "current") {
+		if tm.currentMode.TUIConfig == nil {
+			tm.currentMode.TUIConfig = &TUIConfig{}
+		}
+		tm.currentMode.TUIConfig.CompletionFn = completer
+	}
+	
+	return nil
+}
+
+// jsRegisterKeyBinding registers a custom key binding
+func (tm *TUIManager) jsRegisterKeyBinding(key string, handler goja.Callable) error {
+	if key == "" {
+		return fmt.Errorf("key binding cannot be empty")
+	}
+	
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	
+	// Store the key binding (add to TUIManager if not exists)
+	if tm.keyBindings == nil {
+		tm.keyBindings = make(map[string]goja.Callable)
+	}
+	tm.keyBindings[key] = handler
+	
+	return nil
+}
+
+// createDocumentObject creates a JavaScript Document object with methods
+func (tm *TUIManager) createDocumentObject(d prompt.Document) map[string]interface{} {
+	return map[string]interface{}{
+		"getWordBeforeCursor": func() string {
+			return d.GetWordBeforeCursor()
+		},
+		"getWordAfterCursor": func() string {
+			return d.GetWordAfterCursor()
+		},
+		"getCurrentLine": func() string {
+			return d.CurrentLine()
+		},
+		"getCurrentLineBeforeCursor": func() string {
+			return d.CurrentLineBeforeCursor()
+		},
+		"getCurrentLineAfterCursor": func() string {
+			return d.CurrentLineAfterCursor()
+		},
+		"getText": func() string {
+			return d.Text
+		},
+		"getTextBeforeCursor": func() string {
+			return d.TextBeforeCursor()
+		},
+		"getTextAfterCursor": func() string {
+			return d.TextAfterCursor()
+		},
+		"getLineCount": func() int {
+			return d.LineCount()
+		},
+		"getCurrentLineNumber": func() int {
+			lines := strings.Split(d.TextBeforeCursor(), "\n")
+			return len(lines)
+		},
+	}
 }
 
 // Helper functions for extracting values from JavaScript objects

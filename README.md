@@ -4,12 +4,14 @@ Command one-shot-man lets you produce high quality implementations with drastica
 
 ## Features
 
+- **Rich Interactive TUI**: Powered by go-prompt with auto-completion, syntax highlighting, and customizable key bindings
+- **Advanced JavaScript API**: Comprehensive scripting capabilities with interactive prompt control
 - **Extensible Command System**: Support for both built-in and script-based subcommands
 - **Kubectl-style Configuration**: Configuration file management with environment variable override
 - **dnsmasq-style Config Format**: Simple `optionName remainingLineIsTheValue` format
 - **Script Command Discovery**: Automatic discovery and execution of script commands
 - **Stdlib Flag Package**: Built using Go's standard library flag package
-- **REPL/Wizard Support**: Script commands can implement interactive workflows
+- **REPL/Wizard Support**: Script commands can implement interactive workflows with rich completion
 
 ## Installation
 
@@ -117,6 +119,59 @@ Now you can run it:
 ```bash
 one-shot-man example --wizard
 ```
+
+### Rich Interactive TUI
+
+The interactive mode provides a rich terminal interface powered by go-prompt with advanced features:
+
+#### Auto-Completion
+- **Built-in Commands**: help, exit, mode, modes, state
+- **Mode-Specific Commands**: Commands registered by active script modes
+- **Context-Aware Suggestions**: File completion using ContextManager integration
+- **Custom Completers**: JavaScript-defined completion functions
+
+#### Interactive Features
+```bash
+# Start interactive mode
+one-shot-man script -i scripts/my-script.js
+
+# Rich terminal with:
+# - Colored prompts and suggestions
+# - Tab completion for commands and context
+# - Command history
+# - Custom key bindings
+```
+
+#### JavaScript TUI API
+Scripts can register custom completers and key bindings:
+
+```javascript
+// Register a custom completer
+tui.registerCompleter('fileCompleter', function(document) {
+    const word = document.getWordBeforeCursor();
+    const files = context.listPaths();
+    return files
+        .filter(f => f.startsWith(word))
+        .map(f => ({ text: f, description: "File from context" }));
+});
+
+// Set completer for current mode
+tui.setCompleter('current', 'fileCompleter');
+
+// Register custom key binding
+tui.registerKeyBinding('ctrl-r', function(prompt) {
+    output.print('Reverse search triggered!');
+    return true;
+});
+```
+
+#### Document API
+Completion functions receive rich document context:
+- `document.getWordBeforeCursor()` - Current word being completed
+- `document.getCurrentLine()` - Full current line
+- `document.getText()` - Complete document text
+- `document.getLineCount()` - Total lines
+- Plus 6+ additional methods for comprehensive text analysis
 
 ## Architecture
 

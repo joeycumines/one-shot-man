@@ -64,7 +64,7 @@ func NewEngine(ctx context.Context, stdout, stderr io.Writer) *Engine {
 	}
 
 	// Create TUI manager
-	engine.tuiManager = NewTUIManager(ctx, engine)
+	engine.tuiManager = NewTUIManager(ctx, engine, os.Stdin, os.Stdout)
 
 	// Set up the global context and APIs
 	engine.setupGlobals()
@@ -359,14 +359,19 @@ func (e *Engine) setupGlobals() {
 
 	// TUI and Mode management functions
 	e.vm.Set("tui", map[string]interface{}{
-		"registerMode":        e.tuiManager.jsRegisterMode,
-		"switchMode":          e.tuiManager.jsSwitchMode,
-		"getCurrentMode":      e.tuiManager.jsGetCurrentMode,
-		"setState":            e.tuiManager.jsSetState,
-		"getState":            e.tuiManager.jsGetState,
-		"registerCommand":     e.tuiManager.jsRegisterCommand,
-		"listModes":           e.tuiManager.jsListModes,
-		"createPromptBuilder": e.jsCreatePromptBuilder,
+		"registerMode":         e.tuiManager.jsRegisterMode,
+		"switchMode":           e.tuiManager.jsSwitchMode,
+		"getCurrentMode":       e.tuiManager.jsGetCurrentMode,
+		"setState":             e.tuiManager.jsSetState,
+		"getState":             e.tuiManager.jsGetState,
+		"registerCommand":      e.tuiManager.jsRegisterCommand,
+		"listModes":            e.tuiManager.jsListModes,
+		"createPromptBuilder":  e.jsCreatePromptBuilder,
+		"createAdvancedPrompt": e.tuiManager.jsCreateAdvancedPrompt,
+		"runPrompt":            e.tuiManager.jsRunPrompt,
+		"registerCompleter":    e.tuiManager.jsRegisterCompleter,
+		"setCompleter":         e.tuiManager.jsSetCompleter,
+		"registerKeyBinding":   e.tuiManager.jsRegisterKeyBinding,
 	})
 }
 

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ActiveState/termtest"
+	"github.com/joeycumines/one-shot-man/internal/termtest"
 )
 
 func requireExpect(t *testing.T, p *termtest.ConsoleProcess, value string, timeout ...time.Duration) {
@@ -33,15 +33,22 @@ func TestFullLLMWorkflow(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
 
+	t.Logf("Built binary at: %s", binaryPath)
+
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
 	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+	scriptPath := filepath.Join(projectDir, "scripts", "llm-prompt-builder.js")
+
+	t.Logf("Working directory: %s", wd)
+	t.Logf("Project directory: %s", projectDir)
+	t.Logf("Script path: %s", scriptPath)
 
 	opts := termtest.Options{
 		CmdName:        binaryPath,
-		Args:           []string{"script", "-i", filepath.Join(projectDir, "scripts", "llm-prompt-builder.js")},
+		Args:           []string{"script", "-i", scriptPath},
 		DefaultTimeout: 60 * time.Second,
 	}
 
@@ -54,6 +61,14 @@ func TestFullLLMWorkflow(t *testing.T) {
 	// Wait for TUI startup
 	requireExpect(t, cp, "one-shot-man Rich TUI Terminal")
 	requireExpect(t, cp, "Available modes: llm-prompt-builder")
+
+	// Wait for prompt
+	requireExpect(t, cp, ">>> ", 20*time.Second)
+
+	// Drive go-prompt interactively
+	t.Log("Sending help command...")
+	cp.SendLine("help")
+	requireExpect(t, cp, "Available commands:")
 
 	// Switch to the LLM prompt builder mode
 	cp.SendLine("mode llm-prompt-builder")

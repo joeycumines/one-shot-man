@@ -12,7 +12,6 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/elk-language/go-prompt"
-	istrings "github.com/elk-language/go-prompt/strings"
 )
 
 // TUIManager manages rich terminal interfaces for script modes.
@@ -273,47 +272,8 @@ func (tm *TUIManager) Run() {
 	modes := tm.ListModes()
 	fmt.Fprintf(writer, "Available modes: %s\n", strings.Join(modes, ", "))
 
-	// Check if we should use the simple loop (for testing compatibility)
-	if tm.shouldUseSimpleLoop() {
-		tm.runSimpleLoop()
-	} else {
-		// Use go-prompt for interactive sessions
-		tm.runAdvancedPrompt()
-	}
-}
-
-// shouldUseSimpleLoop determines whether to use the simple loop instead of go-prompt
-func (tm *TUIManager) shouldUseSimpleLoop() bool {
-	// Use simple loop if in test mode or if we detect a non-interactive environment
-	if tm.engine.testMode {
-		return true
-	}
-	
-	// Check if stdin is not a terminal (e.g., piped input, automated tests)
-	if !isTerminal(os.Stdin) {
-		return true
-	}
-	
-	// Check for testing environment variables
-	if os.Getenv("GO_TESTING") != "" || os.Getenv("CI") != "" {
-		return true
-	}
-	
-	return false
-}
-
-// isTerminal checks if the given file is a terminal
-func isTerminal(f *os.File) bool {
-	// Basic check - in a real implementation you might want to use a library
-	// like golang.org/x/term, but for minimal changes, we'll do a simple check
-	stat, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	
-	// Check if it's a character device (typical for terminals)
-	mode := stat.Mode()
-	return mode&os.ModeCharDevice != 0
+	// Use go-prompt instead of simple loop
+	tm.runAdvancedPrompt()
 }
 
 // syncWriter wraps an io.Writer and calls Sync if it's an *os.File
@@ -331,42 +291,27 @@ func (w *syncWriter) Write(p []byte) (n int, err error) {
 
 // runAdvancedPrompt runs the main prompt using go-prompt
 func (tm *TUIManager) runAdvancedPrompt() {
-	// Create completer function that wraps the current mode's completion logic
-	completer := func(d prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber) {
-		suggestions := tm.getCompletions(d)
-		// Return suggestions with start and end positions (simplified)
-		word := d.GetWordBeforeCursor()
-		startChar := istrings.RuneNumber(len(d.TextBeforeCursor()) - len(word))
-		endChar := istrings.RuneNumber(len(d.TextBeforeCursor()))
-		return suggestions, startChar, endChar
-	}
-
-	// Use the simpler Input approach instead of the persistent Run approach
 	for {
-		// Create options with basic configuration
-		options := []prompt.Option{
+		// Get input using go-prompt with exit checker for better test compatibility
+		input := prompt.Input(
 			prompt.WithPrefix(tm.getPromptString()),
 			prompt.WithTitle("one-shot-man"),
-			prompt.WithHistory(tm.getHistory()),
-			prompt.WithPrefixTextColor(prompt.Cyan),
-			prompt.WithSuggestionTextColor(prompt.Blue),
-			prompt.WithSelectedSuggestionBGColor(prompt.LightGray),
-			prompt.WithSuggestionBGColor(prompt.DarkGray),
-			prompt.WithCompleter(completer),
-		}
-
-		// Get single input
-		input := prompt.Input(options...)
+			prompt.WithExitChecker(func(in string, breakline bool) bool {
+				// Exit on common exit commands
+				trimmed := strings.TrimSpace(in)
+				return trimmed == "exit" || trimmed == "quit"
+			}),
+		)
 		
-		// Process the input
-		if !tm.processInput(input) {
+		// Process the input - exit if needed
+		if !tm.processInputWithExit(input) {
 			break
 		}
 	}
 }
 
-// processInput processes a single input line and returns whether to continue
-func (tm *TUIManager) processInput(input string) bool {
+// processInputWithExit processes input and returns false to exit the loop
+func (tm *TUIManager) processInputWithExit(input string) bool {
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return true

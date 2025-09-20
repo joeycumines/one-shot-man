@@ -143,15 +143,6 @@ func (l *TUILogger) Printf(format string, args ...interface{}) {
 	l.logger.Info(fmt.Sprintf(format, args...))
 }
 
-// WriteToTUI writes output directly to the terminal interface.
-// This is separate from logging and is for user-visible output.
-func (l *TUILogger) WriteToTUI(data []byte) (int, error) {
-	if l.tuiWriter != nil {
-		return l.tuiWriter.Write(data)
-	}
-	return len(data), nil
-}
-
 // PrintToTUI prints a message directly to the terminal interface.
 func (l *TUILogger) PrintToTUI(msg string) {
 	if l.tuiWriter != nil {
@@ -177,20 +168,6 @@ func (l *TUILogger) GetLogs() []LogEntry {
 	logs := make([]LogEntry, len(l.handler.entries))
 	copy(logs, l.handler.entries)
 	return logs
-}
-
-// GetLogsByLevel returns log entries filtered by level.
-func (l *TUILogger) GetLogsByLevel(level slog.Level) []LogEntry {
-	l.handler.mutex.RLock()
-	defer l.handler.mutex.RUnlock()
-
-	var filtered []LogEntry
-	for _, entry := range l.handler.entries {
-		if entry.Level >= level {
-			filtered = append(filtered, entry)
-		}
-	}
-	return filtered
 }
 
 // GetRecentLogs returns the most recent N log entries.
@@ -241,69 +218,4 @@ func (l *TUILogger) ClearLogs() {
 	defer l.handler.mutex.Unlock()
 
 	l.handler.entries = l.handler.entries[:0] // Clear slice while keeping capacity
-}
-
-// GetLogStats returns statistics about the log entries.
-func (l *TUILogger) GetLogStats() map[string]int {
-	l.handler.mutex.RLock()
-	defer l.handler.mutex.RUnlock()
-
-	stats := map[string]int{
-		"total": len(l.handler.entries),
-		"debug": 0,
-		"info":  0,
-		"warn":  0,
-		"error": 0,
-	}
-
-	for _, entry := range l.handler.entries {
-		switch entry.Level {
-		case slog.LevelDebug:
-			stats["debug"]++
-		case slog.LevelInfo:
-			stats["info"]++
-		case slog.LevelWarn:
-			stats["warn"]++
-		case slog.LevelError:
-			stats["error"]++
-		}
-	}
-
-	return stats
-}
-
-// FormatLogEntry formats a log entry for display.
-func (l *TUILogger) FormatLogEntry(entry LogEntry) string {
-	var sb strings.Builder
-
-	// Format timestamp
-	sb.WriteString(entry.Time.Format("15:04:05"))
-	sb.WriteString(" ")
-
-	// Format level
-	levelStr := strings.ToUpper(entry.Level.String())
-	sb.WriteString("[")
-	sb.WriteString(levelStr)
-	sb.WriteString("] ")
-
-	// Add message
-	sb.WriteString(entry.Message)
-
-	// Add attributes if present
-	if len(entry.Attrs) > 0 {
-		sb.WriteString(" {")
-		first := true
-		for key, value := range entry.Attrs {
-			if !first {
-				sb.WriteString(", ")
-			}
-			sb.WriteString(key)
-			sb.WriteString("=")
-			sb.WriteString(value)
-			first = false
-		}
-		sb.WriteString("}")
-	}
-
-	return sb.String()
 }

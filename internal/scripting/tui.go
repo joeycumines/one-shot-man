@@ -12,6 +12,7 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/elk-language/go-prompt"
+	istrings "github.com/elk-language/go-prompt/strings"
 )
 
 // TUIManager manages rich terminal interfaces for script modes.
@@ -291,30 +292,46 @@ func (w *syncWriter) Write(p []byte) (n int, err error) {
 
 // runAdvancedPrompt runs the main prompt using go-prompt
 func (tm *TUIManager) runAdvancedPrompt() {
-	for {
-		// Get input using go-prompt with exit checker for better test compatibility
-		input := prompt.Input(
-			prompt.WithPrefix(tm.getPromptString()),
-			prompt.WithTitle("one-shot-man"),
-			prompt.WithExitChecker(func(in string, breakline bool) bool {
-				// Exit on common exit commands
-				trimmed := strings.TrimSpace(in)
-				return trimmed == "exit" || trimmed == "quit"
-			}),
-		)
-		
-		// Process the input - exit if needed
-		if !tm.processInputWithExit(input) {
-			break
-		}
+	// Create completer function that wraps the current mode's completion logic
+	completer := func(d prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber) {
+		suggestions := tm.getCompletions(d)
+		// Return suggestions with start and end positions
+		word := d.GetWordBeforeCursor()
+		startChar := istrings.RuneNumber(len(d.TextBeforeCursor()) - len(word))
+		endChar := istrings.RuneNumber(len(d.TextBeforeCursor()))
+		return suggestions, startChar, endChar
 	}
+
+	// Create executor function that processes commands
+	executor := func(input string) {
+		tm.processInputWithExit(input)
+	}
+
+	// Create the prompt with rich configuration
+	p := prompt.New(
+		executor,
+		prompt.WithPrefix(tm.getPromptString()),
+		prompt.WithTitle("one-shot-man"),
+		prompt.WithCompleter(completer),
+		prompt.WithPrefixTextColor(prompt.Cyan),
+		prompt.WithSuggestionTextColor(prompt.Blue),
+		prompt.WithSelectedSuggestionBGColor(prompt.LightGray),
+		prompt.WithSuggestionBGColor(prompt.DarkGray),
+		prompt.WithExecuteOnEnterCallback(func(prompt *prompt.Prompt, indentSize int) (int, bool) {
+			// Always execute on Enter, don't wait for more input
+			return 0, true
+		}),
+	)
+	
+	tm.activePrompt = p
+	p.Run()
 }
 
-// processInputWithExit processes input and returns false to exit the loop
-func (tm *TUIManager) processInputWithExit(input string) bool {
+// processInputWithExit processes input (used as executor for go-prompt)
+func (tm *TUIManager) processInputWithExit(input string) {
 	input = strings.TrimSpace(input)
 	if input == "" {
-		return true
+		return
 	}
 
 	// Save to history if enabled
@@ -330,10 +347,10 @@ func (tm *TUIManager) processInputWithExit(input string) bool {
 			}
 		}
 		fmt.Fprintln(tm.output, "Goodbye!")
-		return false
+		os.Exit(0)
 	case "help":
 		tm.showHelp()
-		return true
+		return
 	}
 
 	// Parse command and arguments
@@ -351,7 +368,6 @@ func (tm *TUIManager) processInputWithExit(input string) bool {
 			fmt.Fprintln(tm.output, "Type 'help' for available commands or switch to a mode to execute JavaScript")
 		}
 	}
-	return true
 }
 
 // getCompletions provides completion suggestions for go-prompt

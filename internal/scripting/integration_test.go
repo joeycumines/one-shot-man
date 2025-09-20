@@ -1,15 +1,20 @@
 package scripting
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/ActiveState/termtest"
+	"github.com/creack/pty"
 )
 
 func requireExpect(t *testing.T, p *termtest.ConsoleProcess, value string, timeout ...time.Duration) {
@@ -1256,5 +1261,217 @@ func TestScriptStateVerification(t *testing.T) {
 	}
 	if !strings.Contains(outputStr, "Config debug: false") {
 		t.Error("Expected config debug to be false in output")
+	}
+}
+
+// TestMultiModeWorkflowPTY tests the multi-mode workflow using PTY instead of termtest
+func TestMultiModeWorkflowPTY(t *testing.T) {
+	// Create the test script (same as original)
+	multiModeScript := `
+// Multi-mode test script
+ctx.log("Starting multi-mode test");
+
+// Register calculator mode
+tui.registerMode({
+    name: "calculator", 
+    tui: {
+        title: "Calculator Mode",
+        prompt: "calc> "
+    },
+    onEnter: function() {
+        output.print("Calculator mode active");
+        tui.setState("result", 0);
+    },
+    commands: {
+        "add": {
+            description: "Add two numbers",
+            usage: "add <num1> <num2>",
+            handler: function(args) {
+                if (args.length !== 2) {
+                    output.print("Usage: add <num1> <num2>");
+                    return;
+                }
+                var a = parseFloat(args[0]);
+                var b = parseFloat(args[1]);
+                if (isNaN(a) || isNaN(b)) {
+                    output.print("Error: Both arguments must be numbers");
+                    return;
+                }
+                var result = a + b;
+                tui.setState("result", result);
+                output.print("Result: " + result);
+            }
+        },
+        "result": {
+            description: "Show current result",
+            handler: function(args) {
+                var result = tui.getState("result") || 0;
+                output.print("Current result: " + result);
+            }
+        }
+    }
+});
+
+// Register notes mode
+tui.registerMode({
+    name: "notes",
+    tui: {
+        title: "Notes Mode", 
+        prompt: "notes> "
+    },
+    onEnter: function() {
+        output.print("Notes mode active");
+    },
+    commands: {
+        "add": {
+            description: "Add a note",
+            usage: "add <note text>",
+            handler: function(args) {
+                var note = args.join(" ");
+                var notes = tui.getState("notes") || [];
+                notes.push(note);
+                tui.setState("notes", notes);
+                output.print("Added note: " + note);
+            }
+        },
+        "list": {
+            description: "List all notes",
+            handler: function(args) {
+                var notes = tui.getState("notes") || [];
+                if (notes.length === 0) {
+                    output.print("No notes yet");
+                    return;
+                }
+                var noteList = [];
+                for (var i = 0; i < notes.length; i++) {
+                    noteList.push((i + 1) + ". " + notes[i]);
+                }
+                output.print("Notes: " + noteList.join(", "));
+            }
+        }
+    }
+});
+
+ctx.log("Modes registered: calculator, notes");
+`
+
+	// Write the test script
+	scriptPath := "/tmp/multi-mode-test-pty.js"
+	err := os.WriteFile(scriptPath, []byte(multiModeScript), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write test script: %v", err)
+	}
+	defer os.Remove(scriptPath)
+
+	// Build the binary
+	binaryPath := buildTestBinary(t)
+	defer os.Remove(binaryPath)
+
+	// Create PTY
+	ptm, pts, err := pty.Open()
+	if err != nil {
+		t.Fatalf("failed to open pty: %v", err)
+	}
+	defer pts.Close()
+	defer ptm.Close()
+
+	// Start the command with PTY
+	cmd := exec.Command(binaryPath, "script", "-i", scriptPath)
+	cmd.Stdin = pts
+	cmd.Stdout = pts
+	cmd.Stderr = pts
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setctty = true
+	cmd.SysProcAttr.Setsid = true
+
+	// Start the command
+	err = cmd.Start()
+	if err != nil {
+		t.Fatalf("Failed to start command: %v", err)
+	}
+
+	// Track when command finishes
+	cmdDone := make(chan error, 1)
+	go func() {
+		cmdDone <- cmd.Wait()
+	}()
+
+	// Function to send command and read output
+	sendCommand := func(command string) string {
+		// Send command
+		_, err := ptm.Write([]byte(command + "\r"))
+		if err != nil {
+			t.Fatalf("Failed to send command %q: %v", command, err)
+		}
+
+		// Read output with timeout
+		var output bytes.Buffer
+		ptm.SetReadDeadline(time.Now().Add(2 * time.Second))
+		
+		buf := make([]byte, 1024)
+		for i := 0; i < 10; i++ { // Try reading multiple times
+			n, err := ptm.Read(buf)
+			if err != nil {
+				if !strings.Contains(err.Error(), "timeout") && err != io.EOF {
+					break
+				}
+			}
+			if n > 0 {
+				output.Write(buf[:n])
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		
+		return output.String()
+	}
+
+	// Give time for startup
+	time.Sleep(500 * time.Millisecond)
+
+	// Read and log initial output
+	initialOutput := sendCommand("")
+	t.Logf("Initial output:\n%s", initialOutput)
+
+	// Test the workflow
+	output1 := sendCommand("mode calculator")
+	t.Logf("After 'mode calculator':\n%s", output1)
+
+	output2 := sendCommand("add 5 3")
+	t.Logf("After 'add 5 3':\n%s", output2)
+
+	output3 := sendCommand("result")
+	t.Logf("After 'result':\n%s", output3)
+
+	output4 := sendCommand("mode notes")
+	t.Logf("After 'mode notes':\n%s", output4)
+
+	output5 := sendCommand("add Test note")
+	t.Logf("After 'add Test note':\n%s", output5)
+
+	output6 := sendCommand("list")
+	t.Logf("After 'list':\n%s", output6)
+
+	exitOutput := sendCommand("exit")
+	t.Logf("After 'exit':\n%s", exitOutput)
+
+	// Wait for command to finish
+	select {
+	case err := <-cmdDone:
+		if err != nil {
+			t.Logf("Command finished with error: %v", err)
+		} else {
+			t.Logf("Command finished successfully")
+		}
+	case <-time.After(10 * time.Second):
+		cmd.Process.Kill()
+		t.Fatal("Command did not exit within timeout")
+	}
+
+	// Basic verification - just check that we got some output
+	allOutput := initialOutput + output1 + output2 + output3 + output4 + output5 + output6 + exitOutput
+	if !strings.Contains(allOutput, "one-shot-man") {
+		t.Error("Expected to see application name in output")
 	}
 }

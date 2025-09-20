@@ -273,8 +273,47 @@ func (tm *TUIManager) Run() {
 	modes := tm.ListModes()
 	fmt.Fprintf(writer, "Available modes: %s\n", strings.Join(modes, ", "))
 
-	// Use go-prompt instead of simple loop
-	tm.runAdvancedPrompt()
+	// Check if we should use the simple loop (for testing compatibility)
+	if tm.shouldUseSimpleLoop() {
+		tm.runSimpleLoop()
+	} else {
+		// Use go-prompt for interactive sessions
+		tm.runAdvancedPrompt()
+	}
+}
+
+// shouldUseSimpleLoop determines whether to use the simple loop instead of go-prompt
+func (tm *TUIManager) shouldUseSimpleLoop() bool {
+	// Use simple loop if in test mode or if we detect a non-interactive environment
+	if tm.engine.testMode {
+		return true
+	}
+	
+	// Check if stdin is not a terminal (e.g., piped input, automated tests)
+	if !isTerminal(os.Stdin) {
+		return true
+	}
+	
+	// Check for testing environment variables
+	if os.Getenv("GO_TESTING") != "" || os.Getenv("CI") != "" {
+		return true
+	}
+	
+	return false
+}
+
+// isTerminal checks if the given file is a terminal
+func isTerminal(f *os.File) bool {
+	// Basic check - in a real implementation you might want to use a library
+	// like golang.org/x/term, but for minimal changes, we'll do a simple check
+	stat, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	
+	// Check if it's a character device (typical for terminals)
+	mode := stat.Mode()
+	return mode&os.ModeCharDevice != 0
 }
 
 // syncWriter wraps an io.Writer and calls Sync if it's an *os.File

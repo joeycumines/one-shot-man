@@ -11,62 +11,62 @@ tui.registerMode({
         prompt: "[demo]> ",
         enableHistory: false
     },
-    
-    onEnter: function() {
+
+    onEnter: function () {
         output.print("Entered demo mode!");
         output.print("This is a simple demonstration of the mode system.");
-        
+
         // Initialize some state
         tui.setState("counter", 0);
         tui.setState("messages", []);
     },
-    
-    onExit: function() {
+
+    onExit: function () {
         output.print("Leaving demo mode...");
         var counter = tui.getState("counter");
         output.print("Final counter value: " + counter);
     },
-    
+
     commands: {
         "count": {
             description: "Increment the counter",
-            handler: function(args) {
+            handler: function (args) {
                 var counter = tui.getState("counter") || 0;
                 counter++;
                 tui.setState("counter", counter);
                 output.print("Counter: " + counter);
             }
         },
-        
+
         "message": {
             description: "Add a message to the list",
             usage: "message <text>",
-            handler: function(args) {
+            handler: function (args) {
                 if (args.length === 0) {
                     output.print("Usage: message <text>");
                     return;
                 }
-                
+
                 var text = args.join(" ");
                 var messages = tui.getState("messages") || [];
                 messages.push(text);
                 tui.setState("messages", messages);
-                
+
                 output.print("Added message: " + text);
                 output.print("Total messages: " + messages.length);
             }
         },
-        
+
         "show": {
             description: "Show current state",
-            handler: function(args) {
+            handler: function (args) {
                 var counter = tui.getState("counter");
                 var messages = tui.getState("messages");
-                
+
                 output.print("Current state:");
                 output.print("  Counter: " + counter);
                 output.print("  Messages: " + messages.length);
-                
+
                 if (messages.length > 0) {
                     output.print("  Recent messages:");
                     for (var i = Math.max(0, messages.length - 3); i < messages.length; i++) {
@@ -75,17 +75,17 @@ tui.registerMode({
                 }
             }
         },
-        
+
         "js": {
             description: "Execute JavaScript code in mode context",
             usage: "js <code>",
-            handler: function(args) {
+            handler: function (args) {
                 if (args.length === 0) {
                     output.print("Usage: js <code>");
                     output.print("Example: js output.print('Hello from demo mode!')");
                     return;
                 }
-                
+
                 var code = args.join(" ");
                 try {
                     // This would execute in the current JavaScript context
@@ -103,7 +103,7 @@ tui.registerCommand({
     name: "echo",
     description: "Echo the arguments",
     usage: "echo <text>",
-    handler: function(args) {
+    handler: function (args) {
         output.print(args.join(" "));
     }
 });

@@ -6,7 +6,7 @@ ctx.log("Testing TUI API bindings...");
 // Test if tui object exists
 if (typeof tui !== 'undefined') {
     ctx.log("✓ tui object is available");
-    
+
     // Test basic functions
     if (typeof tui.listModes === 'function') {
         ctx.log("✓ tui.listModes is available");
@@ -15,16 +15,16 @@ if (typeof tui !== 'undefined') {
     } else {
         ctx.log("✗ tui.listModes is not available");
     }
-    
+
     if (typeof tui.registerCommand === 'function') {
         ctx.log("✓ tui.registerCommand is available");
-        
+
         // Test simple command registration
         try {
             tui.registerCommand({
                 name: "test",
                 description: "A test command",
-                handler: function(args) {
+                handler: function (args) {
                     output.print("Test command executed with args: " + args.join(" "));
                 }
             });
@@ -35,10 +35,10 @@ if (typeof tui !== 'undefined') {
     } else {
         ctx.log("✗ tui.registerCommand is not available");
     }
-    
+
     if (typeof tui.registerMode === 'function') {
         ctx.log("✓ tui.registerMode is available");
-        
+
         // Test simple mode registration
         try {
             tui.registerMode({
@@ -47,7 +47,7 @@ if (typeof tui !== 'undefined') {
                     title: "Test Mode",
                     prompt: "[test]> "
                 },
-                onEnter: function() {
+                onEnter: function () {
                     output.print("Entered test mode");
                 },
                 commands: {}
@@ -59,7 +59,7 @@ if (typeof tui !== 'undefined') {
     } else {
         ctx.log("✗ tui.registerMode is not available");
     }
-    
+
 } else {
     ctx.log("✗ tui object is not available");
 }

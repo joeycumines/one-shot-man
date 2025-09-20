@@ -306,52 +306,14 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		return suggestions, startChar, endChar
 	}
 
-	// Check if we can use go-prompt (requires TTY)
-	if tm.canUseGoPrompt() {
-		// Use full go-prompt with rich features
-		tm.runGoPrompt(completer)
-	} else {
-		// Fallback to line-by-line input that still supports completion
-		tm.runCompatiblePrompt(completer)
-	}
-}
-
-// canUseGoPrompt checks if go-prompt can be used (requires real TTY)
-func (tm *TUIManager) canUseGoPrompt() bool {
-	// Check if stdin is a terminal
-	if stat, err := os.Stdin.Stat(); err == nil {
-		isCharDevice := stat.Mode()&os.ModeCharDevice != 0
-		
-		// Additional checks to avoid pseudo-terminals that don't work with go-prompt
-		if !isCharDevice {
-			return false
-		}
-		
-		// Check for testing environment indicators
-		if os.Getenv("GO_TESTING") != "" || os.Getenv("CI") != "" {
-			return false
-		}
-		
-		// Check if we're likely in a test environment by looking at the terminal name
-		if term := os.Getenv("TERM"); term == "" || strings.Contains(term, "test") {
-			return false
-		}
-		
-		return true
-	}
-	return false
-}
-
-// runGoPrompt runs the full go-prompt with rich features
-func (tm *TUIManager) runGoPrompt(completer func(prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber)) {
-	// Create executor function
+	// Create executor function that processes commands
 	executor := func(input string) {
 		if !tm.processInputWithExit(input) {
 			os.Exit(0)
 		}
 	}
 
-	// Create the prompt with rich configuration
+	// Create the prompt with rich configuration - SINGLE MODE ONLY
 	p := prompt.New(
 		executor,
 		prompt.WithPrefix(tm.getPromptString()),
@@ -369,27 +331,6 @@ func (tm *TUIManager) runGoPrompt(completer func(prompt.Document) ([]prompt.Sugg
 	
 	tm.activePrompt = p
 	p.Run()
-}
-
-// runCompatiblePrompt runs a test-compatible prompt that still provides completion
-func (tm *TUIManager) runCompatiblePrompt(completer func(prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber)) {
-	scanner := bufio.NewScanner(os.Stdin)
-	for {
-		fmt.Fprint(tm.output, tm.getPromptString())
-
-		if !scanner.Scan() {
-			break
-		}
-
-		input := strings.TrimSpace(scanner.Text())
-		if input == "" {
-			continue
-		}
-
-		if !tm.processInputWithExit(input) {
-			break
-		}
-	}
 }
 
 // processInputWithExit processes input and returns false to exit

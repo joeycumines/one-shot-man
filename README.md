@@ -9,8 +9,9 @@ Command one-shot-man lets you produce high quality implementations with drastica
 - **dnsmasq-style Config Format**: Simple `optionName remainingLineIsTheValue` format
 - **Script Command Discovery**: Automatic discovery and execution of script commands
 - **Stdlib Flag Package**: Built using Go's standard library flag package
- - **Interactive TUI (go-prompt)**: Rich REPL powered by `github.com/elk-language/go-prompt` with completion, custom key bindings, and configurable colors
+- **Interactive TUI (go-prompt)**: Rich REPL powered by `github.com/elk-language/go-prompt` with completion, custom key bindings, and configurable colors
 
+---
 ## Installation
 
 ```bash
@@ -25,6 +26,7 @@ cd one-shot-man
 go build -o one-shot-man ./cmd/one-shot-man
 ```
 
+---
 ## Usage
 
 ### Basic Commands
@@ -46,6 +48,7 @@ one-shot-man config --all
 one-shot-man script -i
 ```
 
+---
 ### Configuration
 
 The configuration file uses a dnsmasq-style format where each line contains an option name followed by its value:
@@ -115,6 +118,7 @@ Notes:
 - Defaults: input=green, prefix=cyan, suggestionText=yellow, suggestionBG=black, selectedSuggestionText=black, selectedSuggestionBG=cyan, descriptionText=white, descriptionBG=black, selectedDescriptionText=white, selectedDescriptionBG=blue, scrollbarThumb=darkgray, scrollbarBG=black.
 - These apply to `one-shot-man script -i` and as defaults for prompts created from JavaScript (which can further override per prompt).
 
+---
 ### Script Commands
 
 Script commands are discovered from these locations (in order):
@@ -168,12 +172,13 @@ Inside the TUI, try:
 - `mode <name>` to switch modes
 - `state` to print current mode state
 
+---
 ## Architecture
 
 ### Built-in Commands
 
 - `help` - Display help information
-- `version` - Show version information  
+- `version` - Show version information
 - `config` - Manage configuration settings
 - `init` - Initialize the one-shot-man environment
 
@@ -212,9 +217,12 @@ type Command interface {
 2. **Script Commands**: Create executable scripts in designated script directories
 3. **Configuration**: Use the dnsmasq-style config format for both global and command-specific options
 
+---
 ## JavaScript TUI API
 
-In addition to the deferred testing-style API on `ctx`, scripts can control the TUI via the global `tui` object.
+In addition to the deferred testing-style API on `ctx`, scripts can control the TUI via the global `tui` object and interact with the host system via the `system` object.
+
+### `tui` Object
 
 Available functions (implemented):
 
@@ -238,6 +246,16 @@ Available functions (implemented):
 - `tui.registerKeyBinding(key, fn)` — Register a JS key handler (e.g., `"ctrl-r"`)
 
 Completer document helpers available in JS: `getText()`, `getTextBeforeCursor()`, `getWordBeforeCursor()`.
+
+### `system` Object
+
+Available functions for system interaction:
+
+- `system.exec(command, ...args)` — Executes a system command. Returns an object: `{ stdout: string, stderr: string, code: int, error: bool, message: string }`.
+- `system.execv(argv)` — Executes a command from an array of strings (e.g., `['git', 'diff']`).
+- `system.readFile(path)` — Reads a file from disk. Returns an object: `{ content: string, error: bool, message: string }`.
+- `system.openEditor(title, initialContent)` — Opens the user's default editor (`$VISUAL` / `$EDITOR` / fallback) with initial content and returns the final edited content as a string.
+- `system.clipboardCopy(text)` — Copies the given text to the system clipboard.
 
 Example: Create a prompt, add a completer, then run it
 
@@ -277,6 +295,7 @@ Run:
 one-shot-man script scripts/demo-prompt.js
 ```
 
+---
 ## Development
 
 ### Running Tests
@@ -291,6 +310,7 @@ go test ./...
 go build -o one-shot-man ./cmd/one-shot-man
 ```
 
+---
 ## Examples
 
 ### Basic Usage
@@ -299,12 +319,51 @@ go build -o one-shot-man ./cmd/one-shot-man
 # Get help
 one-shot-man help
 
-# Initialize configuration  
+# Initialize configuration
 one-shot-man init
 
 # Start interactive terminal
 one-shot-man script -i
 ```
+
+### Prompt Flow (single-file template-driven)
+
+A minimal prompt-flow implementation is available as `scripts/prompt-flow.js`. It lets you:
+
+- Set a goal (required first)
+- Add context via files, git diffs, and freeform notes
+- Edit a meta-prompt template and generate a main prompt
+- Preview and copy either the meta-prompt or the final assembled output (prompt + context)
+
+Run interactively:
+
+```
+one-shot-man script -i scripts/prompt-flow.js
+```
+
+Key commands inside the mode:
+
+- `goal [text]` — Set or edit the goal (no args opens your editor)
+- `add [file ...]` — Track files for context; when omitted opens editor for paths (one per line)
+- `list` — List goal/template/prompt and context items
+- `edit <id|goal|template|prompt>` — Edit an item or top-level state; file items are edited on disk
+- `remove <id>` — Remove a context item; file items also untrack from the backing context
+- `diff [args]` — Capture `git diff` output with optional args (e.g., `--staged`, `HEAD~1`)
+- `note [text]` — Add a note (no args opens editor)
+- `template` — Edit the meta-prompt template; default lives in-memory and includes the txtar context dump
+- `generate` — Build the meta-prompt and open it for editing as your main prompt, transitioning to GENERATED
+- `show [meta]` — Show meta-prompt (or final output by default in GENERATED state)
+- `copy [meta]` — Copy meta or final output to clipboard
+
+Implementation details:
+
+- Uses existing `context.toTxtar()` from the engine to dump tracked files in txtar format for template use
+- Exposes `system.exec`, `system.execv(argv)`, `system.readFile(path)`, `system.openEditor(title, initial)`, and `system.clipboardCopy(text)` for script ergonomics
+- Keeps `scripts/llm-prompt-builder.js` behavior unchanged
+
+Clipboard/editor support:
+- Clipboard: macOS (pbcopy), Linux/BSD (wl-copy, xclip, xsel), Windows (clip). Override with ONESHOT_CLIPBOARD_CMD (executed via sh/cmd with stdin = content).
+- Editor default: $VISUAL | $EDITOR | OS-specific fallback (Windows: notepad; Unix: nano | vi | ed).
 
 ### Configuration Management
 
@@ -316,6 +375,7 @@ ONESHOTMAN_CONFIG=/tmp/myconfig one-shot-man init
 one-shot-man init --force
 ```
 
+---
 ## License
 
 See [LICENSE](LICENSE) file for details.

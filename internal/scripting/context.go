@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -91,8 +92,64 @@ func (cm *ContextManager) RemovePath(path string) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 
-	delete(cm.paths, path)
-	return nil
+	// Fast path: exact key match
+	if _, ok := cm.paths[path]; ok {
+		delete(cm.paths, path)
+		return nil
+	}
+
+	// Try to normalize provided path to the relative key used by the manager
+	// Accept either absolute or relative inputs
+	var rel string
+	if path != "" {
+		abs := path
+		if !filepath.IsAbs(abs) {
+			// Resolve relative to basePath
+			abs = filepath.Join(cm.basePath, path)
+		}
+		if a2, err := filepath.Abs(abs); err == nil {
+			if r, err2 := filepath.Rel(cm.basePath, a2); err2 == nil {
+				rel = r
+			}
+		}
+	}
+
+	if rel != "" {
+		if _, ok := cm.paths[rel]; ok {
+			delete(cm.paths, rel)
+			return nil
+		}
+	}
+
+	// If still not found, attempt a last-resort match by suffix (handles cases
+	// where basePath moved or user supplied slightly different relative form).
+	// IMPORTANT: Detect ambiguity and return an error if multiple matches exist.
+	// This ensures deterministic behavior and surfaces issues to the caller.
+	if path != "" || rel != "" {
+		needleA := filepath.ToSlash(path)
+		needleB := filepath.ToSlash(rel)
+		var candidates []string
+		for k := range cm.paths {
+			ks := filepath.ToSlash(k)
+			if strings.EqualFold(k, path) ||
+				(strings.HasSuffix(ks, needleA) && needleA != "") ||
+				(strings.HasSuffix(ks, needleB) && needleB != "") {
+				candidates = append(candidates, k)
+			}
+		}
+		if len(candidates) == 1 {
+			delete(cm.paths, candidates[0])
+			return nil
+		}
+		if len(candidates) > 1 {
+			// Sort for stable, user-friendly output
+			slices.Sort(candidates)
+			return fmt.Errorf("ambiguous path: %q matches %d tracked paths: %s", path, len(candidates), strings.Join(candidates, ", "))
+		}
+	}
+
+	// Not found is a no-op
+	return fmt.Errorf("path not found: %s", path)
 }
 
 // GetPath returns information about a tracked path.

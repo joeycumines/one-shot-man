@@ -19,6 +19,7 @@ type Options struct {
 	CmdName        string
 	Args           []string
 	DefaultTimeout time.Duration
+	Env            []string
 }
 
 // NewTest creates a new test console process (compatibility with external termtest)
@@ -28,6 +29,11 @@ func NewTest(t *testing.T, opts Options) (*ConsoleProcess, error) {
 	pty, err := New(ctx, opts.CmdName, opts.Args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create PTY: %w", err)
+	}
+
+	// Apply environment overrides if provided
+	if len(opts.Env) > 0 {
+		pty.SetEnv(opts.Env)
 	}
 
 	timeout := opts.DefaultTimeout
@@ -97,4 +103,9 @@ func (cp *ConsoleProcess) Close() error {
 // GetOutput returns all captured output so far
 func (cp *ConsoleProcess) GetOutput() string {
 	return cp.pty.GetOutput()
+}
+
+// ClearOutput clears the accumulated output buffer
+func (cp *ConsoleProcess) ClearOutput() {
+	cp.pty.ClearOutput()
 }

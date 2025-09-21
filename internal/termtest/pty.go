@@ -32,7 +32,7 @@ func New(ctx context.Context, command string, args ...string) (*PTYTest, error) 
 
 	// Create command with proper environment for go-prompt
 	cmd := exec.CommandContext(testCtx, command, args...)
-	// Set environment variables that go-prompt expects
+	// Base environment variables that go-prompt expects; caller may append via SetEnv
 	cmd.Env = append(os.Environ(),
 		"TERM=xterm-256color",
 		"COLUMNS=80",
@@ -46,6 +46,13 @@ func New(ctx context.Context, command string, args ...string) (*PTYTest, error) 
 	}
 
 	return test, nil
+}
+
+// SetEnv appends additional environment variables to the command (only valid before Start()).
+func (p *PTYTest) SetEnv(env []string) {
+	if p.cmd != nil && len(env) > 0 {
+		p.cmd.Env = append(p.cmd.Env, env...)
+	}
 }
 
 // NewForProgram creates a PTY test for testing functions directly (not as external process).

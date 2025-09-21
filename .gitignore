@@ -33,7 +33,7 @@ go.work.sum
 
 # Built binaries
 /one-shot-man
-/cmd/one-shot-man
+/cmd/one-shot-man/one-shot-man
 /bin/one-shot-man
 
 # Makefile user configuration

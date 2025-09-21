@@ -24,7 +24,7 @@ func TestCodeReviewCommand_Integration(t *testing.T) {
 
 	// Check for expected output from the script execution
 	output := stdout.String()
-	
+
 	// Verify the mode registration was successful
 	if !contains(output, "Sub-test enter-review passed") {
 		t.Errorf("Expected enter-review sub-test to pass, got: %s", output)

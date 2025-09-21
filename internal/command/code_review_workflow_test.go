@@ -37,7 +37,7 @@ func TestCodeReviewCommand_FullWorkflow(t *testing.T) {
 
 	expectedPhrases := []string{
 		"GUARANTEE the correctness",
-		"sink commensurate effort", 
+		"sink commensurate effort",
 		"think very VERY hard",
 		"## IMPLEMENTATIONS/CONTEXT",
 		"{{context_txtar}}",
@@ -72,17 +72,17 @@ func TestCodeReviewCommand_FullWorkflow(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cmd.testMode = true
 	cmd.interactive = false
-	
+
 	err := cmd.Execute([]string{}, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Command execution failed: %v", err)
 	}
-	
+
 	output := stdout.String()
 	if !strings.Contains(output, "Code Review: context -> single prompt for PR review") {
 		t.Errorf("Expected banner message in output, got: %s", output)
 	}
-	
+
 	if !strings.Contains(output, "Commands: add, diff, note, list, edit, remove, show, copy, help, exit") {
 		t.Errorf("Expected help message in output, got: %s", output)
 	}

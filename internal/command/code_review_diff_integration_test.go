@@ -21,7 +21,7 @@ func TestCodeReviewCommand_DiffDefaultBehavior(t *testing.T) {
 	}
 
 	output := stdout.String()
-	
+
 	// Verify the script contains lazy diff functionality
 	if !contains(output, "Code Review: context -> single prompt for PR review") {
 		t.Errorf("Expected banner message in output, got: %s", output)

@@ -18,29 +18,29 @@ import (
 func Example() {
 	// This example shows the complete workflow for using prompt-flow
 	// to build a prompt for implementing metrics in a Java application
-	
+
 	// Step 1: Start prompt-flow
 	// one-shot-man prompt-flow
-	
+
 	// Step 2: Set a goal
 	// goal "Add JMX metrics to monitor thread pool performance"
-	
+
 	// Step 3: Add context files
 	// add src/main/java/ThreadPoolManager.java
-	
+
 	// Step 4: Add git diff
 	// diff --staged
-	
+
 	// Step 5: Add a note
 	// note "Focus on Micrometer integration for metrics collection"
-	
+
 	// Step 6: Generate the meta-prompt
 	// generate
-	
+
 	// Step 7: Show and copy the final assembled prompt
 	// show
 	// copy
-	
+
 	fmt.Println("Prompt Flow workflow completed successfully")
 	// Output: Prompt Flow workflow completed successfully
 }
@@ -133,10 +133,10 @@ func TestPromptFlow_Unix_MetaPromptVariations(t *testing.T) {
 
 	testCases := []struct {
 		name           string
-		goal          string
-		files         []string
-		diffs         []string
-		notes         []string
+		goal           string
+		files          []string
+		diffs          []string
+		notes          []string
 		expectedInMeta []string
 	}{
 		{
@@ -149,8 +149,8 @@ func TestPromptFlow_Unix_MetaPromptVariations(t *testing.T) {
 			},
 		},
 		{
-			name: "GoalWithFiles",
-			goal: "Add database connection pooling",
+			name:  "GoalWithFiles",
+			goal:  "Add database connection pooling",
 			files: []string{"database.go", "config.go"},
 			expectedInMeta: []string{
 				"Add database connection pooling",
@@ -159,8 +159,8 @@ func TestPromptFlow_Unix_MetaPromptVariations(t *testing.T) {
 			},
 		},
 		{
-			name: "ComplexScenario",
-			goal: "Implement comprehensive logging system",
+			name:  "ComplexScenario",
+			goal:  "Implement comprehensive logging system",
 			files: []string{"logger.go"},
 			notes: []string{"Use structured logging", "Include log levels"},
 			expectedInMeta: []string{
@@ -247,8 +247,8 @@ func processString(s string) string {
 	mainGoPath := filepath.Join(workspace, "main.go")
 	utilsGoPath := filepath.Join(workspace, "utils.go")
 	cp.SendLine("add " + mainGoPath + " " + utilsGoPath)
-	requireExpect(t, cp, "Added file: " + mainGoPath)
-	requireExpect(t, cp, "Added file: " + utilsGoPath)
+	requireExpect(t, cp, "Added file: "+mainGoPath)
+	requireExpect(t, cp, "Added file: "+utilsGoPath)
 
 	// Add note
 	cp.SendLine("note Focus on separation of concerns and clean architecture")
@@ -264,12 +264,12 @@ func processString(s string) string {
 	// Verify the final output structure
 	requireExpect(t, cp, "Refactor Go application for better modularity") // Goal should be in final output
 	requireExpect(t, cp, "## IMPLEMENTATIONS/CONTEXT")                    // Context section header
-	requireExpect(t, cp, "### Note:")                                      // Note section
+	requireExpect(t, cp, "### Note:")                                     // Note section
 	requireExpect(t, cp, "Focus on separation of concerns")               // Note content
-	requireExpect(t, cp, "-- main.go --")                                  // txtar file marker
-	requireExpect(t, cp, "package main")                                   // File content
-	requireExpect(t, cp, "-- utils.go --")                                 // Second file marker
-	requireExpect(t, cp, "func processString")                             // Second file content
+	requireExpect(t, cp, "-- main.go --")                                 // txtar file marker
+	requireExpect(t, cp, "package main")                                  // File content
+	requireExpect(t, cp, "-- utils.go --")                                // Second file marker
+	requireExpect(t, cp, "func processString")                            // Second file content
 
 	cp.SendLine("exit")
 	requireExpectExitCode(t, cp, 0)
@@ -393,7 +393,7 @@ func TestPromptFlow_Unix_GitDiffIntegration(t *testing.T) {
 
 	cp.SendLine("show")
 	requireExpect(t, cp, "Review and optimize the recent code changes") // Goal
-	requireExpect(t, cp, "### Diff: git diff")                         // Diff section
+	requireExpect(t, cp, "### Diff: git diff")                          // Diff section
 	requireExpect(t, cp, "```diff")                                     // Diff formatting
 	// Note: git diff may be empty if no staged changes, which is expected
 
@@ -570,12 +570,12 @@ esac
 
 func setupGitRepository(t *testing.T, workspace string) {
 	t.Helper()
-	
+
 	// Initialize git repo
 	runCommand(t, workspace, "git", "init")
 	runCommand(t, workspace, "git", "config", "user.name", "Test User")
 	runCommand(t, workspace, "git", "config", "user.email", "test@example.com")
-	
+
 	// Create initial file and commit
 	initialFile := filepath.Join(workspace, "example.go")
 	initialContent := `package main
@@ -589,10 +589,10 @@ func main() {
 	if err := os.WriteFile(initialFile, []byte(initialContent), 0644); err != nil {
 		t.Fatalf("Failed to create initial file: %v", err)
 	}
-	
+
 	runCommand(t, workspace, "git", "add", "example.go")
 	runCommand(t, workspace, "git", "commit", "-m", "\"Initial commit\"")
-	
+
 	// Modify file to create diff
 	modifiedContent := `package main
 
@@ -610,27 +610,27 @@ func main() {
 
 func runCommand(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
-	
+
 	// Build the command properly
 	fullArgs := []string{name}
 	fullArgs = append(fullArgs, args...)
 	cmd := strings.Join(fullArgs, " ")
-	
+
 	// Use sh -c to run the command
 	proc, err := os.StartProcess("/bin/sh", []string{"sh", "-c", cmd}, &os.ProcAttr{
-		Dir: dir,
-		Env: os.Environ(),
+		Dir:   dir,
+		Env:   os.Environ(),
 		Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
 	})
 	if err != nil {
 		t.Fatalf("Failed to start command %s: %v", cmd, err)
 	}
-	
+
 	state, err := proc.Wait()
 	if err != nil {
 		t.Fatalf("Failed to wait for command %s: %v", cmd, err)
 	}
-	
+
 	if !state.Success() {
 		t.Fatalf("Command %s failed with exit code %d", cmd, state.ExitCode())
 	}

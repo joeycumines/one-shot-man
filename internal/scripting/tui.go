@@ -1207,42 +1207,50 @@ func (tm *TUIManager) getDefaultCompletionSuggestions(document prompt.Document) 
 
 	// Provide command completion for first word
 	if len(words) == 1 {
-		// Built-in commands
+		// Collect all commands with precedence: mode commands > registered commands > built-in commands
+		commandMap := make(map[string]prompt.Suggest)
+
+		// Built-in commands (lowest precedence)
 		builtinCommands := []string{"help", "exit", "quit", "mode", "modes", "state"}
 		for _, cmd := range builtinCommands {
 			if strings.HasPrefix(cmd, currentWord) {
-				suggestions = append(suggestions, prompt.Suggest{
+				commandMap[cmd] = prompt.Suggest{
 					Text:        cmd,
 					Description: "Built-in command",
-				})
+				}
 			}
 		}
 
-		// Registered commands
+		// Registered commands (medium precedence)
 		tm.mu.RLock()
 		for _, cmd := range tm.commands {
 			if strings.HasPrefix(cmd.Name, currentWord) {
-				suggestions = append(suggestions, prompt.Suggest{
+				commandMap[cmd.Name] = prompt.Suggest{
 					Text:        cmd.Name,
 					Description: cmd.Description,
-				})
+				}
 			}
 		}
 
-		// Current mode commands
+		// Current mode commands (highest precedence)
 		if tm.currentMode != nil {
 			tm.currentMode.mu.RLock()
 			for _, cmd := range tm.currentMode.Commands {
 				if strings.HasPrefix(cmd.Name, currentWord) {
-					suggestions = append(suggestions, prompt.Suggest{
+					commandMap[cmd.Name] = prompt.Suggest{
 						Text:        cmd.Name,
 						Description: cmd.Description,
-					})
+					}
 				}
 			}
 			tm.currentMode.mu.RUnlock()
 		}
 		tm.mu.RUnlock()
+
+		// Convert map to slice
+		for _, suggestion := range commandMap {
+			suggestions = append(suggestions, suggestion)
+		}
 	}
 
 	// For mode command, suggest available modes

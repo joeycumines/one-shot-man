@@ -59,6 +59,7 @@ func (c *PromptFlowCommand) Execute(args []string, stdout, stderr io.Writer) err
 
 	// Set up global variables
 	engine.SetGlobal("args", args)
+	engine.SetGlobal("promptFlowTemplate", promptFlowTemplate)
 
 	// Load the embedded script
 	script := engine.LoadScriptFromString("prompt-flow", promptFlowScript)

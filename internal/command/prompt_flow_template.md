@@ -7,8 +7,10 @@
 !! Plan for the entire "IMPLEMENTATIONS/CONTEXT" section to be attached after the prompt (with heading). !!
 
 !! **GOAL:** !!
+{{goal}}
 
 !! **IMPLEMENTATIONS/CONTEXT:** !!
+{{context_txtar}}
 
 !! **TEMPLATE:** !!
 ``````

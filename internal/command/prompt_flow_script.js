@@ -179,8 +179,8 @@ function buildCommands() {
             usage: "add [file ...]",
             handler: function (args) {
                 if (args.length === 0) {
-                    const edited = openEditor("paths", "# one path per line\n");
-                    args = edited.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+                    const edited = openEditor("paths", "\n# one path per line\n");
+                    args = edited.split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith('#'));
                 }
                 for (const p of args) {
                     try {

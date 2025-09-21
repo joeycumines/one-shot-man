@@ -71,6 +71,58 @@ function addItem(type, label, payload) {
     return id;
 }
 
+// Format argv array for display (quote args containing spaces)
+function formatArgv(argv) {
+    try {
+        return (argv || []).map(function (a) {
+            if (a === "" || /[\s]/.test(a)) {
+                // simple quote for display; escape existing quotes
+                return '"' + (a || '').replace(/"/g, '\\"') + '"';
+            }
+            return a;
+        }).join(" ");
+    } catch (e) {
+        return (argv || []).join(" ");
+    }
+}
+
+// Parse a string into argv, respecting simple single/double quotes
+function parseArgv(s) {
+    if (!s) return [];
+    const out = [];
+    let i = 0, cur = "", quote = null, wasQuoted = false;
+    while (i < s.length) {
+        const ch = s[i++];
+        if (quote) {
+            if (ch === quote) {
+                quote = null;
+                wasQuoted = true;
+            } else if (ch === '\\' && i < s.length && s[i] === quote) {
+                cur += s[i++];
+            } else {
+                cur += ch;
+            }
+            continue;
+        }
+        if (ch === '"' || ch === "'") {
+            quote = ch;
+            wasQuoted = true;
+            continue;
+        }
+        if (/\s/.test(ch)) {
+            if (cur.length > 0 || wasQuoted) {
+                out.push(cur);
+                cur = "";
+                wasQuoted = false;
+            }
+            continue;
+        }
+        cur += ch;
+    }
+    if (cur.length > 0 || wasQuoted) out.push(cur);
+    return out;
+}
+
 function buildPrompt() {
     // Execute any lazy-diff items and convert them to regular diff items
     const list = items();
@@ -78,10 +130,10 @@ function buildPrompt() {
         const item = list[i];
         if (item.type === "lazy-diff") {
             // Execute the git diff command now
-            const diffArgs = item.payload.split(" ");
+            const diffArgs = Array.isArray(item.payload) ? item.payload : parseArgv(item.payload || "");
             const argv = ["git", "diff"].concat(diffArgs);
             const res = system.execv(argv);
-            
+
             if (res && res.error) {
                 // If git diff fails, store the error as the payload
                 item.payload = "Error executing git diff: " + res.message;
@@ -94,15 +146,15 @@ function buildPrompt() {
         }
     }
     setItems(list);
-    
+
     // Build the final prompt with template and context
     const parts = [];
     const pb = tui.createPromptBuilder("review", "Build code review prompt");
     pb.setTemplate(codeReviewTemplate);
-    
+
     // Build context that includes both files and diff items
     const contextParts = [];
-    
+
     // Add notes and diffs from JavaScript items
     for (const it of items()) {
         if (it.type === "note") {
@@ -113,13 +165,13 @@ function buildPrompt() {
             contextParts.push("### Diff Error: " + (it.label || "git diff") + "\n\n" + it.payload + "\n\n---\n");
         }
     }
-    
+
     // Add the txtar dump for tracked files
     const txtar = context.toTxtar();
     if (txtar && txtar.trim()) {
         contextParts.push("```\n" + txtar + "\n```");
     }
-    
+
     const fullContext = contextParts.join("\n");
     pb.setVariable("context_txtar", fullContext);
     return pb.build();
@@ -162,11 +214,11 @@ function buildCommands() {
             usage: "diff [commit-spec]",
             handler: function (args) {
                 // Default to HEAD~1 if no args provided, otherwise use provided args
-                const diffSpec = (args && args.length > 0) ? args.join(" ") : "HEAD~1";
-                const label = "git diff " + diffSpec;
-                
+                const argv = (args && args.length > 0) ? args.slice(0) : ["HEAD~1"];
+                const label = "git diff " + formatArgv(argv);
+
                 // Store lazy diff item - actual execution happens in buildPrompt
-                addItem("lazy-diff", label, diffSpec);
+                addItem("lazy-diff", label, argv);
                 output.print("Added diff: " + label + " (will be executed when generating prompt)");
             }
         },
@@ -214,9 +266,11 @@ function buildCommands() {
                 }
                 // For lazy-diff items, edit the git diff command specification
                 if (list[idx].type === 'lazy-diff') {
-                    const edited = openEditor("diff-spec-" + id, list[idx].payload || "HEAD~1");
-                    list[idx].payload = edited.trim();
-                    list[idx].label = "git diff " + edited.trim();
+                    const initial = Array.isArray(list[idx].payload) ? formatArgv(list[idx].payload) : (list[idx].payload || "HEAD~1");
+                    const edited = openEditor("diff-spec-" + id, initial);
+                    const argv = parseArgv((edited || "").trim());
+                    list[idx].payload = argv.length ? argv : ["HEAD~1"];
+                    list[idx].label = "git diff " + formatArgv(list[idx].payload);
                     setItems(list);
                     output.print("Updated diff specification [" + id + "]");
                     return;

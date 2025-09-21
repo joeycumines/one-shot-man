@@ -22,21 +22,22 @@ func TestCodeReviewCommand_DiffDefaultBehavior(t *testing.T) {
 
 	output := stdout.String()
 
-	// Verify the script contains lazy diff functionality
+	// Verify banner was printed
 	if !contains(output, "Code Review: context -> single prompt for PR review") {
 		t.Errorf("Expected banner message in output, got: %s", output)
 	}
 
-	// Test script should have the expected diff command description
-	expectedElements := []string{
-		"lazy-diff",
-		"HEAD~1",
-		"will be executed when generating prompt",
+	// Verify help message is shown (indicating commands are available)
+	if !contains(output, "Commands: add, diff, note, list, edit, remove, show, copy, help, exit") {
+		t.Errorf("Expected command list in output, got: %s", output)
 	}
 
-	for _, element := range expectedElements {
-		if !contains(codeReviewScript, element) {
-			t.Errorf("Expected script to contain element: %s", element)
-		}
+	// Verify both script sub-tests passed (register-mode and enter-review)
+	if !contains(output, "Sub-test register-mode passed") {
+		t.Errorf("Expected register-mode sub-test to pass, got: %s", output)
+	}
+
+	if !contains(output, "Sub-test enter-review passed") {
+		t.Errorf("Expected enter-review sub-test to pass, got: %s", output)
 	}
 }

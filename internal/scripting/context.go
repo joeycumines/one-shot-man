@@ -50,7 +50,9 @@ func (cm *ContextManager) AddPath(path string) error {
 
 	// Normalize path to be relative to base path if possible
 	relPath, err := filepath.Rel(cm.basePath, absPath)
-	if err != nil {
+	if err != nil || strings.HasPrefix(relPath, "..") {
+		// If we can't get a relative path, or it would escape the base path,
+		// use the absolute path to preserve uniqueness and enable exact lookups
 		relPath = absPath
 	}
 
@@ -109,7 +111,12 @@ func (cm *ContextManager) RemovePath(path string) error {
 		}
 		if a2, err := filepath.Abs(abs); err == nil {
 			if r, err2 := filepath.Rel(cm.basePath, a2); err2 == nil {
-				rel = r
+				// If outside basePath, prefer the absolute path key we store
+				if strings.HasPrefix(r, "..") {
+					rel = a2
+				} else {
+					rel = r
+				}
 			}
 		}
 	}
@@ -131,9 +138,12 @@ func (cm *ContextManager) RemovePath(path string) error {
 		var candidates []string
 		for k := range cm.paths {
 			ks := filepath.ToSlash(k)
+			// Match exact strings (either provided path or normalized rel),
+			// or suffix in EITHER direction to account for absolute vs relative keys
 			if strings.EqualFold(k, path) ||
-				(strings.HasSuffix(ks, needleA) && needleA != "") ||
-				(strings.HasSuffix(ks, needleB) && needleB != "") {
+				strings.EqualFold(k, rel) ||
+				(needleA != "" && ks != "" && (strings.HasSuffix(needleA, ks) || strings.HasSuffix(ks, needleA))) ||
+				(needleB != "" && ks != "" && (strings.HasSuffix(needleB, ks) || strings.HasSuffix(ks, needleB))) {
 				candidates = append(candidates, k)
 			}
 		}
@@ -185,7 +195,8 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 	for _, contextPath := range cm.paths {
 		if contextPath.Type == "file" {
 			file := txtar.File{
-				Name: contextPath.Path,
+				// Ensure exported name is just the base filename to keep markers stable
+				Name: filepath.Base(contextPath.Path),
 				Data: []byte(contextPath.Content),
 			}
 			archive.Files = append(archive.Files, file)

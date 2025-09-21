@@ -320,9 +320,13 @@ function buildCommands() {
         generate: {
             description: "Generate the main prompt using the meta-prompt",
             handler: function () {
+                output.print("[flow] generate: start");
                 const meta = buildMetaPrompt();
+                output.print("[flow] generate: built meta");
                 // For now, simple: take meta as the prompt seed. In a real flow, send to LLM.
-                setPrompt(openEditor("generated-prompt", meta));
+                const edited = openEditor("generated-prompt", meta);
+                output.print("[flow] generate: editor returned");
+                setPrompt(edited);
                 setPhase("GENERATED");
                 output.print("Generated. You can now 'show' or 'copy'.");
             }

@@ -314,13 +314,21 @@ func TestPromptFlow_Unix_DifferentTemplateConfigurations(t *testing.T) {
 	cp.SendLine("goal Create a REST API for user management")
 	requireExpect(t, cp, "Goal set.")
 
-	// Customize the template
+	// Customize the template (opens editor and returns immediately in our fake editor)
 	cp.SendLine("template")
-	requireExpect(t, cp, "(prompt-builder) > ", 10*time.Second)
+	// Wait for the prompt line to re-render after editor exits
+	raw, err := cp.ExpectNew("(prompt-builder) > ", 10*time.Second)
+	if err != nil {
+		t.Fatalf("Expected prompt after template edit, got error: %v\nRaw:\n%s", err, raw)
+	}
 
 	// Generate with custom template
 	cp.SendLine("generate")
-	requireExpect(t, cp, "Generated. You can now 'show' or 'copy'.")
+	// After generate, we should see the generated message; ensure it's new output
+	raw, err = cp.ExpectNew("Generated. You can now 'show' or 'copy'.", 30*time.Second)
+	if err != nil {
+		t.Fatalf("Expected generate message, got error: %v\nRaw:\n%s", err, raw)
+	}
 
 	// Show meta-prompt to verify template customization
 	cp.SendLine("show meta")

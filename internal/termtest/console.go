@@ -76,6 +76,21 @@ func (cp *ConsoleProcess) Expect(expectedText string, timeout ...time.Duration) 
 	return cp.pty.GetOutput(), nil
 }
 
+// ExpectNew waits for the specified text to appear in the output produced AFTER the current position.
+// This avoids matching stale output from earlier in the session (useful when external tools write to TTY).
+func (cp *ConsoleProcess) ExpectNew(expectedText string, timeout ...time.Duration) (string, error) {
+	t := cp.timeout
+	if len(timeout) > 0 {
+		t = timeout[0]
+	}
+
+	start := cp.pty.OutputLen()
+	if err := cp.pty.WaitForOutputSince(expectedText, start, t); err != nil {
+		return cp.pty.GetOutput(), err
+	}
+	return cp.pty.GetOutput(), nil
+}
+
 // ExpectExitCode waits for the process to exit with the specified code
 func (cp *ConsoleProcess) ExpectExitCode(exitCode int, timeout ...time.Duration) (string, error) {
 	t := cp.timeout

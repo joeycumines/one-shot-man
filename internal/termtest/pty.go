@@ -132,7 +132,9 @@ func (p *PTYTest) Type(input string, delay time.Duration) error {
 		if _, err := p.ptm.WriteString(string(r)); err != nil {
 			return fmt.Errorf("failed to write input: %w", err)
 		}
-		time.Sleep(delay)
+		if delay > 0 {
+			time.Sleep(delay)
+		}
 	}
 	// small settle delay
 	time.Sleep(10 * time.Millisecond)
@@ -205,6 +207,41 @@ func (p *PTYTest) WaitForOutput(expectedText string, timeout time.Duration) erro
 
 	return fmt.Errorf("expected text %q not found in output after %v (output length: %d)",
 		expectedText, timeout, len(output))
+}
+
+// OutputLen returns the current length of the captured output buffer.
+func (p *PTYTest) OutputLen() int {
+	p.outputMu.RLock()
+	defer p.outputMu.RUnlock()
+	return p.output.Len()
+}
+
+// WaitForOutputSince waits for expectedText to appear in the output produced
+// after the given startLen offset. This prevents matching stale output.
+func (p *PTYTest) WaitForOutputSince(expectedText string, startLen int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		p.outputMu.RLock()
+		output := p.output.String()
+		p.outputMu.RUnlock()
+
+		if startLen < 0 || startLen > len(output) {
+			startLen = 0
+		}
+		if strings.Contains(output[startLen:], expectedText) {
+			return nil
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	p.outputMu.RLock()
+	output := p.output.String()
+	p.outputMu.RUnlock()
+
+	return fmt.Errorf("expected text %q not found in new output after %v (checked from %d, new length %d)",
+		expectedText, timeout, startLen, len(output))
 }
 
 // WaitForPrompt waits for a prompt pattern to appear.

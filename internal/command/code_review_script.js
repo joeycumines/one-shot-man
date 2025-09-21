@@ -72,6 +72,29 @@ function addItem(type, label, payload) {
 }
 
 function buildPrompt() {
+    // Execute any lazy-diff items and convert them to regular diff items
+    const list = items();
+    for (let i = 0; i < list.length; i++) {
+        const item = list[i];
+        if (item.type === "lazy-diff") {
+            // Execute the git diff command now
+            const diffArgs = item.payload.split(" ");
+            const argv = ["git", "diff"].concat(diffArgs);
+            const res = system.execv(argv);
+            
+            if (res && res.error) {
+                // If git diff fails, store the error as the payload
+                item.payload = "Error executing git diff: " + res.message;
+                item.type = "diff-error";
+            } else {
+                // Store the actual diff output
+                item.payload = res.stdout || "";
+                item.type = "diff";
+            }
+        }
+    }
+    setItems(list);
+    
     // Leverage context manager txtar dump
     const txtar = context.toTxtar();
     const pb = tui.createPromptBuilder("review", "Build code review prompt");
@@ -113,18 +136,16 @@ function buildCommands() {
             }
         },
         diff: {
-            description: "Add git diff output to context",
-            usage: "diff [args]",
+            description: "Add git diff output to context (default: HEAD~1)",
+            usage: "diff [commit-spec]",
             handler: function (args) {
-                const argv = ["git", "diff"].concat(args || []);
-                const res = system.execv(argv);
-                if (res && res.error) {
-                    output.print("git diff failed: " + res.message);
-                    return;
-                }
-                const label = "git diff " + (args || []).join(" ");
-                addItem("diff", label, res.stdout);
-                output.print("Added diff: " + label);
+                // Default to HEAD~1 if no args provided, otherwise use provided args
+                const diffSpec = (args && args.length > 0) ? args.join(" ") : "HEAD~1";
+                const label = "git diff " + diffSpec;
+                
+                // Store lazy diff item - actual execution happens in buildPrompt
+                addItem("lazy-diff", label, diffSpec);
+                output.print("Added diff: " + label + " (will be executed when generating prompt)");
             }
         },
         note: {
@@ -167,6 +188,15 @@ function buildCommands() {
                 // Disallow editing file items since file content is sourced from disk via context engine
                 if (list[idx].type === 'file') {
                     output.print("Editing file content directly is not supported. Please edit the file on disk.");
+                    return;
+                }
+                // For lazy-diff items, edit the git diff command specification
+                if (list[idx].type === 'lazy-diff') {
+                    const edited = openEditor("diff-spec-" + id, list[idx].payload || "HEAD~1");
+                    list[idx].payload = edited.trim();
+                    list[idx].label = "git diff " + edited.trim();
+                    setItems(list);
+                    output.print("Updated diff specification [" + id + "]");
                     return;
                 }
                 const edited = openEditor("item-" + id, list[idx].payload || "");

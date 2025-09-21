@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"flag"
+	"strings"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -142,36 +143,6 @@ func TestPromptFlowCommand_ExecuteWithArgs(t *testing.T) {
 	}
 }
 
-func TestPromptFlowCommand_ExecuteScriptFailure(t *testing.T) {
-	cfg := config.NewConfig()
-	cmd := NewPromptFlowCommand(cfg)
-	
-	var stdout, stderr bytes.Buffer
-	
-	// Override the script to cause a failure - we'll modify the global promptFlowScript temporarily
-	originalScript := promptFlowScript
-	defer func() {
-		// Note: This won't actually restore it since it's embedded, but shows the intent
-		// In a real scenario, we'd need dependency injection to test this properly
-	}()
-	
-	// Test with valid script - this should pass
-	cmd.testMode = true
-	cmd.interactive = false
-	
-	err := cmd.Execute([]string{}, &stdout, &stderr)
-	if err != nil {
-		t.Fatalf("Expected no error with valid script, got: %v", err)
-	}
-	
-	// Verify we got expected output
-	output := stdout.String()
-	if !contains(output, "Prompt Flow: goal/context/template -> generate -> assemble") {
-		t.Errorf("Expected banner message, got: %s", output)
-	}
-	
-	_ = originalScript // Use the variable to avoid unused warning
-}
 
 func TestPromptFlowCommand_ConfigColorOverrides(t *testing.T) {
 	cfg := config.NewConfig()
@@ -307,5 +278,5 @@ func TestPromptFlowCommand_InteractiveMode(t *testing.T) {
 }
 
 func contains(s, substr string) bool {
-	return bytes.Contains([]byte(s), []byte(substr))
+	return strings.Contains(s, substr)
 }

@@ -55,6 +55,7 @@ func run() error {
 	registry.Register(command.NewConfigCommand(cfg))
 	registry.Register(command.NewInitCommand())
 	registry.Register(command.NewScriptingCommand(cfg))
+	registry.Register(command.NewPromptFlowCommand(cfg))
 
 	// Parse global flags and command
 	if len(os.Args) < 2 {

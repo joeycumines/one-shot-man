@@ -16,17 +16,10 @@ func TestPromptFlow_NonInteractive(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
 
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get working directory: %v", err)
-	}
-	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
-	scriptPath := filepath.Join(projectDir, "scripts", "prompt-flow.js")
-
-	// Run the CLI in non-interactive test mode to evaluate the script
+	// Run the CLI in non-interactive test mode to evaluate the built-in prompt-flow command
 	opts := termtest.Options{
 		CmdName:        binaryPath,
-		Args:           []string{"script", "--test", scriptPath},
+		Args:           []string{"prompt-flow", "--test"},
 		DefaultTimeout: 20 * time.Second,
 	}
 
@@ -56,7 +49,6 @@ func TestPromptFlow_Interactive(t *testing.T) {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
 	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
-	scriptPath := filepath.Join(projectDir, "scripts", "prompt-flow.js")
 
 	// Create a tiny shell to act as EDITOR that appends a suffix to the file; use sh -c echo > "$1"
 	// We'll simulate editor by using /bin/sh -c 'printf ... > file' via setting EDITOR to /bin/sh and VISUAL to empty,
@@ -78,7 +70,7 @@ fi
 
 	opts := termtest.Options{
 		CmdName:        binaryPath,
-		Args:           []string{"script", "-i", scriptPath},
+		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 60 * time.Second,
 		Env: []string{
 			"EDITOR=" + editorScript,
@@ -178,13 +170,6 @@ func TestPromptFlow_Remove_Ambiguous_AbortsUI(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
 
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get working directory: %v", err)
-	}
-	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
-	scriptPath := filepath.Join(projectDir, "scripts", "prompt-flow.js")
-
 	// Create two files with the same basename in different directories
 	tmpDir := t.TempDir()
 	dir1 := filepath.Join(tmpDir, "foo")
@@ -206,7 +191,7 @@ func TestPromptFlow_Remove_Ambiguous_AbortsUI(t *testing.T) {
 
 	opts := termtest.Options{
 		CmdName:        binaryPath,
-		Args:           []string{"script", "-i", scriptPath},
+		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 60 * time.Second,
 		Env: []string{
 			"VISUAL=",
@@ -262,13 +247,6 @@ func TestPromptFlow_Remove_NotFound_AbortsUI(t *testing.T) {
 	binaryPath := buildTestBinary(t)
 	defer os.Remove(binaryPath)
 
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get working directory: %v", err)
-	}
-	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
-	scriptPath := filepath.Join(projectDir, "scripts", "prompt-flow.js")
-
 	tmpFile := filepath.Join(t.TempDir(), "lonely.txt")
 	if err := os.WriteFile(tmpFile, []byte("content"), 0o644); err != nil {
 		t.Fatal(err)
@@ -276,7 +254,7 @@ func TestPromptFlow_Remove_NotFound_AbortsUI(t *testing.T) {
 
 	opts := termtest.Options{
 		CmdName:        binaryPath,
-		Args:           []string{"script", "-i", scriptPath},
+		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 60 * time.Second,
 		Env: []string{
 			"VISUAL=",

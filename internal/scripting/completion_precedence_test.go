@@ -43,26 +43,26 @@ func TestCompletionPrecedence(t *testing.T) {
 	}
 
 	t.Run("DefaultPromptShouldRespectModeCommands", func(t *testing.T) {
-		// Test that when in a mode with commands, those commands should take 
+		// Test that when in a mode with commands, those commands should take
 		// precedence over built-in commands with the same name
-		
+
 		// Create a document with "he" - this should match "help"
 		doc := prompt.Document{Text: "he"}
-		
+
 		// Get completions from default completion function
 		suggestions := tuiManager.getDefaultCompletionSuggestions(doc)
-		
+
 		// Check what completions we get for "help"
 		var allHelp []prompt.Suggest
-		
+
 		for i := range suggestions {
 			if suggestions[i].Text == "help" {
 				allHelp = append(allHelp, suggestions[i])
 			}
 		}
-		
+
 		t.Logf("All help completions found: %+v", allHelp)
-		
+
 		if len(allHelp) > 1 {
 			t.Errorf("Multiple help completions found - mode command should take precedence. Found: %+v", allHelp)
 		} else if len(allHelp) == 1 {
@@ -79,7 +79,7 @@ func TestCompletionPrecedence(t *testing.T) {
 	t.Run("CustomPromptWithJSCompleter", func(t *testing.T) {
 		// Test that custom prompts can use JS completers
 		// This should continue to work as before
-		
+
 		// Register a JS completer for the custom prompt
 		completersScript := engine.LoadScriptFromString("test-completer", `
 			tui.registerCompleter('helpCompleter', function(document) {

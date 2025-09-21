@@ -48,6 +48,41 @@ one-shot-man config --all
 one-shot-man script -i
 ```
 
+### Prompt Flow Command
+
+The `prompt-flow` command provides an interactive prompt builder that follows a goal/context/template workflow to generate and assemble prompts:
+
+```bash
+# Start the interactive prompt flow builder
+one-shot-man prompt-flow
+
+# Start in test mode (non-interactive, for testing)
+one-shot-man prompt-flow --test
+```
+
+The prompt flow workflow:
+
+1. **Set Goal**: Define what you want to achieve
+2. **Build Context**: Add files, git diffs, and notes
+3. **Customize Template**: Edit the meta-prompt template (pre-loaded with a comprehensive template)
+4. **Generate**: Create the main prompt using the meta-prompt
+5. **Assemble**: Combine prompt with context for final output
+
+Commands available in prompt flow mode:
+- `goal [text]` - Set or edit the goal
+- `add [files...]` - Add file content to context
+- `diff [args]` - Add git diff output to context  
+- `note [text]` - Add a freeform note
+- `list` - List current goal, template, prompt, and context items
+- `edit <id|goal|template|prompt>` - Edit items by ID or name
+- `remove <id>` - Remove a context item
+- `template` - Edit the meta-prompt template
+- `generate` - Generate the main prompt using the meta-prompt
+- `show [meta]` - Show meta-prompt or final output
+- `copy [meta]` - Copy meta-prompt or final output to clipboard
+- `help` - Show available commands
+- `exit` - Exit prompt flow mode
+
 ---
 ### Configuration
 
@@ -181,6 +216,8 @@ Inside the TUI, try:
 - `version` - Show version information
 - `config` - Manage configuration settings
 - `init` - Initialize the one-shot-man environment
+- `script` - Execute JavaScript scripts with deferred/declarative API
+- `prompt-flow` - Interactive prompt builder: goal/context/template -> generate -> assemble
 
 ### Interactive TUI (Implemented)
 

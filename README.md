@@ -64,26 +64,28 @@ osm prompt-flow
 
 The prompt flow workflow:
 
-1. **Set Goal**: Define what you want to achieve (required first)
-2. **Build Context**: Add files, git diffs, and notes
-3. **Customize Template**: Edit the meta-prompt template (pre-loaded with a comprehensive template)
-4. **Generate**: Create the main prompt using the meta-prompt
-5. **Assemble**: Combine prompt with context for final output
+1.  **Set Goal**: Define what you want to achieve (e.g., `goal Refactor to unexport all methods except Run`).
+2.  **Build Context**: Add relevant files (`add`), git diffs (`diff`), and notes (`note`).
+3.  **Generate Meta-Prompt**: Run `generate` to create a prompt designed to be sent to an LLM. You can inspect it with `show meta`.
+4.  **Set Task Prompt**: After getting a response from an LLM, use the `use` command to set it as the task prompt (e.g., `use "The user wants a Javascript function..."`).
+5.  **Assemble & Use**: The task prompt is now combined with the context. Use `show` to see the final output or `copy` to send it to your clipboard.
 
 Commands available in prompt flow mode:
-- `goal [text]` - Set or edit the goal (no args opens your editor)
-- `add [files...]` - Add file content to context (no args opens editor for paths, one per line)
-- `diff [args]` - Add git diff output to context (e.g., `--staged`, `HEAD~1`)
-- `note [text]` - Add a freeform note (no args opens editor)
-- `list` - List current goal, template, prompt, and context items
-- `edit <id|goal|template|prompt>` - Edit items by ID or name (file items are edited on disk)
-- `remove <id>` - Remove a context item (file items also untrack from the backing context)
-- `template` - Edit the meta-prompt template
-- `generate` - Generate the main prompt using the meta-prompt
-- `show [meta]` - Show meta-prompt or final output
-- `copy [meta]` - Copy meta-prompt or final output to clipboard
-- `help` - Show available commands
-- `exit` - Exit prompt flow mode
+
+  - `goal [text]` - Set or edit the goal (no args opens your editor).
+  - `add [files...]` - Add file content to context (no args opens editor for paths, one per line).
+  - `diff [args]` - Add git diff output to context (e.g., `--staged`, `HEAD~1`).
+  - `note [text]` - Add a freeform note (no args opens editor).
+  - `list` - List current goal, template, prompts, and context items.
+  - `edit <id|goal|template|meta|prompt>` - Edit items by ID or name. `meta` edits the generated meta-prompt; `prompt` edits the task prompt.
+  - `remove <id>` - Remove a context item (file items also untrack from the backing context).
+  - `template` - Edit the meta-prompt template.
+  - `generate` - Generate the meta-prompt and reset the task prompt.
+  - `use [text]` - Set or edit the task prompt (no args opens editor).
+  - `show [meta|prompt]` - Show content. Default shows final output if the task prompt is set, otherwise shows the meta-prompt.
+  - `copy [meta|prompt]` - Copy content to clipboard. Default behavior mirrors `show`.
+  - `help` - Show available commands.
+  - `exit` - Exit prompt flow mode.
 
 ---
 ### Configuration

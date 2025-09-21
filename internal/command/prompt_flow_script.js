@@ -4,10 +4,11 @@
 // State keys
 const STATE = {
     mode: "flow",               // fixed mode name
-    phase: "phase",             // INITIAL | CONTEXT_BUILDING | GENERATED
+    phase: "phase",             // INITIAL | CONTEXT_BUILDING | META_GENERATED | TASK_PROMPT_SET
     goal: "goal",               // string
     template: "template",       // string (meta-prompt template)
-    prompt: "prompt",           // string (generated main prompt)
+    metaPrompt: "metaPrompt",   // string (generated meta-prompt)
+    taskPrompt: "taskPrompt",   // string (the prompt to perform the task)
     contextItems: "contextItems" // array of { id, type: file|diff|note, label, payload }
 };
 
@@ -53,12 +54,12 @@ ctx.run("register-mode", function () {
 });
 
 function banner() {
-    output.print("Prompt Flow: goal/context/template -> generate -> assemble");
+    output.print("Prompt Flow: goal/context/template -> generate -> use -> assemble");
     output.print("Type 'help' for commands. Use 'flow' to return here later.");
 }
 
 function help() {
-    output.print("Commands: goal, add, diff, note, list, edit, remove, template, generate, show [meta], copy [meta], help, exit");
+    output.print("Commands: goal, add, diff, note, list, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit");
 }
 
 function defaultTemplate() {
@@ -100,12 +101,20 @@ function setTemplate(t) {
     tui.setState(STATE.template, t);
 }
 
-function setPrompt(p) {
-    tui.setState(STATE.prompt, p);
+function setMetaPrompt(p) {
+    tui.setState(STATE.metaPrompt, p);
 }
 
-function getPrompt() {
-    return tui.getState(STATE.prompt) || "";
+function getMetaPrompt() {
+    return tui.getState(STATE.metaPrompt) || "";
+}
+
+function setTaskPrompt(p) {
+    tui.setState(STATE.taskPrompt, p);
+}
+
+function getTaskPrompt() {
+    return tui.getState(STATE.taskPrompt) || "";
 }
 
 function items() {
@@ -136,7 +145,7 @@ function buildMetaPrompt() {
 
 function assembleFinal() {
     const parts = [];
-    const p = getPrompt();
+    const p = getTaskPrompt();
     if (p) parts.push(p.trim());
     parts.push("\n---\n## IMPLEMENTATIONS/CONTEXT\n---\n");
     // Emit notes and diffs
@@ -167,7 +176,7 @@ function buildCommands() {
             handler: function (args) {
                 if (args.length === 0) {
                     const edited = openEditor("goal", getGoal());
-                    setGoal(edited.trim());
+                    if (edited && edited.trim()) setGoal(edited.trim());
                 } else {
                     setGoal(args.join(" "));
                 }
@@ -223,22 +232,25 @@ function buildCommands() {
             }
         },
         list: {
-            description: "List goal, template, prompt, and items",
+            description: "List goal, template, prompts, and items",
             handler: function () {
                 if (getGoal()) output.print("[goal] " + getGoal());
                 if (getTemplate()) output.print("[template] set");
-                if (getPrompt()) output.print("[prompt] " + getPrompt().slice(0, 80) + (getPrompt().length > 80 ? "..." : ""));
+                const meta = getMetaPrompt();
+                if (meta) output.print("[meta] " + meta.slice(0, 80) + (meta.length > 80 ? "..." : ""));
+                const task = getTaskPrompt();
+                if (task) output.print("[prompt] " + task.slice(0, 80) + (task.length > 80 ? "..." : ""));
                 for (const it of items()) {
                     output.print("[" + it.id + "] [" + it.type + "] " + (it.label || ""));
                 }
             }
         },
         edit: {
-            description: "Edit goal/template/prompt by id or name",
-            usage: "edit <id|goal|template|prompt>",
+            description: "Edit goal/template/meta/prompt by id or name",
+            usage: "edit <id|goal|template|meta|prompt>",
             handler: function (args) {
                 if (args.length < 1) {
-                    output.print("Usage: edit <id|goal|template|prompt>");
+                    output.print("Usage: " + this.usage);
                     return;
                 }
                 const target = args[0];
@@ -250,8 +262,20 @@ function buildCommands() {
                     setTemplate(openEditor('template', getTemplate()));
                     return;
                 }
+                if (target === 'meta') {
+                    if (getPhase() === "INITIAL" || getPhase() === "CONTEXT_BUILDING") {
+                        output.print("Meta prompt not generated yet. Use 'generate' first.");
+                        return;
+                    }
+                    setMetaPrompt(openEditor('meta-prompt', getMetaPrompt()));
+                    return;
+                }
                 if (target === 'prompt') {
-                    setPrompt(openEditor('prompt', getPrompt()));
+                    if (getPhase() !== "TASK_PROMPT_SET") {
+                        output.print("Task prompt not set yet. Use 'use' first.");
+                        return;
+                    }
+                    setTaskPrompt(openEditor('task-prompt', getTaskPrompt()));
                     return;
                 }
                 const id = parseInt(target, 10);
@@ -318,41 +342,90 @@ function buildCommands() {
             }
         },
         generate: {
-            description: "Generate the main prompt using the meta-prompt",
+            description: "Generate the meta-prompt and reset the task prompt",
             handler: function () {
-                output.print("[flow] generate: start");
+                output.print("Generating meta-prompt...");
                 const meta = buildMetaPrompt();
-                output.print("[flow] generate: built meta");
-                // For now, simple: take meta as the prompt seed. In a real flow, send to LLM.
-                const edited = openEditor("generated-prompt", meta);
-                output.print("[flow] generate: editor returned");
-                setPrompt(edited);
-                setPhase("GENERATED");
-                output.print("Generated. You can now 'show' or 'copy'.");
+                setMetaPrompt(meta);
+                // Wipe out the old task prompt and reset phase
+                setTaskPrompt("");
+                setPhase("META_GENERATED");
+                output.print("Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.");
+            }
+        },
+        use: {
+            description: "Set or edit the task prompt",
+            usage: "use [text]",
+            handler: function (args) {
+                if (getPhase() !== "META_GENERATED" && getPhase() !== "TASK_PROMPT_SET") {
+                    output.print("Please generate the meta-prompt first using 'generate'.");
+                    return;
+                }
+                let text;
+                if (args.length === 0) {
+                    text = openEditor("task-prompt", getTaskPrompt());
+                } else {
+                    text = args.join(" ");
+                }
+
+                if (text && text.trim()) {
+                    setTaskPrompt(text.trim());
+                    setPhase("TASK_PROMPT_SET");
+                    output.print("Task prompt set. You can now 'show' or 'copy' the final output.");
+                } else {
+                    output.print("Task prompt not set (no content provided).");
+                }
             }
         },
         show: {
-            description: "Show meta or final output",
-            usage: "show [meta]",
+            description: "Show meta, task prompt, or final output",
+            usage: "show [meta|prompt]",
             handler: function (args) {
-                if ((args[0] || "") === 'meta' || getPhase() !== 'GENERATED') {
-                    output.print(buildMetaPrompt());
+                const target = args[0] || "";
+                if (target === 'meta') {
+                    output.print(getMetaPrompt());
+                } else if (target === 'prompt') {
+                    output.print(getTaskPrompt());
                 } else {
-                    output.print(assembleFinal());
+                    // Default behavior
+                    if (getPhase() === 'TASK_PROMPT_SET') {
+                        output.print(assembleFinal());
+                    } else {
+                        output.print(getMetaPrompt());
+                    }
                 }
             }
         },
         copy: {
-            description: "Copy meta or final output to clipboard",
-            usage: "copy [meta]",
+            description: "Copy meta, task prompt, or final output to clipboard",
+            usage: "copy [meta|prompt]",
             handler: function (args) {
-                const meta = (args[0] || "") === 'meta';
-                const text = meta ? buildMetaPrompt() : assembleFinal();
+                const target = args[0] || "";
+                let text;
+                let label;
+
+                if (target === 'meta') {
+                    text = getMetaPrompt();
+                    label = "Meta prompt";
+                } else if (target === 'prompt') {
+                    text = getTaskPrompt();
+                    label = "Task prompt";
+                } else {
+                    // Default behavior
+                    if (getPhase() === 'TASK_PROMPT_SET') {
+                        text = assembleFinal();
+                        label = "Final output";
+                    } else {
+                        text = getMetaPrompt();
+                        label = "Meta prompt";
+                    }
+                }
+
                 const err = system.clipboardCopy(text);
                 if (err && err.message) {
                     output.print("Clipboard error: " + err.message);
                 } else {
-                    output.print((meta ? "Meta" : "Final") + " output copied to clipboard.");
+                    output.print(label + " copied to clipboard.");
                 }
             }
         },

@@ -245,11 +245,12 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 			suffixes := make(map[string]string, len(arr))
 			for _, c := range arr {
 				n := len(c.parts)
-				if depth > n {
-					// If depth exceeds, use full path
-					depth = n
+				// Use an effective depth per path; never mutate the outer loop counter
+				effectiveDepth := depth
+				if effectiveDepth > n {
+					effectiveDepth = n
 				}
-				start := n - depth
+				start := n - effectiveDepth
 				if start < 0 {
 					start = 0
 				}

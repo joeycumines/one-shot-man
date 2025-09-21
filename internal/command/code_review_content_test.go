@@ -36,7 +36,7 @@ func TestCodeReviewScript_Content(t *testing.T) {
 		"codeReviewTemplate",
 		"context.toTxtar()",
 		"pb.setTemplate(codeReviewTemplate)",
-		"pb.setVariable(\"context_txtar\", txtar)",
+		"pb.setVariable(\"context_txtar\", fullContext)",
 		"Code Review: context -> single prompt for PR review",
 		"Commands: add, diff, note, list, edit, remove, show, copy, help, exit",
 	}

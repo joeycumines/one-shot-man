@@ -59,7 +59,7 @@ func TestCodeReviewCommand_FullWorkflow(t *testing.T) {
 		"function buildPrompt()",
 		"codeReviewTemplate",
 		"pb.setTemplate(codeReviewTemplate)",
-		"pb.setVariable(\"context_txtar\", txtar)",
+		"pb.setVariable(\"context_txtar\", fullContext)",
 	}
 
 	for _, element := range expectedScriptElements {

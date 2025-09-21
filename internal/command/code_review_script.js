@@ -95,11 +95,33 @@ function buildPrompt() {
     }
     setItems(list);
     
-    // Leverage context manager txtar dump
-    const txtar = context.toTxtar();
+    // Build the final prompt with template and context
+    const parts = [];
     const pb = tui.createPromptBuilder("review", "Build code review prompt");
     pb.setTemplate(codeReviewTemplate);
-    pb.setVariable("context_txtar", txtar);
+    
+    // Build context that includes both files and diff items
+    const contextParts = [];
+    
+    // Add notes and diffs from JavaScript items
+    for (const it of items()) {
+        if (it.type === "note") {
+            contextParts.push("### Note: " + (it.label || "note") + "\n\n" + it.payload + "\n\n---\n");
+        } else if (it.type === "diff") {
+            contextParts.push("### Diff: " + (it.label || "git diff") + "\n\n```diff\n" + (it.payload || "") + "\n```\n\n---\n");
+        } else if (it.type === "diff-error") {
+            contextParts.push("### Diff Error: " + (it.label || "git diff") + "\n\n" + it.payload + "\n\n---\n");
+        }
+    }
+    
+    // Add the txtar dump for tracked files
+    const txtar = context.toTxtar();
+    if (txtar && txtar.trim()) {
+        contextParts.push("```\n" + txtar + "\n```");
+    }
+    
+    const fullContext = contextParts.join("\n");
+    pb.setVariable("context_txtar", fullContext);
     return pb.build();
 }
 

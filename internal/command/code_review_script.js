@@ -131,8 +131,6 @@ function buildPrompt() {
     // Build context that includes both files and diff items
     const contextParts = [];
 
-    // Process all context items from the state. For lazy-diff items,
-    // execute the git diff command just-in-time without mutating the state.
     for (const it of items()) {
         if (it.type === "note") {
             contextParts.push("### Note: " + (it.label || "note") + "\n\n" + it.payload + "\n\n---\n");
@@ -141,19 +139,16 @@ function buildPrompt() {
         } else if (it.type === "diff-error") {
             contextParts.push("### Diff Error: " + (it.label || "git diff") + "\n\n" + it.payload + "\n\n---\n");
         } else if (it.type === "lazy-diff") {
-            // Execute the git diff command now
+            // Resolve the diff just-in-time without mutating state
             const diffArgs = Array.isArray(it.payload) ? it.payload : parseArgv(it.payload || "");
             const argv = ["git", "diff"].concat(diffArgs);
             const res = system.execv(argv);
-
-            if (res && res.error) {
-                // If git diff fails, format the error into the prompt
-                const errorMessage = "Error executing git diff: " + res.message;
-                contextParts.push("### Diff Error: " + (it.label || "git diff") + "\n\n" + errorMessage + "\n\n---\n");
+            if (!res || res.error) {
+                const msg = res ? res.message : "Execution failed";
+                contextParts.push("### Diff Error: " + (it.label || "git diff") + "\n\n" + ("Error executing git diff: " + msg) + "\n\n---\n");
             } else {
-                // Format the actual diff output into the prompt
-                const diffOutput = res.stdout || "";
-                contextParts.push("### Diff: " + (it.label || "git diff") + "\n\n```diff\n" + diffOutput + "\n```\n\n---\n");
+                const out = res.stdout || "";
+                contextParts.push("### Diff: " + (it.label || "git diff") + "\n\n```diff\n" + out + "\n```\n\n---\n");
             }
         }
     }
@@ -228,7 +223,11 @@ function buildCommands() {
             description: "List context items",
             handler: function () {
                 for (const it of items()) {
-                    output.print("[" + it.id + "] [" + it.type + "] " + (it.label || ""));
+                    let line = "[" + it.id + "] [" + it.type + "] " + (it.label || "");
+                    if (it.type === 'file' && it.label && !system.fileExists(it.label)) {
+                        line += " (missing)";
+                    }
+                    output.print(line);
                 }
             }
         },

@@ -174,24 +174,24 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 
 		output.print("LAZY_DIFF_TEST_6_PASS");
 
-		// Test 7: Build prompt should execute the lazy diffs
+		// Test 7: Build prompt should execute the lazy diffs (without mutating state)
 		try {
 			const prompt = buildPrompt();
-
+			let executed = 0;
+			if (prompt.includes("### Diff:")) executed++;
+			if (prompt.includes("### Diff Error:")) executed++;
+			if (executed < 1) {
+				throw new Error("Expected at least 1 executed diff in prompt output");
+			}
 			const afterBuild = items();
-			let executedDiffs = 0;
+			let mutated = false;
 			for (const item of afterBuild) {
-				if (item.type === "diff" || item.type === "diff-error") {
-					executedDiffs++;
-				}
+				if (item.type === "diff" || item.type === "diff-error") mutated = true;
 			}
-
-			if (executedDiffs < 1) {
-				throw new Error("Expected at least 1 executed diff after buildPrompt, got: " + executedDiffs);
+			if (mutated) {
+				throw new Error("Items mutated unexpectedly; expected lazy-diff to remain");
 			}
-
 			output.print("LAZY_DIFF_TEST_7_PASS");
-
 		} catch (e) {
 			output.print("LAZY_DIFF_TEST_7_FAIL: " + e.message);
 		}

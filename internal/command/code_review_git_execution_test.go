@@ -51,16 +51,21 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 		try {
 			const prompt = buildPrompt();
 			
-			// Check if the lazy diff was executed
-			const updatedItems = items();
-			const executedDiffItem = updatedItems[updatedItems.length - 1];
-			
-			if (executedDiffItem.type === "diff") {
+			// Check if the lazy diff was executed within the prompt output
+			if (prompt.includes("### Diff:")) {
 				output.print("GIT_DIFF_EXECUTED_SUCCESS");
-			} else if (executedDiffItem.type === "diff-error") {
+			} else if (prompt.includes("### Diff Error:")) {
 				output.print("GIT_DIFF_EXECUTED_ERROR");
 			} else {
-				output.print("GIT_DIFF_NOT_EXECUTED: " + executedDiffItem.type);
+				output.print("GIT_DIFF_NOT_EXECUTED_IN_PROMPT");
+			}
+
+			// Ensure state remains lazy (non-mutating behavior)
+			const stillLazy = items()[items().length - 1];
+			if (stillLazy && stillLazy.type === 'lazy-diff') {
+				output.print("STATE_REMAINS_LAZY");
+			} else {
+				output.print("STATE_MUTATED_UNEXPECTEDLY: " + (stillLazy ? stillLazy.type : 'missing'));
 			}
 			
 			// Check that prompt contains the template

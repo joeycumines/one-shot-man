@@ -204,7 +204,17 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 		if cp.Type != "file" {
 			continue
 		}
-		e := entry{key: k, path: cp.Path, content: cp.Content}
+		// Determine absolute path to read from disk.
+		absPath := cp.Path
+		if !filepath.IsAbs(absPath) {
+			absPath = filepath.Join(cm.basePath, cp.Path)
+		}
+		// Read the latest content from disk; silently skip on error (e.g., file removed).
+		data, err := os.ReadFile(absPath)
+		if err != nil {
+			continue
+		}
+		e := entry{key: k, path: cp.Path, content: string(data)}
 		files = append(files, e)
 		base := filepath.Base(cp.Path)
 		baseGroups[base] = append(baseGroups[base], e)

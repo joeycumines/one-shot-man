@@ -241,7 +241,11 @@ function buildCommands() {
                 const task = getTaskPrompt();
                 if (task) output.print("[prompt] " + task.slice(0, 80) + (task.length > 80 ? "..." : ""));
                 for (const it of items()) {
-                    output.print("[" + it.id + "] [" + it.type + "] " + (it.label || ""));
+                    let line = "[" + it.id + "] [" + it.type + "] " + (it.label || "");
+                    if (it.type === 'file' && it.label && !system.fileExists(it.label)) {
+                        line += " (missing)";
+                    }
+                    output.print(line);
                 }
             }
         },

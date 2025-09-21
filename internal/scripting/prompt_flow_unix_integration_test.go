@@ -280,6 +280,127 @@ func processString(s string) string {
 	requireExpectExitCode(t, cp, 0)
 }
 
+// TestPromptFlow_Unix_ListShowsMissing verifies that when a tracked file is removed from disk,
+// the prompt-flow list command shows a "(missing)" indicator next to the file item label.
+func TestPromptFlow_Unix_ListShowsMissing(t *testing.T) {
+	if !isUnixPlatform() {
+		t.Skip("Unix-only integration test")
+	}
+
+	binaryPath := buildTestBinary(t)
+	defer os.Remove(binaryPath)
+
+	workspace := createTestWorkspace(t)
+	defer os.RemoveAll(workspace)
+
+	// Create a file, add it, then remove it and ensure list shows (missing)
+	filePath := filepath.Join(workspace, "gone.txt")
+	if err := os.WriteFile(filePath, []byte("hello\n"), 0644); err != nil {
+		t.Fatalf("Failed to create file: %v", err)
+	}
+
+	editorScript := createFakeEditor(t, workspace)
+
+	opts := termtest.Options{
+		CmdName:        binaryPath,
+		Args:           []string{"prompt-flow", "-i"},
+		DefaultTimeout: 30 * time.Second,
+		Env: []string{
+			"EDITOR=" + editorScript,
+			"VISUAL=",
+			"ONESHOT_CLIPBOARD_CMD=cat > /dev/null",
+		},
+	}
+
+	cp, err := termtest.NewTest(t, opts)
+	if err != nil {
+		t.Fatalf("Failed to create termtest: %v", err)
+	}
+	defer cp.Close()
+
+	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
+	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+
+	// Add the file and verify it's listed
+	cp.SendLine("add " + filePath)
+	requireExpect(t, cp, "Added file:")
+
+	// Remove the file from disk
+	if err := os.Remove(filePath); err != nil {
+		t.Fatalf("Failed to remove file: %v", err)
+	}
+
+	// List should now show (missing)
+	cp.SendLine("list")
+	requireExpect(t, cp, "(missing)")
+
+	cp.SendLine("exit")
+	requireExpectExitCode(t, cp, 0)
+}
+
+// TestPromptFlow_Unix_DiskReadInMeta ensures that context.toTxtar() reflects latest disk content
+// by modifying a file after adding it, then generating meta and verifying updated content appears.
+func TestPromptFlow_Unix_DiskReadInMeta(t *testing.T) {
+	if !isUnixPlatform() {
+		t.Skip("Unix-only integration test")
+	}
+
+	binaryPath := buildTestBinary(t)
+	defer os.Remove(binaryPath)
+
+	workspace := createTestWorkspace(t)
+	defer os.RemoveAll(workspace)
+
+	filePath := filepath.Join(workspace, "live.txt")
+	if err := os.WriteFile(filePath, []byte("v1\n"), 0644); err != nil {
+		t.Fatalf("Failed to create file: %v", err)
+	}
+
+	editorScript := createFakeEditor(t, workspace)
+
+	opts := termtest.Options{
+		CmdName:        binaryPath,
+		Args:           []string{"prompt-flow", "-i"},
+		DefaultTimeout: 30 * time.Second,
+		Env: []string{
+			"EDITOR=" + editorScript,
+			"VISUAL=",
+			"ONESHOT_CLIPBOARD_CMD=cat > /dev/null",
+		},
+	}
+
+	cp, err := termtest.NewTest(t, opts)
+	if err != nil {
+		t.Fatalf("Failed to create termtest: %v", err)
+	}
+	defer cp.Close()
+
+	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
+	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+
+	// Set goal to reach meta generation phase
+	cp.SendLine("goal test live updates")
+	requireExpect(t, cp, "Goal set.")
+
+	// Add file
+	cp.SendLine("add " + filePath)
+	requireExpect(t, cp, "Added file:")
+
+	// Update file content on disk
+	if err := os.WriteFile(filePath, []byte("v2-updated\n"), 0644); err != nil {
+		t.Fatalf("Failed to update file: %v", err)
+	}
+
+	// Generate meta and expect updated content to appear via txtar
+	cp.SendLine("generate")
+	requireExpect(t, cp, "Meta-prompt generated.")
+	cp.SendLine("show meta")
+	requireExpect(t, cp, "v2-updated")
+
+	cp.SendLine("exit")
+	requireExpectExitCode(t, cp, 0)
+}
+
 // TestPromptFlow_Unix_DifferentTemplateConfigurations tests various template
 // customizations to ensure the templating system works correctly.
 func TestPromptFlow_Unix_DifferentTemplateConfigurations(t *testing.T) {

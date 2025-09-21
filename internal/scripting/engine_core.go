@@ -243,7 +243,17 @@ func (e *Engine) setupGlobals() {
 		"openEditor":    e.jsSystemOpenEditor,
 		"clipboardCopy": e.jsSystemClipboardCopy,
 		"readFile":      e.jsSystemReadFile,
+		"fileExists":    e.jsSystemFileExists,
 	})
+}
+
+// jsSystemFileExists checks whether a file or directory exists at the given path.
+func (e *Engine) jsSystemFileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // readFile reads a file and returns its content as a string.

@@ -62,7 +62,7 @@ func buildTestBinary(t *testing.T) string {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 
-	binaryPath := filepath.Join(tempDir, "one-shot-man")
+	binaryPath := filepath.Join(tempDir, "osm")
 
 	wd, err := os.Getwd()
 	if err != nil {
@@ -70,7 +70,7 @@ func buildTestBinary(t *testing.T) string {
 	}
 	projectRoot := filepath.Clean(filepath.Join(wd, "..", ".."))
 
-	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/one-shot-man")
+	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/osm")
 	cmd.Dir = projectRoot
 
 	output, err := cmd.CombinedOutput()

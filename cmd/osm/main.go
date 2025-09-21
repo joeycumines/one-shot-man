@@ -14,7 +14,7 @@ const version = "0.1.0"
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -74,17 +74,17 @@ func run() error {
 	// Get the command
 	cmd, err := registry.Get(cmdName)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmdName)
-		fmt.Fprintln(os.Stderr, "Use 'one-shot-man help' to see available commands.")
+		_, _ = fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmdName)
+		_, _ = fmt.Fprintln(os.Stderr, "Use 'osm help' to see available commands.")
 		return err
 	}
 
 	// Create flag set for this command
 	fs := flag.NewFlagSet(cmd.Name(), flag.ExitOnError)
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: %s\n", cmd.Usage())
-		fmt.Fprintf(os.Stderr, "\n%s\n\n", cmd.Description())
-		fmt.Fprintln(os.Stderr, "Options:")
+		_, _ = fmt.Fprintf(os.Stderr, "Usage: %s\n", cmd.Usage())
+		_, _ = fmt.Fprintf(os.Stderr, "\n%s\n\n", cmd.Description())
+		_, _ = fmt.Fprintln(os.Stderr, "Options:")
 		fs.PrintDefaults()
 	}
 

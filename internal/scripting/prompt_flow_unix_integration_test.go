@@ -20,7 +20,7 @@ func Example() {
 	// to build a prompt for implementing metrics in a Java application
 
 	// Step 1: Start prompt-flow
-	// one-shot-man prompt-flow
+	// osm prompt-flow
 
 	// Step 2: Set a goal
 	// goal "Add JMX metrics to monitor thread pool performance"

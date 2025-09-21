@@ -1,5 +1,5 @@
 // LLM Prompt Builder Mode - Demonstrates rich TUI for building one-shot prompts
-// Usage: one-shot-man script -i scripts/llm-prompt-builder.js
+// Usage: osm script -i scripts/llm-prompt-builder.js
 
 ctx.log("Initializing LLM Prompt Builder mode...");
 

@@ -291,7 +291,7 @@ func (tm *TUIManager) runAdvancedPrompt() {
 	}
 
 	// Add default history support
-	defaultHistoryFile := ".one-shot-man_history"
+	defaultHistoryFile := ".osm_history"
 	if history := loadHistory(defaultHistoryFile); len(history) > 0 {
 		options = append(options, prompt.WithHistory(history))
 	}

@@ -1,5 +1,5 @@
 // Debug script to test TUI API bindings
-// Usage: one-shot-man script --test scripts/debug-tui.js
+// Usage: osm script --test scripts/debug-tui.js
 
 ctx.log("Testing TUI API bindings...");
 

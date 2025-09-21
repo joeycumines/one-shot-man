@@ -1,5 +1,5 @@
 // Demo Mode - Simple example of rich TUI mode system
-// Usage: one-shot-man script -i scripts/demo-mode.js
+// Usage: osm script -i scripts/demo-mode.js
 
 ctx.log("Setting up demo mode...");
 

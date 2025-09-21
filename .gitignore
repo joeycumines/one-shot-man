@@ -32,9 +32,8 @@ go.work.sum
 # .vscode/
 
 # Built binaries
-/one-shot-man
-/cmd/one-shot-man/one-shot-man
-/bin/one-shot-man
+/cmd/osm/osm
+/osm
 
 # Makefile user configuration
 /config.mk

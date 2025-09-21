@@ -32,22 +32,22 @@ func NewHelpCommand(registry *Registry) *HelpCommand {
 func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		// Show general help and list all commands
-		fmt.Fprintln(stdout, "one-shot-man - Command one-shot-man lets you produce high quality implementations with drastically less effort")
-		fmt.Fprintln(stdout, "")
-		fmt.Fprintln(stdout, "Usage: one-shot-man <command> [options] [args...]")
-		fmt.Fprintln(stdout, "")
-		fmt.Fprintln(stdout, "Available commands:")
+		_, _ = fmt.Fprintln(stdout, "one-shot-man - produce higher quality implementations with less effort")
+		_, _ = fmt.Fprintln(stdout, "")
+		_, _ = fmt.Fprintln(stdout, "Usage: osm <command> [options] [args...]")
+		_, _ = fmt.Fprintln(stdout, "")
+		_, _ = fmt.Fprintln(stdout, "Available commands:")
 
 		w := tabwriter.NewWriter(stdout, 0, 8, 2, ' ', 0)
 
 		// List built-in commands
 		builtins := c.registry.ListBuiltin()
 		if len(builtins) > 0 {
-			fmt.Fprintln(w, "")
-			fmt.Fprintln(w, "Built-in commands:")
+			_, _ = fmt.Fprintln(w, "")
+			_, _ = fmt.Fprintln(w, "Built-in commands:")
 			for _, name := range builtins {
 				if cmd, err := c.registry.Get(name); err == nil {
-					fmt.Fprintf(w, "  %s\t%s\n", name, cmd.Description())
+					_, _ = fmt.Fprintf(w, "  %s\t%s\n", name, cmd.Description())
 				}
 			}
 		}
@@ -55,17 +55,17 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		// List script commands
 		scripts := c.registry.ListScript()
 		if len(scripts) > 0 {
-			fmt.Fprintln(w, "")
-			fmt.Fprintln(w, "Script commands:")
+			_, _ = fmt.Fprintln(w, "")
+			_, _ = fmt.Fprintln(w, "Script commands:")
 			for _, name := range scripts {
-				fmt.Fprintf(w, "  %s\t%s\n", name, "Script command")
+				_, _ = fmt.Fprintf(w, "  %s\t%s\n", name, "Script command")
 			}
 		}
 
-		w.Flush()
+		_ = w.Flush()
 
-		fmt.Fprintln(stdout, "")
-		fmt.Fprintln(stdout, "Use 'one-shot-man help <command>' for more information about a specific command.")
+		_, _ = fmt.Fprintln(stdout, "")
+		_, _ = fmt.Fprintln(stdout, "Use 'osm help <command>' for more information about a specific command.")
 		return nil
 	}
 
@@ -73,13 +73,13 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	cmdName := args[0]
 	cmd, err := c.registry.Get(cmdName)
 	if err != nil {
-		fmt.Fprintf(stderr, "Unknown command: %s\n", cmdName)
+		_, _ = fmt.Fprintf(stderr, "Unknown command: %s\n", cmdName)
 		return err
 	}
 
-	fmt.Fprintf(stdout, "Command: %s\n", cmd.Name())
-	fmt.Fprintf(stdout, "Description: %s\n", cmd.Description())
-	fmt.Fprintf(stdout, "Usage: %s\n", cmd.Usage())
+	_, _ = fmt.Fprintf(stdout, "Command: %s\n", cmd.Name())
+	_, _ = fmt.Fprintf(stdout, "Description: %s\n", cmd.Description())
+	_, _ = fmt.Fprintf(stdout, "Usage: %s\n", cmd.Usage())
 
 	return nil
 }
@@ -104,7 +104,7 @@ func NewVersionCommand(version string) *VersionCommand {
 
 // Execute displays version information.
 func (c *VersionCommand) Execute(args []string, stdout, stderr io.Writer) error {
-	fmt.Fprintf(stdout, "one-shot-man version %s\n", c.version)
+	_, _ = fmt.Fprintf(stdout, "one-shot-man version %s\n", c.version)
 	return nil
 }
 
@@ -139,32 +139,32 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		if c.showAll {
 			// Show all configuration
-			fmt.Fprintln(stdout, "Global configuration:")
+			_, _ = fmt.Fprintln(stdout, "Global configuration:")
 			for key, value := range c.config.Global {
-				fmt.Fprintf(stdout, "  %s: %s\n", key, value)
+				_, _ = fmt.Fprintf(stdout, "  %s: %s\n", key, value)
 			}
-			fmt.Fprintln(stdout, "\nCommand-specific configuration:")
+			_, _ = fmt.Fprintln(stdout, "\nCommand-specific configuration:")
 			for cmd, options := range c.config.Commands {
-				fmt.Fprintf(stdout, "  [%s]\n", cmd)
+				_, _ = fmt.Fprintf(stdout, "  [%s]\n", cmd)
 				for key, value := range options {
-					fmt.Fprintf(stdout, "    %s: %s\n", key, value)
+					_, _ = fmt.Fprintf(stdout, "    %s: %s\n", key, value)
 				}
 			}
 			return nil
 		} else if c.showGlobal {
 			// Show global configuration only
-			fmt.Fprintln(stdout, "Global configuration:")
+			_, _ = fmt.Fprintln(stdout, "Global configuration:")
 			for key, value := range c.config.Global {
-				fmt.Fprintf(stdout, "  %s: %s\n", key, value)
+				_, _ = fmt.Fprintf(stdout, "  %s: %s\n", key, value)
 			}
 			return nil
 		} else {
 			// Show usage
-			fmt.Fprintln(stdout, "Configuration management:")
-			fmt.Fprintln(stdout, "  config <key>          - Get configuration value")
-			fmt.Fprintln(stdout, "  config <key> <value>  - Set configuration value")
-			fmt.Fprintln(stdout, "  config --global       - Show global configuration")
-			fmt.Fprintln(stdout, "  config --all          - Show all configuration")
+			_, _ = fmt.Fprintln(stdout, "Configuration management:")
+			_, _ = fmt.Fprintln(stdout, "  config <key>          - Get configuration value")
+			_, _ = fmt.Fprintln(stdout, "  config <key> <value>  - Set configuration value")
+			_, _ = fmt.Fprintln(stdout, "  config --global       - Show global configuration")
+			_, _ = fmt.Fprintln(stdout, "  config --all          - Show all configuration")
 			return nil
 		}
 	}
@@ -173,9 +173,9 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		// Get configuration value
 		key := args[0]
 		if value, exists := c.config.GetGlobalOption(key); exists {
-			fmt.Fprintf(stdout, "%s: %s\n", key, value)
+			_, _ = fmt.Fprintf(stdout, "%s: %s\n", key, value)
 		} else {
-			fmt.Fprintf(stdout, "Configuration key '%s' not found\n", key)
+			_, _ = fmt.Fprintf(stdout, "Configuration key '%s' not found\n", key)
 		}
 		return nil
 	}
@@ -184,11 +184,11 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		// Set configuration value
 		key, value := args[0], args[1]
 		c.config.SetGlobalOption(key, value)
-		fmt.Fprintf(stdout, "Set configuration: %s = %s\n", key, value)
+		_, _ = fmt.Fprintf(stdout, "Set configuration: %s = %s\n", key, value)
 		return nil
 	}
 
-	fmt.Fprintln(stderr, "Invalid number of arguments")
+	_, _ = fmt.Fprintln(stderr, "Invalid number of arguments")
 	return fmt.Errorf("invalid arguments")
 }
 
@@ -224,8 +224,8 @@ func (c *InitCommand) Execute(args []string, stdout, stderr io.Writer) error {
 
 	// Check if config already exists
 	if _, err := os.Stat(configPath); err == nil && !c.force {
-		fmt.Fprintf(stdout, "Configuration already exists at: %s\n", configPath)
-		fmt.Fprintln(stdout, "Use --force to overwrite existing configuration")
+		_, _ = fmt.Fprintf(stdout, "Configuration already exists at: %s\n", configPath)
+		_, _ = fmt.Fprintln(stdout, "Use --force to overwrite existing configuration")
 		return nil
 	}
 
@@ -275,17 +275,17 @@ format full
 	// Load and test the configuration
 	testConfig, err := config.LoadFromPath(configPath)
 	if err != nil {
-		fmt.Fprintf(stderr, "Warning: Failed to load created config: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Warning: Failed to load created config: %v\n", err)
 	} else {
 		// Test the configuration functions
 		if verbose, exists := testConfig.GetGlobalOption("verbose"); exists {
-			fmt.Fprintf(stdout, "Created configuration with verbose=%s\n", verbose)
+			_, _ = fmt.Fprintf(stdout, "Created configuration with verbose=%s\n", verbose)
 		}
 		if pager, exists := testConfig.GetCommandOption("help", "pager"); exists {
-			fmt.Fprintf(stdout, "Help command will use pager: %s\n", pager)
+			_, _ = fmt.Fprintf(stdout, "Help command will use pager: %s\n", pager)
 		}
 	}
 
-	fmt.Fprintf(stdout, "Initialized one-shot-man configuration at: %s\n", configPath)
+	_, _ = fmt.Fprintf(stdout, "Initialized one-shot-man configuration at: %s\n", configPath)
 	return nil
 }

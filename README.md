@@ -1,6 +1,21 @@
 # one-shot-man
 
-Command one-shot-man lets you produce high quality implementations with drastically less effort, keeping track of your context, using a simple, extensible, REPL-based, wizard-style workflow.
+Command `osm` helps produce higher quality implementations with less effort, keeping track of your context, supporting extensible, REPL-based, stateful workflows.
+
+## What & Why
+
+The goal of the `osm` tool is to make the process of utilizing one-shot prompts as painless as possible.
+It's a TUI (terminal user interface) prompt for your prompts.
+
+There are certain use case where one-shot prompt, using the most capable "thinking" model you have access to, can really shine, e.g.:
+
+* Pre-PR and incremental code review - Detailed sanity checks, alternate perspectives, (indirect) quantification of quality
+* Iterating on complex but self-contained, often internal implementations - Precise or strictly constrained adjustments, applied consistently
+
+The nature of one-shot prompts requires scaffolding, to define (constrain) the desired output.
+One-shot prompts can also involve significant prompt and context fiddling, which can be onerous, particularly vs agentic workflows.
+
+This tool is provider-agnostic, integrating primarily via clipboard, file, and command I/O.
 
 ## Features
 
@@ -14,16 +29,10 @@ Command one-shot-man lets you produce high quality implementations with drastica
 ---
 ## Installation
 
-```bash
-go install github.com/joeycumines/one-shot-man/cmd/one-shot-man@latest
-```
+Currently, only source installation is supported. Will add pre-built binaries if this tool makes it to alpha.
 
-Or build from source:
-
-```bash
-git clone https://github.com/joeycumines/one-shot-man.git
-cd one-shot-man
-go build -o one-shot-man ./cmd/one-shot-man
+```sh
+go install github.com/joeycumines/one-shot-man/cmd/osm@latest
 ```
 
 ---
@@ -31,33 +40,26 @@ go build -o one-shot-man ./cmd/one-shot-man
 
 ### Basic Commands
 
-```bash
+```sh
 # Show help
-one-shot-man help
-
+osm help
 # Show version
-one-shot-man version
-
+osm version
 # Initialize configuration
-one-shot-man init
-
+osm init
 # Manage configuration
-one-shot-man config --all
-
+osm config --all
 # Start interactive scripting terminal (TUI)
-one-shot-man script -i
+osm script -i
 ```
 
 ### Prompt Flow Command
 
 The `prompt-flow` command provides an interactive prompt builder that follows a goal/context/template workflow to generate and assemble prompts:
 
-```bash
+```sh
 # Start the interactive prompt flow builder
-one-shot-man prompt-flow
-
-# Start in test mode (non-interactive, for testing)
-one-shot-man prompt-flow --test
+osm prompt-flow
 ```
 
 The prompt flow workflow:
@@ -107,10 +109,10 @@ format short
 - Default: `~/.one-shot-man/config`
 - Override with `ONESHOTMAN_CONFIG` environment variable
 
-```bash
+```sh
 # Use custom config location
 export ONESHOTMAN_CONFIG=/path/to/custom/config
-one-shot-man init
+osm init
 ```
 
 #### Prompt Colors (Configurable)
@@ -151,7 +153,7 @@ prompt.color.scrollbarBG black
 
 Notes:
 - Defaults: input=green, prefix=cyan, suggestionText=yellow, suggestionBG=black, selectedSuggestionText=black, selectedSuggestionBG=cyan, descriptionText=white, descriptionBG=black, selectedDescriptionText=white, selectedDescriptionBG=blue, scrollbarThumb=darkgray, scrollbarBG=black.
-- These apply to `one-shot-man script -i` and as defaults for prompts created from JavaScript (which can further override per prompt).
+- These apply to `osm script -i` and as defaults for prompts created from JavaScript (which can further override per prompt).
 
 ---
 ### Script Commands
@@ -166,7 +168,7 @@ Script commands are discovered from these locations (in order):
 Create JavaScript scripts with the deferred/declarative API:
 
 ```javascript
-// File: scripts/example.js
+// scripts/example.js
 
 ctx.log("Starting example script");
 
@@ -179,33 +181,65 @@ ctx.defer(function() {
 ctx.run("setup", function() {
     ctx.log("Setting up test environment");
     ctx.logf("Environment: %s", env("PATH") ? "defined" : "undefined");
-    
+
     ctx.defer(function() {
         ctx.log("Cleaning up test environment");
     });
 });
 
-console.log("Script execution completed successfully");
+output.print("Script execution completed successfully");
+
+ctx.log("Example script finished");
 ```
 
-Execute the script:
+Execute the script, with `--test` for debug logging, without TUI (no `-i`):
 
-```bash
-one-shot-man script scripts/example.js
+```sh
+osm script --test scripts/example.js
 ```
 
-Start an interactive session instead:
+Will output:
 
-```bash
-one-shot-man script -i
+```
+[example.js] Starting example script
+[example.js/setup] Setting up test environment
+[example.js/setup] Environment: defined
+[example.js/setup] Cleaning up test environment
+[example.js] Sub-test setup passed
+Script execution completed successfully
+[example.js] Example script finished
+[example.js] Cleaning up resources
 ```
 
-Inside the TUI, try:
+To start an interactive session in the REPL-like TUI, use `-i`:
 
-- `help` to list commands
-- `modes` to list registered modes (if your scripts define any)
-- `mode <name>` to switch modes
-- `state` to print current mode state
+```sh
+$ osm script -i
+================================================================
+WARNING: EPHEMERAL SESSION - nothing is persisted. Your work will be lost on exit.
+Save or export anything you need BEFORE quitting.
+================================================================
+one-shot-man Rich TUI Terminal
+Type 'help' for available commands, 'exit' to quit
+Available modes:
+Starting advanced go-prompt interface
+>>> help
+Available commands:
+  help                 - Show this help message
+  exit, quit           - Exit the terminal
+  mode <name>          - Switch to a mode
+  modes                - List available modes
+  state                - Show current mode state
+
+Registered commands:
+  mode                 - Switch to a different mode
+    Usage: mode <mode-name>
+  modes                - List all available modes
+  state                - Show current mode state
+
+Available modes:
+Switch to a mode to execute JavaScript code
+```
 
 ---
 ## Architecture
@@ -218,8 +252,9 @@ Inside the TUI, try:
 - `init` - Initialize the one-shot-man environment
 - `script` - Execute JavaScript scripts with deferred/declarative API
 - `prompt-flow` - Interactive prompt builder: goal/context/template -> generate -> assemble
+- `code-review` - Single-prompt code review with context: context -> generate prompt for PR review
 
-### Interactive TUI (Implemented)
+### Interactive TUI
 
 The TUI is built on go-prompt and provides:
 
@@ -231,7 +266,7 @@ The TUI is built on go-prompt and provides:
 - History loading from a file if present
 
 History:
-- The default interactive prompt will load history from `.one-shot-man_history` if it exists.
+- The default interactive prompt will load history from `.osm_history` if it exists.
 - Advanced prompts created from JavaScript can also specify a history file. (Note: history is loaded if present; automatic saving on exit is not currently implemented.)
 
 ### Command Structure
@@ -315,7 +350,7 @@ const promptName = tui.createAdvancedPrompt({
     prefix: 'demo> ',
     colors: {
         input: 'green',
-        prefix: 'cyan'
+        prefix: 'red'
     },
     history: { enabled: true, file: '.demo_history' }
 });
@@ -328,49 +363,27 @@ tui.runPrompt(promptName);
 
 Run:
 
-```bash
-one-shot-man script scripts/demo-prompt.js
+```sh
+osm script scripts/demo-mode.js
 ```
 
 ---
 ## Development
 
-### Running Tests
+Run all code quality checks:
 
-```bash
-go test ./...
-```
-
-### Building
-
-```bash
-go build -o one-shot-man ./cmd/one-shot-man
-```
-
----
-## Examples
-
-### Basic Usage
-
-```bash
-# Get help
-one-shot-man help
-
-# Initialize configuration
-one-shot-man init
-
-# Start interactive terminal
-one-shot-man script -i
+```sh
+make
 ```
 
 ### Configuration Management
 
-```bash
+```sh
 # Initialize with custom location
-ONESHOTMAN_CONFIG=/tmp/myconfig one-shot-man init
+ONESHOTMAN_CONFIG=/tmp/myconfig osm init
 
 # Force re-initialize
-one-shot-man init --force
+osm init --force
 ```
 
 ---

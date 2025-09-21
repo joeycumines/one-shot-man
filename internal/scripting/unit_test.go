@@ -225,7 +225,7 @@ func TestScriptModeExecution(t *testing.T) {
 	})
 }
 
-// buildTestBinary builds the one-shot-man binary for testing
+// buildTestBinary builds the osm binary for testing
 func buildTestBinary(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()
@@ -234,8 +234,8 @@ func buildTestBinary(t *testing.T) string {
 	}
 	// Correctly determine the project root relative to the test file's location
 	projectRoot := filepath.Clean(filepath.Join(wd, "..", ".."))
-	tempBinary := filepath.Join(t.TempDir(), "one-shot-man")
-	cmd := exec.Command("go", "build", "-o", tempBinary, "./cmd/one-shot-man")
+	tempBinary := filepath.Join(t.TempDir(), "osm")
+	cmd := exec.Command("go", "build", "-o", tempBinary, "./cmd/osm")
 	cmd.Dir = projectRoot
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("Failed to build test binary: %v\nOutput: %s", err, output)

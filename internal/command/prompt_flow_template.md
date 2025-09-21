@@ -7,8 +7,10 @@
 !! Plan for the entire "IMPLEMENTATIONS/CONTEXT" section to be attached after the prompt (with heading). !!
 
 !! **GOAL:** !!
+{{goal}}
 
 !! **IMPLEMENTATIONS/CONTEXT:** !!
+{{context_txtar}}
 
 !! **TEMPLATE:** !!
 ``````
@@ -34,7 +36,5 @@ Think deeply about what is actually the correct and desired behavior here.
 
 You MUST be able to guarantee that the solution is fit for purpose.
 ``````
-
-!! **CRITICAL: If you do not rewrite the template IN FULL or fail to retain the STRUCTURE of the template AS CLOSE AS POSSIBLE per my SPECIFIC ASK, you have failed. N.B. The rewrite may (and should, if suitable) entail the same content as originally, for _some_ sections.** !!
 
 !! **CRITICAL: If you do not rewrite the template IN FULL or fail to retain the STRUCTURE of the template AS CLOSE AS POSSIBLE per my SPECIFIC ASK, you have failed. N.B. The rewrite may (and should, if suitable) entail the same content as originally, for _some_ sections.** !!

@@ -1,6 +1,5 @@
-// Prompt Flow: Single-file, goal/context/template-driven prompt builder
-// Usage: one-shot-man script -i scripts/prompt-flow.js
-// This demonstrates the plan.md design with INITIAL/CONTEXT_BUILDING/GENERATED states.
+// Prompt Flow: Single-file, goal/context/template-driven prompt builder (baked-in version)
+// This is the built-in version of the prompt-flow script with embedded template
 
 // State keys
 const STATE = {
@@ -63,18 +62,17 @@ function help() {
 }
 
 function defaultTemplate() {
-    try {
-        // Try to read template file if present to avoid duplication
-        const res = system.readFile && system.readFile("scripts/prompt-flow-template.md");
-        if (res && res.content && !res.error) return res.content;
-    } catch (e) {
-        // ignore and fallback
-    }
-    return [
-        "!! Generate a prompt using the template for purposes of achieving the following goal. !!", "",
-        "!! **GOAL:** !!", "{{goal}}", "",
-        "!! **IMPLEMENTATIONS/CONTEXT:** !!", "{{context_txtar}}"
-    ].join("\n");
+    // Use the embedded template content passed from the Go command
+    // This ensures we use the single source of truth from prompt_flow_template.md
+    return promptFlowTemplate || `!! N.B. only statements surrounded by "!!" are _instructions_. !!
+
+!! Generate a prompt using the template for purposes of achieving the following goal. !!
+
+!! **GOAL:** !!
+{{goal}}
+
+!! **IMPLEMENTATIONS/CONTEXT:** !!
+{{context_txtar}}`;
 }
 
 function setPhase(p) {
@@ -322,9 +320,13 @@ function buildCommands() {
         generate: {
             description: "Generate the main prompt using the meta-prompt",
             handler: function () {
+                output.print("[flow] generate: start");
                 const meta = buildMetaPrompt();
+                output.print("[flow] generate: built meta");
                 // For now, simple: take meta as the prompt seed. In a real flow, send to LLM.
-                setPrompt(openEditor("generated-prompt", meta));
+                const edited = openEditor("generated-prompt", meta);
+                output.print("[flow] generate: editor returned");
+                setPrompt(edited);
                 setPhase("GENERATED");
                 output.print("Generated. You can now 'show' or 'copy'.");
             }

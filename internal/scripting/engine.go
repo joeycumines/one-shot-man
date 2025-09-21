@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -631,16 +632,21 @@ func (e *Engine) jsSystemOpenEditor(nameHint string, initialContent string) stri
 	if nameHint == "" {
 		nameHint = "oneshot"
 	}
-	tmpFile, err := os.CreateTemp("", fmt.Sprintf("one-shot-man-%s-*.txt", sanitizeFilename(nameHint)))
+	// Create a temporary directory to avoid filename collisions
+	dir, err := os.MkdirTemp("", "one-shot-man-editor-*")
 	if err != nil {
 		return initialContent
 	}
-	path := tmpFile.Name()
-	if _, err := tmpFile.WriteString(initialContent); err != nil {
-		_ = tmpFile.Close()
+	// Use the sanitized hint as the exact basename to support tests that match on it
+	base := sanitizeFilename(nameHint)
+	if base == "" {
+		base = "oneshot"
+	}
+	path := filepath.Join(dir, base)
+	if err := os.WriteFile(path, []byte(initialContent), 0600); err != nil {
+		_ = os.RemoveAll(dir)
 		return initialContent
 	}
-	_ = tmpFile.Close()
 
 	// Choose editor per-OS with sensible defaults
 	editor := os.Getenv("VISUAL")
@@ -675,7 +681,7 @@ func (e *Engine) jsSystemOpenEditor(nameHint string, initialContent string) stri
 	if err := cmd.Run(); err != nil {
 		// Return initial content if editor failed
 		data, _ := os.ReadFile(path)
-		_ = os.Remove(path)
+		_ = os.RemoveAll(dir)
 		if len(data) > 0 {
 			return string(data)
 		}
@@ -683,7 +689,7 @@ func (e *Engine) jsSystemOpenEditor(nameHint string, initialContent string) stri
 	}
 
 	data, readErr := os.ReadFile(path)
-	_ = os.Remove(path)
+	_ = os.RemoveAll(dir)
 	if readErr != nil {
 		return initialContent
 	}

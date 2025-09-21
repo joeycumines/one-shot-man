@@ -229,7 +229,7 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 
 func setupTestRepo(t *testing.T, dir string) {
 	// Initialize git repo
-	runGitCommand(t, dir, "init")
+	runGitCommand(t, dir, "-c", "advice.defaultBranchName=false", "-c", "init.defaultBranch=main", "init", "-q")
 	runGitCommand(t, dir, "config", "user.name", "Test User")
 	runGitCommand(t, dir, "config", "user.email", "test@example.com")
 
@@ -261,7 +261,10 @@ func setupTestRepo(t *testing.T, dir string) {
 func runGitCommand(t *testing.T, dir string, args ...string) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("Git command failed: git %v, error: %v", args, err)
+		t.Fatalf("Git command failed: git %v, error: %v\nstdout: %s\nstderr: %s", args, err, stdout.String(), stderr.String())
 	}
 }

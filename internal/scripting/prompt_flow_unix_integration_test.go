@@ -3,8 +3,10 @@
 package scripting
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -326,9 +328,11 @@ func TestPromptFlow_Unix_DifferentTemplateConfigurations(t *testing.T) {
 	}
 
 	// Generate with custom template
+	// Clear any prior output to avoid races where output is produced before we record the offset
+	cp.ClearOutput()
 	cp.SendLine("generate")
-	// After generate, we should see the generated message; ensure it's new output
-	raw, err = cp.ExpectNew("Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.", 30*time.Second)
+	// After generate, we should see the generated message
+	raw, err = cp.Expect("Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.", 30*time.Second)
 	if err != nil {
 		t.Fatalf("Expected generate message, got error: %v\nRaw:\n%s", err, raw)
 	}
@@ -587,7 +591,8 @@ func setupGitRepository(t *testing.T, workspace string) {
 	t.Helper()
 
 	// Initialize git repo
-	runCommand(t, workspace, "git", "init")
+	// Suppress default-branch hints and keep quiet to avoid polluting PTY/test output
+	runCommand(t, workspace, "git", "-c", "advice.defaultBranchName=false", "-c", "init.defaultBranch=main", "init", "-q")
 	runCommand(t, workspace, "git", "config", "user.name", "Test User")
 	runCommand(t, workspace, "git", "config", "user.email", "test@example.com")
 
@@ -626,28 +631,15 @@ func main() {
 func runCommand(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
 
-	// Build the command properly
-	fullArgs := []string{name}
-	fullArgs = append(fullArgs, args...)
-	cmd := strings.Join(fullArgs, " ")
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Env = os.Environ()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
-	// Use sh -c to run the command
-	proc, err := os.StartProcess("/bin/sh", []string{"sh", "-c", cmd}, &os.ProcAttr{
-		Dir:   dir,
-		Env:   os.Environ(),
-		Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
-	})
-	if err != nil {
-		t.Fatalf("Failed to start command %s: %v", cmd, err)
-	}
-
-	state, err := proc.Wait()
-	if err != nil {
-		t.Fatalf("Failed to wait for command %s: %v", cmd, err)
-	}
-
-	if !state.Success() {
-		t.Fatalf("Command %s failed with exit code %d", cmd, state.ExitCode())
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Command %s %s failed: %v\nstdout: %s\nstderr: %s", name, strings.Join(args, " "), err, stdout.String(), stderr.String())
 	}
 }
 

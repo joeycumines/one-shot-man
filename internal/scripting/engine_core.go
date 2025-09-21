@@ -13,7 +13,7 @@ import (
 // Engine represents a JavaScript scripting engine with deferred execution capabilities.
 type Engine struct {
 	vm             *goja.Runtime
-	scripts        []Script
+	scripts        []*Script
 	ctx            context.Context
 	stdout         io.Writer
 	stderr         io.Writer
@@ -30,7 +30,6 @@ type Script struct {
 	Path        string
 	Content     string
 	Description string
-	deferred    []func() error
 }
 
 // NewEngine creates a new JavaScript scripting engine.
@@ -57,6 +56,15 @@ func NewEngine(ctx context.Context, stdout, stderr io.Writer) *Engine {
 	// Set up the global context and APIs
 	engine.setupGlobals()
 
+	// Interrupt JS execution when context is cancelled
+	go func() {
+		<-ctx.Done()
+		// It's safe to call Interrupt from another goroutine.
+		if engine.vm != nil {
+			engine.vm.Interrupt(ctx.Err())
+		}
+	}()
+
 	return engine
 }
 
@@ -79,31 +87,29 @@ func (e *Engine) LoadScript(name, path string) (*Script, error) {
 	}
 
 	script := &Script{
-		Name:     name,
-		Path:     path,
-		Content:  content,
-		deferred: make([]func() error, 0),
+		Name:    name,
+		Path:    path,
+		Content: content,
 	}
 
-	e.scripts = append(e.scripts, *script)
+	e.scripts = append(e.scripts, script)
 	return script, nil
 }
 
 // LoadScriptFromString loads a JavaScript script from a string.
 func (e *Engine) LoadScriptFromString(name, content string) *Script {
 	script := &Script{
-		Name:     name,
-		Path:     "<string>",
-		Content:  content,
-		deferred: make([]func() error, 0),
+		Name:    name,
+		Path:    "<string>",
+		Content: content,
 	}
 
-	e.scripts = append(e.scripts, *script)
+	e.scripts = append(e.scripts, script)
 	return script
 }
 
 // ExecuteScript executes a script in the engine.
-func (e *Engine) ExecuteScript(script *Script) error {
+func (e *Engine) ExecuteScript(script *Script) (err error) {
 	// Create execution context for this script
 	ctx := &ExecutionContext{
 		engine: e,
@@ -126,14 +132,30 @@ func (e *Engine) ExecuteScript(script *Script) error {
 	}
 	e.vm.Set("ctx", contextObj)
 
+	// Always run deferred functions on exit (even if a panic occurs)
+	defer func() {
+		if dErr := ctx.runDeferred(); dErr != nil {
+			if err != nil {
+				err = fmt.Errorf("execution error: %v; deferred error: %v", err, dErr)
+			} else {
+				err = dErr
+			}
+		}
+	}()
+
+	// Recover from top-level panics so scripts cannot crash the host
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("script panicked (fatal error): %v", r)
+		}
+	}()
+
 	// Execute the script
-	_, err := e.vm.RunString(script.Content)
-	if err != nil {
-		return fmt.Errorf("script execution failed: %w", err)
+	if _, runErr := e.vm.RunString(script.Content); runErr != nil {
+		return fmt.Errorf("script execution failed: %w", runErr)
 	}
 
-	// Execute deferred functions
-	return ctx.runDeferred()
+	return err
 }
 
 // GetTUIManager returns the TUI manager for this engine.
@@ -142,7 +164,7 @@ func (e *Engine) GetTUIManager() *TUIManager {
 }
 
 // GetScripts returns all loaded scripts.
-func (e *Engine) GetScripts() []Script {
+func (e *Engine) GetScripts() []*Script {
 	return e.scripts
 }
 

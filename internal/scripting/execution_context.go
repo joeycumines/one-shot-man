@@ -27,6 +27,10 @@ func (ctx *ExecutionContext) Run(name string, fn goja.Callable) bool {
 		parent: ctx,
 	}
 
+	// Save current JS ctx and guarantee restoration even on panic
+	parentContextObj := ctx.engine.vm.Get("ctx")
+	defer ctx.engine.vm.Set("ctx", parentContextObj)
+
 	// Set up the sub-context in JavaScript with both Go-style and JS-style methods
 	contextObj := map[string]interface{}{
 		// JavaScript-style methods (camelCase)
@@ -43,50 +47,26 @@ func (ctx *ExecutionContext) Run(name string, fn goja.Callable) bool {
 	}
 	ctx.engine.vm.Set("ctx", contextObj)
 
-	// Execute the test function
-	_, err := fn(goja.Undefined())
-	if err != nil {
+	// Execute the test function with panic protection
+	var callErr error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				subCtx.failed = true
+				subCtx.Errorf("Test panicked: %v", r)
+			}
+		}()
+		_, callErr = fn(goja.Undefined())
+	}()
+	if callErr != nil {
 		subCtx.failed = true
-		subCtx.Errorf("Test failed: %v", err)
+		subCtx.Errorf("Test failed: %v", callErr)
 	}
 
 	// Run deferred functions for sub-context
 	if err := subCtx.runDeferred(); err != nil {
 		subCtx.failed = true
 		subCtx.Errorf("Deferred function failed: %v", err)
-	}
-
-	// Restore parent context
-	if ctx.parent != nil {
-		parentObj := map[string]interface{}{
-			// JavaScript-style methods (camelCase)
-			"run":    ctx.parent.Run,
-			"defer":  ctx.parent.Defer,
-			"log":    ctx.parent.Log,
-			"logf":   ctx.parent.Logf,
-			"error":  ctx.parent.Error,
-			"errorf": ctx.parent.Errorf,
-			"fatal":  ctx.parent.Fatal,
-			"fatalf": ctx.parent.Fatalf,
-			"failed": ctx.parent.Failed,
-			"name":   ctx.parent.Name,
-		}
-		ctx.engine.vm.Set("ctx", parentObj)
-	} else {
-		currentObj := map[string]interface{}{
-			// JavaScript-style methods
-			"run":    ctx.Run,
-			"defer":  ctx.Defer,
-			"log":    ctx.Log,
-			"logf":   ctx.Logf,
-			"error":  ctx.Error,
-			"errorf": ctx.Errorf,
-			"fatal":  ctx.Fatal,
-			"fatalf": ctx.Fatalf,
-			"failed": ctx.Failed,
-			"name":   ctx.Name,
-		}
-		ctx.engine.vm.Set("ctx", currentObj)
 	}
 
 	// Report result

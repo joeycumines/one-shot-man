@@ -4,39 +4,39 @@ Command `osm` helps produce higher quality implementations with less effort, kee
 
 ## What & Why
 
-The goal of the `osm` tool is to make the process of utilizing one-shot prompts as painless as possible.
-It's a TUI (terminal user interface) prompt for your prompts.
+The goal of `osm` is to streamline the use of complex one-shot prompts via a stateful TUI (Terminal User Interface). It automates the tedious aspects of building prompt context and scaffolding, which is often required for high-quality, repeatable results.
 
-There are certain use case where one-shot prompts, using the most capable cost-effective "thinking" model you have access to, can really shine, e.g.:
+While agentic workflows have their place, a precisely crafted, context-rich one-shot prompt can yield superior results for specific tasks, such as:
 
-* Pre-PR and incremental code review - Detailed sanity checks, alternate perspectives, (indirect) quantification of quality
-* Iterating on complex but self-contained, often internal implementations - Precise or strictly constrained adjustments, applied consistently
-
-The nature of one-shot prompts requires scaffolding, to define (constrain) the desired output.
-One-shot prompts can also involve significant prompt and context fiddling, which can be onerous, particularly vs agentic workflows.
+* **Pre-PR and incremental code review** - Detailed sanity checks, alternate perspectives, and (indirect) quantification of quality.
+* **Iterating on complex but self-contained implementations** - Precise or strictly constrained adjustments, applied consistently.
 
 This tool is provider-agnostic, integrating primarily via clipboard, file, and command I/O.
 
 ## Features
 
-- **Extensible Command System**: Support for both built-in and script-based subcommands
-- **Kubectl-style Configuration**: Configuration file management with environment variable override
-- **dnsmasq-style Config Format**: Simple `optionName remainingLineIsTheValue` format
-- **Script Command Discovery**: Automatic discovery and execution of script commands
-- **Stdlib Flag Package**: Built using Go's standard library flag package
-- **Interactive TUI (go-prompt)**: Rich REPL powered by `github.com/elk-language/go-prompt` with completion, custom key bindings, and configurable colors
+- **Extensible Command System**: Support for both built-in and script-based subcommands.
+- **Kubectl-style Configuration**: Configuration file management with environment variable overrides.
+- **dnsmasq-style Config Format**: Simple `optionName remainingLineIsTheValue` format.
+- **Script Command Discovery**: Automatic discovery and execution of script commands.
+- **Stdlib Flag Package**: Built using Go's standard library `flag` package.
+- **Interactive TUI (go-prompt)**: Rich REPL powered by `github.com/elk-language/go-prompt` with completion, custom key bindings, and configurable colors.
 
----
+-----
+
 ## Installation
 
-Currently, only source installation is supported. Will add pre-built binaries if this tool makes it to alpha.
+Currently, only source installation is supported. Pre-built binaries will be added if this tool reaches alpha.
 
 ```sh
 go install github.com/joeycumines/one-shot-man/cmd/osm@latest
 ```
 
----
+-----
+
 ## Usage
+
+-----
 
 ### Basic Commands
 
@@ -52,6 +52,38 @@ osm config --all
 # Start interactive scripting terminal (TUI)
 osm script -i
 ```
+
+-----
+
+### Code Review Command
+
+The `code-review` command provides an interactive TUI to build a comprehensive, single-shot prompt for an LLM to perform a code review. It allows you to progressively add context from files, git diffs, and freeform notes.
+
+```sh
+# Start the interactive code review builder
+osm code-review
+```
+
+The code review workflow:
+
+1.  **Build Context**: Iteratively add relevant files (`add`), git diffs (`diff`), and notes (`note`) to construct the scope of the review.
+2.  **Review & Refine**: Use `list`, `edit`, and `remove` to manage the context items.
+3.  **Generate & Use**: Once the context is complete, use `show` to view the final generated prompt or `copy` to send it to your clipboard for use with an LLM.
+
+Commands available in code review mode:
+
+- `add [files...]` - Add file content to the context. Without arguments, it opens an editor to list file paths.
+- `diff [args...]` - Add git diff output to the context. Arguments are passed directly to `git diff` (e.g., `HEAD~1`, `--staged`).
+- `note [text]` - Add a freeform note. Without text, it opens an editor.
+- `list` - List all current context items (files, diffs, notes) with their assigned IDs.
+- `edit <id>` - Edit a note or git diff specification by its ID using the default editor.
+- `remove <id>` - Remove a context item by its ID.
+- `show` - Assemble all context and display the final code review prompt.
+- `copy` - Copy the final prompt to the system clipboard.
+- `help` - Show the list of available commands.
+- `exit` - Exit the code review session.
+
+-----
 
 ### Prompt Flow Command
 
@@ -72,22 +104,23 @@ The prompt flow workflow:
 
 Commands available in prompt flow mode:
 
-  - `goal [text]` - Set or edit the goal (no args opens your editor).
-  - `add [files...]` - Add file content to context (no args opens editor for paths, one per line).
-  - `diff [args]` - Add git diff output to context (e.g., `--staged`, `HEAD~1`).
-  - `note [text]` - Add a freeform note (no args opens editor).
-  - `list` - List current goal, template, prompts, and context items.
-  - `edit <id|goal|template|meta|prompt>` - Edit items by ID or name. `meta` edits the generated meta-prompt; `prompt` edits the task prompt (clearing content will revert back to meta-prompt phase).
-  - `remove <id>` - Remove a context item (file items also untrack from the backing context).
-  - `template` - Edit the meta-prompt template.
-  - `generate` - Generate the meta-prompt and reset the task prompt.
-  - `use [text]` - Set or edit the task prompt (no args opens editor).
-  - `show [meta|prompt]` - Show content. Default shows final output if the task prompt is set, otherwise shows the meta-prompt.
-  - `copy [meta|prompt]` - Copy content to clipboard. Default behavior mirrors `show`.
-  - `help` - Show available commands.
-  - `exit` - Exit prompt flow mode.
+- `goal [text]` - Set or edit the goal (no args opens your editor).
+- `add [files...]` - Add file content to context (no args opens editor for paths, one per line).
+- `diff [args]` - Add git diff output to context (e.g., `--staged`, `HEAD~1`).
+- `note [text]` - Add a freeform note (no args opens editor).
+- `list` - List current goal, template, prompts, and context items.
+- `edit <id|goal|template|meta|prompt>` - Edit items by ID or name. `meta` edits the generated meta-prompt; `prompt` edits the task prompt (clearing content will revert back to meta-prompt phase).
+- `remove <id>` - Remove a context item (file items also untrack from the backing context).
+- `template` - Edit the meta-prompt template.
+- `generate` - Generate the meta-prompt and reset the task prompt.
+- `use [text]` - Set or edit the task prompt (no args opens editor).
+- `show [meta|prompt]` - Show content. Default shows final output if the task prompt is set, otherwise shows the meta-prompt.
+- `copy [meta|prompt]` - Copy content to clipboard. Default behavior mirrors `show`.
+- `help` - Show available commands.
+- `exit` - Exit prompt flow mode.
 
----
+-----
+
 ### Configuration
 
 The configuration file uses a dnsmasq-style format where each line contains an option name followed by its value:
@@ -154,16 +187,19 @@ prompt.color.scrollbarBG black
 ```
 
 Notes:
+
 - Defaults: input=green, prefix=cyan, suggestionText=yellow, suggestionBG=black, selectedSuggestionText=black, selectedSuggestionBG=cyan, descriptionText=white, descriptionBG=black, selectedDescriptionText=white, selectedDescriptionBG=blue, scrollbarThumb=darkgray, scrollbarBG=black.
 - These apply to `osm script -i` and as defaults for prompts created from JavaScript (which can further override per prompt).
 
----
+-----
+
 ### Script Commands
 
 Script commands are discovered from these locations (in order):
-1. `scripts/` directory relative to the executable
-2. `~/.one-shot-man/scripts/` (user scripts)
-3. `./scripts/` (current directory scripts)
+
+1.  `scripts/` directory relative to the executable
+2.  `~/.one-shot-man/scripts/` (user scripts)
+3.  `./scripts/` (current directory scripts)
 
 #### JavaScript Scripting
 
@@ -243,31 +279,33 @@ Available modes:
 Switch to a mode to execute JavaScript code
 ```
 
----
+-----
+
 ## Architecture
 
 ### Built-in Commands
 
-- `help` - Display help information
-- `version` - Show version information
-- `config` - Manage configuration settings
-- `init` - Initialize the one-shot-man environment
-- `script` - Execute JavaScript scripts with deferred/declarative API
-- `prompt-flow` - Interactive prompt builder: goal/context/template -> generate -> assemble
-- `code-review` - Single-prompt code review with context: context -> generate prompt for PR review
+- `help` - Display help information.
+- `version` - Show version information.
+- `config` - Manage configuration settings.
+- `init` - Initialize the one-shot-man environment.
+- `script` - Execute JavaScript scripts with deferred/declarative API.
+- `prompt-flow` - Interactive prompt builder: goal/context/template -\> generate -\> assemble.
+- `code-review` - Single-prompt code review with context: context -\> generate prompt for PR review.
 
 ### Interactive TUI
 
 The TUI is built on go-prompt and provides:
 
-- Prompt with configurable prefix per mode (default `>>> ` or `[mode]> `)
-- Command execution (`help`, `exit|quit`, `mode`, `modes`, `state`)
-- Completion for built-in and registered commands (first token)
-- Custom JavaScript completers and key bindings
-- Color customization via config or per-prompt options
-- History loading from a file if present
+- Prompt with configurable prefix per mode (default ` >>>  ` or ` [mode]>  `).
+- Command execution (`help`, `exit|quit`, `mode`, `modes`, `state`).
+- Completion for built-in and registered commands (first token).
+- Custom JavaScript completers and key bindings.
+- Color customization via config or per-prompt options.
+- History loading from a file if present.
 
 History:
+
 - The default interactive prompt will load history from `.osm_history` if it exists.
 - Advanced prompts created from JavaScript can also specify a history file. (Note: history is loaded if present; automatic saving on exit is not currently implemented.)
 
@@ -287,11 +325,12 @@ type Command interface {
 
 ### Extension Points
 
-1. **Built-in Commands**: Implement the `Command` interface and register with the registry
-2. **Script Commands**: Create executable scripts in designated script directories
-3. **Configuration**: Use the dnsmasq-style config format for both global and command-specific options
+1.  **Built-in Commands**: Implement the `Command` interface and register with the registry.
+2.  **Script Commands**: Create executable scripts in designated script directories.
+3.  **Configuration**: Use the dnsmasq-style config format for both global and command-specific options.
 
----
+-----
+
 ## JavaScript TUI API
 
 In addition to the deferred testing-style API on `ctx`, scripts can control the TUI via the global `tui` object and interact with the host system via the `system` object.
@@ -302,7 +341,7 @@ Available functions (implemented):
 
 - `tui.registerMode(modeConfig)` — Register a mode with optional TUI config:
     - `name` (string)
-    - `tui.prompt` (string) to customize the prefix like `[my-mode]> `
+    - `tui.prompt` (string) to customize the prefix like ` [my-mode]>  `
     - `onEnter`, `onExit`, `onPrompt` (callbacks)
 - `tui.switchMode(name)` — Switch active mode
 - `tui.getCurrentMode()` — Get current mode name
@@ -312,7 +351,7 @@ Available functions (implemented):
 - `tui.createAdvancedPrompt(config)` — Create a named go-prompt instance
     - `config.title` (string)
     - `config.prefix` (string)
-    - `config.colors` (object; keys same as prompt.color.* without the prefix)
+    - `config.colors` (object; keys same as prompt.color.\* without the prefix)
     - `config.history` (object) e.g. `{ enabled: true, file: ".script_history", size: 1000 }` (loads if present)
 - `tui.runPrompt(name)` — Run a created prompt (blocks until exit)
 - `tui.registerCompleter(name, fn)` — Register a JS completer
@@ -369,7 +408,8 @@ Run:
 osm script scripts/demo-mode.js
 ```
 
----
+-----
+
 ## Development
 
 Run all code quality checks:
@@ -388,7 +428,8 @@ ONESHOTMAN_CONFIG=/tmp/myconfig osm init
 osm init --force
 ```
 
----
+-----
+
 ## License
 
 See [LICENSE](LICENSE) file for details.

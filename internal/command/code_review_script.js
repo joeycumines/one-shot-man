@@ -124,38 +124,15 @@ function parseArgv(s) {
 }
 
 function buildPrompt() {
-    // Execute any lazy-diff items and convert them to regular diff items
-    const list = items();
-    for (let i = 0; i < list.length; i++) {
-        const item = list[i];
-        if (item.type === "lazy-diff") {
-            // Execute the git diff command now
-            const diffArgs = Array.isArray(item.payload) ? item.payload : parseArgv(item.payload || "");
-            const argv = ["git", "diff"].concat(diffArgs);
-            const res = system.execv(argv);
-
-            if (res && res.error) {
-                // If git diff fails, store the error as the payload
-                item.payload = "Error executing git diff: " + res.message;
-                item.type = "diff-error";
-            } else {
-                // Store the actual diff output
-                item.payload = res.stdout || "";
-                item.type = "diff";
-            }
-        }
-    }
-    setItems(list);
-
     // Build the final prompt with template and context
-    const parts = [];
     const pb = tui.createPromptBuilder("review", "Build code review prompt");
     pb.setTemplate(codeReviewTemplate);
 
     // Build context that includes both files and diff items
     const contextParts = [];
 
-    // Add notes and diffs from JavaScript items
+    // Process all context items from the state. For lazy-diff items,
+    // execute the git diff command just-in-time without mutating the state.
     for (const it of items()) {
         if (it.type === "note") {
             contextParts.push("### Note: " + (it.label || "note") + "\n\n" + it.payload + "\n\n---\n");
@@ -163,6 +140,21 @@ function buildPrompt() {
             contextParts.push("### Diff: " + (it.label || "git diff") + "\n\n```diff\n" + (it.payload || "") + "\n```\n\n---\n");
         } else if (it.type === "diff-error") {
             contextParts.push("### Diff Error: " + (it.label || "git diff") + "\n\n" + it.payload + "\n\n---\n");
+        } else if (it.type === "lazy-diff") {
+            // Execute the git diff command now
+            const diffArgs = Array.isArray(it.payload) ? it.payload : parseArgv(it.payload || "");
+            const argv = ["git", "diff"].concat(diffArgs);
+            const res = system.execv(argv);
+
+            if (res && res.error) {
+                // If git diff fails, format the error into the prompt
+                const errorMessage = "Error executing git diff: " + res.message;
+                contextParts.push("### Diff Error: " + (it.label || "git diff") + "\n\n" + errorMessage + "\n\n---\n");
+            } else {
+                // Format the actual diff output into the prompt
+                const diffOutput = res.stdout || "";
+                contextParts.push("### Diff: " + (it.label || "git diff") + "\n\n```diff\n" + diffOutput + "\n```\n\n---\n");
+            }
         }
     }
 

@@ -4,7 +4,7 @@
 
 !! Consider the implementation, attached, in doing so. !!
 
-!! Plan for the entire "IMPLEMENTATIONS/CONTEXT" section to be attached after the prompt (with heading). !!
+!! Plan for the entire "IMPLEMENTATIONS/CONTEXT" section to be attached after the prompt (with heading), but DO NOT include it, in the generated prompt. !!
 
 !! **GOAL:** !!
 {{goal}}

@@ -30,9 +30,9 @@ func TestPromptFlow_NonInteractive(t *testing.T) {
 	defer cp.Close()
 
 	// Expect the prompt-flow banner/help emitted by onEnter after auto-switch
-	requireExpect(t, cp, "Prompt Flow: goal/context/template -> generate -> assemble")
+	requireExpect(t, cp, "Prompt Flow: goal/context/template -> generate -> use -> assemble")
 	requireExpect(t, cp, "Type 'help' for commands.")
-	requireExpect(t, cp, "Commands: goal, add, diff, note, list, edit, remove, template, generate, show [meta], copy [meta], help, exit")
+	requireExpect(t, cp, "Commands: goal, add, diff, note, list, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit")
 
 	// Process should terminate on its own (non-interactive mode)
 	requireExpectExitCode(t, cp, 0)
@@ -90,7 +90,7 @@ fi
 	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
 
 	// The script auto-switches to its mode and prints banner/help.
-	requireExpect(t, cp, "Prompt Flow: goal/context/template -> generate -> assemble")
+	requireExpect(t, cp, "Prompt Flow: goal/context/template -> generate -> use -> assemble")
 	requireExpect(t, cp, "Type 'help' for commands.")
 
 	// Wait for the prompt for this mode
@@ -120,19 +120,19 @@ fi
 	requireExpect(t, cp, "[goal] my test goal")
 	requireExpect(t, cp, "[template] set")
 
-	// Show the meta prompt (safe in any phase)
-	cp.SendLine("show meta")
-	requireExpect(t, cp, "**GOAL:**")
-	requireExpect(t, cp, "**IMPLEMENTATIONS/CONTEXT:**")
+	// Trigger generate to create meta-prompt, then inspect meta
+	cp.SendLine("generate")
+	requireExpect(t, cp, "Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.")
 
+	cp.SendLine("show meta")
+	requireExpect(t, cp, "!! **GOAL:** !!")
+	requireExpect(t, cp, "!! **IMPLEMENTATIONS/CONTEXT:** !!")
 	// The meta prompt includes the txtar dump; check that README.md appears
-	// (Not asserting full content, just presence of a filename marker)
-	// Use a smaller timeout since output may be large but immediate
 	requireExpect(t, cp, "README.md", 10*time.Second)
 
-	// Trigger generate, which opens editor for the meta prompt and sets GENERATED phase
-	cp.SendLine("generate")
-	requireExpect(t, cp, "Generated. You can now 'show' or 'copy'.")
+	// Provide a task prompt so default show assembles final content
+	cp.SendLine("use edited prompt from test")
+	requireExpect(t, cp, "Task prompt set.")
 
 	// Show final (assembled) should now include IMPLEMENTATIONS/CONTEXT marker and edited prompt header
 	cp.SendLine("show")

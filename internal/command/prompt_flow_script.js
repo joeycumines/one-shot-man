@@ -275,7 +275,17 @@ function buildCommands() {
                         output.print("Task prompt not set yet. Use 'use' first.");
                         return;
                     }
-                    setTaskPrompt(openEditor('task-prompt', getTaskPrompt()));
+                    const edited = openEditor('task-prompt', getTaskPrompt());
+                    if (edited && edited.trim()) {
+                        setTaskPrompt(edited.trim());
+                        setPhase("TASK_PROMPT_SET");
+                        output.print("Task prompt updated.");
+                    } else {
+                        // If cleared, revert to meta-generated phase to restore sensible defaults
+                        setTaskPrompt("");
+                        setPhase("META_GENERATED");
+                        output.print("Task prompt cleared. Reverted to meta-prompt phase.");
+                    }
                     return;
                 }
                 const id = parseInt(target, 10);

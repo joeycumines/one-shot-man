@@ -7,7 +7,7 @@ Command `osm` helps produce higher quality implementations with less effort, kee
 The goal of the `osm` tool is to make the process of utilizing one-shot prompts as painless as possible.
 It's a TUI (terminal user interface) prompt for your prompts.
 
-There are certain use case where one-shot prompt, using the most capable "thinking" model you have access to, can really shine, e.g.:
+There are certain use case where one-shot prompts, using the most capable cost-effective "thinking" model you have access to, can really shine, e.g.:
 
 * Pre-PR and incremental code review - Detailed sanity checks, alternate perspectives, (indirect) quantification of quality
 * Iterating on complex but self-contained, often internal implementations - Precise or strictly constrained adjustments, applied consistently
@@ -67,8 +67,8 @@ The prompt flow workflow:
 1.  **Set Goal**: Define what you want to achieve (e.g., `goal Refactor to unexport all methods except Run`).
 2.  **Build Context**: Add relevant files (`add`), git diffs (`diff`), and notes (`note`).
 3.  **Generate Meta-Prompt**: Run `generate` to create a prompt designed to be sent to an LLM. You can inspect it with `show meta`.
-4.  **Set Task Prompt**: After getting a response from an LLM, use the `use` command to set it as the task prompt (e.g., `use "The user wants a Javascript function..."`).
-5.  **Assemble & Use**: The task prompt is now combined with the context. Use `show` to see the final output or `copy` to send it to your clipboard.
+4.  **Set Task Prompt**: After getting a response from an LLM, use the `use` command to set it as the task prompt (e.g., `use "The user wants a Javascript function..."`). You can also `edit prompt` later to refine it.
+5.  **Assemble & Use**: The task prompt is now combined with the context. Use `show` to see the final output or `copy` to send it to your clipboard. If you clear the task prompt via `edit prompt` and save empty, the flow reverts to the meta-prompt phase so `show` defaults back to `show meta`.
 
 Commands available in prompt flow mode:
 
@@ -77,7 +77,7 @@ Commands available in prompt flow mode:
   - `diff [args]` - Add git diff output to context (e.g., `--staged`, `HEAD~1`).
   - `note [text]` - Add a freeform note (no args opens editor).
   - `list` - List current goal, template, prompts, and context items.
-  - `edit <id|goal|template|meta|prompt>` - Edit items by ID or name. `meta` edits the generated meta-prompt; `prompt` edits the task prompt.
+  - `edit <id|goal|template|meta|prompt>` - Edit items by ID or name. `meta` edits the generated meta-prompt; `prompt` edits the task prompt (clearing content will revert back to meta-prompt phase).
   - `remove <id>` - Remove a context item (file items also untrack from the backing context).
   - `template` - Edit the meta-prompt template.
   - `generate` - Generate the meta-prompt and reset the task prompt.

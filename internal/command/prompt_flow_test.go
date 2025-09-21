@@ -26,11 +26,11 @@ func TestPromptFlowCommand_NonInteractive(t *testing.T) {
 
 	// Check for expected output from the script execution
 	output := stdout.String()
-	if !contains(output, "Prompt Flow: goal/context/template -> generate -> assemble") {
+	if !contains(output, "Prompt Flow: goal/context/template -> generate -> use -> assemble") {
 		t.Errorf("Expected banner message in output, got: %s", output)
 	}
 
-	if !contains(output, "Commands: goal, add, diff, note, list, edit, remove, template, generate, show [meta], copy [meta], help, exit") {
+	if !contains(output, "Commands: goal, add, diff, note, list, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit") {
 		t.Errorf("Expected help message in output, got: %s", output)
 	}
 }
@@ -138,7 +138,7 @@ func TestPromptFlowCommand_ExecuteWithArgs(t *testing.T) {
 
 	// Should still produce expected output
 	output := stdout.String()
-	if !contains(output, "Prompt Flow: goal/context/template -> generate -> assemble") {
+	if !contains(output, "Prompt Flow: goal/context/template -> generate -> use -> assemble") {
 		t.Errorf("Expected banner message with args, got: %s", output)
 	}
 }
@@ -166,7 +166,7 @@ func TestPromptFlowCommand_ConfigColorOverrides(t *testing.T) {
 
 	// The test should pass without errors even with color configuration
 	output := stdout.String()
-	if !contains(output, "Prompt Flow: goal/context/template -> generate -> assemble") {
+	if !contains(output, "Prompt Flow: goal/context/template -> generate -> use -> assemble") {
 		t.Errorf("Expected banner message with color config, got: %s", output)
 	}
 }
@@ -187,7 +187,7 @@ func TestPromptFlowCommand_NilConfig(t *testing.T) {
 
 	// Should still work
 	output := stdout.String()
-	if !contains(output, "Prompt Flow: goal/context/template -> generate -> assemble") {
+	if !contains(output, "Prompt Flow: goal/context/template -> generate -> use -> assemble") {
 		t.Errorf("Expected banner message with nil config, got: %s", output)
 	}
 }

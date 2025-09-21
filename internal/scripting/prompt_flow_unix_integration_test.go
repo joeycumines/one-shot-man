@@ -256,9 +256,12 @@ func processString(s string) string {
 
 	// Generate meta-prompt
 	cp.SendLine("generate")
-	requireExpect(t, cp, "Generated. You can now 'show' or 'copy'.")
+	requireExpect(t, cp, "Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.")
 
 	// Show the final assembled output
+	// Provide a simple task prompt then show final
+	cp.SendLine("use final output please")
+	requireExpect(t, cp, "Task prompt set.")
 	cp.SendLine("show")
 
 	// Verify the final output structure
@@ -325,7 +328,7 @@ func TestPromptFlow_Unix_DifferentTemplateConfigurations(t *testing.T) {
 	// Generate with custom template
 	cp.SendLine("generate")
 	// After generate, we should see the generated message; ensure it's new output
-	raw, err = cp.ExpectNew("Generated. You can now 'show' or 'copy'.", 30*time.Second)
+	raw, err = cp.ExpectNew("Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.", 30*time.Second)
 	if err != nil {
 		t.Fatalf("Expected generate message, got error: %v\nRaw:\n%s", err, raw)
 	}
@@ -397,8 +400,10 @@ func TestPromptFlow_Unix_GitDiffIntegration(t *testing.T) {
 
 	// Generate and show final output
 	cp.SendLine("generate")
-	requireExpect(t, cp, "Generated. You can now 'show' or 'copy'.")
+	requireExpect(t, cp, "Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.")
 
+	cp.SendLine("use ready to review")
+	requireExpect(t, cp, "Task prompt set.")
 	cp.SendLine("show")
 	requireExpect(t, cp, "Review and optimize the recent code changes") // Goal
 	requireExpect(t, cp, "### Diff: git diff")                          // Diff section
@@ -453,11 +458,11 @@ func TestPromptFlow_Unix_ClipboardIntegration(t *testing.T) {
 	requireExpect(t, cp, "Added note [")
 
 	cp.SendLine("generate")
-	requireExpect(t, cp, "Generated. You can now 'show' or 'copy'.")
+	requireExpect(t, cp, "Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.")
 
 	// Test copying meta-prompt
 	cp.SendLine("copy meta")
-	requireExpect(t, cp, "Meta output copied to clipboard.")
+	requireExpect(t, cp, "Meta prompt copied to clipboard.")
 
 	// Verify meta-prompt was copied
 	metaContent, err := os.ReadFile(clipboardFile)
@@ -475,7 +480,9 @@ func TestPromptFlow_Unix_ClipboardIntegration(t *testing.T) {
 	// Clear clipboard file for final test
 	os.WriteFile(clipboardFile, []byte(""), 0644)
 
-	// Test copying final assembled output
+	// Provide task prompt then copy final assembled output
+	cp.SendLine("use Test goal for automated testing")
+	requireExpect(t, cp, "Task prompt set.")
 	cp.SendLine("copy")
 	requireExpect(t, cp, "Final output copied to clipboard.")
 
@@ -668,7 +675,7 @@ func testCompletePromptFlowWorkflow(t *testing.T, cp *termtest.ConsoleProcess, t
 
 	// Generate meta-prompt
 	cp.SendLine("generate")
-	requireExpect(t, cp, "Generated. You can now 'show' or 'copy'.")
+	requireExpect(t, cp, "Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.")
 
 	// Show meta-prompt to verify content
 	cp.SendLine("show meta")
@@ -676,7 +683,9 @@ func testCompletePromptFlowWorkflow(t *testing.T, cp *termtest.ConsoleProcess, t
 	requireExpect(t, cp, "Enhance Java thread pool with comprehensive monitoring")
 	requireExpect(t, cp, "!! **IMPLEMENTATIONS/CONTEXT:** !!")
 
-	// Show final assembled output
+	// Provide task prompt then show final assembled output
+	cp.SendLine("use ready to assemble")
+	requireExpect(t, cp, "Task prompt set.")
 	cp.SendLine("show")
 	requireExpect(t, cp, "Enhance Java thread pool with comprehensive monitoring") // Goal in final output
 	requireExpect(t, cp, "## IMPLEMENTATIONS/CONTEXT")                             // Context section
@@ -752,7 +761,7 @@ func testMetaPromptVariation(t *testing.T, goal string, files []string, diffs []
 
 	// Generate and show meta-prompt
 	cp.SendLine("generate")
-	requireExpect(t, cp, "Generated. You can now 'show' or 'copy'.")
+	requireExpect(t, cp, "Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.")
 
 	cp.SendLine("show meta")
 

@@ -240,6 +240,7 @@ func (e *Engine) setupGlobals() {
 	e.vm.Set("system", map[string]interface{}{
 		"exec":          e.jsSystemExec,
 		"execv":         e.jsSystemExecv,
+		"parseArgv":     e.jsSystemParseArgv,
 		"openEditor":    e.jsSystemOpenEditor,
 		"clipboardCopy": e.jsSystemClipboardCopy,
 		"readFile":      e.jsSystemReadFile,

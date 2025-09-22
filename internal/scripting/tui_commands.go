@@ -15,7 +15,7 @@ func (tm *TUIManager) executor(input string) bool {
 	}
 
 	// Parse command and arguments
-	parts := strings.Fields(input)
+	parts := tokenizeCommandLine(input)
 	cmdName := parts[0]
 	args := parts[1:]
 

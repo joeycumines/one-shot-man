@@ -3,10 +3,13 @@ package scripting
 import (
 	"fmt"
 	"os"
+	"os/user"
+	"path/filepath"
 	"strings"
 
 	"github.com/dop251/goja"
 	"github.com/elk-language/go-prompt"
+	"github.com/joeycumines/one-shot-man/internal/argv"
 )
 
 // Unified helpers to apply color overrides without duplication.
@@ -172,26 +175,133 @@ func loadHistory(filename string) []string {
 	return history
 }
 
-// getDefaultCompletionSuggestions provides default completion when no custom completer is set.
-func (tm *TUIManager) getDefaultCompletionSuggestions(document prompt.Document) []prompt.Suggest {
-	var suggestions []prompt.Suggest
-
-	// Get the word being typed
-	text := document.TextBeforeCursor()
-	// If TextBeforeCursor is empty, fall back to the full text
-	if text == "" {
-		text = document.Text
+// getFilepathSuggestions provides file and directory path completion.
+// It expands '~' and returns suggestions that properly replace the input path.
+func getFilepathSuggestions(path string) []prompt.Suggest {
+	// Handle the simple case of "~" separately to suggest "~/"
+	if path == "~" {
+		return []prompt.Suggest{{Text: "~/"}}
 	}
 
-	words := strings.Fields(text)
-	if len(words) == 0 {
+	// Handle empty path - should list current directory contents
+	if path == "" {
+		entries, err := os.ReadDir(".")
+		if err != nil {
+			return nil
+		}
+		var suggestions []prompt.Suggest
+		for _, entry := range entries {
+			text := entry.Name()
+			if entry.IsDir() {
+				text += "/"
+			}
+			suggestions = append(suggestions, prompt.Suggest{Text: text})
+		}
 		return suggestions
 	}
 
-	currentWord := words[len(words)-1]
+	// Expand tilde in the path
+	expandedPath := path
+	if strings.HasPrefix(path, "~/") {
+		usr, err := user.Current()
+		if err == nil { // Silently ignore error if home dir can't be found
+			expandedPath = filepath.Join(usr.HomeDir, path[2:])
+		}
+	}
+
+	// Determine the directory to scan and the prefix of the file/dir to match
+	dirToScan := filepath.Dir(expandedPath)
+	prefix := filepath.Base(expandedPath)
+
+	// If the user's input path is the root or an existing directory,
+	// list the contents of that directory.
+	if expandedPath == "/" {
+		dirToScan = "/"
+		prefix = ""
+	} else if fi, err := os.Stat(expandedPath); err == nil && fi.IsDir() {
+		dirToScan = expandedPath
+		prefix = ""
+	}
+
+	entries, err := os.ReadDir(dirToScan)
+	if err != nil {
+		return nil // Gracefully handle errors like permission denied by returning no suggestions
+	}
+
+	var suggestions []prompt.Suggest
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), prefix) {
+			// Build the full replacement text that includes the directory path
+			var text string
+			if dirToScan == "." {
+				// For current directory, just use the entry name
+				text = entry.Name()
+			} else if strings.HasSuffix(path, "/") || prefix == "" {
+				// If input ends with / or we're completing in a directory,
+				// append the entry name to the input path
+				text = path + entry.Name()
+			} else {
+				// Replace the basename part with the matched entry
+				dirPart := filepath.Dir(path)
+				if dirPart == "." {
+					text = entry.Name()
+				} else {
+					text = dirPart + "/" + entry.Name()
+				}
+			}
+
+			if entry.IsDir() {
+				text += "/"
+			}
+
+			suggestions = append(suggestions, prompt.Suggest{Text: text})
+		}
+	}
+	return suggestions
+}
+
+// getDefaultCompletionSuggestions provides default completion when no custom completer is set.
+func (tm *TUIManager) getDefaultCompletionSuggestions(document prompt.Document) []prompt.Suggest {
+	// Delegate to a helper that accepts explicit before/full text.
+	before := document.TextBeforeCursor()
+	if before == "" {
+		before = document.Text
+	}
+	return tm.getDefaultCompletionSuggestionsFor(before, document.Text)
+}
+
+// getDefaultCompletionSuggestionsFor is the pure implementation that powers completion.
+// It uses the text before the cursor (before) to determine the current token, while
+// still accepting the full input line (full) for any future needs. This function is
+// exported only within the package to facilitate unit testing with simulated cursor positions.
+func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []prompt.Suggest {
+	var suggestions []prompt.Suggest
+
+	// Cursor-aware tokenization based solely on text before the cursor
+	completed, currentTok := argv.BeforeCursor(before)
+	words := completed
+	currentWord := currentTok.Text
+	// Note: 'words' are completed tokens BEFORE the cursor.
+	// If len(words)==0, we're editing the first token -> command completion path.
+	// If len(words)>=1, we're on an argument token for command words[0].
+
+	// currentWord already refers to the token content at the cursor (quotes removed)
+
+	// TODO: CRITICAL COMPLETION LOGIC DOCUMENTATION
+	// This function handles completion with the following precedence:
+	// 1. Command completion (for first word)
+	// 2. Argument completion (for subsequent words)
+	// 3. File completion fallback (when arg completers exist but current arg has no matches)
+	//
+	// The precedence for commands is: mode commands > registered commands > built-in commands
+	// The precedence for arg completers is based on their order in cmd.ArgCompleters array
+	//
+	// IMPORTANT: When a command has file arg completers, we suggest files even if:
+	// - Only the command is typed (e.g., "add" suggests files after command suggestions)
+	// - Current file argument has no matches (suggests new args from CWD)
 
 	// Provide command completion for first word
-	if len(words) == 1 {
+	if len(words) == 0 {
 		// Collect all commands with precedence: mode commands > registered commands > built-in commands
 		commandMap := make(map[string]prompt.Suggest)
 
@@ -236,10 +346,117 @@ func (tm *TUIManager) getDefaultCompletionSuggestions(document prompt.Document) 
 		for _, suggestion := range commandMap {
 			suggestions = append(suggestions, suggestion)
 		}
+
+		// NEW: After command suggestions, check if this command supports file completion
+		// and suggest files even when only the command is typed. To avoid redundant filesystem
+		// reads, cache the CWD file suggestions once per completion invocation.
+		func() {
+			tm.mu.RLock()
+			defer tm.mu.RUnlock()
+
+			var cwdFileSuggestions []prompt.Suggest
+			var cwdFileSuggestionsReady bool
+			getCWD := func() []prompt.Suggest {
+				if !cwdFileSuggestionsReady {
+					cwdFileSuggestions = getFilepathSuggestions("")
+					cwdFileSuggestionsReady = true
+				}
+				return cwdFileSuggestions
+			}
+
+			// helper to process a single command
+			appendFileArgFor := func(cmd Command) {
+				for _, ac := range cmd.ArgCompleters {
+					if ac == "file" {
+						for _, fs := range getCWD() {
+							suggestions = append(suggestions, prompt.Suggest{
+								Text:        cmd.Name + " " + fs.Text,
+								Description: "Add file: " + fs.Text,
+							})
+						}
+						break
+					}
+				}
+			}
+
+			// global commands
+			for _, cmd := range tm.commands {
+				if strings.HasPrefix(cmd.Name, currentWord) {
+					appendFileArgFor(cmd)
+				}
+			}
+
+			// mode commands
+			if tm.currentMode != nil {
+				tm.currentMode.mu.RLock()
+				for _, cmd := range tm.currentMode.Commands {
+					if strings.HasPrefix(cmd.Name, currentWord) {
+						appendFileArgFor(cmd)
+					}
+				}
+				tm.currentMode.mu.RUnlock()
+			}
+		}()
+	} else if len(words) >= 1 {
+		// If we have more than one word, check for argument completers.
+		func() {
+			tm.mu.RLock()
+			defer tm.mu.RUnlock()
+
+			// Find the command definition, checking the current mode first.
+			var cmd *Command
+			commandName := words[0]
+
+			if tm.currentMode != nil {
+				if c, ok := tm.currentMode.Commands[commandName]; ok {
+					cmd = &c
+				}
+			}
+
+			if cmd == nil {
+				if c, ok := tm.commands[commandName]; ok {
+					cmd = &c
+				}
+			}
+
+			if cmd != nil {
+				// TODO: CRITICAL - Handle multiple arg completers with proper precedence
+				// The order in cmd.ArgCompleters should determine priority.
+				// Currently we only handle "file" type, but future types should be processed
+				// in the order they appear in the slice for proper precedence.
+				var hasFileCompleters bool
+				var fileCompleterProcessed bool
+
+				for _, argCompleter := range cmd.ArgCompleters {
+					switch argCompleter {
+					case "file":
+						if !fileCompleterProcessed {
+							hasFileCompleters = true
+							fileSuggestions := getFilepathSuggestions(currentWord)
+							suggestions = append(suggestions, fileSuggestions...)
+							fileCompleterProcessed = true
+						}
+					// TODO: Add other arg completer types here (e.g., "command", "mode", etc.)
+					// and respect the order they appear in cmd.ArgCompleters
+					default:
+						// Unknown completer type - ignore for now but log for future implementation
+						// TODO: Add logging or warning for unknown completer types
+					}
+				}
+
+				// NEW: If no file suggestions were found but command supports file completion,
+				// suggest new file arguments from CWD
+				if hasFileCompleters && len(suggestions) == 0 {
+					fallbackSuggestions := getFilepathSuggestions("")
+					suggestions = append(suggestions, fallbackSuggestions...)
+				}
+			}
+		}()
 	}
 
 	// For mode command, suggest available modes
-	if len(words) == 2 && words[0] == "mode" {
+	// Mode name completion: editing second token of 'mode <name>'
+	if len(words) == 1 && words[0] == "mode" {
 		tm.mu.RLock()
 		for modeName := range tm.modes {
 			if strings.HasPrefix(modeName, currentWord) {
@@ -256,30 +473,18 @@ func (tm *TUIManager) getDefaultCompletionSuggestions(document prompt.Document) 
 }
 
 // Helper: length in runes for a string
-func runeLen(s string) int {
-	return len([]rune(s))
-}
+func currentWord(before string) string { _, cur := argv.BeforeCursor(before); return cur.Text }
 
-// Helper: rune index at end of the given string (same as rune length)
-func runeIndex(s string) int {
-	return runeLen(s)
-}
-
-// Helper: returns the current word before cursor, splitting on whitespace
-func currentWord(before string) string {
-	before = strings.ReplaceAll(before, "\n", " ")
-	parts := strings.Fields(before)
-	if len(parts) == 0 {
-		return ""
-	}
-	return parts[len(parts)-1]
-}
+// tokenizeCommandLine tokenizes an entire input line into arguments with shell-like rules.
+// Supports single/double quotes and backslash escaping. Unclosed quotes are allowed and
+// produce a final token up to the end of input. Returned tokens do not include surrounding quotes.
+func tokenizeCommandLine(line string) []string { return argv.ParseSlice(line) }
 
 // tryCallJSCompleter attempts to call a JS completer; returns (suggestions, true) on success, otherwise (nil, false)
 func (tm *TUIManager) tryCallJSCompleter(callable goja.Callable, document prompt.Document) ([]prompt.Suggest, bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Fprintf(tm.output, "Completer panic: %v\n", r)
+			_, _ = fmt.Fprintf(tm.output, "Completer panic: %v\n", r)
 		}
 	}()
 
@@ -293,7 +498,7 @@ func (tm *TUIManager) tryCallJSCompleter(callable goja.Callable, document prompt
 	// Call the JS completer: fn(document)
 	value, err := callable(goja.Undefined(), docObj)
 	if err != nil {
-		fmt.Fprintf(tm.output, "Completer error: %v\n", err)
+		_, _ = fmt.Fprintf(tm.output, "Completer error: %v\n", err)
 		return nil, false
 	}
 
@@ -344,6 +549,7 @@ func getInt(m map[string]interface{}, key string, defaultValue int) int {
 }
 
 // Helper functions for extracting values from JavaScript objects
+
 func getString(m map[string]interface{}, key, defaultValue string) string {
 	if val, exists := m[key]; exists {
 		if str, ok := val.(string); ok {
@@ -360,4 +566,17 @@ func getBool(m map[string]interface{}, key string, defaultValue bool) bool {
 		}
 	}
 	return defaultValue
+}
+
+func getStringSlice(m map[string]interface{}, key string) (result []string) {
+	if val, exists := m[key]; exists {
+		if arr, ok := val.([]interface{}); ok {
+			for _, item := range arr {
+				if str, ok := item.(string); ok {
+					result = append(result, str)
+				}
+			}
+		}
+	}
+	return result
 }

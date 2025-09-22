@@ -124,31 +124,31 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 		// Test 5: Test parseArgv function directly with complex cases
 
 		// Test empty quoted arguments
-		const testEmptyQuotes = parseArgv('command --message ""');
+		const testEmptyQuotes = system.parseArgv('command --message ""');
 		if (testEmptyQuotes.length !== 3 || testEmptyQuotes[0] !== "command" || testEmptyQuotes[1] !== "--message" || testEmptyQuotes[2] !== "") {
 			throw new Error("parseArgv failed with empty quotes, expected [\"command\", \"--message\", \"\"], got: " + JSON.stringify(testEmptyQuotes));
 		}
 
 		// Test single quotes with empty
-		const testEmptySingle = parseArgv("git diff ''");
+		const testEmptySingle = system.parseArgv("git diff ''");
 		if (testEmptySingle.length !== 3 || testEmptySingle[0] !== "git" || testEmptySingle[1] !== "diff" || testEmptySingle[2] !== "") {
 			throw new Error("parseArgv failed with empty single quotes, expected [\"git\", \"diff\", \"\"], got: " + JSON.stringify(testEmptySingle));
 		}
 
 		// Test arguments with spaces in quotes
-		const testSpaces = parseArgv('git diff "feature/my feature" --stat');
+		const testSpaces = system.parseArgv('git diff "feature/my feature" --stat');
 		if (testSpaces.length !== 4 || testSpaces[0] !== "git" || testSpaces[1] !== "diff" || testSpaces[2] !== "feature/my feature" || testSpaces[3] !== "--stat") {
 			throw new Error("parseArgv failed with spaces in quotes, expected [\"git\", \"diff\", \"feature/my feature\", \"--stat\"], got: " + JSON.stringify(testSpaces));
 		}
 
 		// Test escaped quotes
-		const testEscaped = parseArgv('git log --grep "He said \\"hello\\""');
+		const testEscaped = system.parseArgv('git log --grep "He said \\"hello\\""');
 		if (testEscaped.length !== 4 || testEscaped[0] !== "git" || testEscaped[1] !== "log" || testEscaped[2] !== "--grep" || testEscaped[3] !== 'He said "hello"') {
 			throw new Error("parseArgv failed with escaped quotes, expected [\"git\", \"log\", \"--grep\", 'He said \"hello\"'], got: " + JSON.stringify(testEscaped));
 		}
 
 		// Test mixed quotes and unquoted
-		const testMixed = parseArgv("git diff HEAD~1 'file with spaces.txt' --name-only unquoted");
+		const testMixed = system.parseArgv("git diff HEAD~1 'file with spaces.txt' --name-only unquoted");
 		if (testMixed.length !== 6 || testMixed[0] !== "git" || testMixed[1] !== "diff" || testMixed[2] !== "HEAD~1" ||
 		    testMixed[3] !== "file with spaces.txt" || testMixed[4] !== "--name-only" || testMixed[5] !== "unquoted") {
 			throw new Error("parseArgv failed with mixed quotes, expected [\"git\", \"diff\", \"HEAD~1\", \"file with spaces.txt\", \"--name-only\", \"unquoted\"], got: " + JSON.stringify(testMixed));

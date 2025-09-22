@@ -86,43 +86,6 @@ function formatArgv(argv) {
     }
 }
 
-// Parse a string into argv, respecting simple single/double quotes
-function parseArgv(s) {
-    if (!s) return [];
-    const out = [];
-    let i = 0, cur = "", quote = null, wasQuoted = false;
-    while (i < s.length) {
-        const ch = s[i++];
-        if (quote) {
-            if (ch === quote) {
-                quote = null;
-                wasQuoted = true;
-            } else if (ch === '\\' && i < s.length && s[i] === quote) {
-                cur += s[i++];
-            } else {
-                cur += ch;
-            }
-            continue;
-        }
-        if (ch === '"' || ch === "'") {
-            quote = ch;
-            wasQuoted = true;
-            continue;
-        }
-        if (/\s/.test(ch)) {
-            if (cur.length > 0 || wasQuoted) {
-                out.push(cur);
-                cur = "";
-                wasQuoted = false;
-            }
-            continue;
-        }
-        cur += ch;
-    }
-    if (cur.length > 0 || wasQuoted) out.push(cur);
-    return out;
-}
-
 function buildPrompt() {
     // Build the final prompt with template and context
     const pb = tui.createPromptBuilder("review", "Build code review prompt");
@@ -140,7 +103,7 @@ function buildPrompt() {
             contextParts.push("### Diff Error: " + (it.label || "git diff") + "\n\n" + it.payload + "\n\n---\n");
         } else if (it.type === "lazy-diff") {
             // Resolve the diff just-in-time without mutating state
-            const diffArgs = Array.isArray(it.payload) ? it.payload : parseArgv(it.payload || "");
+            const diffArgs = Array.isArray(it.payload) ? it.payload : system.parseArgv(it.payload || "");
             const argv = ["git", "diff"].concat(diffArgs);
             const res = system.execv(argv);
             if (!res || res.error) {
@@ -176,6 +139,7 @@ function buildCommands() {
         add: {
             description: "Add file content to context",
             usage: "add [file ...]",
+            argCompleters: ["file"],
             handler: function (args) {
                 if (args.length === 0) {
                     const edited = openEditor("paths", "\n# one path per line\n");
@@ -259,7 +223,7 @@ function buildCommands() {
                 if (list[idx].type === 'lazy-diff') {
                     const initial = Array.isArray(list[idx].payload) ? formatArgv(list[idx].payload) : (list[idx].payload || "HEAD~1");
                     const edited = openEditor("diff-spec-" + id, initial);
-                    const argv = parseArgv((edited || "").trim());
+                    const argv = system.parseArgv((edited || "").trim());
                     list[idx].payload = argv.length ? argv : ["HEAD~1"];
                     list[idx].label = "git diff " + formatArgv(list[idx].payload);
                     setItems(list);

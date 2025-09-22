@@ -58,11 +58,12 @@ type TUIConfig struct {
 
 // Command represents a command that can be executed in the terminal.
 type Command struct {
-	Name        string
-	Description string
-	Usage       string
-	Handler     interface{} // Can be goja.Callable or Go function
-	IsGoCommand bool
+	Name          string
+	Description   string
+	Usage         string
+	Handler       interface{} // Can be goja.Callable or Go function
+	IsGoCommand   bool
+	ArgCompleters []string
 }
 
 // PromptColors represents color configuration for a prompt.

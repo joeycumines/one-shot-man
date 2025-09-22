@@ -10,6 +10,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/elk-language/go-prompt"
 	istrings "github.com/elk-language/go-prompt/strings"
+	"github.com/joeycumines/one-shot-man/internal/argv"
 )
 
 // NewTUIManager creates a new TUI manager.
@@ -259,9 +260,8 @@ func (tm *TUIManager) runAdvancedPrompt() {
 	completer := func(document prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber) {
 		suggestions := tm.getDefaultCompletionSuggestions(document)
 		before := document.TextBeforeCursor()
-		currWord := currentWord(before)
-		start := runeIndex(before) - runeLen(currWord)
-		end := runeIndex(before)
+		_, cur := argv.BeforeCursor(before)
+		start, end := cur.Start, cur.End
 		return suggestions, istrings.RuneNumber(start), istrings.RuneNumber(end)
 	}
 

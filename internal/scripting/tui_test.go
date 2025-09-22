@@ -3,6 +3,7 @@ package scripting
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,6 +136,56 @@ func TestTUIAdvancedPrompt(t *testing.T) {
 	t.Run("KeyBindings", func(t *testing.T) {
 		testKeyBindings(ctx, t)
 	})
+}
+
+func TestExecutorTokenization_QuotedArgs(t *testing.T) {
+	ctx := context.Background()
+	var out strings.Builder
+	engine := NewEngine(ctx, &out, &out)
+	defer engine.Close()
+
+	tm := engine.GetTUIManager()
+	received := make([][]string, 0)
+	tm.RegisterCommand(Command{
+		Name:        "add",
+		Description: "Add files",
+		IsGoCommand: true,
+		Handler: func(args []string) error {
+			cp := make([]string, len(args))
+			copy(cp, args)
+			received = append(received, cp)
+			return nil
+		},
+	})
+
+	cases := []struct {
+		line string
+		want []string
+	}{
+		{`add "my report.docx"`, []string{"my report.docx"}},
+		{`add 'My Folder'/file.txt`, []string{"My Folder/file.txt"}},
+		{`add path\ with\ spaces.txt`, []string{"path with spaces.txt"}},
+		{`add one two\ three "four five"`, []string{"one", "two three", "four five"}},
+		{`add "embedded \"quote\".txt"`, []string{`embedded "quote".txt`}},
+	}
+
+	for _, tc := range cases {
+		if !tm.executor(tc.line) {
+			t.Fatalf("executor indicated exit for line: %s", tc.line)
+		}
+		if len(received) == 0 {
+			t.Fatalf("no handler calls for line: %s", tc.line)
+		}
+		got := received[len(received)-1]
+		if len(got) != len(tc.want) {
+			t.Fatalf("args len mismatch: got %v want %v", got, tc.want)
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Fatalf("arg[%d] mismatch: got %q want %q (line: %s)", i, got[i], tc.want[i], tc.line)
+			}
+		}
+	}
 }
 
 func testPromptCompletion(ctx context.Context, t *testing.T) {

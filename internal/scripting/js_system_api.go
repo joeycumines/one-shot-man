@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/joeycumines/one-shot-man/internal/argv"
 )
 
 // ------------------- System JS API -------------------
@@ -191,6 +193,12 @@ func (e *Engine) jsSystemReadFile(path string) map[string]interface{} {
 		return map[string]interface{}{"error": true, "message": err.Error(), "content": ""}
 	}
 	return map[string]interface{}{"error": false, "content": string(data)}
+}
+
+// jsSystemParseArgv parses a shell-like command line into argv using a POSIX-compliant tokenizer.
+// It returns an array of strings suitable for execv or further processing.
+func (e *Engine) jsSystemParseArgv(s string) []string {
+	return argv.ParseSlice(s)
 }
 
 // sanitizeFilename produces a filesystem-safe portion for temp filenames

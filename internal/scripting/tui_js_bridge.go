@@ -8,6 +8,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/elk-language/go-prompt"
 	istrings "github.com/elk-language/go-prompt/strings"
+	"github.com/joeycumines/one-shot-man/internal/argv"
 )
 
 // JavaScript bridge methods
@@ -65,10 +66,11 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 				for cmdName, cmdConfig := range commandsMap {
 					if cmdMap, ok := cmdConfig.(map[string]interface{}); ok {
 						cmd := Command{
-							Name:        cmdName,
-							Description: getString(cmdMap, "description", ""),
-							Usage:       getString(cmdMap, "usage", ""),
-							IsGoCommand: false,
+							Name:          cmdName,
+							Description:   getString(cmdMap, "description", ""),
+							Usage:         getString(cmdMap, "usage", ""),
+							IsGoCommand:   false,
+							ArgCompleters: getStringSlice(cmdMap, "argCompleters"),
 						}
 
 						if handler, exists := cmdMap["handler"]; exists {
@@ -113,10 +115,11 @@ func (tm *TUIManager) jsGetState(key string) interface{} {
 func (tm *TUIManager) jsRegisterCommand(cmdConfig interface{}) error {
 	if configMap, ok := cmdConfig.(map[string]interface{}); ok {
 		cmd := Command{
-			Name:        getString(configMap, "name", ""),
-			Description: getString(configMap, "description", ""),
-			Usage:       getString(configMap, "usage", ""),
-			IsGoCommand: false,
+			Name:          getString(configMap, "name", ""),
+			Description:   getString(configMap, "description", ""),
+			Usage:         getString(configMap, "usage", ""),
+			IsGoCommand:   false,
+			ArgCompleters: getStringSlice(configMap, "argCompleters"),
 		}
 
 		if handler, exists := configMap["handler"]; exists {
@@ -172,9 +175,8 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 	completer := func(document prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber) {
 		// Compute selection range around the current word
 		before := document.TextBeforeCursor()
-		currWord := currentWord(before)
-		start := runeIndex(before) - runeLen(currWord)
-		end := runeIndex(before)
+		_, cur := argv.BeforeCursor(before)
+		start, end := cur.Start, cur.End
 
 		// See if a custom completer is configured for this prompt
 		tm.mu.RLock()

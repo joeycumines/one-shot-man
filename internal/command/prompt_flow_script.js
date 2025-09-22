@@ -186,6 +186,7 @@ function buildCommands() {
         add: {
             description: "Add file content to context",
             usage: "add [file ...]",
+            argCompleters: ["file"],
             handler: function (args) {
                 if (args.length === 0) {
                     const edited = openEditor("paths", "\n# one path per line\n");

@@ -48,6 +48,13 @@ func New(ctx context.Context, command string, args ...string) (*PTYTest, error) 
 	return test, nil
 }
 
+// SetDir sets the working directory for the command (only valid before Start()).
+func (p *PTYTest) SetDir(dir string) {
+	if p.cmd != nil && dir != "" {
+		p.cmd.Dir = dir
+	}
+}
+
 // SetEnv appends additional environment variables to the command (only valid before Start()).
 func (p *PTYTest) SetEnv(env []string) {
 	if p.cmd != nil && len(env) > 0 {
@@ -194,7 +201,13 @@ func (p *PTYTest) WaitForOutput(expectedText string, timeout time.Duration) erro
 		output := p.output.String()
 		p.outputMu.RUnlock()
 
+		// First check raw output for performance
 		if strings.Contains(output, expectedText) {
+			return nil
+		}
+
+		// Fall back to normalized comparison to handle ANSI control sequences
+		if strings.Contains(normalizeTTYOutput(output), expectedText) {
 			return nil
 		}
 
@@ -230,6 +243,12 @@ func (p *PTYTest) WaitForOutputSince(expectedText string, startLen int, timeout 
 			startLen = 0
 		}
 		if strings.Contains(output[startLen:], expectedText) {
+			return nil
+		}
+
+		// Normalized comparison to ignore ANSI control codes
+		norm := normalizeTTYOutput(output[startLen:])
+		if strings.Contains(norm, expectedText) {
 			return nil
 		}
 
@@ -352,7 +371,7 @@ func (p *PTYTest) WaitForExit(timeout time.Duration) (int, error) {
 // AssertOutput checks if the output contains the expected text.
 func (p *PTYTest) AssertOutput(expectedText string) error {
 	output := p.GetOutput()
-	if !strings.Contains(output, expectedText) {
+	if !strings.Contains(output, expectedText) && !strings.Contains(normalizeTTYOutput(output), expectedText) {
 		return fmt.Errorf("expected output %q not found in: %q", expectedText, output)
 	}
 	return nil
@@ -361,8 +380,64 @@ func (p *PTYTest) AssertOutput(expectedText string) error {
 // AssertNotOutput checks if the output does NOT contain the specified text.
 func (p *PTYTest) AssertNotOutput(unexpectedText string) error {
 	output := p.GetOutput()
-	if strings.Contains(output, unexpectedText) {
+	if strings.Contains(output, unexpectedText) || strings.Contains(normalizeTTYOutput(output), unexpectedText) {
 		return fmt.Errorf("unexpected output %q found in: %q", unexpectedText, output)
 	}
 	return nil
+}
+
+// normalizeTTYOutput removes ANSI escape/control sequences and carriage returns from a TTY capture
+// so plain-text expectations can be matched reliably across UI re-renders.
+func normalizeTTYOutput(s string) string {
+	// Fast path: if no ESC and no CR, return as-is
+	if !strings.ContainsAny(s, "\x1b\r") {
+		return s
+	}
+
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\r' {
+			// Drop carriage return; keep LF handling to the terminal
+			continue
+		}
+		if c != 0x1b { // ESC
+			b.WriteByte(c)
+			continue
+		}
+		// Handle ESC sequences
+		if i+1 >= len(s) {
+			break
+		}
+		switch s[i+1] {
+		case '[': // CSI: ESC [ ... letter
+			i += 2
+			for i < len(s) {
+				ch := s[i]
+				if ch >= 0x40 && ch <= 0x7E { // final byte @ to ~
+					break
+				}
+				i++
+			}
+			// i currently at final byte; loop will i++
+		case ']': // OSC: ESC ] ... BEL or ESC \
+			i += 2
+			for i < len(s) {
+				if s[i] == 0x07 { // BEL
+					break
+				}
+				if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' { // ESC \
+					i++
+					break
+				}
+				i++
+			}
+		default:
+			// Single-character or two-char sequences (ESC 7, ESC 8, ESC =, ESC >, ESC ( B, etc.)
+			// Skip the next byte and continue
+			i++
+		}
+	}
+	return b.String()
 }

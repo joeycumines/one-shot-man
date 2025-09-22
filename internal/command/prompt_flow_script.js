@@ -133,13 +133,33 @@ function addItem(type, label, payload) {
     return id;
 }
 
-function buildMetaPrompt() {
-    // Leverage context manager txtar dump
+// Build the combined context string from notes, diffs, and tracked files (txtar)
+function buildContextString() {
+    const contextParts = [];
+
+    for (const it of items()) {
+        if (it.type === "note") {
+            contextParts.push("### Note: " + (it.label || "note") + "\n\n" + it.payload + "\n\n---\n");
+        } else if (it.type === "diff") {
+            contextParts.push("### Diff: " + (it.label || "git diff") + "\n\n```diff\n" + (it.payload || "") + "\n```\n\n---\n");
+        }
+    }
+
     const txtar = context.toTxtar();
+    if (txtar && txtar.trim()) {
+        contextParts.push("```\n" + txtar + "\n```");
+    }
+
+    return contextParts.join("\n");
+}
+
+function buildMetaPrompt() {
+    const fullContext = buildContextString();
+
     const pb = tui.createPromptBuilder("meta", "Build meta-prompt");
     pb.setTemplate(getTemplate());
     pb.setVariable("goal", getGoal());
-    pb.setVariable("context_txtar", txtar);
+    pb.setVariable("context_txtar", fullContext);
     return pb.build();
 }
 
@@ -148,16 +168,7 @@ function assembleFinal() {
     const p = getTaskPrompt();
     if (p) parts.push(p.trim());
     parts.push("\n---\n## IMPLEMENTATIONS/CONTEXT\n---\n");
-    // Emit notes and diffs
-    for (const it of items()) {
-        if (it.type === "note") {
-            parts.push("### Note: " + (it.label || "note") + "\n\n" + it.payload + "\n\n---\n");
-        } else if (it.type === "diff") {
-            parts.push("### Diff: " + (it.label || "git diff") + "\n\n```diff\n" + (it.payload || "") + "\n```\n\n---\n");
-        }
-    }
-    // Also append the txtar dump for tracked files
-    parts.push("```\n" + context.toTxtar() + "\n```");
+    parts.push(buildContextString());
     return parts.join("\n");
 }
 
@@ -217,7 +228,8 @@ function buildCommands() {
                     output.print("git diff failed: " + res.message);
                     return;
                 }
-                const label = "git diff " + (args || []).join(" ");
+                const a = args || [];
+                const label = "git diff" + (a.length ? (" " + a.join(" ")) : "");
                 addItem("diff", label, res.stdout);
                 output.print("Added diff: " + label);
             }

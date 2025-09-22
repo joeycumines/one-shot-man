@@ -20,6 +20,7 @@ type Options struct {
 	Args           []string
 	DefaultTimeout time.Duration
 	Env            []string
+	Dir            string
 }
 
 // NewTest creates a new test console process (compatibility with external termtest)
@@ -34,6 +35,10 @@ func NewTest(t *testing.T, opts Options) (*ConsoleProcess, error) {
 	// Apply environment overrides if provided
 	if len(opts.Env) > 0 {
 		pty.SetEnv(opts.Env)
+	}
+	// Set working directory if provided
+	if opts.Dir != "" {
+		pty.SetDir(opts.Dir)
 	}
 
 	timeout := opts.DefaultTimeout

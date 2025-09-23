@@ -446,7 +446,7 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 
 				// NEW: If no file suggestions were found but command supports file completion,
 				// suggest new file arguments from CWD
-				// GUARD: Avoid showing completions when at least one ARGUMENT (i.e. not including 
+				// GUARD: Avoid showing completions when at least one ARGUMENT (i.e. not including
 				// the command) has already been entered, and the cursor is sitting at the end of that one item.
 				// In that scenario, the completion should show IF the user presses space once.
 				// Only apply this guard for simple single-token arguments (no paths with /, no multiple args)

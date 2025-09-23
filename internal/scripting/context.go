@@ -229,7 +229,7 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 			// But for absolute paths outside the base, prefer just the basename if it's unique
 			path := group[0].path
 			if filepath.IsAbs(path) {
-				// For absolute paths, prefer basename since the full absolute path 
+				// For absolute paths, prefer basename since the full absolute path
 				// is often not meaningful in the txtar context
 				out[group[0].key] = filepath.Base(path)
 			} else {

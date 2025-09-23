@@ -67,12 +67,12 @@ func TestContextPathsInTxtarHeaders(t *testing.T) {
 		// Create files both inside and outside base directory
 		internalFile := filepath.Join(baseDir, "internal.go")
 		externalFile := filepath.Join(externalDir, "external.go")
-		
+
 		mustWrite(internalFile, "package internal\n")
 		mustWrite(externalFile, "package external\n")
 
 		cm := NewContextManager(baseDir)
-		
+
 		// Add both files
 		if err := cm.AddPath(internalFile); err != nil {
 			t.Fatal(err)

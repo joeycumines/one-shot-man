@@ -151,7 +151,10 @@ func (tm *TUIManager) executeCommand(cmd Command, args []string) error {
 		defer tm.engine.vm.Set(jsGlobalContextName, parentCtxObj)
 		// ... then set up a new execution context for this command.
 		execCtx := &ExecutionContext{engine: tm.engine, name: "cmd:" + cmd.Name}
-		_ = tm.engine.setExecutionContext(execCtx)
+		if err := tm.engine.setExecutionContext(execCtx); err != nil {
+			// Treat as fatal: we cannot safely execute the command without ctx
+			panic(fmt.Sprintf("unrecoverable error setting command execution context: %v", err))
+		}
 
 		// Convert args to JavaScript array
 		argsJS := tm.engine.vm.NewArray()

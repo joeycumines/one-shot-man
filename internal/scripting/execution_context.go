@@ -32,7 +32,10 @@ func (ctx *ExecutionContext) Run(name string, fn goja.Callable) bool {
 	defer ctx.engine.vm.Set(jsGlobalContextName, parentContextObj)
 
 	// Set up the sub-context in JavaScript
-	_ = ctx.engine.setExecutionContext(subCtx)
+	if err := ctx.engine.setExecutionContext(subCtx); err != nil {
+		// This should never happen under normal circumstances; treat as fatal
+		panic(fmt.Sprintf("unrecoverable error setting sub-context: %v", err))
+	}
 
 	// Execute the test function with panic protection
 	var callErr error

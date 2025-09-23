@@ -136,7 +136,9 @@ func (e *Engine) ExecuteScript(script *Script) (err error) {
 	}
 
 	// Set up the execution context in JavaScript
-	_ = e.setExecutionContext(ctx)
+	if err = e.setExecutionContext(ctx); err != nil {
+		return fmt.Errorf("failed to set script execution context: %w", err)
+	}
 
 	// Always run deferred functions on exit (even if a panic occurs)
 	defer func() {

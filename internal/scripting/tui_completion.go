@@ -271,13 +271,7 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 }
 
 // tryCallJSCompleter attempts to call a JS completer; returns (suggestions, true) on success, otherwise (nil, false)
-func (tm *TUIManager) tryCallJSCompleter(callable goja.Callable, document prompt.Document) ([]prompt.Suggest, bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			_, _ = fmt.Fprintf(tm.output, "Completer panic: %v\n", r)
-		}
-	}()
-
+func (tm *TUIManager) tryCallJSCompleter(callable goja.Callable, document prompt.Document) ([]prompt.Suggest, error) {
 	vm := tm.engine.vm
 	// Build a lightweight JS wrapper for the document
 	docObj := vm.NewObject()
@@ -288,8 +282,7 @@ func (tm *TUIManager) tryCallJSCompleter(callable goja.Callable, document prompt
 	// Call the JS completer: fn(document)
 	value, err := callable(goja.Undefined(), docObj)
 	if err != nil {
-		_, _ = fmt.Fprintf(tm.output, "Completer error: %v\n", err)
-		return nil, false
+		return nil, fmt.Errorf("completer call failed: %w", err)
 	}
 
 	// Convert the result into []prompt.Suggest
@@ -297,30 +290,39 @@ func (tm *TUIManager) tryCallJSCompleter(callable goja.Callable, document prompt
 	var out []prompt.Suggest
 
 	if goja.IsUndefined(value) || goja.IsNull(value) {
-		return nil, false
+		// No suggestions provided
+		return nil, nil
 	}
 
 	// Try export to []interface{} then map
 	var rawArr []interface{}
 	if err := vm.ExportTo(value, &rawArr); err != nil {
-		// Not an array - bail out
-		return nil, false
+		return nil, fmt.Errorf("completer must return an array, got %T", value.Export())
 	}
 
-	for _, item := range rawArr {
+	for idx, item := range rawArr {
 		switch v := item.(type) {
 		case string:
 			out = append(out, prompt.Suggest{Text: v})
 		case map[string]interface{}:
-			text, _ := v["text"].(string)
-			desc, _ := v["description"].(string)
-			if text != "" {
-				out = append(out, prompt.Suggest{Text: text, Description: desc})
+			obj, ok := any(v).(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("completer result[%d] must be an object, but got %T", idx, v)
 			}
+			textVal, hasText := obj["text"]
+			if !hasText {
+				return nil, fmt.Errorf("completer result[%d] missing required 'text' field", idx)
+			}
+			text, ok := textVal.(string)
+			if !ok {
+				return nil, fmt.Errorf("completer result[%d].text must be a string, but got %T", idx, textVal)
+			}
+			desc, _ := obj["description"].(string)
+			out = append(out, prompt.Suggest{Text: text, Description: desc})
 		default:
-			// ignore unsupported types
+			return nil, fmt.Errorf("completer result[%d] has unsupported type %T", idx, v)
 		}
 	}
 
-	return out, true
+	return out, nil
 }

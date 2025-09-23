@@ -6,7 +6,7 @@ import (
 )
 
 // parseHistoryConfig parses history configuration from JavaScript config.
-func parseHistoryConfig(configMap map[string]interface{}) HistoryConfig {
+func parseHistoryConfig(configMap map[string]interface{}) (HistoryConfig, error) {
 	config := HistoryConfig{
 		Enabled: false,
 		File:    "",
@@ -15,13 +15,25 @@ func parseHistoryConfig(configMap map[string]interface{}) HistoryConfig {
 
 	if historyRaw, exists := configMap["history"]; exists {
 		if historyMap, ok := historyRaw.(map[string]interface{}); ok {
-			config.Enabled = getBool(historyMap, "enabled", false)
-			config.File = getString(historyMap, "file", "")
-			config.Size = getInt(historyMap, "size", 1000)
+			if v, err := getBool(historyMap, "enabled", false); err != nil {
+				return HistoryConfig{}, err
+			} else {
+				config.Enabled = v
+			}
+			if v, err := getString(historyMap, "file", ""); err != nil {
+				return HistoryConfig{}, err
+			} else {
+				config.File = v
+			}
+			if v, err := getInt(historyMap, "size", 1000); err != nil {
+				return HistoryConfig{}, err
+			} else {
+				config.Size = v
+			}
 		}
 	}
 
-	return config
+	return config, nil
 }
 
 // loadHistory loads history from a file.

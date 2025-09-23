@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/dop251/goja"
@@ -143,16 +144,19 @@ func (tm *TUIManager) executeCommand(cmd Command, args []string) error {
 		}
 		return fmt.Errorf("invalid Go command handler for %s", cmd.Name)
 	} else {
-		// Handle JavaScript function; temporarily expose a minimal ctx
-		parentCtxObj := tm.engine.vm.Get("ctx")
-		defer tm.engine.vm.Set("ctx", parentCtxObj)
-		execCtx := &ExecutionContext{engine: tm.engine, name: fmt.Sprintf("cmd:%s", cmd.Name)}
-		tm.engine.vm.Set("ctx", execCtx.toJSObject())
+		// Handle JavaScript function; temporarily expose a minimal ctx.
+		//
+		// Ensure we restore the previous context object after execution...
+		parentCtxObj := tm.engine.vm.Get(jsGlobalContextName)
+		defer tm.engine.vm.Set(jsGlobalContextName, parentCtxObj)
+		// ... then set up a new execution context for this command.
+		execCtx := &ExecutionContext{engine: tm.engine, name: "cmd:" + cmd.Name}
+		_ = tm.engine.setExecutionContext(execCtx)
 
 		// Convert args to JavaScript array
 		argsJS := tm.engine.vm.NewArray()
 		for i, arg := range args {
-			argsJS.Set(fmt.Sprintf("%d", i), arg)
+			_ = argsJS.Set(strconv.Itoa(i), arg)
 		}
 
 		// Execute the command handler with panic protection, then run defers.

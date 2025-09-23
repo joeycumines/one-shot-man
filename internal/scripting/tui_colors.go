@@ -9,40 +9,40 @@ import (
 // Unified helpers to apply color overrides without duplication.
 // applyFromGetter reads color overrides using a provided getter function.
 func (pc *PromptColors) applyFromGetter(get func(string) (string, bool)) {
-	if v, ok := get("input"); ok && v != "" {
+	if v, ok := get("input"); ok {
 		pc.InputText = parseColor(v)
 	}
-	if v, ok := get("prefix"); ok && v != "" {
+	if v, ok := get("prefix"); ok {
 		pc.PrefixText = parseColor(v)
 	}
-	if v, ok := get("suggestionText"); ok && v != "" {
+	if v, ok := get("suggestionText"); ok {
 		pc.SuggestionText = parseColor(v)
 	}
-	if v, ok := get("suggestionBG"); ok && v != "" {
+	if v, ok := get("suggestionBG"); ok {
 		pc.SuggestionBG = parseColor(v)
 	}
-	if v, ok := get("selectedSuggestionText"); ok && v != "" {
+	if v, ok := get("selectedSuggestionText"); ok {
 		pc.SelectedSuggestionText = parseColor(v)
 	}
-	if v, ok := get("selectedSuggestionBG"); ok && v != "" {
+	if v, ok := get("selectedSuggestionBG"); ok {
 		pc.SelectedSuggestionBG = parseColor(v)
 	}
-	if v, ok := get("descriptionText"); ok && v != "" {
+	if v, ok := get("descriptionText"); ok {
 		pc.DescriptionText = parseColor(v)
 	}
-	if v, ok := get("descriptionBG"); ok && v != "" {
+	if v, ok := get("descriptionBG"); ok {
 		pc.DescriptionBG = parseColor(v)
 	}
-	if v, ok := get("selectedDescriptionText"); ok && v != "" {
+	if v, ok := get("selectedDescriptionText"); ok {
 		pc.SelectedDescriptionText = parseColor(v)
 	}
-	if v, ok := get("selectedDescriptionBG"); ok && v != "" {
+	if v, ok := get("selectedDescriptionBG"); ok {
 		pc.SelectedDescriptionBG = parseColor(v)
 	}
-	if v, ok := get("scrollbarThumb"); ok && v != "" {
+	if v, ok := get("scrollbarThumb"); ok {
 		pc.ScrollbarThumb = parseColor(v)
 	}
-	if v, ok := get("scrollbarBG"); ok && v != "" {
+	if v, ok := get("scrollbarBG"); ok {
 		pc.ScrollbarBG = parseColor(v)
 	}
 }

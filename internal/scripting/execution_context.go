@@ -28,11 +28,11 @@ func (ctx *ExecutionContext) Run(name string, fn goja.Callable) bool {
 	}
 
 	// Save current JS ctx and guarantee restoration even on panic
-	parentContextObj := ctx.engine.vm.Get("ctx")
-	defer ctx.engine.vm.Set("ctx", parentContextObj)
+	parentContextObj := ctx.engine.vm.Get(jsGlobalContextName)
+	defer ctx.engine.vm.Set(jsGlobalContextName, parentContextObj)
 
 	// Set up the sub-context in JavaScript
-	ctx.engine.vm.Set("ctx", subCtx.toJSObject())
+	_ = ctx.engine.setExecutionContext(subCtx)
 
 	// Execute the test function with panic protection
 	var callErr error

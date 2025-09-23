@@ -149,19 +149,35 @@ func (l *TUILogger) Printf(format string, args ...interface{}) {
 }
 
 // PrintToTUI prints a message directly to the terminal interface.
+//
+// Semantics:
+//   - Always ensures the message ends with a trailing newline ("\n"), regardless of
+//     whether the interactive TUI sink is set or not. This guarantees consistent
+//     line-oriented output across both interactive and non-interactive modes.
+//   - The decision of whether to route to the interactive sink or the fallback
+//     writer is performed atomically with respect to SetTUISink by holding a
+//     read-lock for the duration of the operation. This prevents a race where a
+//     print that observed a nil sink writes directly to the writer after the TUI
+//     has taken control of the terminal.
 func (l *TUILogger) PrintToTUI(msg string) {
+	if !strings.HasSuffix(msg, "\n") {
+		msg += "\n"
+	}
+
+	// Hold the read lock across sink selection AND the subsequent action so that
+	// SetTUISink (which takes the write lock) cannot interleave between the
+	// check and the write/call. This avoids corrupting the TUI output by writing
+	// directly to the terminal after the TUI has started.
 	l.sinkMu.RLock()
-	sink := l.tuiSink
-	l.sinkMu.RUnlock()
-	if sink != nil {
-		sink(msg)
+	defer l.sinkMu.RUnlock()
+
+	if l.tuiSink != nil {
+		l.tuiSink(msg)
 		return
 	}
+
 	if l.tuiWriter != nil {
-		l.tuiWriter.Write([]byte(msg))
-		if !strings.HasSuffix(msg, "\n") {
-			l.tuiWriter.Write([]byte("\n"))
-		}
+		_, _ = l.tuiWriter.Write([]byte(msg))
 	}
 }
 

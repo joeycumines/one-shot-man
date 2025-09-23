@@ -364,7 +364,9 @@ func (tm *TUIManager) runAdvancedPrompt() {
 }
 
 // flushQueuedOutput writes any buffered output messages to the terminal
-// using a syncWriter to ensure they hit the PTY immediately.
+// using a syncWriter to ensure they hit the PTY immediately. Messages are
+// written verbatim as provided by PrintToTUI/PrintfToTUI, which are
+// responsible for ensuring trailing newlines as needed.
 func (tm *TUIManager) flushQueuedOutput() {
 	tm.outputMu.Lock()
 	queue := tm.outputQueue
@@ -375,7 +377,7 @@ func (tm *TUIManager) flushQueuedOutput() {
 	}
 	writer := &syncWriter{tm.output}
 	for _, m := range queue {
-		// Write messages verbatim; do not force newline to preserve exact formatting
+		// Messages already include any necessary trailing newline.
 		_, _ = writer.Write([]byte(m))
 	}
 }

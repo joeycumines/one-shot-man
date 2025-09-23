@@ -136,7 +136,9 @@ func (e *Engine) ExecuteScript(script *Script) (err error) {
 	}
 
 	// Set up the execution context in JavaScript
-	e.vm.Set("ctx", ctx.toJSObject())
+	if err = e.setExecutionContext(ctx); err != nil {
+		return fmt.Errorf("failed to set script execution context: %w", err)
+	}
 
 	// Always run deferred functions on exit (even if a panic occurs)
 	defer func() {
@@ -180,6 +182,26 @@ func (e *Engine) Close() error {
 	e.vm = nil
 	e.scripts = nil
 	return nil
+}
+
+const jsGlobalContextName = "ctx"
+
+func (e *Engine) setExecutionContext(ctx *ExecutionContext) error {
+	if ctx == nil {
+		panic("execution context cannot be nil")
+	}
+	return e.vm.Set(jsGlobalContextName, map[string]interface{}{
+		"run":    ctx.Run,
+		"defer":  ctx.Defer,
+		"log":    ctx.Log,
+		"logf":   ctx.Logf,
+		"error":  ctx.Error,
+		"errorf": ctx.Errorf,
+		"fatal":  ctx.Fatal,
+		"fatalf": ctx.Fatalf,
+		"failed": ctx.Failed,
+		"name":   ctx.Name,
+	})
 }
 
 // setupGlobals sets up the global JavaScript environment.
@@ -242,5 +264,3 @@ func readFile(path string) (string, error) {
 	}
 	return string(content), nil
 }
-
-// (env() moved to osm:os.getenv; no global env function)

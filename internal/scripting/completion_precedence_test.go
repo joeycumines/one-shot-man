@@ -127,9 +127,9 @@ func TestCompletionPrecedence(t *testing.T) {
 		}
 
 		doc := prompt.Document{Text: "he"}
-		suggestions, ok := tuiManager.tryCallJSCompleter(jsCompleter, doc)
-		if !ok {
-			t.Fatal("JS completer call failed")
+		suggestions, err := tuiManager.tryCallJSCompleter(jsCompleter, doc)
+		if err != nil {
+			t.Fatalf("JS completer call failed: %v", err)
 		}
 
 		if len(suggestions) != 1 || suggestions[0].Text != "help" || suggestions[0].Description != "JS completer help" {

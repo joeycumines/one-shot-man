@@ -68,7 +68,8 @@ func TestNewCompletionLogic_Unit(t *testing.T) {
 				ArgCompleters: []string{"file"},
 			},
 		},
-		modes: make(map[string]*ScriptMode),
+		commandOrder: []string{"add"}, // maintain order for deterministic completion
+		modes:        make(map[string]*ScriptMode),
 	}
 
 	// Test cases for the new completion logic
@@ -442,7 +443,8 @@ func TestCursorAwareCompletion(t *testing.T) {
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add files to context", ArgCompleters: []string{"file"}},
 		},
-		modes: make(map[string]*ScriptMode),
+		commandOrder: []string{"add"},
+		modes:        make(map[string]*ScriptMode),
 	}
 
 	// Case 1: Cursor inside first token (before space)
@@ -514,7 +516,8 @@ func TestCompletion_WithSpacesAndQuotes_Unit(t *testing.T) {
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add files to context", ArgCompleters: []string{"file"}},
 		},
-		modes: make(map[string]*ScriptMode),
+		commandOrder: []string{"add"},
+		modes:        make(map[string]*ScriptMode),
 	}
 
 	// Cases exercising quotes and spaces
@@ -553,7 +556,8 @@ func TestCompletion_TildeInQuotes(t *testing.T) {
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add files to context", ArgCompleters: []string{"file"}},
 		},
-		modes: make(map[string]*ScriptMode),
+		commandOrder: []string{"add"},
+		modes:        make(map[string]*ScriptMode),
 	}
 	full := "add \"~\""
 	before := full
@@ -592,9 +596,10 @@ func TestCompletion_EscapedQuoteInToken(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		output:   io.Discard,
-		commands: map[string]Command{"add": {Name: "add", ArgCompleters: []string{"file"}}},
-		modes:    make(map[string]*ScriptMode),
+		output:       io.Discard,
+		commands:     map[string]Command{"add": {Name: "add", ArgCompleters: []string{"file"}}},
+		commandOrder: []string{"add"},
+		modes:        make(map[string]*ScriptMode),
 	}
 
 	// Type within a double-quoted token and escape an inner quote

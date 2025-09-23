@@ -140,12 +140,17 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 	// Provide command completion for first word
 	if len(words) == 0 {
 		// Collect all commands with precedence: mode commands > registered commands > built-in commands
+		// Use a map for deduplication but maintain order
 		commandMap := make(map[string]prompt.Suggest)
+		var orderedCommandNames []string
 
 		// Built-in commands (lowest precedence)
 		builtinCommands := []string{"help", "exit", "quit", "mode", "modes", "state"}
 		for _, cmd := range builtinCommands {
 			if strings.HasPrefix(cmd, currentWord) {
+				if _, exists := commandMap[cmd]; !exists {
+					orderedCommandNames = append(orderedCommandNames, cmd)
+				}
 				commandMap[cmd] = prompt.Suggest{
 					Text:        cmd,
 					Description: "Built-in command",
@@ -155,8 +160,11 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 
 		// Registered commands (medium precedence)
 		tm.mu.RLock()
-		for _, cmd := range tm.commands {
-			if strings.HasPrefix(cmd.Name, currentWord) {
+		for _, cmdName := range tm.commandOrder {
+			if cmd, exists := tm.commands[cmdName]; exists && strings.HasPrefix(cmd.Name, currentWord) {
+				if _, exists := commandMap[cmd.Name]; !exists {
+					orderedCommandNames = append(orderedCommandNames, cmd.Name)
+				}
 				commandMap[cmd.Name] = prompt.Suggest{
 					Text:        cmd.Name,
 					Description: cmd.Description,
@@ -167,8 +175,11 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 		// Current mode commands (highest precedence)
 		if tm.currentMode != nil {
 			tm.currentMode.mu.RLock()
-			for _, cmd := range tm.currentMode.Commands {
-				if strings.HasPrefix(cmd.Name, currentWord) {
+			for _, cmdName := range tm.currentMode.CommandOrder {
+				if cmd, exists := tm.currentMode.Commands[cmdName]; exists && strings.HasPrefix(cmd.Name, currentWord) {
+					if _, exists := commandMap[cmd.Name]; !exists {
+						orderedCommandNames = append(orderedCommandNames, cmd.Name)
+					}
 					commandMap[cmd.Name] = prompt.Suggest{
 						Text:        cmd.Name,
 						Description: cmd.Description,
@@ -179,9 +190,11 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 		}
 		tm.mu.RUnlock()
 
-		// Convert map to slice
-		for _, suggestion := range commandMap {
-			suggestions = append(suggestions, suggestion)
+		// Convert to slice in the order we collected them
+		for _, cmdName := range orderedCommandNames {
+			if suggestion, exists := commandMap[cmdName]; exists {
+				suggestions = append(suggestions, suggestion)
+			}
 		}
 
 		// Intentionally do NOT suggest file arguments at this stage.

@@ -22,9 +22,10 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 			return err
 		}
 		mode := &ScriptMode{
-			Name:     name,
-			Commands: make(map[string]Command),
-			State:    make(map[string]interface{}),
+			Name:         name,
+			Commands:     make(map[string]Command),
+			CommandOrder: make([]string, 0),
+			State:        make(map[string]interface{}),
 		}
 
 		// Set up TUI config
@@ -108,6 +109,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 						if handler, exists := cmdMap["handler"]; exists {
 							cmd.Handler = handler
 							mode.Commands[cmdName] = cmd
+							mode.CommandOrder = append(mode.CommandOrder, cmdName)
 						}
 					}
 				}

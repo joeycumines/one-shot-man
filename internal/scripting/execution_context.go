@@ -31,21 +31,8 @@ func (ctx *ExecutionContext) Run(name string, fn goja.Callable) bool {
 	parentContextObj := ctx.engine.vm.Get("ctx")
 	defer ctx.engine.vm.Set("ctx", parentContextObj)
 
-	// Set up the sub-context in JavaScript with both Go-style and JS-style methods
-	contextObj := map[string]interface{}{
-		// JavaScript-style methods (camelCase)
-		"run":    subCtx.Run,
-		"defer":  subCtx.Defer,
-		"log":    subCtx.Log,
-		"logf":   subCtx.Logf,
-		"error":  subCtx.Error,
-		"errorf": subCtx.Errorf,
-		"fatal":  subCtx.Fatal,
-		"fatalf": subCtx.Fatalf,
-		"failed": subCtx.Failed,
-		"name":   subCtx.Name,
-	}
-	ctx.engine.vm.Set("ctx", contextObj)
+	// Set up the sub-context in JavaScript
+	ctx.engine.vm.Set("ctx", subCtx.toJSObject())
 
 	// Execute the test function with panic protection
 	var callErr error
@@ -162,4 +149,23 @@ func (ctx *ExecutionContext) runDeferred() error {
 		return fmt.Errorf("test context failed")
 	}
 	return nil
+}
+
+// toJSObject builds the canonical JavaScript ctx object for this execution context.
+// This consolidates JS ctx construction in one place.
+func (ctx *ExecutionContext) toJSObject() map[string]interface{} {
+	return map[string]interface{}{
+		"run":    ctx.Run,
+		"defer":  ctx.Defer,
+		"log":    ctx.Log,
+		"logf":   ctx.Logf,
+		"error":  ctx.Error,
+		"errorf": ctx.Errorf,
+		"fatal":  ctx.Fatal,
+		"fatalf": ctx.Fatalf,
+		"failed": ctx.Failed,
+		"name":   ctx.Name,
+		// hidden property used by some native modules, if ever needed in future
+		// "__stdCtx": ctx.engine.ctx, // not exposing for now
+	}
 }

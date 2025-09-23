@@ -12,6 +12,7 @@ tool (
 require (
 	github.com/creack/pty v1.1.24
 	github.com/dop251/goja v0.0.0-20250630131328-58d95d85e994
+	github.com/dop251/goja_nodejs v0.0.0-20250409162600-f7acab6894b0
 	github.com/elk-language/go-prompt v1.3.1
 	golang.org/x/term v0.35.0
 	golang.org/x/tools v0.37.0
@@ -21,7 +22,7 @@ require (
 	github.com/BurntSushi/toml v1.5.0 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
-	github.com/google/pprof v0.0.0-20250919162441-8b542baf5bcf // indirect
+	github.com/google/pprof v0.0.0-20250923004556-9e5a51aed1e8 // indirect
 	github.com/joeycumines/simple-command-output-filter v0.2.1 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

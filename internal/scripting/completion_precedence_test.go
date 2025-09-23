@@ -32,7 +32,7 @@ func TestCompletionPrecedence(t *testing.T) {
 				}
 			}
 		});
-		
+
 		// Switch to the test mode
 		tui.switchMode("test-mode");
 	`)

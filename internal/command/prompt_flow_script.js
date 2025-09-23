@@ -1,6 +1,9 @@
 // Prompt Flow: Single-file, goal/context/template-driven prompt builder (baked-in version)
 // This is the built-in version of the prompt-flow script with embedded template
 
+const {openEditor: osOpenEditor, fileExists, clipboardCopy, getenv} = require('osm:os');
+const {execv} = require('osm:exec');
+
 // State keys
 const STATE = {
     mode: "flow",               // fixed mode name
@@ -173,7 +176,7 @@ function assembleFinal() {
 }
 
 function openEditor(title, initial) {
-    const res = system.openEditor(title, initial || "");
+    const res = osOpenEditor(title, initial || "");
     if (typeof res === 'string') return res;
     // Some engines may return [value, error]; we standardize to string
     return "" + res;
@@ -223,7 +226,7 @@ function buildCommands() {
             usage: "diff [args]",
             handler: function (args) {
                 const argv = ["git", "diff"].concat(args || []);
-                const res = system.execv(argv);
+                const res = execv(argv);
                 if (res && res.error) {
                     output.print("git diff failed: " + res.message);
                     return;
@@ -255,7 +258,7 @@ function buildCommands() {
                 if (task) output.print("[prompt] " + task.slice(0, 80) + (task.length > 80 ? "..." : ""));
                 for (const it of items()) {
                     let line = "[" + it.id + "] [" + it.type + "] " + (it.label || "");
-                    if (it.type === 'file' && it.label && !system.fileExists(it.label)) {
+                    if (it.type === 'file' && it.label && !fileExists(it.label)) {
                         line += " (missing)";
                     }
                     output.print(line);
@@ -448,11 +451,11 @@ function buildCommands() {
                     }
                 }
 
-                const err = system.clipboardCopy(text);
-                if (err && err.message) {
-                    output.print("Clipboard error: " + err.message);
-                } else {
+                try {
+                    clipboardCopy(text);
                     output.print(label + " copied to clipboard.");
+                } catch (e) {
+                    output.print("Clipboard error: " + (e && e.message ? e.message : e));
                 }
             }
         },

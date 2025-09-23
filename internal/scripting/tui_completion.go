@@ -242,6 +242,10 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 				// immediately after it (no trailing space). In that scenario, fallback suggestions
 				// should appear only after the user types a space. Apply this guard only to simple
 				// single-token arguments (no paths with '/', no multiple args).
+				// Guard is for the first simple argument while the cursor is within the arg token (no trailing space).
+				// argv.BeforeCursor returns completed tokens BEFORE the cursor, excluding the current token.
+				// Therefore, when typing the first argument, len(words) == 1 (words[0] is the command),
+				// and currentWord is the partial argument. When typing the second argument, len(words) == 2.
 				isSimpleArgument := len(words) == 1 && currentWord != "" && !strings.Contains(currentWord, "/")
 				shouldAvoidFallback := isSimpleArgument && !strings.HasSuffix(before, " ")
 				if hasFileCompleters && len(suggestions) == 0 && !shouldAvoidFallback {

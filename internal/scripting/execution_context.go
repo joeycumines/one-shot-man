@@ -150,20 +150,3 @@ func (ctx *ExecutionContext) runDeferred() error {
 	}
 	return nil
 }
-
-// toJSObject builds the canonical JavaScript ctx object for this execution context.
-// This consolidates JS ctx construction in one place.
-func (ctx *ExecutionContext) toJSObject() map[string]interface{} {
-	return map[string]interface{}{
-		"run":    ctx.Run,
-		"defer":  ctx.Defer,
-		"log":    ctx.Log,
-		"logf":   ctx.Logf,
-		"error":  ctx.Error,
-		"errorf": ctx.Errorf,
-		"fatal":  ctx.Fatal,
-		"fatalf": ctx.Fatalf,
-		"failed": ctx.Failed,
-		"name":   ctx.Name,
-	}
-}

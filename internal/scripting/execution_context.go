@@ -78,18 +78,18 @@ func (ctx *ExecutionContext) Defer(fn goja.Callable) {
 
 // Log logs a message to the test output (Go-style method for internal use).
 func (ctx *ExecutionContext) Log(args ...interface{}) {
-	fmt.Fprintf(&ctx.output, "[%s] %s\n", ctx.name, fmt.Sprint(args...))
+	_, _ = fmt.Fprintf(&ctx.output, "[%s] %s\n", ctx.name, fmt.Sprint(args...))
 	if ctx.engine.testMode {
-		fmt.Fprintf(ctx.engine.stdout, "[%s] %s\n", ctx.name, fmt.Sprint(args...))
+		_, _ = fmt.Fprintf(ctx.engine.stdout, "[%s] %s\n", ctx.name, fmt.Sprint(args...))
 	}
 }
 
 // Logf logs a formatted message to the test output (Go-style method for internal use).
 func (ctx *ExecutionContext) Logf(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(&ctx.output, "[%s] %s\n", ctx.name, msg)
+	_, _ = fmt.Fprintf(&ctx.output, "[%s] %s\n", ctx.name, msg)
 	if ctx.engine.testMode {
-		fmt.Fprintf(ctx.engine.stdout, "[%s] %s\n", ctx.name, msg)
+		_, _ = fmt.Fprintf(ctx.engine.stdout, "[%s] %s\n", ctx.name, msg)
 	}
 }
 
@@ -97,16 +97,16 @@ func (ctx *ExecutionContext) Logf(format string, args ...interface{}) {
 func (ctx *ExecutionContext) Error(args ...interface{}) {
 	ctx.failed = true
 	msg := fmt.Sprint(args...)
-	fmt.Fprintf(&ctx.output, "[%s] ERROR: %s\n", ctx.name, msg)
-	fmt.Fprintf(ctx.engine.stderr, "[%s] ERROR: %s\n", ctx.name, msg)
+	_, _ = fmt.Fprintf(&ctx.output, "[%s] ERROR: %s\n", ctx.name, msg)
+	_, _ = fmt.Fprintf(ctx.engine.stderr, "[%s] ERROR: %s\n", ctx.name, msg)
 }
 
 // Errorf marks the current test as failed and logs a formatted error message.
 func (ctx *ExecutionContext) Errorf(format string, args ...interface{}) {
 	ctx.failed = true
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(&ctx.output, "[%s] ERROR: %s\n", ctx.name, msg)
-	fmt.Fprintf(ctx.engine.stderr, "[%s] ERROR: %s\n", ctx.name, msg)
+	_, _ = fmt.Fprintf(&ctx.output, "[%s] ERROR: %s\n", ctx.name, msg)
+	_, _ = fmt.Fprintf(ctx.engine.stderr, "[%s] ERROR: %s\n", ctx.name, msg)
 }
 
 // Fatal marks the current test as failed and stops execution.
@@ -165,7 +165,5 @@ func (ctx *ExecutionContext) toJSObject() map[string]interface{} {
 		"fatalf": ctx.Fatalf,
 		"failed": ctx.Failed,
 		"name":   ctx.Name,
-		// hidden property used by some native modules, if ever needed in future
-		// "__stdCtx": ctx.engine.ctx, // not exposing for now
 	}
 }

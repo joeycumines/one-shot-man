@@ -21,6 +21,7 @@ This tool is provider-agnostic, integrating primarily via clipboard, file, and c
 - **Script Command Discovery**: Automatic discovery and execution of script commands.
 - **Stdlib Flag Package**: Built using Go's standard library `flag` package.
 - **Interactive TUI (go-prompt)**: Rich REPL powered by `github.com/elk-language/go-prompt` with completion, custom key bindings, and configurable colors.
+- **Shell Completion**: Built-in support for bash, zsh, fish, and PowerShell completion scripts.
 
 -----
 
@@ -51,6 +52,68 @@ osm init
 osm config --all
 # Start interactive scripting terminal (TUI)
 osm script -i
+```
+
+-----
+
+### Shell Completion
+
+The `completion` command generates shell completion scripts for various shells, providing tab completion for commands.
+
+#### Installation
+
+**Bash:**
+```sh
+# Install system-wide (requires root)
+osm completion bash | sudo tee /etc/bash_completion.d/osm > /dev/null
+
+# Install for current user only
+mkdir -p ~/.local/share/bash-completion/completions
+osm completion bash > ~/.local/share/bash-completion/completions/osm
+
+# Or source directly in your ~/.bashrc
+echo 'source <(osm completion bash)' >> ~/.bashrc
+```
+
+**Zsh:**
+```sh
+# Create completions directory if it doesn't exist
+mkdir -p ~/.zsh/completions
+
+# Install completion script
+osm completion zsh > ~/.zsh/completions/_osm
+
+# Add to your ~/.zshrc (if not already present)
+echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
+echo 'autoload -U compinit && compinit' >> ~/.zshrc
+
+# Or source directly
+echo 'source <(osm completion zsh)' >> ~/.zshrc
+```
+
+**Fish:**
+```sh
+# Install completion script
+osm completion fish > ~/.config/fish/completions/osm.fish
+```
+
+**PowerShell:**
+```powershell
+# Add to your PowerShell profile
+osm completion powershell >> $PROFILE
+
+# Or run directly in current session
+osm completion powershell | Invoke-Expression
+```
+
+#### Usage
+
+Once installed, you can use tab completion for commands:
+
+```sh
+osm <TAB>                # Shows all available commands
+osm he<TAB>              # Completes to "help"  
+osm completion <TAB>     # Shows shell options: bash, zsh, fish, powershell
 ```
 
 -----
@@ -292,6 +355,7 @@ Switch to a mode to execute JavaScript code
 - `script` - Execute JavaScript scripts with deferred/declarative API.
 - `prompt-flow` - Interactive prompt builder: goal/context/template -\> generate -\> assemble.
 - `code-review` - Single-prompt code review with context: context -\> generate prompt for PR review.
+- `completion` - Generate shell completion scripts for bash, zsh, fish, and PowerShell.
 
 ### Interactive TUI
 

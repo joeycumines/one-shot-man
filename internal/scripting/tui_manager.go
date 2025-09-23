@@ -20,6 +20,7 @@ func NewTUIManager(ctx context.Context, engine *Engine, input io.Reader, output 
 		ctx:              ctx,
 		modes:            make(map[string]*ScriptMode),
 		commands:         make(map[string]Command),
+		commandOrder:     make([]string, 0),
 		input:            input,
 		output:           output,
 		prompts:          make(map[string]*prompt.Prompt),
@@ -103,6 +104,11 @@ func (tm *TUIManager) GetCurrentMode() *ScriptMode {
 func (tm *TUIManager) RegisterCommand(cmd Command) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
+	
+	// If this is a new command, add it to the order slice
+	if _, exists := tm.commands[cmd.Name]; !exists {
+		tm.commandOrder = append(tm.commandOrder, cmd.Name)
+	}
 	tm.commands[cmd.Name] = cmd
 }
 
@@ -254,15 +260,21 @@ func (tm *TUIManager) ListCommands() []Command {
 	defer tm.mu.RUnlock()
 
 	commands := make([]Command, 0, len(tm.commands))
-	for _, cmd := range tm.commands {
-		commands = append(commands, cmd)
+	// Use ordered iteration instead of map iteration
+	for _, cmdName := range tm.commandOrder {
+		if cmd, exists := tm.commands[cmdName]; exists {
+			commands = append(commands, cmd)
+		}
 	}
 
 	// Add current mode commands
 	if tm.currentMode != nil {
 		tm.currentMode.mu.RLock()
-		for _, cmd := range tm.currentMode.Commands {
-			commands = append(commands, cmd)
+		// Use ordered iteration for mode commands too
+		for _, cmdName := range tm.currentMode.CommandOrder {
+			if cmd, exists := tm.currentMode.Commands[cmdName]; exists {
+				commands = append(commands, cmd)
+			}
 		}
 		tm.currentMode.mu.RUnlock()
 	}

@@ -18,9 +18,10 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 	// Convert the config object to a Go struct
 	if configMap, ok := modeConfig.(map[string]interface{}); ok {
 		mode := &ScriptMode{
-			Name:     getString(configMap, "name", ""),
-			Commands: make(map[string]Command),
-			State:    make(map[string]interface{}),
+			Name:         getString(configMap, "name", ""),
+			Commands:     make(map[string]Command),
+			CommandOrder: make([]string, 0),
+			State:        make(map[string]interface{}),
 		}
 
 		// Set up TUI config
@@ -76,6 +77,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 						if handler, exists := cmdMap["handler"]; exists {
 							cmd.Handler = handler
 							mode.Commands[cmdName] = cmd
+							mode.CommandOrder = append(mode.CommandOrder, cmdName)
 						}
 					}
 				}

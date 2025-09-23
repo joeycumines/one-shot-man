@@ -25,7 +25,7 @@ func TestFileCompletion_NoPanic_WithSpaces(t *testing.T) {
 	executor := termtest.TestExecutor(&[]string{})
 
 	// Use a minimal TUIManager solely for completion logic
-	tm := &TUIManager{commands: map[string]Command{}, modes: map[string]*ScriptMode{}}
+	tm := &TUIManager{commands: map[string]Command{}, commandOrder: []string{}, modes: map[string]*ScriptMode{}}
 	tm.RegisterCommand(Command{Name: "add", Description: "Add", ArgCompleters: []string{"file"}, IsGoCommand: true, Handler: func([]string) error { return nil }})
 
 	// Bridge our completer into go-prompt

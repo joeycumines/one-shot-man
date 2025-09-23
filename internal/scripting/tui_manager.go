@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/dop251/goja"
@@ -104,7 +105,7 @@ func (tm *TUIManager) GetCurrentMode() *ScriptMode {
 func (tm *TUIManager) RegisterCommand(cmd Command) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
-	
+
 	// If this is a new command, add it to the order slice
 	if _, exists := tm.commands[cmd.Name]; !exists {
 		tm.commandOrder = append(tm.commandOrder, cmd.Name)
@@ -149,27 +150,22 @@ func (tm *TUIManager) executeCommand(cmd Command, args []string) error {
 		}
 		return fmt.Errorf("invalid Go command handler for %s", cmd.Name)
 	} else {
-		// Handle JavaScript function; temporarily expose a minimal ctx
-		parentCtxObj := tm.engine.vm.Get("ctx")
-		defer tm.engine.vm.Set("ctx", parentCtxObj)
-		execCtx := &ExecutionContext{engine: tm.engine, name: fmt.Sprintf("cmd:%s", cmd.Name)}
-		tm.engine.vm.Set("ctx", map[string]interface{}{
-			"run":    execCtx.Run,
-			"defer":  execCtx.Defer,
-			"log":    execCtx.Log,
-			"logf":   execCtx.Logf,
-			"error":  execCtx.Error,
-			"errorf": execCtx.Errorf,
-			"fatal":  execCtx.Fatal,
-			"fatalf": execCtx.Fatalf,
-			"failed": execCtx.Failed,
-			"name":   execCtx.Name,
-		})
+		// Handle JavaScript function; temporarily expose a minimal ctx.
+		//
+		// Ensure we restore the previous context object after execution...
+		parentCtxObj := tm.engine.vm.Get(jsGlobalContextName)
+		defer tm.engine.vm.Set(jsGlobalContextName, parentCtxObj)
+		// ... then set up a new execution context for this command.
+		execCtx := &ExecutionContext{engine: tm.engine, name: "cmd:" + cmd.Name}
+		if err := tm.engine.setExecutionContext(execCtx); err != nil {
+			// Treat as fatal: we cannot safely execute the command without ctx
+			panic(fmt.Sprintf("unrecoverable error setting command execution context: %v", err))
+		}
 
 		// Convert args to JavaScript array
 		argsJS := tm.engine.vm.NewArray()
 		for i, arg := range args {
-			argsJS.Set(fmt.Sprintf("%d", i), arg)
+			_ = argsJS.Set(strconv.Itoa(i), arg)
 		}
 
 		// Execute the command handler with panic protection, then run defers.
@@ -292,16 +288,15 @@ func (tm *TUIManager) Run() {
 		tm.outputMu.Unlock()
 	})
 	// Prominent, unavoidable warning: this TUI is ephemeral and does not persist state
-	fmt.Fprintln(writer, "================================================================")
-	fmt.Fprintln(writer, "WARNING: EPHEMERAL SESSION - nothing is persisted. Your work will be lost on exit.")
-	fmt.Fprintln(writer, "Save or export anything you need BEFORE quitting.")
-	fmt.Fprintln(writer, "================================================================")
-	fmt.Fprintln(writer, "one-shot-man Rich TUI Terminal")
-	fmt.Fprintln(writer, "Type 'help' for available commands, 'exit' to quit")
+	_, _ = fmt.Fprintln(writer, "================================================================")
+	_, _ = fmt.Fprintln(writer, "WARNING: EPHEMERAL SESSION - nothing is persisted. Your work will be lost on exit.")
+	_, _ = fmt.Fprintln(writer, "Save or export anything you need BEFORE quitting.")
+	_, _ = fmt.Fprintln(writer, "================================================================")
+	_, _ = fmt.Fprintln(writer, "one-shot-man Rich TUI Terminal")
+	_, _ = fmt.Fprintln(writer, "Type 'help' for available commands, 'exit' to quit")
 	modes := tm.ListModes()
-	fmt.Fprintf(writer, "Available modes: %s\n", strings.Join(modes, ", "))
-
-	fmt.Fprintln(writer, "Starting advanced go-prompt interface")
+	_, _ = fmt.Fprintf(writer, "Available modes: %s\n", strings.Join(modes, ", "))
+	_, _ = fmt.Fprintln(writer, "Starting advanced go-prompt interface")
 	// Flush any pending output (e.g., from onEnter) before starting prompt
 	tm.flushQueuedOutput()
 	tm.runAdvancedPrompt()

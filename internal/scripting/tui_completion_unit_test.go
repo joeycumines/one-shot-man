@@ -11,9 +11,10 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/argv"
 )
 
-// TestNewCompletionLogic_Unit tests the updated file completion logic
-// that now handles edge cases properly and suggests files for commands
-// even when only the command is typed.
+// TestNewCompletionLogic_Unit tests the file completion logic that
+// handles edge cases properly and does NOT suggest files when only
+// the command is typed (no trailing space). File suggestions appear
+// after a trailing space moves the cursor into the first argument.
 func TestNewCompletionLogic_Unit(t *testing.T) {
 	// Create a temporary directory with test files
 	tmpDir := t.TempDir()
@@ -82,9 +83,9 @@ func TestNewCompletionLogic_Unit(t *testing.T) {
 		{
 			name:           "command_only",
 			input:          "add",
-			expectedTypes:  []string{"command", "file"},
-			shouldHaveFile: true,
-			desc:           "Command only - should suggest command and files for next arg",
+			expectedTypes:  []string{"command"},
+			shouldHaveFile: false,
+			desc:           "Command only - should suggest only command, no files until a space",
 		},
 		{
 			name:           "partial_command",
@@ -234,23 +235,12 @@ func testNewCompletionLogic(t *testing.T, tm *TUIManager, input string, expected
 			t.Errorf("Expected suggestion containing %q for %q, got: %v", expect, input, texts)
 		}
 	case "add":
-		// Expect combined form suggestions like "add <file>" alongside command
-		// Check a couple of fixtures we created
-		wantAny := []string{"add README.md", "add config.mk", "add scripts/"}
-		anyFound := false
-		for _, w := range wantAny {
-			for _, txt := range texts {
-				if txt == w || strings.HasPrefix(w, "add ") && strings.HasPrefix(txt, "add ") && strings.Contains(txt, strings.TrimPrefix(w, "add ")) {
-					anyFound = true
-					break
-				}
+		// With new behavior, command-only input should not inject file suggestions.
+		// Ensure we didn't erroneously include file suggestions here.
+		for _, txt := range texts {
+			if strings.HasPrefix(txt, "add ") {
+				t.Errorf("unexpected file suggestion with command-only input: %q", txt)
 			}
-			if anyFound {
-				break
-			}
-		}
-		if !anyFound {
-			t.Errorf("Expected at least one CWD file suggestion prefixed by command for %q, got: %v", input, texts)
 		}
 	case "add nonexistent/path":
 		// Fallback to CWD suggestions should occur
@@ -425,14 +415,9 @@ func testCompleterLogic(t *testing.T, input, desc string) {
 			t.Logf("    This mismatch is likely the root cause of the panic!")
 		}
 	} else if len(words) == 1 && words[0] == "add" {
-		// NEW TEST: Single command should now trigger file suggestions
-		t.Logf("  Testing NEW logic: single 'add' command should suggest files")
-
-		// Test that the new logic would suggest files from CWD
-		suggestions := getFilepathSuggestions("")
-		if len(suggestions) == 0 {
-			t.Errorf("Expected CWD file suggestions for single 'add' command")
-		}
+		// With the current behavior, single command without trailing space should NOT
+		// trigger file suggestions at this stage. No assertion needed beyond no panic.
+		t.Logf("  Single 'add' command without trailing space: no file suggestions expected here")
 	}
 }
 
@@ -640,5 +625,289 @@ func TestCompletion_EscapedQuoteInToken(t *testing.T) {
 			}
 			return r
 		}())
+	}
+}
+
+// These tests focus specifically on the fallback guard semantics introduced to avoid
+// showing CWD-wide file suggestions while the user is typing the first simple argument
+// until they press a space after it.
+func TestFallbackGuard_FirstSimpleArg_NoSpace_NoFallback(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmp, "README.md"), []byte(""), 0o644)
+	_ = os.MkdirAll(filepath.Join(tmp, "scripts"), 0o755)
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	tm := &TUIManager{
+		output: io.Discard,
+		commands: map[string]Command{
+			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
+		},
+		modes: make(map[string]*ScriptMode),
+	}
+
+	full := "add REA"
+	before := full // cursor right after the first simple argument token (no trailing space)
+	tm.getDefaultCompletionSuggestionsFor(before, full)
+
+	// We still might have direct matches for REA, but the guard only affects the
+	// fallback-to-CWD branch when there are zero matches. So craft an input with no matches.
+	full = "add NOMATCH"
+	before = full
+	sugg := tm.getDefaultCompletionSuggestionsFor(before, full)
+
+	// Expect: no CWD-wide fallback suggestions like "config.mk", "scripts/" etc.
+	// We allow zero suggestions here.
+	for _, s := range sugg {
+		if s.Text == "README.md" || strings.HasSuffix(s.Text, "/") {
+			t.Fatalf("unexpected fallback suggestion while typing first simple arg without space: %q", s.Text)
+		}
+	}
+}
+
+func TestFallbackGuard_FirstSimpleArg_WithSpace_AllowsFallback(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmp, "config.mk"), []byte(""), 0o644)
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	tm := &TUIManager{
+		output: io.Discard,
+		commands: map[string]Command{
+			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
+		},
+		modes: make(map[string]*ScriptMode),
+	}
+
+	full := "add NOMATCH " // trailing space indicates user is ready for next arg
+	before := full
+	sugg := tm.getDefaultCompletionSuggestionsFor(before, full)
+
+	if len(sugg) == 0 {
+		t.Fatalf("expected fallback suggestions after trailing space")
+	}
+}
+
+func TestFallbackGuard_PathArg_WithoutSpace_AllowsFallback(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(tmp, "dir"), 0o755)
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	tm := &TUIManager{
+		output: io.Discard,
+		commands: map[string]Command{
+			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
+		},
+		modes: make(map[string]*ScriptMode),
+	}
+
+	full := "add dir/NOPE"
+	before := full
+	sugg := tm.getDefaultCompletionSuggestionsFor(before, full)
+
+	// No matches under dir/, so the guard should NOT suppress fallback because
+	// the arg contains a slash (treated as a path-like argument).
+	// Expect some fallback suggestions from CWD (may include dir/ itself).
+	if len(sugg) == 0 {
+		t.Fatalf("expected some suggestions for path-like arg without space")
+	}
+}
+
+func TestFallbackGuard_QuotedFirstArg_NoSpace_NoFallback(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmp, "notes.txt"), []byte(""), 0o644)
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	tm := &TUIManager{
+		output: io.Discard,
+		commands: map[string]Command{
+			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
+		},
+		modes: make(map[string]*ScriptMode),
+	}
+
+	full := "add \"NOPE\"" // first arg completed but still first arg and no trailing space
+	before := full
+	sugg := tm.getDefaultCompletionSuggestionsFor(before, full)
+	// With quotes and no trailing space, there should be no fallback suggestions.
+	for _, s := range sugg {
+		if s.Text == "notes.txt" || strings.HasSuffix(s.Text, "/") {
+			t.Fatalf("unexpected fallback suggestion for quoted first arg without space: %q", s.Text)
+		}
+	}
+}
+
+func TestFallbackGuard_SecondArg_NoSpace_AllowsFallback(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmp, "a.txt"), []byte(""), 0o644)
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	tm := &TUIManager{
+		output: io.Discard,
+		commands: map[string]Command{
+			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
+		},
+		modes: make(map[string]*ScriptMode),
+	}
+
+	full := "add done NOPE" // typing second arg now
+	before := full
+	sugg := tm.getDefaultCompletionSuggestionsFor(before, full)
+	if len(sugg) == 0 {
+		t.Fatalf("expected suggestions for second argument without space")
+	}
+}
+
+// Ensure that while typing just the command (no trailing space), we do NOT
+// emit any file suggestions. Previously, suggestions like "add <file>" would
+// appear; this must not happen until a space is typed.
+func TestNoFileSuggestions_WhileTypingCommand_NoSpace(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmp, "hello.txt"), []byte(""), 0o644)
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	tm := &TUIManager{
+		output: io.Discard,
+		commands: map[string]Command{
+			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
+		},
+		modes: make(map[string]*ScriptMode),
+	}
+
+	full := "add" // no trailing space, cursor after command token
+	before := full
+	sugg := tm.getDefaultCompletionSuggestionsFor(before, full)
+
+	// Expect only command suggestions, not file-injected ones like "add hello.txt"
+	for _, s := range sugg {
+		if strings.HasPrefix(s.Text, "add ") {
+			t.Fatalf("unexpected file suggestion during command typing: %q", s.Text)
+		}
+		if s.Text == "hello.txt" {
+			t.Fatalf("unexpected bare file suggestion during command typing: %q", s.Text)
+		}
+	}
+}
+
+// Same as above, but for a partial command prefix (e.g., "ad"). Ensure we don't
+// preemptively add file suggestions combined with the predicted command.
+func TestNoFileSuggestions_WhileTypingCommandPrefix_NoSpace(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmp, "world.md"), []byte(""), 0o644)
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	tm := &TUIManager{
+		output: io.Discard,
+		commands: map[string]Command{
+			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
+		},
+		modes: make(map[string]*ScriptMode),
+	}
+
+	full := "ad" // typing a prefix of the command
+	before := full
+	sugg := tm.getDefaultCompletionSuggestionsFor(before, full)
+
+	for _, s := range sugg {
+		if strings.HasPrefix(s.Text, "add ") {
+			t.Fatalf("unexpected file suggestion during command prefix typing: %q", s.Text)
+		}
+		if s.Text == "world.md" {
+			t.Fatalf("unexpected bare file suggestion during command prefix typing: %q", s.Text)
+		}
+	}
+}
+
+// After typing a trailing space, the cursor moves into the first argument
+// position and file suggestions should appear for commands with file completers,
+// even if the first argument is currently empty.
+func TestCommand_TrailingSpace_ShowsFileSuggestions_FirstArg(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmp, "file1.txt"), []byte(""), 0o644)
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	tm := &TUIManager{
+		output: io.Discard,
+		commands: map[string]Command{
+			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
+		},
+		modes: make(map[string]*ScriptMode),
+	}
+
+	full := "add " // trailing space, first argument position (empty)
+	before := full
+	sugg := tm.getDefaultCompletionSuggestionsFor(before, full)
+
+	if len(sugg) == 0 {
+		t.Fatalf("expected file suggestions after trailing space into first arg")
+	}
+}
+
+// If a command does NOT declare a file completer, even after a trailing space
+// we should not suggest files for the first argument automatically.
+func TestNonFileCommand_TrailingSpace_NoFileSuggestions(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmp, "x.txt"), []byte(""), 0o644)
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	tm := &TUIManager{
+		output: io.Discard,
+		commands: map[string]Command{
+			"noop": {Name: "noop", Description: "NoOp"}, // no ArgCompleters
+		},
+		modes: make(map[string]*ScriptMode),
+	}
+
+	full := "noop "
+	before := full
+	sugg := tm.getDefaultCompletionSuggestionsFor(before, full)
+
+	for _, s := range sugg {
+		if s.Text == "x.txt" || strings.HasSuffix(s.Text, "/") {
+			t.Fatalf("unexpected file suggestion for non-file command: %q", s.Text)
+		}
 	}
 }

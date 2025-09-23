@@ -104,22 +104,22 @@ import java.util.concurrent.TimeUnit;
  */
 public class ThreadPoolManager {
     private final ThreadPoolExecutor executor;
-    
+
     public ThreadPoolManager(int corePoolSize, int maxPoolSize) {
         this.executor = new ThreadPoolExecutor(
             corePoolSize, maxPoolSize, 60L, TimeUnit.SECONDS,
             new LinkedBlockingQueue<>()
         );
     }
-    
+
     public void submitTask(Runnable task) {
         executor.submit(task);
     }
-    
+
     public int getActiveCount() {
         return executor.getActiveCount();
     }
-    
+
     public long getCompletedTaskCount() {
         return executor.getCompletedTaskCount();
     }

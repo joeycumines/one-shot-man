@@ -17,8 +17,12 @@ import (
 func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 	// Convert the config object to a Go struct
 	if configMap, ok := modeConfig.(map[string]interface{}); ok {
+		name, err := getString(configMap, "name", "")
+		if err != nil {
+			return err
+		}
 		mode := &ScriptMode{
-			Name:         getString(configMap, "name", ""),
+			Name:         name,
 			Commands:     make(map[string]Command),
 			CommandOrder: make([]string, 0),
 			State:        make(map[string]interface{}),
@@ -27,11 +31,27 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 		// Set up TUI config
 		if tuiConfigRaw, exists := configMap["tui"]; exists {
 			if tuiMap, ok := tuiConfigRaw.(map[string]interface{}); ok {
+				title, err := getString(tuiMap, "title", "")
+				if err != nil {
+					return err
+				}
+				promptStr, err := getString(tuiMap, "prompt", "")
+				if err != nil {
+					return err
+				}
+				enableHistory, err := getBool(tuiMap, "enableHistory", false)
+				if err != nil {
+					return err
+				}
+				historyFile, err := getString(tuiMap, "historyFile", "")
+				if err != nil {
+					return err
+				}
 				mode.TUIConfig = &TUIConfig{
-					Title:         getString(tuiMap, "title", ""),
-					Prompt:        getString(tuiMap, "prompt", ""),
-					EnableHistory: getBool(tuiMap, "enableHistory", false),
-					HistoryFile:   getString(tuiMap, "historyFile", ""),
+					Title:         title,
+					Prompt:        promptStr,
+					EnableHistory: enableHistory,
+					HistoryFile:   historyFile,
 				}
 			}
 		}
@@ -66,12 +86,24 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 			if commandsMap, ok := commandsRaw.(map[string]interface{}); ok {
 				for cmdName, cmdConfig := range commandsMap {
 					if cmdMap, ok := cmdConfig.(map[string]interface{}); ok {
+						desc, err := getString(cmdMap, "description", "")
+						if err != nil {
+							return err
+						}
+						usage, err := getString(cmdMap, "usage", "")
+						if err != nil {
+							return err
+						}
+						argCompleters, err := getStringSlice(cmdMap, "argCompleters")
+						if err != nil {
+							return err
+						}
 						cmd := Command{
 							Name:          cmdName,
-							Description:   getString(cmdMap, "description", ""),
-							Usage:         getString(cmdMap, "usage", ""),
+							Description:   desc,
+							Usage:         usage,
 							IsGoCommand:   false,
-							ArgCompleters: getStringSlice(cmdMap, "argCompleters"),
+							ArgCompleters: argCompleters,
 						}
 
 						if handler, exists := cmdMap["handler"]; exists {
@@ -116,12 +148,28 @@ func (tm *TUIManager) jsGetState(key string) interface{} {
 // jsRegisterCommand allows JavaScript to register global commands.
 func (tm *TUIManager) jsRegisterCommand(cmdConfig interface{}) error {
 	if configMap, ok := cmdConfig.(map[string]interface{}); ok {
+		name, err := getString(configMap, "name", "")
+		if err != nil {
+			return err
+		}
+		desc, err := getString(configMap, "description", "")
+		if err != nil {
+			return err
+		}
+		usage, err := getString(configMap, "usage", "")
+		if err != nil {
+			return err
+		}
+		argCompleters, err := getStringSlice(configMap, "argCompleters")
+		if err != nil {
+			return err
+		}
 		cmd := Command{
-			Name:          getString(configMap, "name", ""),
-			Description:   getString(configMap, "description", ""),
-			Usage:         getString(configMap, "usage", ""),
+			Name:          name,
+			Description:   desc,
+			Usage:         usage,
 			IsGoCommand:   false,
-			ArgCompleters: getStringSlice(configMap, "argCompleters"),
+			ArgCompleters: argCompleters,
 		}
 
 		if handler, exists := configMap["handler"]; exists {
@@ -150,9 +198,18 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 	}
 
 	// Generate a unique handle for this prompt
-	name := getString(configMap, "name", fmt.Sprintf("prompt_%d", len(tm.prompts)))
-	title := getString(configMap, "title", "Advanced Prompt")
-	prefix := getString(configMap, "prefix", ">>> ")
+	name, err := getString(configMap, "name", fmt.Sprintf("prompt_%d", len(tm.prompts)))
+	if err != nil {
+		return "", err
+	}
+	title, err := getString(configMap, "title", "Advanced Prompt")
+	if err != nil {
+		return "", err
+	}
+	prefix, err := getString(configMap, "prefix", ">>> ")
+	if err != nil {
+		return "", err
+	}
 
 	// Parse colors configuration, starting from manager defaults, then applying overrides
 	colors := tm.defaultColors
@@ -163,7 +220,10 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 	}
 
 	// Parse history configuration
-	historyConfig := parseHistoryConfig(configMap)
+	historyConfig, err := parseHistoryConfig(configMap)
+	if err != nil {
+		return "", err
+	}
 
 	// Create the executor function for this prompt
 	executor := func(line string) {
@@ -190,7 +250,9 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 		tm.mu.RUnlock()
 
 		if jsCompleter != nil && tm.engine != nil && tm.engine.vm != nil {
-			if sugg, ok := tm.tryCallJSCompleter(jsCompleter, document); ok {
+			if sugg, err := tm.tryCallJSCompleter(jsCompleter, document); err != nil {
+				_, _ = fmt.Fprintf(tm.output, "Completer error: %v\n", err)
+			} else if sugg != nil {
 				return sugg, istrings.RuneNumber(start), istrings.RuneNumber(end)
 			}
 		}

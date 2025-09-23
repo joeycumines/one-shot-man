@@ -12,169 +12,6 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/argv"
 )
 
-// Unified helpers to apply color overrides without duplication.
-// applyFromGetter reads color overrides using a provided getter function.
-func (pc *PromptColors) applyFromGetter(get func(string) (string, bool)) {
-	if v, ok := get("input"); ok && v != "" {
-		pc.InputText = parseColor(v)
-	}
-	if v, ok := get("prefix"); ok && v != "" {
-		pc.PrefixText = parseColor(v)
-	}
-	if v, ok := get("suggestionText"); ok && v != "" {
-		pc.SuggestionText = parseColor(v)
-	}
-	if v, ok := get("suggestionBG"); ok && v != "" {
-		pc.SuggestionBG = parseColor(v)
-	}
-	if v, ok := get("selectedSuggestionText"); ok && v != "" {
-		pc.SelectedSuggestionText = parseColor(v)
-	}
-	if v, ok := get("selectedSuggestionBG"); ok && v != "" {
-		pc.SelectedSuggestionBG = parseColor(v)
-	}
-	if v, ok := get("descriptionText"); ok && v != "" {
-		pc.DescriptionText = parseColor(v)
-	}
-	if v, ok := get("descriptionBG"); ok && v != "" {
-		pc.DescriptionBG = parseColor(v)
-	}
-	if v, ok := get("selectedDescriptionText"); ok && v != "" {
-		pc.SelectedDescriptionText = parseColor(v)
-	}
-	if v, ok := get("selectedDescriptionBG"); ok && v != "" {
-		pc.SelectedDescriptionBG = parseColor(v)
-	}
-	if v, ok := get("scrollbarThumb"); ok && v != "" {
-		pc.ScrollbarThumb = parseColor(v)
-	}
-	if v, ok := get("scrollbarBG"); ok && v != "" {
-		pc.ScrollbarBG = parseColor(v)
-	}
-}
-
-// ApplyFromInterfaceMap applies overrides where values come from a JS map (map[string]interface{}).
-func (pc *PromptColors) ApplyFromInterfaceMap(m map[string]interface{}) {
-	if m == nil {
-		return
-	}
-	pc.applyFromGetter(func(k string) (string, bool) {
-		if v, ok := m[k]; ok {
-			if s, ok2 := v.(string); ok2 {
-				return s, true
-			}
-		}
-		return "", false
-	})
-}
-
-// ApplyFromStringMap applies overrides from a simple string map.
-func (pc *PromptColors) ApplyFromStringMap(m map[string]string) {
-	if m == nil {
-		return
-	}
-	pc.applyFromGetter(func(k string) (string, bool) {
-		v, ok := m[k]
-		return v, ok
-	})
-}
-
-// SetDefaultColorsFromStrings allows external config to override the default colors
-// using a simple map of name->colorString. Supported keys mirror PromptColors
-// with the following names: input, prefix, suggestionText, suggestionBG,
-// selectedSuggestionText, selectedSuggestionBG, descriptionText, descriptionBG,
-// selectedDescriptionText, selectedDescriptionBG, scrollbarThumb, scrollbarBG.
-func (tm *TUIManager) SetDefaultColorsFromStrings(m map[string]string) {
-	if m == nil {
-		return
-	}
-	// start from existing defaults
-	c := tm.defaultColors
-	c.ApplyFromStringMap(m)
-	tm.defaultColors = c
-}
-
-// parseHistoryConfig parses history configuration from JavaScript config.
-func parseHistoryConfig(configMap map[string]interface{}) HistoryConfig {
-	config := HistoryConfig{
-		Enabled: false,
-		File:    "",
-		Size:    1000,
-	}
-
-	if historyRaw, exists := configMap["history"]; exists {
-		if historyMap, ok := historyRaw.(map[string]interface{}); ok {
-			config.Enabled = getBool(historyMap, "enabled", false)
-			config.File = getString(historyMap, "file", "")
-			config.Size = getInt(historyMap, "size", 1000)
-		}
-	}
-
-	return config
-}
-
-// parseColor converts a color string to prompt.Color.
-func parseColor(colorStr string) prompt.Color {
-	switch strings.ToLower(colorStr) {
-	case "black":
-		return prompt.Black
-	case "darkred":
-		return prompt.DarkRed
-	case "darkgreen":
-		return prompt.DarkGreen
-	case "brown":
-		return prompt.Brown
-	case "darkblue":
-		return prompt.DarkBlue
-	case "purple":
-		return prompt.Purple
-	case "cyan":
-		return prompt.Cyan
-	case "lightgray":
-		return prompt.LightGray
-	case "darkgray":
-		return prompt.DarkGray
-	case "red":
-		return prompt.Red
-	case "green":
-		return prompt.Green
-	case "yellow":
-		return prompt.Yellow
-	case "blue":
-		return prompt.Blue
-	case "fuchsia":
-		return prompt.Fuchsia
-	case "turquoise":
-		return prompt.Turquoise
-	case "white":
-		return prompt.White
-	default:
-		return prompt.White
-	}
-}
-
-// loadHistory loads history from a file.
-func loadHistory(filename string) []string {
-	if filename == "" {
-		return []string{}
-	}
-
-	content, err := os.ReadFile(filename)
-	if err != nil {
-		return []string{}
-	}
-
-	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
-	var history []string
-	for _, line := range lines {
-		if line = strings.TrimSpace(line); line != "" {
-			history = append(history, line)
-		}
-	}
-
-	return history
-}
-
 // getFilepathSuggestions provides file and directory path completion.
 // It expands '~' and returns suggestions that properly replace the input path.
 func getFilepathSuggestions(path string) []prompt.Suggest {
@@ -360,56 +197,11 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 			}
 		}
 
-		// NEW: After command suggestions, check if this command supports file completion
-		// and suggest files even when only the command is typed. To avoid redundant filesystem
-		// reads, cache the CWD file suggestions once per completion invocation.
-		func() {
-			tm.mu.RLock()
-			defer tm.mu.RUnlock()
-
-			var cwdFileSuggestions []prompt.Suggest
-			var cwdFileSuggestionsReady bool
-			getCWD := func() []prompt.Suggest {
-				if !cwdFileSuggestionsReady {
-					cwdFileSuggestions = getFilepathSuggestions("")
-					cwdFileSuggestionsReady = true
-				}
-				return cwdFileSuggestions
-			}
-
-			// helper to process a single command
-			appendFileArgFor := func(cmd Command) {
-				for _, ac := range cmd.ArgCompleters {
-					if ac == "file" {
-						for _, fs := range getCWD() {
-							suggestions = append(suggestions, prompt.Suggest{
-								Text:        cmd.Name + " " + fs.Text,
-								Description: "Add file: " + fs.Text,
-							})
-						}
-						break
-					}
-				}
-			}
-
-			// global commands
-			for _, cmdName := range tm.commandOrder {
-				if cmd, exists := tm.commands[cmdName]; exists && strings.HasPrefix(cmd.Name, currentWord) {
-					appendFileArgFor(cmd)
-				}
-			}
-
-			// mode commands
-			if tm.currentMode != nil {
-				tm.currentMode.mu.RLock()
-				for _, cmdName := range tm.currentMode.CommandOrder {
-					if cmd, exists := tm.currentMode.Commands[cmdName]; exists && strings.HasPrefix(cmd.Name, currentWord) {
-						appendFileArgFor(cmd)
-					}
-				}
-				tm.currentMode.mu.RUnlock()
-			}
-		}()
+		// Intentionally do NOT suggest file arguments at this stage.
+		// File/path suggestions should only appear after a trailing space
+		// moves the cursor into the first argument position (handled below
+		// when len(words) >= 1). This avoids showing files for just typing
+		// the command name (e.g. "add").
 	} else if len(words) >= 1 {
 		// If we have more than one word, check for argument completers.
 		func() {
@@ -459,7 +251,17 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 
 				// NEW: If no file suggestions were found but command supports file completion,
 				// suggest new file arguments from CWD
-				if hasFileCompleters && len(suggestions) == 0 {
+				// GUARD: Avoid fallback when typing the first simple argument and the cursor is
+				// immediately after it (no trailing space). In that scenario, fallback suggestions
+				// should appear only after the user types a space. Apply this guard only to simple
+				// single-token arguments (no paths with '/', no multiple args).
+				// Guard is for the first simple argument while the cursor is within the arg token (no trailing space).
+				// argv.BeforeCursor returns completed tokens BEFORE the cursor, excluding the current token.
+				// Therefore, when typing the first argument, len(words) == 1 (words[0] is the command),
+				// and currentWord is the partial argument. When typing the second argument, len(words) == 2.
+				isSimpleArgument := len(words) == 1 && currentWord != "" && !strings.Contains(currentWord, "/")
+				shouldAvoidFallback := isSimpleArgument && !strings.HasSuffix(before, " ")
+				if hasFileCompleters && len(suggestions) == 0 && !shouldAvoidFallback {
 					fallbackSuggestions := getFilepathSuggestions("")
 					suggestions = append(suggestions, fallbackSuggestions...)
 				}
@@ -485,22 +287,8 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 	return suggestions
 }
 
-// Helper: length in runes for a string
-func currentWord(before string) string { _, cur := argv.BeforeCursor(before); return cur.Text }
-
-// tokenizeCommandLine tokenizes an entire input line into arguments with shell-like rules.
-// Supports single/double quotes and backslash escaping. Unclosed quotes are allowed and
-// produce a final token up to the end of input. Returned tokens do not include surrounding quotes.
-func tokenizeCommandLine(line string) []string { return argv.ParseSlice(line) }
-
 // tryCallJSCompleter attempts to call a JS completer; returns (suggestions, true) on success, otherwise (nil, false)
-func (tm *TUIManager) tryCallJSCompleter(callable goja.Callable, document prompt.Document) ([]prompt.Suggest, bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			_, _ = fmt.Fprintf(tm.output, "Completer panic: %v\n", r)
-		}
-	}()
-
+func (tm *TUIManager) tryCallJSCompleter(callable goja.Callable, document prompt.Document) ([]prompt.Suggest, error) {
 	vm := tm.engine.vm
 	// Build a lightweight JS wrapper for the document
 	docObj := vm.NewObject()
@@ -511,8 +299,7 @@ func (tm *TUIManager) tryCallJSCompleter(callable goja.Callable, document prompt
 	// Call the JS completer: fn(document)
 	value, err := callable(goja.Undefined(), docObj)
 	if err != nil {
-		_, _ = fmt.Fprintf(tm.output, "Completer error: %v\n", err)
-		return nil, false
+		return nil, fmt.Errorf("completer call failed: %w", err)
 	}
 
 	// Convert the result into []prompt.Suggest
@@ -520,76 +307,39 @@ func (tm *TUIManager) tryCallJSCompleter(callable goja.Callable, document prompt
 	var out []prompt.Suggest
 
 	if goja.IsUndefined(value) || goja.IsNull(value) {
-		return nil, false
+		// No suggestions provided
+		return nil, nil
 	}
 
 	// Try export to []interface{} then map
 	var rawArr []interface{}
 	if err := vm.ExportTo(value, &rawArr); err != nil {
-		// Not an array - bail out
-		return nil, false
+		return nil, fmt.Errorf("completer must return an array, got %T", value.Export())
 	}
 
-	for _, item := range rawArr {
+	for idx, item := range rawArr {
 		switch v := item.(type) {
 		case string:
 			out = append(out, prompt.Suggest{Text: v})
 		case map[string]interface{}:
-			text, _ := v["text"].(string)
-			desc, _ := v["description"].(string)
-			if text != "" {
-				out = append(out, prompt.Suggest{Text: text, Description: desc})
+			obj, ok := any(v).(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("completer result[%d] must be an object, but got %T", idx, v)
 			}
+			textVal, hasText := obj["text"]
+			if !hasText {
+				return nil, fmt.Errorf("completer result[%d] missing required 'text' field", idx)
+			}
+			text, ok := textVal.(string)
+			if !ok {
+				return nil, fmt.Errorf("completer result[%d].text must be a string, but got %T", idx, textVal)
+			}
+			desc, _ := obj["description"].(string)
+			out = append(out, prompt.Suggest{Text: text, Description: desc})
 		default:
-			// ignore unsupported types
+			return nil, fmt.Errorf("completer result[%d] has unsupported type %T", idx, v)
 		}
 	}
 
-	return out, true
-}
-
-// getInt extracts an integer value from a JavaScript object map.
-func getInt(m map[string]interface{}, key string, defaultValue int) int {
-	if val, exists := m[key]; exists {
-		if i, ok := val.(int); ok {
-			return i
-		}
-		if f, ok := val.(float64); ok {
-			return int(f)
-		}
-	}
-	return defaultValue
-}
-
-// Helper functions for extracting values from JavaScript objects
-
-func getString(m map[string]interface{}, key, defaultValue string) string {
-	if val, exists := m[key]; exists {
-		if str, ok := val.(string); ok {
-			return str
-		}
-	}
-	return defaultValue
-}
-
-func getBool(m map[string]interface{}, key string, defaultValue bool) bool {
-	if val, exists := m[key]; exists {
-		if b, ok := val.(bool); ok {
-			return b
-		}
-	}
-	return defaultValue
-}
-
-func getStringSlice(m map[string]interface{}, key string) (result []string) {
-	if val, exists := m[key]; exists {
-		if arr, ok := val.([]interface{}); ok {
-			for _, item := range arr {
-				if str, ok := item.(string); ok {
-					result = append(result, str)
-				}
-			}
-		}
-	}
-	return result
+	return out, nil
 }

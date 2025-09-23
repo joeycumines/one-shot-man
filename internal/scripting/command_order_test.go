@@ -46,7 +46,7 @@ func TestCommandCompletionOrder(t *testing.T) {
 			t.Errorf("Run %d: length mismatch, expected %d got %d", i, len(firstSnapshot), len(snapshot))
 			continue
 		}
-		
+
 		for j, name := range snapshot {
 			if name != firstSnapshot[j] {
 				t.Errorf("Run %d: order mismatch at position %d, expected %s got %s", i, j, firstSnapshot[j], name)
@@ -58,11 +58,11 @@ func TestCommandCompletionOrder(t *testing.T) {
 	// Built-in commands are registered first during initialization
 	builtinCommands := []string{"mode", "modes", "state"}
 	expectedOrder := append(builtinCommands, "zebra", "alpha", "beta", "gamma")
-	
+
 	if len(firstSnapshot) != len(expectedOrder) {
 		t.Fatalf("Expected %d commands, got %d", len(expectedOrder), len(firstSnapshot))
 	}
-	
+
 	for i, expected := range expectedOrder {
 		if firstSnapshot[i] != expected {
 			t.Errorf("Position %d: expected %s, got %s", i, expected, firstSnapshot[i])
@@ -114,7 +114,7 @@ func TestCommandCompletionSuggestionOrder(t *testing.T) {
 			t.Errorf("Run %d: suggestion count mismatch, expected %d got %d", i, len(firstSnapshot), len(snapshot))
 			continue
 		}
-		
+
 		for j, text := range snapshot {
 			if text != firstSnapshot[j] {
 				t.Errorf("Run %d: suggestion order mismatch at position %d, expected %s got %s", i, j, firstSnapshot[j], text)
@@ -127,7 +127,7 @@ func TestCommandCompletionSuggestionOrder(t *testing.T) {
 	if len(firstSnapshot) != len(expectedSuggestions) {
 		t.Fatalf("Expected %d suggestions, got %d", len(expectedSuggestions), len(firstSnapshot))
 	}
-	
+
 	for i, expected := range expectedSuggestions {
 		if firstSnapshot[i] != expected {
 			t.Errorf("Position %d: expected %s, got %s", i, expected, firstSnapshot[i])
@@ -193,7 +193,7 @@ func TestModeCommandOrder(t *testing.T) {
 			t.Errorf("Run %d: length mismatch, expected %d got %d", i, len(firstSnapshot), len(snapshot))
 			continue
 		}
-		
+
 		for j, name := range snapshot {
 			if name != firstSnapshot[j] {
 				t.Errorf("Run %d: order mismatch at position %d, expected %s got %s", i, j, firstSnapshot[j], name)
@@ -205,7 +205,7 @@ func TestModeCommandOrder(t *testing.T) {
 	// The command list should be: global commands first, then mode commands
 	expectedModeCommandsAtEnd := []string{"zzz", "aaa", "mmm"}
 	actualModeCommands := firstSnapshot[len(firstSnapshot)-len(expectedModeCommandsAtEnd):]
-	
+
 	for i, expected := range expectedModeCommandsAtEnd {
 		if actualModeCommands[i] != expected {
 			t.Errorf("Mode command at position %d: expected %s, got %s", i, expected, actualModeCommands[i])

@@ -28,24 +28,14 @@ func (ctx *ExecutionContext) Run(name string, fn goja.Callable) bool {
 	}
 
 	// Save current JS ctx and guarantee restoration even on panic
-	parentContextObj := ctx.engine.vm.Get("ctx")
-	defer ctx.engine.vm.Set("ctx", parentContextObj)
+	parentContextObj := ctx.engine.vm.Get(jsGlobalContextName)
+	defer ctx.engine.vm.Set(jsGlobalContextName, parentContextObj)
 
-	// Set up the sub-context in JavaScript with both Go-style and JS-style methods
-	contextObj := map[string]interface{}{
-		// JavaScript-style methods (camelCase)
-		"run":    subCtx.Run,
-		"defer":  subCtx.Defer,
-		"log":    subCtx.Log,
-		"logf":   subCtx.Logf,
-		"error":  subCtx.Error,
-		"errorf": subCtx.Errorf,
-		"fatal":  subCtx.Fatal,
-		"fatalf": subCtx.Fatalf,
-		"failed": subCtx.Failed,
-		"name":   subCtx.Name,
+	// Set up the sub-context in JavaScript
+	if err := ctx.engine.setExecutionContext(subCtx); err != nil {
+		// This should never happen under normal circumstances; treat as fatal
+		panic(fmt.Sprintf("unrecoverable error setting sub-context: %v", err))
 	}
-	ctx.engine.vm.Set("ctx", contextObj)
 
 	// Execute the test function with panic protection
 	var callErr error
@@ -91,18 +81,18 @@ func (ctx *ExecutionContext) Defer(fn goja.Callable) {
 
 // Log logs a message to the test output (Go-style method for internal use).
 func (ctx *ExecutionContext) Log(args ...interface{}) {
-	fmt.Fprintf(&ctx.output, "[%s] %s\n", ctx.name, fmt.Sprint(args...))
+	_, _ = fmt.Fprintf(&ctx.output, "[%s] %s\n", ctx.name, fmt.Sprint(args...))
 	if ctx.engine.testMode {
-		fmt.Fprintf(ctx.engine.stdout, "[%s] %s\n", ctx.name, fmt.Sprint(args...))
+		_, _ = fmt.Fprintf(ctx.engine.stdout, "[%s] %s\n", ctx.name, fmt.Sprint(args...))
 	}
 }
 
 // Logf logs a formatted message to the test output (Go-style method for internal use).
 func (ctx *ExecutionContext) Logf(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(&ctx.output, "[%s] %s\n", ctx.name, msg)
+	_, _ = fmt.Fprintf(&ctx.output, "[%s] %s\n", ctx.name, msg)
 	if ctx.engine.testMode {
-		fmt.Fprintf(ctx.engine.stdout, "[%s] %s\n", ctx.name, msg)
+		_, _ = fmt.Fprintf(ctx.engine.stdout, "[%s] %s\n", ctx.name, msg)
 	}
 }
 
@@ -110,16 +100,16 @@ func (ctx *ExecutionContext) Logf(format string, args ...interface{}) {
 func (ctx *ExecutionContext) Error(args ...interface{}) {
 	ctx.failed = true
 	msg := fmt.Sprint(args...)
-	fmt.Fprintf(&ctx.output, "[%s] ERROR: %s\n", ctx.name, msg)
-	fmt.Fprintf(ctx.engine.stderr, "[%s] ERROR: %s\n", ctx.name, msg)
+	_, _ = fmt.Fprintf(&ctx.output, "[%s] ERROR: %s\n", ctx.name, msg)
+	_, _ = fmt.Fprintf(ctx.engine.stderr, "[%s] ERROR: %s\n", ctx.name, msg)
 }
 
 // Errorf marks the current test as failed and logs a formatted error message.
 func (ctx *ExecutionContext) Errorf(format string, args ...interface{}) {
 	ctx.failed = true
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(&ctx.output, "[%s] ERROR: %s\n", ctx.name, msg)
-	fmt.Fprintf(ctx.engine.stderr, "[%s] ERROR: %s\n", ctx.name, msg)
+	_, _ = fmt.Fprintf(&ctx.output, "[%s] ERROR: %s\n", ctx.name, msg)
+	_, _ = fmt.Fprintf(ctx.engine.stderr, "[%s] ERROR: %s\n", ctx.name, msg)
 }
 
 // Fatal marks the current test as failed and stops execution.

@@ -48,7 +48,7 @@ func TestTUIManagerAPI(t *testing.T) {
 		// Test command registration
 		tui.registerCommand({
 			name: "global-test",
-			description: "Global test command", 
+			description: "Global test command",
 			handler: function(args) {
 				console.log("Global test command executed");
 			}
@@ -255,28 +255,28 @@ func TestJavaScriptAPIBinding(t *testing.T) {
 		if (typeof tui === 'undefined') {
 			throw new Error("tui object not available");
 		}
-		
+
 		var requiredFunctions = [
 			'registerMode', 'switchMode', 'getCurrentMode',
-			'setState', 'getState', 'registerCommand', 
+			'setState', 'getState', 'registerCommand',
 			'listModes', 'createPromptBuilder'
 		];
-		
+
 		for (var i = 0; i < requiredFunctions.length; i++) {
 			var funcName = requiredFunctions[i];
 			if (typeof tui[funcName] !== 'function') {
 				throw new Error("tui." + funcName + " is not available");
 			}
 		}
-		
+
 		ctx.log("All TUI API functions are available");
-		
+
 		// Test prompt builder creation
 		var pb = tui.createPromptBuilder("Test", "Test prompt");
 		if (!pb || typeof pb.setTemplate !== 'function') {
 			throw new Error("Prompt builder creation failed");
 		}
-		
+
 		ctx.log("Prompt builder creation successful");
 	`)
 
@@ -307,7 +307,7 @@ func TestCommandExecution(t *testing.T) {
 					}
 				},
 				"test2": {
-					description: "Test command 2", 
+					description: "Test command 2",
 					handler: function(args) {
 						tui.setState("test2_executed", true);
 						tui.setState("test2_args", args);
@@ -315,7 +315,7 @@ func TestCommandExecution(t *testing.T) {
 				}
 			}
 		});
-		
+
 		// Register a global command
 		tui.registerCommand({
 			name: "global-test",

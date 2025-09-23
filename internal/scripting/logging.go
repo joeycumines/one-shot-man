@@ -16,6 +16,11 @@ type TUILogger struct {
 	logger    *slog.Logger
 	handler   *TUILogHandler
 	tuiWriter io.Writer
+	// Optional sink used by the interactive TUI to enqueue output and flush
+	// it at safe points in the render lifecycle. When set, PrintToTUI will
+	// call this instead of writing directly to tuiWriter.
+	sinkMu  sync.RWMutex
+	tuiSink func(string)
 }
 
 // LogEntry represents a single log entry with metadata.
@@ -145,6 +150,13 @@ func (l *TUILogger) Printf(format string, args ...interface{}) {
 
 // PrintToTUI prints a message directly to the terminal interface.
 func (l *TUILogger) PrintToTUI(msg string) {
+	l.sinkMu.RLock()
+	sink := l.tuiSink
+	l.sinkMu.RUnlock()
+	if sink != nil {
+		sink(msg)
+		return
+	}
 	if l.tuiWriter != nil {
 		l.tuiWriter.Write([]byte(msg))
 		if !strings.HasSuffix(msg, "\n") {
@@ -157,6 +169,14 @@ func (l *TUILogger) PrintToTUI(msg string) {
 func (l *TUILogger) PrintfToTUI(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
 	l.PrintToTUI(msg)
+}
+
+// SetTUISink configures an optional sink used by the interactive TUI to
+// integrate script output with the prompt render cycle. Pass nil to disable.
+func (l *TUILogger) SetTUISink(sink func(string)) {
+	l.sinkMu.Lock()
+	defer l.sinkMu.Unlock()
+	l.tuiSink = sink
 }
 
 // GetLogs returns all log entries.

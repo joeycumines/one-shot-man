@@ -143,36 +143,69 @@ func (tm *TUIManager) executeCommand(cmd Command, args []string) error {
 		}
 		return fmt.Errorf("invalid Go command handler for %s", cmd.Name)
 	} else {
-		// Handle JavaScript function - try different types
+		// Handle JavaScript function; temporarily expose a minimal ctx
+		parentCtxObj := tm.engine.vm.Get("ctx")
+		defer tm.engine.vm.Set("ctx", parentCtxObj)
+		execCtx := &ExecutionContext{engine: tm.engine, name: fmt.Sprintf("cmd:%s", cmd.Name)}
+		tm.engine.vm.Set("ctx", map[string]interface{}{
+			"run":    execCtx.Run,
+			"defer":  execCtx.Defer,
+			"log":    execCtx.Log,
+			"logf":   execCtx.Logf,
+			"error":  execCtx.Error,
+			"errorf": execCtx.Errorf,
+			"fatal":  execCtx.Fatal,
+			"fatalf": execCtx.Fatalf,
+			"failed": execCtx.Failed,
+			"name":   execCtx.Name,
+		})
+
 		// Convert args to JavaScript array
 		argsJS := tm.engine.vm.NewArray()
 		for i, arg := range args {
 			argsJS.Set(fmt.Sprintf("%d", i), arg)
 		}
 
-		switch handler := cmd.Handler.(type) {
-		case goja.Callable:
-			_, err := handler(goja.Undefined(), argsJS)
-			return err
-		case func(goja.FunctionCall) goja.Value:
-			// Create a function call with the arguments
-			call := goja.FunctionCall{
-				This:      goja.Undefined(),
-				Arguments: []goja.Value{argsJS},
-			}
-			handler(call)
-			return nil
-		default:
-			// Try to call it as a general function
-			if tm.engine != nil && tm.engine.vm != nil {
-				val := tm.engine.vm.ToValue(handler)
-				if callable, ok := goja.AssertFunction(val); ok {
-					_, err := callable(goja.Undefined(), argsJS)
-					return err
+		// Execute the command handler with panic protection, then run defers.
+		var execErr error
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					execErr = fmt.Errorf("command panicked: %v", r)
 				}
+			}()
+			switch handler := cmd.Handler.(type) {
+			case goja.Callable:
+				_, execErr = handler(goja.Undefined(), argsJS)
+			case func(goja.FunctionCall) goja.Value:
+				// Create a function call with the arguments
+				call := goja.FunctionCall{
+					This:      goja.Undefined(),
+					Arguments: []goja.Value{argsJS},
+				}
+				handler(call)
+			default:
+				// Try to call it as a general function
+				if tm.engine != nil && tm.engine.vm != nil {
+					val := tm.engine.vm.ToValue(handler)
+					if callable, ok := goja.AssertFunction(val); ok {
+						_, execErr = callable(goja.Undefined(), argsJS)
+						return
+					}
+				}
+				execErr = fmt.Errorf("invalid JavaScript command handler for %s: %T", cmd.Name, handler)
 			}
-			return fmt.Errorf("invalid JavaScript command handler for %s: %T", cmd.Name, handler)
+		}()
+
+		// Always run deferred functions collected by execCtx
+		if dErr := execCtx.runDeferred(); dErr != nil {
+			if execErr != nil {
+				execErr = fmt.Errorf("%v; deferred error: %v", execErr, dErr)
+			} else {
+				execErr = dErr
+			}
 		}
+		return execErr
 	}
 }
 
@@ -240,6 +273,12 @@ func (tm *TUIManager) ListCommands() []Command {
 // Run starts the TUI manager.
 func (tm *TUIManager) Run() {
 	writer := &syncWriter{tm.output}
+	// Route engine output through a queue we flush at safe points
+	tm.engine.logger.SetTUISink(func(msg string) {
+		tm.outputMu.Lock()
+		tm.outputQueue = append(tm.outputQueue, msg)
+		tm.outputMu.Unlock()
+	})
 	// Prominent, unavoidable warning: this TUI is ephemeral and does not persist state
 	fmt.Fprintln(writer, "================================================================")
 	fmt.Fprintln(writer, "WARNING: EPHEMERAL SESSION - nothing is persisted. Your work will be lost on exit.")
@@ -251,6 +290,8 @@ func (tm *TUIManager) Run() {
 	fmt.Fprintf(writer, "Available modes: %s\n", strings.Join(modes, ", "))
 
 	fmt.Fprintln(writer, "Starting advanced go-prompt interface")
+	// Flush any pending output (e.g., from onEnter) before starting prompt
+	tm.flushQueuedOutput()
 	tm.runAdvancedPrompt()
 }
 
@@ -267,10 +308,14 @@ func (tm *TUIManager) runAdvancedPrompt() {
 
 	// Create the executor function
 	executor := func(line string) {
+		// Drain any pending output before executing the command
+		tm.flushQueuedOutput()
 		if !tm.executor(line) {
 			// If executor returns false, exit the prompt
 			os.Exit(0)
 		}
+		// Flush any queued output synchronously after executing a line
+		tm.flushQueuedOutput()
 	}
 
 	// Configure prompt options - full configuration for go-prompt
@@ -316,4 +361,21 @@ func (tm *TUIManager) runAdvancedPrompt() {
 	tm.mu.Lock()
 	tm.activePrompt = nil
 	tm.mu.Unlock()
+}
+
+// flushQueuedOutput writes any buffered output messages to the terminal
+// using a syncWriter to ensure they hit the PTY immediately.
+func (tm *TUIManager) flushQueuedOutput() {
+	tm.outputMu.Lock()
+	queue := tm.outputQueue
+	tm.outputQueue = nil
+	tm.outputMu.Unlock()
+	if len(queue) == 0 {
+		return
+	}
+	writer := &syncWriter{tm.output}
+	for _, m := range queue {
+		// Write messages verbatim; do not force newline to preserve exact formatting
+		_, _ = writer.Write([]byte(m))
+	}
 }

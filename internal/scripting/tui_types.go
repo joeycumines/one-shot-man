@@ -31,6 +31,11 @@ type TUIManager struct {
 	// without explicit color configuration. It is initialized with sensible
 	// defaults and can be overridden by configuration (e.g., config file).
 	defaultColors PromptColors
+
+	// outputQueue buffers script output so it can be written at safe points
+	// in the prompt lifecycle, preventing races with go-prompt redraws.
+	outputQueue []string
+	outputMu    sync.Mutex
 }
 
 // ScriptMode represents a specific script mode with its own state and commands.

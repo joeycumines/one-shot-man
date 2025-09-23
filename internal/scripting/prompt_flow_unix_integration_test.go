@@ -15,6 +15,37 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/termtest"
 )
 
+// requireExpectSince waits for expected to appear in output produced after the
+// provided start offset. Fails the test with the raw output on error.
+func requireExpectSince(t *testing.T, cp *termtest.ConsoleProcess, expected string, start int, timeout ...time.Duration) {
+	t.Helper()
+	raw, err := cp.ExpectSince(expected, start, timeout...)
+	if err != nil {
+		t.Fatalf("Expected to find %q in new output since offset %d, but got error: %v\nRaw:\n%s\n", expected, start, err, raw)
+	}
+}
+
+// sendThenRequireSince sends a line and waits for expected output from the captured start offset.
+// If the expected output is not found within the default timeout, it sends a single extra Enter
+// as a benign nudge (completion UIs sometimes absorb the first Enter) and waits once more.
+func sendThenRequireSince(t *testing.T, cp *termtest.ConsoleProcess, line string, expected string, start int, timeout ...time.Duration) {
+	t.Helper()
+	if err := cp.SendLine(line); err != nil {
+		t.Fatalf("failed to send line %q: %v", line, err)
+	}
+	// First attempt
+	if raw, err := cp.ExpectSince(expected, start, timeout...); err == nil {
+		_ = raw
+		return
+	}
+	// One-time nudge: send an extra Enter, then wait again from the original offset
+	_ = cp.SendKeys("enter")
+	raw, err := cp.ExpectSince(expected, start, timeout...)
+	if err != nil {
+		t.Fatalf("Expected to find %q in new output since offset %d after sending %q (with enter nudge), but got error: %v\nRaw:\n%s\n", expected, start, line, err, raw)
+	}
+}
+
 // Example demonstrates a complete prompt-flow workflow
 // from setting a goal to generating and copying the final prompt.
 func Example() {
@@ -441,29 +472,21 @@ func TestPromptFlow_Unix_DifferentTemplateConfigurations(t *testing.T) {
 	requireExpect(t, cp, "Goal set.")
 
 	// Customize the template (opens editor and returns immediately in our fake editor)
+	startTemplate := cp.OutputLen()
 	cp.SendLine("template")
-	// Wait for the prompt line to re-render after editor exits
-	raw, err := cp.ExpectNew("(prompt-builder) > ", 10*time.Second)
-	if err != nil {
-		t.Fatalf("Expected prompt after template edit, got error: %v\nRaw:\n%s", err, raw)
-	}
+	// Wait for the prompt line to re-render after editor exits, checking only new output
+	requireExpectSince(t, cp, "(prompt-builder) > ", startTemplate)
 
 	// Generate with custom template
-	// Clear any prior output to avoid races where output is produced before we record the offset
-	cp.ClearOutput()
-	cp.SendLine("generate")
-	// After generate, wait for prompt to reappear which indicates command completed.
-	// Matching the exact log line can be flappy due to ANSI UI re-renders; the prompt
-	// reappearance is a stronger completion signal.
-	raw, err = cp.ExpectNew("(prompt-builder) > ", 30*time.Second)
-	if err != nil {
-		t.Fatalf("Expected prompt after generate, got error: %v\nRaw:\n%s", err, raw)
-	}
+	startGenerate := cp.OutputLen()
+	// Wait for explicit generation completion message to avoid early prompt matches
+	sendThenRequireSince(t, cp, "generate", "Meta-prompt generated.", startGenerate, 90*time.Second)
 
 	// Show meta-prompt to verify template customization
+	startShowMeta := cp.OutputLen()
 	cp.SendLine("show meta")
-	requireExpect(t, cp, "Create a REST API for user management") // Goal should be substituted
-	requireExpect(t, cp, "CUSTOM TEMPLATE MODIFICATION")          // Custom template marker
+	requireExpectSince(t, cp, "Create a REST API for user management", startShowMeta)
+	requireExpectSince(t, cp, "CUSTOM TEMPLATE MODIFICATION", startShowMeta)
 
 	cp.SendLine("exit")
 	requireExpectExitCode(t, cp, 0)

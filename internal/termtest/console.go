@@ -66,6 +66,11 @@ func (cp *ConsoleProcess) SendLine(input string) error {
 	return cp.pty.SendLine(input)
 }
 
+// SendKeys sends special key sequences to the process
+func (cp *ConsoleProcess) SendKeys(keys string) error {
+	return cp.pty.SendKeys(keys)
+}
+
 // Expect waits for the specified text to appear in the output
 func (cp *ConsoleProcess) Expect(expectedText string, timeout ...time.Duration) (string, error) {
 	t := cp.timeout
@@ -83,13 +88,26 @@ func (cp *ConsoleProcess) Expect(expectedText string, timeout ...time.Duration) 
 
 // ExpectNew waits for the specified text to appear in the output produced AFTER the current position.
 // This avoids matching stale output from earlier in the session (useful when external tools write to TTY).
+//
+// WARNING: You will typically want [ConsoleProcess.ExpectSince].
 func (cp *ConsoleProcess) ExpectNew(expectedText string, timeout ...time.Duration) (string, error) {
+	return cp.ExpectSince(expectedText, cp.pty.OutputLen(), timeout...)
+}
+
+// OutputLen returns the current length of the output buffer. Useful for
+// calculating an offset before sending input, to wait only for new output.
+func (cp *ConsoleProcess) OutputLen() int {
+	return cp.pty.OutputLen()
+}
+
+// ExpectSince waits for expectedText to appear in output produced after the
+// provided start offset. This avoids matching stale output. Typically you
+// should capture start via OutputLen() BEFORE sending a command.
+func (cp *ConsoleProcess) ExpectSince(expectedText string, start int, timeout ...time.Duration) (string, error) {
 	t := cp.timeout
 	if len(timeout) > 0 {
 		t = timeout[0]
 	}
-
-	start := cp.pty.OutputLen()
 	if err := cp.pty.WaitForOutputSince(expectedText, start, t); err != nil {
 		return cp.pty.GetOutput(), err
 	}

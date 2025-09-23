@@ -206,8 +206,13 @@ func (p *PTYTest) WaitForOutput(expectedText string, timeout time.Duration) erro
 			return nil
 		}
 
-		// Fall back to normalized comparison to handle ANSI control sequences
-		if strings.Contains(normalizeTTYOutput(output), expectedText) {
+		// Fall back to normalized comparison to handle ANSI control sequences and line wraps
+		norm := normalizeTTYOutput(output)
+		if strings.Contains(norm, expectedText) {
+			return nil
+		}
+		// Collapse whitespace (e.g., line wraps) for robust matching
+		if strings.Contains(collapseWhitespace(norm), collapseWhitespace(expectedText)) {
 			return nil
 		}
 
@@ -246,9 +251,12 @@ func (p *PTYTest) WaitForOutputSince(expectedText string, startLen int, timeout 
 			return nil
 		}
 
-		// Normalized comparison to ignore ANSI control codes
+		// Normalized comparison to ignore ANSI control codes and line wraps
 		norm := normalizeTTYOutput(output[startLen:])
 		if strings.Contains(norm, expectedText) {
+			return nil
+		}
+		if strings.Contains(collapseWhitespace(norm), collapseWhitespace(expectedText)) {
 			return nil
 		}
 
@@ -371,7 +379,8 @@ func (p *PTYTest) WaitForExit(timeout time.Duration) (int, error) {
 // AssertOutput checks if the output contains the expected text.
 func (p *PTYTest) AssertOutput(expectedText string) error {
 	output := p.GetOutput()
-	if !strings.Contains(output, expectedText) && !strings.Contains(normalizeTTYOutput(output), expectedText) {
+	norm := normalizeTTYOutput(output)
+	if !strings.Contains(output, expectedText) && !strings.Contains(norm, expectedText) && !strings.Contains(collapseWhitespace(norm), collapseWhitespace(expectedText)) {
 		return fmt.Errorf("expected output %q not found in: %q", expectedText, output)
 	}
 	return nil
@@ -380,7 +389,8 @@ func (p *PTYTest) AssertOutput(expectedText string) error {
 // AssertNotOutput checks if the output does NOT contain the specified text.
 func (p *PTYTest) AssertNotOutput(unexpectedText string) error {
 	output := p.GetOutput()
-	if strings.Contains(output, unexpectedText) || strings.Contains(normalizeTTYOutput(output), unexpectedText) {
+	norm := normalizeTTYOutput(output)
+	if strings.Contains(output, unexpectedText) || strings.Contains(norm, unexpectedText) || strings.Contains(collapseWhitespace(norm), collapseWhitespace(unexpectedText)) {
 		return fmt.Errorf("unexpected output %q found in: %q", unexpectedText, output)
 	}
 	return nil
@@ -440,4 +450,19 @@ func normalizeTTYOutput(s string) string {
 		}
 	}
 	return b.String()
+}
+
+// collapseWhitespace reduces all contiguous whitespace (spaces, tabs, newlines)
+// to a single space, to make substring matching robust against UI line wraps.
+func collapseWhitespace(s string) string {
+	// Fast path: if no tabs or newlines and no double spaces, return as-is
+	if !strings.ContainsAny(s, "\t\n\r") && !strings.Contains(s, "  ") {
+		return s
+	}
+	// strings.Fields splits on any whitespace and removes empties
+	parts := strings.Fields(s)
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " ")
 }

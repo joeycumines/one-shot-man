@@ -39,9 +39,9 @@ func TestContextManager_ToTxtar_UniqueNaming(t *testing.T) {
 
 	txt := cm.GetTxtarString()
 
-	// Expect utils.go appears as basename (no collision)
-	if !strings.Contains(txt, "-- utils.go --") {
-		t.Fatalf("expected basename for unique file: %s", txt)
+	// Expect utils.go appears with its directory structure (preserving meaningful path)
+	if !strings.Contains(txt, "-- c/utils.go --") {
+		t.Fatalf("expected meaningful path for file: %s", txt)
 	}
 	// Expect handlers.go entries include directory suffixes ensuring uniqueness
 	if !strings.Contains(txt, "-- a/handlers.go --") || !strings.Contains(txt, "-- b/handlers.go --") {

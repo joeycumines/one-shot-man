@@ -225,7 +225,17 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 	computeUniqueSuffixes := func(group []entry) map[string]string {
 		out := make(map[string]string, len(group))
 		if len(group) == 1 {
-			out[group[0].key] = filepath.Base(group[0].path)
+			// Use the full relative path to preserve meaningful directory structure
+			// But for absolute paths outside the base, prefer just the basename if it's unique
+			path := group[0].path
+			if filepath.IsAbs(path) {
+				// For absolute paths, prefer basename since the full absolute path 
+				// is often not meaningful in the txtar context
+				out[group[0].key] = filepath.Base(path)
+			} else {
+				// For relative paths, preserve the full structure as it's meaningful
+				out[group[0].key] = path
+			}
 			return out
 		}
 		// Pre-split into path components (clean first).

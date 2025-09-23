@@ -208,6 +208,8 @@ Create JavaScript scripts with the deferred/declarative API:
 ```javascript
 // scripts/example.js
 
+const {getenv} = require('osm:os');
+
 ctx.log("Starting example script");
 
 // Demonstrate deferred execution (cleanup)
@@ -218,7 +220,7 @@ ctx.defer(function() {
 // Demonstrate sub-tests similar to testing.T.run()
 ctx.run("setup", function() {
     ctx.log("Setting up test environment");
-    ctx.logf("Environment: %s", env("PATH") ? "defined" : "undefined");
+    ctx.logf("Environment: %s", getenv("PATH") ? "defined" : "undefined");
 
     ctx.defer(function() {
         ctx.log("Cleaning up test environment");
@@ -418,7 +420,9 @@ Run all code quality checks:
 make
 ```
 
-### Configuration Management
+### Configuration
+
+#### Config Files
 
 ```sh
 # Initialize with custom location
@@ -427,6 +431,14 @@ ONESHOTMAN_CONFIG=/tmp/myconfig osm init
 # Force re-initialize
 osm init --force
 ```
+
+#### Environment Variables
+
+| Variable                | Description                                                                                                             |
+|:------------------------|:------------------------------------------------------------------------------------------------------------------------|
+| `VISUAL`                | The preferred command to launch a text editor. Takes precedence over `EDITOR`.                                          |
+| `EDITOR`                | A fallback command to launch a text editor if `VISUAL` is not set. Defaults to `nano`, `vi`, or `ed`.                   |
+| `ONESHOT_CLIPBOARD_CMD` | A user-defined shell command to use for copying text to the clipboard, overriding the built-in platform-specific logic. |
 
 -----
 

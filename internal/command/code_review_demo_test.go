@@ -31,27 +31,27 @@ func TestCodeReviewCommand_ShowActualDiffOutput(t *testing.T) {
 	// Test the complete workflow: add diff, then generate prompt
 	testScript := `
 		output.print("=== TESTING CODE REVIEW DIFF FUNCTIONALITY ===");
-		
+
 		// Step 1: Add a lazy diff (default HEAD~1)
 		const commands = buildCommands();
 		commands.diff.handler([]);
-		
+
 		// Show what was added
 		output.print("After adding diff:");
 		commands.list.handler();
-		
+
 		// Step 2: Generate the prompt (this should execute the lazy diff)
 		output.print("\\n=== GENERATING PROMPT ===");
 		const prompt = buildPrompt();
-		
+
 		// Show the final prompt
 		output.print("\\n=== FINAL PROMPT OUTPUT ===");
 		output.print(prompt);
-		
+
 		// Show updated list after prompt generation
 		output.print("\\n=== ITEMS AFTER PROMPT GENERATION ===");
 		commands.list.handler();
-		
+
 		output.print("\\n=== END TEST ===");
 	`
 

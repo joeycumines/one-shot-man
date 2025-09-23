@@ -5,12 +5,17 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 
 	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/require"
+	"github.com/joeycumines/one-shot-man/internal/scripting/builtin"
 )
 
 // Engine represents a JavaScript scripting engine with deferred execution capabilities.
+// It supports CommonJS modules via a global `require` function, which can load:
+// - Native Go modules with the "osm:" prefix (e.g., require("osm:utils")).
+// - Absolute file paths (e.g., require("/path/to/module.js")).
+// - Relative file paths (e.g., require("./module.js")).
 type Engine struct {
 	vm             *goja.Runtime
 	scripts        []*Script
@@ -48,6 +53,19 @@ func NewEngine(ctx context.Context, stdout, stderr io.Writer) *Engine {
 		globals:        make(map[string]interface{}),
 		contextManager: NewContextManager(workingDir),
 		logger:         NewTUILogger(stdout, 1000),
+	}
+
+	// Set up CommonJS require support.
+	{
+		// TODO: Add support for configuring require.WithGlobalFolders, for instance, via an environment variable.
+		registry := require.NewRegistry()
+
+		// Register native Go modules. These are all prefixed with "osm:".
+		// Pass through the engine's context and a TUI sink for modules that need them
+		builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, registry)
+
+		// Enable the `require` function in the runtime.
+		registry.Enable(engine.vm)
 	}
 
 	// Create TUI manager
@@ -118,19 +136,9 @@ func (e *Engine) ExecuteScript(script *Script) (err error) {
 	}
 
 	// Set up the execution context in JavaScript
-	contextObj := map[string]interface{}{
-		"run":    ctx.Run,
-		"defer":  ctx.Defer,
-		"log":    ctx.Log,
-		"logf":   ctx.Logf,
-		"error":  ctx.Error,
-		"errorf": ctx.Errorf,
-		"fatal":  ctx.Fatal,
-		"fatalf": ctx.Fatalf,
-		"failed": ctx.Failed,
-		"name":   ctx.Name,
+	if err = e.setExecutionContext(ctx); err != nil {
+		return fmt.Errorf("failed to set script execution context: %w", err)
 	}
-	e.vm.Set("ctx", contextObj)
 
 	// Always run deferred functions on exit (even if a panic occurs)
 	defer func() {
@@ -176,19 +184,30 @@ func (e *Engine) Close() error {
 	return nil
 }
 
+const jsGlobalContextName = "ctx"
+
+func (e *Engine) setExecutionContext(ctx *ExecutionContext) error {
+	if ctx == nil {
+		panic("execution context cannot be nil")
+	}
+	return e.vm.Set(jsGlobalContextName, map[string]interface{}{
+		"run":    ctx.Run,
+		"defer":  ctx.Defer,
+		"log":    ctx.Log,
+		"logf":   ctx.Logf,
+		"error":  ctx.Error,
+		"errorf": ctx.Errorf,
+		"fatal":  ctx.Fatal,
+		"fatalf": ctx.Fatalf,
+		"failed": ctx.Failed,
+		"name":   ctx.Name,
+	})
+}
+
 // setupGlobals sets up the global JavaScript environment.
 func (e *Engine) setupGlobals() {
-	// Utility functions
-	e.vm.Set("sleep", func(ms int) {
-		time.Sleep(time.Duration(ms) * time.Millisecond)
-	})
-
-	e.vm.Set("env", func(key string) string {
-		return getEnv(key)
-	})
-
 	// Context management functions
-	e.vm.Set("context", map[string]interface{}{
+	_ = e.vm.Set("context", map[string]interface{}{
 		"addPath":       e.jsContextAddPath,
 		"removePath":    e.jsContextRemovePath,
 		"listPaths":     e.jsContextListPaths,
@@ -202,7 +221,7 @@ func (e *Engine) setupGlobals() {
 	})
 
 	// Logging functions (application logs)
-	e.vm.Set("log", map[string]interface{}{
+	_ = e.vm.Set("log", map[string]interface{}{
 		"debug":      e.jsLogDebug,
 		"info":       e.jsLogInfo,
 		"warn":       e.jsLogWarn,
@@ -214,13 +233,13 @@ func (e *Engine) setupGlobals() {
 	})
 
 	// Terminal output functions (separate from logs)
-	e.vm.Set("output", map[string]interface{}{
+	_ = e.vm.Set("output", map[string]interface{}{
 		"print":  e.jsOutputPrint,
 		"printf": e.jsOutputPrintf,
 	})
 
 	// TUI and Mode management functions
-	e.vm.Set("tui", map[string]interface{}{
+	_ = e.vm.Set("tui", map[string]interface{}{
 		"registerMode":         e.tuiManager.jsRegisterMode,
 		"switchMode":           e.tuiManager.jsSwitchMode,
 		"getCurrentMode":       e.tuiManager.jsGetCurrentMode,
@@ -235,26 +254,6 @@ func (e *Engine) setupGlobals() {
 		"setCompleter":         e.tuiManager.jsSetCompleter,
 		"registerKeyBinding":   e.tuiManager.jsRegisterKeyBinding,
 	})
-
-	// System utilities: exec, editor, clipboard
-	e.vm.Set("system", map[string]interface{}{
-		"exec":          e.jsSystemExec,
-		"execv":         e.jsSystemExecv,
-		"parseArgv":     e.jsSystemParseArgv,
-		"openEditor":    e.jsSystemOpenEditor,
-		"clipboardCopy": e.jsSystemClipboardCopy,
-		"readFile":      e.jsSystemReadFile,
-		"fileExists":    e.jsSystemFileExists,
-	})
-}
-
-// jsSystemFileExists checks whether a file or directory exists at the given path.
-func (e *Engine) jsSystemFileExists(path string) bool {
-	if path == "" {
-		return false
-	}
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 // readFile reads a file and returns its content as a string.
@@ -264,9 +263,4 @@ func readFile(path string) (string, error) {
 		return "", err
 	}
 	return string(content), nil
-}
-
-// getEnv gets an environment variable.
-func getEnv(key string) string {
-	return os.Getenv(key)
 }

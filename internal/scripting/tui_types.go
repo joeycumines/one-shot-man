@@ -19,6 +19,7 @@ type TUIManager struct {
 	currentMode      *ScriptMode
 	modes            map[string]*ScriptMode
 	commands         map[string]Command
+	commandOrder     []string // maintains insertion order of commands
 	mu               sync.RWMutex
 	input            io.Reader
 	output           io.Writer
@@ -40,15 +41,16 @@ type TUIManager struct {
 
 // ScriptMode represents a specific script mode with its own state and commands.
 type ScriptMode struct {
-	Name      string
-	Script    *Script
-	State     map[string]interface{}
-	Commands  map[string]Command
-	TUIConfig *TUIConfig
-	OnEnter   goja.Callable
-	OnExit    goja.Callable
-	OnPrompt  goja.Callable
-	mu        sync.RWMutex
+	Name         string
+	Script       *Script
+	State        map[string]interface{}
+	Commands     map[string]Command
+	CommandOrder []string // maintains insertion order of commands
+	TUIConfig    *TUIConfig
+	OnEnter      goja.Callable
+	OnExit       goja.Callable
+	OnPrompt     goja.Callable
+	mu           sync.RWMutex
 }
 
 // TUIConfig defines the configuration for a rich TUI interface.

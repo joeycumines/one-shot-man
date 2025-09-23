@@ -84,7 +84,7 @@ func TestEngine_SubTests(t *testing.T) {
 		ctx.run("subtest1", function() {
 			ctx.log("In subtest 1");
 		});
-		
+
 		ctx.run("subtest2", function() {
 			ctx.log("In subtest 2");
 			ctx.run("nested", function() {
@@ -207,17 +207,19 @@ func TestEngine_ComplexScenario(t *testing.T) {
 	})
 
 	script := engine.LoadScriptFromString("complex_test", `
+		const {sleep} = require('osm:time');
+
 		ctx.run("setup", function() {
 			ctx.log("Setting up test environment");
 			ctx.defer(function() {
 				ctx.log("Cleaning up test environment");
 			});
 		});
-		
+
 		ctx.run("main_test", function() {
 			ctx.logf("Using timeout: %d", config.timeout);
 			ctx.logf("Using retries: %d", config.retries);
-			
+
 			ctx.run("sub_operation", function() {
 				ctx.log("Performing sub-operation");
 				// Simulate some work
@@ -225,7 +227,7 @@ func TestEngine_ComplexScenario(t *testing.T) {
 				ctx.log("Sub-operation completed");
 			});
 		});
-		
+
 		ctx.run("teardown", function() {
 			ctx.log("Tearing down test");
 		});

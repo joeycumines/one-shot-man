@@ -1,8 +1,9 @@
 // Prompt Flow: Single-file, goal/context/template-driven prompt builder (baked-in version)
 // This is the built-in version of the prompt-flow script with embedded template
 
-const {openEditor: osOpenEditor, fileExists, clipboardCopy, getenv} = require('osm:os');
-const {execv} = require('osm:exec');
+const {openEditor: osOpenEditor, fileExists, clipboardCopy} = require('osm:os');
+const {formatArgv} = require('osm:argv');
+const {buildContext} = require('osm:ctxutil');
 
 // State keys
 const STATE = {
@@ -136,24 +137,9 @@ function addItem(type, label, payload) {
     return id;
 }
 
-// Build the combined context string from notes, diffs, and tracked files (txtar)
+// Build the combined context string from notes, diffs (always refreshed), and tracked files (txtar)
 function buildContextString() {
-    const contextParts = [];
-
-    for (const it of items()) {
-        if (it.type === "note") {
-            contextParts.push("### Note: " + (it.label || "note") + "\n\n" + it.payload + "\n\n---\n");
-        } else if (it.type === "diff") {
-            contextParts.push("### Diff: " + (it.label || "git diff") + "\n\n```diff\n" + (it.payload || "") + "\n```\n\n---\n");
-        }
-    }
-
-    const txtar = context.toTxtar();
-    if (txtar && txtar.trim()) {
-        contextParts.push("```\n" + txtar + "\n```");
-    }
-
-    return contextParts.join("\n");
+    return buildContext(items(), {toTxtar: () => context.toTxtar()});
 }
 
 function buildMetaPrompt() {
@@ -222,19 +208,13 @@ function buildCommands() {
             }
         },
         diff: {
-            description: "Add git diff output to context",
+            description: "Add git diff (lazy; refreshed on generate/show)",
             usage: "diff [args]",
             handler: function (args) {
-                const argv = ["git", "diff"].concat(args || []);
-                const res = execv(argv);
-                if (res && res.error) {
-                    output.print("git diff failed: " + res.message);
-                    return;
-                }
-                const a = args || [];
-                const label = "git diff" + (a.length ? (" " + a.join(" ")) : "");
-                addItem("diff", label, res.stdout);
-                output.print("Added diff: " + label);
+                const argv = (args && args.length > 0) ? args.slice(0) : ["HEAD~1"]; // default like code-review
+                const label = "git diff " + (argv.length ? formatArgv(argv) : "");
+                addItem("lazy-diff", label, argv);
+                output.print("Added diff: " + label + " (will be executed when generating output)");
             }
         },
         note: {

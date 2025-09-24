@@ -7,7 +7,7 @@ tui.registerMode({
         title: "Demo Mode - Completion Precedence",
         prompt: "[demo]> "
     },
-    onEnter: function() {
+    onEnter: function () {
         output.print("=== Completion Precedence Demo ===");
         output.print("Type 'he' and press TAB to see completion suggestions.");
         output.print("You should only see 'help Show custom help' (not 'help Built-in command')");
@@ -17,7 +17,7 @@ tui.registerMode({
     commands: {
         help: {
             description: "Show custom help",
-            handler: function() {
+            handler: function () {
                 output.print("🎉 This is the CUSTOM help command from the mode!");
                 output.print("The fix ensures this command takes precedence over the built-in help.");
                 output.print("Before the fix, you would see BOTH completions:");
@@ -28,7 +28,7 @@ tui.registerMode({
         },
         test: {
             description: "Test custom command",
-            handler: function() {
+            handler: function () {
                 output.print("This is a custom test command in demo mode.");
             }
         }

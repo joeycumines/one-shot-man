@@ -4,7 +4,7 @@
 const nextIntegerId = require('osm:nextIntegerId');
 const {parseArgv, formatArgv} = require('osm:argv');
 const {openEditor: osOpenEditor, clipboardCopy, fileExists, getenv} = require('osm:os');
-const {execv} = require('osm:exec');
+const {buildContext} = require('osm:ctxutil');
 
 // State keys
 const STATE = {
@@ -70,42 +70,9 @@ function addItem(type, label, payload) {
 }
 
 function buildPrompt() {
-    // Build the final prompt with template and context
     const pb = tui.createPromptBuilder("review", "Build code review prompt");
     pb.setTemplate(codeReviewTemplate);
-
-    // Build context that includes both files and diff items
-    const contextParts = [];
-
-    for (const it of items()) {
-        if (it.type === "note") {
-            contextParts.push("### Note: " + (it.label || "note") + "\n\n" + it.payload + "\n\n---\n");
-        } else if (it.type === "diff") {
-            contextParts.push("### Diff: " + (it.label || "git diff") + "\n\n```diff\n" + (it.payload || "") + "\n```\n\n---\n");
-        } else if (it.type === "diff-error") {
-            contextParts.push("### Diff Error: " + (it.label || "git diff") + "\n\n" + it.payload + "\n\n---\n");
-        } else if (it.type === "lazy-diff") {
-            // Resolve the diff just-in-time without mutating state
-            const diffArgs = Array.isArray(it.payload) ? it.payload : parseArgv(it.payload || "");
-            const argv = ["git", "diff"].concat(diffArgs);
-            const res = execv(argv);
-            if (!res || res.error) {
-                const msg = res ? res.message : "Execution failed";
-                contextParts.push("### Diff Error: " + (it.label || "git diff") + "\n\n" + ("Error executing git diff: " + msg) + "\n\n---\n");
-            } else {
-                const out = res.stdout || "";
-                contextParts.push("### Diff: " + (it.label || "git diff") + "\n\n```diff\n" + out + "\n```\n\n---\n");
-            }
-        }
-    }
-
-    // Add the txtar dump for tracked files
-    const txtar = context.toTxtar();
-    if (txtar && txtar.trim()) {
-        contextParts.push("```\n" + txtar + "\n```");
-    }
-
-    const fullContext = contextParts.join("\n");
+    const fullContext = buildContext(items(), {toTxtar: () => context.toTxtar()});
     pb.setVariable("context_txtar", fullContext);
     return pb.build();
 }

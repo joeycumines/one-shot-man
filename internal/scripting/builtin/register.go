@@ -5,6 +5,7 @@ import (
 
 	"github.com/dop251/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/scripting/builtin/argv"
+	ctxutils "github.com/joeycumines/one-shot-man/internal/scripting/builtin/ctxutil"
 	execmod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/exec"
 	"github.com/joeycumines/one-shot-man/internal/scripting/builtin/nextintegerid"
 	osmod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/os"
@@ -17,8 +18,8 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	const prefix = "osm:"
 	registry.RegisterNativeModule(prefix+"argv", argv.LoadModule)
 	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.LoadModule)
-	// Modules with host dependencies use factories
 	registry.RegisterNativeModule(prefix+"exec", execmod.ModuleLoader(ctx))
 	registry.RegisterNativeModule(prefix+"os", osmod.ModuleLoader(ctx, tuiSink))
 	registry.RegisterNativeModule(prefix+"time", timemod.LoadModule)
+	registry.RegisterNativeModule(prefix+"ctxutil", ctxutils.ModuleLoader(ctx))
 }

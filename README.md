@@ -83,12 +83,14 @@ mkdir -p ~/.zsh/completions
 # Install completion script
 osm completion zsh > ~/.zsh/completions/_osm
 
-# Add to your ~/.zshrc (if not already present)
-echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
-echo 'autoload -U compinit && compinit' >> ~/.zshrc
+# Ensure these lines exist in your ~/.zshrc (add them if missing)
+# Add completions directory to your function path
+grep -q "fpath=(~/.zsh/completions $fpath)" ~/.zshrc || echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
+# Initialize completion system (only once)
+grep -q "autoload -U compinit" ~/.zshrc || echo 'autoload -U compinit && compinit' >> ~/.zshrc
 
-# Or source directly
-echo 'source <(osm completion zsh)' >> ~/.zshrc
+# Optionally source directly for the current session
+# source <(osm completion zsh)
 ```
 
 **Fish:**

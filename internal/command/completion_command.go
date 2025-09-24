@@ -83,13 +83,17 @@ _osm_completion() {
         return 0
     fi
 
-    # For subsequent arguments, use default file completion
-    case "${prev}" in
-        *)
-            COMPREPLY=($(compgen -f -- ${cur}))
-            return 0
-            ;;
-    esac
+	# For subsequent arguments, provide per-command completions
+	case "${prev}" in
+		completion)
+			COMPREPLY=($(compgen -W "bash zsh fish powershell" -- ${cur}))
+			return 0
+			;;
+		*)
+			COMPREPLY=($(compgen -f -- ${cur}))
+			return 0
+			;;
+	esac
 }
 
 # Register the completion function
@@ -111,7 +115,7 @@ complete -F _osm_completion osm
 func (c *CompletionCommand) generateZshCompletion(w io.Writer) error {
 	commands := c.registry.List()
 	var commandDescriptions strings.Builder
-	
+
 	for _, cmd := range commands {
 		if command, err := c.registry.Get(cmd); err == nil {
 			commandDescriptions.WriteString(fmt.Sprintf("    '%s:%s'\n", cmd, command.Description()))
@@ -137,10 +141,17 @@ _osm() {
 %s            )
             _describe 'commands' commands
             ;;
-        args)
-            # Default to file completion for arguments
-            _files
-            ;;
+		args)
+			# Argument completion based on selected subcommand
+			case ${words[2]} in
+				completion)
+					_values 'shell' 'bash' 'zsh' 'fish' 'powershell'
+					;;
+				*)
+					_files
+					;;
+			esac
+			;;
     esac
 }
 
@@ -166,7 +177,7 @@ func (c *CompletionCommand) generateFishCompletion(w io.Writer) error {
 
 	for _, cmd := range commands {
 		if command, err := c.registry.Get(cmd); err == nil {
-			completions.WriteString(fmt.Sprintf("complete -c osm -n '__fish_use_subcommand' -a '%s' -d '%s'\n", 
+			completions.WriteString(fmt.Sprintf("complete -c osm -n '__fish_use_subcommand' -a '%s' -d '%s'\n",
 				cmd, command.Description()))
 		}
 	}
@@ -175,6 +186,8 @@ func (c *CompletionCommand) generateFishCompletion(w io.Writer) error {
 
 # Complete commands
 %s
+# Completion for 'completion' subcommand args (shells)
+complete -c osm -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish powershell' -d 'Shell'
 # Installation instructions (as comments):
 # To install this completion script:
 # 1. Copy this script to ~/.config/fish/completions/osm.fish
@@ -193,21 +206,42 @@ func (c *CompletionCommand) generatePowerShellCompletion(w io.Writer) error {
 	script := fmt.Sprintf(`# PowerShell completion script for osm (one-shot-man)
 
 Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
-    param($commandName, $wordToComplete, $cursorPosition)
-    
-    $commands = @('%s')
-    
-    # If we're completing the first argument (command name)
-    if ($wordToComplete -eq '' -or $commands -contains $wordToComplete.Split(' ')[0]) {
-        $commands | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
-            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
-        }
-    } else {
-        # For other arguments, provide file completion
-        Get-ChildItem -Path . -Name "$wordToComplete*" | ForEach-Object {
-            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
-        }
-    }
+	param($commandName, $wordToComplete, $cursorPosition)
+
+	$line = $MyInvocation.Line.Substring(0, $cursorPosition)
+	$tokens = $line.TrimStart().Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
+	$tokenCount = $tokens.Length
+
+	$commands = @('%s')
+	$shells = @('bash', 'zsh', 'fish', 'powershell')
+
+	if ($line.TrimEnd().EndsWith(' ')) {
+		$tokenCount++
+	}
+
+	# Completing the command name (token 2: first arg after command)
+	if ($tokenCount -le 2) {
+		$commands | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+			[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+		}
+		return
+	}
+
+	$command = if ($tokens.Count -ge 2) { $tokens[1] } else { '' }
+
+	if ($tokenCount -eq 3 -and $command -eq 'completion') {
+		$shells | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+			[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+		}
+		return
+	}
+
+	# Default to file completion for other commands
+	if ($command -ne 'completion') {
+		Get-ChildItem -Path . -Name "$wordToComplete*" | ForEach-Object {
+			[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+		}
+	}
 }
 
 # Installation instructions (as comments):

@@ -1,4 +1,0 @@
-# Test config with template file
-[prompt-flow]
-template.file ./custom-template.md
-script.ui.banner Custom Template Loaded from File

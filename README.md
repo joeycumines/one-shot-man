@@ -51,6 +51,10 @@ osm init
 osm config --all
 # Start interactive scripting terminal (TUI)
 osm script -i
+# List available pre-written goals
+osm goals -l
+# Run a specific goal
+osm goals comment-stripper
 ```
 
 -----
@@ -294,6 +298,49 @@ Switch to a mode to execute JavaScript code
 - `script` - Execute JavaScript scripts with deferred/declarative API.
 - `prompt-flow` - Interactive prompt builder: goal/context/template -\> generate -\> assemble.
 - `code-review` - Single-prompt code review with context: context -\> generate prompt for PR review.
+- `goals` - Access pre-written goals for common development tasks.
+
+### Goals Command
+
+The `goals` command provides access to pre-written, production-ready goals for common development tasks. These goals come with comprehensive prompts and can be used standalone or integrated with other commands.
+
+```sh
+# List available goals
+osm goals -l
+
+# List goals by category
+osm goals -c testing
+
+# Run a goal interactively
+osm goals comment-stripper
+
+# Run a goal directly (non-interactive)
+osm goals -r doc-generator
+```
+
+**Available Goals:**
+
+- **Code Refactoring:**
+  - `comment-stripper` - Remove useless comments and refactor useful ones with intelligent analysis
+  
+- **Documentation:**
+  - `doc-generator` - Generate comprehensive documentation including API docs, examples, and guides
+  
+- **Testing:**
+  - `test-generator` - Generate comprehensive test suites with unit, integration, and edge case coverage
+
+**Integration with Other Commands:**
+
+Goals integrate seamlessly with existing workflows:
+
+- **Prompt Flow**: Use `goal --prewritten` to see available goals, then `goal use:<goal-name>` to apply them
+- **Code Review**: Use `note --goals` to apply goal-based review focuses like `note goal:comments`
+
+Each goal provides:
+- Comprehensive, context-aware prompts
+- Interactive TUI for building context
+- Integration with the scripting system
+- Extensible design for adding custom goals
 
 ### Interactive TUI
 

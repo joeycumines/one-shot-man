@@ -89,3 +89,57 @@ pager less`
 		t.Errorf("Expected help.pager=less, got %s (exists: %v)", value, ok)
 	}
 }
+
+func TestGetScriptConfig(t *testing.T) {
+	config := NewConfig()
+	// Set up test configuration
+	config.SetGlobalOption("script.default.timeout", "30")
+	config.SetGlobalOption("script.default.verbose", "true")
+	config.SetCommandOption("prompt-flow", "script.template.style", "detailed")
+	config.SetCommandOption("prompt-flow", "script.behavior.auto-save", "false")
+	config.SetCommandOption("prompt-flow", "script.default.timeout", "60")  // Override global
+
+	// Test script config extraction for prompt-flow
+	scriptConfig := config.GetScriptConfig("prompt-flow", "script.")
+	
+	expectedKeys := []string{"default.timeout", "default.verbose", "template.style", "behavior.auto-save"}
+	for _, key := range expectedKeys {
+		if _, exists := scriptConfig[key]; !exists {
+			t.Errorf("Expected script config key '%s' to exist", key)
+		}
+	}
+	
+	// Test values with proper precedence
+	if scriptConfig["default.timeout"] != "60" {
+		t.Errorf("Expected command-specific timeout override '60', got '%s'", scriptConfig["default.timeout"])
+	}
+	
+	if scriptConfig["default.verbose"] != "true" {
+		t.Errorf("Expected global fallback 'true', got '%s'", scriptConfig["default.verbose"])
+	}
+	
+	if scriptConfig["template.style"] != "detailed" {
+		t.Errorf("Expected command-specific 'detailed', got '%s'", scriptConfig["template.style"])
+	}
+}
+
+func TestGetTemplateOverride(t *testing.T) {
+	config := NewConfig()
+	
+	// Test with inline template content
+	config.SetCommandOption("test-command", "template.content", "Custom template content")
+	
+	content, exists := config.GetTemplateOverride("test-command")
+	if !exists {
+		t.Error("Expected template override to exist for inline content")
+	}
+	if content != "Custom template content" {
+		t.Errorf("Expected 'Custom template content', got '%s'", content)
+	}
+	
+	// Test with non-existent command
+	_, exists = config.GetTemplateOverride("non-existent")
+	if exists {
+		t.Error("Expected no template override for non-existent command")
+	}
+}

@@ -191,6 +191,67 @@ Notes:
 - Defaults: input=green, prefix=cyan, suggestionText=yellow, suggestionBG=black, selectedSuggestionText=black, selectedSuggestionBG=cyan, descriptionText=white, descriptionBG=black, selectedDescriptionText=white, selectedDescriptionBG=blue, scrollbarThumb=darkgray, scrollbarBG=black.
 - These apply to `osm script -i` and as defaults for prompts created from JavaScript (which can further override per prompt).
 
+#### Built-in Script Configuration
+
+The built-in scripts (`prompt-flow` and `code-review`) support extensive configuration options to customize their behavior and appearance.
+
+##### Template Customization
+
+You can override the default templates used by built-in scripts:
+
+```
+[prompt-flow]
+# Override with file content (file takes precedence)
+template.file /path/to/custom/prompt-flow-template.md
+
+# Override with inline content
+template.content Custom template with {{goal}} and {{context_txtar}}
+
+[code-review]  
+template.file /path/to/custom/code-review-template.md
+template.content Review template: {{context_txtar}}
+```
+
+##### Script UI Configuration
+
+Customize the user interface elements of built-in scripts:
+
+```
+[prompt-flow]
+script.ui.title Custom Prompt Builder
+script.ui.banner Custom Prompt Flow: Enhanced workflow
+script.ui.prompt (custom-flow) > 
+script.ui.help-text Custom commands: goal, context, generate, export
+script.ui.history-file .custom-prompt-flow-history
+script.ui.enable-history true
+script.ui.show-help-on-start true
+
+[code-review]
+script.ui.title Advanced Code Review  
+script.ui.banner Code Review: Enhanced context analysis
+script.ui.prompt (review) > 
+script.ui.help-text Enhanced commands: add, analyze, generate, export
+script.ui.history-file .custom-code-review-history
+script.ui.enable-history true
+```
+
+##### Available Configuration Options
+
+**Template Options:**
+- `template.file` - Path to custom template file (takes precedence)  
+- `template.content` - Inline template content
+
+**UI Options:**
+- `script.ui.title` - Custom title for the mode
+- `script.ui.banner` - Custom banner text displayed on mode entry
+- `script.ui.prompt` - Custom command prompt string
+- `script.ui.help-text` - Custom help text for commands
+- `script.ui.history-file` - Custom history file name 
+- `script.ui.enable-history` - Enable/disable command history (true/false)
+- `script.ui.show-help-on-start` - Show help on mode entry (true/false)
+
+**Precedence:** Command-specific options override global options. File-based templates override inline content.
+
 -----
 
 ### Script Commands

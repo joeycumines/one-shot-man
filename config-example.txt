@@ -1,0 +1,62 @@
+# Example configuration file for one-shot-man
+# Uses dnsmasq-style format: optionName remainingLineIsTheValue
+
+# Global options
+verbose true
+color auto
+
+# Prompt colors (global defaults)
+prompt.color.input green
+prompt.color.prefix cyan
+prompt.color.suggestionText yellow
+prompt.color.suggestionBG black
+prompt.color.selectedSuggestionText black
+prompt.color.selectedSuggestionBG cyan
+
+# Built-in script configuration examples
+
+# Prompt Flow Command Configuration
+[prompt-flow]
+# Override the default template with file content
+# template.file /path/to/custom/prompt-flow-template.md
+
+# Override the default template with inline content
+# template.content Custom template with {{goal}} and {{context_txtar}}
+
+# Script behavior configuration
+script.ui.title Custom Prompt Builder
+script.ui.banner Custom Prompt Flow: Enhanced workflow
+script.ui.prompt (custom-flow) > 
+script.ui.help-text Custom commands: goal, context, generate, export
+script.ui.history-file .custom-prompt-flow-history
+script.ui.enable-history true
+script.ui.show-help-on-start true
+
+# Code Review Command Configuration  
+[code-review]
+# Template overrides
+# template.file /path/to/custom/code-review-template.md
+# template.content Review template: {{context_txtar}}
+
+# Script behavior configuration
+script.ui.title Advanced Code Review
+script.ui.banner Code Review: Enhanced context analysis
+script.ui.prompt (review) > 
+script.ui.help-text Enhanced commands: add, analyze, generate, export
+script.ui.history-file .custom-code-review-history
+script.ui.enable-history true
+
+# Other built-in command configuration
+[help]
+pager less
+format detailed
+
+[script]
+# Default script engine settings
+script.timeout 120
+script.memory-limit 256MB
+
+# General script configuration (applies to all scripts)
+script.default.verbose false
+script.default.auto-save true
+script.default.backup-history true

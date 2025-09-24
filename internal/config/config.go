@@ -134,3 +134,51 @@ func (c *Config) SetCommandOption(command, name, value string) {
 	}
 	c.Commands[command][name] = value
 }
+
+// GetScriptConfig returns script-specific configuration options for a command.
+// It extracts options with the given prefix and returns them as a map with the prefix stripped.
+func (c *Config) GetScriptConfig(command, prefix string) map[string]string {
+	result := make(map[string]string)
+	
+	// Check command-specific options first
+	if cmdOptions, exists := c.Commands[command]; exists {
+		for key, value := range cmdOptions {
+			if strings.HasPrefix(key, prefix) {
+				strippedKey := strings.TrimPrefix(key, prefix)
+				if strippedKey != "" {
+					result[strippedKey] = value
+				}
+			}
+		}
+	}
+	
+	// Check global options as fallback
+	for key, value := range c.Global {
+		if strings.HasPrefix(key, prefix) {
+			strippedKey := strings.TrimPrefix(key, prefix)
+			if strippedKey != "" && result[strippedKey] == "" {
+				result[strippedKey] = value
+			}
+		}
+	}
+	
+	return result
+}
+
+// GetTemplateOverride checks if there's a custom template configured for a command.
+// It returns the template content and true if found, or empty string and false if not.
+func (c *Config) GetTemplateOverride(command string) (string, bool) {
+	// Check for template file path first
+	if templatePath, exists := c.GetCommandOption(command, "template.file"); exists {
+		if content, err := os.ReadFile(templatePath); err == nil {
+			return string(content), true
+		}
+	}
+	
+	// Check for inline template content
+	if templateContent, exists := c.GetCommandOption(command, "template.content"); exists {
+		return templateContent, true
+	}
+	
+	return "", false
+}

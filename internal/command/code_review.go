@@ -59,7 +59,23 @@ func (c *CodeReviewCommand) Execute(args []string, stdout, stderr io.Writer) err
 
 	// Set up global variables
 	engine.SetGlobal("args", args)
-	engine.SetGlobal("codeReviewTemplate", codeReviewTemplate)
+	
+	// Check for custom template override
+	template := codeReviewTemplate
+	if c.config != nil {
+		if customTemplate, exists := c.config.GetTemplateOverride("code-review"); exists {
+			template = customTemplate
+		}
+	}
+	engine.SetGlobal("codeReviewTemplate", template)
+
+	// Apply script configuration if available
+	if c.config != nil {
+		scriptConfig := c.config.GetScriptConfig("code-review", "script.")
+		if len(scriptConfig) > 0 {
+			engine.SetGlobal("scriptConfig", scriptConfig)
+		}
+	}
 
 	// Load the embedded script
 	script := engine.LoadScriptFromString("code-review", codeReviewScript)

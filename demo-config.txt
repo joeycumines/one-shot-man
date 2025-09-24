@@ -1,0 +1,58 @@
+# Demo configuration for one-shot-man built-in scripts
+# This demonstrates the new configuration integration capabilities
+
+# Global settings
+verbose true
+color auto
+
+# Custom prompt colors
+prompt.color.input blue
+prompt.color.prefix magenta
+
+# Enhanced Prompt Flow Configuration
+[prompt-flow]
+# Custom template with specific focus
+template.content !! This is a CUSTOM prompt-flow template. !!
+
+!! Generate a comprehensive implementation plan for achieving: !!
+
+!! **OBJECTIVE:** !!
+{{goal}}
+
+!! **AVAILABLE CONTEXT:** !!
+{{context_txtar}}
+
+!! Focus on practical, actionable steps with clear deliverables. !!
+
+# Enhanced UI settings
+script.ui.title Enhanced Prompt Flow
+script.ui.banner 🚀 Enhanced Prompt Flow: Advanced Goal-Context-Template Workflow 
+script.ui.prompt (enhanced-flow) ➤ 
+script.ui.help-text Available: goal, add, diff, note, list, edit, remove, template, generate, use, show, copy, help, exit
+script.ui.history-file .enhanced-prompt-flow-history
+script.ui.enable-history true
+script.ui.show-help-on-start true
+
+# Enhanced Code Review Configuration  
+[code-review]
+# Custom review template
+template.content ## Code Review Analysis
+
+### Context Overview
+{{context_txtar}}
+
+### Review Guidelines
+- Focus on code quality, maintainability, and security
+- Check for potential bugs and edge cases
+- Verify alignment with project standards
+- Assess performance implications
+
+### Detailed Analysis Required
+
+# Enhanced UI for code review
+script.ui.title Advanced Code Review
+script.ui.banner 🔍 Advanced Code Review: Comprehensive Context Analysis
+script.ui.prompt (advanced-review) ➤ 
+script.ui.help-text Enhanced: add, diff, note, list, edit, remove, show, copy, help, exit
+script.ui.history-file .advanced-code-review-history  
+script.ui.enable-history true

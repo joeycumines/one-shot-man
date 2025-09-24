@@ -171,6 +171,54 @@ func TestPromptFlowCommand_ConfigColorOverrides(t *testing.T) {
 	}
 }
 
+func TestPromptFlowCommand_TemplateOverride(t *testing.T) {
+	cfg := config.NewConfig()
+	// Set a custom template override
+	cfg.SetCommandOption("prompt-flow", "template.content", "Custom template for testing: {{goal}} - {{context_txtar}}")
+
+	cmd := NewPromptFlowCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	cmd.testMode = true
+	cmd.interactive = false
+
+	err := cmd.Execute([]string{}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Expected no error with template override, got: %v", err)
+	}
+
+	// The test should complete successfully with template override
+	output := stdout.String()
+	if !contains(output, "Prompt Flow: goal/context/template -> generate -> use -> assemble") {
+		t.Errorf("Expected default banner message, got: %s", output)
+	}
+}
+
+func TestPromptFlowCommand_ScriptConfig(t *testing.T) {
+	cfg := config.NewConfig()
+	// Set script-specific configuration
+	cfg.SetCommandOption("prompt-flow", "script.ui.title", "Custom Prompt Builder")
+	cfg.SetCommandOption("prompt-flow", "script.ui.banner", "Custom banner message")
+	cfg.SetGlobalOption("script.ui.enable-history", "false")
+
+	cmd := NewPromptFlowCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	cmd.testMode = true
+	cmd.interactive = false
+
+	err := cmd.Execute([]string{}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Expected no error with script config, got: %v", err)
+	}
+
+	// The test should complete successfully with custom configuration
+	output := stdout.String()
+	if !contains(output, "Custom banner message") {
+		t.Errorf("Expected custom banner message, got: %s", output)
+	}
+}
+
 func TestPromptFlowCommand_NilConfig(t *testing.T) {
 	cmd := NewPromptFlowCommand(nil)
 

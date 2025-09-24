@@ -25,13 +25,20 @@ function nextId(list) {
 
 // Initialize the mode
 ctx.run("register-mode", function () {
+    // Get configuration values, providing sensible defaults
+    const config = (typeof scriptConfig !== 'undefined') ? scriptConfig : {};
+    const title = config["ui.title"] || "Prompt Flow";
+    const prompt = config["ui.prompt"] || "(prompt-builder) > ";
+    const historyFile = config["ui.history-file"] || ".prompt-flow_history";
+    const enableHistory = config["ui.enable-history"] !== "false"; // defaults to true
+    
     tui.registerMode({
         name: STATE.mode,
         tui: {
-            title: "Prompt Flow",
-            prompt: "(prompt-builder) > ",
-            enableHistory: true,
-            historyFile: ".prompt-flow_history"
+            title: title,
+            prompt: prompt,
+            enableHistory: enableHistory,
+            historyFile: historyFile
         },
         onEnter: function () {
             if (!tui.getState(STATE.phase)) {
@@ -58,12 +65,18 @@ ctx.run("register-mode", function () {
 });
 
 function banner() {
-    output.print("Prompt Flow: goal/context/template -> generate -> use -> assemble");
+    const config = (typeof scriptConfig !== 'undefined') ? scriptConfig : {};
+    const bannerText = config["ui.banner"] || "Prompt Flow: goal/context/template -> generate -> use -> assemble";
+    const showHelp = config["ui.show-help-on-start"] !== "false"; // defaults to true
+    
+    output.print(bannerText);
     output.print("Type 'help' for commands. Use 'flow' to return here later.");
 }
 
 function help() {
-    output.print("Commands: goal, add, diff, note, list, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit");
+    const config = (typeof scriptConfig !== 'undefined') ? scriptConfig : {};
+    const helpText = config["ui.help-text"] || "Commands: goal, add, diff, note, list, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit";
+    output.print(helpText);
 }
 
 function defaultTemplate() {

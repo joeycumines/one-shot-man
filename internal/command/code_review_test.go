@@ -170,6 +170,54 @@ func TestCodeReviewCommand_ConfigColorOverrides(t *testing.T) {
 	}
 }
 
+func TestCodeReviewCommand_TemplateOverride(t *testing.T) {
+	cfg := config.NewConfig()
+	// Set a custom template override
+	cfg.SetCommandOption("code-review", "template.content", "Custom review template: {{context_txtar}}")
+
+	cmd := NewCodeReviewCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	cmd.testMode = true
+	cmd.interactive = false
+
+	err := cmd.Execute([]string{}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Expected no error with template override, got: %v", err)
+	}
+
+	// The test should complete successfully with template override
+	output := stdout.String()
+	if !contains(output, "Code Review: context -> single prompt for PR review") {
+		t.Errorf("Expected default banner message, got: %s", output)
+	}
+}
+
+func TestCodeReviewCommand_ScriptConfig(t *testing.T) {
+	cfg := config.NewConfig()
+	// Set script-specific configuration
+	cfg.SetCommandOption("code-review", "script.ui.title", "Custom Code Review")
+	cfg.SetCommandOption("code-review", "script.ui.banner", "Custom review banner")
+	cfg.SetGlobalOption("script.ui.enable-history", "false")
+
+	cmd := NewCodeReviewCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	cmd.testMode = true
+	cmd.interactive = false
+
+	err := cmd.Execute([]string{}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Expected no error with script config, got: %v", err)
+	}
+
+	// The test should complete successfully with custom configuration
+	output := stdout.String()
+	if !contains(output, "Custom review banner") {
+		t.Errorf("Expected custom banner message, got: %s", output)
+	}
+}
+
 func TestCodeReviewCommand_NilConfig(t *testing.T) {
 	cmd := NewCodeReviewCommand(nil)
 

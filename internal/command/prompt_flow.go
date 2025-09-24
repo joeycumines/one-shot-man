@@ -59,7 +59,23 @@ func (c *PromptFlowCommand) Execute(args []string, stdout, stderr io.Writer) err
 
 	// Set up global variables
 	engine.SetGlobal("args", args)
-	engine.SetGlobal("promptFlowTemplate", promptFlowTemplate)
+	
+	// Check for custom template override
+	template := promptFlowTemplate
+	if c.config != nil {
+		if customTemplate, exists := c.config.GetTemplateOverride("prompt-flow"); exists {
+			template = customTemplate
+		}
+	}
+	engine.SetGlobal("promptFlowTemplate", template)
+
+	// Apply script configuration if available
+	if c.config != nil {
+		scriptConfig := c.config.GetScriptConfig("prompt-flow", "script.")
+		if len(scriptConfig) > 0 {
+			engine.SetGlobal("scriptConfig", scriptConfig)
+		}
+	}
 
 	// Load the embedded script
 	script := engine.LoadScriptFromString("prompt-flow", promptFlowScript)

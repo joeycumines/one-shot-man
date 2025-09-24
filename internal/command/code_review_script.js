@@ -14,13 +14,20 @@ const STATE = {
 
 // Initialize the mode
 ctx.run("register-mode", function () {
+    // Get configuration values, providing sensible defaults
+    const config = (typeof scriptConfig !== 'undefined') ? scriptConfig : {};
+    const title = config["ui.title"] || "Code Review";
+    const prompt = config["ui.prompt"] || "(code-review) > ";
+    const historyFile = config["ui.history-file"] || ".code-review_history";
+    const enableHistory = config["ui.enable-history"] !== "false"; // defaults to true
+    
     tui.registerMode({
         name: STATE.mode,
         tui: {
-            title: "Code Review",
-            prompt: "(code-review) > ",
-            enableHistory: true,
-            historyFile: ".code-review_history"
+            title: title,
+            prompt: prompt,
+            enableHistory: enableHistory,
+            historyFile: historyFile
         },
         onEnter: function () {
             if (!tui.getState(STATE.contextItems)) {
@@ -45,12 +52,16 @@ ctx.run("register-mode", function () {
 });
 
 function banner() {
-    output.print("Code Review: context -> single prompt for PR review");
+    const config = (typeof scriptConfig !== 'undefined') ? scriptConfig : {};
+    const bannerText = config["ui.banner"] || "Code Review: context -> single prompt for PR review";
+    output.print(bannerText);
     output.print("Type 'help' for commands. Use 'review' to return here later.");
 }
 
 function help() {
-    output.print("Commands: add, diff, note, list, edit, remove, show, copy, help, exit");
+    const config = (typeof scriptConfig !== 'undefined') ? scriptConfig : {};
+    const helpText = config["ui.help-text"] || "Commands: add, diff, note, list, edit, remove, show, copy, help, exit";
+    output.print(helpText);
 }
 
 function items() {

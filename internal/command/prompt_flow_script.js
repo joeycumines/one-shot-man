@@ -4,6 +4,7 @@
 const {openEditor: osOpenEditor, fileExists, clipboardCopy} = require('osm:os');
 const {formatArgv} = require('osm:argv');
 const {buildContext} = require('osm:ctxutil');
+const interop = require('osm:interop');
 
 // State keys
 const STATE = {
@@ -63,7 +64,7 @@ function banner() {
 }
 
 function help() {
-    output.print("Commands: goal, add, diff, note, list, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit");
+    output.print("Commands: goal, add, diff, note, list, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], export, import, commit, help, exit");
 }
 
 function defaultTemplate() {
@@ -440,6 +441,152 @@ function buildCommands() {
             }
         },
         help: {description: "Show help", handler: help},
+        export: {
+            description: "Export context to shared interop storage",
+            usage: "export [name]",
+            handler: function (args) {
+                try {
+                    const items = tui.getState(STATE.contextItems) || [];
+                    const sharedContext = {
+                        CreatedAt: new Date().toISOString(),
+                        UpdatedAt: new Date().toISOString(),
+                        Version: "1.0",
+                        SourceMode: "prompt_flow",
+                        ContextItems: items,
+                        PromptFlow: {
+                            Phase: tui.getState(STATE.phase) || "INITIAL",
+                            Goal: tui.getState(STATE.goal) || "",
+                            Template: tui.getState(STATE.template) || "",
+                            MetaPrompt: tui.getState(STATE.metaPrompt) || "",
+                            TaskPrompt: tui.getState(STATE.taskPrompt) || ""
+                        }
+                    };
+                    
+                    if (args.length > 0) {
+                        // Save with custom name
+                        const customPath = args[0] + ".osm-interop.json";
+                        interop.setCachePath(customPath);
+                        interop.save(sharedContext);
+                        output.print("Exported " + items.length + " context items to: " + customPath);
+                        // Reset to default path
+                        interop.setCachePath(".osm-interop.json");
+                    } else {
+                        interop.save(sharedContext);
+                        output.print("Exported " + items.length + " context items to: " + interop.getCachePath());
+                    }
+                } catch (e) {
+                    output.print("Export error: " + (e && e.message ? e.message : e));
+                }
+            }
+        },
+        import: {
+            description: "Import context from shared interop storage",
+            usage: "import [name]",
+            handler: function (args) {
+                try {
+                    if (args.length > 0) {
+                        // Load from custom name
+                        const customPath = args[0] + ".osm-interop.json";
+                        interop.setCachePath(customPath);
+                    }
+                    
+                    if (!interop.exists()) {
+                        output.print("No shared context found at: " + interop.getCachePath());
+                        if (args.length > 0) {
+                            // Reset to default path
+                            interop.setCachePath(".osm-interop.json");
+                        }
+                        return;
+                    }
+                    
+                    const sharedContext = interop.load();
+                    const importedItems = sharedContext.ContextItems || [];
+                    const currentItems = tui.getState(STATE.contextItems) || [];
+                    
+                    // Merge items, avoiding duplicates by checking labels
+                    const existingLabels = new Set(currentItems.map(item => item.label));
+                    let addedCount = 0;
+                    
+                    for (const item of importedItems) {
+                        if (!existingLabels.has(item.label)) {
+                            // Assign new ID to avoid conflicts
+                            item.id = nextId(currentItems);
+                            currentItems.push(item);
+                            addedCount++;
+                        }
+                    }
+                    
+                    tui.setState(STATE.contextItems, currentItems);
+                    output.print("Imported " + addedCount + " new items from: " + interop.getCachePath());
+                    output.print("Source: " + (sharedContext.SourceMode || "unknown"));
+                    
+                    // Import prompt flow specific data if available
+                    if (sharedContext.PromptFlow) {
+                        const pf = sharedContext.PromptFlow;
+                        if (pf.Goal) {
+                            tui.setState(STATE.goal, pf.Goal);
+                            output.print("Imported goal: " + pf.Goal);
+                        }
+                        if (pf.Template) {
+                            tui.setState(STATE.template, pf.Template);
+                            output.print("Imported template");
+                        }
+                        if (pf.MetaPrompt) {
+                            tui.setState(STATE.metaPrompt, pf.MetaPrompt);
+                            output.print("Imported meta-prompt");
+                        }
+                        if (pf.TaskPrompt) {
+                            tui.setState(STATE.taskPrompt, pf.TaskPrompt);
+                            output.print("Imported task prompt");
+                        }
+                        if (pf.Phase) {
+                            tui.setState(STATE.phase, pf.Phase);
+                        }
+                    }
+                    
+                    if (args.length > 0) {
+                        // Reset to default path
+                        interop.setCachePath(".osm-interop.json");
+                    }
+                } catch (e) {
+                    output.print("Import error: " + (e && e.message ? e.message : e));
+                }
+            }
+        },
+        commit: {
+            description: "Generate commit message from context",
+            handler: function () {
+                try {
+                    const items = tui.getState(STATE.contextItems) || [];
+                    if (items.length === 0) {
+                        output.print("No context items to generate commit message from");
+                        return;
+                    }
+                    
+                    const goal = tui.getState(STATE.goal) || "";
+                    const commitData = interop.generateCommitMessage(items, {goal: goal});
+                    const conventionalCommit = commitData.type + ": " + commitData.subject;
+                    
+                    output.print("Generated commit message:");
+                    output.print(conventionalCommit);
+                    output.print("");
+                    output.print(commitData.body);
+                    if (goal) {
+                        output.print("Goal: " + goal);
+                    }
+                    
+                    // Try to copy to clipboard
+                    try {
+                        clipboardCopy(conventionalCommit);
+                        output.print("Commit message copied to clipboard!");
+                    } catch (clipErr) {
+                        output.print("Could not copy to clipboard: " + (clipErr && clipErr.message ? clipErr.message : clipErr));
+                    }
+                } catch (e) {
+                    output.print("Commit generation error: " + (e && e.message ? e.message : e));
+                }
+            }
+        },
     };
 }
 

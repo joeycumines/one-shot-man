@@ -7,6 +7,7 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/scripting/builtin/argv"
 	ctxutils "github.com/joeycumines/one-shot-man/internal/scripting/builtin/ctxutil"
 	execmod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/exec"
+	"github.com/joeycumines/one-shot-man/internal/scripting/builtin/interop"
 	"github.com/joeycumines/one-shot-man/internal/scripting/builtin/nextintegerid"
 	osmod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/os"
 	timemod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/time"
@@ -22,4 +23,5 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"os", osmod.ModuleLoader(ctx, tuiSink))
 	registry.RegisterNativeModule(prefix+"time", timemod.LoadModule)
 	registry.RegisterNativeModule(prefix+"ctxutil", ctxutils.ModuleLoader(ctx))
+	registry.RegisterNativeModule(prefix+"interop", interop.ModuleLoader(ctx))
 }

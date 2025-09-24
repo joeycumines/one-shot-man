@@ -85,6 +85,44 @@ Commands available in code review mode:
 
 -----
 
+### Commit Gen Command
+
+The `commit-gen` command analyzes git changes and automatically generates appropriate commit messages based on the diff output.
+
+```sh
+# Generate commit message for staged changes
+osm commit-gen --staged
+
+# Generate commit message for a specific commit
+osm commit-gen --commit HEAD
+
+# Generate a short, single-line commit message
+osm commit-gen --staged --short
+
+# Generate commit message for current changes (default: HEAD~1 or empty tree vs HEAD)
+osm commit-gen
+```
+
+The command analyzes:
+
+- **File changes**: Added, modified, and deleted files
+- **Line changes**: Number of lines added and removed
+- **File types**: Extension analysis for context
+- **Change patterns**: Determines the primary action (add, update, remove, change)
+
+Options:
+
+- `--staged` - Generate commit message for staged changes only (`git diff --cached`)
+- `--commit <ref>` - Generate commit message for changes in a specific commit (e.g., `HEAD`, `HEAD~1`)
+- `--short` - Generate a short, single-line commit message instead of detailed format
+
+Output formats:
+
+- **Detailed** (default): Multi-line message with summary and breakdown of changes
+- **Short**: Single-line summary suitable for quick commits
+
+-----
+
 ### Prompt Flow Command
 
 The `prompt-flow` command provides an interactive prompt builder that follows a goal/context/template workflow to generate and assemble prompts:
@@ -294,6 +332,7 @@ Switch to a mode to execute JavaScript code
 - `script` - Execute JavaScript scripts with deferred/declarative API.
 - `prompt-flow` - Interactive prompt builder: goal/context/template -\> generate -\> assemble.
 - `code-review` - Single-prompt code review with context: context -\> generate prompt for PR review.
+- `commit-gen` - Generate commit messages based on git changes.
 
 ### Interactive TUI
 

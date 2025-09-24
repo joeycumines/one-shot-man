@@ -335,42 +335,105 @@ type Command interface {
 
 ## JavaScript TUI API
 
-In addition to the deferred testing-style API on `ctx`, scripts can control the TUI via the global `tui` object and interact with the host system via the `system` object.
+In addition to the deferred testing-style API on `ctx`, scripts can control the TUI via the global `tui` object and interact with the host system via native CommonJS modules with the `osm:` prefix.
 
 ### `tui` Object
 
-Available functions (implemented):
+Available functions for rich terminal interface management:
 
 - `tui.registerMode(modeConfig)` — Register a mode with optional TUI config:
-    - `name` (string)
-    - `tui.prompt` (string) to customize the prefix like ` [my-mode]>  `
-    - `onEnter`, `onExit`, `onPrompt` (callbacks)
-- `tui.switchMode(name)` — Switch active mode
+    - `name` (string) - Required unique mode name
+    - `tui.title` (string) - Optional window title
+    - `tui.prompt` (string) - Optional prompt prefix like `[my-mode]> `
+    - `tui.enableHistory` (boolean) - Optional command history
+    - `tui.historyFile` (string) - Optional history file path
+    - `onEnter`, `onExit`, `onPrompt` (callbacks) - Optional lifecycle functions
+    - `commands` (object) - Optional mode-specific commands
+- `tui.switchMode(name)` — Switch to active mode
 - `tui.getCurrentMode()` — Get current mode name
 - `tui.setState(key, value)` / `tui.getState(key)` — Per-mode state storage
 - `tui.registerCommand({ name, description, usage, handler })` — Register global JS commands
-- `tui.listModes()` — List mode names
+- `tui.listModes()` — List all registered mode names
 - `tui.createAdvancedPrompt(config)` — Create a named go-prompt instance
-    - `config.title` (string)
-    - `config.prefix` (string)
-    - `config.colors` (object; keys same as prompt.color.\* without the prefix)
-    - `config.history` (object) e.g. `{ enabled: true, file: ".script_history", size: 1000 }` (loads if present)
+    - `config.title` (string) - Prompt window title
+    - `config.prefix` (string) - Prompt prefix text
+    - `config.colors` (object) - Color configuration (keys same as prompt.color.\* without prefix)
+    - `config.history` (object) - History config: `{ enabled: true, file: ".history", size: 1000 }`
 - `tui.runPrompt(name)` — Run a created prompt (blocks until exit)
-- `tui.registerCompleter(name, fn)` — Register a JS completer
+- `tui.registerCompleter(name, fn)` — Register a JS completion function
 - `tui.setCompleter(promptName, completerName)` — Attach completer to a prompt
 - `tui.registerKeyBinding(key, fn)` — Register a JS key handler (e.g., `"ctrl-r"`)
 
 Completer document helpers available in JS: `getText()`, `getTextBeforeCursor()`, `getWordBeforeCursor()`.
 
-### `system` Object
+### Native Go Modules (osm: prefix)
 
-Available functions for system interaction:
+System interaction is provided through CommonJS modules with the `osm:` prefix:
 
-- `system.exec(command, ...args)` — Executes a system command. Returns an object: `{ stdout: string, stderr: string, code: int, error: bool, message: string }`.
-- `system.execv(argv)` — Executes a command from an array of strings (e.g., `['git', 'diff']`).
-- `system.readFile(path)` — Reads a file from disk. Returns an object: `{ content: string, error: bool, message: string }`.
-- `system.openEditor(title, initialContent)` — Opens the user's default editor (`$VISUAL` / `$EDITOR` / fallback) with initial content and returns the final edited content as a string.
-- `system.clipboardCopy(text)` — Copies the given text to the system clipboard.
+#### osm:os - Operating System Functions
+
+```javascript
+const os = require('osm:os');
+
+// File operations
+var result = os.readFile('/path/to/file.txt');  // { content, error, message }
+var exists = os.fileExists('/path/to/file.txt'); // boolean
+
+// Editor integration
+var content = os.openEditor("title", "initial content"); // string
+
+// Clipboard operations
+os.clipboardCopy("text to copy");
+
+// Environment variables
+var value = os.getenv("VARIABLE_NAME"); // string
+```
+
+#### osm:exec - Command Execution
+
+```javascript
+const exec = require('osm:exec');
+
+// Execute with separate arguments
+var result = exec.exec('git', 'status', '--porcelain');
+
+// Execute from array
+var result = exec.execv(['git', 'diff', 'HEAD~1']);
+
+// Returns: { stdout: string, stderr: string, code: number, error: boolean, message: string }
+```
+
+#### osm:argv - Argument Parsing
+
+```javascript
+const argv = require('osm:argv');
+
+// Parse command line string
+var args = argv.parseArgv('git commit -m "Initial commit"');
+
+// Format for display (with proper quoting)
+var formatted = argv.formatArgv(["git", "commit", "-m", "message"]);
+```
+
+#### osm:time - Time Utilities
+
+```javascript
+const time = require('osm:time');
+
+time.sleep(1000); // Sleep for 1000 milliseconds
+```
+
+#### osm:ctxutil - Context Building
+
+```javascript
+const ctxutil = require('osm:ctxutil');
+
+var items = [
+    { type: 'note', payload: 'Review task' },
+    { type: 'lazy-diff', payload: ['--staged'] }
+];
+var context = ctxutil.buildContext(items);
+```
 
 Example: Create a prompt, add a completer, then run it
 

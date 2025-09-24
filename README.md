@@ -121,6 +121,42 @@ Commands available in prompt flow mode:
 
 -----
 
+### Convert to Agent Prompt Command
+
+The `convert-to-agent-prompt` command provides an interactive converter that transforms a user-provided contextual goal or description into a structured agentic AI prompt. This allows users to easily generate comprehensive prompts for AI agents to handle specific implementation tasks.
+
+```sh
+# Start the interactive agent prompt converter
+osm convert-to-agent-prompt
+```
+
+The convert to agent prompt workflow:
+
+1.  **Set Goal**: Define what you want an AI agent to achieve (e.g., `goal Implement a new authentication system`).
+2.  **Build Context**: Add relevant files (`add`), git diffs (`diff`), and notes (`note`) to provide comprehensive context.
+3.  **Generate Meta-Prompt**: Run `generate` to create a prompt that will guide the generation of the agent prompt.
+4.  **Set Agent Prompt**: Use the `use` command to set the structured agentic AI prompt after getting a response from an LLM.
+5.  **Assemble & Use**: The final prompt combines the agent prompt with context. Use `show` to view or `copy` to send it to your clipboard.
+
+Commands available in convert to agent prompt mode:
+
+- `goal [text]` - Set or edit the goal/description that the AI agent should accomplish (no args opens your editor).
+- `add [files...]` - Add file content to context (no args opens editor for paths, one per line).
+- `diff [args]` - Add git diff output to context (e.g., `--staged`, `HEAD~1`).
+- `note [text]` - Add a freeform note with additional context or constraints (no args opens editor).
+- `list` - List current goal, template, prompts, and context items.
+- `edit <id|goal|template|meta|agent>` - Edit items by ID or name. `meta` edits the meta-prompt; `agent` edits the generated agent prompt.
+- `remove <id>` - Remove a context item (file items also untrack from the backing context).
+- `template` - Edit the agent prompt generation template.
+- `generate` - Generate the meta-prompt for creating structured agent prompts.
+- `use [text]` - Set or edit the final agent prompt (no args opens editor).
+- `show [meta|agent]` - Show content. Default shows final assembled prompt if agent prompt is set, otherwise shows meta-prompt.
+- `copy [meta|agent]` - Copy content to clipboard. Default behavior mirrors `show`.
+- `help` - Show available commands.
+- `exit` - Exit convert to agent prompt mode.
+
+-----
+
 ### Configuration
 
 The configuration file uses a dnsmasq-style format where each line contains an option name followed by its value:
@@ -294,6 +330,7 @@ Switch to a mode to execute JavaScript code
 - `script` - Execute JavaScript scripts with deferred/declarative API.
 - `prompt-flow` - Interactive prompt builder: goal/context/template -\> generate -\> assemble.
 - `code-review` - Single-prompt code review with context: context -\> generate prompt for PR review.
+- `convert-to-agent-prompt` - Convert goal/context to structured agentic AI prompt.
 
 ### Interactive TUI
 

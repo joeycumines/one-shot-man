@@ -20,7 +20,7 @@ This tool is provider-agnostic, integrating primarily via clipboard, file, and c
 - **dnsmasq-style Config Format**: Simple `optionName remainingLineIsTheValue` format.
 - **Script Command Discovery**: Automatic discovery and execution of script commands.
 - **Stdlib Flag Package**: Built using Go's standard library `flag` package.
-- **Interactive TUI (go-prompt)**: Rich REPL powered by `github.com/elk-language/go-prompt` with completion, custom key bindings, and configurable colors.
+- **Interactive TUI (go-prompt)**: Rich REPL powered by `github.com/elk-language/go-prompt` with completion, custom key bindings, configurable colors, and automatic command history saving.
 
 -----
 
@@ -308,8 +308,11 @@ The TUI is built on go-prompt and provides:
 
 History:
 
-- The default interactive prompt will load history from `.osm_history` if it exists.
-- Advanced prompts created from JavaScript can also specify a history file. (Note: history is loaded if present; automatic saving on exit is not currently implemented.)
+- The default interactive prompt automatically loads and saves command history from `.osm_history`.
+- Command history is saved periodically (every 30 seconds) and on exit to prevent loss.
+- History supports configurable maximum size (default: 1000 entries) with automatic pruning of older entries.
+- Advanced prompts created from JavaScript can specify custom history files via the `config.history` option.
+- History files use simple plain text format with one command per line.
 
 ### Command Structure
 

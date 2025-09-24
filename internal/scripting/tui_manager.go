@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/elk-language/go-prompt"
@@ -16,6 +17,12 @@ import (
 
 // NewTUIManager creates a new TUI manager.
 func NewTUIManager(ctx context.Context, engine *Engine, input io.Reader, output io.Writer) *TUIManager {
+	manager := newTUIManagerWithOptions(ctx, engine, input, output, true)
+	return manager
+}
+
+// newTUIManagerWithOptions creates a new TUI manager with optional history loading.
+func newTUIManagerWithOptions(ctx context.Context, engine *Engine, input io.Reader, output io.Writer, loadHistory bool) *TUIManager {
 	manager := &TUIManager{
 		engine:           engine,
 		ctx:              ctx,
@@ -43,12 +50,26 @@ func NewTUIManager(ctx context.Context, engine *Engine, input io.Reader, output 
 			ScrollbarThumb:          prompt.DarkGray,
 			ScrollbarBG:             prompt.Black,
 		},
+		// Initialize history settings
+		historyFile:    ".osm_history",
+		commandHistory: make([]string, 0),
+		historyMaxSize: 1000,
 	}
 
 	// Register built-in commands
 	manager.registerBuiltinCommands()
 
+	// Load existing history only if requested
+	if loadHistory {
+		manager.loadExistingHistory()
+	}
+
 	return manager
+}
+
+// NewTUIManagerForTesting creates a new TUI manager without loading history (for tests).
+func NewTUIManagerForTesting(ctx context.Context, engine *Engine, input io.Reader, output io.Writer) *TUIManager {
+	return newTUIManagerWithOptions(ctx, engine, input, output, false)
 }
 
 // RegisterMode registers a new script mode.
@@ -287,6 +308,10 @@ func (tm *TUIManager) Run() {
 		tm.outputQueue = append(tm.outputQueue, msg)
 		tm.outputMu.Unlock()
 	})
+	
+	// Start periodic history saving in background
+	tm.startPeriodicHistorySave()
+	
 	// Prominent, unavoidable warning: this TUI is ephemeral and does not persist state
 	_, _ = fmt.Fprintln(writer, "================================================================")
 	_, _ = fmt.Fprintln(writer, "WARNING: EPHEMERAL SESSION - nothing is persisted. Your work will be lost on exit.")
@@ -342,9 +367,8 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		prompt.WithSelectedDescriptionBGColor(colors.SelectedDescriptionBG),
 	}
 
-	// Add default history support
-	defaultHistoryFile := ".osm_history"
-	if history := loadHistory(defaultHistoryFile); len(history) > 0 {
+	// Add history support using the manager's tracked history
+	if history := tm.getHistoryForPrompt(); len(history) > 0 {
 		options = append(options, prompt.WithHistory(history))
 	}
 
@@ -387,4 +411,83 @@ func (tm *TUIManager) flushQueuedOutput() {
 		// Messages already include any necessary trailing newline.
 		_, _ = writer.Write([]byte(m))
 	}
+}
+
+// loadExistingHistory loads command history from the history file.
+func (tm *TUIManager) loadExistingHistory() {
+	tm.historyMu.Lock()
+	defer tm.historyMu.Unlock()
+	
+	if tm.historyFile != "" {
+		tm.commandHistory = loadHistory(tm.historyFile)
+		// Trim history to max size if needed
+		if len(tm.commandHistory) > tm.historyMaxSize {
+			start := len(tm.commandHistory) - tm.historyMaxSize
+			tm.commandHistory = tm.commandHistory[start:]
+		}
+	}
+}
+
+// addToHistory adds a command to the in-memory history.
+func (tm *TUIManager) addToHistory(command string) {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return
+	}
+
+	tm.historyMu.Lock()
+	defer tm.historyMu.Unlock()
+
+	// Don't add duplicate commands if they're the same as the last entry
+	if len(tm.commandHistory) > 0 && tm.commandHistory[len(tm.commandHistory)-1] == command {
+		return
+	}
+
+	tm.commandHistory = append(tm.commandHistory, command)
+
+	// Trim to max size
+	if len(tm.commandHistory) > tm.historyMaxSize {
+		tm.commandHistory = tm.commandHistory[1:]
+	}
+}
+
+// saveCurrentHistory saves the current command history to file.
+func (tm *TUIManager) saveCurrentHistory() error {
+	tm.historyMu.Lock()
+	defer tm.historyMu.Unlock()
+
+	return saveHistory(tm.historyFile, tm.commandHistory)
+}
+
+// getHistoryForPrompt returns a copy of the command history for use by go-prompt.
+func (tm *TUIManager) getHistoryForPrompt() []string {
+	tm.historyMu.Lock()
+	defer tm.historyMu.Unlock()
+
+	// Return a copy to prevent race conditions
+	history := make([]string, len(tm.commandHistory))
+	copy(history, tm.commandHistory)
+	return history
+}
+
+// startPeriodicHistorySave starts a background goroutine that periodically saves history.
+func (tm *TUIManager) startPeriodicHistorySave() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second) // Save every 30 seconds
+		defer ticker.Stop()
+		
+		for {
+			select {
+			case <-ticker.C:
+				if err := tm.saveCurrentHistory(); err != nil {
+					// Log error but don't interrupt user experience
+					_, _ = fmt.Fprintf(tm.output, "Warning: Failed to save history: %v\n", err)
+				}
+			case <-tm.ctx.Done():
+				// Save on context cancellation
+				_ = tm.saveCurrentHistory()
+				return
+			}
+		}
+	}()
 }

@@ -14,6 +14,9 @@ func (tm *TUIManager) executor(input string) bool {
 		return true
 	}
 
+	// Add command to history before processing (for all non-empty commands)
+	tm.addToHistory(input)
+
 	// Parse command and arguments
 	parts := tokenizeCommandLine(input)
 	cmdName := parts[0]
@@ -22,6 +25,11 @@ func (tm *TUIManager) executor(input string) bool {
 	// Handle special cases
 	switch cmdName {
 	case "exit", "quit":
+		// Save history before exiting
+		if err := tm.saveCurrentHistory(); err != nil {
+			_, _ = fmt.Fprintf(tm.output, "Warning: Failed to save history: %v\n", err)
+		}
+		
 		// Exit current mode if any
 		if tm.currentMode != nil && tm.currentMode.OnExit != nil {
 			if _, err := tm.currentMode.OnExit(goja.Undefined()); err != nil {

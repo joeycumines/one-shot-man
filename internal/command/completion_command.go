@@ -1,7 +1,6 @@
 package command
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"strings"
@@ -11,7 +10,6 @@ import (
 type CompletionCommand struct {
 	*BaseCommand
 	registry *Registry
-	shell    string
 }
 
 // NewCompletionCommand creates a new completion command.
@@ -26,20 +24,17 @@ func NewCompletionCommand(registry *Registry) *CompletionCommand {
 	}
 }
 
-// SetupFlags configures the flags for the completion command.
-func (c *CompletionCommand) SetupFlags(fs *flag.FlagSet) {
-	fs.StringVar(&c.shell, "shell", "", "Shell to generate completion for (bash, zsh, fish, powershell)")
-}
-
 // Execute generates the completion script for the specified shell.
 func (c *CompletionCommand) Execute(args []string, stdout, stderr io.Writer) error {
-	shell := c.shell
-	if shell == "" && len(args) > 0 {
-		shell = args[0]
+	if len(args) > 1 {
+		fmt.Fprintf(stderr, "Too many arguments: %v\n", args[1:])
+		fmt.Fprintln(stderr, "Usage: osm completion [shell]")
+		return fmt.Errorf("too many arguments")
 	}
 
-	if shell == "" {
-		shell = "bash" // Default to bash
+	shell := "bash"
+	if len(args) > 0 {
+		shell = args[0]
 	}
 
 	shell = strings.ToLower(shell)

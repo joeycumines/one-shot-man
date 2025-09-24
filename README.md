@@ -114,7 +114,7 @@ Once installed, you can use tab completion for commands:
 
 ```sh
 osm <TAB>                # Shows all available commands
-osm he<TAB>              # Completes to "help"  
+osm he<TAB>              # Completes to "help"
 osm completion <TAB>     # Shows shell options: bash, zsh, fish, powershell
 ```
 

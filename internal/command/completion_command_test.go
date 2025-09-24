@@ -1,6 +1,8 @@
 package command
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -11,41 +13,44 @@ func TestCompletionCommand(t *testing.T) {
 	registry.Register(NewHelpCommand(registry))
 	registry.Register(NewVersionCommand("1.0.0"))
 
-	completionCmd := NewCompletionCommand(registry)
-
 	tests := []struct {
 		name           string
-		shell          string
+		args           []string
 		expectError    bool
 		expectedOutput string
 	}{
 		{
 			name:           "bash completion",
-			shell:          "bash",
+			args:           []string{"bash"},
 			expectError:    false,
 			expectedOutput: "_osm_completion",
 		},
 		{
 			name:           "zsh completion",
-			shell:          "zsh",
+			args:           []string{"zsh"},
 			expectError:    false,
 			expectedOutput: "#compdef osm",
 		},
 		{
 			name:           "fish completion",
-			shell:          "fish",
+			args:           []string{"fish"},
 			expectError:    false,
 			expectedOutput: "complete -c osm",
 		},
 		{
 			name:           "powershell completion",
-			shell:          "powershell",
+			args:           []string{"powershell"},
 			expectError:    false,
 			expectedOutput: "Register-ArgumentCompleter",
 		},
 		{
 			name:        "unsupported shell",
-			shell:       "unsupported",
+			args:        []string{"unsupported"},
+			expectError: true,
+		},
+		{
+			name:        "too many args",
+			args:        []string{"bash", "zsh"},
 			expectError: true,
 		},
 	}
@@ -55,14 +60,12 @@ func TestCompletionCommand(t *testing.T) {
 			var output strings.Builder
 			var stderr strings.Builder
 
-			// Set the shell flag
-			completionCmd.shell = tt.shell
-
-			err := completionCmd.Execute([]string{}, &output, &stderr)
+			completionCmd := NewCompletionCommand(registry)
+			err := completionCmd.Execute(tt.args, &output, &stderr)
 
 			if tt.expectError {
 				if err == nil {
-					t.Errorf("Expected error for shell %s, but got none", tt.shell)
+					t.Errorf("Expected error for args %v, but got none", tt.args)
 				}
 				return
 			}
@@ -90,10 +93,10 @@ func TestCompletionCommand(t *testing.T) {
 			}
 
 			// Sanity check: 'completion' subcommand should expose shell names in scripts
-			if strings.Contains(tt.shell, "bash") || strings.Contains(tt.shell, "zsh") || strings.Contains(tt.shell, "fish") || strings.Contains(tt.shell, "powershell") {
+			if tt.name != "unsupported shell" && tt.name != "too many args" {
 				for _, w := range []string{"bash", "zsh", "fish", "powershell"} {
 					if !strings.Contains(outputStr, w) {
-						t.Errorf("Expected %s completion script to include %q option for 'completion' subcommand", tt.shell, w)
+						t.Errorf("Expected completion script to include %q option for 'completion' subcommand", w)
 					}
 				}
 			}
@@ -140,5 +143,58 @@ func TestCompletionCommandDefaultToBash(t *testing.T) {
 	outputStr := output.String()
 	if !strings.Contains(outputStr, "_osm_completion") {
 		t.Errorf("Expected bash completion output (default), but got:\n%s", outputStr)
+	}
+}
+
+func TestCompletionCommandIncludesScriptCommands(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(NewHelpCommand(registry))
+
+	scriptDir := t.TempDir()
+	scriptName := "dummy-script"
+	scriptPath := filepath.Join(scriptDir, scriptName)
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("failed to create script command: %v", err)
+	}
+
+	registry.AddScriptPath(scriptDir)
+
+	shells := map[string]string{
+		"bash":       "_osm_completion",
+		"zsh":        "#compdef osm",
+		"fish":       "complete -c osm",
+		"powershell": "Register-ArgumentCompleter",
+	}
+
+	for shell, marker := range shells {
+		shell := shell
+		marker := marker
+		t.Run(shell, func(t *testing.T) {
+			completionCmd := NewCompletionCommand(registry)
+
+			var output strings.Builder
+			var stderr strings.Builder
+
+			if err := completionCmd.Execute([]string{shell}, &output, &stderr); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			outputStr := output.String()
+			if !strings.Contains(outputStr, marker) {
+				to := outputStr
+				if len(to) > 1024 {
+					to = to[:1024]
+				}
+				t.Fatalf("expected %s completion output, got: %s", shell, to)
+			}
+
+			if !strings.Contains(outputStr, scriptName) {
+				to := outputStr
+				if len(to) > 1024 {
+					to = to[:1024]
+				}
+				t.Fatalf("expected %s completion to include script command %q, got: %s", shell, scriptName, to)
+			}
+		})
 	}
 }

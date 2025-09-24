@@ -75,7 +75,9 @@ func TestCompletionCommand(t *testing.T) {
 			outputStr := output.String()
 			if !strings.Contains(outputStr, tt.expectedOutput) {
 				to := outputStr
-				if len(to) > 1024 { to = to[:1024] }
+				if len(to) > 1024 {
+					to = to[:1024]
+				}
 				t.Errorf("Expected output to contain %q, but got:\n%s", tt.expectedOutput, to)
 			}
 

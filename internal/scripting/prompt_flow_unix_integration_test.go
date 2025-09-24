@@ -104,22 +104,22 @@ import java.util.concurrent.TimeUnit;
  */
 public class ThreadPoolManager {
     private final ThreadPoolExecutor executor;
-    
+
     public ThreadPoolManager(int corePoolSize, int maxPoolSize) {
         this.executor = new ThreadPoolExecutor(
             corePoolSize, maxPoolSize, 60L, TimeUnit.SECONDS,
             new LinkedBlockingQueue<>()
         );
     }
-    
+
     public void submitTask(Runnable task) {
         executor.submit(task);
     }
-    
+
     public int getActiveCount() {
         return executor.getActiveCount();
     }
-    
+
     public long getCompletedTaskCount() {
         return executor.getCompletedTaskCount();
     }
@@ -543,11 +543,11 @@ func TestPromptFlow_Unix_GitDiffIntegration(t *testing.T) {
 	cp.SendLine("diff")
 	requireExpect(t, cp, "Added diff:")
 
-	// List to verify diff was captured
+	// List to verify diff was captured (lazy-diff semantics)
 	cp.SendLine("list")
 	requireExpect(t, cp, "[goal] Review and optimize the recent code changes")
 	requireExpect(t, cp, "[template] set")
-	requireExpect(t, cp, "[1] [diff] git diff")
+	requireExpect(t, cp, "[1] [lazy-diff] git diff")
 
 	// Generate and show final output
 	cp.SendLine("generate")
@@ -560,6 +560,159 @@ func TestPromptFlow_Unix_GitDiffIntegration(t *testing.T) {
 	requireExpect(t, cp, "### Diff: git diff")                          // Diff section
 	requireExpect(t, cp, "```diff")                                     // Diff formatting
 	// Note: git diff may be empty if no staged changes, which is expected
+
+	cp.SendLine("exit")
+	requireExpectExitCode(t, cp, 0)
+}
+
+// Ensures that in a repository with only a single commit, the default git diff
+// used by lazy-diff resolves to a valid comparison (empty tree vs HEAD) rather
+// than failing due to missing HEAD~1.
+func TestPromptFlow_Unix_GitDiffSingleCommit(t *testing.T) {
+	if !isUnixPlatform() {
+		t.Skip("Unix-only integration test")
+	}
+
+	binaryPath := buildTestBinary(t)
+	defer os.Remove(binaryPath)
+
+	// Setup a git repo with only one commit
+	workspace := createTestWorkspace(t)
+	defer os.RemoveAll(workspace)
+
+	// Initialize repo with a single commit
+	runCommand(t, workspace, "git", "-c", "advice.defaultBranchName=false", "-c", "init.defaultBranch=main", "init", "-q")
+	runCommand(t, workspace, "git", "config", "user.email", "test@example.com")
+	runCommand(t, workspace, "git", "config", "user.name", "Test User")
+
+	initialContent := `package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("Initial version")
+}
+`
+	initialFile := filepath.Join(workspace, "example.go")
+	if err := os.WriteFile(initialFile, []byte(initialContent), 0644); err != nil {
+		t.Fatalf("Failed to write initial file: %v", err)
+	}
+	runCommand(t, workspace, "git", "add", "example.go")
+	runCommand(t, workspace, "git", "commit", "-m", "Initial commit")
+
+	opts := termtest.Options{
+		CmdName:        binaryPath,
+		Args:           []string{"prompt-flow", "-i"},
+		DefaultTimeout: 30 * time.Second,
+		Env: []string{
+			"EDITOR=",
+			"VISUAL=",
+			"GIT_AUTHOR_NAME=Test User",
+			"GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=Test User",
+			"GIT_COMMITTER_EMAIL=test@example.com",
+		},
+		Dir: workspace,
+	}
+
+	cp, err := termtest.NewTest(t, opts)
+	if err != nil {
+		t.Fatalf("Failed to create termtest: %v", err)
+	}
+	defer cp.Close()
+
+	// Wait for startup
+	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
+	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+
+	// Add a lazy diff with no arguments, triggering the default behavior
+	cp.SendLine("diff")
+	requireExpect(t, cp, "Added diff:")
+
+	// Generate and show output
+	cp.SendLine("generate")
+	requireExpect(t, cp, "Meta-prompt generated.")
+	cp.SendLine("show")
+
+	// Verify that the diff was successful and not an error, and shows an initial commit file as new
+	requireExpect(t, cp, "### Diff: git diff")
+	requireExpect(t, cp, "diff --git a/example.go b/example.go")
+	requireExpect(t, cp, "new file mode 100644")
+
+	cp.SendLine("exit")
+	requireExpectExitCode(t, cp, 0)
+}
+
+// Validates that malformed lazy-diff payloads are handled gracefully and produce
+// descriptive Diff Error messages rather than panicking or silently falling back.
+func TestPromptFlow_Unix_GitDiffMalformedPayload(t *testing.T) {
+	if !isUnixPlatform() {
+		t.Skip("Unix-only integration test")
+	}
+
+	binaryPath := buildTestBinary(t)
+	defer os.Remove(binaryPath)
+
+	workspace := createTestWorkspace(t)
+	defer os.RemoveAll(workspace)
+
+	// Initialize a standard repo with 2 commits to ensure diffs are available
+	setupGitRepository(t, workspace)
+
+	opts := termtest.Options{
+		CmdName:        binaryPath,
+		Args:           []string{"prompt-flow", "-i"},
+		DefaultTimeout: 30 * time.Second,
+		Env: []string{
+			"EDITOR=",
+			"VISUAL=",
+			"GIT_AUTHOR_NAME=Test User",
+			"GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=Test User",
+			"GIT_COMMITTER_EMAIL=test@example.com",
+		},
+		Dir: workspace,
+	}
+
+	cp, err := termtest.NewTest(t, opts)
+	if err != nil {
+		t.Fatalf("Failed to create termtest: %v", err)
+	}
+	defer cp.Close()
+
+	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
+	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+
+	// Helper to test malformed payloads via JS REPL (functions are global in script)
+	testMalformed := func(payloadJS string) {
+		// addItem("lazy-diff", "malformed", <payloadJS>)
+		cp.SendLine("addItem(\"lazy-diff\", \"malformed\", " + payloadJS + ")")
+
+		cp.SendLine("generate")
+		requireExpect(t, cp, "Meta-prompt generated.")
+		cp.SendLine("show")
+
+		requireExpect(t, cp, "### Diff Error: malformed")
+		requireExpect(t, cp, "Invalid payload: expected a string or string array")
+
+		// Clear items list for next sub-case
+		cp.SendLine("setItems([])")
+		requireExpect(t, cp, "(prompt-builder) > ")
+	}
+
+	// Case 1: number
+	testMalformed("12345")
+	// Case 2: boolean
+	testMalformed("true")
+	// Case 3: object
+	testMalformed("({key: 'value'})")
+	// Case 4: array of non-strings should trigger array-specific error
+	cp.SendLine("addItem(\"lazy-diff\", \"malformed\", [1,2,3])")
+	cp.SendLine("generate")
+	requireExpect(t, cp, "Meta-prompt generated.")
+	cp.SendLine("show")
+	requireExpect(t, cp, "### Diff Error: malformed")
+	requireExpect(t, cp, "Invalid payload: expected a string array")
 
 	cp.SendLine("exit")
 	requireExpectExitCode(t, cp, 0)
@@ -828,7 +981,7 @@ func main() {
 	}
 
 	runCommand(t, workspace, "git", "add", "example.go")
-	runCommand(t, workspace, "git", "commit", "-m", "\"Initial commit\"")
+	runCommand(t, workspace, "git", "commit", "-m", "Initial commit")
 
 	// Modify file to create diff
 	modifiedContent := `package main
@@ -843,6 +996,9 @@ func main() {
 	if err := os.WriteFile(initialFile, []byte(modifiedContent), 0644); err != nil {
 		t.Fatalf("Failed to modify file: %v", err)
 	}
+	// Commit the modification to ensure HEAD~1 exists and diffs are available
+	runCommand(t, workspace, "git", "add", "example.go")
+	runCommand(t, workspace, "git", "commit", "-m", "Second commit")
 }
 
 func runCommand(t *testing.T, dir string, name string, args ...string) {

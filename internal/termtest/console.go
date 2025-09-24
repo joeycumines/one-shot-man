@@ -54,7 +54,7 @@ func NewTest(t *testing.T, opts Options) (*ConsoleProcess, error) {
 
 	// Start the command
 	if err := pty.Start(); err != nil {
-		pty.Close()
+		_ = pty.Close()
 		return nil, fmt.Errorf("failed to start command: %w", err)
 	}
 

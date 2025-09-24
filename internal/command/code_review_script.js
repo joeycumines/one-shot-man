@@ -1,18 +1,16 @@
 // Code Review: Single-prompt code review with context (baked-in version)
 // This is the built-in version of the code-review script with embedded template
 
+const nextIntegerId = require('osm:nextIntegerId');
+const {parseArgv, formatArgv} = require('osm:argv');
+const {openEditor: osOpenEditor, clipboardCopy, fileExists, getenv} = require('osm:os');
+const {buildContext} = require('osm:ctxutil');
+
 // State keys
 const STATE = {
     mode: "review",             // fixed mode name
     contextItems: "contextItems" // array of { id, type: file|diff|note, label, payload }
 };
-
-// Simple id generator
-function nextId(list) {
-    let max = 0;
-    for (const it of list) max = Math.max(max, it.id || 0);
-    return max + 1;
-}
 
 // Initialize the mode
 ctx.run("register-mode", function () {
@@ -65,70 +63,22 @@ function setItems(v) {
 
 function addItem(type, label, payload) {
     const list = items();
-    const id = nextId(list);
+    const id = nextIntegerId(list);
     list.push({id, type, label, payload});
     setItems(list);
     return id;
 }
 
-// Format argv array for display (quote args containing spaces)
-function formatArgv(argv) {
-    try {
-        return (argv || []).map(function (a) {
-            if (a === "" || /[\s]/.test(a)) {
-                // simple quote for display; escape existing quotes
-                return '"' + (a || '').replace(/"/g, '\\"') + '"';
-            }
-            return a;
-        }).join(" ");
-    } catch (e) {
-        return (argv || []).join(" ");
-    }
-}
-
 function buildPrompt() {
-    // Build the final prompt with template and context
     const pb = tui.createPromptBuilder("review", "Build code review prompt");
     pb.setTemplate(codeReviewTemplate);
-
-    // Build context that includes both files and diff items
-    const contextParts = [];
-
-    for (const it of items()) {
-        if (it.type === "note") {
-            contextParts.push("### Note: " + (it.label || "note") + "\n\n" + it.payload + "\n\n---\n");
-        } else if (it.type === "diff") {
-            contextParts.push("### Diff: " + (it.label || "git diff") + "\n\n```diff\n" + (it.payload || "") + "\n```\n\n---\n");
-        } else if (it.type === "diff-error") {
-            contextParts.push("### Diff Error: " + (it.label || "git diff") + "\n\n" + it.payload + "\n\n---\n");
-        } else if (it.type === "lazy-diff") {
-            // Resolve the diff just-in-time without mutating state
-            const diffArgs = Array.isArray(it.payload) ? it.payload : system.parseArgv(it.payload || "");
-            const argv = ["git", "diff"].concat(diffArgs);
-            const res = system.execv(argv);
-            if (!res || res.error) {
-                const msg = res ? res.message : "Execution failed";
-                contextParts.push("### Diff Error: " + (it.label || "git diff") + "\n\n" + ("Error executing git diff: " + msg) + "\n\n---\n");
-            } else {
-                const out = res.stdout || "";
-                contextParts.push("### Diff: " + (it.label || "git diff") + "\n\n```diff\n" + out + "\n```\n\n---\n");
-            }
-        }
-    }
-
-    // Add the txtar dump for tracked files
-    const txtar = context.toTxtar();
-    if (txtar && txtar.trim()) {
-        contextParts.push("```\n" + txtar + "\n```");
-    }
-
-    const fullContext = contextParts.join("\n");
+    const fullContext = buildContext(items(), {toTxtar: () => context.toTxtar()});
     pb.setVariable("context_txtar", fullContext);
     return pb.build();
 }
 
 function openEditor(title, initial) {
-    const res = system.openEditor(title, initial || "");
+    const res = osOpenEditor(title, initial || "");
     if (typeof res === 'string') return res;
     // Some engines may return [value, error]; we standardize to string
     return "" + res;
@@ -188,7 +138,7 @@ function buildCommands() {
             handler: function () {
                 for (const it of items()) {
                     let line = "[" + it.id + "] [" + it.type + "] " + (it.label || "");
-                    if (it.type === 'file' && it.label && !system.fileExists(it.label)) {
+                    if (it.type === 'file' && it.label && !fileExists(it.label)) {
                         line += " (missing)";
                     }
                     output.print(line);
@@ -223,7 +173,7 @@ function buildCommands() {
                 if (list[idx].type === 'lazy-diff') {
                     const initial = Array.isArray(list[idx].payload) ? formatArgv(list[idx].payload) : (list[idx].payload || "HEAD~1");
                     const edited = openEditor("diff-spec-" + id, initial);
-                    const argv = system.parseArgv((edited || "").trim());
+                    const argv = parseArgv((edited || "").trim());
                     list[idx].payload = argv.length ? argv : ["HEAD~1"];
                     list[idx].label = "git diff " + formatArgv(list[idx].payload);
                     setItems(list);
@@ -281,11 +231,11 @@ function buildCommands() {
             description: "Copy code review prompt to clipboard",
             handler: function () {
                 const text = buildPrompt();
-                const err = system.clipboardCopy(text);
-                if (err && err.message) {
-                    output.print("Clipboard error: " + err.message);
-                } else {
+                try {
+                    clipboardCopy(text);
                     output.print("Code review prompt copied to clipboard.");
+                } catch (e) {
+                    output.print("Clipboard error: " + (e && e.message ? e.message : e));
                 }
             }
         },

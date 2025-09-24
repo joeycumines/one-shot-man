@@ -37,20 +37,20 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 		// Add a lazy diff
 		const commands = buildCommands();
 		commands.diff.handler([]);
-		
+
 		// Verify it's lazy
 		const contextItems = items();
 		const diffItem = contextItems[contextItems.length - 1];
 		if (diffItem.type !== "lazy-diff") {
 			throw new Error("Expected lazy-diff, got: " + diffItem.type);
 		}
-		
+
 		output.print("ADDED_LAZY_DIFF");
-		
+
 		// Build prompt which should execute the git diff
 		try {
 			const prompt = buildPrompt();
-			
+
 			// Check if the lazy diff was executed within the prompt output
 			if (prompt.includes("### Diff:")) {
 				output.print("GIT_DIFF_EXECUTED_SUCCESS");
@@ -67,12 +67,12 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 			} else {
 				output.print("STATE_MUTATED_UNEXPECTEDLY: " + (stillLazy ? stillLazy.type : 'missing'));
 			}
-			
+
 			// Check that prompt contains the template
 			if (prompt.includes("GUARANTEE the correctness")) {
 				output.print("PROMPT_CONTAINS_TEMPLATE");
 			}
-			
+
 		} catch (e) {
 			output.print("BUILD_PROMPT_ERROR: " + e.message);
 		}

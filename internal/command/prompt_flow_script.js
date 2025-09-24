@@ -1,6 +1,10 @@
 // Prompt Flow: Single-file, goal/context/template-driven prompt builder (baked-in version)
 // This is the built-in version of the prompt-flow script with embedded template
 
+const {openEditor: osOpenEditor, fileExists, clipboardCopy} = require('osm:os');
+const {formatArgv} = require('osm:argv');
+const {buildContext} = require('osm:ctxutil');
+
 // State keys
 const STATE = {
     mode: "flow",               // fixed mode name
@@ -133,24 +137,9 @@ function addItem(type, label, payload) {
     return id;
 }
 
-// Build the combined context string from notes, diffs, and tracked files (txtar)
+// Build the combined context string from notes, diffs (always refreshed), and tracked files (txtar)
 function buildContextString() {
-    const contextParts = [];
-
-    for (const it of items()) {
-        if (it.type === "note") {
-            contextParts.push("### Note: " + (it.label || "note") + "\n\n" + it.payload + "\n\n---\n");
-        } else if (it.type === "diff") {
-            contextParts.push("### Diff: " + (it.label || "git diff") + "\n\n```diff\n" + (it.payload || "") + "\n```\n\n---\n");
-        }
-    }
-
-    const txtar = context.toTxtar();
-    if (txtar && txtar.trim()) {
-        contextParts.push("```\n" + txtar + "\n```");
-    }
-
-    return contextParts.join("\n");
+    return buildContext(items(), {toTxtar: () => context.toTxtar()});
 }
 
 function buildMetaPrompt() {
@@ -173,7 +162,7 @@ function assembleFinal() {
 }
 
 function openEditor(title, initial) {
-    const res = system.openEditor(title, initial || "");
+    const res = osOpenEditor(title, initial || "");
     if (typeof res === 'string') return res;
     // Some engines may return [value, error]; we standardize to string
     return "" + res;
@@ -219,19 +208,13 @@ function buildCommands() {
             }
         },
         diff: {
-            description: "Add git diff output to context",
+            description: "Add git diff (lazy; refreshed on generate/show)",
             usage: "diff [args]",
             handler: function (args) {
-                const argv = ["git", "diff"].concat(args || []);
-                const res = system.execv(argv);
-                if (res && res.error) {
-                    output.print("git diff failed: " + res.message);
-                    return;
-                }
-                const a = args || [];
-                const label = "git diff" + (a.length ? (" " + a.join(" ")) : "");
-                addItem("diff", label, res.stdout);
-                output.print("Added diff: " + label);
+                const argv = (args && args.length > 0) ? args.slice(0) : ["HEAD~1"]; // default like code-review
+                const label = "git diff " + (argv.length ? formatArgv(argv) : "");
+                addItem("lazy-diff", label, argv);
+                output.print("Added diff: " + label + " (will be executed when generating output)");
             }
         },
         note: {
@@ -255,7 +238,7 @@ function buildCommands() {
                 if (task) output.print("[prompt] " + task.slice(0, 80) + (task.length > 80 ? "..." : ""));
                 for (const it of items()) {
                     let line = "[" + it.id + "] [" + it.type + "] " + (it.label || "");
-                    if (it.type === 'file' && it.label && !system.fileExists(it.label)) {
+                    if (it.type === 'file' && it.label && !fileExists(it.label)) {
                         line += " (missing)";
                     }
                     output.print(line);
@@ -448,11 +431,11 @@ function buildCommands() {
                     }
                 }
 
-                const err = system.clipboardCopy(text);
-                if (err && err.message) {
-                    output.print("Clipboard error: " + err.message);
-                } else {
+                try {
+                    clipboardCopy(text);
                     output.print(label + " copied to clipboard.");
+                } catch (e) {
+                    output.print("Clipboard error: " + (e && e.message ? e.message : e));
                 }
             }
         },

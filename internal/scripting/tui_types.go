@@ -37,6 +37,12 @@ type TUIManager struct {
 	// in the prompt lifecycle, preventing races with go-prompt redraws.
 	outputQueue []string
 	outputMu    sync.Mutex
+
+	// History tracking for command persistence
+	historyFile     string   // Path to history file (default: ".osm_history")
+	commandHistory  []string // Current session's command history
+	historyMaxSize  int      // Maximum number of history entries (default: 1000)
+	historyMu       sync.Mutex // Protects history operations
 }
 
 // ScriptMode represents a specific script mode with its own state and commands.

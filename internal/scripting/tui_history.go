@@ -57,3 +57,23 @@ func loadHistory(filename string) []string {
 
 	return history
 }
+
+// saveHistory saves history to a file.
+func saveHistory(filename string, history []string) error {
+	if filename == "" {
+		return nil // Silent no-op if no file specified
+	}
+
+	if len(history) == 0 {
+		return nil // Nothing to save
+	}
+
+	// Create file content
+	content := strings.Join(history, "\n")
+	if content != "" {
+		content += "\n" // Ensure trailing newline
+	}
+
+	// Write to file with proper permissions
+	return os.WriteFile(filename, []byte(content), 0644)
+}

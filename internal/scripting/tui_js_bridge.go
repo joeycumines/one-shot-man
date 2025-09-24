@@ -284,6 +284,11 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 	// Add history if configured
 	if historyConfig.Enabled && historyConfig.File != "" {
 		options = append(options, prompt.WithHistory(loadHistory(historyConfig.File)))
+	} else if historyConfig.Enabled {
+		// Use the manager's tracked history as fallback
+		if history := tm.getHistoryForPrompt(); len(history) > 0 {
+			options = append(options, prompt.WithHistory(history))
+		}
 	}
 
 	// Add any registered key bindings

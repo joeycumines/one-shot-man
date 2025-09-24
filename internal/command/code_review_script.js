@@ -51,6 +51,7 @@ function banner() {
 
 function help() {
     output.print("Commands: add, diff, note, list, edit, remove, show, copy, help, exit");
+    output.print("Tip: Use 'note --goals' to see goal-based review focuses");
 }
 
 function items() {
@@ -125,8 +126,38 @@ function buildCommands() {
         },
         note: {
             description: "Add a freeform note",
-            usage: "note [text]",
+            usage: "note [text|--goals]",
             handler: function (args) {
+                if (args.length === 1 && args[0] === "--goals") {
+                    // Show goal-based review notes
+                    output.print("Pre-written review focus areas:");
+                    output.print("  note goal:comments     - Focus on comment quality and usefulness");
+                    output.print("  note goal:docs         - Focus on documentation completeness");
+                    output.print("  note goal:tests        - Focus on test coverage and quality");
+                    // The following areas are not first-class 'goals' yet, but you can still use them as review focuses:
+                    output.print("  note goal:performance  - Focus on performance implications (review focus)");
+                    output.print("  note goal:security     - Focus on security considerations (review focus)");
+                    return;
+                }
+                if (args.length === 1 && args[0].startsWith("goal:")) {
+                    const goalType = args[0].substring(5);
+                    const goalNotes = {
+                        "comments": "Focus on comment quality: Are comments useful and up-to-date? Remove any redundant comments that merely repeat the code. Ensure complex logic is well-explained.",
+                        "docs": "Focus on documentation completeness: Is the code properly documented? Are API changes reflected in documentation? Are usage examples clear and current?",
+                        "tests": "Focus on test coverage and quality: Are there sufficient tests for new functionality? Do tests cover edge cases? Are test names descriptive?",
+                        "performance": "Focus on performance implications: Are there any performance bottlenecks? Is memory usage optimal? Are algorithms efficient for the expected scale?",
+                        "security": "Focus on security considerations: Are inputs properly validated? Are there any potential security vulnerabilities? Is sensitive data handled correctly?"
+                    };
+                    
+                    if (goalNotes[goalType]) {
+                        const id = addItem("note", "review-focus", goalNotes[goalType]);
+                        output.print("Added goal-based review note [" + id + "]: " + goalType);
+                    } else {
+                        output.print("Unknown goal type: " + goalType);
+                        output.print("Use 'note --goals' to see available goal types.");
+                    }
+                    return;
+                }
                 let text = args.join(" ");
                 if (!text) text = openEditor("note", "");
                 const id = addItem("note", "note", text);

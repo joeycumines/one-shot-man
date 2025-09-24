@@ -76,7 +76,11 @@ func getFilepathSuggestions(path string) []prompt.Suggest {
 			} else if strings.HasSuffix(path, "/") || prefix == "" {
 				// If input ends with / or we're completing in a directory,
 				// append the entry name to the input path
-				text = path + entry.Name()
+				if !strings.HasSuffix(path, "/") {
+					text = path + "/" + entry.Name()
+				} else {
+					text = path + entry.Name()
+				}
 			} else {
 				// Replace the basename part with the matched entry
 				dirPart := filepath.Dir(path)

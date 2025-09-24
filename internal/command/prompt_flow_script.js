@@ -64,6 +64,7 @@ function banner() {
 
 function help() {
     output.print("Commands: goal, add, diff, note, list, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit");
+    output.print("Tip: Use 'goal --prewritten' to see available pre-written goals");
 }
 
 function defaultTemplate() {
@@ -172,8 +173,35 @@ function buildCommands() {
     return {
         goal: {
             description: "Set or edit the goal",
-            usage: "goal [text]",
+            usage: "goal [text|--prewritten]",
             handler: function (args) {
+                if (args.length === 1 && args[0] === "--prewritten") {
+                    // Show available pre-written goals
+                    output.print("Available pre-written goals:");
+                    output.print("  comment-stripper   - Remove useless comments and refactor useful ones");
+                    output.print("  doc-generator      - Generate comprehensive documentation for code");
+                    output.print("  test-generator     - Generate comprehensive test suites");
+                    output.print("");
+                    output.print("Usage: goal use:<goal-name> to use a pre-written goal");
+                    return;
+                }
+                if (args.length === 1 && args[0].startsWith("use:")) {
+                    const goalName = args[0].substring(4);
+                    const prewrittenGoals = {
+                        "comment-stripper": "Analyze the provided code and remove useless comments while refactoring useful ones according to coding best practices. Remove redundant comments that merely repeat what the code does, but preserve valuable business logic explanations, performance considerations, and complex algorithm documentation. Ensure the cleaned code maintains all functionality while improving readability.",
+                        "doc-generator": "Generate comprehensive documentation for the provided code including API documentation, usage examples, configuration guides, and developer notes. Create clear, well-structured documentation that helps users understand and effectively use the code.",
+                        "test-generator": "Generate comprehensive test suites for the provided code including unit tests, integration tests, and edge case coverage. Create thorough tests that verify functionality, handle error conditions, and provide good code coverage while following testing best practices."
+                    };
+                    
+                    if (prewrittenGoals[goalName]) {
+                        setGoal(prewrittenGoals[goalName]);
+                        output.print("Pre-written goal '" + goalName + "' set successfully.");
+                    } else {
+                        output.print("Unknown pre-written goal: " + goalName);
+                        output.print("Use 'goal --prewritten' to see available goals.");
+                    }
+                    return;
+                }
                 if (args.length === 0) {
                     const edited = openEditor("goal", getGoal());
                     if (edited && edited.trim()) setGoal(edited.trim());

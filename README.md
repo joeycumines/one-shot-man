@@ -21,6 +21,7 @@ This tool is provider-agnostic, integrating primarily via clipboard, file, and c
 - **Script Command Discovery**: Automatic discovery and execution of script commands.
 - **Stdlib Flag Package**: Built using Go's standard library `flag` package.
 - **Interactive TUI (go-prompt)**: Rich REPL powered by `github.com/elk-language/go-prompt` with completion, custom key bindings, and configurable colors.
+- **Shell Completion**: Built-in support for bash, zsh, fish, and PowerShell completion scripts.
 
 -----
 
@@ -51,6 +52,74 @@ osm init
 osm config --all
 # Start interactive scripting terminal (TUI)
 osm script -i
+# List available pre-written goals
+osm goals -l
+# Run a specific goal
+osm goals comment-stripper
+```
+
+-----
+
+### Shell Completion
+
+The `completion` command generates shell completion scripts for various shells, providing tab completion for commands.
+
+#### Installation
+
+**Bash:**
+```sh
+# Install system-wide (requires root)
+osm completion bash | sudo tee /etc/bash_completion.d/osm > /dev/null
+
+# Install for current user only
+mkdir -p ~/.local/share/bash-completion/completions
+osm completion bash > ~/.local/share/bash-completion/completions/osm
+
+# Or source directly in your ~/.bashrc
+echo 'source <(osm completion bash)' >> ~/.bashrc
+```
+
+**Zsh:**
+```sh
+# Create completions directory if it doesn't exist
+mkdir -p ~/.zsh/completions
+
+# Install completion script
+osm completion zsh > ~/.zsh/completions/_osm
+
+# Ensure these lines exist in your ~/.zshrc (add them if missing)
+# Add completions directory to your function path
+grep -q "fpath=(~/.zsh/completions $fpath)" ~/.zshrc || echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
+# Initialize completion system (only once)
+grep -q "autoload -U compinit" ~/.zshrc || echo 'autoload -U compinit && compinit' >> ~/.zshrc
+
+# Optionally source directly for the current session
+# source <(osm completion zsh)
+```
+
+**Fish:**
+```sh
+# Install completion script
+osm completion fish > ~/.config/fish/completions/osm.fish
+```
+
+**PowerShell:**
+```powershell
+# Add to your PowerShell profile
+osm completion powershell >> $PROFILE
+
+# Or run directly in current session
+osm completion powershell | Invoke-Expression
+```
+
+#### Usage
+
+Once installed, you can use tab completion for commands:
+
+```sh
+osm <TAB>                # Shows all available commands
+osm he<TAB>              # Completes to "help"
+osm completion <TAB>     # Shows shell options: bash, zsh, fish, powershell
 ```
 
 -----
@@ -298,6 +367,50 @@ Switch to a mode to execute JavaScript code
 - `script` - Execute JavaScript scripts with deferred/declarative API.
 - `prompt-flow` - Interactive prompt builder: goal/context/template -\> generate -\> assemble.
 - `code-review` - Single-prompt code review with context: context -\> generate prompt for PR review.
+- `completion` - Generate shell completion scripts for bash, zsh, fish, and PowerShell.
+- `goals` - Access pre-written goals for common development tasks.
+
+### Goals Command
+
+The `goals` command provides access to pre-written, production-ready goals for common development tasks. These goals come with comprehensive prompts and can be used standalone or integrated with other commands.
+
+```sh
+# List available goals
+osm goals -l
+
+# List goals by category
+osm goals -c testing
+
+# Run a goal interactively
+osm goals comment-stripper
+
+# Run a goal directly (non-interactive)
+osm goals -r doc-generator
+```
+
+**Available Goals:**
+
+- **Code Refactoring:**
+  - `comment-stripper` - Remove useless comments and refactor useful ones with intelligent analysis
+  
+- **Documentation:**
+  - `doc-generator` - Generate comprehensive documentation including API docs, examples, and guides
+  
+- **Testing:**
+  - `test-generator` - Generate comprehensive test suites with unit, integration, and edge case coverage
+
+**Integration with Other Commands:**
+
+Goals integrate seamlessly with existing workflows:
+
+- **Prompt Flow**: Use `goal --prewritten` to see available goals, then `goal use:<goal-name>` to apply them
+- **Code Review**: Use `note --goals` to apply goal-based review focuses like `note goal:comments`
+
+Each goal provides:
+- Comprehensive, context-aware prompts
+- Interactive TUI for building context
+- Integration with the scripting system
+- Extensible design for adding custom goals
 
 ### Interactive TUI
 

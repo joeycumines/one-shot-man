@@ -503,10 +503,27 @@ type Command interface {
 Commands are discovered from multiple sources:
 
 1. **Built-in Commands**: Registered via `registry.Register(cmd)`
-2. **Script Commands**: Executable files in script paths:
+2. **Embedded Scripts**: Core functionality with JavaScript embedded in Go binary
+   - `code-review` command uses embedded script and template
+   - `prompt-flow` command uses embedded script and template
+3. **External Script Commands**: Executable files in script paths:
    - `scripts/` directory relative to executable
    - `~/.one-shot-man/scripts/` (user scripts)
    - `./scripts/` (current directory scripts)
+4. **Example Scripts**: JavaScript files in `scripts/` directory for learning and testing
+
+### Embedded vs. Example Scripts
+
+**Embedded Scripts** (in Go binary):
+- Core functionality that should always be available
+- Located in `internal/command/` with `//go:embed` directives
+- Examples: `code_review_script.js`, `prompt_flow_script.js`
+
+**Example Scripts** (in `scripts/` directory):
+- Learning materials and demonstrations
+- Not embedded - loaded from filesystem
+- Examples: `demo-mode.js`, `llm-prompt-builder.js`, `debug-tui.js`
+- Can be customized or extended by users
 
 ### Script Command Example
 
@@ -609,11 +626,26 @@ func (c *MyCommand) Execute(args []string, stdout, stderr io.Writer) error {
 registry.Register(NewMyCommand())
 ```
 
-### 2. Script Commands  
+### 2. Embedded Commands
+
+Some commands have embedded JavaScript that defines their behavior:
+- **code-review** - Uses embedded `code_review_script.js` and `code_review_template.md`
+- **prompt-flow** - Uses embedded `prompt_flow_script.js` and `prompt_flow_template.md`
+
+These scripts are embedded using Go's `embed` package for core functionality.
+
+### 3. Example Scripts  
+
+The `scripts/` directory contains example JavaScript files demonstrating various features. These are not embedded but serve as:
+- Learning materials for users
+- Test cases for API validation
+- Templates for creating custom scripts
+
+### 4. Script Commands
 
 Create executable scripts in script directories for simple command extensions.
 
-### 3. JavaScript Modes
+### 5. JavaScript Modes
 
 Create rich TUI modes via JavaScript:
 
@@ -636,7 +668,7 @@ tui.registerMode({
 });
 ```
 
-### 4. Native Go Modules
+### 6. Native Go Modules
 
 Extend the `osm:` module system by adding to `internal/scripting/builtin/`:
 
@@ -655,7 +687,7 @@ func LoadModule(runtime *goja.Runtime, module *goja.Object) {
 registry.RegisterNativeModule(prefix+"mymodule", mymodule.LoadModule)
 ```
 
-### 5. Configuration Extensions
+### 7. Configuration Extensions
 
 Add new configuration options by extending the config system to support your commands.
 

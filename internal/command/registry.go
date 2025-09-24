@@ -7,20 +7,32 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+
+	"github.com/joeycumines/one-shot-man/internal/config"
 )
 
 // Registry manages the collection of available commands.
 type Registry struct {
-	commands    map[string]Command
-	scriptPaths []string
+	commands        map[string]Command
+	scriptPaths     []string
+	scriptDiscovery *ScriptDiscovery
 }
 
-// NewRegistry creates a new command registry.
-func NewRegistry() *Registry {
-	return &Registry{
-		commands:    make(map[string]Command),
-		scriptPaths: make([]string, 0),
+// NewRegistryWithConfig creates a new command registry with configuration support.
+func NewRegistryWithConfig(cfg *config.Config) *Registry {
+	registry := &Registry{
+		commands:        make(map[string]Command),
+		scriptPaths:     make([]string, 0),
+		scriptDiscovery: NewScriptDiscovery(cfg),
 	}
+
+	// Discover and add script paths
+	discoveredPaths := registry.scriptDiscovery.DiscoverScriptPaths()
+	for _, path := range discoveredPaths {
+		registry.AddScriptPath(path)
+	}
+
+	return registry
 }
 
 // Register adds a built-in command to the registry.

@@ -139,6 +139,8 @@ format detailed
 format short
 ```
 
+For comprehensive documentation of all configuration options, including script discovery, autodiscovery, and advanced features, see the [Configuration Reference](docs/config-reference.md).
+
 #### Configuration Location
 
 - Default: `~/.one-shot-man/config`
@@ -200,6 +202,8 @@ Script commands are discovered from these locations (in order):
 1.  `scripts/` directory relative to the executable
 2.  `~/.one-shot-man/scripts/` (user scripts)
 3.  `./scripts/` (current directory scripts)
+
+For advanced script discovery options including git repository detection, directory traversal, and custom script paths, see the [Configuration Reference](docs/config-reference.md#script-discovery-options).
 
 #### JavaScript Scripting
 

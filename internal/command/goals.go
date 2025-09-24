@@ -5,6 +5,8 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"io"
 	"path/filepath"
 	"sort"
@@ -43,6 +45,9 @@ type GoalsCommand struct {
 	category    string
 	run         string
 	config      *config.Config
+	// testMode prevents launching the interactive TUI during tests while
+	// still executing JS (so onEnter hooks can print to stdout).
+	testMode bool
 }
 
 // NewGoalsCommand creates a new goals command
@@ -73,16 +78,87 @@ func (c *GoalsCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		return c.listGoals(goals, stdout)
 	}
 
-	if c.run != "" {
-		return c.runGoal(c.run, goals, stdout, stderr)
-	}
-
-	if len(args) == 0 {
+	// Determine which goal to run and whether we should be interactive.
+	var goalName string
+	shouldInteractive := false
+	switch {
+	case c.run != "":
+		goalName = c.run
+		// -r implies non-interactive by default, unless -i explicitly set
+		shouldInteractive = c.interactive
+	case len(args) > 0:
+		goalName = args[0]
+		// Positional goal defaults to interactive, per README
+		shouldInteractive = true || c.interactive
+		if c.interactive { // keep explicit flag honored (no-op here but clearer intent)
+			shouldInteractive = true
+		}
+	default:
 		return c.listGoals(goals, stdout)
 	}
 
-	goalName := args[0]
-	return c.runGoal(goalName, goals, stdout, stderr)
+	// Resolve goal
+	var selectedGoal *Goal
+	for i := range goals {
+		if goals[i].Name == goalName {
+			selectedGoal = &goals[i]
+			break
+		}
+	}
+	if selectedGoal == nil {
+		_, _ = fmt.Fprintf(stderr, "Goal '%s' not found. Use 'osm goals -l' to list available goals.\n", goalName)
+		return fmt.Errorf("goal not found: %s", goalName)
+	}
+
+	// Create a scripting engine to run the goal
+	ctx := context.Background()
+	engine := scripting.NewEngine(ctx, stdout, stderr)
+	defer engine.Close()
+
+	if c.testMode {
+		engine.SetTestMode(true)
+	}
+
+	// Create a script object for the goal
+	script := &scripting.Script{
+		Name:        selectedGoal.Name,
+		Path:        filepath.Join("goals", selectedGoal.FileName),
+		Content:     selectedGoal.Script,
+		Description: selectedGoal.Description,
+	}
+
+	// Execute the goal script to register modes/commands
+	if err := engine.ExecuteScript(script); err != nil {
+		return fmt.Errorf("failed to execute goal '%s': %w", goalName, err)
+	}
+
+	// Launch interactive TUI if requested (and not in test mode)
+	if shouldInteractive {
+		// Switch to the goal's mode so onEnter runs and users land in the right place
+		_ = engine.GetTUIManager().SwitchMode(selectedGoal.Name)
+
+		if !c.testMode {
+			// Apply prompt color overrides from config if present
+			if c.config != nil {
+				colorMap := make(map[string]string)
+				for k, v := range c.config.Global {
+					if strings.HasPrefix(k, "prompt.color.") {
+						key := strings.TrimPrefix(k, "prompt.color.")
+						if key != "" {
+							colorMap[key] = v
+						}
+					}
+				}
+				if len(colorMap) > 0 {
+					engine.GetTUIManager().SetDefaultColorsFromStrings(colorMap)
+				}
+			}
+			terminal := scripting.NewTerminal(ctx, engine)
+			terminal.Run()
+		}
+	}
+
+	return nil
 }
 
 // getAvailableGoals returns all available pre-written goals
@@ -152,7 +228,7 @@ func (c *GoalsCommand) listGoals(goals []Goal, stdout io.Writer) error {
 	sort.Strings(sortedCategories)
 
 	for _, category := range sortedCategories {
-		_, _ = fmt.Fprintf(stdout, "%s:\n", strings.Title(strings.ReplaceAll(category, "-", " ")))
+		_, _ = fmt.Fprintf(stdout, "%s:\n", cases.Title(language.Und).String(strings.ToLower(strings.ReplaceAll(category, "-", " "))))
 		for _, goal := range categories[category] {
 			_, _ = fmt.Fprintf(stdout, "  %-20s %s\n", goal.Name, goal.Description)
 		}
@@ -164,41 +240,6 @@ func (c *GoalsCommand) listGoals(goals []Goal, stdout io.Writer) error {
 	_, _ = fmt.Fprintf(stdout, "  osm goals -r <goal-name>        Run a goal directly\n")
 	_, _ = fmt.Fprintf(stdout, "  osm goals -c <category>         List goals by category\n")
 	_, _ = fmt.Fprintf(stdout, "  osm script goals/<goal>.js      Run goal as regular script\n")
-
-	return nil
-}
-
-// runGoal executes a specific goal
-func (c *GoalsCommand) runGoal(goalName string, goals []Goal, stdout, stderr io.Writer) error {
-	var selectedGoal *Goal
-	for _, goal := range goals {
-		if goal.Name == goalName {
-			selectedGoal = &goal
-			break
-		}
-	}
-
-	if selectedGoal == nil {
-		_, _ = fmt.Fprintf(stderr, "Goal '%s' not found. Use 'osm goals -l' to list available goals.\n", goalName)
-		return fmt.Errorf("goal not found: %s", goalName)
-	}
-
-	// Create a scripting engine to run the goal
-	ctx := context.Background()
-	engine := scripting.NewEngine(ctx, stdout, stderr)
-
-	// Create a script object for the goal
-	script := &scripting.Script{
-		Name:        selectedGoal.Name,
-		Path:        filepath.Join("goals", selectedGoal.FileName),
-		Content:     selectedGoal.Script,
-		Description: selectedGoal.Description,
-	}
-
-	// Execute the goal script
-	if err := engine.ExecuteScript(script); err != nil {
-		return fmt.Errorf("failed to execute goal '%s': %w", goalName, err)
-	}
 
 	return nil
 }

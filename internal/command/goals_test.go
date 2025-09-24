@@ -51,7 +51,7 @@ func TestGoalsCommand_ListGoals(t *testing.T) {
 	// Check for expected goals
 	expectedGoals := []string{
 		"comment-stripper",
-		"doc-generator", 
+		"doc-generator",
 		"test-generator",
 	}
 
@@ -94,7 +94,7 @@ func TestGoalsCommand_ListGoalsByCategory(t *testing.T) {
 	if !strings.Contains(output, "test-generator") {
 		t.Errorf("Expected output to contain test-generator when filtering by testing category")
 	}
-	
+
 	if strings.Contains(output, "comment-stripper") {
 		t.Errorf("Expected output to NOT contain comment-stripper when filtering by testing category")
 	}
@@ -164,8 +164,8 @@ func TestGoalsCommand_EmbeddedScripts(t *testing.T) {
 	// Test script structure - should contain expected patterns
 	scripts := map[string]string{
 		"comment-stripper": commentStripperGoal,
-		"doc-generator":   docGeneratorGoal,
-		"test-generator":  testGeneratorGoal,
+		"doc-generator":    docGeneratorGoal,
+		"test-generator":   testGeneratorGoal,
 	}
 
 	for name, script := range scripts {
@@ -199,5 +199,47 @@ func TestGoalsCommand_InvalidGoal(t *testing.T) {
 
 	if !strings.Contains(stderr.String(), "Goal 'nonexistent-goal' not found") {
 		t.Errorf("Expected error message about goal not found, got: %s", stderr.String())
+	}
+}
+
+func TestGoalsCommand_RunGoal_Success_NonInteractive(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewGoalsCommand(cfg)
+	// use -r to imply non-interactive
+	cmd.run = "comment-stripper"
+	cmd.testMode = true // avoid launching TUI; still executes script
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute(nil, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected success running goal non-interactively, got: %v, stderr=%s", err, stderr.String())
+	}
+	// In testMode (non-interactive), scripts execute and register modes via ctx.run,
+	// which logs sub-test pass messages. We should NOT auto-switch modes.
+	got := stdout.String()
+	if !strings.Contains(got, "Sub-test register-mode passed") {
+		t.Errorf("expected output to include sub-test registration pass, got: %s", got)
+	}
+	if strings.Contains(got, "Switched to mode:") {
+		t.Errorf("did not expect to switch modes in non-interactive run, got: %s", got)
+	}
+}
+
+func TestGoalsCommand_RunGoal_Success_Interactive_Positional(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewGoalsCommand(cfg)
+	// positional argument should default to interactive per README
+	// but we set testMode to avoid actually running the TUI
+	cmd.testMode = true
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"doc-generator"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected success running positional goal, got: %v, stderr=%s", err, stderr.String())
+	}
+	got := stdout.String()
+	// We expect evidence of entering the mode: either explicit switch message or banner/help.
+	if !(strings.Contains(got, "Switched to mode: doc-generator") || strings.Contains(got, "Code Documentation Generator")) {
+		t.Errorf("expected to enter doc-generator mode, got: %s", got)
 	}
 }

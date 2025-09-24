@@ -134,8 +134,9 @@ function buildCommands() {
                     output.print("  note goal:comments     - Focus on comment quality and usefulness");
                     output.print("  note goal:docs         - Focus on documentation completeness");
                     output.print("  note goal:tests        - Focus on test coverage and quality");
-                    output.print("  note goal:performance  - Focus on performance implications");
-                    output.print("  note goal:security     - Focus on security considerations");
+                    // The following areas are not first-class 'goals' yet, but you can still use them as review focuses:
+                    output.print("  note goal:performance  - Focus on performance implications (review focus)");
+                    output.print("  note goal:security     - Focus on security considerations (review focus)");
                     return;
                 }
                 if (args.length === 1 && args[0].startsWith("goal:")) {

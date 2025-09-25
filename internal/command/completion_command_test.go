@@ -5,11 +5,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/config"
 )
 
 func TestCompletionCommand(t *testing.T) {
 	// Create a test registry with some commands
-	registry := NewRegistry()
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
 	registry.Register(NewHelpCommand(registry))
 	registry.Register(NewVersionCommand("1.0.0"))
 
@@ -105,7 +108,8 @@ func TestCompletionCommand(t *testing.T) {
 }
 
 func TestCompletionCommandExecuteWithArgs(t *testing.T) {
-	registry := NewRegistry()
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
 	registry.Register(NewHelpCommand(registry))
 
 	completionCmd := NewCompletionCommand(registry)
@@ -126,7 +130,8 @@ func TestCompletionCommandExecuteWithArgs(t *testing.T) {
 }
 
 func TestCompletionCommandDefaultToBash(t *testing.T) {
-	registry := NewRegistry()
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
 	registry.Register(NewHelpCommand(registry))
 
 	completionCmd := NewCompletionCommand(registry)
@@ -147,7 +152,8 @@ func TestCompletionCommandDefaultToBash(t *testing.T) {
 }
 
 func TestCompletionCommandIncludesScriptCommands(t *testing.T) {
-	registry := NewRegistry()
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
 	registry.Register(NewHelpCommand(registry))
 
 	scriptDir := t.TempDir()

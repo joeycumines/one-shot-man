@@ -77,6 +77,25 @@ osm completion bash > ~/.local/share/bash-completion/completions/osm
 
 # Or source directly in your ~/.bashrc
 echo 'source <(osm completion bash)' >> ~/.bashrc
+
+# For brew + brew-installed bash users of interactive shells on MacOS
+# (in your ~/.profile, OR, if it exists ~/.bash_profile, AFTER necessary PATH and HOMEBREW_PREFIX setup)
+if [ -n "$BASH_VERSION" ]; then
+  [[ -r "${HOMEBREW_PREFIX:-/opt/homebrew}/etc/profile.d/bash_completion.sh" ]] &&
+    source "${HOMEBREW_PREFIX:-/opt/homebrew}/etc/profile.d/bash_completion.sh"
+
+  # osm shell completion inclusive of hook to reload completion after changing directories
+  if command -v osm &>/dev/null && source <(osm completion bash) && __osm_update_completion_on_cd() {
+    if [[ "$PWD" != "${__osm_last_dir-}" ]]; then
+      if command -v osm &>/dev/null; then
+        source <(osm completion bash)
+      fi
+      __osm_last_dir="$PWD"
+    fi
+  } && ! [[ "$PROMPT_COMMAND" =~ __osm_update_completion_on_cd ]]; then
+    PROMPT_COMMAND="${PROMPT_COMMAND};__osm_update_completion_on_cd"
+  fi
+fi
 ```
 
 **Zsh:**

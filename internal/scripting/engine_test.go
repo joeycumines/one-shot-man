@@ -3,15 +3,28 @@ package scripting
 import (
 	"bytes"
 	"context"
+	"io"
 	"strings"
 	"testing"
 )
+
+func newTestEngine(t *testing.T, ctx context.Context, stdout, stderr io.Writer) *Engine {
+	t.Helper()
+	engine, err := NewEngine(ctx, stdout, stderr)
+	if err != nil {
+		t.Fatalf("NewEngine failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = engine.Close()
+	})
+	return engine
+}
 
 func TestEngine_BasicExecution(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 
-	engine := NewEngine(ctx, &stdout, &stderr)
+	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
 	script := engine.LoadScriptFromString("test", `
@@ -37,7 +50,7 @@ func TestEngine_DeferredExecution(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 
-	engine := NewEngine(ctx, &stdout, &stderr)
+	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
 	script := engine.LoadScriptFromString("test_defer", `
@@ -77,7 +90,7 @@ func TestEngine_SubTests(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 
-	engine := NewEngine(ctx, &stdout, &stderr)
+	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
 	script := engine.LoadScriptFromString("test_subtests", `
@@ -114,7 +127,7 @@ func TestEngine_ErrorHandling(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 
-	engine := NewEngine(ctx, &stdout, &stderr)
+	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 
 	script := engine.LoadScriptFromString("test_error", `
@@ -140,7 +153,7 @@ func TestEngine_GlobalVariables(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 
-	engine := NewEngine(ctx, &stdout, &stderr)
+	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 	engine.SetGlobal("testVar", "test value")
 	engine.SetGlobal("testNum", 123)
@@ -168,7 +181,7 @@ func TestEngine_OutputAPI(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 
-	engine := NewEngine(ctx, &stdout, &stderr)
+	engine := newTestEngine(t, ctx, &stdout, &stderr)
 
 	script := engine.LoadScriptFromString("test_output", `
 		output.print("stdout message");
@@ -199,7 +212,7 @@ func TestEngine_ComplexScenario(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 
-	engine := NewEngine(ctx, &stdout, &stderr)
+	engine := newTestEngine(t, ctx, &stdout, &stderr)
 	engine.SetTestMode(true)
 	engine.SetGlobal("config", map[string]interface{}{
 		"timeout": 1000,

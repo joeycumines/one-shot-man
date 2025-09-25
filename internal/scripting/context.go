@@ -15,9 +15,11 @@ import (
 // ContextManager handles tracking and managing file paths and content as context
 // for building LLM prompts.
 type ContextManager struct {
-	paths    map[string]*ContextPath
-	basePath string
-	mutex    sync.RWMutex
+	paths      map[string]*ContextPath
+	basePath   string
+	mutex      sync.RWMutex
+	ownerFiles map[string]map[string]struct{}
+	fileOwners map[string]int
 }
 
 // ContextPath represents a tracked file or directory with metadata.
@@ -31,11 +33,46 @@ type ContextPath struct {
 }
 
 // NewContextManager creates a new context manager.
-func NewContextManager(basePath string) *ContextManager {
-	return &ContextManager{
-		paths:    make(map[string]*ContextPath),
-		basePath: basePath,
+func NewContextManager(basePath string) (*ContextManager, error) {
+	absBase, err := filepath.Abs(basePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve absolute base path for %q: %w", basePath, err)
 	}
+
+	return &ContextManager{
+		paths:      make(map[string]*ContextPath),
+		basePath:   absBase,
+		ownerFiles: make(map[string]map[string]struct{}),
+		fileOwners: make(map[string]int),
+	}, nil
+}
+
+func (cm *ContextManager) normalizeOwnerPath(absPath string) string {
+	relPath, err := filepath.Rel(cm.basePath, absPath)
+	if err != nil {
+		return absPath
+	}
+
+	relPath = filepath.Clean(relPath)
+	if relPath == "." {
+		return "."
+	}
+
+	if strings.HasPrefix(relPath, ".."+string(filepath.Separator)) || relPath == ".." {
+		return absPath
+	}
+
+	return relPath
+}
+
+func (cm *ContextManager) absolutePathFromOwner(owner string) (string, error) {
+	if owner == "." {
+		return cm.basePath, nil
+	}
+	if filepath.IsAbs(owner) {
+		return owner, nil
+	}
+	return filepath.Abs(filepath.Join(cm.basePath, owner))
 }
 
 // AddPath adds a file or directory to the context.
@@ -48,45 +85,188 @@ func (cm *ContextManager) AddPath(path string) error {
 		return fmt.Errorf("failed to get absolute path: %w", err)
 	}
 
-	// Normalize path to be relative to base path if possible
-	relPath, err := filepath.Rel(cm.basePath, absPath)
-	if err != nil || strings.HasPrefix(relPath, "..") {
-		// If we can't get a relative path, or it would escape the base path,
-		// use the absolute path to preserve uniqueness and enable exact lookups
-		relPath = absPath
-	}
+	owner := cm.normalizeOwnerPath(absPath)
 
-	info, err := os.Stat(absPath)
+	info, err := os.Lstat(absPath)
 	if err != nil {
 		return fmt.Errorf("failed to stat path %s: %w", path, err)
 	}
 
-	contextPath := &ContextPath{
-		Path:        relPath,
+	return cm.addPathWithOwnerLocked(absPath, owner, info)
+}
+
+func (cm *ContextManager) addPathWithOwnerLocked(absPath, owner string, info fs.FileInfo) error {
+	if info.Mode()&os.ModeSymlink != 0 {
+		targetInfo, err := os.Stat(absPath)
+		if err != nil {
+			return fmt.Errorf("failed to resolve symlink %s: %w", absPath, err)
+		}
+		info = targetInfo
+	}
+
+	cm.removeOwnerLocked(owner)
+
+	if info.IsDir() {
+		return cm.addDirectoryLocked(absPath, owner, info)
+	}
+
+	if info.Mode().IsRegular() {
+		return cm.addFileLocked(absPath, owner, owner, info)
+	}
+
+	return fmt.Errorf("unsupported path type: %s", absPath)
+}
+
+func (cm *ContextManager) addFileLocked(absPath, logicalPath, owner string, info fs.FileInfo) error {
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return fmt.Errorf("failed to read file %s: %w", absPath, err)
+	}
+
+	cp, exists := cm.paths[logicalPath]
+	if !exists || cp.Type != "file" {
+		cp = &ContextPath{
+			Path:     logicalPath,
+			Type:     "file",
+			Metadata: make(map[string]string),
+		}
+	} else if cp.Metadata == nil {
+		cp.Metadata = make(map[string]string)
+	}
+
+	cp.Content = string(data)
+	cp.Metadata["size"] = fmt.Sprintf("%d", len(data))
+	cp.Metadata["extension"] = filepath.Ext(logicalPath)
+	cp.LastUpdated = info.ModTime().Unix()
+
+	cm.paths[logicalPath] = cp
+
+	ownerSet, ok := cm.ownerFiles[owner]
+	if !ok {
+		ownerSet = make(map[string]struct{})
+		cm.ownerFiles[owner] = ownerSet
+	}
+
+	if _, present := ownerSet[logicalPath]; !present {
+		ownerSet[logicalPath] = struct{}{}
+		cm.fileOwners[logicalPath]++
+	}
+
+	return nil
+}
+
+func (cm *ContextManager) addDirectoryLocked(absPath, owner string, info fs.FileInfo) error {
+	ownerSet := make(map[string]struct{})
+	cm.ownerFiles[owner] = ownerSet
+
+	visited := make(map[string]struct{})
+	var children []string
+	if err := cm.walkDirectory(absPath, owner, owner, ownerSet, &children, visited); err != nil {
+		delete(cm.ownerFiles, owner)
+		return fmt.Errorf("failed to scan directory %s: %w", absPath, err)
+	}
+
+	cm.paths[owner] = &ContextPath{
+		Path:        owner,
+		Type:        "directory",
 		Metadata:    make(map[string]string),
+		Children:    children,
 		LastUpdated: info.ModTime().Unix(),
 	}
 
-	if info.IsDir() {
-		contextPath.Type = "directory"
-		children, err := cm.scanDirectory(absPath)
-		if err != nil {
-			return fmt.Errorf("failed to scan directory %s: %w", path, err)
-		}
-		contextPath.Children = children
-	} else {
-		contextPath.Type = "file"
-		content, err := os.ReadFile(absPath)
-		if err != nil {
-			return fmt.Errorf("failed to read file %s: %w", path, err)
-		}
-		contextPath.Content = string(content)
-		contextPath.Metadata["size"] = fmt.Sprintf("%d", len(content))
-		contextPath.Metadata["extension"] = filepath.Ext(relPath)
+	return nil
+}
+
+func (cm *ContextManager) walkDirectory(absRoot, logicalRoot, owner string, ownerSet map[string]struct{}, children *[]string, visited map[string]struct{}) error {
+	canonical, err := filepath.EvalSymlinks(absRoot)
+	if err != nil {
+		canonical = absRoot
 	}
 
-	cm.paths[relPath] = contextPath
+	if _, ok := visited[canonical]; ok {
+		return nil
+	}
+	visited[canonical] = struct{}{}
+
+	entries, err := os.ReadDir(absRoot)
+	if err != nil {
+		return fmt.Errorf("failed to read directory %s: %w", absRoot, err)
+	}
+
+	for _, entry := range entries {
+		absChild := filepath.Join(absRoot, entry.Name())
+		logicalChild := filepath.Join(logicalRoot, entry.Name())
+
+		info, err := os.Lstat(absChild)
+		if err != nil {
+			return fmt.Errorf("failed to stat path %s: %w", absChild, err)
+		}
+
+		if info.Mode()&os.ModeSymlink != 0 {
+			targetInfo, err := os.Stat(absChild)
+			if err != nil {
+				return fmt.Errorf("failed to resolve symlink %s: %w", absChild, err)
+			}
+			if targetInfo.IsDir() {
+				if err := cm.walkDirectory(absChild, logicalChild, owner, ownerSet, children, visited); err != nil {
+					return err
+				}
+				continue
+			}
+			_, seen := ownerSet[logicalChild]
+			if err := cm.addFileLocked(absChild, logicalChild, owner, targetInfo); err != nil {
+				return err
+			}
+			if !seen {
+				*children = append(*children, logicalChild)
+			}
+			continue
+		}
+
+		if info.IsDir() {
+			if err := cm.walkDirectory(absChild, logicalChild, owner, ownerSet, children, visited); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if info.Mode().IsRegular() {
+			_, seen := ownerSet[logicalChild]
+			if err := cm.addFileLocked(absChild, logicalChild, owner, info); err != nil {
+				return err
+			}
+			if !seen {
+				*children = append(*children, logicalChild)
+			}
+			continue
+		}
+	}
+
 	return nil
+}
+
+func (cm *ContextManager) removeOwnerLocked(owner string) bool {
+	removed := false
+
+	if files, ok := cm.ownerFiles[owner]; ok {
+		for file := range files {
+			if count := cm.fileOwners[file]; count <= 1 {
+				delete(cm.fileOwners, file)
+				delete(cm.paths, file)
+			} else {
+				cm.fileOwners[file] = count - 1
+			}
+		}
+		delete(cm.ownerFiles, owner)
+		removed = true
+	}
+
+	if cp, ok := cm.paths[owner]; ok && cp.Type == "directory" {
+		delete(cm.paths, owner)
+		removed = true
+	}
+
+	return removed
 }
 
 // RemovePath removes a path from the context.
@@ -94,71 +274,31 @@ func (cm *ContextManager) RemovePath(path string) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 
-	// Fast path: exact key match
-	if _, ok := cm.paths[path]; ok {
-		delete(cm.paths, path)
+	if cm.removeOwnerLocked(path) {
 		return nil
 	}
 
-	// Try to normalize provided path to the relative key used by the manager
-	// Accept either absolute or relative inputs
 	var rel string
 	if path != "" {
 		abs := path
 		if !filepath.IsAbs(abs) {
-			// Resolve relative to basePath
 			abs = filepath.Join(cm.basePath, path)
 		}
 		if a2, err := filepath.Abs(abs); err == nil {
-			if r, err2 := filepath.Rel(cm.basePath, a2); err2 == nil {
-				// If outside basePath, prefer the absolute path key we store
-				if strings.HasPrefix(r, "..") {
-					rel = a2
-				} else {
-					rel = r
+			rel = cm.normalizeOwnerPath(a2)
+			if rel != "" && rel != path {
+				if cm.removeOwnerLocked(rel) {
+					return nil
+				}
+			}
+			if a2 != path {
+				if cm.removeOwnerLocked(a2) {
+					return nil
 				}
 			}
 		}
 	}
 
-	if rel != "" {
-		if _, ok := cm.paths[rel]; ok {
-			delete(cm.paths, rel)
-			return nil
-		}
-	}
-
-	// If still not found, attempt a last-resort match by suffix (handles cases
-	// where basePath moved or user supplied slightly different relative form).
-	// IMPORTANT: Detect ambiguity and return an error if multiple matches exist.
-	// This ensures deterministic behavior and surfaces issues to the caller.
-	if path != "" || rel != "" {
-		needleA := filepath.ToSlash(path)
-		needleB := filepath.ToSlash(rel)
-		var candidates []string
-		for k := range cm.paths {
-			ks := filepath.ToSlash(k)
-			// Match exact strings (either provided path or normalized rel),
-			// or suffix in EITHER direction to account for absolute vs relative keys
-			if strings.EqualFold(k, path) ||
-				strings.EqualFold(k, rel) ||
-				(needleA != "" && ks != "" && (strings.HasSuffix(needleA, ks) || strings.HasSuffix(ks, needleA))) ||
-				(needleB != "" && ks != "" && (strings.HasSuffix(needleB, ks) || strings.HasSuffix(ks, needleB))) {
-				candidates = append(candidates, k)
-			}
-		}
-		if len(candidates) == 1 {
-			delete(cm.paths, candidates[0])
-			return nil
-		}
-		if len(candidates) > 1 {
-			// Sort for stable, user-friendly output
-			slices.Sort(candidates)
-			return fmt.Errorf("ambiguous path: %q matches %d tracked paths: %s", path, len(candidates), strings.Join(candidates, ", "))
-		}
-	}
-
-	// Not found is a no-op
 	return fmt.Errorf("path not found: %s", path)
 }
 
@@ -345,6 +485,8 @@ func (cm *ContextManager) FromTxtar(archive *txtar.Archive) error {
 
 	// Clear existing context
 	cm.paths = make(map[string]*ContextPath)
+	cm.ownerFiles = make(map[string]map[string]struct{})
+	cm.fileOwners = make(map[string]int)
 
 	for _, file := range archive.Files {
 		contextPath := &ContextPath{
@@ -357,6 +499,8 @@ func (cm *ContextManager) FromTxtar(archive *txtar.Archive) error {
 		contextPath.Metadata["extension"] = filepath.Ext(file.Name)
 
 		cm.paths[file.Name] = contextPath
+		cm.ownerFiles[file.Name] = map[string]struct{}{file.Name: {}}
+		cm.fileOwners[file.Name] = 1
 	}
 
 	return nil
@@ -379,60 +523,21 @@ func (cm *ContextManager) RefreshPath(path string) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 
-	contextPath, exists := cm.paths[path]
-	if !exists {
-		return fmt.Errorf("path %s is not tracked", path)
+	if _, tracked := cm.ownerFiles[path]; !tracked {
+		return fmt.Errorf("path %s is not a tracked owner", path)
 	}
 
-	absPath := filepath.Join(cm.basePath, path)
-	info, err := os.Stat(absPath)
+	absPath, err := cm.absolutePathFromOwner(path)
+	if err != nil {
+		return fmt.Errorf("failed to resolve path %s: %w", path, err)
+	}
+
+	info, err := os.Lstat(absPath)
 	if err != nil {
 		return fmt.Errorf("failed to stat path %s: %w", path, err)
 	}
 
-	contextPath.LastUpdated = info.ModTime().Unix()
-
-	if contextPath.Type == "file" {
-		content, err := os.ReadFile(absPath)
-		if err != nil {
-			return fmt.Errorf("failed to read file %s: %w", path, err)
-		}
-		contextPath.Content = string(content)
-		contextPath.Metadata["size"] = fmt.Sprintf("%d", len(content))
-	} else if contextPath.Type == "directory" {
-		children, err := cm.scanDirectory(absPath)
-		if err != nil {
-			return fmt.Errorf("failed to scan directory %s: %w", path, err)
-		}
-		contextPath.Children = children
-	}
-
-	return nil
-}
-
-// scanDirectory scans a directory and returns relative paths of its contents.
-func (cm *ContextManager) scanDirectory(dirPath string) ([]string, error) {
-	var children []string
-
-	err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if path == dirPath {
-			return nil // Skip the directory itself
-		}
-
-		relPath, err := filepath.Rel(cm.basePath, path)
-		if err != nil {
-			relPath = path
-		}
-
-		children = append(children, relPath)
-		return nil
-	})
-
-	return children, err
+	return cm.addPathWithOwnerLocked(absPath, path, info)
 }
 
 // GetStats returns statistics about the context.

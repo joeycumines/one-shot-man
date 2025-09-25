@@ -11,8 +11,7 @@ import (
 // based on registration order, not in pseudo-random map iteration order.
 func TestCommandCompletionOrder(t *testing.T) {
 	ctx := context.Background()
-	engine := NewEngine(ctx, io.Discard, io.Discard)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, io.Discard, io.Discard)
 
 	tuiManager := engine.GetTUIManager()
 
@@ -140,8 +139,7 @@ func TestCommandCompletionSuggestionOrder(t *testing.T) {
 // TestModeCommandOrder verifies that mode commands also maintain stable order
 func TestModeCommandOrder(t *testing.T) {
 	ctx := context.Background()
-	engine := NewEngine(ctx, io.Discard, io.Discard)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, io.Discard, io.Discard)
 
 	// Create a test mode with commands in specific order
 	mode := &ScriptMode{

@@ -11,8 +11,7 @@ import (
 
 func TestTUIFullImplementation(t *testing.T) {
 	ctx := context.Background()
-	engine := NewEngine(ctx, os.Stdin, os.Stdout)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, os.Stdin, os.Stdout)
 
 	tuiManager := engine.GetTUIManager()
 
@@ -70,8 +69,7 @@ func TestTUIFullImplementation(t *testing.T) {
 
 func TestAdvancedPromptAPIFunctionality(t *testing.T) {
 	ctx := context.Background()
-	engine := NewEngine(ctx, os.Stdin, os.Stdout)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, os.Stdin, os.Stdout)
 
 	tuiManager := engine.GetTUIManager()
 

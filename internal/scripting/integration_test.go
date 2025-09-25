@@ -3,6 +3,7 @@ package scripting
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,6 +27,18 @@ func requireExpectExitCode(t *testing.T, p *termtest.ConsoleProcess, exitCode in
 	if err != nil {
 		t.Fatalf("Expected exit code %d, but got error: %v\nRaw:\n%s\n", exitCode, err, rawString)
 	}
+}
+
+func mustNewEngine(tb testing.TB, ctx context.Context, stdout, stderr io.Writer) *Engine {
+	tb.Helper()
+	engine, err := NewEngine(ctx, stdout, stderr)
+	if err != nil {
+		tb.Fatalf("NewEngine failed: %v", err)
+	}
+	tb.Cleanup(func() {
+		_ = engine.Close()
+	})
+	return engine
 }
 
 // TestFullLLMWorkflow tests a complete LLM prompt building workflow
@@ -373,8 +386,7 @@ func TestErrorHandling(t *testing.T) {
 // TestConcurrentAccess tests the thread safety of the TUI system
 func TestConcurrentAccess(t *testing.T) {
 	ctx := context.Background()
-	engine := NewEngine(ctx, os.Stdout, os.Stderr)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, os.Stdout, os.Stderr)
 
 	tuiManager := engine.GetTUIManager()
 
@@ -436,8 +448,7 @@ func TestConcurrentAccess(t *testing.T) {
 // TestJavaScriptInteroperability tests complex JavaScript integration
 func TestJavaScriptInteroperability(t *testing.T) {
 	ctx := context.Background()
-	engine := NewEngine(ctx, os.Stdout, os.Stderr)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, os.Stdout, os.Stderr)
 
 	// Test complex JavaScript integration with the TUI system
 	script := engine.LoadScriptFromString("interop-test", `
@@ -513,8 +524,7 @@ func TestJavaScriptInteroperability(t *testing.T) {
 // BenchmarkTUIPerformance benchmarks the TUI system performance
 func BenchmarkTUIPerformance(b *testing.B) {
 	ctx := context.Background()
-	engine := NewEngine(ctx, os.Stdout, os.Stderr)
-	defer engine.Close()
+	engine := mustNewEngine(b, ctx, os.Stdout, os.Stderr)
 
 	// Register a test mode
 	script := engine.LoadScriptFromString("perf-test", `
@@ -571,8 +581,7 @@ func BenchmarkTUIPerformance(b *testing.B) {
 // TestContextManagement tests the context manager functionality
 func TestContextManagement(t *testing.T) {
 	ctx := context.Background()
-	engine := NewEngine(ctx, os.Stdout, os.Stderr)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, os.Stdout, os.Stderr)
 
 	// Test adding paths to context
 	testScript := engine.LoadScriptFromString("context-test", `
@@ -625,8 +634,7 @@ func TestLoggingSystem(t *testing.T) {
 
 	// Capture output
 	var logOutput strings.Builder
-	engine := NewEngine(ctx, &logOutput, &logOutput)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, &logOutput, &logOutput)
 
 	// Test logging operations
 	testScript := engine.LoadScriptFromString("logging-test", `
@@ -679,8 +687,7 @@ func TestLoggingSystem(t *testing.T) {
 // TestTUIModeSystem tests the TUI mode system functionality
 func TestTUIModeSystem(t *testing.T) {
 	ctx := context.Background()
-	engine := NewEngine(ctx, os.Stdout, os.Stderr)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, os.Stdout, os.Stderr)
 
 	// Test mode registration and switching
 	testScript := engine.LoadScriptFromString("tui-mode-test", `
@@ -782,8 +789,7 @@ func TestFullIntegration(t *testing.T) {
 	}
 
 	var output strings.Builder
-	engine := NewEngine(ctx, &output, &output)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, &output, &output)
 
 	// Integration test script
 	testScript := engine.LoadScriptFromString("full-integration", fmt.Sprintf(`
@@ -918,8 +924,7 @@ func TestScriptCommandVerification(t *testing.T) {
 	ctx := context.Background()
 
 	var output strings.Builder
-	engine := NewEngine(ctx, &output, &output)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, &output, &output)
 
 	// Test script with various command types
 	testScript := engine.LoadScriptFromString("command-verification", `
@@ -1071,8 +1076,7 @@ func TestScriptStateVerification(t *testing.T) {
 	ctx := context.Background()
 
 	var output strings.Builder
-	engine := NewEngine(ctx, &output, &output)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, &output, &output)
 
 	// Test state persistence and manipulation
 	testScript := engine.LoadScriptFromString("state-verification", `

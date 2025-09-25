@@ -5,12 +5,13 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 	"io"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
@@ -112,7 +113,10 @@ func (c *GoalsCommand) Execute(args []string, stdout, stderr io.Writer) error {
 
 	// Create a scripting engine to run the goal
 	ctx := context.Background()
-	engine := scripting.NewEngine(ctx, stdout, stderr)
+	engine, err := scripting.NewEngine(ctx, stdout, stderr)
+	if err != nil {
+		return fmt.Errorf("failed to create scripting engine: %w", err)
+	}
 	defer engine.Close()
 
 	if c.testMode {

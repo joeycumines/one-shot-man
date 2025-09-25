@@ -38,11 +38,16 @@ type Script struct {
 }
 
 // NewEngine creates a new JavaScript scripting engine.
-func NewEngine(ctx context.Context, stdout, stderr io.Writer) *Engine {
+func NewEngine(ctx context.Context, stdout, stderr io.Writer) (*Engine, error) {
 	// Get current working directory for context manager
 	workingDir, err := os.Getwd()
 	if err != nil {
 		workingDir = "."
+	}
+
+	contextManager, err := NewContextManager(workingDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create context manager: %w", err)
 	}
 
 	engine := &Engine{
@@ -51,7 +56,7 @@ func NewEngine(ctx context.Context, stdout, stderr io.Writer) *Engine {
 		stdout:         stdout,
 		stderr:         stderr,
 		globals:        make(map[string]interface{}),
-		contextManager: NewContextManager(workingDir),
+		contextManager: contextManager,
 		logger:         NewTUILogger(stdout, 1000),
 	}
 
@@ -83,7 +88,7 @@ func NewEngine(ctx context.Context, stdout, stderr io.Writer) *Engine {
 		}
 	}()
 
-	return engine
+	return engine, nil
 }
 
 // SetTestMode enables test mode for the engine.

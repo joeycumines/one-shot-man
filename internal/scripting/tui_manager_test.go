@@ -10,8 +10,8 @@ import (
 // Verify that flush writes messages verbatim as queued and that PrintToTUI provides newlines
 func TestFlushQueuedOutput_WithSinkAndWriter_Newlines(t *testing.T) {
 	var out bytes.Buffer
-	eng := NewEngine(context.Background(), &out, &out)
-	defer eng.Close()
+	ctx := context.Background()
+	eng := mustNewEngine(t, ctx, &out, &out)
 
 	// Create a manager instance that writes to our buffer (not stdout)
 	tm := NewTUIManager(context.Background(), eng, nil, &out)

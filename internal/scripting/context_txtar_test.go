@@ -26,7 +26,10 @@ func TestContextManager_ToTxtar_UniqueNaming(t *testing.T) {
 	mustWrite(f2, "package b\n")
 	mustWrite(f3, "package c\n")
 
-	cm := NewContextManager(dir)
+	cm, err := NewContextManager(dir)
+	if err != nil {
+		t.Fatalf("NewContextManager failed: %v", err)
+	}
 	if err := cm.AddPath(f1); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +73,10 @@ func TestContextManager_ToTxtar_MultiLevelDisambiguation(t *testing.T) {
 	mustWrite(f2, "package b_d\n")
 	mustWrite(f3, "package a_e\n")
 
-	cm := NewContextManager(dir)
+	cm, err := NewContextManager(dir)
+	if err != nil {
+		t.Fatalf("NewContextManager failed: %v", err)
+	}
 	for _, p := range []string{f1, f2, f3} {
 		if err := cm.AddPath(p); err != nil {
 			t.Fatal(err)
@@ -111,7 +117,10 @@ func TestContextManager_ToTxtar_DeepDisambiguation(t *testing.T) {
 	mustWrite(f2, "package bxy\n")
 	mustWrite(f3, "package cxw\n")
 
-	cm := NewContextManager(dir)
+	cm, err := NewContextManager(dir)
+	if err != nil {
+		t.Fatalf("NewContextManager failed: %v", err)
+	}
 	for _, p := range []string{f1, f2, f3} {
 		if err := cm.AddPath(p); err != nil {
 			t.Fatal(err)

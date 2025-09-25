@@ -19,7 +19,10 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 	// Test with real git diff execution
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine := scripting.NewEngine(ctx, &stdout, &stderr)
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("NewEngine failed: %v", err)
+	}
 	defer engine.Close()
 
 	engine.SetTestMode(true)
@@ -79,7 +82,7 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 	`
 
 	testScriptObj := engine.LoadScriptFromString("git-diff-test", testScript)
-	err := engine.ExecuteScript(testScriptObj)
+	err = engine.ExecuteScript(testScriptObj)
 	if err != nil {
 		t.Fatalf("Test script execution failed: %v", err)
 	}

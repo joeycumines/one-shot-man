@@ -12,8 +12,7 @@ import (
 // TestTUIManagerAPI tests the TUI manager JavaScript API
 func TestTUIManagerAPI(t *testing.T) {
 	ctx := context.Background()
-	engine := NewEngine(ctx, os.Stdout, os.Stderr)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, os.Stdout, os.Stderr)
 
 	tuiManager := engine.GetTUIManager()
 	if tuiManager == nil {
@@ -246,8 +245,7 @@ func buildTestBinary(t *testing.T) string {
 // TestJavaScriptAPIBinding tests the core JavaScript API bindings
 func TestJavaScriptAPIBinding(t *testing.T) {
 	ctx := context.Background()
-	engine := NewEngine(ctx, os.Stdout, os.Stderr)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, os.Stdout, os.Stderr)
 
 	// Test that all API functions are available
 	script := engine.LoadScriptFromString("api-binding-test", `
@@ -289,8 +287,7 @@ func TestJavaScriptAPIBinding(t *testing.T) {
 // TestCommandExecution tests command execution in different scenarios
 func TestCommandExecution(t *testing.T) {
 	ctx := context.Background()
-	engine := NewEngine(ctx, os.Stdout, os.Stderr)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, os.Stdout, os.Stderr)
 
 	tuiManager := engine.GetTUIManager()
 
@@ -373,8 +370,7 @@ func TestCommandExecution(t *testing.T) {
 // TestConcurrentSafety tests the thread safety of the TUI system
 func TestConcurrentSafety(t *testing.T) {
 	ctx := context.Background()
-	engine := NewEngine(ctx, os.Stdout, os.Stderr)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, os.Stdout, os.Stderr)
 
 	tuiManager := engine.GetTUIManager()
 

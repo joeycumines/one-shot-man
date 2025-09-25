@@ -26,8 +26,7 @@ func TestTUIInteractiveMode(t *testing.T) {
 
 func testCommandExecution(ctx context.Context, t *testing.T) {
 	// Test that command execution works in the new implementation
-	engine := NewEngine(ctx, os.Stdin, os.Stdout)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, os.Stdin, os.Stdout)
 
 	tuiManager := engine.GetTUIManager()
 
@@ -66,8 +65,7 @@ func testCommandExecution(ctx context.Context, t *testing.T) {
 
 func testModeSwitching(ctx context.Context, t *testing.T) {
 	// Test mode registration and switching functionality
-	engine := NewEngine(ctx, os.Stdin, os.Stdout)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, os.Stdin, os.Stdout)
 
 	// Register a test mode
 	testScript := engine.LoadScriptFromString("test-mode", `
@@ -141,8 +139,7 @@ func TestTUIAdvancedPrompt(t *testing.T) {
 func TestExecutorTokenization_QuotedArgs(t *testing.T) {
 	ctx := context.Background()
 	var out strings.Builder
-	engine := NewEngine(ctx, &out, &out)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, &out, &out)
 
 	tm := engine.GetTUIManager()
 	received := make([][]string, 0)

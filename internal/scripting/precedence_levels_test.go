@@ -10,8 +10,7 @@ import (
 
 func TestCompletionPrecedenceLevels(t *testing.T) {
 	ctx := context.Background()
-	engine := NewEngine(ctx, os.Stdin, os.Stdout)
-	defer engine.Close()
+	engine := mustNewEngine(t, ctx, os.Stdin, os.Stdout)
 
 	tuiManager := engine.GetTUIManager()
 

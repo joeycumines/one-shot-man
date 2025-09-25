@@ -39,7 +39,10 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 	cmd.interactive = false
 
 	ctx := context.Background()
-	engine := scripting.NewEngine(ctx, &stdout, &stderr)
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("NewEngine failed: %v", err)
+	}
 	defer engine.Close()
 
 	engine.SetTestMode(true)

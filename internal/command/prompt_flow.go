@@ -50,7 +50,10 @@ func (c *PromptFlowCommand) Execute(args []string, stdout, stderr io.Writer) err
 	ctx := context.Background()
 
 	// Create scripting engine
-	engine := scripting.NewEngine(ctx, stdout, stderr)
+	engine, err := scripting.NewEngine(ctx, stdout, stderr)
+	if err != nil {
+		return fmt.Errorf("failed to create scripting engine: %w", err)
+	}
 	defer engine.Close()
 
 	if c.testMode {

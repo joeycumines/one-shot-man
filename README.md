@@ -96,7 +96,7 @@ if [ -n "$BASH_VERSION" ]; then
     if [ -n "$PROMPT_COMMAND" ]; then
       PROMPT_COMMAND="__osm_update_completion_on_cd"
     else
-      PROMPT_COMMAND="${PROMPT_COMMAND};__osm_update_completion_on_cd"
+      PROMPT_COMMAND="${PROMPT_COMMAND}; __osm_update_completion_on_cd"
     fi
   fi
 fi

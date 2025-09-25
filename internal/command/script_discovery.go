@@ -309,15 +309,11 @@ func (sd *ScriptDiscovery) computePathScore(path, cwd, configDir, execDir string
 			if upCount == 0 {
 				return pathScore{class: 0, distance: downCount, depth: downCount}
 			}
-		}
-	}
 
-	if hasDirPrefix(cwd, path) {
-		depth := pathDepthRelative(cwd, path)
-		if depth == 0 {
-			depth = 1
+			if sd.matchesAncestorPattern(segments) {
+				return pathScore{class: 1, distance: upCount, depth: downCount}
+			}
 		}
-		return pathScore{class: 1, distance: depth, depth: depth}
 	}
 
 	if hasDirPrefix(path, configDir) {
@@ -376,6 +372,54 @@ func pathDepthRelative(path, base string) int {
 	}
 	rel = filepath.Clean(rel)
 	_, down := countRelSegments(splitPathSegments(rel))
+	return down
+}
+
+func (sd *ScriptDiscovery) matchesAncestorPattern(segments []string) bool {
+	downSegments := collectDownSegments(segments)
+	if len(downSegments) == 0 {
+		return false
+	}
+
+	for _, pattern := range sd.config.ScriptPathPatterns {
+		pattern = filepath.Clean(pattern)
+		patternSegments := collectDownSegments(splitPathSegments(pattern))
+		if len(patternSegments) == 0 {
+			continue
+		}
+		if len(patternSegments) != len(downSegments) {
+			continue
+		}
+		match := true
+		for i := range downSegments {
+			if patternSegments[i] != downSegments[i] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+
+	return false
+}
+
+func collectDownSegments(segments []string) []string {
+	if len(segments) == 0 {
+		return nil
+	}
+	var down []string
+	for _, segment := range segments {
+		switch segment {
+		case "", ".":
+			continue
+		case "..":
+			continue
+		default:
+			down = append(down, segment)
+		}
+	}
 	return down
 }
 

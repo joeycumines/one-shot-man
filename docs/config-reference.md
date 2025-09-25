@@ -154,11 +154,11 @@ When `script.autodiscovery` is enabled:
 
 Scripts are resolved with the following priority (highest to lowest):
 
-1. **Current Working Directory Tree**: Script directories located in the current working directory or its descendants. Direct children outrank deeper paths.
-2. **Ancestor Directories**: Script directories that require traversing upward from the current working directory, ordered by the fewest `..` steps required.
-3. **User Configuration Scripts**: Paths beneath the resolved configuration directory (respects `ONESHOTMAN_CONFIG`), with shallower paths preferred.
-4. **Executable Scripts**: Directories relative to the one-shot-man executable, again ranked by proximity to the executable directory.
-5. **Other Scripts**: Any remaining locations.
+1. **Current Working Directory Tree (Class 0)**: Script directories located in the current working directory or its descendants. Direct children outrank deeper paths.
+2. **Ancestor Directories (Class 1)**: Script directories that require traversing upward from the current working directory, ordered by the fewest `..` steps required.
+3. **User Configuration Scripts (Class 2)**: Paths beneath the resolved configuration directory (respects `ONESHOTMAN_CONFIG`), with shallower paths preferred.
+4. **Executable Scripts (Class 3)**: Directories relative to the one-shot-man executable, again ranked by proximity to the executable directory.
+5. **Other Scripts (Class 4)**: Any remaining locations.
 
 Because every discovered path is normalized to an absolute location, duplicate entries (even when specified through different relative forms) are eliminated. When multiple git repositories are encountered, the script directories closest to the current working directory automatically outrank those that are further away.
 
@@ -198,6 +198,7 @@ prompt.color.selected yellow
 # Gray for descriptions
 prompt.color.description #808080
 ```
+
 
 ## Security Considerations
 

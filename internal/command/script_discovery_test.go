@@ -3,6 +3,7 @@ package command
 import (
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -134,32 +135,24 @@ func TestScriptDiscovery_GitRepositoryDetection(t *testing.T) {
 	cfg := config.NewConfig()
 	discovery := NewScriptDiscovery(cfg)
 
-	// Test in current directory (should be a git repo for this project)
-	cwd, _ := os.Getwd()
-
-	// Navigate to project root (we might be in a subdirectory)
-	projectRoot := cwd
-	for {
-		if discovery.isGitRepository(projectRoot) {
-			break
-		}
-		parent := filepath.Dir(projectRoot)
-		if parent == projectRoot {
-			// Reached filesystem root without finding git repo
-			t.Skip("Not running in a git repository, skipping git detection test")
-			return
-		}
-		projectRoot = parent
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("failed to create repo dir: %v", err)
 	}
 
-	if !discovery.isGitRepository(projectRoot) {
-		t.Errorf("Expected %s to be detected as git repository", projectRoot)
+	cmd := exec.Command("git", "init", "--quiet")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		t.Skipf("git init failed (%v), skipping git detection test", err)
 	}
 
-	// Test a definitely non-git directory
-	tmpDir := t.TempDir()
-	if discovery.isGitRepository(tmpDir) {
-		t.Errorf("Expected %s to not be detected as git repository", tmpDir)
+	if !discovery.isGitRepository(repoDir) {
+		t.Fatalf("expected %s to be detected as git repository", repoDir)
+	}
+
+	nonRepoDir := t.TempDir()
+	if discovery.isGitRepository(nonRepoDir) {
+		t.Errorf("expected %s to not be detected as git repository", nonRepoDir)
 	}
 }
 
@@ -227,6 +220,16 @@ func TestScriptDiscovery_PathPriority(t *testing.T) {
 			expected: pathScore{class: 0, distance: 0, depth: 0},
 		},
 		{
+			name:     "ancestor immediate",
+			path:     filepath.Join(filepath.Dir(cwd), "scripts"),
+			expected: pathScore{class: 1, distance: 1, depth: 1},
+		},
+		{
+			name:     "ancestor deep",
+			path:     filepath.Join(baseDir, "scripts"),
+			expected: pathScore{class: 1, distance: 2, depth: 1},
+		},
+		{
 			name:     "config",
 			path:     filepath.Join(configDir, "scripts"),
 			expected: pathScore{class: 2, distance: 1, depth: 1},
@@ -280,7 +283,9 @@ func TestScriptDiscovery_PathPriority(t *testing.T) {
 	}
 
 	requireLess("cwd exact", "cwd nested")
-	requireLess("cwd root", "config")
+	requireLess("cwd root", "ancestor immediate")
+	requireLess("ancestor immediate", "ancestor deep")
+	requireLess("ancestor deep", "config")
 	requireLess("config", "exec")
 	requireLess("cwd root", "other")
 }

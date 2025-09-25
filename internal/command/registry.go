@@ -28,9 +28,7 @@ func NewRegistryWithConfig(cfg *config.Config) *Registry {
 
 	// Discover and add script paths
 	discoveredPaths := registry.scriptDiscovery.DiscoverScriptPaths()
-	for _, path := range discoveredPaths {
-		registry.AddScriptPath(path)
-	}
+	registry.scriptPaths = append(registry.scriptPaths, discoveredPaths...)
 
 	return registry
 }

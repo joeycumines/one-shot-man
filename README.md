@@ -93,7 +93,7 @@ if [ -n "$BASH_VERSION" ]; then
       __osm_last_dir="$PWD"
     fi
   } && ! [[ "$PROMPT_COMMAND" =~ __osm_update_completion_on_cd ]]; then
-    if [ -n "$PROMPT_COMMAND" ]; then
+    if [ -z "$PROMPT_COMMAND" ]; then
       PROMPT_COMMAND="__osm_update_completion_on_cd"
     else
       PROMPT_COMMAND="${PROMPT_COMMAND}; __osm_update_completion_on_cd"

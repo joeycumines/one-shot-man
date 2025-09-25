@@ -105,26 +105,29 @@ Configuration options can be specified per command using section headers.
 
 ### Script Command Options
 
+The script command does not currently define any command-specific settings. This section is reserved for future enhancements.
+
 ```
 [script]
-# Command-specific options for the script command
-option_name value
+# Reserved for future script command options
 ```
 
 ### Code Review Command Options
 
+No dedicated configuration keys are available yet for the code review workflow. This section remains reserved for forthcoming options.
+
 ```
 [code-review]
-# Command-specific options for code review
-option_name value
+# Reserved for future code review options
 ```
 
 ### Prompt Flow Command Options
 
+Prompt flow currently relies on the global configuration. Command-specific options will be documented here when they become available.
+
 ```
 [prompt-flow]
-# Command-specific options for prompt flow
-option_name value
+# Reserved for future prompt flow options
 ```
 
 ## Script Path Discovery Rules

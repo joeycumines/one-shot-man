@@ -1,6 +1,7 @@
 package command
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -192,48 +193,96 @@ func TestScriptDiscovery_PathPriority(t *testing.T) {
 	cfg := config.NewConfig()
 	discovery := NewScriptDiscovery(cfg)
 
-	cwd, _ := os.Getwd()
+	baseDir := t.TempDir()
+	cwd := filepath.Join(baseDir, "workspace", "project")
+	configDir := filepath.Join(baseDir, "config")
+	execDir := filepath.Join(baseDir, "bin")
 
-	// Create test paths
-	cwdPath := filepath.Join(cwd, "scripts")
-
-	var userPath string
-	if homeDir, err := os.UserHomeDir(); err == nil {
-		userPath = filepath.Join(homeDir, ".one-shot-man", "scripts")
-	}
-
-	var execPath string
-	if execDir, err := os.Executable(); err == nil {
-		execPath = filepath.Join(filepath.Dir(execDir), "scripts")
-	}
-
-	otherPath := "/some/other/path/scripts"
-
-	// Test priorities (lower number = higher priority)
-	if userPath != "" {
-		cwdPriority := discovery.getPathPriority(cwdPath)
-		userPriority := discovery.getPathPriority(userPath)
-
-		if cwdPriority >= userPriority {
-			t.Errorf("Expected current directory path to have higher priority than user path, got cwd=%d user=%d", cwdPriority, userPriority)
+	for _, dir := range []string{cwd, configDir, execDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("failed to create test directory %q: %v", dir, err)
 		}
 	}
 
-	if execPath != "" {
-		cwdPriority := discovery.getPathPriority(cwdPath)
-		execPriority := discovery.getPathPriority(execPath)
+	type pathExpectation struct {
+		name     string
+		path     string
+		expected pathScore
+	}
 
-		if cwdPriority >= execPriority {
-			t.Errorf("Expected current directory path to have higher priority than exec path, got cwd=%d exec=%d", cwdPriority, execPriority)
+	cases := []pathExpectation{
+		{
+			name:     "cwd root",
+			path:     filepath.Join(cwd, "scripts"),
+			expected: pathScore{class: 0, distance: 1, depth: 1},
+		},
+		{
+			name:     "cwd nested",
+			path:     filepath.Join(cwd, "nested", "scripts"),
+			expected: pathScore{class: 0, distance: 2, depth: 2},
+		},
+		{
+			name:     "cwd exact",
+			path:     cwd,
+			expected: pathScore{class: 0, distance: 0, depth: 0},
+		},
+		{
+			name:     "config",
+			path:     filepath.Join(configDir, "scripts"),
+			expected: pathScore{class: 2, distance: 1, depth: 1},
+		},
+		{
+			name:     "exec",
+			path:     filepath.Join(execDir, "scripts"),
+			expected: pathScore{class: 3, distance: 1, depth: 1},
+		},
+		{
+			name:     "other",
+			path:     filepath.Join(baseDir, "other", "scripts"),
+			expected: pathScore{class: 4, distance: math.MaxInt, depth: math.MaxInt},
+		},
+	}
+
+	scores := make(map[string]pathScore)
+	paths := make(map[string]string)
+	for _, tc := range cases {
+		score := discovery.computePathScore(tc.path, cwd, configDir, execDir)
+		if score != tc.expected {
+			t.Errorf("%s: expected score %+v, got %+v", tc.name, tc.expected, score)
+		}
+		scores[tc.name] = score
+		paths[tc.name] = tc.path
+	}
+
+	less := func(aName, bName string) bool {
+		aPath := paths[aName]
+		bPath := paths[bName]
+
+		aScore := scores[aName]
+		bScore := scores[bName]
+
+		if aScore.class != bScore.class {
+			return aScore.class < bScore.class
+		}
+		if aScore.distance != bScore.distance {
+			return aScore.distance < bScore.distance
+		}
+		if aScore.depth != bScore.depth {
+			return aScore.depth < bScore.depth
+		}
+		return aPath < bPath
+	}
+
+	requireLess := func(higher, lower string) {
+		if !less(higher, lower) {
+			t.Fatalf("expected %s to outrank %s", higher, lower)
 		}
 	}
 
-	otherPriority := discovery.getPathPriority(otherPath)
-	cwdPriority := discovery.getPathPriority(cwdPath)
-
-	if cwdPriority >= otherPriority {
-		t.Errorf("Expected current directory path to have higher priority than other path, got cwd=%d other=%d", cwdPriority, otherPriority)
-	}
+	requireLess("cwd exact", "cwd nested")
+	requireLess("cwd root", "config")
+	requireLess("config", "exec")
+	requireLess("cwd root", "other")
 }
 
 func TestScriptDiscovery_ParsePathList(t *testing.T) {

@@ -53,6 +53,8 @@ When enabled, the following additional discovery mechanisms are activated:
 script.git-traversal true
 ```
 
+**Dependencies**: Requires the `git` executable to be available on `PATH`.
+
 **Security Note**: This option is disabled by default and requires `script.autodiscovery` to be enabled.
 
 #### `script.max-traversal-depth` (integer)
@@ -67,18 +69,19 @@ script.max-traversal-depth 5
 
 #### `script.paths` (path list)
 **Default**: (empty)  
-**Description**: Custom script paths to search, in addition to default locations. Supports colon (`:`) or comma (`,`) separation.
+**Description**: Custom script paths to search, in addition to default locations. Supports comma (`,`) separation and the platform list separator (`:` on Unix, `;` on Windows).
 
 ```
 script.paths ~/my-scripts:/opt/shared-scripts
 script.paths ~/scripts,/usr/local/scripts
+script.paths C:\scripts;$EXTRA_SCRIPTS   # Windows example
 ```
 
 **Path Expansion**: Supports tilde (`~`) expansion and environment variable expansion (`$VAR`).
 
 #### `script.path-patterns` (pattern list)
 **Default**: `scripts`  
-**Description**: Directory names to search for when performing autodiscovery. Supports colon (`:`) or comma (`,`) separation.
+**Description**: Directory names to search for when performing autodiscovery. Supports comma (`,`) separation and the platform list separator.
 
 ```
 script.path-patterns scripts,bin,commands
@@ -148,12 +151,13 @@ When `script.autodiscovery` is enabled:
 
 Scripts are resolved with the following priority (highest to lowest):
 
-1. **Current Directory Scripts**: Scripts in current working directory or subdirectories
-2. **User Configuration Scripts**: Scripts in `~/.one-shot-man/` directory tree
-3. **Executable Scripts**: Scripts relative to the one-shot-man executable
-4. **Other Scripts**: All other discovered script locations
+1. **Current Working Directory Tree**: Script directories located in the current working directory or its descendants. Direct children outrank deeper paths.
+2. **Ancestor Directories**: Script directories that require traversing upward from the current working directory, ordered by the fewest `..` steps required.
+3. **User Configuration Scripts**: Paths beneath the resolved configuration directory (respects `ONESHOTMAN_CONFIG`), with shallower paths preferred.
+4. **Executable Scripts**: Directories relative to the one-shot-man executable, again ranked by proximity to the executable directory.
+5. **Other Scripts**: Any remaining locations.
 
-**Git Repository Priority**: When multiple git repositories are found in the directory tree, the innermost (closest to current working directory) repository has highest priority.
+Because every discovered path is normalized to an absolute location, duplicate entries (even when specified through different relative forms) are eliminated. When multiple git repositories are encountered, the script directories closest to the current working directory automatically outrank those that are further away.
 
 ## TUI Color Configuration
 

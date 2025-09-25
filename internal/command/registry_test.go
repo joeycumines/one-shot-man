@@ -76,19 +76,35 @@ func TestScriptPathDuplication(t *testing.T) {
 	t.Setenv("ONESHOTMAN_CONFIG", configPath)
 
 	cfg := config.NewConfig()
-	cfg.SetGlobalOption("script.paths", scriptsDir)
+	cfg.SetGlobalOption("script.paths", strings.Join([]string{scriptsDir, "../custom-config/scripts"}, ","))
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to determine original working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+
+	if err := os.Chdir(configDir); err != nil {
+		t.Fatalf("Failed to change working directory: %v", err)
+	}
 
 	registry := NewRegistryWithConfig(cfg)
 
-	count := 0
+	counts := make(map[string]int)
 	for _, path := range registry.scriptPaths {
-		if path == scriptsDir {
-			count++
-		}
+		counts[path]++
 	}
 
-	if count != 1 {
+	if count := counts[scriptsDir]; count != 1 {
 		t.Errorf("Expected scripts directory %s to be deduplicated, found %d entries", scriptsDir, count)
+	}
+
+	for path, count := range counts {
+		if count > 1 {
+			t.Errorf("Expected no duplicate script paths, but %s appeared %d times", path, count)
+		}
 	}
 }
 

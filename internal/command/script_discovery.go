@@ -2,6 +2,7 @@ package command
 
 import (
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,35 +82,53 @@ func (sd *ScriptDiscovery) DiscoverScriptPaths() []string {
 	// Add legacy hardcoded paths for backward compatibility
 	legacyPaths := sd.getLegacyPaths()
 	for _, path := range legacyPaths {
-		if !seenPaths[path] {
-			paths = append(paths, path)
-			seenPaths[path] = true
-		}
+		sd.addPath(&paths, seenPaths, path)
 	}
 
 	// Add custom paths from configuration
 	for _, path := range sd.config.CustomPaths {
 		expandedPath := sd.expandPath(path)
-		if !seenPaths[expandedPath] {
-			paths = append(paths, expandedPath)
-			seenPaths[expandedPath] = true
-		}
+		sd.addPath(&paths, seenPaths, expandedPath)
 	}
 
 	// Add autodiscovered paths if enabled
 	if sd.config.EnableAutodiscovery {
 		autoPaths := sd.autodiscoverPaths()
 		for _, path := range autoPaths {
-			if !seenPaths[path] {
-				paths = append(paths, path)
-				seenPaths[path] = true
-			}
+			sd.addPath(&paths, seenPaths, path)
 		}
 	}
 
 	// Sort by priority: closer to CWD first, then user paths, then system paths
+	cwd, _ := os.Getwd()
+
+	var configDir string
+	if configPath, err := config.GetConfigPath(); err == nil {
+		configDir = filepath.Dir(configPath)
+	}
+
+	var execDir string
+	if execPath, err := os.Executable(); err == nil {
+		execDir = filepath.Dir(execPath)
+	}
+
 	sort.Slice(paths, func(i, j int) bool {
-		return sd.getPathPriority(paths[i]) < sd.getPathPriority(paths[j])
+		pi := sd.computePathScore(paths[i], cwd, configDir, execDir)
+		pj := sd.computePathScore(paths[j], cwd, configDir, execDir)
+
+		if pi.class != pj.class {
+			return pi.class < pj.class
+		}
+
+		if pi.distance != pj.distance {
+			return pi.distance < pj.distance
+		}
+
+		if pi.depth != pj.depth {
+			return pi.depth < pj.depth
+		}
+
+		return paths[i] < paths[j]
 	})
 
 	return paths
@@ -241,33 +260,125 @@ func (sd *ScriptDiscovery) expandPath(path string) string {
 	return os.ExpandEnv(path)
 }
 
-// getPathPriority returns priority value for sorting paths (lower = higher priority)
-func (sd *ScriptDiscovery) getPathPriority(path string) int {
-	cwd, _ := os.Getwd()
+func (sd *ScriptDiscovery) normalizePath(path string) (string, error) {
+	cleaned := filepath.Clean(path)
+	return filepath.Abs(cleaned)
+}
 
-	// Highest priority: paths in current directory or subdirectories
-	if strings.HasPrefix(path, cwd) {
-		return 1
+func (sd *ScriptDiscovery) addPath(paths *[]string, seenPaths map[string]bool, candidate string) {
+	if strings.TrimSpace(candidate) == "" {
+		return
 	}
 
-	// Medium priority: user config paths
-	if homeDir, err := os.UserHomeDir(); err == nil {
-		configDir := filepath.Join(homeDir, ".one-shot-man")
-		if strings.HasPrefix(path, configDir) {
-			return 2
+	normalized, err := sd.normalizePath(candidate)
+	if err != nil {
+		log.Printf("warning: skipping script path %q: %v", candidate, err)
+		return
+	}
+
+	if !seenPaths[normalized] {
+		*paths = append(*paths, normalized)
+		seenPaths[normalized] = true
+	}
+}
+
+type pathScore struct {
+	class    int
+	distance int
+	depth    int
+}
+
+func (sd *ScriptDiscovery) computePathScore(path, cwd, configDir, execDir string) pathScore {
+	score := pathScore{
+		class:    4,
+		distance: math.MaxInt,
+		depth:    math.MaxInt,
+	}
+
+	if cwd != "" {
+		if rel, err := filepath.Rel(cwd, path); err == nil {
+			rel = filepath.Clean(rel)
+
+			segments := splitPathSegments(rel)
+			upCount, downCount := countRelSegments(segments)
+
+			if rel == "." {
+				return pathScore{class: 0, distance: 0, depth: 0}
+			}
+
+			if upCount == 0 {
+				return pathScore{class: 0, distance: downCount, depth: downCount}
+			}
 		}
 	}
 
-	// Lower priority: system/executable paths
-	if execPath, err := os.Executable(); err == nil {
-		execDir := filepath.Dir(execPath)
-		if strings.HasPrefix(path, execDir) {
-			return 3
+	if hasDirPrefix(cwd, path) {
+		depth := pathDepthRelative(cwd, path)
+		if depth == 0 {
+			depth = 1
 		}
+		return pathScore{class: 1, distance: depth, depth: depth}
 	}
 
-	// Lowest priority: everything else
-	return 4
+	if hasDirPrefix(path, configDir) {
+		depth := pathDepthRelative(path, configDir)
+		return pathScore{class: 2, distance: depth, depth: depth}
+	}
+
+	if hasDirPrefix(path, execDir) {
+		depth := pathDepthRelative(path, execDir)
+		return pathScore{class: 3, distance: depth, depth: depth}
+	}
+
+	return score
+}
+
+func splitPathSegments(rel string) []string {
+	if rel == "" {
+		return nil
+	}
+	return strings.Split(rel, string(os.PathSeparator))
+}
+
+func countRelSegments(segments []string) (upCount, downCount int) {
+	for _, segment := range segments {
+		switch segment {
+		case "", ".":
+			continue
+		case "..":
+			upCount++
+		default:
+			downCount++
+		}
+	}
+	return
+}
+
+func hasDirPrefix(path, dir string) bool {
+	if dir == "" {
+		return false
+	}
+	if path == dir {
+		return true
+	}
+	separator := string(os.PathSeparator)
+	if strings.HasSuffix(dir, separator) {
+		dir = strings.TrimSuffix(dir, separator)
+	}
+	return strings.HasPrefix(path, dir+separator)
+}
+
+func pathDepthRelative(path, base string) int {
+	if base == "" {
+		return 0
+	}
+	rel, err := filepath.Rel(base, path)
+	if err != nil {
+		return 0
+	}
+	rel = filepath.Clean(rel)
+	_, down := countRelSegments(splitPathSegments(rel))
+	return down
 }
 
 // parsePositiveInt parses a string as a positive integer within the given range.

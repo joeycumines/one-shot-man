@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/config"
 )
 
 // TestCommand implements Command interface for testing
@@ -24,7 +26,8 @@ func (c *TestCommand) Execute(args []string, stdout, stderr io.Writer) error {
 }
 
 func TestRegistry(t *testing.T) {
-	registry := NewRegistry()
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
 
 	// Test registering built-in command
 	testCmd := NewTestCommand("test", "Test command", "test [options]")
@@ -61,14 +64,47 @@ func TestRegistry(t *testing.T) {
 }
 
 func TestScriptPathDuplication(t *testing.T) {
-	registry := NewRegistry()
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "custom-config")
+	scriptsDir := filepath.Join(configDir, "scripts")
 
-	// Add same path twice
-	registry.AddScriptPath("/test/path")
-	registry.AddScriptPath("/test/path")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		t.Fatalf("Failed to create scripts directory: %v", err)
+	}
 
-	if len(registry.scriptPaths) != 1 {
-		t.Errorf("Expected 1 script path, got %d", len(registry.scriptPaths))
+	configPath := filepath.Join(configDir, "config")
+	t.Setenv("ONESHOTMAN_CONFIG", configPath)
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("script.paths", strings.Join([]string{scriptsDir, "../custom-config/scripts"}, ","))
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to determine original working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalDir)
+	})
+
+	if err := os.Chdir(configDir); err != nil {
+		t.Fatalf("Failed to change working directory: %v", err)
+	}
+
+	registry := NewRegistryWithConfig(cfg)
+
+	counts := make(map[string]int)
+	for _, path := range registry.scriptPaths {
+		counts[path]++
+	}
+
+	if count := counts[scriptsDir]; count != 1 {
+		t.Errorf("Expected scripts directory %s to be deduplicated, found %d entries", scriptsDir, count)
+	}
+
+	for path, count := range counts {
+		if count > 1 {
+			t.Errorf("Expected no duplicate script paths, but %s appeared %d times", path, count)
+		}
 	}
 }
 

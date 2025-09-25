@@ -37,3 +37,6 @@ go.work.sum
 
 # Makefile user configuration
 /config.mk
+
+# Test artifacts and temporary files
+test-scripts/

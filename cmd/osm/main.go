@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/joeycumines/one-shot-man/internal/command"
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -27,26 +26,8 @@ func run() error {
 		cfg = config.NewConfig()
 	}
 
-	// Create command registry
-	registry := command.NewRegistry()
-
-	// Add script paths
-	execPath, err := os.Executable()
-	if err == nil {
-		execDir := filepath.Dir(execPath)
-		registry.AddScriptPath(filepath.Join(execDir, "scripts"))
-	}
-
-	// Add user script path
-	if configPath, err := config.GetConfigPath(); err == nil {
-		configDir := filepath.Dir(configPath)
-		registry.AddScriptPath(filepath.Join(configDir, "scripts"))
-	}
-
-	// Add current directory scripts
-	if cwd, err := os.Getwd(); err == nil {
-		registry.AddScriptPath(filepath.Join(cwd, "scripts"))
-	}
+	// Create command registry with configuration
+	registry := command.NewRegistryWithConfig(cfg)
 
 	// Register built-in commands
 	helpCmd := command.NewHelpCommand(registry)

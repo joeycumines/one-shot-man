@@ -362,9 +362,7 @@ func hasDirPrefix(path, dir string) bool {
 		return true
 	}
 	separator := string(os.PathSeparator)
-	if strings.HasSuffix(dir, separator) {
-		dir = strings.TrimSuffix(dir, separator)
-	}
+	dir = strings.TrimSuffix(dir, separator)
 	return strings.HasPrefix(path, dir+separator)
 }
 

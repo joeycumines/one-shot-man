@@ -66,7 +66,7 @@ func TestScriptDiscovery_LegacyPaths(t *testing.T) {
 	found := false
 	cwd, _ := os.Getwd()
 	expectedPath := filepath.Join(cwd, "scripts")
-	
+
 	for _, path := range paths {
 		if path == expectedPath {
 			found = true
@@ -76,6 +76,34 @@ func TestScriptDiscovery_LegacyPaths(t *testing.T) {
 
 	if !found {
 		t.Errorf("Expected to find current directory scripts path %s in legacy paths %v", expectedPath, paths)
+	}
+}
+
+func TestScriptDiscovery_LegacyPathsRespectsConfigEnv(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "custom", "config")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatalf("Failed to create config directory: %v", err)
+	}
+
+	t.Setenv("ONESHOTMAN_CONFIG", configPath)
+
+	cfg := config.NewConfig()
+	discovery := NewScriptDiscovery(cfg)
+
+	paths := discovery.getLegacyPaths()
+	expected := filepath.Join(filepath.Dir(configPath), "scripts")
+
+	found := false
+	for _, path := range paths {
+		if path == expected {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("Expected legacy paths to include %s when ONESHOTMAN_CONFIG is set, got %v", expected, paths)
 	}
 }
 
@@ -107,7 +135,7 @@ func TestScriptDiscovery_GitRepositoryDetection(t *testing.T) {
 
 	// Test in current directory (should be a git repo for this project)
 	cwd, _ := os.Getwd()
-	
+
 	// Navigate to project root (we might be in a subdirectory)
 	projectRoot := cwd
 	for {
@@ -165,27 +193,27 @@ func TestScriptDiscovery_PathPriority(t *testing.T) {
 	discovery := NewScriptDiscovery(cfg)
 
 	cwd, _ := os.Getwd()
-	
+
 	// Create test paths
 	cwdPath := filepath.Join(cwd, "scripts")
-	
+
 	var userPath string
 	if homeDir, err := os.UserHomeDir(); err == nil {
 		userPath = filepath.Join(homeDir, ".one-shot-man", "scripts")
 	}
-	
+
 	var execPath string
 	if execDir, err := os.Executable(); err == nil {
 		execPath = filepath.Join(filepath.Dir(execDir), "scripts")
 	}
-	
+
 	otherPath := "/some/other/path/scripts"
 
 	// Test priorities (lower number = higher priority)
 	if userPath != "" {
 		cwdPriority := discovery.getPathPriority(cwdPath)
 		userPriority := discovery.getPathPriority(userPath)
-		
+
 		if cwdPriority >= userPriority {
 			t.Errorf("Expected current directory path to have higher priority than user path, got cwd=%d user=%d", cwdPriority, userPriority)
 		}
@@ -194,7 +222,7 @@ func TestScriptDiscovery_PathPriority(t *testing.T) {
 	if execPath != "" {
 		cwdPriority := discovery.getPathPriority(cwdPath)
 		execPriority := discovery.getPathPriority(execPath)
-		
+
 		if cwdPriority >= execPriority {
 			t.Errorf("Expected current directory path to have higher priority than exec path, got cwd=%d exec=%d", cwdPriority, execPriority)
 		}
@@ -202,13 +230,14 @@ func TestScriptDiscovery_PathPriority(t *testing.T) {
 
 	otherPriority := discovery.getPathPriority(otherPath)
 	cwdPriority := discovery.getPathPriority(cwdPath)
-	
+
 	if cwdPriority >= otherPriority {
 		t.Errorf("Expected current directory path to have higher priority than other path, got cwd=%d other=%d", cwdPriority, otherPriority)
 	}
 }
 
 func TestScriptDiscovery_ParsePathList(t *testing.T) {
+	sep := string([]byte{filepath.ListSeparator})
 	tests := []struct {
 		input    string
 		expected []string
@@ -221,6 +250,7 @@ func TestScriptDiscovery_ParsePathList(t *testing.T) {
 		{"path1:path2:path3", []string{"path1", "path2", "path3"}},
 		{" path1 : path2 ", []string{"path1", "path2"}},
 		{" path1 , path2 ", []string{"path1", "path2"}},
+		{"path1" + sep + "path2,path3", []string{"path1", "path2", "path3"}},
 	}
 
 	for _, test := range tests {
@@ -229,7 +259,7 @@ func TestScriptDiscovery_ParsePathList(t *testing.T) {
 			t.Errorf("parsePathList(%q): expected %d paths, got %d", test.input, len(test.expected), len(result))
 			continue
 		}
-		
+
 		for i, expected := range test.expected {
 			if result[i] != expected {
 				t.Errorf("parsePathList(%q): expected path[%d]=%q, got %q", test.input, i, expected, result[i])
@@ -242,21 +272,23 @@ func TestScriptDiscovery_ParsePositiveInt(t *testing.T) {
 	tests := []struct {
 		input    string
 		def      int
+		max      int
 		expected int
 	}{
-		{"", 10, 10},
-		{"0", 10, 10},
-		{"-1", 10, 10},
-		{"5", 10, 5},
-		{"123", 10, 123},
-		{"abc", 10, 10},
-		{"12abc", 10, 10},
+		{"", 10, 100, 10},
+		{"0", 10, 100, 10},
+		{"-1", 10, 100, 10},
+		{"5", 10, 100, 5},
+		{"123", 10, 100, 10},
+		{"123", 10, 0, 123},
+		{"abc", 10, 100, 10},
+		{"12abc", 10, 100, 10},
 	}
 
 	for _, test := range tests {
-		result := parsePositiveInt(test.input, test.def)
+		result := parsePositiveInt(test.input, test.def, test.max)
 		if result != test.expected {
-			t.Errorf("parsePositiveInt(%q, %d): expected %d, got %d", test.input, test.def, test.expected, result)
+			t.Errorf("parsePositiveInt(%q, %d, %d): expected %d, got %d", test.input, test.def, test.max, test.expected, result)
 		}
 	}
 }
@@ -289,34 +321,34 @@ func TestNewRegistryWithConfig_Integration(t *testing.T) {
 func TestScriptDiscovery_AutodiscoveryIntegration(t *testing.T) {
 	// Create a temporary directory structure for testing
 	tmpDir := t.TempDir()
-	
+
 	// Create nested directory with scripts
 	scriptsDir := filepath.Join(tmpDir, "project", "scripts")
 	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
 		t.Fatalf("Failed to create test directory: %v", err)
 	}
-	
+
 	// Create a test script
 	testScript := filepath.Join(scriptsDir, "testscript")
 	if err := os.WriteFile(testScript, []byte("#!/bin/bash\necho test"), 0755); err != nil {
 		t.Fatalf("Failed to create test script: %v", err)
 	}
-	
+
 	// Change to the project directory
 	projectDir := filepath.Join(tmpDir, "project")
 	originalDir, _ := os.Getwd()
 	defer os.Chdir(originalDir)
-	
+
 	if err := os.Chdir(projectDir); err != nil {
 		t.Fatalf("Failed to change directory: %v", err)
 	}
-	
+
 	// Test with autodiscovery enabled
 	cfg := config.NewConfig()
 	cfg.SetGlobalOption("script.autodiscovery", "true")
-	
+
 	registry := NewRegistryWithConfig(cfg)
-	
+
 	// Should find the test script
 	scriptCommands := registry.ListScript()
 	found := false
@@ -326,7 +358,7 @@ func TestScriptDiscovery_AutodiscoveryIntegration(t *testing.T) {
 			break
 		}
 	}
-	
+
 	if !found {
 		t.Errorf("Expected to find testscript in discovered scripts, got: %v", scriptCommands)
 	}

@@ -1,10 +1,12 @@
 package command
 
 import (
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -51,7 +53,7 @@ func NewScriptDiscovery(cfg *config.Config) *ScriptDiscovery {
 	}
 
 	if val, exists := cfg.GetGlobalOption("script.max-traversal-depth"); exists {
-		if depth := parsePositiveInt(val, 10); depth > 0 {
+		if depth := parsePositiveInt(val, 10, 100); depth > 0 {
 			discoveryConfig.MaxTraversalDepth = depth
 		}
 	}
@@ -124,9 +126,9 @@ func (sd *ScriptDiscovery) getLegacyPaths() []string {
 	}
 
 	// 2. ~/.one-shot-man/scripts/ (user scripts)
-	if homeDir, err := os.UserHomeDir(); err == nil {
-		userScriptsPath := filepath.Join(homeDir, ".one-shot-man", "scripts")
-		paths = append(paths, userScriptsPath)
+	if configPath, err := config.GetConfigPath(); err == nil {
+		configDir := filepath.Dir(configPath)
+		paths = append(paths, filepath.Join(configDir, "scripts"))
 	}
 
 	// 3. ./scripts/ (current directory scripts)
@@ -242,7 +244,7 @@ func (sd *ScriptDiscovery) expandPath(path string) string {
 // getPathPriority returns priority value for sorting paths (lower = higher priority)
 func (sd *ScriptDiscovery) getPathPriority(path string) int {
 	cwd, _ := os.Getwd()
-	
+
 	// Highest priority: paths in current directory or subdirectories
 	if strings.HasPrefix(path, cwd) {
 		return 1
@@ -268,25 +270,29 @@ func (sd *ScriptDiscovery) getPathPriority(path string) int {
 	return 4
 }
 
-// parsePositiveInt parses a string as a positive integer with a default value
-func parsePositiveInt(s string, defaultVal int) int {
-	if n := parseInt(s); n > 0 {
-		return n
+// parsePositiveInt parses a string as a positive integer within the given range.
+// Values outside the range or invalid inputs result in the default value being returned.
+func parsePositiveInt(s string, defaultVal, max int) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return defaultVal
 	}
-	return defaultVal
-}
 
-// parseInt parses a string as an integer, returning 0 on error
-func parseInt(s string) int {
-	n := 0
-	for _, r := range s {
-		if r >= '0' && r <= '9' {
-			n = n*10 + int(r-'0')
-		} else {
-			return 0
-		}
+	value, err := strconv.Atoi(s)
+	if err != nil {
+		log.Printf("warning: invalid positive integer %q: %v", s, err)
+		return defaultVal
 	}
-	return n
+
+	if value < 1 {
+		return defaultVal
+	}
+
+	if max > 0 && value > max {
+		return defaultVal
+	}
+
+	return value
 }
 
 // parsePathList parses a colon or comma-separated list of paths
@@ -296,21 +302,25 @@ func parsePathList(s string) []string {
 		return nil
 	}
 
-	var paths []string
-	var separators = []string{":", ","}
-	
-	for _, sep := range separators {
-		if strings.Contains(s, sep) {
-			parts := strings.Split(s, sep)
-			for _, part := range parts {
-				if trimmed := strings.TrimSpace(part); trimmed != "" {
-					paths = append(paths, trimmed)
-				}
-			}
-			return paths
+	splitter := func(r rune) bool {
+		return r == ',' || r == rune(filepath.ListSeparator)
+	}
+
+	parts := strings.FieldsFunc(s, splitter)
+	if len(parts) == 0 {
+		return nil
+	}
+
+	paths := parts[:0]
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			paths = append(paths, trimmed)
 		}
 	}
 
-	// Single path
-	return []string{s}
+	if len(paths) == 0 {
+		return nil
+	}
+
+	return paths
 }

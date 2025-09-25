@@ -64,25 +64,31 @@ func TestRegistry(t *testing.T) {
 }
 
 func TestScriptPathDuplication(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "custom-config")
+	scriptsDir := filepath.Join(configDir, "scripts")
+
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		t.Fatalf("Failed to create scripts directory: %v", err)
+	}
+
+	configPath := filepath.Join(configDir, "config")
+	t.Setenv("ONESHOTMAN_CONFIG", configPath)
+
 	cfg := config.NewConfig()
+	cfg.SetGlobalOption("script.paths", scriptsDir)
+
 	registry := NewRegistryWithConfig(cfg)
 
-	// Add same path twice
-	registry.AddScriptPath("/test/path")
-	registry.AddScriptPath("/test/path")
+	count := 0
+	for _, path := range registry.scriptPaths {
+		if path == scriptsDir {
+			count++
+		}
+	}
 
-	if len(registry.scriptPaths) <= 1 {
-		// With configuration-based discovery, we might have more paths than just 1
-		// Check that the specific path isn't duplicated
-		count := 0
-		for _, path := range registry.scriptPaths {
-			if path == "/test/path" {
-				count++
-			}
-		}
-		if count != 1 {
-			t.Errorf("Expected '/test/path' to appear exactly once, found %d times", count)
-		}
+	if count != 1 {
+		t.Errorf("Expected scripts directory %s to be deduplicated, found %d entries", scriptsDir, count)
 	}
 }
 

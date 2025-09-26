@@ -46,11 +46,13 @@ func NewScriptDiscovery(cfg *config.Config) *ScriptDiscovery {
 
 	// Load configuration options
 	if val, exists := cfg.GetGlobalOption("script.autodiscovery"); exists {
-		discoveryConfig.EnableAutodiscovery = strings.ToLower(val) == "true"
+		result, _ := strconv.ParseBool(val)
+		discoveryConfig.EnableAutodiscovery = result
 	}
 
 	if val, exists := cfg.GetGlobalOption("script.git-traversal"); exists {
-		discoveryConfig.EnableGitTraversal = strings.ToLower(val) == "true"
+		result, _ := strconv.ParseBool(val)
+		discoveryConfig.EnableGitTraversal = result
 	}
 
 	if val, exists := cfg.GetGlobalOption("script.max-traversal-depth"); exists {

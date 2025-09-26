@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -87,5 +88,94 @@ pager less`
 
 	if value, ok := config.GetCommandOption("help", "pager"); !ok || value != "less" {
 		t.Errorf("Expected help.pager=less, got %s (exists: %v)", value, ok)
+	}
+}
+
+func TestSetGlobalAndCommandOptions(t *testing.T) {
+	cfg := NewConfig()
+
+	cfg.SetGlobalOption("color", "auto")
+	if got, ok := cfg.GetGlobalOption("color"); !ok || got != "auto" {
+		t.Fatalf("expected global option color=auto, got %q exists=%v", got, ok)
+	}
+
+	cfg.SetCommandOption("script", "timeout", "30s")
+	if got, ok := cfg.GetCommandOption("script", "timeout"); !ok || got != "30s" {
+		t.Fatalf("expected command option script.timeout=30s, got %q exists=%v", got, ok)
+	}
+
+	// ensure command-specific values take precedence over globals
+	cfg.SetGlobalOption("timeout", "10s")
+	if got, ok := cfg.GetCommandOption("script", "timeout"); !ok || got != "30s" {
+		t.Fatalf("expected command option script.timeout to shadow global, got %q exists=%v", got, ok)
+	}
+}
+
+func TestLoadFromPathMissing(t *testing.T) {
+	path := t.TempDir() + "/missing-config"
+
+	cfg, err := LoadFromPath(path)
+	if err != nil {
+		t.Fatalf("expected no error loading missing config, got %v", err)
+	}
+
+	if len(cfg.Global) != 0 || len(cfg.Commands) != 0 {
+		t.Fatalf("expected empty config for missing file, got %+v", cfg)
+	}
+}
+
+func TestLoadFromPathExisting(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/config"
+	contents := "verbose true\n[help]\npager less"
+	if err := os.WriteFile(path, []byte(contents), 0600); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	cfg, err := LoadFromPath(path)
+	if err != nil {
+		t.Fatalf("expected load success, got %v", err)
+	}
+
+	if got, ok := cfg.GetGlobalOption("verbose"); !ok || got != "true" {
+		t.Fatalf("expected verbose global option, got %q exists=%v", got, ok)
+	}
+
+	if got, ok := cfg.GetCommandOption("help", "pager"); !ok || got != "less" {
+		t.Fatalf("expected help pager option, got %q exists=%v", got, ok)
+	}
+}
+
+func TestLoadUsesConfigPathEnv(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/config"
+	if err := os.WriteFile(path, []byte("color auto"), 0600); err != nil {
+		t.Fatalf("failed to write config file: %v", err)
+	}
+
+	t.Setenv("ONESHOTMAN_CONFIG", path)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("expected load success, got %v", err)
+	}
+
+	if got, ok := cfg.GetGlobalOption("color"); !ok || got != "auto" {
+		t.Fatalf("expected color option from env-config, got %q exists=%v", got, ok)
+	}
+}
+
+func TestLoadNoFileReturnsEmptyConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/config"
+	t.Setenv("ONESHOTMAN_CONFIG", path)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("expected load success, got %v", err)
+	}
+
+	if len(cfg.Global) != 0 || len(cfg.Commands) != 0 {
+		t.Fatalf("expected empty config when file missing, got %+v", cfg)
 	}
 }

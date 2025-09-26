@@ -16,10 +16,16 @@ import (
 // ScriptingCommand provides JavaScript scripting capabilities.
 type ScriptingCommand struct {
 	*BaseCommand
-	interactive bool
-	script      string
-	testMode    bool
-	config      *config.Config
+	interactive     bool
+	script          string
+	testMode        bool
+	config          *config.Config
+	engineFactory   func(context.Context, io.Writer, io.Writer) (*scripting.Engine, error)
+	terminalFactory func(context.Context, *scripting.Engine) terminalRunner
+}
+
+type terminalRunner interface {
+	Run()
 }
 
 // NewScriptingCommand creates a new scripting command.
@@ -31,6 +37,12 @@ func NewScriptingCommand(cfg *config.Config) *ScriptingCommand {
 			"script [options] [script-file]",
 		),
 		config: cfg,
+		engineFactory: func(ctx context.Context, stdout, stderr io.Writer) (*scripting.Engine, error) {
+			return scripting.NewEngine(ctx, stdout, stderr)
+		},
+		terminalFactory: func(ctx context.Context, engine *scripting.Engine) terminalRunner {
+			return scripting.NewTerminal(ctx, engine)
+		},
 	}
 }
 
@@ -48,7 +60,14 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	ctx := context.Background()
 
 	// Create scripting engine
-	engine, err := scripting.NewEngine(ctx, stdout, stderr)
+	engineFactory := c.engineFactory
+	if engineFactory == nil {
+		engineFactory = func(ctx context.Context, stdout, stderr io.Writer) (*scripting.Engine, error) {
+			return scripting.NewEngine(ctx, stdout, stderr)
+		}
+	}
+
+	engine, err := engineFactory(ctx, stdout, stderr)
 	if err != nil {
 		return fmt.Errorf("failed to create scripting engine: %w", err)
 	}
@@ -121,7 +140,13 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 				engine.GetTUIManager().SetDefaultColorsFromStrings(colorMap)
 			}
 		}
-		terminal := scripting.NewTerminal(ctx, engine)
+		terminalFactory := c.terminalFactory
+		if terminalFactory == nil {
+			terminalFactory = func(ctx context.Context, engine *scripting.Engine) terminalRunner {
+				return scripting.NewTerminal(ctx, engine)
+			}
+		}
+		terminal := terminalFactory(ctx, engine)
 		terminal.Run()
 		return nil
 	}

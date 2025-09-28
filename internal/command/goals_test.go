@@ -53,6 +53,7 @@ func TestGoalsCommand_ListGoals(t *testing.T) {
 		"comment-stripper",
 		"doc-generator",
 		"test-generator",
+		"commit-message-generator",
 	}
 
 	for _, goal := range expectedGoals {
@@ -66,6 +67,7 @@ func TestGoalsCommand_ListGoals(t *testing.T) {
 		"Code Refactoring:",
 		"Documentation:",
 		"Testing:",
+		"Git Workflow:",
 	}
 
 	for _, category := range expectedCategories {
@@ -139,7 +141,7 @@ func TestGoalsCommand_GetAvailableGoals(t *testing.T) {
 		goalNames[goal.Name] = true
 	}
 
-	expectedGoals := []string{"comment-stripper", "doc-generator", "test-generator"}
+	expectedGoals := []string{"comment-stripper", "doc-generator", "test-generator", "commit-message-generator"}
 	for _, expected := range expectedGoals {
 		if !goalNames[expected] {
 			t.Errorf("Expected goal %q to be available", expected)
@@ -161,11 +163,16 @@ func TestGoalsCommand_EmbeddedScripts(t *testing.T) {
 		t.Error("Expected testGeneratorGoal to be non-empty")
 	}
 
+	if len(commitMessageGeneratorGoal) == 0 {
+		t.Error("Expected commitMessageGeneratorGoal to be non-empty")
+	}
+
 	// Test script structure - should contain expected patterns
 	scripts := map[string]string{
-		"comment-stripper": commentStripperGoal,
-		"doc-generator":    docGeneratorGoal,
-		"test-generator":   testGeneratorGoal,
+		"comment-stripper":          commentStripperGoal,
+		"doc-generator":             docGeneratorGoal,
+		"test-generator":            testGeneratorGoal,
+		"commit-message-generator":  commitMessageGeneratorGoal,
 	}
 
 	for name, script := range scripts {

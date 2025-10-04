@@ -19,16 +19,16 @@ import (
 
 // Embedded goal scripts
 //
-//go:embed goals/comment_stripper.js
+//go:embed goal/comment_stripper.js
 var commentStripperGoal string
 
-//go:embed goals/doc_generator.js
+//go:embed goal/doc_generator.js
 var docGeneratorGoal string
 
-//go:embed goals/test_generator.js
+//go:embed goal/test_generator.js
 var testGeneratorGoal string
 
-//go:embed goals/commit_message.js
+//go:embed goal/commit_message.js
 var commitMessageGoal string
 
 // Goal represents a pre-written goal with metadata
@@ -41,8 +41,8 @@ type Goal struct {
 	FileName    string
 }
 
-// GoalsCommand provides access to pre-written goals
-type GoalsCommand struct {
+// GoalCommand provides access to pre-written goals
+type GoalCommand struct {
 	*BaseCommand
 	interactive bool
 	list        bool
@@ -54,28 +54,28 @@ type GoalsCommand struct {
 	testMode bool
 }
 
-// NewGoalsCommand creates a new goals command
-func NewGoalsCommand(cfg *config.Config) *GoalsCommand {
-	return &GoalsCommand{
+// NewGoalCommand creates a new goal command
+func NewGoalCommand(cfg *config.Config) *GoalCommand {
+	return &GoalCommand{
 		BaseCommand: &BaseCommand{
-			name:        "goals",
+			name:        "goal",
 			description: "Access pre-written goals for common development tasks",
-			usage:       "goals [options] [goal-name]",
+			usage:       "goal [options] [goal-name]",
 		},
 		config: cfg,
 	}
 }
 
-// SetupFlags configures the flags for the goals command
-func (c *GoalsCommand) SetupFlags(fs *flag.FlagSet) {
+// SetupFlags configures the flags for the goal command
+func (c *GoalCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.interactive, "i", false, "Run goal in interactive mode")
 	fs.BoolVar(&c.list, "l", false, "List available goals")
 	fs.StringVar(&c.category, "c", "", "Filter goals by category")
 	fs.StringVar(&c.run, "r", "", "Run specific goal directly")
 }
 
-// Execute runs the goals command
-func (c *GoalsCommand) Execute(args []string, stdout, stderr io.Writer) error {
+// Execute runs the goal command
+func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	goals := c.getAvailableGoals()
 
 	if c.list {
@@ -110,7 +110,7 @@ func (c *GoalsCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		}
 	}
 	if selectedGoal == nil {
-		_, _ = fmt.Fprintf(stderr, "Goal '%s' not found. Use 'osm goals -l' to list available goals.\n", goalName)
+		_, _ = fmt.Fprintf(stderr, "Goal '%s' not found. Use 'osm goal -l' to list available goals.\n", goalName)
 		return fmt.Errorf("goal not found: %s", goalName)
 	}
 
@@ -129,7 +129,7 @@ func (c *GoalsCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	// Create a script object for the goal
 	script := &scripting.Script{
 		Name:        selectedGoal.Name,
-		Path:        filepath.Join("goals", selectedGoal.FileName),
+		Path:        filepath.Join("goal", selectedGoal.FileName),
 		Content:     selectedGoal.Script,
 		Description: selectedGoal.Description,
 	}
@@ -169,7 +169,7 @@ func (c *GoalsCommand) Execute(args []string, stdout, stderr io.Writer) error {
 }
 
 // getAvailableGoals returns all available pre-written goals
-func (c *GoalsCommand) getAvailableGoals() []Goal {
+func (c *GoalCommand) getAvailableGoals() []Goal {
 	return []Goal{
 		{
 			Name:        "comment-stripper",
@@ -207,7 +207,7 @@ func (c *GoalsCommand) getAvailableGoals() []Goal {
 }
 
 // listGoals displays available goals
-func (c *GoalsCommand) listGoals(goals []Goal, stdout io.Writer) error {
+func (c *GoalCommand) listGoals(goals []Goal, stdout io.Writer) error {
 	filteredGoals := goals
 	if c.category != "" {
 		filteredGoals = []Goal{}
@@ -251,10 +251,9 @@ func (c *GoalsCommand) listGoals(goals []Goal, stdout io.Writer) error {
 	}
 
 	_, _ = fmt.Fprintf(stdout, "Usage:\n")
-	_, _ = fmt.Fprintf(stdout, "  osm goals <goal-name>           Run a goal interactively\n")
-	_, _ = fmt.Fprintf(stdout, "  osm goals -r <goal-name>        Run a goal directly\n")
-	_, _ = fmt.Fprintf(stdout, "  osm goals -c <category>         List goals by category\n")
-	_, _ = fmt.Fprintf(stdout, "  osm script goals/<goal>.js      Run goal as regular script\n")
+	_, _ = fmt.Fprintf(stdout, "  osm goal <goal-name>           Run a goal interactively\n")
+	_, _ = fmt.Fprintf(stdout, "  osm goal -r <goal-name>        Run a goal directly\n")
+	_, _ = fmt.Fprintf(stdout, "  osm goal -c <category>         List goals by category\n")
 
 	return nil
 }

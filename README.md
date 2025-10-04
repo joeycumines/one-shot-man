@@ -53,9 +53,9 @@ osm config --all
 # Start interactive scripting terminal (TUI)
 osm script -i
 # List available pre-written goals
-osm goals -l
+osm goal -l
 # Run a specific goal
-osm goals comment-stripper
+osm goal comment-stripper
 ```
 
 -----
@@ -393,22 +393,29 @@ Switch to a mode to execute JavaScript code
 - `completion` - Generate shell completion scripts for bash, zsh, fish, and PowerShell.
 - `goals` - Access pre-written goals for common development tasks.
 
-### Goals Command
+- `config` - Manage configuration (init, get, set, list, location).
+- `prompt-flow` - Interactive prompt builder: goal/context/template -> generate -> assemble.
+- `code-review` - Run code reviews using AI prompt flows with git integration.
+- `script` - Execute custom JavaScript scripts with access to a powerful TUI API.
+- `goal` - Access pre-written goals for common development tasks.
+- `completion` - Generate shell completion scripts.
 
-The `goals` command provides access to pre-written, production-ready goals for common development tasks. These goals come with comprehensive prompts and can be used standalone or integrated with other commands.
+### Goal Command
+
+The `goal` command provides access to pre-written, production-ready goals for common development tasks. These goals come with comprehensive prompts and can be used standalone or integrated with other commands.
 
 ```sh
 # List available goals
-osm goals -l
+osm goal -l
 
 # List goals by category
-osm goals -c testing
+osm goal -c testing
 
 # Run a goal interactively
-osm goals comment-stripper
+osm goal comment-stripper
 
 # Run a goal directly (non-interactive)
-osm goals -r doc-generator
+osm goal -r doc-generator
 ```
 
 **Available Goals:**

@@ -39,7 +39,7 @@ func run() error {
 	registry.Register(command.NewPromptFlowCommand(cfg))
 	registry.Register(command.NewCodeReviewCommand(cfg))
 	registry.Register(command.NewCompletionCommand(registry))
-	registry.Register(command.NewGoalsCommand(cfg))
+	registry.Register(command.NewGoalCommand(cfg))
 
 	// Parse global flags and command
 	if len(os.Args) < 2 {

@@ -8,35 +8,35 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/config"
 )
 
-func TestGoalsCommand_Name(t *testing.T) {
+func TestGoalCommand_Name(t *testing.T) {
 	cfg := config.NewConfig()
-	cmd := NewGoalsCommand(cfg)
-	if cmd.Name() != "goals" {
-		t.Errorf("Expected name 'goals', got %s", cmd.Name())
+	cmd := NewGoalCommand(cfg)
+	if cmd.Name() != "goal" {
+		t.Errorf("Expected name 'goal', got %s", cmd.Name())
 	}
 }
 
-func TestGoalsCommand_Description(t *testing.T) {
+func TestGoalCommand_Description(t *testing.T) {
 	cfg := config.NewConfig()
-	cmd := NewGoalsCommand(cfg)
+	cmd := NewGoalCommand(cfg)
 	expected := "Access pre-written goals for common development tasks"
 	if cmd.Description() != expected {
 		t.Errorf("Expected description %q, got %q", expected, cmd.Description())
 	}
 }
 
-func TestGoalsCommand_Usage(t *testing.T) {
+func TestGoalCommand_Usage(t *testing.T) {
 	cfg := config.NewConfig()
-	cmd := NewGoalsCommand(cfg)
-	expected := "goals [options] [goal-name]"
+	cmd := NewGoalCommand(cfg)
+	expected := "goal [options] [goal-name]"
 	if cmd.Usage() != expected {
 		t.Errorf("Expected usage %q, got %q", expected, cmd.Usage())
 	}
 }
 
-func TestGoalsCommand_ListGoals(t *testing.T) {
+func TestGoalCommand_ListGoals(t *testing.T) {
 	cfg := config.NewConfig()
-	cmd := NewGoalsCommand(cfg)
+	cmd := NewGoalCommand(cfg)
 
 	var stdout, stderr bytes.Buffer
 	cmd.list = true
@@ -53,6 +53,7 @@ func TestGoalsCommand_ListGoals(t *testing.T) {
 		"comment-stripper",
 		"doc-generator",
 		"test-generator",
+		"commit-message",
 	}
 
 	for _, goal := range expectedGoals {
@@ -66,6 +67,7 @@ func TestGoalsCommand_ListGoals(t *testing.T) {
 		"Code Refactoring:",
 		"Documentation:",
 		"Testing:",
+		"Git Workflow:",
 	}
 
 	for _, category := range expectedCategories {
@@ -75,9 +77,9 @@ func TestGoalsCommand_ListGoals(t *testing.T) {
 	}
 }
 
-func TestGoalsCommand_ListGoalsByCategory(t *testing.T) {
+func TestGoalCommand_ListGoalsByCategory(t *testing.T) {
 	cfg := config.NewConfig()
-	cmd := NewGoalsCommand(cfg)
+	cmd := NewGoalCommand(cfg)
 
 	var stdout, stderr bytes.Buffer
 	cmd.list = true
@@ -104,9 +106,9 @@ func TestGoalsCommand_ListGoalsByCategory(t *testing.T) {
 	}
 }
 
-func TestGoalsCommand_GetAvailableGoals(t *testing.T) {
+func TestGoalCommand_GetAvailableGoals(t *testing.T) {
 	cfg := config.NewConfig()
-	cmd := NewGoalsCommand(cfg)
+	cmd := NewGoalCommand(cfg)
 
 	goals := cmd.getAvailableGoals()
 
@@ -139,7 +141,7 @@ func TestGoalsCommand_GetAvailableGoals(t *testing.T) {
 		goalNames[goal.Name] = true
 	}
 
-	expectedGoals := []string{"comment-stripper", "doc-generator", "test-generator"}
+	expectedGoals := []string{"comment-stripper", "doc-generator", "test-generator", "commit-message"}
 	for _, expected := range expectedGoals {
 		if !goalNames[expected] {
 			t.Errorf("Expected goal %q to be available", expected)
@@ -147,7 +149,7 @@ func TestGoalsCommand_GetAvailableGoals(t *testing.T) {
 	}
 }
 
-func TestGoalsCommand_EmbeddedScripts(t *testing.T) {
+func TestGoalCommand_EmbeddedScripts(t *testing.T) {
 	// Test that embedded scripts are non-empty
 	if len(commentStripperGoal) == 0 {
 		t.Error("Expected commentStripperGoal to be non-empty")
@@ -161,11 +163,16 @@ func TestGoalsCommand_EmbeddedScripts(t *testing.T) {
 		t.Error("Expected testGeneratorGoal to be non-empty")
 	}
 
+	if len(commitMessageGoal) == 0 {
+		t.Error("Expected commitMessageGoal to be non-empty")
+	}
+
 	// Test script structure - should contain expected patterns
 	scripts := map[string]string{
 		"comment-stripper": commentStripperGoal,
 		"doc-generator":    docGeneratorGoal,
 		"test-generator":   testGeneratorGoal,
+		"commit-message":   commitMessageGoal,
 	}
 
 	for name, script := range scripts {
@@ -186,9 +193,9 @@ func TestGoalsCommand_EmbeddedScripts(t *testing.T) {
 	}
 }
 
-func TestGoalsCommand_InvalidGoal(t *testing.T) {
+func TestGoalCommand_InvalidGoal(t *testing.T) {
 	cfg := config.NewConfig()
-	cmd := NewGoalsCommand(cfg)
+	cmd := NewGoalCommand(cfg)
 
 	var stdout, stderr bytes.Buffer
 
@@ -202,9 +209,9 @@ func TestGoalsCommand_InvalidGoal(t *testing.T) {
 	}
 }
 
-func TestGoalsCommand_RunGoal_Success_NonInteractive(t *testing.T) {
+func TestGoalCommand_RunGoal_Success_NonInteractive(t *testing.T) {
 	cfg := config.NewConfig()
-	cmd := NewGoalsCommand(cfg)
+	cmd := NewGoalCommand(cfg)
 	// use -r to imply non-interactive
 	cmd.run = "comment-stripper"
 	cmd.testMode = true // avoid launching TUI; still executes script
@@ -225,9 +232,9 @@ func TestGoalsCommand_RunGoal_Success_NonInteractive(t *testing.T) {
 	}
 }
 
-func TestGoalsCommand_RunGoal_Success_Interactive_Positional(t *testing.T) {
+func TestGoalCommand_RunGoal_Success_Interactive_Positional(t *testing.T) {
 	cfg := config.NewConfig()
-	cmd := NewGoalsCommand(cfg)
+	cmd := NewGoalCommand(cfg)
 	// positional argument should default to interactive per README
 	// but we set testMode to avoid actually running the TUI
 	cmd.testMode = true

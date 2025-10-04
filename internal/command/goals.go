@@ -28,8 +28,8 @@ var docGeneratorGoal string
 //go:embed goals/test_generator.js
 var testGeneratorGoal string
 
-//go:embed goals/commit_message_generator.js
-var commitMessageGeneratorGoal string
+//go:embed goals/commit_message.js
+var commitMessageGoal string
 
 // Goal represents a pre-written goal with metadata
 type Goal struct {
@@ -196,12 +196,12 @@ func (c *GoalsCommand) getAvailableGoals() []Goal {
 			FileName:    "test_generator.js",
 		},
 		{
-			Name:        "commit-message-generator",
+			Name:        "commit-message",
 			Description: "Generate Kubernetes-style commit messages from diffs and context",
 			Category:    "git-workflow",
 			Usage:       "Generates commit messages following Kubernetes semantic guidelines from git diffs and additional context",
-			Script:      commitMessageGeneratorGoal,
-			FileName:    "commit_message_generator.js",
+			Script:      commitMessageGoal,
+			FileName:    "commit_message.js",
 		},
 	}
 }

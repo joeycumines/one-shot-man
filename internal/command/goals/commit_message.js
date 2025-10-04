@@ -1,11 +1,11 @@
-// Commit Message Generator Goal: Generate commit messages based on Kubernetes style guidelines
+// Commit Message Goal: Generate commit messages based on Kubernetes style guidelines
 // This goal helps generate commit messages using diff context following K8s semantic conventions
 
 const {buildContext} = require('osm:ctxutil');
 
 // Goal metadata
 const GOAL_META = {
-    name: "Commit Message Generator",
+    name: "Commit Message",
     description: "Generate Kubernetes-style commit messages from diffs and context",
     category: "git-workflow",
     usage: "Generates commit messages following Kubernetes semantic guidelines from git diffs and additional context"
@@ -13,7 +13,7 @@ const GOAL_META = {
 
 // State management
 const STATE = {
-    mode: "commit-message-generator",
+    mode: "commit-message",
     contextItems: "contextItems"
 };
 
@@ -22,10 +22,10 @@ ctx.run("register-mode", function () {
     tui.registerMode({
         name: STATE.mode,
         tui: {
-            title: "Commit Message Generator",
-            prompt: "(commit-message-generator) > ",
+            title: "Commit Message",
+            prompt: "(commit-message) > ",
             enableHistory: true,
-            historyFile: ".commit-message-generator_history"
+            historyFile: ".commit-message_history"
         },
         onEnter: function () {
             if (!tui.getState(STATE.contextItems)) {
@@ -42,8 +42,8 @@ ctx.run("register-mode", function () {
 });
 
 function banner() {
-    output.print("Commit Message Generator: Generate Kubernetes-style commit messages");
-    output.print("Type 'help' for commands. Use 'commit-message-generator' to return here later.");
+    output.print("Commit Message: Generate Kubernetes-style commit messages");
+    output.print("Type 'help' for commands. Use 'commit-message' to return here later.");
 }
 
 function help() {
@@ -101,7 +101,7 @@ General Guidelines:
 
 Generate a commit message that follows these guidelines based on the provided diff and context information.`;
 
-    const pb = tui.createPromptBuilder("commit-message-generator", "Build commit message generator prompt");
+    const pb = tui.createPromptBuilder("commit-message", "Build commit message prompt");
     pb.setTemplate(`**${GOAL_META.description.toUpperCase()}**
 
 {{goal}}
@@ -239,18 +239,18 @@ function buildCommands() {
             }
         },
         show: {
-            description: "Show the commit message generator prompt",
+            description: "Show the commit message prompt",
             handler: function () {
                 output.print(buildPrompt());
             }
         },
         copy: {
-            description: "Copy commit message generator prompt to clipboard",
+            description: "Copy commit message prompt to clipboard",
             handler: function () {
                 const text = buildPrompt();
                 try {
                     clipboardCopy(text);
-                    output.print("Commit message generator prompt copied to clipboard.");
+                    output.print("Commit message prompt copied to clipboard.");
                 } catch (e) {
                     output.print("Clipboard error: " + (e && e.message ? e.message : e));
                 }

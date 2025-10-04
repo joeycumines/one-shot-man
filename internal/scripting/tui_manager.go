@@ -343,6 +343,23 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		prompt.WithShowCompletionAtStart(),
 		prompt.WithMaxSuggestion(100),
 		prompt.WithDynamicCompletion(true),
+		// Enable auto-hiding completions when submitting input
+		prompt.WithExecuteHidesCompletions(true),
+		// Bind Escape key to toggle completion visibility
+		prompt.WithKeyBindings(
+			prompt.KeyBind{
+				Key: prompt.Escape,
+				Fn: func(p *prompt.Prompt) bool {
+					// Toggle: if hidden, show; if visible, hide
+					if p.Completion().IsHidden() {
+						p.Completion().Show()
+					} else {
+						p.Completion().Hide()
+					}
+					return true
+				},
+			},
+		),
 	}
 
 	// Add default history support

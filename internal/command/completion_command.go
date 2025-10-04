@@ -84,6 +84,10 @@ _osm_completion() {
 			COMPREPLY=($(compgen -W "bash zsh fish powershell" -- ${cur}))
 			return 0
 			;;
+		goal)
+			COMPREPLY=($(compgen -W "comment-stripper doc-generator test-generator commit-message" -- ${cur}))
+			return 0
+			;;
 		*)
 			COMPREPLY=($(compgen -f -- ${cur}))
 			return 0
@@ -142,6 +146,9 @@ _osm() {
 				completion)
 					_values 'shell' 'bash' 'zsh' 'fish' 'powershell'
 					;;
+				goal)
+					_values 'goal-name' 'comment-stripper' 'doc-generator' 'test-generator' 'commit-message'
+					;;
 				*)
 					_files
 					;;
@@ -183,6 +190,12 @@ func (c *CompletionCommand) generateFishCompletion(w io.Writer) error {
 %s
 # Completion for 'completion' subcommand args (shells)
 complete -c osm -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish powershell' -d 'Shell'
+
+# Completion for 'goal' subcommand args (goal names)
+complete -c osm -n '__fish_seen_subcommand_from goal' -a 'comment-stripper' -d 'Remove useless comments and refactor useful ones'
+complete -c osm -n '__fish_seen_subcommand_from goal' -a 'doc-generator' -d 'Generate comprehensive documentation for code structures'
+complete -c osm -n '__fish_seen_subcommand_from goal' -a 'test-generator' -d 'Generate comprehensive test suites for existing code'
+complete -c osm -n '__fish_seen_subcommand_from goal' -a 'commit-message' -d 'Generate Kubernetes-style commit messages from diffs and context'
 # Installation instructions (as comments):
 # To install this completion script:
 # 1. Copy this script to ~/.config/fish/completions/osm.fish
@@ -209,6 +222,7 @@ Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
 
 	$commands = @('%s')
 	$shells = @('bash', 'zsh', 'fish', 'powershell')
+	$goals = @('comment-stripper', 'doc-generator', 'test-generator', 'commit-message')
 
 	if ($line.TrimEnd().EndsWith(' ')) {
 		$tokenCount++
@@ -226,6 +240,13 @@ Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
 
 	if ($tokenCount -eq 3 -and $command -eq 'completion') {
 		$shells | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+			[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+		}
+		return
+	}
+
+	if ($tokenCount -eq 3 -and $command -eq 'goal') {
+		$goals | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
 			[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
 		}
 		return

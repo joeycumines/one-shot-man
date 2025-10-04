@@ -204,3 +204,116 @@ func TestCompletionCommandIncludesScriptCommands(t *testing.T) {
 		})
 	}
 }
+
+func TestCompletionCommandGoalSubcommand(t *testing.T) {
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
+	registry.Register(NewHelpCommand(registry))
+	registry.Register(NewGoalCommand(cfg))
+
+	goalNames := []string{
+		"comment-stripper",
+		"doc-generator",
+		"test-generator",
+		"commit-message",
+	}
+
+	tests := []struct {
+		name         string
+		shell        string
+		expectedText []string
+	}{
+		{
+			name:  "bash goal completion",
+			shell: "bash",
+			expectedText: append([]string{
+				"goal)",
+				"COMPREPLY=($(compgen -W \"comment-stripper doc-generator test-generator commit-message\"",
+			}, goalNames...),
+		},
+		{
+			name:  "zsh goal completion",
+			shell: "zsh",
+			expectedText: append([]string{
+				"goal)",
+				"_values 'goal-name'",
+			}, goalNames...),
+		},
+		{
+			name:  "fish goal completion",
+			shell: "fish",
+			expectedText: append([]string{
+				"__fish_seen_subcommand_from goal",
+			}, goalNames...),
+		},
+		{
+			name:  "powershell goal completion",
+			shell: "powershell",
+			expectedText: append([]string{
+				"$goals = @(",
+				"$command -eq 'goal'",
+			}, goalNames...),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			completionCmd := NewCompletionCommand(registry)
+
+			var output strings.Builder
+			var stderr strings.Builder
+
+			err := completionCmd.Execute([]string{tt.shell}, &output, &stderr)
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			outputStr := output.String()
+
+			for _, expected := range tt.expectedText {
+				if !strings.Contains(outputStr, expected) {
+					to := outputStr
+					if len(to) > 2048 {
+						to = to[:2048]
+					}
+					t.Errorf("Expected %s completion to contain %q, got:\n%s", tt.shell, expected, to)
+				}
+			}
+		})
+	}
+}
+
+func TestCompletionCommandGoalDescriptions(t *testing.T) {
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
+	registry.Register(NewGoalCommand(cfg))
+
+	completionCmd := NewCompletionCommand(registry)
+
+	var output strings.Builder
+	var stderr strings.Builder
+
+	// Fish shell includes descriptions in completions
+	err := completionCmd.Execute([]string{"fish"}, &output, &stderr)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	outputStr := output.String()
+
+	expectedDescriptions := map[string]string{
+		"comment-stripper": "Remove useless comments",
+		"doc-generator":    "Generate comprehensive documentation",
+		"test-generator":   "Generate comprehensive test suites",
+		"commit-message":   "Generate Kubernetes-style commit messages",
+	}
+
+	for goalName, description := range expectedDescriptions {
+		if !strings.Contains(outputStr, goalName) {
+			t.Errorf("Expected fish completion to contain goal name %q", goalName)
+		}
+		if !strings.Contains(outputStr, description) {
+			t.Errorf("Expected fish completion to contain description snippet %q for goal %q", description, goalName)
+		}
+	}
+}

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/elk-language/go-prompt"
+	"github.com/joeycumines/go-prompt"
 
 	"github.com/joeycumines/one-shot-man/internal/termtest"
 )

@@ -3,7 +3,7 @@ package scripting
 import (
 	"strings"
 
-	"github.com/elk-language/go-prompt"
+	"github.com/joeycumines/go-prompt"
 )
 
 // Unified helpers to apply color overrides without duplication.

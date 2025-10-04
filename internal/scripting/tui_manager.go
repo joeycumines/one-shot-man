@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/dop251/goja"
-	"github.com/elk-language/go-prompt"
-	istrings "github.com/elk-language/go-prompt/strings"
+	"github.com/joeycumines/go-prompt"
+	istrings "github.com/joeycumines/go-prompt/strings"
 	"github.com/joeycumines/one-shot-man/internal/argv"
 )
 
@@ -340,6 +340,9 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		prompt.WithDescriptionBGColor(colors.DescriptionBG),
 		prompt.WithSelectedDescriptionTextColor(colors.SelectedDescriptionText),
 		prompt.WithSelectedDescriptionBGColor(colors.SelectedDescriptionBG),
+		prompt.WithShowCompletionAtStart(),
+		prompt.WithMaxSuggestion(100),
+		prompt.WithDynamicCompletion(true),
 	}
 
 	// Add default history support

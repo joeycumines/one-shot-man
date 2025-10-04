@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/elk-language/go-prompt"
-	istrings "github.com/elk-language/go-prompt/strings"
+	"github.com/joeycumines/go-prompt"
+	istrings "github.com/joeycumines/go-prompt/strings"
 )
 
 func TestGoPromptIntegration(t *testing.T) {

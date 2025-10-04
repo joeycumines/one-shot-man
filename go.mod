@@ -1,6 +1,6 @@
 module github.com/joeycumines/one-shot-man
 
-go 1.24.7
+go 1.25.1
 
 tool (
 	github.com/joeycumines/simple-command-output-filter
@@ -13,7 +13,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/dop251/goja v0.0.0-20250630131328-58d95d85e994
 	github.com/dop251/goja_nodejs v0.0.0-20250409162600-f7acab6894b0
-	github.com/elk-language/go-prompt v1.3.1
+	github.com/joeycumines/go-prompt v0.0.0-20251004081800-fd2595534423
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/term v0.35.0
 	golang.org/x/text v0.29.0

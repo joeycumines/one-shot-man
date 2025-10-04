@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/elk-language/go-prompt"
+	"github.com/joeycumines/go-prompt"
 )
 
 func TestTUIFullImplementation(t *testing.T) {

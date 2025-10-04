@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/dop251/goja"
-	"github.com/elk-language/go-prompt"
+	"github.com/joeycumines/go-prompt"
 )
 
 // TUIManager manages rich terminal interfaces for script modes.

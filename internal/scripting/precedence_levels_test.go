@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/elk-language/go-prompt"
+	"github.com/joeycumines/go-prompt"
 )
 
 func TestCompletionPrecedenceLevels(t *testing.T) {

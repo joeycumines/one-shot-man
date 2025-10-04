@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/elk-language/go-prompt"
-	istrings "github.com/elk-language/go-prompt/strings"
+	"github.com/joeycumines/go-prompt"
+	istrings "github.com/joeycumines/go-prompt/strings"
 
 	"github.com/joeycumines/one-shot-man/internal/argv"
 	"github.com/joeycumines/one-shot-man/internal/termtest"

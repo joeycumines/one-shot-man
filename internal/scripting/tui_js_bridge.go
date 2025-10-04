@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/dop251/goja"
-	"github.com/elk-language/go-prompt"
-	istrings "github.com/elk-language/go-prompt/strings"
+	"github.com/joeycumines/go-prompt"
+	istrings "github.com/joeycumines/go-prompt/strings"
 	"github.com/joeycumines/one-shot-man/internal/argv"
 )
 

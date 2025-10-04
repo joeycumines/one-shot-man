@@ -20,7 +20,7 @@ This tool is provider-agnostic, integrating primarily via clipboard, file, and c
 - **dnsmasq-style Config Format**: Simple `optionName remainingLineIsTheValue` format.
 - **Script Command Discovery**: Automatic discovery and execution of script commands.
 - **Stdlib Flag Package**: Built using Go's standard library `flag` package.
-- **Interactive TUI (go-prompt)**: Rich REPL powered by `github.com/elk-language/go-prompt` with completion, custom key bindings, and configurable colors.
+- **Interactive TUI (go-prompt)**: Rich REPL powered by `github.com/joeycumines/go-prompt` with completion, custom key bindings, and configurable colors.
 - **Shell Completion**: Built-in support for bash, zsh, fish, and PowerShell completion scripts.
 
 -----

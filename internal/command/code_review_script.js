@@ -148,7 +148,7 @@ function buildCommands() {
                         "performance": "Focus on performance implications: Are there any performance bottlenecks? Is memory usage optimal? Are algorithms efficient for the expected scale?",
                         "security": "Focus on security considerations: Are inputs properly validated? Are there any potential security vulnerabilities? Is sensitive data handled correctly?"
                     };
-                    
+
                     if (goalNotes[goalType]) {
                         const id = addItem("note", "review-focus", goalNotes[goalType]);
                         output.print("Added goal-based review note [" + id + "]: " + goalType);

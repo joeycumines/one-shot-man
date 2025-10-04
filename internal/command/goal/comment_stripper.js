@@ -116,7 +116,7 @@ Maintain all functionality and behavior of the original code while improving its
 ## CODE TO ANALYZE
 
 {{context_txtar}}`);
-    
+
     const fullContext = buildContext(items(), {toTxtar: () => context.toTxtar()});
     pb.setVariable("goal", goal);
     pb.setVariable("context_txtar", fullContext);

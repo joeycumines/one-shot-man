@@ -33,7 +33,7 @@ osm init
 Script discovery controls how one-shot-man finds and loads script commands.
 
 #### `script.autodiscovery` (boolean)
-**Default**: `false`  
+**Default**: `false`
 **Description**: Enables advanced autodiscovery features including git repository detection and directory traversal.
 
 ```
@@ -46,7 +46,7 @@ When enabled, the following additional discovery mechanisms are activated:
 - Prioritization of scripts from innermost git repository
 
 #### `script.git-traversal` (boolean)
-**Default**: `false`  
+**Default**: `false`
 **Description**: Enables traversing up directory tree to find git repositories and their script directories.
 
 ```
@@ -58,7 +58,7 @@ script.git-traversal true
 **Security Note**: This option is disabled by default and requires `script.autodiscovery` to be enabled.
 
 #### `script.max-traversal-depth` (integer)
-**Default**: `10`  
+**Default**: `10`
 **Description**: Limits how many directories to traverse upward when looking for git repositories or script directories.
 
 ```
@@ -68,7 +68,7 @@ script.max-traversal-depth 5
 **Range**: 1-100. Values outside this range fall back to the default.
 
 #### `script.paths` (path list)
-**Default**: (empty)  
+**Default**: (empty)
 **Description**: Custom script paths to search, in addition to default locations. Supports comma (`,`) separation and the platform list separator (`:` on Unix, `;` on Windows).
 
 ```
@@ -80,7 +80,7 @@ script.paths C:\scripts;$EXTRA_SCRIPTS   # Windows example
 **Path Expansion**: Supports tilde (`~`) expansion and environment variable expansion (`$VAR`).
 
 #### `script.path-patterns` (pattern list)
-**Default**: `scripts`  
+**Default**: `scripts`
 **Description**: Directory names to search for when performing autodiscovery. Supports comma (`,`) separation and the platform list separator.
 
 ```
@@ -330,7 +330,7 @@ Use the following commands to debug script discovery:
 # Show all discovered commands
 osm help
 
-# List only script commands  
+# List only script commands
 osm help | grep -A 100 "Script commands:"
 
 # Test configuration loading

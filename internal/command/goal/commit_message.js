@@ -83,13 +83,13 @@ Subject Line:
     Concise Summary: The first line, the subject, should provide a brief summary of the change.
     Length: Aim for 50 characters or less, and do not exceed 72 characters.
     Imperative Mood: Use the imperative mood (e.g., "Add feature," "Fix bug," not "Added feature" or "Adds feature").
-    Capitalization: Capitalize the first word of the subject unless it's a lowercase symbol or identifier. 
-    No Period: Do not end the subject line with a period. 
+    Capitalization: Capitalize the first word of the subject unless it's a lowercase symbol or identifier.
+    No Period: Do not end the subject line with a period.
 
 Body:
     Blank Line Separation: Add a single blank line between the subject and the body.
     Detailed Explanation: The body should explain the "what" and "why" of the commit, providing context and rationale for the changes. Avoid simply restating "how" the change was implemented, as the code itself will show that.
-    Wrap at 72 Characters: Wrap the lines of the body at 72 characters for readability. 
+    Wrap at 72 Characters: Wrap the lines of the body at 72 characters for readability.
 
 General Guidelines:
     Avoid GitHub Keywords/Mentions:
@@ -109,7 +109,7 @@ Generate a commit message that follows these guidelines based on the provided di
 ## DIFF CONTEXT / CHANGES
 
 {{context_txtar}}`);
-    
+
     const fullContext = buildContext(items(), {toTxtar: () => context.toTxtar()});
     pb.setVariable("goal", goal);
     pb.setVariable("context_txtar", fullContext);
@@ -267,7 +267,7 @@ function buildCommands() {
                 }
                 const id = addItem("lazy-diff", gitCmd, {command: gitCmd});
                 output.print("Added lazy diff [" + id + "] " + gitCmd);
-                
+
                 // Show prompt
                 output.print("\n" + buildPrompt());
             }

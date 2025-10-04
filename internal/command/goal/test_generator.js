@@ -82,7 +82,7 @@ function addItem(type, label, payload) {
 function buildPrompt() {
     const testType = tui.getState(STATE.testType) || "unit";
     const framework = tui.getState(STATE.framework) || "auto";
-    
+
     const testTypeInstructions = {
         unit: `Generate comprehensive unit tests including:
 - Test all public methods and functions
@@ -91,7 +91,7 @@ function buildPrompt() {
 - Mock external dependencies appropriately
 - Include boundary value testing
 - Test both positive and negative scenarios`,
-        
+
         integration: `Generate integration tests including:
 - Test interactions between components
 - Verify data flow between modules
@@ -99,7 +99,7 @@ function buildPrompt() {
 - Cover cross-component workflows
 - Test configuration and setup scenarios
 - Include realistic test data scenarios`,
-        
+
         e2e: `Generate end-to-end tests including:
 - Test complete user workflows
 - Verify UI interactions and responses
@@ -107,7 +107,7 @@ function buildPrompt() {
 - Cover critical user journeys
 - Include performance expectations
 - Test error recovery scenarios`,
-        
+
         performance: `Generate performance tests including:
 - Benchmark critical functions and operations
 - Test resource usage and memory leaks
@@ -115,7 +115,7 @@ function buildPrompt() {
 - Test under various load conditions
 - Include stress testing scenarios
 - Set performance baselines and thresholds`,
-        
+
         security: `Generate security tests including:
 - Test input validation and sanitization
 - Verify authentication and authorization
@@ -163,7 +163,7 @@ ${testTypeInstructions[testType]}${frameworkInfo}
 ## CODE TO TEST
 
 {{context_txtar}}`);
-    
+
     const fullContext = buildContext(items(), {toTxtar: () => context.toTxtar()});
     pb.setVariable("goal", goal);
     pb.setVariable("context_txtar", fullContext);

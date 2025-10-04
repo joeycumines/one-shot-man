@@ -76,7 +76,7 @@ function addItem(type, label, payload) {
 
 function buildPrompt() {
     const docType = tui.getState(STATE.docType) || "comprehensive";
-    
+
     const docTypeInstructions = {
         comprehensive: `Generate comprehensive documentation including:
 - Overview and purpose
@@ -86,14 +86,14 @@ function buildPrompt() {
 - Configuration options
 - Troubleshooting guides
 - Contributing guidelines`,
-        
+
         api: `Generate API documentation including:
 - Function/method signatures with parameter descriptions
 - Return value specifications
 - Usage examples for each function
 - Error handling information
 - Type definitions and interfaces`,
-        
+
         readme: `Generate a README.md file including:
 - Project description and purpose
 - Installation instructions
@@ -101,13 +101,13 @@ function buildPrompt() {
 - Basic usage examples
 - Configuration overview
 - Links to additional documentation`,
-        
+
         inline: `Generate inline code documentation:
 - Add comprehensive comments to functions and methods
 - Document complex algorithms and business logic
 - Add type annotations and parameter descriptions
 - Include usage examples in comments`,
-        
+
         tutorial: `Generate step-by-step tutorials including:
 - Learning objectives
 - Prerequisites
@@ -143,7 +143,7 @@ ${docTypeInstructions[docType]}
 ## CODE TO DOCUMENT
 
 {{context_txtar}}`);
-    
+
     const fullContext = buildContext(items(), {toTxtar: () => context.toTxtar()});
     pb.setVariable("goal", goal);
     pb.setVariable("context_txtar", fullContext);

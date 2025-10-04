@@ -192,7 +192,7 @@ function buildCommands() {
                         "doc-generator": "Generate comprehensive documentation for the provided code including API documentation, usage examples, configuration guides, and developer notes. Create clear, well-structured documentation that helps users understand and effectively use the code.",
                         "test-generator": "Generate comprehensive test suites for the provided code including unit tests, integration tests, and edge case coverage. Create thorough tests that verify functionality, handle error conditions, and provide good code coverage while following testing best practices."
                     };
-                    
+
                     if (prewrittenGoals[goalName]) {
                         setGoal(prewrittenGoals[goalName]);
                         output.print("Pre-written goal '" + goalName + "' set successfully.");

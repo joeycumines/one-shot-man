@@ -422,10 +422,10 @@ osm goal -r doc-generator
 
 - **Code Refactoring:**
   - `comment-stripper` - Remove useless comments and refactor useful ones with intelligent analysis
-  
+
 - **Documentation:**
   - `doc-generator` - Generate comprehensive documentation including API docs, examples, and guides
-  
+
 - **Testing:**
   - `test-generator` - Generate comprehensive test suites with unit, integration, and edge case coverage
 

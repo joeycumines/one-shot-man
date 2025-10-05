@@ -22,7 +22,7 @@ func setupModule(t *testing.T) (*goja.Runtime, *goja.Object) {
 	module := runtime.NewObject()
 	exports := runtime.NewObject()
 	_ = module.Set("exports", exports)
-	loader := ModuleLoader(context.Background())
+	loader := Require(context.Background())
 	loader(runtime, module)
 	return runtime, exports
 }

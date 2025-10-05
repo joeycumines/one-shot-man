@@ -12,7 +12,7 @@ func TestSleep(t *testing.T) {
 	module := runtime.NewObject()
 	exports := runtime.NewObject()
 	_ = module.Set("exports", exports)
-	LoadModule(runtime, module)
+	Require(runtime, module)
 
 	sleepVal := exports.Get("sleep")
 	sleepFn, ok := goja.AssertFunction(sleepVal)

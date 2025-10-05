@@ -16,7 +16,7 @@ func setupBuildContext(t *testing.T) *goja.Runtime {
 	exports := runtime.NewObject()
 	_ = module.Set("exports", exports)
 
-	loader := ModuleLoader(context.Background())
+	loader := Require(context.Background())
 	loader(runtime, module)
 
 	if err := runtime.Set("exports", exports); err != nil {

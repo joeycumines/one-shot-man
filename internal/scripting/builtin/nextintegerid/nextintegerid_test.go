@@ -11,7 +11,7 @@ func setupModule(t *testing.T) (*goja.Runtime, goja.Callable) {
 
 	runtime := goja.New()
 	module := runtime.NewObject()
-	LoadModule(runtime, module)
+	Require(runtime, module)
 
 	export := module.Get("exports")
 	callable, ok := goja.AssertFunction(export)

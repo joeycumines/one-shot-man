@@ -3,6 +3,7 @@ package ctxutil
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"fmt"
 	"os/exec"
 	"reflect"
@@ -12,18 +13,35 @@ import (
 	gosmargv "github.com/joeycumines/one-shot-man/internal/argv"
 )
 
+//go:embed contextManager.js
+var contextManagerScript string
+
 var (
 	runGitDiffFn            = runGitDiff
 	getDefaultGitDiffArgsFn = getDefaultGitDiffArgs
 )
 
-// ModuleLoader returns a CommonJS native module under "osm:ctxutil".
+// SetRunGitDiffFn sets the git diff function for testing.
+func SetRunGitDiffFn(fn func(context.Context, []string) (string, string, bool)) func() {
+	old := runGitDiffFn
+	runGitDiffFn = fn
+	return func() { runGitDiffFn = old }
+}
+
+// SetGetDefaultGitDiffArgsFn sets the default git diff args function for testing.
+func SetGetDefaultGitDiffArgsFn(fn func(context.Context) []string) func() {
+	old := getDefaultGitDiffArgsFn
+	getDefaultGitDiffArgsFn = fn
+	return func() { getDefaultGitDiffArgsFn = old }
+}
+
+// Require returns a CommonJS native module under "osm:ctxutil".
 // It exposes helpers to build context strings from a list of items while
 // resolving lazy diffs at call-time to ensure always-fresh content.
 //
 // API (JS):
 //
-//	const { buildContext } = require('osm:ctxutil');
+//	const { buildContext, contextManager } = require('osm:ctxutil');
 //	const text = buildContext(itemsArray, { toTxtar: () => context.toTxtar() });
 //
 // itemsArray: Array<{ id?: number, type: 'note'|'diff'|'diff-error'|'lazy-diff', label?: string, payload?: any }>
@@ -34,9 +52,20 @@ var (
 // - diff: emits a markdown Diff section using payload string.
 // - diff-error: emits a markdown Diff Error section using payload string.
 // - lazy-diff: payload can be string (shell-like) or string[] (argv). Runs `git diff ...` and emits Diff or Diff Error.
-func ModuleLoader(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.Object) {
+//
+// contextManager: Factory function for creating reusable context management patterns.
+// See contextManager.js for detailed documentation.
+func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
-		exports := module.Get("exports").(*goja.Object)
+		// Get or create exports object
+		exportsVal := module.Get("exports")
+		var exports *goja.Object
+		if goja.IsUndefined(exportsVal) || goja.IsNull(exportsVal) {
+			exports = runtime.NewObject()
+			_ = module.Set("exports", exports)
+		} else {
+			exports = exportsVal.ToObject(runtime)
+		}
 
 		// buildContext(items, options?) -> string
 		_ = exports.Set("buildContext", func(call goja.FunctionCall) goja.Value {
@@ -285,6 +314,42 @@ func ModuleLoader(baseCtx context.Context) func(runtime *goja.Runtime, module *g
 
 			return runtime.ToValue(buf.String())
 		})
+
+		// Load contextManager by setting up a temporary module context
+		// We need to execute contextManager.js which uses module.exports pattern
+		tempModule := runtime.NewObject()
+		tempExports := runtime.NewObject()
+		_ = tempModule.Set("exports", tempExports)
+
+		// Wrap contextManager script in a function to avoid polluting global scope
+		wrappedScript := "(function(module) { " + contextManagerScript + "\nreturn module.exports; })"
+
+		// Compile and call the wrapped function
+		compiledScript, err := runtime.RunString(wrappedScript)
+		if err != nil {
+			panic(fmt.Errorf("failed to compile contextManager script: %w", err))
+		}
+
+		// Call the function with tempModule
+		fn, ok := goja.AssertFunction(compiledScript)
+		if !ok {
+			panic(fmt.Errorf("contextManager script wrapper did not return a function"))
+		}
+
+		result, err := fn(goja.Undefined(), runtime.ToValue(tempModule))
+		if err != nil {
+			panic(fmt.Errorf("failed to execute contextManager script: %w", err))
+		}
+
+		// Extract the contextManager function from the result
+		tempExports = result.ToObject(runtime)
+		contextManagerFn := tempExports.Get("contextManager")
+		if goja.IsUndefined(contextManagerFn) || goja.IsNull(contextManagerFn) {
+			panic(fmt.Errorf("contextManager function not found in module exports"))
+		}
+
+		// Set it on our exports object
+		_ = exports.Set("contextManager", contextManagerFn)
 	}
 }
 

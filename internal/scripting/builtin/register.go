@@ -16,10 +16,10 @@ import (
 // modules that need host context or TUI output with the provided values.
 func Register(ctx context.Context, tuiSink func(string), registry *require.Registry) {
 	const prefix = "osm:"
-	registry.RegisterNativeModule(prefix+"argv", argv.LoadModule)
-	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.LoadModule)
-	registry.RegisterNativeModule(prefix+"exec", execmod.ModuleLoader(ctx))
-	registry.RegisterNativeModule(prefix+"os", osmod.ModuleLoader(ctx, tuiSink))
-	registry.RegisterNativeModule(prefix+"time", timemod.LoadModule)
-	registry.RegisterNativeModule(prefix+"ctxutil", ctxutils.ModuleLoader(ctx))
+	registry.RegisterNativeModule(prefix+"argv", argv.Require)
+	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.Require)
+	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx))
+	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, tuiSink))
+	registry.RegisterNativeModule(prefix+"time", timemod.Require)
+	registry.RegisterNativeModule(prefix+"ctxutil", ctxutils.Require(ctx))
 }

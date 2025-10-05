@@ -11,10 +11,9 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/termtest"
 )
 
-// TestPromptFlow_EditPromptClearingRevertsPhase validates that when the task prompt
-// is cleared via `edit prompt` (empty editor result), the phase reverts to META_GENERATED
-// and default `show` switches back to meta-prompt output.
-func TestPromptFlow_EditPromptClearingRevertsPhase(t *testing.T) {
+// TestPromptFlow_EditPromptClearingPreservesPhase ensures that clearing the task prompt via
+// `edit prompt` behaves like the `use` command and leaves the existing prompt/state intact.
+func TestPromptFlow_EditPromptClearingPreservesPhase(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
@@ -80,12 +79,13 @@ esac
 
 	// Now clear the task prompt via edit -> empty
 	cp.SendLine("edit prompt")
-	// Expect acknowledgement of clearing and phase reversion
-	requireExpect(t, cp, "Task prompt cleared. Reverted to meta-prompt phase.")
+	// Expect acknowledgement matching the non-destructive workflow
+	requireExpect(t, cp, "Task prompt not updated (no content provided).")
 
-	// Default show should now print meta-prompt, not the assembled final
+	// Default show should still render the final assembled prompt
 	cp.SendLine("show")
-	requireExpect(t, cp, "!! **GOAL:** !!")
+	requireExpect(t, cp, "## IMPLEMENTATIONS/CONTEXT")
+	requireExpect(t, cp, "hello world")
 
 	cp.SendLine("exit")
 	requireExpectExitCode(t, cp, 0)

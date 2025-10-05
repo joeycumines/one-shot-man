@@ -6,7 +6,7 @@ import (
 	"github.com/dop251/goja"
 )
 
-func LoadModule(runtime *goja.Runtime, module *goja.Object) {
+func Require(runtime *goja.Runtime, module *goja.Object) {
 	exports := module.Get("exports").(*goja.Object)
 
 	// sleep(ms: number): void

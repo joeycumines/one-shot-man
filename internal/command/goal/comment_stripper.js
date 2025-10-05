@@ -1,7 +1,8 @@
 // Comment Stripper Goal: Remove useless comments and refactor useful ones
 // This goal helps clean up codebases by removing redundant comments while preserving valuable ones
 
-const {buildContext} = require('osm:ctxutil');
+const nextIntegerId = require('osm:nextIntegerId');
+const {buildContext, contextManager} = require('osm:ctxutil');
 
 // Goal metadata
 const GOAL_META = {
@@ -17,61 +18,12 @@ const STATE = {
     contextItems: "contextItems"
 };
 
-// Initialize the mode
-ctx.run("register-mode", function () {
-    tui.registerMode({
-        name: STATE.mode,
-        tui: {
-            title: "Comment Stripper",
-            prompt: "(comment-stripper) > ",
-            enableHistory: true,
-            historyFile: ".comment-stripper_history"
-        },
-        onEnter: function () {
-            if (!tui.getState(STATE.contextItems)) {
-                tui.setState(STATE.contextItems, []);
-            }
-            banner();
-            help();
-        },
-        onExit: function () {
-            output.print("Goodbye!");
-        },
-        commands: buildCommands()
-    });
-});
-
-function banner() {
-    output.print("Comment Stripper: Remove useless comments, refactor useful ones");
-    output.print("Type 'help' for commands. Use 'comment-stripper' to return here later.");
-}
-
-function help() {
-    output.print("Commands: add, note, list, edit, remove, show, copy, run, help, exit");
-}
-
 function items() {
     return tui.getState(STATE.contextItems) || [];
 }
 
 function setItems(v) {
     tui.setState(STATE.contextItems, v);
-}
-
-function addItem(type, label, payload) {
-    const list = items();
-    const id = nextIntegerId(list);
-    list.push({id, type, label, payload});
-    setItems(list);
-    return id;
-}
-
-const nextIntegerId = require('osm:nextIntegerId');
-const {parseArgv, formatArgv} = require('osm:argv');
-const {openEditor: osOpenEditor, clipboardCopy} = require('osm:os');
-
-function openEditor(key, content) {
-    return osOpenEditor(key, content);
 }
 
 function buildPrompt() {
@@ -123,134 +75,17 @@ Maintain all functionality and behavior of the original code while improving its
     return pb.build();
 }
 
+// Create context manager
+const ctxmgr = contextManager({
+    getItems: items,
+    setItems: setItems,
+    nextIntegerId: nextIntegerId,
+    buildPrompt: buildPrompt
+});
+
 function buildCommands() {
     return {
-        add: {
-            description: "Add file content to context",
-            usage: "add [file ...]",
-            argCompleters: ["file"],
-            handler: function (args) {
-                if (args.length === 0) {
-                    const edited = openEditor("paths", "\n# one path per line\n");
-                    args = edited.split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith('#'));
-                }
-                for (const p of args) {
-                    try {
-                        const err = context.addPath(p);
-                        if (err && err.message) {
-                            output.print("Error adding " + p + ": " + err.message);
-                            continue;
-                        }
-                        const id = addItem("file", p, {path: p});
-                        output.print("Added file [" + id + "] " + p);
-                    } catch (e) {
-                        output.print("Error: " + e);
-                    }
-                }
-            }
-        },
-        note: {
-            description: "Add a freeform note",
-            usage: "note [text]",
-            handler: function (args) {
-                let text = args.join(" ");
-                if (!text) text = openEditor("note", "");
-                const id = addItem("note", "note", text);
-                output.print("Added note [" + id + "]");
-            }
-        },
-        list: {
-            description: "List context items",
-            handler: function () {
-                for (const it of items()) {
-                    let line = "[" + it.id + "] [" + it.type + "] " + (it.label || "");
-                    if (it.type === "note" && typeof it.payload === "string") {
-                        const preview = it.payload.slice(0, 60);
-                        line += ": " + preview + (it.payload.length > 60 ? "..." : "");
-                    }
-                    output.print(line);
-                }
-            }
-        },
-        edit: {
-            description: "Edit a context item",
-            usage: "edit <id>",
-            handler: function (args) {
-                if (args.length === 0) {
-                    output.print("Usage: edit <id>");
-                    return;
-                }
-                const id = parseInt(args[0]);
-                const list = items();
-                const idx = list.findIndex(it => it.id === id);
-                if (idx === -1) {
-                    output.print("Item [" + id + "] not found");
-                    return;
-                }
-                const item = list[idx];
-                if (item.type === "note") {
-                    const edited = openEditor("edit-note", item.payload);
-                    if (edited !== null && edited.trim()) {
-                        item.payload = edited.trim();
-                        setItems(list);
-                        output.print("Updated [" + id + "]");
-                    }
-                } else {
-                    output.print("Cannot edit item type: " + item.type);
-                }
-            }
-        },
-        remove: {
-            description: "Remove a context item",
-            usage: "remove <id>",
-            handler: function (args) {
-                if (args.length === 0) {
-                    output.print("Usage: remove <id>");
-                    return;
-                }
-                const id = parseInt(args[0]);
-                const list = items();
-                const idx = list.findIndex(it => it.id === id);
-                if (idx === -1) {
-                    output.print("Item [" + id + "] not found");
-                    return;
-                }
-                const item = list[idx];
-                if (item.type === "file") {
-                    try {
-                        const err = context.removePath(item.payload.path);
-                        if (err && err.message) {
-                            output.print("Error removing from context: " + err.message);
-                            return;
-                        }
-                    } catch (e) {
-                        output.print("Error: " + e);
-                        return;
-                    }
-                }
-                list.splice(idx, 1);
-                setItems(list);
-                output.print("Removed [" + id + "]");
-            }
-        },
-        show: {
-            description: "Show the comment stripper prompt",
-            handler: function () {
-                output.print(buildPrompt());
-            }
-        },
-        copy: {
-            description: "Copy comment stripper prompt to clipboard",
-            handler: function () {
-                const text = buildPrompt();
-                try {
-                    clipboardCopy(text);
-                    output.print("Comment stripper prompt copied to clipboard.");
-                } catch (e) {
-                    output.print("Clipboard error: " + (e && e.message ? e.message : e));
-                }
-            }
-        },
+        ...ctxmgr.commands,
         run: {
             description: "Quick run - add files and show prompt",
             usage: "run [file ...]",
@@ -260,26 +95,47 @@ function buildCommands() {
                     output.print("Usage: run [file ...]");
                     return;
                 }
-                // Add files
-                for (const p of args) {
-                    try {
-                        const err = context.addPath(p);
-                        if (err && err.message) {
-                            output.print("Error adding " + p + ": " + err.message);
-                            continue;
-                        }
-                        const id = addItem("file", p, {path: p});
-                        output.print("Added file [" + id + "] " + p);
-                    } catch (e) {
-                        output.print("Error: " + e);
-                    }
-                }
+                // Add files using the base command
+                ctxmgr.commands.add.handler(args);
                 // Show prompt
                 output.print("\n" + buildPrompt());
             }
         },
         help: {description: "Show help", handler: help}
     };
+}
+
+// Initialize the mode
+ctx.run("register-mode", function () {
+    tui.registerMode({
+        name: STATE.mode,
+        tui: {
+            title: "Comment Stripper",
+            prompt: "(comment-stripper) > ",
+            enableHistory: true,
+            historyFile: ".comment-stripper_history"
+        },
+        onEnter: function () {
+            if (!tui.getState(STATE.contextItems)) {
+                tui.setState(STATE.contextItems, []);
+            }
+            banner();
+            help();
+        },
+        onExit: function () {
+            output.print("Goodbye!");
+        },
+        commands: buildCommands()
+    });
+});
+
+function banner() {
+    output.print("Comment Stripper: Remove useless comments, refactor useful ones");
+    output.print("Type 'help' for commands. Use 'comment-stripper' to return here later.");
+}
+
+function help() {
+    output.print("Commands: add, note, list, edit, remove, show, copy, run, help, exit");
 }
 
 // Export metadata for the goals system

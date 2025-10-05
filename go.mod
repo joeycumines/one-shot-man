@@ -13,7 +13,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/dop251/goja v0.0.0-20250630131328-58d95d85e994
 	github.com/dop251/goja_nodejs v0.0.0-20250409162600-f7acab6894b0
-	github.com/joeycumines/go-prompt v0.0.0-20251004161300-082410fd1642
+	github.com/joeycumines/go-prompt v0.0.0-20251005081201-1fa07484602d
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/term v0.35.0
 	golang.org/x/text v0.29.0

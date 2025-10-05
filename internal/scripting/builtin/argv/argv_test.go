@@ -19,7 +19,7 @@ func setupModule(t *testing.T) (*goja.Runtime, *goja.Object) {
 
 func TestParseArgv(t *testing.T) {
 	runtime, module := setupModule(t)
-	LoadModule(runtime, module)
+	Require(runtime, module)
 
 	exports := module.Get("exports").(*goja.Object)
 	parseFn, ok := goja.AssertFunction(exports.Get("parseArgv"))
@@ -50,7 +50,7 @@ func TestParseArgv(t *testing.T) {
 
 func TestParseArgvTypeError(t *testing.T) {
 	runtime, module := setupModule(t)
-	LoadModule(runtime, module)
+	Require(runtime, module)
 
 	exports := module.Get("exports").(*goja.Object)
 	parseFn, ok := goja.AssertFunction(exports.Get("parseArgv"))
@@ -75,7 +75,7 @@ func TestParseArgvTypeError(t *testing.T) {
 
 func TestFormatArgvQuoting(t *testing.T) {
 	runtime, module := setupModule(t)
-	LoadModule(runtime, module)
+	Require(runtime, module)
 
 	exports := module.Get("exports").(*goja.Object)
 	formatFn, ok := goja.AssertFunction(exports.Get("formatArgv"))
@@ -102,7 +102,7 @@ func TestFormatArgvQuoting(t *testing.T) {
 
 func TestFormatArgvFallbacks(t *testing.T) {
 	runtime, module := setupModule(t)
-	LoadModule(runtime, module)
+	Require(runtime, module)
 
 	exports := module.Get("exports").(*goja.Object)
 	formatFn, ok := goja.AssertFunction(exports.Get("formatArgv"))

@@ -201,7 +201,7 @@ Commands available in prompt flow mode:
 - `diff [args]` - Add git diff output to context (e.g., `--staged`, `HEAD~1`).
 - `note [text]` - Add a freeform note (no args opens editor).
 - `list` - List current goal, template, prompts, and context items.
-- `edit <id|goal|template|meta|prompt>` - Edit items by ID or name. `meta` edits the generated meta-prompt; `prompt` edits the task prompt (clearing content will revert back to meta-prompt phase).
+- `edit <id|goal|template|meta|prompt>` - Edit items by ID or name. `meta` edits the generated meta-prompt; `prompt` edits the task prompt.
 - `remove <id>` - Remove a context item (file items also untrack from the backing context).
 - `template` - Edit the meta-prompt template.
 - `generate` - Generate the meta-prompt and reset the task prompt.

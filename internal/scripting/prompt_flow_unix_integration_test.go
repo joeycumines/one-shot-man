@@ -625,6 +625,10 @@ func main() {
 	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
 	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
 
+	// Set a goal before generating
+	cp.SendLine("goal Summarise repository history")
+	requireExpect(t, cp, "Goal set.")
+
 	// Add a lazy diff with no arguments, triggering the default behavior
 	cp.SendLine("diff")
 	requireExpect(t, cp, "Added diff:")
@@ -682,6 +686,10 @@ func TestPromptFlow_Unix_GitDiffMalformedPayload(t *testing.T) {
 
 	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
 	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+
+	// Ensure a goal is present for generate usage
+	cp.SendLine("goal Handle malformed payload test cases")
+	requireExpect(t, cp, "Goal set.")
 
 	// Helper to test malformed payloads via JS REPL (functions are global in script)
 	testMalformed := func(payloadJS string) {

@@ -16,7 +16,7 @@ import (
 // - Byte Order Mark (U+FEFF)
 var jsWhitespace = regexp.MustCompile(`[\p{Zs}\t\n\f\r\v\x{2028}\x{2029}\x{feff}]`)
 
-func LoadModule(runtime *goja.Runtime, module *goja.Object) {
+func Require(runtime *goja.Runtime, module *goja.Object) {
 	exports := module.Get("exports").(*goja.Object)
 
 	// parseArgv(argv: string): string[]

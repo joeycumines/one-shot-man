@@ -1,7 +1,8 @@
 // Code Documentation Generator Goal: Generate comprehensive documentation for code
 // This goal helps create thorough documentation for codebases
 
-const {buildContext} = require('osm:ctxutil');
+const nextIntegerId = require('osm:nextIntegerId');
+const {buildContext, contextManager} = require('osm:ctxutil');
 
 // Goal metadata
 const GOAL_META = {
@@ -18,60 +19,12 @@ const STATE = {
     docType: "docType"
 };
 
-const nextIntegerId = require('osm:nextIntegerId');
-const {openEditor: osOpenEditor, clipboardCopy} = require('osm:os');
-
-// Initialize the mode
-ctx.run("register-mode", function () {
-    tui.registerMode({
-        name: STATE.mode,
-        tui: {
-            title: "Code Documentation Generator",
-            prompt: "(doc-gen) > ",
-            enableHistory: true,
-            historyFile: ".doc-generator_history"
-        },
-        onEnter: function () {
-            if (!tui.getState(STATE.contextItems)) {
-                tui.setState(STATE.contextItems, []);
-            }
-            if (!tui.getState(STATE.docType)) {
-                tui.setState(STATE.docType, "comprehensive");
-            }
-            banner();
-            help();
-        },
-        onExit: function () {
-            output.print("Goodbye!");
-        },
-        commands: buildCommands()
-    });
-});
-
-function banner() {
-    output.print("Code Documentation Generator: Create comprehensive code documentation");
-    output.print("Type 'help' for commands. Use 'doc-generator' to return here later.");
-}
-
-function help() {
-    output.print("Commands: add, note, list, type, edit, remove, show, copy, help, exit");
-    output.print("Doc types: comprehensive, api, readme, inline, tutorial");
-}
-
 function items() {
     return tui.getState(STATE.contextItems) || [];
 }
 
 function setItems(v) {
     tui.setState(STATE.contextItems, v);
-}
-
-function addItem(type, label, payload) {
-    const list = items();
-    const id = nextIntegerId(list);
-    list.push({id, type, label, payload});
-    setItems(list);
-    return id;
 }
 
 function buildPrompt() {
@@ -150,41 +103,20 @@ ${docTypeInstructions[docType]}
     return pb.build();
 }
 
+// Create context manager
+const ctxmgr = contextManager({
+    getItems: items,
+    setItems: setItems,
+    nextIntegerId: nextIntegerId,
+    buildPrompt: buildPrompt
+});
+
 function buildCommands() {
     return {
-        add: {
-            description: "Add file content to context",
-            usage: "add [file ...]",
-            argCompleters: ["file"],
-            handler: function (args) {
-                if (args.length === 0) {
-                    const edited = osOpenEditor("paths", "\n# one path per line\n");
-                    args = edited.split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith('#'));
-                }
-                for (const p of args) {
-                    try {
-                        const err = context.addPath(p);
-                        if (err && err.message) {
-                            output.print("Error adding " + p + ": " + err.message);
-                            continue;
-                        }
-                        const id = addItem("file", p, {path: p});
-                        output.print("Added file [" + id + "] " + p);
-                    } catch (e) {
-                        output.print("Error: " + e);
-                    }
-                }
-            }
-        },
+        ...ctxmgr.commands,
         note: {
-            description: "Add a note about documentation requirements",
-            usage: "note [text]",
-            handler: function (args) {
-                let text = args.join(" ");
-                if (!text) text = osOpenEditor("note", "");
-                const id = addItem("note", "note", text);
-                output.print("Added note [" + id + "]");
-            }
+            ...ctxmgr.commands.note,
+            description: "Add a note about documentation requirements"
         },
         type: {
             description: "Set documentation type",
@@ -210,97 +142,48 @@ function buildCommands() {
             handler: function () {
                 output.print("Documentation type: " + (tui.getState(STATE.docType) || "comprehensive"));
                 output.print("Context items:");
-                for (const it of items()) {
-                    let line = "[" + it.id + "] [" + it.type + "] " + (it.label || "");
-                    if (it.type === "note" && typeof it.payload === "string") {
-                        const preview = it.payload.slice(0, 60);
-                        line += ": " + preview + (it.payload.length > 60 ? "..." : "");
-                    }
-                    output.print(line);
-                }
-            }
-        },
-        edit: {
-            description: "Edit a context item",
-            usage: "edit <id>",
-            handler: function (args) {
-                if (args.length === 0) {
-                    output.print("Usage: edit <id>");
-                    return;
-                }
-                const id = parseInt(args[0]);
-                const list = items();
-                const idx = list.findIndex(it => it.id === id);
-                if (idx === -1) {
-                    output.print("Item [" + id + "] not found");
-                    return;
-                }
-                const item = list[idx];
-                if (item.type === "note") {
-                    const edited = osOpenEditor("edit-note", item.payload);
-                    if (edited !== null && edited.trim()) {
-                        item.payload = edited.trim();
-                        setItems(list);
-                        output.print("Updated [" + id + "]");
-                    }
-                } else {
-                    output.print("Cannot edit item type: " + item.type);
-                }
-            }
-        },
-        remove: {
-            description: "Remove a context item",
-            usage: "remove <id>",
-            handler: function (args) {
-                if (args.length === 0) {
-                    output.print("Usage: remove <id>");
-                    return;
-                }
-                const id = parseInt(args[0]);
-                const list = items();
-                const idx = list.findIndex(it => it.id === id);
-                if (idx === -1) {
-                    output.print("Item [" + id + "] not found");
-                    return;
-                }
-                const item = list[idx];
-                if (item.type === "file") {
-                    try {
-                        const err = context.removePath(item.payload.path);
-                        if (err && err.message) {
-                            output.print("Error removing from context: " + err.message);
-                            return;
-                        }
-                    } catch (e) {
-                        output.print("Error: " + e);
-                        return;
-                    }
-                }
-                list.splice(idx, 1);
-                setItems(list);
-                output.print("Removed [" + id + "]");
-            }
-        },
-        show: {
-            description: "Show the documentation generator prompt",
-            handler: function () {
-                output.print(buildPrompt());
-            }
-        },
-        copy: {
-            description: "Copy documentation generator prompt to clipboard",
-            handler: function () {
-                const text = buildPrompt();
-                try {
-                    clipboardCopy(text);
-                    output.print("Documentation generator prompt copied to clipboard.");
-                } catch (e) {
-                    output.print("Clipboard error: " + (e && e.message ? e.message : e));
-                }
+                ctxmgr.commands.list.handler();
             }
         },
         help: {description: "Show help", handler: help}
     };
+}
+
+// Initialize the mode
+ctx.run("register-mode", function () {
+    tui.registerMode({
+        name: STATE.mode,
+        tui: {
+            title: "Code Documentation Generator",
+            prompt: "(doc-gen) > ",
+            enableHistory: true,
+            historyFile: ".doc-generator_history"
+        },
+        onEnter: function () {
+            if (!tui.getState(STATE.contextItems)) {
+                tui.setState(STATE.contextItems, []);
+            }
+            if (!tui.getState(STATE.docType)) {
+                tui.setState(STATE.docType, "comprehensive");
+            }
+            banner();
+            help();
+        },
+        onExit: function () {
+            output.print("Goodbye!");
+        },
+        commands: buildCommands()
+    });
+});
+
+function banner() {
+    output.print("Code Documentation Generator: Create comprehensive code documentation");
+    output.print("Type 'help' for commands. Use 'doc-generator' to return here later.");
+}
+
+function help() {
+    output.print("Commands: add, note, list, type, edit, remove, show, copy, help, exit");
+    output.print("Doc types: comprehensive, api, readme, inline, tutorial");
 }
 
 // Export metadata for the goals system

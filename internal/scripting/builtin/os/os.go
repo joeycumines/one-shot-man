@@ -12,9 +12,9 @@ import (
 	"github.com/dop251/goja"
 )
 
-// ModuleLoader returns a module loader for `osm:os` that uses the provided base context
+// Require returns a module loader for `osm:os` that uses the provided base context
 // and a TUI sink for fallback messaging (may be nil).
-func ModuleLoader(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runtime, module *goja.Object) {
+func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 

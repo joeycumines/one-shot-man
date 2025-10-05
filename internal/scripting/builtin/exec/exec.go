@@ -9,11 +9,11 @@ import (
 	"github.com/dop251/goja"
 )
 
-// ModuleLoader returns a module loader for `osm:exec` that uses the provided base context
+// Require returns a module loader for `osm:exec` that uses the provided base context
 // (typically the TUI manager's context). Each invocation wraps the base context
 // with context.WithCancel and uses exec.CommandContext to ensure proper
 // cancellation propagation.
-func ModuleLoader(ctx context.Context) func(runtime *goja.Runtime, module *goja.Object) {
+func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 

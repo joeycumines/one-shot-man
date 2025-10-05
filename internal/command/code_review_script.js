@@ -2,15 +2,107 @@
 // This is the built-in version of the code-review script with embedded template
 
 const nextIntegerId = require('osm:nextIntegerId');
-const {parseArgv, formatArgv} = require('osm:argv');
-const {openEditor: osOpenEditor, clipboardCopy, fileExists, getenv} = require('osm:os');
-const {buildContext} = require('osm:ctxutil');
+const {buildContext, contextManager} = require('osm:ctxutil');
 
 // State keys
 const STATE = {
     mode: "review",             // fixed mode name
     contextItems: "contextItems" // array of { id, type: file|diff|note, label, payload }
 };
+
+// Helper functions for state management
+function items() {
+    return tui.getState(STATE.contextItems) || [];
+}
+
+function setItems(v) {
+    tui.setState(STATE.contextItems, v);
+}
+
+function buildPrompt() {
+    const pb = tui.createPromptBuilder("review", "Build code review prompt");
+    pb.setTemplate(codeReviewTemplate);
+    const fullContext = buildContext(items(), {toTxtar: () => context.toTxtar()});
+    pb.setVariable("context_txtar", fullContext);
+    return pb.build();
+}
+
+// Create context manager with code-review specific configuration
+const ctxmgr = contextManager({
+    getItems: items,
+    setItems: setItems,
+    nextIntegerId: nextIntegerId,
+    buildPrompt: buildPrompt
+});
+
+// Expose parseArgv and formatArgv for test access
+const {parseArgv, formatArgv} = ctxmgr;
+
+// Build commands by extending the base contextManager commands
+function buildCommands() {
+    return {
+        add: ctxmgr.commands.add,
+        diff: ctxmgr.commands.diff,
+        list: ctxmgr.commands.list,
+        edit: ctxmgr.commands.edit,
+        remove: ctxmgr.commands.remove,
+        note: {
+            ...ctxmgr.commands.note,
+            usage: "note [text|--goals]",
+            handler: function (args) {
+                if (args.length === 1 && args[0] === "--goals") {
+                    // Show goal-based review notes
+                    output.print("Pre-written review focus areas:");
+                    output.print("  note goal:comments     - Focus on comment quality and usefulness");
+                    output.print("  note goal:docs         - Focus on documentation completeness");
+                    output.print("  note goal:tests        - Focus on test coverage and quality");
+                    // The following areas are not first-class 'goals' yet, but you can still use them as review focuses:
+                    output.print("  note goal:performance  - Focus on performance implications (review focus)");
+                    output.print("  note goal:security     - Focus on security considerations (review focus)");
+                    return;
+                }
+                if (args.length === 1 && args[0].startsWith("goal:")) {
+                    const goalType = args[0].substring(5);
+                    const goalNotes = {
+                        "comments": "Focus on comment quality: Are comments useful and up-to-date? Remove any redundant comments that merely repeat the code. Ensure complex logic is well-explained.",
+                        "docs": "Focus on documentation completeness: Is the code properly documented? Are API changes reflected in documentation? Are usage examples clear and current?",
+                        "tests": "Focus on test coverage and quality: Are there sufficient tests for new functionality? Do tests cover edge cases? Are test names descriptive?",
+                        "performance": "Focus on performance implications: Are there any performance bottlenecks? Is memory usage optimal? Are algorithms efficient for the expected scale?",
+                        "security": "Focus on security considerations: Are inputs properly validated? Are there any potential security vulnerabilities? Is sensitive data handled correctly?"
+                    };
+
+                    if (goalNotes[goalType]) {
+                        const id = ctxmgr.addItem("note", "review-focus", goalNotes[goalType]);
+                        output.print("Added goal-based review note [" + id + "]: " + goalType);
+                    } else {
+                        output.print("Unknown goal type: " + goalType);
+                        output.print("Use 'note --goals' to see available goal types.");
+                    }
+                    return;
+                }
+                // Delegate to base implementation
+                return ctxmgr.commands.note.handler(args);
+            }
+        },
+        show: {
+            description: "Show the code review prompt",
+            handler: ctxmgr.commands.show.handler
+        },
+        copy: {
+            description: "Copy code review prompt to clipboard",
+            handler: function () {
+                const text = buildPrompt();
+                try {
+                    ctxmgr.clipboardCopy(text);
+                    output.print("Code review prompt copied to clipboard.");
+                } catch (e) {
+                    output.print("Clipboard error: " + (e && e.message ? e.message : e));
+                }
+            }
+        },
+        help: {description: "Show help", handler: help}
+    };
+}
 
 // Initialize the mode
 ctx.run("register-mode", function () {
@@ -52,226 +144,6 @@ function banner() {
 function help() {
     output.print("Commands: add, diff, note, list, edit, remove, show, copy, help, exit");
     output.print("Tip: Use 'note --goals' to see goal-based review focuses");
-}
-
-function items() {
-    return tui.getState(STATE.contextItems) || [];
-}
-
-function setItems(v) {
-    tui.setState(STATE.contextItems, v);
-}
-
-function addItem(type, label, payload) {
-    const list = items();
-    const id = nextIntegerId(list);
-    list.push({id, type, label, payload});
-    setItems(list);
-    return id;
-}
-
-function buildPrompt() {
-    const pb = tui.createPromptBuilder("review", "Build code review prompt");
-    pb.setTemplate(codeReviewTemplate);
-    const fullContext = buildContext(items(), {toTxtar: () => context.toTxtar()});
-    pb.setVariable("context_txtar", fullContext);
-    return pb.build();
-}
-
-function openEditor(title, initial) {
-    const res = osOpenEditor(title, initial || "");
-    if (typeof res === 'string') return res;
-    // Some engines may return [value, error]; we standardize to string
-    return "" + res;
-}
-
-function buildCommands() {
-    return {
-        add: {
-            description: "Add file content to context",
-            usage: "add [file ...]",
-            argCompleters: ["file"],
-            handler: function (args) {
-                if (args.length === 0) {
-                    const edited = openEditor("paths", "\n# one path per line\n");
-                    args = edited.split(/\r?\n/).map(s => s.trim()).filter(s => s && !s.startsWith('#'));
-                }
-                for (const p of args) {
-                    try {
-                        const err = context.addPath(p);
-                        if (err && err.message) {
-                            output.print("add error: " + err.message);
-                            continue;
-                        }
-                        addItem("file", p, "");
-                        output.print("Added file: " + p);
-                    } catch (e) {
-                        output.print("add error: " + e);
-                    }
-                }
-            }
-        },
-        diff: {
-            description: "Add git diff output to context (default: HEAD~1)",
-            usage: "diff [commit-spec]",
-            handler: function (args) {
-                // Default to HEAD~1 if no args provided, otherwise use provided args
-                const argv = (args && args.length > 0) ? args.slice(0) : ["HEAD~1"];
-                const label = "git diff " + formatArgv(argv);
-
-                // Store lazy diff item - actual execution happens in buildPrompt
-                addItem("lazy-diff", label, argv);
-                output.print("Added diff: " + label + " (will be executed when generating prompt)");
-            }
-        },
-        note: {
-            description: "Add a freeform note",
-            usage: "note [text|--goals]",
-            handler: function (args) {
-                if (args.length === 1 && args[0] === "--goals") {
-                    // Show goal-based review notes
-                    output.print("Pre-written review focus areas:");
-                    output.print("  note goal:comments     - Focus on comment quality and usefulness");
-                    output.print("  note goal:docs         - Focus on documentation completeness");
-                    output.print("  note goal:tests        - Focus on test coverage and quality");
-                    // The following areas are not first-class 'goals' yet, but you can still use them as review focuses:
-                    output.print("  note goal:performance  - Focus on performance implications (review focus)");
-                    output.print("  note goal:security     - Focus on security considerations (review focus)");
-                    return;
-                }
-                if (args.length === 1 && args[0].startsWith("goal:")) {
-                    const goalType = args[0].substring(5);
-                    const goalNotes = {
-                        "comments": "Focus on comment quality: Are comments useful and up-to-date? Remove any redundant comments that merely repeat the code. Ensure complex logic is well-explained.",
-                        "docs": "Focus on documentation completeness: Is the code properly documented? Are API changes reflected in documentation? Are usage examples clear and current?",
-                        "tests": "Focus on test coverage and quality: Are there sufficient tests for new functionality? Do tests cover edge cases? Are test names descriptive?",
-                        "performance": "Focus on performance implications: Are there any performance bottlenecks? Is memory usage optimal? Are algorithms efficient for the expected scale?",
-                        "security": "Focus on security considerations: Are inputs properly validated? Are there any potential security vulnerabilities? Is sensitive data handled correctly?"
-                    };
-
-                    if (goalNotes[goalType]) {
-                        const id = addItem("note", "review-focus", goalNotes[goalType]);
-                        output.print("Added goal-based review note [" + id + "]: " + goalType);
-                    } else {
-                        output.print("Unknown goal type: " + goalType);
-                        output.print("Use 'note --goals' to see available goal types.");
-                    }
-                    return;
-                }
-                let text = args.join(" ");
-                if (!text) text = openEditor("note", "");
-                const id = addItem("note", "note", text);
-                output.print("Added note [" + id + "]");
-            }
-        },
-        list: {
-            description: "List context items",
-            handler: function () {
-                for (const it of items()) {
-                    let line = "[" + it.id + "] [" + it.type + "] " + (it.label || "");
-                    if (it.type === 'file' && it.label && !fileExists(it.label)) {
-                        line += " (missing)";
-                    }
-                    output.print(line);
-                }
-            }
-        },
-        edit: {
-            description: "Edit context item by id",
-            usage: "edit <id>",
-            handler: function (args) {
-                if (args.length < 1) {
-                    output.print("Usage: edit <id>");
-                    return;
-                }
-                const id = parseInt(args[0], 10);
-                if (isNaN(id)) {
-                    output.print("Invalid id: " + args[0]);
-                    return;
-                }
-                const list = items();
-                const idx = list.findIndex(x => x.id === id);
-                if (idx === -1) {
-                    output.print("Not found: " + id);
-                    return;
-                }
-                // Disallow editing file items since file content is sourced from disk via context engine
-                if (list[idx].type === 'file') {
-                    output.print("Editing file content directly is not supported. Please edit the file on disk.");
-                    return;
-                }
-                // For lazy-diff items, edit the git diff command specification
-                if (list[idx].type === 'lazy-diff') {
-                    const initial = Array.isArray(list[idx].payload) ? formatArgv(list[idx].payload) : (list[idx].payload || "HEAD~1");
-                    const edited = openEditor("diff-spec-" + id, initial);
-                    const argv = parseArgv((edited || "").trim());
-                    list[idx].payload = argv.length ? argv : ["HEAD~1"];
-                    list[idx].label = "git diff " + formatArgv(list[idx].payload);
-                    setItems(list);
-                    output.print("Updated diff specification [" + id + "]");
-                    return;
-                }
-                const edited = openEditor("item-" + id, list[idx].payload || "");
-                list[idx].payload = edited;
-                setItems(list);
-                output.print("Edited [" + id + "]");
-            }
-        },
-        remove: {
-            description: "Remove a context item by id",
-            usage: "remove <id>",
-            handler: function (args) {
-                if (args.length < 1) {
-                    output.print("Usage: remove <id>");
-                    return;
-                }
-                const id = parseInt(args[0], 10);
-                const list = items();
-                const idx = list.findIndex(x => x.id === id);
-                if (idx === -1) {
-                    output.print("Not found: " + id);
-                    return;
-                }
-                const it = list[idx];
-                // If a file item, also remove from Go context manager using the label (path)
-                if (it.type === 'file' && it.label) {
-                    try {
-                        const err = context.removePath(it.label);
-                        if (err) {
-                            const msg = (err && err.message) ? err.message : ("" + err);
-                            output.print("Error: " + msg);
-                            return; // Abort removal if backend failed
-                        }
-                    } catch (e) {
-                        output.print("Error: " + e);
-                        return; // Abort removal if exception thrown
-                    }
-                }
-                list.splice(idx, 1);
-                setItems(list);
-                output.print("Removed [" + id + "]");
-            }
-        },
-        show: {
-            description: "Show the code review prompt",
-            handler: function () {
-                output.print(buildPrompt());
-            }
-        },
-        copy: {
-            description: "Copy code review prompt to clipboard",
-            handler: function () {
-                const text = buildPrompt();
-                try {
-                    clipboardCopy(text);
-                    output.print("Code review prompt copied to clipboard.");
-                } catch (e) {
-                    output.print("Clipboard error: " + (e && e.message ? e.message : e));
-                }
-            }
-        },
-        help: {description: "Show help", handler: help},
-    };
 }
 
 // Auto-switch into review mode when this script loads

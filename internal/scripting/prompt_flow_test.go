@@ -38,6 +38,37 @@ func TestPromptFlow_NonInteractive(t *testing.T) {
 	requireExpectExitCode(t, cp, 0)
 }
 
+func TestPromptFlow_GenerateRequiresGoal(t *testing.T) {
+	binaryPath := buildTestBinary(t)
+	defer os.Remove(binaryPath)
+
+	opts := termtest.Options{
+		CmdName:        binaryPath,
+		Args:           []string{"prompt-flow", "-i"},
+		DefaultTimeout: 30 * time.Second,
+		Env: []string{
+			"VISUAL=",
+			"EDITOR=",
+			"ONESHOT_CLIPBOARD_CMD=cat >/dev/null",
+		},
+	}
+
+	cp, err := termtest.NewTest(t, opts)
+	if err != nil {
+		t.Fatalf("Failed to create termtest: %v", err)
+	}
+	defer cp.Close()
+
+	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
+	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+
+	cp.SendLine("generate")
+	requireExpect(t, cp, "Error: Please set a goal first using the 'goal' command.")
+
+	cp.SendLine("exit")
+	requireExpectExitCode(t, cp, 0)
+}
+
 // TestPromptFlow_Interactive drives a minimal happy path in interactive mode without invoking the editor.
 // It avoids commands that would open the system editor (goal without args, template, generate).
 func TestPromptFlow_Interactive(t *testing.T) {
@@ -135,8 +166,14 @@ fi
 	requireExpect(t, cp, "Task prompt set.")
 
 	// Show final (assembled) should now include IMPLEMENTATIONS/CONTEXT marker and edited prompt header
+	cp.ClearOutput()
 	cp.SendLine("show")
 	requireExpect(t, cp, "## IMPLEMENTATIONS/CONTEXT")
+	if out := cp.GetOutput(); !strings.Contains(out, "edited prompt from test") {
+		t.Fatalf("expected final output to include task prompt, got: %s", out)
+	} else if strings.Contains(out, "!! **TEMPLATE:** !!") {
+		t.Fatalf("expected final output to omit template section, got: %s", out)
+	}
 
 	// Copy final output to clipboard (no-op override)
 	cp.SendLine("copy")
@@ -156,6 +193,31 @@ fi
 	requireExpect(t, cp, "## IMPLEMENTATIONS/CONTEXT")
 	if out := cp.GetOutput(); strings.Contains(out, "README.md") {
 		t.Fatalf("expected README.md to be removed from context, but it was present in output:\n%s", out)
+	}
+
+	// Re-run use to ensure repeated updates work without needing generate
+	cp.SendLine("use second prompt from test")
+	requireExpect(t, cp, "Task prompt set.")
+	cp.ClearOutput()
+	cp.SendLine("show")
+	requireExpect(t, cp, "## IMPLEMENTATIONS/CONTEXT")
+	if out := cp.GetOutput(); !strings.Contains(out, "second prompt from test") {
+		t.Fatalf("expected final output to reflect updated task prompt, got: %s", out)
+	} else if strings.Contains(out, "!! **TEMPLATE:** !!") {
+		t.Fatalf("expected final output after update to omit template section, got: %s", out)
+	}
+
+	// Re-generating should clear the task prompt and revert show to meta output
+	cp.ClearOutput()
+	cp.SendLine("generate")
+	requireExpect(t, cp, "Meta-prompt generated.")
+	cp.ClearOutput()
+	cp.SendLine("show")
+	requireExpect(t, cp, "!! **GOAL:** !!")
+	if out := cp.GetOutput(); strings.Contains(out, "second prompt from test") {
+		t.Fatalf("expected regenerate to clear task prompt, but output still contained task prompt text: %s", out)
+	} else if !strings.Contains(out, "!! **TEMPLATE:** !!") {
+		t.Fatalf("expected meta output to include template instructions, got: %s", out)
 	}
 
 	// Exit cleanly

@@ -21,6 +21,7 @@ func newTestEngine(t *testing.T, ctx context.Context, stdout, stderr io.Writer) 
 }
 
 func TestEngine_BasicExecution(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 
@@ -47,6 +48,7 @@ func TestEngine_BasicExecution(t *testing.T) {
 }
 
 func TestEngine_DeferredExecution(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 
@@ -87,6 +89,7 @@ func TestEngine_DeferredExecution(t *testing.T) {
 }
 
 func TestEngine_SubTests(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 
@@ -124,6 +127,7 @@ func TestEngine_SubTests(t *testing.T) {
 }
 
 func TestEngine_ErrorHandling(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 
@@ -150,6 +154,7 @@ func TestEngine_ErrorHandling(t *testing.T) {
 }
 
 func TestEngine_GlobalVariables(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 
@@ -178,6 +183,7 @@ func TestEngine_GlobalVariables(t *testing.T) {
 }
 
 func TestEngine_OutputAPI(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 
@@ -209,6 +215,7 @@ func TestEngine_OutputAPI(t *testing.T) {
 }
 
 func TestEngine_ComplexScenario(t *testing.T) {
+	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 

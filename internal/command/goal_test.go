@@ -9,6 +9,7 @@ import (
 )
 
 func TestGoalCommand_Name(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewGoalCommand(cfg)
 	if cmd.Name() != "goal" {
@@ -17,6 +18,7 @@ func TestGoalCommand_Name(t *testing.T) {
 }
 
 func TestGoalCommand_Description(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewGoalCommand(cfg)
 	expected := "Access pre-written goals for common development tasks"
@@ -26,6 +28,7 @@ func TestGoalCommand_Description(t *testing.T) {
 }
 
 func TestGoalCommand_Usage(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewGoalCommand(cfg)
 	expected := "goal [options] [goal-name]"
@@ -35,6 +38,7 @@ func TestGoalCommand_Usage(t *testing.T) {
 }
 
 func TestGoalCommand_ListGoals(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewGoalCommand(cfg)
 
@@ -78,6 +82,7 @@ func TestGoalCommand_ListGoals(t *testing.T) {
 }
 
 func TestGoalCommand_ListGoalsByCategory(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewGoalCommand(cfg)
 
@@ -107,6 +112,7 @@ func TestGoalCommand_ListGoalsByCategory(t *testing.T) {
 }
 
 func TestGoalCommand_GetAvailableGoals(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewGoalCommand(cfg)
 
@@ -150,6 +156,7 @@ func TestGoalCommand_GetAvailableGoals(t *testing.T) {
 }
 
 func TestGoalCommand_EmbeddedScripts(t *testing.T) {
+	t.Parallel()
 	// Test that embedded scripts are non-empty
 	if len(commentStripperGoal) == 0 {
 		t.Error("Expected commentStripperGoal to be non-empty")
@@ -194,6 +201,7 @@ func TestGoalCommand_EmbeddedScripts(t *testing.T) {
 }
 
 func TestGoalCommand_InvalidGoal(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewGoalCommand(cfg)
 
@@ -210,6 +218,7 @@ func TestGoalCommand_InvalidGoal(t *testing.T) {
 }
 
 func TestGoalCommand_RunGoal_Success_NonInteractive(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewGoalCommand(cfg)
 	// use -r to imply non-interactive
@@ -233,6 +242,7 @@ func TestGoalCommand_RunGoal_Success_NonInteractive(t *testing.T) {
 }
 
 func TestGoalCommand_RunGoal_Success_Interactive_Positional(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewGoalCommand(cfg)
 	// positional argument should default to interactive per README

@@ -10,6 +10,7 @@ import (
 )
 
 func TestCompletionCommand(t *testing.T) {
+	t.Parallel()
 	// Create a test registry with some commands
 	cfg := config.NewConfig()
 	registry := NewRegistryWithConfig(cfg)
@@ -60,6 +61,7 @@ func TestCompletionCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var output strings.Builder
 			var stderr strings.Builder
 
@@ -108,6 +110,7 @@ func TestCompletionCommand(t *testing.T) {
 }
 
 func TestCompletionCommandExecuteWithArgs(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	registry := NewRegistryWithConfig(cfg)
 	registry.Register(NewHelpCommand(registry))
@@ -130,6 +133,7 @@ func TestCompletionCommandExecuteWithArgs(t *testing.T) {
 }
 
 func TestCompletionCommandDefaultToBash(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	registry := NewRegistryWithConfig(cfg)
 	registry.Register(NewHelpCommand(registry))
@@ -152,6 +156,7 @@ func TestCompletionCommandDefaultToBash(t *testing.T) {
 }
 
 func TestCompletionCommandIncludesScriptCommands(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	registry := NewRegistryWithConfig(cfg)
 	registry.Register(NewHelpCommand(registry))
@@ -176,6 +181,7 @@ func TestCompletionCommandIncludesScriptCommands(t *testing.T) {
 		shell := shell
 		marker := marker
 		t.Run(shell, func(t *testing.T) {
+			t.Parallel()
 			completionCmd := NewCompletionCommand(registry)
 
 			var output strings.Builder
@@ -206,6 +212,7 @@ func TestCompletionCommandIncludesScriptCommands(t *testing.T) {
 }
 
 func TestCompletionCommandGoalSubcommand(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	registry := NewRegistryWithConfig(cfg)
 	registry.Register(NewHelpCommand(registry))
@@ -258,6 +265,7 @@ func TestCompletionCommandGoalSubcommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			completionCmd := NewCompletionCommand(registry)
 
 			var output strings.Builder
@@ -284,6 +292,7 @@ func TestCompletionCommandGoalSubcommand(t *testing.T) {
 }
 
 func TestCompletionCommandGoalDescriptions(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	registry := NewRegistryWithConfig(cfg)
 	registry.Register(NewGoalCommand(cfg))

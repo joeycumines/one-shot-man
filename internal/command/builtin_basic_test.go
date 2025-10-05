@@ -12,6 +12,7 @@ import (
 )
 
 func TestHelpCommandListsBuiltins(t *testing.T) {
+	t.Parallel()
 	registry := &Registry{commands: make(map[string]Command)}
 	version := NewVersionCommand("1.2.3")
 	helper := NewHelpCommand(registry)
@@ -40,6 +41,7 @@ func TestHelpCommandListsBuiltins(t *testing.T) {
 }
 
 func TestHelpCommandSpecificCommand(t *testing.T) {
+	t.Parallel()
 	registry := &Registry{commands: make(map[string]Command)}
 	helper := NewHelpCommand(registry)
 	version := NewVersionCommand("9.9.9")
@@ -60,6 +62,7 @@ func TestHelpCommandSpecificCommand(t *testing.T) {
 }
 
 func TestHelpCommandUnknownCommand(t *testing.T) {
+	t.Parallel()
 	registry := &Registry{commands: make(map[string]Command)}
 	helper := NewHelpCommand(registry)
 	registry.Register(helper)
@@ -82,6 +85,7 @@ func TestHelpCommandUnknownCommand(t *testing.T) {
 }
 
 func TestVersionCommandExecute(t *testing.T) {
+	t.Parallel()
 	cmd := NewVersionCommand("0.0.1-test")
 	var stdout bytes.Buffer
 
@@ -95,6 +99,7 @@ func TestVersionCommandExecute(t *testing.T) {
 }
 
 func TestConfigCommandShowAll(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cfg.SetGlobalOption("color", "auto")
 	cfg.SetCommandOption("help", "pager", "less")
@@ -124,6 +129,7 @@ func TestConfigCommandShowAll(t *testing.T) {
 }
 
 func TestConfigCommandGetAndSet(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cfg.SetGlobalOption("color", "auto")
 	cmd := NewConfigCommand(cfg)

@@ -9,6 +9,7 @@ import (
 )
 
 func TestRegister(t *testing.T) {
+	t.Parallel()
 	runtime := goja.New()
 	registry := require.NewRegistry()
 	var tuiMessages []string

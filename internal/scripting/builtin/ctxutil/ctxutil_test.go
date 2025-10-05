@@ -139,6 +139,7 @@ func TestBuildContextLazyDiffErrors(t *testing.T) {
 }
 
 func TestSafeGetString(t *testing.T) {
+	t.Parallel()
 	runtime := goja.New()
 	obj := runtime.NewObject()
 	_ = obj.Set("value", "text")
@@ -160,6 +161,7 @@ func TestSafeGetString(t *testing.T) {
 }
 
 func TestBuildContextItemsSymbol(t *testing.T) {
+	t.Parallel()
 	runtime := setupBuildContext(t)
 
 	script := `
@@ -176,6 +178,7 @@ func TestBuildContextItemsSymbol(t *testing.T) {
 }
 
 func TestBuildContextWithGoSlice(t *testing.T) {
+	t.Parallel()
 	runtime := setupBuildContext(t)
 
 	goItems := []map[string]interface{}{
@@ -207,6 +210,7 @@ func TestBuildContextWithGoSlice(t *testing.T) {
 }
 
 func TestBuildContextLabelToString(t *testing.T) {
+	t.Parallel()
 	runtime := setupBuildContext(t)
 
 	script := `

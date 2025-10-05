@@ -239,8 +239,10 @@ var coreCases = []CoreCase{
 }
 
 func TestParseSlice_UsingCoreCases(t *testing.T) {
+	t.Parallel()
 	for _, tc := range coreCases {
 		t.Run(tc.Name, func(t *testing.T) {
+			t.Parallel()
 			got := ParseSlice(tc.In)
 			if !slicesEqual(got, tc.WantArgs) {
 				t.Fatalf("ParseSlice mismatch\ninput: %q\nwant:  %#v\ngot:   %#v", tc.In, tc.WantArgs, got)
@@ -250,8 +252,10 @@ func TestParseSlice_UsingCoreCases(t *testing.T) {
 }
 
 func TestArgsSeq_UsingCoreCases(t *testing.T) {
+	t.Parallel()
 	for _, tc := range coreCases {
 		t.Run(tc.Name, func(t *testing.T) {
+			t.Parallel()
 			var got []string
 			for s := range ArgsSeq(tc.In) {
 				got = append(got, s)
@@ -264,8 +268,10 @@ func TestArgsSeq_UsingCoreCases(t *testing.T) {
 }
 
 func TestBeforeCursor_UsingCoreCases(t *testing.T) {
+	t.Parallel()
 	for _, tc := range coreCases {
 		t.Run(tc.Name, func(t *testing.T) {
+			t.Parallel()
 			completed, current := BeforeCursor(tc.In)
 			if !slicesEqual(completed, tc.WantBeforeCompleted) {
 				t.Fatalf("BeforeCursor completed mismatch\ninput: %q\nwant:  %#v\ngot:   %#v", tc.In, tc.WantBeforeCompleted, completed)
@@ -278,11 +284,13 @@ func TestBeforeCursor_UsingCoreCases(t *testing.T) {
 }
 
 func TestTokensSeq_Spans_UsingCoreCases(t *testing.T) {
+	t.Parallel()
 	for _, tc := range coreCases {
 		if len(tc.WantTokens) == 0 {
 			continue
 		}
 		t.Run(tc.Name+"/tokens", func(t *testing.T) {
+			t.Parallel()
 			var got []Token
 			for tok := range TokensSeq(tc.In) {
 				got = append(got, tok)
@@ -297,6 +305,7 @@ func TestTokensSeq_Spans_UsingCoreCases(t *testing.T) {
 // Test that iteration stops promptly when yield returns false, and that no
 // further processing occurs (coverage for early return paths).
 func TestTokensSeq_EarlyStop(t *testing.T) {
+	t.Parallel()
 	input := "one two three"
 	count := 0
 	for range TokensSeq(input) {
@@ -311,6 +320,7 @@ func TestTokensSeq_EarlyStop(t *testing.T) {
 }
 
 func TestArgsSeq_EarlyStop(t *testing.T) {
+	t.Parallel()
 	input := "one two three"
 	count := 0
 	for range ArgsSeq(input) {
@@ -325,6 +335,7 @@ func TestArgsSeq_EarlyStop(t *testing.T) {
 }
 
 func TestTokensSeq_EmptyInput(t *testing.T) {
+	t.Parallel()
 	// Ensure the early return on empty input is covered
 	count := 0
 	for range TokensSeq("") {
@@ -336,6 +347,7 @@ func TestTokensSeq_EmptyInput(t *testing.T) {
 }
 
 func TestTokensSeq_BackslashNewlineAtStart(t *testing.T) {
+	t.Parallel()
 	// A line continuation at token start should not begin a token nor glue whitespace
 	in := "\\\nX"
 	var got []Token
@@ -349,6 +361,7 @@ func TestTokensSeq_BackslashNewlineAtStart(t *testing.T) {
 }
 
 func TestTokensSeq_DoubleQuoteEscapeBackslash(t *testing.T) {
+	t.Parallel()
 	in := "\"a\\\\b\"" // "a\\b"
 	var got []Token
 	for tok := range TokensSeq(in) {
@@ -361,6 +374,7 @@ func TestTokensSeq_DoubleQuoteEscapeBackslash(t *testing.T) {
 }
 
 func TestTokensSeq_NewlineInsideQuotes(t *testing.T) {
+	t.Parallel()
 	// Newline inside quotes is literal (unless escaped in double quotes)
 	in1 := "\"a\nb\""
 	in2 := "'a\nb'"
@@ -380,6 +394,7 @@ func TestTokensSeq_NewlineInsideQuotes(t *testing.T) {
 }
 
 func TestTokensSeq_YieldFalsePath(t *testing.T) {
+	t.Parallel()
 	// Invoke the underlying generator directly to force yield to return false
 	seq := TokensSeq("a b c")
 	n := 0

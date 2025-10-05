@@ -7,6 +7,7 @@ import (
 )
 
 func TestConfigParsing(t *testing.T) {
+	t.Parallel()
 	configContent := `# Global options
 verbose true
 color auto
@@ -53,6 +54,7 @@ format short`
 }
 
 func TestEmptyConfig(t *testing.T) {
+	t.Parallel()
 	config, err := LoadFromReader(strings.NewReader(""))
 	if err != nil {
 		t.Fatalf("Failed to load empty config: %v", err)
@@ -68,6 +70,7 @@ func TestEmptyConfig(t *testing.T) {
 }
 
 func TestConfigWithComments(t *testing.T) {
+	t.Parallel()
 	configContent := `# This is a comment
 verbose true
 # Another comment
@@ -92,6 +95,7 @@ pager less`
 }
 
 func TestSetGlobalAndCommandOptions(t *testing.T) {
+	t.Parallel()
 	cfg := NewConfig()
 
 	cfg.SetGlobalOption("color", "auto")
@@ -112,6 +116,7 @@ func TestSetGlobalAndCommandOptions(t *testing.T) {
 }
 
 func TestLoadFromPathMissing(t *testing.T) {
+	t.Parallel()
 	path := t.TempDir() + "/missing-config"
 
 	cfg, err := LoadFromPath(path)
@@ -125,6 +130,7 @@ func TestLoadFromPathMissing(t *testing.T) {
 }
 
 func TestLoadFromPathExisting(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := dir + "/config"
 	contents := "verbose true\n[help]\npager less"

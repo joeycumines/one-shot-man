@@ -10,6 +10,7 @@ import (
 )
 
 func TestPromptFlowCommand_NonInteractive(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPromptFlowCommand(cfg)
 
@@ -36,6 +37,7 @@ func TestPromptFlowCommand_NonInteractive(t *testing.T) {
 }
 
 func TestPromptFlowCommand_Name(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPromptFlowCommand(cfg)
 
@@ -45,6 +47,7 @@ func TestPromptFlowCommand_Name(t *testing.T) {
 }
 
 func TestPromptFlowCommand_Description(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPromptFlowCommand(cfg)
 
@@ -55,6 +58,7 @@ func TestPromptFlowCommand_Description(t *testing.T) {
 }
 
 func TestPromptFlowCommand_Usage(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPromptFlowCommand(cfg)
 
@@ -65,6 +69,7 @@ func TestPromptFlowCommand_Usage(t *testing.T) {
 }
 
 func TestPromptFlowCommand_SetupFlags(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPromptFlowCommand(cfg)
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -89,6 +94,7 @@ func TestPromptFlowCommand_SetupFlags(t *testing.T) {
 }
 
 func TestPromptFlowCommand_FlagParsing(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPromptFlowCommand(cfg)
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -121,6 +127,7 @@ func TestPromptFlowCommand_FlagParsing(t *testing.T) {
 }
 
 func TestPromptFlowCommand_ExecuteWithArgs(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPromptFlowCommand(cfg)
 
@@ -144,6 +151,7 @@ func TestPromptFlowCommand_ExecuteWithArgs(t *testing.T) {
 }
 
 func TestPromptFlowCommand_ConfigColorOverrides(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cfg.Global = map[string]string{
 		"prompt.color.input":  "green",
@@ -172,6 +180,7 @@ func TestPromptFlowCommand_ConfigColorOverrides(t *testing.T) {
 }
 
 func TestPromptFlowCommand_NilConfig(t *testing.T) {
+	t.Parallel()
 	cmd := NewPromptFlowCommand(nil)
 
 	var stdout, stderr bytes.Buffer
@@ -193,6 +202,7 @@ func TestPromptFlowCommand_NilConfig(t *testing.T) {
 }
 
 func TestPromptFlowCommand_TemplateContent(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPromptFlowCommand(cfg)
 
@@ -228,6 +238,7 @@ func TestPromptFlowCommand_TemplateContent(t *testing.T) {
 }
 
 func TestPromptFlowCommand_EmbeddedContent(t *testing.T) {
+	t.Parallel()
 	// Test that both embedded assets are non-empty
 	if len(promptFlowTemplate) == 0 {
 		t.Error("Expected promptFlowTemplate to be non-empty")
@@ -257,6 +268,7 @@ func TestPromptFlowCommand_EmbeddedContent(t *testing.T) {
 }
 
 func TestPromptFlowCommand_InteractiveMode(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPromptFlowCommand(cfg)
 

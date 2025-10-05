@@ -26,6 +26,7 @@ func (c *TestCommand) Execute(args []string, stdout, stderr io.Writer) error {
 }
 
 func TestRegistry(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	registry := NewRegistryWithConfig(cfg)
 
@@ -109,6 +110,7 @@ func TestScriptPathDuplication(t *testing.T) {
 }
 
 func TestScriptCommand(t *testing.T) {
+	t.Parallel()
 	// Create temporary script file
 	tmpDir := t.TempDir()
 	scriptPath := filepath.Join(tmpDir, "testscript")

@@ -23,6 +23,7 @@ func setupModule(t *testing.T) (*goja.Runtime, goja.Callable) {
 }
 
 func TestNextIntegerID(t *testing.T) {
+	t.Parallel()
 	runtime, nextFn := setupModule(t)
 
 	cases := []struct {
@@ -55,6 +56,7 @@ func TestNextIntegerID(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			result, err := nextFn(goja.Undefined(), tc.args...)
 			if err != nil {
 				t.Fatalf("call failed: %v", err)

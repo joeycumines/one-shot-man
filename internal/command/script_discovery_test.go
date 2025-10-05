@@ -11,6 +11,7 @@ import (
 )
 
 func TestScriptDiscovery_DefaultBehavior(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	discovery := NewScriptDiscovery(cfg)
 
@@ -28,6 +29,7 @@ func TestScriptDiscovery_DefaultBehavior(t *testing.T) {
 }
 
 func TestScriptDiscovery_ConfigurationLoading(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cfg.SetGlobalOption("script.autodiscovery", "true")
 	cfg.SetGlobalOption("script.git-traversal", "true")
@@ -59,6 +61,7 @@ func TestScriptDiscovery_ConfigurationLoading(t *testing.T) {
 }
 
 func TestScriptDiscovery_LegacyPaths(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	discovery := NewScriptDiscovery(cfg)
 
@@ -110,6 +113,7 @@ func TestScriptDiscovery_LegacyPathsRespectsConfigEnv(t *testing.T) {
 }
 
 func TestScriptDiscovery_PathExpansion(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	discovery := NewScriptDiscovery(cfg)
 
@@ -132,6 +136,7 @@ func TestScriptDiscovery_PathExpansion(t *testing.T) {
 }
 
 func TestScriptDiscovery_GitRepositoryDetection(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	discovery := NewScriptDiscovery(cfg)
 
@@ -157,6 +162,7 @@ func TestScriptDiscovery_GitRepositoryDetection(t *testing.T) {
 }
 
 func TestScriptDiscovery_DirectoryExists(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	discovery := NewScriptDiscovery(cfg)
 
@@ -183,6 +189,7 @@ func TestScriptDiscovery_DirectoryExists(t *testing.T) {
 }
 
 func TestScriptDiscovery_PathPriority(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	discovery := NewScriptDiscovery(cfg)
 
@@ -291,6 +298,7 @@ func TestScriptDiscovery_PathPriority(t *testing.T) {
 }
 
 func TestScriptDiscovery_ParsePathList(t *testing.T) {
+	t.Parallel()
 	sep := string([]byte{filepath.ListSeparator})
 	tests := []struct {
 		input    string
@@ -323,6 +331,7 @@ func TestScriptDiscovery_ParsePathList(t *testing.T) {
 }
 
 func TestScriptDiscovery_ParsePositiveInt(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    string
 		def      int
@@ -348,6 +357,7 @@ func TestScriptDiscovery_ParsePositiveInt(t *testing.T) {
 }
 
 func TestNewRegistryWithConfig_Integration(t *testing.T) {
+	t.Parallel()
 	// Test that the registry properly integrates with script discovery
 	cfg := config.NewConfig()
 	cfg.SetGlobalOption("script.paths", "/custom/path")

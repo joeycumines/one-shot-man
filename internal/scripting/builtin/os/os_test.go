@@ -168,6 +168,7 @@ func TestClipboardCopy(t *testing.T) {
 }
 
 func TestSanitizeFilename(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"simple.txt":    "simple.txt",
 		"sp ace":        "sp-ace",

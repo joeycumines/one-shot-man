@@ -8,6 +8,7 @@ import (
 )
 
 func TestSleep(t *testing.T) {
+	t.Parallel()
 	runtime := goja.New()
 	module := runtime.NewObject()
 	exports := runtime.NewObject()

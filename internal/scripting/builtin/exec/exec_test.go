@@ -75,6 +75,7 @@ func toInt64(v interface{}) int64 {
 }
 
 func TestExecAndExecv(t *testing.T) {
+	t.Parallel()
 	runtime, exports := setupModule(t)
 	execFn := requireCallable(t, exports, "exec")
 	execvFn := requireCallable(t, exports, "execv")

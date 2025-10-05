@@ -22,6 +22,7 @@ func (f terminalFunc) Run() {
 }
 
 func TestNewScriptingCommand(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewScriptingCommand(cfg)
 
@@ -46,6 +47,7 @@ func TestNewScriptingCommand(t *testing.T) {
 }
 
 func TestScriptingCommand_SetupFlags(t *testing.T) {
+	t.Parallel()
 	cmd := NewScriptingCommand(config.NewConfig())
 	fs := flag.NewFlagSet("scripting", flag.ContinueOnError)
 
@@ -60,6 +62,7 @@ func TestScriptingCommand_SetupFlags(t *testing.T) {
 
 func TestScriptingCommand_FlagParsing(t *testing.T) {
 	t.Run("long forms", func(t *testing.T) {
+		t.Parallel()
 		cmd := NewScriptingCommand(config.NewConfig())
 		fs := flag.NewFlagSet("scripting", flag.ContinueOnError)
 		cmd.SetupFlags(fs)
@@ -80,6 +83,7 @@ func TestScriptingCommand_FlagParsing(t *testing.T) {
 	})
 
 	t.Run("short forms", func(t *testing.T) {
+		t.Parallel()
 		cmd := NewScriptingCommand(config.NewConfig())
 		fs := flag.NewFlagSet("scripting", flag.ContinueOnError)
 		cmd.SetupFlags(fs)
@@ -98,6 +102,7 @@ func TestScriptingCommand_FlagParsing(t *testing.T) {
 }
 
 func TestScriptingCommand_Execute_NoScript(t *testing.T) {
+	t.Parallel()
 	cmd := NewScriptingCommand(config.NewConfig())
 	var stdout, stderr bytes.Buffer
 
@@ -113,6 +118,7 @@ func TestScriptingCommand_Execute_NoScript(t *testing.T) {
 }
 
 func TestScriptingCommand_Execute_ScriptFileNotFound(t *testing.T) {
+	t.Parallel()
 	cmd := NewScriptingCommand(config.NewConfig())
 	var stdout, stderr bytes.Buffer
 
@@ -189,6 +195,7 @@ func TestScriptingCommand_Execute_ScriptFromScriptsDirectory(t *testing.T) {
 }
 
 func TestScriptingCommand_Execute_InlineScript(t *testing.T) {
+	t.Parallel()
 	cmd := NewScriptingCommand(config.NewConfig())
 	cmd.testMode = true
 	cmd.script = "ctx.log('inline');"
@@ -204,6 +211,7 @@ func TestScriptingCommand_Execute_InlineScript(t *testing.T) {
 }
 
 func TestScriptingCommand_Execute_Interactive(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cfg.Global = map[string]string{
 		"prompt.color.input":  "green",
@@ -232,6 +240,7 @@ func TestScriptingCommand_Execute_Interactive(t *testing.T) {
 }
 
 func TestScriptingCommand_Execute_EngineError(t *testing.T) {
+	t.Parallel()
 	cmd := NewScriptingCommand(config.NewConfig())
 	cmd.engineFactory = func(context.Context, io.Writer, io.Writer) (*scripting.Engine, error) {
 		return nil, errors.New("boom")
@@ -245,6 +254,7 @@ func TestScriptingCommand_Execute_EngineError(t *testing.T) {
 }
 
 func TestScriptingCommand_Execute_InlineScriptFailure(t *testing.T) {
+	t.Parallel()
 	cmd := NewScriptingCommand(config.NewConfig())
 	cmd.script = "throw new Error('kaboom')"
 

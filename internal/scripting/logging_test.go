@@ -9,6 +9,7 @@ import (
 
 // Test newline behavior for non-interactive writer path
 func TestPrintToTUI_Writer_Newline(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	l := NewTUILogger(&buf, 10)
 
@@ -24,6 +25,7 @@ func TestPrintToTUI_Writer_Newline(t *testing.T) {
 
 // Test newline behavior for interactive sink path
 func TestPrintToTUI_Sink_Newline(t *testing.T) {
+	t.Parallel()
 	var got []string
 	var mu sync.Mutex
 
@@ -50,6 +52,7 @@ func TestPrintToTUI_Sink_Newline(t *testing.T) {
 // Test atomicity between PrintToTUI and SetTUISink: SetTUISink should block
 // until any in-flight PrintToTUI completes while holding the read lock
 func TestPrintToTUI_SetTUISink_Atomicity(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	l := NewTUILogger(&buf, 10)
 
@@ -106,6 +109,7 @@ func (w *blockingWriter) Write(p []byte) (int, error) {
 
 // Ensure SetTUISink blocks while a writer-path PrintToTUI is in progress
 func TestPrintToTUI_SetTUISink_Atomicity_WriterPath(t *testing.T) {
+	t.Parallel()
 	bw := &blockingWriter{unblk: make(chan struct{})}
 	l := NewTUILogger(bw, 10)
 

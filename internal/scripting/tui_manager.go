@@ -340,8 +340,7 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		prompt.WithDescriptionBGColor(colors.DescriptionBG),
 		prompt.WithSelectedDescriptionTextColor(colors.SelectedDescriptionText),
 		prompt.WithSelectedDescriptionBGColor(colors.SelectedDescriptionBG),
-		prompt.WithShowCompletionAtStart(),
-		prompt.WithMaxSuggestion(100),
+		prompt.WithMaxSuggestion(10),
 		prompt.WithDynamicCompletion(true),
 		// Enable auto-hiding completions when submitting input
 		prompt.WithExecuteHidesCompletions(true),

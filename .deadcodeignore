@@ -5,3 +5,6 @@
 # Ignore test-only PTY/go-prompt harness utilities which are intentionally
 # unreachable in normal builds and only used via tests
 internal/termtest/*
+
+internal/scripting/builtin/ctxutil/ctxutil.go:*: unreachable func: SetRunGitDiffFn
+internal/scripting/builtin/ctxutil/ctxutil.go:*: unreachable func: SetGetDefaultGitDiffArgsFn

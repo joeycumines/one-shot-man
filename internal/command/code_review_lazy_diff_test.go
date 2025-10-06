@@ -55,11 +55,36 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 		t.Fatalf("Failed to execute script: %v", err)
 	}
 
+	// Explicitly switch to review mode using Go-level call to ensure mode is fully initialized
+	tuiManager := engine.GetTUIManager()
+	if err := tuiManager.SwitchMode("review"); err != nil {
+		t.Fatalf("Failed to switch to review mode: %v", err)
+	}
+
+	// Simple smoke test first: verify that we can call commands
+	smokeTest := `
+		output.print("=== SMOKE TEST ===");
+		output.print("typeof commands: " + typeof commands);
+		output.print("typeof items: " + typeof items);
+		const result = items();
+		output.print("items() result type: " + typeof result);
+		output.print("items() result value: " + (result === null ? "null" : (result === undefined ? "undefined" : JSON.stringify(result))));
+		output.print("=== END SMOKE TEST ===");
+	`
+
+	smokeTestObj := engine.LoadScriptFromString("smoke-test", smokeTest)
+	if err := engine.ExecuteScript(smokeTestObj); err != nil {
+		t.Fatalf("Smoke test failed: %v\nOutput: %s", err, stdout.String())
+	}
+
+	t.Logf("Smoke test output:\n%s", stdout.String())
+
 	// Test lazy diff behavior
 	testScript := `
 		// Test 1: Add a lazy diff (should not execute git diff yet)
+		// Mode is already entered and fully initialized via Go call above
+
 		const initialItems = items().length;
-		const commands = buildCommands();
 
 		// Execute diff command with default (HEAD~1)
 		commands.diff.handler([]);

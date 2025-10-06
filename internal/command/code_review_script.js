@@ -4,48 +4,51 @@
 const nextIntegerId = require('osm:nextIntegerId');
 const {buildContext, contextManager} = require('osm:ctxutil');
 
-// State keys
-const STATE = {
-    mode: "review",             // fixed mode name
-    contextItems: "contextItems" // array of { id, type: file|diff|note, label, payload }
-};
+// Fixed mode name
+const MODE_NAME = "review";
 
-// Helper functions for state management
-function items() {
-    return tui.getState(STATE.contextItems) || [];
-}
-
-function setItems(v) {
-    tui.setState(STATE.contextItems, v);
-}
-
-function buildPrompt() {
-    const pb = tui.createPromptBuilder("review", "Build code review prompt");
-    pb.setTemplate(codeReviewTemplate);
-    const fullContext = buildContext(items(), {toTxtar: () => context.toTxtar()});
-    pb.setVariable("context_txtar", fullContext);
-    return pb.build();
-}
-
-// Create context manager with code-review specific configuration
-const ctxmgr = contextManager({
-    getItems: items,
-    setItems: setItems,
-    nextIntegerId: nextIntegerId,
-    buildPrompt: buildPrompt
+// Define state contract with Symbol keys
+const StateKeys = tui.createStateContract(MODE_NAME, {
+    contextItems: {
+        description: MODE_NAME + ":contextItems",
+        defaultValue: []
+    }
 });
 
-// Expose parseArgv and formatArgv for test access
-const {parseArgv, formatArgv} = ctxmgr;
+// Globals for test access - these will be populated when buildCommands is called
+let parseArgv, formatArgv, items, buildPrompt, commands;
 
-// Build commands by extending the base contextManager commands
-function buildCommands() {
-    return {
-        add: ctxmgr.commands.add,
-        diff: ctxmgr.commands.diff,
-        list: ctxmgr.commands.list,
-        edit: ctxmgr.commands.edit,
-        remove: ctxmgr.commands.remove,
+// Build commands with state accessor - called when mode is first used
+function buildCommands(state) {
+
+    const ctxmgr = contextManager({
+        getItems: () => state.get(StateKeys.contextItems),
+        setItems: (v) => state.set(StateKeys.contextItems, v),
+        nextIntegerId: nextIntegerId,
+        buildPrompt: () => {
+            const pb = tui.createPromptBuilder("review", "Build code review prompt");
+            pb.setTemplate(codeReviewTemplate);
+            const fullContext = buildContext(state.get(StateKeys.contextItems), {toTxtar: () => context.toTxtar()});
+            pb.setVariable("context_txtar", fullContext);
+            return pb.build();
+        }
+    });
+
+    // Export for test access as both module-level and global variables
+    parseArgv = ctxmgr.parseArgv;
+    formatArgv = ctxmgr.formatArgv;
+    items = ctxmgr.getItems;
+    buildPrompt = ctxmgr.buildPrompt;
+
+    // Also set as global variables for cross-script access
+    globalThis.parseArgv = parseArgv;
+    globalThis.formatArgv = formatArgv;
+    globalThis.items = items;
+    globalThis.buildPrompt = buildPrompt;
+
+    // Build the commands object
+    const commandsObj = {
+        ...ctxmgr.commands,
         note: {
             ...ctxmgr.commands.note,
             usage: "note [text|--goals]",
@@ -85,53 +88,48 @@ function buildCommands() {
             }
         },
         show: {
-            description: "Show the code review prompt",
-            handler: ctxmgr.commands.show.handler
-        },
-        copy: {
-            description: "Copy code review prompt to clipboard",
-            handler: function () {
-                const text = buildPrompt();
-                try {
-                    ctxmgr.clipboardCopy(text);
-                    output.print("Code review prompt copied to clipboard.");
-                } catch (e) {
-                    output.print("Clipboard error: " + (e && e.message ? e.message : e));
-                }
-            }
+            ...ctxmgr.commands.show,
+            description: "Show the code review prompt"
         },
         help: {description: "Show help", handler: help}
     };
+
+    // Export for test access
+    commands = commandsObj;
+    globalThis.commands = commandsObj;
+
+    return commandsObj;
 }
 
 // Initialize the mode
 ctx.run("register-mode", function () {
     tui.registerMode({
-        name: STATE.mode,
+        name: MODE_NAME,
+        stateContract: StateKeys,
         tui: {
             title: "Code Review",
             prompt: "(code-review) > ",
             enableHistory: true,
             historyFile: ".code-review_history"
         },
-        onEnter: function () {
-            if (!tui.getState(STATE.contextItems)) {
-                tui.setState(STATE.contextItems, []);
-            }
+        onEnter: function (_, stateObj) {
+            // Commands are already built by the commands() function call during mode switch
+            // We just need to show the banner and help
             banner();
             help();
         },
-        onExit: function () {
+        onExit: function (_, stateObj) {
             output.print("Exiting Code Review.");
         },
-        commands: buildCommands()
+        // Return the commands built with the current state accessor
+        commands: buildCommands
     });
 
     tui.registerCommand({
         name: "review",
         description: "Switch to Code Review mode",
         handler: function () {
-            tui.switchMode(STATE.mode);
+            tui.switchMode(MODE_NAME);
         }
     });
 });
@@ -142,11 +140,11 @@ function banner() {
 }
 
 function help() {
-    output.print("Commands: add, diff, note, list, edit, remove, show, copy, help, exit");
-    output.print("Tip: Use 'note --goals' to see goal-based review focuses");
+	output.print("Commands: add, diff, note, list, edit, remove, show, copy, help, exit");
+	output.print("Tip: Use 'note --goals' to see goal-based review focuses");
 }
 
 // Auto-switch into review mode when this script loads
 ctx.run("enter-review", function () {
-    tui.switchMode(STATE.mode);
+	tui.switchMode(MODE_NAME);
 });

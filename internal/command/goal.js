@@ -15,100 +15,108 @@
     const nextIntegerId = require('osm:nextIntegerId');
     const {buildContext, contextManager} = require('osm:ctxutil');
 
-    // State key for context items
-    const CONTEXT_ITEMS_KEY = "contextItems";
-
-    // Getter/setter for context items
-    function items() {
-        return tui.getState(CONTEXT_ITEMS_KEY) || [];
-    }
-
-    function setItems(v) {
-        tui.setState(CONTEXT_ITEMS_KEY, v);
-    }
-
-    // Build prompt from configuration
-    function buildPrompt() {
-        // Get current state values for template interpolation
-        const stateVars = {};
-        if (config.StateKeys) {
-            for (const key in config.StateKeys) {
-                stateVars[key] = tui.getState(key);
-            }
+    // Build state contract from GOAL_CONFIG.StateKeys
+    const stateContractDef = {
+        contextItems: {
+            description: config.Name + ":contextItems",
+            defaultValue: []
         }
+    };
 
-        // Build context txtar
-        const fullContext = buildContext(items(), {toTxtar: () => context.toTxtar()});
+    // Add state keys from config
+    if (config.StateKeys) {
+        for (const key in config.StateKeys) {
+            stateContractDef[key] = {
+                description: config.Name + ":" + key,
+                defaultValue: config.StateKeys[key]
+            };
+        }
+    }
 
-        // Create prompt builder
-        const pb = tui.createPromptBuilder(config.Name, "Build " + config.Description + " prompt");
-        
-        // Use the PromptTemplate from Go configuration
-        let promptText = config.PromptTemplate || "";
+    const StateKeys = tui.createStateContract(config.Name, stateContractDef);
 
-        // Perform template substitutions
-        // Replace {{.Description | upper}}
-        promptText = promptText.replace(/\{\{\.Description \| upper\}\}/g, (config.Description || "").toUpperCase());
+    // Build commands from configuration
+    function buildCommands(state) {
+        // Build prompt from configuration
+        function buildPrompt() {
+            // Get current state values for template interpolation
+            const stateVars = {};
+            if (config.StateKeys) {
+                for (const key in config.StateKeys) {
+                    stateVars[key] = state.get(StateKeys[key]);
+                }
+            }
 
-        // Replace {{.Description}}
-        promptText = promptText.replace(/\{\{\.Description\}\}/g, config.Description || "");
+            // Build context txtar
+            const fullContext = buildContext(state.get(StateKeys.contextItems), {toTxtar: () => context.toTxtar()});
 
-        // Replace {{.PromptInstructions}}
-        let instructions = config.PromptInstructions || "";
-        
-        // Handle dynamic instruction substitutions from PromptOptions
-        if (config.PromptOptions) {
-            // Generic replacement for any option map (e.g., docTypeInstructions, testTypeInstructions)
-            for (const optionKey in config.PromptOptions) {
-                const optionMap = config.PromptOptions[optionKey];
-                if (typeof optionMap === 'object' && optionMap !== null) {
-                    // Find the corresponding state key (e.g., docType, testType)
-                    // by removing "Instructions" suffix from option key
-                    const stateKeyBase = optionKey.replace(/Instructions$/, '');
-                    const stateValue = stateVars[stateKeyBase];
-                    
-                    if (stateValue && optionMap[stateValue]) {
-                        const placeholder = "{{." + optionKey.charAt(0).toUpperCase() + optionKey.slice(1) + "}}";
-                        instructions = instructions.replace(placeholder, optionMap[stateValue]);
+            // Create prompt builder
+            const pb = tui.createPromptBuilder(config.Name, "Build " + config.Description + " prompt");
+
+            // Use the PromptTemplate from Go configuration
+            let promptText = config.PromptTemplate || "";
+
+            // Perform template substitutions
+            // Replace {{.Description | upper}}
+            promptText = promptText.replace(/\{\{\.Description \| upper\}\}/g, (config.Description || "").toUpperCase());
+
+            // Replace {{.Description}}
+            promptText = promptText.replace(/\{\{\.Description\}\}/g, config.Description || "");
+
+            // Replace {{.PromptInstructions}}
+            let instructions = config.PromptInstructions || "";
+
+            // Handle dynamic instruction substitutions from PromptOptions
+            if (config.PromptOptions) {
+                // Generic replacement for any option map (e.g., docTypeInstructions, testTypeInstructions)
+                for (const optionKey in config.PromptOptions) {
+                    const optionMap = config.PromptOptions[optionKey];
+                    if (typeof optionMap === 'object' && optionMap !== null) {
+                        // Find the corresponding state key (e.g., docType, testType)
+                        // by removing "Instructions" suffix from option key
+                        const stateKeyBase = optionKey.replace(/Instructions$/, '');
+                        const stateValue = stateVars[stateKeyBase];
+
+                        if (stateValue && optionMap[stateValue]) {
+                            const placeholder = "{{." + optionKey.charAt(0).toUpperCase() + optionKey.slice(1) + "}}";
+                            instructions = instructions.replace(placeholder, optionMap[stateValue]);
+                        }
                     }
                 }
             }
+
+            // Handle framework info placeholder (used when a framework state variable is set)
+            if (stateVars.framework && stateVars.framework !== "auto") {
+                instructions = instructions.replace("{{.FrameworkInfo}}", "\nUse the " + stateVars.framework + " testing framework.");
+            } else {
+                instructions = instructions.replace("{{.FrameworkInfo}}", "");
+            }
+
+            // Replace state variable references
+            instructions = instructions.replace(/\{\{\.StateKeys\.(\w+)\}\}/g, function(match, key) {
+                return stateVars[key] || "";
+            });
+
+            promptText = promptText.replace(/\{\{\.PromptInstructions\}\}/g, instructions);
+
+            // Replace {{.ContextHeader}}
+            promptText = promptText.replace(/\{\{\.ContextHeader\}\}/g, config.ContextHeader || "CONTEXT");
+
+            // Replace {{.ContextTxtar}}
+            promptText = promptText.replace(/\{\{\.ContextTxtar\}\}/g, fullContext);
+
+            pb.setTemplate(promptText);
+            return pb.build();
         }
 
-        // Handle framework info placeholder (used when a framework state variable is set)
-        if (stateVars.framework && stateVars.framework !== "auto") {
-            instructions = instructions.replace("{{.FrameworkInfo}}", "\nUse the " + stateVars.framework + " testing framework.");
-        } else {
-            instructions = instructions.replace("{{.FrameworkInfo}}", "");
-        }
-
-        // Replace state variable references
-        instructions = instructions.replace(/\{\{\.StateKeys\.(\w+)\}\}/g, function(match, key) {
-            return stateVars[key] || "";
+        // Create context manager
+        const ctxmgr = contextManager({
+            getItems: () => state.get(StateKeys.contextItems),
+            setItems: (v) => state.set(StateKeys.contextItems, v),
+            nextIntegerId: nextIntegerId,
+            buildPrompt: buildPrompt
         });
 
-        promptText = promptText.replace(/\{\{\.PromptInstructions\}\}/g, instructions);
-
-        // Replace {{.ContextHeader}}
-        promptText = promptText.replace(/\{\{\.ContextHeader\}\}/g, config.ContextHeader || "CONTEXT");
-
-        // Replace {{.ContextTxtar}}
-        promptText = promptText.replace(/\{\{\.ContextTxtar\}\}/g, fullContext);
-
-        pb.setTemplate(promptText);
-        return pb.build();
-    }
-
-    // Create context manager
-    const ctxmgr = contextManager({
-        getItems: items,
-        setItems: setItems,
-        nextIntegerId: nextIntegerId,
-        buildPrompt: buildPrompt
-    });
-
-    // Build commands from configuration
-    function buildCommands() {
         const commands = {};
 
         // Guard against undefined Commands array
@@ -137,23 +145,23 @@
                     // Parse the handler string as a function expression
                     // Remove the "function (args)" wrapper if present and extract the body
                     let handlerCode = cmdConfig.Handler.trim();
-                    
+
                     // If it's a function expression like "function (args) { ... }"
                     // we need to extract just the body
                     const funcMatch = handlerCode.match(/^function\s*\([^)]*\)\s*\{([\s\S]*)\}$/);
                     if (funcMatch) {
                         handlerCode = funcMatch[1];
                     }
-                    
+
                     // Create function with access to necessary variables
                     // new Function is safer than eval as it only has access to global scope
-                    handler = new Function('args', 'ctxmgr', 'output', 'tui', 'buildPrompt', handlerCode);
-                    
+                    handler = new Function('args', 'ctxmgr', 'output', 'tui', 'buildPrompt', 'state', 'StateKeys', handlerCode);
+
                     // Wrap to provide the correct context
                     const wrappedHandler = function(args) {
-                        return handler.call(this, args, ctxmgr, output, tui, buildPrompt);
+                        return handler.call(this, args, ctxmgr, output, tui, buildPrompt, state, StateKeys);
                     };
-                    
+
                     commands[cmdConfig.Name] = {
                         description: cmdConfig.Description || "",
                         usage: cmdConfig.Usage || "",
@@ -194,35 +202,24 @@
 
     // Initialize the mode
     ctx.run("register-mode", function () {
-        // Initialize state keys
-        const onEnterFunc = function () {
-            if (config.StateKeys) {
-                for (const key in config.StateKeys) {
-                    if (tui.getState(key) === undefined || tui.getState(key) === null) {
-                        tui.setState(key, config.StateKeys[key]);
-                    }
-                }
-            }
-            banner();
-            help();
-        };
-
-        const onExitFunc = function () {
-            output.print("Goodbye!");
-        };
-
         // Register the mode
         tui.registerMode({
             name: config.Name,
+            stateContract: StateKeys,
             tui: {
                 title: config.TUITitle || config.Name,
                 prompt: config.TUIPrompt || "> ",
                 enableHistory: config.EnableHistory || false,
                 historyFile: config.HistoryFile || ""
             },
-            onEnter: onEnterFunc,
-            onExit: onExitFunc,
-            commands: buildCommands()
+            onEnter: function (_, stateObj) {
+                banner();
+                help();
+            },
+            onExit: function (_, stateObj) {
+                output.print("Goodbye!");
+            },
+            commands: buildCommands
         });
     });
 })();

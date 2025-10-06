@@ -31,12 +31,18 @@ func TestCodeReviewCommand_ShowActualDiffOutput(t *testing.T) {
 		t.Fatalf("Failed to execute script: %v", err)
 	}
 
+	// Explicitly switch to review mode using Go-level call to ensure mode is fully initialized
+	tuiManager := engine.GetTUIManager()
+	if err := tuiManager.SwitchMode("review"); err != nil {
+		t.Fatalf("Failed to switch to review mode: %v", err)
+	}
+
 	// Test the complete workflow: add diff, then generate prompt
 	testScript := `
 		output.print("=== TESTING CODE REVIEW DIFF FUNCTIONALITY ===");
 
 		// Step 1: Add a lazy diff (default HEAD~1)
-		const commands = buildCommands();
+		// Note: commands is a global set when mode is entered
 		commands.diff.handler([]);
 
 		// Show what was added

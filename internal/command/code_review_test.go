@@ -241,9 +241,9 @@ func TestCodeReviewCommand_EmbeddedContent(t *testing.T) {
 		t.Error("Expected template to contain IMPLEMENTATIONS/CONTEXT section")
 	}
 
-	// Test script structure
-	if !contains(codeReviewScript, "function buildPrompt()") {
-		t.Error("Expected script to contain buildPrompt function")
+	// Test script structure (new architecture uses buildCommands function)
+	if !contains(codeReviewScript, "function buildCommands(state)") {
+		t.Error("Expected script to contain buildCommands function")
 	}
 
 	if !contains(codeReviewScript, "codeReviewTemplate") {

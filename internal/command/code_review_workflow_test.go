@@ -55,8 +55,8 @@ func TestCodeReviewCommand_FullWorkflow(t *testing.T) {
 	}
 
 	expectedScriptElements := []string{
-		"mode: \"review\"",
-		"function buildPrompt()",
+		"const MODE_NAME = \"review\"",
+		"function buildCommands(state)",
 		"codeReviewTemplate",
 		"pb.setTemplate(codeReviewTemplate)",
 		"pb.setVariable(\"context_txtar\", fullContext)",

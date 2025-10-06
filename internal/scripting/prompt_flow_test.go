@@ -281,8 +281,8 @@ func TestPromptFlow_Remove_Ambiguous_AbortsUI(t *testing.T) {
 	// Make the first item's label ambiguous by rewriting it to just the basename
 	// so that removing by id=1 will attempt context.removePath("a.txt") which
 	// should match both tracked files and yield an ambiguity error.
-	// N.B. We mutate JS state via inline JS execution.
-	cp.SendLine(`(function(){ var l=tui.getState("contextItems")||[]; if(l.length>0){ l[0].label="a.txt"; } tui.setState("contextItems", l); })()`)
+	// N.B. We mutate JS state via the dedicated test hook.
+	cp.SendLine(`(function(){ if (typeof __promptFlowTestHooks !== "undefined") { __promptFlowTestHooks.withState(function(h){ var items=h.state.get(h.StateKeys.contextItems); if(items.length>0){ items[0].label="a.txt"; h.state.set(h.StateKeys.contextItems, items); } }); } })()`)
 	// sanity: list shows label now as just a.txt
 	cp.SendLine("list")
 	requireExpect(t, cp, "[1] [file] a.txt")
@@ -339,7 +339,7 @@ func TestPromptFlow_Remove_NotFound_AbortsUI(t *testing.T) {
 	requireExpect(t, cp, "Added file:")
 
 	// Make the UI label a path that isn't tracked in the backend to simulate not found
-	cp.SendLine(`(function(){ var l=tui.getState("contextItems")||[]; if(l.length>0){ l[0].label="nonexistent.txt"; } tui.setState("contextItems", l); })()`)
+	cp.SendLine(`(function(){ if (typeof __promptFlowTestHooks !== "undefined") { __promptFlowTestHooks.withState(function(h){ var items=h.state.get(h.StateKeys.contextItems); if(items.length>0){ items[0].label="nonexistent.txt"; h.state.set(h.StateKeys.contextItems, items); } }); } })()`)
 
 	// Now attempt to remove by id from UI; backend will say not found -> Error
 	cp.SendLine("remove 1")

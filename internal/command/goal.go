@@ -410,7 +410,7 @@ Maintain all functionality and behavior of the original code while improving its
 					Usage:       "type <comprehensive|api|readme|inline|tutorial>",
 					Handler: `function (args) {
 						if (args.length === 0) {
-							output.print("Current type: " + (tui.getState("docType") || "comprehensive"));
+							output.print("Current type: " + (state.get(StateKeys.docType) || "comprehensive"));
 							output.print("Available types: comprehensive, api, readme, inline, tutorial");
 							return;
 						}
@@ -420,7 +420,7 @@ Maintain all functionality and behavior of the original code while improving its
 							output.print("Invalid type. Available: " + validTypes.join(", "));
 							return;
 						}
-						tui.setState("docType", type);
+						state.set(StateKeys.docType, type);
 						output.print("Documentation type set to: " + type);
 					}`,
 				},
@@ -544,7 +544,7 @@ Maintain all functionality and behavior of the original code while improving its
 					Usage:       "type <unit|integration|e2e|performance|security>",
 					Handler: `function (args) {
 						if (args.length === 0) {
-							output.print("Current type: " + (tui.getState("testType") || "unit"));
+							output.print("Current type: " + (state.get(StateKeys.testType) || "unit"));
 							output.print("Available types: unit, integration, e2e, performance, security");
 							return;
 						}
@@ -554,7 +554,7 @@ Maintain all functionality and behavior of the original code while improving its
 							output.print("Invalid type. Available: " + validTypes.join(", "));
 							return;
 						}
-						tui.setState("testType", type);
+						state.set(StateKeys.testType, type);
 						output.print("Test type set to: " + type);
 					}`,
 				},
@@ -565,7 +565,7 @@ Maintain all functionality and behavior of the original code while improving its
 					Usage:       "framework <auto|jest|mocha|go|pytest|junit|rspec>",
 					Handler: `function (args) {
 						if (args.length === 0) {
-							output.print("Current framework: " + (tui.getState("framework") || "auto"));
+							output.print("Current framework: " + (state.get(StateKeys.framework) || "auto"));
 							output.print("Available frameworks: auto, jest, mocha, go, pytest, junit, rspec");
 							return;
 						}
@@ -575,7 +575,7 @@ Maintain all functionality and behavior of the original code while improving its
 							output.print("Invalid framework. Available: " + validFrameworks.join(", "));
 							return;
 						}
-						tui.setState("framework", fw);
+						state.set(StateKeys.framework, fw);
 						output.print("Testing framework set to: " + fw);
 					}`,
 				},

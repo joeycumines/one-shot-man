@@ -4,115 +4,160 @@
 const {buildContext, contextManager} = require('osm:ctxutil');
 const nextIntegerId = require('osm:nextIntegerId');
 
-// State keys
-const STATE = {
-    mode: "flow",               // fixed mode name
-    phase: "phase",             // INITIAL | CONTEXT_BUILDING | META_GENERATED | TASK_PROMPT_SET
-    goal: "goal",               // string
-    template: "template",       // string (meta-prompt template)
-    metaPrompt: "metaPrompt",   // string (generated meta-prompt)
-    taskPrompt: "taskPrompt",   // string (the prompt to perform the task)
-    contextItems: "contextItems" // array of { id, type: file|diff|note, label, payload }
-};
+// Fixed mode name
+const MODE_NAME = "flow";
 
-// Phase helpers need to be defined early
-function getPhase() {
-    return tui.getState(STATE.phase) || "INITIAL";
-}
-
-function setPhase(phase) {
-    tui.setState(STATE.phase, phase);
-}
-
-function items() {
-    return tui.getState(STATE.contextItems) || [];
-}
-
-function setItems(v) {
-    tui.setState(STATE.contextItems, v);
-}
-
-function getGoal() {
-    return tui.getState(STATE.goal) || "";
-}
-
-function setGoal(v) {
-    tui.setState(STATE.goal, v);
-    if ((v || "").trim() && getPhase() === "INITIAL") {
-        setPhase("CONTEXT_BUILDING");
-    }
-}
-
-function getTemplate() {
-    return tui.getState(STATE.template) || defaultTemplate();
-}
-
-function setTemplate(v) {
-    tui.setState(STATE.template, v);
-}
-
-function getMetaPrompt() {
-    return tui.getState(STATE.metaPrompt) || "";
-}
-
-function setMetaPrompt(v) {
-    tui.setState(STATE.metaPrompt, v);
-}
-
-function getTaskPrompt() {
-    return tui.getState(STATE.taskPrompt) || "";
-}
-
-function setTaskPrompt(v) {
-    tui.setState(STATE.taskPrompt, v);
-}
-
-function buildContextTxtar() {
-    return buildContext(items(), {toTxtar: () => context.toTxtar()});
-}
-
-function buildMetaPrompt() {
-    const fullContext = buildContextTxtar();
-    const pb = tui.createPromptBuilder("flow-meta", "Build meta-prompt");
-    pb.setTemplate(getTemplate());
-    pb.setVariable("goal", getGoal());
-    pb.setVariable("context_txtar", fullContext);
-    return pb.build();
-}
-
-function assembleFinal() {
-    const parts = [];
-    const p = getTaskPrompt();
-    if (p) parts.push(p.trim());
-    parts.push("\n---\n## IMPLEMENTATIONS/CONTEXT\n---\n");
-    parts.push(buildContextTxtar());
-    return parts.join("\n");
-}
-
-// Create context manager with prompt-flow specific configuration
-// Note: we provide a custom buildPrompt that handles the phase-dependent logic
-const ctxmgr = contextManager({
-    getItems: items,
-    setItems: setItems,
-    nextIntegerId: nextIntegerId,
-    buildPrompt: function() {
-        // Phase-dependent prompt building
-        if (getPhase() === 'TASK_PROMPT_SET') {
-            return assembleFinal();
-        } else {
-            return getMetaPrompt();
-        }
+// Define state contract with Symbol keys
+const StateKeys = tui.createStateContract(MODE_NAME, {
+    phase: {
+        description: MODE_NAME + ":phase",
+        defaultValue: "INITIAL"
+    },
+    goal: {
+        description: MODE_NAME + ":goal",
+        defaultValue: ""
+    },
+    template: {
+        description: MODE_NAME + ":template",
+        defaultValue: null
+    },
+    metaPrompt: {
+        description: MODE_NAME + ":metaPrompt",
+        defaultValue: ""
+    },
+    taskPrompt: {
+        description: MODE_NAME + ":taskPrompt",
+        defaultValue: ""
+    },
+    contextItems: {
+        description: MODE_NAME + ":contextItems",
+        defaultValue: []
     }
 });
 
-// Expose addItem for test access
-const {addItem} = ctxmgr;
+// Expose limited state hooks for automated tests (no-op for regular users)
+let __testStateAccessor = null;
+if (typeof globalThis !== "undefined") {
+    globalThis.__promptFlowTestHooks = {
+        withState: function (callback) {
+            if (typeof callback === "function" && __testStateAccessor) {
+                callback(__testStateAccessor);
+            }
+        }
+    };
+}
 
-function buildCommands() {
+// Expose addItem for test access - will be set after ctxmgr is created
+let addItem;
+
+function defaultTemplate() {
+    // Use the embedded template content passed from the Go command
+    // This ensures we use the single source of truth from prompt_flow_template.md
+    return promptFlowTemplate || `!! N.B. only statements surrounded by "!!" are _instructions_. !!
+
+!! Generate a prompt using the template for purposes of achieving the following goal. !!
+
+!! **GOAL:** !!
+{{goal}}
+
+!! **IMPLEMENTATIONS/CONTEXT:** !!
+{{context_txtar}}`;
+}
+
+function buildCommands(state) {
+    __testStateAccessor = {state: state, StateKeys: StateKeys};
+
+    // Phase helpers using the injected state accessor
+    function getPhase() {
+        return state.get(StateKeys.phase);
+    }
+
+    function setPhase(phase) {
+        state.set(StateKeys.phase, phase);
+    }
+
+    function getGoal() {
+        return state.get(StateKeys.goal);
+    }
+
+    function setGoal(v) {
+        state.set(StateKeys.goal, v);
+        if ((v || "").trim() && getPhase() === "INITIAL") {
+            setPhase("CONTEXT_BUILDING");
+        }
+    }
+
+    function getTemplate() {
+        const template = state.get(StateKeys.template);
+        // Check for null, undefined, and empty string - all should use default
+        return (template !== null && template !== undefined && template !== "") ? template : defaultTemplate();
+    }
+
+    function setTemplate(v) {
+        state.set(StateKeys.template, v);
+    }
+
+    function getMetaPrompt() {
+        return state.get(StateKeys.metaPrompt);
+    }
+
+    function setMetaPrompt(v) {
+        state.set(StateKeys.metaPrompt, v);
+    }
+
+    function getTaskPrompt() {
+        return state.get(StateKeys.taskPrompt);
+    }
+
+    function setTaskPrompt(v) {
+        state.set(StateKeys.taskPrompt, v);
+    }
+
+    function buildContextTxtar() {
+        return buildContext(state.get(StateKeys.contextItems), {toTxtar: () => context.toTxtar()});
+    }
+
+    function buildMetaPrompt() {
+        const fullContext = buildContextTxtar();
+        const pb = tui.createPromptBuilder("flow-meta", "Build meta-prompt");
+        pb.setTemplate(getTemplate());
+        pb.setVariable("goal", getGoal());
+        pb.setVariable("context_txtar", fullContext);
+        return pb.build();
+    }
+
+    function assembleFinal() {
+        const parts = [];
+        const p = getTaskPrompt();
+        if (p) parts.push(p.trim());
+        parts.push("\n---\n## IMPLEMENTATIONS/CONTEXT\n---\n");
+        parts.push(buildContextTxtar());
+        return parts.join("\n");
+    }
+
+    // Create context manager with the injected state accessor
+    const ctxmgr = contextManager({
+        getItems: () => state.get(StateKeys.contextItems),
+        setItems: (v) => state.set(StateKeys.contextItems, v),
+        nextIntegerId: nextIntegerId,
+        buildPrompt: function() {
+            // Phase-dependent prompt building
+            if (getPhase() === 'TASK_PROMPT_SET') {
+                return assembleFinal();
+            } else {
+                return getMetaPrompt();
+            }
+        }
+    });
+
+    // Export for test access
+    addItem = ctxmgr.addItem;
+
     // Use base commands from contextManager for common operations
     const baseCommands = ctxmgr.commands;
 
     return {
+        ...baseCommands,
         goal: {
             description: "Set or edit the goal",
             usage: "goal [text|--prewritten]",
@@ -225,7 +270,7 @@ function buildCommands() {
                 output.print("Phase: " + getPhase());
                 const g = getGoal();
                 if (g) output.print("[goal] " + g);
-                if (getTemplate()) output.print("[template] set");
+                if (state.get(StateKeys.template) !== null) output.print("[template] set");
 
                 const phase = getPhase();
                 if (phase === "META_GENERATED" || phase === "TASK_PROMPT_SET") {
@@ -311,11 +356,6 @@ function buildCommands() {
                 baseCommands.edit.handler(args);
             }
         },
-        // Delegate all other base commands
-        add: baseCommands.add,
-        diff: baseCommands.diff,
-        note: baseCommands.note,
-        remove: baseCommands.remove,
         show: {
             description: "Show meta, task prompt, or final output",
             usage: "show [meta|prompt]",
@@ -378,33 +418,33 @@ function buildCommands() {
 // Initialize the mode
 ctx.run("register-mode", function () {
     tui.registerMode({
-        name: STATE.mode,
+        name: MODE_NAME,
+        stateContract: StateKeys,
         tui: {
             title: "Prompt Flow",
             prompt: "(prompt-builder) > ",
             enableHistory: true,
             historyFile: ".prompt-flow_history"
         },
-        onEnter: function () {
-            if (!tui.getState(STATE.phase)) {
-                tui.setState(STATE.phase, "INITIAL");
-                tui.setState(STATE.contextItems, []);
-                tui.setState(STATE.template, defaultTemplate());
+        onEnter: function (_, stateObj) {
+            // Initialize template if null (lazy initialization pattern)
+            if (stateObj.state.get(StateKeys.template) === null) {
+                stateObj.state.set(StateKeys.template, defaultTemplate());
             }
             banner();
             help();
         },
-        onExit: function () {
+        onExit: function (_, stateObj) {
             output.print("Exiting Prompt Flow.");
         },
-        commands: buildCommands()
+        commands: buildCommands
     });
 
     tui.registerCommand({
         name: "flow",
         description: "Switch to Prompt Flow mode",
         handler: function () {
-            tui.switchMode(STATE.mode);
+            tui.switchMode(MODE_NAME);
         }
     });
 });
@@ -419,21 +459,7 @@ function help() {
     output.print("Tip: Use 'goal --prewritten' to see available pre-written goals");
 }
 
-function defaultTemplate() {
-    // Use the embedded template content passed from the Go command
-    // This ensures we use the single source of truth from prompt_flow_template.md
-    return promptFlowTemplate || `!! N.B. only statements surrounded by "!!" are _instructions_. !!
-
-!! Generate a prompt using the template for purposes of achieving the following goal. !!
-
-!! **GOAL:** !!
-{{goal}}
-
-!! **IMPLEMENTATIONS/CONTEXT:** !!
-{{context_txtar}}`;
-}
-
 // Auto-switch into flow mode when this script loads
 ctx.run("enter-flow", function () {
-    tui.switchMode(STATE.mode);
+    tui.switchMode(MODE_NAME);
 });

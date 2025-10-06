@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/dop251/goja"
 )
 
 // TestCommandCompletionOrder verifies that REPL commands complete in a stable order
@@ -146,7 +148,7 @@ func TestModeCommandOrder(t *testing.T) {
 		Name:         "test-mode",
 		Commands:     make(map[string]Command),
 		CommandOrder: make([]string, 0),
-		State:        make(map[string]interface{}),
+		State:        make(map[goja.Value]interface{}),
 	}
 
 	// Add commands to mode in specific order

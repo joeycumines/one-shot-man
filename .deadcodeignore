@@ -8,3 +8,6 @@ internal/termtest/*
 
 internal/scripting/builtin/ctxutil/ctxutil.go:*: unreachable func: SetRunGitDiffFn
 internal/scripting/builtin/ctxutil/ctxutil.go:*: unreachable func: SetGetDefaultGitDiffArgsFn
+
+# DeserializeState is part of the public API for state persistence (currently unused in production but tested)
+internal/scripting/state_contract.go:*: unreachable func: DeserializeState

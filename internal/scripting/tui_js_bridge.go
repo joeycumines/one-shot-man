@@ -25,7 +25,29 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 			Name:         name,
 			Commands:     make(map[string]Command),
 			CommandOrder: make([]string, 0),
-			State:        make(map[string]interface{}),
+			State:        make(map[goja.Value]interface{}),
+		}
+
+		// Process stateContract field
+		if stateContractRaw, exists := configMap["stateContract"]; exists {
+			// The stateContract is a JS object of Symbols returned by createStateContract
+			// We need to retrieve the corresponding contract from pendingContracts
+			tm.contractMu.Lock()
+			// For now, we'll try to match by mode name
+			if contract, ok := tm.pendingContracts[name]; ok {
+				mode.StateContract = contract
+				delete(tm.pendingContracts, name)
+				// If this is a shared contract, add it to the persistent sharedContracts list
+				if contract.IsShared {
+					tm.sharedContracts = append(tm.sharedContracts, contract)
+				}
+			}
+			tm.contractMu.Unlock()
+			// If stateContract is provided but we didn't find it, that's a warning
+			// but not a hard error - the mode can still work without it
+			if mode.StateContract == nil && stateContractRaw != nil {
+				fmt.Fprintf(tm.output, "Warning: stateContract provided for mode '%s' but contract not found\n", name)
+			}
 		}
 
 		// Set up TUI config
@@ -82,34 +104,44 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 		}
 
 		// Register commands
+		// Commands can be either:
+		// 1. An object map of command definitions
+		// 2. A function that takes StateAccessor and returns a command map
 		if commandsRaw, exists := configMap["commands"]; exists {
-			if commandsMap, ok := commandsRaw.(map[string]interface{}); ok {
-				for cmdName, cmdConfig := range commandsMap {
-					if cmdMap, ok := cmdConfig.(map[string]interface{}); ok {
-						desc, err := getString(cmdMap, "description", "")
-						if err != nil {
-							return err
-						}
-						usage, err := getString(cmdMap, "usage", "")
-						if err != nil {
-							return err
-						}
-						argCompleters, err := getStringSlice(cmdMap, "argCompleters")
-						if err != nil {
-							return err
-						}
-						cmd := Command{
-							Name:          cmdName,
-							Description:   desc,
-							Usage:         usage,
-							IsGoCommand:   false,
-							ArgCompleters: argCompleters,
-						}
+			// Check if commands is a function
+			if commandsVal := tm.engine.vm.ToValue(commandsRaw); commandsVal != nil {
+				if commandsFunc, ok := goja.AssertFunction(commandsVal); ok {
+					// Store the function to be called later when state is available
+					mode.CommandsBuilder = commandsFunc
+				} else if commandsMap, ok := commandsRaw.(map[string]interface{}); ok {
+					// Traditional object-based commands
+					for cmdName, cmdConfig := range commandsMap {
+						if cmdMap, ok := cmdConfig.(map[string]interface{}); ok {
+							desc, err := getString(cmdMap, "description", "")
+							if err != nil {
+								return err
+							}
+							usage, err := getString(cmdMap, "usage", "")
+							if err != nil {
+								return err
+							}
+							argCompleters, err := getStringSlice(cmdMap, "argCompleters")
+							if err != nil {
+								return err
+							}
+							cmd := Command{
+								Name:          cmdName,
+								Description:   desc,
+								Usage:         usage,
+								IsGoCommand:   false,
+								ArgCompleters: argCompleters,
+							}
 
-						if handler, exists := cmdMap["handler"]; exists {
-							cmd.Handler = handler
-							mode.Commands[cmdName] = cmd
-							mode.CommandOrder = append(mode.CommandOrder, cmdName)
+							if handler, exists := cmdMap["handler"]; exists {
+								cmd.Handler = handler
+								mode.Commands[cmdName] = cmd
+								mode.CommandOrder = append(mode.CommandOrder, cmdName)
+							}
 						}
 					}
 				}
@@ -133,16 +165,6 @@ func (tm *TUIManager) jsGetCurrentMode() string {
 		return mode.Name
 	}
 	return ""
-}
-
-// jsSetState allows JavaScript to set state values.
-func (tm *TUIManager) jsSetState(key string, value interface{}) {
-	tm.SetState(key, value)
-}
-
-// jsGetState allows JavaScript to get state values.
-func (tm *TUIManager) jsGetState(key string) interface{} {
-	return tm.GetState(key)
 }
 
 // jsRegisterCommand allows JavaScript to register global commands.

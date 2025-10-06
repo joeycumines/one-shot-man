@@ -3,98 +3,109 @@
 
 ctx.log("Setting up demo mode...");
 
+// Define state contract
+const StateKeys = tui.createStateContract({
+    counter: {
+        description: "demo:counter",
+        defaultValue: 0
+    },
+    messages: {
+        description: "demo:messages",
+        defaultValue: []
+    }
+});
+
 // Register a simple demo mode
 tui.registerMode({
     name: "demo",
+    stateContract: StateKeys,
     tui: {
         title: "Demo Mode",
         prompt: "[demo]> ",
         enableHistory: false
     },
 
-    onEnter: function () {
+    onEnter: function (_, stateObj) {
         output.print("Entered demo mode!");
         output.print("This is a simple demonstration of the mode system.");
-
-        // Initialize some state
-        tui.setState("counter", 0);
-        tui.setState("messages", []);
     },
 
-    onExit: function () {
+    onExit: function (_, stateObj) {
         output.print("Leaving demo mode...");
-        var counter = tui.getState("counter");
+        var counter = stateObj.state.get(StateKeys.counter);
         output.print("Final counter value: " + counter);
     },
 
-    commands: {
-        "count": {
-            description: "Increment the counter",
-            handler: function (args) {
-                var counter = tui.getState("counter") || 0;
-                counter++;
-                tui.setState("counter", counter);
-                output.print("Counter: " + counter);
-            }
-        },
-
-        "message": {
-            description: "Add a message to the list",
-            usage: "message <text>",
-            handler: function (args) {
-                if (args.length === 0) {
-                    output.print("Usage: message <text>");
-                    return;
+    commands: function (state) {
+        return {
+            "count": {
+                description: "Increment the counter",
+                handler: function (args) {
+                    var counter = state.get(StateKeys.counter);
+                    counter++;
+                    state.set(StateKeys.counter, counter);
+                    output.print("Counter: " + counter);
                 }
+            },
 
-                var text = args.join(" ");
-                var messages = tui.getState("messages") || [];
-                messages.push(text);
-                tui.setState("messages", messages);
+            "message": {
+                description: "Add a message to the list",
+                usage: "message <text>",
+                handler: function (args) {
+                    if (args.length === 0) {
+                        output.print("Usage: message <text>");
+                        return;
+                    }
 
-                output.print("Added message: " + text);
-                output.print("Total messages: " + messages.length);
-            }
-        },
+                    var text = args.join(" ");
+                    var messages = state.get(StateKeys.messages);
+                    messages.push(text);
+                    state.set(StateKeys.messages, messages);
 
-        "show": {
-            description: "Show current state",
-            handler: function (args) {
-                var counter = tui.getState("counter");
-                var messages = tui.getState("messages");
+                    output.print("Added message: " + text);
+                    output.print("Total messages: " + messages.length);
+                }
+            },
 
-                output.print("Current state:");
-                output.print("  Counter: " + counter);
-                output.print("  Messages: " + messages.length);
+            "show": {
+                description: "Show current state",
+                handler: function (args) {
+                    var counter = state.get(StateKeys.counter);
+                    var messages = state.get(StateKeys.messages);
 
-                if (messages.length > 0) {
-                    output.print("  Recent messages:");
-                    for (var i = Math.max(0, messages.length - 3); i < messages.length; i++) {
-                        output.print("    " + (i + 1) + ". " + messages[i]);
+                    output.print("Current state:");
+                    output.print("  Counter: " + counter);
+                    output.print("  Messages: " + messages.length);
+
+                    if (messages.length > 0) {
+                        output.print("  Recent messages:");
+                        for (var i = Math.max(0, messages.length - 3); i < messages.length; i++) {
+                            output.print("    " + (i + 1) + ". " + messages[i]);
+                        }
+                    }
+                }
+            },
+
+            "js": {
+                description: "Execute JavaScript code in mode context",
+                usage: "js <code>",
+                handler: function (args) {
+                    if (args.length === 0) {
+                        output.print("Usage: js <code>");
+                        output.print("Example: js output.print('Hello from demo mode!')");
+                        return;
+                    }
+
+                    var code = args.join(" ");
+                    try {
+                        // This would execute in the current JavaScript context
+                        eval(code);
+                    } catch (e) {
+                        output.print("Error: " + e.message);
                     }
                 }
             }
-        },
-
-        "js": {
-            description: "Execute JavaScript code in mode context",
-            usage: "js <code>",
-            handler: function (args) {
-                if (args.length === 0) {
-                    output.print("Usage: js <code>");
-                    output.print("Example: js output.print('Hello from demo mode!')");
-                    return;
-                }
-
-                var code = args.join(" ");
-                try {
-                    // This would execute in the current JavaScript context
-                    eval(code);
-                } catch (e) {
-                    output.print("Error: " + e.message);
-                }
-            }
-        }
+        };
     }
 });
 

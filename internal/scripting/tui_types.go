@@ -37,20 +37,38 @@ type TUIManager struct {
 	// in the prompt lifecycle, preventing races with go-prompt redraws.
 	outputQueue []string
 	outputMu    sync.Mutex
+
+	// history stores command history per mode
+	history map[string][]HistoryEntry
+
+	// pendingContracts temporarily stores contracts created via createStateContract
+	// before they are linked to a mode in registerMode
+	pendingContracts map[string]*StateContract
+	contractMu       sync.Mutex
+
+	// sharedContracts persistently stores all registered shared state contracts
+	// for runtime shared state detection (checked in get/setStateBySymbol)
+	sharedContracts []*StateContract
+
+	// sharedState stores state that is shared across all modes
+	sharedState map[goja.Value]interface{}
+	sharedMu    sync.RWMutex
 }
 
 // ScriptMode represents a specific script mode with its own state and commands.
 type ScriptMode struct {
-	Name         string
-	Script       *Script
-	State        map[string]interface{}
-	Commands     map[string]Command
-	CommandOrder []string // maintains insertion order of commands
-	TUIConfig    *TUIConfig
-	OnEnter      goja.Callable
-	OnExit       goja.Callable
-	OnPrompt     goja.Callable
-	mu           sync.RWMutex
+	Name            string
+	Script          *Script
+	State           map[goja.Value]interface{} // Changed: now keyed by Symbol (goja.Value)
+	StateContract   *StateContract             // New: formal state contract
+	Commands        map[string]Command
+	CommandsBuilder goja.Callable // New: optional function to build commands with state accessor
+	CommandOrder    []string      // maintains insertion order of commands
+	TUIConfig       *TUIConfig
+	OnEnter         goja.Callable
+	OnExit          goja.Callable
+	OnPrompt        goja.Callable
+	mu              sync.RWMutex
 }
 
 // TUIConfig defines the configuration for a rich TUI interface.

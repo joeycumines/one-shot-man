@@ -35,10 +35,15 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 		t.Fatalf("Failed to execute script: %v", err)
 	}
 
+	// Explicitly switch to review mode using Go-level call to ensure mode is fully initialized
+	tuiManager := engine.GetTUIManager()
+	if err := tuiManager.SwitchMode("review"); err != nil {
+		t.Fatalf("Failed to switch to review mode: %v", err)
+	}
+
 	// Test actual git diff execution
 	testScript := `
-		// Add a lazy diff
-		const commands = buildCommands();
+		// Add a lazy diff (commands is a global set when mode is entered)
 		commands.diff.handler([]);
 
 		// Verify it's lazy

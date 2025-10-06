@@ -27,6 +27,7 @@ type Engine struct {
 	tuiManager     *TUIManager
 	contextManager *ContextManager
 	logger         *TUILogger
+	symbolRegistry *SymbolRegistry
 }
 
 // Script represents a JavaScript script with metadata.
@@ -58,6 +59,7 @@ func NewEngine(ctx context.Context, stdout, stderr io.Writer) (*Engine, error) {
 		globals:        make(map[string]interface{}),
 		contextManager: contextManager,
 		logger:         NewTUILogger(stdout, 1000),
+		symbolRegistry: NewSymbolRegistry(),
 	}
 
 	// Set up CommonJS require support.
@@ -245,19 +247,19 @@ func (e *Engine) setupGlobals() {
 
 	// TUI and Mode management functions
 	_ = e.vm.Set("tui", map[string]interface{}{
-		"registerMode":         e.tuiManager.jsRegisterMode,
-		"switchMode":           e.tuiManager.jsSwitchMode,
-		"getCurrentMode":       e.tuiManager.jsGetCurrentMode,
-		"setState":             e.tuiManager.jsSetState,
-		"getState":             e.tuiManager.jsGetState,
-		"registerCommand":      e.tuiManager.jsRegisterCommand,
-		"listModes":            e.tuiManager.jsListModes,
-		"createPromptBuilder":  e.jsCreatePromptBuilder,
-		"createAdvancedPrompt": e.tuiManager.jsCreateAdvancedPrompt,
-		"runPrompt":            e.tuiManager.jsRunPrompt,
-		"registerCompleter":    e.tuiManager.jsRegisterCompleter,
-		"setCompleter":         e.tuiManager.jsSetCompleter,
-		"registerKeyBinding":   e.tuiManager.jsRegisterKeyBinding,
+		"registerMode":              e.tuiManager.jsRegisterMode,
+		"switchMode":                e.tuiManager.jsSwitchMode,
+		"getCurrentMode":            e.tuiManager.jsGetCurrentMode,
+		"registerCommand":           e.tuiManager.jsRegisterCommand,
+		"listModes":                 e.tuiManager.jsListModes,
+		"createPromptBuilder":       e.jsCreatePromptBuilder,
+		"createStateContract":       e.jsCreateStateContract,
+		"createSharedStateContract": e.jsCreateSharedStateContract,
+		"createAdvancedPrompt":      e.tuiManager.jsCreateAdvancedPrompt,
+		"runPrompt":                 e.tuiManager.jsRunPrompt,
+		"registerCompleter":         e.tuiManager.jsRegisterCompleter,
+		"setCompleter":              e.tuiManager.jsSetCompleter,
+		"registerKeyBinding":        e.tuiManager.jsRegisterKeyBinding,
 	})
 }
 

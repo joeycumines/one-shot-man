@@ -157,46 +157,65 @@ func TestGoalCommand_GetAvailableGoals(t *testing.T) {
 
 func TestGoalCommand_EmbeddedScripts(t *testing.T) {
 	t.Parallel()
-	// Test that embedded scripts are non-empty
-	if len(commentStripperGoal) == 0 {
-		t.Error("Expected commentStripperGoal to be non-empty")
+	// Test that embedded script is non-empty
+	if len(goalScript) == 0 {
+		t.Error("Expected goalScript to be non-empty")
 	}
 
-	if len(docGeneratorGoal) == 0 {
-		t.Error("Expected docGeneratorGoal to be non-empty")
+	// Test script structure - should be a generic interpreter
+	// that reads GOAL_CONFIG from Go
+
+	// Should check for GOAL_CONFIG injection
+	if !strings.Contains(goalScript, "GOAL_CONFIG") {
+		t.Error("Expected goalScript to reference GOAL_CONFIG")
 	}
 
-	if len(testGeneratorGoal) == 0 {
-		t.Error("Expected testGeneratorGoal to be non-empty")
+	// Should contain buildPrompt function
+	if !strings.Contains(goalScript, "function buildPrompt") {
+		t.Error("Expected goalScript to contain buildPrompt function")
 	}
 
-	if len(commitMessageGoal) == 0 {
-		t.Error("Expected commitMessageGoal to be non-empty")
+	// Should contain tui.registerMode
+	if !strings.Contains(goalScript, "tui.registerMode") {
+		t.Error("Expected goalScript to contain mode registration")
 	}
 
-	// Test script structure - should contain expected patterns
-	scripts := map[string]string{
-		"comment-stripper": commentStripperGoal,
-		"doc-generator":    docGeneratorGoal,
-		"test-generator":   testGeneratorGoal,
-		"commit-message":   commitMessageGoal,
+	// Should contain contextManager usage
+	if !strings.Contains(goalScript, "contextManager") {
+		t.Error("Expected goalScript to use contextManager")
 	}
 
-	for name, script := range scripts {
-		// Should contain mode registration
-		if !strings.Contains(script, "tui.registerMode") {
-			t.Errorf("Expected %s script to contain mode registration", name)
+	// Should be generic and NOT contain goal-specific hardcoded strings
+	// (This validates that we've moved logic to Go)
+	goalSpecificStrings := []string{
+		"Remove useless comments",
+		"Generate comprehensive documentation",
+		"Generate comprehensive test suites",
+		"Kubernetes-style commit",
+		"CODE TO DOCUMENT",
+		"CODE TO ANALYZE",
+		"CODE TO TEST",
+		"DIFF CONTEXT",
+		"commit-message",
+		"doc-generator",
+		"test-generator",
+		"comment-stripper",
+	}
+	for _, str := range goalSpecificStrings {
+		if strings.Contains(goalScript, str) {
+			t.Errorf("Expected goalScript to NOT contain goal-specific string %q (should be in Go)", str)
 		}
+	}
 
-		// Should contain GOAL_META export
-		if !strings.Contains(script, "GOAL_META") {
-			t.Errorf("Expected %s script to contain GOAL_META", name)
-		}
+	// Should NOT contain eval() - security risk
+	if strings.Contains(goalScript, "eval(") {
+		t.Error("Expected goalScript to NOT use eval() for security reasons")
+	}
 
-		// Should contain buildPrompt function
-		if !strings.Contains(script, "function buildPrompt") {
-			t.Errorf("Expected %s script to contain buildPrompt function", name)
-		}
+	// Should NOT contain hardcoded if/else for goal names
+	if strings.Contains(goalScript, `config.Name === "commit-message"`) ||
+		strings.Contains(goalScript, `config.Name === "doc-generator"`) {
+		t.Error("Expected goalScript to NOT contain hardcoded goal name conditionals")
 	}
 }
 
@@ -258,5 +277,92 @@ func TestGoalCommand_RunGoal_Success_Interactive_Positional(t *testing.T) {
 	// We expect evidence of entering the mode: either explicit switch message or banner/help.
 	if !(strings.Contains(got, "Switched to mode: doc-generator") || strings.Contains(got, "Code Documentation Generator")) {
 		t.Errorf("expected to enter doc-generator mode, got: %s", got)
+	}
+}
+
+func TestGoalCommand_GoToJSPipeline_PromptTemplate(t *testing.T) {
+	t.Parallel()
+	// Verify that PromptTemplate from Go is correctly used by JS
+	cfg := config.NewConfig()
+	cmd := NewGoalCommand(cfg)
+
+	goals := cmd.getAvailableGoals()
+
+	// Check that all goals have non-empty PromptTemplate
+	for _, goal := range goals {
+		if goal.PromptTemplate == "" {
+			t.Errorf("Goal %q has empty PromptTemplate", goal.Name)
+		}
+
+		// Verify template contains expected placeholders
+		if !strings.Contains(goal.PromptTemplate, "{{.Description") {
+			t.Errorf("Goal %q PromptTemplate missing {{.Description}} placeholder", goal.Name)
+		}
+		if !strings.Contains(goal.PromptTemplate, "{{.PromptInstructions}}") {
+			t.Errorf("Goal %q PromptTemplate missing {{.PromptInstructions}} placeholder", goal.Name)
+		}
+		if !strings.Contains(goal.PromptTemplate, "{{.ContextHeader}}") {
+			t.Errorf("Goal %q PromptTemplate missing {{.ContextHeader}} placeholder", goal.Name)
+		}
+		if !strings.Contains(goal.PromptTemplate, "{{.ContextTxtar}}") {
+			t.Errorf("Goal %q PromptTemplate missing {{.ContextTxtar}} placeholder", goal.Name)
+		}
+	}
+}
+
+func TestGoalCommand_GoToJSPipeline_ContextHeader(t *testing.T) {
+	t.Parallel()
+	// Verify that ContextHeader from Go is correctly set
+	cfg := config.NewConfig()
+	cmd := NewGoalCommand(cfg)
+
+	goals := cmd.getAvailableGoals()
+
+	expectedHeaders := map[string]string{
+		"commit-message":   "DIFF CONTEXT / CHANGES",
+		"doc-generator":    "CODE TO DOCUMENT",
+		"test-generator":   "CODE TO TEST",
+		"comment-stripper": "CODE TO ANALYZE",
+	}
+
+	for _, goal := range goals {
+		expected, ok := expectedHeaders[goal.Name]
+		if !ok {
+			t.Errorf("Test missing expected ContextHeader for goal %q", goal.Name)
+			continue
+		}
+		if goal.ContextHeader != expected {
+			t.Errorf("Goal %q has ContextHeader %q, expected %q", goal.Name, goal.ContextHeader, expected)
+		}
+	}
+}
+
+func TestGoalCommand_GoToJSPipeline_CommandsArray(t *testing.T) {
+	t.Parallel()
+	// Verify that Commands array is properly defined for all goals
+	cfg := config.NewConfig()
+	cmd := NewGoalCommand(cfg)
+
+	goals := cmd.getAvailableGoals()
+
+	for _, goal := range goals {
+		if len(goal.Commands) == 0 {
+			t.Errorf("Goal %q has no Commands defined", goal.Name)
+		}
+
+		// Verify each command has required fields
+		for _, cmdConfig := range goal.Commands {
+			if cmdConfig.Name == "" {
+				t.Errorf("Goal %q has command with empty Name", goal.Name)
+			}
+			if cmdConfig.Type == "" {
+				t.Errorf("Goal %q has command %q with empty Type", goal.Name, cmdConfig.Name)
+			}
+
+			// Custom commands must have a Handler
+			if cmdConfig.Type == "custom" && cmdConfig.Handler == "" {
+				t.Errorf("Goal %q has custom command %q with empty Handler", goal.Name, cmdConfig.Name)
+			}
+		}
 	}
 }

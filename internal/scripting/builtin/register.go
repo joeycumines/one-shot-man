@@ -9,6 +9,7 @@ import (
 	execmod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/exec"
 	"github.com/joeycumines/one-shot-man/internal/scripting/builtin/nextintegerid"
 	osmod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/os"
+	templatemod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/template"
 	timemod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/time"
 	tviewmod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/tview"
 )
@@ -29,6 +30,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, tuiSink))
 	registry.RegisterNativeModule(prefix+"time", timemod.Require)
 	registry.RegisterNativeModule(prefix+"ctxutil", ctxutils.Require(ctx))
+	registry.RegisterNativeModule(prefix+"text/template", templatemod.Require(ctx))
 
 	// Register tview module if provider is available
 	if tviewProvider != nil {

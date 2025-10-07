@@ -3,6 +3,7 @@
 
 const nextIntegerId = require('osm:nextIntegerId');
 const {buildContext, contextManager} = require('osm:ctxutil');
+const template = require('osm:text/template');
 
 // Fixed mode name
 const MODE_NAME = "review";
@@ -26,11 +27,10 @@ function buildCommands(state) {
         setItems: (v) => state.set(StateKeys.contextItems, v),
         nextIntegerId: nextIntegerId,
         buildPrompt: () => {
-            const pb = tui.createPromptBuilder("review", "Build code review prompt");
-            pb.setTemplate(codeReviewTemplate);
             const fullContext = buildContext(state.get(StateKeys.contextItems), {toTxtar: () => context.toTxtar()});
-            pb.setVariable("context_txtar", fullContext);
-            return pb.build();
+            return template.execute(codeReviewTemplate, {
+                context_txtar: fullContext
+            });
         }
     });
 

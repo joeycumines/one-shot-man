@@ -40,7 +40,7 @@ func TestCodeReviewCommand_FullWorkflow(t *testing.T) {
 		"sink commensurate effort",
 		"think very VERY hard",
 		"## IMPLEMENTATIONS/CONTEXT",
-		"{{context_txtar}}",
+		"{{.context_txtar}}",
 	}
 
 	for _, phrase := range expectedPhrases {
@@ -58,8 +58,8 @@ func TestCodeReviewCommand_FullWorkflow(t *testing.T) {
 		"const MODE_NAME = \"review\"",
 		"function buildCommands(state)",
 		"codeReviewTemplate",
-		"pb.setTemplate(codeReviewTemplate)",
-		"pb.setVariable(\"context_txtar\", fullContext)",
+		"template.execute(codeReviewTemplate",
+		"context_txtar: fullContext",
 	}
 
 	for _, element := range expectedScriptElements {

@@ -945,9 +945,9 @@ case "$(basename "$1")" in
 !! CUSTOM TEMPLATE MODIFICATION !!
 !! Generate a specialized prompt for the following goal: !!
 !! **GOAL:** !!
-{{goal}}
+{{.goal}}
 !! **CONTEXT:** !!
-{{context_txtar}}
+{{.context_txtar}}
 !! End of custom template !!
 EOF
 		;;

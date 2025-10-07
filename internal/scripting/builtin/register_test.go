@@ -16,7 +16,7 @@ func TestRegister(t *testing.T) {
 
 	Register(context.Background(), func(msg string) {
 		tuiMessages = append(tuiMessages, msg)
-	}, registry)
+	}, registry, nil) // Pass nil for tviewProvider
 
 	req := registry.Enable(runtime)
 	modules := []string{

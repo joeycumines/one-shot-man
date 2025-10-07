@@ -24,31 +24,30 @@ func setupModule(t *testing.T) (*goja.Runtime, goja.Callable) {
 
 func TestNextIntegerID(t *testing.T) {
 	t.Parallel()
-	runtime, nextFn := setupModule(t)
 
 	cases := []struct {
 		name string
-		args []goja.Value
+		args string
 		want int64
 	}{
 		{
 			name: "no arguments",
-			args: nil,
+			args: "",
 			want: 1,
 		},
 		{
 			name: "empty array",
-			args: []goja.Value{mustRunValue(t, runtime, "[]")},
+			args: "[]",
 			want: 1,
 		},
 		{
 			name: "array with ids",
-			args: []goja.Value{mustRunValue(t, runtime, `[ { id: 2 }, { id: 7 }, { id: 3 } ]`)},
+			args: `[ { id: 2 }, { id: 7 }, { id: 3 } ]`,
 			want: 8,
 		},
 		{
 			name: "array with string ids",
-			args: []goja.Value{mustRunValue(t, runtime, `[ { id: "9" }, { id: "not-a-number" } ]`)},
+			args: `[ { id: "9" }, { id: "not-a-number" } ]`,
 			want: 10,
 		},
 	}
@@ -57,7 +56,15 @@ func TestNextIntegerID(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			result, err := nextFn(goja.Undefined(), tc.args...)
+			// Each subtest gets its own runtime to avoid race conditions
+			runtime, nextFn := setupModule(t)
+
+			var args []goja.Value
+			if tc.args != "" {
+				args = []goja.Value{mustRunValue(t, runtime, tc.args)}
+			}
+
+			result, err := nextFn(goja.Undefined(), args...)
 			if err != nil {
 				t.Fatalf("call failed: %v", err)
 			}

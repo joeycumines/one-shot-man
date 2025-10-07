@@ -9,10 +9,11 @@ import (
 
 func TestGojaCoercion(t *testing.T) {
 	t.Parallel()
-	runtime := goja.New()
 
 	t.Run("ToObject", func(t *testing.T) {
 		t.Parallel()
+		runtime := goja.New()
+
 		// null -> error
 		v, err := runtime.RunString("null")
 		require.NoError(t, err)
@@ -56,6 +57,8 @@ func TestGojaCoercion(t *testing.T) {
 
 	t.Run("ToString", func(t *testing.T) {
 		t.Parallel()
+		runtime := goja.New()
+
 		// null -> "null"
 		v, err := runtime.RunString("null")
 		require.NoError(t, err)
@@ -74,6 +77,8 @@ func TestGojaCoercion(t *testing.T) {
 
 	t.Run("ToInteger", func(t *testing.T) {
 		t.Parallel()
+		runtime := goja.New()
+
 		// null -> 0
 		v, err := runtime.RunString("null")
 		require.NoError(t, err)
@@ -97,6 +102,8 @@ func TestGojaCoercion(t *testing.T) {
 
 	t.Run("Export", func(t *testing.T) {
 		t.Parallel()
+		runtime := goja.New()
+
 		// null -> nil interface{}
 		v, err := runtime.RunString("null")
 		require.NoError(t, err)

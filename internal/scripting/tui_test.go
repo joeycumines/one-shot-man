@@ -3,6 +3,7 @@ package scripting
 import (
 	"context"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/joeycumines/one-shot-man/internal/termtest"
 )
+
+var stripANSIColor = regexp.MustCompile(`\x1B\[[0-9;]+[A-Za-z]`)
 
 func TestTUIInteractiveMode(t *testing.T) {
 	ctx := context.Background()
@@ -221,7 +224,8 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 
 	// Wait for prompt to exit
 	if err := test.WaitForExit(2 * time.Second); err != nil {
-		t.Errorf("prompt did not exit cleanly: %v", err)
+		t.Errorf("prompt did not exit cleanly: %v\nOUTPUT: %s", err,
+			stripANSIColor.ReplaceAllString(test.GetOutput(), ""))
 	}
 
 	// Verify commands were captured
@@ -263,7 +267,8 @@ func testKeyBindings(ctx context.Context, t *testing.T) {
 
 	// Wait for prompt to exit
 	if err := test.WaitForExit(2 * time.Second); err != nil {
-		t.Errorf("prompt did not exit cleanly: %v", err)
+		t.Errorf("prompt did not exit cleanly: %v\nOUTPUT: %s", err,
+			stripANSIColor.ReplaceAllString(test.GetOutput(), ""))
 	}
 
 	// Check that input was processed

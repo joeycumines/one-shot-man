@@ -287,6 +287,64 @@ function buildCommands(state) {
                 baseCommands.list.handler(args);
             }
         },
+        view: {
+            description: "View context items in an interactive table (TUI)",
+            usage: "view",
+            handler: function (args) {
+                // Try to load tview module
+                let tview;
+                try {
+                    tview = require('osm:tview');
+                } catch (e) {
+                    output.print("Error: TUI view not available. Use 'list' for text output.");
+                    return;
+                }
+
+                const items = state.get(StateKeys.contextItems);
+                if (items.length === 0) {
+                    output.print("No context items to view.");
+                    return;
+                }
+
+                // Build table data
+                const headers = ["ID", "Type", "Label", "Status"];
+                const rows = [];
+
+                for (const it of items) {
+                    let label = it.label || "";
+                    let status = "";
+
+                    if (it.type === 'file' && it.label && !ctxmgr.fileExists(it.label)) {
+                        status = "missing";
+                    } else {
+                        status = "ok";
+                    }
+
+                    rows.push([
+                        String(it.id),
+                        it.type || "",
+                        label,
+                        status
+                    ]);
+                }
+
+                // Show the interactive table
+                tview.interactiveTable({
+                    title: "Context Items (" + items.length + " items) - Press Enter to edit, Escape/q to close",
+                    headers: headers,
+                    rows: rows,
+                    footer: "Use arrow keys to navigate | Press Enter to edit selected item | Press Escape or 'q' to close",
+                    onSelect: function(rowIndex) {
+                        // When user selects a row, edit that item
+                        const item = items[rowIndex];
+                        if (item) {
+                            // Call the edit command with the item's ID
+                            baseCommands.edit.handler([String(item.id)]);
+                        }
+                    }
+                });
+            }
+        },
         edit: {
             ...baseCommands.edit,
             usage: "edit <goal|template|meta|prompt|id>",
@@ -455,8 +513,9 @@ function banner() {
 }
 
 function help() {
-    output.print("Commands: goal, add, diff, note, list, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit");
+    output.print("Commands: goal, add, diff, note, list, view, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit");
     output.print("Tip: Use 'goal --prewritten' to see available pre-written goals");
+    output.print("Tip: Use 'view' for an interactive TUI table of context items");
 }
 
 // Auto-switch into flow mode when this script loads

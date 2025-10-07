@@ -32,7 +32,7 @@ func TestPromptFlow_NonInteractive(t *testing.T) {
 	// Expect the prompt-flow banner/help emitted by onEnter after auto-switch
 	requireExpect(t, cp, "Prompt Flow: goal/context/template -> generate -> use -> assemble")
 	requireExpect(t, cp, "Type 'help' for commands.")
-	requireExpect(t, cp, "Commands: goal, add, diff, note, list, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit")
+	requireExpect(t, cp, "Commands: goal, add, diff, note, list, view, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit")
 
 	// Process should terminate on its own (non-interactive mode)
 	requireExpectExitCode(t, cp, 0)

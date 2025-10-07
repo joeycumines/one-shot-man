@@ -9,6 +9,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/scripting/builtin"
+	tviewmod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/tview"
 )
 
 // Engine represents a JavaScript scripting engine with deferred execution capabilities.
@@ -25,6 +26,7 @@ type Engine struct {
 	globals        map[string]interface{}
 	testMode       bool
 	tuiManager     *TUIManager
+	tviewManager   *tviewmod.Manager
 	contextManager *ContextManager
 	logger         *TUILogger
 	symbolRegistry *SymbolRegistry
@@ -60,6 +62,7 @@ func NewEngine(ctx context.Context, stdout, stderr io.Writer) (*Engine, error) {
 		contextManager: contextManager,
 		logger:         NewTUILogger(stdout, 1000),
 		symbolRegistry: NewSymbolRegistry(),
+		tviewManager:   tviewmod.NewManager(ctx, nil, nil, nil),
 	}
 
 	// Set up CommonJS require support.
@@ -69,7 +72,7 @@ func NewEngine(ctx context.Context, stdout, stderr io.Writer) (*Engine, error) {
 
 		// Register native Go modules. These are all prefixed with "osm:".
 		// Pass through the engine's context and a TUI sink for modules that need them
-		builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, registry)
+		builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, registry, engine)
 
 		// Enable the `require` function in the runtime.
 		registry.Enable(engine.vm)
@@ -176,6 +179,11 @@ func (e *Engine) ExecuteScript(script *Script) (err error) {
 // GetTUIManager returns the TUI manager for this engine.
 func (e *Engine) GetTUIManager() *TUIManager {
 	return e.tuiManager
+}
+
+// GetTViewManager returns the TView manager for this engine.
+func (e *Engine) GetTViewManager() *tviewmod.Manager {
+	return e.tviewManager
 }
 
 // GetScripts returns all loaded scripts.

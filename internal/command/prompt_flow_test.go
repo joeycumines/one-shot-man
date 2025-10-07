@@ -31,7 +31,7 @@ func TestPromptFlowCommand_NonInteractive(t *testing.T) {
 		t.Errorf("Expected banner message in output, got: %s", output)
 	}
 
-	if !contains(output, "Commands: goal, add, diff, note, list, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit") {
+	if !contains(output, "Commands: goal, add, diff, note, list, view, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit") {
 		t.Errorf("Expected help message in output, got: %s", output)
 	}
 }

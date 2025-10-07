@@ -10,11 +10,18 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/scripting/builtin/nextintegerid"
 	osmod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/os"
 	timemod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/time"
+	tviewmod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/tview"
 )
+
+// TViewManagerProvider provides access to a tview manager instance.
+type TViewManagerProvider interface {
+	GetTViewManager() *tviewmod.Manager
+}
 
 // Register registers all native Go modules with the provided registry, wiring
 // modules that need host context or TUI output with the provided values.
-func Register(ctx context.Context, tuiSink func(string), registry *require.Registry) {
+// The tviewProvider parameter is optional and can be nil if tview functionality is not needed.
+func Register(ctx context.Context, tuiSink func(string), registry *require.Registry, tviewProvider TViewManagerProvider) {
 	const prefix = "osm:"
 	registry.RegisterNativeModule(prefix+"argv", argv.Require)
 	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.Require)
@@ -22,4 +29,12 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, tuiSink))
 	registry.RegisterNativeModule(prefix+"time", timemod.Require)
 	registry.RegisterNativeModule(prefix+"ctxutil", ctxutils.Require(ctx))
+
+	// Register tview module if provider is available
+	if tviewProvider != nil {
+		tviewMgr := tviewProvider.GetTViewManager()
+		if tviewMgr != nil {
+			registry.RegisterNativeModule(prefix+"tview", tviewmod.Require(ctx, tviewMgr))
+		}
+	}
 }

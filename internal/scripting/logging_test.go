@@ -56,24 +56,25 @@ func TestPrintToTUI_SetTUISink_Atomicity(t *testing.T) {
 	var buf bytes.Buffer
 	l := NewTUILogger(&buf, 10)
 
-	start := make(chan struct{})
-	done := make(chan struct{})
+	entered := make(chan struct{})
 	block := make(chan struct{})
+	done := make(chan struct{})
 
-	// Install a sink that blocks until we let it proceed, to simulate a long write
+	// Install a sink that signals when entered and blocks until allowed
 	l.SetTUISink(func(s string) {
+		close(entered)
 		<-block // wait until allowed
-		// no-op
 	})
 
-	// Goroutine that will print after reading current sink under RLock
+	// Goroutine that will print
 	go func() {
-		close(start)
 		l.PrintToTUI("msg")
 		close(done)
 	}()
 
-	<-start
+	// Wait until PrintToTUI has acquired RLock and entered the sink
+	<-entered
+
 	// Call SetTUISink concurrently; it must block until PrintToTUI releases RLock
 	setDone := make(chan struct{})
 	go func() {
@@ -81,14 +82,12 @@ func TestPrintToTUI_SetTUISink_Atomicity(t *testing.T) {
 		close(setDone)
 	}()
 
-	// Give goroutines a moment to contend
-	time.Sleep(50 * time.Millisecond)
-
+	// SetTUISink should be blocked by the RLock held in PrintToTUI
 	select {
 	case <-setDone:
 		t.Fatalf("SetTUISink returned while PrintToTUI held RLock; expected it to block")
-	default:
-		// expected to be blocked
+	case <-time.After(100 * time.Millisecond):
+		// expected timeout - SetTUISink is properly blocked
 	}
 
 	// Unblock the sink, allowing PrintToTUI to complete and release RLock
@@ -99,10 +98,15 @@ func TestPrintToTUI_SetTUISink_Atomicity(t *testing.T) {
 
 // blockingWriter blocks on Write until unblocked, useful to simulate a slow terminal write
 type blockingWriter struct {
-	unblk chan struct{}
+	entered chan struct{}
+	unblk   chan struct{}
 }
 
 func (w *blockingWriter) Write(p []byte) (int, error) {
+	if w.entered != nil {
+		close(w.entered)
+		w.entered = nil
+	}
 	<-w.unblk
 	return len(p), nil
 }
@@ -110,34 +114,34 @@ func (w *blockingWriter) Write(p []byte) (int, error) {
 // Ensure SetTUISink blocks while a writer-path PrintToTUI is in progress
 func TestPrintToTUI_SetTUISink_Atomicity_WriterPath(t *testing.T) {
 	t.Parallel()
-	bw := &blockingWriter{unblk: make(chan struct{})}
+	entered := make(chan struct{})
+	bw := &blockingWriter{entered: entered, unblk: make(chan struct{})}
 	l := NewTUILogger(bw, 10)
 
-	started := make(chan struct{})
 	printed := make(chan struct{})
 
 	// Kick off a print that will block in the writer
 	go func() {
-		close(started)
 		l.PrintToTUI("x")
 		close(printed)
 	}()
 
-	<-started
+	// Wait until Write is called, meaning PrintToTUI holds the RLock
+	<-entered
+
+	// Try to set the sink - should block until PrintToTUI completes
 	setDone := make(chan struct{})
 	go func() {
 		l.SetTUISink(func(string) {})
 		close(setDone)
 	}()
 
-	// Small delay to allow SetTUISink to attempt acquiring the write lock
-	time.Sleep(25 * time.Millisecond)
-
+	// SetTUISink should be blocked by the RLock held in PrintToTUI
 	select {
 	case <-setDone:
 		t.Fatalf("SetTUISink returned before writer-path PrintToTUI completed; expected it to block")
-	default:
-		// expected to be blocked
+	case <-time.After(100 * time.Millisecond):
+		// expected timeout - SetTUISink is properly blocked
 	}
 
 	// Unblock writer, allowing PrintToTUI to finish and release RLock

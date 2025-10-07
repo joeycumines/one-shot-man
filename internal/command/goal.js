@@ -14,6 +14,7 @@
     const config = GOAL_CONFIG;
     const nextIntegerId = require('osm:nextIntegerId');
     const {buildContext, contextManager} = require('osm:ctxutil');
+    const template = require('osm:text/template');
 
     // Build state contract from GOAL_CONFIG.StateKeys
     const stateContractDef = {
@@ -50,63 +51,53 @@
             // Build context txtar
             const fullContext = buildContext(state.get(StateKeys.contextItems), {toTxtar: () => context.toTxtar()});
 
-            // Create prompt builder
-            const pb = tui.createPromptBuilder(config.Name, "Build " + config.Description + " prompt");
-
             // Use the PromptTemplate from Go configuration
-            let promptText = config.PromptTemplate || "";
+            const promptText = config.PromptTemplate || "";
 
-            // Perform template substitutions
-            // Replace {{.Description | upper}}
-            promptText = promptText.replace(/\{\{\.Description \| upper\}\}/g, (config.Description || "").toUpperCase());
+            // Prepare template data
+            const templateData = {
+                Description: config.Description || "",
+                ContextHeader: config.ContextHeader || "CONTEXT",
+                ContextTxtar: fullContext,
+                StateKeys: stateVars
+            };
 
-            // Replace {{.Description}}
-            promptText = promptText.replace(/\{\{\.Description\}\}/g, config.Description || "");
-
-            // Replace {{.PromptInstructions}}
+            // Handle PromptInstructions with dynamic substitutions
             let instructions = config.PromptInstructions || "";
 
             // Handle dynamic instruction substitutions from PromptOptions
             if (config.PromptOptions) {
-                // Generic replacement for any option map (e.g., docTypeInstructions, testTypeInstructions)
                 for (const optionKey in config.PromptOptions) {
                     const optionMap = config.PromptOptions[optionKey];
                     if (typeof optionMap === 'object' && optionMap !== null) {
-                        // Find the corresponding state key (e.g., docType, testType)
-                        // by removing "Instructions" suffix from option key
                         const stateKeyBase = optionKey.replace(/Instructions$/, '');
                         const stateValue = stateVars[stateKeyBase];
-
                         if (stateValue && optionMap[stateValue]) {
-                            const placeholder = "{{." + optionKey.charAt(0).toUpperCase() + optionKey.slice(1) + "}}";
-                            instructions = instructions.replace(placeholder, optionMap[stateValue]);
+                            templateData[optionKey.charAt(0).toUpperCase() + optionKey.slice(1)] = optionMap[stateValue];
                         }
                     }
                 }
             }
 
-            // Handle framework info placeholder (used when a framework state variable is set)
+            // Handle framework info
             if (stateVars.framework && stateVars.framework !== "auto") {
-                instructions = instructions.replace("{{.FrameworkInfo}}", "\nUse the " + stateVars.framework + " testing framework.");
+                templateData.FrameworkInfo = "\nUse the " + stateVars.framework + " testing framework.";
             } else {
-                instructions = instructions.replace("{{.FrameworkInfo}}", "");
+                templateData.FrameworkInfo = "";
             }
 
-            // Replace state variable references
-            instructions = instructions.replace(/\{\{\.StateKeys\.(\w+)\}\}/g, function(match, key) {
-                return stateVars[key] || "";
+            templateData.PromptInstructions = instructions;
+
+            // Create template with custom functions
+            const tmpl = template.new("goal");
+            tmpl.funcs({
+                upper: function(s) {
+                    return s.toUpperCase();
+                }
             });
+            tmpl.parse(promptText);
 
-            promptText = promptText.replace(/\{\{\.PromptInstructions\}\}/g, instructions);
-
-            // Replace {{.ContextHeader}}
-            promptText = promptText.replace(/\{\{\.ContextHeader\}\}/g, config.ContextHeader || "CONTEXT");
-
-            // Replace {{.ContextTxtar}}
-            promptText = promptText.replace(/\{\{\.ContextTxtar\}\}/g, fullContext);
-
-            pb.setTemplate(promptText);
-            return pb.build();
+            return tmpl.execute(templateData);
         }
 
         // Create context manager

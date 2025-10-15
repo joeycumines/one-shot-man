@@ -356,13 +356,19 @@ func testKeyBindings(ctx context.Context, t *testing.T) {
 		t.Fatalf("input not shown: %v", err)
 	}
 
+	inputLen := test.GetPTY().OutputLen()
+
 	// Test backspace
 	if err := test.SendKeys("backspace"); err != nil {
 		t.Fatalf("failed to send backspace: %v", err)
 	}
 
-	// Give time for backspace to be processed
-	time.Sleep(50 * time.Millisecond)
+	// rerendered
+	if err := test.GetPTY().WaitForOutputSince("test comman", inputLen, 1*time.Second); err != nil {
+		t.Fatalf("input not shown: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
 
 	if err := test.SendKeys("enter"); err != nil {
 		t.Fatalf("failed to send enter: %v", err)

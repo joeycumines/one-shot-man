@@ -1,5 +1,24 @@
 package scripting
 
+// Testing patterns for TUI/terminal tests:
+//
+// 1. ALWAYS capture buffer position BEFORE sending input/keys:
+//    startLen := test.GetPTY().OutputLen()
+//    test.SendInput("command")
+//    test.GetPTY().WaitForOutputSince("expected", startLen, timeout)
+//
+// 2. NEVER use time.Sleep for orchestration - use channels instead:
+//    executorIn := make(chan executorCall)
+//    executorOut := make(chan executorResult)
+//    // In executor: send to executorIn, wait for executorOut
+//    // In test: wait for executorIn with timeout, then send to executorOut
+//
+// 3. Use WaitForOutputSince with offsets, not AssertOutput on full buffer.
+//    This prevents matching stale data from previous commands.
+//
+// 4. For race detector safety, check bounds before accessing slices:
+//    if len(cell.Runes) > 0 { content.WriteRune(cell.Runes[0]) }
+
 import (
 	"context"
 	"os"

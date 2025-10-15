@@ -15,37 +15,6 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/termtest"
 )
 
-// requireExpectSince waits for expected to appear in output produced after the
-// provided start offset. Fails the test with the raw output on error.
-func requireExpectSince(t *testing.T, cp *termtest.ConsoleProcess, expected string, start int, timeout ...time.Duration) {
-	t.Helper()
-	raw, err := cp.ExpectSince(expected, start, timeout...)
-	if err != nil {
-		t.Fatalf("Expected to find %q in new output since offset %d, but got error: %v\nRaw:\n%s\n", expected, start, err, raw)
-	}
-}
-
-// sendThenRequireSince sends a line and waits for expected output from the captured start offset.
-// If the expected output is not found within the default timeout, it sends a single extra Enter
-// as a benign nudge (completion UIs sometimes absorb the first Enter) and waits once more.
-func sendThenRequireSince(t *testing.T, cp *termtest.ConsoleProcess, line string, expected string, start int, timeout ...time.Duration) {
-	t.Helper()
-	if err := cp.SendLine(line); err != nil {
-		t.Fatalf("failed to send line %q: %v", line, err)
-	}
-	// First attempt
-	if raw, err := cp.ExpectSince(expected, start, timeout...); err == nil {
-		_ = raw
-		return
-	}
-	// One-time nudge: send an extra Enter, then wait again from the original offset
-	_ = cp.SendKeys("enter")
-	raw, err := cp.ExpectSince(expected, start, timeout...)
-	if err != nil {
-		t.Fatalf("Expected to find %q in new output since offset %d after sending %q (with enter nudge), but got error: %v\nRaw:\n%s\n", expected, start, line, err, raw)
-	}
-}
-
 // Example demonstrates a complete prompt-flow workflow
 // from setting a goal to generating and copying the final prompt.
 func Example() {
@@ -150,8 +119,13 @@ public class ThreadPoolManager {
 	defer cp.Close()
 
 	// Wait for startup
-	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
-	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+	startLen := cp.OutputLen()
+	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected TUI startup: %v", err)
+	}
+	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+		t.Fatalf("Expected prompt: %v", err)
+	}
 
 	// Test the complete workflow
 	testCompletePromptFlowWorkflow(t, cp, testJavaFile)
@@ -269,45 +243,98 @@ func processString(s string) string {
 	}
 	defer cp.Close()
 
-	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
-	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+	startLen := cp.OutputLen()
+	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected TUI startup: %v", err)
+	}
+	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+		t.Fatalf("Expected prompt: %v", err)
+	}
 
 	// Set goal
-	cp.SendLine("goal Refactor Go application for better modularity")
-	requireExpect(t, cp, "Goal set.")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("goal Refactor Go application for better modularity"); err != nil {
+		t.Fatalf("Failed to send goal: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Goal set.", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected goal set: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Add files with absolute paths
 	mainGoPath := filepath.Join(workspace, "main.go")
 	utilsGoPath := filepath.Join(workspace, "utils.go")
-	cp.SendLine("add " + mainGoPath + " " + utilsGoPath)
-	requireExpect(t, cp, "Added file: "+mainGoPath)
-	requireExpect(t, cp, "Added file: "+utilsGoPath)
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("add " + mainGoPath + " " + utilsGoPath); err != nil {
+		t.Fatalf("Failed to send add: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Added file: "+mainGoPath, startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected file added: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Added file: "+utilsGoPath, startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected file added: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Add note
-	cp.SendLine("note Focus on separation of concerns and clean architecture")
-	requireExpect(t, cp, "Added note [")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("note Focus on separation of concerns and clean architecture"); err != nil {
+		t.Fatalf("Failed to send note: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Added note [", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected note added: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Generate meta-prompt
-	cp.SendLine("generate")
-	requireExpect(t, cp, "Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("generate"); err != nil {
+		t.Fatalf("Failed to send generate: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected meta generated: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Show the final assembled output
 	// Provide a simple task prompt then show final
-	cp.SendLine("use final output please")
-	requireExpect(t, cp, "Task prompt set.")
-	cp.SendLine("show")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("use final output please"); err != nil {
+		t.Fatalf("Failed to send use: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Task prompt set.", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected task prompt set: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("show"); err != nil {
+		t.Fatalf("Failed to send show: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
-	// Verify the final output structure
-	requireExpect(t, cp, "Refactor Go application for better modularity") // Goal should be in final output
-	requireExpect(t, cp, "## IMPLEMENTATIONS/CONTEXT")                    // Context section header
-	requireExpect(t, cp, "### Note:")                                     // Note section
-	requireExpect(t, cp, "Focus on separation of concerns")               // Note content
-	requireExpect(t, cp, "-- main.go --")                                 // txtar file marker
-	requireExpect(t, cp, "package main")                                  // File content
-	requireExpect(t, cp, "-- utils.go --")                                // Second file marker
-	requireExpect(t, cp, "func processString")                            // Second file content
+	// Verify the final output structure (goal is NOT in final output, only task prompt + context)
+	if _, err := cp.ExpectSince("final output please", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected task prompt in final: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("## IMPLEMENTATIONS/CONTEXT", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected context section: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("### Note:", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected note section: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Focus on separation of concerns", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected note content: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("-- main.go --", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected txtar marker: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("package main", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected file content: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("-- utils.go --", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected second file marker: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("func processString", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected second file content: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
-	cp.SendLine("exit")
+	if err := cp.SendLine("exit"); err != nil {
+		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 	requireExpectExitCode(t, cp, 0)
 }
 
@@ -349,12 +376,20 @@ func TestPromptFlow_Unix_ListShowsMissing(t *testing.T) {
 	}
 	defer cp.Close()
 
-	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
-	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+	startLen := cp.OutputLen()
+	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected TUI startup: %v", err)
+	}
+	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+		t.Fatalf("Expected prompt: %v", err)
+	}
 
 	// Add the file and verify it's listed
+	startLen = cp.OutputLen()
 	cp.SendLine("add " + filePath)
-	requireExpect(t, cp, "Added file:")
+	if _, err := cp.ExpectSince("Added file:", startLen); err != nil {
+		t.Fatalf("Expected file added: %v", err)
+	}
 
 	// Remove the file from disk
 	if err := os.Remove(filePath); err != nil {
@@ -362,8 +397,11 @@ func TestPromptFlow_Unix_ListShowsMissing(t *testing.T) {
 	}
 
 	// List should now show (missing)
+	startLen = cp.OutputLen()
 	cp.SendLine("list")
-	requireExpect(t, cp, "(missing)")
+	if _, err := cp.ExpectSince("(missing)", startLen); err != nil {
+		t.Fatalf("Expected missing indicator: %v", err)
+	}
 
 	cp.SendLine("exit")
 	requireExpectExitCode(t, cp, 0)
@@ -406,16 +444,27 @@ func TestPromptFlow_Unix_DiskReadInMeta(t *testing.T) {
 	}
 	defer cp.Close()
 
-	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
-	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+	startLen := cp.OutputLen()
+	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected TUI startup: %v", err)
+	}
+	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+		t.Fatalf("Expected prompt: %v", err)
+	}
 
 	// Set goal to reach meta generation phase
+	startLen = cp.OutputLen()
 	cp.SendLine("goal test live updates")
-	requireExpect(t, cp, "Goal set.")
+	if _, err := cp.ExpectSince("Goal set.", startLen); err != nil {
+		t.Fatalf("Expected goal set: %v", err)
+	}
 
 	// Add file
+	startLen = cp.OutputLen()
 	cp.SendLine("add " + filePath)
-	requireExpect(t, cp, "Added file:")
+	if _, err := cp.ExpectSince("Added file:", startLen); err != nil {
+		t.Fatalf("Expected file added: %v", err)
+	}
 
 	// Update file content on disk
 	if err := os.WriteFile(filePath, []byte("v2-updated\n"), 0644); err != nil {
@@ -423,10 +472,16 @@ func TestPromptFlow_Unix_DiskReadInMeta(t *testing.T) {
 	}
 
 	// Generate meta and expect updated content to appear via txtar
+	startLen = cp.OutputLen()
 	cp.SendLine("generate")
-	requireExpect(t, cp, "Meta-prompt generated.")
+	if _, err := cp.ExpectSince("Meta-prompt generated.", startLen); err != nil {
+		t.Fatalf("Expected meta generated: %v", err)
+	}
+	startLen = cp.OutputLen()
 	cp.SendLine("show meta")
-	requireExpect(t, cp, "v2-updated")
+	if _, err := cp.ExpectSince("v2-updated", startLen); err != nil {
+		t.Fatalf("Expected updated content: %v", err)
+	}
 
 	cp.SendLine("exit")
 	requireExpectExitCode(t, cp, 0)
@@ -464,31 +519,57 @@ func TestPromptFlow_Unix_DifferentTemplateConfigurations(t *testing.T) {
 	}
 	defer cp.Close()
 
-	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
-	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+	startLen := cp.OutputLen()
+	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected TUI startup: %v", err)
+	}
+	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+		t.Fatalf("Expected prompt: %v", err)
+	}
 
 	// Set a goal
-	cp.SendLine("goal Create a REST API for user management")
-	requireExpect(t, cp, "Goal set.")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("goal Create a REST API for user management"); err != nil {
+		t.Fatalf("Failed to send goal: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Goal set.", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected goal set: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Customize the template (opens editor and returns immediately in our fake editor)
 	startTemplate := cp.OutputLen()
-	cp.SendLine("template")
-	// Wait for the prompt line to re-render after editor exits, checking only new output
-	requireExpectSince(t, cp, "(prompt-builder) > ", startTemplate)
+	if err := cp.SendLine("template edit"); err != nil {
+		t.Fatalf("Failed to send template edit: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	// Wait for "Template updated." message after editor exits
+	if _, err := cp.ExpectSince("Template updated.", startTemplate, 5*time.Second); err != nil {
+		t.Fatalf("Expected template updated message: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Generate with custom template
 	startGenerate := cp.OutputLen()
-	// Wait for explicit generation completion message to avoid early prompt matches
-	sendThenRequireSince(t, cp, "generate", "Meta-prompt generated.", startGenerate, 90*time.Second)
+	if err := cp.SendLine("generate"); err != nil {
+		t.Fatalf("Failed to send generate: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Meta-prompt generated.", startGenerate, 10*time.Second); err != nil {
+		t.Fatalf("Expected meta generated: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Show meta-prompt to verify template customization
 	startShowMeta := cp.OutputLen()
-	cp.SendLine("show meta")
-	requireExpectSince(t, cp, "Create a REST API for user management", startShowMeta)
-	requireExpectSince(t, cp, "CUSTOM TEMPLATE MODIFICATION", startShowMeta)
+	if err := cp.SendLine("show meta"); err != nil {
+		t.Fatalf("Failed to send show meta: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Create a REST API for user management", startShowMeta, 2*time.Second); err != nil {
+		t.Fatalf("Expected goal in meta: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("CUSTOM TEMPLATE MODIFICATION", startShowMeta, 2*time.Second); err != nil {
+		t.Fatalf("Expected custom template marker: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
-	cp.SendLine("exit")
+	if err := cp.SendLine("exit"); err != nil {
+		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 	requireExpectExitCode(t, cp, 0)
 }
 
@@ -532,36 +613,82 @@ func TestPromptFlow_Unix_GitDiffIntegration(t *testing.T) {
 	}
 	defer cp.Close()
 
-	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
-	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+	startLen := cp.OutputLen()
+	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected TUI startup: %v", err)
+	}
+	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+		t.Fatalf("Expected prompt: %v", err)
+	}
 
 	// Set goal
-	cp.SendLine("goal Review and optimize the recent code changes")
-	requireExpect(t, cp, "Goal set.")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("goal Review and optimize the recent code changes"); err != nil {
+		t.Fatalf("Failed to send goal: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Goal set.", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected goal set: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Capture git diff
-	cp.SendLine("diff")
-	requireExpect(t, cp, "Added diff:")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("diff"); err != nil {
+		t.Fatalf("Failed to send diff: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Added diff:", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected diff added: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// List to verify diff was captured (lazy-diff semantics)
-	cp.SendLine("list")
-	requireExpect(t, cp, "[goal] Review and optimize the recent code changes")
-	requireExpect(t, cp, "[template] set")
-	requireExpect(t, cp, "[1] [lazy-diff] git diff")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("list"); err != nil {
+		t.Fatalf("Failed to send list: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("[goal] Review and optimize the recent code changes", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected goal in list: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("[template] set", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected template in list: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("[1] [lazy-diff] git diff", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected diff in list: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Generate and show final output
-	cp.SendLine("generate")
-	requireExpect(t, cp, "Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("generate"); err != nil {
+		t.Fatalf("Failed to send generate: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected meta generated: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
-	cp.SendLine("use ready to review")
-	requireExpect(t, cp, "Task prompt set.")
-	cp.SendLine("show")
-	requireExpect(t, cp, "Review and optimize the recent code changes") // Goal
-	requireExpect(t, cp, "### Diff: git diff")                          // Diff section
-	requireExpect(t, cp, "```diff")                                     // Diff formatting
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("use ready to review"); err != nil {
+		t.Fatalf("Failed to send use: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Task prompt set.", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected task prompt set: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("show"); err != nil {
+		t.Fatalf("Failed to send show: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	// After 'use', final output shows task prompt + context, NOT the goal
+	if _, err := cp.ExpectSince("ready to review", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected task prompt in final: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("### Diff: git diff", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected diff section: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("```diff", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected diff formatting: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 	// Note: git diff may be empty if no staged changes, which is expected
 
-	cp.SendLine("exit")
+	if err := cp.SendLine("exit"); err != nil {
+		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 	requireExpectExitCode(t, cp, 0)
 }
 
@@ -622,26 +749,47 @@ func main() {
 	defer cp.Close()
 
 	// Wait for startup
-	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
-	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+	startLen := cp.OutputLen()
+	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected TUI startup: %v", err)
+	}
+	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+		t.Fatalf("Expected prompt: %v", err)
+	}
 
 	// Set a goal before generating
+	startLen = cp.OutputLen()
 	cp.SendLine("goal Summarise repository history")
-	requireExpect(t, cp, "Goal set.")
+	if _, err := cp.ExpectSince("Goal set.", startLen); err != nil {
+		t.Fatalf("Expected goal set: %v", err)
+	}
 
 	// Add a lazy diff with no arguments, triggering the default behavior
+	startLen = cp.OutputLen()
 	cp.SendLine("diff")
-	requireExpect(t, cp, "Added diff:")
+	if _, err := cp.ExpectSince("Added diff:", startLen); err != nil {
+		t.Fatalf("Expected diff added: %v", err)
+	}
 
 	// Generate and show output
+	startLen = cp.OutputLen()
 	cp.SendLine("generate")
-	requireExpect(t, cp, "Meta-prompt generated.")
+	if _, err := cp.ExpectSince("Meta-prompt generated.", startLen); err != nil {
+		t.Fatalf("Expected meta generated: %v", err)
+	}
+	startLen = cp.OutputLen()
 	cp.SendLine("show")
 
 	// Verify that the diff was successful and not an error, and shows an initial commit file as new
-	requireExpect(t, cp, "### Diff: git diff")
-	requireExpect(t, cp, "diff --git a/example.go b/example.go")
-	requireExpect(t, cp, "new file mode 100644")
+	if _, err := cp.ExpectSince("### Diff: git diff", startLen); err != nil {
+		t.Fatalf("Expected diff section: %v", err)
+	}
+	if _, err := cp.ExpectSince("diff --git a/example.go b/example.go", startLen); err != nil {
+		t.Fatalf("Expected diff content: %v", err)
+	}
+	if _, err := cp.ExpectSince("new file mode 100644", startLen); err != nil {
+		t.Fatalf("Expected new file: %v", err)
+	}
 
 	cp.SendLine("exit")
 	requireExpectExitCode(t, cp, 0)
@@ -684,28 +832,72 @@ func TestPromptFlow_Unix_GitDiffMalformedPayload(t *testing.T) {
 	}
 	defer cp.Close()
 
-	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
-	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+	startLen := cp.OutputLen()
+	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected TUI startup: %v", err)
+	}
+	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+		t.Fatalf("Expected prompt: %v", err)
+	}
 
 	// Ensure a goal is present for generate usage
-	cp.SendLine("goal Handle malformed payload test cases")
-	requireExpect(t, cp, "Goal set.")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("goal Handle malformed payload test cases"); err != nil {
+		t.Fatalf("Failed to send goal: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Goal set.", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected goal set: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Helper to test malformed payloads via JS REPL (functions are global in script)
 	testMalformed := func(payloadJS string) {
 		// addItem("lazy-diff", "malformed", <payloadJS>)
-		cp.SendLine("addItem(\"lazy-diff\", \"malformed\", " + payloadJS + ")")
+		// SendLine sends all chars at once -> paste detection -> multi-line mode
+		// So we send empty line to exit multi-line mode
+		startLen := cp.OutputLen()
+		if err := cp.SendLine("addItem(\"lazy-diff\", \"malformed\", " + payloadJS + ")"); err != nil {
+			t.Fatalf("Failed to send addItem: %v\nBuffer: %q", err, cp.GetOutput())
+		}
+		// Send empty line to exit multi-line mode
+		if err := cp.SendLine(""); err != nil {
+			t.Fatalf("Failed to send empty line: %v\nBuffer: %q", err, cp.GetOutput())
+		}
+		// Wait for the JS command to complete and prompt to return
+		if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 2*time.Second); err != nil {
+			t.Fatalf("Expected prompt after addItem: %v\nBuffer: %q", err, cp.GetOutput())
+		}
 
-		cp.SendLine("generate")
-		requireExpect(t, cp, "Meta-prompt generated.")
-		cp.SendLine("show")
+		startLen = cp.OutputLen()
+		if err := cp.SendLine("generate"); err != nil {
+			t.Fatalf("Failed to send generate: %v\nBuffer: %q", err, cp.GetOutput())
+		}
+		if _, err := cp.ExpectSince("Meta-prompt generated.", startLen, 2*time.Second); err != nil {
+			t.Fatalf("Expected meta generated: %v\nBuffer: %q", err, cp.GetOutput())
+		}
+		startLen = cp.OutputLen()
+		if err := cp.SendLine("show"); err != nil {
+			t.Fatalf("Failed to send show: %v\nBuffer: %q", err, cp.GetOutput())
+		}
 
-		requireExpect(t, cp, "### Diff Error: malformed")
-		requireExpect(t, cp, "Invalid payload: expected a string or string array")
+		if _, err := cp.ExpectSince("### Diff Error: malformed", startLen, 2*time.Second); err != nil {
+			t.Fatalf("Expected diff error: %v\nBuffer: %q", err, cp.GetOutput())
+		}
+		if _, err := cp.ExpectSince("Invalid payload: expected a string or string array", startLen, 2*time.Second); err != nil {
+			t.Fatalf("Expected error message: %v\nBuffer: %q", err, cp.GetOutput())
+		}
 
 		// Clear items list for next sub-case
-		cp.SendLine("setItems([])")
-		requireExpect(t, cp, "(prompt-builder) > ")
+		startLen = cp.OutputLen()
+		if err := cp.SendLine("setItems([])"); err != nil {
+			t.Fatalf("Failed to send setItems: %v\nBuffer: %q", err, cp.GetOutput())
+		}
+		// Send empty line to exit multi-line mode
+		if err := cp.SendLine(""); err != nil {
+			t.Fatalf("Failed to send empty line: %v\nBuffer: %q", err, cp.GetOutput())
+		}
+		if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 2*time.Second); err != nil {
+			t.Fatalf("Expected prompt after setItems: %v\nBuffer: %q", err, cp.GetOutput())
+		}
 	}
 
 	// Case 1: number
@@ -715,14 +907,39 @@ func TestPromptFlow_Unix_GitDiffMalformedPayload(t *testing.T) {
 	// Case 3: object
 	testMalformed("({key: 'value'})")
 	// Case 4: array of non-strings should trigger array-specific error
-	cp.SendLine("addItem(\"lazy-diff\", \"malformed\", [1,2,3])")
-	cp.SendLine("generate")
-	requireExpect(t, cp, "Meta-prompt generated.")
-	cp.SendLine("show")
-	requireExpect(t, cp, "### Diff Error: malformed")
-	requireExpect(t, cp, "Invalid payload: expected a string array")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("addItem(\"lazy-diff\", \"malformed\", [1,2,3])"); err != nil {
+		t.Fatalf("Failed to send addItem: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	// Send empty line to exit multi-line mode
+	if err := cp.SendLine(""); err != nil {
+		t.Fatalf("Failed to send empty line: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	// Wait for the JS command to complete and prompt to return
+	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected prompt after addItem: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("generate"); err != nil {
+		t.Fatalf("Failed to send generate: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Meta-prompt generated.", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected meta generated: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("show"); err != nil {
+		t.Fatalf("Failed to send show: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("### Diff Error: malformed", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected diff error: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Invalid payload: expected a string array", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected error message: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
-	cp.SendLine("exit")
+	if err := cp.SendLine("exit"); err != nil {
+		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 	requireExpectExitCode(t, cp, 0)
 }
 
@@ -768,29 +985,50 @@ func TestPromptFlow_Unix_MetaIncludesGitDiff(t *testing.T) {
 	defer cp.Close()
 
 	// Wait for startup and prompt
-	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
-	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+	startLen := cp.OutputLen()
+	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected TUI startup: %v", err)
+	}
+	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+		t.Fatalf("Expected prompt: %v", err)
+	}
 
 	// Set goal
+	startLen = cp.OutputLen()
 	cp.SendLine("goal Summarise changes in the diff")
-	requireExpect(t, cp, "Goal set.")
+	if _, err := cp.ExpectSince("Goal set.", startLen); err != nil {
+		t.Fatalf("Expected goal set: %v", err)
+	}
 
 	// Capture git diff (no args -> working tree diff)
+	startLen = cp.OutputLen()
 	cp.SendLine("diff")
-	requireExpect(t, cp, "Added diff:")
+	if _, err := cp.ExpectSince("Added diff:", startLen); err != nil {
+		t.Fatalf("Expected diff added: %v", err)
+	}
 
 	// Generate meta and show it
+	startLen = cp.OutputLen()
 	cp.SendLine("generate")
-	requireExpect(t, cp, "Meta-prompt generated.")
+	if _, err := cp.ExpectSince("Meta-prompt generated.", startLen); err != nil {
+		t.Fatalf("Expected meta generated: %v", err)
+	}
 
+	startLen = cp.OutputLen()
 	cp.SendLine("show meta")
 
 	// The meta should include the diff section with diff fencing
-	requireExpect(t, cp, "### Diff: git diff")
-	requireExpect(t, cp, "```diff")
+	if _, err := cp.ExpectSince("### Diff: git diff", startLen); err != nil {
+		t.Fatalf("Expected diff section: %v", err)
+	}
+	if _, err := cp.ExpectSince("```diff", startLen); err != nil {
+		t.Fatalf("Expected diff formatting: %v", err)
+	}
 	// And it should include at least some content from our modified file
 	// created by setupGitRepository (Modified version with new features)
-	requireExpect(t, cp, "Modified version with new features")
+	if _, err := cp.ExpectSince("Modified version with new features", startLen); err != nil {
+		t.Fatalf("Expected modified content: %v", err)
+	}
 
 	cp.SendLine("exit")
 	requireExpectExitCode(t, cp, 0)
@@ -829,22 +1067,39 @@ func TestPromptFlow_Unix_ClipboardIntegration(t *testing.T) {
 	}
 	defer cp.Close()
 
-	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
-	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+	startLen := cp.OutputLen()
+	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected TUI startup: %v", err)
+	}
+	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+		t.Fatalf("Expected prompt: %v", err)
+	}
 
 	// Set up a complete scenario
+	startLen = cp.OutputLen()
 	cp.SendLine("goal Test clipboard functionality with prompt-flow")
-	requireExpect(t, cp, "Goal set.")
+	if _, err := cp.ExpectSince("Goal set.", startLen); err != nil {
+		t.Fatalf("Expected goal set: %v", err)
+	}
 
+	startLen = cp.OutputLen()
 	cp.SendLine("note This is a test note for clipboard verification")
-	requireExpect(t, cp, "Added note [")
+	if _, err := cp.ExpectSince("Added note [", startLen); err != nil {
+		t.Fatalf("Expected note added: %v", err)
+	}
 
+	startLen = cp.OutputLen()
 	cp.SendLine("generate")
-	requireExpect(t, cp, "Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.")
+	if _, err := cp.ExpectSince("Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.", startLen); err != nil {
+		t.Fatalf("Expected meta generated: %v", err)
+	}
 
 	// Test copying meta-prompt
+	startLen = cp.OutputLen()
 	cp.SendLine("copy meta")
-	requireExpect(t, cp, "Meta prompt copied to clipboard.")
+	if _, err := cp.ExpectSince("Meta prompt copied to clipboard.", startLen); err != nil {
+		t.Fatalf("Expected copy confirmation: %v", err)
+	}
 
 	// Verify meta-prompt was copied
 	metaContent, err := os.ReadFile(clipboardFile)
@@ -863,10 +1118,16 @@ func TestPromptFlow_Unix_ClipboardIntegration(t *testing.T) {
 	os.WriteFile(clipboardFile, []byte(""), 0644)
 
 	// Provide task prompt then copy final assembled output
+	startLen = cp.OutputLen()
 	cp.SendLine("use Test goal for automated testing")
-	requireExpect(t, cp, "Task prompt set.")
+	if _, err := cp.ExpectSince("Task prompt set.", startLen); err != nil {
+		t.Fatalf("Expected task prompt set: %v", err)
+	}
+	startLen = cp.OutputLen()
 	cp.SendLine("copy")
-	requireExpect(t, cp, "Final output copied to clipboard.")
+	if _, err := cp.ExpectSince("Final output copied to clipboard.", startLen); err != nil {
+		t.Fatalf("Expected copy confirmation: %v", err)
+	}
 
 	// Verify final output was copied
 	finalContent, err := os.ReadFile(clipboardFile)
@@ -1028,50 +1289,118 @@ func testCompletePromptFlowWorkflow(t *testing.T, cp *termtest.ConsoleProcess, t
 	t.Helper()
 
 	// Set goal
-	cp.SendLine("goal Enhance Java thread pool with comprehensive monitoring and metrics")
-	requireExpect(t, cp, "Goal set.")
+	startLen := cp.OutputLen()
+	if err := cp.SendLine("goal Enhance Java thread pool with comprehensive monitoring and metrics"); err != nil {
+		t.Fatalf("Failed to send goal: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Goal set.", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected goal set: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Add test file with absolute path
-	cp.SendLine("add " + testFile)
-	requireExpect(t, cp, "Added file:")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("add " + testFile); err != nil {
+		t.Fatalf("Failed to send add: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Added file:", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected file added: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Add a note
-	cp.SendLine("note Focus on Micrometer integration for production monitoring")
-	requireExpect(t, cp, "Added note [")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("note Focus on Micrometer integration for production monitoring"); err != nil {
+		t.Fatalf("Failed to send note: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Added note [", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected note added: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// List current state
-	cp.SendLine("list")
-	requireExpect(t, cp, "[goal] Enhance Java thread pool")
-	requireExpect(t, cp, "[template] set")
-	requireExpect(t, cp, "[1] [file]")
-	requireExpect(t, cp, "[2] [note]")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("list"); err != nil {
+		t.Fatalf("Failed to send list: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("[goal] Enhance Java thread pool", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected goal in list: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("[template] set", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected template in list: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("[1] [file]", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected file in list: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("[2] [note]", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected note in list: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Generate meta-prompt
-	cp.SendLine("generate")
-	requireExpect(t, cp, "Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("generate"); err != nil {
+		t.Fatalf("Failed to send generate: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected meta generated: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Show meta-prompt to verify content
-	cp.SendLine("show meta")
-	requireExpect(t, cp, "!! **GOAL:** !!")
-	requireExpect(t, cp, "Enhance Java thread pool with comprehensive monitoring")
-	requireExpect(t, cp, "!! **IMPLEMENTATIONS/CONTEXT:** !!")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("show meta"); err != nil {
+		t.Fatalf("Failed to send show meta: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("!! **GOAL:** !!", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected goal marker: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Enhance Java thread pool with comprehensive monitoring", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected goal text: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("!! **IMPLEMENTATIONS/CONTEXT:** !!", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected context marker: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Provide task prompt then show final assembled output
-	cp.SendLine("use ready to assemble")
-	requireExpect(t, cp, "Task prompt set.")
-	cp.SendLine("show")
-	requireExpect(t, cp, "Enhance Java thread pool with comprehensive monitoring") // Goal in final output
-	requireExpect(t, cp, "## IMPLEMENTATIONS/CONTEXT")                             // Context section
-	requireExpect(t, cp, "### Note:")                                              // Note section
-	requireExpect(t, cp, "Micrometer integration")                                 // Note content
-	requireExpect(t, cp, "ThreadPoolManager.java")                                 // File content marker
-	requireExpect(t, cp, "ThreadPoolExecutor")                                     // Java content
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("use ready to assemble"); err != nil {
+		t.Fatalf("Failed to send use: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Task prompt set.", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected task prompt set: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("show"); err != nil {
+		t.Fatalf("Failed to send show: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	// After 'use', the final output shows the task prompt + context, but NOT the goal
+	if _, err := cp.ExpectSince("ready to assemble", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected task prompt in final: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("## IMPLEMENTATIONS/CONTEXT", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected context section: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("### Note:", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected note section: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Micrometer integration", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected note content: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("ThreadPoolManager.java", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected file marker: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("ThreadPoolExecutor", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected java content: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Test copy functionality
-	cp.SendLine("copy")
-	requireExpect(t, cp, "Final output copied to clipboard.")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("copy"); err != nil {
+		t.Fatalf("Failed to send copy: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Final output copied to clipboard.", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected copy confirmation: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
-	cp.SendLine("exit")
+	if err := cp.SendLine("exit"); err != nil {
+		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 	requireExpectExitCode(t, cp, 0)
 }
 
@@ -1112,37 +1441,69 @@ func testMetaPromptVariation(t *testing.T, goal string, files []string, diffs []
 	}
 	defer cp.Close()
 
-	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
-	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+	startLen := cp.OutputLen()
+	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected TUI startup: %v", err)
+	}
+	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+		t.Fatalf("Expected prompt: %v", err)
+	}
 
 	// Set goal
-	cp.SendLine("goal " + goal)
-	requireExpect(t, cp, "Goal set.")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("goal " + goal); err != nil {
+		t.Fatalf("Failed to send goal: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Goal set.", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected goal set: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Add files with absolute paths
 	for _, file := range files {
 		absPath := filepath.Join(workspace, file)
-		cp.SendLine("add " + absPath)
-		requireExpect(t, cp, "Added file:")
+		startLen = cp.OutputLen()
+		if err := cp.SendLine("add " + absPath); err != nil {
+			t.Fatalf("Failed to send add: %v\nBuffer: %q", err, cp.GetOutput())
+		}
+		if _, err := cp.ExpectSince("Added file:", startLen, 2*time.Second); err != nil {
+			t.Fatalf("Expected file added: %v\nBuffer: %q", err, cp.GetOutput())
+		}
 	}
 
 	// Add notes
 	for _, note := range notes {
-		cp.SendLine("note " + note)
-		requireExpect(t, cp, "Added note [")
+		startLen = cp.OutputLen()
+		if err := cp.SendLine("note " + note); err != nil {
+			t.Fatalf("Failed to send note: %v\nBuffer: %q", err, cp.GetOutput())
+		}
+		if _, err := cp.ExpectSince("Added note [", startLen, 2*time.Second); err != nil {
+			t.Fatalf("Expected note added: %v\nBuffer: %q", err, cp.GetOutput())
+		}
 	}
 
 	// Generate and show meta-prompt
-	cp.SendLine("generate")
-	requireExpect(t, cp, "Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("generate"); err != nil {
+		t.Fatalf("Failed to send generate: %v\nBuffer: %q", err, cp.GetOutput())
+	}
+	if _, err := cp.ExpectSince("Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected meta generated: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
-	cp.SendLine("show meta")
+	startLen = cp.OutputLen()
+	if err := cp.SendLine("show meta"); err != nil {
+		t.Fatalf("Failed to send show meta: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 
 	// Verify expected content in meta-prompt
 	for _, expected := range expectedInMeta {
-		requireExpect(t, cp, expected)
+		if _, err := cp.ExpectSince(expected, startLen, 2*time.Second); err != nil {
+			t.Fatalf("Expected %q in meta: %v\nBuffer: %q", expected, err, cp.GetOutput())
+		}
 	}
 
-	cp.SendLine("exit")
+	if err := cp.SendLine("exit"); err != nil {
+		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.GetOutput())
+	}
 	requireExpectExitCode(t, cp, 0)
 }

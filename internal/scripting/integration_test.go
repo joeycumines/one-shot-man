@@ -14,13 +14,14 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/termtest"
 )
 
-func requireExpect(t *testing.T, p *termtest.ConsoleProcess, value string, timeout ...time.Duration) {
-	t.Helper()
-	rawString, err := p.Expect(value, timeout...)
-	if err != nil {
-		t.Fatalf("Expected to find %q in output, but got error: %v\nRaw:\n%s\n", value, err, rawString)
-	}
-}
+// NO HELPER FUNCTIONS FOR EXPECT!
+//
+// Every test MUST:
+// 1. Capture startLen := cp.OutputLen() BEFORE the action
+// 2. Perform the action that produces output
+// 3. Call cp.ExpectSince(expected, startLen, timeout...) directly
+//
+// Any helper that captures offset internally is UNSAFE and creates race conditions!
 
 func requireExpectExitCode(t *testing.T, p *termtest.ConsoleProcess, exitCode int, timeout ...time.Duration) {
 	t.Helper()
@@ -72,22 +73,37 @@ func TestFullLLMWorkflow(t *testing.T) {
 	}
 	defer cp.Close()
 
-	// Wait for TUI startup
-	requireExpect(t, cp, "one-shot-man Rich TUI Terminal")
-	requireExpect(t, cp, "Available modes: llm-prompt-builder")
+	// Capture initial offset for automatic startup output
+	startLen := cp.OutputLen()
 
-	// Wait for prompt
-	requireExpect(t, cp, ">>> ", 20*time.Second)
+	// Wait for TUI startup
+	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen); err != nil {
+		t.Fatalf("Expected TUI startup: %v", err)
+	}
+	if _, err := cp.ExpectSince("Available modes: llm-prompt-builder", startLen); err != nil {
+		t.Fatalf("Expected modes: %v", err)
+	}
+	if _, err := cp.ExpectSince(">>> ", startLen, 20*time.Second); err != nil {
+		t.Fatalf("Expected prompt: %v", err)
+	}
 
 	// Drive go-prompt interactively
 	t.Log("Sending help command...")
+	startLen = cp.OutputLen()
 	cp.SendLine("help")
-	requireExpect(t, cp, "Available commands:")
+	if _, err := cp.ExpectSince("Available commands:", startLen); err != nil {
+		t.Fatalf("Expected help output: %v", err)
+	}
 
 	// Switch to the LLM prompt builder mode
+	startLen = cp.OutputLen()
 	cp.SendLine("mode llm-prompt-builder")
-	requireExpect(t, cp, "Switched to mode: llm-prompt-builder")
-	requireExpect(t, cp, "Welcome to LLM Prompt Builder!")
+	if _, err := cp.ExpectSince("Switched to mode: llm-prompt-builder", startLen); err != nil {
+		t.Fatalf("Expected mode switch: %v", err)
+	}
+	if _, err := cp.ExpectSince("Welcome to LLM Prompt Builder!", startLen); err != nil {
+		t.Fatalf("Expected welcome message: %v", err)
+	}
 
 	// Complete workflow: Create prompt, refine it, save versions, export
 	testCompletePromptWorkflow(t, cp)
@@ -95,74 +111,162 @@ func TestFullLLMWorkflow(t *testing.T) {
 
 func testCompletePromptWorkflow(t *testing.T, cp *termtest.ConsoleProcess) {
 	// Create a customer service prompt
+	startLen := cp.OutputLen()
 	cp.SendLine("new customer-service A customer service assistant prompt")
-	requireExpect(t, cp, "Created new prompt: customer-service")
+	if _, err := cp.ExpectSince("Created new prompt: customer-service", startLen); err != nil {
+		t.Fatalf("Expected prompt creation: %v", err)
+	}
 
 	// Set initial template
+	startLen = cp.OutputLen()
 	cp.SendLine("template You are a {{role}} for {{company}}. You should be {{tone}} and {{helpful_level}}. Customer issue: {{issue}}")
-	requireExpect(t, cp, "Template set:")
+	if _, err := cp.ExpectSince("Template set:", startLen); err != nil {
+		t.Fatalf("Expected template set: %v", err)
+	}
 
-	// Set variables for first version
+	// Set variables for first version - PING-PONG: capture, send, wait for each
+	startLen = cp.OutputLen()
 	cp.SendLine("var role customer service representative")
+	if _, err := cp.ExpectSince("Set variable: role", startLen); err != nil {
+		t.Fatalf("Expected role variable set: %v", err)
+	}
+
+	startLen = cp.OutputLen()
 	cp.SendLine("var company TechCorp Inc")
+	if _, err := cp.ExpectSince("Set variable: company", startLen); err != nil {
+		t.Fatalf("Expected company variable set: %v", err)
+	}
+
+	startLen = cp.OutputLen()
 	cp.SendLine("var tone professional and friendly")
+	if _, err := cp.ExpectSince("Set variable: tone", startLen); err != nil {
+		t.Fatalf("Expected tone variable set: %v", err)
+	}
+
+	startLen = cp.OutputLen()
 	cp.SendLine("var helpful_level extremely helpful")
+	if _, err := cp.ExpectSince("Set variable: helpful_level", startLen); err != nil {
+		t.Fatalf("Expected helpful_level variable set: %v", err)
+	}
+
+	startLen = cp.OutputLen()
 	cp.SendLine("var issue I can't log into my account")
+	if _, err := cp.ExpectSince("Set variable: issue", startLen); err != nil {
+		t.Fatalf("Expected issue variable set: %v", err)
+	}
 
 	// Build and preview
+	startLen = cp.OutputLen()
 	cp.SendLine("build")
-	requireExpect(t, cp, "You are a customer service representative for TechCorp Inc.")
-	requireExpect(t, cp, "I can't log into my account")
+	if _, err := cp.ExpectSince("You are a customer service representative for TechCorp Inc.", startLen); err != nil {
+		t.Fatalf("Expected build output: %v", err)
+	}
+	if _, err := cp.ExpectSince("I can't log into my account", startLen); err != nil {
+		t.Fatalf("Expected issue in output: %v", err)
+	}
 
 	// Save first version
+	startLen = cp.OutputLen()
 	cp.SendLine("save Initial customer service template")
-	requireExpect(t, cp, "Saved version 1")
+	if _, err := cp.ExpectSince("Saved version 1", startLen); err != nil {
+		t.Fatalf("Expected save confirmation: %v", err)
+	}
 
 	// Refine the prompt - make it more specific
+	startLen = cp.OutputLen()
 	cp.SendLine("template You are a {{role}} for {{company}}. You should be {{tone}} and {{helpful_level}}. When handling customer issues, always: 1. Acknowledge the customer's concern 2. Ask clarifying questions if needed 3. Provide step-by-step solutions 4. Offer additional assistance Customer issue: {{issue}}")
-	requireExpect(t, cp, "Template set:")
+	if _, err := cp.ExpectSince("Template set:", startLen); err != nil {
+		t.Fatalf("Expected template update: %v", err)
+	}
 
 	// Build the refined version
+	startLen = cp.OutputLen()
 	cp.SendLine("build")
-	requireExpect(t, cp, "Built prompt:")
-	requireExpect(t, cp, "1. Acknowledge the customer's concern")
-	requireExpect(t, cp, "2. Ask clarifying questions")
+	if _, err := cp.ExpectSince("Built prompt:", startLen); err != nil {
+		t.Fatalf("Expected build output: %v", err)
+	}
+	if _, err := cp.ExpectSince("1. Acknowledge the customer's concern", startLen); err != nil {
+		t.Fatalf("Expected structured response: %v", err)
+	}
+	if _, err := cp.ExpectSince("2. Ask clarifying questions", startLen); err != nil {
+		t.Fatalf("Expected clarifying questions: %v", err)
+	}
 
 	// Save refined version
+	startLen = cp.OutputLen()
 	cp.SendLine("save Added structured response format")
-	requireExpect(t, cp, "Saved version 2")
+	if _, err := cp.ExpectSince("Saved version 2", startLen); err != nil {
+		t.Fatalf("Expected save confirmation: %v", err)
+	}
 
 	// Test different issue type
+	startLen = cp.OutputLen()
 	cp.SendLine("var issue My order hasn't arrived and it's been a week")
+	if _, err := cp.ExpectSince("Set variable: issue", startLen); err != nil {
+		t.Fatalf("Expected issue variable set: %v", err)
+	}
+
+	startLen = cp.OutputLen()
 	cp.SendLine("build")
-	requireExpect(t, cp, "My order hasn't arrived and it's been a week")
+	if _, err := cp.ExpectSince("My order hasn't arrived and it's been a week", startLen); err != nil {
+		t.Fatalf("Expected issue in build output: %v", err)
+	}
 
 	// Save version for different issue
+	startLen = cp.OutputLen()
 	cp.SendLine("save Shipping issue variant")
-	requireExpect(t, cp, "Saved version 3")
+	if _, err := cp.ExpectSince("Saved version 3", startLen); err != nil {
+		t.Fatalf("Expected save confirmation: %v", err)
+	}
 
 	// List all versions
+	startLen = cp.OutputLen()
 	cp.SendLine("versions")
-	requireExpect(t, cp, "v1 -")
-	requireExpect(t, cp, "Initial customer service template")
-	requireExpect(t, cp, "v2 -")
-	requireExpect(t, cp, "Added structured response format")
-	requireExpect(t, cp, "v3 -")
-	requireExpect(t, cp, "Shipping issue variant")
+	if _, err := cp.ExpectSince("v1 -", startLen); err != nil {
+		t.Fatalf("Expected v1 in versions: %v", err)
+	}
+	if _, err := cp.ExpectSince("Initial customer service template", startLen); err != nil {
+		t.Fatalf("Expected v1 description: %v", err)
+	}
+	if _, err := cp.ExpectSince("v2 -", startLen); err != nil {
+		t.Fatalf("Expected v2 in versions: %v", err)
+	}
+	if _, err := cp.ExpectSince("Added structured response format", startLen); err != nil {
+		t.Fatalf("Expected v2 description: %v", err)
+	}
+	if _, err := cp.ExpectSince("v3 -", startLen); err != nil {
+		t.Fatalf("Expected v3 in versions: %v", err)
+	}
+	if _, err := cp.ExpectSince("Shipping issue variant", startLen); err != nil {
+		t.Fatalf("Expected v3 description: %v", err)
+	}
 
 	// Test restoration
+	startLen = cp.OutputLen()
 	cp.SendLine("restore 1")
-	requireExpect(t, cp, "Restored to version 1")
+	if _, err := cp.ExpectSince("Restored to version 1", startLen); err != nil {
+		t.Fatalf("Expected restore confirmation: %v", err)
+	}
 
+	startLen = cp.OutputLen()
 	cp.SendLine("build")
+	if _, err := cp.ExpectSince("Built prompt:", startLen); err != nil {
+		t.Fatalf("Expected build output after restore: %v", err)
+	}
 
 	// Create a second prompt to test multi-prompt management
+	startLen = cp.OutputLen()
 	cp.SendLine("new technical-support Technical support prompt")
-	requireExpect(t, cp, "Created new prompt: technical-support")
+	if _, err := cp.ExpectSince("Created new prompt: technical-support", startLen); err != nil {
+		t.Fatalf("Expected prompt creation: %v", err)
+	}
 
 	// Switch back to customer service
+	startLen = cp.OutputLen()
 	cp.SendLine("load customer-service")
-	requireExpect(t, cp, "Loaded prompt: customer-service")
+	if _, err := cp.ExpectSince("Loaded prompt: customer-service", startLen); err != nil {
+		t.Fatalf("Expected load confirmation: %v", err)
+	}
 
 	cp.SendLine("exit")
 	requireExpectExitCode(t, cp, 0)
@@ -297,56 +401,106 @@ ctx.log("Modes registered: calculator, notes");
 	defer cp.Close()
 
 	// Wait for startup
-	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 10*time.Second)
+	startLen := cp.OutputLen()
+	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 10*time.Second); err != nil {
+		t.Fatalf("Expected TUI startup: %v", err)
+	}
 
 	// Test calculator mode
+	startLen = cp.OutputLen()
 	cp.SendLine("mode calculator")
-	requireExpect(t, cp, "Switched to mode: calculator")
-	requireExpect(t, cp, "Calculator mode active")
+	if _, err := cp.ExpectSince("Switched to mode: calculator", startLen); err != nil {
+		t.Fatalf("Expected mode switch: %v", err)
+	}
+	if _, err := cp.ExpectSince("Calculator mode active", startLen); err != nil {
+		t.Fatalf("Expected calculator active: %v", err)
+	}
 
+	startLen = cp.OutputLen()
 	cp.SendLine("add 5 3")
-	requireExpect(t, cp, "Result: 8")
+	if _, err := cp.ExpectSince("Result: 8", startLen); err != nil {
+		t.Fatalf("Expected add result: %v", err)
+	}
 
+	startLen = cp.OutputLen()
 	cp.SendLine("add 2 7")
-	requireExpect(t, cp, "Result: 9")
+	if _, err := cp.ExpectSince("Result: 9", startLen); err != nil {
+		t.Fatalf("Expected add result: %v", err)
+	}
 
+	startLen = cp.OutputLen()
 	cp.SendLine("result")
-	requireExpect(t, cp, "Current result: 9")
+	if _, err := cp.ExpectSince("Current result: 9", startLen); err != nil {
+		t.Fatalf("Expected current result: %v", err)
+	}
 
 	// Switch to notes mode
+	startLen = cp.OutputLen()
 	cp.SendLine("mode notes")
-	requireExpect(t, cp, "Switched to mode: notes")
-	requireExpect(t, cp, "Note-taking mode active")
+	if _, err := cp.ExpectSince("Switched to mode: notes", startLen); err != nil {
+		t.Fatalf("Expected mode switch: %v", err)
+	}
+	if _, err := cp.ExpectSince("Note-taking mode active", startLen); err != nil {
+		t.Fatalf("Expected notes active: %v", err)
+	}
 
+	startLen = cp.OutputLen()
 	cp.SendLine("add This is my first note")
-	requireExpect(t, cp, "Added note: This is my first note")
+	if _, err := cp.ExpectSince("Added note: This is my first note", startLen); err != nil {
+		t.Fatalf("Expected note added: %v", err)
+	}
 
+	startLen = cp.OutputLen()
 	cp.SendLine("add Another important note")
-	requireExpect(t, cp, "Added note: Another important note")
+	if _, err := cp.ExpectSince("Added note: Another important note", startLen); err != nil {
+		t.Fatalf("Expected note added: %v", err)
+	}
 
+	startLen = cp.OutputLen()
 	cp.SendLine("list")
-	requireExpect(t, cp, "Notes:")
+	if _, err := cp.ExpectSince("Notes:", startLen); err != nil {
+		t.Fatalf("Expected notes list: %v", err)
+	}
 
 	// Switch back to calculator
+	startLen = cp.OutputLen()
 	cp.SendLine("mode calculator")
-	requireExpect(t, cp, "Switched to mode: calculator")
-	requireExpect(t, cp, "Calculator mode active")
+	if _, err := cp.ExpectSince("Switched to mode: calculator", startLen); err != nil {
+		t.Fatalf("Expected mode switch: %v", err)
+	}
+	if _, err := cp.ExpectSince("Calculator mode active", startLen); err != nil {
+		t.Fatalf("Expected calculator active: %v", err)
+	}
 
 	// Result should persist across mode switches
+	startLen = cp.OutputLen()
 	cp.SendLine("result")
-	requireExpect(t, cp, "Current result: 9")
+	if _, err := cp.ExpectSince("Current result: 9", startLen); err != nil {
+		t.Fatalf("Expected persisted result: %v", err)
+	}
 
 	// Switch back to notes
+	startLen = cp.OutputLen()
 	cp.SendLine("mode notes")
-	requireExpect(t, cp, "Switched to mode: notes")
-	requireExpect(t, cp, "Note-taking mode active")
+	if _, err := cp.ExpectSince("Switched to mode: notes", startLen); err != nil {
+		t.Fatalf("Expected mode switch: %v", err)
+	}
+	if _, err := cp.ExpectSince("Note-taking mode active", startLen); err != nil {
+		t.Fatalf("Expected notes active: %v", err)
+	}
 
 	// Notes should still be there
+	startLen = cp.OutputLen()
 	cp.SendLine("list")
-	requireExpect(t, cp, "Notes:")
+	if _, err := cp.ExpectSince("Notes:", startLen); err != nil {
+		t.Fatalf("Expected notes list: %v", err)
+	}
 
+	startLen = cp.OutputLen()
 	cp.SendLine("exit")
-	requireExpect(t, cp, "Goodbye!")
+	if _, err := cp.ExpectSince("Goodbye!", startLen); err != nil {
+		t.Fatalf("Expected goodbye: %v", err)
+	}
 	requireExpectExitCode(t, cp, 0)
 }
 
@@ -374,28 +528,48 @@ func TestErrorHandling(t *testing.T) {
 	defer cp.Close()
 
 	// Wait for startup
-	requireExpect(t, cp, "Rich TUI Terminal")
+	startLen := cp.OutputLen()
+	if _, err := cp.ExpectSince("Rich TUI Terminal", startLen); err != nil {
+		t.Fatalf("Expected TUI startup: %v", err)
+	}
 
 	// Test switching to non-existent mode
+	startLen = cp.OutputLen()
 	cp.SendLine("mode nonexistent")
-	requireExpect(t, cp, "mode nonexistent not found")
+	if _, err := cp.ExpectSince("mode nonexistent not found", startLen); err != nil {
+		t.Fatalf("Expected error message: %v", err)
+	}
 
 	// Test unknown command
+	startLen = cp.OutputLen()
 	cp.SendLine("unknowncommand")
-	requireExpect(t, cp, "Command not found: unknowncommand")
+	if _, err := cp.ExpectSince("Command not found: unknowncommand", startLen); err != nil {
+		t.Fatalf("Expected error message: %v", err)
+	}
 
 	// Switch to demo mode
+	startLen = cp.OutputLen()
 	cp.SendLine("mode demo")
-	requireExpect(t, cp, "Switched to mode: demo")
-	requireExpect(t, cp, "Entered demo mode!")
+	if _, err := cp.ExpectSince("Switched to mode: demo", startLen); err != nil {
+		t.Fatalf("Expected mode switch: %v", err)
+	}
+	if _, err := cp.ExpectSince("Entered demo mode!", startLen); err != nil {
+		t.Fatalf("Expected demo mode active: %v", err)
+	}
 
 	// Test command with wrong usage
+	startLen = cp.OutputLen()
 	cp.SendLine("js")
-	requireExpect(t, cp, "Usage: js <code>")
+	if _, err := cp.ExpectSince("Usage: js <code>", startLen); err != nil {
+		t.Fatalf("Expected usage message: %v", err)
+	}
 
 	// Test JavaScript syntax error
+	startLen = cp.OutputLen()
 	cp.SendLine("js this is not valid javascript syntax +++")
-	requireExpect(t, cp, "Error:")
+	if _, err := cp.ExpectSince("Error:", startLen); err != nil {
+		t.Fatalf("Expected error message: %v", err)
+	}
 
 	cp.SendLine("exit")
 	requireExpectExitCode(t, cp, 0)

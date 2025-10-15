@@ -58,34 +58,59 @@ esac
 	defer cp.Close()
 
 	// Wait for startup
-	requireExpect(t, cp, "one-shot-man Rich TUI Terminal", 15*time.Second)
-	requireExpect(t, cp, "(prompt-builder) > ", 20*time.Second)
+	startLen := cp.OutputLen()
+	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected TUI startup: %v", err)
+	}
+	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+		t.Fatalf("Expected prompt: %v", err)
+	}
 
 	// Minimal setup: goal and generate meta-prompt
+	startLen = cp.OutputLen()
 	cp.SendLine("goal My goal for testing phase reversion")
-	requireExpect(t, cp, "Goal set.")
+	if _, err := cp.ExpectSince("Goal set.", startLen); err != nil {
+		t.Fatalf("Expected goal set: %v", err)
+	}
 
+	startLen = cp.OutputLen()
 	cp.SendLine("generate")
 	// New flow prints this message; wait for any part of it
-	requireExpect(t, cp, "Meta-prompt generated.")
+	if _, err := cp.ExpectSince("Meta-prompt generated.", startLen); err != nil {
+		t.Fatalf("Expected meta-prompt generated: %v", err)
+	}
 
 	// Set task prompt using inline text (no editor)
+	startLen = cp.OutputLen()
 	cp.SendLine("use hello world")
-	requireExpect(t, cp, "Task prompt set.")
+	if _, err := cp.ExpectSince("Task prompt set.", startLen); err != nil {
+		t.Fatalf("Expected task prompt set: %v", err)
+	}
 
 	// Sanity: default show now assembles final output
+	startLen = cp.OutputLen()
 	cp.SendLine("show")
-	requireExpect(t, cp, "## IMPLEMENTATIONS/CONTEXT")
+	if _, err := cp.ExpectSince("## IMPLEMENTATIONS/CONTEXT", startLen); err != nil {
+		t.Fatalf("Expected context section: %v", err)
+	}
 
 	// Now clear the task prompt via edit -> empty
+	startLen = cp.OutputLen()
 	cp.SendLine("edit prompt")
 	// Expect acknowledgement matching the non-destructive workflow
-	requireExpect(t, cp, "Task prompt not updated (no content provided).")
+	if _, err := cp.ExpectSince("Task prompt not updated (no content provided).", startLen); err != nil {
+		t.Fatalf("Expected task prompt not updated: %v", err)
+	}
 
 	// Default show should still render the final assembled prompt
+	startLen = cp.OutputLen()
 	cp.SendLine("show")
-	requireExpect(t, cp, "## IMPLEMENTATIONS/CONTEXT")
-	requireExpect(t, cp, "hello world")
+	if _, err := cp.ExpectSince("## IMPLEMENTATIONS/CONTEXT", startLen); err != nil {
+		t.Fatalf("Expected context section: %v", err)
+	}
+	if _, err := cp.ExpectSince("hello world", startLen); err != nil {
+		t.Fatalf("Expected task prompt text: %v", err)
+	}
 
 	cp.SendLine("exit")
 	requireExpectExitCode(t, cp, 0)

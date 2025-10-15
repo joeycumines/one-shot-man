@@ -191,7 +191,8 @@ esac
 
 func requirePromptFlowExpect(t *testing.T, cp *termtest.ConsoleProcess, expected string, timeout time.Duration) {
 	t.Helper()
-	if raw, err := cp.Expect(expected, timeout); err != nil {
+	startLen := cp.OutputLen()
+	if raw, err := cp.ExpectSince(expected, startLen, timeout); err != nil {
 		t.Fatalf("Expected to find %q in output, but got error: %v\nRaw:\n%s\n", expected, err, raw)
 	}
 }

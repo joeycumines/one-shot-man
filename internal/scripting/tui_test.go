@@ -191,46 +191,116 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 	}
 	defer test.Close()
 
-	var commands []string
-	executor := termtest.TestExecutor(&commands)
+	// Define orchestration channels for executor
+	type executorCall struct {
+		cmd string
+	}
+	type executorResult struct{}
+
+	executorIn := make(chan executorCall)
+	executorOut := make(chan executorResult)
+	defer close(executorIn)
+	defer close(executorOut)
+
+	// Orchestrated executor wrapping test.Executor
+	executor := func(cmd string) {
+		// Send args (ping)
+		select {
+		case executorIn <- executorCall{cmd: cmd}:
+			// Wait for result (pong)
+			<-executorOut
+		case <-ctx.Done():
+			return
+		}
+		// Call the actual executor to record the command
+		test.Executor(cmd)
+	}
+
 	completer := termtest.TestCompleter("help", "exit", "modes", "state")
 
-	// Start prompt with completer
-	test.RunPrompt(executor, prompt.WithCompleter(completer))
+	// Start prompt with completer and prefix
+	test.RunPrompt(executor, prompt.WithPrefix("> "), prompt.WithCompleter(completer))
 
-	// Test completion by typing partial command and pressing tab
+	// Wait for initial prompt to be ready
+	initialLen := test.GetPTY().OutputLen()
+	if err := test.GetPTY().WaitForOutputSince("> ", initialLen, 1*time.Second); err != nil {
+		t.Fatalf("prompt not ready: %v", err)
+	}
+
+	// Capture offset BEFORE typing
+	startLen := test.GetPTY().OutputLen()
+
+	// Test completion by typing partial command
 	if err := test.SendInput("he"); err != nil {
 		t.Fatalf("failed to send input: %v", err)
 	}
 
+	// Wait for echo to appear
+	if err := test.GetPTY().WaitForOutputSince("he", startLen, 500*time.Millisecond); err != nil {
+		t.Fatalf("input echo not shown: %v", err)
+	}
+
+	// Capture offset BEFORE sending tab
+	tabStartLen := test.GetPTY().OutputLen()
 	if err := test.SendKeys("tab"); err != nil {
 		t.Fatalf("failed to send tab: %v", err)
 	}
 
 	// Wait for completion to appear
-	if err := test.WaitForOutput("help", 1*time.Second); err != nil {
-		t.Errorf("completion not shown: %v", err)
+	if err := test.GetPTY().WaitForOutputSince("help", tabStartLen, 1*time.Second); err != nil {
+		output := test.GetOutput()
+		t.Fatalf("completion not shown: %v\nOutput from %d: %q",
+			err, tabStartLen, stripANSIColor.ReplaceAllString(output[tabStartLen:], ""))
 	}
 
-	// Send enter to execute
+	// Press escape to close completion window before executing
+	if err := test.SendKeys("escape"); err != nil {
+		t.Fatalf("failed to send escape: %v", err)
+	}
+
+	// Give time for completion window to close and UI to stabilize
+	time.Sleep(100 * time.Millisecond)
+
+	// Capture offset BEFORE sending enter
+	enterStartLen := test.GetPTY().OutputLen()
 	if err := test.SendKeys("enter"); err != nil {
 		t.Fatalf("failed to send enter: %v", err)
 	}
 
-	// Send exit to finish
-	if err := test.SendLine("exit"); err != nil {
-		t.Fatalf("failed to send exit: %v", err)
+	// Wait for echo of command
+	if err := test.GetPTY().WaitForOutputSince("help\r\n", enterStartLen, 1*time.Second); err != nil {
+		t.Logf("command echo not detected (may be normal): %v", err)
 	}
 
-	// Wait for prompt to exit
-	if err := test.WaitForExit(2 * time.Second); err != nil {
-		t.Errorf("prompt did not exit cleanly: %v\nOUTPUT: %s", err,
-			stripANSIColor.ReplaceAllString(test.GetOutput(), ""))
+	// Orchestrate: wait for executor call with timeout
+	// Use a longer timeout to account for go-prompt's internal processing
+	select {
+	case <-ctx.Done():
+		t.Fatalf("context done before command received")
+	case <-time.After(5 * time.Second):
+		output := test.GetOutput()
+		t.Fatalf("timeout waiting for help command\nFull normalized output: %s\nRaw output: %q",
+			stripANSIColor.ReplaceAllString(output, ""), output)
+	case call := <-executorIn:
+		if call.cmd != "help" {
+			t.Fatalf("expected 'help', got %q", call.cmd)
+		}
+		// Send response unconditionally
+		executorOut <- executorResult{}
 	}
 
-	// Verify commands were captured
-	if len(commands) == 0 {
-		t.Error("no commands were executed")
+	// Close the prompt (ExitChecker is disabled, so we must close explicitly)
+	if err := test.Close(); err != nil {
+		t.Fatalf("close error: %v", err)
+	}
+
+	// Verify command was recorded
+	commands := test.Commands()
+	if len(commands) != 1 {
+		t.Fatalf("expected 1 command, got %d: %v", len(commands), commands)
+	}
+	if commands[0] != "help" {
+		t.Errorf("expected command to be 'help', got %q", commands[0])
 	}
 }
 
@@ -241,15 +311,49 @@ func testKeyBindings(ctx context.Context, t *testing.T) {
 	}
 	defer test.Close()
 
-	var commands []string
-	executor := termtest.TestExecutor(&commands)
+	// Define orchestration channels for executor
+	type executorCall struct {
+		cmd string
+	}
+	type executorResult struct{}
 
-	// Start prompt
-	test.RunPrompt(executor)
+	executorIn := make(chan executorCall)
+	executorOut := make(chan executorResult)
+	defer close(executorIn)
+	defer close(executorOut)
+
+	// Orchestrated executor wrapping test.Executor
+	executor := func(cmd string) {
+		// Send args (ping)
+		select {
+		case executorIn <- executorCall{cmd: cmd}:
+			// Wait for result (pong)
+			<-executorOut
+		case <-ctx.Done():
+			return
+		}
+		// Call the actual executor to record the command
+		test.Executor(cmd)
+	}
+
+	// Start prompt with prefix
+	test.RunPrompt(executor, prompt.WithPrefix("> "))
+
+	// Wait for initial prompt to be ready
+	initialLen := test.GetPTY().OutputLen()
+	if err := test.GetPTY().WaitForOutputSince("> ", initialLen, 1*time.Second); err != nil {
+		t.Fatalf("prompt not ready: %v", err)
+	}
 
 	// Test basic key sequences
+	inputStartLen := test.GetPTY().OutputLen()
 	if err := test.SendInput("test command"); err != nil {
 		t.Fatalf("failed to send input: %v", err)
+	}
+
+	// Wait for input to be displayed
+	if err := test.GetPTY().WaitForOutputSince("test command", inputStartLen, 1*time.Second); err != nil {
+		t.Fatalf("input not shown: %v", err)
 	}
 
 	// Test backspace
@@ -257,23 +361,46 @@ func testKeyBindings(ctx context.Context, t *testing.T) {
 		t.Fatalf("failed to send backspace: %v", err)
 	}
 
+	// Give time for backspace to be processed
+	time.Sleep(50 * time.Millisecond)
+
 	if err := test.SendKeys("enter"); err != nil {
 		t.Fatalf("failed to send enter: %v", err)
 	}
 
-	if err := test.SendLine("exit"); err != nil {
-		t.Fatalf("failed to send exit: %v", err)
+	// Orchestrate: wait for executor call with timeout
+	select {
+	case <-ctx.Done():
+		t.Fatalf("context done before command received")
+	case <-time.After(2 * time.Second):
+		output := test.GetOutput()
+		t.Fatalf("timeout waiting for test command\nOutput: %q",
+			stripANSIColor.ReplaceAllString(output, ""))
+	case call := <-executorIn:
+		if call.cmd != "test comman" { // backspace removed 'd'
+			t.Errorf("expected 'test comman', got %q", call.cmd)
+		}
+		// Send response unconditionally
+		executorOut <- executorResult{}
 	}
 
-	// Wait for prompt to exit
-	if err := test.WaitForExit(2 * time.Second); err != nil {
-		t.Errorf("prompt did not exit cleanly: %v\nOUTPUT: %s", err,
-			stripANSIColor.ReplaceAllString(test.GetOutput(), ""))
+	// Close the prompt (ExitChecker is disabled, so we must close explicitly)
+	if err := test.Close(); err != nil {
+		t.Fatalf("close error: %v", err)
 	}
 
 	// Check that input was processed
 	output := test.GetOutput()
 	if len(output) == 0 {
 		t.Error("no output captured from prompt")
+	}
+
+	// Verify command was recorded
+	commands := test.Commands()
+	if len(commands) != 1 {
+		t.Fatalf("expected 1 command, got %d: %v", len(commands), commands)
+	}
+	if commands[0] != "test comman" { // backspace removed 'd'
+		t.Errorf("expected command to be 'test comman', got %q", commands[0])
 	}
 }

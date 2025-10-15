@@ -121,16 +121,20 @@ func (p *PTYTest) GetPTM() *os.File {
 	return p.ptm
 }
 
-// SendInput sends input to the PTY.
+// SendInput sends input to the PTY immediately without delays.
 func (p *PTYTest) SendInput(input string) error {
 	if p.closed {
 		return fmt.Errorf("pty is closed")
 	}
-	// Type characters with a slight delay to simulate user input
-	return p.Type(input, 10*time.Millisecond)
+	if _, err := p.ptm.WriteString(input); err != nil {
+		return fmt.Errorf("failed to write input: %w", err)
+	}
+	return nil
 }
 
 // Type sends input one character at a time with a delay between characters.
+// This is for simulating human typing in interactive scenarios.
+// For deterministic tests, prefer SendInput() or SendLine().
 func (p *PTYTest) Type(input string, delay time.Duration) error {
 	if p.closed {
 		return fmt.Errorf("pty is closed")
@@ -143,22 +147,75 @@ func (p *PTYTest) Type(input string, delay time.Duration) error {
 			time.Sleep(delay)
 		}
 	}
-	// small settle delay
-	time.Sleep(10 * time.Millisecond)
 	return nil
 }
 
-// SendLine sends input followed by Enter.
+// SendLine sends input followed by Enter key press.
+//
+// WARNING: This function sends input and Enter but does NOT wait for execution consequences.
+// The caller MUST capture the output offset BEFORE calling SendLine,
+// then use WaitForOutputSince to wait for the expected consequence.
+//
+// IMPORTANT: To prevent go-prompt from detecting the input as a paste operation
+// (which triggers multiline mode), characters are sent individually with microsecond delays.
+// The terminal is in RAW mode with line discipline disabled, so go-prompt handles
+// all input processing including \r\n conversion.
+//
+// Example (CORRECT):
+//
+//	startLen := pty.OutputLen()
+//	pty.SendLine("command")
+//	pty.WaitForOutputSince("expected output", startLen, timeout)
+//
+// Example (WRONG - RACE CONDITION):
+//
+//	pty.SendLine("command")  // Input sent
+//	pty.WaitForOutputSince("output", pty.OutputLen(), timeout)  // ❌ Offset captured AFTER input!
 func (p *PTYTest) SendLine(input string) error {
-	// Type characters with a slight delay, then send Enter
-	if err := p.Type(input, 15*time.Millisecond); err != nil {
+	if p.closed {
+		return fmt.Errorf("pty is closed")
+	}
+
+	// Send the entire input string at once (no per-character delay needed for regular text).
+	// Only control keys like Enter need individual timing for proper orchestration.
+	if _, err := p.ptm.WriteString(input); err != nil {
+		return fmt.Errorf("failed to write input: %w", err)
+	}
+
+	// Brief delay to ensure the application reads the input before Enter arrives
+	time.Sleep(15 * time.Millisecond)
+
+	// Send Enter key
+	if err := p.SendKeys("enter"); err != nil {
 		return err
 	}
-	return p.SendKeys("enter")
+
+	// Note: The caller is responsible for waiting for command consequences
+	// using WaitForOutputSince with offset captured BEFORE calling SendLine
+	return nil
 }
 
-// SendKeys sends special key sequences.
+// SendKeys sends special key sequences to the PTY.
+//
+// WARNING: This function sends keys but does NOT wait for consequences.
+// The caller MUST capture the output offset BEFORE calling SendKeys,
+// then use WaitForOutputSince to wait for the expected consequence.
+//
+// Example (CORRECT):
+//
+//	startLen := pty.OutputLen()
+//	pty.SendKeys("tab")
+//	pty.WaitForOutputSince("completion text", startLen, timeout)
+//
+// Example (WRONG - RACE CONDITION):
+//
+//	pty.SendKeys("tab")  // Key sent
+//	pty.WaitForOutputSince("completion text", pty.OutputLen(), timeout)  // ❌ Offset captured AFTER key!
 func (p *PTYTest) SendKeys(keys string) error {
+	if p.closed {
+		return fmt.Errorf("pty is closed")
+	}
+
 	var sequence string
 
 	switch strings.ToLower(keys) {
@@ -173,7 +230,8 @@ func (p *PTYTest) SendKeys(keys string) error {
 	case "tab":
 		sequence = "\t"
 	case "enter":
-		// go-prompt expects LF (0x0a) for Enter per ASCIISequences
+		// go-prompt's ASCIISequences maps Enter key to LF (0x0a / \n)
+		// ControlM (0x0d / \r) is a separate control key
 		sequence = "\n"
 	case "backspace":
 		sequence = "\x7f"
@@ -189,45 +247,24 @@ func (p *PTYTest) SendKeys(keys string) error {
 		return fmt.Errorf("unknown key sequence: %s", keys)
 	}
 
-	return p.SendInput(sequence)
-}
-
-// WaitForOutput waits for specific text to appear in the output.
-func (p *PTYTest) WaitForOutput(expectedText string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-
-	for time.Now().Before(deadline) {
-		p.outputMu.RLock()
-		output := p.output.String()
-		p.outputMu.RUnlock()
-
-		// First check raw output for performance
-		if strings.Contains(output, expectedText) {
-			return nil
-		}
-
-		// Fall back to normalized comparison to handle ANSI control sequences and line wraps
-		norm := normalizeTTYOutput(output)
-		if strings.Contains(norm, expectedText) {
-			return nil
-		}
-		// Collapse whitespace (e.g., line wraps) for robust matching
-		if strings.Contains(collapseWhitespace(norm), collapseWhitespace(expectedText)) {
-			return nil
-		}
-
-		time.Sleep(10 * time.Millisecond)
+	// Write the key sequence
+	if _, err := p.ptm.WriteString(sequence); err != nil {
+		return fmt.Errorf("failed to write key sequence: %w", err)
 	}
 
-	p.outputMu.RLock()
-	output := p.output.String()
-	p.outputMu.RUnlock()
+	// Brief yield to allow the read goroutine to pick up the key from the buffer.
+	// This is NOT a consequence-wait (we don't wait for output change).
+	// It's just ensuring the write completes and the reader can proceed.
+	time.Sleep(time.Millisecond)
 
-	return fmt.Errorf("expected text %q not found in output after %v (output length: %d)",
-		expectedText, timeout, len(output))
+	// Note: The caller is responsible for waiting for key consequences
+	// (e.g., using WaitForOutputSince with proper offset after SendKeys returns)
+	return nil
 }
 
 // OutputLen returns the current length of the captured output buffer.
+// Use this to capture the buffer position BEFORE performing an action,
+// then pass that position to WaitForOutputSince to wait for new output.
 func (p *PTYTest) OutputLen() int {
 	p.outputMu.RLock()
 	defer p.outputMu.RUnlock()
@@ -235,7 +272,32 @@ func (p *PTYTest) OutputLen() int {
 }
 
 // WaitForOutputSince waits for expectedText to appear in the output produced
-// after the given startLen offset. This prevents matching stale output.
+// after the given startLen offset.
+//
+// ⚠️  CRITICAL: ALWAYS USE THIS METHOD WITH AN OFFSET! ⚠️
+//
+// DO NOT check the entire buffer without an offset! This creates a RACE CONDITION
+// where you might match STALE OUTPUT from previous commands instead of waiting for
+// the CONSEQUENCE of your current action.
+//
+// CORRECT USAGE:
+//  1. Capture offset BEFORE action: startLen := pty.OutputLen()
+//  2. Perform action: pty.SendLine("command")
+//  3. Wait for NEW output: pty.WaitForOutputSince("expected", startLen, timeout)
+//
+// INCORRECT USAGE (CAUSES RACE CONDITIONS):
+//
+//	pty.SendLine("command")
+//	pty.WaitForOutput("expected", timeout)  // ❌ WRONG! May match old output!
+//
+// The offset ensures you only match output produced AFTER your action, which is
+// the only way to reliably verify the CONSEQUENCE of that action occurred.
+//
+// This is especially critical in terminal applications where:
+// - Commands may be echoed back immediately
+// - Prompts may be re-rendered with each keystroke
+// - Previous output may contain similar text patterns
+// - Race conditions cause non-deterministic test failures
 func (p *PTYTest) WaitForOutputSince(expectedText string, startLen int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 
@@ -271,11 +333,6 @@ func (p *PTYTest) WaitForOutputSince(expectedText string, startLen int, timeout 
 		expectedText, timeout, startLen, len(output))
 }
 
-// WaitForPrompt waits for a prompt pattern to appear.
-func (p *PTYTest) WaitForPrompt(promptPattern string, timeout time.Duration) error {
-	return p.WaitForOutput(promptPattern, timeout)
-}
-
 // GetOutput returns all captured output so far.
 func (p *PTYTest) GetOutput() string {
 	p.outputMu.RLock()
@@ -304,16 +361,19 @@ func (p *PTYTest) Close() error {
 	// Close slave side first (if present)
 	if p.pts != nil {
 		if err := p.pts.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to close pts: %w", err))
+			// Ignore "file already closed" errors (may be closed by ptyReader)
+			if !strings.Contains(err.Error(), "file already closed") {
+				errs = append(errs, fmt.Errorf("failed to close pts: %w", err))
+			}
 		}
 	}
 
 	// Kill command if it exists
 	if p.cmd != nil && p.cmd.Process != nil {
-		if err := p.cmd.Process.Kill(); err != nil {
-			errs = append(errs, fmt.Errorf("failed to kill command: %w", err))
-		}
-		p.cmd.Wait() // Wait for cleanup
+		// Try to kill the process (may already be dead)
+		_ = p.cmd.Process.Kill()
+		// Wait for cleanup (safe to call even if already waited)
+		_ = p.cmd.Wait()
 	}
 
 	// Close master side
@@ -372,6 +432,8 @@ func (p *PTYTest) WaitForExit(timeout time.Duration) (int, error) {
 		if err := p.cmd.Process.Kill(); err != nil {
 			return -1, fmt.Errorf("timeout and failed to kill process: %w", err)
 		}
+		// Wait for the Wait() goroutine to complete after killing
+		<-done
 		return -1, fmt.Errorf("command timeout after %v", timeout)
 	}
 }

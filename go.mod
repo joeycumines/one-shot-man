@@ -1,6 +1,6 @@
 module github.com/joeycumines/one-shot-man
 
-go 1.25.1
+go 1.25.3
 
 tool (
 	github.com/joeycumines/simple-command-output-filter

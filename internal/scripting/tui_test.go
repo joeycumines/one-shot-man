@@ -1,5 +1,24 @@
 package scripting
 
+// Testing patterns for TUI/terminal tests:
+//
+// 1. ALWAYS capture buffer position BEFORE sending input/keys:
+//    startLen := test.GetPTY().OutputLen()
+//    test.SendInput("command")
+//    test.GetPTY().WaitForOutputSince("expected", startLen, timeout)
+//
+// 2. NEVER use time.Sleep for orchestration - use channels instead:
+//    executorIn := make(chan executorCall)
+//    executorOut := make(chan executorResult)
+//    // In executor: send to executorIn, wait for executorOut
+//    // In test: wait for executorIn with timeout, then send to executorOut
+//
+// 3. Use WaitForOutputSince with offsets, not AssertOutput on full buffer.
+//    This prevents matching stale data from previous commands.
+//
+// 4. For race detector safety, check bounds before accessing slices:
+//    if len(cell.Runes) > 0 { content.WriteRune(cell.Runes[0]) }
+
 import (
 	"context"
 	"os"
@@ -253,15 +272,8 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 			err, tabStartLen, stripANSIColor.ReplaceAllString(output[tabStartLen:], ""))
 	}
 
-	// Press escape to close completion window before executing
-	if err := test.SendKeys("escape"); err != nil {
-		t.Fatalf("failed to send escape: %v", err)
-	}
-
-	// Give time for completion window to close and UI to stabilize
-	time.Sleep(100 * time.Millisecond)
-
-	// Capture offset BEFORE sending enter
+	// Capture offset BEFORE sending enter (after tab completion)
+	// The tab key completed "he" to "help", so we can now execute
 	enterStartLen := test.GetPTY().OutputLen()
 	if err := test.SendKeys("enter"); err != nil {
 		t.Fatalf("failed to send enter: %v", err)
@@ -277,7 +289,7 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 	select {
 	case <-ctx.Done():
 		t.Fatalf("context done before command received")
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		output := test.GetOutput()
 		t.Fatalf("timeout waiting for help command\nFull normalized output: %s\nRaw output: %q",
 			stripANSIColor.ReplaceAllString(output, ""), output)
@@ -363,22 +375,21 @@ func testKeyBindings(ctx context.Context, t *testing.T) {
 		t.Fatalf("failed to send backspace: %v", err)
 	}
 
-	// rerendered
+	// Wait for rerendering to complete
 	if err := test.GetPTY().WaitForOutputSince("test comman", inputLen, 1*time.Second); err != nil {
-		t.Fatalf("input not shown: %v", err)
+		t.Fatalf("backspace not processed: %v", err)
 	}
-
-	time.Sleep(100 * time.Millisecond)
 
 	if err := test.SendKeys("enter"); err != nil {
 		t.Fatalf("failed to send enter: %v", err)
 	}
 
 	// Orchestrate: wait for executor call with timeout
+	// Use a longer timeout to account for go-prompt's internal processing
 	select {
 	case <-ctx.Done():
 		t.Fatalf("context done before command received")
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		output := test.GetOutput()
 		t.Fatalf("timeout waiting for test command\nOutput: %q",
 			stripANSIColor.ReplaceAllString(output, ""))

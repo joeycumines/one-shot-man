@@ -248,6 +248,9 @@ func TestInteractiveTable_ValidConfig_NoActualDisplay(t *testing.T) {
 				// Convert cells to string for content verification
 				var content strings.Builder
 				for _, cell := range cells {
+					if len(cell.Runes) == 0 {
+						continue
+					}
 					content.WriteRune(cell.Runes[0])
 				}
 				contentStr := content.String()
@@ -372,6 +375,9 @@ func TestInteractiveTable_WithoutOnSelect(t *testing.T) {
 				// Convert cells to string for content verification
 				var content strings.Builder
 				for _, cell := range cells {
+					if len(cell.Runes) == 0 {
+						continue
+					}
 					content.WriteRune(cell.Runes[0])
 				}
 				contentStr := content.String()

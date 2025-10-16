@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"github.com/joeycumines/go-prompt"
-
 	"github.com/joeycumines/one-shot-man/internal/termtest"
 )
 
@@ -91,17 +90,17 @@ func testModeSwitching(ctx context.Context, t *testing.T) {
 
 	// Register a test mode
 	testScript := engine.LoadScriptFromString("test-mode", `
-		tui.registerMode({
-			name: "test-mode",
-			tui: {
-				title: "Test Mode",
-				prompt: "[test]> "
-			},
-			onEnter: function() {
-				output.print("Entered test mode!");
-			}
-		});
-	`)
+        tui.registerMode({
+            name: "test-mode",
+            tui: {
+                title: "Test Mode",
+                prompt: "[test]> "
+            },
+            onEnter: function() {
+                output.print("Entered test mode!");
+            }
+        });
+    `)
 
 	err := engine.ExecuteScript(testScript)
 	if err != nil {
@@ -259,6 +258,8 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 		t.Fatalf("input echo not shown: %v", err)
 	}
 
+	time.Sleep(time.Millisecond * 30)
+
 	// Capture offset BEFORE sending tab
 	tabStartLen := test.GetPTY().OutputLen()
 	if err := test.SendKeys("tab"); err != nil {
@@ -271,6 +272,8 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 		t.Fatalf("completion not shown: %v\nOutput from %d: %q",
 			err, tabStartLen, stripANSIColor.ReplaceAllString(output[tabStartLen:], ""))
 	}
+
+	time.Sleep(time.Millisecond * 30)
 
 	// Capture offset BEFORE sending enter (after tab completion)
 	// The tab key completed "he" to "help", so we can now execute
@@ -375,10 +378,21 @@ func testKeyBindings(ctx context.Context, t *testing.T) {
 		t.Fatalf("failed to send backspace: %v", err)
 	}
 
+	const marker = "test comman\x1b"
+
 	// Wait for rerendering to complete
-	if err := test.GetPTY().WaitForOutputSince("test comman", inputLen, 1*time.Second); err != nil {
-		t.Fatalf("backspace not processed: %v", err)
+	if err := test.GetPTY().WaitForOutputSince(marker, inputLen, 1*time.Second); err != nil {
+		t.Fatalf("marker not present: %v\n%q", err, test.GetOutput())
 	}
+
+	inputLen = strings.LastIndex(test.GetOutput(), marker) + len(marker)
+
+	// And the trailing cursor show
+	if err := test.GetPTY().WaitForOutputSince("\x1b[?25h", inputLen, 1*time.Second); err != nil {
+		t.Fatalf("line not present: %v\n%q", err, test.GetOutput())
+	}
+
+	time.Sleep(time.Millisecond * 30)
 
 	if err := test.SendKeys("enter"); err != nil {
 		t.Fatalf("failed to send enter: %v", err)

@@ -3,7 +3,7 @@
 // from Go and registers the appropriate mode. All goal-specific logic is defined
 // in the Go Goal struct, not here.
 
-(function() {
+(function () {
     'use strict';
 
     // GOAL_CONFIG is injected by Go before this script runs
@@ -86,15 +86,24 @@
                 templateData.FrameworkInfo = "";
             }
 
-            templateData.PromptInstructions = instructions;
+            const funcs = {
+                upper: function (s) {
+                    return s.toUpperCase();
+                },
+            };
+
+            // The PromptInstructions string is itself a template. We must execute it
+            // first using the template data we've just constructed to resolve any
+            // dynamic values before injecting it into the main prompt template.
+            const instructionsTmpl = template.new("instructions");
+            // Ensure the instructions template has access to the same helper functions.
+            instructionsTmpl.funcs(funcs);
+            instructionsTmpl.parse(instructions);
+            templateData.PromptInstructions = instructionsTmpl.execute(templateData);
 
             // Create template with custom functions
             const tmpl = template.new("goal");
-            tmpl.funcs({
-                upper: function(s) {
-                    return s.toUpperCase();
-                }
-            });
+            tmpl.funcs(funcs);
             tmpl.parse(promptText);
 
             return tmpl.execute(templateData);
@@ -149,7 +158,7 @@
                     handler = new Function('args', 'ctxmgr', 'output', 'tui', 'buildPrompt', 'state', 'StateKeys', handlerCode);
 
                     // Wrap to provide the correct context
-                    const wrappedHandler = function(args) {
+                    const wrappedHandler = function (args) {
                         return handler.call(this, args, ctxmgr, output, tui, buildPrompt, state, StateKeys);
                     };
 

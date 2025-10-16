@@ -12,7 +12,7 @@ tool (
 require (
 	github.com/creack/pty v1.1.24
 	github.com/dop251/goja v0.0.0-20251008123653-cf18d89f3cf6
-	github.com/dop251/goja_nodejs v0.0.0-20250409162600-f7acab6894b0
+	github.com/dop251/goja_nodejs v0.0.0-20251015164255-5e94316bedaf
 	github.com/gdamore/tcell/v2 v2.9.0
 	github.com/joeycumines/go-prompt v0.0.0-20251012145216-27a57622593d
 	github.com/rivo/tview v0.42.0

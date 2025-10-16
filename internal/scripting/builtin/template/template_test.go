@@ -437,14 +437,14 @@ func TestMixedJSAndGoValues(t *testing.T) {
 	// Set up a Go function that will be available
 	script := `
 		const tmpl = exports.new("mixed");
-		
+
 		// JavaScript function
 		tmpl.funcs({
 			jsfunc: function(s) {
 				return "JS:" + s;
 			}
 		});
-		
+
 		tmpl.parse("{{jsfunc .value}}");
 		const result = tmpl.execute({value: "test"});
 		result;
@@ -467,12 +467,12 @@ func TestComplexTemplateScenario(t *testing.T) {
 
 	script := `
 		const tmpl = exports.new("complex");
-		
+
 		// Define multiple helper functions
 		tmpl.funcs({
 			upper: function(s) { return s.toUpperCase(); },
 			title: function(s) { return s.charAt(0).toUpperCase() + s.slice(1); },
-			join: function(sep, arr) { 
+			join: function(sep, arr) {
 				// Note: In Go templates, piped value comes LAST
 				// {{.tags | join ", "}} calls join(", ", .tags)
 				// Handle both JS arrays and Go arrays exported to JS
@@ -488,7 +488,7 @@ func TestComplexTemplateScenario(t *testing.T) {
 			},
 			default: function(val, def) { return val || def; }
 		});
-		
+
 		// Complex template with range, conditionals, and functions
 		const template = ` + "`" + `
 # {{.title | upper}}
@@ -503,9 +503,9 @@ func TestComplexTemplateScenario(t *testing.T) {
 Tags: {{.tags | join ", "}}
 Status: {{.status | default "pending"}}
 ` + "`" + `;
-		
+
 		tmpl.parse(template);
-		
+
 		const result = tmpl.execute({
 			title: "my report",
 			description: "A sample report",
@@ -566,9 +566,9 @@ func TestRealWorldCodeReviewScenario(t *testing.T) {
 
 	script := `
 		const tmpl = exports.new("code-review");
-		
+
 		const template = "Ensure correctness of the PR.\\n\\n## IMPLEMENTATIONS/CONTEXT\\n\\n{{.context_txtar}}";
-		
+
 		tmpl.parse(template);
 		const result = tmpl.execute({
 			context_txtar: "Some context here\\nMore context"
@@ -595,9 +595,9 @@ func TestRealWorldPromptFlowScenario(t *testing.T) {
 
 	script := `
 		const tmpl = exports.new("prompt-flow");
-		
+
 		const template = "!! Generate a prompt for the following goal. !!\\n\\n!! **GOAL:** !!\\n{{.goal}}\\n\\n!! **IMPLEMENTATIONS/CONTEXT:** !!\\n{{.context_txtar}}";
-		
+
 		tmpl.parse(template);
 		const result = tmpl.execute({
 			goal: "Implement feature X",

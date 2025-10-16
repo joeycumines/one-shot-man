@@ -2,40 +2,123 @@ package termtest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"io"
+	"sync"
+
+	"github.com/joeycumines/go-bigbuff"
 	"github.com/joeycumines/go-prompt"
 	istrings "github.com/joeycumines/go-prompt/strings"
-	"golang.org/x/term"
+	promptterm "github.com/joeycumines/go-prompt/term"
 )
 
 // GoPromptTest provides utilities specifically for testing go-prompt instances.
 type GoPromptTest struct {
-	pty      *PTYTest
-	ctx      context.Context
-	cancel   context.CancelFunc
-	promptCh chan error
+	pty           *PTYTest
+	ctx           context.Context
+	cancel        context.CancelFunc
+	promptCh      chan error
+	promptErr     error
+	promptMu      sync.Mutex
+	promptDone    bool
+	stopCh        chan struct{}
+	stopOnce      sync.Once
+	doneCh        chan struct{} // Signals when prompt goroutines have fully terminated
+	runStarted    atomic.Bool
+	commandMu     sync.RWMutex
+	commandCh     chan string
+	commandBuf    []string
+	commandStop   chan struct{}
+	commandDone   chan struct{}
+	commandOnce   sync.Once
+	commandPubSub *bigbuff.ChanPubSub[chan string, string]
+	executorMu    sync.Mutex
+	executorStop  bool
+	closeOnce     sync.Once
+	closeErr      error
 }
 
 // NewGoPromptTest creates a new test specifically for go-prompt.
 func NewGoPromptTest(ctx context.Context) (*GoPromptTest, error) {
-	testCtx, cancel := context.WithCancel(ctx)
-
-	pty, err := NewForProgram(testCtx)
+	ptyTest, err := NewForProgram(ctx)
 	if err != nil {
-		cancel()
 		return nil, err
 	}
 
-	return &GoPromptTest{
-		pty:      pty,
-		ctx:      testCtx,
-		cancel:   cancel,
-		promptCh: make(chan error, 1),
-	}, nil
+	g := &GoPromptTest{
+		pty:           ptyTest,
+		promptCh:      make(chan error, 1), // Buffered to allow immediate send on panic
+		stopCh:        make(chan struct{}),
+		doneCh:        make(chan struct{}),
+		commandCh:     make(chan string),
+		commandStop:   make(chan struct{}),
+		commandDone:   make(chan struct{}),
+		commandPubSub: bigbuff.NewChanPubSub(make(chan string)),
+	}
+	g.ctx, g.cancel = context.WithCancel(ctx)
+
+	go g.commandWorker()
+
+	return g, nil
+}
+
+func (g *GoPromptTest) commandWorker() {
+	defer close(g.commandDone)
+
+	for {
+		select {
+		case <-g.ctx.Done():
+			return
+
+		case cmd, ok := <-g.commandCh:
+			if !ok {
+				return
+			}
+			g.commandMu.Lock()
+			g.commandBuf = append(g.commandBuf, cmd)
+			g.commandMu.Unlock()
+			g.commandPubSub.Send(cmd)
+		}
+	}
+}
+
+func (g *GoPromptTest) CommandPubSub() *bigbuff.ChanPubSub[chan string, string] {
+	return g.commandPubSub
+}
+
+// Commands returns a slice of all commands entered so far.
+// WARNING: It MUST NOT be mutated, and the backing array may change on subsequent calls.
+func (g *GoPromptTest) Commands() []string {
+	g.commandMu.RLock()
+	defer g.commandMu.RUnlock()
+	return g.commandBuf
+}
+
+func (g *GoPromptTest) Executor(cmd string) {
+	g.executorMu.Lock()
+	defer g.executorMu.Unlock()
+
+	if g.executorStop {
+		return
+	}
+
+	select {
+	case <-g.ctx.Done():
+	case g.commandCh <- cmd:
+	case <-g.commandStop:
+		g.executorStop = true
+		defer close(g.commandCh)
+		select {
+		case <-g.ctx.Done():
+		case g.commandCh <- cmd:
+		}
+	}
 }
 
 // GetPTY returns the underlying PTY for direct access.
@@ -45,10 +128,32 @@ func (g *GoPromptTest) GetPTY() *PTYTest {
 
 // RunPrompt runs a go-prompt instance with the test PTY.
 func (g *GoPromptTest) RunPrompt(executor func(string), options ...prompt.Option) {
+	if !g.runStarted.CompareAndSwap(false, true) {
+		panic("RunPrompt can only be called once per GoPromptTest instance")
+	}
 	go func() {
+		defer close(g.doneCh) // Signal that all prompt goroutines have terminated
+
+		defer func() {
+			time.Sleep(time.Millisecond * 200)
+			g.commandOnce.Do(func() {
+				close(g.commandStop)
+			})
+			g.executorMu.Lock()
+			if !g.executorStop {
+				g.executorStop = true
+				close(g.commandCh)
+			}
+			g.executorMu.Unlock()
+			<-g.commandDone
+		}()
+
 		defer func() {
 			if r := recover(); r != nil {
 				g.promptCh <- fmt.Errorf("prompt panic: %v", r)
+			} else {
+				// Signal successful completion
+				g.promptCh <- nil
 			}
 		}()
 
@@ -56,58 +161,41 @@ func (g *GoPromptTest) RunPrompt(executor func(string), options ...prompt.Option
 		testOptions := []prompt.Option{
 			prompt.WithReader(&ptyReader{file: g.pty.GetPTS()}),
 			prompt.WithWriter(&ptyWriter{g.pty.GetPTS()}),
-			// Ensure completion UI is visible at start for tests that assert it
-			prompt.WithShowCompletionAtStart(),
-			// Provide an ExitChecker so typing 'exit' or 'quit' stops Run
-			prompt.WithExitChecker(func(in string, breakline bool) bool {
-				// When breakline is true, the executor will be called first.
-				// We allow 'exit' or 'quit' to stop Run.
-				trimmed := in
-				if nl := len(trimmed); nl > 0 {
-					last := trimmed[nl-1]
-					if last == '\n' || last == '\r' {
-						trimmed = trimmed[:nl-1]
-					}
-				}
-				return trimmed == "exit" || trimmed == "quit"
-			}),
 		}
+
+		// Append user options
 		testOptions = append(testOptions, options...)
 
-		// Wrap the provided executor to optionally close the prompt on exit
-		var p *prompt.Prompt
-		wrappedExec := func(line string) {
-			if executor != nil {
-				executor(line)
-			}
-			// Ensure prompt loop terminates when typing exit/quit
-			tl := strings.TrimSpace(line)
-			if tl == "exit" || tl == "quit" {
-				if p != nil {
-					p.Close()
-				}
-			}
-		}
+		// Add test-specific options after user options
+		// Force immediate execution on Enter (never multiline mode) for deterministic testing
+		testOptions = append(testOptions, prompt.WithExecuteOnEnterCallback(func(p *prompt.Prompt, indentSize int) (int, bool) {
+			return 0, true // always execute immediately
+		}))
+
+		// Add an ExitChecker that never triggers (we handle exit in the executor)
+		// This ensures all input reaches the executor, including "exit" commands
+		testOptions = append(
+			testOptions,
+			// Never exit via ExitChecker; we handle it in the executor.
+			prompt.WithExitChecker(func(in string, breakline bool) bool { return false }),
+			// Wait for buffered commands to complete before closing.
+			prompt.WithGracefulClose(true),
+		)
 
 		// Create and run the prompt
-		p = prompt.New(wrappedExec, testOptions...)
+		p := prompt.New(executor, testOptions...)
 
-		// Start the prompt in a way that respects context cancellation
-		done := make(chan struct{})
+		ctx, cancel := context.WithCancel(g.ctx)
+		defer cancel()
 		go func() {
-			defer close(done)
-			p.Run()
+			select {
+			case <-ctx.Done():
+			case <-g.stopCh:
+			}
+			p.Close()
 		}()
 
-		// Give the prompt a moment to initialize rendering
-		time.Sleep(50 * time.Millisecond)
-
-		select {
-		case <-done:
-			g.promptCh <- nil
-		case <-g.ctx.Done():
-			g.promptCh <- g.ctx.Err()
-		}
+		p.Run()
 	}()
 }
 
@@ -124,16 +212,6 @@ func (g *GoPromptTest) SendLine(input string) error {
 // SendKeys sends special key sequences to the prompt.
 func (g *GoPromptTest) SendKeys(keys string) error {
 	return g.pty.SendKeys(keys)
-}
-
-// WaitForOutput waits for specific output to appear.
-func (g *GoPromptTest) WaitForOutput(expected string, timeout time.Duration) error {
-	return g.pty.WaitForOutput(expected, timeout)
-}
-
-// WaitForPrompt waits for a prompt pattern to appear.
-func (g *GoPromptTest) WaitForPrompt(promptPattern string, timeout time.Duration) error {
-	return g.pty.WaitForPrompt(promptPattern, timeout)
 }
 
 // GetOutput returns all captured output.
@@ -158,51 +236,136 @@ func (g *GoPromptTest) AssertNotOutput(unexpected string) error {
 
 // WaitForExit waits for the prompt to exit and returns any error.
 func (g *GoPromptTest) WaitForExit(timeout time.Duration) error {
+	g.promptMu.Lock()
+	defer g.promptMu.Unlock()
+	if g.promptDone {
+		return g.promptErr
+	}
 	select {
-	case err := <-g.promptCh:
-		return err
+	case g.promptErr = <-g.promptCh:
+		g.promptDone = true
+		return g.promptErr
 	case <-time.After(timeout):
 		return fmt.Errorf("prompt did not exit within timeout")
 	case <-g.ctx.Done():
-		return g.ctx.Err()
+		// Context canceled - mark as done and save the error
+		g.promptDone = true
+		g.promptErr = g.ctx.Err()
+		return g.promptErr
 	}
+}
+
+func (g *GoPromptTest) Stop() (stopped bool) {
+	stopped = !g.runStarted.CompareAndSwap(false, true)
+	g.stopOnce.Do(func() {
+		close(g.stopCh)
+	})
+	return stopped
 }
 
 // Close closes the test and cleans up resources.
 func (g *GoPromptTest) Close() error {
-	g.cancel()
-	return g.pty.Close()
+	g.closeOnce.Do(func() {
+		var errs []error
+
+		stopped := g.Stop()
+		if stopped {
+			// Wait for prompt to exit gracefully
+			// The stopCh closure triggers p.Close() which closes the reader,
+			// causing the blocked Read() to return an error and unblock
+			gracefulExitErr := g.WaitForExit(time.Millisecond * 500)
+
+			// Close PTY to unblock any reads that are still pending
+			if err := g.pty.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("error closing PTY: %w", err))
+			}
+
+			// Cancel context to force shutdown
+			g.cancel()
+
+			// If graceful exit failed, wait for forced exit
+			if gracefulExitErr != nil {
+				// Wait for the prompt to exit via context cancellation
+				if err := g.WaitForExit(time.Second * 2); err != nil && !errors.Is(err, context.Canceled) {
+					// Only report as error if it's not context.Canceled
+					errs = append(errs, fmt.Errorf("error waiting for forced prompt exit: %w", err))
+				}
+			}
+		} else {
+			// RunPrompt was never called, just clean up
+			if err := g.pty.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("error closing PTY: %w", err))
+			}
+			g.cancel()
+		}
+
+		g.closeErr = errors.Join(errs...)
+	})
+
+	return g.closeErr
 }
 
 // ptyReader implements prompt.Reader interface for PTY testing.
 type ptyReader struct {
-	file     *os.File
-	oldState *term.State
+	file      *os.File
+	closed    bool
+	mu        sync.Mutex
+	closeOnce sync.Once
 }
 
 func (r *ptyReader) Open() error {
-	// Put the slave side into raw mode so go-prompt receives keystrokes
+	// Use go-prompt's own term package which properly disables ICRNL
 	if r.file == nil {
 		return fmt.Errorf("ptyReader has no file")
 	}
-	st, err := term.MakeRaw(int(r.file.Fd()))
-	if err != nil {
-		return fmt.Errorf("failed to set raw mode: %w", err)
+	fd := int(r.file.Fd())
+	if err := promptterm.SetRaw(fd); err != nil {
+		return fmt.Errorf("failed to set terminal to raw mode: %w", err)
 	}
-	r.oldState = st
 	return nil
 }
 
 func (r *ptyReader) Close() error {
-	// Restore terminal state if we changed it
-	if r.file != nil && r.oldState != nil {
-		_ = term.Restore(int(r.file.Fd()), r.oldState)
-	}
+	// Use sync.Once to ensure we only close once
+	r.closeOnce.Do(func() {
+		r.mu.Lock()
+		r.closed = true
+		r.mu.Unlock()
+
+		// Restore terminal state using go-prompt's term package
+		if r.file != nil {
+			_ = promptterm.RestoreFD(int(r.file.Fd()))
+			// Close the file descriptor to unblock any pending Read() calls
+			_ = r.file.Close()
+		}
+	})
 	return nil
 }
 
 func (r *ptyReader) Read(p []byte) (int, error) {
-	return r.file.Read(p)
+	// Check if closed flag is set BEFORE attempting to read
+	r.mu.Lock()
+	closed := r.closed
+	r.mu.Unlock()
+
+	if closed {
+		// Return EOF immediately when closed - non-blocking
+		return 0, io.EOF
+	}
+
+	n, err := r.file.Read(p)
+
+	// Check again after read in case we were closed during the read
+	r.mu.Lock()
+	closed = r.closed
+	r.mu.Unlock()
+
+	if closed && err != nil {
+		// If we were closed during read, return EOF instead of the error
+		return n, io.EOF
+	}
+
+	return n, err
 }
 
 func (r *ptyReader) GetWinSize() *prompt.WinSize {
@@ -215,23 +378,40 @@ type ptyWriter struct {
 }
 
 func (w *ptyWriter) Write(p []byte) (int, error) {
-	return w.file.Write(p)
+	n, err := w.file.Write(p)
+	// Ignore errors from closed files during shutdown
+	if err != nil && strings.Contains(err.Error(), "file already closed") {
+		return n, nil
+	}
+	return n, err
 }
 
 func (w *ptyWriter) WriteString(s string) (int, error) {
-	return w.file.WriteString(s)
+	n, err := w.file.WriteString(s)
+	// Ignore errors from closed files during shutdown
+	if err != nil && strings.Contains(err.Error(), "file already closed") {
+		return n, nil
+	}
+	return n, err
 }
 
 func (w *ptyWriter) WriteRaw(data []byte) {
-	w.file.Write(data)
+	// Ignore errors from closed files during shutdown
+	_, _ = w.file.Write(data)
 }
 
 func (w *ptyWriter) WriteRawString(data string) {
-	w.file.WriteString(data)
+	// Ignore errors from closed files during shutdown
+	_, _ = w.file.WriteString(data)
 }
 
 func (w *ptyWriter) Flush() error {
-	return w.file.Sync()
+	err := w.file.Sync()
+	// Ignore errors from closed files during shutdown
+	if err != nil && strings.Contains(err.Error(), "file already closed") {
+		return nil
+	}
+	return err
 }
 
 // Terminal control methods - implement minimal functionality for testing
@@ -331,21 +511,18 @@ func (w *ptyWriter) SetDisplayAttributes(fg, bg prompt.Color, attrs ...prompt.Di
 	w.SetColor(fg, bg, false)
 }
 
-// TestCompleter creates a simple completer for testing.
+// TestCompleter creates a simple completer for testing that filters based on prefix.
 func TestCompleter(suggestions ...string) prompt.Completer {
 	return func(d prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber) {
 		var sug []prompt.Suggest
+		text := d.Text
 		for _, s := range suggestions {
-			sug = append(sug, prompt.Suggest{Text: s, Description: "Test suggestion"})
+			// Only include suggestions that match the current input
+			if strings.HasPrefix(s, text) || text == "" {
+				sug = append(sug, prompt.Suggest{Text: s, Description: "Test suggestion"})
+			}
 		}
 		return sug, 0, istrings.RuneNumber(len(d.Text))
-	}
-}
-
-// TestExecutor creates a simple executor that captures commands.
-func TestExecutor(commands *[]string) func(string) {
-	return func(line string) {
-		*commands = append(*commands, line)
 	}
 }
 
@@ -357,12 +534,12 @@ func RunPromptTest(ctx context.Context, testFunc func(*GoPromptTest) error, opti
 	}
 	defer test.Close()
 
-	// Set up a basic executor for testing
-	var commands []string
-	executor := TestExecutor(&commands)
+	// Prepend a default prompt prefix if not already specified
+	defaultOptions := []prompt.Option{prompt.WithPrefix("> ")}
+	allOptions := append(defaultOptions, options...)
 
 	// Start the prompt
-	test.RunPrompt(executor, options...)
+	test.RunPrompt(test.Executor, allOptions...)
 
 	// Run the test function
 	if err := testFunc(test); err != nil {

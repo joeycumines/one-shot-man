@@ -71,21 +71,6 @@ func (cp *ConsoleProcess) SendKeys(keys string) error {
 	return cp.pty.SendKeys(keys)
 }
 
-// Expect waits for the specified text to appear in the output
-func (cp *ConsoleProcess) Expect(expectedText string, timeout ...time.Duration) (string, error) {
-	t := cp.timeout
-	if len(timeout) > 0 {
-		t = timeout[0]
-	}
-
-	err := cp.pty.WaitForOutput(expectedText, t)
-	if err != nil {
-		return cp.pty.GetOutput(), err
-	}
-
-	return cp.pty.GetOutput(), nil
-}
-
 // ExpectNew waits for the specified text to appear in the output produced AFTER the current position.
 // This avoids matching stale output from earlier in the session (useful when external tools write to TTY).
 //

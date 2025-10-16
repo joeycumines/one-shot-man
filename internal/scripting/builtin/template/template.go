@@ -98,7 +98,7 @@ func newTemplateWrapper(runtime *goja.Runtime, name string) map[string]interface
 	}
 
 	result := make(map[string]interface{})
-	
+
 	// parse(text: string): Template
 	result["parse"] = func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
@@ -162,7 +162,7 @@ func newTemplateWrapper(runtime *goja.Runtime, name string) map[string]interface
 		tw.tmpl = tw.tmpl.Option(opts...)
 		return result
 	}
-	
+
 	return result
 }
 
@@ -179,7 +179,7 @@ func (tw *templateWrapper) convertFuncMap(funcMapJS goja.Value) template.FuncMap
 	// Iterate over all properties
 	for _, key := range obj.Keys() {
 		val := obj.Get(key)
-		
+
 		// Check if it's a function
 		if fn, ok := goja.AssertFunction(val); ok {
 			// Wrap the JavaScript function to be callable from Go
@@ -209,7 +209,7 @@ func (tw *templateWrapper) wrapJSFunction(fn goja.Callable) interface{} {
 		// We need to handle potential panics and convert them to errors
 		var result goja.Value
 		var callErr error
-		
+
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -221,10 +221,10 @@ func (tw *templateWrapper) wrapJSFunction(fn goja.Callable) interface{} {
 					}
 				}
 			}()
-			
+
 			result, callErr = fn(goja.Undefined(), gojaArgs...)
 		}()
-		
+
 		if callErr != nil {
 			return nil, callErr
 		}

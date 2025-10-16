@@ -522,7 +522,7 @@ Status: {{.status | default "pending"}}
 	}
 
 	result := val.String()
-	
+
 	// Check key parts of the output
 	if !strings.Contains(result, "# MY REPORT") {
 		t.Errorf("expected title to be uppercase, got: %s", result)

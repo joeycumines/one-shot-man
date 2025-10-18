@@ -439,14 +439,13 @@ func (p *PTYTest) WaitForRawOutputSince(timeout time.Duration, startLen int, any
 	return err
 }
 
-// WaitIdleOutput waits until the PTY output has been stable (no new output) for
-// a short duration, or until the context is canceled/times out.
+// WaitIdleOutput waits until the PTY output has been stable (no new output)
+// for a short duration, or until the context is canceled/times out.
 //
-// The stability check requires the output length to remain unchanged for
-// at least `requiredStableChecks` (currently 3) intervals of
-// 20 milliseconds each.
+// The stability check requires the output length to remain unchanged for a
+// series of checks, to account for bursty output patterns.
 //
-// If `timeout` is 0, a default of 2 seconds is used. If `timeout` is positive,
+// If `timeout` is 0, a default value is used. If `timeout` is positive,
 // it is used to set a deadline for the entire operation.
 func (p *PTYTest) WaitIdleOutput(ctx context.Context, timeout time.Duration) error {
 	if err := ctx.Err(); err != nil {

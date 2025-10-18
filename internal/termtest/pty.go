@@ -169,8 +169,8 @@ func (p *PTYTest) Type(input string, delay time.Duration) error {
 //
 // Example (WRONG - RACE CONDITION):
 //
-//	pty.SendLine("command")  // Input sent
-//	pty.WaitForOutputSince("output", pty.OutputLen(), timeout)  // ❌ Offset captured AFTER input!
+//	pty.SendLine("command") // Input sent
+//	pty.WaitForOutputSince("output", pty.OutputLen(), timeout) // ❌ Offset captured AFTER input!
 func (p *PTYTest) SendLine(input string) error {
 	if p.closed {
 		return fmt.Errorf("pty is closed")
@@ -209,8 +209,8 @@ func (p *PTYTest) SendLine(input string) error {
 //
 // Example (WRONG - RACE CONDITION):
 //
-//	pty.SendKeys("tab")  // Key sent
-//	pty.WaitForOutputSince("completion text", pty.OutputLen(), timeout)  // ❌ Offset captured AFTER key!
+//	pty.SendKeys("tab") // Key sent
+//	pty.WaitForOutputSince("completion text", pty.OutputLen(), timeout) // ❌ Offset captured AFTER key!
 func (p *PTYTest) SendKeys(keys string) error {
 	if p.closed {
 		return fmt.Errorf("pty is closed")
@@ -271,6 +271,88 @@ func (p *PTYTest) OutputLen() int {
 	return p.output.Len()
 }
 
+// WaitForOutputSinceCtx waits for expectedText to appear in the output produced
+// after the given startLen offset, respecting the provided context for cancellation.
+//
+// This is the context-aware version of WaitForOutputSince. See the documentation
+// for that method for critical usage details regarding the startLen offset to
+// prevent race conditions.
+func (p *PTYTest) WaitForOutputSinceCtx(ctx context.Context, expectedText string, startLen int) error {
+	// Perform an initial check to immediately return if the text is already present.
+	// This avoids starting the ticker unnecessarily.
+	p.outputMu.RLock()
+	output := p.output.String()
+	p.outputMu.RUnlock()
+
+	if startLen < 0 || startLen > len(output) {
+		startLen = 0
+	}
+	if strings.Contains(output[startLen:], expectedText) {
+		return nil
+	}
+	// Normalized comparison to ignore ANSI control codes and line wraps
+	norm := normalizeTTYOutput(output[startLen:])
+	if strings.Contains(norm, expectedText) {
+		return nil
+	}
+	if strings.Contains(collapseWhitespace(norm), collapseWhitespace(expectedText)) {
+		return nil
+	}
+
+	// Start a ticker for periodic checks.
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			// Before returning an error due to context cancellation, perform one final check.
+			p.outputMu.RLock()
+			finalOutput := p.output.String()
+			p.outputMu.RUnlock()
+
+			if startLen < 0 || startLen > len(finalOutput) {
+				startLen = 0
+			}
+			if strings.Contains(finalOutput[startLen:], expectedText) {
+				return nil
+			}
+			// Normalized comparison to ignore ANSI control codes and line wraps
+			norm := normalizeTTYOutput(finalOutput[startLen:])
+			if strings.Contains(norm, expectedText) {
+				return nil
+			}
+			if strings.Contains(collapseWhitespace(norm), collapseWhitespace(expectedText)) {
+				return nil
+			}
+
+			// If still not found, return the context's error.
+			return ctx.Err()
+
+		case <-ticker.C:
+			// Regular check on each tick.
+			p.outputMu.RLock()
+			currentOutput := p.output.String()
+			p.outputMu.RUnlock()
+
+			if startLen < 0 || startLen > len(currentOutput) {
+				startLen = 0
+			}
+			if strings.Contains(currentOutput[startLen:], expectedText) {
+				return nil
+			}
+			// Normalized comparison to ignore ANSI control codes and line wraps
+			norm := normalizeTTYOutput(currentOutput[startLen:])
+			if strings.Contains(norm, expectedText) {
+				return nil
+			}
+			if strings.Contains(collapseWhitespace(norm), collapseWhitespace(expectedText)) {
+				return nil
+			}
+		}
+	}
+}
+
 // WaitForOutputSince waits for expectedText to appear in the output produced
 // after the given startLen offset.
 //
@@ -299,38 +381,23 @@ func (p *PTYTest) OutputLen() int {
 // - Previous output may contain similar text patterns
 // - Race conditions cause non-deterministic test failures
 func (p *PTYTest) WaitForOutputSince(expectedText string, startLen int, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 
-	for time.Now().Before(deadline) {
+	err := p.WaitForOutputSinceCtx(ctx, expectedText, startLen)
+
+	// If the context-aware function returned a deadline error, we translate it
+	// back to the original, more informative error message that callers of this
+	// specific function expect.
+	if err == context.DeadlineExceeded {
 		p.outputMu.RLock()
 		output := p.output.String()
 		p.outputMu.RUnlock()
-
-		if startLen < 0 || startLen > len(output) {
-			startLen = 0
-		}
-		if strings.Contains(output[startLen:], expectedText) {
-			return nil
-		}
-
-		// Normalized comparison to ignore ANSI control codes and line wraps
-		norm := normalizeTTYOutput(output[startLen:])
-		if strings.Contains(norm, expectedText) {
-			return nil
-		}
-		if strings.Contains(collapseWhitespace(norm), collapseWhitespace(expectedText)) {
-			return nil
-		}
-
-		time.Sleep(10 * time.Millisecond)
+		return fmt.Errorf("expected text %q not found in new output after %v (checked from %d, new length %d)",
+			expectedText, timeout, startLen, len(output))
 	}
 
-	p.outputMu.RLock()
-	output := p.output.String()
-	p.outputMu.RUnlock()
-
-	return fmt.Errorf("expected text %q not found in new output after %v (checked from %d, new length %d)",
-		expectedText, timeout, startLen, len(output))
+	return err
 }
 
 // GetOutput returns all captured output so far.

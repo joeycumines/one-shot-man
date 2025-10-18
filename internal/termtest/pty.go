@@ -169,8 +169,8 @@ func (p *PTYTest) Type(input string, delay time.Duration) error {
 //
 // Example (WRONG - RACE CONDITION):
 //
-//	pty.SendLine("command")  // Input sent
-//	pty.WaitForOutputSince("output", pty.OutputLen(), timeout)  // ❌ Offset captured AFTER input!
+//	pty.SendLine("command") // Input sent
+//	pty.WaitForOutputSince("output", pty.OutputLen(), timeout) // ❌ Offset captured AFTER input!
 func (p *PTYTest) SendLine(input string) error {
 	if p.closed {
 		return fmt.Errorf("pty is closed")
@@ -209,8 +209,8 @@ func (p *PTYTest) SendLine(input string) error {
 //
 // Example (WRONG - RACE CONDITION):
 //
-//	pty.SendKeys("tab")  // Key sent
-//	pty.WaitForOutputSince("completion text", pty.OutputLen(), timeout)  // ❌ Offset captured AFTER key!
+//	pty.SendKeys("tab") // Key sent
+//	pty.WaitForOutputSince("completion text", pty.OutputLen(), timeout) // ❌ Offset captured AFTER key!
 func (p *PTYTest) SendKeys(keys string) error {
 	if p.closed {
 		return fmt.Errorf("pty is closed")
@@ -271,6 +271,96 @@ func (p *PTYTest) OutputLen() int {
 	return p.output.Len()
 }
 
+// WaitForConditionSinceCtx waits for a specific condition to be met in the output
+// produced after the given startLen offset, respecting the provided context for cancellation.
+// This is the generic, context-aware polling function that powers other WaitFor helpers.
+// The provided `check` function is called periodically with the new output slice.
+func (p *PTYTest) WaitForConditionSinceCtx(ctx context.Context, startLen int, check func(outputSinceOffset string) bool) error {
+	// Perform an initial check to immediately return if the condition is already met.
+	// This avoids starting the ticker unnecessarily.
+	p.outputMu.RLock()
+	output := p.output.String()
+	p.outputMu.RUnlock()
+
+	if startLen < 0 || startLen > len(output) {
+		startLen = 0
+	}
+	if check(output[startLen:]) {
+		return nil
+	}
+
+	// Start a ticker for periodic checks.
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			// Before returning an error due to context cancellation, perform one final check.
+			p.outputMu.RLock()
+			finalOutput := p.output.String()
+			p.outputMu.RUnlock()
+
+			if startLen < 0 || startLen > len(finalOutput) {
+				startLen = 0
+			}
+			if check(finalOutput[startLen:]) {
+				return nil
+			}
+
+			// If still not met, return the context's error.
+			return ctx.Err()
+
+		case <-ticker.C:
+			// Regular check on each tick.
+			p.outputMu.RLock()
+			currentOutput := p.output.String()
+			p.outputMu.RUnlock()
+
+			if startLen < 0 || startLen > len(currentOutput) {
+				startLen = 0
+			}
+			if check(currentOutput[startLen:]) {
+				return nil
+			}
+		}
+	}
+}
+
+// WaitForOutputSinceCtx waits for expectedText to appear in the output produced
+// after the given startLen offset, respecting the provided context for cancellation.
+//
+// This is the context-aware version of WaitForOutputSince. See the documentation
+// for that method for critical usage details regarding the startLen offset to
+// prevent race conditions.
+func (p *PTYTest) WaitForOutputSinceCtx(ctx context.Context, expectedText string, startLen int) error {
+	check := func(outputSinceOffset string) bool {
+		if strings.Contains(outputSinceOffset, expectedText) {
+			return true
+		}
+		// Normalized comparison to ignore ANSI control codes and line wraps
+		norm := normalizeTTYOutput(outputSinceOffset)
+		if strings.Contains(norm, expectedText) {
+			return true
+		}
+		if strings.Contains(collapseWhitespace(norm), collapseWhitespace(expectedText)) {
+			return true
+		}
+		return false
+	}
+
+	return p.WaitForConditionSinceCtx(ctx, startLen, check)
+}
+
+// newTimeoutError creates a standard timeout error message.
+func (p *PTYTest) newTimeoutError(expectedFmt string, timeout time.Duration, startLen int) error {
+	p.outputMu.RLock()
+	output := p.output.String()
+	p.outputMu.RUnlock()
+	return fmt.Errorf("expected %s not found in new output after %v (checked from %d, new length %d)",
+		expectedFmt, timeout, startLen, len(output))
+}
+
 // WaitForOutputSince waits for expectedText to appear in the output produced
 // after the given startLen offset.
 //
@@ -299,38 +389,103 @@ func (p *PTYTest) OutputLen() int {
 // - Previous output may contain similar text patterns
 // - Race conditions cause non-deterministic test failures
 func (p *PTYTest) WaitForOutputSince(expectedText string, startLen int, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 
-	for time.Now().Before(deadline) {
-		p.outputMu.RLock()
-		output := p.output.String()
-		p.outputMu.RUnlock()
+	err := p.WaitForOutputSinceCtx(ctx, expectedText, startLen)
 
-		if startLen < 0 || startLen > len(output) {
-			startLen = 0
-		}
-		if strings.Contains(output[startLen:], expectedText) {
-			return nil
-		}
-
-		// Normalized comparison to ignore ANSI control codes and line wraps
-		norm := normalizeTTYOutput(output[startLen:])
-		if strings.Contains(norm, expectedText) {
-			return nil
-		}
-		if strings.Contains(collapseWhitespace(norm), collapseWhitespace(expectedText)) {
-			return nil
-		}
-
-		time.Sleep(10 * time.Millisecond)
+	// If the context-aware function returned a deadline error, we translate it
+	// back to the original, more informative error message that callers of this
+	// specific function expect.
+	if err == context.DeadlineExceeded {
+		return p.newTimeoutError(fmt.Sprintf("text %q", expectedText), timeout, startLen)
 	}
 
-	p.outputMu.RLock()
-	output := p.output.String()
-	p.outputMu.RUnlock()
+	return err
+}
 
-	return fmt.Errorf("expected text %q not found in new output after %v (checked from %d, new length %d)",
-		expectedText, timeout, startLen, len(output))
+// WaitForRawOutputSince waits for any of the given strings to appear in the raw output
+// produced after the given startLen offset, without any normalization.
+//
+// This is useful for matching exact sequences, including ANSI escape codes or
+// specific whitespace, which would be stripped by WaitForOutputSince.
+//
+// See WaitForOutputSince for CRITICAL documentation on why using the startLen
+// offset is mandatory to prevent race conditions.
+func (p *PTYTest) WaitForRawOutputSince(timeout time.Duration, startLen int, anyOf ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	check := func(outputSinceOffset string) bool {
+		for _, s := range anyOf {
+			if strings.Contains(outputSinceOffset, s) {
+				return true
+			}
+		}
+		return false
+	}
+
+	err := p.WaitForConditionSinceCtx(ctx, startLen, check)
+
+	if err == context.DeadlineExceeded {
+		quoted := make([]string, len(anyOf))
+		for i, s := range anyOf {
+			quoted[i] = fmt.Sprintf("%q", s)
+		}
+		expectedFmt := fmt.Sprintf("any of [%s]", strings.Join(quoted, ", "))
+		return p.newTimeoutError(expectedFmt, timeout, startLen)
+	}
+
+	return err
+}
+
+// WaitIdleOutput waits until the PTY output has been stable (no new output)
+// for a short duration, or until the context is canceled/times out.
+//
+// The stability check requires the output length to remain unchanged for a
+// series of checks, to account for bursty output patterns.
+//
+// If `timeout` is 0, a default value is used. If `timeout` is positive,
+// it is used to set a deadline for the entire operation.
+func (p *PTYTest) WaitIdleOutput(ctx context.Context, timeout time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if timeout == 0 {
+		timeout = 5 * time.Second
+	}
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	initialLen := p.OutputLen()
+	stableCount := 0
+	const requiredStableChecks = 20
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+
+		case <-ticker.C:
+			currentLen := p.OutputLen()
+			if currentLen == initialLen {
+				stableCount++
+				if stableCount >= requiredStableChecks {
+					return nil // Output has been stable for required checks
+				}
+			} else {
+				// Output changed, reset stability counter
+				initialLen = currentLen
+				stableCount = 0
+			}
+		}
+	}
 }
 
 // GetOutput returns all captured output so far.

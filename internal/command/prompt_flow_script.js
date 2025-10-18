@@ -3,6 +3,7 @@
 
 const {buildContext, contextManager} = require('osm:ctxutil');
 const nextIntegerId = require('osm:nextIntegerId');
+const template = require('osm:text/template');
 
 // Fixed mode name
 const MODE_NAME = "flow";
@@ -58,10 +59,10 @@ function defaultTemplate() {
 !! Generate a prompt using the template for purposes of achieving the following goal. !!
 
 !! **GOAL:** !!
-{{goal}}
+{{.goal}}
 
 !! **IMPLEMENTATIONS/CONTEXT:** !!
-{{context_txtar}}`;
+{{.context_txtar}}`;
 }
 
 function buildCommands(state) {
@@ -119,11 +120,10 @@ function buildCommands(state) {
 
     function buildMetaPrompt() {
         const fullContext = buildContextTxtar();
-        const pb = tui.createPromptBuilder("flow-meta", "Build meta-prompt");
-        pb.setTemplate(getTemplate());
-        pb.setVariable("goal", getGoal());
-        pb.setVariable("context_txtar", fullContext);
-        return pb.build();
+        return template.execute(getTemplate(), {
+            goal: getGoal(),
+            context_txtar: fullContext
+        });
     }
 
     function assembleFinal() {

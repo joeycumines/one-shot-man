@@ -202,6 +202,20 @@ func TestExecutorTokenization_QuotedArgs(t *testing.T) {
 	}
 }
 
+// waitForPromptIdle waits for the prompt to be in a stable state, meaning no new
+// output has been generated for a short, consistent period. This is crucial for
+// ensuring that subsequent input (like an "enter" key press) is processed as a
+// new event and not bundled with the previous render's output.
+func waitForPromptIdle(t *testing.T, test *termtest.GoPromptTest, timeout time.Duration) {
+	t.Helper()
+	if err := test.GetPTY().WaitIdleOutput(t.Context(), timeout); err != nil {
+		t.Fatalf("timed out waiting for prompt to become idle: %s\nOutput: %q\n---\n%s",
+			err,
+			test.GetOutput(),
+			stripANSIColor.ReplaceAllString(test.GetOutput(), ""))
+	}
+}
+
 func testPromptCompletion(ctx context.Context, t *testing.T) {
 	test, err := termtest.NewGoPromptTest(ctx)
 	if err != nil {
@@ -239,9 +253,9 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 	// Start prompt with completer and prefix
 	test.RunPrompt(executor, prompt.WithPrefix("> "), prompt.WithCompleter(completer))
 
-	// Wait for initial prompt to be ready
+	// Wait for initial prompt to be ready, indicated by the final cursor show.
 	initialLen := test.GetPTY().OutputLen()
-	if err := test.GetPTY().WaitForOutputSince("> ", initialLen, 1*time.Second); err != nil {
+	if err := test.GetPTY().WaitForRawOutputSince(1*time.Second, initialLen, "\x1b[?25h"); err != nil {
 		t.Fatalf("prompt not ready: %v", err)
 	}
 
@@ -253,12 +267,10 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 		t.Fatalf("failed to send input: %v", err)
 	}
 
-	// Wait for echo to appear
-	if err := test.GetPTY().WaitForOutputSince("he", startLen, 500*time.Millisecond); err != nil {
-		t.Fatalf("input echo not shown: %v", err)
+	// Wait for the render cycle that echoes "he" to complete.
+	if err := test.GetPTY().WaitForRawOutputSince(500*time.Millisecond, startLen, "\x1b[?25h"); err != nil {
+		t.Fatalf("input echo render not complete: %v", err)
 	}
-
-	time.Sleep(time.Millisecond * 30)
 
 	// Capture offset BEFORE sending tab
 	tabStartLen := test.GetPTY().OutputLen()
@@ -266,25 +278,20 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 		t.Fatalf("failed to send tab: %v", err)
 	}
 
-	// Wait for completion to appear
-	if err := test.GetPTY().WaitForOutputSince("help", tabStartLen, 1*time.Second); err != nil {
+	// Wait for the render cycle from tab completion to finish. The cursor will be
+	// shown after the line is updated to "help". This is the sync point.
+	if err := test.GetPTY().WaitForRawOutputSince(1*time.Second, tabStartLen, "\x1b[?25h"); err != nil {
 		output := test.GetOutput()
-		t.Fatalf("completion not shown: %v\nOutput from %d: %q",
+		t.Fatalf("completion render not complete: %v\nOutput from %d: %q",
 			err, tabStartLen, stripANSIColor.ReplaceAllString(output[tabStartLen:], ""))
 	}
 
-	time.Sleep(time.Millisecond * 30)
+	// Wait for the prompt to be idle before sending enter to prevent race conditions.
+	waitForPromptIdle(t, test, 500*time.Millisecond)
 
-	// Capture offset BEFORE sending enter (after tab completion)
 	// The tab key completed "he" to "help", so we can now execute
-	enterStartLen := test.GetPTY().OutputLen()
 	if err := test.SendKeys("enter"); err != nil {
 		t.Fatalf("failed to send enter: %v", err)
-	}
-
-	// Wait for echo of command
-	if err := test.GetPTY().WaitForOutputSince("help\r\n", enterStartLen, 1*time.Second); err != nil {
-		t.Logf("command echo not detected (may be normal): %v", err)
 	}
 
 	// Orchestrate: wait for executor call with timeout
@@ -354,9 +361,9 @@ func testKeyBindings(ctx context.Context, t *testing.T) {
 	// Start prompt with prefix
 	test.RunPrompt(executor, prompt.WithPrefix("> "))
 
-	// Wait for initial prompt to be ready
+	// Wait for initial prompt to be ready, indicated by the final cursor show.
 	initialLen := test.GetPTY().OutputLen()
-	if err := test.GetPTY().WaitForOutputSince("> ", initialLen, 1*time.Second); err != nil {
+	if err := test.GetPTY().WaitForRawOutputSince(1*time.Second, initialLen, "\x1b[?25h"); err != nil {
 		t.Fatalf("prompt not ready: %v", err)
 	}
 
@@ -366,33 +373,24 @@ func testKeyBindings(ctx context.Context, t *testing.T) {
 		t.Fatalf("failed to send input: %v", err)
 	}
 
-	// Wait for input to be displayed
-	if err := test.GetPTY().WaitForOutputSince("test command", inputStartLen, 1*time.Second); err != nil {
-		t.Fatalf("input not shown: %v", err)
+	// Wait for the render cycle that echoes the input to complete.
+	if err := test.GetPTY().WaitForRawOutputSince(1*time.Second, inputStartLen, "\x1b[?25h"); err != nil {
+		t.Fatalf("input render not complete: %v", err)
 	}
 
-	inputLen := test.GetPTY().OutputLen()
-
 	// Test backspace
+	backspaceStartLen := test.GetPTY().OutputLen()
 	if err := test.SendKeys("backspace"); err != nil {
 		t.Fatalf("failed to send backspace: %v", err)
 	}
 
-	const marker = "test comman\x1b"
-
-	// Wait for rerendering to complete
-	if err := test.GetPTY().WaitForOutputSince(marker, inputLen, 1*time.Second); err != nil {
-		t.Fatalf("marker not present: %v\n%q", err, test.GetOutput())
+	// Wait for the rerender after backspace to complete, indicated by cursor show.
+	if err := test.GetPTY().WaitForRawOutputSince(1*time.Second, backspaceStartLen, "\x1b[?25h"); err != nil {
+		t.Fatalf("render after backspace not complete: %v\n%q", err, test.GetOutput())
 	}
 
-	inputLen = strings.LastIndex(test.GetOutput(), marker) + len(marker)
-
-	// And the trailing cursor show
-	if err := test.GetPTY().WaitForOutputSince("\x1b[?25h", inputLen, 1*time.Second); err != nil {
-		t.Fatalf("line not present: %v\n%q", err, test.GetOutput())
-	}
-
-	time.Sleep(time.Millisecond * 30)
+	// Wait for the prompt to be idle before sending enter to prevent race conditions.
+	waitForPromptIdle(t, test, 500*time.Millisecond)
 
 	if err := test.SendKeys("enter"); err != nil {
 		t.Fatalf("failed to send enter: %v", err)

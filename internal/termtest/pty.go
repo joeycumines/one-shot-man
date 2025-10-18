@@ -464,7 +464,7 @@ func (p *PTYTest) WaitIdleOutput(ctx context.Context, timeout time.Duration) err
 
 	initialLen := p.OutputLen()
 	stableCount := 0
-	const requiredStableChecks = 18
+	const requiredStableChecks = 20
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 

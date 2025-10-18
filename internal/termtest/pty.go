@@ -182,8 +182,7 @@ func (p *PTYTest) SendLine(input string) error {
 		return fmt.Errorf("failed to write input: %w", err)
 	}
 
-	// Brief delay to ensure the application reads the input before Enter arrives
-	time.Sleep(15 * time.Millisecond)
+	_ = p.waitIdleOutput(context.Background(), 50*time.Millisecond, 5, 5*time.Millisecond)
 
 	// Send Enter key
 	if err := p.SendKeys("enter"); err != nil {
@@ -448,6 +447,10 @@ func (p *PTYTest) WaitForRawOutputSince(timeout time.Duration, startLen int, any
 // If `timeout` is 0, a default value is used. If `timeout` is positive,
 // it is used to set a deadline for the entire operation.
 func (p *PTYTest) WaitIdleOutput(ctx context.Context, timeout time.Duration) error {
+	return p.waitIdleOutput(ctx, timeout, 20, 10*time.Millisecond)
+}
+
+func (p *PTYTest) waitIdleOutput(ctx context.Context, timeout time.Duration, requiredStableChecks int, checkInterval time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -463,8 +466,7 @@ func (p *PTYTest) WaitIdleOutput(ctx context.Context, timeout time.Duration) err
 
 	initialLen := p.OutputLen()
 	stableCount := 0
-	const requiredStableChecks = 20
-	ticker := time.NewTicker(10 * time.Millisecond)
+	ticker := time.NewTicker(checkInterval)
 	defer ticker.Stop()
 
 	for {

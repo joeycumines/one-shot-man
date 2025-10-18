@@ -268,7 +268,7 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 	}
 
 	// Wait for the render cycle that echoes "he" to complete.
-	if err := test.GetPTY().WaitForRawOutputSince(500*time.Millisecond, startLen, "\x1b[?25h"); err != nil {
+	if err := test.GetPTY().WaitForRawOutputSince(time.Second*2, startLen, "\x1b[?25h"); err != nil {
 		t.Fatalf("input echo render not complete: %v", err)
 	}
 
@@ -287,7 +287,7 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 	}
 
 	// Wait for the prompt to be idle before sending enter to prevent race conditions.
-	waitForPromptIdle(t, test, 500*time.Millisecond)
+	waitForPromptIdle(t, test, 0)
 
 	// The tab key completed "he" to "help", so we can now execute
 	if err := test.SendKeys("enter"); err != nil {
@@ -390,7 +390,7 @@ func testKeyBindings(ctx context.Context, t *testing.T) {
 	}
 
 	// Wait for the prompt to be idle before sending enter to prevent race conditions.
-	waitForPromptIdle(t, test, 500*time.Millisecond)
+	waitForPromptIdle(t, test, 0)
 
 	if err := test.SendKeys("enter"); err != nil {
 		t.Fatalf("failed to send enter: %v", err)

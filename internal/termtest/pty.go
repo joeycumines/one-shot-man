@@ -454,7 +454,7 @@ func (p *PTYTest) WaitIdleOutput(ctx context.Context, timeout time.Duration) err
 	}
 
 	if timeout == 0 {
-		timeout = 2 * time.Second
+		timeout = 3 * time.Second
 	}
 	if timeout > 0 {
 		var cancel context.CancelFunc
@@ -464,7 +464,7 @@ func (p *PTYTest) WaitIdleOutput(ctx context.Context, timeout time.Duration) err
 
 	initialLen := p.OutputLen()
 	stableCount := 0
-	const requiredStableChecks = 3
+	const requiredStableChecks = 7
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 

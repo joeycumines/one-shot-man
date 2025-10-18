@@ -271,14 +271,12 @@ func (p *PTYTest) OutputLen() int {
 	return p.output.Len()
 }
 
-// WaitForOutputSinceCtx waits for expectedText to appear in the output produced
-// after the given startLen offset, respecting the provided context for cancellation.
-//
-// This is the context-aware version of WaitForOutputSince. See the documentation
-// for that method for critical usage details regarding the startLen offset to
-// prevent race conditions.
-func (p *PTYTest) WaitForOutputSinceCtx(ctx context.Context, expectedText string, startLen int) error {
-	// Perform an initial check to immediately return if the text is already present.
+// WaitForConditionSinceCtx waits for a specific condition to be met in the output
+// produced after the given startLen offset, respecting the provided context for cancellation.
+// This is the generic, context-aware polling function that powers other WaitFor helpers.
+// The provided `check` function is called periodically with the new output slice.
+func (p *PTYTest) WaitForConditionSinceCtx(ctx context.Context, startLen int, check func(outputSinceOffset string) bool) error {
+	// Perform an initial check to immediately return if the condition is already met.
 	// This avoids starting the ticker unnecessarily.
 	p.outputMu.RLock()
 	output := p.output.String()
@@ -287,15 +285,7 @@ func (p *PTYTest) WaitForOutputSinceCtx(ctx context.Context, expectedText string
 	if startLen < 0 || startLen > len(output) {
 		startLen = 0
 	}
-	if strings.Contains(output[startLen:], expectedText) {
-		return nil
-	}
-	// Normalized comparison to ignore ANSI control codes and line wraps
-	norm := normalizeTTYOutput(output[startLen:])
-	if strings.Contains(norm, expectedText) {
-		return nil
-	}
-	if strings.Contains(collapseWhitespace(norm), collapseWhitespace(expectedText)) {
+	if check(output[startLen:]) {
 		return nil
 	}
 
@@ -314,19 +304,11 @@ func (p *PTYTest) WaitForOutputSinceCtx(ctx context.Context, expectedText string
 			if startLen < 0 || startLen > len(finalOutput) {
 				startLen = 0
 			}
-			if strings.Contains(finalOutput[startLen:], expectedText) {
-				return nil
-			}
-			// Normalized comparison to ignore ANSI control codes and line wraps
-			norm := normalizeTTYOutput(finalOutput[startLen:])
-			if strings.Contains(norm, expectedText) {
-				return nil
-			}
-			if strings.Contains(collapseWhitespace(norm), collapseWhitespace(expectedText)) {
+			if check(finalOutput[startLen:]) {
 				return nil
 			}
 
-			// If still not found, return the context's error.
+			// If still not met, return the context's error.
 			return ctx.Err()
 
 		case <-ticker.C:
@@ -338,19 +320,36 @@ func (p *PTYTest) WaitForOutputSinceCtx(ctx context.Context, expectedText string
 			if startLen < 0 || startLen > len(currentOutput) {
 				startLen = 0
 			}
-			if strings.Contains(currentOutput[startLen:], expectedText) {
-				return nil
-			}
-			// Normalized comparison to ignore ANSI control codes and line wraps
-			norm := normalizeTTYOutput(currentOutput[startLen:])
-			if strings.Contains(norm, expectedText) {
-				return nil
-			}
-			if strings.Contains(collapseWhitespace(norm), collapseWhitespace(expectedText)) {
+			if check(currentOutput[startLen:]) {
 				return nil
 			}
 		}
 	}
+}
+
+// WaitForOutputSinceCtx waits for expectedText to appear in the output produced
+// after the given startLen offset, respecting the provided context for cancellation.
+//
+// This is the context-aware version of WaitForOutputSince. See the documentation
+// for that method for critical usage details regarding the startLen offset to
+// prevent race conditions.
+func (p *PTYTest) WaitForOutputSinceCtx(ctx context.Context, expectedText string, startLen int) error {
+	check := func(outputSinceOffset string) bool {
+		if strings.Contains(outputSinceOffset, expectedText) {
+			return true
+		}
+		// Normalized comparison to ignore ANSI control codes and line wraps
+		norm := normalizeTTYOutput(outputSinceOffset)
+		if strings.Contains(norm, expectedText) {
+			return true
+		}
+		if strings.Contains(collapseWhitespace(norm), collapseWhitespace(expectedText)) {
+			return true
+		}
+		return false
+	}
+
+	return p.WaitForConditionSinceCtx(ctx, startLen, check)
 }
 
 // WaitForOutputSince waits for expectedText to appear in the output produced

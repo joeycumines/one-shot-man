@@ -344,6 +344,9 @@ fi
 	if _, err := cp.ExpectSince("!! **GOAL:** !!", startLen); err != nil {
 		t.Fatalf("Expected goal in meta: %v", err)
 	}
+	if _, err := cp.ExpectSince("!! **TEMPLATE:** !!", startLen); err != nil {
+		t.Fatalf("Expected goal in meta: %v", err)
+	}
 	if out := cp.GetOutput(); strings.Contains(out, "second prompt from test") {
 		t.Fatalf("expected regenerate to clear task prompt, but output still contained task prompt text: %s", out)
 	} else if !strings.Contains(out, "!! **TEMPLATE:** !!") {

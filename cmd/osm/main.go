@@ -29,6 +29,10 @@ func run() error {
 	// Create command registry with configuration
 	registry := command.NewRegistryWithConfig(cfg)
 
+	// Create goal registry
+	goalDiscovery := command.NewGoalDiscovery(cfg)
+	goalRegistry := command.NewDynamicGoalRegistry(command.GetBuiltInGoals(), goalDiscovery)
+
 	// Register built-in commands
 	helpCmd := command.NewHelpCommand(registry)
 	registry.Register(helpCmd)
@@ -38,8 +42,8 @@ func run() error {
 	registry.Register(command.NewScriptingCommand(cfg))
 	registry.Register(command.NewPromptFlowCommand(cfg))
 	registry.Register(command.NewCodeReviewCommand(cfg))
-	registry.Register(command.NewCompletionCommand(registry))
-	registry.Register(command.NewGoalCommand(cfg))
+	registry.Register(command.NewCompletionCommand(registry, goalRegistry))
+	registry.Register(command.NewGoalCommand(cfg, goalRegistry))
 
 	// Parse global flags and command
 	if len(os.Args) < 2 {

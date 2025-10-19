@@ -9,6 +9,15 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/config"
 )
 
+// Helper function to create a test goal registry
+func newTestGoalRegistry() GoalRegistry {
+	cfg := config.NewConfig()
+	// Avoid external goals leaking into tests
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	discovery := NewGoalDiscovery(cfg)
+	return NewDynamicGoalRegistry(GetBuiltInGoals(), discovery)
+}
+
 func TestCompletionCommand(t *testing.T) {
 	t.Parallel()
 	// Create a test registry with some commands
@@ -65,7 +74,8 @@ func TestCompletionCommand(t *testing.T) {
 			var output strings.Builder
 			var stderr strings.Builder
 
-			completionCmd := NewCompletionCommand(registry)
+			goalRegistry := newTestGoalRegistry()
+			completionCmd := NewCompletionCommand(registry, goalRegistry)
 			err := completionCmd.Execute(tt.args, &output, &stderr)
 
 			if tt.expectError {
@@ -109,13 +119,14 @@ func TestCompletionCommand(t *testing.T) {
 	}
 }
 
-func TestCompletionCommandExecuteWithArgs(t *testing.T) {
+func TestCompletionCommandZshShell(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
 	registry := NewRegistryWithConfig(cfg)
 	registry.Register(NewHelpCommand(registry))
 
-	completionCmd := NewCompletionCommand(registry)
+	goalRegistry := newTestGoalRegistry()
+	completionCmd := NewCompletionCommand(registry, goalRegistry)
 
 	var output strings.Builder
 	var stderr strings.Builder
@@ -132,13 +143,14 @@ func TestCompletionCommandExecuteWithArgs(t *testing.T) {
 	}
 }
 
-func TestCompletionCommandDefaultToBash(t *testing.T) {
+func TestCompletionCommandDefaultBash(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
 	registry := NewRegistryWithConfig(cfg)
 	registry.Register(NewHelpCommand(registry))
 
-	completionCmd := NewCompletionCommand(registry)
+	goalRegistry := newTestGoalRegistry()
+	completionCmd := NewCompletionCommand(registry, goalRegistry)
 
 	var output strings.Builder
 	var stderr strings.Builder
@@ -151,7 +163,7 @@ func TestCompletionCommandDefaultToBash(t *testing.T) {
 
 	outputStr := output.String()
 	if !strings.Contains(outputStr, "_osm_completion") {
-		t.Errorf("Expected bash completion output (default), but got:\n%s", outputStr)
+		t.Errorf("Expected default bash completion output")
 	}
 }
 
@@ -182,7 +194,8 @@ func TestCompletionCommandIncludesScriptCommands(t *testing.T) {
 		marker := marker
 		t.Run(shell, func(t *testing.T) {
 			t.Parallel()
-			completionCmd := NewCompletionCommand(registry)
+			goalRegistry := newTestGoalRegistry()
+			completionCmd := NewCompletionCommand(registry, goalRegistry)
 
 			var output strings.Builder
 			var stderr strings.Builder
@@ -216,7 +229,8 @@ func TestCompletionCommandGoalSubcommand(t *testing.T) {
 	cfg := config.NewConfig()
 	registry := NewRegistryWithConfig(cfg)
 	registry.Register(NewHelpCommand(registry))
-	registry.Register(NewGoalCommand(cfg))
+	goalRegistry := newTestGoalRegistry()
+	registry.Register(NewGoalCommand(cfg, goalRegistry))
 
 	goalNames := []string{
 		"comment-stripper",
@@ -235,7 +249,8 @@ func TestCompletionCommandGoalSubcommand(t *testing.T) {
 			shell: "bash",
 			expectedText: append([]string{
 				"goal)",
-				"COMPREPLY=($(compgen -W \"comment-stripper doc-generator test-generator commit-message\"",
+				// Verify exact format: sorted, space-delimited list in compgen -W
+				"COMPREPLY=($(compgen -W \"comment-stripper commit-message doc-generator test-generator\"",
 			}, goalNames...),
 		},
 		{
@@ -266,7 +281,8 @@ func TestCompletionCommandGoalSubcommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			completionCmd := NewCompletionCommand(registry)
+			goalRegistry := newTestGoalRegistry()
+			completionCmd := NewCompletionCommand(registry, goalRegistry)
 
 			var output strings.Builder
 			var stderr strings.Builder
@@ -295,9 +311,10 @@ func TestCompletionCommandGoalDescriptions(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
 	registry := NewRegistryWithConfig(cfg)
-	registry.Register(NewGoalCommand(cfg))
+	goalRegistry := newTestGoalRegistry()
+	registry.Register(NewGoalCommand(cfg, goalRegistry))
 
-	completionCmd := NewCompletionCommand(registry)
+	completionCmd := NewCompletionCommand(registry, goalRegistry)
 
 	var output strings.Builder
 	var stderr strings.Builder
@@ -324,5 +341,57 @@ func TestCompletionCommandGoalDescriptions(t *testing.T) {
 		if !strings.Contains(outputStr, description) {
 			t.Errorf("Expected fish completion to contain description snippet %q for goal %q", description, goalName)
 		}
+	}
+}
+
+func TestCompletionCommandFishEscaping(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+
+	// Create a custom goal with a single quote in the description
+	testGoal := Goal{
+		Name:        "test-escaping",
+		Description: "Test the tool's quote handling",
+		Category:    "testing",
+	}
+
+	// Create a custom goal registry with our test goal
+	discovery := NewGoalDiscovery(cfg)
+	builtInGoals := []Goal{testGoal}
+	goalRegistry := NewDynamicGoalRegistry(builtInGoals, discovery)
+
+	registry := NewRegistryWithConfig(cfg)
+	registry.Register(NewGoalCommand(cfg, goalRegistry))
+
+	completionCmd := NewCompletionCommand(registry, goalRegistry)
+
+	var output strings.Builder
+	var stderr strings.Builder
+
+	// Generate Fish completion script
+	err := completionCmd.Execute([]string{"fish"}, &output, &stderr)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	outputStr := output.String()
+
+	// Verify the goal name is present
+	if !strings.Contains(outputStr, "test-escaping") {
+		t.Errorf("Expected fish completion to contain goal name 'test-escaping'")
+	}
+
+	// Verify the description is correctly escaped
+	// Single quote in "tool's" should be escaped as '\''
+	expectedEscaped := "Test the tool'\\''s quote handling"
+	if !strings.Contains(outputStr, expectedEscaped) {
+		t.Errorf("Expected fish completion to contain correctly escaped description %q, got output:\n%s",
+			expectedEscaped, outputStr)
+	}
+
+	// Ensure the unescaped version is NOT present (which would break the shell script)
+	unescapedBroken := "'Test the tool's quote handling'"
+	if strings.Contains(outputStr, unescapedBroken) {
+		t.Errorf("Fish completion contains unescaped single quote which would break shell syntax")
 	}
 }

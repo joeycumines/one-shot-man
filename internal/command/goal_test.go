@@ -8,10 +8,19 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/config"
 )
 
+func newTestGoalRegistryForGoal() GoalRegistry {
+	cfg := config.NewConfig()
+	// Avoid picking up user/system goals from standard paths during tests
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	discovery := NewGoalDiscovery(cfg)
+	return NewDynamicGoalRegistry(GetBuiltInGoals(), discovery)
+}
+
 func TestGoalCommand_Name(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
-	cmd := NewGoalCommand(cfg)
+	goalRegistry := newTestGoalRegistryForGoal()
+	cmd := NewGoalCommand(cfg, goalRegistry)
 	if cmd.Name() != "goal" {
 		t.Errorf("Expected name 'goal', got %s", cmd.Name())
 	}
@@ -20,7 +29,8 @@ func TestGoalCommand_Name(t *testing.T) {
 func TestGoalCommand_Description(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
-	cmd := NewGoalCommand(cfg)
+	goalRegistry := newTestGoalRegistryForGoal()
+	cmd := NewGoalCommand(cfg, goalRegistry)
 	expected := "Access pre-written goals for common development tasks"
 	if cmd.Description() != expected {
 		t.Errorf("Expected description %q, got %q", expected, cmd.Description())
@@ -30,7 +40,8 @@ func TestGoalCommand_Description(t *testing.T) {
 func TestGoalCommand_Usage(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
-	cmd := NewGoalCommand(cfg)
+	goalRegistry := newTestGoalRegistryForGoal()
+	cmd := NewGoalCommand(cfg, goalRegistry)
 	expected := "goal [options] [goal-name]"
 	if cmd.Usage() != expected {
 		t.Errorf("Expected usage %q, got %q", expected, cmd.Usage())
@@ -40,8 +51,8 @@ func TestGoalCommand_Usage(t *testing.T) {
 func TestGoalCommand_ListGoals(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
-	cmd := NewGoalCommand(cfg)
-
+	goalRegistry := newTestGoalRegistryForGoal()
+	cmd := NewGoalCommand(cfg, goalRegistry)
 	var stdout, stderr bytes.Buffer
 	cmd.list = true
 
@@ -84,7 +95,8 @@ func TestGoalCommand_ListGoals(t *testing.T) {
 func TestGoalCommand_ListGoalsByCategory(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
-	cmd := NewGoalCommand(cfg)
+	goalRegistry := newTestGoalRegistryForGoal()
+	cmd := NewGoalCommand(cfg, goalRegistry)
 
 	var stdout, stderr bytes.Buffer
 	cmd.list = true
@@ -113,10 +125,9 @@ func TestGoalCommand_ListGoalsByCategory(t *testing.T) {
 
 func TestGoalCommand_GetAvailableGoals(t *testing.T) {
 	t.Parallel()
-	cfg := config.NewConfig()
-	cmd := NewGoalCommand(cfg)
+	goalRegistry := newTestGoalRegistryForGoal()
 
-	goals := cmd.getAvailableGoals()
+	goals := goalRegistry.GetAllGoals()
 
 	if len(goals) == 0 {
 		t.Error("Expected at least one goal to be available")
@@ -219,10 +230,11 @@ func TestGoalCommand_EmbeddedScripts(t *testing.T) {
 	}
 }
 
-func TestGoalCommand_InvalidGoal(t *testing.T) {
+func TestGoalCommand_UnknownGoal(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
-	cmd := NewGoalCommand(cfg)
+	goalRegistry := newTestGoalRegistryForGoal()
+	cmd := NewGoalCommand(cfg, goalRegistry)
 
 	var stdout, stderr bytes.Buffer
 
@@ -239,7 +251,8 @@ func TestGoalCommand_InvalidGoal(t *testing.T) {
 func TestGoalCommand_RunGoal_Success_NonInteractive(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
-	cmd := NewGoalCommand(cfg)
+	goalRegistry := newTestGoalRegistryForGoal()
+	cmd := NewGoalCommand(cfg, goalRegistry)
 	// use -r to imply non-interactive
 	cmd.run = "comment-stripper"
 	cmd.testMode = true // avoid launching TUI; still executes script
@@ -263,7 +276,8 @@ func TestGoalCommand_RunGoal_Success_NonInteractive(t *testing.T) {
 func TestGoalCommand_RunGoal_Success_Interactive_Positional(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
-	cmd := NewGoalCommand(cfg)
+	goalRegistry := newTestGoalRegistryForGoal()
+	cmd := NewGoalCommand(cfg, goalRegistry)
 	// positional argument should default to interactive per README
 	// but we set testMode to avoid actually running the TUI
 	cmd.testMode = true
@@ -283,10 +297,9 @@ func TestGoalCommand_RunGoal_Success_Interactive_Positional(t *testing.T) {
 func TestGoalCommand_GoToJSPipeline_PromptTemplate(t *testing.T) {
 	t.Parallel()
 	// Verify that PromptTemplate from Go is correctly used by JS
-	cfg := config.NewConfig()
-	cmd := NewGoalCommand(cfg)
+	goalRegistry := newTestGoalRegistryForGoal()
 
-	goals := cmd.getAvailableGoals()
+	goals := goalRegistry.GetAllGoals()
 
 	// Check that all goals have non-empty PromptTemplate
 	for _, goal := range goals {
@@ -313,10 +326,9 @@ func TestGoalCommand_GoToJSPipeline_PromptTemplate(t *testing.T) {
 func TestGoalCommand_GoToJSPipeline_ContextHeader(t *testing.T) {
 	t.Parallel()
 	// Verify that ContextHeader from Go is correctly set
-	cfg := config.NewConfig()
-	cmd := NewGoalCommand(cfg)
+	goalRegistry := newTestGoalRegistryForGoal()
 
-	goals := cmd.getAvailableGoals()
+	goals := goalRegistry.GetAllGoals()
 
 	expectedHeaders := map[string]string{
 		"commit-message":   "DIFF CONTEXT / CHANGES",
@@ -340,10 +352,9 @@ func TestGoalCommand_GoToJSPipeline_ContextHeader(t *testing.T) {
 func TestGoalCommand_GoToJSPipeline_CommandsArray(t *testing.T) {
 	t.Parallel()
 	// Verify that Commands array is properly defined for all goals
-	cfg := config.NewConfig()
-	cmd := NewGoalCommand(cfg)
+	goalRegistry := newTestGoalRegistryForGoal()
 
-	goals := cmd.getAvailableGoals()
+	goals := goalRegistry.GetAllGoals()
 
 	for _, goal := range goals {
 		if len(goal.Commands) == 0 {

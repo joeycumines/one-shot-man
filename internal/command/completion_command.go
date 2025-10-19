@@ -9,18 +9,20 @@ import (
 // CompletionCommand generates shell completion scripts.
 type CompletionCommand struct {
 	*BaseCommand
-	registry *Registry
+	registry     *Registry
+	goalRegistry GoalRegistry
 }
 
 // NewCompletionCommand creates a new completion command.
-func NewCompletionCommand(registry *Registry) *CompletionCommand {
+func NewCompletionCommand(registry *Registry, goalRegistry GoalRegistry) *CompletionCommand {
 	return &CompletionCommand{
 		BaseCommand: NewBaseCommand(
 			"completion",
 			"Generate shell completion scripts",
 			"completion [shell]",
 		),
-		registry: registry,
+		registry:     registry,
+		goalRegistry: goalRegistry,
 	}
 }
 
@@ -60,6 +62,9 @@ func (c *CompletionCommand) generateBashCompletion(w io.Writer) error {
 	commands := c.registry.List()
 	commandList := strings.Join(commands, " ")
 
+	goals := c.goalRegistry.List()
+	goalList := strings.Join(goals, " ")
+
 	script := fmt.Sprintf(`#!/bin/bash
 # Bash completion script for osm (one-shot-man)
 
@@ -85,7 +90,7 @@ _osm_completion() {
 			return 0
 			;;
 		goal)
-			COMPREPLY=($(compgen -W "comment-stripper doc-generator test-generator commit-message" -- ${cur}))
+			COMPREPLY=($(compgen -W "%s" -- ${cur}))
 			return 0
 			;;
 		*)
@@ -104,7 +109,7 @@ complete -F _osm_completion osm
 #    or ~/.local/share/bash-completion/completions/osm (user-specific)
 # 2. Or source it directly in your ~/.bashrc:
 #    source <(osm completion bash)
-`, commandList)
+`, commandList, goalList)
 
 	_, err := w.Write([]byte(script))
 	return err
@@ -120,6 +125,9 @@ func (c *CompletionCommand) generateZshCompletion(w io.Writer) error {
 			commandDescriptions.WriteString(fmt.Sprintf("    '%s:%s'\n", cmd, command.Description()))
 		}
 	}
+
+	goals := c.goalRegistry.List()
+	goalList := strings.Join(goals, "' '")
 
 	script := fmt.Sprintf(`#compdef osm
 
@@ -147,7 +155,7 @@ _osm() {
 					_values 'shell' 'bash' 'zsh' 'fish' 'powershell'
 					;;
 				goal)
-					_values 'goal-name' 'comment-stripper' 'doc-generator' 'test-generator' 'commit-message'
+					_values 'goal-name' '%s'
 					;;
 				*)
 					_files
@@ -166,7 +174,7 @@ _osm "$@"
 #    fpath=(~/.zsh/completions $fpath)
 # 3. Regenerate completions: rm ~/.zcompdump && compinit
 # 4. Or source it directly: source <(osm completion zsh)
-`, commandDescriptions.String())
+`, commandDescriptions.String(), goalList)
 
 	_, err := w.Write([]byte(script))
 	return err
@@ -184,6 +192,18 @@ func (c *CompletionCommand) generateFishCompletion(w io.Writer) error {
 		}
 	}
 
+	goals := c.goalRegistry.List()
+	var goalCompletions strings.Builder
+	for _, goalName := range goals {
+		goal, err := c.goalRegistry.Get(goalName)
+		if err == nil {
+			// Escape single quotes in description to prevent shell injection
+			escapedDesc := strings.ReplaceAll(goal.Description, "'", "'\\''")
+			goalCompletions.WriteString(fmt.Sprintf("complete -c osm -n '__fish_seen_subcommand_from goal' -a '%s' -d '%s'\n",
+				goalName, escapedDesc))
+		}
+	}
+
 	script := fmt.Sprintf(`# Fish completion script for osm (one-shot-man)
 
 # Complete commands
@@ -192,15 +212,11 @@ func (c *CompletionCommand) generateFishCompletion(w io.Writer) error {
 complete -c osm -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish powershell' -d 'Shell'
 
 # Completion for 'goal' subcommand args (goal names)
-complete -c osm -n '__fish_seen_subcommand_from goal' -a 'comment-stripper' -d 'Remove useless comments and refactor useful ones'
-complete -c osm -n '__fish_seen_subcommand_from goal' -a 'doc-generator' -d 'Generate comprehensive documentation for code structures'
-complete -c osm -n '__fish_seen_subcommand_from goal' -a 'test-generator' -d 'Generate comprehensive test suites for existing code'
-complete -c osm -n '__fish_seen_subcommand_from goal' -a 'commit-message' -d 'Generate Kubernetes-style commit messages from diffs and context'
-# Installation instructions (as comments):
+%s# Installation instructions (as comments):
 # To install this completion script:
 # 1. Copy this script to ~/.config/fish/completions/osm.fish
 # 2. Or pipe it directly: osm completion fish > ~/.config/fish/completions/osm.fish
-`, completions.String())
+`, completions.String(), goalCompletions.String())
 
 	_, err := w.Write([]byte(script))
 	return err
@@ -210,6 +226,9 @@ complete -c osm -n '__fish_seen_subcommand_from goal' -a 'commit-message' -d 'Ge
 func (c *CompletionCommand) generatePowerShellCompletion(w io.Writer) error {
 	commands := c.registry.List()
 	commandList := strings.Join(commands, "', '")
+
+	goals := c.goalRegistry.List()
+	goalList := strings.Join(goals, "', '")
 
 	script := fmt.Sprintf(`# PowerShell completion script for osm (one-shot-man)
 
@@ -222,7 +241,7 @@ Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
 
 	$commands = @('%s')
 	$shells = @('bash', 'zsh', 'fish', 'powershell')
-	$goals = @('comment-stripper', 'doc-generator', 'test-generator', 'commit-message')
+	$goals = @('%s')
 
 	if ($line.TrimEnd().EndsWith(' ')) {
 		$tokenCount++
@@ -265,7 +284,7 @@ Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
 # 1. Add the above code to your PowerShell profile
 # 2. Find your profile location with: $PROFILE
 # 3. Or run directly: osm completion powershell | Invoke-Expression
-`, commandList)
+`, commandList, goalList)
 
 	_, err := w.Write([]byte(script))
 	return err

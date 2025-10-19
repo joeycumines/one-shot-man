@@ -88,6 +88,55 @@ script.path-patterns scripts,bin,commands
 script.path-patterns scripts:tools:utils
 ```
 
+### Goal Discovery Options
+
+Goal discovery controls how one-shot-man finds and loads custom goal definitions.
+
+#### `goal.autodiscovery` (boolean)
+**Default**: `true`
+**Description**: Enables automatic discovery of custom goal files in standard locations.
+
+```
+goal.autodiscovery true
+```
+
+When enabled, searches for custom goal files (`*.json`) in:
+- `~/.one-shot-man/goals/`
+- `<executable-dir>/goals/`
+- `./osm-goals/` (current directory)
+- Parent directories matching `goal.path-patterns`
+
+#### `goal.paths` (path list)
+**Default**: (empty)
+**Description**: Additional directories to search for custom goal files. Supports comma (`,`) separation and the platform list separator (`:` on Unix, `;` on Windows).
+
+```
+goal.paths ~/my-goals:/opt/shared-goals
+goal.paths ~/goals,/usr/local/goals
+goal.paths C:\goals;$EXTRA_GOALS   # Windows example
+```
+
+**Path Expansion**: Supports tilde (`~`) expansion and environment variable expansion (`$VAR`).
+
+#### `goal.path-patterns` (pattern list)
+**Default**: `osm-goals,goals`
+**Description**: Directory names to search for when performing autodiscovery. Supports comma (`,`) separation and the platform list separator.
+
+```
+goal.path-patterns osm-goals,goals
+goal.path-patterns my-goals:custom-goals
+```
+
+#### `goal.max-traversal-depth` (integer)
+**Default**: `10`
+**Description**: Limits how many directories to traverse upward when looking for goal directories.
+
+```
+goal.max-traversal-depth 5
+```
+
+**Range**: 1-100. Values outside this range fall back to the default.
+
 ### Prompt Configuration Options
 
 #### `prompt.color.*` (color specification)
@@ -342,3 +391,148 @@ osm config --all
 - [Main README](../README.md) - General usage and overview
 - [Script Command Documentation](../README.md#script-commands) - JavaScript scripting details
 - [Configuration Management](../README.md#configuration) - Basic configuration guide
+- [Custom Goals Example](custom-goal-example.json) - Example custom goal definition
+
+## Custom Goals
+
+Custom goals allow you to define reusable AI workflows with custom commands, state management, and context handling.
+
+### Goal File Format
+
+Custom goals are defined as JSON files with the following structure:
+
+```json
+{
+  "Name": "my-custom-goal",
+  "Description": "Brief description of what this goal does",
+  "Category": "category-name",
+  "Usage": "Detailed usage information",
+  "TUITitle": "Display Title",
+  "TUIPrompt": "(prompt) > ",
+  "HistoryFile": ".my_custom_goal_history",
+  "EnableHistory": true,
+  "StateKeys": {
+    "contextItems": [],
+    "customState": "initial-value"
+  },
+  "PromptInstructions": "Instructions for the AI assistant...",
+  "PromptTemplate": "{{.PromptInstructions}}\\n\\n{{.ContextTxtar}}",
+  "ContextHeader": "CONTEXT",
+  "BannerText": "Banner displayed on launch",
+  "HelpText": "Help text shown with the help command",
+  "Commands": [
+    {
+      "Name": "add",
+      "Type": "contextManager"
+    },
+    {
+      "Name": "custom",
+      "Type": "custom",
+      "Description": "Custom command description",
+      "Handler": "function (args) { /* JavaScript handler */ }"
+    }
+  ]
+}
+```
+
+### Required Fields
+
+- `Name`: Goal identifier (alphanumeric and hyphens only, no spaces)
+- `Description`: Brief description of the goal's purpose
+
+### Discovery Locations
+
+Custom goal files are discovered using a sophisticated score-based prioritization system. When multiple goal files define the same goal name, the file from the highest-priority location is used.
+
+#### Priority Order (Highest to Lowest)
+
+1. **Project-Local Goals (Class 0)**
+   - Current working directory: `./osm-goals/` or other patterns in `goal.path-patterns`
+   - Subdirectories of the current working directory
+   - Closer subdirectories are preferred over deeper ones
+
+2. **Ancestor Directory Goals (Class 1)**
+   - Goal directories found by traversing upward from the current directory
+   - Closer ancestors (fewer `..` steps) are preferred over more distant ones
+   - Must match patterns specified in `goal.path-patterns` (default: `osm-goals`, `goals`)
+
+3. **User Configuration Goals (Class 2)**
+   - `~/.one-shot-man/goals/` (or the directory specified by `ONESHOTMAN_CONFIG`)
+   - Shallower paths within the config directory are preferred
+
+4. **Executable Directory Goals (Class 3)**
+   - `<executable-dir>/goals/` - Goals relative to the `osm` executable location
+   - Shallower paths are preferred
+
+5. **Custom Configuration Paths (Evaluated by Class)**
+   - Paths specified in the `goal.paths` configuration option
+   - Classified and prioritized according to the rules above
+
+6. **Other/Unrelated Paths (Class 4)**
+   - Any paths that don't match the above categories
+   - Lowest priority
+
+**Note:** All paths are normalized to absolute paths, and duplicates are automatically eliminated. The discovery system ensures that the most contextually relevant goal definition is always selected.
+
+### Goal Naming
+
+- Goal names must be valid identifiers (alphanumeric characters and hyphens)
+- No spaces or special characters (except hyphens)
+- User goals override built-in goals with the same name
+- Goal files should be named `<goal-name>.json`
+
+### Creating Custom Goals
+
+1. Create a goal file in one of the discovery locations:
+   ```bash
+   mkdir -p ~/.one-shot-man/goals
+   nano ~/.one-shot-man/goals/my-goal.json
+   ```
+
+2. Define your goal (see [custom-goal-example.json](custom-goal-example.json) for a complete example)
+
+3. Test your goal:
+   ```bash
+   osm goal -l              # List all goals
+   osm goal my-goal         # Launch your custom goal
+   ```
+
+### Example: Simple Custom Goal
+
+```json
+{
+  "Name": "bug-analyzer",
+  "Description": "Analyze bug reports and suggest fixes",
+  "Category": "debugging",
+  "TUITitle": "Bug Analyzer",
+  "TUIPrompt": "(bug-analyzer) > ",
+  "EnableHistory": true,
+  "StateKeys": {
+    "contextItems": []
+  },
+  "PromptInstructions": "Analyze the provided bug report and code to:\n1. Identify the root cause\n2. Suggest potential fixes\n3. Provide reproduction steps",
+  "PromptTemplate": "{{.PromptInstructions}}\\n\\n## BUG REPORT\\n\\n{{.ContextTxtar}}",
+  "BannerText": "Bug Analyzer - Find and fix issues",
+  "Commands": [
+    {"Name": "add", "Type": "contextManager"},
+    {"Name": "list", "Type": "contextManager"},
+    {"Name": "show", "Type": "contextManager"},
+    {"Name": "copy", "Type": "contextManager"},
+    {"Name": "help", "Type": "help"}
+  ]
+}
+```
+
+### Shell Completion
+
+Shell completion scripts automatically include all discovered goals:
+
+```bash
+# Generate and install completion
+osm completion bash > /etc/bash_completion.d/osm
+osm completion zsh > ~/.zsh/completions/_osm
+osm completion fish > ~/.config/fish/completions/osm.fish
+
+# Your custom goals will appear in tab completion:
+osm goal <TAB>
+```

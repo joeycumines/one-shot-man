@@ -21,6 +21,14 @@ var (
 	getDefaultGitDiffArgsFn = getDefaultGitDiffArgs
 )
 
+// contentBlock holds the processed data for each distinct section before rendering.
+type contentBlock struct {
+	Title   string // The full title, e.g., "Note: Important", "Diff: git diff HEAD~1"
+	Content string // The raw payload for the section
+	Lang    string // The code block language (e.g., "diff"). Empty for non-code blocks.
+	IsError bool   // Flag to distinguish successful diffs from errors.
+}
+
 // SetRunGitDiffFn sets the git diff function for testing.
 func SetRunGitDiffFn(fn func(context.Context, []string) (string, string, bool)) func() {
 	old := runGitDiffFn
@@ -33,6 +41,32 @@ func SetGetDefaultGitDiffArgsFn(fn func(context.Context) []string) func() {
 	old := getDefaultGitDiffArgsFn
 	getDefaultGitDiffArgsFn = fn
 	return func() { getDefaultGitDiffArgsFn = old }
+}
+
+// calculateBacktickFence determines the required fence length based on content.
+// It scans all provided content strings for the longest consecutive run of backticks,
+// then returns a fence that is one character longer, with a minimum of 5 backticks.
+func calculateBacktickFence(contents []string) string {
+	maxLength := 0
+	for _, content := range contents {
+		currentRun := 0
+		for _, ch := range content {
+			if ch == '`' {
+				currentRun++
+				if currentRun > maxLength {
+					maxLength = currentRun
+				}
+			} else {
+				currentRun = 0
+			}
+		}
+	}
+
+	fenceLen := maxLength + 1
+	if fenceLen < 5 {
+		fenceLen = 5
+	}
+	return strings.Repeat("`", fenceLen)
 }
 
 // Require returns a CommonJS native module under "osm:ctxutil".
@@ -83,7 +117,7 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 				return runtime.ToValue("")
 			}
 
-			// Extract items as []any to iterate with minimal assumptions
+			// Extract items as []goja.Value to iterate with minimal assumptions
 			var items []goja.Value
 			if obj != nil && obj.ClassName() == "Array" {
 				l := int(obj.Get("length").ToInteger())
@@ -103,7 +137,9 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 				}
 			}
 
-			var buf strings.Builder
+			// Stage 1: Collection
+			var blocks []*contentBlock
+			var codeContents []string
 
 			for _, v := range items {
 				if goja.IsUndefined(v) || goja.IsNull(v) {
@@ -131,37 +167,50 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 				switch t {
 				case "note":
 					payload := safeGetString(obj, "payload")
-					buf.WriteString("### Note: ")
+					title := "Note: "
 					if label != "" {
-						buf.WriteString(label)
+						title += label
 					} else {
-						buf.WriteString("note")
+						title += "note"
 					}
-					buf.WriteString("\n\n")
-					buf.WriteString(payload)
-					buf.WriteString("\n\n---\n")
+					blocks = append(blocks, &contentBlock{
+						Title:   title,
+						Content: payload,
+						Lang:    "",
+						IsError: false,
+					})
+
 				case "diff":
 					payload := safeGetString(obj, "payload")
-					buf.WriteString("### Diff: ")
+					title := "Diff: "
 					if label != "" {
-						buf.WriteString(label)
+						title += label
 					} else {
-						buf.WriteString("git diff")
+						title += "git diff"
 					}
-					buf.WriteString("\n\n```diff\n")
-					buf.WriteString(payload)
-					buf.WriteString("\n```\n\n---\n")
+					blocks = append(blocks, &contentBlock{
+						Title:   title,
+						Content: payload,
+						Lang:    "diff",
+						IsError: false,
+					})
+					codeContents = append(codeContents, payload)
+
 				case "diff-error":
 					payload := safeGetString(obj, "payload")
-					buf.WriteString("### Diff Error: ")
+					title := "Diff Error: "
 					if label != "" {
-						buf.WriteString(label)
+						title += label
 					} else {
-						buf.WriteString("git diff")
+						title += "git diff"
 					}
-					buf.WriteString("\n\n")
-					buf.WriteString(payload)
-					buf.WriteString("\n\n---\n")
+					blocks = append(blocks, &contentBlock{
+						Title:   title,
+						Content: payload,
+						Lang:    "",
+						IsError: true,
+					})
+
 				case "lazy-diff":
 					// Determine argv for `git diff ...`
 					payloadVal := valueOrUndefined(obj.Get("payload"))
@@ -279,23 +328,29 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 					}
 
 					if hadErr {
-						buf.WriteString("### Diff Error: ")
-						buf.WriteString(finalLabel)
-						buf.WriteString("\n\n")
-						buf.WriteString("Error executing git diff: ")
-						buf.WriteString(errMsg)
-						buf.WriteString("\n\n---\n")
+						title := "Diff Error: " + finalLabel
+						content := "Error executing git diff: " + errMsg
+						blocks = append(blocks, &contentBlock{
+							Title:   title,
+							Content: content,
+							Lang:    "",
+							IsError: true,
+						})
 					} else {
-						buf.WriteString("### Diff: ")
-						buf.WriteString(finalLabel)
-						buf.WriteString("\n\n```diff\n")
-						buf.WriteString(out)
-						buf.WriteString("\n```\n\n---\n")
+						title := "Diff: " + finalLabel
+						blocks = append(blocks, &contentBlock{
+							Title:   title,
+							Content: out,
+							Lang:    "diff",
+							IsError: false,
+						})
+						codeContents = append(codeContents, out)
 					}
 				}
 			}
 
-			// Append txtar using options.toTxtar() if provided
+			// Process txtar content if provided
+			var txtarContent string
 			if len(call.Arguments) >= 2 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
 				// options is an object; look for toTxtar
 				optObj := call.Argument(1).ToObject(runtime)
@@ -303,13 +358,43 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 					if callable, ok := goja.AssertFunction(v); ok {
 						if res, err := callable(goja.Undefined(), nil...); err == nil {
 							if !goja.IsUndefined(res) && !goja.IsNull(res) && res.String() != "" {
-								buf.WriteString("```\n")
-								buf.WriteString(res.String())
-								buf.WriteString("\n```")
+								txtarContent = res.String()
+								codeContents = append(codeContents, txtarContent)
 							}
 						}
 					}
 				}
+			}
+
+			// Stage 2: Rendering
+			fence := calculateBacktickFence(codeContents)
+			var buf strings.Builder
+
+			for _, block := range blocks {
+				buf.WriteString("### ")
+				buf.WriteString(block.Title)
+				buf.WriteString("\n\n")
+
+				if block.Lang == "diff" {
+					buf.WriteString(fence)
+					buf.WriteString("diff\n")
+					buf.WriteString(block.Content)
+					buf.WriteString("\n")
+					buf.WriteString(fence)
+					buf.WriteString("\n\n---\n")
+				} else {
+					buf.WriteString(block.Content)
+					buf.WriteString("\n\n---\n")
+				}
+			}
+
+			// Append txtar block if present
+			if txtarContent != "" {
+				buf.WriteString(fence)
+				buf.WriteString("txtar\n")
+				buf.WriteString(txtarContent)
+				buf.WriteString("\n")
+				buf.WriteString(fence)
 			}
 
 			return runtime.ToValue(buf.String())

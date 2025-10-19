@@ -72,7 +72,7 @@ func TestBuildContextFormatting(t *testing.T) {
 	if !strings.Contains(text, "### Note: Important") || !strings.Contains(text, "Remember") {
 		t.Fatalf("missing note section: %q", text)
 	}
-	if !strings.Contains(text, "### Diff: git diff") || !strings.Contains(text, "```diff\n+added") {
+	if !strings.Contains(text, "### Diff: git diff") || !strings.Contains(text, "`````diff\n+added") {
 		t.Fatalf("missing diff section: %q", text)
 	}
 	if !strings.Contains(text, "### Diff Error: git diff") || !strings.Contains(text, "error details") {
@@ -84,7 +84,7 @@ func TestBuildContextFormatting(t *testing.T) {
 	if !strings.Contains(text, "### Diff: git diff BASE HEAD") || !strings.Contains(text, "default diff") {
 		t.Fatalf("expected fallback diff output to appear: %q", text)
 	}
-	if !strings.Contains(text, "```\ncontent\nof\ntxtar\n```") {
+	if !strings.Contains(text, "`````txtar\ncontent\nof\ntxtar\n`````") {
 		t.Fatalf("missing txtar block: %q", text)
 	}
 
@@ -285,4 +285,111 @@ func TestBuildContextLazyDiffExportedSlice(t *testing.T) {
 	if text := runtime.Get("__lazyBad").String(); !strings.Contains(text, "Invalid payload: expected a string array, but found non-string element at index 1") {
 		t.Fatalf("expected invalid payload error, got: %q", text)
 	}
+}
+
+func TestBuildContextDynamicFence(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Escaping", func(t *testing.T) {
+		runtime := setupBuildContext(t)
+
+		originalRun := runGitDiffFn
+		t.Cleanup(func() { runGitDiffFn = originalRun })
+
+		runGitDiffFn = func(ctx context.Context, args []string) (string, string, bool) {
+			return "diff content with ````` backticks", "", false
+		}
+
+		// Content with 5 backticks should result in 6-backtick fence
+		script := "const items = [{ type: 'diff', payload: 'diff with ' + '`````' + ' backticks' }]; globalThis.__result = exports.buildContext(items);"
+		if _, err := runtime.RunString(script); err != nil {
+			t.Fatalf("failed to execute script: %v", err)
+		}
+
+		text := runtime.Get("__result").String()
+		// With 5 backticks in content, fence should be 6
+		if !strings.Contains(text, "``````diff\n") {
+			t.Fatalf("expected 6-backtick fence for escaping, got: %q", text)
+		}
+		if !strings.Contains(text, "\n``````\n") {
+			t.Fatalf("expected closing 6-backtick fence, got: %q", text)
+		}
+	})
+
+	t.Run("MinimumLength", func(t *testing.T) {
+		runtime := setupBuildContext(t)
+
+		script := `
+			const items = [{ type: "diff", payload: "no backticks here" }];
+			globalThis.__result = exports.buildContext(items);
+		`
+		if _, err := runtime.RunString(script); err != nil {
+			t.Fatalf("failed to execute script: %v", err)
+		}
+
+		text := runtime.Get("__result").String()
+		if !strings.Contains(text, "`````diff\n") {
+			t.Fatalf("expected 5-backtick fence (minimum), got: %q", text)
+		}
+		if !strings.Contains(text, "\n`````\n") {
+			t.Fatalf("expected closing 5-backtick fence, got: %q", text)
+		}
+	})
+
+	t.Run("Consistency", func(t *testing.T) {
+		runtime := setupBuildContext(t)
+
+		// Use string concatenation to create backticks: 4 and 5 backticks respectively
+		script := "const items = [" +
+			"{ type: 'diff', label: 'first', payload: '```' + '`' }," +
+			"{ type: 'diff', label: 'second', payload: '```' + '``' }" +
+			"]; globalThis.__result = exports.buildContext(items);"
+		if _, err := runtime.RunString(script); err != nil {
+			t.Fatalf("failed to execute script: %v", err)
+		}
+
+		text := runtime.Get("__result").String()
+
+		// Both blocks should use 6-backtick fence
+		firstDiffStart := strings.Index(text, "### Diff: first")
+		secondDiffStart := strings.Index(text, "### Diff: second")
+
+		if firstDiffStart == -1 || secondDiffStart == -1 {
+			t.Fatalf("missing diff sections in output: %q", text)
+		}
+
+		// Check first block uses 6 backticks
+		firstBlock := text[firstDiffStart:secondDiffStart]
+		if !strings.Contains(firstBlock, "``````diff\n") {
+			t.Fatalf("expected first block to use 6-backtick fence, got: %q", firstBlock)
+		}
+
+		// Check second block uses 6 backticks
+		if !strings.Contains(text[secondDiffStart:], "``````diff\n") {
+			t.Fatalf("expected second block to use 6-backtick fence, got: %q", text[secondDiffStart:])
+		}
+	})
+
+	t.Run("TxtarInfluence", func(t *testing.T) {
+		runtime := setupBuildContext(t)
+
+		// Use string concatenation to include backticks in toTxtar return value
+		script := "const items = [{ type: 'diff', payload: 'simple diff' }]; " +
+			"globalThis.__result = exports.buildContext(items, { " +
+			"toTxtar: () => 'txtar with ' + '`````' + ' backticks' " +
+			"});"
+		if _, err := runtime.RunString(script); err != nil {
+			t.Fatalf("failed to execute script: %v", err)
+		}
+
+		text := runtime.Get("__result").String()
+
+		// Both diff and txtar blocks should use 6-backtick fence
+		if !strings.Contains(text, "``````diff\n") {
+			t.Fatalf("expected diff block to use 6-backtick fence, got: %q", text)
+		}
+		if !strings.Contains(text, "``````txtar\n") {
+			t.Fatalf("expected txtar block to use 6-backtick fence and be labeled, got: %q", text)
+		}
+	})
 }

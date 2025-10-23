@@ -38,9 +38,7 @@ func TestNewScriptingCommand(t *testing.T) {
 	if cmd.config != cfg {
 		t.Fatalf("expected config to be retained")
 	}
-	if cmd.engineFactory == nil {
-		t.Fatalf("expected engineFactory to be initialized")
-	}
+	// engineFactory is intentionally nil - Execute() creates it with correct session/storage params
 	if cmd.terminalFactory == nil {
 		t.Fatalf("expected terminalFactory to be initialized")
 	}

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
@@ -19,6 +21,8 @@ type ScriptingCommand struct {
 	interactive     bool
 	script          string
 	testMode        bool
+	session         string
+	storageBackend  string
 	config          *config.Config
 	engineFactory   func(context.Context, io.Writer, io.Writer) (*scripting.Engine, error)
 	terminalFactory func(context.Context, *scripting.Engine) terminalRunner
@@ -37,9 +41,7 @@ func NewScriptingCommand(cfg *config.Config) *ScriptingCommand {
 			"script [options] [script-file]",
 		),
 		config: cfg,
-		engineFactory: func(ctx context.Context, stdout, stderr io.Writer) (*scripting.Engine, error) {
-			return scripting.NewEngine(ctx, stdout, stderr)
-		},
+		// No default engineFactory - Execute() will create the correct one with session/storage params
 		terminalFactory: func(ctx context.Context, engine *scripting.Engine) terminalRunner {
 			return scripting.NewTerminal(ctx, engine)
 		},
@@ -53,17 +55,23 @@ func (c *ScriptingCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.script, "script", "", "JavaScript code to execute directly")
 	fs.StringVar(&c.script, "e", "", "JavaScript code to execute directly (short form)")
 	fs.BoolVar(&c.testMode, "test", false, "Enable test mode with verbose output")
+	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
+	fs.StringVar(&c.storageBackend, "storage-backend", "", "Storage backend to use: 'fs' (default) or 'memory' (overrides OSM_STORAGE_BACKEND)")
 }
 
 // Execute runs the scripting command.
 func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) error {
-	ctx := context.Background()
+	// Create a context that cancels on interrupt signals (SIGINT, SIGTERM)
+	// This ensures goroutines spawned by the engine are properly cleaned up
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 
-	// Create scripting engine
+	// Create scripting engine with explicit session configuration (no globals!)
 	engineFactory := c.engineFactory
 	if engineFactory == nil {
+		// Use the new API with explicit parameters to avoid data races
 		engineFactory = func(ctx context.Context, stdout, stderr io.Writer) (*scripting.Engine, error) {
-			return scripting.NewEngine(ctx, stdout, stderr)
+			return scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.storageBackend)
 		}
 	}
 

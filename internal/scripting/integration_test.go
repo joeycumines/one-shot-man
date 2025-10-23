@@ -31,8 +31,33 @@ func requireExpectExitCode(t *testing.T, p *termtest.ConsoleProcess, exitCode in
 	}
 }
 
+// newTestProcessEnv creates an isolated environment for subprocess tests.
+// It provides:
+//   - Unique session ID to prevent session state sharing
+//   - Memory storage backend to avoid filesystem contention
+//   - Unique clipboard file in a temporary directory
+//
+// Test-specific variables like EDITOR should be appended by the caller.
+func newTestProcessEnv(tb testing.TB) []string {
+	tb.Helper()
+	clipboardFile := filepath.Join(tb.(*testing.T).TempDir(), "clipboard.txt")
+	return []string{
+		"OSM_SESSION_ID=" + fmt.Sprintf("test-%s-%d", tb.Name(), time.Now().UnixNano()),
+		"OSM_STORAGE_BACKEND=memory",
+		"ONESHOT_CLIPBOARD_CMD=cat > " + clipboardFile,
+	}
+}
+
 func mustNewEngine(tb testing.TB, ctx context.Context, stdout, stderr io.Writer) *Engine {
 	tb.Helper()
+	// Set memory storage backend to prevent session lock warnings in tests
+	tb.Setenv("OSM_STORAGE_BACKEND", "memory")
+	tb.Setenv("OSM_SESSION_ID", fmt.Sprintf("test-%s-%d", tb.Name(), time.Now().UnixNano()))
+
+	// Create a context that will be cancelled when the test ends to prevent goroutine leaks
+	ctx, cancel := context.WithCancel(ctx)
+	tb.Cleanup(cancel)
+
 	engine, err := NewEngine(ctx, stdout, stderr)
 	if err != nil {
 		tb.Fatalf("NewEngine failed: %v", err)
@@ -46,7 +71,6 @@ func mustNewEngine(tb testing.TB, ctx context.Context, stdout, stderr io.Writer)
 // TestFullLLMWorkflow tests a complete LLM prompt building workflow
 func TestFullLLMWorkflow(t *testing.T) {
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	t.Logf("Built binary at: %s", binaryPath)
 
@@ -61,10 +85,13 @@ func TestFullLLMWorkflow(t *testing.T) {
 	t.Logf("Project directory: %s", projectDir)
 	t.Logf("Script path: %s", scriptPath)
 
+	env := newTestProcessEnv(t)
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"script", "-i", scriptPath},
 		DefaultTimeout: 60 * time.Second,
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -386,12 +413,14 @@ ctx.log("Modes registered: calculator, notes");
 	defer os.Remove(scriptPath)
 
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
+
+	env := newTestProcessEnv(t)
 
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"script", "-i", scriptPath},
 		DefaultTimeout: 60 * time.Second,
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -507,7 +536,6 @@ ctx.log("Modes registered: calculator, notes");
 // TestErrorHandling tests error conditions and edge cases
 func TestErrorHandling(t *testing.T) {
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	wd, err := os.Getwd()
 	if err != nil {
@@ -515,10 +543,13 @@ func TestErrorHandling(t *testing.T) {
 	}
 	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
 
+	env := newTestProcessEnv(t)
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"script", "-i", filepath.Join(projectDir, "scripts", "demo-mode.js")},
 		DefaultTimeout: 60 * time.Second,
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)

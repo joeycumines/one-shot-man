@@ -41,7 +41,14 @@ type Script struct {
 }
 
 // NewEngine creates a new JavaScript scripting engine.
+// For test isolation and to avoid data races, use NewEngineWithConfig instead.
 func NewEngine(ctx context.Context, stdout, stderr io.Writer) (*Engine, error) {
+	return NewEngineWithConfig(ctx, stdout, stderr, "", "")
+}
+
+// NewEngineWithConfig creates a new JavaScript scripting engine with explicit session configuration.
+// sessionID and storageBackend parameters override environment-based discovery and avoid data races.
+func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionID, storageBackend string) (*Engine, error) {
 	// Get current working directory for context manager
 	workingDir, err := os.Getwd()
 	if err != nil {
@@ -78,8 +85,8 @@ func NewEngine(ctx context.Context, stdout, stderr io.Writer) (*Engine, error) {
 		registry.Enable(engine.vm)
 	}
 
-	// Create TUI manager
-	engine.tuiManager = NewTUIManager(ctx, engine, os.Stdin, os.Stdout)
+	// Create TUI manager with explicit configuration
+	engine.tuiManager = NewTUIManagerWithConfig(ctx, engine, os.Stdin, os.Stdout, sessionID, storageBackend)
 
 	// Set up the global context and APIs
 	engine.setupGlobals()

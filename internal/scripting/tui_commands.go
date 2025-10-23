@@ -118,6 +118,9 @@ func (tm *TUIManager) showHelp() {
 	}
 }
 
+// WARNING: Find usages. If you're adding or adjusting a command with args, you may need completion support.
+var builtinCommands = []string{"help", "exit", "quit", "mode", "modes", "state", "reset"}
+
 // registerBuiltinCommands registers the built-in commands.
 func (tm *TUIManager) registerBuiltinCommands() {
 	// Mode switching command
@@ -180,6 +183,25 @@ func (tm *TUIManager) registerBuiltinCommands() {
 					_, _ = fmt.Fprintf(tm.output, "  %s: %v\n", key, value)
 				}
 			}
+			return nil
+		},
+		IsGoCommand: true,
+	})
+
+	// Reset command
+	tm.RegisterCommand(Command{
+		Name:        "reset",
+		Description: "Reset all shared and mode-specific state to default values",
+		Usage:       "reset",
+		Handler: func(args []string) error {
+			if len(args) != 0 {
+				return fmt.Errorf("usage: reset (takes no arguments)")
+			}
+
+			// Call the new reset logic
+			tm.resetAllState()
+
+			_, _ = fmt.Fprintln(tm.output, "All shared and mode-specific state has been reset to default values.")
 			return nil
 		},
 		IsGoCommand: true,

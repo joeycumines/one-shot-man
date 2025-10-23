@@ -4,6 +4,7 @@ package command
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,6 +31,8 @@ func TestPromptFlow_GoalCommandOpensEditor(t *testing.T) {
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 15 * time.Second,
 		Env: []string{
+			"OSM_STORAGE_BACKEND=memory",
+			"OSM_SESSION_ID=" + uniqueSessionID(t),
 			"EDITOR=" + editorScript,
 			"VISUAL=",
 			"ONESHOT_CLIPBOARD_CMD=cat > /dev/null",
@@ -81,6 +84,8 @@ func TestPromptFlow_UseCommandOpensEditor(t *testing.T) {
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 15 * time.Second,
 		Env: []string{
+			"OSM_STORAGE_BACKEND=memory",
+			"OSM_SESSION_ID=" + uniqueSessionID(t),
 			"EDITOR=" + editorScript,
 			"VISUAL=",
 			"ONESHOT_CLIPBOARD_CMD=cat > /dev/null",
@@ -202,4 +207,9 @@ func requirePromptFlowExpectSince(t *testing.T, cp *termtest.ConsoleProcess, exp
 	if raw, err := cp.ExpectSince(expected, start, timeout); err != nil {
 		t.Fatalf("Expected to find %q in new output since offset %d, but got error: %v\nRaw:\n%s\n", expected, start, err, raw)
 	}
+}
+
+// uniqueSessionID generates a unique session ID for a test to prevent session state sharing
+func uniqueSessionID(t *testing.T) string {
+	return fmt.Sprintf("test-%s-%d", t.Name(), time.Now().UnixNano())
 }

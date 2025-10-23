@@ -57,7 +57,8 @@ func TestCommandCompletionOrder(t *testing.T) {
 
 	// Verify the order matches registration order (after built-in commands)
 	// Built-in commands are registered first during initialization
-	builtinCommands := []string{"mode", "modes", "state"}
+	// Note: "help", "exit", "quit" are handled specially in the executor, not registered as commands
+	builtinCommands := []string{"mode", "modes", "state", "reset"}
 	expectedOrder := append(builtinCommands, "zebra", "alpha", "beta", "gamma")
 
 	if len(firstSnapshot) != len(expectedOrder) {

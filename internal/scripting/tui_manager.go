@@ -7,16 +7,31 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
 	istrings "github.com/joeycumines/go-prompt/strings"
 	"github.com/joeycumines/one-shot-man/internal/argv"
+	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
 )
 
-// NewTUIManager creates a new TUI manager.
-func NewTUIManager(ctx context.Context, engine *Engine, input io.Reader, output io.Writer) *TUIManager {
+// extractCommandHistory converts storage.HistoryEntry slice into []string for go-prompt.
+// The go-prompt history manager handles de-duplication and ordering.
+// We provide the complete, chronological list of commands.
+func extractCommandHistory(entries []storage.HistoryEntry) []string {
+	commands := make([]string, len(entries))
+	for i, entry := range entries {
+		commands[i] = entry.Command
+	}
+	return commands
+}
+
+// NewTUIManagerWithConfig creates a new TUI manager with explicit session configuration.
+// This function should be used instead of NewTUIManager to avoid data races on global state.
+func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reader, output io.Writer, sessionID, storageBackend string) *TUIManager {
+	// Discover session ID with explicit override
+	actualSessionID := discoverSessionID(sessionID)
+
 	manager := &TUIManager{
 		engine:           engine,
 		ctx:              ctx,
@@ -33,6 +48,7 @@ func NewTUIManager(ctx context.Context, engine *Engine, input io.Reader, output 
 		pendingContracts: make(map[string]*StateContract),
 		sharedContracts:  make([]*StateContract, 0),
 		sharedState:      make(map[goja.Value]interface{}),
+		sessionID:        actualSessionID,
 		defaultColors: PromptColors{
 			// Choose a readable default for input that is not yellow/white-adjacent
 			InputText:               prompt.Green,
@@ -48,6 +64,19 @@ func NewTUIManager(ctx context.Context, engine *Engine, input io.Reader, output 
 			ScrollbarThumb:          prompt.DarkGray,
 			ScrollbarBG:             prompt.Black,
 		},
+	}
+
+	// Initialize state manager with explicit backend
+	stateManager, err := initializeStateManager(actualSessionID, storageBackend)
+	if err != nil {
+		// Log the error but continue - the TUI can function without persistence
+		fmt.Fprintf(output, "Warning: Failed to initialize state persistence: %v\n", err)
+		fmt.Fprintln(output, "Session will run in ephemeral mode (state will not be persisted)")
+		manager.commandHistory = make([]string, 0)
+	} else {
+		manager.stateManager = stateManager
+		// Load command history *safely* using the new accessor
+		manager.commandHistory = extractCommandHistory(manager.stateManager.GetSessionHistory())
 	}
 
 	// Register built-in commands
@@ -413,11 +442,6 @@ func (tm *TUIManager) Run() {
 		tm.outputQueue = append(tm.outputQueue, msg)
 		tm.outputMu.Unlock()
 	})
-	// Prominent, unavoidable warning: this TUI is ephemeral and does not persist state
-	_, _ = fmt.Fprintln(writer, "================================================================")
-	_, _ = fmt.Fprintln(writer, "WARNING: EPHEMERAL SESSION - nothing is persisted. Your work will be lost on exit.")
-	_, _ = fmt.Fprintln(writer, "Save or export anything you need BEFORE quitting.")
-	_, _ = fmt.Fprintln(writer, "================================================================")
 	_, _ = fmt.Fprintln(writer, "one-shot-man Rich TUI Terminal")
 	_, _ = fmt.Fprintln(writer, "Type 'help' for available commands, 'exit' to quit")
 	modes := tm.ListModes()
@@ -487,10 +511,9 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		),
 	}
 
-	// Add default history support
-	defaultHistoryFile := ".osm_history"
-	if history := loadHistory(defaultHistoryFile); len(history) > 0 {
-		options = append(options, prompt.WithHistory(history))
+	// Add command history from persistent session
+	if len(tm.commandHistory) > 0 {
+		options = append(options, prompt.WithHistory(tm.commandHistory))
 	}
 
 	// Add any registered key bindings
@@ -684,6 +707,13 @@ func (tm *TUIManager) initModeState(mode *ScriptMode) {
 		mode.State = make(map[goja.Value]interface{})
 	}
 
+	// **CRITICAL FIX**: For shared contracts, do NOT initialize defaults in mode.State!
+	// Shared state lives in tm.sharedState, not in individual mode.State maps.
+	if mode.StateContract.IsShared {
+		// Shared contracts don't get mode-level defaults
+		return
+	}
+
 	// Iterate over the contract definitions
 	for _, def := range mode.StateContract.Definitions {
 		// Check if the Symbol-keyed value exists in the current state
@@ -735,28 +765,19 @@ func (tm *TUIManager) GetStateForTest(persistentKey string) (interface{}, error)
 }
 
 // captureHistorySnapshot serializes the current mode's state and logs it as a history entry.
+// Phase 4.3: Updated to collect complete application state (all modes + shared) and
+// delegate to StateManager.CaptureSnapshot for persistence.
 func (tm *TUIManager) captureHistorySnapshot(commandName string, commandArgs []string) {
+	if tm.stateManager == nil {
+		// No state manager, skip persistence
+		return
+	}
+
 	tm.mu.RLock()
 	currentMode := tm.currentMode
 	tm.mu.RUnlock()
 
 	if currentMode == nil {
-		return
-	}
-
-	currentMode.mu.RLock()
-	// Copy the state map to avoid holding the lock during serialization
-	stateCopy := make(map[goja.Value]interface{}, len(currentMode.State))
-	for k, v := range currentMode.State {
-		stateCopy[k] = v
-	}
-	modeName := currentMode.Name
-	currentMode.mu.RUnlock()
-
-	// Serialize the state (this may take time, so we do it without holding locks)
-	stateJSON, err := SerializeState(tm.engine.symbolRegistry, tm.engine.vm, stateCopy)
-	if err != nil {
-		fmt.Fprintf(tm.output, "Warning: Failed to serialize state for history: %v\n", err)
 		return
 	}
 
@@ -766,17 +787,57 @@ func (tm *TUIManager) captureHistorySnapshot(commandName string, commandArgs []s
 		cmdString = fmt.Sprintf("%s %s", commandName, strings.Join(commandArgs, " "))
 	}
 
-	// Create the history entry
-	entry := HistoryEntry{
-		Command:    cmdString,
-		Timestamp:  time.Now().UTC(),
-		FinalState: stateJSON,
+	// Collect complete application state from all modes + shared state
+	stateMap := make(map[string]string)
+
+	// 1. Serialize shared state
+	tm.sharedMu.RLock()
+	sharedStateCopy := make(map[goja.Value]interface{}, len(tm.sharedState))
+	for k, v := range tm.sharedState {
+		sharedStateCopy[k] = v
+	}
+	tm.sharedMu.RUnlock()
+
+	if len(sharedStateCopy) > 0 {
+		sharedJSON, err := SerializeState(tm.engine.symbolRegistry, tm.engine.vm, sharedStateCopy)
+		if err != nil {
+			fmt.Fprintf(tm.output, "Warning: Failed to serialize shared state for history: %v\n", err)
+		} else {
+			stateMap["__shared__"] = sharedJSON
+		}
 	}
 
-	// Append to history (need write lock for the history map)
-	tm.mu.Lock()
-	tm.history[modeName] = append(tm.history[modeName], entry)
-	tm.mu.Unlock()
+	// 2. Serialize all mode states
+	tm.mu.RLock()
+	modes := make(map[string]*ScriptMode, len(tm.modes))
+	for name, mode := range tm.modes {
+		modes[name] = mode
+	}
+	tm.mu.RUnlock()
+
+	for modeName, mode := range modes {
+		mode.mu.RLock()
+		modeCopy := make(map[goja.Value]interface{}, len(mode.State))
+		for k, v := range mode.State {
+			modeCopy[k] = v
+		}
+		mode.mu.RUnlock()
+
+		if len(modeCopy) > 0 {
+			modeJSON, err := SerializeState(tm.engine.symbolRegistry, tm.engine.vm, modeCopy)
+			if err != nil {
+				fmt.Fprintf(tm.output, "Warning: Failed to serialize state for mode %s: %v\n", modeName, err)
+			} else {
+				stateMap[modeName] = modeJSON
+			}
+		}
+	}
+
+	// Delegate to StateManager to capture the snapshot with contract hashes
+	modeID := currentMode.Name
+	if err := tm.stateManager.CaptureSnapshot(modeID, cmdString, stateMap); err != nil {
+		fmt.Fprintf(tm.output, "Warning: Failed to capture history snapshot: %v\n", err)
+	}
 }
 
 // === TEST-ONLY HELPERS ===
@@ -818,4 +879,172 @@ func (tm *TUIManager) SetStateViaJS(persistentKey string, value interface{}) err
 
 	tm.setStateBySymbol(def.Symbol, value)
 	return nil
+}
+
+// TriggerExit programmatically stops the prompt for graceful shutdown.
+func (tm *TUIManager) TriggerExit() {
+	tm.mu.Lock()
+	p := tm.activePrompt
+	tm.mu.Unlock()
+
+	if p != nil {
+		p.Close()
+	}
+}
+
+// PersistSessionForTest persists the current session (for testing only).
+func (tm *TUIManager) PersistSessionForTest() error {
+	if tm.stateManager != nil {
+		return tm.stateManager.PersistSession()
+	}
+	return nil
+}
+
+// Close releases resources held by the TUI manager, including the state manager.
+func (tm *TUIManager) Close() error {
+	if tm.stateManager != nil {
+		return tm.stateManager.Close()
+	}
+	return nil
+}
+
+// resetSharedState atomically clears and re-initializes the global sharedState
+// map based on the default values in all registered shared contracts.
+func (tm *TUIManager) resetSharedState() {
+	tm.contractMu.Lock()
+	defer tm.contractMu.Unlock()
+
+	tm.sharedMu.Lock()
+	defer tm.sharedMu.Unlock()
+
+	// Create a new map to hold the reset state
+	newState := make(map[goja.Value]interface{})
+
+	// Iterate over all registered shared contracts
+	for _, contract := range tm.sharedContracts {
+		// Populate the new state map with default values
+		for _, def := range contract.Definitions {
+			if def.DefaultValue != nil {
+				newState[def.Symbol] = def.DefaultValue
+			}
+		}
+	}
+
+	// Atomically replace the old state map with the new one
+	tm.sharedState = newState
+}
+
+// resetAllModeStates iterates over every registered ScriptMode and atomically
+// resets its mode-specific state to its contract's default values.
+func (tm *TUIManager) resetAllModeStates() {
+	// Read-lock the main TUIManager to safely iterate the tm.modes map
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	for _, mode := range tm.modes {
+		// Acquire a write-lock for each specific mode to reset its state
+		mode.mu.Lock()
+
+		newState := make(map[goja.Value]interface{})
+
+		// Only reset state for modes that have a non-shared contract
+		if mode.StateContract != nil && !mode.StateContract.IsShared {
+			// Populate the new state map with default values
+			for _, def := range mode.StateContract.Definitions {
+				if def.DefaultValue != nil {
+					newState[def.Symbol] = def.DefaultValue
+				}
+			}
+		}
+
+		// Atomically replace the mode's old state map
+		mode.State = newState
+		mode.mu.Unlock()
+	}
+}
+
+// resetAllState performs a complete reset of all in-memory state,
+// including shared state and all mode-specific states.
+func (tm *TUIManager) resetAllState() {
+	tm.resetSharedState()
+	tm.resetAllModeStates()
+}
+
+// rehydrateContextManager re-populates the ContextManager from a restored state.
+// This function looks for an "items" array in the state (as defined by ctxutil.js)
+// and re-adds each file-type entry to the ContextManager.
+//
+// This is called after state deserialization to ensure the Go-side ContextManager
+// is synchronized with the persisted JavaScript state, making context commands
+// like remove and toTxtar functional across session restarts.
+func (tm *TUIManager) rehydrateContextManager(restoredState map[goja.Value]interface{}, contract *StateContract) {
+	if contract == nil || tm.engine == nil || tm.engine.contextManager == nil {
+		return
+	}
+
+	// Step 1: Locate the "items" symbol in the contract
+	var itemsSymbolString string
+	for persistentKey, def := range contract.Definitions {
+		// The persistent key has format "namespace:key", we need to match the key part
+		if strings.HasSuffix(persistentKey, ":items") || persistentKey == "items" {
+			// After deserialization, state keys are strings (Symbol.toString() representation)
+			itemsSymbolString = def.Symbol.String()
+			break
+		}
+	}
+
+	if itemsSymbolString == "" {
+		// No "items" key in this contract, nothing to rehydrate
+		return
+	}
+
+	// Step 2: Extract the items array from the restored state
+	// We must iterate and match against the string representation
+	var itemsValue interface{}
+	var exists bool
+	for k, v := range restoredState {
+		keyString := k.String()
+		if keyString == itemsSymbolString {
+			itemsValue = v
+			exists = true
+			break
+		}
+	}
+
+	if !exists {
+		// No items in the restored state
+		return
+	}
+
+	// Step 3: Convert the JavaScript array to a Go slice
+	var items []map[string]interface{}
+	itemsGojaValue := tm.engine.vm.ToValue(itemsValue)
+	if err := tm.engine.vm.ExportTo(itemsGojaValue, &items); err != nil {
+		fmt.Fprintf(tm.output, "Warning: Failed to convert items array for context rehydration: %v\n", err)
+		return
+	}
+
+	// Step 4: Iterate through items and re-populate the ContextManager
+	for _, item := range items {
+		// Verify the item has the expected structure
+		itemType, hasType := item["type"].(string)
+		label, hasLabel := item["label"].(string)
+
+		if !hasType || !hasLabel {
+			// Skip malformed items
+			continue
+		}
+
+		// Only process file-type items
+		if itemType == "file" {
+			if err := tm.engine.contextManager.AddPath(label); err != nil {
+				// If the file no longer exists, log it but continue
+				if os.IsNotExist(err) {
+					fmt.Fprintf(tm.output, "Info: file from previous session not found: %s\n", label)
+				} else {
+					fmt.Fprintf(tm.output, "Info: could not restore context file %s: %v\n", label, err)
+				}
+			}
+		}
+	}
 }

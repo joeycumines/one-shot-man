@@ -21,7 +21,7 @@ func TestGoPromptIntegration(t *testing.T) {
 			globals: make(map[string]interface{}),
 		}
 
-		tm := NewTUIManager(context.Background(), engine, os.Stdin, os.Stdout)
+		tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, "", "")
 
 		// Register a test mode
 		tm.RegisterMode(&ScriptMode{
@@ -65,7 +65,7 @@ func TestGoPromptIntegration(t *testing.T) {
 			globals: make(map[string]interface{}),
 		}
 
-		tm := NewTUIManager(context.Background(), engine, os.Stdin, os.Stdout)
+		tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, "", "")
 
 		// Test the executor function behavior with help command
 		var output strings.Builder
@@ -97,7 +97,7 @@ func TestGoPromptIntegration(t *testing.T) {
 			globals: make(map[string]interface{}),
 		}
 
-		tm := NewTUIManager(context.Background(), engine, os.Stdin, os.Stdout)
+		tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, "", "")
 
 		// Test prompt string generation
 		promptString := tm.getPromptString()
@@ -132,7 +132,7 @@ func TestFullGoPromptWorkflow(t *testing.T) {
 		globals: make(map[string]interface{}),
 	}
 
-	tm := NewTUIManager(context.Background(), engine, os.Stdin, os.Stdout)
+	tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, "", "")
 
 	// Register commands and modes (same as in production)
 	tm.RegisterMode(&ScriptMode{

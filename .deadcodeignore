@@ -11,3 +11,8 @@ internal/scripting/builtin/ctxutil/ctxutil.go:*: unreachable func: SetGetDefault
 
 # DeserializeState is part of the public API for state persistence (currently unused in production but tested)
 internal/scripting/state_contract.go:*: unreachable func: DeserializeState
+
+internal/scripting/storage/atomic_write.go:*: unreachable func: SetTestHookCrashBeforeRename
+internal/scripting/storage/memory_backend.go:*: unreachable func: ClearAllInMemorySessions
+internal/scripting/storage/paths.go:*: unreachable func: SetTestPaths
+internal/scripting/storage/paths.go:*: unreachable func: ResetPaths

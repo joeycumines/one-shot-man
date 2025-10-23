@@ -14,13 +14,15 @@ import (
 // when executed in non-interactive test mode, and emits the expected banner/help text.
 func TestPromptFlow_NonInteractive(t *testing.T) {
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
+
+	env := newTestProcessEnv(t)
 
 	// Run the CLI in non-interactive test mode to evaluate the built-in prompt-flow command
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "--test"},
 		DefaultTimeout: 20 * time.Second,
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -49,17 +51,15 @@ func TestPromptFlow_NonInteractive(t *testing.T) {
 
 func TestPromptFlow_GenerateRequiresGoal(t *testing.T) {
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
+
+	env := newTestProcessEnv(t)
+	env = append(env, "VISUAL=", "EDITOR=")
 
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 30 * time.Second,
-		Env: []string{
-			"VISUAL=",
-			"EDITOR=",
-			"ONESHOT_CLIPBOARD_CMD=cat >/dev/null",
-		},
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -90,7 +90,6 @@ func TestPromptFlow_GenerateRequiresGoal(t *testing.T) {
 // It avoids commands that would open the system editor (goal without args, template, generate).
 func TestPromptFlow_Interactive(t *testing.T) {
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	wd, err := os.Getwd()
 	if err != nil {
@@ -116,16 +115,14 @@ fi
 		t.Fatalf("failed to write fake editor: %v", err)
 	}
 
+	env := newTestProcessEnv(t)
+	env = append(env, "EDITOR="+editorScript, "VISUAL=")
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 30 * time.Second, // Increased from 60s - this comprehensive integration test needs more time
-		Env: []string{
-			"EDITOR=" + editorScript,
-			"VISUAL=",
-			// ensure clipboard cmd is harmless and fast
-			"ONESHOT_CLIPBOARD_CMD=cat >/dev/null",
-		},
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -365,7 +362,6 @@ fi
 // UI does NOT remove the item and surfaces an error message.
 func TestPromptFlow_Remove_Ambiguous_AbortsUI(t *testing.T) {
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	// Create two files with the same basename in different directories
 	tmpDir := t.TempDir()
@@ -386,15 +382,14 @@ func TestPromptFlow_Remove_Ambiguous_AbortsUI(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	env := newTestProcessEnv(t)
+	env = append(env, "VISUAL=", "EDITOR=")
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 60 * time.Second,
-		Env: []string{
-			"VISUAL=",
-			"EDITOR=",
-			"ONESHOT_CLIPBOARD_CMD=cat >/dev/null",
-		},
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -474,22 +469,20 @@ func TestPromptFlow_Remove_Ambiguous_AbortsUI(t *testing.T) {
 // an error. This ensures we do not silently desynchronize UI from backend.
 func TestPromptFlow_Remove_NotFound_AbortsUI(t *testing.T) {
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	tmpFile := filepath.Join(t.TempDir(), "lonely.txt")
 	if err := os.WriteFile(tmpFile, []byte("content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
+	env := newTestProcessEnv(t)
+	env = append(env, "VISUAL=", "EDITOR=")
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 60 * time.Second,
-		Env: []string{
-			"VISUAL=",
-			"EDITOR=",
-			"ONESHOT_CLIPBOARD_CMD=cat >/dev/null",
-		},
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)

@@ -55,7 +55,6 @@ func TestPromptFlow_Unix_Integration_CompleteWorkflow(t *testing.T) {
 	}
 
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	// Create a temporary workspace with test files
 	workspace := createTestWorkspace(t)
@@ -101,15 +100,14 @@ public class ThreadPoolManager {
 	// Create fake editor script
 	editorScript := createFakeEditor(t, workspace)
 
+	env := newTestProcessEnv(t)
+	env = append(env, "EDITOR="+editorScript, "VISUAL=")
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 30 * time.Second,
-		Env: []string{
-			"EDITOR=" + editorScript,
-			"VISUAL=",
-			"ONESHOT_CLIPBOARD_CMD=cat > /tmp/test_clipboard.txt",
-		},
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -194,7 +192,6 @@ func TestPromptFlow_Unix_ContextAssembly(t *testing.T) {
 	}
 
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	workspace := createTestWorkspace(t)
 	defer os.RemoveAll(workspace)
@@ -226,15 +223,14 @@ func processString(s string) string {
 
 	editorScript := createFakeEditor(t, workspace)
 
+	env := newTestProcessEnv(t)
+	env = append(env, "EDITOR="+editorScript, "VISUAL=")
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 30 * time.Second,
-		Env: []string{
-			"EDITOR=" + editorScript,
-			"VISUAL=",
-			"ONESHOT_CLIPBOARD_CMD=cat > /tmp/test_context_assembly.txt",
-		},
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -346,7 +342,6 @@ func TestPromptFlow_Unix_ListShowsMissing(t *testing.T) {
 	}
 
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	workspace := createTestWorkspace(t)
 	defer os.RemoveAll(workspace)
@@ -359,15 +354,14 @@ func TestPromptFlow_Unix_ListShowsMissing(t *testing.T) {
 
 	editorScript := createFakeEditor(t, workspace)
 
+	env := newTestProcessEnv(t)
+	env = append(env, "EDITOR="+editorScript, "VISUAL=", "ONESHOT_CLIPBOARD_CMD=cat > /dev/null")
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 30 * time.Second,
-		Env: []string{
-			"EDITOR=" + editorScript,
-			"VISUAL=",
-			"ONESHOT_CLIPBOARD_CMD=cat > /dev/null",
-		},
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -415,7 +409,6 @@ func TestPromptFlow_Unix_DiskReadInMeta(t *testing.T) {
 	}
 
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	workspace := createTestWorkspace(t)
 	defer os.RemoveAll(workspace)
@@ -427,15 +420,14 @@ func TestPromptFlow_Unix_DiskReadInMeta(t *testing.T) {
 
 	editorScript := createFakeEditor(t, workspace)
 
+	env := newTestProcessEnv(t)
+	env = append(env, "EDITOR="+editorScript, "VISUAL=", "ONESHOT_CLIPBOARD_CMD=cat > /dev/null")
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 30 * time.Second,
-		Env: []string{
-			"EDITOR=" + editorScript,
-			"VISUAL=",
-			"ONESHOT_CLIPBOARD_CMD=cat > /dev/null",
-		},
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -495,22 +487,20 @@ func TestPromptFlow_Unix_DifferentTemplateConfigurations(t *testing.T) {
 	}
 
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	workspace := createTestWorkspace(t)
 	defer os.RemoveAll(workspace)
 
 	editorScript := createAdvancedFakeEditor(t, workspace)
 
+	env := newTestProcessEnv(t)
+	env = append(env, "EDITOR="+editorScript, "VISUAL=")
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 30 * time.Second,
-		Env: []string{
-			"EDITOR=" + editorScript,
-			"VISUAL=",
-			"ONESHOT_CLIPBOARD_CMD=cat > /tmp/test_template_config.txt",
-		},
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -581,7 +571,6 @@ func TestPromptFlow_Unix_GitDiffIntegration(t *testing.T) {
 	}
 
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	workspace := createTestWorkspace(t)
 	defer os.RemoveAll(workspace)
@@ -591,20 +580,22 @@ func TestPromptFlow_Unix_GitDiffIntegration(t *testing.T) {
 
 	editorScript := createFakeEditor(t, workspace)
 
+	env := newTestProcessEnv(t)
+	env = append(env,
+		"EDITOR="+editorScript,
+		"VISUAL=",
+		"GIT_AUTHOR_NAME=Test User",
+		"GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=Test User",
+		"GIT_COMMITTER_EMAIL=test@example.com",
+	)
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 30 * time.Second,
-		Env: []string{
-			"EDITOR=" + editorScript,
-			"VISUAL=",
-			"ONESHOT_CLIPBOARD_CMD=cat > /tmp/test_git_diff.txt",
-			"GIT_AUTHOR_NAME=Test User",
-			"GIT_AUTHOR_EMAIL=test@example.com",
-			"GIT_COMMITTER_NAME=Test User",
-			"GIT_COMMITTER_EMAIL=test@example.com",
-		},
-		Dir: workspace,
+		Env:            env,
+		Dir:            workspace,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -701,7 +692,6 @@ func TestPromptFlow_Unix_GitDiffSingleCommit(t *testing.T) {
 	}
 
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	// Setup a git repo with only one commit
 	workspace := createTestWorkspace(t)
@@ -727,19 +717,22 @@ func main() {
 	runCommand(t, workspace, "git", "add", "example.go")
 	runCommand(t, workspace, "git", "commit", "-m", "Initial commit")
 
+	env := newTestProcessEnv(t)
+	env = append(env,
+		"EDITOR=",
+		"VISUAL=",
+		"GIT_AUTHOR_NAME=Test User",
+		"GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=Test User",
+		"GIT_COMMITTER_EMAIL=test@example.com",
+	)
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 30 * time.Second,
-		Env: []string{
-			"EDITOR=",
-			"VISUAL=",
-			"GIT_AUTHOR_NAME=Test User",
-			"GIT_AUTHOR_EMAIL=test@example.com",
-			"GIT_COMMITTER_NAME=Test User",
-			"GIT_COMMITTER_EMAIL=test@example.com",
-		},
-		Dir: workspace,
+		Env:            env,
+		Dir:            workspace,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -803,7 +796,6 @@ func TestPromptFlow_Unix_GitDiffMalformedPayload(t *testing.T) {
 	}
 
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	workspace := createTestWorkspace(t)
 	defer os.RemoveAll(workspace)
@@ -811,19 +803,22 @@ func TestPromptFlow_Unix_GitDiffMalformedPayload(t *testing.T) {
 	// Initialize a standard repo with 2 commits to ensure diffs are available
 	setupGitRepository(t, workspace)
 
+	env := newTestProcessEnv(t)
+	env = append(env,
+		"EDITOR=",
+		"VISUAL=",
+		"GIT_AUTHOR_NAME=Test User",
+		"GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=Test User",
+		"GIT_COMMITTER_EMAIL=test@example.com",
+	)
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 30 * time.Second,
-		Env: []string{
-			"EDITOR=",
-			"VISUAL=",
-			"GIT_AUTHOR_NAME=Test User",
-			"GIT_AUTHOR_EMAIL=test@example.com",
-			"GIT_COMMITTER_NAME=Test User",
-			"GIT_COMMITTER_EMAIL=test@example.com",
-		},
-		Dir: workspace,
+		Env:            env,
+		Dir:            workspace,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -952,7 +947,6 @@ func TestPromptFlow_Unix_MetaIncludesGitDiff(t *testing.T) {
 	}
 
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	workspace := createTestWorkspace(t)
 	defer os.RemoveAll(workspace)
@@ -962,20 +956,23 @@ func TestPromptFlow_Unix_MetaIncludesGitDiff(t *testing.T) {
 
 	editorScript := createFakeEditor(t, workspace)
 
+	env := newTestProcessEnv(t)
+	env = append(env,
+		"EDITOR="+editorScript,
+		"VISUAL=",
+		"ONESHOT_CLIPBOARD_CMD=cat > /dev/null",
+		"GIT_AUTHOR_NAME=Test User",
+		"GIT_AUTHOR_EMAIL=test@example.com",
+		"GIT_COMMITTER_NAME=Test User",
+		"GIT_COMMITTER_EMAIL=test@example.com",
+	)
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 30 * time.Second,
-		Env: []string{
-			"EDITOR=" + editorScript,
-			"VISUAL=",
-			"ONESHOT_CLIPBOARD_CMD=cat > /dev/null",
-			"GIT_AUTHOR_NAME=Test User",
-			"GIT_AUTHOR_EMAIL=test@example.com",
-			"GIT_COMMITTER_NAME=Test User",
-			"GIT_COMMITTER_EMAIL=test@example.com",
-		},
-		Dir: workspace,
+		Env:            env,
+		Dir:            workspace,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -1042,23 +1039,27 @@ func TestPromptFlow_Unix_ClipboardIntegration(t *testing.T) {
 	}
 
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	workspace := createTestWorkspace(t)
 	defer os.RemoveAll(workspace)
 
-	clipboardFile := filepath.Join(workspace, "clipboard_test.txt")
 	editorScript := createFakeEditor(t, workspace)
+
+	// This test needs to verify clipboard file contents, so create explicit clipboard file
+	clipboardFile := filepath.Join(t.TempDir(), "clipboard.txt")
+	env := []string{
+		"OSM_SESSION_ID=" + fmt.Sprintf("test-%s-%d", t.Name(), time.Now().UnixNano()),
+		"OSM_STORAGE_BACKEND=memory",
+		"ONESHOT_CLIPBOARD_CMD=cat > " + clipboardFile,
+		"EDITOR=" + editorScript,
+		"VISUAL=",
+	}
 
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 30 * time.Second,
-		Env: []string{
-			"EDITOR=" + editorScript,
-			"VISUAL=",
-			"ONESHOT_CLIPBOARD_CMD=cat > " + clipboardFile,
-		},
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)
@@ -1408,7 +1409,6 @@ func testMetaPromptVariation(t *testing.T, goal string, files []string, diffs []
 	t.Helper()
 
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	workspace := createTestWorkspace(t)
 	defer os.RemoveAll(workspace)
@@ -1424,15 +1424,14 @@ func testMetaPromptVariation(t *testing.T, goal string, files []string, diffs []
 
 	editorScript := createFakeEditor(t, workspace)
 
+	env := newTestProcessEnv(t)
+	env = append(env, "EDITOR="+editorScript, "VISUAL=")
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 30 * time.Second,
-		Env: []string{
-			"EDITOR=" + editorScript,
-			"VISUAL=",
-			"ONESHOT_CLIPBOARD_CMD=cat > /tmp/test_meta_variation.txt",
-		},
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)

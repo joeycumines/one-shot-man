@@ -62,18 +62,6 @@
       "Description": "Increment the counter",
       "Usage": "increment",
       "Handler": "function (args) {\n  var count = state.get(StateKeys.counter) || 0;\n  count++;\n  state.set(StateKeys.counter, count);\n  output.print('Counter incremented to: ' + count);\n}"
-    },
-    {
-      "Name": "reset",
-      "Type": "custom",
-      "Description": "Reset custom state to defaults",
-      "Usage": "reset",
-      "Handler": "function (args) {\n  state.set(StateKeys.customOption, 'default-value');\n  state.set(StateKeys.counter, 0);\n  output.print('State reset to defaults');\n}"
-    },
-    {
-      "Name": "help",
-      "Type": "help",
-      "Description": "Show help information"
     }
   ]
 }

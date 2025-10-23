@@ -149,7 +149,6 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 		var orderedCommandNames []string
 
 		// Built-in commands (lowest precedence)
-		builtinCommands := []string{"help", "exit", "quit", "mode", "modes", "state"}
 		for _, cmd := range builtinCommands {
 			if strings.HasPrefix(cmd, currentWord) {
 				if _, exists := commandMap[cmd]; !exists {

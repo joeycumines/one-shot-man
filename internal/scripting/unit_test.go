@@ -2,9 +2,11 @@ package scripting
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -157,7 +159,6 @@ func TestPromptBuilder(t *testing.T) {
 func TestScriptModeExecution(t *testing.T) {
 	// Build binary for testing
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	wd, err := os.Getwd()
 	if err != nil {
@@ -220,22 +221,78 @@ func TestScriptModeExecution(t *testing.T) {
 	})
 }
 
-// buildTestBinary builds the osm binary for testing
-func buildTestBinary(t *testing.T) string {
-	t.Helper()
+var (
+	testBinaryPath string
+	testBinaryDir  string
+)
+
+// TestMain provides setup and teardown for the entire test suite.
+// It builds the test binary once and cleans it up after all tests complete.
+func TestMain(m *testing.M) {
+	// Build the test binary before any tests run
 	wd, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("Failed to get working directory: %v", err)
+		fmt.Fprintf(os.Stderr, "Failed to get working directory: %v\n", err)
+		os.Exit(1)
 	}
-	// Correctly determine the project root relative to the test file's location
-	projectRoot := filepath.Clean(filepath.Join(wd, "..", ".."))
-	tempBinary := filepath.Join(t.TempDir(), "osm")
-	cmd := exec.Command("go", "build", "-o", tempBinary, "./cmd/osm")
-	cmd.Dir = projectRoot
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("Failed to build test binary: %v\nOutput: %s", err, output)
+
+	// Build to a predictable location in the system temp directory
+	tmpBase := os.TempDir()
+	testBinaryDir = filepath.Join(tmpBase, fmt.Sprintf("osm-test-binary-%d", os.Getpid()))
+
+	// Create directory if it doesn't exist
+	if err := os.MkdirAll(testBinaryDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create temp dir for binary: %v\n", err)
+		os.Exit(1)
 	}
-	return tempBinary
+
+	repoRoot := filepath.Clean(filepath.Join(wd, "..", ".."))
+	testBinaryPath = filepath.Join(testBinaryDir, "osm")
+	if runtime.GOOS == "windows" {
+		testBinaryPath += ".exe"
+	}
+
+	// Build the binary
+	fmt.Printf("TestMain: building test binary to %s\n", testBinaryPath)
+	cmd := exec.Command("go", "build", "-o", testBinaryPath, "./cmd/osm")
+	cmd.Dir = repoRoot
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to build test binary: %v\nOutput:\n%s", err, string(output))
+		os.Exit(1)
+	}
+
+	// Verify the binary was created
+	if info, err := os.Stat(testBinaryPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Binary build succeeded but file doesn't exist: %v\n", err)
+		os.Exit(1)
+	} else {
+		fmt.Printf("TestMain: binary built successfully (size: %d bytes, mode: %s)\n", info.Size(), info.Mode())
+	}
+
+	// Run all tests
+	exitCode := m.Run()
+
+	// Cleanup: remove the test binary directory after all tests complete
+	fmt.Printf("TestMain: cleaning up test binary directory %s\n", testBinaryDir)
+	if err := os.RemoveAll(testBinaryDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to clean up test binary: %v\n", err)
+	}
+
+	os.Exit(exitCode)
+}
+
+// buildTestBinary returns the path to the test binary built by TestMain.
+// The binary is guaranteed to exist and persist for the entire test run.
+func buildTestBinary(tb testing.TB) string {
+	tb.Helper()
+
+	if testBinaryPath == "" {
+		tb.Fatal("testBinaryPath not initialized - TestMain did not run?")
+	}
+
+	tb.Logf("buildTestBinary: returning path %s", testBinaryPath)
+	return testBinaryPath
 }
 
 // TestJavaScriptAPIBinding tests the core JavaScript API bindings

@@ -19,7 +19,6 @@ func TestPromptFlow_EditPromptClearingPreservesPhase(t *testing.T) {
 	}
 
 	binaryPath := buildTestBinary(t)
-	defer os.Remove(binaryPath)
 
 	// Create a temp dir and a fake editor that clears task-prompt content
 	tmp := t.TempDir()
@@ -40,15 +39,14 @@ esac
 		t.Fatalf("failed to write editor: %v", err)
 	}
 
+	env := newTestProcessEnv(t)
+	env = append(env, "EDITOR="+editor, "VISUAL=")
+
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 30 * time.Second,
-		Env: []string{
-			"EDITOR=" + editor,
-			"VISUAL=", // force EDITOR usage
-			"ONESHOT_CLIPBOARD_CMD=cat >/dev/null",
-		},
+		Env:            env,
 	}
 
 	cp, err := termtest.NewTest(t, opts)

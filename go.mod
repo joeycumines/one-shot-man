@@ -14,15 +14,20 @@ require (
 	github.com/dop251/goja v0.0.0-20251008123653-cf18d89f3cf6
 	github.com/dop251/goja_nodejs v0.0.0-20251015164255-5e94316bedaf
 	github.com/gdamore/tcell/v2 v2.9.0
-	github.com/joeycumines/go-prompt v0.0.0-20251012145216-27a57622593d
+	github.com/joeycumines/go-prompt v0.0.0-20251023223825-ff8b80a79653
 	github.com/rivo/tview v0.42.0
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/term v0.36.0 // indirect
+	golang.org/x/term v0.36.0
 	golang.org/x/text v0.30.0
 	golang.org/x/tools v0.38.0
 )
 
-require github.com/joeycumines/go-bigbuff v1.21.0
+require (
+	github.com/google/uuid v1.6.0
+	github.com/gowebpki/jcs v1.0.1
+	github.com/joeycumines/go-bigbuff v1.21.0
+	golang.org/x/sys v0.37.0
+)
 
 require (
 	github.com/BurntSushi/toml v1.5.0 // indirect
@@ -42,12 +47,11 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/yuin/goldmark v1.7.13 // indirect
-	golang.org/x/exp v0.0.0-20251009144603-d2f985daa21b // indirect
-	golang.org/x/exp/typeparams v0.0.0-20251009144603-d2f985daa21b // indirect
+	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
+	golang.org/x/exp/typeparams v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/mod v0.29.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
-	golang.org/x/sys v0.37.0 // indirect
-	golang.org/x/telemetry v0.0.0-20251014153721-24f779f6aaef // indirect
+	golang.org/x/telemetry v0.0.0-20251022145735-5be28d707443 // indirect
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

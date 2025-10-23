@@ -44,7 +44,8 @@ type TUIManager struct {
 	// pendingContracts temporarily stores contracts created via createStateContract
 	// before they are linked to a mode in registerMode
 	pendingContracts map[string]*StateContract
-	contractMu       sync.Mutex
+	// WARNING: MUST ALWAYS BE ACQUIRED BEFORE sharedMu IF BOTH ARE NEEDED
+	contractMu sync.Mutex
 
 	// sharedContracts persistently stores all registered shared state contracts
 	// for runtime shared state detection (checked in get/setStateBySymbol)
@@ -53,6 +54,15 @@ type TUIManager struct {
 	// sharedState stores state that is shared across all modes
 	sharedState map[goja.Value]interface{}
 	sharedMu    sync.RWMutex
+
+	// stateManager orchestrates all persistence logic for this TUI instance
+	stateManager *StateManager
+
+	// sessionID uniquely identifies this TUI session for persistence
+	sessionID string
+
+	// commandHistory holds the list of commands from persistent history
+	commandHistory []string
 }
 
 // ScriptMode represents a specific script mode with its own state and commands.

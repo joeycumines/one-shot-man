@@ -32,17 +32,103 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 		if stateContractRaw, exists := configMap["stateContract"]; exists {
 			// The stateContract is a JS object of Symbols returned by createStateContract
 			// We need to retrieve the corresponding contract from pendingContracts
-			tm.contractMu.Lock()
-			// For now, we'll try to match by mode name
-			if contract, ok := tm.pendingContracts[name]; ok {
-				mode.StateContract = contract
-				delete(tm.pendingContracts, name)
-				// If this is a shared contract, add it to the persistent sharedContracts list
-				if contract.IsShared {
-					tm.sharedContracts = append(tm.sharedContracts, contract)
+			func() {
+				tm.contractMu.Lock()
+				defer tm.contractMu.Unlock()
+
+				var contract *StateContract
+				var contractFound bool
+
+				// Try to match by mode name first
+				if c, ok := tm.pendingContracts[name]; ok {
+					contract = c
+					contractFound = true
+					// Only delete non-shared contracts (shared contracts can be reused by multiple modes)
+					if !c.IsShared {
+						delete(tm.pendingContracts, name)
+					}
+				} else {
+					// If not found by mode name, check if there's a shared contract available
+					for _, c := range tm.pendingContracts {
+						if c.IsShared {
+							contract = c
+							contractFound = true
+							// Don't delete shared contracts - they can be used by multiple modes
+							break
+						}
+					}
 				}
-			}
-			tm.contractMu.Unlock()
+
+				if contractFound {
+					mode.StateContract = contract
+					// If this is a shared contract, add it to the persistent sharedContracts list
+					// (only add once, even if multiple modes use it)
+					if contract.IsShared {
+						alreadyRegistered := false
+						for _, sc := range tm.sharedContracts {
+							if sc == contract {
+								alreadyRegistered = true
+								break
+							}
+						}
+						if !alreadyRegistered {
+							tm.sharedContracts = append(tm.sharedContracts, contract)
+						}
+					}
+
+					// Phase 4.2: Register contract with StateManager and restore persisted state
+					if tm.stateManager != nil {
+						storageContract := convertToStorageContract(contract)
+						// **CRITICAL FIX**: For shared contracts, register under "__shared__" key
+						// For mode-specific contracts, register under the mode's name
+						registrationKey := name
+						if contract.IsShared {
+							registrationKey = sharedStateKey
+						}
+						storageContract.ModeName = registrationKey
+						if err := tm.stateManager.RegisterContract(storageContract); err != nil {
+							fmt.Fprintf(tm.output, "Warning: Failed to register contract for mode '%s': %v\n", name, err)
+						} else {
+							// Attempt to restore state from persistence
+							// For shared contracts, always use sharedStateKey for lookup
+							restoreKey := name
+							if contract.IsShared {
+								restoreKey = sharedStateKey
+							}
+							stateJSON, err := tm.stateManager.RestoreState(restoreKey, contract.IsShared)
+							if err != nil {
+								fmt.Fprintf(tm.output, "Warning: Failed to restore state for mode '%s': %v\n", name, err)
+							} else if stateJSON != "" {
+								// Deserialize the state and apply it to the appropriate location
+								restoredState, err := DeserializeState(tm.engine.symbolRegistry, tm.engine.vm, stateJSON)
+								if err != nil {
+									fmt.Fprintf(tm.output, "Warning: Failed to deserialize state for mode '%s': %v\n", name, err)
+								} else {
+									tm.rehydrateContextManager(restoredState, contract)
+
+									// Apply restored state to the correct location
+									if contract.IsShared {
+										// For shared contracts, restore to tm.sharedState
+										tm.sharedMu.Lock()
+										for symbolKey, value := range restoredState {
+											tm.sharedState[symbolKey] = value
+										}
+										tm.sharedMu.Unlock()
+										fmt.Fprintf(tm.output, "Restored shared state from session %s\n", tm.sessionID)
+									} else {
+										// For mode-specific contracts, restore to mode.State
+										for symbolKey, value := range restoredState {
+											mode.State[symbolKey] = value
+										}
+										fmt.Fprintf(tm.output, "Restored state for mode '%s' from session %s\n", name, tm.sessionID)
+									}
+								}
+							}
+						}
+					}
+				}
+			}()
+
 			// If stateContract is provided but we didn't find it, that's a warning
 			// but not a hard error - the mode can still work without it
 			if mode.StateContract == nil && stateContractRaw != nil {

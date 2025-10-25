@@ -168,6 +168,7 @@ function buildCommands(state) {
                     output.print("  comment-stripper   - Remove useless comments and refactor useful ones");
                     output.print("  doc-generator      - Generate comprehensive documentation for code");
                     output.print("  test-generator     - Generate comprehensive test suites");
+                    output.print("  document-refiner   - Refine an existing document based on feedback");
                     output.print("");
                     output.print("Usage: goal use:<goal-name> to use a pre-written goal");
                     return;
@@ -177,7 +178,16 @@ function buildCommands(state) {
                     const prewrittenGoals = {
                         "comment-stripper": "Analyze the provided code and remove useless comments while refactoring useful ones according to coding best practices. Remove redundant comments that merely repeat what the code does, but preserve valuable business logic explanations, performance considerations, and complex algorithm documentation. Ensure the cleaned code maintains all functionality while improving readability.",
                         "doc-generator": "Generate comprehensive documentation for the provided code including API documentation, usage examples, configuration guides, and developer notes. Create clear, well-structured documentation that helps users understand and effectively use the code.",
-                        "test-generator": "Generate comprehensive test suites for the provided code including unit tests, integration tests, and edge case coverage. Create thorough tests that verify functionality, handle error conditions, and provide good code coverage while following testing best practices."
+                        "test-generator": "Generate comprehensive test suites for the provided code including unit tests, integration tests, and edge case coverage. Create thorough tests that verify functionality, handle error conditions, and provide good code coverage while following testing best practices.",
+                        "document-refiner": "**WITHOUT** unduly changing the meaning of the attached document,\n" +
+                            "\n" +
+                            "**WITHOUT** fabricating information, making undue or possibly-questionable assumptions,\n" +
+                            "\n" +
+                            "**AVOIDING** corrective antithesis (\"not X, but Y\"),\n" +
+                            "\n" +
+                            "Conservatively restructure the document, based on the feedback provided in the attached notes.\n" +
+                            "\n" +
+                            "Take into consideration that the attached notes will be present in the context.",
                     };
 
                     if (prewrittenGoals[goalName]) {

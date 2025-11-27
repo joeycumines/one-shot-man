@@ -25,219 +25,108 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 			Name:         name,
 			Commands:     make(map[string]Command),
 			CommandOrder: make([]string, 0),
-			State:        make(map[goja.Value]interface{}),
 		}
 
-		// Process stateContract field
-		if stateContractRaw, exists := configMap["stateContract"]; exists {
-			// The stateContract is a JS object of Symbols returned by createStateContract
-			// We need to retrieve the corresponding contract from pendingContracts
-			func() {
-				tm.contractMu.Lock()
-				defer tm.contractMu.Unlock()
+		// NOTE: stateContract field is IGNORED in the new architecture.
+		// JavaScript manages its own state via tui.createState() which talks directly to StateManager.
 
-				var contract *StateContract
-				var contractFound bool
-
-				// Try to match by mode name first
-				if c, ok := tm.pendingContracts[name]; ok {
-					contract = c
-					contractFound = true
-					// Only delete non-shared contracts (shared contracts can be reused by multiple modes)
-					if !c.IsShared {
-						delete(tm.pendingContracts, name)
-					}
-				} else {
-					// If not found by mode name, check if there's a shared contract available
-					for _, c := range tm.pendingContracts {
-						if c.IsShared {
-							contract = c
-							contractFound = true
-							// Don't delete shared contracts - they can be used by multiple modes
-							break
-						}
-					}
-				}
-
-				if contractFound {
-					mode.StateContract = contract
-					// If this is a shared contract, add it to the persistent sharedContracts list
-					// (only add once, even if multiple modes use it)
-					if contract.IsShared {
-						alreadyRegistered := false
-						for _, sc := range tm.sharedContracts {
-							if sc == contract {
-								alreadyRegistered = true
-								break
-							}
-						}
-						if !alreadyRegistered {
-							tm.sharedContracts = append(tm.sharedContracts, contract)
-						}
-					}
-
-					// Phase 4.2: Register contract with StateManager and restore persisted state
-					if tm.stateManager != nil {
-						storageContract := convertToStorageContract(contract)
-						// **CRITICAL FIX**: For shared contracts, register under "__shared__" key
-						// For mode-specific contracts, register under the mode's name
-						registrationKey := name
-						if contract.IsShared {
-							registrationKey = sharedStateKey
-						}
-						storageContract.ModeName = registrationKey
-						if err := tm.stateManager.RegisterContract(storageContract); err != nil {
-							fmt.Fprintf(tm.output, "Warning: Failed to register contract for mode '%s': %v\n", name, err)
-						} else {
-							// Attempt to restore state from persistence
-							// For shared contracts, always use sharedStateKey for lookup
-							restoreKey := name
-							if contract.IsShared {
-								restoreKey = sharedStateKey
-							}
-							stateJSON, err := tm.stateManager.RestoreState(restoreKey, contract.IsShared)
-							if err != nil {
-								fmt.Fprintf(tm.output, "Warning: Failed to restore state for mode '%s': %v\n", name, err)
-							} else if stateJSON != "" {
-								// Deserialize the state and apply it to the appropriate location
-								restoredState, err := DeserializeState(tm.engine.symbolRegistry, tm.engine.vm, stateJSON)
-								if err != nil {
-									fmt.Fprintf(tm.output, "Warning: Failed to deserialize state for mode '%s': %v\n", name, err)
-								} else {
-									tm.rehydrateContextManager(restoredState, contract)
-
-									// Apply restored state to the correct location
-									if contract.IsShared {
-										// For shared contracts, restore to tm.sharedState
-										tm.sharedMu.Lock()
-										for symbolKey, value := range restoredState {
-											tm.sharedState[symbolKey] = value
-										}
-										tm.sharedMu.Unlock()
-										fmt.Fprintf(tm.output, "Restored shared state from session %s\n", tm.sessionID)
-									} else {
-										// For mode-specific contracts, restore to mode.State
-										for symbolKey, value := range restoredState {
-											mode.State[symbolKey] = value
-										}
-										fmt.Fprintf(tm.output, "Restored state for mode '%s' from session %s\n", name, tm.sessionID)
-									}
-								}
-							}
-						}
-					}
-				}
-			}()
-
-			// If stateContract is provided but we didn't find it, that's a warning
-			// but not a hard error - the mode can still work without it
-			if mode.StateContract == nil && stateContractRaw != nil {
-				fmt.Fprintf(tm.output, "Warning: stateContract provided for mode '%s' but contract not found\n", name)
-			}
-		}
-
-		// Set up TUI config
-		if tuiConfigRaw, exists := configMap["tui"]; exists {
-			if tuiMap, ok := tuiConfigRaw.(map[string]interface{}); ok {
-				title, err := getString(tuiMap, "title", "")
+		// Process TUI configuration
+		if tuiConfig, exists := configMap["tui"]; exists {
+			if tuiMap, ok := tuiConfig.(map[string]interface{}); ok {
+				mode.TUIConfig = &TUIConfig{}
+				var err error
+				mode.TUIConfig.Title, err = getString(tuiMap, "title", "")
 				if err != nil {
 					return err
 				}
-				promptStr, err := getString(tuiMap, "prompt", "")
+				mode.TUIConfig.Prompt, err = getString(tuiMap, "prompt", "")
 				if err != nil {
 					return err
 				}
-				enableHistory, err := getBool(tuiMap, "enableHistory", false)
+				mode.TUIConfig.HistoryFile, err = getString(tuiMap, "historyFile", "")
 				if err != nil {
 					return err
 				}
-				historyFile, err := getString(tuiMap, "historyFile", "")
+				mode.TUIConfig.EnableHistory, err = getBool(tuiMap, "enableHistory", false)
 				if err != nil {
 					return err
-				}
-				mode.TUIConfig = &TUIConfig{
-					Title:         title,
-					Prompt:        promptStr,
-					EnableHistory: enableHistory,
-					HistoryFile:   historyFile,
 				}
 			}
 		}
 
-		// Set up callbacks - store them as interface{} and handle conversion during execution
+		// Process onEnter and onExit lifecycle callbacks
 		if onEnter, exists := configMap["onEnter"]; exists {
-			if val := tm.engine.vm.ToValue(onEnter); val != nil {
-				if callable, ok := goja.AssertFunction(val); ok {
-					mode.OnEnter = callable
+			if onEnterVal := tm.engine.vm.ToValue(onEnter); onEnterVal != nil {
+				if onEnterFunc, ok := goja.AssertFunction(onEnterVal); ok {
+					mode.OnEnter = onEnterFunc
 				}
 			}
 		}
 
 		if onExit, exists := configMap["onExit"]; exists {
-			if val := tm.engine.vm.ToValue(onExit); val != nil {
-				if callable, ok := goja.AssertFunction(val); ok {
-					mode.OnExit = callable
+			if onExitVal := tm.engine.vm.ToValue(onExit); onExitVal != nil {
+				if onExitFunc, ok := goja.AssertFunction(onExitVal); ok {
+					mode.OnExit = onExitFunc
 				}
 			}
 		}
 
-		if onPrompt, exists := configMap["onPrompt"]; exists {
-			if val := tm.engine.vm.ToValue(onPrompt); val != nil {
-				if callable, ok := goja.AssertFunction(val); ok {
-					mode.OnPrompt = callable
-				}
-			}
+		// Process commands or buildCommands callback (commands is preferred, buildCommands is legacy)
+		commandsBuilder := configMap["commands"]
+		if commandsBuilder == nil {
+			commandsBuilder = configMap["buildCommands"]
 		}
 
-		// Register commands
-		// Commands can be either:
-		// 1. An object map of command definitions
-		// 2. A function that takes StateAccessor and returns a command map
-		if commandsRaw, exists := configMap["commands"]; exists {
-			// Check if commands is a function
-			if commandsVal := tm.engine.vm.ToValue(commandsRaw); commandsVal != nil {
-				if commandsFunc, ok := goja.AssertFunction(commandsVal); ok {
-					// Store the function to be called later when state is available
-					mode.CommandsBuilder = commandsFunc
-				} else if commandsMap, ok := commandsRaw.(map[string]interface{}); ok {
-					// Traditional object-based commands
-					for cmdName, cmdConfig := range commandsMap {
-						if cmdMap, ok := cmdConfig.(map[string]interface{}); ok {
-							desc, err := getString(cmdMap, "description", "")
-							if err != nil {
-								return err
-							}
-							usage, err := getString(cmdMap, "usage", "")
-							if err != nil {
-								return err
-							}
-							argCompleters, err := getStringSlice(cmdMap, "argCompleters")
-							if err != nil {
-								return err
-							}
-							cmd := Command{
-								Name:          cmdName,
-								Description:   desc,
-								Usage:         usage,
-								IsGoCommand:   false,
-								ArgCompleters: argCompleters,
-							}
+		if commandsBuilder != nil {
+			// If it's a JS function, treat it as a CommandsBuilder
+			if builderVal := tm.engine.vm.ToValue(commandsBuilder); builderVal != nil {
+				if builderFunc, ok := goja.AssertFunction(builderVal); ok {
+					mode.CommandsBuilder = builderFunc
+				}
+			}
 
-							if handler, exists := cmdMap["handler"]; exists {
-								cmd.Handler = handler
-								mode.Commands[cmdName] = cmd
-								mode.CommandOrder = append(mode.CommandOrder, cmdName)
-							}
+			// If it's a plain object (map) provided inline, convert it into mode.Commands
+			if objMap, ok := commandsBuilder.(map[string]interface{}); ok {
+				for key, raw := range objMap {
+					if raw == nil {
+						continue
+					}
+					if cmdObj, ok := raw.(map[string]interface{}); ok {
+						desc, _ := getString(cmdObj, "description", "")
+						usage, _ := getString(cmdObj, "usage", "")
+						argCompleters, _ := getStringSlice(cmdObj, "argCompleters")
+
+						cmd := Command{
+							Name:          key,
+							Description:   desc,
+							Usage:         usage,
+							IsGoCommand:   false,
+							ArgCompleters: argCompleters,
+						}
+
+						if handler, exists := cmdObj["handler"]; exists {
+							// Store raw handler; it will be executed via the JS bridge executor
+							cmd.Handler = handler
+							mode.Commands[key] = cmd
+							mode.CommandOrder = append(mode.CommandOrder, key)
 						}
 					}
 				}
 			}
 		}
 
-		return tm.RegisterMode(mode)
+		// Register the mode
+		tm.mu.Lock()
+		if tm.modes == nil {
+			tm.modes = make(map[string]*ScriptMode)
+		}
+		tm.modes[name] = mode
+		tm.mu.Unlock()
+
+		return nil
 	}
 
-	return fmt.Errorf("invalid mode configuration")
+	return fmt.Errorf("registerMode: expected object, got %T", modeConfig)
 }
 
 // jsSwitchMode allows JavaScript to switch modes.

@@ -39,7 +39,8 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 	cmd.interactive = false
 
 	ctx := context.Background()
-	engine, err := scripting.NewEngine(ctx, &stdout, &stderr)
+	// Use explicit memory-backed engine to avoid writing session files during tests
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, "lazy-diff-test-"+t.Name(), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -48,6 +49,8 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 	engine.SetTestMode(true)
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("codeReviewTemplate", codeReviewTemplate)
+	// Inject config object with Name field
+	engine.SetGlobal("config", map[string]interface{}{"Name": "code-review"})
 
 	// Load the script
 	script := engine.LoadScriptFromString("code-review", codeReviewScript)

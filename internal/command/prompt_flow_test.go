@@ -20,6 +20,10 @@ func TestPromptFlowCommand_NonInteractive(t *testing.T) {
 	cmd.testMode = true
 	cmd.interactive = false
 
+	// prevent filesystem persistence from these tests
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
+
 	err := cmd.Execute([]string{}, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
@@ -27,12 +31,8 @@ func TestPromptFlowCommand_NonInteractive(t *testing.T) {
 
 	// Check for expected output from the script execution
 	output := stdout.String()
-	if !contains(output, "Prompt Flow: goal/context/template -> generate -> use -> assemble") {
-		t.Errorf("Expected banner message in output, got: %s", output)
-	}
-
-	if !contains(output, "Commands: goal, add, diff, note, list, view, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit") {
-		t.Errorf("Expected help message in output, got: %s", output)
+	if !contains(output, "Type 'help' for commands. Tip: Try 'goal --prewritten'.") {
+		t.Errorf("Expected compact initial message in output, got: %s", output)
 	}
 }
 
@@ -137,6 +137,9 @@ func TestPromptFlowCommand_ExecuteWithArgs(t *testing.T) {
 	cmd.testMode = true
 	cmd.interactive = false
 
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
+
 	args := []string{"arg1", "arg2"}
 	err := cmd.Execute(args, &stdout, &stderr)
 	if err != nil {
@@ -145,8 +148,8 @@ func TestPromptFlowCommand_ExecuteWithArgs(t *testing.T) {
 
 	// Should still produce expected output
 	output := stdout.String()
-	if !contains(output, "Prompt Flow: goal/context/template -> generate -> use -> assemble") {
-		t.Errorf("Expected banner message with args, got: %s", output)
+	if !contains(output, "Type 'help' for commands. Tip: Try 'goal --prewritten'.") {
+		t.Errorf("Expected compact initial message with args, got: %s", output)
 	}
 }
 
@@ -167,6 +170,9 @@ func TestPromptFlowCommand_ConfigColorOverrides(t *testing.T) {
 	cmd.testMode = true
 	cmd.interactive = false
 
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
+
 	err := cmd.Execute([]string{}, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Expected no error with color config, got: %v", err)
@@ -174,8 +180,8 @@ func TestPromptFlowCommand_ConfigColorOverrides(t *testing.T) {
 
 	// The test should pass without errors even with color configuration
 	output := stdout.String()
-	if !contains(output, "Prompt Flow: goal/context/template -> generate -> use -> assemble") {
-		t.Errorf("Expected banner message with color config, got: %s", output)
+	if !contains(output, "Type 'help' for commands. Tip: Try 'goal --prewritten'.") {
+		t.Errorf("Expected compact initial message with color config, got: %s", output)
 	}
 }
 
@@ -189,6 +195,9 @@ func TestPromptFlowCommand_NilConfig(t *testing.T) {
 	cmd.testMode = true
 	cmd.interactive = false
 
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
+
 	err := cmd.Execute([]string{}, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Expected no error with nil config, got: %v", err)
@@ -196,8 +205,8 @@ func TestPromptFlowCommand_NilConfig(t *testing.T) {
 
 	// Should still work
 	output := stdout.String()
-	if !contains(output, "Prompt Flow: goal/context/template -> generate -> use -> assemble") {
-		t.Errorf("Expected banner message with nil config, got: %s", output)
+	if !contains(output, "Type 'help' for commands. Tip: Try 'goal --prewritten'.") {
+		t.Errorf("Expected compact initial message with nil config, got: %s", output)
 	}
 }
 
@@ -210,6 +219,9 @@ func TestPromptFlowCommand_TemplateContent(t *testing.T) {
 
 	// Test with test mode enabled
 	cmd.testMode = true
+	// do not persist session state to user directories in tests
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
 	cmd.interactive = false
 
 	err := cmd.Execute([]string{}, &stdout, &stderr)

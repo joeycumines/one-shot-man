@@ -46,7 +46,7 @@ func TestPromptFlow_GoalCommandOpensEditor(t *testing.T) {
 	defer cp.Close()
 
 	// Wait for startup
-	requirePromptFlowExpect(t, cp, "(prompt-builder) > ", 10*time.Second)
+	requirePromptFlowExpect(t, cp, "(prompt-flow) > ", 10*time.Second)
 
 	// Call goal with no arguments - should trigger editor
 	start := cp.OutputLen()
@@ -99,7 +99,7 @@ func TestPromptFlow_UseCommandOpensEditor(t *testing.T) {
 	defer cp.Close()
 
 	// Wait for startup
-	requirePromptFlowExpect(t, cp, "(prompt-builder) > ", 10*time.Second)
+	requirePromptFlowExpect(t, cp, "(prompt-flow) > ", 10*time.Second)
 
 	// Set a goal first
 	start := cp.OutputLen()

@@ -55,12 +55,12 @@ esac
 	}
 	defer cp.Close()
 
-	// Wait for startup
+	// Wait for startup — prompt-flow prints a mode switch on enter
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 

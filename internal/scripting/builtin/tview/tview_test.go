@@ -211,7 +211,7 @@ func TestInteractiveTable_ValidConfig_NoActualDisplay(t *testing.T) {
 	t.Cleanup(cancel)
 
 	// Create a simulation screen for testing
-	var simScreen tcell.SimulationScreen = &safeSimScreen{SimulationScreen: tcell.NewSimulationScreen("UTF-8")}
+	var simScreen tcell.SimulationScreen = &safeSimScreen{}
 	err := simScreen.Init()
 	require.NoError(t, err)
 	t.Cleanup(simScreen.Fini)
@@ -320,17 +320,6 @@ func TestInteractiveTable_ValidConfig_NoActualDisplay(t *testing.T) {
 	}
 }
 
-type safeSimScreen struct {
-	tcell.SimulationScreen
-	finiOnce sync.Once
-}
-
-func (s *safeSimScreen) Fini() {
-	s.finiOnce.Do(func() {
-		s.SimulationScreen.Fini()
-	})
-}
-
 func TestInteractiveTable_WithoutOnSelect(t *testing.T) {
 	// Test that onSelect is truly optional
 
@@ -338,7 +327,7 @@ func TestInteractiveTable_WithoutOnSelect(t *testing.T) {
 	t.Cleanup(cancel)
 
 	// Create a simulation screen for testing
-	var simScreen tcell.SimulationScreen = &safeSimScreen{SimulationScreen: tcell.NewSimulationScreen("UTF-8")}
+	var simScreen tcell.SimulationScreen = &safeSimScreen{}
 	err := simScreen.Init()
 	require.NoError(t, err)
 	t.Cleanup(simScreen.Fini)
@@ -352,7 +341,6 @@ func TestInteractiveTable_WithoutOnSelect(t *testing.T) {
 	go func() {
 		defer wg.Done()
 
-		// Poll for expected content with reasonable timeout
 		timeout := time.After(time.Second)
 		ticker := time.NewTicker(5 * time.Millisecond)
 		defer ticker.Stop()
@@ -372,7 +360,6 @@ func TestInteractiveTable_WithoutOnSelect(t *testing.T) {
 					continue
 				}
 
-				// Convert cells to string for content verification
 				var content strings.Builder
 				for _, cell := range cells {
 					if len(cell.Runes) == 0 {
@@ -382,7 +369,6 @@ func TestInteractiveTable_WithoutOnSelect(t *testing.T) {
 				}
 				contentStr := content.String()
 
-				// Check if all expected content is visible
 				allFound := true
 				for _, expected := range expectedContent {
 					if !strings.Contains(contentStr, expected) {
@@ -438,3 +424,382 @@ func TestInteractiveTable_WithoutOnSelect(t *testing.T) {
 		wg.Wait()
 	}
 }
+
+// safeSimScreen is a lightweight, test-only implementation of a tcell simulation
+// screen that is fully synchronized and does not start internal goroutines.
+type safeSimScreen struct {
+	mu       sync.Mutex
+	width    int
+	height   int
+	cells    []tcell.SimCell
+	events   chan tcell.Event
+	finiOnce sync.Once
+	inited   bool
+}
+
+func (s *safeSimScreen) Init() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.inited {
+		return nil
+	}
+	s.width = 80
+	s.height = 25
+	s.cells = make([]tcell.SimCell, s.width*s.height)
+	s.events = make(chan tcell.Event, 16)
+	s.inited = true
+	return nil
+}
+
+func (s *safeSimScreen) Fini() {
+	s.finiOnce.Do(func() {
+		s.mu.Lock()
+		// signal any waiting PollEvent/ChannelEvents readers to wake up
+		if s.events != nil {
+			select {
+			case s.events <- tcell.NewEventInterrupt(nil):
+			default:
+			}
+		}
+		s.inited = false
+		s.mu.Unlock()
+	})
+}
+
+func (s *safeSimScreen) Show() {
+	// No-op, tview will call SetContent which we capture.
+}
+
+func (s *safeSimScreen) InjectKey(k tcell.Key, ch rune, mod tcell.ModMask) {
+	// Avoid holding the mutex while sending to the events channel.
+	// Acquire the channel reference under lock, then perform the (possibly
+	// blocking) send without the lock held to prevent deadlocks where the
+	// event consumer needs the same lock to process events.
+	s.mu.Lock()
+	chRef := s.events
+	s.mu.Unlock()
+	if chRef == nil {
+		return
+	}
+	chRef <- tcell.NewEventKey(k, ch, mod)
+}
+
+func (s *safeSimScreen) PollEvent() tcell.Event {
+	ev, ok := <-s.events
+	if !ok {
+		return nil
+	}
+	return ev
+}
+
+func (s *safeSimScreen) GetContents() ([]tcell.SimCell, int, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cells == nil {
+		return nil, 0, 0
+	}
+	copied := make([]tcell.SimCell, len(s.cells))
+	for i, c := range s.cells {
+		var runesCopy []rune
+		if len(c.Runes) > 0 {
+			runesCopy = make([]rune, len(c.Runes))
+			copy(runesCopy, c.Runes)
+		}
+		copied[i] = tcell.SimCell{Runes: runesCopy, Style: c.Style}
+	}
+	return copied, s.width, s.height
+}
+
+func (s *safeSimScreen) SetContent(x, y int, mainc rune, combc []rune, style tcell.Style) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if x < 0 || y < 0 || x >= s.width || y >= s.height {
+		return
+	}
+	idx := y*s.width + x
+	runesCopy := make([]rune, 0)
+	if len(combc) > 0 {
+		runesCopy = append(runesCopy, combc...)
+	}
+	if mainc != 0 {
+		runesCopy = append([]rune{mainc}, runesCopy...)
+	}
+	s.cells[idx] = tcell.SimCell{Runes: runesCopy, Style: style}
+}
+
+func (s *safeSimScreen) Clear() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cells == nil {
+		return
+	}
+	for i := range s.cells {
+		s.cells[i] = tcell.SimCell{}
+	}
+}
+
+func (s *safeSimScreen) Size() (int, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.width, s.height
+}
+
+func (s *safeSimScreen) Fill(r rune, style tcell.Style) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.cells {
+		var runesCopy []rune
+		if r != 0 {
+			runesCopy = []rune{r}
+		}
+		s.cells[i] = tcell.SimCell{Runes: runesCopy, Style: style}
+	}
+}
+
+// Additional methods to fully satisfy tcell.Screen / SimulationScreen interfaces
+func (s *safeSimScreen) Put(x int, y int, str string, style tcell.Style) (string, int) {
+	if len(str) == 0 {
+		return "", 0
+	}
+	// Put first grapheme only
+	r := []rune(str)[0]
+	s.SetContent(x, y, r, nil, style)
+	return str[1:], 1
+}
+
+func (s *safeSimScreen) PutStr(x int, y int, str string) {
+	// basic implementation
+	r := []rune(str)
+	for i, ch := range r {
+		s.SetContent(x+i, y, ch, nil, tcell.StyleDefault)
+	}
+}
+
+func (s *safeSimScreen) PutStrStyled(x int, y int, str string, style tcell.Style) {
+	r := []rune(str)
+	for i, ch := range r {
+		s.SetContent(x+i, y, ch, nil, style)
+	}
+}
+
+func (s *safeSimScreen) SetCell(x int, y int, style tcell.Style, ch ...rune) {
+	var mainc rune
+	var comb []rune
+	if len(ch) > 0 {
+		mainc = ch[0]
+		if len(ch) > 1 {
+			comb = ch[1:]
+		}
+	}
+	s.SetContent(x, y, mainc, comb, style)
+}
+
+func (s *safeSimScreen) Get(x, y int) (string, tcell.Style, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if x < 0 || y < 0 || x >= s.width || y >= s.height {
+		return "", tcell.StyleDefault, 0
+	}
+	idx := y*s.width + x
+	c := s.cells[idx]
+	if len(c.Runes) == 0 {
+		return "", c.Style, 0
+	}
+	return string(c.Runes), c.Style, 1
+}
+
+func (s *safeSimScreen) GetContent(x, y int) (rune, []rune, tcell.Style, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if x < 0 || y < 0 || x >= s.width || y >= s.height {
+		return 0, nil, tcell.StyleDefault, 0
+	}
+	idx := y*s.width + x
+	c := s.cells[idx]
+	var main rune
+	if len(c.Runes) > 0 {
+		main = c.Runes[0]
+	}
+	// Safely return the tail runes. Slicing c.Runes[1:] when len==0 will
+	// panic, so ensure we only slice when there are elements to return.
+	var tail []rune
+	if len(c.Runes) > 1 {
+		tail = make([]rune, len(c.Runes)-1)
+		copy(tail, c.Runes[1:])
+	} else {
+		tail = nil
+	}
+	return main, tail, c.Style, 1
+}
+
+func (s *safeSimScreen) SetStyle(style tcell.Style) {
+	// no-op for tests
+}
+
+func (s *safeSimScreen) ShowCursor(x int, y int) {
+	// no-op
+}
+
+func (s *safeSimScreen) HideCursor() {
+	// no-op
+}
+
+func (s *safeSimScreen) SetCursorStyle(style tcell.CursorStyle, _ ...tcell.Color) {
+	// no-op
+}
+
+func (s *safeSimScreen) ChannelEvents(ch chan<- tcell.Event, quit <-chan struct{}) {
+	for {
+		select {
+		case <-quit:
+			close(ch)
+			return
+		case ev, ok := <-s.events:
+			if !ok {
+				close(ch)
+				return
+			}
+			ch <- ev
+		}
+	}
+}
+
+func (s *safeSimScreen) HasPendingEvent() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.events) > 0
+}
+
+func (s *safeSimScreen) PostEvent(ev tcell.Event) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.events == nil {
+		return nil
+	}
+	select {
+	case s.events <- ev:
+		return nil
+	default:
+		return tcell.ErrEventQFull
+	}
+}
+
+func (s *safeSimScreen) PostEventWait(ev tcell.Event) {
+	s.mu.Lock()
+	ch := s.events
+	s.mu.Unlock()
+	if ch == nil {
+		return
+	}
+	ch <- ev
+}
+
+func (s *safeSimScreen) EnableMouse(...tcell.MouseFlags) {}
+
+func (s *safeSimScreen) DisableMouse() {}
+
+func (s *safeSimScreen) EnablePaste() {}
+
+func (s *safeSimScreen) DisablePaste() {}
+
+func (s *safeSimScreen) EnableFocus() {}
+
+func (s *safeSimScreen) DisableFocus() {}
+
+func (s *safeSimScreen) HasMouse() bool { return false }
+
+func (s *safeSimScreen) Colors() int { return 256 }
+
+func (s *safeSimScreen) Sync() {}
+
+func (s *safeSimScreen) CharacterSet() string { return "UTF-8" }
+
+func (s *safeSimScreen) RegisterRuneFallback(r rune, subst string) {}
+
+func (s *safeSimScreen) UnregisterRuneFallback(r rune) {}
+
+func (s *safeSimScreen) CanDisplay(r rune, checkFallbacks bool) bool { return true }
+
+func (s *safeSimScreen) Resize(int, int, int, int) {}
+
+func (s *safeSimScreen) HasKey(tcell.Key) bool { return true }
+
+func (s *safeSimScreen) Suspend() error { return nil }
+
+func (s *safeSimScreen) Resume() error { return nil }
+
+func (s *safeSimScreen) Beep() error { return nil }
+
+func (s *safeSimScreen) SetSize(w, h int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if w <= 0 || h <= 0 {
+		s.width = w
+		s.height = h
+		s.cells = nil
+		return
+	}
+
+	// Allocate a new buffer and copy existing contents into the new grid
+	// preserving as much data as will fit in the new dimensions.
+	oldW, oldH := s.width, s.height
+	oldCells := s.cells
+
+	newCells := make([]tcell.SimCell, w*h)
+	// If there was no previous content, just assign the new cell buffer.
+	if oldCells == nil || oldW == 0 || oldH == 0 {
+		s.width = w
+		s.height = h
+		s.cells = newCells
+		return
+	}
+
+	copyW := w
+	if oldW < copyW {
+		copyW = oldW
+	}
+	copyH := h
+	if oldH < copyH {
+		copyH = oldH
+	}
+
+	for yy := 0; yy < copyH; yy++ {
+		for xx := 0; xx < copyW; xx++ {
+			oldIdx := yy*oldW + xx
+			newIdx := yy*w + xx
+			// Make copies of runes to avoid aliasing the old slice.
+			cell := oldCells[oldIdx]
+			var runesCopy []rune
+			if len(cell.Runes) > 0 {
+				runesCopy = make([]rune, len(cell.Runes))
+				copy(runesCopy, cell.Runes)
+			}
+			newCells[newIdx] = tcell.SimCell{Runes: runesCopy, Style: cell.Style}
+		}
+	}
+
+	s.width = w
+	s.height = h
+	s.cells = newCells
+}
+
+func (s *safeSimScreen) LockRegion(x, y, width, height int, lock bool) {}
+
+func (s *safeSimScreen) Tty() (tcell.Tty, bool) { return nil, false }
+
+func (s *safeSimScreen) SetTitle(string) {}
+
+func (s *safeSimScreen) SetClipboard([]byte) {}
+
+func (s *safeSimScreen) GetClipboard() {}
+
+// SimulationScreen-specific additions
+func (s *safeSimScreen) InjectKeyBytes(buf []byte) bool { return true }
+
+func (s *safeSimScreen) InjectMouse(x, y int, buttons tcell.ButtonMask, mod tcell.ModMask) {}
+
+func (s *safeSimScreen) GetCursor() (x int, y int, visible bool) { return 0, 0, false }
+
+func (s *safeSimScreen) GetTitle() string { return "" }
+
+func (s *safeSimScreen) GetClipboardData() []byte { return nil }

@@ -3,22 +3,27 @@
 
 ctx.log("Initializing LLM Prompt Builder mode...");
 
-// Define state contract
-const StateKeys = tui.createStateContract({
-    currentPrompt: {
-        description: "llm-prompt-builder:currentPrompt",
+const MODE_NAME = "llm-prompt-builder";
+
+// Define state keys using Symbols
+const StateKeys = {
+    currentPrompt: Symbol("currentPrompt"),
+    prompts: Symbol("prompts")
+};
+
+// Define state using new API
+const state = tui.createState(MODE_NAME, {
+    [StateKeys.currentPrompt]: {
         defaultValue: null
     },
-    prompts: {
-        description: "llm-prompt-builder:prompts",
+    [StateKeys.prompts]: {
         defaultValue: {}
     }
 });
 
 // Register the LLM prompt builder mode
 tui.registerMode({
-    name: "llm-prompt-builder",
-    stateContract: StateKeys,
+    name: MODE_NAME,
     tui: {
         title: "LLM Prompt Builder",
         prompt: "[prompt-builder]> ",
@@ -26,7 +31,7 @@ tui.registerMode({
         historyFile: ".llm-prompt-history"
     },
 
-    onEnter: function (_, stateObj) {
+    onEnter: function () {
         output.print("Welcome to LLM Prompt Builder!");
         output.print("This mode helps you build and refine prompts for LLM services.");
         output.print("");
@@ -44,11 +49,11 @@ tui.registerMode({
         output.print("");
     },
 
-    onExit: function (_, stateObj) {
+    onExit: function () {
         output.print("Exiting LLM Prompt Builder mode. Goodbye!");
     },
 
-    commands: function (state) {
+    commands: function () {
         return {
             "new": {
                 description: "Create a new prompt",

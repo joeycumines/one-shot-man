@@ -518,6 +518,51 @@ func TestContextManagerIntegrationWithBuildContext(t *testing.T) {
 	}
 }
 
+func TestContextManagerRemoveMissingFile(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	// Mock the context and output globals where removePath returns an error indicating missing path
+	script := `
+		const { contextManager } = exports;
+
+		const contextCalls = { addPath: [], removePath: [] };
+
+		globalThis.context = {
+			addPath: (path) => { contextCalls.addPath.push(path); return null; },
+			removePath: (path) => { contextCalls.removePath.push(path); return new Error('path not found: ' + path); },
+			toTxtar: () => ''
+		};
+
+		globalThis.output = { print: (msg) => { /* ignore */ } };
+
+		let items = [];
+		const ctxmgr = contextManager({ getItems: () => items, setItems: (v) => { items = v; } });
+
+		// Add a file item
+		ctxmgr.addItem('file', 'test.txt', '');
+		const id = items[0].id;
+
+		// Remove it - context.removePath will return a 'path not found' error,
+		// but the handler should still remove the item from the list.
+		ctxmgr.commands.remove.handler([String(id)]);
+
+		globalThis.__itemsLen = items.length;
+		globalThis.__removeCalls = contextCalls.removePath.length;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	if removeCalls := runtime.Get("__removeCalls").ToInteger(); removeCalls != 1 {
+		t.Fatalf("expected context.removePath to be called once, got %d", removeCalls)
+	}
+
+	if itemsLen := runtime.Get("__itemsLen").ToInteger(); itemsLen != 0 {
+		t.Fatalf("expected item to be removed despite missing file, got %d items", itemsLen)
+	}
+}
+
 func TestContextManagerErrorHandling(t *testing.T) {
 	runtime := setupContextManager(t)
 

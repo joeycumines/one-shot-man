@@ -299,7 +299,82 @@ func (cm *ContextManager) RemovePath(path string) error {
 		}
 	}
 
-	return fmt.Errorf("path not found: %s", path)
+	// If the caller supplied a basename-only value (no separators) attempt
+	// to match tracked paths by basename. If multiple matches exist treat
+	// this as ambiguous; if a single unique match exists perform the
+	// appropriate removal logic for that tracked entry.
+	base := filepath.Base(path)
+	// Only treat suffix matching when the input appears to be a bare basename
+	// (e.g., "foo.txt") and not a path containing separators.
+	if path != "" && path == base {
+		var matchKey string
+		matches := 0
+		for k := range cm.paths {
+			if filepath.Base(k) == base {
+				matches++
+				if matches > 1 {
+					return fmt.Errorf("ambiguous path: %s", path)
+				}
+				matchKey = k
+			}
+		}
+
+		if matches == 1 {
+			// First, if the matching key is itself an owner entry attempt
+			// to remove it via the existing owner-removal logic.
+			if cm.removeOwnerLocked(matchKey) {
+				return nil
+			}
+
+			// Otherwise perform a targeted removal of the tracked path. This
+			// removes the path from the primary paths map and cleans up any
+			// owner bookkeeping that references it.
+			if cp, ok := cm.paths[matchKey]; ok {
+				if cp.Type == "directory" {
+					// If it is a directory, removing the owner is the correct
+					// semantics (shouldn't generally reach here as removeOwner
+					// would have handled it above), but handle defensively.
+					cm.removeOwnerLocked(matchKey)
+					return nil
+				}
+
+				// For files: remove from paths, from any owner sets, and
+				// update fileOwners counts and directory children lists.
+				delete(cm.paths, matchKey)
+
+				// Clean up ownerFiles and update directory children where
+				// applicable.
+				for owner, set := range cm.ownerFiles {
+					if _, present := set[matchKey]; present {
+						delete(set, matchKey)
+						if len(set) == 0 {
+							delete(cm.ownerFiles, owner)
+						}
+
+						// If the owner is a directory entry, try to remove the
+						// child from its recorded Children slice.
+						if ownerCP, ok := cm.paths[owner]; ok && ownerCP.Type == "directory" {
+							var newChildren []string
+							for _, child := range ownerCP.Children {
+								if child != matchKey {
+									newChildren = append(newChildren, child)
+								}
+							}
+							ownerCP.Children = newChildren
+						}
+					}
+				}
+
+				// Remove any fileOwners bookkeeping for the removed path.
+				delete(cm.fileOwners, matchKey)
+
+				return nil
+			}
+		}
+	}
+
+	// If path is not found, we consider it successfully removed (idempotent).
+	return nil
 }
 
 // GetPath returns information about a tracked path.
@@ -602,4 +677,14 @@ func (cm *ContextManager) GetFilesByExtension(ext string) []string {
 	}
 
 	return files
+}
+
+// Clear removes all tracked paths from the context.
+func (cm *ContextManager) Clear() {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+
+	cm.paths = make(map[string]*ContextPath)
+	cm.ownerFiles = make(map[string]map[string]struct{})
+	cm.fileOwners = make(map[string]int)
 }

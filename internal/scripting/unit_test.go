@@ -310,7 +310,7 @@ func TestJavaScriptAPIBinding(t *testing.T) {
 		var requiredFunctions = [
 			'registerMode', 'switchMode', 'getCurrentMode',
 			'registerCommand', 'listModes', 'createPromptBuilder',
-			'createStateContract'
+			'createState'
 		];
 
 		for (var i = 0; i < requiredFunctions.length; i++) {
@@ -344,40 +344,29 @@ func TestCommandExecution(t *testing.T) {
 
 	tuiManager := engine.GetTUIManager()
 
-	// Register a test mode with commands using state contracts
+	// Register a test mode with commands using state
 	script := engine.LoadScriptFromString("command-test", `
-		// Define state contract for test mode
-		const StateKeys = tui.createStateContract("command-test-mode", {
-			test1_executed: {
-				description: "command-test-mode:test1_executed",
-				defaultValue: false
-			},
-			test1_args: {
-				description: "command-test-mode:test1_args",
-				defaultValue: []
-			},
-			test2_executed: {
-				description: "command-test-mode:test2_executed",
-				defaultValue: false
-			},
-			test2_args: {
-				description: "command-test-mode:test2_args",
-				defaultValue: []
-			},
-			global_executed: {
-				description: "command-test-mode:global_executed",
-				defaultValue: false
-			},
-			global_args: {
-				description: "command-test-mode:global_args",
-				defaultValue: []
-			}
+		// Define state for test mode
+		const StateKeys = {
+			test1_executed: Symbol("test1_executed"),
+			test1_args: Symbol("test1_args"),
+			test2_executed: Symbol("test2_executed"),
+			test2_args: Symbol("test2_args"),
+			global_executed: Symbol("global_executed"),
+			global_args: Symbol("global_args")
+		};
+		const state = tui.createState("command-test-mode", {
+			[StateKeys.test1_executed]: {defaultValue: false},
+			[StateKeys.test1_args]: {defaultValue: []},
+			[StateKeys.test2_executed]: {defaultValue: false},
+			[StateKeys.test2_args]: {defaultValue: []},
+			[StateKeys.global_executed]: {defaultValue: false},
+			[StateKeys.global_args]: {defaultValue: []}
 		});
 
 		tui.registerMode({
 			name: "command-test-mode",
-			stateContract: StateKeys,
-			commands: function(state) {
+			commands: function() {
 				return {
 					"test1": {
 						description: "Test command 1",

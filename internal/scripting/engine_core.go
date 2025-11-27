@@ -19,6 +19,7 @@ import (
 // - Relative file paths (e.g., require("./module.js")).
 type Engine struct {
 	vm             *goja.Runtime
+	registry       *require.Registry
 	scripts        []*Script
 	ctx            context.Context
 	stdout         io.Writer
@@ -29,7 +30,6 @@ type Engine struct {
 	tviewManager   *tviewmod.Manager
 	contextManager *ContextManager
 	logger         *TUILogger
-	symbolRegistry *SymbolRegistry
 }
 
 // Script represents a JavaScript script with metadata.
@@ -68,25 +68,27 @@ func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionI
 		globals:        make(map[string]interface{}),
 		contextManager: contextManager,
 		logger:         NewTUILogger(stdout, 1000),
-		symbolRegistry: NewSymbolRegistry(),
 		tviewManager:   tviewmod.NewManager(ctx, nil, nil, nil),
 	}
 
 	// Set up CommonJS require support.
 	{
 		// TODO: Add support for configuring require.WithGlobalFolders, for instance, via an environment variable.
-		registry := require.NewRegistry()
+		engine.registry = require.NewRegistry()
 
 		// Register native Go modules. These are all prefixed with "osm:".
 		// Pass through the engine's context and a TUI sink for modules that need them
-		builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, registry, engine)
+		builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine)
 
 		// Enable the `require` function in the runtime.
-		registry.Enable(engine.vm)
+		engine.registry.Enable(engine.vm)
 	}
 
-	// Create TUI manager with explicit configuration
+	// Create TUI manager with explicit configuration (this also initializes StateManager)
 	engine.tuiManager = NewTUIManagerWithConfig(ctx, engine, os.Stdin, os.Stdout, sessionID, storageBackend)
+
+	// Register the shared symbols module properly through the require registry
+	engine.registry.RegisterNativeModule("osm:sharedStateSymbols", builtin.GetSharedSymbolsLoader(engine.tuiManager))
 
 	// Set up the global context and APIs
 	engine.setupGlobals()
@@ -200,6 +202,14 @@ func (e *Engine) GetScripts() []*Script {
 
 // Close cleans up the engine resources.
 func (e *Engine) Close() error {
+	// Close TUI manager if it exists (this persists state)
+	if e.tuiManager != nil {
+		if err := e.tuiManager.Close(); err != nil {
+			// Log error but continue cleanup
+			fmt.Fprintf(e.stderr, "Warning: failed to close TUI manager: %v\n", err)
+		}
+	}
+
 	// Clean up any resources
 	e.vm = nil
 	e.scripts = nil
@@ -262,19 +272,18 @@ func (e *Engine) setupGlobals() {
 
 	// TUI and Mode management functions
 	_ = e.vm.Set("tui", map[string]interface{}{
-		"registerMode":              e.tuiManager.jsRegisterMode,
-		"switchMode":                e.tuiManager.jsSwitchMode,
-		"getCurrentMode":            e.tuiManager.jsGetCurrentMode,
-		"registerCommand":           e.tuiManager.jsRegisterCommand,
-		"listModes":                 e.tuiManager.jsListModes,
-		"createPromptBuilder":       e.jsCreatePromptBuilder,
-		"createStateContract":       e.jsCreateStateContract,
-		"createSharedStateContract": e.jsCreateSharedStateContract,
-		"createAdvancedPrompt":      e.tuiManager.jsCreateAdvancedPrompt,
-		"runPrompt":                 e.tuiManager.jsRunPrompt,
-		"registerCompleter":         e.tuiManager.jsRegisterCompleter,
-		"setCompleter":              e.tuiManager.jsSetCompleter,
-		"registerKeyBinding":        e.tuiManager.jsRegisterKeyBinding,
+		"registerMode":         e.tuiManager.jsRegisterMode,
+		"switchMode":           e.tuiManager.jsSwitchMode,
+		"getCurrentMode":       e.tuiManager.jsGetCurrentMode,
+		"registerCommand":      e.tuiManager.jsRegisterCommand,
+		"listModes":            e.tuiManager.jsListModes,
+		"createPromptBuilder":  e.jsCreatePromptBuilder,
+		"createState":          e.jsCreateState,
+		"createAdvancedPrompt": e.tuiManager.jsCreateAdvancedPrompt,
+		"runPrompt":            e.tuiManager.jsRunPrompt,
+		"registerCompleter":    e.tuiManager.jsRegisterCompleter,
+		"setCompleter":         e.tuiManager.jsSetCompleter,
+		"registerKeyBinding":   e.tuiManager.jsRegisterKeyBinding,
 	})
 }
 

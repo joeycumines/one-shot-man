@@ -55,8 +55,8 @@ func TestCodeReviewCommand_FullWorkflow(t *testing.T) {
 	}
 
 	expectedScriptElements := []string{
-		"const MODE_NAME = \"review\"",
-		"function buildCommands(state)",
+		"const COMMAND_NAME = config.Name",
+		"function buildCommands(stateArg)",
 		"codeReviewTemplate",
 		"template.execute(codeReviewTemplate",
 		"context_txtar: fullContext",
@@ -72,6 +72,9 @@ func TestCodeReviewCommand_FullWorkflow(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cmd.testMode = true
 	cmd.interactive = false
+	// keep tests isolated from user session store
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{}, &stdout, &stderr)
 	if err != nil {
@@ -79,12 +82,8 @@ func TestCodeReviewCommand_FullWorkflow(t *testing.T) {
 	}
 
 	output := stdout.String()
-	if !strings.Contains(output, "Code Review: context -> single prompt for PR review") {
-		t.Errorf("Expected banner message in output, got: %s", output)
-	}
-
-	if !strings.Contains(output, "Commands: add, diff, note, list, edit, remove, show, copy, help, exit") {
-		t.Errorf("Expected help message in output, got: %s", output)
+	if !strings.Contains(output, "Type 'help' for commands. Tip: Try 'note --goals'.") {
+		t.Errorf("Expected compact initial message in output, got: %s", output)
 	}
 
 	// Basic test passed - the command can execute properly

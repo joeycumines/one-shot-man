@@ -19,7 +19,9 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 	// Test with real git diff execution
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngine(ctx, &stdout, &stderr)
+	// Use an in-memory storage backend with a test-scoped session so the test
+	// doesn't write to the user's session directory when executing git diffs.
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, t.Name(), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -28,6 +30,8 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 	engine.SetTestMode(true)
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("codeReviewTemplate", codeReviewTemplate)
+	// Inject config object with Name field
+	engine.SetGlobal("config", map[string]interface{}{"Name": "code-review"})
 
 	// Load the script
 	script := engine.LoadScriptFromString("code-review", codeReviewScript)

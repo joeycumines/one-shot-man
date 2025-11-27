@@ -3,8 +3,6 @@ package scripting
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/dop251/goja"
@@ -186,25 +184,6 @@ func SerializeState(registry *SymbolRegistry, runtime *goja.Runtime, symbolKeyed
 	}
 
 	return string(data), nil
-}
-
-// normalizeSymbolDescription converts a goja.Symbol string representation into the
-// persistent key format used by the registry.
-func normalizeSymbolDescription(symbolDesc string) string {
-	if symbolDesc == "" {
-		return ""
-	}
-
-	const prefix, suffix = "Symbol(", ")"
-	if strings.HasPrefix(symbolDesc, prefix) && strings.HasSuffix(symbolDesc, suffix) {
-		symbolDesc = symbolDesc[len(prefix) : len(symbolDesc)-len(suffix)]
-	}
-
-	if unquoted, err := strconv.Unquote(symbolDesc); err == nil {
-		symbolDesc = unquoted
-	}
-
-	return symbolDesc
 }
 
 // DeserializeState converts a JSON string into a Symbol-keyed state map.

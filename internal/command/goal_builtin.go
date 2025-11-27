@@ -65,8 +65,7 @@ Maintain all functionality and behavior of the original code while improving its
 
 			ContextHeader: "CODE TO ANALYZE",
 
-			BannerText: "Comment Stripper: Remove useless comments, refactor useful ones",
-			HelpText:   "Commands: add, note, list, edit, remove, show, copy, run, help, exit",
+			HelpText: "Commands: add, note, list, edit, remove, show, copy, run, help, exit",
 
 			Commands: []CommandConfig{
 				{Name: "add", Type: "contextManager"},
@@ -180,8 +179,7 @@ Maintain all functionality and behavior of the original code while improving its
 				},
 			},
 
-			BannerText: "Code Documentation Generator: Create comprehensive code documentation",
-			HelpText:   "Commands: add, note, list, type, edit, remove, show, copy, help, exit\nDoc types: comprehensive, api, readme, inline, tutorial",
+			HelpText: "Commands: add, note, list, type, edit, remove, show, copy, help, exit\nDoc types: comprehensive, api, readme, inline, tutorial",
 
 			Commands: []CommandConfig{
 				{Name: "add", Type: "contextManager"},
@@ -314,8 +312,7 @@ Maintain all functionality and behavior of the original code while improving its
 				},
 			},
 
-			BannerText: "Test Generator: Create comprehensive test suites for your code",
-			HelpText:   "Commands: add, note, list, type, framework, edit, remove, show, copy, help, exit\nTest types: unit, integration, e2e, performance, security\nFrameworks: auto, jest, mocha, go, pytest, junit, rspec",
+			HelpText: "Commands: add, note, list, type, framework, edit, remove, show, copy, help, exit\nTest types: unit, integration, e2e, performance, security\nFrameworks: auto, jest, mocha, go, pytest, junit, rspec",
 
 			Commands: []CommandConfig{
 				{Name: "add", Type: "contextManager"},
@@ -425,8 +422,7 @@ Generate a commit message that follows these guidelines based on the provided di
 
 			ContextHeader: "DIFF CONTEXT / CHANGES",
 
-			BannerText: "Commit Message: Generate Kubernetes-style commit messages",
-			HelpText:   "Commands: add, diff, note, list, edit, remove, show, copy, run, help, exit",
+			HelpText: "Commands: add, diff, note, list, edit, remove, show, copy, run, help, exit",
 
 			Commands: []CommandConfig{
 				{Name: "add", Type: "contextManager"},

@@ -35,14 +35,8 @@ func TestPromptFlow_NonInteractive(t *testing.T) {
 	startLen := cp.OutputLen()
 
 	// Expect the prompt-flow banner/help emitted by onEnter after auto-switch
-	if _, err := cp.ExpectSince("Prompt Flow: goal/context/template -> generate -> use -> assemble", startLen, opts.DefaultTimeout); err != nil {
+	if _, err := cp.ExpectSince("Type 'help' for commands. Tip: Try 'goal --prewritten'.", startLen, opts.DefaultTimeout); err != nil {
 		t.Fatalf("Expected banner: %v", err)
-	}
-	if _, err := cp.ExpectSince("Type 'help' for commands.", startLen, opts.DefaultTimeout); err != nil {
-		t.Fatalf("Expected help text: %v", err)
-	}
-	if _, err := cp.ExpectSince("Commands: goal, add, diff, note, list, view, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit", startLen, opts.DefaultTimeout); err != nil {
-		t.Fatalf("Expected commands list: %v", err)
 	}
 
 	// Process should terminate on its own (non-interactive mode)
@@ -69,10 +63,10 @@ func TestPromptFlow_GenerateRequiresGoal(t *testing.T) {
 	defer cp.Close()
 
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
@@ -133,20 +127,12 @@ fi
 
 	// Startup of the TUI
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
-	}
-
-	// The script auto-switches to its mode and prints banner/help.
-	if _, err := cp.ExpectSince("Prompt Flow: goal/context/template -> generate -> use -> assemble", startLen); err != nil {
-		t.Fatalf("Expected prompt flow banner: %v", err)
-	}
-	if _, err := cp.ExpectSince("Type 'help' for commands.", startLen); err != nil {
-		t.Fatalf("Expected help text: %v", err)
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
 
 	// Wait for the prompt for this mode
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
@@ -161,13 +147,13 @@ fi
 	if _, err := cp.ExpectSince("Registered commands:", startLen); err != nil {
 		t.Fatalf("Expected help output: %v", err)
 	}
-	if _, err := cp.ExpectSince("Current mode: flow", startLen); err != nil {
+	if _, err := cp.ExpectSince("Current mode: prompt-flow", startLen); err != nil {
 		t.Fatalf("Expected help output: %v", err)
 	}
 	if _, err := cp.ExpectSince("JavaScript API:", startLen); err != nil {
 		t.Fatalf("Expected help output: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
@@ -400,10 +386,10 @@ func TestPromptFlow_Remove_Ambiguous_AbortsUI(t *testing.T) {
 
 	// Wait for prompt
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v\nBuffer: %q", err, cp.GetOutput())
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v\nBuffer: %q", err, cp.GetOutput())
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v\nBuffer: %q", err, cp.GetOutput())
 	}
 
@@ -492,10 +478,10 @@ func TestPromptFlow_Remove_NotFound_AbortsUI(t *testing.T) {
 	defer cp.Close()
 
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
@@ -515,22 +501,24 @@ func TestPromptFlow_Remove_NotFound_AbortsUI(t *testing.T) {
 	// The JS expression executes but produces no output - just need to let it process
 	time.Sleep(100 * time.Millisecond)
 
-	// Now attempt to remove by id from UI; backend will say not found -> Error
+	// Now attempt to remove by id from UI; backend will say not found -> Info and remove
 	startLen = cp.OutputLen()
 	if err := cp.SendLine("remove 1"); err != nil {
 		t.Fatalf("Failed to send remove: %v\nBuffer: %q", err, cp.GetOutput())
 	}
-	if _, err := cp.ExpectSince("Error:", startLen, 2*time.Second); err != nil {
-		t.Fatalf("Expected error: %v\nBuffer: %q", err, cp.GetOutput())
+	// Since RemovePath is idempotent, it returns success even if file is missing.
+	// The UI should simply report "Removed [1]".
+	if _, err := cp.ExpectSince("Removed [1]", startLen, 2*time.Second); err != nil {
+		t.Fatalf("Expected removal confirmation: %v\nBuffer: %q", err, cp.GetOutput())
 	}
 
-	// Ensure UI still shows the item (id 1)
+	// Ensure UI no longer shows the item (id 1)
 	startLen = cp.OutputLen()
 	if err := cp.SendLine("list"); err != nil {
 		t.Fatalf("Failed to send list: %v\nBuffer: %q", err, cp.GetOutput())
 	}
-	if _, err := cp.ExpectSince("[1] [file]", startLen, 2*time.Second); err != nil {
-		t.Fatalf("Expected file in list: %v\nBuffer: %q", err, cp.GetOutput())
+	if _, err := cp.ExpectSince("[1] [file]", startLen, 2*time.Second); err == nil {
+		t.Fatalf("Expected item to be removed from list, but it is still present\nBuffer: %q", cp.GetOutput())
 	}
 
 	if err := cp.SendLine("exit"); err != nil {

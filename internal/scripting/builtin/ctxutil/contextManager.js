@@ -184,12 +184,24 @@
                                 const err = context.removePath(it.label);
                                 if (err) {
                                     const msg = (err && err.message) ? err.message : ("" + err);
-                                    output.print("Error: " + msg);
-                                    return;
+                                    // If the underlying remove failed due to the path being absent,
+                                    // treat this as non-fatal: allow the item to be removed from
+                                    // the persisted list so users can tidy up stale references.
+                                    if (msg.indexOf('path not found') !== -1 || msg.indexOf('no such file') !== -1) {
+                                        output.print("Info: file not present, removing from session state: " + it.label);
+                                    } else {
+                                        output.print("Error: " + msg);
+                                        return;
+                                    }
                                 }
                             } catch (e) {
-                                output.print("Error: " + e);
-                                return;
+                                const msg = (e && e.message) ? e.message : ("" + e);
+                                if (msg.indexOf('path not found') !== -1 || msg.indexOf('no such file') !== -1) {
+                                    output.print("Info: file not present, removing from session state: " + it.label);
+                                } else {
+                                    output.print("Error: " + e);
+                                    return;
+                                }
                             }
                         }
                         list.splice(idx, 1);

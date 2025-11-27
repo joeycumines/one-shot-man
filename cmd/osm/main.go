@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/joeycumines/one-shot-man/internal/command"
@@ -40,23 +41,38 @@ func run() error {
 	registry.Register(command.NewConfigCommand(cfg))
 	registry.Register(command.NewInitCommand())
 	registry.Register(command.NewScriptingCommand(cfg))
+	registry.Register(command.NewSessionCommand(cfg))
 	registry.Register(command.NewPromptFlowCommand(cfg))
 	registry.Register(command.NewCodeReviewCommand(cfg))
 	registry.Register(command.NewCompletionCommand(registry, goalRegistry))
 	registry.Register(command.NewGoalCommand(cfg, goalRegistry))
 
-	// Parse global flags and command
-	if len(os.Args) < 2 {
-		// No command specified, show help
-		return helpCmd.Execute([]string{}, os.Stdout, os.Stderr)
+	// Parse global flags and command. Avoid manual inspection of args for
+	// help tokens; instead rely on the flag package so we consistently
+	// support -h and -help at the top level.
+	globalFS := flag.NewFlagSet("osm", flag.ContinueOnError)
+	globalFS.SetOutput(io.Discard)
+	var showHelp bool
+	globalFS.BoolVar(&showHelp, "h", false, "Show help")
+	globalFS.BoolVar(&showHelp, "help", false, "Show help")
+	// Parse will stop at the first non-flag token (the command name), so
+	// we can safely parse top-level help flags without consuming subcommand
+	// args.
+	if err := globalFS.Parse(os.Args[1:]); err != nil {
+		if err == flag.ErrHelp {
+			return helpCmd.Execute([]string{}, os.Stdout, os.Stderr)
+		}
+		return err
 	}
 
-	cmdName := os.Args[1]
-
-	// Handle special case for help
-	if cmdName == "-h" || cmdName == "--help" {
+	// Use the remaining args returned by the global flagset rather than
+	// blindly indexing into os.Args. This prevents brittle behavior where
+	// global flags shift argument positions (e.g. `osm -v session`).
+	gargs := globalFS.Args()
+	if showHelp || len(gargs) < 1 {
 		return helpCmd.Execute([]string{}, os.Stdout, os.Stderr)
 	}
+	cmdName := gargs[0]
 
 	// Get the command
 	cmd, err := registry.Get(cmdName)
@@ -67,7 +83,12 @@ func run() error {
 	}
 
 	// Create flag set for this command
-	fs := flag.NewFlagSet(cmd.Name(), flag.ExitOnError)
+	// Use ContinueOnError so we can handle help consistently across
+	// top-level commands and subcommands. This avoids os.Exit from the
+	// stdlib's default ExitOnError behavior and makes exit codes
+	// consistent for scripting and tests.
+	fs := flag.NewFlagSet(cmd.Name(), flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
 	fs.Usage = func() {
 		_, _ = fmt.Fprintf(os.Stderr, "Usage: %s\n", cmd.Usage())
 		_, _ = fmt.Fprintf(os.Stderr, "\n%s\n\n", cmd.Description())
@@ -78,12 +99,24 @@ func run() error {
 	// Let the command setup its flags
 	cmd.SetupFlags(fs)
 
-	// Parse command-specific flags
-	cmdArgs := os.Args[2:]
+	// Parse flags using the FlagSet so flag values are correctly
+	// associated with their flags (avoids breaking flags that accept
+	// values, e.g. `-config file.yaml`). The FlagSet will stop parsing
+	// at the first non-flag token and the remaining arguments can be
+	// retrieved with fs.Args().
+	// Parse only the arguments belonging to this command (everything after
+	// the command name in the global flagset's remaining args).
+	cmdArgs := gargs[1:]
 	if err := fs.Parse(cmdArgs); err != nil {
+		if err == flag.ErrHelp {
+			// flag.ErrHelp indicates usage/help was requested; treat as
+			// non-error so the program can exit successfully and uniformly.
+			return nil
+		}
 		return err
 	}
 
-	// Execute the command with remaining arguments
+	// Execute the command with the arguments remaining after parsing
+	// (these are the non-flag args or subcommand-specific args).
 	return cmd.Execute(fs.Args(), os.Stdout, os.Stderr)
 }

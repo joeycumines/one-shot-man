@@ -2,31 +2,42 @@ package scripting
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/dop251/goja"
 	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
 )
 
-const sharedStateKey = "__shared__"
 const maxHistoryEntries = 200
+
+// archiveAttemptsMax controls how many candidate archive filenames ArchiveAndReset
+// will try before giving up. Tests may override this value for simulation.
 
 // StateManager orchestrates all persistence logic for the TUI.
 type StateManager struct {
-	mu        sync.Mutex // Protects session, registeredContracts, and history buffer
+	mu        sync.Mutex // Protects session and history buffer
 	backend   storage.StorageBackend
 	sessionID string
 	session   *storage.Session
 
-	// Track registered contracts for validation
-	registeredContracts map[string]storage.ContractDefinition
+	// Symbol maps for shared state identification
+	sharedSymbolToString map[goja.Value]string
+	sharedStringToSymbol map[string]goja.Value
+	sessionMu            sync.RWMutex // Protects symbol maps
 
 	// History ring buffer
 	historyBuf   []storage.HistoryEntry // Fixed-size physical buffer (size == maxHistoryEntries)
 	historyStart int                    // Index of the oldest entry in historyBuf
 	historyLen   int                    // Number of valid, populated entries in historyBuf
+	// ArchiveAttemptsMax controls how many candidate archive filenames ArchiveAndReset
+	// will try before giving up. Zero means use the built-in default.
+	ArchiveAttemptsMax int
 }
 
 // NewStateManager creates a new state manager and loads or initializes the session.
@@ -51,9 +62,9 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 			SessionID:   sessionID,
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
-			Contracts:   []storage.ContractDefinition{},
 			History:     []storage.HistoryEntry{},
-			LatestState: make(map[string]storage.ModeState),
+			ScriptState: make(map[string]map[string]interface{}),
+			SharedState: make(map[string]interface{}),
 		}
 	} else {
 		// Handle schema migration if needed
@@ -64,18 +75,27 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 				SessionID:   sessionID,
 				CreatedAt:   time.Now(),
 				UpdatedAt:   time.Now(),
-				Contracts:   []storage.ContractDefinition{},
 				History:     []storage.HistoryEntry{},
-				LatestState: make(map[string]storage.ModeState),
+				ScriptState: make(map[string]map[string]interface{}),
+				SharedState: make(map[string]interface{}),
 			}
+		}
+
+		// Ensure ScriptState and SharedState are initialized
+		if session.ScriptState == nil {
+			session.ScriptState = make(map[string]map[string]interface{})
+		}
+		if session.SharedState == nil {
+			session.SharedState = make(map[string]interface{})
 		}
 	}
 
 	sm := &StateManager{
-		backend:             backend,
-		sessionID:           sessionID,
-		session:             session,
-		registeredContracts: make(map[string]storage.ContractDefinition),
+		backend:              backend,
+		sessionID:            sessionID,
+		session:              session,
+		sharedSymbolToString: make(map[goja.Value]string),
+		sharedStringToSymbol: make(map[string]goja.Value),
 		// Initialize the fixed-size physical buffer
 		historyBuf:   make([]storage.HistoryEntry, maxHistoryEntries),
 		historyStart: 0,
@@ -139,121 +159,147 @@ func (sm *StateManager) getFlatHistoryInternal() []storage.HistoryEntry {
 	return flatHistory
 }
 
-// RegisterContract registers a state contract for a mode.
-// This must be called before attempting to restore state for that mode.
-func (sm *StateManager) RegisterContract(contract storage.ContractDefinition) error {
+// SetSharedSymbols is called by the shared_symbols module loader.
+func (sm *StateManager) SetSharedSymbols(symbolToString map[goja.Value]string, stringToSymbol map[string]goja.Value) {
+	sm.sessionMu.Lock()
+	defer sm.sessionMu.Unlock()
+	sm.sharedSymbolToString = symbolToString
+	sm.sharedStringToSymbol = stringToSymbol
+}
+
+// IsSharedSymbol checks if a goja.Value Symbol is a known shared symbol.
+// If true, it returns its canonical string key (e.g., "contextItems").
+func (sm *StateManager) IsSharedSymbol(symbol goja.Value) (string, bool) {
+	sm.sessionMu.RLock()
+	defer sm.sessionMu.RUnlock()
+	key, ok := sm.sharedSymbolToString[symbol]
+	return key, ok
+}
+
+// GetState retrieves a value from the unified state map.
+// Key format: "commandID:localKey" for command-specific, or shared symbol name for shared state.
+func (sm *StateManager) GetState(persistentKey string) (interface{}, bool) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	// Compute the contract hash
-	hash, err := storage.ComputeContractSchemaHash(contract)
-	if err != nil {
-		return fmt.Errorf("failed to compute contract hash: %w", err)
+	// Ensure maps are initialized
+	if sm.session.ScriptState == nil {
+		sm.session.ScriptState = make(map[string]map[string]interface{})
+	}
+	if sm.session.SharedState == nil {
+		sm.session.SharedState = make(map[string]interface{})
 	}
 
-	// Determine the key (mode name or shared state key)
-	key := contract.ModeName
-	if contract.IsShared {
-		key = sharedStateKey
+	// Check if this is a shared symbol (no colon prefix)
+	if !strings.Contains(persistentKey, ":") {
+		// Shared state lookup
+		val, ok := sm.session.SharedState[persistentKey]
+		return val, ok
 	}
 
-	// Store the contract
-	sm.registeredContracts[key] = contract
-
-	// Update the session's contract list
-	// First, remove any existing contract with the same key
-	newContracts := make([]storage.ContractDefinition, 0, len(sm.session.Contracts)+1)
-	for _, c := range sm.session.Contracts {
-		cKey := c.ModeName
-		if c.IsShared {
-			cKey = sharedStateKey
-		}
-		if cKey != key {
-			newContracts = append(newContracts, c)
-		}
+	// Script-specific state: split "commandID:localKey"
+	parts := strings.SplitN(persistentKey, ":", 2)
+	if len(parts) != 2 {
+		return nil, false
 	}
-	newContracts = append(newContracts, contract)
-	sm.session.Contracts = newContracts
+	commandID := parts[0]
+	localKey := parts[1]
 
-	log.Printf("Registered contract for %q with hash %s", key, hash)
+	// Get command's state map
+	commandState, exists := sm.session.ScriptState[commandID]
+	if !exists {
+		return nil, false
+	}
 
-	return nil
+	val, ok := commandState[localKey]
+	return val, ok
 }
 
-// RestoreState attempts to restore persisted state for a mode.
-// Returns the state as a JSON string if valid state is found, or an empty string otherwise.
-// If the contract hash doesn't match, a warning is logged and no state is restored.
-func (sm *StateManager) RestoreState(modeName string, isShared bool) (string, error) {
+// SetState sets a value in the unified state map.
+// Key format: "commandID:localKey" for command-specific, or shared symbol name for shared state.
+func (sm *StateManager) SetState(persistentKey string, value interface{}) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	key := modeName
-	if isShared {
-		key = sharedStateKey
+	// Ensure maps are initialized
+	if sm.session.ScriptState == nil {
+		sm.session.ScriptState = make(map[string]map[string]interface{})
+	}
+	if sm.session.SharedState == nil {
+		sm.session.SharedState = make(map[string]interface{})
 	}
 
-	// Check if we have a registered contract for this mode
-	contract, ok := sm.registeredContracts[key]
-	if !ok {
-		return "", fmt.Errorf("no contract registered for %q", key)
+	// Check if this is a shared symbol (no colon prefix)
+	if !strings.Contains(persistentKey, ":") {
+		// Shared state write
+		sm.session.SharedState[persistentKey] = value
+		sm.session.UpdatedAt = time.Now()
+		return
 	}
 
-	// Compute the current contract hash
-	currentHash, err := storage.ComputeContractSchemaHash(contract)
-	if err != nil {
-		return "", fmt.Errorf("failed to compute contract hash: %w", err)
+	// Script-specific state: split "commandID:localKey"
+	parts := strings.SplitN(persistentKey, ":", 2)
+	if len(parts) != 2 {
+		return
+	}
+	commandID := parts[0]
+	localKey := parts[1]
+
+	// Get or create command's state map
+	commandState, exists := sm.session.ScriptState[commandID]
+	if !exists {
+		commandState = make(map[string]interface{})
+		sm.session.ScriptState[commandID] = commandState
 	}
 
-	// Look up the persisted state
-	modeState, ok := sm.session.LatestState[key]
-	if !ok {
-		// No persisted state found
-		return "", nil
-	}
-
-	// Validate the contract hash
-	if modeState.ContractHash != currentHash {
-		log.Printf("WARNING: Contract hash mismatch for %q. Expected %s, got %s. Starting with fresh state.", key, currentHash, modeState.ContractHash)
-		return "", nil
-	}
-
-	// Return the persisted state
-	return modeState.StateJSON, nil
+	commandState[localKey] = value
+	sm.session.UpdatedAt = time.Now()
 }
 
-// CaptureSnapshot captures the current state of all modes into the session history.
+// SerializeCompleteState serializes the entire state (both script and shared) into a JSON string.
+// This is used by CaptureSnapshot to create history entries with complete state snapshots.
+func (sm *StateManager) SerializeCompleteState() (string, error) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	// Ensure maps are initialized
+	if sm.session.ScriptState == nil {
+		sm.session.ScriptState = make(map[string]map[string]interface{})
+	}
+	if sm.session.SharedState == nil {
+		sm.session.SharedState = make(map[string]interface{})
+	}
+
+	// Create a wrapper object containing both state zones
+	completeState := map[string]interface{}{
+		"script": sm.session.ScriptState,
+		"shared": sm.session.SharedState,
+	}
+
+	bytes, err := json.Marshal(completeState)
+	if err != nil {
+		return "{}", fmt.Errorf("failed to serialize state: %w", err)
+	}
+
+	return string(bytes), nil
+}
+
+// CaptureSnapshot captures the current state into the session history.
 // This creates an immutable history entry with the complete application state.
-func (sm *StateManager) CaptureSnapshot(modeID, command string, stateMap map[string]string) error {
+func (sm *StateManager) CaptureSnapshot(modeID, command string, stateJSON string) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
 	// Generate a unique entry ID
 	entryID := fmt.Sprintf("%d", time.Now().UnixNano())
 
-	// Compute contract hashes for all registered contracts
-	contractHashes := make(map[string]string)
-	for key, contract := range sm.registeredContracts {
-		hash, err := storage.ComputeContractSchemaHash(contract)
-		if err != nil {
-			return fmt.Errorf("failed to compute contract hash for %q: %w", key, err)
-		}
-		contractHashes[key] = hash
-	}
-
-	// Serialize the complete state map
-	stateJSON, err := json.Marshal(stateMap)
-	if err != nil {
-		return fmt.Errorf("failed to marshal state map: %w", err)
-	}
-
 	// Create the history entry
 	entry := storage.HistoryEntry{
-		EntryID:        entryID,
-		ModeID:         modeID,
-		Command:        command,
-		Timestamp:      time.Now(),
-		FinalState:     string(stateJSON),
-		ContractHashes: contractHashes,
+		EntryID:    entryID,
+		ModeID:     modeID,
+		Command:    command,
+		Timestamp:  time.Now(),
+		FinalState: stateJSON,
 	}
 
 	// Ring buffer write logic
@@ -270,30 +316,6 @@ func (sm *StateManager) CaptureSnapshot(modeID, command string, stateMap map[str
 	} else {
 		// Buffer is full, "pop" the oldest entry by advancing the start
 		sm.historyStart = (sm.historyStart + 1) % maxHistoryEntries
-	}
-
-	// Update the latest state for each mode in the state map
-	for key, stateJSON := range stateMap {
-		// Find the contract for this key
-		_, ok := sm.registeredContracts[key]
-		if !ok {
-			log.Printf("WARNING: No contract found for %q, skipping latest state update", key)
-			continue
-		}
-
-		// Reuse the hash computed earlier instead of recomputing
-		hash, ok := contractHashes[key]
-		if !ok {
-			log.Printf("WARNING: No contract hash found for %q, skipping latest state update", key)
-			continue
-		}
-
-		// Update the latest state
-		sm.session.LatestState[key] = storage.ModeState{
-			ModeName:     key,
-			ContractHash: hash,
-			StateJSON:    stateJSON,
-		}
 	}
 
 	sm.session.UpdatedAt = time.Now()
@@ -331,6 +353,103 @@ func (sm *StateManager) GetSessionHistory() []storage.HistoryEntry {
 	defer sm.mu.Unlock()
 
 	return sm.getFlatHistoryInternal()
+}
+
+// ClearAllState resets all script and shared state to empty maps.
+// It does NOT clear the history.
+func (sm *StateManager) ClearAllState() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sm.session.ScriptState = make(map[string]map[string]interface{})
+	sm.session.SharedState = make(map[string]interface{})
+	sm.session.UpdatedAt = time.Now()
+}
+
+// ArchiveAndReset performs a safe reset that archives the current session and reinitializes.
+// This is called by the reset REPL command to preserve history while clearing state.
+// Steps:
+//  1. Persist current session to ensure all in-memory state is on disk
+//  2. Archive the session file to {archive}/{sanitizedID}--reset--{timestamp}--{counter}.session.json
+//     (counter increments if file already exists, allowing multiple resets with same timestamp)
+//  3. Clear all state and reinitialize to defaults
+//  4. Persist the new empty session under the original session ID filename
+//
+// Returns the archive path and any error encountered.
+func (sm *StateManager) ArchiveAndReset() (string, error) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	if sm.backend == nil {
+		return "", fmt.Errorf("backend is nil, cannot archive")
+	}
+
+	// Step 1: Persist current state to disk
+	if err := sm.persistSessionInternal(); err != nil {
+		return "", fmt.Errorf("failed to persist session before archive: %w", err)
+	}
+
+	// Step 2: Determine archive path and archive the session file
+	// Use a counter to handle collisions when multiple resets happen in quick succession
+	ts := time.Now()
+	counter := 0
+	archivePath := ""
+
+	// Try candidate archive paths until we successfully create one without
+	// overwriting an existing file. ArchiveSession will return os.ErrExist
+	// if the destination already exists which avoids a TOCTOU window.
+	// Determine the effective attempts limit (instance override or default)
+	attemptsLimit := sm.ArchiveAttemptsMax
+	if attemptsLimit <= 0 {
+		attemptsLimit = 1000
+	}
+
+	success := false
+	for counter < attemptsLimit {
+		var err error
+		archivePath, err = storage.ArchiveSessionFilePath(sm.sessionID, ts, counter)
+		if err != nil {
+			return "", fmt.Errorf("failed to determine archive path: %w", err)
+		}
+
+		err = sm.backend.ArchiveSession(sm.sessionID, archivePath)
+		if err == nil {
+			// success
+			success = true
+			break
+		}
+		if errors.Is(err, os.ErrExist) {
+			// collision: try next counter
+			counter++
+			continue
+		}
+		return "", fmt.Errorf("failed to archive session: %w", err)
+	}
+
+	// If we never managed to archive the session (e.g. candidates all existed),
+	// abort and return a clear error rather than clearing the session state.
+	if !success {
+		return "", fmt.Errorf("failed to archive session after %d attempts", attemptsLimit)
+	}
+
+	// Step 3: Clear state and reinitialize session
+	sm.session.ScriptState = make(map[string]map[string]interface{})
+	sm.session.SharedState = make(map[string]interface{})
+	sm.session.CreatedAt = time.Now()
+	sm.session.UpdatedAt = time.Now()
+	sm.session.History = []storage.HistoryEntry{}
+
+	// Reset history ring buffer
+	sm.historyBuf = make([]storage.HistoryEntry, maxHistoryEntries)
+	sm.historyStart = 0
+	sm.historyLen = 0
+
+	// Step 4: Persist the new empty session
+	if err := sm.persistSessionInternal(); err != nil {
+		return "", fmt.Errorf("failed to persist reset session: %w", err)
+	}
+
+	return archivePath, nil
 }
 
 // Close releases resources held by the state manager, persisting

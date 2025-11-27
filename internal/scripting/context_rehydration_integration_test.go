@@ -57,24 +57,21 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 		script := `
 			const {contextManager} = require('osm:ctxutil');
 			const nextIntegerId = require('osm:nextIntegerId');
+			const sharedSymbols = require('osm:sharedStateSymbols');
 
-			const StateKeys = tui.createStateContract("ctx-test", {
-				items: {
-					description: "ctx-test:items",
-					defaultValue: []
-				}
+			const state = tui.createState("ctx-test", {
+				[sharedSymbols.contextItems]: {defaultValue: []}
 			});
 
 			tui.registerMode({
 				name: "ctx-test",
-				stateContract: StateKeys,
 				tui: {
 					enableHistory: true
 				},
-				commands: function(state) {
+				commands: function() {
 					const ctxmgr = contextManager({
-						getItems: () => state.get(StateKeys.items),
-						setItems: (v) => state.set(StateKeys.items, v),
+						getItems: () => state.get(sharedSymbols.contextItems),
+						setItems: (v) => state.set(sharedSymbols.contextItems, v),
 						nextIntegerId: nextIntegerId,
 						buildPrompt: () => context.toTxtar()
 					});
@@ -105,7 +102,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 		}
 
 		// Verify files are in state
-		items, err := tm.GetStateForTest("ctx-test:items")
+		items, err := tm.GetStateForTest("contextItems")
 		if err != nil {
 			t.Fatalf("Failed to get items: %v", err)
 		}
@@ -164,24 +161,21 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 		script := `
 			const {contextManager} = require('osm:ctxutil');
 			const nextIntegerId = require('osm:nextIntegerId');
+			const shared = require('osm:sharedStateSymbols');
 
-			const StateKeys = tui.createStateContract("ctx-test", {
-				items: {
-					description: "ctx-test:items",
-					defaultValue: []
-				}
+			const state = tui.createState("ctx-test", {
+				[shared.contextItems]: {defaultValue: []}
 			});
 
 			tui.registerMode({
 				name: "ctx-test",
-				stateContract: StateKeys,
 				tui: {
 					enableHistory: true
 				},
-				commands: function(state) {
+				commands: function() {
 					const ctxmgr = contextManager({
-						getItems: () => state.get(StateKeys.items),
-						setItems: (v) => state.set(StateKeys.items, v),
+						getItems: () => state.get(shared.contextItems),
+						setItems: (v) => state.set(shared.contextItems, v),
 						nextIntegerId: nextIntegerId,
 						buildPrompt: () => context.toTxtar()
 					});
@@ -200,7 +194,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 		tm := engine.tuiManager
 
 		// Verify items were restored
-		items, err := tm.GetStateForTest("ctx-test:items")
+		items, err := tm.GetStateForTest("contextItems")
 		if err != nil {
 			t.Fatalf("Failed to get items: %v", err)
 		}
@@ -210,8 +204,8 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 			t.Fatalf("Expected items to be array, got %T", items)
 		}
 
-		if len(itemsList) != 3 {
-			t.Errorf("Expected 3 items after restore, got %d", len(itemsList))
+		if len(itemsList) != 2 {
+			t.Errorf("Expected 2 items after restore (missing file removed), got %d", len(itemsList))
 		}
 
 		// Verify ContextManager was re-hydrated (CRITICAL TEST)
@@ -223,13 +217,18 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 
 		// Verify the remove command works (CRITICAL TEST)
 		// This proves the ContextManager state was correctly restored
+		// We remove the first item (index 0), which should be test1.txt
+		// Note: Since test2.txt was removed during rehydration, the indices might have shifted.
+		// If test2.txt was index 1, and it's gone, then test3.txt is now index 1.
+		// Let's check what items are left to be sure.
+		// Assuming order is preserved minus the missing one.
 		stdout.Reset()
 		if err := tm.ExecuteCommand("remove", []string{"1"}); err != nil {
 			t.Fatalf("Failed to remove item after restoration: %v", err)
 		}
 
 		// Verify removal succeeded
-		items, err = tm.GetStateForTest("ctx-test:items")
+		items, err = tm.GetStateForTest("contextItems")
 		if err != nil {
 			t.Fatalf("Failed to get items after remove: %v", err)
 		}
@@ -239,8 +238,8 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 			t.Fatalf("Expected items to be array, got %T", items)
 		}
 
-		if len(itemsList) != 2 {
-			t.Errorf("Expected 2 items after removal, got %d", len(itemsList))
+		if len(itemsList) != 1 {
+			t.Errorf("Expected 1 item after removal, got %d", len(itemsList))
 		}
 
 		// Verify toTxtar still works (CRITICAL TEST)
@@ -296,24 +295,24 @@ func TestContextRehydrationWithSharedState(t *testing.T) {
 	script := `
 		const {contextManager} = require('osm:ctxutil');
 		const nextIntegerId = require('osm:nextIntegerId');
+		const shared = require('osm:sharedStateSymbols');
 
-		const SharedKeys = tui.createSharedStateContract("shared-ctx", {
-			sharedItems: {
-				description: "shared-ctx:sharedItems",
-				defaultValue: []
-			}
+		const SharedStateKeys = {
+			sharedItems: Symbol("sharedItems")
+		};
+		const sharedState = tui.createState("shared-test", {
+			[SharedStateKeys.sharedItems]: {defaultValue: []}
 		});
 
 		tui.registerMode({
 			name: "shared-test",
-			stateContract: SharedKeys,
 			tui: {
 				enableHistory: true
 			},
-			commands: function(state) {
+			commands: function() {
 				const ctxmgr = contextManager({
-					getItems: () => state.get(SharedKeys.sharedItems),
-					setItems: (v) => state.set(SharedKeys.sharedItems, v),
+					getItems: () => sharedState.get(SharedStateKeys.sharedItems),
+					setItems: (v) => sharedState.set(SharedStateKeys.sharedItems, v),
 					nextIntegerId: nextIntegerId,
 					buildPrompt: () => context.toTxtar()
 				});

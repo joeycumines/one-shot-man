@@ -18,6 +18,10 @@ func TestCodeReviewCommand_NonInteractive(t *testing.T) {
 	cmd.testMode = true
 	cmd.interactive = false
 
+	// avoid polluting real session storage
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
+
 	err := cmd.Execute([]string{}, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
@@ -25,12 +29,8 @@ func TestCodeReviewCommand_NonInteractive(t *testing.T) {
 
 	// Check for expected output from the script execution
 	output := stdout.String()
-	if !contains(output, "Code Review: context -> single prompt for PR review") {
-		t.Errorf("Expected banner message in output, got: %s", output)
-	}
-
-	if !contains(output, "Commands: add, diff, note, list, edit, remove, show, copy, help, exit") {
-		t.Errorf("Expected help message in output, got: %s", output)
+	if !contains(output, "Type 'help' for commands. Tip: Try 'note --goals'.") {
+		t.Errorf("Expected compact initial message in output, got: %s", output)
 	}
 }
 
@@ -129,6 +129,10 @@ func TestCodeReviewCommand_ExecuteWithArgs(t *testing.T) {
 	cmd.testMode = true
 	cmd.interactive = false
 
+	// keep tests isolated from real session storage
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
+
 	args := []string{"arg1", "arg2"}
 	err := cmd.Execute(args, &stdout, &stderr)
 	if err != nil {
@@ -137,8 +141,8 @@ func TestCodeReviewCommand_ExecuteWithArgs(t *testing.T) {
 
 	// Should still produce expected output
 	output := stdout.String()
-	if !contains(output, "Code Review: context -> single prompt for PR review") {
-		t.Errorf("Expected banner message with args, got: %s", output)
+	if !contains(output, "Type 'help' for commands. Tip: Try 'note --goals'.") {
+		t.Errorf("Expected compact initial message with args, got: %s", output)
 	}
 }
 
@@ -158,6 +162,10 @@ func TestCodeReviewCommand_ConfigColorOverrides(t *testing.T) {
 	cmd.testMode = true
 	cmd.interactive = false
 
+	// keep tests isolated from real session storage
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
+
 	err := cmd.Execute([]string{}, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Expected no error with color config, got: %v", err)
@@ -165,8 +173,8 @@ func TestCodeReviewCommand_ConfigColorOverrides(t *testing.T) {
 
 	// The test should pass without errors even with color configuration
 	output := stdout.String()
-	if !contains(output, "Code Review: context -> single prompt for PR review") {
-		t.Errorf("Expected banner message with color config, got: %s", output)
+	if !contains(output, "Type 'help' for commands. Tip: Try 'note --goals'.") {
+		t.Errorf("Expected compact initial message with color config, got: %s", output)
 	}
 }
 
@@ -179,6 +187,10 @@ func TestCodeReviewCommand_NilConfig(t *testing.T) {
 	cmd.testMode = true
 	cmd.interactive = false
 
+	// keep tests isolated from real session storage
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
+
 	err := cmd.Execute([]string{}, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Expected no error with nil config, got: %v", err)
@@ -186,8 +198,8 @@ func TestCodeReviewCommand_NilConfig(t *testing.T) {
 
 	// Should still work
 	output := stdout.String()
-	if !contains(output, "Code Review: context -> single prompt for PR review") {
-		t.Errorf("Expected banner message with nil config, got: %s", output)
+	if !contains(output, "Type 'help' for commands. Tip: Try 'note --goals'.") {
+		t.Errorf("Expected compact initial message with nil config, got: %s", output)
 	}
 }
 
@@ -242,7 +254,7 @@ func TestCodeReviewCommand_EmbeddedContent(t *testing.T) {
 	}
 
 	// Test script structure (new architecture uses buildCommands function)
-	if !contains(codeReviewScript, "function buildCommands(state)") {
+	if !contains(codeReviewScript, "function buildCommands(stateArg)") {
 		t.Error("Expected script to contain buildCommands function")
 	}
 

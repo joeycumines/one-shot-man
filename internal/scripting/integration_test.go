@@ -103,13 +103,6 @@ func TestFullLLMWorkflow(t *testing.T) {
 	// Capture initial offset for automatic startup output
 	startLen := cp.OutputLen()
 
-	// Wait for TUI startup
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
-	}
-	if _, err := cp.ExpectSince("Available modes: llm-prompt-builder", startLen); err != nil {
-		t.Fatalf("Expected modes: %v", err)
-	}
 	if _, err := cp.ExpectSince(">>> ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
@@ -140,8 +133,8 @@ func testCompletePromptWorkflow(t *testing.T, cp *termtest.ConsoleProcess) {
 	// Create a customer service prompt
 	startLen := cp.OutputLen()
 	cp.SendLine("new customer-service A customer service assistant prompt")
-	if _, err := cp.ExpectSince("Created new prompt: customer-service", startLen); err != nil {
-		t.Fatalf("Expected prompt creation: %v", err)
+	if _, err := cp.ExpectSince("Created new prompt: customer-service", startLen, time.Second*5); err != nil {
+		t.Fatalf("Expected prompt creation: %v\nOUTPUT: %q", err, cp.GetOutput())
 	}
 
 	// Set initial template
@@ -305,34 +298,35 @@ func TestMultiModeWorkflow(t *testing.T) {
 // Multi-mode test script
 ctx.log("Registering multiple modes...");
 
-const CalculatorKeys = tui.createStateContract("calculator", {
-	result: {
-		description: "calculator:result",
-		defaultValue: 0
-	}
+// Create state for calculator mode (command-specific state)
+const CalculatorStateKeys = {
+	result: Symbol("result")
+};
+const calculatorState = tui.createState("calculator", {
+	[CalculatorStateKeys.result]: {defaultValue: 0}
 });
 
-const NotesKeys = tui.createStateContract("notes", {
-	notes: {
-		description: "notes:notes",
-		defaultValue: []
-	}
+// Create state for notes mode (command-specific state)
+const NotesStateKeys = {
+	notes: Symbol("notes")
+};
+const notesState = tui.createState("notes", {
+	[NotesStateKeys.notes]: {defaultValue: []}
 });
 
 // Register a simple calculator mode
 tui.registerMode({
 	name: "calculator",
-	stateContract: CalculatorKeys,
 	tui: {
 		title: "Simple Calculator",
 		prompt: "[calc]> "
 	},
-	onEnter: function(_, stateObj) {
+	onEnter: function() {
 		output.print("Calculator mode active");
-		var current = stateObj.state.get(CalculatorKeys.result);
+		var current = calculatorState.get(CalculatorStateKeys.result);
 		output.print("Current result: " + current);
 	},
-	commands: function(state) {
+	commands: function() {
 		return {
 			"add": {
 				description: "Add numbers",
@@ -343,14 +337,14 @@ tui.registerMode({
 						return;
 					}
 					var result = parseFloat(args[0]) + parseFloat(args[1]);
-					state.set(CalculatorKeys.result, result);
+					calculatorState.set(CalculatorStateKeys.result, result);
 					output.print("Result: " + result);
 				}
 			},
 			"result": {
 				description: "Show current result",
 				handler: function() {
-					output.print("Current result: " + state.get(CalculatorKeys.result));
+					output.print("Current result: " + calculatorState.get(CalculatorStateKeys.result));
 				}
 			}
 		};
@@ -360,32 +354,31 @@ tui.registerMode({
 // Register a note-taking mode
 tui.registerMode({
 	name: "notes",
-	stateContract: NotesKeys,
 	tui: {
 		title: "Note Taker",
 		prompt: "[notes]> "
 	},
-	onEnter: function(_, stateObj) {
+	onEnter: function() {
 		output.print("Note-taking mode active");
-		output.print("Notes stored: " + stateObj.state.get(NotesKeys.notes).length);
+		output.print("Notes stored: " + notesState.get(NotesStateKeys.notes).length);
 	},
-	commands: function(state) {
+	commands: function() {
 		return {
 			"add": {
 				description: "Add a note",
 				usage: "add <note text>",
 				handler: function(args) {
 					var note = args.join(" ");
-					var notes = state.get(NotesKeys.notes);
+					var notes = notesState.get(NotesStateKeys.notes);
 					notes.push(note);
-					state.set(NotesKeys.notes, notes);
+					notesState.set(NotesStateKeys.notes, notes);
 					output.print("Added note: " + note);
 				}
 			},
 			"list": {
 				description: "List all notes",
 				handler: function() {
-					var notes = state.get(NotesKeys.notes);
+					var notes = notesState.get(NotesStateKeys.notes);
 					if (notes.length === 0) {
 						output.print("No notes yet");
 						return;
@@ -429,10 +422,10 @@ ctx.log("Modes registered: calculator, notes");
 	}
 	defer cp.Close()
 
-	// Wait for startup
+	// Wait for startup — script writes a registration message when ready
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 10*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince(">>> ", startLen, 10*time.Second); err != nil {
+		t.Fatalf("Expected multi-mode registration log: %v\nOUTPUT: %q", err, cp.GetOutput())
 	}
 
 	// Test calculator mode
@@ -558,10 +551,10 @@ func TestErrorHandling(t *testing.T) {
 	}
 	defer cp.Close()
 
-	// Wait for startup
+	// Wait for startup — demo-mode script logs when it registers
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("Rich TUI Terminal", startLen); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince(">>> ", startLen, time.Second*10); err != nil {
+		t.Fatalf("Expected demo script readiness (available modes): %v\nOUTPUT: %q", err, cp.GetOutput())
 	}
 
 	// Test switching to non-existent mode
@@ -613,19 +606,18 @@ func TestConcurrentAccess(t *testing.T) {
 
 	tuiManager := engine.GetTUIManager()
 
-	// Register a test mode with state contract
+	// Register a test mode with state
 	script := engine.LoadScriptFromString("concurrent-test", `
-		const StateKeys = tui.createStateContract("concurrent-test", {
-			counter: {
-				description: "concurrent-test:counter",
-				defaultValue: 0
-			}
+		const StateKeys = {
+			counter: Symbol("counter")
+		};
+		const state = tui.createState("concurrent-test", {
+			[StateKeys.counter]: {defaultValue: 0}
 		});
 
 		tui.registerMode({
 			name: "concurrent-test",
-			stateContract: StateKeys,
-			commands: function(state) {
+			commands: function() {
 				return {
 					"increment": {
 						description: "Increment counter",
@@ -796,37 +788,34 @@ func TestJavaScriptInteroperability(t *testing.T) {
 
 	// Test complex JavaScript integration with the TUI system
 	script := engine.LoadScriptFromString("interop-test", `
-		// Create state contract for complex mode
-		var StateKeys = tui.createStateContract("complex-mode", {
-			config: {
-				description: "complex-mode:config",
-				defaultValue: null
-			},
-			testArray: {
-				description: "complex-mode:testArray",
-				defaultValue: []
-			}
+		// Create state for complex mode
+		var StateKeys = {
+			config: Symbol("config"),
+			testArray: Symbol("testArray")
+		};
+		var state = tui.createState("complex-mode", {
+			[StateKeys.config]: {defaultValue: null},
+			[StateKeys.testArray]: {defaultValue: []}
 		});
 
 		// Test complex object handling
 		var complexConfig = {
 			name: "complex-mode",
-			stateContract: StateKeys,
 			tui: {
 				title: "Complex Mode",
 				prompt: "[complex]> "
 			},
-			onEnter: function(_, stateObj) {
+			onEnter: function() {
 				output.print("Complex mode entered");
 				// Test object state storage
-				stateObj.state.set(StateKeys.config, {
+				state.set(StateKeys.config, {
 					nested: {
 						value: 42,
 						array: [1, 2, 3]
 					}
 				});
 			},
-			commands: function(state) {
+			commands: function() {
 				return {
 					"test-object": {
 						description: "Test object handling",
@@ -901,17 +890,16 @@ func BenchmarkTUIPerformance(b *testing.B) {
 
 	// Register a test mode
 	script := engine.LoadScriptFromString("perf-test", `
-		const StateKeys = tui.createStateContract("perf-test", {
-			counter: {
-				description: "perf-test:counter",
-				defaultValue: 0
-			}
+		const StateKeys = {
+			counter: Symbol("counter")
+		};
+		const state = tui.createState("perf-test", {
+			[StateKeys.counter]: {defaultValue: 0}
 		});
 
 		tui.registerMode({
 			name: "perf-test",
-			stateContract: StateKeys,
-			commands: function(state) {
+			commands: function() {
 				return {
 					"perf": {
 						description: "Performance test command",
@@ -1065,33 +1053,30 @@ func TestTUIModeSystem(t *testing.T) {
 	// Test mode registration and switching
 	testScript := engine.LoadScriptFromString("tui-mode-test", `
 		// Create state contract for test mode
-		var StateKeys = tui.createStateContract("test-mode", {
-			testValue: {
-				description: "test-mode:testValue",
-				defaultValue: null
-			},
-			lastCommand: {
-				description: "test-mode:lastCommand",
-				defaultValue: ""
-			}
+		var StateKeys = {
+			testValue: Symbol("testValue"),
+			lastCommand: Symbol("lastCommand")
+		};
+		var state = tui.createState("test-mode", {
+			[StateKeys.testValue]: {defaultValue: null},
+			[StateKeys.lastCommand]: {defaultValue: ""}
 		});
 
 		// Register a test mode
 		tui.registerMode({
 			name: "test-mode",
-			stateContract: StateKeys,
 			tui: {
 				title: "Test Mode",
 				prompt: "[test]> "
 			},
-			onEnter: function(_, stateObj) {
+			onEnter: function() {
 				log.info("Entered test mode");
-				stateObj.state.set(StateKeys.testValue, "initialized");
+				state.set(StateKeys.testValue, "initialized");
 			},
 			onExit: function() {
 				log.info("Exited test mode");
 			},
-			commands: function(state) {
+			commands: function() {
 				return {
 					"test-cmd": {
 						description: "A test command",
@@ -1195,12 +1180,12 @@ func TestFullIntegration(t *testing.T) {
 		// Full integration test combining all systems
 		log.info("Starting full integration test");
 
-		// Create state contract for integration mode
-		var StateKeys = tui.createStateContract("integration-mode", {
-			filesProcessed: {
-				description: "integration-mode:filesProcessed",
-				defaultValue: 0
-			}
+		// Create state for integration mode
+		var StateKeys = {
+			filesProcessed: Symbol("filesProcessed")
+		};
+		var state = tui.createState("integration-mode", {
+			[StateKeys.filesProcessed]: {defaultValue: 0}
 		});
 
 		// Register a comprehensive mode
@@ -1210,8 +1195,7 @@ func TestFullIntegration(t *testing.T) {
 				title: "Integration Test Mode",
 				prompt: "[integration]> "
 			},
-			onEnter: function(_, stateObj) {
-				var state = stateObj.state;
+			onEnter: function() {
 				log.info("Entered integration mode");
 
 				// Add test files to context
@@ -1226,7 +1210,7 @@ func TestFullIntegration(t *testing.T) {
 					state.set(StateKeys.filesProcessed, 0);
 				}
 			},
-			commands: function(state) {
+			commands: function() {
 				return {
 					"process-files": {
 						description: "Process files in context",
@@ -1340,22 +1324,19 @@ func TestScriptCommandVerification(t *testing.T) {
 
 	// Test script with various command types
 	testScript := engine.LoadScriptFromString("command-verification", `
-		// Create state contract
-		var StateKeys = tui.createStateContract("command-test", {
-			commandResults: {
-				description: "command-test:commandResults",
-				defaultValue: []
-			},
-			complexState: {
-				description: "command-test:complexState",
-				defaultValue: {}
-			}
+		// Create state for command test mode
+		var StateKeys = {
+			commandResults: Symbol("commandResults"),
+			complexState: Symbol("complexState")
+		};
+		var state = tui.createState("command-test", {
+			[StateKeys.commandResults]: {defaultValue: []},
+			[StateKeys.complexState]: {defaultValue: {}}
 		});
 
 		// Register mode with comprehensive command testing
 		tui.registerMode({
 			name: "command-test",
-			stateContract: StateKeys,
 			tui: {
 				title: "Command Test Mode",
 				prompt: "[cmd-test]> "
@@ -1363,7 +1344,7 @@ func TestScriptCommandVerification(t *testing.T) {
 			onEnter: function() {
 				log.info("Command test mode initialized");
 			},
-			commands: function(state) {
+			commands: function() {
 				return {
 					"simple": {
 						description: "Simple command test",
@@ -1506,18 +1487,16 @@ func TestScriptStateVerification(t *testing.T) {
 
 	// Test state persistence and manipulation
 	testScript := engine.LoadScriptFromString("state-verification", `
-		// Create state contract
-		var StateKeys = tui.createStateContract("state-test", {
-			counter: {
-				description: "state-test:counter",
-				defaultValue: 0
-			},
-			messages: {
-				description: "state-test:messages",
-				defaultValue: []
-			},
-			config: {
-				description: "state-test:config",
+		// Create state for state-test mode
+		var StateKeys = {
+			counter: Symbol("counter"),
+			messages: Symbol("messages"),
+			config: Symbol("config")
+		};
+		var state = tui.createState("state-test", {
+			[StateKeys.counter]: {defaultValue: 0},
+			[StateKeys.messages]: {defaultValue: []},
+			[StateKeys.config]: {
 				defaultValue: {
 					name: "test-config",
 					features: ["logging", "state", "commands"],
@@ -1532,7 +1511,6 @@ func TestScriptStateVerification(t *testing.T) {
 		// Register mode with comprehensive state testing
 		tui.registerMode({
 			name: "state-test",
-			stateContract: StateKeys,
 			tui: {
 				title: "State Test Mode",
 				prompt: "[state-test]> "
@@ -1541,7 +1519,7 @@ func TestScriptStateVerification(t *testing.T) {
 				// State is auto-initialized from defaults
 				log.info("State test mode initialized with complex state");
 			},
-			commands: function(state) {
+			commands: function() {
 				return {
 					"increment": {
 						description: "Increment counter",

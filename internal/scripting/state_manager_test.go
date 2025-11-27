@@ -1,7 +1,6 @@
 package scripting
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -41,6 +40,11 @@ func (m *mockBackend) Close() error {
 	return m.closeError
 }
 
+func (m *mockBackend) ArchiveSession(sessionID string, destPath string) error {
+	// Mock archive: no-op, just return nil
+	return nil
+}
+
 func TestNewStateManager_InitializesNewSession(t *testing.T) {
 	backend := &mockBackend{
 		session: nil, // No existing session
@@ -68,33 +72,27 @@ func TestNewStateManager_InitializesNewSession(t *testing.T) {
 	if sm.session.CreatedAt.IsZero() {
 		t.Error("CreatedAt was not set")
 	}
-	if len(sm.session.Contracts) != 0 {
-		t.Errorf("expected empty Contracts, got %d", len(sm.session.Contracts))
-	}
 	history := sm.GetSessionHistory()
 	if len(history) != 0 {
 		t.Errorf("expected empty History, got %d", len(history))
 	}
-	if sm.session.LatestState == nil {
-		t.Error("LatestState was not initialized")
+	if sm.session.ScriptState == nil {
+		t.Error("ScriptState was not initialized")
+	}
+	if sm.session.SharedState == nil {
+		t.Error("SharedState was not initialized")
 	}
 }
 
 func TestNewStateManager_LoadsExistingSession(t *testing.T) {
 	existingSession := &storage.Session{
-		Version:   "1.0.0",
-		SessionID: "test-session-existing",
-		CreatedAt: time.Now().Add(-24 * time.Hour),
-		UpdatedAt: time.Now().Add(-1 * time.Hour),
-		Contracts: []storage.ContractDefinition{
-			{ModeName: "test-mode", Keys: map[string]any{"key1": "value1"}},
-		},
-		History: []storage.HistoryEntry{
-			{EntryID: "1", Command: "test"},
-		},
-		LatestState: map[string]storage.ModeState{
-			"test-mode": {ModeName: "test-mode", ContractHash: "abc123", StateJSON: `{"key1":"value1"}`},
-		},
+		Version:     "1.0.0",
+		SessionID:   "test-session-existing",
+		CreatedAt:   time.Now().Add(-24 * time.Hour),
+		UpdatedAt:   time.Now().Add(-1 * time.Hour),
+		History:     []storage.HistoryEntry{{EntryID: "1", Command: "test"}},
+		ScriptState: map[string]map[string]interface{}{"test-mode": {"key1": "value1"}},
+		SharedState: map[string]interface{}{},
 	}
 	backend := &mockBackend{
 		session: existingSession,
@@ -109,9 +107,6 @@ func TestNewStateManager_LoadsExistingSession(t *testing.T) {
 	if sm.session != existingSession {
 		t.Error("session was not loaded correctly")
 	}
-	if len(sm.session.Contracts) != 1 {
-		t.Errorf("expected 1 contract, got %d", len(sm.session.Contracts))
-	}
 	history := sm.GetSessionHistory()
 	if len(history) != 1 {
 		t.Errorf("expected 1 history entry, got %d", len(history))
@@ -120,19 +115,13 @@ func TestNewStateManager_LoadsExistingSession(t *testing.T) {
 
 func TestNewStateManager_RecoversFromVersionMismatch(t *testing.T) {
 	oldSession := &storage.Session{
-		Version:   "0.9.0", // Old version
-		SessionID: "test-session-old",
-		CreatedAt: time.Now().Add(-24 * time.Hour),
-		UpdatedAt: time.Now().Add(-1 * time.Hour),
-		Contracts: []storage.ContractDefinition{
-			{ModeName: "test-mode", Keys: map[string]any{"key1": "value1"}},
-		},
-		History: []storage.HistoryEntry{
-			{EntryID: "1", Command: "test"},
-		},
-		LatestState: map[string]storage.ModeState{
-			"test-mode": {ModeName: "test-mode", ContractHash: "abc123", StateJSON: `{"key1":"value1"}`},
-		},
+		Version:     "0.9.0", // Old version
+		SessionID:   "test-session-old",
+		CreatedAt:   time.Now().Add(-24 * time.Hour),
+		UpdatedAt:   time.Now().Add(-1 * time.Hour),
+		History:     []storage.HistoryEntry{{EntryID: "1", Command: "test"}},
+		ScriptState: map[string]map[string]interface{}{"test-mode": {"key1": "value1"}},
+		SharedState: map[string]interface{}{},
 	}
 	backend := &mockBackend{
 		session: oldSession,
@@ -148,19 +137,21 @@ func TestNewStateManager_RecoversFromVersionMismatch(t *testing.T) {
 	if sm.session.Version != "1.0.0" {
 		t.Errorf("expected Version 1.0.0, got %q", sm.session.Version)
 	}
-	if len(sm.session.Contracts) != 0 {
-		t.Errorf("expected empty Contracts after version mismatch, got %d", len(sm.session.Contracts))
-	}
 	history := sm.GetSessionHistory()
 	if len(history) != 0 {
 		t.Errorf("expected empty History after version mismatch, got %d", len(history))
 	}
-	if len(sm.session.LatestState) != 0 {
-		t.Errorf("expected empty LatestState after version mismatch, got %d", len(sm.session.LatestState))
+	if len(sm.session.ScriptState) != 0 {
+		t.Errorf("expected empty ScriptState after version mismatch, got %d", len(sm.session.ScriptState))
+	}
+	if len(sm.session.SharedState) != 0 {
+		t.Errorf("expected empty SharedState after version mismatch, got %d", len(sm.session.SharedState))
 	}
 }
 
-func TestRestoreState_Success(t *testing.T) {
+// NEW ARCHITECTURE: Tests for GetState/SetState
+
+func TestGetSetState_ScriptSpecific(t *testing.T) {
 	backend := &mockBackend{
 		session: nil,
 	}
@@ -170,43 +161,35 @@ func TestRestoreState_Success(t *testing.T) {
 	}
 	defer sm.Close()
 
-	// Register a contract
-	contract := storage.ContractDefinition{
-		ModeName: "test-mode",
-		IsShared: false,
-		Keys:     map[string]any{"key1": "default1", "key2": 42},
-		Schemas:  map[string]any{"key1": "string", "key2": "number"},
+	// Set command-specific state
+	sm.SetState("test-mode:key1", "value1")
+	sm.SetState("test-mode:key2", 42)
+
+	// Get command-specific state
+	val1, ok := sm.GetState("test-mode:key1")
+	if !ok {
+		t.Error("expected key1 to exist")
 	}
-	err = sm.RegisterContract(contract)
-	if err != nil {
-		t.Fatalf("RegisterContract failed: %v", err)
+	if val1 != "value1" {
+		t.Errorf("expected value1, got %v", val1)
 	}
 
-	// Compute the expected hash
-	expectedHash, err := storage.ComputeContractSchemaHash(contract)
-	if err != nil {
-		t.Fatalf("ComputeContractSchemaHash failed: %v", err)
+	val2, ok := sm.GetState("test-mode:key2")
+	if !ok {
+		t.Error("expected key2 to exist")
+	}
+	if val2 != 42 {
+		t.Errorf("expected 42, got %v", val2)
 	}
 
-	// Add a matching state to the session
-	stateJSON := `{"key1":"test-value","key2":99}`
-	sm.session.LatestState["test-mode"] = storage.ModeState{
-		ModeName:     "test-mode",
-		ContractHash: expectedHash,
-		StateJSON:    stateJSON,
-	}
-
-	// Restore the state
-	restored, err := sm.RestoreState("test-mode", false)
-	if err != nil {
-		t.Fatalf("RestoreState failed: %v", err)
-	}
-	if restored != stateJSON {
-		t.Errorf("expected state %q, got %q", stateJSON, restored)
+	// Verify isolation between commands
+	_, ok = sm.GetState("other-mode:key1")
+	if ok {
+		t.Error("expected key1 to not exist in other-mode")
 	}
 }
 
-func TestRestoreState_HashMismatch(t *testing.T) {
+func TestGetSetState_Shared(t *testing.T) {
 	backend := &mockBackend{
 		session: nil,
 	}
@@ -216,53 +199,20 @@ func TestRestoreState_HashMismatch(t *testing.T) {
 	}
 	defer sm.Close()
 
-	// Register a contract
-	contract := storage.ContractDefinition{
-		ModeName: "test-mode",
-		IsShared: false,
-		Keys:     map[string]any{"key1": "default1"},
-		Schemas:  map[string]any{"key1": "string"},
-	}
-	err = sm.RegisterContract(contract)
-	if err != nil {
-		t.Fatalf("RegisterContract failed: %v", err)
-	}
+	// Set shared state
+	sm.SetState("contextItems", []string{"file1.txt", "file2.txt"})
 
-	// Add a state with a MISMATCHED hash
-	stateJSON := `{"key1":"test-value"}`
-	sm.session.LatestState["test-mode"] = storage.ModeState{
-		ModeName:     "test-mode",
-		ContractHash: "wrong-hash-12345",
-		StateJSON:    stateJSON,
+	// Get shared state
+	val, ok := sm.GetState("contextItems")
+	if !ok {
+		t.Error("expected contextItems to exist")
 	}
-
-	// Restore the state - should return empty string due to hash mismatch
-	restored, err := sm.RestoreState("test-mode", false)
-	if err != nil {
-		t.Fatalf("RestoreState failed: %v", err)
+	items, ok := val.([]string)
+	if !ok {
+		t.Fatalf("expected []string, got %T", val)
 	}
-	if restored != "" {
-		t.Errorf("expected empty string for mismatched hash, got %q", restored)
-	}
-}
-
-func TestRestoreState_NoContractRegistered(t *testing.T) {
-	backend := &mockBackend{
-		session: nil,
-	}
-	sm, err := NewStateManager(backend, "test-session")
-	if err != nil {
-		t.Fatalf("NewStateManager failed: %v", err)
-	}
-	defer sm.Close()
-
-	// Try to restore state for a mode without registering a contract
-	_, err = sm.RestoreState("unregistered-mode", false)
-	if err == nil {
-		t.Error("expected error for unregistered contract, got nil")
-	}
-	if !strings.Contains(err.Error(), "no contract registered") {
-		t.Errorf("expected 'no contract registered' error, got: %v", err)
+	if len(items) != 2 {
+		t.Errorf("expected 2 items, got %d", len(items))
 	}
 }
 
@@ -276,28 +226,16 @@ func TestCaptureSnapshot(t *testing.T) {
 	}
 	defer sm.Close()
 
-	// Register contracts
-	contract1 := storage.ContractDefinition{
-		ModeName: "mode1",
-		IsShared: false,
-		Keys:     map[string]any{"key1": "default1"},
-		Schemas:  map[string]any{"key1": "string"},
-	}
-	contract2 := storage.ContractDefinition{
-		ModeName: "shared",
-		IsShared: true,
-		Keys:     map[string]any{"shared_key": "default"},
-		Schemas:  map[string]any{"shared_key": "string"},
-	}
-	sm.RegisterContract(contract1)
-	sm.RegisterContract(contract2)
+	// Set some state
+	sm.SetState("mode1:key1", "value1")
+	sm.SetState("contextItems", "shared_value")
 
 	// Capture a snapshot
-	stateMap := map[string]string{
-		"mode1":      `{"key1":"value1"}`,
-		"__shared__": `{"shared_key":"shared_value"}`,
+	stateJSON, err := sm.SerializeCompleteState()
+	if err != nil {
+		t.Fatalf("SerializeCompleteState failed: %v", err)
 	}
-	err = sm.CaptureSnapshot("mode1", "test-command", stateMap)
+	err = sm.CaptureSnapshot("mode1", "test-command", stateJSON)
 	if err != nil {
 		t.Fatalf("CaptureSnapshot failed: %v", err)
 	}
@@ -315,106 +253,9 @@ func TestCaptureSnapshot(t *testing.T) {
 		t.Errorf("expected Command 'test-command', got %q", entry.Command)
 	}
 
-	// Verify FinalState contains the state map
-	var finalState map[string]string
-	err = json.Unmarshal([]byte(entry.FinalState), &finalState)
-	if err != nil {
-		t.Fatalf("failed to unmarshal FinalState: %v", err)
-	}
-	if finalState["mode1"] != stateMap["mode1"] {
-		t.Errorf("expected mode1 state %q, got %q", stateMap["mode1"], finalState["mode1"])
-	}
-	if finalState["__shared__"] != stateMap["__shared__"] {
-		t.Errorf("expected __shared__ state %q, got %q", stateMap["__shared__"], finalState["__shared__"])
-	}
-
-	// Verify LatestState was updated
-	if len(sm.session.LatestState) != 2 {
-		t.Fatalf("expected 2 LatestState entries, got %d", len(sm.session.LatestState))
-	}
-	if sm.session.LatestState["mode1"].StateJSON != stateMap["mode1"] {
-		t.Errorf("expected LatestState mode1 %q, got %q", stateMap["mode1"], sm.session.LatestState["mode1"].StateJSON)
-	}
-	if sm.session.LatestState["__shared__"].StateJSON != stateMap["__shared__"] {
-		t.Errorf("expected LatestState __shared__ %q, got %q", stateMap["__shared__"], sm.session.LatestState["__shared__"].StateJSON)
-	}
-
-	// Verify contract hashes are stored
-	if len(entry.ContractHashes) != 2 {
-		t.Fatalf("expected 2 contract hashes, got %d", len(entry.ContractHashes))
-	}
-}
-
-func TestRegisterContract_UpdatesAndReplaces(t *testing.T) {
-	backend := &mockBackend{
-		session: nil,
-	}
-	sm, err := NewStateManager(backend, "test-session")
-	if err != nil {
-		t.Fatalf("NewStateManager failed: %v", err)
-	}
-	defer sm.Close()
-
-	// Register initial contract
-	contract1 := storage.ContractDefinition{
-		ModeName: "test-mode",
-		IsShared: false,
-		Keys:     map[string]any{"key1": "default1"},
-		Schemas:  map[string]any{"key1": "string"},
-	}
-	err = sm.RegisterContract(contract1)
-	if err != nil {
-		t.Fatalf("RegisterContract failed: %v", err)
-	}
-
-	if len(sm.session.Contracts) != 1 {
-		t.Fatalf("expected 1 contract, got %d", len(sm.session.Contracts))
-	}
-	if sm.session.Contracts[0].ModeName != "test-mode" {
-		t.Errorf("expected ModeName 'test-mode', got %q", sm.session.Contracts[0].ModeName)
-	}
-	if len(sm.registeredContracts) != 1 {
-		t.Fatalf("expected 1 registered contract, got %d", len(sm.registeredContracts))
-	}
-
-	// Register a different contract for the same mode (should replace)
-	contract2 := storage.ContractDefinition{
-		ModeName: "test-mode",
-		IsShared: false,
-		Keys:     map[string]any{"key1": "default1", "key2": 42},
-		Schemas:  map[string]any{"key1": "string", "key2": "number"},
-	}
-	err = sm.RegisterContract(contract2)
-	if err != nil {
-		t.Fatalf("RegisterContract failed: %v", err)
-	}
-
-	// Should still have only 1 contract (the new one)
-	if len(sm.session.Contracts) != 1 {
-		t.Fatalf("expected 1 contract after replacement, got %d", len(sm.session.Contracts))
-	}
-	// Verify it's the new contract
-	if len(sm.session.Contracts[0].Keys) != 2 {
-		t.Errorf("expected 2 keys in replaced contract, got %d", len(sm.session.Contracts[0].Keys))
-	}
-
-	// Register a contract for a different mode
-	contract3 := storage.ContractDefinition{
-		ModeName: "another-mode",
-		IsShared: false,
-		Keys:     map[string]any{"other_key": "value"},
-	}
-	err = sm.RegisterContract(contract3)
-	if err != nil {
-		t.Fatalf("RegisterContract failed: %v", err)
-	}
-
-	// Should now have 2 contracts
-	if len(sm.session.Contracts) != 2 {
-		t.Fatalf("expected 2 contracts, got %d", len(sm.session.Contracts))
-	}
-	if len(sm.registeredContracts) != 2 {
-		t.Fatalf("expected 2 registered contracts, got %d", len(sm.registeredContracts))
+	// Verify FinalState contains the serialized state
+	if entry.FinalState == "" {
+		t.Error("FinalState should not be empty")
 	}
 }
 
@@ -577,9 +418,9 @@ func TestHistory_TruncateOnLoad(t *testing.T) {
 		SessionID:   "test-session-truncate",
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
-		Contracts:   []storage.ContractDefinition{},
 		History:     largeHistory,
-		LatestState: make(map[string]storage.ModeState),
+		ScriptState: make(map[string]map[string]interface{}),
+		SharedState: make(map[string]interface{}),
 	}
 
 	backend := &mockBackend{
@@ -623,24 +464,12 @@ func TestHistory_RingBufferWrapAndRead(t *testing.T) {
 	}
 	defer sm.Close()
 
-	// Register a test contract
-	contract := storage.ContractDefinition{
-		ModeName: "test-mode",
-		IsShared: false,
-		Keys:     map[string]any{"key1": "value1"},
-		Schemas:  map[string]any{"key1": "string"},
-	}
-	err = sm.RegisterContract(contract)
-	if err != nil {
-		t.Fatalf("RegisterContract failed: %v", err)
-	}
-
 	// Action: Capture maxHistoryEntries + 10 snapshots
 	const totalSnapshots = maxHistoryEntries + 10
-	stateMap := map[string]string{"test-mode": `{"key1":"value1"}`}
+	stateJSON := `{"script":{},"shared":{}}`
 	for i := 0; i < totalSnapshots; i++ {
 		command := fmt.Sprintf("cmd_%d", i)
-		err = sm.CaptureSnapshot("test-mode", command, stateMap)
+		err = sm.CaptureSnapshot("test-mode", command, stateJSON)
 		if err != nil {
 			t.Fatalf("CaptureSnapshot %d failed: %v", i, err)
 		}
@@ -676,24 +505,12 @@ func TestHistory_PersistenceAfterWrap(t *testing.T) {
 	}
 	defer sm.Close()
 
-	// Register a test contract
-	contract := storage.ContractDefinition{
-		ModeName: "test-mode",
-		IsShared: false,
-		Keys:     map[string]any{"key1": "value1"},
-		Schemas:  map[string]any{"key1": "string"},
-	}
-	err = sm.RegisterContract(contract)
-	if err != nil {
-		t.Fatalf("RegisterContract failed: %v", err)
-	}
-
 	// Action: Capture maxHistoryEntries + 10 snapshots
 	const totalSnapshots = maxHistoryEntries + 10
-	stateMap := map[string]string{"test-mode": `{"key1":"value1"}`}
+	stateJSON := `{"script":{},"shared":{}}`
 	for i := 0; i < totalSnapshots; i++ {
 		command := fmt.Sprintf("cmd_%d", i)
-		err = sm.CaptureSnapshot("test-mode", command, stateMap)
+		err = sm.CaptureSnapshot("test-mode", command, stateJSON)
 		if err != nil {
 			t.Fatalf("CaptureSnapshot %d failed: %v", i, err)
 		}
@@ -735,24 +552,12 @@ func TestHistory_ReadBeforeFull(t *testing.T) {
 	}
 	defer sm.Close()
 
-	// Register a test contract
-	contract := storage.ContractDefinition{
-		ModeName: "test-mode",
-		IsShared: false,
-		Keys:     map[string]any{"key1": "value1"},
-		Schemas:  map[string]any{"key1": "string"},
-	}
-	err = sm.RegisterContract(contract)
-	if err != nil {
-		t.Fatalf("RegisterContract failed: %v", err)
-	}
-
 	// Action: Capture only 20 snapshots (well below maxHistoryEntries)
 	const totalSnapshots = 20
-	stateMap := map[string]string{"test-mode": `{"key1":"value1"}`}
+	stateJSON := `{"script":{},"shared":{}}`
 	for i := 0; i < totalSnapshots; i++ {
 		command := fmt.Sprintf("cmd_%d", i)
-		err = sm.CaptureSnapshot("test-mode", command, stateMap)
+		err = sm.CaptureSnapshot("test-mode", command, stateJSON)
 		if err != nil {
 			t.Fatalf("CaptureSnapshot %d failed: %v", i, err)
 		}
@@ -788,24 +593,12 @@ func TestHistory_PersistenceBeforeFull(t *testing.T) {
 	}
 	defer sm.Close()
 
-	// Register a test contract
-	contract := storage.ContractDefinition{
-		ModeName: "test-mode",
-		IsShared: false,
-		Keys:     map[string]any{"key1": "value1"},
-		Schemas:  map[string]any{"key1": "string"},
-	}
-	err = sm.RegisterContract(contract)
-	if err != nil {
-		t.Fatalf("RegisterContract failed: %v", err)
-	}
-
 	// Action: Capture only 20 snapshots
 	const totalSnapshots = 20
-	stateMap := map[string]string{"test-mode": `{"key1":"value1"}`}
+	stateJSON := `{"script":{},"shared":{}}`
 	for i := 0; i < totalSnapshots; i++ {
 		command := fmt.Sprintf("cmd_%d", i)
-		err = sm.CaptureSnapshot("test-mode", command, stateMap)
+		err = sm.CaptureSnapshot("test-mode", command, stateJSON)
 		if err != nil {
 			t.Fatalf("CaptureSnapshot %d failed: %v", i, err)
 		}

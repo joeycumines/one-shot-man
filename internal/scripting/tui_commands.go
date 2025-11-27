@@ -32,6 +32,8 @@ func (tm *TUIManager) executor(input string) bool {
 		return false
 	case "help":
 		tm.showHelp()
+		// support printing extra help info
+		_ = tm.ExecuteCommand(cmdName, args)
 		return true
 	}
 
@@ -77,44 +79,46 @@ func (tm *TUIManager) executeJavaScript(code string) {
 
 // showHelp displays help information.
 func (tm *TUIManager) showHelp() {
-	_, _ = fmt.Fprintln(tm.output, "Available commands:")
-	_, _ = fmt.Fprintln(tm.output, "  help                 - Show this help message")
-	_, _ = fmt.Fprintln(tm.output, "  exit, quit           - Exit the terminal")
-	_, _ = fmt.Fprintln(tm.output, "  mode <name>          - Switch to a mode")
-	_, _ = fmt.Fprintln(tm.output, "  modes                - List available modes")
-	_, _ = fmt.Fprintln(tm.output, "  state                - Show current mode state")
-	_, _ = fmt.Fprintln(tm.output, "")
+	// Use syncWriter to ensure output is flushed to PTY immediately
+	writer := &syncWriter{tm.output}
+	_, _ = fmt.Fprintln(writer, "Available commands:")
+	_, _ = fmt.Fprintln(writer, "  help                 - Show this help message")
+	_, _ = fmt.Fprintln(writer, "  exit, quit           - Exit the terminal")
+	_, _ = fmt.Fprintln(writer, "  mode <name>          - Switch to a mode")
+	_, _ = fmt.Fprintln(writer, "  modes                - List available modes")
+	_, _ = fmt.Fprintln(writer, "  state                - Show current mode state")
+	_, _ = fmt.Fprintln(writer, "")
 
 	commands := tm.ListCommands()
 	if len(commands) > 0 {
-		_, _ = fmt.Fprintln(tm.output, "Registered commands:")
+		_, _ = fmt.Fprintln(writer, "Registered commands:")
 		for _, cmd := range commands {
-			_, _ = fmt.Fprintf(tm.output, "  %-20s - %s\n", cmd.Name, cmd.Description)
+			_, _ = fmt.Fprintf(writer, "  %-20s - %s\n", cmd.Name, cmd.Description)
 			if cmd.Usage != "" {
-				_, _ = fmt.Fprintf(tm.output, "    Usage: %s\n", cmd.Usage)
+				_, _ = fmt.Fprintf(writer, "    Usage: %s\n", cmd.Usage)
 			}
 		}
-		_, _ = fmt.Fprintln(tm.output, "")
+		_, _ = fmt.Fprintln(writer, "")
 	}
 
 	// Show loaded scripts
 	scripts := tm.engine.GetScripts()
 	if len(scripts) > 0 {
-		_, _ = fmt.Fprintf(tm.output, "Loaded scripts: %d\n", len(scripts))
+		_, _ = fmt.Fprintf(writer, "Loaded scripts: %d\n", len(scripts))
 	}
 
 	if tm.currentMode != nil {
-		_, _ = fmt.Fprintf(tm.output, "Current mode: %s\n", tm.currentMode.Name)
-		_, _ = fmt.Fprintln(tm.output, "You can execute JavaScript code directly")
-		_, _ = fmt.Fprintln(tm.output, "")
-		_, _ = fmt.Fprintln(tm.output, "JavaScript API:")
-		_, _ = fmt.Fprintln(tm.output, "  ctx.run(name, fn)    - Run a sub-test")
-		_, _ = fmt.Fprintln(tm.output, "  ctx.defer(fn)        - Defer function execution")
-		_, _ = fmt.Fprintln(tm.output, "  ctx.log(...)         - Log a message")
-		_, _ = fmt.Fprintln(tm.output, "  ctx.logf(fmt, ...)   - Log a formatted message")
+		_, _ = fmt.Fprintf(writer, "Current mode: %s\n", tm.currentMode.Name)
+		_, _ = fmt.Fprintln(writer, "You can execute JavaScript code directly")
+		_, _ = fmt.Fprintln(writer, "")
+		_, _ = fmt.Fprintln(writer, "JavaScript API:")
+		_, _ = fmt.Fprintln(writer, "  ctx.run(name, fn)    - Run a sub-test")
+		_, _ = fmt.Fprintln(writer, "  ctx.defer(fn)        - Defer function execution")
+		_, _ = fmt.Fprintln(writer, "  ctx.log(...)         - Log a message")
+		_, _ = fmt.Fprintln(writer, "  ctx.logf(fmt, ...)   - Log a formatted message")
 	} else {
-		_, _ = fmt.Fprintf(tm.output, "Available modes: %s\n", strings.Join(tm.ListModes(), ", "))
-		_, _ = fmt.Fprintln(tm.output, "Switch to a mode to execute JavaScript code")
+		_, _ = fmt.Fprintf(writer, "Available modes: %s\n", strings.Join(tm.ListModes(), ", "))
+		_, _ = fmt.Fprintln(writer, "Switch to a mode to execute JavaScript code")
 	}
 }
 
@@ -175,14 +179,8 @@ func (tm *TUIManager) registerBuiltinCommands() {
 			defer tm.currentMode.mu.RUnlock()
 
 			_, _ = fmt.Fprintf(tm.output, "Mode: %s\n", tm.currentMode.Name)
-			if len(tm.currentMode.State) == 0 {
-				_, _ = fmt.Fprintln(tm.output, "State: empty")
-			} else {
-				_, _ = fmt.Fprintln(tm.output, "State:")
-				for key, value := range tm.currentMode.State {
-					_, _ = fmt.Fprintf(tm.output, "  %s: %v\n", key, value)
-				}
-			}
+			// State is now managed by StateManager, not directly on mode
+			_, _ = fmt.Fprintln(tm.output, "State: managed by StateManager (use history to view state snapshots)")
 			return nil
 		},
 		IsGoCommand: true,

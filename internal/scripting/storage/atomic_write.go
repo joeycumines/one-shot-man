@@ -42,14 +42,17 @@ func AtomicWriteFile(filename string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 
-	// Ensure the temp file is removed on any error path.
+	// Capture the temp path immediately and ensure the temp file is removed
+	// on any error path. Capturing the path prevents races if the underlying
+	// *os.File object is changed or renamed later.
 	// On success, the rename operation moves it, so Remove will fail harmlessly.
 	var success bool
+	tempPath := tempFile.Name()
 	defer func() {
 		// If we haven't succeeded, clean up the temporary file
 		if !success {
-			if err := os.Remove(tempFile.Name()); err != nil {
-				slog.Warn("failed to remove temporary file", "path", tempFile.Name(), "error", err)
+			if err := os.Remove(tempPath); err != nil {
+				slog.Warn("failed to remove temporary file", "path", tempPath, "error", err)
 			}
 		}
 	}()

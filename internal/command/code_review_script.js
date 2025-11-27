@@ -5,29 +5,34 @@ const nextIntegerId = require('osm:nextIntegerId');
 const {buildContext, contextManager} = require('osm:ctxutil');
 const template = require('osm:text/template');
 
-// Fixed mode name
+// Import shared symbols
+const shared = require('osm:sharedStateSymbols');
+
+// config.Name is injected by Go as "code-review"
+const COMMAND_NAME = config.Name;
+// The mode exposed to the TUI is a short name users can switch to.
+// Historically the command is called "code-review" while the single
+// mode it exposes is called "review". Keep that separation so tests
+// and user expectations remain stable.
 const MODE_NAME = "review";
 
-// Define state contract with Symbol keys
-const StateKeys = tui.createStateContract(MODE_NAME, {
-    contextItems: {
-        description: MODE_NAME + ":contextItems",
-        defaultValue: []
-    }
+// Create the single state accessor with only shared contextItems
+const state = tui.createState(COMMAND_NAME, {
+    [shared.contextItems]: {defaultValue: []}
 });
 
 // Globals for test access - these will be populated when buildCommands is called
 let parseArgv, formatArgv, items, buildPrompt, commands;
 
 // Build commands with state accessor - called when mode is first used
-function buildCommands(state) {
+function buildCommands(stateArg) {
 
     const ctxmgr = contextManager({
-        getItems: () => state.get(StateKeys.contextItems),
-        setItems: (v) => state.set(StateKeys.contextItems, v),
+        getItems: () => stateArg.get(shared.contextItems) || [],
+        setItems: (v) => stateArg.set(shared.contextItems, v),
         nextIntegerId: nextIntegerId,
         buildPrompt: () => {
-            const fullContext = buildContext(state.get(StateKeys.contextItems), {toTxtar: () => context.toTxtar()});
+            const fullContext = buildContext(stateArg.get(shared.contextItems), {toTxtar: () => context.toTxtar()});
             return template.execute(codeReviewTemplate, {
                 context_txtar: fullContext
             });
@@ -91,7 +96,6 @@ function buildCommands(state) {
             ...ctxmgr.commands.show,
             description: "Show the code review prompt"
         },
-        help: {description: "Show help", handler: help}
     };
 
     // Export for test access
@@ -105,46 +109,25 @@ function buildCommands(state) {
 ctx.run("register-mode", function () {
     tui.registerMode({
         name: MODE_NAME,
-        stateContract: StateKeys,
         tui: {
             title: "Code Review",
-            prompt: "(code-review) > ",
+            prompt: "(review) > ",
             enableHistory: true,
             historyFile: ".code-review_history"
         },
-        onEnter: function (_, stateObj) {
+        onEnter: function () {
             // Commands are already built by the commands() function call during mode switch
-            // We just need to show the banner and help
-            banner();
-            help();
-        },
-        onExit: function (_, stateObj) {
-            output.print("Exiting Code Review.");
+            // Show a compact, single-line initial message so startup is concise.
+            output.print("Type 'help' for commands. Tip: Try 'note --goals'.");
         },
         // Return the commands built with the current state accessor
-        commands: buildCommands
-    });
-
-    tui.registerCommand({
-        name: "review",
-        description: "Switch to Code Review mode",
-        handler: function () {
-            tui.switchMode(MODE_NAME);
+        commands: function () {
+            return buildCommands(state);
         }
     });
 });
 
-function banner() {
-    output.print("Code Review: context -> single prompt for PR review");
-    output.print("Type 'help' for commands. Use 'review' to return here later.");
-}
-
-function help() {
-	output.print("Commands: add, diff, note, list, edit, remove, show, copy, help, exit");
-	output.print("Tip: Use 'note --goals' to see goal-based review focuses");
-}
-
 // Auto-switch into review mode when this script loads
 ctx.run("enter-review", function () {
-	tui.switchMode(MODE_NAME);
+    tui.switchMode(MODE_NAME);
 });

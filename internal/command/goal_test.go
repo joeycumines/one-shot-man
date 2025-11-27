@@ -56,6 +56,10 @@ func TestGoalCommand_ListGoals(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cmd.list = true
 
+	// keep test runs isolated from real session storage
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
+
 	err := cmd.Execute([]string{}, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
@@ -101,6 +105,10 @@ func TestGoalCommand_ListGoalsByCategory(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cmd.list = true
 	cmd.category = "testing"
+
+	// keep test runs isolated from real session storage
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{}, &stdout, &stderr)
 	if err != nil {
@@ -238,6 +246,10 @@ func TestGoalCommand_UnknownGoal(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
+	// keep test runs isolated from real session storage
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
+
 	err := cmd.Execute([]string{"nonexistent-goal"}, &stdout, &stderr)
 	if err == nil {
 		t.Error("Expected error when running nonexistent goal")
@@ -258,6 +270,9 @@ func TestGoalCommand_RunGoal_Success_NonInteractive(t *testing.T) {
 	cmd.testMode = true // avoid launching TUI; still executes script
 
 	var stdout, stderr bytes.Buffer
+	// avoid polluting real session storage
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
 	err := cmd.Execute(nil, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("expected success running goal non-interactively, got: %v, stderr=%s", err, stderr.String())
@@ -283,13 +298,16 @@ func TestGoalCommand_RunGoal_Success_Interactive_Positional(t *testing.T) {
 	cmd.testMode = true
 
 	var stdout, stderr bytes.Buffer
+	// avoid polluting real session storage
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
 	err := cmd.Execute([]string{"doc-generator"}, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("expected success running positional goal, got: %v, stderr=%s", err, stderr.String())
 	}
 	got := stdout.String()
 	// We expect evidence of entering the mode: either explicit switch message or banner/help.
-	if !(strings.Contains(got, "Switched to mode: doc-generator") || strings.Contains(got, "Code Documentation Generator")) {
+	if !strings.Contains(got, "Type 'help' for commands.") {
 		t.Errorf("expected to enter doc-generator mode, got: %s", got)
 	}
 }

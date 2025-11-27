@@ -5,35 +5,32 @@ const {buildContext, contextManager} = require('osm:ctxutil');
 const nextIntegerId = require('osm:nextIntegerId');
 const template = require('osm:text/template');
 
-// Fixed mode name
-const MODE_NAME = "flow";
+// Import shared symbols
+const shared = require('osm:sharedStateSymbols');
 
-// Define state contract with Symbol keys
-const StateKeys = tui.createStateContract(MODE_NAME, {
-    phase: {
-        description: MODE_NAME + ":phase",
-        defaultValue: "INITIAL"
-    },
-    goal: {
-        description: MODE_NAME + ":goal",
-        defaultValue: ""
-    },
-    template: {
-        description: MODE_NAME + ":template",
-        defaultValue: null
-    },
-    metaPrompt: {
-        description: MODE_NAME + ":metaPrompt",
-        defaultValue: ""
-    },
-    taskPrompt: {
-        description: MODE_NAME + ":taskPrompt",
-        defaultValue: ""
-    },
-    contextItems: {
-        description: MODE_NAME + ":contextItems",
-        defaultValue: []
-    }
+// config.Name is injected by Go as "prompt-flow"
+const COMMAND_NAME = config.Name;
+
+// Define command-specific symbols - JUST the local name, jsCreateState handles namespacing
+const StateKeys = {
+    phase: Symbol("phase"),
+    goal: Symbol("goal"),
+    template: Symbol("template"),
+    metaPrompt: Symbol("metaPrompt"),
+    taskPrompt: Symbol("taskPrompt"),
+};
+
+// Create the single state accessor
+const state = tui.createState(COMMAND_NAME, {
+    // Shared keys
+    [shared.contextItems]: {defaultValue: []},
+
+    // Command-specific keys
+    [StateKeys.phase]: {defaultValue: "INITIAL"},
+    [StateKeys.goal]: {defaultValue: ""},
+    [StateKeys.template]: {defaultValue: null},
+    [StateKeys.metaPrompt]: {defaultValue: ""},
+    [StateKeys.taskPrompt]: {defaultValue: ""},
 });
 
 // Expose limited state hooks for automated tests (no-op for regular users)
@@ -66,7 +63,13 @@ function defaultTemplate() {
 }
 
 function buildCommands(state) {
-    __testStateAccessor = {state: state, StateKeys: StateKeys};
+    __testStateAccessor = {
+        state: state,
+        StateKeys: {
+            ...StateKeys,
+            contextItems: shared.contextItems
+        }
+    };
 
     // Phase helpers using the injected state accessor
     function getPhase() {
@@ -115,7 +118,7 @@ function buildCommands(state) {
     }
 
     function buildContextTxtar() {
-        return buildContext(state.get(StateKeys.contextItems), {toTxtar: () => context.toTxtar()});
+        return buildContext(state.get(shared.contextItems), {toTxtar: () => context.toTxtar()});
     }
 
     function buildMetaPrompt() {
@@ -135,12 +138,12 @@ function buildCommands(state) {
         return parts.join("\n");
     }
 
-    // Create context manager with the injected state accessor
+    // Create context manager with the injected state accessor (shared contextItems)
     const ctxmgr = contextManager({
-        getItems: () => state.get(StateKeys.contextItems),
-        setItems: (v) => state.set(StateKeys.contextItems, v),
+        getItems: () => state.get(shared.contextItems) || [],
+        setItems: (v) => state.set(shared.contextItems, v),
         nextIntegerId: nextIntegerId,
-        buildPrompt: function() {
+        buildPrompt: function () {
             // Phase-dependent prompt building
             if (getPhase() === 'TASK_PROMPT_SET') {
                 return assembleFinal();
@@ -310,7 +313,7 @@ function buildCommands(state) {
                     return;
                 }
 
-                const items = state.get(StateKeys.contextItems);
+                const items = state.get(shared.contextItems);
                 if (items.length === 0) {
                     output.print("No context items to view.");
                     return;
@@ -344,7 +347,7 @@ function buildCommands(state) {
                     headers: headers,
                     rows: rows,
                     footer: "Use arrow keys to navigate | Press Enter to edit selected item | Press Escape or 'q' to close",
-                    onSelect: function(rowIndex) {
+                    onSelect: function (rowIndex) {
                         // When user selects a row, edit that item
                         const item = items[rowIndex];
                         if (item) {
@@ -473,62 +476,42 @@ function buildCommands(state) {
                 }
             }
         },
-        help: {
-            description: "Show this help message",
-            usage: "help",
-            handler: function () {
-                help();
-            }
-        }
+        // N.B. Gets the description from elsewhere, and runs after the built-in help.
+        help: {handler: help}
     };
 }
 
 // Initialize the mode
 ctx.run("register-mode", function () {
     tui.registerMode({
-        name: MODE_NAME,
-        stateContract: StateKeys,
+        name: COMMAND_NAME,
         tui: {
             title: "Prompt Flow",
-            prompt: "(prompt-builder) > ",
+            prompt: "(prompt-flow) > ",
             enableHistory: true,
             historyFile: ".prompt-flow_history"
         },
-        onEnter: function (_, stateObj) {
+        onEnter: function () {
             // Initialize template if null (lazy initialization pattern)
-            if (stateObj.state.get(StateKeys.template) === null) {
-                stateObj.state.set(StateKeys.template, defaultTemplate());
+            if (state.get(StateKeys.template) === null) {
+                state.set(StateKeys.template, defaultTemplate());
             }
-            banner();
-            help();
+            // Show a compact, single-line initial message so startup is concise.
+            output.print("Type 'help' for commands. Tip: Try 'goal --prewritten'.");
         },
-        onExit: function (_, stateObj) {
-            output.print("Exiting Prompt Flow.");
-        },
-        commands: buildCommands
-    });
-
-    tui.registerCommand({
-        name: "flow",
-        description: "Switch to Prompt Flow mode",
-        handler: function () {
-            tui.switchMode(MODE_NAME);
+        commands: function () {
+            return buildCommands(state);
         }
     });
 });
 
-function banner() {
-    output.print("Prompt Flow: goal/context/template -> generate -> use -> assemble");
-    output.print("Type 'help' for commands. Use 'flow' to return here later.");
-}
-
 function help() {
-    output.print("Commands: goal, add, diff, note, list, view, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit");
-    output.print("Tip: Use 'goal --prewritten' to see available pre-written goals");
-    output.print("Tip: Use 'view' for an interactive TUI table of context items");
+    output.print("\nCommands: goal, add, diff, note, list, view, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit\n"
+        + "Tip: Use 'goal --prewritten' to see available pre-written goals\n"
+        + "Tip: Use 'view' for an interactive TUI table of context items");
 }
 
 // Auto-switch into flow mode when this script loads
 ctx.run("enter-flow", function () {
-    tui.switchMode(MODE_NAME);
+    tui.switchMode(COMMAND_NAME);
 });

@@ -1,6 +1,7 @@
 package scripting_test
 
 import (
+	"os"
 	"os/exec"
 	"testing"
 	"time"
@@ -12,7 +13,10 @@ import (
 func TestPTYBasic(t *testing.T) {
 	t.Log("Starting basic PTY test...")
 
-	cmd := exec.Command("echo", "hello")
+	// Use a helper test process (the same test binary) to avoid relying on
+	// external tools being available in PATH.
+	cmd := exec.Command(os.Args[0], "-test.run=TestHelperEchoProcess")
+	cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
 		t.Fatalf("Failed to start command with PTY: %v", err)
@@ -38,4 +42,16 @@ func TestPTYBasic(t *testing.T) {
 	}
 
 	cmd.Wait()
+}
+
+// TestHelperEchoProcess is used as a helper subprocess for PTY tests. It
+// prints a single line to stdout and exits immediately. It only runs when
+// the GO_WANT_HELPER_PROCESS environment variable is set to avoid executing
+// during normal test runs.
+func TestHelperEchoProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	println("hello")
+	os.Exit(0)
 }

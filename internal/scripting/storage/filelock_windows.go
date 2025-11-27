@@ -1,5 +1,4 @@
 //go:build windows
-// +build windows
 
 package storage
 
@@ -13,7 +12,7 @@ import (
 
 // acquireFileLock attempts to acquire an exclusive lock on the given file.
 // Returns the file handle on success, or an error if the lock cannot be acquired.
-func acquireFileLock(path string) (*os.File, error) {
+var acquireFileLock = func(path string) (*os.File, error) {
 	// Create or open the lock file
 	lockFile, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
@@ -70,6 +69,9 @@ func lockFileWindows(f *os.File) error {
 		&overlapped,
 	)
 	if err != nil {
+		if errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
+			return ErrWouldBlock
+		}
 		return fmt.Errorf("LockFileEx failed: %w", err)
 	}
 	return nil

@@ -15,7 +15,9 @@ func TestCodeReviewCommand_ShowActualDiffOutput(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngine(ctx, &stdout, &stderr)
+	// Use an in-memory storage backend with a test-scoped session to avoid
+	// polluting the user's real session files during tests.
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, t.Name(), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -24,6 +26,8 @@ func TestCodeReviewCommand_ShowActualDiffOutput(t *testing.T) {
 	engine.SetTestMode(true)
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("codeReviewTemplate", codeReviewTemplate)
+	// Inject config object with Name field
+	engine.SetGlobal("config", map[string]interface{}{"Name": "code-review"})
 
 	// Load the script
 	script := engine.LoadScriptFromString("code-review", codeReviewScript)

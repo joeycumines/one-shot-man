@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/dop251/goja"
 )
 
 // TestContextManagerRehydration verifies that the ContextManager is correctly
@@ -36,33 +34,20 @@ func TestContextManagerRehydration(t *testing.T) {
 	}
 	defer engine.Close()
 
+	// Create StateManager
+	backend := &mockBackend{session: nil}
+	stateManager, err := NewStateManager(backend, "test-session")
+	if err != nil {
+		t.Fatalf("Failed to create StateManager: %v", err)
+	}
+	defer stateManager.Close()
+
 	output := &testOutput{}
 	tm := &TUIManager{
-		engine: engine,
-		output: output,
+		engine:       engine,
+		output:       output,
+		stateManager: stateManager,
 	}
-
-	// Create a state contract with an "items" key
-	runtime := engine.vm
-
-	// Create Symbol for "items"
-	itemsSymbol, err := runtime.RunString(`Symbol("test:items")`)
-	if err != nil {
-		t.Fatalf("Failed to create Symbol: %v", err)
-	}
-
-	contract := &StateContract{
-		Name: "test-mode",
-		Definitions: map[string]Definition{
-			"items": {
-				Symbol:       itemsSymbol,
-				DefaultValue: []interface{}{},
-			},
-		},
-	}
-
-	// Create a mock restored state with file items
-	restoredState := make(map[goja.Value]interface{})
 
 	// Build the items array in the format expected by ctxutil
 	items := []map[string]interface{}{
@@ -86,7 +71,8 @@ func TestContextManagerRehydration(t *testing.T) {
 		},
 	}
 
-	restoredState[itemsSymbol] = items
+	// Set contextItems in the shared state (using the string key "contextItems")
+	stateManager.SetState("contextItems", items)
 
 	// Initially, the ContextManager should be empty
 	initialPaths := engine.contextManager.ListPaths()
@@ -94,8 +80,8 @@ func TestContextManagerRehydration(t *testing.T) {
 		t.Errorf("Expected empty ContextManager initially, got %d paths", len(initialPaths))
 	}
 
-	// Call rehydrateContextManager
-	tm.rehydrateContextManager(restoredState, contract)
+	// Call rehydrateContextManager (no args in new architecture)
+	tm.rehydrateContextManager()
 
 	// Verify that the ContextManager now contains the file paths
 	paths := engine.contextManager.ListPaths()
@@ -164,29 +150,21 @@ func TestContextManagerRehydrationWithMissingFiles(t *testing.T) {
 	}
 	defer engine.Close()
 
+	// Create StateManager
+	backend := &mockBackend{session: nil}
+	stateManager, err := NewStateManager(backend, "test-session-missing")
+	if err != nil {
+		t.Fatalf("Failed to create StateManager: %v", err)
+	}
+	defer stateManager.Close()
+
 	output := &testOutput{}
 	tm := &TUIManager{
-		engine: engine,
-		output: output,
+		engine:       engine,
+		output:       output,
+		stateManager: stateManager,
 	}
 
-	runtime := engine.vm
-	itemsSymbol, err := runtime.RunString(`Symbol("test:items")`)
-	if err != nil {
-		t.Fatalf("Failed to create Symbol: %v", err)
-	}
-
-	contract := &StateContract{
-		Name: "test-mode",
-		Definitions: map[string]Definition{
-			"items": {
-				Symbol:       itemsSymbol,
-				DefaultValue: []interface{}{},
-			},
-		},
-	}
-
-	restoredState := make(map[goja.Value]interface{})
 	items := []map[string]interface{}{
 		{
 			"id":      float64(1),
@@ -202,10 +180,11 @@ func TestContextManagerRehydrationWithMissingFiles(t *testing.T) {
 		},
 	}
 
-	restoredState[itemsSymbol] = items
+	// Set contextItems in shared state
+	stateManager.SetState("contextItems", items)
 
-	// Call rehydrateContextManager
-	tm.rehydrateContextManager(restoredState, contract)
+	// Call rehydrateContextManager (no args in new architecture)
+	tm.rehydrateContextManager()
 
 	// Should only have 1 path (the missing file should be skipped)
 	paths := engine.contextManager.ListPaths()
@@ -236,33 +215,25 @@ func TestContextManagerRehydrationNoItemsKey(t *testing.T) {
 	}
 	defer engine.Close()
 
+	// Create StateManager
+	backend := &mockBackend{session: nil}
+	stateManager, err := NewStateManager(backend, "test-session-no-items")
+	if err != nil {
+		t.Fatalf("Failed to create StateManager: %v", err)
+	}
+	defer stateManager.Close()
+
 	output := &testOutput{}
 	tm := &TUIManager{
-		engine: engine,
-		output: output,
+		engine:       engine,
+		output:       output,
+		stateManager: stateManager,
 	}
 
-	runtime := engine.vm
-	otherSymbol, err := runtime.RunString(`Symbol("test:other")`)
-	if err != nil {
-		t.Fatalf("Failed to create Symbol: %v", err)
-	}
+	// Don't set contextItems - leave state empty
 
-	contract := &StateContract{
-		Name: "test-mode",
-		Definitions: map[string]Definition{
-			"other": { // Note: NOT "items"
-				Symbol:       otherSymbol,
-				DefaultValue: "some value",
-			},
-		},
-	}
-
-	restoredState := make(map[goja.Value]interface{})
-	restoredState[otherSymbol] = "some value"
-
-	// Call rehydrateContextManager - should be a no-op
-	tm.rehydrateContextManager(restoredState, contract)
+	// Call rehydrateContextManager - should be a no-op (no args in new architecture)
+	tm.rehydrateContextManager()
 
 	// ContextManager should remain empty
 	paths := engine.contextManager.ListPaths()

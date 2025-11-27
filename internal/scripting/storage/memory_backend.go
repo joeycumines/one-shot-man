@@ -84,6 +84,16 @@ func (b *InMemoryBackend) SaveSession(session *Session) error {
 	return nil
 }
 
+// ArchiveSession is a no-op for in-memory backend (for testing).
+// In real tests, archived sessions would be tracked in memory if needed.
+func (b *InMemoryBackend) ArchiveSession(sessionID string, destPath string) error {
+	if sessionID != b.sessionID {
+		return fmt.Errorf("session ID mismatch: backend is for %q, archive requested for %q", b.sessionID, sessionID)
+	}
+	// No-op: in-memory backend doesn't persist to files
+	return nil
+}
+
 // Close releases any resources (no-op for in-memory backend).
 func (b *InMemoryBackend) Close() error {
 	return nil

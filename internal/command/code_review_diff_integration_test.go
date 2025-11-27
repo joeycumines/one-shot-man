@@ -14,6 +14,9 @@ func TestCodeReviewCommand_DiffDefaultBehavior(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cmd.testMode = true
 	cmd.interactive = false
+	// avoid polluting real session storage
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{}, &stdout, &stderr)
 	if err != nil {
@@ -22,14 +25,9 @@ func TestCodeReviewCommand_DiffDefaultBehavior(t *testing.T) {
 
 	output := stdout.String()
 
-	// Verify banner was printed
-	if !contains(output, "Code Review: context -> single prompt for PR review") {
-		t.Errorf("Expected banner message in output, got: %s", output)
-	}
-
-	// Verify help message is shown (indicating commands are available)
-	if !contains(output, "Commands: add, diff, note, list, edit, remove, show, copy, help, exit") {
-		t.Errorf("Expected command list in output, got: %s", output)
+	// Verify compact initial message was printed
+	if !contains(output, "Type 'help' for commands. Tip: Try 'note --goals'.") {
+		t.Errorf("Expected compact initial message in output, got: %s", output)
 	}
 
 	// Verify both script sub-tests passed (register-mode and enter-review)

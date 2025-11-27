@@ -31,14 +31,12 @@ func TestCodeReviewScript_Content(t *testing.T) {
 	// Test the script contains the expected function and structure
 	expectedElements := []string{
 		"Code Review: Single-prompt code review with context",
-		"const MODE_NAME = \"review\"",
-		"function buildCommands(state)",
+		"const COMMAND_NAME = config.Name",
+		"function buildCommands(stateArg)",
 		"codeReviewTemplate",
 		"context.toTxtar()",
 		"template.execute(codeReviewTemplate",
 		"context_txtar: fullContext",
-		"Code Review: context -> single prompt for PR review",
-		"Commands: add, diff, note, list, edit, remove, show, copy, help, exit",
 	}
 
 	for _, element := range expectedElements {
@@ -59,9 +57,8 @@ func TestCodeReviewScript_Commands(t *testing.T) {
 
 	// Verify specific commands are defined or referenced
 	commandChecks := map[string]string{
-		"note command":  "note:",
-		"show command":  "show:",
-		"help function": "function help()",
+		"note command": "note:",
+		"show command": "show:",
 	}
 
 	for name, pattern := range commandChecks {
@@ -69,10 +66,4 @@ func TestCodeReviewScript_Commands(t *testing.T) {
 			t.Errorf("Expected script to contain %s (pattern: %s)", name, pattern)
 		}
 	}
-
-	// Verify that key inherited commands from ctxmgr would be available
-	// (add, diff, list, copy, remove, edit - these come from ...ctxmgr.commands)
-	// These commands aren't explicitly defined in the script, they're inherited via spread operator
-	// The presence of "...ctxmgr.commands" already verified above ensures they're available
-	t.Log("Inherited commands (add, diff, list, copy, remove, edit) available via ...ctxmgr.commands spread")
 }

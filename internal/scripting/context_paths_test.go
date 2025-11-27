@@ -284,7 +284,7 @@ func TestContextManagerRemoveOwnership(t *testing.T) {
 		}
 	})
 
-	t.Run("SuffixMatchesAreRejected", func(t *testing.T) {
+	t.Run("BasenameRemovalAndAmbiguity", func(t *testing.T) {
 		base := t.TempDir()
 		root := filepath.Join(base, "root")
 		if err := os.MkdirAll(filepath.Join(root, "nested"), 0o755); err != nil {
@@ -304,17 +304,91 @@ func TestContextManagerRemoveOwnership(t *testing.T) {
 			t.Fatalf("AddPath(directory) failed: %v", err)
 		}
 
-		err = cm.RemovePath("log.txt")
-		if err == nil {
-			t.Fatalf("expected RemovePath to fail for ambiguous suffix match")
-		}
-		if got := err.Error(); !strings.Contains(got, "path not found") {
-			t.Fatalf("expected 'path not found' error, got: %v", got)
+		// With only a single tracked entry matching the basename,
+		// removing by basename should succeed and untrack that file.
+		if err := cm.RemovePath("log.txt"); err != nil {
+			t.Fatalf("expected RemovePath to succeed for unique basename, got: %v", err)
 		}
 
 		logical := filepath.Join("root", "nested", "log.txt")
-		if _, ok := cm.GetPath(logical); !ok {
-			t.Fatalf("expected %q to remain tracked after failed removal", logical)
+		if _, ok := cm.GetPath(logical); ok {
+			t.Fatalf("expected %q to be removed after basename removal", logical)
+		}
+
+		// Now exercise the ambiguous case: create a fresh manager with two
+		// distinct tracked files that share the same basename so the basename
+		// is ambiguous.
+		filePath2 := filepath.Join(root, "other", "log.txt")
+		if err := os.MkdirAll(filepath.Dir(filePath2), 0o755); err != nil {
+			t.Fatalf("failed to create nested dir: %v", err)
+		}
+		if err := os.WriteFile(filePath2, []byte("log2"), 0o644); err != nil {
+			t.Fatalf("failed to write second log: %v", err)
+		}
+
+		// Rebuild manager with both files to make the basename ambiguous.
+		cm2, err := NewContextManager(base)
+		if err != nil {
+			t.Fatalf("NewContextManager failed: %v", err)
+		}
+		if err := cm2.AddPath(filePath); err != nil {
+			t.Fatalf("AddPath(file1) failed: %v", err)
+		}
+		if err := cm2.AddPath(filePath2); err != nil {
+			t.Fatalf("AddPath(file2) failed: %v", err)
+		}
+
+		// Now basename "log.txt" is ambiguous and should be rejected.
+		err = cm2.RemovePath("log.txt")
+		if err == nil {
+			t.Fatalf("expected RemovePath to fail for ambiguous basename match")
+		}
+		if got := err.Error(); !strings.Contains(got, "ambiguous path") {
+			t.Fatalf("expected 'ambiguous path' error, got: %v", got)
+		}
+	})
+
+	t.Run("FullPathDoesNotTriggerAmbiguity", func(t *testing.T) {
+		// Create two tracked files that share a basename but live under different
+		// logical prefixes. Then attempt to remove using a non-matching full path
+		// which happens to have the same basename: this should return 'path not found'
+		// rather than an ambiguous error because the caller provided a full path.
+		base2 := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(base2, "a"), 0o755); err != nil {
+			t.Fatalf("failed to create dir a: %v", err)
+		}
+		if err := os.MkdirAll(filepath.Join(base2, "c"), 0o755); err != nil {
+			t.Fatalf("failed to create dir c: %v", err)
+		}
+
+		f1 := filepath.Join(base2, "a", "b.txt")
+		f2 := filepath.Join(base2, "c", "b.txt")
+		if err := os.WriteFile(f1, []byte("1"), 0o644); err != nil {
+			t.Fatalf("failed to write f1: %v", err)
+		}
+		if err := os.WriteFile(f2, []byte("2"), 0o644); err != nil {
+			t.Fatalf("failed to write f2: %v", err)
+		}
+
+		cm, err := NewContextManager(base2)
+		if err != nil {
+			t.Fatalf("NewContextManager failed: %v", err)
+		}
+		if err := cm.AddPath(f1); err != nil {
+			t.Fatalf("AddPath(f1) failed: %v", err)
+		}
+		if err := cm.AddPath(f2); err != nil {
+			t.Fatalf("AddPath(f2) failed: %v", err)
+		}
+
+		// Use a non-matching full path (different directory) but same basename.
+		// Because the caller provided a full/path-like value, this should not
+		// be treated as a basename-ambiguous operation.
+		// Since RemovePath is now idempotent, this should succeed (return nil).
+		nonMatching := filepath.Join("x", "b.txt")
+		err = cm.RemovePath(nonMatching)
+		if err != nil {
+			t.Fatalf("expected RemovePath to succeed (idempotent) for non-tracked full path, got: %v", err)
 		}
 	})
 }

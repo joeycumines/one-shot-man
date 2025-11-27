@@ -146,9 +146,9 @@ func TestNewTUIManager_StateManagerErrorPath(t *testing.T) {
 			t.Errorf("commandHistory should be empty when state manager fails, got %d entries", len(tm.commandHistory))
 		}
 
-		// Verify stateManager is nil
-		if tm.stateManager != nil {
-			t.Error("stateManager should be nil when initialization fails")
+		// Verify stateManager is NOT nil (it should be memory backend)
+		if tm.stateManager == nil {
+			t.Error("stateManager should not be nil (should fallback to memory)")
 		}
 	})
 }
@@ -212,11 +212,11 @@ func TestNewTUIManager_LoadsHistoryFromSession(t *testing.T) {
 		}
 
 		// Add some history entries via CaptureSnapshot
-		err := tm1.stateManager.CaptureSnapshot("test-mode", "test command 1", map[string]string{})
+		err := tm1.stateManager.CaptureSnapshot("test-mode", "test command 1", `{"script":{},"shared":{}}`)
 		if err != nil {
 			t.Fatalf("failed to capture snapshot 1: %v", err)
 		}
-		err = tm1.stateManager.CaptureSnapshot("test-mode", "test command 2", map[string]string{})
+		err = tm1.stateManager.CaptureSnapshot("test-mode", "test command 2", `{"script":{},"shared":{}}`)
 		if err != nil {
 			t.Fatalf("failed to capture snapshot 2: %v", err)
 		}
@@ -325,7 +325,7 @@ func TestNewTUIManager_StateManagerIntegration(t *testing.T) {
 		}
 
 		// Step 2: Add history and persist
-		err := tm1.stateManager.CaptureSnapshot("test-mode", "initial command", map[string]string{})
+		err := tm1.stateManager.CaptureSnapshot("test-mode", "initial command", `{"script":{},"shared":{}}`)
 		if err != nil {
 			t.Fatalf("failed to capture snapshot: %v", err)
 		}
@@ -350,7 +350,7 @@ func TestNewTUIManager_StateManagerIntegration(t *testing.T) {
 		}
 
 		// Step 4: Add more history
-		err = tm2.stateManager.CaptureSnapshot("test-mode", "new command", map[string]string{})
+		err = tm2.stateManager.CaptureSnapshot("test-mode", "new command", `{"script":{},"shared":{}}`)
 		if err != nil {
 			t.Fatalf("failed to capture snapshot: %v", err)
 		}

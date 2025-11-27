@@ -10,11 +10,11 @@ const {contextManager} = require('osm:ctxutil');
 const nextIntegerId = require('osm:nextIntegerId');
 
 const MODE_NAME = "context-test";
+const sharedSymbols = require('osm:sharedStateSymbols');
 
-// Define state contract with the items array
-const StateKeys = tui.createStateContract(MODE_NAME, {
-    items: {
-        description: MODE_NAME + ":items",
+// Define state using new API - contextItems is shared state
+const state = tui.createState(MODE_NAME, {
+    [sharedSymbols.contextItems]: {
         defaultValue: []
     }
 });
@@ -22,14 +22,13 @@ const StateKeys = tui.createStateContract(MODE_NAME, {
 // Register the test mode
 tui.registerMode({
     name: MODE_NAME,
-    stateContract: StateKeys,
     tui: {
         title: "Context Re-hydration Test",
         prompt: "[context-test]> ",
         enableHistory: true
     },
 
-    onEnter: function (_, stateObj) {
+    onEnter: function () {
         output.print("==================================================");
         output.print("Context Re-hydration Test Mode");
         output.print("==================================================");
@@ -50,10 +49,10 @@ tui.registerMode({
         output.print("");
     },
 
-    commands: function (state) {
+    commands: function () {
         const ctxmgr = contextManager({
-            getItems: () => state.get(StateKeys.items),
-            setItems: (v) => state.set(StateKeys.items, v),
+            getItems: () => state.get(sharedSymbols.contextItems),
+            setItems: (v) => state.set(sharedSymbols.contextItems, v),
             nextIntegerId: nextIntegerId,
             buildPrompt: function() {
                 return "# Test Prompt\n\n" + context.toTxtar();
@@ -82,7 +81,7 @@ tui.registerMode({
             "verify": {
                 description: "Verify that ContextManager state is synchronized",
                 handler: function (args) {
-                    const items = state.get(StateKeys.items);
+                    const items = state.get(sharedSymbols.contextItems);
                     const contextPaths = context.listPaths();
 
                     output.print("=== Verification Report ===");
@@ -119,7 +118,7 @@ tui.registerMode({
             "status": {
                 description: "Show current session status",
                 handler: function (args) {
-                    const items = state.get(StateKeys.items);
+                    const items = state.get(sharedSymbols.contextItems);
                     output.print("Session Status:");
                     output.print("  Total items: " + items.length);
                     output.print("  Files: " + items.filter(it => it.type === "file").length);

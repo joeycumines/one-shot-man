@@ -307,6 +307,50 @@ func TestCompletionCommandGoalSubcommand(t *testing.T) {
 	}
 }
 
+func TestCompletionCommandSessionSubcommand(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
+	// Ensure help and session commands are registered so completions include them
+	registry.Register(NewHelpCommand(registry))
+	registry.Register(NewSessionCommand(cfg))
+
+	goalRegistry := newTestGoalRegistry()
+
+	completionCmd := NewCompletionCommand(registry, goalRegistry)
+
+	tests := []struct {
+		name        string
+		shell       string
+		expectedTxt []string
+	}{
+		{name: "bash session", shell: "bash", expectedTxt: []string{"session)", "COMPREPLY=($(compgen -W \"list clean delete info\""}},
+		{name: "zsh session", shell: "zsh", expectedTxt: []string{"session)", "_values 'session-subcommand' 'list'"}},
+		{name: "fish session", shell: "fish", expectedTxt: []string{"__fish_seen_subcommand_from session", "list clean delete info"}},
+		{name: "powershell session", shell: "powershell", expectedTxt: []string{"$subs = @('list','clean','delete','info')", "session'"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var output strings.Builder
+			var stderr strings.Builder
+
+			if err := completionCmd.Execute([]string{tt.shell}, &output, &stderr); err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			out := output.String()
+			for _, expected := range tt.expectedTxt {
+				if !strings.Contains(out, expected) {
+					t.Errorf("Expected %s completion to contain %q, got:\n%s", tt.shell, expected, out)
+				}
+			}
+		})
+	}
+}
+
 func TestCompletionCommandGoalDescriptions(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()

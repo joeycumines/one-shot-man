@@ -116,12 +116,12 @@ public class ThreadPoolManager {
 	}
 	defer cp.Close()
 
-	// Wait for startup
+	// Wait for startup — prompt-flow emits an initial mode switch on enter
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
@@ -240,10 +240,10 @@ func processString(s string) string {
 	defer cp.Close()
 
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
@@ -371,10 +371,10 @@ func TestPromptFlow_Unix_ListShowsMissing(t *testing.T) {
 	defer cp.Close()
 
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
@@ -437,10 +437,10 @@ func TestPromptFlow_Unix_DiskReadInMeta(t *testing.T) {
 	defer cp.Close()
 
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
@@ -510,10 +510,10 @@ func TestPromptFlow_Unix_DifferentTemplateConfigurations(t *testing.T) {
 	defer cp.Close()
 
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
@@ -605,10 +605,10 @@ func TestPromptFlow_Unix_GitDiffIntegration(t *testing.T) {
 	defer cp.Close()
 
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
@@ -741,12 +741,12 @@ func main() {
 	}
 	defer cp.Close()
 
-	// Wait for startup
+	// Wait for startup — prompt-flow emits an initial mode switch on enter
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
@@ -828,10 +828,10 @@ func TestPromptFlow_Unix_GitDiffMalformedPayload(t *testing.T) {
 	defer cp.Close()
 
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
@@ -858,7 +858,7 @@ func TestPromptFlow_Unix_GitDiffMalformedPayload(t *testing.T) {
 			t.Fatalf("Failed to send empty line: %v\nBuffer: %q", err, cp.GetOutput())
 		}
 		// Wait for the JS command to complete and prompt to return
-		if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 2*time.Second); err != nil {
+		if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 2*time.Second); err != nil {
 			t.Fatalf("Expected prompt after addItem: %v\nBuffer: %q", err, cp.GetOutput())
 		}
 
@@ -890,7 +890,7 @@ func TestPromptFlow_Unix_GitDiffMalformedPayload(t *testing.T) {
 		if err := cp.SendLine(""); err != nil {
 			t.Fatalf("Failed to send empty line: %v\nBuffer: %q", err, cp.GetOutput())
 		}
-		if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 2*time.Second); err != nil {
+		if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 2*time.Second); err != nil {
 			t.Fatalf("Expected prompt after setItems: %v\nBuffer: %q", err, cp.GetOutput())
 		}
 	}
@@ -911,7 +911,7 @@ func TestPromptFlow_Unix_GitDiffMalformedPayload(t *testing.T) {
 		t.Fatalf("Failed to send empty line: %v\nBuffer: %q", err, cp.GetOutput())
 	}
 	// Wait for the JS command to complete and prompt to return
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 2*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 2*time.Second); err != nil {
 		t.Fatalf("Expected prompt after addItem: %v\nBuffer: %q", err, cp.GetOutput())
 	}
 	startLen = cp.OutputLen()
@@ -981,12 +981,12 @@ func TestPromptFlow_Unix_MetaIncludesGitDiff(t *testing.T) {
 	}
 	defer cp.Close()
 
-	// Wait for startup and prompt
+	// Wait for startup and prompt — prompt-flow prints a mode switch when entering
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
@@ -1069,10 +1069,10 @@ func TestPromptFlow_Unix_ClipboardIntegration(t *testing.T) {
 	defer cp.Close()
 
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
@@ -1274,6 +1274,12 @@ func main() {
 func runCommand(t *testing.T, dir string, name string, args ...string) {
 	t.Helper()
 
+	if name == "git" {
+		if _, err := exec.LookPath("git"); err != nil {
+			t.Skipf("git executable not found in PATH; skipping git-dependent test: %v", err)
+		}
+	}
+
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Env = os.Environ()
@@ -1441,10 +1447,10 @@ func testMetaPromptVariation(t *testing.T, goal string, files []string, diffs []
 	defer cp.Close()
 
 	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("one-shot-man Rich TUI Terminal", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected TUI startup: %v", err)
+	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-builder) > ", startLen, 20*time.Second); err != nil {
+	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 

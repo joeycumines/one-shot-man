@@ -14,6 +14,8 @@ type Config struct {
 	Global map[string]string
 	// Command-specific options
 	Commands map[string]map[string]string
+	// Sessions configuration controls automatic session cleanup and retention.
+	Sessions SessionConfig
 }
 
 // NewConfig creates a new empty configuration.
@@ -21,7 +23,23 @@ func NewConfig() *Config {
 	return &Config{
 		Global:   make(map[string]string),
 		Commands: make(map[string]map[string]string),
+		Sessions: SessionConfig{
+			MaxAgeDays:           90,
+			MaxCount:             100,
+			MaxSizeMB:            500,
+			AutoCleanupEnabled:   true,
+			CleanupIntervalHours: 24,
+		},
 	}
+}
+
+// SessionConfig controls session lifecycle and cleanup behavior.
+type SessionConfig struct {
+	MaxAgeDays           int  `json:"max_age_days" default:"90"`
+	MaxCount             int  `json:"max_count" default:"100"`
+	MaxSizeMB            int  `json:"max_size_mb" default:"500"`
+	AutoCleanupEnabled   bool `json:"auto_cleanup_enabled" default:"true"`
+	CleanupIntervalHours int  `json:"cleanup_interval_hours" default:"24"`
 }
 
 // Load loads configuration from the default config file path.

@@ -16,25 +16,31 @@
     const {buildContext, contextManager} = require('osm:ctxutil');
     const template = require('osm:text/template');
 
-    // Build state contract from GOAL_CONFIG.StateKeys
+    // Import shared symbols
+    const shared = require('osm:sharedStateSymbols');
+
+    // Initialize stateContractDef with shared contextItems
     const stateContractDef = {
-        contextItems: {
-            description: config.Name + ":contextItems",
-            defaultValue: []
-        }
+        [shared.contextItems]: {defaultValue: []}
     };
 
-    // Add state keys from config
+    // Create command-specific symbols
+    const StateKeys = {contextItems: shared.contextItems}; // For convenience
     if (config.StateKeys) {
         for (const key in config.StateKeys) {
-            stateContractDef[key] = {
-                description: config.Name + ":" + key,
+            // Create the symbol, namespaced by the goal name
+            const symbol = Symbol(config.Name + ":" + key);
+            StateKeys[key] = symbol; // Store for JS-side access
+
+            // Add definition to the contract
+            stateContractDef[symbol] = {
                 defaultValue: config.StateKeys[key]
             };
         }
     }
 
-    const StateKeys = tui.createStateContract(config.Name, stateContractDef);
+    // Create the state accessor
+    const state = tui.createState(config.Name, stateContractDef);
 
     // Build commands from configuration
     function buildCommands(state) {
@@ -111,13 +117,16 @@
 
         // Create context manager
         const ctxmgr = contextManager({
-            getItems: () => state.get(StateKeys.contextItems),
-            setItems: (v) => state.set(StateKeys.contextItems, v),
+            getItems: () => state.get(shared.contextItems) || [],
+            setItems: (v) => state.set(shared.contextItems, v),
             nextIntegerId: nextIntegerId,
             buildPrompt: buildPrompt
         });
 
-        const commands = {};
+        const commands = {
+            // N.B. This inherits the default description, and runs _after_ the built-in help.
+            help: {handler: help},
+        };
 
         // Guard against undefined Commands array
         const commandConfigs = config.Commands || [];
@@ -172,31 +181,22 @@
                     output.print("Error creating handler for command " + cmdConfig.Name + ": " + e);
                     continue;
                 }
-            } else if (cmdConfig.Type === "help") {
-                commands[cmdConfig.Name] = {
-                    description: "Show help",
-                    handler: help
-                };
             }
         }
 
         return commands;
     }
 
-    // Banner function
     function banner() {
         if (config.BannerText) {
             output.print(config.BannerText);
         }
-        output.print("Type 'help' for commands. Use '" + config.Name + "' to return here later.");
+        output.print("Type 'help' for commands.");
     }
 
-    // Help function
     function help() {
         if (config.HelpText) {
-            output.print(config.HelpText);
-        } else {
-            output.print("No help available for this goal.");
+            output.print("\n" + config.HelpText);
         }
     }
 
@@ -205,21 +205,16 @@
         // Register the mode
         tui.registerMode({
             name: config.Name,
-            stateContract: StateKeys,
             tui: {
                 title: config.TUITitle || config.Name,
                 prompt: config.TUIPrompt || "> ",
                 enableHistory: config.EnableHistory || false,
                 historyFile: config.HistoryFile || ""
             },
-            onEnter: function (_, stateObj) {
-                banner();
-                help();
-            },
-            onExit: function (_, stateObj) {
-                output.print("Goodbye!");
-            },
-            commands: buildCommands
+            onEnter: banner,
+            commands: function () {
+                return buildCommands(state);
+            }
         });
     });
 })();

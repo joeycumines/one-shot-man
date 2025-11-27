@@ -81,7 +81,9 @@ type GoalCommand struct {
 	registry    GoalRegistry
 	// testMode prevents launching the interactive TUI during tests while
 	// still executing JS (so onEnter hooks can print to stdout).
-	testMode bool
+	testMode       bool
+	session        string
+	storageBackend string
 }
 
 // NewGoalCommand creates a new goal command
@@ -103,6 +105,8 @@ func (c *GoalCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.list, "l", false, "List available goals")
 	fs.StringVar(&c.category, "c", "", "Filter goals by category")
 	fs.StringVar(&c.run, "r", "", "Run specific goal directly")
+	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
+	fs.StringVar(&c.storageBackend, "storage-backend", "", "Storage backend to use: 'fs' (default) or 'memory')")
 }
 
 // Execute runs the goal command
@@ -139,9 +143,9 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("goal not found: %s", goalName)
 	}
 
-	// Create a scripting engine to run the goal
+	// Create a scripting engine to run the goal (allow explicit session/backend)
 	ctx := context.Background()
-	engine, err := scripting.NewEngine(ctx, stdout, stderr)
+	engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.storageBackend)
 	if err != nil {
 		return fmt.Errorf("failed to create scripting engine: %w", err)
 	}

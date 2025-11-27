@@ -21,9 +21,11 @@ var codeReviewScript string
 // CodeReviewCommand provides the baked-in code-review script functionality.
 type CodeReviewCommand struct {
 	*BaseCommand
-	interactive bool
-	testMode    bool
-	config      *config.Config
+	interactive    bool
+	testMode       bool
+	config         *config.Config
+	session        string
+	storageBackend string
 }
 
 // NewCodeReviewCommand creates a new code-review command.
@@ -43,14 +45,16 @@ func (c *CodeReviewCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.interactive, "interactive", true, "Start interactive code review mode (default)")
 	fs.BoolVar(&c.interactive, "i", true, "Start interactive code review mode (short form, default)")
 	fs.BoolVar(&c.testMode, "test", false, "Enable test mode with verbose output")
+	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
+	fs.StringVar(&c.storageBackend, "storage-backend", "", "Storage backend to use: 'fs' (default) or 'memory')")
 }
 
 // Execute runs the code-review command.
 func (c *CodeReviewCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	ctx := context.Background()
 
-	// Create scripting engine
-	engine, err := scripting.NewEngine(ctx, stdout, stderr)
+	// Create scripting engine with explicit session/storage configuration
+	engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.storageBackend)
 	if err != nil {
 		return fmt.Errorf("failed to create scripting engine: %w", err)
 	}
@@ -59,6 +63,12 @@ func (c *CodeReviewCommand) Execute(args []string, stdout, stderr io.Writer) err
 	if c.testMode {
 		engine.SetTestMode(true)
 	}
+
+	// Inject command name for state namespacing
+	const commandName = "code-review"
+	engine.SetGlobal("config", map[string]interface{}{
+		"Name": commandName,
+	})
 
 	// Set up global variables
 	engine.SetGlobal("args", args)

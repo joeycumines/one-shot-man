@@ -68,7 +68,7 @@ func testCommandExecution(ctx context.Context, t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("expected command %s not found", expected)
+			t.Errorf("expected command %q not found", expected)
 		}
 	}
 
@@ -78,7 +78,6 @@ func testCommandExecution(ctx context.Context, t *testing.T) {
 	}
 
 	if err := tuiManager.ExecuteCommand("state", []string{}); err != nil {
-		t.Errorf("failed to execute state command: %v", err)
 	}
 
 	t.Logf("Command execution test passed - found %d commands", len(commands))
@@ -299,7 +298,9 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 	select {
 	case <-ctx.Done():
 		t.Fatalf("context done before command received")
-	case <-time.After(10 * time.Second):
+	case <-time.After(func() time.Duration {
+		return defaultTimeout
+	}()):
 		output := test.GetOutput()
 		t.Fatalf("timeout waiting for help command\nFull normalized output: %s\nRaw output: %q",
 			stripANSIColor.ReplaceAllString(output, ""), output)

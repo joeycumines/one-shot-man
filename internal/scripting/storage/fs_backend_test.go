@@ -298,3 +298,189 @@ func TestFileSystemBackend_ErrorScenarios(t *testing.T) {
 		}
 	})
 }
+
+func TestFileSystemBackend_ArchiveSession_ExclusiveCreate(t *testing.T) {
+	tmp, cleanup := setupTest(t)
+	defer cleanup()
+
+	sessionID := "test-archive-exclusive"
+	backend, err := NewFileSystemBackend(sessionID)
+	if err != nil {
+		t.Fatalf("failed to create backend: %v", err)
+	}
+	defer backend.Close()
+
+	// Save an initial session so session file exists
+	s := &Session{SessionID: sessionID, CreatedAt: time.Now(), UpdatedAt: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
+	if err := backend.SaveSession(s); err != nil {
+		t.Fatalf("SaveSession failed: %v", err)
+	}
+
+	// Determine a candidate archive path
+	ts := time.Now()
+	destPath, err := ArchiveSessionFilePath(sessionID, ts, 0)
+	if err != nil {
+		t.Fatalf("ArchiveSessionFilePath failed: %v", err)
+	}
+
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		t.Fatalf("failed to mkdir archive dir: %v", err)
+	}
+
+	// 1) Create a destination file to simulate collision and expect ErrExist
+	if err := os.WriteFile(destPath, []byte("existing"), 0644); err != nil {
+		t.Fatalf("failed to create pre-existing dest: %v", err)
+	}
+
+	if err := backend.ArchiveSession(sessionID, destPath); !os.IsExist(err) {
+		t.Fatalf("expected ErrExist when dest exists, got: %v", err)
+	}
+
+	// Ensure original session still exists because archive should not have removed it
+	sessionPath, _ := SessionFilePath(sessionID)
+	if _, err := os.Stat(sessionPath); err != nil {
+		t.Fatalf("expected original session to still exist after collided archive attempt: %v", err)
+	}
+
+	// 2) Now pick a new unique destination and ensure ArchiveSession succeeds
+	destPath2, err := ArchiveSessionFilePath(sessionID, ts, 1)
+	if err != nil {
+		t.Fatalf("ArchiveSessionFilePath failed: %v", err)
+	}
+
+	if err := backend.ArchiveSession(sessionID, destPath2); err != nil {
+		t.Fatalf("expected archive to succeed for unused dest, got: %v", err)
+	}
+
+	// Original session should be removed after successful archive
+	if _, err := os.Stat(sessionPath); !os.IsNotExist(err) {
+		t.Fatalf("expected original session removed after archive success, got: %v", err)
+	}
+
+	// Archived file should exist
+	if _, err := os.Stat(destPath2); err != nil {
+		t.Fatalf("expected archive file to exist at %s: %v", destPath2, err)
+	}
+
+	// Clean up temp directory explicitly to avoid linter complaints
+	_ = tmp
+}
+
+func TestFileSystemBackend_ArchiveSession_ConcurrentExclusive(t *testing.T) {
+	tmp, cleanup := setupTest(t)
+	defer cleanup()
+
+	sessionID := "test-archive-concurrent"
+	backend, err := NewFileSystemBackend(sessionID)
+	if err != nil {
+		t.Fatalf("failed to create backend: %v", err)
+	}
+	defer backend.Close()
+
+	// Save an initial session so session file exists
+	s := &Session{SessionID: sessionID, CreatedAt: time.Now(), UpdatedAt: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
+	if err := backend.SaveSession(s); err != nil {
+		t.Fatalf("SaveSession failed: %v", err)
+	}
+
+	ts := time.Now()
+	destPath, err := ArchiveSessionFilePath(sessionID, ts, 0)
+	if err != nil {
+		t.Fatalf("ArchiveSessionFilePath failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		t.Fatalf("failed to mkdir archive dir: %v", err)
+	}
+
+	// Run two concurrent archive attempts using the same destination path.
+	// The backend must ensure one succeeds and the other returns os.ErrExist.
+	var err1, err2 error
+	done := make(chan struct{}, 2)
+
+	go func() { err1 = backend.ArchiveSession(sessionID, destPath); done <- struct{}{} }()
+	go func() { err2 = backend.ArchiveSession(sessionID, destPath); done <- struct{}{} }()
+
+	<-done
+	<-done
+
+	// Exactly one call must succeed and the other should return os.ErrExist.
+	success := 0
+	if err1 == nil {
+		success++
+	} else if !os.IsExist(err1) {
+		t.Fatalf("unexpected error for archive attempt 1: %v", err1)
+	}
+	if err2 == nil {
+		success++
+	} else if !os.IsExist(err2) {
+		t.Fatalf("unexpected error for archive attempt 2: %v", err2)
+	}
+	if success != 1 {
+		t.Fatalf("expected exactly one success, got %d successes (err1=%v err2=%v)", success, err1, err2)
+	}
+
+	// Clean up temp directory explicitly to avoid linter complaints
+	_ = tmp
+}
+
+func TestFileSystemBackend_ArchiveSession_PreserveArchiveOnSourceRemoveFailure(t *testing.T) {
+	tmp, cleanup := setupTest(t)
+	defer cleanup()
+
+	sessionID := "test-archive-remove-fails"
+	backend, err := NewFileSystemBackend(sessionID)
+	if err != nil {
+		t.Fatalf("failed to create backend: %v", err)
+	}
+	defer backend.Close()
+
+	// Save an initial session so session file exists
+	s := &Session{SessionID: sessionID, CreatedAt: time.Now(), UpdatedAt: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
+	if err := backend.SaveSession(s); err != nil {
+		t.Fatalf("SaveSession failed: %v", err)
+	}
+
+	// Prepare archive path and ensure archive dir exists
+	ts := time.Now()
+	destPath, err := ArchiveSessionFilePath(sessionID, ts, 0)
+	if err != nil {
+		t.Fatalf("ArchiveSessionFilePath failed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		t.Fatalf("failed to mkdir archive dir: %v", err)
+	}
+
+	// Make the sessions directory non-writable so os.Remove(sessionPath) will fail
+	sessionsDir, _ := sessionDirectory()
+	// Set to read+exec only so removal of files inside should fail
+	if err := os.Chmod(sessionsDir, 0500); err != nil {
+		t.Fatalf("failed to chmod sessions dir: %v", err)
+	}
+	// Make sure we restore perms at the end so cleanup works
+	defer func() { _ = os.Chmod(sessionsDir, 0755) }()
+
+	// Attempt archive: copy should succeed but removal should fail and return an error
+	err = backend.ArchiveSession(sessionID, destPath)
+	if err == nil {
+		t.Fatalf("expected ArchiveSession to return error when source removal fails, got nil")
+	}
+
+	// Destination should exist (archive kept)
+	if _, statErr := os.Stat(destPath); statErr != nil {
+		t.Fatalf("expected archive file to exist at %s, stat error: %v", destPath, statErr)
+	}
+
+	// Original session should still exist (removal failed)
+	sessionPath, _ := SessionFilePath(sessionID)
+	if _, statErr := os.Stat(sessionPath); statErr != nil {
+		t.Fatalf("expected original session to still exist after failed removal, stat error: %v", statErr)
+	}
+
+	// Clean up: reset perms so test environment can remove files
+	if err := os.Chmod(sessionsDir, 0755); err != nil {
+		t.Fatalf("failed to restore perms on sessions dir: %v", err)
+	}
+
+	_ = tmp
+}

@@ -17,6 +17,10 @@ func TestCodeReviewCommand_Integration(t *testing.T) {
 	cmd.testMode = true
 	cmd.interactive = false
 
+	// Use in-memory storage to avoid polluting real sessions
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
+
 	err := cmd.Execute([]string{}, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
@@ -35,13 +39,9 @@ func TestCodeReviewCommand_Integration(t *testing.T) {
 		t.Errorf("Expected register-mode sub-test to pass, got: %s", output)
 	}
 
-	// Verify the banner and help are displayed
-	if !contains(output, "Code Review: context -> single prompt for PR review") {
-		t.Errorf("Expected banner message in output, got: %s", output)
-	}
-
-	if !contains(output, "Commands: add, diff, note, list, edit, remove, show, copy, help, exit") {
-		t.Errorf("Expected help message in output, got: %s", output)
+	// Verify the compact initial message is displayed
+	if !contains(output, "Type 'help' for commands. Tip: Try 'note --goals'.") {
+		t.Errorf("Expected compact initial message in output, got: %s", output)
 	}
 
 	// Verify the enter-review test passed - removed duplicate check

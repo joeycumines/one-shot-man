@@ -3,47 +3,46 @@
 
 ctx.log("Setting up demo mode...");
 
-// Define state contract
-const StateKeys = tui.createStateContract({
+const MODE_NAME = "demo";
+
+// Define state using new API
+const state = tui.createState(MODE_NAME, {
     counter: {
-        description: "demo:counter",
         defaultValue: 0
     },
     messages: {
-        description: "demo:messages",
         defaultValue: []
     }
 });
 
 // Register a simple demo mode
 tui.registerMode({
-    name: "demo",
-    stateContract: StateKeys,
+    name: MODE_NAME,
     tui: {
         title: "Demo Mode",
         prompt: "[demo]> ",
         enableHistory: false
     },
 
-    onEnter: function (_, stateObj) {
+    onEnter: function () {
         output.print("Entered demo mode!");
         output.print("This is a simple demonstration of the mode system.");
     },
 
-    onExit: function (_, stateObj) {
+    onExit: function () {
         output.print("Leaving demo mode...");
-        var counter = stateObj.state.get(StateKeys.counter);
+        var counter = state.get("counter");
         output.print("Final counter value: " + counter);
     },
 
-    commands: function (state) {
+    commands: function () {
         return {
             "count": {
                 description: "Increment the counter",
                 handler: function (args) {
-                    var counter = state.get(StateKeys.counter);
+                    var counter = state.get("counter");
                     counter++;
-                    state.set(StateKeys.counter, counter);
+                    state.set("counter", counter);
                     output.print("Counter: " + counter);
                 }
             },
@@ -58,9 +57,9 @@ tui.registerMode({
                     }
 
                     var text = args.join(" ");
-                    var messages = state.get(StateKeys.messages);
+                    var messages = state.get("messages");
                     messages.push(text);
-                    state.set(StateKeys.messages, messages);
+                    state.set("messages", messages);
 
                     output.print("Added message: " + text);
                     output.print("Total messages: " + messages.length);
@@ -70,8 +69,8 @@ tui.registerMode({
             "show": {
                 description: "Show current state",
                 handler: function (args) {
-                    var counter = state.get(StateKeys.counter);
-                    var messages = state.get(StateKeys.messages);
+                    var counter = state.get("counter");
+                    var messages = state.get("messages");
 
                     output.print("Current state:");
                     output.print("  Counter: " + counter);

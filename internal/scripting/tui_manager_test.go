@@ -58,33 +58,35 @@ func TestResetCommand_EndToEnd(t *testing.T) {
 
 	// Register modes with mode-specific state
 	modesScript := engine.LoadScriptFromString("modes-setup", `
-		// Create a shared state contract using the correct API
-		const SharedKeys = tui.createSharedStateContract("__shared__", {
-			sharedKey: {
-				description: "__shared__:sharedKey",
-				defaultValue: "defaultShared"
-			}
+		// Import shared symbols
+		const shared = require('osm:sharedStateSymbols');
+
+		// Create shared state
+		const SharedStateKeys = {
+			sharedKey: Symbol("sharedKey")
+		};
+		const sharedState = tui.createState("__shared__", {
+			[SharedStateKeys.sharedKey]: {defaultValue: "defaultShared"}
 		});
 
-		// Create mode-specific contracts
-		const ModeAKeys = tui.createStateContract("modeA", {
-			keyA: {
-				description: "modeA:keyA",
-				defaultValue: 0
-			}
+		// Create mode-specific state
+		const ModeAKeys = {
+			keyA: Symbol("keyA")
+		};
+		const modeAState = tui.createState("modeA", {
+			[ModeAKeys.keyA]: {defaultValue: 0}
 		});
 
-		const ModeBKeys = tui.createStateContract("modeB", {
-			keyB: {
-				description: "modeB:keyB",
-				defaultValue: "defaultB"
-			}
+		const ModeBKeys = {
+			keyB: Symbol("keyB")
+		};
+		const modeBState = tui.createState("modeB", {
+			[ModeBKeys.keyB]: {defaultValue: "defaultB"}
 		});
 
-		// Register a mode with the shared contract first
+		// Register a mode with the shared state first
 		tui.registerMode({
 			name: "shared-user",
-			stateContract: SharedKeys,
 			tui: {
 				prompt: "[shared]> "
 			}
@@ -93,7 +95,6 @@ func TestResetCommand_EndToEnd(t *testing.T) {
 		// Register modeA
 		tui.registerMode({
 			name: "modeA",
-			stateContract: ModeAKeys,
 			tui: {
 				prompt: "[modeA]> "
 			}
@@ -102,7 +103,6 @@ func TestResetCommand_EndToEnd(t *testing.T) {
 		// Register modeB
 		tui.registerMode({
 			name: "modeB",
-			stateContract: ModeBKeys,
 			tui: {
 				prompt: "[modeB]> "
 			}
@@ -146,8 +146,8 @@ func TestResetCommand_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get modeA state: %v", err)
 	}
-	if modeAVal != int64(100) {
-		t.Errorf("Expected modeA state to be 100, got %v", modeAVal)
+	if modeAVal != 100 {
+		t.Errorf("Expected modeA state to be 100, got %v (type %T)", modeAVal, modeAVal)
 	}
 
 	modeBVal, err := tuiManager.GetStateViaJS("modeB:keyB")
@@ -170,33 +170,97 @@ func TestResetCommand_EndToEnd(t *testing.T) {
 	}
 
 	// Verify all state has been reset to default values
+	// NOTE: We verify this by running JS, because the raw storage should be empty (nil),
+	// and the JS accessor is responsible for providing the default.
+
+	// 1. Verify raw storage is empty (nil)
 	sharedVal, err = tuiManager.GetStateViaJS("__shared__:sharedKey")
 	if err != nil {
 		t.Fatalf("Failed to get shared state after reset: %v", err)
 	}
-	if sharedVal != "defaultShared" {
-		t.Errorf("Expected shared state to be reset to 'defaultShared', got %v", sharedVal)
+	if sharedVal != nil {
+		t.Errorf("Expected raw shared state to be nil (cleared), got %v", sharedVal)
 	}
 
 	modeAVal, err = tuiManager.GetStateViaJS("modeA:keyA")
 	if err != nil {
 		t.Fatalf("Failed to get modeA state after reset: %v", err)
 	}
-	if modeAVal != int64(0) {
-		t.Errorf("Expected modeA state to be reset to 0, got %v", modeAVal)
+	if modeAVal != nil {
+		t.Errorf("Expected raw modeA state to be nil (cleared), got %v", modeAVal)
 	}
 
-	// Switch to modeB to check its state was also reset
+	// 2. Verify JS sees the default values
+	// We re-create the state accessors to check the values. This works because createState
+	// is stateless regarding the accessor itself; it just maps to the persistent keys.
+	checkScript := `
+		(function() {
+			// Re-bind shared state
+			const SharedStateKeys = { sharedKey: Symbol("sharedKey") };
+			// Note: We must use the EXACT same symbol description for command-specific state
+			// or the exact same shared symbol for shared state.
+			// For shared state, we need the canonical symbol from the registry if we want to match,
+			// but here we are just checking if the fallback works.
+
+			// Actually, for the test to work with the SAME keys as before, we need to use the
+			// same persistence keys.
+			// The persistence key for shared state is just the symbol name if it's registered,
+			// or "command:desc" if not.
+
+			// In the setup script:
+			// const SharedStateKeys = { sharedKey: Symbol("sharedKey") };
+			// const sharedState = tui.createState("__shared__", { [SharedStateKeys.sharedKey]: ... });
+
+			// Since "sharedKey" is NOT in osm:sharedStateSymbols (unless we added it?),
+			// it is treated as command-specific state for command "__shared__".
+			// Key: "__shared__:sharedKey"
+
+			const sState = tui.createState("__shared__", {
+				[Symbol("sharedKey")]: {defaultValue: "defaultShared"}
+			});
+			const sVal = sState.get(Object.getOwnPropertySymbols(sState.get)[0] || Symbol("sharedKey"));
+			// Wait, we need to pass the EXACT symbol instance to .get() that we used in definition.
+
+			// Let's do it cleaner:
+			const symShared = Symbol("sharedKey");
+			const state1 = tui.createState("__shared__", { [symShared]: {defaultValue: "defaultShared"} });
+			const val1 = state1.get(symShared);
+
+			const symA = Symbol("keyA");
+			const stateA = tui.createState("modeA", { [symA]: {defaultValue: 0} });
+			const valA = stateA.get(symA);
+
+			const symB = Symbol("keyB");
+			const stateB = tui.createState("modeB", { [symB]: {defaultValue: "defaultB"} });
+			const valB = stateB.get(symB);
+
+			return [val1, valA, valB];
+		})()
+	`
+
+	val, err := engine.vm.RunString(checkScript)
+	if err != nil {
+		t.Fatalf("Failed to run verification script: %v", err)
+	}
+
+	resultsObj := val.ToObject(engine.vm)
+	resShared := resultsObj.Get("0").String()
+	resA := resultsObj.Get("1").ToInteger()
+	resB := resultsObj.Get("2").String()
+
+	if resShared != "defaultShared" {
+		t.Errorf("Expected JS shared state to be 'defaultShared', got %v", resShared)
+	}
+	if resA != 0 {
+		t.Errorf("Expected JS modeA state to be 0, got %v", resA)
+	}
+	if resB != "defaultB" {
+		t.Errorf("Expected JS modeB state to be 'defaultB', got %v", resB)
+	}
+
+	// Switch to modeB to check its state was also reset (already verified via JS above, but keeping flow)
 	if err := tuiManager.SwitchMode("modeB"); err != nil {
 		t.Fatalf("Failed to switch to modeB: %v", err)
-	}
-
-	modeBVal, err = tuiManager.GetStateViaJS("modeB:keyB")
-	if err != nil {
-		t.Fatalf("Failed to get modeB state after reset: %v", err)
-	}
-	if modeBVal != "defaultB" {
-		t.Errorf("Expected modeB state to be reset to 'defaultB', got %v", modeBVal)
 	}
 
 	// Switch back to modeA for the final checks

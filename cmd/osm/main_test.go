@@ -37,6 +37,23 @@ func TestRunHelpFlagDisplaysHelp(t *testing.T) {
 	}
 }
 
+func TestRunGlobalFlagBeforeCommandShowsGlobalHelp(t *testing.T) {
+	// Ensure a global flag consumed before a command doesn't make the
+	// program treat the flag token as the command name (bug fixed).
+	stdout, stderr, err := runWithCapturedIO(t, []string{"osm", "-h", "session"})
+	if err != nil {
+		t.Fatalf("run returned error: %v", err)
+	}
+
+	if !strings.Contains(stdout, "Available commands") {
+		t.Fatalf("expected help output to contain 'Available commands', got %q", stdout)
+	}
+
+	if stderr != "" {
+		t.Fatalf("expected no stderr output, got %q", stderr)
+	}
+}
+
 func TestRunUnknownCommand(t *testing.T) {
 	stdout, stderr, err := runWithCapturedIO(t, []string{"osm", "unknown"})
 	if err == nil {
@@ -64,6 +81,31 @@ func TestRunVersionCommand(t *testing.T) {
 
 	if stderr != "" {
 		t.Fatalf("expected no stderr output, got %q", stderr)
+	}
+}
+
+func TestRunSessionSubcommandHelp(t *testing.T) {
+	stdout, stderr, err := runWithCapturedIO(t, []string{"osm", "session", "delete", "-h"})
+	if err != nil {
+		t.Fatalf("run returned error: %v", err)
+	}
+
+	if !strings.Contains(stderr, "Usage:") {
+		t.Fatalf("expected usage output in stderr, got stdout=%q stderr=%q", stdout, stderr)
+	}
+}
+
+func TestRunParseFlagValue(t *testing.T) {
+	// This used to fail when the run() logic attempted to split flags
+	// manually; a flag that expects a value (e.g. -e) caused the parser
+	// to be invoked without the value (parse error "flag needs an argument").
+	stdout, stderr, err := runWithCapturedIO(t, []string{"osm", "script", "-e", "console.log('x')", "extra"})
+
+	// If parsing failed due to missing flag argument the error will
+	// contain the phrase "flag needs an argument" — ensure that is
+	// not the case.
+	if err != nil && strings.Contains(err.Error(), "flag needs an argument") {
+		t.Fatalf("unexpected parse error: %v stdout=%q stderr=%q", err, stdout, stderr)
 	}
 }
 

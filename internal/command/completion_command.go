@@ -83,21 +83,26 @@ _osm_completion() {
         return 0
     fi
 
-	# For subsequent arguments, provide per-command completions
-	case "${prev}" in
-		completion)
-			COMPREPLY=($(compgen -W "bash zsh fish powershell" -- ${cur}))
-			return 0
-			;;
-		goal)
-			COMPREPLY=($(compgen -W "%s" -- ${cur}))
-			return 0
-			;;
-		*)
-			COMPREPLY=($(compgen -f -- ${cur}))
-			return 0
-			;;
-	esac
+    # For subsequent arguments, provide per-command completions
+    case "${prev}" in
+        completion)
+            COMPREPLY=($(compgen -W "bash zsh fish powershell" -- ${cur}))
+            return 0
+            ;;
+        goal)
+            COMPREPLY=($(compgen -W "%s" -- ${cur}))
+            return 0
+            ;;
+        session)
+            COMPREPLY=($(compgen -W "list clean delete info" -- ${cur}))
+            return 0
+            ;;
+        # For delete/info let shell default to filename completion (no session ids)
+        *)
+            COMPREPLY=($(compgen -f -- ${cur}))
+            return 0
+            ;;
+    esac
 }
 
 # Register the completion function
@@ -148,20 +153,27 @@ _osm() {
 %s            )
             _describe 'commands' commands
             ;;
-		args)
-			# Argument completion based on selected subcommand
-			case ${words[2]} in
-				completion)
-					_values 'shell' 'bash' 'zsh' 'fish' 'powershell'
-					;;
-				goal)
-					_values 'goal-name' '%s'
-					;;
-				*)
-					_files
-					;;
-			esac
-			;;
+        args)
+            # Argument completion based on selected subcommand
+            case ${words[2]} in
+                completion)
+                    _values 'shell' 'bash' 'zsh' 'fish' 'powershell'
+                    ;;
+                goal)
+                    _values 'goal-name' '%s'
+                    ;;
+                session)
+                    if (( CURRENT == 3 )); then
+                        _values 'session-subcommand' 'list' 'clean' 'delete' 'info'
+                    else
+                        _files
+                    fi
+                    ;;
+                *)
+                    _files
+                    ;;
+            esac
+            ;;
     esac
 }
 
@@ -204,6 +216,9 @@ func (c *CompletionCommand) generateFishCompletion(w io.Writer) error {
 		}
 	}
 
+	var sessionCompletions strings.Builder
+	sessionCompletions.WriteString("complete -c osm -n '__fish_seen_subcommand_from session' -a 'list clean delete info' -d 'Session subcommands'\n")
+
 	script := fmt.Sprintf(`# Fish completion script for osm (one-shot-man)
 
 # Complete commands
@@ -212,11 +227,13 @@ func (c *CompletionCommand) generateFishCompletion(w io.Writer) error {
 complete -c osm -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish powershell' -d 'Shell'
 
 # Completion for 'goal' subcommand args (goal names)
+%s
+# Completion for 'session' subcommand
 %s# Installation instructions (as comments):
 # To install this completion script:
 # 1. Copy this script to ~/.config/fish/completions/osm.fish
 # 2. Or pipe it directly: osm completion fish > ~/.config/fish/completions/osm.fish
-`, completions.String(), goalCompletions.String())
+`, completions.String(), goalCompletions.String(), sessionCompletions.String())
 
 	_, err := w.Write([]byte(script))
 	return err
@@ -230,53 +247,63 @@ func (c *CompletionCommand) generatePowerShellCompletion(w io.Writer) error {
 	goals := c.goalRegistry.List()
 	goalList := strings.Join(goals, "', '")
 
+	// No per-ID completions for session — only subcommand names are provided.
+
 	script := fmt.Sprintf(`# PowerShell completion script for osm (one-shot-man)
 
 Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
-	param($commandName, $wordToComplete, $cursorPosition)
+    param($commandName, $wordToComplete, $cursorPosition)
 
-	$line = $MyInvocation.Line.Substring(0, $cursorPosition)
-	$tokens = $line.TrimStart().Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
-	$tokenCount = $tokens.Length
+    $line = $MyInvocation.Line.Substring(0, $cursorPosition)
+    $tokens = $line.TrimStart().Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
+    $tokenCount = $tokens.Length
 
-	$commands = @('%s')
-	$shells = @('bash', 'zsh', 'fish', 'powershell')
-	$goals = @('%s')
+    $commands = @('%s')
+    $shells = @('bash', 'zsh', 'fish', 'powershell')
+    $goals = @('%s')
 
-	if ($line.TrimEnd().EndsWith(' ')) {
-		$tokenCount++
-	}
+    if ($line.TrimEnd().EndsWith(' ')) {
+        $tokenCount++
+    }
 
-	# Completing the command name (token 2: first arg after command)
-	if ($tokenCount -le 2) {
-		$commands | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
-			[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
-		}
-		return
-	}
+    # Completing the command name (token 2: first arg after command)
+    if ($tokenCount -le 2) {
+        $commands | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+        return
+    }
 
-	$command = if ($tokens.Count -ge 2) { $tokens[1] } else { '' }
+    $command = if ($tokens.Count -ge 2) { $tokens[1] } else { '' }
 
-	if ($tokenCount -eq 3 -and $command -eq 'completion') {
-		$shells | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
-			[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
-		}
-		return
-	}
+    if ($tokenCount -eq 3 -and $command -eq 'completion') {
+        $shells | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+        return
+    }
 
-	if ($tokenCount -eq 3 -and $command -eq 'goal') {
-		$goals | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
-			[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
-		}
-		return
-	}
+    if ($tokenCount -eq 3 -and $command -eq 'goal') {
+        $goals | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+        return
+    }
 
-	# Default to file completion for other commands
-	if ($command -ne 'completion') {
-		Get-ChildItem -Path . -Name "$wordToComplete*" | ForEach-Object {
-			[System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
-		}
-	}
+    if ($tokenCount -eq 3 -and $command -eq 'session') {
+        $subs = @('list','clean','delete','info')
+        $subs | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+        return
+    }
+
+    # Default to file completion for other commands
+    if ($command -ne 'completion') {
+        Get-ChildItem -Path . -Name "$wordToComplete*" | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+    }
 }
 
 # Installation instructions (as comments):

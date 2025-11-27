@@ -8,6 +8,7 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
+	"github.com/joeycumines/one-shot-man/internal/scripting/builtin"
 )
 
 // TUIManager manages rich terminal interfaces for script modes.
@@ -41,22 +42,10 @@ type TUIManager struct {
 	// history stores command history per mode
 	history map[string][]HistoryEntry
 
-	// pendingContracts temporarily stores contracts created via createStateContract
-	// before they are linked to a mode in registerMode
-	pendingContracts map[string]*StateContract
-	// WARNING: MUST ALWAYS BE ACQUIRED BEFORE sharedMu IF BOTH ARE NEEDED
-	contractMu sync.Mutex
-
-	// sharedContracts persistently stores all registered shared state contracts
-	// for runtime shared state detection (checked in get/setStateBySymbol)
-	sharedContracts []*StateContract
-
-	// sharedState stores state that is shared across all modes
-	sharedState map[goja.Value]interface{}
-	sharedMu    sync.RWMutex
-
 	// stateManager orchestrates all persistence logic for this TUI instance
-	stateManager *StateManager
+	// Use the builtin.StateManager interface to avoid tight coupling to the
+	// concrete implementation.
+	stateManager builtin.StateManager
 
 	// sessionID uniquely identifies this TUI session for persistence
 	sessionID string
@@ -66,13 +55,12 @@ type TUIManager struct {
 }
 
 // ScriptMode represents a specific script mode with its own state and commands.
+// NOTE: State and StateContract fields DELETED - JS manages state via tui.createState()
 type ScriptMode struct {
 	Name            string
 	Script          *Script
-	State           map[goja.Value]interface{} // Changed: now keyed by Symbol (goja.Value)
-	StateContract   *StateContract             // New: formal state contract
 	Commands        map[string]Command
-	CommandsBuilder goja.Callable // New: optional function to build commands with state accessor
+	CommandsBuilder goja.Callable // Renamed from BuildCommands for consistency
 	CommandOrder    []string      // maintains insertion order of commands
 	TUIConfig       *TUIConfig
 	OnEnter         goja.Callable

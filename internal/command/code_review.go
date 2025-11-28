@@ -67,7 +67,7 @@ func (c *CodeReviewCommand) Execute(args []string, stdout, stderr io.Writer) err
 	// Inject command name for state namespacing
 	const commandName = "code-review"
 	engine.SetGlobal("config", map[string]interface{}{
-		"Name": commandName,
+		"name": commandName,
 	})
 
 	// Set up global variables

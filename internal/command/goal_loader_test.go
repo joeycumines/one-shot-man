@@ -12,27 +12,27 @@ func TestLoadGoalFromFile_ValidJSON(t *testing.T) {
 	goalFile := filepath.Join(tmpDir, "test-goal.json")
 
 	goalJSON := `{
-		"Name": "test-goal",
-		"Description": "A test goal",
-		"Category": "testing",
-		"Usage": "Test usage",
-		"TUITitle": "Test Goal",
-		"TUIPrompt": "(test) > ",
-		"HistoryFile": ".test_history",
-		"EnableHistory": true,
-		"StateKeys": {
+		"name": "test-goal",
+		"description": "A test goal",
+		"category": "testing",
+		"usage": "Test usage",
+		"tuiTitle": "Test Goal",
+		"tuiPrompt": "(test) > ",
+		"historyFile": ".test_history",
+		"enableHistory": true,
+		"stateKeys": {
 			"testKey": "testValue"
 		},
-		"PromptInstructions": "Test instructions",
-		"PromptTemplate": "Test template",
-		"ContextHeader": "TEST",
-		"BannerText": "Test Banner",
-		"HelpText": "Test help",
-		"Commands": [
+		"promptInstructions": "Test instructions",
+		"promptTemplate": "Test template",
+		"contextHeader": "TEST",
+		"bannerText": "Test Banner",
+		"helpText": "Test help",
+		"commands": [
 			{
-				"Name": "test",
-				"Type": "custom",
-				"Description": "Test command"
+				"name": "test",
+				"type": "custom",
+				"description": "Test command"
 			}
 		]
 	}`
@@ -74,7 +74,7 @@ func TestLoadGoalFromFile_MissingName(t *testing.T) {
 	goalFile := filepath.Join(tmpDir, "invalid-goal.json")
 
 	goalJSON := `{
-		"Description": "Missing name"
+		"description": "Missing name"
 	}`
 
 	err := os.WriteFile(goalFile, []byte(goalJSON), 0644)
@@ -93,8 +93,8 @@ func TestLoadGoalFromFile_InvalidName(t *testing.T) {
 	goalFile := filepath.Join(tmpDir, "invalid-name.json")
 
 	goalJSON := `{
-		"Name": "invalid name with spaces",
-		"Description": "Test"
+		"name": "invalid name with spaces",
+		"description": "Test"
 	}`
 
 	err := os.WriteFile(goalFile, []byte(goalJSON), 0644)
@@ -113,7 +113,7 @@ func TestLoadGoalFromFile_MissingDescription(t *testing.T) {
 	goalFile := filepath.Join(tmpDir, "no-desc.json")
 
 	goalJSON := `{
-		"Name": "valid-name"
+		"name": "valid-name"
 	}`
 
 	err := os.WriteFile(goalFile, []byte(goalJSON), 0644)

@@ -8,8 +8,8 @@ const template = require('osm:text/template');
 // Import shared symbols
 const shared = require('osm:sharedStateSymbols');
 
-// config.Name is injected by Go as "prompt-flow"
-const COMMAND_NAME = config.Name;
+// config.name is injected by Go as "prompt-flow"
+const COMMAND_NAME = config.name;
 
 // Define command-specific symbols - JUST the local name, jsCreateState handles namespacing
 const StateKeys = {

@@ -89,9 +89,9 @@ func TestDynamicGoalRegistry_UserOverridesBuiltIn(t *testing.T) {
 	// Create a user goal that overrides a built-in
 	userGoalFile := filepath.Join(tmpDir, "override-goal.json")
 	userGoalJSON := `{
-		"Name": "override-goal",
-		"Description": "User version",
-		"Category": "user"
+		"name": "override-goal",
+		"description": "User version",
+		"category": "user"
 	}`
 
 	err := os.WriteFile(userGoalFile, []byte(userGoalJSON), 0644)
@@ -186,9 +186,9 @@ func TestDynamicGoalRegistry_Reload(t *testing.T) {
 	// Add a new goal file
 	goalFile := filepath.Join(tmpDir, "new-goal.json")
 	goalJSON := `{
-		"Name": "new-goal",
-		"Description": "Newly added",
-		"Category": "new"
+		"name": "new-goal",
+		"description": "Newly added",
+		"category": "new"
 	}`
 
 	err := os.WriteFile(goalFile, []byte(goalJSON), 0644)

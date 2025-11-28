@@ -31,7 +31,7 @@ func TestCodeReviewScript_Content(t *testing.T) {
 	// Test the script contains the expected function and structure
 	expectedElements := []string{
 		"Code Review: Single-prompt code review with context",
-		"const COMMAND_NAME = config.Name",
+		"const COMMAND_NAME = config.name",
 		"function buildCommands(stateArg)",
 		"codeReviewTemplate",
 		"context.toTxtar()",

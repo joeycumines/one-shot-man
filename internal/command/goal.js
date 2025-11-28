@@ -26,21 +26,21 @@
 
     // Create command-specific symbols
     const StateKeys = {contextItems: shared.contextItems}; // For convenience
-    if (config.StateKeys) {
-        for (const key in config.StateKeys) {
+    if (config.stateKeys) {
+        for (const key in config.stateKeys) {
             // Create the symbol, namespaced by the goal name
-            const symbol = Symbol(config.Name + ":" + key);
+            const symbol = Symbol(config.name + ":" + key);
             StateKeys[key] = symbol; // Store for JS-side access
 
             // Add definition to the contract
             stateContractDef[symbol] = {
-                defaultValue: config.StateKeys[key]
+                defaultValue: config.stateKeys[key]
             };
         }
     }
 
     // Create the state accessor
-    const state = tui.createState(config.Name, stateContractDef);
+    const state = tui.createState(config.name, stateContractDef);
 
     // Build commands from configuration
     function buildCommands(state) {
@@ -48,8 +48,8 @@
         function buildPrompt() {
             // Get current state values for template interpolation
             const stateVars = {};
-            if (config.StateKeys) {
-                for (const key in config.StateKeys) {
+            if (config.stateKeys) {
+                for (const key in config.stateKeys) {
                     stateVars[key] = state.get(StateKeys[key]);
                 }
             }
@@ -57,24 +57,24 @@
             // Build context txtar
             const fullContext = buildContext(state.get(StateKeys.contextItems), {toTxtar: () => context.toTxtar()});
 
-            // Use the PromptTemplate from Go configuration
-            const promptText = config.PromptTemplate || "";
+            // Use the promptTemplate from Go configuration
+            const promptText = config.promptTemplate || "";
 
             // Prepare template data
             const templateData = {
-                Description: config.Description || "",
-                ContextHeader: config.ContextHeader || "CONTEXT",
+                Description: config.description || "",
+                ContextHeader: config.contextHeader || "CONTEXT",
                 ContextTxtar: fullContext,
                 StateKeys: stateVars
             };
 
-            // Handle PromptInstructions with dynamic substitutions
-            let instructions = config.PromptInstructions || "";
+            // Handle promptInstructions with dynamic substitutions
+            let instructions = config.promptInstructions || "";
 
-            // Handle dynamic instruction substitutions from PromptOptions
-            if (config.PromptOptions) {
-                for (const optionKey in config.PromptOptions) {
-                    const optionMap = config.PromptOptions[optionKey];
+            // Handle dynamic instruction substitutions from promptOptions
+            if (config.promptOptions) {
+                for (const optionKey in config.promptOptions) {
+                    const optionMap = config.promptOptions[optionKey];
                     if (typeof optionMap === 'object' && optionMap !== null) {
                         const stateKeyBase = optionKey.replace(/Instructions$/, '');
                         const stateValue = stateVars[stateKeyBase];
@@ -98,7 +98,7 @@
                 },
             };
 
-            // The PromptInstructions string is itself a template. We must execute it
+            // The promptInstructions string is itself a template. We must execute it
             // first using the template data we've just constructed to resolve any
             // dynamic values before injecting it into the main prompt template.
             const instructionsTmpl = template.new("instructions");
@@ -128,32 +128,32 @@
             help: {handler: help},
         };
 
-        // Guard against undefined Commands array
-        const commandConfigs = config.Commands || [];
+        // Guard against undefined commands array
+        const commandConfigs = config.commands || [];
 
         for (let i = 0; i < commandConfigs.length; i++) {
             const cmdConfig = commandConfigs[i];
 
-            if (cmdConfig.Type === "contextManager") {
+            if (cmdConfig.type === "contextManager") {
                 // Use the base context manager command
-                if (ctxmgr.commands[cmdConfig.Name]) {
-                    commands[cmdConfig.Name] = ctxmgr.commands[cmdConfig.Name];
+                if (ctxmgr.commands[cmdConfig.name]) {
+                    commands[cmdConfig.name] = ctxmgr.commands[cmdConfig.name];
                     // Override description if provided
-                    if (cmdConfig.Description) {
-                        commands[cmdConfig.Name] = {
-                            ...ctxmgr.commands[cmdConfig.Name],
-                            description: cmdConfig.Description
+                    if (cmdConfig.description) {
+                        commands[cmdConfig.name] = {
+                            ...ctxmgr.commands[cmdConfig.name],
+                            description: cmdConfig.description
                         };
                     }
                 }
-            } else if (cmdConfig.Type === "custom") {
+            } else if (cmdConfig.type === "custom") {
                 // Create handler function from string using new Function()
                 // This provides a more constrained scope than dynamic evaluation
                 let handler;
                 try {
                     // Parse the handler string as a function expression
                     // Remove the "function (args)" wrapper if present and extract the body
-                    let handlerCode = cmdConfig.Handler.trim();
+                    let handlerCode = cmdConfig.handler.trim();
 
                     // If it's a function expression like "function (args) { ... }"
                     // we need to extract just the body
@@ -171,14 +171,14 @@
                         return handler.call(this, args, ctxmgr, output, tui, buildPrompt, state, StateKeys);
                     };
 
-                    commands[cmdConfig.Name] = {
-                        description: cmdConfig.Description || "",
-                        usage: cmdConfig.Usage || "",
-                        argCompleters: cmdConfig.ArgCompleters || [],
+                    commands[cmdConfig.name] = {
+                        description: cmdConfig.description || "",
+                        usage: cmdConfig.usage || "",
+                        argCompleters: cmdConfig.argCompleters || [],
                         handler: wrappedHandler
                     };
                 } catch (e) {
-                    output.print("Error creating handler for command " + cmdConfig.Name + ": " + e);
+                    output.print("Error creating handler for command " + cmdConfig.name + ": " + e);
                     continue;
                 }
             }
@@ -188,15 +188,15 @@
     }
 
     function banner() {
-        if (config.BannerText) {
-            output.print(config.BannerText);
+        if (config.bannerText) {
+            output.print(config.bannerText);
         }
         output.print("Type 'help' for commands.");
     }
 
     function help() {
-        if (config.HelpText) {
-            output.print("\n" + config.HelpText);
+        if (config.helpText) {
+            output.print("\n" + config.helpText);
         }
     }
 
@@ -204,12 +204,12 @@
     ctx.run("register-mode", function () {
         // Register the mode
         tui.registerMode({
-            name: config.Name,
+            name: config.name,
             tui: {
-                title: config.TUITitle || config.Name,
-                prompt: config.TUIPrompt || "> ",
-                enableHistory: config.EnableHistory || false,
-                historyFile: config.HistoryFile || ""
+                title: config.tuiTitle || config.name,
+                prompt: config.tuiPrompt || "> ",
+                enableHistory: config.enableHistory || false,
+                historyFile: config.historyFile || ""
             },
             onEnter: banner,
             commands: function () {

@@ -55,7 +55,7 @@ func TestCodeReviewCommand_FullWorkflow(t *testing.T) {
 	}
 
 	expectedScriptElements := []string{
-		"const COMMAND_NAME = config.Name",
+		"const COMMAND_NAME = config.name",
 		"function buildCommands(stateArg)",
 		"codeReviewTemplate",
 		"template.execute(codeReviewTemplate",

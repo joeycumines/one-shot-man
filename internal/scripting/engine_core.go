@@ -206,7 +206,7 @@ func (e *Engine) Close() error {
 	if e.tuiManager != nil {
 		if err := e.tuiManager.Close(); err != nil {
 			// Log error but continue cleanup
-			fmt.Fprintf(e.stderr, "Warning: failed to close TUI manager: %v\n", err)
+			_, _ = fmt.Fprintf(e.stderr, "Warning: failed to close TUI manager: %v\n", err)
 		}
 	}
 

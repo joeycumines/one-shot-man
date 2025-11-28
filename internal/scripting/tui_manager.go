@@ -111,75 +111,81 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 		return fmt.Errorf("mode %s not found", modeName)
 	}
 
-	// Get the current mode and exit callback while holding the lock
+	// Get the current mode and exit callback while holding the lock.
 	currentMode := tm.currentMode
 	var onExitCallback goja.Callable
 	if currentMode != nil && currentMode.OnExit != nil {
 		onExitCallback = currentMode.OnExit
 	}
 
-	// Release lock before calling OnExit to avoid deadlock when callback accesses state
+	// Release lock before calling OnExit to avoid deadlock when callback accesses state.
 	tm.mu.Unlock()
 
-	// Exit current mode (outside the lock)
+	// Exit current mode (outside the lock).
 	if onExitCallback != nil {
-		// Call onExit with signature: function()
-		// Scripts should manage their own state via createState() closures
 		if _, err := onExitCallback(goja.Undefined()); err != nil {
-			fmt.Fprintf(tm.output, "Error exiting mode %s: %v\n", currentMode.Name, err)
+			_, _ = fmt.Fprintf(tm.output, "Error exiting mode %s: %v\n", currentMode.Name, err)
 		}
 	}
 
-	// Reacquire lock for mode switching
-	tm.mu.Lock()
+	// Retrieve state but release lock before invoking callbacks/builders.
+	var (
+		builder         goja.Callable
+		needBuild       bool
+		onEnterCallback goja.Callable
+	)
+	{
+		tm.mu.Lock()
+		var unlocked bool
+		defer func() {
+			if !unlocked {
+				tm.mu.Unlock()
+			}
+		}()
 
-	fmt.Fprintf(tm.output, "Switched to mode: %s\n", mode.Name)
+		tm.currentMode = mode
 
-	// Enter new mode
-	tm.currentMode = mode
+		// capture callbacks and builder state before releasing the lock
+		builder = mode.CommandsBuilder
+		needBuild = false
+		if builder != nil {
+			mode.mu.RLock()
+			needBuild = len(mode.Commands) == 0
+			mode.mu.RUnlock()
+		}
 
-	// NOTE: State initialization removed - JS manages state via tui.createState()
+		if mode.OnEnter != nil {
+			onEnterCallback = mode.OnEnter
+		}
 
-	// Capture callbacks and builder state before releasing the lock
-	builder := mode.CommandsBuilder
-	needBuild := false
-	if builder != nil {
-		mode.mu.RLock()
-		needBuild = len(mode.Commands) == 0
-		mode.mu.RUnlock()
+		_, _ = fmt.Fprintf(tm.output, "Switched to mode: %s\n", mode.Name)
+
+		unlocked = true
+		tm.mu.Unlock()
 	}
-
-	var onEnterCallback goja.Callable
-	if mode.OnEnter != nil {
-		onEnterCallback = mode.OnEnter
-	}
-
-	// Release lock before invoking potentially re-entrant callbacks/builders
-	tm.mu.Unlock()
 
 	// Rehydrate ContextManager from shared state after mode switch
 	// This ensures file paths are restored from persisted contextItems
 	restoredItems, restoredFiles := tm.rehydrateContextManager()
 
-	// Build commands outside the lock to avoid deadlocks if builder touches state
+	// N.B. Avoid calling holding locks here, or risk deadlock within command factories.
 	if builder != nil && needBuild {
 		if err := tm.buildModeCommands(mode); err != nil {
-			fmt.Fprintf(tm.output, "Error building commands for mode %s: %v\n", mode.Name, err)
+			_, _ = fmt.Fprintf(tm.output, "Error building commands for mode %s: %v\n", mode.Name, err)
 			// Note: We don't return the error to allow mode entry to continue
 		}
 	}
 
-	// After building commands, show concise restore summary so commands are ready.
+	// The intent of this message is to notify the user that state restoration occurred.
+	// Excessive noise is detrimental, so we keep it concise / on one line.
 	if restoredItems > 0 {
-		fmt.Fprintf(tm.output, "Session restored: %d items (%d files). `reset` to clear.\n", restoredItems, restoredFiles)
+		_, _ = fmt.Fprintf(tm.output, "Session restored: %d items (%d files). 'reset' to clear.\n", restoredItems, restoredFiles)
 	}
 
-	// Call OnEnter outside the lock
+	// N.B. Similarly, mitigate deadlock risk - avoid holding locks while calling OnEnter.
 	if onEnterCallback != nil {
-		// OnEnter callback signature: function(this, stateObj)
-		// Scripts manage their own state through closures now, so just pass undefined
 		if _, err := onEnterCallback(goja.Undefined(), goja.Undefined(), goja.Undefined()); err != nil {
-			fmt.Fprintf(tm.output, "Error entering mode %s: %v\n", mode.Name, err)
+			_, _ = fmt.Fprintf(tm.output, "Error entering mode %s: %v\n", mode.Name, err)
 		}
 	}
 
@@ -626,7 +632,7 @@ func (tm *TUIManager) captureHistorySnapshot(commandName string, commandArgs []s
 	// Capture snapshot
 	modeID := currentMode.Name
 	if err := tm.stateManager.CaptureSnapshot(modeID, cmdString, stateJSON); err != nil {
-		fmt.Fprintf(tm.output, "Warning: Failed to capture history snapshot: %v\n", err)
+		_, _ = fmt.Fprintf(tm.output, "Warning: Failed to capture history snapshot: %v\n", err)
 	}
 }
 
@@ -759,11 +765,11 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 			if err := tm.engine.contextManager.AddPath(label); err != nil {
 				// If the file no longer exists, log it and remove from state
 				if os.IsNotExist(err) {
-					fmt.Fprintf(tm.output, "Info: file from previous session not found, removing from context: %s\n", label)
+					_, _ = fmt.Fprintf(tm.output, "Info: file from previous session not found, removing from context: %s\n", label)
 					stateChanged = true
 					continue
 				} else {
-					fmt.Fprintf(tm.output, "Info: could not restore context file %s: %v\n", label, err)
+					_, _ = fmt.Fprintf(tm.output, "Info: could not restore context file %s: %v\n", label, err)
 					// For other errors, we also remove it to ensure the session is valid
 					stateChanged = true
 					continue

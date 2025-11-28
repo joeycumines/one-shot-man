@@ -77,7 +77,7 @@ func runHelperProcess() {
 		// Prints the current working directory.
 		wd, err := os.Getwd()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to get working directory: %v\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "Failed to get working directory: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Println(wd)
@@ -101,13 +101,13 @@ func runHelperProcess() {
 		}
 		d, err := time.ParseDuration(args[1])
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Invalid duration: %v\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "Invalid duration: %v\n", err)
 			os.Exit(1)
 		}
 		time.Sleep(d)
 		fmt.Println("Waited.")
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown helper command: %s\n", command)
+		_, _ = fmt.Fprintf(os.Stderr, "Unknown helper command: %s\n", command)
 		os.Exit(1)
 	}
 }

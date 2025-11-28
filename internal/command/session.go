@@ -54,7 +54,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		fs := flag.NewFlagSet("session-list", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
 		fs.Usage = func() {
-			fmt.Fprintf(stderr, "Usage: %s list\n\n", c.Usage())
+			_, _ = fmt.Fprintf(stderr, "Usage: %s list\n\n", c.Usage())
 			fmt.Fprintln(stderr, "Show all existing sessions with metadata.")
 			fmt.Fprintln(stderr, "Options:")
 			fs.PrintDefaults()
@@ -76,7 +76,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		// Uses the same struct field pointer, so it updates c.dry directly.
 		fs.BoolVar(&c.dry, "dry-run", c.dry, "Don't actually delete; show what would be deleted")
 		fs.Usage = func() {
-			fmt.Fprintf(stderr, "Usage: %s clean\n\n", c.Usage())
+			_, _ = fmt.Fprintf(stderr, "Usage: %s clean\n\n", c.Usage())
 			fmt.Fprintln(stderr, "Run automatic cleanup based on configured policies.")
 			fmt.Fprintln(stderr, "Options:")
 			fs.PrintDefaults()
@@ -165,7 +165,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		fs.BoolVar(&dryLocal, "dry-run", false, "Don't actually delete; show what would be deleted")
 
 		fs.Usage = func() {
-			fmt.Fprintf(stderr, "Usage: %s delete <session-id>...\n\n", c.Usage())
+			_, _ = fmt.Fprintf(stderr, "Usage: %s delete <session-id>...\n\n", c.Usage())
 			fmt.Fprintln(stderr, "Remove a specific session from storage. This is irreversible.")
 			fmt.Fprintln(stderr, "Options:")
 			fs.PrintDefaults()
@@ -194,9 +194,9 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			// tests can inject behavior.
 			br := bufio.NewReader(c.stdin)
 			if len(rem) > 1 {
-				fmt.Fprintf(stdout, "Are you sure you want to delete %d sessions? This is irreversible. (y/N): ", len(rem))
+				_, _ = fmt.Fprintf(stdout, "Are you sure you want to delete %d sessions? This is irreversible. (y/N): ", len(rem))
 			} else {
-				fmt.Fprintf(stdout, "Are you sure you want to delete session '%s'? This is irreversible. (y/N): ", id)
+				_, _ = fmt.Fprintf(stdout, "Are you sure you want to delete session '%s'? This is irreversible. (y/N): ", id)
 			}
 			t, err := br.ReadString('\n')
 			if err != nil && err != io.EOF {
@@ -223,7 +223,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		fs := flag.NewFlagSet("session-info", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
 		fs.Usage = func() {
-			fmt.Fprintf(stderr, "Usage: %s info <session-id>\n\n", c.Usage())
+			_, _ = fmt.Fprintf(stderr, "Usage: %s info <session-id>\n\n", c.Usage())
 			fmt.Fprintln(stderr, "Show the raw data for a specific session.")
 			fmt.Fprintln(stderr, "Options:")
 			fs.PrintDefaults()
@@ -260,7 +260,7 @@ func (c *SessionCommand) list(w io.Writer) error {
 		if si.IsActive {
 			active = "active"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%d bytes\t%s\n", si.ID, si.UpdatedAt.Format(time.RFC3339), si.Size, active)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%d bytes\t%s\n", si.ID, si.UpdatedAt.Format(time.RFC3339), si.Size, active)
 	}
 	return nil
 }
@@ -297,7 +297,7 @@ func (c *SessionCommand) clean(w io.Writer) error {
 
 func (c *SessionCommand) delete(w io.Writer, id string) error {
 	if c.dry {
-		fmt.Fprintf(w, "Dry-run: would delete session %s\n", id)
+		_, _ = fmt.Fprintf(w, "Dry-run: would delete session %s\n", id)
 		return nil
 	}
 	p, err := storage.SessionFilePath(id)
@@ -342,7 +342,7 @@ func (c *SessionCommand) delete(w io.Writer, id string) error {
 	// File removed successfully — also remove the lockfile
 	if rerr := storage.ReleaseLockHandle(f); rerr != nil {
 		// best-effort: warn, but the session data was removed
-		fmt.Fprintf(w, "deleted %s (warning: failed to remove lock: %v)\n", id, rerr)
+		_, _ = fmt.Fprintf(w, "deleted %s (warning: failed to remove lock: %v)\n", id, rerr)
 		return nil
 	}
 	fmt.Fprintln(w, "deleted", id)

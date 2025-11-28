@@ -232,7 +232,7 @@ func TestMain(m *testing.M) {
 	// Build the test binary before any tests run
 	wd, err := os.Getwd()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to get working directory: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to get working directory: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -242,7 +242,7 @@ func TestMain(m *testing.M) {
 
 	// Create directory if it doesn't exist
 	if err := os.MkdirAll(testBinaryDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create temp dir for binary: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to create temp dir for binary: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -258,13 +258,13 @@ func TestMain(m *testing.M) {
 	cmd.Dir = repoRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to build test binary: %v\nOutput:\n%s", err, string(output))
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to build test binary: %v\nOutput:\n%s", err, string(output))
 		os.Exit(1)
 	}
 
 	// Verify the binary was created
 	if info, err := os.Stat(testBinaryPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Binary build succeeded but file doesn't exist: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Binary build succeeded but file doesn't exist: %v\n", err)
 		os.Exit(1)
 	} else {
 		fmt.Printf("TestMain: binary built successfully (size: %d bytes, mode: %s)\n", info.Size(), info.Mode())
@@ -276,7 +276,7 @@ func TestMain(m *testing.M) {
 	// Cleanup: remove the test binary directory after all tests complete
 	fmt.Printf("TestMain: cleaning up test binary directory %s\n", testBinaryDir)
 	if err := os.RemoveAll(testBinaryDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to clean up test binary: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to clean up test binary: %v\n", err)
 	}
 
 	os.Exit(exitCode)

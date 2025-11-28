@@ -490,7 +490,7 @@ func (tm *TUIManager) buildKeyBinds() []prompt.KeyBind {
 					// Call the JavaScript handler
 					result, err := jsHandler(goja.Undefined())
 					if err != nil {
-						fmt.Fprintf(tm.output, "Key binding error: %v\n", err)
+						_, _ = fmt.Fprintf(tm.output, "Key binding error: %v\n", err)
 						return false
 					}
 

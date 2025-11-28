@@ -29,7 +29,7 @@ func NewCompletionCommand(registry *Registry, goalRegistry GoalRegistry) *Comple
 // Execute generates the completion script for the specified shell.
 func (c *CompletionCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) > 1 {
-		fmt.Fprintf(stderr, "Too many arguments: %v\n", args[1:])
+		_, _ = fmt.Fprintf(stderr, "Too many arguments: %v\n", args[1:])
 		fmt.Fprintln(stderr, "Usage: osm completion [shell]")
 		return fmt.Errorf("too many arguments")
 	}
@@ -51,7 +51,7 @@ func (c *CompletionCommand) Execute(args []string, stdout, stderr io.Writer) err
 	case "powershell", "pwsh":
 		return c.generatePowerShellCompletion(stdout)
 	default:
-		fmt.Fprintf(stderr, "Unsupported shell: %s\n", shell)
+		_, _ = fmt.Fprintf(stderr, "Unsupported shell: %s\n", shell)
 		fmt.Fprintln(stderr, "Supported shells: bash, zsh, fish, powershell")
 		return fmt.Errorf("unsupported shell: %s", shell)
 	}

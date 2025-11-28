@@ -18,9 +18,7 @@ func GetBuiltInGoals() []Goal {
 			HistoryFile:   ".comment-stripper_history",
 			EnableHistory: true,
 
-			StateKeys: map[string]interface{}{
-				"contextItems": []interface{}{},
-			},
+			StateKeys: map[string]interface{}{},
 
 			PromptInstructions: `Analyze the provided code and remove useless comments while refactoring useful ones according to these rules:
 
@@ -71,6 +69,7 @@ Maintain all functionality and behavior of the original code while improving its
 				{Name: "add", Type: "contextManager"},
 				{Name: "note", Type: "contextManager"},
 				{Name: "list", Type: "contextManager"},
+
 				{Name: "edit", Type: "contextManager"},
 				{Name: "remove", Type: "contextManager"},
 				{Name: "show", Type: "contextManager"},
@@ -109,8 +108,7 @@ Maintain all functionality and behavior of the original code while improving its
 			EnableHistory: true,
 
 			StateKeys: map[string]interface{}{
-				"contextItems": []interface{}{},
-				"docType":      "comprehensive",
+				"docType": "comprehensive",
 			},
 
 			PromptInstructions: `Create {{.StateKeys.docType}} documentation for the provided code following these guidelines:
@@ -179,10 +177,11 @@ Maintain all functionality and behavior of the original code while improving its
 				},
 			},
 
-			HelpText: "Commands: add, note, list, type, edit, remove, show, copy, help, exit\nDoc types: comprehensive, api, readme, inline, tutorial",
+			HelpText: "Commands: add, note, list, diff, type, edit, remove, show, copy, help, exit\nDoc types: comprehensive, api, readme, inline, tutorial",
 
 			Commands: []CommandConfig{
 				{Name: "add", Type: "contextManager"},
+				{Name: "diff", Type: "contextManager"},
 				{Name: "note", Type: "contextManager", Description: "Add a note about documentation requirements"},
 				{Name: "list", Type: "contextManager"},
 				{Name: "edit", Type: "contextManager"},
@@ -229,9 +228,8 @@ Maintain all functionality and behavior of the original code while improving its
 			EnableHistory: true,
 
 			StateKeys: map[string]interface{}{
-				"contextItems": []interface{}{},
-				"testType":     "unit",
-				"framework":    "auto",
+				"testType":  "unit",
+				"framework": "auto",
 			},
 
 			PromptInstructions: `Generate {{.StateKeys.testType}} tests for the provided code following these guidelines:
@@ -312,12 +310,13 @@ Maintain all functionality and behavior of the original code while improving its
 				},
 			},
 
-			HelpText: "Commands: add, note, list, type, framework, edit, remove, show, copy, help, exit\nTest types: unit, integration, e2e, performance, security\nFrameworks: auto, jest, mocha, go, pytest, junit, rspec",
+			HelpText: "Commands: add, note, list, diff, type, framework, edit, remove, show, copy, help, exit\nTest types: unit, integration, e2e, performance, security\nFrameworks: auto, jest, mocha, go, pytest, junit, rspec",
 
 			Commands: []CommandConfig{
 				{Name: "add", Type: "contextManager"},
 				{Name: "note", Type: "contextManager", Description: "Add a note about test requirements"},
 				{Name: "list", Type: "contextManager"},
+				{Name: "diff", Type: "contextManager"},
 				{Name: "edit", Type: "contextManager"},
 				{Name: "remove", Type: "contextManager"},
 				{Name: "show", Type: "contextManager"},
@@ -382,9 +381,7 @@ Maintain all functionality and behavior of the original code while improving its
 			HistoryFile:   ".commit-message_history",
 			EnableHistory: true,
 
-			StateKeys: map[string]interface{}{
-				"contextItems": []interface{}{},
-			},
+			StateKeys: map[string]interface{}{},
 
 			PromptInstructions: `You MUST produce a commit message strictly utilizing the following syntax / style / semantics.
 

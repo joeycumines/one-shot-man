@@ -17,13 +17,12 @@ require (
 	github.com/joeycumines/go-prompt v0.0.0-20251023223825-ff8b80a79653
 	github.com/rivo/tview v0.42.0
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/term v0.37.0
+	golang.org/x/term v0.37.0 // indirect
 	golang.org/x/text v0.31.0
 	golang.org/x/tools v0.39.0
 )
 
 require (
-	github.com/google/uuid v1.6.0
 	github.com/joeycumines/go-bigbuff v1.21.0
 	golang.org/x/sys v0.38.0
 )

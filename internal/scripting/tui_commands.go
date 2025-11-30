@@ -109,16 +109,10 @@ func (tm *TUIManager) showHelp() {
 
 	if tm.currentMode != nil {
 		_, _ = fmt.Fprintf(writer, "Current mode: %s\n", tm.currentMode.Name)
-		_, _ = fmt.Fprintln(writer, "You can execute JavaScript code directly")
-		_, _ = fmt.Fprintln(writer, "")
-		_, _ = fmt.Fprintln(writer, "JavaScript API:")
-		_, _ = fmt.Fprintln(writer, "  ctx.run(name, fn)    - Run a sub-test")
-		_, _ = fmt.Fprintln(writer, "  ctx.defer(fn)        - Defer function execution")
-		_, _ = fmt.Fprintln(writer, "  ctx.log(...)         - Log a message")
-		_, _ = fmt.Fprintln(writer, "  ctx.logf(fmt, ...)   - Log a formatted message")
+		_, _ = fmt.Fprintln(writer, "Note: You can execute JavaScript code directly!")
 	} else {
 		_, _ = fmt.Fprintf(writer, "Available modes: %s\n", strings.Join(tm.ListModes(), ", "))
-		_, _ = fmt.Fprintln(writer, "Switch to a mode to execute JavaScript code")
+		_, _ = fmt.Fprintln(writer, "Switch to a mode to execute JavaScript code.")
 	}
 }
 

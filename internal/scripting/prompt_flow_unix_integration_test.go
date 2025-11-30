@@ -1180,7 +1180,7 @@ case "$(basename "$1")" in
 	"template")
 		echo "!! Custom template for testing !!" > "$1"
 		echo "Goal: {{goal}}" >> "$1"
-		echo "Context: {{context_txtar}}" >> "$1"
+		echo "Context: {{contextTxtar}}" >> "$1"
 		;;
 	*generated-prompt*)
 		echo "Test goal for automated testing" > "$1"
@@ -1209,7 +1209,7 @@ case "$(basename "$1")" in
 !! **GOAL:** !!
 {{.goal}}
 !! **CONTEXT:** !!
-{{.context_txtar}}
+{{.contextTxtar}}
 !! End of custom template !!
 EOF
 		;;

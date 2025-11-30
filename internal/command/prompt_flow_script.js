@@ -12,7 +12,7 @@ const shared = require('osm:sharedStateSymbols');
 const COMMAND_NAME = config.name;
 
 // Define command-specific symbols - JUST the local name, jsCreateState handles namespacing
-const StateKeys = {
+const stateKeys = {
     phase: Symbol("phase"),
     goal: Symbol("goal"),
     template: Symbol("template"),
@@ -26,11 +26,11 @@ const state = tui.createState(COMMAND_NAME, {
     [shared.contextItems]: {defaultValue: []},
 
     // Command-specific keys
-    [StateKeys.phase]: {defaultValue: "INITIAL"},
-    [StateKeys.goal]: {defaultValue: ""},
-    [StateKeys.template]: {defaultValue: null},
-    [StateKeys.metaPrompt]: {defaultValue: ""},
-    [StateKeys.taskPrompt]: {defaultValue: ""},
+    [stateKeys.phase]: {defaultValue: "INITIAL"},
+    [stateKeys.goal]: {defaultValue: ""},
+    [stateKeys.template]: {defaultValue: null},
+    [stateKeys.metaPrompt]: {defaultValue: ""},
+    [stateKeys.taskPrompt]: {defaultValue: ""},
 });
 
 // Expose limited state hooks for automated tests (no-op for regular users)
@@ -59,62 +59,62 @@ function defaultTemplate() {
 {{.goal}}
 
 !! **IMPLEMENTATIONS/CONTEXT:** !!
-{{.context_txtar}}`;
+{{.contextTxtar}}`;
 }
 
 function buildCommands(state) {
     __testStateAccessor = {
         state: state,
-        StateKeys: {
-            ...StateKeys,
+        stateKeys: {
+            ...stateKeys,
             contextItems: shared.contextItems
         }
     };
 
     // Phase helpers using the injected state accessor
     function getPhase() {
-        return state.get(StateKeys.phase);
+        return state.get(stateKeys.phase);
     }
 
     function setPhase(phase) {
-        state.set(StateKeys.phase, phase);
+        state.set(stateKeys.phase, phase);
     }
 
     function getGoal() {
-        return state.get(StateKeys.goal);
+        return state.get(stateKeys.goal);
     }
 
     function setGoal(v) {
-        state.set(StateKeys.goal, v);
+        state.set(stateKeys.goal, v);
         if ((v || "").trim() && getPhase() === "INITIAL") {
             setPhase("CONTEXT_BUILDING");
         }
     }
 
     function getTemplate() {
-        const template = state.get(StateKeys.template);
+        const template = state.get(stateKeys.template);
         // Check for null, undefined, and empty string - all should use default
         return (template !== null && template !== undefined && template !== "") ? template : defaultTemplate();
     }
 
     function setTemplate(v) {
-        state.set(StateKeys.template, v);
+        state.set(stateKeys.template, v);
     }
 
     function getMetaPrompt() {
-        return state.get(StateKeys.metaPrompt);
+        return state.get(stateKeys.metaPrompt);
     }
 
     function setMetaPrompt(v) {
-        state.set(StateKeys.metaPrompt, v);
+        state.set(stateKeys.metaPrompt, v);
     }
 
     function getTaskPrompt() {
-        return state.get(StateKeys.taskPrompt);
+        return state.get(stateKeys.taskPrompt);
     }
 
     function setTaskPrompt(v) {
-        state.set(StateKeys.taskPrompt, v);
+        state.set(stateKeys.taskPrompt, v);
     }
 
     function buildContextTxtar() {
@@ -123,9 +123,9 @@ function buildCommands(state) {
 
     function buildMetaPrompt() {
         const fullContext = buildContextTxtar();
-        return template.execute(getTemplate(), {
+            return template.execute(getTemplate(), {
             goal: getGoal(),
-            context_txtar: fullContext
+            contextTxtar: fullContext
         });
     }
 
@@ -283,7 +283,7 @@ function buildCommands(state) {
                 output.print("Phase: " + getPhase());
                 const g = getGoal();
                 if (g) output.print("[goal] " + g);
-                if (state.get(StateKeys.template) !== null) output.print("[template] set");
+                if (state.get(stateKeys.template) !== null) output.print("[template] set");
 
                 const phase = getPhase();
                 if (phase === "META_GENERATED" || phase === "TASK_PROMPT_SET") {
@@ -493,8 +493,8 @@ ctx.run("register-mode", function () {
         },
         onEnter: function () {
             // Initialize template if null (lazy initialization pattern)
-            if (state.get(StateKeys.template) === null) {
-                state.set(StateKeys.template, defaultTemplate());
+            if (state.get(stateKeys.template) === null) {
+                state.set(stateKeys.template, defaultTemplate());
             }
             // Show a compact, single-line initial message so startup is concise.
             output.print("Type 'help' for commands. Tip: Try 'goal --prewritten'.");

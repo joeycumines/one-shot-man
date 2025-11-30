@@ -244,8 +244,8 @@ func TestPromptFlowCommand_TemplateContent(t *testing.T) {
 		t.Errorf("Expected embedded template to contain {{.goal}} variable")
 	}
 
-	if !contains(promptFlowTemplate, "{{.context_txtar}}") {
-		t.Errorf("Expected embedded template to contain {{.context_txtar}} variable")
+	if !contains(promptFlowTemplate, "{{.contextTxtar}}") {
+		t.Errorf("Expected embedded template to contain {{.contextTxtar}} variable")
 	}
 }
 

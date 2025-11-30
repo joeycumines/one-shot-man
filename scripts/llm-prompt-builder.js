@@ -6,17 +6,17 @@ ctx.log("Initializing LLM Prompt Builder mode...");
 const MODE_NAME = "llm-prompt-builder";
 
 // Define state keys using Symbols
-const StateKeys = {
+const stateKeys = {
     currentPrompt: Symbol("currentPrompt"),
     prompts: Symbol("prompts")
 };
 
 // Define state using new API
 const state = tui.createState(MODE_NAME, {
-    [StateKeys.currentPrompt]: {
+    [stateKeys.currentPrompt]: {
         defaultValue: null
     },
-    [StateKeys.prompts]: {
+    [stateKeys.prompts]: {
         defaultValue: {}
     }
 });
@@ -68,12 +68,12 @@ tui.registerMode({
                     var description = args.slice(1).join(" ") || "A new LLM prompt";
 
                     var prompt = tui.createPromptBuilder(title, description);
-                    state.set(StateKeys.currentPrompt, prompt);
+                    state.set(stateKeys.currentPrompt, prompt);
 
                     // Store in prompts collection
-                    var prompts = state.get(StateKeys.prompts);
+                    var prompts = state.get(stateKeys.prompts);
                     prompts[title] = prompt;
-                    state.set(StateKeys.prompts, prompts);
+                    state.set(stateKeys.prompts, prompts);
 
                     output.print("Created new prompt: " + title);
                     output.print("Description: " + description);
@@ -91,10 +91,10 @@ tui.registerMode({
                     }
 
                     var title = args[0];
-                    var prompts = state.get(StateKeys.prompts);
+                    var prompts = state.get(stateKeys.prompts);
 
                     if (prompts[title]) {
-                        state.set(StateKeys.currentPrompt, prompts[title]);
+                        state.set(stateKeys.currentPrompt, prompts[title]);
                         output.print("Loaded prompt: " + title);
                     } else {
                         output.print("Prompt not found: " + title);
@@ -107,7 +107,7 @@ tui.registerMode({
                 description: "Set the prompt template",
                 usage: "template <text>",
                 handler: function (args) {
-                    var prompt = state.get(StateKeys.currentPrompt);
+                    var prompt = state.get(stateKeys.currentPrompt);
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -119,7 +119,7 @@ tui.registerMode({
                     output.print("Template set:");
                     output.print(template);
                     output.print("");
-                    output.print("Use variables like {{variable_name}} in your template.");
+                    output.print("Use variables like {{variableName}} in your template.");
                     output.print("Set variables with: var <name> <value>");
                 }
             },
@@ -128,7 +128,7 @@ tui.registerMode({
                 description: "Set a template variable",
                 usage: "var <key> <value>",
                 handler: function (args) {
-                    var prompt = state.get(StateKeys.currentPrompt);
+                    var prompt = state.get(stateKeys.currentPrompt);
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -151,7 +151,7 @@ tui.registerMode({
             "build": {
                 description: "Build the current prompt",
                 handler: function (args) {
-                    var prompt = state.get(StateKeys.currentPrompt);
+                    var prompt = state.get(stateKeys.currentPrompt);
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -168,7 +168,7 @@ tui.registerMode({
             "preview": {
                 description: "Preview the current prompt with metadata",
                 handler: function (args) {
-                    var prompt = state.get(StateKeys.currentPrompt);
+                    var prompt = state.get(stateKeys.currentPrompt);
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -182,7 +182,7 @@ tui.registerMode({
                 description: "Save current version",
                 usage: "save [notes]",
                 handler: function (args) {
-                    var prompt = state.get(StateKeys.currentPrompt);
+                    var prompt = state.get(stateKeys.currentPrompt);
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -202,7 +202,7 @@ tui.registerMode({
             "versions": {
                 description: "List all versions",
                 handler: function (args) {
-                    var prompt = state.get(StateKeys.currentPrompt);
+                    var prompt = state.get(stateKeys.currentPrompt);
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -229,7 +229,7 @@ tui.registerMode({
                 description: "Restore a specific version",
                 usage: "restore <version>",
                 handler: function (args) {
-                    var prompt = state.get(StateKeys.currentPrompt);
+                    var prompt = state.get(stateKeys.currentPrompt);
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -258,7 +258,7 @@ tui.registerMode({
             "export": {
                 description: "Export prompt data",
                 handler: function (args) {
-                    var prompt = state.get(StateKeys.currentPrompt);
+                    var prompt = state.get(stateKeys.currentPrompt);
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -273,7 +273,7 @@ tui.registerMode({
             "list": {
                 description: "List all prompts",
                 handler: function (args) {
-                    var prompts = state.get(StateKeys.prompts);
+                    var prompts = state.get(stateKeys.prompts);
                     var names = Object.keys(prompts);
 
                     if (names.length === 0) {

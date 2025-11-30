@@ -44,7 +44,7 @@ type Goal struct {
 	EnableHistory bool   `json:"enableHistory"`
 
 	// State management
-	StateKeys map[string]interface{} `json:"stateKeys"` // Initial state values
+	StateVars map[string]interface{} `json:"stateVars"` // Initial state values
 
 	// Prompt building
 	PromptInstructions string                 `json:"promptInstructions"` // Main goal instructions
@@ -53,8 +53,8 @@ type Goal struct {
 	ContextHeader      string                 `json:"contextHeader"`      // Header for context section
 
 	// UI text
-	BannerText string `json:"bannerText"`
-	HelpText   string `json:"helpText"`
+	BannerTemplate string `json:"bannerTemplate"` // printed on entry to goal, overrides default
+	UsageTemplate  string `json:"usageTemplate"`  // printed after the default help
 
 	// Printed in the default banner
 	NotableVariables []string `json:"notableVariables"`
@@ -131,10 +131,7 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	case len(args) > 0:
 		goalName = args[0]
 		// Positional goal defaults to interactive, per README
-		shouldInteractive = true || c.interactive
-		if c.interactive { // keep explicit flag honored (no-op here but clearer intent)
-			shouldInteractive = true
-		}
+		shouldInteractive = true
 	default:
 		return c.listGoals(goals, stdout)
 	}

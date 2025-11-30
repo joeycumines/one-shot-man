@@ -347,7 +347,7 @@ func TestCommandExecution(t *testing.T) {
 	// Register a test mode with commands using state
 	script := engine.LoadScriptFromString("command-test", `
 		// Define state for test mode
-		const StateKeys = {
+		const stateKeys = {
 			test1_executed: Symbol("test1_executed"),
 			test1_args: Symbol("test1_args"),
 			test2_executed: Symbol("test2_executed"),
@@ -356,12 +356,12 @@ func TestCommandExecution(t *testing.T) {
 			global_args: Symbol("global_args")
 		};
 		const state = tui.createState("command-test-mode", {
-			[StateKeys.test1_executed]: {defaultValue: false},
-			[StateKeys.test1_args]: {defaultValue: []},
-			[StateKeys.test2_executed]: {defaultValue: false},
-			[StateKeys.test2_args]: {defaultValue: []},
-			[StateKeys.global_executed]: {defaultValue: false},
-			[StateKeys.global_args]: {defaultValue: []}
+			[stateKeys.test1_executed]: {defaultValue: false},
+			[stateKeys.test1_args]: {defaultValue: []},
+			[stateKeys.test2_executed]: {defaultValue: false},
+			[stateKeys.test2_args]: {defaultValue: []},
+			[stateKeys.global_executed]: {defaultValue: false},
+			[stateKeys.global_args]: {defaultValue: []}
 		});
 
 		tui.registerMode({
@@ -371,15 +371,15 @@ func TestCommandExecution(t *testing.T) {
 					"test1": {
 						description: "Test command 1",
 						handler: function(args) {
-							state.set(StateKeys.test1_executed, true);
-							state.set(StateKeys.test1_args, args);
+							state.set(stateKeys.test1_executed, true);
+							state.set(stateKeys.test1_args, args);
 						}
 					},
 					"test2": {
 						description: "Test command 2",
 						handler: function(args) {
-							state.set(StateKeys.test2_executed, true);
-							state.set(StateKeys.test2_args, args);
+							state.set(stateKeys.test2_executed, true);
+							state.set(stateKeys.test2_args, args);
 						}
 					}
 				};

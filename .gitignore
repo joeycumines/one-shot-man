@@ -28,8 +28,9 @@ go.work.sum
 .env
 
 # Editor/IDE
-# .idea/
-# .vscode/
+/.vscode
+/.idea
+*.iml
 
 # Built binaries
 /cmd/osm/osm
@@ -40,3 +41,6 @@ go.work.sum
 
 # Test artifacts and temporary files
 test-scripts/
+
+# Log file for use w/ custom targets
+/build.log

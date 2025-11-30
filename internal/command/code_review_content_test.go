@@ -17,7 +17,7 @@ func TestCodeReviewTemplate_Content(t *testing.T) {
 		"Provide a succinct summary then more detailed analysis",
 		"removing any single part, or applying any transformation or adjustment of wording, would make it materially worse",
 		"## IMPLEMENTATIONS/CONTEXT",
-		"{{.context_txtar}}",
+		"{{.contextTxtar}}",
 	}
 
 	for _, phrase := range expectedPhrases {
@@ -36,7 +36,7 @@ func TestCodeReviewScript_Content(t *testing.T) {
 		"codeReviewTemplate",
 		"context.toTxtar()",
 		"template.execute(codeReviewTemplate",
-		"context_txtar: fullContext",
+		"contextTxtar: fullContext",
 	}
 
 	for _, element := range expectedElements {

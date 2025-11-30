@@ -26,7 +26,6 @@ let parseArgv, formatArgv, items, buildPrompt, commands;
 
 // Build commands with state accessor - called when mode is first used
 function buildCommands(stateArg) {
-
     const ctxmgr = contextManager({
         getItems: () => stateArg.get(shared.contextItems) || [],
         setItems: (v) => stateArg.set(shared.contextItems, v),
@@ -34,7 +33,7 @@ function buildCommands(stateArg) {
         buildPrompt: () => {
             const fullContext = buildContext(stateArg.get(shared.contextItems), {toTxtar: () => context.toTxtar()});
             return template.execute(codeReviewTemplate, {
-                context_txtar: fullContext
+                contextTxtar: fullContext
             });
         }
     });

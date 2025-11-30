@@ -20,14 +20,14 @@ func TestLoadGoalFromFile_ValidJSON(t *testing.T) {
 		"tuiPrompt": "(test) > ",
 		"historyFile": ".test_history",
 		"enableHistory": true,
-		"stateKeys": {
+		"stateVars": {
 			"testKey": "testValue"
 		},
 		"promptInstructions": "Test instructions",
 		"promptTemplate": "Test template",
 		"contextHeader": "TEST",
-		"bannerText": "Test Banner",
-		"helpText": "Test help",
+		"bannerTemplate": "Test Banner",
+		"usageTemplate": "Test help",
 		"commands": [
 			{
 				"name": "test",

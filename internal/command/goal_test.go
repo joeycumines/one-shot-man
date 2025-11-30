@@ -326,17 +326,17 @@ func TestGoalCommand_GoToJSPipeline_PromptTemplate(t *testing.T) {
 		}
 
 		// Verify template contains expected placeholders
-		if !strings.Contains(goal.PromptTemplate, "{{.Description") {
-			t.Errorf("Goal %q PromptTemplate missing {{.Description}} placeholder", goal.Name)
+		if !strings.Contains(goal.PromptTemplate, "{{.description") {
+			t.Errorf("Goal %q PromptTemplate missing {{.description}} placeholder", goal.Name)
 		}
-		if !strings.Contains(goal.PromptTemplate, "{{.PromptInstructions}}") {
-			t.Errorf("Goal %q PromptTemplate missing {{.PromptInstructions}} placeholder", goal.Name)
+		if !strings.Contains(goal.PromptTemplate, "{{.promptInstructions}}") {
+			t.Errorf("Goal %q PromptTemplate missing {{.promptInstructions}} placeholder", goal.Name)
 		}
-		if !strings.Contains(goal.PromptTemplate, "{{.ContextHeader}}") {
-			t.Errorf("Goal %q PromptTemplate missing {{.ContextHeader}} placeholder", goal.Name)
+		if !strings.Contains(goal.PromptTemplate, "{{.contextHeader}}") {
+			t.Errorf("Goal %q PromptTemplate missing {{.contextHeader}} placeholder", goal.Name)
 		}
-		if !strings.Contains(goal.PromptTemplate, "{{.ContextTxtar}}") {
-			t.Errorf("Goal %q PromptTemplate missing {{.ContextTxtar}} placeholder", goal.Name)
+		if !strings.Contains(goal.PromptTemplate, "{{.contextTxtar}}") {
+			t.Errorf("Goal %q PromptTemplate missing {{.contextTxtar}} placeholder", goal.Name)
 		}
 	}
 }
@@ -429,16 +429,16 @@ func TestGoalCommand_BuiltInGoal_NotableVariablesAndTypeState(t *testing.T) {
 	}
 
 	// Ensure the stateKeys map uses "type" (not the old "testType") and has default "unit"
-	if _, ok := tg.StateKeys["testType"]; ok {
-		t.Fatalf("unexpected legacy key 'testType' found in StateKeys")
+	if _, ok := tg.StateVars["testType"]; ok {
+		t.Fatalf("unexpected legacy key 'testType' found in stateVars")
 	}
 
-	v, ok := tg.StateKeys["type"]
+	v, ok := tg.StateVars["type"]
 	if !ok {
-		t.Fatalf("expected StateKeys to contain 'type', got keys: %v", tg.StateKeys)
+		t.Fatalf("expected stateVars to contain 'type', got keys: %v", tg.StateVars)
 	}
 	if sv, ok := v.(string); !ok || sv != "unit" {
-		t.Fatalf("expected default StateKeys['type'] == 'unit', got: %#v", v)
+		t.Fatalf("expected default stateVars['type'] == 'unit', got: %#v", v)
 	}
 }
 

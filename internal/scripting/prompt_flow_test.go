@@ -150,7 +150,7 @@ fi
 	if _, err := cp.ExpectSince("Current mode: prompt-flow", startLen); err != nil {
 		t.Fatalf("Expected help output: %v", err)
 	}
-	if _, err := cp.ExpectSince("JavaScript API:", startLen); err != nil {
+	if _, err := cp.ExpectSince("Note: You can execute JavaScript code directly!", startLen); err != nil {
 		t.Fatalf("Expected help output: %v", err)
 	}
 	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen); err != nil {
@@ -413,7 +413,7 @@ func TestPromptFlow_Remove_Ambiguous_AbortsUI(t *testing.T) {
 	// so that removing by id=1 will attempt context.removePath("a.txt") which
 	// should match both tracked files and yield an ambiguity error.
 	// N.B. We mutate JS state via the dedicated test hook.
-	if err := cp.SendLine(`(function(){ if (typeof __promptFlowTestHooks !== "undefined") { __promptFlowTestHooks.withState(function(h){ var items=h.state.get(h.StateKeys.contextItems); if(items.length>0){ items[0].label="a.txt"; h.state.set(h.StateKeys.contextItems, items); } }); } })()`); err != nil {
+	if err := cp.SendLine(`(function(){ if (typeof __promptFlowTestHooks !== "undefined") { __promptFlowTestHooks.withState(function(h){ var items=h.state.get(h.stateKeys.contextItems); if(items.length>0){ items[0].label="a.txt"; h.state.set(h.stateKeys.contextItems, items); } }); } })()`); err != nil {
 		t.Fatalf("Failed to send JS hook: %v\nBuffer: %q", err, cp.GetOutput())
 	}
 	// The JS expression executes but produces no output - just need to let it process
@@ -495,7 +495,7 @@ func TestPromptFlow_Remove_NotFound_AbortsUI(t *testing.T) {
 	}
 
 	// Make the UI label a path that isn't tracked in the backend to simulate not found
-	if err := cp.SendLine(`(function(){ if (typeof __promptFlowTestHooks !== "undefined") { __promptFlowTestHooks.withState(function(h){ var items=h.state.get(h.StateKeys.contextItems); if(items.length>0){ items[0].label="nonexistent.txt"; h.state.set(h.StateKeys.contextItems, items); } }); } })()`); err != nil {
+	if err := cp.SendLine(`(function(){ if (typeof __promptFlowTestHooks !== "undefined") { __promptFlowTestHooks.withState(function(h){ var items=h.state.get(h.stateKeys.contextItems); if(items.length>0){ items[0].label="nonexistent.txt"; h.state.set(h.stateKeys.contextItems, items); } }); } })()`); err != nil {
 		t.Fatalf("Failed to send JS hook: %v\nBuffer: %q", err, cp.GetOutput())
 	}
 	// The JS expression executes but produces no output - just need to let it process

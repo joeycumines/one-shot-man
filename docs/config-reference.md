@@ -411,15 +411,14 @@ Custom goals are defined as JSON files with the following structure:
   "tuiPrompt": "(prompt) > ",
   "historyFile": ".my_custom_goal_history",
   "enableHistory": true,
-  "stateKeys": {
-    "contextItems": [],
+  "stateVars": {
     "customState": "initial-value"
   },
   "promptInstructions": "Instructions for the AI assistant...",
-  "promptTemplate": "{{.PromptInstructions}}\\n\\n{{.ContextTxtar}}",
+   "promptTemplate": "{{.promptInstructions}}\\n\\n{{.contextTxtar}}",
   "contextHeader": "CONTEXT",
-  "bannerText": "Banner displayed on launch",
-  "helpText": "Help text shown with the help command",
+  "bannerTemplate": "Banner displayed on launch",
+  "usageTemplate": "Help text shown with the help command",
   "commands": [
     {
       "name": "add",
@@ -507,12 +506,11 @@ Custom goal files are discovered using a sophisticated score-based prioritizatio
   "tuiTitle": "Bug Analyzer",
   "tuiPrompt": "(bug-analyzer) > ",
   "enableHistory": true,
-  "stateKeys": {
-    "contextItems": []
+  "stateVars": {
   },
   "promptInstructions": "Analyze the provided bug report and code to:\n1. Identify the root cause\n2. Suggest potential fixes\n3. Provide reproduction steps",
-  "promptTemplate": "{{.PromptInstructions}}\\n\\n## BUG REPORT\\n\\n{{.ContextTxtar}}",
-  "bannerText": "Bug Analyzer - Find and fix issues",
+   "promptTemplate": "{{.promptInstructions}}\\n\\n## BUG REPORT\\n\\n{{.contextTxtar}}",
+  "bannerTemplate": "Bug Analyzer - Find and fix issues",
   "commands": [
     {"name": "add", "type": "contextManager"},
     {"name": "list", "type": "contextManager"},

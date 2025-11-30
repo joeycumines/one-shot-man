@@ -1193,7 +1193,7 @@ Built-in goals provide pre-configured modes for common development tasks. Each g
 **State Keys:**
 
   - `contextItems`: Array of context items for documentation generation
-  - `docType`: Documentation type (`comprehensive`, `api`, `readme`, `inline`, `tutorial`)
+  - `type`: Documentation type (`comprehensive`, `api`, `readme`, `inline`, `tutorial`)
 
 **Command Interactions:**
 
@@ -1204,7 +1204,7 @@ Built-in goals provide pre-configured modes for common development tasks. Each g
   - `remove <id>`: Removes items from `contextItems`
   - `show`: Displays current `contextItems`
   - `copy`: Copies current `contextItems` to clipboard
-  - `type <type>`: Sets `docType` to specified value
+  - `type <type>`: Sets `type` to specified value
 
 #### Test Generator Mode (`test-generator`)
 

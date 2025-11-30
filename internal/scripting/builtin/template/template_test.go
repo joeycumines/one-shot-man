@@ -567,11 +567,11 @@ func TestRealWorldCodeReviewScenario(t *testing.T) {
 	script := `
 		const tmpl = exports.new("code-review");
 
-		const template = "Ensure correctness of the PR.\\n\\n## IMPLEMENTATIONS/CONTEXT\\n\\n{{.context_txtar}}";
+		const template = "Ensure correctness of the PR.\\n\\n## IMPLEMENTATIONS/CONTEXT\\n\\n{{.contextTxtar}}";
 
 		tmpl.parse(template);
 		const result = tmpl.execute({
-			context_txtar: "Some context here\\nMore context"
+			contextTxtar: "Some context here\\nMore context"
 		});
 		result;
 	`
@@ -596,12 +596,12 @@ func TestRealWorldPromptFlowScenario(t *testing.T) {
 	script := `
 		const tmpl = exports.new("prompt-flow");
 
-		const template = "!! Generate a prompt for the following goal. !!\\n\\n!! **GOAL:** !!\\n{{.goal}}\\n\\n!! **IMPLEMENTATIONS/CONTEXT:** !!\\n{{.context_txtar}}";
+		const template = "!! Generate a prompt for the following goal. !!\\n\\n!! **GOAL:** !!\\n{{.goal}}\\n\\n!! **IMPLEMENTATIONS/CONTEXT:** !!\\n{{.contextTxtar}}";
 
 		tmpl.parse(template);
 		const result = tmpl.execute({
 			goal: "Implement feature X",
-			context_txtar: "Context data"
+			contextTxtar: "Context data"
 		});
 		result;
 	`

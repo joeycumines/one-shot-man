@@ -224,8 +224,8 @@ func TestCodeReviewCommand_TemplateContent(t *testing.T) {
 	}
 
 	// Check that the template contains context variable
-	if !contains(codeReviewTemplate, "{{.context_txtar}}") {
-		t.Errorf("Expected embedded template to contain {{.context_txtar}} variable")
+	if !contains(codeReviewTemplate, "{{.contextTxtar}}") {
+		t.Errorf("Expected embedded template to contain {{.contextTxtar}} variable")
 	}
 
 	// Check for key parts of the prompt

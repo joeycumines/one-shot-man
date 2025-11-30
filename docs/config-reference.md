@@ -403,33 +403,32 @@ Custom goals are defined as JSON files with the following structure:
 
 ```json
 {
-  "Name": "my-custom-goal",
-  "Description": "Brief description of what this goal does",
-  "Category": "category-name",
-  "Usage": "Detailed usage information",
-  "TUITitle": "Display Title",
-  "TUIPrompt": "(prompt) > ",
-  "HistoryFile": ".my_custom_goal_history",
-  "EnableHistory": true,
-  "StateKeys": {
-    "contextItems": [],
+  "name": "my-custom-goal",
+  "description": "Brief description of what this goal does",
+  "category": "category-name",
+  "usage": "Detailed usage information",
+  "tuiTitle": "Display Title",
+  "tuiPrompt": "(prompt) > ",
+  "historyFile": ".my_custom_goal_history",
+  "enableHistory": true,
+  "stateVars": {
     "customState": "initial-value"
   },
-  "PromptInstructions": "Instructions for the AI assistant...",
-  "PromptTemplate": "{{.PromptInstructions}}\\n\\n{{.ContextTxtar}}",
-  "ContextHeader": "CONTEXT",
-  "BannerText": "Banner displayed on launch",
-  "HelpText": "Help text shown with the help command",
-  "Commands": [
+  "promptInstructions": "Instructions for the AI assistant...",
+   "promptTemplate": "{{.promptInstructions}}\\n\\n{{.contextTxtar}}",
+  "contextHeader": "CONTEXT",
+  "bannerTemplate": "Banner displayed on launch",
+  "usageTemplate": "Help text shown with the help command",
+  "commands": [
     {
-      "Name": "add",
-      "Type": "contextManager"
+      "name": "add",
+      "type": "contextManager"
     },
     {
-      "Name": "custom",
-      "Type": "custom",
-      "Description": "Custom command description",
-      "Handler": "function (args) { /* JavaScript handler */ }"
+      "name": "custom",
+      "type": "custom",
+      "description": "Custom command description",
+      "handler": "function (args) { /* JavaScript handler */ }"
     }
   ]
 }
@@ -437,8 +436,8 @@ Custom goals are defined as JSON files with the following structure:
 
 ### Required Fields
 
-- `Name`: Goal identifier (alphanumeric and hyphens only, no spaces)
-- `Description`: Brief description of the goal's purpose
+- `name`: Goal identifier (alphanumeric and hyphens only, no spaces)
+- `description`: Brief description of the goal's purpose
 
 ### Discovery Locations
 
@@ -501,24 +500,23 @@ Custom goal files are discovered using a sophisticated score-based prioritizatio
 
 ```json
 {
-  "Name": "bug-analyzer",
-  "Description": "Analyze bug reports and suggest fixes",
-  "Category": "debugging",
-  "TUITitle": "Bug Analyzer",
-  "TUIPrompt": "(bug-analyzer) > ",
-  "EnableHistory": true,
-  "StateKeys": {
-    "contextItems": []
+  "name": "bug-analyzer",
+  "description": "Analyze bug reports and suggest fixes",
+  "category": "debugging",
+  "tuiTitle": "Bug Analyzer",
+  "tuiPrompt": "(bug-analyzer) > ",
+  "enableHistory": true,
+  "stateVars": {
   },
-  "PromptInstructions": "Analyze the provided bug report and code to:\n1. Identify the root cause\n2. Suggest potential fixes\n3. Provide reproduction steps",
-  "PromptTemplate": "{{.PromptInstructions}}\\n\\n## BUG REPORT\\n\\n{{.ContextTxtar}}",
-  "BannerText": "Bug Analyzer - Find and fix issues",
-  "Commands": [
-    {"Name": "add", "Type": "contextManager"},
-    {"Name": "list", "Type": "contextManager"},
-    {"Name": "show", "Type": "contextManager"},
-    {"Name": "copy", "Type": "contextManager"},
-    {"Name": "help", "Type": "help"}
+  "promptInstructions": "Analyze the provided bug report and code to:\n1. Identify the root cause\n2. Suggest potential fixes\n3. Provide reproduction steps",
+   "promptTemplate": "{{.promptInstructions}}\\n\\n## BUG REPORT\\n\\n{{.contextTxtar}}",
+  "bannerTemplate": "Bug Analyzer - Find and fix issues",
+  "commands": [
+    {"name": "add", "type": "contextManager"},
+    {"name": "list", "type": "contextManager"},
+    {"name": "show", "type": "contextManager"},
+    {"name": "copy", "type": "contextManager"},
+    {"name": "help", "type": "help"}
   ]
 }
 ```

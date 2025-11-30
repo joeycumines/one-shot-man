@@ -28,46 +28,49 @@ var goalScript string
 // JavaScript runtime simply interprets this configuration.
 type Goal struct {
 	// Basic metadata
-	Name        string `json:"Name"`
-	Description string `json:"Description"`
-	Category    string `json:"Category"`
-	Usage       string `json:"Usage"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Category    string `json:"category"`
+	Usage       string `json:"usage"`
 
 	// Script execution (not serialized to JS)
 	Script   string `json:"-"`
 	FileName string `json:"-"`
 
 	// TUI configuration
-	TUITitle      string `json:"TUITitle"`
-	TUIPrompt     string `json:"TUIPrompt"`
-	HistoryFile   string `json:"HistoryFile"`
-	EnableHistory bool   `json:"EnableHistory"`
+	TUITitle      string `json:"tuiTitle"`
+	TUIPrompt     string `json:"tuiPrompt"`
+	HistoryFile   string `json:"historyFile"`
+	EnableHistory bool   `json:"enableHistory"`
 
 	// State management
-	StateKeys map[string]interface{} `json:"StateKeys"` // Initial state values
+	StateVars map[string]interface{} `json:"stateVars"` // Initial state values
 
 	// Prompt building
-	PromptInstructions string                 `json:"PromptInstructions"` // Main goal instructions
-	PromptTemplate     string                 `json:"PromptTemplate"`     // Template for final prompt
-	PromptOptions      map[string]interface{} `json:"PromptOptions"`      // Additional options for prompt building
-	ContextHeader      string                 `json:"ContextHeader"`      // Header for context section
+	PromptInstructions string                 `json:"promptInstructions"` // Main goal instructions
+	PromptTemplate     string                 `json:"promptTemplate"`     // Template for final prompt
+	PromptOptions      map[string]interface{} `json:"promptOptions"`      // Additional options for prompt building
+	ContextHeader      string                 `json:"contextHeader"`      // Header for context section
 
 	// UI text
-	BannerText string `json:"BannerText"`
-	HelpText   string `json:"HelpText"`
+	BannerTemplate string `json:"bannerTemplate"` // printed on entry to goal, overrides default
+	UsageTemplate  string `json:"usageTemplate"`  // printed after the default help
+
+	// Printed in the default banner
+	NotableVariables []string `json:"notableVariables"`
 
 	// Commands configuration
-	Commands []CommandConfig `json:"Commands"`
+	Commands []CommandConfig `json:"commands"`
 }
 
 // CommandConfig defines a command available in a goal mode
 type CommandConfig struct {
-	Name          string   `json:"Name"`
-	Type          string   `json:"Type"` // "contextManager", "custom", "help"
-	Description   string   `json:"Description,omitempty"`
-	Usage         string   `json:"Usage,omitempty"`
-	ArgCompleters []string `json:"ArgCompleters,omitempty"`
-	Handler       string   `json:"Handler,omitempty"` // JavaScript handler code for custom commands
+	Name          string   `json:"name"`
+	Type          string   `json:"type"` // "contextManager", "custom", "help"
+	Description   string   `json:"description,omitempty"`
+	Usage         string   `json:"usage,omitempty"`
+	ArgCompleters []string `json:"argCompleters,omitempty"`
+	Handler       string   `json:"handler,omitempty"` // JavaScript handler code for custom commands
 }
 
 // GoalCommand provides access to pre-written goals
@@ -106,7 +109,7 @@ func (c *GoalCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.category, "c", "", "Filter goals by category")
 	fs.StringVar(&c.run, "r", "", "Run specific goal directly")
 	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
-	fs.StringVar(&c.storageBackend, "storage-backend", "", "Storage backend to use: 'fs' (default) or 'memory')")
+	fs.StringVar(&c.storageBackend, "storage-backend", "", "Storage backend to use: 'fs' (default) or 'memory'")
 }
 
 // Execute runs the goal command
@@ -128,10 +131,7 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	case len(args) > 0:
 		goalName = args[0]
 		// Positional goal defaults to interactive, per README
-		shouldInteractive = true || c.interactive
-		if c.interactive { // keep explicit flag honored (no-op here but clearer intent)
-			shouldInteractive = true
-		}
+		shouldInteractive = true
 	default:
 		return c.listGoals(goals, stdout)
 	}

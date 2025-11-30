@@ -1,67 +1,66 @@
 {
-  "Name": "example-goal",
-  "Description": "An example custom goal demonstrating all available features",
-  "Category": "examples",
-  "Usage": "Use this as a template for creating your own custom goals",
-  "TUITitle": "Example Custom Goal",
-  "TUIPrompt": "(example) > ",
-  "HistoryFile": ".example_goal_history",
-  "EnableHistory": true,
-  "StateKeys": {
-    "contextItems": [],
+  "name": "example-goal",
+  "description": "An example custom goal demonstrating all available features",
+  "category": "examples",
+  "usage": "Use this as a template for creating your own custom goals",
+  "tuiTitle": "Example Custom Goal",
+  "tuiPrompt": "(example) > ",
+  "historyFile": ".example_goal_history",
+  "enableHistory": true,
+  "stateVars": {
     "customOption": "default-value",
     "counter": 0
   },
-  "PromptInstructions": "This is an example goal. You can customize these instructions to guide the AI assistant in helping you accomplish your specific task.\n\nYou have access to:\n- Context management (add, list, edit, remove, show)\n- Custom state (customOption, counter)\n- Custom commands (increment, reset)\n\nModify this goal file to create your own workflow!",
-  "PromptTemplate": "**{{.Description | upper}}**\n\n{{.PromptInstructions}}\n\n## {{.ContextHeader}}\n\n{{.ContextTxtar}}",
-  "PromptOptions": {
+  "promptInstructions": "This is an example goal. You can customize these instructions to guide the AI assistant in helping you accomplish your specific task.\n\nYou have access to:\n- Context management (add, list, edit, remove, show)\n- Custom state (customOption, counter)\n- Custom commands (increment, reset)\n\nModify this goal file to create your own workflow!",
+  "promptTemplate": "**{{.description | upper}}**\n\n{{.promptInstructions}}\n\n## {{.contextHeader}}\n\n{{.contextTxtar}}",
+  "promptOptions": {
     "exampleOption": "You can add arbitrary data here for use in templates"
   },
-  "ContextHeader": "CONTEXT FILES",
-  "BannerText": "Example Custom Goal - Demonstrating OSM Goal Features",
-  "HelpText": "Available commands:\n  add <file>      Add files to context\n  note <text>     Add a note\n  list            List context items\n  edit <index>    Edit a context item\n  remove <index>  Remove a context item\n  show            Show the current prompt\n  copy            Copy prompt to clipboard\n  increment       Increment the counter\n  reset           Reset custom state\n  help            Show this help\n  exit            Exit the goal",
-  "Commands": [
+  "contextHeader": "CONTEXT FILES",
+  "bannerTemplate": "Example Custom Goal - Demonstrating OSM Goal Features",
+  "usageTemplate": "Available commands:\n  add <file>      Add files to context\n  note <text>     Add a note\n  list            List context items\n  edit <index>    Edit a context item\n  remove <index>  Remove a context item\n  show            Show the current prompt\n  copy            Copy prompt to clipboard\n  increment       Increment the counter\n  reset           Reset custom state\n  help            Show this help\n  exit            Exit the goal",
+  "commands": [
     {
-      "Name": "add",
-      "Type": "contextManager",
-      "Description": "Add files to context"
+      "name": "add",
+      "type": "contextManager",
+      "description": "Add files to context"
     },
     {
-      "Name": "note",
-      "Type": "contextManager",
-      "Description": "Add a text note"
+      "name": "note",
+      "type": "contextManager",
+      "description": "Add a text note"
     },
     {
-      "Name": "list",
-      "Type": "contextManager",
-      "Description": "List all context items"
+      "name": "list",
+      "type": "contextManager",
+      "description": "List all context items"
     },
     {
-      "Name": "edit",
-      "Type": "contextManager",
-      "Description": "Edit a context item"
+      "name": "edit",
+      "type": "contextManager",
+      "description": "Edit a context item"
     },
     {
-      "Name": "remove",
-      "Type": "contextManager",
-      "Description": "Remove a context item"
+      "name": "remove",
+      "type": "contextManager",
+      "description": "Remove a context item"
     },
     {
-      "Name": "show",
-      "Type": "contextManager",
-      "Description": "Show the current prompt"
+      "name": "show",
+      "type": "contextManager",
+      "description": "Show the current prompt"
     },
     {
-      "Name": "copy",
-      "Type": "contextManager",
-      "Description": "Copy prompt to clipboard"
+      "name": "copy",
+      "type": "contextManager",
+      "description": "Copy prompt to clipboard"
     },
     {
-      "Name": "increment",
-      "Type": "custom",
-      "Description": "Increment the counter",
-      "Usage": "increment",
-      "Handler": "function (args) {\n  var count = state.get(StateKeys.counter) || 0;\n  count++;\n  state.set(StateKeys.counter, count);\n  output.print('Counter incremented to: ' + count);\n}"
+      "name": "increment",
+      "type": "custom",
+      "description": "Increment the counter",
+      "usage": "increment",
+      "handler": "function (args) {\n  var count = state.get(stateKeys.counter) || 0;\n  count++;\n  state.set(stateKeys.counter, count);\n  output.print('Counter incremented to: ' + count);\n}"
     }
   ]
 }

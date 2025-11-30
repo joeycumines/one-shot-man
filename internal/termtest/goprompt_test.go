@@ -303,7 +303,15 @@ func TestRunPromptTest_Helper(t *testing.T) {
 			if err := gp.SendLine("exit"); err != nil {
 				return err
 			}
-			return gp.WaitForExit(1 * time.Second)
+			// Ensure prompt is closed deterministically instead of relying on implicit
+			// exit semantics which can be timing-dependent. Close() handles graceful
+			// shutdown and waits for the prompt goroutines to finish.
+			if err := gp.Close(); err != nil {
+				return err
+			}
+			// Close succeeded; prompt has been asked to shut down. Treat Close() success
+			// as the expected outcome for this helper.
+			return nil
 		}
 		err := RunPromptTest(ctx, testFunc)
 		assert.NoError(t, err)

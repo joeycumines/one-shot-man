@@ -131,13 +131,13 @@ func TestEndToEndLifecycle(t *testing.T) {
 
 	// Create a simple test script that defines a mode with state
 	testScript := `
-		const StateKeys = {
+		const stateKeys = {
 			counter: Symbol("counter"),
 			name: Symbol("name")
 		};
 		const state = tui.createState("test-mode", {
-			[StateKeys.counter]: {defaultValue: 0},
-			[StateKeys.name]: {defaultValue: "initial"}
+				[stateKeys.counter]: {defaultValue: 0},
+				[stateKeys.name]: {defaultValue: "initial"}
 		});
 
 		tui.registerMode({
@@ -150,15 +150,15 @@ func TestEndToEndLifecycle(t *testing.T) {
 					increment: {
 						description: 'Increment counter',
 						handler: function(args) {
-							const current = state.get(StateKeys.counter) || 0;
-							state.set(StateKeys.counter, current + 1);
+							const current = state.get(stateKeys.counter) || 0;
+							state.set(stateKeys.counter, current + 1);
 						}
 					},
 					setname: {
 						description: 'Set name',
 						handler: function(args) {
 							if (args.length > 0) {
-								state.set(StateKeys.name, args[0]);
+								state.set(stateKeys.name, args[0]);
 							}
 						}
 					}
@@ -406,11 +406,11 @@ func TestSigintPersistence(t *testing.T) {
 	// Load test script
 	scriptPath := filepath.Join(tmpDir, "test-script.js")
 	scriptContent := `
-		const StateKeys = {
+		const stateKeys = {
 			value: Symbol("value")
 		};
 		const state = tui.createState("sigint-mode", {
-			[StateKeys.value]: {defaultValue: "unset"}
+				[stateKeys.value]: {defaultValue: "unset"}
 		});
 
 		tui.registerMode({
@@ -422,7 +422,7 @@ func TestSigintPersistence(t *testing.T) {
 						description: 'Set value',
 						handler: function(args) {
 							if (args.length > 0) {
-								state.set(StateKeys.value, args[0]);
+								state.set(stateKeys.value, args[0]);
 							}
 						}
 					}

@@ -10,7 +10,7 @@
 {{.goal}}
 
 !! **IMPLEMENTATIONS/CONTEXT:** !!
-{{.context_txtar}}
+{{.contextTxtar}}
 
 !! **TEMPLATE:** !!
 ``````

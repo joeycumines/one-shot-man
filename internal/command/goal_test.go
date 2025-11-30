@@ -326,17 +326,17 @@ func TestGoalCommand_GoToJSPipeline_PromptTemplate(t *testing.T) {
 		}
 
 		// Verify template contains expected placeholders
-		if !strings.Contains(goal.PromptTemplate, "{{.Description") {
-			t.Errorf("Goal %q PromptTemplate missing {{.Description}} placeholder", goal.Name)
+		if !strings.Contains(goal.PromptTemplate, "{{.description") {
+			t.Errorf("Goal %q PromptTemplate missing {{.description}} placeholder", goal.Name)
 		}
-		if !strings.Contains(goal.PromptTemplate, "{{.PromptInstructions}}") {
-			t.Errorf("Goal %q PromptTemplate missing {{.PromptInstructions}} placeholder", goal.Name)
+		if !strings.Contains(goal.PromptTemplate, "{{.promptInstructions}}") {
+			t.Errorf("Goal %q PromptTemplate missing {{.promptInstructions}} placeholder", goal.Name)
 		}
-		if !strings.Contains(goal.PromptTemplate, "{{.ContextHeader}}") {
-			t.Errorf("Goal %q PromptTemplate missing {{.ContextHeader}} placeholder", goal.Name)
+		if !strings.Contains(goal.PromptTemplate, "{{.contextHeader}}") {
+			t.Errorf("Goal %q PromptTemplate missing {{.contextHeader}} placeholder", goal.Name)
 		}
-		if !strings.Contains(goal.PromptTemplate, "{{.ContextTxtar}}") {
-			t.Errorf("Goal %q PromptTemplate missing {{.ContextTxtar}} placeholder", goal.Name)
+		if !strings.Contains(goal.PromptTemplate, "{{.contextTxtar}}") {
+			t.Errorf("Goal %q PromptTemplate missing {{.contextTxtar}} placeholder", goal.Name)
 		}
 	}
 }
@@ -393,5 +393,84 @@ func TestGoalCommand_GoToJSPipeline_CommandsArray(t *testing.T) {
 				t.Errorf("Goal %q has custom command %q with empty Handler", goal.Name, cmdConfig.Name)
 			}
 		}
+	}
+}
+
+func TestGoalCommand_BuiltInGoal_NotableVariablesAndTypeState(t *testing.T) {
+	t.Parallel()
+
+	goals := GetBuiltInGoals()
+
+	var tg *Goal
+	for i := range goals {
+		if goals[i].Name == "test-generator" {
+			tg = &goals[i]
+			break
+		}
+	}
+
+	if tg == nil {
+		t.Fatalf("test-generator goal not found in built-ins")
+	}
+
+	// NotableVariables must exist and include the expected entries
+	foundType := false
+	foundFramework := false
+	for _, v := range tg.NotableVariables {
+		if v == "type" {
+			foundType = true
+		}
+		if v == "framework" {
+			foundFramework = true
+		}
+	}
+	if !foundType || !foundFramework {
+		t.Fatalf("test-generator NotableVariables expected to contain 'type' and 'framework', got: %v", tg.NotableVariables)
+	}
+
+	// Ensure the stateKeys map uses "type" (not the old "testType") and has default "unit"
+	if _, ok := tg.StateVars["testType"]; ok {
+		t.Fatalf("unexpected legacy key 'testType' found in stateVars")
+	}
+
+	v, ok := tg.StateVars["type"]
+	if !ok {
+		t.Fatalf("expected stateVars to contain 'type', got keys: %v", tg.StateVars)
+	}
+	if sv, ok := v.(string); !ok || sv != "unit" {
+		t.Fatalf("expected default stateVars['type'] == 'unit', got: %#v", v)
+	}
+}
+
+func TestGoalCommand_BannerIncludesNotableVariablesOnEnter(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewConfig()
+	goalRegistry := newTestGoalRegistryForGoal()
+	cmd := NewGoalCommand(cfg, goalRegistry)
+
+	var stdout, stderr bytes.Buffer
+	// positional arg implies interactive; use testMode to avoid starting an actual TUI
+	cmd.testMode = true
+
+	// keep test isolated
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
+
+	err := cmd.Execute([]string{"test-generator"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected success running positional test-generator, got: %v, stderr=%s", err, stderr.String())
+	}
+
+	got := stdout.String()
+	// Banner should include the TUITitle and the notable variables
+	if !strings.Contains(got, "Test Generator") {
+		t.Errorf("expected banner to include 'Test Generator' title, got: %s", got)
+	}
+	if !strings.Contains(got, "type=unit") {
+		t.Errorf("expected banner to include 'type=unit', got: %s", got)
+	}
+	if !strings.Contains(got, "framework=auto") {
+		t.Errorf("expected banner to include 'framework=auto', got: %s", got)
 	}
 }

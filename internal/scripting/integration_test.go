@@ -112,7 +112,7 @@ func TestFullLLMWorkflow(t *testing.T) {
 	startLen = cp.OutputLen()
 	cp.SendLine("help")
 	if _, err := cp.ExpectSince("Available commands:", startLen); err != nil {
-		t.Fatalf("Expected help output: %v", err)
+		t.Fatalf("Expected help output: %v\nOUTPUT: %q", err, cp.GetOutput())
 	}
 
 	// Switch to the LLM prompt builder mode
@@ -139,7 +139,7 @@ func testCompletePromptWorkflow(t *testing.T, cp *termtest.ConsoleProcess) {
 
 	// Set initial template
 	startLen = cp.OutputLen()
-	cp.SendLine("template You are a {{role}} for {{company}}. You should be {{tone}} and {{helpful_level}}. Customer issue: {{issue}}")
+	cp.SendLine("template You are a {{role}} for {{company}}. You should be {{tone}} and {{helpfulLevel}}. Customer issue: {{issue}}")
 	if _, err := cp.ExpectSince("Template set:", startLen); err != nil {
 		t.Fatalf("Expected template set: %v", err)
 	}
@@ -164,9 +164,9 @@ func testCompletePromptWorkflow(t *testing.T, cp *termtest.ConsoleProcess) {
 	}
 
 	startLen = cp.OutputLen()
-	cp.SendLine("var helpful_level extremely helpful")
-	if _, err := cp.ExpectSince("Set variable: helpful_level", startLen); err != nil {
-		t.Fatalf("Expected helpful_level variable set: %v", err)
+	cp.SendLine("var helpfulLevel extremely helpful")
+	if _, err := cp.ExpectSince("Set variable: helpfulLevel", startLen); err != nil {
+		t.Fatalf("Expected helpfulLevel variable set: %v", err)
 	}
 
 	startLen = cp.OutputLen()
@@ -194,7 +194,7 @@ func testCompletePromptWorkflow(t *testing.T, cp *termtest.ConsoleProcess) {
 
 	// Refine the prompt - make it more specific
 	startLen = cp.OutputLen()
-	cp.SendLine("template You are a {{role}} for {{company}}. You should be {{tone}} and {{helpful_level}}. When handling customer issues, always: 1. Acknowledge the customer's concern 2. Ask clarifying questions if needed 3. Provide step-by-step solutions 4. Offer additional assistance Customer issue: {{issue}}")
+	cp.SendLine("template You are a {{role}} for {{company}}. You should be {{tone}} and {{helpfulLevel}}. When handling customer issues, always: 1. Acknowledge the customer's concern 2. Ask clarifying questions if needed 3. Provide step-by-step solutions 4. Offer additional assistance Customer issue: {{issue}}")
 	if _, err := cp.ExpectSince("Template set:", startLen); err != nil {
 		t.Fatalf("Expected template update: %v", err)
 	}
@@ -608,11 +608,11 @@ func TestConcurrentAccess(t *testing.T) {
 
 	// Register a test mode with state
 	script := engine.LoadScriptFromString("concurrent-test", `
-		const StateKeys = {
+		const stateKeys = {
 			counter: Symbol("counter")
 		};
 		const state = tui.createState("concurrent-test", {
-			[StateKeys.counter]: {defaultValue: 0}
+			[stateKeys.counter]: {defaultValue: 0}
 		});
 
 		tui.registerMode({
@@ -622,14 +622,14 @@ func TestConcurrentAccess(t *testing.T) {
 					"increment": {
 						description: "Increment counter",
 						handler: function(args) {
-							var current = state.get(StateKeys.counter);
-							state.set(StateKeys.counter, current + 1);
+							var current = state.get(stateKeys.counter);
+							state.set(stateKeys.counter, current + 1);
 						}
 					},
 					"get": {
 						description: "Get counter value",
 						handler: function(args) {
-							output.print("Counter: " + state.get(StateKeys.counter));
+							output.print("Counter: " + state.get(stateKeys.counter));
 						}
 					}
 				};
@@ -789,13 +789,13 @@ func TestJavaScriptInteroperability(t *testing.T) {
 	// Test complex JavaScript integration with the TUI system
 	script := engine.LoadScriptFromString("interop-test", `
 		// Create state for complex mode
-		var StateKeys = {
+		var stateKeys = {
 			config: Symbol("config"),
 			testArray: Symbol("testArray")
 		};
 		var state = tui.createState("complex-mode", {
-			[StateKeys.config]: {defaultValue: null},
-			[StateKeys.testArray]: {defaultValue: []}
+			[stateKeys.config]: {defaultValue: null},
+			[stateKeys.testArray]: {defaultValue: []}
 		});
 
 		// Test complex object handling
@@ -808,7 +808,7 @@ func TestJavaScriptInteroperability(t *testing.T) {
 			onEnter: function() {
 				output.print("Complex mode entered");
 				// Test object state storage
-				state.set(StateKeys.config, {
+				state.set(stateKeys.config, {
 					nested: {
 						value: 42,
 						array: [1, 2, 3]
@@ -820,7 +820,7 @@ func TestJavaScriptInteroperability(t *testing.T) {
 					"test-object": {
 						description: "Test object handling",
 						handler: function(args) {
-							var config = state.get(StateKeys.config);
+							var config = state.get(stateKeys.config);
 							output.print("Nested value: " + config.nested.value);
 							output.print("Array length: " + config.nested.array.length);
 						}
@@ -828,9 +828,9 @@ func TestJavaScriptInteroperability(t *testing.T) {
 					"test-array": {
 						description: "Test array operations",
 						handler: function(args) {
-							var arr = state.get(StateKeys.testArray);
+							var arr = state.get(stateKeys.testArray);
 							arr.push(args.join(" "));
-							state.set(StateKeys.testArray, arr);
+							state.set(stateKeys.testArray, arr);
 							output.print("Array now has " + arr.length + " items");
 						}
 					}
@@ -890,11 +890,11 @@ func BenchmarkTUIPerformance(b *testing.B) {
 
 	// Register a test mode
 	script := engine.LoadScriptFromString("perf-test", `
-		const StateKeys = {
+		const stateKeys = {
 			counter: Symbol("counter")
 		};
 		const state = tui.createState("perf-test", {
-			[StateKeys.counter]: {defaultValue: 0}
+			[stateKeys.counter]: {defaultValue: 0}
 		});
 
 		tui.registerMode({
@@ -904,8 +904,8 @@ func BenchmarkTUIPerformance(b *testing.B) {
 					"perf": {
 						description: "Performance test command",
 						handler: function() {
-							var current = state.get(StateKeys.counter);
-							state.set(StateKeys.counter, current + 1);
+							var current = state.get(stateKeys.counter);
+							state.set(stateKeys.counter, current + 1);
 						}
 					}
 				};
@@ -1053,13 +1053,13 @@ func TestTUIModeSystem(t *testing.T) {
 	// Test mode registration and switching
 	testScript := engine.LoadScriptFromString("tui-mode-test", `
 		// Create state contract for test mode
-		var StateKeys = {
+		var stateKeys = {
 			testValue: Symbol("testValue"),
 			lastCommand: Symbol("lastCommand")
 		};
 		var state = tui.createState("test-mode", {
-			[StateKeys.testValue]: {defaultValue: null},
-			[StateKeys.lastCommand]: {defaultValue: ""}
+			[stateKeys.testValue]: {defaultValue: null},
+			[stateKeys.lastCommand]: {defaultValue: ""}
 		});
 
 		// Register a test mode
@@ -1071,7 +1071,7 @@ func TestTUIModeSystem(t *testing.T) {
 			},
 			onEnter: function() {
 				log.info("Entered test mode");
-				state.set(StateKeys.testValue, "initialized");
+					state.set(stateKeys.testValue, "initialized");
 			},
 			onExit: function() {
 				log.info("Exited test mode");
@@ -1081,14 +1081,14 @@ func TestTUIModeSystem(t *testing.T) {
 					"test-cmd": {
 						description: "A test command",
 						handler: function(args) {
-							state.set(StateKeys.lastCommand, args.join(" "));
+							state.set(stateKeys.lastCommand, args.join(" "));
 							output.print("Test command executed with: " + args.join(" "));
 						}
 					},
 					"get-state": {
 						description: "Get test state",
 						handler: function(args) {
-							var value = state.get(StateKeys.testValue);
+							var value = state.get(stateKeys.testValue);
 							output.print("Test value: " + value);
 						}
 					}
@@ -1181,11 +1181,11 @@ func TestFullIntegration(t *testing.T) {
 		log.info("Starting full integration test");
 
 		// Create state for integration mode
-		var StateKeys = {
+		var stateKeys = {
 			filesProcessed: Symbol("filesProcessed")
 		};
 		var state = tui.createState("integration-mode", {
-			[StateKeys.filesProcessed]: {defaultValue: 0}
+			[stateKeys.filesProcessed]: {defaultValue: 0}
 		});
 
 		// Register a comprehensive mode
@@ -1206,8 +1206,8 @@ func TestFullIntegration(t *testing.T) {
 				log.info("Added " + paths.length + " paths to context");
 
 				// Initialize state (already done by default value, but we can verify)
-				if (state.get(StateKeys.filesProcessed) === null) {
-					state.set(StateKeys.filesProcessed, 0);
+				if (state.get(stateKeys.filesProcessed) === null) {
+					state.set(stateKeys.filesProcessed, 0);
 				}
 			},
 			commands: function() {
@@ -1221,8 +1221,8 @@ func TestFullIntegration(t *testing.T) {
 							log.info("Found " + goFiles.length + " Go files");
 							log.info("Found " + txtFiles.length + " text files");
 
-							var processed = state.get(StateKeys.filesProcessed) + goFiles.length + txtFiles.length;
-							state.set(StateKeys.filesProcessed, processed);
+							var processed = state.get(stateKeys.filesProcessed) + goFiles.length + txtFiles.length;
+							state.set(stateKeys.filesProcessed, processed);
 
 							output.print("Processed " + processed + " files total");
 						}
@@ -1244,7 +1244,7 @@ func TestFullIntegration(t *testing.T) {
 						description: "Show context and mode statistics",
 						handler: function(args) {
 							var contextStats = context.getStats();
-							var processed = state.get(StateKeys.filesProcessed);
+							var processed = state.get(stateKeys.filesProcessed);
 
 							output.print("Context: " + contextStats.files + " files, " + contextStats.totalSize + " bytes");
 							output.print("Processed: " + processed + " files");
@@ -1325,13 +1325,13 @@ func TestScriptCommandVerification(t *testing.T) {
 	// Test script with various command types
 	testScript := engine.LoadScriptFromString("command-verification", `
 		// Create state for command test mode
-		var StateKeys = {
+		var stateKeys = {
 			commandResults: Symbol("commandResults"),
 			complexState: Symbol("complexState")
 		};
 		var state = tui.createState("command-test", {
-			[StateKeys.commandResults]: {defaultValue: []},
-			[StateKeys.complexState]: {defaultValue: {}}
+			[stateKeys.commandResults]: {defaultValue: []},
+			[stateKeys.complexState]: {defaultValue: {}}
 		});
 
 		// Register mode with comprehensive command testing
@@ -1349,9 +1349,9 @@ func TestScriptCommandVerification(t *testing.T) {
 					"simple": {
 						description: "Simple command test",
 						handler: function(args) {
-							var results = state.get(StateKeys.commandResults);
+							var results = state.get(stateKeys.commandResults);
 							results.push("simple:" + args.join(","));
-							state.set(StateKeys.commandResults, results);
+							state.set(stateKeys.commandResults, results);
 							output.print("Simple command executed");
 						}
 					},
@@ -1366,7 +1366,7 @@ func TestScriptCommandVerification(t *testing.T) {
 
 							var action = args[0];
 							var value = args.length > 1 ? args[1] : "";
-							var complexObj = state.get(StateKeys.complexState);
+							var complexObj = state.get(stateKeys.complexState);
 
 							switch (action) {
 								case "set":
@@ -1393,15 +1393,15 @@ func TestScriptCommandVerification(t *testing.T) {
 									return;
 							}
 
-							state.set(StateKeys.complexState, complexObj);
+							state.set(stateKeys.complexState, complexObj);
 							output.print("Complex command " + action + " completed");
 						}
 					},
 					"verify": {
 						description: "Verify all commands worked",
 						handler: function(args) {
-							var results = state.get(StateKeys.commandResults);
-							var complexObj = state.get(StateKeys.complexState);
+							var results = state.get(stateKeys.commandResults);
+							var complexObj = state.get(stateKeys.complexState);
 
 							output.print("Command results: " + results.length + " simple commands executed");
 							output.print("Complex state keys: " + Object.keys(complexObj).length);
@@ -1488,15 +1488,15 @@ func TestScriptStateVerification(t *testing.T) {
 	// Test state persistence and manipulation
 	testScript := engine.LoadScriptFromString("state-verification", `
 		// Create state for state-test mode
-		var StateKeys = {
+		var stateKeys = {
 			counter: Symbol("counter"),
 			messages: Symbol("messages"),
 			config: Symbol("config")
 		};
 		var state = tui.createState("state-test", {
-			[StateKeys.counter]: {defaultValue: 0},
-			[StateKeys.messages]: {defaultValue: []},
-			[StateKeys.config]: {
+			[stateKeys.counter]: {defaultValue: 0},
+			[stateKeys.messages]: {defaultValue: []},
+			[stateKeys.config]: {
 				defaultValue: {
 					name: "test-config",
 					features: ["logging", "state", "commands"],
@@ -1524,9 +1524,9 @@ func TestScriptStateVerification(t *testing.T) {
 					"increment": {
 						description: "Increment counter",
 						handler: function(args) {
-							var counter = state.get(StateKeys.counter);
+							var counter = state.get(stateKeys.counter);
 							counter++;
-							state.set(StateKeys.counter, counter);
+							state.set(stateKeys.counter, counter);
 							output.print("Counter: " + counter);
 						}
 					},
@@ -1534,14 +1534,14 @@ func TestScriptStateVerification(t *testing.T) {
 						description: "Add message to array",
 						usage: "add-message <text>",
 						handler: function(args) {
-							var messages = state.get(StateKeys.messages);
+							var messages = state.get(stateKeys.messages);
 							var text = args.join(" ");
 							messages.push({
 								text: text,
 								timestamp: new Date().getTime(),
 								id: messages.length + 1
 							});
-							state.set(StateKeys.messages, messages);
+							state.set(stateKeys.messages, messages);
 							output.print("Added message: " + text + " (total: " + messages.length + ")");
 						}
 					},
@@ -1554,7 +1554,7 @@ func TestScriptStateVerification(t *testing.T) {
 								return;
 							}
 
-							var config = state.get(StateKeys.config);
+							var config = state.get(stateKeys.config);
 							var key = args[0];
 							var value = args[1];
 
@@ -1573,16 +1573,16 @@ func TestScriptStateVerification(t *testing.T) {
 								config[key] = value;
 							}
 
-							state.set(StateKeys.config, config);
+							state.set(stateKeys.config, config);
 							output.print("Updated config." + key + " = " + value);
 						}
 					},
 					"show-state": {
 						description: "Show all state",
 						handler: function(args) {
-							var counter = state.get(StateKeys.counter);
-							var messages = state.get(StateKeys.messages);
-							var config = state.get(StateKeys.config);
+							var counter = state.get(stateKeys.counter);
+							var messages = state.get(stateKeys.messages);
+							var config = state.get(stateKeys.config);
 
 							output.print("=== State Summary ===");
 							output.print("Counter: " + counter);

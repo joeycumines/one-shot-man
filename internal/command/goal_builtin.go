@@ -18,9 +18,8 @@ func GetBuiltInGoals() []Goal {
 			HistoryFile:   ".comment-stripper_history",
 			EnableHistory: true,
 
-			StateKeys: map[string]interface{}{
-				"contextItems": []interface{}{},
-			},
+			// WARNING: Including contextItems may break the prompt.
+			StateVars: map[string]interface{}{},
 
 			PromptInstructions: `Analyze the provided code and remove useless comments while refactoring useful ones according to these rules:
 
@@ -55,17 +54,17 @@ func GetBuiltInGoals() []Goal {
 
 Maintain all functionality and behavior of the original code while improving its readability and maintainability.`,
 
-			PromptTemplate: `**{{.Description | upper}}**
+			PromptTemplate: `**{{.description | upper}}**
 
-{{.PromptInstructions}}
+{{.promptInstructions}}
 
-## {{.ContextHeader}}
+## {{.contextHeader}}
 
-{{.ContextTxtar}}`,
+{{.contextTxtar}}`,
 
 			ContextHeader: "CODE TO ANALYZE",
 
-			HelpText: "Commands: add, note, list, edit, remove, show, copy, run, help, exit",
+			UsageTemplate: "Commands: add, note, list, edit, remove, show, copy, help, exit",
 
 			Commands: []CommandConfig{
 				{Name: "add", Type: "contextManager"},
@@ -75,21 +74,6 @@ Maintain all functionality and behavior of the original code while improving its
 				{Name: "remove", Type: "contextManager"},
 				{Name: "show", Type: "contextManager"},
 				{Name: "copy", Type: "contextManager"},
-				{
-					Name:          "run",
-					Type:          "custom",
-					Description:   "Quick run - add files and show prompt",
-					Usage:         "run [file ...]",
-					ArgCompleters: []string{"file"},
-					Handler: `function (args) {
-						if (args.length === 0) {
-							output.print("Usage: run [file ...]");
-							return;
-						}
-						ctxmgr.commands.add.handler(args);
-						output.print("\n" + buildPrompt());
-					}`,
-				},
 				{Name: "help", Type: "help"},
 			},
 		},
@@ -108,14 +92,13 @@ Maintain all functionality and behavior of the original code while improving its
 			HistoryFile:   ".doc-generator_history",
 			EnableHistory: true,
 
-			StateKeys: map[string]interface{}{
-				"contextItems": []interface{}{},
-				"docType":      "comprehensive",
+			StateVars: map[string]interface{}{
+				"type": "comprehensive",
 			},
 
-			PromptInstructions: `Create {{.StateKeys.docType}} documentation for the provided code following these guidelines:
+			PromptInstructions: `Create {{.stateKeys.type}} documentation for the provided code following these guidelines:
 
-{{.DocTypeInstructions}}
+{{.typeInstructions}}
 
 **Documentation Standards:**
 - Use clear, concise language appropriate for the target audience
@@ -131,18 +114,18 @@ Maintain all functionality and behavior of the original code while improving its
 - Highlight key sections and important information
 - Ensure the documentation is ready to use without further editing`,
 
-			PromptTemplate: `**{{.Description | upper}}**
+			PromptTemplate: `**{{.description | upper}}**
 
-{{.PromptInstructions}}
+{{.promptInstructions}}
 
-## {{.ContextHeader}}
+## {{.contextHeader}}
 
-{{.ContextTxtar}}`,
+{{.contextTxtar}}`,
 
 			ContextHeader: "CODE TO DOCUMENT",
 
 			PromptOptions: map[string]interface{}{
-				"docTypeInstructions": map[string]string{
+				"typeInstructions": map[string]string{
 					"comprehensive": `Generate comprehensive documentation including:
 - Overview and purpose
 - Architecture and design decisions
@@ -179,10 +162,11 @@ Maintain all functionality and behavior of the original code while improving its
 				},
 			},
 
-			HelpText: "Commands: add, note, list, type, edit, remove, show, copy, help, exit\nDoc types: comprehensive, api, readme, inline, tutorial",
+			UsageTemplate: "Commands: add, note, list, diff, type, edit, remove, show, copy, help, exit\nDoc types: comprehensive, api, readme, inline, tutorial",
 
 			Commands: []CommandConfig{
 				{Name: "add", Type: "contextManager"},
+				{Name: "diff", Type: "contextManager"},
 				{Name: "note", Type: "contextManager", Description: "Add a note about documentation requirements"},
 				{Name: "list", Type: "contextManager"},
 				{Name: "edit", Type: "contextManager"},
@@ -196,7 +180,7 @@ Maintain all functionality and behavior of the original code while improving its
 					Usage:       "type <comprehensive|api|readme|inline|tutorial>",
 					Handler: `function (args) {
 						if (args.length === 0) {
-							output.print("Current type: " + (state.get(StateKeys.docType) || "comprehensive"));
+							output.print("Current type: " + (state.get(stateKeys.type) || "comprehensive"));
 							output.print("Available types: comprehensive, api, readme, inline, tutorial");
 							return;
 						}
@@ -206,7 +190,7 @@ Maintain all functionality and behavior of the original code while improving its
 							output.print("Invalid type. Available: " + validTypes.join(", "));
 							return;
 						}
-						state.set(StateKeys.docType, type);
+						state.set(stateKeys.type, type);
 						output.print("Documentation type set to: " + type);
 					}`,
 				},
@@ -228,15 +212,20 @@ Maintain all functionality and behavior of the original code while improving its
 			HistoryFile:   ".test-generator_history",
 			EnableHistory: true,
 
-			StateKeys: map[string]interface{}{
-				"contextItems": []interface{}{},
-				"testType":     "unit",
-				"framework":    "auto",
+			// printed on entry in the banner
+			NotableVariables: []string{`type`, `framework`},
+
+			StateVars: map[string]interface{}{
+				"type":      "unit",
+				"framework": "auto",
 			},
 
-			PromptInstructions: `Generate {{.StateKeys.testType}} tests for the provided code following these guidelines:
+			PromptInstructions: `Generate {{.stateKeys.type}} tests for the provided code following these guidelines:
 
-{{.TestTypeInstructions}}{{.FrameworkInfo}}
+{{.typeInstructions}}{{if and .stateKeys.framework (ne .stateKeys.framework "auto") }}
+
+Use the {{.stateKeys.framework}} testing framework.
+{{- end }}
 
 **Test Quality Standards:**
 - Write clear, descriptive test names that explain what is being tested
@@ -262,18 +251,18 @@ Maintain all functionality and behavior of the original code while improving its
 - Organize tests in logical groups or describe blocks
 - Include any additional test utilities or helpers needed`,
 
-			PromptTemplate: `**{{.Description | upper}}**
+			PromptTemplate: `**{{.description | upper}}**
 
-{{.PromptInstructions}}
+{{.promptInstructions}}
 
-## {{.ContextHeader}}
+## {{.contextHeader}}
 
-{{.ContextTxtar}}`,
+{{.contextTxtar}}`,
 
 			ContextHeader: "CODE TO TEST",
 
 			PromptOptions: map[string]interface{}{
-				"testTypeInstructions": map[string]string{
+				"typeInstructions": map[string]string{
 					"unit": `Generate comprehensive unit tests including:
 - Test all public methods and functions
 - Cover all branches and edge cases
@@ -312,12 +301,13 @@ Maintain all functionality and behavior of the original code while improving its
 				},
 			},
 
-			HelpText: "Commands: add, note, list, type, framework, edit, remove, show, copy, help, exit\nTest types: unit, integration, e2e, performance, security\nFrameworks: auto, jest, mocha, go, pytest, junit, rspec",
+			UsageTemplate: "Commands: add, note, list, diff, type, framework, edit, remove, show, copy, help, exit\nTest types: unit, integration, e2e, performance, security\nFrameworks: auto, jest, mocha, go, pytest, junit, rspec",
 
 			Commands: []CommandConfig{
 				{Name: "add", Type: "contextManager"},
 				{Name: "note", Type: "contextManager", Description: "Add a note about test requirements"},
 				{Name: "list", Type: "contextManager"},
+				{Name: "diff", Type: "contextManager"},
 				{Name: "edit", Type: "contextManager"},
 				{Name: "remove", Type: "contextManager"},
 				{Name: "show", Type: "contextManager"},
@@ -329,7 +319,7 @@ Maintain all functionality and behavior of the original code while improving its
 					Usage:       "type <unit|integration|e2e|performance|security>",
 					Handler: `function (args) {
 						if (args.length === 0) {
-							output.print("Current type: " + (state.get(StateKeys.testType) || "unit"));
+							output.print("Current type: " + (state.get(stateKeys.type) || "unit"));
 							output.print("Available types: unit, integration, e2e, performance, security");
 							return;
 						}
@@ -339,7 +329,7 @@ Maintain all functionality and behavior of the original code while improving its
 							output.print("Invalid type. Available: " + validTypes.join(", "));
 							return;
 						}
-						state.set(StateKeys.testType, type);
+						state.set(stateKeys.type, type);
 						output.print("Test type set to: " + type);
 					}`,
 				},
@@ -350,7 +340,7 @@ Maintain all functionality and behavior of the original code while improving its
 					Usage:       "framework <auto|jest|mocha|go|pytest|junit|rspec>",
 					Handler: `function (args) {
 						if (args.length === 0) {
-							output.print("Current framework: " + (state.get(StateKeys.framework) || "auto"));
+							output.print("Current framework: " + (state.get(stateKeys.framework) || "auto"));
 							output.print("Available frameworks: auto, jest, mocha, go, pytest, junit, rspec");
 							return;
 						}
@@ -360,7 +350,7 @@ Maintain all functionality and behavior of the original code while improving its
 							output.print("Invalid framework. Available: " + validFrameworks.join(", "));
 							return;
 						}
-						state.set(StateKeys.framework, fw);
+						state.set(stateKeys.framework, fw);
 						output.print("Testing framework set to: " + fw);
 					}`,
 				},
@@ -382,9 +372,7 @@ Maintain all functionality and behavior of the original code while improving its
 			HistoryFile:   ".commit-message_history",
 			EnableHistory: true,
 
-			StateKeys: map[string]interface{}{
-				"contextItems": []interface{}{},
-			},
+			StateVars: map[string]interface{}{},
 
 			PromptInstructions: `You MUST produce a commit message strictly utilizing the following syntax / style / semantics.
 
@@ -412,17 +400,17 @@ General Guidelines:
 
 Generate a commit message that follows these guidelines based on the provided diff and context information.`,
 
-			PromptTemplate: `**{{.Description | upper}}**
+			PromptTemplate: `**{{.description | upper}}**
 
-{{.PromptInstructions}}
+{{.promptInstructions}}
 
-## {{.ContextHeader}}
+## {{.contextHeader}}
 
-{{.ContextTxtar}}`,
+{{.contextTxtar}}`,
 
 			ContextHeader: "DIFF CONTEXT / CHANGES",
 
-			HelpText: "Commands: add, diff, note, list, edit, remove, show, copy, run, help, exit",
+			UsageTemplate: "Commands: add, diff, note, list, edit, remove, show, copy, help, exit",
 
 			Commands: []CommandConfig{
 				{Name: "add", Type: "contextManager"},
@@ -433,16 +421,6 @@ Generate a commit message that follows these guidelines based on the provided di
 				{Name: "remove", Type: "contextManager"},
 				{Name: "show", Type: "contextManager"},
 				{Name: "copy", Type: "contextManager"},
-				{
-					Name:        "run",
-					Type:        "custom",
-					Description: "Quick run - add git diff and show prompt",
-					Usage:       "run [git-diff-args...]",
-					Handler: `function (args) {
-						ctxmgr.commands.diff.handler(args.length > 0 ? args : []);
-						output.print("\n" + buildPrompt());
-					}`,
-				},
 				{Name: "help", Type: "help"},
 			},
 		},

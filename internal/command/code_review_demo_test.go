@@ -26,8 +26,8 @@ func TestCodeReviewCommand_ShowActualDiffOutput(t *testing.T) {
 	engine.SetTestMode(true)
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("codeReviewTemplate", codeReviewTemplate)
-	// Inject config object with Name field
-	engine.SetGlobal("config", map[string]interface{}{"Name": "code-review"})
+	// Inject config object with name field
+	engine.SetGlobal("config", map[string]interface{}{"name": "code-review"})
 
 	// Load the script
 	script := engine.LoadScriptFromString("code-review", codeReviewScript)

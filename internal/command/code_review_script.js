@@ -8,8 +8,8 @@ const template = require('osm:text/template');
 // Import shared symbols
 const shared = require('osm:sharedStateSymbols');
 
-// config.Name is injected by Go as "code-review"
-const COMMAND_NAME = config.Name;
+// config.name is injected by Go as "code-review"
+const COMMAND_NAME = config.name;
 // The mode exposed to the TUI is a short name users can switch to.
 // Historically the command is called "code-review" while the single
 // mode it exposes is called "review". Keep that separation so tests
@@ -26,7 +26,6 @@ let parseArgv, formatArgv, items, buildPrompt, commands;
 
 // Build commands with state accessor - called when mode is first used
 function buildCommands(stateArg) {
-
     const ctxmgr = contextManager({
         getItems: () => stateArg.get(shared.contextItems) || [],
         setItems: (v) => stateArg.set(shared.contextItems, v),
@@ -34,7 +33,7 @@ function buildCommands(stateArg) {
         buildPrompt: () => {
             const fullContext = buildContext(stateArg.get(shared.contextItems), {toTxtar: () => context.toTxtar()});
             return template.execute(codeReviewTemplate, {
-                context_txtar: fullContext
+                contextTxtar: fullContext
             });
         }
     });

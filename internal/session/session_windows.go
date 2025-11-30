@@ -289,13 +289,17 @@ func getFileNameByHandle(h windows.Handle) (string, error) {
 
 	// FileName starts at offset 4, contains WCHARs (UTF-16)
 	// Safety check to ensure we don't read out of bounds
-	if nameLen > uint32(len(buf)-4) {
+	// Buffer is 4096 bytes, minus 4 for length field = 4092 bytes for filename
+	// Maximum UTF-16 characters: 4092 / 2 = 2046
+	maxChars := uint32((len(buf) - 4) / 2)
+	if nameLen/2 > maxChars {
 		return "", fmt.Errorf("filename length corruption detected")
 	}
 
 	// Slice the buffer to get the utf16 array
 	// 4 byte offset, length is in bytes so we divide by 2 for uint16 slice
-	utf16Data := (*[2048]uint16)(unsafe.Pointer(&buf[4]))[:nameLen/2]
+	// Use the buffer size limit (2046) which matches our 4096-4 byte buffer
+	utf16Data := (*[2046]uint16)(unsafe.Pointer(&buf[4]))[:nameLen/2]
 
 	return windows.UTF16ToString(utf16Data), nil
 }

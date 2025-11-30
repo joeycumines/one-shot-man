@@ -3,6 +3,8 @@ package session
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -90,9 +92,11 @@ func generateUUID() (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
+// hashString computes a SHA256 hash of the input string for use in non-anchor session IDs
+// (e.g., SSH connection strings, screen STY values). This is separate from SessionContext
+// which is used for Deep Anchor-based session IDs.
 func hashString(s string) string {
-	ctx := &SessionContext{BootID: s}
-	// CONFLICT RESOLUTION: Removed truncation.
-	// Returning 16 chars (64-bits) created a collision risk.
-	return ctx.GenerateHash()
+	hasher := sha256.New()
+	hasher.Write([]byte(s))
+	return hex.EncodeToString(hasher.Sum(nil))
 }

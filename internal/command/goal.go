@@ -56,6 +56,9 @@ type Goal struct {
 	BannerText string `json:"bannerText"`
 	HelpText   string `json:"helpText"`
 
+	// Printed in the default banner
+	NotableVariables []string `json:"notableVariables"`
+
 	// Commands configuration
 	Commands []CommandConfig `json:"commands"`
 }
@@ -106,7 +109,7 @@ func (c *GoalCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.category, "c", "", "Filter goals by category")
 	fs.StringVar(&c.run, "r", "", "Run specific goal directly")
 	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
-	fs.StringVar(&c.storageBackend, "storage-backend", "", "Storage backend to use: 'fs' (default) or 'memory')")
+	fs.StringVar(&c.storageBackend, "storage-backend", "", "Storage backend to use: 'fs' (default) or 'memory'")
 }
 
 // Execute runs the goal command

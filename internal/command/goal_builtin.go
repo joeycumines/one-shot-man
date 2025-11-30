@@ -18,6 +18,7 @@ func GetBuiltInGoals() []Goal {
 			HistoryFile:   ".comment-stripper_history",
 			EnableHistory: true,
 
+			// WARNING: Including contextItems may break the prompt.
 			StateKeys: map[string]interface{}{},
 
 			PromptInstructions: `Analyze the provided code and remove useless comments while refactoring useful ones according to these rules:
@@ -69,7 +70,6 @@ Maintain all functionality and behavior of the original code while improving its
 				{Name: "add", Type: "contextManager"},
 				{Name: "note", Type: "contextManager"},
 				{Name: "list", Type: "contextManager"},
-
 				{Name: "edit", Type: "contextManager"},
 				{Name: "remove", Type: "contextManager"},
 				{Name: "show", Type: "contextManager"},
@@ -227,14 +227,20 @@ Maintain all functionality and behavior of the original code while improving its
 			HistoryFile:   ".test-generator_history",
 			EnableHistory: true,
 
+			// printed on entry in the banner
+			NotableVariables: []string{`type`, `framework`},
+
 			StateKeys: map[string]interface{}{
-				"testType":  "unit",
+				"type":      "unit",
 				"framework": "auto",
 			},
 
-			PromptInstructions: `Generate {{.StateKeys.testType}} tests for the provided code following these guidelines:
+			PromptInstructions: `Generate {{.StateKeys.type}} tests for the provided code following these guidelines:
 
-{{.TestTypeInstructions}}{{.FrameworkInfo}}
+{{.TypeInstructions}}{{if and .StateKeys.framework (ne .StateKeys.framework "auto") }}
+
+Use the {{.StateKeys.framework}} testing framework.
+{{- end }}
 
 **Test Quality Standards:**
 - Write clear, descriptive test names that explain what is being tested
@@ -271,7 +277,7 @@ Maintain all functionality and behavior of the original code while improving its
 			ContextHeader: "CODE TO TEST",
 
 			PromptOptions: map[string]interface{}{
-				"testTypeInstructions": map[string]string{
+				"typeInstructions": map[string]string{
 					"unit": `Generate comprehensive unit tests including:
 - Test all public methods and functions
 - Cover all branches and edge cases
@@ -328,7 +334,7 @@ Maintain all functionality and behavior of the original code while improving its
 					Usage:       "type <unit|integration|e2e|performance|security>",
 					Handler: `function (args) {
 						if (args.length === 0) {
-							output.print("Current type: " + (state.get(StateKeys.testType) || "unit"));
+							output.print("Current type: " + (state.get(StateKeys.type) || "unit"));
 							output.print("Available types: unit, integration, e2e, performance, security");
 							return;
 						}
@@ -338,7 +344,7 @@ Maintain all functionality and behavior of the original code while improving its
 							output.print("Invalid type. Available: " + validTypes.join(", "));
 							return;
 						}
-						state.set(StateKeys.testType, type);
+						state.set(StateKeys.type, type);
 						output.print("Test type set to: " + type);
 					}`,
 				},

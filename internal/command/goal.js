@@ -12,6 +12,8 @@
     }
 
     const config = GOAL_CONFIG;
+    const tuiTitle = config.tuiTitle || config.name;
+
     const nextIntegerId = require('osm:nextIntegerId');
     const {buildContext, contextManager} = require('osm:ctxutil');
     const template = require('osm:text/template');
@@ -24,10 +26,14 @@
         [shared.contextItems]: {defaultValue: []}
     };
 
-    // Create command-specific symbols
+    // Create command-specific symbols (that is, this command - NOT shared).
     const StateKeys = {contextItems: shared.contextItems}; // For convenience
     if (config.stateKeys) {
         for (const key in config.stateKeys) {
+            if (!Object.hasOwn(config.stateKeys, key)) {
+                continue;
+            }
+
             // Create the symbol, namespaced by the goal name
             const symbol = Symbol(config.name + ":" + key);
             StateKeys[key] = symbol; // Store for JS-side access
@@ -42,93 +48,136 @@
     // Create the state accessor
     const state = tui.createState(config.name, stateContractDef);
 
-    // Build commands from configuration
-    function buildCommands(state) {
-        // Build prompt from configuration
-        function buildPrompt() {
-            // Get current state values for template interpolation
-            const stateVars = {};
-            if (config.stateKeys) {
-                for (const key in config.stateKeys) {
-                    stateVars[key] = state.get(StateKeys[key]);
+    const templateFuncs = {
+        upper: function (s) {
+            return s.toUpperCase();
+        },
+    };
+
+    // the banner is able to overridden via config
+    const bannerTemplate = template.new("bannerText");
+    bannerTemplate.funcs(templateFuncs);
+    bannerTemplate.parse(config.bannerText ||
+        '=== {{ .tuiTitle }}{{ if .notableVariables }}:{{ range .notableVariables }} ' +
+        '{{ . }}={{ index $.StateKeys . }}{{ end }}{{ end }} ===\n' +
+        'Type \'help\' for commands.');
+
+    // Build prompt from configuration
+    function buildPrompt() {
+        const templateData = buildBaseTemplateData(); // N.B. func defined below
+
+        templateData.ContextTxtar = buildContext(state.get(StateKeys.contextItems), {toTxtar: () => context.toTxtar()});
+
+        // The promptInstructions string is itself a template. We must execute it
+        // first using the template data we've just constructed to resolve any
+        // dynamic values before injecting it into the main prompt template.
+        const instructionsTmpl = template.new("instructions");
+        // Ensure the instructions template has access to the same helper functions.
+        instructionsTmpl.funcs(templateFuncs);
+        instructionsTmpl.parse(config.promptInstructions || "");
+        templateData.PromptInstructions = instructionsTmpl.execute(templateData);
+
+        // Create template with custom functions
+        const tmpl = template.new("goal");
+        tmpl.funcs(templateFuncs);
+        tmpl.parse(config.promptTemplate || "");
+
+        return tmpl.execute(templateData);
+    }
+
+    // Create context manager
+    const ctxmgr = contextManager({
+        getItems: () => state.get(shared.contextItems) || [],
+        setItems: (v) => state.set(shared.contextItems, v),
+        nextIntegerId,
+        buildPrompt,
+    });
+
+    function buildBaseTemplateData() {
+        // Prepare template data
+        const templateData = {
+            Description: config.description || "",
+            ContextHeader: config.contextHeader || "CONTEXT",
+            StateKeys: {},
+            promptOptions: config.promptOptions,
+            tuiTitle,
+            notableVariables: config.notableVariables || [],
+        };
+
+        if (config.stateKeys) {
+            for (const key in config.stateKeys) {
+                if (Object.hasOwn(config.stateKeys, key)) {
+                    templateData.StateKeys[key] = state.get(StateKeys[key]);
                 }
             }
-
-            // Build context txtar
-            const fullContext = buildContext(state.get(StateKeys.contextItems), {toTxtar: () => context.toTxtar()});
-
-            // Use the promptTemplate from Go configuration
-            const promptText = config.promptTemplate || "";
-
-            // Prepare template data
-            const templateData = {
-                Description: config.description || "",
-                ContextHeader: config.contextHeader || "CONTEXT",
-                ContextTxtar: fullContext,
-                StateKeys: stateVars
-            };
-
-            // Handle promptInstructions with dynamic substitutions
-            let instructions = config.promptInstructions || "";
-
-            // Handle dynamic instruction substitutions from promptOptions
-            if (config.promptOptions) {
-                for (const optionKey in config.promptOptions) {
-                    const optionMap = config.promptOptions[optionKey];
-                    if (typeof optionMap === 'object' && optionMap !== null) {
-                        const stateKeyBase = optionKey.replace(/Instructions$/, '');
-                        const stateValue = stateVars[stateKeyBase];
-                        if (stateValue && optionMap[stateValue]) {
-                            templateData[optionKey.charAt(0).toUpperCase() + optionKey.slice(1)] = optionMap[stateValue];
-                        }
-                    }
-                }
-            }
-
-            // Handle framework info
-            if (stateVars.framework && stateVars.framework !== "auto") {
-                templateData.FrameworkInfo = "\nUse the " + stateVars.framework + " testing framework.";
-            } else {
-                templateData.FrameworkInfo = "";
-            }
-
-            const funcs = {
-                upper: function (s) {
-                    return s.toUpperCase();
-                },
-            };
-
-            // The promptInstructions string is itself a template. We must execute it
-            // first using the template data we've just constructed to resolve any
-            // dynamic values before injecting it into the main prompt template.
-            const instructionsTmpl = template.new("instructions");
-            // Ensure the instructions template has access to the same helper functions.
-            instructionsTmpl.funcs(funcs);
-            instructionsTmpl.parse(instructions);
-            templateData.PromptInstructions = instructionsTmpl.execute(templateData);
-
-            // Create template with custom functions
-            const tmpl = template.new("goal");
-            tmpl.funcs(funcs);
-            tmpl.parse(promptText);
-
-            return tmpl.execute(templateData);
         }
 
-        // Create context manager
-        const ctxmgr = contextManager({
-            getItems: () => state.get(shared.contextItems) || [],
-            setItems: (v) => state.set(shared.contextItems, v),
-            nextIntegerId: nextIntegerId,
-            buildPrompt: buildPrompt
-        });
+        // Handle dynamic instruction substitutions from promptOptions.
+        // This maps state keys to specific instructions based on the current state value.
+        // E.g., if StateKeys.language is "ES", it looks for promptOptions.languageInstructions["ES"].
+        if (typeof config.promptOptions === 'object' && config.promptOptions !== null) {
+            const instructionsSuffix = 'Instructions';
 
+            for (const optionKey in config.promptOptions) {
+                // 1. Validate the optionKey format and existence.
+                if (!Object.hasOwn(config.promptOptions, optionKey) ||
+                    typeof optionKey !== 'string' ||
+                    !optionKey.endsWith(instructionsSuffix) ||
+                    optionKey === instructionsSuffix) {
+                    continue;
+                }
+
+                const optionMap = config.promptOptions[optionKey];
+
+                // 2. Validate that the value associated with the key is a map (object).
+                if (typeof optionMap !== 'object' || optionMap === null) {
+                    continue;
+                }
+
+                // 3. Derive the stateKey (e.g., "language" from "languageInstructions").
+                const stateKey = optionKey.substring(0, optionKey.length - instructionsSuffix.length);
+
+                // 4. Verify this state key exists in the configuration.
+                if (!config.stateKeys || !Object.hasOwn(config.stateKeys, stateKey)) {
+                    continue;
+                }
+
+                // 5. Get the current active value for this state (e.g., "EN", "dark_mode", etc.).
+                const stateValue = templateData.StateKeys?.[stateKey];
+
+                // Check if the state value is valid string.
+                if (typeof stateValue !== 'string' || stateValue === '') {
+                    continue;
+                }
+
+                // 6. DIRECT LOOKUP: Check if an instruction exists for this specific state value.
+                // (Previously, this was wrapped in a redundant loop iterating over all map keys).
+                if (!Object.hasOwn(optionMap, stateValue)) {
+                    continue;
+                }
+
+                const instructionsValue = optionMap[stateValue];
+
+                // 7. Apply the instruction if valid.
+                if (typeof instructionsValue === 'string' && instructionsValue !== '') {
+                    const targetKey = stateKey.charAt(0).toUpperCase() + stateKey.slice(1) + instructionsSuffix;
+                    templateData[targetKey] = instructionsValue;
+                }
+            }
+        }
+
+
+
+        return templateData;
+    }
+
+    // Build commands from configuration
+    function buildCommands() {
         const commands = {
             // N.B. This inherits the default description, and runs _after_ the built-in help.
             help: {handler: help},
         };
 
-        // Guard against undefined commands array
         const commandConfigs = config.commands || [];
 
         for (let i = 0; i < commandConfigs.length; i++) {
@@ -187,11 +236,10 @@
         return commands;
     }
 
-    function banner() {
-        if (config.bannerText) {
-            output.print(config.bannerText);
-        }
-        output.print("Type 'help' for commands.");
+    function printBanner() {
+        const templateData = buildBaseTemplateData();
+        const bannerText = bannerTemplate.execute(templateData);
+        output.print(bannerText);
     }
 
     function help() {
@@ -206,15 +254,13 @@
         tui.registerMode({
             name: config.name,
             tui: {
-                title: config.tuiTitle || config.name,
+                title: tuiTitle,
                 prompt: config.tuiPrompt || "> ",
                 enableHistory: config.enableHistory || false,
                 historyFile: config.historyFile || ""
             },
-            onEnter: banner,
-            commands: function () {
-                return buildCommands(state);
-            }
+            onEnter: printBanner,
+            commands: buildCommands,
         });
     });
 })();

@@ -395,3 +395,82 @@ func TestGoalCommand_GoToJSPipeline_CommandsArray(t *testing.T) {
 		}
 	}
 }
+
+func TestGoalCommand_BuiltInGoal_NotableVariablesAndTypeState(t *testing.T) {
+	t.Parallel()
+
+	goals := GetBuiltInGoals()
+
+	var tg *Goal
+	for i := range goals {
+		if goals[i].Name == "test-generator" {
+			tg = &goals[i]
+			break
+		}
+	}
+
+	if tg == nil {
+		t.Fatalf("test-generator goal not found in built-ins")
+	}
+
+	// NotableVariables must exist and include the expected entries
+	foundType := false
+	foundFramework := false
+	for _, v := range tg.NotableVariables {
+		if v == "type" {
+			foundType = true
+		}
+		if v == "framework" {
+			foundFramework = true
+		}
+	}
+	if !foundType || !foundFramework {
+		t.Fatalf("test-generator NotableVariables expected to contain 'type' and 'framework', got: %v", tg.NotableVariables)
+	}
+
+	// Ensure the stateKeys map uses "type" (not the old "testType") and has default "unit"
+	if _, ok := tg.StateKeys["testType"]; ok {
+		t.Fatalf("unexpected legacy key 'testType' found in StateKeys")
+	}
+
+	v, ok := tg.StateKeys["type"]
+	if !ok {
+		t.Fatalf("expected StateKeys to contain 'type', got keys: %v", tg.StateKeys)
+	}
+	if sv, ok := v.(string); !ok || sv != "unit" {
+		t.Fatalf("expected default StateKeys['type'] == 'unit', got: %#v", v)
+	}
+}
+
+func TestGoalCommand_BannerIncludesNotableVariablesOnEnter(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewConfig()
+	goalRegistry := newTestGoalRegistryForGoal()
+	cmd := NewGoalCommand(cfg, goalRegistry)
+
+	var stdout, stderr bytes.Buffer
+	// positional arg implies interactive; use testMode to avoid starting an actual TUI
+	cmd.testMode = true
+
+	// keep test isolated
+	cmd.storageBackend = "memory"
+	cmd.session = t.Name()
+
+	err := cmd.Execute([]string{"test-generator"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("expected success running positional test-generator, got: %v, stderr=%s", err, stderr.String())
+	}
+
+	got := stdout.String()
+	// Banner should include the TUITitle and the notable variables
+	if !strings.Contains(got, "Test Generator") {
+		t.Errorf("expected banner to include 'Test Generator' title, got: %s", got)
+	}
+	if !strings.Contains(got, "type=unit") {
+		t.Errorf("expected banner to include 'type=unit', got: %s", got)
+	}
+	if !strings.Contains(got, "framework=auto") {
+		t.Errorf("expected banner to include 'framework=auto', got: %s", got)
+	}
+}

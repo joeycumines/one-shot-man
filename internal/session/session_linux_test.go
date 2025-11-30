@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // =============================================================================
@@ -346,18 +347,9 @@ func TestFindStableAnchorLinux_MaxDepthProtection(t *testing.T) {
 	select {
 	case <-done:
 		// Good - function completed
-	case <-waitTimeout(5000): // 5 second timeout
+	case <-time.After(5 * time.Second): // 5 second timeout
 		t.Fatal("findStableAnchorLinux took too long - possible infinite loop")
 	}
-}
-
-// helper function for timeout
-func waitTimeout(ms int) <-chan bool {
-	ch := make(chan bool)
-	go func() {
-		// Just wait - we use select with timeout
-	}()
-	return ch
 }
 
 // =============================================================================

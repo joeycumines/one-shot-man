@@ -445,14 +445,9 @@ func TestGhostAnchorPrevention_Windows(t *testing.T) {
 		t.Fatalf("findStableAnchorWindows failed: %v", err)
 	}
 
-	// PID should be non-zero
+	// PID should be non-zero (not the system idle process)
 	if pid == 0 {
-		t.Error("anchor PID should not be 0")
-	}
-
-	// Should not be system idle process (PID 0) or invalid
-	if pid == 0 {
-		t.Error("anchor should not be system idle process")
+		t.Error("anchor PID should not be 0 (system idle process)")
 	}
 }
 

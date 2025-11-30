@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // =============================================================================
@@ -714,18 +715,9 @@ func TestGetTmuxSessionID_Timeout(t *testing.T) {
 	select {
 	case <-done:
 		// Good - function completed
-	case <-timeout(2000): // 2 second timeout for the test
+	case <-time.After(2 * time.Second): // 2 second timeout for the test
 		t.Error("getTmuxSessionID took too long - timeout may not be working")
 	}
-}
-
-// helper for test timeout
-func timeout(ms int) <-chan bool {
-	ch := make(chan bool)
-	go func() {
-		select {}
-	}()
-	return ch
 }
 
 // =============================================================================

@@ -1,6 +1,6 @@
 module github.com/joeycumines/one-shot-man
 
-go 1.25.3
+go 1.25.4
 
 tool (
 	github.com/joeycumines/simple-command-output-filter
@@ -13,7 +13,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/dop251/goja v0.0.0-20251121114222-56b1242a5f86
 	github.com/dop251/goja_nodejs v0.0.0-20251015164255-5e94316bedaf
-	github.com/gdamore/tcell/v2 v2.12.2
+	github.com/gdamore/tcell/v2 v2.13.1
 	github.com/joeycumines/go-prompt v0.0.0-20251023223825-ff8b80a79653
 	github.com/rivo/tview v0.42.0
 	github.com/stretchr/testify v1.11.1
@@ -51,7 +51,7 @@ require (
 	golang.org/x/exp/typeparams v0.0.0-20251125195548-87e1e737ad39 // indirect
 	golang.org/x/mod v0.30.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
-	golang.org/x/telemetry v0.0.0-20251124170345-55bbf377f459 // indirect
+	golang.org/x/telemetry v0.0.0-20251128220624-abf20d0e57ec // indirect
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

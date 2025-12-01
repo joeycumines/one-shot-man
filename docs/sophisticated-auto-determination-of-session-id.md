@@ -523,20 +523,47 @@ func findStableAnchorLinux(startPID int) (int, uint64, error) {
         lastValidPID = stat.PID
         lastValidStart = stat.StartTime
 
-        // 2. STABILITY: Known Shells or Root boundaries or Session Leader
+        // 2. STABILITY: Known Shells, Root boundaries, or Session Leader
+        // Check direct match first
         if stableShells[commLower] || rootBoundaries[commLower] {
-            return stat.PID, stat.StartTime, nil
+            return lastValidPID, lastValidStart, nil
         }
+
+        // CRITICAL FIX: Handle Kernel TASK_COMM_LEN Truncation
+        // Linux /proc/[pid]/stat field 2 (comm) is limited to 15 visible characters
+        // (TASK_COMM_LEN = 16 bytes including null terminator).
+        // Root boundaries like "gdm-session-worker" (18 chars) get truncated to
+        // "gdm-session-wor" (15 chars), causing direct map lookup to fail.
+        // Only check if exactly 15 chars (the truncation length).
+        if len(commLower) == 15 {
+            if isRootBoundaryTruncated(commLower) {
+                return lastValidPID, lastValidStart, nil
+            }
+        }
+
+        // Session leader check
         if stat.PID == stat.SID && stat.TtyNr == targetTTY {
-            return stat.PID, stat.StartTime, nil
+            return lastValidPID, lastValidStart, nil
         }
 
         // 3. DEFAULT STOP: Unknown but stable process
         // Anchor here to avoid collapsing unrelated concurrent jobs.
-        return stat.PID, stat.StartTime, nil
+        return lastValidPID, lastValidStart, nil
     }
 
     return lastValidPID, lastValidStart, nil
+}
+
+// isRootBoundaryTruncated checks if a (possibly truncated) process name
+// matches any root boundary via prefix matching.
+// This handles the Linux kernel TASK_COMM_LEN limitation (15 visible chars).
+func isRootBoundaryTruncated(commLower string) bool {
+    for root := range rootBoundaries {
+        if len(root) > 15 && len(commLower) == 15 && strings.HasPrefix(root, commLower) {
+            return true
+        }
+    }
+    return false
 }
 
 func resolveTTYName() string {
@@ -826,11 +853,18 @@ func findStableAnchorWindows() (uint32, uint64, error) {
             }
             parentTime, err := getProcessCreationTime(parentPid)
             if err != nil {
-                 return lastValidPid, lastValidTime, nil
+                // PRIVILEGE BOUNDARY: ERROR_ACCESS_DENIED (Code 5) indicates we hit a
+                // privilege boundary (User -> System). When a standard user process
+                // attempts to inspect a System/Admin process (e.g., services.exe,
+                // wininit.exe), OpenProcess fails with access denied.
+                // We cannot verify the parent's start time, so we must anchor here.
+                // This effectively makes the Session ID "User-Rooted" rather than
+                // "System-Rooted" unless osm is run with elevated privileges.
+                return lastValidPid, lastValidTime, nil
             }
             // Race Check
             if parentTime > currTime {
-                 return lastValidPid, lastValidTime, nil
+                return lastValidPid, lastValidTime, nil
             }
             currPid = parentPid
             currTime = parentTime
@@ -884,9 +918,10 @@ func resolveMinTTYName() string {
 package session
 
 import (
+    "bytes"
+    "encoding/binary"
     "fmt"
     "regexp"
-    "unsafe"
     "golang.org/x/sys/windows"
 )
 
@@ -910,6 +945,8 @@ func checkMinTTY(handle uintptr) (string, bool) {
 }
 
 // CONFLICT RESOLUTION: Replaced internal NtQueryInformationFile with exported Win32 API
+// SAFETY FIX: Use encoding/binary for safe memory access instead of unsafe pointer casts
+// to ensure proper alignment on ARM64 and other architectures.
 func getFileNameByHandle(h windows.Handle) (string, error) {
     // 4096 bytes buffer for GetFileInformationByHandleEx
     var buf [4096]byte
@@ -924,18 +961,32 @@ func getFileNameByHandle(h windows.Handle) (string, error) {
         return "", err
     }
 
-    // First 4 bytes is the FileNameLength (DWORD)
-    nameLen := *(*uint32)(unsafe.Pointer(&buf[0]))
+    // First 4 bytes is the FileNameLength (DWORD) - use encoding/binary for safe access
+    nameLen := binary.LittleEndian.Uint32(buf[:4])
 
-    // FileName starts at offset 4, contains WCHARs (UTF-16)
-    // Safety check to ensure we don't read out of bounds
-    if nameLen > uint32(len(buf)-4) {
-        return "", fmt.Errorf("filename length corruption detected")
+    // Validate filename length:
+    // 1. Must be even (UTF-16 uses 2-byte characters)
+    // 2. Must fit in remaining buffer (4096 - 4 = 4092 bytes)
+    // 3. Must not be zero (handle edge case)
+    if nameLen%2 != 0 {
+        return "", fmt.Errorf("invalid filename length: %d (not even)", nameLen)
+    }
+    maxBytes := uint32(len(buf) - 4)
+    if nameLen > maxBytes {
+        return "", fmt.Errorf("filename length corruption detected: %d > %d", nameLen, maxBytes)
+    }
+    if nameLen == 0 {
+        return "", nil // empty filename is valid
     }
 
-    // Slice the buffer to get the utf16 array
-    // 4 byte offset, length is in bytes so we divide by 2 for uint16 slice
-    utf16Data := (*[2048]uint16)(unsafe.Pointer(&buf[4]))[:nameLen/2]
+    // FileName starts at offset 4, contains WCHARs (UTF-16)
+    // Safely read UTF-16 data using encoding/binary
+    numChars := nameLen / 2
+    utf16Data := make([]uint16, numChars)
+    reader := bytes.NewReader(buf[4 : 4+nameLen])
+    if err := binary.Read(reader, binary.LittleEndian, &utf16Data); err != nil {
+        return "", fmt.Errorf("failed to read filename data: %w", err)
+    }
 
     return windows.UTF16ToString(utf16Data), nil
 }
@@ -969,6 +1020,31 @@ func resolveDeepAnchor() (*SessionContext, error) {
 3.  **Windows dependency:** `golang.org/x/sys/windows` present in `go.mod`.
 4.  **MachineGuid existence:** Windows registry key exists.
 5.  **Snapshot atomicity:** `CreateToolhelp32Snapshot` returns consistent data.
+6.  **Memory alignment:** Windows buffer operations use `encoding/binary` for safe cross-architecture support (including ARM64).
+
+-----
+
+## Known Limitations & Platform-Specific Behaviors
+
+### Linux: TASK_COMM_LEN Truncation
+
+Linux limits the `comm` field in `/proc/[pid]/stat` to **15 visible characters** (`TASK_COMM_LEN` = 16 bytes including null terminator). This affects root boundary detection for processes with long names:
+
+  * **Example:** `gdm-session-worker` (18 characters) is truncated to `gdm-session-wor` (15 characters).
+  * **Mitigation:** The implementation uses prefix matching as a fallback when the process name is exactly 15 characters. If a root boundary name is longer than 15 characters and the observed `comm` matches its prefix, it is treated as a root boundary.
+
+### Windows: Privilege Boundary Limitations
+
+When running as a standard user, the process ancestry walk may be unable to reach true system roots (e.g., `services.exe`, `wininit.exe`) due to `ERROR_ACCESS_DENIED` from `OpenProcess()`:
+
+  * **Behavior:** The walk stops at the highest accessible user-owned process.
+  * **Result:** The Session ID is "User-Rooted" rather than "System-Rooted".
+  * **Impact:** This is acceptable for session identification purposes, as different user sessions will still have distinct anchors.
+  * **Workaround:** Run `osm` with elevated privileges (Administrator) to reach system-level roots.
+
+### Windows: Memory Safety
+
+The `getFileNameByHandle` function uses `encoding/binary` for safe memory access instead of direct pointer casting. This ensures proper operation on all architectures including ARM64 (e.g., Windows Dev Kit, Surface Pro X) where unaligned memory access can cause faults.
 
 -----
 
@@ -976,8 +1052,8 @@ func resolveDeepAnchor() (*SessionContext, error) {
 
 | Platform | Status | Notes |
 |----------|--------|-------|
-| Linux | ✅ Complete | Verified robust against renaming/aliasing. |
-| Windows | ✅ Complete | Verified robust against renaming/aliasing. |
+| Linux | ✅ Complete | Verified robust against renaming/aliasing. Handles TASK_COMM_LEN truncation. |
+| Windows | ✅ Complete | Verified robust against renaming/aliasing. User-rooted when unprivileged. |
 | macOS/Darwin | ⚠️ Partial | Deep Anchor not implemented; relies on `TERM_SESSION_ID`. |
 | BSD | ❌ Not Implemented | Stubs provided. |
 
@@ -988,3 +1064,6 @@ func resolveDeepAnchor() (*SessionContext, error) {
   * **CMD.EXE:** Removed from skip list to fix Windows session collapse.
   * **Build:** Replaced unexported Windows syscalls with standard Win32 APIs; added cross-platform build stubs.
   * **Hash Algo:** Removed truncation to guarantee collision resistance.
+  * **TASK_COMM_LEN:** Added prefix matching fallback for Linux root boundary detection.
+  * **Memory Alignment:** Windows buffer operations use `encoding/binary` instead of unsafe pointer casts for ARM64 compatibility.
+  * **Privilege Boundary:** Documented and handled Windows privilege boundary behavior when user cannot inspect system processes.

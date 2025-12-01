@@ -454,6 +454,97 @@ func TestRootBoundaries_ContainsExpectedProcesses(t *testing.T) {
 }
 
 // =============================================================================
+// TASK_COMM_LEN Truncation Tests (Linux-specific)
+// Per doc: Linux limits comm to 15 visible chars; we must handle truncated names
+// =============================================================================
+
+func TestIsRootBoundaryTruncated_LongNames(t *testing.T) {
+	// gdm-session-worker is 18 characters, truncated to 15 = "gdm-session-wor"
+	truncated := "gdm-session-wor"
+	if len(truncated) != 15 {
+		t.Fatalf("test setup error: truncated name should be 15 chars, got %d", len(truncated))
+	}
+	if !isRootBoundaryTruncated(truncated) {
+		t.Errorf("expected %q to match truncated root boundary 'gdm-session-worker'", truncated)
+	}
+}
+
+func TestIsRootBoundaryTruncated_ShortNames(t *testing.T) {
+	// Short names (< 15 chars) should NOT trigger prefix matching
+	shortNames := []string{"init", "systemd", "login", "sshd", "lightdm"}
+	for _, name := range shortNames {
+		// These should be matched by direct lookup, not by truncation fallback
+		if isRootBoundaryTruncated(name) && len(name) < 15 {
+			t.Errorf("short name %q should not match via truncation fallback", name)
+		}
+	}
+}
+
+func TestIsRootBoundaryTruncated_NonMatching(t *testing.T) {
+	// 15-char names that don't match any root boundary prefix
+	nonMatching := []string{
+		"abcdefghijklmno", // random 15-char string
+		"notarootboundar", // not a prefix of any boundary
+	}
+	for _, name := range nonMatching {
+		if isRootBoundaryTruncated(name) {
+			t.Errorf("non-matching name %q should not match as truncated root boundary", name)
+		}
+	}
+}
+
+func TestIsRootBoundaryTruncated_NotExactly15Chars(t *testing.T) {
+	// Names not exactly 15 chars should not trigger truncation logic
+	// Even if they're a prefix of a boundary name
+	testCases := []string{
+		"gdm-session-wo",  // 14 chars - too short
+		"gdm-session-wor", // 15 chars - should match
+		"gdm-session-work", // 16 chars - too long (impossible from kernel, but test anyway)
+	}
+	
+	// First should not match (14 chars)
+	if isRootBoundaryTruncated(testCases[0]) {
+		t.Errorf("14-char name should not trigger truncation matching")
+	}
+	
+	// Second should match (15 chars)
+	if !isRootBoundaryTruncated(testCases[1]) {
+		t.Errorf("15-char truncated name should match")
+	}
+	
+	// Third should not match (16 chars)
+	if isRootBoundaryTruncated(testCases[2]) {
+		t.Errorf("16-char name should not trigger truncation matching")
+	}
+}
+
+func TestFindStableAnchorLinux_HandlesTruncatedRootBoundary(t *testing.T) {
+	// This is a behavior test - we verify that if a process has a 15-char
+	// name that matches a truncated root boundary, we stop there.
+	// We can't easily mock this, but we verify the code path exists
+	// by checking the isRootBoundaryTruncated function directly.
+	
+	// Verify "gdm-session-worker" would be detected even when truncated
+	fullName := "gdm-session-worker"
+	truncated := fullName[:15] // "gdm-session-wor"
+	
+	// Direct lookup should fail for truncated name
+	if rootBoundaries[truncated] {
+		t.Error("truncated name should not be in rootBoundaries directly")
+	}
+	
+	// But full name should be in the map
+	if !rootBoundaries[fullName] {
+		t.Error("full name should be in rootBoundaries")
+	}
+	
+	// And truncation fallback should catch it
+	if !isRootBoundaryTruncated(truncated) {
+		t.Error("truncation fallback should match truncated name")
+	}
+}
+
+// =============================================================================
 // TTY Resolution Tests (Linux-specific)
 // Per doc: Phase A - CTTY Resolution via /proc/self/fd/N symlinks
 // =============================================================================

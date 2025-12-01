@@ -227,10 +227,26 @@ func findStableAnchorLinux(startPID int) (int, uint64, error) {
 		lastValidPID = stat.PID
 		lastValidStart = stat.StartTime
 
-		// 2. STABILITY: Known Shells or Root boundaries or Session Leader
+		// 2. STABILITY: Known Shells, Root boundaries, or Session Leader
+		// Check direct match first
 		if stableShells[commLower] || rootBoundaries[commLower] {
 			return lastValidPID, lastValidStart, nil
 		}
+
+		// CRITICAL FIX: Handle Kernel TASK_COMM_LEN Truncation
+		// Linux /proc/[pid]/stat field 2 (comm) is limited to 15 visible characters
+		// (TASK_COMM_LEN = 16 bytes including null terminator).
+		// Root boundaries like "gdm-session-worker" (18 chars) get truncated to
+		// "gdm-session-wor" (15 chars), causing direct map lookup to fail.
+		// We must fall back to prefix matching for truncated names.
+		// Only check if exactly 15 chars (the truncation length).
+		if len(commLower) == 15 {
+			if isRootBoundaryTruncated(commLower) {
+				return lastValidPID, lastValidStart, nil
+			}
+		}
+
+		// Session leader check
 		if stat.PID == stat.SID && stat.TtyNr == targetTTY {
 			return lastValidPID, lastValidStart, nil
 		}
@@ -241,6 +257,20 @@ func findStableAnchorLinux(startPID int) (int, uint64, error) {
 	}
 
 	return lastValidPID, lastValidStart, nil
+}
+
+// isRootBoundaryTruncated checks if a (possibly truncated) process name
+// matches any root boundary via prefix matching.
+// This handles the Linux kernel TASK_COMM_LEN limitation (15 visible chars).
+func isRootBoundaryTruncated(commLower string) bool {
+	for root := range rootBoundaries {
+		// Only do prefix check if the root boundary name is longer than 15 chars
+		// and the comm is exactly 15 chars (indicating truncation)
+		if len(root) > 15 && len(commLower) == 15 && strings.HasPrefix(root, commLower) {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveTTYName tries to get the TTY name from file descriptors.

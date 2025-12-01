@@ -202,6 +202,13 @@ func findStableAnchorWindows() (uint32, uint64, error) {
 			}
 			parentTime, err := getProcessCreationTime(parentPid)
 			if err != nil {
+				// PRIVILEGE BOUNDARY: ERROR_ACCESS_DENIED (Code 5) indicates we hit a
+				// privilege boundary (User -> System). When a standard user process
+				// attempts to inspect a System/Admin process (e.g., services.exe,
+				// wininit.exe), OpenProcess fails with access denied.
+				// We cannot verify the parent's start time, so we must anchor here.
+				// This effectively makes the Session ID "User-Rooted" rather than
+				// "System-Rooted" unless osm is run with elevated privileges.
 				return lastValidPid, lastValidTime, nil
 			}
 			// Race Check

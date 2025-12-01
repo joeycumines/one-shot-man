@@ -3,6 +3,8 @@
 package session
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"regexp"
@@ -270,6 +272,8 @@ func checkMinTTY(handle uintptr) (string, bool) {
 
 // getFileNameByHandle retrieves the file name associated with a handle.
 // CONFLICT RESOLUTION: Replaced internal NtQueryInformationFile with exported Win32 API
+// SAFETY FIX: Use encoding/binary for safe memory access instead of unsafe pointer casts
+// to ensure proper alignment on ARM64 and other architectures.
 func getFileNameByHandle(h windows.Handle) (string, error) {
 	// 4096 bytes buffer for GetFileInformationByHandleEx
 	var buf [4096]byte
@@ -284,22 +288,32 @@ func getFileNameByHandle(h windows.Handle) (string, error) {
 		return "", err
 	}
 
-	// First 4 bytes is the FileNameLength (DWORD)
-	nameLen := *(*uint32)(unsafe.Pointer(&buf[0]))
+	// First 4 bytes is the FileNameLength (DWORD) - use encoding/binary for safe access
+	nameLen := binary.LittleEndian.Uint32(buf[:4])
 
-	// FileName starts at offset 4, contains WCHARs (UTF-16)
-	// Safety check to ensure we don't read out of bounds
-	// Buffer is 4096 bytes, minus 4 for length field = 4092 bytes for filename
-	// Maximum UTF-16 characters: 4092 / 2 = 2046
-	maxChars := uint32((len(buf) - 4) / 2)
-	if nameLen/2 > maxChars {
-		return "", fmt.Errorf("filename length corruption detected")
+	// Validate filename length:
+	// 1. Must be even (UTF-16 uses 2-byte characters)
+	// 2. Must fit in remaining buffer (4096 - 4 = 4092 bytes)
+	// 3. Must not be zero (handle edge case)
+	if nameLen%2 != 0 {
+		return "", fmt.Errorf("invalid filename length: %d (not even)", nameLen)
+	}
+	maxBytes := uint32(len(buf) - 4)
+	if nameLen > maxBytes {
+		return "", fmt.Errorf("filename length corruption detected: %d > %d", nameLen, maxBytes)
+	}
+	if nameLen == 0 {
+		return "", nil // empty filename is valid
 	}
 
-	// Slice the buffer to get the utf16 array
-	// 4 byte offset, length is in bytes so we divide by 2 for uint16 slice
-	// Use the buffer size limit (2046) which matches our 4096-4 byte buffer
-	utf16Data := (*[2046]uint16)(unsafe.Pointer(&buf[4]))[:nameLen/2]
+	// FileName starts at offset 4, contains WCHARs (UTF-16)
+	// Safely read UTF-16 data using encoding/binary
+	numChars := nameLen / 2
+	utf16Data := make([]uint16, numChars)
+	reader := bytes.NewReader(buf[4 : 4+nameLen])
+	if err := binary.Read(reader, binary.LittleEndian, &utf16Data); err != nil {
+		return "", fmt.Errorf("failed to read filename data: %w", err)
+	}
 
 	return windows.UTF16ToString(utf16Data), nil
 }

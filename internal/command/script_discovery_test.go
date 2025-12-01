@@ -34,7 +34,8 @@ func TestScriptDiscovery_ConfigurationLoading(t *testing.T) {
 	cfg.SetGlobalOption("script.autodiscovery", "true")
 	cfg.SetGlobalOption("script.git-traversal", "true")
 	cfg.SetGlobalOption("script.max-traversal-depth", "5")
-	cfg.SetGlobalOption("script.paths", "~/custom-scripts:/opt/scripts")
+	// Use comma separator for cross-platform compatibility
+	cfg.SetGlobalOption("script.paths", "~/custom-scripts,/opt/scripts")
 	cfg.SetGlobalOption("script.path-patterns", "scripts,bin,commands")
 
 	discovery := NewScriptDiscovery(cfg)
@@ -310,6 +311,8 @@ func TestScriptDiscovery_PathPriority(t *testing.T) {
 func TestScriptDiscovery_ParsePathList(t *testing.T) {
 	t.Parallel()
 	sep := string([]byte{filepath.ListSeparator})
+	
+	// Platform-agnostic tests using comma (works on all platforms)
 	tests := []struct {
 		input    string
 		expected []string
@@ -317,11 +320,13 @@ func TestScriptDiscovery_ParsePathList(t *testing.T) {
 		{"", nil},
 		{"  ", nil},
 		{"single", []string{"single"}},
-		{"path1:path2", []string{"path1", "path2"}},
 		{"path1,path2", []string{"path1", "path2"}},
-		{"path1:path2:path3", []string{"path1", "path2", "path3"}},
-		{" path1 : path2 ", []string{"path1", "path2"}},
 		{" path1 , path2 ", []string{"path1", "path2"}},
+		{"path1,path2,path3", []string{"path1", "path2", "path3"}},
+		// Tests using platform-specific list separator
+		{"path1" + sep + "path2", []string{"path1", "path2"}},
+		{"path1" + sep + "path2" + sep + "path3", []string{"path1", "path2", "path3"}},
+		{" path1 " + sep + " path2 ", []string{"path1", "path2"}},
 		{"path1" + sep + "path2,path3", []string{"path1", "path2", "path3"}},
 	}
 

@@ -10,24 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  # Primary test job that runs the full make target (including linting)
+  # Primary test job that runs the full make target (including linting) on all platforms
   make:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v5
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: 'stable'
-    - name: Run tests
-      run: |-
-        v="$(nproc)" &&
-        [ ! -z "$v" ] &&
-        make -j "$v"
-
-  # Cross-platform test job for session package
-  # Ensures session ID logic works correctly on all platforms
-  test-session:
     strategy:
       fail-fast: false
       matrix:
@@ -39,7 +23,22 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: 'stable'
-    - name: Run session package tests
-      run: go test -v -count=1 ./internal/session/...
-    - name: Run all tests
-      run: go test -v -count=1 ./...
+    - name: Detect CPU count and run tests (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        if [ "$(uname)" = "Darwin" ]; then
+          v="$(sysctl -n hw.logicalcpu)"
+        else
+          v="$(nproc)"
+        fi
+        [ -n "$v" ] && make -j "$v"
+    - name: Detect CPU count and run tests (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $cpuCount = (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors
+        if ($cpuCount -gt 0) {
+          make -j $cpuCount
+        } else {
+          make
+        }

@@ -23,6 +23,7 @@ require (
 )
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/joeycumines/go-bigbuff v1.21.0
 	golang.org/x/sys v0.38.0
 )

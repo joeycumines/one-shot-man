@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -11,6 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // GetSessionID implements the full discovery hierarchy.
@@ -72,11 +73,17 @@ func GetSessionID(explicitOverride string) (string, string, error) {
 }
 
 func getTmuxSessionID() (string, error) {
+	// Find the absolute path to tmux to avoid PATH manipulation issues
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		return "", fmt.Errorf("tmux not found in PATH: %w", err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
 	// Query tmux for the unique session identifier (e.g., "$0")
-	cmd := exec.CommandContext(ctx, "tmux", "display-message", "-p", "#{session_id}")
+	cmd := exec.CommandContext(ctx, tmuxPath, "display-message", "-p", "#{session_id}")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -85,11 +92,7 @@ func getTmuxSessionID() (string, error) {
 }
 
 func generateUUID() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
+	return uuid.NewString(), nil
 }
 
 // hashString computes a SHA256 hash of the input string for use in non-anchor session IDs

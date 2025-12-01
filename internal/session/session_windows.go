@@ -18,10 +18,10 @@ import (
 // Windows-specific skip list.
 // CONFLICT RESOLUTION: "cmd.exe" REMOVED. It is a shell, not a wrapper.
 var skipListWindows = map[string]bool{
-	"osm.exe":            true,
-	"time.exe":           true,
-	"taskeng.exe":        true,
-	"runtimebroker.exe":  true,
+	"osm.exe":           true,
+	"time.exe":          true,
+	"taskeng.exe":       true,
+	"runtimebroker.exe": true,
 }
 
 // knownShells defines processes that represent shell boundaries on Windows.

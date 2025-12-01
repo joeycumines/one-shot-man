@@ -497,21 +497,21 @@ func TestIsRootBoundaryTruncated_NotExactly15Chars(t *testing.T) {
 	// Names not exactly 15 chars should not trigger truncation logic
 	// Even if they're a prefix of a boundary name
 	testCases := []string{
-		"gdm-session-wo",  // 14 chars - too short
-		"gdm-session-wor", // 15 chars - should match
+		"gdm-session-wo",   // 14 chars - too short
+		"gdm-session-wor",  // 15 chars - should match
 		"gdm-session-work", // 16 chars - too long (impossible from kernel, but test anyway)
 	}
-	
+
 	// First should not match (14 chars)
 	if isRootBoundaryTruncated(testCases[0]) {
 		t.Errorf("14-char name should not trigger truncation matching")
 	}
-	
+
 	// Second should match (15 chars)
 	if !isRootBoundaryTruncated(testCases[1]) {
 		t.Errorf("15-char truncated name should match")
 	}
-	
+
 	// Third should not match (16 chars)
 	if isRootBoundaryTruncated(testCases[2]) {
 		t.Errorf("16-char name should not trigger truncation matching")
@@ -523,21 +523,21 @@ func TestFindStableAnchorLinux_HandlesTruncatedRootBoundary(t *testing.T) {
 	// name that matches a truncated root boundary, we stop there.
 	// We can't easily mock this, but we verify the code path exists
 	// by checking the isRootBoundaryTruncated function directly.
-	
+
 	// Verify "gdm-session-worker" would be detected even when truncated
 	fullName := "gdm-session-worker"
 	truncated := fullName[:15] // "gdm-session-wor"
-	
+
 	// Direct lookup should fail for truncated name
 	if rootBoundaries[truncated] {
 		t.Error("truncated name should not be in rootBoundaries directly")
 	}
-	
+
 	// But full name should be in the map
 	if !rootBoundaries[fullName] {
 		t.Error("full name should be in rootBoundaries")
 	}
-	
+
 	// And truncation fallback should catch it
 	if !isRootBoundaryTruncated(truncated) {
 		t.Error("truncation fallback should match truncated name")

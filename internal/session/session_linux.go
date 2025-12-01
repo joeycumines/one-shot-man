@@ -39,7 +39,7 @@ type ProcStat struct {
 	Comm      string
 	State     rune
 	PPID      int
-	SID       int    // Session ID (field 6)
+	SID       int // Session ID (field 6)
 	TtyNr     int
 	StartTime uint64
 }

@@ -311,7 +311,7 @@ func TestScriptDiscovery_PathPriority(t *testing.T) {
 func TestScriptDiscovery_ParsePathList(t *testing.T) {
 	t.Parallel()
 	sep := string([]byte{filepath.ListSeparator})
-	
+
 	// Platform-agnostic tests using comma (works on all platforms)
 	tests := []struct {
 		input    string

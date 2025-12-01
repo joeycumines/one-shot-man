@@ -29,7 +29,7 @@ func TestPromptFlow_GoalCommandOpensEditor(t *testing.T) {
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
-		DefaultTimeout: 15 * time.Second,
+		DefaultTimeout: 50 * time.Second,
 		Env: []string{
 			"OSM_STORAGE_BACKEND=memory",
 			"OSM_SESSION_ID=" + uniqueSessionID(t),

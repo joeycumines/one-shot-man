@@ -1,3 +1,5 @@
+//go:build unix
+
 package scripting
 
 // Testing patterns for TUI/terminal tests:

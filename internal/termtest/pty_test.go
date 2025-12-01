@@ -1,9 +1,10 @@
+//go:build unix
+
 package termtest
 
 import (
 	"context"
 	"os"
-	"runtime"
 	"testing"
 	"time"
 
@@ -14,10 +15,6 @@ import (
 // newTestPTY creates a PTYTest instance for the helper process.
 func newTestPTY(t *testing.T, command string, args ...string) *PTYTest {
 	t.Helper()
-	// On Windows, pty implementation is different. These tests assume a POSIX-like environment.
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping PTY tests on Windows")
-	}
 
 	ctx := context.Background()
 	// Re-exec the current test binary to run the helper process

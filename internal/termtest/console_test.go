@@ -1,8 +1,9 @@
+//go:build unix
+
 package termtest
 
 import (
 	"os"
-	"runtime"
 	"testing"
 	"time"
 
@@ -13,9 +14,6 @@ import (
 // newTestConsole creates a ConsoleProcess for the helper process.
 func newTestConsole(t *testing.T, opts Options) (*ConsoleProcess, error) {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping Console tests on Windows")
-	}
 
 	// Point to the test binary itself
 	opts.CmdName = os.Args[0]

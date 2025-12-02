@@ -7,21 +7,34 @@
 internal/termtest/*
 
 internal/scripting/builtin/ctxutil/ctxutil.go:*: unreachable func: SetRunGitDiffFn
+internal\scripting\builtin\ctxutil\ctxutil.go:*: unreachable func: SetRunGitDiffFn
 internal/scripting/builtin/ctxutil/ctxutil.go:*: unreachable func: SetGetDefaultGitDiffArgsFn
+internal\scripting\builtin\ctxutil\ctxutil.go:*: unreachable func: SetGetDefaultGitDiffArgsFn
 
 # DeserializeState is part of the public API for state persistence (currently unused in production but tested)
 internal/scripting/state_contract.go:*: unreachable func: DeserializeState
+internal\scripting\state_contract.go:*: unreachable func: DeserializeState
 
 # Engine creation helper used only from tests and examples
 internal/scripting/engine_core.go:*: unreachable func: NewEngine
+internal\scripting\engine_core.go:*: unreachable func: NewEngine
+internal\scripting\integration_notunix.go:*: unreachable func: mustNewEngine
 
 # Symbol registry helpers are part of the test-surface or public API that is
 # exercised from tests but not referenced in production builds.
 internal/scripting/state_contract.go:*: unreachable func: NewSymbolRegistry
+internal\scripting\state_contract.go:*: unreachable func: NewSymbolRegistry
 internal/scripting/state_contract.go:*: unreachable func: RegisterContract
+internal\scripting\state_contract.go:*: unreachable func: RegisterContract
 internal/scripting/state_contract.go:*: unreachable func: SerializeState
+internal\scripting\state_contract.go:*: unreachable func: SerializeState
 
+# These APIs are used for testing.
 internal/scripting/storage/atomic_write.go:*: unreachable func: SetTestHookCrashBeforeRename
+internal\scripting\storage\atomic_write.go:*: unreachable func: SetTestHookCrashBeforeRename
 internal/scripting/storage/memory_backend.go:*: unreachable func: ClearAllInMemorySessions
+internal\scripting\storage\memory_backend.go:*: unreachable func: ClearAllInMemorySessions
 internal/scripting/storage/paths.go:*: unreachable func: SetTestPaths
+internal\scripting\storage\paths.go:*: unreachable func: SetTestPaths
 internal/scripting/storage/paths.go:*: unreachable func: ResetPaths
+internal\scripting\storage\paths.go:*: unreachable func: ResetPaths

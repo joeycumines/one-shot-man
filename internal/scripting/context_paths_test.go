@@ -195,7 +195,9 @@ func TestContextPathsInTxtarHeaders(t *testing.T) {
 		if !containsString(paths, "root") {
 			t.Fatalf("expected directory entry 'root' to be tracked, got: %v", paths)
 		}
-		if !containsString(paths, "root/file_a.txt") || !containsString(paths, "root/sub/file_b.txt") || !containsString(paths, "root/link.txt") {
+		if !containsString(paths, strings.ReplaceAll("root/file_a.txt", "/", string(filepath.Separator))) ||
+			!containsString(paths, strings.ReplaceAll("root/sub/file_b.txt", "/", string(filepath.Separator))) ||
+			!containsString(paths, strings.ReplaceAll("root/link.txt", "/", string(filepath.Separator))) {
 			t.Fatalf("expected directory files to be tracked individually, got: %v", paths)
 		}
 	})

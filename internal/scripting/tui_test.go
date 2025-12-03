@@ -300,9 +300,7 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 	select {
 	case <-ctx.Done():
 		t.Fatalf("context done before command received")
-	case <-time.After(func() time.Duration {
-		return defaultTimeout
-	}()):
+	case <-time.After(defaultTimeout):
 		output := test.GetOutput()
 		t.Fatalf("timeout waiting for help command\nFull normalized output: %s\nRaw output: %q",
 			stripANSIColor.ReplaceAllString(output, ""), output)
@@ -404,7 +402,7 @@ func testKeyBindings(ctx context.Context, t *testing.T) {
 	select {
 	case <-ctx.Done():
 		t.Fatalf("context done before command received")
-	case <-time.After(10 * time.Second):
+	case <-time.After(defaultTimeout):
 		output := test.GetOutput()
 		t.Fatalf("timeout waiting for test command\nOutput: %q",
 			stripANSIColor.ReplaceAllString(output, ""))

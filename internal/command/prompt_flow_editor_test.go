@@ -171,6 +171,9 @@ esac
 	if err := os.WriteFile(editorScript, []byte(scriptContent), 0755); err != nil {
 		t.Fatalf("Failed to write goal editor script: %v", err)
 	}
+	if err := os.Chmod(editorScript, 0755); err != nil {
+		t.Fatalf("Failed to chmod goal editor script: %v", err)
+	}
 	return editorScript
 }
 
@@ -190,6 +193,9 @@ esac
 `
 	if err := os.WriteFile(editorScript, []byte(scriptContent), 0755); err != nil {
 		t.Fatalf("Failed to write use editor script: %v", err)
+	}
+	if err := os.Chmod(editorScript, 0755); err != nil {
+		t.Fatalf("Failed to chmod use editor script: %v", err)
 	}
 	return editorScript
 }

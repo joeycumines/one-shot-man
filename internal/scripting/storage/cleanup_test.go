@@ -3,6 +3,7 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -388,6 +389,9 @@ func TestAcquireLockHandleAndScan(t *testing.T) {
 
 // Sanity: AcquireLockHandle -> Close should not remove the lock artifact.
 func TestAcquireLockHandle_CloseLeavesFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping AcquireLockHandle_CloseLeavesFile on Windows due to file-locking semantics")
+	}
 	dir := t.TempDir()
 	SetTestPaths(dir)
 
@@ -543,6 +547,9 @@ func TestCleaner_DryRunReportsButDoesNotDelete(t *testing.T) {
 // lock handle but NOT remove the lock artifact (so there is no orphan
 // session-without-lock scenario).
 func TestCleaner_PreservesLockWhenRemoveFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping TestCleaner_PreservesLockWhenRemoveFails on Windows due to differing permission semantics")
+	}
 	dir := t.TempDir()
 	SetTestPaths(dir)
 

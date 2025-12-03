@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -34,6 +35,9 @@ func TestAtomicWriteFile(t *testing.T) {
 	})
 
 	t.Run("directory creation failure", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Skipping directory-permission failure test on Windows")
+		}
 		// Arrange: Create a file where a directory is needed, causing MkdirAll to fail.
 		tempDir := t.TempDir()
 		readOnlyDir := filepath.Join(tempDir, "readonly")
@@ -56,6 +60,9 @@ func TestAtomicWriteFile(t *testing.T) {
 	})
 
 	t.Run("temp file creation failure", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Skipping temp-file-creation failure test on Windows")
+		}
 		// Arrange: Create a read-only directory so CreateTemp fails.
 		tempDir := t.TempDir()
 		targetDir := filepath.Join(tempDir, "target")

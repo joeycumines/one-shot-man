@@ -110,6 +110,9 @@ fi
 	if err := os.WriteFile(editorScript, []byte(scriptContent), 0755); err != nil {
 		t.Fatalf("failed to write fake editor: %v", err)
 	}
+	if err := os.Chmod(editorScript, 0755); err != nil {
+		t.Fatalf("failed to chmod fake editor: %v", err)
+	}
 
 	env := newTestProcessEnv(t)
 	env = append(env, "EDITOR="+editorScript, "VISUAL=")

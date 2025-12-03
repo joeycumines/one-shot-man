@@ -1193,6 +1193,9 @@ esac
 	if err := os.WriteFile(editorScript, []byte(scriptContent), 0755); err != nil {
 		t.Fatalf("Failed to write fake editor: %v", err)
 	}
+	if err := os.Chmod(editorScript, 0755); err != nil {
+		t.Fatalf("Failed to chmod fake editor: %v", err)
+	}
 	return editorScript
 }
 
@@ -1223,6 +1226,9 @@ esac
 `
 	if err := os.WriteFile(editorScript, []byte(scriptContent), 0755); err != nil {
 		t.Fatalf("Failed to write advanced fake editor: %v", err)
+	}
+	if err := os.Chmod(editorScript, 0755); err != nil {
+		t.Fatalf("Failed to chmod advanced fake editor: %v", err)
 	}
 	return editorScript
 }

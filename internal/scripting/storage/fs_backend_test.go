@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -425,6 +426,9 @@ func TestFileSystemBackend_ArchiveSession_ConcurrentExclusive(t *testing.T) {
 }
 
 func TestFileSystemBackend_ArchiveSession_PreserveArchiveOnSourceRemoveFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping ArchiveSession remove-failure test on Windows")
+	}
 	tmp, cleanup := setupTest(t)
 	defer cleanup()
 

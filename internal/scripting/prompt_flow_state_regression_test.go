@@ -38,6 +38,9 @@ esac
 	if err := os.WriteFile(editor, []byte(script), 0o755); err != nil {
 		t.Fatalf("failed to write editor: %v", err)
 	}
+	if err := os.Chmod(editor, 0o755); err != nil {
+		t.Fatalf("failed to chmod editor: %v", err)
+	}
 
 	env := newTestProcessEnv(t)
 	env = append(env, "EDITOR="+editor, "VISUAL=")

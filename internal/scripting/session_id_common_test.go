@@ -2,11 +2,39 @@ package scripting
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
-func TestDiscoverSessionID_PrecedenceOverrideFlag(t *testing.T) {
+// isolateEnv captures the current environment, clears it for the test,
+// and guarantees restoration when the test finishes (via t.Cleanup).
+func isolateEnv(t *testing.T) {
+	t.Helper()
+	// Snapshot the original environment
+	originalEnv := os.Environ()
+
+	// Clear environment to give the test the empty slate it requests
 	os.Clearenv()
+
+	// Register cleanup to restore the environment
+	t.Cleanup(func() {
+		// Wipe whatever mess the test left behind
+		os.Clearenv()
+
+		// Restore the original state
+		for _, env := range originalEnv {
+			// os.Environ returns "key=value" strings
+			key, val, found := strings.Cut(env, "=")
+			if found {
+				os.Setenv(key, val)
+			}
+		}
+	})
+}
+
+func TestDiscoverSessionID_PrecedenceOverrideFlag(t *testing.T) {
+	isolateEnv(t)
+
 	got := discoverSessionID("explicit-override")
 	if got != "explicit-override" {
 		t.Fatalf("override flag not respected: got %q", got)
@@ -14,8 +42,8 @@ func TestDiscoverSessionID_PrecedenceOverrideFlag(t *testing.T) {
 }
 
 func TestDiscoverSessionID_PrecedenceEnvVar(t *testing.T) {
-	os.Clearenv()
-	defer os.Unsetenv("OSM_SESSION_ID")
+	isolateEnv(t)
+
 	os.Setenv("OSM_SESSION_ID", "from-env")
 	// Even if TMUX_PANE is set, OSM_SESSION_ID should still win
 	os.Setenv("TMUX", "1")
@@ -28,8 +56,8 @@ func TestDiscoverSessionID_PrecedenceEnvVar(t *testing.T) {
 }
 
 func TestDiscoverSessionID_ScreenPreferred(t *testing.T) {
-	os.Clearenv()
-	defer os.Unsetenv("STY")
+	isolateEnv(t)
+
 	os.Setenv("STY", "12345.pts-0.host")
 
 	got := discoverSessionID("")
@@ -41,8 +69,8 @@ func TestDiscoverSessionID_ScreenPreferred(t *testing.T) {
 }
 
 func TestDiscoverSessionID_SSHConnection(t *testing.T) {
-	os.Clearenv()
-	defer os.Unsetenv("SSH_CONNECTION")
+	isolateEnv(t)
+
 	os.Setenv("SSH_CONNECTION", "192.168.1.100 12345 192.168.1.1 22")
 
 	got := discoverSessionID("")
@@ -54,14 +82,15 @@ func TestDiscoverSessionID_SSHConnection(t *testing.T) {
 }
 
 func TestDiscoverSessionID_SSHDifferentPorts(t *testing.T) {
-	os.Clearenv()
-	defer os.Unsetenv("SSH_CONNECTION")
+	isolateEnv(t)
 
 	// Session 1 with port 12345
 	os.Setenv("SSH_CONNECTION", "192.168.1.100 12345 192.168.1.1 22")
 	id1 := discoverSessionID("")
 
-	// Session 2 with port 12346 (different tab from same host)
+	// We must reset the env for the second "session" within this test,
+	// or effectively clear it. Since isolateEnv handles the *global* restore,
+	// within the test we can just overwrite the var.
 	os.Setenv("SSH_CONNECTION", "192.168.1.100 12346 192.168.1.1 22")
 	id2 := discoverSessionID("")
 
@@ -73,7 +102,7 @@ func TestDiscoverSessionID_SSHDifferentPorts(t *testing.T) {
 }
 
 func TestDiscoverSessionID_FallbackToDeepAnchorOrUUID(t *testing.T) {
-	os.Clearenv()
+	isolateEnv(t)
 
 	got := discoverSessionID("")
 	// Without any environment variables, should fall back to deep-anchor or UUID

@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"path/filepath"
 
 	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
@@ -761,8 +762,29 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 		}
 
 		// Only process file-type items
-		if itemType == "file" {
-			if err := tm.engine.contextManager.AddPath(label); err != nil {
+			if itemType == "file" {
+				// Normalize the stored label to the host OS path format. Some
+				// snapshots may store '/' separators (portable txtar content),
+				// convert them to the OS-specific separator before filesystem
+				// operations so Windows paths are correctly resolved.
+				normalized := filepath.FromSlash(label)
+				normalized = filepath.Clean(normalized)
+
+				// If the stored label is a relative owner path, resolve it
+				// against the context manager's base path so it points at the
+				// right absolute filesystem location (critical on tests where
+				// the stored label was relative but base path differs).
+				if !filepath.IsAbs(normalized) {
+					if abs, err := tm.engine.contextManager.absolutePathFromOwner(normalized); err == nil {
+						normalized = abs
+					} else {
+						_, _ = fmt.Fprintf(tm.output, "Info: could not resolve context file %s: %v\n", label, err)
+						stateChanged = true
+						continue
+					}
+				}
+
+				if err := tm.engine.contextManager.AddPath(normalized); err != nil {
 				// If the file no longer exists, log it and remove from state
 				if os.IsNotExist(err) {
 					_, _ = fmt.Fprintf(tm.output, "Info: file from previous session not found, removing from context: %s\n", label)

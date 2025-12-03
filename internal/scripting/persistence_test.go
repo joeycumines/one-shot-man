@@ -64,6 +64,11 @@ func TestEngine_PersistenceOnClose(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get backend: %v", err)
 	}
+	// Ensure we close the backend so any lock handles are released before
+	// t.TempDir() cleanup runs. t.TempDir's cleanup runs after defers, and
+	// backend.Close must occur before the TempDir deletion on Windows.
+	defer func() { _ = backend.Close() }()
+
 	session, err := backend.LoadSession(sessionID)
 	if err != nil {
 		t.Fatalf("Failed to load session: %v", err)

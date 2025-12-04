@@ -8,13 +8,28 @@ The architecture addresses platform-specific constraints—specifically the lack
 
 **Key Terminology:**
 
-  - **Deep Anchor:** A recursive process tree walk that finds a stable session boundary.
-      - *Linux:* Skips ephemeral wrappers and continues walking until a shell or root boundary is found.
-      - *Windows:* Stops at unknown, stable processes to avoid collapsing multiple services into a shared root.
-  - **Sudo Trap:** When `sudo` invokes `setsid()` and `env_reset`, severing session leader linkage and stripping SSH environment variables.
-  - **Ghost Anchor:** A Windows phenomenon where a parent process terminates but its PID remains in the child's `th32ParentProcessID` field.
-  - **PID Recycling:** When a terminated process's PID is reassigned to a new, unrelated process. Detected via StartTime/CreationTime validation.
-  - **Namespace Inode (Linux):** The kernel namespace identifier obtained from `/proc/self/ns/pid`, used instead of fragile cgroup text parsing.
+- **Deep Anchor:** A recursive process tree walk that finds a stable session boundary.
+    - *Linux:* Skips ephemeral wrappers and continues walking until a shell or root boundary is found.
+    - *Windows:* Stops at unknown, stable processes to avoid collapsing multiple services into a shared root.
+- **Sudo Trap:** When `sudo` invokes `setsid()` and `env_reset`, severing session leader linkage and stripping SSH environment variables.
+- **Ghost Anchor:** A Windows phenomenon where a parent process terminates but its PID remains in the child's `th32ParentProcessID` field.
+- **PID Recycling:** When a terminated process's PID is reassigned to a new, unrelated process. Detected via StartTime/CreationTime validation.
+- **Namespace Inode (Linux):** The kernel namespace identifier obtained from `/proc/self/ns/pid`, used instead of fragile cgroup text parsing.
+
+## Identifier formats used by the implementation
+
+The codebase currently produces a small set of different identifier shapes depending on the
+detector that succeeds. Important notes:
+
+- **Explicit overrides** (`--session-id` / `OSM_SESSION_ID`) are returned verbatim.
+- **Tmux** returns the raw tmux session identifier produced by `tmux` (not hashed).
+- **Other detectors** (screen, macOS terminal, SSH env) return a deterministic SHA256 hex of a
+    namespaced string (the implementation helper `hashString` is used). This is a 64-char hex string.
+- **Deep Anchor** returns a SHA256 hex computed from the structured `SessionContext` fields
+    (BootID, ContainerID/NamespaceID, TTY, AnchorPID, StartTime) via `SessionContext.GenerateHash()`.
+
+This means IDs are not currently emitted in the human-friendly `namespace--payload--hash` layout
+described earlier; instead we have a mixed behavior (raw multiplexer IDs vs hashed representation).
 
 ## Purpose of Session ID
 
@@ -24,9 +39,9 @@ Session IDs serve as unique identifiers for user sessions in the one-shot-man (`
 
 A well-designed session ID ensures that:
 
-  * **Multiplexers:** State (context items, command history) survives terminal closures and reattachments.
-  * **SSH:** Users can identify distinct active connections.
-  * **Concurrency:** Multiple terminals can share state when intended (via multiplexers).
+* **Multiplexers:** State (context items, command history) survives terminal closures and reattachments.
+* **SSH:** Users can identify distinct active connections.
+* **Concurrency:** Multiple terminals can share state when intended (via multiplexers).
 
 ## Hierarchy of Discovery
 
@@ -52,7 +67,7 @@ Multiplexers manage their own session lifecycles. If the process is running insi
 
   * **Tmux:**
       * **Primary Check:** Presence of `TMUX_PANE` environment variable.
-      * **Extraction:** Execute `tmux display-message -p "#{session_id}"` with 500ms timeout.
+      * **Extraction:** The implementation queries `tmux` for `#{session_id}` (500ms timeout) and returns that value directly. The code does not query `window_id` or `pane_id`, so pane-level uniqueness is not provided by `tmux` detection in the current implementation.
       * **Stale Detection:** If `TMUX_PANE` is present but tmux is unreachable, treat as stale and continue to next priority.
   * **GNU Screen:**
       * **Primary Check:** Presence of `STY` environment variable.
@@ -64,9 +79,8 @@ Multiplexers manage their own session lifecycles. If the process is running insi
 
 To avoid permission errors associated with inspecting ancestor processes (e.g., `ptrace_scope` restrictions), the system prioritizes the *current* process environment.
 
-  * **Detection:** Presence of `SSH_CONNECTION` (preferred) or `SSH_CLIENT`.
-  * **ID Generation:** A hash derived from the **full** SSH connection tuple.
-      * **Conflict Resolution:** Previous designs excluded the client port to allow persistence across network reconnections. This was determined to be a critical flaw, as it merged simultaneous sessions from the same client IP (e.g., two terminal tabs). The system now hashes the full tuple: `SHA256("ssh:" + $SSH_CONNECTION)`.
+* **Detection:** Presence of `SSH_CONNECTION`.
+        * **ID Generation (code):** The implementation only checks `SSH_CONNECTION` (no `SSH_CLIENT` fallback). When present the code constructs a namespaced string that includes client IP and client port (the full 4-field tuple) and then returns `hashString()` of that namespaced value (SHA256 hex). This retains uniqueness for concurrent sessions from the same client IP by including the client port.
   * **Fallback (Deep Anchor Walk):** If environment variables are stripped (e.g., via `sudo -i`), the system utilizes the **Deep Anchor** recursive walk.
       * **Logic:** The Deep Anchor walk (Priority 5) will traverse upwards past the `sudo` boundary to find the parent shell or `sshd` process.
 
@@ -74,8 +88,8 @@ To avoid permission errors associated with inspecting ancestor processes (e.g., 
 
 ### 4\. GUI and Terminal Emulators (macOS Only)
 
-  * **Source:** `TERM_SESSION_ID` environment variable.
-  * **Context:** Set by `Terminal.app` and `iTerm2`. Authoritative for macOS local terminals.
+* **Source:** `TERM_SESSION_ID` environment variable.
+* **Context:** Set by `Terminal.app` and `iTerm2`. Authoritative for macOS local terminals.
 
 ### 5\. TTY Device ID (The "Deep Anchor" Strategy)
 
@@ -99,7 +113,7 @@ This method replaces naive `getsid(0)` calls, which fail when `osm` is wrapped i
         2.  Is a session leader matching the target TTY (`PID == SID && TtyNr == targetTTY`).
         3.  Or is a Root/Daemon boundary (PID 1, or names like `init`, `systemd`, `sshd`, `login`).
 
-  * **ID Generation (Linux/POSIX):** `SHA256(Boot_ID : Namespace_ID : TTY_Path : Anchor_PID : Anchor_StartTime)`.
+    * **ID Generation (Linux/POSIX):** The Deep Anchor returns structured coordinates (Boot ID, Namespace ID, Anchor PID, StartTime, TTY). The implementation builds a structured `SessionContext` and uses `SessionContext.GenerateHash()` to produce the final SHA256 hex identifier from these fields.
 
       * `Namespace_ID` is obtained from `/proc/self/ns/pid`.
       * **Critical Constraint:** `Boot_ID` (from `/proc/sys/kernel/random/boot_id`) is required on Linux to prevent ID collisions across system reboots.
@@ -128,20 +142,23 @@ If all discovery methods fail, a random UUID is generated.
 
 ### 1\. Orchestration Entry Point
 
-*This function implements the complete priority hierarchy and must be the sole entry point for session ID resolution.*
+*The following example mirrors the actual implementation in the repository (`internal/session/session.go`).*
 
 ```go
 package session
 
 import (
     "context"
-    "crypto/rand"
+    "crypto/sha256"
+    "encoding/hex"
     "fmt"
     "os"
     "os/exec"
     "runtime"
     "strings"
     "time"
+
+    "github.com/google/uuid"
 )
 
 // GetSessionID implements the full discovery hierarchy.
@@ -160,7 +177,6 @@ func GetSessionID(explicitOverride string) (string, string, error) {
         if sessionID, err := getTmuxSessionID(); err == nil {
             return sessionID, "tmux", nil
         }
-        // TMUX_PANE present but tmux unreachable; treat as stale, continue
     }
     if sty := os.Getenv("STY"); sty != "" {
         return hashString("screen:" + sty), "screen", nil
@@ -168,16 +184,11 @@ func GetSessionID(explicitOverride string) (string, string, error) {
 
     // Priority 3: SSH Context
     if sshConn := os.Getenv("SSH_CONNECTION"); sshConn != "" {
-        // SSH_CONNECTION = "client_ip client_port server_ip server_port"
         parts := strings.Fields(sshConn)
         if len(parts) == 4 {
-            // CONFLICT RESOLUTION: We must include the client port (parts[1])
-            // to distinguish between concurrent sessions (e.g. tabs) from the same host.
-            // Persistence across reconnects is handled by Multiplexers (Priority 2).
             stableString := fmt.Sprintf("ssh:%s:%s:%s:%s", parts[0], parts[1], parts[2], parts[3])
             return hashString(stableString), "ssh-env", nil
         }
-        // Fallback for malformed string
         return hashString("ssh:" + sshConn), "ssh-env", nil
     }
 
@@ -195,19 +206,23 @@ func GetSessionID(explicitOverride string) (string, string, error) {
     }
 
     // Priority 6: UUID Fallback
-    uuid, err := generateUUID()
+    UUID, err := generateUUID()
     if err != nil {
         return "", "", fmt.Errorf("all session detection methods failed: %w", err)
     }
-    return uuid, "uuid-fallback", nil
+    return UUID, "uuid-fallback", nil
 }
 
 func getTmuxSessionID() (string, error) {
+    tmuxPath, err := exec.LookPath("tmux")
+    if err != nil {
+        return "", fmt.Errorf("tmux not found in PATH: %w", err)
+    }
+
     ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
     defer cancel()
 
-    // Query tmux for the unique session identifier (e.g., "$0")
-    cmd := exec.CommandContext(ctx, "tmux", "display-message", "-p", "#{session_id}")
+    cmd := exec.CommandContext(ctx, tmuxPath, "display-message", "-p", "#{session_id}")
     out, err := cmd.Output()
     if err != nil {
         return "", err
@@ -216,18 +231,14 @@ func getTmuxSessionID() (string, error) {
 }
 
 func generateUUID() (string, error) {
-    b := make([]byte, 16)
-    if _, err := rand.Read(b); err != nil {
-        return "", err
-    }
-    return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
+    return uuid.NewString(), nil
 }
 
+// hashString computes a SHA256 hex for various detectors (screen, ssh, terminal).
 func hashString(s string) string {
-    ctx := &SessionContext{BootID: s}
-    // CONFLICT RESOLUTION: Removed truncation.
-    // Returning 16 chars (64-bits) created a collision risk.
-    return ctx.GenerateHash()
+    hasher := sha256.New()
+    hasher.Write([]byte(s))
+    return hex.EncodeToString(hasher.Sum(nil))
 }
 ```
 
@@ -253,11 +264,14 @@ type SessionContext struct {
     TTYName     string // Optional: /dev/pts/X or MinTTY pipe name
 }
 
-// GenerateHash produces the final deterministic Session ID.
-// Formula: SHA256(BootID : ContainerID/NamespaceID : TTY : PID : StartTime)
+// GenerateHash produces the final deterministic session identifier used by the
+// Deep Anchor detector. The repository uses two helpers:
+//  - `hashString(...)` — used by detectors like SSH/screen/terminal to hash a
+//    small namespaced payload into a SHA256 hex string.
+//  - `SessionContext.GenerateHash()` — used by Deep Anchor to produce a SHA256
+//    hex computed from structured fields (BootID, ContainerID, TTY, PID, StartTime).
 func (c *SessionContext) GenerateHash() string {
-    // Delimiter ":" is safe: BootID (UUID), ContainerID (hex), TTYName (/dev/pts/X or ptyN)
-    // none contain colons in standard configurations.
+    // Delimiter ":" is used; ContainerID may contain colons (e.g., 'pid:[inode]'), but SHA256 hashing ensures collision resistance.
     raw := fmt.Sprintf("%s:%s:%s:%d:%d",
         c.BootID,
         c.ContainerID,
@@ -1059,11 +1073,15 @@ The `getFileNameByHandle` function uses `encoding/binary` for safe memory access
 
 ### Summary of Conflict Resolutions
 
-  * **SSH Hash:** Fixed logic to include client port, ensuring uniqueness for concurrent sessions.
-  * **Self-Anchoring Trap:** Deep Anchor walk now unconditionally skips the initiating process PID. This prevents Session ID fragmentation if the binary is renamed (e.g., `osm-v2`).
-  * **CMD.EXE:** Removed from skip list to fix Windows session collapse.
-  * **Build:** Replaced unexported Windows syscalls with standard Win32 APIs; added cross-platform build stubs.
-  * **Hash Algo:** Removed truncation to guarantee collision resistance.
-  * **TASK_COMM_LEN:** Added prefix matching fallback for Linux root boundary detection.
-  * **Memory Alignment:** Windows buffer operations use `encoding/binary` instead of unsafe pointer casts for ARM64 compatibility.
-  * **Privilege Boundary:** Documented and handled Windows privilege boundary behavior when user cannot inspect system processes.
+* **Detection / Formatting:** The code uses per-detector hashing. Non-anchor detectors use `hashString(namespacedPayload)` to return a SHA256 hex string; `SessionContext.GenerateHash()` is used for Deep Anchor. There is no central `formatSessionID(...)` in the current implementation.
+* **Identifier shape:** The repository emits a mixture of outputs: raw explicit/tmux identifiers (returned verbatim) and SHA256 hex identifiers for other detectors and Deep Anchor. The `namespace--sanitized_raw--hash` layout is not used by the runtime code.
+* **Tmux Pane Entropy:** The implementation queries only `#{session_id}` (not window/pane), so pane-level uniqueness is not provided by tmux detection.
+* **hashString Usage:** `hashString` is the helper used by SSH/screen/terminal detectors; `SessionContext.GenerateHash()` is the deterministic computation for Deep Anchor.
+* **SSH Hash:** Fixed logic to include client port, ensuring uniqueness for concurrent sessions.
+* **Self-Anchoring Trap:** Deep Anchor walk now unconditionally skips the initiating process PID. This prevents Session ID fragmentation if the binary is renamed (e.g., `osm-v2`).
+* **CMD.EXE:** Removed from skip list to fix Windows session collapse.
+* **Build:** Replaced unexported Windows syscalls with standard Win32 APIs; added cross-platform build stubs.
+* **Hash Algo:** Removed truncation to guarantee collision resistance.
+* **TASK_COMM_LEN:** Added prefix matching fallback for Linux root boundary detection.
+* **Memory Alignment:** Windows buffer operations use `encoding/binary` instead of unsafe pointer casts for ARM64 compatibility.
+* **Privilege Boundary:** Documented and handled Windows privilege boundary behavior when user cannot inspect system processes.

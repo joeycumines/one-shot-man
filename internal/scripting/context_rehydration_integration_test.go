@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // TestContextRehydrationEndToEnd tests the complete scenario:
@@ -22,7 +24,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 	// Avoid clearing global in-memory store; this test uses a unique session ID
 
 	tmpDir := t.TempDir()
-	sessionID := newTestSessionID(t, "ctx-rehydration-test")
+	sessionID := testutil.NewTestSessionID("ctx-rehydration-test", t.Name())
 
 	// Create test files
 	testFile1 := filepath.Join(tmpDir, "test1.txt")
@@ -271,7 +273,7 @@ func TestContextRehydrationWithSharedState(t *testing.T) {
 	// Avoid clearing global in-memory store; use unique session IDs instead
 
 	tmpDir := t.TempDir()
-	sessionID := newTestSessionID(t, "ctx-shared-test")
+	sessionID := testutil.NewTestSessionID("ctx-shared-test", t.Name())
 
 	testFile := filepath.Join(tmpDir, "shared.txt")
 	if err := os.WriteFile(testFile, []byte("shared content"), 0644); err != nil {

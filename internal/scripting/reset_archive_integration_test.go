@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // TestResetArchiveIntegration_FileSystemBackend verifies the end-to-end reset+archive flow.
@@ -33,7 +34,7 @@ func TestResetArchiveIntegration_FileSystemBackend(t *testing.T) {
 	// Test uses an isolated filesystem backend and a unique session id; do not
 	// clear global in-memory sessions to avoid races with other tests.
 
-	sessionID := newTestSessionID(t, "test-reset-session")
+	sessionID := testutil.NewTestSessionID("test-reset-session", t.Name())
 
 	// Create initial session with some state
 	backend, err := storage.NewFileSystemBackend(sessionID)
@@ -168,7 +169,7 @@ func TestResetCommand_WithArchive(t *testing.T) {
 	storage.SetTestPaths(tmpDir)
 
 	// Create a TUI manager with in-memory backend for testing
-	sessionID := newTestSessionID(t, "test-reset-cmd-session")
+	sessionID := testutil.NewTestSessionID("test-reset-cmd-session", t.Name())
 	backend, err := storage.NewInMemoryBackend(sessionID)
 	if err != nil {
 		t.Fatalf("Failed to create backend: %v", err)
@@ -224,7 +225,7 @@ func TestMultipleResets_ArchiveCounter(t *testing.T) {
 
 	storage.SetTestPaths(tmpDir)
 
-	sessionID := newTestSessionID(t, "test-multi-reset")
+	sessionID := testutil.NewTestSessionID("test-multi-reset", t.Name())
 
 	// Perform multiple reset cycles
 	archivePaths := []string{}

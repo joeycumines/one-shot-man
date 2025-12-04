@@ -13,6 +13,7 @@ import (
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
+	"github.com/joeycumines/one-shot-man/internal/session"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
@@ -389,8 +390,13 @@ func TestStaleLockRecovery(t *testing.T) {
 func TestSigintPersistence(t *testing.T) {
 	// Set up test environment with file system backend
 	sessionID := "test-sigint"
-	// The session ID gets namespaced when passed as explicit override
-	expectedSessionID := "ex--" + sessionID
+	// The session ID gets namespaced when passed as explicit override —
+	// compute the effective session ID using the session package to stay
+	// robust to any namespacing/sanitization logic changes.
+	expectedSessionID, _, err := session.GetSessionID(sessionID)
+	if err != nil {
+		t.Fatalf("failed to compute expected session id: %v", err)
+	}
 	tmpDir := t.TempDir()
 
 	// Override storage paths to use the test directory

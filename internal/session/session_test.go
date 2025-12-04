@@ -2,6 +2,7 @@ package session
 
 import (
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -37,8 +38,10 @@ func TestPriorityHierarchy_ExplicitFlagIsHighestPriority(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Explicit values get namespaced with "ex--" prefix
-	if id != "ex--explicit-flag-value" {
-		t.Errorf("expected ex--explicit-flag-value, got %q", id)
+	// Safe user-provided payloads get MANDATORY MINI suffix (_XX) to prevent mimicry attacks
+	re := regexp.MustCompile(`^ex--explicit-flag-value_[0-9a-f]{2}$`)
+	if !re.MatchString(id) {
+		t.Errorf("expected ex--explicit-flag-value_XX (mini suffix for safe payload), got %q", id)
 	}
 	if source != "explicit-flag" {
 		t.Errorf("expected source explicit-flag, got %q", source)
@@ -64,8 +67,10 @@ func TestPriorityHierarchy_EnvOverridesMultiplexer(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Explicit env values get namespaced with "ex--" prefix
-	if id != "ex--env-session" {
-		t.Errorf("expected ex--env-session, got %q", id)
+	// Safe user-provided payloads get MANDATORY MINI suffix (_XX) to prevent mimicry attacks
+	re := regexp.MustCompile(`^ex--env-session_[0-9a-f]{2}$`)
+	if !re.MatchString(id) {
+		t.Errorf("expected ex--env-session_XX (mini suffix for safe payload), got %q", id)
 	}
 	if source != "explicit-env" {
 		t.Errorf("expected source explicit-env, got %q", source)
@@ -130,8 +135,10 @@ func TestGetSessionID_ExplicitOverride(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Explicit values get namespaced with "ex--" prefix
-	if id != "ex--explicit-override" {
-		t.Fatalf("expected ex--explicit-override, got %q", id)
+	// Safe user-provided payloads get MANDATORY MINI suffix (_XX) to prevent mimicry attacks
+	re := regexp.MustCompile(`^ex--explicit-override_[0-9a-f]{2}$`)
+	if !re.MatchString(id) {
+		t.Fatalf("expected ex--explicit-override_XX (mini suffix for safe payload), got %q", id)
 	}
 	if source != "explicit-flag" {
 		t.Fatalf("expected source explicit-flag, got %q", source)
@@ -148,8 +155,10 @@ func TestGetSessionID_EnvVarOverride(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Explicit env values get namespaced with "ex--" prefix
-	if id != "ex--from-env" {
-		t.Fatalf("expected ex--from-env, got %q", id)
+	// Safe user-provided payloads get MANDATORY MINI suffix (_XX) to prevent mimicry attacks
+	re := regexp.MustCompile(`^ex--from-env_[0-9a-f]{2}$`)
+	if !re.MatchString(id) {
+		t.Fatalf("expected ex--from-env_XX (mini suffix for safe payload), got %q", id)
 	}
 	if source != "explicit-env" {
 		t.Fatalf("expected source explicit-env, got %q", source)
@@ -166,8 +175,10 @@ func TestGetSessionID_ExplicitFlagOverridesEnv(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Explicit flag values get namespaced with "ex--" prefix
-	if id != "ex--from-flag" {
-		t.Fatalf("expected ex--from-flag, got %q", id)
+	// Safe user-provided payloads get MANDATORY MINI suffix (_XX) to prevent mimicry attacks
+	re := regexp.MustCompile(`^ex--from-flag_[0-9a-f]{2}$`)
+	if !re.MatchString(id) {
+		t.Fatalf("expected ex--from-flag_XX (mini suffix for safe payload), got %q", id)
 	}
 	if source != "explicit-flag" {
 		t.Fatalf("expected source explicit-flag, got %q", source)
@@ -186,8 +197,10 @@ func TestGetSessionID_ExplicitOverride_EmptyStringIsNotOverride(t *testing.T) {
 		t.Errorf("empty string should not be treated as explicit flag")
 	}
 	// Explicit env values get namespaced with "ex--" prefix
-	if id != "ex--from-env" {
-		t.Errorf("expected ex--from-env, got %q", id)
+	// Safe user-provided payloads get MANDATORY MINI suffix (_XX) to prevent mimicry attacks
+	re := regexp.MustCompile(`^ex--from-env_[0-9a-f]{2}$`)
+	if !re.MatchString(id) {
+		t.Errorf("expected ex--from-env_XX (mini suffix for safe payload), got %q", id)
 	}
 }
 
@@ -201,12 +214,48 @@ func TestGetSessionID_ExplicitOverride_AlreadyNamespaced(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Already namespaced values should have namespace sanitized and payload sanitized
-	// "custom" and "my-value" are both safe, so output is unchanged
-	if id != "custom--my-value" {
-		t.Errorf("expected custom--my-value, got %q", id)
+	// "custom" and "my-value" are both safe, so MINI suffix (_XX) is added
+	re := regexp.MustCompile(`^custom--my-value_[0-9a-f]{2}$`)
+	if !re.MatchString(id) {
+		t.Errorf("expected custom--my-value_XX (mini suffix for safe payload), got %q", id)
 	}
 	if source != "explicit-flag" {
 		t.Errorf("expected source explicit-flag, got %q", source)
+	}
+}
+
+func TestFormatSessionID_SanitizationAppendsHash(t *testing.T) {
+	// Different raw inputs that sanitize to the same string must not collide.
+	idA := formatSessionID(NamespaceExplicit, "user/name") // Requires sanitization (/ -> _)
+	idB := formatSessionID(NamespaceExplicit, "user_name") // Already safe, no change
+
+	if idA == idB {
+		t.Fatalf("expected different IDs for inputs that sanitize to same value, both got %q", idA)
+	}
+
+	// idA was sanitized (user/name -> user_name), so it MUST have a FULL suffix (16 hex)
+	reA := regexp.MustCompile(`^ex--user_name_[0-9a-f]{16}$`)
+	if !reA.MatchString(idA) {
+		t.Fatalf("expected idA (sanitized) to have _16hex suffix, got %q", idA)
+	}
+
+	// idB was NOT sanitized (user_name is already safe), but gets MINI suffix (2 hex) for mimicry prevention
+	reB := regexp.MustCompile(`^ex--user_name_[0-9a-f]{2}$`)
+	if !reB.MatchString(idB) {
+		t.Fatalf("expected idB (already safe) to have _2hex mini suffix, got %q", idB)
+	}
+}
+
+func TestFormatSessionID_NoSuffixWhenUnchanged(t *testing.T) {
+	// If payload is already safe and unchanged by sanitization, MINI suffix is added
+	// to prevent mimicry attacks (where attacker crafts payload matching suffixed output)
+	input := "safe-name_123"
+	id := formatSessionID(NamespaceExplicit, input)
+
+	// Safe payloads get mandatory mini suffix (_XX) for mimicry prevention
+	re := regexp.MustCompile(`^ex--safe-name_123_[0-9a-f]{2}$`)
+	if !re.MatchString(id) {
+		t.Fatalf("Safe payload should get mini suffix: expected ex--safe-name_123_XX, got %q", id)
 	}
 }
 
@@ -813,65 +862,86 @@ func TestGetSessionID_Deterministic(t *testing.T) {
 // Namespaced Format Tests
 // =============================================================================
 
-// TestFormatTmuxID verifies tmux ID formatting.
-func TestFormatTmuxID(t *testing.T) {
+// TestExtractTmuxServerPID verifies extraction of server PID from TMUX env var.
+func TestExtractTmuxServerPID(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
 		expected string
 	}{
-		{"standard format", "$0:@0:%0", "tmux--s0.w0.p0"},
-		{"different numbers", "$1:@2:%3", "tmux--s1.w2.p3"},
-		{"large numbers", "$999:@888:%777", "tmux--s999.w888.p777"},
-		// Alphanumeric IDs (regex uses \w+ not \d+)
-		{"alphanumeric session", "$abc:@0:%0", "tmux--sabc.w0.p0"},
-		{"alphanumeric window", "$0:@def:%0", "tmux--s0.wdef.p0"},
-		{"alphanumeric pane", "$0:@0:%ghi", "tmux--s0.w0.pghi"},
-		{"all alphanumeric", "$a1b:@c2d:%e3f", "tmux--sa1b.wc2d.pe3f"},
-		{"underscores", "$sess_1:@win_2:%pane_3", "tmux--ssess_1.wwin_2.ppane_3"},
+		{"standard format", "/tmp/tmux-1000/default,12345,0", "12345"},
+		{"different PID", "/tmp/tmux-501/default,98765,1", "98765"},
+		{"long path", "/var/folders/abc/def/T/tmux-501/default,54321,2", "54321"},
+		{"single digit PID", "/tmp/tmux-1000/default,1,0", "1"},
+		{"large PID", "/tmp/tmux-1000/default,4294967295,0", "4294967295"},
+		{"empty string", "", ""},
+		{"no commas", "/tmp/tmux-1000/default", ""},
+		{"one comma only", "/tmp/tmux-1000/default,12345", ""},
+		{"non-numeric PID", "/tmp/tmux-1000/default,abc,0", ""},
+		{"trailing comma", "/tmp/tmux-1000/default,12345,", "12345"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := formatTmuxID(tt.input)
+			result := extractTmuxServerPID(tt.input)
 			if result != tt.expected {
-				t.Errorf("formatTmuxID(%q) = %q, want %q", tt.input, result, tt.expected)
+				t.Errorf("extractTmuxServerPID(%q) = %q, want %q", tt.input, result, tt.expected)
 			}
 		})
 	}
 }
 
-// TestFormatTmuxID_NonStandard verifies non-standard tmux ID handling.
-func TestFormatTmuxID_NonStandard(t *testing.T) {
-	// Non-standard format should be sanitized
-	result := formatTmuxID("named-session:@0:%0")
-	if !strings.HasPrefix(result, "tmux--") {
-		t.Errorf("expected tmux-- prefix, got %q", result)
+// TestGetTmuxSessionID_Format verifies the new tmux ID format uses TMUX_PANE + server PID.
+func TestGetTmuxSessionID_Format(t *testing.T) {
+	os.Clearenv()
+	defer func() {
+		os.Unsetenv("TMUX_PANE")
+		os.Unsetenv("TMUX")
+	}()
+
+	// Set up tmux environment
+	os.Setenv("TMUX_PANE", "%5")
+	os.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
+
+	id, err := getTmuxSessionID()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	// Should not contain original special chars
-	if strings.ContainsAny(result, "$@%:") {
-		t.Errorf("non-standard format should be sanitized, got %q", result)
+
+	// Format should be: tmux--{paneNum}_{serverPID}
+	// Pane %5 -> 5, server PID 12345
+	// Both are integers (safe), so NO suffix needed
+	expected := "tmux--5_12345"
+	if id != expected {
+		t.Errorf("expected %q, got %q", expected, id)
 	}
 }
 
-// TestSanitizeTmuxID verifies tmux ID sanitization.
-func TestSanitizeTmuxID(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"$0:@0:%0", "s0.w0.p0"},
-		{"$1:@2:%3", "s1.w2.p3"},
-		{"$abc:@def:%ghi", "sabc.wdef.pghi"},
-	}
+// TestGetTmuxSessionID_MissingTMUX verifies error when TMUX env var is missing.
+func TestGetTmuxSessionID_MissingTMUX(t *testing.T) {
+	os.Clearenv()
+	defer os.Unsetenv("TMUX_PANE")
 
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			result := sanitizeTmuxID(tt.input)
-			if result != tt.expected {
-				t.Errorf("sanitizeTmuxID(%q) = %q, want %q", tt.input, result, tt.expected)
-			}
-		})
+	os.Setenv("TMUX_PANE", "%0")
+	// TMUX not set
+
+	_, err := getTmuxSessionID()
+	if err == nil {
+		t.Error("expected error when TMUX env var is missing")
+	}
+}
+
+// TestGetTmuxSessionID_MissingTMUX_PANE verifies error when TMUX_PANE is missing.
+func TestGetTmuxSessionID_MissingTMUX_PANE(t *testing.T) {
+	os.Clearenv()
+	defer os.Unsetenv("TMUX")
+
+	os.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
+	// TMUX_PANE not set
+
+	_, err := getTmuxSessionID()
+	if err == nil {
+		t.Error("expected error when TMUX_PANE env var is missing")
 	}
 }
 
@@ -890,12 +960,59 @@ func TestFormatSessionID_LengthBound(t *testing.T) {
 	}
 }
 
-// TestFormatSessionID_ShortPayload verifies short payloads are preserved.
+// TestFormatSessionID_ShortPayload verifies short safe payloads get MINI suffix.
 func TestFormatSessionID_ShortPayload(t *testing.T) {
 	result := formatSessionID("test", "short")
-	expected := "test--short"
-	if result != expected {
-		t.Errorf("formatSessionID(test, short) = %q, want %q", result, expected)
+	// "short" is already safe (no sanitization needed), but user-provided payloads
+	// get mandatory MINI suffix (_XX) to prevent mimicry attacks
+	re := regexp.MustCompile(`^test--short_[0-9a-f]{2}$`)
+	if !re.MatchString(result) {
+		t.Errorf("formatSessionID(test, short) = %q, want test--short_XX (mini suffix)", result)
+	}
+}
+
+// TestFormatSessionID_ExplicitShortHex_StillGetsSuffix verifies that user-controlled
+// namespaces do NOT get to bypass the suffix logic, even if the payload
+// happens to look like an internal 16-char lowercase hex hash.
+func TestFormatSessionID_ExplicitShortHex_StillGetsSuffix(t *testing.T) {
+	payload := "0123456789abcdef" // 16 lowercase hex chars
+	result := formatSessionID(NamespaceExplicit, payload)
+
+	// Even though the payload matches the internal-short-hex pattern, explicit
+	// namespaces must still carry at least the mini suffix to enforce the
+	// "all user-provided payloads are suffixed" guarantee.
+	re := regexp.MustCompile(`^ex--0123456789abcdef_[0-9a-f]{2}$`)
+	if !re.MatchString(result) {
+		t.Fatalf("expected explicit short-hex payload to get mini suffix, got %q", result)
+	}
+}
+
+// Prevent mimicry: a payload that looks like an already-hashed ID must not collide
+// with a different pre-sanitization input that produced that appearance.
+func TestFormatSessionID_PreventMimicry(t *testing.T) {
+	// Input A sanitizes and gets suffix
+	idA := formatSessionID(NamespaceExplicit, "foo/bar")
+
+	// Input B is the literal payload that matches idA's payload portion
+	parts := strings.SplitN(idA, "--", 2)
+	if len(parts) != 2 {
+		t.Fatalf("unexpected id format: %q", idA)
+	}
+	payload := parts[1]
+	idB := formatSessionID(NamespaceExplicit, payload)
+
+	if idA == idB {
+		t.Fatalf("mimicry allowed: %q == %q", idA, idB)
+	}
+}
+
+// Ensure very long namespace doesn't cause slice bounds or panics and remains bounded
+func TestFormatSessionID_NamespaceTooLong_NoPanic(t *testing.T) {
+	longNS := strings.Repeat("n", 200)
+	id := formatSessionID(longNS, "payload")
+
+	if len(id) > MaxSessionIDLength {
+		t.Fatalf("expected id <= %d chars, got %d: %q", MaxSessionIDLength, len(id), id)
 	}
 }
 
@@ -1048,6 +1165,9 @@ func TestExplicitID_PathTraversal(t *testing.T) {
 	os.Clearenv()
 
 	// Attack vector: user supplies path traversal in session ID
+	// Input: "user/name--hack" is parsed as namespace="user/name", payload="hack"
+	// Namespace "/" is sanitized to "_": "user_name"
+	// Payload "hack" is already safe → mini suffix (2 hex)
 	id, _, err := GetSessionID("user/name--hack")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1057,9 +1177,12 @@ func TestExplicitID_PathTraversal(t *testing.T) {
 	if strings.Contains(id, "/") {
 		t.Errorf("SECURITY: path separator not sanitized: %q", id)
 	}
-	// Should be safely sanitized
-	if id != "user_name--hack" {
-		t.Errorf("expected user_name--hack, got %q", id)
+	// Namespace was sanitized (user/name -> user_name), but payload "hack" was safe
+	// Since payload needed no sanitization, it gets mini suffix (2 hex)
+	// Format: {sanitized_namespace}--{safe_payload}_{2hex}
+	re := regexp.MustCompile(`^user_name--hack_[0-9a-f]{2}$`)
+	if !re.MatchString(id) {
+		t.Errorf("expected user_name--hack_XX (mini suffix - payload was safe), got %q", id)
 	}
 }
 
@@ -1079,19 +1202,34 @@ func TestExplicitID_WindowsPathTraversal(t *testing.T) {
 	}
 }
 
-// TestTmuxID_NamedSessionWithSlash verifies tmux named sessions with slashes are safe.
-func TestTmuxID_NamedSessionWithSlash(t *testing.T) {
-	// Simulate tmux named session "feature/login"
-	result := formatTmuxID("feature/login:@0:%0")
+// TestTmuxSessionID_WindowsSafe verifies tmux session IDs are Windows-safe.
+// The new format uses pane number + server PID (both integers), which is always safe.
+func TestTmuxSessionID_WindowsSafe(t *testing.T) {
+	os.Clearenv()
+	defer func() {
+		os.Unsetenv("TMUX_PANE")
+		os.Unsetenv("TMUX")
+	}()
 
-	// Must not contain path separator
-	if strings.Contains(result, "/") {
-		t.Errorf("SECURITY: path separator not sanitized in tmux ID: %q", result)
+	os.Setenv("TMUX_PANE", "%0")
+	os.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
+
+	id, err := getTmuxSessionID()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Must not contain any Windows-unsafe characters
+	unsafeChars := "/\\:*?\"<>|"
+	for _, c := range unsafeChars {
+		if strings.ContainsRune(id, c) {
+			t.Errorf("SECURITY: Windows-unsafe char %q in tmux ID: %q", c, id)
+		}
 	}
 
 	// Should be prefixed correctly
-	if !strings.HasPrefix(result, "tmux--") {
-		t.Errorf("expected tmux-- prefix, got %q", result)
+	if !strings.HasPrefix(id, "tmux--") {
+		t.Errorf("expected tmux-- prefix, got %q", id)
 	}
 }
 

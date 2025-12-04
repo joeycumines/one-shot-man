@@ -1,22 +1,18 @@
 package session
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
-	"os/exec"
-	"regexp"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 )
 
 // Session ID Format Constants
-// All session IDs follow the pattern: {namespace}--{payload}
+// All session IDs follow the pattern: {namespace}--{payload}[_{hash}]
 // where namespace identifies the source and payload is either:
 //   - A sanitized raw value (for short, readable values like tmux tuples)
 //   - A truncated hash (for long or complex values)
@@ -31,15 +27,28 @@ const (
 	// Double-dash is used because it's unambiguous and filesystem-safe.
 	NamespaceDelimiter = "--"
 
-	// MaxPayloadLength is the maximum length of the payload portion.
-	// Calculated as: MaxSessionIDLength - len(longest_namespace) - len(delimiter)
-	// Longest namespace is "terminal" (8 chars), delimiter is 2 chars.
-	// 80 - 8 - 2 = 70, but we use 64 for round number (SHA256 hex length)
-	MaxPayloadLength = 64
+	// SuffixDelimiter separates the payload from the hash suffix.
+	// Underscore is used because it's filesystem-safe and distinct from NamespaceDelimiter.
+	SuffixDelimiter = "_"
 
-	// ShortHashLength is the length of truncated hashes used when raw values are too long.
+	// ShortHashLength is the length of truncated hashes used by internal detectors
+	// (screen, ssh, terminal, anchor). These are recognized and passed through verbatim.
 	// 16 hex chars = 8 bytes = 64 bits of entropy (sufficient for collision resistance)
 	ShortHashLength = 16
+
+	// MiniSuffixHashLength is the length of the mandatory minimum suffix hash.
+	// 2 hex chars = 1 byte = 8 bits of entropy. This is the MINIMUM suffix applied
+	// to ALL user-provided payloads to prevent mimicry attacks where an attacker
+	// crafts a payload matching the output of a previously suffixed ID.
+	// Total overhead: 1 (delimiter) + 2 (hash) = 3 characters.
+	MiniSuffixHashLength = 2
+
+	// FullSuffixHashLength is the length of the full hash suffix used when:
+	// - Sanitization alters the payload (collision prevention)
+	// - Truncation is required (preserves uniqueness)
+	// 16 hex chars provides strong collision resistance.
+	// Total overhead: 1 (delimiter) + 16 (hash) = 17 characters.
+	FullSuffixHashLength = ShortHashLength
 )
 
 // Namespace prefixes for each session source.
@@ -59,7 +68,7 @@ const (
 //
 // Session IDs are namespaced with a prefix identifying the source:
 //   - ex--{value}       : Explicit override
-//   - tmux--s{N}.w{N}.p{N} : Tmux pane (session.window.pane)
+//   - tmux--{pane}_{serverPID} : Tmux pane (pane number + server PID)
 //   - screen--{hash}    : GNU Screen
 //   - ssh--{hash}       : SSH connection
 //   - terminal--{hash}  : macOS terminal
@@ -159,100 +168,207 @@ func formatTerminalID(termID string) string {
 }
 
 // formatUUIDID formats a UUID fallback session ID.
+// UUIDs are internally generated (not user-provided) and always safe
+// (hex digits and hyphens only), so no suffix is needed.
 func formatUUIDID(uuid string) string {
-	// UUID is already well-formed, just namespace it
-	return formatSessionID(NamespaceUUID, uuid)
+	return NamespaceUUID + NamespaceDelimiter + uuid
 }
 
 // formatSessionID creates a namespaced session ID.
-// Format: {namespace}--{payload}
+// Format: {namespace}--{payload}_{hash}
+//
 // The payload is sanitized to ensure filesystem safety on all platforms.
-// If payload exceeds max length, it is truncated with a hash suffix to prevent collisions.
+//
+// SUFFIX STRATEGY (to prevent mimicry attacks and collisions):
+//
+//  1. INTERNAL SHORT HEX (16 chars, lowercase hex only):
+//     Payloads that are exactly ShortHashLength (16) lowercase hex characters
+//     are recognized as internal detector outputs (screen, ssh, terminal, anchor).
+//     These are returned VERBATIM without any suffix, as they are already hashed.
+//
+//  2. SANITIZATION OR TRUNCATION REQUIRED:
+//     If the payload requires sanitization (unsafe chars) OR truncation (too long),
+//     a FULL suffix is appended: "_" + 16 hex chars (FullSuffixHashLength).
+//     This provides strong collision resistance for distinct inputs that would
+//     otherwise sanitize/truncate to the same string.
+//
+//  3. SAFE PAYLOADS (no sanitization, fits in length):
+//     A MANDATORY MINIMUM suffix is appended: "_" + 2 hex chars (MiniSuffixHashLength).
+//     This prevents MIMICRY ATTACKS where an attacker crafts a payload matching
+//     the literal output of a previously suffixed ID.
+//
+// The suffix hash is computed from the ORIGINAL (pre-sanitization) payload,
+// ensuring uniqueness is preserved even when sanitization alters the string.
 func formatSessionID(namespace, payload string) string {
-	// Sanitize payload to ensure filesystem safety
-	// Hash is computed BEFORE sanitization to preserve uniqueness
+	// Compute hash BEFORE sanitization to preserve uniqueness
 	originalPayloadHash := hashString(payload)
-	payload = sanitizePayload(payload)
+	sanitized := sanitizePayload(payload)
 
+	// isInternalShortHex detects payloads that are already internal detector hashes.
+	// These are exactly ShortHashLength lowercase hex characters.
+	isInternalShortHex := func(s string) bool {
+		if len(s) != ShortHashLength {
+			return false
+		}
+		for i := 0; i < len(s); i++ {
+			c := s[i]
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+				return false
+			}
+		}
+		return true
+	}
+
+	// Compute max payload length given namespace
 	maxPayload := MaxSessionIDLength - len(namespace) - len(NamespaceDelimiter)
 
-	if len(payload) > maxPayload {
-		// Truncate and add hash suffix for collision resistance
-		// Use original payload hash to preserve uniqueness even after sanitization
-		truncLen := maxPayload - 9 // 8 chars hash + 1 underscore separator
-		if truncLen < 8 {
-			// Namespace too long, just use hash
-			payload = originalPayloadHash[:maxPayload]
+	// CASE 1: Internal short hex hash - return verbatim (no suffix)
+	// These are produced by internal detectors (screen, ssh, terminal, anchor)
+	// and are already collision-resistant hashes.
+	//
+	// IMPORTANT: This bypass is ONLY allowed for trusted, internal namespaces.
+	// For user-controlled namespaces (explicit overrides, custom prefixes), even
+	// a 16-char hex payload MUST still go through the suffix logic to preserve
+	// the guarantee that all user-provided payloads carry a suffix.
+	if isInternalShortHex(payload) &&
+		len(payload) <= maxPayload &&
+		(namespace == NamespaceScreen ||
+			namespace == NamespaceSSH ||
+			namespace == NamespaceTerminal ||
+			namespace == NamespaceAnchor) {
+		return namespace + NamespaceDelimiter + payload
+	}
+
+	// Determine if sanitization altered the payload or truncation is needed
+	needsSanitization := sanitized != payload
+	// account for minimum suffix
+	needsTruncation := len(sanitized) > (maxPayload - len(SuffixDelimiter) - MiniSuffixHashLength)
+
+	// CASE 2: Sanitization OR truncation required - use FULL suffix (17 chars overhead)
+	if needsSanitization || needsTruncation {
+		const fullSuffixLen = len(SuffixDelimiter) + FullSuffixHashLength // 17
+		const allowedNS = MaxSessionIDLength - len(NamespaceDelimiter) - fullSuffixLen
+
+		// Handle extremely constrained namespace (edge case)
+		if maxPayload < fullSuffixLen {
+
+			if len(namespace) > allowedNS {
+				namespace = namespace[:allowedNS]
+			}
+			maxPayload = MaxSessionIDLength - len(namespace) - len(NamespaceDelimiter)
+		}
+
+		availForSanitized := maxPayload - fullSuffixLen
+
+		var finalPayload string
+		if availForSanitized <= 0 {
+			// No room for sanitized content; use hash-only payload
+			if maxPayload <= 0 {
+				finalPayload = ""
+			} else {
+				finalPayload = originalPayloadHash[:maxPayload]
+			}
 		} else {
-			payload = payload[:truncLen] + "_" + originalPayloadHash[:8]
+			fullSuffix := SuffixDelimiter + originalPayloadHash[:FullSuffixHashLength]
+			if len(sanitized) <= availForSanitized {
+				finalPayload = sanitized + fullSuffix
+			} else {
+				finalPayload = sanitized[:availForSanitized] + fullSuffix
+			}
+		}
+
+		return namespace + NamespaceDelimiter + finalPayload
+	}
+
+	// CASE 3: Safe payload (no sanitization, fits) - use MANDATORY MINIMUM suffix (3 chars overhead)
+	// This prevents mimicry attacks where attacker provides a payload matching
+	// a previously suffixed output.
+	miniSuffix := SuffixDelimiter + originalPayloadHash[:MiniSuffixHashLength]
+	return namespace + NamespaceDelimiter + sanitized + miniSuffix
+}
+
+// getTmuxSessionID constructs a tmux session ID from TMUX_PANE and server PID.
+// Returns a formatted, namespaced session ID: tmux--{pane}_{serverPID}
+// Tmux panes are unique per server instance, so we use TMUX_PANE + server PID.
+//
+// NOTE: This function constructs the ID directly rather than using
+// formatSessionID because tmux payloads are:
+//
+//  1. Always safe (digits and underscore only - no sanitization needed)
+//  2. Not user-provided (from environment - no mimicry attack vector)
+//  3. Already unique (pane + server PID combination)
+//
+// Therefore, no suffix is needed. The key observation is that we use a
+// distinct namespace for tmux session IDs, mitigating collisions with other
+// sources (e.g. a user can't mimic a tmux ID via explicit override).
+func getTmuxSessionID() (string, error) {
+	// TMUX_PANE is like "%0", "%1", etc.
+	pane := os.Getenv("TMUX_PANE")
+	if pane == "" {
+		return "", fmt.Errorf("TMUX_PANE not set")
+	}
+
+	// validate pane format
+	paneNum := strings.TrimPrefix(pane, "%")
+	if paneNum == `` || containsAnyNonDigit(paneNum) {
+		return "", fmt.Errorf("invalid TMUX_PANE format: %s", pane)
+	}
+
+	// TMUX env var format: /path/to/socket,PID,session_index
+	// We extract the server PID (between the last two commas)
+	tmuxEnv := os.Getenv("TMUX")
+	serverPID := extractTmuxServerPID(tmuxEnv)
+	if serverPID == "" {
+		return "", fmt.Errorf("could not extract server PID from TMUX env")
+	}
+
+	// Format: pane number (strip % prefix) + underscore + server PID
+	// Both are integers, so the result is always filesystem-safe.
+	// No suffix needed - this is an internal detector, not user-provided.
+
+	payload := paneNum + "_" + serverPID
+
+	return NamespaceTmux + NamespaceDelimiter + payload, nil
+}
+
+// extractTmuxServerPID extracts the server PID from the TMUX environment variable.
+// TMUX format: /path/to/socket,PID,session_index
+// The PID is between the LAST TWO commas.
+func extractTmuxServerPID(tmuxEnv string) string {
+	if tmuxEnv == "" {
+		return ""
+	}
+
+	// Find last comma
+	lastComma := strings.LastIndex(tmuxEnv, ",")
+	if lastComma <= 0 {
+		return ""
+	}
+
+	// Find second-to-last comma
+	beforeLast := tmuxEnv[:lastComma]
+	secondLastComma := strings.LastIndex(beforeLast, ",")
+	if secondLastComma < 0 {
+		return ""
+	}
+
+	// Extract PID between second-to-last and last comma
+	pid := tmuxEnv[secondLastComma+1 : lastComma]
+
+	if containsAnyNonDigit(pid) {
+		return ""
+	}
+
+	return pid
+}
+
+func containsAnyNonDigit(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return true
 		}
 	}
-
-	return namespace + NamespaceDelimiter + payload
-}
-
-// tmuxIDRegex matches tmux session:window:pane format like "$0:@0:%0"
-// Uses \w+ to accept alphanumeric IDs (tmux typically uses numeric, but be permissive)
-var tmuxIDRegex = regexp.MustCompile(`^\$(\w+):@(\w+):%(\w+)$`)
-
-// getTmuxSessionID queries tmux for the current pane's session ID.
-// Returns a formatted, namespaced session ID: tmux--s{N}.w{N}.p{N}
-func getTmuxSessionID() (string, error) {
-	// Find the absolute path to tmux to avoid PATH manipulation issues
-	tmuxPath, err := exec.LookPath("tmux")
-	if err != nil {
-		return "", fmt.Errorf("tmux not found in PATH: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	// Query tmux for the full session:window:pane tuple to ensure pane-level uniqueness.
-	// Each pane is a distinct logical terminal and must have a unique session ID.
-	// Format: "$0:@0:%0" (session_id:window_id:pane_id)
-	cmd := exec.CommandContext(ctx, tmuxPath, "display-message", "-p", "#{session_id}:#{window_id}:#{pane_id}")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-
-	raw := strings.TrimSpace(string(out))
-	return formatTmuxID(raw), nil
-}
-
-// formatTmuxID converts a tmux tuple like "$0:@0:%0" to a namespaced format.
-// Output format: tmux--s{session}.w{window}.p{pane}
-// This exposes the raw IDs in a filesystem-safe, human-readable format.
-func formatTmuxID(raw string) string {
-	matches := tmuxIDRegex.FindStringSubmatch(raw)
-	if len(matches) == 4 {
-		// Matched standard format: $N:@N:%N
-		// Format as: s{session}.w{window}.p{pane}
-		payload := fmt.Sprintf("s%s.w%s.p%s", matches[1], matches[2], matches[3])
-		return formatSessionID(NamespaceTmux, payload)
-	}
-
-	// Non-standard format (named sessions, etc.)
-	// Sanitize and use as payload, with hash suffix if too long
-	sanitized := sanitizeTmuxID(raw)
-	return formatSessionID(NamespaceTmux, sanitized)
-}
-
-// sanitizeTmuxID converts tmux special characters to filesystem-safe equivalents.
-// $ -> s (session), @ -> w (window), % -> p (pane), : -> .
-// Then applies full sanitization for any remaining unsafe characters.
-func sanitizeTmuxID(raw string) string {
-	// First, apply tmux-specific semantic replacements
-	r := strings.NewReplacer(
-		"$", "s",
-		"@", "w",
-		"%", "p",
-		":", ".",
-	)
-	semantic := r.Replace(raw)
-	// Then apply full sanitization for any remaining unsafe chars
-	// (e.g., named sessions like "feature/login" -> "feature_login")
-	return sanitizePayload(semantic)
+	return false
 }
 
 // sanitizePayload ensures a string is safe for use in filenames on all platforms.

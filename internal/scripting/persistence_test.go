@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
+	"github.com/joeycumines/one-shot-man/internal/session"
 )
 
 // TestEngine_PersistenceOnClose verifies that closing the engine persists the session state.
@@ -14,8 +15,13 @@ func TestEngine_PersistenceOnClose(t *testing.T) {
 	// Create a temporary directory for storage
 	tmpDir := t.TempDir()
 	sessionID := "test-persistence-session"
-	// The session ID gets namespaced when passed as explicit override
-	expectedSessionID := "ex--" + sessionID
+	// The session ID gets namespaced when passed as explicit override —
+	// compute the effective session ID using the session package so tests
+	// remain correct if the namespacing algorithm changes.
+	expectedSessionID, _, err := session.GetSessionID(sessionID)
+	if err != nil {
+		t.Fatalf("failed to compute expected session id: %v", err)
+	}
 
 	// Override storage paths to use tmpDir
 	storage.SetTestPaths(tmpDir)
@@ -55,7 +61,7 @@ func TestEngine_PersistenceOnClose(t *testing.T) {
 	// Verify that the state was persisted to disk.
 	// We need to know where the file is.
 	// SetTestPaths sets it to <tmpDir>/<sessionID>.session.json
-	// Note: session ID is namespaced as ex--<original>
+	// Note: session ID is namespaced according to the session package
 	expectedPath := filepath.Join(tmpDir, expectedSessionID+".session.json")
 
 	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {

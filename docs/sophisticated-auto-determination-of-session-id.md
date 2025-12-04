@@ -4,7 +4,7 @@
 
 This document details the architecture for determining a stable, persistent Session ID across diverse operating systems including Linux, BSD, macOS (Darwin), and Windows. The system prioritizes accuracy and non-blocking performance, leveraging authoritative sources (environment variables, specific OS APIs) before falling back to a rigorous "Deep Anchor" recursive process analysis.
 
-The architecture addresses platform-specific constraints—specifically the lack of `/proc` on macOS, the high cost of process snapshots on Windows, and the "Sudo Trap" where standard session leader logic fails—by employing platform-native syscalls and a concurrent caching strategy.
+The architecture addresses platform-specific constraints—specifically the lack of `/proc` on macOS, the high cost of process snapshots on Windows, and the "Sudo Trap" where standard session leader logic fails—by employing platform-native syscalls and a carefully bounded, per-invocation discovery routine. The current implementation does **not** cache session IDs globally; each `GetSessionID` call performs a fresh, deterministic evaluation based on the live environment.
 
 **Key Terminology:**
 
@@ -15,78 +15,148 @@ The architecture addresses platform-specific constraints—specifically the lack
 - **Ghost Anchor:** A Windows phenomenon where a parent process terminates but its PID remains in the child's `th32ParentProcessID` field.
 - **PID Recycling:** When a terminated process's PID is reassigned to a new, unrelated process. Detected via StartTime/CreationTime validation.
 - **Namespace Inode (Linux):** The kernel namespace identifier obtained from `/proc/self/ns/pid`, used instead of fragile cgroup text parsing.
+- **Mimicry Attack:** When an attacker crafts a payload that matches the literal output of a previously suffixed session ID, causing a collision. Prevented by mandatory minimum suffix on all user-provided payloads.
 
 ## Identifier Format Specification
 
-All session IDs follow a **unified namespaced format** that satisfies three critical constraints:
+All session IDs follow a **unified namespaced format** that satisfies four critical constraints:
 
 1. **Bounded Length**: Maximum 80 characters (filesystem-safe on all platforms)
 2. **Namespaced**: Distinct prefix for each detection source (prevents cross-source collisions)
 3. **Human-Readable Where Possible**: Raw IDs exposed when short and filesystem-safe
+4. **Mimicry-Resistant**: Mandatory hash suffix on user-provided payloads prevents collision attacks
 
 ### Format Structure
 
 ```
-{namespace}--{payload}
+{namespace}--{payload}[_{hash}]
 ```
 
-- **Namespace**: 2-8 character prefix identifying the detection source
-- **Delimiter**: Double-dash `--` (unambiguous, filesystem-safe)
-- **Payload**: Either sanitized raw value OR truncated hash, depending on length
+- **Namespace**: short textual prefix identifying the detection source. The implementation does not impose a hard 2–8 character limit; namespaces should be short for human readability but may be sanitized and truncated in extreme edge cases to keep the entire session ID within the 80-character maximum.
+- **Delimiter**: Double-dash `--` (unambiguous, filesystem-safe, distinct from suffix delimiter)
+- **Payload**: Sanitized value (may be truncated if too long)
+- **Suffix Delimiter**: Underscore `_` (filesystem-safe, distinct from namespace delimiter)
+- **Hash**: 2-16 hex characters depending on suffix type (see Suffix Strategy below)
 
 ### Namespace Prefixes (Exhaustive)
 
-| Namespace  | Source | Example ID |
-|:-----------|:-------|:-----------|
-| `ex`       | Explicit override (`--session-id` flag or `OSM_SESSION_ID` env) | `ex--my-custom-session` |
-| `tmux`     | Tmux multiplexer | `tmux--s0.w0.p0` |
-| `screen`   | GNU Screen | `screen--a1b2c3d4e5f67890` |
-| `ssh`      | SSH connection | `ssh--f0e1d2c3b4a59687` |
-| `terminal` | macOS Terminal.app / iTerm2 | `terminal--1234567890abcdef` |
-| `anchor`   | Deep Anchor (process tree walk) | `anchor--abcd1234efgh5678` |
-| `uuid`     | Random UUID fallback | `uuid--550e8400-e29b-41d4-a716-446655440000` |
+| Namespace  | Source | Example ID | Suffix? |
+|:-----------|:-------|:-----------|:--------|
+| `ex`       | Explicit override (`--session-id` flag or `OSM_SESSION_ID` env) | `ex--my-session_a1` | **Yes (always)** |
+| `tmux`     | Tmux multiplexer | `tmux--5_12345` | No (internal) |
+| `screen`   | GNU Screen | `screen--a1b2c3d4e5f67890` | No (internal) |
+| `ssh`      | SSH connection | `ssh--f0e1d2c3b4a59687` | No (internal) |
+| `terminal` | macOS Terminal.app / iTerm2 | `terminal--1234567890abcdef` | No (internal) |
+| `anchor`   | Deep Anchor (process tree walk) | `anchor--abcd1234efgh5678` | No (internal) |
+| `uuid`     | Random UUID fallback | `uuid--550e8400-e29b-41d4-a716-446655440000` | No (internal) |
+
+### Suffix Strategy (CRITICAL FOR SECURITY)
+
+The suffix strategy prevents two classes of attacks/bugs:
+
+1. **Sanitization Collisions**: Different inputs that sanitize to the same string (e.g., `"foo/bar"` and `"foo_bar"`)
+2. **Mimicry Attacks**: An attacker crafts a payload matching the output of a previously suffixed ID
+
+#### Three Suffix Cases
+
+| Case | Condition | Suffix | Total Overhead | Example |
+|:-----|:----------|:-------|:---------------|:--------|
+| **1. Internal Short Hex** | Payload is exactly 16 lowercase hex chars (`[0-9a-f]`) | None | 0 chars | `screen--a1b2c3d4e5f67890` |
+| **2. Sanitization/Truncation** | Payload requires sanitization OR truncation | Full (`_` + 16 hex) | 17 chars | `ex--foo_bar_a1b2c3d4e5f67890` |
+| **3. Safe Payload** | No sanitization needed, fits in length | Mini (`_` + 2 hex) | 3 chars | `ex--my-session_a1` |
+
+Note: the implementation only allows the "internal short hex" pass-through (no suffix) when the 16-char internal hash also fits within the available payload budget for the chosen namespace (i.e., payload length <= maxPayload). If a 16‑char detector output would overflow the available space it is treated like any oversized payload and the truncation+full-suffix rules apply.
+
+#### Why the Mandatory Minimum Suffix is Critical
+
+**The Mimicry Attack (without mini suffix):**
+
+1. User A provides `"foo/bar"` → sanitizes to `"foo_bar"` → gets full suffix → `"ex--foo_bar_a1b2c3d4e5f67890"`
+2. Attacker provides the literal string `"foo_bar_a1b2c3d4e5f67890"` as their session ID
+3. This payload is "safe" (no sanitization needed) and fits in length
+4. Without mini suffix: Returns `"ex--foo_bar_a1b2c3d4e5f67890"` (unchanged) → **COLLISION with User A!**
+5. With mini suffix: Returns `"ex--foo_bar_a1b2c3d4e5f67890_xx"` → **Distinct, no collision**
+
+**Design Rationale for 2-char Mini Suffix:**
+- 2 hex chars = 8 bits = 256 possible values
+- Sufficient to distinguish original input from mimicry attempts (attacker cannot predict the hash)
+- Minimal overhead (3 chars total) preserves "free space" for user payloads
+- Full hash is still computed internally; only display is truncated
+
+#### Suffix Length Disambiguation
+
+The two suffix lengths are **intentionally distinct** and unambiguous:
+
+| Suffix Type | Format | Total Length | When Applied |
+|:------------|:-------|:-------------|:-------------|
+| Mini | `_XX` | 3 chars | Safe user payloads (no sanitization/truncation) |
+| Full | `_XXXXXXXXXXXXXXXX` | 17 chars | Sanitization OR truncation required |
+
+Both use:
+- Same delimiter: `_` (underscore)
+- Same character set: `[0-9a-f]` (lowercase hex)
+- **Distinct lengths**: 3 vs 17 chars are unambiguous; no overlap possible
+
+### Constants Reference
+
+```go
+const (
+    MaxSessionIDLength   = 80   // Maximum total session ID length (filesystem-safe)
+    NamespaceDelimiter   = "--" // Separates namespace from payload
+    SuffixDelimiter      = "_"  // Separates payload from hash suffix
+    ShortHashLength      = 16   // Internal detector hash length (64 bits)
+    MiniSuffixHashLength = 2    // Mandatory minimum suffix (8 bits, anti-mimicry)
+    FullSuffixHashLength = 16   // Full suffix for sanitization/truncation (64 bits)
+)
+```
 
 ### Payload Encoding Rules
 
-**All payloads are sanitized using a strict whitelist** to ensure filesystem safety on all platforms. Only alphanumeric characters (`a-z`, `A-Z`, `0-9`), dots (`.`), hyphens (`-`), and underscores (`_`) are allowed. All other characters—including path separators (`/`, `\`), Windows reserved characters (`:`, `*`, `?`, `"`, `<`, `>`, `|`), and spaces—are replaced with underscores (`_`).
+**All payloads are sanitized using a strict whitelist** to ensure filesystem safety on all platforms:
 
-1. **Tmux**: The raw `$N:@N:%N` tuple is sanitized to `sN.wN.pN` format:
-   - `$` → `s` (session)
-   - `@` → `w` (window)  
-   - `%` → `p` (pane)
-   - `:` → `.` (separator)
-   - Example: `$0:@0:%0` → `tmux--s0.w0.p0`
-   - Named sessions with slashes (e.g., `feature/login`) are sanitized: `tmux--feature_login...`
+**Allowed characters:** `a-z`, `A-Z`, `0-9`, `.` (dot), `-` (hyphen), `_` (underscore)
 
-2. **Screen/SSH/Terminal/Anchor**: 16-character truncated SHA256 hash of namespaced input:
-   - Screen: `hashString("screen:" + STY)[:16]`
-   - SSH: `hashString("ssh:client_ip:client_port:server_ip:server_port")[:16]`
-   - Terminal: `hashString("terminal:" + TERM_SESSION_ID)[:16]`
-   - Anchor: `SessionContext.GenerateHash()[:16]`
+**Replaced with underscore:** All other characters including:
+- Path separators: `/`, `\`
+- Windows reserved: `:`, `*`, `?`, `"`, `<`, `>`, `|`
+- Spaces, tabs, newlines
+- All other special characters
 
-3. **Explicit Override**: 
-   - Both namespace and payload are sanitized using the strict whitelist
-   - If payload exceeds max length: truncated with 8-char hash suffix (prevents collisions)
-   - Example: `user/name--hack` → `user_name--hack`
+#### Source-Specific Payload Formats
 
-4. **UUID**: Full UUID preserved (UUIDs contain only safe characters): `uuid--{uuid-value}`
+| Source | Payload Format | Suffix | Reason |
+|:-------|:---------------|:-------|:-------|
+| **Tmux** | `{paneNum}_{serverPID}` (e.g., `5_12345`) | None | Internal, not user-provided |
+| **Screen** | `SHA256("screen:" + STY)[:16]` | None | Internal 16-char hex |
+| **SSH** | `SHA256("ssh:clientIP:clientPort:serverIP:serverPort")[:16]` | None | Internal 16-char hex |
+| **Terminal** | `SHA256("terminal:" + TERM_SESSION_ID)[:16]` | None | Internal 16-char hex |
+| **Anchor** | `SessionContext.GenerateHash()[:16]` | None | Internal 16-char hex |
+| **UUID** | Full UUID (e.g., `550e8400-e29b-...`) | None | Internal, not user-provided |
+| **Explicit** | Sanitized user input | **Always** (mini or full) | User-provided, mimicry risk |
 
 ### Length Constraints
 
-| Component | Max Length |
-|:----------|:-----------|
-| Total Session ID | 80 characters |
-| Namespace | 8 characters |
-| Delimiter | 2 characters |
-| Payload | 64 characters (after namespace+delimiter) |
+| Component | Length |
+|:----------|:-------|
+| Maximum Total Session ID | 80 characters |
+| Namespace | Recommended: short (human-friendly). Implementation: not strictly bounded — namespaces will be sanitized and in extreme cases truncated to preserve the MaxSessionIDLength invariant. |
+| Namespace Delimiter (`--`) | 2 characters |
+| Suffix Delimiter (`_`) | 1 character |
+| Mini Suffix Hash | 2 characters |
+| Full Suffix Hash | 16 characters |
+| Maximum Payload | `80 - len(namespace) - 2 - suffix_overhead` |
 
 ### Collision Resistance
 
 - **16-char hex hash = 64 bits of entropy**: Sufficient for collision resistance within a single system
+- **2-char hex hash = 8 bits**: Sufficient to prevent mimicry (256 possibilities)
 - **Namespacing prevents cross-source collisions**: A tmux ID can never collide with an SSH ID
 - **Full SHA256 computed internally**: Only the display format is truncated
-- **Hash-suffix truncation**: When payloads exceed max length, they are truncated with an 8-char hash suffix computed from the *original* (pre-sanitization) value, preventing collisions between similar long strings
-- **Pre-sanitization hashing**: Hash is computed BEFORE sanitization to preserve uniqueness even when different inputs sanitize to the same string
+- **Pre-sanitization hashing**: Hash is computed from ORIGINAL input before sanitization
+
+Note: this pre-sanitization hash ensures that even if two inputs sanitize to the same string, their suffixes remain distinct because the suffix is derived from the original raw payload.
+- **Mandatory suffix**: All user-provided payloads get suffix (prevents mimicry)
+- **Distinct suffix lengths**: 3 chars (mini) vs 17 chars (full) are unambiguous
 
 ## Purpose of Session ID
 
@@ -104,288 +174,279 @@ A well-designed session ID ensures that:
 
 The discovery mechanism follows a strict priority order. Higher-priority methods represent more specific or user-defined contexts.
 
-| Priority | Strategy | Source | Complexity |
-|:---------|:---------|:-------|:-----------|
-| 1 | Explicit Override | `--session-id` flag or `OSM_SESSION_ID` env | O(1) |
-| 2 | Multiplexer | `TMUX_PANE` / `STY` env vars | O(1) |
-| 3 | SSH Context | `SSH_CONNECTION` env or sshd ancestry | O(depth) |
-| 4 | GUI Terminal | `TERM_SESSION_ID` (macOS) | O(1) |
-| 5 | Deep Anchor | Recursive process walk | O(depth) |
-| 6 | UUID Fallback | Random generation | O(1) |
+| Priority | Strategy | Source | Complexity | Suffix? |
+|:---------|:---------|:-------|:-----------|:--------|
+| 1 | Explicit Override | `--session-id` flag or `OSM_SESSION_ID` env | O(1) | **Yes (always)** |
+| 2 | Multiplexer | `TMUX_PANE`+`TMUX` / `STY` env vars | O(1) | No |
+| 3 | SSH Context | `SSH_CONNECTION` env | O(1) | No |
+| 4 | GUI Terminal | `TERM_SESSION_ID` (macOS only) | O(1) | No |
+| 5 | Deep Anchor | Recursive process walk | O(depth) | No |
+| 6 | UUID Fallback | Random generation | O(1) | No |
 
-### 1\. Explicit Overrides
+Returned source labels (exact strings returned by GetSessionID as the "source" value):
 
-**Source:** User arguments or `OSM_SESSION_ID` environment variable (the former taking precedence).
+- `explicit-flag`: returned when explicit override provided via CLI flag
+- `explicit-env`: returned when explicit override provided via the OSM_SESSION_ID environment variable
+- `tmux`: returned when `getTmuxSessionID()` succeeds
+- `screen`: returned when `STY` environment variable is present
+- `ssh-env`: returned when `SSH_CONNECTION` is present
+- `macos-terminal`: returned when `TERM_SESSION_ID` is used on darwin
+- `deep-anchor`: returned when the process ancestry Deep Anchor algorithm provides a SessionContext
+- `uuid-fallback`: returned when all other detection mechanisms fail and a UUID is generated
+
+### 1. Explicit Overrides
+
+**Source:** User arguments (`--session-id` flag) or `OSM_SESSION_ID` environment variable (flag takes precedence).
+
 **Behavior:** If provided, this value is authoritative and bypasses all auto-discovery logic.
-**Format:** All values are sanitized using a strict whitelist. If already namespaced (contains `--`), the namespace and payload are extracted and both sanitized. If payload exceeds max length, it is truncated with an 8-char hash suffix to prevent collisions. Example: `user/name--hack` → `user_name--hack`
 
-### 2\. Multiplexer Contexts
+**Suffix:** ALWAYS applied to prevent mimicry attacks:
+- **Mini suffix** (`_XX`, 3 chars): When payload is safe (no sanitization, fits in length)
+- **Full suffix** (`_XXXXXXXXXXXXXXXX`, 17 chars): When sanitization OR truncation is required
+
+**Format Processing:**
+- If input contains `--`: Extract namespace and payload, sanitize both, apply suffix
+- Otherwise: Use `ex` namespace, sanitize payload, apply suffix
+
+**Examples:**
+- `"my-session"` → `"ex--my-session_a1"` (safe payload, mini suffix)
+- `"user/name"` → `"ex--user_name_a1b2c3d4e5f67890"` (sanitized, full suffix)
+- `"custom--value"` → `"custom--value_a1"` (pre-namespaced, safe payload, mini suffix)
+
+### 2. Multiplexer Contexts
 
 Multiplexers manage their own session lifecycles. If the process is running inside a multiplexer, the multiplexer's own session identifier is the most accurate representation of the "terminal" context.
 
-  * **Tmux:**
-      * **Primary Check:** Presence of `TMUX_PANE` environment variable.
-      * **Extraction:** The implementation queries `tmux` for the full `#{session_id}:#{window_id}:#{pane_id}` tuple (500ms timeout). This ensures **pane-level uniqueness**: each tmux pane is treated as a distinct logical terminal.
-      * **Format:** The raw tuple `$N:@N:%N` is sanitized to `tmux--sN.wN.pN` for filesystem safety.
-        - Example: `$0:@0:%0` → `tmux--s0.w0.p0`
-        - Named sessions with non-numeric IDs are sanitized and hash-suffixed if too long.
-      * **Stale Detection:** If `TMUX_PANE` is present but tmux is unreachable, treat as stale and continue to next priority.
-  * **GNU Screen:**
-      * **Primary Check:** Presence of `STY` environment variable.
-      * **Format:** `screen--{hash16}` where hash16 is the first 16 chars of SHA256("screen:" + STY).
+#### Tmux
 
-### 3\. SSH Sessions (POSIX & Darwin)
-
-**Priority:** Inherited Environment Variables.
-
-To avoid permission errors associated with inspecting ancestor processes (e.g., `ptrace_scope` restrictions), the system prioritizes the *current* process environment.
-
-* **Detection:** Presence of `SSH_CONNECTION`.
-* **ID Generation:** The implementation constructs a namespaced string from the full 4-field tuple (client_ip, client_port, server_ip, server_port).
-* **Format:** `ssh--{hash16}` where hash16 is SHA256("ssh:client_ip:client_port:server_ip:server_port")[:16]
-* **Uniqueness:** Including the client port differentiates concurrent sessions from the same client IP.
-* **Fallback (Deep Anchor Walk):** If environment variables are stripped (e.g., via `sudo -i`), the system utilizes the **Deep Anchor** recursive walk.
-    * **Logic:** The Deep Anchor walk (Priority 5) will traverse upwards past the `sudo` boundary to find the parent shell or `sshd` process.
-
-> **Implementation Note:** Direct recovery of environment variables from ancestor processes (e.g., via `/proc/[pid]/environ`) is theoretically possible but brittle and permission-locked. This implementation relies on the Deep Anchor fallback to handle `sudo` stripping, rather than aggressive memory/env inspection.
-
-### 4\. GUI and Terminal Emulators (macOS Only)
-
-* **Source:** `TERM_SESSION_ID` environment variable.
-* **Context:** Set by `Terminal.app` and `iTerm2`. Authoritative for macOS local terminals.
-* **Format:** `terminal--{hash16}` where hash16 is SHA256("terminal:" + TERM_SESSION_ID)[:16]
-
-### 5\. TTY Device ID (The "Deep Anchor" Strategy)
-
-**Source:** Recursive Ancestry Walk.
-**Format:** `anchor--{hash16}` where hash16 is SHA256 of structured SessionContext fields.
-
-This method replaces naive `getsid(0)` calls, which fail when `osm` is wrapped in ephemeral session leaders (e.g., `setsid`, `sudo`).
-
-  * **Phase A: CTTY Resolution:**
-
-      * **Check:** `isatty(0)`, `isatty(1)`, `isatty(2)`.
-      * **Fallback:** If streams are redirected, inspect the Controlling Terminal directly (Linux: `/proc/self/fd/N` symlinks; macOS/BSD: `ioctl` `TIOCPTYGNAME`).
-      * **Final Fallback:** UUID.
-
-  * **Phase B: The Recursive Anchor Walk (Linux semantics):**
-
-      * The system traverses the process tree upwards to find a **Stable Anchor**.
-      * **Skip List:** The walk must ignore ephemeral wrappers (e.g., `sudo`, `su`, `setsid`, `osm`, `strace`). **Crucially**, the process initiating the walk (Self) is implicitly treated as a wrapper, ensuring that renaming the binary (e.g., `osm-v2`) does not break the anchor logic.
-      * **Race Condition Check:** For every step `Child -> Parent`, verify `Child.StartTime >= Parent.StartTime`. If this fails, the parent process died and the PID was recycled; the walk stops at the last valid child.
-      * **Stability Check:** The walk stops when it finds a process that:
-        1.  Is a known Shell (e.g., `bash`, `zsh`, `fish`).
-        2.  Is a session leader matching the target TTY (`PID == SID && TtyNr == targetTTY`).
-        3.  Or is a Root/Daemon boundary (PID 1, or names like `init`, `systemd`, `sshd`, `login`).
-
-    * **ID Generation (Linux/POSIX):** The Deep Anchor returns structured coordinates (Boot ID, Namespace ID, Anchor PID, StartTime, TTY). The implementation builds a structured `SessionContext` and produces:
-      - Internal hash: `SHA256(BootID:ContainerID:TTYName:AnchorPID:StartTime)`
-      - Final ID: `anchor--{hash[:16]}`
-
-      * `Namespace_ID` is obtained from `/proc/self/ns/pid`.
-      * **Critical Constraint:** `Boot_ID` (from `/proc/sys/kernel/random/boot_id`) is required on Linux to prevent ID collisions across system reboots.
-
-### 6\. Windows Fallback (Snapshot Atomicity)
-
-On Windows, if no SSH/Multiplexer context is detected, the system identifies the console root.
-
-  * **MinTTY Detection:** Checks for named pipes (e.g., `\msys-DDDD-ptyN...`) to support Git Bash/Cygwin users.
-  * **Console Root via Snapshot:**
-      * The system performs a recursive parent walk utilizing `CreateToolhelp32Snapshot`.
-      * **Race Condition Check:** It is **mandatory** to verify `Parent.CreationTime <= Child.CreationTime`.
-      * **Ghost Anchor Prevention:** If a parent PID is missing from the Snapshot, the walk stops at the Child.
-      * **Self-Skipping:** The walk strictly skips the current PID to prevent "Self-Anchoring" if the executable is renamed.
-      * **Shell Boundary Stop Condition:** The walk terminates when encountering a known shell process.
-
-> **[RESOLVED CONFLICT]:** `cmd.exe` is strictly treated as a **Shell**, not a wrapper. Previous iterations placed `cmd.exe` in the skip list, which caused all independent Command Prompt windows to traverse up to `explorer.exe`, resulting in a global session collision (The "Singleton Trap").
-
-### 7\. UUID Fallback
-
-If all discovery methods fail, a random UUID is generated.
-**Format:** `uuid--{uuid-value}`
-
------
-
-## Implementation Specifications
-
-### 1\. Orchestration Entry Point
-
-*The following example mirrors the actual implementation in the repository (`internal/session/session.go`).*
+- **Detection:** Presence of `TMUX_PANE` environment variable
+- **Extraction:** Pane number from `TMUX_PANE` + server PID from `TMUX`
+- **Format:** `tmux--{paneNum}_{serverPID}` (e.g., `tmux--5_12345`)
+- **Suffix:** None (internal detector, not user-provided, always safe)
+- **Rationale:** Tmux panes are unique per server instance. Pane + server PID uniquely identifies the terminal.
+- **Stale Detection:** If `TMUX_PANE` present but `TMUX` missing/malformed, fall through to next priority
 
 ```go
-package session
-
-import (
-    "context"
-    "crypto/sha256"
-    "encoding/hex"
-    "fmt"
-    "os"
-    "os/exec"
-    "regexp"
-    "runtime"
-    "strings"
-    "time"
-
-    "github.com/google/uuid"
-)
-
-// Session ID Format Constants
-const (
-    MaxSessionIDLength = 80          // Maximum total length (filesystem-safe)
-    NamespaceDelimiter = "--"        // Separates namespace from payload
-    MaxPayloadLength   = 64          // Max payload after namespace+delimiter
-    ShortHashLength    = 16          // Truncated hash length (64 bits)
-)
-
-// Namespace prefixes (MUST be distinct)
-const (
-    NamespaceExplicit = "ex"
-    NamespaceTmux     = "tmux"
-    NamespaceScreen   = "screen"
-    NamespaceSSH      = "ssh"
-    NamespaceTerminal = "terminal"
-    NamespaceAnchor   = "anchor"
-    NamespaceUUID     = "uuid"
-)
-
-// GetSessionID implements the full discovery hierarchy.
-// Returns (sessionID, source, error) where source describes which method succeeded.
-//
-// All session IDs are namespaced: {namespace}--{payload}
-func GetSessionID(explicitOverride string) (string, string, error) {
-    // Priority 1: Explicit Override
-    if explicitOverride != "" {
-        return formatExplicitID(explicitOverride), "explicit-flag", nil
+// TMUX env var format: /path/to/socket,PID,session_index
+// Server PID extracted from between the last two commas
+func extractTmuxServerPID(tmuxEnv string) string {
+    lastComma := strings.LastIndex(tmuxEnv, ",")
+    if lastComma <= 0 { return "" }
+    beforeLast := tmuxEnv[:lastComma]
+    secondLastComma := strings.LastIndex(beforeLast, ",")
+    if secondLastComma < 0 { return "" }
+    pid := tmuxEnv[secondLastComma+1 : lastComma]
+    // Validate numeric
+    for _, c := range pid {
+        if c < '0' || c > '9' { return "" }
     }
-    if envID := os.Getenv("OSM_SESSION_ID"); envID != "" {
-        return formatExplicitID(envID), "explicit-env", nil
-    }
-
-    // Priority 2: Multiplexer Detection
-    if pane := os.Getenv("TMUX_PANE"); pane != "" {
-        if sessionID, err := getTmuxSessionID(); err == nil {
-            return sessionID, "tmux", nil
-        }
-    }
-    if sty := os.Getenv("STY"); sty != "" {
-        return formatScreenID(sty), "screen", nil
-    }
-
-    // Priority 3: SSH Context
-    if sshConn := os.Getenv("SSH_CONNECTION"); sshConn != "" {
-        return formatSSHID(sshConn), "ssh-env", nil
-    }
-
-    // Priority 4: macOS GUI Terminal
-    if runtime.GOOS == "darwin" {
-        if termID := os.Getenv("TERM_SESSION_ID"); termID != "" {
-            return formatTerminalID(termID), "macos-terminal", nil
-        }
-    }
-
-    // Priority 5: Deep Anchor (Platform-Specific)
-    ctx, err := resolveDeepAnchor()
-    if err == nil && ctx.AnchorPID != 0 {
-        return ctx.FormatSessionID(), "deep-anchor", nil
-    }
-
-    // Priority 6: UUID Fallback
-    UUID, err := generateUUID()
-    if err != nil {
-        return "", "", fmt.Errorf("all session detection methods failed: %w", err)
-    }
-    return formatUUIDID(UUID), "uuid-fallback", nil
-}
-
-// tmuxIDRegex matches tmux session:window:pane format like "$0:@0:%0"
-// Uses \w+ to accept alphanumeric IDs (tmux typically uses numeric, but be permissive)
-var tmuxIDRegex = regexp.MustCompile(`^\$(\w+):@(\w+):%(\w+)$`)
-
-func getTmuxSessionID() (string, error) {
-    tmuxPath, err := exec.LookPath("tmux")
-    if err != nil {
-        return "", fmt.Errorf("tmux not found in PATH: %w", err)
-    }
-
-    ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-    defer cancel()
-
-    // Query tmux for the full session:window:pane tuple
-    cmd := exec.CommandContext(ctx, tmuxPath, "display-message", "-p", 
-        "#{session_id}:#{window_id}:#{pane_id}")
-    out, err := cmd.Output()
-    if err != nil {
-        return "", err
-    }
-
-    raw := strings.TrimSpace(string(out))
-    return formatTmuxID(raw), nil
-}
-
-// formatTmuxID converts "$0:@0:%0" to "tmux--s0.w0.p0"
-func formatTmuxID(raw string) string {
-    matches := tmuxIDRegex.FindStringSubmatch(raw)
-    if len(matches) == 4 {
-        payload := fmt.Sprintf("s%s.w%s.p%s", matches[1], matches[2], matches[3])
-        return NamespaceTmux + NamespaceDelimiter + payload
-    }
-    // Non-standard format: sanitize and hash if too long
-    sanitized := sanitizeTmuxID(raw)
-    return formatSessionID(NamespaceTmux, sanitized)
-}
-
-func hashString(s string) string {
-    hasher := sha256.New()
-    hasher.Write([]byte(s))
-    return hex.EncodeToString(hasher.Sum(nil))
-}
-
-func generateUUID() (string, error) {
-    return uuid.NewString(), nil
+    return pid
 }
 ```
 
-### 2\. Common Logic (Types and Hashing)
+**Implementation Note:** `getTmuxSessionID()` constructs the ID directly without calling `formatSessionID()` because:
+1. Tmux payloads are always safe (digits + underscore only)
+2. Not user-provided (from environment)
+3. Already unique (pane + server PID combination)
 
-*This logic aggregates the platform-specific signals into a collision-resistant hash using strict delimiters.*
+#### GNU Screen
+
+- **Detection:** Presence of `STY` environment variable
+- **Format:** `screen--{hash16}` where `hash16 = SHA256("screen:" + STY)[:16]`
+- **Suffix:** None (payload is internal 16-char hex, recognized by `isInternalShortHex`)
+
+### 3. SSH Sessions
+
+**Detection:** Presence of `SSH_CONNECTION` environment variable.
+
+**ID Generation:** Full 4-field tuple hashed for uniqueness:
+- `SSH_CONNECTION` format: `client_ip client_port server_ip server_port`
+- Hash input: `"ssh:client_ip:client_port:server_ip:server_port"`
+
+**Format:** `ssh--{hash16}` where `hash16 = SHA256(hash_input)[:16]`
+
+**Suffix:** None (payload is internal 16-char hex)
+
+**Uniqueness:** Including client port differentiates concurrent sessions from same IP.
+
+**Fallback:** If `SSH_CONNECTION` stripped (e.g., via `sudo -i`), Deep Anchor walk recovers session context.
+
+### 4. GUI Terminal (macOS Only)
+
+**Detection:** `TERM_SESSION_ID` environment variable, only when `runtime.GOOS == "darwin"`.
+
+**Format:** `terminal--{hash16}` where `hash16 = SHA256("terminal:" + TERM_SESSION_ID)[:16]`
+
+**Suffix:** None (payload is internal 16-char hex)
+
+**Context:** Set by Terminal.app and iTerm2. Authoritative for macOS local terminals.
+
+### 5. Deep Anchor (Process Tree Walk)
+
+**Source:** Recursive ancestry walk to find stable session boundary.
+
+**Format:** `anchor--{hash16}` where `hash16 = SessionContext.GenerateHash()[:16]`
+
+**Suffix:** None (payload is internal 16-char hex)
+
+See platform-specific sections below for implementation details.
+
+### 6. UUID Fallback
+
+**Condition:** All other methods failed.
+
+**Format:** `uuid--{uuid-value}` (e.g., `uuid--550e8400-e29b-41d4-a716-446655440000`)
+
+**Suffix:** None (UUID is internally generated, always safe, not user-provided)
+
+**Implementation Note:** `formatUUIDID()` constructs the ID directly without calling `formatSessionID()`.
+
+---
+
+## Implementation Specifications
+
+### 1. Core Algorithm: `formatSessionID`
+
+This is the central function that applies the suffix strategy. It handles user-provided payloads via `formatExplicitID()` and internal detector payloads.
 
 ```go
-package session
+func formatSessionID(namespace, payload string) string {
+    // Compute hash BEFORE sanitization to preserve uniqueness
+    originalPayloadHash := hashString(payload)
+    sanitized := sanitizePayload(payload)
 
-import (
-    "crypto/sha256"
-    "encoding/hex"
-    "fmt"
-)
+    // Compute max payload length given namespace
+    maxPayload := MaxSessionIDLength - len(namespace) - len(NamespaceDelimiter)
 
-// SessionContext represents the absolute coordinates of a session.
-type SessionContext struct {
-    BootID      string // Kernel Boot ID (Linux) or MachineGUID (Windows)
-    ContainerID string // Linux: namespace ID (e.g. /proc/self/ns/pid); Empty on Windows
-    AnchorPID   uint32 // The Process ID of the stable parent (uint32 for Windows DWORD compatibility)
-    StartTime   uint64 // Creation time (ticks or filetime)
-    TTYName     string // Optional: /dev/pts/X or MinTTY pipe name
+    // CASE 1: Internal short hex hash - return verbatim (no suffix)
+    // Recognized as 16 lowercase hex chars exactly, but ONLY for trusted
+    // internal detector namespaces (screen, ssh, terminal, anchor). For any
+    // user-controlled namespace (explicit overrides, custom prefixes), even
+    // a 16-char hex payload must still flow through the suffix logic.
+    if isInternalShortHex(payload) && len(payload) <= maxPayload &&
+        (namespace == NamespaceScreen ||
+            namespace == NamespaceSSH ||
+            namespace == NamespaceTerminal ||
+            namespace == NamespaceAnchor) {
+        return namespace + NamespaceDelimiter + payload
+    }
+
+    // Determine if sanitization or truncation needed
+    needsSanitization := sanitized != payload
+    needsTruncation := len(sanitized) > (maxPayload - 1 - MiniSuffixHashLength)
+
+    // CASE 2: Sanitization OR truncation required - use FULL suffix (17 chars)
+    if needsSanitization || needsTruncation {
+        fullSuffix := SuffixDelimiter + originalPayloadHash[:FullSuffixHashLength]
+        // Handle truncation with fullSuffix...
+        return namespace + NamespaceDelimiter + finalPayload
+    }
+
+    // CASE 3: Safe payload - use MANDATORY MINIMUM suffix (3 chars)
+    // This prevents mimicry attacks
+    miniSuffix := SuffixDelimiter + originalPayloadHash[:MiniSuffixHashLength]
+    return namespace + NamespaceDelimiter + sanitized + miniSuffix
+}
+```
+
+### 2. Internal Short Hex Detection
+
+Internal detector payloads (screen, ssh, terminal, anchor) are exactly 16 lowercase hex characters. These are recognized and passed through without suffix:
+
+```go
+func isInternalShortHex(s string) bool {
+    if len(s) != ShortHashLength { // 16
+        return false
+    }
+    for i := 0; i < len(s); i++ {
+        c := s[i]
+        if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+            return false
+        }
+    }
+    return true
+}
+```
+
+### 3. Payload Sanitization
+
+```go
+func sanitizePayload(s string) string {
+    var result strings.Builder
+    result.Grow(len(s))
+    for _, r := range s {
+        if isFilenameSafe(r) {
+            result.WriteRune(r)
+        } else {
+            result.WriteRune('_')
+        }
+    }
+    return result.String()
 }
 
-// GenerateHash produces a deterministic SHA256 hash from the session context.
-// This is used internally; for the final session ID use FormatSessionID().
+func isFilenameSafe(r rune) bool {
+    return (r >= 'a' && r <= 'z') ||
+           (r >= 'A' && r <= 'Z') ||
+           (r >= '0' && r <= '9') ||
+           r == '.' || r == '-' || r == '_'
+}
+```
+
+### 4. Tmux Session ID (Direct Construction)
+
+Tmux IDs are constructed directly, bypassing `formatSessionID()`:
+
+```go
+func getTmuxSessionID() (string, error) {
+    pane := os.Getenv("TMUX_PANE")
+    if pane == "" {
+        return "", fmt.Errorf("TMUX_PANE not set")
+    }
+
+    tmuxEnv := os.Getenv("TMUX")
+    serverPID := extractTmuxServerPID(tmuxEnv)
+    if serverPID == "" {
+        return "", fmt.Errorf("could not extract server PID from TMUX env")
+    }
+
+    paneNum := strings.TrimPrefix(pane, "%")
+    payload := paneNum + "_" + serverPID
+
+    // Direct construction - no suffix needed
+    return NamespaceTmux + NamespaceDelimiter + payload, nil
+}
+```
+
+### 5. UUID Session ID (Direct Construction)
+
+UUID IDs are constructed directly, bypassing `formatSessionID()`:
+
+```go
+func formatUUIDID(uuid string) string {
+    // Direct construction - no suffix needed
+    return NamespaceUUID + NamespaceDelimiter + uuid
+}
+```
+
+### 6. SessionContext (Deep Anchor)
+
+```go
+type SessionContext struct {
+    BootID      string // Kernel Boot ID (Linux) or MachineGUID (Windows)
+    ContainerID string // Linux: namespace ID; Empty on Windows
+    AnchorPID   uint32 // PID of stable parent process
+    StartTime   uint64 // Creation time (ticks or filetime)
+    TTYName     string // /dev/pts/X or MinTTY pipe name
+}
+
 func (c *SessionContext) GenerateHash() string {
     raw := fmt.Sprintf("%s:%s:%s:%d:%d",
-        c.BootID,
-        c.ContainerID,
-        c.TTYName,
-        c.AnchorPID,
-        c.StartTime,
-    )
-
+        c.BootID, c.ContainerID, c.TTYName, c.AnchorPID, c.StartTime)
     hasher := sha256.New()
     hasher.Write([]byte(raw))
     return hex.EncodeToString(hasher.Sum(nil))
 }
 
-// FormatSessionID produces a namespaced session ID for the Deep Anchor detector.
-// Format: anchor--{hash16}
 func (c *SessionContext) FormatSessionID() string {
     hash := c.GenerateHash()
     return NamespaceAnchor + NamespaceDelimiter + hash[:ShortHashLength]
@@ -1179,9 +1240,13 @@ The `getFileNameByHandle` function uses `encoding/binary` for safe memory access
 
 ### Summary of Conflict Resolutions
 
-* **Unified Namespaced Format:** ✅ RESOLVED. All session IDs now use `{namespace}--{payload}` format with distinct prefixes for each source (ex, tmux, screen, ssh, terminal, anchor, uuid).
-* **Bounded Filename Length:** ✅ RESOLVED. Maximum 80 characters guaranteed. Payloads are truncated with hash suffix if needed.
-* **Tmux Pane-Level Uniqueness:** ✅ RESOLVED. Queries full `#{session_id}:#{window_id}:#{pane_id}` tuple. Formatted as `tmux--sN.wN.pN` exposing raw IDs in filesystem-safe format.
+* **Mimicry Attack Prevention:** ✅ RESOLVED. Mandatory minimum suffix (`_XX`, 2 hex chars) applied to ALL user-provided payloads, even when safe/unchanged. This prevents attackers from crafting payloads that match previously suffixed outputs.
+* **Unified Namespaced Format:** ✅ RESOLVED. All session IDs use `{namespace}--{payload}[_{hash}]` format with distinct prefixes for each source.
+* **Bounded Filename Length:** ✅ RESOLVED. Maximum 80 characters guaranteed. Payloads truncated with full hash suffix (17 chars) if needed.
+* **Suffix Length Disambiguation:** ✅ RESOLVED. Two distinct suffix lengths: mini (3 chars: `_XX`) for safe payloads, full (17 chars: `_XXXXXXXXXXXXXXXX`) for sanitization/truncation. No overlap possible.
+* **Tmux Direct Construction:** ✅ RESOLVED. `getTmuxSessionID()` constructs ID directly without suffix (internal, not user-provided, always safe).
+* **UUID Direct Construction:** ✅ RESOLVED. `formatUUIDID()` constructs ID directly without suffix (internal, not user-provided).
+* **Internal Short Hex Detection:** ✅ RESOLVED. Payloads that are exactly 16 lowercase hex chars are recognized as internal detector outputs and passed through without suffix.
 * **SSH Concurrent Sessions:** ✅ RESOLVED. Includes client port in hash, ensuring uniqueness for concurrent sessions from same IP.
 * **Self-Anchoring Trap:** ✅ RESOLVED. Deep Anchor walk unconditionally skips the initiating process PID, preventing fragmentation if binary is renamed.
 * **CMD.EXE:** ✅ RESOLVED. Removed from Windows skip list; treated as a shell, not a wrapper.

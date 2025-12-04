@@ -36,8 +36,8 @@ func TestDiscoverSessionID_PrecedenceOverrideFlag(t *testing.T) {
 	isolateEnv(t)
 
 	got := discoverSessionID("explicit-override")
-	// New format: ex--{payload} for explicit overrides
-	if got != "ex--explicit-override" {
+	// New format: ex--{payload}_{8hex} for explicit overrides
+	if !strings.HasPrefix(got, "ex--explicit-override_") {
 		t.Fatalf("override flag not respected: got %q", got)
 	}
 }
@@ -51,8 +51,8 @@ func TestDiscoverSessionID_PrecedenceEnvVar(t *testing.T) {
 	os.Setenv("TMUX_PANE", "%4")
 
 	got := discoverSessionID("")
-	// New format: ex--{payload} for explicit overrides (env var)
-	if got != "ex--from-env" {
+	// New format: ex--{payload}_{8hex} for explicit overrides (env var)
+	if !strings.HasPrefix(got, "ex--from-env_") {
 		t.Fatalf("OSM_SESSION_ID did not win precedence, got %q", got)
 	}
 }

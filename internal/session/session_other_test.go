@@ -5,6 +5,7 @@ package session
 import (
 	"os"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -109,8 +110,8 @@ func TestGetSessionID_ExplicitOverride_AllPlatforms(t *testing.T) {
 	}
 
 	// New format: ex--{payload}, pass-through for user-provided values
-	if id != "ex--explicit-test" {
-		t.Errorf("expected ex--explicit-test, got %q", id)
+	if !strings.HasPrefix(id, "ex--explicit-test_") {
+		t.Errorf("expected ex--explicit-test_{8hex}, got %q", id)
 	}
 
 	if source != "explicit-flag" {
@@ -131,8 +132,8 @@ func TestGetSessionID_EnvOverride_AllPlatforms(t *testing.T) {
 	}
 
 	// New format: ex--{payload}, pass-through for user-provided values
-	if id != "ex--env-test" {
-		t.Errorf("expected ex--env-test, got %q", id)
+	if !strings.HasPrefix(id, "ex--env-test_") {
+		t.Errorf("expected ex--env-test_{8hex}, got %q", id)
 	}
 
 	if source != "explicit-env" {

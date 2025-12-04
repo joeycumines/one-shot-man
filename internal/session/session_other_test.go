@@ -65,8 +65,12 @@ func TestGetSessionID_MacOSTerminal_Priority(t *testing.T) {
 		if source != "macos-terminal" {
 			t.Errorf("expected source macos-terminal on darwin, got %q", source)
 		}
-		if len(id) != 64 {
-			t.Errorf("expected SHA256 hash (64 chars), got %d chars", len(id))
+		// New format: terminal--{hash16}, total 26 chars
+		if len(id) != 26 {
+			t.Errorf("expected terminal-- prefix + 16-char hash (26 chars), got %d chars: %q", len(id), id)
+		}
+		if id[:10] != "terminal--" {
+			t.Errorf("expected terminal-- prefix, got %q", id[:10])
 		}
 	}
 	// On non-darwin, TERM_SESSION_ID should be ignored
@@ -104,8 +108,9 @@ func TestGetSessionID_ExplicitOverride_AllPlatforms(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if id != "explicit-test" {
-		t.Errorf("expected explicit-test, got %q", id)
+	// New format: ex--{payload}, pass-through for user-provided values
+	if id != "ex--explicit-test" {
+		t.Errorf("expected ex--explicit-test, got %q", id)
 	}
 
 	if source != "explicit-flag" {
@@ -125,8 +130,9 @@ func TestGetSessionID_EnvOverride_AllPlatforms(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if id != "env-test" {
-		t.Errorf("expected env-test, got %q", id)
+	// New format: ex--{payload}, pass-through for user-provided values
+	if id != "ex--env-test" {
+		t.Errorf("expected ex--env-test, got %q", id)
 	}
 
 	if source != "explicit-env" {
@@ -150,8 +156,12 @@ func TestGetSessionID_Screen_AllPlatforms(t *testing.T) {
 		t.Errorf("expected source screen, got %q", source)
 	}
 
-	if len(id) != 64 {
-		t.Errorf("expected SHA256 hash (64 chars), got %d chars: %q", len(id), id)
+	// New format: screen--{hash16}, total 24 chars
+	if len(id) != 24 {
+		t.Errorf("expected screen-- prefix + 16-char hash (24 chars), got %d chars: %q", len(id), id)
+	}
+	if id[:8] != "screen--" {
+		t.Errorf("expected screen-- prefix, got %q", id[:8])
 	}
 }
 
@@ -171,7 +181,11 @@ func TestGetSessionID_SSH_AllPlatforms(t *testing.T) {
 		t.Errorf("expected source ssh-env, got %q", source)
 	}
 
-	if len(id) != 64 {
-		t.Errorf("expected SHA256 hash (64 chars), got %d chars: %q", len(id), id)
+	// New format: ssh--{hash16}, total 21 chars
+	if len(id) != 21 {
+		t.Errorf("expected ssh-- prefix + 16-char hash (21 chars), got %d chars: %q", len(id), id)
+	}
+	if id[:5] != "ssh--" {
+		t.Errorf("expected ssh-- prefix, got %q", id[:5])
 	}
 }

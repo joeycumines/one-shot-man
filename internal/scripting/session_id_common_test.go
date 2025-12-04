@@ -36,7 +36,8 @@ func TestDiscoverSessionID_PrecedenceOverrideFlag(t *testing.T) {
 	isolateEnv(t)
 
 	got := discoverSessionID("explicit-override")
-	if got != "explicit-override" {
+	// New format: ex--{payload} for explicit overrides
+	if got != "ex--explicit-override" {
 		t.Fatalf("override flag not respected: got %q", got)
 	}
 }
@@ -50,7 +51,8 @@ func TestDiscoverSessionID_PrecedenceEnvVar(t *testing.T) {
 	os.Setenv("TMUX_PANE", "%4")
 
 	got := discoverSessionID("")
-	if got != "from-env" {
+	// New format: ex--{payload} for explicit overrides (env var)
+	if got != "ex--from-env" {
 		t.Fatalf("OSM_SESSION_ID did not win precedence, got %q", got)
 	}
 }
@@ -61,10 +63,12 @@ func TestDiscoverSessionID_ScreenPreferred(t *testing.T) {
 	os.Setenv("STY", "12345.pts-0.host")
 
 	got := discoverSessionID("")
-	// The new implementation returns a SHA256 hash of "screen:" + sty
-	// It should be a 64-character hex string (SHA256 hash)
-	if len(got) != 64 {
-		t.Fatalf("expected SHA256 hash (64 chars), got %d chars: %q", len(got), got)
+	// New format: screen--{hash16}, total 24 chars
+	if len(got) != 24 {
+		t.Fatalf("expected screen-- prefix + 16-char hash (24 chars), got %d chars: %q", len(got), got)
+	}
+	if got[:8] != "screen--" {
+		t.Fatalf("expected screen-- prefix, got %q", got[:8])
 	}
 }
 
@@ -74,10 +78,12 @@ func TestDiscoverSessionID_SSHConnection(t *testing.T) {
 	os.Setenv("SSH_CONNECTION", "192.168.1.100 12345 192.168.1.1 22")
 
 	got := discoverSessionID("")
-	// The new implementation returns a SHA256 hash of "ssh:client_ip:client_port:server_ip:server_port"
-	// It should be a 64-character hex string (SHA256 hash)
-	if len(got) != 64 {
-		t.Fatalf("expected SHA256 hash (64 chars), got %d chars: %q", len(got), got)
+	// New format: ssh--{hash16}, total 21 chars
+	if len(got) != 21 {
+		t.Fatalf("expected ssh-- prefix + 16-char hash (21 chars), got %d chars: %q", len(got), got)
+	}
+	if got[:5] != "ssh--" {
+		t.Fatalf("expected ssh-- prefix, got %q", got[:5])
 	}
 }
 
@@ -110,10 +116,13 @@ func TestDiscoverSessionID_FallbackToDeepAnchorOrUUID(t *testing.T) {
 	if got == "" {
 		t.Fatal("expected non-empty session ID")
 	}
-	// On Linux, deep-anchor returns a 64-char SHA256 hash
-	// UUID fallback returns a UUID format
-	// Either way, should have at least 32 characters
-	if len(got) < 32 {
+	// New format: namespaced IDs (anchor--{hash16} or uuid--{uuid})
+	// Check it has a namespace delimiter
+	if !strings.Contains(got, "--") {
+		t.Fatalf("session ID should have namespace delimiter: %q", got)
+	}
+	// Should have at least a namespace + delimiter + some payload
+	if len(got) < 10 {
 		t.Fatalf("session ID seems too short: %q", got)
 	}
 }

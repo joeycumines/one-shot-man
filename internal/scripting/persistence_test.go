@@ -14,6 +14,8 @@ func TestEngine_PersistenceOnClose(t *testing.T) {
 	// Create a temporary directory for storage
 	tmpDir := t.TempDir()
 	sessionID := "test-persistence-session"
+	// The session ID gets namespaced when passed as explicit override
+	expectedSessionID := "ex--" + sessionID
 
 	// Override storage paths to use tmpDir
 	storage.SetTestPaths(tmpDir)
@@ -53,14 +55,15 @@ func TestEngine_PersistenceOnClose(t *testing.T) {
 	// Verify that the state was persisted to disk.
 	// We need to know where the file is.
 	// SetTestPaths sets it to <tmpDir>/<sessionID>.session.json
-	expectedPath := filepath.Join(tmpDir, sessionID+".session.json")
+	// Note: session ID is namespaced as ex--<original>
+	expectedPath := filepath.Join(tmpDir, expectedSessionID+".session.json")
 
 	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
 		t.Fatalf("Session file was not created at %s", expectedPath)
 	}
 
 	// Load the session back to verify content
-	backend, err := storage.GetBackend("fs", sessionID)
+	backend, err := storage.GetBackend("fs", expectedSessionID)
 	if err != nil {
 		t.Fatalf("Failed to get backend: %v", err)
 	}
@@ -73,7 +76,7 @@ func TestEngine_PersistenceOnClose(t *testing.T) {
 		}
 	}()
 
-	session, err := backend.LoadSession(sessionID)
+	session, err := backend.LoadSession(expectedSessionID)
 	if err != nil {
 		t.Fatalf("Failed to load session: %v", err)
 	}

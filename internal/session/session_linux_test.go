@@ -616,9 +616,12 @@ func TestGetSessionID_DeepAnchor_ProducesValidHash(t *testing.T) {
 	}
 
 	if source == "deep-anchor" {
-		// Deep anchor should produce 64-char SHA256 hash
-		if len(id) != 64 {
-			t.Errorf("deep-anchor ID should be 64 chars, got %d: %q", len(id), id)
+		// New format: anchor--{hash16}, total 24 chars
+		if len(id) != 24 {
+			t.Errorf("deep-anchor ID should be anchor-- + 16-char hash (24 chars), got %d: %q", len(id), id)
+		}
+		if id[:8] != "anchor--" {
+			t.Errorf("deep-anchor ID should start with anchor--, got %q", id[:8])
 		}
 	}
 }

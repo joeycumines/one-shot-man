@@ -389,6 +389,8 @@ func TestStaleLockRecovery(t *testing.T) {
 func TestSigintPersistence(t *testing.T) {
 	// Set up test environment with file system backend
 	sessionID := "test-sigint"
+	// The session ID gets namespaced when passed as explicit override
+	expectedSessionID := "ex--" + sessionID
 	tmpDir := t.TempDir()
 
 	// Override storage paths to use the test directory
@@ -459,7 +461,8 @@ func TestSigintPersistence(t *testing.T) {
 	}
 
 	// Get the session file path and verify it was created
-	sessionPath, err := storage.SessionFilePath(sessionID)
+	// Note: session ID is namespaced as ex--<original>
+	sessionPath, err := storage.SessionFilePath(expectedSessionID)
 	if err != nil {
 		t.Fatalf("Failed to get session file path: %v", err)
 	}
@@ -475,8 +478,8 @@ func TestSigintPersistence(t *testing.T) {
 		t.Fatalf("Failed to parse session file: %v", err)
 	}
 
-	if session.SessionID != sessionID {
-		t.Errorf("Session ID mismatch: expected %s, got %s", sessionID, session.SessionID)
+	if session.SessionID != expectedSessionID {
+		t.Errorf("Session ID mismatch: expected %s, got %s", expectedSessionID, session.SessionID)
 	}
 
 	// Verify the state was saved in the new schema

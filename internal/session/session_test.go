@@ -36,8 +36,9 @@ func TestPriorityHierarchy_ExplicitFlagIsHighestPriority(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if id != "explicit-flag-value" {
-		t.Errorf("expected explicit-flag-value, got %q", id)
+	// Explicit values get namespaced with "ex--" prefix
+	if id != "ex--explicit-flag-value" {
+		t.Errorf("expected ex--explicit-flag-value, got %q", id)
 	}
 	if source != "explicit-flag" {
 		t.Errorf("expected source explicit-flag, got %q", source)
@@ -62,8 +63,9 @@ func TestPriorityHierarchy_EnvOverridesMultiplexer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if id != "env-session" {
-		t.Errorf("expected env-session, got %q", id)
+	// Explicit env values get namespaced with "ex--" prefix
+	if id != "ex--env-session" {
+		t.Errorf("expected ex--env-session, got %q", id)
 	}
 	if source != "explicit-env" {
 		t.Errorf("expected source explicit-env, got %q", source)
@@ -90,8 +92,13 @@ func TestPriorityHierarchy_MultiplexerOverridesSSH(t *testing.T) {
 	if source != "screen" {
 		t.Errorf("expected source screen, got %q", source)
 	}
-	if len(id) != 64 {
-		t.Errorf("expected SHA256 hash (64 chars), got %d chars: %q", len(id), id)
+	// New format: screen--{16-char-hash}
+	if !strings.HasPrefix(id, "screen--") {
+		t.Errorf("expected screen-- prefix, got %q", id)
+	}
+	// Total length: "screen--" (8) + 16 = 24
+	if len(id) != 24 {
+		t.Errorf("expected 24 chars (screen-- + 16 hash), got %d chars: %q", len(id), id)
 	}
 }
 
@@ -122,8 +129,9 @@ func TestGetSessionID_ExplicitOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if id != "explicit-override" {
-		t.Fatalf("expected explicit-override, got %q", id)
+	// Explicit values get namespaced with "ex--" prefix
+	if id != "ex--explicit-override" {
+		t.Fatalf("expected ex--explicit-override, got %q", id)
 	}
 	if source != "explicit-flag" {
 		t.Fatalf("expected source explicit-flag, got %q", source)
@@ -139,8 +147,9 @@ func TestGetSessionID_EnvVarOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if id != "from-env" {
-		t.Fatalf("expected from-env, got %q", id)
+	// Explicit env values get namespaced with "ex--" prefix
+	if id != "ex--from-env" {
+		t.Fatalf("expected ex--from-env, got %q", id)
 	}
 	if source != "explicit-env" {
 		t.Fatalf("expected source explicit-env, got %q", source)
@@ -156,8 +165,9 @@ func TestGetSessionID_ExplicitFlagOverridesEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if id != "from-flag" {
-		t.Fatalf("expected from-flag, got %q", id)
+	// Explicit flag values get namespaced with "ex--" prefix
+	if id != "ex--from-flag" {
+		t.Fatalf("expected ex--from-flag, got %q", id)
 	}
 	if source != "explicit-flag" {
 		t.Fatalf("expected source explicit-flag, got %q", source)
@@ -175,8 +185,28 @@ func TestGetSessionID_ExplicitOverride_EmptyStringIsNotOverride(t *testing.T) {
 	if source == "explicit-flag" {
 		t.Errorf("empty string should not be treated as explicit flag")
 	}
-	if id != "from-env" {
-		t.Errorf("expected from-env, got %q", id)
+	// Explicit env values get namespaced with "ex--" prefix
+	if id != "ex--from-env" {
+		t.Errorf("expected ex--from-env, got %q", id)
+	}
+}
+
+// TestGetSessionID_ExplicitOverride_AlreadyNamespaced verifies that
+// already-namespaced values are sanitized and returned.
+func TestGetSessionID_ExplicitOverride_AlreadyNamespaced(t *testing.T) {
+	os.Clearenv()
+
+	id, source, err := GetSessionID("custom--my-value")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Already namespaced values should have namespace sanitized and payload sanitized
+	// "custom" and "my-value" are both safe, so output is unchanged
+	if id != "custom--my-value" {
+		t.Errorf("expected custom--my-value, got %q", id)
+	}
+	if source != "explicit-flag" {
+		t.Errorf("expected source explicit-flag, got %q", source)
 	}
 }
 
@@ -196,9 +226,13 @@ func TestGetSessionID_Screen(t *testing.T) {
 	if source != "screen" {
 		t.Fatalf("expected source screen, got %q", source)
 	}
-	// ID should be a hash
-	if len(id) != 64 { // SHA256 hex output length
-		t.Fatalf("expected SHA256 hash (64 chars), got %d chars: %q", len(id), id)
+	// New format: screen--{16-char-hash}
+	if !strings.HasPrefix(id, "screen--") {
+		t.Fatalf("expected screen-- prefix, got %q", id)
+	}
+	// Total length: "screen--" (8) + 16 = 24
+	if len(id) != 24 {
+		t.Fatalf("expected 24 chars (screen-- + 16 hash), got %d chars: %q", len(id), id)
 	}
 }
 
@@ -273,9 +307,13 @@ func TestGetSessionID_SSH(t *testing.T) {
 	if source != "ssh-env" {
 		t.Fatalf("expected source ssh-env, got %q", source)
 	}
-	// ID should be a hash
-	if len(id) != 64 {
-		t.Fatalf("expected SHA256 hash (64 chars), got %d chars: %q", len(id), id)
+	// New format: ssh--{16-char-hash}
+	if !strings.HasPrefix(id, "ssh--") {
+		t.Fatalf("expected ssh-- prefix, got %q", id)
+	}
+	// Total length: "ssh--" (5) + 16 = 21
+	if len(id) != 21 {
+		t.Fatalf("expected 21 chars (ssh-- + 16 hash), got %d chars: %q", len(id), id)
 	}
 }
 
@@ -334,8 +372,9 @@ func TestGetSessionID_SSH_MalformedConnection(t *testing.T) {
 	if source != "ssh-env" {
 		t.Errorf("expected source ssh-env even for malformed, got %q", source)
 	}
-	if len(id) != 64 {
-		t.Errorf("expected SHA256 hash for malformed SSH_CONNECTION")
+	// New format: ssh--{16-char-hash}
+	if !strings.HasPrefix(id, "ssh--") || len(id) != 21 {
+		t.Errorf("expected ssh-- prefix with 21 total chars, got %q", id)
 	}
 }
 
@@ -384,8 +423,9 @@ func TestGetSessionID_SSH_IPv6Address(t *testing.T) {
 	if source != "ssh-env" {
 		t.Errorf("expected source ssh-env for IPv6, got %q", source)
 	}
-	if len(id) != 64 {
-		t.Errorf("expected SHA256 hash for IPv6 address")
+	// New format: ssh--{16-char-hash}
+	if !strings.HasPrefix(id, "ssh--") || len(id) != 21 {
+		t.Errorf("expected ssh-- prefix with 21 total chars for IPv6, got %q", id)
 	}
 }
 
@@ -409,8 +449,13 @@ func TestGetSessionID_MacOSTerminal(t *testing.T) {
 		if source != "macos-terminal" {
 			t.Errorf("expected source macos-terminal on darwin, got %q", source)
 		}
-		if len(id) != 64 {
-			t.Errorf("expected SHA256 hash (64 chars), got %d chars", len(id))
+		// New format: terminal--{16-char-hash}
+		if !strings.HasPrefix(id, "terminal--") {
+			t.Errorf("expected terminal-- prefix, got %q", id)
+		}
+		// Total length: "terminal--" (10) + 16 = 26
+		if len(id) != 26 {
+			t.Errorf("expected 26 chars (terminal-- + 16 hash), got %d chars", len(id))
 		}
 	} else {
 		// On non-darwin, TERM_SESSION_ID should be ignored
@@ -761,5 +806,335 @@ func TestGetSessionID_Deterministic(t *testing.T) {
 	}
 	if source1 != source2 {
 		t.Errorf("same environment should produce same source: %q != %q", source1, source2)
+	}
+}
+
+// =============================================================================
+// Namespaced Format Tests
+// =============================================================================
+
+// TestFormatTmuxID verifies tmux ID formatting.
+func TestFormatTmuxID(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"standard format", "$0:@0:%0", "tmux--s0.w0.p0"},
+		{"different numbers", "$1:@2:%3", "tmux--s1.w2.p3"},
+		{"large numbers", "$999:@888:%777", "tmux--s999.w888.p777"},
+		// Alphanumeric IDs (regex uses \w+ not \d+)
+		{"alphanumeric session", "$abc:@0:%0", "tmux--sabc.w0.p0"},
+		{"alphanumeric window", "$0:@def:%0", "tmux--s0.wdef.p0"},
+		{"alphanumeric pane", "$0:@0:%ghi", "tmux--s0.w0.pghi"},
+		{"all alphanumeric", "$a1b:@c2d:%e3f", "tmux--sa1b.wc2d.pe3f"},
+		{"underscores", "$sess_1:@win_2:%pane_3", "tmux--ssess_1.wwin_2.ppane_3"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatTmuxID(tt.input)
+			if result != tt.expected {
+				t.Errorf("formatTmuxID(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestFormatTmuxID_NonStandard verifies non-standard tmux ID handling.
+func TestFormatTmuxID_NonStandard(t *testing.T) {
+	// Non-standard format should be sanitized
+	result := formatTmuxID("named-session:@0:%0")
+	if !strings.HasPrefix(result, "tmux--") {
+		t.Errorf("expected tmux-- prefix, got %q", result)
+	}
+	// Should not contain original special chars
+	if strings.ContainsAny(result, "$@%:") {
+		t.Errorf("non-standard format should be sanitized, got %q", result)
+	}
+}
+
+// TestSanitizeTmuxID verifies tmux ID sanitization.
+func TestSanitizeTmuxID(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"$0:@0:%0", "s0.w0.p0"},
+		{"$1:@2:%3", "s1.w2.p3"},
+		{"$abc:@def:%ghi", "sabc.wdef.pghi"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := sanitizeTmuxID(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizeTmuxID(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestFormatSessionID_LengthBound verifies session IDs are bounded.
+func TestFormatSessionID_LengthBound(t *testing.T) {
+	// Very long payload should be truncated
+	longPayload := strings.Repeat("a", 200)
+	result := formatSessionID("test", longPayload)
+
+	if len(result) > MaxSessionIDLength {
+		t.Errorf("session ID should be <= %d chars, got %d: %q", MaxSessionIDLength, len(result), result)
+	}
+
+	if !strings.HasPrefix(result, "test--") {
+		t.Errorf("should preserve namespace prefix, got %q", result)
+	}
+}
+
+// TestFormatSessionID_ShortPayload verifies short payloads are preserved.
+func TestFormatSessionID_ShortPayload(t *testing.T) {
+	result := formatSessionID("test", "short")
+	expected := "test--short"
+	if result != expected {
+		t.Errorf("formatSessionID(test, short) = %q, want %q", result, expected)
+	}
+}
+
+// TestSessionContext_FormatSessionID verifies the namespaced session ID format.
+func TestSessionContext_FormatSessionID(t *testing.T) {
+	ctx := &SessionContext{
+		BootID:      "test-boot-id",
+		ContainerID: "pid:[1234]",
+		AnchorPID:   5678,
+		StartTime:   123456789,
+		TTYName:     "/dev/pts/0",
+	}
+
+	id := ctx.FormatSessionID()
+
+	// Should have anchor-- prefix
+	if !strings.HasPrefix(id, "anchor--") {
+		t.Errorf("expected anchor-- prefix, got %q", id)
+	}
+
+	// Total length: "anchor--" (8) + 16 = 24
+	if len(id) != 24 {
+		t.Errorf("expected 24 chars (anchor-- + 16 hash), got %d: %q", len(id), id)
+	}
+
+	// Should be deterministic
+	id2 := ctx.FormatSessionID()
+	if id != id2 {
+		t.Errorf("FormatSessionID should be deterministic: %q != %q", id, id2)
+	}
+}
+
+// TestNamespaceUniqueness verifies all namespace prefixes are distinct.
+func TestNamespaceUniqueness(t *testing.T) {
+	namespaces := []string{
+		NamespaceExplicit,
+		NamespaceTmux,
+		NamespaceScreen,
+		NamespaceSSH,
+		NamespaceTerminal,
+		NamespaceAnchor,
+		NamespaceUUID,
+	}
+
+	seen := make(map[string]bool)
+	for _, ns := range namespaces {
+		if seen[ns] {
+			t.Errorf("duplicate namespace: %q", ns)
+		}
+		seen[ns] = true
+	}
+}
+
+// TestMaxSessionIDLength verifies the constant is reasonable.
+func TestMaxSessionIDLength(t *testing.T) {
+	// Should be filesystem-safe (most systems support 255 bytes)
+	if MaxSessionIDLength > 255 {
+		t.Errorf("MaxSessionIDLength %d is too large for most filesystems", MaxSessionIDLength)
+	}
+	// Should be reasonable (at least 40 to fit namespace + some payload)
+	if MaxSessionIDLength < 40 {
+		t.Errorf("MaxSessionIDLength %d is too small", MaxSessionIDLength)
+	}
+}
+
+// =============================================================================
+// Filesystem Safety Tests (Negative Tests)
+// =============================================================================
+
+// TestSanitizePayload_PathSeparators verifies path separators are sanitized.
+func TestSanitizePayload_PathSeparators(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"forward slash", "user/name", "user_name"},
+		{"backslash", "user\\name", "user_name"},
+		{"mixed slashes", "path/to\\file", "path_to_file"},
+		{"multiple slashes", "a/b/c/d", "a_b_c_d"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizePayload(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizePayload(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestSanitizePayload_WindowsReservedChars verifies Windows reserved chars are sanitized.
+func TestSanitizePayload_WindowsReservedChars(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"colon", "C:drive", "C_drive"},
+		{"asterisk", "file*name", "file_name"},
+		{"question mark", "what?why", "what_why"},
+		{"quotes", "say\"hello\"", "say_hello_"},
+		{"less than", "a<b", "a_b"},
+		{"greater than", "a>b", "a_b"},
+		{"pipe", "a|b", "a_b"},
+		{"all reserved", ":*?\"<>|", "_______"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizePayload(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizePayload(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestSanitizePayload_Whitelist verifies only whitelisted chars are preserved.
+func TestSanitizePayload_Whitelist(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"lowercase", "abcxyz", "abcxyz"},
+		{"uppercase", "ABCXYZ", "ABCXYZ"},
+		{"digits", "0123456789", "0123456789"},
+		{"dot", "file.txt", "file.txt"},
+		{"hyphen", "my-file", "my-file"},
+		{"underscore", "my_file", "my_file"},
+		{"mixed safe", "My-File_v1.0", "My-File_v1.0"},
+		{"spaces", "hello world", "hello_world"},
+		{"special chars", "a@b#c$d%e", "a_b_c_d_e"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := sanitizePayload(tt.input)
+			if result != tt.expected {
+				t.Errorf("sanitizePayload(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestExplicitID_PathTraversal verifies path traversal attacks are prevented.
+func TestExplicitID_PathTraversal(t *testing.T) {
+	os.Clearenv()
+
+	// Attack vector: user supplies path traversal in session ID
+	id, _, err := GetSessionID("user/name--hack")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The path separator must be sanitized
+	if strings.Contains(id, "/") {
+		t.Errorf("SECURITY: path separator not sanitized: %q", id)
+	}
+	// Should be safely sanitized
+	if id != "user_name--hack" {
+		t.Errorf("expected user_name--hack, got %q", id)
+	}
+}
+
+// TestExplicitID_WindowsPathTraversal verifies Windows path traversal is prevented.
+func TestExplicitID_WindowsPathTraversal(t *testing.T) {
+	os.Clearenv()
+
+	// Attack vector: Windows-style path
+	id, _, err := GetSessionID("C:\\Users\\hack")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The backslash and colon must be sanitized
+	if strings.ContainsAny(id, "\\:") {
+		t.Errorf("SECURITY: Windows path chars not sanitized: %q", id)
+	}
+}
+
+// TestTmuxID_NamedSessionWithSlash verifies tmux named sessions with slashes are safe.
+func TestTmuxID_NamedSessionWithSlash(t *testing.T) {
+	// Simulate tmux named session "feature/login"
+	result := formatTmuxID("feature/login:@0:%0")
+
+	// Must not contain path separator
+	if strings.Contains(result, "/") {
+		t.Errorf("SECURITY: path separator not sanitized in tmux ID: %q", result)
+	}
+
+	// Should be prefixed correctly
+	if !strings.HasPrefix(result, "tmux--") {
+		t.Errorf("expected tmux-- prefix, got %q", result)
+	}
+}
+
+// TestExplicitID_NaiveTruncationCollision verifies hash-suffix prevents collisions.
+func TestExplicitID_NaiveTruncationCollision(t *testing.T) {
+	os.Clearenv()
+
+	// Create two long IDs that differ only at the end
+	base := strings.Repeat("a", 100)
+	id1Input := "custom--" + base + "A"
+	id2Input := "custom--" + base + "B"
+
+	id1, _, _ := GetSessionID(id1Input)
+	id2, _, _ := GetSessionID(id2Input)
+
+	// CRITICAL: These must NOT collide after truncation
+	if id1 == id2 {
+		t.Errorf("COLLISION: different inputs produced same output:\n  input1: %q\n  input2: %q\n  output: %q",
+			id1Input, id2Input, id1)
+	}
+
+	// Both should be within length limit
+	if len(id1) > MaxSessionIDLength {
+		t.Errorf("id1 exceeds max length: %d > %d", len(id1), MaxSessionIDLength)
+	}
+	if len(id2) > MaxSessionIDLength {
+		t.Errorf("id2 exceeds max length: %d > %d", len(id2), MaxSessionIDLength)
+	}
+}
+
+// TestIsFilenameSafe verifies the whitelist function.
+func TestIsFilenameSafe(t *testing.T) {
+	safe := []rune{'a', 'z', 'A', 'Z', '0', '9', '.', '-', '_'}
+	for _, r := range safe {
+		if !isFilenameSafe(r) {
+			t.Errorf("expected %q to be safe", r)
+		}
+	}
+
+	unsafe := []rune{'/', '\\', ':', '*', '?', '"', '<', '>', '|', ' ', '@', '#', '$', '%', '&'}
+	for _, r := range unsafe {
+		if isFilenameSafe(r) {
+			t.Errorf("expected %q to be unsafe", r)
+		}
 	}
 }

@@ -15,7 +15,8 @@ type SessionContext struct {
 	TTYName     string // Optional: /dev/pts/X or MinTTY pipe name
 }
 
-// GenerateHash produces the final deterministic Session ID.
+// GenerateHash produces a deterministic SHA256 hash from the session context.
+// This is used internally; for the final session ID use FormatSessionID().
 // Formula: SHA256(BootID : ContainerID/NamespaceID : TTY : PID : StartTime)
 func (c *SessionContext) GenerateHash() string {
 	// Delimiter ":" is safe: BootID (UUID), ContainerID (hex), TTYName (/dev/pts/X or ptyN)
@@ -31,4 +32,13 @@ func (c *SessionContext) GenerateHash() string {
 	hasher := sha256.New()
 	hasher.Write([]byte(raw))
 	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+// FormatSessionID produces a namespaced session ID for the Deep Anchor detector.
+// Format: anchor--{hash16}
+// The 16-char hash provides 64 bits of entropy for collision resistance.
+func (c *SessionContext) FormatSessionID() string {
+	hash := c.GenerateHash()
+	// Use formatSessionID from session.go for consistent formatting
+	return NamespaceAnchor + NamespaceDelimiter + hash[:ShortHashLength]
 }

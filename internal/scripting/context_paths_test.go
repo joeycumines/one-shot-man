@@ -240,6 +240,74 @@ func TestContextPathsInTxtarHeaders(t *testing.T) {
 	})
 }
 
+func TestAddRelativePath_PreservesLiteralBackslash(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test; windows does not allow backslash in filenames")
+	}
+
+	base := t.TempDir()
+
+	// Create a file whose name contains a literal backslash character.
+	// On POSIX systems '\\' is a valid byte in a filename and must not
+	// be treated as a path separator by the ContextManager.
+	filename := "foo\\bar.txt"
+	full := filepath.Join(base, filename)
+
+	if err := os.WriteFile(full, []byte("ok"), 0o644); err != nil {
+		t.Fatalf("failed to write file with backslash in name: %v", err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatalf("NewContextManager failed: %v", err)
+	}
+
+	owner, err := cm.AddRelativePath(filename)
+	if err != nil {
+		t.Fatalf("AddRelativePath failed to register literal-backslash filename: %v", err)
+	}
+
+	if _, ok := cm.GetPath(owner); !ok {
+		t.Fatalf("expected path to be tracked for owner %q (original label %q)", owner, filename)
+	}
+}
+
+func TestAddPathHandlesAbsolutePaths(t *testing.T) {
+	base := t.TempDir()
+
+	// Create file inside base
+	filePath := filepath.Join(base, "sub", "file.txt")
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		t.Fatalf("failed to make dirs: %v", err)
+	}
+	if err := os.WriteFile(filePath, []byte("hi"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatalf("NewContextManager failed: %v", err)
+	}
+
+	// Add absolute path; should be normalized to a relative owner key
+	if err := cm.AddPath(filePath); err != nil {
+		t.Fatalf("AddPath failed: %v", err)
+	}
+
+	paths := cm.ListPaths()
+	expected := filepath.Join("sub", "file.txt")
+	found := false
+	for _, p := range paths {
+		if p == expected {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected %q to be tracked, got paths: %v", expected, paths)
+	}
+}
+
 func TestContextManagerRemoveOwnership(t *testing.T) {
 	t.Run("FileRemovalKeepsRemainingOwners", func(t *testing.T) {
 		base := t.TempDir()

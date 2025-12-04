@@ -4,7 +4,6 @@ package command
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/termtest"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // TestPromptFlow_GoalCommandOpensEditor verifies that the goal command
@@ -217,5 +217,5 @@ func requirePromptFlowExpectSince(t *testing.T, cp *termtest.ConsoleProcess, exp
 
 // uniqueSessionID generates a unique session ID for a test to prevent session state sharing
 func uniqueSessionID(t *testing.T) string {
-	return fmt.Sprintf("test-%s-%d", t.Name(), time.Now().UnixNano())
+	return testutil.NewTestSessionID("test", t.Name())
 }

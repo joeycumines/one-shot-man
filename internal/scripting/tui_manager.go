@@ -2,13 +2,15 @@ package scripting
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
-	"path/filepath"
 
 	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
@@ -73,7 +75,7 @@ func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reade
 		if storageBackend == memoryBackend {
 			panic(err)
 		}
-		_, _ = fmt.Fprintf(output, "Warning: Failed to initialize state persistence: %v\nSession will run in ephemeral mode (state will not be persisted)\n", err)
+		_, _ = fmt.Fprintf(output, "Warning: Failed to initialize state persistence (session %q): %v\n", actualSessionID, err)
 		stateManager, err = initializeStateManager(actualSessionID, memoryBackend)
 		if err != nil {
 			panic(err)
@@ -751,7 +753,16 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 	stateChanged := false
 	var restoredFiles int
 
-	for _, item := range items {
+	for _, srcItem := range items {
+		// Work on a shallow copy so we never mutate the original in-memory
+		// structure returned from the StateManager. Modifying the original
+		// can leave the in-memory store in a partially-modified state when
+		// early returns or errors occur.
+		item := make(map[string]interface{}, len(srcItem))
+		for k, v := range srcItem {
+			item[k] = v
+		}
+
 		itemType, hasType := item["type"].(string)
 		label, hasLabel := item["label"].(string)
 
@@ -762,36 +773,68 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 		}
 
 		// Only process file-type items
-			if itemType == "file" {
-				// Normalize the stored label to the host OS path format. Some
-				// snapshots may store '/' separators (portable txtar content),
-				// convert them to the OS-specific separator before filesystem
-				// operations so Windows paths are correctly resolved.
-				normalized := filepath.FromSlash(label)
-				normalized = filepath.Clean(normalized)
+		if itemType == "file" {
+			// Try the stored label exactly as-is first. This preserves valid
+			// POSIX filenames that include backslashes ("foo\bar.txt") which
+			// are legal on Linux/macOS and must not be silently converted to
+			// directory separators.
+			// Attempt to re-add using the stored label. AddRelativePath now
+			// returns the canonical owner key used by the backend so we can
+			// update the in-memory TUI state to keep labels in sync.
+			owner, err := tm.engine.contextManager.AddRelativePath(label)
 
-				// If the stored label is a relative owner path, resolve it
-				// against the context manager's base path so it points at the
-				// right absolute filesystem location (critical on tests where
-				// the stored label was relative but base path differs).
-				if !filepath.IsAbs(normalized) {
-					if abs, err := tm.engine.contextManager.absolutePathFromOwner(normalized); err == nil {
-						normalized = abs
-					} else {
-						_, _ = fmt.Fprintf(tm.output, "Info: could not resolve context file %s: %v\n", label, err)
-						stateChanged = true
-						continue
-					}
+			// If initial attempt succeeded, ensure the TUI state label is
+			// updated to the normalized owner returned by the backend. This
+			// prevents a mismatch where the UI keeps a different label than
+			// the actual backend key (which causes ghost entries that can't be removed).
+			if err == nil {
+				if owner != label {
+					item["label"] = owner
+					stateChanged = true
 				}
+				restoredFiles++
+				validItems = append(validItems, item)
+				continue
+			}
 
-				if err := tm.engine.contextManager.AddPath(normalized); err != nil {
+			// Fallback for cross-platform snapshots: if the direct attempt
+			// failed and we are on a non-Windows host, try converting
+			// Windows-style backslashes to forward slashes and retry. This
+			// helps rehydrate sessions created on Windows when rehydrating
+			// on POSIX systems.
+			// Only attempt normalization if the original error indicates the
+			// file truly does not exist. Do not mask permission/IO errors.
+			if err != nil && (os.IsNotExist(err) || errors.Is(err, os.ErrNotExist)) && runtime.GOOS != "windows" && strings.Contains(label, "\\") {
+				normalizedLabel := strings.ReplaceAll(label, "\\", "/")
+				normalized := filepath.Clean(filepath.FromSlash(normalizedLabel))
+				owner2, err2 := tm.engine.contextManager.AddRelativePath(normalized)
+
+				// If the fallback succeeded, update the in-memory TUI state
+				// to the actual owner returned by the backend.
+				if err2 == nil {
+					label = owner2
+					item["label"] = owner2
+					stateChanged = true
+					restoredFiles++
+					validItems = append(validItems, item)
+					continue
+				}
+				// If the normalization fallback failed, prefer surfacing
+				// the fallback error rather than the original 'not exists'
+				// error so callers and logs reflect what actually failed.
+				if err2 != nil {
+					err = fmt.Errorf("fallback normalization failed for %s -> %s: %w", label, normalized, err2)
+				}
+			}
+
+			if err != nil {
 				// If the file no longer exists, log it and remove from state
 				if os.IsNotExist(err) {
-					_, _ = fmt.Fprintf(tm.output, "Info: file from previous session not found, removing from context: %s\n", label)
+					_, _ = fmt.Fprintf(tm.output, "Info: file from previous session not found, removing: %s\n", label)
 					stateChanged = true
 					continue
 				} else {
-					_, _ = fmt.Fprintf(tm.output, "Info: could not restore context file %s: %v\n", label, err)
+					_, _ = fmt.Fprintf(tm.output, "Error restoring file %s: %v\n", label, err)
 					// For other errors, we also remove it to ensure the session is valid
 					stateChanged = true
 					continue
@@ -803,9 +846,13 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 		validItems = append(validItems, item)
 	}
 
-	// Update state if items were removed
+	// Update state if items were removed and persist the change so that
+	// normalized labels are written back to the backend storage.
 	if stateChanged {
 		tm.stateManager.SetState("contextItems", validItems)
+		if err := tm.stateManager.PersistSession(); err != nil {
+			_, _ = fmt.Fprintf(tm.output, "Warning: failed to persist rehydrated contextItems: %v\n", err)
+		}
 	}
 
 	return len(validItems), restoredFiles

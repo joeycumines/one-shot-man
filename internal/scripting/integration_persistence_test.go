@@ -13,6 +13,7 @@ import (
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // TestAtomicityOnCrash simulates a panic during the final atomic rename operation
@@ -123,11 +124,10 @@ func TestCorruptionHandling(t *testing.T) {
 // in different modes, exits, re-initializes a new TUI with the same session, and verifies
 // that the state is correctly restored.
 func TestEndToEndLifecycle(t *testing.T) {
-	storage.ClearAllInMemorySessions()
-	defer storage.ClearAllInMemorySessions()
+	// Avoid clearing global in-memory store; use unique session IDs instead
 
 	// Use unique session ID to avoid conflicts when tests run in parallel
-	sessionID := fmt.Sprintf("test-end-to-end-%d", time.Now().UnixNano())
+	sessionID := testutil.NewTestSessionID("test-end-to-end", t.Name())
 
 	// Create a simple test script that defines a mode with state
 	testScript := `

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/termtest"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // NO HELPER FUNCTIONS FOR EXPECT!
@@ -44,7 +45,7 @@ func newTestProcessEnv(tb testing.TB) []string {
 	tb.Helper()
 	clipboardFile := filepath.Join(tb.(*testing.T).TempDir(), "clipboard.txt")
 	return []string{
-		"OSM_SESSION_ID=" + fmt.Sprintf("test-%s-%d", tb.Name(), time.Now().UnixNano()),
+		"OSM_SESSION_ID=" + testutil.NewTestSessionID("test", tb.Name()),
 		"OSM_STORAGE_BACKEND=memory",
 		"ONESHOT_CLIPBOARD_CMD=cat > " + clipboardFile,
 	}
@@ -54,7 +55,7 @@ func mustNewEngine(tb testing.TB, ctx context.Context, stdout, stderr io.Writer)
 	tb.Helper()
 	// Set memory storage backend to prevent session lock warnings in tests
 	tb.Setenv("OSM_STORAGE_BACKEND", "memory")
-	tb.Setenv("OSM_SESSION_ID", fmt.Sprintf("test-%s-%d", tb.Name(), time.Now().UnixNano()))
+	tb.Setenv("OSM_SESSION_ID", testutil.NewTestSessionID("test", tb.Name()))
 
 	// Create a context that will be cancelled when the test ends to prevent goroutine leaks
 	ctx, cancel := context.WithCancel(ctx)

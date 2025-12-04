@@ -65,11 +65,11 @@ func GetSessionID(explicitOverride string) (string, string, error) {
 	}
 
 	// Priority 6: UUID Fallback
-	uuid, err := generateUUID()
+	UUID, err := generateUUID()
 	if err != nil {
 		return "", "", fmt.Errorf("all session detection methods failed: %w", err)
 	}
-	return uuid, "uuid-fallback", nil
+	return UUID, "uuid-fallback", nil
 }
 
 func getTmuxSessionID() (string, error) {

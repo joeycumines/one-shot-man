@@ -2,9 +2,11 @@
 # Patterns to exclude from deadcode analysis
 # See: https://pkg.go.dev/github.com/joeycumines/simple-command-output-filter
 
-# Ignore test-only PTY/go-prompt harness utilities which are intentionally
-# unreachable in normal builds and only used via tests
+# ignore test helpers
 internal/termtest/*
+internal\termtest\*
+internal/testutil/*
+internal\testutil\*
 
 internal/scripting/builtin/ctxutil/ctxutil.go:*: unreachable func: SetRunGitDiffFn
 internal\scripting\builtin\ctxutil\ctxutil.go:*: unreachable func: SetRunGitDiffFn

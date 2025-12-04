@@ -272,6 +272,44 @@ func TestAddRelativePath_PreservesLiteralBackslash(t *testing.T) {
 	}
 }
 
+// Test that AddRelativePath accepts relative owner labels that resolve
+// outside of the configured base path. Historically such labels were
+// rejected (treated as directory traversal), which prevented sessions that
+// normalized absolute external paths into relative forms from being
+// rehydrated correctly.
+func TestAddRelativePath_AllowsRelativeOutsideBase(t *testing.T) {
+	base := t.TempDir()
+	external := t.TempDir()
+
+	// Create a file in the external directory.
+	extFile := filepath.Join(external, "external.txt")
+	if err := os.WriteFile(extFile, []byte("ok"), 0o644); err != nil {
+		t.Fatalf("failed to write external file: %v", err)
+	}
+
+	// Compute a relative path from base that points to the external file.
+	rel, err := filepath.Rel(base, extFile)
+	if err != nil {
+		t.Fatalf("failed to compute relative path: %v", err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatalf("NewContextManager failed: %v", err)
+	}
+
+	// Previously this would return an error. Now it should register the
+	// external file successfully (relevant for session rehydration).
+	owner, err := cm.AddRelativePath(rel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q) unexpectedly failed: %v", rel, err)
+	}
+
+	if _, ok := cm.GetPath(owner); !ok {
+		t.Fatalf("expected path to be tracked for owner %q (original label %q)", owner, rel)
+	}
+}
+
 func TestAddPathHandlesAbsolutePaths(t *testing.T) {
 	base := t.TempDir()
 

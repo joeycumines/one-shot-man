@@ -802,6 +802,14 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 			// Windows-style backslashes to forward slashes and retry. This
 			// helps rehydrate sessions created on Windows when rehydrating
 			// on POSIX systems.
+			// NOTE: POSIX filesystems allow '\\' within filenames. This
+			// normalization is therefore a best-effort compatibility step
+			// (not a perfect mapping) — it may accidentally rebind a missing
+			// POSIX filename that contained literal backslashes to a
+			// different existing file if one happens to exist at the
+			// normalized path. The fallback is only attempted for missing
+			// files and is intended to reduce Windows->POSIX rehydration
+			// failures; it is not a security or correctness guarantee.
 			// Only attempt normalization if the original error indicates the
 			// file truly does not exist. Do not mask permission/IO errors.
 			if err != nil && (os.IsNotExist(err) || errors.Is(err, os.ErrNotExist)) && runtime.GOOS != "windows" && strings.Contains(label, "\\") {

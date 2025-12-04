@@ -125,18 +125,19 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 		return "", fmt.Errorf("failed to resolve path %s: %w", ownerPath, err)
 	}
 
-	// If the caller supplied a relative owner label it must resolve within
-	// the configured base path to prevent directory-traversal labels from
-	// adding entries outside the intended scope. Absolute paths are allowed
-	// (e.g. rehydration may include absolute snapshot paths) and therefore
-	// skip this containment check when the original ownerPath was absolute.
+	// Historically AddRelativePath rejected relative owner labels that
+	// resolved outside the configured base path. ContextManager is not a
+	// security sandbox — rejecting such labels breaks legitimate
+	// rehydration scenarios where external absolute paths were previously
+	// normalized into relative labels (e.g. sessions that were made portable
+	// and later rehydrated on a different host). To avoid creating sessions
+	// that cannot be reloaded, we do not reject relative inputs solely
+	// because they resolve outside the base path. We still compute the
+	// relative form to detect errors, but do not treat leading ".." as an
+	// operational error during rehydration.
 	if !filepath.IsAbs(ownerPath) {
-		rel, rerr := filepath.Rel(cm.basePath, absPath)
-		if rerr != nil {
+		if _, rerr := filepath.Rel(cm.basePath, absPath); rerr != nil {
 			return "", fmt.Errorf("failed to compute relative path: %w", rerr)
-		}
-		if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return "", fmt.Errorf("resolved path %s is outside base path %s", absPath, cm.basePath)
 		}
 	}
 

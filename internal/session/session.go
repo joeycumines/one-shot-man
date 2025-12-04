@@ -78,8 +78,10 @@ func getTmuxSessionID() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	// Query tmux for the unique session identifier (e.g., "$0")
-	cmd := exec.CommandContext(ctx, tmuxPath, "display-message", "-p", "#{session_id}")
+	// Query tmux for the full session:window:pane tuple to ensure pane-level uniqueness.
+	// Each pane is a distinct logical terminal and must have a unique session ID.
+	// Format: "$0:@0:%0" (session_id:window_id:pane_id)
+	cmd := exec.CommandContext(ctx, tmuxPath, "display-message", "-p", "#{session_id}:#{window_id}:#{pane_id}")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err

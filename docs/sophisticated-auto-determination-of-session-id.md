@@ -22,7 +22,8 @@ The codebase currently produces a small set of different identifier shapes depen
 detector that succeeds. Important notes:
 
 - **Explicit overrides** (`--session-id` / `OSM_SESSION_ID`) are returned verbatim.
-- **Tmux** returns the raw tmux session identifier produced by `tmux` (not hashed).
+- **Tmux** returns the raw tmux session:window:pane identifier tuple (e.g., `$0:@0:%0`), not hashed.
+  This provides pane-level uniqueness: each pane in a tmux session is a distinct logical terminal.
 - **Other detectors** (screen, macOS terminal, SSH env) return a deterministic SHA256 hex of a
     namespaced string (the implementation helper `hashString` is used). This is a 64-char hex string.
 - **Deep Anchor** returns a SHA256 hex computed from the structured `SessionContext` fields
@@ -67,7 +68,7 @@ Multiplexers manage their own session lifecycles. If the process is running insi
 
   * **Tmux:**
       * **Primary Check:** Presence of `TMUX_PANE` environment variable.
-      * **Extraction:** The implementation queries `tmux` for `#{session_id}` (500ms timeout) and returns that value directly. The code does not query `window_id` or `pane_id`, so pane-level uniqueness is not provided by `tmux` detection in the current implementation.
+      * **Extraction:** The implementation queries `tmux` for the full `#{session_id}:#{window_id}:#{pane_id}` tuple (500ms timeout) and returns that value directly (e.g., `$0:@0:%0`). This ensures **pane-level uniqueness**: each tmux pane is treated as a distinct logical terminal.
       * **Stale Detection:** If `TMUX_PANE` is present but tmux is unreachable, treat as stale and continue to next priority.
   * **GNU Screen:**
       * **Primary Check:** Presence of `STY` environment variable.
@@ -222,7 +223,10 @@ func getTmuxSessionID() (string, error) {
     ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
     defer cancel()
 
-    cmd := exec.CommandContext(ctx, tmuxPath, "display-message", "-p", "#{session_id}")
+    // Query tmux for the full session:window:pane tuple to ensure pane-level uniqueness.
+    // Each pane is a distinct logical terminal and must have a unique session ID.
+    // Format: "$0:@0:%0" (session_id:window_id:pane_id)
+    cmd := exec.CommandContext(ctx, tmuxPath, "display-message", "-p", "#{session_id}:#{window_id}:#{pane_id}")
     out, err := cmd.Output()
     if err != nil {
         return "", err
@@ -1075,7 +1079,7 @@ The `getFileNameByHandle` function uses `encoding/binary` for safe memory access
 
 * **Detection / Formatting:** The code uses per-detector hashing. Non-anchor detectors use `hashString(namespacedPayload)` to return a SHA256 hex string; `SessionContext.GenerateHash()` is used for Deep Anchor. There is no central `formatSessionID(...)` in the current implementation.
 * **Identifier shape:** The repository emits a mixture of outputs: raw explicit/tmux identifiers (returned verbatim) and SHA256 hex identifiers for other detectors and Deep Anchor. The `namespace--sanitized_raw--hash` layout is not used by the runtime code.
-* **Tmux Pane Entropy:** The implementation queries only `#{session_id}` (not window/pane), so pane-level uniqueness is not provided by tmux detection.
+* **Tmux Pane Entropy:** The implementation now queries `#{session_id}:#{window_id}:#{pane_id}`, providing pane-level uniqueness (e.g., `$0:@0:%0`).
 * **hashString Usage:** `hashString` is the helper used by SSH/screen/terminal detectors; `SessionContext.GenerateHash()` is the deterministic computation for Deep Anchor.
 * **SSH Hash:** Fixed logic to include client port, ensuring uniqueness for concurrent sessions.
 * **Self-Anchoring Trap:** Deep Anchor walk now unconditionally skips the initiating process PID. This prevents Session ID fragmentation if the binary is renamed (e.g., `osm-v2`).

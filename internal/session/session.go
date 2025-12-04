@@ -30,7 +30,6 @@ func GetSessionID(explicitOverride string) (string, string, error) {
 		if sessionID, err := getTmuxSessionID(); err == nil {
 			return sessionID, "tmux", nil
 		}
-		// TMUX_PANE present but tmux unreachable; treat as stale, continue
 	}
 	if sty := os.Getenv("STY"); sty != "" {
 		return hashString("screen:" + sty), "screen", nil
@@ -38,16 +37,13 @@ func GetSessionID(explicitOverride string) (string, string, error) {
 
 	// Priority 3: SSH Context
 	if sshConn := os.Getenv("SSH_CONNECTION"); sshConn != "" {
-		// SSH_CONNECTION = "client_ip client_port server_ip server_port"
 		parts := strings.Fields(sshConn)
 		if len(parts) == 4 {
-			// CONFLICT RESOLUTION: We must include the client port (parts[1])
-			// to distinguish between concurrent sessions (e.g. tabs) from the same host.
-			// Persistence across reconnects is handled by Multiplexers (Priority 2).
+			// include client port to differentiate concurrent sessions
 			stableString := fmt.Sprintf("ssh:%s:%s:%s:%s", parts[0], parts[1], parts[2], parts[3])
 			return hashString(stableString), "ssh-env", nil
 		}
-		// Fallback for malformed string
+		// fallback for malformed SSH_CONNECTION
 		return hashString("ssh:" + sshConn), "ssh-env", nil
 	}
 
@@ -95,9 +91,7 @@ func generateUUID() (string, error) {
 	return uuid.NewString(), nil
 }
 
-// hashString computes a SHA256 hash of the input string for use in non-anchor session IDs
-// (e.g., SSH connection strings, screen STY values). This is separate from SessionContext
-// which is used for Deep Anchor-based session IDs.
+// hashString computes a SHA256 hex for various detectors (screen, ssh, terminal).
 func hashString(s string) string {
 	hasher := sha256.New()
 	hasher.Write([]byte(s))

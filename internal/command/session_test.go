@@ -68,6 +68,36 @@ func TestSessionsListAndClean(t *testing.T) {
 	}
 }
 
+func TestSessionsPathShowsDirectoryAndFile(t *testing.T) {
+	dir := t.TempDir()
+	storage.SetTestPaths(dir)
+
+	cfg := config.NewConfig()
+	cmd := NewSessionCommand(cfg)
+
+	var out bytes.Buffer
+	// without args should print the sessions directory
+	if err := cmd.Execute([]string{"path"}, &out, &out); err != nil {
+		t.Fatalf("path failed: %v", err)
+	}
+	outStr := strings.TrimSpace(out.String())
+	if outStr == "" || !strings.HasPrefix(outStr, dir) {
+		t.Fatalf("expected path output to contain %q, got: %q", dir, outStr)
+	}
+
+	// with an id should print file path
+	out.Reset()
+	id := "my-session"
+	expectedFile, _ := storage.SessionFilePath(id)
+	if err := cmd.Execute([]string{"path", id}, &out, &out); err != nil {
+		t.Fatalf("path id failed: %v", err)
+	}
+	got := strings.TrimSpace(out.String())
+	if got != expectedFile {
+		t.Fatalf("expected %q, got %q", expectedFile, got)
+	}
+}
+
 func TestSessionsDeleteRemovesLockAndFile(t *testing.T) {
 	dir := t.TempDir()
 	storage.SetTestPaths(dir)

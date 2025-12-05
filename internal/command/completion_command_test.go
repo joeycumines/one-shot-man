@@ -324,10 +324,10 @@ func TestCompletionCommandSessionSubcommand(t *testing.T) {
 		shell       string
 		expectedTxt []string
 	}{
-		{name: "bash session", shell: "bash", expectedTxt: []string{"session)", "COMPREPLY=($(compgen -W \"list clean delete info\""}},
-		{name: "zsh session", shell: "zsh", expectedTxt: []string{"session)", "_values 'session-subcommand' 'list'"}},
-		{name: "fish session", shell: "fish", expectedTxt: []string{"__fish_seen_subcommand_from session", "list clean delete info"}},
-		{name: "powershell session", shell: "powershell", expectedTxt: []string{"$subs = @('list','clean','delete','info')", "session'"}},
+		{name: "bash session", shell: "bash", expectedTxt: []string{"session)", "COMPREPLY=($(compgen -W \"list clean delete info path\""}},
+		{name: "zsh session", shell: "zsh", expectedTxt: []string{"session)", "_values 'session-subcommand' 'list' 'clean' 'delete' 'info' 'path'"}},
+		{name: "fish session", shell: "fish", expectedTxt: []string{"__fish_seen_subcommand_from session", "list clean delete info path"}},
+		{name: "powershell session", shell: "powershell", expectedTxt: []string{"$subs = @('list','clean','delete','info','path')", "session'"}},
 	}
 
 	for _, tt := range tests {

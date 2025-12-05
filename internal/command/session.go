@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -29,7 +30,7 @@ type SessionCommand struct {
 // NewSessionCommand creates the session management command.
 func NewSessionCommand(cfg *config.Config) *SessionCommand {
 	return &SessionCommand{
-		BaseCommand: NewBaseCommand("session", "Manage persisted sessions", "session [list|clean|delete|info]"),
+		BaseCommand: NewBaseCommand("session", "Manage persisted sessions", "session [list|clean|delete|info|path]"),
 		cfg:         cfg,
 		stdin:       os.Stdin,
 	}
@@ -239,6 +240,39 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			return fmt.Errorf("info requires a session id")
 		}
 		return c.info(stdout, rem[0])
+	case "path":
+		fs := flag.NewFlagSet("session-path", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		fs.Usage = func() {
+			_, _ = fmt.Fprintf(stderr, "Usage: %s path [session-id]\n\n", c.Usage())
+			fmt.Fprintln(stderr, "Show the sessions directory or a specific session file path.")
+			fmt.Fprintln(stderr, "Options:")
+			fs.PrintDefaults()
+		}
+		if err := fs.Parse(args[1:]); err != nil {
+			if err == flag.ErrHelp {
+				return nil
+			}
+			return err
+		}
+		rem := fs.Args()
+		if len(rem) == 0 {
+			// Use SessionFilePath to derive a directory using the package-local
+			// sessionDirectory helper (tests override this via SetTestPaths).
+			p, err := storage.SessionFilePath("__osm_probe__")
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(stdout, filepath.Dir(p))
+			return nil
+		}
+		// If an ID is provided print the full session file path
+		p, err := storage.SessionFilePath(rem[0])
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(stdout, p)
+		return nil
 	default:
 		return fmt.Errorf("unknown subcommand: %s", args[0])
 	}

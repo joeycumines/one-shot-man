@@ -153,7 +153,7 @@ To implement a robust, safe, and configurable session lifecycle management syste
   - Register the new top-level command.
   - **File**: `internal/command/session.go`
   - **Struct**: `SessionCommand`
-  - **Usage**: `osm session [list|clean|delete|info]`
+  - **Usage**: `osm session [list|clean|delete|info|path]`
 
 ### **4.2 Subcommands**
 
@@ -167,7 +167,9 @@ To implement a robust, safe, and configurable session lifecycle management syste
       - Targets specific session.
       - Enforces locking check (fails if session is active).
 4.  **`info <id>`**:
-      - Loads full JSON and pretty-prints metadata/history summary.
+  - Loads full JSON and pretty-prints metadata/history summary.
+5.  **`path [id]`**:
+  - Show the sessions storage directory, or the absolute path for a session when an ID is supplied.
 
 -----
 

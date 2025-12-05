@@ -30,7 +30,7 @@ var stableShells = map[string]bool{
 var rootBoundaries = map[string]bool{
 	"init": true, "systemd": true, "login": true, "sshd": true,
 	"gdm-session-worker": true, "lightdm": true,
-	"xinit": true, "gnome-session": true, "kdeinit5": true, "launchd": true,
+	"xinit": true, "gnome-session": true, "kdeinit5": true,
 }
 
 // ProcStat contains parsed information from /proc/[pid]/stat

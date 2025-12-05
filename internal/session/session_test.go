@@ -224,6 +224,32 @@ func TestGetSessionID_ExplicitOverride_AlreadyNamespaced(t *testing.T) {
 	}
 }
 
+// TestGetSessionID_ExplicitPreNamespaced_InternalPassthrough verifies that
+// an explicit override which already contains a namespace and a 16-char
+// lowercase-hex payload for an internal detector namespace is accepted
+// verbatim (no suffix). This behavior is deliberate to allow resuming
+// sessions: previously-detected session IDs can be passed back to resume
+// state without modification.
+func TestGetSessionID_ExplicitPreNamespaced_InternalPassthrough(t *testing.T) {
+	os.Clearenv()
+
+	// Use a 16-char lowercase hex payload which matches internal short-hex.
+	explicit := "ssh--a1b2c3d4e5f67890"
+
+	id, source, err := GetSessionID(explicit)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if id != explicit {
+		t.Fatalf("expected explicit pre-namespaced internal id to pass through unchanged, got %q", id)
+	}
+
+	if source != "explicit-flag" {
+		t.Fatalf("expected source explicit-flag for explicit pre-namespaced input, got %q", source)
+	}
+}
+
 func TestFormatSessionID_SanitizationAppendsHash(t *testing.T) {
 	// Different raw inputs that sanitize to the same string must not collide.
 	idA := formatSessionID(NamespaceExplicit, "user/name") // Requires sanitization (/ -> _)

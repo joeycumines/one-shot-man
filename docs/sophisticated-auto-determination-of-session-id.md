@@ -200,7 +200,7 @@ Returned source labels (exact strings returned by GetSessionID as the "source" v
 
 **Behavior:** If provided, this value is authoritative and bypasses all auto-discovery logic.
 
-**Suffix:** ALWAYS applied to prevent mimicry attacks:
+**Suffix:** ALWAYS applied to prevent mimicry attacks, with one deliberate exception described below.
 - **Mini suffix** (`_XX`, 3 chars): When payload is safe (no sanitization, fits in length)
 - **Full suffix** (`_XXXXXXXXXXXXXXXX`, 17 chars): When sanitization OR truncation is required
 
@@ -212,6 +212,14 @@ Returned source labels (exact strings returned by GetSessionID as the "source" v
 - `"my-session"` → `"ex--my-session_a1"` (safe payload, mini suffix)
 - `"user/name"` → `"ex--user_name_a1b2c3d4e5f67890"` (sanitized, full suffix)
 - `"custom--value"` → `"custom--value_a1"` (pre-namespaced, safe payload, mini suffix)
+
+Note on resuming previously-discovered sessions:
+
+ - The system intentionally allows a pre-namespaced explicit override to pass through verbatim when the namespace matches a trusted internal detector namespace (e.g., `ssh`, `screen`, `terminal`, `anchor`) and the payload is an internal 16-character lowercase hex. This exception allows callers to pass back a previously-generated detector ID (for example from a session listing) to resume that session's state unchanged.
+
+ - Example: `"ssh--a1b2c3d4e5f67890"` (explicit) → accepted verbatim as `ssh--a1b2c3d4e5f67890` so the session can be resumed.
+
+ - Security note: this bypass only applies to explicit values that are already correctly namespaced and whose payloads exactly match the internal 16-char lowercase hex format. All other user-provided values retain the mandatory suffix to avoid mimicry.
 
 ### 2. Multiplexer Contexts
 
@@ -626,7 +634,7 @@ var stableShells = map[string]bool{
 var rootBoundaries = map[string]bool{
     "init": true, "systemd": true, "login": true, "sshd": true,
     "gdm-session-worker": true, "lightdm": true,
-    "xinit": true, "gnome-session": true, "kdeinit5": true, "launchd": true,
+    "xinit": true, "gnome-session": true, "kdeinit5": true,
 }
 
 func resolveDeepAnchor() (*SessionContext, error) {

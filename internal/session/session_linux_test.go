@@ -444,7 +444,7 @@ func TestRootBoundaries_ContainsExpectedProcesses(t *testing.T) {
 	expectedBoundaries := []string{
 		"init", "systemd", "login", "sshd",
 		"gdm-session-worker", "lightdm",
-		"xinit", "gnome-session", "kdeinit5", "launchd",
+		"xinit", "gnome-session", "kdeinit5",
 	}
 	for _, boundary := range expectedBoundaries {
 		if !rootBoundaries[boundary] {

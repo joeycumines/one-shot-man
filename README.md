@@ -67,16 +67,17 @@ The `completion` command generates shell completion scripts for various shells, 
 #### Installation
 
 **Bash:**
-```sh
+
+```bash
 # Install system-wide (requires root)
-osm completion bash | sudo tee /etc/bash_completion.d/osm > /dev/null
+osm completion bash | sudo tee /etc/bash_completion.d/osm >/dev/null
 
 # Install for current user only
 mkdir -p ~/.local/share/bash-completion/completions
-osm completion bash > ~/.local/share/bash-completion/completions/osm
+osm completion bash >~/.local/share/bash-completion/completions/osm
 
 # Or source directly in your ~/.bashrc
-echo 'source <(osm completion bash)' >> ~/.bashrc
+echo 'source <(osm completion bash)' >>~/.bashrc
 
 # For brew + brew-installed bash users of interactive shells on MacOS
 # (in your ~/.profile, OR, if it exists ~/.bash_profile, AFTER necessary PATH and HOMEBREW_PREFIX setup)
@@ -103,30 +104,33 @@ fi
 ```
 
 **Zsh:**
-```sh
+
+```zsh
 # Create completions directory if it doesn't exist
 mkdir -p ~/.zsh/completions
 
 # Install completion script
-osm completion zsh > ~/.zsh/completions/_osm
+osm completion zsh >~/.zsh/completions/_osm
 
 # Ensure these lines exist in your ~/.zshrc (add them if missing)
 # Add completions directory to your function path
-grep -q "fpath=(~/.zsh/completions $fpath)" ~/.zshrc || echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
+grep -q "fpath=(~/.zsh/completions $fpath)" ~/.zshrc || echo 'fpath=(~/.zsh/completions $fpath)' >>~/.zshrc
 # Initialize completion system (only once)
-grep -q "autoload -U compinit" ~/.zshrc || echo 'autoload -U compinit && compinit' >> ~/.zshrc
+grep -q "autoload -U compinit" ~/.zshrc || echo 'autoload -U compinit && compinit' >>~/.zshrc
 
 # Optionally source directly for the current session
 # source <(osm completion zsh)
 ```
 
 **Fish:**
+
 ```sh
 # Install completion script
-osm completion fish > ~/.config/fish/completions/osm.fish
+osm completion fish >~/.config/fish/completions/osm.fish
 ```
 
 **PowerShell:**
+
 ```powershell
 # Add to your PowerShell profile
 osm completion powershell >> $PROFILE
@@ -140,9 +144,9 @@ osm completion powershell | Invoke-Expression
 Once installed, you can use tab completion for commands:
 
 ```sh
-osm <TAB>                # Shows all available commands
-osm he<TAB>              # Completes to "help"
-osm completion <TAB>     # Shows shell options: bash, zsh, fish, powershell
+osm <TAB> # Shows all available commands
+osm he<TAB> # Completes to "help"
+osm completion <TAB> # Shows shell options: bash, zsh, fish, powershell
 ```
 
 -----
@@ -158,9 +162,9 @@ osm code-review
 
 The code review workflow:
 
-1.  **Build Context**: Iteratively add relevant files (`add`), git diffs (`diff`), and notes (`note`) to construct the scope of the review.
-2.  **Review & Refine**: Use `list`, `edit`, and `remove` to manage the context items.
-3.  **Generate & Use**: Once the context is complete, use `show` to view the final generated prompt or `copy` to send it to your clipboard for use with an LLM.
+1. **Build Context**: Iteratively add relevant files (`add`), git diffs (`diff`), and notes (`note`) to construct the scope of the review.
+2. **Review & Refine**: Use `list`, `edit`, and `remove` to manage the context items.
+3. **Generate & Use**: Once the context is complete, use `show` to view the final generated prompt or `copy` to send it to your clipboard for use with an LLM.
 
 Commands available in code review mode:
 
@@ -188,11 +192,11 @@ osm prompt-flow
 
 The prompt flow workflow:
 
-1.  **Set Goal**: Define what you want to achieve (e.g., `goal Refactor to unexport all methods except Run`).
-2.  **Build Context**: Add relevant files (`add`), git diffs (`diff`), and notes (`note`).
-3.  **Generate Meta-Prompt**: Run `generate` to create a prompt designed to be sent to an LLM. You can inspect it with `show meta`.
-4.  **Set Task Prompt**: After getting a response from an LLM, use the `use` command to set it as the task prompt (e.g., `use "The user wants a Javascript function..."`). You can also `edit prompt` later to refine it.
-5.  **Assemble & Use**: The task prompt is now combined with the context. Use `show` to see the final output or `copy` to send it to your clipboard. If you clear the task prompt via `edit prompt` and save empty, the flow reverts to the meta-prompt phase so `show` defaults back to `show meta`.
+1. **Set Goal**: Define what you want to achieve (e.g., `goal Refactor to unexport all methods except Run`).
+2. **Build Context**: Add relevant files (`add`), git diffs (`diff`), and notes (`note`).
+3. **Generate Meta-Prompt**: Run `generate` to create a prompt designed to be sent to an LLM. You can inspect it with `show meta`.
+4. **Set Task Prompt**: After getting a response from an LLM, use the `use` command to set it as the task prompt (e.g., `use "The user wants a Javascript function..."`). You can also `edit prompt` later to refine it.
+5. **Assemble & Use**: The task prompt is now combined with the context. Use `show` to see the final output or `copy` to send it to your clipboard. If you clear the task prompt via `edit prompt` and save empty, the flow reverts to the meta-prompt phase so `show` defaults back to `show meta`.
 
 Commands available in prompt flow mode:
 
@@ -291,9 +295,9 @@ Notes:
 
 Script commands are discovered from these locations (in order):
 
-1.  `scripts/` directory relative to the executable
-2.  `~/.one-shot-man/scripts/` (user scripts)
-3.  `./scripts/` (current directory scripts)
+1. `scripts/` directory relative to the executable
+2. `~/.one-shot-man/scripts/` (user scripts)
+3. `./scripts/` (current directory scripts)
 
 For advanced script discovery options including git repository detection, directory traversal, and custom script paths, see the [Configuration Reference](docs/config-reference.md#script-discovery-options).
 
@@ -309,16 +313,16 @@ const {getenv} = require('osm:os');
 ctx.log("Starting example script");
 
 // Demonstrate deferred execution (cleanup)
-ctx.defer(function() {
+ctx.defer(function () {
     ctx.log("Cleaning up resources");
 });
 
 // Demonstrate sub-tests similar to testing.T.run()
-ctx.run("setup", function() {
+ctx.run("setup", function () {
     ctx.log("Setting up test environment");
     ctx.logf("Environment: %s", getenv("PATH") ? "defined" : "undefined");
 
-    ctx.defer(function() {
+    ctx.defer(function () {
         ctx.log("Cleaning up test environment");
     });
 });
@@ -349,7 +353,7 @@ Script execution completed successfully
 
 To start an interactive session in the REPL-like TUI, use `-i`:
 
-```sh
+```
 $ osm script -i
 ================================================================
 WARNING: EPHEMERAL SESSION - nothing is persisted. Your work will be lost on exit.
@@ -421,13 +425,13 @@ osm goal -r doc-generator
 **Available Goals:**
 
 - **Code Refactoring:**
-  - `comment-stripper` - Remove useless comments and refactor useful ones with intelligent analysis
+    - `comment-stripper` - Remove useless comments and refactor useful ones with intelligent analysis
 
 - **Documentation:**
-  - `doc-generator` - Generate comprehensive documentation including API docs, examples, and guides
+    - `doc-generator` - Generate comprehensive documentation including API docs, examples, and guides
 
 - **Testing:**
-  - `test-generator` - Generate comprehensive test suites with unit, integration, and edge case coverage
+    - `test-generator` - Generate comprehensive test suites with unit, integration, and edge case coverage
 
 **Integration with Other Commands:**
 
@@ -437,6 +441,7 @@ Goals integrate seamlessly with existing workflows:
 - **Code Review**: Use `note --goals` to apply goal-based review focuses like `note goal:comments`
 
 Each goal provides:
+
 - Comprehensive, context-aware prompts
 - Interactive TUI for building context
 - Integration with the scripting system
@@ -463,20 +468,22 @@ History:
 Commands implement the `Command` interface:
 
 ```go
+package command
+
 type Command interface {
-    Name() string
-    Description() string
-    Usage() string
-    SetupFlags(fs *flag.FlagSet)
-    Execute(args []string, stdout, stderr io.Writer) error
+	Name() string
+	Description() string
+	Usage() string
+	SetupFlags(fs *flag.FlagSet)
+	Execute(args []string, stdout, stderr io.Writer) error
 }
 ```
 
 ### Extension Points
 
-1.  **Built-in Commands**: Implement the `Command` interface and register with the registry.
-2.  **Script Commands**: Create executable scripts in designated script directories.
-3.  **Configuration**: Use the dnsmasq-style config format for both global and command-specific options.
+1. **Built-in Commands**: Implement the `Command` interface and register with the registry.
+2. **Script Commands**: Create executable scripts in designated script directories.
+3. **Configuration**: Use the dnsmasq-style config format for both global and command-specific options.
 
 -----
 
@@ -529,8 +536,8 @@ tui.registerCompleter('files', (doc) => {
     const word = doc.getWordBeforeCursor();
     // Suggest some static items for demo
     return [
-        { text: 'help', description: 'Built-in command' },
-        { text: 'modes', description: 'List modes' },
+        {text: 'help', description: 'Built-in command'},
+        {text: 'modes', description: 'List modes'},
     ].filter(s => s.text.startsWith(word));
 });
 
@@ -542,7 +549,7 @@ const promptName = tui.createAdvancedPrompt({
         input: 'green',
         prefix: 'red'
     },
-    history: { enabled: true, file: '.demo_history' }
+    history: {enabled: true, file: '.demo_history'}
 });
 
 tui.setCompleter(promptName, 'files');

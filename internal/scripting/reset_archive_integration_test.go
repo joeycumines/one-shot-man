@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
+	"github.com/joeycumines/one-shot-man/internal/storage"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 

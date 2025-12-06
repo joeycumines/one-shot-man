@@ -16,8 +16,8 @@ import (
 	"github.com/joeycumines/go-prompt"
 	istrings "github.com/joeycumines/go-prompt/strings"
 	"github.com/joeycumines/one-shot-man/internal/argv"
-	"github.com/joeycumines/one-shot-man/internal/scripting/builtin"
-	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
+	"github.com/joeycumines/one-shot-man/internal/builtin"
+	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 
 // extractCommandHistory converts storage.HistoryEntry slice into []string for go-prompt.

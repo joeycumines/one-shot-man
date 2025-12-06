@@ -14,7 +14,7 @@ import (
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
-	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
+	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 
 // stdin reader used for interactive prompts. It's stored on the command

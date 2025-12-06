@@ -6,7 +6,7 @@ This implementation hardens `AcquireLockHandle` against the "stale inode" race c
 
 It introduces a **verification loop**: after acquiring the lock, it stat-checks the file descriptor against the actual filesystem path to ensure strict identity.
 
-### **File: `internal/scripting/storage/filelock.go`**
+### **File: `internal/storage/filelock.go`**
 
 ```go
 package storage

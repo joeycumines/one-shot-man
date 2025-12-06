@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
-	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
+	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 
 const maxHistoryEntries = 200

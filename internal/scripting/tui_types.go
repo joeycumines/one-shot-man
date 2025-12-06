@@ -8,7 +8,7 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
-	"github.com/joeycumines/one-shot-man/internal/scripting/builtin"
+	"github.com/joeycumines/one-shot-man/internal/builtin"
 )
 
 // TUIManager manages rich terminal interfaces for script modes.

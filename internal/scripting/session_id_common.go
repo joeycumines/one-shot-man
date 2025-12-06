@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
 	"github.com/joeycumines/one-shot-man/internal/session"
+	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 
 // discoverSessionID determines the active session ID using the sophisticated hierarchy defined in

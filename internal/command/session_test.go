@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
-	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
+	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 
 type errReader struct{}

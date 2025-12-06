@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
+	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 
 var backendAlwaysExistsCalls int32

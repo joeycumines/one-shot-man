@@ -26,7 +26,7 @@ To implement a robust, safe, and configurable session lifecycle management syste
 ### **1.2 Global Cleanup State**
 
   - Introduce a lightweight global state file to track the last cleanup execution timestamp. This prevents the cleanup logic from running on every command invocation (performance optimization).
-  - **File**: `internal/scripting/storage/global_metadata.go`
+  - **File**: `internal/storage/global_metadata.go`
   - **Path**: `~/.one-shot-man/metadata.json`
   - **Struct**:
     ```go
@@ -45,7 +45,7 @@ To implement a robust, safe, and configurable session lifecycle management syste
 ### **2.1 Non-Blocking Lock Inspection**
 
   - Extend the storage backend utilities to support "TryLock" functionality. This is critical to determine if a session is currently in use without hanging the cleanup process.
-  - **File**: `internal/scripting/storage/filelock_unix.go` / `_windows.go`
+  - **File**: `internal/storage/filelock_unix.go` / `_windows.go`
   - **Function**: `AcquireLockHandle(path string) (*os.File, bool, error)`
       Locking semantics
       -----------------
@@ -90,7 +90,7 @@ To implement a robust, safe, and configurable session lifecycle management syste
 ### **2.2 Session Analysis Service**
 
   - Create a service to inspect session files without fully loading them (parsing headers only where possible, or `os.Stat` for metadata).
-  - **File**: `internal/scripting/storage/inspector.go`
+  - **File**: `internal/storage/inspector.go`
   - **Struct**: `SessionInfo`
     ```go
     type SessionInfo struct {
@@ -116,7 +116,7 @@ To implement a robust, safe, and configurable session lifecycle management syste
 ### **3.1 Cleanup Service**
 
   - Implement the logic to select candidates for deletion based on policies.
-  - **File**: `internal/scripting/storage/cleanup.go`
+  - **File**: `internal/storage/cleanup.go`
   - **Struct**: `Cleaner`
   - **Logic Flow**:
     1.  **Filter**: Exclude the *current* session ID (passed via context).
@@ -294,7 +294,7 @@ This cleanup functionality should be implemented as a new built-in command integ
 
 # Storage Backend Integration
 
-This document provides a complete overview of how the storage backend (`./internal/scripting/storage`) is integrated into the `./cmd/osm` application, enabling persistent state management across terminal sessions and scripts.
+This document provides a complete overview of how the storage backend (`./internal/storage`) is integrated into the `./cmd/osm` application, enabling persistent state management across terminal sessions and scripts.
 
 ## Executive Summary
 
@@ -555,17 +555,17 @@ state.set(localCounter, counter + 1);
 The following files are relevant to the storage backend integration:
 
 ```
-internal/scripting/storage/backend.go
-internal/scripting/storage/fs_backend.go
-internal/scripting/storage/memory_backend.go
-internal/scripting/storage/schema.go
-internal/scripting/storage/registry.go
-internal/scripting/storage/paths.go
-internal/scripting/storage/atomic_write.go
-internal/scripting/storage/atomic_write_unix.go
-internal/scripting/storage/atomic_write_windows.go
-internal/scripting/storage/filelock_unix.go
-internal/scripting/storage/filelock_windows.go
+internal/storage/backend.go
+internal/storage/fs_backend.go
+internal/storage/memory_backend.go
+internal/storage/schema.go
+internal/storage/registry.go
+internal/storage/paths.go
+internal/storage/atomic_write.go
+internal/storage/atomic_write_unix.go
+internal/storage/atomic_write_windows.go
+internal/storage/filelock_unix.go
+internal/storage/filelock_windows.go
 internal/scripting/state_manager.go
 internal/scripting/tui_manager.go
 internal/scripting/session_id_common.go
@@ -578,14 +578,14 @@ internal/command/goal.go
 internal/command/code_review_script.js
 internal/command/goal.js
 internal/command/prompt_flow_script.js
-internal/scripting/builtin/ctxutil/contextManager.js
-internal/scripting/builtin/shared_symbols.go
+internal/builtin/ctxutil/contextManager.js
+internal/builtin/shared_symbols.go
 ```
 
 ## Detailed File Analysis
 
 
-  - **internal/scripting/storage/backend.go**: Defines the `StorageBackend` interface:
+  - **internal/storage/backend.go**: Defines the `StorageBackend` interface:
     ```go
     type StorageBackend interface {
         // LoadSession retrieves a session by its unique ID.
@@ -600,15 +600,15 @@ internal/scripting/builtin/shared_symbols.go
     }
     ```
 
-  - **internal/scripting/storage/fs_backend.go**: Implements the filesystem backend:
+  - **internal/storage/fs_backend.go**: Implements the filesystem backend:
     - Uses `NewFileSystemBackend(sessionID string)` to create the backend and acquire an exclusive lock.
     - Locking is performed via `acquireFileLock(lockPath)` (see platform-specific filelock files).
     - Loads session with `LoadSession(sessionID string)`, checks for session file existence, and deserializes JSON.
     - Version validation is deferred to `StateManager`.
 
-  - **internal/scripting/storage/memory_backend.go**: In-memory backend for testing with global state sharing and mutex protection.
+  - **internal/storage/memory_backend.go**: In-memory backend for testing with global state sharing and mutex protection.
 
-  - **internal/scripting/storage/schema.go**: Defines the session schema:
+  - **internal/storage/schema.go**: Defines the session schema:
     ```go
     type Session struct {
         Version     string                            `json:"version"`
@@ -629,26 +629,26 @@ internal/scripting/builtin/shared_symbols.go
     }
     ```
 
-  - **internal/scripting/storage/registry.go**: Registry for backend factories, registers "fs" and "memory" backends.
+  - **internal/storage/registry.go**: Registry for backend factories, registers "fs" and "memory" backends.
 
-  - **internal/scripting/storage/paths.go**: Path utilities for session directories, files, and lock files with cross-platform support.
+  - **internal/storage/paths.go**: Path utilities for session directories, files, and lock files with cross-platform support.
 
-  - **internal/scripting/storage/atomic_write.go**: Implements atomic file writing:
+  - **internal/storage/atomic_write.go**: Implements atomic file writing:
     - `AtomicWriteFile(filename string, data []byte, perm os.FileMode) error`:
       - Creates a temp file in the target directory.
       - Writes data, syncs to disk.
       - Atomically renames temp file to target file.
       - Cleans up temp file on error.
 
-  - **internal/scripting/storage/atomic_write_unix.go**: Unix-specific atomic rename (uses os.Rename).
+  - **internal/storage/atomic_write_unix.go**: Unix-specific atomic rename (uses os.Rename).
 
-  - **internal/scripting/storage/atomic_write_windows.go**: Windows-specific atomic rename using MoveFileEx.
+  - **internal/storage/atomic_write_windows.go**: Windows-specific atomic rename using MoveFileEx.
 
-  - **internal/scripting/storage/filelock_unix.go**: Unix file locking (platform implementation):
+  - **internal/storage/filelock_unix.go**: Unix file locking (platform implementation):
     - Implementation: uses `unix.Flock` to acquire an exclusive, non-blocking advisory lock on the lock file descriptor.
     - Behaviour: lock file is created/opened, locked, and later unlocked + removed on release.
 
-  - **internal/scripting/storage/filelock_windows.go**: Windows file locking (platform implementation):
+  - **internal/storage/filelock_windows.go**: Windows file locking (platform implementation):
     - Implementation: uses Windows `LockFileEx` to acquire an exclusive byte-range lock via `golang.org/x/sys/windows`.
     - Behaviour: lock file is created/opened, locked, and later unlocked + removed on release.
 
@@ -712,9 +712,9 @@ The StateManager maintains:
 
   - **internal/command/prompt_flow_script.js**: Uses shared `contextItems` and local state keys.
 
-  - **internal/scripting/builtin/ctxutil/contextManager.js**: Context management factory that accepts custom getItems/setItems for shared or mode-specific state.
+  - **internal/builtin/ctxutil/contextManager.js**: Context management factory that accepts custom getItems/setItems for shared or mode-specific state.
 
-  - **internal/scripting/builtin/shared_symbols.go**: Provides the `osm:sharedStateSymbols` module for JavaScript scripts to access shared state symbols.
+  - **internal/builtin/shared_symbols.go**: Provides the `osm:sharedStateSymbols` module for JavaScript scripts to access shared state symbols.
     ```go
     // sharedStateKeys defines the canonical string keys for all shared state.
     var sharedStateKeys = []string{
@@ -1097,11 +1097,11 @@ Contract validation will detect schema mismatches and reset to defaults. Shared 
 
 ### Code Locations
 
-  - **Storage Backend Interface**: `internal/scripting/storage/backend.go`
+  - **Storage Backend Interface**: `internal/storage/backend.go`
   - **Shared State API**: `internal/scripting/js_state_accessor.go:jsCreateState`
-  - **Shared Symbols Module**: `internal/scripting/builtin/shared_symbols.go`
+  - **Shared Symbols Module**: `internal/builtin/shared_symbols.go`
   - **Session Discovery**: `internal/scripting/session_id_common.go:initializeStateManager`
-  - **Context Manager**: `internal/scripting/builtin/ctxutil/contextManager.js`
+  - **Context Manager**: `internal/builtin/ctxutil/contextManager.js`
   - **Built-in Commands**: `internal/command/code_review.go`, `internal/command/prompt_flow.go`, `internal/command/goal.go`
   - **Embedded Scripts**: `internal/command/code_review_script.js`, `internal/command/goal.js`, `internal/command/prompt_flow_script.js`
 
@@ -1491,13 +1491,13 @@ Using an `archive/` subdirectory keeps the main sessions dir tidy and helps the 
 ### **Detailed step-by-step implementation (code locations & behaviour)**
 
 1. Add helper & path utilities
-  - `internal/scripting/storage/paths.go` — add `SessionArchiveDir(sessionID string)` and `ArchiveSessionFilePath(sessionID string, ts time.Time, counter int) string` helpers; add `SanitizeFilename(input string) string`.
+  - `internal/storage/paths.go` — add `SessionArchiveDir(sessionID string)` and `ArchiveSessionFilePath(sessionID string, ts time.Time, counter int) string` helpers; add `SanitizeFilename(input string) string`.
 
 2. Filesystem backend API extension
-  - `internal/scripting/storage/backend.go` — add a new optional method `ArchiveSession(sessionID string, destPath string) error` to enable backends to archive their on-disk representation. `fs_backend.go` implements this; `memory_backend.go` can no-op or provide a memory-record for tests.
+  - `internal/storage/backend.go` — add a new optional method `ArchiveSession(sessionID string, destPath string) error` to enable backends to archive their on-disk representation. `fs_backend.go` implements this; `memory_backend.go` can no-op or provide a memory-record for tests.
 
 3. Implement safe rename in filesystem backend
-  - `internal/scripting/storage/fs_backend.go` — implement `ArchiveSession` to:
+  - `internal/storage/fs_backend.go` — implement `ArchiveSession` to:
     - Ensure target `archive/` dir exists (atomic mkdir semantics),
     - Validate session file exists; fsync to persist current content,
     - Use `os.Rename` when in the same filesystem (fast and atomic). If a cross-device rename is required, fall back to copy-then-sync-and-remove with careful error handling.
@@ -1545,9 +1545,9 @@ Using an `archive/` subdirectory keeps the main sessions dir tidy and helps the 
 
 ### **Summary: deliverables**
 
-- `internal/scripting/storage/paths.go`: archive path helpers + sanitizer
-- `internal/scripting/storage/backend.go`: optional `ArchiveSession` method
-- `internal/scripting/storage/fs_backend.go`: archive implementation (atomic rename, copy fallback)
+- `internal/storage/paths.go`: archive path helpers + sanitizer
+- `internal/storage/backend.go`: optional `ArchiveSession` method
+- `internal/storage/fs_backend.go`: archive implementation (atomic rename, copy fallback)
 - `internal/scripting/tui_manager.go`: resetAllState updated to archive + reinitialize
 - tests in `internal/scripting/*_test.go` covering unit & integration cases
 - docs updated (this section) and `osm session` command extended to list/restore archives

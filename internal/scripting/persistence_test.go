@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
 	"github.com/joeycumines/one-shot-man/internal/session"
+	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 
 // TestEngine_PersistenceOnClose verifies that closing the engine persists the session state.

@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dop251/goja"
-	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
+	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 
 // StateManagerProvider provides access to a StateManager instance.

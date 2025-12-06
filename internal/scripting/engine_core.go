@@ -8,8 +8,8 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
-	"github.com/joeycumines/one-shot-man/internal/scripting/builtin"
-	tviewmod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/tview"
+	"github.com/joeycumines/one-shot-man/internal/builtin"
+	tviewmod "github.com/joeycumines/one-shot-man/internal/builtin/tview"
 )
 
 // Engine represents a JavaScript scripting engine with deferred execution capabilities.

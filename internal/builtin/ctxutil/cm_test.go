@@ -7,8 +7,8 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
-	"github.com/joeycumines/one-shot-man/internal/scripting/builtin"
-	"github.com/joeycumines/one-shot-man/internal/scripting/builtin/ctxutil"
+	"github.com/joeycumines/one-shot-man/internal/builtin"
+	"github.com/joeycumines/one-shot-man/internal/builtin/ctxutil"
 )
 
 func setupContextManager(t *testing.T) *goja.Runtime {

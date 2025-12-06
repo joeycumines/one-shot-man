@@ -4,14 +4,14 @@ import (
 	"context"
 
 	"github.com/dop251/goja_nodejs/require"
-	"github.com/joeycumines/one-shot-man/internal/scripting/builtin/argv"
-	ctxutils "github.com/joeycumines/one-shot-man/internal/scripting/builtin/ctxutil"
-	execmod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/exec"
-	"github.com/joeycumines/one-shot-man/internal/scripting/builtin/nextintegerid"
-	osmod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/os"
-	templatemod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/template"
-	timemod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/time"
-	tviewmod "github.com/joeycumines/one-shot-man/internal/scripting/builtin/tview"
+	"github.com/joeycumines/one-shot-man/internal/builtin/argv"
+	ctxutils "github.com/joeycumines/one-shot-man/internal/builtin/ctxutil"
+	execmod "github.com/joeycumines/one-shot-man/internal/builtin/exec"
+	"github.com/joeycumines/one-shot-man/internal/builtin/nextintegerid"
+	osmod "github.com/joeycumines/one-shot-man/internal/builtin/os"
+	templatemod "github.com/joeycumines/one-shot-man/internal/builtin/template"
+	timemod "github.com/joeycumines/one-shot-man/internal/builtin/time"
+	tviewmod "github.com/joeycumines/one-shot-man/internal/builtin/tview"
 )
 
 // TViewManagerProvider provides access to a tview manager instance.

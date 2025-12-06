@@ -24,9 +24,9 @@ func TestExtractCommandHistory(t *testing.T) {
 	t.Run("single entry", func(t *testing.T) {
 		entries := []storage.HistoryEntry{
 			{
-				EntryID:   "1",
-				Command:   "help",
-				Timestamp: time.Now(),
+				EntryID:  "1",
+				Command:  "help",
+				ReadTime: time.Now(),
 			},
 		}
 		result := extractCommandHistory(entries)
@@ -40,10 +40,10 @@ func TestExtractCommandHistory(t *testing.T) {
 
 	t.Run("multiple entries", func(t *testing.T) {
 		entries := []storage.HistoryEntry{
-			{EntryID: "1", Command: "help", Timestamp: time.Now()},
-			{EntryID: "2", Command: "list modes", Timestamp: time.Now()},
-			{EntryID: "3", Command: "switch demo", Timestamp: time.Now()},
-			{EntryID: "4", Command: "exit", Timestamp: time.Now()},
+			{EntryID: "1", Command: "help", ReadTime: time.Now()},
+			{EntryID: "2", Command: "list modes", ReadTime: time.Now()},
+			{EntryID: "3", Command: "switch demo", ReadTime: time.Now()},
+			{EntryID: "4", Command: "exit", ReadTime: time.Now()},
 		}
 		result := extractCommandHistory(entries)
 		if len(result) != 4 {
@@ -60,9 +60,9 @@ func TestExtractCommandHistory(t *testing.T) {
 
 	t.Run("preserves order", func(t *testing.T) {
 		entries := []storage.HistoryEntry{
-			{EntryID: "1", Command: "first", Timestamp: time.Now()},
-			{EntryID: "2", Command: "second", Timestamp: time.Now()},
-			{EntryID: "3", Command: "third", Timestamp: time.Now()},
+			{EntryID: "1", Command: "first", ReadTime: time.Now()},
+			{EntryID: "2", Command: "second", ReadTime: time.Now()},
+			{EntryID: "3", Command: "third", ReadTime: time.Now()},
 		}
 		result := extractCommandHistory(entries)
 
@@ -73,9 +73,9 @@ func TestExtractCommandHistory(t *testing.T) {
 
 	t.Run("handles commands with special characters", func(t *testing.T) {
 		entries := []storage.HistoryEntry{
-			{EntryID: "1", Command: "echo \"hello world\"", Timestamp: time.Now()},
-			{EntryID: "2", Command: "cmd --flag=value", Timestamp: time.Now()},
-			{EntryID: "3", Command: "path/to/file.txt", Timestamp: time.Now()},
+			{EntryID: "1", Command: "echo \"hello world\"", ReadTime: time.Now()},
+			{EntryID: "2", Command: "cmd --flag=value", ReadTime: time.Now()},
+			{EntryID: "3", Command: "path/to/file.txt", ReadTime: time.Now()},
 		}
 		result := extractCommandHistory(entries)
 
@@ -250,10 +250,10 @@ func TestNewTUIManager_LoadsHistoryFromSession(t *testing.T) {
 func TestCommandHistory_PreservesChronologicalOrder(t *testing.T) {
 	now := time.Now()
 	entries := []storage.HistoryEntry{
-		{EntryID: "1", Command: "first", Timestamp: now.Add(-3 * time.Hour)},
-		{EntryID: "2", Command: "second", Timestamp: now.Add(-2 * time.Hour)},
-		{EntryID: "3", Command: "third", Timestamp: now.Add(-1 * time.Hour)},
-		{EntryID: "4", Command: "fourth", Timestamp: now},
+		{EntryID: "1", Command: "first", ReadTime: now.Add(-3 * time.Hour)},
+		{EntryID: "2", Command: "second", ReadTime: now.Add(-2 * time.Hour)},
+		{EntryID: "3", Command: "third", ReadTime: now.Add(-1 * time.Hour)},
+		{EntryID: "4", Command: "fourth", ReadTime: now},
 	}
 
 	result := extractCommandHistory(entries)
@@ -279,9 +279,9 @@ func TestCommandHistory_LargeHistorySet(t *testing.T) {
 
 	for i := 0; i < numEntries; i++ {
 		entries[i] = storage.HistoryEntry{
-			EntryID:   string(rune(i)),
-			Command:   "command " + string(rune(i)),
-			Timestamp: time.Now().Add(time.Duration(i) * time.Second),
+			EntryID:  string(rune(i)),
+			Command:  "command " + string(rune(i)),
+			ReadTime: time.Now().Add(time.Duration(i) * time.Second),
 		}
 	}
 
@@ -397,9 +397,9 @@ func TestCommandHistory_EmptyAndNilSafety(t *testing.T) {
 
 	t.Run("empty command strings", func(t *testing.T) {
 		entries := []storage.HistoryEntry{
-			{EntryID: "1", Command: "", Timestamp: time.Now()},
-			{EntryID: "2", Command: "valid", Timestamp: time.Now()},
-			{EntryID: "3", Command: "", Timestamp: time.Now()},
+			{EntryID: "1", Command: "", ReadTime: time.Now()},
+			{EntryID: "2", Command: "valid", ReadTime: time.Now()},
+			{EntryID: "3", Command: "", ReadTime: time.Now()},
 		}
 
 		result := extractCommandHistory(entries)

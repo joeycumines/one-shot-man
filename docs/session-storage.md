@@ -15,11 +15,11 @@ To implement a robust, safe, and configurable session lifecycle management syste
   - **Struct Addition**:
     ```go
     type SessionConfig struct {
-        MaxAgeDays           int  `json:"max_age_days" default:"90"`
-        MaxCount             int  `json:"max_count" default:"100"`
-        MaxSizeMB            int  `json:"max_size_mb" default:"500"`
-        AutoCleanupEnabled   bool `json:"auto_cleanup_enabled" default:"true"`
-        CleanupIntervalHours int  `json:"cleanup_interval_hours" default:"24"`
+      MaxAgeDays           int  `json:"maxAgeDays" default:"90"`
+      MaxCount             int  `json:"maxCount" default:"100"`
+      MaxSizeMB            int  `json:"maxSizeMb" default:"500"`
+      AutoCleanupEnabled   bool `json:"autoCleanupEnabled" default:"true"`
+      CleanupIntervalHours int  `json:"cleanupIntervalHours" default:"24"`
     }
     ```
 
@@ -31,7 +31,7 @@ To implement a robust, safe, and configurable session lifecycle management syste
   - **Struct**:
     ```go
     type GlobalMetadata struct {
-        LastCleanupRun time.Time `json:"last_cleanup_run"`
+      LastCleanupRun time.Time `json:"lastCleanupRun"`
     }
     ```
   - **Functions**:
@@ -98,16 +98,16 @@ To implement a robust, safe, and configurable session lifecycle management syste
         Path      string
         LockPath  string
         Size      int64
-        UpdatedAt time.Time
-        CreatedAt time.Time
-        IsActive  bool // True if file is currently locked
+        UpdateTime time.Time
+        CreateTime time.Time
+        Active  bool // True if file is currently locked
     }
     ```
   - **Function**: `ScanSessions(dir string) ([]SessionInfo, error)`
       - Iterates `~/.one-shot-man/sessions/*.session.json`.
       - Calls `AcquireLockHandle` on the corresponding lock file.
-      - If lock acquisition fails (already locked), mark `IsActive = true`.
-      - If lock acquisition succeeds, release immediately and mark `IsActive = false`.
+      - If lock acquisition fails (already locked), mark `Active = true`.
+      - If lock acquisition succeeds, release immediately and mark `Active = false`.
 
 -----
 
@@ -120,9 +120,9 @@ To implement a robust, safe, and configurable session lifecycle management syste
   - **Struct**: `Cleaner`
   - **Logic Flow**:
     1.  **Filter**: Exclude the *current* session ID (passed via context).
-    2.  **Filter**: Exclude `IsActive == true` (sessions locked by other processes).
-    3.  **Policy Check - Age**: Identify sessions where `Now - UpdatedAt > MaxAgeDays`.
-    4.  **Policy Check - Count**: Sort remaining sessions by `UpdatedAt` (descending). Identify entries beyond index `MaxCount`.
+    2.  **Filter**: Exclude `Active == true` (sessions locked by other processes).
+    3.  **Policy Check - Age**: Identify sessions where `Now - UpdateTime > MaxAgeDays`.
+    4.  **Policy Check - Count**: Sort remaining sessions by `UpdateTime` (descending). Identify entries beyond index `MaxCount`.
     5.  **Policy Check - Size**: Calculate total size. If `> MaxSizeMB`, identify oldest sessions until under threshold.
     6.  **Defunct Detection**: Identify "Orphaned Locks". Check for `.lock` files that have no corresponding `.session.json` file and remove them.
 
@@ -206,12 +206,12 @@ To implement a robust, safe, and configurable session lifecycle management syste
 
 1.  **Locking Hierarchy**: We strictly adhere to a locking hierarchy: Global Cleanup Lock -\> Individual Session Lock. This prevents race conditions between the cleanup service and active sessions.
 2.  **Atomic Deletion**: The system verifies the lock *immediately* before deletion. A session cannot become active "in between" the check and the delete because the cleanup process holds the exclusive lock during the `os.Remove` call.
-3.  **Active Session Protection**: The `IsActive` check relies on OS-level file locking. If a user has a terminal open, that process holds the lock. The cleanup service will fail to acquire the lock and unconditionally skip that session.
+3.  **Active Session Protection**: The `Active` check relies on OS-level file locking. If a user has a terminal open, that process holds the lock. The cleanup service will fail to acquire the lock and unconditionally skip that session.
 
 ### **Verification Plan**
 
 1.  **Test: Concurrent Access**: Spawn a background process that holds a lock on `session-A`. Run `osm session clean`. Assert `session-A` is **not** deleted.
-2.  **Test: Age Policy**: Create dummy sessions with `UpdatedAt` timestamps 365 days in the past. Run cleanup. Assert files are removed.
+2.  **Test: Age Policy**: Create dummy sessions with `UpdateTime` timestamps 365 days in the past. Run cleanup. Assert files are removed.
 3.  **Test: Race Condition**: Run `osm session clean` in two separate terminals simultaneously. Assert that one waits or exits gracefully, and no panic or file corruption occurs.
 4.  **Test: Orphaned Locks**: Create a `zombie.lock` with no session JSON. Run cleanup. Assert lock file is removed.
 
@@ -263,24 +263,24 @@ The absence of session cleanup mechanisms represents a significant gap in the st
   `osm session list` supports two optional flags to control output format and ordering:
 
   - `-format <text|json>`
-    - `text` (default): human-readable table lines, one session per line: `ID\tUpdatedAt\tSize\tstate`.
-    - `json`: pretty-printed JSON array of `SessionInfo` objects (fields: `id`, `path`, `lockPath`, `size`, `updatedAt`, `createdAt`, `isActive`).
+    - `text` (default): human-readable table lines, one session per line: `ID\tUpdateTime\tSize\tstate`.
+    - `json`: pretty-printed JSON array of `SessionInfo` objects (fields: `id`, `path`, `lockPath`, `size`, `updateTime`, `createTime`, `active`).
       Note: these are the actual JSON key names produced by the CLI — they are case-sensitive. For example, using `jq` you must access `.id` (not `.ID`).
 
   - `-sort <default|active>`
     - `default` (unchanged): preserves the scanner's ordering (filesystem discovery order).
     - `active`: sorts sessions to surface the most recently active entries first. The ordering rule is:
-      1. Active sessions first (IsActive==true), idle sessions after.
-      2. Within each group, sort by `UpdatedAt` descending (most recent first).
+      1. Active sessions first (Active==true), idle sessions after.
+      2. Within each group, sort by `UpdateTime` descending (most recent first).
       3. Final tiebreaker: `ID` ascending.
 
   This makes it easy to quickly find the currently active sessions and the most recently-updated sessions when reviewing session state.
 
 4. **Configuration Options**: Allow users to customize cleanup behavior via config file:
-  - `session.max_age_days`: Maximum age for sessions
-  - `session.max_count`: Maximum number of sessions to retain
-  - `session.auto_cleanup_enabled`: Enable/disable automatic cleanup
-  - `session.cleanup_interval_hours`: How often to run automatic cleanup
+  - `session.maxAgeDays`: Maximum age for sessions
+  - `session.maxCount`: Maximum number of sessions to retain
+  - `session.autoCleanupEnabled`: Enable/disable automatic cleanup
+  - `session.cleanupIntervalHours`: How often to run automatic cleanup
 
 5. **Safe Cleanup Implementation**: Ensure cleanup operations are atomic and safe:
   - Proper file locking during cleanup operations
@@ -469,14 +469,14 @@ This allows:
 
 ```json
 {
-  "version": "1.0.0",
-  "session_id": "/dev/ttys001",
-  "created_at": "2025-10-25T10:00:00Z",
-  "updated_at": "2025-10-25T10:30:00Z",
-  "shared_state": {
+  "version": "0.1.0",
+  "id": "/dev/ttys001",
+  "createTime": "2025-10-25T10:00:00Z",
+  "updateTime": "2025-10-25T10:30:00Z",
+  "sharedState": {
     "contextItems": [...]
   },
-  "script_state": {
+  "scriptState": {
     "code-review": {...},
     "prompt-flow": {...}
   },
@@ -613,18 +613,18 @@ internal/builtin/shared_symbols.go
     type Session struct {
         Version     string                            `json:"version"`
         ID          string                            `json:"id"`
-        CreatedAt   time.Time                         `json:"created_at"`
-        UpdatedAt   time.Time                         `json:"updated_at"`
+        CreateTime   time.Time                         `json:"createTime"`
+        UpdateTime   time.Time                         `json:"updateTime"`
         History     []HistoryEntry                    `json:"history"`
-        ScriptState map[string]map[string]interface{} `json:"script_state"`
-        SharedState map[string]interface{}            `json:"shared_state"`
+        ScriptState map[string]map[string]interface{} `json:"scriptState"`
+        SharedState map[string]interface{}            `json:"sharedState"`
     }
 
     type HistoryEntry struct {
-        EntryID    string    `json:"entry_id"`
-        ModeID     string    `json:"mode_id"`
+        EntryID    string    `json:"entryId"`
+        ModeID     string    `json:"modeId"`
         Command    string    `json:"command"`
-        Timestamp  time.Time `json:"timestamp"`
+        ReadTime  time.Time `json:"readTime"`
         FinalState string    `json:"finalState"`
     }
     ```
@@ -757,7 +757,7 @@ The StateManager maintains:
 - Defines the `Session` structure for serialized state:
   - `Version`: Schema version for compatibility.
   - `SessionID`: Unique identifier for the session.
-  - `CreatedAt`, `UpdatedAt`: Timestamps for session lifecycle.
+  - `CreateTime`, `UpdateTime`: Timestamps for session lifecycle.
   - `History`: Chronological log of commands.
   - `ScriptState`: Per-command state.
   - `SharedState`: Global shared state.
@@ -783,7 +783,7 @@ The shared state architecture successfully enables cross-command state sharing t
 
 2. **Session-Based Persistence**: Commands with `--session` flags persist state to configurable backends (filesystem or in-memory).
 
-3. **State Manager Integration**: `state_manager.go` treats keys without a colon (:) as shared and stores them in the session's `SharedState` (persisted under the JSON key `shared_state`). Script-specific keys are namespaced as `commandName:localKey` and are stored in `ScriptState`.
+  3. **State Manager Integration**: `state_manager.go` treats keys without a colon (:) as shared and stores them in the session's `SharedState` (persisted under the JSON key `sharedState`). Script-specific keys are namespaced as `commandName:localKey` and are stored in `ScriptState`.
 
 4. **Context Rehydration**: On mode switches, `tui_manager.go:SwitchMode` calls `rehydrateContextManager()` which retrieves persisted `contextItems` from SharedState, re-adds file-type items to ContextManager (removing stale references), and ensures the session remains consistent across mode switches.
 
@@ -1051,7 +1051,7 @@ If issues arise:
 ## Glossary
 
   - **State Contract**: A schema defining state keys, default values, and validation rules for a mode.
-  - **Shared State Contract**: A contract whose keys are accessible across all modes. Shared keys are persisted inside the session's `SharedState` (JSON key `shared_state`). Symbol-based shared keys are exported by `osm:sharedStateSymbols`.
+  - **Shared State Contract**: A contract whose keys are accessible across all modes. Shared keys are persisted inside the session's `SharedState` (JSON key `sharedState`). Symbol-based shared keys are exported by `osm:sharedStateSymbols`.
   - **Session ID**: Unique identifier for a state persistence context, typically tied to a terminal.
   - **Mode**: A self-contained UI and command set within the TUI (e.g., code-review, prompt-flow).
   - **Symbol Registry**: Global mapping of symbol descriptions to ES6 Symbol objects for serialization.
@@ -1442,10 +1442,10 @@ The absence of session cleanup mechanisms represents a significant gap in the st
   - `osm session info <session-id>` - Show detailed session information
 
 4. **Configuration Options**: Allow users to customize cleanup behavior via config file:
-   - `session.max_age_days`: Maximum age for sessions
-   - `session.max_count`: Maximum number of sessions to retain
-   - `session.auto_cleanup_enabled`: Enable/disable automatic cleanup
-   - `session.cleanup_interval_hours`: How often to run automatic cleanup
+  - `session.maxAgeDays`: Maximum age for sessions
+   - `session.maxCount`: Maximum number of sessions to retain
+   - `session.autoCleanupEnabled`: Enable/disable automatic cleanup
+   - `session.cleanupIntervalHours`: How often to run automatic cleanup
 
 5. **Safe Cleanup Implementation**: Ensure cleanup operations are atomic and safe:
    - Proper file locking during cleanup operations
@@ -1473,7 +1473,7 @@ When the user runs `reset` inside an active session the system will:
 1. Ensure the current session file is persisted to disk (persist the most recent in-memory state).
 2. Acquire the session's file lock (the same one the engine already holds for an in-process session); fail if the session is active on another process/owner and the lock can't be obtained.
 3. Atomically rename (move) the existing on-disk session file into an archive location using a deterministic, session-ID-preserving filename (see naming rules below).
-4. Reinitialize the in-memory session to defaults (new CreatedAt/UpdatedAt, empty history or 1 meta history entry indicating a reset), then write a brand new session file under the original `{sessionID}.session.json` filename using the atomic write primitives already present.
+4. Reinitialize the in-memory session to defaults (new CreateTime/UpdateTime, empty history or 1 meta history entry indicating a reset), then write a brand new session file under the original `{sessionID}.session.json` filename using the atomic write primitives already present.
 5. Record a small reset metadata entry (either appended to global metadata or written as a companion file) to make auditing and test verification trivial.
 
 This preserves historical data, keeps the current session ID stable for subsequent persistence and sharing, and ensures other instances cannot race with the reset process.
@@ -1506,7 +1506,7 @@ Using an `archive/` subdirectory keeps the main sessions dir tidy and helps the 
 4. Reset command workflow
   - `internal/scripting/tui_manager.go` — in `resetAllState` replace the simple clear-without-history behavior with the archive+reinitialize workflow described above.
     - Before mutating the in-memory state, ensure current state persisted and call backend.ArchiveSession(sessionID, archivePath) while holding the session lock.
-    - Reinitialize the session in-memory (new CreatedAt/UpdatedAt, new or small history entry describing the reset), then `PersistSession()` to write a new `{sessionID}.session.json` atomically.
+    - Reinitialize the session in-memory (new CreateTime/UpdateTime, new or small history entry describing the reset), then `PersistSession()` to write a new `{sessionID}.session.json` atomically.
     - Update global metadata (e.g. `~/.one-shot-man/metadata.json`) with an entry describing the reset event for auditing.
 
 5. Locking and concurrency rules

@@ -134,8 +134,8 @@ func TestFileSystemBackend_SaveAndLoadSession(t *testing.T) {
 
 	sessionID := "test-session-save-load"
 	originalSession := &Session{
-		ID:        sessionID,
-		CreatedAt: time.Now().Truncate(time.Second), // Truncate for comparison
+		ID:         sessionID,
+		CreateTime: time.Now().Truncate(time.Second), // Truncate for comparison
 		History: []HistoryEntry{
 			{EntryID: "1", Command: "test"},
 		},
@@ -168,10 +168,10 @@ func TestFileSystemBackend_SaveAndLoadSession(t *testing.T) {
 	if onDiskSession.Version != currentSchemaVersion {
 		t.Errorf("version mismatch: got %q, want %q", onDiskSession.Version, currentSchemaVersion)
 	}
-	if onDiskSession.UpdatedAt.IsZero() {
-		t.Error("UpdatedAt was not set on save")
+	if onDiskSession.UpdateTime.IsZero() {
+		t.Error("UpdateTime was not set on save")
 	}
-	firstUpdatedAt := onDiskSession.UpdatedAt
+	firstUpdateTime := onDiskSession.UpdateTime
 
 	// Act 1b: Save again to verify timestamp advances
 	time.Sleep(10 * time.Millisecond) // Ensure clock tick
@@ -198,8 +198,8 @@ func TestFileSystemBackend_SaveAndLoadSession(t *testing.T) {
 	if err := json.Unmarshal(data2, &onDiskSession2); err != nil {
 		t.Fatalf("failed to unmarshal session after second save: %v", err)
 	}
-	if !onDiskSession2.UpdatedAt.After(firstUpdatedAt) {
-		t.Errorf("Expected UpdatedAt to advance on second save. First: %v, Second: %v", firstUpdatedAt, onDiskSession2.UpdatedAt)
+	if !onDiskSession2.UpdateTime.After(firstUpdateTime) {
+		t.Errorf("Expected UpdateTime to advance on second save. First: %v, Second: %v", firstUpdateTime, onDiskSession2.UpdateTime)
 	}
 
 	// Act 2: Load the session
@@ -312,7 +312,7 @@ func TestFileSystemBackend_ArchiveSession_ExclusiveCreate(t *testing.T) {
 	defer backend.Close()
 
 	// Save an initial session so session file exists
-	s := &Session{ID: sessionID, CreatedAt: time.Now(), UpdatedAt: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
+	s := &Session{ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
 	if err := backend.SaveSession(s); err != nil {
 		t.Fatalf("SaveSession failed: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestFileSystemBackend_ArchiveSession_ConcurrentExclusive(t *testing.T) {
 	defer backend.Close()
 
 	// Save an initial session so session file exists
-	s := &Session{ID: sessionID, CreatedAt: time.Now(), UpdatedAt: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
+	s := &Session{ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
 	if err := backend.SaveSession(s); err != nil {
 		t.Fatalf("SaveSession failed: %v", err)
 	}
@@ -440,7 +440,7 @@ func TestFileSystemBackend_ArchiveSession_PreserveArchiveOnSourceRemoveFailure(t
 	defer backend.Close()
 
 	// Save an initial session so session file exists
-	s := &Session{ID: sessionID, CreatedAt: time.Now(), UpdatedAt: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
+	s := &Session{ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
 	if err := backend.SaveSession(s); err != nil {
 		t.Fatalf("SaveSession failed: %v", err)
 	}

@@ -10,7 +10,7 @@ import (
 
 // GlobalMetadata represents metadata for global housekeeping operations.
 type globalMetadata struct {
-	LastCleanupRun time.Time `json:"last_cleanup_run"`
+	LastCleanupRun time.Time `json:"lastCleanupRun"`
 }
 
 // globalMetadataPathTest returns the metadata.json path adjacent to the sessions dir.

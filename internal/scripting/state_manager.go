@@ -58,25 +58,26 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 	// Initialize a new session if one doesn't exist
 	isNewSession := session == nil
 	reinitialized := false
+	now := time.Now()
 	if isNewSession {
 		session = &storage.Session{
-			Version:     "1.0.0",
+			Version:     "0.1.0",
 			ID:          sessionID,
-			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
+			CreateTime:  now,
+			UpdateTime:  now,
 			History:     []storage.HistoryEntry{},
 			ScriptState: make(map[string]map[string]interface{}),
 			SharedState: make(map[string]interface{}),
 		}
 	} else {
 		// Handle schema migration if needed
-		if session.Version != "1.0.0" {
-			log.Printf("WARNING: Session schema version mismatch. Expected 1.0.0, got %s. Starting fresh session.", session.Version)
+		if session.Version != "0.1.0" {
+			log.Printf("WARNING: Session schema version mismatch. Expected 0.1.0, got %s. Starting fresh session.", session.Version)
 			session = &storage.Session{
-				Version:     "1.0.0",
+				Version:     "0.1.0",
 				ID:          sessionID,
-				CreatedAt:   time.Now(),
-				UpdatedAt:   time.Now(),
+				CreateTime:  now,
+				UpdateTime:  now,
 				History:     []storage.HistoryEntry{},
 				ScriptState: make(map[string]map[string]interface{}),
 				SharedState: make(map[string]interface{}),
@@ -248,7 +249,7 @@ func (sm *StateManager) SetState(persistentKey string, value interface{}) {
 	if !strings.Contains(persistentKey, ":") {
 		// Shared state write
 		sm.session.SharedState[persistentKey] = value
-		sm.session.UpdatedAt = time.Now()
+		sm.session.UpdateTime = time.Now()
 		return
 	}
 
@@ -268,7 +269,7 @@ func (sm *StateManager) SetState(persistentKey string, value interface{}) {
 	}
 
 	commandState[localKey] = value
-	sm.session.UpdatedAt = time.Now()
+	sm.session.UpdateTime = time.Now()
 }
 
 // SerializeCompleteState serializes the entire state (both script and shared) into a JSON string.
@@ -313,7 +314,7 @@ func (sm *StateManager) CaptureSnapshot(modeID, command string, stateJSON string
 		EntryID:    entryID,
 		ModeID:     modeID,
 		Command:    command,
-		Timestamp:  time.Now(),
+		ReadTime:   time.Now(),
 		FinalState: stateJSON,
 	}
 
@@ -333,7 +334,7 @@ func (sm *StateManager) CaptureSnapshot(modeID, command string, stateJSON string
 		sm.historyStart = (sm.historyStart + 1) % maxHistoryEntries
 	}
 
-	sm.session.UpdatedAt = time.Now()
+	sm.session.UpdateTime = time.Now()
 
 	return nil
 }
@@ -378,7 +379,7 @@ func (sm *StateManager) ClearAllState() {
 
 	sm.session.ScriptState = make(map[string]map[string]interface{})
 	sm.session.SharedState = make(map[string]interface{})
-	sm.session.UpdatedAt = time.Now()
+	sm.session.UpdateTime = time.Now()
 }
 
 // ArchiveAndReset performs a safe reset that archives the current session and reinitializes.
@@ -450,8 +451,8 @@ func (sm *StateManager) ArchiveAndReset() (string, error) {
 	// Step 3: Clear state and reinitialize session
 	sm.session.ScriptState = make(map[string]map[string]interface{})
 	sm.session.SharedState = make(map[string]interface{})
-	sm.session.CreatedAt = time.Now()
-	sm.session.UpdatedAt = time.Now()
+	sm.session.CreateTime = time.Now()
+	sm.session.UpdateTime = time.Now()
 	sm.session.History = []storage.HistoryEntry{}
 
 	// Reset history ring buffer

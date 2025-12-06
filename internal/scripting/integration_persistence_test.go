@@ -27,7 +27,7 @@ func TestAtomicityOnCrash(t *testing.T) {
 	sessionPath := filepath.Join(tmpDir, sessionID+".session.json")
 
 	// Create an initial session file with original content
-	originalContent := []byte(`{"version":"1.0.0","original":true}`)
+	originalContent := []byte(`{"version":"0.1.0","original":true}`)
 	if err := os.WriteFile(sessionPath, originalContent, 0644); err != nil {
 		t.Fatalf("Failed to write initial session: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestAtomicityOnCrash(t *testing.T) {
 	})
 
 	// Try to write new content - this will panic
-	newData := []byte(`{"version":"1.0.0","corrupted":true}`)
+	newData := []byte(`{"version":"0.1.0","corrupted":true}`)
 	storage.AtomicWriteFile(sessionPath, newData, 0644)
 
 	// After panic is recovered...

@@ -399,18 +399,18 @@ func (c *SessionCommand) list(w io.Writer, format, sortMode string) error {
 		return fmt.Errorf("invalid sort: %q", sortMode)
 	}
 
-	// Apply 'active' sorting: active sessions first, then idle; within groups sort by UpdatedAt (desc), then ID asc
+	// Apply 'active' sorting: active sessions first, then idle; within groups sort by UpdateTime (desc), then ID asc
 	if sortMode == "active" {
 		sort.SliceStable(infos, func(i, j int) bool {
 			a := infos[i]
 			b := infos[j]
 			// Active sessions first
-			if a.IsActive != b.IsActive {
-				return a.IsActive && !b.IsActive
+			if a.Active != b.Active {
+				return a.Active && !b.Active
 			}
 			// Most recently updated first
-			if !a.UpdatedAt.Equal(b.UpdatedAt) {
-				return a.UpdatedAt.After(b.UpdatedAt)
+			if !a.UpdateTime.Equal(b.UpdateTime) {
+				return a.UpdateTime.After(b.UpdateTime)
 			}
 			// Tiebreaker: ID ascending
 			return a.ID < b.ID
@@ -437,10 +437,10 @@ func (c *SessionCommand) list(w io.Writer, format, sortMode string) error {
 
 	for _, si := range infos {
 		active := "idle"
-		if si.IsActive {
+		if si.Active {
 			active = "active"
 		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%d bytes\t%s\n", si.ID, si.UpdatedAt.Format(time.RFC3339), si.Size, active)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%d bytes\t%s\n", si.ID, si.UpdateTime.Format(time.RFC3339), si.Size, active)
 	}
 	return nil
 }

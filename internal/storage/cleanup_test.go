@@ -22,7 +22,7 @@ func TestCleaner_DoesNotRemoveLockForActiveSession(t *testing.T) {
 	sessionPath, _ := sessionFilePath(sessionID)
 	lockPath, _ := sessionLockFilePath(sessionID)
 
-	if err := os.WriteFile(sessionPath, []byte(`{"version":"1.0.0"}`), 0644); err != nil {
+	if err := os.WriteFile(sessionPath, []byte(`{"version":"0.1.0"}`), 0644); err != nil {
 		t.Fatalf("failed to write session: %v", err)
 	}
 	// Create and acquire a lock so the session is actively locked.
@@ -264,7 +264,7 @@ func TestCleaner_DoesNotRemoveLockWhenAcquirableAndSessionExists(t *testing.T) {
 	sessionPath, _ := sessionFilePath(sessionID)
 	lockPath, _ := sessionLockFilePath(sessionID)
 
-	if err := os.WriteFile(sessionPath, []byte(`{"version":"1.0.0"}`), 0644); err != nil {
+	if err := os.WriteFile(sessionPath, []byte(`{"version":"0.1.0"}`), 0644); err != nil {
 		t.Fatalf("failed to write session: %v", err)
 	}
 
@@ -377,8 +377,8 @@ func TestAcquireLockHandleAndScan(t *testing.T) {
 	for _, si := range infos {
 		if si.ID == sessionID {
 			found = true
-			if !si.IsActive {
-				t.Fatalf("expected IsActive true for locked session")
+			if !si.Active {
+				t.Fatalf("expected Active true for locked session")
 			}
 		}
 	}

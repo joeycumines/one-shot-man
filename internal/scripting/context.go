@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/tools/txtar"
 )
@@ -24,12 +25,12 @@ type ContextManager struct {
 
 // ContextPath represents a tracked file or directory with metadata.
 type ContextPath struct {
-	Path        string            `json:"path"`
-	Type        string            `json:"type"` // "file" or "directory"
-	Content     string            `json:"content,omitempty"`
-	Metadata    map[string]string `json:"metadata"`
-	Children    []string          `json:"children,omitempty"` // for directories
-	LastUpdated int64             `json:"lastUpdated"`
+	Path       string            `json:"path"`
+	Type       string            `json:"type"` // "file" or "directory"
+	Content    string            `json:"content,omitempty"`
+	Metadata   map[string]string `json:"metadata"`
+	Children   []string          `json:"children,omitempty"` // for directories
+	UpdateTime time.Time         `json:"updateTime"`
 }
 
 // NewContextManager creates a new context manager.
@@ -197,7 +198,7 @@ func (cm *ContextManager) addFileLocked(absPath, logicalPath, owner string, info
 	cp.Content = string(data)
 	cp.Metadata["size"] = fmt.Sprintf("%d", len(data))
 	cp.Metadata["extension"] = filepath.Ext(logicalPath)
-	cp.LastUpdated = info.ModTime().Unix()
+	cp.UpdateTime = info.ModTime()
 
 	cm.paths[logicalPath] = cp
 
@@ -227,11 +228,11 @@ func (cm *ContextManager) addDirectoryLocked(absPath, owner string, info fs.File
 	}
 
 	cm.paths[owner] = &ContextPath{
-		Path:        owner,
-		Type:        "directory",
-		Metadata:    make(map[string]string),
-		Children:    children,
-		LastUpdated: info.ModTime().Unix(),
+		Path:       owner,
+		Type:       "directory",
+		Metadata:   make(map[string]string),
+		Children:   children,
+		UpdateTime: info.ModTime(),
 	}
 
 	return nil

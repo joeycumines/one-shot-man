@@ -69,7 +69,7 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 			report.Skipped = append(report.Skipped, s.ID)
 			continue
 		}
-		if s.IsActive {
+		if s.Active {
 			report.Skipped = append(report.Skipped, s.ID)
 			continue
 		}
@@ -81,7 +81,7 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 	if c.MaxAgeDays > 0 {
 		cutoff := now.Add(-time.Duration(c.MaxAgeDays) * 24 * time.Hour)
 		for _, s := range candidates {
-			if s.UpdatedAt.Before(cutoff) {
+			if s.UpdateTime.Before(cutoff) {
 				ageCandidates = append(ageCandidates, s)
 			}
 		}
@@ -102,9 +102,9 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 
 	// Count-based pruning: keep newest MaxCount
 	if c.MaxCount > 0 {
-		// Sort candidates by UpdatedAt descending (newest first)
+		// Sort candidates by UpdateTime descending (newest first)
 		sort.SliceStable(candidates, func(i, j int) bool {
-			return candidates[i].UpdatedAt.After(candidates[j].UpdatedAt)
+			return candidates[i].UpdateTime.After(candidates[j].UpdateTime)
 		})
 		if len(candidates) > c.MaxCount {
 			for _, s := range candidates[c.MaxCount:] {
@@ -124,7 +124,7 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 			// Remove oldest until under limit
 			// Sort ascending (oldest first)
 			sort.SliceStable(candidates, func(i, j int) bool {
-				return candidates[i].UpdatedAt.Before(candidates[j].UpdatedAt)
+				return candidates[i].UpdateTime.Before(candidates[j].UpdateTime)
 			})
 			for _, s := range candidates {
 				if total <= maxBytes {

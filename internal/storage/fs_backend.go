@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const currentSchemaVersion = "1.0.0"
+const currentSchemaVersion = "0.1.0"
 
 // FileSystemBackend implements StorageBackend using the local file system.
 type FileSystemBackend struct {
@@ -96,7 +96,7 @@ func (b *FileSystemBackend) SaveSession(session *Session) error {
 
 	// Update the session metadata
 	session.Version = currentSchemaVersion
-	session.UpdatedAt = time.Now()
+	session.UpdateTime = time.Now()
 
 	// Serialize the session
 	data, err := json.MarshalIndent(session, "", "  ")

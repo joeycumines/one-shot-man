@@ -66,11 +66,11 @@ func TestNewStateManager_InitializesNewSession(t *testing.T) {
 	if sm.session.ID != sessionID {
 		t.Errorf("expected ID %q, got %q", sessionID, sm.session.ID)
 	}
-	if sm.session.Version != "1.0.0" {
-		t.Errorf("expected Version 1.0.0, got %q", sm.session.Version)
+	if sm.session.Version != "0.1.0" {
+		t.Errorf("expected Version 0.1.0, got %q", sm.session.Version)
 	}
-	if sm.session.CreatedAt.IsZero() {
-		t.Error("CreatedAt was not set")
+	if sm.session.CreateTime.IsZero() {
+		t.Error("CreateTime was not set")
 	}
 	history := sm.GetSessionHistory()
 	if len(history) != 0 {
@@ -123,10 +123,10 @@ func TestNewStateManager_PersistsAfterVersionMismatch(t *testing.T) {
 
 func TestNewStateManager_LoadsExistingSession(t *testing.T) {
 	existingSession := &storage.Session{
-		Version:     "1.0.0",
+		Version:     "0.1.0",
 		ID:          "test-session-existing",
-		CreatedAt:   time.Now().Add(-24 * time.Hour),
-		UpdatedAt:   time.Now().Add(-1 * time.Hour),
+		CreateTime:  time.Now().Add(-24 * time.Hour),
+		UpdateTime:  time.Now().Add(-1 * time.Hour),
 		History:     []storage.HistoryEntry{{EntryID: "1", Command: "test"}},
 		ScriptState: map[string]map[string]interface{}{"test-mode": {"key1": "value1"}},
 		SharedState: map[string]interface{}{},
@@ -154,8 +154,8 @@ func TestNewStateManager_RecoversFromVersionMismatch(t *testing.T) {
 	oldSession := &storage.Session{
 		Version:     "0.9.0", // Old version
 		ID:          "test-session-old",
-		CreatedAt:   time.Now().Add(-24 * time.Hour),
-		UpdatedAt:   time.Now().Add(-1 * time.Hour),
+		CreateTime:  time.Now().Add(-24 * time.Hour),
+		UpdateTime:  time.Now().Add(-1 * time.Hour),
 		History:     []storage.HistoryEntry{{EntryID: "1", Command: "test"}},
 		ScriptState: map[string]map[string]interface{}{"test-mode": {"key1": "value1"}},
 		SharedState: map[string]interface{}{},
@@ -171,8 +171,8 @@ func TestNewStateManager_RecoversFromVersionMismatch(t *testing.T) {
 	defer sm.Close()
 
 	// Verify a fresh session was created
-	if sm.session.Version != "1.0.0" {
-		t.Errorf("expected Version 1.0.0, got %q", sm.session.Version)
+	if sm.session.Version != "0.1.0" {
+		t.Errorf("expected Version 0.1.0, got %q", sm.session.Version)
 	}
 	history := sm.GetSessionHistory()
 	if len(history) != 0 {
@@ -443,18 +443,18 @@ func TestHistory_TruncateOnLoad(t *testing.T) {
 	largeHistory := make([]storage.HistoryEntry, totalEntries)
 	for i := 0; i < totalEntries; i++ {
 		largeHistory[i] = storage.HistoryEntry{
-			EntryID:   fmt.Sprintf("entry-%d", i),
-			ModeID:    "test-mode",
-			Command:   fmt.Sprintf("cmd_%d", i),
-			Timestamp: time.Now(),
+			EntryID:  fmt.Sprintf("entry-%d", i),
+			ModeID:   "test-mode",
+			Command:  fmt.Sprintf("cmd_%d", i),
+			ReadTime: time.Now(),
 		}
 	}
 
 	existingSession := &storage.Session{
-		Version:     "1.0.0",
+		Version:     "0.1.0",
 		ID:          "test-session-truncate",
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		CreateTime:  time.Now(),
+		UpdateTime:  time.Now(),
 		History:     largeHistory,
 		ScriptState: make(map[string]map[string]interface{}),
 		SharedState: make(map[string]interface{}),

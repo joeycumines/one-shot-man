@@ -43,10 +43,10 @@ func TestResetArchiveIntegration_FileSystemBackend(t *testing.T) {
 	}
 
 	initialSession := &storage.Session{
-		Version:   "1.0.0",
-		ID:        sessionID,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		Version:    "0.1.0",
+		ID:         sessionID,
+		CreateTime: time.Now(),
+		UpdateTime: time.Now(),
 		SharedState: map[string]interface{}{
 			"contextItems": []string{"file1.txt", "file2.go"},
 			"customData":   "important value",
@@ -59,10 +59,10 @@ func TestResetArchiveIntegration_FileSystemBackend(t *testing.T) {
 		},
 		History: []storage.HistoryEntry{
 			{
-				EntryID:   "entry-1",
-				ModeID:    "code-review",
-				Command:   "add file1.txt",
-				Timestamp: time.Now(),
+				EntryID:  "entry-1",
+				ModeID:   "code-review",
+				Command:  "add file1.txt",
+				ReadTime: time.Now(),
 			},
 		},
 	}
@@ -151,8 +151,8 @@ func TestResetArchiveIntegration_FileSystemBackend(t *testing.T) {
 	}
 
 	// Verify new session has fresh timestamps
-	if newSession.CreatedAt.Before(initialSession.UpdatedAt) {
-		t.Errorf("New session CreatedAt should be after archive time")
+	if newSession.CreateTime.Before(initialSession.UpdateTime) {
+		t.Errorf("New session CreateTime should be after archive time")
 	}
 }
 
@@ -238,10 +238,10 @@ func TestMultipleResets_ArchiveCounter(t *testing.T) {
 
 		// Create state
 		session := &storage.Session{
-			Version:     "1.0.0",
+			Version:     "0.1.0",
 			ID:          sessionID,
-			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
+			CreateTime:  time.Now(),
+			UpdateTime:  time.Now(),
 			SharedState: map[string]interface{}{"value": fmt.Sprintf("cycle-%d", i)},
 			ScriptState: make(map[string]map[string]interface{}),
 		}

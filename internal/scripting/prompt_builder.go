@@ -18,12 +18,12 @@ type PromptBuilder struct {
 
 // PromptVersion represents a version of a prompt with metadata.
 type PromptVersion struct {
-	Version   int
-	Content   string
-	Variables map[string]interface{}
-	CreatedAt time.Time
-	Notes     string
-	Tags      []string
+	Version    int
+	Content    string
+	Variables  map[string]interface{}
+	CreateTime time.Time
+	Notes      string
+	Tags       []string
 }
 
 // NewPromptBuilder creates a new prompt builder.
@@ -68,12 +68,12 @@ func (pb *PromptBuilder) Build() string {
 // SaveVersion saves the current prompt as a new version.
 func (pb *PromptBuilder) SaveVersion(notes string, tags []string) {
 	version := PromptVersion{
-		Version:   len(pb.History) + 1,
-		Content:   pb.Build(),
-		Variables: make(map[string]interface{}),
-		CreatedAt: time.Now(),
-		Notes:     notes,
-		Tags:      tags,
+		Version:    len(pb.History) + 1,
+		Content:    pb.Build(),
+		Variables:  make(map[string]interface{}),
+		CreateTime: time.Now(),
+		Notes:      notes,
+		Tags:       tags,
 	}
 
 	// Copy current variables
@@ -116,11 +116,11 @@ func (pb *PromptBuilder) ListVersions() []map[string]interface{} {
 
 	for i, version := range pb.History {
 		versions[i] = map[string]interface{}{
-			"version":   version.Version,
-			"createdAt": version.CreatedAt.Format(time.RFC3339),
-			"notes":     version.Notes,
-			"tags":      version.Tags,
-			"content":   version.Content,
+			"version":    version.Version,
+			"createTime": version.CreateTime.Format(time.RFC3339Nano),
+			"notes":      version.Notes,
+			"tags":       version.Tags,
+			"content":    version.Content,
 		}
 	}
 

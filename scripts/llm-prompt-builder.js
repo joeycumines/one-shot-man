@@ -217,7 +217,7 @@ tui.registerMode({
                     output.print("Prompt versions:");
                     for (var i = 0; i < versions.length; i++) {
                         var v = versions[i];
-                        output.print("  v" + v.version + " - " + v.createdAt + " - " + v.notes);
+                        output.print("  v" + v.version + " - " + v.createTime + " - " + v.notes);
                         if (v.tags && v.tags.length > 0) {
                             output.print("    Tags: " + v.tags.join(", "));
                         }

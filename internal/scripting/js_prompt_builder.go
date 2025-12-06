@@ -44,7 +44,7 @@ func (e *Engine) jsCreatePromptBuilder(title, description string) map[string]int
 				"versions":    len(pb.History),
 				"variables":   len(pb.Variables),
 				"hasTemplate": pb.Template != "",
-				"lastUpdated": time.Now().Format(time.RFC3339),
+				"updateTime":  time.Now().Format(time.RFC3339Nano),
 			}
 		},
 	}

@@ -8,13 +8,13 @@ import (
 
 // SessionInfo holds lightweight metadata for a session file discovered on disk.
 type SessionInfo struct {
-	ID        string    `json:"id"`
-	Path      string    `json:"path"`
-	LockPath  string    `json:"lockPath"`
-	Size      int64     `json:"size"`
-	UpdatedAt time.Time `json:"updatedAt"`
-	CreatedAt time.Time `json:"createdAt"`
-	IsActive  bool      `json:"isActive"`
+	ID         string    `json:"id"`
+	Path       string    `json:"path"`
+	LockPath   string    `json:"lockPath"`
+	Size       int64     `json:"size"`
+	UpdateTime time.Time `json:"updateTime"`
+	CreateTime time.Time `json:"createTime"`
+	Active     bool      `json:"active"`
 }
 
 // ScanSessions inspects the configured sessions directory and returns a slice
@@ -55,35 +55,35 @@ func ScanSessions() ([]SessionInfo, error) {
 		lockPath, _ := sessionLockFilePath(base)
 
 		// Try to acquire lock non-blocking. If we succeed, close the
-		// descriptor and mark IsActive=false. Crucially, do NOT remove the
+		// descriptor and mark Active=false. Crucially, do NOT remove the
 		// lock artifact when we can acquire it — removing the file would
 		// destroy the lock artifact for sessions that are still valid on
 		// disk but currently not held by a process. If we fail to acquire
-		// the lock, mark IsActive=true.
+		// the lock, mark Active=true.
 		if f, ok, err := AcquireLockHandle(lockPath); err == nil {
 			if ok {
 				_ = f.Close() // close descriptor but leave artifact
 			}
 
 			out = append(out, SessionInfo{
-				ID:        base,
-				Path:      path,
-				LockPath:  lockPath,
-				Size:      fi.Size(),
-				UpdatedAt: fi.ModTime(),
-				CreatedAt: fi.ModTime(),
-				IsActive:  !ok,
+				ID:         base,
+				Path:       path,
+				LockPath:   lockPath,
+				Size:       fi.Size(),
+				UpdateTime: fi.ModTime(),
+				CreateTime: fi.ModTime(),
+				Active:     !ok,
 			})
 		} else {
-			// On error, still include with IsActive=false so it will be inspected
+			// On error, still include with Active=false so it will be inspected
 			out = append(out, SessionInfo{
-				ID:        base,
-				Path:      path,
-				LockPath:  lockPath,
-				Size:      fi.Size(),
-				UpdatedAt: fi.ModTime(),
-				CreatedAt: fi.ModTime(),
-				IsActive:  false,
+				ID:         base,
+				Path:       path,
+				LockPath:   lockPath,
+				Size:       fi.Size(),
+				UpdateTime: fi.ModTime(),
+				CreateTime: fi.ModTime(),
+				Active:     false,
 			})
 		}
 	}

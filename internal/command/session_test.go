@@ -554,7 +554,7 @@ func TestSessionsList_SortActive(t *testing.T) {
 		_ = os.Chtimes(p, it.t, it.t)
 		if it.active {
 			l, _ := storage.SessionLockFilePath(it.id)
-			// Acquire and hold an actual lock so ScanSessions reports IsActive=true
+			// Acquire and hold an actual lock so ScanSessions reports Active=true
 			lf, ok, err := storage.AcquireLockHandle(l)
 			if err != nil {
 				t.Fatalf("failed to acquire lock for %s: %v", it.id, err)

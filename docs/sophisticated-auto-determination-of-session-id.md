@@ -40,15 +40,17 @@ All session IDs follow a **unified namespaced format** that satisfies four criti
 
 ### Namespace Prefixes (Exhaustive)
 
-| Namespace  | Source | Example ID | Suffix? |
-|:-----------|:-------|:-----------|:--------|
-| `ex`       | Explicit override (`--session-id` flag or `OSM_SESSION_ID` env) | `ex--my-session_a1` | **Yes (always)** |
-| `tmux`     | Tmux multiplexer | `tmux--5_12345` | No (internal) |
-| `screen`   | GNU Screen | `screen--a1b2c3d4e5f67890` | No (internal) |
-| `ssh`      | SSH connection | `ssh--f0e1d2c3b4a59687` | No (internal) |
-| `terminal` | macOS Terminal.app / iTerm2 | `terminal--1234567890abcdef` | No (internal) |
-| `anchor`   | Deep Anchor (process tree walk) | `anchor--abcd1234efgh5678` | No (internal) |
-| `uuid`     | Random UUID fallback | `uuid--550e8400-e29b-41d4-a716-446655440000` | No (internal) |
+| Namespace  | Source                                                          | Example ID                                   | Suffix?             |
+|:-----------|:----------------------------------------------------------------|:---------------------------------------------|:--------------------|
+| `ex`       | Explicit override (`--session-id` flag or `OSM_SESSION_ID` env) | `ex--my-session_a1`                          | **Yes (always)**    |
+| `tmux`     | Tmux multiplexer **OR Explicit Resume**                         | `tmux--5_12345`                              | No (internal/valid) |
+| `screen`   | GNU Screen **OR Explicit Resume**                               | `screen--a1b2c3d4e5f67890`                   | No (internal/valid) |
+| `ssh`      | SSH connection **OR Explicit Resume**                           | `ssh--f0e1d2c3b4a59687`                      | No (internal/valid) |
+| `terminal` | macOS Terminal.app / iTerm2 **OR Explicit Resume**              | `terminal--1234567890abcdef`                 | No (internal/valid) |
+| `anchor`   | Deep Anchor (process tree walk) **OR Explicit Resume**          | `anchor--abcd1234efgh5678`                   | No (internal/valid) |
+| `uuid`     | Random UUID fallback                                            | `uuid--550e8400-e29b-41d4-a716-446655440000` | No (internal)       |
+
+> **Note on Sources:** The "Source" column indicates the primary detection origin. However, the system allows the **Explicit** source (`--session-id`) to utilize internal namespaces (for example `tmux`, `ssh`, `screen`, `terminal`, `anchor`) to resume sessions, provided the payload passes strict format validation (see "Exception" below).
 
 ### Suffix Strategy (CRITICAL FOR SECURITY)
 
@@ -59,11 +61,11 @@ The suffix strategy prevents two classes of attacks/bugs:
 
 #### Three Suffix Cases
 
-| Case | Condition | Suffix | Total Overhead | Example |
-|:-----|:----------|:-------|:---------------|:--------|
-| **1. Internal Short Hex** | Payload is exactly 16 lowercase hex chars (`[0-9a-f]`) | None | 0 chars | `screen--a1b2c3d4e5f67890` |
-| **2. Sanitization/Truncation** | Payload requires sanitization OR truncation | Full (`_` + 16 hex) | 17 chars | `ex--foo_bar_a1b2c3d4e5f67890` |
-| **3. Safe Payload** | No sanitization needed, fits in length | Mini (`_` + 2 hex) | 3 chars | `ex--my-session_a1` |
+| Case                           | Condition                                              | Suffix              | Total Overhead | Example                        |
+|:-------------------------------|:-------------------------------------------------------|:--------------------|:---------------|:-------------------------------|
+| **1. Internal Short Hex**      | Payload is exactly 16 lowercase hex chars (`[0-9a-f]`) | None                | 0 chars        | `screen--a1b2c3d4e5f67890`     |
+| **2. Sanitization/Truncation** | Payload requires sanitization OR truncation            | Full (`_` + 16 hex) | 17 chars       | `ex--foo_bar_a1b2c3d4e5f67890` |
+| **3. Safe Payload**            | No sanitization needed, fits in length                 | Mini (`_` + 2 hex)  | 3 chars        | `ex--my-session_a1`            |
 
 Note: the implementation only allows the "internal short hex" pass-through (no suffix) when the 16-char internal hash also fits within the available payload budget for the chosen namespace (i.e., payload length <= maxPayload). If a 16‑char detector output would overflow the available space it is treated like any oversized payload and the truncation+full-suffix rules apply.
 
@@ -78,6 +80,7 @@ Note: the implementation only allows the "internal short hex" pass-through (no s
 5. With mini suffix: Returns `"ex--foo_bar_a1b2c3d4e5f67890_xx"` → **Distinct, no collision**
 
 **Design Rationale for 2-char Mini Suffix:**
+
 - 2 hex chars = 8 bits = 256 possible values
 - Sufficient to distinguish original input from mimicry attempts (attacker cannot predict the hash)
 - Minimal overhead (3 chars total) preserves "free space" for user payloads
@@ -87,12 +90,13 @@ Note: the implementation only allows the "internal short hex" pass-through (no s
 
 The two suffix lengths are **intentionally distinct** and unambiguous:
 
-| Suffix Type | Format | Total Length | When Applied |
-|:------------|:-------|:-------------|:-------------|
-| Mini | `_XX` | 3 chars | Safe user payloads (no sanitization/truncation) |
-| Full | `_XXXXXXXXXXXXXXXX` | 17 chars | Sanitization OR truncation required |
+| Suffix Type | Format              | Total Length | When Applied                                    |
+|:------------|:--------------------|:-------------|:------------------------------------------------|
+| Mini        | `_XX`               | 3 chars      | Safe user payloads (no sanitization/truncation) |
+| Full        | `_XXXXXXXXXXXXXXXX` | 17 chars     | Sanitization OR truncation required             |
 
 Both use:
+
 - Same delimiter: `_` (underscore)
 - Same character set: `[0-9a-f]` (lowercase hex)
 - **Distinct lengths**: 3 vs 17 chars are unambiguous; no overlap possible
@@ -100,13 +104,15 @@ Both use:
 ### Constants Reference
 
 ```go
+package session
+
 const (
-    MaxSessionIDLength   = 80   // Maximum total session ID length (filesystem-safe)
-    NamespaceDelimiter   = "--" // Separates namespace from payload
-    SuffixDelimiter      = "_"  // Separates payload from hash suffix
-    ShortHashLength      = 16   // Internal detector hash length (64 bits)
-    MiniSuffixHashLength = 2    // Mandatory minimum suffix (8 bits, anti-mimicry)
-    FullSuffixHashLength = 16   // Full suffix for sanitization/truncation (64 bits)
+	MaxSessionIDLength   = 80   // Maximum total session ID length (filesystem-safe)
+	NamespaceDelimiter   = "--" // Separates namespace from payload
+	SuffixDelimiter      = "_"  // Separates payload from hash suffix
+	ShortHashLength      = 16   // Internal detector hash length (64 bits)
+	MiniSuffixHashLength = 2    // Mandatory minimum suffix (8 bits, anti-mimicry)
+	FullSuffixHashLength = 16   // Full suffix for sanitization/truncation (64 bits)
 )
 ```
 
@@ -117,6 +123,7 @@ const (
 **Allowed characters:** `a-z`, `A-Z`, `0-9`, `.` (dot), `-` (hyphen), `_` (underscore)
 
 **Replaced with underscore:** All other characters including:
+
 - Path separators: `/`, `\`
 - Windows reserved: `:`, `*`, `?`, `"`, `<`, `>`, `|`
 - Spaces, tabs, newlines
@@ -124,27 +131,27 @@ const (
 
 #### Source-Specific Payload Formats
 
-| Source | Payload Format | Suffix | Reason |
-|:-------|:---------------|:-------|:-------|
-| **Tmux** | `{paneNum}_{serverPID}` (e.g., `5_12345`) | None | Internal, not user-provided |
-| **Screen** | `SHA256("screen:" + STY)[:16]` | None | Internal 16-char hex |
-| **SSH** | `SHA256("ssh:clientIP:clientPort:serverIP:serverPort")[:16]` | None | Internal 16-char hex |
-| **Terminal** | `SHA256("terminal:" + TERM_SESSION_ID)[:16]` | None | Internal 16-char hex |
-| **Anchor** | `SessionContext.GenerateHash()[:16]` | None | Internal 16-char hex |
-| **UUID** | Full UUID (e.g., `550e8400-e29b-...`) | None | Internal, not user-provided |
-| **Explicit** | Sanitized user input | **Always** (mini or full) | User-provided, mimicry risk |
+| Source       | Payload Format                                               | Suffix                    | Reason                      |
+|:-------------|:-------------------------------------------------------------|:--------------------------|:----------------------------|
+| **Tmux**     | `{paneNum}_{serverPID}` (e.g., `5_12345`)                    | None                      | Internal, not user-provided |
+| **Screen**   | `SHA256("screen:" + STY)[:16]`                               | None                      | Internal 16-char hex        |
+| **SSH**      | `SHA256("ssh:clientIP:clientPort:serverIP:serverPort")[:16]` | None                      | Internal 16-char hex        |
+| **Terminal** | `SHA256("terminal:" + TERM_SESSION_ID)[:16]`                 | None                      | Internal 16-char hex        |
+| **Anchor**   | `SessionContext.GenerateHash()[:16]`                         | None                      | Internal 16-char hex        |
+| **UUID**     | Full UUID (e.g., `550e8400-e29b-...`)                        | None                      | Internal, not user-provided |
+| **Explicit** | Sanitized user input                                         | **Always** (mini or full) | User-provided, mimicry risk |
 
 ### Length Constraints
 
-| Component | Length |
-|:----------|:-------|
-| Maximum Total Session ID | 80 characters |
-| Namespace | Recommended: short (human-friendly). Implementation: not strictly bounded — namespaces will be sanitized and in extreme cases truncated to preserve the MaxSessionIDLength invariant. |
-| Namespace Delimiter (`--`) | 2 characters |
-| Suffix Delimiter (`_`) | 1 character |
-| Mini Suffix Hash | 2 characters |
-| Full Suffix Hash | 16 characters |
-| Maximum Payload | `80 - len(namespace) - 2 - suffix_overhead` |
+| Component                  | Length                                                                                                                                                                                |
+|:---------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Maximum Total Session ID   | 80 characters                                                                                                                                                                         |
+| Namespace                  | Recommended: short (human-friendly). Implementation: not strictly bounded — namespaces will be sanitized and in extreme cases truncated to preserve the MaxSessionIDLength invariant. |
+| Namespace Delimiter (`--`) | 2 characters                                                                                                                                                                          |
+| Suffix Delimiter (`_`)     | 1 character                                                                                                                                                                           |
+| Mini Suffix Hash           | 2 characters                                                                                                                                                                          |
+| Full Suffix Hash           | 16 characters                                                                                                                                                                         |
+| Maximum Payload            | `80 - len(namespace) - 2 - suffix_overhead`                                                                                                                                           |
 
 ### Collision Resistance
 
@@ -155,6 +162,7 @@ const (
 - **Pre-sanitization hashing**: Hash is computed from ORIGINAL input before sanitization
 
 Note: this pre-sanitization hash ensures that even if two inputs sanitize to the same string, their suffixes remain distinct because the suffix is derived from the original raw payload.
+
 - **Mandatory suffix**: All user-provided payloads get suffix (prevents mimicry)
 - **Distinct suffix lengths**: 3 chars (mini) vs 17 chars (full) are unambiguous
 
@@ -174,14 +182,14 @@ A well-designed session ID ensures that:
 
 The discovery mechanism follows a strict priority order. Higher-priority methods represent more specific or user-defined contexts.
 
-| Priority | Strategy | Source | Complexity | Suffix? |
-|:---------|:---------|:-------|:-----------|:--------|
-| 1 | Explicit Override | `--session-id` flag or `OSM_SESSION_ID` env | O(1) | **Yes (always)** |
-| 2 | Multiplexer | `TMUX_PANE`+`TMUX` / `STY` env vars | O(1) | No |
-| 3 | SSH Context | `SSH_CONNECTION` env | O(1) | No |
-| 4 | GUI Terminal | `TERM_SESSION_ID` (macOS only) | O(1) | No |
-| 5 | Deep Anchor | Recursive process walk | O(depth) | No |
-| 6 | UUID Fallback | Random generation | O(1) | No |
+| Priority | Strategy          | Source                                      | Complexity | Suffix?          |
+|:---------|:------------------|:--------------------------------------------|:-----------|:-----------------|
+| 1        | Explicit Override | `--session-id` flag or `OSM_SESSION_ID` env | O(1)       | **Yes (always)** |
+| 2        | Multiplexer       | `TMUX_PANE`+`TMUX` / `STY` env vars         | O(1)       | No               |
+| 3        | SSH Context       | `SSH_CONNECTION` env                        | O(1)       | No               |
+| 4        | GUI Terminal      | `TERM_SESSION_ID` (macOS only)              | O(1)       | No               |
+| 5        | Deep Anchor       | Recursive process walk                      | O(depth)   | No               |
+| 6        | UUID Fallback     | Random generation                           | O(1)       | No               |
 
 Returned source labels (exact strings returned by GetSessionID as the "source" value):
 
@@ -201,28 +209,31 @@ Returned source labels (exact strings returned by GetSessionID as the "source" v
 **Behavior:** If provided, this value is authoritative and bypasses all auto-discovery logic.
 
 **Suffix:** ALWAYS applied to prevent mimicry attacks. A single, well-scoped exception exists to allow resuming previously-generated *internal detector* IDs — see the consolidated exception below.
+
 - **Mini suffix** (`_XX`, 3 chars): When payload is safe (no sanitization, fits in length)
 - **Full suffix** (`_XXXXXXXXXXXXXXXX`, 17 chars): When sanitization OR truncation is required
 
 **Format Processing:**
+
 - If input contains `--`: Extract namespace and payload, sanitize both, apply suffix
 - Otherwise: Use `ex` namespace, sanitize payload, apply suffix
 
 **Examples:**
+
 - `"my-session"` → `"ex--my-session_a1"` (safe payload, mini suffix)
 - `"user/name"` → `"ex--user_name_a1b2c3d4e5f67890"` (sanitized, full suffix)
 - `"custom--value"` → `"custom--value_a1"` (pre-namespaced, safe payload, mini suffix)
 
 **Exception: Resuming Internal Detector Sessions**
 
-When an explicit override is provided in the fully namespaced form (contains `--`) the system will allow a verbatim pass-through only when ALL of the following conditions are met:
+When an explicit override is provided in the fully namespaced form (contains `--`) the system will allow a verbatim pass-through only when one of the following **Trusted Payload Conditions** is met:
 
-- The namespace is a trusted internal detector namespace: one of `ssh`, `screen`, `terminal`, `anchor`.
-- The payload is exactly 16 lowercase hex characters (a trusted internal short-hex detector output).
+1. **Short Hex Detector:** The namespace is `ssh`, `screen`, `terminal`, or `anchor` **AND** the payload is exactly 16 lowercase hex characters.
+2. **Tmux Detector:** The namespace is `tmux` **AND** the payload strictly matches the format `{pane}_{pid}` (digits, underscore, digits).
 
-This narrow exception exists so callers can re-use a previously-generated detector ID (for example from a session listing) to resume session state unchanged. Any other explicit override — including pre-namespaced values that do not match those two conditions — receives the normal mandatory suffixing logic to prevent mimicry.
+This validation ensures that users can resume any valid internal session ID (including from other Tmux panes) while preventing mimicry attacks using arbitrary strings.
 
-Example: `ssh--a1b2c3d4e5f67890` → accepted verbatim (resume). `ex--foo` or `custom--foo_a1b2` → processed with suffix rules.
+Example: `ssh--a1b2c3d4e5f67890` → accepted verbatim (resume). `tmux--5_12345` → accepted verbatim (resume). `ex--foo` or `custom--foo_a1b2` → processed with suffix rules.
 
 ### 2. Multiplexer Contexts
 
@@ -238,24 +249,33 @@ Multiplexers manage their own session lifecycles. If the process is running insi
 - **Stale Detection:** If `TMUX_PANE` present but `TMUX` missing/malformed, fall through to next priority
 
 ```go
+package session
+
 // TMUX env var format: /path/to/socket,PID,session_index
 // Server PID extracted from between the last two commas
 func extractTmuxServerPID(tmuxEnv string) string {
-    lastComma := strings.LastIndex(tmuxEnv, ",")
-    if lastComma <= 0 { return "" }
-    beforeLast := tmuxEnv[:lastComma]
-    secondLastComma := strings.LastIndex(beforeLast, ",")
-    if secondLastComma < 0 { return "" }
-    pid := tmuxEnv[secondLastComma+1 : lastComma]
-    // Validate numeric
-    for _, c := range pid {
-        if c < '0' || c > '9' { return "" }
-    }
-    return pid
+	lastComma := strings.LastIndex(tmuxEnv, ",")
+	if lastComma <= 0 {
+		return ""
+	}
+	beforeLast := tmuxEnv[:lastComma]
+	secondLastComma := strings.LastIndex(beforeLast, ",")
+	if secondLastComma < 0 {
+		return ""
+	}
+	pid := tmuxEnv[secondLastComma+1 : lastComma]
+	// Validate numeric
+	for _, c := range pid {
+		if c < '0' || c > '9' {
+			return ""
+		}
+	}
+	return pid
 }
 ```
 
 **Implementation Note:** `getTmuxSessionID()` constructs the ID directly without calling `formatSessionID()` because:
+
 1. Tmux payloads are always safe (digits + underscore only)
 2. Not user-provided (from environment)
 3. Already unique (pane + server PID combination)
@@ -271,6 +291,7 @@ func extractTmuxServerPID(tmuxEnv string) string {
 **Detection:** Presence of `SSH_CONNECTION` environment variable.
 
 **ID Generation:** Full 4-field tuple hashed for uniqueness:
+
 - `SSH_CONNECTION` format: `client_ip client_port server_ip server_port`
 - Hash input: `"ssh:client_ip:client_port:server_ip:server_port"`
 
@@ -321,97 +342,121 @@ See platform-specific sections below for implementation details.
 This is the central function that applies the suffix strategy. It handles user-provided payloads via `formatExplicitID()` and internal detector payloads.
 
 ```go
+package session
+
 func formatSessionID(namespace, payload string) string {
-    // Compute hash BEFORE sanitization to preserve uniqueness
-    originalPayloadHash := hashString(payload)
-    sanitized := sanitizePayload(payload)
+	// Compute hash BEFORE sanitization to preserve uniqueness
+	originalPayloadHash := hashString(payload)
+	sanitized := sanitizePayload(payload)
 
-    // Compute max payload length given namespace
-    maxPayload := MaxSessionIDLength - len(namespace) - len(NamespaceDelimiter)
+	// Compute max payload length given namespace
+	maxPayload := MaxSessionIDLength - len(namespace) - len(NamespaceDelimiter)
 
-    // CASE 1: Internal short hex hash - return verbatim (no suffix)
-    // Recognized as 16 lowercase hex chars exactly, but ONLY for trusted
-    // internal detector namespaces (screen, ssh, terminal, anchor). For any
-    // user-controlled namespace (explicit overrides, custom prefixes), even
-    // a 16-char hex payload must still flow through the suffix logic.
-    if isInternalShortHex(payload) && len(payload) <= maxPayload &&
-        (namespace == NamespaceScreen ||
-            namespace == NamespaceSSH ||
-            namespace == NamespaceTerminal ||
-            namespace == NamespaceAnchor) {
-        return namespace + NamespaceDelimiter + payload
-    }
+	// CASE 1: Trusted internal payloads - return verbatim (no suffix).
+	// Allows resuming previously-generated internal IDs (e.g. from session listings).
+	// Validation is namespace-specific and must be strict.
+	isResumableHex := isInternalShortHex(payload) && isTrustedHexNamespace(namespace)
+	isResumableTmux := isTmuxPayload(payload) && namespace == NamespaceTmux
 
-    // Determine if sanitization or truncation needed
-    needsSanitization := sanitized != payload
-    needsTruncation := len(sanitized) > (maxPayload - 1 - MiniSuffixHashLength)
+	if (isResumableHex || isResumableTmux) && len(payload) <= maxPayload {
+		return namespace + NamespaceDelimiter + payload
+	}
 
-    // CASE 2: Sanitization OR truncation required - use FULL suffix (17 chars)
-    if needsSanitization || needsTruncation {
-        fullSuffix := SuffixDelimiter + originalPayloadHash[:FullSuffixHashLength]
-        // Handle truncation with fullSuffix...
-        return namespace + NamespaceDelimiter + finalPayload
-    }
+	// Determine if sanitization or truncation needed
+	needsSanitization := sanitized != payload
+	needsTruncation := len(sanitized) > (maxPayload - 1 - MiniSuffixHashLength)
 
-    // CASE 3: Safe payload - use MANDATORY MINIMUM suffix (3 chars)
-    // This prevents mimicry attacks
-    miniSuffix := SuffixDelimiter + originalPayloadHash[:MiniSuffixHashLength]
-    return namespace + NamespaceDelimiter + sanitized + miniSuffix
+	// CASE 2: Sanitization OR truncation required - use FULL suffix (17 chars)
+	if needsSanitization || needsTruncation {
+		fullSuffix := SuffixDelimiter + originalPayloadHash[:FullSuffixHashLength]
+		// Handle truncation with fullSuffix...
+		return namespace + NamespaceDelimiter + finalPayload
+	}
+
+	// CASE 3: Safe payload - use MANDATORY MINIMUM suffix (3 chars)
+	// This prevents mimicry attacks
+	miniSuffix := SuffixDelimiter + originalPayloadHash[:MiniSuffixHashLength]
+	return namespace + NamespaceDelimiter + sanitized + miniSuffix
 }
 ```
 
-### 2. Internal Short Hex Detection
+### 2. Internal Payload Validation
 
-`isInternalShortHex` is a format validator for internal detector payloads (exactly 16 lowercase hex characters). It does NOT by itself grant a no-suffix bypass — the no-suffix pass-through is only applied when a payload is paired with a trusted internal detector namespace (see the `isTrustedInternalNamespace()` helper below).
+`isInternalShortHex` and `isTmuxPayload` are format validators for internal detector payloads. These validators do NOT by themselves grant a no-suffix bypass — the no-suffix pass-through is only applied when a payload is paired with a trusted internal detector namespace as validated by helper functions (see `isTrustedHexNamespace` below).
 
-Internal detector payloads (screen, ssh, terminal, anchor) are exactly 16 lowercase hex characters and, when combined with a trusted namespace, are passed through without suffix:
+Internal detector payloads (screen, ssh, terminal, anchor) are exactly 16 lowercase hex characters. Tmux payloads use a `{digits}_{digits}` form. When combined with a trusted namespace, those payloads are passed through without suffix.
 
 ```go
+package session
+
 func isInternalShortHex(s string) bool {
-    if len(s) != ShortHashLength { // 16
-        return false
-    }
-    for i := 0; i < len(s); i++ {
-        c := s[i]
-        if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
-            return false
-        }
-    }
-    return true
+	if len(s) != ShortHashLength { // 16
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
-// isTrustedInternalNamespace identifies if the given namespace
-// is one of the trusted internal detector sources that allow
-// the format-session bypass for 16-character internal hashes.
-func isTrustedInternalNamespace(ns string) bool {
-    return ns == NamespaceScreen ||
-           ns == NamespaceSSH ||
-           ns == NamespaceTerminal ||
-           ns == NamespaceAnchor
+// Validator for Tmux payloads: {digits}_{digits}
+func isTmuxPayload(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	hasUnderscore := false
+	for i, r := range s {
+		if r == '_' {
+			if hasUnderscore {
+				return false
+			} // Only one underscore allowed
+			hasUnderscore = true
+		} else if r < '0' || r > '9' {
+			return false // Digits only
+		}
+		// quick rejection for underscore at start/end handled below
+		_ = i
+	}
+	// Must have underscore, and not at start/end
+	return hasUnderscore && s[0] != '_' && s[len(s)-1] != '_'
+}
+
+// Helper: Trusted Short-Hex namespaces
+// Note: Tmux is trusted but has its own validator (isTmuxPayload)
+func isTrustedHexNamespace(ns string) bool {
+	return ns == NamespaceScreen ||
+		ns == NamespaceSSH ||
+		ns == NamespaceTerminal ||
+		ns == NamespaceAnchor
 }
 ```
 
 ### 3. Payload Sanitization
 
 ```go
+package session
+
 func sanitizePayload(s string) string {
-    var result strings.Builder
-    result.Grow(len(s))
-    for _, r := range s {
-        if isFilenameSafe(r) {
-            result.WriteRune(r)
-        } else {
-            result.WriteRune('_')
-        }
-    }
-    return result.String()
+	var result strings.Builder
+	result.Grow(len(s))
+	for _, r := range s {
+		if isFilenameSafe(r) {
+			result.WriteRune(r)
+		} else {
+			result.WriteRune('_')
+		}
+	}
+	return result.String()
 }
 
 func isFilenameSafe(r rune) bool {
-    return (r >= 'a' && r <= 'z') ||
-           (r >= 'A' && r <= 'Z') ||
-           (r >= '0' && r <= '9') ||
-           r == '.' || r == '-' || r == '_'
+	return (r >= 'a' && r <= 'z') ||
+		(r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9') ||
+		r == '.' || r == '-' || r == '_'
 }
 ```
 
@@ -420,23 +465,25 @@ func isFilenameSafe(r rune) bool {
 Tmux IDs are constructed directly, bypassing `formatSessionID()`:
 
 ```go
+package session
+
 func getTmuxSessionID() (string, error) {
-    pane := os.Getenv("TMUX_PANE")
-    if pane == "" {
-        return "", fmt.Errorf("TMUX_PANE not set")
-    }
+	pane := os.Getenv("TMUX_PANE")
+	if pane == "" {
+		return "", fmt.Errorf("TMUX_PANE not set")
+	}
 
-    tmuxEnv := os.Getenv("TMUX")
-    serverPID := extractTmuxServerPID(tmuxEnv)
-    if serverPID == "" {
-        return "", fmt.Errorf("could not extract server PID from TMUX env")
-    }
+	tmuxEnv := os.Getenv("TMUX")
+	serverPID := extractTmuxServerPID(tmuxEnv)
+	if serverPID == "" {
+		return "", fmt.Errorf("could not extract server PID from TMUX env")
+	}
 
-    paneNum := strings.TrimPrefix(pane, "%")
-    payload := paneNum + "_" + serverPID
+	paneNum := strings.TrimPrefix(pane, "%")
+	payload := paneNum + "_" + serverPID
 
-    // Direct construction - no suffix needed
-    return NamespaceTmux + NamespaceDelimiter + payload, nil
+	// Direct construction - no suffix needed
+	return NamespaceTmux + NamespaceDelimiter + payload, nil
 }
 ```
 
@@ -445,34 +492,38 @@ func getTmuxSessionID() (string, error) {
 UUID IDs are constructed directly, bypassing `formatSessionID()`:
 
 ```go
+package session
+
 func formatUUIDID(uuid string) string {
-    // Direct construction - no suffix needed
-    return NamespaceUUID + NamespaceDelimiter + uuid
+	// Direct construction - no suffix needed
+	return NamespaceUUID + NamespaceDelimiter + uuid
 }
 ```
 
 ### 6. SessionContext (Deep Anchor)
 
 ```go
+package session
+
 type SessionContext struct {
-    BootID      string // Kernel Boot ID (Linux) or MachineGUID (Windows)
-    ContainerID string // Linux: namespace ID; Empty on Windows
-    AnchorPID   uint32 // PID of stable parent process
-    StartTime   uint64 // Creation time (ticks or filetime)
-    TTYName     string // /dev/pts/X or MinTTY pipe name
+	BootID      string // Kernel Boot ID (Linux) or MachineGUID (Windows)
+	ContainerID string // Linux: namespace ID; Empty on Windows
+	AnchorPID   uint32 // PID of stable parent process
+	StartTime   uint64 // Creation time (ticks or filetime)
+	TTYName     string // /dev/pts/X or MinTTY pipe name
 }
 
 func (c *SessionContext) GenerateHash() string {
-    raw := fmt.Sprintf("%s:%s:%s:%d:%d",
-        c.BootID, c.ContainerID, c.TTYName, c.AnchorPID, c.StartTime)
-    hasher := sha256.New()
-    hasher.Write([]byte(raw))
-    return hex.EncodeToString(hasher.Sum(nil))
+	raw := fmt.Sprintf("%s:%s:%s:%d:%d",
+		c.BootID, c.ContainerID, c.TTYName, c.AnchorPID, c.StartTime)
+	hasher := sha256.New()
+	hasher.Write([]byte(raw))
+	return hex.EncodeToString(hasher.Sum(nil))
 }
 
 func (c *SessionContext) FormatSessionID() string {
-    hash := c.GenerateHash()
-    return NamespaceAnchor + NamespaceDelimiter + hash[:ShortHashLength]
+	hash := c.GenerateHash()
+	return NamespaceAnchor + NamespaceDelimiter + hash[:ShortHashLength]
 }
 ```
 
@@ -486,26 +537,26 @@ func (c *SessionContext) FormatSessionID() string {
 package session
 
 import (
-    "fmt"
-    "os"
-    "strings"
+	"fmt"
+	"os"
+	"strings"
 )
 
 // getBootID reads the Linux kernel boot ID for persistence across reboots.
 func getBootID() (string, error) {
-    const bootIDPath = "/proc/sys/kernel/random/boot_id"
+	const bootIDPath = "/proc/sys/kernel/random/boot_id"
 
-    data, err := os.ReadFile(bootIDPath)
-    if err != nil {
-        return "", fmt.Errorf("failed to read boot_id: %w", err)
-    }
+	data, err := os.ReadFile(bootIDPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read boot_id: %w", err)
+	}
 
-    id := strings.TrimSpace(string(data))
-    if id == "" {
-        return "", fmt.Errorf("boot_id is empty")
-    }
+	id := strings.TrimSpace(string(data))
+	if id == "" {
+		return "", fmt.Errorf("boot_id is empty")
+	}
 
-    return id, nil
+	return id, nil
 }
 ```
 
@@ -519,100 +570,100 @@ func getBootID() (string, error) {
 package session
 
 import (
-    "bytes"
-    "fmt"
-    "os"
-    "strconv"
-    "strings"
+	"bytes"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
 )
 
 type ProcStat struct {
-    PID       int
-    Comm      string
-    State     rune
-    PPID      int
-    SID       int    // Session ID (field 6)
-    TtyNr     int
-    StartTime uint64
+	PID       int
+	Comm      string
+	State     rune
+	PPID      int
+	SID       int // Session ID (field 6)
+	TtyNr     int
+	StartTime uint64
 }
 
 func getProcStat(pid int) (*ProcStat, error) {
-    path := fmt.Sprintf("/proc/%d/stat", pid)
-    data, err := os.ReadFile(path)
-    if err != nil {
-        return nil, err
-    }
+	path := fmt.Sprintf("/proc/%d/stat", pid)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
 
-    // Find the LAST closing parenthesis (handles names like "cmd (1)")
-    lastParen := bytes.LastIndexByte(data, ')')
-    if lastParen == -1 || lastParen < 2 {
-        return nil, fmt.Errorf("malformed stat: missing closing paren for pid %d", pid)
-    }
+	// Find the LAST closing parenthesis (handles names like "cmd (1)")
+	lastParen := bytes.LastIndexByte(data, ')')
+	if lastParen == -1 || lastParen < 2 {
+		return nil, fmt.Errorf("malformed stat: missing closing paren for pid %d", pid)
+	}
 
-    firstSpace := bytes.IndexByte(data, ' ')
-    if firstSpace == -1 || firstSpace >= lastParen {
-        return nil, fmt.Errorf("malformed stat: missing initial space for pid %d", pid)
-    }
+	firstSpace := bytes.IndexByte(data, ' ')
+	if firstSpace == -1 || firstSpace >= lastParen {
+		return nil, fmt.Errorf("malformed stat: missing initial space for pid %d", pid)
+	}
 
-    // Validate opening parenthesis
-    if len(data) <= firstSpace+1 || data[firstSpace+1] != '(' {
-        return nil, fmt.Errorf("malformed stat: expected '(' for pid %d", pid)
-    }
+	// Validate opening parenthesis
+	if len(data) <= firstSpace+1 || data[firstSpace+1] != '(' {
+		return nil, fmt.Errorf("malformed stat: expected '(' for pid %d", pid)
+	}
 
-    pidStr := string(data[:firstSpace])
-    parsedPid, err := strconv.Atoi(pidStr)
-    if err != nil || parsedPid != pid {
-        return nil, fmt.Errorf("pid mismatch for %d", pid)
-    }
+	pidStr := string(data[:firstSpace])
+	parsedPid, err := strconv.Atoi(pidStr)
+	if err != nil || parsedPid != pid {
+		return nil, fmt.Errorf("pid mismatch for %d", pid)
+	}
 
-    comm := string(data[firstSpace+2 : lastParen])
+	comm := string(data[firstSpace+2 : lastParen])
 
-    if len(data) <= lastParen+2 {
-        return nil, fmt.Errorf("stat truncated for pid %d", pid)
-    }
+	if len(data) <= lastParen+2 {
+		return nil, fmt.Errorf("stat truncated for pid %d", pid)
+	}
 
-    metricsStr := string(data[lastParen+2:])
-    fields := strings.Fields(metricsStr)
+	metricsStr := string(data[lastParen+2:])
+	fields := strings.Fields(metricsStr)
 
-    // Field indices after comm: 0=State, 1=PPID, 2=PGRP, 3=SID, 4=TTY_NR, ..., 19=StartTime
-    if len(fields) < 20 {
-        return nil, fmt.Errorf("stat too short for pid %d", pid)
-    }
+	// Field indices after comm: 0=State, 1=PPID, 2=PGRP, 3=SID, 4=TTY_NR, ..., 19=StartTime
+	if len(fields) < 20 {
+		return nil, fmt.Errorf("stat too short for pid %d", pid)
+	}
 
-    // FIX: Validate State field is non-empty before indexing
-    if len(fields[0]) == 0 {
-        return nil, fmt.Errorf("empty state field for pid %d", pid)
-    }
+	// FIX: Validate State field is non-empty before indexing
+	if len(fields[0]) == 0 {
+		return nil, fmt.Errorf("empty state field for pid %d", pid)
+	}
 
-    ppid, err := strconv.Atoi(fields[1])
-    if err != nil {
-        return nil, fmt.Errorf("failed to parse ppid: %w", err)
-    }
+	ppid, err := strconv.Atoi(fields[1])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse ppid: %w", err)
+	}
 
-    sid, err := strconv.Atoi(fields[3])
-    if err != nil {
-        return nil, fmt.Errorf("failed to parse sid: %w", err)
-    }
+	sid, err := strconv.Atoi(fields[3])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse sid: %w", err)
+	}
 
-    ttyNr, err := strconv.Atoi(fields[4])
-    if err != nil {
-        return nil, fmt.Errorf("failed to parse tty_nr: %w", err)
-    }
+	ttyNr, err := strconv.Atoi(fields[4])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse tty_nr: %w", err)
+	}
 
-    startTime, err := strconv.ParseUint(fields[19], 10, 64)
-    if err != nil {
-        return nil, fmt.Errorf("failed to parse starttime: %w", err)
-    }
+	startTime, err := strconv.ParseUint(fields[19], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse starttime: %w", err)
+	}
 
-    return &ProcStat{
-        PID:       pid,
-        Comm:      comm,
-        State:     rune(fields[0][0]),
-        PPID:      ppid,
-        SID:       sid,
-        TtyNr:     ttyNr,
-        StartTime: startTime,
-    }, nil
+	return &ProcStat{
+		PID:       pid,
+		Comm:      comm,
+		State:     rune(fields[0][0]),
+		PPID:      ppid,
+		SID:       sid,
+		TtyNr:     ttyNr,
+		StartTime: startTime,
+	}, nil
 }
 ```
 
@@ -624,171 +675,171 @@ func getProcStat(pid int) (*ProcStat, error) {
 package session
 
 import (
-    "fmt"
-    "os"
-    "strings"
+	"fmt"
+	"os"
+	"strings"
 )
 
 // skipList defines ephemeral wrapper processes to ignore during ancestry walk.
 // CONFLICT RESOLUTION: These processes are transparent; we must NOT anchor to them.
 var skipList = map[string]bool{
-    "sudo": true, "su": true, "doas": true, "setsid": true,
-    "time": true, "timeout": true, "xargs": true, "env": true,
-    "osm": true, "strace": true, "ltrace": true, "nohup": true,
+	"sudo": true, "su": true, "doas": true, "setsid": true,
+	"time": true, "timeout": true, "xargs": true, "env": true,
+	"osm": true, "strace": true, "ltrace": true, "nohup": true,
 }
 
 // stableShells defines processes that represent user session boundaries.
 // Extended to cover more modern/alternative shells.
 var stableShells = map[string]bool{
-    "bash": true, "zsh": true, "fish": true, "sh": true, "dash": true,
-    "ksh": true, "tcsh": true, "csh": true, "pwsh": true, "nu": true,
-    "elvish": true, "ion": true, "xonsh": true, "oil": true, "murex": true,
+	"bash": true, "zsh": true, "fish": true, "sh": true, "dash": true,
+	"ksh": true, "tcsh": true, "csh": true, "pwsh": true, "nu": true,
+	"elvish": true, "ion": true, "xonsh": true, "oil": true, "murex": true,
 }
 
 // rootBoundaries defines system processes that terminate the walk.
 var rootBoundaries = map[string]bool{
-    "init": true, "systemd": true, "login": true, "sshd": true,
-    "gdm-session-worker": true, "lightdm": true,
-    "xinit": true, "gnome-session": true, "kdeinit5": true,
+	"init": true, "systemd": true, "login": true, "sshd": true,
+	"gdm-session-worker": true, "lightdm": true,
+	"xinit": true, "gnome-session": true, "kdeinit5": true,
 }
 
 func resolveDeepAnchor() (*SessionContext, error) {
-    bootID, err := getBootID()
-    if err != nil {
-        return nil, err
-    }
+	bootID, err := getBootID()
+	if err != nil {
+		return nil, err
+	}
 
-    // On Linux, ContainerID is the PID namespace ID from /proc/self/ns/pid.
-    nsID, err := getNamespaceID()
-    if err != nil {
-        nsID = "host-fallback"
-    }
+	// On Linux, ContainerID is the PID namespace ID from /proc/self/ns/pid.
+	nsID, err := getNamespaceID()
+	if err != nil {
+		nsID = "host-fallback"
+	}
 
-    ttyName := resolveTTYName()
+	ttyName := resolveTTYName()
 
-    pid := os.Getpid()
-    anchorPID, anchorStart, err := findStableAnchorLinux(pid)
-    if err != nil {
-        return nil, err
-    }
+	pid := os.Getpid()
+	anchorPID, anchorStart, err := findStableAnchorLinux(pid)
+	if err != nil {
+		return nil, err
+	}
 
-    return &SessionContext{
-        BootID:      bootID,
-        ContainerID: nsID,
-        AnchorPID:   uint32(anchorPID),
-        StartTime:   anchorStart,
-        TTYName:     ttyName,
-    }, nil
+	return &SessionContext{
+		BootID:      bootID,
+		ContainerID: nsID,
+		AnchorPID:   uint32(anchorPID),
+		StartTime:   anchorStart,
+		TTYName:     ttyName,
+	}, nil
 }
 
 func findStableAnchorLinux(startPID int) (int, uint64, error) {
-    const maxDepth = 100
+	const maxDepth = 100
 
-    currPID := startPID
-    currStat, err := getProcStat(currPID)
-    if err != nil {
-        return 0, 0, err
-    }
+	currPID := startPID
+	currStat, err := getProcStat(currPID)
+	if err != nil {
+		return 0, 0, err
+	}
 
-    targetTTY := currStat.TtyNr
-    lastValidPID := currPID
-    lastValidStart := currStat.StartTime
+	targetTTY := currStat.TtyNr
+	lastValidPID := currPID
+	lastValidStart := currStat.StartTime
 
-    for i := 0; i < maxDepth; i++ {
-        stat, err := getProcStat(currPID)
-        if err != nil {
-            return lastValidPID, lastValidStart, nil
-        }
+	for i := 0; i < maxDepth; i++ {
+		stat, err := getProcStat(currPID)
+		if err != nil {
+			return lastValidPID, lastValidStart, nil
+		}
 
-        commLower := strings.ToLower(stat.Comm)
+		commLower := strings.ToLower(stat.Comm)
 
-        // 1. SKIP LIST / SELF-CHECK
-        // CRITICAL FIX: We must implicitly skip the starting PID (Self) to
-        // handle cases where the binary is renamed (e.g. 'osm-v2').
-        // Without this check, a renamed binary fails the skipList lookup
-        // and becomes its own "stable anchor", breaking context persistence.
-        if skipList[commLower] || stat.PID == startPID {
-            // CONFLICT RESOLUTION: Do NOT update lastValidPID/Start.
-            // These processes are ephemeral (like 'osm' itself); anchoring to them
-            // defeats the purpose of the skip list. We just move up.
+		// 1. SKIP LIST / SELF-CHECK
+		// CRITICAL FIX: We must implicitly skip the starting PID (Self) to
+		// handle cases where the binary is renamed (e.g. 'osm-v2').
+		// Without this check, a renamed binary fails the skipList lookup
+		// and becomes its own "stable anchor", breaking context persistence.
+		if skipList[commLower] || stat.PID == startPID {
+			// CONFLICT RESOLUTION: Do NOT update lastValidPID/Start.
+			// These processes are ephemeral (like 'osm' itself); anchoring to them
+			// defeats the purpose of the skip list. We just move up.
 
-            if stat.PPID == 0 || stat.PPID == 1 {
-                return lastValidPID, lastValidStart, nil
-            }
-            parentStat, err := getProcStat(stat.PPID)
-            if err != nil || parentStat.StartTime > stat.StartTime {
-                return lastValidPID, lastValidStart, nil
-            }
-            currPID = stat.PPID
-            continue
-        }
+			if stat.PPID == 0 || stat.PPID == 1 {
+				return lastValidPID, lastValidStart, nil
+			}
+			parentStat, err := getProcStat(stat.PPID)
+			if err != nil || parentStat.StartTime > stat.StartTime {
+				return lastValidPID, lastValidStart, nil
+			}
+			currPID = stat.PPID
+			continue
+		}
 
-        // Update valid candidate
-        lastValidPID = stat.PID
-        lastValidStart = stat.StartTime
+		// Update valid candidate
+		lastValidPID = stat.PID
+		lastValidStart = stat.StartTime
 
-        // 2. STABILITY: Known Shells, Root boundaries, or Session Leader
-        // Check direct match first
-        if stableShells[commLower] || rootBoundaries[commLower] {
-            return lastValidPID, lastValidStart, nil
-        }
+		// 2. STABILITY: Known Shells, Root boundaries, or Session Leader
+		// Check direct match first
+		if stableShells[commLower] || rootBoundaries[commLower] {
+			return lastValidPID, lastValidStart, nil
+		}
 
-        // CRITICAL FIX: Handle Kernel TASK_COMM_LEN Truncation
-        // Linux /proc/[pid]/stat field 2 (comm) is limited to 15 visible characters
-        // (TASK_COMM_LEN = 16 bytes including null terminator).
-        // Root boundaries like "gdm-session-worker" (18 chars) get truncated to
-        // "gdm-session-wor" (15 chars), causing direct map lookup to fail.
-        // Only check if exactly 15 chars (the truncation length).
-        if len(commLower) == 15 {
-            if isRootBoundaryTruncated(commLower) {
-                return lastValidPID, lastValidStart, nil
-            }
-        }
+		// CRITICAL FIX: Handle Kernel TASK_COMM_LEN Truncation
+		// Linux /proc/[pid]/stat field 2 (comm) is limited to 15 visible characters
+		// (TASK_COMM_LEN = 16 bytes including null terminator).
+		// Root boundaries like "gdm-session-worker" (18 chars) get truncated to
+		// "gdm-session-wor" (15 chars), causing direct map lookup to fail.
+		// Only check if exactly 15 chars (the truncation length).
+		if len(commLower) == 15 {
+			if isRootBoundaryTruncated(commLower) {
+				return lastValidPID, lastValidStart, nil
+			}
+		}
 
-        // Session leader check
-        if stat.PID == stat.SID && stat.TtyNr == targetTTY {
-            return lastValidPID, lastValidStart, nil
-        }
+		// Session leader check
+		if stat.PID == stat.SID && stat.TtyNr == targetTTY {
+			return lastValidPID, lastValidStart, nil
+		}
 
-        // 3. DEFAULT STOP: Unknown but stable process
-        // Anchor here to avoid collapsing unrelated concurrent jobs.
-        return lastValidPID, lastValidStart, nil
-    }
+		// 3. DEFAULT STOP: Unknown but stable process
+		// Anchor here to avoid collapsing unrelated concurrent jobs.
+		return lastValidPID, lastValidStart, nil
+	}
 
-    return lastValidPID, lastValidStart, nil
+	return lastValidPID, lastValidStart, nil
 }
 
 // isRootBoundaryTruncated checks if a (possibly truncated) process name
 // matches any root boundary via prefix matching.
 // This handles the Linux kernel TASK_COMM_LEN limitation (15 visible chars).
 func isRootBoundaryTruncated(commLower string) bool {
-    for root := range rootBoundaries {
-        if len(root) > 15 && len(commLower) == 15 && strings.HasPrefix(root, commLower) {
-            return true
-        }
-    }
-    return false
+	for root := range rootBoundaries {
+		if len(root) > 15 && len(commLower) == 15 && strings.HasPrefix(root, commLower) {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveTTYName() string {
-    for _, fd := range []uintptr{0, 1, 2} {
-        if name := getTTYNameFromFD(fd); name != "" {
-            return name
-        }
-    }
-    return ""
+	for _, fd := range []uintptr{0, 1, 2} {
+		if name := getTTYNameFromFD(fd); name != "" {
+			return name
+		}
+	}
+	return ""
 }
 
 func getTTYNameFromFD(fd uintptr) string {
-    path := fmt.Sprintf("/proc/self/fd/%d", fd)
-    link, err := os.Readlink(path)
-    if err != nil {
-        return ""
-    }
-    if strings.HasPrefix(link, "/dev/pts/") || strings.HasPrefix(link, "/dev/tty") {
-        return link
-    }
-    return ""
+	path := fmt.Sprintf("/proc/self/fd/%d", fd)
+	link, err := os.Readlink(path)
+	if err != nil {
+		return ""
+	}
+	if strings.HasPrefix(link, "/dev/pts/") || strings.HasPrefix(link, "/dev/tty") {
+		return link
+	}
+	return ""
 }
 ```
 
@@ -800,16 +851,16 @@ func getTTYNameFromFD(fd uintptr) string {
 package session
 
 import (
-    "fmt"
-    "os"
+	"fmt"
+	"os"
 )
 
 func getNamespaceID() (string, error) {
-    dest, err := os.Readlink("/proc/self/ns/pid")
-    if err != nil {
-        return "", fmt.Errorf("failed to resolve pid namespace: %w", err)
-    }
-    return dest, nil
+	dest, err := os.Readlink("/proc/self/ns/pid")
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve pid namespace: %w", err)
+	}
+	return dest, nil
 }
 ```
 
@@ -823,29 +874,29 @@ func getNamespaceID() (string, error) {
 package session
 
 import (
-    "fmt"
-    "golang.org/x/sys/windows/registry"
+	"fmt"
+	"golang.org/x/sys/windows/registry"
 )
 
 func getBootID() (string, error) {
-    k, err := registry.OpenKey(
-        registry.LOCAL_MACHINE,
-        `SOFTWARE\Microsoft\Cryptography`,
-        registry.QUERY_VALUE,
-    )
-    if err != nil {
-        return "", fmt.Errorf("failed to open registry: %w", err)
-    }
-    defer k.Close()
+	k, err := registry.OpenKey(
+		registry.LOCAL_MACHINE,
+		`SOFTWARE\Microsoft\Cryptography`,
+		registry.QUERY_VALUE,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to open registry: %w", err)
+	}
+	defer k.Close()
 
-    val, _, err := k.GetStringValue("MachineGuid")
-    if err != nil {
-        return "", fmt.Errorf("failed to read MachineGuid: %w", err)
-    }
-    if val == "" {
-        return "", fmt.Errorf("MachineGuid is empty")
-    }
-    return val, nil
+	val, _, err := k.GetStringValue("MachineGuid")
+	if err != nil {
+		return "", fmt.Errorf("failed to read MachineGuid: %w", err)
+	}
+	if val == "" {
+		return "", fmt.Errorf("MachineGuid is empty")
+	}
+	return val, nil
 }
 ```
 
@@ -857,24 +908,24 @@ func getBootID() (string, error) {
 package session
 
 import (
-    "fmt"
-    "golang.org/x/sys/windows"
+	"fmt"
+	"golang.org/x/sys/windows"
 )
 
 func getProcessCreationTime(pid uint32) (uint64, error) {
-    h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
-    if err != nil {
-        return 0, fmt.Errorf("OpenProcess failed for pid %d: %w", pid, err)
-    }
-    defer windows.CloseHandle(h)
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+	if err != nil {
+		return 0, fmt.Errorf("OpenProcess failed for pid %d: %w", pid, err)
+	}
+	defer windows.CloseHandle(h)
 
-    var creation, exit, kernel, user windows.Filetime
-    err = windows.GetProcessTimes(h, &creation, &exit, &kernel, &user)
-    if err != nil {
-        return 0, fmt.Errorf("GetProcessTimes failed: %w", err)
-    }
+	var creation, exit, kernel, user windows.Filetime
+	err = windows.GetProcessTimes(h, &creation, &exit, &kernel, &user)
+	if err != nil {
+		return 0, fmt.Errorf("GetProcessTimes failed: %w", err)
+	}
 
-    return uint64(creation.HighDateTime)<<32 | uint64(creation.LowDateTime), nil
+	return uint64(creation.HighDateTime)<<32 | uint64(creation.LowDateTime), nil
 }
 ```
 
@@ -886,30 +937,30 @@ func getProcessCreationTime(pid uint32) (uint64, error) {
 package session
 
 import (
-    "os"
-    "strings"
+	"os"
+	"strings"
 )
 
 var knownShells = map[string]bool{
-    "cmd.exe": true, "powershell.exe": true, "pwsh.exe": true,
-    "bash.exe": true, "zsh.exe": true, "fish.exe": true,
-    "wt.exe": true, "explorer.exe": true, "nu.exe": true,
-    "windowsterminal.exe": true, "conhost.exe": true,
+	"cmd.exe": true, "powershell.exe": true, "pwsh.exe": true,
+	"bash.exe": true, "zsh.exe": true, "fish.exe": true,
+	"wt.exe": true, "explorer.exe": true, "nu.exe": true,
+	"windowsterminal.exe": true, "conhost.exe": true,
 }
 
 func isShell(name string) bool {
-    lower := strings.ToLower(name)
-    if knownShells[lower] {
-        return true
-    }
-    if extra := os.Getenv("OSM_EXTRA_SHELLS"); extra != "" {
-        for _, sh := range strings.Split(extra, ";") {
-            if strings.ToLower(strings.TrimSpace(sh)) == lower {
-                return true
-            }
-        }
-    }
-    return false
+	lower := strings.ToLower(name)
+	if knownShells[lower] {
+		return true
+	}
+	if extra := os.Getenv("OSM_EXTRA_SHELLS"); extra != "" {
+		for _, sh := range strings.Split(extra, ";") {
+			if strings.ToLower(strings.TrimSpace(sh)) == lower {
+				return true
+			}
+		}
+	}
+	return false
 }
 ```
 
@@ -921,51 +972,51 @@ func isShell(name string) bool {
 package session
 
 import (
-    "fmt"
-    "unsafe"
-    "golang.org/x/sys/windows"
+	"fmt"
+	"unsafe"
+	"golang.org/x/sys/windows"
 )
 
 type WinProcInfo struct {
-    PID     uint32
-    PPID    uint32
-    ExeName string
+	PID     uint32
+	PPID    uint32
+	ExeName string
 }
 
 func getProcessTree() (map[uint32]WinProcInfo, error) {
-    h, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
-    if err != nil {
-        return nil, fmt.Errorf("snapshot failed: %w", err)
-    }
-    defer windows.CloseHandle(h)
+	h, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot failed: %w", err)
+	}
+	defer windows.CloseHandle(h)
 
-    tree := make(map[uint32]WinProcInfo)
-    var entry windows.ProcessEntry32
-    entry.Size = uint32(unsafe.Sizeof(entry))
+	tree := make(map[uint32]WinProcInfo)
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
 
-    err = windows.Process32First(h, &entry)
-    if err != nil {
-        if err == windows.ERROR_NO_MORE_FILES {
-            return tree, nil
-        }
-        return nil, fmt.Errorf("Process32First failed: %w", err)
-    }
+	err = windows.Process32First(h, &entry)
+	if err != nil {
+		if err == windows.ERROR_NO_MORE_FILES {
+			return tree, nil
+		}
+		return nil, fmt.Errorf("Process32First failed: %w", err)
+	}
 
-    for {
-        exeName := windows.UTF16ToString(entry.ExeFile[:])
-        tree[entry.ProcessID] = WinProcInfo{
-            PID:     entry.ProcessID,
-            PPID:    entry.ParentProcessID,
-            ExeName: exeName,
-        }
+	for {
+		exeName := windows.UTF16ToString(entry.ExeFile[:])
+		tree[entry.ProcessID] = WinProcInfo{
+			PID:     entry.ProcessID,
+			PPID:    entry.ParentProcessID,
+			ExeName: exeName,
+		}
 
-        err = windows.Process32Next(h, &entry)
-        if err != nil {
-            break
-        }
-    }
+		err = windows.Process32Next(h, &entry)
+		if err != nil {
+			break
+		}
+	}
 
-    return tree, nil
+	return tree, nil
 }
 ```
 
@@ -977,140 +1028,140 @@ func getProcessTree() (map[uint32]WinProcInfo, error) {
 package session
 
 import (
-    "fmt"
-    "strings"
-    "golang.org/x/sys/windows"
+	"fmt"
+	"strings"
+	"golang.org/x/sys/windows"
 )
 
 // Windows-specific skip list.
 // CONFLICT RESOLUTION: "cmd.exe" REMOVED. It is a shell, not a wrapper.
 var skipListWindows = map[string]bool{
-    "osm.exe":  true,
-    "time.exe": true,
-    "taskeng.exe": true, "runtimebroker.exe": true,
+	"osm.exe":     true,
+	"time.exe":    true,
+	"taskeng.exe": true, "runtimebroker.exe": true,
 }
 
 // Windows root boundaries.
 var rootBoundariesWindows = map[string]bool{
-    "services.exe": true, "wininit.exe": true, "lsass.exe": true,
-    "svchost.exe": true, "explorer.exe": true, "csrss.exe": true,
+	"services.exe": true, "wininit.exe": true, "lsass.exe": true,
+	"svchost.exe": true, "explorer.exe": true, "csrss.exe": true,
 }
 
 func resolveDeepAnchor() (*SessionContext, error) {
-    bootID, err := getBootID()
-    if err != nil {
-        return nil, err
-    }
+	bootID, err := getBootID()
+	if err != nil {
+		return nil, err
+	}
 
-    ttyName := resolveMinTTYName()
+	ttyName := resolveMinTTYName()
 
-    pid, startTime, err := findStableAnchorWindows()
-    if err != nil {
-        return nil, err
-    }
+	pid, startTime, err := findStableAnchorWindows()
+	if err != nil {
+		return nil, err
+	}
 
-    return &SessionContext{
-        BootID:      bootID,
-        ContainerID: "",
-        AnchorPID:   pid,
-        StartTime:   startTime,
-        TTYName:     ttyName,
-    }, nil
+	return &SessionContext{
+		BootID:      bootID,
+		ContainerID: "",
+		AnchorPID:   pid,
+		StartTime:   startTime,
+		TTYName:     ttyName,
+	}, nil
 }
 
 func findStableAnchorWindows() (uint32, uint64, error) {
-    const maxDepth = 100
+	const maxDepth = 100
 
-    myPid := windows.GetCurrentProcessId()
-    tree, err := getProcessTree()
-    if err != nil {
-        return 0, 0, fmt.Errorf("failed to build process tree: %w", err)
-    }
+	myPid := windows.GetCurrentProcessId()
+	tree, err := getProcessTree()
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to build process tree: %w", err)
+	}
 
-    currPid := myPid
-    currTime, err := getProcessCreationTime(currPid)
-    if err != nil {
-        return 0, 0, fmt.Errorf("failed to get own creation time: %w", err)
-    }
+	currPid := myPid
+	currTime, err := getProcessCreationTime(currPid)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get own creation time: %w", err)
+	}
 
-    lastValidPid := currPid
-    lastValidTime := currTime
+	lastValidPid := currPid
+	lastValidTime := currTime
 
-    for i := 0; i < maxDepth; i++ {
-        node, exists := tree[currPid]
-        if !exists {
-            // Ghost Anchor: parent missing from snapshot
-            return lastValidPid, lastValidTime, nil
-        }
+	for i := 0; i < maxDepth; i++ {
+		node, exists := tree[currPid]
+		if !exists {
+			// Ghost Anchor: parent missing from snapshot
+			return lastValidPid, lastValidTime, nil
+		}
 
-        exeLower := strings.ToLower(node.ExeName)
+		exeLower := strings.ToLower(node.ExeName)
 
-        // PRIORITY 1: Ephemeral wrappers OR Self-Check
-        // CRITICAL FIX: Explicitly check 'currPid == myPid'.
-        // If the binary is renamed (e.g. 'osm-prod.exe'), it fails the skipList check,
-        // erroneously anchors to itself, and breaks persistence.
-        if skipListWindows[exeLower] || currPid == myPid {
-            // CONFLICT RESOLUTION: Do NOT update lastValid here.
-            parentPid := node.PPID
-            if parentPid == 0 || parentPid == 4 {
-                return lastValidPid, lastValidTime, nil
-            }
-            parentTime, err := getProcessCreationTime(parentPid)
-            if err != nil {
-                // PRIVILEGE BOUNDARY: ERROR_ACCESS_DENIED (Code 5) indicates we hit a
-                // privilege boundary (User -> System). When a standard user process
-                // attempts to inspect a System/Admin process (e.g., services.exe,
-                // wininit.exe), OpenProcess fails with access denied.
-                // We cannot verify the parent's start time, so we must anchor here.
-                // This effectively makes the Session ID "User-Rooted" rather than
-                // "System-Rooted" unless osm is run with elevated privileges.
-                return lastValidPid, lastValidTime, nil
-            }
-            // Race Check
-            if parentTime > currTime {
-                return lastValidPid, lastValidTime, nil
-            }
-            currPid = parentPid
-            currTime = parentTime
-            continue
-        }
+		// PRIORITY 1: Ephemeral wrappers OR Self-Check
+		// CRITICAL FIX: Explicitly check 'currPid == myPid'.
+		// If the binary is renamed (e.g. 'osm-prod.exe'), it fails the skipList check,
+		// erroneously anchors to itself, and breaks persistence.
+		if skipListWindows[exeLower] || currPid == myPid {
+			// CONFLICT RESOLUTION: Do NOT update lastValid here.
+			parentPid := node.PPID
+			if parentPid == 0 || parentPid == 4 {
+				return lastValidPid, lastValidTime, nil
+			}
+			parentTime, err := getProcessCreationTime(parentPid)
+			if err != nil {
+				// PRIVILEGE BOUNDARY: ERROR_ACCESS_DENIED (Code 5) indicates we hit a
+				// privilege boundary (User -> System). When a standard user process
+				// attempts to inspect a System/Admin process (e.g., services.exe,
+				// wininit.exe), OpenProcess fails with access denied.
+				// We cannot verify the parent's start time, so we must anchor here.
+				// This effectively makes the Session ID "User-Rooted" rather than
+				// "System-Rooted" unless osm is run with elevated privileges.
+				return lastValidPid, lastValidTime, nil
+			}
+			// Race Check
+			if parentTime > currTime {
+				return lastValidPid, lastValidTime, nil
+			}
+			currPid = parentPid
+			currTime = parentTime
+			continue
+		}
 
-        // Update valid candidate
-        lastValidPid = currPid
-        lastValidTime = currTime
+		// Update valid candidate
+		lastValidPid = currPid
+		lastValidTime = currTime
 
-        // PRIORITY 2: Explicit shell boundary (Includes cmd.exe now)
-        if isShell(node.ExeName) {
-            return currPid, currTime, nil
-        }
+		// PRIORITY 2: Explicit shell boundary (Includes cmd.exe now)
+		if isShell(node.ExeName) {
+			return currPid, currTime, nil
+		}
 
-        // PRIORITY 3: System/service roots
-        if rootBoundariesWindows[exeLower] {
-            return lastValidPid, lastValidTime, nil
-        }
+		// PRIORITY 3: System/service roots
+		if rootBoundariesWindows[exeLower] {
+			return lastValidPid, lastValidTime, nil
+		}
 
-        // PRIORITY 4: Unknown but stable process
-        return currPid, currTime, nil
-    }
+		// PRIORITY 4: Unknown but stable process
+		return currPid, currTime, nil
+	}
 
-    return lastValidPid, lastValidTime, nil
+	return lastValidPid, lastValidTime, nil
 }
 
 func resolveMinTTYName() string {
-    for _, std := range []uint32{
-        uint32(windows.STD_INPUT_HANDLE),
-        uint32(windows.STD_OUTPUT_HANDLE),
-        uint32(windows.STD_ERROR_HANDLE),
-    } {
-        h, err := windows.GetStdHandle(std)
-        if err != nil {
-            continue
-        }
-        if name, ok := checkMinTTY(uintptr(h)); ok {
-            return name
-        }
-    }
-    return ""
+	for _, std := range []uint32{
+		uint32(windows.STD_INPUT_HANDLE),
+		uint32(windows.STD_OUTPUT_HANDLE),
+		uint32(windows.STD_ERROR_HANDLE),
+	} {
+		h, err := windows.GetStdHandle(std)
+		if err != nil {
+			continue
+		}
+		if name, ok := checkMinTTY(uintptr(h)); ok {
+			return name
+		}
+	}
+	return ""
 }
 ```
 
@@ -1122,77 +1173,77 @@ func resolveMinTTYName() string {
 package session
 
 import (
-    "bytes"
-    "encoding/binary"
-    "fmt"
-    "regexp"
-    "golang.org/x/sys/windows"
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"regexp"
+	"golang.org/x/sys/windows"
 )
 
 var minTTYRegex = regexp.MustCompile(`(?i)\\(?:msys|cygwin|mingw)-[0-9a-f]+-pty(\d+)-(?:to|from)-master`)
 
 func checkMinTTY(handle uintptr) (string, bool) {
-    if handle == 0 || handle == ^uintptr(0) {
-        return "", false
-    }
+	if handle == 0 || handle == ^uintptr(0) {
+		return "", false
+	}
 
-    fileName, err := getFileNameByHandle(windows.Handle(handle))
-    if err != nil {
-        return "", false
-    }
+	fileName, err := getFileNameByHandle(windows.Handle(handle))
+	if err != nil {
+		return "", false
+	}
 
-    matches := minTTYRegex.FindStringSubmatch(fileName)
-    if len(matches) < 2 {
-        return "", false
-    }
-    return fmt.Sprintf("pty%s", matches[1]), true
+	matches := minTTYRegex.FindStringSubmatch(fileName)
+	if len(matches) < 2 {
+		return "", false
+	}
+	return fmt.Sprintf("pty%s", matches[1]), true
 }
 
 // CONFLICT RESOLUTION: Replaced internal NtQueryInformationFile with exported Win32 API
 // SAFETY FIX: Use encoding/binary for safe memory access instead of unsafe pointer casts
 // to ensure proper alignment on ARM64 and other architectures.
 func getFileNameByHandle(h windows.Handle) (string, error) {
-    // 4096 bytes buffer for GetFileInformationByHandleEx
-    var buf [4096]byte
+	// 4096 bytes buffer for GetFileInformationByHandleEx
+	var buf [4096]byte
 
-    err := windows.GetFileInformationByHandleEx(
-        h,
-        windows.FileNameInfo,
-        &buf[0],
-        uint32(len(buf)),
-    )
-    if err != nil {
-        return "", err
-    }
+	err := windows.GetFileInformationByHandleEx(
+		h,
+		windows.FileNameInfo,
+		&buf[0],
+		uint32(len(buf)),
+	)
+	if err != nil {
+		return "", err
+	}
 
-    // First 4 bytes is the FileNameLength (DWORD) - use encoding/binary for safe access
-    nameLen := binary.LittleEndian.Uint32(buf[:4])
+	// First 4 bytes is the FileNameLength (DWORD) - use encoding/binary for safe access
+	nameLen := binary.LittleEndian.Uint32(buf[:4])
 
-    // Validate filename length:
-    // 1. Must be even (UTF-16 uses 2-byte characters)
-    // 2. Must fit in remaining buffer (4096 - 4 = 4092 bytes)
-    // 3. Must not be zero (handle edge case)
-    if nameLen%2 != 0 {
-        return "", fmt.Errorf("invalid filename length: %d (not even)", nameLen)
-    }
-    maxBytes := uint32(len(buf) - 4)
-    if nameLen > maxBytes {
-        return "", fmt.Errorf("filename length corruption detected: %d > %d", nameLen, maxBytes)
-    }
-    if nameLen == 0 {
-        return "", nil // empty filename is valid
-    }
+	// Validate filename length:
+	// 1. Must be even (UTF-16 uses 2-byte characters)
+	// 2. Must fit in remaining buffer (4096 - 4 = 4092 bytes)
+	// 3. Must not be zero (handle edge case)
+	if nameLen%2 != 0 {
+		return "", fmt.Errorf("invalid filename length: %d (not even)", nameLen)
+	}
+	maxBytes := uint32(len(buf) - 4)
+	if nameLen > maxBytes {
+		return "", fmt.Errorf("filename length corruption detected: %d > %d", nameLen, maxBytes)
+	}
+	if nameLen == 0 {
+		return "", nil // empty filename is valid
+	}
 
-    // FileName starts at offset 4, contains WCHARs (UTF-16)
-    // Safely read UTF-16 data using encoding/binary
-    numChars := nameLen / 2
-    utf16Data := make([]uint16, numChars)
-    reader := bytes.NewReader(buf[4 : 4+nameLen])
-    if err := binary.Read(reader, binary.LittleEndian, &utf16Data); err != nil {
-        return "", fmt.Errorf("failed to read filename data: %w", err)
-    }
+	// FileName starts at offset 4, contains WCHARs (UTF-16)
+	// Safely read UTF-16 data using encoding/binary
+	numChars := nameLen / 2
+	utf16Data := make([]uint16, numChars)
+	reader := bytes.NewReader(buf[4 : 4+nameLen])
+	if err := binary.Read(reader, binary.LittleEndian, &utf16Data); err != nil {
+		return "", fmt.Errorf("failed to read filename data: %w", err)
+	}
 
-    return windows.UTF16ToString(utf16Data), nil
+	return windows.UTF16ToString(utf16Data), nil
 }
 ```
 
@@ -1206,12 +1257,12 @@ func getFileNameByHandle(h windows.Handle) (string, error) {
 package session
 
 import (
-    "fmt"
-    "runtime"
+	"fmt"
+	"runtime"
 )
 
 func resolveDeepAnchor() (*SessionContext, error) {
-    return nil, fmt.Errorf("deep anchor detection not supported on %s", runtime.GOOS)
+	return nil, fmt.Errorf("deep anchor detection not supported on %s", runtime.GOOS)
 }
 ```
 
@@ -1219,12 +1270,12 @@ func resolveDeepAnchor() (*SessionContext, error) {
 
 ## Trusted Assumptions
 
-1.  **Linux kernel ≥3.8:** Field 22 of `/proc/[pid]/stat` is StartTime and `/proc/self/ns/pid` is available.
-2.  **`/proc` accessibility:** SELinux/AppArmor must permit reading `/proc/[pid]/stat`.
-3.  **Windows dependency:** `golang.org/x/sys/windows` present in `go.mod`.
-4.  **MachineGuid existence:** Windows registry key exists.
-5.  **Snapshot atomicity:** `CreateToolhelp32Snapshot` returns consistent data.
-6.  **Memory alignment:** Windows buffer operations use `encoding/binary` for safe cross-architecture support (including ARM64).
+1. **Linux kernel ≥3.8:** Field 22 of `/proc/[pid]/stat` is StartTime and `/proc/self/ns/pid` is available.
+2. **`/proc` accessibility:** SELinux/AppArmor must permit reading `/proc/[pid]/stat`.
+3. **Windows dependency:** `golang.org/x/sys/windows` present in `go.mod`.
+4. **MachineGuid existence:** Windows registry key exists.
+5. **Snapshot atomicity:** `CreateToolhelp32Snapshot` returns consistent data.
+6. **Memory alignment:** Windows buffer operations use `encoding/binary` for safe cross-architecture support (including ARM64).
 
 -----
 
@@ -1234,17 +1285,17 @@ func resolveDeepAnchor() (*SessionContext, error) {
 
 Linux limits the `comm` field in `/proc/[pid]/stat` to **15 visible characters** (`TASK_COMM_LEN` = 16 bytes including null terminator). This affects root boundary detection for processes with long names:
 
-  * **Example:** `gdm-session-worker` (18 characters) is truncated to `gdm-session-wor` (15 characters).
-  * **Mitigation:** The implementation uses prefix matching as a fallback when the process name is exactly 15 characters. If a root boundary name is longer than 15 characters and the observed `comm` matches its prefix, it is treated as a root boundary.
+* **Example:** `gdm-session-worker` (18 characters) is truncated to `gdm-session-wor` (15 characters).
+* **Mitigation:** The implementation uses prefix matching as a fallback when the process name is exactly 15 characters. If a root boundary name is longer than 15 characters and the observed `comm` matches its prefix, it is treated as a root boundary.
 
 ### Windows: Privilege Boundary Limitations
 
 When running as a standard user, the process ancestry walk may be unable to reach true system roots (e.g., `services.exe`, `wininit.exe`) due to `ERROR_ACCESS_DENIED` from `OpenProcess()`:
 
-  * **Behavior:** The walk stops at the highest accessible user-owned process.
-  * **Result:** The Session ID is "User-Rooted" rather than "System-Rooted".
-  * **Impact:** This is acceptable for session identification purposes, as different user sessions will still have distinct anchors.
-  * **Workaround:** Run `osm` with elevated privileges (Administrator) to reach system-level roots.
+* **Behavior:** The walk stops at the highest accessible user-owned process.
+* **Result:** The Session ID is "User-Rooted" rather than "System-Rooted".
+* **Impact:** This is acceptable for session identification purposes, as different user sessions will still have distinct anchors.
+* **Workaround:** Run `osm` with elevated privileges (Administrator) to reach system-level roots.
 
 ### macOS: Non-Terminal.app Degradation
 
@@ -1261,12 +1312,12 @@ The `getFileNameByHandle` function uses `encoding/binary` for safe memory access
 
 ## Platform Implementation Status
 
-| Platform | Status | Notes |
-|----------|--------|-------|
-| Linux | ✅ Complete | Verified robust against renaming/aliasing. Handles TASK_COMM_LEN truncation. |
-| Windows | ✅ Complete | Verified robust against renaming/aliasing. User-rooted when unprivileged. |
-| macOS/Darwin | ⚠️ Partial | Deep Anchor not implemented; relies on `TERM_SESSION_ID`. Terminals that do not set `TERM_SESSION_ID` (e.g., Alacritty) will fall back to UUID IDs that do not persist across restarts. |
-| BSD | ❌ Not Implemented | Stubs provided. |
+| Platform     | Status            | Notes                                                                                                                                                                                   |
+|--------------|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Linux        | ✅ Complete        | Verified robust against renaming/aliasing. Handles TASK_COMM_LEN truncation.                                                                                                            |
+| Windows      | ✅ Complete        | Verified robust against renaming/aliasing. User-rooted when unprivileged.                                                                                                               |
+| macOS/Darwin | ⚠️ Partial        | Deep Anchor not implemented; relies on `TERM_SESSION_ID`. Terminals that do not set `TERM_SESSION_ID` (e.g., Alacritty) will fall back to UUID IDs that do not persist across restarts. |
+| BSD          | ❌ Not Implemented | Stubs provided.                                                                                                                                                                         |
 
 ### Summary of Conflict Resolutions
 

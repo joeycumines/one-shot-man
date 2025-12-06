@@ -10,7 +10,7 @@ import (
 
 // discoverSessionID determines the active session ID using the sophisticated hierarchy defined in
 // docs/sophisticated-auto-determination-of-session-id.md:
-// 1. Explicit Override (--session-id flag or OSM_SESSION_ID env)
+// 1. Explicit Override (--session flag or OSM_SESSION_ID env)
 // 2. Multiplexer (TMUX_PANE / STY)
 // 3. SSH Context (SSH_CONNECTION with client port)
 // 4. macOS GUI Terminal (TERM_SESSION_ID)

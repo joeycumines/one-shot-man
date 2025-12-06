@@ -56,7 +56,9 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 	}
 
 	// Initialize a new session if one doesn't exist
-	if session == nil {
+	isNewSession := session == nil
+	reinitialized := false
+	if isNewSession {
 		session = &storage.Session{
 			Version:     "1.0.0",
 			SessionID:   sessionID,
@@ -79,6 +81,7 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 				ScriptState: make(map[string]map[string]interface{}),
 				SharedState: make(map[string]interface{}),
 			}
+			reinitialized = true
 		}
 
 		// Ensure ScriptState and SharedState are initialized
@@ -111,18 +114,30 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 	// Immediately nil the session reference to allow GC
 	sm.session.History = nil
 
+	// Calculate truncation
+	startIndex := 0
+	if len(loadedHistory) > maxHistoryEntries {
+		startIndex = len(loadedHistory) - maxHistoryEntries
+	}
+
 	if len(loadedHistory) > 0 {
-		// Calculate truncation
-		startIndex := 0
-		if len(loadedHistory) > maxHistoryEntries {
-			startIndex = len(loadedHistory) - maxHistoryEntries
-		}
 
 		// Copy the truncated data into our new buffer
 		n := copy(sm.historyBuf, loadedHistory[startIndex:])
 
 		// Set the logical length
 		sm.historyLen = n
+	}
+
+	// If this is a brand new session or we reinitialized due to a version
+	// mismatch, persist it immediately so it becomes discoverable by other
+	// processes (e.g., `osm session list`) while this session is active.
+	// Perform this irrespective of loadedHistory length (including empty
+	// histories) so freshly-created sessions are written.
+	if isNewSession || reinitialized {
+		if err := sm.persistSessionInternal(); err != nil {
+			return nil, fmt.Errorf("failed to persist new session: %w", err)
+		}
 	}
 
 	return sm, nil

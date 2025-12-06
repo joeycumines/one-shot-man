@@ -217,10 +217,7 @@ func formatSessionID(namespace, payload string) string {
 	// the guarantee that all user-provided payloads carry a suffix.
 	if isInternalShortHex(payload) &&
 		len(payload) <= maxPayload &&
-		(namespace == NamespaceScreen ||
-			namespace == NamespaceSSH ||
-			namespace == NamespaceTerminal ||
-			namespace == NamespaceAnchor) {
+		isTrustedInternalNamespace(namespace) {
 		return namespace + NamespaceDelimiter + payload
 	}
 
@@ -285,6 +282,16 @@ func isInternalShortHex(s string) bool {
 		}
 	}
 	return true
+}
+
+// isTrustedInternalNamespace identifies if the given namespace
+// is one of the trusted internal detector sources that allow
+// the format-session bypass for 16-character internal hashes.
+func isTrustedInternalNamespace(ns string) bool {
+	return ns == NamespaceScreen ||
+		ns == NamespaceSSH ||
+		ns == NamespaceTerminal ||
+		ns == NamespaceAnchor
 }
 
 // getTmuxSessionID constructs a tmux session ID from TMUX_PANE and server PID.

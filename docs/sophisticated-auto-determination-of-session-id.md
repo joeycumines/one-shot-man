@@ -200,7 +200,7 @@ Returned source labels (exact strings returned by GetSessionID as the "source" v
 
 **Behavior:** If provided, this value is authoritative and bypasses all auto-discovery logic.
 
-**Suffix:** ALWAYS applied to prevent mimicry attacks, with one deliberate exception described below.
+**Suffix:** ALWAYS applied to prevent mimicry attacks. A single, well-scoped exception exists to allow resuming previously-generated *internal detector* IDs — see the consolidated exception below.
 - **Mini suffix** (`_XX`, 3 chars): When payload is safe (no sanitization, fits in length)
 - **Full suffix** (`_XXXXXXXXXXXXXXXX`, 17 chars): When sanitization OR truncation is required
 
@@ -213,13 +213,16 @@ Returned source labels (exact strings returned by GetSessionID as the "source" v
 - `"user/name"` → `"ex--user_name_a1b2c3d4e5f67890"` (sanitized, full suffix)
 - `"custom--value"` → `"custom--value_a1"` (pre-namespaced, safe payload, mini suffix)
 
-Note on resuming previously-discovered sessions:
+**Exception: Resuming Internal Detector Sessions**
 
- - The system intentionally allows a pre-namespaced explicit override to pass through verbatim when the namespace matches a trusted internal detector namespace (e.g., `ssh`, `screen`, `terminal`, `anchor`) and the payload is an internal 16-character lowercase hex. This exception allows callers to pass back a previously-generated detector ID (for example from a session listing) to resume that session's state unchanged.
+When an explicit override is provided in the fully namespaced form (contains `--`) the system will allow a verbatim pass-through only when ALL of the following conditions are met:
 
- - Example: `"ssh--a1b2c3d4e5f67890"` (explicit) → accepted verbatim as `ssh--a1b2c3d4e5f67890` so the session can be resumed.
+- The namespace is a trusted internal detector namespace: one of `ssh`, `screen`, `terminal`, `anchor`.
+- The payload is exactly 16 lowercase hex characters (a trusted internal short-hex detector output).
 
- - Security note: this bypass only applies to explicit values that are already correctly namespaced and whose payloads exactly match the internal 16-char lowercase hex format. All other user-provided values retain the mandatory suffix to avoid mimicry.
+This narrow exception exists so callers can re-use a previously-generated detector ID (for example from a session listing) to resume session state unchanged. Any other explicit override — including pre-namespaced values that do not match those two conditions — receives the normal mandatory suffixing logic to prevent mimicry.
+
+Example: `ssh--a1b2c3d4e5f67890` → accepted verbatim (resume). `ex--foo` or `custom--foo_a1b2` → processed with suffix rules.
 
 ### 2. Multiplexer Contexts
 
@@ -359,7 +362,9 @@ func formatSessionID(namespace, payload string) string {
 
 ### 2. Internal Short Hex Detection
 
-Internal detector payloads (screen, ssh, terminal, anchor) are exactly 16 lowercase hex characters. These are recognized and passed through without suffix:
+`isInternalShortHex` is a format validator for internal detector payloads (exactly 16 lowercase hex characters). It does NOT by itself grant a no-suffix bypass — the no-suffix pass-through is only applied when a payload is paired with a trusted internal detector namespace (see the `isTrustedInternalNamespace()` helper below).
+
+Internal detector payloads (screen, ssh, terminal, anchor) are exactly 16 lowercase hex characters and, when combined with a trusted namespace, are passed through without suffix:
 
 ```go
 func isInternalShortHex(s string) bool {
@@ -373,6 +378,16 @@ func isInternalShortHex(s string) bool {
         }
     }
     return true
+}
+
+// isTrustedInternalNamespace identifies if the given namespace
+// is one of the trusted internal detector sources that allow
+// the format-session bypass for 16-character internal hashes.
+func isTrustedInternalNamespace(ns string) bool {
+    return ns == NamespaceScreen ||
+           ns == NamespaceSSH ||
+           ns == NamespaceTerminal ||
+           ns == NamespaceAnchor
 }
 ```
 
@@ -1231,6 +1246,13 @@ When running as a standard user, the process ancestry walk may be unable to reac
   * **Impact:** This is acceptable for session identification purposes, as different user sessions will still have distinct anchors.
   * **Workaround:** Run `osm` with elevated privileges (Administrator) to reach system-level roots.
 
+### macOS: Non-Terminal.app Degradation
+
+Some third-party macOS terminal emulators (for example Alacritty, Kitty, WezTerm) do not populate the `TERM_SESSION_ID` environment variable. Because Deep Anchor is not implemented on macOS in this version, the discovery falls back to `TERM_SESSION_ID` when available and ultimately to a UUID fallback when it isn't. The practical effect:
+
+    * **Impact:** For terminals that do not set `TERM_SESSION_ID`, `osm` will typically return a random `uuid--...` session ID that does not persist across new terminal instances — i.e., no automatic session persistence.
+    * **Workarounds:** Use Terminal.app or iTerm2 (they provide `TERM_SESSION_ID`), run a multiplexer (`tmux`/`screen`) that survives reconnects, or set an explicit session via `--session-id` or `OSM_SESSION_ID`.
+
 ### Windows: Memory Safety
 
 The `getFileNameByHandle` function uses `encoding/binary` for safe memory access instead of direct pointer casting. This ensures proper operation on all architectures including ARM64 (e.g., Windows Dev Kit, Surface Pro X) where unaligned memory access can cause faults.
@@ -1243,7 +1265,7 @@ The `getFileNameByHandle` function uses `encoding/binary` for safe memory access
 |----------|--------|-------|
 | Linux | ✅ Complete | Verified robust against renaming/aliasing. Handles TASK_COMM_LEN truncation. |
 | Windows | ✅ Complete | Verified robust against renaming/aliasing. User-rooted when unprivileged. |
-| macOS/Darwin | ⚠️ Partial | Deep Anchor not implemented; relies on `TERM_SESSION_ID`. |
+| macOS/Darwin | ⚠️ Partial | Deep Anchor not implemented; relies on `TERM_SESSION_ID`. Terminals that do not set `TERM_SESSION_ID` (e.g., Alacritty) will fall back to UUID IDs that do not persist across restarts. |
 | BSD | ❌ Not Implemented | Stubs provided. |
 
 ### Summary of Conflict Resolutions
@@ -1254,7 +1276,7 @@ The `getFileNameByHandle` function uses `encoding/binary` for safe memory access
 * **Suffix Length Disambiguation:** ✅ RESOLVED. Two distinct suffix lengths: mini (3 chars: `_XX`) for safe payloads, full (17 chars: `_XXXXXXXXXXXXXXXX`) for sanitization/truncation. No overlap possible.
 * **Tmux Direct Construction:** ✅ RESOLVED. `getTmuxSessionID()` constructs ID directly without suffix (internal, not user-provided, always safe).
 * **UUID Direct Construction:** ✅ RESOLVED. `formatUUIDID()` constructs ID directly without suffix (internal, not user-provided).
-* **Internal Short Hex Detection:** ✅ RESOLVED. Payloads that are exactly 16 lowercase hex chars are recognized as internal detector outputs and passed through without suffix.
+* **Internal Short Hex Detection:** ✅ RESOLVED. Payloads that are exactly 16 lowercase hex chars are recognized as internal detector outputs and are passed through without suffix only when paired with a trusted internal detector namespace (ssh, screen, terminal, anchor). User-provided explicit overrides with other namespaces will still receive mandatory suffixing.
 * **SSH Concurrent Sessions:** ✅ RESOLVED. Includes client port in hash, ensuring uniqueness for concurrent sessions from same IP.
 * **Self-Anchoring Trap:** ✅ RESOLVED. Deep Anchor walk unconditionally skips the initiating process PID, preventing fragmentation if binary is renamed.
 * **CMD.EXE:** ✅ RESOLVED. Removed from Windows skip list; treated as a shell, not a wrapper.

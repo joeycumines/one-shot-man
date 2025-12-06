@@ -204,21 +204,6 @@ func formatSessionID(namespace, payload string) string {
 	originalPayloadHash := hashString(payload)
 	sanitized := sanitizePayload(payload)
 
-	// isInternalShortHex detects payloads that are already internal detector hashes.
-	// These are exactly ShortHashLength lowercase hex characters.
-	isInternalShortHex := func(s string) bool {
-		if len(s) != ShortHashLength {
-			return false
-		}
-		for i := 0; i < len(s); i++ {
-			c := s[i]
-			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
-				return false
-			}
-		}
-		return true
-	}
-
 	// Compute max payload length given namespace
 	maxPayload := MaxSessionIDLength - len(namespace) - len(NamespaceDelimiter)
 
@@ -285,6 +270,21 @@ func formatSessionID(namespace, payload string) string {
 	// a previously suffixed output.
 	miniSuffix := SuffixDelimiter + originalPayloadHash[:MiniSuffixHashLength]
 	return namespace + NamespaceDelimiter + sanitized + miniSuffix
+}
+
+// isInternalShortHex detects payloads that are already internal detector hashes.
+// These are exactly ShortHashLength lowercase hex characters.
+func isInternalShortHex(s string) bool {
+	if len(s) != ShortHashLength {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // getTmuxSessionID constructs a tmux session ID from TMUX_PANE and server PID.

@@ -47,7 +47,7 @@ All session IDs follow a **unified namespaced format** that satisfies four criti
 | `screen`   | GNU Screen **OR Explicit Resume**                               | `screen--a1b2c3d4e5f67890`                   | No (internal/valid) |
 | `ssh`      | SSH connection **OR Explicit Resume**                           | `ssh--f0e1d2c3b4a59687`                      | No (internal/valid) |
 | `terminal` | macOS Terminal.app / iTerm2 **OR Explicit Resume**              | `terminal--1234567890abcdef`                 | No (internal/valid) |
-| `anchor`   | Deep Anchor (process tree walk) **OR Explicit Resume**          | `anchor--abcd1234efgh5678`                   | No (internal/valid) |
+| `anchor`   | Deep Anchor (process tree walk) **OR Explicit Resume**          | `anchor--abcd1234ef345678`                   | No (internal/valid) |
 | `uuid`     | Random UUID fallback                                            | `uuid--550e8400-e29b-41d4-a716-446655440000` | No (internal)       |
 
 > **Note on Sources:** The "Source" column indicates the primary detection origin. However, the system allows the **Explicit** source (`--session-id`) to utilize internal namespaces (for example `tmux`, `ssh`, `screen`, `terminal`, `anchor`) to resume sessions, provided the payload passes strict format validation (see "Exception" below).

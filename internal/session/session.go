@@ -79,7 +79,7 @@ func GetSessionID(explicitOverride string) (string, string, error) {
 	if explicitOverride != "" {
 		return formatExplicitID(explicitOverride), "explicit-flag", nil
 	}
-	if envID := os.Getenv("OSM_SESSION_ID"); envID != "" {
+	if envID := os.Getenv("OSM_SESSION"); envID != "" {
 		return formatExplicitID(envID), "explicit-env", nil
 	}
 

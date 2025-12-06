@@ -45,17 +45,17 @@ func newTestProcessEnv(tb testing.TB) []string {
 	tb.Helper()
 	clipboardFile := filepath.Join(tb.(*testing.T).TempDir(), "clipboard.txt")
 	return []string{
-		"OSM_SESSION_ID=" + testutil.NewTestSessionID("test", tb.Name()),
-		"OSM_STORAGE_BACKEND=memory",
-		"ONESHOT_CLIPBOARD_CMD=cat > " + clipboardFile,
+		"OSM_SESSION=" + testutil.NewTestSessionID("test", tb.Name()),
+		"OSM_STORE=memory",
+		"OSM_CLIPBOARD=cat > " + clipboardFile,
 	}
 }
 
 func mustNewEngine(tb testing.TB, ctx context.Context, stdout, stderr io.Writer) *Engine {
 	tb.Helper()
 	// Set memory storage backend to prevent session lock warnings in tests
-	tb.Setenv("OSM_STORAGE_BACKEND", "memory")
-	tb.Setenv("OSM_SESSION_ID", testutil.NewTestSessionID("test", tb.Name()))
+	tb.Setenv("OSM_STORE", "memory")
+	tb.Setenv("OSM_SESSION", testutil.NewTestSessionID("test", tb.Name()))
 
 	// Create a context that will be cancelled when the test ends to prevent goroutine leaks
 	ctx, cancel := context.WithCancel(ctx)

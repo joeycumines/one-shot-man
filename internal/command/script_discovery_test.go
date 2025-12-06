@@ -104,7 +104,7 @@ func TestScriptDiscovery_LegacyPathsRespectsConfigEnv(t *testing.T) {
 		t.Fatalf("Failed to create config directory: %v", err)
 	}
 
-	t.Setenv("ONESHOTMAN_CONFIG", configPath)
+	t.Setenv("OSM_CONFIG", configPath)
 
 	cfg := config.NewConfig()
 	discovery := NewScriptDiscovery(cfg)
@@ -121,7 +121,7 @@ func TestScriptDiscovery_LegacyPathsRespectsConfigEnv(t *testing.T) {
 	}
 
 	if !found {
-		t.Errorf("Expected legacy paths to include %s when ONESHOTMAN_CONFIG is set, got %v", expected, paths)
+		t.Errorf("Expected legacy paths to include %s when OSM_CONFIG is set, got %v", expected, paths)
 	}
 }
 

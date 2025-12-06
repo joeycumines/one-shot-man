@@ -15,7 +15,7 @@ func TestCodeReviewCommand_DiffDefaultBehavior(t *testing.T) {
 	cmd.testMode = true
 	cmd.interactive = false
 	// avoid polluting real session storage
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{}, &stdout, &stderr)

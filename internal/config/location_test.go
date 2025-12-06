@@ -11,7 +11,7 @@ import (
 )
 
 func TestGetConfigPathEnvOverride(t *testing.T) {
-	t.Setenv("ONESHOTMAN_CONFIG", "/tmp/custom-config")
+	t.Setenv("OSM_CONFIG", "/tmp/custom-config")
 
 	got, err := GetConfigPath()
 	if err != nil {
@@ -32,7 +32,7 @@ func TestGetConfigPathDefault(t *testing.T) {
 		homeVar = "USERPROFILE"
 	}
 	t.Setenv(homeVar, dir)
-	t.Setenv("ONESHOTMAN_CONFIG", "")
+	t.Setenv("OSM_CONFIG", "")
 
 	got, err := GetConfigPath()
 	if err != nil {
@@ -48,7 +48,7 @@ func TestGetConfigPathDefault(t *testing.T) {
 func TestEnsureConfigDirCreatesDirectory(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "nested", "config")
-	t.Setenv("ONESHOTMAN_CONFIG", configPath)
+	t.Setenv("OSM_CONFIG", configPath)
 
 	if err := EnsureConfigDir(); err != nil {
 		t.Fatalf("EnsureConfigDir failed: %v", err)
@@ -72,7 +72,7 @@ func TestEnsureConfigDirFailsWhenParentIsFile(t *testing.T) {
 	}
 
 	configPath := filepath.Join(parent, "config")
-	t.Setenv("ONESHOTMAN_CONFIG", configPath)
+	t.Setenv("OSM_CONFIG", configPath)
 
 	err := EnsureConfigDir()
 	if err == nil {

@@ -33,7 +33,7 @@ func extractCommandHistory(entries []storage.HistoryEntry) []string {
 
 // NewTUIManagerWithConfig creates a new TUI manager with explicit session configuration.
 // This function should be used instead of NewTUIManager to avoid data races on global state.
-func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reader, output io.Writer, sessionID, storageBackend string) *TUIManager {
+func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reader, output io.Writer, sessionID, store string) *TUIManager {
 	// Discover session ID with explicit override
 	actualSessionID := discoverSessionID(sessionID)
 
@@ -69,10 +69,10 @@ func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reade
 	}
 
 	// Initialize state manager with explicit backend
-	stateManager, err := initializeStateManager(actualSessionID, storageBackend)
+	stateManager, err := initializeStateManager(actualSessionID, store)
 	if err != nil {
 		const memoryBackend = "memory"
-		if storageBackend == memoryBackend {
+		if store == memoryBackend {
 			panic(err)
 		}
 		_, _ = fmt.Fprintf(output, "Warning: Failed to initialize state persistence (session %q): %v\n", actualSessionID, err)

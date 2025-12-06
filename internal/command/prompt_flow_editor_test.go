@@ -31,11 +31,11 @@ func TestPromptFlow_GoalCommandOpensEditor(t *testing.T) {
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 50 * time.Second,
 		Env: []string{
-			"OSM_STORAGE_BACKEND=memory",
-			"OSM_SESSION_ID=" + uniqueSessionID(t),
+			"OSM_STORE=memory",
+			"OSM_SESSION=" + uniqueSessionID(t),
 			"EDITOR=" + editorScript,
 			"VISUAL=",
-			"ONESHOT_CLIPBOARD_CMD=cat > /dev/null",
+			"OSM_CLIPBOARD=cat > /dev/null",
 		},
 	}
 
@@ -84,11 +84,11 @@ func TestPromptFlow_UseCommandOpensEditor(t *testing.T) {
 		Args:           []string{"prompt-flow", "-i"},
 		DefaultTimeout: 15 * time.Second,
 		Env: []string{
-			"OSM_STORAGE_BACKEND=memory",
-			"OSM_SESSION_ID=" + uniqueSessionID(t),
+			"OSM_STORE=memory",
+			"OSM_SESSION=" + uniqueSessionID(t),
 			"EDITOR=" + editorScript,
 			"VISUAL=",
-			"ONESHOT_CLIPBOARD_CMD=cat > /dev/null",
+			"OSM_CLIPBOARD=cat > /dev/null",
 		},
 	}
 

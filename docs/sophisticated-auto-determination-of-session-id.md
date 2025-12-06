@@ -40,15 +40,15 @@ All session IDs follow a **unified namespaced format** that satisfies four criti
 
 ### Namespace Prefixes (Exhaustive)
 
-| Namespace  | Source                                                       | Example ID                                   | Suffix?             |
-|:-----------|:-------------------------------------------------------------|:---------------------------------------------|:--------------------|
-| `ex`       | Explicit override (`--session` flag or `OSM_SESSION_ID` env) | `ex--my-session_a1`                          | **Yes (always)**    |
-| `tmux`     | Tmux multiplexer **OR Explicit Resume**                      | `tmux--5_12345`                              | No (internal/valid) |
-| `screen`   | GNU Screen **OR Explicit Resume**                            | `screen--a1b2c3d4e5f67890`                   | No (internal/valid) |
-| `ssh`      | SSH connection **OR Explicit Resume**                        | `ssh--f0e1d2c3b4a59687`                      | No (internal/valid) |
-| `terminal` | macOS Terminal.app / iTerm2 **OR Explicit Resume**           | `terminal--1234567890abcdef`                 | No (internal/valid) |
-| `anchor`   | Deep Anchor (process tree walk) **OR Explicit Resume**       | `anchor--abcd1234ef345678`                   | No (internal/valid) |
-| `uuid`     | Random UUID fallback                                         | `uuid--550e8400-e29b-41d4-a716-446655440000` | No (internal)       |
+| Namespace  | Source                                                    | Example ID                                   | Suffix?             |
+|:-----------|:----------------------------------------------------------|:---------------------------------------------|:--------------------|
+| `ex`       | Explicit override (`--session` flag or `OSM_SESSION` env) | `ex--my-session_a1`                          | **Yes (always)**    |
+| `tmux`     | Tmux multiplexer **OR Explicit Resume**                   | `tmux--5_12345`                              | No (internal/valid) |
+| `screen`   | GNU Screen **OR Explicit Resume**                         | `screen--a1b2c3d4e5f67890`                   | No (internal/valid) |
+| `ssh`      | SSH connection **OR Explicit Resume**                     | `ssh--f0e1d2c3b4a59687`                      | No (internal/valid) |
+| `terminal` | macOS Terminal.app / iTerm2 **OR Explicit Resume**        | `terminal--1234567890abcdef`                 | No (internal/valid) |
+| `anchor`   | Deep Anchor (process tree walk) **OR Explicit Resume**    | `anchor--abcd1234ef345678`                   | No (internal/valid) |
+| `uuid`     | Random UUID fallback                                      | `uuid--550e8400-e29b-41d4-a716-446655440000` | No (internal)       |
 
 > **Note on Sources:** The "Source" column indicates the primary detection origin. However, the system allows the **Explicit** source (`--session`) to utilize internal namespaces (for example `tmux`, `ssh`, `screen`, `terminal`, `anchor`) to resume sessions, provided the payload passes strict format validation (see "Exception" below).
 
@@ -182,19 +182,19 @@ A well-designed session ID ensures that:
 
 The discovery mechanism follows a strict priority order. Higher-priority methods represent more specific or user-defined contexts.
 
-| Priority | Strategy          | Source                                   | Complexity | Suffix?          |
-|:---------|:------------------|:-----------------------------------------|:-----------|:-----------------|
-| 1        | Explicit Override | `--session` flag or `OSM_SESSION_ID` env | O(1)       | **Yes (always)** |
-| 2        | Multiplexer       | `TMUX_PANE`+`TMUX` / `STY` env vars      | O(1)       | No               |
-| 3        | SSH Context       | `SSH_CONNECTION` env                     | O(1)       | No               |
-| 4        | GUI Terminal      | `TERM_SESSION_ID` (macOS only)           | O(1)       | No               |
-| 5        | Deep Anchor       | Recursive process walk                   | O(depth)   | No               |
-| 6        | UUID Fallback     | Random generation                        | O(1)       | No               |
+| Priority | Strategy          | Source                                | Complexity | Suffix?          |
+|:---------|:------------------|:--------------------------------------|:-----------|:-----------------|
+| 1        | Explicit Override | `--session` flag or `OSM_SESSION` env | O(1)       | **Yes (always)** |
+| 2        | Multiplexer       | `TMUX_PANE`+`TMUX` / `STY` env vars   | O(1)       | No               |
+| 3        | SSH Context       | `SSH_CONNECTION` env                  | O(1)       | No               |
+| 4        | GUI Terminal      | `TERM_SESSION_ID` (macOS only)        | O(1)       | No               |
+| 5        | Deep Anchor       | Recursive process walk                | O(depth)   | No               |
+| 6        | UUID Fallback     | Random generation                     | O(1)       | No               |
 
 Returned source labels (exact strings returned by GetSessionID as the "source" value):
 
 - `explicit-flag`: returned when explicit override provided via CLI flag
-- `explicit-env`: returned when explicit override provided via the OSM_SESSION_ID environment variable
+- `explicit-env`: returned when explicit override provided via the OSM_SESSION environment variable
 - `tmux`: returned when `getTmuxSessionID()` succeeds
 - `screen`: returned when `STY` environment variable is present
 - `ssh-env`: returned when `SSH_CONNECTION` is present
@@ -204,7 +204,7 @@ Returned source labels (exact strings returned by GetSessionID as the "source" v
 
 ### 1. Explicit Overrides
 
-**Source:** User arguments (`--session` flag) or `OSM_SESSION_ID` environment variable (flag takes precedence).
+**Source:** User arguments (`--session` flag) or `OSM_SESSION` environment variable (flag takes precedence).
 
 **Behavior:** If provided, this value is authoritative and bypasses all auto-discovery logic.
 
@@ -1344,7 +1344,7 @@ When running as a standard user, the process ancestry walk may be unable to reac
 Some third-party macOS terminal emulators (for example Alacritty, Kitty, WezTerm) do not populate the `TERM_SESSION_ID` environment variable. Because Deep Anchor is not implemented on macOS in this version, the discovery falls back to `TERM_SESSION_ID` when available and ultimately to a UUID fallback when it isn't. The practical effect:
 
     * **Impact:** For terminals that do not set `TERM_SESSION_ID`, `osm` will typically return a random `uuid--...` session ID that does not persist across new terminal instances — i.e., no automatic session persistence.
-    * **Workarounds:** Use Terminal.app or iTerm2 (they provide `TERM_SESSION_ID`), run a multiplexer (`tmux`/`screen`) that survives reconnects, or set an explicit session via `--session` or `OSM_SESSION_ID`.
+    * **Workarounds:** Use Terminal.app or iTerm2 (they provide `TERM_SESSION_ID`), run a multiplexer (`tmux`/`screen`) that survives reconnects, or set an explicit session via `--session` or `OSM_SESSION`.
 
 ### Windows: Memory Safety
 

@@ -356,7 +356,7 @@ func TestPromptFlow_Unix_ListShowsMissing(t *testing.T) {
 	editorScript := createFakeEditor(t, workspace)
 
 	env := newTestProcessEnv(t)
-	env = append(env, "EDITOR="+editorScript, "VISUAL=", "ONESHOT_CLIPBOARD_CMD=cat > /dev/null")
+	env = append(env, "EDITOR="+editorScript, "VISUAL=", "OSM_CLIPBOARD=cat > /dev/null")
 
 	opts := termtest.Options{
 		CmdName:        binaryPath,
@@ -422,7 +422,7 @@ func TestPromptFlow_Unix_DiskReadInMeta(t *testing.T) {
 	editorScript := createFakeEditor(t, workspace)
 
 	env := newTestProcessEnv(t)
-	env = append(env, "EDITOR="+editorScript, "VISUAL=", "ONESHOT_CLIPBOARD_CMD=cat > /dev/null")
+	env = append(env, "EDITOR="+editorScript, "VISUAL=", "OSM_CLIPBOARD=cat > /dev/null")
 
 	opts := termtest.Options{
 		CmdName:        binaryPath,
@@ -961,7 +961,7 @@ func TestPromptFlow_Unix_MetaIncludesGitDiff(t *testing.T) {
 	env = append(env,
 		"EDITOR="+editorScript,
 		"VISUAL=",
-		"ONESHOT_CLIPBOARD_CMD=cat > /dev/null",
+		"OSM_CLIPBOARD=cat > /dev/null",
 		"GIT_AUTHOR_NAME=Test User",
 		"GIT_AUTHOR_EMAIL=test@example.com",
 		"GIT_COMMITTER_NAME=Test User",
@@ -1049,9 +1049,9 @@ func TestPromptFlow_Unix_ClipboardIntegration(t *testing.T) {
 	// This test needs to verify clipboard file contents, so create explicit clipboard file
 	clipboardFile := filepath.Join(t.TempDir(), "clipboard.txt")
 	env := []string{
-		"OSM_SESSION_ID=" + testutil.NewTestSessionID("test", t.Name()),
-		"OSM_STORAGE_BACKEND=memory",
-		"ONESHOT_CLIPBOARD_CMD=cat > " + clipboardFile,
+		"OSM_SESSION=" + testutil.NewTestSessionID("test", t.Name()),
+		"OSM_STORE=memory",
+		"OSM_CLIPBOARD=cat > " + clipboardFile,
 		"EDITOR=" + editorScript,
 		"VISUAL=",
 	}

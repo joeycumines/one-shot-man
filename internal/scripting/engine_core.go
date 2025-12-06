@@ -47,8 +47,8 @@ func NewEngine(ctx context.Context, stdout, stderr io.Writer) (*Engine, error) {
 }
 
 // NewEngineWithConfig creates a new JavaScript scripting engine with explicit session configuration.
-// sessionID and storageBackend parameters override environment-based discovery and avoid data races.
-func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionID, storageBackend string) (*Engine, error) {
+// sessionID and store parameters override environment-based discovery and avoid data races.
+func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionID, store string) (*Engine, error) {
 	// Get current working directory for context manager
 	workingDir, err := os.Getwd()
 	if err != nil {
@@ -85,7 +85,7 @@ func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionI
 	}
 
 	// Create TUI manager with explicit configuration (this also initializes StateManager)
-	engine.tuiManager = NewTUIManagerWithConfig(ctx, engine, os.Stdin, os.Stdout, sessionID, storageBackend)
+	engine.tuiManager = NewTUIManagerWithConfig(ctx, engine, os.Stdin, os.Stdout, sessionID, store)
 
 	// Register the shared symbols module properly through the require registry
 	engine.registry.RegisterNativeModule("osm:sharedStateSymbols", builtin.GetSharedSymbolsLoader(engine.tuiManager))

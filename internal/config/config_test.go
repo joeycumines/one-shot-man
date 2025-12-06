@@ -159,7 +159,7 @@ func TestLoadUsesConfigPathEnv(t *testing.T) {
 		t.Fatalf("failed to write config file: %v", err)
 	}
 
-	t.Setenv("ONESHOTMAN_CONFIG", path)
+	t.Setenv("OSM_CONFIG", path)
 
 	cfg, err := Load()
 	if err != nil {
@@ -174,7 +174,7 @@ func TestLoadUsesConfigPathEnv(t *testing.T) {
 func TestLoadNoFileReturnsEmptyConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/config"
-	t.Setenv("ONESHOTMAN_CONFIG", path)
+	t.Setenv("OSM_CONFIG", path)
 
 	cfg, err := Load()
 	if err != nil {

@@ -240,11 +240,11 @@ For comprehensive documentation of all configuration options, including script d
 #### Configuration Location
 
 - Default: `~/.one-shot-man/config`
-- Override with `ONESHOTMAN_CONFIG` environment variable
+- Override with `OSM_CONFIG` environment variable
 
 ```sh
 # Use custom config location
-export ONESHOTMAN_CONFIG=/path/to/custom/config
+export OSM_CONFIG=/path/to/custom/config
 osm init
 ```
 
@@ -580,7 +580,7 @@ make
 
 ```sh
 # Initialize with custom location
-ONESHOTMAN_CONFIG=/tmp/myconfig osm init
+OSM_CONFIG=/tmp/myconfig osm init
 
 # Force re-initialize
 osm init --force
@@ -588,11 +588,14 @@ osm init --force
 
 #### Environment Variables
 
-| Variable                | Description                                                                                                             |
-|:------------------------|:------------------------------------------------------------------------------------------------------------------------|
-| `VISUAL`                | The preferred command to launch a text editor. Takes precedence over `EDITOR`.                                          |
-| `EDITOR`                | A fallback command to launch a text editor if `VISUAL` is not set. Defaults to `nano`, `vi`, or `ed`.                   |
-| `ONESHOT_CLIPBOARD_CMD` | A user-defined shell command to use for copying text to the clipboard, overriding the built-in platform-specific logic. |
+| Variable        | Description                                                                                                             |
+|:----------------|:------------------------------------------------------------------------------------------------------------------------|
+| `VISUAL`        | The preferred command to launch a text editor. Takes precedence over `EDITOR`.                                          |
+| `EDITOR`        | A fallback command to launch a text editor if `VISUAL` is not set. Defaults to `nano`, `vi`, or `ed`.                   |
+| `OSM_CLIPBOARD` | A user-defined shell command to use for copying text to the clipboard, overriding the built-in platform-specific logic. |
+| `OSM_CONFIG`    | Path to the configuration file. Overrides the default location at `~/.one-shot-man/config`.                             |
+| `OSM_SESSION`   | Override the session ID used to store (and resume) interactive TUI state. Various commands also support `--session`.    |
+| `OSM_STORE`     | Session storage backend type. Supported: `fs` (default), `memory`. File storage persists session state between runs.    |
 
 -----
 

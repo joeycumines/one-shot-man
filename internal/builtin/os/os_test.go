@@ -141,7 +141,7 @@ func TestClipboardCopy(t *testing.T) {
 
 	// Use explicit command via environment.
 	outFile := filepath.Join(t.TempDir(), "clipboard.txt")
-	t.Setenv("ONESHOT_CLIPBOARD_CMD", "cat > "+outFile)
+	t.Setenv("OSM_CLIPBOARD", "cat > "+outFile)
 	_, err := clipboardFn(goja.Undefined(), runtime.ToValue("hello clipboard"))
 	if err != nil {
 		t.Fatalf("clipboardCopy with command failed: %v", err)
@@ -155,7 +155,7 @@ func TestClipboardCopy(t *testing.T) {
 	}
 
 	// Ensure fallback to sink when no commands are available.
-	t.Setenv("ONESHOT_CLIPBOARD_CMD", "")
+	t.Setenv("OSM_CLIPBOARD", "")
 	t.Setenv("PATH", filepath.Join(t.TempDir(), "empty-path"))
 	sinkMessages = nil
 	_, err = clipboardFn(goja.Undefined(), runtime.ToValue("alt"))

@@ -180,7 +180,7 @@ func TestInitCommandExistingConfigWithoutForce(t *testing.T) {
 	if err := os.WriteFile(configPath, []byte("existing"), 0600); err != nil {
 		t.Fatalf("failed to seed config: %v", err)
 	}
-	t.Setenv("ONESHOTMAN_CONFIG", configPath)
+	t.Setenv("OSM_CONFIG", configPath)
 
 	cmd := NewInitCommand()
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
@@ -211,7 +211,7 @@ func TestInitCommandExistingConfigWithoutForce(t *testing.T) {
 func TestInitCommandForceCreatesConfig(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "nested", "config")
-	t.Setenv("ONESHOTMAN_CONFIG", configPath)
+	t.Setenv("OSM_CONFIG", configPath)
 
 	cmd := NewInitCommand()
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)

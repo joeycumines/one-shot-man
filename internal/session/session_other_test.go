@@ -122,9 +122,9 @@ func TestGetSessionID_ExplicitOverride_AllPlatforms(t *testing.T) {
 // TestGetSessionID_EnvOverride_AllPlatforms verifies env var override works.
 func TestGetSessionID_EnvOverride_AllPlatforms(t *testing.T) {
 	os.Clearenv()
-	defer os.Unsetenv("OSM_SESSION_ID")
+	defer os.Unsetenv("OSM_SESSION")
 
-	os.Setenv("OSM_SESSION_ID", "env-test")
+	os.Setenv("OSM_SESSION", "env-test")
 
 	id, source, err := GetSessionID("")
 	if err != nil {

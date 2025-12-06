@@ -21,11 +21,11 @@ var codeReviewScript string
 // CodeReviewCommand provides the baked-in code-review script functionality.
 type CodeReviewCommand struct {
 	*BaseCommand
-	interactive    bool
-	testMode       bool
-	config         *config.Config
-	session        string
-	storageBackend string
+	interactive bool
+	testMode    bool
+	config      *config.Config
+	session     string
+	store       string
 }
 
 // NewCodeReviewCommand creates a new code-review command.
@@ -46,7 +46,7 @@ func (c *CodeReviewCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.interactive, "i", true, "Start interactive code review mode (short form, default)")
 	fs.BoolVar(&c.testMode, "test", false, "Enable test mode with verbose output")
 	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
-	fs.StringVar(&c.storageBackend, "storage-backend", "", "Storage backend to use: 'fs' (default) or 'memory'")
+	fs.StringVar(&c.store, "store", "", "Storage backend to use: 'fs' (default) or 'memory'")
 }
 
 // Execute runs the code-review command.
@@ -54,7 +54,7 @@ func (c *CodeReviewCommand) Execute(args []string, stdout, stderr io.Writer) err
 	ctx := context.Background()
 
 	// Create scripting engine with explicit session/storage configuration
-	engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.storageBackend)
+	engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.store)
 	if err != nil {
 		return fmt.Errorf("failed to create scripting engine: %w", err)
 	}

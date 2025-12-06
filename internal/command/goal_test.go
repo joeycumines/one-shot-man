@@ -57,7 +57,7 @@ func TestGoalCommand_ListGoals(t *testing.T) {
 	cmd.list = true
 
 	// keep test runs isolated from real session storage
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{}, &stdout, &stderr)
@@ -107,7 +107,7 @@ func TestGoalCommand_ListGoalsByCategory(t *testing.T) {
 	cmd.category = "testing"
 
 	// keep test runs isolated from real session storage
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{}, &stdout, &stderr)
@@ -247,7 +247,7 @@ func TestGoalCommand_UnknownGoal(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
 	// keep test runs isolated from real session storage
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{"nonexistent-goal"}, &stdout, &stderr)
@@ -271,7 +271,7 @@ func TestGoalCommand_RunGoal_Success_NonInteractive(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	// avoid polluting real session storage
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 	err := cmd.Execute(nil, &stdout, &stderr)
 	if err != nil {
@@ -299,7 +299,7 @@ func TestGoalCommand_RunGoal_Success_Interactive_Positional(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	// avoid polluting real session storage
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 	err := cmd.Execute([]string{"doc-generator"}, &stdout, &stderr)
 	if err != nil {
@@ -454,7 +454,7 @@ func TestGoalCommand_BannerIncludesNotableVariablesOnEnter(t *testing.T) {
 	cmd.testMode = true
 
 	// keep test isolated
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{"test-generator"}, &stdout, &stderr)

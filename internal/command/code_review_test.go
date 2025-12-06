@@ -19,7 +19,7 @@ func TestCodeReviewCommand_NonInteractive(t *testing.T) {
 	cmd.interactive = false
 
 	// avoid polluting real session storage
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{}, &stdout, &stderr)
@@ -130,7 +130,7 @@ func TestCodeReviewCommand_ExecuteWithArgs(t *testing.T) {
 	cmd.interactive = false
 
 	// keep tests isolated from real session storage
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	args := []string{"arg1", "arg2"}
@@ -163,7 +163,7 @@ func TestCodeReviewCommand_ConfigColorOverrides(t *testing.T) {
 	cmd.interactive = false
 
 	// keep tests isolated from real session storage
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{}, &stdout, &stderr)
@@ -188,7 +188,7 @@ func TestCodeReviewCommand_NilConfig(t *testing.T) {
 	cmd.interactive = false
 
 	// keep tests isolated from real session storage
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{}, &stdout, &stderr)

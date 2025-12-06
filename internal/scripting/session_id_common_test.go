@@ -45,15 +45,15 @@ func TestDiscoverSessionID_PrecedenceOverrideFlag(t *testing.T) {
 func TestDiscoverSessionID_PrecedenceEnvVar(t *testing.T) {
 	isolateEnv(t)
 
-	os.Setenv("OSM_SESSION_ID", "from-env")
-	// Even if TMUX_PANE is set, OSM_SESSION_ID should still win
+	os.Setenv("OSM_SESSION", "from-env")
+	// Even if TMUX_PANE is set, OSM_SESSION should still win
 	os.Setenv("TMUX", "1")
 	os.Setenv("TMUX_PANE", "%4")
 
 	got := discoverSessionID("")
 	// New format: ex--{payload}_{8hex} for explicit overrides (env var)
 	if !strings.HasPrefix(got, "ex--from-env_") {
-		t.Fatalf("OSM_SESSION_ID did not win precedence, got %q", got)
+		t.Fatalf("OSM_SESSION did not win precedence, got %q", got)
 	}
 }
 

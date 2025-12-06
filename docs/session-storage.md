@@ -303,7 +303,7 @@ The `osm` CLI features a sophisticated storage system designed for persistent st
 **Key Achievements:**
 - Shared state contracts are fully supported via `tui.createState`
 - ES6 Symbols enable cross-mode state sharing as originally designed
-- Built-in commands support `--session` and `--storage-backend` flags for explicit state sharing
+- Built-in commands support `--session` and `--store` flags for explicit state sharing
 - Scripts utilize shared contracts for common data like `contextItems`
 - Atomic writes, file locking, and session persistence ensure data integrity
 
@@ -362,13 +362,13 @@ registry.Register(command.NewGoalCommand(cfg, registry))
 
 Each command accepts storage-related flags:
 
-  - `--storage-backend`: Override storage backend (`fs` or `memory`)
+  - `--store`: Override storage backend (`fs` or `memory`)
   - `--session`: Override session ID for state persistence
 
 When executed, commands create a scripting engine with explicit configuration:
 
 ```go
-engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.storageBackend)
+engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.store)
 ```
 
 #### 3. Engine Creation (`internal/scripting/engine_core.go`)
@@ -376,7 +376,7 @@ engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.s
 `NewEngineWithConfig` creates the TUI manager with session and storage parameters:
 
 ```go
-engine.tuiManager = NewTUIManagerWithConfig(ctx, engine, os.Stdin, os.Stdout, sessionID, storageBackend)
+engine.tuiManager = NewTUIManagerWithConfig(ctx, engine, os.Stdin, os.Stdout, sessionID, store)
 ```
 
 #### 4. TUI Manager Initialization (`internal/scripting/tui_manager.go`)
@@ -384,7 +384,7 @@ engine.tuiManager = NewTUIManagerWithConfig(ctx, engine, os.Stdin, os.Stdout, se
 `NewTUIManagerWithConfig` initializes the state manager:
 
 ```go
-stateManager, err := initializeStateManager(actualSessionID, storageBackend)
+stateManager, err := initializeStateManager(actualSessionID, store)
 ```
 
 #### 5. State Manager Setup (`internal/scripting/session_id_common.go`)
@@ -392,8 +392,8 @@ stateManager, err := initializeStateManager(actualSessionID, storageBackend)
 `initializeStateManager` determines the backend and creates the state manager:
 
 1.  **Backend Selection** (precedence order):
-       - `storageBackend` parameter (from `--storage-backend` flag)
-       - `OSM_STORAGE_BACKEND` environment variable
+       - `store` parameter (from `--store` flag)
+       - `OSM_STORE` environment variable
        - Default: `"fs"` (filesystem backend)
 
 2.  **Backend Creation**:
@@ -411,7 +411,7 @@ stateManager, err := initializeStateManager(actualSessionID, storageBackend)
 Sessions are uniquely identified to enable state sharing and isolation. The discovery follows this precedence (from `session_id_common.go:discoverSessionID`):
 
 1.  `overrideSessionID` parameter (from `--session` command-line flag)
-2.  `OSM_SESSION_ID` environment variable
+2.  `OSM_SESSION` environment variable
 3.  **Terminal multiplexer identifiers** (checked before generic terminal path):
     - **tmux**: `TMUX_PANE` + hash of `TMUX` socket path to ensure uniqueness across multiple tmux servers (format: `tmux-{socketHash}-{paneID}`)
     - **screen**: `STY` environment variable (format: `screen-{STY}`)
@@ -811,14 +811,14 @@ This section provides implementation facts from inspecting the actual codebase t
 ### `session_id_common.go`
 - **discoverSessionID(overrideSessionID)**: Implements the session ID precedence logic
   - Parameter from flag takes priority
-  - `OSM_SESSION_ID` environment variable as second priority
+  - `OSM_SESSION` environment variable as second priority
   - Tmux detection: uses `TMUX_PANE` + SHA256 hash of TMUX socket path (first 8 chars) for server uniqueness
   - Screen detection: uses `STY` environment variable
   - Falls back to terminal device path via `getTerminalID()`
   - Then tries `TERM_SESSION_ID` (macOS) or `WINDOWID` (X11)
   - Generates UUID as final fallback
 - **initializeStateManager(sessionID, overrideBackend)**: Creates StateManager with backend fallback
-  - Uses precedence: parameter > `OSM_STORAGE_BACKEND` env var > "fs" default
+  - Uses precedence: parameter > `OSM_STORE` env var > "fs" default
   - If backend creation fails, automatically falls back to memory backend with warning message
   - Returns initialized StateManager with either requested or fallback backend
 
@@ -994,13 +994,13 @@ When updating embedded JavaScript scripts to use shared state:
 
 When adding session support to built-in commands:
 
-1.  **Add Fields**: Add `session` and `storageBackend` string fields to command struct.
+1.  **Add Fields**: Add `session` and `store` string fields to command struct.
 2.  **Add Flags**: In `SetupFlags`, add:
     ```go
     fs.StringVar(&c.session, "session", "", "Session ID for state persistence")
-    fs.StringVar(&c.storageBackend, "storage-backend", "", "Storage backend")
+    fs.StringVar(&c.store, "store", "", "Storage backend")
     ```
-3.  **Update Engine Creation**: Replace `scripting.NewEngine(ctx, stdout, stderr)` with `scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.storageBackend)`.
+3.  **Update Engine Creation**: Replace `scripting.NewEngine(ctx, stdout, stderr)` with `scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.store)`.
 
 ### For Users
 
@@ -1065,9 +1065,9 @@ If issues arise:
 
 Symbols provide unique, immutable identifiers that prevent key collisions while allowing descriptive metadata for persistence. They enable the core requirement of cross-mode state sharing.
 
-### Do built-in commands support `--session` and `--storage-backend` flags?
+### Do built-in commands support `--session` and `--store` flags?
 
-Yes — built-in commands expose `--session` and `--storage-backend` flags and construct the engine with `NewEngineWithConfig(ctx, stdout, stderr, session, storageBackend)`. This lets users explicitly control session IDs and the storage backend (for persistent or in-memory sessions).
+Yes — built-in commands expose `--session` and `--store` flags and construct the engine with `NewEngineWithConfig(ctx, stdout, stderr, session, store)`. This lets users explicitly control session IDs and the storage backend (for persistent or in-memory sessions).
 
 ### Can shared state be corrupted by concurrent access?
 
@@ -1151,17 +1151,17 @@ tui.registerMode({
 type MyCommand struct {
     *BaseCommand
     session        string
-    storageBackend string
+    store string
     // ... other fields
 }
 
 func (c *MyCommand) SetupFlags(fs *flag.FlagSet) {
     fs.StringVar(&c.session, "session", "", "Session ID for state persistence")
-    fs.StringVar(&c.storageBackend, "storage-backend", "", "Storage backend")
+    fs.StringVar(&c.store, "store", "", "Storage backend")
 }
 
 func (c *MyCommand) Execute(args []string, stdout, stderr io.Writer) error {
-    engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.storageBackend)
+    engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.store)
     // ... rest of implementation
 }
 ```
@@ -1325,7 +1325,7 @@ The storage system successfully enables interoperability between distinct OSM co
 
 1. **Shared State Contracts**: All commands use `tui.createState(commandName, definitions)` with shared symbols from `osm:sharedStateSymbols` to access shared `contextItems` via `shared.contextItems`.
 
-2. **Session Flags**: Commands support `--session` and `--storage-backend` flags for explicit session sharing.
+2. **Session Flags**: Commands support `--session` and `--store` flags for explicit session sharing.
 
 3. **State Persistence**: Shared state is persisted to configurable backends (filesystem or in-memory) and restored across command invocations.
 
@@ -1346,7 +1346,7 @@ Users can now perform workflows like:
 
 - **Automatic Discovery**: Session IDs are automatically determined via terminal path, environment variables, or UUID fallback
 - **Explicit Override**: Users can specify `--session custom-id` for cross-terminal sharing
-- **Backend Selection**: `--storage-backend fs` or `--storage-backend memory` controls persistence mechanism
+- **Backend Selection**: `--store fs` or `--store memory` controls persistence mechanism
 
 ### Benefits
 
@@ -1360,12 +1360,12 @@ Users can now perform workflows like:
 
 ### Environment Variables
 
-  - `OSM_STORAGE_BACKEND`: Default backend (`fs` or `memory`)
-  - `OSM_SESSION_ID`: Default session ID
+  - `OSM_STORE`: Default backend (`fs` or `memory`)
+  - `OSM_SESSION`: Default session ID
 
 ### Command Flags
 
-  - `--storage-backend`: Override backend for session
+  - `--store`: Override backend for session
   - `--session`: Override session ID
 
 ### Config File
@@ -1613,7 +1613,7 @@ The storage system successfully implements the original design intent of leverag
 
 **Successful Shared State Architecture**: Scripts use `tui.createState(commandName, definitions)` with shared symbols from `osm:sharedStateSymbols` for common data like `contextItems`, enabling access across all commands via `shared.contextItems`.
 
-**Session-Based Persistence**: Commands support `--session` and `--storage-backend` flags, allowing users to explicitly share state across commands and terminals.
+**Session-Based Persistence**: Commands support `--session` and `--store` flags, allowing users to explicitly share state across commands and terminals.
 
 **Robust Backend Implementation**: Filesystem backend with atomic writes, cross-platform file locking, and in-memory backend for testing, all supporting shared state persistence.
 

@@ -18,11 +18,11 @@ optionName remainingLineIsTheValue
 ## Configuration Location
 
 - **Default**: `~/.one-shot-man/config`
-- **Override**: Set `ONESHOTMAN_CONFIG` environment variable
+- **Override**: Set `OSM_CONFIG` environment variable
 
 ```bash
 # Use custom config location
-export ONESHOTMAN_CONFIG=/path/to/custom/config
+export OSM_CONFIG=/path/to/custom/config
 osm init
 ```
 
@@ -205,7 +205,7 @@ Scripts are resolved with the following priority (highest to lowest):
 
 1. **Current Working Directory Tree (Class 0)**: Script directories located in the current working directory or its descendants. Direct children outrank deeper paths.
 2. **Ancestor Directories (Class 1)**: Script directories that require traversing upward from the current working directory, ordered by the fewest `..` steps required.
-3. **User Configuration Scripts (Class 2)**: Paths beneath the resolved configuration directory (respects `ONESHOTMAN_CONFIG`), with shallower paths preferred.
+3. **User Configuration Scripts (Class 2)**: Paths beneath the resolved configuration directory (respects `OSM_CONFIG`), with shallower paths preferred.
 4. **Executable Scripts (Class 3)**: Directories relative to the one-shot-man executable, again ranked by proximity to the executable directory.
 5. **Other Scripts (Class 4)**: Any remaining locations.
 
@@ -456,7 +456,7 @@ Custom goal files are discovered using a sophisticated score-based prioritizatio
    - Must match patterns specified in `goal.path-patterns` (default: `osm-goals`, `goals`)
 
 3. **User Configuration Goals (Class 2)**
-   - `~/.one-shot-man/goals/` (or the directory specified by `ONESHOTMAN_CONFIG`)
+   - `~/.one-shot-man/goals/` (or the directory specified by `OSM_CONFIG`)
    - Shallower paths within the config directory are preferred
 
 4. **Executable Directory Goals (Class 3)**

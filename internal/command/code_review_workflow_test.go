@@ -73,7 +73,7 @@ func TestCodeReviewCommand_FullWorkflow(t *testing.T) {
 	cmd.testMode = true
 	cmd.interactive = false
 	// keep tests isolated from user session store
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{}, &stdout, &stderr)

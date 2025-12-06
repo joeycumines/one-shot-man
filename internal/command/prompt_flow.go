@@ -21,11 +21,11 @@ var promptFlowScript string
 // PromptFlowCommand provides the baked-in prompt-flow script functionality.
 type PromptFlowCommand struct {
 	*BaseCommand
-	interactive    bool
-	testMode       bool
-	config         *config.Config
-	session        string
-	storageBackend string
+	interactive bool
+	testMode    bool
+	config      *config.Config
+	session     string
+	store       string
 }
 
 // NewPromptFlowCommand creates a new prompt-flow command.
@@ -46,7 +46,7 @@ func (c *PromptFlowCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.interactive, "i", true, "Start interactive prompt flow mode (short form, default)")
 	fs.BoolVar(&c.testMode, "test", false, "Enable test mode with verbose output")
 	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
-	fs.StringVar(&c.storageBackend, "storage-backend", "", "Storage backend to use: 'fs' (default) or 'memory')")
+	fs.StringVar(&c.store, "store", "", "Storage backend to use: 'fs' (default) or 'memory'")
 }
 
 // Execute runs the prompt-flow command.
@@ -54,7 +54,7 @@ func (c *PromptFlowCommand) Execute(args []string, stdout, stderr io.Writer) err
 	ctx := context.Background()
 
 	// Create scripting engine with explicit session/storage configuration
-	engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.storageBackend)
+	engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.store)
 	if err != nil {
 		return fmt.Errorf("failed to create scripting engine: %w", err)
 	}

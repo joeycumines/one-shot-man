@@ -106,7 +106,7 @@ func TestSessionsID_ExplicitInputs_TableDriven(t *testing.T) {
 
 	for _, tc := range []struct {
 		name     string
-		input    string // value supplied either via OSM_SESSION_ID or --session
+		input    string // value supplied either via OSM_SESSION or --session
 		expected string // regexp the result must match
 	}{
 		{"unnamespaced-safe", "env-session", `^ex--env-session_[0-9a-f]{2}$`},
@@ -119,9 +119,9 @@ func TestSessionsID_ExplicitInputs_TableDriven(t *testing.T) {
 		{"custom-sanitization", "custom--user/name", `^custom--user_name_[0-9a-f]{16}$`},
 	} {
 		t.Run("env/"+tc.name, func(t *testing.T) {
-			old := os.Getenv("OSM_SESSION_ID")
-			defer func() { _ = os.Setenv("OSM_SESSION_ID", old) }()
-			if err := os.Setenv("OSM_SESSION_ID", tc.input); err != nil {
+			old := os.Getenv("OSM_SESSION")
+			defer func() { _ = os.Setenv("OSM_SESSION", old) }()
+			if err := os.Setenv("OSM_SESSION", tc.input); err != nil {
 				t.Fatalf("setenv: %v", err)
 			}
 
@@ -138,9 +138,9 @@ func TestSessionsID_ExplicitInputs_TableDriven(t *testing.T) {
 
 		t.Run("flag/"+tc.name, func(t *testing.T) {
 			// ensure env doesn't interfere
-			old := os.Getenv("OSM_SESSION_ID")
-			_ = os.Unsetenv("OSM_SESSION_ID")
-			defer func() { _ = os.Setenv("OSM_SESSION_ID", old) }()
+			old := os.Getenv("OSM_SESSION")
+			_ = os.Unsetenv("OSM_SESSION")
+			defer func() { _ = os.Setenv("OSM_SESSION", old) }()
 
 			var out bytes.Buffer
 			if err := cmd.Execute([]string{"id", "--session", tc.input}, &out, &out); err != nil {

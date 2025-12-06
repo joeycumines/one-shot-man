@@ -113,7 +113,7 @@ func runWithCapturedIO(t *testing.T, args []string) (string, string, error) {
 	t.Helper()
 
 	configDir := t.TempDir()
-	t.Setenv("ONESHOTMAN_CONFIG", filepath.Join(configDir, "config"))
+	t.Setenv("OSM_CONFIG", filepath.Join(configDir, "config"))
 
 	origArgs := os.Args
 	os.Args = args
@@ -171,7 +171,7 @@ func newTempFile(t *testing.T) *os.File {
 
 func TestMainInvokesRun(t *testing.T) {
 	configDir := t.TempDir()
-	t.Setenv("ONESHOTMAN_CONFIG", filepath.Join(configDir, "config"))
+	t.Setenv("OSM_CONFIG", filepath.Join(configDir, "config"))
 
 	origArgs := os.Args
 	os.Args = []string{"osm"}

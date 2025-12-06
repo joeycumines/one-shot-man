@@ -103,7 +103,7 @@ func TestScriptingCommand_Execute_NoScript(t *testing.T) {
 	t.Parallel()
 	cmd := NewScriptingCommand(config.NewConfig())
 	// ensure engine uses memory storage in tests
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 	var stdout, stderr bytes.Buffer
 
@@ -122,7 +122,7 @@ func TestScriptingCommand_Execute_ScriptFileNotFound(t *testing.T) {
 	t.Parallel()
 	cmd := NewScriptingCommand(config.NewConfig())
 	// ensure engine uses memory storage in tests
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 	var stdout, stderr bytes.Buffer
 
@@ -136,7 +136,7 @@ func TestScriptingCommand_Execute_ScriptFileSuccess(t *testing.T) {
 	cmd := NewScriptingCommand(config.NewConfig())
 	cmd.testMode = true
 	// prevent filesystem persistence from being used by tests
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	tmpDir := t.TempDir()
@@ -170,7 +170,7 @@ func TestScriptingCommand_Execute_ScriptFromScriptsDirectory(t *testing.T) {
 	cmd := NewScriptingCommand(config.NewConfig())
 	cmd.testMode = true
 	// prevent filesystem persistence from being used by tests
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	tmpDir := t.TempDir()
@@ -209,7 +209,7 @@ func TestScriptingCommand_Execute_InlineScript(t *testing.T) {
 	cmd := NewScriptingCommand(config.NewConfig())
 	cmd.testMode = true
 	cmd.script = "ctx.log('inline');"
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	var stdout, stderr bytes.Buffer
@@ -232,7 +232,7 @@ func TestScriptingCommand_Execute_Interactive(t *testing.T) {
 	}
 
 	cmd := NewScriptingCommand(cfg)
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 	cmd.interactive = true
 
@@ -271,7 +271,7 @@ func TestScriptingCommand_Execute_InlineScriptFailure(t *testing.T) {
 	t.Parallel()
 	cmd := NewScriptingCommand(config.NewConfig())
 	cmd.script = "throw new Error('kaboom')"
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	var stdout, stderr bytes.Buffer

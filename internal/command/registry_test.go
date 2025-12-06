@@ -75,7 +75,7 @@ func TestScriptPathDuplication(t *testing.T) {
 	}
 
 	configPath := filepath.Join(configDir, "config")
-	t.Setenv("ONESHOTMAN_CONFIG", configPath)
+	t.Setenv("OSM_CONFIG", configPath)
 
 	cfg := config.NewConfig()
 	cfg.SetGlobalOption("script.paths", strings.Join([]string{scriptsDir, "../custom-config/scripts"}, ","))

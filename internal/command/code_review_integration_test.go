@@ -18,7 +18,7 @@ func TestCodeReviewCommand_Integration(t *testing.T) {
 	cmd.interactive = false
 
 	// Use in-memory storage to avoid polluting real sessions
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{}, &stdout, &stderr)

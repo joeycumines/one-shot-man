@@ -10,7 +10,7 @@ import (
 
 // discoverSessionID determines the active session ID using the sophisticated hierarchy defined in
 // docs/sophisticated-auto-determination-of-session-id.md:
-// 1. Explicit Override (--session flag or OSM_SESSION_ID env)
+// 1. Explicit Override (--session flag or OSM_SESSION env)
 // 2. Multiplexer (TMUX_PANE / STY)
 // 3. SSH Context (SSH_CONNECTION with client port)
 // 4. macOS GUI Terminal (TERM_SESSION_ID)
@@ -34,12 +34,12 @@ func GetSessionID(overrideSessionID string) string {
 }
 
 // initializeStateManager creates and initializes a StateManager for the given session ID.
-// It uses the storage backend specified by overrideBackend parameter, OSM_STORAGE_BACKEND environment variable, or defaults to 'fs'.
+// It uses the storage backend specified by overrideBackend parameter, OSM_STORE environment variable, or defaults to 'fs'.
 func initializeStateManager(sessionID string, overrideBackend string) (*StateManager, error) {
 	// Determine which backend to use with proper precedence
 	backendName := overrideBackend
 	if backendName == "" {
-		backendName = os.Getenv("OSM_STORAGE_BACKEND")
+		backendName = os.Getenv("OSM_STORE")
 	}
 	if backendName == "" {
 		backendName = "fs" // Default to file system backend

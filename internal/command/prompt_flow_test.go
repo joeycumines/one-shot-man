@@ -21,7 +21,7 @@ func TestPromptFlowCommand_NonInteractive(t *testing.T) {
 	cmd.interactive = false
 
 	// prevent filesystem persistence from these tests
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{}, &stdout, &stderr)
@@ -137,7 +137,7 @@ func TestPromptFlowCommand_ExecuteWithArgs(t *testing.T) {
 	cmd.testMode = true
 	cmd.interactive = false
 
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	args := []string{"arg1", "arg2"}
@@ -170,7 +170,7 @@ func TestPromptFlowCommand_ConfigColorOverrides(t *testing.T) {
 	cmd.testMode = true
 	cmd.interactive = false
 
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{}, &stdout, &stderr)
@@ -195,7 +195,7 @@ func TestPromptFlowCommand_NilConfig(t *testing.T) {
 	cmd.testMode = true
 	cmd.interactive = false
 
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 
 	err := cmd.Execute([]string{}, &stdout, &stderr)
@@ -220,7 +220,7 @@ func TestPromptFlowCommand_TemplateContent(t *testing.T) {
 	// Test with test mode enabled
 	cmd.testMode = true
 	// do not persist session state to user directories in tests
-	cmd.storageBackend = "memory"
+	cmd.store = "memory"
 	cmd.session = t.Name()
 	cmd.interactive = false
 

@@ -148,7 +148,7 @@ func openEditor(ctx context.Context, nameHint string, initialContent string) str
 }
 
 func clipboardCopy(ctx context.Context, tuiSink func(string), text string) error {
-	if cmdStr := os.Getenv("ONESHOT_CLIPBOARD_CMD"); cmdStr != "" {
+	if cmdStr := os.Getenv("OSM_CLIPBOARD"); cmdStr != "" {
 		var c *exec.Cmd
 		if runtime.GOOS == "windows" {
 			c = exec.CommandContext(ctx, "cmd", "/c", cmdStr)

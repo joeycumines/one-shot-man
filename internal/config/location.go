@@ -6,11 +6,11 @@ import (
 )
 
 // GetConfigPath returns the configuration file path using kubectl-style behavior.
-// It first checks the ONESHOTMAN_CONFIG environment variable, then falls back
+// It first checks the OSM_CONFIG environment variable, then falls back
 // to the default location (~/.one-shot-man/config).
 func GetConfigPath() (string, error) {
 	// Check for environment variable override
-	if configPath := os.Getenv("ONESHOTMAN_CONFIG"); configPath != "" {
+	if configPath := os.Getenv("OSM_CONFIG"); configPath != "" {
 		return configPath, nil
 	}
 

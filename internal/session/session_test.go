@@ -15,11 +15,11 @@ import (
 // =============================================================================
 
 // TestPriorityHierarchy_ExplicitFlagIsHighestPriority verifies that explicit flag
-// takes precedence over ALL other methods including OSM_SESSION_ID env.
+// takes precedence over ALL other methods including OSM_SESSION env.
 func TestPriorityHierarchy_ExplicitFlagIsHighestPriority(t *testing.T) {
 	os.Clearenv()
 	defer func() {
-		os.Unsetenv("OSM_SESSION_ID")
+		os.Unsetenv("OSM_SESSION")
 		os.Unsetenv("TMUX_PANE")
 		os.Unsetenv("STY")
 		os.Unsetenv("SSH_CONNECTION")
@@ -27,7 +27,7 @@ func TestPriorityHierarchy_ExplicitFlagIsHighestPriority(t *testing.T) {
 	}()
 
 	// Set all possible environment variables
-	os.Setenv("OSM_SESSION_ID", "env-session")
+	os.Setenv("OSM_SESSION", "env-session")
 	os.Setenv("TMUX_PANE", "%0")
 	os.Setenv("STY", "12345.pts-0.host")
 	os.Setenv("SSH_CONNECTION", "192.168.1.100 12345 192.168.1.1 22")
@@ -48,17 +48,17 @@ func TestPriorityHierarchy_ExplicitFlagIsHighestPriority(t *testing.T) {
 	}
 }
 
-// TestPriorityHierarchy_EnvOverridesMultiplexer verifies OSM_SESSION_ID env
+// TestPriorityHierarchy_EnvOverridesMultiplexer verifies OSM_SESSION env
 // takes precedence over multiplexer detection.
 func TestPriorityHierarchy_EnvOverridesMultiplexer(t *testing.T) {
 	os.Clearenv()
 	defer func() {
-		os.Unsetenv("OSM_SESSION_ID")
+		os.Unsetenv("OSM_SESSION")
 		os.Unsetenv("TMUX_PANE")
 		os.Unsetenv("STY")
 	}()
 
-	os.Setenv("OSM_SESSION_ID", "env-session")
+	os.Setenv("OSM_SESSION", "env-session")
 	os.Setenv("TMUX_PANE", "%0")
 	os.Setenv("STY", "12345.pts-0.host")
 
@@ -147,8 +147,8 @@ func TestGetSessionID_ExplicitOverride(t *testing.T) {
 
 func TestGetSessionID_EnvVarOverride(t *testing.T) {
 	os.Clearenv()
-	defer os.Unsetenv("OSM_SESSION_ID")
-	os.Setenv("OSM_SESSION_ID", "from-env")
+	defer os.Unsetenv("OSM_SESSION")
+	os.Setenv("OSM_SESSION", "from-env")
 
 	id, source, err := GetSessionID("")
 	if err != nil {
@@ -167,8 +167,8 @@ func TestGetSessionID_EnvVarOverride(t *testing.T) {
 
 func TestGetSessionID_ExplicitFlagOverridesEnv(t *testing.T) {
 	os.Clearenv()
-	defer os.Unsetenv("OSM_SESSION_ID")
-	os.Setenv("OSM_SESSION_ID", "from-env")
+	defer os.Unsetenv("OSM_SESSION")
+	os.Setenv("OSM_SESSION", "from-env")
 
 	id, source, err := GetSessionID("from-flag")
 	if err != nil {
@@ -189,8 +189,8 @@ func TestGetSessionID_ExplicitFlagOverridesEnv(t *testing.T) {
 // empty string is not treated as an explicit override.
 func TestGetSessionID_ExplicitOverride_EmptyStringIsNotOverride(t *testing.T) {
 	os.Clearenv()
-	defer os.Unsetenv("OSM_SESSION_ID")
-	os.Setenv("OSM_SESSION_ID", "from-env")
+	defer os.Unsetenv("OSM_SESSION")
+	os.Setenv("OSM_SESSION", "from-env")
 
 	id, source, _ := GetSessionID("")
 	if source == "explicit-flag" {

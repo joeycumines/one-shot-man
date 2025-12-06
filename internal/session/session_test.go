@@ -250,6 +250,36 @@ func TestGetSessionID_ExplicitPreNamespaced_InternalPassthrough(t *testing.T) {
 	}
 }
 
+// New test: tmux pre-namespaced explicit should pass through unchanged
+func TestGetSessionID_ExplicitPreNamespaced_TmuxPassthrough(t *testing.T) {
+	os.Clearenv()
+
+	explicit := "tmux--5_12345"
+
+	id, source, err := GetSessionID(explicit)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if id != explicit {
+		t.Fatalf("expected explicit pre-namespaced tmux id to pass through unchanged, got %q", id)
+	}
+
+	if source != "explicit-flag" {
+		t.Fatalf("expected source explicit-flag for explicit pre-namespaced input, got %q", source)
+	}
+}
+
+// Test formatSessionID allows tmux payloads (digits_digit) to be returned verbatim
+func TestFormatSessionID_TmuxPayloadBypass(t *testing.T) {
+	payload := "5_12345"
+	result := formatSessionID(NamespaceTmux, payload)
+
+	if result != "tmux--5_12345" {
+		t.Fatalf("expected tmux--5_12345, got %q", result)
+	}
+}
+
 func TestFormatSessionID_SanitizationAppendsHash(t *testing.T) {
 	// Different raw inputs that sanitize to the same string must not collide.
 	idA := formatSessionID(NamespaceExplicit, "user/name") // Requires sanitization (/ -> _)

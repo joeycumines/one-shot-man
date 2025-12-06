@@ -215,9 +215,9 @@ func formatSessionID(namespace, payload string) string {
 	// For user-controlled namespaces (explicit overrides, custom prefixes), even
 	// a 16-char hex payload MUST still go through the suffix logic to preserve
 	// the guarantee that all user-provided payloads carry a suffix.
-	if isInternalShortHex(payload) &&
-		len(payload) <= maxPayload &&
-		isTrustedInternalNamespace(namespace) {
+	if len(payload) <= maxPayload &&
+		((isTrustedHexNamespace(namespace) && isInternalShortHex(payload)) ||
+			(namespace == NamespaceTmux && isTmuxPayload(payload))) {
 		return namespace + NamespaceDelimiter + payload
 	}
 
@@ -287,11 +287,43 @@ func isInternalShortHex(s string) bool {
 // isTrustedInternalNamespace identifies if the given namespace
 // is one of the trusted internal detector sources that allow
 // the format-session bypass for 16-character internal hashes.
-func isTrustedInternalNamespace(ns string) bool {
+// isTrustedHexNamespace identifies if the given namespace
+// is one of the trusted internal detector sources that allow
+// the format-session bypass for 16-character internal hashes.
+func isTrustedHexNamespace(ns string) bool {
 	return ns == NamespaceScreen ||
 		ns == NamespaceSSH ||
 		ns == NamespaceTerminal ||
 		ns == NamespaceAnchor
+}
+
+// isTmuxPayload validates a tmux payload in the form of
+// digits + underscore + digits (e.g. "5_12345"). This format
+// is explicitly allowed verbatim for the tmux namespace.
+func isTmuxPayload(s string) bool {
+	if s == "" {
+		return false
+	}
+	// Must contain exactly one underscore separating two numeric parts
+	parts := strings.Split(s, "_")
+	if len(parts) != 2 {
+		return false
+	}
+	left, right := parts[0], parts[1]
+	if left == "" || right == "" {
+		return false
+	}
+	for _, r := range left {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	for _, r := range right {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // getTmuxSessionID constructs a tmux session ID from TMUX_PANE and server PID.

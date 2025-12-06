@@ -355,10 +355,10 @@ func formatSessionID(namespace, payload string) string {
 	// CASE 1: Trusted internal payloads - return verbatim (no suffix).
 	// Allows resuming previously-generated internal IDs (e.g. from session listings).
 	// Validation is namespace-specific and must be strict.
-	isResumableHex := isInternalShortHex(payload) && isTrustedHexNamespace(namespace)
-	isResumableTmux := isTmuxPayload(payload) && namespace == NamespaceTmux
+	isResumableHex := isTrustedHexNamespace(namespace) && isInternalShortHex(payload)
+	isResumableTmux := namespace == NamespaceTmux && isTmuxPayload(payload)
 
-	if (isResumableHex || isResumableTmux) && len(payload) <= maxPayload {
+	if len(payload) <= maxPayload && (isResumableHex || isResumableTmux) {
 		return namespace + NamespaceDelimiter + payload
 	}
 

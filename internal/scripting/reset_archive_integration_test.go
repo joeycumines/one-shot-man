@@ -44,7 +44,7 @@ func TestResetArchiveIntegration_FileSystemBackend(t *testing.T) {
 
 	initialSession := &storage.Session{
 		Version:   "1.0.0",
-		SessionID: sessionID,
+		ID:        sessionID,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 		SharedState: map[string]interface{}{
@@ -239,7 +239,7 @@ func TestMultipleResets_ArchiveCounter(t *testing.T) {
 		// Create state
 		session := &storage.Session{
 			Version:     "1.0.0",
-			SessionID:   sessionID,
+			ID:          sessionID,
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
 			SharedState: map[string]interface{}{"value": fmt.Sprintf("cycle-%d", i)},

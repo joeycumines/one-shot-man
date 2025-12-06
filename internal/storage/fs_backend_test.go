@@ -134,7 +134,7 @@ func TestFileSystemBackend_SaveAndLoadSession(t *testing.T) {
 
 	sessionID := "test-session-save-load"
 	originalSession := &Session{
-		SessionID: sessionID,
+		ID:        sessionID,
 		CreatedAt: time.Now().Truncate(time.Second), // Truncate for comparison
 		History: []HistoryEntry{
 			{EntryID: "1", Command: "test"},
@@ -218,8 +218,8 @@ func TestFileSystemBackend_SaveAndLoadSession(t *testing.T) {
 	if loadedSession == nil {
 		t.Fatal("LoadSession() returned nil session")
 	}
-	if loadedSession.SessionID != originalSession.SessionID {
-		t.Errorf("SessionID mismatch")
+	if loadedSession.ID != originalSession.ID {
+		t.Errorf("ID mismatch")
 	}
 	if len(loadedSession.History) != len(originalSession.History) {
 		t.Errorf("History length mismatch")
@@ -255,7 +255,7 @@ func TestFileSystemBackend_ErrorScenarios(t *testing.T) {
 	})
 
 	t.Run("save with id mismatch", func(t *testing.T) {
-		s := &Session{SessionID: "wrong-id"}
+		s := &Session{ID: "wrong-id"}
 		err := backend.SaveSession(s)
 		if err == nil {
 			t.Error("expected error for session ID mismatch, got nil")
@@ -280,7 +280,7 @@ func TestFileSystemBackend_ErrorScenarios(t *testing.T) {
 
 	t.Run("load version mismatch - backend returns session", func(t *testing.T) {
 		sessionPath, _ := SessionFilePath(sessionID)
-		mismatchedSession := fmt.Sprintf(`{"version": "0.0.1", "session_id": %q}`, sessionID)
+		mismatchedSession := fmt.Sprintf(`{"version": "0.0.1", "id": %q}`, sessionID)
 		// Manually write data with wrong version
 		if err := os.WriteFile(sessionPath, []byte(mismatchedSession), 0644); err != nil {
 			t.Fatalf("failed to write mismatched version file: %v", err)
@@ -312,7 +312,7 @@ func TestFileSystemBackend_ArchiveSession_ExclusiveCreate(t *testing.T) {
 	defer backend.Close()
 
 	// Save an initial session so session file exists
-	s := &Session{SessionID: sessionID, CreatedAt: time.Now(), UpdatedAt: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
+	s := &Session{ID: sessionID, CreatedAt: time.Now(), UpdatedAt: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
 	if err := backend.SaveSession(s); err != nil {
 		t.Fatalf("SaveSession failed: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestFileSystemBackend_ArchiveSession_ConcurrentExclusive(t *testing.T) {
 	defer backend.Close()
 
 	// Save an initial session so session file exists
-	s := &Session{SessionID: sessionID, CreatedAt: time.Now(), UpdatedAt: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
+	s := &Session{ID: sessionID, CreatedAt: time.Now(), UpdatedAt: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
 	if err := backend.SaveSession(s); err != nil {
 		t.Fatalf("SaveSession failed: %v", err)
 	}
@@ -440,7 +440,7 @@ func TestFileSystemBackend_ArchiveSession_PreserveArchiveOnSourceRemoveFailure(t
 	defer backend.Close()
 
 	// Save an initial session so session file exists
-	s := &Session{SessionID: sessionID, CreatedAt: time.Now(), UpdatedAt: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
+	s := &Session{ID: sessionID, CreatedAt: time.Now(), UpdatedAt: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
 	if err := backend.SaveSession(s); err != nil {
 		t.Fatalf("SaveSession failed: %v", err)
 	}

@@ -62,8 +62,8 @@ func (b *InMemoryBackend) LoadSession(sessionID string) (*Session, error) {
 
 // SaveSession atomically persists the entire session state.
 func (b *InMemoryBackend) SaveSession(session *Session) error {
-	if session.SessionID != b.sessionID {
-		return fmt.Errorf("session ID mismatch: backend is for %q, session has %q", b.sessionID, session.SessionID)
+	if session.ID != b.sessionID {
+		return fmt.Errorf("session ID mismatch: backend is for %q, session has %q", b.sessionID, session.ID)
 	}
 
 	// Create a deep copy to prevent external modification
@@ -78,7 +78,7 @@ func (b *InMemoryBackend) SaveSession(session *Session) error {
 	}
 
 	globalInMemoryStore.Lock()
-	globalInMemoryStore.sessions[session.SessionID] = &copied
+	globalInMemoryStore.sessions[session.ID] = &copied
 	globalInMemoryStore.Unlock()
 
 	return nil

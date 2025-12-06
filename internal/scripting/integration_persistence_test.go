@@ -484,8 +484,8 @@ func TestSigintPersistence(t *testing.T) {
 		t.Fatalf("Failed to parse session file: %v", err)
 	}
 
-	if session.SessionID != expectedSessionID {
-		t.Errorf("Session ID mismatch: expected %s, got %s", expectedSessionID, session.SessionID)
+	if session.ID != expectedSessionID {
+		t.Errorf("Session ID mismatch: expected %s, got %s", expectedSessionID, session.ID)
 	}
 
 	// Verify the state was saved in the new schema

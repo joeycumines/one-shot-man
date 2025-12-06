@@ -9,7 +9,7 @@ import (
 // Future enhancements may include history pruning settings (e.g., max entry count) to manage file size.
 type Session struct {
 	Version     string                            `json:"version"`      // Schema version, e.g., "1.0.0", for forward-compatibility and migration logic.
-	SessionID   string                            `json:"session_id"`   // Unique identifier for this session.
+	ID          string                            `json:"id"`           // Unique identifier for this session.
 	CreatedAt   time.Time                         `json:"created_at"`   // Timestamp of session creation.
 	UpdatedAt   time.Time                         `json:"updated_at"`   // Timestamp of the last state modification.
 	History     []HistoryEntry                    `json:"history"`      // A chronological log of all commands.

@@ -612,7 +612,7 @@ internal/builtin/shared_symbols.go
     ```go
     type Session struct {
         Version     string                            `json:"version"`
-        SessionID   string                            `json:"session_id"`
+        ID          string                            `json:"id"`
         CreatedAt   time.Time                         `json:"created_at"`
         UpdatedAt   time.Time                         `json:"updated_at"`
         History     []HistoryEntry                    `json:"history"`

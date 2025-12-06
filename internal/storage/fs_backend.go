@@ -85,11 +85,11 @@ func (b *FileSystemBackend) LoadSession(sessionID string) (*Session, error) {
 
 // SaveSession atomically persists the entire session state.
 func (b *FileSystemBackend) SaveSession(session *Session) error {
-	if session.SessionID != b.sessionID {
-		return fmt.Errorf("session ID mismatch: backend is locked for %q, session has %q", b.sessionID, session.SessionID)
+	if session.ID != b.sessionID {
+		return fmt.Errorf("session ID mismatch: backend is locked for %q, session has %q", b.sessionID, session.ID)
 	}
 
-	sessionPath, err := SessionFilePath(session.SessionID)
+	sessionPath, err := SessionFilePath(session.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get session file path: %w", err)
 	}

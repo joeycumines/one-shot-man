@@ -63,8 +63,8 @@ func TestNewStateManager_InitializesNewSession(t *testing.T) {
 	if sm.session == nil {
 		t.Fatal("session was not initialized")
 	}
-	if sm.session.SessionID != sessionID {
-		t.Errorf("expected SessionID %q, got %q", sessionID, sm.session.SessionID)
+	if sm.session.ID != sessionID {
+		t.Errorf("expected ID %q, got %q", sessionID, sm.session.ID)
 	}
 	if sm.session.Version != "1.0.0" {
 		t.Errorf("expected Version 1.0.0, got %q", sm.session.Version)
@@ -103,14 +103,14 @@ func TestNewStateManager_PersistsNewSession(t *testing.T) {
 
 func TestNewStateManager_PersistsAfterVersionMismatch(t *testing.T) {
 	oldSession := &storage.Session{
-		Version:   "0.9.0",
-		SessionID: "test-session-mismatch",
+		Version: "0.9.0",
+		ID:      "test-session-mismatch",
 	}
 	backend := &mockBackend{
 		session: oldSession,
 	}
 
-	sm, err := NewStateManager(backend, oldSession.SessionID)
+	sm, err := NewStateManager(backend, oldSession.ID)
 	if err != nil {
 		t.Fatalf("NewStateManager failed: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestNewStateManager_PersistsAfterVersionMismatch(t *testing.T) {
 func TestNewStateManager_LoadsExistingSession(t *testing.T) {
 	existingSession := &storage.Session{
 		Version:     "1.0.0",
-		SessionID:   "test-session-existing",
+		ID:          "test-session-existing",
 		CreatedAt:   time.Now().Add(-24 * time.Hour),
 		UpdatedAt:   time.Now().Add(-1 * time.Hour),
 		History:     []storage.HistoryEntry{{EntryID: "1", Command: "test"}},
@@ -135,7 +135,7 @@ func TestNewStateManager_LoadsExistingSession(t *testing.T) {
 		session: existingSession,
 	}
 
-	sm, err := NewStateManager(backend, existingSession.SessionID)
+	sm, err := NewStateManager(backend, existingSession.ID)
 	if err != nil {
 		t.Fatalf("NewStateManager failed: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestNewStateManager_LoadsExistingSession(t *testing.T) {
 func TestNewStateManager_RecoversFromVersionMismatch(t *testing.T) {
 	oldSession := &storage.Session{
 		Version:     "0.9.0", // Old version
-		SessionID:   "test-session-old",
+		ID:          "test-session-old",
 		CreatedAt:   time.Now().Add(-24 * time.Hour),
 		UpdatedAt:   time.Now().Add(-1 * time.Hour),
 		History:     []storage.HistoryEntry{{EntryID: "1", Command: "test"}},
@@ -164,7 +164,7 @@ func TestNewStateManager_RecoversFromVersionMismatch(t *testing.T) {
 		session: oldSession,
 	}
 
-	sm, err := NewStateManager(backend, oldSession.SessionID)
+	sm, err := NewStateManager(backend, oldSession.ID)
 	if err != nil {
 		t.Fatalf("NewStateManager failed: %v", err)
 	}
@@ -452,7 +452,7 @@ func TestHistory_TruncateOnLoad(t *testing.T) {
 
 	existingSession := &storage.Session{
 		Version:     "1.0.0",
-		SessionID:   "test-session-truncate",
+		ID:          "test-session-truncate",
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 		History:     largeHistory,
@@ -465,7 +465,7 @@ func TestHistory_TruncateOnLoad(t *testing.T) {
 	}
 
 	// Action: Load the session
-	sm, err := NewStateManager(backend, existingSession.SessionID)
+	sm, err := NewStateManager(backend, existingSession.ID)
 	if err != nil {
 		t.Fatalf("NewStateManager failed: %v", err)
 	}

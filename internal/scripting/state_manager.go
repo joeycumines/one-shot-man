@@ -61,7 +61,7 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 	if isNewSession {
 		session = &storage.Session{
 			Version:     "1.0.0",
-			SessionID:   sessionID,
+			ID:          sessionID,
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
 			History:     []storage.HistoryEntry{},
@@ -74,7 +74,7 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 			log.Printf("WARNING: Session schema version mismatch. Expected 1.0.0, got %s. Starting fresh session.", session.Version)
 			session = &storage.Session{
 				Version:     "1.0.0",
-				SessionID:   sessionID,
+				ID:          sessionID,
 				CreatedAt:   time.Now(),
 				UpdatedAt:   time.Now(),
 				History:     []storage.HistoryEntry{},

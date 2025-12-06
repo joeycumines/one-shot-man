@@ -8,13 +8,13 @@ import (
 
 // SessionInfo holds lightweight metadata for a session file discovered on disk.
 type SessionInfo struct {
-	ID        string
-	Path      string
-	LockPath  string
-	Size      int64
-	UpdatedAt time.Time
-	CreatedAt time.Time
-	IsActive  bool
+	ID        string    `json:"id"`
+	Path      string    `json:"path"`
+	LockPath  string    `json:"lockPath"`
+	Size      int64     `json:"size"`
+	UpdatedAt time.Time `json:"updatedAt"`
+	CreatedAt time.Time `json:"createdAt"`
+	IsActive  bool      `json:"isActive"`
 }
 
 // ScanSessions inspects the configured sessions directory and returns a slice

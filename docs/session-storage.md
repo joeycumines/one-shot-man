@@ -258,6 +258,24 @@ The absence of session cleanup mechanisms represents a significant gap in the st
   - `osm session clean` - Run automatic cleanup based on policies
   - `osm session info <session-id>` - Show detailed session information
 
+  ### `osm session list` options
+
+  `osm session list` supports two optional flags to control output format and ordering:
+
+  - `-format <text|json>`
+    - `text` (default): human-readable table lines, one session per line: `ID\tUpdatedAt\tSize\tstate`.
+    - `json`: pretty-printed JSON array of `SessionInfo` objects (fields: `id`, `path`, `lockPath`, `size`, `updatedAt`, `createdAt`, `isActive`).
+      Note: these are the actual JSON key names produced by the CLI — they are case-sensitive. For example, using `jq` you must access `.id` (not `.ID`).
+
+  - `-sort <default|active>`
+    - `default` (unchanged): preserves the scanner's ordering (filesystem discovery order).
+    - `active`: sorts sessions to surface the most recently active entries first. The ordering rule is:
+      1. Active sessions first (IsActive==true), idle sessions after.
+      2. Within each group, sort by `UpdatedAt` descending (most recent first).
+      3. Final tiebreaker: `ID` ascending.
+
+  This makes it easy to quickly find the currently active sessions and the most recently-updated sessions when reviewing session state.
+
 4. **Configuration Options**: Allow users to customize cleanup behavior via config file:
   - `session.max_age_days`: Maximum age for sessions
   - `session.max_count`: Maximum number of sessions to retain

@@ -2,11 +2,13 @@ package command
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -43,7 +45,7 @@ func (c *SessionCommand) SetupFlags(fs *flag.FlagSet) {
 
 func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return c.list(stdout)
+		return c.list(stdout, "text", "default")
 	}
 	sub := strings.ToLower(args[0])
 	// Allow subcommands to parse their own flags (e.g. -h, -y) by handing
@@ -54,10 +56,16 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	case "list":
 		fs := flag.NewFlagSet("session-list", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
+		var formatLocal string
+		var sortLocal string
+		fs.StringVar(&formatLocal, "format", "text", "output format: text|json")
+		fs.StringVar(&sortLocal, "sort", "default", "sorting: default|active")
 		fs.Usage = func() {
 			_, _ = fmt.Fprintf(stderr, "Usage: %s list\n\n", c.Usage())
 			fmt.Fprintln(stderr, "Show all existing sessions with metadata.")
-			fmt.Fprintln(stderr, "Options:")
+			fmt.Fprintln(stderr, "\nOptions:")
+			fmt.Fprintln(stderr, "  -format <text|json>   Output format (default: text).\n    'text' prints tab-separated lines; 'json' prints a pretty JSON array of session objects.")
+			fmt.Fprintln(stderr, "  -sort <default|active>  Sorting behavior (default: filesystem discovery order).\n    'active' surfaces active sessions first, then orders by update time (newest first).")
 			fs.PrintDefaults()
 		}
 		if err := fs.Parse(args[1:]); err != nil {
@@ -66,7 +74,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			}
 			return err
 		}
-		return c.list(stdout)
+		return c.list(stdout, formatLocal, sortLocal)
 	case "clean":
 		// parse subcommand flags
 		fs := flag.NewFlagSet("session-clean", flag.ContinueOnError)
@@ -278,12 +286,53 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	}
 }
 
-func (c *SessionCommand) list(w io.Writer) error {
+func (c *SessionCommand) list(w io.Writer, format, sortMode string) error {
 	infos, err := storage.ScanSessions()
 	if err != nil {
 		return err
 	}
 
+	// Validate format
+	if format != "text" && format != "json" {
+		return fmt.Errorf("invalid format: %q", format)
+	}
+
+	// Validate sort
+	if sortMode != "default" && sortMode != "active" {
+		return fmt.Errorf("invalid sort: %q", sortMode)
+	}
+
+	// Apply 'active' sorting: active sessions first, then idle; within groups sort by UpdatedAt (desc), then ID asc
+	if sortMode == "active" {
+		sort.SliceStable(infos, func(i, j int) bool {
+			a := infos[i]
+			b := infos[j]
+			// Active sessions first
+			if a.IsActive != b.IsActive {
+				return a.IsActive && !b.IsActive
+			}
+			// Most recently updated first
+			if !a.UpdatedAt.Equal(b.UpdatedAt) {
+				return a.UpdatedAt.After(b.UpdatedAt)
+			}
+			// Tiebreaker: ID ascending
+			return a.ID < b.ID
+		})
+	}
+
+	if format == "json" {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		if infos == nil {
+			infos = []storage.SessionInfo{}
+		}
+		if err := enc.Encode(infos); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// text format: if no sessions, show friendly message
 	if len(infos) == 0 {
 		fmt.Fprintln(w, "No sessions found")
 		return nil

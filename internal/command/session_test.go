@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -312,6 +313,126 @@ func TestSessionsList_Help(t *testing.T) {
 	s := out.String()
 	if !strings.Contains(s, "Usage:") {
 		t.Fatalf("expected usage output, got: %q", s)
+	}
+	if !strings.Contains(s, "-format") || !strings.Contains(s, "-sort") {
+		t.Fatalf("expected help to mention -format and -sort flags, got: %q", s)
+	}
+}
+
+func TestSessionsList_FormatJSON(t *testing.T) {
+	dir := t.TempDir()
+	storage.SetTestPaths(dir)
+
+	// create two sessions
+	s1, _ := storage.SessionFilePath("j1")
+	s2, _ := storage.SessionFilePath("j2")
+	_ = os.WriteFile(s1, []byte("{}"), 0644)
+	_ = os.WriteFile(s2, []byte("{}"), 0644)
+
+	// make j2 active
+	l2, _ := storage.SessionLockFilePath("j2")
+	_ = os.WriteFile(l2, []byte(""), 0644)
+
+	cfg := config.NewConfig()
+	cmd := NewSessionCommand(cfg)
+
+	var out bytes.Buffer
+	if err := cmd.Execute([]string{"list", "-format", "json"}, &out, &out); err != nil {
+		t.Fatalf("list json failed: %v", err)
+	}
+	var got []storage.SessionInfo
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("expected valid json, unmarshal error: %v; output=%q", err, out.String())
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 sessions in json output, got %d: %s", len(got), out.String())
+	}
+}
+
+func TestSessionsList_FormatJSON_Empty(t *testing.T) {
+	dir := t.TempDir()
+	storage.SetTestPaths(dir)
+
+	cfg := config.NewConfig()
+	cmd := NewSessionCommand(cfg)
+
+	var out bytes.Buffer
+	if err := cmd.Execute([]string{"list", "-format", "json"}, &out, &out); err != nil {
+		t.Fatalf("list json failed: %v", err)
+	}
+	var got []storage.SessionInfo
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("expected valid json, unmarshal error: %v; output=%q", err, out.String())
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected 0 sessions in json output, got %d: %s", len(got), out.String())
+	}
+}
+
+func TestSessionsList_SortActive(t *testing.T) {
+	dir := t.TempDir()
+	storage.SetTestPaths(dir)
+
+	now := time.Now()
+	// three sessions with different times and active status
+	ids := []struct {
+		id     string
+		t      time.Time
+		active bool
+	}{
+		{"a_idle_old", now.Add(-3 * time.Hour), false},
+		{"b_active_new", now.Add(-30 * time.Minute), true},
+		{"c_idle_newer", now.Add(-10 * time.Minute), false},
+	}
+
+	for _, it := range ids {
+		p, _ := storage.SessionFilePath(it.id)
+		_ = os.WriteFile(p, []byte("{}"), 0644)
+		_ = os.Chtimes(p, it.t, it.t)
+		if it.active {
+			l, _ := storage.SessionLockFilePath(it.id)
+			// Acquire and hold an actual lock so ScanSessions reports IsActive=true
+			lf, ok, err := storage.AcquireLockHandle(l)
+			if err != nil {
+				t.Fatalf("failed to acquire lock for %s: %v", it.id, err)
+			}
+			if !ok {
+				t.Fatalf("expected to acquire lock for test setup: %s", it.id)
+			}
+			// keep lf open until after the command executes
+			defer func(f *os.File) { _ = f.Close() }(lf)
+		}
+	}
+
+	cfg := config.NewConfig()
+	cmd := NewSessionCommand(cfg)
+
+	var out bytes.Buffer
+	if err := cmd.Execute([]string{"list", "-sort", "active"}, &out, &out); err != nil {
+		t.Fatalf("list -sort active failed: %v", err)
+	}
+
+	// Split into lines and locate the index of each session id in the output
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+
+	idx := map[string]int{"b_active_new": -1, "c_idle_newer": -1, "a_idle_old": -1}
+	for i, line := range lines {
+		for k := range idx {
+			if strings.Contains(line, k) {
+				idx[k] = i
+			}
+		}
+	}
+
+	for k, v := range idx {
+		if v == -1 {
+			t.Fatalf("output missing expected session %q: %s", k, out.String())
+		}
+	}
+
+	// Expect active session first, then newer idle, then oldest idle
+	if !(idx["b_active_new"] < idx["c_idle_newer"] && idx["c_idle_newer"] < idx["a_idle_old"]) {
+		t.Fatalf("expected order b_active_new -> c_idle_newer -> a_idle_old, got indices %+v, output=%s", idx, out.String())
 	}
 }
 

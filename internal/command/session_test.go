@@ -99,6 +99,54 @@ func TestSessionsPathShowsDirectoryAndFile(t *testing.T) {
 	}
 }
 
+func TestSessionsID_ResolvesFromEnv(t *testing.T) {
+	old := os.Getenv("OSM_SESSION_ID")
+	defer os.Setenv("OSM_SESSION_ID", old)
+	if err := os.Setenv("OSM_SESSION_ID", "env-session"); err != nil {
+		t.Fatalf("setenv: %v", err)
+	}
+
+	cfg := config.NewConfig()
+	cmd := NewSessionCommand(cfg)
+
+	var out bytes.Buffer
+	if err := cmd.Execute([]string{"id"}, &out, &out); err != nil {
+		t.Fatalf("id failed: %v", err)
+	}
+	got := strings.TrimSpace(out.String())
+	if got != "env-session" {
+		t.Fatalf("expected env-session, got %q", got)
+	}
+}
+
+func TestSessionsID_RespectsFlag(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewSessionCommand(cfg)
+
+	// If the --session flag is provided it should override auto discovery
+	var out bytes.Buffer
+	if err := cmd.Execute([]string{"id", "--session", "explicit-flag"}, &out, &out); err != nil {
+		t.Fatalf("id with flag failed: %v", err)
+	}
+	if strings.TrimSpace(out.String()) != "explicit-flag" {
+		t.Fatalf("expected explicit-flag, got %q", out.String())
+	}
+}
+
+func TestSessionsID_HelpShowsSessionFlag(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewSessionCommand(cfg)
+
+	var out bytes.Buffer
+	if err := cmd.Execute([]string{"id", "-h"}, &out, &out); err != nil {
+		t.Fatalf("id -h failed: %v", err)
+	}
+	s := out.String()
+	if !strings.Contains(s, "-session") {
+		t.Fatalf("expected id help to contain -session flag, got: %q", s)
+	}
+}
+
 func TestSessionsDeleteRemovesLockAndFile(t *testing.T) {
 	dir := t.TempDir()
 	storage.SetTestPaths(dir)
@@ -316,6 +364,34 @@ func TestSessionsList_Help(t *testing.T) {
 	}
 	if !strings.Contains(s, "-format") || !strings.Contains(s, "-sort") {
 		t.Fatalf("expected help to mention -format and -sort flags, got: %q", s)
+	}
+}
+
+func TestSessionsClean_HelpShowsFlags(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewSessionCommand(cfg)
+
+	var out bytes.Buffer
+	if err := cmd.Execute([]string{"clean", "-h"}, &out, &out); err != nil {
+		t.Fatalf("clean -h failed: %v", err)
+	}
+	s := out.String()
+	if !strings.Contains(s, "-dry-run") || !strings.Contains(s, "-y") {
+		t.Fatalf("expected clean help to mention -dry-run and -y, got: %q", s)
+	}
+}
+
+func TestSessionsDelete_HelpShowsFlags(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewSessionCommand(cfg)
+
+	var out bytes.Buffer
+	if err := cmd.Execute([]string{"delete", "-h"}, &out, &out); err != nil {
+		t.Fatalf("delete -h failed: %v", err)
+	}
+	s := out.String()
+	if !strings.Contains(s, "-dry-run") || !strings.Contains(s, "-y") {
+		t.Fatalf("expected delete help to mention -dry-run and -y, got: %q", s)
 	}
 }
 

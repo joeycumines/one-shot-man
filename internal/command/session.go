@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
+	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
 )
 
@@ -32,7 +33,7 @@ type SessionCommand struct {
 // NewSessionCommand creates the session management command.
 func NewSessionCommand(cfg *config.Config) *SessionCommand {
 	return &SessionCommand{
-		BaseCommand: NewBaseCommand("session", "Manage persisted sessions", "session [list|clean|delete|info|path]"),
+		BaseCommand: NewBaseCommand("session", "Manage persisted sessions", "session [list|clean|delete|info|path|id]"),
 		cfg:         cfg,
 		stdin:       os.Stdin,
 	}
@@ -53,6 +54,35 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	// FlagSet local to that subcommand. Do NOT inspect args manually for
 	// help tokens - rely on the flag package to handle help behavior.
 	switch sub {
+	case "id":
+		fs := flag.NewFlagSet("session-id", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		// Accept a local --session override (mirrors other built-ins)
+		var localSession string
+		fs.StringVar(&localSession, "session", "", "Session ID for state persistence (overrides auto-discovery)")
+		fs.Usage = func() {
+			_, _ = fmt.Fprintf(stderr, "Usage: %s id\n\n", c.Name())
+			fmt.Fprintln(stderr, "Resolve and print the session id that would be used for this terminal.")
+			// Only show the Options block if this FlagSet actually defines flags
+			var hasFlags bool
+			fs.VisitAll(func(_ *flag.Flag) { hasFlags = true })
+			if hasFlags {
+				fmt.Fprintln(stderr, "Options:")
+				fs.SetOutput(stderr)
+				fs.PrintDefaults()
+				fs.SetOutput(io.Discard)
+			}
+		}
+		if err := fs.Parse(args[1:]); err != nil {
+			if err == flag.ErrHelp {
+				return nil
+			}
+			return err
+		}
+		// Resolve session id using scripting package
+		id := scripting.GetSessionID(localSession)
+		fmt.Fprintln(stdout, id)
+		return nil
 	case "list":
 		fs := flag.NewFlagSet("session-list", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
@@ -61,12 +91,14 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		fs.StringVar(&formatLocal, "format", "text", "output format: text|json")
 		fs.StringVar(&sortLocal, "sort", "default", "sorting: default|active")
 		fs.Usage = func() {
-			_, _ = fmt.Fprintf(stderr, "Usage: %s list\n\n", c.Usage())
+			_, _ = fmt.Fprintf(stderr, "Usage: %s list\n\n", c.Name())
 			fmt.Fprintln(stderr, "Show all existing sessions with metadata.")
 			fmt.Fprintln(stderr, "\nOptions:")
 			fmt.Fprintln(stderr, "  -format <text|json>   Output format (default: text).\n    'text' prints tab-separated lines; 'json' prints a pretty JSON array of session objects.")
 			fmt.Fprintln(stderr, "  -sort <default|active>  Sorting behavior (default: filesystem discovery order).\n    'active' surfaces active sessions first, then orders by update time (newest first).")
+			fs.SetOutput(stderr)
 			fs.PrintDefaults()
+			fs.SetOutput(io.Discard)
 		}
 		if err := fs.Parse(args[1:]); err != nil {
 			if err == flag.ErrHelp {
@@ -85,10 +117,16 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		// Uses the same struct field pointer, so it updates c.dry directly.
 		fs.BoolVar(&c.dry, "dry-run", c.dry, "Don't actually delete; show what would be deleted")
 		fs.Usage = func() {
-			_, _ = fmt.Fprintf(stderr, "Usage: %s clean\n\n", c.Usage())
+			_, _ = fmt.Fprintf(stderr, "Usage: %s clean\n\n", c.Name())
 			fmt.Fprintln(stderr, "Run automatic cleanup based on configured policies.")
-			fmt.Fprintln(stderr, "Options:")
-			fs.PrintDefaults()
+			var hasFlags bool
+			fs.VisitAll(func(_ *flag.Flag) { hasFlags = true })
+			if hasFlags {
+				fmt.Fprintln(stderr, "\nOptions:")
+				fs.SetOutput(stderr)
+				fs.PrintDefaults()
+				fs.SetOutput(io.Discard)
+			}
 		}
 		if err := fs.Parse(args[1:]); err != nil {
 			if err == flag.ErrHelp {
@@ -174,10 +212,16 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		fs.BoolVar(&dryLocal, "dry-run", false, "Don't actually delete; show what would be deleted")
 
 		fs.Usage = func() {
-			_, _ = fmt.Fprintf(stderr, "Usage: %s delete <session-id>...\n\n", c.Usage())
+			_, _ = fmt.Fprintf(stderr, "Usage: %s delete <session-id>...\n\n", c.Name())
 			fmt.Fprintln(stderr, "Remove a specific session from storage. This is irreversible.")
-			fmt.Fprintln(stderr, "Options:")
-			fs.PrintDefaults()
+			var hasFlags bool
+			fs.VisitAll(func(_ *flag.Flag) { hasFlags = true })
+			if hasFlags {
+				fmt.Fprintln(stderr, "Options:")
+				fs.SetOutput(stderr)
+				fs.PrintDefaults()
+				fs.SetOutput(io.Discard)
+			}
 		}
 		// Parse the args that were before '--' and weren't stripped.
 		// This handles help (-h) and any other flags.
@@ -232,10 +276,16 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		fs := flag.NewFlagSet("session-info", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
 		fs.Usage = func() {
-			_, _ = fmt.Fprintf(stderr, "Usage: %s info <session-id>\n\n", c.Usage())
+			_, _ = fmt.Fprintf(stderr, "Usage: %s info <session-id>\n\n", c.Name())
 			fmt.Fprintln(stderr, "Show the raw data for a specific session.")
-			fmt.Fprintln(stderr, "Options:")
-			fs.PrintDefaults()
+			var hasFlags bool
+			fs.VisitAll(func(_ *flag.Flag) { hasFlags = true })
+			if hasFlags {
+				fmt.Fprintln(stderr, "Options:")
+				fs.SetOutput(stderr)
+				fs.PrintDefaults()
+				fs.SetOutput(io.Discard)
+			}
 		}
 		if err := fs.Parse(args[1:]); err != nil {
 			if err == flag.ErrHelp {
@@ -252,10 +302,16 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		fs := flag.NewFlagSet("session-path", flag.ContinueOnError)
 		fs.SetOutput(io.Discard)
 		fs.Usage = func() {
-			_, _ = fmt.Fprintf(stderr, "Usage: %s path [session-id]\n\n", c.Usage())
+			_, _ = fmt.Fprintf(stderr, "Usage: %s path [session-id]\n\n", c.Name())
 			fmt.Fprintln(stderr, "Show the sessions directory or a specific session file path.")
-			fmt.Fprintln(stderr, "Options:")
-			fs.PrintDefaults()
+			var hasFlags bool
+			fs.VisitAll(func(_ *flag.Flag) { hasFlags = true })
+			if hasFlags {
+				fmt.Fprintln(stderr, "Options:")
+				fs.SetOutput(stderr)
+				fs.PrintDefaults()
+				fs.SetOutput(io.Discard)
+			}
 		}
 		if err := fs.Parse(args[1:]); err != nil {
 			if err == flag.ErrHelp {

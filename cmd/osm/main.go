@@ -93,7 +93,12 @@ func run() error {
 		_, _ = fmt.Fprintf(os.Stderr, "Usage: %s\n", cmd.Usage())
 		_, _ = fmt.Fprintf(os.Stderr, "\n%s\n\n", cmd.Description())
 		_, _ = fmt.Fprintln(os.Stderr, "Options:")
+		// PrintDefaults writes to the FlagSet output. When parsing we set the
+		// output to io.Discard to suppress library output; temporarily route
+		// defaults to stderr so users see the available flags.
+		fs.SetOutput(os.Stderr)
 		fs.PrintDefaults()
+		fs.SetOutput(io.Discard)
 	}
 
 	// Let the command setup its flags

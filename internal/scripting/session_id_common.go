@@ -73,6 +73,13 @@ func discoverSessionID(overrideSessionID string) string {
 	return uuid.New().String()
 }
 
+// GetSessionID is the exported entrypoint used by other packages to resolve
+// the session ID that would be used for the current terminal. It simply
+// delegates to discoverSessionID and preserves the resolution precedence.
+func GetSessionID(overrideSessionID string) string {
+	return discoverSessionID(overrideSessionID)
+}
+
 // initializeStateManager creates and initializes a StateManager for the given session ID.
 // It uses the storage backend specified by overrideBackend parameter, OSM_STORAGE_BACKEND environment variable, or defaults to 'fs'.
 func initializeStateManager(sessionID string, overrideBackend string) (*StateManager, error) {

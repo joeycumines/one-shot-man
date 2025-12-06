@@ -272,7 +272,7 @@ func formatSessionID(namespace, payload string) string {
 // isInternalShortHex detects payloads that are already internal detector hashes.
 // These are exactly ShortHashLength lowercase hex characters.
 func isInternalShortHex(s string) bool {
-	if len(s) != ShortHashLength {
+	if len(s) != ShortHashLength { // 16
 		return false
 	}
 	for i := 0; i < len(s); i++ {
@@ -284,46 +284,65 @@ func isInternalShortHex(s string) bool {
 	return true
 }
 
-// isTrustedInternalNamespace identifies if the given namespace
-// is one of the trusted internal detector sources that allow
-// the format-session bypass for 16-character internal hashes.
 // isTrustedHexNamespace identifies if the given namespace
 // is one of the trusted internal detector sources that allow
 // the format-session bypass for 16-character internal hashes.
 func isTrustedHexNamespace(ns string) bool {
-	return ns == NamespaceScreen ||
-		ns == NamespaceSSH ||
-		ns == NamespaceTerminal ||
-		ns == NamespaceAnchor
+	switch ns {
+	case
+		NamespaceScreen,
+		NamespaceSSH,
+		NamespaceTerminal,
+		NamespaceAnchor:
+		return true
+	default:
+		return false
+	}
 }
 
-// isTmuxPayload validates a tmux payload in the form of
-// digits + underscore + digits (e.g. "5_12345"). This format
-// is explicitly allowed verbatim for the tmux namespace.
+// isTmuxPayload validates if a string matches "^(\d+)_(\d+)$".
 func isTmuxPayload(s string) bool {
-	if s == "" {
+	n := len(s)
+
+	// Minimum valid payload is "d_d" (3 bytes).
+	if n < 3 {
 		return false
 	}
-	// Must contain exactly one underscore separating two numeric parts
-	parts := strings.Split(s, "_")
-	if len(parts) != 2 {
-		return false
-	}
-	left, right := parts[0], parts[1]
-	if left == "" || right == "" {
-		return false
-	}
-	for _, r := range left {
-		if r < '0' || r > '9' {
-			return false
+
+	// State machine: true = parsing left side, false = parsing right side.
+	parsingLeft := true
+
+	for i := 0; i < n; i++ {
+		b := s[i]
+		// Check for digits.
+		if b >= '0' && b <= '9' {
+			continue
 		}
-	}
-	for _, r := range right {
-		if r < '0' || r > '9' {
-			return false
+		// State transition trigger: Underscore
+		if b == '_' {
+			// If we are already parsing the right side, a second underscore is invalid.
+			if !parsingLeft {
+				return false
+			}
+			// Validation: Left side cannot be empty.
+			if i == 0 {
+				return false
+			}
+			// Validation: Right side cannot be empty.
+			// If we found the underscore at the very last index, the right side is empty.
+			if i == n-1 {
+				return false
+			}
+			// Transition state
+			parsingLeft = false
+			continue
 		}
+		// Any character that is not a digit or the valid separator is invalid.
+		return false
 	}
-	return true
+
+	// If we are still in parsingLeft state, we never found the underscore.
+	return !parsingLeft
 }
 
 // getTmuxSessionID constructs a tmux session ID from TMUX_PANE and server PID.

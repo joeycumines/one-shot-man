@@ -389,6 +389,8 @@ Internal detector payloads (screen, ssh, terminal, anchor) are exactly 16 lowerc
 ```go
 package session
 
+// isInternalShortHex detects payloads that are already internal detector hashes.
+// These are exactly ShortHashLength lowercase hex characters.
 func isInternalShortHex(s string) bool {
 	if len(s) != ShortHashLength { // 16
 		return false
@@ -402,35 +404,65 @@ func isInternalShortHex(s string) bool {
 	return true
 }
 
-// Validator for Tmux payloads: {digits}_{digits}
+// isTmuxPayload validates if a string matches "^(\d+)_(\d+)$".
 func isTmuxPayload(s string) bool {
-	if len(s) == 0 {
+	n := len(s)
+
+	// Minimum valid payload is "d_d" (3 bytes).
+	if n < 3 {
 		return false
 	}
-	hasUnderscore := false
-	for i, r := range s {
-		if r == '_' {
-			if hasUnderscore {
-				return false
-			} // Only one underscore allowed
-			hasUnderscore = true
-		} else if r < '0' || r > '9' {
-			return false // Digits only
+
+	// State machine: true = parsing left side, false = parsing right side.
+	parsingLeft := true
+
+	for i := 0; i < n; i++ {
+		b := s[i]
+		// Check for digits.
+		if b >= '0' && b <= '9' {
+			continue
 		}
-		// quick rejection for underscore at start/end handled below
-		_ = i
+		// State transition trigger: Underscore
+		if b == '_' {
+			// If we are already parsing the right side, a second underscore is invalid.
+			if !parsingLeft {
+				return false
+			}
+			// Validation: Left side cannot be empty.
+			if i == 0 {
+				return false
+			}
+			// Validation: Right side cannot be empty.
+			// If we found the underscore at the very last index, the right side is empty.
+			if i == n-1 {
+				return false
+			}
+			// Transition state
+			parsingLeft = false
+			continue
+		}
+		// Any character that is not a digit or the valid separator is invalid.
+		return false
 	}
-	// Must have underscore, and not at start/end
-	return hasUnderscore && s[0] != '_' && s[len(s)-1] != '_'
+
+	// If we are still in parsingLeft state, we never found the underscore.
+	return !parsingLeft
 }
 
-// Helper: Trusted Short-Hex namespaces
-// Note: Tmux is trusted but has its own validator (isTmuxPayload)
+// isTrustedHexNamespace identifies if the given namespace
+// is one of the trusted internal detector sources that allow
+// the format-session bypass for 16-character internal hashes.
 func isTrustedHexNamespace(ns string) bool {
-	return ns == NamespaceScreen ||
-		ns == NamespaceSSH ||
-		ns == NamespaceTerminal ||
-		ns == NamespaceAnchor
+	switch ns {
+	case
+		NamespaceScreen,
+		NamespaceSSH,
+		NamespaceTerminal,
+		NamespaceAnchor:
+		return true
+	default:
+		return false
+	}
 }
 ```
 
@@ -439,6 +471,9 @@ func isTrustedHexNamespace(ns string) bool {
 ```go
 package session
 
+// sanitizePayload ensures a string is safe for use in filenames on all platforms.
+// Uses a strict whitelist: only alphanumeric, dot, hyphen, and underscore are allowed.
+// All other characters (including path separators, Windows reserved chars) are replaced with underscore.
 func sanitizePayload(s string) string {
 	var result strings.Builder
 	result.Grow(len(s))
@@ -452,11 +487,16 @@ func sanitizePayload(s string) string {
 	return result.String()
 }
 
+// isFilenameSafe returns true if the rune is safe for filenames on all platforms.
+// Whitelist: a-z, A-Z, 0-9, dot, hyphen, underscore
+// This excludes: / \ : * ? " < > | (Windows reserved) and all other special chars
 func isFilenameSafe(r rune) bool {
 	return (r >= 'a' && r <= 'z') ||
 		(r >= 'A' && r <= 'Z') ||
 		(r >= '0' && r <= '9') ||
-		r == '.' || r == '-' || r == '_'
+		r == '.' ||
+		r == '-' ||
+		r == '_'
 }
 ```
 
@@ -494,8 +534,10 @@ UUID IDs are constructed directly, bypassing `formatSessionID()`:
 ```go
 package session
 
+// formatUUIDID formats a UUID fallback session ID.
+// UUIDs are internally generated (not user-provided) and always safe
+// (hex digits and hyphens only), so no suffix is needed.
 func formatUUIDID(uuid string) string {
-	// Direct construction - no suffix needed
 	return NamespaceUUID + NamespaceDelimiter + uuid
 }
 ```

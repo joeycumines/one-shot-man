@@ -1332,3 +1332,117 @@ func TestIsFilenameSafe(t *testing.T) {
 		}
 	}
 }
+
+func TestIsTmuxPayload(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		// Valid cases
+		{"Valid minimum", "1_1", true},
+		{"Valid standard", "5_12345", true},
+		{"Valid long", "1234567890_1234567890", true},
+		{"Valid zero padded", "00_00", true},
+
+		// Length/Empty checks
+		{"Empty string", "", false},
+		{"Too short (1 char)", "1", false},
+		{"Too short (2 chars)", "12", false},
+
+		// State 0 (Left) failures
+		{"Starts with underscore", "_123", false},
+		{"Left side non-digit", "a_123", false},
+		{"Left side space", " _123", false},
+
+		// State Transition failures
+		{"Missing underscore", "123456", false},
+		{"Double underscore", "1__2", false},
+		{"Multiple underscores scattered", "1_2_3", false},
+
+		// State 1 (Right) failures
+		{"Ends with underscore", "123_", false},
+		{"Right side non-digit", "123_a", false},
+		{"Right side space", "123_ 5", false},
+
+		// Edge cases
+		{"Only underscore", "_", false},
+		{"Underscore and digit", "_1", false},
+		{"Digit and underscore", "1_", false},
+		{"Special chars", "1_!", false},
+		{"UTF-8 chars", "1_gö", false}, // 'ö' is not an ASCII digit
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isTmuxPayload(tt.input); got != tt.want {
+				t.Errorf("isTmuxPayload(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsTrustedHexNamespace(t *testing.T) {
+	tests := []struct {
+		name string
+		ns   string
+		want bool
+	}{
+		// True cases (Trusted)
+		{
+			name: "trusted namespace: screen",
+			ns:   NamespaceScreen,
+			want: true,
+		},
+		{
+			name: "trusted namespace: ssh",
+			ns:   NamespaceSSH,
+			want: true,
+		},
+		{
+			name: "trusted namespace: terminal",
+			ns:   NamespaceTerminal,
+			want: true,
+		},
+		{
+			name: "trusted namespace: anchor",
+			ns:   NamespaceAnchor,
+			want: true,
+		},
+		// False cases (Untrusted defined constants)
+		{
+			name: "untrusted namespace: explicit",
+			ns:   NamespaceExplicit,
+			want: false,
+		},
+		{
+			name: "untrusted namespace: tmux",
+			ns:   NamespaceTmux,
+			want: false,
+		},
+		{
+			name: "untrusted namespace: uuid",
+			ns:   NamespaceUUID,
+			want: false,
+		},
+		// False cases (Edge cases)
+		{
+			name: "unknown namespace",
+			ns:   "some-random-namespace",
+			want: false,
+		},
+		{
+			name: "empty namespace",
+			ns:   "",
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isTrustedHexNamespace(tt.ns); got != tt.want {
+				t.Errorf("isTrustedHexNamespace(%q) = %v, want %v", tt.ns, got, tt.want)
+			}
+		})
+	}
+}

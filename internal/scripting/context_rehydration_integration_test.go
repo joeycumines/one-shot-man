@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // TestContextRehydrationEndToEnd tests the complete scenario:
@@ -21,11 +21,10 @@ import (
 // 7. Verify remove command works after restoration
 // 8. Verify toTxtar works after restoration
 func TestContextRehydrationEndToEnd(t *testing.T) {
-	storage.ClearAllInMemorySessions()
-	defer storage.ClearAllInMemorySessions()
+	// Avoid clearing global in-memory store; this test uses a unique session ID
 
 	tmpDir := t.TempDir()
-	sessionID := "ctx-rehydration-test"
+	sessionID := testutil.NewTestSessionID("ctx-rehydration-test", t.Name())
 
 	// Create test files
 	testFile1 := filepath.Join(tmpDir, "test1.txt")
@@ -271,11 +270,10 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 
 // TestContextRehydrationWithSharedState verifies rehydration works with shared state
 func TestContextRehydrationWithSharedState(t *testing.T) {
-	storage.ClearAllInMemorySessions()
-	defer storage.ClearAllInMemorySessions()
+	// Avoid clearing global in-memory store; use unique session IDs instead
 
 	tmpDir := t.TempDir()
-	sessionID := "ctx-shared-test"
+	sessionID := testutil.NewTestSessionID("ctx-shared-test", t.Name())
 
 	testFile := filepath.Join(tmpDir, "shared.txt")
 	if err := os.WriteFile(testFile, []byte("shared content"), 0644); err != nil {

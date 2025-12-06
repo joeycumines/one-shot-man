@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -99,37 +100,58 @@ func TestSessionsPathShowsDirectoryAndFile(t *testing.T) {
 	}
 }
 
-func TestSessionsID_ResolvesFromEnv(t *testing.T) {
-	old := os.Getenv("OSM_SESSION_ID")
-	defer os.Setenv("OSM_SESSION_ID", old)
-	if err := os.Setenv("OSM_SESSION_ID", "env-session"); err != nil {
-		t.Fatalf("setenv: %v", err)
-	}
-
+func TestSessionsID_ExplicitInputs_TableDriven(t *testing.T) {
 	cfg := config.NewConfig()
 	cmd := NewSessionCommand(cfg)
 
-	var out bytes.Buffer
-	if err := cmd.Execute([]string{"id"}, &out, &out); err != nil {
-		t.Fatalf("id failed: %v", err)
-	}
-	got := strings.TrimSpace(out.String())
-	if got != "env-session" {
-		t.Fatalf("expected env-session, got %q", got)
-	}
-}
+	for _, tc := range []struct {
+		name     string
+		input    string // value supplied either via OSM_SESSION_ID or --session
+		expected string // regexp the result must match
+	}{
+		{"unnamespaced-safe", "env-session", `^ex--env-session_[0-9a-f]{2}$`},
+		{"ssh-pre-namespaced", "ssh--a1b2c3d4e5f67890", `^ssh--a1b2c3d4e5f67890$`},
+		{"screen-pre-namespaced", "screen--a1b2c3d4e5f67890", `^screen--a1b2c3d4e5f67890$`},
+		{"terminal-pre-namespaced", "terminal--a1b2c3d4e5f67890", `^terminal--a1b2c3d4e5f67890$`},
+		{"anchor-pre-namespaced", "anchor--a1b2c3d4e5f67890", `^anchor--a1b2c3d4e5f67890$`},
+		{"tmux-pre-namespaced", "tmux--5_12345", `^tmux--5_12345$`},
+		{"ex-pre-namespaced-safe", "ex--from-env", `^ex--from-env_[0-9a-f]{2}$`},
+		{"custom-sanitization", "custom--user/name", `^custom--user_name_[0-9a-f]{16}$`},
+	} {
+		t.Run("env/"+tc.name, func(t *testing.T) {
+			old := os.Getenv("OSM_SESSION_ID")
+			defer func() { _ = os.Setenv("OSM_SESSION_ID", old) }()
+			if err := os.Setenv("OSM_SESSION_ID", tc.input); err != nil {
+				t.Fatalf("setenv: %v", err)
+			}
 
-func TestSessionsID_RespectsFlag(t *testing.T) {
-	cfg := config.NewConfig()
-	cmd := NewSessionCommand(cfg)
+			var out bytes.Buffer
+			if err := cmd.Execute([]string{"id"}, &out, &out); err != nil {
+				t.Fatalf("id failed: %v", err)
+			}
+			got := strings.TrimSpace(out.String())
+			re := regexp.MustCompile(tc.expected)
+			if !re.MatchString(got) {
+				t.Fatalf("env %q: expected %q, got %q", tc.input, tc.expected, got)
+			}
+		})
 
-	// If the --session flag is provided it should override auto discovery
-	var out bytes.Buffer
-	if err := cmd.Execute([]string{"id", "--session", "explicit-flag"}, &out, &out); err != nil {
-		t.Fatalf("id with flag failed: %v", err)
-	}
-	if strings.TrimSpace(out.String()) != "explicit-flag" {
-		t.Fatalf("expected explicit-flag, got %q", out.String())
+		t.Run("flag/"+tc.name, func(t *testing.T) {
+			// ensure env doesn't interfere
+			old := os.Getenv("OSM_SESSION_ID")
+			_ = os.Unsetenv("OSM_SESSION_ID")
+			defer func() { _ = os.Setenv("OSM_SESSION_ID", old) }()
+
+			var out bytes.Buffer
+			if err := cmd.Execute([]string{"id", "--session", tc.input}, &out, &out); err != nil {
+				t.Fatalf("id with flag failed: %v", err)
+			}
+			got := strings.TrimSpace(out.String())
+			re := regexp.MustCompile(tc.expected)
+			if !re.MatchString(got) {
+				t.Fatalf("flag %q: expected %q, got %q", tc.input, tc.expected, got)
+			}
+		})
 	}
 }
 

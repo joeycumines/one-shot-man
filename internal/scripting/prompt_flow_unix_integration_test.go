@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/termtest"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // Example demonstrates a complete prompt-flow workflow
@@ -1048,7 +1049,7 @@ func TestPromptFlow_Unix_ClipboardIntegration(t *testing.T) {
 	// This test needs to verify clipboard file contents, so create explicit clipboard file
 	clipboardFile := filepath.Join(t.TempDir(), "clipboard.txt")
 	env := []string{
-		"OSM_SESSION_ID=" + fmt.Sprintf("test-%s-%d", t.Name(), time.Now().UnixNano()),
+		"OSM_SESSION_ID=" + testutil.NewTestSessionID("test", t.Name()),
 		"OSM_STORAGE_BACKEND=memory",
 		"ONESHOT_CLIPBOARD_CMD=cat > " + clipboardFile,
 		"EDITOR=" + editorScript,
@@ -1193,6 +1194,9 @@ esac
 	if err := os.WriteFile(editorScript, []byte(scriptContent), 0755); err != nil {
 		t.Fatalf("Failed to write fake editor: %v", err)
 	}
+	if err := os.Chmod(editorScript, 0755); err != nil {
+		t.Fatalf("Failed to chmod fake editor: %v", err)
+	}
 	return editorScript
 }
 
@@ -1223,6 +1227,9 @@ esac
 `
 	if err := os.WriteFile(editorScript, []byte(scriptContent), 0755); err != nil {
 		t.Fatalf("Failed to write advanced fake editor: %v", err)
+	}
+	if err := os.Chmod(editorScript, 0755); err != nil {
+		t.Fatalf("Failed to chmod advanced fake editor: %v", err)
 	}
 	return editorScript
 }

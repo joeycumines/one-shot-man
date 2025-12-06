@@ -84,6 +84,43 @@ func TestNewStateManager_InitializesNewSession(t *testing.T) {
 	}
 }
 
+func TestNewStateManager_PersistsNewSession(t *testing.T) {
+	backend := &mockBackend{
+		session: nil,
+	}
+	sessionID := "test-session-persist"
+
+	sm, err := NewStateManager(backend, sessionID)
+	if err != nil {
+		t.Fatalf("NewStateManager failed: %v", err)
+	}
+	defer sm.Close()
+
+	if !backend.saveCalled {
+		t.Error("expected backend.SaveSession to be called for new session initialization")
+	}
+}
+
+func TestNewStateManager_PersistsAfterVersionMismatch(t *testing.T) {
+	oldSession := &storage.Session{
+		Version:   "0.9.0",
+		SessionID: "test-session-mismatch",
+	}
+	backend := &mockBackend{
+		session: oldSession,
+	}
+
+	sm, err := NewStateManager(backend, oldSession.SessionID)
+	if err != nil {
+		t.Fatalf("NewStateManager failed: %v", err)
+	}
+	defer sm.Close()
+
+	if !backend.saveCalled {
+		t.Error("expected backend.SaveSession to be called after reinitializing due to version mismatch")
+	}
+}
+
 func TestNewStateManager_LoadsExistingSession(t *testing.T) {
 	existingSession := &storage.Session{
 		Version:     "1.0.0",

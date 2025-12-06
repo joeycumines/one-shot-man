@@ -3,6 +3,7 @@ package command
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -174,10 +175,25 @@ func TestCompletionCommandIncludesScriptCommands(t *testing.T) {
 	registry.Register(NewHelpCommand(registry))
 
 	scriptDir := t.TempDir()
-	scriptName := "dummy-script"
+	var scriptName string
+	if runtime.GOOS == "windows" {
+		scriptName = "dummy-script.bat"
+	} else {
+		scriptName = "dummy-script.sh"
+	}
 	scriptPath := filepath.Join(scriptDir, scriptName)
-	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatalf("failed to create script command: %v", err)
+	if runtime.GOOS == "windows" {
+		if err := os.WriteFile(scriptPath, []byte("@echo off\nexit /b 0\n"), 0644); err != nil {
+			t.Fatalf("failed to create script command: %v", err)
+		}
+	} else {
+		if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatalf("failed to create script command: %v", err)
+		}
+		// Ensure execute bit regardless of umask (no-op on Windows).
+		if err := os.Chmod(scriptPath, 0o755); err != nil {
+			t.Fatalf("failed to chmod script command: %v", err)
+		}
 	}
 
 	registry.AddScriptPath(scriptDir)

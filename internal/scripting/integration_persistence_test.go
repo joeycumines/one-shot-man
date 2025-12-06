@@ -13,6 +13,8 @@ import (
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
+	"github.com/joeycumines/one-shot-man/internal/session"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // TestAtomicityOnCrash simulates a panic during the final atomic rename operation
@@ -123,11 +125,10 @@ func TestCorruptionHandling(t *testing.T) {
 // in different modes, exits, re-initializes a new TUI with the same session, and verifies
 // that the state is correctly restored.
 func TestEndToEndLifecycle(t *testing.T) {
-	storage.ClearAllInMemorySessions()
-	defer storage.ClearAllInMemorySessions()
+	// Avoid clearing global in-memory store; use unique session IDs instead
 
 	// Use unique session ID to avoid conflicts when tests run in parallel
-	sessionID := fmt.Sprintf("test-end-to-end-%d", time.Now().UnixNano())
+	sessionID := testutil.NewTestSessionID("test-end-to-end", t.Name())
 
 	// Create a simple test script that defines a mode with state
 	testScript := `
@@ -389,6 +390,13 @@ func TestStaleLockRecovery(t *testing.T) {
 func TestSigintPersistence(t *testing.T) {
 	// Set up test environment with file system backend
 	sessionID := "test-sigint"
+	// The session ID gets namespaced when passed as explicit override —
+	// compute the effective session ID using the session package to stay
+	// robust to any namespacing/sanitization logic changes.
+	expectedSessionID, _, err := session.GetSessionID(sessionID)
+	if err != nil {
+		t.Fatalf("failed to compute expected session id: %v", err)
+	}
 	tmpDir := t.TempDir()
 
 	// Override storage paths to use the test directory
@@ -459,7 +467,8 @@ func TestSigintPersistence(t *testing.T) {
 	}
 
 	// Get the session file path and verify it was created
-	sessionPath, err := storage.SessionFilePath(sessionID)
+	// Note: session ID is namespaced as ex--<original>
+	sessionPath, err := storage.SessionFilePath(expectedSessionID)
 	if err != nil {
 		t.Fatalf("Failed to get session file path: %v", err)
 	}
@@ -475,8 +484,8 @@ func TestSigintPersistence(t *testing.T) {
 		t.Fatalf("Failed to parse session file: %v", err)
 	}
 
-	if session.SessionID != sessionID {
-		t.Errorf("Session ID mismatch: expected %s, got %s", sessionID, session.SessionID)
+	if session.SessionID != expectedSessionID {
+		t.Errorf("Session ID mismatch: expected %s, got %s", expectedSessionID, session.SessionID)
 	}
 
 	// Verify the state was saved in the new schema

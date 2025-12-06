@@ -3,6 +3,7 @@ package scripting_test
 import (
 	"os"
 	"os/exec"
+	"runtime"
 	"testing"
 	"time"
 
@@ -11,6 +12,10 @@ import (
 
 // TestPTYBasic is a minimal test to verify PTY functionality
 func TestPTYBasic(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping PTY test on Windows")
+	}
+
 	t.Log("Starting basic PTY test...")
 
 	// Use a helper test process (the same test binary) to avoid relying on

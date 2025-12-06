@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -581,6 +582,13 @@ func TestCompletion_TildeInQuotes(t *testing.T) {
 }
 
 func TestCompletion_EscapedQuoteInToken(t *testing.T) {
+	// Windows filenames cannot contain double quotes.
+	// We skip instead of modifying the filename to ensure we preserve
+	// the fidelity of testing the specific '\"' escape sequence on supported OSes.
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping: Windows filenames cannot contain double quotes, making this test scenario impossible on this OS.")
+	}
+
 	// Arrange tmp dir with a filename containing a quote character
 	tmpDir := t.TempDir()
 	fname := "He said \"Hi\".txt"

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting/storage"
+	"github.com/joeycumines/one-shot-man/internal/session"
 )
 
 // TestEngine_PersistenceOnClose verifies that closing the engine persists the session state.
@@ -14,6 +15,13 @@ func TestEngine_PersistenceOnClose(t *testing.T) {
 	// Create a temporary directory for storage
 	tmpDir := t.TempDir()
 	sessionID := "test-persistence-session"
+	// The session ID gets namespaced when passed as explicit override —
+	// compute the effective session ID using the session package so tests
+	// remain correct if the namespacing algorithm changes.
+	expectedSessionID, _, err := session.GetSessionID(sessionID)
+	if err != nil {
+		t.Fatalf("failed to compute expected session id: %v", err)
+	}
 
 	// Override storage paths to use tmpDir
 	storage.SetTestPaths(tmpDir)
@@ -53,18 +61,28 @@ func TestEngine_PersistenceOnClose(t *testing.T) {
 	// Verify that the state was persisted to disk.
 	// We need to know where the file is.
 	// SetTestPaths sets it to <tmpDir>/<sessionID>.session.json
-	expectedPath := filepath.Join(tmpDir, sessionID+".session.json")
+	// Note: session ID is namespaced according to the session package
+	expectedPath := filepath.Join(tmpDir, expectedSessionID+".session.json")
 
 	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
 		t.Fatalf("Session file was not created at %s", expectedPath)
 	}
 
 	// Load the session back to verify content
-	backend, err := storage.GetBackend("fs", sessionID)
+	backend, err := storage.GetBackend("fs", expectedSessionID)
 	if err != nil {
 		t.Fatalf("Failed to get backend: %v", err)
 	}
-	session, err := backend.LoadSession(sessionID)
+	// Ensure we close the backend so any lock handles are released before
+	// t.TempDir() cleanup runs. t.TempDir's cleanup runs after defers, and
+	// backend.Close must occur before the TempDir deletion on Windows.
+	defer func() {
+		if err := backend.Close(); err != nil {
+			t.Logf("backend.Close() failed: %v", err)
+		}
+	}()
+
+	session, err := backend.LoadSession(expectedSessionID)
 	if err != nil {
 		t.Fatalf("Failed to load session: %v", err)
 	}

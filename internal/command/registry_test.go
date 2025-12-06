@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -122,6 +123,9 @@ echo "Test script output"
 	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
 		t.Fatalf("Failed to create test script: %v", err)
 	}
+	if err := os.Chmod(scriptPath, 0755); err != nil {
+		t.Fatalf("Failed to chmod test script: %v", err)
+	}
 
 	// Test script command creation
 	scriptCmd := NewScriptCommand("testscript", scriptPath)
@@ -132,5 +136,70 @@ echo "Test script output"
 
 	if !strings.Contains(scriptCmd.Description(), "Script command") {
 		t.Errorf("Expected description to contain 'Script command', got '%s'", scriptCmd.Description())
+	}
+}
+
+func TestIsExecutable_UnixAndWindows(t *testing.T) {
+	t.Parallel()
+
+	// Create temp dir
+	tmp := t.TempDir()
+
+	// Create two files and inspect their executability depending on platform
+	exe := filepath.Join(tmp, "a.exe")
+	txt := filepath.Join(tmp, "b.txt")
+
+	if err := os.WriteFile(exe, []byte("x"), 0644); err != nil {
+		t.Fatalf("failed to create %s: %v", exe, err)
+	}
+	if err := os.WriteFile(txt, []byte("x"), 0644); err != nil {
+		t.Fatalf("failed to create %s: %v", txt, err)
+	}
+
+	infoExe, err := os.Stat(exe)
+	if err != nil {
+		t.Fatalf("stat exe: %v", err)
+	}
+	infoTxt, err := os.Stat(txt)
+	if err != nil {
+		t.Fatalf("stat txt: %v", err)
+	}
+
+	if runtime.GOOS == "windows" {
+		// On Windows our conservative policy treats .exe as executable.
+		if !isExecutable(infoExe) {
+			t.Errorf("expected %s to be executable on Windows", exe)
+		}
+		// .txt should not be executable
+		if isExecutable(infoTxt) {
+			t.Errorf("did not expect %s to be executable on Windows", txt)
+		}
+		// Ensure scripts that require an interpreter are not considered directly executable
+		ps1 := filepath.Join(tmp, "c.ps1")
+		sh := filepath.Join(tmp, "d.sh")
+		_ = os.WriteFile(ps1, []byte("echo"), 0644)
+		_ = os.WriteFile(sh, []byte("echo"), 0644)
+		infoPs1, _ := os.Stat(ps1)
+		infoSh, _ := os.Stat(sh)
+		if isExecutable(infoPs1) {
+			t.Errorf("did not expect %s to be considered executable on Windows", ps1)
+		}
+		if isExecutable(infoSh) {
+			t.Errorf("did not expect %s to be considered executable on Windows", sh)
+		}
+	} else {
+		// On Unix-like systems executability depends on file mode bits.
+		// Make exe executable and re-stat.
+		if err := os.Chmod(exe, 0755); err != nil {
+			t.Fatalf("chmod exe: %v", err)
+		}
+		infoExe2, _ := os.Stat(exe)
+		if !isExecutable(infoExe2) {
+			t.Errorf("expected %s to be executable on Unix-like", exe)
+		}
+		// ensure txt without exec bit is not executable
+		if isExecutable(infoTxt) {
+			t.Errorf("did not expect %s to be executable on Unix-like", txt)
+		}
 	}
 }

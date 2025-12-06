@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -34,7 +36,8 @@ func TestScriptDiscovery_ConfigurationLoading(t *testing.T) {
 	cfg.SetGlobalOption("script.autodiscovery", "true")
 	cfg.SetGlobalOption("script.git-traversal", "true")
 	cfg.SetGlobalOption("script.max-traversal-depth", "5")
-	cfg.SetGlobalOption("script.paths", "~/custom-scripts:/opt/scripts")
+	// Use comma separator for cross-platform compatibility
+	cfg.SetGlobalOption("script.paths", "~/custom-scripts,/opt/scripts")
 	cfg.SetGlobalOption("script.path-patterns", "scripts,bin,commands")
 
 	discovery := NewScriptDiscovery(cfg)
@@ -310,6 +313,8 @@ func TestScriptDiscovery_PathPriority(t *testing.T) {
 func TestScriptDiscovery_ParsePathList(t *testing.T) {
 	t.Parallel()
 	sep := string([]byte{filepath.ListSeparator})
+
+	// Platform-agnostic tests using comma (works on all platforms)
 	tests := []struct {
 		input    string
 		expected []string
@@ -317,11 +322,13 @@ func TestScriptDiscovery_ParsePathList(t *testing.T) {
 		{"", nil},
 		{"  ", nil},
 		{"single", []string{"single"}},
-		{"path1:path2", []string{"path1", "path2"}},
 		{"path1,path2", []string{"path1", "path2"}},
-		{"path1:path2:path3", []string{"path1", "path2", "path3"}},
-		{" path1 : path2 ", []string{"path1", "path2"}},
 		{" path1 , path2 ", []string{"path1", "path2"}},
+		{"path1,path2,path3", []string{"path1", "path2", "path3"}},
+		// Tests using platform-specific list separator
+		{"path1" + sep + "path2", []string{"path1", "path2"}},
+		{"path1" + sep + "path2" + sep + "path3", []string{"path1", "path2", "path3"}},
+		{" path1 " + sep + " path2 ", []string{"path1", "path2"}},
 		{"path1" + sep + "path2,path3", []string{"path1", "path2", "path3"}},
 	}
 
@@ -370,7 +377,13 @@ func TestNewRegistryWithConfig_Integration(t *testing.T) {
 	t.Parallel()
 	// Test that the registry properly integrates with script discovery
 	cfg := config.NewConfig()
-	cfg.SetGlobalOption("script.paths", "/custom/path")
+	// Create a real custom path so discovery can find it on all platforms
+	tmp := t.TempDir()
+	customPath := filepath.Join(tmp, "custom-scripts")
+	if err := os.MkdirAll(customPath, 0755); err != nil {
+		t.Fatalf("failed to create custom scripts dir: %v", err)
+	}
+	cfg.SetGlobalOption("script.paths", customPath)
 
 	registry := NewRegistryWithConfig(cfg)
 
@@ -379,12 +392,21 @@ func TestNewRegistryWithConfig_Integration(t *testing.T) {
 		t.Error("Expected registry to have discovered some script paths")
 	}
 
-	// Custom path should be added
+	// Custom path should be added (compare normalized absolute paths)
 	found := false
+	normalizedCustomPath, _ := filepath.Abs(customPath)
 	for _, path := range registry.scriptPaths {
-		if path == "/custom/path" {
-			found = true
-			break
+		pAbs, _ := filepath.Abs(path)
+		if runtime.GOOS == "windows" {
+			if strings.EqualFold(pAbs, normalizedCustomPath) {
+				found = true
+				break
+			}
+		} else {
+			if pAbs == normalizedCustomPath {
+				found = true
+				break
+			}
 		}
 	}
 	if !found {
@@ -402,10 +424,24 @@ func TestScriptDiscovery_AutodiscoveryIntegration(t *testing.T) {
 		t.Fatalf("Failed to create test directory: %v", err)
 	}
 
-	// Create a test script
-	testScript := filepath.Join(scriptsDir, "testscript")
-	if err := os.WriteFile(testScript, []byte("#!/bin/bash\necho test"), 0755); err != nil {
-		t.Fatalf("Failed to create test script: %v", err)
+	// Create a test script appropriate for the host platform. On Unix-like
+	// systems use a shell script with execute bits; on Windows use a .bat
+	// file (execute bits are not meaningful on Windows in the same way).
+	var testScript string
+	if runtime.GOOS == "windows" {
+		testScript = filepath.Join(scriptsDir, "testscript.bat")
+		if err := os.WriteFile(testScript, []byte("@echo off\necho test"), 0644); err != nil {
+			t.Fatalf("Failed to create test script: %v", err)
+		}
+	} else {
+		testScript = filepath.Join(scriptsDir, "testscript.sh")
+		if err := os.WriteFile(testScript, []byte("#!/bin/bash\necho test"), 0755); err != nil {
+			t.Fatalf("Failed to create test script: %v", err)
+		}
+		// Ensure execute bit regardless of umask (no-op on Windows).
+		if err := os.Chmod(testScript, 0755); err != nil {
+			t.Fatalf("Failed to chmod test script: %v", err)
+		}
 	}
 
 	// Change to the project directory
@@ -426,8 +462,9 @@ func TestScriptDiscovery_AutodiscoveryIntegration(t *testing.T) {
 	// Should find the test script
 	scriptCommands := registry.ListScript()
 	found := false
+	expectedName := filepath.Base(testScript)
 	for _, script := range scriptCommands {
-		if script == "testscript" {
+		if script == expectedName {
 			found = true
 			break
 		}

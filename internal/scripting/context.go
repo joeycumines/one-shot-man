@@ -70,12 +70,17 @@ func (cm *ContextManager) absolutePathFromOwner(owner string) (string, error) {
 		return cm.basePath, nil
 	}
 	if filepath.IsAbs(owner) {
-		return owner, nil
+		// Ensure we return a canonical absolute path for absolute inputs.
+		return filepath.Abs(owner)
 	}
 	return filepath.Abs(filepath.Join(cm.basePath, owner))
 }
 
 // AddPath adds a file or directory to the context.
+//
+// Historically AddPath resolved relative inputs against the process CWD
+// (matching typical CLI/shell expectations). That behavior is preserved so
+// callers which supply user/CLI paths continue to get the expected result.
 func (cm *ContextManager) AddPath(path string) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
@@ -93,6 +98,61 @@ func (cm *ContextManager) AddPath(path string) error {
 	}
 
 	return cm.addPathWithOwnerLocked(absPath, owner, info)
+}
+
+// AddRelativePath resolves the provided owner-style path relative to the
+// ContextManager base path and then registers it. This is intended for
+// internal use (e.g. session rehydration) where stored owner labels must be
+// resolved against the manager's configured base rather than the process CWD.
+//
+// It returns the canonical "owner" key that the ContextManager used to store
+// the path (this is the normalized, relative form when possible). Returning
+// the owner allows callers (e.g., TUI rehydration) to keep persisted labels
+// in sync with the backend and avoid ghost entries.
+func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+
+	// Accept both forward- and back-slash separators for owner labels so
+	// that sessions created on Windows (or with Windows-style labels) can
+	// be rehydrated on other hosts. Important: do NOT mutate the caller's
+	// label (e.g. converting backslashes to separators) — the ContextManager
+	// should operate on the exact label provided. Normalization is a caller
+	// concern (TUI rehydration code performs a conditional normalization
+	// fallback when appropriate).
+	absPath, err := cm.absolutePathFromOwner(ownerPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve path %s: %w", ownerPath, err)
+	}
+
+	// Historically AddRelativePath rejected relative owner labels that
+	// resolved outside the configured base path. ContextManager is not a
+	// security sandbox — rejecting such labels breaks legitimate
+	// rehydration scenarios where external absolute paths were previously
+	// normalized into relative labels (e.g. sessions that were made portable
+	// and later rehydrated on a different host). To avoid creating sessions
+	// that cannot be reloaded, we do not reject relative inputs solely
+	// because they resolve outside the base path. We still compute the
+	// relative form to detect errors, but do not treat leading ".." as an
+	// operational error during rehydration.
+	if !filepath.IsAbs(ownerPath) {
+		if _, rerr := filepath.Rel(cm.basePath, absPath); rerr != nil {
+			return "", fmt.Errorf("failed to compute relative path: %w", rerr)
+		}
+	}
+
+	// Verify the target exists to avoid adding dead entries during
+	// rehydration.
+	info, err := os.Lstat(absPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to stat path %s: %w", ownerPath, err)
+	}
+
+	owner := cm.normalizeOwnerPath(absPath)
+	if err := cm.addPathWithOwnerLocked(absPath, owner, info); err != nil {
+		return "", err
+	}
+	return owner, nil
 }
 
 func (cm *ContextManager) addPathWithOwnerLocked(absPath, owner string, info fs.FileInfo) error {

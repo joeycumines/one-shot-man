@@ -195,7 +195,9 @@ func TestContextPathsInTxtarHeaders(t *testing.T) {
 		if !containsString(paths, "root") {
 			t.Fatalf("expected directory entry 'root' to be tracked, got: %v", paths)
 		}
-		if !containsString(paths, "root/file_a.txt") || !containsString(paths, "root/sub/file_b.txt") || !containsString(paths, "root/link.txt") {
+		if !containsString(paths, strings.ReplaceAll("root/file_a.txt", "/", string(filepath.Separator))) ||
+			!containsString(paths, strings.ReplaceAll("root/sub/file_b.txt", "/", string(filepath.Separator))) ||
+			!containsString(paths, strings.ReplaceAll("root/link.txt", "/", string(filepath.Separator))) {
 			t.Fatalf("expected directory files to be tracked individually, got: %v", paths)
 		}
 	})
@@ -236,6 +238,112 @@ func TestContextPathsInTxtarHeaders(t *testing.T) {
 			t.Fatalf("expected standalone file to remain tracked, got: %s", txtarString)
 		}
 	})
+}
+
+func TestAddRelativePath_PreservesLiteralBackslash(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test; windows does not allow backslash in filenames")
+	}
+
+	base := t.TempDir()
+
+	// Create a file whose name contains a literal backslash character.
+	// On POSIX systems '\\' is a valid byte in a filename and must not
+	// be treated as a path separator by the ContextManager.
+	filename := "foo\\bar.txt"
+	full := filepath.Join(base, filename)
+
+	if err := os.WriteFile(full, []byte("ok"), 0o644); err != nil {
+		t.Fatalf("failed to write file with backslash in name: %v", err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatalf("NewContextManager failed: %v", err)
+	}
+
+	owner, err := cm.AddRelativePath(filename)
+	if err != nil {
+		t.Fatalf("AddRelativePath failed to register literal-backslash filename: %v", err)
+	}
+
+	if _, ok := cm.GetPath(owner); !ok {
+		t.Fatalf("expected path to be tracked for owner %q (original label %q)", owner, filename)
+	}
+}
+
+// Test that AddRelativePath accepts relative owner labels that resolve
+// outside of the configured base path. Historically such labels were
+// rejected (treated as directory traversal), which prevented sessions that
+// normalized absolute external paths into relative forms from being
+// rehydrated correctly.
+func TestAddRelativePath_AllowsRelativeOutsideBase(t *testing.T) {
+	base := t.TempDir()
+	external := t.TempDir()
+
+	// Create a file in the external directory.
+	extFile := filepath.Join(external, "external.txt")
+	if err := os.WriteFile(extFile, []byte("ok"), 0o644); err != nil {
+		t.Fatalf("failed to write external file: %v", err)
+	}
+
+	// Compute a relative path from base that points to the external file.
+	rel, err := filepath.Rel(base, extFile)
+	if err != nil {
+		t.Fatalf("failed to compute relative path: %v", err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatalf("NewContextManager failed: %v", err)
+	}
+
+	// Previously this would return an error. Now it should register the
+	// external file successfully (relevant for session rehydration).
+	owner, err := cm.AddRelativePath(rel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q) unexpectedly failed: %v", rel, err)
+	}
+
+	if _, ok := cm.GetPath(owner); !ok {
+		t.Fatalf("expected path to be tracked for owner %q (original label %q)", owner, rel)
+	}
+}
+
+func TestAddPathHandlesAbsolutePaths(t *testing.T) {
+	base := t.TempDir()
+
+	// Create file inside base
+	filePath := filepath.Join(base, "sub", "file.txt")
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		t.Fatalf("failed to make dirs: %v", err)
+	}
+	if err := os.WriteFile(filePath, []byte("hi"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatalf("NewContextManager failed: %v", err)
+	}
+
+	// Add absolute path; should be normalized to a relative owner key
+	if err := cm.AddPath(filePath); err != nil {
+		t.Fatalf("AddPath failed: %v", err)
+	}
+
+	paths := cm.ListPaths()
+	expected := filepath.Join("sub", "file.txt")
+	found := false
+	for _, p := range paths {
+		if p == expected {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected %q to be tracked, got paths: %v", expected, paths)
+	}
 }
 
 func TestContextManagerRemoveOwnership(t *testing.T) {

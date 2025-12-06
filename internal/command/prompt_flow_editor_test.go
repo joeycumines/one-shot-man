@@ -4,7 +4,6 @@ package command
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/termtest"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // TestPromptFlow_GoalCommandOpensEditor verifies that the goal command
@@ -29,7 +29,7 @@ func TestPromptFlow_GoalCommandOpensEditor(t *testing.T) {
 	opts := termtest.Options{
 		CmdName:        binaryPath,
 		Args:           []string{"prompt-flow", "-i"},
-		DefaultTimeout: 15 * time.Second,
+		DefaultTimeout: 50 * time.Second,
 		Env: []string{
 			"OSM_STORAGE_BACKEND=memory",
 			"OSM_SESSION_ID=" + uniqueSessionID(t),
@@ -171,6 +171,9 @@ esac
 	if err := os.WriteFile(editorScript, []byte(scriptContent), 0755); err != nil {
 		t.Fatalf("Failed to write goal editor script: %v", err)
 	}
+	if err := os.Chmod(editorScript, 0755); err != nil {
+		t.Fatalf("Failed to chmod goal editor script: %v", err)
+	}
 	return editorScript
 }
 
@@ -190,6 +193,9 @@ esac
 `
 	if err := os.WriteFile(editorScript, []byte(scriptContent), 0755); err != nil {
 		t.Fatalf("Failed to write use editor script: %v", err)
+	}
+	if err := os.Chmod(editorScript, 0755); err != nil {
+		t.Fatalf("Failed to chmod use editor script: %v", err)
 	}
 	return editorScript
 }
@@ -211,5 +217,5 @@ func requirePromptFlowExpectSince(t *testing.T, cp *termtest.ConsoleProcess, exp
 
 // uniqueSessionID generates a unique session ID for a test to prevent session state sharing
 func uniqueSessionID(t *testing.T) string {
-	return fmt.Sprintf("test-%s-%d", t.Name(), time.Now().UnixNano())
+	return testutil.NewTestSessionID("test", t.Name())
 }

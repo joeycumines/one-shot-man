@@ -6,7 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strings"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 )
@@ -142,8 +144,23 @@ func (r *Registry) findScriptCommands() []string {
 
 // isExecutable checks if a file is executable.
 func isExecutable(info os.FileInfo) bool {
-	mode := info.Mode()
-	return mode&0111 != 0 // Check if any execute bit is set
+	// On Unix-like systems executability is determined by execute bits.
+	if runtime.GOOS != "windows" {
+		mode := info.Mode()
+		return mode&0111 != 0 // Check if any execute bit is set
+	}
+
+	// On Windows, the file mode bits are not a reliable indicator.
+	// Conservatively treat a small set of well-known executable extensions
+	// as executable (these are discovered but some — e.g. .bat/.cmd — need
+	// an interpreter to be executed via cmd /c).
+	name := strings.ToLower(info.Name())
+	switch filepath.Ext(name) {
+	case ".exe", ".com", ".bat", ".cmd":
+		return true
+	default:
+		return false
+	}
 }
 
 // removeDuplicates removes duplicate strings from a sorted slice.
@@ -184,7 +201,21 @@ func NewScriptCommand(name, scriptPath string) *ScriptCommand {
 
 // Execute runs the script command.
 func (c *ScriptCommand) Execute(args []string, stdout, stderr io.Writer) error {
-	cmd := exec.Command(c.scriptPath, args...)
+	var cmd *exec.Cmd
+
+	// Windows: some script file types (like .bat/.cmd) must be launched
+	// via the command interpreter. Detect those and invoke `cmd /c`.
+	if runtime.GOOS == "windows" {
+		ext := strings.ToLower(filepath.Ext(c.scriptPath))
+		if ext == ".bat" || ext == ".cmd" {
+			cmd = exec.Command("cmd", append([]string{"/c", c.scriptPath}, args...)...)
+		}
+	}
+
+	if cmd == nil {
+		cmd = exec.Command(c.scriptPath, args...)
+	}
+
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	cmd.Stdin = os.Stdin

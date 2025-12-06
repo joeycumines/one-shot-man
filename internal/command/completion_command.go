@@ -94,7 +94,7 @@ _osm_completion() {
             return 0
             ;;
         session)
-            COMPREPLY=($(compgen -W "list clean delete info path id" -- ${cur}))
+            COMPREPLY=($(compgen -W "list clean purge delete info path id" -- ${cur}))
             return 0
             ;;
         # For delete/info let shell default to filename completion (no session ids)
@@ -164,7 +164,7 @@ _osm() {
                     ;;
                 session)
                     if (( CURRENT == 3 )); then
-                        _values 'session-subcommand' 'list' 'clean' 'delete' 'info' 'path' 'id'
+                        _values 'session-subcommand' 'list' 'clean' 'purge' 'delete' 'info' 'path' 'id'
                     else
                         _files
                     fi
@@ -217,7 +217,7 @@ func (c *CompletionCommand) generateFishCompletion(w io.Writer) error {
 	}
 
 	var sessionCompletions strings.Builder
-	sessionCompletions.WriteString("complete -c osm -n '__fish_seen_subcommand_from session' -a 'list clean delete info path id' -d 'Session subcommands'\n")
+	sessionCompletions.WriteString("complete -c osm -n '__fish_seen_subcommand_from session' -a 'list clean purge delete info path id' -d 'Session subcommands'\n")
 
 	script := fmt.Sprintf(`# Fish completion script for osm (one-shot-man)
 
@@ -291,7 +291,7 @@ Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
     }
 
     if ($tokenCount -eq 3 -and $command -eq 'session') {
-    $subs = @('list','clean','delete','info','path','id')
+    $subs = @('list','clean','purge','delete','info','path','id')
         $subs | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
             [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
         }

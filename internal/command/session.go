@@ -33,7 +33,7 @@ type SessionCommand struct {
 // NewSessionCommand creates the session management command.
 func NewSessionCommand(cfg *config.Config) *SessionCommand {
 	return &SessionCommand{
-		BaseCommand: NewBaseCommand("session", "Manage persisted sessions", "session [list|clean|delete|info|path|id]"),
+		BaseCommand: NewBaseCommand("session", "Manage persisted sessions", "session [list|clean|purge|delete|info|path|id]"),
 		cfg:         cfg,
 		stdin:       os.Stdin,
 	}
@@ -149,6 +149,47 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			}
 		}
 		return c.clean(stdout)
+	case "purge":
+		// parse subcommand flags
+		fs := flag.NewFlagSet("session-purge", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		var yesLocal bool
+		fs.BoolVar(&yesLocal, "y", false, "Assume yes to confirmation prompts")
+		// Register dry-run locally so `purge -dry-run` works correctly.
+		fs.BoolVar(&c.dry, "dry-run", c.dry, "Don't actually delete; show what would be deleted")
+		fs.Usage = func() {
+			_, _ = fmt.Fprintf(stderr, "Usage: %s purge\n\n", c.Name())
+			fmt.Fprintln(stderr, "Permanently purge sessions (ignores configured retention policies).")
+			var hasFlags bool
+			fs.VisitAll(func(_ *flag.Flag) { hasFlags = true })
+			if hasFlags {
+				fmt.Fprintln(stderr, "\nOptions:")
+				fs.SetOutput(stderr)
+				fs.PrintDefaults()
+				fs.SetOutput(io.Discard)
+			}
+		}
+		if err := fs.Parse(args[1:]); err != nil {
+			if err == flag.ErrHelp {
+				return nil
+			}
+			return err
+		}
+		// confirmation
+		if !c.dry && !c.yes && !yesLocal {
+			br := bufio.NewReader(c.stdin)
+			fmt.Fprint(stdout, "This will permanently purge sessions (ignoring retention). Proceed? (y/N): ")
+			t, err := br.ReadString('\n')
+			if err != nil && err != io.EOF {
+				return fmt.Errorf("failed to read confirmation: %w", err)
+			}
+			t = strings.TrimSpace(t)
+			if !strings.EqualFold(t, "y") && !strings.EqualFold(t, "yes") {
+				fmt.Fprintln(stdout, "aborted")
+				return nil
+			}
+		}
+		return c.purge(stdout)
 	case "delete":
 		// Pre-scan arguments to support '-y' and '-dry-run' even when placed after non-flag
 		// arguments. The default flag package stops parsing flags at the first
@@ -405,12 +446,24 @@ func (c *SessionCommand) list(w io.Writer, format, sortMode string) error {
 }
 
 func (c *SessionCommand) clean(w io.Writer) error {
+	return c.runCleanup(w, false)
+}
+
+func (c *SessionCommand) purge(w io.Writer) error {
+	return c.runCleanup(w, true)
+}
+
+func (c *SessionCommand) runCleanup(w io.Writer, purge bool) error {
 	cfg := c.cfg
 	sc := cfg.Sessions
-	cleaner := &storage.Cleaner{MaxAgeDays: sc.MaxAgeDays, MaxCount: sc.MaxCount, MaxSizeMB: sc.MaxSizeMB, DryRun: c.dry}
+	cleaner := &storage.Cleaner{MaxAgeDays: sc.MaxAgeDays, MaxCount: sc.MaxCount, MaxSizeMB: sc.MaxSizeMB, DryRun: c.dry, Purge: purge}
 
 	if c.dry {
-		fmt.Fprintln(w, "Dry-run: the following would be removed:")
+		if purge {
+			fmt.Fprintln(w, "Dry-run: the following would be purged:")
+		} else {
+			fmt.Fprintln(w, "Dry-run: the following would be removed:")
+		}
 		report, err := cleaner.ExecuteCleanup("")
 		if err != nil {
 			return err
@@ -426,7 +479,11 @@ func (c *SessionCommand) clean(w io.Writer) error {
 		return err
 	}
 	for _, id := range report.Removed {
-		fmt.Fprintln(w, "removed:", id)
+		if purge {
+			fmt.Fprintln(w, "purged:", id)
+		} else {
+			fmt.Fprintln(w, "removed:", id)
+		}
 	}
 	for _, id := range report.Skipped {
 		fmt.Fprintln(w, "skipped:", id)

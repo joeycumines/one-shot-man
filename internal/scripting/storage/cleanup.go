@@ -24,6 +24,9 @@ type Cleaner struct {
 	// dry-run behavior and tests that need to validate the removal list
 	// without performing destructive actions.
 	DryRun bool
+	// Purge when true instructs the cleaner to ignore retention policies
+	// and consider all non-active, non-excluded sessions for removal.
+	Purge bool
 }
 
 // CleanupReport summarizes what was removed and what was skipped.
@@ -88,6 +91,13 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 	toRemoveMap := map[string]SessionInfo{}
 	for _, s := range ageCandidates {
 		toRemoveMap[s.ID] = s
+	}
+
+	// Purge mode: select all candidates (non-active, non-excluded)
+	if c.Purge {
+		for _, s := range candidates {
+			toRemoveMap[s.ID] = s
+		}
 	}
 
 	// Count-based pruning: keep newest MaxCount

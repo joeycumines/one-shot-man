@@ -289,6 +289,71 @@ func TestSessionsClean_AcceptsDryRunFlag(t *testing.T) {
 	}
 }
 
+func TestSessionsPurge_RemovesAllNonActive(t *testing.T) {
+	dir := t.TempDir()
+	storage.SetTestPaths(dir)
+
+	// create two non-active session files
+	id1 := "purge-old"
+	id2 := "purge-new"
+	p1, _ := storage.SessionFilePath(id1)
+	p2, _ := storage.SessionFilePath(id2)
+	if err := os.WriteFile(p1, []byte("{}"), 0644); err != nil {
+		t.Fatalf("write session p1: %v", err)
+	}
+	if err := os.WriteFile(p2, []byte("{}"), 0644); err != nil {
+		t.Fatalf("write session p2: %v", err)
+	}
+
+	cfg := config.NewConfig()
+	// Set a conservative MaxAge so clean would not remove recent sessions
+	cfg.Sessions.MaxAgeDays = 365
+
+	cmd := NewSessionCommand(cfg)
+
+	var out bytes.Buffer
+	if err := cmd.Execute([]string{"purge", "-y"}, &out, &out); err != nil {
+		t.Fatalf("purge failed: %v", err)
+	}
+
+	if _, err := os.Stat(p1); !os.IsNotExist(err) {
+		t.Fatalf("expected session p1 to be removed by purge")
+	}
+	if _, err := os.Stat(p2); !os.IsNotExist(err) {
+		t.Fatalf("expected session p2 to be removed by purge")
+	}
+}
+
+func TestSessionsPurge_AcceptsDryRunFlag(t *testing.T) {
+	dir := t.TempDir()
+	storage.SetTestPaths(dir)
+
+	cfg := config.NewConfig()
+	cmd := NewSessionCommand(cfg)
+
+	var out bytes.Buffer
+	if err := cmd.Execute([]string{"purge", "-dry-run"}, &out, &out); err != nil {
+		t.Fatalf("purge -dry-run failed: %v", err)
+	}
+	if !strings.Contains(out.String(), "Dry-run") {
+		t.Fatalf("expected dry-run output for purge, got: %q", out.String())
+	}
+}
+
+func TestSessionsPurge_HelpShowsFlags(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewSessionCommand(cfg)
+
+	var out bytes.Buffer
+	if err := cmd.Execute([]string{"purge", "-h"}, &out, &out); err != nil {
+		t.Fatalf("purge -h failed: %v", err)
+	}
+	s := out.String()
+	if !strings.Contains(s, "-dry-run") || !strings.Contains(s, "-y") {
+		t.Fatalf("expected purge help to mention -dry-run and -y, got: %q", s)
+	}
+}
+
 func TestSessionsDeleteAcceptsDryRunAfterID(t *testing.T) {
 	dir := t.TempDir()
 	storage.SetTestPaths(dir)

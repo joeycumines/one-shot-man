@@ -35,10 +35,10 @@ func TestCodeReviewCommand_ShowActualDiffOutput(t *testing.T) {
 		t.Fatalf("Failed to execute script: %v", err)
 	}
 
-	// Explicitly switch to review mode using Go-level call to ensure mode is fully initialized
+	// Explicitly switch to code-review mode using Go-level call to ensure mode is fully initialized
 	tuiManager := engine.GetTUIManager()
-	if err := tuiManager.SwitchMode("review"); err != nil {
-		t.Fatalf("Failed to switch to review mode: %v", err)
+	if err := tuiManager.SwitchMode("code-review"); err != nil {
+		t.Fatalf("Failed to switch to code-review mode: %v", err)
 	}
 
 	// Test the complete workflow: add diff, then generate prompt

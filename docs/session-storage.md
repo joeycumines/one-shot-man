@@ -1290,7 +1290,7 @@ Built-in goals provide pre-configured modes for common development tasks. Each g
   - `show [meta|prompt]`: Displays `metaPrompt` or `taskPrompt`
   - `copy [meta|prompt]`: Copies `metaPrompt`, `taskPrompt`, or final assembled prompt to clipboard
 
-### Code Review Mode (`review`)
+### Code Review Mode (`code-review`)
 
 **State Keys:**
 

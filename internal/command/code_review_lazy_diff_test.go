@@ -58,10 +58,10 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 		t.Fatalf("Failed to execute script: %v", err)
 	}
 
-	// Explicitly switch to review mode using Go-level call to ensure mode is fully initialized
+	// Explicitly switch to code-review mode using Go-level call to ensure mode is fully initialized
 	tuiManager := engine.GetTUIManager()
-	if err := tuiManager.SwitchMode("review"); err != nil {
-		t.Fatalf("Failed to switch to review mode: %v", err)
+	if err := tuiManager.SwitchMode("code-review"); err != nil {
+		t.Fatalf("Failed to switch to code-review mode: %v", err)
 	}
 
 	// Simple smoke test first: verify that we can call commands

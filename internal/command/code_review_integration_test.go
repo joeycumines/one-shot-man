@@ -30,8 +30,8 @@ func TestCodeReviewCommand_Integration(t *testing.T) {
 	output := stdout.String()
 
 	// Verify the mode registration was successful
-	if !contains(output, "Sub-test enter-review passed") {
-		t.Errorf("Expected enter-review sub-test to pass, got: %s", output)
+	if !contains(output, "Sub-test enter-code-review passed") {
+		t.Errorf("Expected enter-code-review sub-test to pass, got: %s", output)
 	}
 
 	// Verify we entered the review mode
@@ -44,5 +44,5 @@ func TestCodeReviewCommand_Integration(t *testing.T) {
 		t.Errorf("Expected compact initial message in output, got: %s", output)
 	}
 
-	// Verify the enter-review test passed - removed duplicate check
+	// Verify the enter-code-review test passed - removed duplicate check
 }

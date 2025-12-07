@@ -30,12 +30,12 @@ func TestCodeReviewCommand_DiffDefaultBehavior(t *testing.T) {
 		t.Errorf("Expected compact initial message in output, got: %s", output)
 	}
 
-	// Verify both script sub-tests passed (register-mode and enter-review)
+	// Verify both script sub-tests passed (register-mode and enter-code-review)
 	if !contains(output, "Sub-test register-mode passed") {
 		t.Errorf("Expected register-mode sub-test to pass, got: %s", output)
 	}
 
-	if !contains(output, "Sub-test enter-review passed") {
-		t.Errorf("Expected enter-review sub-test to pass, got: %s", output)
+	if !contains(output, "Sub-test enter-code-review passed") {
+		t.Errorf("Expected enter-code-review sub-test to pass, got: %s", output)
 	}
 }

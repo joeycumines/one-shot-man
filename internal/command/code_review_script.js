@@ -12,9 +12,9 @@ const shared = require('osm:sharedStateSymbols');
 const COMMAND_NAME = config.name;
 // The mode exposed to the TUI is a short name users can switch to.
 // Historically the command is called "code-review" while the single
-// mode it exposes is called "review". Keep that separation so tests
-// and user expectations remain stable.
-const MODE_NAME = "review";
+// mode it exposes used to be called "review". Use a single consistent
+// mode id of "code-review" now so the TUI mode and command name match.
+const MODE_NAME = "code-review";
 
 // Create the single state accessor with only shared contextItems
 const state = tui.createState(COMMAND_NAME, {
@@ -110,7 +110,7 @@ ctx.run("register-mode", function () {
         name: MODE_NAME,
         tui: {
             title: "Code Review",
-            prompt: "(review) > ",
+            prompt: "(code-review) > ",
             enableHistory: true,
             historyFile: ".code-review_history"
         },
@@ -126,7 +126,7 @@ ctx.run("register-mode", function () {
     });
 });
 
-// Auto-switch into review mode when this script loads
-ctx.run("enter-review", function () {
+// Auto-switch into code-review mode when this script loads
+ctx.run("enter-code-review", function () {
     tui.switchMode(MODE_NAME);
 });

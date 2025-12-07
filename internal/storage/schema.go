@@ -1,8 +1,11 @@
 package storage
 
 import (
+	"encoding/json"
 	"time"
 )
+
+const CurrentSchemaVersion = "0.2.0"
 
 // Session represents the complete, persisted state of a single osm TUI instance.
 // This is the top-level object serialized to a file.
@@ -19,9 +22,9 @@ type Session struct {
 
 // HistoryEntry is an immutable record of a command and the complete state after its execution.
 type HistoryEntry struct {
-	EntryID    string    `json:"entryId"` // Unique ID for the entry (e.g., nanosecond timestamp).
-	ModeID     string    `json:"modeId"`  // The name of the mode where the command was run.
-	Command    string    `json:"command"`
-	ReadTime   time.Time `json:"readTime"`
-	FinalState string    `json:"finalState"` // Complete serialized JSON of unified application state.
+	EntryID    string          `json:"entryId"` // Unique ID for the entry (e.g., nanosecond timestamp).
+	ModeID     string          `json:"modeId"`  // The name of the mode where the command was run.
+	Command    string          `json:"command"`
+	ReadTime   time.Time       `json:"readTime"`
+	FinalState json.RawMessage `json:"finalState"` // Complete serialized JSON of unified application state.
 }

@@ -43,7 +43,7 @@ func TestResetArchiveIntegration_FileSystemBackend(t *testing.T) {
 	}
 
 	initialSession := &storage.Session{
-		Version:    "0.1.0",
+		Version:    storage.CurrentSchemaVersion,
 		ID:         sessionID,
 		CreateTime: time.Now(),
 		UpdateTime: time.Now(),
@@ -238,7 +238,7 @@ func TestMultipleResets_ArchiveCounter(t *testing.T) {
 
 		// Create state
 		session := &storage.Session{
-			Version:     "0.1.0",
+			Version:     storage.CurrentSchemaVersion,
 			ID:          sessionID,
 			CreateTime:  time.Now(),
 			UpdateTime:  time.Now(),

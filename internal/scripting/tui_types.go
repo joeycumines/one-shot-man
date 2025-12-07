@@ -39,16 +39,10 @@ type TUIManager struct {
 	outputQueue []string
 	outputMu    sync.Mutex
 
-	// history stores command history per mode
-	history map[string][]HistoryEntry
-
 	// stateManager orchestrates all persistence logic for this TUI instance
 	// Use the builtin.StateManager interface to avoid tight coupling to the
 	// concrete implementation.
 	stateManager builtin.StateManager
-
-	// sessionID uniquely identifies this TUI session for persistence
-	sessionID string
 
 	// commandHistory holds the list of commands from persistent history
 	commandHistory []string

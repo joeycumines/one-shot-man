@@ -21,7 +21,7 @@ func TestArchiveSession_DestAlreadyExists_DoesNotOverwrite(t *testing.T) {
 	defer b.Close()
 
 	// Save a simple session so there's content to archive.
-	sess := &Session{ID: sid, Version: currentSchemaVersion, CreateTime: time.Now(), UpdateTime: time.Now()}
+	sess := &Session{ID: sid, Version: CurrentSchemaVersion, CreateTime: time.Now(), UpdateTime: time.Now()}
 	if err := b.SaveSession(sess); err != nil {
 		t.Fatalf("failed to save session: %v", err)
 	}

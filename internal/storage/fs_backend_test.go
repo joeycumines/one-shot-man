@@ -165,8 +165,8 @@ func TestFileSystemBackend_SaveAndLoadSession(t *testing.T) {
 	if err := json.Unmarshal(data, &onDiskSession); err != nil {
 		t.Fatalf("failed to unmarshal on-disk session: %v", err)
 	}
-	if onDiskSession.Version != currentSchemaVersion {
-		t.Errorf("version mismatch: got %q, want %q", onDiskSession.Version, currentSchemaVersion)
+	if onDiskSession.Version != CurrentSchemaVersion {
+		t.Errorf("version mismatch: got %q, want %q", onDiskSession.Version, CurrentSchemaVersion)
 	}
 	if onDiskSession.UpdateTime.IsZero() {
 		t.Error("UpdateTime was not set on save")

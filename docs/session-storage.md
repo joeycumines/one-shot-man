@@ -469,7 +469,7 @@ This allows:
 
 ```json
 {
-  "version": "0.1.0",
+  "version": "0.2.0",
   "id": "/dev/ttys001",
   "createTime": "2025-10-25T10:00:00Z",
   "updateTime": "2025-10-25T10:30:00Z",

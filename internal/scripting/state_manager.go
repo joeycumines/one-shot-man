@@ -61,7 +61,7 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 	now := time.Now()
 	if isNewSession {
 		session = &storage.Session{
-			Version:     "0.1.0",
+			Version:     storage.CurrentSchemaVersion,
 			ID:          sessionID,
 			CreateTime:  now,
 			UpdateTime:  now,
@@ -71,10 +71,12 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 		}
 	} else {
 		// Handle schema migration if needed
-		if session.Version != "0.1.0" {
-			log.Printf("WARNING: Session schema version mismatch. Expected 0.1.0, got %s. Starting fresh session.", session.Version)
+		if session.Version != storage.CurrentSchemaVersion {
+			log.Printf("WARNING: Session schema version mismatch. Expected %s, got %s. Starting fresh session.",
+				storage.CurrentSchemaVersion,
+				session.Version)
 			session = &storage.Session{
-				Version:     "0.1.0",
+				Version:     storage.CurrentSchemaVersion,
 				ID:          sessionID,
 				CreateTime:  now,
 				UpdateTime:  now,
@@ -274,7 +276,7 @@ func (sm *StateManager) SetState(persistentKey string, value interface{}) {
 
 // SerializeCompleteState serializes the entire state (both script and shared) into a JSON string.
 // This is used by CaptureSnapshot to create history entries with complete state snapshots.
-func (sm *StateManager) SerializeCompleteState() (string, error) {
+func (sm *StateManager) SerializeCompleteState() (json.RawMessage, error) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -294,15 +296,15 @@ func (sm *StateManager) SerializeCompleteState() (string, error) {
 
 	bytes, err := json.Marshal(completeState)
 	if err != nil {
-		return "{}", fmt.Errorf("failed to serialize state: %w", err)
+		return json.RawMessage("{}"), fmt.Errorf("failed to serialize state: %w", err)
 	}
 
-	return string(bytes), nil
+	return json.RawMessage(bytes), nil
 }
 
 // CaptureSnapshot captures the current state into the session history.
 // This creates an immutable history entry with the complete application state.
-func (sm *StateManager) CaptureSnapshot(modeID, command string, stateJSON string) error {
+func (sm *StateManager) CaptureSnapshot(modeID, command string, stateJSON json.RawMessage) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 

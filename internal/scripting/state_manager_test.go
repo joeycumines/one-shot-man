@@ -1,6 +1,7 @@
 package scripting
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -66,8 +67,8 @@ func TestNewStateManager_InitializesNewSession(t *testing.T) {
 	if sm.session.ID != sessionID {
 		t.Errorf("expected ID %q, got %q", sessionID, sm.session.ID)
 	}
-	if sm.session.Version != "0.1.0" {
-		t.Errorf("expected Version 0.1.0, got %q", sm.session.Version)
+	if sm.session.Version != storage.CurrentSchemaVersion {
+		t.Errorf("expected Version %q, got %q", storage.CurrentSchemaVersion, sm.session.Version)
 	}
 	if sm.session.CreateTime.IsZero() {
 		t.Error("CreateTime was not set")
@@ -123,7 +124,7 @@ func TestNewStateManager_PersistsAfterVersionMismatch(t *testing.T) {
 
 func TestNewStateManager_LoadsExistingSession(t *testing.T) {
 	existingSession := &storage.Session{
-		Version:     "0.1.0",
+		Version:     storage.CurrentSchemaVersion,
 		ID:          "test-session-existing",
 		CreateTime:  time.Now().Add(-24 * time.Hour),
 		UpdateTime:  time.Now().Add(-1 * time.Hour),
@@ -171,8 +172,8 @@ func TestNewStateManager_RecoversFromVersionMismatch(t *testing.T) {
 	defer sm.Close()
 
 	// Verify a fresh session was created
-	if sm.session.Version != "0.1.0" {
-		t.Errorf("expected Version 0.1.0, got %q", sm.session.Version)
+	if sm.session.Version != storage.CurrentSchemaVersion {
+		t.Errorf("expected Version %q, got %q", storage.CurrentSchemaVersion, sm.session.Version)
 	}
 	history := sm.GetSessionHistory()
 	if len(history) != 0 {
@@ -291,7 +292,7 @@ func TestCaptureSnapshot(t *testing.T) {
 	}
 
 	// Verify FinalState contains the serialized state
-	if entry.FinalState == "" {
+	if len(entry.FinalState) == 0 {
 		t.Error("FinalState should not be empty")
 	}
 }
@@ -451,7 +452,7 @@ func TestHistory_TruncateOnLoad(t *testing.T) {
 	}
 
 	existingSession := &storage.Session{
-		Version:     "0.1.0",
+		Version:     storage.CurrentSchemaVersion,
 		ID:          "test-session-truncate",
 		CreateTime:  time.Now(),
 		UpdateTime:  time.Now(),
@@ -503,7 +504,7 @@ func TestHistory_RingBufferWrapAndRead(t *testing.T) {
 
 	// Action: Capture maxHistoryEntries + 10 snapshots
 	const totalSnapshots = maxHistoryEntries + 10
-	stateJSON := `{"script":{},"shared":{}}`
+	stateJSON := json.RawMessage(`{"script":{},"shared":{}}`)
 	for i := 0; i < totalSnapshots; i++ {
 		command := fmt.Sprintf("cmd_%d", i)
 		err = sm.CaptureSnapshot("test-mode", command, stateJSON)
@@ -544,7 +545,7 @@ func TestHistory_PersistenceAfterWrap(t *testing.T) {
 
 	// Action: Capture maxHistoryEntries + 10 snapshots
 	const totalSnapshots = maxHistoryEntries + 10
-	stateJSON := `{"script":{},"shared":{}}`
+	stateJSON := json.RawMessage(`{"script":{},"shared":{}}`)
 	for i := 0; i < totalSnapshots; i++ {
 		command := fmt.Sprintf("cmd_%d", i)
 		err = sm.CaptureSnapshot("test-mode", command, stateJSON)
@@ -591,7 +592,7 @@ func TestHistory_ReadBeforeFull(t *testing.T) {
 
 	// Action: Capture only 20 snapshots (well below maxHistoryEntries)
 	const totalSnapshots = 20
-	stateJSON := `{"script":{},"shared":{}}`
+	stateJSON := json.RawMessage(`{"script":{},"shared":{}}`)
 	for i := 0; i < totalSnapshots; i++ {
 		command := fmt.Sprintf("cmd_%d", i)
 		err = sm.CaptureSnapshot("test-mode", command, stateJSON)
@@ -632,7 +633,7 @@ func TestHistory_PersistenceBeforeFull(t *testing.T) {
 
 	// Action: Capture only 20 snapshots
 	const totalSnapshots = 20
-	stateJSON := `{"script":{},"shared":{}}`
+	stateJSON := json.RawMessage(`{"script":{},"shared":{}}`)
 	for i := 0; i < totalSnapshots; i++ {
 		command := fmt.Sprintf("cmd_%d", i)
 		err = sm.CaptureSnapshot("test-mode", command, stateJSON)

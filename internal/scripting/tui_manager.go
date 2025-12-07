@@ -2,6 +2,7 @@ package scripting
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -49,8 +50,6 @@ func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reade
 		completers:       make(map[string]goja.Callable),
 		keyBindings:      make(map[string]goja.Callable),
 		promptCompleters: make(map[string]string),
-		history:          make(map[string][]HistoryEntry),
-		sessionID:        actualSessionID,
 		defaultColors: PromptColors{
 			// Choose a readable default for input that is not yellow/white-adjacent
 			InputText:               prompt.Green,
@@ -629,7 +628,7 @@ func (tm *TUIManager) captureHistorySnapshot(commandName string, commandArgs []s
 	stateJSON, err := tm.stateManager.SerializeCompleteState()
 	if err != nil {
 		log.Printf("WARNING: Failed to serialize state for snapshot: %v", err)
-		stateJSON = "{}"
+		stateJSON = json.RawMessage("{}")
 	}
 
 	// Capture snapshot

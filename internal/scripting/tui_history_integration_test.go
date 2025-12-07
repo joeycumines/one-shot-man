@@ -2,6 +2,7 @@ package scripting
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
@@ -212,11 +213,11 @@ func TestNewTUIManager_LoadsHistoryFromSession(t *testing.T) {
 		}
 
 		// Add some history entries via CaptureSnapshot
-		err := tm1.stateManager.CaptureSnapshot("test-mode", "test command 1", `{"script":{},"shared":{}}`)
+		err := tm1.stateManager.CaptureSnapshot("test-mode", "test command 1", json.RawMessage(`{"script":{},"shared":{}}`))
 		if err != nil {
 			t.Fatalf("failed to capture snapshot 1: %v", err)
 		}
-		err = tm1.stateManager.CaptureSnapshot("test-mode", "test command 2", `{"script":{},"shared":{}}`)
+		err = tm1.stateManager.CaptureSnapshot("test-mode", "test command 2", json.RawMessage(`{"script":{},"shared":{}}`))
 		if err != nil {
 			t.Fatalf("failed to capture snapshot 2: %v", err)
 		}
@@ -325,7 +326,7 @@ func TestNewTUIManager_StateManagerIntegration(t *testing.T) {
 		}
 
 		// Step 2: Add history and persist
-		err := tm1.stateManager.CaptureSnapshot("test-mode", "initial command", `{"script":{},"shared":{}}`)
+		err := tm1.stateManager.CaptureSnapshot("test-mode", "initial command", json.RawMessage(`{"script":{},"shared":{}}`))
 		if err != nil {
 			t.Fatalf("failed to capture snapshot: %v", err)
 		}
@@ -350,7 +351,7 @@ func TestNewTUIManager_StateManagerIntegration(t *testing.T) {
 		}
 
 		// Step 4: Add more history
-		err = tm2.stateManager.CaptureSnapshot("test-mode", "new command", `{"script":{},"shared":{}}`)
+		err = tm2.stateManager.CaptureSnapshot("test-mode", "new command", json.RawMessage(`{"script":{},"shared":{}}`))
 		if err != nil {
 			t.Fatalf("failed to capture snapshot: %v", err)
 		}

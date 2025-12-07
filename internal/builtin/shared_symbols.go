@@ -2,6 +2,7 @@
 package builtin
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/dop251/goja"
@@ -19,10 +20,10 @@ type StateManager interface {
 	IsSharedSymbol(symbol goja.Value) (string, bool)
 	GetState(persistentKey string) (interface{}, bool)
 	SetState(persistentKey string, value interface{})
-	CaptureSnapshot(modeID, command string, stateJSON string) error
+	CaptureSnapshot(modeID, command string, stateJSON json.RawMessage) error
 	PersistSession() error
 	GetSessionHistory() []storage.HistoryEntry
-	SerializeCompleteState() (string, error)
+	SerializeCompleteState() (json.RawMessage, error)
 	// ArchiveAndReset archives the current session and resets state. Returns
 	// the archive path if successful. Implementations may return an error
 	// indicating the destination already exists (useful for retries).

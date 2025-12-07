@@ -1,5 +1,7 @@
 # TODO - NOT for AI, for people only
 
+- Fix duplicate log lines for purged sessions etc?
+- Consider tightening up the concept of "logging" / the half-baked API exposed to scripts
 - Consider making commands and subcommands correctly fail upon receiving unexpected arguments or options
 - Consider persisting scripts as modes in the session state, to allow quick swapping between them - actually make modes useful
 - Add ability to include JS modules directly

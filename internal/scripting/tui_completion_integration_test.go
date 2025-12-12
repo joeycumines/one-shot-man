@@ -10,18 +10,18 @@ import (
 	"github.com/joeycumines/go-prompt"
 	istrings "github.com/joeycumines/go-prompt/strings"
 
+	"github.com/joeycumines/go-prompt/termtest"
 	"github.com/joeycumines/one-shot-man/internal/argv"
-	"github.com/joeycumines/one-shot-man/internal/termtest"
 )
 
 // TestFileCompletion_NoPanic_WithSpaces ensures completing quoted paths with spaces does not panic.
 func TestFileCompletion_NoPanic_WithSpaces(t *testing.T) {
 	ctx := context.Background()
-	test, err := termtest.NewGoPromptTest(ctx)
+	h, err := termtest.NewHarness(ctx)
 	if err != nil {
-		t.Fatalf("failed to create go-prompt test: %v", err)
+		t.Fatalf("failed to create harness: %v", err)
 	}
-	defer test.Close()
+	defer h.Close()
 
 	// Use a minimal TUIManager solely for completion logic
 	tm := &TUIManager{commands: map[string]Command{}, commandOrder: []string{}, modes: map[string]*ScriptMode{}}
@@ -36,29 +36,60 @@ func TestFileCompletion_NoPanic_WithSpaces(t *testing.T) {
 	}
 
 	// Start the prompt with our completer
-	test.RunPrompt(test.Executor, prompt.WithCompleter(completer))
+	h.RunPrompt(h.Executor, prompt.WithCompleter(completer))
 
 	// Type a command with a quoted path containing spaces, then press Tab to request completion
-	if err := test.SendInput("add \"my repo"); err != nil {
-		t.Fatalf("send input: %v", err)
+	{
+		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		if err := h.Console().WriteSync(ctx, "add \"my repo"); err != nil {
+			t.Fatalf("send input: %v", err)
+		}
 	}
-	// Capture offset BEFORE sending tab
-	startLen := test.GetPTY().OutputLen()
-	if err := test.SendKeys("tab"); err != nil {
-		t.Fatalf("send tab: %v", err)
+
+	// Capture snapshot BEFORE sending tab
+	snap := h.Console().Snapshot()
+	{
+		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		defer cancel()
+		if err := h.Console().SendSync(ctx, "tab"); err != nil {
+			t.Fatalf("send tab: %v", err)
+		}
 	}
 
 	// Give the UI a moment; ensure the process hasn't panicked by checking it's still responsive
-	if err := test.GetPTY().WaitForOutputSince("add", startLen, 1*time.Second); err != nil {
-		// Even if no visual suggestion shows, the important assertion is lack of panic; provide context
-		t.Logf("no completion output observed (not necessarily a failure): %v", err)
+	{
+		ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+		defer cancel()
+		if err := h.Console().Expect(ctx, snap, termtest.Contains("add"), "checking completion non-panic"); err != nil {
+			// Even if no visual suggestion shows, the important assertion is lack of panic; provide context
+			t.Logf("no completion output observed (not necessarily a failure): %v", err)
+		}
 	}
 
-	// Exit cleanly - capture offset BEFORE sending exit
-	exitStartLen := test.GetPTY().OutputLen()
-	if err := test.SendLine("exit"); err != nil {
-		t.Fatalf("send exit: %v", err)
+	// Exit cleanly - clear current input, then send a fresh 'exit' line
+	{
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if err := h.Console().SendSync(ctx, "ctrl+u"); err != nil {
+			t.Fatalf("clear input ctrl+u: %v", err)
+		}
+		if err := h.Console().WriteSync(ctx, "exit"); err != nil {
+			t.Fatalf("write exit: %v", err) // Fixed typo in log message here as well
+		}
+		if err := h.Console().SendSync(ctx, "enter"); err != nil {
+			t.Fatalf("send exit enter: %v", err)
+		}
 	}
-	// Wait for exit to be processed - check for prompt shutdown or any output change
-	_ = test.GetPTY().WaitForOutputSince("", exitStartLen, 500*time.Millisecond)
+
+	// final enter just in case it showed the completion menu
+	_ = h.Console().Send("enter")
+
+	{
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+		if err := h.WaitExit(ctx); err != nil {
+			t.Errorf("wait for prompt exit: %v\nOUTPUT: %q", err, h.Console())
+		}
+	}
 }

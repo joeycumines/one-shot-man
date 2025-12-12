@@ -8,4 +8,4 @@ import "time"
 // slow down scheduling and IO.
 //
 //lint:ignore U1000 Unused depending on env.
-var defaultTimeout = 70 * time.Second
+var defaultTimeout = 50 * time.Second

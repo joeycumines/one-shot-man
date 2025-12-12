@@ -30,7 +30,8 @@ import (
 	"time"
 
 	"github.com/joeycumines/go-prompt"
-	"github.com/joeycumines/one-shot-man/internal/termtest"
+	istrings "github.com/joeycumines/go-prompt/strings"
+	"github.com/joeycumines/go-prompt/termtest"
 )
 
 var stripANSIColor = regexp.MustCompile(`\x1B\[[0-9;]+[A-Za-z]`)
@@ -203,26 +204,28 @@ func TestExecutorTokenization_QuotedArgs(t *testing.T) {
 	}
 }
 
-// waitForPromptIdle waits for the prompt to be in a stable state, meaning no new
-// output has been generated for a short, consistent period. This is crucial for
-// ensuring that subsequent input (like an "enter" key press) is processed as a
-// new event and not bundled with the previous render's output.
-func waitForPromptIdle(t *testing.T, test *termtest.GoPromptTest, timeout time.Duration) {
+// waitForPromptIdle uses the go-prompt sync protocol for deterministic synchronization.
+// This replaces timing-based heuristics with a request-response mechanism:
+// the test sends a sync request, go-prompt responds AFTER processing all input and rendering.
+func waitForPromptIdle(t *testing.T, h *termtest.Harness, timeout time.Duration) {
 	t.Helper()
-	if err := test.GetPTY().WaitIdleOutput(t.Context(), timeout); err != nil {
-		t.Fatalf("timed out waiting for prompt to become idle: %s\nOutput: %q\n---\n%s",
-			err,
-			test.GetOutput(),
-			stripANSIColor.ReplaceAllString(test.GetOutput(), ""))
+	if timeout == 0 {
+		timeout = 5 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if err := h.Console().WaitIdle(ctx, 50*time.Millisecond); err != nil {
+		t.Fatalf("timed out waiting for prompt idle: %s\nOutput: %q",
+			err, h.Console().String())
 	}
 }
 
 func testPromptCompletion(ctx context.Context, t *testing.T) {
-	test, err := termtest.NewGoPromptTest(ctx)
+	h, err := termtest.NewHarness(ctx)
 	if err != nil {
-		t.Fatalf("failed to create go-prompt test: %v", err)
+		t.Fatalf("failed to create harness: %v", err)
 	}
-	defer test.Close()
+	defer h.Close()
 
 	// Define orchestration channels for executor
 	type executorCall struct {
@@ -232,7 +235,6 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 
 	executorIn := make(chan executorCall)
 	executorOut := make(chan executorResult)
-	defer close(executorIn)
 	defer close(executorOut)
 
 	// Orchestrated executor wrapping test.Executor
@@ -246,54 +248,37 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 			return
 		}
 		// Call the actual executor to record the command
-		test.Executor(cmd)
+		h.Executor(cmd)
 	}
 
-	completer := termtest.TestCompleter("help", "exit", "modes", "state")
+	completer := newTestCompleter("help", "exit", "modes", "state")
 
 	// Start prompt with completer and prefix
-	test.RunPrompt(executor, prompt.WithPrefix("> "), prompt.WithCompleter(completer))
+	h.RunPrompt(executor, prompt.WithPrefix("> "), prompt.WithCompleter(completer))
 
-	// Wait for initial prompt to be ready, indicated by the final cursor show.
-	initialLen := test.GetPTY().OutputLen()
-	if err := test.GetPTY().WaitForRawOutputSince(1*time.Second, initialLen, "\x1b[?25h"); err != nil {
-		t.Fatalf("prompt not ready: %v", err)
+	// Wait for initial prompt render to complete using sync protocol.
+	waitForPromptIdle(t, h, 5*time.Second)
+
+	// Test completion by typing partial command and wait for processing.
+	if err := h.Console().WriteSync(ctx, "he"); err != nil {
+		t.Fatalf("failed to send input with sync: %v", err)
 	}
 
-	// Capture offset BEFORE typing
-	startLen := test.GetPTY().OutputLen()
-
-	// Test completion by typing partial command
-	if err := test.SendInput("he"); err != nil {
-		t.Fatalf("failed to send input: %v", err)
+	// Send tab for completion and wait for processing.
+	if err := h.Console().SendSync(ctx, "tab"); err != nil {
+		t.Fatalf("failed to send tab with sync: %v", err)
 	}
 
-	// Wait for the render cycle that echoes "he" to complete.
-	if err := test.GetPTY().WaitForRawOutputSince(time.Second*2, startLen, "\x1b[?25h"); err != nil {
-		t.Fatalf("input echo render not complete: %v", err)
-	}
-
-	// Capture offset BEFORE sending tab
-	tabStartLen := test.GetPTY().OutputLen()
-	if err := test.SendKeys("tab"); err != nil {
-		t.Fatalf("failed to send tab: %v", err)
-	}
-
-	// Wait for the render cycle from tab completion to finish. The cursor will be
-	// shown after the line is updated to "help". This is the sync point.
-	if err := test.GetPTY().WaitForRawOutputSince(1*time.Second, tabStartLen, "\x1b[?25h"); err != nil {
-		output := test.GetOutput()
-		t.Fatalf("completion render not complete: %v\nOutput from %d: %q",
-			err, tabStartLen, stripANSIColor.ReplaceAllString(output[tabStartLen:], ""))
-	}
-
-	// Wait for the prompt to be idle before sending enter to prevent race conditions.
-	waitForPromptIdle(t, test, 0)
-
-	// The tab key completed "he" to "help", so we can now execute
-	if err := test.SendKeys("enter"); err != nil {
-		t.Fatalf("failed to send enter: %v", err)
-	}
+	sendDone := make(chan struct{})
+	go func() {
+		defer close(sendDone)
+		ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+		defer cancel()
+		if err := h.Console().SendSync(ctx, "enter"); err != nil {
+			t.Errorf("failed to send enter: %v", err)
+		}
+		_ = h.Console().Send("enter")
+	}()
 
 	// Orchestrate: wait for executor call with timeout
 	// Use a longer timeout to account for go-prompt's internal processing
@@ -301,7 +286,7 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 	case <-ctx.Done():
 		t.Fatalf("context done before command received")
 	case <-time.After(defaultTimeout):
-		output := test.GetOutput()
+		output := h.Console().String()
 		t.Fatalf("timeout waiting for help command\nFull normalized output: %s\nRaw output: %q",
 			stripANSIColor.ReplaceAllString(output, ""), output)
 	case call := <-executorIn:
@@ -312,13 +297,21 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 		executorOut <- executorResult{}
 	}
 
+	select {
+	case <-sendDone:
+	case <-time.After(defaultTimeout):
+		t.Fatalf("timeout waiting for send to complete")
+	case <-ctx.Done():
+		t.Fatalf("context done before send completed")
+	}
+
 	// Close the prompt (ExitChecker is disabled, so we must close explicitly)
-	if err := test.Close(); err != nil {
+	if err := h.Close(); err != nil {
 		t.Fatalf("close error: %v", err)
 	}
 
 	// Verify command was recorded
-	commands := test.Commands()
+	commands := h.ExecutedCommands()
 	if len(commands) != 1 {
 		t.Fatalf("expected 1 command, got %d: %v", len(commands), commands)
 	}
@@ -328,11 +321,11 @@ func testPromptCompletion(ctx context.Context, t *testing.T) {
 }
 
 func testKeyBindings(ctx context.Context, t *testing.T) {
-	test, err := termtest.NewGoPromptTest(ctx)
+	h, err := termtest.NewHarness(ctx)
 	if err != nil {
-		t.Fatalf("failed to create go-prompt test: %v", err)
+		t.Fatalf("failed to create harness: %v", err)
 	}
-	defer test.Close()
+	defer h.Close()
 
 	// Define orchestration channels for executor
 	type executorCall struct {
@@ -342,7 +335,6 @@ func testKeyBindings(ctx context.Context, t *testing.T) {
 
 	executorIn := make(chan executorCall)
 	executorOut := make(chan executorResult)
-	defer close(executorIn)
 	defer close(executorOut)
 
 	// Orchestrated executor wrapping test.Executor
@@ -356,46 +348,41 @@ func testKeyBindings(ctx context.Context, t *testing.T) {
 			return
 		}
 		// Call the actual executor to record the command
-		test.Executor(cmd)
+		h.Executor(cmd)
 	}
 
 	// Start prompt with prefix
-	test.RunPrompt(executor, prompt.WithPrefix("> "))
+	h.RunPrompt(executor, prompt.WithPrefix("> "))
 
-	// Wait for initial prompt to be ready, indicated by the final cursor show.
-	initialLen := test.GetPTY().OutputLen()
-	if err := test.GetPTY().WaitForRawOutputSince(1*time.Second, initialLen, "\x1b[?25h"); err != nil {
-		t.Fatalf("prompt not ready: %v", err)
+	// Wait for initial prompt render to complete using sync protocol.
+	waitForPromptIdle(t, h, 5*time.Second)
+
+	// Test basic key sequences with sync protocol.
+	if err := h.Console().WriteSync(ctx, "test command"); err != nil {
+		t.Fatalf("failed to send input with sync: %v", err)
 	}
 
-	// Test basic key sequences
-	inputStartLen := test.GetPTY().OutputLen()
-	if err := test.SendInput("test command"); err != nil {
-		t.Fatalf("failed to send input: %v", err)
+	// Test backspace with sync protocol.
+	if err := h.Console().SendSync(ctx, "backspace"); err != nil {
+		t.Fatalf("failed to send backspace with sync: %v", err)
 	}
 
-	// Wait for the render cycle that echoes the input to complete.
-	if err := test.GetPTY().WaitForRawOutputSince(1*time.Second, inputStartLen, "\x1b[?25h"); err != nil {
-		t.Fatalf("input render not complete: %v", err)
-	}
-
-	// Test backspace
-	backspaceStartLen := test.GetPTY().OutputLen()
-	if err := test.SendKeys("backspace"); err != nil {
-		t.Fatalf("failed to send backspace: %v", err)
-	}
-
-	// Wait for the rerender after backspace to complete, indicated by cursor show.
-	if err := test.GetPTY().WaitForRawOutputSince(1*time.Second, backspaceStartLen, "\x1b[?25h"); err != nil {
-		t.Fatalf("render after backspace not complete: %v\n%q", err, test.GetOutput())
-	}
-
-	// Wait for the prompt to be idle before sending enter to prevent race conditions.
-	waitForPromptIdle(t, test, 0)
-
-	if err := test.SendKeys("enter"); err != nil {
+	// select the completion (letting us reduce the risk of race in the next step)
+	if err := h.Console().SendSync(ctx, "right"); err != nil {
 		t.Fatalf("failed to send enter: %v", err)
 	}
+
+	// Execute the command.
+	sendDone := make(chan struct{})
+	go func() {
+		defer close(sendDone)
+		ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+		defer cancel()
+		if err := h.Console().SendSync(ctx, "enter"); err != nil {
+			t.Errorf("failed to send enter: %v", err)
+		}
+		_ = h.Console().Send("enter")
+	}()
 
 	// Orchestrate: wait for executor call with timeout
 	// Use a longer timeout to account for go-prompt's internal processing
@@ -403,7 +390,7 @@ func testKeyBindings(ctx context.Context, t *testing.T) {
 	case <-ctx.Done():
 		t.Fatalf("context done before command received")
 	case <-time.After(defaultTimeout):
-		output := test.GetOutput()
+		output := h.Console().String()
 		t.Fatalf("timeout waiting for test command\nOutput: %q",
 			stripANSIColor.ReplaceAllString(output, ""))
 	case call := <-executorIn:
@@ -414,23 +401,46 @@ func testKeyBindings(ctx context.Context, t *testing.T) {
 		executorOut <- executorResult{}
 	}
 
+	select {
+	case <-sendDone:
+	case <-time.After(defaultTimeout):
+		t.Fatalf("timeout waiting for send to complete")
+	case <-ctx.Done():
+		t.Fatalf("context done before send completed")
+	}
+
 	// Close the prompt (ExitChecker is disabled, so we must close explicitly)
-	if err := test.Close(); err != nil {
+	if err := h.Close(); err != nil {
 		t.Fatalf("close error: %v", err)
 	}
 
 	// Check that input was processed
-	output := test.GetOutput()
+	output := h.Console().String()
 	if len(output) == 0 {
 		t.Error("no output captured from prompt")
 	}
 
 	// Verify command was recorded
-	commands := test.Commands()
+	commands := h.ExecutedCommands()
 	if len(commands) != 1 {
 		t.Fatalf("expected 1 command, got %d: %v", len(commands), commands)
 	}
 	if commands[0] != "test comman" { // backspace removed 'd'
 		t.Errorf("expected command to be 'test comman', got %q", commands[0])
+	}
+}
+
+// TestCompleter creates a simple completer for testing that filters based on prefix.
+func newTestCompleter(suggestions ...string) prompt.Completer {
+	return func(d prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber) {
+		var sug []prompt.Suggest
+		text := d.Text
+		for _, s := range suggestions {
+			// Only include suggestions that match the current input
+			if strings.HasPrefix(s, text) || text == "" {
+				sug = append(sug, prompt.Suggest{Text: s, Description: "Test suggestion"})
+			}
+		}
+		return sug, 0, istrings.RuneNumber(len(d.Text))
 	}
 }

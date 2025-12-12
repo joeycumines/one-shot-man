@@ -522,6 +522,9 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		),
 	}
 
+	// this enables the sync protocol when built with the `integration` build tag
+	options = append(options, staticGoPromptOptions...)
+
 	// Add command history from persistent session
 	if len(tm.commandHistory) > 0 {
 		options = append(options, prompt.WithHistory(tm.commandHistory))

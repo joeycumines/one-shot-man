@@ -278,6 +278,9 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 		prompt.WithCompleter(completer),
 	}
 
+	// this enables the sync protocol when built with the `integration` build tag
+	options = append(options, staticGoPromptOptions...)
+
 	// Add history if configured
 	if historyConfig.Enabled && historyConfig.File != "" {
 		options = append(options, prompt.WithHistory(loadHistory(historyConfig.File)))
@@ -372,57 +375,57 @@ func parseKeyString(keyStr string) prompt.Key {
 	switch strings.ToLower(keyStr) {
 	case "escape", "esc":
 		return prompt.Escape
-	case "ctrl-a", "control-a":
+	case "ctrl-a", "control-a", "ctrl+a", "control+a":
 		return prompt.ControlA
-	case "ctrl-b", "control-b":
+	case "ctrl-b", "control-b", "ctrl+b", "control+b":
 		return prompt.ControlB
-	case "ctrl-c", "control-c":
+	case "ctrl-c", "control-c", "ctrl+c", "control+c":
 		return prompt.ControlC
-	case "ctrl-d", "control-d":
+	case "ctrl-d", "control-d", "ctrl+d", "control+d":
 		return prompt.ControlD
-	case "ctrl-e", "control-e":
+	case "ctrl-e", "control-e", "ctrl+e", "control+e":
 		return prompt.ControlE
-	case "ctrl-f", "control-f":
+	case "ctrl-f", "control-f", "ctrl+f", "control+f":
 		return prompt.ControlF
-	case "ctrl-g", "control-g":
+	case "ctrl-g", "control-g", "ctrl+g", "control+g":
 		return prompt.ControlG
-	case "ctrl-h", "control-h":
+	case "ctrl-h", "control-h", "ctrl+h", "control+h":
 		return prompt.ControlH
-	case "ctrl-i", "control-i":
+	case "ctrl-i", "control-i", "ctrl+i", "control+i":
 		return prompt.ControlI
-	case "ctrl-j", "control-j":
+	case "ctrl-j", "control-j", "ctrl+j", "control+j":
 		return prompt.ControlJ
-	case "ctrl-k", "control-k":
+	case "ctrl-k", "control-k", "ctrl+k", "control+k":
 		return prompt.ControlK
-	case "ctrl-l", "control-l":
+	case "ctrl-l", "control-l", "ctrl+l", "control+l":
 		return prompt.ControlL
-	case "ctrl-m", "control-m":
+	case "ctrl-m", "control-m", "ctrl+m", "control+m":
 		return prompt.ControlM
-	case "ctrl-n", "control-n":
+	case "ctrl-n", "control-n", "ctrl+n", "control+n":
 		return prompt.ControlN
-	case "ctrl-o", "control-o":
+	case "ctrl-o", "control-o", "ctrl+o", "control+o":
 		return prompt.ControlO
-	case "ctrl-p", "control-p":
+	case "ctrl-p", "control-p", "ctrl+p", "control+p":
 		return prompt.ControlP
-	case "ctrl-q", "control-q":
+	case "ctrl-q", "control-q", "ctrl+q", "control+q":
 		return prompt.ControlQ
-	case "ctrl-r", "control-r":
+	case "ctrl-r", "control-r", "ctrl+r", "control+r":
 		return prompt.ControlR
-	case "ctrl-s", "control-s":
+	case "ctrl-s", "control-s", "ctrl+s", "control+s":
 		return prompt.ControlS
-	case "ctrl-t", "control-t":
+	case "ctrl-t", "control-t", "ctrl+t", "control+t":
 		return prompt.ControlT
-	case "ctrl-u", "control-u":
+	case "ctrl-u", "control-u", "ctrl+u", "control+u":
 		return prompt.ControlU
-	case "ctrl-v", "control-v":
+	case "ctrl-v", "control-v", "ctrl+v", "control+v":
 		return prompt.ControlV
-	case "ctrl-w", "control-w":
+	case "ctrl-w", "control-w", "ctrl+w", "control+w":
 		return prompt.ControlW
-	case "ctrl-x", "control-x":
+	case "ctrl-x", "control-x", "ctrl+x", "control+x":
 		return prompt.ControlX
-	case "ctrl-y", "control-y":
+	case "ctrl-y", "control-y", "ctrl+y", "control+y":
 		return prompt.ControlY
-	case "ctrl-z", "control-z":
+	case "ctrl-z", "control-z", "ctrl+z", "control+z":
 		return prompt.ControlZ
 	case "up":
 		return prompt.Up

@@ -252,9 +252,9 @@ func TestMain(m *testing.M) {
 		testBinaryPath += ".exe"
 	}
 
-	// Build the binary
+	// Build the binary (enable integration tag for sync protocol)
 	fmt.Printf("TestMain: building test binary to %s\n", testBinaryPath)
-	cmd := exec.Command("go", "build", "-o", testBinaryPath, "./cmd/osm")
+	cmd := exec.Command("go", "build", "-tags=integration", "-o", testBinaryPath, "./cmd/osm")
 	cmd.Dir = repoRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -286,11 +286,9 @@ func TestMain(m *testing.M) {
 // The binary is guaranteed to exist and persist for the entire test run.
 func buildTestBinary(tb testing.TB) string {
 	tb.Helper()
-
 	if testBinaryPath == "" {
 		tb.Fatal("testBinaryPath not initialized - TestMain did not run?")
 	}
-
 	tb.Logf("buildTestBinary: returning path %s", testBinaryPath)
 	return testBinaryPath
 }

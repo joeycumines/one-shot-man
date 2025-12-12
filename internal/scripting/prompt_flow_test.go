@@ -3,13 +3,14 @@
 package scripting
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/joeycumines/one-shot-man/internal/termtest"
+	"github.com/joeycumines/go-prompt/termtest"
 )
 
 // TestPromptFlow_NonInteractive ensures the prompt-flow script registers and enters its mode
@@ -20,29 +21,41 @@ func TestPromptFlow_NonInteractive(t *testing.T) {
 	env := newTestProcessEnv(t)
 
 	// Run the CLI in non-interactive test mode to evaluate the built-in prompt-flow command
-	opts := termtest.Options{
-		CmdName:        binaryPath,
-		Args:           []string{"prompt-flow", "--test"},
-		DefaultTimeout: 20 * time.Second,
-		Env:            env,
-	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 
-	cp, err := termtest.NewTest(t, opts)
+	cp, err := termtest.NewConsole(ctx,
+		termtest.WithCommand(binaryPath, "prompt-flow", "--test"),
+		termtest.WithDefaultTimeout(20*time.Second),
+		termtest.WithEnv(env),
+	)
 	if err != nil {
 		t.Fatalf("Failed to start test process: %v", err)
 	}
 	defer cp.Close()
 
-	// Capture initial offset BEFORE the process outputs
-	startLen := cp.OutputLen()
+	expect := func(timeout time.Duration, since termtest.Snapshot, cond termtest.Condition, description string) error {
+		ctx, cancel := context.WithTimeout(t.Context(), timeout)
+		defer cancel()
+		return cp.Expect(ctx, since, cond, description)
+	}
+
+	// Capture snapshot immediately after start (before output is asserted)
+	snap := cp.Snapshot()
 
 	// Expect the prompt-flow banner/help emitted by onEnter after auto-switch
-	if _, err := cp.ExpectSince("Type 'help' for commands. Tip: Try 'goal --prewritten'.", startLen, opts.DefaultTimeout); err != nil {
+	if err := expect(20*time.Second, snap, termtest.Contains("Type 'help' for commands. Tip: Try 'goal --prewritten'."), "banner"); err != nil {
 		t.Fatalf("Expected banner: %v", err)
 	}
 
 	// Process should terminate on its own (non-interactive mode)
-	requireExpectExitCode(t, cp, 0)
+	code, err := cp.WaitExit(t.Context())
+	if err != nil {
+		t.Fatalf("Failed to wait for exit: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
 }
 
 func TestPromptFlow_GenerateRequiresGoal(t *testing.T) {
@@ -51,35 +64,47 @@ func TestPromptFlow_GenerateRequiresGoal(t *testing.T) {
 	env := newTestProcessEnv(t)
 	env = append(env, "VISUAL=", "EDITOR=")
 
-	opts := termtest.Options{
-		CmdName:        binaryPath,
-		Args:           []string{"prompt-flow", "-i"},
-		DefaultTimeout: 30 * time.Second,
-		Env:            env,
-	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 
-	cp, err := termtest.NewTest(t, opts)
+	cp, err := termtest.NewConsole(ctx,
+		termtest.WithCommand(binaryPath, "prompt-flow", "-i"),
+		termtest.WithDefaultTimeout(30*time.Second),
+		termtest.WithEnv(env),
+	)
 	if err != nil {
 		t.Fatalf("Failed to create termtest: %v", err)
 	}
 	defer cp.Close()
 
-	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+	expect := func(timeout time.Duration, since termtest.Snapshot, cond termtest.Condition, description string) error {
+		ctx, cancel := context.WithTimeout(t.Context(), timeout)
+		defer cancel()
+		return cp.Expect(ctx, since, cond, description)
+	}
+
+	snap := cp.Snapshot()
+	if err := expect(15*time.Second, snap, termtest.Contains("Switched to mode: prompt-flow"), "mode switch"); err != nil {
 		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
+	if err := expect(20*time.Second, snap, termtest.Contains("(prompt-flow) > "), "prompt"); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	cp.SendLine("generate")
-	if _, err := cp.ExpectSince("Error: Please set a goal first using the 'goal' command.", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Error: Please set a goal first using the 'goal' command."), "error message"); err != nil {
 		t.Fatalf("Expected error message: %v", err)
 	}
 
 	cp.SendLine("exit")
-	requireExpectExitCode(t, cp, 0)
+	code, err := cp.WaitExit(t.Context())
+	if err != nil {
+		t.Fatalf("Failed to wait for exit: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
 }
 
 // TestPromptFlow_Interactive drives a minimal happy path in interactive mode without invoking the editor.
@@ -104,7 +129,7 @@ func TestPromptFlow_Interactive(t *testing.T) {
 # $1 is the path
 # For goal/template/prompt, write a deterministic string
 if [ -n "$1" ]; then
-  echo "edited: $(basename \"$1\")" > "$1"
+  echo "edited: $(basename "$1")" > "$1"
 fi
 `
 	if err := os.WriteFile(editorScript, []byte(scriptContent), 0755); err != nil {
@@ -117,57 +142,63 @@ fi
 	env := newTestProcessEnv(t)
 	env = append(env, "EDITOR="+editorScript, "VISUAL=")
 
-	opts := termtest.Options{
-		CmdName:        binaryPath,
-		Args:           []string{"prompt-flow", "-i"},
-		DefaultTimeout: 30 * time.Second, // Increased from 60s - this comprehensive integration test needs more time
-		Env:            env,
-	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 
-	cp, err := termtest.NewTest(t, opts)
+	cp, err := termtest.NewConsole(ctx,
+		termtest.WithCommand(binaryPath, "prompt-flow", "-i"),
+		termtest.WithDefaultTimeout(30*time.Second), // Increased from 60s - this comprehensive integration test needs more time
+		termtest.WithEnv(env),
+	)
 	if err != nil {
 		t.Fatalf("Failed to create termtest: %v", err)
 	}
 	defer cp.Close()
 
+	expect := func(timeout time.Duration, since termtest.Snapshot, cond termtest.Condition, description string) error {
+		ctx, cancel := context.WithTimeout(t.Context(), timeout)
+		defer cancel()
+		return cp.Expect(ctx, since, cond, description)
+	}
+
 	// Startup of the TUI
-	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+	snap := cp.Snapshot()
+	if err := expect(15*time.Second, snap, termtest.Contains("Switched to mode: prompt-flow"), "mode switch"); err != nil {
 		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
 
 	// Wait for the prompt for this mode
-	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
+	if err := expect(20*time.Second, snap, termtest.Contains("(prompt-flow) > "), "prompt"); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
-	// Basic help - PING-PONG: capture offset, send command, wait for consequence
-	startLen = cp.OutputLen()
+	// Basic help - PING-PONG: capture snapshot, send command, wait for consequence
+	snap = cp.Snapshot()
 	if err := cp.SendLine("help"); err != nil {
 		t.Fatalf("Failed to send help: %v", err)
 	}
-	if _, err := cp.ExpectSince("Available commands:", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Available commands:"), "help output 1"); err != nil {
 		t.Fatalf("Expected help output: %v", err)
 	}
-	if _, err := cp.ExpectSince("Registered commands:", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Registered commands:"), "help output 2"); err != nil {
 		t.Fatalf("Expected help output: %v", err)
 	}
-	if _, err := cp.ExpectSince("Current mode: prompt-flow", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Current mode: prompt-flow"), "help output 3"); err != nil {
 		t.Fatalf("Expected help output: %v", err)
 	}
-	if _, err := cp.ExpectSince("Note: You can execute JavaScript code directly!", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Note: You can execute JavaScript code directly!"), "help output 4"); err != nil {
 		t.Fatalf("Expected help output: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("(prompt-flow) > "), "prompt"); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
 	// Set goal inline to avoid opening editor - PING-PONG
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("goal my test goal"); err != nil {
 		t.Fatalf("Failed to send goal: %v", err)
 	}
-	if _, err := cp.ExpectSince("Goal set.", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Goal set."), "goal set"); err != nil {
 		t.Fatalf("Expected goal set: %v", err)
 	}
 
@@ -175,167 +206,176 @@ fi
 	// engine (which sets basePath to its working directory) can stat it reliably.
 	// PING-PONG: capture, send, wait
 	readmeAbs := filepath.Join(projectDir, "README.md")
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("add " + readmeAbs); err != nil {
 		t.Fatalf("Failed to send add: %v", err)
 	}
 	// Expect the generic success prefix to avoid path differences
-	if _, err := cp.ExpectSince("Added file: ", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Added file: "), "file added"); err != nil {
 		t.Fatalf("Expected file added: %v", err)
 	}
 
 	// Add a simple note - PING-PONG
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("note this is a note"); err != nil {
 		t.Fatalf("Failed to send note: %v", err)
 	}
-	if _, err := cp.ExpectSince("Added note [", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Added note ["), "note added"); err != nil {
 		t.Fatalf("Expected note added: %v", err)
 	}
 
 	// List current state - PING-PONG
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("list"); err != nil {
 		t.Fatalf("Failed to send list: %v", err)
 	}
-	if _, err := cp.ExpectSince("[goal] my test goal", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("[goal] my test goal"), "goal in list"); err != nil {
 		t.Fatalf("Expected goal in list: %v", err)
 	}
-	if _, err := cp.ExpectSince("[template] set", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("[template] set"), "template in list"); err != nil {
 		t.Fatalf("Expected template in list: %v", err)
 	}
 
 	// Trigger generate to create meta-prompt, then inspect meta - PING-PONG
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("generate"); err != nil {
 		t.Fatalf("Failed to send generate: %v", err)
 	}
-	if _, err := cp.ExpectSince("Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'."), "meta prompt generated"); err != nil {
 		t.Fatalf("Expected meta-prompt generated: %v", err)
 	}
 
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("show meta"); err != nil {
 		t.Fatalf("Failed to send show meta: %v", err)
 	}
-	if _, err := cp.ExpectSince("!! **GOAL:** !!", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("!! **GOAL:** !!"), "goal in meta"); err != nil {
 		t.Fatalf("Expected goal in meta: %v", err)
 	}
-	if _, err := cp.ExpectSince("!! **IMPLEMENTATIONS/CONTEXT:** !!", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("!! **IMPLEMENTATIONS/CONTEXT:** !!"), "context in meta"); err != nil {
 		t.Fatalf("Expected context in meta: %v", err)
 	}
 	// The meta prompt includes the txtar dump; check that README.md appears
-	if _, err := cp.ExpectSince("README.md", startLen, 10*time.Second); err != nil {
+	if err := expect(10*time.Second, snap, termtest.Contains("README.md"), "README in meta"); err != nil {
 		t.Fatalf("Expected README in meta: %v", err)
 	}
 
 	// Provide a task prompt so default show assembles final content - PING-PONG
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("use edited prompt from test"); err != nil {
 		t.Fatalf("Failed to send use: %v", err)
 	}
-	if _, err := cp.ExpectSince("Task prompt set.", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Task prompt set."), "task prompt set"); err != nil {
 		t.Fatalf("Expected task prompt set: %v", err)
 	}
 
 	// Show final (assembled) should now include IMPLEMENTATIONS/CONTEXT marker and edited prompt header - PING-PONG
-	cp.ClearOutput()
-	startLen = cp.OutputLen()
+	// We simulate cp.ClearOutput() by capturing the current buffer state and asserting on the diff.
+	beforeShow := cp.String()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("show"); err != nil {
 		t.Fatalf("Failed to send show: %v", err)
 	}
-	if _, err := cp.ExpectSince("## IMPLEMENTATIONS/CONTEXT", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("## IMPLEMENTATIONS/CONTEXT"), "context section"); err != nil {
 		t.Fatalf("Expected context section: %v", err)
 	}
-	if out := cp.GetOutput(); !strings.Contains(out, "edited prompt from test") {
+
+	// Get output generated by the 'show' command
+	out := strings.TrimPrefix(cp.String(), beforeShow)
+	if !strings.Contains(out, "edited prompt from test") {
 		t.Fatalf("expected final output to include task prompt, got: %s", out)
 	} else if strings.Contains(out, "!! **TEMPLATE:** !!") {
 		t.Fatalf("expected final output to omit template section, got: %s", out)
 	}
 
 	// Copy final output to clipboard (no-op override) - PING-PONG
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("copy"); err != nil {
 		t.Fatalf("Failed to send copy: %v", err)
 	}
 	// Expect the success confirmation message
-	if _, err := cp.ExpectSince("Final output copied to clipboard.", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Final output copied to clipboard."), "copy confirmation"); err != nil {
 		t.Fatalf("Expected copy confirmation: %v", err)
 	}
 
 	// Test remove synchronization: add then remove README and ensure it no longer appears in final - PING-PONG
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("list"); err != nil {
 		t.Fatalf("Failed to send list: %v", err)
 	}
-	if _, err := cp.ExpectSince("[file]", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("[file]"), "file in list"); err != nil {
 		t.Fatalf("Expected file in list: %v", err)
 	}
 	// Remove first non-note item id by re-listing and removing id 1 (we don't parse here; assume first add has id=1) - PING-PONG
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("remove 1"); err != nil {
 		t.Fatalf("Failed to send remove: %v", err)
 	}
-	if _, err := cp.ExpectSince("Removed [1]", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Removed [1]"), "remove confirmation"); err != nil {
 		t.Fatalf("Expected remove confirmation: %v", err)
 	}
 
 	// Clear buffer, show final, and assert README.md is not present in the output - PING-PONG
-	cp.ClearOutput()
-	startLen = cp.OutputLen()
+	beforeShow = cp.String()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("show"); err != nil {
 		t.Fatalf("Failed to send show: %v", err)
 	}
-	if _, err := cp.ExpectSince("## IMPLEMENTATIONS/CONTEXT", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("## IMPLEMENTATIONS/CONTEXT"), "context section"); err != nil {
 		t.Fatalf("Expected context section: %v", err)
 	}
-	if out := cp.GetOutput(); strings.Contains(out, "README.md") {
+	out = strings.TrimPrefix(cp.String(), beforeShow)
+	if strings.Contains(out, "README.md") {
 		t.Fatalf("expected README.md to be removed from context, but it was present in output:\n%s", out)
 	}
 
 	// Re-run use to ensure repeated updates work without needing generate - PING-PONG
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("use second prompt from test"); err != nil {
 		t.Fatalf("Failed to send use: %v", err)
 	}
-	if _, err := cp.ExpectSince("Task prompt set.", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Task prompt set."), "task prompt set"); err != nil {
 		t.Fatalf("Expected task prompt set: %v", err)
 	}
-	cp.ClearOutput()
-	startLen = cp.OutputLen()
+
+	beforeShow = cp.String()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("show"); err != nil {
 		t.Fatalf("Failed to send show: %v", err)
 	}
-	if _, err := cp.ExpectSince("## IMPLEMENTATIONS/CONTEXT", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("## IMPLEMENTATIONS/CONTEXT"), "context section"); err != nil {
 		t.Fatalf("Expected context section: %v", err)
 	}
-	if out := cp.GetOutput(); !strings.Contains(out, "second prompt from test") {
+	out = strings.TrimPrefix(cp.String(), beforeShow)
+	if !strings.Contains(out, "second prompt from test") {
 		t.Fatalf("expected final output to reflect updated task prompt, got: %s", out)
 	} else if strings.Contains(out, "!! **TEMPLATE:** !!") {
 		t.Fatalf("expected final output after update to omit template section, got: %s", out)
 	}
 
 	// Re-generating should clear the task prompt and revert show to meta output - PING-PONG
-	cp.ClearOutput()
-	startLen = cp.OutputLen()
+	// (Simulation of ClearOutput not needed here as we are sending generate)
+	snap = cp.Snapshot()
 	if err := cp.SendLine("generate"); err != nil {
 		t.Fatalf("Failed to send generate: %v", err)
 	}
-	if _, err := cp.ExpectSince("Meta-prompt generated.", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Meta-prompt generated."), "meta-prompt generated"); err != nil {
 		t.Fatalf("Expected meta-prompt generated: %v", err)
 	}
-	cp.ClearOutput()
-	startLen = cp.OutputLen()
+
+	beforeShow = cp.String()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("show"); err != nil {
 		t.Fatalf("Failed to send show: %v", err)
 	}
-	if _, err := cp.ExpectSince("!! **GOAL:** !!", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("!! **GOAL:** !!"), "goal in meta"); err != nil {
 		t.Fatalf("Expected goal in meta: %v", err)
 	}
-	if _, err := cp.ExpectSince("!! **TEMPLATE:** !!", startLen); err != nil {
-		t.Fatalf("Expected goal in meta: %v", err)
+	if err := expect(30*time.Second, snap, termtest.Contains("!! **TEMPLATE:** !!"), "template in meta"); err != nil {
+		t.Fatalf("Expected template in meta: %v", err)
 	}
-	if out := cp.GetOutput(); strings.Contains(out, "second prompt from test") {
+	out = strings.TrimPrefix(cp.String(), beforeShow)
+	if strings.Contains(out, "second prompt from test") {
 		t.Fatalf("expected regenerate to clear task prompt, but output still contained task prompt text: %s", out)
 	} else if !strings.Contains(out, "!! **TEMPLATE:** !!") {
 		t.Fatalf("expected meta output to include template instructions, got: %s", out)
@@ -345,7 +385,13 @@ fi
 	if err := cp.SendLine("exit"); err != nil {
 		t.Fatalf("Failed to send exit: %v", err)
 	}
-	requireExpectExitCode(t, cp, 0)
+	code, err := cp.WaitExit(t.Context())
+	if err != nil {
+		t.Fatalf("Failed to wait for exit: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
 }
 
 // TestPromptFlow_Remove_Ambiguous_AbortsUI verifies that when the backend reports
@@ -376,42 +422,48 @@ func TestPromptFlow_Remove_Ambiguous_AbortsUI(t *testing.T) {
 	env := newTestProcessEnv(t)
 	env = append(env, "VISUAL=", "EDITOR=")
 
-	opts := termtest.Options{
-		CmdName:        binaryPath,
-		Args:           []string{"prompt-flow", "-i"},
-		DefaultTimeout: 60 * time.Second,
-		Env:            env,
-	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 
-	cp, err := termtest.NewTest(t, opts)
+	cp, err := termtest.NewConsole(ctx,
+		termtest.WithCommand(binaryPath, "prompt-flow", "-i"),
+		termtest.WithDefaultTimeout(60*time.Second),
+		termtest.WithEnv(env),
+	)
 	if err != nil {
 		t.Fatalf("Failed to create termtest: %v", err)
 	}
 	defer cp.Close()
 
-	// Wait for prompt
-	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
-		t.Fatalf("Expected mode switch to prompt-flow: %v\nBuffer: %q", err, cp.GetOutput())
+	expect := func(timeout time.Duration, since termtest.Snapshot, cond termtest.Condition, description string) error {
+		ctx, cancel := context.WithTimeout(t.Context(), timeout)
+		defer cancel()
+		return cp.Expect(ctx, since, cond, description)
 	}
-	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
-		t.Fatalf("Expected prompt: %v\nBuffer: %q", err, cp.GetOutput())
+
+	// Wait for prompt
+	snap := cp.Snapshot()
+	if err := expect(15*time.Second, snap, termtest.Contains("Switched to mode: prompt-flow"), "mode switch"); err != nil {
+		t.Fatalf("Expected mode switch to prompt-flow: %v\nBuffer: %q", err, cp.String())
+	}
+	if err := expect(20*time.Second, snap, termtest.Contains("(prompt-flow) > "), "prompt"); err != nil {
+		t.Fatalf("Expected prompt: %v\nBuffer: %q", err, cp.String())
 	}
 
 	// Add both files (absolute paths)
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("add " + f1); err != nil {
-		t.Fatalf("Failed to send add: %v\nBuffer: %q", err, cp.GetOutput())
+		t.Fatalf("Failed to send add: %v\nBuffer: %q", err, cp.String())
 	}
-	if _, err := cp.ExpectSince("Added file:", startLen, 2*time.Second); err != nil {
-		t.Fatalf("Expected file added: %v\nBuffer: %q", err, cp.GetOutput())
+	if err := expect(2*time.Second, snap, termtest.Contains("Added file:"), "file 1 added"); err != nil {
+		t.Fatalf("Expected file added: %v\nBuffer: %q", err, cp.String())
 	}
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("add " + f2); err != nil {
-		t.Fatalf("Failed to send add: %v\nBuffer: %q", err, cp.GetOutput())
+		t.Fatalf("Failed to send add: %v\nBuffer: %q", err, cp.String())
 	}
-	if _, err := cp.ExpectSince("Added file:", startLen, 2*time.Second); err != nil {
-		t.Fatalf("Expected file added: %v\nBuffer: %q", err, cp.GetOutput())
+	if err := expect(2*time.Second, snap, termtest.Contains("Added file:"), "file 2 added"); err != nil {
+		t.Fatalf("Expected file added: %v\nBuffer: %q", err, cp.String())
 	}
 
 	// Make the first item's label ambiguous by rewriting it to just the basename
@@ -419,40 +471,46 @@ func TestPromptFlow_Remove_Ambiguous_AbortsUI(t *testing.T) {
 	// should match both tracked files and yield an ambiguity error.
 	// N.B. We mutate JS state via the dedicated test hook.
 	if err := cp.SendLine(`(function(){ if (typeof __promptFlowTestHooks !== "undefined") { __promptFlowTestHooks.withState(function(h){ var items=h.state.get(h.stateKeys.contextItems); if(items.length>0){ items[0].label="a.txt"; h.state.set(h.stateKeys.contextItems, items); } }); } })()`); err != nil {
-		t.Fatalf("Failed to send JS hook: %v\nBuffer: %q", err, cp.GetOutput())
+		t.Fatalf("Failed to send JS hook: %v\nBuffer: %q", err, cp.String())
 	}
 	// The JS expression executes but produces no output - just need to let it process
 	time.Sleep(100 * time.Millisecond)
 	// sanity: list shows label now as just a.txt
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("list"); err != nil {
-		t.Fatalf("Failed to send list: %v\nBuffer: %q", err, cp.GetOutput())
+		t.Fatalf("Failed to send list: %v\nBuffer: %q", err, cp.String())
 	}
-	if _, err := cp.ExpectSince("[1] [file] a.txt", startLen, 2*time.Second); err != nil {
-		t.Fatalf("Expected file in list: %v\nBuffer: %q", err, cp.GetOutput())
+	if err := expect(2*time.Second, snap, termtest.Contains("[1] [file] a.txt"), "file with ambiguous label"); err != nil {
+		t.Fatalf("Expected file in list: %v\nBuffer: %q", err, cp.String())
 	}
 
 	// Attempt removal; should print an Error and NOT say Removed [1]
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("remove 1"); err != nil {
-		t.Fatalf("Failed to send remove: %v\nBuffer: %q", err, cp.GetOutput())
+		t.Fatalf("Failed to send remove: %v\nBuffer: %q", err, cp.String())
 	}
-	if _, err := cp.ExpectSince("Error:", startLen, 2*time.Second); err != nil {
-		t.Fatalf("Expected error: %v\nBuffer: %q", err, cp.GetOutput())
+	if err := expect(2*time.Second, snap, termtest.Contains("Error:"), "error output"); err != nil {
+		t.Fatalf("Expected error: %v\nBuffer: %q", err, cp.String())
 	}
 	// Ensure UI still shows the item (id 1)
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("list"); err != nil {
-		t.Fatalf("Failed to send list: %v\nBuffer: %q", err, cp.GetOutput())
+		t.Fatalf("Failed to send list: %v\nBuffer: %q", err, cp.String())
 	}
-	if _, err := cp.ExpectSince("[1] [file] a.txt", startLen, 2*time.Second); err != nil {
-		t.Fatalf("Expected file still in list: %v\nBuffer: %q", err, cp.GetOutput())
+	if err := expect(2*time.Second, snap, termtest.Contains("[1] [file] a.txt"), "file still in list"); err != nil {
+		t.Fatalf("Expected file still in list: %v\nBuffer: %q", err, cp.String())
 	}
 
 	if err := cp.SendLine("exit"); err != nil {
-		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.GetOutput())
+		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.String())
 	}
-	requireExpectExitCode(t, cp, 0)
+	code, err := cp.WaitExit(t.Context())
+	if err != nil {
+		t.Fatalf("Failed to wait for exit: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
 }
 
 // TestPromptFlow_Remove_NotFound_AbortsUI verifies that when the backend does not
@@ -469,65 +527,77 @@ func TestPromptFlow_Remove_NotFound_AbortsUI(t *testing.T) {
 	env := newTestProcessEnv(t)
 	env = append(env, "VISUAL=", "EDITOR=")
 
-	opts := termtest.Options{
-		CmdName:        binaryPath,
-		Args:           []string{"prompt-flow", "-i"},
-		DefaultTimeout: 60 * time.Second,
-		Env:            env,
-	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 
-	cp, err := termtest.NewTest(t, opts)
+	cp, err := termtest.NewConsole(ctx,
+		termtest.WithCommand(binaryPath, "prompt-flow", "-i"),
+		termtest.WithDefaultTimeout(60*time.Second),
+		termtest.WithEnv(env),
+	)
 	if err != nil {
 		t.Fatalf("Failed to create termtest: %v", err)
 	}
 	defer cp.Close()
 
-	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+	expect := func(timeout time.Duration, since termtest.Snapshot, cond termtest.Condition, description string) error {
+		ctx, cancel := context.WithTimeout(t.Context(), timeout)
+		defer cancel()
+		return cp.Expect(ctx, since, cond, description)
+	}
+
+	snap := cp.Snapshot()
+	if err := expect(15*time.Second, snap, termtest.Contains("Switched to mode: prompt-flow"), "mode switch"); err != nil {
 		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
+	if err := expect(20*time.Second, snap, termtest.Contains("(prompt-flow) > "), "prompt"); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
 	// Add one file
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("add " + tmpFile); err != nil {
-		t.Fatalf("Failed to send add: %v\nBuffer: %q", err, cp.GetOutput())
+		t.Fatalf("Failed to send add: %v\nBuffer: %q", err, cp.String())
 	}
-	if _, err := cp.ExpectSince("Added file:", startLen, 2*time.Second); err != nil {
-		t.Fatalf("Expected file added: %v\nBuffer: %q", err, cp.GetOutput())
+	if err := expect(2*time.Second, snap, termtest.Contains("Added file:"), "file added"); err != nil {
+		t.Fatalf("Expected file added: %v\nBuffer: %q", err, cp.String())
 	}
 
 	// Make the UI label a path that isn't tracked in the backend to simulate not found
 	if err := cp.SendLine(`(function(){ if (typeof __promptFlowTestHooks !== "undefined") { __promptFlowTestHooks.withState(function(h){ var items=h.state.get(h.stateKeys.contextItems); if(items.length>0){ items[0].label="nonexistent.txt"; h.state.set(h.stateKeys.contextItems, items); } }); } })()`); err != nil {
-		t.Fatalf("Failed to send JS hook: %v\nBuffer: %q", err, cp.GetOutput())
+		t.Fatalf("Failed to send JS hook: %v\nBuffer: %q", err, cp.String())
 	}
 	// The JS expression executes but produces no output - just need to let it process
 	time.Sleep(100 * time.Millisecond)
 
 	// Now attempt to remove by id from UI; backend will say not found -> Info and remove
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("remove 1"); err != nil {
-		t.Fatalf("Failed to send remove: %v\nBuffer: %q", err, cp.GetOutput())
+		t.Fatalf("Failed to send remove: %v\nBuffer: %q", err, cp.String())
 	}
 	// Since RemovePath is idempotent, it returns success even if file is missing.
 	// The UI should simply report "Removed [1]".
-	if _, err := cp.ExpectSince("Removed [1]", startLen, 2*time.Second); err != nil {
-		t.Fatalf("Expected removal confirmation: %v\nBuffer: %q", err, cp.GetOutput())
+	if err := expect(2*time.Second, snap, termtest.Contains("Removed [1]"), "remove confirmation"); err != nil {
+		t.Fatalf("Expected removal confirmation: %v\nBuffer: %q", err, cp.String())
 	}
 
 	// Ensure UI no longer shows the item (id 1)
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	if err := cp.SendLine("list"); err != nil {
-		t.Fatalf("Failed to send list: %v\nBuffer: %q", err, cp.GetOutput())
+		t.Fatalf("Failed to send list: %v\nBuffer: %q", err, cp.String())
 	}
-	if _, err := cp.ExpectSince("[1] [file]", startLen, 2*time.Second); err == nil {
-		t.Fatalf("Expected item to be removed from list, but it is still present\nBuffer: %q", cp.GetOutput())
+	if err := expect(2*time.Second, snap, termtest.Contains("[1] [file]"), "forbidden item"); err == nil {
+		t.Fatalf("Expected item to be removed from list, but it is still present\nBuffer: %q", cp.String())
 	}
 
 	if err := cp.SendLine("exit"); err != nil {
-		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.GetOutput())
+		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.String())
 	}
-	requireExpectExitCode(t, cp, 0)
+	code, err := cp.WaitExit(t.Context())
+	if err != nil {
+		t.Fatalf("Failed to wait for exit: %v", err)
+	}
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
 }

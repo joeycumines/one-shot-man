@@ -8,4 +8,4 @@ import "time"
 // components to complete. Non-race builds are quicker so keep it shorter.
 //
 //lint:ignore U1000 Unused depending on env.
-var defaultTimeout = 50 * time.Second
+var defaultTimeout = 30 * time.Second

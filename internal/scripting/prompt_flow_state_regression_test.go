@@ -3,12 +3,13 @@
 package scripting
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/joeycumines/one-shot-man/internal/termtest"
+	"github.com/joeycumines/go-prompt/termtest"
 )
 
 // TestPromptFlow_EditPromptClearingPreservesPhase ensures that clearing the task prompt via
@@ -45,74 +46,80 @@ esac
 	env := newTestProcessEnv(t)
 	env = append(env, "EDITOR="+editor, "VISUAL=")
 
-	opts := termtest.Options{
-		CmdName:        binaryPath,
-		Args:           []string{"prompt-flow", "-i"},
-		DefaultTimeout: 30 * time.Second,
-		Env:            env,
-	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 
-	cp, err := termtest.NewTest(t, opts)
+	cp, err := termtest.NewConsole(ctx,
+		termtest.WithCommand(binaryPath, "prompt-flow", "-i"),
+		termtest.WithDefaultTimeout(30*time.Second),
+		termtest.WithEnv(env),
+	)
 	if err != nil {
 		t.Fatalf("Failed to create termtest: %v", err)
 	}
 	defer cp.Close()
 
+	expect := func(timeout time.Duration, since termtest.Snapshot, cond termtest.Condition, description string) error {
+		ctx, cancel := context.WithTimeout(t.Context(), timeout)
+		defer cancel()
+		return cp.Expect(ctx, since, cond, description)
+	}
+
 	// Wait for startup — prompt-flow prints a mode switch on enter
-	startLen := cp.OutputLen()
-	if _, err := cp.ExpectSince("Switched to mode: prompt-flow", startLen, 15*time.Second); err != nil {
+	snap := cp.Snapshot()
+	if err := expect(15*time.Second, snap, termtest.Contains("Switched to mode: prompt-flow"), "mode switch"); err != nil {
 		t.Fatalf("Expected mode switch to prompt-flow: %v", err)
 	}
-	if _, err := cp.ExpectSince("(prompt-flow) > ", startLen, 20*time.Second); err != nil {
+	if err := expect(20*time.Second, snap, termtest.Contains("(prompt-flow) > "), "prompt"); err != nil {
 		t.Fatalf("Expected prompt: %v", err)
 	}
 
 	// Minimal setup: goal and generate meta-prompt
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	cp.SendLine("goal My goal for testing phase reversion")
-	if _, err := cp.ExpectSince("Goal set.", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Goal set."), "goal set"); err != nil {
 		t.Fatalf("Expected goal set: %v", err)
 	}
 
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	cp.SendLine("generate")
 	// New flow prints this message; wait for any part of it
-	if _, err := cp.ExpectSince("Meta-prompt generated.", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Meta-prompt generated."), "meta-prompt generated"); err != nil {
 		t.Fatalf("Expected meta-prompt generated: %v", err)
 	}
 
 	// Set task prompt using inline text (no editor)
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	cp.SendLine("use hello world")
-	if _, err := cp.ExpectSince("Task prompt set.", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Task prompt set."), "task prompt set"); err != nil {
 		t.Fatalf("Expected task prompt set: %v", err)
 	}
 
 	// Sanity: default show now assembles final output
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	cp.SendLine("show")
-	if _, err := cp.ExpectSince("## IMPLEMENTATIONS/CONTEXT", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("## IMPLEMENTATIONS/CONTEXT"), "context section"); err != nil {
 		t.Fatalf("Expected context section: %v", err)
 	}
 
 	// Now clear the task prompt via edit -> empty
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	cp.SendLine("edit prompt")
 	// Expect acknowledgement matching the non-destructive workflow
-	if _, err := cp.ExpectSince("Task prompt not updated (no content provided).", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("Task prompt not updated (no content provided)."), "task prompt not updated"); err != nil {
 		t.Fatalf("Expected task prompt not updated: %v", err)
 	}
 
 	// Default show should still render the final assembled prompt
-	startLen = cp.OutputLen()
+	snap = cp.Snapshot()
 	cp.SendLine("show")
-	if _, err := cp.ExpectSince("## IMPLEMENTATIONS/CONTEXT", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("## IMPLEMENTATIONS/CONTEXT"), "context section"); err != nil {
 		t.Fatalf("Expected context section: %v", err)
 	}
-	if _, err := cp.ExpectSince("hello world", startLen); err != nil {
+	if err := expect(30*time.Second, snap, termtest.Contains("hello world"), "task prompt text"); err != nil {
 		t.Fatalf("Expected task prompt text: %v", err)
 	}
 
 	cp.SendLine("exit")
-	requireExpectExitCode(t, cp, 0)
+	requireExpectExitCode(t.Context(), t, cp, 0)
 }

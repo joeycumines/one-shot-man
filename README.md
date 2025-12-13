@@ -158,7 +158,7 @@ They are extensible, and discovered automatically from your filesystem.
 ## Development
 
 ```sh
-make help
+make help # note: gmake on macOS (brew install make)
 ```
 
 ## License

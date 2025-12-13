@@ -47,7 +47,7 @@ func TestCodeReviewCommand_Description(t *testing.T) {
 	cfg := config.NewConfig()
 	cmd := NewCodeReviewCommand(cfg)
 
-	expected := "Single-prompt code review with context: context -> generate prompt for PR review"
+	expected := "Single-prompt code review with context"
 	if cmd.Description() != expected {
 		t.Errorf("Expected description '%s', got: %s", expected, cmd.Description())
 	}

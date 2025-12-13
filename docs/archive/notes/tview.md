@@ -1,5 +1,7 @@
 # Comprehensive Guide to `github.com/rivo/tview`
 
+> NOTICE: These are reference notes.
+
 `tview` is a Go module for building rich, interactive terminal-based user interfaces (TUIs). It provides a suite of widgets and layout managers, enabling rapid development of data-driven and interactive applications in the terminal. This guide covers its core concepts, key APIs, design patterns, and practical usage, with comparisons to other UI paradigms like ReactJS.
 
 ---

@@ -1115,7 +1115,7 @@ Contract validation will detect schema mismatches and reset to defaults. Shared 
 
   - **TUI State Management**: `docs/tui-state.md`
   - **JavaScript API**: `docs/goja-reference.md`
-  - **Configuration**: `docs/config-reference.md`
+  - **Configuration**: `docs/reference/config.md`
 
 ## Code Examples
 

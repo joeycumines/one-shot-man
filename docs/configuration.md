@@ -1,0 +1,84 @@
+# Configuration
+
+## Overview
+
+`osm` is intentionally local-first. Configuration is plain text and loosely mirrors the style of tools like `git`/`kubectl`: a global section plus optional command-specific sections.
+
+N.B. A small set of environment variables also affect behavior; see below.
+
+## Location
+
+- Default: `~/.one-shot-man/config`
+- Override: `OSM_CONFIG=/path/to/config`
+
+Create a starter config:
+
+```sh
+osm init
+```
+
+## File format
+
+Each non-comment line is:
+
+```
+optionName remainingLineIsTheValue
+```
+
+Command-specific sections are:
+
+```
+[command-name]
+optionName remainingLineIsTheValue
+```
+
+## What’s currently configurable
+
+### Script discovery (adds `osm <script-name>` commands)
+
+See the deep reference for the full set and defaults:
+- [Configuration reference](reference/config.md)
+
+Highlights:
+- `script.autodiscovery` (bool, default false)
+- `script.git-traversal` (bool, default false)
+- `script.paths` (list)
+- `script.path-patterns` (list, default `scripts`)
+- `script.max-traversal-depth` (int)
+
+### Goal discovery
+
+Also documented in the deep reference:
+- `goal.autodiscovery` (bool, default true)
+- `goal.paths` (list)
+- `goal.path-patterns` (list)
+- `goal.max-traversal-depth` (int)
+
+### Prompt colors
+
+The interactive prompt supports configurable colors via keys like `prompt.color.*`.
+
+Keys:
+- `prompt.color.input`, `prompt.color.prefix`
+- `prompt.color.suggestionText`, `prompt.color.suggestionBG`
+- `prompt.color.selectedSuggestionText`, `prompt.color.selectedSuggestionBG`
+- `prompt.color.descriptionText`, `prompt.color.descriptionBG`
+- `prompt.color.selectedDescriptionText`, `prompt.color.selectedDescriptionBG`
+- `prompt.color.scrollbarThumb`, `prompt.color.scrollbarBG`
+
+Allowed values are named colors:
+
+```
+black,darkred,darkgreen,brown,darkblue,purple,cyan,lightgray,
+darkgray,red,green,yellow,blue,fuchsia,turquoise,white
+```
+
+## Environment variables
+
+These are not “config file keys”, but they materially affect behavior:
+
+- `OSM_CONFIG`: config file path
+- `OSM_SESSION`: override auto session-id detection
+- `OSM_STORE`: storage backend name (`fs` default, or `memory`)
+- `OSM_CLIPBOARD`: override clipboard command (used by JS module `osm:os`)
+- `VISUAL` / `EDITOR`: editor used when workflows open an editor

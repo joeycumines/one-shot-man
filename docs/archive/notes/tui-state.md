@@ -1,5 +1,7 @@
 # TUI State Management Patterns
 
+> NOTICE: This is a draft, produced for exploration. None of this is implemented.
+
 The following is an AI-generated analysis of potential state management patterns for a hook-based
 UI framework (e.g., React), generated in the context of an example event-driven architecture.
 

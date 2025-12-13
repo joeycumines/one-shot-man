@@ -1,5 +1,7 @@
 # React-like TUI Framework: Implementation Plan
 
+> NOTICE: This is a draft, produced for exploration. It is not intended to be actioned.
+
 This document outlines a comprehensive, multi-sprint implementation plan for building a composable, React-like Terminal User Interface (TUI) framework. The framework will be implemented in Go and controlled declaratively from JavaScript via the `goja` runtime, using `tview` as the underlying rendering engine.
 
 -----

@@ -1,8 +1,6 @@
-Of course. Here is the refined and expanded `goja` module reference documentation.
-
------
-
 # "goja" Module Reference
+
+> NOTICE: These are reference notes.
 
 ## Introduction
 

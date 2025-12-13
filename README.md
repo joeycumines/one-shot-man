@@ -143,6 +143,7 @@ They are extensible, and discovered automatically from your filesystem.
 ## Docs
 
 - [docs/README.md](docs/README.md)
+- [docs/shell-completion.md](docs/shell-completion.md)
 - [docs/reference/command.md](docs/reference/command.md)
 - [docs/reference/goal.md](docs/reference/goal.md)
 - [docs/configuration.md](docs/configuration.md) (deep: [docs/reference/config.md](docs/reference/config.md))

@@ -18,10 +18,14 @@ var superDocumentTemplate string
 //go:embed super_document_script.js
 var superDocumentScript string
 
+//go:embed super_document_tui_script.js
+var superDocumentTUIScript string
+
 // SuperDocumentCommand provides the super-document TUI for document merging.
 type SuperDocumentCommand struct {
 	*BaseCommand
 	interactive bool
+	replMode    bool // Use REPL mode instead of visual TUI
 	testMode    bool
 	config      *config.Config
 	session     string
@@ -44,6 +48,7 @@ func NewSuperDocumentCommand(cfg *config.Config) *SuperDocumentCommand {
 func (c *SuperDocumentCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.interactive, "interactive", true, "Start interactive TUI mode (default)")
 	fs.BoolVar(&c.interactive, "i", true, "Start interactive TUI mode (short form, default)")
+	fs.BoolVar(&c.replMode, "repl", false, "Use REPL mode instead of visual TUI")
 	fs.BoolVar(&c.testMode, "test", false, "Enable test mode with verbose output")
 	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
 	fs.StringVar(&c.store, "store", "", "Storage backend to use: 'fs' (default) or 'memory'")
@@ -74,13 +79,38 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 	engine.SetGlobal("args", args)
 	engine.SetGlobal("superDocumentTemplate", superDocumentTemplate)
 
-	// Load the embedded script
+	// Determine which mode to run
+	if c.replMode || c.testMode {
+		// REPL mode: use the original script with terminal
+		return c.runREPLMode(ctx, engine)
+	}
+
+	// Visual TUI mode (default): use the bubbletea-based TUI script
+	if c.interactive {
+		return c.runVisualTUI(engine)
+	}
+
+	return nil
+}
+
+// runVisualTUI runs the bubbletea-based visual TUI via JavaScript.
+func (c *SuperDocumentCommand) runVisualTUI(engine *scripting.Engine) error {
+	script := engine.LoadScriptFromString("super-document-tui", superDocumentTUIScript)
+	if err := engine.ExecuteScript(script); err != nil {
+		return fmt.Errorf("failed to execute super-document TUI script: %w", err)
+	}
+	return nil
+}
+
+// runREPLMode runs the REPL-based mode.
+func (c *SuperDocumentCommand) runREPLMode(ctx context.Context, engine *scripting.Engine) error {
+	// Load the REPL script
 	script := engine.LoadScriptFromString("super-document", superDocumentScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		return fmt.Errorf("failed to execute super-document script: %w", err)
 	}
 
-	// Only run interactive mode if requested and not in test mode
+	// Only run interactive terminal if requested and not in test mode
 	if c.interactive && !c.testMode {
 		// Apply prompt color overrides from config if present
 		if c.config != nil {

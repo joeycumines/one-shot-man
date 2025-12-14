@@ -126,6 +126,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -239,7 +240,7 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]interface{} {
 	case tea.KeyMsg:
 		keyStr := msg.String()
 		// Detect ctrl modifier from the key string (ctrl keys are named "ctrl+x")
-		hasCtrl := len(keyStr) > 5 && keyStr[:5] == "ctrl+"
+		hasCtrl := strings.HasPrefix(keyStr, "ctrl+")
 		return map[string]interface{}{
 			"type": "keyPress",
 			"key":  keyStr,

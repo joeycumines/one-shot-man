@@ -471,7 +471,8 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		case 4:
 			newStyle = wrapper.style.Padding(args[0], args[1], args[2], args[3])
 		default:
-			return obj
+			// Return a copy to maintain immutability even when no args provided
+			newStyle = wrapper.style.Copy()
 		}
 		newWrapper := &StyleWrapper{style: newStyle, runtime: runtime}
 		return createStyleObject(runtime, newWrapper)
@@ -533,7 +534,8 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		case 4:
 			newStyle = wrapper.style.Margin(args[0], args[1], args[2], args[3])
 		default:
-			return obj
+			// Return a copy to maintain immutability even when no args provided
+			newStyle = wrapper.style.Copy()
 		}
 		newWrapper := &StyleWrapper{style: newStyle, runtime: runtime}
 		return createStyleObject(runtime, newWrapper)

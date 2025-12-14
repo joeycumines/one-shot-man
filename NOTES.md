@@ -1,53 +1,6 @@
-- [x] Explore repository structure and understand existing patterns
-- [x] Add bubbletea and lipgloss dependencies to go.mod
-- [x] Create `internal/builtin/bubbletea` package with JavaScript bindings
-  - [x] Define `Manager` struct for bubbletea program management
-  - [x] Implement `Require` function exposing bubbletea API to JavaScript
-  - [x] Export Program, Model, Cmd, Msg, and tea.* primitives
-  - [x] Implement comprehensive unit tests
-- [x] Create `internal/builtin/lipgloss` package with JavaScript bindings
-  - [x] Define `Manager` struct for lipgloss styling
-  - [x] Implement `Require` function exposing lipgloss API to JavaScript
-  - [x] Export Style, Color, Border, Position, and lipgloss.* primitives
-  - [x] Implement comprehensive unit tests
-- [x] Register bubbletea and lipgloss modules in `internal/builtin/register.go`
-- [x] Create `super-document` command
-  - [x] Create `internal/command/super_document.go` command file
-  - [x] Create `internal/command/super_document_script.js` TUI script
-  - [x] Create `internal/command/super_document_template.md`
-  - [x] Implement document management (add/remove/update)
-  - [x] Implement keyboard navigation commands
-  - [x] Implement one-click copy output
-  - [x] Implement file-based document loading
-  - [x] Implement comprehensive unit tests
-- [x] Register `super-document` command in `cmd/osm/main.go`
-- [x] Document the pathway to "full support" for bubbletea/lipgloss
-- [x] Address critical issues from code review:
-  - [x] Fix runProgram deadlock (mutex held during p.Run())
-  - [x] Fix goroutine leak (added wg.Wait() after p.Run())
-  - [x] Fix lipgloss immutability violation (all style methods now return new wrappers)
-  - [x] Add ctrl modifier to KeyMsg (using strings.HasPrefix for safe detection)
-  - [x] Fix padding/margin default cases to maintain immutability
-  - [x] Remove unused quitOnce field
-  - [x] Remove unused BubbleteaManagerProvider/LipglossManagerProvider interfaces
-  - [x] Add immutability test for lipgloss
-- [x] Run CodeQL security check
+# Notes for AI that APPEARS TO BE MISSING THE FUCKING POINT
 
-## Security Summary
-- No vulnerabilities found in dependency additions (bubbletea v1.3.10, lipgloss v1.1.0)
-- CodeQL analysis found 0 security alerts
-
-<!-- START COPILOT CODING AGENT SUFFIX -->
-
-
-
-<!-- START COPILOT ORIGINAL PROMPT -->
-
-
-
-<details>
-
-<summary>Original prompt</summary>
+## The instructions
 
 > <directive>
 > **Implement fully-fledged, well-architected, _production ready_ (exhaustively unit and integration tested) support for both `github.com/charmbracelet/bubbletea` and `github.com/charmbracelet/lipgloss`, and use them in a new built-in command (i.e. alongside `code-review` etc) named `super-document`: An easy to use, mouse-integration-supporting TUI, which is somewhat like a form where you can attach documents, and add or remove documents at will. The documents must have contents that is able to be updated via TUI, or be specified via file (again in the TUI), and must support (for example) one-click removal for a given document document. There must be an easy single-click button for `copy`, too. That said, keyboard navigation and functionality must also be supported.**
@@ -97,5 +50,114 @@
 > 6. **To be clear, I expect to be able to `require('osm:bubbletea')` and `require('osm:lipgloss')`, and build an equivalent / similar app using a variety of components (not just the ones you used) ENTIRELY WITHIN JAVASCRIPT after I merge your PR** - make the magic happen DO NOT let it just be a facade. Your past attempts have been PATHETIC so step up your effort and commitment - show me you aren't incompetent lazy or useless, that you can _deliver on what you claim to be able to - IN FULL_
 > </guidance>
 
+## My previous update
 
-</details>
+># Implementation & Remediation Plan: osm:bubbletea, osm:lipgloss, super-document
+>
+>**STATUS:** CRITICALLY INCOMPLETE.
+>**DIRECTIVE:** Execute full remediation and implementation in ONE session.
+>**CONSTRAINT:** Strict adherence to original requirements. No fabrication.
+>
+>## 1. SCOPE & MANDATE
+>
+>Implement fully-fledged, production-ready support for `github.com/charmbracelet/bubbletea` and `github.com/charmbracelet/lipgloss`. Expose as `osm:bubbletea` and `osm:lipgloss`. Implement `super-document` command.
+>
+>### 1.1 Core Requirements (Per Original Prompt)
+>> Implement a super-document that is INTERNALLY CONSISTENT based on a quorum or carefully-weighed analysis of the attached documents.
+>>
+>> Your goal is to coalesce AS MUCH INFORMATION AS POSSIBLE, in as raw form as possible, while **preserving internal consistency**.
+>>
+>> All information or content that you DON'T manage to coalesce will be discarded, making it critical that you output as much as the requirement of internal consistency allows.
+>>
+>> **Implement fully-fledged, well-architected, _production ready_ (exhaustively unit and integration tested) support for both `github.com/charmbracelet/bubbletea` and `github.com/charmbracelet/lipgloss`, and use them in a new built-in command (i.e. alongside `code-review` etc) named `super-document`: An easy to use, mouse-integration-supporting TUI, which is somewhat like a form where you can attach documents, and add or remove documents at will. The documents must have contents that is able to be updated via TUI, or be specified via file (again in the TUI), and must support (for example) one-click removal for a given document document. There must be an easy single-click button for `copy`, too. That said, keyboard navigation and functionality must also be supported.**
+>
+>### 1.2 Integration Standards
+>1.  **Exposition:** `require('osm:bubbletea')` and `require('osm:lipgloss')` must function identically to native Go modules.
+>2.  **State:** Global state is BANNED.
+>3.  **Testing:** Non-deterministic/timing-dependent tests are BANNED.
+>4.  **Architecture:** Modular packages aligned with Go module structure.
+>5.  **Capability:** Users must be able to build the `super-document` tool entirely within JavaScript using the exposed bindings.
+>
+>---
+>
+> <section snipped - the issue is youve completely missed the point of what the expected behavior is>
+>
+>---
+>
+>## 4. SUPER-DOCUMENT IMPLEMENTATION
+>
+>**Objective:** Combine `osm:bubbletea` and `osm:lipgloss` into the `super-document` TUI tool.
+>
+>### 4.1 Functional Logic
+>1.  **Document CRUD:** Implement Add, Remove, Edit, View, List, Clear.
+>2.  **Content Loading:** Support `load <path>` and `add --file <path>`.
+>3.  **Context Integration:** Integrate `osm:ctxutil` for shared context.
+>4.  **Output Generation:** Implement fence-safe markdown generation.
+>    * *Pattern:*
+>        ```markdown
+>        Document 1:
+>        ```
+>        {{CONTENT}}
+>        ```
+>        ```
+>
+>### 4.2 User Interface
+>1.  **Navigation:** Keyboard and Mouse support (as per requirements).
+>2.  **Actions:** Single-click `copy` button.
+>3.  **Visuals:** Utilize `osm:lipgloss` for styling (borders, padding, colors).
+>
+>---
+>
+>## 5. VALIDATION & VERIFICATION
+>
+>**Constraint:** Session must include extensive validation prior to cessation.
+>
+>### 5.1 Static Analysis
+>* Run `staticcheck`. Fix all reported issues.
+>
+>### 5.2 Unit Testing
+>* **Lipgloss:** Test immutability (Base style must remain unchanged when deriving new style).
+>* **Bubbletea:** Test `Update` cycle with `tea.Msg`.
+>* **Bubbletea:** Test `valueToCmd` batch/sequence execution.
+>* **Bubbletea:** Test `MouseMsg` and `WindowSizeMsg` conversion.
+>
+>### 5.3 Functional/Integration Testing
+>* **Scripting:** Verify `super-document` script executes without `ReferenceError` on globals.
+>* **Logic:** Test `addDocument`, `removeDocument`, `updateDocument`.
+>* **Output:** Verify `buildFinalPrompt` generates correctly fenced markdown.
+>* **End-to-End:** Simulate a TUI session (mock input) and verify state changes.
+>
+>---
+>
+>## 6. EXECUTION ORDER
+>
+>1.  **Refactor Core:** Fix Mutex, WaitGroup, IO types.
+>2.  **Fix Logic:** Lipgloss Immutability, KeyMsg Ctrl.
+>3.  **Implement TUI:** Complete `super-document` logic and script injection.
+>4.  **Verify:** Run suite of new behavioral and functional tests.
+
+## The Point
+
+This is meant be a GUI TOOL! A GUI TOOL! The REPL-style terminal is nice, but
+this is something VERY well suited to be a full-on interactive via mouse TUI,
+rather than console-style TUI.
+
+I don't understand what was unclear - what was the POINT of adding bubbletea and
+lipgloss support if not to actually USE them to build a TUI tool that is
+interactive and mouse-supporting?
+
+A fully-featured solution MUST be designed and IMPLEMENTED, inclusive of UNIT
+and INTEGRATION tests. USE bubbletea and lipgloss to build the TUI tool. The
+REPL-style terminal is a nice-to-have, but secondary to the core requirement of
+a full TUI tool. Now that the config exists, you're going to need to support
+BOTH, which is achievable, but you need to PRIORITIZE the TUI tool.
+
+This must be an IMPRESSIVELY well-designed application. It is meant to be
+a core built-in command, alongside code-review etc. It is meant to be a
+SHOWCASE of the deep integration with bubbletea and lipgloss, and the
+capabilities of the overall system - it MUST be WELL-ARCHITECTED, PRODUCTION
+READY, and EXHAUSTIVELY TESTED, _IMPRESSIVE_ and _VISUALLY AND FUNCTIONALLY
+APPEALING_ addition - not some half-baked, lazy, incomplete, broken
+implementation that doesn't even use the libraries it was meant to showcase.
+
+Fuk you buddy.

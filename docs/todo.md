@@ -4,6 +4,7 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
 
 - Remove "history file" concept from the tui manager and goal definitions - entirely obsolete
 - Investigate/fix/implement `osm config <key> <value>` to persist config changes to disk
+- Take bubbletea/lipgloss for a spin: Implement a form-based "code review merge" (native in Go to kick the tyres?)
 - Fix duplicate log lines for purged sessions etc?
 - Consider tightening up the concept of "logging" / the half-baked API exposed to scripts
 - Consider making commands and subcommands correctly fail upon receiving unexpected arguments or options

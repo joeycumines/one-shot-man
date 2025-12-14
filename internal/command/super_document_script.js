@@ -399,39 +399,6 @@ function buildCommands() {
                 output.print("Cleared all documents");
             },
         },
-        
-        // Show help
-        help: {
-            description: "Show available commands",
-            usage: "help",
-            handler: function(args) {
-                output.print("Super-Document Commands:");
-                output.print("");
-                output.print("Document Management:");
-                output.print("  add [content]        - Add a new document");
-                output.print("  add --file <path>    - Add document from file");
-                output.print("  load <path> [label]  - Load document from file with label");
-                output.print("  remove <id>          - Remove a document");
-                output.print("  edit <id> [content]  - Edit a document's content");
-                output.print("  view <id>            - View a document's content");
-                output.print("  label <id> <label>   - Set a document's label");
-                output.print("  list                 - List all documents");
-                output.print("  clear                - Clear all documents");
-                output.print("");
-                output.print("Output:");
-                output.print("  generate             - Generate the final prompt");
-                output.print("  copy                 - Output prompt for copying");
-                output.print("");
-                output.print("Context (from ctxutil):");
-                output.print("  context add <path>   - Add context from file/directory");
-                output.print("  context list         - List context items");
-                output.print("  context remove <id>  - Remove context item");
-                output.print("");
-                output.print("Other:");
-                output.print("  help                 - Show this help");
-                output.print("  quit                 - Exit the program");
-            },
-        },
     };
 }
 

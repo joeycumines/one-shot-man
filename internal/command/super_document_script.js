@@ -418,8 +418,7 @@ tui.registerMode({
         // Show welcome message
         output.print("Super-Document - TUI for merging documents");
         output.print("Type 'help' for available commands, 'quit' to exit");
-        output.print("");
-        
+
         // List existing documents if any
         const existingDocs = getDocuments();
         if (existingDocs.length > 0) {

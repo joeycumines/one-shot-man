@@ -5,8 +5,10 @@ import (
 
 	"github.com/dop251/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/builtin/argv"
+	bubbleteamod "github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	ctxutils "github.com/joeycumines/one-shot-man/internal/builtin/ctxutil"
 	execmod "github.com/joeycumines/one-shot-man/internal/builtin/exec"
+	lipglossmod "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
 	"github.com/joeycumines/one-shot-man/internal/builtin/nextintegerid"
 	osmod "github.com/joeycumines/one-shot-man/internal/builtin/os"
 	templatemod "github.com/joeycumines/one-shot-man/internal/builtin/template"
@@ -17,6 +19,16 @@ import (
 // TViewManagerProvider provides access to a tview manager instance.
 type TViewManagerProvider interface {
 	GetTViewManager() *tviewmod.Manager
+}
+
+// BubbleteaManagerProvider provides access to a bubbletea manager instance.
+type BubbleteaManagerProvider interface {
+	GetBubbleteaManager() *bubbleteamod.Manager
+}
+
+// LipglossManagerProvider provides access to a lipgloss manager instance.
+type LipglossManagerProvider interface {
+	GetLipglossManager() *lipglossmod.Manager
 }
 
 // Register registers all native Go modules with the provided registry, wiring
@@ -39,4 +51,12 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 			registry.RegisterNativeModule(prefix+"tview", tviewmod.Require(ctx, tviewMgr))
 		}
 	}
+
+	// Register lipgloss module - always available as it's stateless
+	lipglossMgr := lipglossmod.NewManager()
+	registry.RegisterNativeModule(prefix+"lipgloss", lipglossmod.Require(lipglossMgr))
+
+	// Register bubbletea module
+	bubbleteaMgr := bubbleteamod.NewManager(ctx, nil, nil, nil, nil)
+	registry.RegisterNativeModule(prefix+"bubbletea", bubbleteamod.Require(ctx, bubbleteaMgr))
 }

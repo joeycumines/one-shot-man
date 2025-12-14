@@ -130,7 +130,14 @@ const MODE_INPUT = 'input';
 const MODE_VIEW = 'view';
 const MODE_CONFIRM = 'confirm';
 
-let nextDocId = 1;
+// Prompt template constant for easier customization
+const PROMPT_HEADER = [
+    'Implement a super-document that is INTERNALLY CONSISTENT based on a quorum or carefully-weighed analysis of the attached documents.',
+    '',
+    'Your goal is to coalesce AS MUCH INFORMATION AS POSSIBLE, in as raw form as possible, while **preserving internal consistency**.',
+    '',
+    'All information or content that you DON\'T manage to coalesce will be discarded, making it critical that you output as much as the requirement of internal consistency allows.'
+];
 
 function createInitialState() {
     return {
@@ -144,7 +151,8 @@ function createInitialState() {
         height: 24,
         statusMsg: '',
         clipboard: '',
-        hasError: false
+        hasError: false,
+        nextDocId: 1  // Document ID counter kept in state
     };
 }
 
@@ -153,9 +161,11 @@ function createInitialState() {
 // ============================================================================
 
 function addDocument(state, label, content) {
+    const docId = state.nextDocId;
+    state.nextDocId++;
     const doc = {
-        id: nextDocId++,
-        label: label || ('Document ' + state.documents.length + 1),
+        id: docId,
+        label: label || ('Document ' + (state.documents.length + 1)),
         content: content || ''
     };
     state.documents.push(doc);
@@ -211,12 +221,10 @@ function calculateBacktickFence(documents) {
 function buildFinalPrompt(documents) {
     const parts = [];
     
-    // Header
-    parts.push('Implement a super-document that is INTERNALLY CONSISTENT based on a quorum or carefully-weighed analysis of the attached documents.');
-    parts.push('');
-    parts.push('Your goal is to coalesce AS MUCH INFORMATION AS POSSIBLE, in as raw form as possible, while **preserving internal consistency**.');
-    parts.push('');
-    parts.push('All information or content that you DON\'T manage to coalesce will be discarded, making it critical that you output as much as the requirement of internal consistency allows.');
+    // Header from constant
+    for (let i = 0; i < PROMPT_HEADER.length; i++) {
+        parts.push(PROMPT_HEADER[i]);
+    }
     parts.push('');
     parts.push('---');
     parts.push('## DOCUMENTS');

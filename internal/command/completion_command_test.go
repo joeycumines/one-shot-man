@@ -253,6 +253,7 @@ func TestCompletionCommandGoalSubcommand(t *testing.T) {
 		"doc-generator",
 		"test-generator",
 		"commit-message",
+		"morale-improver",
 	}
 
 	tests := []struct {
@@ -266,7 +267,7 @@ func TestCompletionCommandGoalSubcommand(t *testing.T) {
 			expectedText: append([]string{
 				"goal)",
 				// Verify exact format: sorted, space-delimited list in compgen -W
-				"COMPREPLY=($(compgen -W \"comment-stripper commit-message doc-generator test-generator\"",
+				"COMPREPLY=($(compgen -W \"comment-stripper commit-message doc-generator morale-improver test-generator\"",
 			}, goalNames...),
 		},
 		{

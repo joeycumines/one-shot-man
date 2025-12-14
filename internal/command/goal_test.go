@@ -353,6 +353,7 @@ func TestGoalCommand_GoToJSPipeline_ContextHeader(t *testing.T) {
 		"doc-generator":    "CODE TO DOCUMENT",
 		"test-generator":   "CODE TO TEST",
 		"comment-stripper": "CODE TO ANALYZE",
+		"morale-improver":  "CONTEXT",
 	}
 
 	for _, goal := range goals {

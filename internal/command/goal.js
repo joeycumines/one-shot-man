@@ -75,8 +75,28 @@
     const bannerTemplate = template.new("bannerTemplate");
     bannerTemplate.funcs(templateFuncs);
     bannerTemplate.parse(config.bannerTemplate ||
-        '=== {{ .tuiTitle }}{{ if .notableVariables }}:{{ range .notableVariables }} ' +
-        '{{ . }}={{ index $.stateKeys . }}{{ end }}{{ end }} ===\n' +
+        '{{- /* 1. Construct the string variables to measure length */ -}}\n' +
+        '{{- $vars := "" -}}\n' +
+        '{{- range .notableVariables -}}\n' +
+        '    {{- $vars = printf "%s %s=%s" $vars . (index $.stateKeys .) -}}\n' +
+        '{{- end -}}\n' +
+        '\n' +
+        '{{- $fullLine := "" -}}\n' +
+        '{{- if .notableVariables -}}\n' +
+        '    {{- $fullLine = printf "=== %s:%s ===" .tuiTitle $vars -}}\n' +
+        '{{- else -}}\n' +
+        '    {{- $fullLine = printf "=== %s ===" .tuiTitle -}}\n' +
+        '{{- end -}}\n' +
+        '\n' +
+        '{{- /* 2. Rendering Logic */ -}}\n' +
+        '{{- if le (len $fullLine) 120 -}}\n' +
+        '=== {{ .tuiTitle }}{{ if .notableVariables }}:{{ range .notableVariables }} {{ . }}={{ index $.stateKeys . }}{{ end }}{{ end }} ===\n' +
+        '{{- else -}}\n' +
+        '=== {{ .tuiTitle }} ===\n' +
+        '{{- range .notableVariables }}\n' +
+        '  {{ . }}={{ index $.stateKeys . }}\n' +
+        '{{- end }}\n' +
+        '{{- end }}\n' +
         'Type \'help\' for commands.');
 
     // Additional help text to append to the built-in help command

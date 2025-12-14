@@ -180,7 +180,6 @@ type jsModel struct {
 	updateFn   goja.Callable
 	viewFn     goja.Callable
 	state      goja.Value
-	quitOnce   sync.Once
 	quitCalled bool
 }
 
@@ -238,10 +237,14 @@ func (m *jsModel) View() string {
 func (m *jsModel) msgToJS(msg tea.Msg) map[string]interface{} {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		keyStr := msg.String()
+		// Detect ctrl modifier from the key string (ctrl keys are named "ctrl+x")
+		hasCtrl := len(keyStr) > 5 && keyStr[:5] == "ctrl+"
 		return map[string]interface{}{
 			"type": "keyPress",
-			"key":  msg.String(),
+			"key":  keyStr,
 			"alt":  msg.Alt,
+			"ctrl": hasCtrl,
 		}
 	case tea.MouseMsg:
 		return map[string]interface{}{
@@ -548,14 +551,19 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) error {
 	ctx, cancel := context.WithCancelCause(m.ctx)
 	defer cancel(nil)
 
+	// Lock only for accessing/copying configuration, not during p.Run()
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	input := m.input
+	output := m.output
+	signalNotify := m.signalNotify
+	signalStop := m.signalStop
+	m.mu.Unlock()
 
 	// Add input/output options
-	if f, ok := m.input.(*os.File); ok {
+	if f, ok := input.(*os.File); ok {
 		opts = append(opts, tea.WithInput(f))
 	}
-	if f, ok := m.output.(*os.File); ok {
+	if f, ok := output.(*os.File); ok {
 		opts = append(opts, tea.WithOutput(f))
 	}
 
@@ -563,14 +571,13 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) error {
 
 	// Setup signal handling
 	sigCh := make(chan os.Signal, 1)
-	m.signalNotify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	defer m.signalStop(sigCh)
+	signalNotify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	defer signalStop(sigCh)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		defer cancel(nil)
 		select {
 		case <-ctx.Done():
 		case <-sigCh:
@@ -578,7 +585,11 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) error {
 		p.Quit()
 	}()
 
-	if _, err := p.Run(); err != nil {
+	_, err := p.Run()
+	cancel(nil) // Signal the goroutine to exit
+	wg.Wait()   // Wait for the goroutine to finish
+
+	if err != nil {
 		return fmt.Errorf("failed to run program: %w", err)
 	}
 

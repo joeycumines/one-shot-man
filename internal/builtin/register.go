@@ -21,16 +21,6 @@ type TViewManagerProvider interface {
 	GetTViewManager() *tviewmod.Manager
 }
 
-// BubbleteaManagerProvider provides access to a bubbletea manager instance.
-type BubbleteaManagerProvider interface {
-	GetBubbleteaManager() *bubbleteamod.Manager
-}
-
-// LipglossManagerProvider provides access to a lipgloss manager instance.
-type LipglossManagerProvider interface {
-	GetLipglossManager() *lipglossmod.Manager
-}
-
 // Register registers all native Go modules with the provided registry, wiring
 // modules that need host context or TUI output with the provided values.
 // The tviewProvider parameter is optional and can be nil if tview functionality is not needed.

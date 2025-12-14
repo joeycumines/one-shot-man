@@ -321,6 +321,8 @@ func getStringVal(obj *goja.Object, key string) string {
 }
 
 // createStyleObject creates a JavaScript object wrapping a StyleWrapper.
+// All style methods return a NEW style object with the modification applied,
+// preserving immutability semantics consistent with lipgloss.
 func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value {
 	obj := runtime.NewObject()
 
@@ -347,14 +349,17 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		return createStyleObject(runtime, newWrapper)
 	})
 
-	// Text formatting
+	// Text formatting - all return new style objects
 	_ = obj.Set("bold", func(call goja.FunctionCall) goja.Value {
 		v := true
 		if len(call.Arguments) > 0 {
 			v = call.Argument(0).ToBoolean()
 		}
-		wrapper.style = wrapper.style.Bold(v)
-		return obj
+		newWrapper := &StyleWrapper{
+			style:   wrapper.style.Bold(v),
+			runtime: runtime,
+		}
+		return createStyleObject(runtime, newWrapper)
 	})
 
 	_ = obj.Set("italic", func(call goja.FunctionCall) goja.Value {
@@ -362,8 +367,11 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		if len(call.Arguments) > 0 {
 			v = call.Argument(0).ToBoolean()
 		}
-		wrapper.style = wrapper.style.Italic(v)
-		return obj
+		newWrapper := &StyleWrapper{
+			style:   wrapper.style.Italic(v),
+			runtime: runtime,
+		}
+		return createStyleObject(runtime, newWrapper)
 	})
 
 	_ = obj.Set("underline", func(call goja.FunctionCall) goja.Value {
@@ -371,8 +379,11 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		if len(call.Arguments) > 0 {
 			v = call.Argument(0).ToBoolean()
 		}
-		wrapper.style = wrapper.style.Underline(v)
-		return obj
+		newWrapper := &StyleWrapper{
+			style:   wrapper.style.Underline(v),
+			runtime: runtime,
+		}
+		return createStyleObject(runtime, newWrapper)
 	})
 
 	_ = obj.Set("strikethrough", func(call goja.FunctionCall) goja.Value {
@@ -380,8 +391,11 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		if len(call.Arguments) > 0 {
 			v = call.Argument(0).ToBoolean()
 		}
-		wrapper.style = wrapper.style.Strikethrough(v)
-		return obj
+		newWrapper := &StyleWrapper{
+			style:   wrapper.style.Strikethrough(v),
+			runtime: runtime,
+		}
+		return createStyleObject(runtime, newWrapper)
 	})
 
 	_ = obj.Set("blink", func(call goja.FunctionCall) goja.Value {
@@ -389,8 +403,11 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		if len(call.Arguments) > 0 {
 			v = call.Argument(0).ToBoolean()
 		}
-		wrapper.style = wrapper.style.Blink(v)
-		return obj
+		newWrapper := &StyleWrapper{
+			style:   wrapper.style.Blink(v),
+			runtime: runtime,
+		}
+		return createStyleObject(runtime, newWrapper)
 	})
 
 	_ = obj.Set("faint", func(call goja.FunctionCall) goja.Value {
@@ -398,8 +415,11 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		if len(call.Arguments) > 0 {
 			v = call.Argument(0).ToBoolean()
 		}
-		wrapper.style = wrapper.style.Faint(v)
-		return obj
+		newWrapper := &StyleWrapper{
+			style:   wrapper.style.Faint(v),
+			runtime: runtime,
+		}
+		return createStyleObject(runtime, newWrapper)
 	})
 
 	_ = obj.Set("reverse", func(call goja.FunctionCall) goja.Value {
@@ -407,8 +427,11 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		if len(call.Arguments) > 0 {
 			v = call.Argument(0).ToBoolean()
 		}
-		wrapper.style = wrapper.style.Reverse(v)
-		return obj
+		newWrapper := &StyleWrapper{
+			style:   wrapper.style.Reverse(v),
+			runtime: runtime,
+		}
+		return createStyleObject(runtime, newWrapper)
 	})
 
 	// Colors
@@ -417,8 +440,11 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 			return obj
 		}
 		colorStr := call.Argument(0).String()
-		wrapper.style = wrapper.style.Foreground(lipgloss.Color(colorStr))
-		return obj
+		newWrapper := &StyleWrapper{
+			style:   wrapper.style.Foreground(lipgloss.Color(colorStr)),
+			runtime: runtime,
+		}
+		return createStyleObject(runtime, newWrapper)
 	})
 
 	_ = obj.Set("background", func(call goja.FunctionCall) goja.Value {
@@ -426,48 +452,71 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 			return obj
 		}
 		colorStr := call.Argument(0).String()
-		wrapper.style = wrapper.style.Background(lipgloss.Color(colorStr))
-		return obj
+		newWrapper := &StyleWrapper{
+			style:   wrapper.style.Background(lipgloss.Color(colorStr)),
+			runtime: runtime,
+		}
+		return createStyleObject(runtime, newWrapper)
 	})
 
 	// Padding
 	_ = obj.Set("padding", func(call goja.FunctionCall) goja.Value {
 		args := extractInts(call.Arguments)
+		var newStyle lipgloss.Style
 		switch len(args) {
 		case 1:
-			wrapper.style = wrapper.style.Padding(args[0])
+			newStyle = wrapper.style.Padding(args[0])
 		case 2:
-			wrapper.style = wrapper.style.Padding(args[0], args[1])
+			newStyle = wrapper.style.Padding(args[0], args[1])
 		case 4:
-			wrapper.style = wrapper.style.Padding(args[0], args[1], args[2], args[3])
+			newStyle = wrapper.style.Padding(args[0], args[1], args[2], args[3])
+		default:
+			return obj
 		}
-		return obj
+		newWrapper := &StyleWrapper{style: newStyle, runtime: runtime}
+		return createStyleObject(runtime, newWrapper)
 	})
 
 	_ = obj.Set("paddingTop", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
-			wrapper.style = wrapper.style.PaddingTop(int(call.Argument(0).ToInteger()))
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.PaddingTop(int(call.Argument(0).ToInteger())),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
 
 	_ = obj.Set("paddingRight", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
-			wrapper.style = wrapper.style.PaddingRight(int(call.Argument(0).ToInteger()))
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.PaddingRight(int(call.Argument(0).ToInteger())),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
 
 	_ = obj.Set("paddingBottom", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
-			wrapper.style = wrapper.style.PaddingBottom(int(call.Argument(0).ToInteger()))
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.PaddingBottom(int(call.Argument(0).ToInteger())),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
 
 	_ = obj.Set("paddingLeft", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
-			wrapper.style = wrapper.style.PaddingLeft(int(call.Argument(0).ToInteger()))
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.PaddingLeft(int(call.Argument(0).ToInteger())),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
@@ -475,41 +524,61 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 	// Margin
 	_ = obj.Set("margin", func(call goja.FunctionCall) goja.Value {
 		args := extractInts(call.Arguments)
+		var newStyle lipgloss.Style
 		switch len(args) {
 		case 1:
-			wrapper.style = wrapper.style.Margin(args[0])
+			newStyle = wrapper.style.Margin(args[0])
 		case 2:
-			wrapper.style = wrapper.style.Margin(args[0], args[1])
+			newStyle = wrapper.style.Margin(args[0], args[1])
 		case 4:
-			wrapper.style = wrapper.style.Margin(args[0], args[1], args[2], args[3])
+			newStyle = wrapper.style.Margin(args[0], args[1], args[2], args[3])
+		default:
+			return obj
 		}
-		return obj
+		newWrapper := &StyleWrapper{style: newStyle, runtime: runtime}
+		return createStyleObject(runtime, newWrapper)
 	})
 
 	_ = obj.Set("marginTop", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
-			wrapper.style = wrapper.style.MarginTop(int(call.Argument(0).ToInteger()))
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.MarginTop(int(call.Argument(0).ToInteger())),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
 
 	_ = obj.Set("marginRight", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
-			wrapper.style = wrapper.style.MarginRight(int(call.Argument(0).ToInteger()))
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.MarginRight(int(call.Argument(0).ToInteger())),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
 
 	_ = obj.Set("marginBottom", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
-			wrapper.style = wrapper.style.MarginBottom(int(call.Argument(0).ToInteger()))
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.MarginBottom(int(call.Argument(0).ToInteger())),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
 
 	_ = obj.Set("marginLeft", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
-			wrapper.style = wrapper.style.MarginLeft(int(call.Argument(0).ToInteger()))
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.MarginLeft(int(call.Argument(0).ToInteger())),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
@@ -517,28 +586,44 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 	// Dimensions
 	_ = obj.Set("width", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
-			wrapper.style = wrapper.style.Width(int(call.Argument(0).ToInteger()))
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.Width(int(call.Argument(0).ToInteger())),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
 
 	_ = obj.Set("height", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
-			wrapper.style = wrapper.style.Height(int(call.Argument(0).ToInteger()))
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.Height(int(call.Argument(0).ToInteger())),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
 
 	_ = obj.Set("maxWidth", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
-			wrapper.style = wrapper.style.MaxWidth(int(call.Argument(0).ToInteger()))
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.MaxWidth(int(call.Argument(0).ToInteger())),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
 
 	_ = obj.Set("maxHeight", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
-			wrapper.style = wrapper.style.MaxHeight(int(call.Argument(0).ToInteger()))
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.MaxHeight(int(call.Argument(0).ToInteger())),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
@@ -547,7 +632,11 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 	_ = obj.Set("border", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
 			border := jsToBorder(runtime, call.Argument(0))
-			wrapper.style = wrapper.style.Border(border)
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.Border(border),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
@@ -557,8 +646,11 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		if len(call.Arguments) > 0 {
 			v = call.Argument(0).ToBoolean()
 		}
-		wrapper.style = wrapper.style.BorderTop(v)
-		return obj
+		newWrapper := &StyleWrapper{
+			style:   wrapper.style.BorderTop(v),
+			runtime: runtime,
+		}
+		return createStyleObject(runtime, newWrapper)
 	})
 
 	_ = obj.Set("borderRight", func(call goja.FunctionCall) goja.Value {
@@ -566,8 +658,11 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		if len(call.Arguments) > 0 {
 			v = call.Argument(0).ToBoolean()
 		}
-		wrapper.style = wrapper.style.BorderRight(v)
-		return obj
+		newWrapper := &StyleWrapper{
+			style:   wrapper.style.BorderRight(v),
+			runtime: runtime,
+		}
+		return createStyleObject(runtime, newWrapper)
 	})
 
 	_ = obj.Set("borderBottom", func(call goja.FunctionCall) goja.Value {
@@ -575,8 +670,11 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		if len(call.Arguments) > 0 {
 			v = call.Argument(0).ToBoolean()
 		}
-		wrapper.style = wrapper.style.BorderBottom(v)
-		return obj
+		newWrapper := &StyleWrapper{
+			style:   wrapper.style.BorderBottom(v),
+			runtime: runtime,
+		}
+		return createStyleObject(runtime, newWrapper)
 	})
 
 	_ = obj.Set("borderLeft", func(call goja.FunctionCall) goja.Value {
@@ -584,14 +682,21 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		if len(call.Arguments) > 0 {
 			v = call.Argument(0).ToBoolean()
 		}
-		wrapper.style = wrapper.style.BorderLeft(v)
-		return obj
+		newWrapper := &StyleWrapper{
+			style:   wrapper.style.BorderLeft(v),
+			runtime: runtime,
+		}
+		return createStyleObject(runtime, newWrapper)
 	})
 
 	_ = obj.Set("borderForeground", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
 			colorStr := call.Argument(0).String()
-			wrapper.style = wrapper.style.BorderForeground(lipgloss.Color(colorStr))
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.BorderForeground(lipgloss.Color(colorStr)),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
@@ -599,7 +704,11 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 	_ = obj.Set("borderBackground", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
 			colorStr := call.Argument(0).String()
-			wrapper.style = wrapper.style.BorderBackground(lipgloss.Color(colorStr))
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.BorderBackground(lipgloss.Color(colorStr)),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
@@ -608,7 +717,11 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 	_ = obj.Set("align", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
 			pos := lipgloss.Position(call.Argument(0).ToFloat())
-			wrapper.style = wrapper.style.Align(pos)
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.Align(pos),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
@@ -616,7 +729,11 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 	_ = obj.Set("alignHorizontal", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
 			pos := lipgloss.Position(call.Argument(0).ToFloat())
-			wrapper.style = wrapper.style.AlignHorizontal(pos)
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.AlignHorizontal(pos),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})
@@ -624,7 +741,11 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 	_ = obj.Set("alignVertical", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
 			pos := lipgloss.Position(call.Argument(0).ToFloat())
-			wrapper.style = wrapper.style.AlignVertical(pos)
+			newWrapper := &StyleWrapper{
+				style:   wrapper.style.AlignVertical(pos),
+				runtime: runtime,
+			}
+			return createStyleObject(runtime, newWrapper)
 		}
 		return obj
 	})

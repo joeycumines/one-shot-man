@@ -590,3 +590,41 @@ func TestRenderMultipleStrings(t *testing.T) {
 	output := result.String()
 	assert.True(t, strings.Contains(output, "Hello") && strings.Contains(output, "World"))
 }
+
+func TestStyleImmutability(t *testing.T) {
+	manager := NewManager()
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("lipgloss", module.Get("exports"))
+
+	// Test that modifying a derived style doesn't affect the original
+	// Using padding which adds visible spaces even without TTY
+	result, err := vm.RunString(`
+		const base = lipgloss.newStyle();
+		const derived = base.padding(2);
+		
+		// Render base - should not have padding
+		const baseRendered = base.render('test');
+		
+		// Render derived - should have padding (extra spaces)
+		const derivedRendered = derived.render('test');
+		
+		// Base should be different from derived
+		JSON.stringify({
+			baseLen: baseRendered.length,
+			derivedLen: derivedRendered.length,
+			different: baseRendered.length !== derivedRendered.length
+		});
+	`)
+	require.NoError(t, err)
+
+	// Parse the result - derived should be longer due to padding
+	resultStr := result.String()
+	assert.Contains(t, resultStr, `"different":true`, "Base style should not be affected by derived style modifications")
+}

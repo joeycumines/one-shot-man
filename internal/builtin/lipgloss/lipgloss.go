@@ -84,13 +84,64 @@
 //
 // # Pathway to Full Support
 //
-// This implementation exposes the core lipgloss API. Future enhancements could include:
-//   - ColorProfile detection and configuration
-//   - Adaptive colors
-//   - Complete color palette support (ANSI, ANSI256, TrueColor)
-//   - Table rendering support
-//   - WhiteSpace handling options
-//   - Transform functions
+// This implementation exposes the core lipgloss API. The following describes
+// the pathway to achieving full parity with the native Go lipgloss library.
+//
+// ## Currently Implemented
+//
+//   - Style creation with newStyle()
+//   - Text formatting: bold, italic, underline, strikethrough, blink, faint, reverse
+//   - Colors: foreground, background (supports hex, ANSI)
+//   - Spacing: padding, margin (all sides and individual)
+//   - Dimensions: width, height, maxWidth, maxHeight
+//   - Borders: all border types, colors, and individual side control
+//   - Alignment: align, alignHorizontal, alignVertical
+//   - Layout: joinHorizontal, joinVertical, place
+//   - Measurement: size, width, height
+//   - Border presets: normalBorder, roundedBorder, thickBorder, doubleBorder, hiddenBorder
+//
+// ## Phase 1: Color Enhancements (recommended next steps)
+//
+//   - lipgloss.color(value) - Explicit color constructor
+//   - lipgloss.adaptiveColor({light, dark}) - Color based on terminal background
+//   - lipgloss.completeColor({trueColor, ansi256, ansi}) - Fallback color support
+//   - lipgloss.completeAdaptiveColor({light, dark}) - Combined adaptive/complete
+//   - Color profile detection (trueColor, ansi256, ansi, noColor)
+//
+// ## Phase 2: Advanced Styling
+//
+//   - Tab width control
+//   - Inline styles (no newlines)
+//   - Transform functions (uppercase, lowercase, etc.)
+//   - WhiteSpace handling (normal, nowrap, pre, preWrap)
+//   - UnderlineSpaces, StrikethroughSpaces options
+//   - Custom border construction
+//
+// ## Phase 3: Layout Utilities
+//
+//   - lipgloss.placeHorizontal(width, pos, str)
+//   - lipgloss.placeVertical(height, pos, str)
+//   - lipgloss.placeOverlay(x, y, fg, bg) - Overlay strings
+//   - lipgloss.table() - Table rendering support
+//   - lipgloss.list() - List rendering support
+//
+// ## Phase 4: Style Management
+//
+//   - Style inheritance and composition
+//   - Style diffing and merging
+//   - Named style presets
+//   - Theme support with color palettes
+//   - Runtime style updates and observers
+//
+// ## Implementation Notes
+//
+// All additions should follow these patterns:
+//
+//  1. No global state - Manager instance per engine
+//  2. Chainable API - methods return the style for chaining
+//  3. Immutable semantics - methods return copies, not mutations
+//  4. JavaScript-friendly types - use maps and arrays
+//  5. Comprehensive unit tests for all exposed functions
 package lipgloss
 
 import (
@@ -282,7 +333,7 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		for _, arg := range call.Arguments {
 			strs = append(strs, arg.String())
 		}
-		// Join with space as lipgloss.Render does
+		// Render all strings with the style applied
 		result := wrapper.style.Render(strs...)
 		return runtime.ToValue(result)
 	})

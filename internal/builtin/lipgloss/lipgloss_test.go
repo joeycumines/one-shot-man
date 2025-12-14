@@ -586,7 +586,7 @@ func TestRenderMultipleStrings(t *testing.T) {
 		style.render('Hello', ' ', 'World');
 	`)
 	require.NoError(t, err)
-	// lipgloss.Render joins with space
+	// lipgloss.Render applies the style to all string arguments
 	output := result.String()
 	assert.True(t, strings.Contains(output, "Hello") && strings.Contains(output, "World"))
 }

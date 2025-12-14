@@ -47,6 +47,7 @@
 //	// msg.x, msg.y - coordinates
 //	// msg.button - button name
 //	// msg.action - 'press', 'release', 'motion'
+//	// msg.alt, msg.ctrl, msg.shift - modifiers
 //
 //	// Window size events
 //	// msg.type === 'windowSize'
@@ -61,13 +62,62 @@
 //
 // # Pathway to Full Support
 //
-// This implementation exposes the core bubbletea API. Future enhancements could include:
-//   - Cursor management
-//   - Custom input/output streams
-//   - Program suspension/resumption
-//   - Full Cmd/Msg type support
-//   - Component composition patterns
-//   - Spinner, progress, and other common components
+// This implementation exposes the core bubbletea API. The following describes
+// the pathway to achieving full parity with the native Go bubbletea library.
+//
+// ## Currently Implemented
+//
+//   - Model creation (init, update, view functions)
+//   - Program execution with tea.run()
+//   - Commands: quit, clearScreen, batch, sequence
+//   - Key events (keyPress with key, alt modifier)
+//   - Mouse events (mouse with x, y, button, action, modifiers)
+//   - Window size events (windowSize with width, height)
+//   - Program options: altScreen, mouse
+//
+// ## Phase 1: Enhanced Commands (recommended next steps)
+//
+//   - tea.tick(duration, callback) - Timer commands for animations
+//   - tea.execProcess(cmd, args) - Execute external processes
+//   - tea.setWindowTitle(title) - Set terminal window title
+//   - tea.hideCursor() / tea.showCursor() - Cursor visibility control
+//   - tea.enterAltScreen() / tea.exitAltScreen() - Runtime screen buffer control
+//
+// ## Phase 2: Advanced Input Handling
+//
+//   - Bracketed paste mode with paste events
+//   - Focus events (focus, blur)
+//   - Custom key bindings with rune support
+//   - Raw mode for low-level input access
+//   - Input filtering and transformation
+//
+// ## Phase 3: Program Lifecycle
+//
+//   - Program suspension and resumption (e.g., Ctrl+Z handling)
+//   - Graceful shutdown with cleanup callbacks
+//   - Multiple concurrent programs
+//   - Program-to-program communication
+//   - Context cancellation integration
+//
+// ## Phase 4: Component Library
+//
+//   - Spinner component with customizable styles
+//   - Progress bar component
+//   - Text input component with validation
+//   - Table/list components with selection
+//   - Viewport component for scrollable content
+//   - File picker component
+//   - Confirmation dialog component
+//
+// ## Implementation Notes
+//
+// All additions should follow these patterns:
+//
+//  1. No global state - all state managed per Manager instance
+//  2. JavaScript callbacks must be properly synchronized with Go goroutines
+//  3. All functionality exposed via Require() function pattern
+//  4. Comprehensive unit tests using simulation screens
+//  5. Deterministic testing - no timing-dependent tests
 package bubbletea
 
 import (

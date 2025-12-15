@@ -11,6 +11,7 @@ import (
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
@@ -39,8 +40,8 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 	cmd.interactive = false
 
 	ctx := context.Background()
-	// Use explicit memory-backed engine to avoid writing session files during tests
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, "lazy-diff-test-"+t.Name(), "memory")
+	// Use explicit memory-backed engine with unique session ID for test isolation
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("lazy-diff", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}

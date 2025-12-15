@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
@@ -19,9 +20,8 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 	// Test with real git diff execution
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	// Use an in-memory storage backend with a test-scoped session so the test
-	// doesn't write to the user's session directory when executing git diffs.
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, t.Name(), "memory")
+	// Use an in-memory storage backend with unique session ID for test isolation
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("git-exec", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}

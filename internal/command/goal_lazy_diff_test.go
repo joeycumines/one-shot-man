@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // Reproduction test: ensure 'diff HEAD' works in goal.js driven modes (e.g. test-generator)
@@ -24,8 +25,8 @@ func TestGoalScript_DiffHeadDoesNotThrowSyntaxError(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	// Use a per-test session id to avoid collisions when tests run in parallel
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, "goal-lazy-diff-test-"+t.Name(), "memory")
+	// Use a per-test session id with unique suffix to avoid collisions across -count=N runs
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal-lazy-diff", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}

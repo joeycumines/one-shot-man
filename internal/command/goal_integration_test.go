@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // buildMockEditor compiles and returns the path to a cross-platform mock editor executable.
@@ -73,7 +74,7 @@ func TestGoalScript_DocGenerator_PromptContainsTypeInstructions(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, "doc-gen-int-test-"+t.Name(), "memory")
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -120,7 +121,7 @@ func TestGoalScript_TestGenerator_PromptContainsTypeInstructions(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, "test-gen-int-test-"+t.Name(), "memory")
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -187,7 +188,7 @@ func TestGoalScript_MoraleImprover_LoadsAndInitializes(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, "morale-improver-init-test-"+t.Name(), "memory")
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -226,7 +227,7 @@ func TestGoalScript_MoraleImprover_ContextManagerCommands(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, "morale-improver-ctx-test-"+t.Name(), "memory")
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -298,7 +299,7 @@ func TestGoalScript_MoraleImprover_StateVariableCommands(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, "morale-improver-state-test-"+t.Name(), "memory")
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -374,7 +375,7 @@ func TestGoalScript_MoraleImprover_PromptTemplateRendering(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, "morale-improver-template-test-"+t.Name(), "memory")
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -450,7 +451,7 @@ func TestGoalScript_MoraleImprover_ErrorHandling(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, "morale-improver-error-test-"+t.Name(), "memory")
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -531,7 +532,7 @@ func TestGoalScript_MoraleImprover_TUIElements(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, "morale-improver-tui-test-"+t.Name(), "memory")
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}

@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // TestRehydrateNormalizesForwardSlashes ensures rehydrateContextManager will
@@ -32,7 +34,8 @@ func TestRehydrateNormalizesForwardSlashes(t *testing.T) {
 	// relative labels against our tmpDir.
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, "rehyd-test", "memory")
+	sessionID := testutil.NewTestSessionID("rehyd", t.Name())
+	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
@@ -45,7 +48,7 @@ func TestRehydrateNormalizesForwardSlashes(t *testing.T) {
 	engine.contextManager = cm
 
 	// Create a TUI manager using the same engine and a memory backend state manager.
-	tm := NewTUIManagerWithConfig(ctx, engine, nil, &stderr, "rehyd-test", "memory")
+	tm := NewTUIManagerWithConfig(ctx, engine, nil, &stderr, sessionID, "memory")
 
 	// Simulate stored state containing a file label using forward slashes
 	// (e.g., from txtar or older snapshots).
@@ -121,7 +124,8 @@ func TestRehydrateNormalizesBackslashes(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, "rehyd-test-bslash", "memory")
+	sessionID := testutil.NewTestSessionID("rehyd-bslash", t.Name())
+	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
@@ -133,7 +137,7 @@ func TestRehydrateNormalizesBackslashes(t *testing.T) {
 	}
 	engine.contextManager = cm
 
-	tm := NewTUIManagerWithConfig(ctx, engine, nil, &stderr, "rehyd-test-bslash", "memory")
+	tm := NewTUIManagerWithConfig(ctx, engine, nil, &stderr, sessionID, "memory")
 
 	// Simulate stored state containing a file label using backslashes
 	// (e.g., a Windows snapshot).
@@ -199,7 +203,8 @@ func TestRehydrateNormalizesDotPrefix(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, "rehyd-dot", "memory")
+	sessionID := testutil.NewTestSessionID("rehyd-dot", t.Name())
+	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
@@ -211,7 +216,7 @@ func TestRehydrateNormalizesDotPrefix(t *testing.T) {
 	}
 	engine.contextManager = cm
 
-	tm := NewTUIManagerWithConfig(ctx, engine, nil, &stderr, "rehyd-dot", "memory")
+	tm := NewTUIManagerWithConfig(ctx, engine, nil, &stderr, sessionID, "memory")
 
 	// Simulate stored state containing a dot-prefixed label.
 	item := map[string]interface{}{"type": "file", "label": "./config.txt"}

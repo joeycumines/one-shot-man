@@ -60,7 +60,11 @@ type ScriptMode struct {
 	OnEnter         goja.Callable
 	OnExit          goja.Callable
 	OnPrompt        goja.Callable
-	mu              sync.RWMutex
+	// InitialCommand is an optional command string to execute after OnEnter.
+	// This allows modes to automatically run a command when entered, such as
+	// launching a more _interactive_ TUI, from the go-prompt REPL mode.
+	InitialCommand string
+	mu             sync.RWMutex
 }
 
 // TUIConfig defines the configuration for a rich TUI interface.

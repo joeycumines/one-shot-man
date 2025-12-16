@@ -2,7 +2,11 @@
 
 This is not an actual TODO list. Consider it as much a TODO list as your Product Manager's project roadmap.
 
+- Wire up the tui.registerMode initialCommand option, once implemented in go-prompt
 - Remove "history file" concept from the tui manager and goal definitions - entirely obsolete
+- Consider consolidating the two prompt variants, tui.registerMode, and tui.createAdvancedPrompt+tui.runPrompt
+  (they're pretty involved, and the former has drifted significantly, as it is what is used by the built-in
+  commands - the code is also hard to follow, mostly AI's fault but yeah, it's a bit shit)
 - Investigate/fix/implement `osm config <key> <value>` to persist config changes to disk
 - Take bubbletea/lipgloss for a spin: Implement a form-based "code review merge" (native in Go to kick the tyres?)
 - Fix duplicate log lines for purged sessions etc?

@@ -54,6 +54,13 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 			}
 		}
 
+		// This allows modes to specify a command to run automatically after entering.
+		if cmdStr, err := getString(configMap, "initialCommand", ""); err != nil {
+			return fmt.Errorf("initialCommand: %v", err)
+		} else {
+			mode.InitialCommand = cmdStr
+		}
+
 		// Process onEnter and onExit lifecycle callbacks
 		if onEnter, exists := configMap["onEnter"]; exists {
 			if onEnterVal := tm.engine.vm.ToValue(onEnter); onEnterVal != nil {

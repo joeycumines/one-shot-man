@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
@@ -93,14 +94,13 @@ func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionI
 	// Set up the global context and APIs
 	engine.setupGlobals()
 
-	// Interrupt JS execution when context is cancelled
-	go func() {
-		<-ctx.Done()
-		// It's safe to call Interrupt from another goroutine.
+	// Interrupt JS execution when context is canceled
+	context.AfterFunc(ctx, func() {
 		if engine.vm != nil {
+			// N.B. It's safe to call Interrupt from another goroutine.
 			engine.vm.Interrupt(ctx.Err())
 		}
-	}()
+	})
 
 	return engine, nil
 }
@@ -114,6 +114,26 @@ func (e *Engine) SetTestMode(enabled bool) {
 func (e *Engine) SetGlobal(name string, value interface{}) {
 	e.globals[name] = value
 	e.vm.Set(name, value)
+}
+
+// GetGlobal retrieves a global variable from the JavaScript runtime.
+// Returns nil if the variable is not defined or is undefined.
+func (e *Engine) GetGlobal(name string) interface{} {
+	val := e.vm.Get(name)
+	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+		return nil
+	}
+	return val.Export()
+}
+
+// Stdout returns the engine's stdout writer.
+func (e *Engine) Stdout() io.Writer {
+	return e.stdout
+}
+
+// Stderr returns the engine's stderr writer.
+func (e *Engine) Stderr() io.Writer {
+	return e.stderr
 }
 
 // LoadScript loads a JavaScript script from a file.
@@ -173,7 +193,10 @@ func (e *Engine) ExecuteScript(script *Script) (err error) {
 	// Recover from top-level panics so scripts cannot crash the host
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("script panicked (fatal error): %v", r)
+			stackTrace := debug.Stack()
+			err = fmt.Errorf("script panicked (fatal error): %v\n\nStack Trace:\n%s", r, string(stackTrace))
+			// Also print to stderr for visibility
+			_, _ = fmt.Fprintf(e.stderr, "\n[PANIC] Script execution panic:\n  %v\n\nStack Trace:\n%s\n", r, string(stackTrace))
 		}
 	}()
 
@@ -214,6 +237,11 @@ func (e *Engine) Close() error {
 	e.vm = nil
 	e.scripts = nil
 	return nil
+}
+
+// RegisterNativeModule registers a native module loader with the require registry.
+func (e *Engine) RegisterNativeModule(name string, loader func(*goja.Runtime, *goja.Object)) {
+	e.registry.RegisterNativeModule(name, loader)
 }
 
 const jsGlobalContextName = "ctx"

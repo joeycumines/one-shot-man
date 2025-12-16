@@ -191,6 +191,13 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 		}
 	}
 
+	// Execute InitialCommand if configured (after OnEnter and command building)
+	// This allows modes to automatically run a command when entered, such as
+	// launching a TUI from a REPL mode (e.g., "tui" command to show visual UI).
+	if mode.InitialCommand != "" {
+		// TODO: wire up once implemented into go-prompt module
+	}
+
 	return nil
 }
 

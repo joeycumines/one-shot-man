@@ -123,7 +123,7 @@ function buildCommands(state) {
 
     function buildMetaPrompt() {
         const fullContext = buildContextTxtar();
-            return template.execute(getTemplate(), {
+        return template.execute(getTemplate(), {
             goal: getGoal(),
             contextTxtar: fullContext
         });

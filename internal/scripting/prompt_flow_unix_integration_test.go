@@ -1240,7 +1240,7 @@ func runCommand(t *testing.T, dir string, name string, args ...string) {
 
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
-	cmd.Env = os.Environ()
+	cmd.Env = append(append([]string(nil), os.Environ()...), "OSM_SESSION="+testutil.NewTestSessionID("test", t.Name()), "OSM_STORE=memory")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

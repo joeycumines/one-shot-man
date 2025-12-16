@@ -46,9 +46,10 @@ func requireExpectExitCode(ctx context.Context, t *testing.T, p *termtest.Consol
 // Test-specific variables like EDITOR should be appended by the caller.
 func newTestProcessEnv(tb testing.TB) []string {
 	tb.Helper()
-	clipboardFile := filepath.Join(tb.(*testing.T).TempDir(), "clipboard.txt")
+	sessionID := testutil.NewTestSessionID("test", tb.Name())
+	clipboardFile := filepath.Join(tb.(*testing.T).TempDir(), sessionID+"-clipboard.txt")
 	return []string{
-		"OSM_SESSION=" + testutil.NewTestSessionID("test", tb.Name()),
+		"OSM_SESSION=" + sessionID,
 		"OSM_STORE=memory",
 		"OSM_CLIPBOARD=cat > " + clipboardFile,
 	}

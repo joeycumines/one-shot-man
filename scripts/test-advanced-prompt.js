@@ -6,8 +6,6 @@ tui.registerMode({
     tui: {
         title: "Test Mode",
         prompt: "[test]> ",
-        enableHistory: true,
-        historyFile: ".test_history"
     },
     onEnter: function () {
         ctx.log("Entered test mode - creating advanced prompt");

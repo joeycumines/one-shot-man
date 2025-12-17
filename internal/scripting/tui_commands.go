@@ -61,6 +61,14 @@ func (tm *TUIManager) getPromptString() string {
 	return ">>> "
 }
 
+// getInitialCommand returns any [ScriptMode.InitialCommand].
+func (tm *TUIManager) getInitialCommand() string {
+	if tm.currentMode != nil {
+		return tm.currentMode.InitialCommand
+	}
+	return ``
+}
+
 // executeJavaScript executes JavaScript code in the current mode context.
 func (tm *TUIManager) executeJavaScript(code string) {
 	if tm.currentMode == nil {

@@ -305,7 +305,6 @@ func (e *Engine) setupGlobals() {
 		"getCurrentMode":       e.tuiManager.jsGetCurrentMode,
 		"registerCommand":      e.tuiManager.jsRegisterCommand,
 		"listModes":            e.tuiManager.jsListModes,
-		"createPromptBuilder":  e.jsCreatePromptBuilder,
 		"createState":          e.jsCreateState,
 		"createAdvancedPrompt": e.tuiManager.jsCreateAdvancedPrompt,
 		"runPrompt":            e.tuiManager.jsRunPrompt,

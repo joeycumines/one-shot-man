@@ -111,8 +111,6 @@ Example:
   "category": "documentation",
   "tuiTitle": "Document Generator",
   "tuiPrompt": "(doc-gen) > ",
-  "historyFile": ".doc-generator_history",
-  "enableHistory": true,
   "stateVars": {
     "type": "comprehensive"
   },
@@ -245,7 +243,7 @@ See `goal.js` to understand how `buildPrompt` and `buildBaseTemplateData` constr
 
 - Custom goal commands (type `custom`) can be injected as JS handlers. The handler function receives `args` (array), and the runtime exposes helper variables/objects:
     - `output` with `print/printf` for TUI output
-    - `tui` for tui API (e.g., `createPromptBuilder`, `registerCompleter`)
+    - `tui` for tui API (e.g. shell-style prompts - see [tui-api.md](tui-api.md))
     - `ctxmgr` context manager instance (if used)
     - `state` and `stateKeys` for script-local state
     - `buildPrompt` function for the latest generated prompt

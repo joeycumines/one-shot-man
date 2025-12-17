@@ -188,7 +188,7 @@ func testCompletePromptWorkflow(
 	// Set initial template
 	snap = cp.Snapshot()
 	cp.SendLine("template You are a {{role}} for {{company}}. You should be {{tone}} and {{helpfulLevel}}. Customer issue: {{issue}}")
-	if err := expect(defaultTimeout, snap, termtest.Contains("Template set:"), "template set"); err != nil {
+	if err := expect(time.Second*5, snap, termtest.Contains("Template set:"), "template set"); err != nil {
 		t.Fatalf("Expected template set: %v", err)
 	}
 

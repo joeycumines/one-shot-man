@@ -27,8 +27,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 			CommandOrder: make([]string, 0),
 		}
 
-		// NOTE: stateContract field is IGNORED in the new architecture.
-		// JavaScript manages its own state via tui.createState() which talks directly to StateManager.
+		// N.B. JavaScript manages its own state via tui.createState() which talks directly to StateManager.
 
 		// Process TUI configuration
 		if tuiConfig, exists := configMap["tui"]; exists {
@@ -40,14 +39,6 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 					return err
 				}
 				mode.TUIConfig.Prompt, err = getString(tuiMap, "prompt", "")
-				if err != nil {
-					return err
-				}
-				mode.TUIConfig.HistoryFile, err = getString(tuiMap, "historyFile", "")
-				if err != nil {
-					return err
-				}
-				mode.TUIConfig.EnableHistory, err = getBool(tuiMap, "enableHistory", false)
 				if err != nil {
 					return err
 				}
@@ -78,13 +69,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 			}
 		}
 
-		// Process commands or buildCommands callback (commands is preferred, buildCommands is legacy)
-		commandsBuilder := configMap["commands"]
-		if commandsBuilder == nil {
-			commandsBuilder = configMap["buildCommands"]
-		}
-
-		if commandsBuilder != nil {
+		if commandsBuilder := configMap["commands"]; commandsBuilder != nil {
 			// If it's a JS function, treat it as a CommandsBuilder
 			if builderVal := tm.engine.vm.ToValue(commandsBuilder); builderVal != nil {
 				if builderFunc, ok := goja.AssertFunction(builderVal); ok {

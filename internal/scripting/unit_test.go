@@ -90,71 +90,6 @@ func TestTUIManagerAPI(t *testing.T) {
 	// State management is tested in other test functions with proper contracts.
 }
 
-// TestPromptBuilder tests the prompt builder functionality
-func TestPromptBuilder(t *testing.T) {
-	pb := NewPromptBuilder("Test Prompt", "A test prompt for unit testing")
-
-	// Test basic functionality
-	if pb.Title != "Test Prompt" {
-		t.Fatalf("Expected title 'Test Prompt', got '%s'", pb.Title)
-	}
-
-	// Test template and variable setting
-	pb.SetTemplate("Hello {{name}}, you are {{age}} years old.")
-	pb.SetVariable("name", "Alice")
-	pb.SetVariable("age", 30)
-
-	built := pb.Build()
-	expected := "Hello Alice, you are 30 years old."
-	if built != expected {
-		t.Fatalf("Expected '%s', got '%s'", expected, built)
-	}
-
-	// Test version saving
-	pb.SaveVersion("Initial version", []string{"test", "initial"})
-	versions := pb.ListVersions()
-	if len(versions) != 1 {
-		t.Fatalf("Expected 1 version, got %d", len(versions))
-	}
-
-	version := versions[0]
-	if version["notes"] != "Initial version" {
-		t.Fatalf("Expected notes 'Initial version', got '%v'", version["notes"])
-	}
-
-	if version["content"] != expected {
-		t.Fatalf("Expected content '%s', got '%v'", expected, version["content"])
-	}
-
-	// Test version restoration
-	pb.SetVariable("name", "Bob")
-	pb.SetVariable("age", 25)
-	newBuilt := pb.Build()
-	if newBuilt == built {
-		t.Fatal("Expected different content after variable change")
-	}
-
-	err := pb.RestoreVersion(1)
-	if err != nil {
-		t.Fatalf("Version restoration failed: %v", err)
-	}
-
-	restoredBuilt := pb.Build()
-	if restoredBuilt != expected {
-		t.Fatalf("Expected restored content '%s', got '%s'", expected, restoredBuilt)
-	}
-
-	// Test export
-	exported := pb.Export()
-	if exported["title"] != "Test Prompt" {
-		t.Fatalf("Expected exported title 'Test Prompt', got '%v'", exported["title"])
-	}
-
-	if exported["current"] != expected {
-		t.Fatalf("Expected exported current '%s', got '%v'", expected, exported["current"])
-	}
-}
-
 // TestScriptModeExecution tests running scripts that define modes
 func TestScriptModeExecution(t *testing.T) {
 	// Build binary for testing
@@ -307,8 +242,7 @@ func TestJavaScriptAPIBinding(t *testing.T) {
 
 		var requiredFunctions = [
 			'registerMode', 'switchMode', 'getCurrentMode',
-			'registerCommand', 'listModes', 'createPromptBuilder',
-			'createState'
+			'registerCommand', 'listModes', 'createState'
 		];
 
 		for (var i = 0; i < requiredFunctions.length; i++) {
@@ -319,14 +253,6 @@ func TestJavaScriptAPIBinding(t *testing.T) {
 		}
 
 		ctx.log("All TUI API functions are available");
-
-		// Test prompt builder creation
-		var pb = tui.createPromptBuilder("Test", "Test prompt");
-		if (!pb || typeof pb.setTemplate !== 'function') {
-			throw new Error("Prompt builder creation failed");
-		}
-
-		ctx.log("Prompt builder creation successful");
 	`)
 
 	err := engine.ExecuteScript(script)

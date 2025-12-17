@@ -191,13 +191,6 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 		}
 	}
 
-	// Execute InitialCommand if configured (after OnEnter and command building)
-	// This allows modes to automatically run a command when entered, such as
-	// launching a TUI from a REPL mode (e.g., "tui" command to show visual UI).
-	if mode.InitialCommand != "" {
-		// TODO: wire up once implemented into go-prompt module
-	}
-
 	return nil
 }
 
@@ -406,7 +399,7 @@ func (tm *TUIManager) executeCommand(cmd Command, args []string) error {
 		}
 
 		// Capture history snapshot after successful command execution
-		if execErr == nil && tm.currentMode != nil && tm.currentMode.TUIConfig != nil && tm.currentMode.TUIConfig.EnableHistory {
+		if execErr == nil {
 			tm.captureHistorySnapshot(cmd.Name, args)
 		}
 
@@ -496,7 +489,9 @@ func (tm *TUIManager) runAdvancedPrompt() {
 	// Configure prompt options - full configuration for go-prompt
 	colors := tm.defaultColors
 	options := []prompt.Option{
-		prompt.WithPrefix(tm.getPromptString()),
+		// Use a callback so the prompt prefix is evaluated at render time.
+		// This ensures the prefix reflects any changes made by an `initialCommand`.
+		prompt.WithPrefixCallback(func() string { return tm.getPromptString() }),
 		prompt.WithCompleter(completer),
 		prompt.WithInputTextColor(colors.InputText),
 		prompt.WithPrefixTextColor(colors.PrefixText),
@@ -527,6 +522,10 @@ func (tm *TUIManager) runAdvancedPrompt() {
 				},
 			},
 		),
+	}
+
+	if initialCommand := tm.getInitialCommand(); initialCommand != "" {
+		options = append(options, prompt.WithInitialCommand(initialCommand, false))
 	}
 
 	// this enables the sync protocol when built with the `integration` build tag
@@ -577,17 +576,6 @@ func (tm *TUIManager) flushQueuedOutput() {
 		_, _ = writer.Write([]byte(m))
 	}
 }
-
-// === NEW STATE MANAGEMENT METHODS ===
-
-// jsCreateStateContractInternal is DELETED - no longer used in new architecture
-// State is managed directly by JS via tui.createState() -> StateManager
-
-// getStateBySymbol - DELETED in new architecture
-
-// setStateBySymbol - DELETED in new architecture
-
-// initModeState - DELETED in new architecture
 
 // === TEST HELPER METHODS ===
 // These methods provide test-only access to state using string keys.

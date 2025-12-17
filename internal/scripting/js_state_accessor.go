@@ -27,7 +27,6 @@ func normalizeSymbolDescription(symbolDesc string) string {
 }
 
 // jsCreateState implements tui.createState(commandName, definitions)
-// This is the NEW unified API that replaces createStateContract and createSharedStateContract.
 func (e *Engine) jsCreateState(call goja.FunctionCall) goja.Value {
 	runtime := e.vm
 

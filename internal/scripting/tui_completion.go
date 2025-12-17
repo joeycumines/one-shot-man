@@ -55,7 +55,9 @@ func getFilepathSuggestions(path string) []prompt.Suggest {
 	if expandedPath == "/" {
 		dirToScan = "/"
 		prefix = ""
-	} else if fi, err := os.Stat(expandedPath); err == nil && fi.IsDir() {
+	} else if fi, err := os.Stat(expandedPath); err == nil && fi.IsDir() && strings.HasSuffix(path, "/") {
+		// FIXED: Only scan directory contents if the user explicitly typed a trailing slash.
+		// Otherwise, we want to scan the parent to suggest the directory name itself (e.g. "bin/").
 		dirToScan = expandedPath
 		prefix = ""
 	}
@@ -86,6 +88,12 @@ func getFilepathSuggestions(path string) []prompt.Suggest {
 				dirPart := filepath.Dir(path)
 				if dirPart == "." {
 					text = entry.Name()
+				} else if dirPart == "/" {
+					// filepath.Join is avoided here to ensure the suggestion text does not mutate/clean
+					// the user's input.
+					text = dirPart + entry.Name()
+				} else if dirPart == "~" && strings.HasPrefix(path, "~//") {
+					text = "~//" + entry.Name()
 				} else {
 					text = dirPart + "/" + entry.Name()
 				}
@@ -314,8 +322,8 @@ func (tm *TUIManager) tryCallJSCompleter(callable goja.Callable, document prompt
 		return nil, nil
 	}
 
-	// Try export to []interface{} then map
-	var rawArr []interface{}
+	// Try export to []any then map
+	var rawArr []any
 	if err := vm.ExportTo(value, &rawArr); err != nil {
 		return nil, fmt.Errorf("completer must return an array, got %T", value.Export())
 	}
@@ -324,8 +332,8 @@ func (tm *TUIManager) tryCallJSCompleter(callable goja.Callable, document prompt
 		switch v := item.(type) {
 		case string:
 			out = append(out, prompt.Suggest{Text: v})
-		case map[string]interface{}:
-			obj, ok := any(v).(map[string]interface{})
+		case map[string]any:
+			obj, ok := any(v).(map[string]any)
 			if !ok {
 				return nil, fmt.Errorf("completer result[%d] must be an object, but got %T", idx, v)
 			}

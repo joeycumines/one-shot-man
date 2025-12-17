@@ -1,4 +1,4 @@
-// LLM Prompt Builder Mode - Demonstrates rich TUI for building one-shot prompts
+// LLM Prompt Builder - (Legacy) Demo Script
 // Usage: osm script -i scripts/llm-prompt-builder.js
 
 ctx.log("Initializing LLM Prompt Builder mode...");
@@ -21,14 +21,143 @@ const state = tui.createState(MODE_NAME, {
     }
 });
 
+// N.B. This was implemented in Go, but was removed due to its general lack of utility.
+// It was ported to JS largely to support existing integration tests.
+class PromptBuilder {
+    constructor(title, description) {
+        this.title = title;
+        this.description = description;
+        this.template = "";
+        this.variables = {};
+        this.history = [];
+        this.current = null;
+    }
+
+    setTemplate(template) {
+        this.template = template;
+    }
+
+    setVariable(key, value) {
+        this.variables[key] = value;
+    }
+
+    build() {
+        var content = this.template;
+
+        // Replace variables in the template
+        // Go logic: placeholder := fmt.Sprintf("{{%s}}", key)
+        for (var key in this.variables) {
+            if (this.variables.hasOwnProperty(key)) {
+                var placeholder = "{{" + key + "}}";
+                var replacement = String(this.variables[key]);
+                // Mimic strings.ReplaceAll
+                content = content.split(placeholder).join(replacement);
+            }
+        }
+
+        return content;
+    }
+
+    saveVersion(notes, tags) {
+        // Deep copy current variables
+        var variablesCopy = {};
+        for (var k in this.variables) {
+            if (this.variables.hasOwnProperty(k)) {
+                variablesCopy[k] = this.variables[k];
+            }
+        }
+
+        var version = {
+            version: this.history.length + 1,
+            content: this.build(),
+            variables: variablesCopy,
+            createTime: new Date().toISOString(),
+            notes: notes,
+            tags: tags
+        };
+
+        this.history.push(version);
+        this.current = version;
+    }
+
+    restoreVersion(versionNum) {
+        if (versionNum < 1 || versionNum > this.history.length) {
+            throw new Error("version " + versionNum + " not found");
+        }
+
+        // Get version (1-based index to 0-based)
+        var version = this.history[versionNum - 1];
+
+        // Go logic: pb.Template = version.Content
+        this.template = version.content;
+
+        // Go logic: Restore variables (deep copy back)
+        this.variables = {};
+        for (var k in version.variables) {
+            if (version.variables.hasOwnProperty(k)) {
+                this.variables[k] = version.variables[k];
+            }
+        }
+
+        this.current = version;
+    }
+
+    listVersions() {
+        var versions = [];
+        for (var i = 0; i < this.history.length; i++) {
+            var v = this.history[i];
+            versions.push({
+                version: v.version,
+                createTime: v.createTime,
+                notes: v.notes,
+                tags: v.tags,
+                content: v.content
+            });
+        }
+        return versions;
+    }
+
+    export() {
+        return {
+            title: this.title,
+            description: this.description,
+            template: this.template,
+            variables: this.variables,
+            current: this.build(),
+            versions: this.listVersions()
+        };
+    }
+
+    // Helpers inferred from existing JS usage
+    stats() {
+        return {
+            description: this.description,
+            versions: this.history.length
+        };
+    }
+
+    preview() {
+        var out = "Title: " + this.title + "\n";
+        out += "Description: " + this.description + "\n";
+        out += "Variables: " + JSON.stringify(this.variables) + "\n";
+        out += "--- Build Preview ---\n";
+        out += this.build();
+        return out;
+    }
+}
+
+// In-memory storage of prompt instances so JS class methods remain available.
+// Using the StateManager for complex JS objects will convert them to plain
+// Go-native maps and strip methods — keep runtime objects in memory instead.
+const _prompts = {};
+let _currentPrompt = null;
+
 // Register the LLM prompt builder mode
 tui.registerMode({
     name: MODE_NAME,
     tui: {
         title: "LLM Prompt Builder",
         prompt: "[prompt-builder]> ",
-        enableHistory: true,
-        historyFile: ".llm-prompt-history"
     },
 
     onEnter: function () {
@@ -67,13 +196,11 @@ tui.registerMode({
                     var title = args[0];
                     var description = args.slice(1).join(" ") || "A new LLM prompt";
 
-                    var prompt = tui.createPromptBuilder(title, description);
-                    state.set(stateKeys.currentPrompt, prompt);
+                    var prompt = new PromptBuilder(title, description);
 
-                    // Store in prompts collection
-                    var prompts = state.get(stateKeys.prompts);
-                    prompts[title] = prompt;
-                    state.set(stateKeys.prompts, prompts);
+                    // Keep runtime prompt instances in-memory so methods are preserved
+                    _currentPrompt = prompt;
+                    _prompts[title] = prompt;
 
                     output.print("Created new prompt: " + title);
                     output.print("Description: " + description);
@@ -91,14 +218,13 @@ tui.registerMode({
                     }
 
                     var title = args[0];
-                    var prompts = state.get(stateKeys.prompts);
 
-                    if (prompts[title]) {
-                        state.set(stateKeys.currentPrompt, prompts[title]);
+                    if (_prompts[title]) {
+                        _currentPrompt = _prompts[title];
                         output.print("Loaded prompt: " + title);
                     } else {
                         output.print("Prompt not found: " + title);
-                        output.print("Available prompts: " + Object.keys(prompts).join(", "));
+                        output.print("Available prompts: " + Object.keys(_prompts).join(", "));
                     }
                 }
             },
@@ -107,7 +233,7 @@ tui.registerMode({
                 description: "Set the prompt template",
                 usage: "template <text>",
                 handler: function (args) {
-                    var prompt = state.get(stateKeys.currentPrompt);
+                    var prompt = _currentPrompt;
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -128,7 +254,7 @@ tui.registerMode({
                 description: "Set a template variable",
                 usage: "var <key> <value>",
                 handler: function (args) {
-                    var prompt = state.get(stateKeys.currentPrompt);
+                    var prompt = _currentPrompt;
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -151,7 +277,7 @@ tui.registerMode({
             "build": {
                 description: "Build the current prompt",
                 handler: function (args) {
-                    var prompt = state.get(stateKeys.currentPrompt);
+                    var prompt = _currentPrompt;
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -168,7 +294,7 @@ tui.registerMode({
             "preview": {
                 description: "Preview the current prompt with metadata",
                 handler: function (args) {
-                    var prompt = state.get(stateKeys.currentPrompt);
+                    var prompt = _currentPrompt;
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -182,7 +308,7 @@ tui.registerMode({
                 description: "Save current version",
                 usage: "save [notes]",
                 handler: function (args) {
-                    var prompt = state.get(stateKeys.currentPrompt);
+                    var prompt = _currentPrompt;
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -202,7 +328,7 @@ tui.registerMode({
             "versions": {
                 description: "List all versions",
                 handler: function (args) {
-                    var prompt = state.get(stateKeys.currentPrompt);
+                    var prompt = _currentPrompt;
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -229,7 +355,7 @@ tui.registerMode({
                 description: "Restore a specific version",
                 usage: "restore <version>",
                 handler: function (args) {
-                    var prompt = state.get(stateKeys.currentPrompt);
+                    var prompt = _currentPrompt;
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -258,7 +384,7 @@ tui.registerMode({
             "export": {
                 description: "Export prompt data",
                 handler: function (args) {
-                    var prompt = state.get(stateKeys.currentPrompt);
+                    var prompt = _currentPrompt;
                     if (!prompt) {
                         output.print("No active prompt. Use 'new' to create one.");
                         return;
@@ -273,8 +399,7 @@ tui.registerMode({
             "list": {
                 description: "List all prompts",
                 handler: function (args) {
-                    var prompts = state.get(stateKeys.prompts);
-                    var names = Object.keys(prompts);
+                    var names = Object.keys(_prompts);
 
                     if (names.length === 0) {
                         output.print("No prompts created yet. Use 'new' to create one.");
@@ -284,7 +409,7 @@ tui.registerMode({
                     output.print("Available prompts:");
                     for (var i = 0; i < names.length; i++) {
                         var name = names[i];
-                        var prompt = prompts[name];
+                        var prompt = _prompts[name];
                         var stats = prompt.stats();
                         output.print("  " + name + " - " + stats.description + " (" + stats.versions + " versions)");
                     }

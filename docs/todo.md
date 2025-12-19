@@ -3,6 +3,9 @@
 This is not an actual TODO list. Consider it as much a TODO list as your Product Manager's project roadmap.
 
 - Take bubbletea/lipgloss for a spin: Implement a form-based "code review merge" (native in Go to kick the tyres?)
+- Add option to the osm:ctxutil add context command to add files from a diff (`git diff <what> --name-only`)
+- Expose the Go `flag` package as a JS module `osm:flag` for script authors to use
+- Add support for completion for arguments for REPL commands within `osm:ctxutil` module using the `osm:flag` module
 - QoL improvements to prompt-flow, e.g. allow `use` without `goal` or `generate` (i.e. add one-step mode), add `footer` support for the second prompt
 - Add `exec` context builder command as part of `contextManager`
 - Consider tightening up the concept of "logging" / the half-baked API exposed to scripts

@@ -42,15 +42,15 @@ Keys (mirrors go-prompt “color roles”):
 - `prompt.color.input`
 - `prompt.color.prefix`
 - `prompt.color.suggestionText`
-- `prompt.color.suggestionBG`
+- `prompt.color.suggestionBackground`
 - `prompt.color.selectedSuggestionText`
-- `prompt.color.selectedSuggestionBG`
+- `prompt.color.selectedSuggestionBackground`
 - `prompt.color.descriptionText`
-- `prompt.color.descriptionBG`
+- `prompt.color.descriptionBackground`
 - `prompt.color.selectedDescriptionText`
-- `prompt.color.selectedDescriptionBG`
+- `prompt.color.selectedDescriptionBackground`
 - `prompt.color.scrollbarThumb`
-- `prompt.color.scrollbarBG`
+- `prompt.color.scrollbarBackground`
 
 Allowed values (named colors):
 
@@ -64,7 +64,7 @@ Example:
 ```text
 prompt.color.input green
 prompt.color.prefix cyan
-prompt.color.selectedSuggestionBG cyan
+prompt.color.selectedSuggestionBackground cyan
 ```
 
 ## Script command discovery

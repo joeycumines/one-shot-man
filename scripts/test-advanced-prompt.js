@@ -19,8 +19,8 @@ tui.registerMode({
                 prefix: "cyan",
                 input: "white",
                 suggestionText: "yellow",
-                suggestionBG: "black",
-                selectedSuggestionBG: "cyan"
+                suggestionBackground: "black",
+                selectedSuggestionBackground: "cyan"
             },
             history: {
                 enabled: true,

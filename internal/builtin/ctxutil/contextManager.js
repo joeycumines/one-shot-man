@@ -93,11 +93,19 @@
                     }
                 },
                 diff: {
-                    description: "Add git diff output to context (default: HEAD~1)",
+                    description: "Add git diff output to context (default: HEAD)",
                     usage: "diff [commit-spec]",
                     handler: function (args) {
-                        const argv = (args && args.length > 0) ? args.slice(0) : ["HEAD~1"];
-                        const label = "git diff " + formatArgv(argv);
+                        // Don't bake the runtime default into the stored payload. Store an
+                        // empty payload to indicate "no args provided" and let the Go
+                        // runtime decide the most appropriate default (HEAD if it yields
+                        // a useful diff, otherwise fall back to legacy behaviour).
+                        // Note: an empty array payload is a deliberate signal meaning
+                        // "use the runtime default when executing". Consumers should
+                        // treat stored payloads as read-only and avoid mutating them
+                        // while executing lazy diffs.
+                        const argv = (args && args.length > 0) ? args.slice(0) : [];
+                        const label = argv.length ? "git diff " + formatArgv(argv) : "git diff (default: HEAD)";
                         addItem("lazy-diff", label, argv);
                         output.print("Added diff: " + label + " (will be executed when generating prompt)");
                     }
@@ -148,11 +156,13 @@
                             return;
                         }
                         if (list[idx].type === 'lazy-diff') {
-                            const initial = Array.isArray(list[idx].payload) ? formatArgv(list[idx].payload) : (list[idx].payload || "HEAD~1");
+                            const initial = Array.isArray(list[idx].payload) ? formatArgv(list[idx].payload) : (list[idx].payload || "");
                             const edited = openEditor("diff-spec-" + id, initial);
                             const argv = parseArgv((edited || "").trim());
-                            list[idx].payload = argv.length ? argv : ["HEAD~1"];
-                            list[idx].label = "git diff " + formatArgv(list[idx].payload);
+                            // Store an empty payload to represent "no args provided" so
+                            // runtime defaults can be applied when generating the prompt.
+                            list[idx].payload = argv.length ? argv : [];
+                            list[idx].label = argv.length ? "git diff " + formatArgv(list[idx].payload) : "git diff (default: HEAD)";
                             setItems(list);
                             output.print("Updated diff specification [" + id + "]");
                             return;

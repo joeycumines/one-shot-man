@@ -449,7 +449,7 @@ func TestContextManagerIntegrationWithBuildContext(t *testing.T) {
 		ctxmgr.addItem("note", "test note", "This is a test note");
 
 		// Test that lazy-diff was added
-		ctxmgr.addItem("lazy-diff", "git diff HEAD~1", ["HEAD~1"]);
+		ctxmgr.addItem("lazy-diff", "git diff HEAD", ["HEAD"]);
 
 		globalThis.__itemsAfterNoteAndDiff = items.length;
 
@@ -515,6 +515,61 @@ func TestContextManagerIntegrationWithBuildContext(t *testing.T) {
 
 	if !strings.Contains(prompt, "txtar content") {
 		t.Error("expected prompt to contain txtar content")
+	}
+}
+
+func TestContextManagerDiffHandlerPayload(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; }
+		});
+
+		globalThis.output = { print: (msg) => {} };
+
+		// Default invocation: no args -> payload should be empty array
+		ctxmgr.commands.diff.handler([]);
+		globalThis.__itemsAfterDefault = items.length;
+		globalThis.__defaultPayload = items[items.length - 1].payload;
+
+		// Custom args: should be persisted verbatim
+		ctxmgr.commands.diff.handler(["HEAD~2", "--name-only"]);
+		globalThis.__itemsAfterCustom = items.length;
+		globalThis.__customPayload = items[items.length - 1].payload;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	if got := runtime.Get("__itemsAfterDefault").ToInteger(); got != 1 {
+		t.Fatalf("expected 1 item after default diff, got %d", got)
+	}
+
+	defaultPayload := runtime.Get("__defaultPayload").Export()
+	defaultSlice, ok := defaultPayload.([]interface{})
+	if !ok {
+		t.Fatalf("expected default payload to be a slice, got %T", defaultPayload)
+	}
+	if len(defaultSlice) != 0 {
+		t.Fatalf("expected default payload to be empty slice, got %v", defaultSlice)
+	}
+
+	if got := runtime.Get("__itemsAfterCustom").ToInteger(); got != 2 {
+		t.Fatalf("expected 2 items after custom diff, got %d", got)
+	}
+
+	customPayload := runtime.Get("__customPayload").Export()
+	customSlice, ok := customPayload.([]interface{})
+	if !ok {
+		t.Fatalf("expected custom payload to be a slice, got %T", customPayload)
+	}
+	if len(customSlice) != 2 || customSlice[0].(string) != "HEAD~2" || customSlice[1].(string) != "--name-only" {
+		t.Fatalf("expected custom payload [\"HEAD~2\",\"--name-only\"], got %v", customSlice)
 	}
 }
 

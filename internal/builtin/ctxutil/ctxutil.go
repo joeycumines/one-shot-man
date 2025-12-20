@@ -23,7 +23,7 @@ var (
 
 // contentBlock holds the processed data for each distinct section before rendering.
 type contentBlock struct {
-	Title   string // The full title, e.g., "Note: Important", "Diff: git diff HEAD~1"
+	Title   string // The full title, e.g., "Note: Important", "Diff: git diff HEAD"
 	Content string // The raw payload for the section
 	Lang    string // The code block language (e.g., "diff"). Empty for non-code blocks.
 	IsError bool   // Flag to distinguish successful diffs from errors.
@@ -221,33 +221,55 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 					if goja.IsUndefined(payloadVal) || goja.IsNull(payloadVal) {
 						// Unspecified -> choose robust default
 						args = getDefaultGitDiffArgsFn(baseCtx)
+					} else if arr, arrErr := toArrayObject(runtime, payloadVal); arrErr != nil {
+						hadErr = true
+						errMsg = fmt.Sprintf("Invalid payload: %v", arrErr)
+					} else if arr != nil {
+						length := int(arr.Get("length").ToInteger())
+						tmp := make([]string, 0, length)
+						for i := 0; i < length; i++ {
+							itemVal := valueOrUndefined(arr.Get(fmt.Sprintf("%d", i)))
+							if goja.IsUndefined(itemVal) || goja.IsNull(itemVal) {
+								hadErr = true
+								errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%v')", i, itemVal)
+								break
+							}
+							exported, err := exportGojaValue(runtime, itemVal)
+							if err != nil {
+								hadErr = true
+								errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%s')", i, err)
+								break
+							}
+							str, ok := exported.(string)
+							if !ok {
+								typeName := ""
+								if exported != nil {
+									typeName = reflect.TypeOf(exported).String()
+								} else {
+									typeName = "undefined"
+								}
+								hadErr = true
+								errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%s')", i, typeName)
+								break
+							}
+							tmp = append(tmp, str)
+						}
+						if !hadErr {
+							args = tmp
+						}
+					} else if exported, err := exportGojaValue(runtime, payloadVal); err != nil {
+						hadErr = true
+						errMsg = fmt.Sprintf("Invalid payload: %v", err)
 					} else {
-						if arr, arrErr := toArrayObject(runtime, payloadVal); arrErr != nil {
-							hadErr = true
-							errMsg = fmt.Sprintf("Invalid payload: %v", arrErr)
-						} else if arr != nil {
-							length := int(arr.Get("length").ToInteger())
-							tmp := make([]string, 0, length)
-							for i := 0; i < length; i++ {
-								itemVal := valueOrUndefined(arr.Get(fmt.Sprintf("%d", i)))
-								if goja.IsUndefined(itemVal) || goja.IsNull(itemVal) {
-									hadErr = true
-									errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%v')", i, itemVal)
-									break
-								}
-								exported, err := exportGojaValue(runtime, itemVal)
-								if err != nil {
-									hadErr = true
-									errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%s')", i, err)
-									break
-								}
-								str, ok := exported.(string)
+						switch exported := exported.(type) {
+						case []interface{}:
+							tmp := make([]string, 0, len(exported))
+							for i, item := range exported {
+								str, ok := item.(string)
 								if !ok {
-									typeName := ""
-									if exported != nil {
-										typeName = reflect.TypeOf(exported).String()
-									} else {
-										typeName = "undefined"
+									typeName := "undefined"
+									if item != nil {
+										typeName = reflect.TypeOf(item).String()
 									}
 									hadErr = true
 									errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%s')", i, typeName)
@@ -258,58 +280,24 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 							if !hadErr {
 								args = tmp
 							}
-						} else {
-							exported, err := exportGojaValue(runtime, payloadVal)
-							if err != nil {
-								hadErr = true
-								errMsg = fmt.Sprintf("Invalid payload: %v", err)
+						case []string:
+							args = append(args, exported...)
+						case string:
+							args = gosmargv.ParseSlice(exported)
+						default:
+							typeName := ""
+							if exported != nil {
+								typeName = reflect.TypeOf(exported).String()
 							} else {
-								switch exported := exported.(type) {
-								case []interface{}:
-									tmp := make([]string, 0, len(exported))
-									for i, item := range exported {
-										str, ok := item.(string)
-										if !ok {
-											typeName := "undefined"
-											if item != nil {
-												typeName = reflect.TypeOf(item).String()
-											}
-											hadErr = true
-											errMsg = fmt.Sprintf("Invalid payload: expected a string array, but found non-string element at index %d (type '%s')", i, typeName)
-											break
-										}
-										tmp = append(tmp, str)
-									}
-									if !hadErr {
-										args = tmp
-									}
-								case []string:
-									args = append(args, exported...)
-								case string:
-									args = gosmargv.ParseSlice(exported)
-								default:
-									typeName := ""
-									if exported != nil {
-										typeName = reflect.TypeOf(exported).String()
-									} else {
-										typeName = "undefined"
-									}
-									hadErr = true
-									errMsg = fmt.Sprintf("Invalid payload: expected a string or string array, but got type '%s'", typeName)
-								}
+								typeName = "undefined"
 							}
+							hadErr = true
+							errMsg = fmt.Sprintf("Invalid payload: expected a string or string array, but got type '%s'", typeName)
 						}
 					}
 
-					// If args were provided as the common default HEAD~1, but it's invalid in this repo
-					// (e.g. only a single commit exists), upgrade to an empty-tree vs HEAD diff.
-					if !hadErr && len(args) == 1 && strings.TrimSpace(args[0]) == "HEAD~1" {
-						if def := getDefaultGitDiffArgsFn(baseCtx); len(def) == 2 && def[0] != "HEAD~1" {
-							args = def
-						}
-					}
-
-					// If still no args (e.g. empty string payload), choose robust default
+					// If still no args (e.g. empty string payload), choose robust default.
+					// N.B. This is "smart" in that it resolved to the most-likely-useful default.
 					if !hadErr && len(args) == 0 {
 						args = getDefaultGitDiffArgsFn(baseCtx)
 					}
@@ -535,16 +523,26 @@ func runGitDiff(ctx context.Context, args []string) (stdout string, message stri
 }
 
 // getDefaultGitDiffArgs returns a robust default for `git diff`.
-// Prefer HEAD~1 when available; otherwise, use the empty-tree hash vs HEAD
-// which produces the initial commit contents as a diff.
+// Prefer `HEAD` when it seems appropriate (i.e. `git diff HEAD` produces output or the command runs),
+// otherwise fall back to previous behaviour (HEAD~1 if available, else empty-tree vs HEAD).
 func getDefaultGitDiffArgs(ctx context.Context) []string {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	// Check if HEAD~1 exists
+
+	// Try `git diff HEAD` and accept it only if the command produces output
+	// (covers the case where git exits with status 1 to indicate differences
+	// and writes the diff to stdout). If there is no output (e.g. single-commit
+	// repository where HEAD has no changes), fall through to legacy behaviour.
+	if out, _ := exec.CommandContext(ctx, "git", "diff", "--no-ext-diff", "--no-color", "HEAD").CombinedOutput(); len(bytes.TrimSpace(out)) > 0 {
+		return []string{"HEAD"}
+	}
+
+	// Check if HEAD~1 exists (preserve previous preference)
 	if err := exec.CommandContext(ctx, "git", "rev-parse", "-q", "--verify", "HEAD~1").Run(); err == nil {
 		return []string{"HEAD~1"}
 	}
+
 	// Fallback: empty tree vs HEAD
 	return []string{"4b825dc642cb6eb9a060e54bf8d69288fbee4904", "HEAD"}
 }

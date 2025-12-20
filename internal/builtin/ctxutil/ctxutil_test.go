@@ -60,7 +60,7 @@ func TestBuildContextFormatting(t *testing.T) {
 			{ type: "diff", payload: "+added" },
 			{ type: "diff-error", payload: "error details" },
 			{ type: "lazy-diff", label: "stats", payload: "--stat" },
-			{ type: "lazy-diff", payload: ["HEAD~1"] }
+			{ type: "lazy-diff", payload: [] }
 		];
 		globalThis.__buildResult = exports.buildContext(items, { toTxtar: () => "content\nof\ntxtar" });
 	`

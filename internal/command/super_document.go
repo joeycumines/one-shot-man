@@ -22,7 +22,7 @@ var superDocumentScript string
 type SuperDocumentCommand struct {
 	*BaseCommand
 	interactive bool
-	replMode    bool // Use REPL mode instead of visual TUI
+	shellMode   bool // Use shell mode instead of visual TUI
 	testMode    bool
 	config      *config.Config
 	session     string
@@ -45,7 +45,7 @@ func NewSuperDocumentCommand(cfg *config.Config) *SuperDocumentCommand {
 func (c *SuperDocumentCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.interactive, "interactive", true, "Start interactive TUI mode (default)")
 	fs.BoolVar(&c.interactive, "i", true, "Start interactive TUI mode (short form, default)")
-	fs.BoolVar(&c.replMode, "repl", false, "Use REPL mode instead of visual TUI")
+	fs.BoolVar(&c.shellMode, "shell", false, "Use shell mode instead of visual TUI")
 	fs.BoolVar(&c.testMode, "test", false, "Enable test mode with verbose output")
 	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
 	fs.StringVar(&c.store, "store", "", "Storage backend to use: 'fs' (default) or 'memory'")
@@ -67,11 +67,11 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 	}
 
 	// Inject command name and configuration for state namespacing
-	// The replMode flag controls whether to start in REPL or TUI mode
+	// The shellMode flag controls whether to start in shell or TUI mode
 	const commandName = "super-document"
 	engine.SetGlobal("config", map[string]interface{}{
-		"name":     commandName,
-		"replMode": c.replMode, // Wire --repl flag to JS state
+		"name":      commandName,
+		"shellMode": c.shellMode, // Wire --shell flag to JS state
 	})
 
 	// Set up global variables

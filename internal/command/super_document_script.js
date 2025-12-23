@@ -696,45 +696,28 @@ function handleKeys(msg, s) {
                 s.confirmDocId = doc.id;
             }
         }
-        if (k === 'v') {
-            const doc = s.documents[s.selectedIdx];
-            if (doc) {
-                s.mode = MODE_VIEW;
-                s.viewTitle = `Document #${doc.id}: ${doc.label}`;
-                s.viewContent = doc.content;
-            }
-        }
-        if (k === 'g' || k === 'c') {
+        // 'v' key removed - view mode is redundant per AGENTS.md
+        // 'g' key removed - generate button does nothing per AGENTS.md
+        if (k === 'c') {
             if (s.documents.length === 0) {
                 s.statusMsg = 'No documents!';
                 s.hasError = true;
             } else {
                 const prompt = buildFinalPrompt();
                 s.clipboard = prompt;
-                if (k === 'c') {
-                    try {
-                        // Call the system clipboard via osm:os module
-                        osm.clipboardCopy(prompt);
-                        s.statusMsg = `Copied prompt (${prompt.length} chars)`;
-                        s.hasError = false;
-                    } catch (e) {
-                        s.statusMsg = 'Clipboard error: ' + e;
-                        s.hasError = true;
-                    }
-                } else {
-                    s.statusMsg = 'Prompt generated. Press p to preview.';
+                try {
+                    // Call the system clipboard via osm:os module
+                    osm.clipboardCopy(prompt);
+                    s.statusMsg = `Copied prompt (${prompt.length} chars)`;
                     s.hasError = false;
+                } catch (e) {
+                    s.statusMsg = 'Clipboard error: ' + e;
+                    s.hasError = true;
                 }
             }
         }
-        if (k === 'p') {
-            if (s.clipboard) {
-                s.mode = MODE_VIEW;
-                s.viewTitle = 'Generated Prompt Preview';
-                s.viewContent = s.clipboard;
-            }
-        }
-        if (k === '?') s.statusMsg = 'a:add l:load e:edit r:rename d:del v:view c:copy g:gen s:shell q:quit';
+        // 'p' preview removed - view mode is redundant per AGENTS.md
+        if (k === '?') s.statusMsg = 'a:add l:load e:edit r:rename d:del c:copy s:shell q:quit';
     } else if (s.mode === MODE_INPUT) {
         if (k === 'esc') {
             s.mode = MODE_LIST;
@@ -822,9 +805,8 @@ function handleKeys(msg, s) {
             s.statusMsg = 'Cancelled';
             s.mode = MODE_LIST;
         }
-    } else if (s.mode === MODE_VIEW) {
-        if (k === 'esc' || k === 'enter' || k === 'q') s.mode = MODE_LIST;
     }
+    // MODE_VIEW removed - view mode is redundant per AGENTS.md
 
     // Force full screen repaint when transitioning FROM a modal mode TO MODE_LIST
     // This ensures BubbleTea re-renders the entire screen including the title
@@ -859,35 +841,38 @@ function handleMouse(msg, s) {
 
     // Use bubblezone for proper hit-testing - no hardcoded coordinates
     // Buttons are marked with zone IDs like "btn-add", "btn-load", etc.
+    // Note: btn-edit, btn-view, btn-delete, btn-generate removed per AGENTS.md
     const buttonActions = [
         {id: 'btn-add', action: 'a'},
         {id: 'btn-load', action: 'l'},
-        {id: 'btn-edit', action: 'e'},
-        {id: 'btn-view', action: 'v'},
-        {id: 'btn-delete', action: 'd'},
         {id: 'btn-copy', action: 'c'},
-        {id: 'btn-generate', action: 'g'},
         {id: 'btn-shell', action: 'shell'},
-        {id: 'btn-submit', action: 'enter'},
+        {id: 'btn-submit', action: 'submit'},
         {id: 'btn-cancel', action: 'esc'},
         {id: 'btn-yes', action: 'y'},
         {id: 'btn-no', action: 'n'},
     ];
 
-    // Check button zones
-    if (typeof console !== 'undefined') {
-        const addZone = zone.get('btn-add');
-        const copyZone = zone.get('btn-copy');
-        console.log('MOUSE DEBUG: msg.x=' + msg.x + ', msg.y=' + msg.y);
-        console.log('MOUSE DEBUG: btn-add zone:', JSON.stringify(addZone));
-        console.log('MOUSE DEBUG: btn-copy zone:', JSON.stringify(copyZone));
-    }
+    // Check button zones (debug removed)
     for (const btn of buttonActions) {
         if (zone.inBounds(btn.id, msg)) {
-            if (typeof console !== 'undefined') {
-                console.log('MOUSE DEBUG: zone.inBounds(' + btn.id + ') = TRUE, action=' + btn.action);
+            if (btn.action === 'shell') {
+                _userRequestedShell = true;
+                return [s, tea.quit()];
             }
-            if (btn.action === 'shell') return [s, tea.quit()];
+            if (btn.action === 'submit') {
+                // Handle submit button click - this is the fix for the nil pointer crash
+                // We need to properly set focus and handle submission
+                if (s.mode === MODE_INPUT && s.inputFocus !== FOCUS_SUBMIT) {
+                    // First focus the submit button
+                    if (s.inputFocus === FOCUS_CONTENT && s.contentTextarea) {
+                        s.contentTextarea.blur();
+                    }
+                    s.inputFocus = FOCUS_SUBMIT;
+                }
+                // Now handle the enter key to submit
+                return handleKeys({key: 'ctrl+enter'}, s);
+            }
             return handleKeys({key: btn.action}, s);
         }
     }
@@ -976,7 +961,7 @@ function renderView(s) {
     s.layout = {buttons: [], docBoxes: []}; // Reset layout (kept for compatibility)
     let content;
     if (s.mode === MODE_INPUT) content = renderInput(s);
-    else if (s.mode === MODE_VIEW) content = renderViewer(s);
+    // MODE_VIEW removed - view mode is redundant per AGENTS.md
     else if (s.mode === MODE_CONFIRM) content = renderConfirm(s);
     else content = renderList(s);
 
@@ -1053,42 +1038,31 @@ function renderList(s) {
     }
 
     // Button bar section with responsive layout
-    const buttonRow1 = [
+    // Per AGENTS.md design: [A]dd  [L]oad  [C]opy  [S]hell
+    // Delete (d) is keyboard-only, Edit/View/Generate buttons removed
+    const buttonList = [
         {id: 'btn-add', text: '[A]dd', style: styles.button()},
         {id: 'btn-load', text: '[L]oad', style: styles.button()},
-        {id: 'btn-edit', text: '[E]dit', style: styles.button()},
-        {id: 'btn-view', text: '[V]iew', style: styles.button()},
-        {id: 'btn-delete', text: '[D]elete', style: styles.buttonDanger()},
+        {id: 'btn-copy', text: '[C]opy', style: styles.buttonFocused()},
+        {id: 'btn-shell', text: '[S]hell', style: styles.buttonShell()},
     ];
 
-    const buttonRow2 = [
-        {id: 'btn-copy', text: '[C]opy Prompt', style: styles.buttonFocused()},
-        {id: 'btn-generate', text: '[G]enerate', style: styles.button()},
-        {id: 'btn-shell', text: '[S]hell (ESC)', style: styles.buttonShell()},
-    ];
+    // Render buttons with zone markers
+    const renderedButtons = buttonList.map(b => zone.mark(b.id, b.style.render(b.text)));
 
-    // Calculate total button width for row 1
-    const row1Buttons = buttonRow1.map(b => zone.mark(b.id, b.style.render(b.text)));
-    const row2Buttons = buttonRow2.map(b => zone.mark(b.id, b.style.render(b.text)));
-
-    // Calculate widths using lipgloss
-    const row1TotalWidth = row1Buttons.reduce((sum, btn) => sum + lipgloss.width(btn), 0);
-    const row2TotalWidth = row2Buttons.reduce((sum, btn) => sum + lipgloss.width(btn), 0);
+    // Calculate total button width
+    const totalButtonWidth = renderedButtons.reduce((sum, btn) => sum + lipgloss.width(btn), 0);
 
     // Responsive layout: stack vertically if buttons exceed terminal width
     let buttonSection;
     const availWidth = termWidth - 4; // Leave some margin
-    const allButtons = [...row1Buttons, ...row2Buttons];
-    const totalAllButtonsWidth = row1TotalWidth + row2TotalWidth;
 
-    if (row1TotalWidth > availWidth || row2TotalWidth > availWidth) {
+    if (totalButtonWidth > availWidth) {
         // Narrow: stack ALL buttons vertically
-        buttonSection = lipgloss.joinVertical(lipgloss.Left, ...allButtons);
+        buttonSection = lipgloss.joinVertical(lipgloss.Left, ...renderedButtons);
     } else {
         // Wide: horizontal layout
-        const row1 = lipgloss.joinHorizontal(lipgloss.Top, ...row1Buttons);
-        const row2 = lipgloss.joinHorizontal(lipgloss.Top, ...row2Buttons);
-        buttonSection = lipgloss.joinVertical(lipgloss.Left, row1, row2);
+        buttonSection = lipgloss.joinHorizontal(lipgloss.Top, ...renderedButtons);
     }
     const buttonSectionHeight = lipgloss.height(buttonSection);
 
@@ -1103,7 +1077,7 @@ function renderList(s) {
     // Footer section
     const separatorWidth = Math.min(72, termWidth - 2);
     const separator = styles.separator().render('─'.repeat(separatorWidth));
-    const helpText = styles.help().render('a:add l:load e:edit d:del v:view c:copy g:gen s:shell q:quit ↑↓:nav pgup/pgdn:page');
+    const helpText = styles.help().render('a:add l:load e:edit d:del c:copy s:shell q:quit ↑↓:nav pgup/pgdn:page');
     const footer = lipgloss.joinVertical(lipgloss.Left, separator, helpText);
 
     // ------------------------------------------------------------------------
@@ -1245,32 +1219,7 @@ function renderInput(s) {
     return lipgloss.joinVertical(lipgloss.Left, ...sections);
 }
 
-function renderViewer(s) {
-    const termWidth = s.width || 80;
-    const termHeight = s.height || 24;
-
-    // Calculate available space for the box
-    // Layout: title (1) + gap (1) + BOX + gap (1) + help (1) = 4 lines overhead
-    // Box height must be <= termHeight - 4
-    const boxMaxHeight = Math.max(8, termHeight - 4);
-
-    // Build title
-    const titleText = s.viewTitle || 'Preview';
-    const title = styles.title().render(titleText);
-
-    // Build content box with height limit
-    // The box includes borders (2) and padding (2), so content area = boxMaxHeight - 4
-    const boxWidth = Math.max(40, termWidth - 6);
-    const rawContent = s.viewContent || '';
-    const content = styles.box()
-        .width(boxWidth)
-        .maxHeight(boxMaxHeight)
-        .render(rawContent);
-
-    const helpText = styles.help().render('Press Esc or Enter to close');
-
-    return lipgloss.joinVertical(lipgloss.Left, title, '', content, '', helpText);
-}
+// renderViewer removed - view mode is redundant per AGENTS.md
 
 function renderConfirm(s) {
     const title = styles.title().render('⚠️ Confirm Delete');
@@ -1348,19 +1297,36 @@ function buildCommands() {
             }
         },
         "doc-list": {
-            description: "List super-documents",
+            description: "List super-documents and context items",
             usage: "doc-list",
             handler: function () {
                 const docs = getDocuments();
-                if (docs.length === 0) {
-                    output.print("No documents.");
+                const ctxItems = state.get(shared.contextItems) || [];
+                
+                if (docs.length === 0 && ctxItems.length === 0) {
+                    output.print("No documents or context items.");
                     return;
                 }
-                output.print("Super Documents:");
-                docs.forEach(d => {
-                    const prev = (d.content || "").substring(0, 50).replace(/\n/g, " ");
-                    output.print(`  #${d.id} [${d.label}]: ${prev}...`);
-                });
+                
+                // Show super documents
+                if (docs.length > 0) {
+                    output.print("Super Documents:");
+                    docs.forEach(d => {
+                        const prev = (d.content || "").substring(0, 50).replace(/\n/g, " ");
+                        output.print(`  #${d.id} [${d.label}]: ${prev}...`);
+                    });
+                }
+                
+                // Show context items from ctxutil
+                if (ctxItems.length > 0) {
+                    if (docs.length > 0) output.print(""); // blank line separator
+                    output.print("Context Items:");
+                    ctxItems.forEach(item => {
+                        const type = item.type || 'unknown';
+                        const name = item.name || item.path || 'unnamed';
+                        output.print(`  [${type}] ${name}`);
+                    });
+                }
             }
         },
         "doc-view": {
@@ -1455,9 +1421,9 @@ tui.registerMode({
     commands: function () {
         return buildCommands();
     },
-    // If replMode is true (--repl flag passed), don't auto-launch TUI
+    // If shellMode is true (--shell flag passed), don't auto-launch TUI
     // Otherwise, launch TUI immediately for visual interface
-    initialCommand: config.replMode ? undefined : "tui",
+    initialCommand: config.shellMode ? undefined : "tui",
 });
 
 tui.switchMode(COMMAND_NAME);

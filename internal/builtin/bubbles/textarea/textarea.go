@@ -46,6 +46,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/dop251/goja"
 )
 
@@ -419,6 +420,98 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		if wrapper != nil {
 			wrapper.mu.Lock()
 			wrapper.model.CharLimit = n
+			wrapper.mu.Unlock()
+		}
+		return obj
+	})
+
+	// setTextForeground sets the text foreground color for focused state
+	_ = obj.Set("setTextForeground", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return obj
+		}
+		colorStr := call.Argument(0).String()
+		wrapper := manager.getModel(id)
+		if wrapper != nil {
+			wrapper.mu.Lock()
+			wrapper.model.FocusedStyle.Text = wrapper.model.FocusedStyle.Text.Foreground(lipgloss.Color(colorStr))
+			wrapper.model.BlurredStyle.Text = wrapper.model.BlurredStyle.Text.Foreground(lipgloss.Color(colorStr))
+			wrapper.mu.Unlock()
+		}
+		return obj
+	})
+
+	// setCursorLineForeground sets the cursor line foreground color for focused state
+	_ = obj.Set("setCursorLineForeground", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return obj
+		}
+		colorStr := call.Argument(0).String()
+		wrapper := manager.getModel(id)
+		if wrapper != nil {
+			wrapper.mu.Lock()
+			wrapper.model.FocusedStyle.CursorLine = wrapper.model.FocusedStyle.CursorLine.Foreground(lipgloss.Color(colorStr))
+			wrapper.mu.Unlock()
+		}
+		return obj
+	})
+
+	// setCursorLineBackground sets the cursor line background color for focused state
+	_ = obj.Set("setCursorLineBackground", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return obj
+		}
+		colorStr := call.Argument(0).String()
+		wrapper := manager.getModel(id)
+		if wrapper != nil {
+			wrapper.mu.Lock()
+			wrapper.model.FocusedStyle.CursorLine = wrapper.model.FocusedStyle.CursorLine.Background(lipgloss.Color(colorStr))
+			wrapper.mu.Unlock()
+		}
+		return obj
+	})
+
+	// setPlaceholderForeground sets the placeholder text color
+	_ = obj.Set("setPlaceholderForeground", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return obj
+		}
+		colorStr := call.Argument(0).String()
+		wrapper := manager.getModel(id)
+		if wrapper != nil {
+			wrapper.mu.Lock()
+			wrapper.model.FocusedStyle.Placeholder = wrapper.model.FocusedStyle.Placeholder.Foreground(lipgloss.Color(colorStr))
+			wrapper.model.BlurredStyle.Placeholder = wrapper.model.BlurredStyle.Placeholder.Foreground(lipgloss.Color(colorStr))
+			wrapper.mu.Unlock()
+		}
+		return obj
+	})
+
+	// setCursorForeground sets the cursor block foreground color
+	_ = obj.Set("setCursorForeground", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return obj
+		}
+		colorStr := call.Argument(0).String()
+		wrapper := manager.getModel(id)
+		if wrapper != nil {
+			wrapper.mu.Lock()
+			wrapper.model.Cursor.Style = wrapper.model.Cursor.Style.Foreground(lipgloss.Color(colorStr))
+			wrapper.mu.Unlock()
+		}
+		return obj
+	})
+
+	// setCursorBackground sets the cursor block background color
+	_ = obj.Set("setCursorBackground", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return obj
+		}
+		colorStr := call.Argument(0).String()
+		wrapper := manager.getModel(id)
+		if wrapper != nil {
+			wrapper.mu.Lock()
+			wrapper.model.Cursor.Style = wrapper.model.Cursor.Style.Background(lipgloss.Color(colorStr))
 			wrapper.mu.Unlock()
 		}
 		return obj

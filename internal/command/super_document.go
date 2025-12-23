@@ -66,12 +66,46 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 		engine.SetTestMode(true)
 	}
 
+	// Build theme colors from config, with sensible defaults
+	themeColors := map[string]interface{}{
+		"primary":   "#7C3AED", // Purple
+		"secondary": "#10B981", // Green
+		"danger":    "#EF4444", // Red
+		"warning":   "#F59E0B", // Orange
+		"muted":     "#6B7280", // Gray
+		"bg":        "#1F2937", // Dark gray
+		"fg":        "#F9FAFB", // Light
+		"focus":     "#3B82F6", // Blue
+	}
+	if c.config != nil {
+		for k, v := range c.config.Global {
+			if strings.HasPrefix(k, "theme.") {
+				key := strings.TrimPrefix(k, "theme.")
+				if key != "" {
+					themeColors[key] = v
+				}
+			}
+		}
+		// Also check command-specific theme overrides
+		if cmdOpts, ok := c.config.Commands["super-document"]; ok {
+			for k, v := range cmdOpts {
+				if strings.HasPrefix(k, "theme.") {
+					key := strings.TrimPrefix(k, "theme.")
+					if key != "" {
+						themeColors[key] = v
+					}
+				}
+			}
+		}
+	}
+
 	// Inject command name and configuration for state namespacing
 	// The shellMode flag controls whether to start in shell or TUI mode
 	const commandName = "super-document"
 	engine.SetGlobal("config", map[string]interface{}{
 		"name":      commandName,
 		"shellMode": c.shellMode, // Wire --shell flag to JS state
+		"theme":     themeColors, // Wire theme colors to JS
 	})
 
 	// Set up global variables

@@ -439,19 +439,40 @@ const INPUT_EDIT = 'edit';
 const INPUT_LOAD = 'load';
 const INPUT_RENAME = 'rename';
 
+// Button definitions for keyboard navigation
+// Order matches the ASCII design: [A]dd  [L]oad  [C]opy  [S]hell  [R]eset  [Q]uit
+const BUTTONS = [
+    {id: 'btn-add', key: 'a', label: '[A]dd'},
+    {id: 'btn-load', key: 'l', label: '[L]oad'},
+    {id: 'btn-copy', key: 'c', label: '[C]opy'},
+    {id: 'btn-shell', key: 's', label: '[S]hell'},
+    {id: 'btn-reset', key: 'r', label: '[R]eset'},
+    {id: 'btn-quit', key: 'q', label: '[Q]uit'},
+];
+
 // TUI Design
 const DESIGN = {
     buttonPaddingH: 2, buttonPaddingV: 0, buttonMarginR: 1,
     docPaddingH: 1, docPaddingV: 0, docMarginB: 1,
-    previewMaxLen: 50, textareaHeight: 6
+    previewMaxLen: 50, textareaMinHeight: 3, textareaMaxHeight: 20
 };
 
-// TUI Styles
-const COLORS = {
+// TUI Styles - use config.theme if provided, else defaults
+const DEFAULT_COLORS = {
     primary: '#7C3AED', secondary: '#10B981', danger: '#EF4444',
     muted: '#6B7280', bg: '#1F2937', fg: '#F9FAFB',
     warning: '#F59E0B', focus: '#3B82F6'
 };
+const COLORS = (typeof config !== 'undefined' && config.theme) ? {
+    primary: config.theme.primary || DEFAULT_COLORS.primary,
+    secondary: config.theme.secondary || DEFAULT_COLORS.secondary,
+    danger: config.theme.danger || DEFAULT_COLORS.danger,
+    muted: config.theme.muted || DEFAULT_COLORS.muted,
+    bg: config.theme.bg || DEFAULT_COLORS.bg,
+    fg: config.theme.fg || DEFAULT_COLORS.fg,
+    warning: config.theme.warning || DEFAULT_COLORS.warning,
+    focus: config.theme.focus || DEFAULT_COLORS.focus
+} : DEFAULT_COLORS;
 
 const styles = {
     title: () => lipgloss.newStyle().bold(true).foreground(COLORS.primary).padding(0, 1),
@@ -517,6 +538,9 @@ function runVisualTui() {
         clipboard: '',
         width: 80, height: 24,
         layout: {buttons: [], docBoxes: []},
+
+        // Button navigation: -1 = document list focused, 0+ = button index focused
+        focusedButtonIdx: -1,
 
         // Flag to force a full screen clear on first render
         // This ensures the title line is rendered correctly when re-entering TUI from shell
@@ -588,31 +612,182 @@ function handleKeys(msg, s) {
             return [s, tea.quit()];
         }
 
-        // Arrow key navigation with auto-scroll
+        // Arrow key navigation with auto-scroll (documents + buttons)
         if (k === 'up' || k === 'k') {
-            s.selectedIdx = Math.max(0, s.selectedIdx - 1);
-            ensureSelectionVisible(s);
+            if (s.focusedButtonIdx >= 0) {
+                // Currently on buttons - up goes back to last document
+                s.focusedButtonIdx = -1;
+                if (s.documents.length > 0) {
+                    s.selectedIdx = s.documents.length - 1;
+                    ensureSelectionVisible(s);
+                }
+            } else {
+                // In document list - move up normally
+                s.selectedIdx = Math.max(0, s.selectedIdx - 1);
+                ensureSelectionVisible(s);
+            }
         }
         if (k === 'down' || k === 'j') {
-            s.selectedIdx = Math.min(s.documents.length - 1, s.selectedIdx + 1);
-            ensureSelectionVisible(s);
+            if (s.focusedButtonIdx >= 0) {
+                // Already on buttons - down doesn't do anything (buttons are at bottom)
+            } else if (s.selectedIdx >= s.documents.length - 1) {
+                // At bottom of document list - move to first button
+                s.focusedButtonIdx = 0;
+            } else {
+                // In document list - move down normally
+                s.selectedIdx = Math.min(s.documents.length - 1, s.selectedIdx + 1);
+                ensureSelectionVisible(s);
+            }
+        }
+        // Left/Right for button navigation
+        if (k === 'left' || k === 'h') {
+            if (s.focusedButtonIdx > 0) {
+                s.focusedButtonIdx--;
+            }
+        }
+        if (k === 'right' || k === 'l') {
+            if (s.focusedButtonIdx >= 0 && s.focusedButtonIdx < BUTTONS.length - 1) {
+                s.focusedButtonIdx++;
+            }
+        }
+        // Tab cycles: docs -> buttons (forward)
+        if (k === 'tab') {
+            if (s.focusedButtonIdx < 0) {
+                // From docs, go to first button
+                s.focusedButtonIdx = 0;
+            } else if (s.focusedButtonIdx < BUTTONS.length - 1) {
+                // Move to next button
+                s.focusedButtonIdx++;
+            } else {
+                // From last button, wrap to docs
+                s.focusedButtonIdx = -1;
+                s.selectedIdx = 0;
+                if (s.vp) s.vp.setYOffset(0);
+            }
+        }
+        // Shift+Tab cycles: buttons -> docs (backward)
+        if (k === 'shift+tab') {
+            if (s.focusedButtonIdx > 0) {
+                // Move to previous button
+                s.focusedButtonIdx--;
+            } else if (s.focusedButtonIdx === 0) {
+                // From first button, go to last doc
+                s.focusedButtonIdx = -1;
+                if (s.documents.length > 0) {
+                    s.selectedIdx = s.documents.length - 1;
+                    ensureSelectionVisible(s);
+                }
+            } else {
+                // From docs, go to last button
+                s.focusedButtonIdx = BUTTONS.length - 1;
+            }
+        }
+        // Enter on focused button activates it
+        if (k === 'enter' && s.focusedButtonIdx >= 0) {
+            const btn = BUTTONS[s.focusedButtonIdx];
+            if (btn) {
+                // Simulate the key press for the button action
+                // Re-dispatch as the button's key
+                // (use the same handling code below)
+                if (btn.key === 'q') {
+                    _userRequestedShell = false;
+                    return [s, tea.quit()];
+                }
+                if (btn.key === 's') {
+                    _userRequestedShell = true;
+                    return [s, tea.quit()];
+                }
+                // For other buttons, set k to the button's key and fall through
+                // We need to handle them specially to avoid code duplication
+                // Note: a, l, c, r are handled below, so let's just set a marker
+                // Actually, simpler: just set k and let it fall through
+                // But k is a const! Need to refactor...
+                // For now, handle inline:
+                if (btn.key === 'a') {
+                    s.mode = MODE_INPUT;
+                    s.inputOperation = INPUT_ADD;
+                    s.inputFocus = FOCUS_LABEL;
+                    s.labelBuffer = '';
+                    s.contentTextarea = textareaLib.new();
+                    s.contentTextarea.setPlaceholder("Enter document content...");
+                    s.contentTextarea.setWidth(Math.max(40, s.width - 10));
+                    s.contentTextarea.setHeight(DESIGN.textareaMinHeight);
+                    s.contentTextarea.setTextForeground(COLORS.fg);
+                    s.contentTextarea.setCursorLineForeground(COLORS.fg);
+                    s.contentTextarea.setPlaceholderForeground(COLORS.muted);
+                    s.focusedButtonIdx = -1; // Clear button focus when entering input mode
+                }
+                if (btn.key === 'l') {
+                    s.mode = MODE_INPUT;
+                    s.inputOperation = INPUT_LOAD;
+                    s.inputFocus = FOCUS_LABEL;
+                    s.labelBuffer = '';
+                    s.contentTextarea = null;
+                    s.focusedButtonIdx = -1;
+                }
+                if (btn.key === 'c') {
+                    // Copy all documents
+                    const allContent = s.documents.map(d => '# ' + d.label + '\n\n' + d.content).join('\n\n---\n\n');
+                    if (allContent) {
+                        s.clipboard = allContent;
+                        s.statusMsg = 'Copied ' + s.documents.length + ' document(s) to clipboard';
+                        s.hasError = false;
+                    } else {
+                        s.statusMsg = 'No documents to copy';
+                        s.hasError = true;
+                    }
+                    s.focusedButtonIdx = -1;
+                }
+                if (btn.key === 'r') {
+                    // Reset all - confirm
+                    if (s.documents.length > 0) {
+                        s.mode = MODE_CONFIRM;
+                        s.confirmPrompt = 'Delete ALL ' + s.documents.length + ' document(s)? [y/N]';
+                        s.confirmDocId = -1; // -1 means "reset all"
+                    } else {
+                        s.statusMsg = 'No documents to reset';
+                        s.hasError = true;
+                    }
+                    s.focusedButtonIdx = -1;
+                }
+            }
         }
 
         // MANUAL PAGE KEY HANDLING - DO NOT forward to vp.update()!
         // PgDown: Move selection down by approximately a page worth of documents
+        // If already at last document, move focus to buttons
         if (k === 'pgdown') {
-            if (s.documents.length > 0 && s.vp) {
+            if (s.focusedButtonIdx >= 0) {
+                // Already on buttons - no further down to go
+            } else if (s.documents.length > 0 && s.vp) {
                 const vpHeight = s.vp.height();
                 // Estimate ~5 lines per document box
                 const pageSize = Math.max(1, Math.floor(vpHeight / 5));
-                s.selectedIdx = Math.min(s.documents.length - 1, s.selectedIdx + pageSize);
-                ensureSelectionVisible(s);
+                const newIdx = Math.min(s.documents.length - 1, s.selectedIdx + pageSize);
+                if (newIdx === s.selectedIdx && s.selectedIdx >= s.documents.length - 1) {
+                    // At last document and trying to go further - move to buttons
+                    s.focusedButtonIdx = 0;
+                } else {
+                    s.selectedIdx = newIdx;
+                    ensureSelectionVisible(s);
+                }
+            } else if (s.documents.length === 0) {
+                // No documents - jump to buttons
+                s.focusedButtonIdx = 0;
             }
         }
 
         // PgUp: Move selection up by approximately a page worth of documents
+        // If on buttons, return to document list
         if (k === 'pgup') {
-            if (s.documents.length > 0 && s.vp) {
+            if (s.focusedButtonIdx >= 0) {
+                // On buttons - go back to last document
+                s.focusedButtonIdx = -1;
+                if (s.documents.length > 0) {
+                    s.selectedIdx = s.documents.length - 1;
+                    ensureSelectionVisible(s);
+                }
+            } else if (s.documents.length > 0 && s.vp) {
                 const vpHeight = s.vp.height();
                 const pageSize = Math.max(1, Math.floor(vpHeight / 5));
                 s.selectedIdx = Math.max(0, s.selectedIdx - pageSize);
@@ -620,19 +795,22 @@ function handleKeys(msg, s) {
             }
         }
 
-        // Home: Go to first document
+        // Home: Go to first document and clear button focus
         if (k === 'home') {
+            s.focusedButtonIdx = -1;
             if (s.documents.length > 0) {
                 s.selectedIdx = 0;
                 if (s.vp) s.vp.setYOffset(0);
             }
         }
 
-        // End: Go to last document
+        // End: Go to last button (truly the end of the page)
         if (k === 'end') {
-            if (s.documents.length > 0) {
-                s.selectedIdx = s.documents.length - 1;
-                ensureSelectionVisible(s);
+            s.focusedButtonIdx = BUTTONS.length - 1;
+            // Scroll viewport to bottom to ensure buttons are visible
+            if (s.vp) {
+                const maxOffset = Math.max(0, s.vp.totalLineCount() - s.vp.height());
+                s.vp.setYOffset(maxOffset);
             }
         }
 
@@ -648,7 +826,13 @@ function handleKeys(msg, s) {
             s.contentTextarea = textareaLib.new();
             s.contentTextarea.setPlaceholder("Enter document content...");
             s.contentTextarea.setWidth(Math.max(40, s.width - 10));
-            s.contentTextarea.setHeight(DESIGN.textareaHeight);
+            // Start with minimum height, will grow dynamically in render
+            s.contentTextarea.setHeight(DESIGN.textareaMinHeight);
+            // Configure cursor visibility - use visible colors for cursor line
+            s.contentTextarea.setTextForeground(COLORS.fg);
+            s.contentTextarea.setCursorLineForeground(COLORS.fg);
+            s.contentTextarea.setPlaceholderForeground(COLORS.muted);
+            s.focusedButtonIdx = -1; // Clear button focus
         }
         if (k === 'l') {
             s.mode = MODE_INPUT;
@@ -656,8 +840,10 @@ function handleKeys(msg, s) {
             s.inputFocus = FOCUS_LABEL;
             s.labelBuffer = '';
             s.contentTextarea = null; // No textarea for load mode
+            s.focusedButtonIdx = -1; // Clear button focus
         }
-        if (k === 'e' || k === 'enter') {
+        if (k === 'e' || (k === 'enter' && s.focusedButtonIdx < 0)) {
+            // Edit document (only if no button is focused - 'enter' on button is handled above)
             const doc = s.documents[s.selectedIdx];
             if (doc) {
                 s.mode = MODE_INPUT;
@@ -667,13 +853,31 @@ function handleKeys(msg, s) {
                 // Create native textarea with existing content
                 s.contentTextarea = textareaLib.new();
                 s.contentTextarea.setWidth(Math.max(40, s.width - 10));
-                s.contentTextarea.setHeight(DESIGN.textareaHeight);
+                // Start with minimum height, will grow dynamically in render
+                s.contentTextarea.setHeight(DESIGN.textareaMinHeight);
+                // Configure cursor visibility - use visible colors for cursor line
+                s.contentTextarea.setTextForeground(COLORS.fg);
+                s.contentTextarea.setCursorLineForeground(COLORS.fg);
+                s.contentTextarea.setPlaceholderForeground(COLORS.muted);
                 s.contentTextarea.setValue(doc.content);
                 s.contentTextarea.focus();
                 s.editingDocId = doc.id;
+                s.focusedButtonIdx = -1; // Clear button focus
             }
         }
+        // 'r' = Reset (clear all documents) per ASCII design
         if (k === 'r') {
+            if (s.documents.length > 0) {
+                s.mode = MODE_CONFIRM;
+                s.confirmPrompt = `Reset ALL ${s.documents.length} documents? This cannot be undone. (y/n)`;
+                s.confirmDocId = -1; // Special ID for reset-all
+            } else {
+                s.statusMsg = 'No documents to reset';
+            }
+            s.focusedButtonIdx = -1; // Clear button focus
+        }
+        // 'R' (uppercase) = Rename selected document title
+        if (k === 'R') {
             const doc = s.documents[s.selectedIdx];
             if (doc) {
                 s.mode = MODE_INPUT;
@@ -683,6 +887,7 @@ function handleKeys(msg, s) {
                 s.contentTextarea = null; // No textarea for rename mode
                 s.editingDocId = doc.id;
             }
+            s.focusedButtonIdx = -1; // Clear button focus
         }
         if (k === 'd' || k === 'backspace') {
             const doc = s.documents[s.selectedIdx];
@@ -691,6 +896,7 @@ function handleKeys(msg, s) {
                 s.confirmPrompt = `Delete document #${doc.id} "${doc.label}"? (y/n)`;
                 s.confirmDocId = doc.id;
             }
+            s.focusedButtonIdx = -1; // Clear button focus
         }
         // 'v' key removed - view mode is redundant per AGENTS.md
         // 'g' key removed - generate button does nothing per AGENTS.md
@@ -711,9 +917,10 @@ function handleKeys(msg, s) {
                     s.hasError = true;
                 }
             }
+            s.focusedButtonIdx = -1; // Clear button focus
         }
         // 'p' preview removed - view mode is redundant per AGENTS.md
-        if (k === '?') s.statusMsg = 'a:add l:load e:edit r:rename d:del c:copy s:shell q:quit';
+        if (k === '?') s.statusMsg = 'a:add l:load e:edit R:rename d:del c:copy s:shell r:reset q:quit';
     } else if (s.mode === MODE_INPUT) {
         // Keyboard scroll for input viewport (pgup/pgdown/home/end)
         // Early return if inputVp is not available
@@ -807,10 +1014,21 @@ function handleKeys(msg, s) {
         }
     } else if (s.mode === MODE_CONFIRM) {
         if (k === 'y' || k === 'Y') {
-            const deletedId = s.confirmDocId;
-            removeDocumentById(s.confirmDocId);
-            s.documents = getDocuments();  // Refresh local state from global after mutation
-            s.statusMsg = 'Deleted document #' + deletedId;
+            if (s.confirmDocId === -1) {
+                // Reset all documents
+                const count = s.documents.length;
+                setDocuments([]);
+                s.documents = [];
+                s.selectedIdx = 0;
+                state.set(stateKeys.selectedIndex, 0);
+                s.statusMsg = 'Reset: cleared ' + count + ' documents';
+            } else {
+                // Delete single document
+                const deletedId = s.confirmDocId;
+                removeDocumentById(s.confirmDocId);
+                s.documents = getDocuments();  // Refresh local state from global after mutation
+                s.statusMsg = 'Deleted document #' + deletedId;
+            }
             s.mode = MODE_LIST;
         } else if (k === 'n' || k === 'N' || k === 'esc') {
             s.statusMsg = 'Cancelled';
@@ -868,6 +1086,8 @@ function handleMouse(msg, s) {
         {id: 'btn-load', action: 'l'},
         {id: 'btn-copy', action: 'c'},
         {id: 'btn-shell', action: 'shell'},
+        {id: 'btn-reset', action: 'reset'},
+        {id: 'btn-quit', action: 'quit'},
         {id: 'btn-submit', action: 'submit'},
         {id: 'btn-cancel', action: 'esc'},
         {id: 'btn-yes', action: 'y'},
@@ -880,6 +1100,22 @@ function handleMouse(msg, s) {
             if (btn.action === 'shell') {
                 _userRequestedShell = true;
                 return [s, tea.quit()];
+            }
+            if (btn.action === 'quit') {
+                _userRequestedShell = false;
+                return [s, tea.quit()];
+            }
+            if (btn.action === 'reset') {
+                // Reset clears all documents - show confirmation
+                if (s.documents.length > 0) {
+                    s.mode = MODE_CONFIRM;
+                    s.confirmPrompt = `Reset ALL ${s.documents.length} documents? This cannot be undone. (y/n)`;
+                    s.confirmDocId = -1; // Special ID for reset-all
+                    return [s, null];
+                } else {
+                    s.statusMsg = 'No documents to reset';
+                    return [s, null];
+                }
             }
             if (btn.action === 'submit') {
                 // Handle submit button click - this is the fix for the nil pointer crash
@@ -912,12 +1148,16 @@ function handleMouse(msg, s) {
             return [s, null];
         }
         if (zone.inBounds('input-content', msg)) {
-            // Click on content textarea - focus it
+            // Click on content textarea - focus it and forward mouse event
             if (s.inputFocus !== FOCUS_CONTENT) {
                 s.inputFocus = FOCUS_CONTENT;
                 if (s.contentTextarea) {
                     s.contentTextarea.focus();
                 }
+            }
+            // Forward mouse event to textarea for cursor positioning
+            if (s.contentTextarea) {
+                s.contentTextarea.update(msg);
             }
             return [s, null];
         }
@@ -928,9 +1168,9 @@ function handleMouse(msg, s) {
     if (s.mode === MODE_LIST && s.documents.length > 0 && s.layoutMap && s.vp) {
         // Calculate document-relative Y coordinate
         // msg.y is terminal-relative, we need to adjust for:
-        // 1. Header height (title + blank + docs count + blank before viewport = 4 lines)
+        // 1. Header height (title + docs count = 2 lines, no extra blank lines per whitespace fix)
         // 2. Viewport scroll offset
-        const headerHeight = 4;
+        const headerHeight = 2;
         const clickY = msg.y;
 
         // Check if click is in the viewport area
@@ -962,8 +1202,8 @@ function handleMouse(msg, s) {
 
                 // Mapped Action Targets:
                 if (clickResult.relativeLineInDoc === 1) {
-                    // Line 1: Header -> Rename
-                    return handleKeys({key: 'r'}, s);
+                    // Line 1: Header -> Rename (use 'R' uppercase since 'r' is Reset)
+                    return handleKeys({key: 'R'}, s);
                 } else if (clickResult.relativeLineInDoc === 3) {
                     // Line 3: Remove -> Delete
                     return handleKeys({key: 'd'}, s);
@@ -1006,7 +1246,6 @@ function renderList(s) {
     const header = lipgloss.joinVertical(
         lipgloss.Left,
         titleLine,
-        '',
         docsLine
     );
 
@@ -1049,7 +1288,9 @@ function renderList(s) {
             );
 
             // Apply selection style (double border for selected)
-            const style = isSel ? styles.documentSelected() : styles.document();
+            // Only show as selected if button focus is not active
+            const isVisuallySelected = isSel && s.focusedButtonIdx < 0;
+            const style = isVisuallySelected ? styles.documentSelected() : styles.document();
             // Use explicitly calculated content width to prevent box clipping
             const renderedDoc = style.width(docContentWidth).render(docContent);
 
@@ -1059,14 +1300,29 @@ function renderList(s) {
     }
 
     // Button bar section with responsive layout
-    // Per AGENTS.md design: [A]dd  [L]oad  [C]opy  [S]hell
+    // Per ASCII design: [A]dd  [L]oad  [C]opy  [S]hell  [R]eset  [Q]uit
     // Delete (d) is keyboard-only, Edit/View/Generate buttons removed
-    const buttonList = [
-        {id: 'btn-add', text: '[A]dd', style: styles.button()},
-        {id: 'btn-load', text: '[L]oad', style: styles.button()},
-        {id: 'btn-copy', text: '[C]opy', style: styles.buttonFocused()},
-        {id: 'btn-shell', text: '[S]hell', style: styles.buttonShell()},
-    ];
+    // Use BUTTONS constant for consistency and apply focus styles
+    const buttonList = BUTTONS.map((btn, idx) => {
+        let style;
+        const isFocused = s.focusedButtonIdx === idx;
+        if (isFocused) {
+            // Focused button gets primary highlight
+            style = styles.buttonFocused();
+        } else if (btn.key === 'r') {
+            // Reset is always danger style
+            style = styles.buttonDanger();
+        } else if (btn.key === 's') {
+            // Shell is always warning style
+            style = styles.buttonShell();
+        } else if (btn.key === 'c') {
+            // Copy gets focused style (secondary highlight) when not keyboard-focused
+            style = styles.buttonFocused();
+        } else {
+            style = styles.button();
+        }
+        return {id: btn.id, text: btn.label, style: style};
+    });
 
     // Render buttons with zone markers
     const renderedButtons = buttonList.map(b => zone.mark(b.id, b.style.render(b.text)));
@@ -1098,7 +1354,7 @@ function renderList(s) {
     // Footer section
     const separatorWidth = Math.min(72, termWidth - 2);
     const separator = styles.separator().render('─'.repeat(separatorWidth));
-    const helpText = styles.help().render('a:add l:load e:edit d:del c:copy s:shell q:quit ↑↓:nav pgup/pgdn:page');
+    const helpText = styles.help().render('a:add l:load e:edit d:del c:copy s:shell r:reset q:quit ↑↓:nav');
     const footer = lipgloss.joinVertical(lipgloss.Left, separator, helpText);
 
     // ------------------------------------------------------------------------
@@ -1110,7 +1366,7 @@ function renderList(s) {
     const headerHeight = lipgloss.height(header);
     const footerHeight = lipgloss.height(footer);
     const statusHeight = lipgloss.height(statusSection);
-    const spacerHeight = 3; // Empty lines between sections
+    const spacerHeight = 0; // No extra spacer lines - removed per AGENTS.md whitespace fix
 
     // Calculate viewport height - buttons are now INSIDE the viewport
     const fixedHeight = headerHeight + footerHeight + statusHeight + spacerHeight;
@@ -1162,12 +1418,11 @@ function renderList(s) {
     }
 
     // Compose final view - buttons are now inside visibleSection (scrollable)
+    // Per AGENTS.md: Fix excessive whitespace after header - removed empty line
     return lipgloss.joinVertical(
         lipgloss.Left,
         header,
-        '',
         visibleSection,
-        '',
         statusSection,
         footer
     );
@@ -1209,7 +1464,15 @@ function renderInput(s) {
         const fieldWidth = Math.max(40, termWidth - 10);
         const innerWidth = Math.max(10, fieldWidth - 4 - scrollbarWidth); // border(2) + padding(2)
         s.contentTextarea.setWidth(innerWidth);
-        s.contentTextarea.setHeight(DESIGN.textareaHeight);
+
+        // Dynamic height: grow with content, capped at max
+        // lineCount() gives actual line count in textarea (including wrapped lines)
+        const contentLines = Math.max(1, s.contentTextarea.lineCount());
+        const dynamicHeight = Math.min(
+            DESIGN.textareaMaxHeight,
+            Math.max(DESIGN.textareaMinHeight, contentLines)
+        );
+        s.contentTextarea.setHeight(dynamicHeight);
 
         // Get the native textarea view - this includes proper cursor rendering
         const textareaView = s.contentTextarea.view();
@@ -1340,6 +1603,38 @@ function buildCommands() {
 
         // --- Super Document Specific Commands ---
 
+        // Extend the base 'list' command to include super-documents
+        // per AGENTS.md: "consolidating doc-list into JUST list"
+        list: {
+            ...ctxmgr.commands.list,
+            description: "List super-documents and context items",
+            handler: function (args) {
+                const docs = getDocuments();
+
+                // Show super documents first (these are the "super" part of super-document)
+                if (docs.length > 0) {
+                    output.print("Super Documents:");
+                    docs.forEach(d => {
+                        const prev = (d.content || "").substring(0, 50).replace(/\n/g, " ");
+                        output.print(`  #${d.id} [${d.label}]: ${prev}${d.content && d.content.length > 50 ? '...' : ''}`);
+                    });
+                    output.print(""); // blank line separator
+                }
+
+                // Delegate to base list command for context items (files, diffs, notes)
+                // This shows the critical IDs that were missing per review.md
+                ctxmgr.commands.list.handler(args);
+
+                // If both are empty, show helpful message
+                if (docs.length === 0) {
+                    const ctxItems = state.get(shared.contextItems) || [];
+                    if (ctxItems.length === 0) {
+                        output.print("No documents or context items. Use 'doc-add' or 'add' to add content.");
+                    }
+                }
+            }
+        },
+
         "doc-add": {
             description: "Add a new document",
             usage: "doc-add [content] OR doc-add --file <path>",
@@ -1371,39 +1666,6 @@ function buildCommands() {
                 const doc = removeDocumentById(parseInt(args[0]));
                 if (doc) output.print(`Removed document #${doc.id}`);
                 else output.print("Document not found");
-            }
-        },
-        "doc-list": {
-            description: "List super-documents and context items",
-            usage: "doc-list",
-            handler: function () {
-                const docs = getDocuments();
-                const ctxItems = state.get(shared.contextItems) || [];
-
-                if (docs.length === 0 && ctxItems.length === 0) {
-                    output.print("No documents or context items.");
-                    return;
-                }
-
-                // Show super documents
-                if (docs.length > 0) {
-                    output.print("Super Documents:");
-                    docs.forEach(d => {
-                        const prev = (d.content || "").substring(0, 50).replace(/\n/g, " ");
-                        output.print(`  #${d.id} [${d.label}]: ${prev}...`);
-                    });
-                }
-
-                // Show context items from ctxutil
-                if (ctxItems.length > 0) {
-                    if (docs.length > 0) output.print(""); // blank line separator
-                    output.print("Context Items:");
-                    ctxItems.forEach(item => {
-                        const type = item.type || 'unknown';
-                        const name = item.name || item.path || 'unnamed';
-                        output.print(`  [${type}] ${name}`);
-                    });
-                }
             }
         },
         "doc-view": {

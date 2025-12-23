@@ -643,13 +643,15 @@ func TestSuperDocument_HelpCommand(t *testing.T) {
 
 	// Should show help in status message with all keybindings
 	// Note: v:view and g:gen were removed per AGENTS.md
+	// Note: 'r' is now Reset (per ASCII design), 'R' is Rename
 	expect(snap, "a:add", 5*time.Second)
 	expect(snap, "l:load", 5*time.Second)
 	expect(snap, "e:edit", 5*time.Second)
-	expect(snap, "r:rename", 5*time.Second)
+	expect(snap, "R:rename", 5*time.Second)
 	expect(snap, "d:del", 5*time.Second)
 	expect(snap, "c:copy", 5*time.Second)
 	expect(snap, "s:shell", 5*time.Second)
+	expect(snap, "r:reset", 5*time.Second)
 	expect(snap, "q:quit", 5*time.Second)
 
 	// Quit
@@ -1084,8 +1086,9 @@ func TestSuperDocument_REPLTUIToggle(t *testing.T) {
 	// Should see the REPL prompt (shell-like)
 	expect(snap, "(super-document)", 10*time.Second)
 
-	// Type 'doc-list' command in REPL to verify document is visible
-	for _, ch := range "doc-list" {
+	// Type 'list' command in REPL to verify document is visible
+	// (renamed from 'doc-list' per AGENTS.md consolidation)
+	for _, ch := range "list" {
 		sendKey(t, cp, string(ch))
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -1162,18 +1165,18 @@ func TestSuperDocument_MultilineTextarea(t *testing.T) {
 	// Tab to content field
 	sendKey(t, cp, "\t")
 
-	// Type enough lines to exceed the textarea height so the scrollbar shows a track.
-	// The viewport shows 6 lines, so after line 7 is created the scrollbar will show track.
-	// Type lines 1-6 first (fills the viewport without scrolling).
-	for i := 1; i <= 6; i++ {
+	// Type enough lines to exceed the dynamic textarea max height so the scrollbar shows a track.
+	// The textarea grows dynamically up to max 20 lines, so after line 21 is created the scrollbar will show track.
+	// Type lines 1-20 first (fills the viewport without scrolling).
+	for i := 1; i <= 20; i++ {
 		sendKey(t, cp, "x")
 		sendKey(t, cp, "\r")
 	}
 
-	// Take snapshot BEFORE typing line 7 which will cause scrolling.
+	// Take snapshot BEFORE typing line 21 which will cause scrolling.
 	snap = cp.Snapshot()
 
-	// Add content to line 7 - with 7 lines total, the scrollbar must show track.
+	// Add content to line 21 - with 21 lines total, the scrollbar must show track.
 	sendKey(t, cp, "x")
 
 	// Once the textarea can scroll, the scrollbar track glyph should appear.

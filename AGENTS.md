@@ -42,7 +42,6 @@ This is the expected encoding for "raw" events (as an example), inclusive of pas
 - Document list page: It isn't possible to page down to the bottom of the _viewport_ (the scrollbar seems to wired up to the document list itself, or maybe it doesn't handle the fractional component properly?)
 - Document list page: It isn't possible to navigate to the bottom of the page using the arrow keys - it should be possible to highlight the buttons, too
 - Document list page: For that matter, tab and backtab should also navigate to the buttons... I'm actually not sure what would be the most standard and intuitive UI/UX here
-- Fix the event API - implement an internal helper package (for now) to support proper encoding of ALL event types, retaining the type of the event, then replace various switch cases littered throughout the codebase (there are FAR too many pointless switch cases - not that they are bad in and of themselves, but there are many that are literally like "yes this looks like a key press" - bubbletea has metadata for them, but it might take a PR to expose a parser - GOOD HIGH QUALITY REDESIGNS ONLY)
 
 **ALL the above are MANDATORY changes that MUST be completed IMMEDIATELY.**
 

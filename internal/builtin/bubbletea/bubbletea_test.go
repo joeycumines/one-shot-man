@@ -60,6 +60,79 @@ func TestRequire_ExportsCorrectAPI(t *testing.T) {
 		_, ok := goja.AssertFunction(val)
 		assert.True(t, ok, "Export %s should be a function", fn)
 	}
+
+	// Check that tea.keys and tea.keysByName are exported
+	keysVal := exports.Get("keys")
+	assert.False(t, goja.IsUndefined(keysVal), "keys should be exported")
+	assert.False(t, goja.IsNull(keysVal), "keys should not be null")
+
+	keysByNameVal := exports.Get("keysByName")
+	assert.False(t, goja.IsUndefined(keysByNameVal), "keysByName should be exported")
+	assert.False(t, goja.IsNull(keysByNameVal), "keysByName should not be null")
+}
+
+func TestTeaKeys_ContainsCoreKeys(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	exports := module.Get("exports").ToObject(vm)
+	keysObj := exports.Get("keys").ToObject(vm)
+
+	// Verify core keys are present via JS access
+	coreKeys := []string{"enter", "esc", "backspace", "tab", "up", "down", "left", "right"}
+	for _, key := range coreKeys {
+		val := keysObj.Get(key)
+		assert.False(t, goja.IsUndefined(val), "keys[%q] should be defined", key)
+		if !goja.IsUndefined(val) {
+			keyDef := val.ToObject(vm)
+			name := keyDef.Get("name")
+			str := keyDef.Get("string")
+			assert.False(t, goja.IsUndefined(name), "keys[%q].name should be defined", key)
+			assert.False(t, goja.IsUndefined(str), "keys[%q].string should be defined", key)
+			assert.Equal(t, key, str.String(), "keys[%q].string should equal the key", key)
+		}
+	}
+}
+
+func TestTeaKeysByName_ContainsCoreKeys(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	exports := module.Get("exports").ToObject(vm)
+	keysByNameObj := exports.Get("keysByName").ToObject(vm)
+
+	// Verify core keys are present by Go constant name
+	// Note: Use actual constant names from keys_gen.go, not intuitive names
+	// - "KeyEsc" not "KeyEscape"
+	// - "KeyCtrlQuestionMark" represents backspace
+	coreKeyNames := []string{"KeyEnter", "KeyEsc", "KeyUp", "KeyDown", "KeyLeft", "KeyRight"}
+	for _, name := range coreKeyNames {
+		val := keysByNameObj.Get(name)
+		assert.False(t, goja.IsUndefined(val), "keysByName[%q] should be defined", name)
+		if !goja.IsUndefined(val) && !goja.IsNull(val) {
+			keyDef := val.ToObject(vm)
+			if keyDef != nil {
+				keyName := keyDef.Get("name")
+				if !goja.IsUndefined(keyName) && !goja.IsNull(keyName) {
+					assert.Equal(t, name, keyName.String(), "keysByName[%q].name should match", name)
+				}
+			}
+		}
+	}
 }
 
 func TestNewModel_RequiresConfig(t *testing.T) {

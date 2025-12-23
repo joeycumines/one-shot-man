@@ -1,3 +1,5 @@
+//go:generate go run ../../../internal/cmd/generate-bubbletea-key-mapping
+
 // Package bubbletea provides JavaScript bindings for github.com/charmbracelet/bubbletea.
 //
 // The module is exposed as "osm:bubbletea" and provides TUI program capabilities.
@@ -121,9 +123,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -786,6 +790,32 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 		_ = exports.Set("isTTY", func(call goja.FunctionCall) goja.Value {
 			return runtime.ToValue(manager.IsTTY())
 		})
+
+		// keys exposes the key definitions for JS to access key metadata
+		// This allows JS code to look up key information by string value or name
+		keysObj := runtime.NewObject()
+		for _, stringVal := range slices.Sorted(maps.Keys(KeyDefs)) {
+			keyDef := KeyDefs[stringVal]
+			keyDefJS := runtime.NewObject()
+			_ = keyDefJS.Set("name", keyDef.Name)
+			_ = keyDefJS.Set("string", keyDef.String)
+			// Type is exposed as the string representation for JS convenience
+			_ = keyDefJS.Set("type", keyDef.String)
+			_ = keysObj.Set(stringVal, keyDefJS)
+		}
+		_ = exports.Set("keys", keysObj)
+
+		// keysByName exposes key definitions by their Go constant name
+		keysByNameObj := runtime.NewObject()
+		for _, name := range slices.Sorted(maps.Keys(KeyDefsByName)) {
+			keyDef := KeyDefsByName[name]
+			keyDefJS := runtime.NewObject()
+			_ = keyDefJS.Set("name", keyDef.Name)
+			_ = keyDefJS.Set("string", keyDef.String)
+			_ = keyDefJS.Set("type", keyDef.String)
+			_ = keysByNameObj.Set(name, keyDefJS)
+		}
+		_ = exports.Set("keysByName", keysByNameObj)
 
 		// newModel creates a new model wrapper from JS definition
 		_ = exports.Set("newModel", func(call goja.FunctionCall) goja.Value {

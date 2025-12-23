@@ -39,11 +39,11 @@
 // | │  ( ... documents 3 & 4 off-screen, accessible via Scroll/PgUp/PgDn ... ) │ |
 // | └──────────────────────────────────────────────────────────────────────────┘ |
 // |                                                                              |
-// |  [A]dd  [L]oad  [C]opy  [S]hell                                              |
+// |   (  [A]dd  ) ( [L]oad  ) ( [C]opy  ) ( [S]hell ) ( [R]eset ) ( [Q]uit  )    |
 // |                                                                              |
 // | ✓ Status: Ready                                                              |
 // | ──────────────────────────────────────────────────────────────────────────── |
-// |  a: Add  l: Load  e: Edit  d: Delete  c: Copy  s: Shell  q: Quit             |
+// |  a: Add  l: Load  e: Edit  d: Delete  c: Copy  s: Shell  r: Reset  q: Quit   |
 // +==============================================================================+
 //
 // SCENARIO B: NARROW/VERTICAL TERMINAL (Responsive Stack)
@@ -57,15 +57,15 @@
 // | │ ╚══════════════════════════════╝ │                                         |
 // | └──────────────────────────────────┘                                         |
 // |                                                                              |
-// |  ( [A]dd      ) ( [L]oad     )       <-- (Standard)                          |
-// |  ( [Q]uit     )                      <-- (Standard, TODO REFLOW/REDESIGN)    |
-// |  ( [C]opy     ) ( [S]hell    )       <-- (C: Purple BG / S: Orange BG)       |
+// |  (  [A]dd  )  ( [L]oad  )                                                    |
+// |  ( [C]opy  )  ( [S]hell )                                                    |
+// |  ( [R]eset )  ( [Q]uit  )                                                    |
 // |                                                                              |
 // | ✓ Status: Ready                                                              |
 // | ──────────────────────────────────                                           |
 // |  a: Add  l: Load  e: Edit                                                    |
 // |  d: Del   c: Copy                                                            |
-// |  s: Shell q: Quit                                                            |
+// |  s: Shell r: Reset q: Quit                                                   |
 // +==============================================================================+
 //
 // SCENARIO C: INPUT FORM (Textarea Mode)
@@ -312,19 +312,9 @@ function buildFinalPrompt() {
     });
 }
 
-
 // ============================================================================
 // VIEWPORT & LAYOUT HELPERS
 // ============================================================================
-
-// Calculate viewport height based on terminal size and fixed UI elements
-// NOTE: This is now largely handled dynamically inside renderList to account
-// for responsive button heights, but kept as a fallback utility.
-function calculateViewportHeight(s) {
-    const termHeight = s.height || 24;
-    const fixedOverhead = 12; // Adjusted estimate
-    return Math.max(5, termHeight - fixedOverhead);
-}
 
 // Lightweight preview helper: truncate first, then strip newlines to avoid
 // allocating large temporary strings on each render for large documents.
@@ -1277,9 +1267,9 @@ function renderInput(s) {
     const helpHeight = lipgloss.height(helpText);
     const fixedHeight = titleHeight + helpHeight + 2; // 2 for gaps
     const scrollableHeight = Math.max(3, termHeight - fixedHeight);
-    
+
     const scrollableContentHeight = lipgloss.height(scrollableContent);
-    
+
     // If content fits, render directly without viewport
     // Otherwise use the persistent inputVp for scrolling (preserves scroll position)
     let visibleContent;
@@ -1389,12 +1379,12 @@ function buildCommands() {
             handler: function () {
                 const docs = getDocuments();
                 const ctxItems = state.get(shared.contextItems) || [];
-                
+
                 if (docs.length === 0 && ctxItems.length === 0) {
                     output.print("No documents or context items.");
                     return;
                 }
-                
+
                 // Show super documents
                 if (docs.length > 0) {
                     output.print("Super Documents:");
@@ -1403,7 +1393,7 @@ function buildCommands() {
                         output.print(`  #${d.id} [${d.label}]: ${prev}...`);
                     });
                 }
-                
+
                 // Show context items from ctxutil
                 if (ctxItems.length > 0) {
                     if (docs.length > 0) output.print(""); // blank line separator

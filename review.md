@@ -15,18 +15,7 @@ The Pull Request prevents the application from crashing and correctly implements
 
 ---
 
-## 2. Verified Fixes (Do Not Change)
-
-The following implementations have been verified as **CORRECT** and should be preserved in the next iteration:
-
-* ✅ **Nil Pointer Panic:** The crash on the "Submit" button is fixed by safely transitioning focus and checking for the textarea instance before access.
-* ✅ **Viewport Persistence:** Moving the input viewport instantiation out of the render loop fixes the scroll reset bug.
-* ✅ **Shell Mode Rename:** All references to `replMode` have been correctly updated to `shellMode` (Go struct, flags, JS injection).
-* ✅ **Button Layout:** "View", "Edit", and "Generate" buttons were correctly removed. Remaining buttons are correctly placed within the scrollable content area.
-
----
-
-## 3. Critical Defects (Blocking Merge)
+## 2. Critical Defects (Blocking Merge)
 
 ### A. Violation of "Input Growth" Requirement
 
@@ -35,38 +24,29 @@ The following implementations have been verified as **CORRECT** and should be pr
 * **Result:** The textarea has an internal scrollbar while the outer page scrollbar is never used.
 * **Fix:** Calculate height dynamically: `Math.max(minHeight, s.contentTextarea.lineCount())` and update the viewport content accordingly.
 
-### B. Broken Document Click Targets
-
-* **Source:** `internal/command/super_document_script.js`
-* **Defect:** Logic Mismatch.
-* **Visual Layout:** Line 0 (Header), Line 1 (Preview), Line 2 (Remove Button).
-* **Click Handler:** Expects Rename at Line 1, Delete at Line 3.
-
-
-* **Result:** Clicking the "Remove" button (Line 2) does nothing. Clicking the empty space below it (Line 3) triggers deletion.
-* **Fix:** Align `handleMouse` targets to `relativeLine === 0` (Rename/Edit) and `relativeLine === 2` (Remove).
-
-### C. Missing Cursor Tracking (Input Mode)
+### B. Missing Cursor Tracking (Input Mode)
 
 * **Defect:** While `PgUp`/`PgDn` scroll the input page, typing text that pushes the cursor off the bottom of the screen does **not** auto-scroll the viewport.
 * **Result:** Users end up typing blindly into a "black void" off-screen.
 * **Fix:** Logic must be added to compare the cursor's Y position with the viewport's Y offset and scroll the outer `inputVp` automatically during text entry.
 
-### D. Missing Styling ("Black Void")
+### C. Missing Styling ("Black Void")
 
 * **Defect:** No style configuration is applied to the textarea.
 * **Result:** On many terminal themes, the default cursor and text colors result in poor contrast or invisibility.
 * **Fix:** Explicitly inject `s.contentTextarea.focusedStyle` configurations in `initialState`.
 
-### E. Command Name Mismatch
+**WARNING:** This may actually be a bug - can't tell, it's just a black void.
+
+### D. Command Name Mismatch
 
 * **Source:** `AGENTS.md` ("consolidating doc-list into JUST list").
-* **Defect:** The command is still registered as `"doc-list"`.
+* **Defect:** The command is still registered as `"doc-list"`, and that command (as implemented) **fails to include the critical context element ids**
 * **Fix:** Rename registry key and usage to `"list"`. **N.B. FIX the summary to actually use the baseline list command but EXTEND it, a la `osm prompt-flow`.**
 
 ---
 
-## 4. Required Actions
+## 3. Required Actions
 
 To resolve this PR, the developer must:
 
@@ -77,3 +57,4 @@ To resolve this PR, the developer must:
 5. **Wire Styles:** Apply theme colors to the textarea cursor and text.
 6. **Add Input Scrollbar:** Ensure the outer `inputVp` renders a visible scrollbar when content exceeds screen height.
 7. **Fix terminal state reset:** Ensure that the bubbletea integration properly restores the terminal state on exit, e.g. on click of quit.
+8. **ADDRESS ALL OTHER ITEMS IDENTIFIED IN `AGENTS.md`**: The PR must fully comply with all requirements specified in `AGENTS.md`, including but not limited to button layout, navigation behavior, and event handling.

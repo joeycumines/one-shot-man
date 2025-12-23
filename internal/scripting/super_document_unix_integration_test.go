@@ -1028,18 +1028,6 @@ func TestSuperDocument_KeyboardEditDocument(t *testing.T) {
 	}
 }
 
-// TestSuperDocument_MouseClickViewButton is skipped because the [V]iew button
-// was removed per AGENTS.md (view mode is redundant).
-func TestSuperDocument_MouseClickViewButton(t *testing.T) {
-	t.Skip("View button was removed per AGENTS.md - view mode is redundant")
-}
-
-// TestSuperDocument_MouseClickGenerateButton is skipped because the [G]enerate button
-// was removed per AGENTS.md (it does nothing).
-func TestSuperDocument_MouseClickGenerateButton(t *testing.T) {
-	t.Skip("Generate button was removed per AGENTS.md - it does nothing")
-}
-
 // TestSuperDocument_REPLTUIToggle tests the toggle between TUI and REPL modes
 // with state persistence across transitions.
 func TestSuperDocument_REPLTUIToggle(t *testing.T) {

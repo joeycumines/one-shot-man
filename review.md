@@ -15,24 +15,7 @@ The Pull Request prevents the application from crashing and correctly implements
 
 ---
 
-## 2. False Positives (Correction of `review.md`)
-
-The PR includes a file named `review.md` which claims the PR is broken for reasons that are **demonstrably false** upon code inspection. The reviewer must ignore `review.md` and focus on the actual code:
-
-* **FALSE:** "Input Viewport Resets (Infinite Loop)."
-* **Reality:** The code correctly initializes `inputVp` in `initialState` and persists it. The render loop reuses the instance. The scroll position is preserved.
-
-
-* **FALSE:** "Mouse Coordinate Off-by-One / Header Height."
-* **Reality:** The `headerHeight = 4` assumption in `handleMouse` is **correct**. `renderList` produces: Title (0) + Gap (1) + Count (2) + Gap (3) = 4 lines before content.
-
-
-* **FALSE:** "Missing Input Event Routing."
-* **Reality:** `handleKeys` and `handleMouse` both explicitly route `PgUp`, `PgDn`, and `Wheel` events to the input viewport when in `MODE_INPUT`.
-
----
-
-## 3. Verified Fixes (Do Not Change)
+## 2. Verified Fixes (Do Not Change)
 
 The following implementations have been verified as **CORRECT** and should be preserved in the next iteration:
 
@@ -43,7 +26,7 @@ The following implementations have been verified as **CORRECT** and should be pr
 
 ---
 
-## 4. Critical Defects (Blocking Merge)
+## 3. Critical Defects (Blocking Merge)
 
 ### A. Violation of "Input Growth" Requirement
 
@@ -79,15 +62,15 @@ The following implementations have been verified as **CORRECT** and should be pr
 
 * **Source:** `AGENTS.md` ("consolidating doc-list into JUST list").
 * **Defect:** The command is still registered as `"doc-list"`.
-* **Fix:** Rename registry key and usage to `"list"`.
+* **Fix:** Rename registry key and usage to `"list"`. **N.B. FIX the summary to actually use the baseline list command but EXTEND it, a la `osm prompt-flow`.**
 
 ---
 
-## 5. Required Actions
+## 4. Required Actions
 
 To resolve this PR, the developer must:
 
-1. **Rename Command:** Change registry from `"doc-list"` to `"list"`.
+1. **Rename Command:** Change registry from `"doc-list"` to `"list"`. **N.B. FIX the summary to actually use the baseline list command but EXTEND it, a la `osm prompt-flow`.**
 2. **Delete Artifacts:** Remove `review.md` and `WIP.md`.
 3. **Fix Click Targets:** Adjust `handleMouse` logic to match `buildLayoutMap` (Remove button is at index 2).
 4. **Implement Auto-Expanding Textarea:** Remove fixed height; allow textarea to expand and drive the outer viewport scrolling.

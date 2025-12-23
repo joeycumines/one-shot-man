@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"strings"
 	"text/template"
 
 	"github.com/dop251/goja"
-	"github.com/rivo/uniseg"
 )
 
 // Require returns a CommonJS native module under "osm:text/template".
@@ -37,10 +35,6 @@ import (
 //
 //	// Helper function for quick template execution
 //	const output = template.execute("Hello {{.name}}!", {name: "World"});
-//
-//	// Utility functions
-//	const w = template.width("🏳️‍🌈"); // Returns 1 (visual width)
-//	const s = template.truncate("Long string", 5, "..."); // Returns "Lo..."
 func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		// Get or create exports object
@@ -88,66 +82,6 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 			return runtime.ToValue(buf.String())
 		})
 
-		// width(s string) int
-		// Returns the monospace display width of the string.
-		_ = exports.Set("width", func(call goja.FunctionCall) goja.Value {
-			s := ""
-			if len(call.Arguments) > 0 {
-				s = call.Argument(0).String()
-			}
-			return runtime.ToValue(uniseg.StringWidth(s))
-		})
-
-		// truncate(s string, maxWidth int, tail string) string
-		// Truncates s such that its display width does not exceed maxWidth*.
-		// Appends tail if truncation occurs.
-		//
-		// (*) WARNING: Tail may cause the result to exceed maxWidth if its width is greater than maxWidth.
-		_ = exports.Set("truncate", func(call goja.FunctionCall) goja.Value {
-			if len(call.Arguments) < 2 {
-				panic(runtime.NewGoError(fmt.Errorf("truncate requires at least 2 arguments (string, maxWidth)")))
-			}
-			s := call.Argument(0).String()
-			maxWidth := int(call.Argument(1).ToInteger())
-			tail := "..."
-			if len(call.Arguments) > 2 {
-				tail = call.Argument(2).String()
-			}
-
-			// 1. Check if the whole string fits
-			if uniseg.StringWidth(s) <= maxWidth {
-				return runtime.ToValue(s)
-			}
-
-			// 2. Calculate available space for content
-			tailWidth := uniseg.StringWidth(tail)
-			if tailWidth > maxWidth {
-				// Edge case: tail is wider than allowed width.
-				// Return tail as best effort (or possibly empty).
-				return runtime.ToValue(tail)
-			}
-			targetWidth := maxWidth - tailWidth
-
-			// 3. Iterate grapheme clusters to fill targetWidth
-			var sb strings.Builder
-			var currentWidth int
-			state := -1
-			var cluster string
-			var width int
-
-			remaining := s
-			for len(remaining) > 0 {
-				cluster, remaining, width, state = uniseg.FirstGraphemeClusterInString(remaining, state)
-				if currentWidth+width > targetWidth {
-					break
-				}
-				currentWidth += width
-				sb.WriteString(cluster)
-			}
-
-			sb.WriteString(tail)
-			return runtime.ToValue(sb.String())
-		})
 	}
 }
 

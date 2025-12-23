@@ -6,8 +6,6 @@ tui.registerMode({
     tui: {
         title: "Test Mode",
         prompt: "[test]> ",
-        enableHistory: true,
-        historyFile: ".test_history"
     },
     onEnter: function () {
         ctx.log("Entered test mode - creating advanced prompt");
@@ -21,8 +19,8 @@ tui.registerMode({
                 prefix: "cyan",
                 input: "white",
                 suggestionText: "yellow",
-                suggestionBG: "black",
-                selectedSuggestionBG: "cyan"
+                suggestionBackground: "black",
+                selectedSuggestionBackground: "cyan"
             },
             history: {
                 enabled: true,

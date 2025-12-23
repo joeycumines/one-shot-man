@@ -90,7 +90,7 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 
 		const initialItems = items().length;
 
-		// Execute diff command with default (HEAD~1)
+		// Execute diff command with default (HEAD)
 		commands.diff.handler([]);
 
 		const afterDiff = items();
@@ -103,8 +103,9 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 			throw new Error("Expected lazy-diff type, got: " + diffItem.type);
 		}
 
-		if (!Array.isArray(diffItem.payload) || diffItem.payload.length !== 1 || diffItem.payload[0] !== "HEAD~1") {
-			throw new Error("Expected payload [\"HEAD~1\"], got: " + JSON.stringify(diffItem.payload));
+// Default args should not be persisted verbatim; an empty array indicates "no args provided"
+        if (!Array.isArray(diffItem.payload) || diffItem.payload.length !== 0) {
+            throw new Error("Expected payload [] (no args persisted for default), got: " + JSON.stringify(diffItem.payload));
 		}
 
 		output.print("LAZY_DIFF_TEST_1_PASS");

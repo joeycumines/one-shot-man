@@ -81,12 +81,13 @@ High-level calls:
 - `tui.switchMode(name)` / `tui.getCurrentMode()`
 - `tui.registerCommand({...})`
 - `tui.createState(commandName, definitions)`
-- `tui.createPromptBuilder(title, description)`
 - `tui.createAdvancedPrompt({...})` + `tui.runPrompt(name)`
 - `tui.registerCompleter(name, fn)` + `tui.setCompleter(promptName, completerName)`
 - `tui.registerKeyBinding(key, fn)`
 
-(For canonical user workflows, `prompt-flow` and `code-review` are the ready-made TUI experiences.)
+Built-ins like `prompt-flow` and `code-review` are embedded into the `osm` binary as scripts that use these APIs.
+
+See also [reference/tui-api.md](./reference/tui-api.md), for more detailed documentation, including motivations and examples.
 
 ### `tui.createState` (persisted mode state)
 

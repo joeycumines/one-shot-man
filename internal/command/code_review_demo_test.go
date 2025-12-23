@@ -46,7 +46,7 @@ func TestCodeReviewCommand_ShowActualDiffOutput(t *testing.T) {
 	testScript := `
 		output.print("=== TESTING CODE REVIEW DIFF FUNCTIONALITY ===");
 
-		// Step 1: Add a lazy diff (default HEAD~1)
+		// Step 1: Add a lazy diff (default HEAD)
 		// Note: commands is a global set when mode is entered
 		commands.diff.handler([]);
 

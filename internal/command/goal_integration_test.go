@@ -523,12 +523,6 @@ func TestGoalScript_MoraleImprover_TUIElements(t *testing.T) {
 	if g.TUIPrompt != "(morale-improver) > " {
 		t.Errorf("expected specific TUI prompt, got %q", g.TUIPrompt)
 	}
-	if g.HistoryFile != ".morale-improver_history" {
-		t.Errorf("expected specific history file, got %q", g.HistoryFile)
-	}
-	if !g.EnableHistory {
-		t.Error("expected history to be enabled")
-	}
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()

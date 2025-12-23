@@ -38,10 +38,8 @@ type Goal struct {
 	FileName string `json:"-"`
 
 	// TUI configuration
-	TUITitle      string `json:"tuiTitle"`
-	TUIPrompt     string `json:"tuiPrompt"`
-	HistoryFile   string `json:"historyFile"`
-	EnableHistory bool   `json:"enableHistory"`
+	TUITitle  string `json:"tuiTitle"`
+	TUIPrompt string `json:"tuiPrompt"`
 
 	// State management
 	StateVars map[string]interface{} `json:"stateVars"` // Initial state values

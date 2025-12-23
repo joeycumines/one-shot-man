@@ -204,7 +204,7 @@ func TestNewTUIManager_LoadsHistoryFromSession(t *testing.T) {
 		testSessionID := testutil.NewTestSessionID("test-history-load", t.Name())
 
 		// Create first TUI manager to establish a session (using fs backend)
-		tm1 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "")
+		tm1 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "memory")
 		if tm1 == nil {
 			t.Fatal("first NewTUIManager failed")
 		}
@@ -314,7 +314,7 @@ func TestNewTUIManager_StateManagerIntegration(t *testing.T) {
 		testSessionID := testutil.NewTestSessionID("test-lifecycle", t.Name())
 
 		// Step 1: Create first TUI manager - should initialize new session
-		tm1 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "")
+		tm1 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "memory")
 		if tm1 == nil {
 			t.Fatal("first NewTUIManager failed")
 		}

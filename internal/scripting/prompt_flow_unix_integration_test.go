@@ -103,7 +103,8 @@ public class ThreadPoolManager {
 	editorScript := createFakeEditor(t, workspace)
 
 	env := newTestProcessEnv(t)
-	env = append(env, "EDITOR="+editorScript, "VISUAL=")
+	env = append(env, "EDITOR="+editorScript, "VISUAL=",
+		"OSM_STORE=memory", "OSM_SESSION="+testutil.NewTestSessionID("", t.Name()))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -232,7 +233,8 @@ func processString(s string) string {
 	editorScript := createFakeEditor(t, workspace)
 
 	env := newTestProcessEnv(t)
-	env = append(env, "EDITOR="+editorScript, "VISUAL=")
+	env = append(env, "EDITOR="+editorScript, "VISUAL=",
+		"OSM_STORE=memory", "OSM_SESSION="+testutil.NewTestSessionID("", t.Name()))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -473,10 +475,6 @@ func TestPromptFlow_Unix_DiskReadInMeta(t *testing.T) {
 // TestPromptFlow_Unix_DifferentTemplateConfigurations tests various template
 // customizations to ensure the templating system works correctly.
 func TestPromptFlow_Unix_DifferentTemplateConfigurations(t *testing.T) {
-	if !isUnixPlatform() {
-		t.Skip("Unix-only integration test")
-	}
-
 	binaryPath := buildTestBinary(t)
 
 	workspace := createTestWorkspace(t)
@@ -485,7 +483,11 @@ func TestPromptFlow_Unix_DifferentTemplateConfigurations(t *testing.T) {
 	editorScript := createAdvancedFakeEditor(t, workspace)
 
 	env := newTestProcessEnv(t)
-	env = append(env, "EDITOR="+editorScript, "VISUAL=")
+	env = append(env, "EDITOR="+editorScript, "VISUAL=",
+		"OSM_STORE=memory", "OSM_SESSION="+testutil.NewTestSessionID("", t.Name()))
+
+	//tb.Setenv("OSM_STORE=memory")
+	//	tb.Setenv()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1240,7 +1242,7 @@ func runCommand(t *testing.T, dir string, name string, args ...string) {
 
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
-	cmd.Env = os.Environ()
+	cmd.Env = append(append([]string(nil), os.Environ()...), "OSM_SESSION="+testutil.NewTestSessionID("test", t.Name()), "OSM_STORE=memory")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -1363,7 +1365,8 @@ func testMetaPromptVariation(t *testing.T, goal string, files []string, diffs []
 	editorScript := createFakeEditor(t, workspace)
 
 	env := newTestProcessEnv(t)
-	env = append(env, "EDITOR="+editorScript, "VISUAL=")
+	env = append(env, "EDITOR="+editorScript, "VISUAL=",
+		"OSM_STORE=memory", "OSM_SESSION="+testutil.NewTestSessionID("", t.Name()))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

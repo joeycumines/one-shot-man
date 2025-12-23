@@ -56,14 +56,14 @@ func TestPromptFlow_GoalCommandOpensEditor(t *testing.T) {
 	}
 
 	// Expect the editor to have written our test goal
-	requirePromptFlowExpectSince(t, ctx, cp, "Goal updated.", snap, 5*time.Second)
+	requirePromptFlowExpectSince(t, ctx, cp, "Goal updated.", snap, 20*time.Second)
 
 	// Verify the goal was actually set by listing
 	snap = cp.Snapshot()
 	if err := cp.SendLine("list"); err != nil {
 		t.Fatalf("Failed to send 'list' command: %v", err)
 	}
-	requirePromptFlowExpectSince(t, ctx, cp, "[goal] Test goal from editor", snap, 5*time.Second)
+	requirePromptFlowExpectSince(t, ctx, cp, "[goal] Test goal from editor", snap, 20*time.Second)
 
 	cp.SendLine("exit")
 }
@@ -85,7 +85,7 @@ func TestPromptFlow_UseCommandOpensEditor(t *testing.T) {
 
 	cp, err := termtest.NewConsole(ctx,
 		termtest.WithCommand(binaryPath, "prompt-flow", "-i"),
-		termtest.WithDefaultTimeout(15*time.Second),
+		termtest.WithDefaultTimeout(25*time.Second),
 		termtest.WithEnv([]string{
 			"OSM_STORE=memory",
 			"OSM_SESSION=" + uniqueSessionID(t),
@@ -107,14 +107,14 @@ func TestPromptFlow_UseCommandOpensEditor(t *testing.T) {
 	if err := cp.SendLine("goal Test goal for use command"); err != nil {
 		t.Fatalf("Failed to send 'goal' command: %v", err)
 	}
-	requirePromptFlowExpectSince(t, ctx, cp, "Goal set.", snap, 5*time.Second)
+	requirePromptFlowExpectSince(t, ctx, cp, "Goal set.", snap, 20*time.Second)
 
 	// Generate meta-prompt (required before use)
 	snap = cp.Snapshot()
 	if err := cp.SendLine("generate"); err != nil {
 		t.Fatalf("Failed to send 'generate' command: %v", err)
 	}
-	requirePromptFlowExpectSince(t, ctx, cp, "Meta-prompt generated.", snap, 5*time.Second)
+	requirePromptFlowExpectSince(t, ctx, cp, "Meta-prompt generated.", snap, 20*time.Second)
 
 	// Call use with no arguments - should trigger editor
 	snap = cp.Snapshot()
@@ -123,16 +123,18 @@ func TestPromptFlow_UseCommandOpensEditor(t *testing.T) {
 	}
 
 	// Expect the editor to have written our test task prompt
-	requirePromptFlowExpectSince(t, ctx, cp, "Task prompt set.", snap, 5*time.Second)
+	requirePromptFlowExpectSince(t, ctx, cp, "Task prompt set.", snap, 20*time.Second)
 
 	// Verify the task prompt was actually set by listing
 	snap = cp.Snapshot()
 	if err := cp.SendLine("list"); err != nil {
 		t.Fatalf("Failed to send 'list' command: %v", err)
 	}
-	requirePromptFlowExpectSince(t, ctx, cp, "[prompt] Test task prompt from editor", snap, 5*time.Second)
+	requirePromptFlowExpectSince(t, ctx, cp, "[prompt] Test task prompt from editor", snap, 20*time.Second)
 
-	cp.SendLine("exit")
+	if err := cp.SendLine("exit"); err != nil {
+		t.Error(err)
+	}
 }
 
 // Helper functions

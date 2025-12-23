@@ -13,10 +13,8 @@ func GetBuiltInGoals() []Goal {
 			Script:      goalScript,
 			FileName:    "goal.js",
 
-			TUITitle:      "Comment Stripper",
-			TUIPrompt:     "(comment-stripper) > ",
-			HistoryFile:   ".comment-stripper_history",
-			EnableHistory: true,
+			TUITitle:  "Comment Stripper",
+			TUIPrompt: "(comment-stripper) > ",
 
 			// WARNING: Including contextItems may break the prompt.
 			StateVars: map[string]interface{}{},
@@ -85,10 +83,8 @@ Maintain all functionality and behavior of the original code while improving its
 			Script:      goalScript,
 			FileName:    "goal.js",
 
-			TUITitle:      "Code Documentation Generator",
-			TUIPrompt:     "(doc-gen) > ",
-			HistoryFile:   ".doc-generator_history",
-			EnableHistory: true,
+			TUITitle:  "Code Documentation Generator",
+			TUIPrompt: "(doc-gen) > ",
 
 			StateVars: map[string]interface{}{
 				"type": "comprehensive",
@@ -203,10 +199,8 @@ Maintain all functionality and behavior of the original code while improving its
 			Script:      goalScript,
 			FileName:    "goal.js",
 
-			TUITitle:      "Test Generator",
-			TUIPrompt:     "(test-gen) > ",
-			HistoryFile:   ".test-generator_history",
-			EnableHistory: true,
+			TUITitle:  "Test Generator",
+			TUIPrompt: "(test-gen) > ",
 
 			// printed on entry in the banner
 			NotableVariables: []string{`type`, `framework`},
@@ -361,10 +355,8 @@ Use the {{.stateKeys.framework}} testing framework.
 			Script:      goalScript,
 			FileName:    "goal.js",
 
-			TUITitle:      "Commit Message",
-			TUIPrompt:     "(commit-message) > ",
-			HistoryFile:   ".commit-message_history",
-			EnableHistory: true,
+			TUITitle:  "Commit Message",
+			TUIPrompt: "(commit-message) > ",
 
 			StateVars: map[string]interface{}{},
 
@@ -419,16 +411,14 @@ Generate a commit message that follows these guidelines based on the provided di
 
 		// Morale Improver Goal
 		{
-			Name:          "morale-improver",
-			Description:   "Generate a derisive prompt to force task completion",
-			Category:      "meta-prompting",
-			Usage:         "Constructs a persona-driven prompt to force a lazy AI model to complete tasks by closing loopholes and using high-intensity language",
-			Script:        goalScript,
-			FileName:      "goal.js",
-			TUITitle:      "The Beatings Will Continue Until Morale Improves",
-			TUIPrompt:     "(morale-improver) > ",
-			HistoryFile:   ".morale-improver_history",
-			EnableHistory: true,
+			Name:        "morale-improver",
+			Description: "Generate a derisive prompt to force task completion",
+			Category:    "meta-prompting",
+			Usage:       "Constructs a persona-driven prompt to force a lazy AI model to complete tasks by closing loopholes and using high-intensity language",
+			Script:      goalScript,
+			FileName:    "goal.js",
+			TUITitle:    "The Beatings Will Continue Until Morale Improves",
+			TUIPrompt:   "(morale-improver) > ",
 
 			NotableVariables: []string{"originalInstructions", "failedPlan", "specificFailures"},
 

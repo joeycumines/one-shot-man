@@ -7,11 +7,16 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // TestContextManagerRehydration verifies that the ContextManager is correctly
 // re-hydrated from persisted state after a session restart.
 func TestContextManagerRehydration(t *testing.T) {
+	t.Setenv("OSM_SESSION", testutil.NewTestSessionID("ctxrehyd", t.Name()))
+	t.Setenv("OSM_STORE", "memory")
+
 	// Create a temporary directory for test files
 	tmpDir := t.TempDir()
 
@@ -133,6 +138,9 @@ func TestContextManagerRehydration(t *testing.T) {
 
 // TestContextManagerRehydrationWithMissingFiles verifies graceful handling of missing files
 func TestContextManagerRehydrationWithMissingFiles(t *testing.T) {
+	t.Setenv("OSM_SESSION", testutil.NewTestSessionID("ctxrehydmissfile", t.Name()))
+	t.Setenv("OSM_STORE", "memory")
+
 	tmpDir := t.TempDir()
 
 	// Create only one test file, reference a non-existent one
@@ -207,6 +215,9 @@ func TestContextManagerRehydrationWithMissingFiles(t *testing.T) {
 
 // TestContextManagerRehydrationNoItemsKey verifies graceful handling when no items key exists
 func TestContextManagerRehydrationNoItemsKey(t *testing.T) {
+	t.Setenv("OSM_SESSION", testutil.NewTestSessionID("noitem", t.Name()))
+	t.Setenv("OSM_STORE", "memory")
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := NewEngine(ctx, &stdout, &stderr)

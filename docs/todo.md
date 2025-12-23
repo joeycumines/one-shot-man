@@ -2,13 +2,22 @@
 
 This is not an actual TODO list. Consider it as much a TODO list as your Product Manager's project roadmap.
 
-- Remove "history file" concept from the tui manager and goal definitions - entirely obsolete
-- Investigate/fix/implement `osm config <key> <value>` to persist config changes to disk
 - Take bubbletea/lipgloss for a spin: Implement a form-based "code review merge" (native in Go to kick the tyres?)
-- Fix duplicate log lines for purged sessions etc?
+- Add option to the osm:ctxutil add context command to add files from a diff (`git diff <what> --name-only`)
+- Expose the Go `flag` package as a JS module `osm:flag` for script authors to use
+- Add support for completion for arguments for REPL commands within `osm:ctxutil` module using the `osm:flag` module
+- QoL improvements to prompt-flow, e.g. allow `use` without `goal` or `generate` (i.e. add one-step mode), add `footer` support for the second prompt
+- Add `exec` context builder command as part of `contextManager`
 - Consider tightening up the concept of "logging" / the half-baked API exposed to scripts
 - Consider making commands and subcommands correctly fail upon receiving unexpected arguments or options
-- Consider persisting scripts as modes in the session state, to allow quick swapping between them - actually make modes useful
+- ~~Consider consolidating the two prompt variants~~ Ensure the two useful prompt variants,
+  (tui.registerMode, and tui.createAdvancedPrompt) are well documented, and are equivalent in
+  terms of supported go-prompt features. They're pretty involved, and the former has drifted
+  significantly, as it is what is used by the built-in commands - the code is also hard to follow,
+  mostly AI's fault but yeah, it's a bit shit. Consolidating the _implementation_ would be nice.
+  The API surfaces are fairly likely to remain mostly the same.
+- Investigate/fix/implement `osm config <key> <value>` to persist config changes to disk
+- Consider integrating git diff completion support into the diff `contextManager` command
 - Add ability to include JS modules directly
 - Implement behavior tree JS wrapper - wrap go-behavior-tree most likely (otherwise a proper event loop will be necessary)
 - Implement partially-compliant fetch API backed by the Go http client
@@ -23,3 +32,4 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
 - Review `tview`/`tcell` support for refinement or removal
 - Explore in-JS support for `bubbletea` and `lipgloss`
 - Plan system-style logging (file output, tailing) - likely deferred
+- Fix duplicate log lines for purged sessions etc?

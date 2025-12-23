@@ -111,8 +111,6 @@ ctx.run("register-mode", function () {
         tui: {
             title: "Code Review",
             prompt: "(code-review) > ",
-            enableHistory: true,
-            historyFile: ".code-review_history"
         },
         onEnter: function () {
             // Commands are already built by the commands() function call during mode switch

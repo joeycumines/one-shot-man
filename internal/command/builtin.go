@@ -250,15 +250,15 @@ color auto
 # prompt.color.input green
 # prompt.color.prefix cyan
 # prompt.color.suggestionText yellow
-# prompt.color.suggestionBG black
+# prompt.color.suggestionBackground black
 # prompt.color.selectedSuggestionText black
-# prompt.color.selectedSuggestionBG cyan
+# prompt.color.selectedSuggestionBackground cyan
 # prompt.color.descriptionText white
-# prompt.color.descriptionBG black
+# prompt.color.descriptionBackground black
 # prompt.color.selectedDescriptionText white
-# prompt.color.selectedDescriptionBG blue
+# prompt.color.selectedDescriptionBackground blue
 # prompt.color.scrollbarThumb darkgray
-# prompt.color.scrollbarBG black
+# prompt.color.scrollbarBackground black
 
 # Example command-specific options
 [help]

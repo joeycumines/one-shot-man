@@ -18,8 +18,6 @@ func TestLoadGoalFromFile_ValidJSON(t *testing.T) {
 		"usage": "Test usage",
 		"tuiTitle": "Test Goal",
 		"tuiPrompt": "(test) > ",
-		"historyFile": ".test_history",
-		"enableHistory": true,
 		"stateVars": {
 			"testKey": "testValue"
 		},

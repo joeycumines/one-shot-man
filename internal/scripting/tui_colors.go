@@ -18,31 +18,31 @@ func (pc *PromptColors) applyFromGetter(get func(string) (string, bool)) {
 	if v, ok := get("suggestionText"); ok && v != "" {
 		pc.SuggestionText = parseColor(v)
 	}
-	if v, ok := get("suggestionBG"); ok && v != "" {
+	if v, ok := get("suggestionBackground"); ok && v != "" {
 		pc.SuggestionBG = parseColor(v)
 	}
 	if v, ok := get("selectedSuggestionText"); ok && v != "" {
 		pc.SelectedSuggestionText = parseColor(v)
 	}
-	if v, ok := get("selectedSuggestionBG"); ok && v != "" {
+	if v, ok := get("selectedSuggestionBackground"); ok && v != "" {
 		pc.SelectedSuggestionBG = parseColor(v)
 	}
 	if v, ok := get("descriptionText"); ok && v != "" {
 		pc.DescriptionText = parseColor(v)
 	}
-	if v, ok := get("descriptionBG"); ok && v != "" {
+	if v, ok := get("descriptionBackground"); ok && v != "" {
 		pc.DescriptionBG = parseColor(v)
 	}
 	if v, ok := get("selectedDescriptionText"); ok && v != "" {
 		pc.SelectedDescriptionText = parseColor(v)
 	}
-	if v, ok := get("selectedDescriptionBG"); ok && v != "" {
+	if v, ok := get("selectedDescriptionBackground"); ok && v != "" {
 		pc.SelectedDescriptionBG = parseColor(v)
 	}
 	if v, ok := get("scrollbarThumb"); ok && v != "" {
 		pc.ScrollbarThumb = parseColor(v)
 	}
-	if v, ok := get("scrollbarBG"); ok && v != "" {
+	if v, ok := get("scrollbarBackground"); ok && v != "" {
 		pc.ScrollbarBG = parseColor(v)
 	}
 }
@@ -75,9 +75,9 @@ func (pc *PromptColors) ApplyFromStringMap(m map[string]string) {
 
 // SetDefaultColorsFromStrings allows external config to override the default colors
 // using a simple map of name->colorString. Supported keys mirror PromptColors
-// with the following names: input, prefix, suggestionText, suggestionBG,
-// selectedSuggestionText, selectedSuggestionBG, descriptionText, descriptionBG,
-// selectedDescriptionText, selectedDescriptionBG, scrollbarThumb, scrollbarBG.
+// with the following names: input, prefix, suggestionText, suggestionBackground,
+// selectedSuggestionText, selectedSuggestionBackground, descriptionText, descriptionBackground,
+// selectedDescriptionText, selectedDescriptionBackground, scrollbarThumb, scrollbarBackground.
 func (tm *TUIManager) SetDefaultColorsFromStrings(m map[string]string) {
 	if m == nil {
 		return

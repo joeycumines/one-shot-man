@@ -60,17 +60,18 @@ type ScriptMode struct {
 	OnEnter         goja.Callable
 	OnExit          goja.Callable
 	OnPrompt        goja.Callable
-	mu              sync.RWMutex
+	// InitialCommand is an optional command string  to execute when starting the prompt.
+	// Basically, it defers _visibly_ starting the prompt, until after the initial command is run.
+	InitialCommand string
+	mu             sync.RWMutex
 }
 
 // TUIConfig defines the configuration for a rich TUI interface.
 type TUIConfig struct {
-	Title         string
-	Prompt        string
-	CompletionFn  goja.Callable
-	ValidatorFn   goja.Callable
-	HistoryFile   string
-	EnableHistory bool
+	Title        string
+	Prompt       string
+	CompletionFn goja.Callable
+	ValidatorFn  goja.Callable
 }
 
 // Command represents a command that can be executed in the terminal.

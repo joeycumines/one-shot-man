@@ -60,11 +60,11 @@ The interactive prompt supports configurable colors via keys like `prompt.color.
 
 Keys:
 - `prompt.color.input`, `prompt.color.prefix`
-- `prompt.color.suggestionText`, `prompt.color.suggestionBG`
-- `prompt.color.selectedSuggestionText`, `prompt.color.selectedSuggestionBG`
-- `prompt.color.descriptionText`, `prompt.color.descriptionBG`
-- `prompt.color.selectedDescriptionText`, `prompt.color.selectedDescriptionBG`
-- `prompt.color.scrollbarThumb`, `prompt.color.scrollbarBG`
+- `prompt.color.suggestionText`, `prompt.color.suggestionBackground`
+- `prompt.color.selectedSuggestionText`, `prompt.color.selectedSuggestionBackground`
+- `prompt.color.descriptionText`, `prompt.color.descriptionBackground`
+- `prompt.color.selectedDescriptionText`, `prompt.color.selectedDescriptionBackground`
+- `prompt.color.scrollbarThumb`, `prompt.color.scrollbarBackground`
 
 Allowed values are named colors:
 

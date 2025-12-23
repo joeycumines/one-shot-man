@@ -8,6 +8,7 @@ import (
 
 	"github.com/joeycumines/go-prompt"
 	istrings "github.com/joeycumines/go-prompt/strings"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 func TestGoPromptIntegration(t *testing.T) {
@@ -21,7 +22,7 @@ func TestGoPromptIntegration(t *testing.T) {
 			globals: make(map[string]interface{}),
 		}
 
-		tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, "", "")
+		tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, testutil.NewTestSessionID("gopromptint1", t.Name()), "memory")
 
 		// Register a test mode
 		tm.RegisterMode(&ScriptMode{
@@ -65,7 +66,7 @@ func TestGoPromptIntegration(t *testing.T) {
 			globals: make(map[string]interface{}),
 		}
 
-		tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, "", "")
+		tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, testutil.NewTestSessionID("gopromptint2", t.Name()), "memory")
 
 		// Test the executor function behavior with help command
 		var output strings.Builder
@@ -97,7 +98,7 @@ func TestGoPromptIntegration(t *testing.T) {
 			globals: make(map[string]interface{}),
 		}
 
-		tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, "", "")
+		tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, testutil.NewTestSessionID("gopromptint3", t.Name()), "memory")
 
 		// Test prompt string generation
 		promptString := tm.getPromptString()
@@ -132,7 +133,7 @@ func TestFullGoPromptWorkflow(t *testing.T) {
 		globals: make(map[string]interface{}),
 	}
 
-	tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, "", "")
+	tm := NewTUIManagerWithConfig(context.Background(), engine, os.Stdin, os.Stdout, testutil.NewTestSessionID("gopromptwflw", t.Name()), "memory")
 
 	// Register commands and modes (same as in production)
 	tm.RegisterMode(&ScriptMode{

@@ -14,7 +14,7 @@ require (
 	github.com/dop251/goja v0.0.0-20251201205617-2bb4c724c0f9
 	github.com/dop251/goja_nodejs v0.0.0-20251015164255-5e94316bedaf
 	github.com/gdamore/tcell/v2 v2.13.4
-	github.com/joeycumines/go-prompt v0.0.0-20251214081709-6a27aa53d371
+	github.com/joeycumines/go-prompt v0.0.0-20251216225628-303240a719e7
 	github.com/rivo/tview v0.42.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/term v0.38.0 // indirect
@@ -26,6 +26,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/google/uuid v1.6.0
+	github.com/rivo/uniseg v0.4.7
 	golang.org/x/sys v0.39.0
 )
 
@@ -58,14 +59,13 @@ require (
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/pkg/term v1.2.0-beta.2 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yuin/goldmark v1.7.13 // indirect
 	golang.org/x/exp v0.0.0-20251209150349-8475f28825e9 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20251209150349-8475f28825e9 // indirect
 	golang.org/x/mod v0.31.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/telemetry v0.0.0-20251208220230-2638a1023523 // indirect
+	golang.org/x/telemetry v0.0.0-20251215142616-e75fd47794af // indirect
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

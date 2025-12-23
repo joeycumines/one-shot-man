@@ -21,7 +21,7 @@
 
     // Build the initial state - a record to look up symbols, and a contract for the accessor.
     const stateKeys = {};
-    const stateContractDef = {};
+    const stateVars = {};
     for (const [stringKey, opts] of [
         ['contextItems', {defaultValue: []}],
     ]) {
@@ -36,11 +36,11 @@
             !Array.isArray(opts.defaultValue)) {
             throw new Error("Invalid state definition for: " + symbolKey);
         }
-        if (stringKey in stateKeys || symbolKey in stateContractDef) {
+        if (stringKey in stateKeys || symbolKey in stateVars) {
             throw new Error("State key collision: " + stringKey);
         }
         stateKeys[stringKey] = symbolKey;
-        stateContractDef[symbolKey] = opts;
+        stateVars[symbolKey] = opts;
     }
     if (config.stateVars) {
         for (const stringKey in config.stateVars) {
@@ -56,14 +56,14 @@
             // shared state symbol convention (e.g. "osm:shared/contextItems").
             const symbolKey = Symbol(`goal:${config.name}/${stringKey}`);
             stateKeys[stringKey] = symbolKey;
-            stateContractDef[symbolKey] = {
+            stateVars[symbolKey] = {
                 defaultValue: config.stateVars[stringKey]
             };
         }
     }
 
     // Create the state accessor, using the contact we built above.
-    const state = tui.createState(config.name, stateContractDef);
+    const state = tui.createState(config.name, stateVars);
 
     const templateFuncs = {
         upper: function (s) {
@@ -312,8 +312,6 @@
             tui: {
                 title: tuiTitle,
                 prompt: config.tuiPrompt || "> ",
-                enableHistory: config.enableHistory || false,
-                historyFile: config.historyFile || ""
             },
             onEnter: printBanner,
             commands: buildCommands,

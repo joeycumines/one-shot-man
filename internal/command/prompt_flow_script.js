@@ -123,7 +123,7 @@ function buildCommands(state) {
 
     function buildMetaPrompt() {
         const fullContext = buildContextTxtar();
-            return template.execute(getTemplate(), {
+        return template.execute(getTemplate(), {
             goal: getGoal(),
             contextTxtar: fullContext
         });
@@ -488,8 +488,6 @@ ctx.run("register-mode", function () {
         tui: {
             title: "Prompt Flow",
             prompt: "(prompt-flow) > ",
-            enableHistory: true,
-            historyFile: ".prompt-flow_history"
         },
         onEnter: function () {
             // Initialize template if null (lazy initialization pattern)

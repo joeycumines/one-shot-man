@@ -46,9 +46,10 @@ func requireExpectExitCode(ctx context.Context, t *testing.T, p *termtest.Consol
 // Test-specific variables like EDITOR should be appended by the caller.
 func newTestProcessEnv(tb testing.TB) []string {
 	tb.Helper()
-	clipboardFile := filepath.Join(tb.(*testing.T).TempDir(), "clipboard.txt")
+	sessionID := testutil.NewTestSessionID("test", tb.Name())
+	clipboardFile := filepath.Join(tb.(*testing.T).TempDir(), sessionID+"-clipboard.txt")
 	return []string{
-		"OSM_SESSION=" + testutil.NewTestSessionID("test", tb.Name()),
+		"OSM_SESSION=" + sessionID,
 		"OSM_STORE=memory",
 		"OSM_CLIPBOARD=cat > " + clipboardFile,
 	}
@@ -187,7 +188,7 @@ func testCompletePromptWorkflow(
 	// Set initial template
 	snap = cp.Snapshot()
 	cp.SendLine("template You are a {{role}} for {{company}}. You should be {{tone}} and {{helpfulLevel}}. Customer issue: {{issue}}")
-	if err := expect(defaultTimeout, snap, termtest.Contains("Template set:"), "template set"); err != nil {
+	if err := expect(time.Second*5, snap, termtest.Contains("Template set:"), "template set"); err != nil {
 		t.Fatalf("Expected template set: %v", err)
 	}
 

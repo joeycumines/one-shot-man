@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -341,7 +342,10 @@ func TestJsModel_Init(t *testing.T) {
 	require.NoError(t, err)
 
 	modelWrapper := result.ToObject(vm)
-	modelVal := modelWrapper.Get("_model")
+	getModelFn, ok := goja.AssertFunction(modelWrapper.Get("_getModel"))
+	require.True(t, ok, "_getModel should be a function")
+	modelVal, err := getModelFn(goja.Undefined())
+	require.NoError(t, err)
 	model, ok := modelVal.Export().(*jsModel)
 	require.True(t, ok)
 
@@ -377,7 +381,10 @@ func TestJsModel_View(t *testing.T) {
 	require.NoError(t, err)
 
 	modelWrapper := result.ToObject(vm)
-	modelVal := modelWrapper.Get("_model")
+	getModelFn, ok := goja.AssertFunction(modelWrapper.Get("_getModel"))
+	require.True(t, ok, "_getModel should be a function")
+	modelVal, err := getModelFn(goja.Undefined())
+	require.NoError(t, err)
 	model, ok := modelVal.Export().(*jsModel)
 	require.True(t, ok)
 
@@ -387,6 +394,59 @@ func TestJsModel_View(t *testing.T) {
 	// Test View
 	view := model.View()
 	assert.Equal(t, "Message: Hello World", view)
+}
+
+func TestJsModel_Update_QuitCommand(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	// Create a model that returns tea.quit() when 'q' is pressed
+	result, err := vm.RunString(`
+		tea.newModel({
+			init: function() { return { count: 0 }; },
+			update: function(msg, model) {
+				if (msg.type === 'keyPress' && msg.key === 'q') {
+					return [model, tea.quit()];
+				}
+				return [model, null];
+			},
+			view: function(model) { return 'Count: ' + model.count; }
+		});
+	`)
+	require.NoError(t, err)
+
+	modelWrapper := result.ToObject(vm)
+	getModelFn, ok := goja.AssertFunction(modelWrapper.Get("_getModel"))
+	require.True(t, ok, "_getModel should be a function")
+	modelVal, err := getModelFn(goja.Undefined())
+	require.NoError(t, err)
+	model, ok := modelVal.Export().(*jsModel)
+	require.True(t, ok)
+
+	// Initialize
+	model.Init()
+
+	// Simulate 'q' key press
+	keyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	_, cmd := model.Update(keyMsg)
+
+	// Verify that cmd is tea.Quit
+	// tea.Quit is a function that returns tea.QuitMsg when called
+	require.NotNil(t, cmd, "cmd should not be nil when returning tea.quit()")
+
+	// Execute the command to get the message
+	quitMsg := cmd()
+	_, isQuitMsg := quitMsg.(tea.QuitMsg)
+	assert.True(t, isQuitMsg, "cmd() should return tea.QuitMsg, got %T", quitMsg)
 }
 
 func TestBatchWithNoArgs(t *testing.T) {
@@ -427,4 +487,285 @@ func TestSequenceWithNoArgs(t *testing.T) {
 
 	resultObj := result.ToObject(vm)
 	assert.Equal(t, "sequence", resultObj.Get("_cmdType").String())
+}
+
+// ============================================================================
+// NEW COMMAND TESTS
+// ============================================================================
+
+func TestTickCommand_Valid(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	result, err := vm.RunString(`tea.tick(1000, 'timer1')`)
+	require.NoError(t, err)
+
+	resultObj := result.ToObject(vm)
+	assert.Equal(t, "tick", resultObj.Get("_cmdType").String())
+	assert.Equal(t, int64(1000), resultObj.Get("duration").ToInteger())
+	assert.Equal(t, "timer1", resultObj.Get("id").String())
+}
+
+func TestTickCommand_InvalidDuration(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	result, err := vm.RunString(`tea.tick(-100, 'timer')`)
+	require.NoError(t, err)
+
+	resultObj := result.ToObject(vm)
+	assert.Contains(t, resultObj.Get("error").String(), "BT001")
+}
+
+func TestSetWindowTitle(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	result, err := vm.RunString(`tea.setWindowTitle('My App')`)
+	require.NoError(t, err)
+
+	resultObj := result.ToObject(vm)
+	assert.Equal(t, "setWindowTitle", resultObj.Get("_cmdType").String())
+	assert.Equal(t, "My App", resultObj.Get("title").String())
+}
+
+func TestCursorCommands(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	// Test hideCursor
+	result, err := vm.RunString(`tea.hideCursor()`)
+	require.NoError(t, err)
+	resultObj := result.ToObject(vm)
+	assert.Equal(t, "hideCursor", resultObj.Get("_cmdType").String())
+
+	// Test showCursor
+	result, err = vm.RunString(`tea.showCursor()`)
+	require.NoError(t, err)
+	resultObj = result.ToObject(vm)
+	assert.Equal(t, "showCursor", resultObj.Get("_cmdType").String())
+}
+
+func TestAltScreenCommands(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	// Test enterAltScreen
+	result, err := vm.RunString(`tea.enterAltScreen()`)
+	require.NoError(t, err)
+	resultObj := result.ToObject(vm)
+	assert.Equal(t, "enterAltScreen", resultObj.Get("_cmdType").String())
+
+	// Test exitAltScreen
+	result, err = vm.RunString(`tea.exitAltScreen()`)
+	require.NoError(t, err)
+	resultObj = result.ToObject(vm)
+	assert.Equal(t, "exitAltScreen", resultObj.Get("_cmdType").String())
+}
+
+func TestBracketedPasteCommands(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	// Test enableBracketedPaste
+	result, err := vm.RunString(`tea.enableBracketedPaste()`)
+	require.NoError(t, err)
+	resultObj := result.ToObject(vm)
+	assert.Equal(t, "enableBracketedPaste", resultObj.Get("_cmdType").String())
+
+	// Test disableBracketedPaste
+	result, err = vm.RunString(`tea.disableBracketedPaste()`)
+	require.NoError(t, err)
+	resultObj = result.ToObject(vm)
+	assert.Equal(t, "disableBracketedPaste", resultObj.Get("_cmdType").String())
+}
+
+func TestReportFocusCommands(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	// Test enableReportFocus
+	result, err := vm.RunString(`tea.enableReportFocus()`)
+	require.NoError(t, err)
+	resultObj := result.ToObject(vm)
+	assert.Equal(t, "enableReportFocus", resultObj.Get("_cmdType").String())
+
+	// Test disableReportFocus
+	result, err = vm.RunString(`tea.disableReportFocus()`)
+	require.NoError(t, err)
+	resultObj = result.ToObject(vm)
+	assert.Equal(t, "disableReportFocus", resultObj.Get("_cmdType").String())
+}
+
+func TestWindowSizeCommand(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	result, err := vm.RunString(`tea.windowSize()`)
+	require.NoError(t, err)
+
+	resultObj := result.ToObject(vm)
+	assert.Equal(t, "windowSize", resultObj.Get("_cmdType").String())
+}
+
+func TestIsTTY(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	// Just verify the function exists and returns a boolean
+	result, err := vm.RunString(`typeof tea.isTTY()`)
+	require.NoError(t, err)
+	assert.Equal(t, "boolean", result.String())
+}
+
+func TestRequire_AllNewFunctionsExported(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	exports := module.Get("exports").ToObject(vm)
+	require.NotNil(t, exports)
+
+	// Check all new functions are exported
+	newFunctions := []string{
+		"tick",
+		"setWindowTitle",
+		"hideCursor",
+		"showCursor",
+		"enterAltScreen",
+		"exitAltScreen",
+		"enableBracketedPaste",
+		"disableBracketedPaste",
+		"enableReportFocus",
+		"disableReportFocus",
+		"windowSize",
+		"isTTY",
+	}
+
+	for _, fn := range newFunctions {
+		val := exports.Get(fn)
+		assert.False(t, goja.IsUndefined(val), "Function %s should be exported", fn)
+		assert.False(t, goja.IsNull(val), "Function %s should not be null", fn)
+		_, ok := goja.AssertFunction(val)
+		assert.True(t, ok, "Export %s should be a function", fn)
+	}
+}
+
+func TestCommandHasID(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	// All commands should have unique _cmdID
+	result, err := vm.RunString(`
+		const cmd1 = tea.quit();
+		const cmd2 = tea.quit();
+		const id1 = cmd1._cmdID;
+		const id2 = cmd2._cmdID;
+		JSON.stringify({
+			hasID1: typeof id1 === 'number',
+			hasID2: typeof id2 === 'number',
+			unique: id1 !== id2
+		});
+	`)
+	require.NoError(t, err)
+
+	assert.Contains(t, result.String(), `"hasID1":true`)
+	assert.Contains(t, result.String(), `"hasID2":true`)
+	assert.Contains(t, result.String(), `"unique":true`)
 }

@@ -641,7 +641,7 @@ func TestWidthFunction(t *testing.T) {
 				errors.push("Case '" + c.name + "': expected " + c.want + ", got " + got);
 			}
 		}
-		
+
 		errors.join("\n");
 	`
 
@@ -669,8 +669,8 @@ func TestTruncateFunction(t *testing.T) {
 
 			// Edge cases: Tail wider than maxWidth
 			// If tail (3) > max (2), code returns tail "..."
-			{s: "abc", max: 2, tail: "...", want: "...", name: "tail wider than max"}, 
-			
+			{s: "abc", max: 2, tail: "...", want: "...", name: "tail wider than max"},
+
 			// Edge cases: Unicode / CJK
 			// "你好世界" -> Each char is width 2.
 			// Max 3, tail ".". Target = 3-1 = 2.
@@ -678,23 +678,23 @@ func TestTruncateFunction(t *testing.T) {
 			// Next char "好" (2). 2+2 > 2. Break.
 			// Result "你" + "." = "你."
 			{s: "你好世界", max: 3, tail: ".", want: "你.", name: "CJK truncate split"},
-			
+
 			// "你好世界", max 5, tail ".". Target 4.
 			// "你"(2) + "好"(2) = 4. Matches target.
 			// Result "你好" + "." = "你好." (Total width 5)
 			{s: "你好世界", max: 5, tail: ".", want: "你好.", name: "CJK exact grapheme fit"},
 
 			// Complex Graphemes
-			// "e\u0301" is width 1. 
+			// "e\u0301" is width 1.
 			{s: "e\u0301abcd", max: 2, tail: ".", want: "e\u0301.", name: "combining char preservation"},
-			
+
 			// Emoji
 			// "😀" is width 2.
 			// "😀bc", max 2, tail ".". Target 1.
 			// "😀" (2) > 1. Break immediately.
 			// Result "" + "." = "."
 			{s: "😀bc", max: 2, tail: ".", want: ".", name: "emoji exceeds target"},
-			
+
 			// "abc😀", max 4, tail ".". Target 3.
 			// "abc" (3) fits. "😀" (2) -> 5 > 3. Break.
 			// Result "abc."

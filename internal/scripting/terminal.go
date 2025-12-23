@@ -45,7 +45,7 @@ func (t *Terminal) Run() {
 		// TUI exited normally (e.g., 'exit' command or Ctrl+D).
 	case sig := <-sigChan:
 		// Signal received. Trigger a graceful exit of the prompt.
-		_, _ = fmt.Fprintf(t.tuiManager.output, "\n\nReceived signal %v, shutting down...\n", sig)
+		_, _ = fmt.Fprintf(t.tuiManager.writer, "\n\nReceived signal %v, shutting down...\n", sig)
 		t.tuiManager.TriggerExit()
 		<-done // Wait for the TUI goroutine to fully stop.
 	}
@@ -53,16 +53,16 @@ func (t *Terminal) Run() {
 	// Persist session on ANY exit path (clean or signal-based).
 	// This centralizes the save logic.
 	if t.tuiManager.stateManager != nil {
-		fmt.Fprintln(t.tuiManager.output, "Saving session...")
+		fmt.Fprintln(t.tuiManager.writer, "Saving session...")
 		if err := t.tuiManager.stateManager.PersistSession(); err != nil {
-			_, _ = fmt.Fprintf(t.tuiManager.output, "Warning: Failed to persist session: %v\n", err)
+			_, _ = fmt.Fprintf(t.tuiManager.writer, "Warning: Failed to persist session: %v\n", err)
 		} else {
-			fmt.Fprintln(t.tuiManager.output, "Session saved successfully.")
+			fmt.Fprintln(t.tuiManager.writer, "Session saved successfully.")
 		}
 	}
 
 	// Ensure resources are released on all exit paths.
 	if err := t.tuiManager.Close(); err != nil {
-		_, _ = fmt.Fprintf(t.tuiManager.output, "Warning: Failed to close TUI manager: %v\n", err)
+		_, _ = fmt.Fprintf(t.tuiManager.writer, "Warning: Failed to close TUI manager: %v\n", err)
 	}
 }

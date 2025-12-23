@@ -100,6 +100,43 @@ N.B. `tui.runPrompt` blocks until the prompt exits.
 
 ---
 
+## Exit control
+
+### `tui.requestExit()`
+
+Signals that the shell loop should exit after the current command completes.
+This function has no return value and is a cooperative, runtime-only request — it sets an
+in-memory exit request flag that is checked by the prompt's ExitChecker (so the current
+command may finish and any queued output will be flushed before the prompt exits).
+
+Implementation notes:
+
+- This does **not** call `os.Exit()` or otherwise force process termination; it merely requests a clean, graceful shell loop shutdown.
+- The request flag is **not persisted** to session state; it only lives for the current runtime.
+- The preferred usage from scripts is to call `tui.requestExit()` when user intent or script logic requires leaving the interactive shell.
+
+Example:
+
+```js
+// inside a command handler
+if (!wantShell) {
+    // signal the shell loop to exit after this handler returns
+    tui.requestExit();
+}
+```
+
+> Example: a real-world usage can be found in `internal/command/super_document_script.js`, where the visual TUI command calls `tui.requestExit()` when the user chooses to leave the UI.
+
+### `tui.isExitRequested()`
+
+Returns `true` if an exit has been requested in the current runtime (the same flag that `tui.requestExit()` sets). Useful for conditional logic in long-running scripts or loops.
+
+### `tui.clearExitRequest()`
+
+Clears the runtime exit request flag. This can be used to cancel a previously requested exit before the prompt's exit checker observes it.
+
+---
+
 ## Completion
 
 ### `tui.registerCompleter(name, fn)`

@@ -70,7 +70,7 @@ func TestGoPromptIntegration(t *testing.T) {
 
 		// Test the executor function behavior with help command
 		var output strings.Builder
-		tm.output = &output
+		tm.writer = NewTUIWriterFromIO(&output)
 
 		// Test executor with "help" command
 		_ = tm.executor("help")
@@ -168,7 +168,7 @@ func TestFullGoPromptWorkflow(t *testing.T) {
 	t.Run("CommandExecution", func(t *testing.T) {
 		// Test command execution workflow
 		var output strings.Builder
-		tm.output = &output
+		tm.writer = NewTUIWriterFromIO(&output)
 
 		// Execute help command
 		result := tm.executor("help")

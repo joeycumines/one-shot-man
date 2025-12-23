@@ -517,7 +517,7 @@ func TestColorMethods(t *testing.T) {
 			.foreground('#FF0000')
 			.background('#00FF00');
 		style1.render('Test');
-		
+
 		// ANSI color numbers
 		const style2 = lipgloss.newStyle()
 			.foreground('1')
@@ -608,13 +608,13 @@ func TestStyleImmutability(t *testing.T) {
 	result, err := vm.RunString(`
 		const base = lipgloss.newStyle();
 		const derived = base.padding(2);
-		
+
 		// Render base - should not have padding
 		const baseRendered = base.render('test');
-		
+
 		// Render derived - should have padding (extra spaces)
 		const derivedRendered = derived.render('test');
-		
+
 		// Base should be different from derived
 		JSON.stringify({
 			baseLen: baseRendered.length,
@@ -627,4 +627,248 @@ func TestStyleImmutability(t *testing.T) {
 	// Parse the result - derived should be longer due to padding
 	resultStr := result.String()
 	assert.Contains(t, resultStr, `"different":true`, "Base style should not be affected by derived style modifications")
+}
+
+// ============================================================================
+// VALIDATION AND ERROR HANDLING TESTS
+// ============================================================================
+
+func TestInvalidDimension_Negative(t *testing.T) {
+	manager := NewManager()
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("lipgloss", module.Get("exports"))
+
+	// Test negative dimension returns error style
+	result, err := vm.RunString(`
+		const style = lipgloss.newStyle().width(-10);
+		JSON.stringify({
+			hasError: style.hasError,
+			errorCode: style.errorCode || null
+		});
+	`)
+	require.NoError(t, err)
+	assert.Contains(t, result.String(), `"hasError":true`)
+	assert.Contains(t, result.String(), `"errorCode":"LG002"`)
+}
+
+func TestInvalidDimension_TooLarge(t *testing.T) {
+	manager := NewManager()
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("lipgloss", module.Get("exports"))
+
+	// Test dimension over 10000 returns error style
+	result, err := vm.RunString(`
+		const style = lipgloss.newStyle().height(20000);
+		JSON.stringify({
+			hasError: style.hasError,
+			errorCode: style.errorCode || null
+		});
+	`)
+	require.NoError(t, err)
+	assert.Contains(t, result.String(), `"hasError":true`)
+	assert.Contains(t, result.String(), `"errorCode":"LG002"`)
+}
+
+func TestValidDimensions(t *testing.T) {
+	manager := NewManager()
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("lipgloss", module.Get("exports"))
+
+	// Test valid dimensions don't return error
+	result, err := vm.RunString(`
+		const style = lipgloss.newStyle()
+			.width(80)
+			.height(24)
+			.maxWidth(100)
+			.maxHeight(50);
+		JSON.stringify({
+			hasError: style.hasError || false
+		});
+	`)
+	require.NoError(t, err)
+	assert.Contains(t, result.String(), `"hasError":false`)
+}
+
+func TestInvalidPadding_Negative(t *testing.T) {
+	manager := NewManager()
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("lipgloss", module.Get("exports"))
+
+	// Test negative padding returns error style
+	result, err := vm.RunString(`
+		const style = lipgloss.newStyle().padding(-5);
+		JSON.stringify({
+			hasError: style.hasError,
+			errorCode: style.errorCode || null
+		});
+	`)
+	require.NoError(t, err)
+	assert.Contains(t, result.String(), `"hasError":true`)
+	assert.Contains(t, result.String(), `"errorCode":"LG002"`)
+}
+
+func TestInvalidMargin_Negative(t *testing.T) {
+	manager := NewManager()
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("lipgloss", module.Get("exports"))
+
+	// Test negative margin returns error style
+	result, err := vm.RunString(`
+		const style = lipgloss.newStyle().marginLeft(-3);
+		JSON.stringify({
+			hasError: style.hasError,
+			errorCode: style.errorCode || null
+		});
+	`)
+	require.NoError(t, err)
+	assert.Contains(t, result.String(), `"hasError":true`)
+	assert.Contains(t, result.String(), `"errorCode":"LG002"`)
+}
+
+func TestStyleHasErrorProperty(t *testing.T) {
+	manager := NewManager()
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("lipgloss", module.Get("exports"))
+
+	// Test that new styles have hasError = false by default
+	result, err := vm.RunString(`
+		const style = lipgloss.newStyle();
+		style.hasError === false;
+	`)
+	require.NoError(t, err)
+	assert.True(t, result.ToBoolean())
+}
+
+func TestValidColorsAccepted(t *testing.T) {
+	manager := NewManager()
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("lipgloss", module.Get("exports"))
+
+	// Test valid colors
+	result, err := vm.RunString(`
+		const tests = [
+			lipgloss.newStyle().foreground('#FF0000').hasError,  // 6-char hex
+			lipgloss.newStyle().foreground('#F00').hasError,     // 3-char hex
+			lipgloss.newStyle().foreground('255').hasError,      // ANSI max
+			lipgloss.newStyle().foreground('0').hasError,        // ANSI min
+			lipgloss.newStyle().foreground('red').hasError,      // named color
+		];
+		JSON.stringify(tests);
+	`)
+	require.NoError(t, err)
+	// All should be false (no errors)
+	assert.Equal(t, "[false,false,false,false,false]", result.String())
+}
+
+func TestStyleImmutabilityWithMultipleModifications(t *testing.T) {
+	manager := NewManager()
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("lipgloss", module.Get("exports"))
+
+	// Test that multiple modifications don't affect base
+	result, err := vm.RunString(`
+		const base = lipgloss.newStyle();
+
+		// Create multiple derived styles
+		const s1 = base.bold(true);
+		const s2 = base.italic(true);
+		const s3 = base.padding(2);
+		const s4 = s1.italic(true);  // Derive from derived
+
+		// Render all
+		const r0 = base.render('test');
+		const r1 = s1.render('test');
+		const r2 = s2.render('test');
+		const r3 = s3.render('test');
+		const r4 = s4.render('test');
+
+		// Verify base is still minimal
+		JSON.stringify({
+			baseMinimal: r0.length === 4,  // Just 'test', no styling
+			s1Longer: r1.length > r0.length || r1 !== r0,  // Has bold escape
+			s2Longer: r2.length > r0.length || r2 !== r0,  // Has italic escape
+			s3Longer: r3.length > r0.length,  // Has padding
+		});
+	`)
+	require.NoError(t, err)
+
+	// Base should be unmodified (minimal rendering)
+	assert.Contains(t, result.String(), `"baseMinimal":true`)
+}
+
+func TestStyleGoStyleExposed(t *testing.T) {
+	manager := NewManager()
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("lipgloss", module.Get("exports"))
+
+	// Test that _goStyle is exposed for testing
+	result, err := vm.RunString(`
+		const style = lipgloss.newStyle();
+		typeof style._goStyle !== 'undefined';
+	`)
+	require.NoError(t, err)
+	assert.True(t, result.ToBoolean())
 }

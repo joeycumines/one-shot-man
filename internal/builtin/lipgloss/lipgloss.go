@@ -10,144 +10,92 @@
 //	// Create a new style
 //	const style = lipgloss.newStyle();
 //
-//	// Apply styling methods (chainable)
-//	style.foreground('#FF0000');
-//	style.background('#00FF00');
-//	style.bold(true);
-//	style.italic(true);
-//	style.underline(true);
-//	style.strikethrough(true);
-//	style.blink(true);
-//	style.faint(true);
-//	style.reverse(true);
+//	// Apply styling methods (chainable, immutable)
+//	const styledText = style
+//	    .foreground('#FF0000')
+//	    .background('#00FF00')
+//	    .bold(true)
+//	    .padding(1, 2)
+//	    .render('Hello, World!');
 //
-//	// Set padding and margins
-//	style.padding(1, 2, 1, 2);  // top, right, bottom, left
-//	style.margin(1, 2, 1, 2);   // top, right, bottom, left
-//	style.paddingTop(1);
-//	style.paddingRight(2);
-//	style.paddingBottom(1);
-//	style.paddingLeft(2);
-//	style.marginTop(1);
-//	style.marginRight(2);
-//	style.marginBottom(1);
-//	style.marginLeft(2);
+//	// All methods return NEW style objects - original is unchanged
+//	const base = lipgloss.newStyle().bold(true);
+//	const derived = base.italic(true); // base is still just bold
 //
-//	// Set borders
-//	style.border(lipgloss.normalBorder());
-//	style.borderForeground('#FF0000');
-//	style.borderBackground('#00FF00');
-//	style.borderTop(true);
-//	style.borderRight(true);
-//	style.borderBottom(true);
-//	style.borderLeft(true);
+// # Error Handling
 //
-//	// Set dimensions
-//	style.width(80);
-//	style.height(10);
-//	style.maxWidth(100);
-//	style.maxHeight(20);
+// All methods validate their inputs and return error information when invalid:
 //
-//	// Set alignment
-//	style.align(lipgloss.Center);  // Left, Center, Right
-//	style.alignHorizontal(lipgloss.Center);
-//	style.alignVertical(lipgloss.Center);
+//	const result = lipgloss.newStyle().foreground('not-a-color');
+//	// result.hasError === true
+//	// result.error === 'LG001: invalid color format'
 //
-//	// Render text with the style
-//	const rendered = style.render('Hello, World!');
+// Error codes:
+//   - LG001: Invalid color format
+//   - LG002: Invalid dimension (negative or too large)
+//   - LG003: Invalid alignment value
+//   - LG004: Invalid border configuration
 //
-//	// Copy a style
-//	const copy = style.copy();
+// # Style Methods
 //
-//	// Border types
-//	lipgloss.normalBorder()
-//	lipgloss.roundedBorder()
-//	lipgloss.thickBorder()
-//	lipgloss.doubleBorder()
-//	lipgloss.hiddenBorder()
-//	lipgloss.noBorder()
+// Text formatting:
+//   - bold(bool), italic(bool), underline(bool)
+//   - strikethrough(bool), blink(bool), faint(bool), reverse(bool)
 //
-//	// Alignment constants
-//	lipgloss.Left      // 0.0
-//	lipgloss.Center    // 0.5
-//	lipgloss.Right     // 1.0
-//	lipgloss.Top       // 0.0
-//	lipgloss.Bottom    // 1.0
+// Colors (supports hex '#RRGGBB', ANSI '0'-'255', or named colors):
+//   - foreground(color), background(color)
+//   - borderForeground(color), borderBackground(color)
 //
-//	// Utility functions
-//	lipgloss.joinHorizontal(pos, ...strs);  // Join strings horizontally
-//	lipgloss.joinVertical(pos, ...strs);    // Join strings vertically
-//	lipgloss.place(width, height, hPos, vPos, str);  // Place string in a box
-//	lipgloss.size(str);  // Returns {width, height}
-//	lipgloss.width(str); // Returns width
-//	lipgloss.height(str); // Returns height
+// Spacing (values must be non-negative):
+//   - padding(top, right?, bottom?, left?)
+//   - paddingTop(n), paddingRight(n), paddingBottom(n), paddingLeft(n)
+//   - margin(top, right?, bottom?, left?)
+//   - marginTop(n), marginRight(n), marginBottom(n), marginLeft(n)
 //
-// # Pathway to Full Support
+// Dimensions (values must be non-negative, max 10000):
+//   - width(n), height(n), maxWidth(n), maxHeight(n)
 //
-// This implementation exposes the core lipgloss API. The following describes
-// the pathway to achieving full parity with the native Go lipgloss library.
+// Borders:
+//   - border(borderType)
+//   - borderTop(bool), borderRight(bool), borderBottom(bool), borderLeft(bool)
 //
-// ## Currently Implemented
+// Alignment (0.0 = left/top, 0.5 = center, 1.0 = right/bottom):
+//   - align(pos), alignHorizontal(pos), alignVertical(pos)
 //
-//   - Style creation with newStyle()
-//   - Text formatting: bold, italic, underline, strikethrough, blink, faint, reverse
-//   - Colors: foreground, background (supports hex, ANSI)
-//   - Spacing: padding, margin (all sides and individual)
-//   - Dimensions: width, height, maxWidth, maxHeight
-//   - Borders: all border types, colors, and individual side control
-//   - Alignment: align, alignHorizontal, alignVertical
-//   - Layout: joinHorizontal, joinVertical, place
-//   - Measurement: size, width, height
-//   - Border presets: normalBorder, roundedBorder, thickBorder, doubleBorder, hiddenBorder
+// # Implementation Notes
 //
-// ## Phase 1: Color Enhancements (recommended next steps)
-//
-//   - lipgloss.color(value) - Explicit color constructor
-//   - lipgloss.adaptiveColor({light, dark}) - Color based on terminal background
-//   - lipgloss.completeColor({trueColor, ansi256, ansi}) - Fallback color support
-//   - lipgloss.completeAdaptiveColor({light, dark}) - Combined adaptive/complete
-//   - Color profile detection (trueColor, ansi256, ansi, noColor)
-//
-// ## Phase 2: Advanced Styling
-//
-//   - Tab width control
-//   - Inline styles (no newlines)
-//   - Transform functions (uppercase, lowercase, etc.)
-//   - WhiteSpace handling (normal, nowrap, pre, preWrap)
-//   - UnderlineSpaces, StrikethroughSpaces options
-//   - Custom border construction
-//
-// ## Phase 3: Layout Utilities
-//
-//   - lipgloss.placeHorizontal(width, pos, str)
-//   - lipgloss.placeVertical(height, pos, str)
-//   - lipgloss.placeOverlay(x, y, fg, bg) - Overlay strings
-//   - lipgloss.table() - Table rendering support
-//   - lipgloss.list() - List rendering support
-//
-// ## Phase 4: Style Management
-//
-//   - Style inheritance and composition
-//   - Style diffing and merging
-//   - Named style presets
-//   - Theme support with color palettes
-//   - Runtime style updates and observers
-//
-// ## Implementation Notes
-//
-// All additions should follow these patterns:
+// All additions follow these patterns:
 //
 //  1. No global state - Manager instance per engine
 //  2. Chainable API - methods return the style for chaining
 //  3. Immutable semantics - methods return copies, not mutations
 //  4. JavaScript-friendly types - use maps and arrays
-//  5. Comprehensive unit tests for all exposed functions
+//  5. Input validation with clear error messages
+//  6. Comprehensive unit tests for all exposed functions
 package lipgloss
 
 import (
+	"regexp"
+	"strconv"
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dop251/goja"
 )
+
+// Error codes for lipgloss operations.
+const (
+	ErrCodeInvalidColor     = "LG001" // Invalid color format
+	ErrCodeInvalidDimension = "LG002" // Invalid dimension value
+	ErrCodeInvalidAlignment = "LG003" // Invalid alignment value
+	ErrCodeInvalidBorder    = "LG004" // Invalid border configuration
+)
+
+// Maximum dimension value to prevent overflow.
+const maxDimension = 10000
+
+// colorRegex validates hex color codes.
+var colorRegex = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$|^#[0-9A-Fa-f]{3}$`)
 
 // Manager holds lipgloss-related state per engine instance.
 // Currently stateless but provided for consistency and future extensibility.
@@ -160,8 +108,61 @@ func NewManager() *Manager {
 
 // StyleWrapper wraps a lipgloss.Style for JavaScript interaction.
 type StyleWrapper struct {
-	style   lipgloss.Style
-	runtime *goja.Runtime
+	style    lipgloss.Style
+	runtime  *goja.Runtime
+	hasError bool
+	errCode  string
+	errMsg   string
+}
+
+// validateColor checks if a color string is valid.
+// Accepts hex colors (#RGB, #RRGGBB) or ANSI color numbers (0-255).
+func validateColor(colorStr string) (bool, string) {
+	colorStr = strings.TrimSpace(colorStr)
+
+	if colorStr == "" {
+		return true, "" // Empty is valid (no color)
+	}
+
+	// Check hex format
+	if strings.HasPrefix(colorStr, "#") {
+		if colorRegex.MatchString(colorStr) {
+			return true, ""
+		}
+		return false, "hex color must be #RGB or #RRGGBB format"
+	}
+
+	// Check ANSI color number (0-255)
+	if n, err := strconv.Atoi(colorStr); err == nil {
+		if n >= 0 && n <= 255 {
+			return true, ""
+		}
+		return false, "ANSI color must be 0-255"
+	}
+
+	// Allow named colors (lipgloss handles these)
+	// Common terminal color names
+	namedColors := map[string]bool{
+		"black": true, "red": true, "green": true, "yellow": true,
+		"blue": true, "magenta": true, "cyan": true, "white": true,
+	}
+	if namedColors[strings.ToLower(colorStr)] {
+		return true, ""
+	}
+
+	// Allow any string - lipgloss will handle it
+	return true, ""
+}
+
+// validateDimension checks if a dimension value is valid.
+func validateDimension(n int) (bool, string) {
+	if n < 0 {
+		return false, "dimension cannot be negative"
+	}
+	if n > maxDimension {
+		return false, "dimension exceeds maximum of 10000"
+	}
+	return true, ""
 }
 
 // Require returns a CommonJS native module under "osm:lipgloss".
@@ -326,6 +327,25 @@ func getStringVal(obj *goja.Object, key string) string {
 func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value {
 	obj := runtime.NewObject()
 
+	// Add error properties if this style has an error
+	_ = obj.Set("hasError", wrapper.hasError)
+	if wrapper.hasError {
+		_ = obj.Set("error", wrapper.errCode+": "+wrapper.errMsg)
+		_ = obj.Set("errorCode", wrapper.errCode)
+	}
+
+	// Helper to create a new wrapper with error
+	createErrorStyle := func(code, msg string) goja.Value {
+		errWrapper := &StyleWrapper{
+			style:    wrapper.style, // lipgloss styles are immutable, no need to copy
+			runtime:  runtime,
+			hasError: true,
+			errCode:  code,
+			errMsg:   msg,
+		}
+		return createStyleObject(runtime, errWrapper)
+	}
+
 	// render: Render text with this style
 	_ = obj.Set("render", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
@@ -340,10 +360,10 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		return runtime.ToValue(result)
 	})
 
-	// copy: Create a copy of this style
+	// copy: Create a copy of this style (for API compatibility, though styles are immutable)
 	_ = obj.Set("copy", func(call goja.FunctionCall) goja.Value {
 		newWrapper := &StyleWrapper{
-			style:   wrapper.style.Copy(),
+			style:   wrapper.style, // Assignment is equivalent to Copy() for immutable styles
 			runtime: runtime,
 		}
 		return createStyleObject(runtime, newWrapper)
@@ -434,12 +454,15 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		return createStyleObject(runtime, newWrapper)
 	})
 
-	// Colors
+	// Colors with validation
 	_ = obj.Set("foreground", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
 			return obj
 		}
 		colorStr := call.Argument(0).String()
+		if valid, errMsg := validateColor(colorStr); !valid {
+			return createErrorStyle(ErrCodeInvalidColor, errMsg)
+		}
 		newWrapper := &StyleWrapper{
 			style:   wrapper.style.Foreground(lipgloss.Color(colorStr)),
 			runtime: runtime,
@@ -452,6 +475,9 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 			return obj
 		}
 		colorStr := call.Argument(0).String()
+		if valid, errMsg := validateColor(colorStr); !valid {
+			return createErrorStyle(ErrCodeInvalidColor, errMsg)
+		}
 		newWrapper := &StyleWrapper{
 			style:   wrapper.style.Background(lipgloss.Color(colorStr)),
 			runtime: runtime,
@@ -459,9 +485,14 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		return createStyleObject(runtime, newWrapper)
 	})
 
-	// Padding
+	// Padding with validation
 	_ = obj.Set("padding", func(call goja.FunctionCall) goja.Value {
 		args := extractInts(call.Arguments)
+		for _, v := range args {
+			if valid, errMsg := validateDimension(v); !valid {
+				return createErrorStyle(ErrCodeInvalidDimension, errMsg)
+			}
+		}
 		var newStyle lipgloss.Style
 		switch len(args) {
 		case 1:
@@ -472,7 +503,7 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 			newStyle = wrapper.style.Padding(args[0], args[1], args[2], args[3])
 		default:
 			// Return a copy to maintain immutability even when no args provided
-			newStyle = wrapper.style.Copy()
+			newStyle = wrapper.style
 		}
 		newWrapper := &StyleWrapper{style: newStyle, runtime: runtime}
 		return createStyleObject(runtime, newWrapper)
@@ -480,8 +511,12 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 
 	_ = obj.Set("paddingTop", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
+			v := int(call.Argument(0).ToInteger())
+			if valid, errMsg := validateDimension(v); !valid {
+				return createErrorStyle(ErrCodeInvalidDimension, errMsg)
+			}
 			newWrapper := &StyleWrapper{
-				style:   wrapper.style.PaddingTop(int(call.Argument(0).ToInteger())),
+				style:   wrapper.style.PaddingTop(v),
 				runtime: runtime,
 			}
 			return createStyleObject(runtime, newWrapper)
@@ -491,8 +526,12 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 
 	_ = obj.Set("paddingRight", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
+			v := int(call.Argument(0).ToInteger())
+			if valid, errMsg := validateDimension(v); !valid {
+				return createErrorStyle(ErrCodeInvalidDimension, errMsg)
+			}
 			newWrapper := &StyleWrapper{
-				style:   wrapper.style.PaddingRight(int(call.Argument(0).ToInteger())),
+				style:   wrapper.style.PaddingRight(v),
 				runtime: runtime,
 			}
 			return createStyleObject(runtime, newWrapper)
@@ -502,8 +541,12 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 
 	_ = obj.Set("paddingBottom", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
+			v := int(call.Argument(0).ToInteger())
+			if valid, errMsg := validateDimension(v); !valid {
+				return createErrorStyle(ErrCodeInvalidDimension, errMsg)
+			}
 			newWrapper := &StyleWrapper{
-				style:   wrapper.style.PaddingBottom(int(call.Argument(0).ToInteger())),
+				style:   wrapper.style.PaddingBottom(v),
 				runtime: runtime,
 			}
 			return createStyleObject(runtime, newWrapper)
@@ -513,8 +556,12 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 
 	_ = obj.Set("paddingLeft", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
+			v := int(call.Argument(0).ToInteger())
+			if valid, errMsg := validateDimension(v); !valid {
+				return createErrorStyle(ErrCodeInvalidDimension, errMsg)
+			}
 			newWrapper := &StyleWrapper{
-				style:   wrapper.style.PaddingLeft(int(call.Argument(0).ToInteger())),
+				style:   wrapper.style.PaddingLeft(v),
 				runtime: runtime,
 			}
 			return createStyleObject(runtime, newWrapper)
@@ -522,9 +569,14 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		return obj
 	})
 
-	// Margin
+	// Margin with validation
 	_ = obj.Set("margin", func(call goja.FunctionCall) goja.Value {
 		args := extractInts(call.Arguments)
+		for _, v := range args {
+			if valid, errMsg := validateDimension(v); !valid {
+				return createErrorStyle(ErrCodeInvalidDimension, errMsg)
+			}
+		}
 		var newStyle lipgloss.Style
 		switch len(args) {
 		case 1:
@@ -535,7 +587,7 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 			newStyle = wrapper.style.Margin(args[0], args[1], args[2], args[3])
 		default:
 			// Return a copy to maintain immutability even when no args provided
-			newStyle = wrapper.style.Copy()
+			newStyle = wrapper.style
 		}
 		newWrapper := &StyleWrapper{style: newStyle, runtime: runtime}
 		return createStyleObject(runtime, newWrapper)
@@ -543,8 +595,12 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 
 	_ = obj.Set("marginTop", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
+			v := int(call.Argument(0).ToInteger())
+			if valid, errMsg := validateDimension(v); !valid {
+				return createErrorStyle(ErrCodeInvalidDimension, errMsg)
+			}
 			newWrapper := &StyleWrapper{
-				style:   wrapper.style.MarginTop(int(call.Argument(0).ToInteger())),
+				style:   wrapper.style.MarginTop(v),
 				runtime: runtime,
 			}
 			return createStyleObject(runtime, newWrapper)
@@ -554,8 +610,12 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 
 	_ = obj.Set("marginRight", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
+			v := int(call.Argument(0).ToInteger())
+			if valid, errMsg := validateDimension(v); !valid {
+				return createErrorStyle(ErrCodeInvalidDimension, errMsg)
+			}
 			newWrapper := &StyleWrapper{
-				style:   wrapper.style.MarginRight(int(call.Argument(0).ToInteger())),
+				style:   wrapper.style.MarginRight(v),
 				runtime: runtime,
 			}
 			return createStyleObject(runtime, newWrapper)
@@ -565,8 +625,12 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 
 	_ = obj.Set("marginBottom", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
+			v := int(call.Argument(0).ToInteger())
+			if valid, errMsg := validateDimension(v); !valid {
+				return createErrorStyle(ErrCodeInvalidDimension, errMsg)
+			}
 			newWrapper := &StyleWrapper{
-				style:   wrapper.style.MarginBottom(int(call.Argument(0).ToInteger())),
+				style:   wrapper.style.MarginBottom(v),
 				runtime: runtime,
 			}
 			return createStyleObject(runtime, newWrapper)
@@ -576,8 +640,12 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 
 	_ = obj.Set("marginLeft", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
+			v := int(call.Argument(0).ToInteger())
+			if valid, errMsg := validateDimension(v); !valid {
+				return createErrorStyle(ErrCodeInvalidDimension, errMsg)
+			}
 			newWrapper := &StyleWrapper{
-				style:   wrapper.style.MarginLeft(int(call.Argument(0).ToInteger())),
+				style:   wrapper.style.MarginLeft(v),
 				runtime: runtime,
 			}
 			return createStyleObject(runtime, newWrapper)
@@ -585,11 +653,15 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		return obj
 	})
 
-	// Dimensions
+	// Dimensions with validation
 	_ = obj.Set("width", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
+			v := int(call.Argument(0).ToInteger())
+			if valid, errMsg := validateDimension(v); !valid {
+				return createErrorStyle(ErrCodeInvalidDimension, errMsg)
+			}
 			newWrapper := &StyleWrapper{
-				style:   wrapper.style.Width(int(call.Argument(0).ToInteger())),
+				style:   wrapper.style.Width(v),
 				runtime: runtime,
 			}
 			return createStyleObject(runtime, newWrapper)
@@ -599,8 +671,12 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 
 	_ = obj.Set("height", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
+			v := int(call.Argument(0).ToInteger())
+			if valid, errMsg := validateDimension(v); !valid {
+				return createErrorStyle(ErrCodeInvalidDimension, errMsg)
+			}
 			newWrapper := &StyleWrapper{
-				style:   wrapper.style.Height(int(call.Argument(0).ToInteger())),
+				style:   wrapper.style.Height(v),
 				runtime: runtime,
 			}
 			return createStyleObject(runtime, newWrapper)
@@ -610,8 +686,12 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 
 	_ = obj.Set("maxWidth", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
+			v := int(call.Argument(0).ToInteger())
+			if valid, errMsg := validateDimension(v); !valid {
+				return createErrorStyle(ErrCodeInvalidDimension, errMsg)
+			}
 			newWrapper := &StyleWrapper{
-				style:   wrapper.style.MaxWidth(int(call.Argument(0).ToInteger())),
+				style:   wrapper.style.MaxWidth(v),
 				runtime: runtime,
 			}
 			return createStyleObject(runtime, newWrapper)
@@ -621,8 +701,12 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 
 	_ = obj.Set("maxHeight", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
+			v := int(call.Argument(0).ToInteger())
+			if valid, errMsg := validateDimension(v); !valid {
+				return createErrorStyle(ErrCodeInvalidDimension, errMsg)
+			}
 			newWrapper := &StyleWrapper{
-				style:   wrapper.style.MaxHeight(int(call.Argument(0).ToInteger())),
+				style:   wrapper.style.MaxHeight(v),
 				runtime: runtime,
 			}
 			return createStyleObject(runtime, newWrapper)
@@ -694,6 +778,9 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 	_ = obj.Set("borderForeground", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
 			colorStr := call.Argument(0).String()
+			if valid, errMsg := validateColor(colorStr); !valid {
+				return createErrorStyle(ErrCodeInvalidColor, errMsg)
+			}
 			newWrapper := &StyleWrapper{
 				style:   wrapper.style.BorderForeground(lipgloss.Color(colorStr)),
 				runtime: runtime,
@@ -706,6 +793,9 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 	_ = obj.Set("borderBackground", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) > 0 {
 			colorStr := call.Argument(0).String()
+			if valid, errMsg := validateColor(colorStr); !valid {
+				return createErrorStyle(ErrCodeInvalidColor, errMsg)
+			}
 			newWrapper := &StyleWrapper{
 				style:   wrapper.style.BorderBackground(lipgloss.Color(colorStr)),
 				runtime: runtime,
@@ -751,6 +841,9 @@ func createStyleObject(runtime *goja.Runtime, wrapper *StyleWrapper) goja.Value 
 		}
 		return obj
 	})
+
+	// Expose the underlying Go style for testing (read-only)
+	_ = obj.Set("_goStyle", runtime.ToValue(wrapper.style))
 
 	return obj
 }

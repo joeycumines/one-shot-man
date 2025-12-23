@@ -82,6 +82,7 @@ High-level calls:
 - `tui.registerCommand({...})`
 - `tui.createState(commandName, definitions)`
 - `tui.createAdvancedPrompt({...})` + `tui.runPrompt(name)`
+- `tui.requestExit()` / `tui.isExitRequested()` / `tui.clearExitRequest()`
 - `tui.registerCompleter(name, fn)` + `tui.setCompleter(promptName, completerName)`
 - `tui.registerKeyBinding(key, fn)`
 

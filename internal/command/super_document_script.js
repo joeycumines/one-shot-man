@@ -1,10 +1,166 @@
-// Super Document: TUI for merging documents into a single internally consistent document
-// This script uses the osm:bubbletea and osm:lipgloss modules for the UI
+// ============================================================================
+// DESIGN SPECIFICATION (UI Layout & Architecture)
+// ============================================================================
+//
+// 1. ARCHITECTURAL & LIFECYCLE SPECIFICATION
+// ------------------------------------------
+//
+// - RUNTIME HOST: The TUI runs *inside* the `go-prompt` shell. It is not a
+//   separate process. The `osm super-document` command initializes this view.
+// - SHELL INTEGRATION: The "Open Shell" action (Hot: 's') / exits the TUI to
+//   "drop into" a shell-like prompt. The state is preserved, and _mutable_ via
+//   this prompt. The shell variant has more features, including the ability to
+//   add files (with completion). A command (e.g., `tui`) restores the
+//   full-screen view.
+// - VIEWPORT STRATEGY: The UI is divided into
+//   Scrollable Header+Content+Dynamic Button Area, and Fixed Footer.
+// - INPUT STRATEGY: Input fields act as a "Form" with Tab-based focus cycling.
+//
+// 2. VISUAL LAYOUT (Responsive ASCII Blueprints)
+// ----------------------------------------------
+//
+// SCENARIO A: WIDE TERMINAL (Standard Layout)
+// +==============================================================================+
+// |    📄 Super-Document Builder                                                 |
+// |                                                                              |
+// |   Documents: 4                                                               |
+// | ┌──────────────────────────────────────────────────────────────────────────┐ |
+// | │ ╔══════════════════════════════════════════════════════════════════════╗ │ |
+// | │ ║ #1 [project-brief.md] (Optional Label)                    [X] Remove ║ │ |
+// | │ ║                                                                      ║ │ |
+// | │ ║  Preview text of the document content...                             ║ │ |
+// | │ ╚══════════════════════════════════════════════════════════════════════╝ │ |
+// | │ ┌──────────────────────────────────────────────────────────────────────┐ │ |
+// | │ │ #2 (No Label)                                             [X] Remove │ │ |
+// | │ │                                                                      │ │ |
+// | │ │  Another document content preview...                                 │ │ |
+// | │ └──────────────────────────────────────────────────────────────────────┘ │ |
+// | │                                                                          │ |
+// | │  ( ... documents 3 & 4 off-screen, accessible via Scroll/PgUp/PgDn ... ) │ |
+// | └──────────────────────────────────────────────────────────────────────────┘ |
+// |                                                                              |
+// |  [A]dd  [L]oad  [E]dit  [V]iew  [D]elete  [C]opy  [S]hell                    |
+// |                                                                              |
+// | ✓ Status: Ready                                                              |
+// | ──────────────────────────────────────────────────────────────────────────── |
+// |  a: Add  l: Load  e: Edit  v: View  d: Delete  c: Copy  s: Shell  q: Quit    |
+// +==============================================================================+
+//
+// SCENARIO B: NARROW/VERTICAL TERMINAL (Responsive Stack)
+// +==============================================================================+
+// | Docs: 4                                                                      |
+// | ┌──────────────────────────────────┐                                         |
+// | │ ╔══════════════════════════════╗ │                                         |
+// | │ ║ #1 [Label]        [X] Remove ║ │                                         |
+// | │ ║                              ║ │                                         |
+// | │ ║  Preview...                  ║ │                                         |
+// | │ ╚══════════════════════════════╝ │                                         |
+// | └──────────────────────────────────┘                                         |
+// |                                                                              |
+// |  ( [A]dd      ) ( [L]oad     )       <-- (Standard)                          |
+// |  ( [E]dit     ) ( [V]iew     )       <-- (Standard)                          |
+// |  ( [D]elete   ) ( [Q]uit     )       <-- (Standard)                          |
+// |  ( [C]opy     ) ( [S]hell    )       <-- (C: Purple BG / S: Orange BG)       |
+// |                                                                              |
+// | ✓ Status: Ready                                                              |
+// | ──────────────────────────────────                                           |
+// |  a: Add  l: Load  e: Edit                                                    |
+// |  v: View d: Del   c: Copy                                                    |
+// |  s: Shell q: Quit                                                            |
+// +==============================================================================+
+//
+// SCENARIO C: INPUT FORM (Textarea Mode)
+// +==============================================================================+
+// |    📝 Add / Edit Document                                                    |
+// |                                                                              |
+// |  Label (Optional):                                                           |
+// |  ┌────────────────────────────────────────────────────────────────────────┐  |
+// |  │ my-custom-label                                                        │  |
+// |  └────────────────────────────────────────────────────────────────────────┘  |
+// |                                                                              |
+// |  Content (Multi-line):                                                       |
+// |  ┌────────────────────────────────────────────────────────────────────────┐  |
+// |  │ > Cursor starts here.                                                  │  |
+// |  │                                                                        │  |
+// |  │   Indentation is preserved.                                            │  |
+// |  └────────────────────────────────────────────────────────────────────────┘  |
+// |                                                                              |
+// |             [    Submit    ]                  [    Cancel    ]               |
+// |                                                                              |
+// |  Tab: Cycle Focus    Enter: Newline (Text) / Submit (Button)    Esc: Cancel  |
+// +==============================================================================+
+//
+// 3. RESPONSIVE LAYOUT & LIPGLOSS STRATEGY
+// ----------------------------------------
+// The layout is calculated dynamically in the `View` function using `msg.Width`
+// and `msg.Height`.
+//
+// - LAYOUT COMPOSITION:
+//   Use `lipgloss.JoinVertical(lipgloss.Top, header, viewport, buttonBar, footer)`
+//
+// - VIEWPORT (Document List):
+//   The Viewport height is dynamic: `Height = TermHeight - (Header + Buttons + Footer)`.
+//   Content within uses `lipgloss.Style` with borders.
+//
+// - BUTTON BAR (Responsive):
+//   1. Calculate total width of buttons in a single row.
+//   2. If `TotalWidth < TermWidth`:
+//      Use `lipgloss.JoinHorizontal(lipgloss.Top, buttons...)` with spacing.
+//   3. If `TotalWidth > TermWidth`:
+//      Switch to vertical stack using `lipgloss.JoinVertical(lipgloss.Left, buttons...)`.
+//      Buttons expand to fill width or center align.
+//
+// - SCROLLING:
+//   **MUST use the `osm:bubbles/viewport` module (internal/builtin/bubbles/viewport).**
+//   Integrate a `viewport` instance to render the document list (e.g., `vp.setContent(...)` and `vp.view()`),
+//   and implement `PgUp`/`PgDn`/`Home`/`End` semantics via the viewport API. Do not use ad-hoc line slicing or custom clipping —
+//   the registered `viewport` module is required for correct scrolling semantics and hit-testing.
+//   TODO: integrate `viewportLib` into `renderList()`/`renderView()`, and fix viewport height calculation.
+//
+// 4. BEHAVIORAL RULES & INTERACTIONS
+// ----------------------------------
+//
+// DOCUMENT LIST:
+// - CLICK TARGETS:
+//   1. [X] Remove Button: `x` range of the text "[X] Remove" + padding.
+//      Action: Triggers Delete Confirmation.
+//   2. Document Body (Remainder of box):
+//      Action: Opens Input View (Edit Mode) with pre-filled data.
+// - SELECTION: Keyboard `Up/Down` highlights the box with a **Purple Border**.
+//   `Enter` on selected box opens Edit Mode.
+//
+// INPUT FORM:
+// - NAVIGATION: `Tab` cycles: Label -> Content -> Submit -> Cancel -> Label.
+// - LABEL: Optional. If empty, the system generates "Document N".
+// - CONTENT: True Textarea. `Enter` adds newline. `Ctrl+Enter` submits form.
+//
+// GLOBAL BUTTONS:
+// - [A]dd (a): Clears input buffers, opens Input View.
+// - [L]oad (l): Triggers file loading dialog (Context dependant).
+// - [E]dit (e): Opens the currently selected document for editing.
+// - [V]iew (v): Opens the currently selected document in read-only view / Preview.
+// - [D]elete (d): Triggers delete confirmation for selected document.
+// - [C]opy (c): **Purple Style**. Copies the prompt content to clipboard.
+// - [S]hell (s): **Orange Style**. Leaves the GUI mode and "drops" to a shell-style mode.
+// - VISUALS: Buttons are terse text blocks with brackets.
+//
+// FOOTER:
+// - Fixed to bottom. Contains help keys.
+// - Has dynamic layout. Demonstrated above.
+// - Footer component should be reusable across views.
+//
+// ============================================================================
 
 const {buildContext, contextManager} = require('osm:ctxutil');
 const nextIntegerId = require('osm:nextIntegerId');
 const template = require('osm:text/template');
+const tea = require('osm:bubbletea');
+const lipgloss = require('osm:lipgloss');
 const osm = require('osm:os');
+const zone = require('osm:bubblezone');
+const textareaLib = require('osm:bubbles/textarea');
+const viewportLib = require('osm:bubbles/viewport'); // MUST be used: integrate the viewport instance into list rendering (see SCROLLING section below). Do NOT leave this import unused.
+const scrollbarLib = require('osm:termui/scrollbar');
 
 // Import shared symbols
 const shared = require('osm:sharedStateSymbols');
@@ -12,120 +168,72 @@ const shared = require('osm:sharedStateSymbols');
 // config.name is injected by Go as "super-document"
 const COMMAND_NAME = config.name;
 
-// Define command-specific symbols for state management
+// Define command-specific symbols
 const stateKeys = {
     documents: Symbol("documents"),
     selectedIndex: Symbol("selectedIndex"),
-    mode: Symbol("mode"),  // 'list', 'edit', 'view'
-    editBuffer: Symbol("editBuffer"),
+    nextDocId: Symbol("nextDocId"),
+    template: Symbol("template"),
 };
 
-// Create the single state accessor
+// ============================================================================
+// RUNTIME-ONLY FLAGS (NEVER PERSISTED)
+// ============================================================================
+// These flags coordinate between the TUI command and the shell loop.
+// They are MODULE-LEVEL VARIABLES, not part of the persistent state system.
+// When the user presses 'q', we request exit. When they press 's', we drop to shell.
+// The shell loop's exit checker reads these to decide whether to exit.
+
+let _userRequestedShell = false;
+
+// Create the single state accessor (ONLY for persistent data)
 const state = tui.createState(COMMAND_NAME, {
     // Shared keys
     [shared.contextItems]: {defaultValue: []},
 
-    // Command-specific keys
+    // Command-specific keys (all persistent)
     [stateKeys.documents]: {defaultValue: []},
     [stateKeys.selectedIndex]: {defaultValue: 0},
-    [stateKeys.mode]: {defaultValue: "list"},
-    [stateKeys.editBuffer]: {defaultValue: ""},
+    [stateKeys.nextDocId]: {defaultValue: 1},
+    [stateKeys.template]: {defaultValue: null},
 });
 
-// Expose addItem for test access - will be set after ctxmgr is created
-let addItem;
+// ============================================================================
+// CORE LOGIC & HELPERS
+// ============================================================================
 
-// Helper function to calculate the backtick fence length needed to safely escape content
-function calculateBacktickFence(contents) {
-    let maxLength = 0;
-    for (const content of contents) {
-        if (!content) continue;
-        let currentRun = 0;
-        for (const ch of content) {
-            if (ch === '`') {
-                currentRun++;
-                if (currentRun > maxLength) {
-                    maxLength = currentRun;
-                }
-            } else {
-                currentRun = 0;
-            }
-        }
-    }
-    const fenceLen = Math.max(maxLength + 1, 5);
-    return '`'.repeat(fenceLen);
+function defaultTemplate() {
+    // Use the injected template or a fallback
+    return superDocumentTemplate || `Implement a super-document that is INTERNALLY CONSISTENT based on a quorum or carefully-weighed analysis of the attached documents.
+
+Your goal is to coalesce AS MUCH INFORMATION AS POSSIBLE, in as raw form as possible, while **preserving internal consistency**.
+
+{{if .contextTxtar}}
+---
+## CONTEXT
+---
+
+{{.contextTxtar}}
+{{end}}
+
+---
+## DOCUMENTS
+---
+
+{{range $idx, $doc := .documents}}
+Document {{$doc.id}}:
+\`\`\`\`\`
+{{$doc.content}}
+\`\`\`\`\`
+
+{{end}}`;
 }
 
-// Build the final prompt from documents
-function buildFinalPrompt() {
-    const documents = state.get(stateKeys.documents) || [];
-    const contextItems = state.get(shared.contextItems) || [];
-    
-    // Build context txtar if we have context items
-    let contextTxtar = "";
-    if (contextItems.length > 0) {
-        contextTxtar = buildContext(contextItems, {toTxtar: () => context.toTxtar()});
-    }
-    
-    // Prepare documents for template
-    const docData = documents.map((doc, idx) => ({
-        id: doc.id,
-        label: doc.label || ("Document " + (idx + 1)),
-        content: doc.content || "",
-    }));
-    
-    // Calculate safe fence for all document contents
-    const allContents = docData.map(d => d.content);
-    const fence = calculateBacktickFence(allContents);
-    
-    // Build the prompt manually to handle fence safely
-    const parts = [
-        "Implement a super-document that is INTERNALLY CONSISTENT based on a quorum or carefully-weighed analysis of the attached documents.",
-        "",
-        "Your goal is to coalesce AS MUCH INFORMATION AS POSSIBLE, in as raw form as possible, while **preserving internal consistency**.",
-        "",
-        "All information or content that you DON'T manage to coalesce will be discarded, making it critical that you output as much as the requirement of internal consistency allows.",
-    ];
-    
-    if (contextTxtar) {
-        parts.push("");
-        parts.push("---");
-        parts.push("## CONTEXT");
-        parts.push("---");
-        parts.push("");
-        parts.push(contextTxtar);
-    }
-    
-    parts.push("");
-    parts.push("---");
-    parts.push("## DOCUMENTS");
-    parts.push("---");
-    parts.push("");
-    
-    for (let i = 0; i < docData.length; i++) {
-        const doc = docData[i];
-        parts.push("Document " + (i + 1) + ":");
-        parts.push(fence);
-        parts.push(doc.content);
-        parts.push(fence);
-        parts.push("");
-    }
-    
-    return parts.join("\n");
+function getTemplate() {
+    const tmpl = state.get(stateKeys.template);
+    return (tmpl !== null && tmpl !== undefined && tmpl !== "") ? tmpl : defaultTemplate();
 }
 
-// Create context manager for context items
-const ctxmgr = contextManager({
-    getItems: () => state.get(shared.contextItems) || [],
-    setItems: (v) => state.set(shared.contextItems, v),
-    nextIntegerId: nextIntegerId,
-    buildPrompt: buildFinalPrompt,
-});
-
-// Export for test access
-addItem = ctxmgr.addItem;
-
-// Document management functions
 function getDocuments() {
     return state.get(stateKeys.documents) || [];
 }
@@ -134,33 +242,48 @@ function setDocuments(docs) {
     state.set(stateKeys.documents, docs);
 }
 
-function addDocument(content, label) {
+function getNextDocId() {
+    return state.get(stateKeys.nextDocId) || 1;
+}
+
+function incrementNextDocId() {
+    state.set(stateKeys.nextDocId, getNextDocId() + 1);
+}
+
+function addDocument(label, content) {
     const docs = getDocuments();
-    const id = nextIntegerId();
+    const id = getNextDocId();
+    incrementNextDocId();
     const doc = {
         id: id,
-        label: label || ("Document " + (docs.length + 1)),
-        content: content || "",
+        label: label || ('Document ' + (docs.length + 1)),
+        content: content || ''
     };
     docs.push(doc);
     setDocuments(docs);
     return doc;
 }
 
-function removeDocument(id) {
+function removeDocumentById(id) {
     const docs = getDocuments();
     const idx = docs.findIndex(d => d.id === id);
     if (idx >= 0) {
+        const doc = docs[idx];
         docs.splice(idx, 1);
         setDocuments(docs);
+
         // Adjust selected index if needed
-        const selectedIndex = state.get(stateKeys.selectedIndex);
-        if (selectedIndex >= docs.length) {
-            state.set(stateKeys.selectedIndex, Math.max(0, docs.length - 1));
+        let selectedIdx = state.get(stateKeys.selectedIndex);
+        if (selectedIdx >= docs.length && selectedIdx > 0) {
+            state.set(stateKeys.selectedIndex, selectedIdx - 1);
         }
-        return true;
+        return doc;
     }
-    return false;
+    return null;
+}
+
+function getDocumentById(id) {
+    return getDocuments().find(d => d.id === id);
 }
 
 function updateDocument(id, content, label) {
@@ -175,261 +298,1167 @@ function updateDocument(id, content, label) {
     return false;
 }
 
-function getSelectedDocument() {
+function buildContextTxtar() {
+    return buildContext(state.get(shared.contextItems), {toTxtar: () => context.toTxtar()});
+}
+
+function buildFinalPrompt() {
     const docs = getDocuments();
-    const idx = state.get(stateKeys.selectedIndex);
-    if (idx >= 0 && idx < docs.length) {
-        return docs[idx];
+    const contextTxtar = buildContextTxtar();
+
+    // Execute template
+    return template.execute(getTemplate(), {
+        documents: docs,
+        contextTxtar: contextTxtar
+    });
+}
+
+
+// ============================================================================
+// VIEWPORT & LAYOUT HELPERS
+// ============================================================================
+
+// Calculate viewport height based on terminal size and fixed UI elements
+// NOTE: This is now largely handled dynamically inside renderList to account
+// for responsive button heights, but kept as a fallback utility.
+function calculateViewportHeight(s) {
+    const termHeight = s.height || 24;
+    const fixedOverhead = 12; // Adjusted estimate
+    return Math.max(5, termHeight - fixedOverhead);
+}
+
+// Lightweight preview helper: truncate first, then strip newlines to avoid
+// allocating large temporary strings on each render for large documents.
+function previewOf(content, maxLen) {
+    const raw = content || '';
+    let p = raw.substring(0, maxLen).replace(/\n/g, ' ');
+    if (raw.length > maxLen) p += '...';
+    return p;
+}
+
+// Generate a hash of document IDs to detect changes
+function getDocsHash(docs) {
+    if (!docs || docs.length === 0) return '';
+    // Include length to catch wrapping changes.
+    return docs.map(d => d.id + ':' + (d.content || '').length).join(',');
+}
+
+// Build the LayoutMap: maps document index to {top: pixelOffset, height: lineCount}
+// This is used for:
+// 1. Calculating scroll offset when selection changes
+// 2. Hit-testing mouse clicks inside the viewport
+function buildLayoutMap(docs, docContentWidth) {
+    const layoutMap = [];
+    let currentTop = 0;
+
+    docs.forEach((doc, i) => {
+        // Calculate the rendered height of this document box
+        // Document box structure inside the border:
+        // - Header line: #id [label] (1 line)
+        // - Preview line (1 line)
+        // - Remove button line (1 line)
+        // Borders add +2 height (top/bottom)
+
+        let prev = previewOf(doc.content, DESIGN.previewMaxLen);
+
+        const docHeader = `#${doc.id} [${doc.label}]`;
+        const docPreview = styles.preview().render(prev);
+        const removeBtn = '[X] Remove';
+        const docContent = lipgloss.joinVertical(
+            lipgloss.Left,
+            docHeader,
+            docPreview,
+            removeBtn
+        );
+
+        const style = styles.document(); // Use base style for height calculation
+        // CRITICAL: Use consistent width passed from renderList
+        const renderedDoc = style.width(docContentWidth).render(docContent);
+        const docHeight = lipgloss.height(renderedDoc);
+
+        layoutMap.push({
+            top: currentTop,
+            height: docHeight,
+            docId: doc.id
+        });
+
+        currentTop += docHeight;
+    });
+
+    return layoutMap;
+}
+
+// Ensure the selected document is visible in the viewport
+function ensureSelectionVisible(s) {
+    if (!s.vp || !s.layoutMap || s.layoutMap.length === 0) return;
+    if (s.selectedIdx < 0 || s.selectedIdx >= s.layoutMap.length) return;
+
+    const entry = s.layoutMap[s.selectedIdx];
+    const yOffset = s.vp.yOffset();
+    const vpHeight = s.vp.height();
+
+    // Check if selection is above the viewport
+    if (entry.top < yOffset) {
+        s.vp.setYOffset(entry.top);
+        return;
+    }
+
+    // Check if selection is below the viewport
+    const selectionBottom = entry.top + entry.height;
+    if (selectionBottom > yOffset + vpHeight) {
+        s.vp.setYOffset(selectionBottom - vpHeight);
+    }
+}
+
+// Find which document was clicked based on viewport-relative coordinates
+// Returns {index: docIndex, relativeLineInDoc: lineOffset} or null if no hit
+function findClickedDocument(s, relativeY) {
+    if (!s.layoutMap || s.layoutMap.length === 0) return null;
+
+    // relativeY is already adjusted for viewport offset
+    for (let i = 0; i < s.layoutMap.length; i++) {
+        const entry = s.layoutMap[i];
+        if (relativeY >= entry.top && relativeY < entry.top + entry.height) {
+            return {
+                index: i,
+                relativeLineInDoc: relativeY - entry.top
+            };
+        }
     }
     return null;
 }
 
-// Build command handlers
+
+// ============================================================================
+// TUI IMPLEMENTATION (Bubble Tea)
+// ============================================================================
+
+// TUI Constants
+const MODE_LIST = 'list';
+const MODE_INPUT = 'input';
+const MODE_VIEW = 'view';
+const MODE_CONFIRM = 'confirm';
+
+const FOCUS_LABEL = 0;
+const FOCUS_CONTENT = 1;
+const FOCUS_SUBMIT = 2;
+const FOCUS_CANCEL = 3;
+const FOCUS_MAX = 4;
+
+const INPUT_ADD = 'add';
+const INPUT_EDIT = 'edit';
+const INPUT_LOAD = 'load';
+const INPUT_RENAME = 'rename';
+
+// TUI Design
+const DESIGN = {
+    buttonPaddingH: 2, buttonPaddingV: 0, buttonMarginR: 1,
+    docPaddingH: 1, docPaddingV: 0, docMarginB: 1,
+    previewMaxLen: 50, textareaHeight: 6
+};
+
+// TUI Styles
+const COLORS = {
+    primary: '#7C3AED', secondary: '#10B981', danger: '#EF4444',
+    muted: '#6B7280', bg: '#1F2937', fg: '#F9FAFB',
+    warning: '#F59E0B', focus: '#3B82F6'
+};
+
+const styles = {
+    title: () => lipgloss.newStyle().bold(true).foreground(COLORS.primary).padding(0, 1),
+    normal: () => lipgloss.newStyle().foreground(COLORS.fg).padding(0, 1),
+    button: () => lipgloss.newStyle().foreground(COLORS.fg).background(COLORS.secondary).padding(DESIGN.buttonPaddingV, DESIGN.buttonPaddingH).marginRight(DESIGN.buttonMarginR),
+    buttonFocused: () => lipgloss.newStyle().foreground(COLORS.fg).background(COLORS.primary).bold(true).padding(DESIGN.buttonPaddingV, DESIGN.buttonPaddingH).marginRight(DESIGN.buttonMarginR),
+    buttonDanger: () => lipgloss.newStyle().foreground(COLORS.fg).background(COLORS.danger).padding(DESIGN.buttonPaddingV, DESIGN.buttonPaddingH).marginRight(DESIGN.buttonMarginR),
+    buttonShell: () => lipgloss.newStyle().foreground(COLORS.fg).background(COLORS.warning).bold(true).padding(DESIGN.buttonPaddingV, DESIGN.buttonPaddingH).marginRight(DESIGN.buttonMarginR),
+    status: () => lipgloss.newStyle().foreground(COLORS.secondary).italic(true),
+    error: () => lipgloss.newStyle().foreground(COLORS.danger).bold(true),
+    help: () => lipgloss.newStyle().foreground(COLORS.muted),
+    separator: () => lipgloss.newStyle().foreground(COLORS.muted),
+    box: () => lipgloss.newStyle().border(lipgloss.roundedBorder()).borderForeground(COLORS.primary).padding(1, 2),
+    inputNormal: () => lipgloss.newStyle().border(lipgloss.normalBorder()).borderForeground(COLORS.muted).padding(0, 1),
+    inputFocused: () => lipgloss.newStyle().border(lipgloss.normalBorder()).borderForeground(COLORS.focus).bold(true).padding(0, 1),
+    document: () => lipgloss.newStyle().border(lipgloss.normalBorder()).borderForeground(COLORS.muted).padding(DESIGN.docPaddingV, DESIGN.docPaddingH).marginBottom(DESIGN.docMarginB),
+    documentSelected: () => lipgloss.newStyle().border(lipgloss.doubleBorder()).borderForeground(COLORS.primary).padding(DESIGN.docPaddingV, DESIGN.docPaddingH).marginBottom(DESIGN.docMarginB),
+    preview: () => lipgloss.newStyle().foreground(COLORS.muted),
+    label: () => lipgloss.newStyle().foreground(COLORS.fg).bold(true),
+};
+
+// TUI Logic
+function runVisualTui() {
+    // Create viewport instance ONCE at init time (not on each render)
+    const vp = viewportLib.new(80, 24);
+    vp.mouseWheelEnabled(false); // We handle mouse wheel manually
+
+    const initialState = {
+        // Core state linked to global state
+        documents: getDocuments(),
+        selectedIdx: state.get(stateKeys.selectedIndex),
+
+        // Viewport instance (created once, reused)
+        vp: vp,
+        listScrollbar: scrollbarLib.new(),
+        inputScrollbar: scrollbarLib.new(),
+        vpContentWidth: 0,
+
+        // LayoutMap cache: maps document index -> {top: y, height: h}
+        // Rebuilt only when documents array changes
+        layoutMap: null,
+        layoutMapDocsHash: '', // Hash to detect document changes
+
+        // UI State
+        mode: MODE_LIST,
+        inputOperation: null,
+        inputFocus: FOCUS_LABEL,
+        labelBuffer: '',
+        contentTextarea: null, // Native bubbles/textarea component
+        editingDocId: null,
+        viewContent: '',
+        viewTitle: '',
+        confirmPrompt: '',
+        confirmDocId: null,
+        statusMsg: '',
+        hasError: false,
+        clipboard: '',
+        width: 80, height: 24,
+        layout: {buttons: [], docBoxes: []},
+
+        // Flag to force a full screen clear on first render
+        // This ensures the title line is rendered correctly when re-entering TUI from shell
+        needsInitClear: true
+    };
+
+    const model = tea.newModel({
+        init: function () {
+            return initialState;
+        },
+        update: function (msg, tuiState) {
+            // DEBUG: Log all messages to understand what's being received
+            if (typeof console !== 'undefined' && msg.type === 'mouse') {
+                console.log('UPDATE DEBUG: msg.type=' + msg.type + ', msg.action=' + msg.action + ', msg.button=' + msg.button + ', msg.x=' + msg.x + ', msg.y=' + msg.y);
+            }
+            // Sync documents from global state on every update to ensure freshness
+            tuiState.documents = getDocuments();
+
+            if (msg.type === 'windowSize') {
+                tuiState.width = msg.width;
+                tuiState.height = msg.height;
+                // Update viewport dimensions (will clamp yOffset automatically in Go)
+                if (tuiState.vp) {
+                    // NOTE: Viewport sizing is handled in `renderList` to account for
+                    // dynamic button bar/footer heights. We intentionally do NOT set
+                    // explicit width/height here to avoid a split source of truth.
+                    // Keep the viewport instance intact so `renderList` can configure it.
+                }
+                // Invalidate layoutMap when width changes (affects text wrapping/heights)
+                tuiState.layoutMap = null;
+
+                // Force full screen clear on first windowSize message after init
+                // This ensures all content (including title) is rendered correctly
+                // when re-entering TUI from shell mode
+                if (tuiState.needsInitClear) {
+                    tuiState.needsInitClear = false;
+                    return [tuiState, tea.clearScreen()];
+                }
+            } else if (msg.type === 'keyPress') {
+                return handleKeys(msg, tuiState);
+            } else if (msg.type === 'mouse' && msg.action === 'press') {
+                return handleMouse(msg, tuiState);
+            }
+            return [tuiState, null];
+        },
+        view: function (tuiState) {
+            return renderView(tuiState);
+        }
+    });
+
+    return tea.run(model, {altScreen: true, mouse: true});
+}
+
+function handleKeys(msg, s) {
+    const k = msg.key;
+    const prevMode = s.mode; // Track mode before processing
+    // Global quit from any mode if ctrl+c
+    if (k === 'ctrl+c') return [s, tea.quit()];
+
+    if (s.mode === MODE_LIST) {
+        if (k === 'q') {
+            // User wants to exit completely - use module-level flag (NOT persistent state)
+            _userRequestedShell = false;
+            return [s, tea.quit()];
+        }
+        if (k === 's') {
+            // User explicitly requested to drop into shell - use module-level flag
+            _userRequestedShell = true;
+            return [s, tea.quit()];
+        }
+
+        // Arrow key navigation with auto-scroll
+        if (k === 'up' || k === 'k') {
+            s.selectedIdx = Math.max(0, s.selectedIdx - 1);
+            ensureSelectionVisible(s);
+        }
+        if (k === 'down' || k === 'j') {
+            s.selectedIdx = Math.min(s.documents.length - 1, s.selectedIdx + 1);
+            ensureSelectionVisible(s);
+        }
+
+        // MANUAL PAGE KEY HANDLING - DO NOT forward to vp.update()!
+        // PgDown: Move selection down by approximately a page worth of documents
+        if (k === 'pgdown') {
+            if (s.documents.length > 0 && s.vp) {
+                const vpHeight = s.vp.height();
+                // Estimate ~5 lines per document box
+                const pageSize = Math.max(1, Math.floor(vpHeight / 5));
+                s.selectedIdx = Math.min(s.documents.length - 1, s.selectedIdx + pageSize);
+                ensureSelectionVisible(s);
+            }
+        }
+
+        // PgUp: Move selection up by approximately a page worth of documents
+        if (k === 'pgup') {
+            if (s.documents.length > 0 && s.vp) {
+                const vpHeight = s.vp.height();
+                const pageSize = Math.max(1, Math.floor(vpHeight / 5));
+                s.selectedIdx = Math.max(0, s.selectedIdx - pageSize);
+                ensureSelectionVisible(s);
+            }
+        }
+
+        // Home: Go to first document
+        if (k === 'home') {
+            if (s.documents.length > 0) {
+                s.selectedIdx = 0;
+                if (s.vp) s.vp.setYOffset(0);
+            }
+        }
+
+        // End: Go to last document
+        if (k === 'end') {
+            if (s.documents.length > 0) {
+                s.selectedIdx = s.documents.length - 1;
+                ensureSelectionVisible(s);
+            }
+        }
+
+        // Persist selection after any navigation
+        state.set(stateKeys.selectedIndex, s.selectedIdx);
+
+        if (k === 'a') {
+            s.mode = MODE_INPUT;
+            s.inputOperation = INPUT_ADD;
+            s.inputFocus = FOCUS_LABEL;
+            s.labelBuffer = '';
+            // Create native textarea for content
+            s.contentTextarea = textareaLib.new();
+            s.contentTextarea.setPlaceholder("Enter document content...");
+            s.contentTextarea.setWidth(Math.max(40, s.width - 10));
+            s.contentTextarea.setHeight(DESIGN.textareaHeight);
+        }
+        if (k === 'l') {
+            s.mode = MODE_INPUT;
+            s.inputOperation = INPUT_LOAD;
+            s.inputFocus = FOCUS_LABEL;
+            s.labelBuffer = '';
+            s.contentTextarea = null; // No textarea for load mode
+        }
+        if (k === 'e' || k === 'enter') {
+            const doc = s.documents[s.selectedIdx];
+            if (doc) {
+                s.mode = MODE_INPUT;
+                s.inputOperation = INPUT_EDIT;
+                s.inputFocus = FOCUS_CONTENT;
+                s.labelBuffer = doc.label;
+                // Create native textarea with existing content
+                s.contentTextarea = textareaLib.new();
+                s.contentTextarea.setWidth(Math.max(40, s.width - 10));
+                s.contentTextarea.setHeight(DESIGN.textareaHeight);
+                s.contentTextarea.setValue(doc.content);
+                s.contentTextarea.focus();
+                s.editingDocId = doc.id;
+            }
+        }
+        if (k === 'r') {
+            const doc = s.documents[s.selectedIdx];
+            if (doc) {
+                s.mode = MODE_INPUT;
+                s.inputOperation = INPUT_RENAME;
+                s.inputFocus = FOCUS_LABEL;
+                s.labelBuffer = doc.label;
+                s.contentTextarea = null; // No textarea for rename mode
+                s.editingDocId = doc.id;
+            }
+        }
+        if (k === 'd' || k === 'backspace') {
+            const doc = s.documents[s.selectedIdx];
+            if (doc) {
+                s.mode = MODE_CONFIRM;
+                s.confirmPrompt = `Delete document #${doc.id} "${doc.label}"? (y/n)`;
+                s.confirmDocId = doc.id;
+            }
+        }
+        if (k === 'v') {
+            const doc = s.documents[s.selectedIdx];
+            if (doc) {
+                s.mode = MODE_VIEW;
+                s.viewTitle = `Document #${doc.id}: ${doc.label}`;
+                s.viewContent = doc.content;
+            }
+        }
+        if (k === 'g' || k === 'c') {
+            if (s.documents.length === 0) {
+                s.statusMsg = 'No documents!';
+                s.hasError = true;
+            } else {
+                const prompt = buildFinalPrompt();
+                s.clipboard = prompt;
+                if (k === 'c') {
+                    try {
+                        // Call the system clipboard via osm:os module
+                        osm.clipboardCopy(prompt);
+                        s.statusMsg = `Copied prompt (${prompt.length} chars)`;
+                        s.hasError = false;
+                    } catch (e) {
+                        s.statusMsg = 'Clipboard error: ' + e;
+                        s.hasError = true;
+                    }
+                } else {
+                    s.statusMsg = 'Prompt generated. Press p to preview.';
+                    s.hasError = false;
+                }
+            }
+        }
+        if (k === 'p') {
+            if (s.clipboard) {
+                s.mode = MODE_VIEW;
+                s.viewTitle = 'Generated Prompt Preview';
+                s.viewContent = s.clipboard;
+            }
+        }
+        if (k === '?') s.statusMsg = 'a:add l:load e:edit r:rename d:del v:view c:copy g:gen s:shell q:quit';
+    } else if (s.mode === MODE_INPUT) {
+        if (k === 'esc') {
+            s.mode = MODE_LIST;
+            s.statusMsg = 'Cancelled';
+        } else if (k === 'tab' || k === 'shift+tab') {
+            // Handle focus transitions and blur/focus the textarea
+            const oldFocus = s.inputFocus;
+            if (k === 'tab') {
+                s.inputFocus = (s.inputFocus + 1) % FOCUS_MAX;
+            } else {
+                // shift+tab: cycle backward
+                s.inputFocus = (s.inputFocus - 1 + FOCUS_MAX) % FOCUS_MAX;
+            }
+            // Skip content focus for specific ops (forward)
+            if (k === 'tab') {
+                if (s.inputOperation === INPUT_RENAME && s.inputFocus === FOCUS_CONTENT) s.inputFocus = FOCUS_SUBMIT;
+                if (s.inputOperation === INPUT_LOAD && s.inputFocus === FOCUS_CONTENT) s.inputFocus = FOCUS_SUBMIT;
+            } else {
+                // Skip content focus for specific ops (backward)
+                if (s.inputOperation === INPUT_RENAME && s.inputFocus === FOCUS_CONTENT) s.inputFocus = FOCUS_LABEL;
+                if (s.inputOperation === INPUT_LOAD && s.inputFocus === FOCUS_CONTENT) s.inputFocus = FOCUS_LABEL;
+            }
+
+            // Manage textarea focus
+            if (s.contentTextarea) {
+                if (s.inputFocus === FOCUS_CONTENT) {
+                    s.contentTextarea.focus();
+                } else if (oldFocus === FOCUS_CONTENT) {
+                    s.contentTextarea.blur();
+                }
+            }
+        } else if (k === 'ctrl+enter' || (k === 'enter' && s.inputFocus !== FOCUS_CONTENT)) {
+            // Submit
+            if (s.inputFocus === FOCUS_CANCEL) {
+                s.mode = MODE_LIST;
+                // Force full screen repaint when exiting form mode
+                return [s, tea.clearScreen()];
+            }
+
+            // Get content from textarea if present
+            const contentValue = s.contentTextarea ? s.contentTextarea.value() : '';
+
+            // Process Submit
+            if (s.inputOperation === INPUT_ADD) {
+                const doc = addDocument(s.labelBuffer.trim(), contentValue);
+                s.statusMsg = 'Added document #' + doc.id;
+            } else if (s.inputOperation === INPUT_EDIT) {
+                updateDocument(s.editingDocId, contentValue, s.labelBuffer.trim());
+                s.statusMsg = 'Updated document';
+            } else if (s.inputOperation === INPUT_RENAME) {
+                updateDocument(s.editingDocId, undefined, s.labelBuffer.trim());
+                s.statusMsg = 'Renamed document';
+            } else if (s.inputOperation === INPUT_LOAD) {
+                const res = osm.readFile(s.labelBuffer.trim());
+                if (res.error) {
+                    s.statusMsg = 'Error: ' + res.error;
+                    s.hasError = true;
+                    return [s, null];
+                }
+                const doc = addDocument(s.labelBuffer.trim(), res.content);
+                s.statusMsg = 'Loaded document #' + doc.id;
+            }
+            // Refresh local state from global after mutation
+            s.documents = getDocuments();
+            s.mode = MODE_LIST;
+            s.hasError = false;
+        } else {
+            // Field input handling
+            if (s.inputFocus === FOCUS_LABEL) {
+                if (k === 'backspace') s.labelBuffer = s.labelBuffer.slice(0, -1);
+                else if (k.length === 1) s.labelBuffer += k;
+            } else if (s.inputFocus === FOCUS_CONTENT && s.contentTextarea) {
+                // Delegate to native textarea component
+                s.contentTextarea.update(msg);
+            }
+        }
+    } else if (s.mode === MODE_CONFIRM) {
+        if (k === 'y' || k === 'Y') {
+            const deletedId = s.confirmDocId;
+            removeDocumentById(s.confirmDocId);
+            s.documents = getDocuments();  // Refresh local state from global after mutation
+            s.statusMsg = 'Deleted document #' + deletedId;
+            s.mode = MODE_LIST;
+        } else if (k === 'n' || k === 'N' || k === 'esc') {
+            s.statusMsg = 'Cancelled';
+            s.mode = MODE_LIST;
+        }
+    } else if (s.mode === MODE_VIEW) {
+        if (k === 'esc' || k === 'enter' || k === 'q') s.mode = MODE_LIST;
+    }
+
+    // Force full screen repaint when transitioning FROM a modal mode TO MODE_LIST
+    // This ensures BubbleTea re-renders the entire screen including the title
+    if (s.mode === MODE_LIST && prevMode !== MODE_LIST) {
+        return [s, tea.clearScreen()];
+    }
+    return [s, null];
+}
+
+function handleMouse(msg, s) {
+    // Guard: Only process left-button clicks for button/document activation
+    // Wheel events should not trigger actions (they'll be handled as scroll if needed)
+    const isLeftClick = msg.button === 'left';
+    const isWheelEvent = msg.button === 'wheelUp' || msg.button === 'wheelDown' ||
+        msg.button === 'wheelLeft' || msg.button === 'wheelRight';
+
+    // Handle wheel events for scrolling in list mode via viewport
+    if (isWheelEvent && s.mode === MODE_LIST && s.documents.length > 0 && s.vp) {
+        if (msg.button === 'wheelUp') {
+            s.vp.scrollUp(3); // Scroll viewport up by 3 lines
+        } else if (msg.button === 'wheelDown') {
+            s.vp.scrollDown(3); // Scroll viewport down by 3 lines
+        }
+        // Don't change selection on wheel - just scroll the viewport
+        return [s, null];
+    }
+
+    // Only left-button presses trigger button/document activation
+    if (!isLeftClick) {
+        return [s, null];
+    }
+
+    // Use bubblezone for proper hit-testing - no hardcoded coordinates
+    // Buttons are marked with zone IDs like "btn-add", "btn-load", etc.
+    const buttonActions = [
+        {id: 'btn-add', action: 'a'},
+        {id: 'btn-load', action: 'l'},
+        {id: 'btn-edit', action: 'e'},
+        {id: 'btn-view', action: 'v'},
+        {id: 'btn-delete', action: 'd'},
+        {id: 'btn-copy', action: 'c'},
+        {id: 'btn-generate', action: 'g'},
+        {id: 'btn-shell', action: 'shell'},
+        {id: 'btn-submit', action: 'enter'},
+        {id: 'btn-cancel', action: 'esc'},
+        {id: 'btn-yes', action: 'y'},
+        {id: 'btn-no', action: 'n'},
+    ];
+
+    // Check button zones
+    if (typeof console !== 'undefined') {
+        const addZone = zone.get('btn-add');
+        const copyZone = zone.get('btn-copy');
+        console.log('MOUSE DEBUG: msg.x=' + msg.x + ', msg.y=' + msg.y);
+        console.log('MOUSE DEBUG: btn-add zone:', JSON.stringify(addZone));
+        console.log('MOUSE DEBUG: btn-copy zone:', JSON.stringify(copyZone));
+    }
+    for (const btn of buttonActions) {
+        if (zone.inBounds(btn.id, msg)) {
+            if (typeof console !== 'undefined') {
+                console.log('MOUSE DEBUG: zone.inBounds(' + btn.id + ') = TRUE, action=' + btn.action);
+            }
+            if (btn.action === 'shell') return [s, tea.quit()];
+            return handleKeys({key: btn.action}, s);
+        }
+    }
+
+    // Handle input field zones for mouse focus (MODE_INPUT only)
+    if (s.mode === MODE_INPUT) {
+        if (zone.inBounds('input-label', msg)) {
+            // Click on label field - focus it
+            if (s.inputFocus !== FOCUS_LABEL) {
+                // Blur textarea if leaving content
+                if (s.inputFocus === FOCUS_CONTENT && s.contentTextarea) {
+                    s.contentTextarea.blur();
+                }
+                s.inputFocus = FOCUS_LABEL;
+            }
+            return [s, null];
+        }
+        if (zone.inBounds('input-content', msg)) {
+            // Click on content textarea - focus it
+            if (s.inputFocus !== FOCUS_CONTENT) {
+                s.inputFocus = FOCUS_CONTENT;
+                if (s.contentTextarea) {
+                    s.contentTextarea.focus();
+                }
+            }
+            return [s, null];
+        }
+    }
+
+    // Document click handling using LayoutMap + coordinate math
+    // zone.mark is NOT used for documents inside viewport (clipping destroys markers)
+    if (s.mode === MODE_LIST && s.documents.length > 0 && s.layoutMap && s.vp) {
+        // Calculate document-relative Y coordinate
+        // msg.y is terminal-relative, we need to adjust for:
+        // 1. Header height (title + blank + docs count + blank = 4 lines)
+        // 2. Viewport scroll offset
+        const headerHeight = 4;
+        const clickY = msg.y;
+
+        // Check if click is in the viewport area
+        const vpTop = headerHeight;
+        const vpHeight = s.vp.height();
+        const vpBottom = vpTop + vpHeight;
+
+        if (clickY >= vpTop && clickY < vpBottom) {
+            // Ignore clicks on the right-side scrollbar column.
+            if (s.vpContentWidth > 0 && msg.x >= s.vpContentWidth) {
+                return [s, null];
+            }
+            // Convert to content-space coordinates
+            const viewportRelativeY = clickY - vpTop;
+            const contentY = viewportRelativeY + s.vp.yOffset();
+
+            // Find which document was clicked and where within it
+            const clickResult = findClickedDocument(s, contentY);
+            if (clickResult !== null) {
+                s.selectedIdx = clickResult.index;
+                state.set(stateKeys.selectedIndex, clickResult.index);
+
+                // Document box structure relative to LayoutMap:
+                // Line 0: Top Border
+                // Line 1: Header (#id [label])
+                // Line 2: Preview
+                // Line 3: [X] Remove button
+                // Line 4: Bottom Border
+
+                // Mapped Action Targets:
+                if (clickResult.relativeLineInDoc === 1) {
+                    // Line 1: Header -> Rename
+                    return handleKeys({key: 'r'}, s);
+                } else if (clickResult.relativeLineInDoc === 3) {
+                    // Line 3: Remove -> Delete
+                    return handleKeys({key: 'd'}, s);
+                } else {
+                    // All other lines -> Edit Content
+                    return handleKeys({key: 'e'}, s);
+                }
+            }
+        }
+    }
+
+    return [s, null];
+}
+
+function renderView(s) {
+    s.layout = {buttons: [], docBoxes: []}; // Reset layout (kept for compatibility)
+    let content;
+    if (s.mode === MODE_INPUT) content = renderInput(s);
+    else if (s.mode === MODE_VIEW) content = renderViewer(s);
+    else if (s.mode === MODE_CONFIRM) content = renderConfirm(s);
+    else content = renderList(s);
+
+    // Wrap with zone.scan() to register zones and strip markers
+    return zone.scan(content);
+}
+
+// Minimal Render Helpers (inlining logic for single-file)
+function renderList(s) {
+    const termWidth = s.width || 80;
+    const termHeight = s.height || 24;
+    const scrollbarWidth = 1;
+
+    // Header section - ALWAYS use fresh style creation to avoid caching issues
+    const titleStyle = lipgloss.newStyle().bold(true).foreground(COLORS.primary).padding(0, 1);
+    const normalStyle = lipgloss.newStyle().foreground(COLORS.fg).padding(0, 1);
+
+    const titleLine = titleStyle.render('📄 Super-Document Builder');
+    const docsLine = normalStyle.render(`Documents: ${s.documents.length}`);
+
+    const header = lipgloss.joinVertical(
+        lipgloss.Left,
+        titleLine,
+        '',
+        docsLine
+    );
+
+    // FIX: Explicitly calculate widths to avoid clipping.
+    // 1. Viewport width: Available width aligned to right edge (termWidth - scrollbar)
+    // 2. Document content width: Viewport width minus style overhead (Border + Padding)
+    // Overhead = Border(2) + Padding(2) = 4
+    const docStyleOverhead = 4;
+    const viewportWidth = termWidth - scrollbarWidth;
+    const docContentWidth = Math.max(40, viewportWidth - docStyleOverhead);
+
+    // Update/rebuild LayoutMap if documents changed
+    const docsHash = getDocsHash(s.documents);
+    if (s.layoutMap === null || s.layoutMapDocsHash !== docsHash) {
+        // Layout widths must match the viewport width we use below.
+        s.layoutMap = buildLayoutMap(s.documents, docContentWidth);
+        s.layoutMapDocsHash = docsHash;
+    }
+
+    // Document list section
+    let docSection = '';
+    if (s.documents.length === 0) {
+        docSection = styles.help().render("No documents. Press 'a' to add, 'l' to load, 's' for shell.");
+    } else {
+        const docItems = [];
+        s.documents.forEach((doc, i) => {
+            const isSel = i === s.selectedIdx;
+            let prev = previewOf(doc.content, DESIGN.previewMaxLen);
+
+            const removeBtn = '[X] Remove';
+
+            // Build document content line by line
+            const docHeader = `#${doc.id} [${doc.label}]`;
+            const docPreview = styles.preview().render(prev);
+            const docContent = lipgloss.joinVertical(
+                lipgloss.Left,
+                docHeader,
+                docPreview,
+                removeBtn
+            );
+
+            // Apply selection style (double border for selected)
+            const style = isSel ? styles.documentSelected() : styles.document();
+            // Use explicitly calculated content width to prevent box clipping
+            const renderedDoc = style.width(docContentWidth).render(docContent);
+
+            docItems.push(renderedDoc);
+        });
+        docSection = lipgloss.joinVertical(lipgloss.Left, ...docItems);
+    }
+
+    // Button bar section with responsive layout
+    const buttonRow1 = [
+        {id: 'btn-add', text: '[A]dd', style: styles.button()},
+        {id: 'btn-load', text: '[L]oad', style: styles.button()},
+        {id: 'btn-edit', text: '[E]dit', style: styles.button()},
+        {id: 'btn-view', text: '[V]iew', style: styles.button()},
+        {id: 'btn-delete', text: '[D]elete', style: styles.buttonDanger()},
+    ];
+
+    const buttonRow2 = [
+        {id: 'btn-copy', text: '[C]opy Prompt', style: styles.buttonFocused()},
+        {id: 'btn-generate', text: '[G]enerate', style: styles.button()},
+        {id: 'btn-shell', text: '[S]hell (ESC)', style: styles.buttonShell()},
+    ];
+
+    // Calculate total button width for row 1
+    const row1Buttons = buttonRow1.map(b => zone.mark(b.id, b.style.render(b.text)));
+    const row2Buttons = buttonRow2.map(b => zone.mark(b.id, b.style.render(b.text)));
+
+    // Calculate widths using lipgloss
+    const row1TotalWidth = row1Buttons.reduce((sum, btn) => sum + lipgloss.width(btn), 0);
+    const row2TotalWidth = row2Buttons.reduce((sum, btn) => sum + lipgloss.width(btn), 0);
+
+    // Responsive layout: stack vertically if buttons exceed terminal width
+    let buttonSection;
+    const availWidth = termWidth - 4; // Leave some margin
+    const allButtons = [...row1Buttons, ...row2Buttons];
+    const totalAllButtonsWidth = row1TotalWidth + row2TotalWidth;
+
+    if (row1TotalWidth > availWidth || row2TotalWidth > availWidth) {
+        // Narrow: stack ALL buttons vertically
+        buttonSection = lipgloss.joinVertical(lipgloss.Left, ...allButtons);
+    } else {
+        // Wide: horizontal layout
+        const row1 = lipgloss.joinHorizontal(lipgloss.Top, ...row1Buttons);
+        const row2 = lipgloss.joinHorizontal(lipgloss.Top, ...row2Buttons);
+        buttonSection = lipgloss.joinVertical(lipgloss.Left, row1, row2);
+    }
+    const buttonSectionHeight = lipgloss.height(buttonSection);
+
+    // Status section
+    let statusSection = '';
+    if (s.statusMsg) {
+        const statusStyle = s.hasError ? styles.error() : styles.status();
+        const statusIcon = s.hasError ? '✗ ' : '✓ ';
+        statusSection = statusStyle.render(statusIcon + s.statusMsg);
+    }
+
+    // Footer section
+    const separatorWidth = Math.min(72, termWidth - 2);
+    const separator = styles.separator().render('─'.repeat(separatorWidth));
+    const helpText = styles.help().render('a:add l:load e:edit d:del v:view c:copy g:gen s:shell q:quit ↑↓:nav pgup/pgdn:page');
+    const footer = lipgloss.joinVertical(lipgloss.Left, separator, helpText);
+
+    // ------------------------------------------------------------------------
+    // DYNAMIC VIEWPORT HEIGHT CALCULATION (Fix for Scrolling Header)
+    // ------------------------------------------------------------------------
+    // Calculate exact height available for the viewport to prevent the terminal
+    // from scrolling the header off-screen.
+    const headerHeight = lipgloss.height(header);
+    const footerHeight = lipgloss.height(footer);
+    const statusHeight = lipgloss.height(statusSection);
+    const spacerHeight = 3; // Empty lines between sections
+
+    // Safety clamp to at least 0
+    const fixedHeight = headerHeight + buttonSectionHeight + footerHeight + statusHeight + spacerHeight;
+    const vpHeight = Math.max(0, termHeight - fixedHeight);
+
+    // Integrate viewport + thin vertical scrollbar
+    let visibleDocSection = docSection;
+    if (s.vp && s.documents.length > 0) {
+        const vpWidth = viewportWidth; // Aligned to right edge (termWidth - scrollbar)
+        s.vpContentWidth = vpWidth;
+        s.vp.setWidth(vpWidth);
+        s.vp.setHeight(vpHeight);
+        s.vp.setContent(docSection);
+        const vpView = s.vp.view();
+
+        if (s.listScrollbar) {
+            s.listScrollbar.setViewportHeight(vpHeight);
+            s.listScrollbar.setContentHeight(s.vp.totalLineCount());
+            s.listScrollbar.setYOffset(s.vp.yOffset());
+            s.listScrollbar.setChars("█", "░");
+            // Use setThumbForeground for opaque █ character (full block draws foreground, not background)
+            s.listScrollbar.setThumbForeground(COLORS.primary);
+            s.listScrollbar.setTrackForeground(COLORS.muted);
+        }
+
+        const sbView = s.listScrollbar ? s.listScrollbar.view() : "";
+        visibleDocSection = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
+    }
+
+    // Compose final view
+    return lipgloss.joinVertical(
+        lipgloss.Left,
+        header,
+        '',
+        visibleDocSection,
+        '',
+        buttonSection,
+        '',
+        statusSection,
+        footer
+    );
+}
+
+function renderInput(s) {
+    const termWidth = s.width || 80;
+    const scrollbarWidth = 1;
+
+    // Title based on operation
+    let titleText;
+    if (s.inputOperation === INPUT_ADD) titleText = '📝 Add Document';
+    else if (s.inputOperation === INPUT_EDIT) titleText = '📝 Edit Document';
+    else if (s.inputOperation === INPUT_RENAME) titleText = '📝 Rename Document';
+    else titleText = '📂 Load File';
+
+    const title = styles.title().render(titleText);
+
+    // Label/Path field - wrap in zone for mouse focus
+    const lblLabel = s.inputOperation === INPUT_LOAD ? 'File path:' : 'Label (optional):';
+    const lblStyle = s.inputFocus === FOCUS_LABEL ? styles.inputFocused() : styles.inputNormal();
+    const lblContent = s.labelBuffer + (s.inputFocus === FOCUS_LABEL ? '▌' : '');
+    const lblFieldRendered = lipgloss.joinVertical(
+        lipgloss.Left,
+        styles.label().render(lblLabel),
+        lblStyle.width(Math.max(40, termWidth - 10)).render(lblContent)
+    );
+    const lblField = zone.mark('input-label', lblFieldRendered);
+
+    // Content field using native bubbles/textarea (not shown for LOAD or RENAME)
+    let contentField = '';
+    if (s.inputOperation !== INPUT_LOAD && s.inputOperation !== INPUT_RENAME && s.contentTextarea) {
+        // Use native textarea view() for proper cursor handling
+        const cntStyle = s.inputFocus === FOCUS_CONTENT ? styles.inputFocused() : styles.inputNormal();
+
+        // Update textarea dimensions based on current terminal size.
+        // Reserve a thin scrollbar column on the right.
+        const fieldWidth = Math.max(40, termWidth - 10);
+        const innerWidth = Math.max(10, fieldWidth - 4 - scrollbarWidth); // border(2) + padding(2)
+        s.contentTextarea.setWidth(innerWidth);
+        s.contentTextarea.setHeight(DESIGN.textareaHeight);
+
+        // Get the native textarea view - this includes proper cursor rendering
+        const textareaView = s.contentTextarea.view();
+
+        // Render a scrollbar synced to textarea scroll state.
+        let textareaWithScrollbar = textareaView;
+        if (s.inputScrollbar) {
+            const h = s.contentTextarea.height();
+            const contentH = s.contentTextarea.lineCount();
+            // Use the actual viewport yOffset from the textarea (via unsafe access)
+            const yOffset = s.contentTextarea.yOffset();
+
+            s.inputScrollbar.setViewportHeight(h);
+            s.inputScrollbar.setContentHeight(contentH);
+            s.inputScrollbar.setYOffset(yOffset);
+            s.inputScrollbar.setChars("█", "░");
+            // Use setThumbForeground for opaque █ character (full block draws foreground, not background)
+            s.inputScrollbar.setThumbForeground(COLORS.primary);
+            s.inputScrollbar.setTrackForeground(COLORS.muted);
+            textareaWithScrollbar = lipgloss.joinHorizontal(lipgloss.Top, textareaView, s.inputScrollbar.view());
+        }
+
+        const contentFieldRendered = lipgloss.joinVertical(
+            lipgloss.Left,
+            styles.label().render('Content (multi-line):'),
+            cntStyle.width(fieldWidth).render(textareaWithScrollbar)
+        );
+        // Wrap textarea area in zone for mouse focus
+        contentField = zone.mark('input-content', contentFieldRendered);
+    }
+
+    // Buttons with zone markers
+    const submitBtn = zone.mark('btn-submit',
+        (s.inputFocus === FOCUS_SUBMIT ? styles.buttonFocused() : styles.button()).render('[Submit]'));
+    const cancelBtn = zone.mark('btn-cancel',
+        (s.inputFocus === FOCUS_CANCEL ? styles.buttonDanger() : styles.button()).render('[Cancel]'));
+    const buttonRow = lipgloss.joinHorizontal(lipgloss.Top, submitBtn, cancelBtn);
+
+    // Help text
+    const helpText = styles.help().render('Tab: Cycle Focus    Enter: Newline (Content) / Submit    Esc: Cancel');
+
+    // Compose view
+    const sections = [title, '', lblField];
+    if (contentField) {
+        sections.push('', contentField);
+    }
+    sections.push('', buttonRow, '', helpText);
+
+    return lipgloss.joinVertical(lipgloss.Left, ...sections);
+}
+
+function renderViewer(s) {
+    const termWidth = s.width || 80;
+    const termHeight = s.height || 24;
+
+    // Calculate available space for the box
+    // Layout: title (1) + gap (1) + BOX + gap (1) + help (1) = 4 lines overhead
+    // Box height must be <= termHeight - 4
+    const boxMaxHeight = Math.max(8, termHeight - 4);
+
+    // Build title
+    const titleText = s.viewTitle || 'Preview';
+    const title = styles.title().render(titleText);
+
+    // Build content box with height limit
+    // The box includes borders (2) and padding (2), so content area = boxMaxHeight - 4
+    const boxWidth = Math.max(40, termWidth - 6);
+    const rawContent = s.viewContent || '';
+    const content = styles.box()
+        .width(boxWidth)
+        .maxHeight(boxMaxHeight)
+        .render(rawContent);
+
+    const helpText = styles.help().render('Press Esc or Enter to close');
+
+    return lipgloss.joinVertical(lipgloss.Left, title, '', content, '', helpText);
+}
+
+function renderConfirm(s) {
+    const title = styles.title().render('⚠️ Confirm Delete');
+    const prompt = s.confirmPrompt;
+
+    // Buttons with zone markers
+    const yesBtn = zone.mark('btn-yes', styles.buttonDanger().render('[Y]es'));
+    const noBtn = zone.mark('btn-no', styles.button().render('[N]o'));
+    const buttonRow = lipgloss.joinHorizontal(lipgloss.Top, yesBtn, noBtn);
+
+    const helpText = styles.help().render('y: Confirm    n/Esc: Cancel');
+
+    return lipgloss.joinVertical(
+        lipgloss.Left,
+        title,
+        '',
+        prompt,
+        '',
+        buttonRow,
+        '',
+        helpText
+    );
+}
+
+// ============================================================================
+// COMMANDS
+// ============================================================================
+
 function buildCommands() {
-    const baseCommands = ctxmgr.commands;
-    
+    // Context Manager with injected state
+    const ctxmgr = contextManager({
+        getItems: () => state.get(shared.contextItems) || [],
+        setItems: (v) => state.set(shared.contextItems, v),
+        nextIntegerId: nextIntegerId,
+        buildPrompt: buildFinalPrompt
+    });
+
     return {
-        ...baseCommands,
-        
-        // Add a new document
-        add: {
+        // Base context commands (add, list, remove, etc.)
+        ...ctxmgr.commands,
+
+        // --- Super Document Specific Commands ---
+
+        "doc-add": {
             description: "Add a new document",
-            usage: "add [content] or add --file <path>",
-            handler: function(args) {
+            usage: "doc-add [content] OR doc-add --file <path>",
+            handler: function (args) {
                 if (args.length >= 2 && args[0] === "--file") {
-                    // Load from file
-                    const filePath = args[1];
-                    const result = osm.readFile(filePath);
-                    if (result.error) {
-                        output.print("Error reading file: " + result.error);
+                    const path = args[1];
+                    const res = osm.readFile(path);
+                    if (res.error) {
+                        output.print("Error: " + res.error);
                         return;
                     }
-                    const doc = addDocument(result.content, filePath);
-                    output.print("Added document #" + doc.id + " from file: " + filePath);
+                    const doc = addDocument(path, res.content);
+                    output.print(`Added document #${doc.id} from ${path}`);
                 } else {
-                    // Add with content from args
                     const content = args.join(" ");
-                    const doc = addDocument(content);
-                    output.print("Added document #" + doc.id);
-                    if (!content) {
-                        output.print("Use 'edit " + doc.id + "' to add content");
+                    const doc = addDocument(null, content);
+                    output.print(`Added document #${doc.id}`);
+                }
+            }
+        },
+        "doc-rm": {
+            description: "Remove a document",
+            usage: "doc-rm <id>",
+            handler: function (args) {
+                if (!args[0]) {
+                    output.print("Usage: doc-rm <id>");
+                    return;
+                }
+                const doc = removeDocumentById(parseInt(args[0]));
+                if (doc) output.print(`Removed document #${doc.id}`);
+                else output.print("Document not found");
+            }
+        },
+        "doc-list": {
+            description: "List super-documents",
+            usage: "doc-list",
+            handler: function () {
+                const docs = getDocuments();
+                if (docs.length === 0) {
+                    output.print("No documents.");
+                    return;
+                }
+                output.print("Super Documents:");
+                docs.forEach(d => {
+                    const prev = (d.content || "").substring(0, 50).replace(/\n/g, " ");
+                    output.print(`  #${d.id} [${d.label}]: ${prev}...`);
+                });
+            }
+        },
+        "doc-view": {
+            description: "View a specific document content",
+            usage: "doc-view <id>",
+            handler: function (args) {
+                if (!args[0]) {
+                    output.print("Usage: doc-view <id>");
+                    return;
+                }
+                const doc = getDocumentById(parseInt(args[0]));
+                if (doc) {
+                    output.print(`--- Document #${doc.id}: ${doc.label} ---`);
+                    output.print(doc.content);
+                    output.print("---");
+                } else output.print("Document not found");
+            }
+        },
+        "doc-clear": {
+            description: "Clear all documents",
+            handler: function () {
+                setDocuments([]);
+                output.print("All documents cleared.");
+            }
+        },
+        "copy": {
+            description: "Copy the final prompt to clipboard",
+            handler: function () {
+                if (getDocuments().length === 0) {
+                    output.print("No documents.");
+                    return;
+                }
+                const txt = buildFinalPrompt();
+                try {
+                    ctxmgr.clipboardCopy(txt);
+                    output.print(`Copied ${txt.length} chars to clipboard.`);
+                } catch (e) {
+                    output.print("Clipboard error: " + e);
+                }
+            }
+        },
+        "tui": {
+            description: "Open the Visual TUI interface",
+            handler: function () {
+                // Clear any previous shell request (module-level, NOT persistent)
+                _userRequestedShell = false;
+
+                try {
+                    // Launch the embedded Bubble Tea app
+                    const res = runVisualTui();
+                    if (res && res.error) {
+                        output.print("TUI Error: " + res.error);
+                    }
+                } finally {
+                    // Check if user explicitly requested shell mode (module-level flag)
+                    const wantedShell = _userRequestedShell;
+
+                    // Clear the flag for next time
+                    _userRequestedShell = false;
+
+                    // If user pressed 'q' (not 's'), signal the shell loop to exit
+                    // The shell loop's exit checker will see this and terminate gracefully
+                    // This does NOT call os.Exit - the shell loop handles exit at the top level
+                    if (!wantedShell) {
+                        tui.requestExit();
+                    } else {
+                        // Inform the user they're now in shell mode and how to get back
+                        output.print("Dropped to shell. Use the 'tui' command to return to the visual UI.");
                     }
                 }
-            },
-        },
-        
-        // Remove a document
-        remove: {
-            description: "Remove a document by ID",
-            usage: "remove <id>",
-            handler: function(args) {
-                if (args.length < 1) {
-                    output.print("Usage: remove <id>");
-                    return;
-                }
-                const id = parseInt(args[0], 10);
-                if (isNaN(id)) {
-                    output.print("Invalid document ID: " + args[0]);
-                    return;
-                }
-                if (removeDocument(id)) {
-                    output.print("Removed document #" + id);
-                } else {
-                    output.print("Document #" + id + " not found");
-                }
-            },
-        },
-        
-        // Edit a document
-        edit: {
-            description: "Edit a document's content",
-            usage: "edit <id> [new content]",
-            handler: function(args) {
-                if (args.length < 1) {
-                    output.print("Usage: edit <id> [new content]");
-                    return;
-                }
-                const id = parseInt(args[0], 10);
-                if (isNaN(id)) {
-                    output.print("Invalid document ID: " + args[0]);
-                    return;
-                }
-                const content = args.slice(1).join(" ");
-                if (updateDocument(id, content)) {
-                    output.print("Updated document #" + id);
-                } else {
-                    output.print("Document #" + id + " not found");
-                }
-            },
-        },
-        
-        // View a document
-        view: {
-            description: "View a document's content",
-            usage: "view <id>",
-            handler: function(args) {
-                if (args.length < 1) {
-                    output.print("Usage: view <id>");
-                    return;
-                }
-                const id = parseInt(args[0], 10);
-                if (isNaN(id)) {
-                    output.print("Invalid document ID: " + args[0]);
-                    return;
-                }
-                const docs = getDocuments();
-                const doc = docs.find(d => d.id === id);
-                if (doc) {
-                    output.print("Document #" + doc.id + " (" + doc.label + "):");
-                    output.print("---");
-                    output.print(doc.content || "(empty)");
-                    output.print("---");
-                } else {
-                    output.print("Document #" + id + " not found");
-                }
-            },
-        },
-        
-        // Label a document
-        label: {
-            description: "Set a document's label",
-            usage: "label <id> <new label>",
-            handler: function(args) {
-                if (args.length < 2) {
-                    output.print("Usage: label <id> <new label>");
-                    return;
-                }
-                const id = parseInt(args[0], 10);
-                if (isNaN(id)) {
-                    output.print("Invalid document ID: " + args[0]);
-                    return;
-                }
-                const label = args.slice(1).join(" ");
-                if (updateDocument(id, undefined, label)) {
-                    output.print("Updated label for document #" + id + ": " + label);
-                } else {
-                    output.print("Document #" + id + " not found");
-                }
-            },
-        },
-        
-        // List all documents
-        list: {
-            description: "List all documents",
-            usage: "list",
-            handler: function(args) {
-                const docs = getDocuments();
-                if (docs.length === 0) {
-                    output.print("No documents. Use 'add' to add a document.");
-                    return;
-                }
-                output.print("Documents:");
-                for (let i = 0; i < docs.length; i++) {
-                    const doc = docs[i];
-                    const preview = (doc.content || "").substring(0, 50).replace(/\n/g, " ");
-                    const suffix = (doc.content || "").length > 50 ? "..." : "";
-                    output.print("  #" + doc.id + " [" + doc.label + "]: " + preview + suffix);
-                }
-            },
-        },
-        
-        // Load document from file
-        load: {
-            description: "Load a document from a file",
-            usage: "load <path> [label]",
-            handler: function(args) {
-                if (args.length < 1) {
-                    output.print("Usage: load <path> [label]");
-                    return;
-                }
-                const filePath = args[0];
-                const label = args.slice(1).join(" ") || filePath;
-                const result = osm.readFile(filePath);
-                if (result.error) {
-                    output.print("Error reading file: " + result.error);
-                    return;
-                }
-                const doc = addDocument(result.content, label);
-                output.print("Loaded document #" + doc.id + " from: " + filePath);
-            },
-        },
-        
-        // Generate the final prompt
-        generate: {
-            description: "Generate the final super-document prompt",
-            usage: "generate",
-            handler: function(args) {
-                const docs = getDocuments();
-                if (docs.length === 0) {
-                    output.print("No documents to generate from. Use 'add' or 'load' to add documents.");
-                    return;
-                }
-                const prompt = buildFinalPrompt();
-                output.print("Generated Super-Document Prompt:");
-                output.print("=".repeat(40));
-                output.print(prompt);
-                output.print("=".repeat(40));
-            },
-        },
-        
-        // Copy the final prompt to clipboard (via output for now)
-        copy: {
-            description: "Copy the generated prompt (outputs for manual copy)",
-            usage: "copy",
-            handler: function(args) {
-                const docs = getDocuments();
-                if (docs.length === 0) {
-                    output.print("No documents to copy. Use 'add' or 'load' to add documents.");
-                    return;
-                }
-                const prompt = buildFinalPrompt();
-                output.print(prompt);
-                output.print("");
-                output.print("--- Copy the above content ---");
-            },
-        },
-        
-        // Clear all documents
-        clear: {
-            description: "Clear all documents",
-            usage: "clear",
-            handler: function(args) {
-                setDocuments([]);
-                state.set(stateKeys.selectedIndex, 0);
-                output.print("Cleared all documents");
-            },
-        },
+            }
+        }
     };
 }
 
-// Register all commands
-const commands = buildCommands();
+// ============================================================================
+// REGISTRATION
+// ============================================================================
 
-// Register modes
+// config.name is injected by Go as "super-document"
+// config.replMode is injected by Go based on --repl flag
+
 tui.registerMode({
     name: COMMAND_NAME,
     tui: {
         title: "Super Document",
-        prompt: "super-document> ",
-        enableHistory: true,
-        historyFile: ".super-document_history"
+        prompt: `(${COMMAND_NAME}) > `,
     },
-    onEnter: function() {
-        // Show welcome message
-        output.print("Super-Document - TUI for merging documents");
-        output.print("Type 'help' for available commands, 'quit' to exit");
-
-        // List existing documents if any
-        const existingDocs = getDocuments();
-        if (existingDocs.length > 0) {
-            output.print("Loaded " + existingDocs.length + " existing document(s)");
-            commands.list.handler([]);
-        }
+    onEnter: function () {
+        output.print("Super Document Mode. Type 'tui' for visual interface, 'help' for commands.");
     },
-    commands: function() {
+    commands: function () {
         return buildCommands();
-    }
+    },
+    // If replMode is true (--repl flag passed), don't auto-launch TUI
+    // Otherwise, launch TUI immediately for visual interface
+    initialCommand: config.replMode ? undefined : "tui",
 });
 
-// Switch to document mode
 tui.switchMode(COMMAND_NAME);

@@ -62,7 +62,7 @@ func TestNewCompletionLogic_Unit(t *testing.T) {
 
 	// Create a mock TUI manager to test the new completion logic
 	tm := &TUIManager{
-		output: io.Discard,
+		writer: NewTUIWriterFromIO(io.Discard),
 		commands: map[string]Command{
 			"add": {
 				Name:          "add",
@@ -441,7 +441,7 @@ func TestCursorAwareCompletion(t *testing.T) {
 
 	// TUI manager with a file-arg command
 	tm := &TUIManager{
-		output: io.Discard,
+		writer: NewTUIWriterFromIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add files to context", ArgCompleters: []string{"file"}},
 		},
@@ -514,7 +514,7 @@ func TestCompletion_WithSpacesAndQuotes_Unit(t *testing.T) {
 
 	// TUI manager with a file-arg command
 	tm := &TUIManager{
-		output: io.Discard,
+		writer: NewTUIWriterFromIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add files to context", ArgCompleters: []string{"file"}},
 		},
@@ -554,7 +554,7 @@ func TestCompletion_WithSpacesAndQuotes_Unit(t *testing.T) {
 func TestCompletion_TildeInQuotes(t *testing.T) {
 	// Tilde-only case is special-cased to suggest "~/"
 	tm := &TUIManager{
-		output: io.Discard,
+		writer: NewTUIWriterFromIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add files to context", ArgCompleters: []string{"file"}},
 		},
@@ -605,7 +605,7 @@ func TestCompletion_EscapedQuoteInToken(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		output:       io.Discard,
+		writer:       NewTUIWriterFromIO(io.Discard),
 		commands:     map[string]Command{"add": {Name: "add", ArgCompleters: []string{"file"}}},
 		commandOrder: []string{"add"},
 		modes:        make(map[string]*ScriptMode),
@@ -652,7 +652,7 @@ func TestFallbackGuard_FirstSimpleArg_NoSpace_NoFallback(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		output: io.Discard,
+		writer: NewTUIWriterFromIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -689,7 +689,7 @@ func TestFallbackGuard_FirstSimpleArg_WithSpace_AllowsFallback(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		output: io.Discard,
+		writer: NewTUIWriterFromIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -716,7 +716,7 @@ func TestFallbackGuard_PathArg_WithoutSpace_AllowsFallback(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		output: io.Discard,
+		writer: NewTUIWriterFromIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -746,7 +746,7 @@ func TestFallbackGuard_QuotedFirstArg_NoSpace_NoFallback(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		output: io.Discard,
+		writer: NewTUIWriterFromIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -775,7 +775,7 @@ func TestFallbackGuard_SecondArg_NoSpace_AllowsFallback(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		output: io.Discard,
+		writer: NewTUIWriterFromIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -804,7 +804,7 @@ func TestNoFileSuggestions_WhileTypingCommand_NoSpace(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		output: io.Discard,
+		writer: NewTUIWriterFromIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -839,7 +839,7 @@ func TestNoFileSuggestions_WhileTypingCommandPrefix_NoSpace(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		output: io.Discard,
+		writer: NewTUIWriterFromIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -874,7 +874,7 @@ func TestCommand_TrailingSpace_ShowsFileSuggestions_FirstArg(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		output: io.Discard,
+		writer: NewTUIWriterFromIO(io.Discard),
 		commands: map[string]Command{
 			"add": {Name: "add", Description: "Add", ArgCompleters: []string{"file"}},
 		},
@@ -903,7 +903,7 @@ func TestNonFileCommand_TrailingSpace_NoFileSuggestions(t *testing.T) {
 	}
 
 	tm := &TUIManager{
-		output: io.Discard,
+		writer: NewTUIWriterFromIO(io.Discard),
 		commands: map[string]Command{
 			"noop": {Name: "noop", Description: "NoOp"}, // no ArgCompleters
 		},

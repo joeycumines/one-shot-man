@@ -138,6 +138,99 @@ public class ThreadPoolManager {
 	testCompletePromptFlowWorkflow(t, ctx, cp, testJavaFile)
 }
 
+// TestPromptFlow_Unix_ViewDisplaysTUI ensures the `view` command opens the tview UI
+// and that it can be exited with 'q'. This is a smoke/integration test that runs
+// the real binary in a pty.
+func TestPromptFlow_Unix_ViewDisplaysTUI(t *testing.T) {
+	if !isUnixPlatform() {
+		t.Skip("Unix-only integration test")
+	}
+
+	binaryPath := buildTestBinary(t)
+
+	workspace := createTestWorkspace(t)
+	defer os.RemoveAll(workspace)
+
+	editorScript := createFakeEditor(t, workspace)
+
+	env := newTestProcessEnv(t)
+	env = append(env, "EDITOR="+editorScript, "VISUAL=", "OSM_STORE=memory", "OSM_SESSION="+testutil.NewTestSessionID("", t.Name()), "OSM_TEST_TVIEW_READY=1")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cp, err := termtest.NewConsole(ctx,
+		termtest.WithCommand(binaryPath, "prompt-flow", "-i"),
+		termtest.WithDefaultTimeout(30*time.Second),
+		termtest.WithEnv(env),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create termtest: %v", err)
+	}
+	defer cp.Close()
+
+	expect := func(snap termtest.Snapshot, target string, timeout time.Duration) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		if err := cp.Expect(ctx, snap, termtest.Contains(target), fmt.Sprintf("wait for %q", target)); err != nil {
+			t.Fatalf("Expected %q: %v\nBuffer: %q", target, err, cp.String())
+		}
+	}
+
+	// Wait for startup — prompt-flow emits an initial mode switch on enter
+	snap := termtest.Snapshot{}
+	expect(snap, "(prompt-flow) > ", 20*time.Second)
+
+	// Add a note so that view has something to display
+	snap = cp.Snapshot()
+	if err := cp.SendLine("note Tview integration test note"); err != nil {
+		t.Fatalf("Failed to send note: %v\nBuffer: %q", err, cp.String())
+	}
+	expect(snap, "Added note [", 2*time.Second)
+
+	// Invoke view — should open the tview interactive table
+	snap = cp.Snapshot()
+	if err := cp.SendLine("view"); err != nil {
+		t.Fatalf("Failed to send view: %v\nBuffer: %q", err, cp.String())
+	}
+	// Wait for the TUI to be ready by detecting the sentinel at the start of the title
+	// The sentinel is embedded as "[OSM_TVIEW_READY] Context Items..."
+	expect(snap, "[OSM_TVIEW_READY]", 5*time.Second)
+
+	// Exit the UI
+	snap = cp.Snapshot()
+	if _, err := cp.WriteString("q"); err != nil {
+		t.Fatalf("Failed to send q: %v\nBuffer: %q", err, cp.String())
+	}
+	// Ensure prompt is present
+	expect(snap, "(prompt-flow) > ", 5*time.Second)
+
+	// CRITICAL: Verify go-prompt is functional after TUI exit.
+	// This catches the "zombie input loop" bug where tcell's background goroutine
+	// keeps running and races with go-prompt for stdin input.
+	snap = cp.Snapshot()
+	if err := cp.SendLine("note Post-TUI verification note"); err != nil {
+		t.Fatalf("Failed to send post-TUI command: %v\nBuffer: %q", err, cp.String())
+	}
+	expect(snap, "Added note [2]", 2*time.Second) // Second note added
+
+	// Verify the note was actually added by listing - should show 2 notes now
+	snap = cp.Snapshot()
+	if err := cp.SendLine("list"); err != nil {
+		t.Fatalf("Failed to send list command: %v\nBuffer: %q", err, cp.String())
+	}
+	expect(snap, "[2] [note]", 2*time.Second) // Second note visible in list
+
+	// Exit
+	if err := cp.SendLine("exit"); err != nil {
+		t.Fatalf("Failed to send exit: %v\nBuffer: %q", err, cp.String())
+	}
+	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
+		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
+	}
+}
+
 // TestPromptFlow_Unix_MetaPromptVariations tests different meta-prompt configurations
 // to verify template variable substitution and output format consistency.
 func TestPromptFlow_Unix_MetaPromptVariations(t *testing.T) {

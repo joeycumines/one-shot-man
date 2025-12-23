@@ -18,9 +18,6 @@ var superDocumentTemplate string
 //go:embed super_document_script.js
 var superDocumentScript string
 
-//go:embed super_document_tui_script.js
-var superDocumentTUIScript string
-
 // SuperDocumentCommand provides the super-document TUI for document merging.
 type SuperDocumentCommand struct {
 	*BaseCommand
@@ -69,48 +66,25 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 		engine.SetTestMode(true)
 	}
 
-	// Inject command name for state namespacing
+	// Inject command name and configuration for state namespacing
+	// The replMode flag controls whether to start in REPL or TUI mode
 	const commandName = "super-document"
 	engine.SetGlobal("config", map[string]interface{}{
-		"name": commandName,
+		"name":     commandName,
+		"replMode": c.replMode, // Wire --repl flag to JS state
 	})
 
 	// Set up global variables
 	engine.SetGlobal("args", args)
 	engine.SetGlobal("superDocumentTemplate", superDocumentTemplate)
 
-	// Determine which mode to run
-	if c.replMode || c.testMode {
-		// REPL mode: use the original script with terminal
-		return c.runREPLMode(ctx, engine)
-	}
-
-	// Visual TUI mode (default): use the bubbletea-based TUI script
-	if c.interactive {
-		return c.runVisualTUI(engine)
-	}
-
-	return nil
-}
-
-// runVisualTUI runs the bubbletea-based visual TUI via JavaScript.
-func (c *SuperDocumentCommand) runVisualTUI(engine *scripting.Engine) error {
-	script := engine.LoadScriptFromString("super-document-tui", superDocumentTUIScript)
-	if err := engine.ExecuteScript(script); err != nil {
-		return fmt.Errorf("failed to execute super-document TUI script: %w", err)
-	}
-	return nil
-}
-
-// runREPLMode runs the REPL-based mode.
-func (c *SuperDocumentCommand) runREPLMode(ctx context.Context, engine *scripting.Engine) error {
-	// Load the REPL script
+	// Load the embedded script
 	script := engine.LoadScriptFromString("super-document", superDocumentScript)
 	if err := engine.ExecuteScript(script); err != nil {
 		return fmt.Errorf("failed to execute super-document script: %w", err)
 	}
 
-	// Only run interactive terminal if requested and not in test mode
+	// Only run interactive mode if requested and not in test mode
 	if c.interactive && !c.testMode {
 		// Apply prompt color overrides from config if present
 		if c.config != nil {

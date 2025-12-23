@@ -23,7 +23,7 @@ func setupContextManager(t *testing.T) *goja.Runtime {
 			t.Logf("TUI: %s", s)
 		},
 		registry,
-		nil) // Pass nil for tviewProvider
+		nil, nil) // Pass nil for tviewProvider and terminalProvider
 
 	registry.Enable(runtime)
 

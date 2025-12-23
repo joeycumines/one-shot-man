@@ -17,7 +17,7 @@ All information or content that you DON'T manage to coalesce will be discarded, 
 ---
 
 {{range $idx, $doc := .documents}}
-Document {{add $idx 1}}:
+Document {{$doc.id}}:
 `````
 {{$doc.content}}
 `````

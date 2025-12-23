@@ -2,6 +2,8 @@ package scripting
 
 import (
 	"fmt"
+
+	"github.com/dop251/goja"
 	"github.com/joeycumines/one-shot-man/internal/argv"
 )
 
@@ -13,9 +15,24 @@ func currentWord(before string) string { _, cur := argv.BeforeCursor(before); re
 // produce a final token up to the end of input. Returned tokens do not include surrounding quotes.
 func tokenizeCommandLine(line string) []string { return argv.ParseSlice(line) }
 
+// isUndefined returns true if val is a goja.Value that is undefined or if the Go value is nil.
+// Some JS 'undefined' values may be mapped to Go nil; treat nil as absent as well.
+func isUndefined(val interface{}) bool {
+	if val == nil {
+		return true
+	}
+	if v, ok := val.(goja.Value); ok {
+		return goja.IsUndefined(v)
+	}
+	return false
+}
+
 // getInt extracts an integer value from a JavaScript object map.
 func getInt(m map[string]interface{}, key string, defaultValue int) (int, error) {
 	if val, exists := m[key]; exists {
+		if isUndefined(val) {
+			return defaultValue, nil
+		}
 		switch v := val.(type) {
 		case int:
 			return v, nil
@@ -38,6 +55,9 @@ func getInt(m map[string]interface{}, key string, defaultValue int) (int, error)
 
 func getString(m map[string]interface{}, key, defaultValue string) (string, error) {
 	if val, exists := m[key]; exists {
+		if isUndefined(val) {
+			return defaultValue, nil
+		}
 		if str, ok := val.(string); ok {
 			return str, nil
 		}
@@ -48,6 +68,9 @@ func getString(m map[string]interface{}, key, defaultValue string) (string, erro
 
 func getBool(m map[string]interface{}, key string, defaultValue bool) (bool, error) {
 	if val, exists := m[key]; exists {
+		if isUndefined(val) {
+			return defaultValue, nil
+		}
 		if b, ok := val.(bool); ok {
 			return b, nil
 		}
@@ -58,6 +81,9 @@ func getBool(m map[string]interface{}, key string, defaultValue bool) (bool, err
 
 func getStringSlice(m map[string]interface{}, key string) ([]string, error) {
 	if val, exists := m[key]; exists {
+		if isUndefined(val) {
+			return nil, nil
+		}
 		if arr, ok := val.([]interface{}); ok {
 			result := make([]string, 0, len(arr))
 			for i, item := range arr {

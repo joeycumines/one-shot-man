@@ -2,7 +2,6 @@ package scripting
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/dop251/goja"
@@ -14,6 +13,8 @@ import (
 // JavaScript bridge methods
 
 // jsRegisterMode allows JavaScript to register a new mode.
+// IMPORTANT: This is a JS mutator - it uses scheduleWriteAndWait to avoid deadlocks.
+// See TUIManager documentation for the locking strategy.
 func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 	// Convert the config object to a Go struct
 	if configMap, ok := modeConfig.(map[string]interface{}); ok {
@@ -47,6 +48,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 
 		// This allows modes to specify a command to run automatically after entering.
 		if cmdStr, err := getString(configMap, "initialCommand", ""); err != nil {
+			_, _ = fmt.Fprintf(tm.writer, "%#v\n", configMap)
 			return fmt.Errorf("initialCommand: %v", err)
 		} else {
 			mode.InitialCommand = cmdStr
@@ -107,15 +109,16 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 			}
 		}
 
-		// Register the mode
-		tm.mu.Lock()
-		if tm.modes == nil {
-			tm.modes = make(map[string]*ScriptMode)
-		}
-		tm.modes[name] = mode
-		tm.mu.Unlock()
-
-		return nil
+		// Register the mode via the writer queue to avoid deadlocks.
+		// JS callbacks run without holding locks, so we must not acquire
+		// tm.mu.Lock() directly here.
+		return tm.scheduleWriteAndWait(func() error {
+			if tm.modes == nil {
+				tm.modes = make(map[string]*ScriptMode)
+			}
+			tm.modes[name] = mode
+			return nil
+		})
 	}
 
 	return fmt.Errorf("registerMode: expected object, got %T", modeConfig)
@@ -135,6 +138,8 @@ func (tm *TUIManager) jsGetCurrentMode() string {
 }
 
 // jsRegisterCommand allows JavaScript to register global commands.
+// IMPORTANT: This is a JS mutator - it uses scheduleWriteAndWait to avoid deadlocks.
+// See TUIManager documentation for the locking strategy.
 func (tm *TUIManager) jsRegisterCommand(cmdConfig interface{}) error {
 	if configMap, ok := cmdConfig.(map[string]interface{}); ok {
 		name, err := getString(configMap, "name", "")
@@ -164,8 +169,17 @@ func (tm *TUIManager) jsRegisterCommand(cmdConfig interface{}) error {
 		if handler, exists := configMap["handler"]; exists {
 			// Store the handler as-is, and handle the conversion during execution
 			cmd.Handler = handler
-			tm.RegisterCommand(cmd)
-			return nil
+			// Register via the writer queue to avoid deadlocks.
+			// JS callbacks run without holding locks, so we must not acquire
+			// tm.mu.Lock() directly here.
+			return tm.scheduleWriteAndWait(func() error {
+				// If this is a new command, add it to the order slice
+				if _, exists := tm.commands[cmd.Name]; !exists {
+					tm.commandOrder = append(tm.commandOrder, cmd.Name)
+				}
+				tm.commands[cmd.Name] = cmd
+				return nil
+			})
 		}
 
 		return fmt.Errorf("command must have a handler function")
@@ -180,6 +194,8 @@ func (tm *TUIManager) jsListModes() []string {
 }
 
 // jsCreateAdvancedPrompt creates a new go-prompt instance with given configuration.
+// IMPORTANT: This is a JS mutator - it uses scheduleWriteAndWait to avoid deadlocks.
+// See TUIManager documentation for the locking strategy.
 func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error) {
 	configMap, ok := config.(map[string]interface{})
 	if !ok {
@@ -214,12 +230,21 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 		return "", err
 	}
 
-	// Create the executor function for this prompt
+	// Create the executor function for this prompt.
+	// The executor runs the command; if it returns false, we set exitRequested
+	// so the ExitChecker (below) will cause the prompt to exit cleanly.
+	// We do NOT call os.Exit here - exit happens at the shell loop level.
 	executor := func(line string) {
 		if !tm.executor(line) {
-			// If executor returns false, exit the prompt
-			os.Exit(0)
+			// Signal the prompt to exit via ExitChecker mechanism
+			tm.RequestExit()
 		}
+	}
+
+	// Create the exit checker that allows the prompt to exit when requested.
+	// This is called by go-prompt after each input to determine if Run() should return.
+	exitChecker := func(_ string, _ bool) bool {
+		return tm.IsExitRequested()
 	}
 
 	// Create the completer function as a dispatcher that can call a JS completer
@@ -240,7 +265,7 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 
 		if jsCompleter != nil && tm.engine != nil && tm.engine.vm != nil {
 			if sugg, err := tm.tryCallJSCompleter(jsCompleter, document); err != nil {
-				_, _ = fmt.Fprintf(tm.output, "Completer error: %v\n", err)
+				_, _ = fmt.Fprintf(tm.writer, "Completer error: %v\n", err)
 			} else if sugg != nil {
 				return sugg, istrings.RuneNumber(start), istrings.RuneNumber(end)
 			}
@@ -268,6 +293,7 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 		prompt.WithScrollbarThumbColor(colors.ScrollbarThumb),
 		prompt.WithScrollbarBGColor(colors.ScrollbarBG),
 		prompt.WithCompleter(completer),
+		prompt.WithExitChecker(exitChecker), // Allow graceful exit via RequestExit()
 	}
 
 	// this enables the sync protocol when built with the `integration` build tag
@@ -286,10 +312,16 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 	// Create the prompt instance
 	p := prompt.New(executor, options...)
 
-	// Store the prompt
-	tm.mu.Lock()
-	tm.prompts[name] = p
-	tm.mu.Unlock()
+	// Store the prompt via the writer queue to avoid deadlocks.
+	// JS callbacks run without holding locks, so we must not acquire
+	// tm.mu.Lock() directly here.
+	err = tm.scheduleWriteAndWait(func() error {
+		tm.prompts[name] = p
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
 
 	return name, nil
 }
@@ -319,47 +351,59 @@ func (tm *TUIManager) jsRunPrompt(name string) error {
 }
 
 // jsRegisterCompleter registers a JavaScript completion function.
+// IMPORTANT: This is a JS mutator - it uses scheduleWriteAndWait to avoid deadlocks.
+// See TUIManager documentation for the locking strategy.
 func (tm *TUIManager) jsRegisterCompleter(name string, completer goja.Callable) error {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-
-	tm.completers[name] = completer
-	return nil
+	// Register via the writer queue to avoid deadlocks.
+	// JS callbacks run without holding locks, so we must not acquire
+	// tm.mu.Lock() directly here.
+	return tm.scheduleWriteAndWait(func() error {
+		tm.completers[name] = completer
+		return nil
+	})
 }
 
 // jsSetCompleter sets the completer for a named prompt.
+// IMPORTANT: This is a JS mutator - it uses scheduleWriteAndWait to avoid deadlocks.
+// See TUIManager documentation for the locking strategy.
 func (tm *TUIManager) jsSetCompleter(promptName, completerName string) error {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
+	// Validate and set via the writer queue to avoid deadlocks.
+	// JS callbacks run without holding locks, so we must not acquire
+	// tm.mu.Lock() directly here.
+	return tm.scheduleWriteAndWait(func() error {
+		_, exists := tm.prompts[promptName]
+		if !exists {
+			return fmt.Errorf("prompt %s not found", promptName)
+		}
 
-	_, exists := tm.prompts[promptName]
-	if !exists {
-		return fmt.Errorf("prompt %s not found", promptName)
-	}
+		_, exists = tm.completers[completerName]
+		if !exists {
+			return fmt.Errorf("completer %s not found", completerName)
+		}
 
-	_, exists = tm.completers[completerName]
-	if !exists {
-		return fmt.Errorf("completer %s not found", completerName)
-	}
+		// Store the completer association for future use
+		// Since go-prompt doesn't allow changing completers after creation,
+		// we'll use this in the completer dispatcher pattern
+		if tm.promptCompleters == nil {
+			tm.promptCompleters = make(map[string]string)
+		}
+		tm.promptCompleters[promptName] = completerName
 
-	// Store the completer association for future use
-	// Since go-prompt doesn't allow changing completers after creation,
-	// we'll use this in the completer dispatcher pattern
-	if tm.promptCompleters == nil {
-		tm.promptCompleters = make(map[string]string)
-	}
-	tm.promptCompleters[promptName] = completerName
-
-	return nil
+		return nil
+	})
 }
 
 // jsRegisterKeyBinding registers a JavaScript key binding handler.
+// IMPORTANT: This is a JS mutator - it uses scheduleWriteAndWait to avoid deadlocks.
+// See TUIManager documentation for the locking strategy.
 func (tm *TUIManager) jsRegisterKeyBinding(key string, handler goja.Callable) error {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-
-	tm.keyBindings[key] = handler
-	return nil
+	// Register via the writer queue to avoid deadlocks.
+	// JS callbacks run without holding locks, so we must not acquire
+	// tm.mu.Lock() directly here.
+	return tm.scheduleWriteAndWait(func() error {
+		tm.keyBindings[key] = handler
+		return nil
+	})
 }
 
 // parseKeyString converts a key string to a prompt.Key constant.
@@ -485,7 +529,7 @@ func (tm *TUIManager) buildKeyBinds() []prompt.KeyBind {
 					// Call the JavaScript handler
 					result, err := jsHandler(goja.Undefined())
 					if err != nil {
-						_, _ = fmt.Fprintf(tm.output, "Key binding error: %v\n", err)
+						_, _ = fmt.Fprintf(tm.writer, "Key binding error: %v\n", err)
 						return false
 					}
 

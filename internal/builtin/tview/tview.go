@@ -3,22 +3,159 @@ package tview
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
 	"sync"
-	"syscall"
 
 	"github.com/dop251/goja"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
+	"golang.org/x/term"
 )
+
+// TerminalOps defines the interface for terminal operations.
+// This matches the interface in internal/scripting/tui_io.go.
+type TerminalOps interface {
+	io.Reader
+	io.Writer
+	io.Closer
+
+	// Fd returns the file descriptor of the underlying terminal.
+	Fd() uintptr
+
+	// MakeRaw puts the terminal into raw mode and returns the previous state.
+	MakeRaw() (*term.State, error)
+
+	// Restore restores the terminal to a previous state.
+	Restore(state *term.State) error
+
+	// GetSize returns the current terminal size (width, height).
+	GetSize() (width, height int, err error)
+
+	// IsTerminal returns true if the underlying resource is a terminal.
+	IsTerminal() bool
+}
+
+// TcellAdapter implements tcell.Tty by wrapping a TerminalOps.
+// This allows tcell/tview to use the shared terminal I/O from the engine.
+type TcellAdapter struct {
+	terminal   TerminalOps
+	savedState *term.State
+	resizeCb   func()
+	resizeMu   sync.Mutex
+	stopResize chan struct{}
+	closeOnce  sync.Once
+}
+
+// NewTcellAdapter creates a new tcell.Tty adapter wrapping the given terminal.
+func NewTcellAdapter(terminal TerminalOps) *TcellAdapter {
+	return &TcellAdapter{
+		terminal:   terminal,
+		stopResize: make(chan struct{}),
+	}
+}
+
+// Start puts the terminal into raw mode.
+func (a *TcellAdapter) Start() error {
+	if a.terminal == nil {
+		return fmt.Errorf("terminal not initialized")
+	}
+	// If we've already put the terminal into raw mode, do nothing.
+	// This prevents overwriting the original saved state on repeated Start() calls.
+	if a.savedState != nil {
+		return nil
+	}
+	state, err := a.terminal.MakeRaw()
+	if err != nil {
+		return fmt.Errorf("failed to set raw mode: %w", err)
+	}
+	a.savedState = state
+	return nil
+}
+
+// Stop restores the terminal to its previous state.
+func (a *TcellAdapter) Stop() error {
+	if a.savedState == nil {
+		return nil
+	}
+	err := a.terminal.Restore(a.savedState)
+	a.savedState = nil
+	return err
+}
+
+// Drain satisfies the tcell.Tty interface.
+// We implement it as a no-op because the adapter bypass mechanism
+// handles state transitions, and attempting to drain via FCNTL/IOCTL
+// manually here is dangerous and platform-dependent.
+func (a *TcellAdapter) Drain() error {
+	return nil
+}
+
+// NotifyResize registers a callback for terminal resize events.
+func (a *TcellAdapter) NotifyResize(cb func()) {
+	a.resizeMu.Lock()
+	defer a.resizeMu.Unlock()
+	a.resizeCb = cb
+}
+
+// WindowSize returns the current terminal size.
+func (a *TcellAdapter) WindowSize() (tcell.WindowSize, error) {
+	width, height, err := a.terminal.GetSize()
+	if err != nil {
+		return tcell.WindowSize{}, err
+	}
+	return tcell.WindowSize{
+		Width:  width,
+		Height: height,
+		// Pixel dimensions not available from term.GetSize
+		PixelWidth:  0,
+		PixelHeight: 0,
+	}, nil
+}
+
+// Read implements io.Reader.
+func (a *TcellAdapter) Read(p []byte) (n int, err error) {
+	return a.terminal.Read(p)
+}
+
+// Write implements io.Writer.
+func (a *TcellAdapter) Write(p []byte) (n int, err error) {
+	return a.terminal.Write(p)
+}
+
+// Close implements io.Closer.
+func (a *TcellAdapter) Close() error {
+	var err error
+	a.closeOnce.Do(func() {
+		// Stop resize handler
+		a.resizeMu.Lock()
+		a.resizeCb = nil
+		a.resizeMu.Unlock()
+		select {
+		case a.stopResize <- struct{}{}:
+		default:
+		}
+
+		// Restore terminal state if needed
+		if a.savedState != nil {
+			err = a.Stop()
+		}
+		// Don't close the underlying terminal - it's shared
+	})
+	return err
+}
+
+// Compile-time check that TcellAdapter implements tcell.Tty
+var _ tcell.Tty = (*TcellAdapter)(nil)
 
 // Manager holds the tview application and related state per engine instance.
 type Manager struct {
 	ctx          context.Context
 	mu           sync.Mutex
 	screen       tcell.Screen // optional
+	terminal     TerminalOps  // optional - for creating screen via adapter
 	signalNotify func(c chan<- os.Signal, sig ...os.Signal)
 	signalStop   func(c chan<- os.Signal)
 }
@@ -40,9 +177,25 @@ type TableConfig struct {
 // NewManager creates a new tview manager for an engine instance.
 // The provided screen is optional and mainly for testing purposes.
 // Similarly, custom signal handling functions can be provided for testing.
+// The terminal parameter is optional - if provided and screen is nil,
+// it will be used to create a screen via TcellAdapter.
 func NewManager(
 	ctx context.Context,
 	screen tcell.Screen,
+	terminal TerminalOps,
+	signalNotify func(c chan<- os.Signal, sig ...os.Signal),
+	signalStop func(c chan<- os.Signal),
+) *Manager {
+	return NewManagerWithTerminal(ctx, screen, terminal, signalNotify, signalStop)
+}
+
+// NewManagerWithTerminal creates a new tview manager with terminal ops support.
+// If screen is nil and terminal is provided, a screen will be created using
+// the TcellAdapter when needed.
+func NewManagerWithTerminal(
+	ctx context.Context,
+	screen tcell.Screen,
+	terminal TerminalOps,
 	signalNotify func(c chan<- os.Signal, sig ...os.Signal),
 	signalStop func(c chan<- os.Signal),
 ) *Manager {
@@ -55,9 +208,42 @@ func NewManager(
 	return &Manager{
 		ctx:          ctx,
 		screen:       screen,
+		terminal:     terminal,
 		signalNotify: signalNotify,
 		signalStop:   signalStop,
 	}
+}
+
+// getOrCreateScreen returns the configured screen or creates one using the terminal adapter.
+// If no screen or terminal is configured, returns (nil, nil) to let tview create its own
+// screen via tcell.NewScreen() internally. This is the correct production behavior.
+func (m *Manager) getOrCreateScreen() (tcell.Screen, error) {
+	if m.screen != nil {
+		return m.screen, nil
+	}
+	if m.terminal != nil {
+		adapter := NewTcellAdapter(m.terminal)
+		screen, err := tcell.NewTerminfoScreenFromTty(adapter)
+		if err != nil {
+			// Attempt to restore terminal state if screen creation fails
+			_ = adapter.Stop()
+			return nil, fmt.Errorf("failed to create screen from terminal: %w", err)
+		}
+		if err := screen.Init(); err != nil {
+			// Ensure we restore terminal state if initialization fails
+			_ = adapter.Stop()
+			return nil, fmt.Errorf("failed to initialize screen: %w", err)
+		}
+
+		return screen, nil
+	}
+
+	// No screen or terminal configured - return nil to let tview handle screen creation.
+	// tview.Application.Run() will call tcell.NewScreen() internally, which:
+	// - On Unix: Uses NewTerminfoScreen() -> opens /dev/tty internally
+	// - On Windows: Falls back to NewConsoleScreen()
+	// This is the behavior that works correctly with go-prompt.
+	return nil, nil
 }
 
 // Require returns a CommonJS native module under "osm:tview".
@@ -200,9 +386,13 @@ func (m *Manager) ShowInteractiveTable(config TableConfig) error {
 	var stopOnce sync.Once
 	defer stopOnce.Do(app.Stop)
 
-	// If a screen is provided (for testing), use it
-	if m.screen != nil {
-		app.SetScreen(m.screen)
+	// Get or create screen using terminal adapter if available
+	screen, err := m.getOrCreateScreen()
+	if err != nil {
+		return err
+	}
+	if screen != nil {
+		app.SetScreen(screen)
 	}
 
 	table := tview.NewTable().
@@ -227,11 +417,22 @@ func (m *Manager) ShowInteractiveTable(config TableConfig) error {
 		}
 	}
 
+	// Build title string - embed test sentinel if requested
+	titleText := config.Title
+	if v := os.Getenv("OSM_TEST_TVIEW_READY"); v != "" {
+		sentinel := v
+		if sentinel == "1" {
+			sentinel = "OSM_TVIEW_READY"
+		}
+		// Embed sentinel at the START of the title so it's visible even if title is truncated
+		titleText = "[" + sentinel + "] " + titleText
+	}
+
 	// Create flex layout with title and footer
 	flex := tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(tview.NewTextView().
-			SetText(config.Title).
+			SetText(titleText).
 			SetTextAlign(tview.AlignCenter).
 			SetTextColor(tcell.ColorGreen), 1, 0, false).
 		AddItem(table, 0, 1, true).
@@ -275,10 +476,7 @@ func (m *Manager) ShowInteractiveTable(config TableConfig) error {
 
 	// register signal handler to stop the app
 	sigCh := make(chan os.Signal, 1)
-	m.signalNotify(sigCh,
-		syscall.SIGINT,
-		syscall.SIGTERM,
-		syscall.SIGQUIT)
+	m.signalNotify(sigCh, defaultSignals...)
 	defer m.signalStop(sigCh)
 
 	// stop signals

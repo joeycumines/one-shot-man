@@ -39,11 +39,11 @@
 // | │  ( ... documents 3 & 4 off-screen, accessible via Scroll/PgUp/PgDn ... ) │ |
 // | └──────────────────────────────────────────────────────────────────────────┘ |
 // |                                                                              |
-// |  [A]dd  [L]oad  [E]dit  [V]iew  [D]elete  [C]opy  [S]hell                    |
+// |  [A]dd  [L]oad  [C]opy  [S]hell                                              |
 // |                                                                              |
 // | ✓ Status: Ready                                                              |
 // | ──────────────────────────────────────────────────────────────────────────── |
-// |  a: Add  l: Load  e: Edit  v: View  d: Delete  c: Copy  s: Shell  q: Quit    |
+// |  a: Add  l: Load  e: Edit  d: Delete  c: Copy  s: Shell  q: Quit             |
 // +==============================================================================+
 //
 // SCENARIO B: NARROW/VERTICAL TERMINAL (Responsive Stack)
@@ -58,14 +58,13 @@
 // | └──────────────────────────────────┘                                         |
 // |                                                                              |
 // |  ( [A]dd      ) ( [L]oad     )       <-- (Standard)                          |
-// |  ( [E]dit     ) ( [V]iew     )       <-- (Standard)                          |
-// |  ( [D]elete   ) ( [Q]uit     )       <-- (Standard)                          |
+// |  ( [Q]uit     )                      <-- (Standard, TODO REFLOW/REDESIGN)    |
 // |  ( [C]opy     ) ( [S]hell    )       <-- (C: Purple BG / S: Orange BG)       |
 // |                                                                              |
 // | ✓ Status: Ready                                                              |
 // | ──────────────────────────────────                                           |
 // |  a: Add  l: Load  e: Edit                                                    |
-// |  v: View d: Del   c: Copy                                                    |
+// |  d: Del   c: Copy                                                            |
 // |  s: Shell q: Quit                                                            |
 // +==============================================================================+
 //

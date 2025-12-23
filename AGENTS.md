@@ -6,27 +6,24 @@
 
 DO NOT MODIFY THIS FILE. This is MY file. You are ONLY allowed to READ this file.
 
+Current focus: `osm super-document` UI and command behavior fixes.
+
+**N.B. The designs are AUTHORITATIVE but this document takes precedence over them where conflicts exist.**
+
+- The `--repl` flag needs to be renamed to `--shell` to match the naming (repl was in use but shell was decided on as being less confusing)
+- The scrolling behavior of the document list page should _include_ the buttons - those buttons are ONLY USEFUL for mouse users, which have access to easy scrolling. The height of the button stack is problematic in small terminal windows.
+- The scrollbar in the textarea for document add/edit _should remain_ to support a CAPPED (large/long/tall) textedit, but the textedit MUST be allowed to grow up to that size - for which reason, the _entire_ edit document page (INCLUDING buttons, EXCEPT the hints down the bottom and title header) should _scroll_, with a scrollbar, much like the main document list page
+- The only page which correctly handles mouse input calculations when the viewport is smaller than the content is the main document list view - the edit document view etc still have BROKEN mouse input calculations
+    - **THIS NEEDS TO WORK WITH SCROLLING! Testing also obviously needs to support scrolling the viewport.**
+- There doesn't need to be a "title edit only" mode to the edit document view - just use the normal edit document view for both title and content editing, and auto-focus the appropriate input field based on what was clicked to open the view (title or content - note: there's only one hotkey to edit, and it should probably go to the content. **Also, the "edit document" button is redundant, the button should be removed (it can't even be used with keyboard lol)**)
+- The view document button / mode is also redundant - a "full screen" edit view would be much better, accessible from within the edit document view (e.g. a button to "expand" to full screen, or a hotkey). The view document mode should be removed, along with button and shortcuts.
 - nil pointer dereference on CLICKING the **submit** button without having first highlighted it with tab (CLICKING IT WORKS EVEN WITH MOUSE if and only if you first highlight it with tab - otherwise it crashes)
 - The cursor / line highlight is just a black void - idk if the text is black on black or what but it's impossible to see where the cursor is or what the content is
-- The fucking buttons STILL don't REMOTELY match the designs (the ascii art and description of behavior is authorative, NOT your code): There's a useless "Rename" button, the style and layout of the buttons don't align, nor do the text.
-- Fix the event API - implement proper encoding of ALL event types retaining the type of the event, then replace the dumbass switch cases that just forward the event (this is a follow on from the backtab one - backtab does now work, the implementation is just pathetic)
-- The idea of a Generate button is POINTLESS (IT DOES NOTHING) - DO NOT use / remove it, follow the designs in super_document_script.js
-- The `--repl` flag needs to be renamed to `--shell` to match the naming (repl was in use but shell was decided on as being less confusing)
+- Remove the dumbass Generate button as it is POINTLESS (IT DOES NOTHING) - DO NOT use / remove it, follow the designs in super_document_script.js
+- The buttons on the document list page STILL don't REMOTELY match the designs - the buttons which exist, how they are laid out, EVERYTHING NEEDS TO BE AS DESIGNED IN THE ASCII ART AT THE TOP OF super_document_script.js
+    - The designs are AUTHORITATIVE although this document takes precedence over them where conflicts exist
 - The `doc-list` command is silly - although the `osm:ctxutil` contextManager commands _are_ and MUST remain standard behavior wise, `list` is and SHOULD list any OTHER context, as well, alongside the core set of context i.e. diffs files etc that are supported by most commands in this project
-- You have failed to implement scrolling support of any kind - the designs for the main page / document list view EXPLICITLY indicate scrolling behavior - this is MANDATORY
-- If the window is smaller than the content, clicking location is miscalculated (e.g. clicking on the buttons result in clicking the documents - despite the fact that the top of the page is cut off, i.e. the clicks are registered higher visually than they actually are)
-    - An attempted fix was made, and it doesn't necessarily seem to have made things worse, but it is still an issue
-    - **THIS NEEDS TO WORK WITH SCROLLING! Testing obviously needs to support scrolling the viewport.**
-
-**Execution Order**:
-
-This ordering is strict. Deviating will cause merge conflicts or invalid tests.
-These plans are located within `.github/prompts/`. They are **STRICTLY** to be executed in the following order.
-
-8. **`plan-fixCursorHighlight.prompt.md`** (Visual Fix)
-10. **`plan-removeSuperDocumentGenerateUi.prompt.md`** (Cleanup)
-11. **`plan-renameReplToShell.prompt.md`** (Cleanup/Rename)
-15. **`plan-docListIncludeOtherContexts.prompt.md`** (Command Fix)
+- Fix the event API - implement an internal helper package (for now) to support proper encoding of ALL event types, retaining the type of the event, then replace various switch cases littered throughout the codebase (there are FAR too many pointless switch cases - not that they are bad in and of themselves, but there are many that are literally like "yes this looks like a key press" - bubbletea has metadata for them, but it might take a PR to expose a parser - GOOD HIGH QUALITY REDESIGNS ONLY)
 
 **ON TOOLS: Use `config.mk` to create custom targets, and the `make` tool to run targets. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of those CRITICAL rules. Abide. OBEY.**
 

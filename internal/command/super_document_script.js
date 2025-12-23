@@ -489,13 +489,19 @@ function runVisualTui() {
     const vp = viewportLib.new(80, 24);
     vp.mouseWheelEnabled(false); // We handle mouse wheel manually
 
+    // Create input viewport instance ONCE at init time (not on each render)
+    // This fixes the scroll reset bug where viewport was recreated in renderInput
+    const inputVp = viewportLib.new(80, 24);
+    inputVp.mouseWheelEnabled(false); // We handle mouse wheel manually
+
     const initialState = {
         // Core state linked to global state
         documents: getDocuments(),
         selectedIdx: state.get(stateKeys.selectedIndex),
 
-        // Viewport instance (created once, reused)
+        // Viewport instances (created once, reused)
         vp: vp,
+        inputVp: inputVp,  // Persistent input viewport for MODE_INPUT scrolling
         listScrollbar: scrollbarLib.new(),
         inputScrollbar: scrollbarLib.new(),
         vpContentWidth: 0,
@@ -719,6 +725,25 @@ function handleKeys(msg, s) {
         // 'p' preview removed - view mode is redundant per AGENTS.md
         if (k === '?') s.statusMsg = 'a:add l:load e:edit r:rename d:del c:copy s:shell q:quit';
     } else if (s.mode === MODE_INPUT) {
+        // Keyboard scroll for input viewport (pgup/pgdown/home/end)
+        if (k === 'pgdown' && s.inputVp) {
+            s.inputVp.scrollDown(s.inputVp.height());
+            return [s, null];
+        }
+        if (k === 'pgup' && s.inputVp) {
+            s.inputVp.scrollUp(s.inputVp.height());
+            return [s, null];
+        }
+        if (k === 'home' && s.inputVp) {
+            s.inputVp.setYOffset(0);
+            return [s, null];
+        }
+        if (k === 'end' && s.inputVp) {
+            // Scroll to bottom - set yOffset to max
+            const maxOffset = Math.max(0, s.inputVp.totalLineCount() - s.inputVp.height());
+            s.inputVp.setYOffset(maxOffset);
+            return [s, null];
+        }
         if (k === 'esc') {
             s.mode = MODE_LIST;
             s.statusMsg = 'Cancelled';
@@ -834,6 +859,16 @@ function handleMouse(msg, s) {
         return [s, null];
     }
 
+    // Handle wheel events for scrolling in input mode via inputVp
+    if (isWheelEvent && s.mode === MODE_INPUT && s.inputVp) {
+        if (msg.button === 'wheelUp') {
+            s.inputVp.scrollUp(3); // Scroll input viewport up by 3 lines
+        } else if (msg.button === 'wheelDown') {
+            s.inputVp.scrollDown(3); // Scroll input viewport down by 3 lines
+        }
+        return [s, null];
+    }
+
     // Only left-button presses trigger button/document activation
     if (!isLeftClick) {
         return [s, null];
@@ -907,7 +942,7 @@ function handleMouse(msg, s) {
     if (s.mode === MODE_LIST && s.documents.length > 0 && s.layoutMap && s.vp) {
         // Calculate document-relative Y coordinate
         // msg.y is terminal-relative, we need to adjust for:
-        // 1. Header height (title + blank + docs count + blank = 4 lines)
+        // 1. Header height (title + blank + docs count + blank before viewport = 4 lines)
         // 2. Viewport scroll offset
         const headerHeight = 4;
         const clickY = msg.y;
@@ -1250,18 +1285,18 @@ function renderInput(s) {
     const scrollableContentHeight = lipgloss.height(scrollableContent);
     
     // If content fits, render directly without viewport
-    // Otherwise use viewport for scrolling
+    // Otherwise use the persistent inputVp for scrolling (preserves scroll position)
     let visibleContent;
     if (scrollableContentHeight <= scrollableHeight) {
         // Content fits - no scrolling needed
         visibleContent = scrollableContent;
     } else {
-        // Content too tall - use viewport (but for now, just render with max height)
-        // The viewport is created per-render which is not ideal, but acceptable
-        // for the input form which is not performance-critical
-        const inputVp = viewportLib.new(termWidth - scrollbarWidth, scrollableHeight);
-        inputVp.setContent(scrollableContent);
-        visibleContent = inputVp.view();
+        // Content too tall - use persistent inputVp for scrolling
+        // NOTE: inputVp is stored in state to preserve scroll position across renders
+        s.inputVp.setWidth(termWidth - scrollbarWidth);
+        s.inputVp.setHeight(scrollableHeight);
+        s.inputVp.setContent(scrollableContent);
+        visibleContent = s.inputVp.view();
     }
 
     // Compose final view

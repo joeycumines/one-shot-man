@@ -90,7 +90,7 @@ func TestSuperDocument_TUIRendering(t *testing.T) {
 	expect(snap, "Documents: 0", 5*time.Second)
 	expect(snap, "[A]dd", 5*time.Second)
 	expect(snap, "[L]oad", 5*time.Second)
-	expect(snap, "[C]opy Prompt", 5*time.Second)
+	expect(snap, "[C]opy", 5*time.Second)
 
 	// Verify help text is displayed (check for common shortcuts visible in the 80-col terminal)
 	expect(snap, "a:add", 5*time.Second)
@@ -642,14 +642,14 @@ func TestSuperDocument_HelpCommand(t *testing.T) {
 	sendKey(t, cp, "?")
 
 	// Should show help in status message with all keybindings
+	// Note: v:view and g:gen were removed per AGENTS.md
 	expect(snap, "a:add", 5*time.Second)
 	expect(snap, "l:load", 5*time.Second)
 	expect(snap, "e:edit", 5*time.Second)
 	expect(snap, "r:rename", 5*time.Second)
 	expect(snap, "d:del", 5*time.Second)
-	expect(snap, "v:view", 5*time.Second)
 	expect(snap, "c:copy", 5*time.Second)
-	expect(snap, "g:gen", 5*time.Second)
+	expect(snap, "s:shell", 5*time.Second)
 	expect(snap, "q:quit", 5*time.Second)
 
 	// Quit
@@ -921,10 +921,10 @@ func TestSuperDocument_MouseClickCopyPrompt(t *testing.T) {
 		t.Logf("  Row %2d: %q", i, parsedScreen[i])
 	}
 
-	if loc := mouse.FindElement("[C]opy Prompt"); loc != nil {
-		t.Logf("Found [C]opy Prompt at row=%d, col=%d, width=%d", loc.Row, loc.Col, loc.Width)
+	if loc := mouse.FindElement("[C]opy"); loc != nil {
+		t.Logf("Found [C]opy at row=%d, col=%d, width=%d", loc.Row, loc.Col, loc.Width)
 	} else {
-		t.Log("Did not find [C]opy Prompt in buffer!")
+		t.Log("Did not find [C]opy in buffer!")
 	}
 
 	// Debug: Also check where [A]dd button is
@@ -932,10 +932,10 @@ func TestSuperDocument_MouseClickCopyPrompt(t *testing.T) {
 		t.Logf("Found [A]dd at row=%d, col=%d, width=%d", loc.Row, loc.Col, loc.Width)
 	}
 
-	// Now click on [C]opy Prompt button
+	// Now click on [C]opy button
 	snap = cp.Snapshot()
-	if err := mouse.ClickElement(ctx, "[C]opy Prompt", 5*time.Second); err != nil {
-		t.Fatalf("Failed to click [C]opy Prompt: %v", err)
+	if err := mouse.ClickElement(ctx, "[C]opy", 5*time.Second); err != nil {
+		t.Fatalf("Failed to click [C]opy: %v", err)
 	}
 
 	// Verify the status message
@@ -960,8 +960,8 @@ func TestSuperDocument_MouseClickCopyPrompt(t *testing.T) {
 	}
 }
 
-// TestSuperDocument_MouseClickEditButton tests clicking the [E]dit button
-// to edit an existing document.
+// TestSuperDocument_MouseClickEditButton tests using keyboard 'e' to edit
+// an existing document. The [E]dit button was removed per AGENTS.md.
 func TestSuperDocument_MouseClickEditButton(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
@@ -983,8 +983,6 @@ func TestSuperDocument_MouseClickEditButton(t *testing.T) {
 	}
 	defer cp.Close()
 
-	mouse := NewMouseTestAPI(t, cp)
-
 	expect := func(snap termtest.Snapshot, target string, timeout time.Duration) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -997,7 +995,6 @@ func TestSuperDocument_MouseClickEditButton(t *testing.T) {
 	// Wait for initial render
 	snap := cp.Snapshot()
 	expect(snap, "Super-Document Builder", 15*time.Second)
-	expect(snap, "[E]dit", 5*time.Second) // Verify edit button is visible
 
 	// Add a document first
 	snap = cp.Snapshot()
@@ -1010,11 +1007,9 @@ func TestSuperDocument_MouseClickEditButton(t *testing.T) {
 	snap = cp.Snapshot()
 	expect(snap, "Documents: 1", 5*time.Second)
 
-	// Now click on [E]dit button
+	// Press 'e' to edit the selected document (button was removed, use keyboard)
 	snap = cp.Snapshot()
-	if err := mouse.ClickElement(ctx, "[E]dit", 5*time.Second); err != nil {
-		t.Fatalf("Failed to click [E]dit: %v", err)
-	}
+	sendKey(t, cp, "e")
 
 	// Should be in edit mode with the original content visible
 	expect(snap, "Edit Document", 5*time.Second)
@@ -1033,159 +1028,16 @@ func TestSuperDocument_MouseClickEditButton(t *testing.T) {
 	}
 }
 
-// TestSuperDocument_MouseClickViewButton tests clicking the [V]iew button
-// to view document content.
+// TestSuperDocument_MouseClickViewButton is skipped because the [V]iew button
+// was removed per AGENTS.md (view mode is redundant).
 func TestSuperDocument_MouseClickViewButton(t *testing.T) {
-	if !isUnixPlatform() {
-		t.Skip("Unix-only integration test")
-	}
-
-	binaryPath := buildTestBinary(t)
-	env := newTestProcessEnv(t)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	cp, err := termtest.NewConsole(ctx,
-		termtest.WithCommand(binaryPath, "super-document", "--interactive"),
-		termtest.WithDefaultTimeout(30*time.Second),
-		termtest.WithEnv(env),
-	)
-	if err != nil {
-		t.Fatalf("Failed to create termtest: %v", err)
-	}
-	defer cp.Close()
-
-	mouse := NewMouseTestAPI(t, cp)
-
-	expect := func(snap termtest.Snapshot, target string, timeout time.Duration) {
-		t.Helper()
-		ctx, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-		if err := cp.Expect(ctx, snap, termtest.Contains(target), fmt.Sprintf("wait for %q", target)); err != nil {
-			t.Fatalf("Expected %q: %v\nBuffer: %q", target, err, cp.String())
-		}
-	}
-
-	// Wait for initial render
-	snap := cp.Snapshot()
-	expect(snap, "Super-Document Builder", 15*time.Second)
-	expect(snap, "[V]iew", 5*time.Second) // Verify view button is visible
-
-	// Add a document with multiline content
-	snap = cp.Snapshot()
-	sendKey(t, cp, "a")
-	expect(snap, "Content (multi-line):", 5*time.Second)
-
-	// Use helper to add document
-	addDocumentNewUI(t, cp, "ViewTestContent")
-
-	snap = cp.Snapshot()
-	expect(snap, "Documents: 1", 5*time.Second)
-
-	// Click on [V]iew button
-	snap = cp.Snapshot()
-	if err := mouse.ClickElement(ctx, "[V]iew", 5*time.Second); err != nil {
-		t.Fatalf("Failed to click [V]iew: %v", err)
-	}
-
-	// Should be in view mode showing the document content
-	expect(snap, "Document #1", 5*time.Second)
-	expect(snap, "ViewTestContent", 5*time.Second)
-	expect(snap, "Press Esc", 5*time.Second)
-
-	// Press Escape to return
-	snap = cp.Snapshot()
-	sendKey(t, cp, "\x1b")
-	expect(snap, "Documents: 1", 5*time.Second)
-
-	// Quit
-	sendKey(t, cp, "q")
-
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	t.Skip("View button was removed per AGENTS.md - view mode is redundant")
 }
 
-// TestSuperDocument_MouseClickGenerateButton tests clicking the [G]enerate button
-// to generate the prompt.
+// TestSuperDocument_MouseClickGenerateButton is skipped because the [G]enerate button
+// was removed per AGENTS.md (it does nothing).
 func TestSuperDocument_MouseClickGenerateButton(t *testing.T) {
-	if !isUnixPlatform() {
-		t.Skip("Unix-only integration test")
-	}
-
-	binaryPath := buildTestBinary(t)
-	env := newTestProcessEnv(t)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	cp, err := termtest.NewConsole(ctx,
-		termtest.WithCommand(binaryPath, "super-document", "--interactive"),
-		termtest.WithDefaultTimeout(30*time.Second),
-		termtest.WithEnv(env),
-	)
-	if err != nil {
-		t.Fatalf("Failed to create termtest: %v", err)
-	}
-	defer cp.Close()
-
-	mouse := NewMouseTestAPI(t, cp)
-
-	expect := func(snap termtest.Snapshot, target string, timeout time.Duration) {
-		t.Helper()
-		ctx, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-		if err := cp.Expect(ctx, snap, termtest.Contains(target), fmt.Sprintf("wait for %q", target)); err != nil {
-			t.Fatalf("Expected %q: %v\nBuffer: %q", target, err, cp.String())
-		}
-	}
-
-	// Wait for initial render
-	snap := cp.Snapshot()
-	expect(snap, "Super-Document Builder", 15*time.Second)
-	expect(snap, "[G]enerate", 5*time.Second) // Verify generate button is visible
-
-	// Add a document first
-	snap = cp.Snapshot()
-	sendKey(t, cp, "a")
-	expect(snap, "Content (multi-line):", 5*time.Second)
-
-	// Use helper to add document
-	addDocumentNewUI(t, cp, "GenerateTestContent")
-
-	snap = cp.Snapshot()
-	expect(snap, "Documents: 1", 5*time.Second)
-
-	// Click on [G]enerate button
-	snap = cp.Snapshot()
-	if err := mouse.ClickElement(ctx, "[G]enerate", 5*time.Second); err != nil {
-		t.Fatalf("Failed to click [G]enerate: %v", err)
-	}
-
-	// Should see status message about generated prompt
-	expect(snap, "Prompt generated", 5*time.Second)
-	expect(snap, "Press p to preview", 5*time.Second)
-
-	// Press 'p' to preview the generated prompt
-	snap = cp.Snapshot()
-	sendKey(t, cp, "p")
-
-	// Should be in view mode showing the generated prompt
-	expect(snap, "Generated Prompt Preview", 5*time.Second)
-	expect(snap, "DOCUMENTS", 5*time.Second)
-
-	// Press Escape to return and wait for list mode
-	snap = cp.Snapshot()
-	sendKey(t, cp, "\x1b")
-	expect(snap, "Documents: 1", 5*time.Second)
-
-	// Quit
-	sendKey(t, cp, "q")
-
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
-	}
+	t.Skip("Generate button was removed per AGENTS.md - it does nothing")
 }
 
 // TestSuperDocument_REPLTUIToggle tests the toggle between TUI and REPL modes
@@ -1348,13 +1200,11 @@ func TestSuperDocument_MultilineTextarea(t *testing.T) {
 	// Verify document was added
 	expect(snap, "Documents: 1", 5*time.Second)
 
-	// View the document to verify multi-line content
-	snap = cp.Snapshot()
-	sendKey(t, cp, "v")
+	// The document preview in the list should show "x" (multi-line content preview)
+	// View mode was removed per AGENTS.md - verify content is visible in preview
 	expect(snap, "x", 5*time.Second)
 
-	// Exit view and quit
-	sendKey(t, cp, "\x1b")
+	// Quit
 	time.Sleep(100 * time.Millisecond)
 	sendKey(t, cp, "q")
 
@@ -1425,10 +1275,10 @@ func TestSuperDocument_MouseWheelDoesNotTriggerButtonClick(t *testing.T) {
 	// Verify we're still in list mode (NOT in add mode)
 	notExpect("Content (multi-line):", 500*time.Millisecond)
 
-	// Send wheel down event over [C]opy Prompt button
+	// Send wheel down event over [C]opy button
 	// This should NOT trigger copy
-	if err := mouse.ScrollWheelOnElement(ctx, "[C]opy Prompt", "down", 5*time.Second); err != nil {
-		t.Fatalf("Failed to scroll on [C]opy Prompt: %v", err)
+	if err := mouse.ScrollWheelOnElement(ctx, "[C]opy", "down", 5*time.Second); err != nil {
+		t.Fatalf("Failed to scroll on [C]opy: %v", err)
 	}
 
 	// Verify no error message (copy with no documents would show error)

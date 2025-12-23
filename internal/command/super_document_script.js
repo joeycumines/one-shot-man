@@ -21,8 +21,7 @@
 //
 // SCENARIO A: WIDE TERMINAL (Standard Layout)
 // +==============================================================================+
-// |    📄 Super-Document Builder                                                 |
-// |                                                                              |
+// |    📄 Super-Document Builder                                 ✓ Status: Ready |
 // |   Documents: 4                                                               |
 // | ┌──────────────────────────────────────────────────────────────────────────┐ |
 // | │ ╔══════════════════════════════════════════════════════════════════════╗ │ |
@@ -41,13 +40,14 @@
 // |                                                                              |
 // |   (  [A]dd  ) ( [L]oad  ) ( [C]opy  ) ( [S]hell ) ( [R]eset ) ( [Q]uit  )    |
 // |                                                                              |
-// | ✓ Status: Ready                                                              |
 // | ──────────────────────────────────────────────────────────────────────────── |
 // |  a: Add  l: Load  e: Edit  d: Delete  c: Copy  s: Shell  r: Reset  q: Quit   |
 // +==============================================================================+
 //
 // SCENARIO B: NARROW/VERTICAL TERMINAL (Responsive Stack)
 // +==============================================================================+
+// | 📄 Super-Document Builder                                                    |
+// | ✓ Status: Ready                                                              |
 // | Docs: 4                                                                      |
 // | ┌──────────────────────────────────┐                                         |
 // | │ ╔══════════════════════════════╗ │                                         |
@@ -61,7 +61,6 @@
 // |  ( [C]opy  )  ( [S]hell )                                                    |
 // |  ( [R]eset )  ( [Q]uit  )                                                    |
 // |                                                                              |
-// | ✓ Status: Ready                                                              |
 // | ──────────────────────────────────                                           |
 // |  a: Add  l: Load  e: Edit                                                    |
 // |  d: Del   c: Copy                                                            |
@@ -377,9 +376,23 @@ function buildLayoutMap(docs, docContentWidth) {
     return layoutMap;
 }
 
-// Ensure the selected document is visible in the viewport
+// Ensure the selected document or focused buttons are visible in the viewport
+// This provides a holistic fix for "viewport must follow focus"
 function ensureSelectionVisible(s) {
-    if (!s.vp || !s.layoutMap || s.layoutMap.length === 0) return;
+    if (!s.vp) return;
+
+    // Case 1: Button Focus (Bottom of Viewport)
+    // If buttons are focused, we must ensure the bottom of the content is visible.
+    // We scroll to the totalLineCount to ensure the absolute bottom is reached,
+    // solving rounding errors where manual page scrolling might fall short.
+    if (s.focusedButtonIdx >= 0) {
+        const totalLines = s.vp.totalLineCount();
+        s.vp.setYOffset(totalLines); // Viewport clamps this to the maximum valid offset
+        return;
+    }
+
+    // Case 2: Document Selection (Standard LayoutMap Logic)
+    if (!s.layoutMap || s.layoutMap.length === 0) return;
     if (s.selectedIdx < 0 || s.selectedIdx >= s.layoutMap.length) return;
 
     const entry = s.layoutMap[s.selectedIdx];
@@ -633,6 +646,7 @@ function handleKeys(msg, s) {
             } else if (s.selectedIdx >= s.documents.length - 1) {
                 // At bottom of document list - move to first button
                 s.focusedButtonIdx = 0;
+                ensureSelectionVisible(s); // Holistic fix: ensure buttons are visible
             } else {
                 // In document list - move down normally
                 s.selectedIdx = Math.min(s.documents.length - 1, s.selectedIdx + 1);
@@ -655,6 +669,7 @@ function handleKeys(msg, s) {
             if (s.focusedButtonIdx < 0) {
                 // From docs, go to first button
                 s.focusedButtonIdx = 0;
+                ensureSelectionVisible(s); // Ensure buttons visible
             } else if (s.focusedButtonIdx < BUTTONS.length - 1) {
                 // Move to next button
                 s.focusedButtonIdx++;
@@ -675,11 +690,12 @@ function handleKeys(msg, s) {
                 s.focusedButtonIdx = -1;
                 if (s.documents.length > 0) {
                     s.selectedIdx = s.documents.length - 1;
-                    ensureSelectionVisible(s);
+                    ensureSelectionVisible(s); // Scroll back to doc
                 }
             } else {
                 // From docs, go to last button
                 s.focusedButtonIdx = BUTTONS.length - 1;
+                ensureSelectionVisible(s); // Ensure buttons visible
             }
         }
         // Enter on focused button activates it
@@ -769,11 +785,12 @@ function handleKeys(msg, s) {
                     s.focusedButtonIdx = 0;
                 } else {
                     s.selectedIdx = newIdx;
-                    ensureSelectionVisible(s);
                 }
+                ensureSelectionVisible(s);
             } else if (s.documents.length === 0) {
                 // No documents - jump to buttons
                 s.focusedButtonIdx = 0;
+                ensureSelectionVisible(s);
             }
         }
 
@@ -807,11 +824,7 @@ function handleKeys(msg, s) {
         // End: Go to last button (truly the end of the page)
         if (k === 'end') {
             s.focusedButtonIdx = BUTTONS.length - 1;
-            // Scroll viewport to bottom to ensure buttons are visible
-            if (s.vp) {
-                const maxOffset = Math.max(0, s.vp.totalLineCount() - s.vp.height());
-                s.vp.setYOffset(maxOffset);
-            }
+            ensureSelectionVisible(s); // Holistic fix ensures scroll to bottom
         }
 
         // Persist selection after any navigation
@@ -1240,12 +1253,41 @@ function renderList(s) {
     const titleStyle = lipgloss.newStyle().bold(true).foreground(COLORS.primary).padding(0, 1);
     const normalStyle = lipgloss.newStyle().foreground(COLORS.fg).padding(0, 1);
 
+    // Status Section (Created early for header placement)
+    // Removed from bottom of layout and integrated into Header per requirement.
+    let statusSection = '';
+    if (s.statusMsg) {
+        const statusStyle = s.hasError ? styles.error() : styles.status();
+        const statusIcon = s.hasError ? '✗ ' : '✓ ';
+        statusSection = statusStyle.render(statusIcon + s.statusMsg);
+    }
+
+    // Header Construction
     const titleLine = titleStyle.render('📄 Super-Document Builder');
     const docsLine = normalStyle.render(`Documents: ${s.documents.length}`);
 
+    // Calculate available width for header layout to decide between Wide (Side-by-Side) or Narrow (Stacked)
+    // Structure SCENARIO A: Title [Spacer] Status
+    // Structure SCENARIO B: Title \n Status
+    let topHeaderLine;
+    const titleWidth = lipgloss.width(titleLine);
+    const statusWidth = lipgloss.width(statusSection);
+    // Reserve at least 2 spaces gap
+    const gap = termWidth - titleWidth - statusWidth;
+
+    if (gap >= 2) {
+        // SCENARIO A: Wide Terminal
+        // Use a filler to push status to the right
+        const spacer = lipgloss.newStyle().width(gap).render('');
+        topHeaderLine = lipgloss.joinHorizontal(lipgloss.Top, titleLine, spacer, statusSection);
+    } else {
+        // SCENARIO B: Narrow Terminal
+        topHeaderLine = lipgloss.joinVertical(lipgloss.Left, titleLine, statusSection);
+    }
+
     const header = lipgloss.joinVertical(
         lipgloss.Left,
-        titleLine,
+        topHeaderLine,
         docsLine
     );
 
@@ -1343,14 +1385,6 @@ function renderList(s) {
     }
     const buttonSectionHeight = lipgloss.height(buttonSection);
 
-    // Status section
-    let statusSection = '';
-    if (s.statusMsg) {
-        const statusStyle = s.hasError ? styles.error() : styles.status();
-        const statusIcon = s.hasError ? '✗ ' : '✓ ';
-        statusSection = statusStyle.render(statusIcon + s.statusMsg);
-    }
-
     // Footer section
     const separatorWidth = Math.min(72, termWidth - 2);
     const separator = styles.separator().render('─'.repeat(separatorWidth));
@@ -1363,13 +1397,13 @@ function renderList(s) {
     // Per AGENTS.md: buttons should be INSIDE the scrollable area since they're
     // only useful for mouse users who have easy scrolling access.
     // Only the footer (hints) and header remain fixed.
+    // Status Widget is now part of the Header.
     const headerHeight = lipgloss.height(header);
     const footerHeight = lipgloss.height(footer);
-    const statusHeight = lipgloss.height(statusSection);
     const spacerHeight = 0; // No extra spacer lines - removed per AGENTS.md whitespace fix
 
     // Calculate viewport height - buttons are now INSIDE the viewport
-    const fixedHeight = headerHeight + footerHeight + statusHeight + spacerHeight;
+    const fixedHeight = headerHeight + footerHeight + spacerHeight;
     const vpHeight = Math.max(0, termHeight - fixedHeight);
 
     // Build scrollable content: documents + buttons
@@ -1419,11 +1453,11 @@ function renderList(s) {
 
     // Compose final view - buttons are now inside visibleSection (scrollable)
     // Per AGENTS.md: Fix excessive whitespace after header - removed empty line
+    // Status Widget removed from bottom (now in header).
     return lipgloss.joinVertical(
         lipgloss.Left,
         header,
         visibleSection,
-        statusSection,
         footer
     );
 }

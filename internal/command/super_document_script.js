@@ -726,22 +726,18 @@ function handleKeys(msg, s) {
         if (k === '?') s.statusMsg = 'a:add l:load e:edit r:rename d:del c:copy s:shell q:quit';
     } else if (s.mode === MODE_INPUT) {
         // Keyboard scroll for input viewport (pgup/pgdown/home/end)
-        if (k === 'pgdown' && s.inputVp) {
-            s.inputVp.scrollDown(s.inputVp.height());
-            return [s, null];
-        }
-        if (k === 'pgup' && s.inputVp) {
-            s.inputVp.scrollUp(s.inputVp.height());
-            return [s, null];
-        }
-        if (k === 'home' && s.inputVp) {
-            s.inputVp.setYOffset(0);
-            return [s, null];
-        }
-        if (k === 'end' && s.inputVp) {
-            // Scroll to bottom - set yOffset to max
-            const maxOffset = Math.max(0, s.inputVp.totalLineCount() - s.inputVp.height());
-            s.inputVp.setYOffset(maxOffset);
+        // Early return if inputVp is not available
+        if (s.inputVp && (k === 'pgdown' || k === 'pgup' || k === 'home' || k === 'end')) {
+            if (k === 'pgdown') {
+                s.inputVp.scrollDown(s.inputVp.height());
+            } else if (k === 'pgup') {
+                s.inputVp.scrollUp(s.inputVp.height());
+            } else if (k === 'home') {
+                s.inputVp.setYOffset(0);
+            } else if (k === 'end') {
+                const maxOffset = Math.max(0, s.inputVp.totalLineCount() - s.inputVp.height());
+                s.inputVp.setYOffset(maxOffset);
+            }
             return [s, null];
         }
         if (k === 'esc') {

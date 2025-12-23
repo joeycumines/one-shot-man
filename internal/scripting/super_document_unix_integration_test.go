@@ -960,9 +960,9 @@ func TestSuperDocument_MouseClickCopyPrompt(t *testing.T) {
 	}
 }
 
-// TestSuperDocument_MouseClickEditButton tests using keyboard 'e' to edit
+// TestSuperDocument_KeyboardEditDocument tests using keyboard 'e' to edit
 // an existing document. The [E]dit button was removed per AGENTS.md.
-func TestSuperDocument_MouseClickEditButton(t *testing.T) {
+func TestSuperDocument_KeyboardEditDocument(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}

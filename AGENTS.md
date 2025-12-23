@@ -12,6 +12,7 @@ Current focus: `osm super-document` UI and command behavior fixes.
 
 **ALL the below are MANDATORY changes that MUST be completed IMMEDIATELY.**
 
+- A review button is required
 - The `--repl` flag needs to be renamed to `--shell` to match the naming (repl was in use but shell was decided on as being less confusing)
 - The scrolling behavior of the document list page should _include_ the buttons - those buttons are ONLY USEFUL for mouse users, which have access to easy scrolling. The height of the button stack is problematic in small terminal windows.
 - The scrollbar in the textarea for document add/edit _should remain_ to support a CAPPED (large/long/tall) textedit, but the textedit MUST be allowed to grow up to that size - for which reason, the _entire_ edit document page (INCLUDING buttons, EXCEPT the hints down the bottom and title header) should _scroll_, with a scrollbar, much like the main document list page

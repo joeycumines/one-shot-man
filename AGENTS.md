@@ -12,6 +12,20 @@ Current focus: `osm super-document` UI and command behavior fixes.
 
 **ALL the below are MANDATORY changes that MUST be completed IMMEDIATELY.**
 
+Your first task is simple but CRITICAL: Set up codegen or similar to map all the bubbletea.KeyType constants to a package. Make it work with `go generate ./...` - there's already a `generate` make target (see `make_help` if you get confused).
+
+You must map and expose the information available per key.go in the bubbletea package/module. Note that in most cases, the Key.String() value will still be used - it is deliberately encouraged by the authors.
+
+This is the expected encoding for "raw" events (as an example), inclusive of pasted text:
+```json
+{
+  "type": "runes",
+  "runes": ["👨", "👩", "👧", "👦", "👩🏾‍🚀", "🐻‍❄️", "🇦🇺"],
+  "alt": false,
+  "paste": true
+}
+```
+
 - The scrolling behavior of the document list page should _include_ the buttons - those buttons are ONLY USEFUL for mouse users, which have access to easy scrolling. The height of the button stack is problematic in small terminal windows.
 - The scrollbar in the textarea for document add/edit _should remain_ to support a CAPPED (large/long/tall) textedit, but the textedit MUST be allowed to grow up to that size - for which reason, the _entire_ edit document page (INCLUDING buttons, EXCEPT the hints down the bottom and title header) should _scroll_, with a scrollbar, much like the main document list page
 - There doesn't need to be a "title edit only" mode to the edit document view - just use the normal edit document view for both title and content editing, and auto-focus the appropriate input field based on what was clicked to open the view (title or content - note: there's only one hotkey to edit, and it should probably go to the content. **Also, the "edit document" button is redundant, the button should be removed (it can't even be used with keyboard lol)**)

@@ -1,27 +1,41 @@
 # WIP: Super-Document TUI Fixes
 
-## Critical Bugs (from review.md)
+## Status: COMPLETE
 
-1. **Input Viewport State Reset** (lines 1255-1264 in super_document_script.js)
-   - BUG: `viewportLib.new()` is called inside `renderInput()` render loop
-   - RESULT: Viewport scroll position resets to 0 on every frame
-   - FIX: Move `inputVp` to `initialState` like `vp` for document list
+## Fixes Applied
 
-2. **Missing Input Event Routing**
-   - BUG: No scroll handling for MODE_INPUT in `handleMouse` or `handleKeys`
-   - FIX: Add pgup/pgdown/wheel handling for input mode viewport
+### Critical Bugs from review.md
 
-3. **Mouse Coordinate Alignment**
-   - Verified headerHeight = 4 is correct (title + blank + docsLine + blank before viewport = 4 lines)
+1. **Input Viewport State Reset** ✅
+   - BUG: `viewportLib.new()` was called inside `renderInput()` render loop
+   - FIX: Moved `inputVp` to `initialState` - scroll position now persists
 
-## Plan
+2. **Missing Input Event Routing** ✅
+   - BUG: No scroll handling for MODE_INPUT
+   - FIX: Added mouse wheel and keyboard (PgUp/PgDn/Home/End) scrolling for inputVp
 
-- [x] Task 1: Move `inputVp` to initialState (persist viewport state)
-- [x] Task 2: Wire up mouse wheel and keyboard navigation in MODE_INPUT
-- [x] Task 3: Verify headerHeight is correct (4 lines, not 3)
-- [x] Task 4: Update tests for removed buttons (Edit/View/Generate)
-- [x] Task 5: Run full test suite
+3. **Mouse Coordinate Alignment** ✅
+   - Verified headerHeight=4 is correct (title + blank + docsLine + blank = 4 lines before viewport)
+   - The review.md incorrectly suggested changing to 3, but 4 was correct
 
-## Deviations
+### Test Updates ✅
 
-- The review.md claimed headerHeight should be 3, but after analyzing renderList(), it's actually 4 (header=3 lines + 1 blank before viewport). Kept as 4.
+- Updated `TestSuperDocument_HelpCommand` - removed v:view and g:gen from expected output
+- Renamed `TestSuperDocument_MouseClickEditButton` to `TestSuperDocument_KeyboardEditDocument`
+- Skipped `TestSuperDocument_MouseClickViewButton` - [V]iew button removed per AGENTS.md
+- Skipped `TestSuperDocument_MouseClickGenerateButton` - [G]enerate button removed per AGENTS.md
+- Updated button text expectations from `[C]opy Prompt` to `[C]opy`
+- Removed view mode usage from multiline textarea test
+
+### Code Review Fixes ✅
+
+- Refactored keyboard scroll handlers to reduce duplication
+- Renamed test function to match its actual behavior
+
+## All Checks Pass
+
+- make all: ✅
+- staticcheck: ✅
+- CodeQL: 0 alerts
+- All tests: ✅
+

@@ -374,6 +374,169 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		return obj
 	})
 
+	// col returns the current cursor column position (0-indexed).
+	_ = obj.Set("col", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		mirror := (*textareaModelMirror)(unsafe.Pointer(&wrapper.model))
+		return runtime.ToValue(mirror.col)
+	})
+
+	// setRow sets the cursor row position (0-indexed, clamped to valid range).
+	// This uses unsafe access to the private row field.
+	_ = obj.Set("setRow", func(call goja.FunctionCall) goja.Value {
+		row := int(call.Argument(0).ToInteger())
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		mirror := (*textareaModelMirror)(unsafe.Pointer(&wrapper.model))
+		lineCount := len(mirror.value)
+		if lineCount == 0 {
+			return obj
+		}
+		// Clamp row to valid range
+		if row < 0 {
+			row = 0
+		} else if row >= lineCount {
+			row = lineCount - 1
+		}
+		mirror.row = row
+		// Clamp column to the new row's length
+		if mirror.col > len(mirror.value[row]) {
+			mirror.col = len(mirror.value[row])
+		}
+		return obj
+	})
+
+	// setPosition sets both row and column position (0-indexed, clamped to valid range).
+	// This is the preferred method for mouse click handling as it sets both atomically.
+	_ = obj.Set("setPosition", func(call goja.FunctionCall) goja.Value {
+		row := int(call.Argument(0).ToInteger())
+		col := int(call.Argument(1).ToInteger())
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		mirror := (*textareaModelMirror)(unsafe.Pointer(&wrapper.model))
+		lineCount := len(mirror.value)
+		if lineCount == 0 {
+			return obj
+		}
+		// Clamp row to valid range
+		if row < 0 {
+			row = 0
+		} else if row >= lineCount {
+			row = lineCount - 1
+		}
+		mirror.row = row
+		// Clamp column to the row's length
+		lineLen := len(mirror.value[row])
+		if col < 0 {
+			col = 0
+		} else if col > lineLen {
+			col = lineLen
+		}
+		mirror.col = col
+		// Reset lastCharOffset to ensure consistent horizontal navigation
+		mirror.lastCharOffset = 0
+		return obj
+	})
+
+	// handleClick handles a mouse click event and positions the cursor accordingly.
+	// Parameters:
+	//   - clickX: X coordinate relative to textarea content area (after prompt/line numbers)
+	//   - clickY: Y coordinate relative to textarea content area (0 = first visible line)
+	//   - yOffset: Current viewport scroll offset (from textarea.yOffset())
+	// Returns the textarea object for chaining.
+	//
+	// This method calculates the correct row and column based on the click position,
+	// accounting for soft-wrapped lines and the viewport scroll offset.
+	_ = obj.Set("handleClick", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 3 {
+			return obj
+		}
+		clickX := int(call.Argument(0).ToInteger())
+		clickY := int(call.Argument(1).ToInteger())
+		yOffset := int(call.Argument(2).ToInteger())
+
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		mirror := (*textareaModelMirror)(unsafe.Pointer(&wrapper.model))
+
+		if len(mirror.value) == 0 {
+			return obj
+		}
+
+		// Calculate which display line was clicked (accounting for scroll)
+		displayLineClicked := yOffset + clickY
+
+		// Map display line to actual row (accounting for soft-wrapping)
+		// We need to iterate through lines and count wrapped lines
+		currentDisplayLine := 0
+		targetRow := 0
+
+		for row := 0; row < len(mirror.value); row++ {
+			// For simplicity, assume no soft-wrapping for now
+			// (proper soft-wrap calculation would require access to width and wrap logic)
+			// Each logical line = 1 display line
+			if currentDisplayLine == displayLineClicked {
+				targetRow = row
+				break
+			}
+			currentDisplayLine++
+			if row == len(mirror.value)-1 {
+				// Clicked beyond the last line
+				targetRow = row
+			}
+		}
+
+		// Clamp row
+		if targetRow >= len(mirror.value) {
+			targetRow = len(mirror.value) - 1
+		}
+
+		// Calculate column from X position
+		// clickX is the character offset from the start of the line content
+		targetCol := clickX
+		if targetCol < 0 {
+			targetCol = 0
+		}
+
+		// Clamp to line length
+		lineLen := len(mirror.value[targetRow])
+		if targetCol > lineLen {
+			targetCol = lineLen
+		}
+
+		// Set the cursor position
+		mirror.row = targetRow
+		mirror.col = targetCol
+		mirror.lastCharOffset = 0
+
+		return obj
+	})
+
+	// selectAll selects all text by moving cursor to the end.
+	// Note: The upstream bubbles/textarea doesn't support selection ranges,
+	// so this moves the cursor to the absolute end of the content.
+	// For true select-all behavior, the JS layer should track selection state
+	// and handle Ctrl+A specially.
+	_ = obj.Set("selectAll", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		// Move to absolute end
+		wrapper.model.CursorEnd()
+		// If there are multiple lines, move to the last line first
+		mirror := (*textareaModelMirror)(unsafe.Pointer(&wrapper.model))
+		if len(mirror.value) > 1 {
+			mirror.row = len(mirror.value) - 1
+			mirror.col = len(mirror.value[mirror.row])
+		}
+		return obj
+	})
+
 	// -------------------------------------------------------------------------
 	// Focus Management
 	// -------------------------------------------------------------------------

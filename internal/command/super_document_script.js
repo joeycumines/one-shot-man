@@ -551,6 +551,16 @@ function runVisualTui() {
         // Button navigation: -1 = document list focused, 0+ = button index focused
         focusedButtonIdx: -1,
 
+        // Textarea content area bounds for mouse click positioning
+        // These are set in renderInput and used in handleMouse
+        textareaBounds: {
+            // Screen position of the textarea content area (inside border/padding)
+            contentTop: 0,       // Y offset from screen top to first content line
+            contentLeft: 0,      // X offset from screen left to first content column
+            lineNumberWidth: 0,  // Width of line numbers column
+            promptWidth: 0,      // Width of prompt column
+        },
+
         // Flag to force a full screen clear on first render
         // This ensures the title line is rendered correctly when re-entering TUI from shell
         needsInitClear: true
@@ -1091,6 +1101,47 @@ function handleKeys(msg, s) {
                 }
                 // Silently discard ALL invalid input (garbage escape sequences, etc.)
             } else if (s.inputFocus === FOCUS_CONTENT && s.contentTextarea) {
+                // INTERCEPT SPECIAL HOTKEYS before delegating to textarea
+                // The upstream bubbles/textarea has different keybindings than web forms:
+                //   - ctrl+a = line start (not select all)
+                //   - ctrl+e = line end
+                // We intercept some keys for browser-like behavior.
+
+                // Ctrl+A: Select All - copy all content to clipboard
+                // Since upstream textarea doesn't support selection ranges,
+                // we implement "select all" as "copy all to clipboard"
+                if (k === 'ctrl+a') {
+                    const allContent = s.contentTextarea.value();
+                    if (allContent) {
+                        try {
+                            osm.clipboardCopy(allContent);
+                            s.statusMsg = 'All content copied to clipboard (' + allContent.length + ' chars)';
+                            s.hasError = false;
+                        } catch (e) {
+                            s.statusMsg = 'Clipboard error: ' + e;
+                            s.hasError = true;
+                        }
+                    } else {
+                        s.statusMsg = 'No content to select';
+                        s.hasError = false;
+                    }
+                    return [s, null];
+                }
+
+                // Ctrl+Home: Go to beginning of document
+                if (k === 'ctrl+home') {
+                    s.contentTextarea.setPosition(0, 0);
+                    s.inputViewportUnlocked = false;
+                    return [s, null];
+                }
+
+                // Ctrl+End: Go to end of document
+                if (k === 'ctrl+end') {
+                    s.contentTextarea.selectAll(); // Moves to absolute end
+                    s.inputViewportUnlocked = false;
+                    return [s, null];
+                }
+
                 // Use Go-based validation for textarea input
                 // This prevents garbage (fragmented escape sequences from rapid scroll)
                 // from being inserted into the document content.
@@ -1269,19 +1320,47 @@ function handleMouse(msg, s) {
             return [s, null];
         }
         if (zone.inBounds('input-content', msg)) {
-            // Click on content textarea - focus it and forward mouse event
+            // Click on content textarea - focus it and position cursor
             if (s.inputFocus !== FOCUS_CONTENT) {
                 s.inputFocus = FOCUS_CONTENT;
                 if (s.contentTextarea) {
                     s.contentTextarea.focus();
                 }
             }
-            // Forward ONLY left-click mouse events to textarea for cursor positioning
-            // CRITICAL: Do NOT forward wheel events - they cause text insertion bugs
-            // (isLeftClick is guaranteed here since we guard above with `if (!isLeftClick) return`)
-            // FIX: Redundant check to ensure NO wheel events pass through
-            if (s.contentTextarea && isLeftClick && !isWheelEvent) {
-                s.contentTextarea.update(msg);
+
+            // CRITICAL FIX: Position cursor at click location
+            // The upstream bubbles/textarea does NOT handle mouse events for cursor positioning,
+            // so we must calculate the position ourselves using the bounds from renderInput.
+            if (s.contentTextarea && isLeftClick && !isWheelEvent && s.textareaBounds) {
+                // Calculate textarea-relative coordinates
+                // msg.x and msg.y are screen-relative coordinates
+                //
+                // The textarea is inside a scrollable viewport (inputVp).
+                // We need to account for:
+                // 1. Header height (titleHeight = 1)
+                // 2. Viewport scroll offset (inputVp.yOffset())
+                // 3. Content offset within the scrollable area (textareaBounds.contentTop)
+                // 4. Horizontal offset to text content (textareaBounds.contentLeft)
+
+                const titleHeight = 1;
+                const vpYOffset = s.inputVp ? s.inputVp.yOffset() : 0;
+
+                // Calculate clicked row (0-indexed relative to textarea content)
+                // Screen Y -> Viewport-relative Y -> Content-relative Y -> Textarea row
+                const viewportRelativeY = msg.y - titleHeight;
+                const contentRelativeY = viewportRelativeY + vpYOffset;
+                const textareaRow = contentRelativeY - s.textareaBounds.contentTop;
+
+                // Calculate clicked column (0-indexed relative to text content)
+                // Subtract the left offset (border + padding + prompt + line numbers)
+                const textareaCol = Math.max(0, msg.x - s.textareaBounds.contentLeft);
+
+                // Only reposition if the click is within the textarea area (positive row)
+                if (textareaRow >= 0) {
+                    s.contentTextarea.setPosition(textareaRow, textareaCol);
+                    // Reset viewport unlock so cursor stays visible after click
+                    s.inputViewportUnlocked = false;
+                }
             }
             return [s, null];
         }
@@ -1618,6 +1697,60 @@ function renderInput(s) {
 
         // Update pre-content height for cursor calculation
         preContentHeight += lipgloss.height(contentLabel) + 1; // border top
+
+        // CALCULATE TEXTAREA BOUNDS FOR MOUSE CLICK POSITIONING
+        // These bounds are used in handleMouse to translate click coordinates
+        // to textarea row/column positions.
+        //
+        // Screen layout (Y axis):
+        //   titleHeight (1 line for header row)
+        //   [scrollable content starts here - this is viewport content]
+        //     lblField (label field with border)
+        //     gap (1 empty line)
+        //     contentLabel ("Content (multi-line):" - 1 line)
+        //     border top (1 line from cntStyle border)
+        //     [TEXTAREA CONTENT STARTS HERE]
+        //
+        // X axis:
+        //   border left (1 char from cntStyle border)
+        //   padding left (1 char from cntStyle padding)
+        //   prompt (from textarea, e.g., "▌ ")
+        //   line numbers (if enabled, e.g., " 1 ")
+        //   [TEXTAREA TEXT CONTENT STARTS HERE]
+        //
+        // Line numbers: textarea uses ShowLineNumbers=true, which adds " N " format
+        // The line number width is dynamic based on total lines, but typically 4 chars
+
+        const titleHeight = 1; // Header row
+        const lblFieldHeight = lipgloss.height(lblFieldRendered);
+        const gapHeight = 1;
+        const contentLabelHeight = lipgloss.height(contentLabel);
+        const borderTop = 1;
+
+        // Calculate Y offset to first textarea content line (relative to viewport content)
+        const textareaContentStartY = lblFieldHeight + gapHeight + contentLabelHeight + borderTop;
+
+        // Calculate X offset to first textarea text character
+        // Border (1) + Padding (1) = 2 from the left edge of the field
+        const borderLeft = 1;
+        const paddingLeft = 1;
+        // Textarea prompt: default is thick border "▌ " which is ~2 chars
+        const promptWidth = 2;
+        // Line numbers: " N " format, typically 4 chars for up to 999 lines
+        const lineNumberWidth = 4;
+
+        // Store bounds in state for handleMouse to use
+        s.textareaBounds = {
+            // Offset from start of scrollable content to first content row
+            contentTop: textareaContentStartY,
+            // Offset from left edge of screen to first text character
+            contentLeft: borderLeft + paddingLeft + promptWidth + lineNumberWidth,
+            lineNumberWidth: lineNumberWidth,
+            promptWidth: promptWidth,
+            // Store additional info for precise calculations
+            fieldWidth: fieldWidth,
+            innerWidth: innerWidth,
+        };
     }
 
     // Buttons

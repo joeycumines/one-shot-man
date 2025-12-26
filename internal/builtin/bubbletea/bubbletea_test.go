@@ -487,7 +487,7 @@ func TestJsModel_Update_QuitCommand(t *testing.T) {
 		tea.newModel({
 			init: function() { return { count: 0 }; },
 			update: function(msg, model) {
-				if (msg.type === 'keyPress' && msg.key === 'q') {
+				if (msg.type === 'Key' && msg.key === 'q') {
 					return [model, tea.quit()];
 				}
 				return [model, null];

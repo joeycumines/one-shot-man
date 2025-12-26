@@ -66,16 +66,18 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 		engine.SetTestMode(true)
 	}
 
-	// Build theme colors from config, with sensible defaults
+	// Build theme colors from config, with sensible defaults.
+	// Optimized for light backgrounds with high-contrast.
+	// Accent colors are tuned to support black text overlays (badges/pills).
 	themeColors := map[string]interface{}{
-		"primary":   "#7C3AED", // Purple
-		"secondary": "#10B981", // Green
-		"danger":    "#EF4444", // Red
-		"warning":   "#F59E0B", // Orange
-		"muted":     "#6B7280", // Gray
-		"bg":        "#1F2937", // Dark gray
-		"fg":        "#F9FAFB", // Light
-		"focus":     "#3B82F6", // Blue
+		"primary":   "#818CF8", // Indigo: Soft but distinct
+		"secondary": "#34D399", // Emerald: Minty green, highly readable with black text
+		"danger":    "#F87171", // Soft Red: Urgent but not harsh
+		"warning":   "#FBBF24", // Amber: Standard warning yellow-orange
+		"muted":     "#64748B", // Slate: Dark enough to be read as text on white
+		"bg":        "#FFFFFF", // Pure White: Matches macOS default terminal background
+		"fg":        "#0F172A", // Slate 900: Soft black for main text to reduce eye strain
+		"focus":     "#60A5FA", // Blue: Clear active state
 	}
 	if c.config != nil {
 		for k, v := range c.config.Global {

@@ -22,8 +22,9 @@
 // SCENARIO A: WIDE TERMINAL (Standard Layout)
 // +==============================================================================+
 // |    📄 Super-Document Builder                                 ✓ Status: Ready |
-// |   Documents: 4                                                               |
 // | ┌──────────────────────────────────────────────────────────────────────────┐ |
+// | │                                                                          │ |
+// | │ Documents: 4                                                             │ |
 // | │ ╔══════════════════════════════════════════════════════════════════════╗ │ |
 // | │ ║ #1 [project-brief.md] (Optional Label)                    [X] Remove ║ │ |
 // | │ ║                                                                      ║ │ |
@@ -36,9 +37,10 @@
 // | │ └──────────────────────────────────────────────────────────────────────┘ │ |
 // | │                                                                          │ |
 // | │  ( ... documents 3 & 4 off-screen, accessible via Scroll/PgUp/PgDn ... ) │ |
+// | │                                                                          │ |
+// | │ (  [A]dd  ) ( [L]oad  ) ( [C]opy  ) ( [S]hell ) ( [R]eset ) ( [Q]uit  )  │ |
+// | │                                                                          │ |
 // | └──────────────────────────────────────────────────────────────────────────┘ |
-// |                                                                              |
-// |   (  [A]dd  ) ( [L]oad  ) ( [C]opy  ) ( [S]hell ) ( [R]eset ) ( [Q]uit  )    |
 // |                                                                              |
 // | ──────────────────────────────────────────────────────────────────────────── |
 // |  a: Add  l: Load  e: Edit  d: Delete  c: Copy  s: Shell  r: Reset  q: Quit   |
@@ -48,8 +50,9 @@
 // +==============================================================================+
 // | 📄 Super-Document Builder                                                    |
 // | ✓ Status: Ready                                                              |
-// | Docs: 4                                                                      |
 // | ┌──────────────────────────────────┐                                         |
+// | │                                  │                                         |
+// | │ Docs: 4                          │                                         |
 // | │ ╔══════════════════════════════╗ │                                         |
 // | │ ║ #1 [Label]        [X] Remove ║ │                                         |
 // | │ ║                              ║ │                                         |
@@ -69,7 +72,7 @@
 //
 // SCENARIO C: INPUT FORM (Textarea Mode)
 // +==============================================================================+
-// |    📝 Add / Edit Document                                                    |
+// |    📝 Add / Edit Document                                   [ ↑ ] [ ↓ ]      |
 // |                                                                              |
 // |  Label (Optional):                                                           |
 // |  ┌────────────────────────────────────────────────────────────────────────┐  |
@@ -200,36 +203,16 @@ const state = tui.createState(COMMAND_NAME, {
 // CORE LOGIC & HELPERS
 // ============================================================================
 
-function defaultTemplate() {
-    // Use the injected template or a fallback
-    return superDocumentTemplate || `Implement a super-document that is INTERNALLY CONSISTENT based on a quorum or carefully-weighed analysis of the attached documents.
-
-Your goal is to coalesce AS MUCH INFORMATION AS POSSIBLE, in as raw form as possible, while **preserving internal consistency**.
-
-{{if .contextTxtar}}
----
-## CONTEXT
----
-
-{{.contextTxtar}}
-{{end}}
-
----
-## DOCUMENTS
----
-
-{{range $idx, $doc := .documents}}
-Document {{$doc.id}}:
-\`\`\`\`\`
-{{$doc.content}}
-\`\`\`\`\`
-
-{{end}}`;
+// Strict validation of injected globals
+// The Go host must inject 'superDocumentTemplate' to prevent drift/errors.
+if (typeof superDocumentTemplate !== 'string' || superDocumentTemplate === '') {
+    throw new Error("Critical configuration error: global 'superDocumentTemplate' is missing or empty. The host application must inject this.");
 }
 
 function getTemplate() {
     const tmpl = state.get(stateKeys.template);
-    return (tmpl !== null && tmpl !== undefined && tmpl !== "") ? tmpl : defaultTemplate();
+    // Return persistent state override if set, otherwise the mandatory global default.
+    return (tmpl !== null && tmpl !== undefined && tmpl !== "") ? tmpl : superDocumentTemplate;
 }
 
 function getDocuments() {
@@ -253,9 +236,7 @@ function addDocument(label, content) {
     const id = getNextDocId();
     incrementNextDocId();
     const doc = {
-        id: id,
-        label: label || ('Document ' + (docs.length + 1)),
-        content: content || ''
+        id: id, label: label || ('Document ' + (docs.length + 1)), content: content || ''
     };
     docs.push(doc);
     setDocuments(docs);
@@ -306,8 +287,7 @@ function buildFinalPrompt() {
 
     // Execute template
     return template.execute(getTemplate(), {
-        documents: docs,
-        contextTxtar: contextTxtar
+        documents: docs, contextTxtar: contextTxtar
     });
 }
 
@@ -345,19 +325,14 @@ function buildLayoutMap(docs, docContentWidth) {
         // - Header line: #id [label] (1 line)
         // - Preview line (1 line)
         // - Remove button line (1 line)
-        // Borders add +2 height (top/bottom)
+        // - Borders add +2 height (top/bottom)
 
         let prev = previewOf(doc.content, DESIGN.previewMaxLen);
 
         const docHeader = `#${doc.id} [${doc.label}]`;
         const docPreview = styles.preview().render(prev);
         const removeBtn = '[X] Remove';
-        const docContent = lipgloss.joinVertical(
-            lipgloss.Left,
-            docHeader,
-            docPreview,
-            removeBtn
-        );
+        const docContent = lipgloss.joinVertical(lipgloss.Left, docHeader, docPreview, removeBtn);
 
         const style = styles.document(); // Use base style for height calculation
         // CRITICAL: Use consistent width passed from renderList
@@ -365,9 +340,7 @@ function buildLayoutMap(docs, docContentWidth) {
         const docHeight = lipgloss.height(renderedDoc);
 
         layoutMap.push({
-            top: currentTop,
-            height: docHeight,
-            docId: doc.id
+            top: currentTop, height: docHeight, docId: doc.id
         });
 
         currentTop += docHeight;
@@ -395,18 +368,23 @@ function ensureSelectionVisible(s) {
     if (!s.layoutMap || s.layoutMap.length === 0) return;
     if (s.selectedIdx < 0 || s.selectedIdx >= s.layoutMap.length) return;
 
+    // Adjust for the new top padding and count line in the scrollable area
+    // Padding (1) + Count Line (1) = 2 lines offset
+    const scrollableOffset = 2;
+
     const entry = s.layoutMap[s.selectedIdx];
+    const top = entry.top + scrollableOffset;
     const yOffset = s.vp.yOffset();
     const vpHeight = s.vp.height();
 
     // Check if selection is above the viewport
-    if (entry.top < yOffset) {
-        s.vp.setYOffset(entry.top);
+    if (top < yOffset) {
+        s.vp.setYOffset(top);
         return;
     }
 
     // Check if selection is below the viewport
-    const selectionBottom = entry.top + entry.height;
+    const selectionBottom = top + entry.height;
     if (selectionBottom > yOffset + vpHeight) {
         s.vp.setYOffset(selectionBottom - vpHeight);
     }
@@ -417,13 +395,20 @@ function ensureSelectionVisible(s) {
 function findClickedDocument(s, relativeY) {
     if (!s.layoutMap || s.layoutMap.length === 0) return null;
 
+    // Adjust for the new top padding and count line in the scrollable area
+    // relativeY is relative to viewport content.
+    // The documents start after: Padding (1) + Count Line (1) = 2 lines.
+    const scrollableOffset = 2;
+    const adjustedY = relativeY - scrollableOffset;
+
+    if (adjustedY < 0) return null; // Clicked on padding or count line
+
     // relativeY is already adjusted for viewport offset
     for (let i = 0; i < s.layoutMap.length; i++) {
         const entry = s.layoutMap[i];
-        if (relativeY >= entry.top && relativeY < entry.top + entry.height) {
+        if (adjustedY >= entry.top && adjustedY < entry.top + entry.height) {
             return {
-                index: i,
-                relativeLineInDoc: relativeY - entry.top
+                index: i, relativeLineInDoc: adjustedY - entry.top
             };
         }
     }
@@ -438,7 +423,6 @@ function findClickedDocument(s, relativeY) {
 // TUI Constants
 const MODE_LIST = 'list';
 const MODE_INPUT = 'input';
-const MODE_VIEW = 'view';
 const MODE_CONFIRM = 'confirm';
 
 const FOCUS_LABEL = 0;
@@ -454,38 +438,42 @@ const INPUT_RENAME = 'rename';
 
 // Button definitions for keyboard navigation
 // Order matches the ASCII design: [A]dd  [L]oad  [C]opy  [S]hell  [R]eset  [Q]uit
-const BUTTONS = [
-    {id: 'btn-add', key: 'a', label: '[A]dd'},
-    {id: 'btn-load', key: 'l', label: '[L]oad'},
-    {id: 'btn-copy', key: 'c', label: '[C]opy'},
-    {id: 'btn-shell', key: 's', label: '[S]hell'},
-    {id: 'btn-reset', key: 'r', label: '[R]eset'},
-    {id: 'btn-quit', key: 'q', label: '[Q]uit'},
-];
+const BUTTONS = [{id: 'btn-add', key: 'a', label: '[A]dd'}, {
+    id: 'btn-load',
+    key: 'l',
+    label: '[L]oad'
+}, {id: 'btn-copy', key: 'c', label: '[C]opy'}, {id: 'btn-shell', key: 's', label: '[S]hell'}, {
+    id: 'btn-reset',
+    key: 'r',
+    label: '[R]eset'
+}, {id: 'btn-quit', key: 'q', label: '[Q]uit'},];
 
 // TUI Design
 const DESIGN = {
-    buttonPaddingH: 2, buttonPaddingV: 0, buttonMarginR: 1,
-    docPaddingH: 1, docPaddingV: 0, docMarginB: 1,
-    previewMaxLen: 50, textareaMinHeight: 3, textareaMaxHeight: 20
+    buttonPaddingH: 2,
+    buttonPaddingV: 0,
+    buttonMarginR: 1,
+    docPaddingH: 1,
+    docPaddingV: 0,
+    docMarginB: 1,
+    previewMaxLen: 50,
+    // Removed fixed textarea constraints as requested
 };
 
-// TUI Styles - use config.theme if provided, else defaults
-const DEFAULT_COLORS = {
-    primary: '#7C3AED', secondary: '#10B981', danger: '#EF4444',
-    muted: '#6B7280', bg: '#1F2937', fg: '#F9FAFB',
-    warning: '#F59E0B', focus: '#3B82F6'
-};
-const COLORS = (typeof config !== 'undefined' && config.theme) ? {
-    primary: config.theme.primary || DEFAULT_COLORS.primary,
-    secondary: config.theme.secondary || DEFAULT_COLORS.secondary,
-    danger: config.theme.danger || DEFAULT_COLORS.danger,
-    muted: config.theme.muted || DEFAULT_COLORS.muted,
-    bg: config.theme.bg || DEFAULT_COLORS.bg,
-    fg: config.theme.fg || DEFAULT_COLORS.fg,
-    warning: config.theme.warning || DEFAULT_COLORS.warning,
-    focus: config.theme.focus || DEFAULT_COLORS.focus
-} : DEFAULT_COLORS;
+// TUI Styles - Strict configuration requirement
+if (typeof config !== 'object' || config === null || !config.theme) {
+    throw new Error("Critical configuration error: 'config.theme' is missing. The host application must inject the theme.");
+}
+
+{
+    const requiredThemeKeys = ['primary', 'secondary', 'danger', 'muted', 'bg', 'fg', 'warning', 'focus'];
+    const missingThemeKeys = requiredThemeKeys.filter(key => !config.theme[key]);
+    if (missingThemeKeys.length > 0) {
+        throw new Error("Critical configuration error: 'config.theme' is missing required keys: " + missingThemeKeys.join(', '));
+    }
+}
+
+const COLORS = config.theme;
 
 const styles = {
     title: () => lipgloss.newStyle().bold(true).foreground(COLORS.primary).padding(0, 1),
@@ -505,6 +493,7 @@ const styles = {
     documentSelected: () => lipgloss.newStyle().border(lipgloss.doubleBorder()).borderForeground(COLORS.primary).padding(DESIGN.docPaddingV, DESIGN.docPaddingH).marginBottom(DESIGN.docMarginB),
     preview: () => lipgloss.newStyle().foreground(COLORS.muted),
     label: () => lipgloss.newStyle().foreground(COLORS.fg).bold(true),
+    jumpIcon: () => lipgloss.newStyle().foreground(COLORS.primary).bold(true).padding(0, 1).height(1),
 };
 
 // TUI Logic
@@ -527,13 +516,19 @@ function runVisualTui() {
         vp: vp,
         inputVp: inputVp,  // Persistent input viewport for MODE_INPUT scrolling
         listScrollbar: scrollbarLib.new(),
-        inputScrollbar: scrollbarLib.new(),
+        inputScrollbar: scrollbarLib.new(), // Outer page scrollbar
+        // textareaScrollbar removed as textarea expands fully
         vpContentWidth: 0,
 
         // LayoutMap cache: maps document index -> {top: y, height: h}
         // Rebuilt only when documents array changes
         layoutMap: null,
         layoutMapDocsHash: '', // Hash to detect document changes
+
+        // Viewport unlock flag for input mode:
+        // When true, the viewport can scroll freely without snapping to cursor.
+        // Set true on scroll events, set false on typing (to snap back to cursor).
+        inputViewportUnlocked: false,
 
         // UI State
         mode: MODE_LIST,
@@ -549,7 +544,8 @@ function runVisualTui() {
         statusMsg: '',
         hasError: false,
         clipboard: '',
-        width: 80, height: 24,
+        width: 80,
+        height: 24,
         layout: {buttons: [], docBoxes: []},
 
         // Button navigation: -1 = document list focused, 0+ = button index focused
@@ -563,16 +559,15 @@ function runVisualTui() {
     const model = tea.newModel({
         init: function () {
             return initialState;
-        },
-        update: function (msg, tuiState) {
+        }, update: function (msg, tuiState) {
             // DEBUG: Log all messages to understand what's being received
-            if (typeof console !== 'undefined' && msg.type === 'mouse') {
+            if (typeof console !== 'undefined' && msg.type === 'Mouse') {
                 console.log('UPDATE DEBUG: msg.type=' + msg.type + ', msg.action=' + msg.action + ', msg.button=' + msg.button + ', msg.x=' + msg.x + ', msg.y=' + msg.y);
             }
             // Sync documents from global state on every update to ensure freshness
             tuiState.documents = getDocuments();
 
-            if (msg.type === 'windowSize') {
+            if (msg.type === 'WindowSize') {
                 tuiState.width = msg.width;
                 tuiState.height = msg.height;
                 // Update viewport dimensions (will clamp yOffset automatically in Go)
@@ -592,19 +587,67 @@ function runVisualTui() {
                     tuiState.needsInitClear = false;
                     return [tuiState, tea.clearScreen()];
                 }
-            } else if (msg.type === 'keyPress') {
+            } else if (msg.type === 'Key') {
                 return handleKeys(msg, tuiState);
-            } else if (msg.type === 'mouse' && msg.action === 'press') {
+            } else if (msg.type === 'Mouse' && msg.action === 'press') {
                 return handleMouse(msg, tuiState);
             }
             return [tuiState, null];
-        },
-        view: function (tuiState) {
+        }, view: function (tuiState) {
             return renderView(tuiState);
         }
     });
 
     return tea.run(model, {altScreen: true, mouse: true});
+}
+
+function configureTextarea(ta, width) {
+    ta.setPlaceholder("Enter document content...");
+    ta.setWidth(Math.max(40, width - 10));
+    // Initial height 1, will be expanded in renderInput
+    ta.setHeight(1);
+    ta.setShowLineNumbers(true);
+
+    // HIGH VISIBILITY STYLING & FIXES
+    // Ensure selected text is visible (fix black bar) by setting specific style.
+    // IMPORTANT: We set prompt to {} (no styling) to prevent double-rendering issues.
+    // When Prompt has styling (e.g., foreground), it renders with ANSI codes like \x1b[37m.
+    // Then CursorLine's Render() wraps that already-styled string, causing lipgloss to
+    // treat the escape sequences as literal characters and style each one individually.
+    // By clearing Prompt style, we let CursorLine handle ALL styling for the current line.
+    ta.setFocusedStyle({
+        prompt: {},  // Clear default prompt styling to prevent double-render corruption
+        cursorLine: {
+            // NOTE: Do NOT use underline here! When underline is true, lipgloss iterates
+            // character-by-character to handle underlineSpaces, which corrupts any
+            // ANSI escape codes in the input (from nested Cursor.View() styling).
+            // The bubbles textarea has a bug where it applies CursorLine styling twice:
+            // 1. m.Cursor.TextStyle = computedCursorLine()
+            // 2. style.Render(m.Cursor.View()) where style is also CursorLine
+            // Without underline, lipgloss uses a faster path that preserves ANSI codes.
+            //
+            // FIX: Use focus color as background highlight to make cursor line visible.
+            // Previously used COLORS.bg (white) which made text invisible on white terminals.
+            background: COLORS.focus, // Blue highlight for current line (visible on white)
+            foreground: COLORS.bg     // White text on blue background for contrast
+        },
+        cursorLineNumber: {
+            foreground: COLORS.warning,
+            bold: true
+        },
+        text: {
+            foreground: COLORS.fg
+        },
+        placeholder: {
+            foreground: COLORS.muted
+        }
+    });
+
+    // NOTE: Do NOT set cursor style via setCursorForeground when CursorLine styling is active!
+    // bubbles textarea.go line 1170 does: style.Render(m.Cursor.View())
+    // Cursor.View() already renders with TextStyle, then CursorLine wraps it AGAIN,
+    // causing ANSI escape codes to be treated as literal text (double-render corruption).
+    // The cursor will use the CursorLine styling instead.
 }
 
 function handleKeys(msg, s) {
@@ -634,10 +677,14 @@ function handleKeys(msg, s) {
                     s.selectedIdx = s.documents.length - 1;
                     ensureSelectionVisible(s);
                 }
-            } else {
+            } else if (s.selectedIdx > 0) {
                 // In document list - move up normally
-                s.selectedIdx = Math.max(0, s.selectedIdx - 1);
+                s.selectedIdx = s.selectedIdx - 1;
                 ensureSelectionVisible(s);
+            } else if (s.vp && s.vp.yOffset() > 0) {
+                // Already at first document - scroll viewport to absolute top
+                // This enables reaching the document count area at the top
+                s.vp.setYOffset(0);
             }
         }
         if (k === 'down' || k === 'j') {
@@ -724,22 +771,20 @@ function handleKeys(msg, s) {
                     s.inputOperation = INPUT_ADD;
                     s.inputFocus = FOCUS_LABEL;
                     s.labelBuffer = '';
+                    // Create native textarea for content
                     s.contentTextarea = textareaLib.new();
-                    s.contentTextarea.setPlaceholder("Enter document content...");
-                    s.contentTextarea.setWidth(Math.max(40, s.width - 10));
-                    s.contentTextarea.setHeight(DESIGN.textareaMinHeight);
-                    s.contentTextarea.setTextForeground(COLORS.fg);
-                    s.contentTextarea.setCursorLineForeground(COLORS.fg);
-                    s.contentTextarea.setPlaceholderForeground(COLORS.muted);
+                    configureTextarea(s.contentTextarea, s.width);
                     s.focusedButtonIdx = -1; // Clear button focus when entering input mode
+                    s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
                 }
                 if (btn.key === 'l') {
                     s.mode = MODE_INPUT;
                     s.inputOperation = INPUT_LOAD;
                     s.inputFocus = FOCUS_LABEL;
                     s.labelBuffer = '';
-                    s.contentTextarea = null;
-                    s.focusedButtonIdx = -1;
+                    s.contentTextarea = null; // No textarea for load mode
+                    s.focusedButtonIdx = -1; // Clear button focus
+                    s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
                 }
                 if (btn.key === 'c') {
                     // Copy all documents
@@ -807,8 +852,17 @@ function handleKeys(msg, s) {
             } else if (s.documents.length > 0 && s.vp) {
                 const vpHeight = s.vp.height();
                 const pageSize = Math.max(1, Math.floor(vpHeight / 5));
-                s.selectedIdx = Math.max(0, s.selectedIdx - pageSize);
-                ensureSelectionVisible(s);
+                const newIdx = Math.max(0, s.selectedIdx - pageSize);
+                if (newIdx === s.selectedIdx && s.selectedIdx === 0 && s.vp.yOffset() > 0) {
+                    // Already at first document but not at top of viewport - scroll to absolute top
+                    s.vp.setYOffset(0);
+                } else {
+                    s.selectedIdx = newIdx;
+                    ensureSelectionVisible(s);
+                }
+            } else if (s.documents.length === 0 && s.vp && s.vp.yOffset() > 0) {
+                // No documents but viewport scrolled - scroll to top
+                s.vp.setYOffset(0);
             }
         }
 
@@ -837,15 +891,9 @@ function handleKeys(msg, s) {
             s.labelBuffer = '';
             // Create native textarea for content
             s.contentTextarea = textareaLib.new();
-            s.contentTextarea.setPlaceholder("Enter document content...");
-            s.contentTextarea.setWidth(Math.max(40, s.width - 10));
-            // Start with minimum height, will grow dynamically in render
-            s.contentTextarea.setHeight(DESIGN.textareaMinHeight);
-            // Configure cursor visibility - use visible colors for cursor line
-            s.contentTextarea.setTextForeground(COLORS.fg);
-            s.contentTextarea.setCursorLineForeground(COLORS.fg);
-            s.contentTextarea.setPlaceholderForeground(COLORS.muted);
+            configureTextarea(s.contentTextarea, s.width);
             s.focusedButtonIdx = -1; // Clear button focus
+            s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
         }
         if (k === 'l') {
             s.mode = MODE_INPUT;
@@ -854,6 +902,7 @@ function handleKeys(msg, s) {
             s.labelBuffer = '';
             s.contentTextarea = null; // No textarea for load mode
             s.focusedButtonIdx = -1; // Clear button focus
+            s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
         }
         if (k === 'e' || (k === 'enter' && s.focusedButtonIdx < 0)) {
             // Edit document (only if no button is focused - 'enter' on button is handled above)
@@ -865,17 +914,13 @@ function handleKeys(msg, s) {
                 s.labelBuffer = doc.label;
                 // Create native textarea with existing content
                 s.contentTextarea = textareaLib.new();
-                s.contentTextarea.setWidth(Math.max(40, s.width - 10));
-                // Start with minimum height, will grow dynamically in render
-                s.contentTextarea.setHeight(DESIGN.textareaMinHeight);
-                // Configure cursor visibility - use visible colors for cursor line
-                s.contentTextarea.setTextForeground(COLORS.fg);
-                s.contentTextarea.setCursorLineForeground(COLORS.fg);
-                s.contentTextarea.setPlaceholderForeground(COLORS.muted);
+                configureTextarea(s.contentTextarea, s.width);
+
                 s.contentTextarea.setValue(doc.content);
                 s.contentTextarea.focus();
                 s.editingDocId = doc.id;
                 s.focusedButtonIdx = -1; // Clear button focus
+                s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
             }
         }
         // 'r' = Reset (clear all documents) per ASCII design
@@ -899,6 +944,7 @@ function handleKeys(msg, s) {
                 s.labelBuffer = doc.label;
                 s.contentTextarea = null; // No textarea for rename mode
                 s.editingDocId = doc.id;
+                s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
             }
             s.focusedButtonIdx = -1; // Clear button focus
         }
@@ -911,8 +957,6 @@ function handleKeys(msg, s) {
             }
             s.focusedButtonIdx = -1; // Clear button focus
         }
-        // 'v' key removed - view mode is redundant per AGENTS.md
-        // 'g' key removed - generate button does nothing per AGENTS.md
         if (k === 'c') {
             if (s.documents.length === 0) {
                 s.statusMsg = 'No documents!';
@@ -932,27 +976,27 @@ function handleKeys(msg, s) {
             }
             s.focusedButtonIdx = -1; // Clear button focus
         }
-        // 'p' preview removed - view mode is redundant per AGENTS.md
         if (k === '?') s.statusMsg = 'a:add l:load e:edit R:rename d:del c:copy s:shell r:reset q:quit';
     } else if (s.mode === MODE_INPUT) {
-        // Keyboard scroll for input viewport (pgup/pgdown/home/end)
-        // Early return if inputVp is not available
-        if (s.inputVp && (k === 'pgdown' || k === 'pgup' || k === 'home' || k === 'end')) {
-            if (k === 'pgdown') {
-                s.inputVp.scrollDown(s.inputVp.height());
-            } else if (k === 'pgup') {
-                s.inputVp.scrollUp(s.inputVp.height());
-            } else if (k === 'home') {
-                s.inputVp.setYOffset(0);
-            } else if (k === 'end') {
-                const maxOffset = Math.max(0, s.inputVp.totalLineCount() - s.inputVp.height());
-                s.inputVp.setYOffset(maxOffset);
+        // PRECISE SCROLL & EVENT PROPAGATION FOR INPUT MODE
+
+        // Explicitly handle PageUp/PageDown to scroll outer viewport effectively
+        if (s.inputVp && (k === 'pgdown' || k === 'pgup')) {
+            const pageSize = s.inputVp.height();
+            if (k === 'pgup') {
+                s.inputVp.scrollUp(pageSize);
+            } else {
+                s.inputVp.scrollDown(pageSize);
             }
+            // CRITICAL: Unlock viewport so it doesn't snap back to cursor
+            s.inputViewportUnlocked = true;
             return [s, null];
         }
+
         if (k === 'esc') {
             s.mode = MODE_LIST;
             s.statusMsg = 'Cancelled';
+            s.inputViewportUnlocked = false; // Reset on mode exit
         } else if (k === 'tab' || k === 'shift+tab') {
             // Handle focus transitions and blur/focus the textarea
             const oldFocus = s.inputFocus;
@@ -976,6 +1020,8 @@ function handleKeys(msg, s) {
             if (s.contentTextarea) {
                 if (s.inputFocus === FOCUS_CONTENT) {
                     s.contentTextarea.focus();
+                    // When focusing textarea, reset viewport unlock so cursor is visible
+                    s.inputViewportUnlocked = false;
                 } else if (oldFocus === FOCUS_CONTENT) {
                     s.contentTextarea.blur();
                 }
@@ -984,6 +1030,7 @@ function handleKeys(msg, s) {
             // Submit
             if (s.inputFocus === FOCUS_CANCEL) {
                 s.mode = MODE_LIST;
+                s.inputViewportUnlocked = false; // Reset on mode exit
                 // Force full screen repaint when exiting form mode
                 return [s, tea.clearScreen()];
             }
@@ -1015,14 +1062,46 @@ function handleKeys(msg, s) {
             s.documents = getDocuments();
             s.mode = MODE_LIST;
             s.hasError = false;
+            s.inputViewportUnlocked = false; // Reset on mode exit
         } else {
             // Field input handling
+            // Extract paste flag from message (bracketed paste mode)
+            const isPaste = msg.paste === true;
+
             if (s.inputFocus === FOCUS_LABEL) {
-                if (k === 'backspace') s.labelBuffer = s.labelBuffer.slice(0, -1);
-                else if (k.length === 1) s.labelBuffer += k;
+                // Use Go-based validation for label input
+                const validation = tea.isValidLabelInput(k, isPaste);
+                if (validation.valid) {
+                    if (k === 'backspace') {
+                        s.labelBuffer = s.labelBuffer.slice(0, -1);
+                    } else if (isPaste) {
+                        // Paste event - extract content from bracketed format [content]
+                        // and append to label (stripping brackets if present)
+                        let pasteContent = k;
+                        if (k.startsWith('[') && k.endsWith(']') && k.length > 2) {
+                            pasteContent = k.slice(1, -1);
+                        }
+                        // For labels, only take first line and strip newlines
+                        pasteContent = pasteContent.split('\n')[0].replace(/\r/g, '');
+                        s.labelBuffer += pasteContent;
+                    } else {
+                        // Single printable character - add to label
+                        s.labelBuffer += k;
+                    }
+                }
+                // Silently discard ALL invalid input (garbage escape sequences, etc.)
             } else if (s.inputFocus === FOCUS_CONTENT && s.contentTextarea) {
-                // Delegate to native textarea component
-                s.contentTextarea.update(msg);
+                // Use Go-based validation for textarea input
+                // This prevents garbage (fragmented escape sequences from rapid scroll)
+                // from being inserted into the document content.
+                const validation = tea.isValidTextareaInput(k, isPaste);
+                if (msg.type === 'Key' && validation.valid) {
+                    // Delegate to native textarea component
+                    s.contentTextarea.update(msg);
+                    // CRITICAL: Reset viewport unlock when user types, so view snaps to cursor
+                    s.inputViewportUnlocked = false;
+                }
+                // Silently discard ALL invalid input (garbage)
             }
         }
     } else if (s.mode === MODE_CONFIRM) {
@@ -1048,7 +1127,6 @@ function handleKeys(msg, s) {
             s.mode = MODE_LIST;
         }
     }
-    // MODE_VIEW removed - view mode is redundant per AGENTS.md
 
     // Force full screen repaint when transitioning FROM a modal mode TO MODE_LIST
     // This ensures BubbleTea re-renders the entire screen including the title
@@ -1062,14 +1140,16 @@ function handleMouse(msg, s) {
     // Guard: Only process left-button clicks for button/document activation
     // Wheel events should not trigger actions (they'll be handled as scroll if needed)
     const isLeftClick = msg.button === 'left';
-    const isWheelEvent = msg.button === 'wheelUp' || msg.button === 'wheelDown' ||
-        msg.button === 'wheelLeft' || msg.button === 'wheelRight';
+    // Use msg.isWheel property from MouseEventToJS for proper wheel detection
+    // This aligns with tea.MouseEvent.IsWheel() and handles all wheel button types
+    const isWheelEvent = msg.isWheel === true;
 
     // Handle wheel events for scrolling in list mode via viewport
     if (isWheelEvent && s.mode === MODE_LIST && s.documents.length > 0 && s.vp) {
-        if (msg.button === 'wheelUp') {
+        // Mouse button strings now match tea.MouseEvent.String(): "wheel up", "wheel down", etc.
+        if (msg.button === 'wheel up') {
             s.vp.scrollUp(3); // Scroll viewport up by 3 lines
-        } else if (msg.button === 'wheelDown') {
+        } else if (msg.button === 'wheel down') {
             s.vp.scrollDown(3); // Scroll viewport down by 3 lines
         }
         // Don't change selection on wheel - just scroll the viewport
@@ -1078,11 +1158,17 @@ function handleMouse(msg, s) {
 
     // Handle wheel events for scrolling in input mode via inputVp
     if (isWheelEvent && s.mode === MODE_INPUT && s.inputVp) {
-        if (msg.button === 'wheelUp') {
+        // PRECISE MOUSE SCROLL PROPAGATION
+        // CHANGE: Removed scroll capture in textarea. Events now always bubble to outer viewport.
+
+        // Standard outer scroll
+        if (msg.button === 'wheel up') {
             s.inputVp.scrollUp(3); // Scroll input viewport up by 3 lines
-        } else if (msg.button === 'wheelDown') {
+        } else if (msg.button === 'wheel down') {
             s.inputVp.scrollDown(3); // Scroll input viewport down by 3 lines
         }
+        // CRITICAL: Unlock viewport so it doesn't snap back to cursor on next render
+        s.inputViewportUnlocked = true;
         return [s, null];
     }
 
@@ -1093,18 +1179,18 @@ function handleMouse(msg, s) {
 
     // Use bubblezone for proper hit-testing - no hardcoded coordinates
     // Buttons are marked with zone IDs like "btn-add", "btn-load", etc.
-    // Note: btn-edit, btn-view, btn-delete, btn-generate removed per AGENTS.md
-    const buttonActions = [
-        {id: 'btn-add', action: 'a'},
-        {id: 'btn-load', action: 'l'},
-        {id: 'btn-copy', action: 'c'},
-        {id: 'btn-shell', action: 'shell'},
-        {id: 'btn-reset', action: 'reset'},
-        {id: 'btn-quit', action: 'quit'},
-        {id: 'btn-submit', action: 'submit'},
-        {id: 'btn-cancel', action: 'esc'},
-        {id: 'btn-yes', action: 'y'},
-        {id: 'btn-no', action: 'n'},
+    const buttonActions = [{id: 'btn-add', action: 'a'}, {id: 'btn-load', action: 'l'}, {
+        id: 'btn-copy',
+        action: 'c'
+    }, {id: 'btn-shell', action: 'shell'}, {id: 'btn-reset', action: 'reset'}, {
+        id: 'btn-quit',
+        action: 'quit'
+    }, {id: 'btn-submit', action: 'submit'}, {id: 'btn-cancel', action: 'esc'}, {
+        id: 'btn-yes',
+        action: 'y'
+    }, {id: 'btn-no', action: 'n'},
+        // Jump icons
+        {id: 'btn-top', action: 'jump-top'}, {id: 'btn-bottom', action: 'jump-bottom'}
     ];
 
     // Check button zones (debug removed)
@@ -1117,6 +1203,28 @@ function handleMouse(msg, s) {
             if (btn.action === 'quit') {
                 _userRequestedShell = false;
                 return [s, tea.quit()];
+            }
+            if (btn.action === 'jump-top') {
+                if (s.mode === MODE_INPUT && s.inputVp) {
+                    // De-focus textarea first (per requirement: defocus then scroll)
+                    if (s.inputFocus === FOCUS_CONTENT && s.contentTextarea) {
+                        s.contentTextarea.blur();
+                        s.inputFocus = FOCUS_LABEL; // Move focus to label field
+                    }
+                    s.inputVp.setYOffset(0);
+                    // CRITICAL: Unlock viewport so it stays at top
+                    s.inputViewportUnlocked = true;
+                }
+                return [s, null];
+            }
+            if (btn.action === 'jump-bottom') {
+                if (s.mode === MODE_INPUT && s.inputVp) {
+                    const maxOffset = Math.max(0, s.inputVp.totalLineCount() - s.inputVp.height());
+                    s.inputVp.setYOffset(maxOffset);
+                    // CRITICAL: Unlock viewport so it stays at bottom
+                    s.inputViewportUnlocked = true;
+                }
+                return [s, null];
             }
             if (btn.action === 'reset') {
                 // Reset clears all documents - show confirmation
@@ -1168,11 +1276,20 @@ function handleMouse(msg, s) {
                     s.contentTextarea.focus();
                 }
             }
-            // Forward mouse event to textarea for cursor positioning
-            if (s.contentTextarea) {
+            // Forward ONLY left-click mouse events to textarea for cursor positioning
+            // CRITICAL: Do NOT forward wheel events - they cause text insertion bugs
+            // (isLeftClick is guaranteed here since we guard above with `if (!isLeftClick) return`)
+            // FIX: Redundant check to ensure NO wheel events pass through
+            if (s.contentTextarea && isLeftClick && !isWheelEvent) {
                 s.contentTextarea.update(msg);
             }
             return [s, null];
+        }
+        // Fix issue #2: Clicking anywhere in input mode that doesn't trigger another action
+        // should de-focus the textarea (catch-all handler)
+        if (s.inputFocus === FOCUS_CONTENT && s.contentTextarea) {
+            s.contentTextarea.blur();
+            s.inputFocus = FOCUS_LABEL; // Move focus to label field
         }
     }
 
@@ -1181,12 +1298,15 @@ function handleMouse(msg, s) {
     if (s.mode === MODE_LIST && s.documents.length > 0 && s.layoutMap && s.vp) {
         // Calculate document-relative Y coordinate
         // msg.y is terminal-relative, we need to adjust for:
-        // 1. Header height (title + docs count = 2 lines, no extra blank lines per whitespace fix)
+        // 1. Header height (title + status = 2 lines typically, dependent on logic)
         // 2. Viewport scroll offset
-        const headerHeight = 2;
-        const clickY = msg.y;
+        // 3. Viewport internal padding (1 line) + Count line (1 line)
 
-        // Check if click is in the viewport area
+        // Re-calculate header height exactly as in renderList to get precise top
+        // FIX: Let's store headerHeight in state.
+        const headerHeight = s.headerHeight || 2; // Default to 2 if not set
+
+        const clickY = msg.y;
         const vpTop = headerHeight;
         const vpHeight = s.vp.height();
         const vpBottom = vpTop + vpHeight;
@@ -1197,28 +1317,38 @@ function handleMouse(msg, s) {
                 return [s, null];
             }
             // Convert to content-space coordinates
+            // Subtract Header Top
             const viewportRelativeY = clickY - vpTop;
             const contentY = viewportRelativeY + s.vp.yOffset();
 
             // Find which document was clicked and where within it
+            // findClickedDocument handles the internal padding/count offset logic
             const clickResult = findClickedDocument(s, contentY);
             if (clickResult !== null) {
+                // Compute structural lines for this document
+                const entry = s.layoutMap[clickResult.index];
+                const removeButtonLine = Math.max(0, entry.height - 3);
+                const bottomBorderLine = Math.max(0, entry.height - 2);
+
+                // If the click landed on the bottom border or the margin below the
+                // document, treat it as a no-op. Previously these clicks fell into
+                // the "other lines" case and opened edit mode for the previous
+                // document when the user clicked the gap between documents.
+                if (clickResult.relativeLineInDoc >= bottomBorderLine) {
+                    // Do not change selection or trigger actions for gap clicks
+                    return [s, null];
+                }
+
+                // Click is within the actual document content area; make it selected
                 s.selectedIdx = clickResult.index;
                 state.set(stateKeys.selectedIndex, clickResult.index);
-
-                // Document box structure relative to LayoutMap:
-                // Line 0: Top Border
-                // Line 1: Header (#id [label])
-                // Line 2: Preview
-                // Line 3: [X] Remove button
-                // Line 4: Bottom Border
 
                 // Mapped Action Targets:
                 if (clickResult.relativeLineInDoc === 1) {
                     // Line 1: Header -> Rename (use 'R' uppercase since 'r' is Reset)
                     return handleKeys({key: 'R'}, s);
-                } else if (clickResult.relativeLineInDoc === 3) {
-                    // Line 3: Remove -> Delete
+                } else if (clickResult.relativeLineInDoc === removeButtonLine) {
+                    // Dynamic line for Remove button -> Delete
                     return handleKeys({key: 'd'}, s);
                 } else {
                     // All other lines -> Edit Content
@@ -1232,12 +1362,10 @@ function handleMouse(msg, s) {
 }
 
 function renderView(s) {
-    s.layout = {buttons: [], docBoxes: []}; // Reset layout (kept for compatibility)
+    s.layout = {buttons: [], docBoxes: []}; // Reset layout
     let content;
     if (s.mode === MODE_INPUT) content = renderInput(s);
-    // MODE_VIEW removed - view mode is redundant per AGENTS.md
-    else if (s.mode === MODE_CONFIRM) content = renderConfirm(s);
-    else content = renderList(s);
+    else if (s.mode === MODE_CONFIRM) content = renderConfirm(s); else content = renderList(s);
 
     // Wrap with zone.scan() to register zones and strip markers
     return zone.scan(content);
@@ -1254,7 +1382,6 @@ function renderList(s) {
     const normalStyle = lipgloss.newStyle().foreground(COLORS.fg).padding(0, 1);
 
     // Status Section (Created early for header placement)
-    // Removed from bottom of layout and integrated into Header per requirement.
     let statusSection = '';
     if (s.statusMsg) {
         const statusStyle = s.hasError ? styles.error() : styles.status();
@@ -1264,7 +1391,6 @@ function renderList(s) {
 
     // Header Construction
     const titleLine = titleStyle.render('📄 Super-Document Builder');
-    const docsLine = normalStyle.render(`Documents: ${s.documents.length}`);
 
     // Calculate available width for header layout to decide between Wide (Side-by-Side) or Narrow (Stacked)
     // Structure SCENARIO A: Title [Spacer] Status
@@ -1285,11 +1411,9 @@ function renderList(s) {
         topHeaderLine = lipgloss.joinVertical(lipgloss.Left, titleLine, statusSection);
     }
 
-    const header = lipgloss.joinVertical(
-        lipgloss.Left,
-        topHeaderLine,
-        docsLine
-    );
+    // Header contains Title + Status only now.
+    // Document count moved to viewport per requirement.
+    const header = topHeaderLine;
 
     // FIX: Explicitly calculate widths to avoid clipping.
     // 1. Viewport width: Available width aligned to right edge (termWidth - scrollbar)
@@ -1322,12 +1446,7 @@ function renderList(s) {
             // Build document content line by line
             const docHeader = `#${doc.id} [${doc.label}]`;
             const docPreview = styles.preview().render(prev);
-            const docContent = lipgloss.joinVertical(
-                lipgloss.Left,
-                docHeader,
-                docPreview,
-                removeBtn
-            );
+            const docContent = lipgloss.joinVertical(lipgloss.Left, docHeader, docPreview, removeBtn);
 
             // Apply selection style (double border for selected)
             // Only show as selected if button focus is not active
@@ -1343,22 +1462,16 @@ function renderList(s) {
 
     // Button bar section with responsive layout
     // Per ASCII design: [A]dd  [L]oad  [C]opy  [S]hell  [R]eset  [Q]uit
-    // Delete (d) is keyboard-only, Edit/View/Generate buttons removed
-    // Use BUTTONS constant for consistency and apply focus styles
     const buttonList = BUTTONS.map((btn, idx) => {
         let style;
         const isFocused = s.focusedButtonIdx === idx;
         if (isFocused) {
-            // Focused button gets primary highlight
             style = styles.buttonFocused();
         } else if (btn.key === 'r') {
-            // Reset is always danger style
             style = styles.buttonDanger();
         } else if (btn.key === 's') {
-            // Shell is always warning style
             style = styles.buttonShell();
         } else if (btn.key === 'c') {
-            // Copy gets focused style (secondary highlight) when not keyboard-focused
             style = styles.buttonFocused();
         } else {
             style = styles.button();
@@ -1366,24 +1479,29 @@ function renderList(s) {
         return {id: btn.id, text: btn.label, style: style};
     });
 
-    // Render buttons with zone markers
     const renderedButtons = buttonList.map(b => zone.mark(b.id, b.style.render(b.text)));
-
-    // Calculate total button width
     const totalButtonWidth = renderedButtons.reduce((sum, btn) => sum + lipgloss.width(btn), 0);
 
-    // Responsive layout: stack vertically if buttons exceed terminal width
     let buttonSection;
     const availWidth = termWidth - 4; // Leave some margin
 
     if (totalButtonWidth > availWidth) {
-        // Narrow: stack ALL buttons vertically
-        buttonSection = lipgloss.joinVertical(lipgloss.Left, ...renderedButtons);
+        // SCENARIO B: Narrow terminal - use 2-column grid layout per ASCII design:
+        // |  (  [A]dd  )  ( [L]oad  )  |
+        // |  ( [C]opy  )  ( [S]hell )  |
+        // |  ( [R]eset )  ( [Q]uit  )  |
+        const rows = [];
+        for (let i = 0; i < renderedButtons.length; i += 2) {
+            const btn1 = renderedButtons[i];
+            const btn2 = renderedButtons[i + 1] || ''; // Handle odd number of buttons
+            const row = lipgloss.joinHorizontal(lipgloss.Top, btn1, btn2);
+            rows.push(row);
+        }
+        buttonSection = lipgloss.joinVertical(lipgloss.Left, ...rows);
     } else {
-        // Wide: horizontal layout
+        // SCENARIO A: Wide terminal - horizontal layout
         buttonSection = lipgloss.joinHorizontal(lipgloss.Top, ...renderedButtons);
     }
-    const buttonSectionHeight = lipgloss.height(buttonSection);
 
     // Footer section
     const separatorWidth = Math.min(72, termWidth - 2);
@@ -1394,38 +1512,33 @@ function renderList(s) {
     // ------------------------------------------------------------------------
     // DYNAMIC VIEWPORT HEIGHT CALCULATION
     // ------------------------------------------------------------------------
-    // Per AGENTS.md: buttons should be INSIDE the scrollable area since they're
-    // only useful for mouse users who have easy scrolling access.
-    // Only the footer (hints) and header remain fixed.
-    // Status Widget is now part of the Header.
     const headerHeight = lipgloss.height(header);
+    s.headerHeight = headerHeight; // Store for mouse hit testing
     const footerHeight = lipgloss.height(footer);
-    const spacerHeight = 0; // No extra spacer lines - removed per AGENTS.md whitespace fix
+    const spacerHeight = 0;
 
-    // Calculate viewport height - buttons are now INSIDE the viewport
     const fixedHeight = headerHeight + footerHeight + spacerHeight;
     const vpHeight = Math.max(0, termHeight - fixedHeight);
 
-    // Build scrollable content: documents + buttons
-    // This allows buttons to scroll with the document list on small terminals
-    let scrollableContent;
-    if (s.documents.length === 0) {
-        // No documents: show help message + buttons
-        scrollableContent = lipgloss.joinVertical(
-            lipgloss.Left,
-            docSection,
-            '',
-            buttonSection
-        );
-    } else {
-        // Has documents: documents + gap + buttons
-        scrollableContent = lipgloss.joinVertical(
-            lipgloss.Left,
-            docSection,
-            '',
-            buttonSection
-        );
-    }
+    // Build scrollable content:
+    // 1. Top Padding (1 line)
+    // 2. Count Line
+    // 3. Documents
+    // 4. Buttons
+    // 5. Bottom Padding (1 line)
+    const docsLine = normalStyle.render(`Documents: ${s.documents.length}`);
+    const paddingLine = " "; // Blank line
+
+    // Join elements into the scrollable content
+    const scrollableContent = lipgloss.joinVertical(
+        lipgloss.Left,
+        paddingLine,
+        docsLine,
+        docSection,
+        "", // Gap
+        buttonSection,
+        paddingLine
+    );
 
     // Integrate viewport + thin vertical scrollbar
     let visibleSection = scrollableContent;
@@ -1442,7 +1555,6 @@ function renderList(s) {
             s.listScrollbar.setContentHeight(s.vp.totalLineCount());
             s.listScrollbar.setYOffset(s.vp.yOffset());
             s.listScrollbar.setChars("█", "░");
-            // Use setThumbForeground for opaque █ character (full block draws foreground, not background)
             s.listScrollbar.setThumbForeground(COLORS.primary);
             s.listScrollbar.setTrackForeground(COLORS.muted);
         }
@@ -1451,15 +1563,8 @@ function renderList(s) {
         visibleSection = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
     }
 
-    // Compose final view - buttons are now inside visibleSection (scrollable)
-    // Per AGENTS.md: Fix excessive whitespace after header - removed empty line
-    // Status Widget removed from bottom (now in header).
-    return lipgloss.joinVertical(
-        lipgloss.Left,
-        header,
-        visibleSection,
-        footer
-    );
+    // Compose final view
+    return lipgloss.joinVertical(lipgloss.Left, header, visibleSection, footer);
 }
 
 function renderInput(s) {
@@ -1469,88 +1574,69 @@ function renderInput(s) {
 
     // Title based on operation
     let titleText;
-    if (s.inputOperation === INPUT_ADD) titleText = '📝 Add Document';
-    else if (s.inputOperation === INPUT_EDIT) titleText = '📝 Edit Document';
-    else if (s.inputOperation === INPUT_RENAME) titleText = '📝 Rename Document';
-    else titleText = '📂 Load File';
+    if (s.inputOperation === INPUT_ADD) titleText = '📝 Add Document'; else if (s.inputOperation === INPUT_EDIT) titleText = '📝 Edit Document'; else if (s.inputOperation === INPUT_RENAME) titleText = '📝 Rename Document'; else titleText = '📂 Load File';
 
-    const title = styles.title().render(titleText);
+    const titleStyle = styles.title();
+    const title = titleStyle.render(titleText);
 
-    // Label/Path field - wrap in zone for mouse focus
+    // Jump Icons
+    const btnTop = zone.mark('btn-top', styles.jumpIcon().render('[ ↑ ]'));
+    const btnBot = zone.mark('btn-bottom', styles.jumpIcon().render('[ ↓ ]'));
+    const spacer = lipgloss.newStyle().width(Math.max(2, termWidth - lipgloss.width(title) - lipgloss.width(btnTop) - lipgloss.width(btnBot) - 4)).render('');
+    const headerRow = lipgloss.joinHorizontal(lipgloss.Top, title, spacer, btnTop, btnBot);
+
+    // Label/Path field
     const lblLabel = s.inputOperation === INPUT_LOAD ? 'File path:' : 'Label (optional):';
     const lblStyle = s.inputFocus === FOCUS_LABEL ? styles.inputFocused() : styles.inputNormal();
     const lblContent = s.labelBuffer + (s.inputFocus === FOCUS_LABEL ? '▌' : '');
-    const lblFieldRendered = lipgloss.joinVertical(
-        lipgloss.Left,
-        styles.label().render(lblLabel),
-        lblStyle.width(Math.max(40, termWidth - 10)).render(lblContent)
-    );
+    const lblFieldRendered = lipgloss.joinVertical(lipgloss.Left, styles.label().render(lblLabel), lblStyle.width(Math.max(40, termWidth - 10)).render(lblContent));
     const lblField = zone.mark('input-label', lblFieldRendered);
 
-    // Content field using native bubbles/textarea (not shown for LOAD or RENAME)
+    // Content field
     let contentField = '';
+    // Calculate heights for cursor tracking offset
+    let preContentHeight = lipgloss.height(lblFieldRendered) + 1; // +1 gap
+
     if (s.inputOperation !== INPUT_LOAD && s.inputOperation !== INPUT_RENAME && s.contentTextarea) {
-        // Use native textarea view() for proper cursor handling
         const cntStyle = s.inputFocus === FOCUS_CONTENT ? styles.inputFocused() : styles.inputNormal();
 
-        // Update textarea dimensions based on current terminal size.
-        // Reserve a thin scrollbar column on the right.
+        // Update textarea dimensions
         const fieldWidth = Math.max(40, termWidth - 10);
         const innerWidth = Math.max(10, fieldWidth - 4 - scrollbarWidth); // border(2) + padding(2)
         s.contentTextarea.setWidth(innerWidth);
 
-        // Dynamic height: grow with content, capped at max
-        // lineCount() gives actual line count in textarea (including wrapped lines)
+        // Infinite height: set to line count to avoid internal scrolling
         const contentLines = Math.max(1, s.contentTextarea.lineCount());
-        const dynamicHeight = Math.min(
-            DESIGN.textareaMaxHeight,
-            Math.max(DESIGN.textareaMinHeight, contentLines)
-        );
-        s.contentTextarea.setHeight(dynamicHeight);
+        // Add buffer for newlines
+        s.contentTextarea.setHeight(contentLines + 1);
 
-        // Get the native textarea view - this includes proper cursor rendering
         const textareaView = s.contentTextarea.view();
 
-        // Render a scrollbar synced to textarea scroll state.
-        let textareaWithScrollbar = textareaView;
-        if (s.inputScrollbar) {
-            const h = s.contentTextarea.height();
-            const contentH = s.contentTextarea.lineCount();
-            // Use the actual viewport yOffset from the textarea (via unsafe access)
-            const yOffset = s.contentTextarea.yOffset();
-
-            s.inputScrollbar.setViewportHeight(h);
-            s.inputScrollbar.setContentHeight(contentH);
-            s.inputScrollbar.setYOffset(yOffset);
-            s.inputScrollbar.setChars("█", "░");
-            // Use setThumbForeground for opaque █ character (full block draws foreground, not background)
-            s.inputScrollbar.setThumbForeground(COLORS.primary);
-            s.inputScrollbar.setTrackForeground(COLORS.muted);
-            textareaWithScrollbar = lipgloss.joinHorizontal(lipgloss.Top, textareaView, s.inputScrollbar.view());
-        }
-
-        const contentFieldRendered = lipgloss.joinVertical(
-            lipgloss.Left,
-            styles.label().render('Content (multi-line):'),
-            cntStyle.width(fieldWidth).render(textareaWithScrollbar)
-        );
-        // Wrap textarea area in zone for mouse focus
+        const contentLabel = styles.label().render('Content (multi-line):');
+        const contentFieldRendered = lipgloss.joinVertical(lipgloss.Left, contentLabel, cntStyle.width(fieldWidth).render(textareaView));
         contentField = zone.mark('input-content', contentFieldRendered);
+
+        // Update pre-content height for cursor calculation
+        preContentHeight += lipgloss.height(contentLabel) + 1; // border top
     }
 
-    // Buttons with zone markers
-    const submitBtn = zone.mark('btn-submit',
-        (s.inputFocus === FOCUS_SUBMIT ? styles.buttonFocused() : styles.button()).render('[Submit]'));
-    const cancelBtn = zone.mark('btn-cancel',
-        (s.inputFocus === FOCUS_CANCEL ? styles.buttonDanger() : styles.button()).render('[Cancel]'));
+    // Buttons
+    const submitBtn = zone.mark('btn-submit', (s.inputFocus === FOCUS_SUBMIT ? styles.buttonFocused() : styles.button()).render('[Submit]'));
+    const cancelBtn = zone.mark('btn-cancel', (s.inputFocus === FOCUS_CANCEL ? styles.buttonDanger() : styles.button()).render('[Cancel]'));
     const buttonRow = lipgloss.joinHorizontal(lipgloss.Top, submitBtn, cancelBtn);
 
-    // Help text (fixed footer)
-    const helpText = styles.help().render('Tab: Cycle Focus    Enter: Newline (Content) / Submit    Esc: Cancel');
+    // Footer - Fixed layout
+    const sep = styles.separator().render('─'.repeat(termWidth));
+    // Dynamic footer text based on operation
+    let fText = 'Tab: Cycle Focus    Enter: Newline/Submit    Esc: Cancel';
+    if (s.inputOperation === INPUT_EDIT || s.inputOperation === INPUT_ADD) {
+        fText += '    PgUp/PgDn: Scroll';
+    }
+    const helpText = styles.help().render(fText);
+    const footer = lipgloss.joinVertical(lipgloss.Left, sep, helpText);
+    const footerHeight = lipgloss.height(footer);
 
-    // Per AGENTS.md: The entire edit page (including buttons, except hints and title header) 
-    // should scroll with a scrollbar
-    // Build scrollable content: label + content + buttons
+    // Build scrollable content for the OUTER viewport
     const scrollableSections = [lblField];
     if (contentField) {
         scrollableSections.push('', contentField);
@@ -1559,41 +1645,60 @@ function renderInput(s) {
     const scrollableContent = lipgloss.joinVertical(lipgloss.Left, ...scrollableSections);
 
     // Calculate available height for the scrollable area
-    // Fixed elements: title (1 line) + gap (1) + gap before help (1) + help (1) = 4 lines
-    const titleHeight = lipgloss.height(title);
-    const helpHeight = lipgloss.height(helpText);
-    const fixedHeight = titleHeight + helpHeight + 2; // 2 for gaps
+    const titleHeight = lipgloss.height(headerRow);
+    const fixedHeight = titleHeight + footerHeight + 1; // 1 for gaps
     const scrollableHeight = Math.max(3, termHeight - fixedHeight);
 
     const scrollableContentHeight = lipgloss.height(scrollableContent);
 
-    // If content fits, render directly without viewport
-    // Otherwise use the persistent inputVp for scrolling (preserves scroll position)
+    // OUTER Viewport + Scrollbar logic
     let visibleContent;
-    if (scrollableContentHeight <= scrollableHeight) {
-        // Content fits - no scrolling needed
-        visibleContent = scrollableContent;
+    // Always use inputVp logic to support scrolling
+    s.inputVp.setWidth(termWidth - scrollbarWidth);
+    s.inputVp.setHeight(scrollableHeight);
+    s.inputVp.setContent(scrollableContent);
+
+    // CURSOR VISIBILITY LOGIC
+    // Only auto-scroll to keep cursor visible if viewport is NOT unlocked.
+    // When unlocked (user is scrolling freely), don't interfere with their scroll position.
+    // The unlock flag is reset when user types, so the view will snap back to cursor on input.
+    if (s.contentTextarea && s.inputFocus === FOCUS_CONTENT && !s.inputViewportUnlocked) {
+        const cursorLineIdx = s.contentTextarea.line();
+        // preContentHeight is the Y offset from start of scrollable content to start of textarea text
+        // Note: we must account for style borders.
+        // lblField (height) + gap(1) + contentLabel(1) + borderTop(1)
+        const cursorAbsY = preContentHeight + cursorLineIdx;
+
+        const vpY = s.inputVp.yOffset();
+        const vpH = s.inputVp.height();
+
+        // Scroll if out of bounds
+        if (cursorAbsY < vpY) {
+            s.inputVp.setYOffset(cursorAbsY);
+        } else if (cursorAbsY >= vpY + vpH) {
+            s.inputVp.setYOffset(cursorAbsY - vpH + 1);
+        }
+    }
+
+    const vpView = s.inputVp.view();
+
+    // Show OUTER scrollbar if content exceeds height OR if configured
+    // Sync outer scrollbar
+    if (s.inputScrollbar) {
+        s.inputScrollbar.setViewportHeight(scrollableHeight);
+        s.inputScrollbar.setContentHeight(scrollableContentHeight);
+        s.inputScrollbar.setYOffset(s.inputVp.yOffset());
+        s.inputScrollbar.setChars("█", "░");
+        s.inputScrollbar.setThumbForeground(COLORS.primary);
+        s.inputScrollbar.setTrackForeground(COLORS.muted);
+        visibleContent = lipgloss.joinHorizontal(lipgloss.Top, vpView, s.inputScrollbar.view());
     } else {
-        // Content too tall - use persistent inputVp for scrolling
-        // NOTE: inputVp is stored in state to preserve scroll position across renders
-        s.inputVp.setWidth(termWidth - scrollbarWidth);
-        s.inputVp.setHeight(scrollableHeight);
-        s.inputVp.setContent(scrollableContent);
-        visibleContent = s.inputVp.view();
+        visibleContent = vpView;
     }
 
     // Compose final view
-    return lipgloss.joinVertical(
-        lipgloss.Left,
-        title,
-        '',
-        visibleContent,
-        '',
-        helpText
-    );
+    return lipgloss.joinVertical(lipgloss.Left, headerRow, '', visibleContent, footer);
 }
-
-// renderViewer removed - view mode is redundant per AGENTS.md
 
 function renderConfirm(s) {
     const title = styles.title().render('⚠️ Confirm Delete');
@@ -1606,16 +1711,7 @@ function renderConfirm(s) {
 
     const helpText = styles.help().render('y: Confirm    n/Esc: Cancel');
 
-    return lipgloss.joinVertical(
-        lipgloss.Left,
-        title,
-        '',
-        prompt,
-        '',
-        buttonRow,
-        '',
-        helpText
-    );
+    return lipgloss.joinVertical(lipgloss.Left, title, '', prompt, '', buttonRow, '', helpText);
 }
 
 // ============================================================================
@@ -1637,17 +1733,14 @@ function buildCommands() {
 
         // --- Super Document Specific Commands ---
 
-        // Extend the base 'list' command to include super-documents
-        // per AGENTS.md: "consolidating doc-list into JUST list"
+        // Extend the base 'list' command to include the documents
         list: {
-            ...ctxmgr.commands.list,
-            description: "List super-documents and context items",
-            handler: function (args) {
+            ...ctxmgr.commands.list, description: "List super-documents and context items", handler: function (args) {
                 const docs = getDocuments();
 
-                // Show super documents first (these are the "super" part of super-document)
+                // Show documents first - our core, non-standard context.
                 if (docs.length > 0) {
-                    output.print("Super Documents:");
+                    output.print("Documents:");
                     docs.forEach(d => {
                         const prev = (d.content || "").substring(0, 50).replace(/\n/g, " ");
                         output.print(`  #${d.id} [${d.label}]: ${prev}${d.content && d.content.length > 50 ? '...' : ''}`);
@@ -1688,24 +1781,17 @@ function buildCommands() {
                     output.print(`Added document #${doc.id}`);
                 }
             }
-        },
-        "doc-rm": {
-            description: "Remove a document",
-            usage: "doc-rm <id>",
-            handler: function (args) {
+        }, "doc-rm": {
+            description: "Remove a document", usage: "doc-rm <id>", handler: function (args) {
                 if (!args[0]) {
                     output.print("Usage: doc-rm <id>");
                     return;
                 }
                 const doc = removeDocumentById(parseInt(args[0]));
-                if (doc) output.print(`Removed document #${doc.id}`);
-                else output.print("Document not found");
+                if (doc) output.print(`Removed document #${doc.id}`); else output.print("Document not found");
             }
-        },
-        "doc-view": {
-            description: "View a specific document content",
-            usage: "doc-view <id>",
-            handler: function (args) {
+        }, "doc-view": {
+            description: "View a specific document content", usage: "doc-view <id>", handler: function (args) {
                 if (!args[0]) {
                     output.print("Usage: doc-view <id>");
                     return;
@@ -1717,17 +1803,13 @@ function buildCommands() {
                     output.print("---");
                 } else output.print("Document not found");
             }
-        },
-        "doc-clear": {
-            description: "Clear all documents",
-            handler: function () {
+        }, "doc-clear": {
+            description: "Clear all documents", handler: function () {
                 setDocuments([]);
                 output.print("All documents cleared.");
             }
-        },
-        "copy": {
-            description: "Copy the final prompt to clipboard",
-            handler: function () {
+        }, "copy": {
+            description: "Copy the final prompt to clipboard", handler: function () {
                 if (getDocuments().length === 0) {
                     output.print("No documents.");
                     return;
@@ -1740,10 +1822,8 @@ function buildCommands() {
                     output.print("Clipboard error: " + e);
                 }
             }
-        },
-        "tui": {
-            description: "Open the Visual TUI interface",
-            handler: function () {
+        }, "tui": {
+            description: "Open the Visual TUI interface", handler: function () {
                 // Clear any previous shell request (module-level, NOT persistent)
                 _userRequestedShell = false;
 
@@ -1783,18 +1863,13 @@ function buildCommands() {
 // config.replMode is injected by Go based on --repl flag
 
 tui.registerMode({
-    name: COMMAND_NAME,
-    tui: {
-        title: "Super Document",
-        prompt: `(${COMMAND_NAME}) > `,
-    },
-    onEnter: function () {
+    name: COMMAND_NAME, tui: {
+        title: "Super Document", prompt: `(${COMMAND_NAME}) > `,
+    }, onEnter: function () {
         output.print("Super Document Mode. Type 'tui' for visual interface, 'help' for commands.");
-    },
-    commands: function () {
+    }, commands: function () {
         return buildCommands();
-    },
-    // If shellMode is true (--shell flag passed), don't auto-launch TUI
+    }, // If shellMode is true (--shell flag passed), don't auto-launch TUI
     // Otherwise, launch TUI immediately for visual interface
     initialCommand: config.shellMode ? undefined : "tui",
 });

@@ -19,6 +19,7 @@ import (
 	scrollbarmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/scrollbar"
 	timemod "github.com/joeycumines/one-shot-man/internal/builtin/time"
 	tviewmod "github.com/joeycumines/one-shot-man/internal/builtin/tview"
+	unicodetextmod "github.com/joeycumines/one-shot-man/internal/builtin/unicodetext"
 )
 
 // TViewManagerProvider provides access to a tview manager instance.
@@ -59,6 +60,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"time", timemod.Require)
 	registry.RegisterNativeModule(prefix+"ctxutil", ctxutils.Require(ctx))
 	registry.RegisterNativeModule(prefix+"text/template", templatemod.Require(ctx))
+	registry.RegisterNativeModule(prefix+"unicodetext", unicodetextmod.Require(ctx))
 
 	// Register tview module if provider is available
 	if tviewProvider != nil {

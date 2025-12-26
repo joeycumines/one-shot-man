@@ -11,28 +11,28 @@
 //
 //	// Create a program with a model
 //	const model = tea.newModel({
-//	    init: function() {
-//	        return { count: 0 };
-//	    },
-//	    update: function(msg, model) {
-//	        switch (msg.type) {
-//	            case 'keyPress':
-//	                if (msg.key === 'q') return [model, tea.quit()];
-//	                if (msg.key === 'up') return [{ count: model.count + 1 }, null];
-//	                if (msg.key === 'down') return [{ count: model.count - 1 }, null];
-//	                break;
-//	            case 'focus':
-//	                // Terminal gained focus
-//	                break;
-//	            case 'blur':
-//	                // Terminal lost focus
-//	                break;
-//	        }
-//	        return [model, null];
-//	    },
-//	    view: function(model) {
-//	        return 'Count: ' + model.count + '\nPress q to quit';
-//	    }
+//		init: function() {
+//			return { count: 0 };
+//		},
+//		update: function(msg, model) {
+//			switch (msg.type) {
+//				case 'Key':
+//					if (msg.key === 'q') return [model, tea.quit()];
+//					if (msg.key === 'up') return [{ count: model.count + 1 }, null];
+//					if (msg.key === 'down') return [{ count: model.count - 1 }, null];
+//					break;
+//				case 'focus':
+//					// Terminal gained focus
+//					break;
+//				case 'blur':
+//					// Terminal lost focus
+//					break;
+//			}
+//			return [model, null];
+//		},
+//		view: function(model) {
+//			return 'Count: ' + model.count + '\nPress q to quit';
+//		}
 //	});
 //
 //	// Run the program
@@ -56,7 +56,7 @@
 //	tea.windowSize();              // Query current window size
 //
 //	// Key events
-//	// msg.type === 'keyPress'
+//	// msg.type === 'Key'
 //	// msg.key - the key name ('q', 'enter', 'up', 'down', etc.)
 //	// msg.runes - array of runes (for unicode/IME input)
 //	// msg.alt - alt modifier
@@ -64,14 +64,14 @@
 //	// msg.paste - true if this is part of a bracketed paste
 //
 //	// Mouse events (when enabled)
-//	// msg.type === 'mouse'
+//	// msg.type === 'Mouse'
 //	// msg.x, msg.y - coordinates
 //	// msg.button - button name
 //	// msg.action - 'press', 'release', 'motion'
 //	// msg.alt, msg.ctrl, msg.shift - modifiers
 //
 //	// Window size events
-//	// msg.type === 'windowSize'
+//	// msg.type === 'WindowSize'
 //	// msg.width, msg.height - terminal dimensions
 //
 //	// Focus events (when reportFocus enabled)
@@ -294,6 +294,66 @@ func (m *Manager) IsTTY() bool {
 	return m.isTTY
 }
 
+// JsToTeaMsg converts a JavaScript message object to a tea.Msg.
+// This provides a standard way to decode events sent from JS components to Go models.
+// It handles standard "Key", "Mouse", and "WindowSize" event types.
+// Returns nil if the message cannot be converted (invalid object, unknown type, etc.)
+func JsToTeaMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
+	if obj == nil || runtime == nil {
+		return nil
+	}
+	typeVal := obj.Get("type")
+	if typeVal == nil || goja.IsUndefined(typeVal) || goja.IsNull(typeVal) {
+		return nil
+	}
+
+	msgType := typeVal.String()
+
+	switch msgType {
+	case "Key":
+		keyVal := obj.Get("key")
+		if goja.IsUndefined(keyVal) || goja.IsNull(keyVal) {
+			return nil
+		}
+		key, _ := ParseKey(keyVal.String())
+		return tea.KeyMsg(key)
+
+	case "Mouse":
+		x := int(obj.Get("x").ToInteger())
+		y := int(obj.Get("y").ToInteger())
+		buttonStr := obj.Get("button").String()
+		actionStr := obj.Get("action").String()
+
+		// Modifiers
+		alt := false
+		ctrl := false
+		shift := false
+
+		if v := obj.Get("alt"); !goja.IsUndefined(v) {
+			alt = v.ToBoolean()
+		}
+		if v := obj.Get("ctrl"); !goja.IsUndefined(v) {
+			ctrl = v.ToBoolean()
+		}
+		if v := obj.Get("shift"); !goja.IsUndefined(v) {
+			shift = v.ToBoolean()
+		}
+
+		// Use JSToMouseEvent which uses the generated MouseButtonDefs/MouseActionDefs
+		return JSToMouseEvent(buttonStr, actionStr, x, y, alt, ctrl, shift)
+
+	case "WindowSize":
+		w := int(obj.Get("width").ToInteger())
+		h := int(obj.Get("height").ToInteger())
+		return tea.WindowSizeMsg{
+			Width:  w,
+			Height: h,
+		}
+	}
+
+	return nil
+}
+
 // jsModel wraps a JavaScript model definition for bubbletea.
 type jsModel struct {
 	runtime     *goja.Runtime
@@ -429,7 +489,7 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]interface{} {
 		key := tea.Key(msg)
 
 		return map[string]interface{}{
-			"type":  "keyPress",
+			"type":  "Key",
 			"key":   keyStr,
 			"runes": runes,
 			"alt":   key.Alt,
@@ -438,20 +498,12 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]interface{} {
 		}
 
 	case tea.MouseMsg:
-		return map[string]interface{}{
-			"type":   "mouse",
-			"x":      msg.X,
-			"y":      msg.Y,
-			"button": mouseButtonToString(msg.Button),
-			"action": mouseActionToString(msg.Action),
-			"alt":    msg.Alt,
-			"ctrl":   msg.Ctrl,
-			"shift":  msg.Shift,
-		}
+		// Use the generated MouseEventToJS which ensures consistency with tea.MouseEvent.String()
+		return MouseEventToJS(msg)
 
 	case tea.WindowSizeMsg:
 		return map[string]interface{}{
-			"type":   "windowSize",
+			"type":   "WindowSize",
 			"width":  msg.Width,
 			"height": msg.Height,
 		}
@@ -515,48 +567,6 @@ func isCtrlKey(kt tea.KeyType) bool {
 	return false
 }
 
-// mouseButtonToString converts a tea.MouseButton to a string.
-func mouseButtonToString(b tea.MouseButton) string {
-	switch b {
-	case tea.MouseButtonNone:
-		return "none"
-	case tea.MouseButtonLeft:
-		return "left"
-	case tea.MouseButtonMiddle:
-		return "middle"
-	case tea.MouseButtonRight:
-		return "right"
-	case tea.MouseButtonWheelUp:
-		return "wheelUp"
-	case tea.MouseButtonWheelDown:
-		return "wheelDown"
-	case tea.MouseButtonWheelLeft:
-		return "wheelLeft"
-	case tea.MouseButtonWheelRight:
-		return "wheelRight"
-	case tea.MouseButtonBackward:
-		return "backward"
-	case tea.MouseButtonForward:
-		return "forward"
-	default:
-		return "unknown"
-	}
-}
-
-// mouseActionToString converts a tea.MouseAction to a string.
-func mouseActionToString(a tea.MouseAction) string {
-	switch a {
-	case tea.MouseActionPress:
-		return "press"
-	case tea.MouseActionRelease:
-		return "release"
-	case tea.MouseActionMotion:
-		return "motion"
-	default:
-		return "unknown"
-	}
-}
-
 // valueToCmd converts a JavaScript value to a tea.Cmd.
 // Commands are validated using their _cmdID to prevent forgery.
 func (m *jsModel) valueToCmd(val goja.Value) tea.Cmd {
@@ -583,10 +593,10 @@ func (m *jsModel) valueToCmd(val goja.Value) tea.Cmd {
 	//
 	// cmdIDVal := obj.Get("_cmdID")
 	// if !goja.IsUndefined(cmdIDVal) && !goja.IsNull(cmdIDVal) {
-	// 	cmdID := uint64(cmdIDVal.ToInteger())
-	// 	if !m.isValidCommand(cmdID) {
-	// 		return nil
-	// 	}
+	//	 cmdID := uint64(cmdIDVal.ToInteger())
+	//	 if !m.isValidCommand(cmdID) {
+	//		 return nil
+	//	 }
 	// }
 
 	switch cmdType.String() {
@@ -816,6 +826,103 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			_ = keysByNameObj.Set(name, keyDefJS)
 		}
 		_ = exports.Set("keysByName", keysByNameObj)
+
+		// mouseButtons exposes mouse button definitions for JS to access button metadata
+		// The keys are the string representations (e.g., "left", "wheel up")
+		mouseButtonsObj := runtime.NewObject()
+		for _, stringVal := range slices.Sorted(maps.Keys(MouseButtonDefs)) {
+			buttonDef := MouseButtonDefs[stringVal]
+			buttonDefJS := runtime.NewObject()
+			_ = buttonDefJS.Set("name", buttonDef.Name)
+			_ = buttonDefJS.Set("string", buttonDef.String)
+			_ = buttonDefJS.Set("isWheel", IsWheelButton(buttonDef.Button))
+			_ = mouseButtonsObj.Set(stringVal, buttonDefJS)
+		}
+		_ = exports.Set("mouseButtons", mouseButtonsObj)
+
+		// mouseButtonsByName exposes mouse button definitions by their Go constant name
+		// (e.g., "MouseButtonLeft", "MouseButtonWheelUp")
+		mouseButtonsByNameObj := runtime.NewObject()
+		for _, name := range slices.Sorted(maps.Keys(MouseButtonDefsByName)) {
+			buttonDef := MouseButtonDefsByName[name]
+			buttonDefJS := runtime.NewObject()
+			_ = buttonDefJS.Set("name", buttonDef.Name)
+			_ = buttonDefJS.Set("string", buttonDef.String)
+			_ = buttonDefJS.Set("isWheel", IsWheelButton(buttonDef.Button))
+			_ = mouseButtonsByNameObj.Set(name, buttonDefJS)
+		}
+		_ = exports.Set("mouseButtonsByName", mouseButtonsByNameObj)
+
+		// mouseActions exposes mouse action definitions for JS to access action metadata
+		// The keys are the string representations (e.g., "press", "release", "motion")
+		mouseActionsObj := runtime.NewObject()
+		for _, stringVal := range slices.Sorted(maps.Keys(MouseActionDefs)) {
+			actionDef := MouseActionDefs[stringVal]
+			actionDefJS := runtime.NewObject()
+			_ = actionDefJS.Set("name", actionDef.Name)
+			_ = actionDefJS.Set("string", actionDef.String)
+			_ = mouseActionsObj.Set(stringVal, actionDefJS)
+		}
+		_ = exports.Set("mouseActions", mouseActionsObj)
+
+		// mouseActionsByName exposes mouse action definitions by their Go constant name
+		// (e.g., "MouseActionPress", "MouseActionRelease", "MouseActionMotion")
+		mouseActionsByNameObj := runtime.NewObject()
+		for _, name := range slices.Sorted(maps.Keys(MouseActionDefsByName)) {
+			actionDef := MouseActionDefsByName[name]
+			actionDefJS := runtime.NewObject()
+			_ = actionDefJS.Set("name", actionDef.Name)
+			_ = actionDefJS.Set("string", actionDef.String)
+			_ = mouseActionsByNameObj.Set(name, actionDefJS)
+		}
+		_ = exports.Set("mouseActionsByName", mouseActionsByNameObj)
+
+		// isValidTextareaInput validates if a key event should be forwarded to a textarea.
+		// Uses WHITELIST approach: only explicitly allowed inputs pass through.
+		// This prevents garbage (fragmented escape sequences) from corrupting content.
+		// Parameters: keyStr (string), isPaste (boolean)
+		// Returns: { valid: boolean, reason: string }
+		_ = exports.Set("isValidTextareaInput", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 1 {
+				return runtime.ToValue(map[string]interface{}{
+					"valid":  false,
+					"reason": "missing keyStr argument",
+				})
+			}
+			keyStr := call.Argument(0).String()
+			isPaste := false
+			if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) {
+				isPaste = call.Argument(1).ToBoolean()
+			}
+			result := ValidateTextareaInput(keyStr, isPaste)
+			return runtime.ToValue(map[string]interface{}{
+				"valid":  result.Valid,
+				"reason": result.Reason,
+			})
+		})
+
+		// isValidLabelInput validates if a key event should be accepted for a label field.
+		// More restrictive: only single printable characters and backspace.
+		// Parameters: keyStr (string), isPaste (boolean)
+		// Returns: { valid: boolean, reason: string }
+		_ = exports.Set("isValidLabelInput", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 1 {
+				return runtime.ToValue(map[string]interface{}{
+					"valid":  false,
+					"reason": "missing keyStr argument",
+				})
+			}
+			keyStr := call.Argument(0).String()
+			isPaste := false
+			if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) {
+				isPaste = call.Argument(1).ToBoolean()
+			}
+			result := ValidateLabelInput(keyStr, isPaste)
+			return runtime.ToValue(map[string]interface{}{
+				"valid":  result.Valid,
+				"reason": result.Reason,
+			})
+		})
 
 		// newModel creates a new model wrapper from JS definition
 		_ = exports.Set("newModel", func(call goja.FunctionCall) goja.Value {

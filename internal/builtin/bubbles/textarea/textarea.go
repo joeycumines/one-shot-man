@@ -38,6 +38,7 @@
 package textarea
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -45,24 +46,20 @@ import (
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dop251/goja"
+	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 )
 
 // textareaModelMirror is a memory-layout-compatible mirror of textarea.Model.
 // This struct MUST exactly match the upstream textarea.Model field layout from
-// github.com/charmbracelet/bubbles/textarea v0.21.0.
+// github.com/charmbracelet/bubbles/textarea.
 //
 // We use this unsafe technique to access the unexported `viewport` field
 // and retrieve the scroll offset (YOffset) for synchronizing the scrollbar.
-//
-// CRITICAL: The static assertion textareaModelMirrorSizeCheck below ensures
-// this struct's size matches the upstream at compile time. If the upstream
-// library changes its struct layout, compilation will fail.
 type textareaModelMirror struct {
 	Err   error
-	cache unsafe.Pointer // *memoization.MemoCache[line, [][]rune] - internal type, use unsafe.Pointer
+	cache unsafe.Pointer // *memoization.MemoCache[line, [][]rune]
 
 	Prompt               string
 	Placeholder          string
@@ -86,16 +83,13 @@ type textareaModelMirror struct {
 	row                  int
 	lastCharOffset       int
 	viewport             *viewport.Model
-	rsan                 interface{} // runeutil.Sanitizer is an interface (2-word fat pointer)
+	rsan                 interface{} // runeutil.Sanitizer
 }
 
 // modelCounter for generating unique model IDs
 var modelCounter uint64
 
 // Static assertion: verify textareaModelMirror has the same size as textarea.Model.
-// If the upstream library changes its struct layout, this will fail at compile time.
-// The assertion works by creating arrays of size 0 when sizes match (valid) or
-// negative size when they differ (compilation error).
 var _ = [0]struct{}{}
 var _ = [unsafe.Sizeof(textareaModelMirror{}) - unsafe.Sizeof(textarea.Model{})]struct{}{}
 var _ = [unsafe.Sizeof(textarea.Model{}) - unsafe.Sizeof(textareaModelMirror{})]struct{}{}
@@ -130,7 +124,14 @@ func (m *Manager) registerModel(wrapper *ModelWrapper) uint64 {
 	return id
 }
 
-// getModel retrieves a model by ID.
+// unregisterModel removes a model from the manager.
+func (m *Manager) unregisterModel(id uint64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.models, id)
+}
+
+// getModel retrieves a model by ID. Returns nil if not found.
 func (m *Manager) getModel(id uint64) *ModelWrapper {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -157,222 +158,83 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) goja.Value {
 	obj := runtime.NewObject()
 
+	// ensureModel retrieves the model wrapper or throws a JS error if disposed.
+	ensureModel := func() *ModelWrapper {
+		wrapper := manager.getModel(id)
+		if wrapper == nil {
+			panic(runtime.NewGoError(errors.New("textarea model has been disposed")))
+		}
+		return wrapper
+	}
+
 	_ = obj.Set("_id", id)
 	_ = obj.Set("_type", "bubbles/textarea")
 
-	// setWidth sets the textarea width
+	// dispose removes the model from the manager, freeing resources.
+	_ = obj.Set("dispose", func(call goja.FunctionCall) goja.Value {
+		manager.unregisterModel(id)
+		return goja.Undefined()
+	})
+
+	// -------------------------------------------------------------------------
+	// Geometry & Layout
+	// -------------------------------------------------------------------------
+
 	_ = obj.Set("setWidth", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			return goja.Undefined()
-		}
 		w := int(call.Argument(0).ToInteger())
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.SetWidth(w)
-			wrapper.mu.Unlock()
-		}
-		return obj
-	})
-
-	// setHeight sets the textarea height
-	_ = obj.Set("setHeight", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			return goja.Undefined()
-		}
-		h := int(call.Argument(0).ToInteger())
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.SetHeight(h)
-			wrapper.mu.Unlock()
-		}
-		return obj
-	})
-
-	// setValue sets the textarea content
-	_ = obj.Set("setValue", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			return goja.Undefined()
-		}
-		s := call.Argument(0).String()
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.SetValue(s)
-			wrapper.mu.Unlock()
-		}
-		return obj
-	})
-
-	// value returns the textarea content
-	_ = obj.Set("value", func(call goja.FunctionCall) goja.Value {
-		wrapper := manager.getModel(id)
-		if wrapper == nil {
-			return runtime.ToValue("")
-		}
+		wrapper := ensureModel()
 		wrapper.mu.Lock()
 		defer wrapper.mu.Unlock()
-		return runtime.ToValue(wrapper.model.Value())
-	})
-
-	// focus focuses the textarea
-	_ = obj.Set("focus", func(call goja.FunctionCall) goja.Value {
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.Focus()
-			wrapper.mu.Unlock()
-		}
+		wrapper.model.SetWidth(w)
 		return obj
 	})
 
-	// blur unfocuses the textarea
-	_ = obj.Set("blur", func(call goja.FunctionCall) goja.Value {
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.Blur()
-			wrapper.mu.Unlock()
-		}
-		return obj
-	})
-
-	// focused returns whether the textarea is focused
-	_ = obj.Set("focused", func(call goja.FunctionCall) goja.Value {
-		wrapper := manager.getModel(id)
-		if wrapper == nil {
-			return runtime.ToValue(false)
-		}
-		wrapper.mu.Lock()
-		defer wrapper.mu.Unlock()
-		return runtime.ToValue(wrapper.model.Focused())
-	})
-
-	// update processes a bubbletea message
-	_ = obj.Set("update", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			arr := runtime.NewArray()
-			_ = arr.Set("0", obj)
-			_ = arr.Set("1", goja.Null())
-			return arr
-		}
-
-		msgObj := call.Argument(0).ToObject(runtime)
-		if msgObj == nil {
-			arr := runtime.NewArray()
-			_ = arr.Set("0", obj)
-			_ = arr.Set("1", goja.Null())
-			return arr
-		}
-
-		msg := jsToTeaMsg(runtime, msgObj)
-		if msg == nil {
-			arr := runtime.NewArray()
-			_ = arr.Set("0", obj)
-			_ = arr.Set("1", goja.Null())
-			return arr
-		}
-
-		wrapper := manager.getModel(id)
-		if wrapper == nil {
-			arr := runtime.NewArray()
-			_ = arr.Set("0", obj)
-			_ = arr.Set("1", goja.Null())
-			return arr
-		}
-
-		wrapper.mu.Lock()
-		newModel, cmd := wrapper.model.Update(msg)
-		wrapper.model = newModel
-		wrapper.mu.Unlock()
-
-		arr := runtime.NewArray()
-		_ = arr.Set("0", obj)
-		if cmd != nil {
-			_ = arr.Set("1", runtime.ToValue(map[string]interface{}{"hasCmd": true}))
-		} else {
-			_ = arr.Set("1", goja.Null())
-		}
-		return arr
-	})
-
-	// view renders the textarea
-	_ = obj.Set("view", func(call goja.FunctionCall) goja.Value {
-		wrapper := manager.getModel(id)
-		if wrapper == nil {
-			return runtime.ToValue("")
-		}
-		wrapper.mu.Lock()
-		defer wrapper.mu.Unlock()
-		return runtime.ToValue(wrapper.model.View())
-	})
-
-	// reset clears the textarea
-	_ = obj.Set("reset", func(call goja.FunctionCall) goja.Value {
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.Reset()
-			wrapper.mu.Unlock()
-		}
-		return obj
-	})
-
-	// lineCount returns the number of lines
-	_ = obj.Set("lineCount", func(call goja.FunctionCall) goja.Value {
-		wrapper := manager.getModel(id)
-		if wrapper == nil {
-			return runtime.ToValue(0)
-		}
-		wrapper.mu.Lock()
-		defer wrapper.mu.Unlock()
-		return runtime.ToValue(wrapper.model.LineCount())
-	})
-
-	// line returns the current cursor line index
-	_ = obj.Set("line", func(call goja.FunctionCall) goja.Value {
-		wrapper := manager.getModel(id)
-		if wrapper == nil {
-			return runtime.ToValue(0)
-		}
-		wrapper.mu.Lock()
-		defer wrapper.mu.Unlock()
-		return runtime.ToValue(wrapper.model.Line())
-	})
-
-	// width returns the textarea width
 	_ = obj.Set("width", func(call goja.FunctionCall) goja.Value {
-		wrapper := manager.getModel(id)
-		if wrapper == nil {
-			return runtime.ToValue(0)
-		}
+		wrapper := ensureModel()
 		wrapper.mu.Lock()
 		defer wrapper.mu.Unlock()
 		return runtime.ToValue(wrapper.model.Width())
 	})
 
-	// height returns the textarea height
+	_ = obj.Set("setHeight", func(call goja.FunctionCall) goja.Value {
+		h := int(call.Argument(0).ToInteger())
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.SetHeight(h)
+		return obj
+	})
+
 	_ = obj.Set("height", func(call goja.FunctionCall) goja.Value {
-		wrapper := manager.getModel(id)
-		if wrapper == nil {
-			return runtime.ToValue(0)
-		}
+		wrapper := ensureModel()
 		wrapper.mu.Lock()
 		defer wrapper.mu.Unlock()
 		return runtime.ToValue(wrapper.model.Height())
 	})
 
-	// yOffset returns the viewport's vertical scroll offset.
-	// This uses unsafe pointer casting to access the unexported viewport field.
-	_ = obj.Set("yOffset", func(call goja.FunctionCall) goja.Value {
-		wrapper := manager.getModel(id)
-		if wrapper == nil {
-			return runtime.ToValue(0)
-		}
+	_ = obj.Set("setMaxHeight", func(call goja.FunctionCall) goja.Value {
+		h := int(call.Argument(0).ToInteger())
+		wrapper := ensureModel()
 		wrapper.mu.Lock()
 		defer wrapper.mu.Unlock()
-		// Cast to mirror struct to access unexported viewport field
+		wrapper.model.MaxHeight = h
+		return obj
+	})
+
+	_ = obj.Set("setMaxWidth", func(call goja.FunctionCall) goja.Value {
+		w := int(call.Argument(0).ToInteger())
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.MaxWidth = w
+		return obj
+	})
+
+	// yOffset returns the viewport's vertical scroll offset (unsafe access).
+	_ = obj.Set("yOffset", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
 		mirror := (*textareaModelMirror)(unsafe.Pointer(&wrapper.model))
 		if mirror.viewport == nil {
 			return runtime.ToValue(0)
@@ -380,223 +242,416 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		return runtime.ToValue(mirror.viewport.YOffset)
 	})
 
-	// setPrompt sets the prompt string
+	// -------------------------------------------------------------------------
+	// Content & State
+	// -------------------------------------------------------------------------
+
+	_ = obj.Set("setValue", func(call goja.FunctionCall) goja.Value {
+		s := call.Argument(0).String()
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.SetValue(s)
+		return obj
+	})
+
+	_ = obj.Set("value", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		return runtime.ToValue(wrapper.model.Value())
+	})
+
+	_ = obj.Set("insertString", func(call goja.FunctionCall) goja.Value {
+		s := call.Argument(0).String()
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.InsertString(s)
+		return obj
+	})
+
+	_ = obj.Set("insertRune", func(call goja.FunctionCall) goja.Value {
+		s := call.Argument(0).String()
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		if len(s) > 0 {
+			r := []rune(s)[0]
+			wrapper.model.InsertRune(r)
+		}
+		return obj
+	})
+
+	_ = obj.Set("length", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		return runtime.ToValue(wrapper.model.Length())
+	})
+
+	_ = obj.Set("lineCount", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		return runtime.ToValue(wrapper.model.LineCount())
+	})
+
+	_ = obj.Set("line", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		return runtime.ToValue(wrapper.model.Line())
+	})
+
+	_ = obj.Set("lineInfo", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		li := wrapper.model.LineInfo()
+
+		infoObj := runtime.NewObject()
+		_ = infoObj.Set("width", li.Width)
+		_ = infoObj.Set("charWidth", li.CharWidth)
+		_ = infoObj.Set("height", li.Height)
+		_ = infoObj.Set("startColumn", li.StartColumn)
+		_ = infoObj.Set("columnOffset", li.ColumnOffset)
+		_ = infoObj.Set("rowOffset", li.RowOffset)
+		_ = infoObj.Set("charOffset", li.CharOffset)
+		return infoObj
+	})
+
+	_ = obj.Set("reset", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.Reset()
+		return obj
+	})
+
+	// -------------------------------------------------------------------------
+	// Cursor Management
+	// -------------------------------------------------------------------------
+
+	_ = obj.Set("cursorUp", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.CursorUp()
+		return obj
+	})
+
+	_ = obj.Set("cursorDown", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.CursorDown()
+		return obj
+	})
+
+	_ = obj.Set("cursorStart", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.CursorStart()
+		return obj
+	})
+
+	_ = obj.Set("cursorEnd", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.CursorEnd()
+		return obj
+	})
+
+	_ = obj.Set("setCursor", func(call goja.FunctionCall) goja.Value {
+		col := int(call.Argument(0).ToInteger())
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.SetCursor(col)
+		return obj
+	})
+
+	// -------------------------------------------------------------------------
+	// Focus Management
+	// -------------------------------------------------------------------------
+
+	_ = obj.Set("focus", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.Focus()
+		return obj
+	})
+
+	_ = obj.Set("blur", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.Blur()
+		return obj
+	})
+
+	_ = obj.Set("focused", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		return runtime.ToValue(wrapper.model.Focused())
+	})
+
+	// -------------------------------------------------------------------------
+	// Configuration & Options
+	// -------------------------------------------------------------------------
+
 	_ = obj.Set("setPrompt", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			return goja.Undefined()
-		}
 		s := call.Argument(0).String()
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.Prompt = s
-			wrapper.mu.Unlock()
-		}
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.Prompt = s
 		return obj
 	})
 
-	// setPlaceholder sets the placeholder text
 	_ = obj.Set("setPlaceholder", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			return goja.Undefined()
-		}
 		s := call.Argument(0).String()
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.Placeholder = s
-			wrapper.mu.Unlock()
-		}
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.Placeholder = s
 		return obj
 	})
 
-	// setCharLimit sets the character limit
 	_ = obj.Set("setCharLimit", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			return goja.Undefined()
-		}
 		n := int(call.Argument(0).ToInteger())
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.CharLimit = n
-			wrapper.mu.Unlock()
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.CharLimit = n
+		return obj
+	})
+
+	_ = obj.Set("setShowLineNumbers", func(call goja.FunctionCall) goja.Value {
+		v := call.Argument(0).ToBoolean()
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.ShowLineNumbers = v
+		return obj
+	})
+
+	// -------------------------------------------------------------------------
+	// Styles
+	// -------------------------------------------------------------------------
+
+	// applyStyleConfig updates a textarea.Style struct based on a JS configuration object.
+	applyStyleConfig := func(style *textarea.Style, config *goja.Object) {
+		if config == nil || style == nil || runtime == nil {
+			return
+		}
+
+		updateStyle := func(target *lipgloss.Style, key string) {
+			if target == nil {
+				return
+			}
+			val := config.Get(key)
+			// Comprehensive nil/undefined/null checks
+			if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+				return
+			}
+			styleObj := val.ToObject(runtime)
+			if styleObj == nil {
+				return
+			}
+
+			// Check if this is a style-reset request (empty object or object with only undefined/null values).
+			// If an empty object like {} is passed, we CLEAR the existing style to prevent
+			// issues like double-rendering of ANSI codes (e.g., Prompt default \x1b[37m getting
+			// wrapped by CursorLine's Render() which treats escape codes as literal text).
+			keys := styleObj.Keys()
+			hasAnyValue := false
+			for _, k := range keys {
+				v := styleObj.Get(k)
+				if v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					hasAnyValue = true
+					break
+				}
+			}
+			if !hasAnyValue {
+				// Empty object: reset the style to a clean lipgloss.Style
+				*target = lipgloss.NewStyle()
+				return
+			}
+
+			// Apply standard attributes with defensive checks
+			if fg := styleObj.Get("foreground"); fg != nil && !goja.IsUndefined(fg) && !goja.IsNull(fg) {
+				*target = target.Foreground(lipgloss.Color(fg.String()))
+			}
+			if bg := styleObj.Get("background"); bg != nil && !goja.IsUndefined(bg) && !goja.IsNull(bg) {
+				*target = target.Background(lipgloss.Color(bg.String()))
+			}
+			if bold := styleObj.Get("bold"); bold != nil && !goja.IsUndefined(bold) && !goja.IsNull(bold) {
+				*target = target.Bold(bold.ToBoolean())
+			}
+			if italic := styleObj.Get("italic"); italic != nil && !goja.IsUndefined(italic) && !goja.IsNull(italic) {
+				*target = target.Italic(italic.ToBoolean())
+			}
+			if underline := styleObj.Get("underline"); underline != nil && !goja.IsUndefined(underline) && !goja.IsNull(underline) {
+				*target = target.Underline(underline.ToBoolean())
+			}
+		}
+
+		updateStyle(&style.Base, "base")
+		updateStyle(&style.CursorLine, "cursorLine")
+		updateStyle(&style.CursorLineNumber, "cursorLineNumber")
+		updateStyle(&style.EndOfBuffer, "endOfBuffer")
+		updateStyle(&style.LineNumber, "lineNumber")
+		updateStyle(&style.Placeholder, "placeholder")
+		updateStyle(&style.Prompt, "prompt")
+		updateStyle(&style.Text, "text")
+	}
+
+	_ = obj.Set("setFocusedStyle", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return obj
+		}
+		config := call.Argument(0).ToObject(runtime)
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		applyStyleConfig(&wrapper.model.FocusedStyle, config)
+		return obj
+	})
+
+	_ = obj.Set("setBlurredStyle", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return obj
+		}
+		config := call.Argument(0).ToObject(runtime)
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		applyStyleConfig(&wrapper.model.BlurredStyle, config)
+		return obj
+	})
+
+	_ = obj.Set("setCursorStyle", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return obj
+		}
+		config := call.Argument(0).ToObject(runtime)
+		if config == nil {
+			return obj
+		}
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+
+		if fg := config.Get("foreground"); fg != nil && !goja.IsUndefined(fg) && !goja.IsNull(fg) {
+			wrapper.model.Cursor.Style = wrapper.model.Cursor.Style.Foreground(lipgloss.Color(fg.String()))
+		}
+		if bg := config.Get("background"); bg != nil && !goja.IsUndefined(bg) && !goja.IsNull(bg) {
+			wrapper.model.Cursor.Style = wrapper.model.Cursor.Style.Background(lipgloss.Color(bg.String()))
 		}
 		return obj
 	})
 
-	// setTextForeground sets the text foreground color for focused state
+	// Convenience methods for common style attributes
 	_ = obj.Set("setTextForeground", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
 			return obj
 		}
-		colorStr := call.Argument(0).String()
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.FocusedStyle.Text = wrapper.model.FocusedStyle.Text.Foreground(lipgloss.Color(colorStr))
-			wrapper.model.BlurredStyle.Text = wrapper.model.BlurredStyle.Text.Foreground(lipgloss.Color(colorStr))
-			wrapper.mu.Unlock()
-		}
+		color := call.Argument(0).String()
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.FocusedStyle.Text = wrapper.model.FocusedStyle.Text.Foreground(lipgloss.Color(color))
+		wrapper.model.BlurredStyle.Text = wrapper.model.BlurredStyle.Text.Foreground(lipgloss.Color(color))
 		return obj
 	})
 
-	// setCursorLineForeground sets the cursor line foreground color for focused state
-	_ = obj.Set("setCursorLineForeground", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			return obj
-		}
-		colorStr := call.Argument(0).String()
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.FocusedStyle.CursorLine = wrapper.model.FocusedStyle.CursorLine.Foreground(lipgloss.Color(colorStr))
-			wrapper.mu.Unlock()
-		}
-		return obj
-	})
-
-	// setCursorLineBackground sets the cursor line background color for focused state
-	_ = obj.Set("setCursorLineBackground", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			return obj
-		}
-		colorStr := call.Argument(0).String()
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.FocusedStyle.CursorLine = wrapper.model.FocusedStyle.CursorLine.Background(lipgloss.Color(colorStr))
-			wrapper.mu.Unlock()
-		}
-		return obj
-	})
-
-	// setPlaceholderForeground sets the placeholder text color
 	_ = obj.Set("setPlaceholderForeground", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
 			return obj
 		}
-		colorStr := call.Argument(0).String()
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.FocusedStyle.Placeholder = wrapper.model.FocusedStyle.Placeholder.Foreground(lipgloss.Color(colorStr))
-			wrapper.model.BlurredStyle.Placeholder = wrapper.model.BlurredStyle.Placeholder.Foreground(lipgloss.Color(colorStr))
-			wrapper.mu.Unlock()
-		}
+		color := call.Argument(0).String()
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.FocusedStyle.Placeholder = wrapper.model.FocusedStyle.Placeholder.Foreground(lipgloss.Color(color))
+		wrapper.model.BlurredStyle.Placeholder = wrapper.model.BlurredStyle.Placeholder.Foreground(lipgloss.Color(color))
 		return obj
 	})
 
-	// setCursorForeground sets the cursor block foreground color
 	_ = obj.Set("setCursorForeground", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
 			return obj
 		}
-		colorStr := call.Argument(0).String()
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.Cursor.Style = wrapper.model.Cursor.Style.Foreground(lipgloss.Color(colorStr))
-			wrapper.mu.Unlock()
-		}
+		color := call.Argument(0).String()
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.Cursor.Style = wrapper.model.Cursor.Style.Foreground(lipgloss.Color(color))
 		return obj
 	})
 
-	// setCursorBackground sets the cursor block background color
-	_ = obj.Set("setCursorBackground", func(call goja.FunctionCall) goja.Value {
+	_ = obj.Set("setCursorLineForeground", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
 			return obj
 		}
-		colorStr := call.Argument(0).String()
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.Cursor.Style = wrapper.model.Cursor.Style.Background(lipgloss.Color(colorStr))
-			wrapper.mu.Unlock()
-		}
+		color := call.Argument(0).String()
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		wrapper.model.FocusedStyle.CursorLine = wrapper.model.FocusedStyle.CursorLine.Foreground(lipgloss.Color(color))
+		wrapper.model.BlurredStyle.CursorLine = wrapper.model.BlurredStyle.CursorLine.Foreground(lipgloss.Color(color))
 		return obj
 	})
 
+	// -------------------------------------------------------------------------
+	// Runtime
+	// -------------------------------------------------------------------------
+
+	_ = obj.Set("update", func(call goja.FunctionCall) goja.Value {
+		// Prepare return structure [model, cmd]
+		arr := runtime.NewArray()
+		_ = arr.Set("0", obj)
+		_ = arr.Set("1", goja.Null())
+
+		if len(call.Arguments) < 1 {
+			return arr
+		}
+
+		msgObj := call.Argument(0).ToObject(runtime)
+		if msgObj == nil {
+			return arr
+		}
+
+		msg := bubbletea.JsToTeaMsg(runtime, msgObj)
+		if msg == nil {
+			return arr
+		}
+
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		newModel, cmd := wrapper.model.Update(msg)
+		wrapper.model = newModel
+		wrapper.mu.Unlock()
+
+		if cmd != nil {
+			_ = arr.Set("1", runtime.ToValue(map[string]interface{}{"hasCmd": true}))
+		}
+
+		return arr
+	})
+
+	_ = obj.Set("view", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		return runtime.ToValue(wrapper.model.View())
+	})
+
 	return obj
-}
-
-// jsToTeaMsg converts a JavaScript message object to a tea.Msg.
-func jsToTeaMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
-	typeVal := obj.Get("type")
-	if goja.IsUndefined(typeVal) || goja.IsNull(typeVal) {
-		return nil
-	}
-
-	msgType := typeVal.String()
-
-	switch msgType {
-	case "keyPress":
-		keyVal := obj.Get("key")
-		if goja.IsUndefined(keyVal) || goja.IsNull(keyVal) {
-			return nil
-		}
-		keyStr := keyVal.String()
-		keyType, runes := parseKeyString(keyStr)
-		return tea.KeyMsg{
-			Type:  keyType,
-			Runes: runes,
-		}
-	default:
-		return nil
-	}
-}
-
-// parseKeyString converts a key string to tea.KeyType and runes.
-// Handles standard key names including modifiers like shift+tab.
-func parseKeyString(keyStr string) (tea.KeyType, []rune) {
-	switch keyStr {
-	case "enter":
-		return tea.KeyEnter, nil
-	case "backspace":
-		return tea.KeyBackspace, nil
-	case "tab":
-		return tea.KeyTab, nil
-	case "shift+tab":
-		return tea.KeyShiftTab, nil
-	case "up":
-		return tea.KeyUp, nil
-	case "down":
-		return tea.KeyDown, nil
-	case "left":
-		return tea.KeyLeft, nil
-	case "right":
-		return tea.KeyRight, nil
-	case "shift+up":
-		return tea.KeyShiftUp, nil
-	case "shift+down":
-		return tea.KeyShiftDown, nil
-	case "shift+left":
-		return tea.KeyShiftLeft, nil
-	case "shift+right":
-		return tea.KeyShiftRight, nil
-	case "home":
-		return tea.KeyHome, nil
-	case "end":
-		return tea.KeyEnd, nil
-	case "shift+home":
-		return tea.KeyShiftHome, nil
-	case "shift+end":
-		return tea.KeyShiftEnd, nil
-	case "pgup":
-		return tea.KeyPgUp, nil
-	case "pgdown":
-		return tea.KeyPgDown, nil
-	case "delete":
-		return tea.KeyDelete, nil
-	case "esc":
-		return tea.KeyEscape, nil
-	case "space":
-		return tea.KeySpace, nil
-	}
-
-	if len(keyStr) == 1 {
-		return tea.KeyRunes, []rune(keyStr)
-	}
-
-	return tea.KeyRunes, []rune(keyStr)
 }

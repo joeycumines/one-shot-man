@@ -67,8 +67,8 @@ import (
 	"sync/atomic"
 
 	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dop251/goja"
+	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 )
 
 // modelCounter for generating unique model IDs
@@ -464,7 +464,7 @@ func createViewportObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		}
 
 		// Convert JS message to tea.Msg
-		msg := jsToTeaMsg(runtime, msgObj)
+		msg := bubbletea.JsToTeaMsg(runtime, msgObj)
 		if msg == nil {
 			arr := runtime.NewArray()
 			_ = arr.Set("0", obj)
@@ -522,126 +522,5 @@ func clampYOffset(model *viewport.Model) {
 	}
 	if model.YOffset < 0 {
 		model.SetYOffset(0)
-	}
-}
-
-// jsToTeaMsg converts a JavaScript message object to a tea.Msg.
-// This handles key and mouse events that the viewport needs to process.
-func jsToTeaMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
-	typeVal := obj.Get("type")
-	if goja.IsUndefined(typeVal) || goja.IsNull(typeVal) {
-		return nil
-	}
-
-	msgType := typeVal.String()
-
-	switch msgType {
-	case "keyPress":
-		keyVal := obj.Get("key")
-		if goja.IsUndefined(keyVal) || goja.IsNull(keyVal) {
-			return nil
-		}
-		keyStr := keyVal.String()
-		keyType, runes := parseKeyString(keyStr)
-		return tea.KeyMsg{
-			Type:  keyType,
-			Runes: runes,
-		}
-
-	case "mouse":
-		x := int(obj.Get("x").ToInteger())
-		y := int(obj.Get("y").ToInteger())
-		buttonStr := obj.Get("button").String()
-		actionStr := obj.Get("action").String()
-
-		return tea.MouseMsg{
-			X:      x,
-			Y:      y,
-			Button: parseMouseButton(buttonStr),
-			Action: parseMouseAction(actionStr),
-		}
-
-	case "windowSize":
-		w := int(obj.Get("width").ToInteger())
-		h := int(obj.Get("height").ToInteger())
-		return tea.WindowSizeMsg{
-			Width:  w,
-			Height: h,
-		}
-
-	default:
-		return nil
-	}
-}
-
-// parseKeyString converts a key string to tea.KeyType and runes.
-func parseKeyString(keyStr string) (tea.KeyType, []rune) {
-	switch keyStr {
-	case "up":
-		return tea.KeyUp, nil
-	case "down":
-		return tea.KeyDown, nil
-	case "left":
-		return tea.KeyLeft, nil
-	case "right":
-		return tea.KeyRight, nil
-	case "pgup":
-		return tea.KeyPgUp, nil
-	case "pgdown":
-		return tea.KeyPgDown, nil
-	case "home":
-		return tea.KeyHome, nil
-	case "end":
-		return tea.KeyEnd, nil
-	case "ctrl+u":
-		return tea.KeyCtrlU, nil
-	case "ctrl+d":
-		return tea.KeyCtrlD, nil
-	case "ctrl+f":
-		return tea.KeyCtrlF, nil
-	case "ctrl+b":
-		return tea.KeyCtrlB, nil
-	}
-
-	if len(keyStr) == 1 {
-		return tea.KeyRunes, []rune(keyStr)
-	}
-
-	return tea.KeyRunes, []rune(keyStr)
-}
-
-// parseMouseButton converts a button string to tea.MouseButton.
-func parseMouseButton(buttonStr string) tea.MouseButton {
-	switch buttonStr {
-	case "left":
-		return tea.MouseButtonLeft
-	case "middle":
-		return tea.MouseButtonMiddle
-	case "right":
-		return tea.MouseButtonRight
-	case "wheelUp":
-		return tea.MouseButtonWheelUp
-	case "wheelDown":
-		return tea.MouseButtonWheelDown
-	case "wheelLeft":
-		return tea.MouseButtonWheelLeft
-	case "wheelRight":
-		return tea.MouseButtonWheelRight
-	default:
-		return tea.MouseButtonNone
-	}
-}
-
-// parseMouseAction converts an action string to tea.MouseAction.
-func parseMouseAction(actionStr string) tea.MouseAction {
-	switch actionStr {
-	case "press":
-		return tea.MouseActionPress
-	case "release":
-		return tea.MouseActionRelease
-	case "motion":
-		return tea.MouseActionMotion
-	default:
-		return tea.MouseActionPress
 	}
 }

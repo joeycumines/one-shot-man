@@ -74,3 +74,8 @@ internal/termui/scrollbar/scrollbar.go:*: unreachable func: WithStyles
 internal\termui\scrollbar\scrollbar.go:*: unreachable func: WithStyles
 internal/termui/scrollbar/scrollbar.go:*: unreachable func: WithChars
 internal\termui\scrollbar\scrollbar.go:*: unreachable func: WithChars
+
+# ParseMouseEvent is part of the public API for parsing mouse events from string representation
+# (parallels ParseKey for key events). Used in tests and available for external callers.
+internal/builtin/bubbletea/parsemouse.go:*: unreachable func: ParseMouseEvent
+internal\builtin\bubbletea\parsemouse.go:*: unreachable func: ParseMouseEvent

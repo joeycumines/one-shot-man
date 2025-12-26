@@ -1,13 +1,14 @@
-// Command generate-bubbletea-key-mapping generates keys_gen.go for the bubbletea package.
+// Command generate-bubbletea-key-mapping generates keys_gen.go and mouse_gen.go for the bubbletea package.
 //
-// This generator extracts KeyType constants from github.com/charmbracelet/bubbletea and
-// generates a Go file exposing key metadata that can be used by the JS runtime.
+// This generator extracts KeyType constants and MouseButton/MouseAction constants from
+// github.com/charmbracelet/bubbletea and generates Go files exposing metadata that can be
+// used by the JS runtime.
 //
 // Usage:
 //
 //	go run ./internal/cmd/generate-bubbletea-key-mapping
 //
-// The generated file will be placed at internal/builtin/bubbletea/keys_gen.go.
+// The generated files will be placed at internal/builtin/bubbletea/keys_gen.go and mouse_gen.go.
 package main
 
 import (
@@ -68,10 +69,22 @@ func run() error {
 		return fmt.Errorf("extracting key info: %w", err)
 	}
 
-	// Generate the output file
-	output, err := generateOutput(keyNames, aliases)
+	// Generate the keys output file
+	keysOutput, err := generateKeysOutput(keyNames, aliases)
 	if err != nil {
-		return fmt.Errorf("generating output: %w", err)
+		return fmt.Errorf("generating keys output: %w", err)
+	}
+
+	// Extract mouse button and action information
+	mouseButtons, mouseActions, err := extractMouseInfo(pkgs[0])
+	if err != nil {
+		return fmt.Errorf("extracting mouse info: %w", err)
+	}
+
+	// Generate the mouse output file
+	mouseOutput, err := generateMouseOutput(mouseButtons, mouseActions)
+	if err != nil {
+		return fmt.Errorf("generating mouse output: %w", err)
 	}
 
 	// Determine output path relative to this file's location
@@ -82,14 +95,20 @@ func run() error {
 
 	// Go up to internal/cmd/generate-bubbletea-key-mapping, then to internal/builtin/bubbletea
 	baseDir := filepath.Dir(filepath.Dir(filepath.Dir(thisFile)))
-	outputPath := filepath.Join(baseDir, "builtin", "bubbletea", "keys_gen.go")
+	keysOutputPath := filepath.Join(baseDir, "builtin", "bubbletea", "keys_gen.go")
+	mouseOutputPath := filepath.Join(baseDir, "builtin", "bubbletea", "mouse_gen.go")
 
-	// Write the output
-	if err := os.WriteFile(outputPath, output, 0644); err != nil {
-		return fmt.Errorf("writing output file: %w", err)
+	// Write the output files
+	if err := os.WriteFile(keysOutputPath, keysOutput, 0644); err != nil {
+		return fmt.Errorf("writing keys output file: %w", err)
 	}
+	fmt.Printf("Generated %s\n", keysOutputPath)
 
-	fmt.Printf("Generated %s\n", outputPath)
+	if err := os.WriteFile(mouseOutputPath, mouseOutput, 0644); err != nil {
+		return fmt.Errorf("writing mouse output file: %w", err)
+	}
+	fmt.Printf("Generated %s\n", mouseOutputPath)
+
 	return nil
 }
 
@@ -218,8 +237,8 @@ var preferredNames = map[string][]string{
 	"ctrl+@":    {"KeyCtrlAt", "KeyNull"},
 }
 
-// generateOutput generates the Go source file content.
-func generateOutput(keyNames map[string]string, aliases map[string]string) ([]byte, error) {
+// generateKeysOutput generates the Go source file content for keys_gen.go.
+func generateKeysOutput(keyNames map[string]string, aliases map[string]string) ([]byte, error) {
 	// Build the final list of key definitions
 	// We want: string value -> exported constant name -> tea.ExportedConstant
 	//
@@ -385,6 +404,238 @@ var AllKeyTypes = []tea.KeyType{
 	if err != nil {
 		// If formatting fails, return the raw output for debugging
 		return buf.Bytes(), fmt.Errorf("formatting output: %w\nRaw output:\n%s", err, buf.String())
+	}
+
+	return formatted, nil
+}
+
+// extractMouseInfo parses the bubbletea package and extracts mouseButtons and mouseActions maps.
+// Returns:
+// - mouseButtons: map from constant name to string value (e.g., "MouseButtonLeft" -> "left")
+// - mouseActions: map from constant name to string value (e.g., "MouseActionPress" -> "press")
+func extractMouseInfo(pkg *packages.Package) (mouseButtons map[string]string, mouseActions map[string]string, err error) {
+	mouseButtons = make(map[string]string)
+	mouseActions = make(map[string]string)
+
+	for _, file := range pkg.Syntax {
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch decl := n.(type) {
+			case *ast.GenDecl:
+				if decl.Tok == token.VAR {
+					for _, spec := range decl.Specs {
+						if vs, ok := spec.(*ast.ValueSpec); ok {
+							for i, name := range vs.Names {
+								if name.Name == "mouseButtons" && i < len(vs.Values) {
+									extractMouseMap(vs.Values[i], mouseButtons, "MouseButton")
+								}
+								if name.Name == "mouseActions" && i < len(vs.Values) {
+									extractMouseMap(vs.Values[i], mouseActions, "MouseAction")
+								}
+							}
+						}
+					}
+				}
+			}
+			return true
+		})
+	}
+
+	return mouseButtons, mouseActions, nil
+}
+
+// extractMouseMap extracts key-value pairs from a map composite literal.
+// The prefix is used to ensure we only capture the correct constant names.
+func extractMouseMap(expr ast.Expr, result map[string]string, prefix string) {
+	compLit, ok := expr.(*ast.CompositeLit)
+	if !ok {
+		return
+	}
+
+	for _, elt := range compLit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+
+		// Get key (constant name)
+		var keyName string
+		switch k := kv.Key.(type) {
+		case *ast.Ident:
+			keyName = k.Name
+		default:
+			continue
+		}
+
+		// Get value (string literal)
+		var strVal string
+		switch v := kv.Value.(type) {
+		case *ast.BasicLit:
+			if v.Kind == token.STRING {
+				unquoted, err := strconv.Unquote(v.Value)
+				if err != nil {
+					continue
+				}
+				strVal = unquoted
+			}
+		default:
+			continue
+		}
+
+		if keyName != "" && strVal != "" {
+			result[keyName] = strVal
+		}
+	}
+}
+
+// generateMouseOutput generates the Go source file content for mouse_gen.go.
+func generateMouseOutput(mouseButtons, mouseActions map[string]string) ([]byte, error) {
+	var buf bytes.Buffer
+
+	// Write header
+	buf.WriteString(`// Code generated by generate-bubbletea-key-mapping. DO NOT EDIT.
+
+package bubbletea
+
+import tea "github.com/charmbracelet/bubbletea"
+
+// MouseButtonDef represents metadata about a bubbletea MouseButton.
+type MouseButtonDef struct {
+	// Name is the Go constant name (e.g., "MouseButtonLeft").
+	Name string
+	// String is the string representation (e.g., "left").
+	String string
+	// Button is the actual tea.MouseButton value.
+	Button tea.MouseButton
+}
+
+// MouseActionDef represents metadata about a bubbletea MouseAction.
+type MouseActionDef struct {
+	// Name is the Go constant name (e.g., "MouseActionPress").
+	Name string
+	// String is the string representation (e.g., "press").
+	String string
+	// Action is the actual tea.MouseAction value.
+	Action tea.MouseAction
+}
+
+// MouseButtonDefs contains all bubbletea MouseButton definitions.
+// The map is keyed by the String() representation for JS lookup efficiency.
+var MouseButtonDefs = map[string]MouseButtonDef{
+`)
+
+	// Sort buttons by string value for deterministic output
+	type buttonEntry struct {
+		name   string
+		strVal string
+	}
+	var buttons []buttonEntry
+	for name, strVal := range mouseButtons {
+		buttons = append(buttons, buttonEntry{name: name, strVal: strVal})
+	}
+	sort.Slice(buttons, func(i, j int) bool {
+		return buttons[i].strVal < buttons[j].strVal
+	})
+
+	for _, b := range buttons {
+		buf.WriteString(fmt.Sprintf("\t%q: {Name: %q, String: %q, Button: tea.%s},\n",
+			b.strVal, b.name, b.strVal, b.name))
+	}
+
+	buf.WriteString(`}
+
+// MouseButtonDefsByName contains all bubbletea MouseButton definitions keyed by constant name.
+var MouseButtonDefsByName = map[string]MouseButtonDef{
+`)
+
+	// Sort by name for deterministic output
+	sort.Slice(buttons, func(i, j int) bool {
+		return buttons[i].name < buttons[j].name
+	})
+	for _, b := range buttons {
+		buf.WriteString(fmt.Sprintf("\t%q: MouseButtonDefs[%q],\n", b.name, b.strVal))
+	}
+
+	buf.WriteString(`}
+
+// MouseActionDefs contains all bubbletea MouseAction definitions.
+// The map is keyed by the String() representation for JS lookup efficiency.
+var MouseActionDefs = map[string]MouseActionDef{
+`)
+
+	// Sort actions by string value for deterministic output
+	type actionEntry struct {
+		name   string
+		strVal string
+	}
+	var actions []actionEntry
+	for name, strVal := range mouseActions {
+		actions = append(actions, actionEntry{name: name, strVal: strVal})
+	}
+	sort.Slice(actions, func(i, j int) bool {
+		return actions[i].strVal < actions[j].strVal
+	})
+
+	for _, a := range actions {
+		buf.WriteString(fmt.Sprintf("\t%q: {Name: %q, String: %q, Action: tea.%s},\n",
+			a.strVal, a.name, a.strVal, a.name))
+	}
+
+	buf.WriteString(`}
+
+// MouseActionDefsByName contains all bubbletea MouseAction definitions keyed by constant name.
+var MouseActionDefsByName = map[string]MouseActionDef{
+`)
+
+	// Sort by name for deterministic output
+	sort.Slice(actions, func(i, j int) bool {
+		return actions[i].name < actions[j].name
+	})
+	for _, a := range actions {
+		buf.WriteString(fmt.Sprintf("\t%q: MouseActionDefs[%q],\n", a.name, a.strVal))
+	}
+
+	buf.WriteString(`}
+
+// AllMouseButtons returns all known tea.MouseButton values that have string representations.
+var AllMouseButtons = []tea.MouseButton{
+`)
+
+	// Use the original sorted-by-strVal order
+	sort.Slice(buttons, func(i, j int) bool {
+		return buttons[i].strVal < buttons[j].strVal
+	})
+	for _, b := range buttons {
+		buf.WriteString(fmt.Sprintf("\ttea.%s,\n", b.name))
+	}
+
+	buf.WriteString(`}
+
+// AllMouseActions returns all known tea.MouseAction values that have string representations.
+var AllMouseActions = []tea.MouseAction{
+`)
+
+	// Use the original sorted-by-strVal order
+	sort.Slice(actions, func(i, j int) bool {
+		return actions[i].strVal < actions[j].strVal
+	})
+	for _, a := range actions {
+		buf.WriteString(fmt.Sprintf("\ttea.%s,\n", a.name))
+	}
+
+	buf.WriteString(`}
+
+// IsWheelButton returns true if the button is a wheel button.
+// This mirrors tea.MouseEvent.IsWheel() for use in parsing/validation.
+func IsWheelButton(b tea.MouseButton) bool {
+	return b == tea.MouseButtonWheelUp || b == tea.MouseButtonWheelDown ||
+		b == tea.MouseButtonWheelLeft || b == tea.MouseButtonWheelRight
+}
+`)
+
+	// Format the output
+	formatted, err := format.Source(buf.Bytes())
+	if err != nil {
+		return buf.Bytes(), fmt.Errorf("formatting mouse output: %w\nRaw output:\n%s", err, buf.String())
 	}
 
 	return formatted, nil

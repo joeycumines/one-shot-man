@@ -1275,3 +1275,207 @@ func TestPromptWidthAndContentWidth(t *testing.T) {
 
 	t.Logf("promptWidth=%d, reservedInnerWidth=%d, contentWidth=%d", promptWidth, reservedInner, contentWidth)
 }
+
+// TestHanaSamaScenario100CharLine is a MANDATORY test requested by Hana-sama:
+// 100-character line in 40-character viewport - clicking the wrapped segment
+// MUST stay in logical row 0. This is the critical regression test for the
+// "cursor jumps to wrong line" bug.
+func TestHanaSamaScenario100CharLine(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Clear prompt and disable line numbers for exact width control
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+
+	// Set 40-char viewport width as requested by Hana-sama
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(40))
+
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	performHitTestFn, _ := goja.AssertFunction(ta.Get("performHitTest"))
+	visualLineCountFn, _ := goja.AssertFunction(ta.Get("visualLineCount"))
+	lineFn, _ := goja.AssertFunction(ta.Get("line"))
+	colFn, _ := goja.AssertFunction(ta.Get("col"))
+
+	// 100-character line exactly as Hana-sama specified
+	hundredCharLine := "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+	if len(hundredCharLine) != 100 {
+		t.Fatalf("Test setup error: expected 100 chars, got %d", len(hundredCharLine))
+	}
+
+	// Add a second line so we can verify we DON'T incorrectly jump to it
+	_, _ = setValueFn(ta, runtime.ToValue(hundredCharLine+"\nSecond Line"))
+
+	// Verify wrapping: 100 chars at width 40 = ceil(100/40) = 3 visual lines
+	// Plus "Second Line" = 1 visual line = 4 total
+	visualCount, _ := visualLineCountFn(ta)
+	if visualCount.ToInteger() < 3 {
+		t.Errorf("Expected at least 3 visual lines (100/40=2.5 rounded up), got %d", visualCount.ToInteger())
+	}
+	t.Logf("100-char line in 40-width viewport produces %d visual lines", visualCount.ToInteger())
+
+	// THE CRITICAL TEST: Click on visual line 2 (the third wrapped segment of row 0)
+	// This MUST position cursor in logical row 0, NOT row 2
+	tests := []struct {
+		name          string
+		visualX       int
+		visualY       int
+		expectedRow   int64
+		expectedMinCol int64  // Minimum expected column
+		expectedMaxCol int64  // Maximum expected column
+	}{
+		{
+			name:          "click first visual line (row 0, chars 0-39)",
+			visualX:       5,
+			visualY:       0,
+			expectedRow:   0,
+			expectedMinCol: 5,
+			expectedMaxCol: 5,
+		},
+		{
+			name:          "click second visual line (STILL row 0, chars 40-79)",
+			visualX:       5,
+			visualY:       1,
+			expectedRow:   0, // CRITICAL: Must stay in logical row 0!
+			expectedMinCol: 45, // 40 (wrap offset) + 5
+			expectedMaxCol: 45,
+		},
+		{
+			name:          "click third visual line (STILL row 0, chars 80-99)",
+			visualX:       5,
+			visualY:       2,
+			expectedRow:   0, // CRITICAL: Must stay in logical row 0!
+			expectedMinCol: 85, // 80 (second wrap offset) + 5
+			expectedMaxCol: 85,
+		},
+		{
+			name:          "click fourth visual line (this is logical row 1)",
+			visualX:       3,
+			visualY:       3,
+			expectedRow:   1, // This is actually the second logical line
+			expectedMinCol: 3,
+			expectedMaxCol: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hitResultVal, err := performHitTestFn(ta, runtime.ToValue(tt.visualX), runtime.ToValue(tt.visualY))
+			if err != nil {
+				t.Fatalf("performHitTest failed: %v", err)
+			}
+
+			hitResult := hitResultVal.ToObject(runtime)
+			row := hitResult.Get("row").ToInteger()
+			col := hitResult.Get("col").ToInteger()
+
+			if row != tt.expectedRow {
+				t.Errorf("HANA-SAMA BUG DETECTED: Expected logical row %d, got %d. "+
+					"Clicking visual line %d jumped to wrong logical row!", 
+					tt.expectedRow, row, tt.visualY)
+			}
+
+			if col < tt.expectedMinCol || col > tt.expectedMaxCol {
+				t.Errorf("Expected column in range [%d, %d], got %d", 
+					tt.expectedMinCol, tt.expectedMaxCol, col)
+			}
+
+			// Also verify setPosition + line/col retrieval works correctly
+			setPositionFn, _ := goja.AssertFunction(ta.Get("setPosition"))
+			_, _ = setPositionFn(ta, runtime.ToValue(row), runtime.ToValue(col))
+
+			lineResult, _ := lineFn(ta)
+			colResult, _ := colFn(ta)
+
+			if lineResult.ToInteger() != tt.expectedRow {
+				t.Errorf("setPosition row mismatch: set %d, got %d", tt.expectedRow, lineResult.ToInteger())
+			}
+			if colResult.ToInteger() != col {
+				t.Errorf("setPosition col mismatch: set %d, got %d", col, colResult.ToInteger())
+			}
+		})
+	}
+}
+
+// TestHanaSamaScenarioMultiWidthHitTest tests clicking on CJK/emoji characters
+// as demanded by Hana-sama. Clicking the right half of a 2-cell character
+// should position correctly, not split the character or jump to wrong position.
+func TestHanaSamaScenarioMultiWidthHitTest(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Clear prompt and disable line numbers
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(20))
+
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	performHitTestFn, _ := goja.AssertFunction(ta.Get("performHitTest"))
+
+	// Content: "A你好B" = A(1) + 你(2) + 好(2) + B(1) = 6 visual cells, 4 runes
+	// Visual layout:  A 你你 好好 B
+	// Cell indices:   0 1 2  3 4  5
+	// Rune indices:   0 1    2    3
+	_, _ = setValueFn(ta, runtime.ToValue("A你好B"))
+
+	tests := []struct {
+		name        string
+		visualX     int
+		visualY     int
+		expectedRow int64
+		expectedCol int64 // Column is in RUNE units, not cells
+	}{
+		{"click on A (cell 0)", 0, 0, 0, 0},
+		{"click on left half of 你 (cell 1)", 1, 0, 0, 1},
+		{"click on right half of 你 (cell 2)", 2, 0, 0, 2}, // Should advance to next char
+		{"click on left half of 好 (cell 3)", 3, 0, 0, 2},
+		{"click on right half of 好 (cell 4)", 4, 0, 0, 3}, // Should advance to next char
+		{"click on B (cell 5)", 5, 0, 0, 3},
+		{"click beyond line (cell 6)", 6, 0, 0, 4}, // Clamp to end
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hitResultVal, err := performHitTestFn(ta, runtime.ToValue(tt.visualX), runtime.ToValue(tt.visualY))
+			if err != nil {
+				t.Fatalf("performHitTest failed: %v", err)
+			}
+
+			hitResult := hitResultVal.ToObject(runtime)
+			row := hitResult.Get("row").ToInteger()
+			col := hitResult.Get("col").ToInteger()
+
+			if row != tt.expectedRow {
+				t.Errorf("Expected row %d, got %d", tt.expectedRow, row)
+			}
+			if col != tt.expectedCol {
+				t.Errorf("MULTI-WIDTH BUG: Expected col %d (rune index), got %d. "+
+					"Clicking visual cell %d mapped to wrong rune position.",
+					tt.expectedCol, col, tt.visualX)
+			}
+		})
+	}
+}

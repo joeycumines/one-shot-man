@@ -1941,11 +1941,17 @@ function renderInput(s) {
     // When unlocked (user is scrolling freely), don't interfere with their scroll position.
     // The unlock flag is reset when user types, so the view will snap back to cursor on input.
     if (s.contentTextarea && s.inputFocus === FOCUS_CONTENT && !s.inputViewportUnlocked) {
-        const cursorLineIdx = s.contentTextarea.line();
+        // CRITICAL FIX: Use cursorVisualLine() instead of line() for viewport scrolling.
+        // line() returns the LOGICAL line index (0 if on first line, even if cursor is on wrapped portion).
+        // cursorVisualLine() returns the VISUAL line index (accounting for soft-wrapping).
+        // Using line() caused viewport shaking/stuttering because the viewport thought the cursor
+        // was at the wrong position when lines wrapped.
+        const cursorVisualLineIdx = s.contentTextarea.cursorVisualLine ? 
+            s.contentTextarea.cursorVisualLine() : s.contentTextarea.line();
         // preContentHeight is the Y offset from start of scrollable content to start of textarea text
         // Note: we must account for style borders.
         // lblField (height) + gap(1) + contentLabel(1) + borderTop(1)
-        const cursorAbsY = preContentHeight + cursorLineIdx;
+        const cursorAbsY = preContentHeight + cursorVisualLineIdx;
 
         const vpY = s.inputVp.yOffset();
         const vpH = s.inputVp.height();

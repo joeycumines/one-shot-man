@@ -497,6 +497,49 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		return runtime.ToValue(totalVisualLines)
 	})
 
+	// cursorVisualLine returns the visual line index where the cursor is located.
+	// This accounts for soft-wrapping: if the cursor is on the wrapped portion of
+	// a logical line, this returns the visual line number (0-indexed from document start).
+	// This is essential for viewport scrolling to correctly track the cursor position.
+	//
+	// CRITICAL: Using line() (logical line) for viewport scrolling causes shaking/stuttering
+	// because the viewport thinks the cursor is at the wrong position when lines wrap.
+	_ = obj.Set("cursorVisualLine", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		mirror := (*textareaModelMirror)(unsafe.Pointer(&wrapper.model))
+
+		if len(mirror.value) == 0 {
+			return runtime.ToValue(0)
+		}
+
+		contentWidth := mirror.width - mirror.promptWidth
+
+		// Count visual lines for all rows BEFORE the current row
+		visualLinesBefore := 0
+		for row := 0; row < mirror.row && row < len(mirror.value); row++ {
+			visualLinesBefore += calculateWrappedLineCount(mirror.value[row], contentWidth)
+		}
+
+		// Now calculate which visual line within the current row the cursor is on
+		visualLineWithinRow := 0
+		if mirror.row < len(mirror.value) && contentWidth > 0 {
+			currentLine := mirror.value[mirror.row]
+			// Sum visual widths of characters up to the cursor column
+			visualWidthToCursor := 0
+			for i := 0; i < mirror.col && i < len(currentLine); i++ {
+				visualWidthToCursor += runeWidth(currentLine[i])
+			}
+			// Which wrapped segment is the cursor in?
+			if contentWidth > 0 && visualWidthToCursor >= contentWidth {
+				visualLineWithinRow = visualWidthToCursor / contentWidth
+			}
+		}
+
+		return runtime.ToValue(visualLinesBefore + visualLineWithinRow)
+	})
+
 	// performHitTest maps visual coordinates to logical row/column.
 	// This properly accounts for soft-wrapped lines and multi-width characters.
 	// Parameters:

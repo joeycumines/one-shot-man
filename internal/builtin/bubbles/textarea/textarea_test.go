@@ -928,3 +928,273 @@ func TestTextareaMultiWidthCharacters(t *testing.T) {
 		t.Errorf("expected at least 2 visual lines for CJK text at width 6, got %d", visualResult.ToInteger())
 	}
 }
+
+// TestSuperDocumentViewportAlignment tests that visualLineCount and performHitTest
+// work correctly under PRODUCTION CONDITIONS (with line numbers enabled and
+// default prompt intact). This is a regression test for the viewport shaking/ghosting
+// issue identified by Hana-sama where the Go and JS calculations drifted.
+//
+// The key insight: In production, we have:
+// - ShowLineNumbers = true
+// - Default prompt = "┃ " (2 chars)
+// - Line numbers add variable width (e.g., " 1 " = 4 chars for 1-9 lines)
+//
+// The textarea internally calculates:
+// - promptWidth = len(prompt) + lineNumberWidth
+// - contentWidth = width - promptWidth
+//
+// If we set width=40 with ShowLineNumbers=true and default prompt:
+// - promptWidth = 2 (prompt) + 4 (line nums) = 6
+// - contentWidth = 40 - 6 = 34
+//
+// A line of 68 characters should wrap into 2 visual lines (68/34 = 2).
+func TestSuperDocumentViewportAlignment(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// PRODUCTION CONDITIONS: DO NOT clear prompt, DO enable line numbers
+	// This mirrors what super_document_script.js does
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(true))
+
+	// Set width - must be after ShowLineNumbers to get correct promptWidth calculation
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(40)) // Typical narrow terminal width
+
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	visualLineCountFn, _ := goja.AssertFunction(ta.Get("visualLineCount"))
+	lineCountFn, _ := goja.AssertFunction(ta.Get("lineCount"))
+
+	// Test 1: A single long line that wraps
+	// With default prompt "┃ " (2 chars) and line numbers (4 chars), promptWidth = 6
+	// So contentWidth = 40 - 6 = 34
+	// A 68-char line should wrap into 2 visual lines
+	longLine := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ABCDEF" // 68 chars
+	_, _ = setValueFn(ta, runtime.ToValue(longLine))
+
+	logicalCount, _ := lineCountFn(ta)
+	visualCount, _ := visualLineCountFn(ta)
+
+	if logicalCount.ToInteger() != 1 {
+		t.Errorf("Expected 1 logical line, got %d", logicalCount.ToInteger())
+	}
+
+	// Visual lines should be >= 2 (68 chars / 34 content width = 2 visual lines)
+	if visualCount.ToInteger() < 2 {
+		t.Errorf("Expected at least 2 visual lines for 68-char line at width 40, got %d (promptWidth may be calculated incorrectly)", visualCount.ToInteger())
+	}
+
+	// Test 2: Multiple lines with wrapping
+	multiLineContent := longLine + "\n" + longLine + "\nShort line"
+	_, _ = setValueFn(ta, runtime.ToValue(multiLineContent))
+
+	logicalCount, _ = lineCountFn(ta)
+	visualCount, _ = visualLineCountFn(ta)
+
+	if logicalCount.ToInteger() != 3 {
+		t.Errorf("Expected 3 logical lines, got %d", logicalCount.ToInteger())
+	}
+
+	// Visual lines: 2 (first long) + 2 (second long) + 1 (short) = 5
+	if visualCount.ToInteger() < 5 {
+		t.Errorf("Expected at least 5 visual lines, got %d", visualCount.ToInteger())
+	}
+
+	// Test 3: Verify performHitTest with production conditions
+	performHitTestFn, ok := goja.AssertFunction(ta.Get("performHitTest"))
+	if !ok {
+		t.Fatal("performHitTest is not a function")
+	}
+
+	// Click on the wrapped continuation of the first line (visual line 1)
+	hitResult, err := performHitTestFn(ta, runtime.ToValue(5), runtime.ToValue(1))
+	if err != nil {
+		t.Fatalf("performHitTest failed: %v", err)
+	}
+
+	row := hitResult.ToObject(runtime).Get("row").ToInteger()
+	col := hitResult.ToObject(runtime).Get("col").ToInteger()
+
+	// Should still be in logical row 0, but column should be >= 34 (start of wrapped segment + click offset)
+	if row != 0 {
+		t.Errorf("VIEWPORT ALIGNMENT BUG: Click on wrapped line mapped to wrong logical row. Expected row 0, got %d", row)
+	}
+
+	// Column should be somewhere in the 34-40 range (wrapped segment start + visual X)
+	// contentWidth ~= 34, so visual line 1 starts at column 34, and visualX=5 means column 39
+	expectedMinCol := int64(30) // Be lenient due to promptWidth calculation variations
+	if col < expectedMinCol {
+		t.Errorf("VIEWPORT ALIGNMENT BUG: Click column %d is too low, expected >= %d", col, expectedMinCol)
+	}
+}
+
+// TestViewportDoubleCounting specifically tests for the double-counting bug
+// where border/padding/prompt offsets might be counted twice between JS and Go.
+func TestViewportDoubleCounting(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Set up exactly like production code in configureTextarea()
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(true))
+
+	// Simulate the JS calculation:
+	// fieldWidth = max(40, termWidth - 10) = let's say 60
+	// innerWidth = fieldWidth - 4 - scrollbarWidth = 60 - 4 - 1 = 55
+	// setWidth(innerWidth)
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	innerWidth := 55
+	_, _ = setWidthFn(ta, runtime.ToValue(innerWidth))
+
+	// Now visualLineCount should use:
+	// contentWidth = width - promptWidth = 55 - 6 = 49 (assuming prompt=2, lineNums=4)
+	//
+	// If the JS then ALSO subtracts prompt/lineNum width when calculating bounds,
+	// there would be a double-count.
+
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	visualLineCountFn, _ := goja.AssertFunction(ta.Get("visualLineCount"))
+
+	// Create content that would wrap differently depending on contentWidth
+	// At contentWidth=49, a 100-char line wraps into 3 visual lines (100/49 = ceil(2.04) = 3)
+	// At contentWidth=55, a 100-char line wraps into 2 visual lines (100/55 = ceil(1.82) = 2)
+	hundredChars := "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+	_, _ = setValueFn(ta, runtime.ToValue(hundredChars))
+
+	visualCount, _ := visualLineCountFn(ta)
+
+	// With proper calculation (contentWidth = 55 - 6 = 49), we expect 3 visual lines
+	// If there's double-counting, we might get more or fewer lines
+	expectedVisualLines := int64(3) // ceil(100/49) = 3
+
+	if visualCount.ToInteger() != expectedVisualLines {
+		t.Errorf("Potential double-counting bug: Expected %d visual lines, got %d. "+
+			"This suggests contentWidth calculation drift between Go and JS.",
+			expectedVisualLines, visualCount.ToInteger())
+	}
+}
+
+// TestCursorVisualLine tests the cursorVisualLine method which returns the visual
+// line index where the cursor is located, accounting for soft-wrapping.
+// This is a regression test for the viewport shaking/stuttering bug where using
+// line() (logical) instead of cursorVisualLine() (visual) caused the viewport
+// to track the wrong position.
+func TestCursorVisualLine(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Clear prompt and disable line numbers for predictable width
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+
+	// Set narrow width to force wrapping
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(10)) // Content width = 10
+
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	setPositionFn, _ := goja.AssertFunction(ta.Get("setPosition"))
+	cursorVisualLineFn, ok := goja.AssertFunction(ta.Get("cursorVisualLine"))
+	if !ok {
+		t.Fatal("cursorVisualLine is not a function")
+	}
+	lineFn, _ := goja.AssertFunction(ta.Get("line"))
+
+	// Content: "ABCDEFGHIJKLMNOPQRST" (20 chars at width 10 = 2 visual lines)
+	// Then "XYZ" on second logical line
+	_, _ = setValueFn(ta, runtime.ToValue("ABCDEFGHIJKLMNOPQRST\nXYZ"))
+
+	tests := []struct {
+		name               string
+		row                int
+		col                int
+		expectedLogicalLine int64
+		expectedVisualLine  int64
+	}{
+		{
+			name:               "cursor at start of first logical line",
+			row:                0,
+			col:                0,
+			expectedLogicalLine: 0,
+			expectedVisualLine:  0,
+		},
+		{
+			name:               "cursor at end of first visual segment (col 9)",
+			row:                0,
+			col:                9,
+			expectedLogicalLine: 0,
+			expectedVisualLine:  0,
+		},
+		{
+			name:               "cursor at start of wrapped segment (col 10)",
+			row:                0,
+			col:                10,
+			expectedLogicalLine: 0, // Still logical line 0
+			expectedVisualLine:  1, // But visual line 1 (wrapped)
+		},
+		{
+			name:               "cursor at end of wrapped segment (col 19)",
+			row:                0,
+			col:                19,
+			expectedLogicalLine: 0,
+			expectedVisualLine:  1,
+		},
+		{
+			name:               "cursor at second logical line (visual line 2)",
+			row:                1,
+			col:                0,
+			expectedLogicalLine: 1,
+			expectedVisualLine:  2, // First logical line takes 2 visual lines
+		},
+		{
+			name:               "cursor at middle of second logical line",
+			row:                1,
+			col:                2,
+			expectedLogicalLine: 1,
+			expectedVisualLine:  2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _ = setPositionFn(ta, runtime.ToValue(tt.row), runtime.ToValue(tt.col))
+
+			logicalResult, _ := lineFn(ta)
+			if logicalResult.ToInteger() != tt.expectedLogicalLine {
+				t.Errorf("expected logical line %d, got %d", tt.expectedLogicalLine, logicalResult.ToInteger())
+			}
+
+			visualResult, _ := cursorVisualLineFn(ta)
+			if visualResult.ToInteger() != tt.expectedVisualLine {
+				t.Errorf("VIEWPORT SHAKING BUG: expected cursor visual line %d, got %d. "+
+					"Using line() instead of cursorVisualLine() causes viewport tracking errors.",
+					tt.expectedVisualLine, visualResult.ToInteger())
+			}
+		})
+	}
+}

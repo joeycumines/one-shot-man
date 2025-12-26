@@ -1319,7 +1319,65 @@ function handleMouse(msg, s) {
             }
             return [s, null];
         }
-        if (zone.inBounds('input-content', msg)) {
+
+        // COORDINATE-BASED TEXTAREA HIT DETECTION
+        // Zone-based detection fails for large scrolled documents because the zone marker
+        // doesn't correctly account for viewport scroll offset. Use coordinate math instead.
+        //
+        // Layout (Y-axis from top of screen):
+        //   titleHeight (1 line) - fixed header
+        //   [viewport starts here - scrollable area]
+        //     lblField (label field with border)
+        //     gap (1 empty line)
+        //     contentLabel ("Content (multi-line):" - 1 line)
+        //     border top (1 line)
+        //     [TEXTAREA CONTENT - variable height]
+        //     border bottom (1 line)
+        //   [buttons, etc.]
+        //   footer - fixed
+        //
+        // We need to check if the click is within the VISIBLE textarea bounds.
+        let clickedInTextareaArea = false;
+        if (s.textareaBounds && s.inputVp) {
+            const titleHeight = 1;
+            const vpYOffset = s.inputVp.yOffset();
+            const vpHeight = s.inputVp.height();
+
+            // Screen Y position of viewport top and bottom
+            const vpScreenTop = titleHeight;
+            const vpScreenBottom = vpScreenTop + vpHeight;
+
+            // Check if click is within viewport vertical bounds
+            if (msg.y >= vpScreenTop && msg.y < vpScreenBottom) {
+                // Convert screen Y to content-space Y
+                const viewportRelativeY = msg.y - titleHeight;
+                const contentY = viewportRelativeY + vpYOffset;
+
+                // Textarea content area starts at textareaBounds.contentTop in content-space
+                // and extends for the height of the textarea (which we can derive from lineCount)
+                const textareaContentTop = s.textareaBounds.contentTop;
+                // Add 1 for the border at top of the content field style
+                const textareaLineCount = s.contentTextarea ? s.contentTextarea.lineCount() : 0;
+                // Content area height = lineCount + buffer (the height we set)
+                const textareaContentHeight = Math.max(1, textareaLineCount + 1);
+                const textareaContentBottom = textareaContentTop + textareaContentHeight;
+
+                // Check if content Y is within textarea content area
+                if (contentY >= textareaContentTop && contentY < textareaContentBottom) {
+                    // Also check X bounds - should be within the field width
+                    const fieldLeftEdge = 0; // Leftmost edge of the field
+                    const fieldRightEdge = s.textareaBounds.fieldWidth || s.width;
+                    if (msg.x >= fieldLeftEdge && msg.x < fieldRightEdge) {
+                        clickedInTextareaArea = true;
+                    }
+                }
+            }
+        }
+
+        // Also try zone-based detection as fallback for smaller content
+        const zoneHit = zone.inBounds('input-content', msg);
+
+        if (clickedInTextareaArea || zoneHit) {
             // Click on content textarea - focus it and position cursor
             if (s.inputFocus !== FOCUS_CONTENT) {
                 s.inputFocus = FOCUS_CONTENT;
@@ -1328,20 +1386,9 @@ function handleMouse(msg, s) {
                 }
             }
 
-            // CRITICAL FIX: Position cursor at click location
-            // The upstream bubbles/textarea does NOT handle mouse events for cursor positioning,
-            // so we must calculate the position ourselves using the bounds from renderInput.
+            // CURSOR POSITIONING for mouse clicks
+            // Calculate the clicked row/column and update cursor position.
             if (s.contentTextarea && isLeftClick && !isWheelEvent && s.textareaBounds) {
-                // Calculate textarea-relative coordinates
-                // msg.x and msg.y are screen-relative coordinates
-                //
-                // The textarea is inside a scrollable viewport (inputVp).
-                // We need to account for:
-                // 1. Header height (titleHeight = 1)
-                // 2. Viewport scroll offset (inputVp.yOffset())
-                // 3. Content offset within the scrollable area (textareaBounds.contentTop)
-                // 4. Horizontal offset to text content (textareaBounds.contentLeft)
-
                 const titleHeight = 1;
                 const vpYOffset = s.inputVp ? s.inputVp.yOffset() : 0;
 
@@ -1356,6 +1403,7 @@ function handleMouse(msg, s) {
                 const textareaCol = Math.max(0, msg.x - s.textareaBounds.contentLeft);
 
                 // Only reposition if the click is within the textarea area (positive row)
+                // Clamp to valid range - setPosition will do additional clamping
                 if (textareaRow >= 0) {
                     s.contentTextarea.setPosition(textareaRow, textareaCol);
                     // Reset viewport unlock so cursor stays visible after click
@@ -1364,11 +1412,25 @@ function handleMouse(msg, s) {
             }
             return [s, null];
         }
-        // Fix issue #2: Clicking anywhere in input mode that doesn't trigger another action
-        // should de-focus the textarea (catch-all handler)
-        if (s.inputFocus === FOCUS_CONTENT && s.contentTextarea) {
-            s.contentTextarea.blur();
-            s.inputFocus = FOCUS_LABEL; // Move focus to label field
+
+        // CATCH-ALL BLUR LOGIC (FIXED)
+        // Only blur if clicking OUTSIDE the scrollable viewport area entirely.
+        // Previously this would fire for any click that didn't match a zone,
+        // causing incorrect blurs when clicking on large scrolled documents.
+        if (s.inputFocus === FOCUS_CONTENT && s.contentTextarea && s.inputVp) {
+            const titleHeight = 1;
+            const vpHeight = s.inputVp.height();
+            const vpScreenTop = titleHeight;
+            const vpScreenBottom = vpScreenTop + vpHeight;
+
+            // Only blur if click is OUTSIDE the viewport Y bounds
+            // (clicking within viewport but outside textarea should keep focus)
+            if (msg.y < vpScreenTop || msg.y >= vpScreenBottom) {
+                s.contentTextarea.blur();
+                s.inputFocus = FOCUS_LABEL;
+            }
+            // If click is within viewport but not on textarea, we still keep focus
+            // to avoid jarring blur/focus cycles. User can Tab to move focus.
         }
     }
 
@@ -1740,6 +1802,8 @@ function renderInput(s) {
         const lineNumberWidth = 4;
 
         // Store bounds in state for handleMouse to use
+        // These bounds are critical for proper mouse click handling, especially
+        // for large documents where zone-based detection fails.
         s.textareaBounds = {
             // Offset from start of scrollable content to first content row
             contentTop: textareaContentStartY,
@@ -1750,6 +1814,11 @@ function renderInput(s) {
             // Store additional info for precise calculations
             fieldWidth: fieldWidth,
             innerWidth: innerWidth,
+            // Store content height for hit detection
+            contentHeight: contentLines + 1,
+            // Store the border widths for X-axis hit detection
+            borderLeft: borderLeft,
+            paddingLeft: paddingLeft,
         };
     }
 

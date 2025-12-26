@@ -307,3 +307,264 @@ func TestTextareaCol(t *testing.T) {
 		t.Errorf("expected col 3, got %d", colResult.ToInteger())
 	}
 }
+
+// TestTextareaLargeDocument tests cursor positioning in a large document (100+ lines).
+// This is critical for ensuring the implementation works with scrolled content.
+func TestTextareaLargeDocument(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Build a large document with 150 lines
+	var content string
+	for i := 0; i < 150; i++ {
+		if i > 0 {
+			content += "\n"
+		}
+		content += "Line " + string(rune('A'+i%26)) + " number " + string(rune('0'+i/100)) + string(rune('0'+(i/10)%10)) + string(rune('0'+i%10))
+	}
+
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	_, _ = setValueFn(ta, runtime.ToValue(content))
+
+	// Verify line count
+	lineCountFn, _ := goja.AssertFunction(ta.Get("lineCount"))
+	lineCountResult, _ := lineCountFn(ta)
+	if lineCountResult.ToInteger() != 150 {
+		t.Fatalf("expected 150 lines, got %d", lineCountResult.ToInteger())
+	}
+
+	setPositionFn, _ := goja.AssertFunction(ta.Get("setPosition"))
+	lineFn, _ := goja.AssertFunction(ta.Get("line"))
+	colFn, _ := goja.AssertFunction(ta.Get("col"))
+
+	tests := []struct {
+		name        string
+		row         int
+		col         int
+		expectedRow int64
+		expectedCol int64
+	}{
+		{"first line", 0, 5, 0, 5},
+		{"middle line", 75, 10, 75, 10},
+		{"line 100", 100, 8, 100, 8},
+		{"last line", 149, 5, 149, 5},
+		{"beyond last line", 200, 5, 149, 5},
+		{"col beyond line length", 50, 100, 50, 17}, // Each line is ~17-18 chars (variable)
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _ = setPositionFn(ta, runtime.ToValue(tt.row), runtime.ToValue(tt.col))
+
+			lineResult, _ := lineFn(ta)
+			if lineResult.ToInteger() != tt.expectedRow {
+				t.Errorf("expected row %d, got %d", tt.expectedRow, lineResult.ToInteger())
+			}
+
+			colResult, _ := colFn(ta)
+			if colResult.ToInteger() != tt.expectedCol {
+				t.Errorf("expected col %d, got %d", tt.expectedCol, colResult.ToInteger())
+			}
+		})
+	}
+}
+
+// TestTextareaHandleClickWithScrollOffset tests handleClick with various scroll offsets.
+// This simulates clicking on a large scrolled document.
+func TestTextareaHandleClickWithScrollOffset(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Build a document with 50 lines
+	var content string
+	for i := 0; i < 50; i++ {
+		if i > 0 {
+			content += "\n"
+		}
+		content += "Line content here"
+	}
+
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	_, _ = setValueFn(ta, runtime.ToValue(content))
+
+	handleClickFn, _ := goja.AssertFunction(ta.Get("handleClick"))
+	lineFn, _ := goja.AssertFunction(ta.Get("line"))
+	colFn, _ := goja.AssertFunction(ta.Get("col"))
+
+	tests := []struct {
+		name        string
+		clickX      int
+		clickY      int
+		yOffset     int
+		expectedRow int64
+		expectedCol int64
+	}{
+		// No scroll: clicking display line 0 = actual line 0
+		{"no scroll, click line 0", 5, 0, 0, 0, 5},
+		{"no scroll, click line 5", 8, 5, 0, 5, 8},
+
+		// Scrolled by 10 lines: clicking display line 0 = actual line 10
+		{"scroll 10, click display line 0", 3, 0, 10, 10, 3},
+		{"scroll 10, click display line 5", 7, 5, 10, 15, 7},
+
+		// Scrolled by 30 lines: clicking display line 10 = actual line 40
+		{"scroll 30, click display line 10", 12, 10, 30, 40, 12},
+
+		// Edge case: click beyond content (should clamp to last line)
+		{"scroll 45, click display line 10", 5, 10, 45, 49, 5}, // 45+10=55, but only 50 lines (0-49)
+
+		// Column clamping
+		{"click col beyond line length", 100, 0, 0, 0, 17}, // "Line content here" = 17 chars
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _ = handleClickFn(ta,
+				runtime.ToValue(tt.clickX),
+				runtime.ToValue(tt.clickY),
+				runtime.ToValue(tt.yOffset))
+
+			lineResult, _ := lineFn(ta)
+			if lineResult.ToInteger() != tt.expectedRow {
+				t.Errorf("expected row %d, got %d", tt.expectedRow, lineResult.ToInteger())
+			}
+
+			colResult, _ := colFn(ta)
+			if colResult.ToInteger() != tt.expectedCol {
+				t.Errorf("expected col %d, got %d", tt.expectedCol, colResult.ToInteger())
+			}
+		})
+	}
+}
+
+// TestTextareaSetPositionAfterFocus tests that setPosition works correctly
+// when the textarea is focused (the common case during user interaction).
+func TestTextareaSetPositionAfterFocus(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Set content
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	_, _ = setValueFn(ta, runtime.ToValue("First line\nSecond line\nThird line\nFourth line"))
+
+	// Focus the textarea
+	focusFn, _ := goja.AssertFunction(ta.Get("focus"))
+	_, _ = focusFn(ta)
+
+	// Verify focused
+	focusedFn, _ := goja.AssertFunction(ta.Get("focused"))
+	focusedResult, _ := focusedFn(ta)
+	if !focusedResult.ToBoolean() {
+		t.Error("textarea should be focused")
+	}
+
+	// Set position while focused
+	setPositionFn, _ := goja.AssertFunction(ta.Get("setPosition"))
+	_, _ = setPositionFn(ta, runtime.ToValue(2), runtime.ToValue(5))
+
+	// Verify position
+	lineFn, _ := goja.AssertFunction(ta.Get("line"))
+	colFn, _ := goja.AssertFunction(ta.Get("col"))
+
+	lineResult, _ := lineFn(ta)
+	if lineResult.ToInteger() != 2 {
+		t.Errorf("expected row 2, got %d", lineResult.ToInteger())
+	}
+
+	colResult, _ := colFn(ta)
+	if colResult.ToInteger() != 5 {
+		t.Errorf("expected col 5, got %d", colResult.ToInteger())
+	}
+
+	// Verify still focused (setPosition shouldn't change focus state)
+	focusedResult, _ = focusedFn(ta)
+	if !focusedResult.ToBoolean() {
+		t.Error("textarea should still be focused after setPosition")
+	}
+}
+
+// TestTextareaEmptyDocument tests handling of empty documents.
+func TestTextareaEmptyDocument(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Don't set any value - document is empty
+
+	setPositionFn, _ := goja.AssertFunction(ta.Get("setPosition"))
+	lineFn, _ := goja.AssertFunction(ta.Get("line"))
+	colFn, _ := goja.AssertFunction(ta.Get("col"))
+
+	// Try to set position on empty document - should not crash
+	_, err := setPositionFn(ta, runtime.ToValue(5), runtime.ToValue(10))
+	if err != nil {
+		t.Fatalf("setPosition on empty document failed: %v", err)
+	}
+
+	// Position should be at origin or clamped
+	lineResult, _ := lineFn(ta)
+	colResult, _ := colFn(ta)
+
+	// For empty document, expect position 0,0
+	if lineResult.ToInteger() != 0 {
+		t.Errorf("expected row 0 for empty doc, got %d", lineResult.ToInteger())
+	}
+	if colResult.ToInteger() != 0 {
+		t.Errorf("expected col 0 for empty doc, got %d", colResult.ToInteger())
+	}
+}
+
+// TestTextareaHandleClickEmptyDocument tests handleClick on empty document.
+func TestTextareaHandleClickEmptyDocument(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Empty document
+
+	handleClickFn, _ := goja.AssertFunction(ta.Get("handleClick"))
+
+	// Should not crash
+	_, err := handleClickFn(ta, runtime.ToValue(5), runtime.ToValue(10), runtime.ToValue(0))
+	if err != nil {
+		t.Fatalf("handleClick on empty document failed: %v", err)
+	}
+}

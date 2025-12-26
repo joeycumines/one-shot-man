@@ -49,7 +49,18 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dop251/goja"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
+	"github.com/mattn/go-runewidth"
 )
+
+// runeWidth returns the visual width of a rune, accounting for multi-width
+// characters (CJK, emojis, etc.). This is essential for proper cursor positioning.
+func runeWidth(r rune) int {
+	w := runewidth.RuneWidth(r)
+	if w < 1 {
+		return 1 // Control characters and zero-width chars take at least 1 cell for our purposes
+	}
+	return w
+}
 
 // textareaModelMirror is a memory-layout-compatible mirror of textarea.Model.
 // This struct MUST exactly match the upstream textarea.Model field layout from
@@ -442,6 +453,163 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		return obj
 	})
 
+	// calculateWrappedLineCount calculates the number of visual lines a logical line
+	// will occupy when soft-wrapped to the given width.
+	// This uses runewidth for proper multi-width character handling.
+	calculateWrappedLineCount := func(line []rune, width int) int {
+		if width <= 0 {
+			return 1
+		}
+		if len(line) == 0 {
+			return 1
+		}
+		// Calculate visual width of the line using runewidth
+		visualWidth := 0
+		for _, r := range line {
+			visualWidth += runeWidth(r)
+		}
+		if visualWidth <= width {
+			return 1
+		}
+		// Calculate number of wrapped lines (ceiling division)
+		return (visualWidth + width - 1) / width
+	}
+
+	// visualLineCount returns the total number of visual lines in the textarea
+	// accounting for soft-wrapping based on the current width.
+	// This fixes the viewport clipping bug where bottom of wrapped documents was invisible.
+	_ = obj.Set("visualLineCount", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		mirror := (*textareaModelMirror)(unsafe.Pointer(&wrapper.model))
+
+		if len(mirror.value) == 0 {
+			return runtime.ToValue(1)
+		}
+
+		// Content width = total width - prompt width
+		contentWidth := mirror.width - mirror.promptWidth
+		totalVisualLines := 0
+		for _, line := range mirror.value {
+			totalVisualLines += calculateWrappedLineCount(line, contentWidth)
+		}
+		return runtime.ToValue(totalVisualLines)
+	})
+
+	// performHitTest maps visual coordinates to logical row/column.
+	// This properly accounts for soft-wrapped lines and multi-width characters.
+	// Parameters:
+	//   - visualX: X coordinate relative to textarea content area (0 = first char column)
+	//   - visualY: Y coordinate relative to textarea content (0 = first visual line, including wrapped lines)
+	// Returns an object with {row, col} representing the logical position.
+	_ = obj.Set("performHitTest", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			return runtime.NewObject()
+		}
+		visualX := int(call.Argument(0).ToInteger())
+		visualY := int(call.Argument(1).ToInteger())
+
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		mirror := (*textareaModelMirror)(unsafe.Pointer(&wrapper.model))
+
+		result := runtime.NewObject()
+		_ = result.Set("row", 0)
+		_ = result.Set("col", 0)
+
+		if len(mirror.value) == 0 {
+			return result
+		}
+
+		// Content width = total width - prompt width
+		contentWidth := mirror.width - mirror.promptWidth
+
+		// Clamp visualY to non-negative
+		if visualY < 0 {
+			visualY = 0
+		}
+
+		// Iterate through logical lines, tracking visual line count
+		currentVisualLine := 0
+		targetRow := 0
+		targetWrappedSegment := 0 // Which wrapped segment within the logical line was clicked
+
+		for row := 0; row < len(mirror.value); row++ {
+			lineHeight := calculateWrappedLineCount(mirror.value[row], contentWidth)
+
+			// Check if the clicked visual line is within this logical line's range
+			if visualY >= currentVisualLine && visualY < currentVisualLine+lineHeight {
+				targetRow = row
+				targetWrappedSegment = visualY - currentVisualLine
+				break
+			}
+
+			currentVisualLine += lineHeight
+
+			// If we've passed the clicked line, clamp to last logical line
+			if row == len(mirror.value)-1 {
+				targetRow = row
+				targetWrappedSegment = lineHeight - 1 // Last wrapped segment
+			}
+		}
+
+		// Calculate column within the logical line
+		// Account for the wrapped segment we're in
+		line := mirror.value[targetRow]
+		targetCol := 0
+
+		if contentWidth > 0 && len(line) > 0 {
+			// Calculate the starting character index for this wrapped segment
+			// by summing visual widths of characters in previous segments
+			charsConsumed := 0
+
+			// Skip characters from previous wrapped segments
+			for segment := 0; segment < targetWrappedSegment && charsConsumed < len(line); segment++ {
+				segmentWidth := 0
+				for segmentWidth < contentWidth && charsConsumed < len(line) {
+					rw := runeWidth(line[charsConsumed])
+					if segmentWidth+rw > contentWidth {
+						break
+					}
+					segmentWidth += rw
+					charsConsumed++
+				}
+			}
+
+			// Now find the column within the current wrapped segment
+			widthConsumed := 0
+
+			for charsConsumed < len(line) && widthConsumed < visualX {
+				rw := runeWidth(line[charsConsumed])
+				if widthConsumed+rw > contentWidth {
+					// Wrapped to next visual line
+					break
+				}
+				widthConsumed += rw
+				charsConsumed++
+			}
+
+			targetCol = charsConsumed
+
+			// Clamp to line length
+			if targetCol > len(line) {
+				targetCol = len(line)
+			}
+		} else {
+			// No width constraint or empty line
+			targetCol = visualX
+			if targetCol > len(line) {
+				targetCol = len(line)
+			}
+		}
+
+		_ = result.Set("row", targetRow)
+		_ = result.Set("col", targetCol)
+		return result
+	})
+
 	// handleClick handles a mouse click event and positions the cursor accordingly.
 	// Parameters:
 	//   - clickX: X coordinate relative to textarea content area (after prompt/line numbers)
@@ -451,6 +619,7 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 	//
 	// This method calculates the correct row and column based on the click position,
 	// accounting for soft-wrapped lines and the viewport scroll offset.
+	// NOTE: This is a legacy method. Prefer using performHitTest() for new code.
 	_ = obj.Set("handleClick", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 3 {
 			return obj
@@ -468,26 +637,28 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 			return obj
 		}
 
-		// Calculate which display line was clicked (accounting for scroll)
-		displayLineClicked := yOffset + clickY
+		// Calculate which visual line was clicked (accounting for scroll)
+		visualLineClicked := yOffset + clickY
 
-		// Map display line to actual row (accounting for soft-wrapping)
-		// We need to iterate through lines and count wrapped lines
-		currentDisplayLine := 0
+		// Map visual line to logical row (accounting for soft-wrapping)
+		currentVisualLine := 0
 		targetRow := 0
+		targetWrappedSegment := 0
 
 		for row := 0; row < len(mirror.value); row++ {
-			// For simplicity, assume no soft-wrapping for now
-			// (proper soft-wrap calculation would require access to width and wrap logic)
-			// Each logical line = 1 display line
-			if currentDisplayLine == displayLineClicked {
+			lineHeight := calculateWrappedLineCount(mirror.value[row], mirror.width)
+
+			if visualLineClicked >= currentVisualLine && visualLineClicked < currentVisualLine+lineHeight {
 				targetRow = row
+				targetWrappedSegment = visualLineClicked - currentVisualLine
 				break
 			}
-			currentDisplayLine++
+
+			currentVisualLine += lineHeight
+
 			if row == len(mirror.value)-1 {
-				// Clicked beyond the last line
 				targetRow = row
+				targetWrappedSegment = lineHeight - 1
 			}
 		}
 
@@ -496,17 +667,48 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 			targetRow = len(mirror.value) - 1
 		}
 
-		// Calculate column from X position
-		// clickX is the character offset from the start of the line content
-		targetCol := clickX
-		if targetCol < 0 {
-			targetCol = 0
-		}
+		// Calculate column accounting for wrapped segment and multi-width characters
+		line := mirror.value[targetRow]
+		targetCol := 0
 
-		// Clamp to line length
-		lineLen := len(mirror.value[targetRow])
-		if targetCol > lineLen {
-			targetCol = lineLen
+		if mirror.width > 0 && len(line) > 0 {
+			// Skip characters from previous wrapped segments
+			charsConsumed := 0
+			for segment := 0; segment < targetWrappedSegment && charsConsumed < len(line); segment++ {
+				segmentWidth := 0
+				for segmentWidth < mirror.width && charsConsumed < len(line) {
+					rw := runeWidth(line[charsConsumed])
+					if segmentWidth+rw > mirror.width {
+						break
+					}
+					segmentWidth += rw
+					charsConsumed++
+				}
+			}
+
+			// Find column within current segment
+			widthConsumed := 0
+			for charsConsumed < len(line) && widthConsumed < clickX {
+				rw := runeWidth(line[charsConsumed])
+				if widthConsumed+rw > mirror.width {
+					break
+				}
+				widthConsumed += rw
+				charsConsumed++
+			}
+
+			targetCol = charsConsumed
+			if targetCol > len(line) {
+				targetCol = len(line)
+			}
+		} else {
+			targetCol = clickX
+			if targetCol < 0 {
+				targetCol = 0
+			}
+			if targetCol > len(line) {
+				targetCol = len(line)
+			}
 		}
 
 		// Set the cursor position

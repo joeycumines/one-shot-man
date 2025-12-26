@@ -321,26 +321,54 @@ function buildLayoutMap(docs, docContentWidth) {
 
     docs.forEach((doc, i) => {
         // Calculate the rendered height of this document box
-        // Document box structure inside the border:
-        // - Header line: #id [label] (1 line)
-        // - Preview line (1 line)
-        // - Remove button line (1 line)
-        // - Borders add +2 height (top/bottom)
+        // Document box structure (with border and padding):
+        // - Top border (1 line)
+        // - Header line(s): #id [label] (may wrap)
+        // - Preview line(s) (may wrap)
+        // - Remove button line (1 line, always "[X] Remove")
+        // - Bottom border (1 line)
 
         let prev = previewOf(doc.content, DESIGN.previewMaxLen);
 
         const docHeader = `#${doc.id} [${doc.label}]`;
         const docPreview = styles.preview().render(prev);
         const removeBtn = '[X] Remove';
-        const docContent = lipgloss.joinVertical(lipgloss.Left, docHeader, docPreview, removeBtn);
+        
+        // Render each component individually to measure their heights at the content width
+        // Subtract border padding (docPaddingH * 2) and border itself (2) from width
+        const contentInnerWidth = Math.max(1, docContentWidth - (DESIGN.docPaddingH * 2) - 2);
+        
+        // For each element, we need to compute rendered height
+        // We use a temporary style to measure wrapped height
+        const measuringStyle = lipgloss.newStyle().width(contentInnerWidth);
+        const headerRendered = measuringStyle.render(docHeader);
+        const previewRendered = measuringStyle.render(docPreview);
+        
+        const headerHeight = lipgloss.height(headerRendered);
+        const previewHeight = lipgloss.height(previewRendered);
+        const removeBtnHeight = 1; // Remove button is always 1 line
+        
+        // Calculate removeButton line offset within the document box:
+        // topBorder (1) + header + preview = position where removeBtn starts
+        const removeButtonLineOffset = 1 + headerHeight + previewHeight;
+        
+        // Calculate bottom border line offset:
+        // removeButtonLineOffset + removeBtnHeight = bottom border position
+        const bottomBorderLineOffset = removeButtonLineOffset + removeBtnHeight;
 
+        const docContent = lipgloss.joinVertical(lipgloss.Left, docHeader, docPreview, removeBtn);
         const style = styles.document(); // Use base style for height calculation
         // CRITICAL: Use consistent width passed from renderList
         const renderedDoc = style.width(docContentWidth).render(docContent);
         const docHeight = lipgloss.height(renderedDoc);
 
         layoutMap.push({
-            top: currentTop, height: docHeight, docId: doc.id
+            top: currentTop, 
+            height: docHeight, 
+            docId: doc.id,
+            removeButtonLineOffset: removeButtonLineOffset,
+            bottomBorderLineOffset: bottomBorderLineOffset,
+            headerHeight: headerHeight
         });
 
         currentTop += docHeight;
@@ -658,6 +686,14 @@ function configureTextarea(ta, width) {
     // Cursor.View() already renders with TextStyle, then CursorLine wraps it AGAIN,
     // causing ANSI escape codes to be treated as literal text (double-render corruption).
     // The cursor will use the CursorLine styling instead.
+    
+    // Set cursor block styling to ensure visibility on both light and dark backgrounds.
+    // The cursor block (the blinking character) needs explicit foreground/background
+    // to be visible when the CursorLine styling is applied.
+    ta.setCursorStyle({
+        foreground: COLORS.warning, // Amber/yellow cursor for high visibility
+        background: COLORS.primary  // Indigo background for contrast
+    });
 }
 
 function handleKeys(msg, s) {
@@ -691,15 +727,29 @@ function handleKeys(msg, s) {
                 // In document list - move up normally
                 s.selectedIdx = s.selectedIdx - 1;
                 ensureSelectionVisible(s);
-            } else if (s.vp && s.vp.yOffset() > 0) {
-                // Already at first document - scroll viewport to absolute top
-                // This enables reaching the document count area at the top
+            } else if (s.selectedIdx === 0) {
+                // At first document - deselect and scroll to top
+                // This enables "de-highlight everything" to reach the document count area
+                s.selectedIdx = -1; // No document selected
+                if (s.vp) s.vp.setYOffset(0); // Scroll viewport to absolute top
+            } else if (s.selectedIdx < 0 && s.vp && s.vp.yOffset() > 0) {
+                // Already deselected - just ensure we're at the absolute top
                 s.vp.setYOffset(0);
             }
         }
         if (k === 'down' || k === 'j') {
             if (s.focusedButtonIdx >= 0) {
                 // Already on buttons - down doesn't do anything (buttons are at bottom)
+            } else if (s.selectedIdx < 0) {
+                // No document selected - select first document
+                if (s.documents.length > 0) {
+                    s.selectedIdx = 0;
+                    ensureSelectionVisible(s);
+                } else {
+                    // No documents - go to buttons
+                    s.focusedButtonIdx = 0;
+                    ensureSelectionVisible(s);
+                }
             } else if (s.selectedIdx >= s.documents.length - 1) {
                 // At bottom of document list - move to first button
                 s.focusedButtonIdx = 0;
@@ -859,12 +909,16 @@ function handleKeys(msg, s) {
                     s.selectedIdx = s.documents.length - 1;
                     ensureSelectionVisible(s);
                 }
+            } else if (s.selectedIdx < 0) {
+                // Already deselected - just ensure we're at absolute top
+                if (s.vp) s.vp.setYOffset(0);
             } else if (s.documents.length > 0 && s.vp) {
                 const vpHeight = s.vp.height();
                 const pageSize = Math.max(1, Math.floor(vpHeight / 5));
                 const newIdx = Math.max(0, s.selectedIdx - pageSize);
-                if (newIdx === s.selectedIdx && s.selectedIdx === 0 && s.vp.yOffset() > 0) {
-                    // Already at first document but not at top of viewport - scroll to absolute top
+                if (newIdx === 0 && s.selectedIdx === 0) {
+                    // Already at first document - deselect and scroll to top
+                    s.selectedIdx = -1;
                     s.vp.setYOffset(0);
                 } else {
                     s.selectedIdx = newIdx;
@@ -1354,12 +1408,13 @@ function handleMouse(msg, s) {
                 const contentY = viewportRelativeY + vpYOffset;
 
                 // Textarea content area starts at textareaBounds.contentTop in content-space
-                // and extends for the height of the textarea (which we can derive from lineCount)
+                // and extends for the height of the textarea (accounting for soft-wrapping)
                 const textareaContentTop = s.textareaBounds.contentTop;
-                // Add 1 for the border at top of the content field style
-                const textareaLineCount = s.contentTextarea ? s.contentTextarea.lineCount() : 0;
-                // Content area height = lineCount + buffer (the height we set)
-                const textareaContentHeight = Math.max(1, textareaLineCount + 1);
+                // CRITICAL FIX: Use visualLineCount for proper height calculation with soft-wrapped lines
+                const textareaVisualLines = s.contentTextarea ? 
+                    (s.contentTextarea.visualLineCount ? s.contentTextarea.visualLineCount() : s.contentTextarea.lineCount()) : 0;
+                // Content area height = visual lines + buffer (the height we set)
+                const textareaContentHeight = Math.max(1, textareaVisualLines + 1);
                 const textareaContentBottom = textareaContentTop + textareaContentHeight;
 
                 // Check if content Y is within textarea content area
@@ -1387,25 +1442,32 @@ function handleMouse(msg, s) {
             }
 
             // CURSOR POSITIONING for mouse clicks
-            // Calculate the clicked row/column and update cursor position.
+            // CRITICAL FIX: Use performHitTest() to properly map visual coordinates
+            // to logical row/column, accounting for soft-wrapped lines and multi-width characters.
+            // This fixes the cursor jump bug where clicking on wrapped text placed the cursor
+            // in the wrong logical position.
             if (s.contentTextarea && isLeftClick && !isWheelEvent && s.textareaBounds) {
                 const titleHeight = 1;
                 const vpYOffset = s.inputVp ? s.inputVp.yOffset() : 0;
 
-                // Calculate clicked row (0-indexed relative to textarea content)
-                // Screen Y -> Viewport-relative Y -> Content-relative Y -> Textarea row
+                // Calculate visual Y coordinate relative to textarea content (0 = first visual line)
                 const viewportRelativeY = msg.y - titleHeight;
                 const contentRelativeY = viewportRelativeY + vpYOffset;
-                const textareaRow = contentRelativeY - s.textareaBounds.contentTop;
+                const visualY = contentRelativeY - s.textareaBounds.contentTop;
 
-                // Calculate clicked column (0-indexed relative to text content)
-                // Subtract the left offset (border + padding + prompt + line numbers)
-                const textareaCol = Math.max(0, msg.x - s.textareaBounds.contentLeft);
+                // Calculate visual X coordinate relative to text content
+                const visualX = Math.max(0, msg.x - s.textareaBounds.contentLeft);
 
-                // Only reposition if the click is within the textarea area (positive row)
-                // Clamp to valid range - setPosition will do additional clamping
-                if (textareaRow >= 0) {
-                    s.contentTextarea.setPosition(textareaRow, textareaCol);
+                // Only reposition if the click is within the textarea area (positive visual row)
+                if (visualY >= 0) {
+                    // Use performHitTest to properly map visual coords to logical row/col
+                    if (s.contentTextarea.performHitTest) {
+                        const hitResult = s.contentTextarea.performHitTest(visualX, visualY);
+                        s.contentTextarea.setPosition(hitResult.row, hitResult.col);
+                    } else {
+                        // Fallback for backwards compatibility
+                        s.contentTextarea.setPosition(visualY, visualX);
+                    }
                     // Reset viewport unlock so cursor stays visible after click
                     s.inputViewportUnlocked = false;
                 }
@@ -1466,16 +1528,19 @@ function handleMouse(msg, s) {
             // findClickedDocument handles the internal padding/count offset logic
             const clickResult = findClickedDocument(s, contentY);
             if (clickResult !== null) {
-                // Compute structural lines for this document
+                // Use pre-computed structural line offsets from layoutMap
                 const entry = s.layoutMap[clickResult.index];
-                const removeButtonLine = Math.max(0, entry.height - 3);
-                const bottomBorderLine = Math.max(0, entry.height - 2);
+                
+                // Use the pre-computed offsets that account for wrapped content
+                const removeButtonLineOffset = entry.removeButtonLineOffset;
+                const bottomBorderLineOffset = entry.bottomBorderLineOffset;
+                const headerHeight = entry.headerHeight;
 
                 // If the click landed on the bottom border or the margin below the
                 // document, treat it as a no-op. Previously these clicks fell into
                 // the "other lines" case and opened edit mode for the previous
                 // document when the user clicked the gap between documents.
-                if (clickResult.relativeLineInDoc >= bottomBorderLine) {
+                if (clickResult.relativeLineInDoc >= bottomBorderLineOffset) {
                     // Do not change selection or trigger actions for gap clicks
                     return [s, null];
                 }
@@ -1485,15 +1550,24 @@ function handleMouse(msg, s) {
                 state.set(stateKeys.selectedIndex, clickResult.index);
 
                 // Mapped Action Targets:
-                if (clickResult.relativeLineInDoc === 1) {
-                    // Line 1: Header -> Rename (use 'R' uppercase since 'r' is Reset)
+                // Line 0: Top border - no action (falls through to edit)
+                // Lines 1 to 1+headerHeight-1: Header -> Rename
+                // Lines after header and before removeButton: Preview -> Edit
+                // removeButtonLineOffset: Remove button -> Delete
+                const headerEndLine = 1 + headerHeight; // First line after header ends
+                
+                if (clickResult.relativeLineInDoc >= 1 && clickResult.relativeLineInDoc < headerEndLine) {
+                    // Header area -> Rename (use 'R' uppercase since 'r' is Reset)
                     return handleKeys({key: 'R'}, s);
-                } else if (clickResult.relativeLineInDoc === removeButtonLine) {
-                    // Dynamic line for Remove button -> Delete
+                } else if (clickResult.relativeLineInDoc === removeButtonLineOffset) {
+                    // Remove button line -> Delete
                     return handleKeys({key: 'd'}, s);
-                } else {
-                    // All other lines -> Edit Content
+                } else if (clickResult.relativeLineInDoc > 0 && clickResult.relativeLineInDoc < removeButtonLineOffset) {
+                    // Preview or other content area -> Edit Content
                     return handleKeys({key: 'e'}, s);
+                } else {
+                    // Top border (line 0) - just select, no action
+                    return [s, null];
                 }
             }
         }
@@ -1746,10 +1820,12 @@ function renderInput(s) {
         const innerWidth = Math.max(10, fieldWidth - 4 - scrollbarWidth); // border(2) + padding(2)
         s.contentTextarea.setWidth(innerWidth);
 
-        // Infinite height: set to line count to avoid internal scrolling
-        const contentLines = Math.max(1, s.contentTextarea.lineCount());
-        // Add buffer for newlines
-        s.contentTextarea.setHeight(contentLines + 1);
+        // CRITICAL FIX: Use visualLineCount() instead of lineCount() for height calculation.
+        // This accounts for soft-wrapped lines and fixes the viewport clipping bug where
+        // the bottom of wrapped documents was invisible.
+        const visualLines = Math.max(1, s.contentTextarea.visualLineCount ? s.contentTextarea.visualLineCount() : s.contentTextarea.lineCount());
+        // Add buffer for cursor and end-of-buffer character
+        s.contentTextarea.setHeight(visualLines + 1);
 
         const textareaView = s.contentTextarea.view();
 
@@ -1814,8 +1890,8 @@ function renderInput(s) {
             // Store additional info for precise calculations
             fieldWidth: fieldWidth,
             innerWidth: innerWidth,
-            // Store content height for hit detection
-            contentHeight: contentLines + 1,
+            // Store content height for hit detection (use visual lines for proper soft-wrap handling)
+            contentHeight: visualLines + 1,
             // Store the border widths for X-axis hit detection
             borderLeft: borderLeft,
             paddingLeft: paddingLeft,

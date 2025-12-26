@@ -568,3 +568,363 @@ func TestTextareaHandleClickEmptyDocument(t *testing.T) {
 		t.Fatalf("handleClick on empty document failed: %v", err)
 	}
 }
+
+// ============================================================================
+// REGRESSION TESTS FOR SOFT-WRAPPING BUGS (from review.md)
+// ============================================================================
+
+// TestTextareaVisualLineCount tests the visualLineCount method which accounts
+// for soft-wrapped lines. This is a regression test for the viewport clipping
+// bug where bottom of wrapped documents was invisible.
+func TestTextareaVisualLineCount(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Clear the default prompt and disable line numbers to get exact width control
+	// IMPORTANT: setWidth must be called AFTER these to recalculate promptWidth
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+
+	// Set width for wrapping calculations
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(20)) // Narrow width to force wrapping
+
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	lineCountFn, _ := goja.AssertFunction(ta.Get("lineCount"))
+	visualLineCountFn, ok := goja.AssertFunction(ta.Get("visualLineCount"))
+	if !ok {
+		t.Fatal("visualLineCount is not a function")
+	}
+
+	tests := []struct {
+		name                   string
+		content                string
+		expectedLogicalLines   int64
+		minExpectedVisualLines int64 // At least this many visual lines
+	}{
+		{
+			name:                   "empty document",
+			content:                "",
+			expectedLogicalLines:   1, // bubbles textarea always has at least 1 line
+			minExpectedVisualLines: 1,
+		},
+		{
+			name:                   "short single line (no wrap)",
+			content:                "Hello",
+			expectedLogicalLines:   1,
+			minExpectedVisualLines: 1,
+		},
+		{
+			name:                   "long single line (wraps)",
+			content:                "This is a very long line that should definitely wrap when the width is only 20 characters",
+			expectedLogicalLines:   1,
+			minExpectedVisualLines: 4, // Should wrap to at least 4 visual lines
+		},
+		{
+			name:                   "multiple short lines",
+			content:                "Line 1\nLine 2\nLine 3",
+			expectedLogicalLines:   3,
+			minExpectedVisualLines: 3,
+		},
+		{
+			name:                   "multiple lines with wrapping",
+			content:                "Short\nThis is a long line that will wrap multiple times\nAnother short line",
+			expectedLogicalLines:   3,
+			minExpectedVisualLines: 4, // Middle line should wrap
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _ = setValueFn(ta, runtime.ToValue(tt.content))
+
+			logicalResult, _ := lineCountFn(ta)
+			if logicalResult.ToInteger() != tt.expectedLogicalLines {
+				t.Errorf("expected logical lines %d, got %d", tt.expectedLogicalLines, logicalResult.ToInteger())
+			}
+
+			visualResult, _ := visualLineCountFn(ta)
+			if visualResult.ToInteger() < tt.minExpectedVisualLines {
+				t.Errorf("expected at least %d visual lines, got %d", tt.minExpectedVisualLines, visualResult.ToInteger())
+			}
+
+			// Visual lines should always be >= logical lines
+			if visualResult.ToInteger() < logicalResult.ToInteger() {
+				t.Errorf("visual lines (%d) should be >= logical lines (%d)", visualResult.ToInteger(), logicalResult.ToInteger())
+			}
+		})
+	}
+}
+
+// TestTextareaPerformHitTest tests the performHitTest method which maps visual
+// coordinates to logical row/column. This is a regression test for the cursor
+// jump bug where clicking on wrapped text placed cursor in wrong position.
+func TestTextareaPerformHitTest(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Clear the prompt and disable line numbers to get predictable content width
+	// IMPORTANT: setWidth must be called AFTER these to recalculate promptWidth
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+
+	// Set narrow width to force wrapping
+	// With prompt cleared and line numbers disabled, content width = total width
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(10)) // Content width = 10
+
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	performHitTestFn, ok := goja.AssertFunction(ta.Get("performHitTest"))
+	if !ok {
+		t.Fatal("performHitTest is not a function")
+	}
+
+	// Set content that will wrap:
+	// "ABCDEFGHIJKLMNOPQRST" (20 chars) at width 10 = 2 visual lines
+	// "XYZ" (3 chars) = 1 visual line
+	// Total: 2 logical lines, 3 visual lines
+	_, _ = setValueFn(ta, runtime.ToValue("ABCDEFGHIJKLMNOPQRST\nXYZ"))
+
+	tests := []struct {
+		name        string
+		visualX     int
+		visualY     int
+		expectedRow int64
+		expectedCol int64
+	}{
+		{
+			name:        "first char of first line",
+			visualX:     0,
+			visualY:     0,
+			expectedRow: 0,
+			expectedCol: 0,
+		},
+		{
+			name:        "middle of first visual line (unwrapped part)",
+			visualX:     5,
+			visualY:     0,
+			expectedRow: 0,
+			expectedCol: 5,
+		},
+		{
+			name:        "first char of wrapped continuation (visual line 1)",
+			visualX:     0,
+			visualY:     1,
+			expectedRow: 0,        // Still logical line 0
+			expectedCol: 10,       // Column 10 (start of wrapped segment)
+		},
+		{
+			name:        "middle of wrapped continuation",
+			visualX:     5,
+			visualY:     1,
+			expectedRow: 0,        // Still logical line 0
+			expectedCol: 15,       // Column 15
+		},
+		{
+			name:        "first char of second logical line (visual line 2)",
+			visualX:     0,
+			visualY:     2,
+			expectedRow: 1,        // Logical line 1
+			expectedCol: 0,
+		},
+		{
+			name:        "end of second logical line",
+			visualX:     3,
+			visualY:     2,
+			expectedRow: 1,
+			expectedCol: 3,
+		},
+		{
+			name:        "beyond end of document (clamps)",
+			visualX:     5,
+			visualY:     10,
+			expectedRow: 1,        // Clamped to last line
+			expectedCol: 3,        // Clamped to line length
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hitResultVal, err := performHitTestFn(ta, runtime.ToValue(tt.visualX), runtime.ToValue(tt.visualY))
+			if err != nil {
+				t.Fatalf("performHitTest failed: %v", err)
+			}
+
+			hitResult := hitResultVal.ToObject(runtime)
+			row := hitResult.Get("row").ToInteger()
+			col := hitResult.Get("col").ToInteger()
+
+			if row != tt.expectedRow {
+				t.Errorf("expected row %d, got %d", tt.expectedRow, row)
+			}
+			if col != tt.expectedCol {
+				t.Errorf("expected col %d, got %d", tt.expectedCol, col)
+			}
+		})
+	}
+}
+
+// TestTextareaHandleClickWithSoftWrap tests that handleClick correctly positions
+// the cursor when clicking on soft-wrapped lines. This is a critical regression
+// test for the cursor jump bug identified in review.md.
+func TestTextareaHandleClickWithSoftWrap(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Clear the default prompt and disable line numbers to get exact width control
+	// IMPORTANT: setWidth must be called AFTER these to recalculate promptWidth
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+
+	// Set narrow width to force wrapping
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(10))
+
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	handleClickFn, _ := goja.AssertFunction(ta.Get("handleClick"))
+	lineFn, _ := goja.AssertFunction(ta.Get("line"))
+	colFn, _ := goja.AssertFunction(ta.Get("col"))
+
+	// Content with wrapping: "ABCDEFGHIJKLMNOPQRST" wraps at width 10
+	_, _ = setValueFn(ta, runtime.ToValue("ABCDEFGHIJKLMNOPQRST\nXYZ"))
+
+	tests := []struct {
+		name        string
+		clickX      int
+		clickY      int // Visual line (0 = first display line)
+		yOffset     int
+		expectedRow int64
+		expectedCol int64
+	}{
+		{
+			name:        "click first visual line",
+			clickX:     3,
+			clickY:     0,
+			yOffset:    0,
+			expectedRow: 0,
+			expectedCol: 3,
+		},
+		{
+			name:        "click wrapped continuation (visual line 1)",
+			clickX:     3,
+			clickY:     1,
+			yOffset:    0,
+			expectedRow: 0,  // CRITICAL: Should stay in logical line 0!
+			expectedCol: 13, // 10 (start of wrap) + 3
+		},
+		{
+			name:        "click second logical line (visual line 2)",
+			clickX:     1,
+			clickY:     2,
+			yOffset:    0,
+			expectedRow: 1,
+			expectedCol: 1,
+		},
+		{
+			name:        "click with scroll offset",
+			clickX:     2,
+			clickY:     0, // Visual line 0 of viewport
+			yOffset:    1, // Scrolled down by 1, so visual line 1 is at top
+			expectedRow: 0,  // Wrapped part of line 0
+			expectedCol: 12, // 10 + 2
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := handleClickFn(ta,
+				runtime.ToValue(tt.clickX),
+				runtime.ToValue(tt.clickY),
+				runtime.ToValue(tt.yOffset))
+			if err != nil {
+				t.Fatalf("handleClick failed: %v", err)
+			}
+
+			lineResult, _ := lineFn(ta)
+			if lineResult.ToInteger() != tt.expectedRow {
+				t.Errorf("expected row %d, got %d (BUG: cursor jumped to wrong line!)", tt.expectedRow, lineResult.ToInteger())
+			}
+
+			colResult, _ := colFn(ta)
+			if colResult.ToInteger() != tt.expectedCol {
+				t.Errorf("expected col %d, got %d", tt.expectedCol, colResult.ToInteger())
+			}
+		})
+	}
+}
+
+// TestTextareaMultiWidthCharacters tests handling of CJK and emoji characters
+// which occupy 2 visual cells but 1 rune index.
+func TestTextareaMultiWidthCharacters(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Clear the default prompt and disable line numbers to get exact width control
+	// IMPORTANT: setWidth must be called AFTER these to recalculate promptWidth
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(20))
+
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	visualLineCountFn, _ := goja.AssertFunction(ta.Get("visualLineCount"))
+
+	// Test content with CJK characters (each takes 2 cells)
+	// "你好世界" = 4 characters, 8 visual cells
+	_, _ = setValueFn(ta, runtime.ToValue("你好世界"))
+
+	visualResult, _ := visualLineCountFn(ta)
+	// At width 20, 8 cells should fit in 1 line
+	if visualResult.ToInteger() != 1 {
+		t.Errorf("expected 1 visual line for CJK text at width 20, got %d", visualResult.ToInteger())
+	}
+
+	// Now test at narrower width where it must wrap
+	_, _ = setWidthFn(ta, runtime.ToValue(6))
+	visualResult, _ = visualLineCountFn(ta)
+	// 8 cells at width 6 = ceil(8/6) = 2 visual lines
+	if visualResult.ToInteger() < 2 {
+		t.Errorf("expected at least 2 visual lines for CJK text at width 6, got %d", visualResult.ToInteger())
+	}
+}

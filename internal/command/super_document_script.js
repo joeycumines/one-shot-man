@@ -1049,16 +1049,18 @@ function handleKeys(msg, s) {
     } else if (s.mode === MODE_INPUT) {
         // PRECISE SCROLL & EVENT PROPAGATION FOR INPUT MODE
 
-        // Explicitly handle PageUp/PageDown to scroll outer viewport effectively
-        if (s.inputVp && (k === 'pgdown' || k === 'pgup')) {
-            const pageSize = s.inputVp.height();
-            if (k === 'pgup') {
-                s.inputVp.scrollUp(pageSize);
-            } else {
-                s.inputVp.scrollDown(pageSize);
+        // Handle PageUp/PageDown - send to textarea's Update method
+        // REARCHITECTURE: With fixed textarea height and internal scrolling,
+        // page up/down should scroll the textarea, not an external viewport
+        if (s.contentTextarea && (k === 'pgdown' || k === 'pgup')) {
+            // bubbles/textarea handles ctrl+d (half page down) and ctrl+u (half page up)
+            // For full page, we'll move the cursor by the visible height
+            const visibleHeight = s.textareaBounds ? s.textareaBounds.visibleHeight : 10;
+            const direction = k === 'pgup' ? 'up' : 'down';
+            // Move cursor by visible height lines
+            for (let i = 0; i < visibleHeight; i++) {
+                s.contentTextarea.update({ key: direction });
             }
-            // CRITICAL: Unlock viewport so it doesn't snap back to cursor
-            s.inputViewportUnlocked = true;
             return [s, null];
         }
 
@@ -1266,19 +1268,17 @@ function handleMouse(msg, s) {
         return [s, null];
     }
 
-    // Handle wheel events for scrolling in input mode via inputVp
-    if (isWheelEvent && s.mode === MODE_INPUT && s.inputVp) {
-        // PRECISE MOUSE SCROLL PROPAGATION
-        // CHANGE: Removed scroll capture in textarea. Events now always bubble to outer viewport.
-
-        // Standard outer scroll
-        if (msg.button === 'wheel up') {
-            s.inputVp.scrollUp(3); // Scroll input viewport up by 3 lines
-        } else if (msg.button === 'wheel down') {
-            s.inputVp.scrollDown(3); // Scroll input viewport down by 3 lines
+    // Handle wheel events for scrolling in input mode
+    // REARCHITECTURE: With fixed textarea height, wheel events should scroll the TEXTAREA
+    // not an external viewport. The textarea handles its own internal scrolling.
+    if (isWheelEvent && s.mode === MODE_INPUT && s.contentTextarea) {
+        // Send scroll keys to the textarea's Update method
+        // This lets bubbles/textarea handle scrolling internally
+        const scrollMsg = { key: msg.button === 'wheel up' ? 'up' : 'down' };
+        // Call update 3 times for 3-line scroll
+        for (let i = 0; i < 3; i++) {
+            s.contentTextarea.update(scrollMsg);
         }
-        // CRITICAL: Unlock viewport so it doesn't snap back to cursor on next render
-        s.inputViewportUnlocked = true;
         return [s, null];
     }
 
@@ -1315,24 +1315,19 @@ function handleMouse(msg, s) {
                 return [s, tea.quit()];
             }
             if (btn.action === 'jump-top') {
-                if (s.mode === MODE_INPUT && s.inputVp) {
-                    // De-focus textarea first (per requirement: defocus then scroll)
-                    if (s.inputFocus === FOCUS_CONTENT && s.contentTextarea) {
-                        s.contentTextarea.blur();
-                        s.inputFocus = FOCUS_LABEL; // Move focus to label field
-                    }
-                    s.inputVp.setYOffset(0);
-                    // CRITICAL: Unlock viewport so it stays at top
-                    s.inputViewportUnlocked = true;
+                if (s.mode === MODE_INPUT && s.contentTextarea) {
+                    // REARCHITECTURE: Move cursor to start of document
+                    // The textarea will auto-scroll to keep cursor visible
+                    s.contentTextarea.setPosition(0, 0);
                 }
                 return [s, null];
             }
             if (btn.action === 'jump-bottom') {
-                if (s.mode === MODE_INPUT && s.inputVp) {
-                    const maxOffset = Math.max(0, s.inputVp.totalLineCount() - s.inputVp.height());
-                    s.inputVp.setYOffset(maxOffset);
-                    // CRITICAL: Unlock viewport so it stays at bottom
-                    s.inputViewportUnlocked = true;
+                if (s.mode === MODE_INPUT && s.contentTextarea) {
+                    // REARCHITECTURE: Move cursor to end of document
+                    // The textarea will auto-scroll to keep cursor visible
+                    const lineCount = s.contentTextarea.lineCount ? s.contentTextarea.lineCount() : 1;
+                    s.contentTextarea.setPosition(lineCount - 1, 9999); // 9999 will be clamped
                 }
                 return [s, null];
             }
@@ -1379,57 +1374,36 @@ function handleMouse(msg, s) {
             return [s, null];
         }
 
-        // COORDINATE-BASED TEXTAREA HIT DETECTION
-        // Zone-based detection fails for large scrolled documents because the zone marker
-        // doesn't correctly account for viewport scroll offset. Use coordinate math instead.
+        // COORDINATE-BASED TEXTAREA HIT DETECTION (REARCHITECTED)
+        // =========================================================================
+        // With fixed textarea height and internal scrolling:
+        // - screenTop is the absolute Y position of textarea content on screen
+        // - visibleHeight is the fixed height of the textarea
+        // - Textarea handles its own internal scrolling via yOffset()
         //
         // Layout (Y-axis from top of screen):
-        //   titleHeight (1 line) - fixed header
-        //   [viewport starts here - scrollable area]
-        //     lblField (label field with border)
-        //     gap (1 empty line)
-        //     contentLabel ("Content (multi-line):" - 1 line)
-        //     border top (1 line)
-        //     [TEXTAREA CONTENT - variable height]
-        //     border bottom (1 line)
-        //   [buttons, etc.]
-        //   footer - fixed
-        //
-        // We need to check if the click is within the VISIBLE textarea bounds.
+        //   headerRow (title + jump icons)
+        //   gap (1)
+        //   lblField (label field with border)
+        //   gap (1)
+        //   contentLabel ("Content (multi-line):")
+        //   border top (1)
+        //   [TEXTAREA CONTENT - FIXED HEIGHT, internal scrolling]
+        //   border bottom (1)
+        //   ...
+        // =========================================================================
         let clickedInTextareaArea = false;
-        if (s.textareaBounds && s.inputVp) {
-            const titleHeight = 1;
-            const vpYOffset = s.inputVp.yOffset();
-            const vpHeight = s.inputVp.height();
+        if (s.textareaBounds) {
+            const screenTop = s.textareaBounds.screenTop;
+            const visibleHeight = s.textareaBounds.visibleHeight;
+            const screenBottom = screenTop + visibleHeight;
 
-            // Screen Y position of viewport top and bottom
-            const vpScreenTop = titleHeight;
-            const vpScreenBottom = vpScreenTop + vpHeight;
-
-            // Check if click is within viewport vertical bounds
-            if (msg.y >= vpScreenTop && msg.y < vpScreenBottom) {
-                // Convert screen Y to content-space Y
-                const viewportRelativeY = msg.y - titleHeight;
-                const contentY = viewportRelativeY + vpYOffset;
-
-                // Textarea content area starts at textareaBounds.contentTop in content-space
-                // and extends for the height of the textarea (accounting for soft-wrapping)
-                const textareaContentTop = s.textareaBounds.contentTop;
-                // CRITICAL FIX: Use visualLineCount for proper height calculation with soft-wrapped lines
-                const textareaVisualLines = s.contentTextarea ? 
-                    (s.contentTextarea.visualLineCount ? s.contentTextarea.visualLineCount() : s.contentTextarea.lineCount()) : 0;
-                // Content area height = visual lines + buffer (the height we set)
-                const textareaContentHeight = Math.max(1, textareaVisualLines + 1);
-                const textareaContentBottom = textareaContentTop + textareaContentHeight;
-
-                // Check if content Y is within textarea content area
-                if (contentY >= textareaContentTop && contentY < textareaContentBottom) {
-                    // Also check X bounds - should be within the field width
-                    const fieldLeftEdge = 0; // Leftmost edge of the field
-                    const fieldRightEdge = s.textareaBounds.fieldWidth || s.width;
-                    if (msg.x >= fieldLeftEdge && msg.x < fieldRightEdge) {
-                        clickedInTextareaArea = true;
-                    }
+            // Check if click is within textarea's VISIBLE area on screen
+            if (msg.y >= screenTop && msg.y < screenBottom) {
+                // Check X bounds - should be within the field width
+                const fieldRightEdge = s.textareaBounds.fieldWidth || s.width;
+                if (msg.x >= 0 && msg.x < fieldRightEdge) {
+                    clickedInTextareaArea = true;
                 }
             }
         }
@@ -1446,25 +1420,24 @@ function handleMouse(msg, s) {
                 }
             }
 
-            // CURSOR POSITIONING for mouse clicks
-            // CRITICAL FIX: Use performHitTest() to properly map visual coordinates
-            // to logical row/column, accounting for soft-wrapped lines and multi-width characters.
-            // This fixes the cursor jump bug where clicking on wrapped text placed the cursor
-            // in the wrong logical position.
+            // CURSOR POSITIONING for mouse clicks (REARCHITECTED)
+            // With fixed textarea height:
+            // - visualY = (click Y relative to textarea) + textarea's internal yOffset
+            // - This gives the visual line index accounting for internal scrolling
             if (s.contentTextarea && isLeftClick && !isWheelEvent && s.textareaBounds) {
-                const titleHeight = 1;
-                const vpYOffset = s.inputVp ? s.inputVp.yOffset() : 0;
+                const screenTop = s.textareaBounds.screenTop;
+                // Get textarea's internal scroll offset
+                const taYOffset = s.contentTextarea.yOffset ? s.contentTextarea.yOffset() : 0;
 
-                // Calculate visual Y coordinate relative to textarea content (0 = first visual line)
-                const viewportRelativeY = msg.y - titleHeight;
-                const contentRelativeY = viewportRelativeY + vpYOffset;
-                const visualY = contentRelativeY - s.textareaBounds.contentTop;
+                // Calculate visual Y = position on screen + internal scroll
+                const screenRelativeY = msg.y - screenTop;
+                const visualY = screenRelativeY + taYOffset;
 
                 // Calculate visual X coordinate relative to text content
                 const visualX = Math.max(0, msg.x - s.textareaBounds.contentLeft);
 
-                // Only reposition if the click is within the textarea area (positive visual row)
-                if (visualY >= 0) {
+                // Only reposition if the click is within the textarea area
+                if (screenRelativeY >= 0 && screenRelativeY < s.textareaBounds.visibleHeight) {
                     // Use performHitTest to properly map visual coords to logical row/col
                     if (s.contentTextarea.performHitTest) {
                         const hitResult = s.contentTextarea.performHitTest(visualX, visualY);
@@ -1473,26 +1446,19 @@ function handleMouse(msg, s) {
                         // Fallback for backwards compatibility
                         s.contentTextarea.setPosition(visualY, visualX);
                     }
-                    // Reset viewport unlock so cursor stays visible after click
-                    s.inputViewportUnlocked = false;
                 }
             }
             return [s, null];
         }
 
-        // CATCH-ALL BLUR LOGIC (FIXED)
-        // Only blur if clicking OUTSIDE the scrollable viewport area entirely.
-        // Previously this would fire for any click that didn't match a zone,
-        // causing incorrect blurs when clicking on large scrolled documents.
-        if (s.inputFocus === FOCUS_CONTENT && s.contentTextarea && s.inputVp) {
-            const titleHeight = 1;
-            const vpHeight = s.inputVp.height();
-            const vpScreenTop = titleHeight;
-            const vpScreenBottom = vpScreenTop + vpHeight;
+        // CATCH-ALL BLUR LOGIC
+        // Only blur if clicking OUTSIDE the textarea area entirely.
+        if (s.inputFocus === FOCUS_CONTENT && s.contentTextarea && s.textareaBounds) {
+            const screenTop = s.textareaBounds.screenTop;
+            const screenBottom = screenTop + s.textareaBounds.visibleHeight;
 
-            // Only blur if click is OUTSIDE the viewport Y bounds
-            // (clicking within viewport but outside textarea should keep focus)
-            if (msg.y < vpScreenTop || msg.y >= vpScreenBottom) {
+            // Only blur if click is OUTSIDE the textarea Y bounds
+            if (msg.y < screenTop || msg.y >= screenBottom) {
                 s.contentTextarea.blur();
                 s.inputFocus = FOCUS_LABEL;
             }
@@ -1815,22 +1781,65 @@ function renderInput(s) {
     // Content field
     let contentField = '';
     // Calculate heights for cursor tracking offset
-    let preContentHeight = lipgloss.height(lblFieldRendered) + 1; // +1 gap
+    // =========================================================================
+    // HOLISTIC REARCHITECTURE: Let bubbles/textarea handle its own scrolling
+    // =========================================================================
+    // The previous "Infinite Height" pattern set textarea to full content height
+    // and used an external inputVp to scroll through it. This caused:
+    // 1. O(N) performance (textarea renders ALL content every frame)
+    // 2. Scroll desynchronization (two viewports fighting)
+    // 3. Cannot scroll past line 121 with 2000 lines
+    //
+    // NEW APPROACH: Give textarea a FIXED height and let it scroll internally.
+    // =========================================================================
+
+    // Calculate fixed dimensions FIRST, before rendering textarea
+    const fieldWidth = Math.max(40, termWidth - 10);
+    const innerWidth = Math.max(10, fieldWidth - 4 - scrollbarWidth); // border(2) + padding(2)
+    
+    // Footer - Fixed layout (calculate early to determine remaining space)
+    const sep = styles.separator().render('─'.repeat(termWidth));
+    let fText = 'Tab: Cycle Focus    Enter: Newline/Submit    Esc: Cancel';
+    if (s.inputOperation === INPUT_EDIT || s.inputOperation === INPUT_ADD) {
+        fText += '    PgUp/PgDn: Scroll';
+    }
+    const helpText = styles.help().render(fText);
+    const footer = lipgloss.joinVertical(lipgloss.Left, sep, helpText);
+    const footerHeight = lipgloss.height(footer);
+
+    // Buttons (calculate height early)
+    const submitBtn = zone.mark('btn-submit', (s.inputFocus === FOCUS_SUBMIT ? styles.buttonFocused() : styles.button()).render('[Submit]'));
+    const cancelBtn = zone.mark('btn-cancel', (s.inputFocus === FOCUS_CANCEL ? styles.buttonDanger() : styles.button()).render('[Cancel]'));
+    const buttonRow = lipgloss.joinHorizontal(lipgloss.Top, submitBtn, cancelBtn);
+    const buttonRowHeight = lipgloss.height(buttonRow);
+
+    // Calculate heights of fixed elements
+    const headerRowHeight = lipgloss.height(headerRow);
+    const lblFieldHeight = lipgloss.height(lblFieldRendered);
+    const contentLabelHeight = 1; // "Content (multi-line):" label
+    const borderTopBottom = 2; // border around textarea content field
+    const gaps = 4; // gaps between elements (header-gap, lblField-gap, contentLabel-gap, buttons-gap)
+
+    // Calculate total fixed height (everything except textarea content)
+    const fixedElementsHeight = headerRowHeight + lblFieldHeight + contentLabelHeight + 
+                                 borderTopBottom + buttonRowHeight + footerHeight + gaps;
+
+    // Textarea gets all remaining height
+    // This is the KEY CHANGE: textarea has a FIXED height, not "visualLines + 1"
+    const availableTextareaHeight = Math.max(3, termHeight - fixedElementsHeight);
+
+    // Calculate pre-content offset for hit testing
+    let preContentHeight = lblFieldHeight + 1; // +1 gap
 
     if (s.inputOperation !== INPUT_LOAD && s.inputOperation !== INPUT_RENAME && s.contentTextarea) {
         const cntStyle = s.inputFocus === FOCUS_CONTENT ? styles.inputFocused() : styles.inputNormal();
 
         // Update textarea dimensions
-        const fieldWidth = Math.max(40, termWidth - 10);
-        const innerWidth = Math.max(10, fieldWidth - 4 - scrollbarWidth); // border(2) + padding(2)
         s.contentTextarea.setWidth(innerWidth);
-
-        // CRITICAL FIX: Use visualLineCount() instead of lineCount() for height calculation.
-        // This accounts for soft-wrapped lines and fixes the viewport clipping bug where
-        // the bottom of wrapped documents was invisible.
-        const visualLines = Math.max(1, s.contentTextarea.visualLineCount ? s.contentTextarea.visualLineCount() : s.contentTextarea.lineCount());
-        // Add buffer for cursor and end-of-buffer character
-        s.contentTextarea.setHeight(visualLines + 1);
+        
+        // CRITICAL CHANGE: Set FIXED height instead of "infinite" height
+        // This lets bubbles/textarea handle its own internal scrolling!
+        s.contentTextarea.setHeight(availableTextareaHeight);
 
         const textareaView = s.contentTextarea.view();
 
@@ -1842,150 +1851,82 @@ function renderInput(s) {
         preContentHeight += lipgloss.height(contentLabel) + 1; // border top
 
         // CALCULATE TEXTAREA BOUNDS FOR MOUSE CLICK POSITIONING
-        // These bounds are used in handleMouse to translate click coordinates
-        // to textarea row/column positions.
-        //
-        // Screen layout (Y axis):
-        //   titleHeight (1 line for header row)
-        //   [scrollable content starts here - this is viewport content]
-        //     lblField (label field with border)
-        //     gap (1 empty line)
-        //     contentLabel ("Content (multi-line):" - 1 line)
-        //     border top (1 line from cntStyle border)
-        //     [TEXTAREA CONTENT STARTS HERE]
-        //
-        // X axis:
-        //   border left (1 char from cntStyle border)
-        //   padding left (1 char from cntStyle padding)
-        //   prompt (from textarea, e.g., "▌ ")
-        //   line numbers (if enabled, e.g., " 1 ")
-        //   [TEXTAREA TEXT CONTENT STARTS HERE]
-        //
-        // Line numbers: textarea uses ShowLineNumbers=true, which adds " N " format
-        // The line number width is dynamic based on total lines, but typically 4 chars
+        // Screen layout (Y axis) - NOW WITH FIXED TEXTAREA HEIGHT:
+        //   headerRow (title + jump icons)
+        //   gap (1)
+        //   lblField (label field with border)
+        //   gap (1)
+        //   contentLabel ("Content (multi-line):")
+        //   border top (1)
+        //   [TEXTAREA CONTENT - FIXED HEIGHT, internal scrolling]
+        //   border bottom (1)
+        //   gap (1)
+        //   buttonRow
+        //   footer
 
-        const titleHeight = 1; // Header row
-        const lblFieldHeight = lipgloss.height(lblFieldRendered);
         const gapHeight = 1;
-        const contentLabelHeight = lipgloss.height(contentLabel);
         const borderTop = 1;
 
-        // Calculate Y offset to first textarea content line (relative to viewport content)
-        const textareaContentStartY = lblFieldHeight + gapHeight + contentLabelHeight + borderTop;
+        // Calculate Y offset to first VISIBLE textarea content line (relative to screen top)
+        // With fixed height, the textarea handles scrolling internally via yOffset
+        const textareaScreenTop = headerRowHeight + gapHeight + lblFieldHeight + gapHeight + contentLabelHeight + borderTop;
 
-        // Calculate X offset to first textarea text character
-        // Border (1) + Padding (1) = 2 from the left edge of the field
+        // X axis offsets
         const borderLeft = 1;
         const paddingLeft = 1;
-        // Textarea prompt: default is thick border "▌ " which is ~2 chars
-        const promptWidth = 2;
-        // Line numbers: " N " format, typically 4 chars for up to 999 lines
-        const lineNumberWidth = 4;
+        const promptWidth = 2;  // "▌ " prompt
+        const lineNumberWidth = 4;  // " N " format
+
+        // Get visual line count for scrollbar sync
+        const visualLines = s.contentTextarea.visualLineCount ? s.contentTextarea.visualLineCount() : s.contentTextarea.lineCount();
 
         // Store bounds in state for handleMouse to use
-        // These bounds are critical for proper mouse click handling, especially
-        // for large documents where zone-based detection fails.
         s.textareaBounds = {
-            // Offset from start of scrollable content to first content row
-            contentTop: textareaContentStartY,
+            // Absolute Y position of textarea content on screen
+            screenTop: textareaScreenTop,
             // Offset from left edge of screen to first text character
             contentLeft: borderLeft + paddingLeft + promptWidth + lineNumberWidth,
             lineNumberWidth: lineNumberWidth,
             promptWidth: promptWidth,
-            // Store additional info for precise calculations
             fieldWidth: fieldWidth,
             innerWidth: innerWidth,
-            // Store content height for hit detection (use visual lines for proper soft-wrap handling)
-            contentHeight: visualLines + 1,
-            // Store the border widths for X-axis hit detection
+            // Total visual lines in content (for scrollbar)
+            visualLineCount: visualLines,
+            // Visible height of textarea
+            visibleHeight: availableTextareaHeight,
+            // Border widths for X-axis hit detection
             borderLeft: borderLeft,
             paddingLeft: paddingLeft,
         };
     }
 
-    // Buttons
-    const submitBtn = zone.mark('btn-submit', (s.inputFocus === FOCUS_SUBMIT ? styles.buttonFocused() : styles.button()).render('[Submit]'));
-    const cancelBtn = zone.mark('btn-cancel', (s.inputFocus === FOCUS_CANCEL ? styles.buttonDanger() : styles.button()).render('[Cancel]'));
-    const buttonRow = lipgloss.joinHorizontal(lipgloss.Top, submitBtn, cancelBtn);
-
-    // Footer - Fixed layout
-    const sep = styles.separator().render('─'.repeat(termWidth));
-    // Dynamic footer text based on operation
-    let fText = 'Tab: Cycle Focus    Enter: Newline/Submit    Esc: Cancel';
-    if (s.inputOperation === INPUT_EDIT || s.inputOperation === INPUT_ADD) {
-        fText += '    PgUp/PgDn: Scroll';
-    }
-    const helpText = styles.help().render(fText);
-    const footer = lipgloss.joinVertical(lipgloss.Left, sep, helpText);
-    const footerHeight = lipgloss.height(footer);
-
-    // Build scrollable content for the OUTER viewport
-    const scrollableSections = [lblField];
+    // Build the screen layout directly (NO external viewport for textarea content)
+    // The textarea handles its own internal scrolling now.
+    const sections = [lblField];
     if (contentField) {
-        scrollableSections.push('', contentField);
+        sections.push('', contentField);
     }
-    scrollableSections.push('', buttonRow);
-    const scrollableContent = lipgloss.joinVertical(lipgloss.Left, ...scrollableSections);
+    sections.push('', buttonRow);
+    const mainContent = lipgloss.joinVertical(lipgloss.Left, ...sections);
 
-    // Calculate available height for the scrollable area
-    const titleHeight = lipgloss.height(headerRow);
-    const fixedHeight = titleHeight + footerHeight + 1; // 1 for gaps
-    const scrollableHeight = Math.max(3, termHeight - fixedHeight);
-
-    const scrollableContentHeight = lipgloss.height(scrollableContent);
-
-    // OUTER Viewport + Scrollbar logic
+    // Scrollbar syncs with TEXTAREA's internal yOffset, not an external viewport
     let visibleContent;
-    // Always use inputVp logic to support scrolling
-    s.inputVp.setWidth(termWidth - scrollbarWidth);
-    s.inputVp.setHeight(scrollableHeight);
-    s.inputVp.setContent(scrollableContent);
-
-    // CURSOR VISIBILITY LOGIC
-    // Only auto-scroll to keep cursor visible if viewport is NOT unlocked.
-    // When unlocked (user is scrolling freely), don't interfere with their scroll position.
-    // The unlock flag is reset when user types, so the view will snap back to cursor on input.
-    if (s.contentTextarea && s.inputFocus === FOCUS_CONTENT && !s.inputViewportUnlocked) {
-        // CRITICAL FIX: Use cursorVisualLine() instead of line() for viewport scrolling.
-        // line() returns the LOGICAL line index (0 if on first line, even if cursor is on wrapped portion).
-        // cursorVisualLine() returns the VISUAL line index (accounting for soft-wrapping).
-        // Using line() caused viewport shaking/stuttering because the viewport thought the cursor
-        // was at the wrong position when lines wrapped.
-        const cursorVisualLineIdx = s.contentTextarea.cursorVisualLine ? 
-            s.contentTextarea.cursorVisualLine() : s.contentTextarea.line();
-        // preContentHeight is the Y offset from start of scrollable content to start of textarea text
-        // Note: we must account for style borders.
-        // lblField (height) + gap(1) + contentLabel(1) + borderTop(1)
-        const cursorAbsY = preContentHeight + cursorVisualLineIdx;
-
-        const vpY = s.inputVp.yOffset();
-        const vpH = s.inputVp.height();
-
-        // Scroll if out of bounds
-        if (cursorAbsY < vpY) {
-            s.inputVp.setYOffset(cursorAbsY);
-        } else if (cursorAbsY >= vpY + vpH) {
-            s.inputVp.setYOffset(cursorAbsY - vpH + 1);
-        }
-    }
-
-    const vpView = s.inputVp.view();
-
-    // Show OUTER scrollbar if content exceeds height OR if configured
-    // Sync outer scrollbar
-    if (s.inputScrollbar) {
-        s.inputScrollbar.setViewportHeight(scrollableHeight);
-        s.inputScrollbar.setContentHeight(scrollableContentHeight);
-        s.inputScrollbar.setYOffset(s.inputVp.yOffset());
+    if (s.inputScrollbar && s.contentTextarea) {
+        const visualLines = s.textareaBounds ? s.textareaBounds.visualLineCount : 1;
+        const taYOffset = s.contentTextarea.yOffset ? s.contentTextarea.yOffset() : 0;
+        
+        s.inputScrollbar.setViewportHeight(availableTextareaHeight);
+        s.inputScrollbar.setContentHeight(visualLines);
+        s.inputScrollbar.setYOffset(taYOffset);
         s.inputScrollbar.setChars("█", "░");
         s.inputScrollbar.setThumbForeground(COLORS.primary);
         s.inputScrollbar.setTrackForeground(COLORS.muted);
-        visibleContent = lipgloss.joinHorizontal(lipgloss.Top, vpView, s.inputScrollbar.view());
+        visibleContent = lipgloss.joinHorizontal(lipgloss.Top, mainContent, s.inputScrollbar.view());
     } else {
-        visibleContent = vpView;
+        visibleContent = mainContent;
     }
 
-    // Compose final view
+    // Compose final view - NO external viewport wrapping!
     return lipgloss.joinVertical(lipgloss.Left, headerRow, '', visibleContent, footer);
 }
 

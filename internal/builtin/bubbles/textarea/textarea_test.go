@@ -1130,51 +1130,51 @@ func TestCursorVisualLine(t *testing.T) {
 	_, _ = setValueFn(ta, runtime.ToValue("ABCDEFGHIJKLMNOPQRST\nXYZ"))
 
 	tests := []struct {
-		name               string
-		row                int
-		col                int
+		name                string
+		row                 int
+		col                 int
 		expectedLogicalLine int64
 		expectedVisualLine  int64
 	}{
 		{
-			name:               "cursor at start of first logical line",
-			row:                0,
-			col:                0,
+			name:                "cursor at start of first logical line",
+			row:                 0,
+			col:                 0,
 			expectedLogicalLine: 0,
 			expectedVisualLine:  0,
 		},
 		{
-			name:               "cursor at end of first visual segment (col 9)",
-			row:                0,
-			col:                9,
+			name:                "cursor at end of first visual segment (col 9)",
+			row:                 0,
+			col:                 9,
 			expectedLogicalLine: 0,
 			expectedVisualLine:  0,
 		},
 		{
-			name:               "cursor at start of wrapped segment (col 10)",
-			row:                0,
-			col:                10,
+			name:                "cursor at start of wrapped segment (col 10)",
+			row:                 0,
+			col:                 10,
 			expectedLogicalLine: 0, // Still logical line 0
 			expectedVisualLine:  1, // But visual line 1 (wrapped)
 		},
 		{
-			name:               "cursor at end of wrapped segment (col 19)",
-			row:                0,
-			col:                19,
+			name:                "cursor at end of wrapped segment (col 19)",
+			row:                 0,
+			col:                 19,
 			expectedLogicalLine: 0,
 			expectedVisualLine:  1,
 		},
 		{
-			name:               "cursor at second logical line (visual line 2)",
-			row:                1,
-			col:                0,
+			name:                "cursor at second logical line (visual line 2)",
+			row:                 1,
+			col:                 0,
 			expectedLogicalLine: 1,
 			expectedVisualLine:  2, // First logical line takes 2 visual lines
 		},
 		{
-			name:               "cursor at middle of second logical line",
-			row:                1,
-			col:                2,
+			name:                "cursor at middle of second logical line",
+			row:                 1,
+			col:                 2,
 			expectedLogicalLine: 1,
 			expectedVisualLine:  2,
 		},

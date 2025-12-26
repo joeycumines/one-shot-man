@@ -241,6 +241,47 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		return obj
 	})
 
+	// promptWidth returns the prompt width (includes line numbers if enabled).
+	// This is critical for proper click coordinate translation.
+	_ = obj.Set("promptWidth", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		mirror := (*textareaModelMirror)(unsafe.Pointer(&wrapper.model))
+		return runtime.ToValue(mirror.promptWidth)
+	})
+
+	// contentWidth returns the usable content width.
+	// This is the actual character display area width (mirror.width).
+	// NOTE: mirror.width is already content width - SetWidth() calculates:
+	// width = inputWidth - reservedOuter - reservedInner
+	_ = obj.Set("contentWidth", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		mirror := (*textareaModelMirror)(unsafe.Pointer(&wrapper.model))
+		return runtime.ToValue(mirror.width)
+	})
+
+	// reservedInnerWidth returns the total inner reserved width.
+	// This is promptWidth + line number width (if ShowLineNumbers is enabled).
+	// This is what JS needs to calculate the X offset from the left edge of
+	// the textarea field to where the actual text content starts.
+	_ = obj.Set("reservedInnerWidth", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		mirror := (*textareaModelMirror)(unsafe.Pointer(&wrapper.model))
+		// Calculate: reservedInner = viewport.Width - m.width
+		// Because: m.width = inputWidth - reservedOuter - reservedInner
+		// And: viewport.Width = inputWidth - reservedOuter
+		// So: reservedInner = viewport.Width - m.width
+		if mirror.viewport == nil {
+			return runtime.ToValue(mirror.promptWidth)
+		}
+		return runtime.ToValue(mirror.viewport.Width - mirror.width)
+	})
+
 	// yOffset returns the viewport's vertical scroll offset (unsafe access).
 	_ = obj.Set("yOffset", func(call goja.FunctionCall) goja.Value {
 		wrapper := ensureModel()
@@ -488,8 +529,9 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 			return runtime.ToValue(1)
 		}
 
-		// Content width = total width - prompt width
-		contentWidth := mirror.width - mirror.promptWidth
+		// Content width is mirror.width - it's already the usable content width
+		// (SetWidth calculates: width = inputWidth - reservedOuter - reservedInner)
+		contentWidth := mirror.width
 		totalVisualLines := 0
 		for _, line := range mirror.value {
 			totalVisualLines += calculateWrappedLineCount(line, contentWidth)
@@ -514,7 +556,9 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 			return runtime.ToValue(0)
 		}
 
-		contentWidth := mirror.width - mirror.promptWidth
+		// Content width is mirror.width - it's already the usable content width
+		// (SetWidth calculates: width = inputWidth - reservedOuter - reservedInner)
+		contentWidth := mirror.width
 
 		// Count visual lines for all rows BEFORE the current row
 		visualLinesBefore := 0
@@ -566,8 +610,9 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 			return result
 		}
 
-		// Content width = total width - prompt width
-		contentWidth := mirror.width - mirror.promptWidth
+		// Content width is mirror.width - it's already the usable content width
+		// (SetWidth calculates: width = inputWidth - reservedOuter - reservedInner)
+		contentWidth := mirror.width
 
 		// Clamp visualY to non-negative
 		if visualY < 0 {

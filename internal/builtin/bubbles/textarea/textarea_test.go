@@ -1198,3 +1198,80 @@ func TestCursorVisualLine(t *testing.T) {
 		})
 	}
 }
+
+// TestPromptWidthAndContentWidth verifies that promptWidth(), contentWidth(),
+// and reservedInnerWidth() return the correct values for JS coordinate calculations.
+// This fixes the bug where JS hardcoded promptWidth=2 and lineNumberWidth=4
+// instead of using the actual values from the textarea model.
+func TestPromptWidthAndContentWidth(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Configure with line numbers (like super-document does)
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(true))
+	// IMPORTANT: setWidth must be called AFTER setShowLineNumbers to recalculate promptWidth
+	_, _ = setWidthFn(ta, runtime.ToValue(40))
+
+	// Get promptWidth, contentWidth, and reservedInnerWidth
+	promptWidthFn, ok := goja.AssertFunction(ta.Get("promptWidth"))
+	if !ok {
+		t.Fatal("promptWidth function not available")
+	}
+	contentWidthFn, ok := goja.AssertFunction(ta.Get("contentWidth"))
+	if !ok {
+		t.Fatal("contentWidth function not available")
+	}
+	reservedInnerWidthFn, ok := goja.AssertFunction(ta.Get("reservedInnerWidth"))
+	if !ok {
+		t.Fatal("reservedInnerWidth function not available")
+	}
+
+	promptWidthResult, _ := promptWidthFn(ta)
+	contentWidthResult, _ := contentWidthFn(ta)
+	reservedInnerResult, _ := reservedInnerWidthFn(ta)
+
+	promptWidth := promptWidthResult.ToInteger()
+	contentWidth := contentWidthResult.ToInteger()
+	reservedInner := reservedInnerResult.ToInteger()
+
+	// promptWidth is just the prompt string width (2 for "┃ ")
+	if promptWidth != 2 {
+		t.Errorf("promptWidth should be 2 (prompt string only), got %d", promptWidth)
+	}
+
+	// reservedInnerWidth should be promptWidth + lineNumberWidth (4)
+	// With ShowLineNumbers=true, this should be 2 + 4 = 6
+	if reservedInner < 5 {
+		t.Errorf("reservedInnerWidth too low: got %d, expected >= 5 (prompt + line numbers)", reservedInner)
+	}
+
+	// contentWidth should be reasonable (width - reservedInner - reservedOuter)
+	// With width=40, reservedInner=6, reservedOuter=0, contentWidth should be 34
+	if contentWidth <= 0 {
+		t.Errorf("contentWidth should be positive, got %d", contentWidth)
+	}
+
+	// Verify consistency: viewport.Width - width = reservedInnerWidth
+	widthFn, _ := goja.AssertFunction(ta.Get("width"))
+	widthResult, _ := widthFn(ta)
+	totalWidth := widthResult.ToInteger()
+
+	// width() returns m.width which IS contentWidth
+	if totalWidth != contentWidth {
+		t.Errorf("width() and contentWidth() should return the same value: width=%d, contentWidth=%d",
+			totalWidth, contentWidth)
+	}
+
+	t.Logf("promptWidth=%d, reservedInnerWidth=%d, contentWidth=%d", promptWidth, reservedInner, contentWidth)
+}

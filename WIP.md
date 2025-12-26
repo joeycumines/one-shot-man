@@ -1,20 +1,74 @@
-# WIP: Super-Document HOLISTIC FIX - RETAIN DOUBLE VIEWPORT
+# WIP: Super-Document TRUE FIX - FIXING ROOT CAUSES
 
 ## Current Goal
-Fix ALL issues while **RETAINING the double viewport architecture (inputVp)**.
-Previous attempt INCORRECTLY removed the double viewport. This session corrects that.
+ACTUALLY FIX the click/scroll/performance issues. Previous session only verified tests
+pass but DID NOT FIX the actual bugs.
 
-## Status: ✅ ALL TESTS PASS - VERIFICATION COMPLETE
+## Status: 🟡 IN PROGRESS
 
-### Personal Guarantee from Takumi:
-**I guarantee the following has been exhaustively verified:**
+### COMPLETED FIXES:
 
-1. ✅ All `make-all-with-log` tests PASS
-2. ✅ All textarea regression tests PASS (11 tests)
-3. ✅ All super-document integration tests PASS (19 tests)
-4. ✅ Each AGENTS.md mandatory item traced to specific code lines
-5. ✅ The stashed incorrect changes (removing inputVp) have been DROPPED
-6. ✅ The double viewport architecture is RETAINED and CORRECT
+#### Fix #1: Double-subtraction bug in contentWidth calculation ✅
+**ROOT CAUSE:** The Go methods `visualLineCount()`, `cursorVisualLine()`, and
+`performHitTest()` were calculating `contentWidth = mirror.width - mirror.promptWidth`.
+
+**WHY IT WAS WRONG:** The upstream bubbles/textarea `SetWidth()` already calculates:
+```go
+m.width = inputWidth - reservedOuter - reservedInner
+// where reservedInner = promptWidth + (ShowLineNumbers ? 4 : 0)
+```
+
+So `mirror.width` is ALREADY the content width. Subtracting `mirror.promptWidth` again
+caused a double-subtraction, making the content width too small and breaking wrapping
+calculations.
+
+**THE FIX:**
+1. Changed `contentWidth := mirror.width - mirror.promptWidth` → `contentWidth := mirror.width`
+   in all three methods: visualLineCount(), cursorVisualLine(), performHitTest()
+2. Added new Go methods:
+   - `promptWidth()` - returns the prompt string width only
+   - `contentWidth()` - returns mirror.width (the usable content width)
+   - `reservedInnerWidth()` - returns viewport.Width - width (prompt + line numbers)
+3. Updated JS to use `reservedInnerWidth()` instead of hardcoding `promptWidth=2, lineNumberWidth=4`
+
+**TESTS:** All 12 textarea tests pass, all super-document tests pass (19 tests).
+
+---
+
+### INVESTIGATED (No Issue Found):
+
+#### SCENARIO B zone detection when text wraps
+**INVESTIGATION:** Traced through `buildLayoutMap()` and click detection code.
+- Width calculations are consistent between measurement and rendering
+- `contentInnerWidth = docContentWidth - 4` matches actual inner width
+- `lipgloss.Height()` and `lipgloss.Width()` correctly handle ANSI codes
+- All 19 super-document tests pass, including click tests
+- No actual bug found in current code; may need real-world repro case
+
+---
+
+### REMAINING AGENTS.MD MANDATORY ITEMS:
+
+1. ⬜ SCENARIO B zone detection when text wraps - NO BUG FOUND (tests pass)
+2. ⬜ Edit page scrolling - textarea should scroll with whole page
+3. ⬜ Cursor/line highlight visibility - black void issue
+4. ⬜ Button layout in SCENARIO B - needs to match ASCII designs
+5. ⬜ Textarea navigation - clicking/PgUp/PgDn should work properly
+6. ⬜ Document list PageUp to TOP - doesn't scroll to yOffset=0
+7. ⬜ Document list arrow key to TOP - can't de-highlight to reach top
+
+---
+
+## Progress Log
+
+### Session 4 (Current)
+1. Identified TRUE root cause: double-subtraction in contentWidth calculation
+2. Fixed Go methods to use mirror.width directly (already content width)
+3. Added promptWidth(), contentWidth(), reservedInnerWidth() getters
+4. Updated JS to use reservedInnerWidth() instead of hardcoded values
+5. Added TestPromptWidthAndContentWidth test
+6. All tests pass: make-all-with-log SUCCESS, super-document tests SUCCESS
+7. Investigated SCENARIO B zone detection - no bug found in code
 
 ---
 
@@ -35,7 +89,7 @@ architecturally necessary because:
 
 ### All Tests Pass ✅
 - `make-all-with-log` - SUCCESS
-- `test-textarea-viewport` - SUCCESS  
+- `test-textarea-viewport` - SUCCESS
 - `test-super-document` - SUCCESS (All 19 tests pass)
 
 ---

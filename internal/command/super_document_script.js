@@ -333,25 +333,25 @@ function buildLayoutMap(docs, docContentWidth) {
         const docHeader = `#${doc.id} [${doc.label}]`;
         const docPreview = styles.preview().render(prev);
         const removeBtn = '[X] Remove';
-        
+
         // Render each component individually to measure their heights at the content width
         // Subtract border padding (docPaddingH * 2) and border itself (2) from width
         const contentInnerWidth = Math.max(1, docContentWidth - (DESIGN.docPaddingH * 2) - 2);
-        
+
         // For each element, we need to compute rendered height
         // We use a temporary style to measure wrapped height
         const measuringStyle = lipgloss.newStyle().width(contentInnerWidth);
         const headerRendered = measuringStyle.render(docHeader);
         const previewRendered = measuringStyle.render(docPreview);
-        
+
         const headerHeight = lipgloss.height(headerRendered);
         const previewHeight = lipgloss.height(previewRendered);
         const removeBtnHeight = 1; // Remove button is always 1 line
-        
+
         // Calculate removeButton line offset within the document box:
         // topBorder (1) + header + preview = position where removeBtn starts
         const removeButtonLineOffset = 1 + headerHeight + previewHeight;
-        
+
         // Calculate bottom border line offset:
         // removeButtonLineOffset + removeBtnHeight = bottom border position
         const bottomBorderLineOffset = removeButtonLineOffset + removeBtnHeight;
@@ -363,8 +363,8 @@ function buildLayoutMap(docs, docContentWidth) {
         const docHeight = lipgloss.height(renderedDoc);
 
         layoutMap.push({
-            top: currentTop, 
-            height: docHeight, 
+            top: currentTop,
+            height: docHeight,
             docId: doc.id,
             removeButtonLineOffset: removeButtonLineOffset,
             bottomBorderLineOffset: bottomBorderLineOffset,
@@ -645,7 +645,7 @@ function configureTextarea(ta, width) {
     // Initial height 1, will be expanded in renderInput
     ta.setHeight(1);
     ta.setShowLineNumbers(true);
-    
+
     // CRITICAL FIX: The upstream bubbles/textarea has a default MaxHeight of 99 lines.
     // This prevents users from entering more than ~100 lines via Enter key.
     // Set MaxHeight to 0 to disable the limit entirely.
@@ -691,7 +691,7 @@ function configureTextarea(ta, width) {
     // Cursor.View() already renders with TextStyle, then CursorLine wraps it AGAIN,
     // causing ANSI escape codes to be treated as literal text (double-render corruption).
     // The cursor will use the CursorLine styling instead.
-    
+
     // Set cursor block styling to ensure visibility on both light and dark backgrounds.
     // The cursor block (the blinking character) needs explicit foreground/background
     // to be visible when the CursorLine styling is applied.
@@ -1416,7 +1416,7 @@ function handleMouse(msg, s) {
                 // and extends for the height of the textarea (accounting for soft-wrapping)
                 const textareaContentTop = s.textareaBounds.contentTop;
                 // CRITICAL FIX: Use visualLineCount for proper height calculation with soft-wrapped lines
-                const textareaVisualLines = s.contentTextarea ? 
+                const textareaVisualLines = s.contentTextarea ?
                     (s.contentTextarea.visualLineCount ? s.contentTextarea.visualLineCount() : s.contentTextarea.lineCount()) : 0;
                 // Content area height = visual lines + buffer (the height we set)
                 const textareaContentHeight = Math.max(1, textareaVisualLines + 1);
@@ -1535,7 +1535,7 @@ function handleMouse(msg, s) {
             if (clickResult !== null) {
                 // Use pre-computed structural line offsets from layoutMap
                 const entry = s.layoutMap[clickResult.index];
-                
+
                 // Use the pre-computed offsets that account for wrapped content
                 const removeButtonLineOffset = entry.removeButtonLineOffset;
                 const bottomBorderLineOffset = entry.bottomBorderLineOffset;
@@ -1560,7 +1560,7 @@ function handleMouse(msg, s) {
                 // Lines after header and before removeButton: Preview -> Edit
                 // removeButtonLineOffset: Remove button -> Delete
                 const headerEndLine = 1 + headerHeight; // First line after header ends
-                
+
                 if (clickResult.relativeLineInDoc >= 1 && clickResult.relativeLineInDoc < headerEndLine) {
                     // Header area -> Rename (use 'R' uppercase since 'r' is Reset)
                     return handleKeys({key: 'R'}, s);
@@ -1877,10 +1877,11 @@ function renderInput(s) {
         // Border (1) + Padding (1) = 2 from the left edge of the field
         const borderLeft = 1;
         const paddingLeft = 1;
-        // Textarea prompt: default is thick border "▌ " which is ~2 chars
-        const promptWidth = 2;
-        // Line numbers: " N " format, typically 4 chars for up to 999 lines
-        const lineNumberWidth = 4;
+        // CRITICAL FIX: Use reservedInnerWidth() from Go instead of hardcoding.
+        // This returns the total inner reserved width = promptWidth + lineNumberWidth
+        // This is dynamically calculated by bubbles/textarea based on ShowLineNumbers.
+        // Previously this was hardcoded as promptWidth=2 + lineNumberWidth=4 = 6
+        const reservedInner = s.contentTextarea.reservedInnerWidth ? s.contentTextarea.reservedInnerWidth() : 6;
 
         // Store bounds in state for handleMouse to use
         // These bounds are critical for proper mouse click handling, especially
@@ -1889,9 +1890,10 @@ function renderInput(s) {
             // Offset from start of scrollable content to first content row
             contentTop: textareaContentStartY,
             // Offset from left edge of screen to first text character
-            contentLeft: borderLeft + paddingLeft + promptWidth + lineNumberWidth,
-            lineNumberWidth: lineNumberWidth,
-            promptWidth: promptWidth,
+            // borderLeft + paddingLeft + reservedInner (prompt + line numbers)
+            contentLeft: borderLeft + paddingLeft + reservedInner,
+            // Store the reserved inner width from Go (prompt + line numbers)
+            reservedInnerWidth: reservedInner,
             // Store additional info for precise calculations
             fieldWidth: fieldWidth,
             innerWidth: innerWidth,
@@ -1951,7 +1953,7 @@ function renderInput(s) {
         // cursorVisualLine() returns the VISUAL line index (accounting for soft-wrapping).
         // Using line() caused viewport shaking/stuttering because the viewport thought the cursor
         // was at the wrong position when lines wrapped.
-        const cursorVisualLineIdx = s.contentTextarea.cursorVisualLine ? 
+        const cursorVisualLineIdx = s.contentTextarea.cursorVisualLine ?
             s.contentTextarea.cursorVisualLine() : s.contentTextarea.line();
         // preContentHeight is the Y offset from start of scrollable content to start of textarea text
         // Note: we must account for style borders.

@@ -730,21 +730,21 @@ func TestTextareaPerformHitTest(t *testing.T) {
 			name:        "first char of wrapped continuation (visual line 1)",
 			visualX:     0,
 			visualY:     1,
-			expectedRow: 0,        // Still logical line 0
-			expectedCol: 10,       // Column 10 (start of wrapped segment)
+			expectedRow: 0,  // Still logical line 0
+			expectedCol: 10, // Column 10 (start of wrapped segment)
 		},
 		{
 			name:        "middle of wrapped continuation",
 			visualX:     5,
 			visualY:     1,
-			expectedRow: 0,        // Still logical line 0
-			expectedCol: 15,       // Column 15
+			expectedRow: 0,  // Still logical line 0
+			expectedCol: 15, // Column 15
 		},
 		{
 			name:        "first char of second logical line (visual line 2)",
 			visualX:     0,
 			visualY:     2,
-			expectedRow: 1,        // Logical line 1
+			expectedRow: 1, // Logical line 1
 			expectedCol: 0,
 		},
 		{
@@ -758,8 +758,8 @@ func TestTextareaPerformHitTest(t *testing.T) {
 			name:        "beyond end of document (clamps)",
 			visualX:     5,
 			visualY:     10,
-			expectedRow: 1,        // Clamped to last line
-			expectedCol: 3,        // Clamped to line length
+			expectedRow: 1, // Clamped to last line
+			expectedCol: 3, // Clamped to line length
 		},
 	}
 
@@ -828,33 +828,33 @@ func TestTextareaHandleClickWithSoftWrap(t *testing.T) {
 	}{
 		{
 			name:        "click first visual line",
-			clickX:     3,
-			clickY:     0,
-			yOffset:    0,
+			clickX:      3,
+			clickY:      0,
+			yOffset:     0,
 			expectedRow: 0,
 			expectedCol: 3,
 		},
 		{
 			name:        "click wrapped continuation (visual line 1)",
-			clickX:     3,
-			clickY:     1,
-			yOffset:    0,
+			clickX:      3,
+			clickY:      1,
+			yOffset:     0,
 			expectedRow: 0,  // CRITICAL: Should stay in logical line 0!
 			expectedCol: 13, // 10 (start of wrap) + 3
 		},
 		{
 			name:        "click second logical line (visual line 2)",
-			clickX:     1,
-			clickY:     2,
-			yOffset:    0,
+			clickX:      1,
+			clickY:      2,
+			yOffset:     0,
 			expectedRow: 1,
 			expectedCol: 1,
 		},
 		{
 			name:        "click with scroll offset",
-			clickX:     2,
-			clickY:     0, // Visual line 0 of viewport
-			yOffset:    1, // Scrolled down by 1, so visual line 1 is at top
+			clickX:      2,
+			clickY:      0,  // Visual line 0 of viewport
+			yOffset:     1,  // Scrolled down by 1, so visual line 1 is at top
 			expectedRow: 0,  // Wrapped part of line 0
 			expectedCol: 12, // 10 + 2
 		},

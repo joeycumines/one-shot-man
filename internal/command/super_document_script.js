@@ -645,6 +645,11 @@ function configureTextarea(ta, width) {
     // Initial height 1, will be expanded in renderInput
     ta.setHeight(1);
     ta.setShowLineNumbers(true);
+    
+    // CRITICAL FIX: The upstream bubbles/textarea has a default MaxHeight of 99 lines.
+    // This prevents users from entering more than ~100 lines via Enter key.
+    // Set MaxHeight to 0 to disable the limit entirely.
+    ta.setMaxHeight(0);
 
     // HIGH VISIBILITY STYLING & FIXES
     // Ensure selected text is visible (fix black bar) by setting specific style.

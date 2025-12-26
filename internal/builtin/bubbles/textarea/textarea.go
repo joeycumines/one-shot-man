@@ -54,6 +54,8 @@ import (
 
 // runeWidth returns the visual width of a rune, accounting for multi-width
 // characters (CJK, emojis, etc.). This is essential for proper cursor positioning.
+//
+// Deprecated: Use [github.com/rivo/uniseg] for grapheme cluster support. I'll deal with this later.
 func runeWidth(r rune) int {
 	w := runewidth.RuneWidth(r)
 	if w < 1 {
@@ -495,25 +497,40 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 	})
 
 	// calculateWrappedLineCount calculates the number of visual lines a logical line
-	// will occupy when soft-wrapped to the given width.
-	// This uses runewidth for proper multi-width character handling.
+	// will occupy by simulating the greedy wrap behavior.
 	calculateWrappedLineCount := func(line []rune, width int) int {
-		if width <= 0 {
+		if width <= 0 || len(line) == 0 {
 			return 1
 		}
-		if len(line) == 0 {
-			return 1
-		}
-		// Calculate visual width of the line using runewidth
-		visualWidth := 0
+
+		count := 1
+		currentWidth := 0
+
 		for _, r := range line {
-			visualWidth += runeWidth(r)
+			rw := runeWidth(r)
+
+			// Handle edge case: Character wider than viewport (e.g. CJK in width 1 col)
+			// We treat this as taking up the entire current line.
+			if rw > width {
+				if currentWidth > 0 {
+					count++ // Wrap previous content if line wasn't empty
+				}
+				// We do NOT increment count again here. We simple mark the line as
+				// fully occupied. If there is more text, the standard greedy wrap
+				// check (below) will handle the wrap for the NEXT character.
+				currentWidth = width
+				continue
+			}
+
+			// Standard greedy wrap
+			if currentWidth+rw > width {
+				count++
+				currentWidth = rw
+			} else {
+				currentWidth += rw
+			}
 		}
-		if visualWidth <= width {
-			return 1
-		}
-		// Calculate number of wrapped lines (ceiling division)
-		return (visualWidth + width - 1) / width
+		return count
 	}
 
 	// visualLineCount returns the total number of visual lines in the textarea
@@ -1104,6 +1121,319 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		wrapper.mu.Lock()
 		defer wrapper.mu.Unlock()
 		return runtime.ToValue(wrapper.model.View())
+	})
+
+	// =========================================================================
+	// ARCHITECTURAL OVERHAUL: GO-NATIVE VIEWPORT COORDINATION
+	// =========================================================================
+	// These methods provide a GO-NATIVE, REUSABLE, PERFORMANT interface for
+	// handling viewport coordination in a double-viewport architecture.
+	// They minimize cross-language calls by batching related operations.
+	// =========================================================================
+
+	// ViewportContext stores the outer viewport configuration so Go can
+	// perform all coordinate calculations without JS involvement.
+	// This is stored per-textarea instance for thread safety.
+	type viewportContext struct {
+		// Outer viewport scroll offset (inputVp.yOffset())
+		outerYOffset int
+		// Y offset from outer viewport content top to textarea content start
+		textareaContentTop int
+		// X offset from screen left to textarea text start (borders + padding + prompt + line numbers)
+		textareaContentLeft int
+		// Height of outer viewport in lines
+		outerViewportHeight int
+		// Pre-content height (Y offset within outer viewport to textarea content)
+		preContentHeight int
+	}
+
+	// Per-instance viewport context (stored in closure)
+	var vpCtx viewportContext
+
+	// setViewportContext configures the viewport context for coordinate calculations.
+	// This should be called once per render cycle with current viewport state.
+	// Parameters (as object):
+	//   - outerYOffset: Current outer viewport scroll offset
+	//   - textareaContentTop: Y offset from outer content top to textarea content
+	//   - textareaContentLeft: X offset from screen left to text content
+	//   - outerViewportHeight: Height of outer viewport
+	//   - preContentHeight: Height of content before textarea in outer viewport
+	// Returns the textarea object for chaining.
+	_ = obj.Set("setViewportContext", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return obj
+		}
+		config := call.Argument(0).ToObject(runtime)
+		if config == nil {
+			return obj
+		}
+
+		if v := config.Get("outerYOffset"); v != nil && !goja.IsUndefined(v) {
+			vpCtx.outerYOffset = int(v.ToInteger())
+		}
+		if v := config.Get("textareaContentTop"); v != nil && !goja.IsUndefined(v) {
+			vpCtx.textareaContentTop = int(v.ToInteger())
+		}
+		if v := config.Get("textareaContentLeft"); v != nil && !goja.IsUndefined(v) {
+			vpCtx.textareaContentLeft = int(v.ToInteger())
+		}
+		if v := config.Get("outerViewportHeight"); v != nil && !goja.IsUndefined(v) {
+			vpCtx.outerViewportHeight = int(v.ToInteger())
+		}
+		if v := config.Get("preContentHeight"); v != nil && !goja.IsUndefined(v) {
+			vpCtx.preContentHeight = int(v.ToInteger())
+		}
+		return obj
+	})
+
+	// handleClickAtScreenCoords handles a mouse click using RAW SCREEN coordinates.
+	// This is the GO-NATIVE method that does ALL coordinate translation internally.
+	// JS only needs to pass msg.x and msg.y directly - no math required in JS.
+	//
+	// Parameters:
+	//   - screenX: Raw X coordinate from mouse event (msg.x)
+	//   - screenY: Raw Y coordinate from mouse event (msg.y)
+	//   - titleHeight: Height of fixed header above outer viewport
+	//
+	// Returns object: {hit: bool, row: int, col: int, visualLine: int}
+	//   - hit: true if click was within textarea content bounds
+	//   - row: logical row where cursor was placed (if hit)
+	//   - col: logical column where cursor was placed (if hit)
+	//   - visualLine: visual line index where cursor is now
+	//
+	// This method:
+	// 1. Converts screen coords to outer viewport coords
+	// 2. Converts to content-space coords (accounting for outer scroll)
+	// 3. Converts to textarea-relative coords
+	// 4. Performs hit test to map visual to logical coords
+	// 5. Sets cursor position
+	// All in ONE cross-language call for PERFORMANCE.
+	_ = obj.Set("handleClickAtScreenCoords", func(call goja.FunctionCall) goja.Value {
+		result := runtime.NewObject()
+		_ = result.Set("hit", false)
+		_ = result.Set("row", 0)
+		_ = result.Set("col", 0)
+		_ = result.Set("visualLine", 0)
+
+		if len(call.Arguments) < 3 {
+			return result
+		}
+
+		screenX := int(call.Argument(0).ToInteger())
+		screenY := int(call.Argument(1).ToInteger())
+		titleHeight := int(call.Argument(2).ToInteger())
+
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		mirror := (*textareaModelMirror)(unsafe.Pointer(&wrapper.model))
+
+		if len(mirror.value) == 0 {
+			return result
+		}
+
+		// Step 1: Convert screen Y to viewport-relative Y
+		viewportRelativeY := screenY - titleHeight
+
+		// Step 2: Check if within outer viewport bounds
+		if viewportRelativeY < 0 || viewportRelativeY >= vpCtx.outerViewportHeight {
+			return result // Click outside viewport
+		}
+
+		// Step 3: Convert to content-space Y (add outer scroll offset)
+		contentY := viewportRelativeY + vpCtx.outerYOffset
+
+		// Step 4: Convert to textarea-relative Y
+		visualY := contentY - vpCtx.textareaContentTop
+
+		// Step 5: Check if within textarea content bounds
+		contentWidth := mirror.width
+		totalVisualLines := 0
+		for _, line := range mirror.value {
+			totalVisualLines += calculateWrappedLineCount(line, contentWidth)
+		}
+
+		if visualY < 0 || visualY >= totalVisualLines+1 {
+			return result // Click outside textarea content
+		}
+
+		// Step 6: Convert screen X to textarea-relative X
+		visualX := screenX - vpCtx.textareaContentLeft
+		if visualX < 0 {
+			visualX = 0
+		}
+
+		// Step 7: Perform hit test (find logical row/col from visual coords)
+		// This is the same logic as performHitTest but inline for efficiency
+		currentVisualLine := 0
+		targetRow := 0
+		targetWrappedSegment := 0
+
+		for row := 0; row < len(mirror.value); row++ {
+			lineHeight := calculateWrappedLineCount(mirror.value[row], contentWidth)
+
+			if visualY >= currentVisualLine && visualY < currentVisualLine+lineHeight {
+				targetRow = row
+				targetWrappedSegment = visualY - currentVisualLine
+				break
+			}
+
+			currentVisualLine += lineHeight
+
+			if row == len(mirror.value)-1 {
+				targetRow = row
+				targetWrappedSegment = lineHeight - 1
+			}
+		}
+
+		// Step 8: Calculate column within the logical line
+		line := mirror.value[targetRow]
+		targetCol := 0
+
+		if contentWidth > 0 && len(line) > 0 {
+			charsConsumed := 0
+
+			for segment := 0; segment < targetWrappedSegment && charsConsumed < len(line); segment++ {
+				segmentWidth := 0
+				for segmentWidth < contentWidth && charsConsumed < len(line) {
+					rw := runeWidth(line[charsConsumed])
+					if segmentWidth+rw > contentWidth {
+						break
+					}
+					segmentWidth += rw
+					charsConsumed++
+				}
+			}
+
+			widthConsumed := 0
+			for charsConsumed < len(line) && widthConsumed < visualX {
+				rw := runeWidth(line[charsConsumed])
+				if widthConsumed+rw > contentWidth {
+					break
+				}
+				widthConsumed += rw
+				charsConsumed++
+			}
+
+			targetCol = charsConsumed
+			if targetCol > len(line) {
+				targetCol = len(line)
+			}
+		} else {
+			targetCol = visualX
+			if targetCol > len(line) {
+				targetCol = len(line)
+			}
+		}
+
+		// Step 9: Set cursor position
+		mirror.row = targetRow
+		mirror.col = targetCol
+		mirror.lastCharOffset = 0
+
+		// Step 10: Calculate cursor visual line for scroll sync
+		cursorVisualLine := 0
+		for row := 0; row < targetRow && row < len(mirror.value); row++ {
+			cursorVisualLine += calculateWrappedLineCount(mirror.value[row], contentWidth)
+		}
+		if targetRow < len(mirror.value) && contentWidth > 0 {
+			visualWidthToCursor := 0
+			for i := 0; i < targetCol && i < len(mirror.value[targetRow]); i++ {
+				visualWidthToCursor += runeWidth(mirror.value[targetRow][i])
+			}
+			if contentWidth > 0 && visualWidthToCursor >= contentWidth {
+				cursorVisualLine += visualWidthToCursor / contentWidth
+			}
+		}
+
+		_ = result.Set("hit", true)
+		_ = result.Set("row", targetRow)
+		_ = result.Set("col", targetCol)
+		_ = result.Set("visualLine", cursorVisualLine)
+		return result
+	})
+
+	// getScrollSyncInfo returns all information needed for viewport synchronization
+	// in a SINGLE cross-language call. This replaces multiple separate calls to
+	// cursorVisualLine(), visualLineCount(), line(), etc.
+	//
+	// Returns object:
+	//   - cursorVisualLine: Visual line where cursor is (for scroll tracking)
+	//   - totalVisualLines: Total visual lines in document (for height calc)
+	//   - cursorRow: Current logical row (for display)
+	//   - cursorCol: Current logical column (for display)
+	//   - lineCount: Total logical lines
+	//   - cursorAbsY: Absolute Y position of cursor in outer viewport content space
+	//                 (preContentHeight + cursorVisualLine)
+	//   - suggestedYOffset: Suggested outer viewport Y offset to keep cursor visible
+	//
+	// This enables the JS to sync the outer viewport with ONE call instead of many.
+	_ = obj.Set("getScrollSyncInfo", func(call goja.FunctionCall) goja.Value {
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		mirror := (*textareaModelMirror)(unsafe.Pointer(&wrapper.model))
+
+		result := runtime.NewObject()
+
+		if len(mirror.value) == 0 {
+			_ = result.Set("cursorVisualLine", 0)
+			_ = result.Set("totalVisualLines", 1)
+			_ = result.Set("cursorRow", 0)
+			_ = result.Set("cursorCol", 0)
+			_ = result.Set("lineCount", 1)
+			_ = result.Set("cursorAbsY", vpCtx.preContentHeight)
+			_ = result.Set("suggestedYOffset", 0)
+			return result
+		}
+
+		contentWidth := mirror.width
+
+		// Calculate total visual lines
+		totalVisualLines := 0
+		for _, line := range mirror.value {
+			totalVisualLines += calculateWrappedLineCount(line, contentWidth)
+		}
+
+		// Calculate cursor visual line
+		cursorVisualLine := 0
+		for row := 0; row < mirror.row && row < len(mirror.value); row++ {
+			cursorVisualLine += calculateWrappedLineCount(mirror.value[row], contentWidth)
+		}
+		if mirror.row < len(mirror.value) && contentWidth > 0 {
+			visualWidthToCursor := 0
+			for i := 0; i < mirror.col && i < len(mirror.value[mirror.row]); i++ {
+				visualWidthToCursor += runeWidth(mirror.value[mirror.row][i])
+			}
+			if contentWidth > 0 && visualWidthToCursor >= contentWidth {
+				cursorVisualLine += visualWidthToCursor / contentWidth
+			}
+		}
+
+		// Calculate cursor absolute Y in outer viewport content space
+		cursorAbsY := vpCtx.preContentHeight + cursorVisualLine
+
+		// Calculate suggested Y offset to keep cursor visible
+		suggestedYOffset := vpCtx.outerYOffset
+		if cursorAbsY < vpCtx.outerYOffset {
+			// Cursor above viewport - scroll up
+			suggestedYOffset = cursorAbsY
+		} else if cursorAbsY >= vpCtx.outerYOffset+vpCtx.outerViewportHeight {
+			// Cursor below viewport - scroll down
+			suggestedYOffset = cursorAbsY - vpCtx.outerViewportHeight + 1
+		}
+		if suggestedYOffset < 0 {
+			suggestedYOffset = 0
+		}
+
+		_ = result.Set("cursorVisualLine", cursorVisualLine)
+		_ = result.Set("totalVisualLines", totalVisualLines)
+		_ = result.Set("cursorRow", mirror.row)
+		_ = result.Set("cursorCol", mirror.col)
+		_ = result.Set("lineCount", len(mirror.value))
+		_ = result.Set("cursorAbsY", cursorAbsY)
+		_ = result.Set("suggestedYOffset", suggestedYOffset)
+		return result
 	})
 
 	return obj

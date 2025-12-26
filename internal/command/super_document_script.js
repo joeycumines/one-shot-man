@@ -1446,35 +1446,45 @@ function handleMouse(msg, s) {
                 }
             }
 
-            // CURSOR POSITIONING for mouse clicks
-            // CRITICAL FIX: Use performHitTest() to properly map visual coordinates
-            // to logical row/column, accounting for soft-wrapped lines and multi-width characters.
-            // This fixes the cursor jump bug where clicking on wrapped text placed the cursor
-            // in the wrong logical position.
-            if (s.contentTextarea && isLeftClick && !isWheelEvent && s.textareaBounds) {
+            // GO-NATIVE CLICK HANDLING
+            // Uses handleClickAtScreenCoords() which does ALL coordinate translation in Go.
+            // This replaces manual JS coordinate math for PERFORMANCE and CORRECTNESS.
+            // The Go method handles: screen→viewport→content→textarea→visual→logical mapping.
+            if (s.contentTextarea && isLeftClick && !isWheelEvent) {
                 const titleHeight = 1;
-                const vpYOffset = s.inputVp ? s.inputVp.yOffset() : 0;
 
-                // Calculate visual Y coordinate relative to textarea content (0 = first visual line)
-                const viewportRelativeY = msg.y - titleHeight;
-                const contentRelativeY = viewportRelativeY + vpYOffset;
-                const visualY = contentRelativeY - s.textareaBounds.contentTop;
+                // Try GO-NATIVE method first (does all math in Go for performance)
+                if (s.contentTextarea.handleClickAtScreenCoords) {
+                    const hitResult = s.contentTextarea.handleClickAtScreenCoords(msg.x, msg.y, titleHeight);
+                    if (hitResult.hit) {
+                        // Cursor was successfully positioned by Go
+                        s.inputViewportUnlocked = false;
+                    }
+                } else if (s.textareaBounds && s.contentTextarea.performHitTest) {
+                    // Fallback: Use legacy manual coordinate calculation
+                    const vpYOffset = s.inputVp ? s.inputVp.yOffset() : 0;
+                    const viewportRelativeY = msg.y - titleHeight;
+                    const contentRelativeY = viewportRelativeY + vpYOffset;
+                    const visualY = contentRelativeY - s.textareaBounds.contentTop;
+                    const visualX = Math.max(0, msg.x - s.textareaBounds.contentLeft);
 
-                // Calculate visual X coordinate relative to text content
-                const visualX = Math.max(0, msg.x - s.textareaBounds.contentLeft);
-
-                // Only reposition if the click is within the textarea area (positive visual row)
-                if (visualY >= 0) {
-                    // Use performHitTest to properly map visual coords to logical row/col
-                    if (s.contentTextarea.performHitTest) {
+                    if (visualY >= 0) {
                         const hitResult = s.contentTextarea.performHitTest(visualX, visualY);
                         s.contentTextarea.setPosition(hitResult.row, hitResult.col);
-                    } else {
-                        // Fallback for backwards compatibility
-                        s.contentTextarea.setPosition(visualY, visualX);
+                        s.inputViewportUnlocked = false;
                     }
-                    // Reset viewport unlock so cursor stays visible after click
-                    s.inputViewportUnlocked = false;
+                } else if (s.textareaBounds) {
+                    // Last resort fallback for backwards compatibility
+                    const vpYOffset = s.inputVp ? s.inputVp.yOffset() : 0;
+                    const viewportRelativeY = msg.y - titleHeight;
+                    const contentRelativeY = viewportRelativeY + vpYOffset;
+                    const visualY = contentRelativeY - s.textareaBounds.contentTop;
+                    const visualX = Math.max(0, msg.x - s.textareaBounds.contentLeft);
+
+                    if (visualY >= 0) {
+                        s.contentTextarea.setPosition(visualY, visualX);
+                        s.inputViewportUnlocked = false;
+                    }
                 }
             }
             return [s, null];
@@ -1943,31 +1953,52 @@ function renderInput(s) {
     s.inputVp.setHeight(scrollableHeight);
     s.inputVp.setContent(scrollableContent);
 
+    // GO-NATIVE VIEWPORT CONTEXT SETUP
+    // Configure the textarea with the current viewport state so it can do
+    // ALL coordinate calculations in Go (for handleClickAtScreenCoords and getScrollSyncInfo).
+    if (s.contentTextarea && s.contentTextarea.setViewportContext && s.textareaBounds) {
+        s.contentTextarea.setViewportContext({
+            outerYOffset: s.inputVp.yOffset(),
+            textareaContentTop: s.textareaBounds.contentTop,
+            textareaContentLeft: s.textareaBounds.contentLeft,
+            outerViewportHeight: scrollableHeight,
+            preContentHeight: preContentHeight
+        });
+    }
+
     // CURSOR VISIBILITY LOGIC
     // Only auto-scroll to keep cursor visible if viewport is NOT unlocked.
     // When unlocked (user is scrolling freely), don't interfere with their scroll position.
     // The unlock flag is reset when user types, so the view will snap back to cursor on input.
     if (s.contentTextarea && s.inputFocus === FOCUS_CONTENT && !s.inputViewportUnlocked) {
-        // CRITICAL FIX: Use cursorVisualLine() instead of line() for viewport scrolling.
-        // line() returns the LOGICAL line index (0 if on first line, even if cursor is on wrapped portion).
-        // cursorVisualLine() returns the VISUAL line index (accounting for soft-wrapping).
-        // Using line() caused viewport shaking/stuttering because the viewport thought the cursor
-        // was at the wrong position when lines wrapped.
-        const cursorVisualLineIdx = s.contentTextarea.cursorVisualLine ?
-            s.contentTextarea.cursorVisualLine() : s.contentTextarea.line();
-        // preContentHeight is the Y offset from start of scrollable content to start of textarea text
-        // Note: we must account for style borders.
-        // lblField (height) + gap(1) + contentLabel(1) + borderTop(1)
-        const cursorAbsY = preContentHeight + cursorVisualLineIdx;
+        // GO-NATIVE SCROLL SYNC: Use getScrollSyncInfo() to get all sync data in ONE call.
+        // This is more performant than calling cursorVisualLine(), line(), etc. separately.
+        if (s.contentTextarea.getScrollSyncInfo) {
+            const syncInfo = s.contentTextarea.getScrollSyncInfo();
+            // cursorAbsY is already calculated in Go (preContentHeight + cursorVisualLine)
+            const cursorAbsY = syncInfo.cursorAbsY;
+            const vpY = s.inputVp.yOffset();
+            const vpH = s.inputVp.height();
 
-        const vpY = s.inputVp.yOffset();
-        const vpH = s.inputVp.height();
+            // Scroll if out of bounds
+            if (cursorAbsY < vpY) {
+                s.inputVp.setYOffset(cursorAbsY);
+            } else if (cursorAbsY >= vpY + vpH) {
+                s.inputVp.setYOffset(cursorAbsY - vpH + 1);
+            }
+        } else {
+            // Fallback: Use legacy separate method calls
+            const cursorVisualLineIdx = s.contentTextarea.cursorVisualLine ?
+                s.contentTextarea.cursorVisualLine() : s.contentTextarea.line();
+            const cursorAbsY = preContentHeight + cursorVisualLineIdx;
+            const vpY = s.inputVp.yOffset();
+            const vpH = s.inputVp.height();
 
-        // Scroll if out of bounds
-        if (cursorAbsY < vpY) {
-            s.inputVp.setYOffset(cursorAbsY);
-        } else if (cursorAbsY >= vpY + vpH) {
-            s.inputVp.setYOffset(cursorAbsY - vpH + 1);
+            if (cursorAbsY < vpY) {
+                s.inputVp.setYOffset(cursorAbsY);
+            } else if (cursorAbsY >= vpY + vpH) {
+                s.inputVp.setYOffset(cursorAbsY - vpH + 1);
+            }
         }
     }
 

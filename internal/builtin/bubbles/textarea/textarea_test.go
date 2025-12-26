@@ -1,6 +1,7 @@
 package textarea
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dop251/goja"
@@ -931,8 +932,8 @@ func TestTextareaMultiWidthCharacters(t *testing.T) {
 
 // TestSuperDocumentViewportAlignment tests that visualLineCount and performHitTest
 // work correctly under PRODUCTION CONDITIONS (with line numbers enabled and
-// default prompt intact). This is a regression test for the viewport shaking/ghosting
-// issue identified by Hana-sama where the Go and JS calculations drifted.
+// default prompt intact). This is a regression test for the viewport
+// shaking/ghosting issue, where the Go and JS calculations drifted.
 //
 // The key insight: In production, we have:
 // - ShowLineNumbers = true
@@ -1276,11 +1277,10 @@ func TestPromptWidthAndContentWidth(t *testing.T) {
 	t.Logf("promptWidth=%d, reservedInnerWidth=%d, contentWidth=%d", promptWidth, reservedInner, contentWidth)
 }
 
-// TestHanaSamaScenario100CharLine is a MANDATORY test requested by Hana-sama:
-// 100-character line in 40-character viewport - clicking the wrapped segment
-// MUST stay in logical row 0. This is the critical regression test for the
-// "cursor jumps to wrong line" bug.
-func TestHanaSamaScenario100CharLine(t *testing.T) {
+// TestOneHundredCharLine tests 100-character line in 40-character viewport -
+// clicking the wrapped segment MUST stay in logical row 0. This is the
+// critical regression test for the "cursor jumps to wrong line" bug.
+func TestOneHundredCharLine(t *testing.T) {
 	manager := NewManager()
 	runtime := goja.New()
 
@@ -1298,7 +1298,7 @@ func TestHanaSamaScenario100CharLine(t *testing.T) {
 	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
 	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
 
-	// Set 40-char viewport width as requested by Hana-sama
+	// Set 40-char viewport width
 	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
 	_, _ = setWidthFn(ta, runtime.ToValue(40))
 
@@ -1308,7 +1308,7 @@ func TestHanaSamaScenario100CharLine(t *testing.T) {
 	lineFn, _ := goja.AssertFunction(ta.Get("line"))
 	colFn, _ := goja.AssertFunction(ta.Get("col"))
 
-	// 100-character line exactly as Hana-sama specified
+	// 100-character line
 	hundredCharLine := "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
 	if len(hundredCharLine) != 100 {
 		t.Fatalf("Test setup error: expected 100 chars, got %d", len(hundredCharLine))
@@ -1328,42 +1328,42 @@ func TestHanaSamaScenario100CharLine(t *testing.T) {
 	// THE CRITICAL TEST: Click on visual line 2 (the third wrapped segment of row 0)
 	// This MUST position cursor in logical row 0, NOT row 2
 	tests := []struct {
-		name          string
-		visualX       int
-		visualY       int
-		expectedRow   int64
-		expectedMinCol int64  // Minimum expected column
-		expectedMaxCol int64  // Maximum expected column
+		name           string
+		visualX        int
+		visualY        int
+		expectedRow    int64
+		expectedMinCol int64 // Minimum expected column
+		expectedMaxCol int64 // Maximum expected column
 	}{
 		{
-			name:          "click first visual line (row 0, chars 0-39)",
-			visualX:       5,
-			visualY:       0,
-			expectedRow:   0,
+			name:           "click first visual line (row 0, chars 0-39)",
+			visualX:        5,
+			visualY:        0,
+			expectedRow:    0,
 			expectedMinCol: 5,
 			expectedMaxCol: 5,
 		},
 		{
-			name:          "click second visual line (STILL row 0, chars 40-79)",
-			visualX:       5,
-			visualY:       1,
-			expectedRow:   0, // CRITICAL: Must stay in logical row 0!
+			name:           "click second visual line (STILL row 0, chars 40-79)",
+			visualX:        5,
+			visualY:        1,
+			expectedRow:    0,  // CRITICAL: Must stay in logical row 0!
 			expectedMinCol: 45, // 40 (wrap offset) + 5
 			expectedMaxCol: 45,
 		},
 		{
-			name:          "click third visual line (STILL row 0, chars 80-99)",
-			visualX:       5,
-			visualY:       2,
-			expectedRow:   0, // CRITICAL: Must stay in logical row 0!
+			name:           "click third visual line (STILL row 0, chars 80-99)",
+			visualX:        5,
+			visualY:        2,
+			expectedRow:    0,  // CRITICAL: Must stay in logical row 0!
 			expectedMinCol: 85, // 80 (second wrap offset) + 5
 			expectedMaxCol: 85,
 		},
 		{
-			name:          "click fourth visual line (this is logical row 1)",
-			visualX:       3,
-			visualY:       3,
-			expectedRow:   1, // This is actually the second logical line
+			name:           "click fourth visual line (this is logical row 1)",
+			visualX:        3,
+			visualY:        3,
+			expectedRow:    1, // This is actually the second logical line
 			expectedMinCol: 3,
 			expectedMaxCol: 3,
 		},
@@ -1381,13 +1381,12 @@ func TestHanaSamaScenario100CharLine(t *testing.T) {
 			col := hitResult.Get("col").ToInteger()
 
 			if row != tt.expectedRow {
-				t.Errorf("HANA-SAMA BUG DETECTED: Expected logical row %d, got %d. "+
-					"Clicking visual line %d jumped to wrong logical row!", 
+				t.Errorf("Expected logical row %d, got %d. Clicking visual line %d jumped to wrong logical row!",
 					tt.expectedRow, row, tt.visualY)
 			}
 
 			if col < tt.expectedMinCol || col > tt.expectedMaxCol {
-				t.Errorf("Expected column in range [%d, %d], got %d", 
+				t.Errorf("Expected column in range [%d, %d], got %d",
 					tt.expectedMinCol, tt.expectedMaxCol, col)
 			}
 
@@ -1408,10 +1407,10 @@ func TestHanaSamaScenario100CharLine(t *testing.T) {
 	}
 }
 
-// TestHanaSamaScenarioMultiWidthHitTest tests clicking on CJK/emoji characters
-// as demanded by Hana-sama. Clicking the right half of a 2-cell character
-// should position correctly, not split the character or jump to wrong position.
-func TestHanaSamaScenarioMultiWidthHitTest(t *testing.T) {
+// TestMultiWidthHitTest tests clicking on CJK/emoji characters.
+// Clicking the right half of a 2-cell character should position correctly,
+// not split the character or jump to wrong position.
+func TestMultiWidthHitTest(t *testing.T) {
 	manager := NewManager()
 	runtime := goja.New()
 
@@ -1477,5 +1476,377 @@ func TestHanaSamaScenarioMultiWidthHitTest(t *testing.T) {
 					tt.expectedCol, col, tt.visualX)
 			}
 		})
+	}
+}
+
+// TestSetViewportContextAndHandleClickAtScreenCoords tests the GO-NATIVE
+// click handling that takes raw screen coordinates and does ALL coordinate
+// translation internally.
+func TestSetViewportContextAndHandleClickAtScreenCoords(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Configure textarea: no prompt, no line numbers, 40-char content width
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(40))
+
+	// Set content: 100 chars wraps to 3 visual lines in 40-char viewport
+	content := strings.Repeat("x", 100)
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	_, _ = setValueFn(ta, runtime.ToValue(content+"\nsecond line"))
+
+	// Get the new GO-NATIVE methods
+	setViewportContextFn, _ := goja.AssertFunction(ta.Get("setViewportContext"))
+	handleClickFn, _ := goja.AssertFunction(ta.Get("handleClickAtScreenCoords"))
+
+	// Configure viewport context:
+	// - Screen layout: [title (3 lines)] [viewport (10 lines)]
+	// - Outer viewport: starts at screen Y=3, height=10, scroll offset=0
+	// - Textarea content starts at outer viewport content Y=2 (some header above textarea)
+	// - Textarea text starts at screen X=5 (borders + padding)
+	vpConfig := runtime.NewObject()
+	_ = vpConfig.Set("outerYOffset", 0)         // Not scrolled
+	_ = vpConfig.Set("textareaContentTop", 2)   // 2 lines of header before textarea content
+	_ = vpConfig.Set("textareaContentLeft", 5)  // 5 chars of left margin/border
+	_ = vpConfig.Set("outerViewportHeight", 10) // Viewport is 10 lines tall
+	_ = vpConfig.Set("preContentHeight", 2)     // Same as textareaContentTop
+
+	_, err := setViewportContextFn(ta, vpConfig)
+	if err != nil {
+		t.Fatalf("setViewportContext failed: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		screenX     int
+		screenY     int
+		titleHeight int
+		expectHit   bool
+		expectedRow int64
+		minCol      int64
+		maxCol      int64
+	}{
+		{
+			name:        "click first visual line (row 0, chars 0-39)",
+			screenX:     10, // 5 (left margin) + 5 (5 chars into text)
+			screenY:     5,  // 3 (title) + 2 (header) + 0 (first visual line)
+			titleHeight: 3,
+			expectHit:   true,
+			expectedRow: 0,
+			minCol:      5,
+			maxCol:      5,
+		},
+		{
+			name:        "click second visual line (STILL row 0, chars 40-79)",
+			screenX:     10, // 5 (left margin) + 5 (5 chars into wrapped segment)
+			screenY:     6,  // 3 (title) + 2 (header) + 1 (second visual line)
+			titleHeight: 3,
+			expectHit:   true,
+			expectedRow: 0,  // CRITICAL: Must stay in logical row 0
+			minCol:      45, // 40 (wrap offset) + 5
+			maxCol:      45,
+		},
+		{
+			name:        "click third visual line (STILL row 0, chars 80-99)",
+			screenX:     10, // 5 (left margin) + 5 (5 chars into wrapped segment)
+			screenY:     7,  // 3 (title) + 2 (header) + 2 (third visual line)
+			titleHeight: 3,
+			expectHit:   true,
+			expectedRow: 0,  // CRITICAL: Must stay in logical row 0
+			minCol:      85, // 80 (wrap offset) + 5
+			maxCol:      85,
+		},
+		{
+			name:        "click fourth visual line (logical row 1)",
+			screenX:     8, // 5 (left margin) + 3 (3 chars into text)
+			screenY:     8, // 3 (title) + 2 (header) + 3 (fourth visual line)
+			titleHeight: 3,
+			expectHit:   true,
+			expectedRow: 1,
+			minCol:      3,
+			maxCol:      3,
+		},
+		{
+			name:        "click outside viewport (above)",
+			screenX:     10,
+			screenY:     2, // Above title
+			titleHeight: 3,
+			expectHit:   false,
+		},
+		{
+			name:        "click outside viewport (below)",
+			screenX:     10,
+			screenY:     20, // Beyond viewport
+			titleHeight: 3,
+			expectHit:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset cursor position before each test
+			setPositionFn, _ := goja.AssertFunction(ta.Get("setPosition"))
+			_, _ = setPositionFn(ta, runtime.ToValue(0), runtime.ToValue(0))
+
+			result, err := handleClickFn(ta,
+				runtime.ToValue(tt.screenX),
+				runtime.ToValue(tt.screenY),
+				runtime.ToValue(tt.titleHeight))
+			if err != nil {
+				t.Fatalf("handleClickAtScreenCoords failed: %v", err)
+			}
+
+			obj := result.ToObject(runtime)
+			hit := obj.Get("hit").ToBoolean()
+			row := obj.Get("row").ToInteger()
+			col := obj.Get("col").ToInteger()
+
+			if hit != tt.expectHit {
+				t.Errorf("Expected hit=%v, got hit=%v", tt.expectHit, hit)
+				return
+			}
+
+			if !tt.expectHit {
+				return // No further checks for misses
+			}
+
+			if row != tt.expectedRow {
+				t.Errorf("GO-NATIVE CLICK BUG: Expected logical row %d, got %d. "+
+					"Screen click (%d, %d) translated incorrectly.",
+					tt.expectedRow, row, tt.screenX, tt.screenY)
+			}
+
+			if col < tt.minCol || col > tt.maxCol {
+				t.Errorf("Expected column in range [%d, %d], got %d",
+					tt.minCol, tt.maxCol, col)
+			}
+		})
+	}
+}
+
+// TestGetScrollSyncInfo tests the GO-NATIVE scroll sync method that returns
+// all viewport synchronization data in a single call.
+func TestGetScrollSyncInfo(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Configure textarea
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(40))
+
+	// Content: 3 logical lines, but first line wraps to 3 visual lines
+	// Total visual lines: 3 + 1 + 1 = 5
+	content := strings.Repeat("a", 100) + "\nline2\nline3"
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	_, _ = setValueFn(ta, runtime.ToValue(content))
+
+	// Configure viewport context
+	setViewportContextFn, _ := goja.AssertFunction(ta.Get("setViewportContext"))
+	vpConfig := runtime.NewObject()
+	_ = vpConfig.Set("outerYOffset", 0)
+	_ = vpConfig.Set("textareaContentTop", 0)
+	_ = vpConfig.Set("textareaContentLeft", 0)
+	_ = vpConfig.Set("outerViewportHeight", 3) // Only 3 visible lines
+	_ = vpConfig.Set("preContentHeight", 0)
+	_, _ = setViewportContextFn(ta, vpConfig)
+
+	getScrollSyncInfoFn, _ := goja.AssertFunction(ta.Get("getScrollSyncInfo"))
+	setPositionFn, _ := goja.AssertFunction(ta.Get("setPosition"))
+
+	t.Run("cursor at start", func(t *testing.T) {
+		_, _ = setPositionFn(ta, runtime.ToValue(0), runtime.ToValue(0))
+
+		result, err := getScrollSyncInfoFn(ta)
+		if err != nil {
+			t.Fatalf("getScrollSyncInfo failed: %v", err)
+		}
+
+		obj := result.ToObject(runtime)
+		cursorVisualLine := obj.Get("cursorVisualLine").ToInteger()
+		totalVisualLines := obj.Get("totalVisualLines").ToInteger()
+		cursorRow := obj.Get("cursorRow").ToInteger()
+		lineCount := obj.Get("lineCount").ToInteger()
+
+		if cursorVisualLine != 0 {
+			t.Errorf("Expected cursorVisualLine=0, got %d", cursorVisualLine)
+		}
+		if totalVisualLines != 5 { // 3 for wrapped first line + 1 + 1
+			t.Errorf("Expected totalVisualLines=5, got %d", totalVisualLines)
+		}
+		if cursorRow != 0 {
+			t.Errorf("Expected cursorRow=0, got %d", cursorRow)
+		}
+		if lineCount != 3 {
+			t.Errorf("Expected lineCount=3, got %d", lineCount)
+		}
+	})
+
+	t.Run("cursor in wrapped segment", func(t *testing.T) {
+		// Position cursor at column 50 (within second visual segment of first line)
+		_, _ = setPositionFn(ta, runtime.ToValue(0), runtime.ToValue(50))
+
+		result, err := getScrollSyncInfoFn(ta)
+		if err != nil {
+			t.Fatalf("getScrollSyncInfo failed: %v", err)
+		}
+
+		obj := result.ToObject(runtime)
+		cursorVisualLine := obj.Get("cursorVisualLine").ToInteger()
+		cursorRow := obj.Get("cursorRow").ToInteger()
+		cursorCol := obj.Get("cursorCol").ToInteger()
+
+		if cursorVisualLine != 1 { // Second visual line (0-indexed)
+			t.Errorf("Expected cursorVisualLine=1 (wrapped segment), got %d", cursorVisualLine)
+		}
+		if cursorRow != 0 {
+			t.Errorf("Expected cursorRow=0 (still first logical line), got %d", cursorRow)
+		}
+		if cursorCol != 50 {
+			t.Errorf("Expected cursorCol=50, got %d", cursorCol)
+		}
+	})
+
+	t.Run("cursor on second logical line", func(t *testing.T) {
+		_, _ = setPositionFn(ta, runtime.ToValue(1), runtime.ToValue(0))
+
+		result, err := getScrollSyncInfoFn(ta)
+		if err != nil {
+			t.Fatalf("getScrollSyncInfo failed: %v", err)
+		}
+
+		obj := result.ToObject(runtime)
+		cursorVisualLine := obj.Get("cursorVisualLine").ToInteger()
+		cursorRow := obj.Get("cursorRow").ToInteger()
+
+		// First line takes 3 visual lines (100 chars / 40 = 3)
+		// So logical line 1 starts at visual line 3
+		if cursorVisualLine != 3 {
+			t.Errorf("Expected cursorVisualLine=3 (after wrapped first line), got %d", cursorVisualLine)
+		}
+		if cursorRow != 1 {
+			t.Errorf("Expected cursorRow=1, got %d", cursorRow)
+		}
+	})
+
+	t.Run("suggested scroll offset", func(t *testing.T) {
+		// Position cursor at end (visual line 4, beyond viewport of 3 lines)
+		_, _ = setPositionFn(ta, runtime.ToValue(2), runtime.ToValue(0))
+
+		result, err := getScrollSyncInfoFn(ta)
+		if err != nil {
+			t.Fatalf("getScrollSyncInfo failed: %v", err)
+		}
+
+		obj := result.ToObject(runtime)
+		cursorAbsY := obj.Get("cursorAbsY").ToInteger()
+		suggestedYOffset := obj.Get("suggestedYOffset").ToInteger()
+
+		// Cursor at visual line 4 (0-indexed), viewport height 3
+		// Suggested offset should scroll down to show cursor
+		if cursorAbsY != 4 {
+			t.Errorf("Expected cursorAbsY=4, got %d", cursorAbsY)
+		}
+		// suggestedYOffset = cursorAbsY - viewportHeight + 1 = 4 - 3 + 1 = 2
+		if suggestedYOffset != 2 {
+			t.Errorf("Expected suggestedYOffset=2, got %d", suggestedYOffset)
+		}
+	})
+}
+
+// TestScenarioGreedyWrap tests the "waste" at end of lines.
+func TestScenarioGreedyWrap(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// 1. Setup: No line numbers, No prompt. Width 3.
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(3))
+
+	// 2. Input: "你好你好" (Visual Width 8)
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	_, _ = setValueFn(ta, runtime.ToValue("你好你好"))
+
+	// 3. Verify
+	visualLineCountFn, _ := goja.AssertFunction(ta.Get("visualLineCount"))
+	val, _ := visualLineCountFn(ta)
+	count := val.ToInteger()
+
+	// Expect 4 lines: [你_], [好_], [你_], [好 ]
+	if count != 4 {
+		t.Errorf("GREEDY WRAP FAILURE: Expected 4 visual lines, got %d", count)
+	}
+}
+
+// TestScenarioMegaChar tests characters wider than the viewport.
+func TestScenarioMegaChar(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// 1. Setup: Width 1. No prompt.
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(1))
+
+	// 2. Input: "a你b"
+	// 'a' (1) fits.
+	// '你' (2) overflows width 1 -> Force Wrap -> Occupies Line 2.
+	// 'b' (1) -> Force Wrap (Line 2 was full) -> Occupies Line 3.
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	_, _ = setValueFn(ta, runtime.ToValue("a你b"))
+
+	// 3. Verify
+	visualLineCountFn, _ := goja.AssertFunction(ta.Get("visualLineCount"))
+	val, _ := visualLineCountFn(ta)
+	count := val.ToInteger()
+
+	if count != 3 {
+		t.Errorf("MEGA CHAR FAILURE: Expected 3 visual lines, got %d. Input 'a你b' in Width 1.", count)
 	}
 }

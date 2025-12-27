@@ -536,6 +536,53 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		return count
 	}
 
+	// calculateVisualLineWithinRow returns which wrapped segment (0-indexed)
+	// contains the character at column `col`. This uses greedy wrapping simulation
+	// to match the renderer's behavior, replacing the naive integer division
+	// (width / contentWidth) which doesn't account for wrap boundaries correctly.
+	calculateVisualLineWithinRow := func(line []rune, width int, col int) int {
+		if width <= 0 || len(line) == 0 || col <= 0 {
+			return 0
+		}
+
+		visualLine := 0
+		currentWidth := 0
+
+		for i := 0; i < len(line) && i < col; i++ {
+			rw := runeWidth(line[i])
+
+			// Handle edge case: Character wider than viewport
+			if rw > width {
+				if currentWidth > 0 {
+					visualLine++ // Wrap previous content
+				}
+				currentWidth = width // Mark line as full
+				continue
+			}
+
+			// Standard greedy wrap: if adding this char exceeds width, wrap first
+			if currentWidth+rw > width {
+				visualLine++
+				currentWidth = rw
+			} else {
+				currentWidth += rw
+			}
+		}
+
+		// After processing all characters before col, check if the cursor
+		// position would wrap to the next line. This happens when the current
+		// visual line is exactly full (currentWidth == width) and there are
+		// more characters remaining in the line after the cursor position.
+		// Example: "ABCDEFGHIJKLMNOPQRST" at width 10, cursor at col 10:
+		// - Characters 0-9 fill visual line 0 completely (width=10)
+		// - Cursor at col 10 is at the START of visual line 1
+		if currentWidth >= width && col < len(line) {
+			visualLine++
+		}
+
+		return visualLine
+	}
+
 	// visualLineCount returns the total number of visual lines in the textarea
 	// accounting for soft-wrapping based on the current width.
 	// This fixes the viewport clipping bug where bottom of wrapped documents was invisible.
@@ -587,18 +634,10 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		}
 
 		// Now calculate which visual line within the current row the cursor is on
+		// Using greedy wrapping simulation for correctness with multi-width chars
 		visualLineWithinRow := 0
 		if mirror.row < len(mirror.value) && contentWidth > 0 {
-			currentLine := mirror.value[mirror.row]
-			// Sum visual widths of characters up to the cursor column
-			visualWidthToCursor := 0
-			for i := 0; i < mirror.col && i < len(currentLine); i++ {
-				visualWidthToCursor += runeWidth(currentLine[i])
-			}
-			// Which wrapped segment is the cursor in?
-			if contentWidth > 0 && visualWidthToCursor >= contentWidth {
-				visualLineWithinRow = visualWidthToCursor / contentWidth
-			}
+			visualLineWithinRow = calculateVisualLineWithinRow(mirror.value[mirror.row], contentWidth, mirror.col)
 		}
 
 		return runtime.ToValue(visualLinesBefore + visualLineWithinRow)
@@ -676,13 +715,18 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 			// Skip characters from previous wrapped segments
 			for segment := 0; segment < targetWrappedSegment && charsConsumed < len(line); segment++ {
 				segmentWidth := 0
-				for segmentWidth < contentWidth && charsConsumed < len(line) {
+				for charsConsumed < len(line) {
 					rw := runeWidth(line[charsConsumed])
-					if segmentWidth+rw > contentWidth {
+					// If adding this char exceeds width AND we already have content, wrap
+					if segmentWidth > 0 && segmentWidth+rw > contentWidth {
 						break
 					}
 					segmentWidth += rw
 					charsConsumed++
+					// After consuming, if we've filled the line, break for wrap
+					if segmentWidth >= contentWidth {
+						break
+					}
 				}
 			}
 
@@ -784,13 +828,18 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 			charsConsumed := 0
 			for segment := 0; segment < targetWrappedSegment && charsConsumed < len(line); segment++ {
 				segmentWidth := 0
-				for segmentWidth < mirror.width && charsConsumed < len(line) {
+				for charsConsumed < len(line) {
 					rw := runeWidth(line[charsConsumed])
-					if segmentWidth+rw > mirror.width {
+					// If adding this char exceeds width AND we already have content, wrap
+					if segmentWidth > 0 && segmentWidth+rw > mirror.width {
 						break
 					}
 					segmentWidth += rw
 					charsConsumed++
+					// After consuming, if we've filled the line, break for wrap
+					if segmentWidth >= mirror.width {
+						break
+					}
 				}
 			}
 
@@ -1279,17 +1328,18 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		// Step 4: Convert to textarea-relative Y
 		visualY := contentY - vpCtx.textareaContentTop
 
-		// Step 5: Check if within textarea content bounds
+		// Step 5: Check if within textarea content bounds (vertical only)
+		// Only reject clicks ABOVE content. Clicks below content (visualY >= totalVisualLines)
+		// are allowed and will be clamped to the last line by the loop in Step 7.
+		// This matches standard editor behavior: clicking below text places cursor at end.
+		if visualY < 0 {
+			return result // Click above textarea content
+		}
+
 		contentWidth := mirror.width
 		totalVisualLines := 0
 		for _, line := range mirror.value {
 			totalVisualLines += calculateWrappedLineCount(line, contentWidth)
-		}
-
-		// `totalVisualLines` is the number of visual lines (0-indexed).
-		// Valid visualY ranges are 0..totalVisualLines-1, so check >= totalVisualLines.
-		if visualY < 0 || visualY >= totalVisualLines {
-			return result // Click outside textarea content
 		}
 
 		// Step 6: Convert screen X to textarea-relative X
@@ -1330,13 +1380,18 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 
 			for segment := 0; segment < targetWrappedSegment && charsConsumed < len(line); segment++ {
 				segmentWidth := 0
-				for segmentWidth < contentWidth && charsConsumed < len(line) {
+				for charsConsumed < len(line) {
 					rw := runeWidth(line[charsConsumed])
-					if segmentWidth+rw > contentWidth {
+					// If adding this char exceeds width AND we already have content, wrap
+					if segmentWidth > 0 && segmentWidth+rw > contentWidth {
 						break
 					}
 					segmentWidth += rw
 					charsConsumed++
+					// After consuming, if we've filled the line, break for wrap
+					if segmentWidth >= contentWidth {
+						break
+					}
 				}
 			}
 
@@ -1367,18 +1422,13 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		mirror.lastCharOffset = 0
 
 		// Step 10: Calculate cursor visual line for scroll sync
+		// Using greedy wrapping simulation for correctness with multi-width chars
 		cursorVisualLine := 0
 		for row := 0; row < targetRow && row < len(mirror.value); row++ {
 			cursorVisualLine += calculateWrappedLineCount(mirror.value[row], contentWidth)
 		}
 		if targetRow < len(mirror.value) && contentWidth > 0 {
-			visualWidthToCursor := 0
-			for i := 0; i < targetCol && i < len(mirror.value[targetRow]); i++ {
-				visualWidthToCursor += runeWidth(mirror.value[targetRow][i])
-			}
-			if contentWidth > 0 && visualWidthToCursor >= contentWidth {
-				cursorVisualLine += visualWidthToCursor / contentWidth
-			}
+			cursorVisualLine += calculateVisualLineWithinRow(mirror.value[targetRow], contentWidth, targetCol)
 		}
 
 		_ = result.Set("hit", true)
@@ -1430,19 +1480,13 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 			totalVisualLines += calculateWrappedLineCount(line, contentWidth)
 		}
 
-		// Calculate cursor visual line
+		// Calculate cursor visual line using greedy wrapping simulation
 		cursorVisualLine := 0
 		for row := 0; row < mirror.row && row < len(mirror.value); row++ {
 			cursorVisualLine += calculateWrappedLineCount(mirror.value[row], contentWidth)
 		}
 		if mirror.row < len(mirror.value) && contentWidth > 0 {
-			visualWidthToCursor := 0
-			for i := 0; i < mirror.col && i < len(mirror.value[mirror.row]); i++ {
-				visualWidthToCursor += runeWidth(mirror.value[mirror.row][i])
-			}
-			if contentWidth > 0 && visualWidthToCursor >= contentWidth {
-				cursorVisualLine += visualWidthToCursor / contentWidth
-			}
+			cursorVisualLine += calculateVisualLineWithinRow(mirror.value[mirror.row], contentWidth, mirror.col)
 		}
 
 		// Calculate cursor absolute Y in outer viewport content space

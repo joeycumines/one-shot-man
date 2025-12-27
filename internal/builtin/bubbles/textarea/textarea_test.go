@@ -1753,7 +1753,9 @@ func TestHandleClickAtScreenCoords_BottomEdge(t *testing.T) {
 		t.Errorf("Expected hit on last visual line at screenY %d (totalVisualLines=%d)", screenYLast, totalVisualLines)
 	}
 
-	// Click exactly on the first line after last (should miss)
+	// Click below content (should HIT and clamp to last line per DEFECT 5 fix)
+	// Standard editor behavior: clicking empty space below text places cursor at end of document.
+	// The clamping logic in handleClickAtScreenCoords ensures this works correctly.
 	screenYBelow := screenYLast + 1
 	resBelow, err := handleClickFn(ta,
 		runtime.ToValue(screenX),
@@ -1763,8 +1765,13 @@ func TestHandleClickAtScreenCoords_BottomEdge(t *testing.T) {
 		t.Fatalf("handleClickAtScreenCoords failed: %v", err)
 	}
 	objBelow := resBelow.ToObject(runtime)
-	if objBelow.Get("hit").ToBoolean() {
-		t.Errorf("Expected miss for click at screenY %d (visualY == totalVisualLines), but got hit", screenYBelow)
+	if !objBelow.Get("hit").ToBoolean() {
+		t.Errorf("Expected hit for click below content at screenY %d (visualY == totalVisualLines) - should clamp to last line", screenYBelow)
+	}
+	// Verify the cursor was clamped to the last logical line
+	cursorRow := int(objBelow.Get("row").ToInteger())
+	if cursorRow != 1 { // "second line" is row 1 (0-indexed)
+		t.Errorf("Expected cursor row 1 (last logical line), got %d", cursorRow)
 	}
 }
 

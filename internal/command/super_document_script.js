@@ -639,9 +639,20 @@ function runVisualTui() {
     return tea.run(model, {altScreen: true, mouse: true});
 }
 
+// disposeTextareaIfExists safely disposes a textarea model to prevent memory leaks.
+// The Go textarea.Manager keeps models in a map to prevent GC; calling dispose()
+// removes them from the map. This MUST be called when switching modes or creating
+// a new textarea to avoid unbounded memory growth.
+function disposeTextareaIfExists(s) {
+    if (s.contentTextarea && typeof s.contentTextarea.dispose === 'function') {
+        s.contentTextarea.dispose();
+        s.contentTextarea = null;
+    }
+}
+
 function configureTextarea(ta, width) {
     ta.setPlaceholder("Enter document content...");
-    ta.setWidth(Math.max(40, width - 10));
+    ta.setWidth(Math.max(10, width - 10));
     // Initial height 1, will be expanded in renderInput
     ta.setHeight(1);
     ta.setShowLineNumbers(true);
@@ -837,6 +848,7 @@ function handleKeys(msg, s) {
                     s.inputFocus = FOCUS_LABEL;
                     s.labelBuffer = '';
                     // Create native textarea for content
+                    disposeTextareaIfExists(s);
                     s.contentTextarea = textareaLib.new();
                     configureTextarea(s.contentTextarea, s.width);
                     s.focusedButtonIdx = -1; // Clear button focus when entering input mode
@@ -959,6 +971,7 @@ function handleKeys(msg, s) {
             s.inputFocus = FOCUS_LABEL;
             s.labelBuffer = '';
             // Create native textarea for content
+            disposeTextareaIfExists(s);
             s.contentTextarea = textareaLib.new();
             configureTextarea(s.contentTextarea, s.width);
             s.focusedButtonIdx = -1; // Clear button focus
@@ -982,6 +995,7 @@ function handleKeys(msg, s) {
                 s.inputFocus = FOCUS_CONTENT;
                 s.labelBuffer = doc.label;
                 // Create native textarea with existing content
+                disposeTextareaIfExists(s);
                 s.contentTextarea = textareaLib.new();
                 configureTextarea(s.contentTextarea, s.width);
 
@@ -1063,6 +1077,7 @@ function handleKeys(msg, s) {
         }
 
         if (k === 'esc') {
+            disposeTextareaIfExists(s);
             s.mode = MODE_LIST;
             s.statusMsg = 'Cancelled';
             s.inputViewportUnlocked = false; // Reset on mode exit
@@ -1098,6 +1113,7 @@ function handleKeys(msg, s) {
         } else if (k === 'ctrl+enter' || (k === 'enter' && s.inputFocus !== FOCUS_CONTENT)) {
             // Submit
             if (s.inputFocus === FOCUS_CANCEL) {
+                disposeTextareaIfExists(s);
                 s.mode = MODE_LIST;
                 s.inputViewportUnlocked = false; // Reset on mode exit
                 // Force full screen repaint when exiting form mode
@@ -1129,6 +1145,7 @@ function handleKeys(msg, s) {
             }
             // Refresh local state from global after mutation
             s.documents = getDocuments();
+            disposeTextareaIfExists(s);
             s.mode = MODE_LIST;
             s.hasError = false;
             s.inputViewportUnlocked = false; // Reset on mode exit
@@ -1662,7 +1679,7 @@ function renderList(s) {
     // Overhead = Border(2) + Padding(2) = 4
     const docStyleOverhead = 4;
     const viewportWidth = termWidth - scrollbarWidth;
-    const docContentWidth = Math.max(40, viewportWidth - docStyleOverhead);
+    const docContentWidth = Math.max(10, viewportWidth - docStyleOverhead);
 
     // Update/rebuild LayoutMap if documents changed
     const docsHash = getDocsHash(s.documents);
@@ -1851,7 +1868,7 @@ function renderInput(s) {
     const lblLabel = s.inputOperation === INPUT_LOAD ? 'File path:' : 'Label (optional):';
     const lblStyle = s.inputFocus === FOCUS_LABEL ? styles.inputFocused() : styles.inputNormal();
     const lblContent = s.labelBuffer + (s.inputFocus === FOCUS_LABEL ? '▌' : '');
-    const lblFieldRendered = lipgloss.joinVertical(lipgloss.Left, styles.label().render(lblLabel), lblStyle.width(Math.max(40, termWidth - 10)).render(lblContent));
+    const lblFieldRendered = lipgloss.joinVertical(lipgloss.Left, styles.label().render(lblLabel), lblStyle.width(Math.max(10, termWidth - 10)).render(lblContent));
     const lblField = zone.mark('input-label', lblFieldRendered);
 
     // Content field
@@ -1863,7 +1880,7 @@ function renderInput(s) {
         const cntStyle = s.inputFocus === FOCUS_CONTENT ? styles.inputFocused() : styles.inputNormal();
 
         // Update textarea dimensions
-        const fieldWidth = Math.max(40, termWidth - 10);
+        const fieldWidth = Math.max(10, termWidth - 10);
         const innerWidth = Math.max(10, fieldWidth - 4 - scrollbarWidth); // border(2) + padding(2)
         s.contentTextarea.setWidth(innerWidth);
 

@@ -222,6 +222,7 @@ type TUIWriter struct {
 	once     sync.Once
 	initFn   func() prompt.Writer
 	isStdout bool // true if this writer is backed by stdout (for correct Fd() behavior)
+	mu       sync.Mutex
 }
 
 // NewTUIWriter creates a TUIWriter that lazily initializes to write to stdout.
@@ -281,6 +282,8 @@ func (w *TUIWriter) Write(p []byte) (n int, err error) {
 	if writer == nil {
 		return len(p), nil // silently discard if no writer
 	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return writer.Write(p)
 }
 
@@ -290,6 +293,8 @@ func (w *TUIWriter) WriteString(s string) (n int, err error) {
 	if writer == nil {
 		return len(s), nil // silently discard if no writer
 	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return writer.WriteString(s)
 }
 
@@ -299,6 +304,8 @@ func (w *TUIWriter) Flush() error {
 	if writer == nil {
 		return nil
 	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return writer.Flush()
 }
 
@@ -306,7 +313,9 @@ func (w *TUIWriter) Flush() error {
 func (w *TUIWriter) WriteRaw(data []byte) {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.WriteRaw(data)
+		w.mu.Unlock()
 	}
 }
 
@@ -314,7 +323,9 @@ func (w *TUIWriter) WriteRaw(data []byte) {
 func (w *TUIWriter) WriteRawString(data string) {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.WriteRawString(data)
+		w.mu.Unlock()
 	}
 }
 
@@ -322,7 +333,9 @@ func (w *TUIWriter) WriteRawString(data string) {
 func (w *TUIWriter) EraseScreen() {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.EraseScreen()
+		w.mu.Unlock()
 	}
 }
 
@@ -330,7 +343,9 @@ func (w *TUIWriter) EraseScreen() {
 func (w *TUIWriter) EraseUp() {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.EraseUp()
+		w.mu.Unlock()
 	}
 }
 
@@ -338,7 +353,9 @@ func (w *TUIWriter) EraseUp() {
 func (w *TUIWriter) EraseDown() {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.EraseDown()
+		w.mu.Unlock()
 	}
 }
 
@@ -346,7 +363,9 @@ func (w *TUIWriter) EraseDown() {
 func (w *TUIWriter) EraseStartOfLine() {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.EraseStartOfLine()
+		w.mu.Unlock()
 	}
 }
 
@@ -354,7 +373,9 @@ func (w *TUIWriter) EraseStartOfLine() {
 func (w *TUIWriter) EraseEndOfLine() {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.EraseEndOfLine()
+		w.mu.Unlock()
 	}
 }
 
@@ -362,7 +383,9 @@ func (w *TUIWriter) EraseEndOfLine() {
 func (w *TUIWriter) EraseLine() {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.EraseLine()
+		w.mu.Unlock()
 	}
 }
 
@@ -370,7 +393,9 @@ func (w *TUIWriter) EraseLine() {
 func (w *TUIWriter) ShowCursor() {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.ShowCursor()
+		w.mu.Unlock()
 	}
 }
 
@@ -378,7 +403,9 @@ func (w *TUIWriter) ShowCursor() {
 func (w *TUIWriter) HideCursor() {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.HideCursor()
+		w.mu.Unlock()
 	}
 }
 
@@ -386,7 +413,9 @@ func (w *TUIWriter) HideCursor() {
 func (w *TUIWriter) CursorGoTo(row, col int) {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.CursorGoTo(row, col)
+		w.mu.Unlock()
 	}
 }
 
@@ -394,7 +423,9 @@ func (w *TUIWriter) CursorGoTo(row, col int) {
 func (w *TUIWriter) CursorUp(n int) {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.CursorUp(n)
+		w.mu.Unlock()
 	}
 }
 
@@ -402,7 +433,9 @@ func (w *TUIWriter) CursorUp(n int) {
 func (w *TUIWriter) CursorDown(n int) {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.CursorDown(n)
+		w.mu.Unlock()
 	}
 }
 
@@ -410,7 +443,9 @@ func (w *TUIWriter) CursorDown(n int) {
 func (w *TUIWriter) CursorForward(n int) {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.CursorForward(n)
+		w.mu.Unlock()
 	}
 }
 
@@ -418,7 +453,9 @@ func (w *TUIWriter) CursorForward(n int) {
 func (w *TUIWriter) CursorBackward(n int) {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.CursorBackward(n)
+		w.mu.Unlock()
 	}
 }
 
@@ -426,7 +463,9 @@ func (w *TUIWriter) CursorBackward(n int) {
 func (w *TUIWriter) AskForCPR() {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.AskForCPR()
+		w.mu.Unlock()
 	}
 }
 
@@ -434,7 +473,9 @@ func (w *TUIWriter) AskForCPR() {
 func (w *TUIWriter) SaveCursor() {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.SaveCursor()
+		w.mu.Unlock()
 	}
 }
 
@@ -442,7 +483,9 @@ func (w *TUIWriter) SaveCursor() {
 func (w *TUIWriter) UnSaveCursor() {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.UnSaveCursor()
+		w.mu.Unlock()
 	}
 }
 
@@ -450,7 +493,9 @@ func (w *TUIWriter) UnSaveCursor() {
 func (w *TUIWriter) ScrollDown() {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.ScrollDown()
+		w.mu.Unlock()
 	}
 }
 
@@ -458,7 +503,9 @@ func (w *TUIWriter) ScrollDown() {
 func (w *TUIWriter) ScrollUp() {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.ScrollUp()
+		w.mu.Unlock()
 	}
 }
 
@@ -466,7 +513,9 @@ func (w *TUIWriter) ScrollUp() {
 func (w *TUIWriter) SetTitle(title string) {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.SetTitle(title)
+		w.mu.Unlock()
 	}
 }
 
@@ -474,7 +523,9 @@ func (w *TUIWriter) SetTitle(title string) {
 func (w *TUIWriter) ClearTitle() {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.ClearTitle()
+		w.mu.Unlock()
 	}
 }
 
@@ -482,7 +533,9 @@ func (w *TUIWriter) ClearTitle() {
 func (w *TUIWriter) SetColor(fg, bg prompt.Color, bold bool) {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.SetColor(fg, bg, bold)
+		w.mu.Unlock()
 	}
 }
 
@@ -490,7 +543,9 @@ func (w *TUIWriter) SetColor(fg, bg prompt.Color, bold bool) {
 func (w *TUIWriter) SetDisplayAttributes(fg, bg prompt.Color, attrs ...prompt.DisplayAttribute) {
 	writer := w.GetWriter()
 	if writer != nil {
+		w.mu.Lock()
 		writer.SetDisplayAttributes(fg, bg, attrs...)
+		w.mu.Unlock()
 	}
 }
 

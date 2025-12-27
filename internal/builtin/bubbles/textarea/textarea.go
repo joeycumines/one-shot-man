@@ -39,6 +39,7 @@ package textarea
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -1148,6 +1149,8 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		outerViewportHeight int
 		// Pre-content height (Y offset within outer viewport to textarea content)
 		preContentHeight int
+		// Height of the fixed header/title above the outer viewport (in screen lines)
+		titleHeight int
 		// Whether setViewportContext has been called and the values are current
 		initialized bool
 	}
@@ -1173,6 +1176,11 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 			return obj
 		}
 
+		// Synchronize writes to the viewport context with the model wrapper mutex.
+		wrapper := ensureModel()
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+
 		if v := config.Get("outerYOffset"); v != nil && !goja.IsUndefined(v) {
 			vpCtx.outerYOffset = int(v.ToInteger())
 		}
@@ -1187,6 +1195,9 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		}
 		if v := config.Get("preContentHeight"); v != nil && !goja.IsUndefined(v) {
 			vpCtx.preContentHeight = int(v.ToInteger())
+		}
+		if v := config.Get("titleHeight"); v != nil && !goja.IsUndefined(v) {
+			vpCtx.titleHeight = int(v.ToInteger())
 		}
 		// Mark viewport context initialized (set during render)
 		vpCtx.initialized = true
@@ -1222,18 +1233,28 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		_ = result.Set("col", 0)
 		_ = result.Set("visualLine", 0)
 
-		if len(call.Arguments) < 3 {
+		if len(call.Arguments) < 2 {
 			return result
 		}
 
 		screenX := int(call.Argument(0).ToInteger())
 		screenY := int(call.Argument(1).ToInteger())
-		titleHeight := int(call.Argument(2).ToInteger())
 
 		wrapper := ensureModel()
 		wrapper.mu.Lock()
 		defer wrapper.mu.Unlock()
 		mirror := (*textareaModelMirror)(unsafe.Pointer(&wrapper.model))
+
+		// Prefer titleHeight from viewport context (set via setViewportContext()),
+		// fallback to supplied argument for backward compatibility (if provided).
+		var titleHeight int
+		if vpCtx.titleHeight > 0 {
+			titleHeight = vpCtx.titleHeight
+		} else if len(call.Arguments) >= 3 {
+			titleHeight = int(call.Argument(2).ToInteger())
+		} else {
+			titleHeight = 0
+		}
 
 		if len(mirror.value) == 0 {
 			return result
@@ -1249,6 +1270,8 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 
 		// Step 2: Check if within outer viewport bounds
 		if viewportRelativeY < 0 || viewportRelativeY >= vpCtx.outerViewportHeight {
+			// Debug: log miss reason for integration tests
+			fmt.Printf("[CLICK HANDLER] miss: viewportRelativeY=%d outside outerViewportHeight=%d (screenY=%d titleHeight=%d)\n", viewportRelativeY, vpCtx.outerViewportHeight, screenY, titleHeight)
 			return result // Click outside viewport
 		}
 
@@ -1360,6 +1383,7 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 			}
 		}
 
+		fmt.Printf("[CLICK HANDLER] hit: screenX=%d screenY=%d titleHeight=%d viewportRelativeY=%d outerYOffset=%d textareaContentTop=%d contentY=%d visualY=%d visualX=%d totalVisualLines=%d targetRow=%d targetCol=%d\n", screenX, screenY, titleHeight, viewportRelativeY, vpCtx.outerYOffset, vpCtx.textareaContentTop, contentY, visualY, visualX, totalVisualLines, targetRow, targetCol)
 		_ = result.Set("hit", true)
 		_ = result.Set("row", targetRow)
 		_ = result.Set("col", targetCol)

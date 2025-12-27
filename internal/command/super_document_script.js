@@ -1398,7 +1398,7 @@ function handleMouse(msg, s) {
         // We need to check if the click is within the VISIBLE textarea bounds.
         let clickedInTextareaArea = false;
         if (s.textareaBounds && s.inputVp) {
-            const titleHeight = 1;
+            const titleHeight = s.titleHeight || 1;
             const vpYOffset = s.inputVp.yOffset();
             const vpHeight = s.inputVp.height();
 
@@ -1451,7 +1451,18 @@ function handleMouse(msg, s) {
             // This replaces manual JS coordinate math for PERFORMANCE and CORRECTNESS.
             // The Go method handles: screen→viewport→content→textarea→visual→logical mapping.
             if (s.contentTextarea && isLeftClick && !isWheelEvent) {
-                const titleHeight = 1;
+                const titleHeight = s.titleHeight || 1;
+
+                // Defensive: refresh viewport context right before asking Go to hit-test.
+                if (s.contentTextarea.setViewportContext && s.textareaBounds) {
+                    s.contentTextarea.setViewportContext({
+                        outerYOffset: s.inputVp.yOffset(),
+                        textareaContentTop: s.textareaBounds.contentTop,
+                        textareaContentLeft: s.textareaBounds.contentLeft,
+                        outerViewportHeight: s.inputVp.height(),
+                        titleHeight: titleHeight
+                    });
+                }
 
                 // Try GO-NATIVE method first (does all math in Go for performance)
                 if (s.contentTextarea.handleClickAtScreenCoords) {
@@ -1495,7 +1506,7 @@ function handleMouse(msg, s) {
         // Previously this would fire for any click that didn't match a zone,
         // causing incorrect blurs when clicking on large scrolled documents.
         if (s.inputFocus === FOCUS_CONTENT && s.contentTextarea && s.inputVp) {
-            const titleHeight = 1;
+            const titleHeight = s.titleHeight || 1;
             const vpHeight = s.inputVp.height();
             const vpScreenTop = titleHeight;
             const vpScreenBottom = vpScreenTop + vpHeight;
@@ -1832,6 +1843,10 @@ function renderInput(s) {
     const spacer = lipgloss.newStyle().width(Math.max(2, termWidth - lipgloss.width(title) - lipgloss.width(btnTop) - lipgloss.width(btnBot) - 4)).render('');
     const headerRow = lipgloss.joinHorizontal(lipgloss.Top, title, spacer, btnTop, btnBot);
 
+    // Compute header height once and store in state for use by mouse handlers
+    const titleHeight = lipgloss.height(headerRow);
+    s.titleHeight = titleHeight;
+
     // Label/Path field
     const lblLabel = s.inputOperation === INPUT_LOAD ? 'File path:' : 'Label (optional):';
     const lblStyle = s.inputFocus === FOCUS_LABEL ? styles.inputFocused() : styles.inputNormal();
@@ -1891,7 +1906,7 @@ function renderInput(s) {
         // Line numbers: textarea uses ShowLineNumbers=true, which adds " N " format
         // The line number width is dynamic based on total lines, but typically 4 chars
 
-        const titleHeight = 1; // Header row
+        // titleHeight already computed above and stored in s.titleHeight
         const lblFieldHeight = lipgloss.height(lblFieldRendered);
         const gapHeight = 1;
         const contentLabelHeight = lipgloss.height(contentLabel);
@@ -1957,7 +1972,6 @@ function renderInput(s) {
     const scrollableContent = lipgloss.joinVertical(lipgloss.Left, ...scrollableSections);
 
     // Calculate available height for the scrollable area
-    const titleHeight = lipgloss.height(headerRow);
     const fixedHeight = titleHeight + footerHeight + 1; // 1 for gaps
     const scrollableHeight = Math.max(3, termHeight - fixedHeight);
 
@@ -1979,7 +1993,8 @@ function renderInput(s) {
             textareaContentTop: s.textareaBounds.contentTop,
             textareaContentLeft: s.textareaBounds.contentLeft,
             outerViewportHeight: scrollableHeight,
-            preContentHeight: preContentHeight
+            preContentHeight: preContentHeight,
+            titleHeight: titleHeight
         });
     }
 
@@ -2017,6 +2032,18 @@ function renderInput(s) {
                 s.inputVp.setYOffset(cursorAbsY - vpH + 1);
             }
         }
+    }
+
+    // Ensure Go has the final outerYOffset after any auto-scroll update.
+    if (s.contentTextarea && s.contentTextarea.setViewportContext && s.textareaBounds) {
+        s.contentTextarea.setViewportContext({
+            outerYOffset: s.inputVp.yOffset(), // capture final offset after potential setYOffset(...).
+            textareaContentTop: s.textareaBounds.contentTop,
+            textareaContentLeft: s.textareaBounds.contentLeft,
+            outerViewportHeight: scrollableHeight,
+            preContentHeight: preContentHeight,
+            titleHeight: titleHeight
+        });
     }
 
     const vpView = s.inputVp.view();

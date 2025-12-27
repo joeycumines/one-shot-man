@@ -493,9 +493,9 @@ func (m *MouseTestAPI) ClickElement(ctx context.Context, content string, timeout
 	}
 
 found:
-	// Calculate center of element (buffer coordinates)
+	// Calculate center of element (screen coordinates)
 	centerX := loc.Col + loc.Width/2
-	bufferY := loc.Row
+	screenY := loc.Row
 
 	// Check if row 0 is empty in the parsed buffer - this indicates a render issue
 	// where the title line was not sent to the terminal but exists in the zone system.
@@ -503,17 +503,14 @@ found:
 	screen := parseTerminalBuffer(m.cp.String())
 	row0Empty := len(screen) > 0 && strings.TrimSpace(screen[0]) == ""
 	if row0Empty {
-		bufferY++ // Compensate for missing title line
-		m.t.Logf("[CLICK DEBUG] Row 0 is empty, adjusting bufferY from %d to %d", bufferY-1, bufferY)
+		screenY++ // Compensate for missing title line
+		m.t.Logf("[CLICK DEBUG] Row 0 is empty, adjusting screenY from %d to %d", screenY-1, screenY)
 	}
 
-	// Convert buffer row to viewport-relative row for SGR mouse event
-	viewportY := m.bufferRowToViewportRow(bufferY)
+	m.t.Logf("[CLICK DEBUG] ClickElement %q: loc.Row=%d (1-indexed), centerX=%d, screenY=%d", content, loc.Row, centerX, screenY)
 
-	m.t.Logf("[CLICK DEBUG] ClickElement %q: loc.Row=%d (1-indexed), centerX=%d, viewportY=%d", content, loc.Row, centerX, viewportY)
-
-	// Send mouse click using viewport-relative coordinates
-	return m.ClickViewport(centerX, viewportY)
+	// Send mouse click using screen-relative coordinates (terminal absolute)
+	return m.Click(centerX, screenY)
 }
 
 // Click sends a mouse click at the specified viewport-relative coordinates (1-indexed).

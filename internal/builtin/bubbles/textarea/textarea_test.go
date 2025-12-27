@@ -1,6 +1,7 @@
 package textarea
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -1966,5 +1967,255 @@ func TestScenarioMegaChar(t *testing.T) {
 
 	if count != 3 {
 		t.Errorf("MEGA CHAR FAILURE: Expected 3 visual lines, got %d. Input 'a你b' in Width 1.", count)
+	}
+}
+
+// TestHandleClickAtScreenCoords_StaleViewportContext reproduces the "phantom scroll"
+// scenario where setViewportContext has a stale outerYOffset and a click that
+// occurs after JS auto-scroll would map incorrectly until setViewportContext is
+// updated with the final offset.
+func TestHandleClickAtScreenCoords_StaleViewportContext(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Configure textarea
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(40))
+
+	// Content: many lines so we can place cursor far from initial offset
+	var sb strings.Builder
+	for i := 0; i < 100; i++ {
+		_, _ = fmt.Fprintf(&sb, "line%03d\n", i)
+	}
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	_, _ = setValueFn(ta, runtime.ToValue(sb.String()))
+
+	setViewportContextFn, _ := goja.AssertFunction(ta.Get("setViewportContext"))
+	getScrollSyncInfoFn, _ := goja.AssertFunction(ta.Get("getScrollSyncInfo"))
+	handleClickFn, _ := goja.AssertFunction(ta.Get("handleClickAtScreenCoords"))
+	setPositionFn, _ := goja.AssertFunction(ta.Get("setPosition"))
+
+	// Initial viewport: outerYOffset=10 (stale)
+	vpConfig := runtime.NewObject()
+	_ = vpConfig.Set("outerYOffset", 10)
+	_ = vpConfig.Set("textareaContentTop", 2)
+	_ = vpConfig.Set("textareaContentLeft", 0)
+	_ = vpConfig.Set("outerViewportHeight", 10)
+	_ = vpConfig.Set("preContentHeight", 2)
+	_ = vpConfig.Set("titleHeight", 3)
+	_, _ = setViewportContextFn(ta, vpConfig)
+
+	// Place cursor at logical row 27
+	_, _ = setPositionFn(ta, runtime.ToValue(27), runtime.ToValue(0))
+
+	// Ask Go for suggestedYOffset (what JS would set on the outer viewport)
+	syncVal, err := getScrollSyncInfoFn(ta)
+	if err != nil {
+		t.Fatalf("getScrollSyncInfo failed: %v", err)
+	}
+	syncObj := syncVal.ToObject(runtime)
+	suggested := int(syncObj.Get("suggestedYOffset").ToInteger())
+	cursorAbsY := int(syncObj.Get("cursorAbsY").ToInteger())
+
+	if suggested == 10 {
+		t.Fatalf("sanity: suggestedYOffset==initial offset, test setup invalid")
+	}
+
+	// Simulate the user's view: screenY where the cursor is visible after JS scrolls
+	titleHeight := 3
+	screenY := titleHeight + (cursorAbsY - suggested)
+	screenX := 5
+
+	// With stale vpCtx (outerYOffset still 10), JS-visible coordinate should NOT map to the right row
+	res, err := handleClickFn(ta, runtime.ToValue(screenX), runtime.ToValue(screenY), runtime.ToValue(titleHeight))
+	if err != nil {
+		t.Fatalf("handleClickAtScreenCoords failed: %v", err)
+	}
+	obj := res.ToObject(runtime)
+	if obj.Get("hit").ToBoolean() {
+		row := obj.Get("row").ToInteger()
+		if row == 27 {
+			t.Fatalf("Expected stale context to cause incorrect mapping, but got row 27")
+		}
+	}
+
+	// Now simulate JS updating the viewport context to the final suggested value
+	vpConfig2 := runtime.NewObject()
+	_ = vpConfig2.Set("outerYOffset", suggested)
+	_ = vpConfig2.Set("textareaContentTop", 2)
+	_ = vpConfig2.Set("textareaContentLeft", 0)
+	_ = vpConfig2.Set("outerViewportHeight", 10)
+	_ = vpConfig2.Set("preContentHeight", 2)
+	_ = vpConfig2.Set("titleHeight", 3)
+	_, _ = setViewportContextFn(ta, vpConfig2)
+
+	// Now the click should map to the correct logical row
+	res2, err := handleClickFn(ta, runtime.ToValue(screenX), runtime.ToValue(screenY), runtime.ToValue(titleHeight))
+	if err != nil {
+		t.Fatalf("handleClickAtScreenCoords failed: %v", err)
+	}
+	obj2 := res2.ToObject(runtime)
+	if !obj2.Get("hit").ToBoolean() {
+		t.Fatalf("After updating viewport context expected hit=true, got miss")
+	}
+	row2 := obj2.Get("row").ToInteger()
+	if row2 != 27 {
+		t.Fatalf("After updating viewport context expected row 27, got %d", row2)
+	}
+}
+
+// Test that handleClickAtScreenCoords uses titleHeight from vpCtx if caller omits arg
+func TestHandleClickAtScreenCoords_TitleHeightFromVpCtx(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Configure textarea
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(40))
+
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	_, _ = setValueFn(ta, runtime.ToValue(strings.Repeat("x", 100)+"\nsecond line"))
+
+	setViewportContextFn, _ := goja.AssertFunction(ta.Get("setViewportContext"))
+	handleClickFn, _ := goja.AssertFunction(ta.Get("handleClickAtScreenCoords"))
+	setPositionFn, _ := goja.AssertFunction(ta.Get("setPosition"))
+
+	vpConfig := runtime.NewObject()
+	_ = vpConfig.Set("outerYOffset", 0)
+	_ = vpConfig.Set("textareaContentTop", 2)
+	_ = vpConfig.Set("textareaContentLeft", 5)
+	_ = vpConfig.Set("outerViewportHeight", 10)
+	_ = vpConfig.Set("preContentHeight", 2)
+	_ = vpConfig.Set("titleHeight", 4)
+	_, _ = setViewportContextFn(ta, vpConfig)
+
+	// Place cursor at logical row 0
+	_, _ = setPositionFn(ta, runtime.ToValue(0), runtime.ToValue(0))
+
+	// Calculate a screenY that corresponds to the first visual line
+	getScrollSyncInfoFn, _ := goja.AssertFunction(ta.Get("getScrollSyncInfo"))
+	syncVal, _ := getScrollSyncInfoFn(ta)
+	syncObj := syncVal.ToObject(runtime)
+	cursorAbsY := int(syncObj.Get("cursorAbsY").ToInteger())
+	screenY := 4 + (cursorAbsY - int(syncObj.Get("suggestedYOffset").ToInteger())) // 4 == titleHeight in vpCtx
+
+	// Call handleClick WITHOUT passing the titleHeight arg
+	res, err := handleClickFn(ta, runtime.ToValue(10), runtime.ToValue(screenY))
+	if err != nil {
+		t.Fatalf("handleClickAtScreenCoords failed: %v", err)
+	}
+	obj := res.ToObject(runtime)
+	if !obj.Get("hit").ToBoolean() {
+		t.Fatalf("Expected hit but got miss when vpCtx provided titleHeight")
+	}
+}
+
+// Test that when vpCtx.titleHeight is set it takes precedence over an
+// explicit argument provided by the caller.
+func TestHandleClickAtScreenCoords_PrefersVpCtxOverArg(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Configure textarea
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(40))
+
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	_, _ = setValueFn(ta, runtime.ToValue(strings.Repeat("x", 100)+"\nsecond line"))
+
+	setViewportContextFn, _ := goja.AssertFunction(ta.Get("setViewportContext"))
+	handleClickFn, _ := goja.AssertFunction(ta.Get("handleClickAtScreenCoords"))
+	setPositionFn, _ := goja.AssertFunction(ta.Get("setPosition"))
+	getScrollSyncInfoFn, _ := goja.AssertFunction(ta.Get("getScrollSyncInfo"))
+
+	// Set vpCtx.titleHeight = 5
+	vpConfig := runtime.NewObject()
+	_ = vpConfig.Set("outerYOffset", 0)
+	_ = vpConfig.Set("textareaContentTop", 2)
+	_ = vpConfig.Set("textareaContentLeft", 5)
+	_ = vpConfig.Set("outerViewportHeight", 10)
+	_ = vpConfig.Set("preContentHeight", 2)
+	_ = vpConfig.Set("titleHeight", 5)
+	_, _ = setViewportContextFn(ta, vpConfig)
+
+	// Place cursor at logical row 0
+	_, _ = setPositionFn(ta, runtime.ToValue(0), runtime.ToValue(0))
+
+	// Compute a screenY that corresponds to the first visual line using titleHeight=5
+	syncVal, _ := getScrollSyncInfoFn(ta)
+	syncObj := syncVal.ToObject(runtime)
+	cursorAbsY := int(syncObj.Get("cursorAbsY").ToInteger())
+	screenY := 5 + (cursorAbsY - int(syncObj.Get("suggestedYOffset").ToInteger()))
+
+	// Call handleClick with a conflicting explicit arg (1) — vpCtx should win
+	res1, err := handleClickFn(ta, runtime.ToValue(10), runtime.ToValue(screenY), runtime.ToValue(1))
+	if err != nil {
+		t.Fatalf("handleClickAtScreenCoords failed: %v", err)
+	}
+	obj1 := res1.ToObject(runtime)
+	if !obj1.Get("hit").ToBoolean() {
+		t.Fatalf("Expected hit using vpCtx titleHeight (5), got miss")
+	}
+
+	// Now change vpCtx.titleHeight to 1 and verify it is used instead
+	vpConfig2 := runtime.NewObject()
+	_ = vpConfig2.Set("outerYOffset", 0)
+	_ = vpConfig2.Set("textareaContentTop", 2)
+	_ = vpConfig2.Set("textareaContentLeft", 5)
+	_ = vpConfig2.Set("outerViewportHeight", 10)
+	_ = vpConfig2.Set("preContentHeight", 2)
+	_ = vpConfig2.Set("titleHeight", 1)
+	_, _ = setViewportContextFn(ta, vpConfig2)
+
+	// Recompute screenY for titleHeight=1
+	syncVal2, _ := getScrollSyncInfoFn(ta)
+	syncObj2 := syncVal2.ToObject(runtime)
+	cursorAbsY2 := int(syncObj2.Get("cursorAbsY").ToInteger())
+	screenY2 := 1 + (cursorAbsY2 - int(syncObj2.Get("suggestedYOffset").ToInteger()))
+
+	// Call with explicit conflicting arg (5) - vpCtx (1) should still be used
+	res2, err := handleClickFn(ta, runtime.ToValue(10), runtime.ToValue(screenY2), runtime.ToValue(5))
+	if err != nil {
+		t.Fatalf("handleClickAtScreenCoords failed: %v", err)
+	}
+	obj2 := res2.ToObject(runtime)
+	if !obj2.Get("hit").ToBoolean() {
+		t.Fatalf("Expected hit using vpCtx titleHeight=1 after update, got miss")
 	}
 }

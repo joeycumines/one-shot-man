@@ -24,9 +24,15 @@
 //	vp.halfPageUp();
 //	vp.halfPageDown();
 //
+//	// Horizontal Scroll control
+//	vp.setXOffset(0);
+//	vp.scrollLeft(2);
+//	vp.scrollRight(2);
+//
 //	// Get scroll position
-//	const offset = vp.yOffset();
-//	const percent = vp.scrollPercent();
+//	const yOff = vp.yOffset();
+//	const yPercent = vp.scrollPercent();
+//	const xPercent = vp.horizontalScrollPercent();
 //	const atTop = vp.atTop();
 //	const atBottom = vp.atBottom();
 //
@@ -44,12 +50,16 @@
 //	// Mouse wheel settings
 //	vp.mouseWheelEnabled(true);
 //	vp.setMouseWheelDelta(3);
+//	const delta = vp.mouseWheelDelta();
 //
 //	// Update with a message (returns [model, cmd] for bubbletea compatibility)
 //	const [newModel, cmd] = vp.update(msg);
 //
 //	// Render the view
 //	const view = vp.view();
+//
+//	// Clean up
+//	vp.dispose();
 //
 // # Implementation Notes
 //
@@ -104,6 +114,13 @@ func (m *Manager) registerModel(wrapper *ModelWrapper) uint64 {
 	return id
 }
 
+// unregisterModel removes a model from the manager.
+func (m *Manager) unregisterModel(id uint64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.models, id)
+}
+
 // getModel retrieves a model by ID.
 func (m *Manager) getModel(id uint64) *ModelWrapper {
 	m.mu.RLock()
@@ -144,6 +161,14 @@ func createViewportObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 	_ = obj.Set("_id", id)
 	_ = obj.Set("_type", "bubbles/viewport")
 
+	// Memory Management
+	_ = obj.Set("dispose", func(call goja.FunctionCall) goja.Value {
+		manager.unregisterModel(id)
+		// Prevent use-after-free by invalidating the ID
+		_ = obj.Set("_id", goja.Null())
+		return goja.Undefined()
+	})
+
 	// Content management
 	_ = obj.Set("setContent", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
@@ -169,8 +194,9 @@ func createViewportObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		if wrapper != nil {
 			wrapper.mu.Lock()
 			wrapper.model.Width = w
-			// Immediate clamping: ensure yOffset stays within valid bounds after resize
-			clampYOffset(&wrapper.model)
+			// Force re-calculation of bounds by calling SetYOffset with current value.
+			// This relies on the upstream model's internal logic (which handles styles/frames).
+			wrapper.model.SetYOffset(wrapper.model.YOffset)
 			wrapper.mu.Unlock()
 		}
 		return obj
@@ -185,8 +211,9 @@ func createViewportObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		if wrapper != nil {
 			wrapper.mu.Lock()
 			wrapper.model.Height = h
-			// Immediate clamping: ensure yOffset stays within valid bounds after resize
-			clampYOffset(&wrapper.model)
+			// Force re-calculation of bounds by calling SetYOffset with current value.
+			// This relies on the upstream model's internal logic (which handles styles/frames).
+			wrapper.model.SetYOffset(wrapper.model.YOffset)
 			wrapper.mu.Unlock()
 		}
 		return obj
@@ -229,34 +256,6 @@ func createViewportObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 	})
 
 	_ = obj.Set("scrollUp", func(call goja.FunctionCall) goja.Value {
-		n := 1
-		if len(call.Arguments) >= 1 {
-			n = int(call.Argument(0).ToInteger())
-		}
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.ScrollUp(n)
-			wrapper.mu.Unlock()
-		}
-		return obj
-	})
-
-	_ = obj.Set("lineDown", func(call goja.FunctionCall) goja.Value {
-		n := 1
-		if len(call.Arguments) >= 1 {
-			n = int(call.Argument(0).ToInteger())
-		}
-		wrapper := manager.getModel(id)
-		if wrapper != nil {
-			wrapper.mu.Lock()
-			wrapper.model.ScrollDown(n)
-			wrapper.mu.Unlock()
-		}
-		return obj
-	})
-
-	_ = obj.Set("lineUp", func(call goja.FunctionCall) goja.Value {
 		n := 1
 		if len(call.Arguments) >= 1 {
 			n = int(call.Argument(0).ToInteger())
@@ -330,7 +329,50 @@ func createViewportObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		return obj
 	})
 
-	// Y offset management
+	// Horizontal Scroll control
+	_ = obj.Set("setXOffset", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return goja.Undefined()
+		}
+		n := int(call.Argument(0).ToInteger())
+		wrapper := manager.getModel(id)
+		if wrapper != nil {
+			wrapper.mu.Lock()
+			wrapper.model.SetXOffset(n)
+			wrapper.mu.Unlock()
+		}
+		return obj
+	})
+
+	_ = obj.Set("scrollLeft", func(call goja.FunctionCall) goja.Value {
+		n := 1
+		if len(call.Arguments) >= 1 {
+			n = int(call.Argument(0).ToInteger())
+		}
+		wrapper := manager.getModel(id)
+		if wrapper != nil {
+			wrapper.mu.Lock()
+			wrapper.model.ScrollLeft(n)
+			wrapper.mu.Unlock()
+		}
+		return obj
+	})
+
+	_ = obj.Set("scrollRight", func(call goja.FunctionCall) goja.Value {
+		n := 1
+		if len(call.Arguments) >= 1 {
+			n = int(call.Argument(0).ToInteger())
+		}
+		wrapper := manager.getModel(id)
+		if wrapper != nil {
+			wrapper.mu.Lock()
+			wrapper.model.ScrollRight(n)
+			wrapper.mu.Unlock()
+		}
+		return obj
+	})
+
+	// Offsets
 	_ = obj.Set("yOffset", func(call goja.FunctionCall) goja.Value {
 		wrapper := manager.getModel(id)
 		if wrapper == nil {
@@ -364,6 +406,16 @@ func createViewportObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		wrapper.mu.Lock()
 		defer wrapper.mu.Unlock()
 		return runtime.ToValue(wrapper.model.ScrollPercent())
+	})
+
+	_ = obj.Set("horizontalScrollPercent", func(call goja.FunctionCall) goja.Value {
+		wrapper := manager.getModel(id)
+		if wrapper == nil {
+			return runtime.ToValue(0.0)
+		}
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		return runtime.ToValue(wrapper.model.HorizontalScrollPercent())
 	})
 
 	_ = obj.Set("atTop", func(call goja.FunctionCall) goja.Value {
@@ -446,6 +498,16 @@ func createViewportObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		return obj
 	})
 
+	_ = obj.Set("mouseWheelDelta", func(call goja.FunctionCall) goja.Value {
+		wrapper := manager.getModel(id)
+		if wrapper == nil {
+			return runtime.ToValue(0)
+		}
+		wrapper.mu.Lock()
+		defer wrapper.mu.Unlock()
+		return runtime.ToValue(wrapper.model.MouseWheelDelta)
+	})
+
 	// Update - process a bubbletea message and return [model, cmd]
 	_ = obj.Set("update", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
@@ -507,20 +569,4 @@ func createViewportObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 	})
 
 	return obj
-}
-
-// clampYOffset ensures the viewport's yOffset stays within valid bounds.
-// This must be called with the wrapper's mutex held.
-func clampYOffset(model *viewport.Model) {
-	totalLines := model.TotalLineCount()
-	maxOffset := totalLines - model.Height
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
-	if model.YOffset > maxOffset {
-		model.SetYOffset(maxOffset)
-	}
-	if model.YOffset < 0 {
-		model.SetYOffset(0)
-	}
 }

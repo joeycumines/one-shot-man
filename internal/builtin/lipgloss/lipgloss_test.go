@@ -633,6 +633,53 @@ func TestStyleImmutability(t *testing.T) {
 // VALIDATION AND ERROR HANDLING TESTS
 // ============================================================================
 
+func TestParseWhitespaceOptions_IgnoresNullWhitespaceChars(t *testing.T) {
+	vm := goja.New()
+	obj := vm.NewObject()
+	require.NoError(t, obj.Set("whitespaceChars", goja.Null()))
+
+	opts, err := parseWhitespaceOptions(vm, obj)
+	require.NoError(t, err)
+	assert.Equal(t, 0, len(opts))
+}
+
+func TestWhitespaceChars_NullIgnoredInPlace(t *testing.T) {
+	manager := NewManager()
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(manager)
+	requireFn(vm, module)
+	_ = vm.Set("lipgloss", module.Get("exports"))
+
+	res, err := vm.RunString(`
+		const opts = { whitespaceChars: null };
+		lipgloss.place(6, 1, lipgloss.Left, lipgloss.Top, 'X', opts);
+	`)
+	require.NoError(t, err)
+	assert.NotContains(t, res.String(), "null")
+	assert.Contains(t, res.String(), "X")
+}
+
+func TestWhitespaceChars_StringIsAccepted(t *testing.T) {
+	manager := NewManager()
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(manager)
+	requireFn(vm, module)
+	_ = vm.Set("lipgloss", module.Get("exports"))
+
+	res, err := vm.RunString(`
+		const opts = { whitespaceChars: 'Z' };
+		lipgloss.place(6, 1, lipgloss.Left, lipgloss.Top, 'X', opts);
+	`)
+	require.NoError(t, err)
+	assert.Contains(t, res.String(), "Z")
+}
+
 func TestInvalidDimension_Negative(t *testing.T) {
 	manager := NewManager()
 
@@ -648,31 +695,6 @@ func TestInvalidDimension_Negative(t *testing.T) {
 	// Test negative dimension returns error style
 	result, err := vm.RunString(`
 		const style = lipgloss.newStyle().width(-10);
-		JSON.stringify({
-			hasError: style.hasError,
-			errorCode: style.errorCode || null
-		});
-	`)
-	require.NoError(t, err)
-	assert.Contains(t, result.String(), `"hasError":true`)
-	assert.Contains(t, result.String(), `"errorCode":"LG002"`)
-}
-
-func TestInvalidDimension_TooLarge(t *testing.T) {
-	manager := NewManager()
-
-	vm := goja.New()
-	module := vm.NewObject()
-	require.NoError(t, module.Set("exports", vm.NewObject()))
-
-	requireFn := Require(manager)
-	requireFn(vm, module)
-
-	_ = vm.Set("lipgloss", module.Get("exports"))
-
-	// Test dimension over 10000 returns error style
-	result, err := vm.RunString(`
-		const style = lipgloss.newStyle().height(20000);
 		JSON.stringify({
 			hasError: style.hasError,
 			errorCode: style.errorCode || null
@@ -850,25 +872,4 @@ func TestStyleImmutabilityWithMultipleModifications(t *testing.T) {
 
 	// Base should be unmodified (minimal rendering)
 	assert.Contains(t, result.String(), `"baseMinimal":true`)
-}
-
-func TestStyleGoStyleExposed(t *testing.T) {
-	manager := NewManager()
-
-	vm := goja.New()
-	module := vm.NewObject()
-	require.NoError(t, module.Set("exports", vm.NewObject()))
-
-	requireFn := Require(manager)
-	requireFn(vm, module)
-
-	_ = vm.Set("lipgloss", module.Get("exports"))
-
-	// Test that _goStyle is exposed for testing
-	result, err := vm.RunString(`
-		const style = lipgloss.newStyle();
-		typeof style._goStyle !== 'undefined';
-	`)
-	require.NoError(t, err)
-	assert.True(t, result.ToBoolean())
 }

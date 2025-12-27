@@ -1710,27 +1710,44 @@ function renderList(s) {
     });
 
     const renderedButtons = buttonList.map(b => zone.mark(b.id, b.style.render(b.text)));
-    const totalButtonWidth = renderedButtons.reduce((sum, btn) => sum + lipgloss.width(btn), 0);
 
+    // Build button rows by packing buttons horizontally and wrapping when the
+    // next button would exceed the available width. This makes the narrow
+    // terminal behavior identical to the wide layout, but wrapped at the edge.
     let buttonSection;
     const availWidth = termWidth - 4; // Leave some margin
 
-    if (totalButtonWidth > availWidth) {
-        // SCENARIO B: Narrow terminal - use 2-column grid layout per ASCII design:
-        // |  (  [A]dd  )  ( [L]oad  )  |
-        // |  ( [C]opy  )  ( [S]hell )  |
-        // |  ( [R]eset )  ( [Q]uit  )  |
+    {
         const rows = [];
-        for (let i = 0; i < renderedButtons.length; i += 2) {
-            const btn1 = renderedButtons[i];
-            const btn2 = renderedButtons[i + 1] || ''; // Handle odd number of buttons
-            const row = lipgloss.joinHorizontal(lipgloss.Top, btn1, btn2);
-            rows.push(row);
+        let currentRow = [];
+        let currentWidth = 0;
+
+        for (const btn of renderedButtons) {
+            const w = lipgloss.width(btn);
+
+            // If currentRow is empty, start a new row even if button is wider than availWidth
+            if (currentRow.length === 0) {
+                currentRow.push(btn);
+                currentWidth = w;
+                continue;
+            }
+
+            // If the button fits in the current row, append it; otherwise start a new row
+            if (currentWidth + w <= availWidth) {
+                currentRow.push(btn);
+                currentWidth += w;
+            } else {
+                rows.push(lipgloss.joinHorizontal(lipgloss.Top, ...currentRow));
+                currentRow = [btn];
+                currentWidth = w;
+            }
         }
+
+        if (currentRow.length > 0) rows.push(lipgloss.joinHorizontal(lipgloss.Top, ...currentRow));
+
+        // Join all rows vertically. If there is only one row this behaves exactly like
+        // the previous single-line wide layout, otherwise buttons are wrapped.
         buttonSection = lipgloss.joinVertical(lipgloss.Left, ...rows);
-    } else {
-        // SCENARIO A: Wide terminal - horizontal layout
-        buttonSection = lipgloss.joinHorizontal(lipgloss.Top, ...renderedButtons);
     }
 
     // Footer section

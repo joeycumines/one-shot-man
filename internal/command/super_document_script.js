@@ -104,12 +104,12 @@
 //   Content within uses `lipgloss.Style` with borders.
 //
 // - BUTTON BAR (Responsive):
-//   1. Calculate total width of buttons in a single row.
-//   2. If `TotalWidth < TermWidth`:
-//      Use `lipgloss.JoinHorizontal(lipgloss.Top, buttons...)` with spacing.
-//   3. If `TotalWidth > TermWidth`:
-//      Switch to vertical stack using `lipgloss.JoinVertical(lipgloss.Left, buttons...)`.
-//      Buttons expand to fill width or center align.
+//   1. Calculate the available width for buttons.
+//   2. Pack buttons horizontally into rows; if adding a button would overflow the
+//      current row, wrap it to the next line. Use `lipgloss.JoinHorizontal(lipgloss.Top, rowButtons...)`
+//      for each row so that each line renders like SCENARIO A.
+//   3. Stack rows using `lipgloss.JoinVertical(lipgloss.Left, rows...)`, producing a multi-line
+//      button bar that dynamically wraps at the terminal edge rather than forcing a fixed grid.
 //
 // - SCROLLING:
 //   **MUST use the `osm:bubbles/viewport` module (internal/builtin/bubbles/viewport).**

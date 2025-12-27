@@ -8,7 +8,7 @@ import (
 
 func TestRegisterModeValidation(t *testing.T) {
 	ctx := context.Background()
-	engine := mustNewEngine(t, ctx, os.Stdin, os.Stdout)
+	engine := mustNewEngine(t, ctx, os.Stdout, os.Stderr)
 
 	t.Run("InvalidTitleType", func(t *testing.T) {
 		script := engine.LoadScriptFromString("invalid-title", `

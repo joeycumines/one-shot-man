@@ -40,3 +40,42 @@ internal/storage/paths.go:*: unreachable func: SetTestPaths
 internal\storage\paths.go:*: unreachable func: SetTestPaths
 internal/storage/paths.go:*: unreachable func: ResetPaths
 internal\storage\paths.go:*: unreachable func: ResetPaths
+
+# Writer queue and debug assertions are part of the deadlock-prevention infrastructure.
+# scheduleWrite is the fire-and-forget variant tested but not yet used in production.
+# Debug assertions are compiled with -tags debug only but stubs exist for production.
+internal/scripting/debug_assertions_stub.go:*: unreachable func: TUIManager.debugAssertNotInWriteContext
+internal\scripting\debug_assertions_stub.go:*: unreachable func: TUIManager.debugAssertNotInWriteContext
+internal/scripting/debug_assertions_stub.go:*: unreachable func: TUIManager.debugAssertInWriteContext
+internal\scripting\debug_assertions_stub.go:*: unreachable func: TUIManager.debugAssertInWriteContext
+internal/scripting/tui_manager.go:*: unreachable func: TUIManager.scheduleWrite
+internal\scripting\tui_manager.go:*: unreachable func: TUIManager.scheduleWrite
+
+# TUI I/O wrapper types - test helpers for injecting custom readers/writers
+internal/scripting/tui_io.go:*: unreachable func: NewTestTUIReader
+internal\scripting\tui_io.go:*: unreachable func: NewTestTUIReader
+internal/scripting/tui_io.go:*: unreachable func: NewTestTUIWriter
+internal\scripting\tui_io.go:*: unreachable func: NewTestTUIWriter
+internal/scripting/tui_io.go:*: unreachable func: NewTUIWriterStderr
+internal\scripting\tui_io.go:*: unreachable func: NewTUIWriterStderr
+
+# tview manager - backwards-compatible constructor used only from tests
+internal/builtin/tview/tview.go:*: unreachable func: NewManager
+internal\builtin\tview\tview.go:*: unreachable func: NewManager
+
+# Scrollbar Option constructors - used in tests and as part of public API
+internal/termui/scrollbar/scrollbar.go:*: unreachable func: WithContentHeight
+internal\termui\scrollbar\scrollbar.go:*: unreachable func: WithContentHeight
+internal/termui/scrollbar/scrollbar.go:*: unreachable func: WithViewportHeight
+internal\termui\scrollbar\scrollbar.go:*: unreachable func: WithViewportHeight
+internal/termui/scrollbar/scrollbar.go:*: unreachable func: WithYOffset
+internal\termui\scrollbar\scrollbar.go:*: unreachable func: WithYOffset
+internal/termui/scrollbar/scrollbar.go:*: unreachable func: WithStyles
+internal\termui\scrollbar\scrollbar.go:*: unreachable func: WithStyles
+internal/termui/scrollbar/scrollbar.go:*: unreachable func: WithChars
+internal\termui\scrollbar\scrollbar.go:*: unreachable func: WithChars
+
+# ParseMouseEvent is part of the public API for parsing mouse events from string representation
+# (parallels ParseKey for key events). Used in tests and available for external callers.
+internal/builtin/bubbletea/parsemouse.go:*: unreachable func: ParseMouseEvent
+internal\builtin\bubbletea\parsemouse.go:*: unreachable func: ParseMouseEvent

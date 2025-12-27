@@ -2,6 +2,7 @@ package tview
 
 import (
 	"context"
+	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -11,11 +12,26 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/term"
 )
+
+type testFakeTerm struct {
+	makeRawCount int
+	restoreCount int
+}
+
+func (f *testFakeTerm) Read(p []byte) (int, error)              { return 0, io.EOF }
+func (f *testFakeTerm) Write(p []byte) (int, error)             { return len(p), nil }
+func (f *testFakeTerm) Close() error                            { return nil }
+func (f *testFakeTerm) Fd() uintptr                             { return uintptr(0) }
+func (f *testFakeTerm) MakeRaw() (*term.State, error)           { f.makeRawCount++; return &term.State{}, nil }
+func (f *testFakeTerm) Restore(state *term.State) error         { f.restoreCount++; return nil }
+func (f *testFakeTerm) GetSize() (width, height int, err error) { return 80, 24, nil }
+func (f *testFakeTerm) IsTerminal() bool                        { return true }
 
 func TestRequire_ExportsCorrectAPI(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil)
+	manager := NewManager(ctx, nil, nil, nil, nil)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -39,7 +55,7 @@ func TestRequire_ExportsCorrectAPI(t *testing.T) {
 
 func TestInteractiveTable_RequiresConfig(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil)
+	manager := NewManager(ctx, nil, nil, nil, nil)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -61,7 +77,7 @@ func TestInteractiveTable_RequiresConfig(t *testing.T) {
 
 func TestInteractiveTable_HandlesNullConfig(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil)
+	manager := NewManager(ctx, nil, nil, nil, nil)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -152,12 +168,22 @@ func TestGetStringProp_HandlesDefaults(t *testing.T) {
 }
 
 func TestManager_Creation(t *testing.T) {
-	manager := NewManager(t.Context(), nil, nil, nil)
+	manager := NewManager(t.Context(), nil, nil, nil, nil)
 	assert.NotNil(t, manager)
 	assert.True(t, t.Context() == manager.ctx)
 	assert.True(t, manager.screen == nil)
 	assert.NotNil(t, manager.signalNotify)
 	assert.NotNil(t, manager.signalStop)
+}
+
+func TestTcellAdapter_Start_Idempotent(t *testing.T) {
+	ft := &testFakeTerm{}
+	adapter := NewTcellAdapter(ft)
+	require.NoError(t, adapter.Start())
+	require.NoError(t, adapter.Start(), "second Start() should be a no-op and not overwrite saved state")
+	assert.Equal(t, 1, ft.makeRawCount)
+	require.NoError(t, adapter.Stop())
+	assert.Equal(t, 1, ft.restoreCount)
 }
 
 func TestTableConfig_Structure(t *testing.T) {
@@ -182,7 +208,7 @@ func TestTableConfig_Structure(t *testing.T) {
 
 func TestRequire_Integration(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil)
+	manager := NewManager(ctx, nil, nil, nil, nil)
 
 	vm := goja.New()
 
@@ -216,7 +242,7 @@ func TestInteractiveTable_ValidConfig_NoActualDisplay(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(simScreen.Fini)
 
-	manager := NewManager(ctx, simScreen, nil, nil)
+	manager := NewManager(ctx, simScreen, nil, nil, nil)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -332,7 +358,7 @@ func TestInteractiveTable_WithoutOnSelect(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(simScreen.Fini)
 
-	manager := NewManager(ctx, simScreen, nil, nil)
+	manager := NewManager(ctx, simScreen, nil, nil, nil)
 
 	var wg sync.WaitGroup
 	wg.Add(1)

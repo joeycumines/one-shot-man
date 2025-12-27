@@ -341,8 +341,8 @@ function buildCommands(state) {
                     ]);
                 }
 
-                // Show the interactive table
-                tview.interactiveTable({
+                // Show the interactive table and surface any error to the user
+                var _tviewErr = tview.interactiveTable({
                     title: "Context Items (" + items.length + " items) - Press Enter to edit, Escape/q to close",
                     headers: headers,
                     rows: rows,
@@ -356,6 +356,9 @@ function buildCommands(state) {
                         }
                     }
                 });
+                if (_tviewErr) {
+                    output.print("TUI view error: " + _tviewErr);
+                }
             }
         },
         edit: {

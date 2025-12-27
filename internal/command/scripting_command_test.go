@@ -21,6 +21,12 @@ func (f terminalFunc) Run() {
 	f()
 }
 
+// testCtxFactory returns a context factory for tests that avoids signal.NotifyContext,
+// which causes race conditions when tests run in parallel.
+func testCtxFactory() (context.Context, context.CancelFunc) {
+	return context.WithCancel(context.Background())
+}
+
 func TestNewScriptingCommand(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
@@ -102,6 +108,7 @@ func TestScriptingCommand_FlagParsing(t *testing.T) {
 func TestScriptingCommand_Execute_NoScript(t *testing.T) {
 	t.Parallel()
 	cmd := NewScriptingCommand(config.NewConfig())
+	cmd.ctxFactory = testCtxFactory // avoid signal handling races in parallel tests
 	// ensure engine uses memory storage in tests
 	cmd.store = "memory"
 	cmd.session = t.Name()
@@ -121,6 +128,7 @@ func TestScriptingCommand_Execute_NoScript(t *testing.T) {
 func TestScriptingCommand_Execute_ScriptFileNotFound(t *testing.T) {
 	t.Parallel()
 	cmd := NewScriptingCommand(config.NewConfig())
+	cmd.ctxFactory = testCtxFactory // avoid signal handling races in parallel tests
 	// ensure engine uses memory storage in tests
 	cmd.store = "memory"
 	cmd.session = t.Name()
@@ -133,7 +141,9 @@ func TestScriptingCommand_Execute_ScriptFileNotFound(t *testing.T) {
 }
 
 func TestScriptingCommand_Execute_ScriptFileSuccess(t *testing.T) {
+	// NOT parallel: uses os.Chdir which affects other tests
 	cmd := NewScriptingCommand(config.NewConfig())
+	cmd.ctxFactory = testCtxFactory // avoid signal handling races in parallel tests
 	cmd.testMode = true
 	// prevent filesystem persistence from being used by tests
 	cmd.store = "memory"
@@ -167,7 +177,9 @@ func TestScriptingCommand_Execute_ScriptFileSuccess(t *testing.T) {
 }
 
 func TestScriptingCommand_Execute_ScriptFromScriptsDirectory(t *testing.T) {
+	// NOT parallel: uses os.Chdir which affects other tests
 	cmd := NewScriptingCommand(config.NewConfig())
+	cmd.ctxFactory = testCtxFactory // avoid signal handling races in parallel tests
 	cmd.testMode = true
 	// prevent filesystem persistence from being used by tests
 	cmd.store = "memory"
@@ -207,6 +219,7 @@ func TestScriptingCommand_Execute_ScriptFromScriptsDirectory(t *testing.T) {
 func TestScriptingCommand_Execute_InlineScript(t *testing.T) {
 	t.Parallel()
 	cmd := NewScriptingCommand(config.NewConfig())
+	cmd.ctxFactory = testCtxFactory // avoid signal handling races in parallel tests
 	cmd.testMode = true
 	cmd.script = "ctx.log('inline');"
 	cmd.store = "memory"
@@ -232,6 +245,7 @@ func TestScriptingCommand_Execute_Interactive(t *testing.T) {
 	}
 
 	cmd := NewScriptingCommand(cfg)
+	cmd.ctxFactory = testCtxFactory // avoid signal handling races in parallel tests
 	cmd.store = "memory"
 	cmd.session = t.Name()
 	cmd.interactive = true
@@ -256,6 +270,7 @@ func TestScriptingCommand_Execute_Interactive(t *testing.T) {
 func TestScriptingCommand_Execute_EngineError(t *testing.T) {
 	t.Parallel()
 	cmd := NewScriptingCommand(config.NewConfig())
+	cmd.ctxFactory = testCtxFactory // avoid signal handling races in parallel tests
 	cmd.engineFactory = func(context.Context, io.Writer, io.Writer) (*scripting.Engine, error) {
 		return nil, errors.New("boom")
 	}
@@ -270,6 +285,7 @@ func TestScriptingCommand_Execute_EngineError(t *testing.T) {
 func TestScriptingCommand_Execute_InlineScriptFailure(t *testing.T) {
 	t.Parallel()
 	cmd := NewScriptingCommand(config.NewConfig())
+	cmd.ctxFactory = testCtxFactory // avoid signal handling races in parallel tests
 	cmd.script = "throw new Error('kaboom')"
 	cmd.store = "memory"
 	cmd.session = t.Name()

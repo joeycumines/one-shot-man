@@ -44,6 +44,7 @@ func run() error {
 	registry.Register(command.NewSessionCommand(cfg))
 	registry.Register(command.NewPromptFlowCommand(cfg))
 	registry.Register(command.NewCodeReviewCommand(cfg))
+	registry.Register(command.NewSuperDocumentCommand(cfg))
 	registry.Register(command.NewCompletionCommand(registry, goalRegistry))
 	registry.Register(command.NewGoalCommand(cfg, goalRegistry))
 

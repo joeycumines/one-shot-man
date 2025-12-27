@@ -716,7 +716,10 @@ function handleKeys(msg, s) {
     const k = msg.key;
     const prevMode = s.mode; // Track mode before processing
     // Global quit from any mode if ctrl+c
-    if (k === 'ctrl+c') return [s, tea.quit()];
+    if (k === 'ctrl+c') {
+        disposeTextareaIfExists(s);
+        return [s, tea.quit()];
+    }
 
     if (s.mode === MODE_LIST) {
         if (k === 'q') {
@@ -1396,12 +1399,37 @@ function handleMouse(msg, s) {
             return [s, null];
         }
 
+        // DYNAMIC HEADER HEIGHT CALCULATION (Fix for Race Condition)
+        // Replicate renderInput header logic to determine height based on current width
+        // This ensures hit-testing uses the correct layout even if View hasn't updated yet.
+        let titleHeight = 1;
+        {
+            const termWidth = s.width || 80;
+            let titleText;
+            if (s.inputOperation === INPUT_ADD) titleText = '📝 Add Document';
+            else if (s.inputOperation === INPUT_EDIT) titleText = '📝 Edit Document';
+            else if (s.inputOperation === INPUT_RENAME) titleText = '📝 Rename Document';
+            else titleText = '📂 Load File';
+
+            const titleStyle = styles.title();
+            const title = titleStyle.render(titleText);
+            const btnTop = styles.jumpIcon().render('[ ↑ ]');
+            const btnBot = styles.jumpIcon().render('[ ↓ ]');
+
+            // Spacer calculation from renderInput
+            const spacerWidth = Math.max(2, termWidth - lipgloss.width(title) - lipgloss.width(btnTop) - lipgloss.width(btnBot) - 4);
+            const spacer = lipgloss.newStyle().width(spacerWidth).render('');
+
+            const headerRow = lipgloss.joinHorizontal(lipgloss.Top, title, spacer, btnTop, btnBot);
+            titleHeight = lipgloss.height(headerRow);
+        }
+
         // COORDINATE-BASED TEXTAREA HIT DETECTION
         // Zone-based detection fails for large scrolled documents because the zone marker
         // doesn't correctly account for viewport scroll offset. Use coordinate math instead.
         //
         // Layout (Y-axis from top of screen):
-        //   titleHeight (1 line) - fixed header
+        //   titleHeight (dynamic) - fixed header
         //   [viewport starts here - scrollable area]
         //     lblField (label field with border)
         //     gap (1 empty line)
@@ -1409,13 +1437,13 @@ function handleMouse(msg, s) {
         //     border top (1 line)
         //     [TEXTAREA CONTENT - variable height]
         //     border bottom (1 line)
-        //   [buttons, etc.]
-        //   footer - fixed
+        //    [buttons, etc.]
+        //    footer - fixed
         //
         // We need to check if the click is within the VISIBLE textarea bounds.
         let clickedInTextareaArea = false;
         if (s.textareaBounds && s.inputVp) {
-            const titleHeight = s.titleHeight || 1;
+            // Use dynamically calculated titleHeight
             const vpYOffset = s.inputVp.yOffset();
             const vpHeight = s.inputVp.height();
 
@@ -1468,8 +1496,6 @@ function handleMouse(msg, s) {
             // This replaces manual JS coordinate math for PERFORMANCE and CORRECTNESS.
             // The Go method handles: screen→viewport→content→textarea→visual→logical mapping.
             if (s.contentTextarea && isLeftClick && !isWheelEvent) {
-                const titleHeight = s.titleHeight || 1;
-
                 // Defensive: refresh viewport context right before asking Go to hit-test.
                 if (s.contentTextarea.setViewportContext && s.textareaBounds) {
                     s.contentTextarea.setViewportContext({
@@ -1477,13 +1503,14 @@ function handleMouse(msg, s) {
                         textareaContentTop: s.textareaBounds.contentTop,
                         textareaContentLeft: s.textareaBounds.contentLeft,
                         outerViewportHeight: s.inputVp.height(),
-                        titleHeight: titleHeight
+                        titleHeight: titleHeight // Use dynamic height
                     });
                 }
 
                 // Try GO-NATIVE method first (does all math in Go for performance)
                 if (s.contentTextarea.handleClickAtScreenCoords) {
-                    const hitResult = s.contentTextarea.handleClickAtScreenCoords(msg.x, msg.y, titleHeight);
+                    // Refactor: Remove titleHeight arg, relying on struct context as Single Source of Truth
+                    const hitResult = s.contentTextarea.handleClickAtScreenCoords(msg.x, msg.y);
                     if (hitResult.hit) {
                         // Cursor was successfully positioned by Go
                         s.inputViewportUnlocked = false;
@@ -1523,7 +1550,7 @@ function handleMouse(msg, s) {
         // Previously this would fire for any click that didn't match a zone,
         // causing incorrect blurs when clicking on large scrolled documents.
         if (s.inputFocus === FOCUS_CONTENT && s.contentTextarea && s.inputVp) {
-            const titleHeight = s.titleHeight || 1;
+            // Use dynamically calculated titleHeight
             const vpHeight = s.inputVp.height();
             const vpScreenTop = titleHeight;
             const vpScreenBottom = vpScreenTop + vpHeight;

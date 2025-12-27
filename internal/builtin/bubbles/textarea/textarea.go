@@ -56,6 +56,9 @@ import (
 // characters (CJK, emojis, etc.). This is essential for proper cursor positioning.
 //
 // Deprecated: Use [github.com/rivo/uniseg] for grapheme cluster support. I'll deal with this later.
+// NOTE: This currently maps zero-width combining marks to width 1, which can
+// cause misalignment in complex scripts; replace with grapheme-cluster-aware
+// logic in a follow-up.
 func runeWidth(r rune) int {
 	w := runewidth.RuneWidth(r)
 	if w < 1 {
@@ -1145,6 +1148,8 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		outerViewportHeight int
 		// Pre-content height (Y offset within outer viewport to textarea content)
 		preContentHeight int
+		// Whether setViewportContext has been called and the values are current
+		initialized bool
 	}
 
 	// Per-instance viewport context (stored in closure)
@@ -1183,6 +1188,8 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		if v := config.Get("preContentHeight"); v != nil && !goja.IsUndefined(v) {
 			vpCtx.preContentHeight = int(v.ToInteger())
 		}
+		// Mark viewport context initialized (set during render)
+		vpCtx.initialized = true
 		return obj
 	})
 
@@ -1232,6 +1239,11 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 			return result
 		}
 
+		// Ensure viewport context has been set by JS. If not, treat as miss to allow legacy fallback.
+		if !vpCtx.initialized {
+			return result
+		}
+
 		// Step 1: Convert screen Y to viewport-relative Y
 		viewportRelativeY := screenY - titleHeight
 
@@ -1253,7 +1265,9 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 			totalVisualLines += calculateWrappedLineCount(line, contentWidth)
 		}
 
-		if visualY < 0 || visualY >= totalVisualLines+1 {
+		// `totalVisualLines` is the number of visual lines (0-indexed).
+		// Valid visualY ranges are 0..totalVisualLines-1, so check >= totalVisualLines.
+		if visualY < 0 || visualY >= totalVisualLines {
 			return result // Click outside textarea content
 		}
 

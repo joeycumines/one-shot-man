@@ -1636,6 +1636,124 @@ func TestSetViewportContextAndHandleClickAtScreenCoords(t *testing.T) {
 	}
 }
 
+func TestHandleClickAtScreenCoords_BottomEdge(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Configure textarea: no prompt, no line numbers, 40-char content width
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(40))
+
+	// Set content: 100 chars wraps to 3 visual lines in 40-char viewport
+	content := strings.Repeat("x", 100) + "\nsecond line"
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	_, _ = setValueFn(ta, runtime.ToValue(content))
+
+	// Get the new GO-NATIVE methods
+	setViewportContextFn, _ := goja.AssertFunction(ta.Get("setViewportContext"))
+	handleClickFn, _ := goja.AssertFunction(ta.Get("handleClickAtScreenCoords"))
+	getScrollSyncInfoFn, _ := goja.AssertFunction(ta.Get("getScrollSyncInfo"))
+
+	// Configure viewport context (same as other tests)
+	vpConfig := runtime.NewObject()
+	_ = vpConfig.Set("outerYOffset", 0)
+	_ = vpConfig.Set("textareaContentTop", 2)
+	_ = vpConfig.Set("textareaContentLeft", 5)
+	_ = vpConfig.Set("outerViewportHeight", 10)
+	_ = vpConfig.Set("preContentHeight", 2)
+
+	_, err := setViewportContextFn(ta, vpConfig)
+	if err != nil {
+		t.Fatalf("setViewportContext failed: %v", err)
+	}
+
+	// Obtain totalVisualLines via getScrollSyncInfo
+	syncVal, err := getScrollSyncInfoFn(ta)
+	if err != nil {
+		t.Fatalf("getScrollSyncInfo failed: %v", err)
+	}
+	totalVisualLines := int(syncVal.ToObject(runtime).Get("totalVisualLines").ToInteger())
+	titleHeight := 3
+	textareaContentTop := 2
+	screenX := 10
+
+	// Click on last visual line (should hit)
+	screenYLast := titleHeight + textareaContentTop + totalVisualLines - 1
+	resLast, err := handleClickFn(ta,
+		runtime.ToValue(screenX),
+		runtime.ToValue(screenYLast),
+		runtime.ToValue(titleHeight))
+	if err != nil {
+		t.Fatalf("handleClickAtScreenCoords failed: %v", err)
+	}
+	objLast := resLast.ToObject(runtime)
+	if !objLast.Get("hit").ToBoolean() {
+		t.Errorf("Expected hit on last visual line at screenY %d (totalVisualLines=%d)", screenYLast, totalVisualLines)
+	}
+
+	// Click exactly on the first line after last (should miss)
+	screenYBelow := screenYLast + 1
+	resBelow, err := handleClickFn(ta,
+		runtime.ToValue(screenX),
+		runtime.ToValue(screenYBelow),
+		runtime.ToValue(titleHeight))
+	if err != nil {
+		t.Fatalf("handleClickAtScreenCoords failed: %v", err)
+	}
+	objBelow := resBelow.ToObject(runtime)
+	if objBelow.Get("hit").ToBoolean() {
+		t.Errorf("Expected miss for click at screenY %d (visualY == totalVisualLines), but got hit", screenYBelow)
+	}
+}
+
+func TestHandleClickAtScreenCoords_VpCtxUninitialized(t *testing.T) {
+	// Verify that if setViewportContext has not been called yet, clicks are treated as misses
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Configure textarea but DO NOT call setViewportContext
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(40))
+
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	_, _ = setValueFn(ta, runtime.ToValue("abc"))
+
+	handleClickFn, _ := goja.AssertFunction(ta.Get("handleClickAtScreenCoords"))
+
+	res, err := handleClickFn(ta, runtime.ToValue(10), runtime.ToValue(5), runtime.ToValue(3))
+	if err != nil {
+		t.Fatalf("handleClickAtScreenCoords failed: %v", err)
+	}
+	obj := res.ToObject(runtime)
+	if obj.Get("hit").ToBoolean() {
+		t.Fatalf("Expected miss when viewport context is uninitialized, but got hit")
+	}
+}
+
 // TestGetScrollSyncInfo tests the GO-NATIVE scroll sync method that returns
 // all viewport synchronization data in a single call.
 func TestGetScrollSyncInfo(t *testing.T) {

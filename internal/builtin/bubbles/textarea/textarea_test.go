@@ -2,6 +2,7 @@ package textarea
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -272,6 +273,54 @@ func TestTextareaHandleClick(t *testing.T) {
 	colResult, _ := colFn(ta)
 	if colResult.ToInteger() != 2 {
 		t.Errorf("expected col 2 after click, got %d", colResult.ToInteger())
+	}
+}
+
+// TestTextarea_HandleClickDoesNotWriteStdout ensures click handlers do not write to stdout.
+func TestTextarea_HandleClickDoesNotWriteStdout(t *testing.T) {
+	manager := NewManager()
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require(manager)(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Set content
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	_, _ = setValueFn(ta, runtime.ToValue("ABCD\nEFGH\nIJKL"))
+
+	handleClickFn, _ := goja.AssertFunction(ta.Get("handleClick"))
+	handleClickAtScreenCoordsFn, _ := goja.AssertFunction(ta.Get("handleClickAtScreenCoords"))
+
+	// Capture stdout to a temp file
+	stdoutFile, err := os.CreateTemp(t.TempDir(), "textarea-stdout-*.txt")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	origStdout := os.Stdout
+	os.Stdout = stdoutFile
+
+	// Ensure stdout is restored and file closed at end
+	t.Cleanup(func() {
+		os.Stdout = origStdout
+		_ = stdoutFile.Close()
+	})
+
+	// Invoke click handlers
+	_, _ = handleClickFn(ta, runtime.ToValue(2), runtime.ToValue(1), runtime.ToValue(0))
+	_, _ = handleClickAtScreenCoordsFn(ta, runtime.ToValue(10), runtime.ToValue(5), runtime.ToValue(0))
+
+	// Close and read file
+	_ = stdoutFile.Close()
+	out, err := os.ReadFile(stdoutFile.Name())
+	if err != nil {
+		t.Fatalf("failed to read stdout temp file: %v", err)
+	}
+	if len(out) != 0 {
+		t.Errorf("expected no stdout output from click handlers, got: %q", string(out))
 	}
 }
 

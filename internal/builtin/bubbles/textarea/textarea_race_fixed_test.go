@@ -1,5 +1,4 @@
-//go:build ignore
-// temporarily excluded due to corruption; use textarea_race_fixed_test.go as replacement
+//go:build race
 
 package textarea
 
@@ -42,6 +41,7 @@ func TestTextarea_ConcurrentSetViewportContextAndReaders_Race(t *testing.T) {
 
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
+	var rtMu sync.Mutex
 
 	// Writers
 	for i := 0; i < 4; i++ {
@@ -54,6 +54,7 @@ func TestTextarea_ConcurrentSetViewportContextAndReaders_Race(t *testing.T) {
 				case <-stop:
 					return
 				default:
+					rtMu.Lock()
 					obj := runtime.NewObject()
 					_ = obj.Set("outerYOffset", idx%100)
 					_ = obj.Set("textareaContentTop", 2)
@@ -61,6 +62,7 @@ func TestTextarea_ConcurrentSetViewportContextAndReaders_Race(t *testing.T) {
 					_ = obj.Set("outerViewportHeight", 50)
 					_ = obj.Set("preContentHeight", 2)
 					_, _ = setViewportContextFn(ta, obj)
+					rtMu.Unlock()
 					idx++
 				}
 			}
@@ -77,8 +79,10 @@ func TestTextarea_ConcurrentSetViewportContextAndReaders_Race(t *testing.T) {
 				case <-stop:
 					return
 				default:
+					rtMu.Lock()
 					_, _ = handleClickFn(ta, runtime.ToValue(10), runtime.ToValue(10), runtime.ToValue(1))
 					_, _ = getScrollSyncInfoFn(ta)
+					rtMu.Unlock()
 				}
 			}
 		}()
@@ -89,96 +93,3 @@ func TestTextarea_ConcurrentSetViewportContextAndReaders_Race(t *testing.T) {
 	close(stop)
 	wg.Wait()
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-}		}(i)			}				}					_, _ = getScrollSyncInfoFn(ta)					_, _ = handleClickFn(ta, runtime.ToValue(10), runtime.ToValue(10), runtime.ToValue(1))					// 				default:					return				case <-stop:				select {			for {			defer wg.Done()		go func(id int) {		wg.Add(1)	for i := 0; i < 8; i++ {	}		}(i)			}				}					idx++					_, _ = setViewportContextFn(ta, obj)					_ = obj.Set("preContentHeight", 2)					_ = obj.Set("outerViewportHeight", 50)					_ = obj.Set("textareaContentLeft", 0)					_ = obj.Set("textareaContentTop", 2)					_ = obj.Set("outerYOffset", idx%100)					obj := runtime.NewObject()				default:					return				case <-stop:				select {			for {			idx := 0			defer wg.Done()		go func(id int) {		wg.Add(1)	for i := 0; i < 4; i++ {	// Writers: repeatedly call setViewportContext	var wg sync.WaitGroup	stop := make(chan struct{})

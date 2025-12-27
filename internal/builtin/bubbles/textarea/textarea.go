@@ -39,7 +39,6 @@ package textarea
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -1271,7 +1270,6 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 		// Step 2: Check if within outer viewport bounds
 		if viewportRelativeY < 0 || viewportRelativeY >= vpCtx.outerViewportHeight {
 			// Debug: log miss reason for integration tests
-			fmt.Printf("[CLICK HANDLER] miss: viewportRelativeY=%d outside outerViewportHeight=%d (screenY=%d titleHeight=%d)\n", viewportRelativeY, vpCtx.outerViewportHeight, screenY, titleHeight)
 			return result // Click outside viewport
 		}
 
@@ -1383,7 +1381,6 @@ func createTextareaObject(runtime *goja.Runtime, manager *Manager, id uint64) go
 			}
 		}
 
-		fmt.Printf("[CLICK HANDLER] hit: screenX=%d screenY=%d titleHeight=%d viewportRelativeY=%d outerYOffset=%d textareaContentTop=%d contentY=%d visualY=%d visualX=%d totalVisualLines=%d targetRow=%d targetCol=%d\n", screenX, screenY, titleHeight, viewportRelativeY, vpCtx.outerYOffset, vpCtx.textareaContentTop, contentY, visualY, visualX, totalVisualLines, targetRow, targetCol)
 		_ = result.Set("hit", true)
 		_ = result.Set("row", targetRow)
 		_ = result.Set("col", targetCol)

@@ -528,12 +528,12 @@ const styles = {
 function runVisualTui() {
     // Create viewport instance ONCE at init time (not on each render)
     const vp = viewportLib.new(80, 24);
-    vp.mouseWheelEnabled(false); // We handle mouse wheel manually
+    vp.setMouseWheelEnabled(false); // We handle mouse wheel manually
 
     // Create input viewport instance ONCE at init time (not on each render)
     // This fixes the scroll reset bug where viewport was recreated in renderInput
     const inputVp = viewportLib.new(80, 24);
-    inputVp.mouseWheelEnabled(false); // We handle mouse wheel manually
+    inputVp.setMouseWheelEnabled(false); // We handle mouse wheel manually
 
     const initialState = {
         // Core state linked to global state

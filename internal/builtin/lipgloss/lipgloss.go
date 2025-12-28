@@ -740,6 +740,31 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 // Helpers
 // ---------------------------------------------------------------------
 
+// UnwrapStyle attempts to retrieve the underlying lipgloss.Style from a JavaScript object.
+// It returns an error if the object is not a valid style instance or contains an error state.
+func UnwrapStyle(rt *goja.Runtime, v goja.Value) (lipgloss.Style, error) {
+	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+		return lipgloss.Style{}, fmt.Errorf("value is null or undefined")
+	}
+
+	obj := v.ToObject(rt)
+	val := obj.Get(internalStateKey)
+	if val == nil {
+		return lipgloss.Style{}, fmt.Errorf("object is not a lipgloss style")
+	}
+
+	state, ok := val.Export().(*styleState)
+	if !ok {
+		return lipgloss.Style{}, fmt.Errorf("object has invalid internal state")
+	}
+
+	if state.hasError {
+		return lipgloss.Style{}, fmt.Errorf("cannot use style with error: %s (%s)", state.errMsg, state.errCode)
+	}
+
+	return state.style, nil
+}
+
 // parseColor strictly validates and parses a Goja value into a lipgloss.TerminalColor.
 func parseColor(runtime *goja.Runtime, val goja.Value) (lipgloss.TerminalColor, error) {
 	if goja.IsUndefined(val) || goja.IsNull(val) {

@@ -248,9 +248,9 @@ func TestJS_Styling(t *testing.T) {
 		// but here we demonstrate resetting.
 		vp.setStyle(null);
 	`)
-	// Note: variables don't persist across RunString unless set on Global.
-	// Since we defined 'const vp' inside the script scope, it's gone.
-	// We'll trust the logic flow or rewrite the test to be single-pass.
+	if err != nil {
+		t.Errorf("JS Execution failed on style clear: %v", err)
+	}
 }
 
 func TestJS_Style_Clear(t *testing.T) {

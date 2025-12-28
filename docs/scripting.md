@@ -151,6 +151,17 @@ const sharedState = tui.createState("__shared__", {
 - `require("osm:argv")`
 - `require("osm:nextIntegerId")`
 - `require("osm:ctxutil")` (workflow helpers used by built-ins)
+- `require("osm:unicodetext")` — unicode helpers
+- `require("osm:sharedStateSymbols")` — shared symbol helpers
+- Bubbletea-related modules for building your own TUI components (experimental, introduced for `osm super-document`):
+    - `require("osm:bubbletea")` — Bubbletea bindings (Charm JS API, WIP)
+    - `require("osm:lipgloss")` — Lipgloss styling helpers
+    - `require("osm:bubbles/viewport")`, `require("osm:bubbles/textarea")` — bubble components
+    - `require("osm:bubblezone")` — zone/mouse helpers
+    - `require("osm:termui/scrollbar")` — scrollbar helper
+- `require("osm:tview")` — TUI helpers (proof-of-concept, overlaps with bubbletea)
+
+Note: Better documentation for these modules is pending; see package comments in `./internal/builtin` and the root `README.md` for stability status.
 
 ## Where to look for examples
 

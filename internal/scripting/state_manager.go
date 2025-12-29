@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 
@@ -38,6 +39,11 @@ type StateManager struct {
 	// ArchiveAttemptsMax controls how many candidate archive filenames ArchiveAndReset
 	// will try before giving up. Zero means use the built-in default.
 	ArchiveAttemptsMax int
+
+	// State change listeners
+	listenerMu sync.RWMutex
+	listeners  map[int]builtin.StateListener
+	nextListID int
 }
 
 // NewStateManager creates a new state manager and loads or initializes the session.
@@ -106,6 +112,9 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 		historyBuf:   make([]storage.HistoryEntry, maxHistoryEntries),
 		historyStart: 0,
 		historyLen:   0,
+		// Initialize listener infrastructure
+		listeners:  make(map[int]builtin.StateListener),
+		nextListID: 1,
 	}
 
 	sm.mu.Lock()
@@ -235,9 +244,9 @@ func (sm *StateManager) GetState(persistentKey string) (interface{}, bool) {
 
 // SetState sets a value in the unified state map.
 // Key format: "commandID:localKey" for command-specific, or shared symbol name for shared state.
+// After updating the state, all registered listeners are notified with the changed key.
 func (sm *StateManager) SetState(persistentKey string, value interface{}) {
 	sm.mu.Lock()
-	defer sm.mu.Unlock()
 
 	// Ensure maps are initialized
 	if sm.session.ScriptState == nil {
@@ -252,12 +261,16 @@ func (sm *StateManager) SetState(persistentKey string, value interface{}) {
 		// Shared state write
 		sm.session.SharedState[persistentKey] = value
 		sm.session.UpdateTime = time.Now()
+		sm.mu.Unlock()
+		// Notify listeners outside of main lock
+		sm.notifyListeners(persistentKey)
 		return
 	}
 
 	// Script-specific state: split "commandID:localKey"
 	parts := strings.SplitN(persistentKey, ":", 2)
 	if len(parts) != 2 {
+		sm.mu.Unlock()
 		return
 	}
 	commandID := parts[0]
@@ -272,6 +285,10 @@ func (sm *StateManager) SetState(persistentKey string, value interface{}) {
 
 	commandState[localKey] = value
 	sm.session.UpdateTime = time.Now()
+	sm.mu.Unlock()
+
+	// Notify listeners outside of main lock
+	sm.notifyListeners(persistentKey)
 }
 
 // SerializeCompleteState serializes the entire state (both script and shared) into a JSON string.
@@ -499,4 +516,46 @@ func (sm *StateManager) Close() error {
 		return persistErr
 	}
 	return closeErr
+}
+
+// AddListener registers a callback function to be invoked when any state key changes.
+// Returns a listener ID that can be used to remove the listener later.
+// The listener is invoked asynchronously after state updates (outside the main lock).
+// Listeners MUST NOT call back into StateManager methods to avoid deadlocks.
+func (sm *StateManager) AddListener(fn builtin.StateListener) int {
+	sm.listenerMu.Lock()
+	defer sm.listenerMu.Unlock()
+	id := sm.nextListID
+	sm.nextListID++
+	if sm.listeners == nil {
+		sm.listeners = make(map[int]builtin.StateListener)
+	}
+	sm.listeners[id] = fn
+	return id
+}
+
+// RemoveListener removes a previously registered listener by its ID.
+// It is safe to call with an invalid ID (no-op).
+func (sm *StateManager) RemoveListener(id int) {
+	sm.listenerMu.Lock()
+	defer sm.listenerMu.Unlock()
+	delete(sm.listeners, id)
+}
+
+// notifyListeners invokes all registered listeners with the given key.
+// This is called AFTER the main mutex is released to avoid deadlocks.
+// Listeners are invoked synchronously in arbitrary order.
+func (sm *StateManager) notifyListeners(key string) {
+	sm.listenerMu.RLock()
+	// Copy listeners under the lock to allow iteration without holding the lock
+	listeners := make([]builtin.StateListener, 0, len(sm.listeners))
+	for _, fn := range sm.listeners {
+		listeners = append(listeners, fn)
+	}
+	sm.listenerMu.RUnlock()
+
+	// Invoke listeners outside of any lock
+	for _, fn := range listeners {
+		fn(key)
+	}
 }

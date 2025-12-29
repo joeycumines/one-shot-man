@@ -18,19 +18,22 @@ import (
 // - Native Go modules with the "osm:" prefix (e.g., require("osm:utils")).
 // - Absolute file paths (e.g., require("/path/to/module.js")).
 // - Relative file paths (e.g., require("./module.js")).
+
 type Engine struct {
-	vm             *goja.Runtime
-	registry       *require.Registry
-	scripts        []*Script
-	ctx            context.Context
-	stdout         io.Writer
-	stderr         io.Writer
-	globals        map[string]interface{}
-	testMode       bool
-	tuiManager     *TUIManager
-	tviewManager   *tviewmod.Manager
-	contextManager *ContextManager
-	logger         *TUILogger
+	vm               *goja.Runtime
+	registry         *require.Registry
+	scripts          []*Script
+	ctx              context.Context
+	stdout           io.Writer
+	stderr           io.Writer
+	globals          map[string]interface{}
+	testMode         bool
+	tuiManager       *TUIManager
+	tviewManager     *tviewmod.Manager
+	contextManager   *ContextManager
+	logger           *TUILogger
+	terminalIO       *TerminalIO              // Shared terminal I/O for all TUI subsystems
+	bubbleteaManager builtin.BubbleteaManager // For sending state refresh messages to running TUI
 }
 
 // Script represents a JavaScript script with metadata.
@@ -61,6 +64,10 @@ func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionI
 		return nil, fmt.Errorf("failed to create context manager: %w", err)
 	}
 
+	// Create shared terminal I/O for all TUI subsystems.
+	// This is the single source of truth for terminal state management.
+	terminalIO := NewTerminalIOStdio()
+
 	engine := &Engine{
 		vm:             goja.New(),
 		ctx:            ctx,
@@ -69,8 +76,13 @@ func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionI
 		globals:        make(map[string]interface{}),
 		contextManager: contextManager,
 		logger:         NewTUILogger(stdout, 1000),
-		tviewManager:   tviewmod.NewManager(ctx, nil, nil, nil),
+		terminalIO:     terminalIO,
 	}
+
+	// Create tview manager WITHOUT terminal ops - let tview/tcell manage its own TTY.
+	// Using TerminalIO here conflicts with go-prompt's reader which is already consuming
+	// stdin. tcell expects raw os.Stdin access, not go-prompt's buffered reader.
+	engine.tviewManager = tviewmod.NewManagerWithTerminal(ctx, nil, nil, nil, nil)
 
 	// Set up CommonJS require support.
 	{
@@ -78,15 +90,33 @@ func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionI
 		engine.registry = require.NewRegistry()
 
 		// Register native Go modules. These are all prefixed with "osm:".
-		// Pass through the engine's context and a TUI sink for modules that need them
-		builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine)
+		// Pass through the engine's context and a TUI sink for modules that need them.
+		// Pass 'engine' as terminalProvider so bubbletea uses the unified TerminalIO
+		// instead of defaulting to raw os.Stdin (which would violate Single Source of Truth).
+		// This is safe because Fd() no longer triggers lazy initialization - it returns
+		// os.Stdin.Fd()/os.Stdout.Fd() when the underlying reader/writer is nil.
+		registerResult := builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine)
+		engine.bubbleteaManager = registerResult.BubbleteaManager
 
 		// Enable the `require` function in the runtime.
 		engine.registry.Enable(engine.vm)
 	}
 
-	// Create TUI manager with explicit configuration (this also initializes StateManager)
-	engine.tuiManager = NewTUIManagerWithConfig(ctx, engine, os.Stdin, os.Stdout, sessionID, store)
+	// Create TUI manager with explicit configuration (this also initializes StateManager).
+	// Pass the shared terminal reader/writer from terminalIO.
+	engine.tuiManager = NewTUIManagerWithConfig(ctx, engine, terminalIO.TUIReader, terminalIO.TUIWriter, sessionID, store)
+
+	// Wire StateManager to send state refresh messages to bubbletea when state changes.
+	// This enables the TUI to automatically re-render when external code modifies state.
+	// NOTE: The listener is invoked asynchronously (in a goroutine) to avoid blocking
+	// the update loop or causing issues with p.Send() being called from within updates.
+	if engine.bubbleteaManager != nil && engine.tuiManager.stateManager != nil {
+		bubbleteaMgr := engine.bubbleteaManager
+		engine.tuiManager.stateManager.AddListener(func(key string) {
+			// Send state refresh asynchronously to avoid blocking
+			go bubbleteaMgr.SendStateRefresh(key)
+		})
+	}
 
 	// Register the shared symbols module properly through the require registry
 	engine.registry.RegisterNativeModule("osm:sharedStateSymbols", builtin.GetSharedSymbolsLoader(engine.tuiManager))
@@ -218,6 +248,24 @@ func (e *Engine) GetTViewManager() *tviewmod.Manager {
 	return e.tviewManager
 }
 
+// GetTerminalReader returns the shared terminal reader.
+// This implements builtin.TerminalOpsProvider.
+func (e *Engine) GetTerminalReader() io.Reader {
+	if e.terminalIO == nil {
+		return nil
+	}
+	return e.terminalIO.TUIReader
+}
+
+// GetTerminalWriter returns the shared terminal writer.
+// This implements builtin.TerminalOpsProvider.
+func (e *Engine) GetTerminalWriter() io.Writer {
+	if e.terminalIO == nil {
+		return nil
+	}
+	return e.terminalIO.TUIWriter
+}
+
 // GetScripts returns all loaded scripts.
 func (e *Engine) GetScripts() []*Script {
 	return e.scripts
@@ -229,9 +277,18 @@ func (e *Engine) Close() error {
 	if e.tuiManager != nil {
 		if err := e.tuiManager.Close(); err != nil {
 			// Log error but continue cleanup
-			_, _ = fmt.Fprintf(e.stderr, "Warning: failed to close TUI manager: %v\n", err)
+			if e.stderr != nil {
+				_, _ = fmt.Fprintf(e.stderr, "Warning: failed to close TUI manager: %v\n", err)
+			}
 		}
 	}
+
+	// NOTE: We intentionally do NOT close terminalIO here.
+	// TerminalIO wraps stdin/stdout which are process-owned resources.
+	// Each subsystem (go-prompt, tview, bubbletea) manages its own terminal
+	// state lifecycle independently. Attempting to close terminalIO causes
+	// "bad file descriptor" errors because go-prompt's reader has already
+	// been closed when the prompt loop exits.
 
 	// Clean up any resources
 	e.vm = nil
@@ -311,6 +368,19 @@ func (e *Engine) setupGlobals() {
 		"registerCompleter":    e.tuiManager.jsRegisterCompleter,
 		"setCompleter":         e.tuiManager.jsSetCompleter,
 		"registerKeyBinding":   e.tuiManager.jsRegisterKeyBinding,
+		// requestExit signals that the shell loop should exit after the current command completes.
+		// This is checked by the exit checker configured on the prompt.
+		"requestExit": func() {
+			e.tuiManager.SetExitRequested(true)
+		},
+		// isExitRequested returns whether an exit has been requested.
+		"isExitRequested": func() bool {
+			return e.tuiManager.IsExitRequested()
+		},
+		// clearExitRequest clears the exit request flag.
+		"clearExitRequest": func() {
+			e.tuiManager.SetExitRequested(false)
+		},
 	})
 }
 

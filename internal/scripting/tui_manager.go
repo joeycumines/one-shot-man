@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"unsafe"
 
 	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
@@ -34,9 +35,36 @@ func extractCommandHistory(entries []storage.HistoryEntry) []string {
 
 // NewTUIManagerWithConfig creates a new TUI manager with explicit session configuration.
 // This function should be used instead of NewTUIManager to avoid data races on global state.
+//
+// The input and output parameters are wrapped in concrete TUIReader/TUIWriter types.
+// For production use, pass nil for both to use the default stdin/stdout.
+// For testing, pass custom io.Reader/io.Writer to capture output.
+// If *TUIReader/*TUIWriter are passed directly, they are used as-is (no re-wrapping).
 func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reader, output io.Writer, sessionID, store string) *TUIManager {
 	// Discover session ID with explicit override
 	actualSessionID := discoverSessionID(sessionID)
+
+	// Create or reuse concrete reader/writer wrappers
+	var reader *TUIReader
+	var writer *TUIWriter
+
+	// Check if input is already a *TUIReader (avoid double-wrapping)
+	if r, ok := input.(*TUIReader); ok {
+		reader = r
+	} else if input == nil {
+		reader = NewTUIReader() // lazily initializes to stdin
+	} else {
+		reader = NewTUIReaderFromIO(input)
+	}
+
+	// Check if output is already a *TUIWriter (avoid double-wrapping)
+	if w, ok := output.(*TUIWriter); ok {
+		writer = w
+	} else if output == nil {
+		writer = NewTUIWriter() // lazily initializes to stdout
+	} else {
+		writer = NewTUIWriterFromIO(output)
+	}
 
 	manager := &TUIManager{
 		engine:           engine,
@@ -44,12 +72,15 @@ func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reade
 		modes:            make(map[string]*ScriptMode),
 		commands:         make(map[string]Command),
 		commandOrder:     make([]string, 0),
-		input:            input,
-		output:           output,
+		reader:           reader,
+		writer:           writer,
 		prompts:          make(map[string]*prompt.Prompt),
 		completers:       make(map[string]goja.Callable),
 		keyBindings:      make(map[string]goja.Callable),
 		promptCompleters: make(map[string]string),
+		writerQueue:      make(chan writeTask, 64),
+		writerStop:       make(chan struct{}),
+		writerDone:       make(chan struct{}),
 		defaultColors: PromptColors{
 			// Choose a readable default for input that is not yellow/white-adjacent
 			InputText:               prompt.Green,
@@ -66,6 +97,11 @@ func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reade
 			ScrollbarBG:             prompt.Black,
 		},
 	}
+
+	// Start the writer goroutine that executes mutation tasks under the write lock.
+	// This goroutine is the only place that holds tm.mu.Lock() for JS-originated
+	// mutations, preventing deadlocks when JS callbacks call back into mutating APIs.
+	go manager.runWriter()
 
 	// Initialize state manager with explicit backend
 	stateManager, err := initializeStateManager(actualSessionID, store)
@@ -88,6 +124,146 @@ func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reade
 	manager.registerBuiltinCommands()
 
 	return manager
+}
+
+// runWriter is the single dedicated writer goroutine that executes mutation tasks.
+// All JS-originated mutations are routed through this goroutine to prevent deadlocks.
+// Tasks are executed under tm.mu.Lock().
+//
+// This goroutine listens on both tm.writerStop (shutdown signal) and tm.writerQueue.
+// The writerQueue is NEVER closed - we use writerStop to signal exit per the
+// "Signal, Don't Close" pattern to prevent panics from racing senders.
+func (tm *TUIManager) runWriter() {
+	defer close(tm.writerDone)
+
+	for {
+		select {
+		case <-tm.writerStop:
+			// Shutdown signal received. Exit the loop.
+			// The queue is left open for garbage collection to handle.
+			return
+
+		case task := <-tm.writerQueue:
+			// Execute the task under the write lock with panic protection
+			tm.mu.Lock()
+			tm.debugWriteContextEnter() // Debug assertion: mark we're in write context
+
+			var err error
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						err = fmt.Errorf("panic in mutation task: %v", r)
+					}
+				}()
+				err = task.fn()
+			}()
+
+			tm.debugWriteContextExit() // Debug assertion: mark we're leaving write context
+			tm.mu.Unlock()
+
+			// Send result if caller is waiting (non-blocking to avoid blocking writer)
+			if task.resultCh != nil {
+				select {
+				case task.resultCh <- err:
+				default:
+					// Caller abandoned, drop result
+				}
+			}
+		}
+	}
+}
+
+// scheduleWrite queues a mutation task to be executed by the writer goroutine.
+// The task runs under tm.mu.Lock(). This method returns immediately without waiting
+// for the task to complete (fire-and-forget semantics).
+//
+// Use this for mutations where the caller does not need to know the result.
+// For mutations that must complete before proceeding, use scheduleWriteAndWait.
+//
+// IMPORTANT: This is the ONLY safe way for JS callbacks to perform mutations.
+// Never acquire tm.mu.Lock() directly from code called by JS.
+//
+// Uses queueMu to prevent the "check-then-send" race condition during shutdown.
+// CRITICAL: We unlock BEFORE the select to prevent deadlock when queue is full.
+func (tm *TUIManager) scheduleWrite(fn func() error) {
+	tm.queueMu.Lock()
+	if tm.writerShutdown.IsSet() {
+		tm.queueMu.Unlock()
+		return
+	}
+	tm.queueMu.Unlock() // Unlock BEFORE select to prevent deadlock
+
+	// We can safely send because writerQueue is never closed.
+	// The select on writerStop handles the race where shutdown happens after unlock.
+	task := writeTask{fn: fn, resultCh: nil}
+	select {
+	case tm.writerQueue <- task:
+	case <-tm.writerStop:
+		// Writer has shut down, drop the task safely
+	}
+}
+
+// scheduleWriteAndWait queues a mutation task and waits for it to complete.
+// The task runs under tm.mu.Lock(). This method blocks until the task finishes.
+//
+// Use this when the caller needs confirmation that the mutation succeeded,
+// or when subsequent code depends on the mutation having been applied.
+//
+// IMPORTANT: This is the ONLY safe way for JS callbacks to perform synchronous mutations.
+//
+// Prevents shutdown hangs by selecting on writerStop/writerDone.
+// CRITICAL: We unlock BEFORE the select to prevent deadlock when queue is full.
+func (tm *TUIManager) scheduleWriteAndWait(fn func() error) error {
+	resultCh := make(chan error, 1)
+	task := writeTask{fn: fn, resultCh: resultCh}
+
+	// Step 1: Check shutdown flag under lock, then unlock before select
+	tm.queueMu.Lock()
+	if tm.writerShutdown.IsSet() {
+		tm.queueMu.Unlock()
+		return errors.New("writer goroutine has shut down")
+	}
+	tm.queueMu.Unlock() // Unlock BEFORE select to prevent deadlock
+
+	// The select on writerStop handles the race where shutdown happens after unlock.
+	select {
+	case tm.writerQueue <- task:
+		// Task queued successfully, proceed to wait for result
+	case <-tm.writerStop:
+		return errors.New("manager shutting down")
+	}
+
+	// Step 2: Wait for result OR shutdown signal.
+	// This fixes the "Shutdown Hang" defect.
+	select {
+	case err := <-resultCh:
+		return err
+	case <-tm.writerStop:
+		return errors.New("manager shutting down")
+	case <-tm.writerDone:
+		return errors.New("manager shutting down")
+	}
+}
+
+// stopWriter signals the writer to exit.
+// This implements the "Signal, Don't Close" pattern to eliminate panics.
+// The writerQueue channel is NEVER closed.
+func (tm *TUIManager) stopWriter() {
+	tm.queueMu.Lock()
+	// 1. Set flag to prevent new tasks from entering
+	tm.writerShutdown.Set()
+
+	// 2. Signal the writer loop to stop via the control channel
+	select {
+	case <-tm.writerStop:
+		// already closed
+	default:
+		close(tm.writerStop)
+	}
+	tm.queueMu.Unlock()
+
+	// 3. Wait for writer to finish current task and cleanup
+	<-tm.writerDone
 }
 
 // RegisterMode registers a new script mode.
@@ -126,7 +302,7 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 	// Exit current mode (outside the lock).
 	if onExitCallback != nil {
 		if _, err := onExitCallback(goja.Undefined()); err != nil {
-			_, _ = fmt.Fprintf(tm.output, "Error exiting mode %s: %v\n", currentMode.Name, err)
+			_, _ = fmt.Fprintf(tm.writer, "Error exiting mode %s: %v\n", currentMode.Name, err)
 		}
 	}
 
@@ -160,11 +336,12 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 			onEnterCallback = mode.OnEnter
 		}
 
-		_, _ = fmt.Fprintf(tm.output, "Switched to mode: %s\n", mode.Name)
-
 		unlocked = true
 		tm.mu.Unlock()
 	}
+
+	// N.B. After releasing the lock to mitigate deadlock risk.
+	_, _ = fmt.Fprintf(tm.writer, "Switched to mode: %s\n", mode.Name)
 
 	// Rehydrate ContextManager from shared state after mode switch
 	// This ensures file paths are restored from persisted contextItems
@@ -173,7 +350,7 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 	// N.B. Avoid calling holding locks here, or risk deadlock within command factories.
 	if builder != nil && needBuild {
 		if err := tm.buildModeCommands(mode); err != nil {
-			_, _ = fmt.Fprintf(tm.output, "Error building commands for mode %s: %v\n", mode.Name, err)
+			_, _ = fmt.Fprintf(tm.writer, "Error building commands for mode %s: %v\n", mode.Name, err)
 			// Note: We don't return the error to allow mode entry to continue
 		}
 	}
@@ -181,13 +358,13 @@ func (tm *TUIManager) SwitchMode(modeName string) error {
 	// The intent of this message is to notify the user that state restoration occurred.
 	// Excessive noise is detrimental, so we keep it concise / on one line.
 	if restoredItems > 0 {
-		_, _ = fmt.Fprintf(tm.output, "Session restored: %d items (%d files). 'reset' to clear.\n", restoredItems, restoredFiles)
+		_, _ = fmt.Fprintf(tm.writer, "Session restored: %d items (%d files). 'reset' to clear.\n", restoredItems, restoredFiles)
 	}
 
 	// N.B. Similarly, mitigate deadlock risk - avoid holding locks while calling OnEnter.
 	if onEnterCallback != nil {
 		if _, err := onEnterCallback(goja.Undefined(), goja.Undefined(), goja.Undefined()); err != nil {
-			_, _ = fmt.Fprintf(tm.output, "Error entering mode %s: %v\n", mode.Name, err)
+			_, _ = fmt.Fprintf(tm.writer, "Error entering mode %s: %v\n", mode.Name, err)
 		}
 	}
 
@@ -474,16 +651,24 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		return suggestions, istrings.RuneNumber(start), istrings.RuneNumber(end)
 	}
 
-	// Create the executor function
+	// Create the executor function.
+	// When executor returns false, signal the exit checker to terminate the prompt.
+	// We do NOT call os.Exit here - exit is handled gracefully via ExitChecker.
 	executor := func(line string) {
 		// Drain any pending output before executing the command
 		tm.flushQueuedOutput()
 		if !tm.executor(line) {
-			// If executor returns false, exit the prompt
-			os.Exit(0)
+			// Signal the prompt to exit via ExitChecker mechanism
+			tm.RequestExit()
 		}
 		// Flush any queued output synchronously after executing a line
 		tm.flushQueuedOutput()
+	}
+
+	// Create the exit checker that allows the prompt to exit when requested.
+	// This is called by go-prompt after each input to determine if Run() should return.
+	exitChecker := func(_ string, _ bool) bool {
+		return tm.IsExitRequested()
 	}
 
 	// Configure prompt options - full configuration for go-prompt
@@ -493,6 +678,7 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		// This ensures the prefix reflects any changes made by an `initialCommand`.
 		prompt.WithPrefixCallback(func() string { return tm.getPromptString() }),
 		prompt.WithCompleter(completer),
+		prompt.WithExitChecker(exitChecker), // Allow graceful exit via RequestExit()
 		prompt.WithInputTextColor(colors.InputText),
 		prompt.WithPrefixTextColor(colors.PrefixText),
 		prompt.WithSuggestionTextColor(colors.SuggestionText),
@@ -530,6 +716,14 @@ func (tm *TUIManager) runAdvancedPrompt() {
 
 	// this enables the sync protocol when built with the `integration` build tag
 	options = append(options, staticGoPromptOptions...)
+
+	// CRITICAL: Inject the shared reader/writer into go-prompt.
+	// This ensures go-prompt uses the same terminal I/O as bubbletea and tview,
+	// preventing conflicts over stdin and ensuring proper terminal state cleanup.
+	options = append(options,
+		prompt.WithReader(tm.reader),
+		prompt.WithWriter(tm.writer),
+	)
 
 	// Add command history from persistent session
 	if len(tm.commandHistory) > 0 {
@@ -570,10 +764,10 @@ func (tm *TUIManager) flushQueuedOutput() {
 	if len(queue) == 0 {
 		return
 	}
-	writer := &syncWriter{tm.output}
 	for _, m := range queue {
 		// Messages already include any necessary trailing newline.
-		_, _ = writer.Write([]byte(m))
+		b := unsafe.Slice(unsafe.StringData(m), len(m))
+		_, _ = tm.writer.Write(b)
 	}
 }
 
@@ -632,7 +826,7 @@ func (tm *TUIManager) captureHistorySnapshot(commandName string, commandArgs []s
 	// Capture snapshot
 	modeID := currentMode.Name
 	if err := tm.stateManager.CaptureSnapshot(modeID, cmdString, stateJSON); err != nil {
-		_, _ = fmt.Fprintf(tm.output, "Warning: Failed to capture history snapshot: %v\n", err)
+		_, _ = fmt.Fprintf(tm.writer, "Warning: Failed to capture history snapshot: %v\n", err)
 	}
 }
 
@@ -661,6 +855,35 @@ func (tm *TUIManager) TriggerExit() {
 	}
 }
 
+// SetExitRequested sets the runtime-only exit request flag.
+// This flag is NEVER persisted - it's purely for runtime coordination
+// between JavaScript commands and the shell loop's exit checker.
+func (tm *TUIManager) SetExitRequested(value bool) {
+	if value {
+		tm.exitRequested.Set()
+	} else {
+		tm.exitRequested.Clear()
+	}
+}
+
+// RequestExit signals that the shell loop should exit.
+// This is the preferred method to call from JavaScript.
+func (tm *TUIManager) RequestExit() {
+	tm.exitRequested.Set()
+}
+
+// ClearExitRequested clears the exit request flag.
+// Called when restarting a prompt loop or after handling an exit.
+func (tm *TUIManager) ClearExitRequested() {
+	tm.exitRequested.Clear()
+}
+
+// IsExitRequested returns whether an exit has been requested.
+// This is checked by the exit checker to determine if the shell loop should exit.
+func (tm *TUIManager) IsExitRequested() bool {
+	return tm.exitRequested.IsSet()
+}
+
 // PersistSessionForTest persists the current session (for testing only).
 func (tm *TUIManager) PersistSessionForTest() error {
 	if tm.stateManager != nil {
@@ -671,6 +894,10 @@ func (tm *TUIManager) PersistSessionForTest() error {
 
 // Close releases resources held by the TUI manager, including the state manager.
 func (tm *TUIManager) Close() error {
+	// Stop the writer goroutine first
+	if tm.writerQueue != nil {
+		tm.stopWriter()
+	}
 	if tm.stateManager != nil {
 		return tm.stateManager.Close()
 	}
@@ -695,11 +922,11 @@ func (tm *TUIManager) resetAllState() {
 		if err != nil {
 			// If archiving fails we MUST not destroy the existing session.
 			// Preserve state and warn the user so they can retry or investigate.
-			_, _ = fmt.Fprintf(tm.output, "WARNING: Failed to archive session: %v\nState preserved; reset aborted.\n", err)
+			_, _ = fmt.Fprintf(tm.writer, "WARNING: Failed to archive session: %v\nState preserved; reset aborted.\n", err)
 			return
 		}
 
-		_, _ = fmt.Fprintf(tm.output, "Session archived to: %s\n", archivePath)
+		_, _ = fmt.Fprintf(tm.writer, "Session archived to: %s\n", archivePath)
 
 		// Clear context manager only after a successful archive+reset so that
 		// we don't accidentally drop context items when the reset failed.
@@ -809,7 +1036,8 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 			// failures; it is not a security or correctness guarantee.
 			// Only attempt normalization if the original error indicates the
 			// file truly does not exist. Do not mask permission/IO errors.
-			if err != nil && (os.IsNotExist(err) || errors.Is(err, os.ErrNotExist)) && runtime.GOOS != "windows" && strings.Contains(label, "\\") {
+			// Note: err is guaranteed non-nil here since we returned early above on success.
+			if (os.IsNotExist(err) || errors.Is(err, os.ErrNotExist)) && runtime.GOOS != "windows" && strings.Contains(label, "\\") {
 				normalizedLabel := strings.ReplaceAll(label, "\\", "/")
 				normalized := filepath.Clean(filepath.FromSlash(normalizedLabel))
 				owner2, err2 := tm.engine.contextManager.AddRelativePath(normalized)
@@ -824,28 +1052,22 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 					validItems = append(validItems, item)
 					continue
 				}
-				// If the normalization fallback failed, prefer surfacing
-				// the fallback error rather than the original 'not exists'
-				// error so callers and logs reflect what actually failed.
-				if err2 != nil {
-					err = fmt.Errorf("fallback normalization failed for %s -> %s: %w", label, normalized, err2)
-				}
+				// Normalization fallback failed - prefer surfacing the fallback
+				// error rather than the original 'not exists' error.
+				err = fmt.Errorf("fallback normalization failed for %s -> %s: %w", label, normalized, err2)
 			}
 
-			if err != nil {
-				// If the file no longer exists, log it and remove from state
-				if os.IsNotExist(err) {
-					_, _ = fmt.Fprintf(tm.output, "Info: file from previous session not found, removing: %s\n", label)
-					stateChanged = true
-					continue
-				} else {
-					_, _ = fmt.Fprintf(tm.output, "Error restoring file %s: %v\n", label, err)
-					// For other errors, we also remove it to ensure the session is valid
-					stateChanged = true
-					continue
-				}
+			// Handle error (err is guaranteed non-nil here since we returned early on success)
+			// If the file no longer exists, log it and remove from state
+			if os.IsNotExist(err) {
+				_, _ = fmt.Fprintf(tm.writer, "Info: file from previous session not found, removing: %s\n", label)
+				stateChanged = true
+				continue
 			}
-			restoredFiles++
+			_, _ = fmt.Fprintf(tm.writer, "Error restoring file %s: %v\n", label, err)
+			// For other errors, we also remove it to ensure the session is valid
+			stateChanged = true
+			continue
 		}
 		// Keep valid items
 		validItems = append(validItems, item)
@@ -856,7 +1078,7 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 	if stateChanged {
 		tm.stateManager.SetState("contextItems", validItems)
 		if err := tm.stateManager.PersistSession(); err != nil {
-			_, _ = fmt.Fprintf(tm.output, "Warning: failed to persist rehydrated contextItems: %v\n", err)
+			_, _ = fmt.Fprintf(tm.writer, "Warning: failed to persist rehydrated contextItems: %v\n", err)
 		}
 	}
 

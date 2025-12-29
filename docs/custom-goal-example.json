@@ -5,8 +5,6 @@
   "usage": "Use this as a template for creating your own custom goals",
   "tuiTitle": "Example Custom Goal",
   "tuiPrompt": "(example) > ",
-  "historyFile": ".example_goal_history",
-  "enableHistory": true,
   "stateVars": {
     "customOption": "default-value",
     "counter": 0

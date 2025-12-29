@@ -26,6 +26,9 @@ type ScriptingCommand struct {
 	config          *config.Config
 	engineFactory   func(context.Context, io.Writer, io.Writer) (*scripting.Engine, error)
 	terminalFactory func(context.Context, *scripting.Engine) terminalRunner
+	// ctxFactory creates the execution context. If nil, uses signal.NotifyContext for proper
+	// signal handling. Tests should set this to avoid signal handling races.
+	ctxFactory func() (context.Context, context.CancelFunc)
 }
 
 type terminalRunner interface {
@@ -61,9 +64,16 @@ func (c *ScriptingCommand) SetupFlags(fs *flag.FlagSet) {
 
 // Execute runs the scripting command.
 func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) error {
-	// Create a context that cancels on interrupt signals (SIGINT, SIGTERM)
-	// This ensures goroutines spawned by the engine are properly cleaned up
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// Create execution context. Use injected factory if available (for tests),
+	// otherwise use signal.NotifyContext for proper signal handling.
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if c.ctxFactory != nil {
+		ctx, cancel = c.ctxFactory()
+	} else {
+		// Production: cancel on interrupt signals (SIGINT, SIGTERM)
+		ctx, cancel = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	}
 	defer cancel()
 
 	// Create scripting engine with explicit session configuration (no globals!)

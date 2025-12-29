@@ -50,7 +50,7 @@ func TestContextManagerRehydration(t *testing.T) {
 	output := &testOutput{}
 	tm := &TUIManager{
 		engine:       engine,
-		output:       output,
+		writer:       NewTUIWriterFromIO(output),
 		stateManager: stateManager,
 	}
 
@@ -169,7 +169,7 @@ func TestContextManagerRehydrationWithMissingFiles(t *testing.T) {
 	output := &testOutput{}
 	tm := &TUIManager{
 		engine:       engine,
-		output:       output,
+		writer:       NewTUIWriterFromIO(output),
 		stateManager: stateManager,
 	}
 
@@ -237,7 +237,7 @@ func TestContextManagerRehydrationNoItemsKey(t *testing.T) {
 	output := &testOutput{}
 	tm := &TUIManager{
 		engine:       engine,
-		output:       output,
+		writer:       NewTUIWriterFromIO(output),
 		stateManager: stateManager,
 	}
 

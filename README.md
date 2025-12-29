@@ -6,7 +6,7 @@
 
 Refine reproducible one-shot prompts from your terminal, then paste them into the LLM UI you already use.
 
-`osm` is a local-first CLI (with optional TUI) for constructing single-shot prompts:
+`osm` is an extensible scriptable local-first CLI (with optional TUI) for constructing single-shot prompts:
 files + diffs + notes + templates → prompt → clipboard.
 
 It does **not** call any model API. No keys, no "agent platform", no network required.
@@ -138,7 +138,15 @@ They are extensible, and discovered automatically from your filesystem.
 
 - **Script autodiscovery:** Discovery of user scripts works, but the file system traversal rules and UX are currently experimental.
 - **Logging surface (`log.*`):** While available for debugging custom scripts, the logging API is not yet stable.
-- **Pre-v1:** In the absence of a stable release, all API surfaces are subject to change, if deemed necessary.
+
+## Stability
+
+N.B. The `osm` tool includes a scripting environment as a core component.
+
+- Prompts and commands are subject to change, but are likely to remain largely stable.
+- No stable (v1) release; APIs are pre-v1 and may change. This `README.md` is the single source of truth for stability.
+- There are areas of active development:
+    - JS bindings for the [Charm](https://github.com/charmbracelet) ecosystem (see also [docs/scripting.md](docs/scripting.md)).
 
 ## Docs
 

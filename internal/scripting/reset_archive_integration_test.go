@@ -181,9 +181,10 @@ func TestResetCommand_WithArchive(t *testing.T) {
 	}
 
 	// Create a minimal TUI manager
+	var buf bytes.Buffer
 	tuiMgr := &TUIManager{
 		stateManager: stateManager,
-		output:       &bytes.Buffer{},
+		writer:       NewTUIWriterFromIO(&buf),
 	}
 
 	// Set some state before reset
@@ -205,7 +206,7 @@ func TestResetCommand_WithArchive(t *testing.T) {
 	}
 
 	// Check output mentions archive (if using filesystem backend)
-	output := tuiMgr.output.(*bytes.Buffer).String()
+	output := buf.String()
 	// For memory backend, ArchiveAndReset returns nil so we won't see the archive message
 	// but the reset should still work
 	if output != "" && !strings.Contains(output, "archive") && !strings.Contains(output, "WARNING") {

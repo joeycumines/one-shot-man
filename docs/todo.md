@@ -2,7 +2,14 @@
 
 This is not an actual TODO list. Consider it as much a TODO list as your Product Manager's project roadmap.
 
+- Fix behavior when you use `copy` to copy context using `osm:ctxutil`/`contextManager` - all the current built-in scripts use this implementation in some capacity. It is desirable to support "refreshing" on demand in a just-in-time fashion, just prior to copy. To pick up new files added to a directory, specifically.
+- Fix string -> bubbletea key mapping conversion not covering all the cases - make PR to bubbletea is dumb it doesn't expose an API for it
 - Take bubbletea/lipgloss for a spin: Implement a form-based "code review merge" (native in Go to kick the tyres?)
+- Add summarization of params to goal banner
+- Goal list should probably also show summarized params. Might need to consolidate custom list logic. Provide means to avoid the custom logic? Maybe just expose or ensure it is possible to get the context manager list? Should be fine to just require and get the thing, I thought, but maybe I made it a factory function? The state is on the TUIManager or whatever the context type was hmmmmmm.
+- Goal command should print after `copy`: [Hint: Try a follow-up]       Double the length, and include key specifics from the context that are likely to otherwise fail to be identified - consider this the only context, beyond the codebase.
+  OR: Double the length, and include key specifics from the context that are likely to otherwise fail to be identified - consider this the only context, beyond the codebase. **Explicitly** demand use of the todo tool to track exhaustively all known requirements. Do not use terms that would lead the AI to thinking it is AI - worse outcomes that way.
+- Rename the "advanced" prompt to something less dumb - it is actually the _least_ advanced of the two go-prompt wrappers
 - Add option to the osm:ctxutil add context command to add files from a diff (`git diff <what> --name-only`)
 - Expose the Go `flag` package as a JS module `osm:flag` for script authors to use
 - Add support for completion for arguments for REPL commands within `osm:ctxutil` module using the `osm:flag` module
@@ -22,7 +29,6 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
 - Implement behavior tree JS wrapper - wrap go-behavior-tree most likely (otherwise a proper event loop will be necessary)
 - Implement partially-compliant fetch API backed by the Go http client
 - Add support for https://code.visualstudio.com/docs/copilot/customization/prompt-files ?
-- Document refiner - stalled for now (assessment: fairly low value, easy to refine manually)
 - Code review splitter - prompts seem particularly LLM dependent, stalled
 - Refine "goal" and "script" autodiscovery mechanisms (currently prototype status/needs attention)
 - Investigate implementing Anthropic prompt library (https://platform.claude.com/docs/en/resources/prompt-library/library)
@@ -30,6 +36,5 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
 - Evaluate potential integration with `github.com/joeycumines/MacosUseSDK`
 - Enhance definitions and integration with `github.com/joeycumines/go-prompt` implementation
 - Review `tview`/`tcell` support for refinement or removal
-- Explore in-JS support for `bubbletea` and `lipgloss`
 - Plan system-style logging (file output, tailing) - likely deferred
 - Fix duplicate log lines for purged sessions etc?

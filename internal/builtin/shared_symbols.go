@@ -9,6 +9,10 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 
+// StateListener is a callback function invoked when state changes.
+// It receives the key that was changed.
+type StateListener func(key string)
+
 // StateManagerProvider provides access to a StateManager instance.
 type StateManagerProvider interface {
 	GetStateManager() StateManager
@@ -30,6 +34,11 @@ type StateManager interface {
 	ArchiveAndReset() (string, error)
 	Close() error
 	ClearAllState()
+	// AddListener registers a callback to be invoked when state changes.
+	// Returns a listener ID for removal.
+	AddListener(fn StateListener) int
+	// RemoveListener unregisters a previously added listener by ID.
+	RemoveListener(id int)
 }
 
 // sharedStateKeys defines the canonical string keys for all shared state.

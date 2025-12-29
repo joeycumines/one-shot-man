@@ -14,7 +14,7 @@ require (
 	github.com/dop251/goja v0.0.0-20251201205617-2bb4c724c0f9
 	github.com/dop251/goja_nodejs v0.0.0-20251015164255-5e94316bedaf
 	github.com/gdamore/tcell/v2 v2.13.5
-	github.com/joeycumines/go-prompt v0.0.0-20251223235132-50a94412ea31
+	github.com/joeycumines/go-prompt v0.0.0-20251229222625-118b9ef8ec20
 	github.com/rivo/tview v0.42.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/term v0.38.0

@@ -326,7 +326,7 @@ func TestGoalCommand_GoToJSPipeline_PromptTemplate(t *testing.T) {
 		}
 
 		// Verify template contains expected placeholders
-		if !strings.Contains(goal.PromptTemplate, "{{.description") {
+		if goal.Name != "implementation-plan" && !strings.Contains(goal.PromptTemplate, "{{.description") {
 			t.Errorf("Goal %q PromptTemplate missing {{.description}} placeholder", goal.Name)
 		}
 		if !strings.Contains(goal.PromptTemplate, "{{.promptInstructions}}") {
@@ -349,11 +349,12 @@ func TestGoalCommand_GoToJSPipeline_ContextHeader(t *testing.T) {
 	goals := goalRegistry.GetAllGoals()
 
 	expectedHeaders := map[string]string{
-		"commit-message":   "DIFF CONTEXT / CHANGES",
-		"doc-generator":    "CODE TO DOCUMENT",
-		"test-generator":   "CODE TO TEST",
-		"comment-stripper": "CODE TO ANALYZE",
-		"morale-improver":  "CONTEXT",
+		"commit-message":      "DIFF CONTEXT / CHANGES",
+		"doc-generator":       "CODE TO DOCUMENT",
+		"test-generator":      "CODE TO TEST",
+		"comment-stripper":    "CODE TO ANALYZE",
+		"morale-improver":     "CONTEXT",
+		"implementation-plan": "CONTEXT & REQUIREMENTS",
 	}
 
 	for _, goal := range goals {

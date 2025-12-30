@@ -654,7 +654,7 @@ This illustrates the required level of detail and structure:
 
 ---
 
-## CONTEXT & REQUIREMENTS
+## {{.contextHeader}}
 
 {{.contextTxtar}}
 
@@ -665,7 +665,7 @@ This illustrates the required level of detail and structure:
 !! You MUST act as a domain expert. You MUST NOT hedge. You MUST solely respond based on the "!!"-surrounded GOAL. !!
 `,
 
-			ContextHeader: "CONTEXT",
+			ContextHeader: "CONTEXT & REQUIREMENTS",
 
 			BannerTemplate: `Implementation Plan Generator
 Type 'help' for commands.`,

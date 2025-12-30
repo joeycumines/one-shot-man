@@ -171,20 +171,20 @@ Maintain all functionality and behavior of the original code while improving its
 					Description: "Set documentation type",
 					Usage:       "type <comprehensive|api|readme|inline|tutorial>",
 					Handler: `function (args) {
-						if (args.length === 0) {
-							output.print("Current type: " + (state.get(stateKeys.type) || "comprehensive"));
-							output.print("Available types: comprehensive, api, readme, inline, tutorial");
-							return;
-						}
-						const type = args[0].toLowerCase();
-						const validTypes = ["comprehensive", "api", "readme", "inline", "tutorial"];
-						if (!validTypes.includes(type)) {
-							output.print("Invalid type. Available: " + validTypes.join(", "));
-							return;
-						}
-						state.set(stateKeys.type, type);
-						output.print("Documentation type set to: " + type);
-					}`,
+                        if (args.length === 0) {
+                            output.print("Current type: " + (state.get(stateKeys.type) || "comprehensive"));
+                            output.print("Available types: comprehensive, api, readme, inline, tutorial");
+                            return;
+                        }
+                        const type = args[0].toLowerCase();
+                        const validTypes = ["comprehensive", "api", "readme", "inline", "tutorial"];
+                        if (!validTypes.includes(type)) {
+                            output.print("Invalid type. Available: " + validTypes.join(", "));
+                            return;
+                        }
+                        state.set(stateKeys.type, type);
+                        output.print("Documentation type set to: " + type);
+                    }`,
 				},
 				{Name: "help", Type: "help"},
 			},
@@ -306,20 +306,20 @@ Use the {{.stateKeys.framework}} testing framework.
 					Description: "Set test type",
 					Usage:       "type <unit|integration|e2e|performance|security>",
 					Handler: `function (args) {
-						if (args.length === 0) {
-							output.print("Current type: " + (state.get(stateKeys.type) || "unit"));
-							output.print("Available types: unit, integration, e2e, performance, security");
-							return;
-						}
-						const type = args[0].toLowerCase();
-						const validTypes = ["unit", "integration", "e2e", "performance", "security"];
-						if (!validTypes.includes(type)) {
-							output.print("Invalid type. Available: " + validTypes.join(", "));
-							return;
-						}
-						state.set(stateKeys.type, type);
-						output.print("Test type set to: " + type);
-					}`,
+                        if (args.length === 0) {
+                            output.print("Current type: " + (state.get(stateKeys.type) || "unit"));
+                            output.print("Available types: unit, integration, e2e, performance, security");
+                            return;
+                        }
+                        const type = args[0].toLowerCase();
+                        const validTypes = ["unit", "integration", "e2e", "performance", "security"];
+                        if (!validTypes.includes(type)) {
+                            output.print("Invalid type. Available: " + validTypes.join(", "));
+                            return;
+                        }
+                        state.set(stateKeys.type, type);
+                        output.print("Test type set to: " + type);
+                    }`,
 				},
 				{
 					Name:        "framework",
@@ -327,20 +327,20 @@ Use the {{.stateKeys.framework}} testing framework.
 					Description: "Set testing framework",
 					Usage:       "framework <auto|jest|mocha|go|pytest|junit|rspec>",
 					Handler: `function (args) {
-						if (args.length === 0) {
-							output.print("Current framework: " + (state.get(stateKeys.framework) || "auto"));
-							output.print("Available frameworks: auto, jest, mocha, go, pytest, junit, rspec");
-							return;
-						}
-						const fw = args[0].toLowerCase();
-						const validFrameworks = ["auto", "jest", "mocha", "go", "pytest", "junit", "rspec"];
-						if (!validFrameworks.includes(fw)) {
-							output.print("Invalid framework. Available: " + validFrameworks.join(", "));
-							return;
-						}
-						state.set(stateKeys.framework, fw);
-						output.print("Testing framework set to: " + fw);
-					}`,
+                        if (args.length === 0) {
+                            output.print("Current framework: " + (state.get(stateKeys.framework) || "auto"));
+                            output.print("Available frameworks: auto, jest, mocha, go, pytest, junit, rspec");
+                            return;
+                        }
+                        const fw = args[0].toLowerCase();
+                        const validFrameworks = ["auto", "jest", "mocha", "go", "pytest", "junit", "rspec"];
+                        if (!validFrameworks.includes(fw)) {
+                            output.print("Invalid framework. Available: " + validFrameworks.join(", "));
+                            return;
+                        }
+                        state.set(stateKeys.framework, fw);
+                        output.print("Testing framework set to: " + fw);
+                    }`,
 				},
 				{Name: "help", Type: "help"},
 			},
@@ -491,31 +491,31 @@ There is no "I'll do it later." There is no "that's good enough." There is no "c
 					Description: "Set the original instructions that were ignored",
 					Usage:       "set-original <text>",
 					Handler: `function (args) {
-						const current = state.get(stateKeys.originalInstructions) || "";
-						let text;
-						if (args.length === 0) {
-							const edited = ctxmgr.openEditor("original-instructions", current);
-							text = (edited || "").trim();
-						} else {
-							text = args.join(" ").trim();
-						}
-						if (!text) {
-							const wasSet = current !== "";
-							if (wasSet) {
-								state.set(stateKeys.originalInstructions, null);
-								output.print("Original instructions cleared");
-							} else {
-								output.print("Original instructions not updated (no content provided).");
-							}
-							return;
-						}
-						if (text !== current) {
-							state.set(stateKeys.originalInstructions, text);
-							output.print("Original instructions set successfully");
-						} else {
-							output.print("Original instructions unchanged");
-						}
-					}`,
+                        const current = state.get(stateKeys.originalInstructions) || "";
+                        let text;
+                        if (args.length === 0) {
+                            const edited = ctxmgr.openEditor("original-instructions", current);
+                            text = (edited || "").trim();
+                        } else {
+                            text = args.join(" ").trim();
+                        }
+                        if (!text) {
+                            const wasSet = current !== "";
+                            if (wasSet) {
+                                state.set(stateKeys.originalInstructions, null);
+                                output.print("Original instructions cleared");
+                            } else {
+                                output.print("Original instructions not updated (no content provided).");
+                            }
+                            return;
+                        }
+                        if (text !== current) {
+                            state.set(stateKeys.originalInstructions, text);
+                            output.print("Original instructions set successfully");
+                        } else {
+                            output.print("Original instructions unchanged");
+                        }
+                    }`,
 				},
 				{
 					Name:        "set-plan",
@@ -523,31 +523,31 @@ There is no "I'll do it later." There is no "that's good enough." There is no "c
 					Description: "Set the plan that was disregarded",
 					Usage:       "set-plan <text>",
 					Handler: `function (args) {
-						const current = state.get(stateKeys.failedPlan) || "";
-						let text;
-						if (args.length === 0) {
-							const edited = ctxmgr.openEditor("failed-plan", current);
-							text = (edited || "").trim();
-						} else {
-							text = args.join(" ").trim();
-						}
-						if (!text) {
-							const wasSet = current !== "";
-							if (wasSet) {
-								state.set(stateKeys.failedPlan, null);
-								output.print("Failed plan cleared");
-							} else {
-								output.print("Failed plan not updated (no content provided).");
-							}
-							return;
-						}
-						if (text !== current) {
-							state.set(stateKeys.failedPlan, text);
-							output.print("Failed plan set successfully");
-						} else {
-							output.print("Failed plan unchanged");
-						}
-					}`,
+                        const current = state.get(stateKeys.failedPlan) || "";
+                        let text;
+                        if (args.length === 0) {
+                            const edited = ctxmgr.openEditor("failed-plan", current);
+                            text = (edited || "").trim();
+                        } else {
+                            text = args.join(" ").trim();
+                        }
+                        if (!text) {
+                            const wasSet = current !== "";
+                            if (wasSet) {
+                                state.set(stateKeys.failedPlan, null);
+                                output.print("Failed plan cleared");
+                            } else {
+                                output.print("Failed plan not updated (no content provided).");
+                            }
+                            return;
+                        }
+                        if (text !== current) {
+                            state.set(stateKeys.failedPlan, text);
+                            output.print("Failed plan set successfully");
+                        } else {
+                            output.print("Failed plan unchanged");
+                        }
+                    }`,
 				},
 				{
 					Name:        "set-failures",
@@ -555,33 +555,184 @@ There is no "I'll do it later." There is no "that's good enough." There is no "c
 					Description: "Set specific failures and gaps",
 					Usage:       "set-failures <text>",
 					Handler: `function (args) {
-						const current = state.get(stateKeys.specificFailures) || "";
-						let text;
-						if (args.length === 0) {
-							const edited = ctxmgr.openEditor("specific-failures", current);
-							text = (edited || "").trim();
-						} else {
-							text = args.join(" ").trim();
-						}
-						if (!text) {
-							const wasSet = current !== "";
-							if (wasSet) {
-								state.set(stateKeys.specificFailures, null);
-								output.print("Specific failures cleared");
-							} else {
-								output.print("Specific failures not updated (no content provided).");
-							}
-							return;
-						}
-						if (text !== current) {
-							state.set(stateKeys.specificFailures, text);
-							output.print("Specific failures set successfully");
-						} else {
-							output.print("Specific failures unchanged");
-						}
-					}`,
+                        const current = state.get(stateKeys.specificFailures) || "";
+                        let text;
+                        if (args.length === 0) {
+                            const edited = ctxmgr.openEditor("specific-failures", current);
+                            text = (edited || "").trim();
+                        } else {
+                            text = args.join(" ").trim();
+                        }
+                        if (!text) {
+                            const wasSet = current !== "";
+                            if (wasSet) {
+                                state.set(stateKeys.specificFailures, null);
+                                output.print("Specific failures cleared");
+                            } else {
+                                output.print("Specific failures not updated (no content provided).");
+                            }
+                            return;
+                        }
+                        if (text !== current) {
+                            state.set(stateKeys.specificFailures, text);
+                            output.print("Specific failures set successfully");
+                        } else {
+                            output.print("Specific failures unchanged");
+                        }
+                    }`,
 				},
 				{Name: "help", Type: "help"},
+			},
+		},
+
+		// Implementation Plan Goal
+		{
+			Name:        "implementation-plan",
+			Description: "Prepare a detailed, explicit implementation plan for a given task.",
+			Category:    "planning",
+			Usage:       "osm goal implementation-plan",
+			Script:      goalScript,
+			FileName:    "goal.js",
+
+			TUITitle:  "Implementation Plan",
+			TUIPrompt: "(plan) > ",
+
+			StateVars: map[string]interface{}{
+				"goalText": "Prepare a detailed, _explicit_ implementation plan, .",
+			},
+
+			PromptInstructions: `!! N.B. only statements surrounded by "!!" are _instructions_. !!
+
+!! You MUST act as a domain expert. You MUST NOT hedge. You MUST solely respond based on the "!!"-surrounded GOAL. !!
+
+!! Consider the implementation, attached, in doing so. !!
+
+!! Avoid the use of **corrective antithesis** or the **'not X, but Y'** and **'it's not just X, it's Y'** framing. !!
+
+!! Ensure, or rather GUARANTEE the correctness of your response. Since you're _guaranteeing_ it, sink commensurate effort; you care deeply about keeping your word, after all. Even then, I expect you to think very VERY hard, significantly harder than you might expect. Assume, from start to finish, that there's _always_ another problem, and you just haven't caught it yet. !!
+
+!! **GOAL:** {{.stateKeys.goalText -}} !!
+
+!! Your primary task is to generate a detailed, explicit implementation plan. You MUST model your response on the gold-standard example, "EXAMPLE SNIPPET", internalizing its structure and quality. !!
+
+!! Your plan MUST embody the following key qualities: !!
+
+1.  **Clear Objectives**: Start with a concise, high-level summary of what the implementation will achieve.
+2.  **Phased Breakdown**: Logically divide the work into sequential phases (e.g., Phase 1: Architecture, Phase 2: Implementation, etc.). Each phase should have a clear goal.
+3.  **Actionable Tasks**: Within each phase, list discrete, actionable tasks. Each task should be a concrete step that can be implemented and verified.
+4.  **Technical Specifics**: Provide necessary technical details, such as function signatures, data structures, file paths, schema definitions, and command examples. Avoid ambiguity.
+5.  **Correctness & Guarantees**: Include a dedicated section outlining how the correctness of the implementation will be verified and what guarantees it provides.
+
+---
+
+!! **EXAMPLE SNIPPET** !!
+
+This illustrates the required level of detail and structure:
+
+## **Phase 1: Goal Discovery & Loading Architecture**
+
+### **1.1 Goal Definition Format**
+- Introduce a **standardized file format** for goal definitions (e.g., ` + "`goal.json`" + `).
+- File must contain all fields currently defined in the ` + "`Goal`" + ` struct.
+- File must be placed in a **well-known directory** (e.g., ` + "`~/.one-shot-man/goals/`" + `).
+
+### **1.2 Goal Discovery Paths**
+- Extend ` + "`ScriptDiscovery`" + ` logic to include **goal discovery paths**:
+  - ` + "`~/.one-shot-man/goals/`" + `
+  - ` + "`<exec-dir>/goals/`" + `
+  - Additional paths via config: ` + "`goal.paths = /custom/path`" + `
+
+## **Phase 5: Implementation Tasks (Ordered)**
+
+### **5.1 Core Changes**
+1.  **Define goal file schema** (JSON-compatible with ` + "`Goal`" + ` struct).
+2.  **Implement ` + "`LoadGoalFromFile`" + ` with validation.
+3.  **Implement ` + "`DynamicGoalRegistry`" + `.
+4.  **Refactor ` + "`GoalCommand`" + ` to use the registry.`,
+
+			PromptTemplate: `{{.promptInstructions}}
+
+---
+
+## CONTEXT & REQUIREMENTS
+
+{{.contextTxtar}}
+
+---
+
+!! You MUST act as a domain expert. You MUST NOT hedge. You MUST solely respond based on the "!!"-surrounded GOAL. !!
+
+!! You MUST act as a domain expert. You MUST NOT hedge. You MUST solely respond based on the "!!"-surrounded GOAL. !!
+`,
+
+			ContextHeader: "CONTEXT",
+
+			BannerTemplate: `Implementation Plan Generator
+Type 'help' for commands.`,
+
+			UsageTemplate: `Available commands:
+  add <file>      Add files to context
+  note <text>      Add a note
+  list            List context items
+  edit <index>    Edit a context item
+  remove <index>  Remove a context item
+  show            Show the current prompt
+  copy            Copy prompt to clipboard
+  goal <text>      Update the core goal text for the plan
+  reset            Reset the context to the current goal text
+  help            Show this help text`,
+
+			Commands: []CommandConfig{
+				{
+					Name:        "add",
+					Type:        "contextManager",
+					Description: "Add files to context",
+				},
+				{
+					Name:        "diff",
+					Type:        "contextManager",
+					Description: "Add a diff to context",
+				},
+				{
+					Name:        "note",
+					Type:        "contextManager",
+					Description: "Add a text note",
+				},
+				{
+					Name:        "list",
+					Type:        "contextManager",
+					Description: "List all context items",
+				},
+				{
+					Name:        "edit",
+					Type:        "contextManager",
+					Description: "Edit a context item",
+				},
+				{
+					Name:        "remove",
+					Type:        "contextManager",
+					Description: "Remove a context item",
+				},
+				{
+					Name:        "show",
+					Type:        "contextManager",
+					Description: "Show the current prompt",
+				},
+				{
+					Name:        "copy",
+					Type:        "contextManager",
+					Description: "Copy prompt to clipboard",
+				},
+				{
+					Name:        "goal",
+					Type:        "custom",
+					Description: "Set the core goal text for the plan",
+					Usage:       "goal <new goal text...>",
+					Handler: `function (args) {
+  state.set(stateKeys.goalText, (args.length === 0 ? ctxmgr.openEditor("goal", state.get(stateKeys.goalText)) : args.join(' ')).replace(/[\r\n]+$/, ''));
+  output.print("Goal text updated. Use 'reset' to apply it to the context.");
+}`,
+				},
 			},
 		},
 	}

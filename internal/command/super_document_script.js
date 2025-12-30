@@ -157,7 +157,7 @@ const nextIntegerId = require('osm:nextIntegerId');
 const template = require('osm:text/template');
 const tea = require('osm:bubbletea');
 const lipgloss = require('osm:lipgloss');
-const osm = require('osm:os');
+const os = require('osm:os');
 const zone = require('osm:bubblezone');
 const textareaLib = require('osm:bubbles/textarea');
 const viewportLib = require('osm:bubbles/viewport'); // MUST be used: integrate the viewport instance into list rendering (see SCROLLING section below). Do NOT leave this import unused.
@@ -856,7 +856,7 @@ function handleKeys(msg, s) {
                     // Copy final prompt (includes documents + other context)
                     const prompt = buildFinalPrompt();
                     try {
-                        osm.clipboardCopy(prompt);
+                        os.clipboardCopy(prompt);
                         s.statusMsg = `Copied prompt (${prompt.length} chars)`;
                         s.hasError = false;
                     } catch (e) {
@@ -1022,7 +1022,7 @@ function handleKeys(msg, s) {
             s.clipboard = prompt;
             try {
                 // Call the system clipboard via osm:os module
-                osm.clipboardCopy(prompt);
+                os.clipboardCopy(prompt);
                 s.statusMsg = `Copied prompt (${prompt.length} chars)`;
                 s.hasError = false;
             } catch (e) {
@@ -1104,7 +1104,7 @@ function handleKeys(msg, s) {
                 updateDocument(s.editingDocId, undefined, s.labelBuffer.trim());
                 s.statusMsg = 'Renamed document';
             } else if (s.inputOperation === INPUT_LOAD) {
-                const res = osm.readFile(s.labelBuffer.trim());
+                const res = os.readFile(s.labelBuffer.trim());
                 if (res.error) {
                     s.statusMsg = 'Error: ' + res.error;
                     s.hasError = true;
@@ -1159,7 +1159,7 @@ function handleKeys(msg, s) {
                     const allContent = s.contentTextarea.value();
                     if (allContent) {
                         try {
-                            osm.clipboardCopy(allContent);
+                            os.clipboardCopy(allContent);
                             s.statusMsg = 'All content copied to clipboard (' + allContent.length + ' chars)';
                             s.hasError = false;
                         } catch (e) {
@@ -2151,7 +2151,7 @@ function buildCommands() {
             handler: function (args) {
                 if (args.length >= 2 && args[0] === "--file") {
                     const path = args[1];
-                    const res = osm.readFile(path);
+                    const res = os.readFile(path);
                     if (res.error) {
                         output.print("Error: " + res.error);
                         return;

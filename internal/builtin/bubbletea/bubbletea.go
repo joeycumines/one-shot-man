@@ -101,9 +101,10 @@
 //
 // Error codes:
 //   - BT001: Invalid duration (tick command)
-//   - BT002: Invalid command in batch/sequence
-//   - BT003: TTY initialization failed
 //   - BT004: Program execution failed
+//   - BT005: Invalid model object
+//   - BT006: Invalid arguments
+//   - BT007: Panic during program execution
 //
 // # Implementation Notes
 //

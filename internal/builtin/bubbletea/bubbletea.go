@@ -75,11 +75,11 @@
 //	// msg.width, msg.height - terminal dimensions
 //
 //	// Focus events (when reportFocus enabled)
-//	// msg.type === 'focus'  - terminal gained focus
-//	// msg.type === 'blur'   - terminal lost focus
+//	// msg.type === 'Focus'  - terminal gained focus
+//	// msg.type === 'Blur'   - terminal lost focus
 //
 //	// Tick events (from tick command)
-//	// msg.type === 'tick'
+//	// msg.type === 'Tick'
 //	// msg.id - the id passed to tick()
 //	// msg.time - timestamp in milliseconds
 //
@@ -141,8 +141,6 @@ import (
 // Error codes for bubbletea operations.
 const (
 	ErrCodeInvalidDuration = "BT001" // Invalid duration (tick command)
-	ErrCodeInvalidCommand  = "BT002" // Invalid command in batch/sequence
-	ErrCodeTTYInitFailed   = "BT003" // TTY initialization failed
 	ErrCodeProgramFailed   = "BT004" // Program execution failed
 	ErrCodeInvalidModel    = "BT005" // Invalid model object
 	ErrCodeInvalidArgs     = "BT006" // Invalid arguments
@@ -547,17 +545,17 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]interface{} {
 
 	case tea.FocusMsg:
 		return map[string]interface{}{
-			"type": "focus",
+			"type": "Focus",
 		}
 
 	case tea.BlurMsg:
 		return map[string]interface{}{
-			"type": "blur",
+			"type": "Blur",
 		}
 
 	case tickMsg:
 		return map[string]interface{}{
-			"type": "tick",
+			"type": "Tick",
 			"id":   msg.id,
 			"time": msg.time.UnixMilli(),
 		}
@@ -565,17 +563,17 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]interface{} {
 	case quitMsg:
 		m.quitCalled = true
 		return map[string]interface{}{
-			"type": "quit",
+			"type": "Quit",
 		}
 
 	case clearScreenMsg:
 		return map[string]interface{}{
-			"type": "clearScreen",
+			"type": "ClearScreen",
 		}
 
 	case stateRefreshMsg:
 		return map[string]interface{}{
-			"type": "stateRefresh",
+			"type": "StateRefresh",
 			"key":  msg.key,
 		}
 

@@ -1,5 +1,6 @@
+#!/usr/bin/env osm script --test
+
 // Debug script to test TUI API bindings
-// Usage: osm script --test scripts/debug-tui.js
 
 ctx.log("Testing TUI API bindings...");
 

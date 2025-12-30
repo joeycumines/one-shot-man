@@ -1,5 +1,6 @@
+#!/usr/bin/env osm script -i
+
 // Demo Mode - Simple example of rich TUI mode system
-// Usage: osm script -i scripts/demo-mode.js
 
 ctx.log("Setting up demo mode...");
 

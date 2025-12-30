@@ -102,7 +102,7 @@ func TestScriptModeExecution(t *testing.T) {
 	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
 
 	t.Run("DemoModeScript", func(t *testing.T) {
-		cmd := exec.Command(binaryPath, "script", "--test", filepath.Join(projectDir, "scripts", "demo-mode.js"))
+		cmd := exec.Command(binaryPath, "script", "--test", filepath.Join(projectDir, "scripts", "test-01-register-mode.js"))
 		cmd.Dir = filepath.Dir(binaryPath)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
@@ -120,7 +120,7 @@ func TestScriptModeExecution(t *testing.T) {
 	})
 
 	t.Run("LLMPromptBuilderScript", func(t *testing.T) {
-		cmd := exec.Command(binaryPath, "script", "--test", filepath.Join(projectDir, "scripts", "llm-prompt-builder.js"))
+		cmd := exec.Command(binaryPath, "script", "--test", filepath.Join(projectDir, "scripts", "example-01-llm-prompt-builder.js"))
 		cmd.Dir = filepath.Dir(binaryPath)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
@@ -134,7 +134,7 @@ func TestScriptModeExecution(t *testing.T) {
 	})
 
 	t.Run("DebugTUIScript", func(t *testing.T) {
-		cmd := exec.Command(binaryPath, "script", "--test", filepath.Join(projectDir, "scripts", "debug-tui.js"))
+		cmd := exec.Command(binaryPath, "script", "--test", filepath.Join(projectDir, "scripts", "test-03-debug-tui.js"))
 		cmd.Dir = filepath.Dir(binaryPath)
 		output, err := cmd.CombinedOutput()
 		if err != nil {

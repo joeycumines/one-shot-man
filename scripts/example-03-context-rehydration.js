@@ -1,8 +1,7 @@
-// Test script for context manager re-hydration after session restore
-// This verifies that the ContextManager state is correctly re-initialized
-// when loading history from a persisted session.
-//
-// Usage: osm script -i scripts/test-context-rehydration.js
+#!/usr/bin/env osm script -i
+
+// Example script to demonstrate ContextManager re-hydration after restart.
+// N.B. "Context" may include _files_, which may be missing, e.g. when switching between git branches.
 
 ctx.log("Testing ContextManager re-hydration...");
 
@@ -54,7 +53,7 @@ tui.registerMode({
             getItems: () => state.get(sharedSymbols.contextItems),
             setItems: (v) => state.set(sharedSymbols.contextItems, v),
             nextIntegerId: nextIntegerId,
-            buildPrompt: function() {
+            buildPrompt: function () {
                 return "# Test Prompt\n\n" + context.toTxtar();
             }
         });
@@ -129,5 +128,4 @@ tui.registerMode({
     }
 });
 
-ctx.log("Context re-hydration test mode registered!");
-ctx.log("Switch to test mode with: mode " + MODE_NAME);
+tui.switchMode(MODE_NAME);

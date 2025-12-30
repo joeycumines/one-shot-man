@@ -10,7 +10,7 @@ import (
 func TestLLMPromptBuilderCommands(t *testing.T) {
 	ctx := context.Background()
 	engine := mustNewEngine(t, ctx, nil, nil)
-	scriptPath := filepath.Join("..", "..", "scripts", "llm-prompt-builder.js")
+	scriptPath := filepath.Join("..", "..", "scripts", "example-01-llm-prompt-builder.js")
 	script, err := engine.LoadScript("llm-prompt-builder", scriptPath)
 	if err != nil {
 		t.Fatalf("Failed to load script: %v", err)

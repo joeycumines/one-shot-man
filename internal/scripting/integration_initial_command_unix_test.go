@@ -20,7 +20,7 @@ func TestInitialCommand_DefersPrompt(t *testing.T) {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
 	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
-	scriptPath := filepath.Join(projectDir, "scripts", "initial-command-test.js")
+	scriptPath := filepath.Join(projectDir, "scripts", "test-02-initial-command.js")
 
 	env := newTestProcessEnv(t)
 	defaultTimeout := 20 * time.Second

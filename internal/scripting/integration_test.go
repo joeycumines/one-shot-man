@@ -86,7 +86,7 @@ func TestFullLLMWorkflow(t *testing.T) {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
 	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
-	scriptPath := filepath.Join(projectDir, "scripts", "llm-prompt-builder.js")
+	scriptPath := filepath.Join(projectDir, "scripts", "example-01-llm-prompt-builder.js")
 
 	t.Logf("Working directory: %s", wd)
 	t.Logf("Project directory: %s", projectDir)
@@ -689,7 +689,7 @@ func TestErrorHandling(t *testing.T) {
 	defer cancel()
 
 	cp, err := termtest.NewConsole(ctx,
-		termtest.WithCommand(binaryPath, "script", "-i", filepath.Join(projectDir, "scripts", "demo-mode.js")),
+		termtest.WithCommand(binaryPath, "script", "-i", filepath.Join(projectDir, "scripts", "test-01-register-mode.js")),
 		termtest.WithDefaultTimeout(defaultTimeout),
 		termtest.WithEnv(env),
 	)

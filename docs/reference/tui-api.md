@@ -29,7 +29,7 @@ Implementation notes:
 
 - The mode record is stored in the TUI manager's `modes` map keyed by the provided `name`.
 
-See `scripts/*` for examples (e.g., `scripts/demo-mode.js`, `scripts/initial-command-test.js`).
+See `scripts/*` for examples (e.g., `scripts/test-01-register-mode.js`, `scripts/test-02-initial-command.js`).
 
 ### `tui.switchMode(name)`
 
@@ -211,4 +211,11 @@ N.B. Modes and commands are intentionally separate from persisted state; `tui.cr
 
 ## Examples
 
-- See `scripts/test-advanced-prompt.js` for a full example of `createAdvancedPrompt`, `registerCompleter`, `setCompleter`, `registerKeyBinding`, and running a prompt from a command.
+N.B. The _best_ examples are the built-in commands.
+
+- [scripts/test-01-register-mode.js](../../scripts/test-01-register-mode.js) — register a simple mode and switch to it.
+- [scripts/test-02-initial-command.js](../../scripts/test-02-initial-command.js) — demonstrate `initialCommand` behavior.
+- [scripts/example-01-llm-prompt-builder.js](../../scripts/example-01-llm-prompt-builder.js) — build an advanced prompt and completer.
+- [scripts/example-02-graphical-todo.js](../../scripts/example-02-graphical-todo.js) — simple interactive user interface w/ mouse support.
+- [scripts/example-03-context-rehydration.js](../../scripts/example-03-context-rehydration.js) — persisted state and context rehydration.
+- [scripts/test-03-debug-tui.js](../../scripts/test-03-debug-tui.js) — key bindings and exit control examples.

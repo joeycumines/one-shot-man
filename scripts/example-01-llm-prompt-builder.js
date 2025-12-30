@@ -1,5 +1,6 @@
+#!/usr/bin/env osm script -i
+
 // LLM Prompt Builder - (Legacy) Demo Script
-// Usage: osm script -i scripts/llm-prompt-builder.js
 
 ctx.log("Initializing LLM Prompt Builder mode...");
 

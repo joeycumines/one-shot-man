@@ -1,4 +1,6 @@
-package osmod
+// Package os provides a Goja module for OS interactions per the Go os package,
+// with some additional utilities, e.g. clipboard access and opening an editor.
+package os
 
 import (
 	"context"
@@ -8,8 +10,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/dop251/goja"
+)
+
+const (
+	clipboardTimeout = time.Second * 10
 )
 
 // Require returns a module loader for `osm:os` that uses the provided base context
@@ -67,7 +74,7 @@ func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runti
 			if len(call.Arguments) > 0 {
 				text = call.Argument(0).String()
 			}
-			ctx, cancel := context.WithCancel(ctx)
+			ctx, cancel := context.WithTimeout(ctx, clipboardTimeout)
 			defer cancel()
 			if err := clipboardCopy(ctx, tuiSink, text); err != nil {
 				panic(runtime.NewGoError(err))
@@ -148,6 +155,7 @@ func openEditor(ctx context.Context, nameHint string, initialContent string) str
 }
 
 func clipboardCopy(ctx context.Context, tuiSink func(string), text string) error {
+	// override via OSM_CLIPBOARD
 	if cmdStr := os.Getenv("OSM_CLIPBOARD"); cmdStr != "" {
 		var c *exec.Cmd
 		if runtime.GOOS == "windows" {
@@ -161,40 +169,56 @@ func clipboardCopy(ctx context.Context, tuiSink func(string), text string) error
 		}
 	}
 
+	// platform specific utilities
+	var cmd *exec.Cmd
+
 	switch runtime.GOOS {
 	case "darwin":
 		if _, err := exec.LookPath("pbcopy"); err == nil {
-			c := exec.CommandContext(ctx, "pbcopy")
-			c.Stdin = strings.NewReader(text)
-			return c.Run()
+			cmd = exec.CommandContext(ctx, "pbcopy")
 		}
 	case "windows":
 		if _, err := exec.LookPath("clip"); err == nil {
-			c := exec.CommandContext(ctx, "clip")
-			c.Stdin = strings.NewReader(text)
-			return c.Run()
+			cmd = exec.CommandContext(ctx, "clip")
 		}
 	default:
-		if _, err := exec.LookPath("wl-copy"); err == nil {
-			c := exec.CommandContext(ctx, "wl-copy")
-			c.Stdin = strings.NewReader(text)
-			return c.Run()
+		// Linux/Unix
+		// 1. Wayland
+		if os.Getenv("WAYLAND_DISPLAY") != "" {
+			if _, err := exec.LookPath("wl-copy"); err == nil {
+				cmd = exec.CommandContext(ctx, "wl-copy")
+			}
 		}
-		if _, err := exec.LookPath("xclip"); err == nil {
-			c := exec.CommandContext(ctx, "xclip", "-selection", "clipboard")
-			c.Stdin = strings.NewReader(text)
-			return c.Run()
+		// 2. Termux
+		if cmd == nil {
+			if _, err := exec.LookPath("termux-clipboard-set"); err == nil {
+				cmd = exec.CommandContext(ctx, "termux-clipboard-set")
+			}
 		}
-		if _, err := exec.LookPath("xsel"); err == nil {
-			c := exec.CommandContext(ctx, "xsel", "--clipboard", "--input")
-			c.Stdin = strings.NewReader(text)
-			return c.Run()
+		// 3. xclip
+		if cmd == nil {
+			if _, err := exec.LookPath("xclip"); err == nil {
+				cmd = exec.CommandContext(ctx, "xclip", "-selection", "clipboard")
+			}
+		}
+		// 4. xsel
+		if cmd == nil {
+			if _, err := exec.LookPath("xsel"); err == nil {
+				cmd = exec.CommandContext(ctx, "xsel", "--clipboard", "--input")
+			}
 		}
 	}
 
-	// best-effort fallback: route via provided TUI sink if available
+	if cmd != nil {
+		cmd.Stdin = strings.NewReader(text)
+		if err := cmd.Run(); err == nil {
+			return nil
+		}
+	}
+
+	// fallback to tuiSink if available
 	if tuiSink != nil {
-		tuiSink("[clipboard] No system clipboard utility available; printing content below\n" + text + "\n")
+		tuiSink("[clipboard] No system clipboard available; printing content below\n" + text + "\n")
 		return nil
 	}
 	return fmt.Errorf("no system clipboard available")
@@ -223,5 +247,3 @@ func sanitizeFilename(s string) string {
 	}
 	return out
 }
-
-// (no JS ctx extraction needed; module uses base context)

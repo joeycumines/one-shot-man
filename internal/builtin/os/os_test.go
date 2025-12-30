@@ -1,4 +1,4 @@
-package osmod
+package os
 
 import (
 	"context"
@@ -162,8 +162,75 @@ func TestClipboardCopy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clipboardCopy fallback failed: %v", err)
 	}
-	if len(sinkMessages) == 0 || !strings.Contains(sinkMessages[0], "No system clipboard utility") {
+	if len(sinkMessages) == 0 || !strings.Contains(sinkMessages[0], "No system clipboard available") {
 		t.Fatalf("expected sink message, got %#v", sinkMessages)
+	}
+}
+
+func TestClipboard_SystemUtilities(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("posix-specific test")
+	}
+
+	ctx := context.Background()
+	// create a fake clipboard utility that writes stdin to a capture file
+	capture := filepath.Join(t.TempDir(), "capture.txt")
+
+	binDir := t.TempDir()
+	var utilName string
+	switch goruntime.GOOS {
+	case "darwin":
+		utilName = "pbcopy"
+	default:
+		utilName = "wl-copy"
+		// Ensure system detection logic tries wl-copy
+		t.Setenv("WAYLAND_DISPLAY", "wayland-test-0")
+	}
+	script := "#!/bin/sh\n/bin/cat >'" + strings.ReplaceAll(capture, "'", `'\''`) + "'\n"
+	binPath := filepath.Join(binDir, utilName)
+	if err := os.WriteFile(binPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed to write fake util: %v", err)
+	}
+	// make PATH point only to our binDir
+	t.Setenv("PATH", binDir)
+
+	if err := clipboardCopy(ctx, nil, "from-utility"); err != nil {
+		t.Fatalf("clipboardCopy failed: %v", err)
+	}
+	data, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatalf("failed to read capture file: %v", err)
+	}
+	if string(data) != "from-utility" {
+		t.Fatalf("unexpected capture content %q", string(data))
+	}
+}
+
+func TestClipboard_TUISinkFallbackWhenNoSystemClipboard(t *testing.T) {
+	ctx := context.Background()
+	var sink []string
+	// make PATH empty so no utilities are found
+	t.Setenv("PATH", "")
+	// Ensure no overrides
+	t.Setenv("OSM_CLIPBOARD", "")
+
+	if err := clipboardCopy(ctx, func(msg string) { sink = append(sink, msg) }, "alt"); err != nil {
+		t.Fatalf("clipboardCopy failed: %v", err)
+	}
+	if len(sink) == 0 || !strings.Contains(sink[0], "No system clipboard") {
+		t.Fatalf("expected sink message, got %#v", sink)
+	}
+}
+
+func TestClipboard_ErrorWhenNoSinkAvailable(t *testing.T) {
+	ctx := context.Background()
+	// make PATH empty so no utilities are found
+	t.Setenv("PATH", "")
+	// Ensure no overrides
+	t.Setenv("OSM_CLIPBOARD", "")
+
+	if err := clipboardCopy(ctx, nil, "x"); err == nil {
+		t.Fatalf("expected error when no sink and no system clipboard, got nil")
 	}
 }
 

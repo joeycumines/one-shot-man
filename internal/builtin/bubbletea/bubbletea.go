@@ -157,6 +157,43 @@ func generateCommandID() uint64 {
 	return atomic.AddUint64(&commandIDCounter, 1)
 }
 
+// WrapCmd wraps a tea.Cmd as an opaque JavaScript value.
+// JavaScript receives the Go function wrapped via runtime.ToValue().
+// When JavaScript passes this value back, Go can retrieve the original
+// tea.Cmd using Export(). NO REGISTRY NEEDED - goja handles this natively.
+//
+// If cmd is nil, returns goja.Null().
+//
+// Usage:
+//
+//	// In viewport/textarea update():
+//	newModel, cmd := vp.Update(msg)
+//	// update the underlying model instance via pointer.
+//	*vp = newModel
+//	// return [<model object>, <wrapped cmd>]
+//	return runtime.NewArray(
+//		// Return the same JS object, which wraps the model instance / hides the Go state.
+//		obj,
+//		// Wrap the tea.Cmd as an opaque value - JS can pass this back and Go
+//		// can retrieve the original function via Export().
+//		bubbletea.WrapCmd(runtime, cmd),
+//	)
+//
+//	// In valueToCmd():
+//	if exported := val.Export(); exported != nil {
+//	    if cmd, ok := exported.(tea.Cmd); ok {
+//	        return cmd
+//	    }
+//	}
+func WrapCmd(runtime *goja.Runtime, cmd tea.Cmd) goja.Value {
+	if cmd == nil {
+		return goja.Null()
+	}
+	// runtime.ToValue() wraps Go values. For functions, it creates a
+	// JavaScript wrapper that, when Export()'ed, returns the original Go value.
+	return runtime.ToValue(cmd)
+}
+
 // TerminalChecker provides terminal detection and file descriptor access.
 // This interface allows dependency injection for testing and proper integration
 // with terminal management wrappers like TUIReader/TUIWriter.
@@ -568,36 +605,38 @@ func isCtrlKey(kt tea.KeyType) bool {
 }
 
 // valueToCmd converts a JavaScript value to a tea.Cmd.
-// Commands are validated using their _cmdID to prevent forgery.
-func (m *jsModel) valueToCmd(val goja.Value) tea.Cmd {
+// Handles two types of command values:
+// 1. Directly wrapped Go tea.Cmd functions (from bubbles components via WrapCmd)
+// 2. Command descriptor objects (e.g., {_cmdType: "quit"} from JS tea.quit())
+func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
+	if m == nil || m.runtime == nil {
+		return nil
+	}
 	if goja.IsUndefined(val) || goja.IsNull(val) {
 		return nil
 	}
 
+	// First, try to extract a directly wrapped tea.Cmd (from bubbles components)
+	// This uses goja's native Export() which returns the original Go value
+	// if it was wrapped via runtime.ToValue()
+	if exported := val.Export(); exported != nil {
+		if cmd, ok := exported.(tea.Cmd); ok {
+			return cmd
+		}
+	}
+
+	// Not a wrapped Go function - try command descriptor object
 	obj := val.ToObject(m.runtime)
 	if obj == nil {
 		return nil
 	}
 
-	cmdType := obj.Get("_cmdType")
-	if goja.IsUndefined(cmdType) {
+	var cmdType goja.Value
+	if m.runtime.Try(func() {
+		cmdType = obj.Get("_cmdType")
+	}) != nil || cmdType == nil || !cmdType.ToBoolean() {
 		return nil
 	}
-
-	// NOTE: Command ID validation is currently disabled because it was causing
-	// quit commands to be silently dropped. The issue is that currentModel
-	// (used during createCommand) and m (the receiver here) may not always
-	// be the same object due to how the closure and model registry interact.
-	// TODO: Fix the command registration to use a proper shared registry
-	// instead of relying on pointer identity.
-	//
-	// cmdIDVal := obj.Get("_cmdID")
-	// if !goja.IsUndefined(cmdIDVal) && !goja.IsNull(cmdIDVal) {
-	//	 cmdID := uint64(cmdIDVal.ToInteger())
-	//	 if !m.isValidCommand(cmdID) {
-	//		 return nil
-	//	 }
-	// }
 
 	switch cmdType.String() {
 	case "quit":
@@ -686,6 +725,10 @@ func (m *jsModel) extractSequenceCmd(obj *goja.Object) tea.Cmd {
 			cmds = append(cmds, cmd)
 		}
 	}
+	// Use bubbletea.Sequence to preserve the intended semantics: commands
+	// should be executed one-at-a-time by the bubbletea runtime. This allows
+	// nested sequence/batch commands to be handled correctly by the runtime
+	// machinery rather than forcing immediate execution here.
 	return tea.Sequence(cmds...)
 }
 

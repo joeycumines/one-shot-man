@@ -89,16 +89,13 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"bubblezone", bubblezonemod.Require(bubblezoneMgr))
 
 	// Register bubbles/textarea module for native multi-line text input
-	textareaMgr := textareamod.NewManager()
-	registry.RegisterNativeModule(prefix+"bubbles/textarea", textareamod.Require(textareaMgr))
+	registry.RegisterNativeModule(prefix+"bubbles/textarea", textareamod.Require())
 
 	// Register bubbles/viewport module for native scrollable content
-	viewportMgr := viewportmod.NewManager()
-	registry.RegisterNativeModule(prefix+"bubbles/viewport", viewportmod.Require(viewportMgr))
+	registry.RegisterNativeModule(prefix+"bubbles/viewport", viewportmod.Require())
 
 	// Register termui/scrollbar module for thin vertical scrollbars
-	scrollbarMgr := scrollbarmod.NewManager()
-	registry.RegisterNativeModule(prefix+"termui/scrollbar", scrollbarmod.Require(scrollbarMgr))
+	registry.RegisterNativeModule(prefix+"termui/scrollbar", scrollbarmod.Require())
 
 	return RegisterResult{
 		BubbleteaManager: bubbleteaMgr,

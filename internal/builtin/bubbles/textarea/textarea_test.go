@@ -6,17 +6,19 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dop251/goja"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestNewTextarea tests creating a new textarea instance.
 func TestNewTextarea(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	// Set up the module
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 
 	exports := module.Get("exports").ToObject(runtime)
 	if exports == nil {
@@ -50,11 +52,10 @@ func TestNewTextarea(t *testing.T) {
 
 // TestTextareaSetPosition tests the setPosition method for cursor positioning.
 func TestTextareaSetPosition(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -94,11 +95,10 @@ func TestTextareaSetPosition(t *testing.T) {
 
 // TestTextareaSetPositionClamping tests that setPosition clamps to valid ranges.
 func TestTextareaSetPositionClamping(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -147,11 +147,10 @@ func TestTextareaSetPositionClamping(t *testing.T) {
 
 // TestTextareaSetRow tests the setRow method.
 func TestTextareaSetRow(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -193,11 +192,10 @@ func TestTextareaSetRow(t *testing.T) {
 
 // TestTextareaSelectAll tests the selectAll method.
 func TestTextareaSelectAll(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -236,11 +234,10 @@ func TestTextareaSelectAll(t *testing.T) {
 
 // TestTextareaHandleClick tests the handleClick method.
 func TestTextareaHandleClick(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -276,13 +273,91 @@ func TestTextareaHandleClick(t *testing.T) {
 	}
 }
 
-// TestTextarea_HandleClickDoesNotWriteStdout ensures click handlers do not write to stdout.
-func TestTextarea_HandleClickDoesNotWriteStdout(t *testing.T) {
-	manager := NewManager()
+// -----------------------------------------------------------------------------
+// New tests for command propagation behavior
+// -----------------------------------------------------------------------------
+
+func TestTextarea_UpdateReturnsWrappedCommand(t *testing.T) {
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
+
+	exports := module.Get("exports").ToObject(runtime)
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Focus the textarea so updates will be processed
+	focusFn, _ := goja.AssertFunction(ta.Get("focus"))
+	_, _ = focusFn(ta)
+
+	// Ensure cursor is at 0
+	setCursorFn, _ := goja.AssertFunction(ta.Get("setCursor"))
+	_, _ = setCursorFn(ta, runtime.ToValue(0))
+
+	// Call update with a Key message that moves the cursor (inserts a rune)
+	updateFn, ok := goja.AssertFunction(ta.Get("update"))
+	require.True(t, ok, "update should be a function")
+
+	msg := runtime.NewObject()
+	_ = msg.Set("type", "Key")
+	_ = msg.Set("key", "a")
+
+	res, err := updateFn(ta, msg)
+	require.NoError(t, err)
+	resArr := res.ToObject(runtime)
+	require.NotNil(t, resArr)
+
+	// result[1] should be a wrapped command or null
+	cmdVal := resArr.Get("1")
+	assert.False(t, goja.IsNull(cmdVal), "expected non-null command value when cursor blink triggered")
+
+	// Export should yield a tea.Cmd
+	exported := cmdVal.Export()
+	cmdFn, ok := exported.(tea.Cmd)
+	require.True(t, ok, "exported command should be a tea.Cmd")
+	// Execute it to ensure it runs
+	_ = cmdFn()
+}
+
+func TestTextarea_UpdateReturnsNullWhenNoCommand(t *testing.T) {
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require()(runtime, module)
+
+	exports := module.Get("exports").ToObject(runtime)
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Blur so updates are no-ops and return null command
+	blurFn, _ := goja.AssertFunction(ta.Get("blur"))
+	_, _ = blurFn(ta)
+
+	updateFn, ok := goja.AssertFunction(ta.Get("update"))
+	require.True(t, ok, "update should be a function")
+
+	msg := runtime.NewObject()
+	_ = msg.Set("type", "Key")
+	_ = msg.Set("key", "a")
+
+	res, err := updateFn(ta, msg)
+	require.NoError(t, err)
+	resArr := res.ToObject(runtime)
+	require.NotNil(t, resArr)
+
+	cmdVal := resArr.Get("1")
+	assert.True(t, goja.IsNull(cmdVal), "expected null command when textarea not focused")
+}
+
+// TestTextarea_HandleClickDoesNotWriteStdout ensures click handlers do not write to stdout.
+func TestTextarea_HandleClickDoesNotWriteStdout(t *testing.T) {
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
 	result, _ := newFn(goja.Undefined())
@@ -326,11 +401,10 @@ func TestTextarea_HandleClickDoesNotWriteStdout(t *testing.T) {
 
 // TestTextareaCol tests the col method.
 func TestTextareaCol(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -362,11 +436,10 @@ func TestTextareaCol(t *testing.T) {
 // TestTextareaLargeDocument tests cursor positioning in a large document (100+ lines).
 // This is critical for ensuring the implementation works with scrolled content.
 func TestTextareaLargeDocument(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -431,11 +504,10 @@ func TestTextareaLargeDocument(t *testing.T) {
 // TestTextareaHandleClickWithScrollOffset tests handleClick with various scroll offsets.
 // This simulates clicking on a large scrolled document.
 func TestTextareaHandleClickWithScrollOffset(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -507,11 +579,10 @@ func TestTextareaHandleClickWithScrollOffset(t *testing.T) {
 // TestTextareaSetPositionAfterFocus tests that setPosition works correctly
 // when the textarea is focused (the common case during user interaction).
 func TestTextareaSetPositionAfterFocus(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -560,11 +631,10 @@ func TestTextareaSetPositionAfterFocus(t *testing.T) {
 
 // TestTextareaEmptyDocument tests handling of empty documents.
 func TestTextareaEmptyDocument(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -598,11 +668,10 @@ func TestTextareaEmptyDocument(t *testing.T) {
 
 // TestTextareaHandleClickEmptyDocument tests handleClick on empty document.
 func TestTextareaHandleClickEmptyDocument(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -628,11 +697,10 @@ func TestTextareaHandleClickEmptyDocument(t *testing.T) {
 // for soft-wrapped lines. This is a regression test for the viewport clipping
 // bug where bottom of wrapped documents was invisible.
 func TestTextareaVisualLineCount(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -721,11 +789,10 @@ func TestTextareaVisualLineCount(t *testing.T) {
 // coordinates to logical row/column. This is a regression test for the cursor
 // jump bug where clicking on wrapped text placed cursor in wrong position.
 func TestTextareaPerformHitTest(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -839,11 +906,10 @@ func TestTextareaPerformHitTest(t *testing.T) {
 // the cursor when clicking on soft-wrapped lines. This is a critical regression
 // test for the cursor jump bug identified in review.md.
 func TestTextareaHandleClickWithSoftWrap(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -937,11 +1003,10 @@ func TestTextareaHandleClickWithSoftWrap(t *testing.T) {
 // TestTextareaMultiWidthCharacters tests handling of CJK and emoji characters
 // which occupy 2 visual cells but 1 rune index.
 func TestTextareaMultiWidthCharacters(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -1000,11 +1065,10 @@ func TestTextareaMultiWidthCharacters(t *testing.T) {
 //
 // A line of 68 characters should wrap into 2 visual lines (68/34 = 2).
 func TestSuperDocumentViewportAlignment(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -1090,11 +1154,10 @@ func TestSuperDocumentViewportAlignment(t *testing.T) {
 // TestViewportDoubleCounting specifically tests for the double-counting bug
 // where border/padding/prompt offsets might be counted twice between JS and Go.
 func TestViewportDoubleCounting(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -1147,11 +1210,10 @@ func TestViewportDoubleCounting(t *testing.T) {
 // line() (logical) instead of cursorVisualLine() (visual) caused the viewport
 // to track the wrong position.
 func TestCursorVisualLine(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -1255,11 +1317,10 @@ func TestCursorVisualLine(t *testing.T) {
 // This fixes the bug where JS hardcoded promptWidth=2 and lineNumberWidth=4
 // instead of using the actual values from the textarea model.
 func TestPromptWidthAndContentWidth(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -1331,11 +1392,10 @@ func TestPromptWidthAndContentWidth(t *testing.T) {
 // clicking the wrapped segment MUST stay in logical row 0. This is the
 // critical regression test for the "cursor jumps to wrong line" bug.
 func TestOneHundredCharLine(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -1461,11 +1521,10 @@ func TestOneHundredCharLine(t *testing.T) {
 // Clicking the right half of a 2-cell character should position correctly,
 // not split the character or jump to wrong position.
 func TestMultiWidthHitTest(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -1533,11 +1592,10 @@ func TestMultiWidthHitTest(t *testing.T) {
 // click handling that takes raw screen coordinates and does ALL coordinate
 // translation internally.
 func TestSetViewportContextAndHandleClickAtScreenCoords(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -1687,11 +1745,10 @@ func TestSetViewportContextAndHandleClickAtScreenCoords(t *testing.T) {
 }
 
 func TestHandleClickAtScreenCoords_BottomEdge(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -1777,11 +1834,10 @@ func TestHandleClickAtScreenCoords_BottomEdge(t *testing.T) {
 
 func TestHandleClickAtScreenCoords_VpCtxUninitialized(t *testing.T) {
 	// Verify that if setViewportContext has not been called yet, clicks are treated as misses
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -1814,11 +1870,10 @@ func TestHandleClickAtScreenCoords_VpCtxUninitialized(t *testing.T) {
 // TestGetScrollSyncInfo tests the GO-NATIVE scroll sync method that returns
 // all viewport synchronization data in a single call.
 func TestGetScrollSyncInfo(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -1954,11 +2009,10 @@ func TestGetScrollSyncInfo(t *testing.T) {
 
 // TestScenarioGreedyWrap tests the "waste" at end of lines.
 func TestScenarioGreedyWrap(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -1990,11 +2044,10 @@ func TestScenarioGreedyWrap(t *testing.T) {
 
 // TestScenarioMegaChar tests characters wider than the viewport.
 func TestScenarioMegaChar(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -2031,11 +2084,10 @@ func TestScenarioMegaChar(t *testing.T) {
 // occurs after JS auto-scroll would map incorrectly until setViewportContext is
 // updated with the final offset.
 func TestHandleClickAtScreenCoords_StaleViewportContext(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -2134,11 +2186,10 @@ func TestHandleClickAtScreenCoords_StaleViewportContext(t *testing.T) {
 
 // Test that handleClickAtScreenCoords uses titleHeight from vpCtx if caller omits arg
 func TestHandleClickAtScreenCoords_TitleHeightFromVpCtx(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))
@@ -2193,11 +2244,10 @@ func TestHandleClickAtScreenCoords_TitleHeightFromVpCtx(t *testing.T) {
 // Test that when vpCtx.titleHeight is set it takes precedence over an
 // explicit argument provided by the caller.
 func TestHandleClickAtScreenCoords_PrefersVpCtxOverArg(t *testing.T) {
-	manager := NewManager()
 	runtime := goja.New()
 
 	module := runtime.NewObject()
-	Require(manager)(runtime, module)
+	Require()(runtime, module)
 	exports := module.Get("exports").ToObject(runtime)
 
 	newFn, _ := goja.AssertFunction(exports.Get("new"))

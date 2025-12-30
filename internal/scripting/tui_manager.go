@@ -915,25 +915,27 @@ func (tm *TUIManager) GetStateManager() builtin.StateManager {
 
 // resetAllState clears all state and archives the previous session (used by the reset REPL command).
 // It performs a safe archive-and-reset operation that preserves history while clearing state.
-func (tm *TUIManager) resetAllState() {
+// Returns the archive path if successful, or an error otherwise.
+func (tm *TUIManager) resetAllState() (string, error) {
 	// Perform archive + reset via state manager (safe with file operations)
-	if tm.stateManager != nil {
-		archivePath, err := tm.stateManager.ArchiveAndReset()
-		if err != nil {
-			// If archiving fails we MUST not destroy the existing session.
-			// Preserve state and warn the user so they can retry or investigate.
-			_, _ = fmt.Fprintf(tm.writer, "WARNING: Failed to archive session: %v\nState preserved; reset aborted.\n", err)
-			return
-		}
-
-		_, _ = fmt.Fprintf(tm.writer, "Session archived to: %s\n", archivePath)
-
-		// Clear context manager only after a successful archive+reset so that
-		// we don't accidentally drop context items when the reset failed.
-		if tm.engine != nil && tm.engine.contextManager != nil {
-			tm.engine.contextManager.Clear()
-		}
+	if tm.stateManager == nil {
+		return "", fmt.Errorf("no state manager")
 	}
+
+	archivePath, err := tm.stateManager.ArchiveAndReset()
+	if err != nil {
+		// If archiving fails we MUST not destroy the existing session.
+		// Preserve state and surface the error to the caller to decide how to handle it.
+		return "", err
+	}
+
+	// Clear context manager only after a successful archive+reset so that
+	// we don't accidentally drop context items when the reset failed.
+	if tm.engine != nil && tm.engine.contextManager != nil {
+		tm.engine.contextManager.Clear()
+	}
+
+	return archivePath, nil
 }
 
 // resetSharedState, resetAllModeStates, getStateBySymbol, setStateBySymbol - DELETED in new architecture

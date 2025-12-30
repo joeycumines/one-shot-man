@@ -3,8 +3,12 @@ package bubbletea
 import (
 	"context"
 	"os"
+	"reflect"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/charmbracelet/bubbles/cursor"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
@@ -841,4 +845,402 @@ func TestCommandHasID(t *testing.T) {
 	assert.Contains(t, result.String(), `"hasID1":true`)
 	assert.Contains(t, result.String(), `"hasID2":true`)
 	assert.Contains(t, result.String(), `"unique":true`)
+}
+
+func TestWrapCmd_NilCommand(t *testing.T) {
+	runtime := goja.New()
+	val := WrapCmd(runtime, nil)
+	assert.True(t, goja.IsNull(val), "WrapCmd(nil) should return goja.Null()")
+}
+
+func TestWrapCmd_ActualCommand(t *testing.T) {
+	runtime := goja.New()
+	val := WrapCmd(runtime, tea.Quit)
+	assert.False(t, goja.IsNull(val))
+
+	exported := val.Export()
+	reqCmd, ok := exported.(tea.Cmd)
+	assert.True(t, ok, "Exported value should be a tea.Cmd")
+	// Execute the command to ensure it behaves like tea.Quit
+	res := reqCmd()
+	_, isQuit := res.(tea.QuitMsg)
+	assert.True(t, isQuit, "Wrapped command should execute to a QuitMsg")
+}
+
+func TestWrapCmd_ClosureCommand(t *testing.T) {
+	runtime := goja.New()
+	type uniqueTestMsg struct{ id int }
+	closureCmd := func() tea.Msg { return uniqueTestMsg{id: 42} }
+	val := WrapCmd(runtime, closureCmd)
+	assert.False(t, goja.IsNull(val))
+
+	exported := val.Export()
+	cmdFn, ok := exported.(tea.Cmd)
+	assert.True(t, ok, "Exported closure should be a tea.Cmd")
+	res := cmdFn()
+	ut, ok := res.(uniqueTestMsg)
+	assert.True(t, ok, "closure cmd should return uniqueTestMsg")
+	assert.Equal(t, 42, ut.id)
+}
+
+func TestWrapCmd_CursorBlinkCommand(t *testing.T) {
+	runtime := goja.New()
+	// cursor.Blink() returns a tea.Msg; wrap it in a tea.Cmd closure
+	blinkCmd := func() tea.Msg { return cursor.Blink() }
+	val := WrapCmd(runtime, blinkCmd)
+	assert.False(t, goja.IsNull(val))
+
+	exported := val.Export()
+	cmd2, ok := exported.(tea.Cmd)
+	assert.True(t, ok, "Exported cursor.Blink should be a tea.Cmd")
+	res := cmd2()
+	assert.NotNil(t, res, "cursor.Blink() when executed should return a non-nil message")
+}
+
+// ----------------------------
+// Phase 2: ValueToCmd & Roundtrip Tests
+// ----------------------------
+
+func TestValueToCmd_WrappedCommand(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	// Create a model to obtain a jsModel with runtime
+	result, err := vm.RunString(`tea.newModel({ init: function() { return {}; }, update: function(msg, model) { return [model, null]; }, view: function(model) { return ''; } });`)
+	require.NoError(t, err)
+
+	modelWrapper := result.ToObject(vm)
+	getModelFn, ok := goja.AssertFunction(modelWrapper.Get("_getModel"))
+	require.True(t, ok, "_getModel should be a function")
+	modelVal, err := getModelFn(goja.Undefined())
+	require.NoError(t, err)
+	m, ok := modelVal.Export().(*jsModel)
+	require.True(t, ok)
+
+	// Wrap tea.Quit using the model's runtime
+	wrapped := WrapCmd(m.runtime, tea.Quit)
+	cmd := m.valueToCmd(wrapped)
+	require.NotNil(t, cmd)
+	res := cmd()
+	_, isQuit := res.(tea.QuitMsg)
+	assert.True(t, isQuit, "valueToCmd should extract wrapped tea.Quit")
+}
+
+func TestValueToCmd_DescriptorQuit(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	// Create model
+	result, err := vm.RunString(`tea.newModel({ init: function() { return {}; }, update: function(msg, model) { return [model, null]; }, view: function(model) { return ''; } });`)
+	require.NoError(t, err)
+
+	modelWrapper := result.ToObject(vm)
+	getModelFn, ok := goja.AssertFunction(modelWrapper.Get("_getModel"))
+	require.True(t, ok, "_getModel should be a function")
+	modelVal, err := getModelFn(goja.Undefined())
+	require.NoError(t, err)
+	m, ok := modelVal.Export().(*jsModel)
+	require.True(t, ok)
+
+	// Use tea.quit() descriptor
+	val, err := vm.RunString(`tea.quit()`)
+	require.NoError(t, err)
+
+	cmd := m.valueToCmd(val)
+	require.NotNil(t, cmd)
+	res := cmd()
+	_, isQuit := res.(tea.QuitMsg)
+	assert.True(t, isQuit, "descriptor quit should extract to tea.Quit")
+}
+
+func TestValueToCmd_DescriptorBatch(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	// Create model
+	result, err := vm.RunString(`tea.newModel({ init: function() { return {}; }, update: function(msg, model) { return [model, null]; }, view: function(model) { return ''; } });`)
+	require.NoError(t, err)
+
+	modelWrapper := result.ToObject(vm)
+	getModelFn, ok := goja.AssertFunction(modelWrapper.Get("_getModel"))
+	require.True(t, ok, "_getModel should be a function")
+	modelVal, err := getModelFn(goja.Undefined())
+	require.NoError(t, err)
+	m, ok := modelVal.Export().(*jsModel)
+	require.True(t, ok)
+
+	// Descriptor batch containing wrapped Go commands - verify both are executed
+	calls := make([]int, 0)
+	var callsMu sync.Mutex
+	c1 := func() tea.Msg { callsMu.Lock(); defer callsMu.Unlock(); calls = append(calls, 1); return nil }
+	c2 := func() tea.Msg { callsMu.Lock(); defer callsMu.Unlock(); calls = append(calls, 2); return nil }
+	g1 := WrapCmd(m.runtime, c1)
+	g2 := WrapCmd(m.runtime, c2)
+	_ = vm.Set("g1", g1)
+	_ = vm.Set("g2", g2)
+	val, err := vm.RunString(`({ _cmdType: 'batch', _cmdID: 1, cmds: [ g1, g2 ] })`)
+	require.NoError(t, err)
+
+	// Confirm individual elements extract correctly
+	first, err := vm.RunString(`({ _cmdType: 'batch', _cmdID: 1, cmds: [ g1, g2 ] }).cmds[0]`)
+	require.NoError(t, err)
+	second, err := vm.RunString(`({ _cmdType: 'batch', _cmdID: 1, cmds: [ g1, g2 ] }).cmds[1]`)
+	require.NoError(t, err)
+	cmd1 := m.valueToCmd(first)
+	require.NotNil(t, cmd1, "first batch element should convert to a non-nil cmd")
+	cmd2 := m.valueToCmd(second)
+	require.NotNil(t, cmd2, "second batch element should convert to a non-nil cmd")
+
+	cmd := m.valueToCmd(val)
+	require.NotNil(t, cmd)
+	// Also ensure individual extracted cmds execute correctly
+	cmd1()
+	cmd2()
+	// Execute and wait briefly for both to run (Batch may run sub-commands concurrently)
+	cmd()
+	// Wait for a short period for both commands to have a chance to execute
+	time.Sleep(20 * time.Millisecond)
+	callsMu.Lock()
+	defer callsMu.Unlock()
+	require.Equal(t, 2, len(calls), "both batch commands should have executed")
+	require.Equal(t, 1, calls[0])
+	require.Equal(t, 2, calls[1])
+}
+
+func TestValueToCmd_DescriptorSequence(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	// Create model
+	result, err := vm.RunString(`tea.newModel({ init: function() { return {}; }, update: function(msg, model) { return [model, null]; }, view: function(model) { return ''; } });`)
+	require.NoError(t, err)
+
+	modelWrapper := result.ToObject(vm)
+	getModelFn, ok := goja.AssertFunction(modelWrapper.Get("_getModel"))
+	require.True(t, ok, "_getModel should be a function")
+	modelVal, err := getModelFn(goja.Undefined())
+	require.NoError(t, err)
+	m, ok := modelVal.Export().(*jsModel)
+	require.True(t, ok)
+
+	calls := make([]int, 0)
+	var callsMu sync.Mutex
+	c1 := func() tea.Msg { callsMu.Lock(); calls = append(calls, 1); callsMu.Unlock(); return nil }
+	c2 := func() tea.Msg { callsMu.Lock(); calls = append(calls, 2); callsMu.Unlock(); return nil }
+	g1 := WrapCmd(m.runtime, c1)
+	g2 := WrapCmd(m.runtime, c2)
+	_ = vm.Set("g1", g1)
+	_ = vm.Set("g2", g2)
+	// sequence with mixed wrapped and descriptor (non-terminating)
+	val, err := vm.RunString(`({ _cmdType: 'sequence', _cmdID: 3, cmds: [ g1, tea.clearScreen(), g2 ] })`)
+	require.NoError(t, err)
+
+	// Also extract individual elements to validate element conversion
+	first, err := vm.RunString(`({ _cmdType: 'sequence', _cmdID: 3, cmds: [ g1, tea.clearScreen(), g2 ] }).cmds[0]`)
+	require.NoError(t, err)
+	second, err := vm.RunString(`({ _cmdType: 'sequence', _cmdID: 3, cmds: [ g1, tea.clearScreen(), g2 ] }).cmds[1]`)
+	require.NoError(t, err)
+	third, err := vm.RunString(`({ _cmdType: 'sequence', _cmdID: 3, cmds: [ g1, tea.clearScreen(), g2 ] }).cmds[2]`)
+	require.NoError(t, err)
+
+	cmd1 := m.valueToCmd(first)
+	require.NotNil(t, cmd1, "first sequence element should convert to non-nil cmd")
+	cmd2 := m.valueToCmd(second)
+	require.NotNil(t, cmd2, "second sequence element (descriptor) should convert to non-nil cmd")
+	cmd3 := m.valueToCmd(third)
+	require.NotNil(t, cmd3, "third sequence element should convert to non-nil cmd")
+
+	// Execute individual elements to verify they run and append to calls
+	cmd1()
+	cmd3()
+	time.Sleep(10 * time.Millisecond)
+
+	callsMu.Lock()
+	if len(calls) != 2 {
+		// If individual elements didn't run either, fail early with diagnostic
+		callsMu.Unlock()
+		require.Fail(t, "individual elements did not execute; sequence element extraction failed")
+	}
+	callsMu.Unlock()
+
+	// Now convert the sequence descriptor as a whole
+	seqCmd := m.valueToCmd(val)
+	require.NotNil(t, seqCmd)
+
+	// Executing a sequence command returns a slice-like message containing Cmds.
+	// Simulate the runtime by invoking the cmd, reflecting over the returned value
+	// and executing each contained Cmd in order.
+	msg := seqCmd()
+	require.NotNil(t, msg)
+	rv := reflect.ValueOf(msg)
+	require.Equal(t, reflect.Slice, rv.Kind(), "sequence cmd should return a slice-like message")
+
+	for i := 0; i < rv.Len(); i++ {
+		if rv.Index(i).IsNil() {
+			continue
+		}
+		elem := rv.Index(i).Interface()
+		cmd, ok := elem.(tea.Cmd)
+		require.True(t, ok, "sequence element should be a tea.Cmd")
+		_ = cmd()
+	}
+
+	// Wait briefly for any asynchronous closures to run
+	time.Sleep(20 * time.Millisecond)
+	callsMu.Lock()
+	defer callsMu.Unlock()
+	require.Equal(t, 4, len(calls), "expect four total calls after executing sequence and individuals")
+	require.Equal(t, 1, calls[0])
+	require.Equal(t, 2, calls[1])
+	require.Equal(t, 1, calls[2])
+	require.Equal(t, 2, calls[3])
+}
+
+func TestValueToCmd_NullUndefined(t *testing.T) {
+	runtime := goja.New()
+	vm := runtime
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	// Create model with runtime
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	result, err := vm.RunString(`tea.newModel({ init: function() { return {}; }, update: function(msg, model) { return [model, null]; }, view: function(model) { return ''; } });`)
+	require.NoError(t, err)
+
+	modelWrapper := result.ToObject(vm)
+	getModelFn, ok := goja.AssertFunction(modelWrapper.Get("_getModel"))
+	require.True(t, ok, "_getModel should be a function")
+	modelVal, err := getModelFn(goja.Undefined())
+	require.NoError(t, err)
+	m, ok := modelVal.Export().(*jsModel)
+	require.True(t, ok)
+
+	nullVal := goja.Null()
+	undefinedVal := goja.Undefined()
+
+	assert.Nil(t, m.valueToCmd(nullVal), "null should map to nil cmd")
+	assert.Nil(t, m.valueToCmd(undefinedVal), "undefined should map to nil cmd")
+}
+
+func TestValueToCmd_InvalidObject(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	// Create model
+	result, err := vm.RunString(`tea.newModel({ init: function() { return {}; }, update: function(msg, model) { return [model, null]; }, view: function(model) { return ''; } });`)
+	require.NoError(t, err)
+
+	modelWrapper := result.ToObject(vm)
+	getModelFn, ok := goja.AssertFunction(modelWrapper.Get("_getModel"))
+	require.True(t, ok, "_getModel should be a function")
+	modelVal, err := getModelFn(goja.Undefined())
+	require.NoError(t, err)
+	m, ok := modelVal.Export().(*jsModel)
+	require.True(t, ok)
+
+	val, err := vm.RunString(`({foo: 1})`)
+	require.NoError(t, err)
+
+	assert.Nil(t, m.valueToCmd(val), "object without _cmdType should return nil")
+}
+
+func TestCommandRoundtrip_ThroughJSArrayAndObject(t *testing.T) {
+	ctx := context.Background()
+	manager := NewManager(ctx, nil, nil, nil, nil)
+
+	vm := goja.New()
+	module := vm.NewObject()
+	require.NoError(t, module.Set("exports", vm.NewObject()))
+
+	requireFn := Require(ctx, manager)
+	requireFn(vm, module)
+
+	_ = vm.Set("tea", module.Get("exports"))
+
+	// Create model
+	result, err := vm.RunString(`tea.newModel({ init: function() { return {}; }, update: function(msg, model) { return [model, null]; }, view: function(model) { return ''; } });`)
+	require.NoError(t, err)
+
+	modelWrapper := result.ToObject(vm)
+	getModelFn, ok := goja.AssertFunction(modelWrapper.Get("_getModel"))
+	require.True(t, ok, "_getModel should be a function")
+	modelVal, err := getModelFn(goja.Undefined())
+	require.NoError(t, err)
+	m, ok := modelVal.Export().(*jsModel)
+	require.True(t, ok)
+
+	// Create a closure command and wrap it
+	type testMsg struct{ id int }
+	closure := func() tea.Msg { return testMsg{id: 7} }
+	wrapped := WrapCmd(m.runtime, closure)
+
+	// Put wrapped into JS array
+	_ = vm.Set("wrappedCmd", wrapped)
+	valArr, err := vm.RunString(`[wrappedCmd][0]`)
+	require.NoError(t, err)
+	cmd := m.valueToCmd(valArr)
+	require.NotNil(t, cmd)
+	res := cmd()
+	_, okRes := res.(testMsg)
+	assert.True(t, okRes, "wrapped command should survive storing in JS array")
+
+	// Put wrapped into JS object property
+	valObj, err := vm.RunString(`({c: wrappedCmd}).c`)
+	require.NoError(t, err)
+	cmd2 := m.valueToCmd(valObj)
+	require.NotNil(t, cmd2)
+	res2 := cmd2()
+	_, okRes2 := res2.(testMsg)
+	assert.True(t, okRes2, "wrapped command should survive storing as object property")
 }

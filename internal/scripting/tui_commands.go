@@ -198,10 +198,17 @@ func (tm *TUIManager) registerBuiltinCommands() {
 				return fmt.Errorf("usage: reset (takes no arguments)")
 			}
 
-			// Call the new reset logic
-			tm.resetAllState()
+			archivePath, err := tm.resetAllState()
+			if err != nil {
+				_, _ = fmt.Fprintf(tm.writer, "WARNING: Failed to archive session: %v\nState preserved; reset aborted.\n", err)
+				return nil
+			}
 
-			_, _ = fmt.Fprintln(tm.writer, "All shared and mode-specific state has been reset to default values.")
+			if archivePath != "" {
+				_, _ = fmt.Fprintf(tm.writer, "Session archived to: %s\n", archivePath)
+			} else {
+				_, _ = fmt.Fprintln(tm.writer, "All shared and mode-specific state has been reset to default values.")
+			}
 			return nil
 		},
 		IsGoCommand: true,

@@ -381,6 +381,13 @@ func (e *Engine) setupGlobals() {
 		"clearExitRequest": func() {
 			e.tuiManager.SetExitRequested(false)
 		},
+		// reset: perform an archive+reset and return the archive path (if any) or throw on error
+		"reset": func() (string, error) {
+			if e.tuiManager == nil {
+				return "", fmt.Errorf("tui manager not available")
+			}
+			return e.tuiManager.resetAllState()
+		},
 	})
 }
 

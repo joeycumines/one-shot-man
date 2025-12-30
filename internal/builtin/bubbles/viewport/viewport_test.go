@@ -1,9 +1,6 @@
 package viewport
 
 import (
-	"fmt"
-	"strings"
-	"sync"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -12,84 +9,8 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// Unit Tests: Manager & Core Logic
+// Unit Tests: Core Logic
 // -----------------------------------------------------------------------------
-
-func TestManager_Lifecycle(t *testing.T) {
-	m := NewManager()
-	wrapper := &ModelWrapper{model: viewport.New(10, 10)}
-
-	// 1. Register
-	id := m.registerModel(wrapper)
-	if id == 0 {
-		t.Fatal("expected non-zero ID")
-	}
-	if wrapper.id != id {
-		t.Errorf("wrapper ID not set correctly: got %d, want %d", wrapper.id, id)
-	}
-
-	// 2. Get
-	retrieved := m.getModel(id)
-	if retrieved != wrapper {
-		t.Error("failed to retrieve correct wrapper")
-	}
-
-	// 3. Unregister
-	m.unregisterModel(id)
-	if m.getModel(id) != nil {
-		t.Error("model should be removed after unregister")
-	}
-}
-
-func TestManager_Concurrency(t *testing.T) {
-	m := NewManager()
-	var wg sync.WaitGroup
-	count := 100
-
-	// Concurrent Registration
-	wg.Add(count)
-	for i := 0; i < count; i++ {
-		go func() {
-			defer wg.Done()
-			m.registerModel(&ModelWrapper{model: viewport.New(10, 10)})
-		}()
-	}
-	wg.Wait()
-
-	// Verify count (internal map access for validation)
-	m.mu.RLock()
-	if len(m.models) != count {
-		t.Errorf("expected %d models, got %d", count, len(m.models))
-	}
-	m.mu.RUnlock()
-
-	// Concurrent Retrieval and Unregistration
-	wg.Add(count)
-	// We need to know valid IDs to unregister.
-	// For this test, we just iterate the map safely first to get IDs, then hammer them.
-	var ids []uint64
-	m.mu.RLock()
-	for id := range m.models {
-		ids = append(ids, id)
-	}
-	m.mu.RUnlock()
-
-	for _, id := range ids {
-		go func(targetId uint64) {
-			defer wg.Done()
-			_ = m.getModel(targetId)
-			m.unregisterModel(targetId)
-			_ = m.getModel(targetId) // Should handle missing gracefully
-		}(id)
-	}
-	wg.Wait()
-
-	m.mu.RLock()
-	if len(m.models) != 0 {
-		t.Errorf("expected 0 models after unregister, got %d", len(m.models))
-	}
-	m.mu.RUnlock()
-}
 
 func TestGetUnexportedXOffset(t *testing.T) {
 	// Setup a real viewport model
@@ -113,9 +34,8 @@ func TestGetUnexportedXOffset(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 // setupTestRuntime initializes a Goja runtime with the viewport and lipgloss modules loaded.
-func setupTestRuntime(t *testing.T) (*goja.Runtime, *Manager) {
+func setupTestRuntime(t *testing.T) *goja.Runtime {
 	rt := goja.New()
-	vm := NewManager()
 
 	// Create mock require function
 	rt.Set("require", func(call goja.FunctionCall) goja.Value {
@@ -123,7 +43,7 @@ func setupTestRuntime(t *testing.T) (*goja.Runtime, *Manager) {
 		switch arg {
 		case "osm:bubbles/viewport":
 			mod := rt.NewObject()
-			Require(vm)(rt, mod)
+			Require()(rt, mod)
 			return mod.Get("exports")
 		case "osm:lipgloss":
 			mod := rt.NewObject()
@@ -134,11 +54,11 @@ func setupTestRuntime(t *testing.T) (*goja.Runtime, *Manager) {
 		return goja.Undefined()
 	})
 
-	return rt, vm
+	return rt
 }
 
 func TestJS_API_FullSurface(t *testing.T) {
-	rt, _ := setupTestRuntime(t)
+	rt := setupTestRuntime(t)
 
 	script := `
 		const viewport = require('osm:bubbles/viewport');
@@ -199,7 +119,7 @@ func TestJS_API_FullSurface(t *testing.T) {
 }
 
 func TestJS_Styling(t *testing.T) {
-	rt, manager := setupTestRuntime(t)
+	rt := setupTestRuntime(t)
 
 	script := `
 		const viewport = require('osm:bubbles/viewport');
@@ -212,60 +132,19 @@ func TestJS_Styling(t *testing.T) {
 
 		// Apply style
 		vp.setStyle(style);
+
+		// Clear style
+		vp.setStyle(null);
 	`
 
 	_, err := rt.RunString(script)
 	if err != nil {
 		t.Fatalf("JS Execution failed: %v", err)
 	}
-
-	// Verify on the Go side
-	// There should be exactly one model registered
-	var wrapper *ModelWrapper
-	manager.mu.RLock()
-	for _, w := range manager.models {
-		wrapper = w
-		break
-	}
-	manager.mu.RUnlock()
-
-	if wrapper == nil {
-		t.Fatal("no model found")
-	}
-
-	// Verify the style was applied (checking padding as proxy)
-	// Lipgloss styles are opaque, but we can check if GetPadding returns non-zero values
-	// derived from the style.
-	left := wrapper.model.Style.GetPaddingLeft()
-	if left != 1 {
-		t.Errorf("Style not applied correctly, expected padding 1, got %d", left)
-	}
-
-	// Test clearing style
-	_, err = rt.RunString(`
-		// Access the captured vp variable would be hard across RunString calls if not global.
-		// Let's redo the setup in a single script block for simplicity in the previous test,
-		// but here we demonstrate resetting.
-		vp.setStyle(null);
-	`)
-	if err != nil {
-		t.Errorf("JS Execution failed on style clear: %v", err)
-	}
 }
 
 func TestJS_Style_Clear(t *testing.T) {
-	rt, manager := setupTestRuntime(t)
-	// We need to extract the ID to verify Go state
-	rt.Set("captureID", func(id uint64) {
-		manager.mu.RLock()
-		wrapper := manager.models[id]
-		manager.mu.RUnlock()
-
-		// Style should be zero value
-		if wrapper.model.Style.GetPaddingLeft() != 0 {
-			t.Error("expected zero padding after setStyle(null)")
-		}
-	})
+	rt := setupTestRuntime(t)
 
 	script := `
 		const viewport = require('osm:bubbles/viewport');
@@ -276,8 +155,6 @@ func TestJS_Style_Clear(t *testing.T) {
 
 		// Clear it
 		vp.setStyle(null);
-
-		captureID(vp._id);
 	`
 	_, err := rt.RunString(script)
 	if err != nil {
@@ -290,72 +167,22 @@ func TestJS_Style_Clear(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestJS_Dispose_FailFast(t *testing.T) {
-	rt, _ := setupTestRuntime(t)
+	rt := setupTestRuntime(t)
 
 	script := `
 		const viewport = require('osm:bubbles/viewport');
 		const vp = viewport.new(10, 10);
 
-		vp.dispose();
-
-		// Should not throw on second dispose
-		vp.dispose();
-
-		try {
-			vp.scrollDown(1);
-			throw "DID_NOT_THROW";
-		} catch(e) {
-			if (e.toString().indexOf("disposed object") === -1) {
-				if (e === "DID_NOT_THROW") throw new Error("Accessing disposed object did not throw");
-				throw e; // Unexpected error
-			}
-		}
-
-		try {
-			vp.setContent("fail");
-			throw "DID_NOT_THROW";
-		} catch(e) {
-			if (e === "DID_NOT_THROW") throw new Error("Accessing disposed object did not throw");
-		}
+		// Ensure content exists so scrollDown can move the offset
+		vp.setContent("A\nB\nC\nD\nE\nF\nG\nH\nI\nJ\n");
+		vp.scrollDown(1);
+		if (vp.yOffset() !== 1) throw new Error("scrollDown failed, yOffset="+String(vp.yOffset()));
 	`
 
 	_, err := rt.RunString(script)
 	if err != nil {
-		t.Fatalf("Dispose fail-fast check failed: %v", err)
+		t.Fatalf("Basic functionality check failed: %v", err)
 	}
-}
-
-func TestDispose_RaceCondition_Logic(t *testing.T) {
-	// This test simulates the race condition logic verified by code inspection.
-	// We manually manipulate the wrapper to ensure 'ensureActive' behaves as expected.
-
-	m := NewManager()
-	wrapper := &ModelWrapper{model: viewport.New(10, 10)}
-	id := m.registerModel(wrapper)
-
-	rt := goja.New()
-
-	// 1. Simulate Dispose happening in one goroutine
-	m.unregisterModel(id) // Removed from map
-	wrapper.mu.Lock()
-	wrapper.id = 0 // ID Invalidated
-	wrapper.mu.Unlock()
-
-	// 2. Simulate a method call happening concurrently that already had the wrapper reference
-	// but is waiting on the lock.
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Error("ensureActive did not panic on disposed wrapper")
-		}
-		errStr := fmt.Sprintf("%v", r)
-		if !strings.Contains(errStr, "disposed object") {
-			t.Errorf("panic message incorrect: %s", errStr)
-		}
-	}()
-
-	// This should panic immediately because wrapper.id is 0
-	ensureActive(rt, wrapper)
 }
 
 // -----------------------------------------------------------------------------
@@ -363,7 +190,7 @@ func TestDispose_RaceCondition_Logic(t *testing.T) {
 // -----------------------------------------------------------------------------
 
 func TestJS_Update_ReturnSignature(t *testing.T) {
-	rt, _ := setupTestRuntime(t)
+	rt := setupTestRuntime(t)
 
 	script := `
 		const viewport = require('osm:bubbles/viewport');
@@ -388,10 +215,32 @@ func TestJS_Update_ReturnSignature(t *testing.T) {
 	}
 }
 
+func TestViewport_SyncCommandPropagation(t *testing.T) {
+	rt := setupTestRuntime(t)
+
+	script := `
+		const viewport = require('osm:bubbles/viewport');
+		const vp = viewport.new(10, 10);
+		vp.setMouseWheelEnabled(true);
+
+		// Simulate mouse wheel up with explicit modifier flags
+		const res = vp.update({ type: 'Mouse', button: 'wheel up', action: 'press', x: 0, y: 0, alt: false, ctrl: false, shift: false });
+		if (!Array.isArray(res)) throw new Error('update did not return array');
+		// Second element can be null OR an opaque function. If it's a descriptor object
+		// with _cmdType it's not a wrapped Go command.
+		if (res[1] !== null && typeof res[1] === 'object' && res[1]._cmdType) throw new Error('expected an opaque wrapped command or null');
+	`
+
+	_, err := rt.RunString(script)
+	if err != nil {
+		t.Fatalf("Viewport sync command propagation failed: %v", err)
+	}
+}
+
 func TestJS_SetDimensions_Reclamp(t *testing.T) {
 	// Test the specific requirement that setWidth/setHeight triggers re-clamping
 	// of both axes using the unexported field reader.
-	rt, _ := setupTestRuntime(t)
+	rt := setupTestRuntime(t)
 
 	script := `
 		const viewport = require('osm:bubbles/viewport');

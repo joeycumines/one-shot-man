@@ -639,17 +639,6 @@ function runVisualTui() {
     return tea.run(model, {altScreen: true, mouse: true});
 }
 
-// disposeTextareaIfExists safely disposes a textarea model to prevent memory leaks.
-// The Go textarea.Manager keeps models in a map to prevent GC; calling dispose()
-// removes them from the map. This MUST be called when switching modes or creating
-// a new textarea to avoid unbounded memory growth.
-function disposeTextareaIfExists(s) {
-    if (s.contentTextarea && typeof s.contentTextarea.dispose === 'function') {
-        s.contentTextarea.dispose();
-        s.contentTextarea = null;
-    }
-}
-
 function configureTextarea(ta, width) {
     ta.setPlaceholder("Enter document content...");
     ta.setWidth(Math.max(10, width - 10));
@@ -717,7 +706,6 @@ function handleKeys(msg, s) {
     const prevMode = s.mode; // Track mode before processing
     // Global quit from any mode if ctrl+c
     if (k === 'ctrl+c') {
-        disposeTextareaIfExists(s);
         return [s, tea.quit()];
     }
 
@@ -850,8 +838,6 @@ function handleKeys(msg, s) {
                     s.inputOperation = INPUT_ADD;
                     s.inputFocus = FOCUS_LABEL;
                     s.labelBuffer = '';
-                    // Create native textarea for content
-                    disposeTextareaIfExists(s);
                     s.contentTextarea = textareaLib.new();
                     configureTextarea(s.contentTextarea, s.width);
                     s.focusedButtonIdx = -1; // Clear button focus when entering input mode
@@ -867,28 +853,23 @@ function handleKeys(msg, s) {
                     s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
                 }
                 if (btn.key === 'c') {
-                    // Copy all documents
-                    const allContent = s.documents.map(d => '# ' + d.label + '\n\n' + d.content).join('\n\n---\n\n');
-                    if (allContent) {
-                        s.clipboard = allContent;
-                        s.statusMsg = 'Copied ' + s.documents.length + ' document(s) to clipboard';
+                    // Copy final prompt (includes documents + other context)
+                    const prompt = buildFinalPrompt();
+                    try {
+                        osm.clipboardCopy(prompt);
+                        s.statusMsg = `Copied prompt (${prompt.length} chars)`;
                         s.hasError = false;
-                    } else {
-                        s.statusMsg = 'No documents to copy';
+                    } catch (e) {
+                        s.statusMsg = 'Clipboard error: ' + e;
                         s.hasError = true;
                     }
                     s.focusedButtonIdx = -1;
                 }
                 if (btn.key === 'r') {
-                    // Reset all - confirm
-                    if (s.documents.length > 0) {
-                        s.mode = MODE_CONFIRM;
-                        s.confirmPrompt = 'Delete ALL ' + s.documents.length + ' document(s)? [y/N]';
-                        s.confirmDocId = -1; // -1 means "reset all"
-                    } else {
-                        s.statusMsg = 'No documents to reset';
-                        s.hasError = true;
-                    }
+                    // Reset (archive + clear session state) - show confirmation regardless of documents
+                    s.mode = MODE_CONFIRM;
+                    s.confirmPrompt = 'Reset the session (archive current state and clear all persisted state)? This cannot be undone. (y/n)';
+                    s.confirmDocId = -1; // -1 means "reset all"
                     s.focusedButtonIdx = -1;
                 }
             }
@@ -973,8 +954,6 @@ function handleKeys(msg, s) {
             s.inputOperation = INPUT_ADD;
             s.inputFocus = FOCUS_LABEL;
             s.labelBuffer = '';
-            // Create native textarea for content
-            disposeTextareaIfExists(s);
             s.contentTextarea = textareaLib.new();
             configureTextarea(s.contentTextarea, s.width);
             s.focusedButtonIdx = -1; // Clear button focus
@@ -997,8 +976,6 @@ function handleKeys(msg, s) {
                 s.inputOperation = INPUT_EDIT;
                 s.inputFocus = FOCUS_CONTENT;
                 s.labelBuffer = doc.label;
-                // Create native textarea with existing content
-                disposeTextareaIfExists(s);
                 s.contentTextarea = textareaLib.new();
                 configureTextarea(s.contentTextarea, s.width);
 
@@ -1011,13 +988,10 @@ function handleKeys(msg, s) {
         }
         // 'r' = Reset (clear all documents) per ASCII design
         if (k === 'r') {
-            if (s.documents.length > 0) {
-                s.mode = MODE_CONFIRM;
-                s.confirmPrompt = `Reset ALL ${s.documents.length} documents? This cannot be undone. (y/n)`;
-                s.confirmDocId = -1; // Special ID for reset-all
-            } else {
-                s.statusMsg = 'No documents to reset';
-            }
+            // Reset (archive + clear session state) - show confirmation regardless of documents
+            s.mode = MODE_CONFIRM;
+            s.confirmPrompt = 'Reset the session (archive current state and clear all persisted state)? This cannot be undone. (y/n)';
+            s.confirmDocId = -1; // Special ID for reset-all
             s.focusedButtonIdx = -1; // Clear button focus
         }
         // 'R' (uppercase) = Rename selected document title
@@ -1044,21 +1018,16 @@ function handleKeys(msg, s) {
             s.focusedButtonIdx = -1; // Clear button focus
         }
         if (k === 'c') {
-            if (s.documents.length === 0) {
-                s.statusMsg = 'No documents!';
+            const prompt = buildFinalPrompt();
+            s.clipboard = prompt;
+            try {
+                // Call the system clipboard via osm:os module
+                osm.clipboardCopy(prompt);
+                s.statusMsg = `Copied prompt (${prompt.length} chars)`;
+                s.hasError = false;
+            } catch (e) {
+                s.statusMsg = 'Clipboard error: ' + e;
                 s.hasError = true;
-            } else {
-                const prompt = buildFinalPrompt();
-                s.clipboard = prompt;
-                try {
-                    // Call the system clipboard via osm:os module
-                    osm.clipboardCopy(prompt);
-                    s.statusMsg = `Copied prompt (${prompt.length} chars)`;
-                    s.hasError = false;
-                } catch (e) {
-                    s.statusMsg = 'Clipboard error: ' + e;
-                    s.hasError = true;
-                }
             }
             s.focusedButtonIdx = -1; // Clear button focus
         }
@@ -1080,7 +1049,6 @@ function handleKeys(msg, s) {
         }
 
         if (k === 'esc') {
-            disposeTextareaIfExists(s);
             s.mode = MODE_LIST;
             s.statusMsg = 'Cancelled';
             s.inputViewportUnlocked = false; // Reset on mode exit
@@ -1116,7 +1084,6 @@ function handleKeys(msg, s) {
         } else if (k === 'ctrl+enter' || (k === 'enter' && s.inputFocus !== FOCUS_CONTENT)) {
             // Submit
             if (s.inputFocus === FOCUS_CANCEL) {
-                disposeTextareaIfExists(s);
                 s.mode = MODE_LIST;
                 s.inputViewportUnlocked = false; // Reset on mode exit
                 // Force full screen repaint when exiting form mode
@@ -1148,7 +1115,6 @@ function handleKeys(msg, s) {
             }
             // Refresh local state from global after mutation
             s.documents = getDocuments();
-            disposeTextareaIfExists(s);
             s.mode = MODE_LIST;
             s.hasError = false;
             s.inputViewportUnlocked = false; // Reset on mode exit
@@ -1226,10 +1192,15 @@ function handleKeys(msg, s) {
                 // from being inserted into the document content.
                 const validation = tea.isValidTextareaInput(k, isPaste);
                 if (msg.type === 'Key' && validation.valid) {
-                    // Delegate to native textarea component
-                    s.contentTextarea.update(msg);
+                    // Delegate to native textarea component and capture returned command
+                    const [newTa, taCmd] = s.contentTextarea.update(msg);
+                    if (newTa) {
+                        s.contentTextarea = newTa; // update the textarea instance
+                    }
                     // CRITICAL: Reset viewport unlock when user types, so view snaps to cursor
                     s.inputViewportUnlocked = false;
+                    // Propagate any textarea command up to the BubbleTea runtime
+                    return [s, (typeof taCmd === 'undefined' ? null : taCmd)];
                 }
                 // Silently discard ALL invalid input (garbage)
             }
@@ -1237,13 +1208,20 @@ function handleKeys(msg, s) {
     } else if (s.mode === MODE_CONFIRM) {
         if (k === 'y' || k === 'Y') {
             if (s.confirmDocId === -1) {
-                // Reset all documents
-                const count = s.documents.length;
-                setDocuments([]);
-                s.documents = [];
-                s.selectedIdx = 0;
-                state.set(stateKeys.selectedIndex, 0);
-                s.statusMsg = 'Reset: cleared ' + count + ' documents';
+                // Perform a full archive+reset via TUI API
+                try {
+                    const archivePath = tui.reset();
+                    // Refresh local document list from global state
+                    setDocuments([]); // Ensure UI-level documents cleared
+                    s.documents = getDocuments();
+                    s.selectedIdx = 0;
+                    state.set(stateKeys.selectedIndex, 0);
+                    s.statusMsg = archivePath ? ('Session archived: ' + archivePath) : 'Session reset';
+                    s.hasError = false;
+                } catch (e) {
+                    s.statusMsg = 'Reset failed: ' + e;
+                    s.hasError = true;
+                }
             } else {
                 // Delete single document
                 const deletedId = s.confirmDocId;
@@ -1357,16 +1335,11 @@ function handleMouse(msg, s) {
                 return [s, null];
             }
             if (btn.action === 'reset') {
-                // Reset clears all documents - show confirmation
-                if (s.documents.length > 0) {
-                    s.mode = MODE_CONFIRM;
-                    s.confirmPrompt = `Reset ALL ${s.documents.length} documents? This cannot be undone. (y/n)`;
-                    s.confirmDocId = -1; // Special ID for reset-all
-                    return [s, null];
-                } else {
-                    s.statusMsg = 'No documents to reset';
-                    return [s, null];
-                }
+                // Reset (archive + clear session state) - show confirmation regardless of documents
+                s.mode = MODE_CONFIRM;
+                s.confirmPrompt = 'Reset the session (archive current state and clear all persisted state)? This cannot be undone. (y/n)';
+                s.confirmDocId = -1; // Special ID for reset-all
+                return [s, null];
             }
             if (btn.action === 'submit') {
                 // Handle submit button click - this is the fix for the nil pointer crash
@@ -2220,10 +2193,6 @@ function buildCommands() {
             }
         }, "copy": {
             description: "Copy the final prompt to clipboard", handler: function () {
-                if (getDocuments().length === 0) {
-                    output.print("No documents.");
-                    return;
-                }
                 const txt = buildFinalPrompt();
                 try {
                     ctxmgr.clipboardCopy(txt);

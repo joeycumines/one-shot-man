@@ -192,7 +192,11 @@ func TestResetCommand_WithArchive(t *testing.T) {
 	stateManager.SetState("code-review:notes", "test notes")
 
 	// Execute reset
-	tuiMgr.resetAllState()
+	archivePath, err := tuiMgr.resetAllState()
+	if err != nil {
+		t.Fatalf("resetAllState failed: %v", err)
+	}
+	_ = archivePath // may be empty for in-memory backend
 
 	// Verify state was cleared
 	contextItems, ok := stateManager.GetState("contextItems")

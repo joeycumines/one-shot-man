@@ -590,8 +590,8 @@ func TestSuperDocument_ErrorOnCopyWithNoDocuments(t *testing.T) {
 	snap = cp.Snapshot()
 	sendKey(t, cp, "c")
 
-	// Should see error message
-	expect(snap, "No documents!", 5*time.Second)
+	// Should see a copy status message (copying final prompt even with no document)
+	expect(snap, "Copied prompt", 5*time.Second)
 
 	// Quit
 	sendKey(t, cp, "q")

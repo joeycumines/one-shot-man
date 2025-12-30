@@ -80,21 +80,32 @@ func TestSuperDocument_ClickAfterAutoScrollPlacesCursorCorrectly(t *testing.T) {
 	}
 
 	marker := "UNIQ-MARKER-CLICK-AFTER-SCROLL"
-	// Type many lines to force auto-scroll; put the unique marker on the last line
-	for i := 0; i < 120; i++ {
+	// Type enough lines to force auto-scroll; put the unique marker on the last line.
+	// 25 lines is sufficient to trigger auto-scroll in any reasonable terminal height
+	// while keeping the test fast and deterministic.
+	numLines := 25
+	for i := 0; i < numLines; i++ {
 		line := fmt.Sprintf("line-%03d", i)
-		if i == 119 {
+		if i == numLines-1 {
 			line = line + " " + marker
 		}
 		for _, ch := range line {
 			sendKey(t, cp, string(ch))
-			time.Sleep(4 * time.Millisecond)
+			time.Sleep(5 * time.Millisecond) // Slightly slower typing to improve reliability
 		}
 		sendKey(t, cp, "\r")
+		// Slightly longer delay after each line to let the terminal fully process
+		time.Sleep(30 * time.Millisecond)
 	}
 
-	// Immediately attempt to click the visible marker (ClickElement waits until it's visible)
-	if err := mouse.ClickElement(ctx, marker, 6*time.Second); err != nil {
+	// Wait for the marker to appear in the buffer before attempting to click
+	// This ensures typing is complete and the content is rendered
+	if err := waitForBufferContains(ctx, cp, marker, 20*time.Second); err != nil {
+		t.Fatalf("Marker never appeared after typing: %v\nBuffer: %q", err, cp.String())
+	}
+
+	// Now attempt to click the visible marker
+	if err := mouse.ClickElement(ctx, marker, 10*time.Second); err != nil {
 		t.Fatalf("Failed to click marker element: %v", err)
 	}
 

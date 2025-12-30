@@ -21,10 +21,10 @@
 //					if (msg.key === 'up') return [{ count: model.count + 1 }, null];
 //					if (msg.key === 'down') return [{ count: model.count - 1 }, null];
 //					break;
-//				case 'focus':
+//				case 'Focus':
 //					// Terminal gained focus
 //					break;
-//				case 'blur':
+//				case 'Blur':
 //					// Terminal lost focus
 //					break;
 //			}

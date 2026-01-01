@@ -16,9 +16,8 @@ var (
 	testBinDir     string // The bin/ directory added to PATH
 
 	// Recording flags - set via -record and -execute-vhs flags
-	recordingEnabled   bool
-	executeVHSEnabled  bool
-	recordingOutputDir string
+	recordingEnabled  bool
+	executeVHSEnabled bool
 )
 
 // TestMain provides setup and teardown for the entire test suite.
@@ -33,7 +32,6 @@ func TestMain(m *testing.M) {
 	// Parse recording flags
 	flag.BoolVar(&recordingEnabled, "record", false, "enable recording")
 	flag.BoolVar(&executeVHSEnabled, "execute-vhs", false, "enable VHS execution for recording tests")
-	flag.StringVar(&recordingOutputDir, "recording-dir", "", "output directory for recordings")
 	flag.Parse()
 
 	// Build the test binary before any tests run
@@ -113,24 +111,11 @@ func buildTestBinary(tb testing.TB) string {
 
 // getRecordingOutputDir returns the output directory for recordings.
 func getRecordingOutputDir() string {
-	if recordingOutputDir != "" {
-		return recordingOutputDir
-	}
-	// Default to docs/visuals/gifs relative to repo root
 	_, source, _, ok := runtime.Caller(0)
 	if !ok {
 		panic("failed to find caller source")
 	}
+	// Clean, absolute path to docs/visuals/gifs
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
 	return filepath.Join(repoRoot, "docs", "visuals", "gifs")
-}
-
-// isRecordingEnabled returns whether recording is enabled.
-func isRecordingEnabled() bool {
-	return recordingEnabled
-}
-
-// isVHSExecutionEnabled returns whether VHS execution is enabled.
-func isVHSExecutionEnabled() bool {
-	return executeVHSEnabled
 }

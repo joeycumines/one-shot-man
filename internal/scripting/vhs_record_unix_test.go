@@ -48,6 +48,10 @@ type recorderConfig struct {
 
 	// VHS recording settings
 	vhsSettings VHSRecordSettings
+
+	// skipTapeOutput disables writing the .tape file on Close.
+	// The test logic still runs; only file output is skipped.
+	skipTapeOutput bool
 }
 
 // recorderOptionImpl implements RecorderOption.
@@ -119,6 +123,16 @@ func WithRecorderVHSSettings(settings VHSRecordSettings) RecorderOption {
 	})
 }
 
+// WithRecorderSkipTapeOutput disables writing the .tape file on Close.
+// The test logic still runs normally; only file output is skipped.
+// This is used when running tests without the -record flag.
+func WithRecorderSkipTapeOutput() RecorderOption {
+	return recorderOptionImpl(func(c *recorderConfig) error {
+		c.skipTapeOutput = true
+		return nil
+	})
+}
+
 // resolveRecorderOptions applies options and returns the config.
 func resolveRecorderOptions(opts []RecorderOption) (*recorderConfig, error) {
 	cfg := &recorderConfig{
@@ -152,6 +166,9 @@ type InputCaptureRecorder struct {
 	// The command that was typed - for documentation in tape
 	typedCommand string
 	typedArgs    []string
+
+	// skipTapeOutput disables writing the .tape file on Close.
+	skipTapeOutput bool
 }
 
 // NewInputCaptureRecorder creates a new recorder that wraps a termtest.Console
@@ -189,12 +206,13 @@ func NewInputCaptureRecorder(ctx context.Context, tapePath string, opts ...Recor
 	}
 
 	return &InputCaptureRecorder{
-		console:      console,
-		input:        &bytes.Buffer{},
-		config:       cfg.vhsSettings,
-		tapePath:     tapePath,
-		typedCommand: cfg.command,
-		typedArgs:    cfg.args,
+		console:        console,
+		input:          &bytes.Buffer{},
+		config:         cfg.vhsSettings,
+		tapePath:       tapePath,
+		typedCommand:   cfg.command,
+		typedArgs:      cfg.args,
+		skipTapeOutput: cfg.skipTapeOutput,
 	}, nil
 }
 
@@ -255,13 +273,20 @@ func (r *InputCaptureRecorder) TypeCommand() error {
 }
 
 // Close closes the console and saves the captured input as a VHS tape.
+// If skipTapeOutput is true, tape file writing is skipped but the console is still closed.
 func (r *InputCaptureRecorder) Close() error {
 	if r.closed {
 		return nil
 	}
 	r.closed = true
-	r.console.Close()
-	return r.saveTape()
+	closeErr := r.console.Close()
+	if r.skipTapeOutput {
+		return closeErr
+	}
+	if saveErr := r.saveTape(); saveErr != nil {
+		return saveErr
+	}
+	return closeErr
 }
 
 // Snapshot returns a snapshot of the console buffer.

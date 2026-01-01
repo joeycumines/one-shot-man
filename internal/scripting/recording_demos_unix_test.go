@@ -15,8 +15,8 @@ import (
 )
 
 // Recording integration tests that generate VHS tapes as a side effect.
-// These tests actually run the application, verify correct behavior,
-// and record the interaction for generating documentation GIFs.
+// These tests ALWAYS run the application and verify correct behavior.
+// Recording output (tapes and GIFs) is only generated when the appropriate flags are set.
 //
 // IMPORTANT: These tests use InputCaptureRecorder with the new options pattern.
 // Commands are typed into a shell (not run directly) to ensure .tape files
@@ -24,8 +24,9 @@ import (
 //
 // Usage:
 //
-//	go test -v -run TestRecording -record              # Generate tapes only
-//	go test -v -run TestRecording -record -execute-vhs # Generate tapes and GIFs
+//	go test -v -run TestRecording                      # Run tests only (no output files)
+//	go test -v -run TestRecording -record              # Run tests + generate tapes
+//	go test -v -run TestRecording -record -execute-vhs # Run tests + generate tapes + GIFs
 
 // executeVHSOnTape runs VHS on a tape file to generate the GIF.
 func executeVHSOnTape(ctx context.Context, tapePath string) error {
@@ -40,6 +41,16 @@ func executeVHSOnTape(ctx context.Context, tapePath string) error {
 		return fmt.Errorf("vhs execution failed: %w\nOutput: %s", err, output)
 	}
 	return nil
+}
+
+// buildRecorderOpts returns recorder options, including WithRecorderSkipTapeOutput()
+// if recordingEnabled is false. This ensures tests always run but only write
+// tape files when -record flag is set.
+func buildRecorderOpts(baseOpts ...RecorderOption) []RecorderOption {
+	if !recordingEnabled {
+		return append(baseOpts, WithRecorderSkipTapeOutput())
+	}
+	return baseOpts
 }
 
 // typeString types a string character-by-character with a small delay.
@@ -77,20 +88,9 @@ func typeStringFast(t *testing.T, recorder *InputCaptureRecorder, s string) {
 // - Navigating between documents
 // - Copying the prompt
 func TestRecording_SuperDocument_Visual(t *testing.T) {
-	if !isRecordingEnabled() {
-		t.Skip("Recording disabled. Use -record flag to enable.")
-	}
-	if !isUnixPlatform() {
-		t.Skip("Unix-only recording test")
-	}
-
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-visual.tape")
 	gifPath := filepath.Join(outputDir, "super-document-visual.gif")
-
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		t.Fatalf("Failed to create output directory: %v", err)
-	}
 
 	// Create temp config to ensure isolation
 	tempConfig := filepath.Join(t.TempDir(), "config")
@@ -109,7 +109,7 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 	settings := DefaultVHSRecordSettings()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath,
+	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
 		WithRecorderShell("bash"),
 		WithRecorderCommand("osm", "super-document"),
 		WithRecorderTimeout(30*time.Second),
@@ -121,7 +121,7 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 			"TERM=xterm-256color",
 		),
 		WithRecorderVHSSettings(settings),
-	)
+	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
 	}
@@ -268,9 +268,11 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 		t.Fatalf("Failed to save tape: %v", err)
 	}
 
-	t.Logf("Recording tape saved to: %s", tapePath)
+	if recordingEnabled {
+		t.Logf("Recording tape saved to: %s", tapePath)
+	}
 
-	if isVHSExecutionEnabled() {
+	if executeVHSEnabled && recordingEnabled {
 		if err := executeVHSOnTape(ctx, tapePath); err != nil {
 			t.Fatalf("Failed to execute VHS: %v", err)
 		}
@@ -280,20 +282,9 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 
 // TestRecording_SuperDocument_Shell demonstrates the super-document shell mode.
 func TestRecording_SuperDocument_Shell(t *testing.T) {
-	if !isRecordingEnabled() {
-		t.Skip("Recording disabled. Use -record flag to enable.")
-	}
-	if !isUnixPlatform() {
-		t.Skip("Unix-only recording test")
-	}
-
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-shell.tape")
 	gifPath := filepath.Join(outputDir, "super-document-shell.gif")
-
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		t.Fatalf("Failed to create output directory: %v", err)
-	}
 
 	// Create temp config to ensure isolation
 	tempConfig := filepath.Join(t.TempDir(), "config")
@@ -312,7 +303,7 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 	settings := DefaultVHSRecordSettings()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath,
+	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
 		WithRecorderShell("bash"),
 		WithRecorderCommand("osm", "super-document", "--shell"),
 		WithRecorderTimeout(30*time.Second),
@@ -324,7 +315,7 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 			"TERM=xterm-256color",
 		),
 		WithRecorderVHSSettings(settings),
-	)
+	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
 	}
@@ -441,9 +432,11 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 		t.Fatalf("Failed to save tape: %v", err)
 	}
 
-	t.Logf("Recording tape saved to: %s", tapePath)
+	if recordingEnabled {
+		t.Logf("Recording tape saved to: %s", tapePath)
+	}
 
-	if isVHSExecutionEnabled() {
+	if executeVHSEnabled && recordingEnabled {
 		if err := executeVHSOnTape(ctx, tapePath); err != nil {
 			t.Fatalf("Failed to execute VHS: %v", err)
 		}
@@ -453,20 +446,9 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 
 // TestRecording_SuperDocument_Interop demonstrates visual<->shell mode switching.
 func TestRecording_SuperDocument_Interop(t *testing.T) {
-	if !isRecordingEnabled() {
-		t.Skip("Recording disabled. Use -record flag to enable.")
-	}
-	if !isUnixPlatform() {
-		t.Skip("Unix-only recording test")
-	}
-
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-interop.tape")
 	gifPath := filepath.Join(outputDir, "super-document-interop.gif")
-
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		t.Fatalf("Failed to create output directory: %v", err)
-	}
 
 	// Create temp config to ensure isolation
 	tempConfig := filepath.Join(t.TempDir(), "config")
@@ -485,7 +467,7 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 	settings := DefaultVHSRecordSettings()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath,
+	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
 		WithRecorderShell("bash"),
 		WithRecorderCommand("osm", "super-document"),
 		WithRecorderTimeout(30*time.Second),
@@ -497,7 +479,7 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 			"TERM=xterm-256color",
 		),
 		WithRecorderVHSSettings(settings),
-	)
+	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
 	}
@@ -641,9 +623,11 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 		t.Fatalf("Failed to save tape: %v", err)
 	}
 
-	t.Logf("Recording tape saved to: %s", tapePath)
+	if recordingEnabled {
+		t.Logf("Recording tape saved to: %s", tapePath)
+	}
 
-	if isVHSExecutionEnabled() {
+	if executeVHSEnabled && recordingEnabled {
 		if err := executeVHSOnTape(ctx, tapePath); err != nil {
 			t.Fatalf("Failed to execute VHS: %v", err)
 		}
@@ -653,20 +637,9 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 
 // TestRecording_CodeReview demonstrates the code-review command.
 func TestRecording_CodeReview(t *testing.T) {
-	if !isRecordingEnabled() {
-		t.Skip("Recording disabled. Use -record flag to enable.")
-	}
-	if !isUnixPlatform() {
-		t.Skip("Unix-only recording test")
-	}
-
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "code-review.tape")
 	gifPath := filepath.Join(outputDir, "code-review.gif")
-
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		t.Fatalf("Failed to create output directory: %v", err)
-	}
 
 	// Create temp config to ensure isolation
 	tempConfig := filepath.Join(t.TempDir(), "config")
@@ -685,7 +658,7 @@ func TestRecording_CodeReview(t *testing.T) {
 	settings := DefaultVHSRecordSettings()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath,
+	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
 		WithRecorderShell("bash"),
 		WithRecorderCommand("osm", "code-review"),
 		WithRecorderTimeout(30*time.Second),
@@ -698,7 +671,7 @@ func TestRecording_CodeReview(t *testing.T) {
 			"TERM=xterm-256color",
 		),
 		WithRecorderVHSSettings(settings),
-	)
+	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
 	}
@@ -825,9 +798,11 @@ func TestRecording_CodeReview(t *testing.T) {
 		t.Fatalf("Failed to save tape: %v", err)
 	}
 
-	t.Logf("Recording tape saved to: %s", tapePath)
+	if recordingEnabled {
+		t.Logf("Recording tape saved to: %s", tapePath)
+	}
 
-	if isVHSExecutionEnabled() {
+	if executeVHSEnabled && recordingEnabled {
 		if err := executeVHSOnTape(ctx, tapePath); err != nil {
 			t.Fatalf("Failed to execute VHS: %v", err)
 		}
@@ -837,20 +812,9 @@ func TestRecording_CodeReview(t *testing.T) {
 
 // TestRecording_PromptFlow demonstrates the prompt-flow command.
 func TestRecording_PromptFlow(t *testing.T) {
-	if !isRecordingEnabled() {
-		t.Skip("Recording disabled. Use -record flag to enable.")
-	}
-	if !isUnixPlatform() {
-		t.Skip("Unix-only recording test")
-	}
-
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "prompt-flow.tape")
 	gifPath := filepath.Join(outputDir, "prompt-flow.gif")
-
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		t.Fatalf("Failed to create output directory: %v", err)
-	}
 
 	// Create temp config to ensure isolation
 	tempConfig := filepath.Join(t.TempDir(), "config")
@@ -869,7 +833,7 @@ func TestRecording_PromptFlow(t *testing.T) {
 	settings := DefaultVHSRecordSettings()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath,
+	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
 		WithRecorderShell("bash"),
 		WithRecorderCommand("osm", "prompt-flow"),
 		WithRecorderTimeout(30*time.Second),
@@ -881,7 +845,7 @@ func TestRecording_PromptFlow(t *testing.T) {
 			"TERM=xterm-256color",
 		),
 		WithRecorderVHSSettings(settings),
-	)
+	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
 	}
@@ -1017,9 +981,11 @@ func TestRecording_PromptFlow(t *testing.T) {
 		t.Fatalf("Failed to save tape: %v", err)
 	}
 
-	t.Logf("Recording tape saved to: %s", tapePath)
+	if recordingEnabled {
+		t.Logf("Recording tape saved to: %s", tapePath)
+	}
 
-	if isVHSExecutionEnabled() {
+	if executeVHSEnabled && recordingEnabled {
 		if err := executeVHSOnTape(ctx, tapePath); err != nil {
 			t.Fatalf("Failed to execute VHS: %v", err)
 		}
@@ -1029,20 +995,9 @@ func TestRecording_PromptFlow(t *testing.T) {
 
 // TestRecording_Goal demonstrates the goal command with a sample workflow.
 func TestRecording_Goal(t *testing.T) {
-	if !isRecordingEnabled() {
-		t.Skip("Recording disabled. Use -record flag to enable.")
-	}
-	if !isUnixPlatform() {
-		t.Skip("Unix-only recording test")
-	}
-
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "goal.tape")
 	gifPath := filepath.Join(outputDir, "goal.gif")
-
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		t.Fatalf("Failed to create output directory: %v", err)
-	}
 
 	// Create temp config to ensure isolation
 	tempConfig := filepath.Join(t.TempDir(), "config")
@@ -1061,7 +1016,7 @@ func TestRecording_Goal(t *testing.T) {
 	settings := DefaultVHSRecordSettings()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath,
+	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
 		WithRecorderShell("bash"),
 		WithRecorderCommand("osm", "goal", "test-generator"),
 		WithRecorderTimeout(30*time.Second),
@@ -1073,7 +1028,7 @@ func TestRecording_Goal(t *testing.T) {
 			"TERM=xterm-256color",
 		),
 		WithRecorderVHSSettings(settings),
-	)
+	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
 	}
@@ -1165,9 +1120,11 @@ func TestRecording_Goal(t *testing.T) {
 		t.Fatalf("Failed to save tape: %v", err)
 	}
 
-	t.Logf("Recording tape saved to: %s", tapePath)
+	if recordingEnabled {
+		t.Logf("Recording tape saved to: %s", tapePath)
+	}
 
-	if isVHSExecutionEnabled() {
+	if executeVHSEnabled && recordingEnabled {
 		if err := executeVHSOnTape(ctx, tapePath); err != nil {
 			t.Fatalf("Failed to execute VHS: %v", err)
 		}
@@ -1177,20 +1134,9 @@ func TestRecording_Goal(t *testing.T) {
 
 // TestRecording_Quickstart is a quick overview demo.
 func TestRecording_Quickstart(t *testing.T) {
-	if !isRecordingEnabled() {
-		t.Skip("Recording disabled. Use -record flag to enable.")
-	}
-	if !isUnixPlatform() {
-		t.Skip("Unix-only recording test")
-	}
-
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "quickstart.tape")
 	gifPath := filepath.Join(outputDir, "quickstart.gif")
-
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		t.Fatalf("Failed to create output directory: %v", err)
-	}
 
 	// Create temp config to ensure isolation
 	tempConfig := filepath.Join(t.TempDir(), "config")
@@ -1209,7 +1155,7 @@ func TestRecording_Quickstart(t *testing.T) {
 	settings := DefaultVHSRecordSettings()
 	settings.OutputGIF = filepath.Base(gifPath)
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath,
+	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
 		WithRecorderShell("bash"),
 		WithRecorderCommand("osm", "help"),
 		WithRecorderTimeout(10*time.Second),
@@ -1221,7 +1167,7 @@ func TestRecording_Quickstart(t *testing.T) {
 			"TERM=xterm-256color",
 		),
 		WithRecorderVHSSettings(settings),
-	)
+	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
 	}
@@ -1278,9 +1224,11 @@ func TestRecording_Quickstart(t *testing.T) {
 		t.Fatalf("Failed to save tape: %v", err)
 	}
 
-	t.Logf("Recording tape saved to: %s", tapePath)
+	if recordingEnabled {
+		t.Logf("Recording tape saved to: %s", tapePath)
+	}
 
-	if isVHSExecutionEnabled() {
+	if executeVHSEnabled && recordingEnabled {
 		if err := executeVHSOnTape(ctx, tapePath); err != nil {
 			t.Fatalf("Failed to execute VHS: %v", err)
 		}
@@ -1290,20 +1238,9 @@ func TestRecording_Quickstart(t *testing.T) {
 
 // TestRecording_SuperDocument_Visual_Light demonstrates light theme.
 func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
-	if !isRecordingEnabled() {
-		t.Skip("Recording disabled. Use -record flag to enable.")
-	}
-	if !isUnixPlatform() {
-		t.Skip("Unix-only recording test")
-	}
-
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-visual-light.tape")
 	gifPath := filepath.Join(outputDir, "super-document-visual-light.gif")
-
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		t.Fatalf("Failed to create output directory: %v", err)
-	}
 
 	// Create temp config to ensure isolation
 	tempConfig := filepath.Join(t.TempDir(), "config")
@@ -1324,7 +1261,7 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 	settings.Theme = VHSLightTheme
 	settings.MarginFill = "#f8f8f2"
 
-	recorder, err := NewInputCaptureRecorder(ctx, tapePath,
+	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
 		WithRecorderShell("bash"),
 		WithRecorderCommand("osm", "super-document"),
 		WithRecorderTimeout(30*time.Second),
@@ -1336,7 +1273,7 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 			"TERM=xterm-256color",
 		),
 		WithRecorderVHSSettings(settings),
-	)
+	)...)
 	if err != nil {
 		t.Fatalf("Failed to create recorder: %v", err)
 	}
@@ -1433,9 +1370,11 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 		t.Fatalf("Failed to save tape: %v", err)
 	}
 
-	t.Logf("Recording tape saved to: %s", tapePath)
+	if recordingEnabled {
+		t.Logf("Recording tape saved to: %s", tapePath)
+	}
 
-	if isVHSExecutionEnabled() {
+	if executeVHSEnabled && recordingEnabled {
 		if err := executeVHSOnTape(ctx, tapePath); err != nil {
 			t.Fatalf("Failed to execute VHS: %v", err)
 		}

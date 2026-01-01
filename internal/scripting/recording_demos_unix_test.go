@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +42,66 @@ func executeVHSOnTape(ctx context.Context, tapePath string) error {
 		return fmt.Errorf("vhs execution failed: %w\nOutput: %s", err, output)
 	}
 	return nil
+}
+
+// ensurePrompt waits for a shell prompt or verifies it's already present.
+// This guards against races by ensuring that any trailing '$' is the active
+// shell prompt (it must be the last significant character on the line and
+// not followed by other non-whitespace text). If not present, it waits for a
+// real prompt to appear within the timeout.
+func ensurePrompt(ctx context.Context, t *testing.T, r *InputCaptureRecorder, timeout time.Duration) {
+	t.Helper()
+
+	// 1. Capture state ONCE.
+	snap := r.Snapshot()
+
+	// 2. Define logic (unchanged)
+	isPrompt := func(buf string) bool {
+		idx := strings.LastIndex(buf, "$")
+		if idx == -1 {
+			return false
+		}
+		tail := buf[idx:]
+		return strings.TrimRight(tail, " \t\r\n") == "$"
+	}
+
+	// 3. Check the captured state.
+	// Note: Assuming r.Console().String() matches the snapshot state,
+	// or better, if Snapshot has a String() method, use that.
+	// If not, r.String() is acceptable ONLY if we accept that 'snap'
+	// might be slightly older than 'r.String()', but never newer.
+	// Ideally:
+	currentBuf := r.String()
+	if isPrompt(currentBuf) {
+		return
+	}
+
+	// 4. Wait relative to the snapshot taken BEFORE the check.
+	// Even if the prompt arrived during step 3, 'snap' (step 1)
+	// does NOT contain it, so 'Expect' will see it as new content.
+	promptCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	condition := func(output string) bool {
+		return isPrompt(output)
+	}
+
+	if err := r.Expect(promptCtx, snap, condition, "wait for strict prompt '$'"); err != nil {
+		t.Fatalf("Expected prompt '$' at tail: %v\nBuffer: %q", err, r.String())
+	}
+}
+
+// waitForProcessExit waits for the spawned shell to exit with code 0 and emits
+// the recorder buffer in the error to aid debugging in case of timeout/failure.
+// The timeout context is derived from the parent test context to ensure
+// cancellation propagates.
+func waitForProcessExit(ctx context.Context, t *testing.T, cp *termtest.Console, r *InputCaptureRecorder) {
+	t.Helper()
+	exitCtx, exitCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer exitCancel()
+	if code, err := cp.WaitExit(exitCtx); err != nil || code != 0 {
+		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, r.String())
+	}
 }
 
 // buildRecorderOpts returns recorder options, including WithRecorderSkipTapeOutput()
@@ -251,8 +312,7 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 	recorder.RecordSleep(300 * time.Millisecond)
 
 	// Wait for shell prompt to return
-	snap = recorder.Snapshot()
-	expect(snap, "$", 5*time.Second)
+	ensurePrompt(ctx, t, recorder, 5*time.Second)
 
 	// Exit the shell
 	typeString(t, recorder, "exit")
@@ -260,9 +320,7 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitForProcessExit(ctx, t, cp, recorder)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -615,9 +673,7 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitForProcessExit(ctx, t, cp, recorder)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -790,9 +846,7 @@ func TestRecording_CodeReview(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitForProcessExit(ctx, t, cp, recorder)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -973,9 +1027,7 @@ func TestRecording_PromptFlow(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitForProcessExit(ctx, t, cp, recorder)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -1112,9 +1164,7 @@ func TestRecording_Goal(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitForProcessExit(ctx, t, cp, recorder)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -1207,8 +1257,7 @@ func TestRecording_Quickstart(t *testing.T) {
 	recorder.RecordSleep(1 * time.Second)
 
 	// Wait for shell prompt to return (help exits immediately)
-	snap = recorder.Snapshot()
-	expect(snap, "$", 5*time.Second)
+	ensurePrompt(ctx, t, recorder, 5*time.Second)
 
 	// Exit the shell
 	typeString(t, recorder, "exit")
@@ -1216,9 +1265,7 @@ func TestRecording_Quickstart(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	if _, err := cp.WaitExit(ctx); err != nil {
-		t.Logf("Shell exited: %v", err)
-	}
+	waitForProcessExit(ctx, t, cp, recorder)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)
@@ -1362,9 +1409,7 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitForProcessExit(ctx, t, cp, recorder)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)

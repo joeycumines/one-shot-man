@@ -110,6 +110,8 @@ func buildTestBinary(tb testing.TB) string {
 }
 
 // getRecordingOutputDir returns the output directory for recordings.
+//
+//lint:ignore U1000 Unused depending on env.
 func getRecordingOutputDir() string {
 	_, source, _, ok := runtime.Caller(0)
 	if !ok {

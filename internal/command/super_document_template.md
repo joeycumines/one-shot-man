@@ -12,6 +12,8 @@ All information or content that you DON'T manage to coalesce will be discarded, 
 {{.contextTxtar}}
 {{end}}
 
+{{- if .documents}}
+
 ---
 ## DOCUMENTS
 ---
@@ -22,4 +24,5 @@ Document {{$doc.id}}:
 {{$doc.content}}
 `````
 
+{{end}}
 {{end}}

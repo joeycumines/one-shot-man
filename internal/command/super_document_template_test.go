@@ -20,6 +20,8 @@ func TestSuperDocumentTemplate_ConditionalDocuments(t *testing.T) {
 			t.Fatalf("execute template: %v", err)
 		}
 		out := buf.String()
+		// Normalize line endings to avoid Windows CRLF/LF differences in CI
+		out = strings.ReplaceAll(out, "\r\n", "\n")
 		if strings.Contains(out, "## DOCUMENTS") {
 			t.Fatalf("expected no DOCUMENTS header, got output containing it:\n%s", out)
 		}
@@ -35,6 +37,8 @@ func TestSuperDocumentTemplate_ConditionalDocuments(t *testing.T) {
 			t.Fatalf("execute template: %v", err)
 		}
 		out := buf.String()
+		// Normalize line endings to avoid Windows CRLF/LF differences in CI
+		out = strings.ReplaceAll(out, "\r\n", "\n")
 		if !strings.Contains(out, "## DOCUMENTS") {
 			t.Fatalf("expected DOCUMENTS header present, got:\n%s", out)
 		}

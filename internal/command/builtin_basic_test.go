@@ -61,6 +61,28 @@ func TestHelpCommandSpecificCommand(t *testing.T) {
 	}
 }
 
+func TestHelpCommandShowsCommandFlags(t *testing.T) {
+	t.Parallel()
+	registry := &Registry{commands: make(map[string]Command)}
+	helper := NewHelpCommand(registry)
+	cfg := config.NewConfig()
+	configCmd := NewConfigCommand(cfg)
+	registry.Register(helper)
+	registry.Register(configCmd)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	if err := helper.Execute([]string{"config"}, &stdout, &stderr); err != nil {
+		t.Fatalf("help execute returned error: %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Flags:") || !strings.Contains(out, "-global") || !strings.Contains(out, "-all") {
+		t.Fatalf("expected config help to mention flags, got %q", out)
+	}
+}
+
 func TestHelpCommandUnknownCommand(t *testing.T) {
 	t.Parallel()
 	registry := &Registry{commands: make(map[string]Command)}

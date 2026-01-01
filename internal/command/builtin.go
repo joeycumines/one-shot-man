@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -65,7 +66,7 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		_ = w.Flush()
 
 		_, _ = fmt.Fprintln(stdout, "")
-		_, _ = fmt.Fprintln(stdout, "Use 'osm help <command>' for more information about a specific command.")
+		_, _ = fmt.Fprintln(stdout, "Use 'osm help <command>' for more information about a specific command (includes flags).")
 		return nil
 	}
 
@@ -80,6 +81,25 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	_, _ = fmt.Fprintf(stdout, "Command: %s\n", cmd.Name())
 	_, _ = fmt.Fprintf(stdout, "Description: %s\n", cmd.Description())
 	_, _ = fmt.Fprintf(stdout, "Usage: %s\n", cmd.Usage())
+
+	// Show command-specific flags (if any) by invoking SetupFlags on a temporary FlagSet
+	fs := flag.NewFlagSet(cmd.Name(), flag.ContinueOnError)
+	buf := &bytes.Buffer{}
+	fs.SetOutput(buf)
+	cmd.SetupFlags(fs)
+	// PrintDefaults writes any defined flags to the FlagSet output
+	fs.PrintDefaults()
+	if buf.Len() > 0 {
+		_, _ = fmt.Fprintln(stdout, "")
+		_, _ = fmt.Fprintln(stdout, "Flags:")
+		_, _ = fmt.Fprint(stdout, buf.String())
+	} else {
+		// If this is a script command, hint to run the script with -h
+		if _, isScript := cmd.(*ScriptCommand); isScript {
+			_, _ = fmt.Fprintln(stdout, "")
+			_, _ = fmt.Fprintf(stdout, "Note: this is a script command; run 'osm %s -h' for its help (if supported).\n", cmd.Name())
+		}
+	}
 
 	return nil
 }

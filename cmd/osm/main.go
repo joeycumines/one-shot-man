@@ -79,7 +79,7 @@ func run() error {
 	cmd, err := registry.Get(cmdName)
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmdName)
-		_, _ = fmt.Fprintln(os.Stderr, "Use 'osm help' to see available commands.")
+		_, _ = fmt.Fprintln(os.Stderr, "Use 'osm help' to see available commands; use 'osm help <command>' for details (includes flags).")
 		return err
 	}
 

@@ -2,7 +2,7 @@
 
 This is a *meaning-based* reference (what each command is for), plus the key flags that shape behavior.
 
-Note: `osm help <command>` prints name/description/usage only. For flags, use `osm <command> -h`.
+Note: `osm help <command>` prints name, description, usage, and any defined flags. For full, verbatim command help (including flag formatting produced by the command), use `osm <command> -h`.
 
 ## Top-level commands
 

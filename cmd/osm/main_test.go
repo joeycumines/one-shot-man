@@ -95,6 +95,17 @@ func TestRunSessionSubcommandHelp(t *testing.T) {
 	}
 }
 
+func TestRunHelpForSpecificCommand(t *testing.T) {
+	stdout, stderr, err := runWithCapturedIO(t, []string{"osm", "help", "config"})
+	if err != nil {
+		t.Fatalf("run returned error: %v", err)
+	}
+
+	if !strings.Contains(stdout, "Flags:") || !strings.Contains(stdout, "-global") {
+		t.Fatalf("expected config help to mention flags, got stdout=%q stderr=%q", stdout, stderr)
+	}
+}
+
 func TestRunParseFlagValue(t *testing.T) {
 	// This used to fail when the run() logic attempted to split flags
 	// manually; a flag that expects a value (e.g. -e) caused the parser

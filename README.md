@@ -57,6 +57,18 @@ flowchart LR
     linkStyle default stroke: #546e7a, stroke-width: 2px, fill: none;
 ```
 
+Core functionality:
+
+- **`osm code-review`**: interactive code review prompt builder (files/diffs/notes → prompt → clipboard).
+- **`osm prompt-flow`**: two-step prompt builder (meta-prompt → final prompt) when you want the model to help shape the final ask.
+- **`osm goal`**: curated prompt templates/workflows (built-ins + discovery of custom goals).
+- **`osm session`**: local persistence keyed to your terminal environment (maintain state across commands).
+- **`osm script`**: embedded JS runtime (Goja). The built-in workflows are scripts, allowing you to inspect or extend them.
+
+Future functionality based on merits.
+Fair warning: This may include experimental features which expand the scope of functionality.
+See also [docs/todo.md](docs/todo.md).
+
 ## Demos
 
 <details>
@@ -121,18 +133,6 @@ Curated prompt templates for common tasks. Extensible with custom goals discover
 </details>
 
 > **Note:** GIFs are auto-generated and reproducible. To regenerate: `make generate-tapes-and-gifs` (requires [VHS](https://github.com/charmbracelet/vhs)).
-
-Core functionality:
-
-- **`osm code-review`**: interactive code review prompt builder (files/diffs/notes → prompt → clipboard).
-- **`osm prompt-flow`**: two-step prompt builder (meta-prompt → final prompt) when you want the model to help shape the final ask.
-- **`osm goal`**: curated prompt templates/workflows (built-ins + discovery of custom goals).
-- **`osm session`**: local persistence keyed to your terminal environment (maintain state across commands).
-- **`osm script`**: embedded JS runtime (Goja). The built-in workflows are scripts, allowing you to inspect or extend them.
-
-Future functionality based on merits.
-Fair warning: This may include experimental features which expand the scope of functionality.
-See also [docs/todo.md](docs/todo.md).
 
 ## Quickstart
 

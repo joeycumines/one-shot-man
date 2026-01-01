@@ -493,35 +493,186 @@ if (typeof config !== 'object' || config === null || !config.theme) {
     throw new Error("Critical configuration error: 'config.theme' is missing. The host application must inject the theme.");
 }
 
-{
-    const requiredThemeKeys = ['primary', 'secondary', 'danger', 'muted', 'bg', 'fg', 'warning', 'focus'];
-    const missingThemeKeys = requiredThemeKeys.filter(key => !config.theme[key]);
-    if (missingThemeKeys.length > 0) {
-        throw new Error("Critical configuration error: 'config.theme' is missing required keys: " + missingThemeKeys.join(', '));
-    }
-}
+// ============================================================================
+// ADAPTIVE COLOR PALETTE
+// ============================================================================
+// This palette uses AdaptiveColor format: {light: "...", dark: "..."}
+// lipgloss automatically selects the appropriate color based on terminal background.
+// This eliminates the "invisible text" issue in both light and dark modes.
+//
+// Palette philosophy:
+// - "Off-Black" and "Off-White" to reduce eye strain
+// - Primary accent (Indigo/Blue) looks good on both backgrounds
+// - Semantic colors for success, error, warning states
+// ============================================================================
 
-const COLORS = config.theme;
+// Theme object with semantic color names
+// Uses config.theme which contains {light, dark} objects for each color
+const theme = {
+    // Text colors
+    text: {
+        primary: config.theme.textPrimary,
+        secondary: config.theme.textSecondary,
+        tertiary: config.theme.textTertiary,
+        inverted: config.theme.textInverted,
+    },
+    // Accent colors
+    accent: {
+        primary: config.theme.accentPrimary,
+        subtle: config.theme.accentSubtle,
+        success: config.theme.accentSuccess,
+        error: config.theme.accentError,
+        warning: config.theme.accentWarning,
+    },
+    // UI chrome colors
+    ui: {
+        border: config.theme.uiBorder,
+        activeBorder: config.theme.uiActiveBorder,
+        bg: config.theme.uiBg,
+        bgSubtle: config.theme.uiBgSubtle,
+    },
+};
+
+// ============================================================================
+// STYLES - Using Adaptive Colors and Rounded Borders
+// ============================================================================
+// All styles now use theme.* for adaptive colors
+// Borders upgraded to rounded for a modern, premium appearance
+// ============================================================================
 
 const styles = {
-    title: () => lipgloss.newStyle().bold(true).foreground(COLORS.primary).padding(0, 1),
-    normal: () => lipgloss.newStyle().foreground(COLORS.fg).padding(0, 1),
-    button: () => lipgloss.newStyle().foreground(COLORS.fg).background(COLORS.secondary).padding(DESIGN.buttonPaddingV, DESIGN.buttonPaddingH).marginRight(DESIGN.buttonMarginR),
-    buttonFocused: () => lipgloss.newStyle().foreground(COLORS.fg).background(COLORS.primary).bold(true).padding(DESIGN.buttonPaddingV, DESIGN.buttonPaddingH).marginRight(DESIGN.buttonMarginR),
-    buttonDanger: () => lipgloss.newStyle().foreground(COLORS.fg).background(COLORS.danger).padding(DESIGN.buttonPaddingV, DESIGN.buttonPaddingH).marginRight(DESIGN.buttonMarginR),
-    buttonShell: () => lipgloss.newStyle().foreground(COLORS.fg).background(COLORS.warning).bold(true).padding(DESIGN.buttonPaddingV, DESIGN.buttonPaddingH).marginRight(DESIGN.buttonMarginR),
-    status: () => lipgloss.newStyle().foreground(COLORS.secondary).italic(true),
-    error: () => lipgloss.newStyle().foreground(COLORS.danger).bold(true),
-    help: () => lipgloss.newStyle().foreground(COLORS.muted),
-    separator: () => lipgloss.newStyle().foreground(COLORS.muted),
-    box: () => lipgloss.newStyle().border(lipgloss.roundedBorder()).borderForeground(COLORS.primary).padding(1, 2),
-    inputNormal: () => lipgloss.newStyle().border(lipgloss.normalBorder()).borderForeground(COLORS.muted).padding(0, 1),
-    inputFocused: () => lipgloss.newStyle().border(lipgloss.normalBorder()).borderForeground(COLORS.focus).bold(true).padding(0, 1),
-    document: () => lipgloss.newStyle().border(lipgloss.normalBorder()).borderForeground(COLORS.muted).padding(DESIGN.docPaddingV, DESIGN.docPaddingH).marginBottom(DESIGN.docMarginB),
-    documentSelected: () => lipgloss.newStyle().border(lipgloss.doubleBorder()).borderForeground(COLORS.primary).padding(DESIGN.docPaddingV, DESIGN.docPaddingH).marginBottom(DESIGN.docMarginB),
-    preview: () => lipgloss.newStyle().foreground(COLORS.muted),
-    label: () => lipgloss.newStyle().foreground(COLORS.fg).bold(true),
-    jumpIcon: () => lipgloss.newStyle().foreground(COLORS.primary).bold(true).padding(0, 1).height(1),
+    // === Header & Title ===
+    title: () => lipgloss.newStyle()
+        .bold(true)
+        .foreground(theme.text.inverted)
+        .background(theme.accent.primary)
+        .padding(0, 1),
+
+    // === Normal text ===
+    normal: () => lipgloss.newStyle()
+        .foreground(theme.text.primary)
+        .padding(0, 1),
+
+    // === Labels (above input fields) ===
+    label: () => lipgloss.newStyle()
+        .foreground(theme.text.secondary)
+        .bold(true),
+
+    // === Buttons ===
+    button: () => lipgloss.newStyle()
+        .foreground(theme.text.primary)
+        .background(theme.ui.bgSubtle)
+        .padding(DESIGN.buttonPaddingV, DESIGN.buttonPaddingH)
+        .marginRight(DESIGN.buttonMarginR)
+        .border(lipgloss.roundedBorder())
+        .borderForeground(theme.ui.border),
+
+    buttonFocused: () => lipgloss.newStyle()
+        .foreground(theme.text.inverted)
+        .background(theme.accent.primary)
+        .bold(true)
+        .padding(DESIGN.buttonPaddingV, DESIGN.buttonPaddingH)
+        .marginRight(DESIGN.buttonMarginR)
+        .border(lipgloss.roundedBorder())
+        .borderForeground(theme.accent.primary),
+
+    buttonDanger: () => lipgloss.newStyle()
+        .foreground(theme.text.inverted)
+        .background(theme.accent.error)
+        .padding(DESIGN.buttonPaddingV, DESIGN.buttonPaddingH)
+        .marginRight(DESIGN.buttonMarginR)
+        .border(lipgloss.roundedBorder())
+        .borderForeground(theme.accent.error),
+
+    buttonShell: () => lipgloss.newStyle()
+        .foreground(theme.text.primary)
+        .background(theme.accent.warning)
+        .bold(true)
+        .padding(DESIGN.buttonPaddingV, DESIGN.buttonPaddingH)
+        .marginRight(DESIGN.buttonMarginR)
+        .border(lipgloss.roundedBorder())
+        .borderForeground(theme.accent.warning),
+
+    buttonSuccess: () => lipgloss.newStyle()
+        .foreground(theme.text.inverted)
+        .background(theme.accent.success)
+        .padding(DESIGN.buttonPaddingV, DESIGN.buttonPaddingH)
+        .marginRight(DESIGN.buttonMarginR)
+        .border(lipgloss.roundedBorder())
+        .borderForeground(theme.accent.success),
+
+    // === Status & Messages ===
+    status: () => lipgloss.newStyle()
+        .foreground(theme.accent.success)
+        .italic(true),
+
+    error: () => lipgloss.newStyle()
+        .foreground(theme.accent.error)
+        .bold(true),
+
+    // === Help & Hints ===
+    help: () => lipgloss.newStyle()
+        .foreground(theme.text.tertiary),
+
+    separator: () => lipgloss.newStyle()
+        .foreground(theme.ui.border),
+
+    // === Boxes & Containers ===
+    box: () => lipgloss.newStyle()
+        .border(lipgloss.roundedBorder())
+        .borderForeground(theme.accent.primary)
+        .padding(1, 2),
+
+    // === Input Fields ===
+    inputNormal: () => lipgloss.newStyle()
+        .border(lipgloss.roundedBorder())
+        .borderForeground(theme.ui.border)
+        .padding(0, 1),
+
+    inputFocused: () => lipgloss.newStyle()
+        .border(lipgloss.roundedBorder())
+        .borderForeground(theme.ui.activeBorder)
+        .padding(0, 1),
+
+    // === Document Cards ===
+    document: () => lipgloss.newStyle()
+        .border(lipgloss.roundedBorder())
+        .borderForeground(theme.ui.border)
+        .padding(DESIGN.docPaddingV, DESIGN.docPaddingH)
+        .marginBottom(DESIGN.docMarginB),
+
+    documentSelected: () => lipgloss.newStyle()
+        .border(lipgloss.roundedBorder())
+        .borderForeground(theme.accent.primary)
+        .padding(DESIGN.docPaddingV, DESIGN.docPaddingH)
+        .marginBottom(DESIGN.docMarginB),
+
+    // === Content Preview ===
+    preview: () => lipgloss.newStyle()
+        .foreground(theme.text.tertiary),
+
+    // === Jump Icons ===
+    jumpIcon: () => lipgloss.newStyle()
+        .foreground(theme.accent.primary)
+        .bold(true)
+        .padding(0, 1)
+        .height(1),
+
+    // === Header Bar (new premium style) ===
+    headerBar: () => lipgloss.newStyle()
+        .bold(true)
+        .foreground(theme.text.inverted)
+        .background(theme.accent.primary)
+        .padding(0, 1)
+        .marginBottom(1),
+
+    // === Footer / Help Strip ===
+    helpKey: () => lipgloss.newStyle()
+        .bold(true)
+        .foreground(theme.accent.primary),
+
+    helpDesc: () => lipgloss.newStyle()
+        .foreground(theme.text.secondary),
 };
 
 // TUI Logic
@@ -652,12 +803,16 @@ function configureTextarea(ta, width) {
     ta.setMaxHeight(0);
 
     // HIGH VISIBILITY STYLING & FIXES
+    //
     // Ensure selected text is visible (fix black bar) by setting specific style.
     // IMPORTANT: We set prompt to {} (no styling) to prevent double-rendering issues.
     // When Prompt has styling (e.g., foreground), it renders with ANSI codes like \x1b[37m.
     // Then CursorLine's Render() wraps that already-styled string, causing lipgloss to
     // treat the escape sequences as literal characters and style each one individually.
     // By clearing Prompt style, we let CursorLine handle ALL styling for the current line.
+    //
+    // ADAPTIVE COLORS: All colors now use {light, dark} format for proper visibility
+    // in both light and dark terminal modes.
     ta.setFocusedStyle({
         prompt: {},  // Clear default prompt styling to prevent double-render corruption
         cursorLine: {
@@ -669,20 +824,20 @@ function configureTextarea(ta, width) {
             // 2. style.Render(m.Cursor.View()) where style is also CursorLine
             // Without underline, lipgloss uses a faster path that preserves ANSI codes.
             //
-            // FIX: Use focus color as background highlight to make cursor line visible.
-            // Previously used COLORS.bg (white) which made text invisible on white terminals.
-            background: COLORS.focus, // Blue highlight for current line (visible on white)
-            foreground: COLORS.bg     // White text on blue background for contrast
+            // FIX: Use accent.subtle as background highlight for cursor line visibility.
+            // The adaptive color ensures proper contrast in both light and dark modes.
+            background: theme.accent.subtle,   // Subtle highlight for current line
+            foreground: theme.text.primary     // High contrast text on highlight
         },
         cursorLineNumber: {
-            foreground: COLORS.warning,
+            foreground: theme.accent.warning,
             bold: true
         },
         text: {
-            foreground: COLORS.fg
+            foreground: theme.text.primary     // Ensure all text is visible
         },
         placeholder: {
-            foreground: COLORS.muted
+            foreground: theme.text.tertiary
         }
     });
 
@@ -696,8 +851,8 @@ function configureTextarea(ta, width) {
     // The cursor block (the blinking character) needs explicit foreground/background
     // to be visible when the CursorLine styling is applied.
     ta.setCursorStyle({
-        foreground: COLORS.warning, // Amber/yellow cursor for high visibility
-        background: COLORS.primary  // Indigo background for contrast
+        foreground: theme.accent.warning,  // Amber/yellow cursor for high visibility
+        background: theme.accent.primary   // Primary accent background for contrast
     });
 }
 
@@ -1635,9 +1790,10 @@ function renderList(s) {
     const termHeight = s.height || 24;
     const scrollbarWidth = 1;
 
-    // Header section - ALWAYS use fresh style creation to avoid caching issues
-    const titleStyle = lipgloss.newStyle().bold(true).foreground(COLORS.primary).padding(0, 1);
-    const normalStyle = lipgloss.newStyle().foreground(COLORS.fg).padding(0, 1);
+    // Header section - Premium styling with accent background
+    // Using adaptive colors for proper visibility in both light and dark modes
+    const titleStyle = styles.headerBar();
+    const normalStyle = styles.normal();
 
     // Status Section (Created early for header placement)
     let statusSection = '';
@@ -1647,7 +1803,7 @@ function renderList(s) {
         statusSection = statusStyle.render(statusIcon + s.statusMsg);
     }
 
-    // Header Construction
+    // Header Construction - Premium banner style
     const titleLine = titleStyle.render('📄 Super-Document Builder');
 
     // Calculate available width for header layout to decide between Wide (Side-by-Side) or Narrow (Stacked)
@@ -1730,7 +1886,7 @@ function renderList(s) {
         } else if (btn.key === 's') {
             style = styles.buttonShell();
         } else if (btn.key === 'c') {
-            style = styles.buttonFocused();
+            style = styles.buttonSuccess();  // Copy uses success style (green)
         } else {
             style = styles.button();
         }
@@ -1778,10 +1934,30 @@ function renderList(s) {
         buttonSection = lipgloss.joinVertical(lipgloss.Left, ...rows);
     }
 
-    // Footer section
+    // Footer section - Premium help strip with key/desc styling
     const separatorWidth = Math.min(72, termWidth - 2);
     const separator = styles.separator().render('─'.repeat(separatorWidth));
-    const helpText = styles.help().render('a:add l:load e:edit d:del c:copy s:shell r:reset q:quit ↑↓:nav');
+
+    // Build help strip with styled key/desc pairs
+    const helpPairs = [
+        {key: 'a', desc: 'add'},
+        {key: 'l', desc: 'load'},
+        {key: 'e', desc: 'edit'},
+        {key: 'd', desc: 'del'},
+        {key: 'c', desc: 'copy'},
+        {key: 's', desc: 'shell'},
+        {key: 'r', desc: 'reset'},
+        {key: 'q', desc: 'quit'},
+        {key: '↑↓', desc: 'nav'},
+    ];
+
+    const helpItems = helpPairs.map(p =>
+        styles.helpKey().render(p.key) + styles.helpDesc().render(':' + p.desc)
+    );
+    const helpText = lipgloss.joinHorizontal(lipgloss.Top, ...helpItems.map((item, i) =>
+        i < helpItems.length - 1 ? item + '  ' : item
+    ));
+
     const footer = lipgloss.joinVertical(lipgloss.Left, separator, helpText);
 
     // ------------------------------------------------------------------------
@@ -1830,8 +2006,8 @@ function renderList(s) {
             s.listScrollbar.setContentHeight(s.vp.totalLineCount());
             s.listScrollbar.setYOffset(s.vp.yOffset());
             s.listScrollbar.setChars("█", "░");
-            s.listScrollbar.setThumbForeground(COLORS.primary);
-            s.listScrollbar.setTrackForeground(COLORS.muted);
+            s.listScrollbar.setThumbForeground(theme.accent.primary);
+            s.listScrollbar.setTrackForeground(theme.ui.border);
         }
 
         const sbView = s.listScrollbar ? s.listScrollbar.view() : "";
@@ -1969,14 +2145,26 @@ function renderInput(s) {
     const cancelBtn = zone.mark('btn-cancel', (s.inputFocus === FOCUS_CANCEL ? styles.buttonDanger() : styles.button()).render('[Cancel]'));
     const buttonRow = lipgloss.joinHorizontal(lipgloss.Top, submitBtn, cancelBtn);
 
-    // Footer - Fixed layout
+    // Footer - Fixed layout with styled key/desc pairs
     const sep = styles.separator().render('─'.repeat(termWidth));
-    // Dynamic footer text based on operation
-    let fText = 'Tab: Cycle Focus    Enter: Newline/Submit    Esc: Cancel';
+
+    // Build help strip with styled key/desc pairs
+    const inputHelpPairs = [
+        {key: 'Tab', desc: 'Cycle Focus'},
+        {key: 'Enter', desc: 'Newline/Submit'},
+        {key: 'Esc', desc: 'Cancel'},
+    ];
     if (s.inputOperation === INPUT_EDIT || s.inputOperation === INPUT_ADD) {
-        fText += '    PgUp/PgDn: Scroll';
+        inputHelpPairs.push({key: 'PgUp/PgDn', desc: 'Scroll'});
     }
-    const helpText = styles.help().render(fText);
+
+    const helpItems = inputHelpPairs.map(p =>
+        styles.helpKey().render(p.key) + styles.helpDesc().render(':' + p.desc)
+    );
+    const helpText = lipgloss.joinHorizontal(lipgloss.Top, ...helpItems.map((item, i) =>
+        i < helpItems.length - 1 ? item + '    ' : item
+    ));
+
     const footer = lipgloss.joinVertical(lipgloss.Left, sep, helpText);
     const footerHeight = lipgloss.height(footer);
 
@@ -2072,8 +2260,8 @@ function renderInput(s) {
         s.inputScrollbar.setContentHeight(scrollableContentHeight);
         s.inputScrollbar.setYOffset(s.inputVp.yOffset());
         s.inputScrollbar.setChars("█", "░");
-        s.inputScrollbar.setThumbForeground(COLORS.primary);
-        s.inputScrollbar.setTrackForeground(COLORS.muted);
+        s.inputScrollbar.setThumbForeground(theme.accent.primary);
+        s.inputScrollbar.setTrackForeground(theme.ui.border);
         visibleContent = lipgloss.joinHorizontal(lipgloss.Top, vpView, s.inputScrollbar.view());
     } else {
         visibleContent = vpView;
@@ -2084,15 +2272,25 @@ function renderInput(s) {
 }
 
 function renderConfirm(s) {
-    const title = styles.title().render('⚠️ Confirm Delete');
-    const prompt = s.confirmPrompt;
+    const title = styles.headerBar().render('⚠️ Confirm Action');
+    const prompt = styles.normal().render(s.confirmPrompt);
 
     // Buttons with zone markers
     const yesBtn = zone.mark('btn-yes', styles.buttonDanger().render('[Y]es'));
     const noBtn = zone.mark('btn-no', styles.button().render('[N]o'));
     const buttonRow = lipgloss.joinHorizontal(lipgloss.Top, yesBtn, noBtn);
 
-    const helpText = styles.help().render('y: Confirm    n/Esc: Cancel');
+    // Styled help text
+    const confirmHelpPairs = [
+        {key: 'y', desc: 'Confirm'},
+        {key: 'n/Esc', desc: 'Cancel'},
+    ];
+    const helpItems = confirmHelpPairs.map(p =>
+        styles.helpKey().render(p.key) + styles.helpDesc().render(':' + p.desc)
+    );
+    const helpText = lipgloss.joinHorizontal(lipgloss.Top, ...helpItems.map((item, i) =>
+        i < helpItems.length - 1 ? item + '    ' : item
+    ));
 
     return lipgloss.joinVertical(lipgloss.Left, title, '', prompt, '', buttonRow, '', helpText);
 }

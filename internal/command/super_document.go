@@ -66,18 +66,33 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 		engine.SetTestMode(true)
 	}
 
-	// Build theme colors from config, with sensible defaults.
-	// Optimized for light backgrounds with high-contrast.
-	// Accent colors are tuned to support black text overlays (badges/pills).
+	// Build theme colors from config, with sensible adaptive defaults.
+	// Uses AdaptiveColor format: {light: "...", dark: "..."} for automatic
+	// terminal background detection. This eliminates "invisible text" issues.
+	//
+	// Palette philosophy:
+	// - "Off-Black" and "Off-White" to reduce eye strain
+	// - Primary accent (Indigo/Blue) looks good on both backgrounds
+	// - Semantic colors for success, error, warning states
 	themeColors := map[string]interface{}{
-		"primary":   "#818CF8", // Indigo: Soft but distinct
-		"secondary": "#34D399", // Emerald: Minty green, highly readable with black text
-		"danger":    "#F87171", // Soft Red: Urgent but not harsh
-		"warning":   "#FBBF24", // Amber: Standard warning yellow-orange
-		"muted":     "#64748B", // Slate: Dark enough to be read as text on white
-		"bg":        "#FFFFFF", // Pure White: Matches macOS default terminal background
-		"fg":        "#0F172A", // Slate 900: Soft black for main text to reduce eye strain
-		"focus":     "#60A5FA", // Blue: Clear active state
+		// Text colors - primary content, secondary labels, tertiary/muted hints
+		"textPrimary":   map[string]string{"light": "#24292f", "dark": "#e6edf3"},
+		"textSecondary": map[string]string{"light": "#57606a", "dark": "#8b949e"},
+		"textTertiary":  map[string]string{"light": "#6e7781", "dark": "#6e7681"},
+		"textInverted":  map[string]string{"light": "#ffffff", "dark": "#0d1117"},
+
+		// Accent colors - interactive elements, states
+		"accentPrimary": map[string]string{"light": "#0969da", "dark": "#58a6ff"},
+		"accentSubtle":  map[string]string{"light": "#ddf4ff", "dark": "#0d419d"},
+		"accentSuccess": map[string]string{"light": "#1a7f37", "dark": "#3fb950"},
+		"accentError":   map[string]string{"light": "#cf222e", "dark": "#f85149"},
+		"accentWarning": map[string]string{"light": "#9a6700", "dark": "#d29922"},
+
+		// UI chrome colors - borders, backgrounds
+		"uiBorder":       map[string]string{"light": "#d0d7de", "dark": "#30363d"},
+		"uiActiveBorder": map[string]string{"light": "#0969da", "dark": "#58a6ff"},
+		"uiBg":           map[string]string{"light": "#ffffff", "dark": "#0d1117"},
+		"uiBgSubtle":     map[string]string{"light": "#f6f8fa", "dark": "#161b22"},
 	}
 	if c.config != nil {
 		for k, v := range c.config.Global {

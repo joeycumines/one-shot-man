@@ -22,14 +22,19 @@ func TestSuperDocumentE2E_FullWorkflow(t *testing.T) {
 	engine.SetTestMode(true)
 
 	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
-		"primary":   "#7f5fcf",
-		"secondary": "#efefef",
-		"danger":    "#ff0000",
-		"muted":     "#888888",
-		"bg":        "#000000",
-		"fg":        "#ffffff",
-		"warning":   "#ffaa00",
-		"focus":     "#00ff00",
+		"textPrimary":    "#7f5fcf",
+		"textSecondary":  "#efefef",
+		"textTertiary":   "#888888",
+		"textInverted":   "#ffffff",
+		"accentPrimary":  "#7f5fcf",
+		"accentSubtle":   "#efefef",
+		"accentSuccess":  "#1a7f37",
+		"accentError":    "#ff0000",
+		"accentWarning":  "#ffaa00",
+		"uiBorder":       "#444444",
+		"uiActiveBorder": "#7f5fcf",
+		"uiBg":           "#000000",
+		"uiBgSubtle":     "#111111",
 	}})
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("superDocumentTemplate", "dummy template")

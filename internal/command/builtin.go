@@ -33,7 +33,7 @@ func NewHelpCommand(registry *Registry) *HelpCommand {
 func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		// Show general help and list all commands
-		_, _ = fmt.Fprintln(stdout, "one-shot-man - produce higher quality implementations with less effort")
+		_, _ = fmt.Fprintln(stdout, "one-shot-man - refine reproducible one-shot prompts from your terminal")
 		_, _ = fmt.Fprintln(stdout, "")
 		_, _ = fmt.Fprintln(stdout, "Usage: osm <command> [options] [args...]")
 		_, _ = fmt.Fprintln(stdout, "")

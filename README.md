@@ -6,6 +6,10 @@
 
 Refine reproducible one-shot prompts from your terminal, then paste them into the LLM UI you already use.
 
+<p align="center">
+  <img src="https://vhs.charm.sh/vhs-231LLSBeReAzfRuYvDcWhh.gif" alt="quickstart.gif" width="700">
+</p>
+
 `osm` is an extensible scriptable local-first CLI (with optional TUI) for constructing single-shot prompts:
 files + diffs + notes + templates → prompt → clipboard.
 
@@ -52,6 +56,71 @@ flowchart LR
     paste --> answer
     linkStyle default stroke: #546e7a, stroke-width: 2px, fill: none;
 ```
+
+## Demos
+
+<details>
+<summary><strong>📋 Super-Document Builder (Visual TUI)</strong></summary>
+
+Build structured prompts interactively with the visual TUI. Navigate with keyboard, add documents, and copy the final prompt to clipboard.
+
+![super-document-visual.gif](https://vhs.charm.sh/vhs-7FBO5VD1uWeeW3hN3xFWdd.gif)
+
+</details>
+
+<details>
+<summary><strong>💻 Super-Document Builder (Shell Mode)</strong></summary>
+
+Prefer a REPL? Use `--shell` for a command-line interface to the same document builder.
+
+![super-document-shell.gif](https://vhs.charm.sh/vhs-66rfa16MOgVKY2Mu7Yoyxn.gif)
+
+</details>
+
+<details>
+<summary><strong>🔄 Mode Interoperability</strong></summary>
+
+Switch seamlessly between visual TUI and shell modes. Documents persist across mode switches.
+
+![super-document-interop.gif](https://vhs.charm.sh/vhs-TQnbpQp3N1tC6hKXQCYyC.gif)
+
+</details>
+
+<details>
+<summary><strong>🔍 Code Review Workflow</strong></summary>
+
+Assemble review context: files, git diffs, and focus notes. Generate a comprehensive review prompt.
+
+![code-review.gif](https://vhs.charm.sh/vhs-mcoAMgE9oEdDMwdzDdYuZ.gif)
+
+</details>
+
+<details>
+<summary><strong>🎯 Prompt Flow (Two-Step Builder)</strong></summary>
+
+Let the model help write your prompt. Define a goal → generate meta-prompt → refine with task → assemble final.
+
+![prompt-flow.gif](https://vhs.charm.sh/vhs-2OgtCV13DDgTkOy2WPrWui.gif)
+
+</details>
+
+<details>
+<summary><strong>📝 Goal-Based Workflows</strong></summary>
+
+Curated prompt templates for common tasks. Extensible with custom goals discovered from your filesystem.
+
+![goal.gif](https://vhs.charm.sh/vhs-68PSt8wdj7OCCsXmMoY7hL.gif)
+
+</details>
+
+<details>
+<summary><strong>☀️ Light Theme Variant</strong></summary>
+
+![super-document-visual-light.gif](https://vhs.charm.sh/vhs-2FvzjqCUEbKdcIsqyFZ4vt.gif)
+
+</details>
+
+> **Note:** GIFs are auto-generated and reproducible. To regenerate: `make generate-tapes-and-gifs` (requires [VHS](https://github.com/charmbracelet/vhs)).
 
 Core functionality:
 

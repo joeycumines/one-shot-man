@@ -23,7 +23,7 @@ Manually assembling and especially tweaking context was tiresome, so I built `os
 <details>
 <summary><strong>📋 Super-Document Builder (Visual TUI)</strong></summary>
 
-Build structured prompts interactively with the visual TUI. Navigate with keyboard, add documents, and copy the final prompt to clipboard.
+Build structured prompts interactively with the visual TUI. Navigate with keyboard or mouse, add documents, and copy the final prompt to clipboard.
 
 ![super-document-visual.gif](https://vhs.charm.sh/vhs-7FBO5VD1uWeeW3hN3xFWdd.gif)
 

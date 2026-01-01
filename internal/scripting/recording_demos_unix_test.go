@@ -473,8 +473,7 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 	recorder.RecordSleep(300 * time.Millisecond)
 
 	// Wait for outer shell prompt
-	snap = recorder.Snapshot()
-	expect(snap, "$", 5*time.Second)
+	ensurePrompt(ctx, t, recorder, 5*time.Second)
 
 	// Exit the outer shell
 	typeString(t, recorder, "exit")
@@ -482,9 +481,7 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 		t.Fatalf("Failed to send enter: %v", err)
 	}
 
-	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
-		t.Fatalf("Expected exit code 0, got %d (err: %v)", code, err)
-	}
+	waitForProcessExit(ctx, t, cp, recorder)
 
 	if err := recorder.Close(); err != nil {
 		t.Fatalf("Failed to save tape: %v", err)

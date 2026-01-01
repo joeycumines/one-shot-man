@@ -1,7 +1,5 @@
 # This is an example config.mk file, to support local customizations.
 
-.DEFAULT_GOAL := all
-
 ifndef CUSTOM_TARGETS_DEFINED
 CUSTOM_TARGETS_DEFINED := 1
 ##@ Custom Targets

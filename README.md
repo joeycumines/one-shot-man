@@ -18,57 +18,6 @@ It does **not** call any model API. No keys, no "agent platform", no network req
 I use this tool almost every day (work + personal projects).
 Manually assembling and especially tweaking context was tiresome, so I built `osm` to help.
 
-## Features
-
-How it works:
-
-```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'fontFamily': 'Arial', 'fontSize': '14px', 'primaryColor': '#fff', 'edgeLabelBackground':'#fff'}}}%%
-flowchart LR
-    classDef userNode fill: #e3f2fd, stroke: #1565c0, stroke-width: 2px, color: #0d47a1, rx: 10, ry: 10;
-    classDef osmNode fill: #f3e5f5, stroke: #7b1fa2, stroke-width: 2px, color: #4a148c, rx: 10, ry: 10;
-    classDef llmNode fill: #e8f5e9, stroke: #2e7d32, stroke-width: 2px, color: #1b5e20, rx: 10, ry: 10;
-    classDef subGraphStyle fill: #ffffff, stroke: #cfd8dc, stroke-width: 2px, rx: 10, ry: 10, stroke-dasharray: 5 5;
-    subgraph You ["User Context"]
-        direction TB
-        edit["Edit code in repo"]:::userNode
-        run["Run osm"]:::userNode
-    end
-    subgraph OSM ["OSM Tool"]
-        direction TB
-        gather["Gather context<br/>(files/diffs/notes)"]:::osmNode
-        render["Render prompt<br/>(templates/goals)"]:::osmNode
-        clip["Copy to clipboard"]:::osmNode
-    end
-    subgraph LLM ["LLM Interface"]
-        direction TB
-        paste["Paste prompt"]:::llmNode
-        answer["Get output"]:::llmNode
-    end
-    class You subGraphStyle
-    class OSM subGraphStyle
-    class LLM subGraphStyle
-    edit --> run
-    run --> gather
-    gather --> render
-    render --> clip
-    clip -.-o paste
-    paste --> answer
-    linkStyle default stroke: #546e7a, stroke-width: 2px, fill: none;
-```
-
-Core functionality:
-
-- **`osm code-review`**: interactive code review prompt builder (files/diffs/notes → prompt → clipboard).
-- **`osm prompt-flow`**: two-step prompt builder (meta-prompt → final prompt) when you want the model to help shape the final ask.
-- **`osm goal`**: curated prompt templates/workflows (built-ins + discovery of custom goals).
-- **`osm session`**: local persistence keyed to your terminal environment (maintain state across commands).
-- **`osm script`**: embedded JS runtime (Goja). The built-in workflows are scripts, allowing you to inspect or extend them.
-
-Future functionality based on merits.
-Fair warning: This may include experimental features which expand the scope of functionality.
-See also [docs/todo.md](docs/todo.md).
-
 ## Demos
 
 <details>
@@ -133,6 +82,88 @@ Curated prompt templates for common tasks. Extensible with custom goals discover
 </details>
 
 > **Note:** GIFs are auto-generated and reproducible. To regenerate: `make generate-tapes-and-gifs` (requires [VHS](https://github.com/charmbracelet/vhs)).
+
+## Features
+
+How it works:
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'fontFamily': 'Arial', 'fontSize': '14px', 'primaryColor': '#fff', 'edgeLabelBackground':'#fff'}}}%%
+flowchart LR
+    classDef userNode fill: #e3f2fd, stroke: #1565c0, stroke-width: 2px, color: #0d47a1, rx: 10, ry: 10;
+    classDef osmNode fill: #f3e5f5, stroke: #7b1fa2, stroke-width: 2px, color: #4a148c, rx: 10, ry: 10;
+    classDef llmNode fill: #e8f5e9, stroke: #2e7d32, stroke-width: 2px, color: #1b5e20, rx: 10, ry: 10;
+    classDef subGraphStyle fill: #ffffff, stroke: #cfd8dc, stroke-width: 2px, rx: 10, ry: 10, stroke-dasharray: 5 5;
+    subgraph You ["User Context"]
+        direction TB
+        edit["Edit code in repo"]:::userNode
+        run["Run osm"]:::userNode
+    end
+    subgraph OSM ["OSM Tool"]
+        direction TB
+        gather["Gather context<br/>(files/diffs/notes)"]:::osmNode
+        render["Render prompt<br/>(templates/goals)"]:::osmNode
+        clip["Copy to clipboard"]:::osmNode
+    end
+    subgraph LLM ["LLM Interface"]
+        direction TB
+        paste["Paste prompt"]:::llmNode
+        answer["Get output"]:::llmNode
+    end
+    class You subGraphStyle
+    class OSM subGraphStyle
+    class LLM subGraphStyle
+    edit --> run
+    run --> gather
+    gather --> render
+    render --> clip
+    clip -.-o paste
+    paste --> answer
+    linkStyle default stroke: #546e7a, stroke-width: 2px, fill: none;
+```
+
+### The "Daily Drivers"
+
+These are the builtin commands to generate prompts from your codebase.
+
+- **`osm code-review`**: Interactive code review prompt builder. Assembles files, git diffs, and notes into a structured review request.
+- **`osm prompt-flow`**: Two-step prompt builder. Use this when you want the model to help shape the final ask (Meta-Prompt → Final Prompt).
+- **`osm goal` (e.g. `commit-message`)**: Curated prompt templates and workflows (built-ins + discovery of custom goals).
+
+### Consensus & Assembly
+
+**`osm super-document`**: **Visual & Shell Modes**
+
+**Summary:** Assembles a single, internally consistent document from multiple sources.
+
+**The Workflow:** Use the TUI as a "bin" to collect inputs—such as multiple AI responses from an `osm code-review` session or various text files. The tool merges these documents with your repository context (files/diffs) and renders a final prompt designed to force internal consistency and discard hallucinations.
+
+**Modes:**
+
+- **Visual TUI:** Paste/Add documents, review content, and copy the result.
+- **Shell REPL (`--shell`):** More functionality, just not quite as convenient.
+
+**Why use it:** To improve quality and reliability. By aggregating multiple AI outputs and forcing them through a consistency template, you produce a higher-fidelity result than any single shot could achieve.
+
+### Session Persistence
+
+State persists locally to your terminal session.
+
+- **Persistence:** You can start a workflow (e.g., `osm code-review`), exit it, and resume later.
+- **Shared Context:** State is shared across compatible commands. You can gather context in one command and refine it in another.
+- **Mode Interoperability:** *Distinct from session persistence*, this feature allows you to switch between Visual TUI and Shell REPL modes *within the same process* (see Demos above) without losing transient state.
+
+### For Hackers / Scripting
+
+Command `osm` is a scripting engine.
+
+- **Powered by Goja:** An embedded JavaScript runtime powers the core workflows.
+- **Native Bindings:** Includes native bindings for **Go Prompt** (Shell TUI), **Bubble Tea** (Arbitrary TUI), **Lipgloss** (styling), and the system clipboard.
+- **Customizable:** You can write your own interactive workflows in JavaScript that run natively in `osm`. The built-in commands (`code-review`, `goal`, etc) are actually scripts that you can inspect and modify.
+
+Future functionality based on merits.
+Fair warning: This may include experimental features which expand the scope of functionality.
+See also [docs/todo.md](docs/todo.md).
 
 ## Quickstart
 

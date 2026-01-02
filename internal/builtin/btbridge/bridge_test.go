@@ -233,3 +233,55 @@ func TestBridge_OsmBtModuleRegistered(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, true, val)
 }
+
+// TestManager tests the Manager lifecycle helper.
+func TestManager(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	mgr, err := NewManager(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, mgr)
+
+	// Get the underlying bridge
+	bridge := mgr.GetBridge()
+	require.NotNil(t, bridge)
+	require.True(t, bridge.IsRunning())
+
+	// Load a simple script
+	err = bridge.LoadScript("test.js", `
+		async function testLeaf() { return bt.success; }
+	`)
+	require.NoError(t, err)
+
+	// Close the manager
+	err = mgr.Close()
+	require.NoError(t, err)
+
+	// Bridge should be stopped
+	require.False(t, bridge.IsRunning())
+}
+
+// TestManager_WithCancellation tests Manager respects context cancellation.
+func TestManager_WithCancellation(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	mgr, err := NewManager(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, mgr)
+
+	bridge := mgr.GetBridge()
+	require.True(t, bridge.IsRunning())
+
+	// Cancel the context
+	cancel()
+
+	// Wait for bridge to stop (context.AfterFunc triggers)
+	time.Sleep(20 * time.Millisecond)
+	require.False(t, bridge.IsRunning())
+
+	// Close should be idempotent
+	err = mgr.Close()
+	require.NoError(t, err)
+}

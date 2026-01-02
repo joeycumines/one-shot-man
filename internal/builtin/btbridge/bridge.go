@@ -26,6 +26,10 @@ type Bridge struct {
 	mu      sync.RWMutex
 	started bool
 	stopped bool
+
+	// Lifecycle context for Done() channel
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // NewBridge creates a new Bridge with an initialized event loop.
@@ -43,8 +47,13 @@ func NewBridgeWithContext(ctx context.Context) (*Bridge, error) {
 		eventloop.EnableConsole(true),
 	)
 
+	// Create internal lifecycle context
+	childCtx, cancel := context.WithCancel(context.Background())
+
 	b := &Bridge{
-		loop: loop,
+		loop:   loop,
+		ctx:    childCtx,
+		cancel: cancel,
 	}
 
 	// Start the event loop
@@ -60,16 +69,17 @@ func NewBridgeWithContext(ctx context.Context) (*Bridge, error) {
 		errCh <- b.initializeJS(vm)
 	})
 	if !ok {
+		cancel()
 		return nil, errors.New("failed to initialize: event loop not running")
 	}
 
 	if err := <-errCh; err != nil {
+		cancel()
 		loop.Stop()
 		return nil, fmt.Errorf("failed to initialize JavaScript environment: %w", err)
 	}
 
-	// Handle context cancellation - register if context is cancelable
-	// context.AfterFunc returns nil if the context will never be canceled
+	// Handle external context cancellation - register if context is cancelable
 	if ctx.Done() != nil {
 		context.AfterFunc(ctx, func() {
 			b.Stop()
@@ -82,11 +92,13 @@ func NewBridgeWithContext(ctx context.Context) (*Bridge, error) {
 // initializeJS sets up the JavaScript environment with behavior tree helpers.
 func (b *Bridge) initializeJS(vm *goja.Runtime) error {
 	// Set up the runLeaf helper which bridges async JS functions to callbacks
+	// Note: The status strings in jsHelpers MUST match JSStatusRunning, JSStatusSuccess, JSStatusFailure
 	_, err := vm.RunString(jsHelpers)
 	return err
 }
 
 // jsHelpers contains the JavaScript helper code for the bridge.
+// IMPORTANT: Status strings here MUST match the JSStatus* constants in adapter.go
 const jsHelpers = `
 // runLeaf executes a JS leaf function and calls the callback with the result.
 // This bridges the Promise-based JS world to the callback-based Go world.
@@ -99,7 +111,7 @@ globalThis.runLeaf = function(fn, ctx, args, callback) {
 		);
 };
 
-// Status constants matching go-behaviortree
+// Status constants matching go-behaviortree (must match JSStatus* constants)
 globalThis.bt = {
 	running: "running",
 	success: "success",
@@ -109,6 +121,7 @@ globalThis.bt = {
 
 // Stop gracefully stops the event loop.
 // It's safe to call multiple times.
+// After Stop is called, Done() channel will be closed.
 func (b *Bridge) Stop() {
 	b.mu.Lock()
 	if b.stopped {
@@ -118,7 +131,16 @@ func (b *Bridge) Stop() {
 	b.stopped = true
 	b.mu.Unlock()
 
+	// Cancel the lifecycle context BEFORE stopping the loop
+	// This ensures any goroutines waiting on Done() will unblock
+	b.cancel()
 	b.loop.Stop()
+}
+
+// Done returns a channel that is closed when the bridge is stopped.
+// This is useful for select statements to detect bridge shutdown.
+func (b *Bridge) Done() <-chan struct{} {
+	return b.ctx.Done()
 }
 
 // IsRunning returns true if the bridge is running (started and not stopped).
@@ -145,7 +167,7 @@ func (b *Bridge) RunOnLoop(fn func(*goja.Runtime)) bool {
 }
 
 // RunOnLoopSync schedules a function on the event loop and waits for completion.
-// Returns an error if the event loop is not running.
+// Returns an error if the event loop is not running or stops while waiting.
 func (b *Bridge) RunOnLoopSync(fn func(*goja.Runtime) error) error {
 	b.mu.RLock()
 	if !b.started || b.stopped {
@@ -162,7 +184,13 @@ func (b *Bridge) RunOnLoopSync(fn func(*goja.Runtime) error) error {
 		return errors.New("event loop not running")
 	}
 
-	return <-errCh
+	// Wait with cancellation support to avoid deadlock if bridge stops
+	select {
+	case err := <-errCh:
+		return err
+	case <-b.Done():
+		return errors.New("bridge stopped before completion")
+	}
 }
 
 // LoadScript loads JavaScript code into the runtime.

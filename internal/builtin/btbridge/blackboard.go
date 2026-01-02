@@ -99,6 +99,8 @@ func (b *Blackboard) Snapshot() map[string]any {
 //	blackboard.clear()
 func (b *Blackboard) ExposeToJS(vm *goja.Runtime) goja.Value {
 	obj := vm.NewObject()
+	// Note: Set() cannot fail for these keys as they are valid JavaScript identifiers.
+	// Ignoring the errors is intentional and safe.
 	_ = obj.Set("get", b.Get)
 	_ = obj.Set("set", b.Set)
 	_ = obj.Set("has", b.Has)

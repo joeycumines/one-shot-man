@@ -10,6 +10,13 @@ import (
 	bt "github.com/joeycumines/go-behaviortree"
 )
 
+// JS status string constants - single source of truth for status string values.
+const (
+	JSStatusRunning = "running"
+	JSStatusSuccess = "success"
+	JSStatusFailure = "failure"
+)
+
 // AsyncState represents the state of an asynchronous JS leaf execution.
 type AsyncState int
 
@@ -32,8 +39,14 @@ const (
 //   - Completed: JS finished. On tick, returns the final status and resets to Idle.
 //
 // Thread Safety:
-// The adapter is safe for concurrent access. The state is protected by a mutex.
+// The adapter is safe for concurrent Tick() calls. All state transitions are atomic
+// (under mutex), and generation counting prevents stale callbacks from corrupting state.
 // JavaScript execution happens on the event loop goroutine via Bridge.RunOnLoop.
+//
+// One-Shot Context Semantics:
+// When using NewJSLeafAdapterWithContext, once the context is cancelled, this specific
+// Node instance cannot be reused effectively as the context remains cancelled.
+// Create a new Node for retries after cancellation.
 type JSLeafAdapter struct {
 	bridge *Bridge
 	fnName string
@@ -41,6 +54,7 @@ type JSLeafAdapter struct {
 
 	mu         sync.Mutex
 	state      AsyncState
+	generation uint64 // Monotonic dispatch identifier to prevent stale callbacks
 	lastStatus bt.Status
 	lastError  error
 
@@ -90,67 +104,75 @@ func (a *JSLeafAdapter) Cancel() {
 }
 
 // Tick implements the go-behaviortree Tick interface.
+// Thread-safe: state transitions are atomic (under mutex) and generation counting
+// prevents stale callbacks from corrupting state.
 func (a *JSLeafAdapter) Tick(children []bt.Node) (bt.Status, error) {
 	a.mu.Lock()
-	currentState := a.state
-	a.mu.Unlock()
 
-	switch currentState {
+	switch a.state {
 	case StateIdle:
 		// Check for cancellation before starting
 		select {
 		case <-a.ctx.Done():
+			a.mu.Unlock()
 			return bt.Failure, errors.New("execution cancelled")
 		default:
 		}
-		// Start the JS execution
-		a.dispatchJS()
+		// ATOMIC: Transition to running and bump generation before unlock
+		// This prevents double-dispatch under concurrent Tick() calls
+		a.generation++
+		gen := a.generation
+		a.state = StateRunning
+		a.mu.Unlock()
+
+		// Dispatch with the captured generation
+		a.dispatchJSWithGen(gen)
 		return bt.Running, nil
 
 	case StateRunning:
 		// Check for cancellation while running
 		select {
 		case <-a.ctx.Done():
-			a.mu.Lock()
+			// CRITICAL: Increment generation to invalidate pending callbacks
 			a.state = StateIdle
+			a.generation++
 			a.mu.Unlock()
 			return bt.Failure, errors.New("execution cancelled")
 		default:
 		}
+		a.mu.Unlock()
 		// Still waiting for JS to complete
 		return bt.Running, nil
 
 	case StateCompleted:
 		// Collect the result and reset to idle
-		a.mu.Lock()
-		defer a.mu.Unlock()
 		status, err := a.lastStatus, a.lastError
 		a.state = StateIdle
 		a.lastStatus = 0
 		a.lastError = nil
+		a.mu.Unlock()
 		return status, err
-	}
 
-	return bt.Failure, errors.New("invalid async state")
+	default:
+		a.mu.Unlock()
+		return bt.Failure, errors.New("invalid async state")
+	}
 }
 
-// dispatchJS sends the execution request to the JavaScript event loop.
-func (a *JSLeafAdapter) dispatchJS() {
-	a.mu.Lock()
-	a.state = StateRunning
-	a.mu.Unlock()
-
+// dispatchJSWithGen sends the execution request to the JavaScript event loop.
+// The gen parameter is passed to finalize to ensure stale callbacks are ignored.
+func (a *JSLeafAdapter) dispatchJSWithGen(gen uint64) {
 	ok := a.bridge.RunOnLoop(func(vm *goja.Runtime) {
 		defer func() {
 			if r := recover(); r != nil {
-				a.finalize(bt.Failure, fmt.Errorf("panic in JS leaf %s: %v", a.fnName, r))
+				a.finalize(gen, bt.Failure, fmt.Errorf("panic in JS leaf %s: %v", a.fnName, r))
 			}
 		}()
 
 		// Get the JS function
 		fnVal := vm.Get(a.fnName)
 		if _, ok := goja.AssertFunction(fnVal); !ok {
-			a.finalize(bt.Failure, fmt.Errorf("JS function '%s' not callable", a.fnName))
+			a.finalize(gen, bt.Failure, fmt.Errorf("JS function '%s' not callable", a.fnName))
 			return
 		}
 
@@ -158,7 +180,7 @@ func (a *JSLeafAdapter) dispatchJS() {
 		runLeafVal := vm.Get("runLeaf")
 		runLeafFn, ok := goja.AssertFunction(runLeafVal)
 		if !ok {
-			a.finalize(bt.Failure, errors.New("runLeaf helper not found"))
+			a.finalize(gen, bt.Failure, errors.New("runLeaf helper not found"))
 			return
 		}
 
@@ -169,7 +191,7 @@ func (a *JSLeafAdapter) dispatchJS() {
 			if !goja.IsNull(call.Argument(1)) && !goja.IsUndefined(call.Argument(1)) {
 				err = fmt.Errorf("%s", call.Argument(1).String())
 			}
-			a.finalize(mapJSStatus(statusStr), err)
+			a.finalize(gen, mapJSStatus(statusStr), err)
 			return goja.Undefined()
 		}
 
@@ -191,19 +213,26 @@ func (a *JSLeafAdapter) dispatchJS() {
 			vm.ToValue(callback),
 		)
 		if err != nil {
-			a.finalize(bt.Failure, fmt.Errorf("runLeaf failed for function '%s': %w", a.fnName, err))
+			a.finalize(gen, bt.Failure, fmt.Errorf("runLeaf failed for function '%s': %w", a.fnName, err))
 		}
 	})
 
 	if !ok {
-		a.finalize(bt.Failure, errors.New("event loop terminated"))
+		a.finalize(gen, bt.Failure, errors.New("event loop terminated"))
 	}
 }
 
 // finalize sets the result and transitions to StateCompleted.
-func (a *JSLeafAdapter) finalize(status bt.Status, err error) {
+// The gen parameter is verified against the current generation to discard stale callbacks.
+func (a *JSLeafAdapter) finalize(gen uint64, status bt.Status, err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+
+	// Discard stale callbacks from cancelled or superseded runs
+	if gen != a.generation {
+		return
+	}
+
 	a.lastStatus = status
 	a.lastError = err
 	a.state = StateCompleted
@@ -212,11 +241,11 @@ func (a *JSLeafAdapter) finalize(status bt.Status, err error) {
 // mapJSStatus converts a JavaScript status string to a go-behaviortree Status.
 func mapJSStatus(s string) bt.Status {
 	switch s {
-	case "running":
+	case JSStatusRunning:
 		return bt.Running
-	case "success":
+	case JSStatusSuccess:
 		return bt.Success
-	case "failure":
+	case JSStatusFailure:
 		return bt.Failure
 	default:
 		return bt.Failure
@@ -229,7 +258,15 @@ func mapJSStatus(s string) bt.Status {
 //
 // Unlike JSLeafAdapter, this blocks the calling goroutine until the JS
 // Promise resolves. It's simpler but doesn't support true interleaving.
+//
+// Use BlockingJSLeafWithContext when you need cancellation support.
 func BlockingJSLeaf(bridge *Bridge, fnName string, getCtx func() any) bt.Node {
+	return BlockingJSLeafWithContext(context.Background(), bridge, fnName, getCtx)
+}
+
+// BlockingJSLeafWithContext creates a blocking leaf with context cancellation support.
+// The context allows the caller to cancel the operation if the JS Promise takes too long.
+func BlockingJSLeafWithContext(ctx context.Context, bridge *Bridge, fnName string, getCtx func() any) bt.Node {
 	return func() (bt.Tick, []bt.Node) {
 		return func(children []bt.Node) (bt.Status, error) {
 			type result struct {
@@ -238,17 +275,24 @@ func BlockingJSLeaf(bridge *Bridge, fnName string, getCtx func() any) bt.Node {
 			}
 			ch := make(chan result, 1)
 
+			// Use sync.Once to guarantee single send to channel
+			// This prevents double-send bugs if multiple code paths try to send
+			var once sync.Once
+			send := func(r result) {
+				once.Do(func() { ch <- r })
+			}
+
 			ok := bridge.RunOnLoop(func(vm *goja.Runtime) {
 				defer func() {
 					if r := recover(); r != nil {
-						ch <- result{bt.Failure, fmt.Errorf("panic: %v", r)}
+						send(result{bt.Failure, fmt.Errorf("panic: %v", r)})
 					}
 				}()
 
 				// Get the JS function
 				fnVal := vm.Get(fnName)
 				if _, ok := goja.AssertFunction(fnVal); !ok {
-					ch <- result{bt.Failure, fmt.Errorf("function '%s' not callable", fnName)}
+					send(result{bt.Failure, fmt.Errorf("function '%s' not callable", fnName)})
 					return
 				}
 
@@ -256,7 +300,7 @@ func BlockingJSLeaf(bridge *Bridge, fnName string, getCtx func() any) bt.Node {
 				runLeafVal := vm.Get("runLeaf")
 				runLeafFn, ok := goja.AssertFunction(runLeafVal)
 				if !ok {
-					ch <- result{bt.Failure, errors.New("runLeaf helper not found")}
+					send(result{bt.Failure, errors.New("runLeaf helper not found")})
 					return
 				}
 
@@ -266,7 +310,7 @@ func BlockingJSLeaf(bridge *Bridge, fnName string, getCtx func() any) bt.Node {
 					if arg1 := call.Argument(1); !goja.IsNull(arg1) && !goja.IsUndefined(arg1) {
 						err = fmt.Errorf("%s", arg1.String())
 					}
-					ch <- result{mapJSStatus(statusStr), err}
+					send(result{mapJSStatus(statusStr), err})
 					return goja.Undefined()
 				}
 
@@ -285,7 +329,8 @@ func BlockingJSLeaf(bridge *Bridge, fnName string, getCtx func() any) bt.Node {
 					vm.ToValue(callback),
 				)
 				if err != nil {
-					ch <- result{bt.Failure, err}
+					send(result{bt.Failure, err})
+					return
 				}
 			})
 
@@ -293,8 +338,15 @@ func BlockingJSLeaf(bridge *Bridge, fnName string, getCtx func() any) bt.Node {
 				return bt.Failure, errors.New("event loop terminated")
 			}
 
-			r := <-ch
-			return r.status, r.err
+			// Wait with cancellation support to avoid deadlock if bridge stops
+			select {
+			case r := <-ch:
+				return r.status, r.err
+			case <-ctx.Done():
+				return bt.Failure, ctx.Err()
+			case <-bridge.Done():
+				return bt.Failure, errors.New("bridge stopped")
+			}
 		}, nil
 	}
 }

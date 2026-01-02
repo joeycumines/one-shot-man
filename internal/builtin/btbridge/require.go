@@ -54,7 +54,14 @@ func (m *Manager) Close() error {
 
 // Require returns a require.ModuleLoader for the "osm:bt" module.
 // This loader exposes the behavior tree functionality to JavaScript.
+//
+// Note: This module exposes Go-native behavior tree primitives. The newNode and
+// newTicker helpers operate only on Go bt.Node and bt.Tick values exported into JS,
+// not arbitrary JS functions. For JS-authored leaves, use createLeafNode.
 func Require(ctx context.Context, bridge *Bridge) require.ModuleLoader {
+	if bridge == nil {
+		panic("btbridge.Require: bridge must not be nil")
+	}
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
@@ -64,10 +71,10 @@ func Require(ctx context.Context, bridge *Bridge) require.ModuleLoader {
 		// available via GetBTJS() for advanced users who want to use a bundler
 		// or transpile it for their specific needs.
 
-		// Status constants
-		_ = exports.Set("running", "running")
-		_ = exports.Set("success", "success")
-		_ = exports.Set("failure", "failure")
+		// Status constants (must match JSStatus* constants in adapter.go)
+		_ = exports.Set("running", JSStatusRunning)
+		_ = exports.Set("success", JSStatusSuccess)
+		_ = exports.Set("failure", JSStatusFailure)
 
 		// Go status constants
 		_ = exports.Set("Running", int(bt.Running))

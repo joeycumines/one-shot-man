@@ -168,7 +168,10 @@ func TestIntegration_AsyncJSLeafWithTicker(t *testing.T) {
 
 	// NewTicker reports context deadline exceeded as error (expected behavior)
 	// We just verify the counter was incremented before the timeout
-	count := bb.Get("counter").(int64)
+	countVal := bb.Get("counter")
+	require.NotNil(t, countVal, "counter should have been set by JS")
+	count, ok := countVal.(int64)
+	require.True(t, ok, "counter should be int64, got %T", countVal)
 	require.Greater(t, count, int64(0), "counter should have been incremented")
 }
 

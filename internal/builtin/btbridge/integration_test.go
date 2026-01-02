@@ -9,6 +9,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// waitForTreeCompletion polls the tree until it returns a non-Running status or timeout.
+func waitForTreeCompletion(t *testing.T, tree bt.Node, timeout time.Duration) (bt.Status, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatal("timeout waiting for tree completion")
+			return bt.Failure, ctx.Err()
+		case <-ticker.C:
+			status, err := tree.Tick()
+			if status != bt.Running || err != nil {
+				return status, err
+			}
+		}
+	}
+}
+
 // TestIntegration_GoCompositeWithJSLeaves demonstrates the Go-Centric architecture:
 // go-behaviortree composites (Sequence, Selector) with JavaScript leaf behaviors.
 func TestIntegration_GoCompositeWithJSLeaves(t *testing.T) {
@@ -196,17 +219,9 @@ func TestIntegration_Memorize(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, bt.Running, status)
 
-	// Poll until completion (wait for JS promises)
-	for i := 0; i < 50; i++ {
-		time.Sleep(10 * time.Millisecond)
-		status, err = tree.Tick()
-		require.NoError(t, err)
-		if status != bt.Running {
-			break
-		}
-	}
-
-	// Eventually should succeed
+	// Wait for completion using helper
+	status, err = waitForTreeCompletion(t, tree, time.Second)
+	require.NoError(t, err)
 	require.Equal(t, bt.Success, status)
 
 	// Check counts - step1 should be 2, step2 should be 2

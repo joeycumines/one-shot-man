@@ -89,21 +89,6 @@ func (a *JSLeafAdapter) Cancel() {
 	a.cancel()
 }
 
-// GetAdapter returns the underlying JSLeafAdapter from a Node created by NewJSLeafAdapter.
-// This is useful for accessing the Cancel method.
-// Returns nil if the node was not created by NewJSLeafAdapter.
-func GetAdapter(node bt.Node) *JSLeafAdapter {
-	// Get the tick and children from the node
-	tick, _ := node()
-	if tick == nil {
-		return nil
-	}
-
-	// Unfortunately, we can't easily extract the adapter from the closure.
-	// This would require a different design pattern.
-	return nil
-}
-
 // Tick implements the go-behaviortree Tick interface.
 func (a *JSLeafAdapter) Tick(children []bt.Node) (bt.Status, error) {
 	a.mu.Lock()
@@ -206,7 +191,7 @@ func (a *JSLeafAdapter) dispatchJS() {
 			vm.ToValue(callback),
 		)
 		if err != nil {
-			a.finalize(bt.Failure, fmt.Errorf("runLeaf failed: %w", err))
+			a.finalize(bt.Failure, fmt.Errorf("runLeaf failed for function '%s': %w", a.fnName, err))
 		}
 	})
 

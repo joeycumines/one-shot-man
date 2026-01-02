@@ -9,6 +9,30 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// waitForCompletion polls the node until it returns a non-Running status or timeout.
+// This helper avoids brittle hardcoded iteration counts in tests.
+func waitForCompletion(t *testing.T, node bt.Node, timeout time.Duration) (bt.Status, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			t.Fatal("timeout waiting for node completion")
+			return bt.Failure, ctx.Err()
+		case <-ticker.C:
+			status, err := node.Tick()
+			if status != bt.Running || err != nil {
+				return status, err
+			}
+		}
+	}
+}
+
 func TestJSLeafAdapter_Success(t *testing.T) {
 	t.Parallel()
 
@@ -33,16 +57,8 @@ func TestJSLeafAdapter_Success(t *testing.T) {
 	require.Equal(t, bt.Running, status)
 
 	// Wait for JS to complete
-	var finalStatus bt.Status
-	for i := 0; i < 100; i++ {
-		time.Sleep(5 * time.Millisecond)
-		finalStatus, err = node.Tick()
-		require.NoError(t, err)
-		if finalStatus != bt.Running {
-			break
-		}
-	}
-
+	finalStatus, err := waitForCompletion(t, node, time.Second)
+	require.NoError(t, err)
 	require.Equal(t, bt.Success, finalStatus)
 }
 
@@ -69,16 +85,8 @@ func TestJSLeafAdapter_Failure(t *testing.T) {
 	require.Equal(t, bt.Running, status)
 
 	// Wait for completion
-	var finalStatus bt.Status
-	for i := 0; i < 100; i++ {
-		time.Sleep(5 * time.Millisecond)
-		finalStatus, err = node.Tick()
-		require.NoError(t, err)
-		if finalStatus != bt.Running {
-			break
-		}
-	}
-
+	finalStatus, err := waitForCompletion(t, node, time.Second)
+	require.NoError(t, err)
 	require.Equal(t, bt.Failure, finalStatus)
 }
 
@@ -113,16 +121,8 @@ func TestJSLeafAdapter_WithBlackboard(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, bt.Running, status)
 
-	var finalStatus bt.Status
-	for i := 0; i < 100; i++ {
-		time.Sleep(5 * time.Millisecond)
-		finalStatus, err = node.Tick()
-		require.NoError(t, err)
-		if finalStatus != bt.Running {
-			break
-		}
-	}
-
+	finalStatus, err := waitForCompletion(t, node, time.Second)
+	require.NoError(t, err)
 	require.Equal(t, bt.Success, finalStatus)
 	require.Equal(t, int64(20), bb.Get("output"))
 }
@@ -149,17 +149,8 @@ func TestJSLeafAdapter_Error(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, bt.Running, status)
 
-	// Wait for completion
-	var finalStatus bt.Status
-	var finalErr error
-	for i := 0; i < 100; i++ {
-		time.Sleep(5 * time.Millisecond)
-		finalStatus, finalErr = node.Tick()
-		if finalStatus != bt.Running {
-			break
-		}
-	}
-
+	// Wait for completion - expect error
+	finalStatus, finalErr := waitForCompletion(t, node, time.Second)
 	require.Equal(t, bt.Failure, finalStatus)
 	require.Error(t, finalErr)
 	require.Contains(t, finalErr.Error(), "test error")
@@ -180,16 +171,7 @@ func TestJSLeafAdapter_NonExistentFunction(t *testing.T) {
 	require.Equal(t, bt.Running, status)
 
 	// Should fail with error about non-callable function
-	var finalStatus bt.Status
-	var finalErr error
-	for i := 0; i < 100; i++ {
-		time.Sleep(5 * time.Millisecond)
-		finalStatus, finalErr = node.Tick()
-		if finalStatus != bt.Running {
-			break
-		}
-	}
-
+	finalStatus, finalErr := waitForCompletion(t, node, time.Second)
 	require.Equal(t, bt.Failure, finalStatus)
 	require.Error(t, finalErr)
 	require.Contains(t, finalErr.Error(), "not callable")
@@ -262,16 +244,8 @@ func TestJSLeafAdapter_MultipleExecutions(t *testing.T) {
 		require.Equal(t, bt.Running, status)
 
 		// Wait for completion
-		var finalStatus bt.Status
-		for i := 0; i < 100; i++ {
-			time.Sleep(5 * time.Millisecond)
-			finalStatus, err = node.Tick()
-			require.NoError(t, err)
-			if finalStatus != bt.Running {
-				break
-			}
-		}
-
+		finalStatus, err := waitForCompletion(t, node, time.Second)
+		require.NoError(t, err)
 		require.Equal(t, bt.Success, finalStatus)
 		require.Equal(t, int64(round), bb.Get("counter"))
 	}

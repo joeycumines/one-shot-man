@@ -13,6 +13,13 @@ import (
 //go:embed bt.js
 var btJS string
 
+// GetBTJS returns the embedded bt.js source code.
+// This is useful for advanced users who want to use a bundler
+// or transpile it for their specific needs.
+func GetBTJS() string {
+	return btJS
+}
+
 // Manager manages behavior tree bridges and provides the require module interface.
 type Manager struct {
 	ctx    context.Context
@@ -53,10 +60,9 @@ func Require(ctx context.Context, bridge *Bridge) require.ModuleLoader {
 
 		// Note: bt.js uses ES module syntax which isn't directly compatible
 		// with CommonJS require. We expose the Go-side primitives and bridge
-		// functionality instead, with bt.js available for advanced users who
-		// want to use a bundler or modify the code.
-		// The btJS variable is embedded and available for future use.
-		_ = btJS // Silence unused warning; available for future ES module support
+		// functionality instead. The original bt.js source is embedded and
+		// available via GetBTJS() for advanced users who want to use a bundler
+		// or transpile it for their specific needs.
 
 		// Status constants
 		_ = exports.Set("running", "running")
@@ -75,12 +81,12 @@ func Require(ctx context.Context, bridge *Bridge) require.ModuleLoader {
 
 		// Expose blackboard to JS helper
 		_ = exports.Set("exposeBlackboard", func(call goja.FunctionCall) goja.Value {
-			if len(call.Arguments) < 1 {
-				panic(runtime.NewTypeError("exposeBlackboard requires a Blackboard argument"))
+			if len(call.Arguments) != 1 {
+				panic(runtime.NewTypeError("exposeBlackboard requires exactly one Blackboard argument"))
 			}
 			bb, ok := call.Arguments[0].Export().(*Blackboard)
 			if !ok {
-				panic(runtime.NewTypeError("exposeBlackboard requires a Blackboard argument"))
+				panic(runtime.NewTypeError("exposeBlackboard: argument must be a Blackboard instance"))
 			}
 			return bb.ExposeToJS(runtime)
 		})

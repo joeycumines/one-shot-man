@@ -68,8 +68,9 @@ func NewBridgeWithContext(ctx context.Context) (*Bridge, error) {
 		return nil, fmt.Errorf("failed to initialize JavaScript environment: %w", err)
 	}
 
-	// Handle context cancellation
-	if ctx != context.Background() {
+	// Handle context cancellation - register if context is cancelable
+	// context.AfterFunc returns nil if the context will never be canceled
+	if ctx.Done() != nil {
 		context.AfterFunc(ctx, func() {
 			b.Stop()
 		})

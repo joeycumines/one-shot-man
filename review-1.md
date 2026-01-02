@@ -484,7 +484,7 @@ type Manager struct {
 
 **The Bug:** The `Require` module exposes `bt.Sequence` (Go implementation). Go `Tick` returns `(int, error)`. `goja` converts to JS `number`. The embedded `bt.js` logic checks `if (status === "running")`. Since `1 !== "running"`, JS composites misinterpret Go `Running` as `Failure`.
 
-**Impact:** Users cannot mix Go composites and JS composites reliably.
+**Impact:** Users cannot mix Go composites and JS composites reliably. JUST C.2 IS INSUFFICIENT; FULL INTEROPERABILITY IS REQUIRED.
 
 **Required Fix:** Either:
 1. Wrap Go nodes to return string status, OR
@@ -758,10 +758,11 @@ func NewJSLeafAdapterWithContext(...)
 **Required Fix:** Document this clearly in `doc.go`:
 
 ```go
-// This package implements Variant C.2 (Go-centric with JS leaves).
-// Full bt.js composite compatibility is NOT provided.
-// Use go-behaviortree composites (Sequence, Selector, etc.) in Go.
-// JavaScript is used only for leaf behaviors.
+// This package currently implements Variant C.2 (Go-centric with JS leaves).
+// IMPORTANT: JUST C.2 IS INSUFFICIENT; FULL INTEROPERABILITY IS REQUIRED. This includes
+// bt.js composites and semantics (status translation, module wiring, mixed
+// Go/JS composites). The implementation must be extended to guarantee
+// seamless, bi-directional interoperability between Go and JS.
 ```
 
 **This fix must be addressed.**
@@ -1160,7 +1161,7 @@ fmt.Sprintf(`globalThis.bt = {
 - [ ] Remove "Ready for release" from WIP.md
 - [ ] Fix thread safety claims in adapter.go
 - [ ] Document one-shot context behavior
-- [ ] Document bt.js compatibility limitations
+- [ ] Document bt.js compatibility limitations — include explicit statement: 'JUST C.2 IS INSUFFICIENT; FULL INTEROPERABILITY IS REQUIRED.'
 - [ ] Document or remove performance claims
 - [ ] Update test count in WIP.md
 
@@ -1168,7 +1169,7 @@ fmt.Sprintf(`globalThis.bt = {
 
 ## Final Verdict
 
-**This PR requires significant corrections before merge.** The core design is sound (Variant C.2 architecture, event loop usage, Go-owned blackboard), but the implementation contains critical concurrency bugs that will cause data corruption and deadlocks in production.
+**This PR requires significant corrections before merge.** The core design is based on Variant C.2 architecture (event loop usage, Go-owned blackboard), but JUST C.2 IS INSUFFICIENT; FULL INTEROPERABILITY IS REQUIRED. The implementation contains critical concurrency bugs that will cause data corruption and deadlocks in production.
 
 **Minimum requirements for merge approval:**
 1. All items in Section 11.1 (Critical Fixes) completed

@@ -36,7 +36,7 @@ There is **no single perfect solution** that offers 100% API compatibility, 100%
 | **`Running` Representation** | Pending Promise / re-execution via loop   | Returned value meaning "call me again"  |
 | **Concurrency**              | Event Loop / Microtasks (single-threaded) | Goroutines / Mutexes (concurrent)       |
 
-**Critical Implication:** A Go `Running` status does not naturally map to a pending JS Promise. In Go, it is a returned value; in JS, "running" is implied by the Promise not yet resolving. Direct wrapping without an architectural bridge is semantically impossible.
+**Critical Implication:** A Go `Running` status does not naturally map to a pending JS Promise. In Go, it is a returned value; in JS, "running" is implied by the Promise not yet resolving. Direct wrapping without an architectural bridge is semantically impossible. **Note:** JUST C.2 IS INSUFFICIENT; FULL INTEROPERABILITY IS REQUIRED.
 
 ### 1.2 Non-Negotiable Requirements
 
@@ -55,7 +55,7 @@ This design:
 - Respects `goja`'s execution model and `eventloop` semantics
 - Makes all BT scheduling and concurrency visible and testable in Go
 - Allows JS to implement rich async behaviors using Promises and `bt.js`-style helpers inside leaves
-- Leaves room to evolve toward deeper `bt.js` compatibility without compromising robustness
+- Leaves room to evolve toward deeper `bt.js` compatibility without compromising robustness (BUT JUST C.2 IS INSUFFICIENT; FULL INTEROPERABILITY IS REQUIRED) 
 
 ---
 
@@ -146,7 +146,7 @@ The bridge must translate:
 
 - `go-behaviortree` is canonical for tree structure and composites
 - JS is used for **leaf actions/conditions only**
-- Satisfies interoperability with Go BT module most naturally
+- Satisfies local interoperability with the Go BT module most naturally (baseline only; FULL INTEROPERABILITY with `bt.js` is required)
 
 **Option 3: Hybrid/Transpiled**
 
@@ -233,7 +233,7 @@ The bridge must translate:
 | Performance | Limited to JS execution speed |
 | Use Case | JavaScript-centric teams, prototyping, legacy JS trees |
 
-**Verdict:** Gives JS compatibility but does not truly integrate with `go-behaviortree` beyond "JS subtree as leaf node."
+**Verdict:** Gives JS compatibility but does not truly integrate with `go-behaviortree` beyond "JS subtree as leaf node." (Not sufficient for full interoperability.)
 
 ### 4.2 Variant B: Thin Wrapper
 
@@ -258,6 +258,8 @@ The bridge must translate:
 
 **Verdict:** Most effective, performant, and robust baseline solution.
 
+**Important:** Treat Variant C.2 as a robust baseline only; **JUST C.2 IS INSUFFICIENT** for our goals. The project **must** include an explicit roadmap and design to achieve **FULL interoperability** with `bt.js` — including support for JS composites or a translation layer, reliable status string/int translation, require-module compatibility, and deterministic mixed Go/JS testing.
+
 ### 4.4 Variant C.1: Polling-Based Bridge
 
 **Mechanism:**
@@ -272,7 +274,7 @@ The bridge must translate:
 - Polling introduces latency (1-10ms typical)
 - Wasted CPU cycles during polling
 
-### 4.5 Variant C.2: Event-Driven Bridge (Recommended for Production)
+### 4.5 Variant C.2: Event-Driven Bridge (Recommended for Production — baseline only; FULL INTEROPERABILITY REQUIRED)
 
 **Mechanism:**
 
@@ -1448,7 +1450,7 @@ async function longRunningAction(ctx, args) {
 |----------------------------|-----------|-------------------|--------|----------------------------------|
 | Pure JS (Variant A)        | ~100µs    | ~10k ticks/sec    | Low    | Bottleneck: JS execution         |
 | Polling (Variant C.1)      | ~1-10ms   | ~100-1k ticks/sec | Medium | Bottleneck: Poll interval        |
-| Event-Driven (Variant C.2) | ~50-200µs | ~5-20k ticks/sec  | Higher | Bottleneck: Goroutine scheduling |
+| Event-Driven (Variant C.2 — baseline only; FULL INTEROPERABILITY REQUIRED) | ~50-200µs | ~5-20k ticks/sec  | Higher | Bottleneck: Goroutine scheduling |
 
 ### 10.3 Scaling Considerations
 
@@ -1479,11 +1481,11 @@ The key takeaway is that the solution variants are not mutually exclusive, and t
 |-------------------------------------|----------------------------|-----------------------|
 | **Must use exact `bt.js` API**      | Variant A (Pure JS)        | Pattern B (JS Object) |
 | **JavaScript Team / Prototyping**   | Variant A (Pure JS)        | Pattern B (JS Object) |
-| **Production / Low Latency (<1ms)** | Variant C.2 (Event-Driven) | Pattern A (Go-Owned)  |
-| **Existing Go BT Codebase**         | Variant C.2 (Event-Driven) | Pattern A (Go-Owned)  |
+| **Production / Low Latency (<1ms)** | Variant C.2 (Event-Driven — baseline only; FULL INTEROPERABILITY REQUIRED) | Pattern A (Go-Owned)  |
+| **Existing Go BT Codebase**         | Variant C.2 (Event-Driven — baseline only; FULL INTEROPERABILITY REQUIRED) | Pattern A (Go-Owned)  |
 | **Mixed Team (Go & JS)**            | Variant C.1 (Polling)      | Pattern A (Go-Owned)  |
 | **High Concurrency (>1000 trees)**  | Variant A (Pure JS)        | Pattern B (JS Object) |
-| **Large Team / Strict Types**       | Variant C.2 (Event-Driven) | Pattern D (Schema)    |
+| **Large Team / Strict Types**       | Variant C.2 (Event-Driven — baseline only; FULL INTEROPERABILITY REQUIRED) | Pattern D (Schema)    |
 | **Simplicity Above All**            | Variant A (Pure JS)        | Pattern B (JS Object) |
 
 ### 11.2 Runtime Topology Selection
@@ -1734,7 +1736,7 @@ The following steps are the prescriptive implementation sequence for a single de
 2. Identify performance bottlenecks (specific expensive nodes)
 3. Re-implement those nodes in Go, register via `RegisterGoNode`
 4. Use `bt.wrapGoNode(id)` in JS tree definition
-5. If latency requirements tighten, move to Variant C.2
+5. If latency requirements tighten, move to Variant C.2 (baseline only); ensure an explicit plan for FULL INTEROPERABILITY.
 
 ### 13.3 Migration: Existing Go BT → Hybrid
 

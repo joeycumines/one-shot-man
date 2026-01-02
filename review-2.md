@@ -26,6 +26,7 @@ Every issue described in the source documents is integrated somewhere in these s
    - `go-behaviortree` is the canonical runtime for tree structure and composites.
    - JavaScript is used **only for leaf behaviors**.
    - All JS runs inside a single-threaded `goja` runtime driven by `goja_nodejs/eventloop` (or equivalent), and **all** VM interactions occur via `RunOnLoop`.
+   - **Important:** Variant C.2 is a recommended baseline. JUST C.2 IS INSUFFICIENT; FULL INTEROPERABILITY IS REQUIRED: interoperability with `bt.js` composites and semantics (status translation, module compatibility, and mixed Go/JS composite usage) is a mandatory requirement and must be included in the implementation plan.
 
 2. The implementation **must** be:
    - **Thread-safe** according to its own API claims (e.g., if `JSLeafAdapter` claims to be safe for concurrent `Tick()` calls, it must be correct under that usage).
@@ -550,7 +551,7 @@ This means:
 This is consistent with the **Go-centric** approach but must be documented:
 
 - `osm:bt.newNode` is a helper for assembling **Go** composites and nodes **from JS**, not for defining JS composites.
-- Mixing JS-defined composites (bt.js-style) with these Go nodes is not supported.
+- Mixing JS-defined composites (bt.js-style) with these Go nodes is not supported. JUST C.2 IS INSUFFICIENT; FULL INTEROPERABILITY IS REQUIRED.
 
 You must:
 
@@ -573,8 +574,7 @@ Given the Go-centric design and the analysis, the simplest and internally consis
 - **Explicitly document** that:
   - `"osm:bt"` is for assembling **Go** trees.
   - The embedded bt.js is not used directly; bt.js-style composites are not supported in the same runtime.
-  - Leaf functions may still follow bt.js-like leaf contracts (string statuses), but composite logic is not shared.
-
+- Leaf functions may still follow bt.js-like leaf contracts (string statuses), but composite logic is not shared. JUST C.2 IS INSUFFICIENT; FULL INTEROPERABILITY IS REQUIRED.
 ### 5.4 Manager Type and Tests
 
 The `Manager` type exposed via `require.go`:
@@ -737,7 +737,7 @@ All public-facing documentation, especially `doc.go` and `WIP.md` (or equivalent
 You must:
 
 - Clearly state that:
-  - Full bt.js composite API (sequence, fallback, parallel, etc.) is **not** implemented on top of goja in this bridge.
+  - Full bt.js composite API (sequence, fallback, parallel, etc.) is **not** implemented on top of goja in this bridge. JUST C.2 IS INSUFFICIENT; FULL INTEROPERABILITY IS REQUIRED.
   - The bridge supports **bt.js-style leaves** (async functions returning string statuses) but uses **Go-native composites** via `go-behaviortree`.
 - Remove or correct any claims that suggest full bt.js tree execution in JS (unless you actually implement it and test it, which is currently not the case).
 
@@ -985,8 +985,8 @@ This section enumerates a concrete, ordered list of tasks that must all be compl
 ### 11.7 Documentation & Claims
 
 30. Update `doc.go` and `WIP.md` (or equivalents) to:
-    - Clarify Go-centric design and JS-leaves-only support.
-    - Remove or modify any full bt.js compatibility claims.
+    - Clarify Go-centric design and JS-leaves-only support. JUST C.2 IS INSUFFICIENT; FULL INTEROPERABILITY IS REQUIRED.
+    - Remove or modify any full bt.js compatibility claims. JUST C.2 IS INSUFFICIENT; FULL INTEROPERABILITY IS REQUIRED.
     - Remove or hedge unverified performance numbers.
     - Update test and lint status only after reruns.
 31. Document “one-shot” semantics of `NewJSLeafAdapterWithContext`:

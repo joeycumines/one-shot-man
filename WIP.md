@@ -10,6 +10,8 @@ Implement a complete, release-ready integration of `bt.js` with `github.com/joey
 - Go-owned blackboard exposed to JS
 - Event-driven bridge for optimal performance
 
+**Status note:** JUST C.2 IS INSUFFICIENT; FULL INTEROPERABILITY IS REQUIRED. The project is **not** ready for release until all critical interoperability and concurrency items are resolved and verified.
+
 ## Implementation Plan
 
 ### Phase 1: Foundation

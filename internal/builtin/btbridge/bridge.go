@@ -56,6 +56,10 @@ func NewBridgeWithContext(ctx context.Context) (*Bridge, error) {
 		cancel: cancel,
 	}
 
+	// Register the osm:bt module BEFORE starting the event loop
+	// This makes it available to JS code via require('osm:bt')
+	reg.RegisterNativeModule("osm:bt", Require(ctx, b))
+
 	// Start the event loop
 	loop.Start()
 	b.mu.Lock()

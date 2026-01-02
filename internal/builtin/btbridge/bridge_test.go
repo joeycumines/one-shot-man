@@ -196,3 +196,40 @@ func TestBridge_JSHelpers(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, val)
 }
+
+// TestBridge_OsmBtModuleRegistered verifies that the osm:bt module is automatically registered
+// and accessible via require('osm:bt') in JavaScript.
+func TestBridge_OsmBtModuleRegistered(t *testing.T) {
+	t.Parallel()
+
+	bridge, err := NewBridge()
+	require.NoError(t, err)
+	defer bridge.Stop()
+
+	// Try to require the osm:bt module from JavaScript
+	err = bridge.LoadScript("test.js", `
+		const bt = require('osm:bt');
+		globalThis.btModule = bt;
+		globalThis.hasRunning = bt.running === 'running';
+		globalThis.hasSuccess = bt.success === 'success';
+		globalThis.hasFailure = bt.failure === 'failure';
+	`)
+	require.NoError(t, err)
+
+	// Verify the module was loaded correctly
+	val, err := bridge.GetGlobal("btModule")
+	require.NoError(t, err)
+	require.NotNil(t, val, "btModule should be defined after require")
+
+	val, err = bridge.GetGlobal("hasRunning")
+	require.NoError(t, err)
+	require.Equal(t, true, val)
+
+	val, err = bridge.GetGlobal("hasSuccess")
+	require.NoError(t, err)
+	require.Equal(t, true, val)
+
+	val, err = bridge.GetGlobal("hasFailure")
+	require.NoError(t, err)
+	require.Equal(t, true, val)
+}

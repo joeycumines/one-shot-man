@@ -79,3 +79,8 @@ internal\termui\scrollbar\scrollbar.go:*: unreachable func: WithChars
 # (parallels ParseKey for key events). Used in tests and available for external callers.
 internal/builtin/bubbletea/parsemouse.go:*: unreachable func: ParseMouseEvent
 internal\builtin\bubbletea\parsemouse.go:*: unreachable func: ParseMouseEvent
+
+# btbridge package - public API for JavaScript behavior tree integration
+# This is a new module not yet consumed by the main application
+internal/builtin/btbridge/*.go:*: unreachable func: *
+internal\builtin\btbridge\*.go:*: unreachable func: *

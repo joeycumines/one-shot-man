@@ -15,47 +15,59 @@ Implement a complete, release-ready integration of `bt.js` with `github.com/joey
 ### Phase 1: Foundation
 - [x] Understand repository structure and existing patterns
 - [x] Clone bt.js gist
-- [ ] Add go-behaviortree dependency
-- [ ] Create internal/builtin/btbridge package structure
-- [ ] Implement Bridge struct with eventloop setup
-- [ ] Implement threadsafe Blackboard
+- [x] Add go-behaviortree dependency
+- [x] Create internal/builtin/btbridge package structure
+- [x] Implement Bridge struct with eventloop setup
+- [x] Implement threadsafe Blackboard
 
 ### Phase 2: Core Bridge
-- [ ] Implement JSLeafAdapter state machine (non-blocking)
-- [ ] Register runLeaf JS helper during VM init
-- [ ] Add panic recovery and error reporting
-- [ ] Implement promise-finalization guarantees
-- [ ] Implement BlockingJSLeaf alternative for simpler use cases
+- [x] Implement JSLeafAdapter state machine (non-blocking)
+- [x] Register runLeaf JS helper during VM init
+- [x] Add panic recovery and error reporting
+- [x] Implement promise-finalization guarantees
+- [x] Implement BlockingJSLeaf alternative for simpler use cases
 
 ### Phase 3: JavaScript Module
-- [ ] Copy bt.js to internal/builtin/btbridge/bt.js
-- [ ] Create osm:bt module registration
-- [ ] Expose bt.js primitives: running, success, failure
-- [ ] Expose bt.js composites: node, tick, sequence, fallback, parallel, etc.
-- [ ] Expose bridge-specific helpers: createLeaf, createBlackboard
+- [x] Copy bt.js to internal/builtin/btbridge/bt.js
+- [x] Create osm:bt module registration (Require function)
+- [x] Expose bt.js primitives: running, success, failure
+- [x] Expose go-behaviortree composites: Sequence, Selector, etc.
+- [x] Expose bridge-specific helpers: createLeafNode, createBlackboard
 
 ### Phase 4: Tree Construction Helpers
-- [ ] Create Go-side helpers for building trees with JS leaves
-- [ ] Implement tree construction example
-- [ ] Add Manager/Ticker integration with cancellation propagation
+- [x] Create Go-side helpers for building trees with JS leaves
+- [x] Implement tree construction example (in integration tests)
+- [x] Add Manager/Ticker integration with cancellation propagation
 
 ### Phase 5: Testing & Hardening
-- [ ] Unit tests for Blackboard
-- [ ] Unit tests for Bridge lifecycle (Start/Stop, RunOnLoop)
-- [ ] Unit tests for JSLeafAdapter state machine
-- [ ] Integration tests for JS leaf execution
-- [ ] Tests for error handling (panics, promise rejections)
-- [ ] Tests for cancellation propagation
-- [ ] Tests for concurrent execution
+- [x] Unit tests for Blackboard
+- [x] Unit tests for Bridge lifecycle (Start/Stop, RunOnLoop)
+- [x] Unit tests for JSLeafAdapter state machine
+- [x] Integration tests for JS leaf execution
+- [x] Tests for error handling (panics, promise rejections)
+- [x] Tests for cancellation propagation
+- [ ] Tests for concurrent execution (advanced scenarios)
 - [ ] Memory leak tests (goroutine leaks)
 
 ### Phase 6: Documentation
-- [ ] Document public API
-- [ ] Add usage examples
+- [x] Document public API (package-level doc.go)
+- [x] Add usage examples (in doc.go and integration tests)
 - [ ] Update docs/scripting.md if needed
 
 ## Deviations Log
-(Record any deviations from the plan here)
+- Module registration: btbridge is kept as a standalone package rather than auto-registered
+  in builtin.Register due to the complexity of Bridge lifecycle management. Users can
+  import and use the package directly.
+- bt.js ES modules: The original bt.js uses ES module syntax which isn't compatible with
+  CommonJS require. The Go-side primitives are exposed instead, with bt.js embedded for
+  future use or bundled workflows.
 
 ## Current Status
-Phase 1: Understanding repository - COMPLETE
+Phase 5 MOSTLY COMPLETE - all core tests passing
+Phase 6 IN PROGRESS - documentation added
+
+## Remaining Work
+- [ ] Additional stress tests for concurrent scenarios
+- [ ] Memory/goroutine leak detection tests  
+- [ ] Consider adding to docs/scripting.md
+- [ ] Run code_review and codeql_checker

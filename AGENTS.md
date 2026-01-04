@@ -1,19 +1,33 @@
-**This is `./AGENTS.md`. Your equivalent is `./WIP.md` which must track your plan. KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.**
+<engineering_mindset>
+Please write a high-quality, general-purpose solution using the standard tools available. Do not create helper scripts or workarounds to accomplish the task more efficiently. Implement a solution that works correctly for all valid inputs, not just the test cases. Do not hard-code values or create solutions that only work for specific test inputs. Instead, implement the actual logic that solves the problem generally.
 
-**ON TOOLS: Use `config.mk` to create custom targets, and the `make` tool to run targets. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of those CRITICAL rules. Abide. OBEY.**
+Focus on understanding the problem requirements and implementing the correct algorithm. Tests are there to verify correctness, not to define the solution. Provide a principled implementation that follows best practices and software design principles.
 
-**ON CHECKS: All checks MUST pass AT ALL TIMES. DO NOT PROCEED IF CHECKS ARE FAILING. FIX THE CHECKS IMMEDIATELY. You are SOLELY responsible for ALL checks and ALL behavior. Declaring "it was broken before" is NOT an excuse. FIX IT.**
+If the task is unreasonable or infeasible, or if any of the tests are incorrect, please inform me rather than working around them. The solution should be robust, maintainable, and extendable.
+</engineering_mindset>
 
-DO NOT MODIFY THIS FILE. This is MY file. You are ONLY allowed to READ this file.
+<code_checks>
+Per `make help`.
 
-**ALL the contents of `./WIP.md` and `./review.md` (if either exist, including if you create them) are MANDATORY changes/tasks that MUST be completed _in full_ IMMEDIATELY _without fail_.**
+YOU are _always_ responsible for ensuring the `all` target (output-limited variant per `example.config.mk`) ALWAYS passes 100%.
+</code_checks>
 
-... TO REITERATE ...
+<default_to_action>
+By default, implement changes rather than only suggesting them. If the user's intent is unclear, infer the most useful likely action and proceed, using tools to discover any missing details instead of guessing. Try to infer the user's intent about whether a tool call (e.g., file edit or read) is intended or not, and act accordingly.
+</default_to_action>
 
-**ALL the contents of `./WIP.md` and `./review.md` (if either exist, including if you create them) are MANDATORY changes/tasks that MUST be completed _in full_ IMMEDIATELY _without fail_.**
+<threat_of_inaction>
+There MUST be ZERO test failures on ANY of (3x OS) - irrespective of timing or non-determinism. NO EXCUSES e.g. "it was pre-existing" or "it is flaky" - YOUR JOB IS TO IMMEDIATELY FIX IT, **PROPERLY**.
+</threat_of_inaction>
 
-**ON TOOLS: Use `config.mk` to create custom targets, and the `make` tool to run targets. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of those CRITICAL rules. Abide. OBEY.**
+<memory_protocol>
+To avoid forgetting what you were doing, maintain a STRUCTURED `./blueprint.json` defining ALL distinct units of verifiable functionality, alongside `./WIP.md` - your personal diary - keeping the latter up to date with your Current Goal, and HIGH LEVEL Action Plan, and maintaining `./blueprint.json` as the live status of all Must Have sub-tasks - you aren't DONE until ALL are "DONE DONE".
 
-**ON CHECKS: All checks MUST pass AT ALL TIMES. DO NOT PROCEED IF CHECKS ARE FAILING. FIX THE CHECKS IMMEDIATELY. You are SOLELY responsible for ALL checks and ALL behavior. Declaring "it was broken before" is NOT an excuse. FIX IT.**
+Start of Task: Immediately read (verify if resuming - use a subagent to avoid polluting your context) then update/reset both `./WIP.md` and `./blueprint.json`, ensuring you reference `./blueprint.json` (don't duplicate its content).
 
-P.S. Use #todo #runSubagent #make religiously.
+End of Iteration: Update those files to mark progress. Verify progress via subagent - DO NOT ASSUME, DO NOT TRUST _YOURSELF_ (use a sub-agent).
+
+End of Task: Verifying both files are coherent and reflect reality (DO NOT ASSUME!), and `./blueprint.json` is 100% complete. This is MANDATORY.
+
+CONTINUOUS: The plan (inclusive of formal sub-tasks) MUST be refined HOLISTICALLY and UPDATED after any change of any size. Deviations to the plan MUST be logged within the plan.
+</memory_protocol>

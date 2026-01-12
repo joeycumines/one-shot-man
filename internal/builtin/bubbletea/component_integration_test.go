@@ -16,9 +16,8 @@ import (
 // into a single tea.Cmd and that executing it runs all constituent commands.
 func TestMixedComponents_BatchExecutesAll(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 

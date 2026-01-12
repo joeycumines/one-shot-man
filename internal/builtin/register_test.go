@@ -6,17 +6,23 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 func TestRegister(t *testing.T) {
 	t.Parallel()
+
+	// Create test event loop provider (REQUIRED)
+	eventLoopProvider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(eventLoopProvider.Stop)
+
 	runtime := goja.New()
 	registry := require.NewRegistry()
 	var tuiMessages []string
 
 	Register(context.Background(), func(msg string) {
 		tuiMessages = append(tuiMessages, msg)
-	}, registry, nil, nil) // Pass nil for tviewProvider and terminalProvider
+	}, registry, nil, nil, eventLoopProvider)
 
 	req := registry.Enable(runtime)
 	modules := []string{

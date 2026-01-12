@@ -15,8 +15,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newTestManager creates a Manager with a SyncJSRunner for unit testing.
+// This is appropriate for tests that don't run actual BubbleTea programs.
+func newTestManager(ctx context.Context, vm *goja.Runtime) *Manager {
+	return NewManager(ctx, nil, nil, &SyncJSRunner{Runtime: vm}, nil, nil)
+}
+
+// newTestManagerWithIO creates a Manager with custom I/O and a SyncJSRunner for unit testing.
+func newTestManagerWithIO(ctx context.Context, input, output *os.File, vm *goja.Runtime) *Manager {
+	return NewManager(ctx, input, output, &SyncJSRunner{Runtime: vm}, nil, nil)
+}
+
 func TestNewManager(t *testing.T) {
-	manager := NewManager(context.Background(), nil, nil, nil, nil)
+	vm := goja.New()
+	manager := newTestManager(context.Background(), vm)
 	assert.NotNil(t, manager)
 	assert.NotNil(t, manager.input)
 	assert.NotNil(t, manager.output)
@@ -25,9 +37,10 @@ func TestNewManager(t *testing.T) {
 }
 
 func TestNewManager_WithCustomIO(t *testing.T) {
+	vm := goja.New()
 	input := os.Stdin
 	output := os.Stdout
-	manager := NewManager(context.Background(), input, output, nil, nil)
+	manager := newTestManagerWithIO(context.Background(), input, output, vm)
 	assert.NotNil(t, manager)
 	assert.Equal(t, input, manager.input)
 	assert.Equal(t, output, manager.output)
@@ -35,9 +48,9 @@ func TestNewManager_WithCustomIO(t *testing.T) {
 
 func TestRequire_ExportsCorrectAPI(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
+
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -77,9 +90,8 @@ func TestRequire_ExportsCorrectAPI(t *testing.T) {
 
 func TestTeaKeys_ContainsCoreKeys(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -107,9 +119,8 @@ func TestTeaKeys_ContainsCoreKeys(t *testing.T) {
 
 func TestTeaKeysByName_ContainsCoreKeys(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -141,9 +152,8 @@ func TestTeaKeysByName_ContainsCoreKeys(t *testing.T) {
 
 func TestNewModel_RequiresConfig(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -162,9 +172,8 @@ func TestNewModel_RequiresConfig(t *testing.T) {
 
 func TestNewModel_RequiresInitFunction(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -186,9 +195,8 @@ func TestNewModel_RequiresInitFunction(t *testing.T) {
 
 func TestNewModel_RequiresUpdateFunction(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -210,9 +218,8 @@ func TestNewModel_RequiresUpdateFunction(t *testing.T) {
 
 func TestNewModel_RequiresViewFunction(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -234,9 +241,8 @@ func TestNewModel_RequiresViewFunction(t *testing.T) {
 
 func TestNewModel_ValidConfig(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -273,9 +279,8 @@ func TestNewModel_ValidConfig(t *testing.T) {
 
 func TestQuit_ReturnsCommand(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -293,9 +298,8 @@ func TestQuit_ReturnsCommand(t *testing.T) {
 
 func TestClearScreen_ReturnsCommand(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -313,9 +317,8 @@ func TestClearScreen_ReturnsCommand(t *testing.T) {
 
 func TestBatch_ReturnsCommand(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -335,9 +338,8 @@ func TestBatch_ReturnsCommand(t *testing.T) {
 
 func TestSequence_ReturnsCommand(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -357,9 +359,8 @@ func TestSequence_ReturnsCommand(t *testing.T) {
 
 func TestRun_RequiresModel(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -377,9 +378,8 @@ func TestRun_RequiresModel(t *testing.T) {
 
 func TestRun_RequiresValidModel(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -397,9 +397,8 @@ func TestRun_RequiresValidModel(t *testing.T) {
 
 func TestJsModel_Init(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -437,9 +436,8 @@ func TestJsModel_Init(t *testing.T) {
 
 func TestJsModel_View(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -475,9 +473,8 @@ func TestJsModel_View(t *testing.T) {
 
 func TestJsModel_Update_QuitCommand(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -528,9 +525,8 @@ func TestJsModel_Update_QuitCommand(t *testing.T) {
 
 func TestBatchWithNoArgs(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -548,9 +544,8 @@ func TestBatchWithNoArgs(t *testing.T) {
 
 func TestSequenceWithNoArgs(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -572,9 +567,8 @@ func TestSequenceWithNoArgs(t *testing.T) {
 
 func TestTickCommand_Valid(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -594,9 +588,8 @@ func TestTickCommand_Valid(t *testing.T) {
 
 func TestTickCommand_InvalidDuration(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -614,9 +607,8 @@ func TestTickCommand_InvalidDuration(t *testing.T) {
 
 func TestSetWindowTitle(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -635,9 +627,8 @@ func TestSetWindowTitle(t *testing.T) {
 
 func TestCursorCommands(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -661,9 +652,8 @@ func TestCursorCommands(t *testing.T) {
 
 func TestAltScreenCommands(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -687,9 +677,8 @@ func TestAltScreenCommands(t *testing.T) {
 
 func TestBracketedPasteCommands(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -713,9 +702,8 @@ func TestBracketedPasteCommands(t *testing.T) {
 
 func TestReportFocusCommands(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -739,9 +727,8 @@ func TestReportFocusCommands(t *testing.T) {
 
 func TestWindowSizeCommand(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -759,9 +746,8 @@ func TestWindowSizeCommand(t *testing.T) {
 
 func TestIsTTY(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -778,9 +764,8 @@ func TestIsTTY(t *testing.T) {
 
 func TestRequire_AllNewFunctionsExported(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -817,9 +802,8 @@ func TestRequire_AllNewFunctionsExported(t *testing.T) {
 
 func TestCommandHasID(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -903,9 +887,8 @@ func TestWrapCmd_CursorBlinkCommand(t *testing.T) {
 
 func TestValueToCmd_WrappedCommand(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -937,9 +920,8 @@ func TestValueToCmd_WrappedCommand(t *testing.T) {
 
 func TestValueToCmd_DescriptorQuit(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -973,9 +955,8 @@ func TestValueToCmd_DescriptorQuit(t *testing.T) {
 
 func TestValueToCmd_DescriptorBatch(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -1036,9 +1017,8 @@ func TestValueToCmd_DescriptorBatch(t *testing.T) {
 
 func TestValueToCmd_DescriptorSequence(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -1133,10 +1113,9 @@ func TestValueToCmd_DescriptorSequence(t *testing.T) {
 }
 
 func TestValueToCmd_NullUndefined(t *testing.T) {
-	runtime := goja.New()
-	vm := runtime
+	vm := goja.New()
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
+	manager := newTestManager(ctx, vm)
 
 	// Create model with runtime
 	module := vm.NewObject()
@@ -1166,9 +1145,8 @@ func TestValueToCmd_NullUndefined(t *testing.T) {
 
 func TestValueToCmd_InvalidObject(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -1197,9 +1175,8 @@ func TestValueToCmd_InvalidObject(t *testing.T) {
 
 func TestCommandRoundtrip_ThroughJSArrayAndObject(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 

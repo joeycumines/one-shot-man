@@ -9,12 +9,17 @@ import (
 	"github.com/dop251/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/ctxutil"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 func setupContextManager(t *testing.T) *goja.Runtime {
 	t.Helper()
 
 	runtime := goja.New()
+
+	// Create test event loop provider (REQUIRED for builtin.Register)
+	eventLoopProvider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(eventLoopProvider.Stop)
 
 	registry := require.NewRegistry()
 
@@ -23,7 +28,7 @@ func setupContextManager(t *testing.T) *goja.Runtime {
 			t.Logf("TUI: %s", s)
 		},
 		registry,
-		nil, nil) // Pass nil for tviewProvider and terminalProvider
+		nil, nil, eventLoopProvider)
 
 	registry.Enable(runtime)
 

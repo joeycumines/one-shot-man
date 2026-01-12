@@ -749,10 +749,6 @@ function runVisualTui() {
         init: function () {
             return initialState;
         }, update: function (msg, tuiState) {
-            // DEBUG: Log all messages to understand what's being received
-            if (typeof console !== 'undefined' && msg.type === 'Mouse') {
-                console.log('UPDATE DEBUG: msg.type=' + msg.type + ', msg.action=' + msg.action + ', msg.button=' + msg.button + ', msg.x=' + msg.x + ', msg.y=' + msg.y);
-            }
             // Sync documents from global state on every update to ensure freshness
             tuiState.documents = getDocuments();
 

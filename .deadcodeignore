@@ -22,6 +22,10 @@ internal/scripting/engine_core.go:*: unreachable func: NewEngine
 internal\scripting\engine_core.go:*: unreachable func: NewEngine
 internal\scripting\integration_notunix.go:*: unreachable func: mustNewEngine
 
+# Runtime convenience constructor used by tests (production uses NewRuntimeWithRegistry)
+internal/scripting/runtime.go:*: unreachable func: NewRuntime
+internal\scripting\runtime.go:*: unreachable func: NewRuntime
+
 # Symbol registry helpers are part of the test-surface or public API that is
 # exercised from tests but not referenced in production builds.
 internal/scripting/state_contract.go:*: unreachable func: NewSymbolRegistry
@@ -79,3 +83,8 @@ internal\termui\scrollbar\scrollbar.go:*: unreachable func: WithChars
 # (parallels ParseKey for key events). Used in tests and available for external callers.
 internal/builtin/bubbletea/parsemouse.go:*: unreachable func: ParseMouseEvent
 internal\builtin\bubbletea\parsemouse.go:*: unreachable func: ParseMouseEvent
+
+# SyncJSRunner is a test helper for unit tests that need a JSRunner without a real event loop.
+# It's used by tests in bubbletea, bubbles/textarea, and bubbles/viewport packages.
+internal/builtin/bubbletea/testing.go:*: unreachable func: SyncJSRunner.RunJSSync
+internal\builtin\bubbletea\testing.go:*: unreachable func: SyncJSRunner.RunJSSync

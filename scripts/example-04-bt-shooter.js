@@ -1,3 +1,5 @@
+#!/usr/bin/env osm script
+
 // ============================================================================
 // example-04-bt-shooter.js
 // A 2D top-down shooter game demonstrating osm:bt + osm:bubbletea integration

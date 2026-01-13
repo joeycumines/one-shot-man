@@ -162,8 +162,10 @@ Command `osm` is a scripting engine.
 - **Customizable:** You can write your own interactive workflows in JavaScript that run natively in `osm`. The built-in commands (`code-review`, `goal`, etc) are actually scripts that you can inspect and modify.
 
 Future functionality based on merits.
-Fair warning: This may include experimental features which expand the scope of functionality.
+Fair warning: This may include features* which expand the scope of functionality.
 See also [docs/todo.md](docs/todo.md).
+
+(\*) Probably more along the lines of [Behavior Tree support](https://github.com/joeycumines/one-shot-man/pull/27) than [Tailwind SQL](https://tailwindsql.xyz/) - but I make no promises 😛.
 
 ## Quickstart
 

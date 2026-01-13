@@ -1,3 +1,5 @@
+//go:build darwin
+
 // Package main provides a PTY-based test runner that checks terminal state before/after tests.
 package main
 

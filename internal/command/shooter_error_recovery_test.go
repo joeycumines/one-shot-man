@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/testutil"
@@ -272,25 +271,11 @@ func TestShooterError_ER003_NormalExecution(t *testing.T) {
 	t.Run("script_loads_without_syntax_errors", func(t *testing.T) {
 		// Load the script - syntax errors would be caught here
 		script := engine.LoadScriptFromString("shooter-normal", string(content))
-		// Note: We expect execution to fail/timeout because it tries to run bubbletea
-		// but we can still catch syntax errors
+		// Just verify the script can be loaded (parsed) without syntax errors.
+		// We do NOT execute the full script because it uses bubbletea which puts
+		// the terminal into raw mode and corrupts TTY state if not properly cleaned up.
 		t.Logf("✓ Shooter script loaded without syntax errors")
-
-		// Actually execute it with a timeout
-		done := make(chan error, 1)
-		go func() {
-			done <- engine.ExecuteScript(script)
-		}()
-
-		select {
-		case err := <-done:
-			// Execution completed (likely due to TUI requirements)
-			// We expect some error since we're not in a terminal
-			t.Logf("Script execution result: %v", err)
-		case <-time.After(5 * time.Second):
-			// Timeout is expected for TUI scripts - this is ok
-			t.Logf("✓ Script is running (timeout as expected for TUI script)")
-		}
+		_ = script // Script is valid but we don't run it to avoid TTY corruption
 	})
 
 	t.Run("verify_initial_sections_execute", func(t *testing.T) {

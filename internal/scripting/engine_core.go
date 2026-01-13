@@ -25,22 +25,23 @@ import (
 // enabling proper async/Promise support and safe integration with bt.
 
 type Engine struct {
-	runtime          *Runtime          // Shared runtime with event loop
-	vm               *goja.Runtime     // Direct VM reference (for sync operations)
-	registry         *require.Registry // CommonJS require registry
-	scripts          []*Script
-	ctx              context.Context
-	stdout           io.Writer
-	stderr           io.Writer
-	globals          map[string]interface{}
-	testMode         bool
-	tuiManager       *TUIManager
-	tviewManager     *tviewmod.Manager
-	contextManager   *ContextManager
-	logger           *TUILogger
-	terminalIO       *TerminalIO              // Shared terminal I/O for all TUI subsystems
-	bubbleteaManager builtin.BubbleteaManager // For sending state refresh messages to running TUI
-	btBridge         *bt.Bridge               // Behavior tree bridge for JS integration
+	runtime           *Runtime          // Shared runtime with event loop
+	vm                *goja.Runtime     // Direct VM reference (for sync operations)
+	registry          *require.Registry // CommonJS require registry
+	scripts           []*Script
+	ctx               context.Context
+	stdout            io.Writer
+	stderr            io.Writer
+	globals           map[string]interface{}
+	testMode          bool
+	tuiManager        *TUIManager
+	tviewManager      *tviewmod.Manager
+	contextManager    *ContextManager
+	logger            *TUILogger
+	terminalIO        *TerminalIO               // Shared terminal I/O for all TUI subsystems
+	bubbleteaManager  builtin.BubbleteaManager  // For sending state refresh messages to running TUI
+	btBridge          *bt.Bridge                // Behavior tree bridge for JS integration
+	bubblezoneManager builtin.BubblezoneManager // Zone-based mouse hit-testing for BubbleTea
 }
 
 // Script represents a JavaScript script with metadata.
@@ -123,6 +124,7 @@ func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionI
 	registerResult := builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine, engine)
 	engine.bubbleteaManager = registerResult.BubbleteaManager
 	engine.btBridge = registerResult.BTBridge
+	engine.bubblezoneManager = registerResult.BubblezoneManager
 
 	// Enable the `require` function in the runtime (must be done on event loop)
 	err = runtime.RunOnLoopSync(func(r *goja.Runtime) error {
@@ -334,6 +336,12 @@ func (e *Engine) Close() error {
 	// This stops the internal bt.Manager and any running tickers.
 	if e.btBridge != nil {
 		e.btBridge.Stop()
+	}
+
+	// Close() bubblezone manager if it exists to stop zone worker goroutines.
+	// This prevents resource leaks which can cause tests to timeout.
+	if e.bubblezoneManager != nil {
+		e.bubblezoneManager.Close()
 	}
 
 	// NOTE: We intentionally do NOT close terminalIO here.

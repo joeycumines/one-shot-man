@@ -60,10 +60,16 @@ type BubbleteaManager = *bubbleteamod.Manager
 // This provides access to the behavior tree bridge for JS integration.
 type BTBridge = *bt.Bridge
 
+// BubblezoneManager returns -> *bubblezonemod.Manager from RegisterResult.
+// This provides zone-based mouse hit-testing for BubbleTea applications.
+type BubblezoneManager = *bubblezonemod.Manager
+
 // RegisterResult contains references to managers created during registration.
+// All returned managers should be stored and cleaned up appropriately.
 type RegisterResult struct {
-	BubbleteaManager BubbleteaManager
-	BTBridge         BTBridge
+	BubbleteaManager  BubbleteaManager
+	BTBridge          BTBridge
+	BubblezoneManager BubblezoneManager
 }
 
 // Register registers all native Go modules with the provided registry, wiring
@@ -134,8 +140,9 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"termui/scrollbar", scrollbarmod.Require())
 
 	return RegisterResult{
-		BubbleteaManager: bubbleteaMgr,
-		BTBridge:         btBridge,
+		BubbleteaManager:  bubbleteaMgr,
+		BTBridge:          btBridge,
+		BubblezoneManager: bubblezoneMgr,
 	}
 }
 

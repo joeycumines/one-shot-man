@@ -10,14 +10,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newTestManager creates a Manager with a SyncJSRunner for unit testing.
+func newTestManager(ctx context.Context, vm *goja.Runtime) *bubbletea.Manager {
+	return bubbletea.NewManager(ctx, nil, nil, &bubbletea.SyncJSRunner{Runtime: vm}, nil, nil)
+}
+
 // TestViewportIntegration_CommandPropagation verifies that a JS-side viewport
 // scroll (mouse wheel) produces a callable command that can be invoked from JS
 // (i.e., bubbles up as a wrapped tea.Cmd).
 func TestViewportIntegration_CommandPropagation(t *testing.T) {
 	ctx := context.Background()
-	manager := bubbletea.NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -53,9 +57,8 @@ func TestViewportIntegration_CommandPropagation(t *testing.T) {
 // both are callable.
 func TestViewportIntegration_BatchWithViewportCommand(t *testing.T) {
 	ctx := context.Background()
-	manager := bubbletea.NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -110,9 +113,8 @@ func TestViewportIntegration_BatchWithViewportCommand(t *testing.T) {
 // information can be used to set the viewport offset via JS-side API calls.
 func TestViewportIntegration_SyncScroll(t *testing.T) {
 	ctx := context.Background()
-	manager := bubbletea.NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 

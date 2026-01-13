@@ -8,8 +8,10 @@ import (
 	"runtime/debug"
 
 	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/eventloop"
 	"github.com/dop251/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
+	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	tviewmod "github.com/joeycumines/one-shot-man/internal/builtin/tview"
 )
 
@@ -18,22 +20,28 @@ import (
 // - Native Go modules with the "osm:" prefix (e.g., require("osm:utils")).
 // - Absolute file paths (e.g., require("/path/to/module.js")).
 // - Relative file paths (e.g., require("./module.js")).
+//
+// The Engine now uses a shared Runtime with an event loop for all JavaScript execution,
+// enabling proper async/Promise support and safe integration with bt.
 
 type Engine struct {
-	vm               *goja.Runtime
-	registry         *require.Registry
-	scripts          []*Script
-	ctx              context.Context
-	stdout           io.Writer
-	stderr           io.Writer
-	globals          map[string]interface{}
-	testMode         bool
-	tuiManager       *TUIManager
-	tviewManager     *tviewmod.Manager
-	contextManager   *ContextManager
-	logger           *TUILogger
-	terminalIO       *TerminalIO              // Shared terminal I/O for all TUI subsystems
-	bubbleteaManager builtin.BubbleteaManager // For sending state refresh messages to running TUI
+	runtime           *Runtime          // Shared runtime with event loop
+	vm                *goja.Runtime     // Direct VM reference (for sync operations)
+	registry          *require.Registry // CommonJS require registry
+	scripts           []*Script
+	ctx               context.Context
+	stdout            io.Writer
+	stderr            io.Writer
+	globals           map[string]interface{}
+	testMode          bool
+	tuiManager        *TUIManager
+	tviewManager      *tviewmod.Manager
+	contextManager    *ContextManager
+	logger            *TUILogger
+	terminalIO        *TerminalIO               // Shared terminal I/O for all TUI subsystems
+	bubbleteaManager  builtin.BubbleteaManager  // For sending state refresh messages to running TUI
+	btBridge          *bt.Bridge                // Behavior tree bridge for JS integration
+	bubblezoneManager builtin.BubblezoneManager // Zone-based mouse hit-testing for BubbleTea
 }
 
 // Script represents a JavaScript script with metadata.
@@ -68,8 +76,32 @@ func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionI
 	// This is the single source of truth for terminal state management.
 	terminalIO := NewTerminalIOStdio()
 
+	// Create the require registry first - it will be shared
+	registry := require.NewRegistry()
+
+	// Create the shared Runtime with event loop
+	// The Runtime owns the event loop and provides thread-safe JS execution
+	runtime, err := NewRuntimeWithRegistry(ctx, registry)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create runtime: %w", err)
+	}
+
+	// Get a direct reference to the VM for sync operations
+	// Note: All script execution should still go through the event loop for async safety
+	var vm *goja.Runtime
+	err = runtime.RunOnLoopSync(func(r *goja.Runtime) error {
+		vm = r
+		return nil
+	})
+	if err != nil {
+		runtime.Close()
+		return nil, fmt.Errorf("failed to get VM reference: %w", err)
+	}
+
 	engine := &Engine{
-		vm:             goja.New(),
+		runtime:        runtime,
+		vm:             vm,
+		registry:       registry,
 		ctx:            ctx,
 		stdout:         stdout,
 		stderr:         stderr,
@@ -84,22 +116,24 @@ func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionI
 	// stdin. tcell expects raw os.Stdin access, not go-prompt's buffered reader.
 	engine.tviewManager = tviewmod.NewManagerWithTerminal(ctx, nil, nil, nil, nil)
 
-	// Set up CommonJS require support.
-	{
-		// TODO: Add support for configuring require.WithGlobalFolders, for instance, via an environment variable.
-		engine.registry = require.NewRegistry()
+	// Register native Go modules. These are all prefixed with "osm:".
+	// Pass through the engine's context and a TUI sink for modules that need them.
+	// Pass 'engine' as terminalProvider so bubbletea uses the unified TerminalIO
+	// instead of defaulting to raw os.Stdin (which would violate Single Source of Truth).
+	// Pass 'engine' as eventLoopProvider so bt shares the event loop.
+	registerResult := builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine, engine)
+	engine.bubbleteaManager = registerResult.BubbleteaManager
+	engine.btBridge = registerResult.BTBridge
+	engine.bubblezoneManager = registerResult.BubblezoneManager
 
-		// Register native Go modules. These are all prefixed with "osm:".
-		// Pass through the engine's context and a TUI sink for modules that need them.
-		// Pass 'engine' as terminalProvider so bubbletea uses the unified TerminalIO
-		// instead of defaulting to raw os.Stdin (which would violate Single Source of Truth).
-		// This is safe because Fd() no longer triggers lazy initialization - it returns
-		// os.Stdin.Fd()/os.Stdout.Fd() when the underlying reader/writer is nil.
-		registerResult := builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine)
-		engine.bubbleteaManager = registerResult.BubbleteaManager
-
-		// Enable the `require` function in the runtime.
-		engine.registry.Enable(engine.vm)
+	// Enable the `require` function in the runtime (must be done on event loop)
+	err = runtime.RunOnLoopSync(func(r *goja.Runtime) error {
+		registry.Enable(r)
+		return nil
+	})
+	if err != nil {
+		runtime.Close()
+		return nil, fmt.Errorf("failed to enable require: %w", err)
 	}
 
 	// Create TUI manager with explicit configuration (this also initializes StateManager).
@@ -266,6 +300,21 @@ func (e *Engine) GetTerminalWriter() io.Writer {
 	return e.terminalIO.TUIWriter
 }
 
+// EventLoop returns the shared event loop.
+// This implements builtin.EventLoopProvider.
+func (e *Engine) EventLoop() *eventloop.EventLoop {
+	if e.runtime == nil {
+		return nil
+	}
+	return e.runtime.EventLoop()
+}
+
+// Registry returns the require.Registry for module registration.
+// This implements builtin.EventLoopProvider.
+func (e *Engine) Registry() *require.Registry {
+	return e.registry
+}
+
 // GetScripts returns all loaded scripts.
 func (e *Engine) GetScripts() []*Script {
 	return e.scripts
@@ -283,12 +332,30 @@ func (e *Engine) Close() error {
 		}
 	}
 
+	// Stop the behavior tree bridge if it exists.
+	// This stops the internal bt.Manager and any running tickers.
+	if e.btBridge != nil {
+		e.btBridge.Stop()
+	}
+
+	// Close() bubblezone manager if it exists to stop zone worker goroutines.
+	// This prevents resource leaks which can cause tests to timeout.
+	if e.bubblezoneManager != nil {
+		e.bubblezoneManager.Close()
+	}
+
 	// NOTE: We intentionally do NOT close terminalIO here.
 	// TerminalIO wraps stdin/stdout which are process-owned resources.
 	// Each subsystem (go-prompt, tview, bubbletea) manages its own terminal
 	// state lifecycle independently. Attempting to close terminalIO causes
 	// "bad file descriptor" errors because go-prompt's reader has already
 	// been closed when the prompt loop exits.
+
+	// Close the runtime (this stops the event loop).
+	// We do this after stopping btBridge so any pending JS operations complete.
+	if e.runtime != nil {
+		e.runtime.Close()
+	}
 
 	// Clean up any resources
 	e.vm = nil

@@ -9,14 +9,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newTestManager creates a Manager with a SyncJSRunner for unit testing.
+func newTestManager(ctx context.Context, vm *goja.Runtime) *bubbletea.Manager {
+	return bubbletea.NewManager(ctx, nil, nil, &bubbletea.SyncJSRunner{Runtime: vm}, nil, nil)
+}
+
 // TestTextareaIntegration_CommandPropagation verifies that a parent JS model
 // that delegates to textarea.update() and returns the textarea command will
 // receive a wrapped command that can be extracted and executed by Go.
 func TestTextareaIntegration_CommandPropagation(t *testing.T) {
 	ctx := context.Background()
-	manager := bubbletea.NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -55,9 +59,8 @@ func TestTextareaIntegration_CommandPropagation(t *testing.T) {
 // that includes two textarea commands stores both commands and they are callable.
 func TestTextareaIntegration_BatchWithTextareaCommand(t *testing.T) {
 	ctx := context.Background()
-	manager := bubbletea.NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 
@@ -101,9 +104,8 @@ func TestTextareaIntegration_BatchWithTextareaCommand(t *testing.T) {
 // descriptors mixing wrapped and descriptor commands expose callable commands in order.
 func TestTextareaIntegration_SequenceWithTextareaCommand(t *testing.T) {
 	ctx := context.Background()
-	manager := bubbletea.NewManager(ctx, nil, nil, nil, nil)
-
 	vm := goja.New()
+	manager := newTestManager(ctx, vm)
 	module := vm.NewObject()
 	require.NoError(t, module.Set("exports", vm.NewObject()))
 

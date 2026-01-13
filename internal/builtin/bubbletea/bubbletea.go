@@ -205,6 +205,36 @@ type TerminalChecker interface {
 	IsTerminal() bool
 }
 
+// JSRunner provides thread-safe JavaScript execution on the event loop.
+// This interface abstracts the event loop synchronization mechanism,
+// allowing BubbleTea's jsModel to safely call JavaScript functions from
+// the BubbleTea goroutine without violating goja.Runtime's thread-safety
+// requirements.
+//
+// CRITICAL: goja.Runtime is NOT thread-safe. All JS calls MUST go through
+// RunJSSync when called from goroutines other than the event loop goroutine.
+// This is especially important for BubbleTea's Init/Update/View methods
+// which run on the BubbleTea goroutine, not the event loop goroutine.
+type JSRunner interface {
+	// RunJSSync schedules a function on the event loop and waits for completion.
+	// The provided goja.Runtime is the event loop's runtime instance.
+	// Returns an error if the event loop is not running or stops while waiting.
+	// This method blocks until the callback completes.
+	RunJSSync(fn func(*goja.Runtime) error) error
+}
+
+// AsyncJSRunner extends JSRunner with non-blocking async execution.
+// This is required for tea.run() to return a Promise without blocking
+// the event loop, allowing the Promise to be resolved/rejected when
+// the BubbleTea program finishes.
+type AsyncJSRunner interface {
+	JSRunner
+	// RunOnLoop schedules a function on the event loop WITHOUT blocking.
+	// Returns true if the function was successfully scheduled.
+	// Returns false if the event loop is not running.
+	RunOnLoop(fn func(*goja.Runtime)) bool
+}
+
 // Manager holds bubbletea-related state per engine instance.
 type Manager struct {
 	ctx          context.Context
@@ -217,32 +247,51 @@ type Manager struct {
 	isTTY        bool         // Whether input is a TTY
 	ttyFd        int          // TTY file descriptor (if available)
 	program      *tea.Program // Currently running program (if any)
+	jsRunner     JSRunner     // REQUIRED: thread-safe JS execution via event loop
 }
 
 // NewManager creates a new bubbletea manager for an engine instance.
 // Input and output can be nil to use os.Stdin and os.Stdout.
 // Automatically detects TTY and sets up proper terminal handling.
+//
+// CRITICAL: jsRunner is REQUIRED. It provides thread-safe JS execution from
+// BubbleTea's goroutine. Without it, JS calls would cause data races.
+// Use *bt.Bridge which implements JSRunner directly.
+// Panics if jsRunner is nil.
 func NewManager(
 	ctx context.Context,
 	input io.Reader,
 	output io.Writer,
+	jsRunner JSRunner,
 	signalNotify func(c chan<- os.Signal, sig ...os.Signal),
 	signalStop func(c chan<- os.Signal),
 ) *Manager {
-	return NewManagerWithStderr(ctx, input, output, nil, signalNotify, signalStop)
+	if jsRunner == nil {
+		panic("bubbletea.NewManager: jsRunner is REQUIRED - cannot be nil; provide a JSRunner implementation (e.g., *bt.Bridge)")
+	}
+	return NewManagerWithStderr(ctx, input, output, nil, jsRunner, signalNotify, signalStop)
 }
 
 // NewManagerWithStderr creates a new bubbletea manager with explicit stderr for error logging.
 // Input, output, and stderr can be nil to use os.Stdin, os.Stdout, and os.Stderr.
 // Automatically detects TTY and sets up proper terminal handling.
+//
+// CRITICAL: jsRunner is REQUIRED. It provides thread-safe JS execution from
+// BubbleTea's goroutine. Without it, JS calls would cause data races.
+// Use *bt.Bridge which implements JSRunner directly.
+// Panics if jsRunner is nil.
 func NewManagerWithStderr(
 	ctx context.Context,
 	input io.Reader,
 	output io.Writer,
 	stderr io.Writer,
+	jsRunner JSRunner,
 	signalNotify func(c chan<- os.Signal, sig ...os.Signal),
 	signalStop func(c chan<- os.Signal),
 ) *Manager {
+	if jsRunner == nil {
+		panic("bubbletea.NewManagerWithStderr: jsRunner is REQUIRED - cannot be nil; provide a JSRunner implementation (e.g., *bt.Bridge)")
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -274,6 +323,7 @@ func NewManagerWithStderr(
 		signalStop:   signalStop,
 		isTTY:        false,
 		ttyFd:        -1,
+		jsRunner:     jsRunner, // REQUIRED: set at construction time
 	}
 
 	// Skip TTY detection if caller passed nil for both input and output.
@@ -321,6 +371,30 @@ func NewManagerWithStderr(
 	}
 
 	return m
+}
+
+// SetJSRunner configures the Manager to use thread-safe JS execution.
+// This MUST be called before any BubbleTea programs are run.
+// The JSRunner ensures all JS calls from BubbleTea's goroutine are safely
+// routed through the event loop.
+//
+// CRITICAL: JSRunner is MANDATORY. Without it, JS calls from BubbleTea's
+// Init/Update/View methods would execute directly on the BubbleTea goroutine,
+// causing data races with the event loop. This function panics if runner is nil.
+func (m *Manager) SetJSRunner(runner JSRunner) {
+	if runner == nil {
+		panic("bubbletea: SetJSRunner called with nil runner - JSRunner is mandatory for thread-safe operation")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.jsRunner = runner
+}
+
+// GetJSRunner returns the configured JSRunner, or nil if not set.
+func (m *Manager) GetJSRunner() JSRunner {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.jsRunner
 }
 
 // IsTTY returns whether the manager has access to a TTY.
@@ -401,6 +475,18 @@ type jsModel struct {
 	initError   string          // Store init error for debugging
 	validCmdIDs map[uint64]bool // Track valid command IDs to prevent forgery
 	cmdMu       sync.Mutex
+	jsRunner    JSRunner // Optional: thread-safe JS execution via event loop
+
+	// Render throttling state (optional, opt-in feature)
+	throttleEnabled    bool            // Whether throttling is enabled (default: false)
+	throttleIntervalMs int64           // Minimum ms between renders (default: 16)
+	alwaysRenderTypes  map[string]bool // Message types that force immediate render
+	cachedView         string          // Cached view output
+	lastRenderTime     time.Time       // Time of last actual render
+	forceNextRender    bool            // Force next render (e.g., for Tick messages)
+	throttleMu         sync.Mutex      // Protects throttle timer state
+	throttleTimerSet   bool            // True if a delayed render is already scheduled
+	program            *tea.Program    // Reference for sending delayed render messages
 }
 
 // registerCommand registers a command ID as valid.
@@ -414,10 +500,33 @@ func (m *jsModel) registerCommand(id uint64) {
 }
 
 // Init implements tea.Model.
+// CRITICAL: This is called from BubbleTea's goroutine, NOT the event loop goroutine.
+// JSRunner MUST be set to safely marshal JS execution to the event loop.
 func (m *jsModel) Init() tea.Cmd {
 	if m == nil || m.initFn == nil || m.runtime == nil {
 		return nil
 	}
+
+	// JSRunner is MANDATORY - panic if not set.
+	// This ensures thread-safe JS execution from BubbleTea's goroutine.
+	if m.jsRunner == nil {
+		panic("bubbletea: jsModel.Init called without JSRunner - this is a programming error; SetJSRunner must be called before running any BubbleTea program")
+	}
+
+	var cmd tea.Cmd
+	err := m.jsRunner.RunJSSync(func(vm *goja.Runtime) error {
+		cmd = m.initDirect()
+		return nil
+	})
+	if err != nil {
+		m.initError = fmt.Sprintf("Init error (event loop): %v", err)
+		return nil
+	}
+	return cmd
+}
+
+// initDirect performs the actual init call. MUST be called from event loop goroutine.
+func (m *jsModel) initDirect() tea.Cmd {
 	// Call JS init function to get initial state
 	result, err := m.initFn(goja.Undefined())
 	if err != nil {
@@ -429,15 +538,42 @@ func (m *jsModel) Init() tea.Cmd {
 	if result == nil || goja.IsUndefined(result) || goja.IsNull(result) {
 		m.state = m.runtime.NewObject()
 		m.initError = "Init returned nil/undefined"
-	} else {
-		m.state = result
+		return nil
 	}
+
+	// Check if result is an array [state, cmd] (like update returns)
+	resultObj := result.ToObject(m.runtime)
+	if resultObj != nil && resultObj.ClassName() == "Array" {
+		// Extract state from index 0
+		if newState := resultObj.Get("0"); !goja.IsUndefined(newState) && !goja.IsNull(newState) {
+			m.state = newState
+		} else {
+			m.state = m.runtime.NewObject()
+		}
+		// Extract command from index 1
+		cmdVal := resultObj.Get("1")
+		return m.valueToCmd(cmdVal)
+	}
+
+	// Otherwise, result is just the state object (no initial command)
+	m.state = result
 	return nil
 }
 
 // Update implements tea.Model.
+// CRITICAL: This is called from BubbleTea's goroutine, NOT the event loop goroutine.
+// JSRunner MUST be set to safely marshal JS execution to the event loop.
 func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m == nil || m.updateFn == nil || m.runtime == nil {
+		return m, nil
+	}
+
+	// Handle renderRefreshMsg specially - it just forces the next view to render
+	if _, ok := msg.(renderRefreshMsg); ok {
+		m.throttleMu.Lock()
+		m.throttleTimerSet = false // Timer has fired
+		m.forceNextRender = true   // Force the next View() to actually render
+		m.throttleMu.Unlock()
 		return m, nil
 	}
 
@@ -446,6 +582,37 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Check if this message type should force an immediate render
+	if m.throttleEnabled && m.alwaysRenderTypes != nil {
+		if msgType, ok := jsMsg["type"].(string); ok {
+			if m.alwaysRenderTypes[msgType] {
+				m.throttleMu.Lock()
+				m.forceNextRender = true
+				m.throttleMu.Unlock()
+			}
+		}
+	}
+
+	// JSRunner is MANDATORY - panic if not set.
+	// This ensures thread-safe JS execution from BubbleTea's goroutine.
+	if m.jsRunner == nil {
+		panic("bubbletea: jsModel.Update called without JSRunner - this is a programming error; SetJSRunner must be called before running any BubbleTea program")
+	}
+
+	var cmd tea.Cmd
+	err := m.jsRunner.RunJSSync(func(vm *goja.Runtime) error {
+		cmd = m.updateDirect(jsMsg)
+		return nil
+	})
+	if err != nil {
+		// Event loop error - return current state unchanged
+		return m, nil
+	}
+	return m, cmd
+}
+
+// updateDirect performs the actual update call. MUST be called from event loop goroutine.
+func (m *jsModel) updateDirect(jsMsg map[string]interface{}) tea.Cmd {
 	// Ensure state is not nil before passing to JS
 	state := m.state
 	if state == nil || goja.IsUndefined(state) || goja.IsNull(state) {
@@ -454,13 +621,13 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	result, err := m.updateFn(goja.Undefined(), m.runtime.ToValue(jsMsg), state)
 	if err != nil {
-		return m, nil
+		return nil
 	}
 
 	// Result should be [newState, cmd] array
 	resultObj := result.ToObject(m.runtime)
 	if resultObj == nil || resultObj.ClassName() != "Array" {
-		return m, nil
+		return nil
 	}
 
 	// Extract new state
@@ -470,12 +637,16 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Extract command
 	cmdVal := resultObj.Get("1")
-	cmd := m.valueToCmd(cmdVal)
-
-	return m, cmd
+	return m.valueToCmd(cmdVal)
 }
 
 // View implements tea.Model.
+// CRITICAL: This is called from BubbleTea's goroutine, NOT the event loop goroutine.
+// JSRunner MUST be set to safely marshal JS execution to the event loop.
+//
+// Render Throttling: When throttleEnabled is true, this method may return a cached
+// view if the minimum interval has not elapsed. A delayed renderRefreshMsg is scheduled
+// to ensure the view is eventually re-rendered.
 func (m *jsModel) View() string {
 	if m == nil || m.viewFn == nil || m.runtime == nil {
 		return "[BT] View: nil model/viewFn/runtime"
@@ -486,6 +657,65 @@ func (m *jsModel) View() string {
 		return "[BT] " + m.initError
 	}
 
+	// Render throttling logic
+	if m.throttleEnabled {
+		m.throttleMu.Lock()
+		now := time.Now()
+		elapsed := now.Sub(m.lastRenderTime)
+		intervalDur := time.Duration(m.throttleIntervalMs) * time.Millisecond
+
+		// Check if we should throttle this render
+		shouldThrottle := !m.forceNextRender && elapsed < intervalDur && m.cachedView != ""
+
+		if shouldThrottle {
+			// Schedule a delayed render if not already scheduled
+			if !m.throttleTimerSet && m.program != nil {
+				m.throttleTimerSet = true
+				delay := intervalDur - elapsed
+				prog := m.program
+				go func() {
+					time.Sleep(delay)
+					prog.Send(renderRefreshMsg{})
+				}()
+			}
+			cached := m.cachedView
+			m.throttleMu.Unlock()
+			return cached
+		}
+
+		// Will do an actual render - update state
+		m.forceNextRender = false
+		m.lastRenderTime = now
+		m.throttleMu.Unlock()
+	}
+
+	// JSRunner is MANDATORY - panic if not set.
+	// This ensures thread-safe JS execution from BubbleTea's goroutine.
+	if m.jsRunner == nil {
+		panic("bubbletea: jsModel.View called without JSRunner - this is a programming error; SetJSRunner must be called before running any BubbleTea program")
+	}
+
+	var viewStr string
+	err := m.jsRunner.RunJSSync(func(vm *goja.Runtime) error {
+		viewStr = m.viewDirect()
+		return nil
+	})
+	if err != nil {
+		return fmt.Sprintf("[BT] View error (event loop): %v", err)
+	}
+
+	// Cache the view if throttling is enabled
+	if m.throttleEnabled {
+		m.throttleMu.Lock()
+		m.cachedView = viewStr
+		m.throttleMu.Unlock()
+	}
+
+	return viewStr
+}
+
+// viewDirect performs the actual view call. MUST be called from event loop goroutine.
+func (m *jsModel) viewDirect() string {
 	// Ensure state is not nil before passing to JS
 	state := m.state
 	if state == nil || goja.IsUndefined(state) || goja.IsNull(state) {
@@ -577,6 +807,11 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]interface{} {
 			"type": "StateRefresh",
 			"key":  msg.key,
 		}
+
+	case renderRefreshMsg:
+		// Internal message for render throttle - returns nil to skip JS processing
+		// The Update method handles this specially to force a render
+		return nil
 
 	default:
 		return nil
@@ -771,6 +1006,11 @@ type clearScreenMsg struct{}
 type stateRefreshMsg struct {
 	key string // The state key that changed (for filtering/debugging)
 }
+
+// renderRefreshMsg is used internally by the render throttle mechanism.
+// When a render is throttled, a delayed renderRefreshMsg is scheduled to
+// ensure the view is eventually re-rendered with the latest state.
+type renderRefreshMsg struct{}
 
 // SendStateRefresh sends a state refresh message to the currently running program.
 // This is safe to call from any goroutine. If no program is running, it's a no-op.
@@ -992,6 +1232,12 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				return createError(ErrCodeInvalidArgs, "view must be a function")
 			}
 
+			// Get JSRunner from manager if available (for thread-safe JS execution)
+			var jsRunner JSRunner
+			if manager != nil {
+				jsRunner = manager.GetJSRunner()
+			}
+
 			model := &jsModel{
 				runtime:     runtime,
 				initFn:      initFn,
@@ -999,6 +1245,44 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				viewFn:      viewFn,
 				state:       runtime.NewObject(), // Initialize with empty object to avoid nil
 				validCmdIDs: make(map[uint64]bool),
+				jsRunner:    jsRunner,
+			}
+
+			// Parse optional renderThrottle configuration
+			// Usage: { renderThrottle: { enabled: true, minIntervalMs: 16, alwaysRenderMsgTypes: ["Tick", "WindowSize"] } }
+			if throttleVal := config.Get("renderThrottle"); throttleVal != nil && !goja.IsUndefined(throttleVal) && !goja.IsNull(throttleVal) {
+				throttleObj := throttleVal.ToObject(runtime)
+				if throttleObj != nil {
+					// Check if enabled
+					if enabledVal := throttleObj.Get("enabled"); enabledVal != nil && !goja.IsUndefined(enabledVal) {
+						model.throttleEnabled = enabledVal.ToBoolean()
+					}
+					// Parse minIntervalMs (default: 16ms ~= 60fps)
+					model.throttleIntervalMs = 16
+					if intervalVal := throttleObj.Get("minIntervalMs"); intervalVal != nil && !goja.IsUndefined(intervalVal) {
+						model.throttleIntervalMs = intervalVal.ToInteger()
+						if model.throttleIntervalMs < 1 {
+							model.throttleIntervalMs = 1
+						}
+					}
+					// Parse alwaysRenderMsgTypes (message types that bypass throttling)
+					model.alwaysRenderTypes = make(map[string]bool)
+					// Default: always render Tick and WindowSize immediately
+					model.alwaysRenderTypes["Tick"] = true
+					model.alwaysRenderTypes["WindowSize"] = true
+					if typesVal := throttleObj.Get("alwaysRenderMsgTypes"); typesVal != nil && !goja.IsUndefined(typesVal) {
+						typesObj := typesVal.ToObject(runtime)
+						if typesObj != nil && typesObj.ClassName() == "Array" {
+							// Clear defaults and use user-provided list
+							model.alwaysRenderTypes = make(map[string]bool)
+							for _, key := range typesObj.Keys() {
+								if val := typesObj.Get(key); val != nil && !goja.IsUndefined(val) {
+									model.alwaysRenderTypes[val.String()] = true
+								}
+							}
+						}
+					}
+				}
 			}
 
 			// Set as current model for command registration
@@ -1107,7 +1391,20 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				return createError(ErrCodeProgramFailed, "manager is nil")
 			}
 
-			// Run the program
+			// Run the program synchronously. This blocks until the BubbleTea
+			// program exits (user quits, error, etc.).
+			//
+			// Threading model:
+			// - This function is called from the goroutine running ExecuteScript()
+			// - BubbleTea runs its event loop on its own goroutine
+			// - BubbleTea calls Init/Update/View via JSRunner.RunJSSync()
+			// - RunJSSync schedules on the event loop goroutine (separate from here)
+			// - The event loop is free to process requests while we block here
+			//
+			// This is NOT a deadlock because:
+			// 1. We're blocking the ExecuteScript goroutine, NOT the event loop
+			// 2. The event loop goroutine is free to process RunJSSync callbacks
+			// 3. BubbleTea's goroutine can call RunJSSync and get responses
 			if err := manager.runProgram(model, opts...); err != nil {
 				return createError(ErrCodeProgramFailed, err.Error())
 			}
@@ -1329,6 +1626,12 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) (err er
 		m.program = nil
 		m.mu.Unlock()
 	}()
+
+	// Also store program reference in jsModel for render throttling
+	if jm, ok := model.(*jsModel); ok {
+		jm.program = p
+		defer func() { jm.program = nil }()
+	}
 
 	// Setup signal handling
 	sigCh := make(chan os.Signal, 1)

@@ -5031,44 +5031,6 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 	})
 }
 
-// TestShooterGame_EnemyAIIntegration tests integration of behavior tree with enemy AI
-// TEST-006: Skip this test with t.Skip() since leaf functions are tested individually
-func TestShooterGame_EnemyAIIntegration(t *testing.T) {
-	t.Skip("Leaf functions tested directly in TestShooterGame_BehaviorTreeLeaves")
-
-	ctx := context.Background()
-	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
-	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
-	}
-	defer engine.Close()
-	engine.SetTestMode(true)
-
-	// Load behavior tree integration test code
-	scriptContent := `
-		const bt = {
-			success: 1,
-			failure: 0,
-			running: 2
-		};
-
-		let gameState = {
-			player: { x: 40, y: 20 },
-			enemies: []
-		};
-	`
-	script := engine.LoadScriptFromString("enemy-ai-integration", scriptContent)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("Failed to load enemy AI integration code: %v", err)
-	}
-
-	// Placeholder for future integration testing
-	t.Run("Placeholder", func(t *testing.T) {
-		t.Skip("Leaf functions tested directly in TestShooterGame_BehaviorTreeLeaves")
-	})
-}
-
 // TestShooterGame_GameLoopIntegration tests full tick flow and game loop integration
 // TEST-007: Critical for ensuring game updates correctly over time
 func TestShooterGame_GameLoopIntegration(t *testing.T) {

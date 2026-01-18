@@ -69,8 +69,9 @@ function initializeSimulation() {
         // Win condition
         winConditionMet: false,
 
-        // Debug mode
-        debugMode: false
+        // Debug mode - enabled by default for E2E test harness compatibility
+        // Toggle with backtick (`) key
+        debugMode: true
     };
 }
 
@@ -253,9 +254,10 @@ function setupPABTActions(state) {
 
     // Register all actions with the PA-BT State
     // CRITICAL: Actions MUST be explicitly registered for PA-BT planner to use them
-    state.pabtState.RegisterAction(moveToCube1Action);
-    state.pabtState.RegisterAction(pickCube1Action);
-    state.pabtState.RegisterAction(moveToGoal1Action);
+    // RegisterAction takes (name, action) - name is used for debugging/logging
+    state.pabtState.RegisterAction('moveToCube1', moveToCube1Action);
+    state.pabtState.RegisterAction('pickCube1', pickCube1Action);
+    state.pabtState.RegisterAction('moveToGoal1', moveToGoal1Action);
 }
 
 // ============================================================================

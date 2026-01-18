@@ -58,7 +58,7 @@ func NewBridge(ctx context.Context, loop *eventloop.EventLoop, registry *require
 
 	// Register the osm:pabt module
 	if registry != nil {
-		registry.RegisterNativeModule("osm:pabt", ModuleLoader(childCtx))
+		registry.RegisterNativeModule("osm:pabt", ModuleLoader(childCtx, btBridge))
 	}
 
 	// Handle external parent context cancellation

@@ -20,14 +20,23 @@ import (
 //   - newPlan(state, goals) - Create a PA-BT plan with goal conditions
 //   - newAction(name, conditions, effects, node) - Create an action
 //   - Running/Success/Failure status constants
-func ModuleLoader(ctx context.Context) require.ModuleLoader {
+//
+// The bridge parameter is required for thread-safe goja.Runtime access.
+// JSCondition.Match is called from the bt.Ticker goroutine and must use
+// Bridge.RunOnLoopSync to marshal calls to the event loop goroutine.
+func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
 		// Status constants (match osm:bt)
+		// Uppercase (canonical)
 		_ = exports.Set("Running", "running")
 		_ = exports.Set("Success", "success")
 		_ = exports.Set("Failure", "failure")
+		// Lowercase aliases for JavaScript convenience
+		_ = exports.Set("running", "running")
+		_ = exports.Set("success", "success")
+		_ = exports.Set("failure", "failure")
 
 		// newState(blackboard) - Create a PA-BT state
 		_ = exports.Set("newState", func(call goja.FunctionCall) goja.Value {
@@ -53,7 +62,64 @@ func ModuleLoader(ctx context.Context) require.ModuleLoader {
 
 			// Create PABTState wrapping the blackboard
 			state := NewState(bb)
-			return runtime.ToValue(state)
+
+			// Create a JavaScript object with proper method exposure
+			jsObj := runtime.NewObject()
+
+			// Expose Variable method as 'variable'
+			_ = jsObj.Set("variable", func(call goja.FunctionCall) goja.Value {
+				if len(call.Arguments) < 1 {
+					panic(runtime.NewTypeError("variable requires a key argument"))
+				}
+				key := call.Arguments[0].Export()
+				value, err := state.Variable(key)
+				if err != nil {
+					panic(runtime.NewGoError(err))
+				}
+				return runtime.ToValue(value)
+			})
+
+			// Expose Blackboard Get method as 'get'
+			_ = jsObj.Set("get", func(call goja.FunctionCall) goja.Value {
+				if len(call.Arguments) < 1 {
+					panic(runtime.NewTypeError("get requires a key argument"))
+				}
+				key := call.Arguments[0].String()
+				return runtime.ToValue(state.Blackboard.Get(key))
+			})
+
+			// Expose Blackboard Set method as 'set'
+			_ = jsObj.Set("set", func(call goja.FunctionCall) goja.Value {
+				if len(call.Arguments) < 2 {
+					panic(runtime.NewTypeError("set requires key and value arguments"))
+				}
+				key := call.Arguments[0].String()
+				value := call.Arguments[1].Export()
+				state.Blackboard.Set(key, value)
+				return goja.Undefined()
+			})
+
+			// Expose RegisterAction method
+			_ = jsObj.Set("RegisterAction", func(call goja.FunctionCall) goja.Value {
+				if len(call.Arguments) < 2 {
+					panic(runtime.NewTypeError("RegisterAction requires name and action arguments"))
+				}
+				name := call.Arguments[0].String()
+				actionVal := call.Arguments[1].Export()
+
+				action, ok := actionVal.(*Action)
+				if !ok {
+					panic(runtime.NewTypeError("action must be created via pabt.newAction()"))
+				}
+
+				state.RegisterAction(name, action)
+				return goja.Undefined()
+			})
+
+			// Store native reference for interop (e.g., newPlan)
+			_ = jsObj.Set("_native", state)
+
+			return jsObj
 		})
 
 		// newSymbol(name)NOT USED in go-pabt v0.2.0, we use raw values
@@ -72,9 +138,18 @@ func ModuleLoader(ctx context.Context) require.ModuleLoader {
 				panic(runtime.NewTypeError("newPlan requires state and goals arguments"))
 			}
 
-			// Extract the state
-			stateVal := call.Arguments[0]
-			state, ok := stateVal.Export().(*State)
+			// Extract the state from JS object's _native property
+			stateObj := call.Arguments[0].ToObject(runtime)
+			if stateObj == nil {
+				panic(runtime.NewTypeError("state must be a PABTState created via pabt.newState()"))
+			}
+
+			nativeVal := stateObj.Get("_native")
+			if nativeVal == nil || goja.IsUndefined(nativeVal) {
+				panic(runtime.NewTypeError("state must be a PABTState created via pabt.newState()"))
+			}
+
+			state, ok := nativeVal.Export().(*State)
 			if !ok {
 				panic(runtime.NewTypeError("state must be a PABTState created via pabt.newState()"))
 			}
@@ -120,7 +195,7 @@ func ModuleLoader(ctx context.Context) require.ModuleLoader {
 				condition := &JSCondition{
 					key:     keyVal.Export(),
 					matcher: matchFn,
-					runtime: runtime,
+					bridge:  bridge,
 				}
 
 				// Each goal is wrapped as IConditions (a single group)
@@ -190,7 +265,7 @@ func ModuleLoader(ctx context.Context) require.ModuleLoader {
 					condition := &JSCondition{
 						key:     keyVal.Export(),
 						matcher: matchFn,
-						runtime: runtime,
+						bridge:  bridge,
 					}
 
 					conditionSlice = append(conditionSlice, pabtpkg.Condition(condition))
@@ -274,7 +349,7 @@ func ModuleLoader(ctx context.Context) require.ModuleLoader {
 type JSCondition struct {
 	key     any
 	matcher goja.Callable
-	runtime *goja.Runtime
+	bridge  *btmod.Bridge // Required for thread-safe goja access from ticker goroutine
 }
 
 // Key implements pabtpkg.Variable.Key().
@@ -284,16 +359,28 @@ func (c *JSCondition) Key() any {
 
 // Match implements pabttpkg.Condition.Match(value any) bool.
 // It calls the JavaScript matcher function dynamically.
+//
+// CRITICAL: This method is called from the bt.Ticker goroutine, but goja.Runtime
+// is NOT thread-safe. We MUST use Bridge.RunOnLoopSync to marshal the call to
+// the event loop goroutine where goja operations are safe.
 func (c *JSCondition) Match(value any) bool {
-	// Call the JavaScript matcher function
-	result, err := c.matcher(goja.Undefined(), c.runtime.ToValue(value))
-
-	if err != nil {
-		// On error, return false (conservative)
+	// Defensive: check if condition is valid before calling matcher
+	if c == nil || c.matcher == nil || c.bridge == nil {
 		return false
 	}
 
-	return result.ToBoolean()
+	var result bool
+	err := c.bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		res, callErr := c.matcher(goja.Undefined(), vm.ToValue(value))
+		if callErr != nil {
+			return callErr
+		}
+		result = res.ToBoolean()
+		return nil
+	})
+
+	// On error (including event loop not running), return false
+	return err == nil && result
 }
 
 // JSEffect implements pabtpkg.Effect interface.

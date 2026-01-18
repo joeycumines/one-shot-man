@@ -151,7 +151,7 @@ func TestPickAndPlaceError_ER002_RuntimeIntentionalError(t *testing.T) {
 				var bt = require('osm:bt');
 
 				// Try to create a state with invalid configuration
-				const bb = bt.newBlackboard();
+				const bb = new bt.Blackboard();
 				const state = pabt.newState(bb);
 
 				// Try to create a plan without proper goal conditions
@@ -293,13 +293,14 @@ func TestPickAndPlaceError_ER003_NormalExecution(t *testing.T) {
 
 		// Test basic state creation
 		var bt = require('osm:bt');
-		const bb = bt.newBlackboard();
+		const bb = new bt.Blackboard();
 		const state = pabt.newState(bb);
 		console.log('✓ PA-BT state created successfully');
 
 		// Test action registration API
-		const action = pabt.newAction('test_action', [], function(bb) { return pabt.success; });
-		state.registerAction(action);
+		const node = bt.node(function(bb) { return pabt.success; });
+		const action = pabt.newAction('test_action', [], [], node);
+		state.RegisterAction('test_action', action);
 		console.log('✓ Action can be registered on state');
 
 		// Verify constants are defined
@@ -402,10 +403,11 @@ func TestPickAndPlaceError_ER004_PA_BT_Errors(t *testing.T) {
 
 		// Try to create an action without a name
 		try {
-			const bb = bt.newBlackboard();
+			const bb = new bt.Blackboard();
 			const state = pabt.newState(bb);
-			const action = pabt.newAction('', [], function(bb) { return pabt.success; });
-			state.registerAction(action);
+			const node = bt.node(function(bb) { return pabt.success; });
+			const action = pabt.newAction('', [], [], node);
+			state.RegisterAction('', action);
 			throw new Error('Should have failed for invalid action name');
 		} catch (e) {
 			console.log('Caught error: ' + e.message);
@@ -422,7 +424,7 @@ func TestPickAndPlaceError_ER004_PA_BT_Errors(t *testing.T) {
 		var bt = require('osm:bt');
 
 		// Try to create a plan with invalid goal conditions
-		const bb = bt.newBlackboard();
+		const bb = new bt.Blackboard();
 		const state = pabt.newState(bb);
 
 		try {
@@ -445,7 +447,7 @@ func TestPickAndPlaceError_ER004_PA_BT_Errors(t *testing.T) {
 		var bt = require('osm:bt');
 
 		// Test state variable API - need to create blackboard first
-		const bb = bt.newBlackboard();
+		const bb = new bt.Blackboard();
 		const state = pabt.newState(bb);
 
 		// Try to access non-existent variable
@@ -476,13 +478,14 @@ func TestPickAndPlaceError_ER004_PA_BT_Errors(t *testing.T) {
 		// Note: In a real scenario, you'd also need to check if plan can be executed
 		// Need blackboard for state creation
 		var bt = require('osm:bt');
-		const bb = bt.newBlackboard();
+		const bb = new bt.Blackboard();
 		const state = pabt.newState(bb);
 
-		const failingAction = pabt.newAction('failing', [], function(bb) {
+		const failingNode = bt.node(function(bb) {
 			throw new Error('Action failed intentionally');
 		});
-		state.registerAction(failingAction);
+		const failingAction = pabt.newAction('failing', [], [], failingNode);
+		state.RegisterAction('failing', failingAction);
 		console.log('✓ Failing action registered');
 
 		// Create a plan using the failing action
@@ -522,7 +525,7 @@ func TestPickAndPlaceError_ER004_PA_BT_Errors(t *testing.T) {
 
 		// Test state blackboard - need bb
 		var bt = require('osm:bt');
-		const bb = bt.newBlackboard();
+		const bb = new bt.Blackboard();
 		const state = pabt.newState(bb);
 		state.set('test', 'value');
 		const val = state.get('test');

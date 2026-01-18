@@ -197,9 +197,15 @@ func ModuleLoader(ctx context.Context) require.ModuleLoader {
 				}
 
 				// Wrap as IConditions - all conditions in this slice must pass
+				// Always initialize as empty slice (not nil) to avoid nil pointer issues
 				if len(conditionSlice) > 0 {
 					conditions = []pabtpkg.IConditions{conditionSlice}
+				} else {
+					conditions = []pabtpkg.IConditions{}
 				}
+			} else {
+				// No conditions provided - explicitly initialize as empty slice
+				conditions = []pabtpkg.IConditions{}
 			}
 
 			// Extract effects (array)
@@ -240,6 +246,9 @@ func ModuleLoader(ctx context.Context) require.ModuleLoader {
 
 					effects = append(effects, pabtpkg.Effect(effect))
 				}
+			} else {
+				// No effects provided - explicitly initialize as empty slice
+				effects = []pabtpkg.Effect{}
 			}
 
 			// Extract node (must be a bt.Node)

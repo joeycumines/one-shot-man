@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -58,28 +59,70 @@ type PickAndPlaceHarness struct {
 func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPlaceConfig) (*PickAndPlaceHarness, error) {
 	t.Helper()
 
+	// Determine script path - use config.ScriptPath if provided, else use default
+	scriptPath := config.ScriptPath
+	if scriptPath == "" {
+		// Use the relative path from current working directory
+		scriptPath = pickAndPlaceScript
+	}
+
 	// Build test binary
-	binaryPath := buildPickAndPlaceTestBinary(t)
+	binaryPath := BuildPickAndPlaceTestBinary(t)
 
 	// Create test environment
-	env := newPickAndPlaceTestProcessEnv(t)
+	env := NewPickAndPlaceTestProcessEnv(t)
 	timeout := 60 * time.Second
 
 	testCtx, cancel := context.WithTimeout(ctx, timeout)
 
-	return &PickAndPlaceHarness{
+	h := &PickAndPlaceHarness{
 		t:          t,
 		ctx:        testCtx,
 		cancel:     cancel,
 		binaryPath: binaryPath,
-		scriptPath: config.ScriptPath,
+		scriptPath: scriptPath,
 		env:        env,
 		timeout:    timeout,
-	}, nil
+	}
+
+	// Calculate project directory to set correct working directory for termtest
+	wd, err := os.Getwd()
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to get working directory: %w", err)
+	}
+	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+
+	// Start the console automatically with TestMode environment variable
+	testEnv := append(h.env, "OSM_TEST_MODE=1")
+	h.console, err = termtest.NewConsole(h.ctx,
+		termtest.WithCommand(h.binaryPath, "script", h.scriptPath),
+		termtest.WithDefaultTimeout(h.timeout),
+		termtest.WithEnv(testEnv),
+		termtest.WithDir(projectDir), // Set project directory so script paths resolve correctly
+	)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create termtest console: %w", err)
+	}
+
+	// Wait for simulator to appear
+	snap := h.console.Snapshot()
+	menuPatterns := []string{"PICK AND PLACE", "PA-BT", "Robot", "Cube"}
+	for _, pattern := range menuPatterns {
+		if err := h.console.Expect(h.ctx, snap, termtest.Contains(pattern), "simulator start"); err == nil {
+			t.Logf("Simulator started, detected: %s", pattern)
+			return h, nil
+		}
+	}
+
+	h.console.Close()
+	cancel()
+	return nil, fmt.Errorf("simulator did not show expected startup. Buffer:\n%s", h.console.String())
 }
 
-// buildPickAndPlaceTestBinary builds the osm test binary for pick-and-place tests
-func buildPickAndPlaceTestBinary(t *testing.T) string {
+// BuildPickAndPlaceTestBinary builds the osm test binary for pick-and-place tests
+func BuildPickAndPlaceTestBinary(t *testing.T) string {
 	t.Helper()
 	binaryPath := filepath.Join(t.TempDir(), "osm-pickplace-test")
 	cmd := exec.Command("go", "build", "-tags=integration", "-o", binaryPath, "../../cmd/osm")
@@ -91,8 +134,19 @@ func buildPickAndPlaceTestBinary(t *testing.T) string {
 	return binaryPath
 }
 
-// newPickAndPlaceTestProcessEnv creates an isolated environment for pick-and-place subprocess tests.
-func newPickAndPlaceTestProcessEnv(tb testing.TB) []string {
+// getPickAndPlaceScriptPath returns the absolute path to the pick-and-place script
+func getPickAndPlaceScriptPath(t *testing.T) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+	return filepath.Join(projectDir, "scripts", "example-05-pick-and-place.js")
+}
+
+// NewPickAndPlaceTestProcessEnv creates an isolated environment for pick-and-place subprocess tests.
+func NewPickAndPlaceTestProcessEnv(tb testing.TB) []string {
 	tb.Helper()
 	sessionID := testutil.NewTestSessionID("pickplace", tb.Name())
 	clipboardFile := filepath.Join(tb.(*testing.T).TempDir(), sessionID+"-clipboard.txt")
@@ -107,10 +161,12 @@ const pickAndPlaceScript = "scripts/example-05-pick-and-place.js"
 
 // TestPickAndPlaceInitialState verifies the initial state matches expectations
 func TestPickAndPlaceInitialState(t *testing.T) {
+	// Note: Script is always present at scripts/example-05-pick-and-place.js
+	// Removing os.Stat check to avoid false negative test failures
+
 	ctx := context.Background()
 	harness, err := NewPickAndPlaceHarness(ctx, t, PickAndPlaceConfig{
-		ScriptPath: pickAndPlaceScript,
-		TestMode:   true,
+		TestMode: true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create harness: %v", err)
@@ -312,11 +368,19 @@ func containsPattern(s, pattern string) bool {
 
 // Start launches the pick-and-place simulator via osm script command
 func (h *PickAndPlaceHarness) Start() error {
-	var err error
+	// Calculate project directory to set correct working directory for termtest
+	wd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+
+	testEnv := append(h.env, "OSM_TEST_MODE=1")
 	h.console, err = termtest.NewConsole(h.ctx,
-		termtest.WithCommand(h.binaryPath, "script", "-i", h.scriptPath),
+		termtest.WithCommand(h.binaryPath, "script", h.scriptPath),
 		termtest.WithDefaultTimeout(h.timeout),
-		termtest.WithEnv(h.env),
+		termtest.WithEnv(testEnv),
+		termtest.WithDir(projectDir), // Set project directory so script paths resolve correctly
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create termtest console: %w", err)
@@ -437,6 +501,8 @@ var pickPlaceDebugJSONRegex = regexp.MustCompile(`(?s)__place_debug_start__\s*(.
 
 // pickPlaceRawJSONRegex matches the debug JSON directly (fallback if markers are fragmented)
 var pickPlaceRawJSONRegex = regexp.MustCompile(`\{"m":"[^"]+","t":\d+[^}]*\}`)
+
+// ansiRegex is defined in shooter_harness_test.go and shared across the package
 
 func (h *PickAndPlaceHarness) parseDebugJSON(buffer string) (*PickAndPlaceDebugJSON, error) {
 	// Strip ANSI codes first to improve matching

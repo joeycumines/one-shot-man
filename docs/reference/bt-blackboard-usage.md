@@ -17,6 +17,176 @@ tags:
 - **Avoid bt.Blackboard**: For pure JavaScript behavior trees - direct object access is faster and simpler
 - **JavaScript state is the single source of truth**: Blackboard is a minimal bridge, not the primary state store
 - **Sync only planning inputs**: Copy primitive values to blackboard before Go planning; BT nodes read/write JS state directly
+- **⚠️ CRITICAL CONSTRAINT**: Blackboard ONLY supports types that `encoding/json` unmarshals to by default (bool, float64, int64, string, []interface{}, map[string]interface{}). NO custom structs, NO time.Time, NO channels.
+
+---
+
+## ⚠️ CRITICAL: Blackboard Type Constraints
+
+### The JSON Unmarshal Constraint
+
+**This is a hard architectural constraint.** The BT blackboard may ONLY support types that `encoding/json` unmarshals to by default when you unmarshal any valid JSON to a destination of type `any`.
+
+This constraint exists because:
+
+1. **Go planner interfaces** (like `pabt.State[T]`) use `any` type for blackboard values
+2. **JSON unmarshal to `any`** has well-defined, limited type mappings
+3. **Type safety** requires predictable behavior across the Go-JavaScript boundary
+4. **Performance** avoids reflection overhead for custom types
+
+### Supported Types (JSON-Compatible)
+
+These types are explicitly permitted in the blackboard:
+
+| Go Type              | JSON Type | Example in Blackboard       |
+|----------------------|-----------|------------------------------|
+| `bool`               | boolean   | `bb.set('isVisible', true)` |
+| `float64`            | number    | `bb.set('x', 15.5)`          |
+| `int64` (via float64)| number    | `bb.set('count', 42)`        |
+| `string`             | string    | `bb.set('name', 'robot1')`   |
+| `[]interface{}`      | array     | `bb.set('items', [1,2,3])`  |
+| `map[string]interface{}` | object | `bb.set('pos', {x:10,y:20})` |
+
+### Forbidden Types
+
+These types are **explicitly prohibited** in the blackboard:
+
+| Forbidden Type          | Reason                             |
+|-------------------------|------------------------------------|
+| Custom structs (e.g., `*Actor`) | Not JSON-unmarshalable to `any` |
+| Pointers to custom types | Same as above                     |
+| Interface types (other than `any`) | Ambiguous type resolution      |
+| `time.Time`             | JSON requires custom encoding     |
+| `chan`                  | Not serializable                  |
+| `func`                  | Not serializable                  |
+| `[]byte`                | Only []any allowed to support semantics closer to JS array |
+
+### Data Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        JavaScript World                              │
+│  ┌─────────────────────────────────────────────────────────────────┐  │
+│  │    Full State (Maps, Objects, Complex Types)                     │  │
+│  │                                                                  │  │
+│  │  state.models.actors.get(1) = {                                  │  │
+│  │    id: 1,                                                        │  │
+│  │    x: 5,                                                         │  │
+│  │    y: 10,                                                        │  │
+│  │    heldItem: Cube {id: 1, x: 15, ...}                          │  │
+│  │  }                                                               │  │
+│  └─────────────────────────────────────────────────────────────────┘  │
+│                           │                                         │
+│                           │ syncToBlackboards() ◄──────────────┐    │
+│                           │ Extract ONLY primitives             │    │
+│                           ▼                                    │    │
+└───────────────────────────┼────────────────────────────────────┼────┘
+                            │                                    │
+┌───────────────────────────┼────────────────────────────────────┼────────┐
+│  Blackboard Boundary ─────┼────────────────────────────────────┼────────│
+│  (JSON Types Only) │                             │ │        │
+└───────────────────────────┼────────────────────────────────────┼────────┘
+                            │                                    │
+                            │ READ-ONLY for Go Planner           │
+                            ▼                                    │
+┌───────────────────────────────────────────┐                    │
+│           Go World - PA-BT Planner        │                    │
+├───────────────────────────────────────────┤                    │
+│  state.Variable('actorX') → 5             │                    │
+│  state.Variable('actorY') → 10            │                    │
+│  state.Variable('heldItemExists') → true  │                    │
+│                                           │                    │
+│  ✓ Reads primitives via pabt.State API   │                    │
+│  ✗ Cannot access full Actor struct       │                    │
+│  ✗ Cannot inspect heldItem complex obj   │                    │
+└───────────────────────────────────────────┘                    │
+                            │                                        │
+                            │ Selected action executes              │
+                            │──────────────────────────────────────┘
+                            │
+                    ┌───────▼────────────────────────────────────────┐
+                    │          JavaScript World (Execution)          │
+                    │  Action.node() → bt.Node executes            │
+                    │  Direct closure access to state.models.actors │
+                    │  mutate.actor.heldItem = cube                 │
+                    │  mutate.cube.deleted = true                    │
+                    └─────────────────────────────────────────────────┘
+
+    ┌────────────────────────────────────────────────────────────────┐
+    │                       ⚠️ PROHIBITED ⚠️                          │
+    │                                                                  │
+    │  DO NOT write this:                                              │
+    │    bb.set('actor', {x: 5, y: 10, heldItem: {...}})  // NO!      │
+    │                                                                  │
+    │  DO NOT do this:                                                 │
+    │    syncFromBlackboards()  // NO REVERSE SYNC!                   │
+    │                                                                  │
+    │  The blackboard is WRITE-ONLY from JS perspective.             │
+    │  The Go planner is READ-ONLY from blackboard.                   │
+    │  NO reverse flow of data.                                       │
+    └────────────────────────────────────────────────────────────────┘
+```
+
+### Implementation Examples
+
+#### ✅ CORRECT: Primitive Extraction
+
+```javascript
+// JavaScript - full state
+const actor = state.models.actors.get(1);
+const cube = state.models.cubes.get(1);
+
+// syncToBlackboards - extract primitives ONLY
+function syncToBlackboards(state) {
+    const bb = state.pabt.blackboard;
+    const actor = state.models.actors.get(1);
+    const cube = state.models.cubes.get(1);
+
+    // ✅ CORRECT: Primitive types only
+    bb.set('actorX', actor.x);
+    bb.set('actorY', actor.y);
+    bb.set('heldItemExists', actor.heldItem !== null);
+    bb.set('cubeDeleted', cube.deleted);
+
+    // ✅ CORRECT: Simple arrays of primitives
+    const cubeCoords = [cube.x, cube.y];
+    bb.set('cubeCoords', cubeCoords);
+}
+```
+
+#### ❌ WRONG: Complex Objects
+
+```javascript
+// ❌ WRONG: Entire complex object
+const cube = state.models.cubes.get(1);
+bb.set('cube1', cube);
+
+// ❌ WRONG: Nested object with struct references
+bb.set('actorWithItem', {
+    actor: {id: 1, x: 5, y: 10},
+    heldItem: cube  // References a complex struct!
+});
+
+// ❌ WRONG: Array of complex objects
+const allCubes = Array.from(state.models.cubes.values());
+bb.set('allCubes', allCubes);  // Arrays of structs!
+```
+
+#### ❌ WRONG: Reverse Sync
+
+```javascript
+// ❌ WRONG: Attempting sync from blackboard to JS state
+function syncFromBlackboards(state) {
+    const bb = state.pabt.blackboard;
+
+    // ❌ This doesn't work! Blackboard is write-only from JS
+    if (bb.has('newActorX')) {
+        const newX = bb.get('newActorX');  // Was never set by Go!
+        state.models.actors.get(1).x = newX;  // ❌ UNREACHABLE
+        bb.delete('newActorX');
+    }
+}
+```
 
 ---
 
@@ -363,16 +533,70 @@ bb.set('cube_1', {x: 10, y: 15, deleted: false});
 // Go planner evaluates: pabt.State.Variable('cube_1')
 // Problem: Go can only treat value as `any` type
 // Complex object inspection in Go is inefficient and error-prone
+
+// ❌ CRITICAL: This violates the JSON-unmarshal constraint!
+// The object {x: 10, y: 15, deleted: false} becomes map[string]interface{}
+// when type is `any`, but custom struct references won't work.
 ```
 
 **Correct**:
 
 ```javascript
-// CORRECT: Extract minimal planning primitives
+// CORRECT: Extract minimal planning primitives (JSON-compatible ONLY!)
 state.models.cubes.get(1) // Full object in JS (for rendering, collision, etc.)
-bb.set('cube_1_x', 10)       // Primitives for Go planner
-bb.set('cube_1_y', 15)
-bb.set('cube_1_deleted', false)
+bb.set('cube_1_x', 10)       // Primitives for Go planner (float64)
+bb.set('cube_1_y', 15)       // Primitives for Go planner (float64)
+bb.set('cube_1_deleted', false)  // Primitives for Go planner (bool)
+
+// ✅ These are ALL JSON-compatible types when unmarshaling to `any`
+// ✅ Go planner can read them via pabt.State.Variable() safely
+// ✅ No type ambiguity, no reflection overhead
+```
+
+### ❌ Using Custom Structs
+
+```javascript
+// ❌ WRONG: Attempting to put a custom struct in blackboard
+// This is BLOCKED by the JSON-unmarshal constraint!
+
+// Even if you could marshal it...
+const serialized = JSON.stringify(actor);
+bb.set('actor1', serialized);
+
+// The Go planner receives a string, not a struct
+// It cannot inspect fields, cannot modify, cannot use effectively
+```
+
+**Correct**:
+
+```javascript
+// ✅ CORRECT: Extract only the fields the planner needs
+bb.set('actor1_x', actor.x);      // float64
+bb.set('actor1_y', actor.y);      // float64
+bb.set('actor1_heldId', actor.heldItem ? actor.heldItem.id : null);  // number or null
+
+// The rest of the struct remains in JS for full feature access
+```
+
+### ❌ Using Time Types
+
+```javascript
+// ❌ WRONG: time.Time is not JSON-compatible
+import * as time from 'osm:time';  // Hypothetical module
+bb.set('spawnTime', time.now());
+
+// Go side: receives string or number, not time.Time
+// Cannot perform time arithmetic in Go planner
+```
+
+**Correct**:
+
+```javascript
+// ✅ CORRECT: Store as numbers (milliseconds or Unix timestamp)
+bb.set('spawnTimeMs', Date.now());
+bb.set('spawnTimeUnix', Math.floor(Date.now() / 1000));
+
+// Go planner can compare numbers: Variable('spawnTimeMs') > threshold
 ```
 
 ---

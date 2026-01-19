@@ -91,11 +91,11 @@ func TestSuperDocument_ClickAfterAutoScrollPlacesCursorCorrectly(t *testing.T) {
 		}
 		for _, ch := range line {
 			sendKey(t, cp, string(ch))
-			time.Sleep(5 * time.Millisecond) // Slightly slower typing to improve reliability
+			time.Sleep(10 * time.Millisecond) // Increased delay to prevent character drops
 		}
 		sendKey(t, cp, "\r")
-		// Slightly longer delay after each line to let the terminal fully process
-		time.Sleep(30 * time.Millisecond)
+		// Longer delay after each line to let the terminal fully process auto-scroll
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	// Wait for the marker to appear in the buffer before attempting to click

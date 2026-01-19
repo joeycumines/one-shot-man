@@ -94,7 +94,7 @@ func TestRequire_ModuleRegistration(t *testing.T) {
 		"Running", "Success", "Failure",
 		"running", "success", "failure",
 		// Factory functions
-		"newState", "newSymbol", "newPlan", "newAction", "newExprCondition",
+		"newState", "newPlan", "newAction", "newExprCondition",
 	}
 
 	for _, export := range expectedExports {
@@ -544,17 +544,4 @@ func TestJSCondition_ThreadSafety(t *testing.T) {
 		assert.True(t, obj["matchCalled"].(bool))
 		assert.True(t, obj["matchResult"].(bool))
 	})
-}
-
-// TestNewSymbol verifies pabt.newSymbol (compatibility layer).
-func TestNewSymbol(t *testing.T) {
-	bridge, _, _ := setupTestEnv(t)
-
-	res := executeJS(t, bridge, `
-		(() => {
-			const sym = pabt.newSymbol("myKey");
-			return sym === "myKey";
-		})()
-	`)
-	assert.True(t, res.ToBoolean())
 }

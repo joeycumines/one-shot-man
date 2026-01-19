@@ -124,16 +124,6 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 			return jsObj
 		})
 
-		// newSymbol(name) - NOT USED in go-pabt v0.2.0, we use raw values
-		_ = exports.Set("newSymbol", func(call goja.FunctionCall) goja.Value {
-			if len(call.Arguments) < 1 {
-				panic(runtime.NewTypeError("newSymbol requires a name argument"))
-			}
-			// In go-pabt v0.2.0, you can use raw values directly as keys.
-			// This is just for compatibility.
-			return call.Arguments[0]
-		})
-
 		// newPlan(state, goals) - Create a PA-BT plan
 		_ = exports.Set("newPlan", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) < 2 {

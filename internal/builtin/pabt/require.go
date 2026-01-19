@@ -100,9 +100,9 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 			})
 
 			// Expose RegisterAction method
-			_ = jsObj.Set("RegisterAction", func(call goja.FunctionCall) goja.Value {
+			registerActionFn := func(call goja.FunctionCall) goja.Value {
 				if len(call.Arguments) < 2 {
-					panic(runtime.NewTypeError("RegisterAction requires name and action arguments"))
+					panic(runtime.NewTypeError("registerAction requires name and action arguments"))
 				}
 				name := call.Arguments[0].String()
 				actionVal := call.Arguments[1].Export()
@@ -114,7 +114,9 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 
 				state.RegisterAction(name, action)
 				return goja.Undefined()
-			})
+			}
+			_ = jsObj.Set("RegisterAction", registerActionFn)
+			_ = jsObj.Set("registerAction", registerActionFn) // lowercase alias for JS convention
 
 			// Store native reference for interop (e.g., newPlan)
 			_ = jsObj.Set("_native", state)
@@ -122,7 +124,7 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 			return jsObj
 		})
 
-		// newSymbol(name)NOT USED in go-pabt v0.2.0, we use raw values
+		// newSymbol(name) - NOT USED in go-pabt v0.2.0, we use raw values
 		_ = exports.Set("newSymbol", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) < 1 {
 				panic(runtime.NewTypeError("newSymbol requires a name argument"))
@@ -330,71 +332,39 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 			nodeVal := call.Arguments[3]
 			// Try to extract the underlying bt.Node
 			if nodeExport, ok := nodeVal.Export().(bt.Node); ok {
-				// Create an action that wraps the node
-				wrappedAction := &Action{
-					Name:       nameStr,
-					conditions: conditions,
-					effects:    effects,
-					node:       nodeExport,
-				}
+				// Create an action using the factory function
+				wrappedAction := NewAction(nameStr, conditions, effects, nodeExport)
 				return runtime.ToValue(wrappedAction)
 			}
 
 			panic(runtime.NewTypeError("node argument must be a bt.Node"))
 		})
+
+		// newExprCondition(key, expression) - Create a Go-native ExprCondition (fast path)
+		// This creates a condition that uses expr-lang evaluation with ZERO Goja calls.
+		_ = exports.Set("newExprCondition", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				panic(runtime.NewTypeError("newExprCondition requires key and expression arguments"))
+			}
+
+			key := call.Arguments[0].Export()
+			expr := call.Arguments[1].String()
+
+			condition := NewExprCondition(key, expr)
+
+			// Return a JS object with key and Match for compatibility with newAction
+			jsObj := runtime.NewObject()
+			_ = jsObj.Set("key", key)
+			_ = jsObj.Set("Match", func(call goja.FunctionCall) goja.Value {
+				if len(call.Arguments) < 1 {
+					return runtime.ToValue(false)
+				}
+				value := call.Arguments[0].Export()
+				return runtime.ToValue(condition.Match(value))
+			})
+			_ = jsObj.Set("_native", condition)
+
+			return jsObj
+		})
 	}
-}
-
-// JSCondition implements pabtpkg.Condition interface using JavaScript Match function.
-type JSCondition struct {
-	key     any
-	matcher goja.Callable
-	bridge  *btmod.Bridge // Required for thread-safe goja access from ticker goroutine
-}
-
-// Key implements pabtpkg.Variable.Key().
-func (c *JSCondition) Key() any {
-	return c.key
-}
-
-// Match implements pabttpkg.Condition.Match(value any) bool.
-// It calls the JavaScript matcher function dynamically.
-//
-// CRITICAL: This method is called from the bt.Ticker goroutine, but goja.Runtime
-// is NOT thread-safe. We MUST use Bridge.RunOnLoopSync to marshal the call to
-// the event loop goroutine where goja operations are safe.
-func (c *JSCondition) Match(value any) bool {
-	// Defensive: check if condition is valid before calling matcher
-	if c == nil || c.matcher == nil || c.bridge == nil {
-		return false
-	}
-
-	var result bool
-	err := c.bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
-		res, callErr := c.matcher(goja.Undefined(), vm.ToValue(value))
-		if callErr != nil {
-			return callErr
-		}
-		result = res.ToBoolean()
-		return nil
-	})
-
-	// On error (including event loop not running), return false
-	return err == nil && result
-}
-
-// JSEffect implements pabtpkg.Effect interface.
-type JSEffect struct {
-	key   any
-	value any
-}
-
-// Key implements pabtpkg.Variable.Key().
-func (e *JSEffect) Key() any {
-	return e.key
-}
-
-// Value implements pabttpkg.Effect.Value().
-func (e *JSEffect) Value() any {
-	return e.value
 }

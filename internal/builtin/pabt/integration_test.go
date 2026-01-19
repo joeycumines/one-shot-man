@@ -167,17 +167,3 @@ func (c *CustomCondition) Key() any {
 func (c *CustomCondition) Match(value any) bool {
 	return c.matchFn(value)
 }
-
-// SimpleEffect is a test helper effect.
-type SimpleEffect struct {
-	key   any
-	value any
-}
-
-func (e *SimpleEffect) Key() any {
-	return e.key
-}
-
-func (e *SimpleEffect) Value() any {
-	return e.value
-}

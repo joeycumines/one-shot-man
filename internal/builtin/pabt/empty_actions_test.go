@@ -71,7 +71,7 @@ func TestActionWithEmptyConditionsEffects(t *testing.T) {
 	}
 
 	// Verify canExecuteAction works
-	if !state.canExecuteAction(action) {
+	if !canExecuteAction(state, action) {
 		t.Error("Action with empty conditions should be executable")
 	}
 }
@@ -122,81 +122,6 @@ func TestActionWithSomeConditionsEmptyEffects(t *testing.T) {
 	if !found {
 		t.Error("Action should be executable when conditions are satisfied")
 	}
-}
-
-// TestActionIntegrationInPlan tests that actions can be used in an actual PA-BT plan
-// DISABLED: Test has architectural issue - action with empty conditions can always run,
-// but PA-BT doesn't automatically stop when goal is achieved unless action returns Failure.
-// This test needs redesign to properly model the planning cycle.
-func TestActionIntegrationInPlan(t *testing.T) {
-	t.Skip("Test requires redesign: action with empty conditions runs indefinitely when goal is already satisfied")
-	// Create a state
-	bb := new(btmod.Blackboard)
-	bb.Set("count", 0)
-	bb.Set("done", false)
-	state := NewState(bb)
-
-	// Create an action with empty conditions (always executable)
-	action := &Action{
-		Name:       "increment",
-		conditions: []pabtpkg.IConditions{},
-		effects:    []pabtpkg.Effect{},
-		node: bt.New(func(children []bt.Node) (bt.Status, error) {
-			count := bb.Get("count").(int)
-			count++
-			bb.Set("count", count)
-			if count >= 3 {
-				bb.Set("done", true)
-			}
-			return bt.Success, nil
-		}),
-	}
-
-	state.RegisterAction("increment", action)
-
-	// Create a goal: at count 3 or done = true
-	goal := []pabtpkg.IConditions{
-		{
-			&TestCondition{
-				key:     "done",
-				matchFn: func(v any) bool { return v == true },
-			},
-		},
-	}
-
-	// Create plan
-	plan, err := pabtpkg.INew(state, goal)
-	if err != nil {
-		t.Fatalf("Failed to create plan: %v", err)
-	}
-
-	// Get the behavior tree node
-	btNode := plan.Node()
-	if btNode == nil {
-		t.Fatal("Plan.Node() returned nil")
-	}
-
-	// Execute the plan until goal is reached
-	maxTicks := 10
-	var status bt.Status
-	for i := 0; i < maxTicks; i++ {
-		status, err = btNode.Tick()
-		if err != nil {
-			t.Fatalf("Plan tick failed: %v", err)
-		}
-
-		if status == bt.Success {
-			break
-		}
-	}
-
-	// Verify goal was achieved
-	done := bb.Get("done")
-	if done != true {
-		t.Errorf("Goal not achieved, done=%v", done)
-	}
-
-	t.Logf("Plan completed with status=%v after processing", status)
 }
 
 // TestCondition for testing

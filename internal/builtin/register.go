@@ -17,7 +17,6 @@ import (
 	lipglossmod "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
 	"github.com/joeycumines/one-shot-man/internal/builtin/nextintegerid"
 	osmod "github.com/joeycumines/one-shot-man/internal/builtin/os"
-	pabtmod "github.com/joeycumines/one-shot-man/internal/builtin/pabt"
 	templatemod "github.com/joeycumines/one-shot-man/internal/builtin/template"
 	scrollbarmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/scrollbar"
 	timemod "github.com/joeycumines/one-shot-man/internal/builtin/time"
@@ -61,10 +60,6 @@ type BubbleteaManager = *bubbleteamod.Manager
 // This provides access to the behavior tree bridge for JS integration.
 type BTBridge = *bt.Bridge
 
-// PABTBridge returns the pabt.Bridge from RegisterResult.
-// This provides access to the planning-augmented behavior tree bridge for JS integration.
-type PABTBridge = *pabtmod.Bridge
-
 // BubblezoneManager returns -> *bubblezonemod.Manager from RegisterResult.
 // This provides zone-based mouse hit-testing for BubbleTea applications.
 type BubblezoneManager = *bubblezonemod.Manager
@@ -74,7 +69,6 @@ type BubblezoneManager = *bubblezonemod.Manager
 type RegisterResult struct {
 	BubbleteaManager  BubbleteaManager
 	BTBridge          BTBridge
-	PABTBridge        PABTBridge
 	BubblezoneManager BubblezoneManager
 }
 
@@ -119,11 +113,6 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	// NewBridgeWithEventLoop registers the osm:bt module automatically.
 	btBridge := bt.NewBridgeWithEventLoop(ctx, eventLoopProvider.EventLoop(), eventLoopProvider.Registry())
 
-	// Register pabt module for planning-augmented behavior tree integration.
-	// osm:pabt provides JavaScript wrappers for go-pabt PA-BT planning system.
-	// NewBridge wraps the btBridge and registers the osm:pabt module automatically.
-	pabtBridge := pabtmod.NewBridge(ctx, eventLoopProvider.EventLoop(), eventLoopProvider.Registry(), btBridge)
-
 	// Register bubbletea module with terminal ops if available.
 	// Bridge implements JSRunner directly - no adapter needed.
 	var bubbleInput io.Reader
@@ -153,10 +142,6 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	return RegisterResult{
 		BubbleteaManager:  bubbleteaMgr,
 		BTBridge:          btBridge,
-		PABTBridge:        pabtBridge,
 		BubblezoneManager: bubblezoneMgr,
 	}
 }
-
-// Note: bridgeJSRunner is no longer needed - *bt.Bridge directly implements
-// bubbleteamod.JSRunner via its RunJSSync method.

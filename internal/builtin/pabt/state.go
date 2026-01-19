@@ -10,6 +10,11 @@ import (
 // State implements pabtpkg.State (which is State[Condition]) interface backed by a bt.Blackboard.
 // It normalizes any key type to string for blackboard storage and provides
 // access to a registry of actions.
+//
+// The osm:pabt Go layer is deliberately minimal - it provides only the PA-BT
+// primitives (State, Action, Condition, Effect). Application-specific types
+// like simulation state, sprites, shapes, etc. belong in the scripting layer
+// (JavaScript) where they can be customized per-application.
 type State struct {
 	// Embed bt.Blackboard for storage
 	*btmod.Blackboard
@@ -27,7 +32,8 @@ func NewState(bb *btmod.Blackboard) *State {
 }
 
 // Variable implements pabtpkg.State.Variable(key any).
-// It normalizes any type of key to a string for blackboard lookup.
+//
+// It normalizes the key to a string for blackboard lookup.
 // Returns (nil, nil) if key doesn't exist (pabt semantics).
 func (s *State) Variable(key any) (any, error) {
 	if key == nil {
@@ -60,60 +66,56 @@ func (s *State) Variable(key any) (any, error) {
 }
 
 // Actions implements pabtpkg.State.Actions(failed Condition).
-// Returns all actions that can potentially fix the failed condition.
+// Returns all actions whose effects could potentially satisfy the failed condition.
 //
-// Note: The 'failed' parameter indicates which condition failed during planning.
-// A smarter implementation could filter actions by whether their effects include
-// keys related to the failed condition to improve efficiency.
+// PA-BT Algorithm: An action is relevant if it has an effect that:
+// 1. Has the same key as the failed condition
+// 2. Would satisfy the failed condition (failed.Match(effect.Value()) returns true)
+//
+// This is the core of PA-BT planning: find actions that can make progress
+// toward satisfying unsatisfied conditions.
+//
+// Special case: If failed is nil, returns all registered actions (for backward
+// compatibility and testing purposes).
 func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 	registeredActions := s.actions.All()
 
-	// Filter actions to only those with satisfied conditions
-	var playableActions []pabtpkg.IAction
+	// Special case: nil failed condition returns all actions
+	if failed == nil {
+		return registeredActions, nil
+	}
+
+	failedKey := failed.Key()
+
+	// Filter actions to those with relevant effects
+	var relevantActions []pabtpkg.IAction
 	for _, action := range registeredActions {
-		if s.canExecuteAction(action) {
-			playableActions = append(playableActions, action)
+		if s.actionHasRelevantEffect(action, failedKey, failed) {
+			relevantActions = append(relevantActions, action)
 		}
 	}
 
-	return playableActions, nil
+	return relevantActions, nil
 }
 
-// canExecuteAction checks if all of an action's conditions pass against current state.
-// An action has multiple IConditions groups; at least ONE group must pass (OR logic).
-// Within each group, ALL conditions must pass (AND logic).
-func (s *State) canExecuteAction(action pabtpkg.IAction) bool {
-	allConditions := action.Conditions()
-
-	// Try each IConditions group (there may be zero groups, meaning always executable)
-	for _, conditionGroup := range allConditions {
-		// Check if all conditions in this group pass
-		allMatch := true
-		for _, cond := range conditionGroup {
-			// Skip nil conditions
-			if cond == nil {
-				continue
-			}
-			value, err := s.Variable(cond.Key())
-			if err != nil {
-				allMatch = false
-				break
-			}
-
-			if !cond.Match(value) {
-				allMatch = false
-				break
-			}
+// actionHasRelevantEffect checks if an action has an effect that would
+// satisfy the given failed condition.
+//
+// An effect is relevant if:
+// 1. effect.Key() equals the failed condition's key
+// 2. failed.Match(effect.Value()) returns true
+func (s *State) actionHasRelevantEffect(action pabtpkg.IAction, failedKey any, failed pabtpkg.Condition) bool {
+	effects := action.Effects()
+	for _, effect := range effects {
+		if effect == nil {
+			continue
 		}
-
-		// If this group's conditions all pass, the action is executable
-		if allMatch {
+		// Check if this effect's key matches the failed condition's key
+		if effect.Key() == failedKey && failed.Match(effect.Value()) {
 			return true
 		}
 	}
-
-	// No condition group passed - action not executable
-	return len(allConditions) == 0
+	return false
 }
 
 // RegisterAction adds an action to the state's action registry.

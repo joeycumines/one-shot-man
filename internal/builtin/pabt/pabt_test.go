@@ -119,16 +119,14 @@ func TestStateActionsFiltering(t *testing.T) {
 	bb := new(btmod.Blackboard)
 	state := NewState(bb)
 
-	// Create actions with conditions
+	// Create actions with effects
 	tick1 := func([]bt.Node) (bt.Status, error) {
 		return bt.Success, nil
 	}
 	action1 := &Action{
 		Name: "move",
-		conditions: []pabtpkg.IConditions{
-			{
-				&NeverFailsCondition{match: func(v any) bool { return true }},
-			},
+		effects: []pabtpkg.Effect{
+			&SimpleEffect{key: "position", value: "target"},
 		},
 		node: bt.New(tick1),
 	}
@@ -138,10 +136,8 @@ func TestStateActionsFiltering(t *testing.T) {
 	}
 	action2 := &Action{
 		Name: "pick",
-		conditions: []pabtpkg.IConditions{
-			{
-				&NeverFailsCondition{match: func(v any) bool { return false }},
-			},
+		effects: []pabtpkg.Effect{
+			&SimpleEffect{key: "held_item", value: "cube"},
 		},
 		node: bt.New(tick2),
 	}
@@ -149,15 +145,30 @@ func TestStateActionsFiltering(t *testing.T) {
 	state.RegisterAction("move", action1)
 	state.RegisterAction("pick", action2)
 
-	// Get all actions
-	actions, err := state.Actions(nil)
+	// Test 1: Actions(nil) returns ALL actions (legacy mode)
+	allActions, err := state.Actions(nil)
 	if err != nil {
-		t.Fatalf("Actions() returned error: %v", err)
+		t.Fatalf("Actions(nil) returned error: %v", err)
+	}
+	if len(allActions) != 2 {
+		t.Errorf("Actions(nil) returned %d actions, want 2", len(allActions))
 	}
 
-	// Should only return action1 (matches condition)
-	if len(actions) != 1 {
-		t.Errorf("Actions() returned %d actions, want 1", len(actions))
+	// Test 2: Actions(failedCondition) filters by effect matching
+	// Create a condition that wants position == "target"
+	positionCondition := NewSimpleCond("position", func(v any) bool {
+		return v == "target"
+	})
+
+	filteredActions, err := state.Actions(positionCondition)
+	if err != nil {
+		t.Fatalf("Actions(positionCondition) returned error: %v", err)
+	}
+	if len(filteredActions) != 1 {
+		t.Fatalf("Actions(positionCondition) returned %d actions, want 1", len(filteredActions))
+	}
+	if filteredActions[0].(*Action).Name != "move" {
+		t.Errorf("Expected 'move' action, got '%s'", filteredActions[0].(*Action).Name)
 	}
 }
 
@@ -172,6 +183,48 @@ func TestInitialStateEmptyActions(t *testing.T) {
 	}
 	if len(actions) != 0 {
 		t.Errorf("Actions returned %d actions, want 0", len(actions))
+	}
+}
+
+func TestNewAction(t *testing.T) {
+	// Test factory creates action correctly
+	tick := func([]bt.Node) (bt.Status, error) {
+		return bt.Success, nil
+	}
+	node := bt.New(tick)
+
+	conds := []pabtpkg.IConditions{
+		{NewSimpleCond("key1", func(v any) bool { return v == "value1" })},
+	}
+	effs := pabtpkg.Effects{
+		NewSimpleEffect("key2", "value2"),
+	}
+
+	action := NewAction("test_action", conds, effs, node)
+
+	// Verify name
+	if action.Name != "test_action" {
+		t.Errorf("action.Name = %s, want test_action", action.Name)
+	}
+
+	// Verify conditions
+	gotConds := action.Conditions()
+	if len(gotConds) != 1 {
+		t.Errorf("len(Conditions()) = %d, want 1", len(gotConds))
+	}
+
+	// Verify effects
+	gotEffs := action.Effects()
+	if len(gotEffs) != 1 {
+		t.Errorf("len(Effects()) = %d, want 1", len(gotEffs))
+	}
+	if gotEffs[0].Key() != "key2" || gotEffs[0].Value() != "value2" {
+		t.Errorf("Effects()[0] = (%v, %v), want (key2, value2)", gotEffs[0].Key(), gotEffs[0].Value())
+	}
+
+	// Verify node is non-nil (can't compare funcs directly)
+	if action.Node() == nil {
+		t.Error("Node() is nil")
 	}
 }
 

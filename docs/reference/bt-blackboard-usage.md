@@ -694,7 +694,73 @@ If you're using blackboard and need PA-BT:
 
 ## See Also
 
-- [PA-BT integration example](example-05-pick-and-place.js) (forthcoming)
-- [Pure JavaScript behavior tree example](example-04-bt-shooter.js) (current)
+- [PA-BT integration example](../../scripts/example-05-pick-and-place.js)
+- [Pure JavaScript behavior tree example](../../scripts/example-04-bt-shooter.js)
+- [osm:pabt module reference](./pabt.md)
 - [bt.Blackboard implementation](../../internal/builtin/bt/blackboard.go)
 - [bt Bridge API](../../internal/builtin/bt/bridge.go)
+
+---
+
+## Appendix: PA-BT Condition Evaluation Modes
+
+The `osm:pabt` module supports two evaluation modes for conditions:
+
+### JSCondition (Default)
+
+JavaScript conditions evaluated via Goja runtime:
+
+```javascript
+// Create action with JavaScript condition
+const pickAction = pabt.newAction('pick', [
+    {
+        key: 'heldItemExists',
+        Match: function(value) {
+            return value === false;  // JavaScript evaluation
+        }
+    }
+], [...]);
+```
+
+**Characteristics:**
+- Full JavaScript expressiveness
+- Closure access to surrounding scope
+- Evaluated on Go event loop via `RunOnLoopSync`
+- ~50-100x slower than ExprCondition (still fast enough for most use cases)
+
+### ExprCondition (Fast Path)
+
+Go-native conditions using [expr-lang](https://github.com/antonmedv/expr):
+
+```javascript
+// Create action with expr-lang condition (Go-native, ZERO Goja calls)
+const moveAction = pabt.newAction('move', [
+    pabt.newExprCondition('actorX', 'Value < 50 && Value > 0')
+], [...]);
+```
+
+**Characteristics:**
+- Go-native bytecode compilation and execution
+- **ZERO Goja calls during Match()**
+- 10-100x faster than JSCondition
+- Expression syntax: `Value` refers to the condition input value
+- Limited to expr-lang supported operations (no closure access)
+
+### When to Use Each
+
+| Scenario | Recommended Mode |
+|----------|-----------------|
+| Complex logic with closures | JSCondition |
+| Performance-critical planning | ExprCondition |
+| String manipulation | JSCondition |
+| Numeric comparisons | ExprCondition |
+| Access to JS state | JSCondition |
+| Simple boolean logic | ExprCondition |
+
+### Memory Safety
+
+Both modes are designed to avoid circular reference traps:
+
+- **JSCondition**: Condition values are passed as primitives through blackboard (JSON-compatible types only)
+- **ExprCondition**: Pure Go evaluation, no Goja runtime references held
+- **FuncCondition**: Native Go functions, no JavaScript involvement

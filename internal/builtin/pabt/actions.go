@@ -83,3 +83,20 @@ func (a *Action) Effects() pabtpkg.Effects {
 func (a *Action) Node() bt.Node {
 	return a.node
 }
+
+// NewAction creates a new Action with the specified components.
+// This is the preferred factory function for creating actions.
+//
+// Parameters:
+//   - name: Unique identifier for debugging/logging
+//   - conditions: Preconditions (each slice is AND group, groups are OR logic)
+//   - effects: What this action achieves in the state
+//   - node: Behavior tree node implementing the action's logic
+func NewAction(name string, conditions []pabtpkg.IConditions, effects pabtpkg.Effects, node bt.Node) *Action {
+	return &Action{
+		Name:       name,
+		conditions: conditions,
+		effects:    effects,
+		node:       node,
+	}
+}

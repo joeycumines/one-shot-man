@@ -8,7 +8,7 @@
 // Top-level error handler - ensures ANY uncaught error triggers non-zero exit
 try {
     // Load required modules with error handling
-    var bt, tea, pabt;
+    var bt, tea, pabt, os;
     try {
         bt = require('osm:bt');
     } catch (e) {
@@ -25,6 +25,12 @@ try {
         pabt = require('osm:pabt');
     } catch (e) {
         console.error('Error: Failed to load osm:pabt module. Make sure you are running with "osm script"');
+        throw e;
+    }
+    try {
+        os = require('osm:os');
+    } catch (e) {
+        console.error('Error: Failed to load osm:os module. Make sure you are running with "osm script"');
         throw e;
     }
 
@@ -119,12 +125,15 @@ try {
             renderBufferWidth: 0,
             renderBufferHeight: 0,
 
-            // Win condition
+            // Win condition - once true, stays true (monotonic)
             winConditionMet: false,
+            // Track if target cube was actually delivered (for win verification)
+            targetDelivered: false,
 
-            // Debug mode - enabled by default for E2E test harness compatibility
+            // Debug mode - OFF by default, enabled when OSM_TEST_MODE=1
+            // This ensures normal users see clean output, tests get debug JSON
             // Toggle with backtick (`) key
-            debugMode: true
+            debugMode: os.getenv('OSM_TEST_MODE') === '1'
         };
     }
 
@@ -264,7 +273,7 @@ try {
         // =========================================================================
 
         // Create actions for each blockade cube
-        BLOCKADE_CUBE_IDS.forEach(function(cubeId) {
+        BLOCKADE_CUBE_IDS.forEach(function (cubeId) {
             const cubeKey = 'cube_' + cubeId;
 
             // Action: Move to blockade cube N
@@ -600,8 +609,10 @@ try {
                     }
                 }
             ],
-            [ // Effects
-                {key: 'cubeDeliveredAtGoal', Value: true} // WIN!
+            [ // Effects - COMPLETE state change for planner consistency
+                {key: 'cubeDeliveredAtGoal', Value: true}, // WIN!
+                {key: 'heldItemExists', Value: false},      // No longer holding
+                {key: 'heldItemId', Value: -1}              // No item ID
             ],
             bt.createLeafNode(function () {
                 const actor = state.actors.get(state.activeActorId);
@@ -620,9 +631,10 @@ try {
                     return bt.running;
                 }
 
-                // At goal - drop target cube and WIN!
+                // At goal - drop target cube and mark as delivered
                 actor.heldItem = null;
-                state.winConditionMet = true;
+                state.targetDelivered = true; // Flag for win condition check
+                // Don't set winConditionMet here - let checkWinCondition handle it monotonically
                 return bt.success;
             })
         );
@@ -679,7 +691,7 @@ try {
 
         // Count blockade cubes still at wall position
         let blkCount = 0;
-        BLOCKADE_CUBE_IDS.forEach(function(id) {
+        BLOCKADE_CUBE_IDS.forEach(function (id) {
             const cube = state.cubes.get(id);
             if (cube && !cube.deleted && Math.abs(cube.x - BLOCKADE_X) < 3) {
                 blkCount++;
@@ -874,22 +886,34 @@ try {
 // ============================================================================
 
     function checkWinCondition(state) {
+        // CRITICAL: Win condition is MONOTONIC - once true, stays true forever
+        // This prevents the infinite loop where win is set then unset when actor moves
+        if (state.winConditionMet) {
+            return; // Already won, nothing more to check
+        }
+
         const actor = state.actors.get(state.activeActorId);
         const goal = state.goals.get(1);
 
         if (!actor || !goal) {
-            state.winConditionMet = false;
-            return;
+            return; // Don't set to false - just return
         }
 
-        // Check if actor has delivered a cube to goal
-        // Win condition: actor at goal and not holding anything
+        // Win condition requires:
+        // 1. Target cube (cube 1) was delivered (targetDelivered flag set by deliverToGoal)
+        // 2. Actor is at or near goal 1
+        // 3. Actor is not holding anything (dropped the cube)
+        if (!state.targetDelivered) {
+            return; // Target not yet delivered - can't win
+        }
+
         const dx = goal.x - actor.x;
         const dy = goal.y - actor.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        const droppedCube = !actor.heldItem && dist < 1.5;
 
-        state.winConditionMet = droppedCube;
+        if (dist < 2.5 && !actor.heldItem) {
+            state.winConditionMet = true; // WIN! This is permanent.
+        }
     }
 
 // ============================================================================

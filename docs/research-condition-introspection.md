@@ -1,7 +1,7 @@
 # Research: JavaScript Condition Introspection for PA-BT
 
-**Date:** 2026-01-19  
-**Status:** Complete  
+**Date:** 2026-01-19
+**Status:** Complete
 **Author:** Takumi (匠)
 
 ## Executive Summary
@@ -276,7 +276,7 @@ func (g *graphState) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error
 
 1. **Condition contains the target value**: `graphCondition{key: "actor", value: node}` - The condition itself carries the expected value.
 
-2. **Match compares identity**: 
+2. **Match compares identity**:
    ```go
    func (c *graphCondition) Match(value any) bool {
        return value == c.value  // Pointer equality
@@ -362,7 +362,7 @@ Add an optional extension interface that conditions can implement:
 // to receive additional context about match evaluation.
 type ConditionIntrospector interface {
     Condition
-    
+
     // SetMatchContext is called before Match() to provide context.
     // This allows conditions to track whether they're evaluating
     // state values or effect values.
@@ -415,7 +415,7 @@ JavaScript conditions can then inspect:
 condition.Match = function(wrapped) {
     const value = wrapped.Value;
     const source = wrapped.Source;
-    
+
     if (source === 'effect') {
         // Effect filtering context
         return this.matchesEffect(value);
@@ -492,7 +492,7 @@ GraphState.prototype.initFig76 = function() {
     const s4 = new GraphNode('s4');
     const s5 = new GraphNode('s5');
     const sg = new GraphNode('sg');
-    
+
     // Set up links (matching go-pabt reference)
     s0.links = [s1];
     s1.links = [s4, s3, s2, s0];
@@ -501,11 +501,11 @@ GraphState.prototype.initFig76 = function() {
     s4.links = [s5, s3, s1];
     s5.links = [sg, s4, s2];
     sg.links = [s5, s3];
-    
+
     this.nodes = [s0, s1, s2, s3, s4, s5, sg];
     this.actor = s0;
     this.goal = [sg];
-    
+
     return { s0, s1, s2, s3, s4, s5, sg };
 };
 
@@ -526,19 +526,19 @@ GraphState.prototype.actions = function(failed) {
     if (!(failed instanceof GraphCondition)) {
         throw new Error(`invalid condition type: ${typeof failed}`);
     }
-    
+
     if (failed.condKey !== 'actor') {
         throw new Error(`invalid condition key: ${failed.condKey}`);
     }
-    
+
     const targetNode = failed.value;
     const actions = [];
-    
+
     // Generate actions from each node that links to the target
     for (const fromNode of targetNode.links) {
         actions.push(new GraphAction(this, fromNode, targetNode));
     }
-    
+
     return actions;
 };
 
@@ -557,7 +557,7 @@ GraphCondition.prototype.key = function() {
 GraphCondition.prototype.Match = function(value) {
     // Handle wrapped values (Option C)
     const actualValue = (value && value.Value !== undefined) ? value.Value : value;
-    
+
     // Use Symbol identity for comparison
     return actualValue && actualValue.id === this.value.id;
 };
@@ -603,7 +603,7 @@ GraphAction.prototype.node = function() {
             console.log(`action failed: actor at ${self.state.actor.name}, expected ${self.from.name}`);
             return bt.Failure;
         }
-        
+
         // Verify link exists
         let ok = false;
         for (const link of self.from.links) {
@@ -616,7 +616,7 @@ GraphAction.prototype.node = function() {
             console.log(`action failed: no link from ${self.from.name} to ${self.to.name}`);
             return bt.Failure;
         }
-        
+
         // Execute
         console.log(`actor ${self.state.actor.name} -> ${self.to.name}`);
         self.state.pathTaken.push(self.state.actor.name, self.to.name);
@@ -629,34 +629,34 @@ GraphAction.prototype.node = function() {
 function testGraphPath() {
     const state = new GraphState();
     const nodes = state.initFig76();
-    
+
     console.log('Graph structure:');
     for (const node of state.nodes) {
         console.log(`  ${node.name} -> ${node.links.map(n => n.name).join(', ')}`);
     }
     console.log(`goal = ${state.goal.map(n => n.name).join(', ')}`);
     console.log(`actor = ${state.actor.name}`);
-    
+
     // Create plan using pabt.newPlan
     const plan = pabt.newPlan(state, state.goalConditions());
     const node = plan.Node();
-    
+
     // Execute
     let status = bt.Running;
     let iterations = 0;
     const maxIterations = 20;
-    
+
     while (status === bt.Running && iterations < maxIterations) {
         iterations++;
         const result = node.Tick();
         status = result.status;
         console.log(`iteration = ${iterations}, status = ${status}, actor = ${state.actor.name}`);
-        
+
         if (result.err) {
             throw result.err;
         }
     }
-    
+
     // Verify path
     const path = [];
     for (let i = 0; i < state.pathTaken.length; i++) {
@@ -664,14 +664,14 @@ function testGraphPath() {
             path.push(state.pathTaken[i]);
         }
     }
-    
+
     console.log(`Path taken: ${path.join(' -> ')}`);
     console.log(`Expected: s0 -> s1 -> s3 -> sg`);
-    
+
     if (path.join(',') !== 's0,s1,s3,sg') {
         throw new Error(`Unexpected path: ${path.join(' -> ')}`);
     }
-    
+
     console.log('✓ Graph test PASSED');
 }
 ```

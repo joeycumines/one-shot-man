@@ -270,7 +270,7 @@ func TestRegisterAction(t *testing.T) {
 				);
 
 				state.registerAction("move", action);
-				
+
 				// Action was registered - we can verify by state's _native
 				return true;
 			})()
@@ -536,7 +536,7 @@ func TestJSCondition_ThreadSafety(t *testing.T) {
 
 				// Directly call Match (simulating what RunOnLoopSync would do)
 				const matchResult = goal.Match(1);
-				
+
 				return { matchCalled, matchResult };
 			})()
 		`)

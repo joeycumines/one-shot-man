@@ -2,10 +2,19 @@ package pabt
 
 import (
 	"fmt"
+	"os"
+	"sync"
 
 	pabtpkg "github.com/joeycumines/go-pabt"
 	btmod "github.com/joeycumines/one-shot-man/internal/builtin/bt"
 )
+
+// debugPABT controls verbose PA-BT debugging output.
+// Set OSM_DEBUG_PABT=1 to enable.
+var debugPABT = os.Getenv("OSM_DEBUG_PABT") == "1"
+
+// debugOnce logs once that debugging is enabled
+var debugOnce sync.Once
 
 // State implements pabtpkg.State (which is State[Condition]) interface backed by a bt.Blackboard.
 // It normalizes any key type to string for blackboard storage and provides
@@ -62,6 +71,15 @@ func (s *State) Variable(key any) (any, error) {
 
 	// Get value from blackboard (returns nil if not found, which is correct pabt semantics)
 	value := s.Blackboard.Get(keyStr)
+
+	if debugPABT {
+		debugOnce.Do(func() {
+			fmt.Fprintln(os.Stderr, "[PA-BT DEBUG] Debugging enabled via OSM_DEBUG_PABT=1")
+		})
+		fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] State.Variable called: key=%v keyStr=%s value=%v (%T)\n",
+			key, keyStr, value, value)
+	}
+
 	return value, nil
 }
 
@@ -87,12 +105,31 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 
 	failedKey := failed.Key()
 
+	if debugPABT {
+		debugOnce.Do(func() {
+			fmt.Fprintln(os.Stderr, "[PA-BT DEBUG] Debugging enabled via OSM_DEBUG_PABT=1")
+		})
+		fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] State.Actions called: failedKey=%v (%T), registeredActionCount=%d\n",
+			failedKey, failedKey, len(registeredActions))
+	}
+
 	// Filter actions to those with relevant effects
 	var relevantActions []pabtpkg.IAction
 	for _, action := range registeredActions {
 		if s.actionHasRelevantEffect(action, failedKey, failed) {
 			relevantActions = append(relevantActions, action)
 		}
+	}
+
+	if debugPABT {
+		actionNames := make([]string, 0, len(relevantActions))
+		for _, a := range relevantActions {
+			if named, ok := a.(*Action); ok {
+				actionNames = append(actionNames, named.Name)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] State.Actions result: failedKey=%v, relevantActionCount=%d, relevantActions=%v\n",
+			failedKey, len(relevantActions), actionNames)
 	}
 
 	return relevantActions, nil
@@ -110,8 +147,26 @@ func (s *State) actionHasRelevantEffect(action pabtpkg.IAction, failedKey any, f
 		if effect == nil {
 			continue
 		}
+		effectKey := effect.Key()
+		effectValue := effect.Value()
+
 		// Check if this effect's key matches the failed condition's key
-		if effect.Key() == failedKey && failed.Match(effect.Value()) {
+		keyMatch := effectKey == failedKey
+		var valueMatch bool
+		if keyMatch {
+			valueMatch = failed.Match(effectValue)
+		}
+
+		if debugPABT {
+			var actionName string
+			if named, ok := action.(*Action); ok {
+				actionName = named.Name
+			}
+			fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] Effect comparison: action=%s effectKey=%v (%T) failedKey=%v (%T) keyMatch=%v effectValue=%v valueMatch=%v\n",
+				actionName, effectKey, effectKey, failedKey, failedKey, keyMatch, effectValue, valueMatch)
+		}
+
+		if keyMatch && valueMatch {
 			return true
 		}
 	}

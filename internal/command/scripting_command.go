@@ -23,6 +23,8 @@ type ScriptingCommand struct {
 	testMode        bool
 	session         string
 	store           string
+	logPath         string
+	logBufferSize   int
 	config          *config.Config
 	engineFactory   func(context.Context, io.Writer, io.Writer) (*scripting.Engine, error)
 	terminalFactory func(context.Context, *scripting.Engine) terminalRunner
@@ -60,6 +62,8 @@ func (c *ScriptingCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.testMode, "test", false, "Enable test mode with verbose output")
 	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
 	fs.StringVar(&c.store, "store", "", "Storage backend to use: 'fs' (default) or 'memory' (overrides OSM_STORE)")
+	fs.StringVar(&c.logPath, "log-file", "", "Path to log file (JSON output)")
+	fs.IntVar(&c.logBufferSize, "log-buffer", 1000, "Size of in-memory log buffer")
 }
 
 // Execute runs the scripting command.
@@ -76,12 +80,23 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	}
 	defer cancel()
 
+	// Prepare logging configuration
+	var logFile io.Writer
+	if c.logPath != "" {
+		f, err := os.OpenFile(c.logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open log file %s: %w", c.logPath, err)
+		}
+		defer f.Close()
+		logFile = f
+	}
+
 	// Create scripting engine with explicit session configuration (no globals!)
 	engineFactory := c.engineFactory
 	if engineFactory == nil {
 		// Use the new API with explicit parameters to avoid data races
 		engineFactory = func(ctx context.Context, stdout, stderr io.Writer) (*scripting.Engine, error) {
-			return scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.store)
+			return scripting.NewEngineDetailed(ctx, stdout, stderr, c.session, c.store, logFile, c.logBufferSize)
 		}
 	}
 

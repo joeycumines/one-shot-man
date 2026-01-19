@@ -61,6 +61,13 @@ func NewEngine(ctx context.Context, stdout, stderr io.Writer) (*Engine, error) {
 // NewEngineWithConfig creates a new JavaScript scripting engine with explicit session configuration.
 // sessionID and store parameters override environment-based discovery and avoid data races.
 func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionID, store string) (*Engine, error) {
+	return NewEngineDetailed(ctx, stdout, stderr, sessionID, store, nil, 0)
+}
+
+// NewEngineDetailed creates a new JavaScript scripting engine with full configuration options.
+// logFile: optional writer for log output (JSON).
+// logBufferSize: size of the in-memory log buffer (default 1000 if <= 0).
+func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID, store string, logFile io.Writer, logBufferSize int) (*Engine, error) {
 	// Get current working directory for context manager
 	workingDir, err := os.Getwd()
 	if err != nil {
@@ -107,7 +114,7 @@ func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionI
 		stderr:         stderr,
 		globals:        make(map[string]interface{}),
 		contextManager: contextManager,
-		logger:         NewTUILogger(stdout, 1000),
+		logger:         NewTUILogger(stdout, logFile, logBufferSize),
 		terminalIO:     terminalIO,
 	}
 

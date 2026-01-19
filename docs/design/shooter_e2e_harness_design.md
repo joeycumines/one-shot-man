@@ -1,8 +1,8 @@
 # Shooter Game E2E Test Harness Design
 
-**Document Status:** DESIGN SPECIFICATION  
-**Target File:** `internal/command/shooter_game_unix_test.go`  
-**Date:** 2026-01-06  
+**Document Status:** DESIGN SPECIFICATION
+**Target File:** `internal/command/shooter_game_unix_test.go`
+**Date:** 2026-01-06
 
 ---
 
@@ -28,32 +28,32 @@ This document specifies a **sophisticated end-to-end test harness** for the term
 type TestShooterHarness struct {
     // Testing framework reference
     t          *testing.T
-    
+
     // Context for cancellation and timeouts
     ctx        context.Context
     cancel     context.CancelFunc
-    
+
     // PTY console for process interaction
     console    *termtest.Console
-    
+
     // Path to the osm test binary
     binaryPath string
-    
+
     // Path to the shooter game script
     scriptPath string
-    
+
     // Environment variables for isolated test execution
     env        []string
-    
+
     // Default timeout for Expect operations
     timeout    time.Duration
-    
+
     // Last captured debug state (cached from getDebugState)
     lastState  *ShooterDebugState
-    
+
     // Frame counter at last debug state capture
     lastFrame  int
-    
+
     // Screen dimensions (from terminal size)
     screenWidth  int
     screenHeight int
@@ -74,35 +74,35 @@ The game MUST expose a debug overlay mode (toggle via 'D' key) that outputs a JS
 type ShooterDebugState struct {
     // Current game mode: "menu", "playing", "paused", "gameOver", "victory"
     GameMode string `json:"gameMode"`
-    
+
     // Monotonically increasing frame counter (increments every tick)
     // This is the PRIMARY synchronization primitive for deterministic tests
     Tick int `json:"tick"`
-    
+
     // Current score
     Score int `json:"score"`
-    
+
     // Remaining player lives
     Lives int `json:"lives"`
-    
+
     // Current wave number (1-indexed)
     Wave int `json:"wave"`
-    
+
     // Total number of waves in the game
     TotalWaves int `json:"totalWaves"`
-    
+
     // Player entity state
     Player PlayerState `json:"player"`
-    
+
     // All active enemies
     Enemies []EnemyState `json:"enemies"`
-    
+
     // All active projectiles
     Projectiles []ProjectileState `json:"projectiles"`
-    
+
     // Wave progression state
     WaveState WaveStateInfo `json:"waveState"`
-    
+
     // Terminal dimensions
     ScreenWidth  int `json:"screenWidth"`
     ScreenHeight int `json:"screenHeight"`
@@ -570,17 +570,17 @@ func (h *TestShooterHarness) WaitForCondition(
         return err
     }
     startTick := initial.Tick
-    
+
     for {
         state, err := h.RefreshDebugState()
         if err != nil {
             return err
         }
-        
+
         if check(state) {
             return nil // Condition met
         }
-        
+
         if state.Tick > startTick + maxFrames {
             return fmt.Errorf("timeout after %d frames waiting for: %s", maxFrames, description)
         }
@@ -665,38 +665,38 @@ func (h *TestShooterHarness) getLine(lineNum int) (string, error)
 func TestShooterE2E_PlayerShoots(t *testing.T) {
     h := NewTestShooterHarness(t)
     defer h.Close()
-    
+
     // Launch and start game
     require.NoError(t, h.StartGame())
     require.NoError(t, h.PressStart())
     require.NoError(t, h.EnableDebugMode())
-    
+
     // Capture initial state
     state, err := h.GetDebugState()
     require.NoError(t, err)
     require.Equal(t, 0, len(state.Projectiles), "should start with no projectiles")
-    
+
     // Shoot
     require.NoError(t, h.ShootProjectile())
-    
+
     // Wait for projectile to appear
     projectile, err := h.WaitForNewProjectile()
     require.NoError(t, err)
     require.Equal(t, "player", projectile.Owner)
     require.Less(t, projectile.VY, 0.0, "projectile should move upward")
-    
+
     // Verify bullet character in visual buffer
     require.NoError(t, h.AssertBulletVisible("player"))
     require.NoError(t, h.ExpectPatternInBuffer("•"))
-    
+
     // Verify projectile moves over time
     initialY := projectile.Y
     require.NoError(t, h.WaitForFrames(10))
-    
+
     state, err = h.GetDebugState()
     require.NoError(t, err)
     require.Less(t, state.Projectiles[0].Y, initialY, "projectile should have moved up")
-    
+
     // Cleanup
     _, err = h.Quit()
     require.NoError(t, err)
@@ -762,9 +762,9 @@ function renderDebugJSON(state) {
         screenWidth: state.terminalSize.width,
         screenHeight: state.terminalSize.height
     };
-    
-    return '\n═══ DEBUG JSON ═══\n' + 
-           JSON.stringify(debugState) + 
+
+    return '\n═══ DEBUG JSON ═══\n' +
+           JSON.stringify(debugState) +
            '\n═══════════════════\n';
 }
 ```
@@ -805,11 +805,11 @@ internal/command/
 
 This design provides:
 
-✅ **Deterministic testing** via frame-counter synchronization  
-✅ **State visibility** via JSON debug overlay  
-✅ **Visual verification** via screen buffer assertions  
-✅ **Comprehensive coverage** of all game mechanics  
-✅ **Non-flaky execution** by avoiding time.Sleep  
-✅ **Clear separation** of harness, types, and tests  
+✅ **Deterministic testing** via frame-counter synchronization
+✅ **State visibility** via JSON debug overlay
+✅ **Visual verification** via screen buffer assertions
+✅ **Comprehensive coverage** of all game mechanics
+✅ **Non-flaky execution** by avoiding time.Sleep
+✅ **Clear separation** of harness, types, and tests
 
 The harness is designed to be robust, maintainable, and extensible for future game features.

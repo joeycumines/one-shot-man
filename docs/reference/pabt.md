@@ -23,7 +23,7 @@ const bb = new bt.Blackboard();
 const state = pabt.newState(bb);
 
 // 2. Register actions
-const moveAction = pabt.newAction('move', 
+const moveAction = pabt.newAction('move',
     [{key: 'atGoal', Match: v => v === false}],  // Preconditions
     [{key: 'atGoal', Value: true}],               // Effects
     bt.createLeafNode(() => { /* execute */ return bt.success; })
@@ -275,7 +275,7 @@ function syncToBlackboard(state) {
     const bb = state.blackboard;
     const actor = state.actors.get(1);
     const cube = state.cubes.get(1);
-    
+
     bb.set('actorX', actor.x);
     bb.set('actorY', actor.y);
     bb.set('heldItemExists', actor.heldItem !== null);

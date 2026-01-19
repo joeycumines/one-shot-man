@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,9 +35,11 @@ type PickAndPlaceDebugJSON struct {
 }
 
 // PickAndPlaceConfig holds configuration for pick-and-place tests
+// PickAndPlaceConfig holds configuration for pick-and-place tests
 type PickAndPlaceConfig struct {
-	ScriptPath string
-	TestMode   bool // If true, run in test mode (debug enabled)
+	ScriptPath  string
+	LogFilePath string // If non-empty, use this file for logs
+	TestMode    bool   // If true, run in test mode (debug enabled)
 }
 
 // PickAndPlaceHarness wraps termtest.Console with pick-and-place-specific helpers
@@ -47,6 +50,7 @@ type PickAndPlaceHarness struct {
 	console    *termtest.Console
 	binaryPath string
 	scriptPath string
+	logPath    string // Add this
 	env        []string
 	timeout    time.Duration
 
@@ -81,6 +85,7 @@ func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPla
 		cancel:     cancel,
 		binaryPath: binaryPath,
 		scriptPath: scriptPath,
+		logPath:    config.LogFilePath,
 		env:        env,
 		timeout:    timeout,
 	}
@@ -95,8 +100,14 @@ func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPla
 
 	// Start the console automatically with TestMode environment variable
 	testEnv := append(h.env, "OSM_TEST_MODE=1")
+	args := []string{"script"}
+	if h.logPath != "" {
+		args = append(args, "-log-file", h.logPath)
+	}
+	args = append(args, "-i", h.scriptPath)
+
 	h.console, err = termtest.NewConsole(h.ctx,
-		termtest.WithCommand(h.binaryPath, "script", "-i", h.scriptPath),
+		termtest.WithCommand(h.binaryPath, args...),
 		termtest.WithDefaultTimeout(h.timeout),
 		termtest.WithEnv(testEnv),
 		termtest.WithDir(projectDir), // Set project directory so script paths resolve correctly
@@ -108,20 +119,61 @@ func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPla
 
 	// Wait for simulator to appear - look for patterns actually in the TUI view
 	snap := h.console.Snapshot()
-	menuPatterns := []string{"PICK-AND-PLACE", "Mode:", "@", "█"}
-	for _, pattern := range menuPatterns {
-		if err := h.console.Expect(h.ctx, snap, termtest.Contains(pattern), "simulator start"); err == nil {
-			t.Logf("Simulator started, detected: %s", pattern)
-			// Wait a moment for TUI to stabilize after alternate screen entry
-			// The TUI needs time to render at least one frame to the alternate screen buffer
-			time.Sleep(500 * time.Millisecond)
-			return h, nil
+
+	// First wait for TUI to enter alternate screen mode and render
+	// The debug JSON markers only appear in the TUI alternate screen, not in console output
+	// This ensures we're seeing actual TUI output, not just the pre-startup console.log
+	debugPatterns := []string{"__place_debug_start__", `"m":"`, "__place_debug_end__"}
+	found := false
+	for _, pattern := range debugPatterns {
+		if err := h.console.Expect(h.ctx, snap, termtest.Contains(pattern), "debug overlay"); err == nil {
+			t.Logf("Simulator started, detected debug pattern: %s", pattern)
+			found = true
+			break
 		}
 	}
 
-	h.console.Close()
-	cancel()
-	return nil, fmt.Errorf("simulator did not show expected startup. Buffer:\n%s", h.console.String())
+	// Fallback to original patterns if debug overlay not found
+	if !found {
+		menuPatterns := []string{"PICK-AND-PLACE", "Mode:", "@", "█"}
+		for _, pattern := range menuPatterns {
+			if err := h.console.Expect(h.ctx, snap, termtest.Contains(pattern), "simulator start"); err == nil {
+				t.Logf("Simulator started, detected: %s", pattern)
+				// Wait a moment for TUI to stabilize after alternate screen entry
+				// The TUI needs time to render at least one frame to the alternate screen buffer
+				time.Sleep(200 * time.Millisecond)
+				found = true
+				break
+			}
+		}
+	}
+
+	if !found {
+		h.console.Close()
+		cancel()
+		return nil, fmt.Errorf("simulator did not show expected startup. Buffer:\n%s", h.console.String())
+	}
+
+	return h, nil
+}
+
+// VerifyLogContent checks if the log file contains the given substring.
+func (h *PickAndPlaceHarness) VerifyLogContent(substring string) error {
+	if h.logPath == "" {
+		return fmt.Errorf("log verification failed: no log file configured")
+	}
+
+	content, err := os.ReadFile(h.logPath)
+	if err != nil {
+		return fmt.Errorf("failed to read log file: %w", err)
+	}
+
+	logContent := string(content)
+	if !strings.Contains(logContent, substring) {
+		// return fmt.Errorf("log file missing expected content: %q\nFull content:\n%s", substring, logContent) // Be careful with large logs
+		return fmt.Errorf("log file missing expected content: %q", substring)
+	}
+	return nil
 }
 
 // BuildPickAndPlaceTestBinary builds the osm test binary for pick-and-place tests
@@ -183,33 +235,242 @@ func TestPickAndPlaceInitialState(t *testing.T) {
 	harness.WaitForFrames(3)
 
 	initialState := harness.GetInitialState()
-	t.Logf("Initial state: tick=%d, actor=(%.1f,%.1f), held=%d, mode=%s",
-		initialState.Tick, initialState.ActorX, initialState.ActorY, initialState.HeldItemID, initialState.Mode)
+	t.Logf("Initial state: tick=%d, actor=(%.1f,%.1f), held=%d, mode=%s, blockade=%d",
+		initialState.Tick, initialState.ActorX, initialState.ActorY, initialState.HeldItemID, initialState.Mode, initialState.BlockadeCount)
 
-	// In manual mode, actor should not have moved much from initial position (8, 12)
+	// In manual mode, actor should not have moved much from initial position (5, 12)
 	// Allow some tolerance for timing - actor might have moved 1-2 units before mode switch
-	if initialState.ActorX < 6 || initialState.ActorX > 12 ||
-		initialState.ActorY < 10 || initialState.ActorY > 14 {
-		t.Errorf("Actor position (%.1f, %.1f) is far from initial (8, 12)",
+	if initialState.ActorX < 2 || initialState.ActorX > 10 ||
+		initialState.ActorY < 7 || initialState.ActorY > 17 {
+		t.Errorf("Actor position (%.1f, %.1f) is far from initial (5, 12)",
 			initialState.ActorX, initialState.ActorY)
 	}
 
-	// Target cube (cube 1) should be at (45, 12) - behind the blockade
-	if initialState.TargetX == nil || *initialState.TargetX != 45 ||
+	// Target cube (cube 1) should be at (40, 12) - inside the inner ring
+	if initialState.TargetX == nil || *initialState.TargetX != 40 ||
 		initialState.TargetY == nil || *initialState.TargetY != 12 {
-		t.Errorf("Expected target cube at (45, 12), got (%v, %v)",
+		t.Errorf("Expected target cube at (40, 12), got (%v, %v)",
 			initialState.TargetX, initialState.TargetY)
 	}
 
-	// Blockade should have 7 cubes (IDs 2-8) initially
-	if initialState.BlockadeCount != 7 {
-		t.Errorf("Expected 7 blockade cubes, got %d", initialState.BlockadeCount)
+	// Blockade should have 18 cubes (Inner Ring) initially
+	if initialState.BlockadeCount != 18 {
+		t.Errorf("Expected 18 blockade cubes, got %d", initialState.BlockadeCount)
 	}
 
 	// We switched to manual mode to prevent actor from moving, so expect 'm'
 	if initialState.Mode != "m" {
 		t.Errorf("Expected mode 'm' (manual - we sent 'm' key), got '%s'", initialState.Mode)
 	}
+}
+
+// TestPickAndPlaceCompletion runs the simulation until the win condition is met
+// or the agent is detected as stuck.
+func TestPickAndPlaceCompletion(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping long-running completion test in short mode")
+	}
+
+	ctx := context.Background()
+	// Allow a generous timeout for the agent to figure it out (e.g. 5 minutes)
+	// Real time is faster, but test environment CPU can be slow.
+	ctx, cancel := context.WithTimeout(ctx, 300*time.Second)
+	defer cancel()
+
+	// Add log file for debugging
+	logFilePath := filepath.Join(t.TempDir(), "completion_test.log")
+
+	harness, err := NewPickAndPlaceHarness(ctx, t, PickAndPlaceConfig{
+		TestMode:    true,
+		LogFilePath: logFilePath,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create harness: %v", err)
+	}
+	defer func() {
+		// Dump log on failure or completion
+		if content, readErr := os.ReadFile(logFilePath); readErr == nil {
+			t.Logf("=== Simulation Log (last 5000 bytes) ===\n%s", truncateFromEnd(string(content), 5000))
+		}
+		harness.Close()
+	}()
+
+	// Initial wait
+	harness.WaitForFrames(5)
+
+	maxTicks := 6000 // Roughly 10 minutes at 10 ticks/sec if real-time, but accelerated in test logic
+	// In TUI, tick rate is fixed at ~60fps layout, but logic tick is 100ms (10Hz).
+	// We just poll the state.
+
+	// Stuck detection tracking
+	type stateSnapshot struct {
+		x, y float64
+		held int
+		tick int64
+	}
+	lastProgressTick := int64(0)
+	lastState := stateSnapshot{}
+
+	startTime := time.Now()
+
+	t.Log("Starting Pick-and-Place Completion Test...")
+
+	loopCount := 0
+
+	for {
+		loopCount++
+
+		// Check timeout
+		if ctx.Err() != nil {
+			t.Fatalf("Test timed out before completion")
+		}
+
+		// Get current state
+		state := harness.GetDebugState()
+
+		// Log progress every 10 loop iterations (not tick based, since we may skip ticks)
+		if loopCount%10 == 0 || loopCount <= 5 {
+			t.Logf("Loop %d: tick=%d pos=(%.1f,%.1f) held=%d win=%d blockade=%d",
+				loopCount, state.Tick, state.ActorX, state.ActorY, state.HeldItemID, state.WinCond, state.BlockadeCount)
+		}
+
+		// Detect if debug overlay is missing (state will have Tick=0 consistently)
+		// If we've been running for > 10 seconds and still getting zero tick, something's wrong
+		if state.Tick == 0 && time.Since(startTime) > 10*time.Second {
+			buffer := harness.GetScreenBuffer()
+			t.Logf("WARNING: Debug overlay not detected after 10s. Buffer snippet: %q",
+				buffer[max(0, len(buffer)-300):])
+		}
+
+		// 1. Check Win Condition
+		if state.WinCond == 1 {
+			t.Logf("SUCCESS: Win condition met at tick %d! (Time: %v)", state.Tick, time.Since(startTime))
+			return
+		}
+
+		// 2. Stuck Detection
+		// We consider "progress" to be ANY change in:
+		// - Position (> 0.5 units)
+		// - Held item
+		// If no progress for 300 ticks (~30 seconds), fail.
+		currentSnapshot := stateSnapshot{
+			x:    state.ActorX,
+			y:    state.ActorY,
+			held: state.HeldItemID,
+			tick: state.Tick,
+		}
+
+		dist := (currentSnapshot.x-lastState.x)*(currentSnapshot.x-lastState.x) +
+			(currentSnapshot.y-lastState.y)*(currentSnapshot.y-lastState.y)
+
+		positionChanged := dist > 0.25 // Moved > 0.5 units
+		heldChanged := currentSnapshot.held != lastState.held
+
+		if positionChanged || heldChanged {
+			// Progress made!
+			lastProgressTick = state.Tick
+			lastState = currentSnapshot
+		} else {
+			// No progress
+			if state.Tick-lastProgressTick > 300 {
+				t.Fatalf("FAILURE: Agent appears stuck! No movement or state change for %d ticks. Pos: (%.1f, %.1f), Held: %d",
+					state.Tick-lastProgressTick, state.ActorX, state.ActorY, state.HeldItemID)
+			}
+		}
+
+		// 3. Collision Check (Strict)
+		// Wall Definitions (must match script constants)
+		const (
+			OuterRingMinX = 15
+			OuterRingMaxX = 50
+			OuterRingMinY = 5
+			OuterRingMaxY = 20
+			GapLeftX      = 15 // Entry point on left wall
+			GapRightX     = 50 // Exit point on right wall
+			GapY          = 12 // Same y-level for both gaps
+		)
+
+		// Check if actor is colliding with walls
+		// We approximate collision as being within 0.5 distance of a wall integer coordinate
+		// Wall coordinates:
+		// Top: (OuterRingMinX..OuterRingMaxX, OuterRingMinY)
+		// Bottom: (OuterRingMinX..OuterRingMaxX, OuterRingMaxY)
+		// Left: (OuterRingMinX, OuterRingMinY..OuterRingMaxY) EXCEPT Gap
+		// Right: (OuterRingMaxX, OuterRingMinY..OuterRingMaxY) EXCEPT Gap
+
+		actorX := state.ActorX
+		actorY := state.ActorY
+		collision := false
+		wallDesc := ""
+
+		inLeftGap := func(x, y float64) bool {
+			return ctxAlmostEqual(x, float64(GapLeftX), 1.5) && ctxAlmostEqual(y, float64(GapY), 1.5)
+		}
+		inRightGap := func(x, y float64) bool {
+			return ctxAlmostEqual(x, float64(GapRightX), 1.5) && ctxAlmostEqual(y, float64(GapY), 1.5)
+		}
+
+		// Helper to check point against segment
+		checkSegment := func(x1, y1, x2, y2 float64, vertical bool) bool {
+			// Basic point-to-segment distance check
+			// Since walls are axis-aligned, simpler:
+			// If vertical, x must be close to x1, and y between y1 and y2
+			if vertical {
+				if math.Abs(actorX-x1) < 0.8 && actorY >= y1-0.5 && actorY <= y2+0.5 {
+					return true
+				}
+			} else {
+				if math.Abs(actorY-y1) < 0.8 && actorX >= x1-0.5 && actorX <= x2+0.5 {
+					return true
+				}
+			}
+			return false
+		}
+
+		// Check walls
+		// Top
+		if checkSegment(float64(OuterRingMinX), float64(OuterRingMinY), float64(OuterRingMaxX), float64(OuterRingMinY), false) {
+			collision = true
+			wallDesc = "Top Wall"
+		}
+		// Bottom
+		if checkSegment(float64(OuterRingMinX), float64(OuterRingMaxY), float64(OuterRingMaxX), float64(OuterRingMaxY), false) {
+			collision = true
+			wallDesc = "Bottom Wall"
+		}
+		// Left
+		if checkSegment(float64(OuterRingMinX), float64(OuterRingMinY), float64(OuterRingMinX), float64(OuterRingMaxY), true) {
+			if !inLeftGap(actorX, actorY) {
+				collision = true
+				wallDesc = "Left Wall"
+			}
+		}
+		// Right
+		if checkSegment(float64(OuterRingMaxX), float64(OuterRingMinY), float64(OuterRingMaxX), float64(OuterRingMaxY), true) {
+			if !inRightGap(actorX, actorY) {
+				collision = true
+				wallDesc = "Right Wall"
+			}
+		}
+
+		if collision {
+			t.Fatalf("FAILURE: Agent walked through wall! Pos: (%.1f, %.1f), Wall: %s", actorX, actorY, wallDesc)
+		}
+
+		// 4. Limit Check
+		if state.Tick > int64(maxTicks) {
+			t.Fatalf("FAILURE: Reached max ticks (%d) without winning.", maxTicks)
+		}
+
+		// Wait a bit before polling again meant to mimic human observation rate
+		// but also give the sim time to run.
+		// NOTE: harness.WaitForFrames checks the Tick counter, ensuring we don't busy-wait faster than sim.
+		harness.WaitForFrames(10) // Wait ~1 second of sim time (assuming 10hz logic)
+	}
+}
+
+func ctxAlmostEqual(a, b, epsilon float64) bool {
+	return math.Abs(a-b) < epsilon
 }
 
 // TestPickAndPlaceDebugJSONFormat verifies the debug JSON matches expected schema
@@ -465,13 +726,31 @@ func (h *PickAndPlaceHarness) WaitForFrames(frames int64) {
 	initialState := h.GetDebugState()
 	initialTick := initialState.Tick
 
+	// Wait for the TUI to render at least one frame with debug overlay
+	// Try up to 5 seconds for the debug overlay to appear
+	for time.Now().Before(deadline) {
+		buffer := h.GetScreenBuffer()
+		if strings.Contains(buffer, "__place_debug_start__") || strings.Contains(buffer, `"m":"`) {
+			h.t.Logf("WaitForFrames: debug overlay found, buffer len=%d", len(buffer))
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Now wait for frames to advance
+	retries := 0
 	for time.Now().Before(deadline) {
 		currentState := h.GetDebugState()
+		if retries%20 == 0 {
+			h.t.Logf("WaitForFrames: checking tick, current=%d, target=%d", currentState.Tick, initialTick+int64(frames))
+		}
+		retries++
 		if currentState.Tick >= initialTick+int64(frames) {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	h.t.Logf("WaitForFrames: timeout reached, last tick=%d", initialTick)
 }
 
 // GetDebugState returns the parsed debug state from the simulator
@@ -544,6 +823,16 @@ var pickPlaceRawJSONRegex = regexp.MustCompile(`\{"m":"[^"]+","t":\d+[^}]*\}`)
 // ansiRegex is defined in shooter_harness_test.go and shared across the package
 
 func (h *PickAndPlaceHarness) parseDebugJSON(buffer string) (*PickAndPlaceDebugJSON, error) {
+	// Check for debug JSON markers in full buffer first
+	hasMarkers := strings.Contains(buffer, "__place_debug_start__")
+
+	// OPTIMIZATION: Only process the last portion of the buffer
+	// The debug JSON is always at the end of the view() output
+	const maxLen = 50000 // Increased to 50KB
+	if len(buffer) > maxLen {
+		buffer = buffer[len(buffer)-maxLen:]
+	}
+
 	// Strip ANSI codes first to improve matching
 	cleanBuffer := ansiRegex.ReplaceAllString(buffer, "")
 
@@ -578,7 +867,11 @@ func (h *PickAndPlaceHarness) parseDebugJSON(buffer string) (*PickAndPlaceDebugJ
 
 	if jsonStr == "" {
 		// Return error for first parse, but this is normal for empty buffer
-		return nil, fmt.Errorf("debug JSON not found in buffer")
+		errMsg := "debug JSON not found in buffer"
+		if hasMarkers {
+			errMsg += " (markers found in full buffer but not in truncated portion)"
+		}
+		return nil, fmt.Errorf("%s", errMsg)
 	}
 
 	// Strip any remaining ANSI codes and whitespace
@@ -592,4 +885,46 @@ func (h *PickAndPlaceHarness) parseDebugJSON(buffer string) (*PickAndPlaceDebugJ
 	}
 
 	return &state, nil
+}
+
+func TestPickAndPlaceLogging(t *testing.T) {
+	// This test verifies that the pick-and-place script generates expected logs
+	t.Parallel()
+
+	// Only run in integration test environment
+	if os.Getenv("OSM_TEST_MODE") != "1" && testing.Short() {
+		t.Skip("Skipping pick-and-place logging test in short mode")
+	}
+
+	config := PickAndPlaceConfig{
+		TestMode:    true,
+		LogFilePath: filepath.Join(t.TempDir(), "sim.log"),
+	}
+
+	harness, err := NewPickAndPlaceHarness(context.Background(), t, config)
+	if err != nil {
+		t.Fatalf("Failed to create harness: %v", err)
+	}
+	defer harness.Close()
+
+	// Let it run for a bit to generate some logs (planner thinking, moves, etc.)
+	time.Sleep(2 * time.Second)
+
+	// Check for a few expected log patterns
+	// "Pick-and-Place simulation initialized" from the script startup
+	if err := harness.VerifyLogContent("Pick-and-Place simulation initialized"); err != nil {
+		// Try to read the file content to debug
+		content, _ := os.ReadFile(config.LogFilePath)
+		t.Logf("Log file content:\n%s", string(content))
+		t.Fatalf("Log verification failed: %v", err)
+	}
+}
+
+// truncateFromEnd returns the last n characters of s.
+// If s is shorter than n, returns the full string.
+func truncateFromEnd(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return "...[truncated]...\n" + s[len(s)-n:]
 }

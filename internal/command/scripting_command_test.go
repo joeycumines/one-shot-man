@@ -296,3 +296,41 @@ func TestScriptingCommand_Execute_InlineScriptFailure(t *testing.T) {
 		t.Fatalf("expected script failure, got %v", err)
 	}
 }
+
+func TestScriptingCommand_LogFile(t *testing.T) {
+	// NOT parallel: uses os.Chdir
+	cmd := NewScriptingCommand(config.NewConfig())
+	cmd.ctxFactory = testCtxFactory
+	cmd.testMode = true
+	cmd.store = "memory"
+	cmd.session = t.Name()
+
+	tmpDir := t.TempDir()
+	logPath := filepath.Join(tmpDir, "debug.log")
+	cmd.logPath = logPath
+
+	// Script that logs some info
+	cmd.script = `
+		log.info("test log entry", {foo: "bar"});
+	`
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute(nil, &stdout, &stderr); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	// Verify log file exists
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("failed to read log file: %v", err)
+	}
+
+	// Unmarshal JSON to verify content (or just string check)
+	logContent := string(content)
+	if !strings.Contains(logContent, `"msg":"test log entry"`) {
+		t.Errorf("log file missing message: %s", logContent)
+	}
+	if !strings.Contains(logContent, `"foo":"bar"`) {
+		t.Errorf("log file missing attributes: %s", logContent)
+	}
+}

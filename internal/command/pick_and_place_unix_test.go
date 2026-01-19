@@ -219,10 +219,11 @@ func TestPickAndPlaceE2E_DebugOverlay(t *testing.T) {
 	}
 
 	// In automatic mode, actor might have moved from initial position
-	// Allow tolerance for timing - actor starts at (10, 12)
-	if state.ActorX < 8 || state.ActorX > 14 ||
+	// Allow tolerance for timing - actor starts at (5, 12) - outside the outer ring
+	// The x-range 3-20 allows for some movement in auto mode
+	if state.ActorX < 3 || state.ActorX > 20 ||
 		state.ActorY < 10 || state.ActorY > 14 {
-		t.Errorf("Actor position (%.1f, %.1f) is far from initial (10, 12)",
+		t.Errorf("Actor position (%.1f, %.1f) is far from initial (5, 12)",
 			state.ActorX, state.ActorY)
 	}
 

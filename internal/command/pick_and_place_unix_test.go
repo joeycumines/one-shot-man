@@ -1002,22 +1002,22 @@ func TestPickAndPlaceE2E_UnexpectedCircumstances(t *testing.T) {
 	// Wait for initial render
 	h.WaitForFrames(3)
 
-	// Helper to safely get cube1 position (returns 0,0 if deleted)
-	getCube1Pos := func(state *PickAndPlaceDebugJSON) (float64, float64, bool) {
-		if state.Cube1X == nil || state.Cube1Y == nil {
+	// Helper to safely get target cube position (returns 0,0 if deleted)
+	getTargetPos := func(state *PickAndPlaceDebugJSON) (float64, float64, bool) {
+		if state.TargetX == nil || state.TargetY == nil {
 			return 0, 0, false
 		}
-		return *state.Cube1X, *state.Cube1Y, true
+		return *state.TargetX, *state.TargetY, true
 	}
 
 	// Get initial state
 	initialState := h.GetDebugState()
-	initialCube1X, initialCube1Y, cube1Exists := getCube1Pos(initialState)
-	if !cube1Exists {
-		t.Fatal("Cube 1 does not exist at start of test")
+	initialTargetX, initialTargetY, targetExists := getTargetPos(initialState)
+	if !targetExists {
+		t.Fatal("Target cube does not exist at start of test")
 	}
-	t.Logf("Initial state: actor=(%.1f,%.1f), cube1=(%.1f,%.1f)",
-		initialState.ActorX, initialState.ActorY, initialCube1X, initialCube1Y)
+	t.Logf("Initial state: actor=(%.1f,%.1f), target=(%.1f,%.1f)",
+		initialState.ActorX, initialState.ActorY, initialTargetX, initialTargetY)
 
 	// Switch to auto mode - PA-BT planner starts working
 	t.Log("Switching to auto mode for PA-BT planning...")
@@ -1049,15 +1049,15 @@ func TestPickAndPlaceE2E_UnexpectedCircumstances(t *testing.T) {
 		transitState = h.GetDebugState()
 	}
 
-	// Check if cube is still available (not already picked up)
-	_, _, cube1StillExists := getCube1Pos(transitState)
-	if !cube1StillExists {
-		t.Log("Note: Cube 1 was already picked up before we could move it")
+	// Check if target is still available (not already picked up)
+	_, _, targetStillExists := getTargetPos(transitState)
+	if !targetStillExists {
+		t.Log("Note: Target cube was already picked up before we could move it")
 		// Continue anyway - still valid to test goal achievement
 	}
 
-	// NOW inject the unexpected circumstance: move cube 1 to new position
-	t.Log(">>> INJECTING UNEXPECTED CIRCUMSTANCE: Moving cube 1 to new position! <<<")
+	// NOW inject the unexpected circumstance: move target cube to new position
+	t.Log(">>> INJECTING UNEXPECTED CIRCUMSTANCE: Moving target cube to new position! <<<")
 	if err := h.SendKey("x"); err != nil {
 		t.Fatalf("Failed to send 'x' to move cube: %v", err)
 	}
@@ -1065,20 +1065,20 @@ func TestPickAndPlaceE2E_UnexpectedCircumstances(t *testing.T) {
 
 	// Get state after cube move
 	stateAfterMove := h.GetDebugState()
-	newCube1X, newCube1Y, newCubeExists := getCube1Pos(stateAfterMove)
+	newTargetX, newTargetY, newTargetExists := getTargetPos(stateAfterMove)
 
 	// Verify cube actually moved (if it still exists)
 	cubeMoved := false
-	if newCubeExists && cube1StillExists {
-		cubeMoved = newCube1X != initialCube1X || newCube1Y != initialCube1Y
+	if newTargetExists && targetStillExists {
+		cubeMoved = newTargetX != initialTargetX || newTargetY != initialTargetY
 		if cubeMoved {
-			t.Logf("✓ Cube 1 moved from (%.1f,%.1f) to (%.1f,%.1f)",
-				initialCube1X, initialCube1Y, newCube1X, newCube1Y)
+			t.Logf("✓ Target moved from (%.1f,%.1f) to (%.1f,%.1f)",
+				initialTargetX, initialTargetY, newTargetX, newTargetY)
 		} else {
-			t.Logf("Note: Cube position unchanged after 'x' key")
+			t.Logf("Note: Target position unchanged after 'x' key")
 		}
-	} else if !newCubeExists {
-		t.Logf("Note: Cube 1 was deleted (picked up) - testing goal achievement instead")
+	} else if !newTargetExists {
+		t.Logf("Note: Target was deleted (picked up) - testing goal achievement instead")
 	}
 
 	// Monitor PA-BT replanning behavior
@@ -1107,23 +1107,23 @@ func TestPickAndPlaceE2E_UnexpectedCircumstances(t *testing.T) {
 			break
 		}
 
-		// Detect replanning: robot moving toward NEW cube position instead of old
-		if cubeMoved && newCubeExists && len(positions) >= 3 {
+		// Detect replanning: robot moving toward NEW target position instead of old
+		if cubeMoved && newTargetExists && len(positions) >= 3 {
 			// Calculate direction change
 			lastPos := positions[len(positions)-1]
 			prevPos := positions[len(positions)-2]
 
-			// Distance to new cube vs old cube
-			distToNew := distance(lastPos.x, lastPos.y, newCube1X, newCube1Y)
-			distToOld := distance(lastPos.x, lastPos.y, initialCube1X, initialCube1Y)
+			// Distance to new target vs old target
+			distToNew := distance(lastPos.x, lastPos.y, newTargetX, newTargetY)
+			distToOld := distance(lastPos.x, lastPos.y, initialTargetX, initialTargetY)
 
 			// If robot is getting closer to new position AND further from old, replanning worked
-			prevDistToNew := distance(prevPos.x, prevPos.y, newCube1X, newCube1Y)
-			if distToNew < prevDistToNew && distToOld > distance(prevPos.x, prevPos.y, initialCube1X, initialCube1Y) {
+			prevDistToNew := distance(prevPos.x, prevPos.y, newTargetX, newTargetY)
+			if distToNew < prevDistToNew && distToOld > distance(prevPos.x, prevPos.y, initialTargetX, initialTargetY) {
 				if !replanningDetected {
 					replanningDetected = true
-					t.Logf("✓ REPLANNING DETECTED: Robot adjusting toward new cube position")
-					t.Logf("  Dist to new cube: %.1f → %.1f (decreasing)", prevDistToNew, distToNew)
+					t.Logf("✓ REPLANNING DETECTED: Robot adjusting toward new target position")
+					t.Logf("  Dist to new target: %.1f → %.1f (decreasing)", prevDistToNew, distToNew)
 				}
 			}
 		}
@@ -1170,4 +1170,162 @@ func distance(x1, y1, x2, y2 float64) float64 {
 	dx := x2 - x1
 	dy := y2 - y1
 	return dx*dx + dy*dy // Using squared distance for comparison (faster)
+}
+
+// TestPickAndPlaceE2E_InfiniteLoopDetection detects if PA-BT gets stuck in an infinite loop
+// picking up and depositing the same blockade cube repeatedly.
+//
+// The loop bug manifests as:
+// 1. Pick blockade cube N from wall
+// 2. Deposit at drop zone (cube reappears at drop zone)
+// 3. Planner sees cube N exists, selects moveToBlockade_N
+// 4. Walk to drop zone (NOT the wall!)
+// 5. Pick up same cube again
+// 6. Deposit again → LOOP FOREVER
+//
+// This test MUST FAIL if the bug exists.
+func TestPickAndPlaceE2E_InfiniteLoopDetection(t *testing.T) {
+	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
+		ScriptPath: getPickAndPlaceScriptPath(t),
+		TestMode:   true,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create harness: %v", err)
+	}
+	defer h.Close()
+
+	h.WaitForFrames(3)
+
+	// Switch to auto mode for PA-BT planning
+	initialState := h.GetDebugState()
+	if initialState.Mode != "a" {
+		t.Log("Switching to auto mode...")
+		if err := h.SendKey("m"); err != nil {
+			t.Fatalf("Failed to send 'm': %v", err)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	t.Logf("Initial state: tick=%d, actor=(%.1f,%.1f), held=%d, blockadeCount=%d",
+		initialState.Tick, initialState.ActorX, initialState.ActorY,
+		initialState.HeldItemID, initialState.BlockadeCount)
+
+	// Track pick/deposit cycles to detect looping
+	type pickEvent struct {
+		tick   int64
+		cubeID int
+		actorX float64
+		actorY float64
+	}
+	pickEvents := make([]pickEvent, 0, 20)
+	depositEvents := make([]pickEvent, 0, 20)
+
+	// Monitor for 60 seconds - long enough to detect looping
+	monitorDuration := 60 * time.Second
+	pollInterval := 150 * time.Millisecond
+	startTime := time.Now()
+
+	var prevState *PickAndPlaceDebugJSON
+	for time.Since(startTime) < monitorDuration {
+		state := h.GetDebugState()
+
+		if prevState != nil {
+			// Detect pick event (held item changed from -1 to positive)
+			if prevState.HeldItemID == -1 && state.HeldItemID > 0 {
+				pickEvents = append(pickEvents, pickEvent{
+					tick:   state.Tick,
+					cubeID: state.HeldItemID,
+					actorX: state.ActorX,
+					actorY: state.ActorY,
+				})
+				t.Logf("PICK: tick=%d, cube=%d, actor=(%.1f,%.1f)",
+					state.Tick, state.HeldItemID, state.ActorX, state.ActorY)
+			}
+
+			// Detect deposit event (held item changed from positive to -1)
+			if prevState.HeldItemID > 0 && state.HeldItemID == -1 {
+				depositEvents = append(depositEvents, pickEvent{
+					tick:   state.Tick,
+					cubeID: prevState.HeldItemID,
+					actorX: state.ActorX,
+					actorY: state.ActorY,
+				})
+				t.Logf("DEPOSIT: tick=%d, cube=%d, actor=(%.1f,%.1f)",
+					state.Tick, prevState.HeldItemID, state.ActorX, state.ActorY)
+			}
+
+			// Win condition - exit early
+			if state.WinCond == 1 {
+				t.Log("✓ WIN CONDITION MET - no loop detected")
+				break
+			}
+		}
+
+		// Store for next iteration
+		stateCopy := *state
+		prevState = &stateCopy
+
+		time.Sleep(pollInterval)
+	}
+
+	// Analyze for infinite loop pattern:
+	// If the SAME cube ID is picked more than twice AND picked from similar positions,
+	// that's an infinite loop.
+	cubePickCounts := make(map[int]int)
+	cubePickPositions := make(map[int][]struct{ x, y float64 })
+	for _, pe := range pickEvents {
+		cubePickCounts[pe.cubeID]++
+		cubePickPositions[pe.cubeID] = append(cubePickPositions[pe.cubeID], struct{ x, y float64 }{pe.actorX, pe.actorY})
+	}
+
+	t.Logf("\n=== LOOP DETECTION ANALYSIS ===")
+	t.Logf("Total pick events: %d", len(pickEvents))
+	t.Logf("Total deposit events: %d", len(depositEvents))
+
+	loopDetected := false
+	for cubeID, count := range cubePickCounts {
+		t.Logf("Cube %d picked %d time(s)", cubeID, count)
+
+		// If same cube picked more than 2 times, check if positions are similar
+		// (indicating robot returning to same spot = loop)
+		if count > 2 && cubeID != 1 { // cubeID 1 is target, not blockade
+			positions := cubePickPositions[cubeID]
+			// Check if picks were from similar positions (within 5 units)
+			for i := 0; i < len(positions)-1; i++ {
+				for j := i + 1; j < len(positions); j++ {
+					dist := distance(positions[i].x, positions[i].y, positions[j].x, positions[j].y)
+					if dist < 25 { // 5*5 = 25 (squared distance)
+						t.Logf("  ⚠ Picks %d and %d at similar positions: (%.1f,%.1f) and (%.1f,%.1f)",
+							i+1, j+1, positions[i].x, positions[i].y, positions[j].x, positions[j].y)
+						loopDetected = true
+					}
+				}
+			}
+		}
+	}
+
+	// CRITICAL ASSERTION: If loop is detected, fail the test
+	if loopDetected {
+		t.Errorf("INFINITE LOOP DETECTED: Robot repeatedly picking and depositing same blockade cube")
+		t.Errorf("This indicates the atWall condition is not working properly")
+	} else if len(pickEvents) > 0 {
+		t.Log("✓ No infinite loop pattern detected")
+	} else {
+		t.Log("Note: No pick events observed - robot may not have reached blockade yet")
+	}
+
+	// Additional check: If blockade count never decreased, planning may be stuck
+	finalState := h.GetDebugState()
+	if finalState != nil && initialState.BlockadeCount > 0 && finalState.BlockadeCount == initialState.BlockadeCount {
+		if len(pickEvents) > 5 {
+			t.Errorf("STUCK LOOP: %d pick events but blockade count unchanged (%d → %d)",
+				len(pickEvents), initialState.BlockadeCount, finalState.BlockadeCount)
+		}
+	}
+
+	if err := h.Quit(); err != nil {
+		t.Logf("Warning: Failed to quit: %v", err)
+	}
+
+	t.Log("InfiniteLoopDetection test completed")
 }

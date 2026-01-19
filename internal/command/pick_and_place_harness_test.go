@@ -20,17 +20,17 @@ import (
 )
 
 // PickAndPlaceDebugJSON represents the compact debug JSON output by the pick-and-place simulator
+// Keys: m=mode, t=tick, x/y=actor pos, h=held, w=win, a/b=target pos, n=blockade count
 type PickAndPlaceDebugJSON struct {
-	Mode       string   `json:"m"`           // 'a' = automatic, 'm' = manual
-	Tick       int64    `json:"t"`           // Tick counter
-	ActorX     float64  `json:"x"`           // Actor X position (rounded)
-	ActorY     float64  `json:"y"`           // Actor Y position (rounded)
-	HeldItemID int      `json:"h"`           // Held cube ID (-1 if none)
-	WinCond    int      `json:"w"`           // Win condition met (0 = false, 1 = true)
-	Cube1X     *float64 `json:"a,omitempty"` // Cube 1 X (optional, only if not deleted)
-	Cube1Y     *float64 `json:"b,omitempty"` // Cube 1 Y (optional)
-	Cube2X     *float64 `json:"d,omitempty"` // Cube 2 X (optional, only if not deleted)
-	Cube2Y     *float64 `json:"e,omitempty"` // Cube 2 Y (optional)
+	Mode          string   `json:"m"`           // 'a' = automatic, 'm' = manual
+	Tick          int64    `json:"t"`           // Tick counter
+	ActorX        float64  `json:"x"`           // Actor X position (rounded)
+	ActorY        float64  `json:"y"`           // Actor Y position (rounded)
+	HeldItemID    int      `json:"h"`           // Held cube ID (-1 if none)
+	WinCond       int      `json:"w"`           // Win condition met (0 = false, 1 = true)
+	TargetX       *float64 `json:"a,omitempty"` // Target cube X (cube 1, optional if deleted)
+	TargetY       *float64 `json:"b,omitempty"` // Target cube Y (cube 1)
+	BlockadeCount int      `json:"n"`           // Number of blockade cubes still at wall (0-7)
 }
 
 // PickAndPlaceConfig holds configuration for pick-and-place tests
@@ -186,24 +186,24 @@ func TestPickAndPlaceInitialState(t *testing.T) {
 	t.Logf("Initial state: tick=%d, actor=(%.1f,%.1f), held=%d, mode=%s",
 		initialState.Tick, initialState.ActorX, initialState.ActorY, initialState.HeldItemID, initialState.Mode)
 
-	// In manual mode, actor should not have moved much from initial position (10, 12)
+	// In manual mode, actor should not have moved much from initial position (8, 12)
 	// Allow some tolerance for timing - actor might have moved 1-2 units before mode switch
-	if initialState.ActorX < 8 || initialState.ActorX > 14 ||
+	if initialState.ActorX < 6 || initialState.ActorX > 12 ||
 		initialState.ActorY < 10 || initialState.ActorY > 14 {
-		t.Errorf("Actor position (%.1f, %.1f) is far from initial (10, 12)",
+		t.Errorf("Actor position (%.1f, %.1f) is far from initial (8, 12)",
 			initialState.ActorX, initialState.ActorY)
 	}
 
-	// Cube 1 should be at (25, 10) and not deleted (check that it exists)
-	if initialState.Cube1X == nil || *initialState.Cube1X != 25 ||
-		initialState.Cube1Y == nil || *initialState.Cube1Y != 10 {
-		t.Error("Expected cube 1 at (25, 10)")
+	// Target cube (cube 1) should be at (45, 12) - behind the blockade
+	if initialState.TargetX == nil || *initialState.TargetX != 45 ||
+		initialState.TargetY == nil || *initialState.TargetY != 12 {
+		t.Errorf("Expected target cube at (45, 12), got (%v, %v)",
+			initialState.TargetX, initialState.TargetY)
 	}
 
-	// Cube 2 should be at (25, 15) and not deleted
-	if initialState.Cube2X == nil || *initialState.Cube2X != 25 ||
-		initialState.Cube2Y == nil || *initialState.Cube2Y != 15 {
-		t.Error("Expected cube 2 at (25, 15)")
+	// Blockade should have 7 cubes (IDs 2-8) initially
+	if initialState.BlockadeCount != 7 {
+		t.Errorf("Expected 7 blockade cubes, got %d", initialState.BlockadeCount)
 	}
 
 	// We switched to manual mode to prevent actor from moving, so expect 'm'

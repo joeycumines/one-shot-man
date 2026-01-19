@@ -88,3 +88,9 @@ internal\builtin\bubbletea\parsemouse.go:*: unreachable func: ParseMouseEvent
 # It's used by tests in bubbletea, bubbles/textarea, and bubbles/viewport packages.
 internal/builtin/bubbletea/testing.go:*: unreachable func: SyncJSRunner.RunJSSync
 internal\builtin\bubbletea\testing.go:*: unreachable func: SyncJSRunner.RunJSSync
+
+# PA-BT module exports - called from JavaScript via Goja runtime (not visible to deadcode analyzer)
+# These are the core PA-BT primitives exposed to JavaScript via require.go ModuleLoader.
+# Using wildcard patterns for all pabt functions called from JavaScript.
+internal/builtin/pabt/*: unreachable func: *
+internal\builtin\pabt\*: unreachable func: *

@@ -32,24 +32,77 @@ try {
 // Simulation State
 // ============================================================================
 
+    // =========================================================================
+    // BLOCKADE SCENARIO DESIGN
+    // =========================================================================
+    // The actor must navigate through a complex obstacle course:
+    //
+    // Layout (not to scale):
+    //   
+    //   GOAL2 (5,4)    [Drop zone for cleared cubes - top]
+    //        
+    //   ACTOR (8,12)   |  BLOCKADE WALL  |   TARGET (45,12)   GOAL1 (55,12)
+    //        @         |  ████████████   |        ◆              ○
+    //                  |  x=25, y=6-18   |
+    //                  |  (7 cubes)      |
+    //                               
+    //   GOAL3 (5,20)   [Drop zone for cleared cubes - bottom]
+    //
+    // The blockade is a VERTICAL WALL of 7 cubes (IDs 2-8) at x=25.
+    // The actor CANNOT reach the target cube without removing blockade cubes.
+    // Each blockade cube must be picked up and deposited at goal 2 or 3.
+    // Only after clearing a gap can the actor reach the target (cube 1).
+    // Finally, the target must be delivered to goal 1.
+    //
+    // This demonstrates COMPLEX MULTI-STEP PLANNING:
+    // 1. Planner recognizes target is unreachable (blockade intact)
+    // 2. Planner generates sub-goals: clear blockade cubes
+    // 3. For each blockade cube: move → pick → deposit at drop zone
+    // 4. Once gap exists: move to target → pick → deliver to goal 1
+    // =========================================================================
+
+    // Blockade cube IDs: 2, 3, 4, 5, 6, 7, 8 (7 cubes total)
+    const BLOCKADE_CUBE_IDS = [2, 3, 4, 5, 6, 7, 8];
+    const BLOCKADE_X = 25;
+    const BLOCKADE_Y_START = 6;
+    const BLOCKADE_Y_SPACING = 2;
+
     function initializeSimulation() {
+        // Create blockade cubes
+        const cubesInit = [
+            // Cube 1 (TARGET): Behind the blockade - the cube we must deliver
+            [1, {id: 1, x: 45, y: 12, deleted: false, isTarget: true}]
+        ];
+
+        // Add blockade cubes (vertical wall at x=25)
+        for (let i = 0; i < BLOCKADE_CUBE_IDS.length; i++) {
+            const id = BLOCKADE_CUBE_IDS[i];
+            const y = BLOCKADE_Y_START + (i * BLOCKADE_Y_SPACING);
+            cubesInit.push([id, {id: id, x: BLOCKADE_X, y: y, deleted: false, isBlockade: true}]);
+        }
+
         return {
             // Simulation bounds
             width: 80,
             height: 24,
-            spaceWidth: 56,
+            spaceWidth: 60,
 
             // All entities in JavaScript Maps
             actors: new Map([
-                [1, {id: 1, x: 10, y: 12, heldItem: null}]
+                [1, {id: 1, x: 8, y: 12, heldItem: null}]
             ]),
-            cubes: new Map([
-                [1, {id: 1, x: 25, y: 10, deleted: false}],
-                [2, {id: 2, x: 25, y: 15, deleted: false}]
-            ]),
+            cubes: new Map(cubesInit),
             goals: new Map([
-                [1, {id: 1, x: 55, y: 12}]
+                // Goal 1: Final destination for TARGET cube (cube 1)
+                [1, {id: 1, x: 55, y: 12, forTarget: true}],
+                // Goal 2: Drop zone for blockade cubes (top)
+                [2, {id: 2, x: 5, y: 4, forBlockade: true}],
+                // Goal 3: Drop zone for blockade cubes (bottom)
+                [3, {id: 3, x: 5, y: 20, forBlockade: true}]
             ]),
+
+            // Track which drop zone to use next (alternates between goal 2 and 3)
+            nextDropZone: 2,
 
             // PA-BT state
             blackboard: null,
@@ -89,6 +142,7 @@ try {
         bb.set('actorX', actor.x);
         bb.set('actorY', actor.y);
         bb.set('heldItemExists', actor.heldItem !== null);
+        bb.set('heldItemId', actor.heldItem ? actor.heldItem.id : -1);
 
         // Sync cube state
         state.cubes.forEach((cube, id) => {
@@ -102,9 +156,78 @@ try {
                 const dy = cube.y - actor.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 bb.set('cube_' + id + '_distance', dist);
-                bb.set('cube_' + id + '_inRange', dist < 1.5);
+                bb.set('cube_' + id + '_inRange', dist < 2.0);
+            } else {
+                // Deleted cubes have infinite distance
+                bb.set('cube_' + id + '_distance', Infinity);
+                bb.set('cube_' + id + '_inRange', false);
             }
         });
+
+        // =========================================================================
+        // BLOCKADE STATE CALCULATION
+        // =========================================================================
+        // The blockade is BLOCKING if ANY blockade cube still exists at the wall
+        // position (x=25, within the Y range that blocks horizontal movement).
+        //
+        // For the actor to reach the target (behind the wall), there must be a
+        // GAP in the blockade at a Y position the actor can pass through.
+        // =========================================================================
+
+        // Check which blockade cubes are still in blocking position
+        let blockadeCubesAtWall = 0;
+        let closestGapY = null;
+        const actorY = actor.y;
+
+        // Track Y positions that are blocked
+        const blockedYPositions = new Set();
+        BLOCKADE_CUBE_IDS.forEach(id => {
+            const cube = state.cubes.get(id);
+            if (cube && !cube.deleted) {
+                // Cube is "at wall" if it's near the blockade X position
+                if (Math.abs(cube.x - BLOCKADE_X) < 3) {
+                    blockadeCubesAtWall++;
+                    // This Y band is blocked (cube blocks ±1 Y units around it)
+                    for (let dy = -1; dy <= 1; dy++) {
+                        blockedYPositions.add(Math.round(cube.y + dy));
+                    }
+                    // Track that this cube is at the wall (for planner conditions)
+                    bb.set('cube_' + id + '_atWall', true);
+                } else {
+                    // Cube exists but is NOT at the wall (e.g., deposited at drop zone)
+                    bb.set('cube_' + id + '_atWall', false);
+                }
+            } else {
+                // Cube is deleted/held - not at wall
+                bb.set('cube_' + id + '_atWall', false);
+            }
+        });
+
+        // Check if there's a gap the actor can pass through
+        // Actor needs a clear Y position near their current Y
+        let canPassBlockade = false;
+        for (let testY = Math.max(1, actorY - 3); testY <= Math.min(22, actorY + 3); testY++) {
+            if (!blockedYPositions.has(testY)) {
+                canPassBlockade = true;
+                closestGapY = testY;
+                break;
+            }
+        }
+
+        // Also check if actor is already past the blockade
+        if (actor.x > BLOCKADE_X + 2) {
+            canPassBlockade = true;
+        }
+
+        bb.set('blockadeCubesAtWall', blockadeCubesAtWall);
+        bb.set('blockadeCleared', blockadeCubesAtWall === 0);
+        bb.set('canPassBlockade', canPassBlockade);
+        bb.set('gapY', closestGapY);
+
+        // Can reach target if blockade has a passable gap or is cleared
+        const targetCube = state.cubes.get(1);
+        const targetReachable = canPassBlockade && targetCube && !targetCube.deleted;
+        bb.set('targetReachable', targetReachable);
 
         // Sync goal state
         state.goals.forEach((goal, id) => {
@@ -116,9 +239,10 @@ try {
             const dy = goal.y - actor.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             bb.set('goal_' + id + '_distance', dist);
+            bb.set('goal_' + id + '_inRange', dist < 2.0);
         });
 
-        // Track if any cube has been delivered to goal
+        // Track if target cube has been delivered to goal 1
         bb.set('cubeDeliveredAtGoal', state.winConditionMet);
     }
 
@@ -127,16 +251,257 @@ try {
 // ============================================================================
 
     function setupPABTActions(state) {
-        const bb = state.blackboard;
+        // =========================================================================
+        // BLOCKADE CLEARING ACTIONS
+        // =========================================================================
+        // For each blockade cube (IDs 2-8), we need:
+        // 1. Move to blockade cube N
+        // 2. Pick up blockade cube N
+        // 3. Deposit at drop zone (goal 2 or 3)
+        //
+        // The planner will select the appropriate cube to clear based on
+        // which one is closest or most accessible.
+        // =========================================================================
 
-        // Action 1: Move to cube 1
-        const moveToCube1Action = pabt.newAction(
-            'moveToCube1',
+        // Create actions for each blockade cube
+        BLOCKADE_CUBE_IDS.forEach(function(cubeId) {
+            const cubeKey = 'cube_' + cubeId;
+
+            // Action: Move to blockade cube N
+            // CRITICAL: Only targets cubes ACTUALLY AT THE WALL (not deposited at drop zones)
+            const moveToBlockadeCubeAction = pabt.newAction(
+                'moveToBlockade_' + cubeId,
+                [
+                    {
+                        key: cubeKey + '_deleted',
+                        Match: function (value) {
+                            return value === false; // Cube exists
+                        }
+                    },
+                    {
+                        // *** FIX: Only target cubes AT THE BLOCKADE WALL ***
+                        // Cubes deposited at drop zones have atWall=false
+                        key: cubeKey + '_atWall',
+                        Match: function (value) {
+                            return value === true; // Must be at the blockade wall
+                        }
+                    },
+                    {
+                        key: 'heldItemExists',
+                        Match: function (value) {
+                            return value === false; // Not holding anything
+                        }
+                    }
+                ],
+                [ // Effects
+                    {key: cubeKey + '_inRange', Value: true}
+                ],
+                bt.createLeafNode(function () {
+                    const actor = state.actors.get(state.activeActorId);
+                    const cube = state.cubes.get(cubeId);
+
+                    if (!cube || cube.deleted) return bt.failure;
+
+                    const dx = cube.x - actor.x;
+                    const dy = cube.y - actor.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist > 1.8) {
+                        actor.x += Math.sign(dx) * Math.min(1.5, Math.abs(dx));
+                        actor.y += Math.sign(dy) * Math.min(1.5, Math.abs(dy));
+                        return bt.running;
+                    }
+
+                    return bt.success;
+                })
+            );
+
+            // Action: Pick up blockade cube N
+            // CRITICAL: Only pick cubes AT THE WALL (prevents re-picking deposited cubes)
+            const pickBlockadeCubeAction = pabt.newAction(
+                'pickBlockade_' + cubeId,
+                [
+                    {
+                        key: cubeKey + '_deleted',
+                        Match: function (value) {
+                            return value === false; // Cube exists
+                        }
+                    },
+                    {
+                        // *** FIX: Only target cubes AT THE BLOCKADE WALL ***
+                        key: cubeKey + '_atWall',
+                        Match: function (value) {
+                            return value === true; // Must be at the blockade wall
+                        }
+                    },
+                    {
+                        key: 'heldItemExists',
+                        Match: function (value) {
+                            return value === false; // Not holding anything
+                        }
+                    },
+                    {
+                        key: cubeKey + '_inRange',
+                        Match: function (value) {
+                            return value === true; // In range
+                        }
+                    }
+                ],
+                [ // Effects: Cube removed from blockade, actor holding it
+                    {key: cubeKey + '_deleted', Value: true},
+                    {key: cubeKey + '_atWall', Value: false}, // No longer at wall
+                    {key: 'heldItemExists', Value: true},
+                    {key: 'heldItemId', Value: cubeId},
+                    // Picking up a blockade cube MAY clear the blockade
+                    {key: 'canPassBlockade', Value: true}
+                ],
+                bt.createLeafNode(function () {
+                    const actor = state.actors.get(state.activeActorId);
+                    const cube = state.cubes.get(cubeId);
+
+                    if (!cube || cube.deleted || !actor) return bt.failure;
+
+                    cube.deleted = true;
+                    actor.heldItem = {id: cubeId, originalX: cube.x, originalY: cube.y};
+
+                    return bt.success;
+                })
+            );
+
+            // Register blockade cube actions
+            state.pabtState.RegisterAction('moveToBlockade_' + cubeId, moveToBlockadeCubeAction);
+            state.pabtState.RegisterAction('pickBlockade_' + cubeId, pickBlockadeCubeAction);
+        });
+
+        // =========================================================================
+        // DROP ZONE ACTIONS
+        // =========================================================================
+        // When holding a blockade cube, deposit it at a drop zone (goal 2 or 3)
+        // =========================================================================
+
+        // Action: Deposit blockade cube at drop zone (goal 2)
+        const depositAtDropZone2Action = pabt.newAction(
+            'depositAtDropZone2',
+            [
+                {
+                    key: 'heldItemExists',
+                    Match: function (value) {
+                        return value === true; // Must be holding something
+                    }
+                },
+                {
+                    // Must NOT be holding the target cube (cube 1)
+                    key: 'heldItemId',
+                    Match: function (value) {
+                        return value !== 1; // Not holding target cube
+                    }
+                }
+            ],
+            [ // Effects: Hands free, blockade cube deposited
+                {key: 'heldItemExists', Value: false},
+                {key: 'heldItemId', Value: -1}
+            ],
+            bt.createLeafNode(function () {
+                const actor = state.actors.get(state.activeActorId);
+                const dropZone = state.goals.get(2);
+
+                if (!dropZone || !actor || !actor.heldItem) return bt.failure;
+                if (actor.heldItem.id === 1) return bt.failure; // Don't deposit target cube here
+
+                const dx = dropZone.x - actor.x;
+                const dy = dropZone.y - actor.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist > 1.8) {
+                    actor.x += Math.sign(dx) * Math.min(1.5, Math.abs(dx));
+                    actor.y += Math.sign(dy) * Math.min(1.5, Math.abs(dy));
+                    return bt.running;
+                }
+
+                // Drop the cube at drop zone
+                const heldId = actor.heldItem.id;
+                const cube = state.cubes.get(heldId);
+                if (cube) {
+                    cube.deleted = false;
+                    cube.x = dropZone.x + (Math.random() * 2 - 1); // Slight offset
+                    cube.y = dropZone.y + (Math.random() * 2 - 1);
+                }
+                actor.heldItem = null;
+                return bt.success;
+            })
+        );
+
+        // Action: Deposit blockade cube at drop zone (goal 3)
+        const depositAtDropZone3Action = pabt.newAction(
+            'depositAtDropZone3',
+            [
+                {
+                    key: 'heldItemExists',
+                    Match: function (value) {
+                        return value === true; // Must be holding something
+                    }
+                },
+                {
+                    // Must NOT be holding the target cube (cube 1)
+                    key: 'heldItemId',
+                    Match: function (value) {
+                        return value !== 1; // Not holding target cube
+                    }
+                }
+            ],
+            [ // Effects: Hands free, blockade cube deposited
+                {key: 'heldItemExists', Value: false},
+                {key: 'heldItemId', Value: -1}
+            ],
+            bt.createLeafNode(function () {
+                const actor = state.actors.get(state.activeActorId);
+                const dropZone = state.goals.get(3);
+
+                if (!dropZone || !actor || !actor.heldItem) return bt.failure;
+                if (actor.heldItem.id === 1) return bt.failure; // Don't deposit target cube here
+
+                const dx = dropZone.x - actor.x;
+                const dy = dropZone.y - actor.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist > 1.8) {
+                    actor.x += Math.sign(dx) * Math.min(1.5, Math.abs(dx));
+                    actor.y += Math.sign(dy) * Math.min(1.5, Math.abs(dy));
+                    return bt.running;
+                }
+
+                // Drop the cube at drop zone
+                const heldId = actor.heldItem.id;
+                const cube = state.cubes.get(heldId);
+                if (cube) {
+                    cube.deleted = false;
+                    cube.x = dropZone.x + (Math.random() * 2 - 1); // Slight offset
+                    cube.y = dropZone.y + (Math.random() * 2 - 1);
+                }
+                actor.heldItem = null;
+                return bt.success;
+            })
+        );
+
+        state.pabtState.RegisterAction('depositAtDropZone2', depositAtDropZone2Action);
+        state.pabtState.RegisterAction('depositAtDropZone3', depositAtDropZone3Action);
+
+        // =========================================================================
+        // TARGET CUBE ACTIONS (main objective)
+        // =========================================================================
+        // These actions are for the TARGET cube (cube 1), which must be
+        // delivered to goal 1 to win.
+        // CRITICAL: Target can only be reached when blockade is passable.
+        // =========================================================================
+
+        // Action: Move to target cube (cube 1)
+        const moveToTargetAction = pabt.newAction(
+            'moveToTarget',
             [
                 {
                     key: 'cube_1_deleted',
                     Match: function (value) {
-                        return value === false; // Cube exists
+                        return value === false; // Target exists
                     }
                 },
                 {
@@ -144,39 +509,47 @@ try {
                     Match: function (value) {
                         return value === false; // Not holding anything
                     }
+                },
+                {
+                    // *** CRITICAL BLOCKADE CONDITION ***
+                    key: 'canPassBlockade',
+                    Match: function (value) {
+                        return value === true; // Must have path through blockade
+                    }
                 }
             ],
             [ // Effects
-                {key: 'cube_1_inRange', Value: true} // Will be in range after moving
+                {key: 'cube_1_inRange', Value: true},
+                {key: 'targetReachable', Value: true}
             ],
             bt.createLeafNode(function () {
                 const actor = state.actors.get(state.activeActorId);
-                const cube = state.cubes.get(1);
+                const target = state.cubes.get(1);
 
-                if (!cube || cube.deleted) return bt.failure;
+                if (!target || target.deleted) return bt.failure;
 
-                // Move towards cube
-                const dx = cube.x - actor.x;
-                const dy = cube.y - actor.y;
+                const dx = target.x - actor.x;
+                const dy = target.y - actor.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
 
-                if (dist > 0.1) {
-                    actor.x += Math.sign(dx) * Math.min(1, dist);
-                    actor.y += Math.sign(dy) * Math.min(1, dist);
+                if (dist > 1.8) {
+                    actor.x += Math.sign(dx) * Math.min(1.5, Math.abs(dx));
+                    actor.y += Math.sign(dy) * Math.min(1.5, Math.abs(dy));
+                    return bt.running;
                 }
 
-                return bt.running;
+                return bt.success;
             })
         );
 
-        // Action 2: Pick up cube 1
-        const pickCube1Action = pabt.newAction(
-            'pickCube1',
+        // Action: Pick up target cube (cube 1)
+        const pickTargetAction = pabt.newAction(
+            'pickTarget',
             [
                 {
                     key: 'cube_1_deleted',
                     Match: function (value) {
-                        return value === false; // Cube exists
+                        return value === false; // Target exists
                     }
                 },
                 {
@@ -193,71 +566,71 @@ try {
                 }
             ],
             [ // Effects
-                {key: 'cube_1_deleted', Value: true}, // Cube deleted
-                {key: 'heldItemExists', Value: true}  // Now holding something
+                {key: 'cube_1_deleted', Value: true},
+                {key: 'heldItemExists', Value: true},
+                {key: 'heldItemId', Value: 1}
             ],
             bt.createLeafNode(function () {
                 const actor = state.actors.get(state.activeActorId);
-                const cube = state.cubes.get(1);
+                const target = state.cubes.get(1);
 
-                if (!cube || cube.deleted || !actor) return bt.failure;
+                if (!target || target.deleted || !actor) return bt.failure;
 
-                // Pick up cube
-                cube.deleted = true;
-                actor.heldItem = {id: 1, originalX: cube.x, originalY: cube.y};
+                target.deleted = true;
+                actor.heldItem = {id: 1, originalX: target.x, originalY: target.y};
 
                 return bt.success;
             })
         );
 
-        // Action 3: Move to goal 1
-        const moveToGoal1Action = pabt.newAction(
-            'moveToGoal1',
+        // Action: Deliver target to goal 1 (WIN!)
+        const deliverToGoalAction = pabt.newAction(
+            'deliverToGoal',
             [
                 {
                     key: 'heldItemExists',
                     Match: function (value) {
-                        return value === true; // Holding something
+                        return value === true; // Must be holding something
+                    }
+                },
+                {
+                    key: 'heldItemId',
+                    Match: function (value) {
+                        return value === 1; // Must be holding target cube
                     }
                 }
             ],
             [ // Effects
-                {key: 'cubeDeliveredAtGoal', Value: true} // Goal achieved when at goal
+                {key: 'cubeDeliveredAtGoal', Value: true} // WIN!
             ],
             bt.createLeafNode(function () {
                 const actor = state.actors.get(state.activeActorId);
                 const goal = state.goals.get(1);
 
-                if (!goal || !actor) return bt.failure;
+                if (!goal || !actor || !actor.heldItem) return bt.failure;
+                if (actor.heldItem.id !== 1) return bt.failure; // Must be target cube
 
-                // Move towards goal
                 const dx = goal.x - actor.x;
                 const dy = goal.y - actor.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
 
-                if (dist > 0.1) {
-                    actor.x += Math.sign(dx) * Math.min(1, dist);
-                    actor.y += Math.sign(dy) * Math.min(1, dist);
+                if (dist > 1.8) {
+                    actor.x += Math.sign(dx) * Math.min(1.5, Math.abs(dx));
+                    actor.y += Math.sign(dy) * Math.min(1.5, Math.abs(dy));
+                    return bt.running;
                 }
 
-                // Check if at goal (within 1.5 units)
-                const goalDist = Math.sqrt(Math.pow(goal.x - actor.x, 2) + Math.pow(goal.y - actor.y, 2));
-                if (goalDist < 1.5) {
-                    // Drop cube at goal location
-                    actor.heldItem = null;
-                    state.winConditionMet = true;
-                }
-
-                return bt.running;
+                // At goal - drop target cube and WIN!
+                actor.heldItem = null;
+                state.winConditionMet = true;
+                return bt.success;
             })
         );
 
-        // Register all actions with the PA-BT State
-        // CRITICAL: Actions MUST be explicitly registered for PA-BT planner to use them
-        // RegisterAction takes (name, action) - name is used for debugging/logging
-        state.pabtState.RegisterAction('moveToCube1', moveToCube1Action);
-        state.pabtState.RegisterAction('pickCube1', pickCube1Action);
-        state.pabtState.RegisterAction('moveToGoal1', moveToGoal1Action);
+        // Register target cube actions
+        state.pabtState.RegisterAction('moveToTarget', moveToTargetAction);
+        state.pabtState.RegisterAction('pickTarget', pickTargetAction);
+        state.pabtState.RegisterAction('deliverToGoal', deliverToGoalAction);
     }
 
 // ============================================================================
@@ -296,19 +669,22 @@ try {
     function getDebugOverlayJSON(state) {
         const actor = state.actors.get(state.activeActorId);
 
-        // Build cube positions (only non-deleted cubes)
-        let cub1X = -1, cub1Y = -1, cub2X = -1, cub2Y = -1;
+        // Target cube (cube 1) position
         const cube1 = state.cubes.get(1);
-        const cube2 = state.cubes.get(2);
-
+        let tgtX = -1, tgtY = -1;
         if (cube1 && !cube1.deleted) {
-            cub1X = Math.round(cube1.x);
-            cub1Y = Math.round(cube1.y);
+            tgtX = Math.round(cube1.x);
+            tgtY = Math.round(cube1.y);
         }
-        if (cube2 && !cube2.deleted) {
-            cub2X = Math.round(cube2.x);
-            cub2Y = Math.round(cube2.y);
-        }
+
+        // Count blockade cubes still at wall position
+        let blkCount = 0;
+        BLOCKADE_CUBE_IDS.forEach(function(id) {
+            const cube = state.cubes.get(id);
+            if (cube && !cube.deleted && Math.abs(cube.x - BLOCKADE_X) < 3) {
+                blkCount++;
+            }
+        });
 
         // Held cube ID
         const held = actor.heldItem ? actor.heldItem.id : -1;
@@ -317,7 +693,7 @@ try {
         const win = state.winConditionMet ? 1 : 0;
 
         // ULTRA-compact: Use single-char keys
-        // ~75 chars: {"m":"a","t":123,"x":10,"y":12,"h":1,"w":0,"a":25,"b":10,"d":25,"e":15}
+        // Keys: m=mode, t=tick, x/y=actor pos, h=held, w=win, a/b=target pos, n=blockade count
         return JSON.stringify({
             m: state.gameMode === 'automatic' ? 'a' : 'm',
             t: state.tickCount,
@@ -325,10 +701,9 @@ try {
             y: Math.round(actor.y),
             h: held,
             w: win,
-            a: cub1X > -1 ? cub1X : undefined,
-            b: cub1Y > -1 ? cub1Y : undefined,
-            d: cub2X > -1 ? cub2X : undefined,
-            e: cub2Y > -1 ? cub2Y : undefined
+            a: tgtX > -1 ? tgtX : undefined,
+            b: tgtY > -1 ? tgtY : undefined,
+            n: blkCount // Number of blockade cubes still at wall
         });
     }
 

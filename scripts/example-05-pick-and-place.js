@@ -3,6 +3,7 @@
 // ============================================================================
 // example-05-pick-and-place.js
 // Pick-and-Place Simulator demonstrating osm:pabt PA-BT planning integration
+// with TRUE PARAMETRIC ACTIONS via ActionGenerator
 // ============================================================================
 
 // Top-level error handler - ensures ANY uncaught error triggers non-zero exit
@@ -35,168 +36,157 @@ try {
     }
 
     // ============================================================================
-    // Simulation State
+    // SCENARIO CONFIGURATION
+    // ============================================================================
+    //
+    // Layout:
+    //   +-----------------------------------------------------------+
+    //   |                                                           |
+    //   |   @ (Actor starts here)                                   |
+    //   |                                                           |
+    //   |         +-------------------------------+                 |
+    //   |         |                               |                 |
+    //   |    +--->|  ■ ■ (blockade)   □ (target)  |                 |
+    //   |    |    |                               |                 |
+    //   |    |    +-------------------------------+                 |
+    //   |  GOAL                                                     |
+    //   |   ○ (deliver target here)                                 |
+    //   |                                                           |
+    //   +-----------------------------------------------------------+
+    //
+    // The actor must:
+    // 1. Enter the room through the left gap
+    // 2. Clear blockade cubes (pick and dispose outside)
+    // 3. Pick the target cube
+    // 4. Exit the room
+    // 5. Deliver target to goal
+    //
+    // TRUE PARAMETRIC ACTIONS:
+    // - MoveTo(entityId) - Generated dynamically based on failed condition
+    // - Pick(cubeId) - Pick up any reachable cube
+    // - Place() - Place held item at goal
     // ============================================================================
 
-    // =========================================================================
-    // SCENARIO CONFIGURATION
-    // =========================================================================
-
-    // Environment constants
-    const ENV_WIDTH = 90;
+    const ENV_WIDTH = 80;
     const ENV_HEIGHT = 24;
 
-    // Target location (center-ish)
+    // Room bounds (the enclosed area)
+    const ROOM_MIN_X = 20;
+    const ROOM_MAX_X = 55;
+    const ROOM_MIN_Y = 6;
+    const ROOM_MAX_Y = 16;
+    const ROOM_GAP_X = 20; // Entry on left wall
+    const ROOM_GAP_Y = 11; // Gap Y position
+
+    // Entity IDs
     const TARGET_ID = 1;
-    const TARGET_X = 40;
-    const TARGET_Y = 12;
+    const GOAL_ID = 1;
+    const DUMPSTER_ID = 2;
+    const STAGING_AREA_ID = 3; // Where target can be temporarily placed
 
-    // Inner Ring (Box around target) - MOVABLE OBSTACLES (Blockade)
-    // Needs to be cleared.
-    const INNER_RING_RADIUS_X = 4;
-    const INNER_RING_RADIUS_Y = 3;
-    const INNER_RING_IDS = [];
-
-    // Outer Ring (Static Wall) - STATIC OBSTACLES
-    // Has two gaps: entry on left, exit on right
-    const OUTER_RING_MIN_X = 15;
-    const OUTER_RING_MAX_X = 50;
-    const OUTER_RING_MIN_Y = 5;
-    const OUTER_RING_MAX_Y = 20;
-    const GAP_LEFT_X = 15;  // Entry point on left wall
-    const GAP_RIGHT_X = 50; // Exit point on right wall
-    const GAP_Y = 12;       // Same y-level for both gaps
-    // Static wall IDs start at 1000
-
-    // Goal locations
-    const GOAL_FINAL_ID = 1; // Delivery point for target
-    const GOAL_DROP_ID = 2;  // Dumpster for cleared obstacles
-
-    // Patrol cubes
-    const PATROL_IDS = [101, 102];
+    // Blockade cube IDs (generated dynamically)
+    var BLOCKADE_IDS = [];
+    // Goal blockade IDs - movable wall around the goal
+    var GOAL_BLOCKADE_IDS = [];
 
     function initializeSimulation() {
-        // Collect all entities
         const cubesInit = [];
 
-        // 1. Target Cube
+        // 1. Target Cube (inside room, right side)
         cubesInit.push([TARGET_ID, {
             id: TARGET_ID,
-            x: TARGET_X,
-            y: TARGET_Y,
+            x: 45,
+            y: 11,
             deleted: false,
             isTarget: true,
             type: 'target'
         }]);
 
-        // 2. Inner Ring (Movable Blockade)
-        // Create a tight box around target
-        let nextId = 2;
-        for (let x = TARGET_X - INNER_RING_RADIUS_X; x <= TARGET_X + INNER_RING_RADIUS_X; x += 2) {
-            for (let y = TARGET_Y - INNER_RING_RADIUS_Y; y <= TARGET_Y + INNER_RING_RADIUS_Y; y += 2) {
-                // Skip center (where target is)
-                if (Math.abs(x - TARGET_X) < 2 && Math.abs(y - TARGET_Y) < 2) continue;
+        // 2. Blockade Cubes - REMOVED for simpler test scenario
+        // Path to target is now clear - only the goal is blocked
+        // This isolates the conflict resolution testing to just the goal blockade wall
 
-                cubesInit.push([nextId, {
-                    id: nextId,
-                    x: x,
-                    y: y,
-                    deleted: false,
-                    isBlockade: true,
-                    type: 'blockade'
-                }]);
-                INNER_RING_IDS.push(nextId);
-                nextId++;
-            }
+        // 3. Goal Blockade Cubes (COMPLETE 3x3 wall AROUND the goal at 8,18)
+        // Using 8 blockades to completely surround the goal in ALL directions
+        // including diagonals - this TRULY forces conflict resolution since
+        // the agent cannot even get within 1 cell of the goal without clearing.
+        let goalBlockadeId = 100;
+        const goalBlockadePositions = [
+            // Complete 8-directional enclosure - blocks ALL access including diagonals
+            {x: 7, y: 17},   // NW of goal
+            {x: 8, y: 17},   // N of goal
+            {x: 9, y: 17},   // NE of goal
+            {x: 7, y: 18},   // W of goal
+            {x: 9, y: 18},   // E of goal
+            {x: 7, y: 19},   // SW of goal
+            {x: 8, y: 19},   // S of goal
+            {x: 9, y: 19}    // SE of goal
+        ];
+        for (const pos of goalBlockadePositions) {
+            cubesInit.push([goalBlockadeId, {
+                id: goalBlockadeId,
+                x: pos.x,
+                y: pos.y,
+                deleted: false,
+                isGoalBlockade: true,
+                type: 'goal_blockade'
+            }]);
+            GOAL_BLOCKADE_IDS.push(goalBlockadeId);
+            goalBlockadeId++;
         }
 
-        // 3. Patrol Cubes (Dynamic)
-        // Moving vertically at x=30 and x=50 inside the outer ring
-        cubesInit.push([101, {
-            id: 101,
-            x: 30,
-            y: 8,
-            deleted: false,
-            isPatrol: true,
-            vy: 0.5,
-            minY: 6,
-            maxY: 18,
-            type: 'patrol'
-        }]);
-        cubesInit.push([102, {
-            id: 102,
-            x: 45,  // Moved from x=50 to avoid blocking the right gap exit
-            y: 16,
-            deleted: false,
-            isPatrol: true,
-            vy: -0.5,
-            minY: 6,
-            maxY: 18,
-            type: 'patrol'
-        }]);
-
-        // 4. Outer Ring (Static Walls)
-        // We represent static walls as special "cube" entities with big IDs
-        // or just handle them in collision logic?
-        // Let's add them as static entities to be visualized and collided with
-        let staticId = 1000;
-
-        function addStatic(x, y) {
-            // Leave gap on LEFT wall (entry)
-            if (Math.abs(x - GAP_LEFT_X) < 2 && Math.abs(y - GAP_Y) < 2) return;
-            // Leave gap on RIGHT wall (exit)
-            if (Math.abs(x - GAP_RIGHT_X) < 2 && Math.abs(y - GAP_Y) < 2) return;
-            cubesInit.push([staticId, {
-                id: staticId,
+        // 4. Room Walls (static obstacles)
+        let wallId = 1000;
+        function addWall(x, y) {
+            // Leave gap at entry point
+            if (x === ROOM_MIN_X && Math.abs(y - ROOM_GAP_Y) <= 1) return;
+            cubesInit.push([wallId, {
+                id: wallId,
                 x: x,
                 y: y,
                 deleted: false,
                 isStatic: true,
                 type: 'wall'
             }]);
-            staticId++;
+            wallId++;
         }
 
-        // Top/Bottom walls - extend from x=1 to close off left side and prevent going around
-        for (let x = 1; x <= OUTER_RING_MAX_X; x += 1) {
-            addStatic(x, OUTER_RING_MIN_Y);
-            addStatic(x, OUTER_RING_MAX_Y);
+        // Top and bottom walls
+        for (let x = ROOM_MIN_X; x <= ROOM_MAX_X; x++) {
+            addWall(x, ROOM_MIN_Y);
+            addWall(x, ROOM_MAX_Y);
         }
-        // Left/Right walls
-        for (let y = OUTER_RING_MIN_Y; y <= OUTER_RING_MAX_Y; y += 1) {
-            addStatic(OUTER_RING_MIN_X, y);
-            addStatic(OUTER_RING_MAX_X, y);
+        // Left and right walls
+        for (let y = ROOM_MIN_Y; y <= ROOM_MAX_Y; y++) {
+            addWall(ROOM_MIN_X, y);
+            addWall(ROOM_MAX_X, y);
         }
 
         return {
-            // Simulation bounds
             width: ENV_WIDTH,
             height: ENV_HEIGHT,
             spaceWidth: 60,
 
-            // Entities
             actors: new Map([
-                [1, {id: 1, x: 5, y: 12, heldItem: null}] // Start on left, outside
+                [1, {id: 1, x: 5, y: 11, heldItem: null}]
             ]),
             cubes: new Map(cubesInit),
             goals: new Map([
-                [GOAL_FINAL_ID, {id: GOAL_FINAL_ID, x: 60, y: 12, forTarget: true}], // Moved to x=60 (safe distance from x=50 wall)
-                [GOAL_DROP_ID, {id: GOAL_DROP_ID, x: 5, y: 20, forBlockade: true}] // Dumpster
+                [GOAL_ID, {id: GOAL_ID, x: 8, y: 18, forTarget: true}],
+                [DUMPSTER_ID, {id: DUMPSTER_ID, x: 8, y: 4, forBlockade: true}],
+                [STAGING_AREA_ID, {id: STAGING_AREA_ID, x: 5, y: 15, forStaging: true}]
             ]),
 
-            // State
             blackboard: null,
             pabtPlan: null,
+            pabtState: null,
             activeActorId: 1,
             gameMode: 'automatic',
             tickCount: 0,
-            lastTickTime: Date.now(),
 
-            // Win state
             winConditionMet: false,
             targetDelivered: false,
 
-            // Rendering
             renderBuffer: null,
             renderBufferWidth: 0,
             renderBufferHeight: 0,
@@ -206,53 +196,48 @@ try {
     }
 
     // ============================================================================
-    // Blackboard Synchronization
+    // Pathfinding
     // ============================================================================
 
-    // Simple BFS to check reachability and distance
-    function getPathInfo(state, startX, startY, targetX, targetY, ignoreCubeId = -1) {
-        const width = state.width;
-        const height = state.height;
-        const visited = new Set();
-        const queue = [{x: startX, y: startY, dist: 0}];
-        const key = (x, y) => x + ',' + y;
-
-        visited.add(key(startX, startY));
-
-        // Create collision map for this frame
+    function buildBlockedSet(state, ignoreCubeId) {
         const blocked = new Set();
+        const key = (x, y) => x + ',' + y;
+        const actor = state.actors.get(state.activeActorId);
 
-        // Static walls
         state.cubes.forEach(c => {
             if (c.deleted) return;
-            if (c.id === ignoreCubeId) return; // Ignore specific cube (e.g. the one we want to pick)
-            if (c.id === state.actors.get(state.activeActorId).heldItem?.id) return; // Ignore held item
-
-            // Cubes occupy their integer position
+            if (c.id === ignoreCubeId) return;
+            if (actor.heldItem && c.id === actor.heldItem.id) return;
             blocked.add(key(Math.round(c.x), Math.round(c.y)));
-            // Patrols might sweep, but for now treat as instantaneous obstacles
         });
 
-        // Add Outer Ring boundaries (explicit coordinates if not in cubes list, but we added them as cubes)
+        return blocked;
+    }
+
+    function getPathInfo(state, startX, startY, targetX, targetY, ignoreCubeId) {
+        const blocked = buildBlockedSet(state, ignoreCubeId);
+        const key = (x, y) => x + ',' + y;
+        const visited = new Set();
+        const queue = [{x: Math.round(startX), y: Math.round(startY), dist: 0}];
+
+        visited.add(key(queue[0].x, queue[0].y));
 
         while (queue.length > 0) {
             const current = queue.shift();
+            const dx = Math.abs(current.x - Math.round(targetX));
+            const dy = Math.abs(current.y - Math.round(targetY));
 
-            // Check success (allow being adjacent for "reachability" to pick)
-            const dx = Math.abs(current.x - targetX);
-            const dy = Math.abs(current.y - targetY);
-            if (dx <= 1.5 && dy <= 1.5) {
+            if (dx <= 1 && dy <= 1) {
                 return {reachable: true, distance: current.dist};
             }
 
-            // Neighbors
             const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
             for (const [ox, oy] of dirs) {
                 const nx = current.x + ox;
                 const ny = current.y + oy;
                 const nKey = key(nx, ny);
 
-                if (nx < 1 || nx >= width - 1 || ny < 1 || ny >= height - 1) continue;
+                if (nx < 1 || nx >= state.width - 1 || ny < 1 || ny >= state.height - 1) continue;
                 if (visited.has(nKey)) continue;
                 if (blocked.has(nKey)) continue;
 
@@ -264,162 +249,31 @@ try {
         return {reachable: false, distance: Infinity};
     }
 
-    function syncToBlackboard(state) {
-        if (!state.blackboard) return;
-
-        const bb = state.blackboard;
-        const actor = state.actors.get(state.activeActorId);
-        const ax = Math.round(actor.x);
-        const ay = Math.round(actor.y);
-
-        // Sync standard actor state
-        bb.set('actorX', actor.x);
-        bb.set('actorY', actor.y);
-        bb.set('heldItemExists', actor.heldItem !== null);
-        bb.set('heldItemId', actor.heldItem ? actor.heldItem.id : -1);
-
-        // Create SHARED collision map for this frame to optimize BFS
+    function findNextStep(state, startX, startY, targetX, targetY, ignoreCubeId) {
+        const blocked = buildBlockedSet(state, ignoreCubeId);
         const key = (x, y) => x + ',' + y;
-        const globalBlocked = new Set();
-        state.cubes.forEach(c => {
-            if (c.deleted) return;
-            if (c.id === actor.heldItem?.id) return;
-            globalBlocked.add(key(Math.round(c.x), Math.round(c.y)));
-        });
-
-        // Helper for reachability that uses the shared blocked set
-        const checkReachable = (tx, ty, ignoreId = -1) => {
-            return getPathInfoWithBlocked(state, ax, ay, tx, ty, globalBlocked, ignoreId);
-        };
-
-        // 1. Target
-        const target = state.cubes.get(TARGET_ID);
-        if (target && !target.deleted) {
-            const info = checkReachable(Math.round(target.x), Math.round(target.y), TARGET_ID);
-            bb.set('pathClear_' + TARGET_ID, info.reachable);
-            bb.set('distance_' + TARGET_ID, info.distance);
-            bb.set('inRange_' + TARGET_ID, info.distance < 2.5);
-        } else {
-            bb.set('pathClear_' + TARGET_ID, true);
-            bb.set('inRange_' + TARGET_ID, false);
-        }
-
-        // 2. Inner Ring Cubes (Blockade)
-        INNER_RING_IDS.forEach(id => {
-            const cube = state.cubes.get(id);
-            if (cube && !cube.deleted) {
-                const info = checkReachable(Math.round(cube.x), Math.round(cube.y), id);
-                bb.set('pathClear_' + id, info.reachable);
-                bb.set('distance_' + id, info.distance);
-                bb.set('inRange_' + id, info.distance < 2.5);
-            } else {
-                bb.set('pathClear_' + id, true);
-                bb.set('inRange_' + id, false);
-            }
-        });
-
-        // 3. Goals
-        state.goals.forEach(goal => {
-            const info = checkReachable(Math.round(goal.x), Math.round(goal.y));
-            bb.set('pathClear_Goal_' + goal.id, info.reachable);
-            bb.set('distance_Goal_' + goal.id, info.distance);
-            bb.set('inRange_Goal_' + goal.id, info.distance < 2.5);
-        });
-
-        // 4. Win condition state
-        bb.set('cubeDeliveredAtGoal', state.winConditionMet);
-    }
-
-    // Optimized BFS that accepts a pre-populated blocked set
-    function getPathInfoWithBlocked(state, startX, startY, targetX, targetY, blockedSet, ignoreId = -1) {
-        const width = state.width;
-        const height = state.height;
-        const visited = new Set();
-        const queue = [{x: startX, y: startY, dist: 0}];
-        const key = (x, y) => x + ',' + y;
-
-        visited.add(key(startX, startY));
-
-        let currentBlocked = blockedSet;
-        let ignoreKey = null;
-        if (ignoreId !== -1) {
-            const c = state.cubes.get(ignoreId);
-            if (c) ignoreKey = key(Math.round(c.x), Math.round(c.y));
-        }
-
-        while (queue.length > 0) {
-            const current = queue.shift();
-
-            const dx = Math.abs(current.x - targetX);
-            const dy = Math.abs(current.y - targetY);
-            if (dx <= 1.5 && dy <= 1.5) {
-                return {reachable: true, distance: current.dist};
-            }
-
-            const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-            for (const [ox, oy] of dirs) {
-                const nx = current.x + ox;
-                const ny = current.y + oy;
-                const nKey = key(nx, ny);
-
-                if (nx < 1 || nx >= width - 1 || ny < 1 || ny >= height - 1) continue;
-                if (visited.has(nKey)) continue;
-                if (currentBlocked.has(nKey) && nKey !== ignoreKey) continue;
-
-                visited.add(nKey);
-                queue.push({x: nx, y: ny, dist: current.dist + 1});
-            }
-        }
-
-        return {reachable: false, distance: Infinity};
-    }
-
-
-    // ============================================================================
-    // PA-BT Action Setup
-    // ============================================================================
-
-    function findNextStep(state, startX, startY, targetX, targetY, ignoreCubeId = -1) {
-        // Integerize check
         const iStartX = Math.round(startX);
         const iStartY = Math.round(startY);
         const iTargetX = Math.round(targetX);
         const iTargetY = Math.round(targetY);
-        const width = state.width;
-        const height = state.height;
 
-        // Trivial case: already there-ish
         if (Math.abs(startX - targetX) < 1.0 && Math.abs(startY - targetY) < 1.0) {
             return {x: targetX, y: targetY};
         }
 
         const visited = new Set();
         const queue = [];
-        const key = (x, y) => x + ',' + y;
-
-        // Identify obstacles
-        const blocked = new Set();
-        state.cubes.forEach(c => {
-            if (c.deleted) return;
-            if (c.id === ignoreCubeId) return;
-            if (c.id === state.actors.get(state.activeActorId).heldItem?.id) return;
-            blocked.add(key(Math.round(c.x), Math.round(c.y)));
-        });
-
-        // BFS
         visited.add(key(iStartX, iStartY));
-        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]]; // 4-way movement
 
-        // Initial neighbors
+        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
         for (const [ox, oy] of dirs) {
             const nx = iStartX + ox;
             const ny = iStartY + oy;
             const nKey = key(nx, ny);
 
-            if (nx < 1 || nx >= width - 1 || ny < 1 || ny >= height - 1) continue;
-            if (blocked.has(nKey)) continue;
+            if (nx < 1 || nx >= state.width - 1 || ny < 1 || ny >= state.height - 1) continue;
+            if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
 
-            // If this neighbor IS the target, go there
             if (nx === iTargetX && ny === iTargetY) {
                 return {x: nx, y: ny};
             }
@@ -431,9 +285,7 @@ try {
         while (queue.length > 0) {
             const cur = queue.shift();
 
-            // Reached target?
             if (cur.x === iTargetX && cur.y === iTargetY) {
-                // Return step in direction of first move
                 return {x: startX + cur.firstX, y: startY + cur.firstY};
             }
 
@@ -442,8 +294,8 @@ try {
                 const ny = cur.y + oy;
                 const nKey = key(nx, ny);
 
-                if (nx < 1 || nx >= width - 1 || ny < 1 || ny >= height - 1) continue;
-                if (blocked.has(nKey)) continue;
+                if (nx < 1 || nx >= state.width - 1 || ny < 1 || ny >= state.height - 1) continue;
+                if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
                 if (visited.has(nKey)) continue;
 
                 visited.add(nKey);
@@ -451,29 +303,332 @@ try {
             }
         }
 
-        // Fallback: if no path, try direct (or stay put)
         return null;
     }
 
-    function setupPABTActions(state) {
-        // Helper to register simple actions
-        const reg = (name, conds, effects, tickFn) => {
-            // Convert simple condition objects to Match functions
-            const conditions = conds.map(c => ({
-                key: c.k,
-                Match: v => c.v === undefined ? v === true : v === c.v
-            }));
-            const effectList = effects.map(e => ({key: e.k, Value: e.v}));
+    // ============================================================================
+    // Blackboard Synchronization
+    // ============================================================================
 
-            // Wrap tickFn to pause in manual mode AND log every execution
-            const wrappedTickFn = () => {
-                const a = state.actors.get(state.activeActorId);
+    function syncToBlackboard(state) {
+        if (!state.blackboard) return;
+
+        const bb = state.blackboard;
+        const actor = state.actors.get(state.activeActorId);
+        const ax = Math.round(actor.x);
+        const ay = Math.round(actor.y);
+
+        bb.set('actorX', actor.x);
+        bb.set('actorY', actor.y);
+        bb.set('heldItemExists', actor.heldItem !== null);
+        bb.set('heldItemId', actor.heldItem ? actor.heldItem.id : -1);
+
+        // Target cube
+        const target = state.cubes.get(TARGET_ID);
+        if (target && !target.deleted) {
+            const info = getPathInfo(state, ax, ay, target.x, target.y, TARGET_ID);
+            bb.set('reachable_cube_' + TARGET_ID, info.reachable);
+            bb.set('distance_cube_' + TARGET_ID, info.distance);
+            bb.set('atEntity_' + TARGET_ID, info.distance < 2);
+        } else {
+            bb.set('reachable_cube_' + TARGET_ID, false);
+            bb.set('atEntity_' + TARGET_ID, false);
+        }
+
+        // Blockade cubes
+        BLOCKADE_IDS.forEach(id => {
+            const cube = state.cubes.get(id);
+            if (cube && !cube.deleted) {
+                const info = getPathInfo(state, ax, ay, cube.x, cube.y, id);
+                bb.set('reachable_cube_' + id, info.reachable);
+                bb.set('distance_cube_' + id, info.distance);
+                bb.set('atEntity_' + id, info.distance < 2);
+            } else {
+                bb.set('reachable_cube_' + id, false);
+                bb.set('atEntity_' + id, false);
+            }
+        });
+
+        // Goal blockade cubes (around the goal)
+        GOAL_BLOCKADE_IDS.forEach(id => {
+            const cube = state.cubes.get(id);
+            if (cube && !cube.deleted) {
+                const info = getPathInfo(state, ax, ay, cube.x, cube.y, id);
+                bb.set('reachable_cube_' + id, info.reachable);
+                bb.set('distance_cube_' + id, info.distance);
+                bb.set('atEntity_' + id, info.distance < 2);
+            } else {
+                bb.set('reachable_cube_' + id, false);
+                bb.set('atEntity_' + id, false);
+            }
+        });
+
+        // Goals
+        state.goals.forEach(goal => {
+            const info = getPathInfo(state, ax, ay, goal.x, goal.y);
+            bb.set('reachable_goal_' + goal.id, info.reachable);
+            bb.set('distance_goal_' + goal.id, info.distance);
+            bb.set('atGoal_' + goal.id, info.distance < 2);
+        });
+
+        // Special: Check if goal path is clear (no goal blockades remaining)
+        // This is used by Deliver_Target to ensure path clearing happened
+        let goalBlockadesRemaining = 0;
+        GOAL_BLOCKADE_IDS.forEach(id => {
+            const cube = state.cubes.get(id);
+            if (cube && !cube.deleted) goalBlockadesRemaining++;
+        });
+        bb.set('goalPathCleared', goalBlockadesRemaining === 0);
+
+        bb.set('cubeDeliveredAtGoal', state.winConditionMet);
+    }
+
+    // ============================================================================
+    // TRUE PARAMETRIC ACTIONS via ActionGenerator
+    // ============================================================================
+
+    // Cache for dynamically created actions to avoid recreating them every tick
+    var actionCache = new Map();
+
+    function createMoveToAction(state, entityType, entityId) {
+        const cacheKey = 'MoveTo_' + entityType + '_' + entityId;
+        if (actionCache.has(cacheKey)) {
+            return actionCache.get(cacheKey);
+        }
+
+        const name = cacheKey;
+        let targetKey, reachableKey;
+
+        if (entityType === 'cube') {
+            targetKey = 'atEntity_' + entityId;
+            reachableKey = 'reachable_cube_' + entityId;
+        } else if (entityType === 'goal') {
+            targetKey = 'atGoal_' + entityId;
+            reachableKey = 'reachable_goal_' + entityId;
+        }
+
+        const conditions = [
+            {key: reachableKey, Match: function(v) { return v === true; }}
+        ];
+        const effects = [
+            {key: targetKey, Value: true}
+        ];
+
+        const tickFn = function() {
+            if (state.gameMode !== 'automatic') {
+                return bt.running;
+            }
+
+            const actor = state.actors.get(state.activeActorId);
+            let targetX, targetY, ignoreCubeId;
+
+            if (entityType === 'cube') {
+                const cube = state.cubes.get(entityId);
+                if (!cube || cube.deleted) {
+                    log.debug(name + " success: cube gone", {entityId: entityId});
+                    return bt.success;
+                }
+                targetX = cube.x;
+                targetY = cube.y;
+                ignoreCubeId = entityId;
+            } else {
+                const goal = state.goals.get(entityId);
+                if (!goal) {
+                    log.error(name + " failed: goal not found", {entityId: entityId});
+                    return bt.failure;
+                }
+                targetX = goal.x;
+                targetY = goal.y;
+                ignoreCubeId = -1;
+            }
+
+            const dx = targetX - actor.x;
+            const dy = targetY - actor.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist <= 1.8) {
+                log.debug(name + " success: in range", {dist: dist});
+                return bt.success;
+            }
+
+            const nextStep = findNextStep(state, actor.x, actor.y, targetX, targetY, ignoreCubeId);
+            if (nextStep) {
+                const stepDx = nextStep.x - actor.x;
+                const stepDy = nextStep.y - actor.y;
+                actor.x += Math.sign(stepDx) * Math.min(1.0, Math.abs(stepDx));
+                actor.y += Math.sign(stepDy) * Math.min(1.0, Math.abs(stepDy));
+                return bt.running;
+            } else {
+                // CRITICAL: Return FAILURE when no path - this triggers PA-BT replanning!
+                // This is essential for conflict resolution: agent holding target can't reach goal,
+                // so PA-BT replans and discovers it needs to clear blockades but hands are full.
+                log.warn(name + " FAILED: no path to destination - triggering replan", {
+                    actorX: Math.round(actor.x), 
+                    actorY: Math.round(actor.y),
+                    targetX: Math.round(targetX),
+                    targetY: Math.round(targetY)
+                });
+                return bt.failure;
+            }
+        };
+
+        const node = bt.createLeafNode(tickFn);
+        const action = pabt.newAction(name, conditions, effects, node);
+        actionCache.set(cacheKey, action);
+        return action;
+    }
+
+    function setupPABTActions(state) {
+        const actor = () => state.actors.get(state.activeActorId);
+
+        // =========================================================================
+        // ACTION GENERATOR - TRUE PARAMETRIC ACTIONS
+        // =========================================================================
+        // This generator is called by PA-BT when it needs actions to satisfy
+        // a failed condition. Instead of registering MoveTo_1, MoveTo_10, MoveTo_11...
+        // we generate them ON DEMAND based on what condition failed.
+        // =========================================================================
+
+        state.pabtState.setActionGenerator(function(failedCondition) {
+            const actions = [];
+            const key = failedCondition.key;
+            const currentHeldId = state.blackboard.get('heldItemId');
+            const isHoldingItem = state.blackboard.get('heldItemExists');
+
+            log.info("ActionGenerator called for failed condition", {
+                failedKey: key,
+                heldItemExists: isHoldingItem,
+                heldItemId: currentHeldId,
+                goalPathCleared: state.blackboard.get('goalPathCleared'),
+                reachable_goal_1: state.blackboard.get('reachable_goal_1'),
+                reachable_goal_2: state.blackboard.get('reachable_goal_' + DUMPSTER_ID)
+            });
+
+            // Pattern match on the failed condition key
+            // atEntity_X means we need MoveTo actions for cubes
+            if (key && typeof key === 'string' && key.startsWith('atEntity_')) {
+                const entityId = parseInt(key.replace('atEntity_', ''), 10);
+                if (!isNaN(entityId)) {
+                    // Generate MoveTo action for this specific cube
+                    const cube = state.cubes.get(entityId);
+                    if (cube && !cube.deleted) {
+                        actions.push(createMoveToAction(state, 'cube', entityId));
+                        log.debug("Generated MoveTo action", {target: 'cube', entityId: entityId});
+                    }
+                }
+            }
+
+            // atGoal_X means we need MoveTo actions for goals
+            if (key && typeof key === 'string' && key.startsWith('atGoal_')) {
+                const goalId = parseInt(key.replace('atGoal_', ''), 10);
+                if (!isNaN(goalId)) {
+                    const goal = state.goals.get(goalId);
+                    if (goal) {
+                        actions.push(createMoveToAction(state, 'goal', goalId));
+                        log.debug("Generated MoveTo action", {target: 'goal', goalId: goalId});
+                    }
+                }
+
+                // =========================================================================
+                // CONFLICT RESOLUTION: When delivery goal (GOAL_ID) is unreachable
+                // AND agent is holding the target, offer the staging area path!
+                // This enables: MoveTo staging → Place_Target_Temporary → hands free →
+                // pick blockade → deposit → goal becomes reachable → retrieve → deliver
+                // =========================================================================
+                if (goalId === GOAL_ID && isHoldingItem && currentHeldId === TARGET_ID) {
+                    const goalReachable = state.blackboard.get('reachable_goal_' + GOAL_ID);
+                    if (!goalReachable) {
+                        log.info("CONFLICT DETECTED: Holding target but goal unreachable, offering staging path", {
+                            heldItemId: currentHeldId,
+                            reachable_goal_1: goalReachable
+                        });
+                        // Offer MoveTo staging area as alternative
+                        actions.push(createMoveToAction(state, 'goal', STAGING_AREA_ID));
+                        log.debug("Generated MoveTo action for staging area (conflict resolution)", {goalId: STAGING_AREA_ID});
+                    }
+                }
+            }
+
+            // =========================================================================
+            // Handle reachable_goal_X failures - when goal is blocked
+            // Generate actions to help PA-BT plan blockade clearing
+            // =========================================================================
+            if (key && typeof key === 'string' && key.startsWith('reachable_goal_')) {
+                const goalId = parseInt(key.replace('reachable_goal_', ''), 10);
+                if (goalId === GOAL_ID) {
+                    // Case 1: Holding target - offer staging path
+                    if (isHoldingItem && currentHeldId === TARGET_ID) {
+                        log.info("CONFLICT DETECTED: reachable_goal_1 failed while holding target, offering staging path", {
+                            heldItemId: currentHeldId
+                        });
+                        // Offer MoveTo staging area to enable Place_Target_Temporary
+                        actions.push(createMoveToAction(state, 'goal', STAGING_AREA_ID));
+                        log.debug("Generated MoveTo action for staging area (conflict resolution)", {goalId: STAGING_AREA_ID});
+                    }
+                    
+                    // Case 2: Hands empty (after placing target) - offer MoveTo for goal blockades
+                    // This enables PA-BT to plan: MoveTo_cube_X → Pick_GoalBlockade_X → ... → reachable_goal_1
+                    if (!isHoldingItem) {
+                        log.info("BLOCKADE_CLEARING: reachable_goal_1 failed with empty hands, offering goal blockade paths", {
+                            heldItemExists: isHoldingItem
+                        });
+                        // Generate MoveTo for all reachable goal blockades
+                        GOAL_BLOCKADE_IDS.forEach(function(blockadeId) {
+                            const cube = state.cubes.get(blockadeId);
+                            if (cube && !cube.deleted) {
+                                const reachableKey = 'reachable_cube_' + blockadeId;
+                                if (state.blackboard.get(reachableKey)) {
+                                    actions.push(createMoveToAction(state, 'cube', blockadeId));
+                                    log.debug("Generated MoveTo action for goal blockade", {cubeId: blockadeId});
+                                }
+                            }
+                        });
+                        // Also offer dumpster path (for deposit after picking)
+                        actions.push(createMoveToAction(state, 'goal', DUMPSTER_ID));
+                        log.debug("Generated MoveTo action for dumpster (blockade clearing)", {goalId: DUMPSTER_ID});
+                    }
+                }
+            }
+
+            // =========================================================================
+            // CRITICAL FIX: Handle heldItemId/heldItemExists failures when holding
+            // something unexpected. If hands are full and PA-BT needs different item,
+            // we need to generate a Deposit action to clear hands first!
+            // =========================================================================
+            if (key === 'heldItemId' || key === 'heldItemExists') {
+                if (isHoldingItem && currentHeldId > 0) {
+                    log.info("ActionGenerator: Hands full with unexpected item, generating deposit options", {
+                        currentlyHolding: currentHeldId
+                    });
+
+                    // Generate MoveTo_goal_DUMPSTER to enable deposit action
+                    actions.push(createMoveToAction(state, 'goal', DUMPSTER_ID));
+                    log.debug("Generated MoveTo action for dumpster", {goalId: DUMPSTER_ID});
+                }
+            }
+
+            return actions;
+        });
+
+        // =========================================================================
+        // STATIC ACTIONS (Not parametric - finite set)
+        // =========================================================================
+
+        // Helper to register actions
+        const reg = function(name, conds, effects, tickFn) {
+            const conditions = conds.map(function(c) {
+                return {
+                    key: c.k,
+                    Match: function(v) { return c.v === undefined ? v === true : v === c.v; }
+                };
+            });
+            const effectList = effects.map(function(e) { return {key: e.k, Value: e.v}; });
+
+            const wrappedTickFn = function() {
+                const a = actor();
                 if (state.gameMode !== 'automatic') {
-                    // In manual mode, PA-BT is paused - return running to hold state
-                    log.debug("PA-BT paused (manual mode)", {action: name, tick: state.tickCount});
                     return bt.running;
                 }
-                // Log action start
                 log.info("PA-BT action executing", {
                     action: name,
                     tick: state.tickCount,
@@ -482,15 +637,11 @@ try {
                     held: a.heldItem ? a.heldItem.id : -1
                 });
                 const result = tickFn();
-                // Log action result
                 const resultName = result === bt.success ? 'SUCCESS' : (result === bt.failure ? 'FAILURE' : 'RUNNING');
                 log.info("PA-BT action result", {
                     action: name,
                     result: resultName,
-                    tick: state.tickCount,
-                    actorX: Math.round(a.x),
-                    actorY: Math.round(a.y),
-                    held: a.heldItem ? a.heldItem.id : -1
+                    tick: state.tickCount
                 });
                 return result;
             };
@@ -499,62 +650,23 @@ try {
             state.pabtState.RegisterAction(name, pabt.newAction(name, conditions, effectList, node));
         };
 
-        const actor = () => state.actors.get(state.activeActorId);
-
         // ---------------------------------------------------------------------
-        // 1. MoveTo(Target)
+        // Pick_Target: Pick up the target cube
+        // Condition: atEntity_TARGET_ID, hands empty
+        // Effect: holding target
+        // NOTE: This action should be used AFTER path blockades are cleared
+        // and AFTER goal blockades are cleared (via Place_Target_Temporary flow)
         // ---------------------------------------------------------------------
-        // Condition: pathClear_1
-        // Effect: inRange_1
-        reg('MoveTo_Target',
-            [{k: 'pathClear_' + TARGET_ID, v: true}],
-            [{k: 'inRange_' + TARGET_ID, v: true}],
-            () => {
-                const a = actor();
-                const t = state.cubes.get(TARGET_ID);
-                if (!t || t.deleted) {
-                    log.debug("MoveTo_Target skipped: target already gone");
-                    return bt.success;
-                }
-
-                const dx = t.x - a.x;
-                const dy = t.y - a.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist <= 1.8) {
-                    log.debug("MoveTo_Target success: in range", {dist: dist});
-                    return bt.success;
-                }
-
-                log.debug("Executing MoveTo action", {target: "TargetCube", dist: dist});
-                const nextStep = findNextStep(state, a.x, a.y, t.x, t.y, TARGET_ID);
-                if (nextStep) {
-                    const stepDx = nextStep.x - a.x;
-                    const stepDy = nextStep.y - a.y;
-                    a.x += Math.sign(stepDx) * Math.min(1.0, Math.abs(stepDx));
-                    a.y += Math.sign(stepDy) * Math.min(1.0, Math.abs(stepDy));
-                } else {
-                    log.warn("MoveTo_Target stuck: no path", {agentX: a.x, agentY: a.y});
-                }
-                return bt.running;
-            }
-        );
-
-        // ---------------------------------------------------------------------
-        // 2. Pick(Target)
-        // ---------------------------------------------------------------------
-        // Condition: inRange_1, handsEmpty
-        // Effect: holding_1, !handsEmpty
         reg('Pick_Target',
-            [{k: 'inRange_' + TARGET_ID, v: true}, {k: 'heldItemExists', v: false}],
+            [{k: 'atEntity_' + TARGET_ID, v: true}, {k: 'heldItemExists', v: false}],
             [{k: 'heldItemId', v: TARGET_ID}, {k: 'heldItemExists', v: true}],
-            () => {
+            function() {
                 const a = actor();
                 const t = state.cubes.get(TARGET_ID);
                 if (!t || t.deleted) {
-                    log.error("Pick_Target failed: target missing/deleted");
+                    log.error("Pick_Target failed: target missing");
                     return bt.failure;
                 }
-
                 log.info("Picking up target cube", {id: TARGET_ID});
                 t.deleted = true;
                 a.heldItem = {id: TARGET_ID};
@@ -563,136 +675,62 @@ try {
         );
 
         // ---------------------------------------------------------------------
-        // 3. MoveTo(Goal)
+        // Deliver_Target: Place target at goal
+        // Condition: holding target, at goal
+        // Effect: win condition
+        // NOTE: NO goalPathCleared condition here! The conflict must arise NATURALLY:
+        //   1. Agent picks target
+        //   2. Agent tries atGoal_1 → FAILS (path blocked by goal wall)
+        //   3. PA-BT tries MoveTo but can't reach due to blockades
+        //   4. PA-BT needs to clear blockades, but hands are FULL (holding target)
+        //   5. PA-BT generates Place_Target_Temporary to free hands
+        //   6. Agent clears blockades
+        //   7. Agent retrieves target and delivers
         // ---------------------------------------------------------------------
-        reg('MoveTo_Goal',
-            [{k: 'pathClear_Goal_' + GOAL_FINAL_ID, v: true}],
-            [{k: 'inRange_Goal_' + GOAL_FINAL_ID, v: true}],
-            () => {
-                const a = actor();
-                const g = state.goals.get(GOAL_FINAL_ID);
-
-                const dx = g.x - a.x;
-                const dy = g.y - a.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist <= 1.8) {
-                    log.debug("MoveTo_Goal success: in range", {dist: dist});
-                    return bt.success;
-                }
-
-                log.debug("Executing MoveTo action", {target: "Goal", dist: dist});
-                const nextStep = findNextStep(state, a.x, a.y, g.x, g.y);
-                if (nextStep) {
-                    const stepDx = nextStep.x - a.x;
-                    const stepDy = nextStep.y - a.y;
-                    a.x += Math.sign(stepDx) * Math.min(1.0, Math.abs(stepDx));
-                    a.y += Math.sign(stepDy) * Math.min(1.0, Math.abs(stepDy));
-                } else {
-                    log.warn("MoveTo_Goal stuck: no path", {agentX: a.x, agentY: a.y});
-                    // Fallback to dumb move if no path (e.g. goal is blocked?)
-                    a.x += Math.sign(dx) * Math.min(1.0, Math.abs(dx));
-                    a.y += Math.sign(dy) * Math.min(1.0, Math.abs(dy));
-                }
-                return bt.running;
-            }
-        );
-
-        // ---------------------------------------------------------------------
-        // 4. Deliver(Target) -> Place at Goal
-        // ---------------------------------------------------------------------
-        // CRITICAL: heldItemId must be checked BEFORE inRange_Goal to ensure
-        // PA-BT backward chaining picks up the target FIRST before going to goal.
-        // If inRange_Goal is first, robot goes to goal empty-handed!
         reg('Deliver_Target',
-            [{k: 'heldItemId', v: TARGET_ID}, {k: 'inRange_Goal_' + GOAL_FINAL_ID, v: true}],
             [
-                {k: 'cubeDeliveredAtGoal', v: true},
-                {k: 'heldItemExists', v: false},
-                {k: 'heldItemId', v: -1}
+                {k: 'heldItemId', v: TARGET_ID},
+                {k: 'atGoal_' + GOAL_ID, v: true}
             ],
-            () => {
+            [{k: 'cubeDeliveredAtGoal', v: true}, {k: 'heldItemExists', v: false}, {k: 'heldItemId', v: -1}],
+            function() {
                 const a = actor();
                 if (!a.heldItem || a.heldItem.id !== TARGET_ID) {
-                    log.warn("Deliver_Target failed: incorrect item held", {
-                        expected: TARGET_ID,
-                        held: a.heldItem ? a.heldItem.id : "none"
-                    });
+                    log.warn("Deliver_Target failed: not holding target");
                     return bt.failure;
                 }
-                log.info("Delivering target to goal", {
-                    targetId: TARGET_ID,
-                    goalId: GOAL_FINAL_ID
-                });
+                log.info("Delivering target to goal");
                 a.heldItem = null;
                 state.targetDelivered = true;
-                state.winConditionMet = true; // Set win condition!
+                state.winConditionMet = true;
                 return bt.success;
             }
         );
 
-        // =====================================================================
-        // BLOCKADE CLEARING LOGIC
-        // =====================================================================
-        // For each blockade cube:
-        // MoveTo(Cube) -> Pick(Cube) -> MoveTo(Drop) -> Place(Drop)
-        // CRITICAL: Pick(Cube) has the side effect of making pathClear_Target TRUE
-        // This is the heuristic we give the planner.
-        // =====================================================================
-
-        INNER_RING_IDS.forEach(id => {
-            const cubeKey = id;
-
-            // MoveTo(BlockadeCube)
-            reg('MoveTo_' + id,
-                [{k: 'pathClear_' + id, v: true}],
-                [{k: 'inRange_' + id, v: true}],
-                () => {
-                    const a = actor();
-                    const c = state.cubes.get(id);
-                    if (!c || c.deleted) {
-                        log.debug("MoveTo skipped: cube already gone", {cubeId: id});
-                        return bt.success;
-                    }
-
-                    const dx = c.x - a.x;
-                    const dy = c.y - a.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    if (dist <= 1.8) {
-                        log.debug("MoveTo success: in range of cube", {cubeId: id, dist: dist});
-                        return bt.success;
-                    }
-
-                    const nextStep = findNextStep(state, a.x, a.y, c.x, c.y, id);
-                    if (nextStep) {
-                        const stepDx = nextStep.x - a.x;
-                        const stepDy = nextStep.y - a.y;
-                        a.x += Math.sign(stepDx) * Math.min(1.0, Math.abs(stepDx));
-                        a.y += Math.sign(stepDy) * Math.min(1.0, Math.abs(stepDy));
-                        // log.debug("Moving towards cube", {cubeId: id, agentX: a.x, agentY: a.y});
-                    } else {
-                        log.warn("MoveTo stuck: no path to cube", {cubeId: id, agentX: a.x, agentY: a.y});
-                    }
-                    return bt.running;
-                }
-            );
-
-            // Pick(BlockadeCube)
-            // Side effect: pathClear_Target = true (Heuristic)
-            reg('Pick_' + id,
-                [{k: 'inRange_' + id, v: true}, {k: 'heldItemExists', v: false}],
+        // ---------------------------------------------------------------------
+        // Pick_Blockade_X: Pick up a blockade cube to clear path
+        // This is one action per blockade cube, but that's OK because the
+        // number of blockade cubes is SMALL and FIXED.
+        // The KEY insight is that picking a blockade cube affects reachability
+        // of the TARGET - this is encoded in the effects.
+        // ---------------------------------------------------------------------
+        BLOCKADE_IDS.forEach(function(id) {
+            reg('Pick_Blockade_' + id,
+                [{k: 'atEntity_' + id, v: true}, {k: 'heldItemExists', v: false}],
                 [
                     {k: 'heldItemId', v: id},
                     {k: 'heldItemExists', v: true},
-                    {k: 'pathClear_' + TARGET_ID, v: true} // THE MAGIC BIT
+                    // CRITICAL HEURISTIC: Picking a blockade makes target reachable
+                    // This tells PA-BT that clearing blockades helps reach the target
+                    {k: 'reachable_cube_' + TARGET_ID, v: true}
                 ],
-                () => {
+                function() {
                     const a = actor();
                     const c = state.cubes.get(id);
                     if (!c || c.deleted) {
-                        log.warn("Pick failed: cube missing/deleted", {cubeId: id});
-                        return bt.failure;
+                        log.debug("Pick_Blockade skipped: cube gone", {cubeId: id});
+                        return bt.success;
                     }
-
                     log.info("Picking up blockade cube", {cubeId: id});
                     c.deleted = true;
                     a.heldItem = {id: id};
@@ -700,38 +738,106 @@ try {
                 }
             );
 
-            // Deposit(BlockadeCube) -> Drops at Goal 2
-            reg('Deposit_' + id,
-                [{k: 'heldItemId', v: id}], // Requires holding this specific cube
+            // Deposit blockade at dumpster
+            reg('Deposit_Blockade_' + id,
+                [{k: 'heldItemId', v: id}, {k: 'atGoal_' + DUMPSTER_ID, v: true}],
                 [{k: 'heldItemExists', v: false}, {k: 'heldItemId', v: -1}],
-                () => {
+                function() {
                     const a = actor();
-                    const drop = state.goals.get(GOAL_DROP_ID);
+                    log.info("Depositing blockade at dumpster", {cubeId: id});
+                    a.heldItem = null;
+                    return bt.success;
+                }
+            );
+        });
 
-                    // Move to drop zone if not there
-                    const dx = drop.x - a.x;
-                    const dy = drop.y - a.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    if (dist > 2.0) {
-                        const nextStep = findNextStep(state, a.x, a.y, drop.x, drop.y);
-                        if (nextStep) {
-                            const stepDx = nextStep.x - a.x;
-                            const stepDy = nextStep.y - a.y;
-                            a.x += Math.sign(stepDx) * Math.min(1.0, Math.abs(stepDx));
-                            a.y += Math.sign(stepDy) * Math.min(1.0, Math.abs(stepDy));
-                        }
-                        return bt.running;
-                    }
+        // ---------------------------------------------------------------------
+        // Place_Target_Temporary: Place target at staging area to free hands
+        // This enables conflict resolution - when goal is blocked and hands full
+        // Condition: holding target, at staging area
+        // Effect: hands empty (so we can pick up blockades)
+        // NOTE: We do NOT set reachable_cube_TARGET_ID here because that would
+        // cause PA-BT to immediately want to pick up the target again!
+        // ---------------------------------------------------------------------
+        reg('Place_Target_Temporary',
+            [{k: 'heldItemId', v: TARGET_ID}, {k: 'atGoal_' + STAGING_AREA_ID, v: true}],
+            [
+                {k: 'heldItemExists', v: false},
+                {k: 'heldItemId', v: -1}
+                // NO effect on reachable_cube_TARGET_ID - we want PA-BT to focus on clearing blockades
+            ],
+            function() {
+                const a = actor();
+                if (!a.heldItem || a.heldItem.id !== TARGET_ID) {
+                    log.warn("Place_Target_Temporary failed: not holding target");
+                    return bt.failure;
+                }
+                const stagingGoal = state.goals.get(STAGING_AREA_ID);
+                log.info("CONFLICT_RESOLUTION: Placing target at staging area", {
+                    x: stagingGoal.x,
+                    y: stagingGoal.y,
+                    reason: "freeing_hands_to_clear_goal_wall"
+                });
+                // Re-create target cube at staging location
+                state.cubes.set(TARGET_ID, {
+                    id: TARGET_ID,
+                    x: stagingGoal.x,
+                    y: stagingGoal.y,
+                    deleted: false,
+                    isTarget: true,
+                    type: 'target'
+                });
+                a.heldItem = null;
+                return bt.success;
+            }
+        );
 
-                    // Drop it
+        // ---------------------------------------------------------------------
+        // Goal Blockade Actions: Pick up and deposit goal wall cubes
+        // These are the movable wall around the goal that requires clearing
+        // NOTE: We DO NOT add reachable_goal_1=true as effect here!
+        // That would cause PA-BT to prioritize clearing blockades BEFORE picking target.
+        // Instead, reachability updates naturally via blackboard sync.
+        // The conflict resolution flow depends on PA-BT trying MoveTo and failing.
+        // ---------------------------------------------------------------------
+        GOAL_BLOCKADE_IDS.forEach(function(id) {
+            reg('Pick_GoalBlockade_' + id,
+                [{k: 'atEntity_' + id, v: true}, {k: 'heldItemExists', v: false}],
+                [
+                    {k: 'heldItemId', v: id},
+                    {k: 'heldItemExists', v: true}
+                    // NO reachable_goal effect - this is intentional!
+                ],
+                function() {
+                    const a = actor();
                     const c = state.cubes.get(id);
-                    if (c) {
-                        log.info("Dropping blockade cube at dumpster", {cubeId: id});
-                        c.deleted = false;
-                        c.x = drop.x + (Math.random() * 2 - 1);
-                        c.y = drop.y + (Math.random() * 2 - 1);
-                        // Make sure it doesn't block again immediately
+                    if (!c || c.deleted) {
+                        log.debug("Pick_GoalBlockade skipped: cube gone", {cubeId: id});
+                        return bt.success;
                     }
+                    log.info("GOAL_WALL_CLEAR: Picking up goal blockade cube", {cubeId: id});
+                    c.deleted = true;
+                    a.heldItem = {id: id};
+                    return bt.success;
+                }
+            );
+
+            // Deposit goal blockade at dumpster
+            // CRITICAL: This action has reachable_goal_1=true effect!
+            // This tells PA-BT: to make goal reachable, deposit blockades.
+            // PA-BT backward planning: want reachable_goal_1 → Deposit_GoalBlockade →
+            //   needs heldItemId=blockade → Pick_GoalBlockade → needs heldItemExists=false →
+            //   Place_Target_Temporary → needs atGoal_STAGING → MoveTo staging
+            reg('Deposit_GoalBlockade_' + id,
+                [{k: 'heldItemId', v: id}, {k: 'atGoal_' + DUMPSTER_ID, v: true}],
+                [
+                    {k: 'heldItemExists', v: false}, 
+                    {k: 'heldItemId', v: -1},
+                    {k: 'reachable_goal_' + GOAL_ID, v: true}  // KEY HEURISTIC!
+                ],
+                function() {
+                    const a = actor();
+                    log.info("GOAL_WALL_CLEAR: Depositing goal blockade at dumpster", {cubeId: id});
                     a.heldItem = null;
                     return bt.success;
                 }
@@ -740,8 +846,46 @@ try {
     }
 
     // ============================================================================
-    // Render Buffer
+    // Rendering
     // ============================================================================
+
+    function getDebugOverlayJSON(state) {
+        const actor = state.actors.get(state.activeActorId);
+        const cube1 = state.cubes.get(TARGET_ID);
+        let tgtX = -1, tgtY = -1;
+        if (cube1 && !cube1.deleted) {
+            tgtX = Math.round(cube1.x);
+            tgtY = Math.round(cube1.y);
+        }
+
+        let blkCount = 0;
+        BLOCKADE_IDS.forEach(function(id) {
+            const cube = state.cubes.get(id);
+            if (cube && !cube.deleted) blkCount++;
+        });
+
+        let goalBlkCount = 0;
+        GOAL_BLOCKADE_IDS.forEach(function(id) {
+            const cube = state.cubes.get(id);
+            if (cube && !cube.deleted) goalBlkCount++;
+        });
+
+        const held = actor.heldItem ? actor.heldItem.id : -1;
+        const win = state.winConditionMet ? 1 : 0;
+
+        return JSON.stringify({
+            m: state.gameMode === 'automatic' ? 'a' : 'm',
+            t: state.tickCount,
+            x: Math.round(actor.x),
+            y: Math.round(actor.y),
+            h: held,
+            w: win,
+            a: tgtX > -1 ? tgtX : undefined,
+            b: tgtY > -1 ? tgtY : undefined,
+            n: blkCount,
+            g: goalBlkCount  // Goal blockade count
+        });
+    }
 
     function getRenderBuffer(state, width, height) {
         if (state.renderBuffer === null || state.renderBufferWidth !== width || state.renderBufferHeight !== height) {
@@ -759,109 +903,50 @@ try {
         return y * width + x;
     }
 
-    function clearBuffer(buffer, width, height) {
+    function clearBuffer(buffer) {
         for (let i = 0; i < buffer.length; i++) {
             buffer[i] = ' ';
         }
     }
 
-    // ============================================================================
-    // Rendering
-    // ============================================================================
-
-    // Generate ultra-compact JSON for E2E test harness scraping
-    // NOTE: Keep this VERY SHORT to avoid terminal line-wrapping truncation!
-    // Terminal is typically 80 chars wide. JSON must be < 80 chars.
-    function getDebugOverlayJSON(state) {
-        const actor = state.actors.get(state.activeActorId);
-
-        // Target cube (cube 1) position
-        const cube1 = state.cubes.get(1);
-        let tgtX = -1, tgtY = -1;
-        if (cube1 && !cube1.deleted) {
-            tgtX = Math.round(cube1.x);
-            tgtY = Math.round(cube1.y);
-        }
-
-        // Count blockade cubes (inner ring) still active
-        let blkCount = 0;
-        INNER_RING_IDS.forEach(function (id) {
-            const cube = state.cubes.get(id);
-            if (cube && !cube.deleted) {
-                blkCount++;
-            }
-        });
-
-        // Held cube ID
-        const held = actor.heldItem ? actor.heldItem.id : -1;
-
-        // Win condition (as 0/1 for compactness)
-        const win = state.winConditionMet ? 1 : 0;
-
-        // ULTRA-compact: Use single-char keys
-        // Keys: m=mode, t=tick, x/y=actor pos, h=held, w=win, a/b=target pos, n=blockade count
-        return JSON.stringify({
-            m: state.gameMode === 'automatic' ? 'a' : 'm',
-            t: state.tickCount,
-            x: Math.round(actor.x),
-            y: Math.round(actor.y),
-            h: held,
-            w: win,
-            a: tgtX > -1 ? tgtX : undefined,
-            b: tgtY > -1 ? tgtY : undefined,
-            n: blkCount // Number of active inner ring cubes
-        });
-    }
-
     function getAllSprites(state) {
         const sprites = [];
 
-        // Render actors
-        state.actors.forEach(actor => {
-            sprites.push({
-                x: actor.x,
-                y: actor.y,
-                char: actor.id === state.activeActorId ? '@' : '+',
-                width: 1,
-                height: 1
-            });
-        });
-
-        // Render held item above actor
-        state.actors.forEach(actor => {
+        state.actors.forEach(function(actor) {
+            sprites.push({x: actor.x, y: actor.y, char: '@', width: 1, height: 1});
             if (actor.heldItem) {
-                sprites.push({
-                    x: actor.x,
-                    y: actor.y - 0.5,
-                    char: '■',
-                    width: 1,
-                    height: 1
-                });
+                sprites.push({x: actor.x, y: actor.y - 0.5, char: '◆', width: 1, height: 1});
             }
         });
 
-        // Render cubes
-        state.cubes.forEach(cube => {
+        state.cubes.forEach(function(cube) {
             if (!cube.deleted) {
-                sprites.push({
-                    x: cube.x,
-                    y: cube.y,
-                    char: '█',
-                    width: 1,
-                    height: 1
-                });
+                // DISTINCT SPRITES for different object types
+                let spriteChar = '█'; // Default
+                if (cube.type === 'target') {
+                    spriteChar = '◇'; // Diamond for target cube
+                } else if (cube.type === 'blockade') {
+                    spriteChar = '▓'; // Dark shade for path blockades
+                } else if (cube.type === 'goal_blockade') {
+                    spriteChar = '▒'; // Medium shade for goal wall blockades
+                } else if (cube.type === 'wall') {
+                    spriteChar = '█'; // Solid for static walls
+                }
+                sprites.push({x: cube.x, y: cube.y, char: spriteChar, width: 1, height: 1});
             }
         });
 
-        // Render goals
-        state.goals.forEach(goal => {
-            sprites.push({
-                x: goal.x,
-                y: goal.y,
-                char: '○',
-                width: 1,
-                height: 1
-            });
+        state.goals.forEach(function(goal) {
+            // DISTINCT SPRITES for different goal types
+            let goalChar = '○'; // Default
+            if (goal.forTarget) {
+                goalChar = '◎'; // Bullseye for target delivery goal
+            } else if (goal.forBlockade) {
+                goalChar = '⊙'; // Circled dot for dumpster
+            } else if (goal.forStaging) {
+                goalChar = '◌'; // Dotted circle for staging area
+            }
+            sprites.push({x: goal.x, y: goal.y, char: goalChar, width: 1, height: 1});
         });
 
         return sprites;
@@ -872,34 +957,24 @@ try {
         const height = state.height;
         const buffer = getRenderBuffer(state, width, height);
 
-        // Clear buffer
-        clearBuffer(buffer, width, height);
+        clearBuffer(buffer);
 
-        // Draw separator line
         const spaceX = Math.floor((width - state.spaceWidth) / 2);
         for (let y = 0; y < height; y++) {
             buffer[bufferIndex(spaceX, y, width)] = '│';
         }
 
-        // Get and draw all sprites
         const sprites = getAllSprites(state);
+        sprites.sort(function(a, b) { return a.y - b.y; });
 
-        // Y-sort sprites (rendering order)
-        sprites.sort((a, b) => a.y - b.y);
-
-        // Draw sprites (with clipping)
         for (const sprite of sprites) {
             if (sprite.char === '') continue;
-
             const startX = Math.floor(sprite.x);
             const startY = Math.floor(sprite.y);
-
             for (let dy = 0; dy < sprite.height; dy++) {
                 for (let dx = 0; dx < sprite.width; dx++) {
                     const x = startX + dx;
                     const y = startY + dy;
-
-                    // Clip to bounds
                     if (x >= 0 && x < width && y >= 0 && y < height) {
                         buffer[bufferIndex(x, y, width)] = sprite.char;
                     }
@@ -907,7 +982,6 @@ try {
             }
         }
 
-        // Draw HUD on right side
         const hudX = state.spaceWidth + 2;
         let hudY = 2;
 
@@ -927,39 +1001,36 @@ try {
         drawHudLine('═════════════════════════');
         drawHudLine('');
         drawHudLine('Mode: ' + state.gameMode.toUpperCase());
-        if (state.debugMode) {
-            drawHudLine('DEBUG: ON');
-        }
+        if (state.debugMode) drawHudLine('DEBUG: ON');
         drawHudLine('');
         drawHudLine('Actor Position:');
         drawHudLine('  X: ' + actor.x.toFixed(1));
         drawHudLine('  Y: ' + actor.y.toFixed(1));
-        drawHudLine('  Holding: ' + (actor.heldItem ? 'Yes' : 'No'));
+        drawHudLine('  Holding: ' + (actor.heldItem ? 'Yes (' + actor.heldItem.id + ')' : 'No'));
         drawHudLine('');
-        drawHudLine('Cubes: ' + state.cubes.size);
-        drawHudLine('Goals: ' + state.goals.size);
+        drawHudLine('Blockade: ' + BLOCKADE_IDS.filter(function(id) {
+            const c = state.cubes.get(id);
+            return c && !c.deleted;
+        }).length + ' remaining');
+        drawHudLine('Goal Wall: ' + GOAL_BLOCKADE_IDS.filter(function(id) {
+            const c = state.cubes.get(id);
+            return c && !c.deleted;
+        }).length + ' remaining');
         drawHudLine('');
 
         if (state.winConditionMet) {
             drawHudLine('*** GOAL ACHIEVED! ***');
         } else {
-            drawHudLine('Goal: Move cube to ○');
+            drawHudLine('Goal: Deliver target to ○');
         }
 
         drawHudLine('');
         drawHudLine('CONTROLS:');
         drawHudLine('  [M] Mode: Auto/Manual');
-        drawHudLine('  [X] Move cube (test)');
         drawHudLine('  [Q] Quit');
-        if (state.gameMode === 'manual') {
-            drawHudLine('  [WASD/Arrows] Move');
-            drawHudLine('  [1-2] Pick cube');
-            drawHudLine('  [R] Drop item');
-        }
         drawHudLine('');
         drawHudLine('═════════════════════════');
 
-        // Convert buffer to string
         const rows = [];
         for (let y = 0; y < height; y++) {
             rows.push(buffer.slice(y * width, (y + 1) * width).join(''));
@@ -967,47 +1038,11 @@ try {
 
         let output = rows.join('\n');
 
-        // Append debug JSON if debug mode is enabled (for E2E test harness)
         if (state.debugMode) {
             output += '\n__place_debug_start__\n' + getDebugOverlayJSON(state) + '\n__place_debug_end__';
         }
 
         return output;
-    }
-
-    // ============================================================================
-    // Update Logic
-    // ============================================================================
-
-    function checkWinCondition(state) {
-        // CRITICAL: Win condition is MONOTONIC - once true, stays true forever
-        // This prevents the infinite loop where win is set then unset when actor moves
-        if (state.winConditionMet) {
-            return; // Already won, nothing more to check
-        }
-
-        const actor = state.actors.get(state.activeActorId);
-        const goal = state.goals.get(1);
-
-        if (!actor || !goal) {
-            return; // Don't set to false - just return
-        }
-
-        // Win condition requires:
-        // 1. Target cube (cube 1) was delivered (targetDelivered flag set by deliverToGoal)
-        // 2. Actor is at or near goal 1
-        // 3. Actor is not holding anything (dropped the cube)
-        if (!state.targetDelivered) {
-            return; // Target not yet delivered - can't win
-        }
-
-        const dx = goal.x - actor.x;
-        const dy = goal.y - actor.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        if (dist < 2.5 && !actor.heldItem) {
-            state.winConditionMet = true; // WIN! This is permanent.
-        }
     }
 
     // ============================================================================
@@ -1017,47 +1052,38 @@ try {
     function init() {
         const state = initializeSimulation();
 
-        // Log startup
-        if (typeof log !== 'undefined' && log.info) {
-            log.info("Pick-and-Place simulation initialized", {
-                width: state.width,
-                height: state.height,
-                cubes: state.cubes.size,
-                goals: state.goals.size
-            });
-        }
-
-        // Initialize blackboard
-        state.blackboard = new bt.Blackboard();
-
-        // Create PA-BT State wrapper for blackboard
-        state.pabtState = pabt.newState(state.blackboard);
-
-        // Setup PA-BT actions and register them
-        setupPABTActions(state);
-
-        // CRITICAL: Sync state to blackboard BEFORE creating plan
-        // Otherwise, all pathClear_X conditions are undefined and planning fails!
-        syncToBlackboard(state);
-        log.info("Initial blackboard sync complete", {
-            pathClear_Target: state.blackboard.get('pathClear_' + TARGET_ID),
-            pathClear_Goal: state.blackboard.get('pathClear_Goal_' + GOAL_FINAL_ID),
-            actorPos: [state.actors.get(state.activeActorId).x, state.actors.get(state.activeActorId).y]
+        log.info("Pick-and-Place simulation initialized", {
+            width: state.width,
+            height: state.height,
+            cubes: state.cubes.size,
+            goals: state.goals.size,
+            blockades: BLOCKADE_IDS.length,
+            goalBlockades: GOAL_BLOCKADE_IDS.length
         });
 
-        // Create PA-BT plan with PABT State (not raw blackboard)
+        state.blackboard = new bt.Blackboard();
+        state.pabtState = pabt.newState(state.blackboard);
+
+        setupPABTActions(state);
+        syncToBlackboard(state);
+
+        log.info("Initial blackboard sync complete", {
+            reachable_target: state.blackboard.get('reachable_cube_' + TARGET_ID),
+            reachable_goal: state.blackboard.get('reachable_goal_' + GOAL_ID),
+            reachable_dumpster: state.blackboard.get('reachable_goal_' + DUMPSTER_ID),
+            reachable_staging: state.blackboard.get('reachable_goal_' + STAGING_AREA_ID),
+            heldItemExists: state.blackboard.get('heldItemExists'),
+            atEntity_target: state.blackboard.get('atEntity_' + TARGET_ID)
+        });
+
         const goalConditions = [
             {
                 key: 'cubeDeliveredAtGoal',
-                Match: function (value) {
-                    return value === true;
-                }
+                Match: function(value) { return value === true; }
             }
         ];
         state.pabtPlan = pabt.newPlan(state.pabtState, goalConditions);
 
-        // Create background BT ticker (PA-BT planner runs at 100ms)
-        // NOTE: Plan.Node() with uppercase N
         const rootNode = state.pabtPlan.Node();
         state.ticker = bt.newTicker(100, rootNode);
 
@@ -1067,54 +1093,24 @@ try {
     function update(state, msg) {
         if (msg.type === 'Tick' && msg.id === 'tick') {
             state.tickCount++;
-
-            // Update Patrols (Dynamic Obstacles)
-            state.cubes.forEach(cube => {
-                if (cube.isPatrol && !cube.deleted) {
-                    cube.y += cube.vy;
-                    // Bounce logic
-                    if (cube.y <= cube.minY || cube.y >= cube.maxY) {
-                        cube.vy *= -1;
-                        cube.y = Math.max(cube.minY, Math.min(cube.maxY, cube.y));
-                    }
-                }
-            });
-
-            // Sync read-only data to blackboard for PA-BT planner
             syncToBlackboard(state);
 
-            // Check win condition periodically
-            if (state.tickCount % 10 === 0) {
-                checkWinCondition(state);
-            }
-
-            // Periodic telemetry (every 20 ticks = ~2 seconds)
             if (state.tickCount % 20 === 0) {
                 const actor = state.actors.get(state.activeActorId);
-                const bb = state.blackboard;
-
-                // Count active blockade cubes
-                let activeBlockade = 0;
-                INNER_RING_IDS.forEach(id => {
-                    const cube = state.cubes.get(id);
-                    if (cube && !cube.deleted) activeBlockade++;
-                });
-
-                // Get key blackboard values
-                const pathClear1 = bb.get('pathClear_' + TARGET_ID);
-                const inRange1 = bb.get('inRange_' + TARGET_ID);
-                const dist1 = bb.get('distance_' + TARGET_ID);
-
                 log.info("Simulation telemetry", {
                     tick: state.tickCount,
                     mode: state.gameMode,
                     actorX: Math.round(actor.x),
                     actorY: Math.round(actor.y),
                     held: actor.heldItem ? actor.heldItem.id : -1,
-                    activeBlockade: activeBlockade,
-                    pathClearToTarget: pathClear1,
-                    inRangeOfTarget: inRange1,
-                    distanceToTarget: dist1,
+                    blockadeRemaining: BLOCKADE_IDS.filter(function(id) {
+                        const c = state.cubes.get(id);
+                        return c && !c.deleted;
+                    }).length,
+                    goalBlockadeRemaining: GOAL_BLOCKADE_IDS.filter(function(id) {
+                        const c = state.cubes.get(id);
+                        return c && !c.deleted;
+                    }).length,
                     win: state.winConditionMet
                 });
             }
@@ -1122,53 +1118,29 @@ try {
             return [state, tea.tick(16, 'tick')];
         }
 
-        // Keyboard controls
         if (msg.type === 'Key') {
             const key = msg.key;
 
-            // Quit
             if (key === 'q' || key === 'Q') {
                 return [state, tea.quit()];
             }
 
-            // Toggle mode
             if (key === 'm' || key === 'M') {
                 const oldMode = state.gameMode;
                 state.gameMode = state.gameMode === 'automatic' ? 'manual' : 'automatic';
-                log.info("Mode toggled", {
-                    from: oldMode,
-                    to: state.gameMode,
-                    tick: state.tickCount
-                });
+                log.info("Mode toggled", {from: oldMode, to: state.gameMode});
                 return [state, tea.tick(16, 'tick')];
             }
 
-            // Toggle debug mode
             if (key === '`') {
                 state.debugMode = !state.debugMode;
                 return [state, tea.tick(16, 'tick')];
             }
 
-            // Move cube 1 to a new random position (for testing unexpected circumstances / replanning)
-            // This works in BOTH automatic and manual mode
-            if (key === 'x' || key === 'X') {
-                const cube = state.cubes.get(1);
-                if (cube && !cube.deleted) {
-                    // Move cube to opposite side of play area
-                    cube.x = cube.x < 28 ? 45 : 15;
-                    cube.y = cube.y < 12 ? 18 : 6;
-                    // Force blackboard sync to trigger replanning
-                    syncToBlackboard(state);
-                }
-                return [state, tea.tick(16, 'tick')];
-            }
-
-            // Manual controls
             if (state.gameMode === 'manual') {
                 const actor = state.actors.get(state.activeActorId);
                 const moveSpeed = 1.0;
 
-                // Movement
                 if (key === 'ArrowUp' || key === 'w' || key === 'W') {
                     actor.y = Math.max(1, actor.y - moveSpeed);
                 } else if (key === 'ArrowDown' || key === 's' || key === 'S') {
@@ -1177,30 +1149,6 @@ try {
                     actor.x = Math.max(1, actor.x - moveSpeed);
                 } else if (key === 'ArrowRight' || key === 'd' || key === 'D') {
                     actor.x = Math.min(state.spaceWidth - 1, actor.x + moveSpeed);
-                }
-
-                // Pick cube
-                if ((key === '1' || key === '2') && !actor.heldItem) {
-                    const cubeId = parseInt(key, 10);
-                    const cube = state.cubes.get(cubeId);
-
-                    if (cube && !cube.deleted) {
-                        const dx = cube.x - actor.x;
-                        const dy = cube.y - actor.y;
-                        const dist = Math.sqrt(dx * dx + dy * dy);
-
-                        if (dist < 2.0) {
-                            cube.deleted = true;
-                            actor.heldItem = {id: cubeId, originalX: cube.x, originalY: cube.y};
-                            checkWinCondition(state);
-                        }
-                    }
-                }
-
-                // Drop item
-                if ((key === 'r' || key === 'R') && actor.heldItem) {
-                    actor.heldItem = null;
-                    checkWinCondition(state);
                 }
 
                 return [state, tea.tick(16, 'tick')];
@@ -1224,28 +1172,25 @@ try {
     // ============================================================================
 
     const program = tea.newModel({
-        init: function () {
-            return init();
-        },
-        update: function (msg, model) {
-            return update(model, msg);
-        },
-        view: function (model) {
-            return view(model);
-        }
+        init: function() { return init(); },
+        update: function(msg, model) { return update(model, msg); },
+        view: function(model) { return view(model); }
     });
 
-    // Wrap execution with try/catch for error handling
     try {
         console.log('');
         console.log('═════════════════════════════════════════');
         console.log('  PICK-AND-PLACE SIMULATOR');
-        console.log('  Demonstrating PA-BT Planning');
+        console.log('  Demonstrating PA-BT with Parametric Actions');
         console.log('═════════════════════════════════════════');
         console.log('');
         console.log('The actor (@) will automatically plan and');
         console.log('execute actions to move a cube (█) to');
         console.log('the goal location (○).');
+        console.log('');
+        console.log('TRUE PARAMETRIC ACTIONS:');
+        console.log('  MoveTo actions are generated ON DEMAND');
+        console.log('  based on what the planner needs.');
         console.log('');
         console.log('CONTROLS:');
         console.log('  [M] Mode: Auto/Manual');
@@ -1255,7 +1200,6 @@ try {
         console.log('Press any key to start...');
         console.log('');
 
-        // Run the program
         tea.run(program, {altScreen: true});
 
         console.log('');
@@ -1268,7 +1212,6 @@ try {
     }
 
 } catch (e) {
-    // Top-level error handler - ensures non-zero exit code
     console.error('');
     console.error('========================================');
     console.error('PROGRAM STARTUP FAILED');
@@ -1281,7 +1224,5 @@ try {
     console.error('If this is a module loading error, ensure you are running:');
     console.error('  osm script scripts/example-05-pick-and-place.js');
     console.error('========================================');
-
-    // Throw to trigger Go's panic recovery (non-zero exit)
     throw e;
 }

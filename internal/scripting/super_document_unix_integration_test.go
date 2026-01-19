@@ -1957,6 +1957,7 @@ func TestSuperDocument_FastScrollDoesNotInsertGarbage(t *testing.T) {
 // 2. Typing in the textarea snaps the viewport back to the cursor position
 // This is a regression test for the "viewport locked to cursor" issue.
 func TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping(t *testing.T) {
+	t.Parallel() // Allow parallel execution to avoid blocking other tests
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}

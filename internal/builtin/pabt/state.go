@@ -24,13 +24,61 @@ var debugOnce sync.Once
 // primitives (State, Action, Condition, Effect). Application-specific types
 // like simulation state, sprites, shapes, etc. belong in the scripting layer
 // (JavaScript) where they can be customized per-application.
+//
+// ActionGenerator Support:
+// For TRUE parametric actions (like MoveTo(entityId)), set an ActionGenerator
+// callback via SetActionGenerator(). When Actions() is called with a failed
+// condition, the generator is invoked to produce actions dynamically based on
+// the current world state and the specific failed condition.
 type State struct {
 	// Embed bt.Blackboard for storage
 	*btmod.Blackboard
 
-	// Registry of available actions
+	// Registry of available actions (static registration)
 	actions *ActionRegistry
+
+	// ActionGenerator is an optional callback for dynamic action generation.
+	// When set, it is called by Actions() to generate actions based on the
+	// failed condition. This enables TRUE parametric actions like MoveTo(entityId)
+	// where the entity parameter is determined at planning time.
+	//
+	// The generator receives the failed condition and should return a slice of
+	// actions that could potentially satisfy it. These are combined with any
+	// statically registered actions.
+	//
+	// Thread safety: The generator is called from the bt.Ticker goroutine.
+	// If it accesses JavaScript state, it MUST use Bridge.RunOnLoopSync.
+	actionGenerator ActionGeneratorFunc
+
+	// mu protects actionGenerator from concurrent read/write
+	mu sync.RWMutex
 }
+
+// ActionGeneratorFunc is a function that generates actions dynamically based on
+// the failed condition. This is the core of parametric action support.
+//
+// Parameters:
+//   - failed: The condition that failed (triggered planning). Contains the key
+//     and value that the planner is trying to achieve.
+//
+// Returns:
+//   - actions: Slice of actions that could potentially satisfy the failed condition.
+//     Each action should have effects that match the failed condition's key.
+//   - error: If action generation fails.
+//
+// Example usage for MoveTo(entityId):
+//
+//	generator := func(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
+//	    key := failed.Key()
+//	    if key == "atEntity" {
+//	        // Generate MoveTo actions for each reachable entity
+//	        for _, entity := range world.entities {
+//	            actions = append(actions, createMoveToAction(entity.id))
+//	        }
+//	    }
+//	    return actions, nil
+//	}
+type ActionGeneratorFunc func(failed pabtpkg.Condition) ([]pabtpkg.IAction, error)
 
 // NewState creates a new State backed by the provided blackboard.
 func NewState(bb *btmod.Blackboard) *State {
@@ -38,6 +86,28 @@ func NewState(bb *btmod.Blackboard) *State {
 		Blackboard: bb,
 		actions:    NewActionRegistry(),
 	}
+}
+
+// SetActionGenerator sets the dynamic action generator callback.
+// When set, Actions() will call this generator in addition to returning
+// statically registered actions.
+//
+// This enables TRUE parametric actions like MoveTo(entityId) where the
+// entity parameter is determined at planning time based on the failed condition.
+//
+// Thread safety: The generator is protected by a mutex and can be set/cleared
+// at any time. The generator itself is called from the bt.Ticker goroutine.
+func (s *State) SetActionGenerator(gen ActionGeneratorFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.actionGenerator = gen
+}
+
+// GetActionGenerator returns the current action generator, or nil if none is set.
+func (s *State) GetActionGenerator() ActionGeneratorFunc {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.actionGenerator
 }
 
 // Variable implements pabtpkg.State.Variable(key any).
@@ -93,12 +163,19 @@ func (s *State) Variable(key any) (any, error) {
 // This is the core of PA-BT planning: find actions that can make progress
 // toward satisfying unsatisfied conditions.
 //
+// Action Sources (in order):
+// 1. ActionGenerator (if set) - generates parametric actions dynamically
+// 2. Static registry - returns pre-registered actions
+//
+// Both sources are filtered to only include actions with relevant effects.
+//
 // Special case: If failed is nil, returns all registered actions (for backward
 // compatibility and testing purposes).
 func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
+	// Get statically registered actions
 	registeredActions := s.actions.All()
 
-	// Special case: nil failed condition returns all actions
+	// Special case: nil failed condition returns all registered actions
 	if failed == nil {
 		return registeredActions, nil
 	}
@@ -113,8 +190,34 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 			failedKey, failedKey, len(registeredActions))
 	}
 
-	// Filter actions to those with relevant effects
 	var relevantActions []pabtpkg.IAction
+
+	// 1. Call ActionGenerator if set (parametric actions)
+	s.mu.RLock()
+	generator := s.actionGenerator
+	s.mu.RUnlock()
+
+	if generator != nil {
+		generatedActions, err := generator(failed)
+		if err != nil {
+			if debugPABT {
+				fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] ActionGenerator error: %v\n", err)
+			}
+			// Don't fail completely - fall back to static actions
+		} else {
+			if debugPABT {
+				fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] ActionGenerator returned %d actions\n", len(generatedActions))
+			}
+			// Filter generated actions for relevance
+			for _, action := range generatedActions {
+				if s.actionHasRelevantEffect(action, failedKey, failed) {
+					relevantActions = append(relevantActions, action)
+				}
+			}
+		}
+	}
+
+	// 2. Filter static registry actions for relevance
 	for _, action := range registeredActions {
 		if s.actionHasRelevantEffect(action, failedKey, failed) {
 			relevantActions = append(relevantActions, action)

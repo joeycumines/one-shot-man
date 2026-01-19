@@ -1,6 +1,7 @@
 package pabt
 
 import (
+	"sort"
 	"sync"
 
 	bt "github.com/joeycumines/go-behaviortree"
@@ -37,14 +38,23 @@ func (r *ActionRegistry) Get(name string) pabtpkg.IAction {
 	return r.actions[name]
 }
 
-// All returns all registered actions.
+// All returns all registered actions in deterministic order (sorted by name).
+// Deterministic ordering is CRITICAL for PA-BT planning reproducibility.
 func (r *ActionRegistry) All() []pabtpkg.IAction {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	// Collect names for sorting
+	names := make([]string, 0, len(r.actions))
+	for name := range r.actions {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	// Build result in sorted order
 	result := make([]pabtpkg.IAction, 0, len(r.actions))
-	for _, action := range r.actions {
-		result = append(result, action)
+	for _, name := range names {
+		result = append(result, r.actions[name])
 	}
 	return result
 }

@@ -21,17 +21,18 @@ import (
 )
 
 // PickAndPlaceDebugJSON represents the compact debug JSON output by the pick-and-place simulator
-// Keys: m=mode, t=tick, x/y=actor pos, h=held, w=win, a/b=target pos, n=blockade count
+// Keys: m=mode, t=tick, x/y=actor pos, h=held, w=win, a/b=target pos, n=blockade count, g=goal blockade count
 type PickAndPlaceDebugJSON struct {
-	Mode          string   `json:"m"`           // 'a' = automatic, 'm' = manual
-	Tick          int64    `json:"t"`           // Tick counter
-	ActorX        float64  `json:"x"`           // Actor X position (rounded)
-	ActorY        float64  `json:"y"`           // Actor Y position (rounded)
-	HeldItemID    int      `json:"h"`           // Held cube ID (-1 if none)
-	WinCond       int      `json:"w"`           // Win condition met (0 = false, 1 = true)
-	TargetX       *float64 `json:"a,omitempty"` // Target cube X (cube 1, optional if deleted)
-	TargetY       *float64 `json:"b,omitempty"` // Target cube Y (cube 1)
-	BlockadeCount int      `json:"n"`           // Number of blockade cubes still at wall (0-7)
+	Mode              string   `json:"m"`           // 'a' = automatic, 'm' = manual
+	Tick              int64    `json:"t"`           // Tick counter
+	ActorX            float64  `json:"x"`           // Actor X position (rounded)
+	ActorY            float64  `json:"y"`           // Actor Y position (rounded)
+	HeldItemID        int      `json:"h"`           // Held cube ID (-1 if none)
+	WinCond           int      `json:"w"`           // Win condition met (0 = false, 1 = true)
+	TargetX           *float64 `json:"a,omitempty"` // Target cube X (cube 1, optional if deleted)
+	TargetY           *float64 `json:"b,omitempty"` // Target cube Y (cube 1)
+	BlockadeCount     int      `json:"n"`           // Number of blockade cubes still at wall (0-3)
+	GoalBlockadeCount int      `json:"g"`           // Number of goal blockade cubes (0-7)
 }
 
 // PickAndPlaceConfig holds configuration for pick-and-place tests
@@ -238,24 +239,29 @@ func TestPickAndPlaceInitialState(t *testing.T) {
 	t.Logf("Initial state: tick=%d, actor=(%.1f,%.1f), held=%d, mode=%s, blockade=%d",
 		initialState.Tick, initialState.ActorX, initialState.ActorY, initialState.HeldItemID, initialState.Mode, initialState.BlockadeCount)
 
-	// In manual mode, actor should not have moved much from initial position (5, 12)
+	// In manual mode, actor should not have moved much from initial position (5, 11)
 	// Allow some tolerance for timing - actor might have moved 1-2 units before mode switch
 	if initialState.ActorX < 2 || initialState.ActorX > 10 ||
 		initialState.ActorY < 7 || initialState.ActorY > 17 {
-		t.Errorf("Actor position (%.1f, %.1f) is far from initial (5, 12)",
+		t.Errorf("Actor position (%.1f, %.1f) is far from initial (5, 11)",
 			initialState.ActorX, initialState.ActorY)
 	}
 
-	// Target cube (cube 1) should be at (40, 12) - inside the inner ring
-	if initialState.TargetX == nil || *initialState.TargetX != 40 ||
-		initialState.TargetY == nil || *initialState.TargetY != 12 {
-		t.Errorf("Expected target cube at (40, 12), got (%v, %v)",
+	// Target cube (cube 1) should be at (45, 11) - inside the room
+	if initialState.TargetX == nil || *initialState.TargetX != 45 ||
+		initialState.TargetY == nil || *initialState.TargetY != 11 {
+		t.Errorf("Expected target cube at (45, 11), got (%v, %v)",
 			initialState.TargetX, initialState.TargetY)
 	}
 
-	// Blockade should have 18 cubes (Inner Ring) initially
-	if initialState.BlockadeCount != 18 {
-		t.Errorf("Expected 18 blockade cubes, got %d", initialState.BlockadeCount)
+	// Blockade should have 0 cubes initially (path blockades removed in simplified scenario)
+	if initialState.BlockadeCount != 0 {
+		t.Errorf("Expected 0 blockade cubes (path blockades removed), got %d", initialState.BlockadeCount)
+	}
+
+	// Goal blockade should have 8 cubes initially (complete "O" wall around goal)
+	if initialState.GoalBlockadeCount != 8 {
+		t.Errorf("Expected 8 goal blockade cubes, got %d", initialState.GoalBlockadeCount)
 	}
 
 	// We switched to manual mode to prevent actor from moving, so expect 'm'
@@ -379,35 +385,32 @@ func TestPickAndPlaceCompletion(t *testing.T) {
 		}
 
 		// 3. Collision Check (Strict)
-		// Wall Definitions (must match script constants)
+		// Room Wall Definitions (must match script constants)
+		// New simplified scenario: Room from x=20-55, y=6-16 with entry gap at (20, 11)
 		const (
-			OuterRingMinX = 15
-			OuterRingMaxX = 50
-			OuterRingMinY = 5
-			OuterRingMaxY = 20
-			GapLeftX      = 15 // Entry point on left wall
-			GapRightX     = 50 // Exit point on right wall
-			GapY          = 12 // Same y-level for both gaps
+			RoomMinX = 20
+			RoomMaxX = 55
+			RoomMinY = 6
+			RoomMaxY = 16
+			GapX     = 20 // Entry point on left wall
+			GapY     = 11 // Gap Y position
 		)
 
 		// Check if actor is colliding with walls
 		// We approximate collision as being within 0.5 distance of a wall integer coordinate
 		// Wall coordinates:
-		// Top: (OuterRingMinX..OuterRingMaxX, OuterRingMinY)
-		// Bottom: (OuterRingMinX..OuterRingMaxX, OuterRingMaxY)
-		// Left: (OuterRingMinX, OuterRingMinY..OuterRingMaxY) EXCEPT Gap
-		// Right: (OuterRingMaxX, OuterRingMinY..OuterRingMaxY) EXCEPT Gap
+		// Top: (RoomMinX..RoomMaxX, RoomMinY)
+		// Bottom: (RoomMinX..RoomMaxX, RoomMaxY)
+		// Left: (RoomMinX, RoomMinY..RoomMaxY) EXCEPT Gap
+		// Right: (RoomMaxX, RoomMinY..RoomMaxY)
 
 		actorX := state.ActorX
 		actorY := state.ActorY
 		collision := false
 		wallDesc := ""
 
-		inLeftGap := func(x, y float64) bool {
-			return ctxAlmostEqual(x, float64(GapLeftX), 1.5) && ctxAlmostEqual(y, float64(GapY), 1.5)
-		}
-		inRightGap := func(x, y float64) bool {
-			return ctxAlmostEqual(x, float64(GapRightX), 1.5) && ctxAlmostEqual(y, float64(GapY), 1.5)
+		inGap := func(x, y float64) bool {
+			return ctxAlmostEqual(x, float64(GapX), 1.5) && ctxAlmostEqual(y, float64(GapY), 1.5)
 		}
 
 		// Helper to check point against segment
@@ -429,28 +432,26 @@ func TestPickAndPlaceCompletion(t *testing.T) {
 
 		// Check walls
 		// Top
-		if checkSegment(float64(OuterRingMinX), float64(OuterRingMinY), float64(OuterRingMaxX), float64(OuterRingMinY), false) {
+		if checkSegment(float64(RoomMinX), float64(RoomMinY), float64(RoomMaxX), float64(RoomMinY), false) {
 			collision = true
 			wallDesc = "Top Wall"
 		}
 		// Bottom
-		if checkSegment(float64(OuterRingMinX), float64(OuterRingMaxY), float64(OuterRingMaxX), float64(OuterRingMaxY), false) {
+		if checkSegment(float64(RoomMinX), float64(RoomMaxY), float64(RoomMaxX), float64(RoomMaxY), false) {
 			collision = true
 			wallDesc = "Bottom Wall"
 		}
-		// Left
-		if checkSegment(float64(OuterRingMinX), float64(OuterRingMinY), float64(OuterRingMinX), float64(OuterRingMaxY), true) {
-			if !inLeftGap(actorX, actorY) {
+		// Left (with gap)
+		if checkSegment(float64(RoomMinX), float64(RoomMinY), float64(RoomMinX), float64(RoomMaxY), true) {
+			if !inGap(actorX, actorY) {
 				collision = true
 				wallDesc = "Left Wall"
 			}
 		}
 		// Right
-		if checkSegment(float64(OuterRingMaxX), float64(OuterRingMinY), float64(OuterRingMaxX), float64(OuterRingMaxY), true) {
-			if !inRightGap(actorX, actorY) {
-				collision = true
-				wallDesc = "Right Wall"
-			}
+		if checkSegment(float64(RoomMaxX), float64(RoomMinY), float64(RoomMaxX), float64(RoomMaxY), true) {
+			collision = true
+			wallDesc = "Right Wall"
 		}
 
 		if collision {
@@ -818,6 +819,7 @@ func (h *PickAndPlaceHarness) GetScreenBuffer() string {
 var pickPlaceDebugJSONRegex = regexp.MustCompile(`(?s)__place_debug_start__\s*(.+?)\s*__place_debug_end__`)
 
 // pickPlaceRawJSONRegex matches the debug JSON directly (fallback if markers are fragmented)
+// Updated to match both old format (without g) and new format (with g for goal blockade count)
 var pickPlaceRawJSONRegex = regexp.MustCompile(`\{"m":"[^"]+","t":\d+[^}]*\}`)
 
 // ansiRegex is defined in shooter_harness_test.go and shared across the package
@@ -927,4 +929,413 @@ func truncateFromEnd(s string, n int) string {
 		return s
 	}
 	return "...[truncated]...\n" + s[len(s)-n:]
+}
+
+// ============================================================================
+// PA-BT Conflict Resolution Verification Test
+// ============================================================================
+// This test verifies that the PA-BT planner correctly handles the "goal blocked"
+// scenario by demonstrating conflict resolution:
+// 1. Agent picks up target
+// 2. Agent discovers goal is blocked (can't deliver)
+// 3. Agent places target temporarily
+// 4. Agent clears at least one goal blockade
+// 5. Agent retrieves target
+// 6. Agent delivers target to goal
+// ============================================================================
+
+// LogEvent represents a parsed log event from the simulation
+type LogEvent struct {
+	Timestamp string                 `json:"timestamp"`
+	Level     string                 `json:"level"`
+	Message   string                 `json:"message"`
+	Fields    map[string]interface{} `json:"fields"`
+}
+
+// MirroredState represents the Go-side state built from log events
+type MirroredState struct {
+	ActorX         float64
+	ActorY         float64
+	HeldItemID     int
+	PickedItems    map[int]bool // Items that have been picked up
+	PlacedItems    map[int]bool // Items that have been placed
+	DeliveredItems map[int]bool // Items delivered to goal
+	WinCondition   bool
+}
+
+// StateDelta represents a change in state
+type StateDelta struct {
+	Tick      int64
+	Action    string
+	ItemID    int
+	OldHeld   int
+	NewHeld   int
+	OldX      float64
+	NewX      float64
+	OldY      float64
+	NewY      float64
+	EventType string // "PICK", "PLACE", "DELIVER", "CONFLICT_RESOLUTION", "GOAL_WALL_CLEAR"
+}
+
+// parseLogEvents parses log file content into structured events
+func parseLogEvents(content string) []LogEvent {
+	var events []LogEvent
+	lines := strings.Split(content, "\n")
+
+	// Log format: timestamp level message {json_fields}
+	// Example: 2024-01-20T00:00:00.000Z INFO PA-BT action executing {"action":"Pick_Target",...}
+	logLineRegex := regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}T[\d:.]+Z?)\s+(\w+)\s+(.+?)\s*(\{.*\})?\s*$`)
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		matches := logLineRegex.FindStringSubmatch(line)
+		if len(matches) >= 4 {
+			event := LogEvent{
+				Timestamp: matches[1],
+				Level:     matches[2],
+				Message:   matches[3],
+				Fields:    make(map[string]interface{}),
+			}
+
+			// Parse JSON fields if present
+			if len(matches) >= 5 && matches[4] != "" {
+				json.Unmarshal([]byte(matches[4]), &event.Fields)
+			}
+
+			events = append(events, event)
+		} else {
+			// Try parsing as pure JSON log line (structured logging)
+			var jsonEvent map[string]interface{}
+			if err := json.Unmarshal([]byte(line), &jsonEvent); err == nil {
+				event := LogEvent{Fields: make(map[string]interface{})}
+				if ts, ok := jsonEvent["time"].(string); ok {
+					event.Timestamp = ts
+				}
+				if lvl, ok := jsonEvent["level"].(string); ok {
+					event.Level = lvl
+				}
+				if msg, ok := jsonEvent["msg"].(string); ok {
+					event.Message = msg
+				}
+				// Copy remaining fields
+				for k, v := range jsonEvent {
+					if k != "time" && k != "level" && k != "msg" {
+						event.Fields[k] = v
+					}
+				}
+				events = append(events, event)
+			}
+		}
+	}
+	return events
+}
+
+// buildStateHistory builds a history of state deltas from log events
+func buildStateHistory(events []LogEvent) ([]StateDelta, *MirroredState) {
+	state := &MirroredState{
+		HeldItemID:     -1,
+		PickedItems:    make(map[int]bool),
+		PlacedItems:    make(map[int]bool),
+		DeliveredItems: make(map[int]bool),
+	}
+
+	var deltas []StateDelta
+	var currentTick int64
+
+	for _, event := range events {
+		// Update tick from fields
+		if tick, ok := event.Fields["tick"].(float64); ok {
+			currentTick = int64(tick)
+		}
+
+		// Track position updates
+		if x, ok := event.Fields["actorX"].(float64); ok {
+			if state.ActorX != x {
+				state.ActorX = x
+			}
+		}
+		if y, ok := event.Fields["actorY"].(float64); ok {
+			if state.ActorY != y {
+				state.ActorY = y
+			}
+		}
+
+		// Parse action events
+		action, actionOk := event.Fields["action"].(string)
+		if !actionOk {
+			continue
+		}
+
+		// Detect state changes based on action result
+		result, hasResult := event.Fields["result"].(string)
+		if !hasResult || result != "SUCCESS" {
+			continue // Only track successful actions
+		}
+
+		delta := StateDelta{
+			Tick:    currentTick,
+			Action:  action,
+			OldHeld: state.HeldItemID,
+		}
+
+		// Classify the action
+		switch {
+		case strings.HasPrefix(action, "Pick_Target"):
+			delta.EventType = "PICK"
+			delta.ItemID = 1 // TARGET_ID
+			state.HeldItemID = 1
+			state.PickedItems[1] = true
+			delta.NewHeld = 1
+			deltas = append(deltas, delta)
+
+		case strings.HasPrefix(action, "Place_Target_Temporary"):
+			delta.EventType = "CONFLICT_RESOLUTION"
+			delta.ItemID = 1
+			state.HeldItemID = -1
+			state.PlacedItems[1] = true
+			delta.NewHeld = -1
+			deltas = append(deltas, delta)
+
+		case strings.HasPrefix(action, "Pick_GoalBlockade_"):
+			delta.EventType = "GOAL_WALL_CLEAR"
+			// Extract ID from action name
+			parts := strings.Split(action, "_")
+			if len(parts) >= 3 {
+				if id, err := parseInt(parts[2]); err == nil {
+					delta.ItemID = id
+					state.HeldItemID = id
+					state.PickedItems[id] = true
+					delta.NewHeld = id
+				}
+			}
+			deltas = append(deltas, delta)
+
+		case strings.HasPrefix(action, "Deposit_GoalBlockade_"):
+			delta.EventType = "GOAL_WALL_CLEAR"
+			state.HeldItemID = -1
+			delta.NewHeld = -1
+			deltas = append(deltas, delta)
+
+		case strings.HasPrefix(action, "Deliver_Target"):
+			delta.EventType = "DELIVER"
+			delta.ItemID = 1
+			state.HeldItemID = -1
+			state.DeliveredItems[1] = true
+			state.WinCondition = true
+			delta.NewHeld = -1
+			deltas = append(deltas, delta)
+
+		case strings.HasPrefix(action, "Pick_Blockade_"):
+			delta.EventType = "PICK"
+			parts := strings.Split(action, "_")
+			if len(parts) >= 3 {
+				if id, err := parseInt(parts[2]); err == nil {
+					delta.ItemID = id
+					state.HeldItemID = id
+					state.PickedItems[id] = true
+					delta.NewHeld = id
+				}
+			}
+			deltas = append(deltas, delta)
+
+		case strings.HasPrefix(action, "Deposit_Blockade_"):
+			delta.EventType = "PLACE"
+			state.HeldItemID = -1
+			delta.NewHeld = -1
+			deltas = append(deltas, delta)
+		}
+	}
+
+	return deltas, state
+}
+
+func parseInt(s string) (int, error) {
+	var result int
+	_, err := fmt.Sscanf(s, "%d", &result)
+	return result, err
+}
+
+// TestPickAndPlaceConflictResolution verifies the PA-BT conflict resolution behavior
+// This is the EXHAUSTIVE verification test that:
+// 1. Runs the simulation until completion
+// 2. Parses all log events
+// 3. Builds mirrored state from events
+// 4. Verifies the expected sequence of actions occurred
+func TestPickAndPlaceConflictResolution(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping conflict resolution test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second)
+	defer cancel()
+
+	logFilePath := filepath.Join(t.TempDir(), "conflict_resolution_test.log")
+
+	harness, err := NewPickAndPlaceHarness(ctx, t, PickAndPlaceConfig{
+		TestMode:    true,
+		LogFilePath: logFilePath,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create harness: %v", err)
+	}
+	defer harness.Close()
+
+	t.Log("Starting PA-BT Conflict Resolution Test...")
+	t.Log("Expected behavior:")
+	t.Log("  1. Clear path blockades")
+	t.Log("  2. Pick target")
+	t.Log("  3. Discover goal blocked → Place target temporarily (CONFLICT RESOLUTION)")
+	t.Log("  4. Clear goal wall blockades")
+	t.Log("  5. Retrieve target")
+	t.Log("  6. Deliver target to goal")
+
+	// Wait for initial frames
+	harness.WaitForFrames(10)
+	startTime := time.Now()
+
+	// Monitor until win condition or timeout
+	loopCount := 0
+	for {
+		loopCount++
+
+		if ctx.Err() != nil {
+			// Dump log on timeout
+			content, _ := os.ReadFile(logFilePath)
+			t.Logf("=== Log at timeout (last 10000 bytes) ===\n%s", truncateFromEnd(string(content), 10000))
+			t.Fatalf("Test timed out before completion")
+		}
+
+		state := harness.GetDebugState()
+
+		// Log progress periodically
+		if loopCount%20 == 0 {
+			t.Logf("Loop %d: tick=%d pos=(%.1f,%.1f) held=%d blockade=%d goalBlockade=%d win=%d",
+				loopCount, state.Tick, state.ActorX, state.ActorY, state.HeldItemID,
+				state.BlockadeCount, state.GoalBlockadeCount, state.WinCond)
+		}
+
+		// Check win condition
+		if state.WinCond == 1 {
+			t.Logf("WIN CONDITION MET at tick %d! (Time: %v)", state.Tick, time.Since(startTime))
+			break
+		}
+
+		harness.WaitForFrames(10)
+	}
+
+	// === PHASE 2: Parse logs and verify conflict resolution ===
+	t.Log("=== Verifying conflict resolution from logs ===")
+
+	content, err := os.ReadFile(logFilePath)
+	if err != nil {
+		t.Fatalf("Failed to read log file: %v", err)
+	}
+
+	events := parseLogEvents(string(content))
+	t.Logf("Parsed %d log events", len(events))
+
+	deltas, finalState := buildStateHistory(events)
+	t.Logf("Built %d state deltas", len(deltas))
+
+	// Log all deltas for debugging
+	t.Log("=== State Delta History ===")
+	for i, delta := range deltas {
+		t.Logf("  [%d] tick=%d action=%s type=%s itemID=%d held=%d->%d",
+			i, delta.Tick, delta.Action, delta.EventType, delta.ItemID, delta.OldHeld, delta.NewHeld)
+	}
+
+	// === Verification assertions ===
+
+	// 1. Verify win condition was achieved
+	if !finalState.WinCondition {
+		t.Error("FAIL: Win condition not achieved")
+	} else {
+		t.Log("PASS: Win condition achieved")
+	}
+
+	// 2. Verify target was delivered
+	if !finalState.DeliveredItems[1] {
+		t.Error("FAIL: Target was not delivered")
+	} else {
+		t.Log("PASS: Target was delivered")
+	}
+
+	// 3. Count event types
+	var pickTargetCount, placeTargetCount, goalWallClearCount, deliverCount int
+	for _, delta := range deltas {
+		switch delta.EventType {
+		case "PICK":
+			if delta.ItemID == 1 {
+				pickTargetCount++
+			}
+		case "CONFLICT_RESOLUTION":
+			placeTargetCount++
+		case "GOAL_WALL_CLEAR":
+			goalWallClearCount++
+		case "DELIVER":
+			deliverCount++
+		}
+	}
+
+	t.Logf("Event counts: Pick_Target=%d, Place_Target_Temporary=%d, Goal_Wall_Clear=%d, Deliver=%d",
+		pickTargetCount, placeTargetCount, goalWallClearCount, deliverCount)
+
+	// 4. Verify conflict resolution occurred (Place_Target_Temporary was used)
+	if placeTargetCount < 1 {
+		t.Error("FAIL: Place_Target_Temporary was never executed - conflict resolution did not occur!")
+	} else {
+		t.Logf("PASS: Place_Target_Temporary executed %d time(s) - conflict resolution occurred!", placeTargetCount)
+	}
+
+	// 5. Verify target was picked up at least twice (initial pick + retrieve after placing)
+	if pickTargetCount < 2 {
+		t.Errorf("FAIL: Expected target to be picked at least 2 times (initial + retrieve), got %d", pickTargetCount)
+	} else {
+		t.Logf("PASS: Target picked %d times (includes retrieve after temporary placement)", pickTargetCount)
+	}
+
+	// 6. Verify at least one goal blockade was cleared
+	if goalWallClearCount < 2 { // Pick + Deposit = 2 events minimum
+		t.Errorf("FAIL: Expected at least 2 goal wall clear events (pick+deposit), got %d", goalWallClearCount)
+	} else {
+		t.Logf("PASS: %d goal wall clear events occurred", goalWallClearCount)
+	}
+
+	// 7. Verify deliver occurred exactly once
+	if deliverCount != 1 {
+		t.Errorf("FAIL: Expected exactly 1 deliver event, got %d", deliverCount)
+	} else {
+		t.Log("PASS: Deliver occurred exactly once")
+	}
+
+	// 8. Verify sequence: Place_Target_Temporary must occur BEFORE second Pick_Target
+	var placeTargetTick, secondPickTargetTick int64
+	pickTargetOccurrences := 0
+	for _, delta := range deltas {
+		if delta.EventType == "CONFLICT_RESOLUTION" && placeTargetTick == 0 {
+			placeTargetTick = delta.Tick
+		}
+		if delta.EventType == "PICK" && delta.ItemID == 1 {
+			pickTargetOccurrences++
+			if pickTargetOccurrences == 2 {
+				secondPickTargetTick = delta.Tick
+			}
+		}
+	}
+
+	if placeTargetTick > 0 && secondPickTargetTick > 0 {
+		if placeTargetTick < secondPickTargetTick {
+			t.Logf("PASS: Sequence verified - Place_Target_Temporary (tick %d) before second Pick_Target (tick %d)",
+				placeTargetTick, secondPickTargetTick)
+		} else {
+			t.Errorf("FAIL: Sequence violation - Place_Target_Temporary (tick %d) should occur before second Pick_Target (tick %d)",
+				placeTargetTick, secondPickTargetTick)
+		}
+	}
+
+	t.Log("=== Conflict Resolution Verification Complete ===")
 }

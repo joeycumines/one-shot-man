@@ -118,6 +118,92 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 			_ = jsObj.Set("RegisterAction", registerActionFn)
 			_ = jsObj.Set("registerAction", registerActionFn) // lowercase alias for JS convention
 
+			// Expose setActionGenerator for TRUE parametric actions
+			// The generator function receives (failedCondition) and returns an array of actions
+			setActionGeneratorFn := func(call goja.FunctionCall) goja.Value {
+				if len(call.Arguments) < 1 {
+					panic(runtime.NewTypeError("setActionGenerator requires a generator function argument"))
+				}
+
+				// Allow null/undefined to clear the generator
+				if goja.IsNull(call.Arguments[0]) || goja.IsUndefined(call.Arguments[0]) {
+					state.SetActionGenerator(nil)
+					return goja.Undefined()
+				}
+
+				genFn, ok := goja.AssertFunction(call.Arguments[0])
+				if !ok {
+					panic(runtime.NewTypeError("generator must be a function"))
+				}
+
+				// Create a Go ActionGeneratorFunc that calls the JS function
+				generator := func(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
+					var actions []pabtpkg.IAction
+					var genErr error
+
+					// CRITICAL: Must use RunOnLoopSync for thread-safe goja access
+					err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+						// Build a JS-friendly condition object from the failed condition
+						condObj := vm.NewObject()
+						if failed != nil {
+							_ = condObj.Set("key", failed.Key())
+							// Add a match method that wraps the Go condition
+							_ = condObj.Set("Match", func(fcall goja.FunctionCall) goja.Value {
+								if len(fcall.Arguments) < 1 {
+									return vm.ToValue(false)
+								}
+								return vm.ToValue(failed.Match(fcall.Arguments[0].Export()))
+							})
+						}
+
+						// Call the JS generator function
+						result, callErr := genFn(goja.Undefined(), condObj)
+						if callErr != nil {
+							genErr = callErr
+							return nil
+						}
+
+						// Parse the result array into Go actions
+						if goja.IsNull(result) || goja.IsUndefined(result) {
+							return nil
+						}
+
+						resultObj := result.ToObject(vm)
+						if resultObj == nil {
+							return nil
+						}
+
+						length := int(resultObj.Get("length").ToInteger())
+						for i := 0; i < length; i++ {
+							actionVal := resultObj.Get(fmt.Sprintf("%d", i))
+							if goja.IsUndefined(actionVal) || goja.IsNull(actionVal) {
+								continue
+							}
+
+							// Extract the Go action from the JS wrapper
+							actionExport := actionVal.Export()
+							if action, ok := actionExport.(*Action); ok {
+								actions = append(actions, action)
+							}
+						}
+						return nil
+					})
+
+					if err != nil {
+						return nil, err
+					}
+					if genErr != nil {
+						return nil, genErr
+					}
+					return actions, nil
+				}
+
+				state.SetActionGenerator(generator)
+				return goja.Undefined()
+			}
+			_ = jsObj.Set("setActionGenerator", setActionGeneratorFn)
+			_ = jsObj.Set("SetActionGenerator", setActionGeneratorFn) // uppercase alias
+
 			// Store native reference for interop (e.g., newPlan)
 			_ = jsObj.Set("_native", state)
 

@@ -1,0 +1,129 @@
+{
+  "project": "Pick-and-Place PA-BT Conflict Resolution Demo",
+  "lastUpdated": "2026-01-20T00:00:00Z",
+  "status": "IN_PROGRESS",
+  "mandatoryTasks": [
+    {
+      "id": 1,
+      "title": "Modify scenario: Add movable wall AROUND goal",
+      "description": "Place movable blockade objects in a contiguous, impassable wall surrounding the final goal. This forces the planner to use conflict resolution when target is picked but goal is unreachable.",
+      "status": "NOT_STARTED",
+      "mandatory": true,
+      "sequential": true,
+      "subtasks": [
+        {"id": "1.1", "title": "Define GOAL_BLOCKADE_IDS array", "status": "NOT_STARTED"},
+        {"id": "1.2", "title": "Create goal wall positions around (8,18)", "status": "NOT_STARTED"},
+        {"id": "1.3", "title": "Add goal blockades to cubesInit", "status": "NOT_STARTED"},
+        {"id": "1.4", "title": "Update BLOCKADE_IDS to include goal blockades OR separate array", "status": "NOT_STARTED"}
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Add Place_Target_Temporary action",
+      "description": "New action that allows agent to place target cube on ground temporarily. Precondition: holding target. Effect: target exists at actor location, hands empty. This enables the 'place target, clear path, retrieve' behavior.",
+      "status": "NOT_STARTED",
+      "mandatory": true,
+      "sequential": true,
+      "subtasks": [
+        {"id": "2.1", "title": "Define Place_Target_Temporary action with conditions/effects", "status": "NOT_STARTED"},
+        {"id": "2.2", "title": "Update target cube position when placed", "status": "NOT_STARTED"},
+        {"id": "2.3", "title": "Add blackboard key for target_placed_temp", "status": "NOT_STARTED"}
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Add Pick_GoalBlockade_X and Deposit_GoalBlockade_X actions",
+      "description": "Actions to pick up and deposit blockades around the goal. Similar to existing blockade actions but with effect heuristic for goal reachability.",
+      "status": "NOT_STARTED",
+      "mandatory": true,
+      "sequential": true,
+      "subtasks": [
+        {"id": "3.1", "title": "Register Pick_GoalBlockade_X for each goal blockade ID", "status": "NOT_STARTED"},
+        {"id": "3.2", "title": "Register Deposit_GoalBlockade_X for each goal blockade ID", "status": "NOT_STARTED"},
+        {"id": "3.3", "title": "Add effect heuristic: reachable_goal_1 = true", "status": "NOT_STARTED"}
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Update blackboard sync for goal blockades",
+      "description": "Sync goal blockade reachability and atEntity states to blackboard.",
+      "status": "NOT_STARTED",
+      "mandatory": true,
+      "sequential": true
+    },
+    {
+      "id": 5,
+      "title": "Add EXHAUSTIVE logging for state verification",
+      "description": "Add structured log events for: action execution, world state changes, replanning triggers, conflict resolution. Each log must be parseable.",
+      "status": "NOT_STARTED",
+      "mandatory": true,
+      "sequential": true,
+      "subtasks": [
+        {"id": "5.1", "title": "Log WORLD_STATE_CHANGE events on cube pick/place", "status": "NOT_STARTED"},
+        {"id": "5.2", "title": "Log PLAN_STEP events on action execution", "status": "NOT_STARTED"},
+        {"id": "5.3", "title": "Log REPLAN events when replanning occurs", "status": "NOT_STARTED"},
+        {"id": "5.4", "title": "Ensure all logs have structured JSON format", "status": "NOT_STARTED"}
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Update debug JSON with goal blockade count",
+      "description": "Add field for goal blockade count in debug JSON output.",
+      "status": "NOT_STARTED",
+      "mandatory": true,
+      "sequential": true
+    },
+    {
+      "id": 7,
+      "title": "Build Go-side state mirroring from logs",
+      "description": "In integration test, parse log events and build a mirrored state representation. Track history of state deltas.",
+      "status": "NOT_STARTED",
+      "mandatory": true,
+      "sequential": true,
+      "subtasks": [
+        {"id": "7.1", "title": "Define Go structs for mirrored state", "status": "NOT_STARTED"},
+        {"id": "7.2", "title": "Parse log events from log file", "status": "NOT_STARTED"},
+        {"id": "7.3", "title": "Build state history from events", "status": "NOT_STARTED"},
+        {"id": "7.4", "title": "Track and store deltas", "status": "NOT_STARTED"}
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Verify state history programmatically",
+      "description": "Assert that the sequence of state deltas matches expected PA-BT conflict resolution behavior: pick target → place target → clear goal wall → retrieve target → deliver.",
+      "status": "NOT_STARTED",
+      "mandatory": true,
+      "sequential": true,
+      "subtasks": [
+        {"id": "8.1", "title": "Define expected event sequence", "status": "NOT_STARTED"},
+        {"id": "8.2", "title": "Assert Pick_Target occurs", "status": "NOT_STARTED"},
+        {"id": "8.3", "title": "Assert Place_Target_Temporary occurs", "status": "NOT_STARTED"},
+        {"id": "8.4", "title": "Assert Pick_GoalBlockade_X occurs", "status": "NOT_STARTED"},
+        {"id": "8.5", "title": "Assert second Pick_Target (retrieve) occurs", "status": "NOT_STARTED"},
+        {"id": "8.6", "title": "Assert Deliver_Target occurs", "status": "NOT_STARTED"},
+        {"id": "8.7", "title": "Assert win condition met", "status": "NOT_STARTED"}
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Update harness for new debug JSON schema",
+      "description": "Update PickAndPlaceDebugJSON struct and harness tests for new fields.",
+      "status": "NOT_STARTED",
+      "mandatory": true,
+      "sequential": true
+    },
+    {
+      "id": 10,
+      "title": "Run make-all-with-log and verify ALL tests pass",
+      "description": "Final verification that all tests pass including the new integration test.",
+      "status": "NOT_STARTED",
+      "mandatory": true,
+      "sequential": true
+    }
+  ],
+  "notes": [
+    "MINIMAL action templates required - use ActionGenerator for MoveTo actions",
+    "Integration test ONLY via termtest - no manual runs",
+    "All work is MANDATORY - no deferral allowed"
+  ]
+}

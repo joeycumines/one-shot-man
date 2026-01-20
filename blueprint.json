@@ -1,53 +1,66 @@
 {
-  "project": "Pick-and-Place PA-BT Conflict Resolution Demo",
-  "lastUpdated": "2026-01-21T00:00:00Z",
+  "project": "Pick-and-Place PA-BT Conflict Resolution Demo - REBOOT",
+  "lastUpdated": "2026-01-20T00:00:00Z",
   "status": "IN_PROGRESS",
   "criticalContext": {
-    "currentBug": "Deliver_Target executes despite blocked goal - conflict resolution bypassed",
-    "symptom": "Test wins but only 2 actions: Pick_Target(92) → Deliver_Target(214), no blockade clearing",
-    "hypothesis": "PA-BT runtime condition check not reading real blackboard values",
-    "verified": "BT ticker auto-ticks via goroutine, PA-BT uses newConditionNode for preconditions"
+    "rootCauseDocument": "unconfirmed-academic-failure-analysis.md",
+    "problem": "Heuristic effects violate PA-BT trust model causing infinite replanning loops",
+    "solution": "Use TRUTHFUL position-based effects per textbook pattern",
+    "textbookReference": "github.com/joeycumines/go-pabt/examples/tcell-pick-and-place/logic/logic.go"
+  },
+  "constraints": {
+    "runOnlyViaIntegrationTest": true,
+    "useLogGlobal": true,
+    "mirrorStateInGoFromLogs": true,
+    "verifyDeltasProgrammatically": true,
+    "minimalActionTemplates": true
   },
   "mandatoryTasks": [
     {
       "id": 1,
-      "title": "Debug: Verify atGoal_1 blackboard value at Deliver_Target execution",
-      "description": "Add debug logging to confirm what value PA-BT sees when checking Deliver_Target preconditions",
+      "title": "VERIFY: Run current test and capture baseline failure",
       "status": "IN_PROGRESS",
-      "mandatory": true,
-      "subtasks": [
-        {"id": "1.1", "title": "Run test and capture fresh logs", "status": "IN_PROGRESS"},
-        {"id": "1.2", "title": "Trace atGoal_1 value at Deliver_Target tick", "status": "NOT_STARTED"},
-        {"id": "1.3", "title": "Identify why precondition appears satisfied", "status": "NOT_STARTED"}
-      ]
-    },
-    {
-      "id": 2,
-      "title": "Fix: Ensure PA-BT runtime condition check works correctly",
-      "description": "Fix whatever is causing preconditions to pass when they should fail",
-      "status": "NOT_STARTED",
       "mandatory": true
     },
     {
+      "id": 2,
+      "title": "ANALYZE: Study textbook pattern via subagent",
+      "status": "DONE"
+    },
+    {
       "id": 3,
-      "title": "Verify: Full conflict resolution sequence triggers",
-      "description": "Confirm: Pick_Target → Place_Target_Temporary → Clear blockades → Retrieve → Deliver",
+      "title": "FIX: Ensure PA-BT can find Place_Target_Temporary for hands-full conflict",
       "status": "NOT_STARTED",
       "mandatory": true
     },
     {
       "id": 4,
-      "title": "Final: make-all-with-log passes",
-      "description": "All tests pass including conflict resolution test with correct path",
+      "title": "FIX: Verify per-blockade conditions work in MoveTo_goal_1",
+      "status": "NOT_STARTED",
+      "mandatory": true
+    },
+    {
+      "id": 5,
+      "title": "TEST: Run integration test and verify conflict resolution sequence",
+      "status": "NOT_STARTED",
+      "mandatory": true
+    },
+    {
+      "id": 6,
+      "title": "SCALE: Restore 8 blockades around goal",
+      "status": "NOT_STARTED",
+      "mandatory": true
+    },
+    {
+      "id": 7,
+      "title": "FINAL: make-all-with-log passes 100%",
       "status": "NOT_STARTED",
       "mandatory": true
     }
   ],
   "notes": [
-    "PA-BT condition check: newConditionNode calls state.Variable(key) + match(value)",
-    "syncToBlackboard sets atGoal_1 = distance < 2 from getPathInfo",
-    "When blocked: getPathInfo returns {reachable: false, distance: Infinity}",
-    "Infinity < 2 === false, so atGoal_1 SHOULD be false when blocked",
-    "bt.newTicker(100, rootNode) auto-ticks via bt.NewTicker goroutine"
+    "Per-blockade conditions: goalBlockade_100_cleared with TRUTHFUL Deposit effect",
+    "Conflict resolution chain: hands full -> Place_Target_Temporary -> clear blockades -> retrieve",
+    "NEVER use heuristic effects that lie about what an action achieves"
   ]
 }

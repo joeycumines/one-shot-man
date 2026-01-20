@@ -635,13 +635,23 @@ try {
             const currentHeldId = state.blackboard.get('heldItemId');
             const isHoldingItem = state.blackboard.get('heldItemExists');
 
+            // CRITICAL DEBUG: Log to stderr to see what condition is failing
+            if (state.tickCount > 280 && state.tickCount % 100 === 0) {
+                console.error("[PABT_DEBUG] tick=" + state.tickCount + " failedKey=" + key + 
+                    " held=" + currentHeldId + 
+                    " reachable_3=" + state.blackboard.get('reachable_goal_' + STAGING_AREA_ID));
+            }
+
             log.info("ActionGenerator called for failed condition", {
                 failedKey: key,
                 heldItemExists: isHoldingItem,
                 heldItemId: currentHeldId,
                 goalPathCleared: state.blackboard.get('goalPathCleared'),
                 reachable_goal_1: state.blackboard.get('reachable_goal_1'),
-                reachable_goal_2: state.blackboard.get('reachable_goal_' + DUMPSTER_ID)
+                reachable_goal_2: state.blackboard.get('reachable_goal_' + DUMPSTER_ID),
+                reachable_goal_3: state.blackboard.get('reachable_goal_' + STAGING_AREA_ID),
+                atGoal_3: state.blackboard.get('atGoal_' + STAGING_AREA_ID),
+                tick: state.tickCount
             });
 
             // Pattern match on the failed condition key
@@ -728,17 +738,29 @@ try {
             // =========================================================================
             // CRITICAL FIX: Handle heldItemId/heldItemExists failures when holding
             // something unexpected. If hands are full and PA-BT needs different item,
-            // we need to generate a Deposit action to clear hands first!
+            // we need to generate appropriate MoveTo actions:
+            //   - If holding TARGET: MoveTo staging area (for Place_Target_Temporary)
+            //   - If holding blockade: MoveTo dumpster (for Deposit_Blockade_X)
             // =========================================================================
             if (key === 'heldItemId' || key === 'heldItemExists') {
                 if (isHoldingItem && currentHeldId > 0) {
-                    log.info("ActionGenerator: Hands full with unexpected item, generating deposit options", {
-                        currentlyHolding: currentHeldId
-                    });
-
-                    // Generate MoveTo_goal_DUMPSTER to enable deposit action
-                    actions.push(createMoveToAction(state, 'goal', DUMPSTER_ID));
-                    log.debug("Generated MoveTo action for dumpster", {goalId: DUMPSTER_ID});
+                    if (currentHeldId === TARGET_ID) {
+                        // Holding TARGET - need to place at staging area to free hands
+                        // This allows PA-BT to find Place_Target_Temporary
+                        log.info("ActionGenerator: Holding TARGET, generating MoveTo staging area", {
+                            currentlyHolding: currentHeldId,
+                            stagingAreaId: STAGING_AREA_ID,
+                            reason: "conflict_resolution_path"
+                        });
+                        actions.push(createMoveToAction(state, 'goal', STAGING_AREA_ID));
+                    } else {
+                        // Holding a blockade - can deposit at dumpster
+                        log.info("ActionGenerator: Holding blockade, generating MoveTo dumpster", {
+                            currentlyHolding: currentHeldId,
+                            dumpsterId: DUMPSTER_ID
+                        });
+                        actions.push(createMoveToAction(state, 'goal', DUMPSTER_ID));
+                    }
                 }
             }
 
@@ -1297,6 +1319,11 @@ try {
 
         setupPABTActions(state);
         syncToBlackboard(state);
+
+        // CRITICAL DEBUG: Log to stderr
+        console.error("[INIT] reachable_goal_3=" + state.blackboard.get('reachable_goal_' + STAGING_AREA_ID) +
+            " reachable_goal_1=" + state.blackboard.get('reachable_goal_' + GOAL_ID) +
+            " reachable_goal_2=" + state.blackboard.get('reachable_goal_' + DUMPSTER_ID));
 
         log.info("Initial blackboard sync complete", {
             reachable_target: state.blackboard.get('reachable_cube_' + TARGET_ID),

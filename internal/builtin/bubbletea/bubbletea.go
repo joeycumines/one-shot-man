@@ -124,6 +124,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"os"
 	"os/signal"
@@ -621,6 +622,7 @@ func (m *jsModel) updateDirect(jsMsg map[string]interface{}) tea.Cmd {
 
 	result, err := m.updateFn(goja.Undefined(), m.runtime.ToValue(jsMsg), state)
 	if err != nil {
+		slog.Error("bubbletea: updateDirect: JS update function error", "error", err, "msgType", jsMsg["type"])
 		return nil
 	}
 

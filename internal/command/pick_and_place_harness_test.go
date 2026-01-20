@@ -122,6 +122,7 @@ func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPla
 		termtest.WithDefaultTimeout(h.timeout),
 		termtest.WithEnv(testEnv),
 		termtest.WithDir(projectDir), // Set project directory so script paths resolve correctly
+		termtest.WithSize(24, 200),   // Wide terminal to prevent JSON line-wrapping
 	)
 	if err != nil {
 		cancel()
@@ -231,16 +232,28 @@ func TestPickAndPlaceInitialState(t *testing.T) {
 	// Removing os.Stat check to avoid false negative test failures
 
 	ctx := context.Background()
+	logPath := filepath.Join(t.TempDir(), "initial-state.log")
 	harness, err := NewPickAndPlaceHarness(ctx, t, PickAndPlaceConfig{
-		TestMode: true,
+		TestMode:    true,
+		LogFilePath: logPath,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create harness: %v", err)
 	}
-	defer harness.Close()
+	defer func() {
+		// Print log contents on test completion for debugging
+		content, _ := os.ReadFile(logPath)
+		if len(content) > 0 {
+			t.Logf("Script log:\n%s", string(content))
+		}
+		harness.Close()
+	}()
 
 	// Send 'm' key to switch to manual mode first, to prevent actor from moving
 	harness.SendKey("m")
+
+	// Wait for mode switch to be processed (key handling is async)
+	time.Sleep(300 * time.Millisecond)
 
 	// Wait for at least one frame to render with debug JSON
 	harness.WaitForFrames(3)
@@ -269,9 +282,10 @@ func TestPickAndPlaceInitialState(t *testing.T) {
 		t.Errorf("Expected 0 blockade cubes (path blockades removed), got %d", initialState.BlockadeCount)
 	}
 
-	// Goal blockade should have 8 cubes initially (complete "O" wall around goal)
-	if initialState.GoalBlockadeCount != 8 {
-		t.Errorf("Expected 8 goal blockade cubes, got %d", initialState.GoalBlockadeCount)
+	// Goal blockade should have 16 cubes initially (complete ring around 3x3 goal area)
+	// Geometry: 5x5 outer ring (25) minus 3x3 goal area hole (9) = 16 blockade cubes
+	if initialState.GoalBlockadeCount != 16 {
+		t.Errorf("Expected 16 goal blockade cubes, got %d", initialState.GoalBlockadeCount)
 	}
 
 	// We switched to manual mode to prevent actor from moving, so expect 'm'
@@ -690,6 +704,7 @@ func (h *PickAndPlaceHarness) Start() error {
 		termtest.WithDefaultTimeout(h.timeout),
 		termtest.WithEnv(testEnv),
 		termtest.WithDir(projectDir), // Set project directory so script paths resolve correctly
+		termtest.WithSize(24, 200),   // Wide terminal to prevent JSON line-wrapping
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create termtest console: %w", err)
@@ -758,11 +773,15 @@ func (h *PickAndPlaceHarness) WaitForFrames(frames int64) {
 
 	// Now wait for frames to advance
 	retries := 0
+	prevBufferLen := 0
 	for time.Now().Before(deadline) {
 		currentState := h.GetDebugState()
+		currentBufferLen := len(h.GetScreenBuffer())
 		if retries%20 == 0 {
-			h.t.Logf("WaitForFrames: checking tick, current=%d, target=%d", currentState.Tick, initialTick+int64(frames))
+			h.t.Logf("WaitForFrames: checking tick, current=%d, target=%d, bufLen=%d (delta=%d)",
+				currentState.Tick, initialTick+int64(frames), currentBufferLen, currentBufferLen-prevBufferLen)
 		}
+		prevBufferLen = currentBufferLen
 		retries++
 		if currentState.Tick >= initialTick+int64(frames) {
 			return
@@ -845,6 +864,7 @@ var pickPlaceRawJSONRegex = regexp.MustCompile(`\{"m":"[^"]+","t":\d+[^}]*\}`)
 func (h *PickAndPlaceHarness) parseDebugJSON(buffer string) (*PickAndPlaceDebugJSON, error) {
 	// Check for debug JSON markers in full buffer first
 	hasMarkers := strings.Contains(buffer, "__place_debug_start__")
+	hasRawJSON := strings.Contains(buffer, `"m":"`)
 
 	// OPTIMIZATION: Only process the last portion of the buffer
 	// The debug JSON is always at the end of the view() output
@@ -865,9 +885,28 @@ func (h *PickAndPlaceHarness) parseDebugJSON(buffer string) (*PickAndPlaceDebugJ
 	// Try raw JSON matching first (more reliable than markers)
 	rawMatches := pickPlaceRawJSONRegex.FindAllString(normalizedBuffer, -1)
 
+	// Diagnostic logging for regex matching
+	if hasRawJSON && len(rawMatches) == 0 {
+		// Find position of "m":" in normalized buffer and show context
+		idx := strings.Index(normalizedBuffer, `"m":"`)
+		if idx >= 0 {
+			start := max(0, idx-10)
+			end := min(len(normalizedBuffer), idx+100)
+			h.t.Logf("DEBUG: regex found 0 matches but buffer has 'm\":' at %d, context: %q", idx, normalizedBuffer[start:end])
+		}
+	}
+
 	var jsonStr string
 	if len(rawMatches) > 0 {
 		jsonStr = rawMatches[len(rawMatches)-1]
+		// DEBUG: log what we matched
+		if len(rawMatches) > 1 {
+			h.t.Logf("DEBUG: regex matched %d JSONs, using last one: %q (first was: %q)", len(rawMatches), jsonStr, rawMatches[0])
+		} else {
+			h.t.Logf("DEBUG: regex matched 1 JSON: %q (bufLen=%d)", jsonStr, len(normalizedBuffer))
+		}
+	} else {
+		h.t.Logf("DEBUG: regex matched 0 JSONs (bufLen=%d, hasRawJSON=%v)", len(normalizedBuffer), hasRawJSON)
 	}
 
 	// If raw didn't work, try with markers on original buffer
@@ -904,6 +943,11 @@ func (h *PickAndPlaceHarness) parseDebugJSON(buffer string) (*PickAndPlaceDebugJ
 		return nil, fmt.Errorf("failed to parse debug JSON: %w\nJSON: %s", err, jsonStr)
 	}
 
+	// Diagnostic: if we parsed successfully but tick is 0 and jsonStr contains non-zero tick, log warning
+	if state.Tick == 0 && strings.Contains(jsonStr, `"t":`) && !strings.Contains(jsonStr, `"t":0`) {
+		h.t.Logf("DEBUG: parsed tick=0 but jsonStr contains non-zero t: %q", jsonStr)
+	}
+
 	return &state, nil
 }
 
@@ -937,6 +981,23 @@ func TestPickAndPlaceLogging(t *testing.T) {
 		content, _ := os.ReadFile(config.LogFilePath)
 		t.Logf("Log file content:\n%s", string(content))
 		t.Fatalf("Log verification failed: %v", err)
+	}
+
+	// Verify tick messages are being processed
+	if err := harness.VerifyLogContent("Tick 1"); err != nil {
+		content, _ := os.ReadFile(config.LogFilePath)
+		t.Logf("Log file content (checking for Tick 1):\n%s", string(content))
+		t.Fatalf("Tick messages not being processed: %v", err)
+	}
+
+	// Verify that the debug JSON in the buffer has a non-zero tick
+	state := harness.GetDebugState()
+	t.Logf("Debug state after 2s: tick=%d, actor=(%.1f,%.1f)", state.Tick, state.ActorX, state.ActorY)
+	if state.Tick == 0 {
+		// Debug: dump the last 500 chars of buffer
+		buffer := harness.GetScreenBuffer()
+		t.Logf("Buffer (last 500 chars): %q", buffer[max(0, len(buffer)-500):])
+		t.Errorf("Expected tick > 0 after 2 seconds, got tick=0")
 	}
 }
 
@@ -1242,6 +1303,12 @@ func TestPickAndPlaceConflictResolution(t *testing.T) {
 		}
 
 		state := harness.GetDebugState()
+
+		// Dump log periodically for debugging
+		if loopCount%30 == 0 {
+			content, _ := os.ReadFile(logFilePath)
+			t.Logf("=== Periodic log dump (loop %d, last 3000 bytes) ===\n%s", loopCount, truncateFromEnd(string(content), 3000))
+		}
 
 		// Log progress periodically
 		if loopCount%20 == 0 {

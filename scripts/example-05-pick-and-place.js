@@ -464,6 +464,7 @@ try {
         if (extraEffects) effects.push(...extraEffects);
 
         const tickFn = function () {
+            log.info("BT TICK: " + name + " executing at tick " + state.tickCount);
             if (state.gameMode !== 'automatic') return bt.running;
 
             const actor = state.actors.get(state.activeActorId);
@@ -471,7 +472,10 @@ try {
 
             if (entityType === 'cube') {
                 const cube = state.cubes.get(entityId);
-                if (!cube || cube.deleted) return bt.success;
+                if (!cube || cube.deleted) {
+                    log.debug("MoveTo " + name + " target deleted, returning success");
+                    return bt.success;
+                }
                 targetX = cube.x;
                 targetY = cube.y;
                 ignoreCubeId = entityId;
@@ -489,7 +493,10 @@ try {
             // Slightly wider acceptance for Goal Area
             const threshold = (entityType === 'goal' && entityId === GOAL_ID) ? 2.5 : 1.8;
 
-            if (dist <= threshold) return bt.success;
+            if (dist <= threshold) {
+                log.debug("MoveTo " + name + " reached target, dist=" + dist.toFixed(2) + ", threshold=" + threshold);
+                return bt.success;
+            }
 
             const nextStep = findNextStep(state, actor.x, actor.y, targetX, targetY, ignoreCubeId);
             if (nextStep) {
@@ -499,6 +506,7 @@ try {
                 actor.y += Math.sign(stepDy) * Math.min(1.0, Math.abs(stepDy));
                 return bt.running;
             } else {
+                log.warn("MoveTo " + name + " pathfinding FAILED at actor(" + actor.x + "," + actor.y + ") -> target(" + targetX + "," + targetY + ")");
                 return bt.failure;
             }
         };
@@ -515,21 +523,51 @@ try {
         state.pabtState.setActionGenerator(function (failedCondition) {
             const actions = [];
             const key = failedCondition.key;
+            
+            // Log EVERY call to actionGenerator to track planner activity
+            log.info("ACTION_GENERATOR called", {
+                failedKey: key,
+                failedKeyType: typeof key,
+                tick: state.tickCount
+            });
 
             if (key && typeof key === 'string') {
                 if (key.startsWith('atEntity_')) {
                     const entityId = parseInt(key.replace('atEntity_', ''), 10);
-                    if (!isNaN(entityId)) actions.push(createMoveToAction(state, 'cube', entityId));
+                    if (!isNaN(entityId)) {
+                        log.debug("ACTION_GENERATOR: creating MoveTo for entity", {entityId: entityId});
+                        actions.push(createMoveToAction(state, 'cube', entityId));
+                    }
                 }
                 if (key.startsWith('atGoal_')) {
                     const goalId = parseInt(key.replace('atGoal_', ''), 10);
-                    if (!isNaN(goalId)) actions.push(createMoveToAction(state, 'goal', goalId));
+                    if (!isNaN(goalId)) {
+                        log.debug("ACTION_GENERATOR: creating MoveTo for goal", {goalId: goalId});
+                        actions.push(createMoveToAction(state, 'goal', goalId));
+                    }
+                }
+                // CRITICAL: When planner needs heldItemExists=false (to pick something new),
+                // but actor is holding something, generate Place_Held_Item or Place_Target_Temporary
+                if (key === 'heldItemExists') {
+                    // The planner is checking this condition. If Match expects false and we're holding,
+                    // we need to generate actions to free hands.
+                    // Note: Place_Held_Item and Place_Target_Temporary are already registered.
+                    // But we may need to dynamically generate them here for deep dependency chains.
+                    log.debug("Action generator: heldItemExists condition requested", {key: key});
+                }
+                // Generate blockade clearing dependencies
+                if (key.startsWith('goalBlockade_') && key.endsWith('_cleared')) {
+                    const match = key.match(/goalBlockade_(\d+)_cleared/);
+                    if (match) {
+                        const blockadeId = parseInt(match[1], 10);
+                        // Generate MoveTo for this blockade
+                        log.debug("ACTION_GENERATOR: creating MoveTo for blockade", {blockadeId: blockadeId});
+                        actions.push(createMoveToAction(state, 'cube', blockadeId));
+                    }
                 }
             }
-
-            // WARNING: If holding Item and need to change focus, generate MoveTo Dumpster?
-            // Actually, we use generic Place logic now.
-
+            
+            log.debug("ACTION_GENERATOR returning", {actionCount: actions.length, failedKey: key});
             return actions;
         });
 
@@ -556,6 +594,14 @@ try {
                 t.deleted = true;
                 a.heldItem = {id: TARGET_ID};
 
+                log.info("PA-BT action executing", {
+                    action: "Pick_Target",
+                    result: "SUCCESS",
+                    tick: state.tickCount,
+                    actorX: a.x,
+                    actorY: a.y
+                });
+
                 if (state.blackboard) {
                     state.blackboard.set('heldItemId', TARGET_ID);
                     state.blackboard.set('heldItemExists', true);
@@ -577,6 +623,15 @@ try {
                 // Generic Place Logic targeted at Goal Area
                 const spot = getFreeAdjacentCell(state, a.x, a.y, true); // true = targetGoalArea
                 if (!spot) return bt.failure; // Not close enough to valid goal cell
+
+                log.info("PA-BT action executing", {
+                    action: "Deliver_Target",
+                    result: "SUCCESS",
+                    tick: state.tickCount,
+                    actorX: a.x,
+                    actorY: a.y,
+                    deliveredAt: {x: spot.x, y: spot.y}
+                });
 
                 a.heldItem = null;
                 state.targetDelivered = true;
@@ -612,6 +667,16 @@ try {
                     if (!c || c.deleted) return bt.success;
                     c.deleted = true;
                     a.heldItem = {id: id};
+                    
+                    log.info("PA-BT action executing", {
+                        action: "Pick_Blockade_" + id,
+                        result: "SUCCESS",
+                        tick: state.tickCount,
+                        blockadeId: id,
+                        actorX: a.x,
+                        actorY: a.y
+                    });
+                    
                     if (state.blackboard) {
                         state.blackboard.set('heldItemId', id);
                         state.blackboard.set('heldItemExists', true);
@@ -631,6 +696,16 @@ try {
                 }],
                 function () {
                     const a = actor();
+                    
+                    log.info("PA-BT action executing", {
+                        action: "Deposit_Blockade_" + id,
+                        result: "SUCCESS",
+                        tick: state.tickCount,
+                        blockadeId: id,
+                        actorX: a.x,
+                        actorY: a.y
+                    });
+                    
                     a.heldItem = null;
                     if (state.blackboard) {
                         state.blackboard.set('heldItemExists', false);
@@ -641,6 +716,47 @@ try {
                 }
             );
         });
+
+        // ---------------------------------------------------------------------
+        // Place_Target_Temporary: Conflict resolution action
+        // When holding target but goal is blocked, place target temporarily
+        // so hands are free to clear blockades.
+        // ---------------------------------------------------------------------
+        reg('Place_Target_Temporary',
+            [{k: 'heldItemId', v: TARGET_ID}],
+            [{k: 'heldItemExists', v: false}, {k: 'heldItemId', v: -1}],
+            function () {
+                const a = actor();
+                if (!a.heldItem || a.heldItem.id !== TARGET_ID) return bt.failure;
+
+                const spot = getFreeAdjacentCell(state, a.x, a.y, false); // false = don't target goal area
+                if (!spot) return bt.failure;
+
+                log.info("PA-BT action executing", {
+                    action: "Place_Target_Temporary",
+                    result: "SUCCESS",
+                    tick: state.tickCount,
+                    actorX: a.x,
+                    actorY: a.y,
+                    placedAt: {x: spot.x, y: spot.y}
+                });
+
+                // Re-instantiate target in the world at temporary location
+                const t = state.cubes.get(TARGET_ID);
+                if (t) {
+                    t.deleted = false;
+                    t.x = spot.x;
+                    t.y = spot.y;
+                }
+
+                a.heldItem = null;
+                if (state.blackboard) {
+                    state.blackboard.set('heldItemExists', false);
+                    state.blackboard.set('heldItemId', -1);
+                }
+                return bt.success;
+            }
+        );
 
         // ---------------------------------------------------------------------
         // Place_Held_Item (Generic Drop to free hands)
@@ -656,7 +772,14 @@ try {
                 const spot = getFreeAdjacentCell(state, a.x, a.y);
                 if (!spot) return bt.failure; // No space
 
-                log.info("Generic Place: Dropping item to free hands", {id: a.heldItem.id});
+                log.info("PA-BT action executing", {
+                    action: "Place_Held_Item",
+                    result: "SUCCESS",
+                    tick: state.tickCount,
+                    id: a.heldItem.id,
+                    actorX: a.x,
+                    actorY: a.y
+                });
 
                 // Re-instantiate the item in the world
                 const c = state.cubes.get(a.heldItem.id);
@@ -747,6 +870,13 @@ try {
         draw('Mode: ' + state.gameMode.toUpperCase());
         draw('Goal: 3x3 Area');
         if (state.winConditionMet) draw('*** GOAL ACHIEVED! ***');
+        draw('');
+        draw('CONTROLS');
+        draw('────────');
+        draw('[Q] Quit');
+        draw('[M] Toggle Mode');
+        draw('[WASD] Move (manual)');
+        draw('[Space] Pause');
 
         const rows = [];
         for (let y = 0; y < height; y++) rows.push(buffer.slice(y * width, (y + 1) * width).join(''));
@@ -763,6 +893,14 @@ try {
         state.pabtState = pabt.newState(state.blackboard);
         setupPABTActions(state);
         syncToBlackboard(state);
+        
+        log.info("Pick-and-Place simulation initialized", {
+            actorX: state.actors.get(state.activeActorId).x,
+            actorY: state.actors.get(state.activeActorId).y,
+            goalBlockadeCount: GOAL_BLOCKADE_IDS.length,
+            targetId: TARGET_ID,
+            mode: state.gameMode
+        });
 
         const goalConditions = [{key: 'cubeDeliveredAtGoal', Match: v => v === true}];
         state.pabtPlan = pabt.newPlan(state.pabtState, goalConditions);
@@ -772,8 +910,28 @@ try {
     }
 
     function update(state, msg) {
-        if (msg.type === 'Tick') {
+        // Debug log every 50 ticks (not every tick to avoid log spam)
+        if (msg.type === 'Tick' && msg.id === 'tick') {
             state.tickCount++;
+            
+            // Check ticker error status periodically
+            if (state.ticker && (state.tickCount <= 10 || state.tickCount % 50 === 0)) {
+                const tickerErr = state.ticker.err();
+                if (tickerErr) {
+                    log.error('BT TICKER ERROR', {error: String(tickerErr), tick: state.tickCount});
+                }
+            }
+            
+            if (state.tickCount <= 5 || state.tickCount % 50 === 0) {
+                const actor = state.actors.get(state.activeActorId);
+                log.debug('Tick status', {
+                    tick: state.tickCount,
+                    actorX: actor.x,
+                    actorY: actor.y,
+                    heldItem: actor.heldItem ? actor.heldItem.id : -1,
+                    gameMode: state.gameMode
+                });
+            }
             syncToBlackboard(state);
             return [state, tea.tick(16, 'tick')];
         }
@@ -869,7 +1027,48 @@ try {
     }
 
     function view(state) {
-        return renderPlayArea(state);
+        let output = renderPlayArea(state);
+        
+        // Debug JSON overlay for test harness (only in test mode)
+        if (state.debugMode) {
+            const actor = state.actors.get(state.activeActorId);
+            const target = state.cubes.get(TARGET_ID);
+            const dumpster = state.goals.get(DUMPSTER_ID);
+            const goal = state.goals.get(GOAL_ID);
+            
+            // Count remaining blockades
+            let blockadeCount = 0;
+            let goalBlockadeCount = 0;
+            GOAL_BLOCKADE_IDS.forEach(id => {
+                const cube = state.cubes.get(id);
+                if (cube && !cube.deleted) goalBlockadeCount++;
+            });
+            
+            // Check reachability
+            const ax = Math.round(actor.x);
+            const ay = Math.round(actor.y);
+            const dumpsterReachable = dumpster ? getPathInfo(state, ax, ay, dumpster.x, dumpster.y).reachable : false;
+            const goalReachable = goal ? getPathInfo(state, ax, ay, goal.x, goal.y).reachable : false;
+            
+            const debugJSON = JSON.stringify({
+                m: state.gameMode === 'automatic' ? 'a' : 'm',
+                t: state.tickCount,
+                x: Math.round(actor.x * 10) / 10,
+                y: Math.round(actor.y * 10) / 10,
+                h: actor.heldItem ? actor.heldItem.id : -1,
+                w: state.winConditionMet ? 1 : 0,
+                a: target && !target.deleted ? target.x : null,
+                b: target && !target.deleted ? target.y : null,
+                n: blockadeCount,
+                g: goalBlockadeCount,
+                dr: dumpsterReachable ? 1 : 0,
+                gr: goalReachable ? 1 : 0
+            });
+            
+            output += '\n__place_debug_start__\n' + debugJSON + '\n__place_debug_end__';
+        }
+        
+        return output;
     }
 
     program = tea.newModel({

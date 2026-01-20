@@ -3,7 +3,7 @@ package pabt
 import (
 	"context"
 	"fmt"
-	"os"
+	"log/slog"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
@@ -339,7 +339,7 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 					}
 
 					// DEBUG: Log condition creation
-					fmt.Fprintf(os.Stderr, "[PA-BT COND CREATE] Action '%s' condition key=%v\n", name, keyVal.Export())
+					slog.Debug("[PA-BT COND CREATE]", "action", name, "conditionKey", keyVal.Export())
 
 					// Extract Match function
 					matchVal := condObj.Get("Match")

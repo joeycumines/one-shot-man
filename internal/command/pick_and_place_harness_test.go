@@ -38,11 +38,11 @@ type PickAndPlaceDebugJSON struct {
 }
 
 // PickAndPlaceConfig holds configuration for pick-and-place tests
-// PickAndPlaceConfig holds configuration for pick-and-place tests
 type PickAndPlaceConfig struct {
 	ScriptPath  string
 	LogFilePath string // If non-empty, use this file for logs
 	TestMode    bool   // If true, run in test mode (debug enabled)
+	LogLevel    string // Log level (debug, info, warn, error). Defaults to "debug".
 }
 
 // PickAndPlaceHarness wraps termtest.Console with pick-and-place-specific helpers
@@ -54,6 +54,7 @@ type PickAndPlaceHarness struct {
 	binaryPath string
 	scriptPath string
 	logPath    string // Add this
+	logLevel   string
 	env        []string
 	timeout    time.Duration
 
@@ -82,6 +83,11 @@ func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPla
 
 	testCtx, cancel := context.WithTimeout(ctx, timeout)
 
+	logLevel := config.LogLevel
+	if logLevel == "" {
+		logLevel = "debug"
+	}
+
 	h := &PickAndPlaceHarness{
 		t:          t,
 		ctx:        testCtx,
@@ -89,6 +95,7 @@ func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPla
 		binaryPath: binaryPath,
 		scriptPath: scriptPath,
 		logPath:    config.LogFilePath,
+		logLevel:   logLevel,
 		env:        env,
 		timeout:    timeout,
 	}
@@ -107,6 +114,7 @@ func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPla
 	if h.logPath != "" {
 		args = append(args, "-log-file", h.logPath)
 	}
+	args = append(args, "-log-level", h.logLevel)
 	args = append(args, "-i", h.scriptPath)
 
 	h.console, err = termtest.NewConsole(h.ctx,
@@ -668,9 +676,17 @@ func (h *PickAndPlaceHarness) Start() error {
 	}
 	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
 
+	// Start the console automatically with TestMode environment variable
 	testEnv := append(h.env, "OSM_TEST_MODE=1")
+	args := []string{"script"}
+	if h.logPath != "" {
+		args = append(args, "-log-file", h.logPath)
+	}
+	args = append(args, "-log-level", h.logLevel)
+	args = append(args, "-i", h.scriptPath)
+
 	h.console, err = termtest.NewConsole(h.ctx,
-		termtest.WithCommand(h.binaryPath, "script", "-i", h.scriptPath),
+		termtest.WithCommand(h.binaryPath, args...),
 		termtest.WithDefaultTimeout(h.timeout),
 		termtest.WithEnv(testEnv),
 		termtest.WithDir(projectDir), // Set project directory so script paths resolve correctly

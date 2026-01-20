@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"runtime/debug"
 
@@ -61,13 +62,14 @@ func NewEngine(ctx context.Context, stdout, stderr io.Writer) (*Engine, error) {
 // NewEngineWithConfig creates a new JavaScript scripting engine with explicit session configuration.
 // sessionID and store parameters override environment-based discovery and avoid data races.
 func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionID, store string) (*Engine, error) {
-	return NewEngineDetailed(ctx, stdout, stderr, sessionID, store, nil, 0)
+	return NewEngineDetailed(ctx, stdout, stderr, sessionID, store, nil, 0, slog.LevelInfo)
 }
 
 // NewEngineDetailed creates a new JavaScript scripting engine with full configuration options.
 // logFile: optional writer for log output (JSON).
 // logBufferSize: size of the in-memory log buffer (default 1000 if <= 0).
-func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID, store string, logFile io.Writer, logBufferSize int) (*Engine, error) {
+// logLevel: minimum log level to capture (e.g. slog.LevelDebug).
+func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID, store string, logFile io.Writer, logBufferSize int, logLevel slog.Level) (*Engine, error) {
 	// Get current working directory for context manager
 	workingDir, err := os.Getwd()
 	if err != nil {
@@ -114,7 +116,7 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 		stderr:         stderr,
 		globals:        make(map[string]interface{}),
 		contextManager: contextManager,
-		logger:         NewTUILogger(stdout, logFile, logBufferSize),
+		logger:         NewTUILogger(stdout, logFile, logBufferSize, logLevel),
 		terminalIO:     terminalIO,
 	}
 
@@ -277,6 +279,11 @@ func (e *Engine) ExecuteScript(script *Script) (err error) {
 	}
 
 	return err
+}
+
+// Logger returns the engine's logger.
+func (e *Engine) Logger() *slog.Logger {
+	return e.logger.Logger()
 }
 
 // GetTUIManager returns the TUI manager for this engine.

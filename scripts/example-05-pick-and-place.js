@@ -111,7 +111,7 @@ try {
         let goalBlockadeId = 100;
         // Re-enabled: Testing conflict resolution with single blockade
         const goalBlockadePositions = [
-            {x: 8, y: 17}    // Directly N of goal (blocking direct approach)
+            { x: 8, y: 17 }    // Directly N of goal (blocking direct approach)
         ];
         for (const pos of goalBlockadePositions) {
             cubesInit.push([goalBlockadeId, {
@@ -160,13 +160,13 @@ try {
             spaceWidth: 60,
 
             actors: new Map([
-                [1, {id: 1, x: 5, y: 11, heldItem: null}]
+                [1, { id: 1, x: 5, y: 11, heldItem: null }]
             ]),
             cubes: new Map(cubesInit),
             goals: new Map([
-                [GOAL_ID, {id: GOAL_ID, x: 8, y: 18, forTarget: true}],
-                [DUMPSTER_ID, {id: DUMPSTER_ID, x: 8, y: 4, forBlockade: true}],
-                [STAGING_AREA_ID, {id: STAGING_AREA_ID, x: 5, y: 15, forStaging: true}]
+                [GOAL_ID, { id: GOAL_ID, x: 8, y: 18, forTarget: true }],
+                [DUMPSTER_ID, { id: DUMPSTER_ID, x: 8, y: 4, forBlockade: true }],
+                [STAGING_AREA_ID, { id: STAGING_AREA_ID, x: 5, y: 15, forStaging: true }]
             ]),
 
             blackboard: null,
@@ -201,7 +201,7 @@ try {
         state.cubes.forEach(c => {
             // Track ALL goal blockades for debugging
             if (c.id >= 100 && c.id <= 107) {
-                allGoalBlockades.push({id: c.id, x: Math.round(c.x), y: Math.round(c.y), deleted: c.deleted});
+                allGoalBlockades.push({ id: c.id, x: Math.round(c.x), y: Math.round(c.y), deleted: c.deleted });
             }
 
             if (c.deleted) return;
@@ -209,7 +209,7 @@ try {
             if (actor.heldItem && c.id === actor.heldItem.id) return;
             blocked.add(key(Math.round(c.x), Math.round(c.y)));
             if (c.id >= 100 && c.id <= 107) {
-                debugBlockedCubes.push({id: c.id, x: Math.round(c.x), y: Math.round(c.y)});
+                debugBlockedCubes.push({ id: c.id, x: Math.round(c.x), y: Math.round(c.y) });
             }
         });
 
@@ -244,7 +244,7 @@ try {
         const blocked = buildBlockedSet(state, ignoreCubeId);
         const key = (x, y) => x + ',' + y;
         const visited = new Set();
-        const queue = [{x: Math.round(startX), y: Math.round(startY), dist: 0}];
+        const queue = [{ x: Math.round(startX), y: Math.round(startY), dist: 0 }];
 
         visited.add(key(queue[0].x, queue[0].y));
 
@@ -264,7 +264,7 @@ try {
                         distance: current.dist
                     });
                 }
-                return {reachable: true, distance: current.dist};
+                return { reachable: true, distance: current.dist };
             }
 
             const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
@@ -278,11 +278,11 @@ try {
                 if (blocked.has(nKey)) continue;
 
                 visited.add(nKey);
-                queue.push({x: nx, y: ny, dist: current.dist + 1});
+                queue.push({ x: nx, y: ny, dist: current.dist + 1 });
             }
         }
 
-        return {reachable: false, distance: Infinity};
+        return { reachable: false, distance: Infinity };
     }
 
     function findNextStep(state, startX, startY, targetX, targetY, ignoreCubeId) {
@@ -294,7 +294,7 @@ try {
         const iTargetY = Math.round(targetY);
 
         if (Math.abs(startX - targetX) < 1.0 && Math.abs(startY - targetY) < 1.0) {
-            return {x: targetX, y: targetY};
+            return { x: targetX, y: targetY };
         }
 
         const visited = new Set();
@@ -311,10 +311,10 @@ try {
             if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
 
             if (nx === iTargetX && ny === iTargetY) {
-                return {x: nx, y: ny};
+                return { x: nx, y: ny };
             }
 
-            queue.push({x: nx, y: ny, firstX: ox, firstY: oy});
+            queue.push({ x: nx, y: ny, firstX: ox, firstY: oy });
             visited.add(nKey);
         }
 
@@ -322,7 +322,7 @@ try {
             const cur = queue.shift();
 
             if (cur.x === iTargetX && cur.y === iTargetY) {
-                return {x: startX + cur.firstX, y: startY + cur.firstY};
+                return { x: startX + cur.firstX, y: startY + cur.firstY };
             }
 
             for (const [ox, oy] of dirs) {
@@ -335,7 +335,7 @@ try {
                 if (visited.has(nKey)) continue;
 
                 visited.add(nKey);
-                queue.push({x: nx, y: ny, firstX: cur.firstX, firstY: cur.firstY});
+                queue.push({ x: nx, y: ny, firstX: cur.firstX, firstY: cur.firstY });
             }
         }
 
@@ -435,7 +435,7 @@ try {
                 // Track per-blockade cleared status (false = not cleared yet)
                 bb.set('goalBlockade_' + id + '_cleared', false);
                 if (state.tickCount % 200 === 0 || state.tickCount < 10) {
-                    log.warn("BLOCKADE_STATUS", {id: id, cleared: false, exists: true, tick: state.tickCount});
+                    log.warn("BLOCKADE_STATUS", { id: id, cleared: false, exists: true, tick: state.tickCount });
                 }
             } else {
                 bb.set('reachable_cube_' + id, false);
@@ -443,7 +443,7 @@ try {
                 // Track per-blockade cleared status (true = cleared/deleted)
                 bb.set('goalBlockade_' + id + '_cleared', true);
                 if (state.tickCount % 200 === 0 || state.tickCount < 10) {
-                    log.warn("BLOCKADE_STATUS", {id: id, cleared: true, exists: false, tick: state.tickCount});
+                    log.warn("BLOCKADE_STATUS", { id: id, cleared: true, exists: false, tick: state.tickCount });
                 }
             }
         });
@@ -542,7 +542,7 @@ try {
             });
             for (var i = 0; i < GOAL_BLOCKADE_IDS.length; i++) {
                 const blockadeId = GOAL_BLOCKADE_IDS[i];
-                log.debug("MoveTo_goal_1: Adding blockade condition", {blockadeId: blockadeId, index: i});
+                log.debug("MoveTo_goal_1: Adding blockade condition", { blockadeId: blockadeId, index: i });
                 conditions.push({
                     key: 'goalBlockade_' + blockadeId + '_cleared',
                     Match: function (v) {
@@ -567,7 +567,7 @@ try {
         }
 
         const effects = [
-            {key: targetKey, Value: true}
+            { key: targetKey, Value: true }
         ];
 
         // Add extra effects if provided (used for heuristic effects like reachable_goal_1)
@@ -597,7 +597,7 @@ try {
             if (entityType === 'cube') {
                 const cube = state.cubes.get(entityId);
                 if (!cube || cube.deleted) {
-                    log.debug(name + " success: cube gone", {entityId: entityId});
+                    log.debug(name + " success: cube gone", { entityId: entityId });
                     return bt.success;
                 }
                 targetX = cube.x;
@@ -606,7 +606,7 @@ try {
             } else {
                 const goal = state.goals.get(entityId);
                 if (!goal) {
-                    log.error(name + " failed: goal not found", {entityId: entityId});
+                    log.error(name + " failed: goal not found", { entityId: entityId });
                     return bt.failure;
                 }
                 targetX = goal.x;
@@ -629,7 +629,7 @@ try {
             });
 
             if (dist <= 1.8) {
-                log.debug(name + " success: in range", {dist: dist});
+                log.debug(name + " success: in range", { dist: dist });
                 return bt.success;
             }
 
@@ -705,7 +705,7 @@ try {
                     const cube = state.cubes.get(entityId);
                     if (cube && !cube.deleted) {
                         actions.push(createMoveToAction(state, 'cube', entityId));
-                        log.debug("Generated MoveTo action", {target: 'cube', entityId: entityId});
+                        log.debug("Generated MoveTo action", { target: 'cube', entityId: entityId });
                     }
                 }
             }
@@ -720,7 +720,7 @@ try {
                         // Let PA-BT discover precondition failures (reachable_goal_X)
                         // and expand from there to find blockade clearing path.
                         actions.push(createMoveToAction(state, 'goal', goalId));
-                        log.debug("Generated MoveTo action for goal", {target: 'goal', goalId: goalId});
+                        log.debug("Generated MoveTo action for goal", { target: 'goal', goalId: goalId });
                     }
                 }
             }
@@ -843,7 +843,7 @@ try {
                 };
             });
             const effectList = effects.map(function (e) {
-                return {key: e.k, Value: e.v};
+                return { key: e.k, Value: e.v };
             });
 
             const wrappedTickFn = function () {
@@ -892,10 +892,10 @@ try {
         // PA-BT searches for Place actions before MoveTo when hands are full.
         reg('Pick_Target',
             [
-                {k: 'heldItemExists', v: false},
-                {k: 'atEntity_' + TARGET_ID, v: true}
+                { k: 'heldItemExists', v: false },
+                { k: 'atEntity_' + TARGET_ID, v: true }
             ],
-            [{k: 'heldItemId', v: TARGET_ID}, {k: 'heldItemExists', v: true}],
+            [{ k: 'heldItemId', v: TARGET_ID }, { k: 'heldItemExists', v: true }],
             function () {
                 const a = actor();
                 const t = state.cubes.get(TARGET_ID);
@@ -903,9 +903,9 @@ try {
                     log.error("Pick_Target failed: target missing");
                     return bt.failure;
                 }
-                log.info("Picking up target cube", {id: TARGET_ID});
+                log.info("Picking up target cube", { id: TARGET_ID });
                 t.deleted = true;
-                a.heldItem = {id: TARGET_ID};
+                a.heldItem = { id: TARGET_ID };
                 // CRITICAL: Sync blackboard IMMEDIATELY so PA-BT post-condition check passes!
                 // PA-BT runs on a separate Go goroutine and checks post-conditions
                 // immediately after action returns SUCCESS. Without this sync,
@@ -933,8 +933,8 @@ try {
         // ---------------------------------------------------------------------
         reg('Deliver_Target',
             [
-                {k: 'heldItemId', v: TARGET_ID},
-                {k: 'atGoal_' + GOAL_ID, v: true}
+                { k: 'heldItemId', v: TARGET_ID },
+                { k: 'atGoal_' + GOAL_ID, v: true }
             ],
             // CRITICAL FIX: Only include cubeDeliveredAtGoal=true as effect!
             // Previously included heldItemExists=false which caused PA-BT to consider
@@ -944,7 +944,7 @@ try {
             // Pick_GoalBlockade → heldItemExists=false → [LOOP]
             // By removing heldItemExists/heldItemId effects, PA-BT will now correctly
             // find Place_Target_Temporary for emptying hands.
-            [{k: 'cubeDeliveredAtGoal', v: true}],
+            [{ k: 'cubeDeliveredAtGoal', v: true }],
             function () {
                 const a = actor();
                 if (!a.heldItem || a.heldItem.id !== TARGET_ID) {
@@ -993,24 +993,24 @@ try {
         // ---------------------------------------------------------------------
         BLOCKADE_IDS.forEach(function (id) {
             reg('Pick_Blockade_' + id,
-                [{k: 'atEntity_' + id, v: true}, {k: 'heldItemExists', v: false}],
+                [{ k: 'atEntity_' + id, v: true }, { k: 'heldItemExists', v: false }],
                 [
-                    {k: 'heldItemId', v: id},
-                    {k: 'heldItemExists', v: true},
+                    { k: 'heldItemId', v: id },
+                    { k: 'heldItemExists', v: true },
                     // CRITICAL HEURISTIC: Picking a blockade makes target reachable
                     // This tells PA-BT that clearing blockades helps reach the target
-                    {k: 'reachable_cube_' + TARGET_ID, v: true}
+                    { k: 'reachable_cube_' + TARGET_ID, v: true }
                 ],
                 function () {
                     const a = actor();
                     const c = state.cubes.get(id);
                     if (!c || c.deleted) {
-                        log.debug("Pick_Blockade skipped: cube gone", {cubeId: id});
+                        log.debug("Pick_Blockade skipped: cube gone", { cubeId: id });
                         return bt.success;
                     }
-                    log.info("Picking up blockade cube", {cubeId: id});
+                    log.info("Picking up blockade cube", { cubeId: id });
                     c.deleted = true;
-                    a.heldItem = {id: id};
+                    a.heldItem = { id: id };
                     // CRITICAL: Sync blackboard IMMEDIATELY so PA-BT post-condition check passes!
                     if (state.blackboard) {
                         state.blackboard.set('heldItemId', id);
@@ -1022,11 +1022,11 @@ try {
 
             // Deposit blockade at dumpster
             reg('Deposit_Blockade_' + id,
-                [{k: 'heldItemId', v: id}, {k: 'atGoal_' + DUMPSTER_ID, v: true}],
-                [{k: 'heldItemExists', v: false}, {k: 'heldItemId', v: -1}],
+                [{ k: 'heldItemId', v: id }, { k: 'atGoal_' + DUMPSTER_ID, v: true }],
+                [{ k: 'heldItemExists', v: false }, { k: 'heldItemId', v: -1 }],
                 function () {
                     const a = actor();
-                    log.info("Depositing blockade at dumpster", {cubeId: id});
+                    log.info("Depositing blockade at dumpster", { cubeId: id });
                     a.heldItem = null;
                     // CRITICAL: Sync blackboard IMMEDIATELY so PA-BT post-condition check passes!
                     if (state.blackboard) {
@@ -1050,13 +1050,13 @@ try {
         // ---------------------------------------------------------------------
         reg('Place_Target_Temporary',
             [
-                {k: 'heldItemId', v: TARGET_ID},
-                {k: 'atGoal_' + STAGING_AREA_ID, v: true},
-                {k: 'needToPlaceTarget', v: true}  // Only when blockades still exist!
+                { k: 'heldItemId', v: TARGET_ID },
+                { k: 'atGoal_' + STAGING_AREA_ID, v: true },
+                { k: 'needToPlaceTarget', v: true }  // Only when blockades still exist!
             ],
             [
-                {k: 'heldItemExists', v: false},
-                {k: 'heldItemId', v: -1}
+                { k: 'heldItemExists', v: false },
+                { k: 'heldItemId', v: -1 }
                 // REMOVED: {k: 'reachable_goal_' + GOAL_ID, v: true} - heuristic that breaks PA-BT
             ],
             function () {
@@ -1108,22 +1108,22 @@ try {
         // ---------------------------------------------------------------------
         GOAL_BLOCKADE_IDS.forEach(function (id) {
             reg('Pick_GoalBlockade_' + id,
-                [{k: 'heldItemExists', v: false}, {k: 'atEntity_' + id, v: true}],
+                [{ k: 'heldItemExists', v: false }, { k: 'atEntity_' + id, v: true }],
                 [
-                    {k: 'heldItemId', v: id},
-                    {k: 'heldItemExists', v: true}
+                    { k: 'heldItemId', v: id },
+                    { k: 'heldItemExists', v: true }
                     // REMOVED: {k: 'reachable_goal_' + GOAL_ID, v: true} - heuristic that breaks PA-BT
                 ],
                 function () {
                     const a = actor();
                     const c = state.cubes.get(id);
                     if (!c || c.deleted) {
-                        log.debug("Pick_GoalBlockade skipped: cube gone", {cubeId: id});
+                        log.debug("Pick_GoalBlockade skipped: cube gone", { cubeId: id });
                         return bt.success;
                     }
-                    log.info("GOAL_WALL_CLEAR: Picking up goal blockade cube", {cubeId: id});
+                    log.info("GOAL_WALL_CLEAR: Picking up goal blockade cube", { cubeId: id });
                     c.deleted = true;
-                    a.heldItem = {id: id};
+                    a.heldItem = { id: id };
                     // CRITICAL: Sync blackboard IMMEDIATELY so PA-BT post-condition check passes!
                     if (state.blackboard) {
                         state.blackboard.set('heldItemId', id);
@@ -1139,16 +1139,16 @@ try {
             // PA-BT will find this action when goalBlockade_X_cleared fails, and the effect
             // will be TRUE after execution.
             reg('Deposit_GoalBlockade_' + id,
-                [{k: 'heldItemId', v: id}, {k: 'atGoal_' + DUMPSTER_ID, v: true}],
+                [{ k: 'heldItemId', v: id }, { k: 'atGoal_' + DUMPSTER_ID, v: true }],
                 [
-                    {k: 'heldItemExists', v: false},
-                    {k: 'heldItemId', v: -1},
+                    { k: 'heldItemExists', v: false },
+                    { k: 'heldItemId', v: -1 },
                     // TRUTHFUL: This specific blockade is now cleared
-                    {k: 'goalBlockade_' + id + '_cleared', v: true}
+                    { k: 'goalBlockade_' + id + '_cleared', v: true }
                 ],
                 function () {
                     const a = actor();
-                    log.info("GOAL_WALL_CLEAR: Depositing goal blockade at dumpster", {cubeId: id});
+                    log.info("GOAL_WALL_CLEAR: Depositing goal blockade at dumpster", { cubeId: id });
                     a.heldItem = null;
                     // CRITICAL: Sync blackboard IMMEDIATELY so PA-BT post-condition check passes!
                     if (state.blackboard) {
@@ -1236,9 +1236,9 @@ try {
         const sprites = [];
 
         state.actors.forEach(function (actor) {
-            sprites.push({x: actor.x, y: actor.y, char: '@', width: 1, height: 1});
+            sprites.push({ x: actor.x, y: actor.y, char: '@', width: 1, height: 1 });
             if (actor.heldItem) {
-                sprites.push({x: actor.x, y: actor.y - 0.5, char: '◆', width: 1, height: 1});
+                sprites.push({ x: actor.x, y: actor.y - 0.5, char: '◆', width: 1, height: 1 });
             }
         });
 
@@ -1255,7 +1255,7 @@ try {
                 } else if (cube.type === 'wall') {
                     spriteChar = '█'; // Solid for static walls
                 }
-                sprites.push({x: cube.x, y: cube.y, char: spriteChar, width: 1, height: 1});
+                sprites.push({ x: cube.x, y: cube.y, char: spriteChar, width: 1, height: 1 });
             }
         });
 
@@ -1269,7 +1269,7 @@ try {
             } else if (goal.forStaging) {
                 goalChar = '◌'; // Dotted circle for staging area
             }
-            sprites.push({x: goal.x, y: goal.y, char: goalChar, width: 1, height: 1});
+            sprites.push({ x: goal.x, y: goal.y, char: goalChar, width: 1, height: 1 });
         });
 
         return sprites;
@@ -1364,7 +1364,8 @@ try {
         let output = rows.join('\n');
 
         if (state.debugMode) {
-            output += '\n__place_debug_start__\n' + getDebugOverlayJSON(state) + '\n__place_debug_end__';
+            // Compact output to avoid line wrapping/scrolling issues in tests
+            output += '__place_debug_start__' + getDebugOverlayJSON(state) + '__place_debug_end__';
         }
 
         return output;
@@ -1510,7 +1511,7 @@ try {
                                 // PLACING: Look for empty cell (or special goals)
                                 if (!occupiedBy) {
                                     // Valid placement target
-                                    bestCand = {action: 'place', x: neighborX, y: neighborY};
+                                    bestCand = { action: 'place', x: neighborX, y: neighborY };
                                     minClickDist = distToClick;
                                 }
                                 // Note: Goals (dumpster/delivery) are not in 'cubes' map so they count as "not occupiedBy"
@@ -1518,7 +1519,7 @@ try {
                             } else {
                                 // PICKING: Look for occupied cell (non-static)
                                 if (occupiedBy && !occupiedBy.isStatic) {
-                                    bestCand = {action: 'pick', x: neighborX, y: neighborY, target: occupiedBy};
+                                    bestCand = { action: 'pick', x: neighborX, y: neighborY, target: occupiedBy };
                                     minClickDist = distToClick;
                                 }
                             }
@@ -1531,10 +1532,10 @@ try {
                     if (bestCand.action === 'pick') {
                         // --- MANUAL PICK ---
                         const target = bestCand.target;
-                        log.info("MANUAL: Picking up item", {id: target.id});
+                        log.info("MANUAL: Picking up item", { id: target.id });
 
                         target.deleted = true;
-                        actor.heldItem = {id: target.id};
+                        actor.heldItem = { id: target.id };
 
                         // Sync global state
                         if (state.blackboard) {
@@ -1560,7 +1561,7 @@ try {
                             }
                         } else if (isDumpster) {
                             // DEPOSIT AT DUMPSTER (Destroy item)
-                            log.info("MANUAL: Depositing item at dumpster", {id: heldId});
+                            log.info("MANUAL: Depositing item at dumpster", { id: heldId });
                             actor.heldItem = null;
                             // Update cleared flags if it was a goal blockade
                             if (GOAL_BLOCKADE_IDS.includes(heldId)) {
@@ -1572,7 +1573,7 @@ try {
                             }
                         } else {
                             // NORMAL PLACE (Restore to grid)
-                            log.info("MANUAL: Placing item", {id: heldId, x: bestCand.x, y: bestCand.y});
+                            log.info("MANUAL: Placing item", { id: heldId, x: bestCand.x, y: bestCand.y });
 
                             // Retrieve original metadata to preserve type/flags
                             const original = state.cubes.get(heldId);
@@ -1603,7 +1604,7 @@ try {
             if (key === 'm' || key === 'M') {
                 const oldMode = state.gameMode;
                 state.gameMode = state.gameMode === 'automatic' ? 'manual' : 'automatic';
-                log.info("Mode toggled", {from: oldMode, to: state.gameMode});
+                log.info("Mode toggled", { from: oldMode, to: state.gameMode });
                 return [state, null];
             }
 
@@ -1704,7 +1705,7 @@ try {
         console.log('Press any key to start...');
         console.log('');
 
-        tea.run(program, {altScreen: true});
+        tea.run(program, { altScreen: true });
 
         console.log('');
         console.log('Program exited successfully.');

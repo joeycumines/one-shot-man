@@ -32,9 +32,10 @@ type LogEntry struct {
 	Source  string            `json:"source,omitempty"`
 }
 
-// NewTUILogger creates a new TUI-integrated logger.
+// NewTUILogger creates a new TUI-integrated logger with a specified log level.
 // If logFile is not nil, logs will also be written to it in JSON format.
-func NewTUILogger(tuiWriter io.Writer, logFile io.Writer, maxEntries int) *TUILogger {
+// The level parameter controls the minimum level of logs that will be processed.
+func NewTUILogger(tuiWriter io.Writer, logFile io.Writer, maxEntries int, level slog.Level) *TUILogger {
 	if maxEntries <= 0 {
 		maxEntries = 1000
 	}
@@ -42,7 +43,7 @@ func NewTUILogger(tuiWriter io.Writer, logFile io.Writer, maxEntries int) *TUILo
 	var jsonHandler slog.Handler
 	if logFile != nil {
 		jsonHandler = slog.NewJSONHandler(logFile, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
+			Level: level,
 		})
 	}
 
@@ -51,6 +52,7 @@ func NewTUILogger(tuiWriter io.Writer, logFile io.Writer, maxEntries int) *TUILo
 		maxSize:     maxEntries,
 		mutex:       sync.RWMutex{},
 		fileHandler: jsonHandler,
+		level:       level,
 	}
 
 	logger := slog.New(handler)
@@ -68,11 +70,12 @@ type TUILogHandler struct {
 	maxSize     int
 	mutex       sync.RWMutex
 	fileHandler slog.Handler // Optional handler for file logging (JSON)
+	level       slog.Level   // Minimum level to log
 }
 
 // Enabled implements slog.Handler.
 func (h *TUILogHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	return true // Enable all levels for TUI logging
+	return level >= h.level
 }
 
 // Handle implements slog.Handler.
@@ -266,4 +269,10 @@ func (l *TUILogger) ClearLogs() {
 	defer l.handler.mutex.Unlock()
 
 	l.handler.entries = l.handler.entries[:0] // Clear slice while keeping capacity
+}
+
+// Logger returns the underlying slog.Logger.
+// This can be used to set the global slog default via slog.SetDefault().
+func (l *TUILogger) Logger() *slog.Logger {
+	return l.logger
 }

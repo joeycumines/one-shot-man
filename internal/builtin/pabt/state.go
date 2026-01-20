@@ -2,6 +2,7 @@ package pabt
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -16,9 +17,6 @@ var _ pabtpkg.IState = (*State)(nil)
 // debugPABT controls verbose PA-BT debugging output.
 // Set OSM_DEBUG_PABT=1 to enable.
 var debugPABT = os.Getenv("OSM_DEBUG_PABT") == "1"
-
-// debugOnce logs once that debugging is enabled
-var debugOnce sync.Once
 
 // actionsCallCounter tracks how many times Actions() is called for debugging infinite loops
 var actionsCallCounter int64
@@ -150,34 +148,29 @@ func (s *State) Variable(key any) (any, error) {
 	// Get value from blackboard (returns nil if not found, which is correct pabt semantics)
 	value := s.Blackboard.Get(keyStr)
 
-	// ALWAYS log ALL State.Variable calls for debugging
-	fmt.Fprintf(os.Stderr, "[PA-BT VAR] key=%s value=%v\n", keyStr, value)
-
-	// ALWAYS log key variables, not just when debugPABT is set
-	// This helps debug the stuck issue even without OSM_DEBUG_PABT
-	if strings.HasPrefix(keyStr, "atGoal_") {
-		fmt.Fprintf(os.Stderr, "[PA-BT ALWAYS] ATGOAL: %s = %v\n", keyStr, value)
-	}
-	if keyStr == "heldItemId" {
-		fmt.Fprintf(os.Stderr, "[PA-BT ALWAYS] HELD: heldItemId = %v\n", value)
-	}
-
 	if debugPABT {
-		debugOnce.Do(func() {
-			fmt.Fprintln(os.Stderr, "[PA-BT DEBUG] Debugging enabled via OSM_DEBUG_PABT=1")
-		})
-		fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] State.Variable called: key=%v keyStr=%s value=%v (%T)\n",
-			key, keyStr, value, value)
+		slog.Debug("[PA-BT DEBUG] State.Variable called", "key", key, "keyStr", keyStr, "value", value, "type", fmt.Sprintf("%T", value))
+
+		// Moved detailed logging here to avoid excessive noise in standard debug level
+		slog.Debug("[PA-BT VAR]", "key", keyStr, "value", value)
+
+		// ALWAYS log key variables (as Debug, was [PA-BT ALWAYS])
+		if strings.HasPrefix(keyStr, "atGoal_") {
+			slog.Debug("[PA-BT ALWAYS] ATGOAL", "key", keyStr, "value", value)
+		}
+		if keyStr == "heldItemId" {
+			slog.Debug("[PA-BT ALWAYS] HELD", "key", "heldItemId", "value", value)
+		}
 
 		// CRITICAL: Track when atGoal_1 is checked - should happen after heldItemId passes
 		if strings.HasPrefix(keyStr, "atGoal_") {
-			fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] ATGOAL_VAR: Checking %s = %v (expected: false before reaching goal)\n", keyStr, value)
+			slog.Debug("[PA-BT DEBUG] ATGOAL_VAR: Checking value (expected: false before reaching goal)", "key", keyStr, "value", value)
 		}
 
 		// CRITICAL: Track heldItemId values - especially non-negative ones
 		if keyStr == "heldItemId" {
 			if v, ok := value.(int64); ok && v >= 0 {
-				fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] HELD_POSITIVE: heldItemId=%d - condition should PASS now!\n", v)
+				slog.Debug("[PA-BT DEBUG] HELD_POSITIVE: condition should PASS now!", "heldItemId", v)
 			}
 		}
 	}
@@ -212,7 +205,7 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 
 	// Detect infinite loop - if Actions called too many times in quick succession
 	if callCount > 10000 && callCount%1000 == 0 {
-		fmt.Fprintf(os.Stderr, "[PA-BT WARN] Actions() called %d times - possible infinite loop!\n", callCount)
+		slog.Warn("[PA-BT WARN] Actions() possible infinite loop", "callCount", callCount)
 	}
 
 	// Get statically registered actions
@@ -226,28 +219,23 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 	failedKey := failed.Key()
 
 	if debugPABT {
-		debugOnce.Do(func() {
-			fmt.Fprintln(os.Stderr, "[PA-BT DEBUG] Debugging enabled via OSM_DEBUG_PABT=1")
-		})
-		fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] State.Actions called: failedKey=%v (%T), registeredActionCount=%d\n",
-			failedKey, failedKey, len(registeredActions))
+		slog.Debug("[PA-BT DEBUG] State.Actions called", "failedKey", failedKey, "failedKeyType", fmt.Sprintf("%T", failedKey), "registeredActionCount", len(registeredActions))
 
 		// CRITICAL: Log when atGoal_X is requested - this is key for conflict resolution
 		if failedKeyStr, ok := failedKey.(string); ok {
 			if strings.HasPrefix(failedKeyStr, "atGoal_") {
-				fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] ATGOAL_CRITICAL: Actions() called for %s - this triggers MoveTo generation\n", failedKeyStr)
+				slog.Debug("[PA-BT DEBUG] ATGOAL_CRITICAL: Actions() called - triggers MoveTo generation", "key", failedKeyStr)
 			}
 		}
 
 		// CUBE_DELIVERED: Log ALL actions when searching for cubeDeliveredAtGoal
 		if failedKeyStr, ok := failedKey.(string); ok {
 			if failedKeyStr == "cubeDeliveredAtGoal" {
-				fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] CUBE_DELIVERED: Searching for cubeDeliveredAtGoal=true actions. Listing ALL registered actions:\n")
+				slog.Debug("[PA-BT DEBUG] CUBE_DELIVERED: Searching for actions")
 				for _, a := range registeredActions {
 					if named, ok := a.(*Action); ok {
-						fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] CUBE_DELIVERED:   Action: %s\n", named.Name)
 						for _, e := range a.Effects() {
-							fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] CUBE_DELIVERED:     effect: key=%v (%T) value=%v (%T)\n", e.Key(), e.Key(), e.Value(), e.Value())
+							slog.Debug("[PA-BT DEBUG] CUBE_DELIVERED: Action detail", "action", named.Name, "effectKey", e.Key(), "effectValue", e.Value())
 						}
 					}
 				}
@@ -256,14 +244,10 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 
 		// Extra debug: log all registered action names
 		if failedKey == "reachable_goal_1" {
-			fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] SPECIAL: Searching for reachable_goal_1 actions. Listing all registered actions:\n")
+			slog.Debug("[PA-BT DEBUG] SPECIAL: Searching for reachable_goal_1 actions")
 			for _, a := range registeredActions {
 				if named, ok := a.(*Action); ok {
-					fmt.Fprintf(os.Stderr, "[PA-BT DEBUG]   Action: %s, effects: ", named.Name)
-					for _, e := range a.Effects() {
-						fmt.Fprintf(os.Stderr, "%v=%v ", e.Key(), e.Value())
-					}
-					fmt.Fprintln(os.Stderr)
+					slog.Debug("[PA-BT DEBUG]   Action", "name", named.Name, "effects", a.Effects())
 				}
 			}
 		}
@@ -271,18 +255,18 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 		// EXTRA: Check for goalBlockade conditions
 		if failedKeyStr, ok := failedKey.(string); ok {
 			if strings.HasPrefix(failedKeyStr, "goalBlockade_") && strings.HasSuffix(failedKeyStr, "_cleared") {
-				fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] GOALBLOCKADE: Looking for actions that satisfy %s\n", failedKeyStr)
+				slog.Debug("[PA-BT DEBUG] GOALBLOCKADE: Looking for actions", "key", failedKeyStr)
 			}
 		}
 
 		// EXTRA: Check for heldItemExists/heldItemId - critical for conflict resolution
 		if failedKey == "heldItemExists" || failedKey == "heldItemId" {
-			fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] HANDS: Looking for actions that satisfy %s. Registered actions with that effect:\n", failedKey)
+			slog.Debug("[PA-BT DEBUG] HANDS: Looking for actions", "failedKey", failedKey)
 			for _, a := range registeredActions {
 				if named, ok := a.(*Action); ok {
 					for _, e := range a.Effects() {
 						if e.Key() == failedKey {
-							fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] HANDS:   %s has effect %s=%v\n", named.Name, failedKey, e.Value())
+							slog.Debug("[PA-BT DEBUG] HANDS: Action has effect", "action", named.Name, "key", failedKey, "value", e.Value())
 						}
 					}
 				}
@@ -301,12 +285,12 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 		generatedActions, err := generator(failed)
 		if err != nil {
 			if debugPABT {
-				fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] ActionGenerator error: %v\n", err)
+				slog.Debug("[PA-BT DEBUG] ActionGenerator error", "error", err)
 			}
 			// Don't fail completely - fall back to static actions
 		} else {
 			if debugPABT {
-				fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] ActionGenerator returned %d actions\n", len(generatedActions))
+				slog.Debug("[PA-BT DEBUG] ActionGenerator returned actions", "count", len(generatedActions))
 			}
 			// Filter generated actions for relevance
 			for _, action := range generatedActions {
@@ -331,8 +315,7 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 				actionNames = append(actionNames, named.Name)
 			}
 		}
-		fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] State.Actions result: failedKey=%v, relevantActionCount=%d, relevantActions=%v\n",
-			failedKey, len(relevantActions), actionNames)
+		slog.Debug("[PA-BT DEBUG] State.Actions result", "failedKey", failedKey, "relevantActionCount", len(relevantActions), "relevantActions", actionNames)
 	}
 
 	return relevantActions, nil
@@ -365,8 +348,7 @@ func (s *State) actionHasRelevantEffect(action pabtpkg.IAction, failedKey any, f
 			if named, ok := action.(*Action); ok {
 				actionName = named.Name
 			}
-			fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] Effect comparison: action=%s effectKey=%v (%T) failedKey=%v (%T) keyMatch=%v effectValue=%v valueMatch=%v\n",
-				actionName, effectKey, effectKey, failedKey, failedKey, keyMatch, effectValue, valueMatch)
+			slog.Debug("[PA-BT DEBUG] Effect comparison", "action", actionName, "effectKey", effectKey, "failedKey", failedKey, "keyMatch", keyMatch, "effectValue", effectValue, "valueMatch", valueMatch)
 		}
 
 		if keyMatch && valueMatch {

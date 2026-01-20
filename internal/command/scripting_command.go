@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -25,6 +26,7 @@ type ScriptingCommand struct {
 	store           string
 	logPath         string
 	logBufferSize   int
+	logLevel        string
 	config          *config.Config
 	engineFactory   func(context.Context, io.Writer, io.Writer) (*scripting.Engine, error)
 	terminalFactory func(context.Context, *scripting.Engine) terminalRunner
@@ -64,6 +66,7 @@ func (c *ScriptingCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.store, "store", "", "Storage backend to use: 'fs' (default) or 'memory' (overrides OSM_STORE)")
 	fs.StringVar(&c.logPath, "log-file", "", "Path to log file (JSON output)")
 	fs.IntVar(&c.logBufferSize, "log-buffer", 1000, "Size of in-memory log buffer")
+	fs.StringVar(&c.logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
 }
 
 // Execute runs the scripting command.
@@ -79,6 +82,21 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 		ctx, cancel = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	}
 	defer cancel()
+
+	// Parse log level
+	var level slog.Level
+	switch strings.ToLower(c.logLevel) {
+	case "debug":
+		level = slog.LevelDebug
+	case "info":
+		level = slog.LevelInfo
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		return fmt.Errorf("invalid log level: %s", c.logLevel)
+	}
 
 	// Prepare logging configuration
 	var logFile io.Writer
@@ -96,7 +114,7 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	if engineFactory == nil {
 		// Use the new API with explicit parameters to avoid data races
 		engineFactory = func(ctx context.Context, stdout, stderr io.Writer) (*scripting.Engine, error) {
-			return scripting.NewEngineDetailed(ctx, stdout, stderr, c.session, c.store, logFile, c.logBufferSize)
+			return scripting.NewEngineDetailed(ctx, stdout, stderr, c.session, c.store, logFile, c.logBufferSize, level)
 		}
 	}
 
@@ -105,6 +123,11 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 		return fmt.Errorf("failed to create scripting engine: %w", err)
 	}
 	defer engine.Close()
+
+	// Set global default logger
+	// Note: We access the internal logger getter. This is the "modular wiring" part -
+	// the engine provides the logger, and the command (entrypoint logic) wires it up.
+	slog.SetDefault(engine.Logger())
 
 	if c.testMode {
 		engine.SetTestMode(true)

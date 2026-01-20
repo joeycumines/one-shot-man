@@ -12,7 +12,7 @@ import (
 func TestPrintToTUI_Writer_Newline(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	l := NewTUILogger(&buf, nil, 10)
+	l := NewTUILogger(&buf, nil, 10, slog.LevelInfo)
 
 	l.PrintToTUI("hello")
 	l.PrintToTUI("world\n")
@@ -30,7 +30,7 @@ func TestPrintToTUI_Sink_Newline(t *testing.T) {
 	var got []string
 	var mu sync.Mutex
 
-	l := NewTUILogger(nil, nil, 10)
+	l := NewTUILogger(nil, nil, 10, slog.LevelInfo)
 	l.SetTUISink(func(s string) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -55,7 +55,7 @@ func TestPrintToTUI_Sink_Newline(t *testing.T) {
 func TestPrintToTUI_SetTUISink_Atomicity(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	l := NewTUILogger(&buf, nil, 10)
+	l := NewTUILogger(&buf, nil, 10, slog.LevelInfo)
 
 	entered := make(chan struct{})
 	block := make(chan struct{})
@@ -117,7 +117,7 @@ func TestPrintToTUI_SetTUISink_Atomicity_WriterPath(t *testing.T) {
 	t.Parallel()
 	entered := make(chan struct{})
 	bw := &blockingWriter{entered: entered, unblk: make(chan struct{})}
-	l := NewTUILogger(bw, nil, 10)
+	l := NewTUILogger(bw, nil, 10, slog.LevelInfo)
 
 	printed := make(chan struct{})
 
@@ -155,7 +155,7 @@ func TestPrintToTUI_SetTUISink_Atomicity_WriterPath(t *testing.T) {
 func TestTUILogger_FileLogging(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	l := NewTUILogger(nil, &buf, 10)
+	l := NewTUILogger(nil, &buf, 10, slog.LevelInfo)
 
 	l.Info("test message", slog.String("key", "value"))
 

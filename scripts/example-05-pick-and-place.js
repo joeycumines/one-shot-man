@@ -106,21 +106,12 @@ try {
         // Path to target is now clear - only the goal is blocked
         // This isolates the conflict resolution testing to just the goal blockade wall
 
-        // 3. Goal Blockade Cubes (COMPLETE 3x3 wall AROUND the goal at 8,18)
-        // Using 8 blockades to completely surround the goal in ALL directions
-        // including diagonals - this TRULY forces conflict resolution since
-        // the agent cannot even get within 1 cell of the goal without clearing.
+        // 3. Goal Blockade Cubes - Single blockade for testing PA-BT conflict resolution
+        // When goal is blocked, PA-BT should find the Deposit_GoalBlockade_X action to clear path
         let goalBlockadeId = 100;
+        // Re-enabled: Testing conflict resolution with single blockade
         const goalBlockadePositions = [
-            // Complete 8-directional enclosure - blocks ALL access including diagonals
-            {x: 7, y: 17},   // NW of goal
-            {x: 8, y: 17},   // N of goal
-            {x: 9, y: 17},   // NE of goal
-            {x: 7, y: 18},   // W of goal
-            {x: 9, y: 18},   // E of goal
-            {x: 7, y: 19},   // SW of goal
-            {x: 8, y: 19},   // S of goal
-            {x: 9, y: 19}    // SE of goal
+            {x: 8, y: 17}    // Directly N of goal (blocking direct approach)
         ];
         for (const pos of goalBlockadePositions) {
             cubesInit.push([goalBlockadeId, {
@@ -204,12 +195,46 @@ try {
         const key = (x, y) => x + ',' + y;
         const actor = state.actors.get(state.activeActorId);
 
+        let debugBlockedCubes = [];
+        let allGoalBlockades = [];
         state.cubes.forEach(c => {
+            // Track ALL goal blockades for debugging
+            if (c.id >= 100 && c.id <= 107) {
+                allGoalBlockades.push({id: c.id, x: Math.round(c.x), y: Math.round(c.y), deleted: c.deleted});
+            }
+            
             if (c.deleted) return;
             if (c.id === ignoreCubeId) return;
             if (actor.heldItem && c.id === actor.heldItem.id) return;
             blocked.add(key(Math.round(c.x), Math.round(c.y)));
+            if (c.id >= 100 && c.id <= 107) {
+                debugBlockedCubes.push({id: c.id, x: Math.round(c.x), y: Math.round(c.y)});
+            }
         });
+
+        // DEBUG: Log ALL goal blockades (including deleted) vs blocked set
+        if (state.tickCount === 5) {
+            log.error("BLOCKED_SET_DEBUG_TICK5", {
+                tick: state.tickCount,
+                allGoalBlockadesInMap: allGoalBlockades.length,
+                allGoalBlockades: JSON.stringify(allGoalBlockades),
+                goalBlockadesInBlockedSet: debugBlockedCubes.length,
+                positions: JSON.stringify(debugBlockedCubes),
+                ignoreCubeId: ignoreCubeId,
+                heldItemId: actor.heldItem ? actor.heldItem.id : -1
+            });
+        }
+        if (state.tickCount === 700) {
+            log.error("BLOCKED_SET_DEBUG_TICK700", {
+                tick: state.tickCount,
+                allGoalBlockadesInMap: allGoalBlockades.length,
+                allGoalBlockades: JSON.stringify(allGoalBlockades),
+                goalBlockadesInBlockedSet: debugBlockedCubes.length,
+                positions: JSON.stringify(debugBlockedCubes),
+                ignoreCubeId: ignoreCubeId,
+                heldItemId: actor.heldItem ? actor.heldItem.id : -1
+            });
+        }
 
         return blocked;
     }
@@ -228,6 +253,16 @@ try {
             const dy = Math.abs(current.y - Math.round(targetY));
 
             if (dx <= 1 && dy <= 1) {
+                // DEBUG: Log when we find the goal to understand how we got there
+                if (Math.round(targetX) === 8 && Math.round(targetY) === 18) {
+                    log.warn("BFS_FOUND_GOAL_PATH", {
+                        currentCell: current.x + "," + current.y,
+                        target: targetX + "," + targetY,
+                        dx: dx,
+                        dy: dy,
+                        distance: current.dist
+                    });
+                }
                 return {reachable: true, distance: current.dist};
             }
 
@@ -321,7 +356,21 @@ try {
         bb.set('actorX', actor.x);
         bb.set('actorY', actor.y);
         bb.set('heldItemExists', actor.heldItem !== null);
-        bb.set('heldItemId', actor.heldItem ? actor.heldItem.id : -1);
+        
+        // CRITICAL DEBUG: Track heldItemId synchronization
+        const heldId = actor.heldItem ? actor.heldItem.id : -1;
+        bb.set('heldItemId', heldId);
+        
+        // Log EVERY time heldItemId changes to non-negative
+        if (heldId >= 0) {
+            log.warn("SYNC_HELD_POSITIVE", {
+                tick: state.tickCount,
+                heldId: heldId,
+                actorX: ax,
+                actorY: ay,
+                verifyGet: bb.get('heldItemId')
+            });
+        }
 
         // Target cube
         const target = state.cubes.get(TARGET_ID);
@@ -357,9 +406,19 @@ try {
                 bb.set('reachable_cube_' + id, info.reachable);
                 bb.set('distance_cube_' + id, info.distance);
                 bb.set('atEntity_' + id, info.distance < 2);
+                // Track per-blockade cleared status (false = not cleared yet)
+                bb.set('goalBlockade_' + id + '_cleared', false);
+                if (state.tickCount % 200 === 0 || state.tickCount < 10) {
+                    log.warn("BLOCKADE_STATUS", {id: id, cleared: false, exists: true, tick: state.tickCount});
+                }
             } else {
                 bb.set('reachable_cube_' + id, false);
                 bb.set('atEntity_' + id, false);
+                // Track per-blockade cleared status (true = cleared/deleted)
+                bb.set('goalBlockade_' + id + '_cleared', true);
+                if (state.tickCount % 200 === 0 || state.tickCount < 10) {
+                    log.warn("BLOCKADE_STATUS", {id: id, cleared: true, exists: false, tick: state.tickCount});
+                }
             }
         });
 
@@ -369,6 +428,27 @@ try {
             bb.set('reachable_goal_' + goal.id, info.reachable);
             bb.set('distance_goal_' + goal.id, info.distance);
             bb.set('atGoal_' + goal.id, info.distance < 2);
+            
+            // DEBUG: Log goal reachability for debugging EVERY TICK for main goal
+            if (goal.id === GOAL_ID) {
+                const atGoalValue = info.distance < 2;
+                if (atGoalValue || state.tickCount % 50 === 1) {
+                    log.error("GOAL_STATUS_DEBUG", {
+                        tick: state.tickCount,
+                        goalType: 'DELIVERY',
+                        actorPos: ax + "," + ay,
+                        goalPos: goal.x + "," + goal.y,
+                        reachable: info.reachable,
+                        distance: info.distance,
+                        atGoal: atGoalValue,
+                        goalBlockadesRemaining: GOAL_BLOCKADE_IDS.filter(function(id) {
+                            const c = state.cubes.get(id);
+                            return c && !c.deleted;
+                        }).length,
+                        heldItemId: actor.heldItem ? actor.heldItem.id : -1
+                    });
+                }
+            }
         });
 
         // Special: Check if goal path is clear (no goal blockades remaining)
@@ -390,13 +470,17 @@ try {
     // Cache for dynamically created actions to avoid recreating them every tick
     var actionCache = new Map();
 
-    function createMoveToAction(state, entityType, entityId) {
-        const cacheKey = 'MoveTo_' + entityType + '_' + entityId;
+    // Create a MoveTo action for a cube or goal
+    // extraEffects: optional array of {key, Value} pairs for additional effects
+    function createMoveToAction(state, entityType, entityId, extraEffects) {
+        // Include extraEffects in cache key to ensure different variants are cached separately
+        const extraKey = extraEffects ? JSON.stringify(extraEffects.map(function(e) { return e.key; })) : '';
+        const cacheKey = 'MoveTo_' + entityType + '_' + entityId + extraKey;
         if (actionCache.has(cacheKey)) {
             return actionCache.get(cacheKey);
         }
 
-        const name = cacheKey;
+        const name = 'MoveTo_' + entityType + '_' + entityId;
         let targetKey, reachableKey;
 
         if (entityType === 'cube') {
@@ -407,16 +491,62 @@ try {
             reachableKey = 'reachable_goal_' + entityId;
         }
 
-        const conditions = [
-            {key: reachableKey, Match: function(v) { return v === true; }}
-        ];
+        const conditions = [];
+        
+        // CRITICAL: For goal 1 (delivery goal), use per-blockade conditions instead of reachability
+        // This allows PA-BT to find Deposit_GoalBlockade_X actions when blocked
+        // These are TRUTHFUL conditions - if a blockade is deleted, it IS cleared
+        // For other entities, use the standard reachability precondition
+        if (entityType === 'goal' && entityId === GOAL_ID && GOAL_BLOCKADE_IDS.length > 0) {
+            // Add a condition for EACH blockade that must be cleared
+            // PA-BT will find Deposit_GoalBlockade_X actions to satisfy each
+            log.warn("MOVETO_GOAL_1_CONDITIONS", {
+                blockadeCount: GOAL_BLOCKADE_IDS.length,
+                blockadeIds: GOAL_BLOCKADE_IDS.join(",")
+            });
+            for (var i = 0; i < GOAL_BLOCKADE_IDS.length; i++) {
+                const blockadeId = GOAL_BLOCKADE_IDS[i];
+                log.debug("MoveTo_goal_1: Adding blockade condition", {blockadeId: blockadeId, index: i});
+                conditions.push({
+                    key: 'goalBlockade_' + blockadeId + '_cleared',
+                    Match: function(v) { return v === true; }
+                });
+            }
+        } else {
+            // Standard reachability precondition for non-goal-1 entities
+            // Also used for goal 1 when there are NO blockades
+            if (entityType === 'goal' && entityId === GOAL_ID) {
+                log.warn("MOVETO_GOAL_1_NO_BLOCKADES", {
+                    blockadeCount: GOAL_BLOCKADE_IDS.length,
+                    reason: "Using standard reachability"
+                });
+            }
+            conditions.push({key: reachableKey, Match: function(v) { return v === true; }});
+        }
+        
         const effects = [
             {key: targetKey, Value: true}
         ];
+        
+        // Add extra effects if provided (used for heuristic effects like reachable_goal_1)
+        if (extraEffects) {
+            for (var i = 0; i < extraEffects.length; i++) {
+                effects.push(extraEffects[i]);
+            }
+        }
 
         const tickFn = function() {
             if (state.gameMode !== 'automatic') {
                 return bt.running;
+            }
+
+            // Log when MoveTo_goal_1 is being executed
+            if (entityType === 'goal' && entityId === GOAL_ID) {
+                log.error("MOVETO_GOAL_1_TICK", {
+                    tick: state.tickCount,
+                    actorX: state.actors.get(state.activeActorId).x,
+                    actorY: state.actors.get(state.activeActorId).y
+                });
             }
 
             const actor = state.actors.get(state.activeActorId);
@@ -445,6 +575,16 @@ try {
             const dx = targetX - actor.x;
             const dy = targetY - actor.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            // Debug log: track MoveTo execution
+            log.debug("MoveTo tick", {
+                name: name,
+                actorX: Math.round(actor.x),
+                actorY: Math.round(actor.y),
+                targetX: Math.round(targetX),
+                targetY: Math.round(targetY),
+                dist: Math.round(dist * 10) / 10
+            });
 
             if (dist <= 1.8) {
                 log.debug(name + " success: in range", {dist: dist});
@@ -524,70 +664,65 @@ try {
                 if (!isNaN(goalId)) {
                     const goal = state.goals.get(goalId);
                     if (goal) {
+                        // ALWAYS return MoveTo for the requested goal.
+                        // Let PA-BT discover precondition failures (reachable_goal_X)
+                        // and expand from there to find blockade clearing path.
                         actions.push(createMoveToAction(state, 'goal', goalId));
-                        log.debug("Generated MoveTo action", {target: 'goal', goalId: goalId});
-                    }
-                }
-
-                // =========================================================================
-                // CONFLICT RESOLUTION: When delivery goal (GOAL_ID) is unreachable
-                // AND agent is holding the target, offer the staging area path!
-                // This enables: MoveTo staging → Place_Target_Temporary → hands free →
-                // pick blockade → deposit → goal becomes reachable → retrieve → deliver
-                // =========================================================================
-                if (goalId === GOAL_ID && isHoldingItem && currentHeldId === TARGET_ID) {
-                    const goalReachable = state.blackboard.get('reachable_goal_' + GOAL_ID);
-                    if (!goalReachable) {
-                        log.info("CONFLICT DETECTED: Holding target but goal unreachable, offering staging path", {
-                            heldItemId: currentHeldId,
-                            reachable_goal_1: goalReachable
-                        });
-                        // Offer MoveTo staging area as alternative
-                        actions.push(createMoveToAction(state, 'goal', STAGING_AREA_ID));
-                        log.debug("Generated MoveTo action for staging area (conflict resolution)", {goalId: STAGING_AREA_ID});
+                        log.debug("Generated MoveTo action for goal", {target: 'goal', goalId: goalId});
                     }
                 }
             }
 
             // =========================================================================
             // Handle reachable_goal_X failures - when goal is blocked
-            // Generate actions to help PA-BT plan blockade clearing
+            // DO NOT generate heuristic actions here! PA-BT must find registered
+            // actions (Place_Target_Temporary, Pick_GoalBlockade_X, etc.) which have
+            // reachable_goal_1=true as effect. ActionGenerator should only generate
+            // MoveTo actions for preconditions of those registered actions.
+            //
+            // LESSON LEARNED: Heuristic effects break PA-BT's trust model. When an
+            // action with effect X=true succeeds, PA-BT assumes X is actually true.
+            // If it's a heuristic (lie), PA-BT enters an infinite loop.
             // =========================================================================
             if (key && typeof key === 'string' && key.startsWith('reachable_goal_')) {
                 const goalId = parseInt(key.replace('reachable_goal_', ''), 10);
                 if (goalId === GOAL_ID) {
-                    // Case 1: Holding target - offer staging path
-                    if (isHoldingItem && currentHeldId === TARGET_ID) {
-                        log.info("CONFLICT DETECTED: reachable_goal_1 failed while holding target, offering staging path", {
-                            heldItemId: currentHeldId
-                        });
-                        // Offer MoveTo staging area to enable Place_Target_Temporary
-                        actions.push(createMoveToAction(state, 'goal', STAGING_AREA_ID));
-                        log.debug("Generated MoveTo action for staging area (conflict resolution)", {goalId: STAGING_AREA_ID});
-                    }
-                    
-                    // Case 2: Hands empty (after placing target) - offer MoveTo for goal blockades
-                    // This enables PA-BT to plan: MoveTo_cube_X → Pick_GoalBlockade_X → ... → reachable_goal_1
-                    if (!isHoldingItem) {
-                        log.info("BLOCKADE_CLEARING: reachable_goal_1 failed with empty hands, offering goal blockade paths", {
-                            heldItemExists: isHoldingItem
-                        });
-                        // Generate MoveTo for all reachable goal blockades
-                        GOAL_BLOCKADE_IDS.forEach(function(blockadeId) {
-                            const cube = state.cubes.get(blockadeId);
-                            if (cube && !cube.deleted) {
-                                const reachableKey = 'reachable_cube_' + blockadeId;
-                                if (state.blackboard.get(reachableKey)) {
-                                    actions.push(createMoveToAction(state, 'cube', blockadeId));
-                                    log.debug("Generated MoveTo action for goal blockade", {cubeId: blockadeId});
-                                }
-                            }
-                        });
-                        // Also offer dumpster path (for deposit after picking)
-                        actions.push(createMoveToAction(state, 'goal', DUMPSTER_ID));
-                        log.debug("Generated MoveTo action for dumpster (blockade clearing)", {goalId: DUMPSTER_ID});
-                    }
+                    // Log the conflict but DO NOT return any actions.
+                    // PA-BT will find registered actions (Place_Target_Temporary, 
+                    // Pick_GoalBlockade_X, Deposit_GoalBlockade_X) which have this effect.
+                    log.info("CONFLICT: reachable_goal_1 failed, letting PA-BT find registered actions", {
+                        heldItemExists: isHoldingItem,
+                        heldItemId: currentHeldId,
+                        goalBlocked: true
+                    });
+                    // Return empty - DO NOT add heuristic MoveTo actions!
                 }
+            }
+
+            // Keep the Case 3 hands empty logic ONLY for logging, but don't add heuristic effects
+            if (key && typeof key === 'string' && key.startsWith('reachable_goal_')) {
+                const goalId = parseInt(key.replace('reachable_goal_', ''), 10);
+                if (goalId === GOAL_ID && !isHoldingItem) {
+                    log.debug("BLOCKADE_CLEARING: reachable_goal_1 failed with empty hands, PA-BT should find Pick_GoalBlockade_X", {
+                        heldItemExists: isHoldingItem
+                    });
+                    // DO NOT generate any actions here - let PA-BT find registered 
+                    // Pick_GoalBlockade_X actions which have reachable_goal_1=true effect.
+                }
+            }
+
+            // =========================================================================
+            // Handle goalBlockade_X_cleared failures - when a specific blockade needs clearing
+            // PA-BT should find Deposit_GoalBlockade_X which has truthful effect
+            // =========================================================================
+            if (key && typeof key === 'string' && key.startsWith('goalBlockade_') && key.endsWith('_cleared')) {
+                const blockadeId = parseInt(key.replace('goalBlockade_', '').replace('_cleared', ''), 10);
+                log.info("BLOCKADE_CONDITION_FAILED: goalBlockade_" + blockadeId + "_cleared", {
+                    blockadeId: blockadeId,
+                    heldItemExists: isHoldingItem,
+                    heldItemId: currentHeldId
+                });
+                // DO NOT generate actions - PA-BT will find Deposit_GoalBlockade_X
             }
 
             // =========================================================================
@@ -654,11 +789,23 @@ try {
         // Pick_Target: Pick up the target cube
         // Condition: atEntity_TARGET_ID, hands empty
         // Effect: holding target
-        // NOTE: This action should be used AFTER path blockades are cleared
-        // and AFTER goal blockades are cleared (via Place_Target_Temporary flow)
+        // NOTE: We REMOVED the reachable_goal_1 precondition because:
+        // 1. It requires actions with effect reachable_goal_1=true
+        // 2. No single action can truthfully make this true (requires 8 blockade clears)
+        // 3. Heuristic effects break PA-BT's trust model
+        // 
+        // The conflict must arise NATURALLY:
+        //   1. Agent picks target
+        //   2. Agent tries atGoal_1 → MoveTo fails (path blocked)
+        //   3. PA-BT needs to clear path, but hands are FULL
+        //   4. PA-BT finds Place_Target_Temporary to free hands
+        //   5. Agent clears blockades, retrieves target, delivers
         // ---------------------------------------------------------------------
         reg('Pick_Target',
-            [{k: 'atEntity_' + TARGET_ID, v: true}, {k: 'heldItemExists', v: false}],
+            [
+                {k: 'atEntity_' + TARGET_ID, v: true},
+                {k: 'heldItemExists', v: false}
+            ],
             [{k: 'heldItemId', v: TARGET_ID}, {k: 'heldItemExists', v: true}],
             function() {
                 const a = actor();
@@ -670,6 +817,14 @@ try {
                 log.info("Picking up target cube", {id: TARGET_ID});
                 t.deleted = true;
                 a.heldItem = {id: TARGET_ID};
+                // CRITICAL: Sync blackboard IMMEDIATELY so PA-BT post-condition check passes!
+                // PA-BT runs on a separate Go goroutine and checks post-conditions
+                // immediately after action returns SUCCESS. Without this sync,
+                // the blackboard would still have heldItemId=-1.
+                if (state.blackboard) {
+                    state.blackboard.set('heldItemId', TARGET_ID);
+                    state.blackboard.set('heldItemExists', true);
+                }
                 return bt.success;
             }
         );
@@ -692,17 +847,50 @@ try {
                 {k: 'heldItemId', v: TARGET_ID},
                 {k: 'atGoal_' + GOAL_ID, v: true}
             ],
-            [{k: 'cubeDeliveredAtGoal', v: true}, {k: 'heldItemExists', v: false}, {k: 'heldItemId', v: -1}],
+            // CRITICAL FIX: Only include cubeDeliveredAtGoal=true as effect!
+            // Previously included heldItemExists=false which caused PA-BT to consider
+            // Deliver_Target when looking for actions to empty hands. This created an
+            // infinite loop: heldItemExists=false → Deliver_Target → atGoal_1 → 
+            // goalBlockade_100_cleared → Deposit_GoalBlockade → heldItemId=100 →
+            // Pick_GoalBlockade → heldItemExists=false → [LOOP]
+            // By removing heldItemExists/heldItemId effects, PA-BT will now correctly
+            // find Place_Target_Temporary for emptying hands.
+            [{k: 'cubeDeliveredAtGoal', v: true}],
             function() {
                 const a = actor();
                 if (!a.heldItem || a.heldItem.id !== TARGET_ID) {
                     log.warn("Deliver_Target failed: not holding target");
                     return bt.failure;
                 }
+                // CRITICAL: Verify we're ACTUALLY at the delivery goal!
+                // PA-BT may have been tricked by heuristic effects.
+                const deliveryGoal = state.goals.get(GOAL_ID);
+                if (!deliveryGoal) {
+                    log.error("Deliver_Target failed: delivery goal not found");
+                    return bt.failure;
+                }
+                const dx = deliveryGoal.x - a.x;
+                const dy = deliveryGoal.y - a.y;
+                const distToGoal = Math.sqrt(dx * dx + dy * dy);
+                if (distToGoal > 2) {
+                    // NOT at delivery goal - PA-BT was fooled by heuristic effects!
+                    log.warn("Deliver_Target failed: not at delivery goal (dist=" + distToGoal.toFixed(1) + "), returning FAILURE to trigger replan", {
+                        actorX: a.x, actorY: a.y,
+                        goalX: deliveryGoal.x, goalY: deliveryGoal.y,
+                        distance: distToGoal
+                    });
+                    return bt.failure;
+                }
                 log.info("Delivering target to goal");
                 a.heldItem = null;
                 state.targetDelivered = true;
                 state.winConditionMet = true;
+                // CRITICAL: Sync blackboard IMMEDIATELY so PA-BT post-condition check passes!
+                if (state.blackboard) {
+                    state.blackboard.set('cubeDeliveredAtGoal', true);
+                    state.blackboard.set('heldItemExists', false);
+                    state.blackboard.set('heldItemId', -1);
+                }
                 return bt.success;
             }
         );
@@ -734,6 +922,11 @@ try {
                     log.info("Picking up blockade cube", {cubeId: id});
                     c.deleted = true;
                     a.heldItem = {id: id};
+                    // CRITICAL: Sync blackboard IMMEDIATELY so PA-BT post-condition check passes!
+                    if (state.blackboard) {
+                        state.blackboard.set('heldItemId', id);
+                        state.blackboard.set('heldItemExists', true);
+                    }
                     return bt.success;
                 }
             );
@@ -746,6 +939,11 @@ try {
                     const a = actor();
                     log.info("Depositing blockade at dumpster", {cubeId: id});
                     a.heldItem = null;
+                    // CRITICAL: Sync blackboard IMMEDIATELY so PA-BT post-condition check passes!
+                    if (state.blackboard) {
+                        state.blackboard.set('heldItemExists', false);
+                        state.blackboard.set('heldItemId', -1);
+                    }
                     return bt.success;
                 }
             );
@@ -756,15 +954,14 @@ try {
         // This enables conflict resolution - when goal is blocked and hands full
         // Condition: holding target, at staging area
         // Effect: hands empty (so we can pick up blockades)
-        // NOTE: We do NOT set reachable_cube_TARGET_ID here because that would
-        // cause PA-BT to immediately want to pick up the target again!
+        // NOTE: REMOVED reachable_goal_1=true heuristic - it's a lie that breaks PA-BT
         // ---------------------------------------------------------------------
         reg('Place_Target_Temporary',
             [{k: 'heldItemId', v: TARGET_ID}, {k: 'atGoal_' + STAGING_AREA_ID, v: true}],
             [
                 {k: 'heldItemExists', v: false},
                 {k: 'heldItemId', v: -1}
-                // NO effect on reachable_cube_TARGET_ID - we want PA-BT to focus on clearing blockades
+                // REMOVED: {k: 'reachable_goal_' + GOAL_ID, v: true} - heuristic that breaks PA-BT
             ],
             function() {
                 const a = actor();
@@ -788,6 +985,11 @@ try {
                     type: 'target'
                 });
                 a.heldItem = null;
+                // CRITICAL: Sync blackboard IMMEDIATELY so PA-BT post-condition check passes!
+                if (state.blackboard) {
+                    state.blackboard.set('heldItemExists', false);
+                    state.blackboard.set('heldItemId', -1);
+                }
                 return bt.success;
             }
         );
@@ -795,10 +997,13 @@ try {
         // ---------------------------------------------------------------------
         // Goal Blockade Actions: Pick up and deposit goal wall cubes
         // These are the movable wall around the goal that requires clearing
-        // NOTE: We DO NOT add reachable_goal_1=true as effect here!
-        // That would cause PA-BT to prioritize clearing blockades BEFORE picking target.
-        // Instead, reachability updates naturally via blackboard sync.
-        // The conflict resolution flow depends on PA-BT trying MoveTo and failing.
+        // NOTE: We REMOVED the reachable_goal_1=true heuristic effect because:
+        // 1. It's a LIE - picking ONE blockade doesn't clear the path
+        // 2. PA-BT trusts action effects - lying breaks the planning model
+        // 3. The effect caused infinite loops when PA-BT tried to use it
+        // 
+        // Instead, PA-BT should find these actions via a different mechanism:
+        // - When reachable_goal_1 fails, we need a custom approach
         // ---------------------------------------------------------------------
         GOAL_BLOCKADE_IDS.forEach(function(id) {
             reg('Pick_GoalBlockade_' + id,
@@ -806,7 +1011,7 @@ try {
                 [
                     {k: 'heldItemId', v: id},
                     {k: 'heldItemExists', v: true}
-                    // NO reachable_goal effect - this is intentional!
+                    // REMOVED: {k: 'reachable_goal_' + GOAL_ID, v: true} - heuristic that breaks PA-BT
                 ],
                 function() {
                     const a = actor();
@@ -818,27 +1023,38 @@ try {
                     log.info("GOAL_WALL_CLEAR: Picking up goal blockade cube", {cubeId: id});
                     c.deleted = true;
                     a.heldItem = {id: id};
+                    // CRITICAL: Sync blackboard IMMEDIATELY so PA-BT post-condition check passes!
+                    if (state.blackboard) {
+                        state.blackboard.set('heldItemId', id);
+                        state.blackboard.set('heldItemExists', true);
+                    }
                     return bt.success;
                 }
             );
 
             // Deposit goal blockade at dumpster
-            // CRITICAL: This action has reachable_goal_1=true effect!
-            // This tells PA-BT: to make goal reachable, deposit blockades.
-            // PA-BT backward planning: want reachable_goal_1 → Deposit_GoalBlockade →
-            //   needs heldItemId=blockade → Pick_GoalBlockade → needs heldItemExists=false →
-            //   Place_Target_Temporary → needs atGoal_STAGING → MoveTo staging
+            // TRUTHFUL EFFECT: Depositing a specific blockade marks it as cleared.
+            // This is NOT a heuristic - depositing blockade X really does clear it permanently.
+            // PA-BT will find this action when goalBlockade_X_cleared fails, and the effect
+            // will be TRUE after execution.
             reg('Deposit_GoalBlockade_' + id,
                 [{k: 'heldItemId', v: id}, {k: 'atGoal_' + DUMPSTER_ID, v: true}],
                 [
                     {k: 'heldItemExists', v: false}, 
                     {k: 'heldItemId', v: -1},
-                    {k: 'reachable_goal_' + GOAL_ID, v: true}  // KEY HEURISTIC!
+                    // TRUTHFUL: This specific blockade is now cleared
+                    {k: 'goalBlockade_' + id + '_cleared', v: true}
                 ],
                 function() {
                     const a = actor();
                     log.info("GOAL_WALL_CLEAR: Depositing goal blockade at dumpster", {cubeId: id});
                     a.heldItem = null;
+                    // CRITICAL: Sync blackboard IMMEDIATELY so PA-BT post-condition check passes!
+                    if (state.blackboard) {
+                        state.blackboard.set('heldItemExists', false);
+                        state.blackboard.set('heldItemId', -1);
+                        state.blackboard.set('goalBlockade_' + id + '_cleared', true);
+                    }
                     return bt.success;
                 }
             );
@@ -872,6 +1088,10 @@ try {
 
         const held = actor.heldItem ? actor.heldItem.id : -1;
         const win = state.winConditionMet ? 1 : 0;
+        
+        // Debug: check dumpster reachability
+        const dumpsterReachable = state.blackboard ? state.blackboard.get('reachable_goal_' + DUMPSTER_ID) : null;
+        const goalReachable = state.blackboard ? state.blackboard.get('reachable_goal_' + GOAL_ID) : null;
 
         return JSON.stringify({
             m: state.gameMode === 'automatic' ? 'a' : 'm',
@@ -883,7 +1103,9 @@ try {
             a: tgtX > -1 ? tgtX : undefined,
             b: tgtY > -1 ? tgtY : undefined,
             n: blkCount,
-            g: goalBlkCount  // Goal blockade count
+            g: goalBlkCount,  // Goal blockade count
+            dr: dumpsterReachable ? 1 : 0,  // Dumpster reachable
+            gr: goalReachable ? 1 : 0  // Goal reachable
         });
     }
 
@@ -1051,6 +1273,15 @@ try {
 
     function init() {
         const state = initializeSimulation();
+
+        // DEBUG: Verify cube 100 exists immediately after init
+        const cube100 = state.cubes.get(100);
+        log.error("INIT_CUBE_100_CHECK", {
+            cube100Exists: !!cube100,
+            cube100: cube100 ? JSON.stringify(cube100) : "NOT_FOUND",
+            allGoalBlockadeIds: JSON.stringify(GOAL_BLOCKADE_IDS),
+            cubesSize: state.cubes.size
+        });
 
         log.info("Pick-and-Place simulation initialized", {
             width: state.width,

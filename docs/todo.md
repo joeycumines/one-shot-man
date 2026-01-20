@@ -28,6 +28,7 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
 - Consider integrating git diff completion support into the diff `contextManager` command
 - Add ability to include JS modules directly
 - Implement behavior tree JS wrapper - wrap go-behavior-tree most likely (otherwise a proper event loop will be necessary)
+- PA-BT Conflict Resolution: Fix heuristic effects not working with PA-BT for multi-step indirect planning. The PA-BT library assumes action effects are truthful - when an action with effect X=true succeeds, it proceeds without verifying X is actually true. This breaks conflict resolution scenarios where intermediate actions enable (but don't directly achieve) goals. Requires either: (1) modifying go-pabt to add post-action verification, (2) restructuring scenarios to use multiple sequential PA-BT plans, or (3) different planning approach. See TestPickAndPlaceConflictResolution skip comment.
 - Implement partially-compliant fetch API backed by the Go http client
 - Add support for https://code.visualstudio.com/docs/copilot/customization/prompt-files ?
 - Code review splitter - prompts seem particularly LLM dependent, stalled

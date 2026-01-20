@@ -7,10 +7,16 @@
 package bt
 
 import (
+	"fmt"
+	"os"
 	"sync"
 
 	"github.com/dop251/goja"
 )
+
+// EnableBlackboardDebug controls debug output for blackboard operations.
+// Set to true to see heldItemId changes in stderr.
+var EnableBlackboardDebug = true
 
 // Blackboard provides a thread-safe key-value store for behavior tree state.
 // It implements a shared state pattern where Go manages the state and exposes
@@ -39,7 +45,12 @@ func (b *Blackboard) Get(key string) any {
 	if b.data == nil {
 		return nil
 	}
-	return b.data[key]
+	val := b.data[key]
+	// DEBUG: Track heldItemId reads
+	if EnableBlackboardDebug && key == "heldItemId" {
+		fmt.Fprintf(os.Stderr, "DEBUG BB.Get: heldItemId=%v\n", val)
+	}
+	return val
 }
 
 // Set stores a value in the blackboard.
@@ -48,6 +59,10 @@ func (b *Blackboard) Set(key string, value any) {
 	defer b.mu.Unlock()
 	b.init()
 	b.data[key] = value
+	// DEBUG: Track heldItemId changes
+	if EnableBlackboardDebug && key == "heldItemId" {
+		fmt.Fprintf(os.Stderr, "DEBUG BB.Set: heldItemId=%v\n", value)
+	}
 }
 
 // Has returns true if the key exists in the blackboard.

@@ -3,11 +3,15 @@ package pabt
 import (
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	pabtpkg "github.com/joeycumines/go-pabt"
 	btmod "github.com/joeycumines/one-shot-man/internal/builtin/bt"
 )
+
+// Compile-time interface check: State must implement pabtpkg.IState
+var _ pabtpkg.IState = (*State)(nil)
 
 // debugPABT controls verbose PA-BT debugging output.
 // Set OSM_DEBUG_PABT=1 to enable.
@@ -15,6 +19,10 @@ var debugPABT = os.Getenv("OSM_DEBUG_PABT") == "1"
 
 // debugOnce logs once that debugging is enabled
 var debugOnce sync.Once
+
+// actionsCallCounter tracks how many times Actions() is called for debugging infinite loops
+var actionsCallCounter int64
+var actionsCallMu sync.Mutex
 
 // State implements pabtpkg.State (which is State[Condition]) interface backed by a bt.Blackboard.
 // It normalizes any key type to string for blackboard storage and provides
@@ -148,6 +156,18 @@ func (s *State) Variable(key any) (any, error) {
 		})
 		fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] State.Variable called: key=%v keyStr=%s value=%v (%T)\n",
 			key, keyStr, value, value)
+
+		// CRITICAL: Track when atGoal_1 is checked - should happen after heldItemId passes
+		if strings.HasPrefix(keyStr, "atGoal_") {
+			fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] ATGOAL_VAR: Checking %s = %v (expected: false before reaching goal)\n", keyStr, value)
+		}
+
+		// CRITICAL: Track heldItemId values - especially non-negative ones
+		if keyStr == "heldItemId" {
+			if v, ok := value.(int64); ok && v >= 0 {
+				fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] HELD_POSITIVE: heldItemId=%d - condition should PASS now!\n", v)
+			}
+		}
 	}
 
 	return value, nil
@@ -172,6 +192,17 @@ func (s *State) Variable(key any) (any, error) {
 // Special case: If failed is nil, returns all registered actions (for backward
 // compatibility and testing purposes).
 func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
+	// Track call count to detect infinite loops
+	actionsCallMu.Lock()
+	actionsCallCounter++
+	callCount := actionsCallCounter
+	actionsCallMu.Unlock()
+
+	// Detect infinite loop - if Actions called too many times in quick succession
+	if callCount > 10000 && callCount%1000 == 0 {
+		fmt.Fprintf(os.Stderr, "[PA-BT WARN] Actions() called %d times - possible infinite loop!\n", callCount)
+	}
+
 	// Get statically registered actions
 	registeredActions := s.actions.All()
 
@@ -188,6 +219,63 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 		})
 		fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] State.Actions called: failedKey=%v (%T), registeredActionCount=%d\n",
 			failedKey, failedKey, len(registeredActions))
+
+		// CRITICAL: Log when atGoal_X is requested - this is key for conflict resolution
+		if failedKeyStr, ok := failedKey.(string); ok {
+			if strings.HasPrefix(failedKeyStr, "atGoal_") {
+				fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] ATGOAL_CRITICAL: Actions() called for %s - this triggers MoveTo generation\n", failedKeyStr)
+			}
+		}
+
+		// CUBE_DELIVERED: Log ALL actions when searching for cubeDeliveredAtGoal
+		if failedKeyStr, ok := failedKey.(string); ok {
+			if failedKeyStr == "cubeDeliveredAtGoal" {
+				fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] CUBE_DELIVERED: Searching for cubeDeliveredAtGoal=true actions. Listing ALL registered actions:\n")
+				for _, a := range registeredActions {
+					if named, ok := a.(*Action); ok {
+						fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] CUBE_DELIVERED:   Action: %s\n", named.Name)
+						for _, e := range a.Effects() {
+							fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] CUBE_DELIVERED:     effect: key=%v (%T) value=%v (%T)\n", e.Key(), e.Key(), e.Value(), e.Value())
+						}
+					}
+				}
+			}
+		}
+
+		// Extra debug: log all registered action names
+		if failedKey == "reachable_goal_1" {
+			fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] SPECIAL: Searching for reachable_goal_1 actions. Listing all registered actions:\n")
+			for _, a := range registeredActions {
+				if named, ok := a.(*Action); ok {
+					fmt.Fprintf(os.Stderr, "[PA-BT DEBUG]   Action: %s, effects: ", named.Name)
+					for _, e := range a.Effects() {
+						fmt.Fprintf(os.Stderr, "%v=%v ", e.Key(), e.Value())
+					}
+					fmt.Fprintln(os.Stderr)
+				}
+			}
+		}
+
+		// EXTRA: Check for goalBlockade conditions
+		if failedKeyStr, ok := failedKey.(string); ok {
+			if strings.HasPrefix(failedKeyStr, "goalBlockade_") && strings.HasSuffix(failedKeyStr, "_cleared") {
+				fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] GOALBLOCKADE: Looking for actions that satisfy %s\n", failedKeyStr)
+			}
+		}
+
+		// EXTRA: Check for heldItemExists/heldItemId - critical for conflict resolution
+		if failedKey == "heldItemExists" || failedKey == "heldItemId" {
+			fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] HANDS: Looking for actions that satisfy %s. Registered actions with that effect:\n", failedKey)
+			for _, a := range registeredActions {
+				if named, ok := a.(*Action); ok {
+					for _, e := range a.Effects() {
+						if e.Key() == failedKey {
+							fmt.Fprintf(os.Stderr, "[PA-BT DEBUG] HANDS:   %s has effect %s=%v\n", named.Name, failedKey, e.Value())
+						}
+					}
+				}
+			}
+		}
 	}
 
 	var relevantActions []pabtpkg.IAction

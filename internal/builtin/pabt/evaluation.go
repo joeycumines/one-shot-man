@@ -55,10 +55,15 @@ type Condition interface {
 
 // JSCondition implements pabtpkg.Condition using JavaScript Match function.
 // This condition is evaluated via Goja runtime with thread-safe bridge access.
+//
+// The jsObject field stores the original JavaScript condition object, preserving
+// all its properties (including .value) so the action generator can access them
+// directly - equivalent to Go's type assertion for accessing internal state.
 type JSCondition struct {
-	key     any
-	matcher goja.Callable
-	bridge  *btmod.Bridge // Required for thread-safe goja access from ticker goroutine
+	key      any
+	matcher  goja.Callable
+	bridge   *btmod.Bridge // Required for thread-safe goja access from ticker goroutine
+	jsObject *goja.Object  // Original JS object for passthrough to action generator
 }
 
 var _ Condition = (*JSCondition)(nil)

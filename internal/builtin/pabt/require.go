@@ -143,17 +143,25 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 
 					// CRITICAL: Must use RunOnLoopSync for thread-safe goja access
 					err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
-						// Build a JS-friendly condition object from the failed condition
-						condObj := vm.NewObject()
-						if failed != nil {
+						// Pass the original JS object back unchanged if available.
+						// This preserves ALL properties (including .value) for action templating,
+						// equivalent to Go's type assertion for accessing internal state.
+						var condObj *goja.Object
+						if jsCond, ok := failed.(*JSCondition); ok && jsCond.jsObject != nil {
+							// Return the SAME JS object - preserves .value and all properties
+							condObj = jsCond.jsObject
+						} else if failed != nil {
+							// Fallback: create minimal wrapper for non-JS conditions
+							condObj = vm.NewObject()
 							_ = condObj.Set("key", failed.Key())
-							// Add a match method that wraps the Go condition
 							_ = condObj.Set("Match", func(fcall goja.FunctionCall) goja.Value {
 								if len(fcall.Arguments) < 1 {
 									return vm.ToValue(false)
 								}
 								return vm.ToValue(failed.Match(fcall.Arguments[0].Export()))
 							})
+						} else {
+							condObj = vm.NewObject()
 						}
 
 						// Call the JS generator function
@@ -269,11 +277,12 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 					panic(runtime.NewTypeError(fmt.Sprintf("goal %d.Match must be a function", i)))
 				}
 
-				// Create go-pabt condition
+				// Create go-pabt condition, storing original JS object for passthrough
 				condition := &JSCondition{
-					key:     keyVal.Export(),
-					matcher: matchFn,
-					bridge:  bridge,
+					key:      keyVal.Export(),
+					matcher:  matchFn,
+					bridge:   bridge,
+					jsObject: goalObj, // Store original for action generator access to .value etc
 				}
 
 				// Each goal is wrapped as IConditions (a single group)
@@ -339,11 +348,12 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 						continue
 					}
 
-					// Create go-pabt condition
+					// Create go-pabt condition, storing original JS object for passthrough
 					condition := &JSCondition{
-						key:     keyVal.Export(),
-						matcher: matchFn,
-						bridge:  bridge,
+						key:      keyVal.Export(),
+						matcher:  matchFn,
+						bridge:   bridge,
+						jsObject: condObj, // Store original for action generator access
 					}
 
 					conditionSlice = append(conditionSlice, pabtpkg.Condition(condition))

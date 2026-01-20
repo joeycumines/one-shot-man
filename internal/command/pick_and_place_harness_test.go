@@ -33,6 +33,8 @@ type PickAndPlaceDebugJSON struct {
 	TargetY           *float64 `json:"b,omitempty"` // Target cube Y (cube 1)
 	BlockadeCount     int      `json:"n"`           // Number of blockade cubes still at wall (0-3)
 	GoalBlockadeCount int      `json:"g"`           // Number of goal blockade cubes (0-7)
+	DumpsterReachable int      `json:"dr"`          // Dumpster reachable (0 = false, 1 = true)
+	GoalReachable     int      `json:"gr"`          // Goal reachable (0 = false, 1 = true)
 }
 
 // PickAndPlaceConfig holds configuration for pick-and-place tests
@@ -336,8 +338,8 @@ func TestPickAndPlaceCompletion(t *testing.T) {
 
 		// Log progress every 10 loop iterations (not tick based, since we may skip ticks)
 		if loopCount%10 == 0 || loopCount <= 5 {
-			t.Logf("Loop %d: tick=%d pos=(%.1f,%.1f) held=%d win=%d blockade=%d",
-				loopCount, state.Tick, state.ActorX, state.ActorY, state.HeldItemID, state.WinCond, state.BlockadeCount)
+			t.Logf("Loop %d: tick=%d pos=(%.1f,%.1f) held=%d win=%d blockade=%d goalBlk=%d dumpR=%d goalR=%d",
+				loopCount, state.Tick, state.ActorX, state.ActorY, state.HeldItemID, state.WinCond, state.BlockadeCount, state.GoalBlockadeCount, state.DumpsterReachable, state.GoalReachable)
 		}
 
 		// Detect if debug overlay is missing (state will have Tick=0 consistently)
@@ -1165,10 +1167,24 @@ func parseInt(s string) (int, error) {
 // 2. Parses all log events
 // 3. Builds mirrored state from events
 // 4. Verifies the expected sequence of actions occurred
+//
+// KNOWN LIMITATION (2026-01-20):
+// PA-BT's design assumes action effects are truthful. When an action with effect X=true
+// succeeds, PA-BT assumes X is actually true and proceeds to the next action.
+// For conflict resolution (multi-step indirect planning), we use "heuristic effects"
+// that claim to achieve goals they don't directly achieve. This breaks PA-BT's assumptions:
+// - After heuristic-driven actions complete, conditions seem satisfied
+// - But reality says otherwise (goal still blocked)
+// - PA-BT gets stuck or takes wrong path
+//
+// Proper fix requires either:
+// 1. Modifying go-pabt to support post-action condition verification
+// 2. Restructuring scenario to use multiple sequential PA-BT plans
+// 3. Using a different planning approach
+//
+// TODO: Implement proper conflict resolution support
 func TestPickAndPlaceConflictResolution(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping conflict resolution test in short mode")
-	}
+	// t.Skip("KNOWN LIMITATION: PA-BT heuristic effects cannot properly handle multi-step conflict resolution. See test comment for details.")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second)
 	defer cancel()

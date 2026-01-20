@@ -1,14 +1,49 @@
 #!/usr/bin/env osm script
 
-// ============================================================================
-// example-05-pick-and-place.js
-// Pick-and-Place Simulator demonstrating osm:pabt PA-BT planning integration
-// ============================================================================
-
-// WARNING RE: LOGGING:
-// This is an _interactive_ terminal application. It sets the terminal to
-// raw mode. DO NOT use console logging within the program itself (tea.run).
-// Instead, use the built-in 'log' global, for application logs (slog).
+/**
+ * @fileoverview example-05-pick-and-place.js
+ * @description
+ * Pick-and-Place Simulator demonstrating osm:pabt PA-BT planning integration.
+ *
+ * ARCHITECTURAL WARNING: "TRUTHFUL EFFECTS" REQUIRED
+ *
+ * This implementation relies on a Reactive Planning Loop (Plan -> Execute -> Verify).
+ * To prevent Livelocks (Infinite Replanning) and Deadlocks (Bridge Freezes),
+ * you must adhere to the following strict architectural constraints derived from
+ * "Behavior Trees in Robotics and AI" (Colledanchise/Ögren).
+ *
+ * 1. NO HEURISTIC EFFECTS (The "Lying Action" Anti-Pattern)
+ *    Do not assert that an atomic action satisfies a high-level aggregate condition
+ *    unless it physically guarantees it in a single tick.
+ *    - BAD: Action `Pick_Obstacle` has Effect `isPathClear = true`.
+ *      (Reasoning: If 8 obstacles exist, picking one does NOT make the path clear.
+ *      The Planner will loop infinitely: Plan Pick -> Execute -> Verify (Path still blocked) -> Replan Pick.)
+ *    - GOOD: Action `Pick_Obstacle_A` has Effect `isCleared(Obstacle_A) = true`.
+ *      (Reasoning: The planner generates a sequence to clear A, then B, then C, until `isPathClear` is naturally satisfied).
+ *
+ * 2. STATE GRANULARITY (The "Reward Sparsity" Problem)
+ *    PA-BT requires granular feedback to measure progress. Do not use binary flags
+ *    for multi-step states.
+ *    - The Blackboard must reflect incremental progress. If a wall is composed of
+ *      multiple entities, the Precondition must be `!Overlaps(Entity_ID)`, not `!Blocked`.
+ *
+ * 3. DYNAMIC ACTION GENERATION COMPLETENESS
+ *    When decomposing high-level conditions (e.g., `reachable`), the `ActionGenerator`
+ *    must be capable of expanding ALL dependency chains.
+ *    - If `Pick` requires `Hands_Empty`, and `Hands_Empty` fails, the generator
+ *      MUST produce a valid `Place/Drop` action.
+ *    - Failure to generate a valid bridging action for a deep dependency will cause
+ *      the Go-side planner to enter an infinite expansion loop, saturating the
+ *      `RunOnLoopSync` bridge and freezing the JavaScript simulation tick.
+ *
+ * **WARNING RE: LOGGING:** This is an _interactive_ terminal application.
+ *    It sets the terminal to raw mode.
+ *    DO NOT use console logging within the program itself (tea.run).
+ *    Instead, use the built-in 'log' global, for application logs (slog).
+ *
+ * @see {@link https://btirai.github.io/ | Behavior Trees in Robotics and AI}
+ * @module PA-BT-Logic
+ */
 
 const printFatalError = (e) => {
     console.error('FATAL ERROR: ' + e?.message || e);

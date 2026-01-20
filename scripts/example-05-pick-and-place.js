@@ -46,7 +46,7 @@ try {
     //    |                                                           |
     //    |          +-------------------------------+                |
     //    |          |                               |                |
-    //    |     +--->|   ■ ■ (blockade)    □ (target)  |                |
+    //    |     +--->|   ■ ■ (blockade)    □ (target)  |              |
     //    |     |    |                               |                |
     //    |     |    +-------------------------------+                |
     //    |   GOAL                                                    |
@@ -1459,6 +1459,140 @@ try {
             return [state, tea.tick(16, 'tick')];
         }
 
+        // ========================================================================
+        // MANUAL MODE MOUSE CONTROL (PICK & PLACE)
+        // ========================================================================
+        if (msg.type === 'Mouse' && msg.event === 'press' && state.gameMode === 'manual') {
+            const actor = state.actors.get(state.activeActorId);
+
+            // Calculate simulation grid coordinates from mouse position
+            // The play area is centered when width > spaceWidth
+            const spaceX = Math.floor((state.width - state.spaceWidth) / 2);
+            const clickX = msg.x - spaceX;
+            const clickY = msg.y;
+
+            // Ignore clicks outside the play area
+            if (clickX >= 0 && clickX < state.spaceWidth && clickY >= 0 && clickY < state.height) {
+
+                // Identify the best candidate cell adjacent to the actor
+                // "Closest available or free cell" logic relative to the click
+                let bestCand = null;
+                let minClickDist = Infinity;
+
+                // Scan 3x3 area around actor for adjacency
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        // We check 8-way adjacency (including diagonals) similar to AI range checks
+                        if (dx === 0 && dy === 0) continue;
+
+                        const neighborX = Math.round(actor.x) + dx;
+                        const neighborY = Math.round(actor.y) + dy;
+
+                        // Bounds check
+                        if (neighborX < 0 || neighborX >= state.spaceWidth || neighborY < 0 || neighborY >= state.height) continue;
+
+                        // Calculate distance from this neighbor to the Mouse Click
+                        const cdx = clickX - neighborX;
+                        const cdy = clickY - neighborY;
+                        const distToClick = Math.sqrt(cdx * cdx + cdy * cdy);
+
+                        if (distToClick < minClickDist) {
+                            // Check cell occupancy
+                            let occupiedBy = null;
+                            for (const [id, c] of state.cubes) {
+                                if (!c.deleted && Math.round(c.x) === neighborX && Math.round(c.y) === neighborY) {
+                                    occupiedBy = c;
+                                    break;
+                                }
+                            }
+
+                            if (actor.heldItem) {
+                                // PLACING: Look for empty cell (or special goals)
+                                if (!occupiedBy) {
+                                    // Valid placement target
+                                    bestCand = {action: 'place', x: neighborX, y: neighborY};
+                                    minClickDist = distToClick;
+                                }
+                                // Note: Goals (dumpster/delivery) are not in 'cubes' map so they count as "not occupiedBy"
+                                // which is correct. The placement logic below handles the specific goal effects.
+                            } else {
+                                // PICKING: Look for occupied cell (non-static)
+                                if (occupiedBy && !occupiedBy.isStatic) {
+                                    bestCand = {action: 'pick', x: neighborX, y: neighborY, target: occupiedBy};
+                                    minClickDist = distToClick;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Execute the resolved manual action
+                if (bestCand) {
+                    if (bestCand.action === 'pick') {
+                        // --- MANUAL PICK ---
+                        const target = bestCand.target;
+                        log.info("MANUAL: Picking up item", {id: target.id});
+
+                        target.deleted = true;
+                        actor.heldItem = {id: target.id};
+
+                        // Sync global state
+                        if (state.blackboard) {
+                            state.blackboard.set('heldItemId', target.id);
+                            state.blackboard.set('heldItemExists', true);
+                        }
+                    } else if (bestCand.action === 'place') {
+                        // --- MANUAL PLACE ---
+                        const heldId = actor.heldItem.id;
+                        const isDumpster = (bestCand.x === 8 && bestCand.y === 4); // DUMPSTER_ID coords
+                        const isDelivery = (bestCand.x === 8 && bestCand.y === 18 && heldId === TARGET_ID); // GOAL_ID coords
+
+                        if (isDelivery) {
+                            // DELIVER TARGET
+                            log.info("MANUAL: Delivering target to goal");
+                            actor.heldItem = null;
+                            state.targetDelivered = true;
+                            state.winConditionMet = true;
+                            if (state.blackboard) {
+                                state.blackboard.set('cubeDeliveredAtGoal', true);
+                                state.blackboard.set('heldItemExists', false);
+                                state.blackboard.set('heldItemId', -1);
+                            }
+                        } else if (isDumpster) {
+                            // DEPOSIT AT DUMPSTER (Destroy item)
+                            log.info("MANUAL: Depositing item at dumpster", {id: heldId});
+                            actor.heldItem = null;
+                            // Update cleared flags if it was a goal blockade
+                            if (GOAL_BLOCKADE_IDS.includes(heldId)) {
+                                if (state.blackboard) state.blackboard.set('goalBlockade_' + heldId + '_cleared', true);
+                            }
+                            if (state.blackboard) {
+                                state.blackboard.set('heldItemExists', false);
+                                state.blackboard.set('heldItemId', -1);
+                            }
+                        } else {
+                            // NORMAL PLACE (Restore to grid)
+                            log.info("MANUAL: Placing item", {id: heldId, x: bestCand.x, y: bestCand.y});
+
+                            // Retrieve original metadata to preserve type/flags
+                            const original = state.cubes.get(heldId);
+                            if (original) {
+                                original.x = bestCand.x;
+                                original.y = bestCand.y;
+                                original.deleted = false;
+                                actor.heldItem = null;
+                                if (state.blackboard) {
+                                    state.blackboard.set('heldItemExists', false);
+                                    state.blackboard.set('heldItemId', -1);
+                                }
+                            }
+                        }
+                    }
+                    syncToBlackboard(state);
+                }
+            }
+        }
+
         if (msg.type === 'Key') {
             const key = msg.key;
 
@@ -1481,15 +1615,38 @@ try {
             if (state.gameMode === 'manual') {
                 const actor = state.actors.get(state.activeActorId);
                 const moveSpeed = 1.0;
+                let nextX = actor.x;
+                let nextY = actor.y;
 
                 if (key === 'ArrowUp' || key === 'w' || key === 'W') {
-                    actor.y = Math.max(1, actor.y - moveSpeed);
+                    nextY = Math.max(1, actor.y - moveSpeed);
                 } else if (key === 'ArrowDown' || key === 's' || key === 'S') {
-                    actor.y = Math.min(state.height - 1, actor.y + moveSpeed);
+                    nextY = Math.min(state.height - 1, actor.y + moveSpeed);
                 } else if (key === 'ArrowLeft' || key === 'a' || key === 'A') {
-                    actor.x = Math.max(1, actor.x - moveSpeed);
+                    nextX = Math.max(1, actor.x - moveSpeed);
                 } else if (key === 'ArrowRight' || key === 'd' || key === 'D') {
-                    actor.x = Math.min(state.spaceWidth - 1, actor.x + moveSpeed);
+                    nextX = Math.min(state.spaceWidth - 1, actor.x + moveSpeed);
+                }
+
+                // ================================================================
+                // STRICT COLLISION DETECTION
+                // ================================================================
+                let blocked = false;
+
+                // Check if the target cell is occupied by any non-deleted cube
+                for (const [id, cube] of state.cubes) {
+                    if (!cube.deleted &&
+                        Math.round(cube.x) === Math.round(nextX) &&
+                        Math.round(cube.y) === Math.round(nextY)) {
+                        blocked = true;
+                        break;
+                    }
+                }
+
+                if (!blocked) {
+                    actor.x = nextX;
+                    actor.y = nextY;
+                    syncToBlackboard(state);
                 }
 
                 return [state, null];

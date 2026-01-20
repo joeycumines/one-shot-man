@@ -13,25 +13,25 @@ try {
     try {
         bt = require('osm:bt');
     } catch (e) {
-        console.error('Error: Failed to load osm:bt module. Make sure you are running with "osm script"');
+        log.error('Error: Failed to load osm:bt module. Make sure you are running with "osm script"');
         throw e;
     }
     try {
         tea = require('osm:bubbletea');
     } catch (e) {
-        console.error('Error: Failed to load osm:bubbletea module. Make sure you are running with "osm script"');
+        log.error('Error: Failed to load osm:bubbletea module. Make sure you are running with "osm script"');
         throw e;
     }
     try {
         pabt = require('osm:pabt');
     } catch (e) {
-        console.error('Error: Failed to load osm:pabt module. Make sure you are running with "osm script"');
+        log.error('Error: Failed to load osm:pabt module. Make sure you are running with "osm script"');
         throw e;
     }
     try {
         os = require('osm:os');
     } catch (e) {
-        console.error('Error: Failed to load osm:os module. Make sure you are running with "osm script"');
+        log.error('Error: Failed to load osm:os module. Make sure you are running with "osm script"');
         throw e;
     }
 
@@ -46,7 +46,7 @@ try {
     //    |                                                           |
     //    |          +-------------------------------+                |
     //    |          |                               |                |
-    //    |     +--->|   ■ ■ (blockade)    □ (target)  |              |
+    //    |     +--->|   ■ ■ (blockade)  □ (target)  |                |
     //    |     |    |                               |                |
     //    |     |    +-------------------------------+                |
     //    |   GOAL                                                    |
@@ -679,7 +679,7 @@ try {
 
             // CRITICAL DEBUG: Log to stderr to see what condition is failing
             if (state.tickCount > 280 && state.tickCount % 100 === 0) {
-                console.error("[PABT_DEBUG] tick=" + state.tickCount + " failedKey=" + key +
+                log.debug("[PABT_DEBUG] tick=" + state.tickCount + " failedKey=" + key +
                     " held=" + currentHeldId +
                     " reachable_3=" + state.blackboard.get('reachable_goal_' + STAGING_AREA_ID));
             }
@@ -781,8 +781,8 @@ try {
             // CRITICAL FIX: Handle heldItemId/heldItemExists failures when holding
             // something unexpected. If hands are full and PA-BT needs different item,
             // we need to generate appropriate MoveTo actions:
-            //   - If holding TARGET: MoveTo staging area (for Place_Target_Temporary)
-            //   - If holding blockade: MoveTo dumpster (for Deposit_Blockade_X)
+            //    - If holding TARGET: MoveTo staging area (for Place_Target_Temporary)
+            //    - If holding blockade: MoveTo dumpster (for Deposit_Blockade_X)
             // =========================================================================
             if (key === 'heldItemId' || key === 'heldItemExists') {
                 if (isHoldingItem && currentHeldId > 0) {
@@ -882,11 +882,11 @@ try {
         // 3. Heuristic effects break PA-BT's trust model
         //
         // The conflict must arise NATURALLY:
-        //   1. Agent picks target
-        //   2. Agent tries atGoal_1 → MoveTo fails (path blocked)
-        //   3. PA-BT needs to clear path, but hands are FULL
-        //   4. PA-BT finds Place_Target_Temporary to free hands
-        //   5. Agent clears blockades, retrieves target, delivers
+        //    1. Agent picks target
+        //    2. Agent tries atGoal_1 → MoveTo fails (path blocked)
+        //    3. PA-BT needs to clear path, but hands are FULL
+        //    4. PA-BT finds Place_Target_Temporary to free hands
+        //    5. Agent clears blockades, retrieves target, delivers
         // ---------------------------------------------------------------------
         // CRITICAL CONDITION ORDERING: heldItemExists=false FIRST to ensure
         // PA-BT searches for Place actions before MoveTo when hands are full.
@@ -923,13 +923,13 @@ try {
         // Condition: holding target, at goal
         // Effect: win condition
         // NOTE: NO goalPathCleared condition here! The conflict must arise NATURALLY:
-        //   1. Agent picks target
-        //   2. Agent tries atGoal_1 → FAILS (path blocked by goal wall)
-        //   3. PA-BT tries MoveTo but can't reach due to blockades
-        //   4. PA-BT needs to clear blockades, but hands are FULL (holding target)
-        //   5. PA-BT generates Place_Target_Temporary to free hands
-        //   6. Agent clears blockades
-        //   7. Agent retrieves target and delivers
+        //    1. Agent picks target
+        //    2. Agent tries atGoal_1 → FAILS (path blocked by goal wall)
+        //    3. PA-BT tries MoveTo but can't reach due to blockades
+        //    4. PA-BT needs to clear blockades, but hands are FULL (holding target)
+        //    5. PA-BT generates Place_Target_Temporary to free hands
+        //    6. Agent clears blockades
+        //    7. Agent retrieves target and delivers
         // ---------------------------------------------------------------------
         reg('Deliver_Target',
             [
@@ -1402,7 +1402,7 @@ try {
         syncToBlackboard(state);
 
         // CRITICAL DEBUG: Log to stderr
-        console.error("[INIT] reachable_goal_3=" + state.blackboard.get('reachable_goal_' + STAGING_AREA_ID) +
+        log.error("[INIT] reachable_goal_3=" + state.blackboard.get('reachable_goal_' + STAGING_AREA_ID) +
             " reachable_goal_1=" + state.blackboard.get('reachable_goal_' + GOAL_ID) +
             " reachable_goal_2=" + state.blackboard.get('reachable_goal_' + DUMPSTER_ID));
 

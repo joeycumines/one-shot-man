@@ -372,13 +372,30 @@ try {
             });
         }
 
+        // CRITICAL FIX: needToPlaceTarget is ONLY true when holding target AND
+        // goal blockades still exist. This prevents Place_Target_Temporary from
+        // being selected after blockades are cleared (which caused infinite pickup/drop loop).
+        const holdingTarget = actor.heldItem && actor.heldItem.id === TARGET_ID;
+        const goalBlockadesExist = GOAL_BLOCKADE_IDS.some(function(id) {
+            const c = state.cubes.get(id);
+            return c && !c.deleted;
+        });
+        bb.set('needToPlaceTarget', holdingTarget && goalBlockadesExist);
+
         // Target cube
         const target = state.cubes.get(TARGET_ID);
         if (target && !target.deleted) {
             const info = getPathInfo(state, ax, ay, target.x, target.y, TARGET_ID);
             bb.set('reachable_cube_' + TARGET_ID, info.reachable);
             bb.set('distance_cube_' + TARGET_ID, info.distance);
-            bb.set('atEntity_' + TARGET_ID, info.distance < 2);
+            // FIX: Use Euclidean distance for atEntity_X, NOT BFS distance!
+            // BFS distance counts grid steps, but actual "at entity" means within interaction range.
+            // Using BFS distance < 2 caused atEntity_1=true when agent was 1 BFS step away
+            // but still > 1.8 Euclidean distance away.
+            const tdx = target.x - ax;
+            const tdy = target.y - ay;
+            const euclideanDistToTarget = Math.sqrt(tdx * tdx + tdy * tdy);
+            bb.set('atEntity_' + TARGET_ID, euclideanDistToTarget <= 1.8);
         } else {
             bb.set('reachable_cube_' + TARGET_ID, false);
             bb.set('atEntity_' + TARGET_ID, false);
@@ -391,7 +408,11 @@ try {
                 const info = getPathInfo(state, ax, ay, cube.x, cube.y, id);
                 bb.set('reachable_cube_' + id, info.reachable);
                 bb.set('distance_cube_' + id, info.distance);
-                bb.set('atEntity_' + id, info.distance < 2);
+                // FIX: Use Euclidean distance for atEntity_X
+                const bdx = cube.x - ax;
+                const bdy = cube.y - ay;
+                const euclideanDistToBlockade = Math.sqrt(bdx * bdx + bdy * bdy);
+                bb.set('atEntity_' + id, euclideanDistToBlockade <= 1.8);
             } else {
                 bb.set('reachable_cube_' + id, false);
                 bb.set('atEntity_' + id, false);
@@ -405,7 +426,11 @@ try {
                 const info = getPathInfo(state, ax, ay, cube.x, cube.y, id);
                 bb.set('reachable_cube_' + id, info.reachable);
                 bb.set('distance_cube_' + id, info.distance);
-                bb.set('atEntity_' + id, info.distance < 2);
+                // FIX: Use Euclidean distance for atEntity_X
+                const gbdx = cube.x - ax;
+                const gbdy = cube.y - ay;
+                const euclideanDistToGoalBlockade = Math.sqrt(gbdx * gbdx + gbdy * gbdy);
+                bb.set('atEntity_' + id, euclideanDistToGoalBlockade <= 1.8);
                 // Track per-blockade cleared status (false = not cleared yet)
                 bb.set('goalBlockade_' + id + '_cleared', false);
                 if (state.tickCount % 200 === 0 || state.tickCount < 10) {
@@ -427,11 +452,18 @@ try {
             const info = getPathInfo(state, ax, ay, goal.x, goal.y);
             bb.set('reachable_goal_' + goal.id, info.reachable);
             bb.set('distance_goal_' + goal.id, info.distance);
-            bb.set('atGoal_' + goal.id, info.distance < 2);
+            // FIX: Use Euclidean distance for atGoal_X, NOT BFS distance!
+            // BFS distance counts grid steps, but MoveTo uses Euclidean distance <= 1.8.
+            // Using BFS distance < 2 caused atGoal_1=true when agent was 1 BFS step away
+            // but still > 1.8 Euclidean distance away, creating an infinite loop.
+            const gdx = goal.x - ax;
+            const gdy = goal.y - ay;
+            const euclideanDistToGoal = Math.sqrt(gdx * gdx + gdy * gdy);
+            bb.set('atGoal_' + goal.id, euclideanDistToGoal <= 1.8);  // Match MoveTo threshold
             
             // DEBUG: Log goal reachability for debugging EVERY TICK for main goal
             if (goal.id === GOAL_ID) {
-                const atGoalValue = info.distance < 2;
+                const atGoalValue = euclideanDistToGoal <= 1.8;
                 if (atGoalValue || state.tickCount % 50 === 1) {
                     log.error("GOAL_STATUS_DEBUG", {
                         tick: state.tickCount,
@@ -439,7 +471,8 @@ try {
                         actorPos: ax + "," + ay,
                         goalPos: goal.x + "," + goal.y,
                         reachable: info.reachable,
-                        distance: info.distance,
+                        bfsDistance: info.distance,
+                        euclideanDist: Math.round(euclideanDistToGoal * 100) / 100,
                         atGoal: atGoalValue,
                         goalBlockadesRemaining: GOAL_BLOCKADE_IDS.filter(function(id) {
                             const c = state.cubes.get(id);
@@ -745,14 +778,33 @@ try {
             if (key === 'heldItemId' || key === 'heldItemExists') {
                 if (isHoldingItem && currentHeldId > 0) {
                     if (currentHeldId === TARGET_ID) {
-                        // Holding TARGET - need to place at staging area to free hands
-                        // This allows PA-BT to find Place_Target_Temporary
-                        log.info("ActionGenerator: Holding TARGET, generating MoveTo staging area", {
-                            currentlyHolding: currentHeldId,
-                            stagingAreaId: STAGING_AREA_ID,
-                            reason: "conflict_resolution_path"
-                        });
-                        actions.push(createMoveToAction(state, 'goal', STAGING_AREA_ID));
+                        // Only generate MoveTo staging area if goal blockades still exist!
+                        // After blockades are cleared, we DON'T want to go to staging - 
+                        // we want to go directly to the goal.
+                        const goalBlockadesRemaining = GOAL_BLOCKADE_IDS.filter(function(id) {
+                            const c = state.cubes.get(id);
+                            return c && !c.deleted;
+                        }).length;
+                        
+                        if (goalBlockadesRemaining > 0) {
+                            // Holding TARGET and goal is blocked - need to place at staging area
+                            // This allows PA-BT to find Place_Target_Temporary
+                            log.info("ActionGenerator: Holding TARGET with blocked goal, generating MoveTo staging area", {
+                                currentlyHolding: currentHeldId,
+                                stagingAreaId: STAGING_AREA_ID,
+                                goalBlockadesRemaining: goalBlockadesRemaining,
+                                reason: "conflict_resolution_path"
+                            });
+                            actions.push(createMoveToAction(state, 'goal', STAGING_AREA_ID));
+                        } else {
+                            // Goal is clear! Don't generate MoveTo staging - let PA-BT find
+                            // the atGoal_1 condition expansion which generates MoveTo_goal_1
+                            log.info("ActionGenerator: Holding TARGET with CLEAR goal path, NOT generating staging MoveTo", {
+                                currentlyHolding: currentHeldId,
+                                goalBlockadesRemaining: goalBlockadesRemaining,
+                                reason: "goal_path_clear_deliver_directly"
+                            });
+                        }
                     } else {
                         // Holding a blockade - can deposit at dumpster
                         log.info("ActionGenerator: Holding blockade, generating MoveTo dumpster", {
@@ -823,10 +875,12 @@ try {
         //   4. PA-BT finds Place_Target_Temporary to free hands
         //   5. Agent clears blockades, retrieves target, delivers
         // ---------------------------------------------------------------------
+        // CRITICAL CONDITION ORDERING: heldItemExists=false FIRST to ensure
+        // PA-BT searches for Place actions before MoveTo when hands are full.
         reg('Pick_Target',
             [
-                {k: 'atEntity_' + TARGET_ID, v: true},
-                {k: 'heldItemExists', v: false}
+                {k: 'heldItemExists', v: false},
+                {k: 'atEntity_' + TARGET_ID, v: true}
             ],
             [{k: 'heldItemId', v: TARGET_ID}, {k: 'heldItemExists', v: true}],
             function() {
@@ -974,12 +1028,19 @@ try {
         // ---------------------------------------------------------------------
         // Place_Target_Temporary: Place target at staging area to free hands
         // This enables conflict resolution - when goal is blocked and hands full
-        // Condition: holding target, at staging area
+        // Condition: holding target, at staging area, AND goal blockades exist
         // Effect: hands empty (so we can pick up blockades)
         // NOTE: REMOVED reachable_goal_1=true heuristic - it's a lie that breaks PA-BT
+        // CRITICAL FIX: Added needToPlaceTarget=true condition to prevent this action
+        // from being selected after goal blockades are cleared (which caused infinite
+        // pickup/drop loop when agent was near staging area).
         // ---------------------------------------------------------------------
         reg('Place_Target_Temporary',
-            [{k: 'heldItemId', v: TARGET_ID}, {k: 'atGoal_' + STAGING_AREA_ID, v: true}],
+            [
+                {k: 'heldItemId', v: TARGET_ID}, 
+                {k: 'atGoal_' + STAGING_AREA_ID, v: true},
+                {k: 'needToPlaceTarget', v: true}  // Only when blockades still exist!
+            ],
             [
                 {k: 'heldItemExists', v: false},
                 {k: 'heldItemId', v: -1}
@@ -1026,10 +1087,15 @@ try {
         // 
         // Instead, PA-BT should find these actions via a different mechanism:
         // - When reachable_goal_1 fails, we need a custom approach
+        // 
+        // CRITICAL CONDITION ORDERING:
+        // heldItemExists=false MUST come FIRST so PA-BT checks it before atEntity_X.
+        // If atEntity_X comes first, PA-BT will try MoveTo when blocked instead of
+        // searching for Place actions to empty hands. This causes infinite loops.
         // ---------------------------------------------------------------------
         GOAL_BLOCKADE_IDS.forEach(function(id) {
             reg('Pick_GoalBlockade_' + id,
-                [{k: 'atEntity_' + id, v: true}, {k: 'heldItemExists', v: false}],
+                [{k: 'heldItemExists', v: false}, {k: 'atEntity_' + id, v: true}],
                 [
                     {k: 'heldItemId', v: id},
                     {k: 'heldItemExists', v: true}

@@ -3,6 +3,7 @@ package pabt
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
@@ -336,6 +337,9 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 					if keyVal == nil || goja.IsUndefined(keyVal) {
 						continue
 					}
+
+					// DEBUG: Log condition creation
+					fmt.Fprintf(os.Stderr, "[PA-BT COND CREATE] Action '%s' condition key=%v\n", name, keyVal.Export())
 
 					// Extract Match function
 					matchVal := condObj.Get("Match")

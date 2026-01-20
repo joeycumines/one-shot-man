@@ -150,6 +150,18 @@ func (s *State) Variable(key any) (any, error) {
 	// Get value from blackboard (returns nil if not found, which is correct pabt semantics)
 	value := s.Blackboard.Get(keyStr)
 
+	// ALWAYS log ALL State.Variable calls for debugging
+	fmt.Fprintf(os.Stderr, "[PA-BT VAR] key=%s value=%v\n", keyStr, value)
+
+	// ALWAYS log key variables, not just when debugPABT is set
+	// This helps debug the stuck issue even without OSM_DEBUG_PABT
+	if strings.HasPrefix(keyStr, "atGoal_") {
+		fmt.Fprintf(os.Stderr, "[PA-BT ALWAYS] ATGOAL: %s = %v\n", keyStr, value)
+	}
+	if keyStr == "heldItemId" {
+		fmt.Fprintf(os.Stderr, "[PA-BT ALWAYS] HELD: heldItemId = %v\n", value)
+	}
+
 	if debugPABT {
 		debugOnce.Do(func() {
 			fmt.Fprintln(os.Stderr, "[PA-BT DEBUG] Debugging enabled via OSM_DEBUG_PABT=1")

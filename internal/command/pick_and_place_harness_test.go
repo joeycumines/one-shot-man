@@ -34,7 +34,7 @@ type PickAndPlaceDebugJSON struct {
 	BlockadeCount     int      `json:"n"`           // Number of blockade cubes remaining
 	GoalBlockadeCount int      `json:"g"`           // Number of goal blockade cubes (0-7)
 	// NOTE: DumpsterReachable removed - no dumpster in dynamic obstacle handling
-	GoalReachable     int      `json:"gr"`          // Goal reachable (0 = false, 1 = true)
+	GoalReachable int `json:"gr"` // Goal reachable (0 = false, 1 = true)
 }
 
 // PickAndPlaceConfig holds configuration for pick-and-place tests
@@ -197,7 +197,7 @@ func BuildPickAndPlaceTestBinary(t *testing.T) string {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
 	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
-	
+
 	binaryPath := filepath.Join(t.TempDir(), "osm-pickplace-test")
 	cmd := exec.Command("go", "build", "-tags=integration", "-o", binaryPath, "./cmd/osm")
 	cmd.Dir = projectDir // Critical: set working directory to project root
@@ -1290,7 +1290,8 @@ func TestPickAndPlaceConflictResolution(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second)
 	defer cancel()
 
-	logFilePath := filepath.Join(t.TempDir(), "conflict_resolution_test.log")
+	// DEBUG: Use persistent log path for investigation
+	logFilePath := "/tmp/conflict_resolution_test.log"
 
 	harness, err := NewPickAndPlaceHarness(ctx, t, PickAndPlaceConfig{
 		TestMode:    true,

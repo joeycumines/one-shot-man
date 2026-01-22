@@ -253,6 +253,14 @@ try {
         const blocked = new Set();
         const key = (x, y) => x + ',' + y;
         const actor = state.actors.get(state.activeActorId);
+        
+        // DEBUG: Check if 6,18 blocker exists before building set
+        var blockerAt6_18 = null;
+        state.cubes.forEach(c => {
+            if (Math.round(c.x) === 6 && Math.round(c.y) === 18 && !c.deleted) {
+                blockerAt6_18 = c;
+            }
+        });
 
         state.cubes.forEach(c => {
             if (c.deleted) return;
@@ -260,6 +268,11 @@ try {
             if (actor.heldItem && c.id === actor.heldItem.id) return;
             blocked.add(key(Math.round(c.x), Math.round(c.y)));
         });
+        
+        // DEBUG: Log if (6,18) blocker exists but not in blocked set (no tick limit now)
+        if (blockerAt6_18 && !blocked.has('6,18')) {
+            log.warn("buildBlockedSet BUG: blockerAt6_18 exists (id=" + blockerAt6_18.id + ") but 6,18 not in blocked! ignoreCubeId=" + ignoreCubeId + " heldItem=" + (actor.heldItem ? actor.heldItem.id : 'null') + " tick=" + state.tickCount);
+        }
 
         return blocked;
     }
@@ -308,6 +321,11 @@ try {
         const iStartY = Math.round(startY);
         const iTargetX = Math.round(targetX);
         const iTargetY = Math.round(targetY);
+        
+        // DEBUG: Check if pathfinding from (5,18) to goal and (6,18) is blocked
+        if (iStartX === 5 && iStartY === 18 && iTargetX === 8 && iTargetY === 18) {
+            log.warn("findNextStep DEBUG: start=(5,18) target=(8,18) blocked.has('6,18')=" + blocked.has('6,18') + " ignoreCubeId=" + ignoreCubeId + " tick=" + state.tickCount);
+        }
 
         // Simple reach check
         if (Math.abs(startX - targetX) < 1.0 && Math.abs(startY - targetY) < 1.0) {
@@ -391,6 +409,15 @@ try {
             cubeAtPosition.set(key(Math.round(c.x), Math.round(c.y)), c.id);
         });
         
+        // DEBUG: Log ring blocker positions once per call (first 100 ticks only)
+        if (state.tickCount < 100 && toX === 8 && toY === 18) {
+            var positions = [];
+            cubeAtPosition.forEach(function(id, pos) {
+                positions.push(pos + ":" + id);
+            });
+            log.debug("findFirstBlocker to goal: cubeAtPosition=" + positions.join(","));
+        }
+        
         // Build blocked set for pathfinding (pass excludeId to exclude it from blocked cells)
         const blocked = buildBlockedSet(state, excludeId !== undefined ? excludeId : -1);
         
@@ -411,6 +438,10 @@ try {
             const dx = Math.abs(current.x - targetIX);
             const dy = Math.abs(current.y - targetIY);
             if (dx <= 1 && dy <= 1) {
+                // DEBUG: Log when we reach adjacency
+                if (state.tickCount < 100 && targetIX === 8 && targetIY === 18) {
+                    log.debug("findFirstBlocker: reached adjacency at (" + current.x + "," + current.y + ") to goal");
+                }
                 return null; // Path exists, no blocker
             }
             
@@ -438,12 +469,14 @@ try {
             }
         }
         
-        // Path is blocked - return the nearest movable blocker
+        // Path is blocked - return the blocker closest to the goal
+        // IMPORTANT: Sort by distance to GOAL, not to actor. This ensures we prioritize
+        // clearing blockers that are actually blocking access to the goal, rather than
+        // incidental blockers in the opposite direction from the goal.
         if (frontier.length > 0) {
-            // Sort by distance to actor and return closest
             frontier.sort((a, b) => {
-                const distA = Math.abs(a.x - fromX) + Math.abs(a.y - fromY);
-                const distB = Math.abs(b.x - fromX) + Math.abs(b.y - fromY);
+                const distA = Math.abs(a.x - toX) + Math.abs(a.y - toY);
+                const distB = Math.abs(b.x - toX) + Math.abs(b.y - toY);
                 return distA - distB;
             });
             return frontier[0].id;
@@ -561,6 +594,12 @@ try {
             if (state.gameMode !== 'automatic') return bt.running;
 
             const actor = state.actors.get(state.activeActorId);
+            
+            // AGGRESSIVE DEBUG: Log ALL movements near tick 1000
+            if (state.tickCount > 950 && state.tickCount < 1050) {
+                log.warn("TRACE-MOVETO " + name + " tick=" + state.tickCount + " actor=(" + actor.x.toFixed(2) + "," + actor.y.toFixed(2) + ") round=(" + Math.round(actor.x) + "," + Math.round(actor.y) + ")");
+            }
+            
             let targetX, targetY, ignoreCubeId;
 
             if (entityType === 'cube') {
@@ -598,8 +637,30 @@ try {
                 const stepDx = nextStep.x - actor.x;
                 const stepDy = nextStep.y - actor.y;
                 const oldX = actor.x, oldY = actor.y;
-                actor.x += Math.sign(stepDx) * Math.min(1.0, Math.abs(stepDx));
-                actor.y += Math.sign(stepDy) * Math.min(1.0, Math.abs(stepDy));
+                var newX = actor.x + Math.sign(stepDx) * Math.min(1.0, Math.abs(stepDx));
+                var newY = actor.y + Math.sign(stepDy) * Math.min(1.0, Math.abs(stepDy));
+                
+                // DEBUG: Check if destination is blocked
+                var checkBlocked = buildBlockedSet(state, ignoreCubeId);
+                var destKey = Math.round(newX) + ',' + Math.round(newY);
+                
+                // DEBUG: Special check for the ring blocker at (6,18)
+                if (Math.round(newX) === 6 && Math.round(newY) === 18) {
+                    log.warn("MoveTo " + name + " CRITICAL: Entering cell (6,18)! destKey=" + destKey + " blockedHas=" + checkBlocked.has(destKey) + " ignoreCubeId=" + ignoreCubeId);
+                    // Check what blocker is at (6,18)
+                    state.cubes.forEach(function(c) {
+                        if (Math.round(c.x) === 6 && Math.round(c.y) === 18) {
+                            log.warn("  -> Cube at (6,18): id=" + c.id + " deleted=" + c.deleted);
+                        }
+                    });
+                }
+                
+                if (checkBlocked.has(destKey)) {
+                    log.warn("MoveTo " + name + " BUG: trying to move into blocked cell (" + Math.round(newX) + "," + Math.round(newY) + ") from (" + oldX + "," + oldY + ")");
+                }
+                
+                actor.x = newX;
+                actor.y = newY;
                 log.debug("MoveTo " + name + " step: (" + oldX + "," + oldY + ") -> (" + actor.x + "," + actor.y + ") via nextStep(" + nextStep.x + "," + nextStep.y + ")");
                 return bt.running;
             } else {
@@ -742,6 +803,10 @@ try {
             
             // ATOMIC pick-and-place: pick up the blocker and immediately place it
             // to avoid mid-operation re-planning when heldItemExists becomes true
+            
+            // Capture blocker's ORIGINAL position before modifying
+            const originalBX = Math.round(blocker.x);
+            const originalBY = Math.round(blocker.y);
             blocker.deleted = true;
             
             // Find a placement spot that does NOT block the path to goal
@@ -832,20 +897,26 @@ try {
                 blocker.x = nx;
                 blocker.y = ny;
                 blocker.deleted = false;
-                log.debug(name + " testing placement", {nx: nx, ny: ny});
+                log.debug(name + " testing placement", {nx: nx, ny: ny, originalBX: originalBX, originalBY: originalBY});
                 
-                // IMPROVED: Check ONLY actor-to-goal path. Target-to-goal check was too strict.
-                // The blocker must not be the first obstacle from actor's current position to goal.
-                const stillBlockedFromActor = goal ? findFirstBlocker(state, ax, ay, goalX, goalY, TARGET_ID) : null;
-                
-                // Validation: cube must NOT be the first blocker from actor to goal
-                const blockerIdNum = blockerId;
-                const validPlacement = (stillBlockedFromActor !== blockerIdNum);
+                // FIX: Validate placement by checking two conditions:
+                // 1. The new position (nx, ny) is NOT the original position
+                // 2. The original blocking cell is no longer occupied by this blocker
+                //
+                // We DON'T use findFirstBlocker here because:
+                // - findFirstBlocker explores ALL directions via BFS
+                // - If blocker is placed adjacent to actor, BFS immediately hits it
+                // - Even though it's not on the goal path, it becomes "nearest blocker"
+                //
+                // Instead, simply check that we're moving the blocker to a DIFFERENT cell.
+                // The original cell where it was blocking is now free for BFS to pass through.
+                const notOriginalSpot = (nx !== originalBX || ny !== originalBY);
+                const validPlacement = notOriginalSpot;
                 
                 log.debug(name + " placement check", {
                     nx: nx, ny: ny,
-                    stillBlockedFromActor: stillBlockedFromActor,
-                    blockerIdNum: blockerIdNum,
+                    originalBX: originalBX, originalBY: originalBY,
+                    notOriginalSpot: notOriginalSpot,
                     validPlacement: validPlacement
                 });
                 
@@ -859,8 +930,10 @@ try {
             }
             
             if (!placementSpot) {
-                // Fallback: just use any free adjacent cell (better than failing)
-                placementSpot = getFreeAdjacentCell(state, actor.x, actor.y, false);
+                // No valid placement found - log and fail properly instead of using invalid fallback
+                log.debug(name + " no valid placement found - need to reposition first");
+                blocker.deleted = false; // Restore blocker to original position
+                return bt.failure;
             }
             
             if (!placementSpot) {
@@ -1074,10 +1147,14 @@ try {
         //   1. MoveTo_cube_1 → Pick_Target (shorter, but leads to dead end)
         //   2. ClearPath_X → ... (longer, but correct)
         // By requiring clear path, we force the planner to commit to clearing first.
+        // CRITICAL: Condition ORDER matters! PA-BT checks conditions in order and
+        // expands the FIRST unmet condition. We MUST check pathBlocker FIRST to
+        // force the planner to clear the path before trying to go to the target.
+        // Otherwise, the planner oscillates between MoveTo_cube_1 and ClearPath.
         const pickTargetConditions = [];
+        pickTargetConditions.push({k: 'pathBlocker_goal_' + GOAL_ID, v: -1});  // FIRST: Path must be clear!
         pickTargetConditions.push({k: 'heldItemExists', v: false});
         pickTargetConditions.push({k: 'atEntity_' + TARGET_ID, v: true});
-        pickTargetConditions.push({k: 'pathBlocker_goal_' + GOAL_ID, v: -1});  // CRITICAL: Path must be clear!
         reg('Pick_Target',
             pickTargetConditions,
             [{k: 'heldItemId', v: TARGET_ID}, {k: 'heldItemExists', v: true}],

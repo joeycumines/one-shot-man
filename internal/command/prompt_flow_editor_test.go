@@ -147,7 +147,7 @@ func buildPromptFlowTestBinary(t *testing.T) string {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
 	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
-	
+
 	binaryPath := filepath.Join(t.TempDir(), "osm-test")
 	cmd := exec.Command("go", "build", "-tags=integration", "-o", binaryPath, "./cmd/osm")
 	cmd.Dir = projectDir // Critical: set working directory to project root

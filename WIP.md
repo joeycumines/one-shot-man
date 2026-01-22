@@ -32,12 +32,16 @@ Complete architectural overhaul: Remove ALL hardcoded blockade handling, impleme
 - ⏳ E-T01: Add TestPickAndPlaceDynamicBlockerDetection
 - ⏳ E-T02: Add TestPickAndPlaceClearPathAction
 - ⏳ **E-T03: Enable/Fix TestPickAndPlaceConflictResolution** ← CURRENT
-  - **ISSUE DISCOVERED**: Test enabled but FAILING
-  - Test expects `Place_Target_Temporary` action (CONFLICT_RESOLUTION event)
-  - Test expects `Pick_GoalBlockade_*` / `Deposit_GoalBlockade_*` actions (GOAL_WALL_CLEAR events)
-  - **ROOT CAUSE**: ClearPath action is an "Atomic Action" anti-pattern (review.md 3.2)
-  - ClearPath internally handles placing held target - planner never plans Place_Target_Temporary
-  - **FIX REQUIRED**: Add `heldItemExists: false` precondition to ClearPath, let planner plan separate steps
+  - **LATEST DISCOVERY (tick 794 debug)**:
+    - Precondition reordering FIXED: actor now reaches goal area (5,15) ✅
+    - ClearPath_100_for_goal_1 IS executing and succeeds at tick 790 ✅
+    - BUT: placement validation uses `findFirstBlocker` which returns NEAREST cube to actor
+    - Cube 100 placed at (4,14) or (5,16) - still detected as "blocking" because:
+      - `findFirstBlocker` adds ALL blocked cells encountered by BFS to frontier
+      - Sorts by distance to ACTOR (wrong! design doc says distance to TARGET)
+      - Cube 100 at (4,14) is distance 2 from actor, same as ring cubes
+    - **FIX**: Change placement validation to use `getPathInfo().reachable` instead of `findFirstBlocker() !== blockerId`
+    - This checks if path to goal is ACTUALLY clear, not just if specific cube is still blocking
 - ⏳ E-T04: Add TestPickAndPlaceNoHardcodedBlockades
 - ⏳ E-T05: Run full test suite 100% pass
 

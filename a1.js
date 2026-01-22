@@ -999,10 +999,6 @@ try {
                 // pathBlocker_X: Dynamic obstacle detection
                 // When MoveTo fails due to blocked path, syncToBlackboard sets pathBlocker_X = cubeId
                 // ActionGenerator creates decomposed Pick + Deposit actions per PA-BT principles
-                // 
-                // CRITICAL FIX (2026-01-23): Must return BOTH Pick_GoalBlockade AND Deposit_GoalBlockade
-                // The planner needs Pick to satisfy Deposit's precondition (heldItemId=X).
-                // Without Pick in the returned actions, planner cannot chain them!
                 // -----------------------------------------------------------------
                 if (key.startsWith('pathBlocker_')) {
                     const destId = key.replace('pathBlocker_', '');
@@ -1016,27 +1012,17 @@ try {
                     });
 
                     // When value == -1 is desired (path clear), we need to clear the blocker
-                    // PA-BT DECOMPOSITION: Return BOTH Pick_GoalBlockade_X AND Deposit_GoalBlockade_X
-                    // Pick achieves heldItemId=X, Deposit achieves pathBlocker=-1
-                    // Planner will chain: MoveTo(blocker) -> Pick -> Deposit
+                    // PA-BT DECOMPOSITION: Return Deposit_GoalBlockade_X which achieves pathBlocker=-1
+                    // The Deposit requires heldItemId=X which triggers Pick_GoalBlockade_X
                     if (targetValue === -1) {
                         if (typeof currentBlocker === 'number' && currentBlocker !== -1) {
                             const cube = state.cubes.get(currentBlocker);
                             // NOTE: The cube might be picked up (deleted=true) but we still need
-                            // to generate actions. The cube exists in state.cubes even when held.
+                            // to generate the Deposit action to place it elsewhere.
+                            // The cube exists in state.cubes even when held by the actor.
                             if (cube) {
-                                log.debug("ACTION_GENERATOR: creating Pick + Deposit for pathBlocker", { 
-                                    destination: destId, 
-                                    blockerId: currentBlocker, 
-                                    cubeDeleted: cube.deleted 
-                                });
-                                
-                                // CRITICAL: Return Pick_GoalBlockade FIRST so planner can chain
-                                // Pick -> Deposit sequence for clearing the path
-                                const pickAction = createPickGoalBlockadeAction(state, currentBlocker);
-                                if (pickAction) actions.push(pickAction);
-                                
-                                // Then Deposit which achieves pathBlocker_X = -1
+                                log.debug("ACTION_GENERATOR: creating Deposit_GoalBlockade for pathBlocker", { destination: destId, blockerId: currentBlocker, cubeDeleted: cube.deleted });
+                                // Generate Deposit_GoalBlockade action that achieves pathBlocker_X = -1
                                 const depositAction = createDepositGoalBlockadeAction(state, currentBlocker, destId);
                                 if (depositAction) actions.push(depositAction);
                             }
@@ -1586,6 +1572,7 @@ try {
                 n: 0,              // No path blockades in simplified scenario
                 g: obstacleCount,  // Goal blockade ring count (0-16)
                 gr: goalReachable ? 1 : 0
+                // NOTE: 'dr' (dumpsterReachable) REMOVED - no dumpster anymore
             });
 
             output += '\n__place_debug_start__\n' + debugJSON + '\n__place_debug_end__';

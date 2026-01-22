@@ -1,0 +1,300 @@
+{
+  "title": "PA-BT Pick-and-Place DYNAMIC Obstacle Handling",
+  "version": "2.0.0",
+  "status": "IMPLEMENTATION_IN_PROGRESS",
+  "created": "2026-01-22",
+  "updated": "2026-01-22",
+  "summary": "Complete architectural overhaul: Remove hardcoded blockade handling, implement dynamic obstacle discovery and clearing per PA-BT principles",
+  
+  "architecture_principle": "Agent MUST NOT bake in ANY knowledge of blockade layout. Obstacles are discovered dynamically via pathfinding and cleared to arbitrary locations.",
+  
+  "references": [
+    "./review.md",
+    "./planning.md",
+    "./docs/design/dynamic-obstacle-detection.md",
+    "./docs/design/pick-and-place-clearpath-feasibility.md"
+  ],
+
+  "phases": {
+    "phase_1_infrastructure": {
+      "title": "Phase 1: Infrastructure Prerequisites",
+      "status": "IN_PROGRESS",
+      "tasks": [
+        {
+          "id": "P1-T01",
+          "title": "Add findFirstBlocker() pathfinding function",
+          "description": "BFS function that returns ID of first movable cube blocking path from A to B",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 1
+        },
+        {
+          "id": "P1-T02",
+          "title": "Remove GOAL_BLOCKADE_IDS array",
+          "description": "Delete the hardcoded array and all references to it",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 2
+        },
+        {
+          "id": "P1-T03",
+          "title": "Remove DUMPSTER_ID constant and dumpster goal",
+          "description": "Delete the dumpster concept entirely - obstacles go to any free cell",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 2
+        },
+        {
+          "id": "P1-T04",
+          "title": "Remove isInBlockadeRing() function",
+          "description": "Delete the hardcoded geometry detection function",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 2
+        },
+        {
+          "id": "P1-T05",
+          "title": "Remove goalBlockade_X_cleared blackboard keys",
+          "description": "Remove from syncToBlackboard - reachability computed dynamically",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 3
+        },
+        {
+          "id": "P1-T06",
+          "title": "Remove goalPathCleared blackboard key",
+          "description": "This aggregation violates PA-BT granularity principle",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 3
+        }
+      ]
+    },
+    "phase_2_action_refactoring": {
+      "title": "Phase 2: Action Refactoring",
+      "status": "NOT_STARTED",
+      "tasks": [
+        {
+          "id": "P2-T01",
+          "title": "Refactor Pick_Target - remove blockade preconditions",
+          "description": "Pick_Target should ONLY require: heldItemExists=false, atEntity_TARGET. Remove ALL 16 goalBlockade_X_cleared conditions.",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 1
+        },
+        {
+          "id": "P2-T02",
+          "title": "Remove createMoveToAction blockade conditions",
+          "description": "MoveTo_goal_1 should NOT require goalBlockade_X_cleared conditions. Path blocking handled via bt.failure + replan.",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 1
+        },
+        {
+          "id": "P2-T03",
+          "title": "Remove Deposit_Blockade_X action registrations",
+          "description": "Delete the 16 hardcoded Deposit_Blockade_X actions that require dumpster",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 2
+        },
+        {
+          "id": "P2-T04",
+          "title": "Remove Pick_Blockade_X action registrations",
+          "description": "These will be replaced by dynamic ClearObstacle generation",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 2
+        },
+        {
+          "id": "P2-T05",
+          "title": "Modify Place_Held_Item - remove blockade restriction",
+          "description": "Remove heldItemIsBlockade=false precondition. Any item can be placed anywhere.",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 2
+        },
+        {
+          "id": "P2-T06",
+          "title": "Add generic Pick_Cube action",
+          "description": "Generic action to pick up any movable cube (not just target or predefined blockades)",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 3
+        }
+      ]
+    },
+    "phase_3_actiongenerator_overhaul": {
+      "title": "Phase 3: ActionGenerator Dynamic Discovery",
+      "status": "NOT_STARTED",
+      "tasks": [
+        {
+          "id": "P3-T01",
+          "title": "Implement ClearObstacle action factory",
+          "description": "Function to create ClearObstacle_X action for any blocking cube X dynamically",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 1
+        },
+        {
+          "id": "P3-T02",
+          "title": "Refactor ActionGenerator for atEntity failures",
+          "description": "When atEntity_X fails: check if path blocked via findFirstBlocker(), generate ClearObstacle if blocked",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 1
+        },
+        {
+          "id": "P3-T03",
+          "title": "Refactor ActionGenerator for atGoal failures",
+          "description": "When atGoal_X fails: check if path blocked via findFirstBlocker(), generate ClearObstacle if blocked",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 1
+        },
+        {
+          "id": "P3-T04",
+          "title": "Remove goalBlockade_X_cleared handlers",
+          "description": "These conditions no longer exist - remove from ActionGenerator",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 2
+        },
+        {
+          "id": "P3-T05",
+          "title": "Remove heldItemIsBlockade handlers",
+          "description": "This distinction no longer exists - all items are treated uniformly",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 2
+        },
+        {
+          "id": "P3-T06",
+          "title": "Handle heldItemExists=false dynamically",
+          "description": "Return Place_Held_Item for any held item (no blockade-specific logic)",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 2
+        }
+      ]
+    },
+    "phase_4_cleanup": {
+      "title": "Phase 4: Cleanup & Simplification",
+      "status": "NOT_STARTED",
+      "tasks": [
+        {
+          "id": "P4-T01",
+          "title": "Remove heldItemIsBlockade blackboard key",
+          "description": "No longer needed - all items treated uniformly",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 1
+        },
+        {
+          "id": "P4-T02",
+          "title": "Simplify view() debug output",
+          "description": "Remove dumpsterReachable, update debug JSON structure",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 2
+        },
+        {
+          "id": "P4-T03",
+          "title": "Update manual control logic",
+          "description": "Remove dumpster-specific disposal logic",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 3
+        },
+        {
+          "id": "P4-T04",
+          "title": "Clean up unused cube type properties",
+          "description": "isGoalBlockade property no longer needed",
+          "file": "scripts/example-05-pick-and-place.js",
+          "status": "TODO",
+          "priority": 3
+        }
+      ]
+    },
+    "phase_5_testing": {
+      "title": "Phase 5: Testing & Verification",
+      "status": "NOT_STARTED",
+      "tasks": [
+        {
+          "id": "P5-T01",
+          "title": "Update test harness expectations",
+          "description": "Tests may expect old debug JSON format - update if needed",
+          "file": "internal/command/pick_and_place_*_test.go",
+          "status": "TODO",
+          "priority": 1
+        },
+        {
+          "id": "P5-T02",
+          "title": "Run TestPickAndPlaceInitialState",
+          "description": "Basic initialization test",
+          "status": "TODO",
+          "priority": 1
+        },
+        {
+          "id": "P5-T03",
+          "title": "Run TestPickAndPlaceCompletion",
+          "description": "Full scenario completion test - MUST PASS",
+          "status": "TODO",
+          "priority": 1
+        },
+        {
+          "id": "P5-T04",
+          "title": "Run make all",
+          "description": "Full test suite - 100% pass required",
+          "status": "TODO",
+          "priority": 1
+        },
+        {
+          "id": "P5-T05",
+          "title": "Verify dynamic behavior",
+          "description": "Use subagent to verify no hardcoded blockade references remain",
+          "status": "TODO",
+          "priority": 2
+        }
+      ]
+    }
+  },
+
+  "already_completed": [
+    {
+      "id": "DONE-001",
+      "description": "Removed actionCache from createMoveToAction (ISSUE-001)",
+      "file": "scripts/example-05-pick-and-place.js"
+    },
+    {
+      "id": "DONE-002",
+      "description": "Changed geometric threshold from 2.5 to 1.5 (ISSUE-002)",
+      "file": "scripts/example-05-pick-and-place.js"
+    },
+    {
+      "id": "DONE-003",
+      "description": "Added infinite loop guard to PA-BT Actions() (ISSUE-004)",
+      "file": "internal/builtin/pabt/state.go"
+    },
+    {
+      "id": "DONE-004",
+      "description": "Created comprehensive planning.md with 3 subagent reviews",
+      "file": "./planning.md"
+    }
+  ],
+
+  "test_requirements": {
+    "mandatory": [
+      "TestPickAndPlaceInitialState",
+      "TestPickAndPlaceStateProgression",
+      "TestPickAndPlaceCompletion",
+      "TestPickAndPlaceConflictResolution",
+      "All existing tests via make all"
+    ],
+    "constraints": {
+      "max_timeout": "5 minutes per test",
+      "determinism": "Zero timing-dependent failures",
+      "no_hardcoding": "No knowledge of blockade ring or dumpster in planning logic"
+    }
+  }
+}

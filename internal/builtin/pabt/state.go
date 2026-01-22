@@ -203,9 +203,20 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 	callCount := actionsCallCounter
 	actionsCallMu.Unlock()
 
-	// Detect infinite loop - if Actions called too many times in quick succession
-	if callCount > 10000 && callCount%1000 == 0 {
-		slog.Warn("[PA-BT WARN] Actions() possible infinite loop", "callCount", callCount)
+	// CRITICAL FIX (ISSUE-004): Detect AND STOP infinite loop
+	// Previous implementation only warned but didn't stop, causing BT ticker to freeze.
+	// If Actions() is called more than 1 million times, this is definitely an infinite loop.
+	// Normal pick-and-place with 16 blockades should need at most ~50k calls over entire run.
+	// Return an error to break the expansion and allow graceful timeout.
+	if callCount > 1000000 {
+		if callCount%100000 == 0 {
+			slog.Error("[PA-BT] Actions() infinite loop detected - ABORTING expansion", "callCount", callCount)
+		}
+		return nil, fmt.Errorf("PA-BT infinite loop detected: Actions() called %d times, aborting", callCount)
+	}
+	// Warn at lower threshold for debugging
+	if callCount > 50000 && callCount%10000 == 0 {
+		slog.Warn("[PA-BT WARN] Actions() high call count - possible infinite loop", "callCount", callCount)
 	}
 
 	// Get statically registered actions

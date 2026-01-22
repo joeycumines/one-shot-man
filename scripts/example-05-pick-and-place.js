@@ -94,7 +94,8 @@ try {
     // Entity IDs
     const TARGET_ID = 1;
     const GOAL_ID = 1;
-    const DUMPSTER_ID = 2;
+    // NOTE: DUMPSTER_ID removed - obstacles placed at any free cell dynamically
+    // GOAL_BLOCKADE_IDS kept for visual counting only, not used in planning logic
     var GOAL_BLOCKADE_IDS = [];
 
     // Pick/Place thresholds
@@ -108,17 +109,8 @@ try {
             y <= GOAL_CENTER_Y + GOAL_RADIUS;
     }
 
-    // Helper: Check if point is within the Blockade Ring (surrounding the goal area)
-    // The ring is a 5x5 area minus the 3x3 goal area = 16 cells
-    function isInBlockadeRing(x, y) {
-        const ringMinX = GOAL_CENTER_X - GOAL_RADIUS - 1;
-        const ringMaxX = GOAL_CENTER_X + GOAL_RADIUS + 1;
-        const ringMinY = GOAL_CENTER_Y - GOAL_RADIUS - 1;
-        const ringMaxY = GOAL_CENTER_Y + GOAL_RADIUS + 1;
-        
-        const inRingBounds = x >= ringMinX && x <= ringMaxX && y >= ringMinY && y <= ringMaxY;
-        return inRingBounds && !isInGoalArea(x, y);
-    }
+    // NOTE: isInBlockadeRing() function REMOVED
+    // Dynamic obstacle detection now used instead of hardcoded geometry
 
     function initializeSimulation() {
         const cubesInit = [];
@@ -151,8 +143,8 @@ try {
                     x: x,
                     y: y,
                     deleted: false,
-                    isGoalBlockade: true,
-                    type: 'goal_blockade'
+                    // NOTE: isGoalBlockade removed - not needed for planning
+                    type: 'obstacle'  // Generic type, rendering uses position/context
                 }]);
                 GOAL_BLOCKADE_IDS.push(goalBlockadeId);
                 goalBlockadeId++;
@@ -194,8 +186,8 @@ try {
             ]),
             cubes: new Map(cubesInit),
             goals: new Map([
-                [GOAL_ID, {id: GOAL_ID, x: GOAL_CENTER_X, y: GOAL_CENTER_Y, forTarget: true}],
-                [DUMPSTER_ID, {id: DUMPSTER_ID, x: 8, y: 4, forBlockade: true}]
+                [GOAL_ID, {id: GOAL_ID, x: GOAL_CENTER_X, y: GOAL_CENTER_Y, forTarget: true}]
+                // NOTE: Dumpster goal REMOVED - obstacles placed anywhere dynamically
             ]),
 
             blackboard: null,
@@ -245,13 +237,8 @@ try {
                     break;
                 }
             }
-            // Check walls/static
-            if (!occupied) {
-                // Check goals? Goals are usually walkable/placeable unless they are Dumpsters
-                // Actually, for generic placement, we avoid placing ON the dumpster to avoid accidental deletion
-                // unless intended.
-                if (nx === 8 && ny === 4) occupied = true; // Avoid accidental dumpster drop
-            }
+            // No additional occupancy check needed - dumpster concept removed
+            // Obstacles can be placed at any free cell
 
             if (!occupied) return {x: nx, y: ny};
         }
@@ -302,7 +289,7 @@ try {
                 const ny = current.y + oy;
                 const nKey = key(nx, ny);
 
-                if (nx < 1 || nx >= state.width - 1 || ny < 1 || ny >= state.height - 1) continue;
+                if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
                 if (visited.has(nKey)) continue;
                 if (blocked.has(nKey)) continue;
 
@@ -337,7 +324,7 @@ try {
             const ny = iStartY + oy;
             const nKey = key(nx, ny);
 
-            if (nx < 1 || nx >= state.width - 1 || ny < 1 || ny >= state.height - 1) continue;
+            if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
             // Allow entering target cell
             if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
 
@@ -361,7 +348,7 @@ try {
                 const ny = cur.y + oy;
                 const nKey = key(nx, ny);
 
-                if (nx < 1 || nx >= state.width - 1 || ny < 1 || ny >= state.height - 1) continue;
+                if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
                 if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
                 if (visited.has(nKey)) continue;
 
@@ -433,7 +420,7 @@ try {
                 const ny = current.y + oy;
                 const nKey = key(nx, ny);
                 
-                if (nx < 1 || nx >= state.width - 1 || ny < 1 || ny >= state.height - 1) continue;
+                if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
                 if (visited.has(nKey)) continue;
                 
                 if (blocked.has(nKey)) {
@@ -483,41 +470,48 @@ try {
         bb.set('heldItemId', actor.heldItem ? actor.heldItem.id : -1);
         // REFACTORED: Removed heldItemIsBlockade - all items treated uniformly
 
-        // Entities - track proximity ONLY (path blockers computed on-demand by ActionGenerator)
-        // OPTIMIZATION: Removed per-cube pathBlocker computation - it's O(cubes × map_area) per tick!
-        // Path blockers are now computed lazily when the planner needs them.
+        // Entities - track proximity AND path blockers for TARGET cube
+        // FIX (review.md 4.1): Compute pathBlocker_to_Target every tick, not just when holding target.
+        // This prevents "Self-Blockage Blindness" - agent must know if target is blocked even when 
+        // it's not holding the target (e.g., after dropping target to clear path).
         state.cubes.forEach(cube => {
             if (!cube.deleted) {
                 const dist = Math.sqrt(Math.pow(cube.x - ax, 2) + Math.pow(cube.y - ay, 2));
+                // 1.8 threshold for entity proximity (slightly larger than goal's 1.5)
                 const atEntity = dist <= 1.8;
                 bb.set('atEntity_' + cube.id, atEntity);
+                
+                // For TARGET cube specifically, compute path blocker every tick
+                // This is needed because agent may need to re-acquire target after placing it
+                if (cube.id === TARGET_ID) {
+                    const cubeX = Math.round(cube.x);
+                    const cubeY = Math.round(cube.y);
+                    // Exclude TARGET_ID from being considered a blocker to itself
+                    const blocker = findFirstBlocker(state, ax, ay, cubeX, cubeY, TARGET_ID);
+                    bb.set('pathBlocker_entity_' + cube.id, blocker === null ? -1 : blocker);
+                }
             } else {
                 bb.set('atEntity_' + cube.id, false);
+                if (cube.id === TARGET_ID) {
+                    bb.set('pathBlocker_entity_' + cube.id, -1);
+                }
             }
         });
 
         // Goals - track proximity and path blockers
+        // FIX (review.md 4.1): ALWAYS compute pathBlocker_to_Goal, regardless of what agent is holding.
+        // The old code only computed this when holding target - causing "Self-Blockage Blindness".
         state.goals.forEach(goal => {
             const dist = Math.sqrt(Math.pow(goal.x - ax, 2) + Math.pow(goal.y - ay, 2));
-            // 1.5 threshold ensures physical adjacency for goal area
+            // 1.5 threshold ensures physical adjacency for goal area (stricter than entities)
             bb.set('atGoal_' + goal.id, dist <= 1.5);
             
-            // Check path blocker to goal - ONLY when holding target!
-            // When not holding target: set to -1 (irrelevant, agent should go get target first)
-            // When holding target: compute from ACTOR to goal (we need to carry target there)
+            // Compute path blocker to goal UNCONDITIONALLY every tick
+            // This allows the planner to plan ahead even when not yet holding target
             const goalX = Math.round(goal.x);
             const goalY = Math.round(goal.y);
-            const actor = state.actors.get(state.activeActorId);
-            let blocker = null;
-            
-            if (actor.heldItem && actor.heldItem.id === TARGET_ID) {
-                // Holding target: compute path from ACTOR to goal
-                blocker = findFirstBlocker(state, ax, ay, goalX, goalY, TARGET_ID);
-            }
-            // else: Not holding target - don't compute blocker, leave as -1
-            // This allows agent to go pick up target first without clearing goal path
-            
-            // Convert null (no blocker) to -1 for blackboard consistency
+            // Exclude TARGET_ID from being considered a blocker (we carry target TO the goal)
+            const blocker = findFirstBlocker(state, ax, ay, goalX, goalY, TARGET_ID);
             bb.set('pathBlocker_goal_' + goal.id, blocker === null ? -1 : blocker);
         });
 
@@ -589,9 +583,10 @@ try {
             const dy = targetY - actor.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
-            // CRITICAL FIX (ISSUE-002): Reduced threshold from 2.5 to 1.5
-            // Must match syncToBlackboard threshold for atGoal to prevent livelock
-            const threshold = (entityType === 'goal' && entityId === GOAL_ID) ? 1.5 : 1.5;
+            // CRITICAL FIX (ISSUE-002): Uniform threshold of 1.5 for all MoveTo actions.
+            // This is STRICTER than atEntity_X (1.8) and equal to atGoal_X (1.5), 
+            // ensuring MoveTo success always implies the blackboard condition is met.
+            const threshold = 1.5;
 
             if (dist <= threshold) {
                 log.debug("MoveTo " + name + " reached target, dist=" + dist.toFixed(2) + ", threshold=" + threshold);
@@ -695,10 +690,12 @@ try {
     function createClearPathAction(state, blockerId, destinationKey) {
         const name = 'ClearPath_' + blockerId + '_for_' + destinationKey;
         
-        // ClearPath only needs to be at the blocker location
-        // NOTE: No heldItemExists precondition! The action handles placing held items internally.
-        // This avoids the planner deadlock when holding target but needing to clear path.
+        // ClearPath REQUIRES hands to be empty (heldItemExists=false).
+        // Per review.md 3.2: The "Atomic Action" anti-pattern must be avoided.
+        // If holding something (like TARGET), planner must first plan Place_Target_Temporary.
+        // This ensures proper PA-BT conflict resolution with explicit planning steps.
         const conditions = [
+            {key: 'heldItemExists', value: false, Match: v => v === false},
             {key: 'atEntity_' + blockerId, value: true, Match: v => v === true}
         ];
         
@@ -714,43 +711,11 @@ try {
             
             const actor = state.actors.get(state.activeActorId);
             
-            // If we're already holding something (like the TARGET), place it temporarily
-            // then continue to the blocker clearing phase IN THE SAME TICK (atomic operation)
-            // This prevents PA-BT replan from picking up the target again.
+            // If we're holding something, this action CANNOT proceed - precondition violated
+            // Planner should have planned Place_Target_Temporary first
             if (actor.heldItem) {
-                const heldId = actor.heldItem.id;
-                // Place it somewhere nearby (not at goal area, not blocking path)
-                const spot = getFreeAdjacentCell(state, actor.x, actor.y, false);
-                if (!spot) {
-                    log.debug(name + " no free spot to place held item");
-                    return bt.failure;
-                }
-                
-                // Re-instantiate the cube at the free spot
-                const cube = state.cubes.get(heldId);
-                if (cube) {
-                    cube.deleted = false;
-                    cube.x = spot.x;
-                    cube.y = spot.y;
-                }
-                actor.heldItem = null;
-                
-                if (state.blackboard) {
-                    state.blackboard.set('heldItemExists', false);
-                    state.blackboard.set('heldItemId', -1);
-                }
-                
-                log.info("PA-BT action executing", {
-                    action: name,
-                    subAction: "PlaceHeldItem",
-                    result: "CONTINUING",
-                    tick: state.tickCount,
-                    placedId: heldId,
-                    placedAt: {x: spot.x, y: spot.y}
-                });
-                
-                // FALL THROUGH to blocker clearing - do NOT return!
-                // This makes the entire operation atomic in one tick.
+                log.debug(name + " PRECONDITION VIOLATED: heldItemExists=true, need to place held item first");
+                return bt.failure;
             }
             
             // Check if blocker still exists
@@ -791,29 +756,64 @@ try {
             const ax = Math.round(actor.x);
             const ay = Math.round(actor.y);
             
-            // CRITICAL: Search order matters! Prioritize directions AWAY from the goal approach path.
-            // The approach is from target (45, 11) to goal (8, 18), i.e., from right-top to left-bottom.
-            // Good placement spots are: LEFT of goal (x < goalX-2) or BELOW goal (y > goalY+2)
-            // So we should try: [-1, 0] (left), [0, 1] (down) before [1, 0] (right), [0, -1] (up)
-            // Prioritize going perpendicular/away from the approach path
-            const dirs = [
-                [-1, 0],  // left - away from approach corridor
-                [-1, 1],  // down-left - away from approach
-                [0, 1],   // down - might be below goal
-                [-1, -1], // up-left
-                [1, 1],   // down-right  
-                [1, 0],   // right - toward approach, less ideal
-                [0, -1],  // up - toward approach, less ideal
-                [1, -1]   // up-right - toward approach, least ideal
-            ];
+            // CRITICAL: Search order matters! Prioritize directions AWAY from the goal.
+            // We need to place the blocker somewhere that won't obstruct future travel.
+            // 
+            // SIMPLIFIED LOGIC: Only check if placement blocks actor's CURRENT path to goal.
+            // The target-to-goal check was too strict and caused all placements to fail.
+            // We can't guarantee perfect placement for all future paths - just ensure 
+            // the CURRENT path is unblocked after this ClearPath action.
+            
+            // STRATEGIC PLACEMENT: Calculate direction from actor to goal,
+            // then prioritize placement PERPENDICULAR or OPPOSITE to that direction.
+            const dirToGoalX = goalX - ax;
+            const dirToGoalY = goalY - ay;
+            
+            // Normalize to understand general direction: goal is at (8, 18), actor typically east of it
+            // If dirToGoalX < 0, goal is to the LEFT → place blocker to the RIGHT
+            // If dirToGoalY > 0, goal is BELOW → place blocker ABOVE
+            
+            // Dynamic direction ordering based on goal direction
+            const dirs = [];
+            // Prioritize AWAY from goal path
+            if (dirToGoalX < 0) {
+                // Goal is left, place RIGHT
+                dirs.push([1, 0]);   // right
+                dirs.push([1, -1]);  // up-right
+                dirs.push([1, 1]);   // down-right
+            } else {
+                // Goal is right, place LEFT  
+                dirs.push([-1, 0]);  // left
+                dirs.push([-1, -1]); // up-left
+                dirs.push([-1, 1]);  // down-left
+            }
+            if (dirToGoalY > 0) {
+                // Goal is below, place ABOVE
+                dirs.push([0, -1]);  // up
+            } else {
+                // Goal is above, place BELOW
+                dirs.push([0, 1]);   // down
+            }
+            // Add remaining directions as fallback
+            const allDirs = [[1, 0], [1, -1], [0, -1], [1, 1], [-1, -1], [-1, 0], [0, 1], [-1, 1]];
+            for (const d of allDirs) {
+                if (!dirs.some(existing => existing[0] === d[0] && existing[1] === d[1])) {
+                    dirs.push(d);
+                }
+            }
+            
             let placementSpot = null;
             
+            log.debug(name + " trying placement dirs", {ax: ax, ay: ay, goalX: goalX, goalY: goalY, dirToGoalX: dirToGoalX, dirToGoalY: dirToGoalY});
             for (const [dx, dy] of dirs) {
                 const nx = ax + dx;
                 const ny = ay + dy;
                 
-                // Bounds check
-                if (nx < 0 || nx >= state.width || ny < 0 || ny >= state.height) continue;
+                // Bounds check - use spaceWidth (simulation space), not width (terminal)
+                if (nx < 0 || nx >= state.spaceWidth || ny < 0 || ny >= state.height) {
+                    log.debug(name + " dir rejected: out of bounds", {dx: dx, dy: dy, nx: nx, ny: ny});
+                    continue;
+                }
                 
                 // Check if cell is occupied
                 let occupied = false;
@@ -823,20 +823,33 @@ try {
                         break;
                     }
                 }
-                if (occupied) continue;
+                if (occupied) {
+                    log.debug(name + " dir rejected: occupied", {dx: dx, dy: dy, nx: nx, ny: ny});
+                    continue;
+                }
                 
-                // Temporarily place cube at this spot and check if path is clear
+                // Temporarily place cube at this spot and check if paths are clear
                 blocker.x = nx;
                 blocker.y = ny;
                 blocker.deleted = false;
+                log.debug(name + " testing placement", {nx: nx, ny: ny});
                 
-                // Check if placing blocker here clears the ACTOR→GOAL path
-                // Note: We check actor→goal, not target→goal, because the actor carries the target
-                const stillBlocked = goal ? findFirstBlocker(state, ax, ay, goalX, goalY, TARGET_ID) : null;
+                // IMPROVED: Check ONLY actor-to-goal path. Target-to-goal check was too strict.
+                // The blocker must not be the first obstacle from actor's current position to goal.
+                const stillBlockedFromActor = goal ? findFirstBlocker(state, ax, ay, goalX, goalY, TARGET_ID) : null;
                 
-                // If THIS cube is no longer the first blocker, we've cleared it from the path!
-                // (Either path is now clear, or a different cube is the new first blocker)
-                if (stillBlocked !== blockerId) {
+                // Validation: cube must NOT be the first blocker from actor to goal
+                const blockerIdNum = blockerId;
+                const validPlacement = (stillBlockedFromActor !== blockerIdNum);
+                
+                log.debug(name + " placement check", {
+                    nx: nx, ny: ny,
+                    stillBlockedFromActor: stillBlockedFromActor,
+                    blockerIdNum: blockerIdNum,
+                    validPlacement: validPlacement
+                });
+                
+                if (validPlacement) {
                     placementSpot = {x: nx, y: ny};
                     break;
                 }
@@ -1055,13 +1068,16 @@ try {
         // - MoveTo_goal_1 needs pathBlocker_goal_1=-1
         // - To clear path: need to pick up the blocker
         // Pick_Target: Pick up the target cube when at its location
-        // NOTE: No pathBlocker_goal constraint! Agent should:
-        // 1. Go to target (may have obstacles on path to target, but not on path to goal yet)
-        // 2. Pick up target
-        // 3. Move toward goal, clearing blockers as encountered
+        // 
+        // CRITICAL FIX: Require pathBlocker_goal_1=-1 before picking target!
+        // Without this constraint, the planner oscillates between:
+        //   1. MoveTo_cube_1 → Pick_Target (shorter, but leads to dead end)
+        //   2. ClearPath_X → ... (longer, but correct)
+        // By requiring clear path, we force the planner to commit to clearing first.
         const pickTargetConditions = [];
         pickTargetConditions.push({k: 'heldItemExists', v: false});
         pickTargetConditions.push({k: 'atEntity_' + TARGET_ID, v: true});
+        pickTargetConditions.push({k: 'pathBlocker_goal_' + GOAL_ID, v: -1});  // CRITICAL: Path must be clear!
         reg('Pick_Target',
             pickTargetConditions,
             [{k: 'heldItemId', v: TARGET_ID}, {k: 'heldItemExists', v: true}],
@@ -1135,8 +1151,8 @@ try {
 
         // ---------------------------------------------------------------------
         // Place_Obstacle: Generic action to place any held obstacle
-        // Places the obstacle at any free adjacent cell (NOT at a pre-defined dumpster)
-        // This is the DYNAMIC replacement for all Deposit_Blockade_X actions
+        // Places the obstacle at any free adjacent cell
+        // This is the DYNAMIC replacement for hardcoded blockade actions
         // ---------------------------------------------------------------------
         reg('Place_Obstacle',
             [{k: 'heldItemExists', v: true}],
@@ -1233,9 +1249,13 @@ try {
         // Satisfies the removal of Staging Area logic.
         // REFACTORED: No heldItemIsBlockade check - just place any held item
         // Place_Obstacle is preferred for obstacles; this is a fallback for any item
+        // NOTE: This action EXCLUDES holding TARGET - use Place_Target_Temporary for that!
         // ---------------------------------------------------------------------
         reg('Place_Held_Item',
-            [{k: 'heldItemExists', v: true}],
+            [
+                {k: 'heldItemExists', v: true},
+                {k: 'heldItemId', v: -1, Match: v => v !== TARGET_ID}  // Only for NON-target items
+            ],
             [{k: 'heldItemExists', v: false}, {k: 'heldItemId', v: -1}],
             function () {
                 const a = actor();
@@ -1287,14 +1307,14 @@ try {
             if (!c.deleted) {
                 let ch = '█';
                 if (c.type === 'target') ch = '◇';
-                else if (c.type === 'goal_blockade') ch = '▒';
+                else if (c.type === 'obstacle') ch = '▒';  // Was 'goal_blockade', now generic
                 sprites.push({x: c.x, y: c.y, char: ch, width: 1, height: 1});
             }
         });
         state.goals.forEach(g => {
             let ch = '○';
             if (g.forTarget) ch = '◎';
-            else if (g.forBlockade) ch = '⊙';
+            // NOTE: forBlockade (dumpster) removed - only target goal exists now
             sprites.push({x: g.x, y: g.y, char: ch, width: 1, height: 1});
         });
         return sprites;
@@ -1372,7 +1392,7 @@ try {
         log.info("Pick-and-Place simulation initialized", {
             actorX: state.actors.get(state.activeActorId).x,
             actorY: state.actors.get(state.activeActorId).y,
-            goalBlockadeCount: GOAL_BLOCKADE_IDS.length,
+            obstacleCount: GOAL_BLOCKADE_IDS.length,  // Renamed from goalBlockadeCount
             targetId: TARGET_ID,
             mode: state.gameMode
         });
@@ -1436,10 +1456,8 @@ try {
                         for (let c of state.cubes.values()) {
                             if (!c.deleted && Math.round(c.x) === nx && Math.round(c.y) === ny) occupied = true;
                         }
-                        // Special: Dumpster
-                        if (nx === 8 && ny === 4) {
-                            actor.heldItem = null; // Dispose
-                        } else if (!occupied) {
+                        // NOTE: Dumpster logic removed - just place at free cell
+                        if (!occupied) {
                             // Place Generic
                             const c = state.cubes.get(actor.heldItem.id);
                             if (c) {
@@ -1509,21 +1527,18 @@ try {
         if (state.debugMode) {
             const actor = state.actors.get(state.activeActorId);
             const target = state.cubes.get(TARGET_ID);
-            const dumpster = state.goals.get(DUMPSTER_ID);
             const goal = state.goals.get(GOAL_ID);
             
-            // Count remaining blockades
-            let blockadeCount = 0;
-            let goalBlockadeCount = 0;
+            // Count remaining obstacles dynamically (not using hardcoded IDs for logic)
+            let obstacleCount = 0;
             GOAL_BLOCKADE_IDS.forEach(id => {
                 const cube = state.cubes.get(id);
-                if (cube && !cube.deleted) goalBlockadeCount++;
+                if (cube && !cube.deleted) obstacleCount++;
             });
             
-            // Check reachability
+            // Check reachability - only goal matters now (no dumpster)
             const ax = Math.round(actor.x);
             const ay = Math.round(actor.y);
-            const dumpsterReachable = dumpster ? getPathInfo(state, ax, ay, dumpster.x, dumpster.y).reachable : false;
             const goalReachable = goal ? getPathInfo(state, ax, ay, goal.x, goal.y).reachable : false;
             
             const debugJSON = JSON.stringify({
@@ -1535,10 +1550,10 @@ try {
                 w: state.winConditionMet ? 1 : 0,
                 a: target && !target.deleted ? target.x : null,
                 b: target && !target.deleted ? target.y : null,
-                n: blockadeCount,
-                g: goalBlockadeCount,
-                dr: dumpsterReachable ? 1 : 0,
+                n: 0,              // No path blockades in simplified scenario
+                g: obstacleCount,  // Goal blockade ring count (0-16)
                 gr: goalReachable ? 1 : 0
+                // NOTE: 'dr' (dumpsterReachable) REMOVED - no dumpster anymore
             });
             
             output += '\n__place_debug_start__\n' + debugJSON + '\n__place_debug_end__';

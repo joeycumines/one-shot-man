@@ -19,8 +19,16 @@ import (
 // buildTestBinary builds the osm test binary for command package tests
 func buildTestBinary(t *testing.T) string {
 	t.Helper()
+	// Get the working directory and compute project root
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+	
 	binaryPath := filepath.Join(t.TempDir(), "osm-test")
-	cmd := exec.Command("go", "build", "-tags=integration", "-o", binaryPath, "../../cmd/osm")
+	cmd := exec.Command("go", "build", "-tags=integration", "-o", binaryPath, "./cmd/osm")
+	cmd.Dir = projectDir // Critical: set working directory to project root
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

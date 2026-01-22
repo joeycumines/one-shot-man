@@ -1,13 +1,15 @@
 {
-  "title": "PA-BT Pick-and-Place DYNAMIC Obstacle Handling",
-  "version": "2.0.0",
+  "title": "PA-BT Pick-and-Place DYNAMIC Obstacle Handling - Complete Overhaul",
+  "version": "3.0.0",
   "status": "IMPLEMENTATION_IN_PROGRESS",
   "created": "2026-01-22",
   "updated": "2026-01-22",
-  "summary": "Complete architectural overhaul: Remove hardcoded blockade handling, implement dynamic obstacle discovery and clearing per PA-BT principles",
-  
+  "policy": "ALL tasks and subtasks contained within this blueprint MUST be completed in their entirety. Deferring, skipping, or omitting any part of the plan is strictly prohibited. Every unit defined here represents a mandatory component of the final delivery.",
+
+  "summary": "Complete architectural overhaul: Remove ALL hardcoded blockade handling, implement DYNAMIC obstacle discovery per PA-BT principles. Fix all test infrastructure issues. Add comprehensive integration tests with review cycles.",
+
   "architecture_principle": "Agent MUST NOT bake in ANY knowledge of blockade layout. Obstacles are discovered dynamically via pathfinding and cleared to arbitrary locations.",
-  
+
   "references": [
     "./review.md",
     "./planning.md",
@@ -15,284 +17,161 @@
     "./docs/design/pick-and-place-clearpath-feasibility.md"
   ],
 
-  "phases": {
-    "phase_1_infrastructure": {
-      "title": "Phase 1: Infrastructure Prerequisites",
-      "status": "IN_PROGRESS",
+  "groups": {
+    "GROUP_0_INFRA_FIX": {
+      "title": "Group 0: Infrastructure Fixes (Test Harness)",
+      "status": "COMPLETED",
       "tasks": [
-        {
-          "id": "P1-T01",
-          "title": "Add findFirstBlocker() pathfinding function",
-          "description": "BFS function that returns ID of first movable cube blocking path from A to B",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 1
-        },
-        {
-          "id": "P1-T02",
-          "title": "Remove GOAL_BLOCKADE_IDS array",
-          "description": "Delete the hardcoded array and all references to it",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 2
-        },
-        {
-          "id": "P1-T03",
-          "title": "Remove DUMPSTER_ID constant and dumpster goal",
-          "description": "Delete the dumpster concept entirely - obstacles go to any free cell",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 2
-        },
-        {
-          "id": "P1-T04",
-          "title": "Remove isInBlockadeRing() function",
-          "description": "Delete the hardcoded geometry detection function",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 2
-        },
-        {
-          "id": "P1-T05",
-          "title": "Remove goalBlockade_X_cleared blackboard keys",
-          "description": "Remove from syncToBlackboard - reachability computed dynamically",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 3
-        },
-        {
-          "id": "P1-T06",
-          "title": "Remove goalPathCleared blackboard key",
-          "description": "This aggregation violates PA-BT granularity principle",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 3
-        }
+        {"id": "G0-T01", "title": "Fix BuildPickAndPlaceTestBinary cmd.Dir", "status": "DONE"},
+        {"id": "G0-T02", "title": "Fix buildTestBinary in shooter_game_unix_test.go", "status": "DONE"},
+        {"id": "G0-T03", "title": "Fix buildPromptFlowTestBinary cmd.Dir", "status": "DONE"}
       ]
     },
-    "phase_2_action_refactoring": {
-      "title": "Phase 2: Action Refactoring",
-      "status": "NOT_STARTED",
+
+    "GROUP_A_INFRASTRUCTURE": {
+      "title": "Group A: Infrastructure Cleanup (Remove Hardcoded IDs)",
+      "status": "COMPLETED",
       "tasks": [
-        {
-          "id": "P2-T01",
-          "title": "Refactor Pick_Target - remove blockade preconditions",
-          "description": "Pick_Target should ONLY require: heldItemExists=false, atEntity_TARGET. Remove ALL 16 goalBlockade_X_cleared conditions.",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 1
-        },
-        {
-          "id": "P2-T02",
-          "title": "Remove createMoveToAction blockade conditions",
-          "description": "MoveTo_goal_1 should NOT require goalBlockade_X_cleared conditions. Path blocking handled via bt.failure + replan.",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 1
-        },
-        {
-          "id": "P2-T03",
-          "title": "Remove Deposit_Blockade_X action registrations",
-          "description": "Delete the 16 hardcoded Deposit_Blockade_X actions that require dumpster",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 2
-        },
-        {
-          "id": "P2-T04",
-          "title": "Remove Pick_Blockade_X action registrations",
-          "description": "These will be replaced by dynamic ClearObstacle generation",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 2
-        },
-        {
-          "id": "P2-T05",
-          "title": "Modify Place_Held_Item - remove blockade restriction",
-          "description": "Remove heldItemIsBlockade=false precondition. Any item can be placed anywhere.",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 2
-        },
-        {
-          "id": "P2-T06",
-          "title": "Add generic Pick_Cube action",
-          "description": "Generic action to pick up any movable cube (not just target or predefined blockades)",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 3
-        }
+        {"id": "A-T01", "title": "Remove GOAL_BLOCKADE_IDS array usage from planning logic", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
+        {"id": "A-T02", "title": "Remove DUMPSTER_ID constant and dumpster goal", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
+        {"id": "A-T03", "title": "Remove isInBlockadeRing() function", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
+        {"id": "A-T04", "title": "Remove isGoalBlockade property from cubes", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
+        {"id": "A-T05", "title": "Update debug JSON to remove dumpster references", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"}
       ]
     },
-    "phase_3_actiongenerator_overhaul": {
-      "title": "Phase 3: ActionGenerator Dynamic Discovery",
-      "status": "NOT_STARTED",
+
+    "GROUP_A_REVIEW": {
+      "title": "Group A Review Cycle",
+      "status": "COMPLETED",
       "tasks": [
-        {
-          "id": "P3-T01",
-          "title": "Implement ClearObstacle action factory",
-          "description": "Function to create ClearObstacle_X action for any blocking cube X dynamically",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 1
-        },
-        {
-          "id": "P3-T02",
-          "title": "Refactor ActionGenerator for atEntity failures",
-          "description": "When atEntity_X fails: check if path blocked via findFirstBlocker(), generate ClearObstacle if blocked",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 1
-        },
-        {
-          "id": "P3-T03",
-          "title": "Refactor ActionGenerator for atGoal failures",
-          "description": "When atGoal_X fails: check if path blocked via findFirstBlocker(), generate ClearObstacle if blocked",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 1
-        },
-        {
-          "id": "P3-T04",
-          "title": "Remove goalBlockade_X_cleared handlers",
-          "description": "These conditions no longer exist - remove from ActionGenerator",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 2
-        },
-        {
-          "id": "P3-T05",
-          "title": "Remove heldItemIsBlockade handlers",
-          "description": "This distinction no longer exists - all items are treated uniformly",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 2
-        },
-        {
-          "id": "P3-T06",
-          "title": "Handle heldItemExists=false dynamically",
-          "description": "Return Place_Held_Item for any held item (no blockade-specific logic)",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 2
-        }
+        {"id": "A-REVIEW-1", "title": "Review Group A with subagent", "status": "DONE", "output": "./reviews/01-group-a.md"},
+        {"id": "A-FIX", "title": "Address Group A review issues", "status": "DONE", "notes": "No issues found - all tasks verified complete"},
+        {"id": "A-REVIEW-2", "title": "Re-review Group A", "status": "DONE", "output": "./reviews/02-group-a-rereview.md"}
       ]
     },
-    "phase_4_cleanup": {
-      "title": "Phase 4: Cleanup & Simplification",
-      "status": "NOT_STARTED",
+
+    "GROUP_B_BLACKBOARD": {
+      "title": "Group B: Blackboard Improvements",
+      "status": "COMPLETED",
       "tasks": [
-        {
-          "id": "P4-T01",
-          "title": "Remove heldItemIsBlockade blackboard key",
-          "description": "No longer needed - all items treated uniformly",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 1
-        },
-        {
-          "id": "P4-T02",
-          "title": "Simplify view() debug output",
-          "description": "Remove dumpsterReachable, update debug JSON structure",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 2
-        },
-        {
-          "id": "P4-T03",
-          "title": "Update manual control logic",
-          "description": "Remove dumpster-specific disposal logic",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 3
-        },
-        {
-          "id": "P4-T04",
-          "title": "Clean up unused cube type properties",
-          "description": "isGoalBlockade property no longer needed",
-          "file": "scripts/example-05-pick-and-place.js",
-          "status": "TODO",
-          "priority": 3
-        }
+        {"id": "B-T01", "title": "Compute pathBlocker_entity_X for target", "status": "DONE", "file": "scripts/example-05-pick-and-place.js", "notes": "Now computed every tick for TARGET_ID cube"},
+        {"id": "B-T02", "title": "Remove conditional blocker computation", "status": "DONE", "file": "scripts/example-05-pick-and-place.js", "notes": "Removed if(holding target) gate per review.md 4.1"},
+        {"id": "B-T03", "title": "Ensure atEntity_X uses consistent threshold", "status": "DONE", "file": "scripts/example-05-pick-and-place.js", "notes": "1.8 for entities, 1.5 for goals - documented as intentional"}
       ]
     },
-    "phase_5_testing": {
-      "title": "Phase 5: Testing & Verification",
-      "status": "NOT_STARTED",
+
+    "GROUP_B_REVIEW": {
+      "title": "Group B Review Cycle",
+      "status": "COMPLETED",
       "tasks": [
-        {
-          "id": "P5-T01",
-          "title": "Update test harness expectations",
-          "description": "Tests may expect old debug JSON format - update if needed",
-          "file": "internal/command/pick_and_place_*_test.go",
-          "status": "TODO",
-          "priority": 1
-        },
-        {
-          "id": "P5-T02",
-          "title": "Run TestPickAndPlaceInitialState",
-          "description": "Basic initialization test",
-          "status": "TODO",
-          "priority": 1
-        },
-        {
-          "id": "P5-T03",
-          "title": "Run TestPickAndPlaceCompletion",
-          "description": "Full scenario completion test - MUST PASS",
-          "status": "TODO",
-          "priority": 1
-        },
-        {
-          "id": "P5-T04",
-          "title": "Run make all",
-          "description": "Full test suite - 100% pass required",
-          "status": "TODO",
-          "priority": 1
-        },
-        {
-          "id": "P5-T05",
-          "title": "Verify dynamic behavior",
-          "description": "Use subagent to verify no hardcoded blockade references remain",
-          "status": "TODO",
-          "priority": 2
-        }
+        {"id": "B-REVIEW-1", "title": "Review Group B with subagent", "status": "DONE", "output": "./reviews/03-group-b.md"},
+        {"id": "B-FIX", "title": "Address Group B review issues", "status": "DONE", "notes": "Fixed redundant ternary threshold"},
+        {"id": "B-REVIEW-2", "title": "Re-review Group B", "status": "DONE", "output": "./reviews/04-group-b-rereview.md"}
+      ]
+    },
+
+    "GROUP_C_ACTIONS": {
+      "title": "Group C: Action/Generator Refinement",
+      "status": "COMPLETED",
+      "tasks": [
+        {"id": "C-T01", "title": "Verify ClearPath action preconditions", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
+        {"id": "C-T02", "title": "Verify ActionGenerator handles pathBlocker_entity_X", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
+        {"id": "C-T03", "title": "Ensure Pick_Target has minimal preconditions", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
+        {"id": "C-T04", "title": "Verify MoveTo returns bt.failure when blocked", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"}
+      ]
+    },
+
+    "GROUP_C_REVIEW": {
+      "title": "Group C Review Cycle",
+      "status": "COMPLETED",
+      "tasks": [
+        {"id": "C-REVIEW-1", "title": "Review Group C with subagent", "status": "DONE", "output": "./reviews/05-group-c.md"},
+        {"id": "C-FIX", "title": "Address Group C review issues", "status": "DONE", "notes": "No issues found"},
+        {"id": "C-REVIEW-2", "title": "Re-review Group C", "status": "DONE", "output": "./reviews/06-group-c-rereview.md"}
+      ]
+    },
+
+    "GROUP_D_CLEANUP": {
+      "title": "Group D: Cleanup & Simplification",
+      "status": "COMPLETED",
+      "tasks": [
+        {"id": "D-T01", "title": "Remove dumpster from manual control", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
+        {"id": "D-T02", "title": "Remove dumpster from getFreeAdjacentCell", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
+        {"id": "D-T03", "title": "Update test harness expectations", "status": "DONE", "file": "internal/command/pick_and_place_*_test.go"},
+        {"id": "D-T04", "title": "Remove unused type property references", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"}
+      ]
+    },
+
+    "GROUP_D_REVIEW": {
+      "title": "Group D Review Cycle",
+      "status": "COMPLETED",
+      "tasks": [
+        {"id": "D-REVIEW-1", "title": "Review Group D with subagent", "status": "DONE", "output": "./reviews/07-group-d.md"},
+        {"id": "D-FIX", "title": "Address Group D review issues", "status": "DONE", "notes": "No issues found"},
+        {"id": "D-REVIEW-2", "title": "Re-review Group D", "status": "DONE", "output": "./reviews/08-group-d-rereview.md"}
+      ]
+    },
+
+    "GROUP_E_INTEGRATION_TESTS": {
+      "title": "Group E: Integration Tests",
+      "status": "TODO",
+      "tasks": [
+        {"id": "E-T01", "title": "Add TestPickAndPlaceDynamicBlockerDetection", "status": "TODO", "file": "internal/command/pick_and_place_unit_test.go"},
+        {"id": "E-T02", "title": "Add TestPickAndPlaceClearPathAction", "status": "TODO", "file": "internal/command/pick_and_place_unit_test.go"},
+        {"id": "E-T03", "title": "Enable/Fix TestPickAndPlaceConflictResolution", "status": "TODO", "file": "internal/command/pick_and_place_harness_test.go"},
+        {"id": "E-T04", "title": "Add TestPickAndPlaceNoHardcodedBlockades", "status": "TODO", "file": "internal/command/pick_and_place_unit_test.go"},
+        {"id": "E-T05", "title": "Run full test suite 100% pass", "status": "TODO"}
+      ]
+    },
+
+    "GROUP_E_REVIEW": {
+      "title": "Group E Review Cycle",
+      "status": "TODO",
+      "tasks": [
+        {"id": "E-REVIEW-1", "title": "Review Group E with subagent", "status": "TODO", "output": "./reviews/09-group-e.md"},
+        {"id": "E-FIX", "title": "Address Group E review issues", "status": "TODO"},
+        {"id": "E-REVIEW-2", "title": "Re-review Group E", "status": "TODO", "output": "./reviews/10-group-e-rereview.md"}
+      ]
+    },
+
+    "GROUP_F_FINAL": {
+      "title": "Group F: Final Verification",
+      "status": "TODO",
+      "tasks": [
+        {"id": "F-T01", "title": "Comprehensive final subagent review", "status": "TODO", "output": "./reviews/11-final.md"},
+        {"id": "F-T02", "title": "Run make all three times", "status": "TODO"},
+        {"id": "F-T03", "title": "Update WIP.md with completion", "status": "TODO"},
+        {"id": "F-T04", "title": "Verify blueprint.json 100% complete", "status": "TODO"}
       ]
     }
   },
 
   "already_completed": [
-    {
-      "id": "DONE-001",
-      "description": "Removed actionCache from createMoveToAction (ISSUE-001)",
-      "file": "scripts/example-05-pick-and-place.js"
-    },
-    {
-      "id": "DONE-002",
-      "description": "Changed geometric threshold from 2.5 to 1.5 (ISSUE-002)",
-      "file": "scripts/example-05-pick-and-place.js"
-    },
-    {
-      "id": "DONE-003",
-      "description": "Added infinite loop guard to PA-BT Actions() (ISSUE-004)",
-      "file": "internal/builtin/pabt/state.go"
-    },
-    {
-      "id": "DONE-004",
-      "description": "Created comprehensive planning.md with 3 subagent reviews",
-      "file": "./planning.md"
-    }
+    {"id": "DONE-001", "description": "Removed actionCache (ISSUE-001)", "file": "scripts/example-05-pick-and-place.js"},
+    {"id": "DONE-002", "description": "Changed threshold to 1.5 (ISSUE-002)", "file": "scripts/example-05-pick-and-place.js"},
+    {"id": "DONE-003", "description": "Added infinite loop guard", "file": "internal/builtin/pabt/state.go"},
+    {"id": "DONE-004", "description": "Created findFirstBlocker()", "file": "scripts/example-05-pick-and-place.js"},
+    {"id": "DONE-005", "description": "Created createClearPathAction()", "file": "scripts/example-05-pick-and-place.js"},
+    {"id": "DONE-006", "description": "Created createPickObstacleAction()", "file": "scripts/example-05-pick-and-place.js"},
+    {"id": "DONE-007", "description": "ActionGenerator handles pathBlocker_*", "file": "scripts/example-05-pick-and-place.js"},
+    {"id": "DONE-008", "description": "Fixed BuildPickAndPlaceTestBinary cmd.Dir", "file": "internal/command/pick_and_place_harness_test.go"},
+    {"id": "DONE-009", "description": "Fixed buildTestBinary cmd.Dir", "file": "internal/command/shooter_game_unix_test.go"},
+    {"id": "DONE-010", "description": "Fixed buildPromptFlowTestBinary cmd.Dir", "file": "internal/command/prompt_flow_editor_test.go"}
   ],
 
   "test_requirements": {
     "mandatory": [
       "TestPickAndPlaceInitialState",
       "TestPickAndPlaceStateProgression",
+      "TestPickAndPlaceRenderOutput",
+      "TestPickAndPlaceLogging",
+      "TestPickAndPlaceModeToggle",
       "TestPickAndPlaceCompletion",
       "TestPickAndPlaceConflictResolution",
-      "All existing tests via make make-all-with-log"
+      "make make-all-with-log (100% pass)"
     ],
     "constraints": {
-      "max_timeout": "5 minutes per test",
+      "max_timeout": "12 minutes for full suite",
       "determinism": "Zero timing-dependent failures",
       "no_hardcoding": "No knowledge of blockade ring or dumpster in planning logic"
     }

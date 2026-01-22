@@ -31,9 +31,9 @@ type PickAndPlaceDebugJSON struct {
 	WinCond           int      `json:"w"`           // Win condition met (0 = false, 1 = true)
 	TargetX           *float64 `json:"a,omitempty"` // Target cube X (cube 1, optional if deleted)
 	TargetY           *float64 `json:"b,omitempty"` // Target cube Y (cube 1)
-	BlockadeCount     int      `json:"n"`           // Number of blockade cubes still at wall (0-3)
+	BlockadeCount     int      `json:"n"`           // Number of blockade cubes remaining
 	GoalBlockadeCount int      `json:"g"`           // Number of goal blockade cubes (0-7)
-	DumpsterReachable int      `json:"dr"`          // Dumpster reachable (0 = false, 1 = true)
+	// NOTE: DumpsterReachable removed - no dumpster in dynamic obstacle handling
 	GoalReachable     int      `json:"gr"`          // Goal reachable (0 = false, 1 = true)
 }
 
@@ -191,8 +191,16 @@ func (h *PickAndPlaceHarness) VerifyLogContent(substring string) error {
 // BuildPickAndPlaceTestBinary builds the osm test binary for pick-and-place tests
 func BuildPickAndPlaceTestBinary(t *testing.T) string {
 	t.Helper()
+	// Get the working directory and compute project root
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+	
 	binaryPath := filepath.Join(t.TempDir(), "osm-pickplace-test")
-	cmd := exec.Command("go", "build", "-tags=integration", "-o", binaryPath, "../../cmd/osm")
+	cmd := exec.Command("go", "build", "-tags=integration", "-o", binaryPath, "./cmd/osm")
+	cmd.Dir = projectDir // Critical: set working directory to project root
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -360,8 +368,8 @@ func TestPickAndPlaceCompletion(t *testing.T) {
 
 		// Log progress every 10 loop iterations (not tick based, since we may skip ticks)
 		if loopCount%10 == 0 || loopCount <= 5 {
-			t.Logf("Loop %d: tick=%d pos=(%.1f,%.1f) held=%d win=%d blockade=%d goalBlk=%d dumpR=%d goalR=%d",
-				loopCount, state.Tick, state.ActorX, state.ActorY, state.HeldItemID, state.WinCond, state.BlockadeCount, state.GoalBlockadeCount, state.DumpsterReachable, state.GoalReachable)
+			t.Logf("Loop %d: tick=%d pos=(%.1f,%.1f) held=%d win=%d blockade=%d goalBlk=%d goalR=%d",
+				loopCount, state.Tick, state.ActorX, state.ActorY, state.HeldItemID, state.WinCond, state.BlockadeCount, state.GoalBlockadeCount, state.GoalReachable)
 		}
 
 		// Detect if debug overlay is missing (state will have Tick=0 consistently)
@@ -569,10 +577,10 @@ func TestPickAndPlaceRenderOutput(t *testing.T) {
 		t.Error("Output should contain cube '█'")
 	}
 
-	// Verify goal (◎ for target goal, ⊙ for dumpster) is present
-	// Note: '○' is for unmarked goals, but our scenario uses forTarget=true (◎) and forBlockade=true (⊙)
-	if !containsPattern(output, "◎") && !containsPattern(output, "⊙") {
-		t.Error("Output should contain goal '◎' (target) or '⊙' (dumpster)")
+	// Verify goal (◎ for target goal) is present
+	// Note: Dumpster (⊙) has been removed - only target goal (◎) remains
+	if !containsPattern(output, "◎") {
+		t.Error("Output should contain goal '◎' (target)")
 	}
 
 	// Verify HUD elements (Mode, Tick, Goal text)
@@ -1270,9 +1278,14 @@ func parseInt(s string) (int, error) {
 // 2. Restructuring scenario to use multiple sequential PA-BT plans
 // 3. Using a different planning approach
 //
-// TODO: Implement proper conflict resolution support
+// FIXED: Dynamic obstacle detection now implemented per blueprint.json Groups A-D.
+// Path blockers computed every tick for both goal and target destinations.
 func TestPickAndPlaceConflictResolution(t *testing.T) {
-	t.Skip("KNOWN LIMITATION: PA-BT heuristic effects cannot properly handle multi-step conflict resolution. See test comment for details. Fix requires dynamic obstacle detection per blueprint.json Phase 1-4.")
+	// NOTE: Test enabled after implementing dynamic obstacle detection.
+	// The simulation now properly handles conflict resolution by:
+	// 1. Detecting path blockers dynamically via findFirstBlocker()
+	// 2. Creating ClearPath actions to move obstacles out of the way
+	// 3. Placing target temporarily when needed to clear goal area
 
 	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second)
 	defer cancel()

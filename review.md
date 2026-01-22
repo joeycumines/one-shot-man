@@ -59,11 +59,6 @@ const threshold = (entityType === 'goal' && entityId === GOAL_ID) ? 1.5 : 1.8;
 * **Remove:** `if (actionCache.has(cacheKey)) ...`
 * **Requirement:** Always instantiate fresh BT nodes and Action wrappers in the Generator. Garbage collection cost is negligible compared to correctness.
 
-### 2.3 Infinite Loop Guard
-
-**The Issue:** Infinite expansion depth during unsolvable scenarios.
-**The Fix:** Maintain the hard cap on expansion iterations (e.g., 10,000 or 1M operations) and return a hard failure to halt the agent rather than crashing the browser.
-
 ---
 
 ## 3. Architectural Overhaul: Dynamic Obstacle Handling

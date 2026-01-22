@@ -491,19 +491,6 @@ try {
                 const dist = Math.sqrt(Math.pow(cube.x - ax, 2) + Math.pow(cube.y - ay, 2));
                 const atEntity = dist <= 1.8;
                 bb.set('atEntity_' + cube.id, atEntity);
-                // DEBUG: Log target entity position
-                if (cube.id === TARGET_ID && state.tickCount >= 1160 && state.tickCount <= 1170) {
-                    log.info('syncToBlackboard TARGET', {
-                        tick: state.tickCount,
-                        cubeId: cube.id,
-                        cubeX: cube.x,
-                        cubeY: cube.y,
-                        actorX: ax,
-                        actorY: ay,
-                        dist: dist.toFixed(2),
-                        atEntity: atEntity
-                    });
-                }
             } else {
                 bb.set('atEntity_' + cube.id, false);
             }
@@ -1398,63 +1385,11 @@ try {
     }
 
     function update(state, msg) {
-        // Debug log every 50 ticks (not every tick to avoid log spam)
         if (msg.type === 'Tick' && msg.id === 'tick') {
             state.tickCount++;
             
-            // DEBUG: Log every tick from 80-100 to catch the stuck issue
-            if (state.tickCount >= 80 && state.tickCount <= 120) {
-                const actor = state.actors.get(state.activeActorId);
-                const target = state.cubes.get(TARGET_ID);
-                log.info('DEBUG_TICK', {
-                    tick: state.tickCount,
-                    actorX: actor.x,
-                    actorY: actor.y,
-                    heldItem: actor.heldItem ? actor.heldItem.id : -1,
-                    targetX: target ? target.x : 'null',
-                    targetY: target ? target.y : 'null',
-                    targetDeleted: target ? target.deleted : 'null'
-                });
-            }
-            
-            // Debug: Log every tick to track if tickCount is advancing
-            if (state.tickCount % 100 === 0 || state.tickCount > 5000) {
-                log.info('TICK UPDATE', {newTickCount: state.tickCount});
-            }
-            
-            // Check ticker error status periodically - INCREASED FREQUENCY for debugging
-            if (state.ticker && state.tickCount >= 80) {
-                const tickerErr = state.ticker.err();
-                if (tickerErr) {
-                    log.error('BT TICKER ERROR', {error: String(tickerErr), tick: state.tickCount});
-                } else if (state.tickCount % 5 === 0) {
-                    log.info('BT TICKER OK', {tick: state.tickCount});
-                }
-            } else if (state.ticker && (state.tickCount <= 10 || state.tickCount % 50 === 0)) {
-                const tickerErr = state.ticker.err();
-                if (tickerErr) {
-                    log.error('BT TICKER ERROR', {error: String(tickerErr), tick: state.tickCount});
-                }
-            }
-            
-            // Check PA-BT plan Running status when stuck (tick > 5000)
-            if (state.pabtPlan && state.tickCount > 5000 && state.tickCount % 20 === 0) {
-                try {
-                    const isRunning = state.pabtPlan.Running();
-                    const actor = state.actors.get(state.activeActorId);
-                    log.info('PA-BT STATUS', {
-                        tick: state.tickCount,
-                        isRunning: isRunning,
-                        actorX: actor.x,
-                        actorY: actor.y,
-                        heldItem: actor.heldItem ? actor.heldItem.id : -1
-                    });
-                } catch (e) {
-                    log.error('PA-BT STATUS ERROR', {tick: state.tickCount, error: String(e)});
-                }
-            }
-            
-            if (state.tickCount <= 5 || state.tickCount % 50 === 0) {
+            // Periodic status logging (every 50 ticks or first 5)
+            if (state.debugMode && (state.tickCount <= 5 || state.tickCount % 50 === 0)) {
                 const actor = state.actors.get(state.activeActorId);
                 log.debug('Tick status', {
                     tick: state.tickCount,
@@ -1464,8 +1399,16 @@ try {
                     gameMode: state.gameMode
                 });
             }
+            
+            // Check for ticker errors periodically
+            if (state.ticker && state.tickCount % 50 === 0) {
+                const tickerErr = state.ticker.err();
+                if (tickerErr) {
+                    log.error('BT TICKER ERROR', {error: String(tickerErr), tick: state.tickCount});
+                }
+            }
+            
             syncToBlackboard(state);
-            log.debug('UPDATE returning with tick cmd', {tick: state.tickCount});
             return [state, tea.tick(16, 'tick')];
         }
 
@@ -1560,11 +1503,6 @@ try {
     }
 
     function view(state) {
-        // Debug: Log EVERY view call for ticks > 5170 to catch the stuck issue
-        if (state.tickCount > 5170) {
-            log.info('VIEW START', {tick: state.tickCount});
-        }
-        
         let output = renderPlayArea(state);
         
         // Debug JSON overlay for test harness (only in test mode)
@@ -1582,17 +1520,11 @@ try {
                 if (cube && !cube.deleted) goalBlockadeCount++;
             });
             
-            // Check reachability - with logging for debug
+            // Check reachability
             const ax = Math.round(actor.x);
             const ay = Math.round(actor.y);
-            if (state.tickCount > 5170) {
-                log.info('VIEW getPathInfo START', {tick: state.tickCount});
-            }
             const dumpsterReachable = dumpster ? getPathInfo(state, ax, ay, dumpster.x, dumpster.y).reachable : false;
             const goalReachable = goal ? getPathInfo(state, ax, ay, goal.x, goal.y).reachable : false;
-            if (state.tickCount > 5170) {
-                log.info('VIEW getPathInfo DONE', {tick: state.tickCount, dumpsterReachable, goalReachable});
-            }
             
             const debugJSON = JSON.stringify({
                 m: state.gameMode === 'automatic' ? 'a' : 'm',
@@ -1612,9 +1544,6 @@ try {
             output += '\n__place_debug_start__\n' + debugJSON + '\n__place_debug_end__';
         }
         
-        if (state.tickCount > 5170) {
-            log.info('VIEW RETURNING', {tick: state.tickCount, outputLen: output.length});
-        }
         return output;
     }
 

@@ -7,7 +7,6 @@
 package bt
 
 import (
-	"log/slog"
 	"sync"
 
 	"github.com/dop251/goja"

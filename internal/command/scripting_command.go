@@ -47,7 +47,8 @@ func NewScriptingCommand(cfg *config.Config) *ScriptingCommand {
 			"Execute JavaScript scripts with deferred/declarative API",
 			"script [options] [script-file]",
 		),
-		config: cfg,
+		config:   cfg,
+		logLevel: "info", // Default log level - SetupFlags may override this
 		// No default engineFactory - Execute() will create the correct one with session/storage params
 		terminalFactory: func(ctx context.Context, engine *scripting.Engine) terminalRunner {
 			return scripting.NewTerminal(ctx, engine)

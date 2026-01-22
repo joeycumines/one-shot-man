@@ -173,7 +173,6 @@
   "already_completed": [
     {"id": "DONE-001", "description": "Removed actionCache (ISSUE-001)", "file": "scripts/example-05-pick-and-place.js"},
     {"id": "DONE-002", "description": "Changed threshold to 1.5 (ISSUE-002)", "file": "scripts/example-05-pick-and-place.js"},
-    {"id": "DONE-003", "description": "Added infinite loop guard", "file": "internal/builtin/pabt/state.go"},
     {"id": "DONE-004", "description": "Created findFirstBlocker()", "file": "scripts/example-05-pick-and-place.js"},
     {"id": "DONE-005", "description": "Created createClearPathAction()", "file": "scripts/example-05-pick-and-place.js"},
     {"id": "DONE-006", "description": "Created createPickObstacleAction()", "file": "scripts/example-05-pick-and-place.js"},

@@ -105,6 +105,18 @@ try {
             y <= GOAL_CENTER_Y + GOAL_RADIUS;
     }
 
+    // Helper: Check if point is within the Blockade Ring (surrounding the goal area)
+    // The ring is a 5x5 area minus the 3x3 goal area = 16 cells
+    function isInBlockadeRing(x, y) {
+        const ringMinX = GOAL_CENTER_X - GOAL_RADIUS - 1;
+        const ringMaxX = GOAL_CENTER_X + GOAL_RADIUS + 1;
+        const ringMinY = GOAL_CENTER_Y - GOAL_RADIUS - 1;
+        const ringMaxY = GOAL_CENTER_Y + GOAL_RADIUS + 1;
+        
+        const inRingBounds = x >= ringMinX && x <= ringMaxX && y >= ringMinY && y <= ringMaxY;
+        return inRingBounds && !isInGoalArea(x, y);
+    }
+
     function initializeSimulation() {
         const cubesInit = [];
 
@@ -374,22 +386,25 @@ try {
         bb.set('actorY', actor.y);
         bb.set('heldItemExists', actor.heldItem !== null);
         bb.set('heldItemId', actor.heldItem ? actor.heldItem.id : -1);
+        // Track whether held item is a blockade (used by Place_Held_Item to prevent dropping blockades)
+        bb.set('heldItemIsBlockade', actor.heldItem ? (GOAL_BLOCKADE_IDS.indexOf(actor.heldItem.id) >= 0) : false);
 
-        // Entities
+        // Entities - NOTE: reachable_* is NOT used by PA-BT (see createMoveToAction comments).
+        // Pathfinding is done lazily in MoveTo tick functions via findNextStep.
+        // Removed expensive getPathInfo calls that were causing 800ms per tick!
         state.cubes.forEach(cube => {
             if (!cube.deleted) {
-                const info = getPathInfo(state, ax, ay, cube.x, cube.y, cube.id);
-                bb.set('reachable_cube_' + cube.id, info.reachable);
-
                 const dist = Math.sqrt(Math.pow(cube.x - ax, 2) + Math.pow(cube.y - ay, 2));
                 bb.set('atEntity_' + cube.id, dist <= 1.8);
 
-                // Track blockade clearance
+                // Track blockade clearance - a blockade is "cleared" when moved OUTSIDE the blockade ring
+                // The ring surrounds the goal area and blocks access to it.
+                // A blockade is still blocking if it's in the ring; it's cleared if moved elsewhere.
                 if (cube.isGoalBlockade) {
-                    bb.set('goalBlockade_' + cube.id + '_cleared', false);
+                    const stillBlocking = isInBlockadeRing(cube.x, cube.y);
+                    bb.set('goalBlockade_' + cube.id + '_cleared', !stillBlocking);
                 }
             } else {
-                bb.set('reachable_cube_' + cube.id, false);
                 bb.set('atEntity_' + cube.id, false);
                 if (cube.isGoalBlockade) {
                     bb.set('goalBlockade_' + cube.id + '_cleared', true);
@@ -397,11 +412,9 @@ try {
             }
         });
 
-        // Goals
+        // Goals - NOTE: reachable_* is NOT used by PA-BT.
+        // Removed expensive getPathInfo calls.
         state.goals.forEach(goal => {
-            const info = getPathInfo(state, ax, ay, goal.x, goal.y);
-            bb.set('reachable_goal_' + goal.id, info.reachable);
-
             const dist = Math.sqrt(Math.pow(goal.x - ax, 2) + Math.pow(goal.y - ay, 2));
 
             // For Goal Area, check proximity to center implies proximity to area edges?
@@ -434,14 +447,12 @@ try {
         if (actionCache.has(cacheKey)) return actionCache.get(cacheKey);
 
         const name = 'MoveTo_' + entityType + '_' + entityId;
-        let targetKey, reachableKey;
+        let targetKey;
 
         if (entityType === 'cube') {
             targetKey = 'atEntity_' + entityId;
-            reachableKey = 'reachable_cube_' + entityId;
         } else {
             targetKey = 'atGoal_' + entityId;
-            reachableKey = 'reachable_goal_' + entityId;
         }
 
         const conditions = [];
@@ -454,11 +465,13 @@ try {
                     Match: v => v === true
                 });
             }
-        } else {
-            conditions.push({
-                key: reachableKey, Match: v => v === true
-            });
         }
+        // NOTE: We intentionally do NOT add reachable_* as a condition.
+        // Reachability is a primitive environmental fact that changes dynamically
+        // as the actor moves. The MoveTo tick function handles unreachability
+        // by returning bt.failure when pathfinding fails, which triggers replanning.
+        // Adding reachable_* as a condition would cause infinite expansion loops
+        // because there's no action that "makes" something reachable.
 
         const effects = [{key: targetKey, Value: true}];
         if (extraEffects) effects.push(...extraEffects);
@@ -502,8 +515,10 @@ try {
             if (nextStep) {
                 const stepDx = nextStep.x - actor.x;
                 const stepDy = nextStep.y - actor.y;
+                const oldX = actor.x, oldY = actor.y;
                 actor.x += Math.sign(stepDx) * Math.min(1.0, Math.abs(stepDx));
                 actor.y += Math.sign(stepDy) * Math.min(1.0, Math.abs(stepDy));
+                log.debug("MoveTo " + name + " step: (" + oldX + "," + oldY + ") -> (" + actor.x + "," + actor.y + ") via nextStep(" + nextStep.x + "," + nextStep.y + ")");
                 return bt.running;
             } else {
                 log.warn("MoveTo " + name + " pathfinding FAILED at actor(" + actor.x + "," + actor.y + ") -> target(" + targetX + "," + targetY + ")");
@@ -520,18 +535,96 @@ try {
     function setupPABTActions(state) {
         const actor = () => state.actors.get(state.activeActorId);
 
+        // =====================================================================
+        // ACTION GENERATOR - MUST return actions for ALL conditions the planner queries!
+        // 
+        // PA-BT does NOT auto-discover registered actions. The actionGenerator
+        // MUST explicitly return actions that can satisfy the failed condition.
+        // 
+        // Key insight from graphjsimpl_test.go:
+        // - failedCondition.key = the condition key being checked
+        // - failedCondition.value = the TARGET value the planner needs to achieve
+        // =====================================================================
         state.pabtState.setActionGenerator(function (failedCondition) {
             const actions = [];
             const key = failedCondition.key;
+            const targetValue = failedCondition.value;
             
             // Log EVERY call to actionGenerator to track planner activity
             log.info("ACTION_GENERATOR called", {
                 failedKey: key,
+                failedValue: targetValue,
                 failedKeyType: typeof key,
                 tick: state.tickCount
             });
 
             if (key && typeof key === 'string') {
+                // -----------------------------------------------------------------
+                // cubeDeliveredAtGoal: The GOAL condition!
+                // To achieve cubeDeliveredAtGoal=true, we need Deliver_Target
+                // But Deliver_Target requires heldItemId=TARGET_ID and atGoal_1=true
+                // -----------------------------------------------------------------
+                if (key === 'cubeDeliveredAtGoal') {
+                    // Return Deliver_Target action (must be created or retrieved)
+                    // The registered action should be returned here
+                    log.debug("ACTION_GENERATOR: returning Deliver_Target for cubeDeliveredAtGoal");
+                    const deliverAction = state.pabtState.GetAction('Deliver_Target');
+                    if (deliverAction) {
+                        actions.push(deliverAction);
+                    }
+                }
+                
+                // -----------------------------------------------------------------
+                // heldItemId: Planner needs a specific item to be held
+                // Return Pick_Target for TARGET_ID, Pick_Blockade_X for blockade IDs
+                // -----------------------------------------------------------------
+                if (key === 'heldItemId') {
+                    const itemId = targetValue;
+                    if (itemId === TARGET_ID) {
+                        log.debug("ACTION_GENERATOR: returning Pick_Target for heldItemId=" + itemId);
+                        const pickAction = state.pabtState.GetAction('Pick_Target');
+                        if (pickAction) {
+                            actions.push(pickAction);
+                        }
+                    } else if (typeof itemId === 'number' && GOAL_BLOCKADE_IDS.indexOf(itemId) >= 0) {
+                        log.debug("ACTION_GENERATOR: returning Pick_Blockade_" + itemId);
+                        const pickAction = state.pabtState.GetAction('Pick_Blockade_' + itemId);
+                        if (pickAction) {
+                            actions.push(pickAction);
+                        }
+                    }
+                }
+                
+                // -----------------------------------------------------------------
+                // heldItemExists: Planner needs hands to be free (false) or holding (true)
+                // Return Place_Held_Item or Place_Target_Temporary when value=false needed
+                // -----------------------------------------------------------------
+                if (key === 'heldItemExists') {
+                    if (targetValue === false) {
+                        log.debug("ACTION_GENERATOR: returning Place actions for heldItemExists=false");
+                        // Return both place actions - planner will choose based on preconditions
+                        const placeHeldItem = state.pabtState.GetAction('Place_Held_Item');
+                        const placeTargetTemp = state.pabtState.GetAction('Place_Target_Temporary');
+                        if (placeHeldItem) actions.push(placeHeldItem);
+                        if (placeTargetTemp) actions.push(placeTargetTemp);
+                        // CRITICAL FIX: Only return Deposit_Blockade for the CURRENTLY HELD item!
+                        // Returning all 16 Deposit actions causes PA-BT to get stuck in an infinite
+                        // loop: it tries Deposit_Blockade_100, which requires heldItemId=100,
+                        // which requires Pick_Blockade_100, which requires heldItemExists=false,
+                        // which loops back to trying all Deposit actions again.
+                        const heldId = state.blackboard.get('heldItemId');
+                        if (typeof heldId === 'number' && GOAL_BLOCKADE_IDS.indexOf(heldId) >= 0) {
+                            log.debug("ACTION_GENERATOR: returning Deposit_Blockade_" + heldId + " for currently held item");
+                            const depositAction = state.pabtState.GetAction('Deposit_Blockade_' + heldId);
+                            if (depositAction) actions.push(depositAction);
+                        }
+                    }
+                }
+                
+                // -----------------------------------------------------------------
+                // atEntity_X: Planner needs actor at entity location
+                // Return MoveTo_cube_X
+                // -----------------------------------------------------------------
                 if (key.startsWith('atEntity_')) {
                     const entityId = parseInt(key.replace('atEntity_', ''), 10);
                     if (!isNaN(entityId)) {
@@ -539,6 +632,11 @@ try {
                         actions.push(createMoveToAction(state, 'cube', entityId));
                     }
                 }
+                
+                // -----------------------------------------------------------------
+                // atGoal_X: Planner needs actor at goal location
+                // Return MoveTo_goal_X
+                // -----------------------------------------------------------------
                 if (key.startsWith('atGoal_')) {
                     const goalId = parseInt(key.replace('atGoal_', ''), 10);
                     if (!isNaN(goalId)) {
@@ -546,23 +644,39 @@ try {
                         actions.push(createMoveToAction(state, 'goal', goalId));
                     }
                 }
-                // CRITICAL: When planner needs heldItemExists=false (to pick something new),
-                // but actor is holding something, generate Place_Held_Item or Place_Target_Temporary
-                if (key === 'heldItemExists') {
-                    // The planner is checking this condition. If Match expects false and we're holding,
-                    // we need to generate actions to free hands.
-                    // Note: Place_Held_Item and Place_Target_Temporary are already registered.
-                    // But we may need to dynamically generate them here for deep dependency chains.
-                    log.debug("Action generator: heldItemExists condition requested", {key: key});
-                }
-                // Generate blockade clearing dependencies
+                
+                // -----------------------------------------------------------------
+                // goalBlockade_X_cleared: Planner needs blockade X to be cleared
+                // Clearing requires: Pick_Blockade_X + Deposit_Blockade_X
+                // Return Deposit_Blockade_X (which will cascade to Pick_Blockade_X via preconditions)
+                // -----------------------------------------------------------------
                 if (key.startsWith('goalBlockade_') && key.endsWith('_cleared')) {
                     const match = key.match(/goalBlockade_(\d+)_cleared/);
                     if (match) {
                         const blockadeId = parseInt(match[1], 10);
-                        // Generate MoveTo for this blockade
-                        log.debug("ACTION_GENERATOR: creating MoveTo for blockade", {blockadeId: blockadeId});
-                        actions.push(createMoveToAction(state, 'cube', blockadeId));
+                        log.debug("ACTION_GENERATOR: returning Deposit_Blockade_" + blockadeId + " for clearing");
+                        const depositAction = state.pabtState.GetAction('Deposit_Blockade_' + blockadeId);
+                        if (depositAction) {
+                            actions.push(depositAction);
+                        }
+                    }
+                }
+                
+                // -----------------------------------------------------------------
+                // heldItemIsBlockade: Planner needs hands to NOT hold a blockade
+                // Return Deposit_Blockade_X for the currently held blockade
+                // -----------------------------------------------------------------
+                if (key === 'heldItemIsBlockade') {
+                    if (targetValue === false) {
+                        // Get the currently held item ID
+                        const heldId = state.blackboard.get('heldItemId');
+                        if (typeof heldId === 'number' && GOAL_BLOCKADE_IDS.indexOf(heldId) >= 0) {
+                            log.debug("ACTION_GENERATOR: returning Deposit_Blockade_" + heldId + " for heldItemIsBlockade=false");
+                            const depositAction = state.pabtState.GetAction('Deposit_Blockade_' + heldId);
+                            if (depositAction) {
+                                actions.push(depositAction);
+                            }
+                        }
                     }
                 }
             }
@@ -583,8 +697,27 @@ try {
         // ---------------------------------------------------------------------
         // Pick_Target
         // ---------------------------------------------------------------------
+        // CRITICAL: Require ALL goal blockades cleared BEFORE picking up target!
+        // Otherwise PA-BT will pick up target first, then be stuck because:
+        // - To deliver: need to MoveTo_goal_1
+        // - MoveTo_goal_1 needs all goalBlockade_X_cleared
+        // - To clear blockades: need to Pick_Blockade_X
+        // - Pick_Blockade_X needs heldItemExists=false
+        // - But we're already holding the target!
+        // By adding all goalBlockade_X_cleared as preconditions, PA-BT knows
+        // it needs to clear blockades BEFORE picking up the target.
+        // CRITICAL: Put blockade conditions FIRST so PA-BT expands them before atEntity_1
+        // (PA-BT checks preconditions in order, first unsatisfied one triggers action generation)
+        const pickTargetConditions = [];
+        // Add each blockade as an explicit precondition FIRST
+        for (let id of GOAL_BLOCKADE_IDS) {
+            pickTargetConditions.push({k: 'goalBlockade_' + id + '_cleared', v: true});
+        }
+        // Then add the normal preconditions
+        pickTargetConditions.push({k: 'heldItemExists', v: false});
+        pickTargetConditions.push({k: 'atEntity_' + TARGET_ID, v: true});
         reg('Pick_Target',
-            [{k: 'heldItemExists', v: false}, {k: 'atEntity_' + TARGET_ID, v: true}],
+            pickTargetConditions,
             [{k: 'heldItemId', v: TARGET_ID}, {k: 'heldItemExists', v: true}],
             function () {
                 const a = actor();
@@ -660,7 +793,9 @@ try {
         GOAL_BLOCKADE_IDS.forEach(function (id) {
             reg('Pick_Blockade_' + id,
                 [{k: 'heldItemExists', v: false}, {k: 'atEntity_' + id, v: true}],
-                [{k: 'heldItemId', v: id}, {k: 'heldItemExists', v: true}, {k: 'reachable_cube_' + TARGET_ID, v: true}],
+                // NOTE: We intentionally do NOT claim this makes the target reachable.
+                // Reachability is determined by the environment, not by picking up blockades.
+                [{k: 'heldItemId', v: id}, {k: 'heldItemExists', v: true}],
                 function () {
                     const a = actor();
                     const c = state.cubes.get(id);
@@ -680,6 +815,7 @@ try {
                     if (state.blackboard) {
                         state.blackboard.set('heldItemId', id);
                         state.blackboard.set('heldItemExists', true);
+                        state.blackboard.set('heldItemIsBlockade', true);
                     }
                     return bt.success;
                 }
@@ -690,7 +826,7 @@ try {
             // ---------------------------------------------------------------------
             reg('Deposit_Blockade_' + id,
                 [{k: 'heldItemId', v: id}, {k: 'atGoal_' + DUMPSTER_ID, v: true}],
-                [{k: 'heldItemExists', v: false}, {k: 'heldItemId', v: -1}, {
+                [{k: 'heldItemExists', v: false}, {k: 'heldItemId', v: -1}, {k: 'heldItemIsBlockade', v: false}, {
                     k: 'goalBlockade_' + id + '_cleared',
                     v: true
                 }],
@@ -705,6 +841,12 @@ try {
                         actorX: a.x,
                         actorY: a.y
                     });
+                    
+                    // Mark the blockade as deleted (removed from the world)
+                    const blockade = state.cubes.get(id);
+                    if (blockade) {
+                        blockade.deleted = true;
+                    }
                     
                     a.heldItem = null;
                     if (state.blackboard) {
@@ -761,9 +903,11 @@ try {
         // ---------------------------------------------------------------------
         // Place_Held_Item (Generic Drop to free hands)
         // Satisfies the removal of Staging Area logic.
+        // CRITICAL: Cannot use this action for blockades - only Deposit_Blockade_X at dumpster!
+        // Otherwise PA-BT would just drop blockades in the ring, not at the dumpster.
         // ---------------------------------------------------------------------
         reg('Place_Held_Item',
-            [{k: 'heldItemExists', v: true}],
+            [{k: 'heldItemExists', v: true}, {k: 'heldItemIsBlockade', v: false}],
             [{k: 'heldItemExists', v: false}, {k: 'heldItemId', v: -1}],
             function () {
                 const a = actor();
@@ -778,11 +922,13 @@ try {
                     tick: state.tickCount,
                     id: a.heldItem.id,
                     actorX: a.x,
-                    actorY: a.y
+                    actorY: a.y,
+                    placedAt: {x: spot.x, y: spot.y}
                 });
 
                 // Re-instantiate the item in the world
-                const c = state.cubes.get(a.heldItem.id);
+                const itemId = a.heldItem.id;
+                const c = state.cubes.get(itemId);
                 if (c) {
                     c.deleted = false;
                     c.x = spot.x;
@@ -793,6 +939,19 @@ try {
                 if (state.blackboard) {
                     state.blackboard.set('heldItemExists', false);
                     state.blackboard.set('heldItemId', -1);
+                    
+                    // If this was a goal blockade, update cleared status based on new position
+                    // A blockade is cleared if it's no longer in the ring surrounding the goal
+                    if (GOAL_BLOCKADE_IDS.indexOf(itemId) >= 0) {
+                        const stillBlocking = isInBlockadeRing(spot.x, spot.y);
+                        state.blackboard.set('goalBlockade_' + itemId + '_cleared', !stillBlocking);
+                        log.debug("Place_Held_Item: blockade status", {
+                            blockadeId: itemId,
+                            placedAt: spot,
+                            stillBlocking: stillBlocking,
+                            cleared: !stillBlocking
+                        });
+                    }
                 }
                 return bt.success;
             }
@@ -869,6 +1028,7 @@ try {
         draw('═════════════════════════');
         draw('Mode: ' + state.gameMode.toUpperCase());
         draw('Goal: 3x3 Area');
+        draw('Tick: ' + state.tickCount);  // Force bubbletea renderer to see change
         if (state.winConditionMet) draw('*** GOAL ACHIEVED! ***');
         draw('');
         draw('CONTROLS');
@@ -914,11 +1074,33 @@ try {
         if (msg.type === 'Tick' && msg.id === 'tick') {
             state.tickCount++;
             
+            // Debug: Log every tick to track if tickCount is advancing
+            if (state.tickCount % 100 === 0 || state.tickCount > 5000) {
+                log.info('TICK UPDATE', {newTickCount: state.tickCount});
+            }
+            
             // Check ticker error status periodically
             if (state.ticker && (state.tickCount <= 10 || state.tickCount % 50 === 0)) {
                 const tickerErr = state.ticker.err();
                 if (tickerErr) {
                     log.error('BT TICKER ERROR', {error: String(tickerErr), tick: state.tickCount});
+                }
+            }
+            
+            // Check PA-BT plan Running status when stuck (tick > 5000)
+            if (state.pabtPlan && state.tickCount > 5000 && state.tickCount % 20 === 0) {
+                try {
+                    const isRunning = state.pabtPlan.Running();
+                    const actor = state.actors.get(state.activeActorId);
+                    log.info('PA-BT STATUS', {
+                        tick: state.tickCount,
+                        isRunning: isRunning,
+                        actorX: actor.x,
+                        actorY: actor.y,
+                        heldItem: actor.heldItem ? actor.heldItem.id : -1
+                    });
+                } catch (e) {
+                    log.error('PA-BT STATUS ERROR', {tick: state.tickCount, error: String(e)});
                 }
             }
             
@@ -1027,6 +1209,11 @@ try {
     }
 
     function view(state) {
+        // Debug: Log EVERY view call for ticks > 5170 to catch the stuck issue
+        if (state.tickCount > 5170) {
+            log.info('VIEW START', {tick: state.tickCount});
+        }
+        
         let output = renderPlayArea(state);
         
         // Debug JSON overlay for test harness (only in test mode)
@@ -1044,11 +1231,17 @@ try {
                 if (cube && !cube.deleted) goalBlockadeCount++;
             });
             
-            // Check reachability
+            // Check reachability - with logging for debug
             const ax = Math.round(actor.x);
             const ay = Math.round(actor.y);
+            if (state.tickCount > 5170) {
+                log.info('VIEW getPathInfo START', {tick: state.tickCount});
+            }
             const dumpsterReachable = dumpster ? getPathInfo(state, ax, ay, dumpster.x, dumpster.y).reachable : false;
             const goalReachable = goal ? getPathInfo(state, ax, ay, goal.x, goal.y).reachable : false;
+            if (state.tickCount > 5170) {
+                log.info('VIEW getPathInfo DONE', {tick: state.tickCount, dumpsterReachable, goalReachable});
+            }
             
             const debugJSON = JSON.stringify({
                 m: state.gameMode === 'automatic' ? 'a' : 'm',
@@ -1068,6 +1261,9 @@ try {
             output += '\n__place_debug_start__\n' + debugJSON + '\n__place_debug_end__';
         }
         
+        if (state.tickCount > 5170) {
+            log.info('VIEW RETURNING', {tick: state.tickCount, outputLen: output.length});
+        }
         return output;
     }
 

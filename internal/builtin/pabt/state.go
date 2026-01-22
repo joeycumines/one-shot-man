@@ -276,6 +276,10 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 
 	var relevantActions []pabtpkg.IAction
 
+	// Track whether ActionGenerator returned any actions for this condition.
+	// If so, the generator is authoritative and we don't scan the static registry.
+	generatorHandled := false
+
 	// 1. Call ActionGenerator if set (parametric actions)
 	s.mu.RLock()
 	generator := s.actionGenerator
@@ -298,13 +302,21 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 					relevantActions = append(relevantActions, action)
 				}
 			}
+			// If generator returned any actions (even if not all were relevant),
+			// it's authoritative for this condition
+			if len(generatedActions) > 0 {
+				generatorHandled = true
+			}
 		}
 	}
 
 	// 2. Filter static registry actions for relevance
-	for _, action := range registeredActions {
-		if s.actionHasRelevantEffect(action, failedKey, failed) {
-			relevantActions = append(relevantActions, action)
+	// ONLY if ActionGenerator didn't handle this condition
+	if !generatorHandled {
+		for _, action := range registeredActions {
+			if s.actionHasRelevantEffect(action, failedKey, failed) {
+				relevantActions = append(relevantActions, action)
+			}
 		}
 	}
 

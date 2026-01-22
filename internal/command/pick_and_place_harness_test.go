@@ -1292,6 +1292,8 @@ func TestPickAndPlaceConflictResolution(t *testing.T) {
 
 	// Monitor until win condition or timeout
 	loopCount := 0
+	stuckCount := 0
+	lastTick := int64(0)
 	for {
 		loopCount++
 
@@ -1303,6 +1305,22 @@ func TestPickAndPlaceConflictResolution(t *testing.T) {
 		}
 
 		state := harness.GetDebugState()
+
+		// Detect when tick is stuck - NOTE: Increased threshold from 2 to 10 to
+		// account for PTY buffer refresh delays. The internal simulation may be
+		// running faster than the screen buffer updates.
+		if state.Tick == lastTick {
+			stuckCount++
+			if stuckCount == 10 {
+				// After 10 consecutive checks with no progress, dump logs and fail fast
+				content, _ := os.ReadFile(logFilePath)
+				t.Logf("=== TICK STUCK at %d, dumping logs (last 8000 bytes) ===\n%s", state.Tick, truncateFromEnd(string(content), 8000))
+				t.Fatalf("TICK STUCK - tick=%d is not advancing after 10 WaitForFrames iterations", state.Tick)
+			}
+		} else {
+			stuckCount = 0
+			lastTick = state.Tick
+		}
 
 		// Dump log periodically for debugging
 		if loopCount%30 == 0 {

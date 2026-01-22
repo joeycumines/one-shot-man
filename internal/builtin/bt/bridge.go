@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -338,6 +339,8 @@ func (b *Bridge) RunOnLoopSync(fn func(*goja.Runtime) error) error {
 		case <-b.Done():
 			return errors.New("bridge stopped before completion")
 		case <-timer.C:
+			// NOTE: Print to stderr so it's VISIBLE in test output (slog goes to file)
+			fmt.Fprintf(os.Stderr, "\n!!! TIMEOUT: RunOnLoopSync timed out after %v - event loop may be blocked !!!\n", timeout)
 			return fmt.Errorf("operation timed out after %v (consider increasing timeout or checking for infinite loops in JS code)", timeout)
 		}
 	}

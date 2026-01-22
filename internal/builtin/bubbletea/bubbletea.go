@@ -583,6 +583,11 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Log Update calls for debugging tick loop issues
+	if msgType, ok := jsMsg["type"].(string); ok && msgType == "Tick" {
+		slog.Debug("bubbletea: Update called with Tick message", "id", jsMsg["id"])
+	}
+
 	// Check if this message type should force an immediate render
 	if m.throttleEnabled && m.alwaysRenderTypes != nil {
 		if msgType, ok := jsMsg["type"].(string); ok {
@@ -607,6 +612,9 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	})
 	if err != nil {
 		// Event loop error - return current state unchanged
+		// NOTE: Using fmt.Fprintf to stderr so it's VISIBLE in test output (slog goes to file)
+		fmt.Fprintf(os.Stderr, "\n!!! CRITICAL: bubbletea Update RunJSSync error: %v (msgType=%v) - TICK LOOP BROKEN !!!\n", err, jsMsg["type"])
+		slog.Error("bubbletea: Update: RunJSSync error, returning nil cmd (breaks tick loop!)", "error", err, "msgType", jsMsg["type"])
 		return m, nil
 	}
 	return m, cmd
@@ -623,12 +631,21 @@ func (m *jsModel) updateDirect(jsMsg map[string]interface{}) tea.Cmd {
 	result, err := m.updateFn(goja.Undefined(), m.runtime.ToValue(jsMsg), state)
 	if err != nil {
 		slog.Error("bubbletea: updateDirect: JS update function error", "error", err, "msgType", jsMsg["type"])
+		fmt.Fprintf(os.Stderr, "\n!!! JS UPDATE ERROR: %v (msgType=%v) !!!\n", err, jsMsg["type"])
 		return nil
 	}
+	slog.Debug("bubbletea: updateDirect: JS update returned successfully", "msgType", jsMsg["type"])
 
 	// Result should be [newState, cmd] array
 	resultObj := result.ToObject(m.runtime)
 	if resultObj == nil || resultObj.ClassName() != "Array" {
+		slog.Error("bubbletea: updateDirect: update did not return [state, cmd] array", "resultObj", resultObj, "className", func() string {
+			if resultObj == nil {
+				return "nil"
+			} else {
+				return resultObj.ClassName()
+			}
+		}())
 		return nil
 	}
 
@@ -639,7 +656,11 @@ func (m *jsModel) updateDirect(jsMsg map[string]interface{}) tea.Cmd {
 
 	// Extract command
 	cmdVal := resultObj.Get("1")
-	return m.valueToCmd(cmdVal)
+	cmd := m.valueToCmd(cmdVal)
+	if cmd == nil {
+		slog.Warn("bubbletea: updateDirect: valueToCmd returned nil", "cmdVal", cmdVal)
+	}
+	return cmd
 }
 
 // View implements tea.Model.
@@ -846,9 +867,11 @@ func isCtrlKey(kt tea.KeyType) bool {
 // 2. Command descriptor objects (e.g., {_cmdType: "quit"} from JS tea.quit())
 func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 	if m == nil || m.runtime == nil {
+		slog.Warn("bubbletea: valueToCmd: nil model or runtime")
 		return nil
 	}
 	if goja.IsUndefined(val) || goja.IsNull(val) {
+		slog.Warn("bubbletea: valueToCmd: cmd value is undefined/null")
 		return nil
 	}
 
@@ -864,6 +887,7 @@ func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 	// Not a wrapped Go function - try command descriptor object
 	obj := val.ToObject(m.runtime)
 	if obj == nil {
+		slog.Warn("bubbletea: valueToCmd: cmd is not an object")
 		return nil
 	}
 
@@ -871,6 +895,7 @@ func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 	if m.runtime.Try(func() {
 		cmdType = obj.Get("_cmdType")
 	}) != nil || cmdType == nil || !cmdType.ToBoolean() {
+		slog.Warn("bubbletea: valueToCmd: cmd object has no _cmdType (may be a foreign Go func)")
 		return nil
 	}
 
@@ -972,10 +997,12 @@ func (m *jsModel) extractSequenceCmd(obj *goja.Object) tea.Cmd {
 func (m *jsModel) extractTickCmd(obj *goja.Object) tea.Cmd {
 	durationVal := obj.Get("duration")
 	if goja.IsUndefined(durationVal) || goja.IsNull(durationVal) {
+		slog.Warn("bubbletea: extractTickCmd: duration is nil/undefined")
 		return nil
 	}
 	durationMs := durationVal.ToInteger()
 	if durationMs <= 0 {
+		slog.Warn("bubbletea: extractTickCmd: duration <= 0", "durationMs", durationMs)
 		return nil
 	}
 
@@ -985,8 +1012,18 @@ func (m *jsModel) extractTickCmd(obj *goja.Object) tea.Cmd {
 		id = idVal.String()
 	}
 
+	slog.Debug("bubbletea: extractTickCmd: scheduling tick", "id", id, "durationMs", durationMs)
+	// DEBUG: Print to stderr to see if ticks are being scheduled after freeze
+	if id != "" {
+		fmt.Fprintf(os.Stderr, "[TICK] scheduling tick id=%s duration=%dms\n", id, durationMs)
+	}
 	duration := time.Duration(durationMs) * time.Millisecond
 	return tea.Tick(duration, func(t time.Time) tea.Msg {
+		slog.Debug("bubbletea: tick callback fired", "id", id, "time", t)
+		// DEBUG: Print to stderr when tick callback fires
+		if id != "" {
+			fmt.Fprintf(os.Stderr, "[TICK] callback fired id=%s\n", id)
+		}
 		return tickMsg{id: id, time: t}
 	})
 }

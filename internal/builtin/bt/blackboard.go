@@ -44,12 +44,7 @@ func (b *Blackboard) Get(key string) any {
 	if b.data == nil {
 		return nil
 	}
-	val := b.data[key]
-	// DEBUG: Track heldItemId reads
-	if key == "heldItemId" {
-		slog.Debug("BB.Get", "key", "heldItemId", "val", val)
-	}
-	return val
+	return b.data[key]
 }
 
 // Set stores a value in the blackboard.
@@ -58,10 +53,6 @@ func (b *Blackboard) Set(key string, value any) {
 	defer b.mu.Unlock()
 	b.init()
 	b.data[key] = value
-	// DEBUG: Track heldItemId changes
-	if key == "heldItemId" {
-		slog.Debug("BB.Set", "key", "heldItemId", "val", value)
-	}
 }
 
 // Has returns true if the key exists in the blackboard.

@@ -289,7 +289,7 @@
       "TestPickAndPlaceStateProgression",
       "TestPickAndPlaceCompletion",
       "TestPickAndPlaceConflictResolution",
-      "All existing tests via make all"
+      "All existing tests via make make-all-with-log"
     ],
     "constraints": {
       "max_timeout": "5 minutes per test",

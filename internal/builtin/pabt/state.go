@@ -18,10 +18,6 @@ var _ pabtpkg.IState = (*State)(nil)
 // Set OSM_DEBUG_PABT=1 to enable.
 var debugPABT = os.Getenv("OSM_DEBUG_PABT") == "1"
 
-// actionsCallCounter tracks how many times Actions() is called for debugging infinite loops
-var actionsCallCounter int64
-var actionsCallMu sync.Mutex
-
 // State implements pabtpkg.State (which is State[Condition]) interface backed by a bt.Blackboard.
 // It normalizes any key type to string for blackboard storage and provides
 // access to a registry of actions.
@@ -197,28 +193,6 @@ func (s *State) Variable(key any) (any, error) {
 // Special case: If failed is nil, returns all registered actions (for backward
 // compatibility and testing purposes).
 func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
-	// Track call count to detect infinite loops
-	actionsCallMu.Lock()
-	actionsCallCounter++
-	callCount := actionsCallCounter
-	actionsCallMu.Unlock()
-
-	// CRITICAL FIX (ISSUE-004): Detect AND STOP infinite loop
-	// Previous implementation only warned but didn't stop, causing BT ticker to freeze.
-	// If Actions() is called more than 1 million times, this is definitely an infinite loop.
-	// Normal pick-and-place with 16 blockades should need at most ~50k calls over entire run.
-	// Return an error to break the expansion and allow graceful timeout.
-	if callCount > 1000000 {
-		if callCount%100000 == 0 {
-			slog.Error("[PA-BT] Actions() infinite loop detected - ABORTING expansion", "callCount", callCount)
-		}
-		return nil, fmt.Errorf("PA-BT infinite loop detected: Actions() called %d times, aborting", callCount)
-	}
-	// Warn at lower threshold for debugging
-	if callCount > 50000 && callCount%10000 == 0 {
-		slog.Warn("[PA-BT WARN] Actions() high call count - possible infinite loop", "callCount", callCount)
-	}
-
 	// Get statically registered actions
 	registeredActions := s.actions.All()
 

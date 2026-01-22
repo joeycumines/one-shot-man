@@ -984,9 +984,10 @@ func TestPickAndPlaceLogging(t *testing.T) {
 	}
 
 	// Verify tick messages are being processed
-	if err := harness.VerifyLogContent("Tick 1"); err != nil {
+	// Note: The script logs "Tick status" with {"tick":N} in JSON fields, not "Tick 1"
+	if err := harness.VerifyLogContent(`"tick":1`); err != nil {
 		content, _ := os.ReadFile(config.LogFilePath)
-		t.Logf("Log file content (checking for Tick 1):\n%s", string(content))
+		t.Logf("Log file content (checking for tick 1):\n%s", string(content))
 		t.Fatalf("Tick messages not being processed: %v", err)
 	}
 

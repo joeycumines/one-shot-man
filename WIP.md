@@ -4,8 +4,8 @@
 Complete architectural overhaul: Remove ALL hardcoded blockade handling, implement DYNAMIC obstacle discovery per PA-BT principles. **MUST complete EVERY task in blueprint.json.**
 
 ## Status
-- **Date**: 2026-01-22
-- **Phase**: EXECUTING GROUP E - Integration Tests
+- **Date**: 2026-01-23
+- **Phase**: EXECUTING CRITICAL GROUP - ClearPath Decomposition
 
 ## Reference
 - See `./blueprint.json` for EXHAUSTIVE task list (7 groups with review cycles)
@@ -28,31 +28,22 @@ Complete architectural overhaul: Remove ALL hardcoded blockade handling, impleme
 - ✅ Group D: Cleanup & Simplification (4 tasks)
 - ✅ Group D Review: (3 review tasks)
 
-## Current Focus: Group E - Integration Tests
-- ⏳ E-T01: Add TestPickAndPlaceDynamicBlockerDetection
-- ⏳ E-T02: Add TestPickAndPlaceClearPathAction
-- ⏳ **E-T03: Enable/Fix TestPickAndPlaceConflictResolution** ← CURRENT
-  - **LATEST DISCOVERY (tick 794 debug)**:
-    - Precondition reordering FIXED: actor now reaches goal area (5,15) ✅
-    - ClearPath_100_for_goal_1 IS executing and succeeds at tick 790 ✅
-    - BUT: placement validation uses `findFirstBlocker` which returns NEAREST cube to actor
-    - Cube 100 placed at (4,14) or (5,16) - still detected as "blocking" because:
-      - `findFirstBlocker` adds ALL blocked cells encountered by BFS to frontier
-      - Sorts by distance to ACTOR (wrong! design doc says distance to TARGET)
-      - Cube 100 at (4,14) is distance 2 from actor, same as ring cubes
-    - **FIX**: Change placement validation to use `getPathInfo().reachable` instead of `findFirstBlocker() !== blockerId`
-    - This checks if path to goal is ACTUALLY clear, not just if specific cube is still blocking
-- ⏳ E-T04: Add TestPickAndPlaceNoHardcodedBlockades
-- ⏳ E-T05: Run full test suite 100% pass
+## Current Focus: CRITICAL - ClearPath Decomposition
+### DONE:
+- ✅ CRIT-01: Removed createClearPathAction entirely
+- ✅ CRIT-02: Created createPickGoalBlockadeAction (Pick_GoalBlockade_X)
+- ✅ CRIT-03: Created createDepositGoalBlockadeAction (Deposit_GoalBlockade_X)
+- ✅ CRIT-04: Updated ActionGenerator to produce decomposed actions
+- ✅ Removed pathBlocker_goal_1 precondition from Pick_Target (allows conflict resolution pattern)
 
-## Pending Groups
-- Group E Review: 3 review cycle tasks
-- Group F: Final Verification (4 tasks)
+### CURRENT ISSUE:
+- Place_Target_Temporary executes at tick 3536 ✅
+- But then tick gets STUCK at 3538
+- Agent placed target at (9,19)
+- Now needs to: Pick_GoalBlockade → Deposit_GoalBlockade → Pick_Target → Deliver
+- Something in the planning loop is causing infinite expansion
 
-## Already Implemented
-- ✅ findFirstBlocker() function
-- ✅ createClearPathAction() for dynamic clearing
-- ✅ createPickObstacleAction() for dynamic picking
-- ✅ ActionGenerator handles pathBlocker_* keys
-- ✅ Threshold set to 1.5
-- ✅ actionCache removed
+### Next Steps:
+1. Investigate why tick is stuck after Place_Target_Temporary
+2. Check if ActionGenerator is returning proper actions for clearing the blocker
+3. May need to add pathBlocker detection when NOT holding target

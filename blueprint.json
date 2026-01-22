@@ -112,13 +112,37 @@
       ]
     },
 
+    "GROUP_CRITICAL_CLEARPATH_DECOMPOSITION": {
+      "title": "CRITICAL: ClearPath Decomposition (PA-BT Compliance)",
+      "status": "IN_PROGRESS",
+      "priority": "HIGHEST - ARCHITECTURAL VIOLATION FIX",
+      "notes": "review.md Section 3.2 explicitly forbids atomic ClearPath. Must decompose into Pick + Place per PA-BT granularity.",
+      "tasks": [
+        {"id": "CRIT-01", "title": "REMOVE createClearPathAction entirely", "status": "TODO", "file": "scripts/example-05-pick-and-place.js", "reason": "Atomic pattern violates PA-BT principle of decomposable actions"},
+        {"id": "CRIT-02", "title": "Create Pick_GoalBlockade_X action template", "status": "TODO", "file": "scripts/example-05-pick-and-place.js", "reason": "Standard Pick action for ring blockers, matches test harness expectation"},
+        {"id": "CRIT-03", "title": "Create Deposit_GoalBlockade_X action template", "status": "TODO", "file": "scripts/example-05-pick-and-place.js", "reason": "Standard Place action for ring blockers, matches test harness expectation"},
+        {"id": "CRIT-04", "title": "Update ActionGenerator to produce Pick_GoalBlockade + MoveTo + Deposit_GoalBlockade sequence", "status": "TODO", "file": "scripts/example-05-pick-and-place.js", "reason": "Generator must produce decomposed actions not atomic ClearPath"},
+        {"id": "CRIT-05", "title": "Verify test harness detects GOAL_WALL_CLEAR events", "status": "TODO", "file": "internal/command/pick_and_place_harness_test.go", "reason": "Harness looks for Pick_GoalBlockade_ and Deposit_GoalBlockade_ prefixes"}
+      ]
+    },
+
+    "GROUP_CRITICAL_REVIEW": {
+      "title": "CRITICAL Group Review Cycle",
+      "status": "TODO",
+      "tasks": [
+        {"id": "CRIT-REVIEW-1", "title": "Review CRITICAL group with subagent", "status": "TODO", "output": "./reviews/09-critical.md"},
+        {"id": "CRIT-FIX", "title": "Address CRITICAL review issues", "status": "TODO"},
+        {"id": "CRIT-REVIEW-2", "title": "Re-review CRITICAL group", "status": "TODO", "output": "./reviews/10-critical-rereview.md"}
+      ]
+    },
+
     "GROUP_E_INTEGRATION_TESTS": {
       "title": "Group E: Integration Tests",
       "status": "TODO",
       "tasks": [
         {"id": "E-T01", "title": "Add TestPickAndPlaceDynamicBlockerDetection", "status": "TODO", "file": "internal/command/pick_and_place_unit_test.go"},
         {"id": "E-T02", "title": "Add TestPickAndPlaceClearPathAction", "status": "TODO", "file": "internal/command/pick_and_place_unit_test.go"},
-        {"id": "E-T03", "title": "Enable/Fix TestPickAndPlaceConflictResolution", "status": "TODO", "file": "internal/command/pick_and_place_harness_test.go"},
+        {"id": "E-T03", "title": "Verify TestPickAndPlaceConflictResolution PASSES with decomposed actions", "status": "TODO", "file": "internal/command/pick_and_place_harness_test.go"},
         {"id": "E-T04", "title": "Add TestPickAndPlaceNoHardcodedBlockades", "status": "TODO", "file": "internal/command/pick_and_place_unit_test.go"},
         {"id": "E-T05", "title": "Run full test suite 100% pass", "status": "TODO"}
       ]

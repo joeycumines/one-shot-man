@@ -12,13 +12,13 @@ To ensure the system functions as a dynamic planner rather than a scripted state
 The fundamental atom of the system is not the Action, but the PPA expansion. The planner does not generate a linear queue of tasks; it generates a tree that satisfies conditions.
 
 * **Structure:** `Fallback(Condition C, Sequence(Preconditions(A), A))`
-* **Lazy Expansion:** The planner **must not** expand a subtree unless the Postcondition  is currently `Failure`. Expanding conditions that are already met or not yet relevant leads to computational waste and logic cycles.
+* **Lazy Expansion:** The planner **must not** expand a subtree unless the Postcondition is currently `Failure`. Expanding conditions that are already met or not yet relevant leads to computational waste and logic cycles.
 
 ### 1.2 Truthful Effects (The Anti-Livelock Rule)
 
 For the reactive loop to function, the **Descriptive Model** (what the planner thinks an action does) must match the **Operational Model** (what the physics engine actually does).
 
-* **Rule:** If Action  claims `Effect: X=True`, executing  must physically result in .
+* **Rule:** If Action claims `Effect: X=True`, executing must physically result in .
 * **Violation:** If `MoveTo` claims success based on a distance of , but `Pick` requires a distance of , the planner enters a Livelock (believes it is at the goal, attempts to pick, fails, believes it is at the goal).
 
 ### 1.3 Conflict Resolution via Priority Inversion
@@ -98,15 +98,16 @@ Remove all blockade-related preconditions. `Pick_Target` should only assert loca
 reg('Pick_Target',
     // Preconditions
     [
-        { k: 'heldItemExists', v: false }, 
-        { k: 'atEntity_' + TARGET_ID, v: true } 
+        {k: 'heldItemExists', v: false},
+        {k: 'atEntity_' + TARGET_ID, v: true}
     ],
     // Effects
     [
-        { k: 'heldItemId', v: TARGET_ID }, 
-        { k: 'heldItemExists', v: true }
+        {k: 'heldItemId', v: TARGET_ID},
+        {k: 'heldItemExists', v: true}
     ],
-    function () { /* Standard Pick Logic */ }
+    function () { /* Standard Pick Logic */
+    }
 );
 
 ```
@@ -131,27 +132,29 @@ state.pabtState.setActionGenerator(function (failedCondition) {
 
     // Trigger: Planner cannot reach a destination (Target OR Goal)
     if (key.startsWith('reachable_') || key.startsWith('atEntity_')) {
-        const targetId = extractId(key); 
-        
+        const targetId = extractId(key);
+
         // 1. Run A* to find the FIRST blocking entity on the path
         const blockerId = findFirstBlockerOnPath(state, actor, targetId);
-        
+
         if (blockerId !== -1) {
             // 2. Generate the Bridge Action
             // Name: ClearPathTo_<target>_via_<blocker>
             const actionName = `ClearBlocker_${blockerId}_For_${targetId}`;
-            
+
             // The Bridge Action does NOT execute logic. 
             // It simply asserts: "If Blocker X is cleared, Path is reachable."
-            const dummyTick = function () { return bt.success; };
+            const dummyTick = function () {
+                return bt.success;
+            };
             const node = bt.createLeafNode(dummyTick);
-            
+
             actions.push(pabt.newAction(
                 actionName,
                 // PRECONDITION: The specific blocker must be cleared
-                [{ key: `goalBlockade_${blockerId}_cleared`, Match: v => v === true }], 
+                [{key: `goalBlockade_${blockerId}_cleared`, Match: v => v === true}],
                 // EFFECT: The path is now considered reachable
-                [{ key: key, Value: true }], 
+                [{key: key, Value: true}],
                 node
             ));
         }
@@ -167,10 +170,9 @@ Once the Bridge Action is inserted, the planner sees a new unmet precondition: `
 
 * The Generator now offers a **standard** `Pick` and `Place` sequence to satisfy this.
 * This decomposes the "Atomic ClearPath" into discrete PA-BT nodes:
+
 1. `Pick(Blocker)`
 2. `Place(Blocker, valid_spot)`
-
-
 
 ---
 
@@ -189,7 +191,8 @@ Once the Bridge Action is inserted, the planner sees a new unmet precondition: `
 **The Issue:** `Place_Obstacle` secretly rejects the Target ID inside its tick function, but the Action Template does not declare this restriction.
 **The Consequence:** The planner plans to use `Place_Obstacle` to move the target out of the way, but the action fails repeatedly at runtime (Livelock).
 **The Fix:** 1.  **Explicit Preconditions:** If `Place_Obstacle` cannot handle the target, add a precondition: `{ k: 'heldItemIsTarget', v: false }`.
-2.  **Generalize Placement:** Ideally, allow `Place_Obstacle` to place *any* item (including the target) into a safe, non-blocking zone. This requires a `FindSafeSpot` routine that checks A* connectivity before placing.
+
+2. **Generalize Placement:** Ideally, allow `Place_Obstacle` to place *any* item (including the target) into a safe, non-blocking zone. This requires a `FindSafeSpot` routine that checks A* connectivity before placing.
 
 ---
 
@@ -198,25 +201,125 @@ Once the Bridge Action is inserted, the planner sees a new unmet precondition: `
 To achieve internal consistency and robustness, perform these steps in order:
 
 1. **Runtime Sanitization:**
+
 * Set `MoveTo` success threshold to `1.5` (or consistent strict adjacency).
 * Disable `actionCache`.
 
 
 2. **Blackboard Logic Update:**
+
 * Remove `if (holding target)` check for blocker detection.
 * Compute `pathBlocker_to_Goal` AND `pathBlocker_to_Target` every tick using A*.
 
 
 3. **Action Refactoring:**
+
 * **Strip** `Pick_Target` of all 16 `goalBlockade` preconditions.
 * **Refactor** `Place_Obstacle` to be truthful about what it can place, or generalize it to handle the Target.
 
 
 4. **Generator Logic Update (The Bridge):**
+
 * Implement the `findFirstBlockerOnPath` logic within the Generator (or access cached Blackboard result).
 * Inject `ClearBlocker` Bridge Actions when `atEntity/reachable` fails.
 * Ensure `ClearBlocker` preconditions link to `goalBlockade_ID_cleared`.
 
 
 5. **Verify Decomposition:**
+
 * Ensure `goalBlockade_ID_cleared` is achieved by `Deposit_Blockade` (Pick -> Place), **not** by a magical atomic function.
+
+---
+
+Based on the Planning and Acting using Behavior Trees (PA-BT) framework described in the uploaded literature (specifically the work of Colledanchise and Ögren), the following is a formalized definition of exhaustive **Action Templates**.
+
+These templates are designed for a **Complex Dynamic Pick-and-Place Domain**, extending beyond simple transport to include resource management (battery), heterogeneous tool usage (gripper changing), perception (object localization), and dynamic recovery (handling slips/obstacles).
+
+### 1. Formal Definition of an Action Template
+
+In PA-BT, an Action Template is not merely the executable code; it is the semantic unit used by the backchaining algorithm to synthesize the tree.
+
+Let be the state space. An Action Template is defined as a tuple:
+
+Where:
+
+* ** (Action):** The executable behavior node (typically a `Sequence` of primitives or a reactive `Action` leaf). It returns `Success`, `Failure`, or `Running`.
+* ** (Preconditions):** A set of logical conditions that must be satisfied (return `Success`) *before*  is executed. In the generated BT, these become the children of a `Sequence` node preceding .
+* ** (Effects):** A set of logical propositions that are guaranteed to be true if returns `Success`. These correspond to the **Goals** or **Subgoals** the planner seeks to achieve.
+* **:** A heuristic function representing the cost (time, energy, risk) of executing , used to select between multiple templates that achieve the same effect.
+
+---
+
+### 2. Catalogue of Action Templates for Complex Pick-and-Place
+
+The following tables define the exhaustive templates necessary for a robust system.
+
+#### A. Manipulation & Interaction Templates
+
+These handle the physical interaction with objects. Note the inclusion of tool requirements, handling the "complex" aspect of the prompt.
+
+| Action Template () | Effects ()                           | Preconditions ()                                                    | Dynamic Context                                                         |
+|--------------------|--------------------------------------|---------------------------------------------------------------------|-------------------------------------------------------------------------|
+| **Pick**           | `Holding(obj)`                       | `At(loc)`  `ObjectAt(obj, loc)`  `GripperEmpty`  `AlignedWith(obj)` | Fails if object slips; relies on Alignment.                             |
+| **Place**          | `ObjectAt(obj, loc)`  `GripperEmpty` | `At(loc)`  `Holding(obj)`  `SurfaceClear(loc)`                      | Fails if target surface is cluttered.                                   |
+| **EquipTool**      | `HasTool(tool)`                      | `At(ToolStation)`  `GripperEmpty`                                   | Necessary for handling different object types (e.g., suction vs. claw). |
+| **UnequipTool**    | `GripperEmpty`  `HasTool`            | `At(ToolStation)`  `HasTool(_)`                                     | Required before changing tools.                                         |
+| **ClearDebris**    | `SurfaceClear(loc)`                  | `At(loc)`  `GripperEmpty`                                           | Reactive action if `Place` fails due to clutter.                        |
+
+#### B. Navigation & Mobility Templates
+
+These handles movement, including geometric constraints (reachability) and battery constraints (dynamic environment).
+
+| Action Template () | Effects ()                | Preconditions ()                                          | Dynamic Context                              |
+|--------------------|---------------------------|-----------------------------------------------------------|----------------------------------------------|
+| **MoveTo**         | `At(loc)`                 | `PathFree(loc)`  `BatteryLevel > Min`  `MotorsCalibrated` | Fails if path blocked or battery low.        |
+| **Dock**           | `At(station)`  `IsDocked` | `At(NearStation)`  `PathFree(station)`                    | Precise movement for charging/tool changing. |
+| **OpenDoor**       | `PathFree(loc)`           | `At(door)`  `DoorUnlocked(door)`  `GripperEmpty`          | Handles environmental barriers.              |
+| **UnlockDoor**     | `DoorUnlocked(door)`      | `HasKey(door)`  `At(door)`                                | Complex dependency chain.                    |
+
+#### C. Perception & Knowledge Templates
+
+In complex domains, the state of the world is often unknown (e.g., "Where is the screw?"). These actions transform unknown states into known states.
+
+| Action Template () | Effects ()             | Preconditions ()                                | Dynamic Context                 |
+|--------------------|------------------------|-------------------------------------------------|---------------------------------|
+| **SearchFor**      | `KnownLocation(obj)`   | `CameraOn`  `AreaIlluminated`                   | Explores until object is found. |
+| **VisualAlign**    | `AlignedWith(obj)`     | `KnownLocation(obj)`  `At(obj.loc)`  `CameraOn` | Closed-loop visual servoing.    |
+| **Inspect**        | `QualityVerified(obj)` | `Holding(obj)`  `At(InspectionStation)`         | QA step in complex assembly.    |
+
+#### D. Maintenance & Recovery Templates
+
+These allow the system to sustain itself over long periods (autonomy).
+
+| Action Template () | Effects ()            | Preconditions ()    | Dynamic Context                                     |
+|--------------------|-----------------------|---------------------|-----------------------------------------------------|
+| **Recharge**       | `BatteryLevel > High` | `IsDocked(Charger)` | Triggered when `MoveTo` fails due to low battery.   |
+| **CalibrateArm**   | `MotorsCalibrated`    | `IsHomePosition`    | Triggered if manipulation fails repeatedly (drift). |
+| **ForceDrop**      | `GripperEmpty`        | `At(DisposalBin)`   | Emergency recovery if object is stuck.              |
+
+---
+
+### 3. Structural Integration in PA-BT
+
+In PA-BT, these templates are not arranged manually. They are synthesized using **Postcondition-Precondition-Action (PPA)** expansions.
+
+The formal expansion logic works as follows:
+
+1. **Goal Check:** The root of the tree checks the global goal (e.g., `ObjectAt(PartA, Box1)`).
+2. **Expansion:** If the goal returns `Failure` (not met), the planner searches the **Effects ()** column of the templates above.
+3. **Selection:** It finds `Place(PartA, Box1)`.
+4. **Insertion:** It inserts a `Fallback` node. The first child is the condition `ObjectAt(PartA, Box1)`. The second child is the `Sequence`:
+
+
+5. **Recursion:** The planner now treats as new sub-goals. For example, it must satisfy `Holding(PartA)`. It searches the templates for an action with effect `Holding`, finding `Pick`.
+
+### 4. Handling Dynamic Failures (The "Reactive" Part)
+
+The formal definition of these templates ensures reactivity through the **Zero-Inference Rule** of Behavior Trees:
+
+* **Scenario:** The robot is moving to place an object (`MoveTo`), but the battery drops below the threshold defined in `MoveTo`'s preconditions.
+* **Reaction:** The `MoveTo` precondition `BatteryLevel > Min` fails.
+* **Replanning:** The planner sees a failed condition. It looks for a template with the effect `BatteryLevel > Min`.
+* **Result:** It inserts the `Recharge` branch *before* the movement branch. The robot automatically aborts the move, goes to charge, and then resumes the move.
+
+This structure allows the same set of finite templates to generate infinite behavior variations based on the environment's state.

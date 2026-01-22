@@ -1293,6 +1293,9 @@ func TestPickAndPlaceConflictResolution(t *testing.T) {
 	// DEBUG: Use persistent log path for investigation
 	logFilePath := "/tmp/conflict_resolution_test.log"
 
+	// Clear the log file from previous runs to avoid counting stale events
+	_ = os.Remove(logFilePath)
+
 	harness, err := NewPickAndPlaceHarness(ctx, t, PickAndPlaceConfig{
 		TestMode:    true,
 		LogFilePath: logFilePath,

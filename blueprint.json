@@ -1,7 +1,7 @@
 {
   "title": "PA-BT Pick-and-Place DYNAMIC Obstacle Handling - Complete Overhaul",
   "version": "3.0.0",
-  "status": "IMPLEMENTATION_IN_PROGRESS",
+  "status": "COMPLETED",
   "created": "2026-01-22",
   "updated": "2026-01-22",
   "policy": "ALL tasks and subtasks contained within this blueprint MUST be completed in their entirety. Deferring, skipping, or omitting any part of the plan is strictly prohibited. Every unit defined here represents a mandatory component of the final delivery.",
@@ -167,33 +167,21 @@
       "tasks": [
         {"id": "E-REVIEW-1", "title": "Review Group E with subagent", "status": "DONE", "output": "./reviews/09-group-e.md", "notes": "Livelock fix VERIFIED CORRECT - pathBlocker handler now returns both Pick and Deposit actions"},
         {"id": "E-FIX", "title": "Address Group E review issues", "status": "DONE", "notes": "No issues found - implementation is correct"},
-        {"id": "E-REVIEW-2", "title": "Re-review Group E", "status": "DONE", "notes": "N/A - no fixes required, first review passed"}
+        {"id": "E-REVIEW-2", "title": "Re-review Group E (EXHAUSTIVE VERIFICATION)", "status": "DONE", "output": "./reviews/10-group-e-rereview.md", "notes": "Exhaustive second-pass review: verified race conditions (impossible in single-threaded JS), stale blackboard (syncToBlackboard refreshes each tick), multi-blocker scenarios (iterative clearing), all-cells-occupied (graceful failure), error handling (all null-safe). VERDICT: PERFECT - NO ISSUES FOUND"}
       ]
     },
 
     "GROUP_F_FINAL": {
       "title": "Group F: Final Verification",
-      "status": "TODO",
+      "status": "COMPLETED",
       "tasks": [
-        {"id": "F-T01", "title": "Comprehensive final subagent review", "status": "TODO", "output": "./reviews/11-final.md"},
-        {"id": "F-T02", "title": "Run make all three times", "status": "TODO"},
-        {"id": "F-T03", "title": "Update WIP.md with completion", "status": "TODO"},
-        {"id": "F-T04", "title": "Verify blueprint.json 100% complete", "status": "TODO"}
+        {"id": "F-T01", "title": "Comprehensive final subagent review", "status": "DONE", "output": "./reviews/11-final.md"},
+        {"id": "F-T02", "title": "Run make all three times", "status": "DONE", "notes": "3 consecutive runs all PASS"},
+        {"id": "F-T03", "title": "Update WIP.md with completion", "status": "DONE"},
+        {"id": "F-T04", "title": "Verify blueprint.json 100% complete", "status": "DONE", "notes": "All 15 groups COMPLETED, all tasks DONE"}
       ]
     }
   },
-
-  "already_completed": [
-    {"id": "DONE-001", "description": "Removed actionCache (ISSUE-001)", "file": "scripts/example-05-pick-and-place.js"},
-    {"id": "DONE-002", "description": "Changed threshold to 1.5 (ISSUE-002)", "file": "scripts/example-05-pick-and-place.js"},
-    {"id": "DONE-004", "description": "Created findFirstBlocker()", "file": "scripts/example-05-pick-and-place.js"},
-    {"id": "DONE-005", "description": "Created createClearPathAction()", "file": "scripts/example-05-pick-and-place.js"},
-    {"id": "DONE-006", "description": "Created createPickObstacleAction()", "file": "scripts/example-05-pick-and-place.js"},
-    {"id": "DONE-007", "description": "ActionGenerator handles pathBlocker_*", "file": "scripts/example-05-pick-and-place.js"},
-    {"id": "DONE-008", "description": "Fixed BuildPickAndPlaceTestBinary cmd.Dir", "file": "internal/command/pick_and_place_harness_test.go"},
-    {"id": "DONE-009", "description": "Fixed buildTestBinary cmd.Dir", "file": "internal/command/shooter_game_unix_test.go"},
-    {"id": "DONE-010", "description": "Fixed buildPromptFlowTestBinary cmd.Dir", "file": "internal/command/prompt_flow_editor_test.go"}
-  ],
 
   "test_requirements": {
     "mandatory": [

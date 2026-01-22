@@ -940,7 +940,8 @@ try {
                 
                 // -----------------------------------------------------------------
                 // heldItemExists: Planner needs hands to be free (false) or holding (true)
-                // Return Place_Held_Item, Place_Target_Temporary, or Place_Obstacle
+                // Return Place_Held_Item, Place_Target_Temporary, Place_Obstacle,
+                // AND Deposit_GoalBlockade_X if holding a ring blocker!
                 // -----------------------------------------------------------------
                 if (key === 'heldItemExists') {
                     if (targetValue === false) {
@@ -952,6 +953,20 @@ try {
                         if (placeHeldItem) actions.push(placeHeldItem);
                         if (placeTargetTemp) actions.push(placeTargetTemp);
                         if (placeObstacle) actions.push(placeObstacle);
+                        
+                        // CRITICAL FIX: If holding a ring blocker (ID >= 100),
+                        // also return Deposit_GoalBlockade_X which properly places
+                        // the blocker AWAY from the goal path!
+                        const currentHeldId = state.blackboard.get('heldItemId');
+                        if (typeof currentHeldId === 'number' && currentHeldId >= 100) {
+                            log.info("ACTION_GENERATOR: holding ring blocker, adding Deposit action", {
+                                heldId: currentHeldId
+                            });
+                            // Find which goal this blocker is blocking
+                            const goalId = 1; // Assuming single goal
+                            const depositAction = createDepositGoalBlockadeAction(state, currentHeldId, 'goal_' + goalId);
+                            if (depositAction) actions.push(depositAction);
+                        }
                     }
                 }
                 
@@ -1151,6 +1166,13 @@ try {
                     return bt.failure;
                 }
                 
+                // CRITICAL: Don't place ring blockers (ID >= 100) using this action!
+                // Use Deposit_GoalBlockade_X instead, which places blockers AWAY from goal path.
+                if (heldId >= 100) {
+                    log.debug("Place_Obstacle: refusing ring blocker " + heldId + ", use Deposit_GoalBlockade instead");
+                    return bt.failure;
+                }
+                
                 // Find a free spot nearby (NOT in goal area)
                 const spot = getFreeAdjacentCell(state, a.x, a.y, false);
                 if (!spot) {
@@ -1249,6 +1271,13 @@ try {
                 
                 // Runtime guard: Don't place TARGET with this action
                 if (a.heldItem.id === TARGET_ID) {
+                    return bt.failure;
+                }
+                
+                // Runtime guard: Don't place ring blockers (ID >= 100) with this action
+                // Use Deposit_GoalBlockade_X instead, which places blockers AWAY from goal path.
+                if (a.heldItem.id >= 100) {
+                    log.debug("Place_Held_Item: refusing ring blocker " + a.heldItem.id + ", use Deposit_GoalBlockade instead");
                     return bt.failure;
                 }
 

@@ -85,66 +85,6 @@
   ],
   "review_groups": [
     {
-      "id": "RG-1",
-      "title": "Core Manual Mode Fixes",
-      "description": "Core manual mode functionality: manualKeys state, KeyRelease handling, WASD in Tick handler",
-      "tasks": [1, 2, 3],
-      "status": "not-started",
-      "review_tasks": [
-        {
-          "id": "RG-1-R1",
-          "title": "GUARANTEE correctness of Core Manual Mode Fixes with #runSubagent review",
-          "status": "not-started",
-          "description": "Run subagent review to guarantee correctness of Core Manual Mode Fixes. Review MUST verify: (1) manualKeys state field properly added and initialized, (2) KeyRelease event handling properly implemented, (3) WASD movement logic completely moved to Tick handler. Review task: 'Review scripts/example-05-pick-and-place.js and guarantee Core Manual Mode Fixes are correct. Verify manualKeys field exists, KeyRelease handler works, WASD is in Tick handler not Key handler. Report any issues with specific line numbers.'",
-          "deliverable": "Subagent review report confirming all Core Manual Mode Fixes are correct or identifying exact issues"
-        },
-        {
-          "id": "RG-1-R2",
-          "title": "Address ALL issues found in Core Manual Mode Fixes review",
-          "status": "not-started",
-          "description": "Fix ALL issues identified in RG-1-R1 review. Do NOT proceed until every issue is resolved. If review indicates tasks are incomplete, complete them. If review indicates bugs, fix them. If review indicates missing functionality, implement it.",
-          "deliverable": "All issues from RG-1-R1 review resolved, code corrected"
-        },
-        {
-          "id": "RG-1-R3",
-          "title": "Re-review Core Manual Mode Fixes with same prompt - mark tasks as pending AGAIN if not perfect",
-          "status": "not-started",
-          "description": "Re-run EXACT same review as RG-1-R1. If ANY issues found, mark RG-1 tasks as pending and go back to RG-1-R2. Repeat until review returns perfect with zero issues. Only then mark RG-1 tasks complete.",
-          "deliverable": "Subagent review report returning perfect score with zero issues"
-        }
-      ]
-    },
-    {
-      "id": "RG-2",
-      "title": "Input Handling Robustness",
-      "description": "Input handling improvements: key-hold support, debug output",
-      "tasks": [4, 5],
-      "status": "not-started",
-      "review_tasks": [
-        {
-          "id": "RG-2-R1",
-          "title": "GUARANTEE correctness of Input Handling Robustness with #runSubagent review",
-          "status": "not-started",
-          "description": "Run subagent review to guarantee correctness of Input Handling Robustness. Review MUST verify: (1) Custom key-hold support implemented in Tick handler with smooth repeat rate, (2) NOT relying on OS key repeat, (3) Good intuitive UX for held keys, (4) Debug output for manualKeys present. Review task: 'Review scripts/example-05-pick-and-place.js and guarantee Input Handling Robustness features are correct. Verify custom key-hold in Tick handler, smooth movement, no OS repeat dependency, debug mk field exists. Report any issues.'",
-          "deliverable": "Subagent review report confirming all Input Handling Robustness features are correct"
-        },
-        {
-          "id": "RG-2-R2",
-          "title": "Address ALL issues found in Input Handling Robustness review",
-          "status": "not-started",
-          "description": "Fix ALL issues identified in RG-2-R1 review. Do NOT proceed until every issue is resolved.",
-          "deliverable": "All issues from RG-2-R1 review resolved, code corrected"
-        },
-        {
-          "id": "RG-2-R3",
-          "title": "Re-review Input Handling Robustness with same prompt - mark tasks as pending AGAIN if not perfect",
-          "status": "not-started",
-          "description": "Re-run EXACT same review as RG-2-R1. If ANY issues found, mark RG-2 tasks as pending and go back to RG-2-R2. Repeat until perfect.",
-          "deliverable": "Subagent review report returning perfect score with zero issues"
-        }
-      ]
-    },
-    {
       "id": "RG-3",
       "title": "Simulation Consistency",
       "description": "Simulation consistency verification across manual and automatic modes",
@@ -170,66 +110,6 @@
           "title": "Re-review Simulation Consistency with same prompt - mark tasks as pending AGAIN if not perfect",
           "status": "not-started",
           "description": "Re-run EXACT same review as RG-3-R1. If ANY issues found, mark RG-3 tasks as pending and go back to RG-3-R2. Repeat until perfect.",
-          "deliverable": "Subagent review report returning perfect score with zero issues"
-        }
-      ]
-    },
-    {
-      "id": "RG-4",
-      "title": "Integration Testing",
-      "description": "Integration tests for manual mode and mode switching",
-      "tasks": [9, 10, 11, 12, 13],
-      "status": "not-started",
-      "review_tasks": [
-        {
-          "id": "RG-4-R1",
-          "title": "GUARANTEE correctness of Integration Testing with #runSubagent review",
-          "status": "not-started",
-          "description": "Run subagent review to guarantee correctness of Integration Testing. Review MUST verify: (1) Mouse interaction tests cover ALL scenarios (pick, place, invalid attempts, win condition), (2) WASD movement tests cover ALL scenarios (single-step, key-hold, directional changes, boundaries, path traversal), (3) Mode switching tests cover ALL scenarios (auto->manual, manual->auto, during critical operations), (4) All tests have robust timeout/hang prevention, (5) All tests pass with no hangs. Review task: 'Review all Integration tests for scripts/example-05-pick-and-place.js and guarantee comprehensive coverage of manual behaviors and mode switching. Verify robust timeout/hang prevention and no test hangs. Report any issues.'",
-          "deliverable": "Subagent review report confirming all Integration tests are correct, comprehensive, and pass"
-        },
-        {
-          "id": "RG-4-R2",
-          "title": "Address ALL issues found in Integration Testing review",
-          "status": "not-started",
-          "description": "Fix ALL issues identified in RG-4-R1 review. Do NOT proceed until every issue is resolved.",
-          "deliverable": "All issues from RG-4-R1 review resolved, tests corrected and passing"
-        },
-        {
-          "id": "RG-4-R3",
-          "title": "Re-review Integration Testing with same prompt - mark tasks as pending AGAIN if not perfect",
-          "status": "not-started",
-          "description": "Re-run EXACT same review as RG-4-R1. If ANY issues found, mark RG-4 tasks as pending and go back to RG-4-R2. Repeat until perfect.",
-          "deliverable": "Subagent review report returning perfect score with zero issues"
-        }
-      ]
-    },
-    {
-      "id": "RG-5",
-      "title": "Hang Prevention",
-      "description": "Hang prevention mechanisms for all new tests",
-      "tasks": [14, 15],
-      "status": "not-started",
-      "review_tasks": [
-        {
-          "id": "RG-5-R1",
-          "title": "GUARANTEE correctness of Hang Prevention with #runSubagent review",
-          "status": "not-started",
-          "description": "Run subagent review to guarantee correctness of Hang Prevention. Review MUST verify: (1) All manual mode tests have robust timeouts, (2) All mode switching tests have robust timeouts, (3) Tests run individually with no hangs, (4) Timeouts are appropriate (not too short to fail, not too long to mask hangs), (5) Tests are isolated to prevent cascading hangs. Review task: 'Review all Hang Prevention mechanisms for scripts/example-05-pick-and-place.js tests and guarantee robust timeout strategy, test isolation, and zero hang risk. Verify tests run individually with no hangs. Report any issues.'",
-          "deliverable": "Subagent review report confirming all Hang Prevention mechanisms are correct and effective"
-        },
-        {
-          "id": "RG-5-R2",
-          "title": "Address ALL issues found in Hang Prevention review",
-          "status": "not-started",
-          "description": "Fix ALL issues identified in RG-5-R1 review. Do NOT proceed until every issue is resolved.",
-          "deliverable": "All issues from RG-5-R1 review resolved, hang prevention improved"
-        },
-        {
-          "id": "RG-5-R3",
-          "title": "Re-review Hang Prevention with same prompt - mark tasks as pending AGAIN if not perfect",
-          "status": "not-started",
-          "description": "Re-run EXACT same review as RG-5-R1. If ANY issues found, mark RG-5 tasks as pending and go back to RG-5-R2. Repeat until perfect.",
           "deliverable": "Subagent review report returning perfect score with zero issues"
         }
       ]
@@ -296,7 +176,7 @@
     }
   ],
   "implementation_strategy": {
-    "sequential_review_groups": "Review groups MUST be completed sequentially in order: RG-1 -> RG-2 -> RG-3 -> RG-4 -> RG-5 -> RG-6 -> RG-7",
+    "sequential_review_groups": "Review groups MUST be completed sequentially in order: RG-3 -> RG-6 -> RG-7",
     "task_completion_prerequisite": "Within each review group, all tasks in tasks[] MUST be completed BEFORE starting RG-X-R1 review",
     "review_cycle_requirements": {
       "R1_review": "MUST be run with subagent using specified prompt",
@@ -329,14 +209,6 @@
     "NO_IMPERFECT_DELIVERY": "Do NOT mark complete until R3 review returns perfect with zero issues"
   },
   "notes_for_implementation": {
-    "manualKeys_state_field": "Must be added to state initialization as empty object/map. Will be set/checked in Key and Tick handlers.",
-    "KeyRelease_handling": "Bubbletea supports KeyRelease events. Add handler for msg.type === 'KeyRelease' to remove keys from manualKeys.",
-    "WASD_in_Tick_handler": "Current WASD in Key handler at msg.type === 'Key'. Move movement logic to Tick handler. Key handler only updates manualKeys.",
-    "custom_key_hold": "Implement in Tick handler: check state.manualKeys for pressed keys, apply movement at consistent rate (e.g., every 60ms or based on delta). Do NOT rely on OS repeat.",
-    "mouse_events": "Existing mouse handling at line ~1581 works for basic pick/place. Test thoroughly for edge cases.",
-    "test_files": "Add tests to existing internal/builtin/bubbletea/pick_place_integration_test.go or create new test file specifically for manual mode and mode switching.",
-    "timeout_strategy": "Start with 30s timeouts per test. If legitimately needed, increase but document why. Tests run individually.",
-    "hang_prevention": "Isolate tests, clear state between tests, use test-specific timeouts, run hang-possible tests individually.",
     "pabt_preservation": "Ensure NO changes to automatic mode code paths. Verify with tests comparing automatic mode behavior before and after fixes.",
     "verification": "Use subagent for ALL reviews. R1 review, R2 fixes, R3 re-review until perfect."
   }

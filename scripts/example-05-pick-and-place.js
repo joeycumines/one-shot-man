@@ -53,13 +53,12 @@ const printFatalError = (e) => {
 };
 
 // init the program
-let bt, tea, pabt, os, producer, program;
+let bt, tea, pabt, os, program;
 try {
     bt = require('osm:bt');
     tea = require('osm:bubbletea');
     pabt = require('osm:pabt');
     os = require('osm:os');
-    producer = require('osm:producer');
 
     // SCENARIO CONFIGURATION
     //
@@ -1557,12 +1556,8 @@ try {
                             state.winConditionMet = true;
                         }
                         log.info("Manual Place", {id: heldId, at: {x: clickX, y: clickY}});
-                        producer.sendEvent("manual_place", 1, {status: "success"});
-                    } else {
-                        producer.sendEvent("manual_place", 1, {status: "failure"});
                     }
                 } else {
-                    producer.sendEvent("manual_place", 1, {status: "failure"});
                 }
             } else {
                 // PICK: Can pick if valid cube and within PICK_THRESHOLD
@@ -1571,9 +1566,7 @@ try {
                     actor.heldItem = {id: clickedCube.id};
                     performedAction = true;
                     log.info("Manual Pick", {id: clickedCube.id, at: {x: clickX, y: clickY}});
-                    producer.sendEvent("manual_pick", 1, {status: "success"});
                 } else {
-                    if (clickedCube) producer.sendEvent("manual_pick", 1, {status: "failure"});
                 }
             }
 
@@ -1590,12 +1583,10 @@ try {
                     log.debug("Manual Move: Path calculated", {steps: path.length, target: {x: clickX, y: clickY}});
                     state.manualPath = path;
                     state.manualMoveTarget = {x: clickX, y: clickY};
-                    producer.sendEvent("manual_move_calc", 1, {status: "success"});
                 } else {
                     log.debug("Manual Move: No path found or already there");
                     state.manualPath = [];
                     state.manualMoveTarget = null;
-                    producer.sendEvent("manual_move_calc", 1, {status: "failure"});
                 }
             }
 

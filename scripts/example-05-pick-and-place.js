@@ -197,6 +197,8 @@ try {
             manualMoveTarget: null,
             manualPath: [],
             pathStuckTicks: 0,
+            manualKeys: new Map(), // Track key press/release state for custom key-hold support
+            manualKeyLastSeen: new Map(), // Track last time each key was pressed for release detection
 
             winConditionMet: false,
             targetDelivered: false,
@@ -210,6 +212,54 @@ try {
     }
 
     // Logic Helpers
+
+    // manualKeysMovement: Handle WASD movement in manual mode based on pressed keys
+    // Returns true if movement occurred, false otherwise
+    function manualKeysMovement(state, actor) {
+        if (!state.manualKeys || state.manualKeys.size === 0) return false;
+
+        const getDir = () => {
+            let dx = 0, dy = 0;
+            if (state.manualKeys.get('w')) dy = -1;
+            if (state.manualKeys.get('s')) dy = 1;
+            if (state.manualKeys.get('a')) dx = -1;
+            if (state.manualKeys.get('d')) dx = 1;
+
+            // Diagonal handling: allow diagonal movement if both axes pressed
+            return {dx, dy};
+        };
+
+        const {dx, dy} = getDir();
+
+        if (dx === 0 && dy === 0) return false;
+
+        const nx = actor.x + dx;
+        const ny = actor.y + dy;
+        let blocked = false;
+
+        // Boundary check first
+        if (Math.round(nx) < 0 || Math.round(nx) >= state.spaceWidth ||
+            Math.round(ny) < 0 || Math.round(ny) >= state.height) {
+            blocked = true;
+        }
+
+        // Fast collision check (only if not already blocked by boundary)
+        if (!blocked) {
+            for (const c of state.cubes.values()) {
+                if (!c.deleted && Math.round(c.x) === Math.round(nx) && Math.round(c.y) === Math.round(ny)) {
+                    if (actor.heldItem && c.id === actor.heldItem.id) continue;
+                    blocked = true;
+                    break;
+                }
+            }
+        }
+
+        if (!blocked) {
+            actor.x = nx;
+            actor.y = ny;
+        }
+        return !blocked; // Return true if movement occurred successfully
+    }
 
     // Find a free adjacent cell for generic placement
     function getFreeAdjacentCell(state, actorX, actorY, targetGoalArea = false) {
@@ -888,6 +938,7 @@ try {
             }
 
             actor.heldItem = null;
+            log.debug("PA-BT: HeldItem cleared (blocker placed)", {tick: state.tickCount});
 
             log.info("PA-BT action executing", {
                 action: name,
@@ -1538,9 +1589,30 @@ try {
                 // Fallback cleanup if path is empty but target remains (shouldn't happen with new logic)
                 state.manualMoveTarget = null;
             }
-            // Handle Manual WASD Movement (direct movement on key press)
-            // Note: WASD movement is handled directly in Key handler since Bubbletea
-            // doesn't have KeyRelease message type for key-hold support
+
+            // Handle Manual WASD Movement in Tick handler for smooth key-hold
+            // This enables custom key-hold support with controlled repeat rate
+            if (state.gameMode === 'manual') {
+                const actor = state.actors.get(state.activeActorId);
+                const now = Date.now();
+
+                // Key release detection: remove keys not seen recently (500ms timeout)
+                const KEY_RELEASE_TIMEOUT_MS = 500;
+                for (const [key, lastSeen] of state.manualKeyLastSeen.entries()) {
+                    if (now - lastSeen > KEY_RELEASE_TIMEOUT_MS) {
+                        state.manualKeys.delete(key);
+                        state.manualKeyLastSeen.delete(key);
+                    }
+                }
+
+                // Movement based on pressed keys
+                const moved = manualKeysMovement(state, actor);
+                if (moved) {
+                    // Interrupt any click-movement when using keyboard
+                    state.manualPath = [];
+                    state.manualMoveTarget = null;
+                }
+            }
 
             if (state.debugMode && (state.tickCount <= 5 || state.tickCount % 50 === 0)) {
                 const actor = state.actors.get(state.activeActorId);
@@ -1603,6 +1675,8 @@ try {
             const isHolding = actor.heldItem !== null;
             let performedAction = false;
 
+            log.debug("Manual Mouse: Click details", {clickX, clickY, actorX: actor.x, actorY: actor.y, isHolding, clickedCube: clickedCube ? `id:${clickedCube.id}` : null});
+
             if (isHolding) {
                 // PLACE: Can place if empty cell and within adjacency (approx 1.5)
                 if (!clickedCube && dist <= 1.5) {
@@ -1614,6 +1688,8 @@ try {
                         c.y = clickY;
                         actor.heldItem = null;
                         performedAction = true;
+                        log.debug("MANUAL: HeldItem cleared (item placed)", {heldId, tick: state.tickCount});
+
                         // Check win condition
                         if (heldId === TARGET_ID && isInGoalArea(clickX, clickY)) {
                             state.winConditionMet = true;
@@ -1621,6 +1697,7 @@ try {
                         log.info("Manual Place", {id: heldId, at: {x: clickX, y: clickY}});
                     }
                 } else {
+                    log.debug("Manual Place: Failed", {reason: clickedCube ? "clicked on occupied cube" : "too far", clickedCube, dist});
                 }
             } else {
                 // PICK: Can pick if valid cube and within PICK_THRESHOLD
@@ -1660,6 +1737,9 @@ try {
 
         // KEYBOARD INTERACTION
         if (msg.type === 'Key') {
+            // Get actor reference for mode switch logging
+            const actor = state.actors.get(state.activeActorId);
+            
             if (msg.key === 'q') return [state, tea.quit()];
             if (msg.key === 'm') {
                 const wasManual = state.gameMode === 'manual';
@@ -1669,6 +1749,8 @@ try {
                 state.manualMoveTarget = null;
                 state.manualPath = [];
                 state.pathStuckTicks = 0;
+
+                log.debug('Mode switch: Setting gameMode', {oldMode, newMode, wasManual, hasHeldItem: actor.heldItem !== null, heldItemId: actor.heldItem ? actor.heldItem.id : null});
 
                 // Debug logging
                 log.debug('Mode switch', {oldMode, newMode, wasManual});
@@ -1692,39 +1774,17 @@ try {
                 return [state, null];
             }
 
-            // WASD Movement in Manual Mode
+            // WASD Key Tracking for Manual Mode - Key Press
             if (state.gameMode === 'manual' && ['w', 'a', 's', 'd'].includes(msg.key)) {
-                const actor = state.actors.get(state.activeActorId);
-                let dx = 0, dy = 0;
-                if (msg.key === 'w') dy = -1;
-                if (msg.key === 's') dy = 1;
-                if (msg.key === 'a') dx = -1;
-                if (msg.key === 'd') dx = 1;
-
-                // Interrupt any click-movement
-                state.manualPath = [];
-                state.manualMoveTarget = null;
-
-                const nx = actor.x + dx;
-                const ny = actor.y + dy;
-                let blocked = false;
-
-                // Fast collision check
-                for (const c of state.cubes.values()) {
-                    if (!c.deleted && Math.round(c.x) === Math.round(nx) && Math.round(c.y) === Math.round(ny)) {
-                        // We can walk through held item
-                        if (actor.heldItem && c.id === actor.heldItem.id) continue;
-                        blocked = true;
-                        break;
-                    }
-                }
-
-                if (!blocked) {
-                    actor.x = nx;
-                    actor.y = ny;
-                }
+                // Track key press state for custom key-hold
+                state.manualKeys.set(msg.key, true);
+                state.manualKeyLastSeen.set(msg.key, Date.now()); // Track press timestamp for release detection
                 return [state, null];
             }
+
+            // WASD Key Release detection - timeout-based approach
+            // Bubbletea doesn't provide explicit KeyRelease for keyboard
+            // We detect releases by checking if a key hasn't been seen for a short period
         }
 
         if (msg.type === 'Resize') {
@@ -1753,6 +1813,16 @@ try {
             const ay = Math.round(actor.y);
             const goalReachable = goal ? getPathInfo(state, ax, ay, goal.x, goal.y).reachable : false;
 
+            // Build mk (manualKeys) array for debug output
+            const mk = [];
+            if (state.gameMode === 'manual') {
+                for (const key of ['w', 'a', 's', 'd']) {
+                    if (state.manualKeys && state.manualKeys.get(key)) {
+                        mk.push(key);
+                    }
+                }
+            }
+
             const debugJSON = JSON.stringify({
                 m: state.gameMode === 'automatic' ? 'a' : 'm',
                 t: state.tickCount,
@@ -1767,7 +1837,8 @@ try {
                 gr: goalReachable ? 1 : 0,
                 mt: state.manualMoveTarget ? 1 : 0,
                 mpl: state.manualPath.length,
-                pst: state.pathStuckTicks
+                pst: state.pathStuckTicks,
+                mk: mk.length > 0 ? mk : null
             });
 
             output += '\n__place_debug_start__\n' + debugJSON + '\n__place_debug_end__';
@@ -1797,7 +1868,13 @@ try {
             init,
             update,
             initializeSimulation,
-            TARGET_ID
+            TARGET_ID,
+            buildBlockedSet,
+            findPath,
+            getPathInfo,
+            findNextStep,
+            findFirstBlocker,
+            manualKeysMovement
         };
     }
 } catch (e) {

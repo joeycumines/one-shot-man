@@ -29,5 +29,9 @@ set -o pipefail; \
 docker run --rm -v $(PROJECT_ROOT):/work -w /work "golang:$${go_version}" bash -lc 'export PATH="/usr/local/go/bin:$$PATH" && export GOFLAGS=-buildvcs=false && { jobs="$$(nproc)" && [ "$$jobs" -gt 0 ] && jobs="-j $${jobs}" || jobs=''; } && set -x && make $${jobs} $(_CUSTOM_MAKE_ALL_TARGET_MAKE_ARGS)' 2>&1 | fold -w 200 | tee build.log | tail -n 15; \
 exit $${PIPESTATUS[0]}
 
+.PHONY: run-sim-consistency-tests
+run-sim-consistency-tests: ## Run simulation consistency tests (T6-T8)
+	go test -v ./internal/builtin/bubbletea -run TestSimulationConsistency
+
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

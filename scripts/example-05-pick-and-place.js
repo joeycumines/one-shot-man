@@ -182,11 +182,11 @@ try {
             spaceWidth: 60,
 
             actors: new Map([
-                [1, { id: 1, x: 5, y: 11, heldItem: null }]
+                [1, {id: 1, x: 5, y: 11, heldItem: null}]
             ]),
             cubes: new Map(cubesInit),
             goals: new Map([
-                [GOAL_ID, { id: GOAL_ID, x: GOAL_CENTER_X, y: GOAL_CENTER_Y, forTarget: true }]
+                [GOAL_ID, {id: GOAL_ID, x: GOAL_CENTER_X, y: GOAL_CENTER_Y, forTarget: true}]
                 // NOTE: Dumpster goal REMOVED - obstacles placed anywhere dynamically
             ]),
 
@@ -240,7 +240,7 @@ try {
             // No additional occupancy check needed - dumpster concept removed
             // Obstacles can be placed at any free cell
 
-            if (!occupied) return { x: nx, y: ny };
+            if (!occupied) return {x: nx, y: ny};
         }
         return null;
     }
@@ -281,7 +281,7 @@ try {
         const blocked = buildBlockedSet(state, ignoreCubeId);
         const key = (x, y) => x + ',' + y;
         const visited = new Set();
-        const queue = [{ x: Math.round(startX), y: Math.round(startY), dist: 0 }];
+        const queue = [{x: Math.round(startX), y: Math.round(startY), dist: 0}];
 
         visited.add(key(queue[0].x, queue[0].y));
 
@@ -293,7 +293,7 @@ try {
             const dy = Math.abs(current.y - Math.round(targetY));
 
             if (dx <= 1 && dy <= 1) {
-                return { reachable: true, distance: current.dist };
+                return {reachable: true, distance: current.dist};
             }
 
             const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
@@ -307,11 +307,11 @@ try {
                 if (blocked.has(nKey)) continue;
 
                 visited.add(nKey);
-                queue.push({ x: nx, y: ny, dist: current.dist + 1 });
+                queue.push({x: nx, y: ny, dist: current.dist + 1});
             }
         }
 
-        return { reachable: false, distance: Infinity };
+        return {reachable: false, distance: Infinity};
     }
 
     function findNextStep(state, startX, startY, targetX, targetY, ignoreCubeId) {
@@ -329,7 +329,7 @@ try {
 
         // Simple reach check
         if (Math.abs(startX - targetX) < 1.0 && Math.abs(startY - targetY) < 1.0) {
-            return { x: targetX, y: targetY };
+            return {x: targetX, y: targetY};
         }
 
         const visited = new Set();
@@ -347,10 +347,10 @@ try {
             if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
 
             if (nx === iTargetX && ny === iTargetY) {
-                return { x: nx, y: ny };
+                return {x: nx, y: ny};
             }
 
-            queue.push({ x: nx, y: ny, firstX: ox, firstY: oy });
+            queue.push({x: nx, y: ny, firstX: ox, firstY: oy});
             visited.add(nKey);
         }
 
@@ -358,7 +358,7 @@ try {
             const cur = queue.shift();
 
             if (cur.x === iTargetX && cur.y === iTargetY) {
-                return { x: startX + cur.firstX, y: startY + cur.firstY };
+                return {x: startX + cur.firstX, y: startY + cur.firstY};
             }
 
             for (const [ox, oy] of dirs) {
@@ -371,7 +371,7 @@ try {
                 if (visited.has(nKey)) continue;
 
                 visited.add(nKey);
-                queue.push({ x: nx, y: ny, firstX: cur.firstX, firstY: cur.firstY });
+                queue.push({x: nx, y: ny, firstX: cur.firstX, firstY: cur.firstY});
             }
         }
 
@@ -423,7 +423,7 @@ try {
 
         const visited = new Set();
         const frontier = []; // Cells we tried to enter but were blocked by movable cubes
-        const queue = [{ x: Math.round(fromX), y: Math.round(fromY) }];
+        const queue = [{x: Math.round(fromX), y: Math.round(fromY)}];
 
         visited.add(key(queue[0].x, queue[0].y));
 
@@ -459,13 +459,13 @@ try {
                     const blockerId = cubeAtPosition.get(nKey);
                     if (blockerId !== undefined) {
                         // Found a movable blocker!
-                        frontier.push({ x: nx, y: ny, id: blockerId, dist: current.dist || 0 });
+                        frontier.push({x: nx, y: ny, id: blockerId, dist: current.dist || 0});
                     }
                     continue;
                 }
 
                 visited.add(nKey);
-                queue.push({ x: nx, y: ny, dist: (current.dist || 0) + 1 });
+                queue.push({x: nx, y: ny, dist: (current.dist || 0) + 1});
             }
         }
 
@@ -579,14 +579,14 @@ try {
         // - For non-target entities, we skip this to prevent regression (only Target needs guaranteed path)
         const conditions = [];
         if (entityType === 'goal' || (entityType === 'cube' && entityId === TARGET_ID)) {
-            conditions.push({ key: pathBlockerKey, value: -1, Match: v => v === -1 });
+            conditions.push({key: pathBlockerKey, value: -1, Match: v => v === -1});
         }
         // Add any extra preconditions (e.g., TARGET MoveTo needs pathBlocker_goal=-1)
         if (extraPreconditions) {
             conditions.push(...extraPreconditions);
         }
 
-        const effects = [{ key: targetKey, Value: true }];
+        const effects = [{key: targetKey, Value: true}];
 
         const tickFn = function () {
             log.info("BT TICK: " + name + " executing at tick " + state.tickCount);
@@ -683,13 +683,13 @@ try {
         const name = 'Pick_GoalBlockade_' + cubeId;
 
         const conditions = [
-            { key: 'heldItemExists', value: false, Match: v => v === false },
-            { key: 'atEntity_' + cubeId, value: true, Match: v => v === true }
+            {key: 'heldItemExists', value: false, Match: v => v === false},
+            {key: 'atEntity_' + cubeId, value: true, Match: v => v === true}
         ];
 
         const effects = [
-            { key: 'heldItemId', Value: cubeId },
-            { key: 'heldItemExists', Value: true }
+            {key: 'heldItemId', Value: cubeId},
+            {key: 'heldItemExists', Value: true}
         ];
 
         const tickFn = function () {
@@ -710,13 +710,13 @@ try {
             const dist = Math.sqrt(dx * dx + dy * dy);
 
             if (dist > PICK_THRESHOLD) {
-                log.debug(name + " too far from cube", { dist: dist, threshold: PICK_THRESHOLD });
+                log.debug(name + " too far from cube", {dist: dist, threshold: PICK_THRESHOLD});
                 return bt.failure;
             }
 
             // Pick it up
             cube.deleted = true;
-            actor.heldItem = { id: cubeId };
+            actor.heldItem = {id: cubeId};
 
             log.info("PA-BT action executing", {
                 action: name,
@@ -753,14 +753,14 @@ try {
 
         // Precondition: Must be holding THIS specific blocker
         const conditions = [
-            { key: 'heldItemId', value: cubeId, Match: v => v === cubeId }
+            {key: 'heldItemId', value: cubeId, Match: v => v === cubeId}
         ];
 
         // Effect: Path is cleared
         const effects = [
-            { key: 'heldItemExists', Value: false },
-            { key: 'heldItemId', Value: -1 },
-            { key: 'pathBlocker_' + destinationKey, Value: -1 }
+            {key: 'heldItemExists', Value: false},
+            {key: 'heldItemId', Value: -1},
+            {key: 'pathBlocker_' + destinationKey, Value: -1}
         ];
 
         const tickFn = function () {
@@ -826,7 +826,7 @@ try {
                 if (occupied) continue;
 
                 // Valid spot found
-                placementSpot = { x: nx, y: ny };
+                placementSpot = {x: nx, y: ny};
                 break;
             }
 
@@ -993,7 +993,7 @@ try {
                 if (key.startsWith('atGoal_')) {
                     const goalId = parseInt(key.replace('atGoal_', ''), 10);
                     if (!isNaN(goalId)) {
-                        log.debug("ACTION_GENERATOR: creating MoveTo for goal", { goalId: goalId });
+                        log.debug("ACTION_GENERATOR: creating MoveTo for goal", {goalId: goalId});
                         actions.push(createMoveToAction(state, 'goal', goalId));
                     }
                 }
@@ -1044,13 +1044,13 @@ try {
                                 if (depositAction) actions.push(depositAction);
                             }
                         } else {
-                            log.debug("ACTION_GENERATOR: pathBlocker already clear or invalid", { currentBlocker: currentBlocker });
+                            log.debug("ACTION_GENERATOR: pathBlocker already clear or invalid", {currentBlocker: currentBlocker});
                         }
                     }
                 }
             }
 
-            log.debug("ACTION_GENERATOR returning", { actionCount: actions.length, failedKey: key });
+            log.debug("ACTION_GENERATOR returning", {actionCount: actions.length, failedKey: key});
             return actions;
         });
 
@@ -1061,7 +1061,7 @@ try {
                 value: c.v,  // ActionGenerator needs this to know the target value
                 Match: v => c.v === undefined ? v === true : v === c.v
             }));
-            const effectList = effects.map(e => ({ key: e.k, Value: e.v }));
+            const effectList = effects.map(e => ({key: e.k, Value: e.v}));
             const node = bt.createLeafNode(() => state.gameMode === 'automatic' ? tickFn() : bt.running);
             state.pabtState.RegisterAction(name, pabt.newAction(name, conditions, effectList, node));
         };
@@ -1082,11 +1082,11 @@ try {
         // NOTE: We do NOT require pathBlocker_goal_1=-1 as precondition!
         // This allows the agent to pick up target first, then handle blocking.
         const pickTargetConditions = [];
-        pickTargetConditions.push({ k: 'heldItemExists', v: false });
-        pickTargetConditions.push({ k: 'atEntity_' + TARGET_ID, v: true });
+        pickTargetConditions.push({k: 'heldItemExists', v: false});
+        pickTargetConditions.push({k: 'atEntity_' + TARGET_ID, v: true});
         reg('Pick_Target',
             pickTargetConditions,
-            [{ k: 'heldItemId', v: TARGET_ID }, { k: 'heldItemExists', v: true }],
+            [{k: 'heldItemId', v: TARGET_ID}, {k: 'heldItemExists', v: true}],
             function () {
                 const a = actor();
                 // Runtime guard: Cannot pick if already holding something
@@ -1101,7 +1101,7 @@ try {
                 if (!t || t.deleted) return bt.failure;
 
                 t.deleted = true;
-                a.heldItem = { id: TARGET_ID };
+                a.heldItem = {id: TARGET_ID};
 
                 log.info("PA-BT action executing", {
                     action: "Pick_Target",
@@ -1123,8 +1123,8 @@ try {
         // Deliver_Target: Place target INTO Goal Area
         // ---------------------------------------------------------------------
         reg('Deliver_Target',
-            [{ k: 'atGoal_' + GOAL_ID, v: true }, { k: 'heldItemId', v: TARGET_ID }],
-            [{ k: 'cubeDeliveredAtGoal', v: true }],
+            [{k: 'atGoal_' + GOAL_ID, v: true}, {k: 'heldItemId', v: TARGET_ID}],
+            [{k: 'cubeDeliveredAtGoal', v: true}],
             function () {
                 const a = actor();
                 if (!a.heldItem || a.heldItem.id !== TARGET_ID) return bt.failure;
@@ -1139,7 +1139,7 @@ try {
                     tick: state.tickCount,
                     actorX: a.x,
                     actorY: a.y,
-                    deliveredAt: { x: spot.x, y: spot.y }
+                    deliveredAt: {x: spot.x, y: spot.y}
                 });
 
                 a.heldItem = null;
@@ -1169,8 +1169,8 @@ try {
         // This is the DYNAMIC replacement for hardcoded blockade actions
         // ---------------------------------------------------------------------
         reg('Place_Obstacle',
-            [{ k: 'heldItemExists', v: true }],
-            [{ k: 'heldItemExists', v: false }, { k: 'heldItemId', v: -1 }],
+            [{k: 'heldItemExists', v: true}],
+            [{k: 'heldItemExists', v: false}, {k: 'heldItemId', v: -1}],
             function () {
                 const a = actor();
                 if (!a.heldItem) return bt.failure;
@@ -1211,7 +1211,7 @@ try {
                     result: "SUCCESS",
                     tick: state.tickCount,
                     obstacleId: heldId,
-                    placedAt: { x: spot.x, y: spot.y },
+                    placedAt: {x: spot.x, y: spot.y},
                     actorX: a.x,
                     actorY: a.y
                 });
@@ -1230,8 +1230,8 @@ try {
         // so hands are free to clear blockades.
         // ---------------------------------------------------------------------
         reg('Place_Target_Temporary',
-            [{ k: 'heldItemId', v: TARGET_ID }],
-            [{ k: 'heldItemExists', v: false }, { k: 'heldItemId', v: -1 }],
+            [{k: 'heldItemId', v: TARGET_ID}],
+            [{k: 'heldItemExists', v: false}, {k: 'heldItemId', v: -1}],
             function () {
                 const a = actor();
                 if (!a.heldItem || a.heldItem.id !== TARGET_ID) return bt.failure;
@@ -1245,7 +1245,7 @@ try {
                     tick: state.tickCount,
                     actorX: a.x,
                     actorY: a.y,
-                    placedAt: { x: spot.x, y: spot.y }
+                    placedAt: {x: spot.x, y: spot.y}
                 });
 
                 // Re-instantiate target in the world at temporary location
@@ -1277,10 +1277,10 @@ try {
         // ---------------------------------------------------------------------
         reg('Place_Held_Item',
             [
-                { k: 'heldItemExists', v: true }
+                {k: 'heldItemExists', v: true}
                 // NOTE: Removed heldItemId precondition - runtime checks for TARGET instead
             ],
-            [{ k: 'heldItemExists', v: false }, { k: 'heldItemId', v: -1 }],
+            [{k: 'heldItemExists', v: false}, {k: 'heldItemId', v: -1}],
             function () {
                 const a = actor();
                 if (!a.heldItem) return bt.success;
@@ -1307,7 +1307,7 @@ try {
                     id: a.heldItem.id,
                     actorX: a.x,
                     actorY: a.y,
-                    placedAt: { x: spot.x, y: spot.y }
+                    placedAt: {x: spot.x, y: spot.y}
                 });
 
                 // Re-instantiate the item in the world
@@ -1336,22 +1336,22 @@ try {
     function getAllSprites(state) {
         const sprites = [];
         state.actors.forEach(a => {
-            sprites.push({ x: a.x, y: a.y, char: '@', width: 1, height: 1 });
-            if (a.heldItem) sprites.push({ x: a.x, y: a.y - 0.5, char: '◆', width: 1, height: 1 });
+            sprites.push({x: a.x, y: a.y, char: '@', width: 1, height: 1});
+            if (a.heldItem) sprites.push({x: a.x, y: a.y - 0.5, char: '◆', width: 1, height: 1});
         });
         state.cubes.forEach(c => {
             if (!c.deleted) {
                 let ch = '█';
                 if (c.type === 'target') ch = '◇';
                 else if (c.type === 'obstacle') ch = '▒';  // Was 'goal_blockade', now generic
-                sprites.push({ x: c.x, y: c.y, char: ch, width: 1, height: 1 });
+                sprites.push({x: c.x, y: c.y, char: ch, width: 1, height: 1});
             }
         });
         state.goals.forEach(g => {
             let ch = '○';
             if (g.forTarget) ch = '◎';
             // NOTE: forBlockade (dumpster) removed - only target goal exists now
-            sprites.push({ x: g.x, y: g.y, char: ch, width: 1, height: 1 });
+            sprites.push({x: g.x, y: g.y, char: ch, width: 1, height: 1});
         });
         return sprites;
     }
@@ -1503,7 +1503,7 @@ try {
             mode: state.gameMode
         });
 
-        const goalConditions = [{ key: 'cubeDeliveredAtGoal', Match: v => v === true }];
+        const goalConditions = [{key: 'cubeDeliveredAtGoal', Match: v => v === true}];
         state.pabtPlan = pabt.newPlan(state.pabtState, goalConditions);
         state.ticker = bt.newTicker(100, state.pabtPlan.Node());
 
@@ -1528,7 +1528,7 @@ try {
             if (state.ticker && state.tickCount % 50 === 0) {
                 const tickerErr = state.ticker.err();
                 if (tickerErr) {
-                    log.error('BT TICKER ERROR', { error: String(tickerErr), tick: state.tickCount });
+                    log.error('BT TICKER ERROR', {error: String(tickerErr), tick: state.tickCount});
                 }
             }
 
@@ -1549,9 +1549,9 @@ try {
                     const c = state.cubes.get(target.targetId);
                     if (c && !c.deleted) {
                         c.deleted = true;
-                        actor.heldItem = { id: c.id };
+                        actor.heldItem = {id: c.id};
                         syncToBlackboard(state);
-                        log.info("Manual Pick", { id: c.id, at: { x: c.x, y: c.y }, click: { x: clickX, y: clickY } });
+                        log.info("Manual Pick", {id: c.id, at: {x: c.x, y: c.y}, click: {x: clickX, y: clickY}});
                     }
                 } else if (target.type === 'place') {
                     const heldId = actor.heldItem.id;
@@ -1566,10 +1566,14 @@ try {
                         state.winConditionMet = true;
                     }
                     syncToBlackboard(state);
-                    log.info("Manual Place", { id: heldId, at: { x: target.x, y: target.y }, click: { x: clickX, y: clickY } });
+                    log.info("Manual Place", {
+                        id: heldId,
+                        at: {x: target.x, y: target.y},
+                        click: {x: clickX, y: clickY}
+                    });
                 }
             } else {
-                log.debug("No viable target to interact with", { click: { x: clickX, y: clickY } });
+                log.debug("No viable target to interact with", {click: {x: clickX, y: clickY}});
             }
             return [state, null];
         }
@@ -1676,33 +1680,32 @@ try {
             TARGET_ID
         };
     }
-
 } catch (e) {
     printFatalError(e);
     throw e;
 }
 
 // EXECUTION CONTROL:
-// Run ONLY if not being required as a module (Node.js) OR if we are in OSM runtime (likely global execution).
+// Run ONLY if we are in OSM runtime.
 // WE ASSUME: In OSM runtime, 'module' is UNDEFINED.
 // WE ASSUME: In Test runtime, 'module' is DEFINED.
 // So: Run if module is undefined.
 // OR: Run if module IS defined but require.main === module.
-
-var shouldRun = true;
-if (typeof module !== 'undefined') {
-    // We are in Node-like environment. Check if main.
-    if (typeof require !== 'undefined' && require.main !== module) {
-        shouldRun = false;
+{
+    let shouldRun = true;
+    if (typeof module !== 'undefined') {
+        // We are in Node-like environment. Check if main.
+        if (typeof require !== 'undefined' && require.main !== module) {
+            shouldRun = false;
+        }
     }
-}
-
-if (shouldRun) {
-    try {
-        tea.run(program, { altScreen: true, mouse: true });
-    } catch (e) {
-        printFatalError(e);
-        throw e;
+    if (shouldRun) {
+        try {
+            tea.run(program, {altScreen: true, mouse: true});
+        } catch (e) {
+            printFatalError(e);
+            throw e;
+        }
     }
-}
 
+}

@@ -60,9 +60,7 @@ try {
     pabt = require('osm:pabt');
     os = require('osm:os');
 
-    // ============================================================================
     // SCENARIO CONFIGURATION
-    // ============================================================================
     //
     // The actor must:
     // 1. Enter the room
@@ -74,7 +72,6 @@ try {
     // - MoveTo(entityId)
     // - Pick(cubeId)
     // - Place() / PlaceAt()
-    // ============================================================================
 
     const ENV_WIDTH = 80;
     const ENV_HEIGHT = 24;
@@ -196,6 +193,8 @@ try {
             activeActorId: 1,
             gameMode: 'automatic',
             tickCount: 0,
+            paused: false,
+            manualMoveTarget: null,
 
             winConditionMet: false,
             targetDelivered: false,
@@ -208,9 +207,7 @@ try {
         };
     }
 
-    // ============================================================================
     // Logic Helpers
-    // ============================================================================
 
     // Find a free adjacent cell for generic placement
     function getFreeAdjacentCell(state, actorX, actorY, targetGoalArea = false) {
@@ -245,9 +242,7 @@ try {
         return null;
     }
 
-    // ============================================================================
     // Pathfinding
-    // ============================================================================
 
     function buildBlockedSet(state, ignoreCubeId) {
         const blocked = new Set();
@@ -378,9 +373,7 @@ try {
         return null;
     }
 
-    // ============================================================================
     // Dynamic Blocker Discovery (PA-BT Dynamic Obstacle Handling)
-    // ============================================================================
 
     /**
      * Finds the ID of the first MOVABLE cube blocking the path from start to target.
@@ -485,9 +478,7 @@ try {
         return null; // No movable blockers found (blocked by walls only)
     }
 
-    // ============================================================================
     // Blackboard Synchronization
-    // ============================================================================
 
     function syncToBlackboard(state) {
         if (!state.blackboard) return;
@@ -551,9 +542,7 @@ try {
         bb.set('cubeDeliveredAtGoal', state.winConditionMet);
     }
 
-    // ============================================================================
     // TRUE PARAMETRIC ACTIONS via ActionGenerator
-    // ============================================================================
 
     // CRITICAL FIX (ISSUE-001): Removed actionCache entirely.
     // PA-BT nodes are STATEFUL - they retain Running status or child indices.
@@ -674,11 +663,9 @@ try {
         return action;
     }
 
-    // =========================================================================
     // createPickGoalBlockadeAction: Pick action for ring blockers (IDs >= 100)
     // Named "Pick_GoalBlockade_X" to match test harness expectations
     // Generated on-demand by ActionGenerator when planner needs heldItemId=X
-    // =========================================================================
     function createPickGoalBlockadeAction(state, cubeId) {
         const name = 'Pick_GoalBlockade_' + cubeId;
 
@@ -743,11 +730,9 @@ try {
         return action;
     }
 
-    // =========================================================================
     // createDepositGoalBlockadeAction: Place a ring blocker to clear the path
     // Named "Deposit_GoalBlockade_X" to match test harness expectations
     // Effect: pathBlocker_goal_1 = -1 (path is now clear)
-    // =========================================================================
     function createDepositGoalBlockadeAction(state, cubeId, destinationKey) {
         const name = 'Deposit_GoalBlockade_' + cubeId;
 
@@ -870,11 +855,9 @@ try {
         return action;
     }
 
-
     function setupPABTActions(state) {
         const actor = () => state.actors.get(state.activeActorId);
 
-        // =====================================================================
         // ACTION GENERATOR - MUST return actions for ALL conditions the planner queries!
         //
         // PA-BT does NOT auto-discover registered actions. The actionGenerator
@@ -883,7 +866,6 @@ try {
         // Key insight from graphjsimpl_test.go:
         // - failedCondition.key = the condition key being checked
         // - failedCondition.value = the TARGET value the planner needs to achieve
-        // =====================================================================
         state.pabtState.setActionGenerator(function (failedCondition) {
             const actions = [];
             const key = failedCondition.key;
@@ -898,11 +880,9 @@ try {
             });
 
             if (key && typeof key === 'string') {
-                // -----------------------------------------------------------------
                 // cubeDeliveredAtGoal: The GOAL condition!
                 // To achieve cubeDeliveredAtGoal=true, we need Deliver_Target
                 // But Deliver_Target requires heldItemId=TARGET_ID and atGoal_1=true
-                // -----------------------------------------------------------------
                 if (key === 'cubeDeliveredAtGoal') {
                     // Return Deliver_Target action (must be created or retrieved)
                     // The registered action should be returned here
@@ -913,10 +893,8 @@ try {
                     }
                 }
 
-                // -----------------------------------------------------------------
                 // heldItemId: Planner needs a specific item to be held
                 // Dynamically create Pick_Obstacle_X for any cube (no hardcoded IDs)
-                // -----------------------------------------------------------------
                 if (key === 'heldItemId') {
                     const itemId = targetValue;
                     if (itemId === TARGET_ID) {
@@ -937,11 +915,9 @@ try {
                     }
                 }
 
-                // -----------------------------------------------------------------
                 // heldItemExists: Planner needs hands to be free (false) or holding (true)
                 // Return Place_Held_Item, Place_Target_Temporary, Place_Obstacle,
                 // AND Deposit_GoalBlockade_X if holding a ring blocker!
-                // -----------------------------------------------------------------
                 if (key === 'heldItemExists') {
                     if (targetValue === false) {
                         log.debug("ACTION_GENERATOR: returning Place actions for heldItemExists=false");
@@ -969,10 +945,8 @@ try {
                     }
                 }
 
-                // -----------------------------------------------------------------
                 // atEntity_X: Planner needs actor at entity location
                 // Return MoveTo_cube_X
-                // -----------------------------------------------------------------
                 if (key.startsWith('atEntity_')) {
                     const entityId = parseInt(key.replace('atEntity_', ''), 10);
                     if (!isNaN(entityId)) {
@@ -986,10 +960,8 @@ try {
                     }
                 }
 
-                // -----------------------------------------------------------------
                 // atGoal_X: Planner needs actor at goal location
                 // Return MoveTo_goal_X
-                // -----------------------------------------------------------------
                 if (key.startsWith('atGoal_')) {
                     const goalId = parseInt(key.replace('atGoal_', ''), 10);
                     if (!isNaN(goalId)) {
@@ -998,7 +970,6 @@ try {
                     }
                 }
 
-                // -----------------------------------------------------------------
                 // pathBlocker_X: Dynamic obstacle detection
                 // When MoveTo fails due to blocked path, syncToBlackboard sets pathBlocker_X = cubeId
                 // ActionGenerator creates decomposed Pick + Deposit actions per PA-BT principles
@@ -1006,7 +977,6 @@ try {
                 // CRITICAL FIX (2026-01-23): Must return BOTH Pick_GoalBlockade AND Deposit_GoalBlockade
                 // The planner needs Pick to satisfy Deposit's precondition (heldItemId=X).
                 // Without Pick in the returned actions, planner cannot chain them!
-                // -----------------------------------------------------------------
                 if (key.startsWith('pathBlocker_')) {
                     const destId = key.replace('pathBlocker_', '');
                     // Get current blocker from blackboard
@@ -1066,9 +1036,7 @@ try {
             state.pabtState.RegisterAction(name, pabt.newAction(name, conditions, effectList, node));
         };
 
-        // ---------------------------------------------------------------------
         // Pick_Target
-        // ---------------------------------------------------------------------
         // Pick_Target: Pick up the target cube when at its location
         //
         // CONFLICT RESOLUTION PATTERN (per review.md 1.3):
@@ -1119,9 +1087,7 @@ try {
             }
         );
 
-        // ---------------------------------------------------------------------
         // Deliver_Target: Place target INTO Goal Area
-        // ---------------------------------------------------------------------
         reg('Deliver_Target',
             [{k: 'atGoal_' + GOAL_ID, v: true}, {k: 'heldItemId', v: TARGET_ID}],
             [{k: 'cubeDeliveredAtGoal', v: true}],
@@ -1163,11 +1129,9 @@ try {
             }
         );
 
-        // ---------------------------------------------------------------------
         // Place_Obstacle: Generic action to place any held obstacle
         // Places the obstacle at any free adjacent cell
         // This is the DYNAMIC replacement for hardcoded blockade actions
-        // ---------------------------------------------------------------------
         reg('Place_Obstacle',
             [{k: 'heldItemExists', v: true}],
             [{k: 'heldItemExists', v: false}, {k: 'heldItemId', v: -1}],
@@ -1224,11 +1188,9 @@ try {
             }
         );
 
-        // ---------------------------------------------------------------------
         // Place_Target_Temporary: Conflict resolution action
         // When holding target but goal is blocked, place target temporarily
         // so hands are free to clear blockades.
-        // ---------------------------------------------------------------------
         reg('Place_Target_Temporary',
             [{k: 'heldItemId', v: TARGET_ID}],
             [{k: 'heldItemExists', v: false}, {k: 'heldItemId', v: -1}],
@@ -1265,7 +1227,6 @@ try {
             }
         );
 
-        // ---------------------------------------------------------------------
         // Place_Held_Item (Generic Drop to free hands)
         // Satisfies the removal of Staging Area logic.
         // REFACTORED: No heldItemIsBlockade check - just place any held item
@@ -1274,7 +1235,6 @@ try {
         // The runtime tick function checks for TARGET_ID and returns failure if holding target.
         // We CANNOT use heldItemId in preconditions because the planner interprets the 'value'
         // field as "this is the value I need to achieve", which causes infinite loops.
-        // ---------------------------------------------------------------------
         reg('Place_Held_Item',
             [
                 {k: 'heldItemExists', v: true}
@@ -1329,9 +1289,7 @@ try {
         );
     }
 
-    // ============================================================================
     // Rendering & Helpers
-    // ============================================================================
 
     function getAllSprites(state) {
         const sprites = [];
@@ -1398,6 +1356,7 @@ try {
         draw(' PICK-AND-PLACE SIM');
         draw('═════════════════════════');
         draw('Mode: ' + state.gameMode.toUpperCase());
+        if (state.paused) draw('*** PAUSED ***');
         draw('Goal: 3x3 Area');
         draw('Tick: ' + state.tickCount);  // Force bubbletea renderer to see change
         if (state.winConditionMet) draw('*** GOAL ACHIEVED! ***');
@@ -1408,85 +1367,14 @@ try {
         draw('[M] Toggle Mode');
         draw('[WASD] Move (manual)');
         draw('[Space] Pause');
+        draw('[Mouse] Click to Move/Interact');
 
         const rows = [];
         for (let y = 0; y < height; y++) rows.push(buffer.slice(y * width, (y + 1) * width).join(''));
         return rows.join('\n');
     }
 
-    // ============================================================================
     // Model Update & Init
-    // ============================================================================
-
-
-    // ============================================================================
-    // Helper: Find Closest Viable Target
-    // ============================================================================
-    function findClosestViableTarget(state, clickX, clickY) {
-        const actor = state.actors.get(state.activeActorId);
-        const candidates = [];
-        const ax = Math.round(actor.x);
-        const ay = Math.round(actor.y);
-
-        // Define adjacency (including diagonals)
-        const dirs = [[0, 0], [0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-
-        // Mode 1: Holding Item -> Can Place
-        if (actor.heldItem) {
-            for (const [dx, dy] of dirs) {
-                const nx = ax + dx;
-                const ny = ay + dy;
-
-                if (nx < 0 || nx >= state.spaceWidth || ny < 0 || ny >= state.height) continue;
-
-                let occupied = false;
-                for (const c of state.cubes.values()) {
-                    if (!c.deleted && Math.round(c.x) === nx && Math.round(c.y) === ny) {
-                        occupied = true;
-                        break;
-                    }
-                }
-
-                if (!occupied) {
-                    candidates.push({
-                        type: 'place',
-                        x: nx,
-                        y: ny,
-                        dist: Math.sqrt(Math.pow(nx - clickX, 2) + Math.pow(ny - clickY, 2))
-                    });
-                }
-            }
-        }
-        // Mode 2: Empty Hands -> Can Pick
-        else {
-            for (const [dx, dy] of dirs) {
-                const nx = ax + dx;
-                const ny = ay + dy;
-
-                for (const c of state.cubes.values()) {
-                    if (!c.deleted && !c.isStatic && Math.round(c.x) === nx && Math.round(c.y) === ny) {
-                        candidates.push({
-                            type: 'pick',
-                            targetId: c.id,
-                            x: nx,
-                            y: ny,
-                            dist: Math.sqrt(Math.pow(nx - clickX, 2) + Math.pow(ny - clickY, 2))
-                        });
-                    }
-                }
-            }
-        }
-
-        if (candidates.length === 0) return null;
-        candidates.sort((a, b) => a.dist - b.dist);
-        if (candidates[0].dist > 5.0) return null;
-
-        return candidates[0];
-    }
-
-    // ============================================================================
-    // Model Update & Init
-    // ============================================================================
 
     function init() {
         const state = initializeSimulation();
@@ -1511,8 +1399,42 @@ try {
     }
 
     function update(state, msg) {
+        // SIMULATION TICK
         if (msg.type === 'Tick' && msg.id === 'tick') {
+            if (state.paused) {
+                return [state, tea.tick(16, 'tick')];
+            }
+
             state.tickCount++;
+
+            // Handle Manual Click-to-Move Pathfinding (Standard Game-Style Logic)
+            if (state.gameMode === 'manual' && state.manualMoveTarget) {
+                const actor = state.actors.get(state.activeActorId);
+                const tx = state.manualMoveTarget.x;
+                const ty = state.manualMoveTarget.y;
+
+                const dx = tx - actor.x;
+                const dy = ty - actor.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                // Use 1.5 threshold for movement arrival (consistent with MoveTo)
+                if (dist < 1.0) {
+                    state.manualMoveTarget = null;
+                } else {
+                    // Use existing pathfinding logic
+                    const ignoreId = actor.heldItem ? actor.heldItem.id : -1;
+                    const nextStep = findNextStep(state, actor.x, actor.y, tx, ty, ignoreId);
+                    if (nextStep) {
+                        const stepDx = nextStep.x - actor.x;
+                        const stepDy = nextStep.y - actor.y;
+                        actor.x += Math.sign(stepDx) * Math.min(1.0, Math.abs(stepDx));
+                        actor.y += Math.sign(stepDy) * Math.min(1.0, Math.abs(stepDy));
+                    } else {
+                        // Blocked or unreachable
+                        state.manualMoveTarget = null;
+                    }
+                }
+            }
 
             if (state.debugMode && (state.tickCount <= 5 || state.tickCount % 50 === 0)) {
                 const actor = state.actors.get(state.activeActorId);
@@ -1536,57 +1458,97 @@ try {
             return [state, tea.tick(16, 'tick')];
         }
 
+        // MOUSE INTERACTION (Manual Mode Only)
         if (msg.type === 'Mouse' && msg.event === 'press' && state.gameMode === 'manual') {
             const actor = state.actors.get(state.activeActorId);
             const spaceX = Math.floor((state.width - state.spaceWidth) / 2);
             const clickX = msg.x - spaceX;
             const clickY = msg.y;
 
-            const target = findClosestViableTarget(state, clickX, clickY);
+            // Bounds check
+            if (clickX < 0 || clickX >= state.spaceWidth || clickY < 0 || clickY >= state.height) {
+                return [state, null];
+            }
 
-            if (target) {
-                if (target.type === 'pick') {
-                    const c = state.cubes.get(target.targetId);
-                    if (c && !c.deleted) {
-                        c.deleted = true;
-                        actor.heldItem = {id: c.id};
-                        syncToBlackboard(state);
-                        log.info("Manual Pick", {id: c.id, at: {x: c.x, y: c.y}, click: {x: clickX, y: clickY}});
-                    }
-                } else if (target.type === 'place') {
+            // Identify clicked entity
+            let clickedCube = null;
+            for (const c of state.cubes.values()) {
+                if (!c.deleted && Math.round(c.x) === clickX && Math.round(c.y) === clickY) {
+                    clickedCube = c;
+                    break;
+                }
+            }
+
+            const dist = Math.sqrt(Math.pow(clickX - actor.x, 2) + Math.pow(clickY - actor.y, 2));
+            const isHolding = actor.heldItem !== null;
+
+            // INTERACTION LOGIC: "Standard Game-Style"
+            // 1. Interact if possible and close enough
+            // 2. Otherwise move there
+
+            let performedAction = false;
+
+            if (isHolding) {
+                // PLACE: Can place if empty cell and within adjacency (approx 1.5)
+                if (!clickedCube && dist <= 1.5) {
                     const heldId = actor.heldItem.id;
                     const c = state.cubes.get(heldId);
                     if (c) {
                         c.deleted = false;
-                        c.x = target.x;
-                        c.y = target.y;
+                        c.x = clickX;
+                        c.y = clickY;
+                        actor.heldItem = null;
+                        performedAction = true;
+                        // Check win condition
+                        if (heldId === TARGET_ID && isInGoalArea(clickX, clickY)) {
+                            state.winConditionMet = true;
+                        }
+                        syncToBlackboard(state);
+                        log.info("Manual Place", {id: heldId, at: {x: clickX, y: clickY}});
                     }
-                    actor.heldItem = null;
-                    if (isInGoalArea(target.x, target.y) && heldId === TARGET_ID) {
-                        state.winConditionMet = true;
-                    }
-                    syncToBlackboard(state);
-                    log.info("Manual Place", {
-                        id: heldId,
-                        at: {x: target.x, y: target.y},
-                        click: {x: clickX, y: clickY}
-                    });
                 }
             } else {
-                log.debug("No viable target to interact with", {click: {x: clickX, y: clickY}});
+                // PICK: Can pick if valid cube and within PICK_THRESHOLD
+                if (clickedCube && !clickedCube.isStatic && dist <= PICK_THRESHOLD) {
+                    clickedCube.deleted = true;
+                    actor.heldItem = {id: clickedCube.id};
+                    performedAction = true;
+                    syncToBlackboard(state);
+                    log.info("Manual Pick", {id: clickedCube.id, at: {x: clickX, y: clickY}});
+                }
             }
+
+            if (performedAction) {
+                state.manualMoveTarget = null; // Stop moving if we interacted
+            } else {
+                // MOVE: If not interacting, set pathfinding target
+                log.debug("Manual Move Target Set", {x: clickX, y: clickY});
+                state.manualMoveTarget = {x: clickX, y: clickY};
+            }
+
             return [state, null];
         }
 
+        // KEYBOARD INTERACTION
         if (msg.type === 'Key') {
             if (msg.key === 'q') return [state, tea.quit()];
             if (msg.key === 'm') {
                 state.gameMode = state.gameMode === 'automatic' ? 'manual' : 'automatic';
+                state.manualMoveTarget = null; // Reset pathfinding on mode switch
+                return [state, null];
+            }
+            if (msg.key === ' ') {
+                state.paused = !state.paused;
                 return [state, null];
             }
 
-            if (state.gameMode === 'manual') {
+            // SNAPPY MANUAL CONTROL
+            // Removed heavy Blackboard sync from this loop to eliminate input lag.
+            // Collision checks happen directly against state.cubes.
+            if (state.gameMode === 'manual' && !state.paused) {
                 const actor = state.actors.get(state.activeActorId);
+                state.manualMoveTarget = null; // Key input overrides click pathfinding
+
                 let dx = 0, dy = 0;
                 if (msg.key === 'w') dy = -1;
                 if (msg.key === 's') dy = 1;
@@ -1597,13 +1559,20 @@ try {
                     const nx = actor.x + dx;
                     const ny = actor.y + dy;
                     let blocked = false;
+
+                    // Fast collision check
                     for (let c of state.cubes.values()) {
-                        if (!c.deleted && Math.round(c.x) === Math.round(nx) && Math.round(c.y) === Math.round(ny)) blocked = true;
+                        if (!c.deleted && Math.round(c.x) === Math.round(nx) && Math.round(c.y) === Math.round(ny)) {
+                            // We can walk through held item
+                            if (actor.heldItem && c.id === actor.heldItem.id) continue;
+                            blocked = true;
+                            break;
+                        }
                     }
+
                     if (!blocked) {
                         actor.x = nx;
                         actor.y = ny;
-                        syncToBlackboard(state);
                     }
                     return [state, null];
                 }
@@ -1707,5 +1676,4 @@ try {
             throw e;
         }
     }
-
 }

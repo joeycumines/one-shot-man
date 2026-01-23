@@ -1482,16 +1482,20 @@ try {
                     const nextX = actor.x + Math.sign(dx) * Math.min(1.0, Math.abs(dx));
                     const nextY = actor.y + Math.sign(dy) * Math.min(1.0, Math.abs(dy));
                     let nextBlocked = false;
-                    
+
                     for (const c of state.cubes.values()) {
                         if (!c.deleted && Math.round(c.x) === Math.round(nextX) && Math.round(c.y) === Math.round(nextY)) {
                             if (actor.heldItem && c.id === actor.heldItem.id) continue;
                             nextBlocked = true;
-                            log.warn("Path collision detected during manual movement", {x: nextX, y: nextY, tick: state.tickCount});
+                            log.warn("Path collision detected during manual movement", {
+                                x: nextX,
+                                y: nextY,
+                                tick: state.tickCount
+                            });
                             break;
                         }
                     }
-                    
+
                     if (nextBlocked) {
                         // Path is now blocked - abort movement
                         state.manualPath = [];
@@ -1499,7 +1503,7 @@ try {
                         state.pathStuckTicks = 0;
                     }
                 }
-                
+
                 if (state.manualPath.length > 0) {
                     if (dist < 0.1) {
                         // Reached waypoint
@@ -1512,7 +1516,7 @@ try {
                         // Move towards waypoint (Speed = 1.0, consistent with findNextStep)
                         actor.x += Math.sign(dx) * Math.min(1.0, Math.abs(dx));
                         actor.y += Math.sign(dy) * Math.min(1.0, Math.abs(dy));
-                        
+
                         // Stuck detection: if distance didn't decrease, increment counter
                         const newDist = Math.sqrt(Math.pow(nextPoint.x - actor.x, 2) + Math.pow(nextPoint.y - actor.y, 2));
                         if (newDist >= oldDist - 0.01) {
@@ -1520,7 +1524,7 @@ try {
                         } else {
                             state.pathStuckTicks = 0; // Reset on progress
                         }
-                        
+
                         // Abort if stuck for ~1 second (62 ticks at 16ms)
                         if (state.pathStuckTicks > 60) {
                             log.warn("Path traversal stuck - aborting movement", {tick: state.tickCount});
@@ -1665,10 +1669,10 @@ try {
                 state.manualMoveTarget = null;
                 state.manualPath = [];
                 state.pathStuckTicks = 0;
-                
+
                 // Debug logging
                 log.debug('Mode switch', {oldMode, newMode, wasManual});
-                
+
                 // When resuming automatic mode, sync blackboard with full pathfinding
                 if (wasManual && state.gameMode === 'automatic') {
                     syncToBlackboard(state);

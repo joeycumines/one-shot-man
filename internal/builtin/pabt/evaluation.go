@@ -232,10 +232,11 @@ func (c *ExprCondition) getOrCompileProgram() (*vm.Program, error) {
 
 	// Check global cache
 	if cached, ok := exprCache.Load(c.expression); ok {
+		program := cached.(*vm.Program)
 		c.mu.Lock()
-		c.program = cached.(*vm.Program)
+		c.program = program
 		c.mu.Unlock()
-		return c.program, nil
+		return program, nil
 	}
 
 	// Compile the expression

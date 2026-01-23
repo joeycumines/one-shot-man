@@ -2,6 +2,7 @@ package bt
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -452,8 +453,13 @@ func TestBlockingJSLeaf_BridgeStopWhileWaiting(t *testing.T) {
 	case r := <-resultCh:
 		require.Equal(t, bt.Failure, r.status)
 		require.Error(t, r.err)
-		// Actual error is "event loop terminated" from RunOnLoop returning false
-		require.Contains(t, r.err.Error(), "event loop terminated")
+		// Actual error is "event loop terminated" from RunOnLoop returning false, or "bridge stopped"
+		// if the bridge context is cancelled while waiting.
+		require.True(t,
+			(r.err.Error() == "event loop terminated") ||
+				(strings.Contains(r.err.Error(), "bridge stopped")),
+			"error should be 'event loop terminated' or contain 'bridge stopped', got: %v", r.err,
+		)
 	case <-time.After(time.Second):
 		t.Fatal("BlockingJSLeaf should have unblocked when bridge stopped")
 	}

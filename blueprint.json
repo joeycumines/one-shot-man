@@ -28,61 +28,6 @@
   },
   "tasks": [
     {
-      "id": 1,
-      "grouping": "Core Manual Mode Fixes",
-      "title": "Add manualKeys state field to track key press/release state",
-      "description": "Add state.manualKeys field to track which keys are currently pressed. This enables smooth key-hold detection and release handling. Must initialize as empty object/map in state initialization.",
-      "status": "completed",
-      "deliverable": "state.manualKeys field exists in state initialization and is properly maintained",
-      "dependencies": [],
-      "validation": "manualKeys field present in initialization, correctly tracks key press/release events",
-      "notes": "Implemented at line 200 of scripts/example-05-pick-and-place.js: manualKeys: new Map()"
-    },
-    {
-      "id": 2,
-      "grouping": "Core Manual Mode Fixes",
-      "title": "Implement KeyRelease event handling in Bubbletea message handler",
-      "description": "Add KeyRelease event handling in the message handler. When KeyRelease event arrives, remove key from state.manualKeys. This enables proper cleanup when user releases keys.",
-      "status": "completed",
-      "deliverable": "KeyRelease events are captured and state.manualKeys is updated appropriately",
-      "dependencies": [1],
-      "validation": "Key release detection works correctly via timeout-based approach",
-      "notes": "Alternative implementation using timeout-based key release detection (500ms) at lines 1600-1605. Bubbletea doesn't provide explicit KeyRelease for keyboard, so timestamp tracking achieves same result. Works correctly per integration tests."
-    },
-    {
-      "id": 3,
-      "grouping": "Core Manual Mode Fixes",
-      "title": "Move WASD movement logic from Key handler to Tick handler",
-      "description": "Currently WASD movement is in Key handler (msg.type === 'Key'). Move WASD movement logic to Tick handler. Key handler should only update state.manualKeys. Tick handler should check state.manualKeys and apply movement. This enables smooth, continuous input without OS repeat rate limitations.",
-      "status": "completed",
-      "deliverable": "WASD movement logic entirely in Tick handler driven by state.manualKeys, not in Key handler",
-      "dependencies": [1, 2],
-      "validation": "Key handler only updates manualKeys, Tick handler applies movement based on manualKeys",
-      "notes": "Implemented at line 216-250: manualKeysMovement() function, called at line 1609 in Tick handler. Key handler at line 1780 only sets manualKeys state. Verified by tests."
-    },
-    {
-      "id": 4,
-      "grouping": "Input Handling Robustness",
-      "title": "Implement custom key-hold support with smooth repeat rate",
-      "description": "Implement custom key-hold logic in Tick handler instead of relying on OS key repeat. Use state.manualKeys to detect held keys. Apply movement at consistent, smooth rate (e.g., every N ticks or based on delta time). This provides GOOD intuitive UX for holding keys.",
-      "status": "completed",
-      "deliverable": "Smooth key-hold movement implemented with consistent, configurable repeat rate not dependent on OS settings",
-      "dependencies": [3],
-      "validation": "Holding WASD keys produces smooth, continuous movement without stuttering or OS repeat artifacts",
-      "notes": "Implemented at 16ms tick rate in manualKeysMovement() function. NOT relying on OS key repeat. Diagonal movement supported. Verified by tests with smooth continuous movement."
-    },
-    {
-      "id": 5,
-      "grouping": "Input Handling Robustness",
-      "title": "Add debug output for manualKeys state to verify key tracking",
-      "description": "Add state.manualKeys to debug JSON output (e.g., 'mk' field) to visualize which keys are currently pressed. This aids debugging and verification of input handling correctness.",
-      "status": "completed",
-      "deliverable": "debug JSON includes 'mk' field showing current pressed keys",
-      "dependencies": [1],
-      "validation": "Debug output successfully shows manualKeys state correctly",
-      "notes": "Implemented at lines 1816-1841: builds mk array from manualKeys Map, included in debug JSON. Correctly shows pressed keys like ['w'] or ['w','a'] for diagonal."
-    },
-    {
       "id": 6,
       "grouping": "Simulation Consistency",
       "title": "Create tests to verify identical physics across manual and automatic modes",

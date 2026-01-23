@@ -130,7 +130,9 @@ try {
 
     // Pick/Place thresholds
     const PICK_THRESHOLD = 1.8; // Distance threshold for picking up cubes
-    const MANUAL_MOVE_SPEED = 0.25;
+    // MANUAL_MOVE_SPEED = 1.0 to match automatic mode movement (1 unit per tick)
+    // This ensures PERFECT CONSISTENCY between manual and automatic modes per bugreport.md
+    const MANUAL_MOVE_SPEED = 1.0;
 
     // Helper: Check if point is within the Goal Area
     function isInGoalArea(x, y) {
@@ -267,20 +269,27 @@ try {
 
         if (dx === 0 && dy === 0) return false;
 
+        // Calculate new position - with MANUAL_MOVE_SPEED = 1.0, this is integer-based
         const nx = actor.x + dx * MANUAL_MOVE_SPEED;
         const ny = actor.y + dy * MANUAL_MOVE_SPEED;
+        
+        // Use integer position for collision detection (consistent with automatic mode)
+        const inx = Math.round(nx);
+        const iny = Math.round(ny);
         let blocked = false;
 
-        // Boundary check first
-        if (Math.round(nx) < 0 || Math.round(nx) >= state.spaceWidth ||
-            Math.round(ny) < 0 || Math.round(ny) >= state.height) {
+        // Boundary check - MUST match pathfinding boundaries for consistency
+        // Pathfinding uses: nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1
+        // This is to ensure consistent behavior between manual and automatic modes
+        if (inx < 1 || inx >= state.spaceWidth - 1 ||
+            iny < 1 || iny >= state.height - 1) {
             blocked = true;
         }
 
         // Fast collision check (only if not already blocked by boundary)
         if (!blocked) {
             for (const c of state.cubes.values()) {
-                if (!c.deleted && Math.round(c.x) === Math.round(nx) && Math.round(c.y) === Math.round(ny)) {
+                if (!c.deleted && Math.round(c.x) === inx && Math.round(c.y) === iny) {
                     if (actor.heldItem && c.id === actor.heldItem.id) continue;
                     blocked = true;
                     break;

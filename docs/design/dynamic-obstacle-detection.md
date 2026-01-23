@@ -1,7 +1,7 @@
 # Dynamic Obstacle Detection and Clearing System
 
-**Design Document**  
-**Date:** 2026-01-22  
+**Design Document**
+**Date:** 2026-01-22
 **Status:** DESIGN PROPOSAL
 
 ---
@@ -126,24 +126,24 @@ interface BlockerResult {
 
 /**
  * BFS pathfinding that identifies blocking obstacles.
- * 
+ *
  * @param state - Current simulation state
  * @param fromX - Starting X coordinate
- * @param fromY - Starting Y coordinate  
+ * @param fromY - Starting Y coordinate
  * @param toX - Target X coordinate
  * @param toY - Target Y coordinate
  * @returns BlockerResult with blocking status and blocker info
  */
 function findBlockerOnPath(
     state: SimulationState,
-    fromX: number, 
+    fromX: number,
     fromY: number,
-    toX: number, 
+    toX: number,
     toY: number
 ): BlockerResult {
     const visited = new Set<string>();
     const key = (x: number, y: number) => `${x},${y}`;
-    
+
     // Build obstacle map: position -> cube ID
     const obstacles = new Map<string, number>();
     state.cubes.forEach(cube => {
@@ -151,33 +151,33 @@ function findBlockerOnPath(
             obstacles.set(key(Math.round(cube.x), Math.round(cube.y)), cube.id);
         }
     });
-    
+
     // BFS from target toward start (for "first blocker" from goal perspective)
     const queue = [{x: Math.round(toX), y: Math.round(toY)}];
     visited.add(key(queue[0].x, queue[0].y));
-    
+
     const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
     let nearestBlocker: {id: number, x: number, y: number, dist: number} | null = null;
-    
+
     while (queue.length > 0) {
         const current = queue.shift()!;
-        
+
         // Check if reached start position
         if (Math.abs(current.x - fromX) <= 1 && Math.abs(current.y - fromY) <= 1) {
             return { blocked: false, blockerId: null, blockerPosition: null };
         }
-        
+
         for (const [dx, dy] of dirs) {
             const nx = current.x + dx;
             const ny = current.y + dy;
             const nKey = key(nx, ny);
-            
+
             if (visited.has(nKey)) continue;
             visited.add(nKey);
-            
+
             // Check bounds
             if (nx < 0 || nx >= state.width || ny < 0 || ny >= state.height) continue;
-            
+
             // Check for obstacle
             const obstacleId = obstacles.get(nKey);
             if (obstacleId !== undefined) {
@@ -188,20 +188,20 @@ function findBlockerOnPath(
                 }
                 continue; // Don't expand through obstacles
             }
-            
+
             queue.push({x: nx, y: ny});
         }
     }
-    
+
     // Path blocked - return the nearest blocker
     if (nearestBlocker) {
-        return { 
-            blocked: true, 
+        return {
+            blocked: true,
             blockerId: nearestBlocker.id,
             blockerPosition: { x: nearestBlocker.x, y: nearestBlocker.y }
         };
     }
-    
+
     // Completely isolated - no path possible
     return { blocked: true, blockerId: null, blockerPosition: null };
 }
@@ -213,12 +213,12 @@ function findBlockerOnPath(
 function createMoveToAction(state, targetX, targetY, targetName) {
     return bt.createLeafNode(() => {
         const actor = state.actors.get(state.activeActorId);
-        
+
         // Check reachability with blocker discovery
         const blockerResult = findBlockerOnPath(
             state, actor.x, actor.y, targetX, targetY
         );
-        
+
         if (blockerResult.blocked) {
             // Record the blocker in blackboard for ActionGenerator
             if (blockerResult.blockerId !== null) {
@@ -226,19 +226,19 @@ function createMoveToAction(state, targetX, targetY, targetName) {
                 state.blackboard.set('pathBlockedAt_x', blockerResult.blockerPosition.x);
                 state.blackboard.set('pathBlockedAt_y', blockerResult.blockerPosition.y);
             }
-            
+
             log.debug('MoveTo failed - path blocked by cube', {
                 blockerId: blockerResult.blockerId,
                 from: {x: actor.x, y: actor.y},
                 to: {x: targetX, y: targetY}
             });
-            
+
             return bt.failure; // Triggers replanning
         }
-        
+
         // Clear any previous blocker state
         state.blackboard.set('pathBlockedBy', -1);
-        
+
         // ... normal pathfinding step execution ...
         return bt.running;
     });
@@ -279,13 +279,13 @@ The dynamic approach requires **fewer** blackboard keys than the hardcoded appro
 function syncToBlackboard(state) {
     const bb = state.blackboard;
     const actor = state.actors.get(state.activeActorId);
-    
+
     // ALWAYS sync: Core state (small fixed set)
     bb.set('actorX', actor.x);
     bb.set('actorY', actor.y);
     bb.set('heldItemExists', actor.heldItem !== null);
     bb.set('heldItemId', actor.heldItem?.id ?? -1);
-    
+
     // DYNAMICALLY sync: Only for entities we're interacting with
     // Don't pre-create atEntity_X for every cube - create on demand
     if (state.currentTargetId !== null) {
@@ -295,7 +295,7 @@ function syncToBlackboard(state) {
             bb.set(`atEntity_${state.currentTargetId}`, dist <= 1.8);
         }
     }
-    
+
     // CLEAR stale dynamic keys when no longer relevant
     // (handled by action completion callbacks)
 }
@@ -364,16 +364,16 @@ These actions are always available and don't depend on dynamic discovery:
         // Find nearest free cell and place held item there
         const spot = getFreeAdjacentCell(state, actor.x, actor.y);
         if (!spot) return bt.failure;
-        
+
         // Place the cube at spot
         const cube = state.cubes.get(actor.heldItem.id);
         cube.x = spot.x;
         cube.y = spot.y;
         cube.deleted = false;
-        
+
         // Mark this cube as "cleared" (moved from blocking position)
         state.blackboard.set(`cube_${cube.id}_cleared`, true);
-        
+
         actor.heldItem = null;
         return bt.success;
     }
@@ -404,10 +404,10 @@ function createClearObstacleAction(state, cubeId) {
         tick: function() {
             const cube = state.cubes.get(cubeId);
             if (!cube || cube.deleted) return bt.success;
-            
+
             cube.deleted = true;
             actor.heldItem = { id: cubeId };
-            
+
             // Now we need to place it somewhere
             // This triggers Place_Held_Item as next action
             return bt.success;
@@ -421,7 +421,7 @@ function createClearObstacleAction(state, cubeId) {
 ```javascript
 function createMoveToEntityAction(state, entityId) {
     const entity = state.cubes.get(entityId) || state.goals.get(entityId);
-    
+
     return {
         name: `MoveTo_${entityId}`,
         preconditions: [
@@ -435,12 +435,12 @@ function createMoveToEntityAction(state, entityId) {
             const blockerResult = findBlockerOnPath(
                 state, actor.x, actor.y, entity.x, entity.y
             );
-            
+
             if (blockerResult.blocked) {
                 state.blackboard.set('pathBlockedBy', blockerResult.blockerId);
                 return bt.failure; // Triggers ClearObstacle via ActionGenerator
             }
-            
+
             // ... execute movement step ...
         }
     };
@@ -460,9 +460,9 @@ state.pabtState.setActionGenerator(function(failedCondition) {
     const actions = [];
     const key = failedCondition.key;
     const targetValue = failedCondition.value;
-    
+
     log.debug('ActionGenerator called', { key, targetValue });
-    
+
     // ─────────────────────────────────────────────────────────────────
     // CASE 1: Planner needs actor at a specific entity
     // Generate MoveTo action for that entity
@@ -473,7 +473,7 @@ state.pabtState.setActionGenerator(function(failedCondition) {
             actions.push(createMoveToEntityAction(state, entityId));
         }
     }
-    
+
     // ─────────────────────────────────────────────────────────────────
     // CASE 2: Planner needs a specific cube cleared
     // Generate ClearObstacle action for that cube
@@ -485,7 +485,7 @@ state.pabtState.setActionGenerator(function(failedCondition) {
             actions.push(createClearObstacleAction(state, cubeId));
         }
     }
-    
+
     // ─────────────────────────────────────────────────────────────────
     // CASE 3: Planner needs heldItemExists=false (hands free)
     // Return Place_Held_Item (already registered statically)
@@ -494,7 +494,7 @@ state.pabtState.setActionGenerator(function(failedCondition) {
         const placeAction = state.pabtState.GetAction('Place_Held_Item');
         if (placeAction) actions.push(placeAction);
     }
-    
+
     // ─────────────────────────────────────────────────────────────────
     // CASE 4: MoveTo returned failure and set pathBlockedBy
     // This triggers the DYNAMIC DISCOVERY pattern
@@ -505,7 +505,7 @@ state.pabtState.setActionGenerator(function(failedCondition) {
     //
     // The key insight: we DON'T need to check pathBlockedBy here.
     // The failure cascade naturally leads to the right condition.
-    
+
     return actions;
 });
 ```
@@ -515,31 +515,31 @@ state.pabtState.setActionGenerator(function(failedCondition) {
 ```
 1. Goal: cubeDeliveredAtGoal=true
    ↓ Planner selects Deliver_Target
-   
+
 2. Precondition: atGoal=true (FAILED)
    ↓ ActionGenerator returns MoveTo_Goal
-   
+
 3. MoveTo_Goal.tick() runs
    ↓ Path blocked by cube 105
    ↓ Sets pathBlockedBy=105
    ↓ Returns bt.failure
-   
+
 4. Replanning triggered
    ↓ Planner rechecks atGoal=true
    ↓ MoveTo_Goal still available, but WHY did it fail?
-   
+
 5. INSIGHT: MoveTo needs cube_105_cleared=true
    (This is implicit in the failure - we make it explicit)
-   
+
 6. Precondition: cube_105_cleared=true (FAILED)
    ↓ ActionGenerator returns ClearObstacle_105
-   
+
 7. ClearObstacle_105.preconditions:
    - heldItemExists=false ✓
    - atEntity_105=false (FAILED)
-   
+
 8. ActionGenerator returns MoveTo_105
-   
+
 9. Final plan: [MoveTo_105, ClearObstacle_105, Place_Held_Item, MoveTo_Goal, Deliver_Target]
 ```
 
@@ -571,18 +571,18 @@ Goal Check: cubeDeliveredAtGoal=true? → NO
 Planner Expansion:
   Goal: cubeDeliveredAtGoal=true
     ← Effect of Deliver_Target
-    
+
   Deliver_Target.preconditions:
     - heldItemId=TARGET_ID → FALSE
     - atGoalArea=true → FALSE
-    
+
   Expand heldItemId=TARGET_ID:
     ← Effect of Pick_Target
-    
+
   Pick_Target.preconditions:
     - heldItemExists=false → TRUE ✓
     - atEntity_TARGET=true → FALSE
-    
+
   Expand atEntity_TARGET=true:
     ← ActionGenerator creates MoveTo_TARGET
 
@@ -624,23 +624,23 @@ TICK 103: Replanning with Blocker Knowledge
 Planner re-expands from Deliver_Target:
   - heldItemId=TARGET_ID → TRUE ✓
   - atGoalArea=true → FALSE
-  
+
 Expand atGoalArea=true:
   ← ActionGenerator creates MoveTo_Goal
-  
+
 MoveTo_Goal has implicit precondition:
   cube_100_cleared=true → FALSE
-  
+
 Expand cube_100_cleared=true:
   ← ActionGenerator creates ClearObstacle_100
-  
+
 ClearObstacle_100.preconditions:
   - heldItemExists=false → FALSE (holding target!)
   - atEntity_100=true → FALSE
-  
+
 Expand heldItemExists=false:
   ← ActionGenerator returns Place_Held_Item
-  
+
 NEW Plan: [Place_Held_Item, MoveTo_100, ClearObstacle_100, Place_Held_Item,
            MoveTo_TARGET, Pick_Target, MoveTo_Goal, Deliver_Target]
 
@@ -729,7 +729,7 @@ Pick_Target.preconditions = ['blockade_100_cleared', 'blockade_101_cleared', ...
 - Obstacle is cleared as long as it's not blocking the path
 - Much faster execution
 
-**Caveat:** If the free cell is STILL in the path, the obstacle isn't really cleared. 
+**Caveat:** If the free cell is STILL in the path, the obstacle isn't really cleared.
 Solution: `getFreeAdjacentCell` should prefer cells AWAY from the goal path.
 
 ### 3. How Does Planner Discover Obstacles Without Preconditions?

@@ -1,7 +1,7 @@
 # PA-BT Pick-and-Place Planning Document
 
-**Created:** 2026-01-22  
-**Status:** ACTIVE - Implementation pending  
+**Created:** 2026-01-22
+**Status:** ACTIVE - Implementation pending
 
 ---
 
@@ -22,7 +22,7 @@ The current `scripts/example-05-pick-and-place.js` implementation **fundamentall
 The agent MUST NOT bake in ANY knowledge of the "blockade". The implementation MUST:
 
 1. **Navigate to goal item** to pick it up
-2. **If blocked, replan**: 
+2. **If blocked, replan**:
    - Place goal item down (if holding)
    - Move ONE blocking object out of the way to an **arbitrary, low-effort location** (NOT a pre-defined bin)
 3. **Return to goal item**, pick it up, deliver to goal

@@ -346,14 +346,14 @@ Sets a dynamic action generator for **parametric actions**.
 ```javascript
 state.setActionGenerator(function(failedCondition) {
     const key = failedCondition.key;
-    
+
     // Pattern match on condition key
     if (key && key.startsWith('atEntity_')) {
         const entityId = parseInt(key.replace('atEntity_', ''));
         // Generate MoveTo action for this specific entity
         return [createMoveToAction(entityId)];
     }
-    
+
     return [];  // No actions for this condition
 });
 ```
@@ -441,13 +441,13 @@ state.registerAction('Pick', pabt.newAction('Pick',
 // PARAMETRIC: MoveTo any entity
 state.setActionGenerator(function(failedCondition) {
     const key = failedCondition.key;
-    
+
     // Generate MoveTo actions on-demand
     if (key.startsWith('atEntity_')) {
         const id = parseInt(key.replace('atEntity_', ''));
         return [createMoveToAction(id)];
     }
-    
+
     return [];
 });
 ```
@@ -521,12 +521,12 @@ Efficient synchronization between JS state and blackboard.
 function syncToBlackboard(state) {
     const bb = state.blackboard;
     const actor = state.actors.get(1);
-    
+
     // ALWAYS sync: Core state
     bb.set('actorX', actor.x);
     bb.set('actorY', actor.y);
     bb.set('heldItem', actor.heldItem ? actor.heldItem.id : null);
-    
+
     // CONDITIONALLY sync: Expensive computations
     // Only sync reachability if planner might need it
     if (!state.plan || !state.plan.Running()) {
@@ -556,12 +556,12 @@ const actionCache = new Map();
 
 function createMoveToAction(entityId) {
     const cacheKey = `MoveTo_${entityId}`;
-    
+
     // Return cached if exists
     if (actionCache.has(cacheKey)) {
         return actionCache.get(cacheKey);
     }
-    
+
     // Create new action
     const action = pabt.newAction(
         cacheKey,
@@ -569,7 +569,7 @@ function createMoveToAction(entityId) {
         [{key: `atEntity_${entityId}`, Value: true}],
         createExecutionNode(entityId)
     );
-    
+
     // Cache for future use
     actionCache.set(cacheKey, action);
     return action;
@@ -605,7 +605,7 @@ state.setActionGenerator(function(failedCondition) {
    ```javascript
    // Bad: JavaScript condition (slow)
    {key: 'distance', Match: v => v < 100}
-   
+
    // Good: Expr condition (fast)
    pabt.newExprCondition('distance', 'Value < 100')
    ```
@@ -618,7 +618,7 @@ state.setActionGenerator(function(failedCondition) {
    bb.set('cube_x', cube.x);
    bb.set('cube_y', cube.y);
    bb.set('distance', Math.sqrt(...));  // Derived
-   
+
    // Good: Sync only what planner needs
    bb.set('distance', computeDistance(actor, cube));
    ```
@@ -685,10 +685,10 @@ const action = pabt.newAction('Pick',
     bt.createLeafNode(() => {
         console.log('Pick executing!');
         console.log('Before:', actor.heldItem);
-        
+
         // Actually mutate state
         actor.heldItem = {id: 1};
-        
+
         console.log('After:', actor.heldItem);
         return bt.success;  // Must return correct status!
     })
@@ -752,14 +752,14 @@ const plan = pabt.newPlan(state, [
 ```javascript
 state.setActionGenerator(function(failedCondition) {
     console.log('Generator called! Key:', failedCondition.key);
-    
+
     const key = failedCondition.key;
     if (key.startsWith('atEntity_')) {
         console.log('Generating MoveTo for:', key);
         const id = parseInt(key.replace('atEntity_', ''));
         return [createMoveToAction(id)];
     }
-    
+
     console.log('No match for key:', key);
     return [];
 });

@@ -1,8 +1,8 @@
 # Feasibility Report: Dynamic ClearPath Implementation for Pick-and-Place
 
-**Date**: 2026-01-22  
-**Author**: Architecture Review  
-**Status**: FEASIBLE with caveats  
+**Date**: 2026-01-22
+**Author**: Architecture Review
+**Status**: FEASIBLE with caveats
 
 ---
 
@@ -52,10 +52,10 @@ function findNextStep(state, startX, startY, targetX, targetY, ignoreCubeId);
  * Uses a two-phase approach:
  *   1. BFS to determine if path is blocked
  *   2. If blocked, scan frontier cells to find the nearest blocker
- * 
+ *
  * @param {Object} state - Simulation state
  * @param {number} fromX - Starting X coordinate
- * @param {number} fromY - Starting Y coordinate  
+ * @param {number} fromY - Starting Y coordinate
  * @param {number} toX - Target X coordinate
  * @param {number} toY - Target Y coordinate
  * @returns {number|null} - ID of first blocking cube, or null if path is clear
@@ -63,7 +63,7 @@ function findNextStep(state, startX, startY, targetX, targetY, ignoreCubeId);
 function findFirstBlocker(state, fromX, fromY, toX, toY) {
     const key = (x, y) => x + ',' + y;
     const actor = state.actors.get(state.activeActorId);
-    
+
     // Build cube position lookup: position -> cubeId
     const cubeAtPosition = new Map();
     state.cubes.forEach(c => {
@@ -72,7 +72,7 @@ function findFirstBlocker(state, fromX, fromY, toX, toY) {
         if (actor.heldItem && c.id === actor.heldItem.id) return;
         cubeAtPosition.set(key(Math.round(c.x), Math.round(c.y)), c.id);
     });
-    
+
     // Build blocked set (static obstacles only for initial path check)
     const staticBlocked = new Set();
     state.cubes.forEach(c => {
@@ -80,37 +80,37 @@ function findFirstBlocker(state, fromX, fromY, toX, toY) {
         if (actor.heldItem && c.id === actor.heldItem.id) return;
         staticBlocked.add(key(Math.round(c.x), Math.round(c.y)));
     });
-    
+
     const visited = new Set();
     const frontier = []; // Cells we tried to enter but were blocked
     const queue = [{x: Math.round(fromX), y: Math.round(fromY)}];
-    
+
     visited.add(key(queue[0].x, queue[0].y));
-    
+
     const targetIX = Math.round(toX);
     const targetIY = Math.round(toY);
-    
+
     // BFS to find path and collect frontier (blocked neighbors)
     while (queue.length > 0) {
         const current = queue.shift();
-        
+
         // Check if we've reached adjacency to target
         const dx = Math.abs(current.x - targetIX);
         const dy = Math.abs(current.y - targetIY);
         if (dx <= 1 && dy <= 1) {
             return null; // Path exists, no blocker
         }
-        
+
         const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
         for (const [ox, oy] of dirs) {
             const nx = current.x + ox;
             const ny = current.y + oy;
             const nKey = key(nx, ny);
-            
+
             // Bounds check
             if (nx < 1 || nx >= state.width - 1 || ny < 1 || ny >= state.height - 1) continue;
             if (visited.has(nKey)) continue;
-            
+
             if (staticBlocked.has(nKey)) {
                 // This cell is blocked - add to frontier for later analysis
                 frontier.push({x: nx, y: ny, parentX: current.x, parentY: current.y});
@@ -122,7 +122,7 @@ function findFirstBlocker(state, fromX, fromY, toX, toY) {
             }
         }
     }
-    
+
     // Path is blocked - find the nearest movable blocker from frontier
     // Sort frontier by Manhattan distance to target (prioritize blockers closer to goal)
     frontier.sort((a, b) => {
@@ -130,7 +130,7 @@ function findFirstBlocker(state, fromX, fromY, toX, toY) {
         const distB = Math.abs(b.x - targetIX) + Math.abs(b.y - targetIY);
         return distA - distB;
     });
-    
+
     for (const cell of frontier) {
         const cubeId = cubeAtPosition.get(key(cell.x, cell.y));
         if (cubeId !== undefined) {
@@ -140,7 +140,7 @@ function findFirstBlocker(state, fromX, fromY, toX, toY) {
             }
         }
     }
-    
+
     // All blockers are static walls - path is permanently blocked
     return null;
 }
@@ -182,14 +182,14 @@ The Bridge Action tells PA-BT "if you clear the first blocker, you'll make progr
 
 Without a designated dumpster, cubes can be placed at any free adjacent cell. This is simpler than the current approach but has a key constraint:
 
-**Critical**: Placing a cube at an arbitrary position might create NEW blockages elsewhere. 
+**Critical**: Placing a cube at an arbitrary position might create NEW blockages elsewhere.
 
 **Solution**: The `Place_ClearPath` action should prefer placement locations that don't block other paths. A simple heuristic:
 
 ```javascript
 function findClearingSpot(state, actorX, actorY, targetPathX, targetPathY) {
     const candidates = getFreeAdjacentCells(state, actorX, actorY);
-    
+
     // Filter: Don't place where it would block the path we're clearing
     return candidates.filter(spot => {
         // Simulate placing cube here - would it block the target path?
@@ -227,11 +227,11 @@ MoveTo tick:
 // Blackboard sync (before tick)
 function syncReachability(state) {
     const actor = state.actors.get(state.activeActorId);
-    
+
     // For key entities (target, goal), sync reachability
     const pathInfo = getPathInfo(state, actor.x, actor.y, target.x, target.y);
     state.blackboard.set('reachable_entity_' + TARGET_ID, pathInfo.reachable);
-    
+
     const goalPathInfo = getPathInfo(state, actor.x, actor.y, goal.x, goal.y);
     state.blackboard.set('reachable_goal_' + GOAL_ID, goalPathInfo.reachable);
 }
@@ -241,14 +241,14 @@ Then modify `createMoveToAction()` to include reachability as a precondition:
 
 ```javascript
 function createMoveToAction(state, entityType, entityId, extraEffects) {
-    const reachableKey = entityType === 'cube' 
-        ? 'reachable_entity_' + entityId 
+    const reachableKey = entityType === 'cube'
+        ? 'reachable_entity_' + entityId
         : 'reachable_goal_' + entityId;
-    
+
     const conditions = [
         {key: reachableKey, Match: v => v === true}  // NEW: Must be reachable
     ];
-    
+
     // ... rest of action definition
 }
 ```
@@ -261,12 +261,12 @@ When `reachable_X = false` triggers action generation:
 state.pabtState.setActionGenerator(function(failedCondition) {
     const actions = [];
     const key = failedCondition.key;
-    
+
     // Handle reachability failures
     if (key && key.startsWith('reachable_')) {
         const targetIdStr = key.replace('reachable_entity_', '').replace('reachable_goal_', '');
         const targetId = parseInt(targetIdStr, 10);
-        
+
         // Determine target position
         let targetX, targetY;
         if (key.includes('_entity_')) {
@@ -276,11 +276,11 @@ state.pabtState.setActionGenerator(function(failedCondition) {
             const goal = state.goals.get(targetId);
             if (goal) { targetX = goal.x; targetY = goal.y; }
         }
-        
+
         if (targetX !== undefined) {
             const actor = state.actors.get(state.activeActorId);
             const blockerId = findFirstBlocker(state, actor.x, actor.y, targetX, targetY);
-            
+
             if (blockerId !== null) {
                 // Generate ClearPath action for this specific blocker
                 const clearAction = createClearPathAction(state, blockerId, key);
@@ -288,7 +288,7 @@ state.pabtState.setActionGenerator(function(failedCondition) {
             }
         }
     }
-    
+
     // ... existing handlers for other conditions
     return actions;
 });
@@ -366,7 +366,7 @@ function getReachability(state, targetId, isGoal) {
         reachabilityCache = {};
         reachabilityTick = state.tickCount;
     }
-    
+
     const cacheKey = (isGoal ? 'goal_' : 'entity_') + targetId;
     if (!(cacheKey in reachabilityCache)) {
         // Compute and cache
@@ -400,32 +400,32 @@ function getReachability(state, targetId, isGoal) {
 /**
  * Creates a ClearPath bridge action for a specific blocker.
  * This action tells PA-BT: "clearing this blocker will improve reachability"
- * 
+ *
  * The action decomposes internally to:
  *   1. MoveTo_cube_<blockerId>
- *   2. Pick_cube_<blockerId>  
+ *   2. Pick_cube_<blockerId>
  *   3. Place (anywhere free)
  */
 function createClearPathAction(state, blockerId, targetReachableKey) {
     const actionName = 'ClearPath_' + blockerId;
-    
+
     // Preconditions: Must clear this specific blocker
     // This creates a dependency chain: ClearPath needs Pick, Pick needs MoveTo
     const conditions = [
         {key: 'cube_' + blockerId + '_removed', Match: v => v === true}
     ];
-    
+
     // Effect: After clearing blocker, target MAY become reachable
     // This is a HEURISTIC - we don't guarantee full path clearance
     const effects = [
         {key: targetReachableKey, Value: true}
     ];
-    
+
     // Dummy tick: ClearPath is a planning-only action
     // Actual work is done by Pick/Place sequence
     const tickFn = () => bt.success;
     const node = bt.createLeafNode(tickFn);
-    
+
     return pabt.newAction(actionName, conditions, effects, node);
 }
 
@@ -434,32 +434,32 @@ function createClearPathAction(state, blockerId, targetReachableKey) {
  */
 function createPickBlockerAction(state, blockerId) {
     const name = 'Pick_Blocker_' + blockerId;
-    
+
     const conditions = [
         {key: 'heldItemExists', Match: v => v === false},
         {key: 'atEntity_' + blockerId, Match: v => v === true}
     ];
-    
+
     const effects = [
         {key: 'heldItemId', Value: blockerId},
         {key: 'heldItemExists', Value: true},
         {key: 'cube_' + blockerId + '_removed', Value: true}  // Blocker is now "removed" from path
     ];
-    
+
     const tickFn = function() {
         const actor = state.actors.get(state.activeActorId);
         const cube = state.cubes.get(blockerId);
         if (!cube || cube.deleted) return bt.success;
-        
+
         cube.deleted = true;
         actor.heldItem = {id: blockerId};
-        
+
         state.blackboard.set('heldItemId', blockerId);
         state.blackboard.set('heldItemExists', true);
         return bt.success;
     };
-    
-    return pabt.newAction(name, 
+
+    return pabt.newAction(name,
         conditions.map(c => ({key: c.key, Match: c.Match})),
         effects.map(e => ({key: e.key, Value: e.Value})),
         bt.createLeafNode(tickFn)
@@ -471,23 +471,23 @@ function createPickBlockerAction(state, blockerId) {
  */
 function createPlaceAnywhereAction(state) {
     const name = 'Place_Anywhere';
-    
+
     const conditions = [
         {key: 'heldItemExists', Match: v => v === true}
     ];
-    
+
     const effects = [
         {key: 'heldItemExists', Value: false},
         {key: 'heldItemId', Value: -1}
     ];
-    
+
     const tickFn = function() {
         const actor = state.actors.get(state.activeActorId);
         if (!actor.heldItem) return bt.success;
-        
+
         const spot = getFreeAdjacentCell(state, actor.x, actor.y);
         if (!spot) return bt.failure;
-        
+
         const cubeId = actor.heldItem.id;
         const cube = state.cubes.get(cubeId);
         if (cube) {
@@ -495,13 +495,13 @@ function createPlaceAnywhereAction(state) {
             cube.x = spot.x;
             cube.y = spot.y;
         }
-        
+
         actor.heldItem = null;
         state.blackboard.set('heldItemExists', false);
         state.blackboard.set('heldItemId', -1);
         return bt.success;
     };
-    
+
     return pabt.newAction(name,
         conditions.map(c => ({key: c.key, Match: c.Match})),
         effects.map(e => ({key: e.key, Value: e.Value})),
@@ -517,14 +517,14 @@ state.pabtState.setActionGenerator(function(failedCondition) {
     const actions = [];
     const key = failedCondition.key;
     const targetValue = failedCondition.value;
-    
+
     if (!key || typeof key !== 'string') return actions;
-    
+
     // --- REACHABILITY HANDLING (NEW) ---
     if (key.startsWith('reachable_')) {
         const actor = state.actors.get(state.activeActorId);
         let targetX, targetY;
-        
+
         if (key.startsWith('reachable_entity_')) {
             const entityId = parseInt(key.replace('reachable_entity_', ''), 10);
             const cube = state.cubes.get(entityId);
@@ -540,7 +540,7 @@ state.pabtState.setActionGenerator(function(failedCondition) {
                 targetY = goal.y;
             }
         }
-        
+
         if (targetX !== undefined) {
             const blockerId = findFirstBlocker(state, actor.x, actor.y, targetX, targetY);
             if (blockerId !== null) {
@@ -551,45 +551,45 @@ state.pabtState.setActionGenerator(function(failedCondition) {
             }
         }
     }
-    
+
     // --- CUBE REMOVED HANDLING (NEW) ---
     if (key.startsWith('cube_') && key.endsWith('_removed')) {
         const blockerId = parseInt(key.match(/cube_(\d+)_removed/)[1], 10);
         actions.push(createPickBlockerAction(state, blockerId));
         actions.push(createMoveToAction(state, 'cube', blockerId));
     }
-    
+
     // --- EXISTING HANDLERS ---
     if (key === 'cubeDeliveredAtGoal') {
         const deliverAction = state.pabtState.GetAction('Deliver_Target');
         if (deliverAction) actions.push(deliverAction);
     }
-    
+
     if (key === 'heldItemId') {
         if (targetValue === TARGET_ID) {
             const pickAction = state.pabtState.GetAction('Pick_Target');
             if (pickAction) actions.push(pickAction);
         }
     }
-    
+
     if (key === 'heldItemExists' && targetValue === false) {
         actions.push(createPlaceAnywhereAction(state));
     }
-    
+
     if (key.startsWith('atEntity_')) {
         const entityId = parseInt(key.replace('atEntity_', ''), 10);
         if (!isNaN(entityId)) {
             actions.push(createMoveToAction(state, 'cube', entityId));
         }
     }
-    
+
     if (key.startsWith('atGoal_')) {
         const goalId = parseInt(key.replace('atGoal_', ''), 10);
         if (!isNaN(goalId)) {
             actions.push(createMoveToAction(state, 'goal', goalId));
         }
     }
-    
+
     return actions;
 });
 ```
@@ -632,7 +632,7 @@ const DEBUG_CLEARPATH = os.getenv('OSM_DEBUG_CLEARPATH') === '1';
 
 function findFirstBlocker(state, fromX, fromY, toX, toY) {
     const result = /* ... BFS logic ... */;
-    
+
     if (DEBUG_CLEARPATH) {
         log.debug('findFirstBlocker', {
             from: {x: fromX, y: fromY},
@@ -641,7 +641,7 @@ function findFirstBlocker(state, fromX, fromY, toX, toY) {
             tick: state.tickCount
         });
     }
-    
+
     return result;
 }
 ```
@@ -651,7 +651,7 @@ function findFirstBlocker(state, fromX, fromY, toX, toY) {
 ## 8. Implementation Phases
 
 ### Phase 1: Pathfinding Extension (Low Risk)
-1. Implement `findFirstBlocker()` 
+1. Implement `findFirstBlocker()`
 2. Add unit tests
 3. No changes to existing behavior
 
@@ -679,7 +679,7 @@ function findFirstBlocker(state, fromX, fromY, toX, toY) {
 The dynamic ClearPath approach is architecturally sound and addresses the "God-Precondition" anti-pattern identified in the review. Key success factors:
 
 1. **First-blocker-only strategy** prevents infinite loops
-2. **Heuristic effects** guide planner without guaranteeing full path clearance  
+2. **Heuristic effects** guide planner without guaranteeing full path clearance
 3. **Existing PA-BT safety limits** (1M action calls) provide backstop
 4. **Phased implementation** allows validation at each step
 

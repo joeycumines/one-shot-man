@@ -137,7 +137,7 @@ state.pabtState.setActionGenerator(function (failedCondition) {
             // Name: ClearPathTo_<target>_via_<blocker>
             const actionName = `ClearBlocker_${blockerId}_For_${targetId}`;
 
-            // The Bridge Action does NOT execute logic. 
+            // The Bridge Action does NOT execute logic.
             // It simply asserts: "If Blocker X is cleared, Path is reachable."
             const dummyTick = function () {
                 return bt.success;

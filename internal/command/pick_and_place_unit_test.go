@@ -206,7 +206,7 @@ func TestPickAndPlaceDynamicBlockerDetection(t *testing.T) {
 
 		// Copying findFirstBlocker logic from example-05-pick-and-place.js
 		// (Simplified for test context where dependendencies like key() are inclusive)
-		
+
 		function findFirstBlocker(state, fromX, fromY, toX, toY, excludeId) {
 			const key = (x, y) => x + ',' + y;
 			const actor = state.actors.get(state.activeActorId);
@@ -408,7 +408,7 @@ func TestPickAndPlaceActionGenerator(t *testing.T) {
 		// Mock PA-BT and State
 		const bt = { running: 1, success: 2, failure: 3, createLeafNode: () => {} };
 		const pabt = { newAction: (n,c,e,node) => ({name:n}) };
-		
+
 		const state = {
 			spaceWidth: 20,
 			height: 20,
@@ -427,7 +427,7 @@ func TestPickAndPlaceActionGenerator(t *testing.T) {
 				setActionGenerator: function(fn) { this.generator = fn; }
 			}
 		};
-		
+
 		state.actors.set(1, { x: 5, y: 5 });
 
 		// Mock logger
@@ -441,18 +441,18 @@ func TestPickAndPlaceActionGenerator(t *testing.T) {
 		function createDepositGoalBlockadeAction(state, blockerId, destId) {
 			return { name: "Deposit_GoalBlockade_" + blockerId };
 		}
-		
+
 		// Ingest the Generator definition code (simplified from example-05)
 		// We'll manually attach it.
 		state.pabtState.setActionGenerator(function (failedCondition) {
 			const actions = [];
 			const key = failedCondition.key;
 			const targetValue = failedCondition.value;
-			
+
 			if (key.startsWith('pathBlocker_')) {
 				const destId = key.replace('pathBlocker_', '');
 				const currentBlocker = state.blackboard.get(key);
-				
+
 				if (targetValue === -1) {
 					if (typeof currentBlocker === 'number' && currentBlocker !== -1) {
 						// Here we just return a stub action to verify logic

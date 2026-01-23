@@ -93,7 +93,7 @@ const GOAL_BLOCKADE_IDS = [0, 1, 2, ..., 15];
 No registry. Obstacles are discovered dynamically via path queries:
 ```javascript
 function getBlockingObjects(from, to, worldState) {
-  return worldState.objects.filter(obj => 
+  return worldState.objects.filter(obj =>
     obj.blocksPath(from, to) && obj.isMovable
   );
 }
@@ -151,11 +151,11 @@ The ActionGenerator should **not** pre-enumerate all possible obstacle-clearing 
 ```javascript
 function generateClearPathActions(goalState, worldState) {
   const path = computePath(agent.location, goalState.targetLocation);
-  
+
   if (path.blocked) {
     const blockingObj = path.firstBlockingObject;
     const freeSpots = findFreeLocations(worldState);
-    
+
     // Generate ONE action per viable relocation spot (or just the best one)
     return freeSpots.slice(0, 3).map(spot => ({
       action: 'Relocate',
@@ -171,7 +171,7 @@ function generateClearPathActions(goalState, worldState) {
       ]
     }));
   }
-  
+
   return [];
 }
 ```
@@ -204,7 +204,7 @@ Steps:
   2. Pick up blocking object
   3. Place blocking object at any free location NOT on path(A, B)
   4. Return to original task
-  
+
 This is NOT a goal—it's an enabler.
 ```
 
@@ -222,16 +222,16 @@ Replace static obstacle knowledge with dynamic queries:
 class WorldState {
   // Query: What blocks path from A to B?
   getPathObstacles(from, to) {
-    return this.objects.filter(obj => 
+    return this.objects.filter(obj =>
       this.pathIntersects(from, to, obj.bounds)
     );
   }
-  
+
   // Query: Is this location free for placement?
   isFreeLocation(loc) {
     return !this.objects.some(obj => obj.occupies(loc));
   }
-  
+
   // Query: Find N nearest free locations from reference point
   findFreeLocations(reference, count = 5) {
     return this.grid
@@ -251,10 +251,10 @@ function onWorldStateChange(change) {
   if (change.type === 'OBJECT_APPEARED' || change.type === 'OBJECT_MOVED') {
     // Check if change affects current plan
     const currentPlan = planner.getCurrentPlan();
-    const affectedActions = currentPlan.filter(action => 
+    const affectedActions = currentPlan.filter(action =>
       action.dependsOn(change.affectedRegion)
     );
-    
+
     if (affectedActions.length > 0) {
       // Invalidate and replan from current state
       planner.replanFrom(getCurrentWorldState());
@@ -269,19 +269,19 @@ function onWorldStateChange(change) {
 function planToGoal(goal, worldState) {
   const openGoals = [goal];
   const plan = [];
-  
+
   while (openGoals.length > 0) {
     const currentGoal = openGoals.pop();
-    
+
     // Find action that achieves currentGoal
     const candidateActions = actionGenerator.getActionsFor(currentGoal, worldState);
-    
+
     for (const action of candidateActions) {
       // Check preconditions - THIS IS WHERE DISCOVERY HAPPENS
-      const unmetPreconditions = action.preconditions.filter(p => 
+      const unmetPreconditions = action.preconditions.filter(p =>
         !worldState.satisfies(p)
       );
-      
+
       if (unmetPreconditions.length === 0) {
         plan.push(action);
       } else {
@@ -291,7 +291,7 @@ function planToGoal(goal, worldState) {
       }
     }
   }
-  
+
   return plan.reverse(); // Execute in forward order
 }
 ```
@@ -325,6 +325,6 @@ The agent should not "know" there are 16 blockades. It should only know: "I want
 
 ---
 
-*Document Author: Takumi*  
-*Review Date: 2026-01-22*  
+*Document Author: Takumi*
+*Review Date: 2026-01-22*
 *Status: Theoretical Analysis Complete*

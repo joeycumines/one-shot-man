@@ -97,6 +97,7 @@ try {
 
     // Pick/Place thresholds
     const PICK_THRESHOLD = 1.8; // Distance threshold for picking up cubes
+    const MANUAL_MOVE_SPEED = 0.25;
 
     // Helper: Check if point is within the Goal Area
     function isInGoalArea(x, y) {
@@ -233,8 +234,8 @@ try {
 
         if (dx === 0 && dy === 0) return false;
 
-        const nx = actor.x + dx;
-        const ny = actor.y + dy;
+        const nx = actor.x + dx * MANUAL_MOVE_SPEED;
+        const ny = actor.y + dy * MANUAL_MOVE_SPEED;
         let blocked = false;
 
         // Boundary check first
@@ -1530,8 +1531,8 @@ try {
 
                 // Collision check for next position
                 if (dist >= 0.1) {
-                    const nextX = actor.x + Math.sign(dx) * Math.min(1.0, Math.abs(dx));
-                    const nextY = actor.y + Math.sign(dy) * Math.min(1.0, Math.abs(dy));
+                    const nextX = actor.x + Math.sign(dx) * Math.min(MANUAL_MOVE_SPEED, Math.abs(dx));
+                    const nextY = actor.y + Math.sign(dy) * Math.min(MANUAL_MOVE_SPEED, Math.abs(dy));
                     let nextBlocked = false;
 
                     for (const c of state.cubes.values()) {
@@ -1564,9 +1565,9 @@ try {
                         state.pathStuckTicks = 0; // Reset stuck counter on progress
                     } else {
                         const oldDist = dist;
-                        // Move towards waypoint (Speed = 1.0, consistent with findNextStep)
-                        actor.x += Math.sign(dx) * Math.min(1.0, Math.abs(dx));
-                        actor.y += Math.sign(dy) * Math.min(1.0, Math.abs(dy));
+                        // Move towards waypoint (Speed = MANUAL_MOVE_SPEED)
+                        actor.x += Math.sign(dx) * Math.min(MANUAL_MOVE_SPEED, Math.abs(dx));
+                        actor.y += Math.sign(dy) * Math.min(MANUAL_MOVE_SPEED, Math.abs(dy));
 
                         // Stuck detection: if distance didn't decrease, increment counter
                         const newDist = Math.sqrt(Math.pow(nextPoint.x - actor.x, 2) + Math.pow(nextPoint.y - actor.y, 2));
@@ -1675,7 +1676,14 @@ try {
             const isHolding = actor.heldItem !== null;
             let performedAction = false;
 
-            log.debug("Manual Mouse: Click details", {clickX, clickY, actorX: actor.x, actorY: actor.y, isHolding, clickedCube: clickedCube ? `id:${clickedCube.id}` : null});
+            log.debug("Manual Mouse: Click details", {
+                clickX,
+                clickY,
+                actorX: actor.x,
+                actorY: actor.y,
+                isHolding,
+                clickedCube: clickedCube ? `id:${clickedCube.id}` : null
+            });
 
             if (isHolding) {
                 // PLACE: Can place if empty cell and within adjacency (approx 1.5)
@@ -1697,7 +1705,11 @@ try {
                         log.info("Manual Place", {id: heldId, at: {x: clickX, y: clickY}});
                     }
                 } else {
-                    log.debug("Manual Place: Failed", {reason: clickedCube ? "clicked on occupied cube" : "too far", clickedCube, dist});
+                    log.debug("Manual Place: Failed", {
+                        reason: clickedCube ? "clicked on occupied cube" : "too far",
+                        clickedCube,
+                        dist
+                    });
                 }
             } else {
                 // PICK: Can pick if valid cube and within PICK_THRESHOLD
@@ -1739,7 +1751,7 @@ try {
         if (msg.type === 'Key') {
             // Get actor reference for mode switch logging
             const actor = state.actors.get(state.activeActorId);
-            
+
             if (msg.key === 'q') return [state, tea.quit()];
             if (msg.key === 'm') {
                 const wasManual = state.gameMode === 'manual';
@@ -1750,7 +1762,13 @@ try {
                 state.manualPath = [];
                 state.pathStuckTicks = 0;
 
-                log.debug('Mode switch: Setting gameMode', {oldMode, newMode, wasManual, hasHeldItem: actor.heldItem !== null, heldItemId: actor.heldItem ? actor.heldItem.id : null});
+                log.debug('Mode switch: Setting gameMode', {
+                    oldMode,
+                    newMode,
+                    wasManual,
+                    hasHeldItem: actor.heldItem !== null,
+                    heldItemId: actor.heldItem ? actor.heldItem.id : null
+                });
 
                 // Debug logging
                 log.debug('Mode switch', {oldMode, newMode, wasManual});

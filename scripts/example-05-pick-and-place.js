@@ -5,38 +5,71 @@
  * @description
  * Pick-and-Place Simulator demonstrating osm:pabt PA-BT planning integration.
  *
- * ARCHITECTURAL WARNING: "TRUTHFUL EFFECTS" REQUIRED
+ * =========================================================================================
+ * ARCHITECTURAL MANIFESTO: THE PA-BT STANDARD
+ * =========================================================================================
  *
- * This implementation relies on a Reactive Planning Loop (Plan -> Execute -> Verify).
- * To prevent Livelocks (Infinite Replanning) and Deadlocks (Bridge Freezes),
- * you must adhere to the following strict architectural constraints derived from
- * "Behavior Trees in Robotics and AI" (Colledanchise/Ögren).
+ * This implementation adheres strictly to "Behavior Trees in Robotics and AI" (Colledanchise & Ögren).
+ * The system functions as a dynamic planner, not a scripted state machine.
  *
- * 1. NO HEURISTIC EFFECTS (The "Lying Action" Anti-Pattern)
- * Do not assert that an atomic action satisfies a high-level aggregate condition
- * unless it physically guarantees it in a single tick.
- * - BAD: Action `Pick_Obstacle` has Effect `isPathClear = true`.
- * (Reasoning: If 8 obstacles exist, picking one does NOT make the path clear.
- * The Planner will loop infinitely: Plan Pick -> Execute -> Verify (Path still blocked) -> Replan Pick.)
- * - GOOD: Action `Pick_Obstacle_A` has Effect `isCleared(Obstacle_A) = true`.
- * (Reasoning: The planner generates a sequence to clear A, then B, then C, until `isPathClear` is naturally satisfied).
+ * 1. THE POSTCONDITION-PRECONDITION-ACTION (PPA) UNIT
+ * The fundamental atom of this system is NOT the Action, but the PPA expansion.
+ * Structure: `Fallback(Condition C, Sequence(Preconditions(A), A))`
+ * The planner generates a tree that satisfies conditions, rather than a linear queue of tasks.
  *
- * 2. STATE GRANULARITY (The "Reward Sparsity" Problem)
- * PA-BT requires granular feedback to measure progress. Do not use binary flags
- * for multi-step states.
- * - The Blackboard must reflect incremental progress. If a wall is composed of
- * multiple entities, the Precondition must be `!Overlaps(Entity_ID)`, not `!Blocked`.
+ * 2. DESCRIPTIVE VS. OPERATIONAL MODELS
+ * For the reactive loop to function, the "Descriptive Model" (what the planner thinks an action does)
+ * MUST match the "Operational Model" (what the physics engine actually does).
+ * Discrepancies here lead to Livelocks (infinite replanning) or Deadlocks.
  *
- * 3. DYNAMIC ACTION GENERATION COMPLETENESS
- * When decomposing high-level conditions (e.g., `reachable`), the `ActionGenerator`
- * must be capable of expanding ALL dependency chains.
- * - If `Pick` requires `Hands_Empty`, and `Hands_Empty` fails, the generator
- * MUST produce a valid `Place/Drop` action.
- * - Failure to generate a valid bridging action for a deep dependency will cause
- * the Go-side planner to enter an infinite expansion loop, saturating the
- * `RunOnLoopSync` bridge and freezing the JavaScript simulation tick.
+ * =========================================================================================
+ * DEFINED ANTI-PATTERNS & REQUIRED FIXES
+ * =========================================================================================
  *
- * **WARNING RE: LOGGING:** This is an _interactive_ terminal application.
+ * To ensure architectural integrity, the following patterns are explicitly defined and prohibited:
+ *
+ * [A] THE "GOD-PRECONDITION" ANTI-PATTERN
+ * Definition: A single action listing every potential global blockade in its preconditions.
+ * Failure Mode: Violates **Lazy Expansion**. It forces the planner to "solve" the entire map layout
+ * before execution begins, coupling atomic actions to global geometry.
+ * Refutation: The planner must not expand subtrees for conditions that are not yet relevant.
+ *
+ * [B] THE "ATOMIC ACTION" ANTI-PATTERN
+ * Definition: A single action (e.g., `AtomicClearPath`) that handles moving, picking, and placing
+ * in one tick to avoid planning complexity.
+ * Failure Mode: Violates **Reactive Granularity**. It creates a "Black Box" that prevents reactive repair.
+ * If the atomic action fails mid-execution, the planner has no visibility into the partial state.
+ *
+ * [C] THE SOLUTION: THE "BRIDGE ACTION" PATTERN
+ * Requirement: Use **Dynamic Discovery**.
+ * Instead of hardcoding map data, the ActionGenerator must dynamically inject "Bridge Actions"
+ * (e.g., `ClearBlocker_X`) only when a specific navigational condition (`reachable_Target`) fails.
+ *
+ * =========================================================================================
+ * CRITICAL RUNTIME WARNINGS
+ * =========================================================================================
+ *
+ * 1. TRUTHFUL EFFECTS (THE ANTI-LIVELOCK RULE)
+ * Do not assert that an action satisfies a high-level condition unless it guarantees it physically.
+ * * BAD: `Pick_Obstacle` claims Effect `isPathClear = true`. (Lying: picking one might not clear the path).
+ * * GOOD: `Pick_Obstacle_A` claims Effect `isCleared(A) = true`.
+ *
+ * 2. NO "ZOMBIE STATE" (DISABLE CACHING)
+ * BT Nodes contain internal state (`Running`, `childIndex`). Reusing node instances (Action Caching)
+ * across branches creates "Zombie State," where a node behaves as if running from a previous context.
+ * ALWAYS instantiate fresh BT nodes in the Generator.
+ *
+ * 3. AVOID "SELF-BLOCKAGE BLINDNESS"
+ * The Blackboard must compute path blockers for ALL relevant destinations (Goal and Target) every tick.
+ * Do not gate blocker detection behind `if (holding target)`. The agent must know the path is blocked
+ * even if it has dropped the target to clear the way.
+ *
+ * 4. PREVENT "SILENT FAILURE"
+ * An action must not secretly reject a target in its tick function if that restriction is not
+ * declared in its Preconditions.
+ * * If `Place_Obstacle` cannot handle the Target, it must explicitly Precondition: `!heldItemIsTarget`.
+ *
+ * **WARNING RE: LOGGING:** This is an *interactive* terminal application.
  * It sets the terminal to raw mode.
  * DO NOT use console logging within the program itself (tea.run).
  * Instead, use the built-in 'log' global, for application logs (slog).

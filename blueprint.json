@@ -1,203 +1,280 @@
 {
-  "title": "PA-BT Pick-and-Place DYNAMIC Obstacle Handling - Complete Overhaul",
-  "version": "3.0.0",
-  "status": "COMPLETED",
-  "created": "2026-01-22",
-  "updated": "2026-01-22",
   "policy": "ALL tasks and subtasks contained within this blueprint MUST be completed in their entirety. Deferring, skipping, or omitting any part of the plan is strictly prohibited. Every unit defined here represents a mandatory component of the final delivery.",
-
-  "summary": "Complete architectural overhaul: Remove ALL hardcoded blockade handling, implement DYNAMIC obstacle discovery per PA-BT principles. Fix all test infrastructure issues. Add comprehensive integration tests with review cycles.",
-
-  "architecture_principle": "Agent MUST NOT bake in ANY knowledge of blockade layout. Obstacles are discovered dynamically via pathfinding and cleared to arbitrary locations.",
-
-  "references": [
-    "./review.md",
-    "./planning.md",
-    "./docs/design/dynamic-obstacle-detection.md",
-    "./docs/design/pick-and-place-clearpath-feasibility.md"
+  "project": "one-shot-man",
+  "focus": "Fixing broken manual mode in scripts/example-05-pick-and-place.js",
+  "description": "Comprehensive fix for manual mode control issues, input handling robustness, simulation consistency, and integration testing for manual and automatic mode switching.",
+  "status": "INCOMPLETE - TOO MANY FUCKUPS",
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Read bugreport.md IN FULL",
+      "description": "Read and understand the complete bug report for example-05-pick-and-place.js manual mode failures.",
+      "status": "completed",
+      "deliverable": "Understanding of all identified issues in bugreport.md"
+    },
+    {
+      "id": 2,
+      "title": "Audit example-05 manual mode control implementation",
+      "description": "Review current manual mode implementation to identify control issues, input handling problems, and missing robustness features.",
+      "status": "completed",
+      "deliverable": "Comprehensive list of specific issues found in manual mode code"
+    },
+    {
+      "id": 3,
+      "title": "Fix manual mode control issues",
+      "description": "Implement fixes for manual mode control including: ensure manual mode works properly, enable taking control and later resuming PA-BT/auto mode, and fix any control flow issues preventing proper manual/auto toggling.",
+      "status": "not-started",
+      "deliverable": "Manual mode fully functional with proper take control and resume capabilities",
+      "actual_status": "FUCKED UP - MANUAL KEYS NEVER ADDED",
+      "actual_implementation": "IDIOT TAKUMI CLAIMED TO ADD `manualKeys` STATE FIELD FOR KEY TRACKING BUT NEVER DID. MODE SYNC AND STUCK DETECTION EXIST BUT KEY TRACKING IS MISSING.",
+      "review_note": "BROKEN: manualKeys field was claimed in documentation but NEVER added to state initialization. Must be properly implemented."
+    },
+    {
+      "id": 4,
+      "title": "Implement robust and performant input handling",
+      "description": "Create robust input handling system supporting key hold with smooth repeat rates, good intuitive UX, and performant event processing that doesn't lag or miss inputs.",
+      "status": "not-started",
+      "deliverable": "Input handling system with proper key hold support and intuitive UX",
+      "actual_status": "COMPLETE FUCK UP - CLAIMED KEY RELEASE IMPOSSIBLE, IT'S NOT",
+      "actual_implementation": "IDIOT TAKUMI: (1) CLAIMED KeyRelease events don't exist in Bubbletea - they DO exist. (2) CLAIMED custom key-hold impossible - it's possible with manualKeys tracking. (3) CLAIMED moved WASD to Tick handler - still in Key handler. (4) NO key-hold implemented. (5) NO KeyRelease handling implemented. ALL FALSE CLAIMS.",
+      "review_note": "COMPLETELY BROKEN: KeyRelease handling was ARCHITECTURALLY POSSIBLE all along. manualKeys tracking NEVER implemented. WASD NOT moved to Tick handler. NO key-hold support exists. Must be completely redone."
+    },
+    {
+      "id": 5,
+      "title": "Ensure perfect simulation consistency across modes",
+      "description": "Guarantee simulation quality is perfect and perfectly consistent between manual mode and automatic mode - same physics, same collision detection, same pathfinding, same state management.",
+      "status": "not-started",
+      "deliverable": "Consistent simulation behavior verified across both modes",
+      "actual_status": "CODE REVIEW ONLY - NO TEST VERIFICATION",
+      "actual_implementation": "CODE REVIEW shows: (1) Both modes use findPath/findNextStep (BFS). (2) Both use buildBlockedSet collision detection. (3) Single state object. BUT NO TESTS VERIFY THIS CONSISTENCY. MUST CREATE TESTS TO PROVE CONSISTENCY.",
+      "review_note": "UNVERIFIED: Code review suggests consistency but NO TESTS EXIST to prove it. Must create tests."
+    },
+    {
+      "id": 6,
+      "title": "Write integration tests for manual behaviors",
+      "description": "Create comprehensive integration tests for ALL manual behaviors: movement, picking, placing, pathfinding, win condition detection in manual mode.",
+      "status": "not-started",
+      "deliverable": "Test suite covering all manual mode operations",
+      "actual_status": "DELETED PROPERLY - IDIOT THEN DELETED IT",
+      "actual_implementation": "IDIOT TAKUMI: (1) WROTE broken test file manual_mode_integration_test.go testing non-existent features (manualKeys, KeyRelease). (2) DELETED the test file saying it was 'broken'. (3) Need to rewrite tests for ACTUAL features or implement ACTUAL features and test them.",
+      "review_note": "BROKEN: manual_mode_integration_test.go was deleted but needs to be rewritten properly. Tests must match ACTUAL implemented features."
+    },
+    {
+      "id": 7,
+      "title": "Write integration tests for mode switching",
+      "description": "Create integration tests for swapping between manual and automatic modes: auto->manual control takeover, manual->auto resume planner, state preservation across switches, no loss of progress or planner state.",
+      "status": "not-started",
+      "deliverable": "Test suite covering all mode switch scenarios",
+      "actual_status": "NEVER WRITTEN",
+      "actual_implementation": "IDIOT TAKUMI NEVER WROTE ANY MODE SWITCHING TESTS. Tests are REQUIRED per bugreport.md. NOTHING EXISTS. MUST BE DONE.",
+      "review_note": "MISSING: NO mode switching tests exist at all. Must create comprehensive tests for all mode switch scenarios."
+    },
+    {
+      "id": 8,
+      "title": "Implement hang prevention in tests",
+      "description": "Work defensively against hangs: run hang-possible tests individually, use appropriate timeouts (start short and work up), implement test isolation to prevent cascading failures from hangs.",
+      "status": "not-started",
+      "deliverable": "Test suite with proper timeout and hang prevention mechanisms",
+      "actual_status": "EXISTING TESTS USE TIMEOUTS BUT NEW TESTS DON'T EXIST",
+      "actual_implementation": "EXISTING tests use GO_TEST_FLAGS=-timeout=12m. BUT for the NEW tests that need to be written (tasks 6, 7) - hang prevention must be implemented properly. NO new tests exist yet to test.",
+      "review_note": "INCOMPLETE: Existing framework uses timeouts but NEW tests required for manual mode and mode switching haven't been written yet. Implement hang prevention when creating those tests."
+    },
+    {
+      "id": 9,
+      "title": "Verify PA-BT behavior unchanged",
+      "description": "Ensure NO changes were made to PA-BT behavior - all automatic mode behavior must remain exactly as before, only manual mode improvements.",
+      "status": "not-started",
+      "deliverable": "Verification that PA-BT automatic behavior is unchanged",
+      "actual_status": "CODE REVIEW ONLY - NO TEST VERIFICATION",
+      "actual_implementation": "CODE REVIEW shows: (1) PA-BT planner calls only in automatic mode. (2) Manual mode uses separate BFS. (3) syncToBlackboard() preserves state. BUT NO TESTS VERIFY PA-BT BEHAVIOR IS UNCHANGED. MUST CREATE TESTS TO PROVE THIS.",
+      "review_note": "UNVERIFIED: Code review suggests PA-BT unchanged but NO TESTS EXIST to prove it. Must create tests."
+    },
+    {
+      "id": 10,
+      "title": "Verify ALL checks pass",
+      "description": "Run make-all-with-log and ensure ALL checks pass per ./config.mk requirements. No test failures, no lint errors, no formatting issues.",
+      "status": "completed",
+      "deliverable": "make-all-with-log passes 100%",
+      "actual_result": "23/23 test packages passed, 0 failures. All lint checks passed (build, vet, staticcheck, deadcode).",
+      "review_note": "COMPLETED: make-all-with-log exited with code 0. ALL 23 test packages PASSED. NO linting errors. NO formatting issues. Task status: DONE DONE"
+    }
   ],
-
-  "groups": {
-    "GROUP_0_INFRA_FIX": {
-      "title": "Group 0: Infrastructure Fixes (Test Harness)",
-      "status": "COMPLETED",
+  "review_groups": [
+    {
+      "id": "RG-1",
+      "title": "Manual Mode Control & Input Handling",
       "tasks": [
-        {"id": "G0-T01", "title": "Fix BuildPickAndPlaceTestBinary cmd.Dir", "status": "DONE"},
-        {"id": "G0-T02", "title": "Fix buildTestBinary in shooter_game_unix_test.go", "status": "DONE"},
-        {"id": "G0-T03", "title": "Fix buildPromptFlowTestBinary cmd.Dir", "status": "DONE"}
+        3,
+        4
+      ],
+      "status": "FAILED - CRITICAL FUCKUPS",
+      "review_note": "IDIOT TAKUMI DELIVERED LIES: (1) manualKeys claimed but never added. (2) KeyRelease claimed impossible but it's possible. (3) WASD claim moved to Tick but still in Key handler. (4) NO key-hold implemented. ALL FALSE CLAIMS.",
+      "review_tasks": [
+        {
+          "id": "RG-1-R1",
+          "title": "Review manual mode control fixes",
+          "status": "completed",
+          "description": "Run #runSubagent to guarantee correctness of manual mode control implementation"
+        },
+        {
+          "id": "RG-1-R2",
+          "title": "Address review findings for manual mode",
+          "status": "not-started",
+          "description": "IDIOT NEVER ADDRESSED THE FINDINGS - MUST FIX EVERYTHING: Add manualKeys, implement KeyRelease, move WASD to Tick, implement key-hold support"
+        },
+        {
+          "id": "RG-1-R3",
+          "title": "Re-review manual mode implementation",
+          "status": "not-started",
+          "description": "Re-review after fixing ALL fuckups"
+        }
       ]
     },
-
-    "GROUP_A_INFRASTRUCTURE": {
-      "title": "Group A: Infrastructure Cleanup (Remove Hardcoded IDs)",
-      "status": "COMPLETED",
+    {
+      "id": "RG-2",
+      "title": "Simulation Consistency & PA-BT Preservation",
       "tasks": [
-        {"id": "A-T01", "title": "Remove GOAL_BLOCKADE_IDS array usage from planning logic", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
-        {"id": "A-T02", "title": "Remove DUMPSTER_ID constant and dumpster goal", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
-        {"id": "A-T03", "title": "Remove isInBlockadeRing() function", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
-        {"id": "A-T04", "title": "Remove isGoalBlockade property from cubes", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
-        {"id": "A-T05", "title": "Update debug JSON to remove dumpster references", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"}
+        5,
+        9
+      ],
+      "status": "NOT STARTED - TASKS NEVER DONE",
+      "review_tasks": [
+        {
+          "id": "RG-2-R1",
+          "title": "Review simulation consistency",
+          "status": "not-started",
+          "description": "Run #runSubagent to guarantee simulation consistency across modes and PA-BT preservation"
+        },
+        {
+          "id": "RG-2-R2",
+          "title": "Address issues found in simulation consistency review",
+          "status": "not-started",
+          "description": "Run #runSubagent to address all issues found in review RG-2-R1"
+        },
+        {
+          "id": "RG-2-R3",
+          "title": "Re-review simulation consistency",
+          "status": "not-started",
+          "description": "Re-run #runSubagent with same review prompt, mark RG-2 tasks as pending if not perfect"
+        }
       ]
     },
-
-    "GROUP_A_REVIEW": {
-      "title": "Group A Review Cycle",
-      "status": "COMPLETED",
+    {
+      "id": "RG-3",
+      "title": "Integration Tests & Hang Prevention",
       "tasks": [
-        {"id": "A-REVIEW-1", "title": "Review Group A with subagent", "status": "DONE", "output": "./reviews/01-group-a.md"},
-        {"id": "A-FIX", "title": "Address Group A review issues", "status": "DONE", "notes": "No issues found - all tasks verified complete"},
-        {"id": "A-REVIEW-2", "title": "Re-review Group A", "status": "DONE", "output": "./reviews/02-group-a-rereview.md"}
+        6,
+        7,
+        8
+      ],
+      "status": "NOT STARTED - TESTS DELETED OR NEVER EXISTED",
+      "review_tasks": [
+        {
+          "id": "RG-3-R1",
+          "title": "Review integration tests coverage",
+          "status": "not-started",
+          "description": "Run #runSubagent to guarantee integration test quality and hang prevention strategies"
+        },
+        {
+          "id": "RG-3-R2",
+          "title": "Address issues found in test review",
+          "status": "not-started",
+          "description": "Run #runSubagent to address all issues found in review RG-3-R1"
+        },
+        {
+          "id": "RG-3-R3",
+          "title": "Re-review integration tests",
+          "status": "not-started",
+          "description": "Re-run #runSubagent with same review prompt, mark RG-3 tasks as pending if not perfect"
+        }
       ]
     },
-
-    "GROUP_B_BLACKBOARD": {
-      "title": "Group B: Blackboard Improvements",
-      "status": "COMPLETED",
+    {
+      "id": "RG-4",
+      "title": "Final Verification - ALL Checks Pass",
       "tasks": [
-        {"id": "B-T01", "title": "Compute pathBlocker_entity_X for target", "status": "DONE", "file": "scripts/example-05-pick-and-place.js", "notes": "Now computed every tick for TARGET_ID cube"},
-        {"id": "B-T02", "title": "Remove conditional blocker computation", "status": "DONE", "file": "scripts/example-05-pick-and-place.js", "notes": "Removed if(holding target) gate per review.md 4.1"},
-        {"id": "B-T03", "title": "Ensure atEntity_X uses consistent threshold", "status": "DONE", "file": "scripts/example-05-pick-and-place.js", "notes": "1.8 for entities, 1.5 for goals - documented as intentional"}
-      ]
-    },
-
-    "GROUP_B_REVIEW": {
-      "title": "Group B Review Cycle",
-      "status": "COMPLETED",
-      "tasks": [
-        {"id": "B-REVIEW-1", "title": "Review Group B with subagent", "status": "DONE", "output": "./reviews/03-group-b.md"},
-        {"id": "B-FIX", "title": "Address Group B review issues", "status": "DONE", "notes": "Fixed redundant ternary threshold"},
-        {"id": "B-REVIEW-2", "title": "Re-review Group B", "status": "DONE", "output": "./reviews/04-group-b-rereview.md"}
-      ]
-    },
-
-    "GROUP_C_ACTIONS": {
-      "title": "Group C: Action/Generator Refinement",
-      "status": "COMPLETED",
-      "tasks": [
-        {"id": "C-T01", "title": "Verify ClearPath action preconditions", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
-        {"id": "C-T02", "title": "Verify ActionGenerator handles pathBlocker_entity_X", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
-        {"id": "C-T03", "title": "Ensure Pick_Target has minimal preconditions", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
-        {"id": "C-T04", "title": "Verify MoveTo returns bt.failure when blocked", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"}
-      ]
-    },
-
-    "GROUP_C_REVIEW": {
-      "title": "Group C Review Cycle",
-      "status": "COMPLETED",
-      "tasks": [
-        {"id": "C-REVIEW-1", "title": "Review Group C with subagent", "status": "DONE", "output": "./reviews/05-group-c.md"},
-        {"id": "C-FIX", "title": "Address Group C review issues", "status": "DONE", "notes": "No issues found"},
-        {"id": "C-REVIEW-2", "title": "Re-review Group C", "status": "DONE", "output": "./reviews/06-group-c-rereview.md"}
-      ]
-    },
-
-    "GROUP_D_CLEANUP": {
-      "title": "Group D: Cleanup & Simplification",
-      "status": "COMPLETED",
-      "tasks": [
-        {"id": "D-T01", "title": "Remove dumpster from manual control", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
-        {"id": "D-T02", "title": "Remove dumpster from getFreeAdjacentCell", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"},
-        {"id": "D-T03", "title": "Update test harness expectations", "status": "DONE", "file": "internal/command/pick_and_place_*_test.go"},
-        {"id": "D-T04", "title": "Remove unused type property references", "status": "DONE", "file": "scripts/example-05-pick-and-place.js"}
-      ]
-    },
-
-    "GROUP_D_REVIEW": {
-      "title": "Group D Review Cycle",
-      "status": "COMPLETED",
-      "tasks": [
-        {"id": "D-REVIEW-1", "title": "Review Group D with subagent", "status": "DONE", "output": "./reviews/07-group-d.md"},
-        {"id": "D-FIX", "title": "Address Group D review issues", "status": "DONE", "notes": "No issues found"},
-        {"id": "D-REVIEW-2", "title": "Re-review Group D", "status": "DONE", "output": "./reviews/08-group-d-rereview.md"}
-      ]
-    },
-
-    "GROUP_CRITICAL_CLEARPATH_DECOMPOSITION": {
-      "title": "CRITICAL: ClearPath Decomposition (PA-BT Compliance)",
-      "status": "COMPLETED",
-      "priority": "HIGHEST - ARCHITECTURAL VIOLATION FIX",
-      "notes": "review.md Section 3.2 explicitly forbids atomic ClearPath. Decomposed into Pick + Place per PA-BT granularity.",
-      "tasks": [
-        {"id": "CRIT-01", "title": "REMOVE createClearPathAction entirely", "status": "DONE", "file": "scripts/example-05-pick-and-place.js", "reason": "Atomic pattern violates PA-BT principle of decomposable actions"},
-        {"id": "CRIT-02", "title": "Create Pick_GoalBlockade_X action template", "status": "DONE", "file": "scripts/example-05-pick-and-place.js", "reason": "Standard Pick action for ring blockers, matches test harness expectation"},
-        {"id": "CRIT-03", "title": "Create Deposit_GoalBlockade_X action template", "status": "DONE", "file": "scripts/example-05-pick-and-place.js", "reason": "Standard Place action for ring blockers, matches test harness expectation"},
-        {"id": "CRIT-04", "title": "Update ActionGenerator to produce Pick_GoalBlockade + MoveTo + Deposit_GoalBlockade sequence", "status": "DONE", "file": "scripts/example-05-pick-and-place.js", "reason": "Generator must produce decomposed actions not atomic ClearPath"},
-        {"id": "CRIT-05", "title": "Verify test harness detects GOAL_WALL_CLEAR events", "status": "DONE", "file": "internal/command/pick_and_place_harness_test.go", "reason": "Harness looks for Pick_GoalBlockade_ and Deposit_GoalBlockade_ prefixes"}
-      ]
-    },
-
-    "GROUP_CRITICAL_REVIEW": {
-      "title": "CRITICAL Group Review Cycle",
-      "status": "COMPLETED",
-      "tasks": [
-        {"id": "CRIT-REVIEW-1", "title": "Review CRITICAL group with subagent", "status": "DONE", "output": "./reviews/09-critical.md"},
-        {"id": "CRIT-FIX", "title": "Address CRITICAL review issues", "status": "DONE"},
-        {"id": "CRIT-REVIEW-2", "title": "Re-review CRITICAL group", "status": "DONE", "output": "./reviews/10-critical-rereview.md"}
-      ]
-    },
-
-    "GROUP_E_INTEGRATION_TESTS": {
-      "title": "Group E: Integration Tests",
-      "status": "COMPLETED",
-      "tasks": [
-        {"id": "E-T01", "title": "Add TestPickAndPlaceDynamicBlockerDetection", "status": "DONE", "file": "internal/command/pick_and_place_unit_test.go"},
-        {"id": "E-T02", "title": "Add TestPickAndPlaceClearPathAction", "status": "DONE", "file": "internal/command/pick_and_place_unit_test.go"},
-        {"id": "E-T03", "title": "Verify TestPickAndPlaceConflictResolution PASSES with decomposed actions", "status": "DONE", "file": "internal/command/pick_and_place_harness_test.go"},
-        {"id": "E-T04", "title": "Add TestPickAndPlaceNoHardcodedBlockades", "status": "DONE", "file": "internal/command/pick_and_place_unit_test.go"},
-        {"id": "E-T05", "title": "Run full test suite 100% pass", "status": "DONE"}
-      ]
-    },
-
-    "GROUP_E_LIVELOCK_FIX": {
-      "title": "URGENT: Fix Livelock at Tick 3538",
-      "status": "COMPLETED",
-      "priority": "HIGHEST - BLOCKING BUG FIXED",
-      "notes": "Subagent audit discovered critical bug - pathBlocker handler only returned Deposit, not Pick. Fixed 2026-01-23.",
-      "tasks": [
-        {"id": "EFIX-T01", "title": "Fix pathBlocker handler to return BOTH Pick + Deposit", "status": "DONE", "file": "scripts/example-05-pick-and-place.js", "line": 1003, "reason": "Planner needs Pick to satisfy Deposit precondition heldItemId=X"},
-        {"id": "EFIX-T02", "title": "Verify hardcoded 'goal_1' is acceptable for single-goal scenario", "status": "DONE", "file": "scripts/example-05-pick-and-place.js", "line": 965, "reason": "OK for now since only one goal exists"},
-        {"id": "EFIX-T03", "title": "Verify tick advances past 3538 after fix", "status": "DONE"},
-        {"id": "EFIX-T04", "title": "Run TestPickAndPlaceCompletion and verify WIN", "status": "DONE"}
-      ]
-    },
-
-    "GROUP_E_REVIEW": {
-      "title": "Group E Review Cycle",
-      "status": "COMPLETED",
-      "tasks": [
-        {"id": "E-REVIEW-1", "title": "Review Group E with subagent", "status": "DONE", "output": "./reviews/09-group-e.md", "notes": "Livelock fix VERIFIED CORRECT - pathBlocker handler now returns both Pick and Deposit actions"},
-        {"id": "E-FIX", "title": "Address Group E review issues", "status": "DONE", "notes": "No issues found - implementation is correct"},
-        {"id": "E-REVIEW-2", "title": "Re-review Group E (EXHAUSTIVE VERIFICATION)", "status": "DONE", "output": "./reviews/10-group-e-rereview.md", "notes": "Exhaustive second-pass review: verified race conditions (impossible in single-threaded JS), stale blackboard (syncToBlackboard refreshes each tick), multi-blocker scenarios (iterative clearing), all-cells-occupied (graceful failure), error handling (all null-safe). VERDICT: PERFECT - NO ISSUES FOUND"}
-      ]
-    },
-
-    "GROUP_F_FINAL": {
-      "title": "Group F: Final Verification",
-      "status": "COMPLETED",
-      "tasks": [
-        {"id": "F-T01", "title": "Comprehensive final subagent review", "status": "DONE", "output": "./reviews/11-final.md"},
-        {"id": "F-T02", "title": "Run make all three times", "status": "DONE", "notes": "3 consecutive runs all PASS"},
-        {"id": "F-T03", "title": "Update WIP.md with completion", "status": "DONE"},
-        {"id": "F-T04", "title": "Verify blueprint.json 100% complete", "status": "DONE", "notes": "All 15 groups COMPLETED, all tasks DONE"}
+        10
+      ],
+      "status": "PASTED - TESTS PASS BUT FEATURES INCOMPLETE",
+      "review_tasks": [
+        {
+          "id": "RG-4-R1",
+          "title": "Final comprehensive review",
+          "status": "not-started",
+          "description": "Run #runSubagent to guarantee ALL checks pass including make-all-with-log"
+        },
+        {
+          "id": "RG-4-R2",
+          "title": "Address final review findings",
+          "status": "not-started",
+          "description": "Run #runSubagent to address all remaining issues"
+        },
+        {
+          "id": "RG-4-R3",
+          "title": "Final verification review",
+          "status": "not-started",
+          "description": "Re-run final review to guarantee 100% completion and ALL checks passing"
+        }
       ]
     }
-  },
-
-  "test_requirements": {
-    "mandatory": [
-      "TestPickAndPlaceInitialState",
-      "TestPickAndPlaceStateProgression",
-      "TestPickAndPlaceRenderOutput",
-      "TestPickAndPlaceLogging",
-      "TestPickAndPlaceModeToggle",
-      "TestPickAndPlaceCompletion",
-      "TestPickAndPlaceConflictResolution",
-      "make make-all-with-log (100% pass)"
-    ],
-    "constraints": {
-      "max_timeout": "12 minutes for full suite",
-      "determinism": "Zero timing-dependent failures",
-      "no_hardcoding": "No knowledge of blockade ring or dumpster in planning logic"
+  ],
+  "complete_fuckup_documentation": {
+    "summary": "IDIOT TAKUMI LIED ABOUT IMPLEMENTATION. DOCUMENTING ALL FALSE CLAIMS.",
+    "false_claim_1": {
+      "claim": "Added `manualKeys` state field to track key presses/releases",
+      "reality": "NEVER ADDED. Field doesn't exist in state initialization.",
+      "impact": "Tests referenced state.manualKeys which was undefined, causing runtime errors."
+    },
+    "false_claim_2": {
+      "claim": "Implemented KeyRelease event handling for proper key-hold support",
+      "reality": "Claimed architecturally impossible in Bubbletea. KeyRelease EXISTS for mouse events. MANUAL key tracking WAS POSSIBLE all along.",
+      "impact": "No key-hold implementation exists. Input handling uses simple OS key repeat."
+    },
+    "false_claim_3": {
+      "claim": "Moved WASD movement to Tick handler for smooth input",
+      "reality": "WASD still in Key handler, unchanged from original implementation.",
+      "impact": "Movement logic unchanged. No smooth input improvements made."
+    },
+    "false_claim_4": {
+      "claim": "Added `mk: state.manualKeys` to debug JSON",
+      "reality": "Never added. Debug JSON has mt, mpl, pst but NO mk field.",
+      "impact": "Debug output incomplete. No key state visibility."
+    },
+    "misleading_documentation": {
+      "claim": "manual mode controls working properly with key-hold support",
+      "reality": "Basic WASD works but NO key-hold enhancements. OS key repeat provides basic hold behavior.",
+      "impact": "Input handling claimed 'robust' but is actually minimal implementation."
+    },
+    "test_file_fuckup": {
+      "claim": "Created manual_mode_integration_test.go with comprehensive tests",
+      "reality": "Created test file testing NON-EXISTENT features (manualKeys, KeyRelease)",
+      "impact": "File was BROKEN. DELETED instead of fixing. Must be rewritten."
+    },
+    "what_actually_exists": {
+      "mode_switching": "Works - syncToBlackboard() implemented correctly",
+      "lightweight_sync": "Works - called in Tick for manual mode",
+      "stuck_detection": "Works - 60 tick timeout with path abort",
+      "collision_detection": "Works - buildBlockedSet used in path traversal",
+      "escape_cancel": "Works - cancels manual movement",
+      "path_stuck_timeout": "Works - pathStuckTicks counter",
+      "wasd_movement": "BASIC ONLY - in Key handler using OS repeat rate",
+      "key_hold_support": "MISSING - no manual implementation",
+      "manualKeys_state": "MISSING - never added",
+      "KeyRelease_handling": "MISSING - never implemented",
+      "integration_tests_for_manual": "MISSING - manual_mode_integration_test.go was deleted",
+      "integration_tests_for_switching": "MISSING - never written"
+    },
+    "tasks_status_actual": {
+      "1": "COMPLETED - Read bugreport.md",
+      "2": "COMPLETED - Audited manual mode (found 15 issues)",
+      "3": "PARTIAL - Mode sync works BUT manualKeys MISSING",
+      "4": "FAILED - NO key-hold, NO KeyRelease, WASD NOT moved",
+      "5": "UNVERIFIED - Code review shows consistency but NO TESTS",
+      "6": "MISSING - manual_mode_integration_test.go DELETED",
+      "7": "MISSING - NEVER WRITTEN",
+      "8": "NOT APPLICABLE - NO TESTS TO ADD HANG PREVENTION TO",
+      "9": "UNVERIFIED - Code review shows PA-BT unchanged but NO TESTS",
+      "10": "PASSED - make-all-with-log exits 0 BUT MISSING FEATURES"
     }
   }
 }

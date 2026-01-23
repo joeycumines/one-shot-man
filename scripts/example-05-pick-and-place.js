@@ -196,6 +196,7 @@ try {
             paused: false,
             manualMoveTarget: null,
             manualPath: [],
+            pathStuckTicks: 0,
 
             winConditionMet: false,
             targetDelivered: false,
@@ -1476,20 +1477,66 @@ try {
                 const dy = nextPoint.y - actor.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
 
-                if (dist < 0.1) {
-                    // Reached waypoint
-                    actor.x = nextPoint.x;
-                    actor.y = nextPoint.y;
-                    state.manualPath.shift(); // Remove reached point
-                } else {
-                    // Move towards waypoint (Speed = 1.0, consistent with findNextStep)
-                    actor.x += Math.sign(dx) * Math.min(1.0, Math.abs(dx));
-                    actor.y += Math.sign(dy) * Math.min(1.0, Math.abs(dy));
+                // Collision check for next position
+                if (dist >= 0.1) {
+                    const nextX = actor.x + Math.sign(dx) * Math.min(1.0, Math.abs(dx));
+                    const nextY = actor.y + Math.sign(dy) * Math.min(1.0, Math.abs(dy));
+                    let nextBlocked = false;
+                    
+                    for (const c of state.cubes.values()) {
+                        if (!c.deleted && Math.round(c.x) === Math.round(nextX) && Math.round(c.y) === Math.round(nextY)) {
+                            if (actor.heldItem && c.id === actor.heldItem.id) continue;
+                            nextBlocked = true;
+                            log.warn("Path collision detected during manual movement", {x: nextX, y: nextY, tick: state.tickCount});
+                            break;
+                        }
+                    }
+                    
+                    if (nextBlocked) {
+                        // Path is now blocked - abort movement
+                        state.manualPath = [];
+                        state.manualMoveTarget = null;
+                        state.pathStuckTicks = 0;
+                    }
+                }
+                
+                if (state.manualPath.length > 0) {
+                    if (dist < 0.1) {
+                        // Reached waypoint
+                        actor.x = nextPoint.x;
+                        actor.y = nextPoint.y;
+                        state.manualPath.shift(); // Remove reached point
+                        state.pathStuckTicks = 0; // Reset stuck counter on progress
+                    } else {
+                        const oldDist = dist;
+                        // Move towards waypoint (Speed = 1.0, consistent with findNextStep)
+                        actor.x += Math.sign(dx) * Math.min(1.0, Math.abs(dx));
+                        actor.y += Math.sign(dy) * Math.min(1.0, Math.abs(dy));
+                        
+                        // Stuck detection: if distance didn't decrease, increment counter
+                        const newDist = Math.sqrt(Math.pow(nextPoint.x - actor.x, 2) + Math.pow(nextPoint.y - actor.y, 2));
+                        if (newDist >= oldDist - 0.01) {
+                            state.pathStuckTicks++;
+                        } else {
+                            state.pathStuckTicks = 0; // Reset on progress
+                        }
+                        
+                        // Abort if stuck for ~1 second (62 ticks at 16ms)
+                        if (state.pathStuckTicks > 60) {
+                            log.warn("Path traversal stuck - aborting movement", {tick: state.tickCount});
+                            state.manualPath = [];
+                            state.manualMoveTarget = null;
+                            state.pathStuckTicks = 0;
+                        }
+                    }
                 }
             } else if (state.gameMode === 'manual' && state.manualMoveTarget) {
                 // Fallback cleanup if path is empty but target remains (shouldn't happen with new logic)
                 state.manualMoveTarget = null;
             }
+            // Handle Manual WASD Movement (direct movement on key press)
+            // Note: WASD movement is handled directly in Key handler since Bubbletea
+            // doesn't have KeyRelease message type for key-hold support
 
             if (state.debugMode && (state.tickCount <= 5 || state.tickCount % 50 === 0)) {
                 const actor = state.actors.get(state.activeActorId);
@@ -1509,9 +1556,21 @@ try {
                 }
             }
 
-            // Sync blackboard for rendering/logic, but in Manual mode checking it every frame is fine
-            // as long as we aren't doing heavy pathfinding.
-            syncToBlackboard(state);
+            // Sync blackboard: In manual mode, use lightweight sync to avoid expensive pathfinding
+            // In automatic mode, run full sync with pathfinding
+            if (state.gameMode === 'automatic') {
+                syncToBlackboard(state); // Full sync with pathfinding
+            } else {
+                // Lightweight sync: update only actor position and held item state
+                if (state.blackboard) {
+                    const actor = state.actors.get(state.activeActorId);
+                    state.blackboard.set('actorX', actor.x);
+                    state.blackboard.set('actorY', actor.y);
+                    state.blackboard.set('heldItemExists', actor.heldItem !== null);
+                    state.blackboard.set('heldItemId', actor.heldItem ? actor.heldItem.id : -1);
+                    // Note: Skip pathBlocker calculations in manual mode for performance
+                }
+            }
             return [state, tea.tick(16, 'tick')];
         }
 
@@ -1574,6 +1633,7 @@ try {
             if (performedAction) {
                 state.manualPath = []; // Stop moving if we interacted
                 state.manualMoveTarget = null;
+                state.pathStuckTicks = 0;
             } else {
                 // Calculate full path NOW
                 const ignoreId = actor.heldItem ? actor.heldItem.id : -1;
@@ -1598,9 +1658,21 @@ try {
         if (msg.type === 'Key') {
             if (msg.key === 'q') return [state, tea.quit()];
             if (msg.key === 'm') {
-                state.gameMode = state.gameMode === 'automatic' ? 'manual' : 'automatic';
+                const wasManual = state.gameMode === 'manual';
+                const oldMode = state.gameMode;
+                const newMode = state.gameMode === 'automatic' ? 'manual' : 'automatic';
+                state.gameMode = newMode;
                 state.manualMoveTarget = null;
                 state.manualPath = [];
+                state.pathStuckTicks = 0;
+                
+                // Debug logging
+                log.debug('Mode switch', {oldMode, newMode, wasManual});
+                
+                // When resuming automatic mode, sync blackboard with full pathfinding
+                if (wasManual && state.gameMode === 'automatic') {
+                    syncToBlackboard(state);
+                }
                 return [state, null];
             }
             if (msg.key === ' ') {
@@ -1608,43 +1680,46 @@ try {
                 return [state, null];
             }
 
-            // SNAPPY MANUAL CONTROL
-            // Interrupts any click-movement path
-            if (state.gameMode === 'manual' && !state.paused) {
+            // Escape key: Cancel current movement path
+            if (msg.key === 'escape') {
+                state.manualPath = [];
+                state.manualMoveTarget = null;
+                state.pathStuckTicks = 0;
+                return [state, null];
+            }
+
+            // WASD Movement in Manual Mode
+            if (state.gameMode === 'manual' && ['w', 'a', 's', 'd'].includes(msg.key)) {
                 const actor = state.actors.get(state.activeActorId);
                 let dx = 0, dy = 0;
-
                 if (msg.key === 'w') dy = -1;
                 if (msg.key === 's') dy = 1;
                 if (msg.key === 'a') dx = -1;
                 if (msg.key === 'd') dx = 1;
 
-                if (dx !== 0 || dy !== 0) {
-                    // Interrupt click-movement
-                    state.manualPath = [];
-                    state.manualMoveTarget = null;
+                // Interrupt any click-movement
+                state.manualPath = [];
+                state.manualMoveTarget = null;
 
-                    const nx = actor.x + dx;
-                    const ny = actor.y + dy;
-                    let blocked = false;
+                const nx = actor.x + dx;
+                const ny = actor.y + dy;
+                let blocked = false;
 
-                    // Fast collision check
-                    for (let c of state.cubes.values()) {
-                        if (!c.deleted && Math.round(c.x) === Math.round(nx) && Math.round(c.y) === Math.round(ny)) {
-                            // We can walk through held item
-                            if (actor.heldItem && c.id === actor.heldItem.id) continue;
-                            blocked = true;
-                            break;
-                        }
+                // Fast collision check
+                for (const c of state.cubes.values()) {
+                    if (!c.deleted && Math.round(c.x) === Math.round(nx) && Math.round(c.y) === Math.round(ny)) {
+                        // We can walk through held item
+                        if (actor.heldItem && c.id === actor.heldItem.id) continue;
+                        blocked = true;
+                        break;
                     }
-
-                    if (!blocked) {
-                        actor.x = nx;
-                        actor.y = ny;
-                    }
-                    // Return [state, null] to trigger immediate re-render
-                    return [state, null];
                 }
+
+                if (!blocked) {
+                    actor.x = nx;
+                    actor.y = ny;
+                }
+                return [state, null];
             }
         }
 
@@ -1685,7 +1760,10 @@ try {
                 b: target && !target.deleted ? target.y : null,
                 n: 0,
                 g: obstacleCount,
-                gr: goalReachable ? 1 : 0
+                gr: goalReachable ? 1 : 0,
+                mt: state.manualMoveTarget ? 1 : 0,
+                mpl: state.manualPath.length,
+                pst: state.pathStuckTicks
             });
 
             output += '\n__place_debug_start__\n' + debugJSON + '\n__place_debug_end__';

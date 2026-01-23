@@ -15,16 +15,8 @@
     "all_checks_pass": "ALL checks MUST pass per ./config.mk"
   },
   "critical_failures_to_fix": {
-    "manualKeys_state_field": "CLAIMED to be added in previous attempt but NEVER ADDED to state initialization. Currently no tracking of key press/release state exists.",
-    "key_release_handling": "Previous attempt claimed KeyRelease events don't exist in Bubbletea - FALSE. Bubbletea provides KeyRelease for keyboard. MANUAL tracking MUST be implemented for smooth key-hold.",
-    "key_hold_support": "NO custom key-hold implementation exists. Currently relies on OS key repeat which results in choppy, non-performant input.",
-    "wasd_tick_handler": "Previous attempt claimed WASD movement moved to Tick handler - FALSE. WASD still in Key handler. MUST move to Tick handler for smooth movement.",
-    "integration_tests": "manual_mode_integration_test.go was WRITTEN then DELETED because it tested non-existent features. Must be rewritten to test ACTUAL implemented features.",
-    "mode_switching_tests": "NEVER WRITTEN. Required per bugreport.md. Must create comprehensive tests for all mode switch scenarios.",
-    "mouse_events_incomplete": "Mouse handling exists for pick/place but may have edge cases. Needs comprehensive review and testing.",
     "simulation_consistency_unverified": "Code suggests consistency but NO TESTS to prove it. Must create tests to verify identical physics/collision/pathfinding across modes.",
-    "pabt_behavior_unverified": "Code suggests PA-BT unchanged but NO TESTS to prove it. Must create tests to verify PA-BT behavior unchanged.",
-    "hang_prevention_incomplete": "Existing tests use timeouts but NEW tests (manual mode, mode switching) must have robust hang prevention built in."
+    "pabt_behavior_unverified": "Code suggests PA-BT unchanged but NO TESTS to prove it. Must create tests to verify PA-BT behavior unchanged."
   },
   "tasks": [
     {
@@ -61,78 +53,6 @@
       "notes": "Tests exist in internal/builtin/bubbletea/simulation_consistency_test.go (T8.1-T8.7) but are FAILING. Known issues: T8.1 distance calculation off by 1, T8.2 blocked paths reported as reachable, T8.3/T8.6 path objects missing .get() method, T8.7 wrong blocker ID. Need to fix test structure and expectations."
     },
     {
-      "id": 9,
-      "grouping": "Integration Testing",
-      "title": "Create comprehensive mouse interaction tests for pick and place",
-      "description": "Create integration tests covering ALL mouse interactions: pick cubes, place cubes at valid locations, invalid pick attempts (too far, static cubes), invalid place attempts (blocked cells, too far), win condition via manual place. Test using ParseMouseEvent and mouse action definitions.",
-      "status": "completed",
-      "deliverable": "Test suite covering all manual mouse interaction scenarios, with hang prevention",
-      "dependencies": [],
-      "validation": "All mouse interaction tests pass with timeouts, no hangs"
-    },
-    {
-      "id": 10,
-      "grouping": "Integration Testing",
-      "title": "Create comprehensive manual WASD movement tests",
-      "description": "Create integration tests for manual WASD movement: single-step movement, continuous key-hold movement, directional changes while holding keys, boundary collision detection, movement around obstacles, path traversal to target.",
-      "status": "completed",
-      "deliverable": "Test suite covering all manual WASD movement scenarios, with hang prevention",
-      "dependencies": [3, 4],
-      "validation": "All WASD movement tests pass with timeouts, smooth movement verified"
-    },
-    {
-      "id": 11,
-      "grouping": "Integration Testing",
-      "title": "Create comprehensive mode switching tests (auto -> manual)",
-      "description": "Create integration tests for switching from automatic to manual mode: initial state in auto mode, switch to manual mid-execution, verify PA-BT planner suspended, verify manual control works, verify state preserved (actor position, held items, obstacles).",
-      "status": "completed",
-      "deliverable": "Test suite covering auto->manual switch scenarios, with hang prevention",
-      "dependencies": [],
-      "validation": "All auto->manual tests pass with timeouts, state preservation verified"
-    },
-    {
-      "id": 12,
-      "grouping": "Integration Testing",
-      "title": "Create comprehensive mode switching tests (manual -> auto)",
-      "description": "Create integration tests for switching from manual to automatic mode: initial state in manual mode, perform manual actions, switch to auto, verify PA-BT planner resumes from preserved state, verify planner continues correctly, verify no state loss.",
-      "status": "completed",
-      "deliverable": "Test suite covering manual->auto switch scenarios, with hang prevention",
-      "dependencies": [],
-      "validation": "All manual->auto tests pass with timeouts, PA-BT resume verified"
-    },
-    {
-      "id": 13,
-      "grouping": "Integration Testing",
-      "title": "Create tests for mode switching during critical operations",
-      "description": "Create integration tests for mode switching during critical operations: switch while picking up target, switch while dropping target, switch while mid-path traversal, switch while blocked by obstacle. Verify no crashes, no state corruption, no hangs.",
-      "status": "completed",
-      "deliverable": "Test suite covering mode switching during critical operations, with aggressive hang prevention",
-      "dependencies": [],
-      "validation": "All critical operation mode switch tests pass with timeouts"
-    },
-    {
-      "id": 14,
-      "grouping": "Hang Prevention",
-      "title": "Implement robust timeout strategy in all new manual mode tests",
-      "description": "Apply hang prevention to ALL manual mode integration tests: start with short timeouts (e.g., 30s), increase if legitimately needed, isolate each test to prevent cascading hangs, clear state between tests, use test-specific timeouts. Follow defensive programming guidelines.",
-      "status": "completed",
-      "deliverable": "All manual mode tests have robust timeout and hang prevention mechanisms",
-      "dependencies": [9, 10],
-      "validation": "Tests run individually and in parallel with no hangs, timeouts observed",
-      "notes": "All WASD tests (T13) use 2-second timeouts with goroutine + select pattern. Tests run sequentially (no t.Parallel()) to prevent cascading hangs. Verified by test execution with no hangs."
-    },
-    {
-      "id": 15,
-      "grouping": "Hang Prevention",
-      "title": "Implement robust timeout strategy in all mode switching tests",
-      "description": "Apply hang prevention to ALL mode switching integration tests: start with short timeouts (e.g., 30s), increase if legitimately needed, isolate each test, clear state between tests, use test-specific timeouts. Run hang-possible tests individually.",
-      "status": "completed",
-      "deliverable": "All mode switching tests have robust timeout and hang prevention mechanisms",
-      "dependencies": [11, 12, 13],
-      "validation": "Tests run individually and in parallel with no hangs, timeouts observed",
-      "notes": "All mode switching tests (T10-T12) use 2-second timeouts with same goroutine + select pattern. Tests run individually. Verified by test execution with no hangs."
-    },
-    {
       "id": 16,
       "grouping": "PA-BT Preservation Verification",
       "title": "Create tests verifying PA-BT planner unchanged in automatic mode",
@@ -149,7 +69,7 @@
       "description": "Create integration tests verifying manual mode operations (movement, pick, place) do not corrupt PA-BT blackboard state, planner state, or automatic mode behavior. Test manual mode, switch to auto, verify planner state intact.",
       "status": "not-started",
       "deliverable": "Test suite proving manual mode does not affect PA-BT state",
-      "dependencies": [11, 12],
+      "dependencies": [6, 7, 8],
       "validation": "Tests pass, PA-BT state verified intact after manual mode operations"
     },
     {
@@ -159,7 +79,7 @@
       "description": "Run make-all-with-log and verify 100% pass rate: all tests pass, no lint errors, no formatting issues, no build failures. Address any failures immediately.",
       "status": "not-started",
       "deliverable": "make-all-with-log exits with code 0, all tests pass, all checks pass",
-      "dependencies": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+      "dependencies": [6, 7, 8, 16, 17],
       "validation": "Test output shows 100% pass rate, zero errors, zero warnings"
     }
   ],

@@ -13,33 +13,33 @@
  * "Behavior Trees in Robotics and AI" (Colledanchise/Ögren).
  *
  * 1. NO HEURISTIC EFFECTS (The "Lying Action" Anti-Pattern)
- *    Do not assert that an atomic action satisfies a high-level aggregate condition
- *    unless it physically guarantees it in a single tick.
- *    - BAD: Action `Pick_Obstacle` has Effect `isPathClear = true`.
- *      (Reasoning: If 8 obstacles exist, picking one does NOT make the path clear.
- *      The Planner will loop infinitely: Plan Pick -> Execute -> Verify (Path still blocked) -> Replan Pick.)
- *    - GOOD: Action `Pick_Obstacle_A` has Effect `isCleared(Obstacle_A) = true`.
- *      (Reasoning: The planner generates a sequence to clear A, then B, then C, until `isPathClear` is naturally satisfied).
+ * Do not assert that an atomic action satisfies a high-level aggregate condition
+ * unless it physically guarantees it in a single tick.
+ * - BAD: Action `Pick_Obstacle` has Effect `isPathClear = true`.
+ * (Reasoning: If 8 obstacles exist, picking one does NOT make the path clear.
+ * The Planner will loop infinitely: Plan Pick -> Execute -> Verify (Path still blocked) -> Replan Pick.)
+ * - GOOD: Action `Pick_Obstacle_A` has Effect `isCleared(Obstacle_A) = true`.
+ * (Reasoning: The planner generates a sequence to clear A, then B, then C, until `isPathClear` is naturally satisfied).
  *
  * 2. STATE GRANULARITY (The "Reward Sparsity" Problem)
- *    PA-BT requires granular feedback to measure progress. Do not use binary flags
- *    for multi-step states.
- *    - The Blackboard must reflect incremental progress. If a wall is composed of
- *      multiple entities, the Precondition must be `!Overlaps(Entity_ID)`, not `!Blocked`.
+ * PA-BT requires granular feedback to measure progress. Do not use binary flags
+ * for multi-step states.
+ * - The Blackboard must reflect incremental progress. If a wall is composed of
+ * multiple entities, the Precondition must be `!Overlaps(Entity_ID)`, not `!Blocked`.
  *
  * 3. DYNAMIC ACTION GENERATION COMPLETENESS
- *    When decomposing high-level conditions (e.g., `reachable`), the `ActionGenerator`
- *    must be capable of expanding ALL dependency chains.
- *    - If `Pick` requires `Hands_Empty`, and `Hands_Empty` fails, the generator
- *      MUST produce a valid `Place/Drop` action.
- *    - Failure to generate a valid bridging action for a deep dependency will cause
- *      the Go-side planner to enter an infinite expansion loop, saturating the
- *      `RunOnLoopSync` bridge and freezing the JavaScript simulation tick.
+ * When decomposing high-level conditions (e.g., `reachable`), the `ActionGenerator`
+ * must be capable of expanding ALL dependency chains.
+ * - If `Pick` requires `Hands_Empty`, and `Hands_Empty` fails, the generator
+ * MUST produce a valid `Place/Drop` action.
+ * - Failure to generate a valid bridging action for a deep dependency will cause
+ * the Go-side planner to enter an infinite expansion loop, saturating the
+ * `RunOnLoopSync` bridge and freezing the JavaScript simulation tick.
  *
  * **WARNING RE: LOGGING:** This is an _interactive_ terminal application.
- *    It sets the terminal to raw mode.
- *    DO NOT use console logging within the program itself (tea.run).
- *    Instead, use the built-in 'log' global, for application logs (slog).
+ * It sets the terminal to raw mode.
+ * DO NOT use console logging within the program itself (tea.run).
+ * Instead, use the built-in 'log' global, for application logs (slog).
  *
  * @see {@link https://btirai.github.io/ | Behavior Trees in Robotics and AI}
  * @module PA-BT-Logic
@@ -53,12 +53,13 @@ const printFatalError = (e) => {
 };
 
 // init the program
-let bt, tea, pabt, os, program;
+let bt, tea, pabt, os, producer, program;
 try {
     bt = require('osm:bt');
     tea = require('osm:bubbletea');
     pabt = require('osm:pabt');
     os = require('osm:os');
+    producer = require('osm:producer');
 
     // SCENARIO CONFIGURATION
     //
@@ -195,6 +196,7 @@ try {
             tickCount: 0,
             paused: false,
             manualMoveTarget: null,
+            manualPath: [],
 
             winConditionMet: false,
             targetDelivered: false,
@@ -309,7 +311,65 @@ try {
         return {reachable: false, distance: Infinity};
     }
 
+    // Calculate full path for click-based movement (BFS).
+    // Returns array of {x,y} waypoints.
+    function findPath(state, startX, startY, targetX, targetY, ignoreCubeId) {
+        const blocked = buildBlockedSet(state, ignoreCubeId);
+        const key = (x, y) => x + ',' + y;
+        const iStartX = Math.round(startX);
+        const iStartY = Math.round(startY);
+        const iTargetX = Math.round(targetX);
+        const iTargetY = Math.round(targetY);
+
+        if (iStartX === iTargetX && iStartY === iTargetY) return [];
+
+        const visited = new Map(); // Key -> Parent Key
+        const queue = [{x: iStartX, y: iStartY}];
+        const startKey = key(iStartX, iStartY);
+        visited.set(startKey, null);
+
+        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+        let found = false;
+        let finalNode = null;
+
+        while (queue.length > 0) {
+            const cur = queue.shift();
+
+            if (cur.x === iTargetX && cur.y === iTargetY) {
+                found = true;
+                finalNode = cur;
+                break;
+            }
+
+            for (const [ox, oy] of dirs) {
+                const nx = cur.x + ox;
+                const ny = cur.y + oy;
+                const nKey = key(nx, ny);
+
+                if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
+                // Allow entering target cell even if technically blocked (e.g. picking item)
+                if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
+                if (visited.has(nKey)) continue;
+
+                visited.set(nKey, cur); // Store parent node object
+                queue.push({x: nx, y: ny, parent: cur});
+            }
+        }
+
+        if (!found) return null;
+
+        // Reconstruct path
+        const path = [];
+        let curr = finalNode; // The node from the queue which has .parent
+        while (curr.parent) {
+            path.unshift({x: curr.x, y: curr.y});
+            curr = curr.parent;
+        }
+        return path;
+    }
+
     function findNextStep(state, startX, startY, targetX, targetY, ignoreCubeId) {
+        // Keeps original implementation for Automatic mode
         const blocked = buildBlockedSet(state, ignoreCubeId);
         const key = (x, y) => x + ',' + y;
         const iStartX = Math.round(startX);
@@ -1042,10 +1102,10 @@ try {
         // CONFLICT RESOLUTION PATTERN (per review.md 1.3):
         // Agent picks target first, then discovers path to goal is blocked.
         // Planner must then:
-        //   1. Place_Target_Temporary (free hands)
-        //   2. Pick_GoalBlockade + Deposit_GoalBlockade (clear path)
-        //   3. Pick_Target again (retrieve)
-        //   4. Deliver_Target
+        //    1. Place_Target_Temporary (free hands)
+        //    2. Pick_GoalBlockade + Deposit_GoalBlockade (clear path)
+        //    3. Pick_Target again (retrieve)
+        //    4. Deliver_Target
         //
         // NOTE: We do NOT require pathBlocker_goal_1=-1 as precondition!
         // This allows the agent to pick up target first, then handle blocking.
@@ -1407,33 +1467,29 @@ try {
 
             state.tickCount++;
 
-            // Handle Manual Click-to-Move Pathfinding (Standard Game-Style Logic)
-            if (state.gameMode === 'manual' && state.manualMoveTarget) {
+            // Handle Manual Click-to-Move Path Traversal
+            // We traverse the pre-calculated path instead of BFS-ing every tick.
+            if (state.gameMode === 'manual' && state.manualPath.length > 0) {
                 const actor = state.actors.get(state.activeActorId);
-                const tx = state.manualMoveTarget.x;
-                const ty = state.manualMoveTarget.y;
+                const nextPoint = state.manualPath[0];
 
-                const dx = tx - actor.x;
-                const dy = ty - actor.y;
+                const dx = nextPoint.x - actor.x;
+                const dy = nextPoint.y - actor.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
 
-                // Use 1.5 threshold for movement arrival (consistent with MoveTo)
-                if (dist < 1.0) {
-                    state.manualMoveTarget = null;
+                if (dist < 0.1) {
+                    // Reached waypoint
+                    actor.x = nextPoint.x;
+                    actor.y = nextPoint.y;
+                    state.manualPath.shift(); // Remove reached point
                 } else {
-                    // Use existing pathfinding logic
-                    const ignoreId = actor.heldItem ? actor.heldItem.id : -1;
-                    const nextStep = findNextStep(state, actor.x, actor.y, tx, ty, ignoreId);
-                    if (nextStep) {
-                        const stepDx = nextStep.x - actor.x;
-                        const stepDy = nextStep.y - actor.y;
-                        actor.x += Math.sign(stepDx) * Math.min(1.0, Math.abs(stepDx));
-                        actor.y += Math.sign(stepDy) * Math.min(1.0, Math.abs(stepDy));
-                    } else {
-                        // Blocked or unreachable
-                        state.manualMoveTarget = null;
-                    }
+                    // Move towards waypoint (Speed = 1.0, consistent with findNextStep)
+                    actor.x += Math.sign(dx) * Math.min(1.0, Math.abs(dx));
+                    actor.y += Math.sign(dy) * Math.min(1.0, Math.abs(dy));
                 }
+            } else if (state.gameMode === 'manual' && state.manualMoveTarget) {
+                // Fallback cleanup if path is empty but target remains (shouldn't happen with new logic)
+                state.manualMoveTarget = null;
             }
 
             if (state.debugMode && (state.tickCount <= 5 || state.tickCount % 50 === 0)) {
@@ -1454,6 +1510,8 @@ try {
                 }
             }
 
+            // Sync blackboard for rendering/logic, but in Manual mode checking it every frame is fine
+            // as long as we aren't doing heavy pathfinding.
             syncToBlackboard(state);
             return [state, tea.tick(16, 'tick')];
         }
@@ -1481,11 +1539,6 @@ try {
 
             const dist = Math.sqrt(Math.pow(clickX - actor.x, 2) + Math.pow(clickY - actor.y, 2));
             const isHolding = actor.heldItem !== null;
-
-            // INTERACTION LOGIC: "Standard Game-Style"
-            // 1. Interact if possible and close enough
-            // 2. Otherwise move there
-
             let performedAction = false;
 
             if (isHolding) {
@@ -1503,9 +1556,13 @@ try {
                         if (heldId === TARGET_ID && isInGoalArea(clickX, clickY)) {
                             state.winConditionMet = true;
                         }
-                        syncToBlackboard(state);
                         log.info("Manual Place", {id: heldId, at: {x: clickX, y: clickY}});
+                        producer.sendEvent("manual_place", 1, {status: "success"});
+                    } else {
+                        producer.sendEvent("manual_place", 1, {status: "failure"});
                     }
+                } else {
+                    producer.sendEvent("manual_place", 1, {status: "failure"});
                 }
             } else {
                 // PICK: Can pick if valid cube and within PICK_THRESHOLD
@@ -1513,19 +1570,36 @@ try {
                     clickedCube.deleted = true;
                     actor.heldItem = {id: clickedCube.id};
                     performedAction = true;
-                    syncToBlackboard(state);
                     log.info("Manual Pick", {id: clickedCube.id, at: {x: clickX, y: clickY}});
+                    producer.sendEvent("manual_pick", 1, {status: "success"});
+                } else {
+                    if (clickedCube) producer.sendEvent("manual_pick", 1, {status: "failure"});
                 }
             }
 
+            // Click-to-Move Path Calculation (Calculate Once, Traverse Later)
             if (performedAction) {
-                state.manualMoveTarget = null; // Stop moving if we interacted
+                state.manualPath = []; // Stop moving if we interacted
+                state.manualMoveTarget = null;
             } else {
-                // MOVE: If not interacting, set pathfinding target
-                log.debug("Manual Move Target Set", {x: clickX, y: clickY});
-                state.manualMoveTarget = {x: clickX, y: clickY};
+                // Calculate full path NOW
+                const ignoreId = actor.heldItem ? actor.heldItem.id : -1;
+                const path = findPath(state, actor.x, actor.y, clickX, clickY, ignoreId);
+
+                if (path && path.length > 0) {
+                    log.debug("Manual Move: Path calculated", {steps: path.length, target: {x: clickX, y: clickY}});
+                    state.manualPath = path;
+                    state.manualMoveTarget = {x: clickX, y: clickY};
+                    producer.sendEvent("manual_move_calc", 1, {status: "success"});
+                } else {
+                    log.debug("Manual Move: No path found or already there");
+                    state.manualPath = [];
+                    state.manualMoveTarget = null;
+                    producer.sendEvent("manual_move_calc", 1, {status: "failure"});
+                }
             }
 
+            // Force immediate update by returning null command (wait for next natural tick) or just state
             return [state, null];
         }
 
@@ -1534,7 +1608,8 @@ try {
             if (msg.key === 'q') return [state, tea.quit()];
             if (msg.key === 'm') {
                 state.gameMode = state.gameMode === 'automatic' ? 'manual' : 'automatic';
-                state.manualMoveTarget = null; // Reset pathfinding on mode switch
+                state.manualMoveTarget = null;
+                state.manualPath = [];
                 return [state, null];
             }
             if (msg.key === ' ') {
@@ -1543,19 +1618,21 @@ try {
             }
 
             // SNAPPY MANUAL CONTROL
-            // Removed heavy Blackboard sync from this loop to eliminate input lag.
-            // Collision checks happen directly against state.cubes.
+            // Interrupts any click-movement path
             if (state.gameMode === 'manual' && !state.paused) {
                 const actor = state.actors.get(state.activeActorId);
-                state.manualMoveTarget = null; // Key input overrides click pathfinding
-
                 let dx = 0, dy = 0;
+
                 if (msg.key === 'w') dy = -1;
                 if (msg.key === 's') dy = 1;
                 if (msg.key === 'a') dx = -1;
                 if (msg.key === 'd') dx = 1;
 
                 if (dx !== 0 || dy !== 0) {
+                    // Interrupt click-movement
+                    state.manualPath = [];
+                    state.manualMoveTarget = null;
+
                     const nx = actor.x + dx;
                     const ny = actor.y + dy;
                     let blocked = false;
@@ -1574,6 +1651,7 @@ try {
                         actor.x = nx;
                         actor.y = ny;
                     }
+                    // Return [state, null] to trigger immediate re-render
                     return [state, null];
                 }
             }

@@ -1725,7 +1725,7 @@ try {
         }
 
         // MOUSE INTERACTION (Manual Mode Only)
-        if (msg.type === 'Mouse' && msg.event === 'press' && state.gameMode === 'manual') {
+        if (msg.type === 'Mouse' && msg.string === 'left press' && state.gameMode === 'manual') {
             const actor = state.actors.get(state.activeActorId);
             const spaceX = Math.floor((state.width - state.spaceWidth) / 2);
             const clickX = msg.x - spaceX;
@@ -1759,10 +1759,7 @@ try {
             });
 
             if (isHolding) {
-                // PLACE LOGIC: Try direct click first, then nearest valid placement
-                const ignoreId = actor.heldItem.id;
-
-                // Case 1: Direct click on empty cell within adjacency
+                // PLACE: Can place if empty cell and within adjacency (approx 1.5)
                 if (!clickedCube && dist <= 1.5) {
                     const heldId = actor.heldItem.id;
                     const c = state.cubes.get(heldId);
@@ -1772,85 +1769,29 @@ try {
                         c.y = clickY;
                         actor.heldItem = null;
                         performedAction = true;
-                        log.debug("MANUAL: HeldItem cleared (item placed)", {heldId, tick: state.tickCount, method: "direct"});
+                        log.debug("MANUAL: HeldItem cleared (item placed)", {heldId, tick: state.tickCount});
 
                         // Check win condition
                         if (heldId === TARGET_ID && isInGoalArea(clickX, clickY)) {
                             state.winConditionMet = true;
                         }
-                        log.info("Manual Place (direct)", {id: heldId, at: {x: clickX, y: clickY}});
+                        log.info("Manual Place", {id: heldId, at: {x: clickX, y: clickY}});
                     }
-                }
-                // Case 2a: Click within reach but on occupied cell - REJECT (respect user intent)
-                else if (clickedCube && dist <= 1.5) {
-                    log.debug("Manual Place: Rejected - clicked on occupied cell within reach", {
-                        clickPos: {x: clickX, y: clickY},
-                        occupiedBy: clickedCube.id
+                } else {
+                    log.debug("Manual Place: Failed", {
+                        reason: clickedCube ? "clicked on occupied cube" : "too far",
+                        clickedCube,
+                        dist
                     });
-                    // Do not place - user clicked on occupied cell
-                }
-                // Case 2b: Click out of reach - find nearest valid placement
-                else {
-                    const nearestPlacement = findNearestValidPlacement(state, actor.x, actor.y, ignoreId);
-
-                    if (nearestPlacement) {
-                        const heldId = actor.heldItem.id;
-                        const c = state.cubes.get(heldId);
-                        if (c) {
-                            c.deleted = false;
-                            c.x = nearestPlacement.x;
-                            c.y = nearestPlacement.y;
-                            actor.heldItem = null;
-                            performedAction = true;
-                            log.debug("MANUAL: HeldItem cleared (item placed)", {heldId, tick: state.tickCount, method: "nearest"});
-
-                            if (heldId === TARGET_ID && isInGoalArea(nearestPlacement.x, nearestPlacement.y)) {
-                                state.winConditionMet = true;
-                            }
-                            log.info("Manual Place (nearest)", {id: heldId, at: nearestPlacement});
-                        }
-                    } else {
-                        log.debug("Manual Place: No valid placement found", {actorPos: {x: actor.x, y: actor.y}});
-                    }
                 }
             } else {
-                // PICK LOGIC: Try direct click first, then nearest cube
-
-                // Case 1: Direct click on cube within threshold
+                // PICK: Can pick if valid cube and within PICK_THRESHOLD
                 if (clickedCube && !clickedCube.isStatic && dist <= PICK_THRESHOLD) {
                     clickedCube.deleted = true;
                     actor.heldItem = {id: clickedCube.id};
                     performedAction = true;
-                    log.info("Manual Pick (direct)", {id: clickedCube.id, at: {x: clickedCube.x, y: clickedCube.y}});
-                }
-                // Case 2: No direct click - find nearest pickable cube within PICK_THRESHOLD of click
-                // IMPORTANT: Also check that ACTOR is within PICK_THRESHOLD of the cube (physical reachability)
-                else {
-                    const nearestCube = findNearestPickableCube(state, clickX, clickY);
-                    if (nearestCube) {
-                        // Verify actor is close enough to the cube to pick it up
-                        const actorToCubeDist = Math.sqrt(
-                            Math.pow(nearestCube.x - actor.x, 2) +
-                            Math.pow(nearestCube.y - actor.y, 2)
-                        );
-                        if (actorToCubeDist <= PICK_THRESHOLD) {
-                            nearestCube.deleted = true;
-                            actor.heldItem = {id: nearestCube.id};
-                            performedAction = true;
-                            log.info("Manual Pick (nearest)", {id: nearestCube.id, at: {x: nearestCube.x, y: nearestCube.y}});
-                        } else {
-                            log.debug("Manual Pick: Cube found but actor too far", {
-                                cubeId: nearestCube.id,
-                                actorToCubeDist,
-                                threshold: PICK_THRESHOLD
-                            });
-                        }
-                    } else {
-                        log.debug("Manual Pick: No cube in range", {
-                            method: "nearest",
-                            clickPos: {x: clickX, y: clickY}
-                        });
-                    }
+                    log.info("Manual Pick", {id: clickedCube.id, at: {x: clickX, y: clickY}});
+                } else {
                 }
             }
 

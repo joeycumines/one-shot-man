@@ -1,18 +1,35 @@
+//go:build !windows
+// +build !windows
+
 package bubbletea
 
 import (
 	"bytes"
 	"context"
+	"io"
+	"os"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/creack/pty"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestRunProgram_Lifecycle verifies the full lifecycle of a bubbletea program execution.
+func openPty(t *testing.T) (*os.File, *os.File) {
+	t.Helper()
+	master, slave, err := pty.Open()
+	if err != nil {
+		t.Fatalf("failed to open pty: %v", err)
+	}
+	// set a reasonable default size; ignore error if it fails
+	_ = pty.Setsize(slave, &pty.Winsize{Cols: 80, Rows: 24})
+	return master, slave
+}
+
+// TestRunProgram_Lifecycle verifies the full lifecycle of a bubbletea program execution using a PTY.
 func TestRunProgram_Lifecycle(t *testing.T) {
 	vm := goja.New()
 
@@ -23,16 +40,17 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 
 	model := &jsModel{
 		runtime: vm,
-		initFn: createViewFn(vm, func(state goja.Value) string {
+		initFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
 			select {
 			case initCalled <- struct{}{}:
 			default:
 			}
-			// Return a command to ensure Update runs. a Tick with 1ms.
-			// Or just return nil, expecting WindowSizeMsg.
-			// Let's rely on WindowSizeMsg or a synthetic batch.
-			return ""
-		}),
+			// Return an initial command to ensure Update runs and the program exits deterministically.
+			newState := vm.NewObject()
+			quit := map[string]interface{}{"_cmdType": "quit"}
+			return vm.NewArray(newState, vm.ToValue(quit)), nil
+		},
+
 		updateFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
 			// Signal update
 			select {
@@ -60,10 +78,14 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 	var output bytes.Buffer
 	manager := NewManager(context.Background(), &input, &output, model.jsRunner, nil, nil)
 
-	// Run program in goroutine
+	master, slave := openPty(t)
+	defer master.Close()
+	defer slave.Close()
+
+	// Run program in goroutine using PTY slave for input/output
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- manager.runProgram(model)
+		errCh <- manager.runProgram(model, tea.WithInput(slave), tea.WithOutput(slave))
 	}()
 
 	// Wait for lifecycle events with timeout
@@ -73,6 +95,8 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 	// 1. Init should be called
 	select {
 	case <-initCalled:
+	case err := <-errCh:
+		t.Fatalf("runProgram failed: %v", err)
 	case <-timeout.C:
 		t.Fatal("Timeout waiting for Init")
 	}
@@ -85,18 +109,10 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 	}
 
 	// 3. Update should be called (e.g. WindowSizeMsg or initial command)
-	// If Update is NOT called, we might hang waiting for it?
-	// But View is called.
-	// If Update is called, it returns Quit.
-	// If Update is NOT called, the program runs forever.
-	// Does bubbletea guarantee Update is called?
-	// Usually yes, with WindowSizeMsg.
 	select {
 	case <-updateCalled:
 	case <-timeout.C:
-		// If explicit update didn't happen, force quit?
-		// But we can't easily force quit from outside without program instance reference.
-		// Manager stores it!
+		// If explicit update didn't happen, force quit
 		manager.mu.Lock()
 		if manager.program != nil {
 			manager.program.Quit()
@@ -114,17 +130,13 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 	}
 }
 
-// TestRunProgram_Options verifies that options are correctly passed.
-// We can't inspect tea.Program options directly, so we check side effects (ANSI sequences in output).
+// TestRunProgram_Options verifies that options are correctly passed by inspecting PTY output.
 func TestRunProgram_Options(t *testing.T) {
 	vm := goja.New()
 
 	// Define raw init function that returns a Tick command
 	initFnRaw := func(this goja.Value, args ...goja.Value) (goja.Value, error) {
-		// Init is called with 0 args in initDirect
 		newState := vm.NewObject()
-		// Return a tick command to ensure the loop runs at least once
-		// The tick will fire a message back to Update
 		tick := map[string]interface{}{
 			"_cmdType": "tick",
 			"duration": 50, // 50ms
@@ -153,13 +165,30 @@ func TestRunProgram_Options(t *testing.T) {
 	var output bytes.Buffer
 	manager := NewManager(context.Background(), &input, &output, model.jsRunner, nil, nil)
 
-	// Run with options
-	// WithAltScreen should emit enter/exit alt screen sequences
-	err := manager.runProgram(model, tea.WithAltScreen())
+	master, slave := openPty(t)
+	defer master.Close()
+	// Start reading from the master end *before* running the program so we reliably capture output written while the program runs.
+	buf := &bytes.Buffer{}
+	done := make(chan struct{})
+	go func() {
+		io.Copy(buf, master)
+		close(done)
+	}()
+
+	// Run with AltScreen option and PTY
+	err := manager.runProgram(model, tea.WithAltScreen(), tea.WithInput(slave), tea.WithOutput(slave))
 	require.NoError(t, err)
 
-	// Check for AltScreen sequences
-	outStr := output.String()
+	// Close slave to signal EOF to master and allow the reader to finish
+	_ = slave.Close()
+
+	select {
+	case <-done:
+	case <-time.After(1 * time.Second):
+		t.Fatal("timed out waiting for program output")
+	}
+
+	outStr := buf.String()
 	assert.Contains(t, outStr, "\x1b[?1049h", "Should contain enter alt screen sequence")
 	assert.Contains(t, outStr, "\x1b[?1049l", "Should contain exit alt screen sequence")
 }
@@ -168,30 +197,23 @@ func TestRunProgram_Options(t *testing.T) {
 func TestRunProgram_AlreadyRunning(t *testing.T) {
 	vm := goja.New()
 
-	programStarted := make(chan struct{}, 1) // Buffered to prevent blocking if test proceeds quickly
+	firstProgramStarted := make(chan struct{})
+	stopFirstProgram := make(chan struct{})
 
 	model := &jsModel{
 		runtime: vm,
 		initFn: createViewFn(vm, func(state goja.Value) string {
-			select {
-			case programStarted <- struct{}{}: // Signal that init has been called
-			default:
-			}
+			close(firstProgramStarted)
 			return ""
 		}),
 		updateFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
-			// Don't quit immediately to block
-			return vm.NewArray(args[1], goja.Null()), nil
-		},
-		viewFn: createViewFn(vm, func(state goja.Value) string { return "" }),
-		state:  vm.NewObject(),
-	}
-	model = &jsModel{
-		runtime: vm,
-		// initFn and updateFn will be customized below
-		initFn: createViewFn(vm, func(state goja.Value) string { return "" }),
-		updateFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
-			return vm.NewArray(args[1], goja.Null()), nil
+			select {
+			case <-stopFirstProgram:
+				quit := map[string]interface{}{"_cmdType": "quit"}
+				return vm.NewArray(args[1], vm.ToValue(quit)), nil
+			default:
+				return vm.NewArray(args[1], goja.Null()), nil
+			}
 		},
 		viewFn: createViewFn(vm, func(state goja.Value) string { return "" }),
 		state:  vm.NewObject(),
@@ -202,60 +224,42 @@ func TestRunProgram_AlreadyRunning(t *testing.T) {
 	var output bytes.Buffer
 	manager := NewManager(context.Background(), &input, &output, model.jsRunner, nil, nil)
 
-	// Channel to signal that the first program has started and locked the manager
-	firstProgramStarted := make(chan struct{})
-	// Channel to signal that the first program should exit
-	stopFirstProgram := make(chan struct{})
+	master, slave := openPty(t)
+	defer master.Close()
+	defer slave.Close()
 
-	// Custom init to signal start
-	model.initFn = createViewFn(vm, func(state goja.Value) string {
-		close(firstProgramStarted)
-		return ""
-	})
-	// Custom update to wait for stop signal
-	model.updateFn = func(this goja.Value, args ...goja.Value) (goja.Value, error) {
-		select {
-		case <-stopFirstProgram:
-			quit := map[string]interface{}{"_cmdType": "quit"}
-			return vm.NewArray(args[1], vm.ToValue(quit)), nil
-		default:
-			return vm.NewArray(args[1], goja.Null()), nil
-		}
-	}
-
-	// Start first program
+	startErrCh := make(chan error, 1)
 	go func() {
-		manager.runProgram(model)
+		startErrCh <- manager.runProgram(model, tea.WithInput(slave), tea.WithOutput(slave))
 	}()
 
-	// Wait for first program to actually start
 	select {
 	case <-firstProgramStarted:
+	case err := <-startErrCh:
+		t.Fatalf("failed to start first program: %v", err)
 	case <-time.After(2 * time.Second):
 		t.Fatal("Timeout waiting for first program to start")
 	}
 
-	// Try starting second program matches the race window where lock is held?
-	// runProgram checks m.program under lock.
-	// Since first program started (Init called), m.program IS set.
-
-	err := manager.runProgram(model)
+	// Try starting second program while the first holds the lock
+	err := manager.runProgram(model, tea.WithInput(slave), tea.WithOutput(slave))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "already running")
 
-	// Cleanup: signal first program to quit via update
-	// We need to trigger an update for the select case to run.
-	// Close channel then send a message.
+	// Cleanup: signal first program to quit
 	close(stopFirstProgram)
-	// We can use SendStateRefresh to trigger Update
 	manager.SendStateRefresh("shutdown")
 
-	// Wait for cleanup if needed, but manager.runProgram returns when done.
-	// The background goroutine will exit.
+	// Wait for first program to exit
+	select {
+	case err := <-startErrCh:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("first program didn't exit")
+	}
 }
 
 // TestSendStateRefresh_Integration verifies SendStateRefresh actually sends a message.
-// This is an integration-style unit test.
 func TestSendStateRefresh_Integration(t *testing.T) {
 	vm := goja.New()
 	refreshReceived := make(chan string)
@@ -264,12 +268,10 @@ func TestSendStateRefresh_Integration(t *testing.T) {
 		runtime: vm,
 		initFn:  createViewFn(vm, func(state goja.Value) string { return "" }),
 		updateFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
-			// Check if msg is StateRefresh
 			jsMsg := args[0].ToObject(vm)
 			if jsMsg.Get("type").String() == "StateRefresh" {
 				key := jsMsg.Get("key").String()
 				go func() { refreshReceived <- key }()
-				// Quit
 				quit := map[string]interface{}{"_cmdType": "quit"}
 				return vm.NewArray(args[1], vm.ToValue(quit)), nil
 			}
@@ -282,12 +284,24 @@ func TestSendStateRefresh_Integration(t *testing.T) {
 
 	manager := NewManager(context.Background(), &bytes.Buffer{}, &bytes.Buffer{}, model.jsRunner, nil, nil)
 
+	master, slave := openPty(t)
+	defer master.Close()
+	defer slave.Close()
+
+	startErrCh := make(chan error, 1)
 	go func() {
-		manager.runProgram(model)
+		startErrCh <- manager.runProgram(model, tea.WithInput(slave), tea.WithOutput(slave))
 	}()
 
-	// wait for start
-	time.Sleep(100 * time.Millisecond)
+	// wait for start (or immediate failure)
+	select {
+	case err := <-startErrCh:
+		if err != nil {
+			t.Fatalf("runProgram failed to start: %v", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		// Assume started
+	}
 
 	// Send refresh
 	manager.SendStateRefresh("testKey")
@@ -298,7 +312,12 @@ func TestSendStateRefresh_Integration(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Timeout waiting for state refresh")
 	}
-}
 
-// Helper to cover panic recovery in run (via Require export test) logic unit test is harder without full JS env.
-// But we covered runProgram logic which is the core.
+	// Wait for program to exit
+	select {
+	case err := <-startErrCh:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("program didn't exit")
+	}
+}

@@ -1645,12 +1645,17 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) (err er
 	}()
 
 	// Configure input/output
-	if input != nil {
-		opts = append(opts, tea.WithInput(input))
+	if f, ok := input.(*os.File); ok {
+		opts = append(opts, tea.WithInput(f))
+	} else if input != nil {
+		// For non-file readers, try to use input TTY
+		if isTTY {
+			opts = append(opts, tea.WithInputTTY())
+		}
 	}
 
-	if output != nil {
-		opts = append(opts, tea.WithOutput(output))
+	if f, ok := output.(*os.File); ok {
+		opts = append(opts, tea.WithOutput(f))
 	}
 
 	p := tea.NewProgram(model, opts...)

@@ -1023,46 +1023,4 @@ func TestManualMode_WASD_Movement_T13(t *testing.T) {
 		newX = actor.Get("x").ToFloat()
 		assert.GreaterOrEqual(t, newX, 1.0, "Actor should not go below left boundary")
 	})
-
-	t.Run("Keys Released Stop Movement", func(t *testing.T) {
-		t.Skip("Cannot test key release without timestamp simulation (requires 500ms timeout)")
-
-		// Reset
-		_ = actor.Set("x", 30)
-		_ = actor.Set("y", 12)
-
-		// Press 'D' key
-		msgPress := map[string]interface{}{"type": "Key", "key": "d"}
-		_, err := updateFn(goja.Undefined(), state, vm.ToValue(msgPress))
-		assert.NoError(t, err)
-
-		// Verify key is pressed
-		manualKeys := state.Get("manualKeys").ToObject(vm)
-		getFn, _ := goja.AssertFunction(manualKeys.Get("get"))
-		dVal, _ := getFn(manualKeys, vm.ToValue("d"))
-		assert.True(t, dVal.ToBoolean())
-
-		// Simulate key release (timeout-based)
-		// The script uses a 500ms timeout for key release detection
-		// We can't directly simulate time, but we can verify the mechanism
-
-		// Trigger tick with movement
-		msgTick := map[string]interface{}{"type": "Tick", "id": "tick"}
-		_, err = updateFn(goja.Undefined(), state, vm.ToValue(msgTick))
-		assert.NoError(t, err)
-
-		// Actor moved
-		newX := actor.Get("x").ToFloat()
-		assert.Greater(t, newX, 30.0)
-
-		// In the actual implementation, key release is detected by
-		// checking manualKeyLastSeen timestamp against current time
-		// We can verify the manualKeyLastSeen was set
-		manualKeyLastSeen := state.Get("manualKeyLastSeen").ToObject(vm)
-		if manualKeyLastSeen != nil {
-			getLastSeen, _ := goja.AssertFunction(manualKeyLastSeen.Get("get"))
-			lastSeen, _ := getLastSeen(manualKeyLastSeen, vm.ToValue("d"))
-			assert.True(t, lastSeen.ToInteger() > 0, "lastSeen timestamp should be set")
-		}
-	})
 }

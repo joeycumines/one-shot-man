@@ -94,3 +94,7 @@ internal\builtin\bubbletea\testing.go:*: unreachable func: SyncJSRunner.RunJSSyn
 # Using wildcard patterns for all pabt functions called from JavaScript.
 internal/builtin/pabt/*: unreachable func: *
 internal\builtin\pabt\*: unreachable func: *
+
+# Mouseharness is a test-only package
+internal/mouseharness/*
+internal\mouseharness\*

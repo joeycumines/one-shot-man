@@ -15,6 +15,15 @@ import (
 	"github.com/joeycumines/go-prompt/termtest"
 )
 
+// getExpectedShellPrompt returns the expected shell prompt character based on the user ID.
+// Returns '#' for root (uid 0) and '$' for others.
+func getExpectedShellPrompt() string {
+	if os.Geteuid() == 0 {
+		return "#"
+	}
+	return "$"
+}
+
 // Recording integration tests that generate VHS tapes as a side effect.
 // These tests ALWAYS run the application and verify correct behavior.
 // Recording output (tapes and GIFs) is only generated when the appropriate flags are set.
@@ -57,12 +66,13 @@ func ensurePrompt(ctx context.Context, t *testing.T, r *InputCaptureRecorder, ti
 
 	// 2. Define logic (unchanged)
 	isPrompt := func(buf string) bool {
-		idx := strings.LastIndex(buf, "$")
+		prompt := getExpectedShellPrompt()
+		idx := strings.LastIndex(buf, prompt)
 		if idx == -1 {
 			return false
 		}
 		tail := buf[idx:]
-		return strings.TrimRight(tail, " \t\r\n") == "$"
+		return strings.TrimRight(tail, " \t\r\n") == prompt
 	}
 
 	// 3. Check the captured state.
@@ -86,8 +96,8 @@ func ensurePrompt(ctx context.Context, t *testing.T, r *InputCaptureRecorder, ti
 		return isPrompt(output)
 	}
 
-	if err := r.Expect(promptCtx, snap, condition, "wait for strict prompt '$'"); err != nil {
-		t.Fatalf("Expected prompt '$' at tail: %v\nBuffer: %q", err, r.String())
+	if err := r.Expect(promptCtx, snap, condition, fmt.Sprintf("wait for strict prompt %q", getExpectedShellPrompt())); err != nil {
+		t.Fatalf("Expected prompt %q at tail: %v\nBuffer: %q", getExpectedShellPrompt(), err, r.String())
 	}
 }
 
@@ -205,7 +215,7 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -396,7 +406,7 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -557,7 +567,7 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -662,7 +672,7 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 
 	// Wait for shell prompt to return
 	snap = recorder.Snapshot()
-	expect(snap, "$", 5*time.Second)
+	expect(snap, getExpectedShellPrompt(), 5*time.Second)
 
 	// Exit the shell
 	typeString(t, recorder, "exit")
@@ -747,7 +757,7 @@ func TestRecording_CodeReview(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -835,7 +845,7 @@ func TestRecording_CodeReview(t *testing.T) {
 
 	// Wait for outer shell prompt
 	snap = recorder.Snapshot()
-	expect(snap, "$", 5*time.Second)
+	expect(snap, getExpectedShellPrompt(), 5*time.Second)
 
 	// Exit the outer shell
 	typeString(t, recorder, "exit")
@@ -919,7 +929,7 @@ func TestRecording_PromptFlow(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -1016,7 +1026,7 @@ func TestRecording_PromptFlow(t *testing.T) {
 
 	// Wait for outer shell prompt
 	snap = recorder.Snapshot()
-	expect(snap, "$", 5*time.Second)
+	expect(snap, getExpectedShellPrompt(), 5*time.Second)
 
 	// Exit the outer shell
 	typeString(t, recorder, "exit")
@@ -1100,7 +1110,7 @@ func TestRecording_Goal(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -1153,7 +1163,7 @@ func TestRecording_Goal(t *testing.T) {
 
 	// Wait for outer shell prompt
 	snap = recorder.Snapshot()
-	expect(snap, "$", 5*time.Second)
+	expect(snap, getExpectedShellPrompt(), 5*time.Second)
 
 	// Exit the outer shell
 	typeString(t, recorder, "exit")
@@ -1237,7 +1247,7 @@ func TestRecording_Quickstart(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -1340,7 +1350,7 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -1398,7 +1408,7 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 
 	// Wait for shell prompt to return
 	snap = recorder.Snapshot()
-	expect(snap, "$", 5*time.Second)
+	expect(snap, getExpectedShellPrompt(), 5*time.Second)
 
 	// Exit the shell
 	typeString(t, recorder, "exit")

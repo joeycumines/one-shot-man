@@ -254,7 +254,7 @@ try {
         // Calculate new position - with MANUAL_MOVE_SPEED = 1.0, this is integer-based
         const nx = actor.x + dx * MANUAL_MOVE_SPEED;
         const ny = actor.y + dy * MANUAL_MOVE_SPEED;
-        
+
         // Use integer position for collision detection (consistent with automatic mode)
         const inx = Math.round(nx);
         const iny = Math.round(ny);
@@ -1614,7 +1614,6 @@ try {
                 // Fallback cleanup if path is empty but target remains (shouldn't happen with new logic)
                 state.manualMoveTarget = null;
             }
-
 
 
             if (state.debugMode && (state.tickCount <= 5 || state.tickCount % 50 === 0)) {

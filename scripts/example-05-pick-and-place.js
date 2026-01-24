@@ -1499,6 +1499,34 @@ try {
 
     // Rendering & Helpers
 
+    // OPTIMIZATION: Pre-allocate render buffer to avoid per-frame allocations.
+    // This is CRITICAL for performance - the original implementation allocated
+    // 2000+ objects per frame and used O(n²) string concatenation.
+    let _renderBuffer = null;
+    let _renderBufferWidth = 0;
+    let _renderBufferHeight = 0;
+
+    // Get or create render buffer for given dimensions
+    function getRenderBuffer(width, height) {
+        if (_renderBuffer === null || _renderBufferWidth !== width || _renderBufferHeight !== height) {
+            // Only reallocate if dimensions changed
+            _renderBufferWidth = width;
+            _renderBufferHeight = height;
+            // Use 1D array of chars (much faster than 2D array of objects)
+            _renderBuffer = new Array(width * height);
+            for (let i = 0; i < _renderBuffer.length; i++) {
+                _renderBuffer[i] = ' ';
+            }
+        }
+        return _renderBuffer;
+    }
+
+    function clearBuffer(buffer, width, height) {
+        for (let i = 0; i < buffer.length; i++) {
+            buffer[i] = ' ';
+        }
+    }
+
     function getAllSprites(state) {
         const sprites = [];
         state.actors.forEach(a => {
@@ -1525,7 +1553,10 @@ try {
     function renderPlayArea(state) {
         const width = state.width;
         const height = state.height;
-        const buffer = new Array(width * height || 0).fill(' ');
+
+        // OPTIMIZATION: Use pre-allocated buffer (see example-04)
+        const buffer = getRenderBuffer(width, height);
+        clearBuffer(buffer, width, height);
 
         // Draw Play Area Border
         const spaceX = Math.floor((width - state.spaceWidth) / 2);
@@ -1772,7 +1803,11 @@ try {
                         c.y = clickY;
                         actor.heldItem = null;
                         performedAction = true;
-                        log.debug("MANUAL: HeldItem cleared (item placed)", {heldId, tick: state.tickCount, method: "direct"});
+                        log.debug("MANUAL: HeldItem cleared (item placed)", {
+                            heldId,
+                            tick: state.tickCount,
+                            method: "direct"
+                        });
 
                         // Check win condition
                         if (heldId === TARGET_ID && isInGoalArea(clickX, clickY)) {
@@ -1802,7 +1837,11 @@ try {
                             c.y = nearestPlacement.y;
                             actor.heldItem = null;
                             performedAction = true;
-                            log.debug("MANUAL: HeldItem cleared (item placed)", {heldId, tick: state.tickCount, method: "nearest"});
+                            log.debug("MANUAL: HeldItem cleared (item placed)", {
+                                heldId,
+                                tick: state.tickCount,
+                                method: "nearest"
+                            });
 
                             if (heldId === TARGET_ID && isInGoalArea(nearestPlacement.x, nearestPlacement.y)) {
                                 state.winConditionMet = true;
@@ -1823,7 +1862,7 @@ try {
                     performedAction = true;
                     log.info("Manual Pick (direct)", {id: clickedCube.id, at: {x: clickedCube.x, y: clickedCube.y}});
                 }
-                // Case 2: No direct click - find nearest pickable cube within PICK_THRESHOLD of click
+                    // Case 2: No direct click - find nearest pickable cube within PICK_THRESHOLD of click
                 // IMPORTANT: Also check that ACTOR is within PICK_THRESHOLD of the cube (physical reachability)
                 else {
                     const nearestCube = findNearestPickableCube(state, clickX, clickY);
@@ -1837,7 +1876,10 @@ try {
                             nearestCube.deleted = true;
                             actor.heldItem = {id: nearestCube.id};
                             performedAction = true;
-                            log.info("Manual Pick (nearest)", {id: nearestCube.id, at: {x: nearestCube.x, y: nearestCube.y}});
+                            log.info("Manual Pick (nearest)", {
+                                id: nearestCube.id,
+                                at: {x: nearestCube.x, y: nearestCube.y}
+                            });
                         } else {
                             log.debug("Manual Pick: Cube found but actor too far", {
                                 cubeId: nearestCube.id,

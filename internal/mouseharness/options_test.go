@@ -119,13 +119,6 @@ func TestNew_MissingTermtestConsole(t *testing.T) {
 	assert.Contains(t, err.Error(), "WithTermtestConsole is required")
 }
 
-func TestNew_MissingTestingTB(t *testing.T) {
-	// We can't easily create a mock termtest.Console without a real PTY,
-	// but we can test that the error occurs for missing tb
-	// This test is limited - full validation in integration tests
-	t.Skip("Requires mock termtest.Console - tested in integration tests")
-}
-
 func TestNew_AppliesMultipleOptions(t *testing.T) {
 	// Test that multiple options are applied in order
 	cfg := defaultConfig()

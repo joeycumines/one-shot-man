@@ -1,4 +1,4 @@
-package bubbletea
+package pickandplace
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dop251/goja"
+	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,7 +35,7 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 			// Use real bubbletea bindings
 			mod := vm.NewObject()
 			_ = mod.Set("exports", vm.NewObject())
-			Require(ctx, manager)(vm, mod)
+			bubbletea.Require(ctx, manager)(vm, mod)
 			exports = mod.Get("exports")
 
 		case "osm:bt":

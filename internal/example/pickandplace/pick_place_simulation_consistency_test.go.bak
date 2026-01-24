@@ -1,4 +1,4 @@
-package bubbletea
+package pickandplace
 
 import (
 	"context"
@@ -9,16 +9,11 @@ import (
 	"testing"
 
 	"github.com/dop251/goja"
+	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// ============================================================================
-// SECTION A: Helper Functions for Simulation Consistency Tests
-// ============================================================================
-
-// setupConsistencyTestPair creates two identical test environments (manual and auto)
-// Returns: (manualVM, manualState, autoVM, autoState, exports)
 func setupConsistencyTestPair(t *testing.T) (*goja.Runtime, *goja.Object, *goja.Runtime, *goja.Object, *goja.Object) {
 	// Setup manual mode
 	ctxManual := context.Background()
@@ -81,8 +76,7 @@ func setupConsistencyTestPair(t *testing.T) (*goja.Runtime, *goja.Object, *goja.
 	return vmManual, stateManual, vmAuto, stateAuto, exports
 }
 
-// setupTestVM configures VM with require, module, log mocks
-func setupTestVM(t *testing.T, vm *goja.Runtime, manager *Manager) {
+func setupTestVM(t *testing.T, vm *goja.Runtime, manager *bubbletea.Manager) {
 	modules := make(map[string]goja.Value)
 
 	vm.Set("require", func(call goja.FunctionCall) goja.Value {
@@ -97,7 +91,7 @@ func setupTestVM(t *testing.T, vm *goja.Runtime, manager *Manager) {
 		case "osm:bubbletea":
 			mod := vm.NewObject()
 			_ = mod.Set("exports", vm.NewObject())
-			Require(context.Background(), manager)(vm, mod)
+			bubbletea.Require(context.Background(), manager)(vm, mod)
 			exports = mod.Get("exports")
 
 		case "osm:bt":
@@ -166,7 +160,6 @@ func setupTestVM(t *testing.T, vm *goja.Runtime, manager *Manager) {
 	_ = vm.Set("log", logObj)
 }
 
-// setupTestState configures state with blackboard and standard settings
 func setupTestState(t *testing.T, vm *goja.Runtime, state *goja.Object) {
 	blackboard := vm.NewObject()
 	_ = blackboard.Set("get", func(call goja.FunctionCall) goja.Value {
@@ -181,7 +174,7 @@ func setupTestState(t *testing.T, vm *goja.Runtime, state *goja.Object) {
 	_ = state.Set("debugMode", false)
 }
 
-// createKeyMsg creates a Key message
+createKeyMsg creates a Key message
 func createKeyMsg(key string) map[string]interface{} {
 	return map[string]interface{}{
 		"type": "Key",
@@ -189,7 +182,7 @@ func createKeyMsg(key string) map[string]interface{} {
 	}
 }
 
-// createTickMsg creates a Tick message
+createTickMsg creates a Tick message
 func createTickMsg() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "Tick",
@@ -201,7 +194,7 @@ func createTickMsg() map[string]interface{} {
 // Exported Function Callers
 // ============================================================================
 
-// callBuildBlockedSet invokes buildBlockedSet from script
+callBuildBlockedSet invokes buildBlockedSet from script
 func callBuildBlockedSet(t *testing.T, vm *goja.Runtime, exports *goja.Object, state *goja.Object, ignoreCubeId int64) map[string]string {
 	buildBlockedSetFn, ok := goja.AssertFunction(exports.Get("buildBlockedSet"))
 	require.True(t, ok, "buildBlockedSet not exported")
@@ -225,7 +218,7 @@ func callBuildBlockedSet(t *testing.T, vm *goja.Runtime, exports *goja.Object, s
 	return blockedSet
 }
 
-// callFindPath invokes findPath from script
+callFindPath invokes findPath from script
 func callFindPath(t *testing.T, vm *goja.Runtime, exports *goja.Object, state *goja.Object, startX, startY, targetX, targetY, ignoreCubeId float64) *goja.Object {
 	findPathFn, ok := goja.AssertFunction(exports.Get("findPath"))
 	require.True(t, ok, "findPath not exported")
@@ -240,7 +233,7 @@ func callFindPath(t *testing.T, vm *goja.Runtime, exports *goja.Object, state *g
 	return pathVal.ToObject(vm)
 }
 
-// callGetPathInfo invokes getPathInfo from script
+callGetPathInfo invokes getPathInfo from script
 func callGetPathInfo(t *testing.T, vm *goja.Runtime, exports *goja.Object, state *goja.Object, startX, startY, targetX, targetY, ignoreCubeId float64) *goja.Object {
 	getPathInfoFn, ok := goja.AssertFunction(exports.Get("getPathInfo"))
 	require.True(t, ok, "getPathInfo not exported")
@@ -251,7 +244,7 @@ func callGetPathInfo(t *testing.T, vm *goja.Runtime, exports *goja.Object, state
 	return infoVal.ToObject(vm)
 }
 
-// callFindNextStep invokes findNextStep from script
+callFindNextStep invokes findNextStep from script
 func callFindNextStep(t *testing.T, vm *goja.Runtime, exports *goja.Object, state *goja.Object, startX, startY, targetX, targetY, ignoreCubeId float64) *goja.Object {
 	findNextStepFn, ok := goja.AssertFunction(exports.Get("findNextStep"))
 	require.True(t, ok, "findNextStep not exported")
@@ -266,7 +259,7 @@ func callFindNextStep(t *testing.T, vm *goja.Runtime, exports *goja.Object, stat
 	return stepVal.ToObject(vm)
 }
 
-// callFindFirstBlocker invokes findFirstBlocker from script
+callFindFirstBlocker invokes findFirstBlocker from script
 func callFindFirstBlocker(t *testing.T, vm *goja.Runtime, exports *goja.Object, state *goja.Object, fromX, fromY, toX, toY, excludeId float64) goja.Value {
 	findFirstBlockerFn, ok := goja.AssertFunction(exports.Get("findFirstBlocker"))
 	require.True(t, ok, "findFirstBlocker not exported")
@@ -277,7 +270,7 @@ func callFindFirstBlocker(t *testing.T, vm *goja.Runtime, exports *goja.Object, 
 	return blockerVal
 }
 
-// getPathLength returns the length of a path array
+getPathLength returns the length of a path array
 func getPathLength(t *testing.T, vm *goja.Runtime, path *goja.Object) int64 {
 	if path == nil {
 		return 0
@@ -285,7 +278,7 @@ func getPathLength(t *testing.T, vm *goja.Runtime, path *goja.Object) int64 {
 	return path.Get("length").ToInteger()
 }
 
-// assertPathIdentical compares two path arrays for equality
+assertPathIdentical compares two path arrays for equality
 func assertPathIdentical(t *testing.T, vm *goja.Runtime, path1, path2 *goja.Object, msg string) {
 	if path1 == nil && path2 == nil {
 		return
@@ -320,7 +313,7 @@ func assertPathIdentical(t *testing.T, vm *goja.Runtime, path1, path2 *goja.Obje
 	}
 }
 
-// pathContainsPoint checks if path contains a specific point
+pathContainsPoint checks if path contains a specific point
 func pathContainsPoint(t *testing.T, vm *goja.Runtime, path *goja.Object, x, y float64) bool {
 	if path == nil {
 		t.Logf("pathContainsPoint: path is nil")

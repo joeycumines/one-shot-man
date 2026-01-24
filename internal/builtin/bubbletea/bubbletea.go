@@ -423,7 +423,7 @@ func JsToTeaMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
 	switch msgType {
 	case "Key":
 		keyVal := obj.Get("key")
-		if goja.IsUndefined(keyVal) || goja.IsNull(keyVal) {
+		if keyVal == nil || goja.IsUndefined(keyVal) || goja.IsNull(keyVal) {
 			return nil
 		}
 		key, _ := ParseKey(keyVal.String())
@@ -440,13 +440,13 @@ func JsToTeaMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
 		ctrl := false
 		shift := false
 
-		if v := obj.Get("alt"); !goja.IsUndefined(v) {
+		if v := obj.Get("alt"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 			alt = v.ToBoolean()
 		}
-		if v := obj.Get("ctrl"); !goja.IsUndefined(v) {
+		if v := obj.Get("ctrl"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 			ctrl = v.ToBoolean()
 		}
-		if v := obj.Get("shift"); !goja.IsUndefined(v) {
+		if v := obj.Get("shift"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 			shift = v.ToBoolean()
 		}
 
@@ -956,7 +956,7 @@ func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 // extractBatchCmd extracts commands from a batch command object.
 func (m *jsModel) extractBatchCmd(obj *goja.Object) tea.Cmd {
 	cmdsVal := obj.Get("cmds")
-	if goja.IsUndefined(cmdsVal) || goja.IsNull(cmdsVal) {
+	if cmdsVal == nil || goja.IsUndefined(cmdsVal) || goja.IsNull(cmdsVal) {
 		return nil
 	}
 	cmdsObj := cmdsVal.ToObject(m.runtime)
@@ -974,7 +974,7 @@ func (m *jsModel) extractBatchCmd(obj *goja.Object) tea.Cmd {
 // extractSequenceCmd extracts commands from a sequence command object.
 func (m *jsModel) extractSequenceCmd(obj *goja.Object) tea.Cmd {
 	cmdsVal := obj.Get("cmds")
-	if goja.IsUndefined(cmdsVal) || goja.IsNull(cmdsVal) {
+	if cmdsVal == nil || goja.IsUndefined(cmdsVal) || goja.IsNull(cmdsVal) {
 		return nil
 	}
 	cmdsObj := cmdsVal.ToObject(m.runtime)
@@ -996,7 +996,7 @@ func (m *jsModel) extractSequenceCmd(obj *goja.Object) tea.Cmd {
 // extractTickCmd extracts a tick command.
 func (m *jsModel) extractTickCmd(obj *goja.Object) tea.Cmd {
 	durationVal := obj.Get("duration")
-	if goja.IsUndefined(durationVal) || goja.IsNull(durationVal) {
+	if durationVal == nil || goja.IsUndefined(durationVal) || goja.IsNull(durationVal) {
 		slog.Warn("bubbletea: extractTickCmd: duration is nil/undefined")
 		return nil
 	}
@@ -1586,6 +1586,10 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) (err er
 	signalStop := m.signalStop
 	isTTY := m.isTTY
 	ttyFd := m.ttyFd
+	if m.program != nil {
+		m.mu.Unlock()
+		return fmt.Errorf("runProgram: program is already running")
+	}
 	m.mu.Unlock()
 
 	// Debug: validate required function pointers
@@ -1677,20 +1681,29 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) (err er
 	signalNotify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	defer signalStop(sigCh)
 
+	// Channel to signal that Run() has finished
+	programFinished := make(chan struct{})
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		select {
+		case <-programFinished:
+			// Program finished naturally, no need to call Quit
+			return
 		case <-ctx.Done():
+			// Context cancelled externally
 		case <-sigCh:
+			// OS Signal received
 		}
 		p.Quit()
 	}()
 
 	_, runErr := p.Run()
-	cancel(nil) // Signal the goroutine to exit
-	wg.Wait()   // Wait for the goroutine to finish
+	close(programFinished) // Signal that Run() returned
+	cancel(nil)            // Signal the goroutine to exit (via ctx.Done path if race, but programFinished priority)
+	wg.Wait()              // Wait for the goroutine to finish
 
 	if runErr != nil {
 		return fmt.Errorf("failed to run program: %w", runErr)

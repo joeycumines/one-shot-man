@@ -1,4 +1,4 @@
-package bubbletea
+package pickandplace
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +36,7 @@ func setupPickAndPlaceTest(t *testing.T) (*context.Context, *goja.Runtime, *goja
 			// Use real bubbletea bindings
 			mod := vm.NewObject()
 			_ = mod.Set("exports", vm.NewObject())
-			Require(ctx, manager)(vm, mod)
+			bubbletea.Require(ctx, manager)(vm, mod)
 			exports = mod.Get("exports")
 
 		case "osm:bt":

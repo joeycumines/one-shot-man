@@ -741,6 +741,56 @@ func (h *PickAndPlaceHarness) Quit() error {
 	return h.SendKey("q")
 }
 
+// Click sends a mouse click at the specified viewport-relative coordinates (1-indexed).
+// This sends both press and release events using SGR extended mouse mode.
+// Based on internal/mouseharness/mouse.go implementation.
+func (h *PickAndPlaceHarness) Click(x, y int) error {
+	return h.ClickWithButton(x, y, 0) // 0 = left button
+}
+
+// ClickViewport is an alias for Click, emphasizing that coordinates are
+// viewport-relative (not buffer-absolute). SGR mouse events always use
+// viewport-relative coordinates where row 1 is the top visible row.
+func (h *PickAndPlaceHarness) ClickViewport(x, y int) error {
+	return h.Click(x, y)
+}
+
+// ClickAtBufferPosition sends a mouse click at the specified buffer-absolute
+// coordinates (1-indexed). The buffer row is converted to viewport-relative
+// coordinates before sending the SGR mouse event.
+func (h *PickAndPlaceHarness) ClickAtBufferPosition(x, bufferY int) error {
+	// Convert buffer row to viewport row (they're identical for full-screen apps)
+	viewportY := bufferY
+	return h.Click(x, viewportY)
+}
+
+// ClickWithButton sends a mouse click with a specific button at the coordinates.
+// Coordinates are viewport-relative (1-indexed).
+// Button values: 0=left, 1=middle, 2=right
+func (h *PickAndPlaceHarness) ClickWithButton(x, y, button int) error {
+	if h.console == nil {
+		return fmt.Errorf("harness not started")
+	}
+
+	// SGR mouse encoding: ESC [ < Cb ; Cx ; Cy M (press) / m (release)
+	// Cb = button number (0=left, 1=middle, 2=right)
+	mousePress := fmt.Sprintf("\x1b[<%d;%d;%dM", button, x, y)
+	mouseRelease := fmt.Sprintf("\x1b[<%d;%d;%dm", button, x, y)
+
+	if _, err := h.console.WriteString(mousePress); err != nil {
+		return fmt.Errorf("failed to send mouse press: %w", err)
+	}
+
+	// Small delay between press and release for realism
+	// time.Sleep(30 * time.Millisecond) - Not adding this as it slows test execution
+
+	if _, err := h.console.WriteString(mouseRelease); err != nil {
+		return fmt.Errorf("failed to send mouse release: %w", err)
+	}
+
+	return nil
+}
+
 // SendKey sends a single key to the simulator using WriteString (raw character)
 // NOT SendLine which adds a newline after!
 // For bubbletea-based simulators, we need raw keypresses without Enter.

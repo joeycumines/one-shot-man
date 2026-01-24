@@ -1008,7 +1008,7 @@ func (m *jsModel) extractTickCmd(obj *goja.Object) tea.Cmd {
 
 	idVal := obj.Get("id")
 	id := ""
-	if !goja.IsUndefined(idVal) && !goja.IsNull(idVal) {
+	if idVal != nil && !goja.IsUndefined(idVal) && !goja.IsNull(idVal) {
 		id = idVal.String()
 	}
 

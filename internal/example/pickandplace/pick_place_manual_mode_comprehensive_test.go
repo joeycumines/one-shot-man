@@ -217,6 +217,15 @@ func getCube(t *testing.T, vm *goja.Runtime, state *goja.Object, id int64) *goja
 	return cubeVal.ToObject(vm)
 }
 
+// Helper to delete cube from the cubes map (removes entirely, not just sets deleted=true)
+func deleteCube(t *testing.T, vm *goja.Runtime, state *goja.Object, id int64) {
+	cubes := state.Get("cubes").ToObject(vm)
+	deleteFn, ok := goja.AssertFunction(cubes.Get("delete"))
+	if ok {
+		_, _ = deleteFn(cubes, vm.ToValue(id))
+	}
+}
+
 // Helper to check if a Goja value is an empty array
 func isGojaEmptyArray(t *testing.T, vm *goja.Runtime, val goja.Value) bool {
 	if goja.IsNull(val) || goja.IsUndefined(val) {
@@ -361,6 +370,10 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 		// Debug: print heldItem state before attempting place
 		fmt.Printf("DEBUG heldItem before: %v\n", heldItem)
 
+		// Clean up cubes from previous tests at the target location
+		deleteCube(t, vm, state, 501) // From "Pick Closest Viable Cube"
+		deleteCube(t, vm, state, 503) // From "Place At Empty Adjacent Cell"
+
 		// Add cube 504 to world and mark it as deleted (held item state)
 		addCube(t, vm, state, 504, -1, -1, false, "obstacle")
 		setCubeDeleted(t, vm, state, 504, true) // Mark as deleted when held
@@ -452,7 +465,11 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 		_ = actor.Set("y", 10)
 		_ = actor.Set("heldItem", goja.Null())
 
-		// Add a static wall
+		// Clean up any leftover cubes from previous tests at the target location
+		// (cube 999 from "Place Fails If Cell Occupied" was at 11,10)
+		deleteCube(t, vm, state, 999)
+
+		// Add a static wall at a different location to avoid any conflicts
 		addCube(t, vm, state, 1000, 11, 10, true, "wall")
 
 		// Try to pick the wall: SimX=11, SimY=10
@@ -487,6 +504,9 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 		_ = heldItem.Set("id", 505)
 		_ = actor.Set("heldItem", heldItem)
 
+		// Clean up cube from previous test
+		deleteCube(t, vm, state, 1000)
+
 		// Add another cube nearby
 		addCube(t, vm, state, 506, 11, 10, false, "obstacle")
 
@@ -519,6 +539,9 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 		_ = actor.Set("x", 10)
 		_ = actor.Set("y", 10)
 		_ = actor.Set("heldItem", goja.Null())
+
+		// Clean up cube from previous test
+		deleteCube(t, vm, state, 506)
 
 		// Add a cube
 		addCube(t, vm, state, 507, 11, 10, false, "obstacle")

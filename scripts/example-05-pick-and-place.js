@@ -319,6 +319,78 @@ try {
         return null;
     }
 
+    // Find the NEAREST pickable cube to the given position, within PICK_THRESHOLD.
+    // Returns null if no cube is within range.
+    // OPTIMIZED: Moved Map.get() call outside loop for better performance.
+    function findNearestPickableCube(state, clickX, clickY) {
+        let nearest = null;
+        let nearestDist = PICK_THRESHOLD; // Only find cubes within threshold
+
+        // Get actor ONCE before loop instead of every iteration
+        const actor = state.actors.get(state.activeActorId);
+
+        for (const c of state.cubes.values()) {
+            // Skip deleted cubes, static obstacles, or already-held cubes
+            if (c.deleted) continue;
+            if (c.isStatic) continue;
+            if (actor.heldItem && c.id === actor.heldItem.id) continue;
+
+            // Distance from CLICK position to cube
+            const dist = Math.sqrt(Math.pow(c.x - clickX, 2) + Math.pow(c.y - clickY, 2));
+
+            if (dist < nearestDist) {
+                nearest = c;
+                nearestDist = dist;
+            }
+        }
+
+        return nearest;
+    }
+
+    // Find the NEAREST valid placement cell adjacent to actor.
+    // Returns a {x, y} object or null if no valid cell found.
+    // A placement cell is valid if it is within bounds and not occupied (except by ignoreId).
+    // OPTIMIZED: O(n) algorithm - builds Set of occupied positions for O(1) lookup.
+    function findNearestValidPlacement(state, actorX, actorY, ignoreId) {
+        const ax = Math.round(actorX);
+        const ay = Math.round(actorY);
+        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+
+        // Build position lookup Set ONCE instead of scanning all cubes 8 times
+        const occupiedPositions = new Set();
+        for (const c of state.cubes.values()) {
+            if (!c.deleted && c.id !== ignoreId) {
+                const posKey = Math.round(c.x) + ',' + Math.round(c.y);
+                occupiedPositions.add(posKey);
+            }
+        }
+
+        let nearest = null;
+        let nearestDist = Infinity;
+
+        for (const [dx, dy] of dirs) {
+            const nx = ax + dx;
+            const ny = ay + dy;
+
+            // Bounds check
+            if (nx < 0 || nx >= state.spaceWidth || ny < 0 || ny >= state.height) continue;
+
+            // O(1) lookup instead of O(n) scan!
+            const posKey = nx + ',' + ny;
+            if (occupiedPositions.has(posKey)) continue;
+
+            // Calculate distance from actor to this placement cell
+            const dist = Math.sqrt(Math.pow(nx - ax, 2) + Math.pow(ny - ay, 2));
+
+            if (dist < nearestDist) {
+                nearest = {x: nx, y: ny};
+                nearestDist = dist;
+            }
+        }
+
+        return nearest;
+    }
+
     // Pathfinding
 
     function buildBlockedSet(state, ignoreCubeId) {
@@ -1687,7 +1759,10 @@ try {
             });
 
             if (isHolding) {
-                // PLACE: Can place if empty cell and within adjacency (approx 1.5)
+                // PLACE LOGIC: Try direct click first, then nearest valid placement
+                const ignoreId = actor.heldItem.id;
+
+                // Case 1: Direct click on empty cell within adjacency
                 if (!clickedCube && dist <= 1.5) {
                     const heldId = actor.heldItem.id;
                     const c = state.cubes.get(heldId);
@@ -1697,29 +1772,85 @@ try {
                         c.y = clickY;
                         actor.heldItem = null;
                         performedAction = true;
-                        log.debug("MANUAL: HeldItem cleared (item placed)", {heldId, tick: state.tickCount});
+                        log.debug("MANUAL: HeldItem cleared (item placed)", {heldId, tick: state.tickCount, method: "direct"});
 
                         // Check win condition
                         if (heldId === TARGET_ID && isInGoalArea(clickX, clickY)) {
                             state.winConditionMet = true;
                         }
-                        log.info("Manual Place", {id: heldId, at: {x: clickX, y: clickY}});
+                        log.info("Manual Place (direct)", {id: heldId, at: {x: clickX, y: clickY}});
                     }
-                } else {
-                    log.debug("Manual Place: Failed", {
-                        reason: clickedCube ? "clicked on occupied cube" : "too far",
-                        clickedCube,
-                        dist
+                }
+                // Case 2a: Click within reach but on occupied cell - REJECT (respect user intent)
+                else if (clickedCube && dist <= 1.5) {
+                    log.debug("Manual Place: Rejected - clicked on occupied cell within reach", {
+                        clickPos: {x: clickX, y: clickY},
+                        occupiedBy: clickedCube.id
                     });
+                    // Do not place - user clicked on occupied cell
+                }
+                // Case 2b: Click out of reach - find nearest valid placement
+                else {
+                    const nearestPlacement = findNearestValidPlacement(state, actor.x, actor.y, ignoreId);
+
+                    if (nearestPlacement) {
+                        const heldId = actor.heldItem.id;
+                        const c = state.cubes.get(heldId);
+                        if (c) {
+                            c.deleted = false;
+                            c.x = nearestPlacement.x;
+                            c.y = nearestPlacement.y;
+                            actor.heldItem = null;
+                            performedAction = true;
+                            log.debug("MANUAL: HeldItem cleared (item placed)", {heldId, tick: state.tickCount, method: "nearest"});
+
+                            if (heldId === TARGET_ID && isInGoalArea(nearestPlacement.x, nearestPlacement.y)) {
+                                state.winConditionMet = true;
+                            }
+                            log.info("Manual Place (nearest)", {id: heldId, at: nearestPlacement});
+                        }
+                    } else {
+                        log.debug("Manual Place: No valid placement found", {actorPos: {x: actor.x, y: actor.y}});
+                    }
                 }
             } else {
-                // PICK: Can pick if valid cube and within PICK_THRESHOLD
+                // PICK LOGIC: Try direct click first, then nearest cube
+
+                // Case 1: Direct click on cube within threshold
                 if (clickedCube && !clickedCube.isStatic && dist <= PICK_THRESHOLD) {
                     clickedCube.deleted = true;
                     actor.heldItem = {id: clickedCube.id};
                     performedAction = true;
-                    log.info("Manual Pick", {id: clickedCube.id, at: {x: clickX, y: clickY}});
-                } else {
+                    log.info("Manual Pick (direct)", {id: clickedCube.id, at: {x: clickedCube.x, y: clickedCube.y}});
+                }
+                // Case 2: No direct click - find nearest pickable cube within PICK_THRESHOLD of click
+                // IMPORTANT: Also check that ACTOR is within PICK_THRESHOLD of the cube (physical reachability)
+                else {
+                    const nearestCube = findNearestPickableCube(state, clickX, clickY);
+                    if (nearestCube) {
+                        // Verify actor is close enough to the cube to pick it up
+                        const actorToCubeDist = Math.sqrt(
+                            Math.pow(nearestCube.x - actor.x, 2) +
+                            Math.pow(nearestCube.y - actor.y, 2)
+                        );
+                        if (actorToCubeDist <= PICK_THRESHOLD) {
+                            nearestCube.deleted = true;
+                            actor.heldItem = {id: nearestCube.id};
+                            performedAction = true;
+                            log.info("Manual Pick (nearest)", {id: nearestCube.id, at: {x: nearestCube.x, y: nearestCube.y}});
+                        } else {
+                            log.debug("Manual Pick: Cube found but actor too far", {
+                                cubeId: nearestCube.id,
+                                actorToCubeDist,
+                                threshold: PICK_THRESHOLD
+                            });
+                        }
+                    } else {
+                        log.debug("Manual Pick: No cube in range", {
+                            method: "nearest",
+                            clickPos: {x: clickX, y: clickY}
+                        });
+                    }
                 }
             }
 
@@ -1874,6 +2005,15 @@ try {
         },
         view: function (model) {
             return view(model);
+        },
+        // Enable render throttling to improve input responsiveness
+        // This caches view output and only re-renders after 16ms (60fps)
+        // Tick and WindowSize messages always trigger immediate re-render
+        // CRITICAL: Without this, mouse hover floods the render queue and freezes the app!
+        renderThrottle: {
+            enabled: true,
+            minIntervalMs: 16,  // ~60fps cap
+            alwaysRenderMsgTypes: ["Tick", "WindowSize"]
         }
     });
 

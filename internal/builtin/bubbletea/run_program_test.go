@@ -127,19 +127,8 @@ func TestRunProgram_Options(t *testing.T) {
 		// The tick will fire a message back to Update
 		tick := map[string]interface{}{
 			"_cmdType": "tick",
-			"duration": 10, // 10ms
+			"duration": 50, // 50ms
 		}
-		// Wait, extractTickCmd uses durationVal.ToObject(m.runtime).ToInteger() -> int64
-		// bubbletea.go extractTickCmd: time.Duration(durationVal.ToInteger())
-		// If input is ns, 10ms = 10 * 1,000,000 = 10,000,000
-		// Actually, let's verify extractTickCmd logic.
-		// lines 996+:
-		// durationVal := obj.Get("duration")
-		// if durationVal == nil ...
-		// return tea.Tick(time.Duration(durationVal.ToInteger()), func(t time.Time) tea.Msg { ... })
-		// goja ToInteger returns int64.
-		// So it interprets the number as nanoseconds because time.Duration is int64 nanoseconds.
-		// So 10ms = 10 * 1000 * 1000 = 10,000,000.
 
 		return vm.NewArray(newState, vm.ToValue(tick)), nil
 	}
@@ -151,10 +140,6 @@ func TestRunProgram_Options(t *testing.T) {
 		updateFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
 			// When we receive the tick (or any message), quit
 			quit := map[string]interface{}{"_cmdType": "quit"}
-			// Debugging
-			if len(args) < 2 {
-				return nil, nil // Should not happen
-			}
 			return vm.NewArray(args[1], vm.ToValue(quit)), nil
 		},
 		viewFn: createViewFn(vm, func(state goja.Value) string { return "" }),

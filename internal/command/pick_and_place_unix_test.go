@@ -1010,7 +1010,18 @@ func TestPickAndPlace_MousePick_NearestTarget(t *testing.T) {
 
 	t.Logf("Initial position: (%.1f, %.1f)", initialX, initialY)
 
-	// Click on empty space near a cube
+	// Navigate actor near the target cube at (45, 11)
+	// Actor starts at ~(5, 11), need to move ~40 units right
+	for i := 0; i < 40; i++ {
+		h.SendKey("d") // Move right
+		time.Sleep(50 * time.Millisecond)
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	stateNearCube := h.GetDebugState()
+	t.Logf("Actor position near cube: (%.1f, %.1f)", stateNearCube.ActorX, stateNearCube.ActorY)
+
+	// Click on empty space near the cube
 	// The target cube (TARGET_ID=1) is at (45, 11)
 	// We'll click on empty space (e.g., at 46, 11) which is adjacent to cube at (45, 11)
 	// The nearest cube (at 45, 11) should be picked up.
@@ -1159,6 +1170,22 @@ func TestPickAndPlace_MousePick_DirectClick(t *testing.T) {
 		t.Fatalf("Not in manual mode, got '%s'", state.Mode)
 	}
 
+	// Navigate actor near the blockade cube at (7, 18)
+	// Actor starts at ~(5, 11), need to move right and up/down to reach (7, 18)
+	// Move 2 right, then 7 down (assuming higher Y is down in screen coords)
+	for i := 0; i < 2; i++ {
+		h.SendKey("d") // Move right
+		time.Sleep(50 * time.Millisecond)
+	}
+	for i := 0; i < 7; i++ {
+		h.SendKey("s") // Move down
+		time.Sleep(50 * time.Millisecond)
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	stateNearCube := h.GetDebugState()
+	t.Logf("Actor position near blockade: (%.1f, %.1f)", stateNearCube.ActorX, stateNearCube.ActorY)
+
 	// Click directly on a goal blockade cube (near goal area)
 	// Goal blockade cube 100 is at (7, 18) - right side of goal area
 	spaceX := 10 // Approximate
@@ -1202,6 +1229,21 @@ func TestPickAndPlace_MousePick_HoldingItem(t *testing.T) {
 	if state.Mode != "m" {
 		t.Fatalf("Not in manual mode, got '%s'", state.Mode)
 	}
+
+	// Navigate actor near the blockade cube at (7, 18)
+	// Actor starts at ~(5, 11), need to move right and down
+	for i := 0; i < 2; i++ {
+		h.SendKey("d") // Move right
+		time.Sleep(50 * time.Millisecond)
+	}
+	for i := 0; i < 7; i++ {
+		h.SendKey("s") // Move down
+		time.Sleep(50 * time.Millisecond)
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	stateNear := h.GetDebugState()
+	t.Logf("Actor position near blockade: (%.1f, %.1f)", stateNear.ActorX, stateNear.ActorY)
 
 	// First, pick up a cube by direct clicking
 	spaceX := 10 // Approximate

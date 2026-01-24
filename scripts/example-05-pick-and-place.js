@@ -233,9 +233,6 @@ try {
             manualMoveTarget: null,
             manualPath: [],
             pathStuckTicks: 0,
-            manualKeys: new Map(), // Track key press/release state for custom key-hold support
-            manualKeyLastSeen: new Map(), // Track last time each key was pressed for release detection
-
             winConditionMet: false,
             targetDelivered: false,
 
@@ -249,24 +246,9 @@ try {
 
     // Logic Helpers
 
-    // manualKeysMovement: Handle WASD movement in manual mode based on pressed keys
+    // manualKeysMovement: Handle WASD movement in manual mode (discrete movement per key press)
     // Returns true if movement occurred, false otherwise
-    function manualKeysMovement(state, actor) {
-        if (!state.manualKeys || state.manualKeys.size === 0) return false;
-
-        const getDir = () => {
-            let dx = 0, dy = 0;
-            if (state.manualKeys.get('w')) dy = -1;
-            if (state.manualKeys.get('s')) dy = 1;
-            if (state.manualKeys.get('a')) dx = -1;
-            if (state.manualKeys.get('d')) dx = 1;
-
-            // Diagonal handling: allow diagonal movement if both axes pressed
-            return {dx, dy};
-        };
-
-        const {dx, dy} = getDir();
-
+    function manualKeysMovement(state, actor, dx, dy) {
         if (dx === 0 && dy === 0) return false;
 
         // Calculate new position - with MANUAL_MOVE_SPEED = 1.0, this is integer-based
@@ -1633,29 +1615,7 @@ try {
                 state.manualMoveTarget = null;
             }
 
-            // Handle Manual WASD Movement in Tick handler for smooth key-hold
-            // This enables custom key-hold support with controlled repeat rate
-            if (state.gameMode === 'manual') {
-                const actor = state.actors.get(state.activeActorId);
-                const now = Date.now();
 
-                // Key release detection: remove keys not seen recently (500ms timeout)
-                const KEY_RELEASE_TIMEOUT_MS = 500;
-                for (const [key, lastSeen] of state.manualKeyLastSeen.entries()) {
-                    if (now - lastSeen > KEY_RELEASE_TIMEOUT_MS) {
-                        state.manualKeys.delete(key);
-                        state.manualKeyLastSeen.delete(key);
-                    }
-                }
-
-                // Movement based on pressed keys
-                const moved = manualKeysMovement(state, actor);
-                if (moved) {
-                    // Interrupt any click-movement when using keyboard
-                    state.manualPath = [];
-                    state.manualMoveTarget = null;
-                }
-            }
 
             if (state.debugMode && (state.tickCount <= 5 || state.tickCount % 50 === 0)) {
                 const actor = state.actors.get(state.activeActorId);
@@ -1834,17 +1794,24 @@ try {
                 return [state, null];
             }
 
-            // WASD Key Tracking for Manual Mode - Key Press
+            // WASD Movement - Discrete movement per key press in Manual Mode
             if (state.gameMode === 'manual' && ['w', 'a', 's', 'd'].includes(msg.key)) {
-                // Track key press state for custom key-hold
-                state.manualKeys.set(msg.key, true);
-                state.manualKeyLastSeen.set(msg.key, Date.now()); // Track press timestamp for release detection
+                const actor = state.actors.get(state.activeActorId);
+                let dx = 0, dy = 0;
+                if (msg.key === 'w') dy = -1;
+                if (msg.key === 's') dy = 1;
+                if (msg.key === 'a') dx = -1;
+                if (msg.key === 'd') dx = 1;
+
+                // Perform one-step movement immediately
+                const moved = manualKeysMovement(state, actor, dx, dy);
+                if (moved) {
+                    // Interrupt any click-movement when using keyboard
+                    state.manualPath = [];
+                    state.manualMoveTarget = null;
+                }
                 return [state, null];
             }
-
-            // WASD Key Release detection - timeout-based approach
-            // Bubbletea doesn't provide explicit KeyRelease for keyboard
-            // We detect releases by checking if a key hasn't been seen for a short period
         }
 
         if (msg.type === 'Resize') {
@@ -1873,15 +1840,8 @@ try {
             const ay = Math.round(actor.y);
             const goalReachable = goal ? getPathInfo(state, ax, ay, goal.x, goal.y).reachable : false;
 
-            // Build mk (manualKeys) array for debug output
+            // Build mk (manualKeys) array for debug output (empty array - discrete movement only)
             const mk = [];
-            if (state.gameMode === 'manual') {
-                for (const key of ['w', 'a', 's', 'd']) {
-                    if (state.manualKeys && state.manualKeys.get(key)) {
-                        mk.push(key);
-                    }
-                }
-            }
 
             const debugJSON = JSON.stringify({
                 m: state.gameMode === 'automatic' ? 'a' : 'm',
@@ -1897,8 +1857,7 @@ try {
                 gr: goalReachable ? 1 : 0,
                 mt: state.manualMoveTarget ? 1 : 0,
                 mpl: state.manualPath.length,
-                pst: state.pathStuckTicks,
-                mk: mk.length > 0 ? mk : null
+                pst: state.pathStuckTicks
             });
 
             output += '\n__place_debug_start__\n' + debugJSON + '\n__place_debug_end__';

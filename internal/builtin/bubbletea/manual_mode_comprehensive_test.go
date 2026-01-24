@@ -230,14 +230,9 @@ func isGojaEmptyArray(t *testing.T, vm *goja.Runtime, val goja.Value) bool {
 }
 
 // Helper to clear manual keys state between tests
+// NOTE: manualKeys and manualKeyLastSeen removed - discrete movement only now
 func clearManualKeys(t *testing.T, vm *goja.Runtime, state *goja.Object) {
-	manualKeys := state.Get("manualKeys").ToObject(vm)
-	clearFn, _ := goja.AssertFunction(manualKeys.Get("clear"))
-	clearFn(manualKeys)
-
-	manualKeyLastSeen := state.Get("manualKeyLastSeen").ToObject(vm)
-	clearFn2, _ := goja.AssertFunction(manualKeyLastSeen.Get("clear"))
-	clearFn2(manualKeyLastSeen)
+	// No-op - keys are no longer tracked for hold state
 }
 
 // ============================================================================
@@ -910,89 +905,61 @@ func TestManualMode_WASD_Movement_T13(t *testing.T) {
 		_ = actor.Set("x", 30)
 		_ = actor.Set("y", 12)
 
-		// Press 'W' key
+		// Press 'W' key - movement happens immediately on key press (not in Tick)
 		msg := map[string]interface{}{"type": "Key", "key": "w"}
 		_, err := updateFn(goja.Undefined(), state, vm.ToValue(msg))
 		assert.NoError(t, err)
 
-		// Actor should have moved up (not in update, but in Tick)
-		// Let's verify the key was registered in manualKeys
-		manualKeys := state.Get("manualKeys").ToObject(vm)
-		wPressed, _ := goja.AssertFunction(manualKeys.Get("get"))
-		val, _ := wPressed(manualKeys, vm.ToValue("w"))
-		assert.True(t, val.ToBoolean(), "'w' key should be registered as pressed")
-
-		// Now trigger a tick to verify movement
-		msgTick := map[string]interface{}{"type": "Tick", "id": "tick"}
-		_, err = updateFn(goja.Undefined(), state, vm.ToValue(msgTick))
-		assert.NoError(t, err)
-
-		// Actor Y should have decreased (moved up)
+		// Actor Y should have decreased immediately (moved up)
 		newY := actor.Get("y").ToFloat()
-		assert.Less(t, newY, 12.0, "Actor should have moved up")
+		assert.Less(t, newY, 12.0, "Actor should have moved up immediately")
+		assert.Equal(t, 11.0, newY, "Actor should have moved exactly 1 cell up")
 	})
 
-	t.Run("Key Hold Moves Continuously", func(t *testing.T) {
+	t.Run("Multiple Key Presses Move Multiple Times", func(t *testing.T) {
 		clearManualKeys(t, vm, state) // Clear state from previous tests
 
 		// Reset
 		_ = actor.Set("x", 30)
 		_ = actor.Set("y", 12)
 
-		// Press 'D' key repeatedly
+		// Press 'D' key 5 times (discrete movement)
 		msgKey := map[string]interface{}{"type": "Key", "key": "d"}
-		_, err := updateFn(goja.Undefined(), state, vm.ToValue(msgKey))
-		assert.NoError(t, err)
-
-		// Simulate multiple ticks while key is held
-		msgTick := map[string]interface{}{"type": "Tick", "id": "tick"}
 		initialX := actor.Get("x").ToFloat()
 
 		for i := 0; i < 5; i++ {
-			_, err = updateFn(goja.Undefined(), state, vm.ToValue(msgTick))
-			assert.NoError(t, err)
+			_, err := updateFn(goja.Undefined(), state, vm.ToValue(msgKey))
+			assert.NoError(t, err, "Key press %d should succeed", i)
 		}
 
-		// Actor should have moved multiple times
+		// Actor should have moved 5 times (5 cells right)
 		finalX := actor.Get("x").ToFloat()
-		assert.Greater(t, finalX, initialX, "Actor should have moved right multiple times")
-		assert.Greater(t, finalX, initialX+4, "Should have moved at least 4 units over 5 ticks")
+		assert.Greater(t, finalX, initialX, "Actor should have moved right")
+		assert.Equal(t, 35.0, finalX, "Should have moved exactly 5 cells right")
 	})
 
-	t.Run("Multiple Keys Pressed Diagonal Movement", func(t *testing.T) {
+	t.Run("Diagonal Movement via Sequential Keys", func(t *testing.T) {
 		clearManualKeys(t, vm, state) // Clear state from previous tests
 
 		// Reset
 		_ = actor.Set("x", 30)
 		_ = actor.Set("y", 12)
 
-		// Press 'W' and 'D' together (diagonal up-right)
+		// Press 'W' key (move up)
 		msgW := map[string]interface{}{"type": "Key", "key": "w"}
 		_, err1 := updateFn(goja.Undefined(), state, vm.ToValue(msgW))
 		assert.NoError(t, err1)
 
+		// Press 'D' key (move right)
 		msgD := map[string]interface{}{"type": "Key", "key": "d"}
 		_, err2 := updateFn(goja.Undefined(), state, vm.ToValue(msgD))
 		assert.NoError(t, err2)
 
-		// Verify both keys are registered
-		manualKeys := state.Get("manualKeys").ToObject(vm)
-		getFn, _ := goja.AssertFunction(manualKeys.Get("get"))
-		wVal, _ := getFn(manualKeys, vm.ToValue("w"))
-		dVal, _ := getFn(manualKeys, vm.ToValue("d"))
-		assert.True(t, wVal.ToBoolean())
-		assert.True(t, dVal.ToBoolean())
-
-		// Trigger tick for movement
-		msgTick := map[string]interface{}{"type": "Tick", "id": "tick"}
-		_, err := updateFn(goja.Undefined(), state, vm.ToValue(msgTick))
-		assert.NoError(t, err)
-
-		// Actor should have moved diagonally
+		// Actor should have moved up 1 and right 1 (2 key presses = 2 moves)
 		newX := actor.Get("x").ToFloat()
 		newY := actor.Get("y").ToFloat()
-		assert.Greater(t, newX, 30.0, "X should increase (right)")
-		assert.Less(t, newY, 12.0, "Y should decrease (up)")
+		assert.Equal(t, 31.0, newX, "X should be 31 (moved right)")
+		assert.Equal(t, 11.0, newY, "Y should be 11 (moved up)")
 	})
 
 	t.Run("Collision Detection Stops Movement", func(t *testing.T) {

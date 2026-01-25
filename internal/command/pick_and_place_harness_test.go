@@ -35,6 +35,8 @@ type PickAndPlaceDebugJSON struct {
 	GoalBlockadeCount int      `json:"g"`           // Number of goal blockade cubes (0-7)
 	// NOTE: DumpsterReachable removed - no dumpster in dynamic obstacle handling
 	GoalReachable int `json:"gr"` // Goal reachable (0 = false, 1 = true)
+	TotalWidth    int `json:"tw"` // Total terminal width
+	SpaceWidth    int `json:"sw"` // Width of the simulation space
 }
 
 // PickAndPlaceConfig holds configuration for pick-and-place tests
@@ -753,6 +755,16 @@ func (h *PickAndPlaceHarness) Click(x, y int) error {
 // viewport-relative coordinates where row 1 is the top visible row.
 func (h *PickAndPlaceHarness) ClickViewport(x, y int) error {
 	return h.Click(x, y)
+}
+
+// ClickGrid sends a mouse click at the specified simulation-grid coordinates (0-indexed).
+// It handles the mapping to 1-indexed terminal coordinates, including the side padding.
+func (h *PickAndPlaceHarness) ClickGrid(x, y int) error {
+	state := h.GetDebugState()
+	spaceX := (state.TotalWidth - state.SpaceWidth) / 2
+	// Terminal coordinates: Column = x + 1 (0-indexed grid to 1-indexed terminal) + spaceX
+	// Row = y + 1 (0-indexed grid to 1-indexed terminal)
+	return h.Click(x+spaceX+1, y+1)
 }
 
 // ClickAtBufferPosition sends a mouse click at the specified buffer-absolute

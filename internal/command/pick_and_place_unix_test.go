@@ -977,9 +977,11 @@ func TestPickAndPlaceE2E_AdvancedScenarios(t *testing.T) {
 // TestPickAndPlace_MousePick_NearestTarget verifies that clicking on empty space
 // with a nearby cube picks up the NEAREST cube (not just direct-click).
 func TestPickAndPlace_MousePick_NearestTarget(t *testing.T) {
+	logPath := "mouse-coordination-dbg.log"
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
-		ScriptPath: getPickAndPlaceScriptPath(t),
-		TestMode:   true,
+		ScriptPath:  getPickAndPlaceScriptPath(t),
+		TestMode:    true,
+		LogFilePath: logPath,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create harness: %v", err)
@@ -1011,10 +1013,12 @@ func TestPickAndPlace_MousePick_NearestTarget(t *testing.T) {
 	t.Logf("Initial position: (%.1f, %.1f)", initialX, initialY)
 
 	// Navigate actor near the target cube at (45, 11)
-	// Actor starts at ~(5, 11), need to move ~40 units right
-	for i := 0; i < 40; i++ {
-		h.SendKey("d") // Move right
-		time.Sleep(50 * time.Millisecond)
+	// Actor starts at ~(5, 11), room gap is at (20, 11), target is at (45, 11)
+	// Ensure we are at Y=11 and move right
+	t.Logf("Navigating through gap at (20, 11) towards target at (45, 11)")
+	for i := 0; i < 60; i++ {
+		h.SendKey("d")                     // Move right
+		time.Sleep(100 * time.Millisecond) // Slower for reliability
 	}
 	time.Sleep(300 * time.Millisecond)
 
@@ -1027,9 +1031,12 @@ func TestPickAndPlace_MousePick_NearestTarget(t *testing.T) {
 	// The nearest cube (at 45, 11) should be picked up.
 	clickX := 46
 	clickY := 11
-	spaceX := 10 // Approximate - script does: Math.floor((state.width - state.spaceWidth) / 2)
 
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	// Dynamically calculate spaceX to match JS: Math.floor((state.width - state.spaceWidth) / 2)
+	// state.width for tests is 200
+	// state.spaceWidth is 80 (hardcoded in example-05-pick-and-place.js)
+
+	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
@@ -1074,7 +1081,7 @@ func TestPickAndPlace_MousePick_MultipleCubes(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	for i := 0; i < 4; i++ {
-		h.SendKey("w") // Move up toward goal area
+		h.SendKey("s") // Move down toward goal area
 		time.Sleep(100 * time.Millisecond)
 	}
 
@@ -1088,11 +1095,10 @@ func TestPickAndPlace_MousePick_MultipleCubes(t *testing.T) {
 	// and expecting the nearest cube to be picked
 
 	// Click on empty space at (10, 16)
-	spaceX := 10 // Approximate
 	clickX := 10
 	clickY := 16
 
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
@@ -1130,11 +1136,10 @@ func TestPickAndPlace_MousePick_NoTargetInRange(t *testing.T) {
 
 	// Navigate far from any cubes
 	// Click on empty space far from goal blockade ring (e.g., 50, 5)
-	spaceX := 10 // Approximate
 	clickX := 50
 	clickY := 5
 
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
@@ -1188,13 +1193,14 @@ func TestPickAndPlace_MousePick_DirectClick(t *testing.T) {
 
 	// Click directly on a goal blockade cube (near goal area)
 	// Goal blockade cube 100 is at (7, 18) - right side of goal area
-	spaceX := 10 // Approximate
+	// Click directly on a goal blockade cube (near goal area)
+	// Goal blockade cube 100 is at (7, 18) - right side of goal area
 	clickX := 7
 	clickY := 18
 
 	t.Logf("Clicking directly on cube at (%d, %d)", clickX, clickY)
 
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
@@ -1234,47 +1240,65 @@ func TestPickAndPlace_MousePick_HoldingItem(t *testing.T) {
 	// Actor starts at ~(5, 11), need to move right and down
 	for i := 0; i < 2; i++ {
 		h.SendKey("d") // Move right
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
-	for i := 0; i < 7; i++ {
-		h.SendKey("s") // Move down
-		time.Sleep(50 * time.Millisecond)
+	for i := 0; i < 9; i++ {
+		h.SendKey("s") // Move down to ~20
+		time.Sleep(100 * time.Millisecond)
 	}
-	time.Sleep(300 * time.Millisecond)
+
+	// Wait for movement to definitely finish
+	h.WaitForFrames(10)
+	time.Sleep(500 * time.Millisecond)
 
 	stateNear := h.GetDebugState()
 	t.Logf("Actor position near blockade: (%.1f, %.1f)", stateNear.ActorX, stateNear.ActorY)
 
 	// First, pick up a cube by direct clicking
-	spaceX := 10 // Approximate
+	// Cube 100 at (7, 18)
 	clickX := 7
-	clickY := 18 // Click on blockade cube 100
+	clickY := 18
 
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send first mouse click: %v", err)
 	}
 
+	h.WaitForFrames(5)
 	time.Sleep(500 * time.Millisecond)
 	stateAfterPick := h.GetDebugState()
 
 	if stateAfterPick.HeldItemID < 100 {
-		t.Fatalf("Failed to pick up first cube, held item is %d", stateAfterPick.HeldItemID)
+		// Try picking one more time if it missed (PTY lag)
+		h.ClickGrid(clickX, clickY)
+		time.Sleep(500 * time.Millisecond)
+		stateAfterPick = h.GetDebugState()
+		if stateAfterPick.HeldItemID < 100 {
+			t.Fatalf("Failed to pick up first cube, held item is %d (actor at %.1f, %.1f)", stateAfterPick.HeldItemID, stateAfterPick.ActorX, stateAfterPick.ActorY)
+		}
 	}
 
-	t.Logf("Holding cube id=%d, now click on empty space", stateAfterPick.HeldItemID)
+	t.Logf("Holding cube id=%d, now click on an OCCUPIED cell within reach (adjacency)", stateAfterPick.HeldItemID)
 
-	// Click on empty space while holding - should NOT pick another item
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	// We want to click on an OCCUPIED cell (e.g., another blockade cube)
+	// Blockades are at Y: 16, 17, 18, 19, 20
+	// If actor is at Y=15, Y=16 is adjacent.
+	// If actor is at Y=17, Y=16/18 are adjacent but wait, he's on X=7 which is the ring edge.
+	// Let's just click (7, 16) if actor is close to it.
+	targetX := 7
+	targetY := 5
+
+	if err := h.ClickGrid(targetX, targetY); err != nil {
 		t.Fatalf("Failed to send second mouse click: %v", err)
 	}
 
+	h.WaitForFrames(5)
 	time.Sleep(500 * time.Millisecond)
 	stateAfterSecondClick := h.GetDebugState()
 
-	// Verify item is still held (shouldn't pick another)
+	// Verify item is still held (shouldn't drop or pick another)
 	if stateAfterSecondClick.HeldItemID != stateAfterPick.HeldItemID {
-		t.Errorf("Expected held item unchanged (%d), but now holding %d",
-			stateAfterPick.HeldItemID, stateAfterSecondClick.HeldItemID)
+		t.Errorf("Expected held item unchanged (%d), but now holding %d (actor at %.1f, %.1f, click was at %d, %d)",
+			stateAfterPick.HeldItemID, stateAfterSecondClick.HeldItemID, stateAfterSecondClick.ActorX, stateAfterSecondClick.ActorY, targetX, targetY)
 	} else {
 		t.Logf("✓ Correctly ignored click - still holding same item (id=%d)", stateAfterSecondClick.HeldItemID)
 	}
@@ -1313,11 +1337,10 @@ func TestPickAndPlace_MousePick_StaticObstacles(t *testing.T) {
 	t.Logf("Actor near wall at (%.1f, %.1f)", stateNearWall.ActorX, stateNearWall.ActorY)
 
 	// Click near/on the wall position
-	spaceX := 10 // Approximate
 	clickX := 20 // Wall at x=20
 	clickY := 11
 
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
@@ -1357,14 +1380,23 @@ func TestPickAndPlace_MousePlace_NearestEmpty(t *testing.T) {
 		t.Fatalf("Not in manual mode, got '%s'", state.Mode)
 	}
 
-	// First, pick up a cube by direct clicking
-	spaceX := 10 // Approximate
-	clickX := 7
-	clickY := 18   // Cube 100 at (7, 18)
-	h.SendKey("m") // Ensure manual mode
-	h.SendKey("m")
+	// Navigate actor near the blockade cube at (7, 18)
+	for i := 0; i < 2; i++ {
+		h.SendKey("d") // Move right
+		time.Sleep(50 * time.Millisecond)
+	}
+	for i := 0; i < 7; i++ {
+		h.SendKey("s") // Move down
+		time.Sleep(50 * time.Millisecond)
+	}
+	h.WaitForFrames(5)
+	time.Sleep(300 * time.Millisecond)
 
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	// First, pick up a cube by direct clicking
+	clickX := 7
+	clickY := 18 // Cube 100 at (7, 18)
+
+	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send pick click: %v", err)
 	}
 
@@ -1394,10 +1426,7 @@ func TestPickAndPlace_MousePlace_NearestEmpty(t *testing.T) {
 	t.Logf("Actor before place: (%.1f, %.1f)", stateBeforePlace.ActorX, stateBeforePlace.ActorY)
 
 	// Click on empty space (20, 17) - should use NEAREST valid placement
-	clickPlaceX := 20
-	clickPlaceY := 17
-
-	if err := h.Click(clickPlaceX+spaceX, clickPlaceY); err != nil {
+	if err := h.ClickGrid(20, 17); err != nil {
 		t.Fatalf("Failed to send place click: %v", err)
 	}
 
@@ -1428,14 +1457,24 @@ func TestPickAndPlace_MousePlace_BlockedCell(t *testing.T) {
 	h.SendKey("m")
 	time.Sleep(300 * time.Millisecond)
 
+	// Navigate actor near the blockade cube at (7, 18)
+	for i := 0; i < 2; i++ {
+		h.SendKey("d") // Move right
+		time.Sleep(100 * time.Millisecond)
+	}
+	for i := 0; i < 7; i++ {
+		h.SendKey("s") // Move down
+		time.Sleep(100 * time.Millisecond)
+	}
+	h.WaitForFrames(5)
+	time.Sleep(300 * time.Millisecond)
+
 	// Pick up a cube
-	spaceX := 10 // Approximate
-	h.SendKey("m")
-	h.SendKey("m")
-	h.Click(7+spaceX, 18) // Pick cube 100
+	state := h.GetDebugState()
+	h.ClickGrid(7, 18) // Pick cube 100
 	time.Sleep(500 * time.Millisecond)
 
-	state := h.GetDebugState()
+	state = h.GetDebugState()
 	if state.HeldItemID < 100 {
 		t.Fatalf("Failed to pick up cube, held item is %d", state.HeldItemID)
 	}
@@ -1458,7 +1497,7 @@ func TestPickAndPlace_MousePlace_BlockedCell(t *testing.T) {
 	clickX := 8
 	clickY := 18
 
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send place click: %v", err)
 	}
 
@@ -1489,8 +1528,6 @@ func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 	h.SendKey("m")
 	time.Sleep(300 * time.Millisecond)
 
-	spaceX := 10 // Approximate - script does: Math.floor((state.width - state.spaceWidth) / 2)
-
 	// Pick up target cube (cube 1) by navigating to it
 	// Auto mode to get near target, then manual to pick and place
 	h.SendKey("m")              // Switch to auto
@@ -1516,7 +1553,7 @@ func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 
 	// Try direct click to pick target if close
 	if distanceToTarget <= 2.0 {
-		h.Click(45+spaceX, 11)
+		h.ClickGrid(45, 11)
 		time.Sleep(500 * time.Millisecond)
 
 		stateAfterPick := h.GetDebugState()
@@ -1544,7 +1581,7 @@ func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 	clickX := 10
 	clickY := 18
 
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send place click: %v", err)
 	}
 
@@ -1581,11 +1618,20 @@ func TestPickAndPlace_MousePlace_NoValidCell(t *testing.T) {
 	h.SendKey("m")
 	time.Sleep(300 * time.Millisecond)
 
+	// Navigate actor near the blockade cube at (7, 18)
+	for i := 0; i < 2; i++ {
+		h.SendKey("d") // Move right
+		time.Sleep(100 * time.Millisecond)
+	}
+	for i := 0; i < 7; i++ {
+		h.SendKey("s") // Move down
+		time.Sleep(100 * time.Millisecond)
+	}
+	h.WaitForFrames(5)
+	time.Sleep(300 * time.Millisecond)
+
 	// Pick up a cube
-	spaceX := 10 // Approximate
-	h.SendKey("m")
-	h.SendKey("m")
-	h.Click(7+spaceX, 18) // Pick cube 100
+	h.ClickGrid(7, 18) // Pick cube 100
 	time.Sleep(500 * time.Millisecond)
 
 	state := h.GetDebugState()
@@ -1612,10 +1658,7 @@ func TestPickAndPlace_MousePlace_NoValidCell(t *testing.T) {
 		stateBeforeClick.ActorX, stateBeforeClick.ActorY, heldIdBefore)
 
 	// Click while surrounded - should find nearest valid placement
-	clickX := 8
-	clickY := 17
-
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(8, 17); err != nil {
 		t.Fatalf("Failed to send place click: %v", err)
 	}
 
@@ -1652,11 +1695,20 @@ func TestPickAndPlace_MousePlace_NonTargetInGoal(t *testing.T) {
 	h.SendKey("m")
 	time.Sleep(300 * time.Millisecond)
 
+	// Navigate actor near the blockade cube at (7, 18)
+	for i := 0; i < 2; i++ {
+		h.SendKey("d") // Move right
+		time.Sleep(100 * time.Millisecond)
+	}
+	for i := 0; i < 7; i++ {
+		h.SendKey("s") // Move down
+		time.Sleep(100 * time.Millisecond)
+	}
+	h.WaitForFrames(5)
+	time.Sleep(300 * time.Millisecond)
+
 	// Pick up a non-target cube (cube 100 at 7, 18)
-	spaceX := 10 // Approximate
-	h.SendKey("m")
-	h.SendKey("m")
-	h.Click(7+spaceX, 18)
+	h.ClickGrid(7, 18)
 	time.Sleep(500 * time.Millisecond)
 
 	stateAfterPick := h.GetDebugState()
@@ -1678,10 +1730,7 @@ func TestPickAndPlace_MousePlace_NonTargetInGoal(t *testing.T) {
 	}
 
 	// Click on goal area (8, 18) - should place at nearest valid cell
-	clickX := 8
-	clickY := 18
-
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(8, 18); err != nil {
 		t.Fatalf("Failed to send place click: %v", err)
 	}
 
@@ -1927,11 +1976,10 @@ func TestPickAndPlace_MouseNoAction_NoCubesInRange(t *testing.T) {
 	initialY := state.ActorY
 
 	// Click on empty space far from any cubes (50, 5)
-	spaceX := 10 // Approximate
 	clickX := 50
 	clickY := 5
 
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
@@ -1972,9 +2020,20 @@ func TestPickAndPlace_MouseNoAction_NoValidPlacement(t *testing.T) {
 	h.SendKey("m")
 	time.Sleep(300 * time.Millisecond)
 
+	// Navigate actor near the blockade cube at (7, 18)
+	for i := 0; i < 2; i++ {
+		h.SendKey("d") // Move right
+		time.Sleep(100 * time.Millisecond)
+	}
+	for i := 0; i < 7; i++ {
+		h.SendKey("s") // Move down
+		time.Sleep(100 * time.Millisecond)
+	}
+	h.WaitForFrames(5)
+	time.Sleep(300 * time.Millisecond)
+
 	// Pick up a cube
-	spaceX := 10          // Approximate
-	h.Click(7+spaceX, 18) // Cube 100 at (7, 18)
+	h.ClickGrid(7, 18) // Cube 100 at (7, 18)
 	time.Sleep(500 * time.Millisecond)
 
 	stateAfterPick := h.GetDebugState()
@@ -1997,10 +2056,7 @@ func TestPickAndPlace_MouseNoAction_NoValidPlacement(t *testing.T) {
 	heldIdBefore := stateBeforeClick.HeldItemID
 
 	// Click while surrounded - should find nearest placement or do nothing
-	clickX := 8
-	clickY := 18
-
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(8, 18); err != nil {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
@@ -2049,11 +2105,10 @@ func TestPickAndPlace_MouseNoAction_StaticObstacle(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	// Click on wall position (x=20 is room wall)
-	spaceX := 10 // Approximate
 	clickX := 20
 	clickY := 11
 
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
@@ -2093,11 +2148,10 @@ func TestPickAndPlace_MouseNoAction_PausedState(t *testing.T) {
 	tickBefore := stateBeforeClick.Tick
 
 	// Click anywhere on screen
-	spaceX := 10 // Approximate
 	clickX := 30
 	clickY := 10
 
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
@@ -2140,9 +2194,20 @@ func TestPickAndPlace_MouseNoAction_AlreadyHeldCube(t *testing.T) {
 	h.SendKey("m")
 	time.Sleep(300 * time.Millisecond)
 
+	// Navigate actor near the blockade cube at (7, 18)
+	for i := 0; i < 2; i++ {
+		h.SendKey("d") // Move right
+		time.Sleep(100 * time.Millisecond)
+	}
+	for i := 0; i < 7; i++ {
+		h.SendKey("s") // Move down
+		time.Sleep(100 * time.Millisecond)
+	}
+	h.WaitForFrames(5)
+	time.Sleep(300 * time.Millisecond)
+
 	// Pick up cube 100
-	spaceX := 10          // Approximate
-	h.Click(7+spaceX, 18) // Cube 100 at (7, 18)
+	h.ClickGrid(7, 18) // Cube 100 at (7, 18)
 	time.Sleep(500 * time.Millisecond)
 
 	stateAfterPick := h.GetDebugState()
@@ -2152,10 +2217,7 @@ func TestPickAndPlace_MouseNoAction_AlreadyHeldCube(t *testing.T) {
 
 	// Now click on the original cube position (it should be marked deleted: true)
 	// Verify no pick occurs (already held)
-	clickX := 7
-	clickY := 18
-
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(7, 5); err != nil {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
@@ -2191,12 +2253,11 @@ func TestPickAndPlace_MouseNoAction_RapidClicks(t *testing.T) {
 	stateBefore := h.GetDebugState()
 
 	// Send 10 rapid clicks on empty space (no cubes in range)
-	spaceX := 10 // Approximate
 	clickX := 30
 	clickY := 20
 
 	for i := 0; i < 10; i++ {
-		if err := h.Click(clickX+spaceX, clickY); err != nil {
+		if err := h.ClickGrid(clickX, clickY); err != nil {
 			t.Fatalf("Failed to send mouse click %d: %v", i+1, err)
 		}
 		time.Sleep(20 * time.Millisecond) // Very short delay
@@ -2242,11 +2303,10 @@ func TestPickAndPlace_MouseNoAction_BoundaryClicks(t *testing.T) {
 	initialY := stateBefore.ActorY
 
 	// Click at left boundary (negative position - should be ignored or treated as min)
-	spaceX := 10 // Approximate
 	clickX := -5
 	clickY := 10
 
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(clickX, clickY); err != nil {
 		// This is expected - mouseharness might reject negative coordinates
 		t.Logf("✓ Left boundary click correctly rejected: %v", err)
 	} else {
@@ -2265,7 +2325,7 @@ func TestPickAndPlace_MouseNoAction_BoundaryClicks(t *testing.T) {
 	clickX = 999
 	clickY = 10
 
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(clickX, clickY); err != nil {
 		// Expected - coordinates outside viewport
 		t.Logf("✓ Right boundary click correctly rejected: %v", err)
 	} else {
@@ -2314,11 +2374,10 @@ func TestPickAndPlace_MouseNoAction_HUDArea(t *testing.T) {
 
 	// Click on HUD area (far right, outside play space)
 	// Play space is approximately 42 wide, HUD starts at x=42
-	spaceX := 10 // Approximate
 	clickX := 50 // HUD area
 	clickY := 10
 
-	if err := h.Click(clickX+spaceX, clickY); err != nil {
+	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 

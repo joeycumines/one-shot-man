@@ -1,4 +1,5 @@
 {
+  "policy": "ALL tasks and subtasks contained within this blueprint MUST be completed in their entirety. Deferring, skipping, or omitting any part of the plan is strictly prohibited. Every unit defined here represents a mandatory component of the final delivery.",
   "units": [
     {
       "id": "fix_manual_movement_speed",

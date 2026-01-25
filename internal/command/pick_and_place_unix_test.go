@@ -1034,7 +1034,7 @@ func TestPickAndPlace_MousePick_NearestTarget(t *testing.T) {
 
 	// Dynamically calculate spaceX to match JS: Math.floor((state.width - state.spaceWidth) / 2)
 	// state.width for tests is 200
-	// state.spaceWidth is 80 (hardcoded in example-05-pick-and-place.js)
+	// state.spaceWidth is 55 (hardcoded in example-05-pick-and-place.js)
 
 	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send mouse click: %v", err)
@@ -1470,11 +1470,10 @@ func TestPickAndPlace_MousePlace_BlockedCell(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	// Pick up a cube
-	state := h.GetDebugState()
 	h.ClickGrid(7, 18) // Pick cube 100
 	time.Sleep(500 * time.Millisecond)
 
-	state = h.GetDebugState()
+	state := h.GetDebugState()
 	if state.HeldItemID < 100 {
 		t.Fatalf("Failed to pick up cube, held item is %d", state.HeldItemID)
 	}
@@ -2373,7 +2372,7 @@ func TestPickAndPlace_MouseNoAction_HUDArea(t *testing.T) {
 	tickBefore := stateBefore.Tick
 
 	// Click on HUD area (far right, outside play space)
-	// Play space is approximately 42 wide, HUD starts at x=42
+	// Play space is spaceWidth=55 columns; HUD only renders on terminals >= 109 cols
 	clickX := 50 // HUD area
 	clickY := 10
 

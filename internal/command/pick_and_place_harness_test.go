@@ -762,9 +762,11 @@ func (h *PickAndPlaceHarness) ClickViewport(x, y int) error {
 func (h *PickAndPlaceHarness) ClickGrid(x, y int) error {
 	state := h.GetDebugState()
 	spaceX := (state.TotalWidth - state.SpaceWidth) / 2
-	// Terminal coordinates: Column = x + 1 (0-indexed grid to 1-indexed terminal) + spaceX
-	// Row = y + 1 (0-indexed grid to 1-indexed terminal)
-	return h.Click(x+spaceX+1, y+1)
+	// Grid (gx, gy) is rendered at buffer column (gx + spaceX + 1) and buffer row (gy)
+	// SGR mouse uses 1-indexed terminal coordinates
+	// So: terminal column = (gx + spaceX + 1) + 1 = gx + spaceX + 2
+	//     terminal row = gy + 1
+	return h.Click(x+spaceX+2, y+1)
 }
 
 // ClickAtBufferPosition sends a mouse click at the specified buffer-absolute

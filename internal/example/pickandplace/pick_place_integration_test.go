@@ -189,11 +189,11 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 		addCube(101, 11, 10)
 
 		// Click coords: SimX=11, SimY=10
-		// Screen coords: spaceX=(80-60)/2 = 10. ClickX=21, ClickY=10
+		// Screen coords: spaceX=(80-60)/2 = 10. ClickX = 11 + 10 + 1 = 22, ClickY=10
 		msg := map[string]interface{}{
 			"type":   "Mouse",
-			"event":  "press",
-			"x":      21,
+			"action": "press",
+			"x":      22,
 			"y":      10,
 			"button": "left",
 		}
@@ -225,11 +225,11 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 		// but `update` logic re-enables it upon placement.
 		// Let's ensure the cube object exists in the map.
 
-		// Click coords: SimX=11, SimY=10. ScreenX=21, ScreenY=10
+		// Click coords: SimX=11, SimY=10. ScreenX = 11+10+1 = 22, ScreenY=10
 		msg := map[string]interface{}{
 			"type":   "Mouse",
-			"event":  "press",
-			"x":      21,
+			"action": "press",
+			"x":      22,
 			"y":      10,
 			"button": "left",
 		}
@@ -259,11 +259,11 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 		// Cube at 11, 10 (Close)
 		addCube(401, 11, 10)
 
-		// Click Far Away: SimX=50, SimY=10. ScreenX=60, SimY=10
+		// Click Far Away: SimX=50, SimY=10. ScreenX = 50+10+1 = 61, SimY=10
 		msg := map[string]interface{}{
 			"type":   "Mouse",
-			"event":  "press",
-			"x":      60,
+			"action": "press",
+			"x":      61,
 			"y":      10,
 			"button": "left",
 		}

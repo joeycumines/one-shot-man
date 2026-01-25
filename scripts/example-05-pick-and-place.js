@@ -255,7 +255,7 @@ try {
         return {
             width: ENV_WIDTH,
             height: ENV_HEIGHT,
-            spaceWidth: 55, // Updated to allow HUD on 80-column terminals
+            spaceWidth: 55, // Must accommodate ROOM_MAX_X=55; HUD conditionally hidden on narrow terminals
 
             actors: new Map([
                 [1, { id: 1, x: 5, y: 11, heldItem: null }]
@@ -306,8 +306,8 @@ try {
         // Boundary check - MUST match pathfinding boundaries for consistency
         // Pathfinding uses: nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1
         // This is to ensure consistent behavior between manual and automatic modes
-        if (inx < 0 || inx >= state.spaceWidth ||
-            iny < 0 || iny >= state.height) {
+        if (inx < 1 || inx >= state.spaceWidth - 1 ||
+            iny < 1 || iny >= state.height - 1) {
             blocked = true;
         }
 
@@ -1175,30 +1175,42 @@ try {
             }
         }
 
-        // HUD
-        let hudY = 2;
-        const hudX = Math.min(state.spaceWidth + 2, width - 25);
-        const draw = (txt) => {
-            for (let i = 0; i < txt.length && hudX + i < width; i++) buffer[hudY * width + hudX + i] = txt[i];
-            hudY++;
-        };
+        // HUD - positioned to the right of play area
+        // FIX (HUD-1): hudX MUST account for spaceX offset
+        // FIX (HUD-2): Only render HUD if there's enough space (need 25 columns)
+        const HUD_WIDTH = 25;
+        const hudX = spaceX + state.spaceWidth + 2;  // Right of play area border
+        const hudSpace = width - hudX;
+        
+        // Only render HUD if there's at least enough space for minimal content
+        if (hudSpace >= HUD_WIDTH) {
+            let hudY = 2;
+            const draw = (txt) => {
+                // Truncate text to fit available space
+                const maxLen = Math.min(txt.length, hudSpace);
+                for (let i = 0; i < maxLen && hudX + i < width; i++) {
+                    buffer[hudY * width + hudX + i] = txt[i];
+                }
+                hudY++;
+            };
 
-        draw('═════════════════════════');
-        draw(' PICK-AND-PLACE SIM');
-        draw('═════════════════════════');
-        draw('Mode: ' + state.gameMode.toUpperCase());
-        if (state.paused) draw('*** PAUSED ***');
-        draw('Goal: 3x3 Area');
-        draw('Tick: ' + state.tickCount);  // Force bubbletea renderer to see change
-        if (state.winConditionMet) draw('*** GOAL ACHIEVED! ***');
-        draw('');
-        draw('CONTROLS');
-        draw('────────');
-        draw('[Q] Quit');
-        draw('[M] Toggle Mode');
-        draw('[WASD] Move (manual)');
-        draw('[Space] Pause');
-        draw('[Mouse] Click to Move/Interact');
+            draw('═════════════════════════');
+            draw(' PICK-AND-PLACE SIM');
+            draw('═════════════════════════');
+            draw('Mode: ' + state.gameMode.toUpperCase());
+            if (state.paused) draw('*** PAUSED ***');
+            draw('Goal: 3x3 Area');
+            draw('Tick: ' + state.tickCount);  // Force bubbletea renderer to see change
+            if (state.winConditionMet) draw('*** GOAL ACHIEVED! ***');
+            draw('');
+            draw('CONTROLS');
+            draw('────────');
+            draw('[Q] Quit');
+            draw('[M] Toggle Mode');
+            draw('[WASD] Move (manual)');
+            draw('[Space] Pause');
+            draw('[Mouse] Click to Move/Interact');
+        }
 
         const rows = [];
         for (let y = 0; y < height; y++) rows.push(buffer.slice(y * width, (y + 1) * width).join(''));
@@ -1224,6 +1236,13 @@ try {
     }
 
     function update(state, msg) {
+        // Handle terminal resize - update rendering dimensions
+        if (msg.type === 'WindowSize') {
+            state.width = msg.width;
+            state.height = msg.height;
+            return [state, null];
+        }
+
         if (msg.type === 'Tick' && msg.id === 'tick') {
             if (state.paused) return [state, tea.tick(16, 'tick')];
             state.tickCount++;
@@ -1333,9 +1352,11 @@ try {
         if (msg.type === 'Mouse' && msg.action === 'press' && msg.button === 'left' && state.gameMode === 'manual') {
             const actor = state.actors.get(state.activeActorId);
             const spaceX = Math.floor((state.width - state.spaceWidth) / 2);
-            // Revert: Use 1-based offset logic (Grid starts at spaceX + 1)
-            const clickX = msg.x - 1 - Math.max(0, spaceX);
-            const clickY = msg.y - 1;
+            // Coordinate conversion: bubbletea MouseEvent uses 0-indexed coords
+            // Grid cell (gx, gy) is rendered at buffer position (gx + spaceX + 1, gy)
+            // So: gx = msg.x - spaceX - 1, gy = msg.y
+            const clickX = msg.x - spaceX - 1;
+            const clickY = msg.y;
 
             log.info("MOUSE CLICK DETECTED", {
                 rawX: msg.x, rawY: msg.y,

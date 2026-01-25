@@ -1175,18 +1175,28 @@ try {
             }
         }
 
-        // HUD - positioned to the right of play area
-        // FIX (HUD-1): hudX MUST account for spaceX offset
-        // FIX (HUD-2): Only render HUD if there's enough space (need 25 columns)
+        // HUD Rendering - ALWAYS shows at minimum a status bar
+        // The HUD can be in two modes:
+        // 1. Full HUD (right panel): When there's enough space (>= 25 columns right of play area)
+        // 2. Minimal status bar (bottom row): ALWAYS shown as fallback
         const HUD_WIDTH = 25;
         const hudX = spaceX + state.spaceWidth + 2;  // Right of play area border
         const hudSpace = width - hudX;
         
-        // Only render HUD if there's at least enough space for minimal content
+        // Helper to draw text at position
+        const drawAt = (x, y, txt) => {
+            for (let i = 0; i < txt.length && x + i < width; i++) {
+                const idx = y * width + x + i;
+                if (idx >= 0 && idx < buffer.length) {
+                    buffer[idx] = txt[i];
+                }
+            }
+        };
+
+        // Full HUD panel (right side) - only when there's enough space
         if (hudSpace >= HUD_WIDTH) {
             let hudY = 2;
             const draw = (txt) => {
-                // Truncate text to fit available space
                 const maxLen = Math.min(txt.length, hudSpace);
                 for (let i = 0; i < maxLen && hudX + i < width; i++) {
                     buffer[hudY * width + hudX + i] = txt[i];
@@ -1200,7 +1210,7 @@ try {
             draw('Mode: ' + state.gameMode.toUpperCase());
             if (state.paused) draw('*** PAUSED ***');
             draw('Goal: 3x3 Area');
-            draw('Tick: ' + state.tickCount);  // Force bubbletea renderer to see change
+            draw('Tick: ' + state.tickCount);
             if (state.winConditionMet) draw('*** GOAL ACHIEVED! ***');
             draw('');
             draw('CONTROLS');
@@ -1210,6 +1220,21 @@ try {
             draw('[WASD] Move (manual)');
             draw('[Space] Pause');
             draw('[Mouse] Click to Move/Interact');
+        } else {
+            // Minimal status bar at bottom - ALWAYS shown when full HUD doesn't fit
+            const statusY = height - 1;
+            const modeStr = 'Mode: ' + state.gameMode.toUpperCase();
+            const tickStr = ' T:' + state.tickCount;
+            const hintStr = ' [Q]uit [M]ode [WASD] [Space]Pause';
+            const winStr = state.winConditionMet ? ' WIN!' : '';
+            const pauseStr = state.paused ? ' PAUSED' : '';
+            
+            // Build status line, truncate to fit width
+            let statusLine = modeStr + tickStr + pauseStr + winStr + hintStr;
+            if (statusLine.length > width) {
+                statusLine = statusLine.substring(0, width);
+            }
+            drawAt(0, statusY, statusLine);
         }
 
         const rows = [];

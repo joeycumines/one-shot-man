@@ -1,0 +1,87 @@
+{
+  "units": [
+    {
+      "id": "fix_manual_movement_speed",
+      "title": "Fix Manual Mode Movement Speed",
+      "description": "Manual mode movement is currently running at 60Hz (UI loop) vs Automatic mode's 10Hz (Logic loop), causing the actor to move 6x faster ('teleporting'). The goal is to align Manual speed with Automatic speed (approx 10 units/sec) by decoupling UI tick from logic tick.",
+      "status": "todo",
+      "verification_criteria": [
+        "Actor moves at approximately 10 units per second in Manual Mode.",
+        "Crossing the room (width ~35 units) takes ~3.5 seconds.",
+        "Movement is smooth, not instant snapping.",
+        "Regression test: Automatic mode speed remains unchanged."
+      ]
+    },
+    {
+      "id": "enforce_interaction_constraints",
+      "title": "Enforce Manual Interaction Constraints",
+      "description": "Prevent 'Action at a Distance'. The actor must be physically adjacent (<= 1.5 units) to an object to Pick or Place it. Clicking a distant object should trigger a 'Walk-Then-Interact' sequence.",
+      "status": "todo",
+      "verification_criteria": [
+        "Clicking an object > 1.5 units away initiates movement ONLY.",
+        "Held Item status does NOT change immediately upon clicking a distant object.",
+        "Interaction (Pick/Place) occurs AUTOMATICALLY only after the actor walks to within 1.5 units.",
+        "If the path is blocked/unreachable, no interaction occurs."
+      ]
+    },
+    {
+      "id": "fix_hud_layout",
+      "title": "Fix HUD Layout & Overlap",
+      "description": "The HUD currently overlaps the play area on some terminal sizes because it ignores the board's centering offset.",
+      "status": "todo",
+      "verification_criteria": [
+        "HUD is positioned to the right of the play area, explicitly accounting for `spaceX` offset.",
+        "HUD does not occlude any map tiles (walls, cubes, goals).",
+        "HUD remains readable and non-overlapping on standard terminal sizes (80x24)."
+      ]
+    },
+    {
+      "id": "performance_real_pty_benchmarking",
+      "title": "Performance & Real-PTY Benchmarking",
+      "description": "Optimizations must be verified via real PTY testing (termtest). The implementation must support high-performance input/output handling without freezing or lagging.",
+      "status": "todo",
+      "verification_criteria": [
+        "Benchmarking: Integration tests must measure and assert effectively on rendering/logic performance (e.g. no missed frames during heavy load).",
+        "Input Performance: Verify responsiveness under load using PTY injection.",
+        "UI must remain responsive (> 30fps) during heavy pathfinding/rendering operations.",
+        "Memory: Zero unnecessary allocations per frame (verify `_renderBuffer` reuse)."
+      ]
+    },
+    {
+      "id": "input_latency_reduction",
+      "title": "Input Latency Reduction",
+      "description": "Ensure input handling (mouse/keyboard) is responsive and not artificially delayed by the logic loop rate.",
+      "status": "todo",
+      "verification_criteria": [
+        "Mouse clicks register immediately (visual feedback).",
+        "Keyboard movement in Manual Mode feels responsive (low latency).",
+        "Input processing is decoupled from the 10Hz logic tick where possible."
+      ]
+    },
+    {
+      "id": "visual_integrity",
+      "title": "Visual Integrity & Glitches",
+      "description": "Fix 'disappearing' artifacts or Z-fighting issues where sprites might flicker or vanish.",
+      "status": "todo",
+      "verification_criteria": [
+        "Held items are always visible (render order: Floor < Goal < Target/Obstacle < Actor < HeldItem).",
+        "No flickering of sprites during movement.",
+        "Clear visual distinction between Target, Obstacles, and Goals."
+      ]
+    },
+    {
+      "id": "integration_test_suite_hardcore",
+      "title": "Exhaustive, Real-PTY Integration Test Suite",
+      "description": "A comprehensive test suite in `internal/command` using `termtest` and real PTYs to verify all functionality (Pick, Place, Move, HUD, Speed, Performance) with zero regressions.",
+      "status": "todo",
+      "verification_criteria": [
+        "Must use Real PTY (`termtest`) for ALL interaction tests.",
+        "TestPickAndPlaceManualSpeed: Measures tick-to-distance ratio to ensure speed limit.",
+        "TestPickAndPlaceManualConstraints: Verifies state does not change during transit.",
+        "TestPickAndPlaceHUD: Verifies output buffer for overlap (no HUD text on map coordinates).",
+        "TestPickAndPlaceModeSwitch: Rapid toggling of modes does not crash or hang.",
+        "TestPickAndPlacePerformance: Benchmarks rendering consistency."
+      ]
+    }
+  ]
+}

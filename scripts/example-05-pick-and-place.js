@@ -136,12 +136,20 @@ try {
             this.cells.set(this.key(x, y), id);
         }
 
-        remove(x, y) {
-            this.cells.delete(this.key(x, y));
+        /**
+         * Removes the entity from the grid.
+         * Checks that the ID at the location matches to prevent
+         * accidental deletion of overlapping entities (cache corruption).
+         */
+        remove(x, y, id) {
+            const k = this.key(x, y);
+            if (id === undefined || this.cells.get(k) === id) {
+                this.cells.delete(k);
+            }
         }
 
         move(id, oldX, oldY, newX, newY) {
-            this.remove(oldX, oldY);
+            this.remove(oldX, oldY, id);
             this.add(id, newX, newY);
         }
 
@@ -937,7 +945,7 @@ try {
                     }
                 } else if (clickedCube && !clickedCube.isStatic && !clickedCube.deleted) {
                     clickedCube.deleted = true;
-                    state.spatialGrid.remove(clickedCube.x, clickedCube.y); // Remove from grid
+                    state.spatialGrid.remove(clickedCube.x, clickedCube.y, clickedCube.id); // Remove from grid with check
                     actor.heldItem = {id: clickedCube.id};
                     state.spritesDirty = true;
                 } else if (!isHolding && !clickedCube) {
@@ -946,7 +954,7 @@ try {
                         const actorToCubeDist = Math.sqrt(Math.pow(nearestCube.x - actor.x, 2) + Math.pow(nearestCube.y - actor.y, 2));
                         if (actorToCubeDist <= PICK_THRESHOLD) {
                             nearestCube.deleted = true;
-                            state.spatialGrid.remove(nearestCube.x, nearestCube.y); // Remove from grid
+                            state.spatialGrid.remove(nearestCube.x, nearestCube.y, nearestCube.id); // Remove from grid with check
                             actor.heldItem = {id: nearestCube.id};
                             state.spritesDirty = true;
                         }
@@ -1067,7 +1075,7 @@ try {
             if (dist > PICK_THRESHOLD) return bt.failure;
 
             cube.deleted = true;
-            state.spatialGrid.remove(cube.x, cube.y); // Remove from grid
+            state.spatialGrid.remove(cube.x, cube.y, cube.id); // Remove from grid
 
             actor.heldItem = {id: cubeId};
             state.spritesDirty = true;
@@ -1223,7 +1231,7 @@ try {
             if (a.heldItem || !t || t.deleted) return bt.failure;
 
             t.deleted = true;
-            state.spatialGrid.remove(t.x, t.y); // Grid update
+            state.spatialGrid.remove(t.x, t.y, t.id); // Grid update
 
             a.heldItem = {id: TARGET_ID};
             state.spritesDirty = true;

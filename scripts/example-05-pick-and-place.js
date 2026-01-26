@@ -313,7 +313,7 @@ try {
         const occupiedPositions = new Set();
         for (const c of state.cubes.values()) {
             if (!c.deleted && c.id !== ignoreId) {
-                const posKey = Math.round(c.x) + ',' + Math.round(c.y);
+                const posKey = (Math.round(c.y) << 12) | Math.round(c.x);
                 occupiedPositions.add(posKey);
             }
         }
@@ -325,7 +325,7 @@ try {
             const nx = ax + dx;
             const ny = ay + dy;
             if (nx < 0 || nx >= state.spaceWidth || ny < 0 || ny >= state.height) continue;
-            const posKey = nx + ',' + ny;
+            const posKey = (ny << 12) | nx;
             if (occupiedPositions.has(posKey)) continue;
             const dist = Math.sqrt(Math.pow(nx - ax, 2) + Math.pow(ny - ay, 2));
             if (dist < nearestDist) {
@@ -340,14 +340,13 @@ try {
 
     function buildBlockedSet(state, ignoreCubeId) {
         const blocked = new Set();
-        const key = (x, y) => x + ',' + y;
         const actor = state.actors.get(state.activeActorId);
 
         state.cubes.forEach(c => {
             if (c.deleted) return;
             if (c.id === ignoreCubeId) return;
             if (actor.heldItem && c.id === actor.heldItem.id) return;
-            blocked.add(key(Math.round(c.x), Math.round(c.y)));
+            blocked.add((Math.round(c.y) << 12) | Math.round(c.x));
         });
         return blocked;
     }
@@ -355,6 +354,10 @@ try {
     class MinHeap {
         constructor() {
             this.data = [];
+        }
+
+        clear() {
+            this.data.length = 0;
         }
 
         push(val) {
@@ -404,6 +407,9 @@ try {
         grid: null,
         gridWidth: 0,
         gridHeight: 0,
+        gScore: null,
+        cameFrom: null,
+        heap: new MinHeap(),
         budget: 2000,
 
         invalidate() {
@@ -415,7 +421,11 @@ try {
             if (this.grid && this.gridWidth === state.width && this.gridHeight === state.height && this.gridVersion === this.version) {
                 return this.grid;
             }
-            if (!this.grid || this.grid.length !== sz) this.grid = new Int32Array(sz);
+            if (!this.grid || this.grid.length !== sz) {
+                this.grid = new Int32Array(sz);
+                this.gScore = new Uint16Array(sz);
+                this.cameFrom = new Int32Array(sz);
+            }
             this.grid.fill(-1);
             for (const c of state.cubes.values()) {
                 if (c.deleted) continue;
@@ -436,12 +446,14 @@ try {
 
             const grid = this.getGrid(state);
             const size = w * h;
-            const gScore = new Uint16Array(size).fill(65535);
-            const cameFrom = new Int32Array(size).fill(-1);
-            const open = new MinHeap();
 
-            gScore[startIdx] = 0;
-            open.push({idx: startIdx, f: Math.abs(tx - Math.round(sx)) + Math.abs(ty - Math.round(sy))});
+            // Use cached arrays to prevent GC
+            this.gScore.fill(65535);
+            this.cameFrom.fill(-1);
+            this.heap.clear();
+
+            this.gScore[startIdx] = 0;
+            this.heap.push({idx: startIdx, f: Math.abs(tx - Math.round(sx)) + Math.abs(ty - Math.round(sy))});
 
             const dirs = [w, -w, 1, -1];
             let expansions = 0;
@@ -451,9 +463,9 @@ try {
             const actor = state.actors.get(state.activeActorId);
             const heldId = actor.heldItem ? actor.heldItem.id : -1;
 
-            while (open.size() > 0) {
+            while (this.heap.size() > 0) {
                 if (++expansions > this.budget) break;
-                const {idx: cIdx} = open.pop();
+                const {idx: cIdx} = this.heap.pop();
                 if (cIdx === targetIdx) {
                     bestNode = cIdx;
                     break;
@@ -465,7 +477,7 @@ try {
                     bestDist = dist;
                     bestNode = cIdx;
                 }
-                const cg = gScore[cIdx];
+                const cg = this.gScore[cIdx];
 
                 for (const d of dirs) {
                     const nIdx = cIdx + d;
@@ -481,10 +493,10 @@ try {
                     }
 
                     const ng = cg + 1;
-                    if (ng < gScore[nIdx]) {
-                        gScore[nIdx] = ng;
-                        cameFrom[nIdx] = cIdx;
-                        open.push({idx: nIdx, f: ng + Math.abs(tx - nx) + Math.abs(ty - ny)});
+                    if (ng < this.gScore[nIdx]) {
+                        this.gScore[nIdx] = ng;
+                        this.cameFrom[nIdx] = cIdx;
+                        this.heap.push({idx: nIdx, f: ng + Math.abs(tx - nx) + Math.abs(ty - ny)});
                     }
                 }
             }
@@ -493,7 +505,7 @@ try {
             let curr = bestNode;
             while (curr !== startIdx && curr !== -1) {
                 path.unshift({x: curr % w, y: (curr / w) | 0});
-                curr = cameFrom[curr];
+                curr = this.cameFrom[curr];
             }
             return path;
         }
@@ -501,10 +513,9 @@ try {
 
     function getPathInfo(state, startX, startY, targetX, targetY, ignoreCubeId) {
         const blocked = buildBlockedSet(state, ignoreCubeId);
-        const key = (x, y) => x + ',' + y;
         const visited = new Set();
         const queue = [{x: Math.round(startX), y: Math.round(startY), dist: 0}];
-        visited.add(key(queue[0].x, queue[0].y));
+        visited.add((queue[0].y << 12) | queue[0].x);
 
         while (queue.length > 0) {
             const current = queue.shift();
@@ -515,7 +526,7 @@ try {
             for (const [ox, oy] of dirs) {
                 const nx = current.x + ox;
                 const ny = current.y + oy;
-                const nKey = key(nx, ny);
+                const nKey = (ny << 12) | nx;
                 if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
                 if (visited.has(nKey)) continue;
                 if (blocked.has(nKey)) continue;
@@ -531,52 +542,18 @@ try {
     }
 
     function findNextStep(state, startX, startY, targetX, targetY, ignoreCubeId) {
-        const blocked = buildBlockedSet(state, ignoreCubeId);
-        const key = (x, y) => x + ',' + y;
-        const iStartX = Math.round(startX);
-        const iStartY = Math.round(startY);
-        const iTargetX = Math.round(targetX);
-        const iTargetY = Math.round(targetY);
-
+        // Optimization: Use the cached grid A* pathfinder instead of ad-hoc BFS
         if (Math.abs(startX - targetX) < 1.0 && Math.abs(startY - targetY) < 1.0) {
             return {x: targetX, y: targetY};
         }
-
-        const visited = new Set();
-        const queue = [];
-        visited.add(key(iStartX, iStartY));
-
-        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-        for (const [ox, oy] of dirs) {
-            const nx = iStartX + ox;
-            const ny = iStartY + oy;
-            const nKey = key(nx, ny);
-            if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
-            if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
-            if (nx === iTargetX && ny === iTargetY) return {x: nx, y: ny};
-            queue.push({x: nx, y: ny, firstX: ox, firstY: oy});
-            visited.add(nKey);
-        }
-
-        while (queue.length > 0) {
-            const cur = queue.shift();
-            if (cur.x === iTargetX && cur.y === iTargetY) return {x: startX + cur.firstX, y: startY + cur.firstY};
-            for (const [ox, oy] of dirs) {
-                const nx = cur.x + ox;
-                const ny = cur.y + oy;
-                const nKey = key(nx, ny);
-                if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
-                if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
-                if (visited.has(nKey)) continue;
-                visited.add(nKey);
-                queue.push({x: nx, y: ny, firstX: cur.firstX, firstY: cur.firstY});
-            }
+        const path = manualPathfinder.find(state, startX, startY, targetX, targetY, ignoreCubeId);
+        if (path && path.length > 0) {
+            return path[0];
         }
         return null;
     }
 
     function findFirstBlocker(state, fromX, fromY, toX, toY, excludeId) {
-        const key = (x, y) => x + ',' + y;
         const actor = state.actors.get(state.activeActorId);
         const cubeAtPosition = new Map();
         state.cubes.forEach(c => {
@@ -584,14 +561,14 @@ try {
             if (c.isStatic) return;
             if (actor.heldItem && c.id === actor.heldItem.id) return;
             if (excludeId !== undefined && c.id === excludeId) return;
-            cubeAtPosition.set(key(Math.round(c.x), Math.round(c.y)), c.id);
+            cubeAtPosition.set((Math.round(c.y) << 12) | Math.round(c.x), c.id);
         });
 
         const blocked = buildBlockedSet(state, excludeId !== undefined ? excludeId : -1);
         const visited = new Set();
         const frontier = [];
         const queue = [{x: Math.round(fromX), y: Math.round(fromY)}];
-        visited.add(key(queue[0].x, queue[0].y));
+        visited.add((queue[0].y << 12) | queue[0].x);
         const targetIX = Math.round(toX);
         const targetIY = Math.round(toY);
 
@@ -605,7 +582,7 @@ try {
             for (const [ox, oy] of dirs) {
                 const nx = current.x + ox;
                 const ny = current.y + oy;
-                const nKey = key(nx, ny);
+                const nKey = (ny << 12) | nx;
                 if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
                 if (visited.has(nKey)) continue;
 
@@ -860,7 +837,7 @@ try {
                 var newY = actor.y + Math.sign(stepDy) * Math.min(1.0, Math.abs(stepDy));
 
                 var checkBlocked = buildBlockedSet(state, ignoreCubeId);
-                var destKey = Math.round(newX) + ',' + Math.round(newY);
+                var destKey = (Math.round(newY) << 12) | Math.round(newX);
 
                 if (Math.round(newX) === 6 && Math.round(newY) === 18) {
                     log.warn("MoveTo " + name + " CRITICAL: Entering cell (6,18)! destKey=" + destKey + " blockedHas=" + checkBlocked.has(destKey) + " ignoreCubeId=" + ignoreCubeId);
@@ -1428,7 +1405,7 @@ try {
 
                 for (const n of neighbors) {
                     const p = findPath(state, actor.x, actor.y, n.x, n.y, ignoreId, searchLimit);
-                    if (p !== null) {
+                    if (p !== null && p.length > 0) {
                         path = p;
                         break;
                     }

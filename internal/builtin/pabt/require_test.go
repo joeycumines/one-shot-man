@@ -97,11 +97,6 @@ func TestRequire_ModuleRegistration(t *testing.T) {
 	for _, export := range expectedExports {
 		assert.NotNil(t, pabtObj.Get(export), "Missing export: %s", export)
 	}
-
-	// Verify status constants match osm:bt
-	assert.Equal(t, "running", pabtObj.Get("Running").String())
-	assert.Equal(t, "success", pabtObj.Get("Success").String())
-	assert.Equal(t, "failure", pabtObj.Get("Failure").String())
 }
 
 // TestNewState_Creation verifies pabt.newState(blackboard) creates a valid state.

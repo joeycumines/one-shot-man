@@ -113,6 +113,47 @@ try {
     const PICK_THRESHOLD = 5.0;
     const MANUAL_MOVE_SPEED = 1.0;
 
+    // Optimization Constants
+    const DIRS_4 = Object.freeze([[0, 1], [0, -1], [1, 0], [-1, 0]]);
+    const DIRS_8 = Object.freeze([[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]]);
+
+    // Object Pooling Arenas
+    const nodeArena = [];
+    let nodeArenaIdx = 0;
+    const spriteArena = [];
+    let spriteArenaIdx = 0;
+
+    class SpatialGrid {
+        constructor() {
+            this.cells = new Map();
+        }
+
+        key(x, y) {
+            return (Math.round(x) << 16) | (Math.round(y) & 0xFFFF);
+        }
+
+        add(id, x, y) {
+            this.cells.set(this.key(x, y), id);
+        }
+
+        remove(x, y) {
+            this.cells.delete(this.key(x, y));
+        }
+
+        move(id, oldX, oldY, newX, newY) {
+            this.remove(oldX, oldY);
+            this.add(id, newX, newY);
+        }
+
+        has(x, y) {
+            return this.cells.has(this.key(x, y));
+        }
+
+        get(x, y) {
+            return this.cells.get(this.key(x, y));
+        }
+    }
+
     function isInGoalArea(x, y) {
         return x >= GOAL_CENTER_X - GOAL_RADIUS &&
             x <= GOAL_CENTER_X + GOAL_RADIUS &&
@@ -121,16 +162,25 @@ try {
     }
 
     function initializeSimulation() {
+        GOAL_BLOCKADE_IDS = []; // Fix: Clear before populating
         const cubesInit = [];
+        const spatialGrid = new SpatialGrid();
 
-        cubesInit.push([TARGET_ID, {
+        function registerCube(c) {
+            cubesInit.push([c.id, c]);
+            if (!c.deleted) {
+                spatialGrid.add(c.id, c.x, c.y);
+            }
+        }
+
+        registerCube({
             id: TARGET_ID,
             x: 45,
             y: 11,
             deleted: false,
             isTarget: true,
             type: 'target'
-        }]);
+        });
 
         let goalBlockadeId = 100;
         const ringMinX = GOAL_CENTER_X - GOAL_RADIUS - 1;
@@ -142,13 +192,13 @@ try {
             for (let x = ringMinX; x <= ringMaxX; x++) {
                 if (isInGoalArea(x, y)) continue;
 
-                cubesInit.push([goalBlockadeId, {
+                registerCube({
                     id: goalBlockadeId,
                     x: x,
                     y: y,
                     deleted: false,
                     type: 'obstacle'
-                }]);
+                });
                 GOAL_BLOCKADE_IDS.push(goalBlockadeId);
                 goalBlockadeId++;
             }
@@ -158,14 +208,14 @@ try {
 
         function addWall(x, y) {
             if (x === ROOM_MIN_X && Math.abs(y - ROOM_GAP_Y) <= 1) return;
-            cubesInit.push([wallId, {
+            registerCube({
                 id: wallId,
                 x: x,
                 y: y,
                 deleted: false,
                 isStatic: true,
                 type: 'wall'
-            }]);
+            });
             wallId++;
         }
 
@@ -178,13 +228,13 @@ try {
             addWall(ROOM_MAX_X, y);
         }
 
-        cubesInit.push([803, {
+        registerCube({
             id: 803,
             x: 7,
             y: 5,
             deleted: false,
             type: 'obstacle'
-        }]);
+        });
 
         log.info("Pick-and-Place simulation initialized");
         return {
@@ -196,11 +246,13 @@ try {
                 [1, {id: 1, x: 5, y: 11, heldItem: null}]
             ]),
             cubes: new Map(cubesInit),
+            spatialGrid: spatialGrid, // Spatial Indexing
             goals: new Map([
                 [GOAL_ID, {id: GOAL_ID, x: GOAL_CENTER_X, y: GOAL_CENTER_Y, forTarget: true}]
             ]),
 
             blackboard: null,
+            bbCache: new Map(), // Value diffing cache
             pabtPlan: null,
             pabtState: null,
             activeActorId: 1,
@@ -220,6 +272,8 @@ try {
             renderBuffer: null,
             renderBufferWidth: 0,
             renderBufferHeight: 0,
+            spritesDirty: true,
+            lastSortedSprites: [],
 
             debugMode: os.getenv('OSM_TEST_MODE') === '1'
         };
@@ -239,8 +293,10 @@ try {
         }
 
         if (!blocked) {
-            const blockedSet = getManualBlockedSetCached(state, -1);
-            blocked = blockedSet.has(inx + ',' + iny);
+            // Use SpatialGrid for blocking check
+            const ignoreId = actor.heldItem ? actor.heldItem.id : -1;
+            const blockId = state.spatialGrid.get(inx, iny);
+            blocked = blockId !== undefined && blockId !== ignoreId;
         }
 
         if (!blocked) {
@@ -248,6 +304,7 @@ try {
             const oldY = Math.round(actor.y);
             actor.x = nx;
             actor.y = ny;
+            state.spritesDirty = true; // Optimization: Dirty flag
             return Math.round(actor.x) !== oldX || Math.round(actor.y) !== oldY;
         }
         return false;
@@ -256,22 +313,16 @@ try {
     function getFreeAdjacentCell(state, actorX, actorY, targetGoalArea = false) {
         const ax = Math.round(actorX);
         const ay = Math.round(actorY);
-        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
-        for (const [dx, dy] of dirs) {
+        for (const [dx, dy] of DIRS_8) {
             const nx = ax + dx;
             const ny = ay + dy;
 
             if (nx < 0 || nx >= state.spaceWidth || ny < 0 || ny >= state.height) continue;
             if (targetGoalArea && !isInGoalArea(nx, ny)) continue;
 
-            let occupied = false;
-            for (const c of state.cubes.values()) {
-                if (!c.deleted && Math.round(c.x) === nx && Math.round(c.y) === ny) {
-                    occupied = true;
-                    break;
-                }
-            }
+            const blockId = state.spatialGrid.get(nx, ny);
+            const occupied = blockId !== undefined;
 
             if (!occupied) return {x: nx, y: ny};
         }
@@ -296,46 +347,69 @@ try {
         return nearest;
     }
 
+    // Replaces buildBlockedSet with direct SpatialGrid wrapper/interface or logic replacement
     function buildBlockedSet(state, ignoreCubeId) {
-        const blocked = new Set();
-        const key = (x, y) => x + ',' + y;
-        const actor = state.actors.get(state.activeActorId);
+        // Compatibility wrapper for legacy calls relying on Set interface if needed,
+        // but performance critical paths should use state.spatialGrid directly.
+        // For the purpose of "replacing O(n) iteration", we return a proxy object.
+        return {
+            has: (key) => {
+                // Parse key "x,y" (Legacy support)
+                const parts = key.split(',');
+                const x = parseInt(parts[0]);
+                const y = parseInt(parts[1]);
+                const id = state.spatialGrid.get(x, y);
+                if (id === undefined) return false;
 
-        state.cubes.forEach(c => {
-            if (c.deleted) return;
-            if (c.id === ignoreCubeId) return;
-            if (actor.heldItem && c.id === actor.heldItem.id) return;
-            blocked.add(key(Math.round(c.x), Math.round(c.y)));
-        });
-        return blocked;
+                const actor = state.actors.get(state.activeActorId);
+                const heldId = actor.heldItem ? actor.heldItem.id : -1;
+
+                if (id === ignoreCubeId) return false;
+                if (heldId !== -1 && id === heldId) return false;
+                return true;
+            }
+        };
     }
 
     function getPathInfo(state, startX, startY, targetX, targetY, ignoreCubeId) {
-        const blocked = buildBlockedSet(state, ignoreCubeId);
-        const key = (x, y) => x + ',' + y;
+        // Uses SpatialGrid indirectly or directly
+        const keyInt = state.spatialGrid.key;
         const visited = new Set();
         const queue = [{x: Math.round(startX), y: Math.round(startY), dist: 0}];
+        const iTargetX = Math.round(targetX);
+        const iTargetY = Math.round(targetY);
 
-        visited.add(key(queue[0].x, queue[0].y));
+        visited.add(keyInt(queue[0].x, queue[0].y));
 
         while (queue.length > 0) {
             const current = queue.shift();
-            const dx = Math.abs(current.x - Math.round(targetX));
-            const dy = Math.abs(current.y - Math.round(targetY));
+            const dx = Math.abs(current.x - iTargetX);
+            const dy = Math.abs(current.y - iTargetY);
 
             if (dx <= 1 && dy <= 1) {
                 return {reachable: true, distance: current.dist};
             }
 
-            const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-            for (const [ox, oy] of dirs) {
+            for (const [ox, oy] of DIRS_4) {
                 const nx = current.x + ox;
                 const ny = current.y + oy;
-                const nKey = key(nx, ny);
+                const nKey = keyInt(nx, ny);
 
                 if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
                 if (visited.has(nKey)) continue;
-                if (blocked.has(nKey)) continue;
+
+                // Block check using SpatialGrid
+                const blockId = state.spatialGrid.get(nx, ny);
+                let blocked = false;
+                if (blockId !== undefined) {
+                    const actor = state.actors.get(state.activeActorId);
+                    const heldId = actor.heldItem ? actor.heldItem.id : -1;
+                    if (blockId !== ignoreCubeId && (!heldId || blockId !== heldId)) {
+                        blocked = true;
+                    }
+                }
+
+                if (blocked) continue;
 
                 visited.add(nKey);
                 queue.push({x: nx, y: ny, dist: current.dist + 1});
@@ -347,15 +421,9 @@ try {
     // =========================================================================================
     // MANUAL MODE PERFORMANCE OPTIMIZATIONS (GUARANTEED CORRECTNESS)
     // =========================================================================================
-    //
-    // Key optimizations:
-    // 1. Binary Heap for A* (O(log n) vs O(n) operations)
-    // 2. Zero-allocation reusable data structures in manualModeCache
-    // 3. Input queue decoupling
 
     const MANUAL_PATH_NODE_BUDGET = 500;
 
-    // Simple MinHeap for A* Open Set (O(log n) performance)
     class MinHeap {
         constructor() {
             this.content = [];
@@ -419,54 +487,44 @@ try {
     }
 
     const manualModeCache = {
-        blockedSet: null,
-        blockedSetTick: -1,
-        blockedSetIgnoreId: -999,
-        clickGeneration: 0,
         // Reusable structures to reduce GC
         openHeap: new MinHeap(),
         gScore: new Map(),
         closed: new Set()
     };
 
-    function getManualBlockedSetCached(state, ignoreCubeId) {
-        const actor = state.actors.get(state.activeActorId);
-        const heldId = actor.heldItem ? actor.heldItem.id : -1;
-        const effectiveIgnore = ignoreCubeId !== undefined && ignoreCubeId !== -1 ? ignoreCubeId : heldId;
-
-        if (manualModeCache.blockedSet !== null &&
-            manualModeCache.blockedSetTick === state.tickCount &&
-            manualModeCache.blockedSetIgnoreId === effectiveIgnore) {
-            return manualModeCache.blockedSet;
-        }
-
-        const blocked = new Set();
-        for (const c of state.cubes.values()) {
-            if (c.deleted) continue;
-            if (c.id === effectiveIgnore) continue;
-            if (heldId !== -1 && c.id === heldId) continue;
-            blocked.add(Math.round(c.x) + ',' + Math.round(c.y));
-        }
-
-        manualModeCache.blockedSet = blocked;
-        manualModeCache.blockedSetTick = state.tickCount;
-        manualModeCache.blockedSetIgnoreId = effectiveIgnore;
-
-        return blocked;
+    function invalidateManualBlockedCache() {
+        // No-op now as SpatialGrid handles live updates
     }
 
-    function invalidateManualBlockedCache() {
-        manualModeCache.blockedSetTick = -1;
+    // Object Pooling for A* Nodes
+    function allocNode(x, y, g, f, parent) {
+        let n;
+        if (nodeArenaIdx < nodeArena.length) {
+            n = nodeArena[nodeArenaIdx++];
+        } else {
+            n = {};
+            nodeArena.push(n);
+            nodeArenaIdx++;
+        }
+        n.x = x;
+        n.y = y;
+        n.g = g;
+        n.f = f;
+        n.parent = parent;
+        return n;
     }
 
     function findPathManual(state, startX, startY, targetX, targetY, ignoreCubeId) {
-        const blocked = getManualBlockedSetCached(state, ignoreCubeId);
+        // Reset pool for this search
+        nodeArenaIdx = 0;
+
         const iStartX = Math.round(startX), iStartY = Math.round(startY);
         const iTargetX = Math.round(targetX), iTargetY = Math.round(targetY);
 
         if (iStartX === iTargetX && iStartY === iTargetY) return [];
 
-        const key = (x, y) => x + ',' + y;
+        const keyInt = state.spatialGrid.key;
         const h = (x, y) => Math.abs(x - iTargetX) + Math.abs(y - iTargetY);
 
         // Reuse persistent structures
@@ -477,18 +535,20 @@ try {
         gScore.clear();
         closed.clear();
 
-        open.push({x: iStartX, y: iStartY, g: 0, f: h(iStartX, iStartY), parent: null});
-        gScore.set(key(iStartX, iStartY), 0);
+        const startNode = allocNode(iStartX, iStartY, 0, h(iStartX, iStartY), null);
+        open.push(startNode);
+        gScore.set(keyInt(iStartX, iStartY), 0);
 
         let expanded = 0;
-        let bestNode = open.content[0];
+        let bestNode = startNode;
         let bestH = h(iStartX, iStartY);
 
-        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+        const actor = state.actors.get(state.activeActorId);
+        const heldId = actor.heldItem ? actor.heldItem.id : -1;
 
         while (open.size() > 0 && expanded < MANUAL_PATH_NODE_BUDGET) {
             const cur = open.pop();
-            const curKey = key(cur.x, cur.y);
+            const curKey = keyInt(cur.x, cur.y);
 
             if (closed.has(curKey)) continue;
             closed.add(curKey);
@@ -504,19 +564,29 @@ try {
                 bestNode = cur;
             }
 
-            for (const [dx, dy] of dirs) {
+            for (const [dx, dy] of DIRS_4) {
                 const nx = cur.x + dx, ny = cur.y + dy;
-                const nKey = key(nx, ny);
+                const nKey = keyInt(nx, ny);
 
                 if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
                 if (closed.has(nKey)) continue;
-                if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
+
+                // Spatial Grid Check
+                const blockId = state.spatialGrid.get(nx, ny);
+                let isBlocked = false;
+                if (blockId !== undefined) {
+                    if (blockId !== ignoreCubeId && (!heldId || blockId !== heldId)) {
+                        isBlocked = true;
+                    }
+                }
+
+                if (isBlocked && !(nx === iTargetX && ny === iTargetY)) continue;
 
                 const ng = cur.g + 1;
                 const existingG = gScore.get(nKey);
                 if (existingG === undefined || ng < existingG) {
                     gScore.set(nKey, ng);
-                    open.push({x: nx, y: ny, g: ng, f: ng + h(nx, ny), parent: cur});
+                    open.push(allocNode(nx, ny, ng, ng + h(nx, ny), cur));
                 }
             }
         }
@@ -532,16 +602,15 @@ try {
         const path = [];
         let n = node;
         while (n && n.parent) {
-            path.unshift({x: n.x, y: n.y});
+            path.push({x: n.x, y: n.y}); // Optimization: push + reverse
             n = n.parent;
         }
-        return path;
+        return path.reverse();
     }
 
     function findPath(state, startX, startY, targetX, targetY, ignoreCubeId, searchLimit) {
-        // Legacy BFS for fallback/click check - maintained for compatibility
-        const blocked = buildBlockedSet(state, ignoreCubeId);
-        const key = (x, y) => x + ',' + y;
+        // Legacy BFS
+        const keyInt = state.spatialGrid.key;
         const iStartX = Math.round(startX);
         const iStartY = Math.round(startY);
         const iTargetX = Math.round(targetX);
@@ -551,11 +620,13 @@ try {
 
         const visited = new Map();
         const queue = [{x: iStartX, y: iStartY}];
-        visited.set(key(iStartX, iStartY), null);
+        visited.set(keyInt(iStartX, iStartY), null);
 
-        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
         let finalNode = null;
         let iterations = 0;
+
+        const actor = state.actors.get(state.activeActorId);
+        const heldId = actor.heldItem ? actor.heldItem.id : -1;
 
         while (queue.length > 0) {
             if (searchLimit && iterations >= searchLimit) break;
@@ -567,12 +638,21 @@ try {
                 break;
             }
 
-            for (const [ox, oy] of dirs) {
+            for (const [ox, oy] of DIRS_4) {
                 const nx = cur.x + ox;
                 const ny = cur.y + oy;
-                const nKey = key(nx, ny);
+                const nKey = keyInt(nx, ny);
                 if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
-                if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
+
+                const blockId = state.spatialGrid.get(nx, ny);
+                let blocked = false;
+                if (blockId !== undefined) {
+                    if (blockId !== ignoreCubeId && (!heldId || blockId !== heldId)) {
+                        blocked = true;
+                    }
+                }
+
+                if (blocked && !(nx === iTargetX && ny === iTargetY)) continue;
                 if (visited.has(nKey)) continue;
 
                 visited.set(nKey, cur);
@@ -584,15 +664,14 @@ try {
         const path = [];
         let curr = finalNode;
         while (curr.parent) {
-            path.unshift({x: curr.x, y: curr.y});
+            path.push({x: curr.x, y: curr.y}); // Optimization here too
             curr = curr.parent;
         }
-        return path;
+        return path.reverse();
     }
 
     function findNextStep(state, startX, startY, targetX, targetY, ignoreCubeId) {
-        const blocked = buildBlockedSet(state, ignoreCubeId);
-        const key = (x, y) => x + ',' + y;
+        const keyInt = state.spatialGrid.key;
         const iStartX = Math.round(startX);
         const iStartY = Math.round(startY);
         const iTargetX = Math.round(targetX);
@@ -604,16 +683,27 @@ try {
 
         const visited = new Set();
         const queue = [];
-        visited.add(key(iStartX, iStartY));
+        visited.add(keyInt(iStartX, iStartY));
 
-        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-        for (const [ox, oy] of dirs) {
+        const actor = state.actors.get(state.activeActorId);
+        const heldId = actor.heldItem ? actor.heldItem.id : -1;
+
+        for (const [ox, oy] of DIRS_4) {
             const nx = iStartX + ox;
             const ny = iStartY + oy;
-            const nKey = key(nx, ny);
+            const nKey = keyInt(nx, ny);
 
             if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
-            if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
+
+            const blockId = state.spatialGrid.get(nx, ny);
+            let blocked = false;
+            if (blockId !== undefined) {
+                if (blockId !== ignoreCubeId && (!heldId || blockId !== heldId)) {
+                    blocked = true;
+                }
+            }
+
+            if (blocked && !(nx === iTargetX && ny === iTargetY)) continue;
 
             if (nx === iTargetX && ny === iTargetY) {
                 return {x: nx, y: ny};
@@ -628,12 +718,21 @@ try {
             if (cur.x === iTargetX && cur.y === iTargetY) {
                 return {x: startX + cur.firstX, y: startY + cur.firstY};
             }
-            for (const [ox, oy] of dirs) {
+            for (const [ox, oy] of DIRS_4) {
                 const nx = cur.x + ox;
                 const ny = cur.y + oy;
-                const nKey = key(nx, ny);
+                const nKey = keyInt(nx, ny);
                 if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
-                if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
+
+                const blockId = state.spatialGrid.get(nx, ny);
+                let blocked = false;
+                if (blockId !== undefined) {
+                    if (blockId !== ignoreCubeId && (!heldId || blockId !== heldId)) {
+                        blocked = true;
+                    }
+                }
+
+                if (blocked && !(nx === iTargetX && ny === iTargetY)) continue;
                 if (visited.has(nKey)) continue;
                 visited.add(nKey);
                 queue.push({x: nx, y: ny, firstX: cur.firstX, firstY: cur.firstY});
@@ -643,22 +742,14 @@ try {
     }
 
     function findFirstBlocker(state, fromX, fromY, toX, toY, excludeId) {
-        const key = (x, y) => x + ',' + y;
+        const keyInt = state.spatialGrid.key;
         const actor = state.actors.get(state.activeActorId);
-        const cubeAtPosition = new Map();
-        state.cubes.forEach(c => {
-            if (c.deleted) return;
-            if (c.isStatic) return;
-            if (actor.heldItem && c.id === actor.heldItem.id) return;
-            if (excludeId !== undefined && c.id === excludeId) return;
-            cubeAtPosition.set(key(Math.round(c.x), Math.round(c.y)), c.id);
-        });
+        const heldId = actor.heldItem ? actor.heldItem.id : -1;
 
-        const blocked = buildBlockedSet(state, excludeId !== undefined ? excludeId : -1);
         const visited = new Set();
         const frontier = [];
         const queue = [{x: Math.round(fromX), y: Math.round(fromY)}];
-        visited.add(key(queue[0].x, queue[0].y));
+        visited.add(keyInt(queue[0].x, queue[0].y));
         const targetIX = Math.round(toX);
         const targetIY = Math.round(toY);
 
@@ -668,22 +759,24 @@ try {
             const dy = Math.abs(current.y - targetIY);
             if (dx <= 1 && dy <= 1) return null;
 
-            const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-            for (const [ox, oy] of dirs) {
+            for (const [ox, oy] of DIRS_4) {
                 const nx = current.x + ox;
                 const ny = current.y + oy;
-                const nKey = key(nx, ny);
+                const nKey = keyInt(nx, ny);
 
                 if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
                 if (visited.has(nKey)) continue;
 
-                if (blocked.has(nKey)) {
-                    const blockerId = cubeAtPosition.get(nKey);
-                    if (blockerId !== undefined) {
-                        frontier.push({x: nx, y: ny, id: blockerId, dist: current.dist || 0});
+                const blockId = state.spatialGrid.get(nx, ny);
+                let blocked = false;
+                if (blockId !== undefined) {
+                    if ((excludeId === undefined || blockId !== excludeId) && (!heldId || blockId !== heldId)) {
+                        blocked = true;
+                        frontier.push({x: nx, y: ny, id: blockId, dist: current.dist || 0});
                     }
-                    continue;
                 }
+
+                if (blocked) continue;
 
                 visited.add(nKey);
                 queue.push({x: nx, y: ny, dist: (current.dist || 0) + 1});
@@ -701,49 +794,56 @@ try {
         return null;
     }
 
+    function syncValue(state, key, newValue) {
+        if (state.bbCache.get(key) !== newValue) {
+            state.blackboard.set(key, newValue);
+            state.bbCache.set(key, newValue);
+        }
+    }
+
     function syncToBlackboard(state) {
         if (!state.blackboard) return;
-        const bb = state.blackboard;
+
         const actor = state.actors.get(state.activeActorId);
         const ax = Math.round(actor.x);
         const ay = Math.round(actor.y);
 
-        bb.set('actorX', actor.x);
-        bb.set('actorY', actor.y);
-        bb.set('heldItemExists', actor.heldItem !== null);
-        bb.set('heldItemId', actor.heldItem ? actor.heldItem.id : -1);
+        syncValue(state, 'actorX', actor.x);
+        syncValue(state, 'actorY', actor.y);
+        syncValue(state, 'heldItemExists', actor.heldItem !== null);
+        syncValue(state, 'heldItemId', actor.heldItem ? actor.heldItem.id : -1);
 
         state.cubes.forEach(cube => {
             if (!cube.deleted) {
                 const dist = Math.sqrt(Math.pow(cube.x - ax, 2) + Math.pow(cube.y - ay, 2));
                 const atEntity = dist <= 1.8;
-                bb.set('atEntity_' + cube.id, atEntity);
+                syncValue(state, 'atEntity_' + cube.id, atEntity);
 
                 if (cube.id === TARGET_ID) {
                     const cubeX = Math.round(cube.x);
                     const cubeY = Math.round(cube.y);
                     const blocker = findFirstBlocker(state, ax, ay, cubeX, cubeY, TARGET_ID);
-                    bb.set('pathBlocker_entity_' + cube.id, blocker === null ? -1 : blocker);
+                    syncValue(state, 'pathBlocker_entity_' + cube.id, blocker === null ? -1 : blocker);
                 }
             } else {
-                bb.set('atEntity_' + cube.id, false);
+                syncValue(state, 'atEntity_' + cube.id, false);
                 if (cube.id === TARGET_ID) {
-                    bb.set('pathBlocker_entity_' + cube.id, -1);
+                    syncValue(state, 'pathBlocker_entity_' + cube.id, -1);
                 }
             }
         });
 
         state.goals.forEach(goal => {
             const dist = Math.sqrt(Math.pow(goal.x - ax, 2) + Math.pow(goal.y - ay, 2));
-            bb.set('atGoal_' + goal.id, dist <= 1.5);
+            syncValue(state, 'atGoal_' + goal.id, dist <= 1.5);
 
             const goalX = Math.round(goal.x);
             const goalY = Math.round(goal.y);
             const blocker = findFirstBlocker(state, ax, ay, goalX, goalY, TARGET_ID);
-            bb.set('pathBlocker_goal_' + goal.id, blocker === null ? -1 : blocker);
+            syncValue(state, 'pathBlocker_goal_' + goal.id, blocker === null ? -1 : blocker);
         });
 
-        bb.set('cubeDeliveredAtGoal', state.winConditionMet);
+        syncValue(state, 'cubeDeliveredAtGoal', state.winConditionMet);
     }
 
     // =========================================================================================
@@ -761,12 +861,13 @@ try {
             const dist = Math.sqrt(dx * dx + dy * dy);
 
             if (dist >= 0.1) {
+                // Movement logic
                 const moveDist = Math.min(MANUAL_MOVE_SPEED, dist);
                 const nextX = actor.x + Math.sign(dx) * Math.min(MANUAL_MOVE_SPEED, Math.abs(dx));
                 const nextY = actor.y + Math.sign(dy) * Math.min(MANUAL_MOVE_SPEED, Math.abs(dy));
 
-                const blocked = getManualBlockedSetCached(state, -1);
-                const nextBlocked = blocked.has(Math.round(nextX) + ',' + Math.round(nextY));
+                const blockId = state.spatialGrid.get(Math.round(nextX), Math.round(nextY));
+                const nextBlocked = blockId !== undefined; // Assume all blocks stop manual move
 
                 if (nextBlocked) {
                     state.manualPath = [];
@@ -778,6 +879,7 @@ try {
                 const oldDist = dist;
                 actor.x += Math.sign(dx) * Math.min(MANUAL_MOVE_SPEED, Math.abs(dx));
                 actor.y += Math.sign(dy) * Math.min(MANUAL_MOVE_SPEED, Math.abs(dy));
+                state.spritesDirty = true; // Flag dirty
 
                 const newDist = Math.sqrt(Math.pow(nextPoint.x - actor.x, 2) + Math.pow(nextPoint.y - actor.y, 2));
                 if (newDist >= oldDist - 0.01) state.pathStuckTicks++;
@@ -792,6 +894,7 @@ try {
             } else {
                 actor.x = nextPoint.x;
                 actor.y = nextPoint.y;
+                state.spritesDirty = true; // Flag dirty
                 state.manualPath.shift();
                 state.pathStuckTicks = 0;
             }
@@ -811,11 +914,9 @@ try {
             const isHolding = actor.heldItem !== null;
 
             let clickedCube = null;
-            for (const c of state.cubes.values()) {
-                if (Math.round(c.x) === clickX && Math.round(c.y) === clickY) {
-                    clickedCube = c;
-                    break;
-                }
+            const targetId = state.spatialGrid.get(clickX, clickY);
+            if (targetId !== undefined) {
+                clickedCube = state.cubes.get(targetId);
             }
 
             const dist = Math.sqrt(Math.pow(clickX - actor.x, 2) + Math.pow(clickY - actor.y, 2));
@@ -826,25 +927,28 @@ try {
                         const c = state.cubes.get(ignoreId);
                         if (c) {
                             c.deleted = false;
+                            state.spatialGrid.add(c.id, clickX, clickY); // Add to grid
                             c.x = clickX;
                             c.y = clickY;
                             actor.heldItem = null;
-                            invalidateManualBlockedCache();
+                            state.spritesDirty = true;
                             if (ignoreId === TARGET_ID && isInGoalArea(clickX, clickY)) state.winConditionMet = true;
                         }
                     }
                 } else if (clickedCube && !clickedCube.isStatic && !clickedCube.deleted) {
                     clickedCube.deleted = true;
+                    state.spatialGrid.remove(clickedCube.x, clickedCube.y); // Remove from grid
                     actor.heldItem = {id: clickedCube.id};
-                    invalidateManualBlockedCache();
+                    state.spritesDirty = true;
                 } else if (!isHolding && !clickedCube) {
                     const nearestCube = findNearestPickableCube(state, clickX, clickY);
                     if (nearestCube) {
                         const actorToCubeDist = Math.sqrt(Math.pow(nearestCube.x - actor.x, 2) + Math.pow(nearestCube.y - actor.y, 2));
                         if (actorToCubeDist <= PICK_THRESHOLD) {
                             nearestCube.deleted = true;
+                            state.spatialGrid.remove(nearestCube.x, nearestCube.y); // Remove from grid
                             actor.heldItem = {id: nearestCube.id};
-                            invalidateManualBlockedCache();
+                            state.spritesDirty = true;
                         }
                     }
                 }
@@ -923,6 +1027,7 @@ try {
 
                 actor.x = newX;
                 actor.y = newY;
+                state.spritesDirty = true; // Flag dirty
                 log.debug("[PA-BT ACTION]", {
                     action: name,
                     result: "SUCCESS",
@@ -960,8 +1065,13 @@ try {
             const dy = cube.y - actor.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist > PICK_THRESHOLD) return bt.failure;
+
             cube.deleted = true;
+            state.spatialGrid.remove(cube.x, cube.y); // Remove from grid
+
             actor.heldItem = {id: cubeId};
+            state.spritesDirty = true;
+
             log.debug("[PA-BT ACTION]", {
                 action: name,
                 result: "SUCCESS",
@@ -971,8 +1081,8 @@ try {
                 cubeId: cubeId
             });
             if (state.blackboard) {
-                state.blackboard.set('heldItemId', cubeId);
-                state.blackboard.set('heldItemExists', true);
+                syncValue(state, 'heldItemId', cubeId);
+                syncValue(state, 'heldItemExists', true);
             }
             return bt.success;
         };
@@ -1000,18 +1110,17 @@ try {
             if (dirToGoalX < 0) dirs.push([1, 0], [1, -1], [1, 1]);
             else dirs.push([-1, 0], [-1, -1], [-1, 1]);
             if (dirToGoalY > 0) dirs.push([0, -1]); else dirs.push([0, 1]);
-            const allDirs = [[1, 0], [1, -1], [0, -1], [1, 1], [-1, -1], [-1, 0], [0, 1], [-1, 1]];
-            for (const d of allDirs) if (!dirs.some(e => e[0] === d[0] && e[1] === d[1])) dirs.push(d);
+
+            for (const d of DIRS_8) {
+                if (!dirs.some(e => e[0] === d[0] && e[1] === d[1])) dirs.push(d);
+            }
 
             let spot = null;
             for (const [dx, dy] of dirs) {
                 const nx = ax + dx, ny = ay + dy;
                 if (nx < 0 || nx >= state.spaceWidth || ny < 0 || ny >= state.height) continue;
-                let occupied = false;
-                for (const c of state.cubes.values()) if (!c.deleted && c.id !== cubeId && Math.round(c.x) === nx && Math.round(c.y) === ny) {
-                    occupied = true;
-                    break;
-                }
+
+                const occupied = state.spatialGrid.get(nx, ny) !== undefined && state.spatialGrid.get(nx, ny) !== cubeId;
                 if (!occupied) {
                     spot = {x: nx, y: ny};
                     break;
@@ -1023,6 +1132,8 @@ try {
                 blocker.x = spot.x;
                 blocker.y = spot.y;
                 blocker.deleted = false;
+                state.spatialGrid.add(blocker.id, spot.x, spot.y); // Add to grid
+                state.spritesDirty = true;
             }
             actor.heldItem = null;
             log.debug("[PA-BT ACTION]", {
@@ -1035,9 +1146,9 @@ try {
                 dest: destinationKey
             });
             if (state.blackboard) {
-                state.blackboard.set('heldItemExists', false);
-                state.blackboard.set('heldItemId', -1);
-                state.blackboard.set('pathBlocker_' + destinationKey, -1);
+                syncValue(state, 'heldItemExists', false);
+                syncValue(state, 'heldItemId', -1);
+                syncValue(state, 'pathBlocker_' + destinationKey, -1);
             }
             return bt.success;
         };
@@ -1110,8 +1221,12 @@ try {
         }, {k: 'heldItemExists', v: true}], function () {
             const a = actor(), t = state.cubes.get(TARGET_ID);
             if (a.heldItem || !t || t.deleted) return bt.failure;
+
             t.deleted = true;
+            state.spatialGrid.remove(t.x, t.y); // Grid update
+
             a.heldItem = {id: TARGET_ID};
+            state.spritesDirty = true;
             log.debug("[PA-BT ACTION]", {
                 action: "Pick_Target",
                 result: "SUCCESS",
@@ -1121,8 +1236,8 @@ try {
                 cubeId: TARGET_ID
             });
             if (state.blackboard) {
-                state.blackboard.set('heldItemId', TARGET_ID);
-                state.blackboard.set('heldItemExists', true);
+                syncValue(state, 'heldItemId', TARGET_ID);
+                syncValue(state, 'heldItemExists', true);
             }
             return bt.success;
         });
@@ -1151,11 +1266,13 @@ try {
                 t.deleted = false;
                 t.x = spot.x;
                 t.y = spot.y;
+                state.spatialGrid.add(t.id, spot.x, spot.y); // Grid update
+                state.spritesDirty = true;
             }
             if (state.blackboard) {
-                state.blackboard.set('cubeDeliveredAtGoal', true);
-                state.blackboard.set('heldItemExists', false);
-                state.blackboard.set('heldItemId', -1);
+                syncValue(state, 'cubeDeliveredAtGoal', true);
+                syncValue(state, 'heldItemExists', false);
+                syncValue(state, 'heldItemId', -1);
             }
             return bt.success;
         });
@@ -1173,6 +1290,8 @@ try {
                 cube.deleted = false;
                 cube.x = spot.x;
                 cube.y = spot.y;
+                state.spatialGrid.add(cube.id, spot.x, spot.y); // Grid update
+                state.spritesDirty = true;
             }
             log.debug("[PA-BT ACTION]", {
                 action: "Place_Obstacle",
@@ -1184,8 +1303,8 @@ try {
             });
             a.heldItem = null;
             if (state.blackboard) {
-                state.blackboard.set('heldItemExists', false);
-                state.blackboard.set('heldItemId', -1);
+                syncValue(state, 'heldItemExists', false);
+                syncValue(state, 'heldItemId', -1);
             }
             return bt.success;
         });
@@ -1211,11 +1330,13 @@ try {
                 t.deleted = false;
                 t.x = spot.x;
                 t.y = spot.y;
+                state.spatialGrid.add(t.id, spot.x, spot.y); // Grid update
+                state.spritesDirty = true;
             }
             a.heldItem = null;
             if (state.blackboard) {
-                state.blackboard.set('heldItemExists', false);
-                state.blackboard.set('heldItemId', -1);
+                syncValue(state, 'heldItemExists', false);
+                syncValue(state, 'heldItemId', -1);
             }
             return bt.success;
         });
@@ -1233,6 +1354,8 @@ try {
                 c.deleted = false;
                 c.x = spot.x;
                 c.y = spot.y;
+                state.spatialGrid.add(c.id, spot.x, spot.y); // Grid update
+                state.spritesDirty = true;
             }
             log.debug("[PA-BT ACTION]", {
                 action: "Place_Held_Item",
@@ -1244,8 +1367,8 @@ try {
             });
             a.heldItem = null;
             if (state.blackboard) {
-                state.blackboard.set('heldItemExists', false);
-                state.blackboard.set('heldItemId', -1);
+                syncValue(state, 'heldItemExists', false);
+                syncValue(state, 'heldItemId', -1);
             }
             return bt.success;
         });
@@ -1274,23 +1397,43 @@ try {
     }
 
     function getAllSprites(state) {
+        // Sprite Pooling
+        spriteArenaIdx = 0;
+
+        function allocSprite(x, y, char, w = 1, h = 1) {
+            let s;
+            if (spriteArenaIdx < spriteArena.length) {
+                s = spriteArena[spriteArenaIdx++];
+            } else {
+                s = {};
+                spriteArena.push(s);
+                spriteArenaIdx++;
+            }
+            s.x = x;
+            s.y = y;
+            s.char = char;
+            s.width = w;
+            s.height = h;
+            return s;
+        }
+
         const sprites = [];
         state.actors.forEach(a => {
-            sprites.push({x: a.x, y: a.y, char: '@', width: 1, height: 1});
-            if (a.heldItem) sprites.push({x: a.x, y: a.y - 0.5, char: '◆', width: 1, height: 1});
+            sprites.push(allocSprite(a.x, a.y, '@'));
+            if (a.heldItem) sprites.push(allocSprite(a.x, a.y - 0.5, '◆'));
         });
         state.cubes.forEach(c => {
             if (!c.deleted) {
                 let ch = '█';
                 if (c.type === 'target') ch = '◇';
                 else if (c.type === 'obstacle') ch = '▒';
-                sprites.push({x: c.x, y: c.y, char: ch, width: 1, height: 1});
+                sprites.push(allocSprite(c.x, c.y, ch));
             }
         });
         state.goals.forEach(g => {
             let ch = '○';
             if (g.forTarget) ch = '◎';
-            sprites.push({x: g.x, y: g.y, char: ch, width: 1, height: 1});
+            sprites.push(allocSprite(g.x, g.y, ch));
         });
         return sprites;
     }
@@ -1316,8 +1459,13 @@ try {
             }
         }
 
-        const sprites = getAllSprites(state).sort((a, b) => a.y - b.y);
-        for (const s of sprites) {
+        // Optimized Sorting
+        if (state.spritesDirty) {
+            state.lastSortedSprites = getAllSprites(state).sort((a, b) => a.y - b.y);
+            state.spritesDirty = false;
+        }
+
+        for (const s of state.lastSortedSprites) {
             const sx = Math.floor(s.x) + spaceX + 1;
             const sy = Math.floor(s.y);
             if (sx >= 0 && sx < width && sy >= 0 && sy < height) {
@@ -1428,6 +1576,9 @@ try {
             }
         }
 
+        let wasdDx = 0;
+        let wasdDy = 0;
+
         for (const msg of compactedInputs) {
             if (msg.type === 'Mouse') {
                 if (state.gameMode === 'manual') {
@@ -1439,12 +1590,10 @@ try {
                         const actor = state.actors.get(state.activeActorId);
                         const ignoreId = actor.heldItem ? actor.heldItem.id : -1;
                         let path = null;
-                        const searchLimit = 1000;
 
                         if (actor.heldItem) {
-                            const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]];
                             const neighbors = [];
-                            for (const [dx, dy] of dirs) {
+                            for (const [dx, dy] of DIRS_8) {
                                 const nx = clickX + dx;
                                 const ny = clickY + dy;
                                 if (nx >= 0 && nx < state.spaceWidth && ny >= 0 && ny < state.height) {
@@ -1497,20 +1646,27 @@ try {
                     state.manualPath = [];
                     state.manualMoveTarget = null;
                     state.pathStuckTicks = 0;
-                } else if (state.gameMode === 'manual' && ['w', 'a', 's', 'd'].includes(msg.key)) {
-                    const actor = state.actors.get(state.activeActorId);
-                    let dx = 0, dy = 0;
-                    if (msg.key === 'w') dy = -1;
-                    if (msg.key === 's') dy = 1;
-                    if (msg.key === 'a') dx = -1;
-                    if (msg.key === 'd') dx = 1;
-                    if (manualKeysMovement(state, actor, dx, dy)) {
-                        state.manualPath = [];
-                        state.manualMoveTarget = null;
-                    }
+                } else if (state.gameMode === 'manual') {
+                    // Input Compaction: Accumulate WASD delta
+                    if (msg.key === 'w') wasdDy -= 1;
+                    if (msg.key === 's') wasdDy += 1;
+                    if (msg.key === 'a') wasdDx -= 1;
+                    if (msg.key === 'd') wasdDx += 1;
                 }
             }
         }
+
+        // Apply Compacted WASD movement
+        if ((wasdDx !== 0 || wasdDy !== 0) && state.gameMode === 'manual') {
+            const actor = state.actors.get(state.activeActorId);
+            const moveDx = Math.sign(wasdDx); // Clamp to -1, 0, 1
+            const moveDy = Math.sign(wasdDy); // Clamp to -1, 0, 1
+            if (manualKeysMovement(state, actor, moveDx, moveDy)) {
+                state.manualPath = [];
+                state.manualMoveTarget = null;
+            }
+        }
+
         return [state, cmd];
     }
 
@@ -1541,11 +1697,12 @@ try {
             if (state.gameMode === 'automatic') {
                 syncToBlackboard(state);
             } else if (state.blackboard) {
+                // Optimized updates for manual mode (only key props)
                 const actor = state.actors.get(state.activeActorId);
-                state.blackboard.set('actorX', actor.x);
-                state.blackboard.set('actorY', actor.y);
-                state.blackboard.set('heldItemExists', actor.heldItem !== null);
-                state.blackboard.set('heldItemId', actor.heldItem ? actor.heldItem.id : -1);
+                syncValue(state, 'actorX', actor.x);
+                syncValue(state, 'actorY', actor.y);
+                syncValue(state, 'heldItemExists', actor.heldItem !== null);
+                syncValue(state, 'heldItemId', actor.heldItem ? actor.heldItem.id : -1);
             }
             return [state, tea.tick(16, 'tick')];
         }

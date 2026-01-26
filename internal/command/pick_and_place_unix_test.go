@@ -977,11 +977,9 @@ func TestPickAndPlaceE2E_AdvancedScenarios(t *testing.T) {
 // TestPickAndPlace_MousePick_NearestTarget verifies that clicking on empty space
 // with a nearby cube picks up the NEAREST cube (not just direct-click).
 func TestPickAndPlace_MousePick_NearestTarget(t *testing.T) {
-	logPath := "mouse-coordination-dbg.log"
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
-		ScriptPath:  getPickAndPlaceScriptPath(t),
-		TestMode:    true,
-		LogFilePath: logPath,
+		ScriptPath: getPickAndPlaceScriptPath(t),
+		TestMode:   true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create harness: %v", err)

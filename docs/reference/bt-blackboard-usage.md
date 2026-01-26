@@ -13,15 +13,15 @@ tags:
 
 **Quick summary**
 
-- **Use bt.Blackboard**: ONLY when using Go-based composites (PA-BT planning, Go-side conditions)
-- **Avoid bt.Blackboard**: For pure JavaScript behavior trees - direct object access is faster and simpler
-- **JavaScript state is the single source of truth**: Blackboard is a minimal bridge, not the primary state store
-- **Sync only planning inputs**: Copy primitive values to blackboard before Go planning; BT nodes read/write JS state directly
-- **⚠️ CRITICAL CONSTRAINT**: Blackboard ONLY supports types that `encoding/json` unmarshals to by default (bool, float64, int64, string, []interface{}, map[string]interface{}). NO custom structs, NO time.Time, NO channels.
+- **Use bt.Blackboard**: When using Go-based composites (PA-BT planning, Go-side conditions)
+- **Use Standard JS Objects**: For pure JavaScript behavior trees, direct object access is faster and simpler
+- **JavaScript State is the Source of Truth**: The blackboard serves as a minimal bridge
+- **Sync Only Planning Inputs**: Copy primitive values to the blackboard before Go planning
+- **CRITICAL CONSTRAINT**: Blackboard ONLY supports types that `encoding/json` unmarshals to by default (bool, float64, int64, string, []interface{}, map[string]interface{}). NO custom structs, NO time.Time, NO channels.
 
 ---
 
-## ⚠️ CRITICAL: Blackboard Type Constraints
+## CRITICAL: Blackboard Type Constraints
 
 ### The JSON Unmarshal Constraint
 
@@ -129,7 +129,7 @@ These types are **explicitly prohibited** in the blackboard:
 
 ### Implementation Examples
 
-#### ✅ CORRECT: Primitive Extraction
+#### Correct: Primitive Extraction
 
 ```javascript
 // JavaScript - full state
@@ -142,47 +142,47 @@ function syncToBlackboards(state) {
     const actor = state.models.actors.get(1);
     const cube = state.models.cubes.get(1);
 
-    // ✅ CORRECT: Primitive types only
+    // CORRECT: Primitive types only
     bb.set('actorX', actor.x);
     bb.set('actorY', actor.y);
     bb.set('heldItemExists', actor.heldItem !== null);
     bb.set('cubeDeleted', cube.deleted);
 
-    // ✅ CORRECT: Simple arrays of primitives
+    // CORRECT: Simple arrays of primitives
     const cubeCoords = [cube.x, cube.y];
     bb.set('cubeCoords', cubeCoords);
 }
 ```
 
-#### ❌ WRONG: Complex Objects
+#### Incorrect: Complex Objects
 
 ```javascript
-// ❌ WRONG: Entire complex object
+// WRONG: Entire complex object
 const cube = state.models.cubes.get(1);
 bb.set('cube1', cube);
 
-// ❌ WRONG: Nested object with struct references
+// WRONG: Nested object with struct references
 bb.set('actorWithItem', {
     actor: {id: 1, x: 5, y: 10},
     heldItem: cube  // References a complex struct!
 });
 
-// ❌ WRONG: Array of complex objects
+// WRONG: Array of complex objects
 const allCubes = Array.from(state.models.cubes.values());
 bb.set('allCubes', allCubes);  // Arrays of structs!
 ```
 
-#### ❌ WRONG: Reverse Sync
+#### Incorrect: Reverse Sync
 
 ```javascript
-// ❌ WRONG: Attempting sync from blackboard to JS state
+// WRONG: Attempting sync from blackboard to JS state
 function syncFromBlackboards(state) {
     const bb = state.pabt.blackboard;
 
-    // ❌ This doesn't work! Blackboard is write-only from JS
+    // This doesn't work! Blackboard is write-only from JS
     if (bb.has('newActorX')) {
         const newX = bb.get('newActorX');  // Was never set by Go!
-        state.models.actors.get(1).x = newX;  // ❌ UNREACHABLE
+        state.models.actors.get(1).x = newX;  // UNREACHABLE
         bb.delete('newActorX');
     }
 }
@@ -240,10 +240,10 @@ const ticker = bt.newTicker(100, tree);
 
 **Benefits**:
 
-- ✅ **Fastest**: Direct object access, no mutex overhead
-- ✅ **Simple**: Single source of truth, no sync bugs
-- ✅ **Type-safe**: JavaScript objects have dynamic types
-- ✅ **Flexible**: State can be any JS structure (objects, Maps, Sets)
+- **Fastest**: Direct object access, no mutex overhead
+- **Simple**: Single source of truth, no sync bugs
+- **Type-safe**: JavaScript objects have dynamic types
+- **Flexible**: State can be any JS structure (objects, Maps, Sets)
 
 **When to choose**:
 
@@ -254,13 +254,13 @@ const ticker = bt.newTicker(100, tree);
 
 **When to avoid**:
 
-- ❌ Using Go-based PA-BT planning (requires Go-readable state)
-- ❌ Need thread-safety between Go and JS
-- ❌ State accessed from Go code (outside BT execution)
+- Go-based PA-BT planning (requires Go-readable state)
+- Scenarios needing thread-safety between Go and JS
+- State accessed from Go code (outside BT execution)
 
 ---
 
-### Pattern B: Blackboard as MinimalPlanning Bridge (SYNC ONE-WAY)
+### Pattern B: Blackboard as Minimal Planning Bridge (SYNC ONE-WAY)
 
 **Use case**: Go-based PA-BT planning algorithm (go-pabt) selects actions in Go
 
@@ -353,7 +353,7 @@ function update(state, msg) {
 - **No sync from blackboard**: Execution happens after planning, outputs go directly to `state.models`
 - **Efficiency**: Only sync minimal primitive values (numbers, booleans), not entire objects
 
-**Key principle**: Blackboard = Go planning bridge, NOT a state cache. Go planner reads blackboard; BT node mutates JS state.
+**Key principle**: Blackboard serves as a Go planning bridge. Go planner reads the blackboard; the BT node mutates JS state.
 
 ---
 
@@ -398,7 +398,7 @@ function syncFromBlackboards(state) {
 
 **When to choose**:
 
-- ❌ **Rarely needed** - consider if you ACTUALLY need Go to control mutations
+- **Rarely needed** - consider if you ACTUALLY need Go to control mutations
 - Possible use case: Go-side game engine with JS AI plugins
 - Possible use case: Multi-language integration where Go owns lifecycle
 
@@ -434,16 +434,6 @@ JS: goja bridge call → Go function → mutex → return
 - bt.Blackboard.get(): ~500ns (50x slower due to mutex + goja bridge)
 - bt.Blackboard.set(): ~800ns (80x slower)
 
-### Impact on Real-World Scenarios
-
-| Scenario         | Pattern     | Tick Rate | Performance                   |
-|------------------|-------------|-----------|-------------------------------|
-| < 50 entities    | A (JS-only) | 60 Hz     | Negligible (both fine)        |
-| < 50 entities    | B (PA-BT)   | 60 Hz     | Sync cost < 1ms               |
-| 100-500 entities | A (JS-only) | 60 Hz     | JS-only preferred             |
-| 100-500 entities | B (PA-BT)   | 30 Hz     | Sync cost ~2-5ms (acceptable) |
-| 1000+ entities   | A (JS-only) | 60 Hz     | JS-only required              |
-
 **Rule of thumb**: Use Pattern A unless you specifically need Go planning. The performance difference matters at scale (1000+ entities) or high frequencies (>60 Hz).
 
 ---
@@ -469,7 +459,7 @@ Do you need Go-based PA-BT planning?
 
 ## Common Pitfalls
 
-### ❌ Using Blackboard Unnecessarily
+### Using Blackboard Unnecessarily
 
 ```javascript
 // WRONG: Blackboard for pure JS BT (adds unnecessary complexity)
@@ -497,7 +487,7 @@ const moveLeaf = bt.createLeafNode(() => {
 });
 ```
 
-### ❌ Two-Way Sync for PA-BT
+### Two-Way Sync for PA-BT
 
 ```javascript
 // WRONG: Two-way sync for PA-BT (unnecessary and error-prone)
@@ -524,7 +514,7 @@ const pickNode = bt.createLeafNode(() => {
 // No syncFromBlackboards needed!
 ```
 
-### ❌ Complex Objects in Blackboard
+### Complex Objects in Blackboard
 
 ```javascript
 // WRONG: Passing entire JS objects to Go planner
@@ -534,7 +524,7 @@ bb.set('cube_1', {x: 10, y: 15, deleted: false});
 // Problem: Go can only treat value as `any` type
 // Complex object inspection in Go is inefficient and error-prone
 
-// ❌ CRITICAL: This violates the JSON-unmarshal constraint!
+// CRITICAL: This violates the JSON-unmarshal constraint!
 // The object {x: 10, y: 15, deleted: false} becomes map[string]interface{}
 // when type is `any`, but custom struct references won't work.
 ```
@@ -548,15 +538,15 @@ bb.set('cube_1_x', 10)       // Primitives for Go planner (float64)
 bb.set('cube_1_y', 15)       // Primitives for Go planner (float64)
 bb.set('cube_1_deleted', false)  // Primitives for Go planner (bool)
 
-// ✅ These are ALL JSON-compatible types when unmarshaling to `any`
-// ✅ Go planner can read them via pabt.State.Variable() safely
-// ✅ No type ambiguity, no reflection overhead
+// These are ALL JSON-compatible types when unmarshaling to `any`
+// Go planner can read them via pabt.State.Variable() safely
+// No type ambiguity, no reflection overhead
 ```
 
-### ❌ Using Custom Structs
+### Using Custom Structs
 
 ```javascript
-// ❌ WRONG: Attempting to put a custom struct in blackboard
+// WRONG: Attempting to put a custom struct in blackboard
 // This is BLOCKED by the JSON-unmarshal constraint!
 
 // Even if you could marshal it...
@@ -570,7 +560,7 @@ bb.set('actor1', serialized);
 **Correct**:
 
 ```javascript
-// ✅ CORRECT: Extract only the fields the planner needs
+// CORRECT: Extract only the fields the planner needs
 bb.set('actor1_x', actor.x);      // float64
 bb.set('actor1_y', actor.y);      // float64
 bb.set('actor1_heldId', actor.heldItem ? actor.heldItem.id : null);  // number or null
@@ -578,10 +568,10 @@ bb.set('actor1_heldId', actor.heldItem ? actor.heldItem.id : null);  // number o
 // The rest of the struct remains in JS for full feature access
 ```
 
-### ❌ Using Time Types
+### Using Time Types
 
 ```javascript
-// ❌ WRONG: time.Time is not JSON-compatible
+// WRONG: time.Time is not JSON-compatible
 import * as time from 'osm:time';  // Hypothetical module
 bb.set('spawnTime', time.now());
 
@@ -592,7 +582,7 @@ bb.set('spawnTime', time.now());
 **Correct**:
 
 ```javascript
-// ✅ CORRECT: Store as numbers (milliseconds or Unix timestamp)
+// CORRECT: Store as numbers (milliseconds or Unix timestamp)
 bb.set('spawnTimeMs', Date.now());
 bb.set('spawnTimeUnix', Math.floor(Date.now() / 1000));
 
@@ -613,13 +603,13 @@ const bb = new bt.Blackboard();
 
 | Method            | Signature                    | Purpose                       | Thread-Safe |
 |-------------------|------------------------------|-------------------------------|-------------|
-| `get(key)`        | `any get(string key)`        | Retrieve value or `undefined` | ✅           |
-| `set(key, value)` | `set(string key, any value)` | Store or update value         | ✅           |
-| `has(key)`        | `boolean has(string key)`    | Check if key exists           | ✅           |
-| `delete(key)`     | `delete(string key)`         | Remove key                    | ✅           |
-| `keys()`          | `string[] keys()`            | Get all key names             | ✅           |
-| `clear()`         | `clear()`                    | Remove all keys               | ✅           |
-| `len()`           | `number len()`               | Get key count                 | ✅           |
+| `get(key)`        | `any get(string key)`        | Retrieve value or `undefined` | Yes         |
+| `set(key, value)` | `set(string key, any value)` | Store or update value         | Yes         |
+| `has(key)`        | `boolean has(string key)`    | Check if key exists           | Yes         |
+| `delete(key)`     | `delete(string key)`         | Remove key                    | Yes         |
+| `keys()`          | `string[] keys()`            | Get all key names             | Yes         |
+| `clear()`         | `clear()`                    | Remove all keys               | Yes         |
+| `len()`           | `number len()`               | Get key count                 | Yes         |
 
 ### Threading Note
 

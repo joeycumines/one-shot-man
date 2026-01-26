@@ -1445,7 +1445,7 @@ try {
             if (state.paused) draw('*** PAUSED ***');
             draw('Goal: 3x3 Area');
             draw('Tick: ' + state.tickCount);
-            if (state.winConditionMet) draw('*** GOAL ACHIEVED! ***');
+            if (state.winConditionMet) draw('*** WIN! ***');
             draw('');
             draw('CONTROLS');
             draw('────────');

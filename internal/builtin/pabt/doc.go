@@ -122,7 +122,7 @@
 // operations MUST be marshalled to the event loop goroutine via Bridge.RunOnLoopSync.
 //
 // This affects:
-//   - JSCondition.Match (called from ticker, uses RunOnLoopSync)
+//   - JSCondition.match (called from ticker, uses RunOnLoopSync)
 //   - ActionGenerator callback (if accessing JS state, must use RunOnLoopSync)
 //   - Action Node execution (already runs on event loop, no special handling needed)
 //
@@ -167,7 +167,7 @@
 //
 //	// Static action template
 //	state.registerAction('Pick', pabt.newAction('Pick',
-//	    [{key: 'atCube', Match: v => v === true}],  // preconditions
+//	    [{key: 'atCube', match: v => v === true}],  // preconditions
 //	    [{key: 'heldItem', Value: 1}],              // effects
 //	    bt.createLeafNode(() => { /* ... */ })      // execution node
 //	));
@@ -184,7 +184,7 @@
 //
 //	// Create plan with goal
 //	const plan = pabt.newPlan(state, [
-//	    {key: 'targetDelivered', Match: v => v === true}
+//	    {key: 'targetDelivered', match: v => v === true}
 //	]);
 //
 //	// Execute

@@ -304,8 +304,8 @@ func TestRequire_NewExprCondition(t *testing.T) {
 				const cond = pabt.newExprCondition("x", "Value == 5");
 				return {
 					hasKey: cond.key === "x",
-					match5: cond.Match(5),
-					match10: cond.Match(10)
+					match5: cond.match(5),
+					match10: cond.match(10)
 				};
 			})()
 		`)
@@ -320,7 +320,7 @@ func TestRequire_NewExprCondition(t *testing.T) {
 		res := executeJS(t, bridge, `
 			(() => {
 				const cond = pabt.newExprCondition("status", 'Value == "ready"');
-				return cond.Match("ready");
+				return cond.match("ready");
 			})()
 		`)
 		assert.True(t, res.ToBoolean())
@@ -332,8 +332,8 @@ func TestRequire_NewExprCondition(t *testing.T) {
 			(() => {
 				const cond = pabt.newExprCondition("x", "Value >= 0 && Value <= 10");
 				return {
-					inRange: cond.Match(5),
-					outOfRange: cond.Match(15)
+					inRange: cond.match(5),
+					outOfRange: cond.match(15)
 				};
 			})()
 		`)
@@ -505,7 +505,7 @@ func TestPlanExecution(t *testing.T) {
 
 // TestJSCondition_ThreadSafety verifies that JSCondition.Match uses RunOnLoopSync.
 // This test creates a plan in JS, then ticks it from Go to trigger the cross-goroutine
-// Match call that requires RunOnLoopSync.
+// match call that requires RunOnLoopSync.
 func TestJSCondition_ThreadSafety(t *testing.T) {
 	t.Run("ConditionMatchFromGo", func(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
@@ -513,8 +513,8 @@ func TestJSCondition_ThreadSafety(t *testing.T) {
 		// Create the plan in JS and verify the architecture by checking that
 		// JS conditions are properly created and can be matched.
 		//
-		// NOTE: Calling bt.tick() directly from JS while using JS Match functions
-		// would deadlock because Match uses RunOnLoopSync from within the loop.
+		// NOTE: Calling bt.tick() directly from JS while using JS match functions
+		// would deadlock because match uses RunOnLoopSync from within the loop.
 		// The actual cross-goroutine test happens when bt.Ticker runs in its own goroutine.
 		// Here we just verify the condition wiring is correct.
 		res := executeJS(t, bridge, `
@@ -528,14 +528,14 @@ func TestJSCondition_ThreadSafety(t *testing.T) {
 				// Create a JS condition
 				const goal = {
 					key: "x",
-					Match: (v) => {
+					match: (v) => {
 						matchCalled = true;
 						return v === 1;
 					}
 				};
 
-				// Directly call Match (simulating what RunOnLoopSync would do)
-				const matchResult = goal.Match(1);
+				// Directly call match (simulating what RunOnLoopSync would do)
+				const matchResult = goal.match(1);
 
 				return { matchCalled, matchResult };
 			})()

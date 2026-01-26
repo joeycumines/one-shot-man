@@ -19,7 +19,7 @@ type EvaluationMode int
 const (
 	// EvalModeJavaScript uses Goja JavaScript runtime for condition evaluation.
 	// This mode requires a Bridge for thread-safe runtime access and incurs
-	// the overhead of Go→JS→Go value conversion on every Match call.
+	// the overhead of Go→JS→Go value conversion on every match call.
 	// Use when conditions require complex JavaScript logic or closure state.
 	EvalModeJavaScript EvaluationMode = iota
 
@@ -53,7 +53,7 @@ type Condition interface {
 	Mode() EvaluationMode
 }
 
-// JSCondition implements pabtpkg.Condition using JavaScript Match function.
+// JSCondition implements pabtpkg.Condition using JavaScript match function.
 // This condition is evaluated via Goja runtime with thread-safe bridge access.
 //
 // The jsObject field stores the original JavaScript condition object, preserving

@@ -315,8 +315,8 @@ These actions are always available and don't depend on dynamic discovery:
 {
     name: 'Pick_Target',
     preconditions: [
-        { key: 'heldItemExists', Match: v => v === false },
-        { key: 'atEntity_TARGET', Match: v => v === true }
+        { key: 'heldItemExists', match: v => v === false },
+        { key: 'atEntity_TARGET', match: v => v === true }
         // NOTE: NO blockade preconditions! Planner discovers via MoveTo failure
     ],
     effects: [
@@ -335,8 +335,8 @@ These actions are always available and don't depend on dynamic discovery:
 {
     name: 'Deliver_Target',
     preconditions: [
-        { key: 'heldItemId', Match: v => v === TARGET_ID },
-        { key: 'atGoalArea', Match: v => v === true }
+        { key: 'heldItemId', match: v => v === TARGET_ID },
+        { key: 'atGoalArea', match: v => v === true }
     ],
     effects: [
         { key: 'cubeDeliveredAtGoal', Value: true },
@@ -354,7 +354,7 @@ These actions are always available and don't depend on dynamic discovery:
 {
     name: 'Place_Held_Item',
     preconditions: [
-        { key: 'heldItemExists', Match: v => v === true }
+        { key: 'heldItemExists', match: v => v === true }
     ],
     effects: [
         { key: 'heldItemExists', Value: false },
@@ -391,8 +391,8 @@ function createClearObstacleAction(state, cubeId) {
     return {
         name: `ClearObstacle_${cubeId}`,
         preconditions: [
-            { key: 'heldItemExists', Match: v => v === false },
-            { key: `atEntity_${cubeId}`, Match: v => v === true }
+            { key: 'heldItemExists', match: v => v === false },
+            { key: `atEntity_${cubeId}`, match: v => v === true }
         ],
         effects: [
             // The obstacle is no longer blocking the path

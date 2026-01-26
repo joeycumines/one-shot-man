@@ -246,7 +246,7 @@ function createMoveToAction(state, entityType, entityId, extraEffects) {
         : 'reachable_goal_' + entityId;
 
     const conditions = [
-        {key: reachableKey, Match: v => v === true}  // NEW: Must be reachable
+        {key: reachableKey, match: v => v === true}  // NEW: Must be reachable
     ];
 
     // ... rest of action definition
@@ -412,7 +412,7 @@ function createClearPathAction(state, blockerId, targetReachableKey) {
     // Preconditions: Must clear this specific blocker
     // This creates a dependency chain: ClearPath needs Pick, Pick needs MoveTo
     const conditions = [
-        {key: 'cube_' + blockerId + '_removed', Match: v => v === true}
+        {key: 'cube_' + blockerId + '_removed', match: v => v === true}
     ];
 
     // Effect: After clearing blocker, target MAY become reachable
@@ -436,8 +436,8 @@ function createPickBlockerAction(state, blockerId) {
     const name = 'Pick_Blocker_' + blockerId;
 
     const conditions = [
-        {key: 'heldItemExists', Match: v => v === false},
-        {key: 'atEntity_' + blockerId, Match: v => v === true}
+        {key: 'heldItemExists', match: v => v === false},
+        {key: 'atEntity_' + blockerId, match: v => v === true}
     ];
 
     const effects = [
@@ -460,7 +460,7 @@ function createPickBlockerAction(state, blockerId) {
     };
 
     return pabt.newAction(name,
-        conditions.map(c => ({key: c.key, Match: c.Match})),
+        conditions.map(c => ({key: c.key, match: c.match})),
         effects.map(e => ({key: e.key, Value: e.Value})),
         bt.createLeafNode(tickFn)
     );
@@ -473,7 +473,7 @@ function createPlaceAnywhereAction(state) {
     const name = 'Place_Anywhere';
 
     const conditions = [
-        {key: 'heldItemExists', Match: v => v === true}
+        {key: 'heldItemExists', match: v => v === true}
     ];
 
     const effects = [
@@ -503,7 +503,7 @@ function createPlaceAnywhereAction(state) {
     };
 
     return pabt.newAction(name,
-        conditions.map(c => ({key: c.key, Match: c.Match})),
+        conditions.map(c => ({key: c.key, match: c.match})),
         effects.map(e => ({key: e.key, Value: e.Value})),
         bt.createLeafNode(tickFn)
     );

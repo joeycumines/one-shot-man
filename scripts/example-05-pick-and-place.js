@@ -886,7 +886,7 @@ try {
 
         const conditions = [];
         if (entityType === 'goal' || (entityType === 'cube' && entityId === TARGET_ID)) {
-            conditions.push({key: pathBlockerKey, value: -1, Match: v => v === -1});
+            conditions.push({key: pathBlockerKey, value: -1, match: v => v === -1});
         }
         if (extraPreconditions) {
             conditions.push(...extraPreconditions);
@@ -963,8 +963,8 @@ try {
     function createPickGoalBlockadeAction(state, cubeId) {
         const name = 'Pick_GoalBlockade_' + cubeId;
         const conditions = [
-            {key: 'heldItemExists', value: false, Match: v => v === false},
-            {key: 'atEntity_' + cubeId, value: true, Match: v => v === true}
+            {key: 'heldItemExists', value: false, match: v => v === false},
+            {key: 'atEntity_' + cubeId, value: true, match: v => v === true}
         ];
         const effects = [
             {key: 'heldItemId', Value: cubeId},
@@ -1006,7 +1006,7 @@ try {
 
     function createDepositGoalBlockadeAction(state, cubeId, destinationKey) {
         const name = 'Deposit_GoalBlockade_' + cubeId;
-        const conditions = [{key: 'heldItemId', value: cubeId, Match: v => v === cubeId}];
+        const conditions = [{key: 'heldItemId', value: cubeId, match: v => v === cubeId}];
         const effects = [
             {key: 'heldItemExists', Value: false},
             {key: 'heldItemId', Value: -1},
@@ -1151,7 +1151,7 @@ try {
             const conditions = conds.map(c => ({
                 key: c.k,
                 value: c.v,
-                Match: v => c.v === undefined ? v === true : v === c.v
+                match: v => c.v === undefined ? v === true : v === c.v
             }));
             const effectList = effects.map(e => ({key: e.k, Value: e.v}));
             const node = bt.createLeafNode(() => state.gameMode === 'automatic' ? tickFn() : bt.running);
@@ -1483,7 +1483,7 @@ try {
         setupPABTActions(state);
         syncToBlackboard(state);
 
-        const goalConditions = [{key: 'cubeDeliveredAtGoal', Match: v => v === true}];
+        const goalConditions = [{key: 'cubeDeliveredAtGoal', match: v => v === true}];
         state.pabtPlan = pabt.newPlan(state.pabtState, goalConditions);
         state.ticker = bt.newTicker(100, state.pabtPlan.Node());
 

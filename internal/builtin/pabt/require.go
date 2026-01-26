@@ -161,7 +161,7 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 							// Fallback: create minimal wrapper for non-JS conditions
 							condObj = vm.NewObject()
 							_ = condObj.Set("key", failed.Key())
-							_ = condObj.Set("Match", func(fcall goja.FunctionCall) goja.Value {
+							_ = condObj.Set("match", func(fcall goja.FunctionCall) goja.Value {
 								if len(fcall.Arguments) < 1 {
 									return vm.ToValue(false)
 								}
@@ -273,15 +273,15 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 					panic(runtime.NewTypeError(fmt.Sprintf("goal %d must have a 'key' property", i)))
 				}
 
-				// Extract Match function
-				matchVal := goalObj.Get("Match")
+				// Extract match function
+				matchVal := goalObj.Get("match")
 				if matchVal == nil || goja.IsUndefined(matchVal) {
-					panic(runtime.NewTypeError(fmt.Sprintf("goal %d must have a 'Match' function", i)))
+					panic(runtime.NewTypeError(fmt.Sprintf("goal %d must have a 'match' function", i)))
 				}
 
 				matchFn, ok := goja.AssertFunction(matchVal)
 				if !ok {
-					panic(runtime.NewTypeError(fmt.Sprintf("goal %d.Match must be a function", i)))
+					panic(runtime.NewTypeError(fmt.Sprintf("goal %d.match must be a function", i)))
 				}
 
 				// Create go-pabt condition, storing original JS object for passthrough
@@ -347,8 +347,8 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 					// DEBUG: Log condition creation
 					slog.Debug("[PA-BT COND CREATE]", "action", name, "conditionKey", keyVal.Export())
 
-					// Extract Match function
-					matchVal := condObj.Get("Match")
+					// Extract match function
+					matchVal := condObj.Get("match")
 					if matchVal == nil || goja.IsUndefined(matchVal) {
 						continue
 					}
@@ -456,10 +456,10 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 
 			condition := NewExprCondition(key, expr)
 
-			// Return a JS object with key and Match for compatibility with newAction
+			// Return a JS object with key and match for compatibility with newAction
 			jsObj := runtime.NewObject()
 			_ = jsObj.Set("key", key)
-			_ = jsObj.Set("Match", func(call goja.FunctionCall) goja.Value {
+			_ = jsObj.Set("match", func(call goja.FunctionCall) goja.Value {
 				if len(call.Arguments) < 1 {
 					return runtime.ToValue(false)
 				}

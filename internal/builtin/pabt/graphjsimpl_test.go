@@ -56,7 +56,7 @@ func TestGraphJS_PlanCreation(t *testing.T) {
 
 					actions.push(pabt.newAction(
 						"move_" + source + "_" + target,
-						[{ key: "actor", value: source, Match: (v) => v === source }],
+						[{ key: "actor", value: source, match: (v) => v === source }],
 						[{ key: "actor", Value: target }],
 						moveNode
 					));
@@ -65,7 +65,7 @@ func TestGraphJS_PlanCreation(t *testing.T) {
 			});
 
 			// Goal: actor at sg (with explicit value property for action generator)
-			const goal = { key: "actor", value: "sg", Match: (v) => v === "sg" };
+			const goal = { key: "actor", value: "sg", match: (v) => v === "sg" };
 			const plan = pabt.newPlan(state, [goal]);
 
 			return {
@@ -117,7 +117,7 @@ func TestGraphJS_PlanExecution(t *testing.T) {
 					});
 					actions.push(pabt.newAction(
 						"move_" + source + "_" + target,
-						[{ key: "actor", value: source, Match: (v) => v === source }],
+						[{ key: "actor", value: source, match: (v) => v === source }],
 						[{ key: "actor", Value: target }],
 						moveNode
 					));
@@ -125,7 +125,7 @@ func TestGraphJS_PlanExecution(t *testing.T) {
 				return actions;
 			});
 
-			const goal = { key: "actor", value: "sg", Match: (v) => v === "sg" };
+			const goal = { key: "actor", value: "sg", match: (v) => v === "sg" };
 			const plan = pabt.newPlan(state, [goal]);
 			globalThis.graphTestTicker = bt.newTicker(10, plan.Node(), { stopOnFailure: true });
 		})()
@@ -202,7 +202,7 @@ func TestGraphJS_PathValidation(t *testing.T) {
 					});
 					actions.push(pabt.newAction(
 						"move_" + source + "_" + target,
-						[{ key: "actor", value: source, Match: (v) => v === source }],
+						[{ key: "actor", value: source, match: (v) => v === source }],
 						[{ key: "actor", Value: target }],
 						moveNode
 					));
@@ -210,7 +210,7 @@ func TestGraphJS_PathValidation(t *testing.T) {
 				return actions;
 			});
 
-			const goal = { key: "actor", value: "sg", Match: (v) => v === "sg" };
+			const goal = { key: "actor", value: "sg", match: (v) => v === "sg" };
 			const plan = pabt.newPlan(state, [goal]);
 			globalThis.pathTestTicker = bt.newTicker(10, plan.Node(), { stopOnFailure: true });
 		})()
@@ -281,7 +281,7 @@ func TestGraphJS_UnreachableGoal(t *testing.T) {
 					});
 					actions.push(pabt.newAction(
 						"move_" + source + "_" + target,
-						[{ key: "actor", value: source, Match: (v) => v === source }],
+						[{ key: "actor", value: source, match: (v) => v === source }],
 						[{ key: "actor", Value: target }],
 						moveNode
 					));
@@ -290,7 +290,7 @@ func TestGraphJS_UnreachableGoal(t *testing.T) {
 			});
 
 			// Goal: actor at "isolated" (which has no links)
-			const goal = { key: "actor", value: "isolated", Match: (v) => v === "isolated" };
+			const goal = { key: "actor", value: "isolated", match: (v) => v === "isolated" };
 			const plan = pabt.newPlan(state, [goal]);
 			globalThis.unreachablePlanCreated = plan !== null;
 			globalThis.unreachableTicker = bt.newTicker(10, plan.Node(), { stopOnFailure: true });
@@ -358,7 +358,7 @@ func TestGraphJS_MultipleGoals(t *testing.T) {
 					});
 					actions.push(pabt.newAction(
 						"move_" + source + "_" + target,
-						[{ key: "actor", value: source, Match: (v) => v === source }],
+						[{ key: "actor", value: source, match: (v) => v === source }],
 						[{ key: "actor", Value: target }],
 						moveNode
 					));
@@ -367,8 +367,8 @@ func TestGraphJS_MultipleGoals(t *testing.T) {
 			});
 
 			// Multiple goals: either s5 OR sg is acceptable
-			const goal1 = { key: "actor", value: "s5", Match: (v) => v === "s5" };
-			const goal2 = { key: "actor", value: "sg", Match: (v) => v === "sg" };
+			const goal1 = { key: "actor", value: "s5", match: (v) => v === "s5" };
+			const goal2 = { key: "actor", value: "sg", match: (v) => v === "sg" };
 			const plan = pabt.newPlan(state, [goal1, goal2]);
 			globalThis.multiGoalTicker = bt.newTicker(10, plan.Node(), { stopOnFailure: true });
 		})()
@@ -438,7 +438,7 @@ func TestGraphJS_PlanIdempotent(t *testing.T) {
 					});
 					actions.push(pabt.newAction(
 						"move_" + source + "_" + target,
-						[{ key: "actor", value: source, Match: (v) => v === source }],
+						[{ key: "actor", value: source, match: (v) => v === source }],
 						[{ key: "actor", Value: target }],
 						moveNode
 					));
@@ -446,7 +446,7 @@ func TestGraphJS_PlanIdempotent(t *testing.T) {
 				return actions;
 			});
 
-			const goal = { key: "actor", value: "sg", Match: (v) => v === "sg" };
+			const goal = { key: "actor", value: "sg", match: (v) => v === "sg" };
 			const plan = pabt.newPlan(state, [goal]);
 			globalThis.idempotentTicker = bt.newTicker(10, plan.Node(), { stopOnFailure: true });
 		})()

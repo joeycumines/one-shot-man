@@ -293,11 +293,11 @@ const pickCubeAction = pabt.newAction({
     conditions: [
         {
             key: 'heldItemExists',
-            Match: (v) => v === false  // Go planner reads from blackboard
+            match: (v) => v === false  // Go planner reads from blackboard
         },
         {
             key: 'cube_1_within_range',
-            Match: (v) => {
+            match: (v) => {
                 // Complex JS calculation via closure
                 const actor = state.models.actors.get(1);
                 const cube = state.models.cubes.get(1);
@@ -715,7 +715,7 @@ JavaScript conditions evaluated via Goja runtime:
 const pickAction = pabt.newAction('pick', [
     {
         key: 'heldItemExists',
-        Match: function(value) {
+        match: function(value) {
             return value === false;  // JavaScript evaluation
         }
     }
@@ -741,7 +741,7 @@ const moveAction = pabt.newAction('move', [
 
 **Characteristics:**
 - Go-native bytecode compilation and execution
-- **ZERO Goja calls during Match()**
+- **ZERO Goja calls during match()**
 - 10-100x faster than JSCondition
 - Expression syntax: `Value` refers to the condition input value
 - Limited to expr-lang supported operations (no closure access)

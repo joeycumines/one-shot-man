@@ -54,7 +54,7 @@ Each action template has three components:
 ```javascript
 pabt.newAction(
     'Pick',                                          // 1. Name (for debugging)
-    [{key: 'atCube', Match: v => v === true}],      // 2. Preconditions
+    [{key: 'atCube', match: v => v === true}],      // 2. Preconditions
     [{key: 'heldItem', Value: 1}],                  // 3. Effects
     bt.createLeafNode(() => { /* execute */ })      // 4. Execution node
 )
@@ -69,7 +69,7 @@ pabt.newAction(
 
 ### How Planning Works
 
-When you specify a goal like `{key: 'heldItem', Match: v => v === 1}`:
+When you specify a goal like `{key: 'heldItem', match: v => v === 1}`:
 
 1. **Goal Check**: Is `heldItem === 1` true? If not, planning begins
 2. **Find Actions**: Search for actions whose **effects** satisfy the goal (e.g., `Pick` has effect `heldItem: 1`)
@@ -139,7 +139,7 @@ function syncToBlackboard() {
 
 // 3. Register static action templates
 state.registerAction('Pick', pabt.newAction('Pick',
-    [{key: 'atCube', Match: v => v === true}],   // preconditions
+    [{key: 'atCube', match: v => v === true}],   // preconditions
     [{key: 'heldItem', Value: 1}],                // effects
     bt.createLeafNode(() => {
         cube.deleted = true;
@@ -150,7 +150,7 @@ state.registerAction('Pick', pabt.newAction('Pick',
 
 // 4. Create plan with goal
 const plan = pabt.newPlan(state, [
-    {key: 'heldItem', Match: v => v === 1}
+    {key: 'heldItem', match: v => v === 1}
 ]);
 
 // 5. Execute with BT ticker
@@ -199,7 +199,7 @@ function tick() {
 │  ┌──────────────────────────────────────────────────────┐    │
 │  │              go-pabt Planning Algorithm              │    │
 │  │  • Reads primitives from blackboard                 │    │
-│  │  • Evaluates conditions (Match functions)           │    │
+│  │  • Evaluates conditions (match functions)           │    │
 │  │  • Constructs action sequence                       │    │
 │  │  • Returns bt.Node for execution                    │    │
 │  └──────────────────────────────────────────────────────┘    │
@@ -252,7 +252,7 @@ Creates a PA-BT action template.
 const action = pabt.newAction(
     'MoveTo',
     [
-        {key: 'reachable', Match: v => v === true}
+        {key: 'reachable', match: v => v === true}
     ],
     [
         {key: 'atTarget', Value: true}
@@ -266,7 +266,7 @@ const action = pabt.newAction(
 
 **Parameters:**
 - `name` (string) - Unique action identifier (for debugging)
-- `conditions` (array) - Preconditions as `{key, Match}` objects
+- `conditions` (array) - Preconditions as `{key, match}` objects
 - `effects` (array) - Effects as `{key, Value}` objects
 - `node` (bt.Node) - Behavior tree node for execution
 
@@ -274,7 +274,7 @@ const action = pabt.newAction(
 ```javascript
 {
     key: 'stateVariable',              // Blackboard key
-    Match: function(value) {            // Match function
+    match: function(value) {            // match function
         return value === expectedValue;
     }
 }
@@ -300,7 +300,7 @@ Creates a PA-BT plan with goal conditions.
 
 ```javascript
 const plan = pabt.newPlan(state, [
-    {key: 'targetDelivered', Match: v => v === true}
+    {key: 'targetDelivered', match: v => v === true}
 ]);
 ```
 
@@ -315,8 +315,8 @@ const plan = pabt.newPlan(state, [
 ```javascript
 // Success if EITHER condition is true
 const plan = pabt.newPlan(state, [
-    {key: 'locationA', Match: v => v === true},
-    {key: 'locationB', Match: v => v === true}
+    {key: 'locationA', match: v => v === true},
+    {key: 'locationB', match: v => v === true}
 ]);
 ```
 
@@ -360,7 +360,7 @@ state.setActionGenerator(function(failedCondition) {
 
 **Parameters:**
 - `generator` (function) - Called when planning needs actions
-  - Receives: `failedCondition` (object with `key` and `Match` method)
+  - Receives: `failedCondition` (object with `key` and `match` method)
   - Returns: Array of actions (or empty array)
 
 **When to use:**
@@ -382,7 +382,7 @@ Creates a Go-native condition using expr-lang (fast path).
 
 ```javascript
 // Instead of:
-{key: 'distance', Match: v => v < 50}
+{key: 'distance', match: v => v < 50}
 
 // Use:
 pabt.newExprCondition('distance', 'Value < 50')
@@ -433,7 +433,7 @@ Combine static actions for fixed operations with parametric actions for dynamic 
 ```javascript
 // STATIC: Fixed actions (Pick, Place)
 state.registerAction('Pick', pabt.newAction('Pick',
-    [{key: 'atCube', Match: v => v === true}],
+    [{key: 'atCube', match: v => v === true}],
     [{key: 'heldItem', Value: cubeId}],
     pickNode
 ));
@@ -468,7 +468,7 @@ Use **heuristic effects** to guide the planner without strict guarantees.
 // (depends on which blockade, world layout, etc.)
 // But we can use it as a HEURISTIC for planning
 state.registerAction('PickBlockade_1', pabt.newAction('PickBlockade_1',
-    [{key: 'atEntity_1', Match: v => v === true}],
+    [{key: 'atEntity_1', match: v => v === true}],
     [
         {key: 'heldItem', Value: 1},
         // HEURISTIC: Suggest this helps reach target
@@ -497,7 +497,7 @@ Use intermediate goals to resolve conflicts (e.g., "hands full but need to pick 
 
 // Place target temporarily to free hands
 state.registerAction('PlaceTemporary', pabt.newAction('PlaceTemporary',
-    [{key: 'heldItem', Match: v => v === targetId}],
+    [{key: 'heldItem', match: v => v === targetId}],
     [{key: 'heldItem', Value: null}],  // Frees hands
     placeAtStagingNode
 ));
@@ -565,7 +565,7 @@ function createMoveToAction(entityId) {
     // Create new action
     const action = pabt.newAction(
         cacheKey,
-        [{key: `reachable_${entityId}`, Match: v => v === true}],
+        [{key: `reachable_${entityId}`, match: v => v === true}],
         [{key: `atEntity_${entityId}`, Value: true}],
         createExecutionNode(entityId)
     );
@@ -604,7 +604,7 @@ state.setActionGenerator(function(failedCondition) {
 1. **Use ExprCondition for hot paths**
    ```javascript
    // Bad: JavaScript condition (slow)
-   {key: 'distance', Match: v => v < 100}
+   {key: 'distance', match: v => v < 100}
 
    // Good: Expr condition (fast)
    pabt.newExprCondition('distance', 'Value < 100')
@@ -725,7 +725,7 @@ state.registerAction('Pick', pabt.newAction('Pick',
 
 // Check goal is achievable
 const plan = pabt.newPlan(state, [
-    {key: 'heldItem', Match: v => {
+    {key: 'heldItem', match: v => {
         console.log('Goal check: heldItem =', v);
         return v === 1;
     }}

@@ -252,6 +252,7 @@ func (r *InputCaptureRecorder) TypeCommand() error {
 	}
 
 	// Build the full command line
+	// WARNING: This filthy hack is CRITICAL for the recording of the .tape files, which need to resolve the script path correctly.
 	// TODO: Real solution for the remapping of paths, also quoting of args is likely completely wrong
 	typedCommand := r.typedCommand
 	typedArgs := r.typedArgs

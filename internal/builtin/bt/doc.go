@@ -128,12 +128,5 @@ The osm:bt module matches the bt.d.ts API with camelCase naming:
 All composite tick implementations (sequence, fallback, parallel, etc.) return
 Status synchronously when children return Status directly. They only return
 Promise<Status> when a child tick returns a Promise.
-
-# bt.js Compatibility
-
-This package implements Go-side primitives compatible with bt.js-style leaves
-(async functions returning string status). The embedded bt.js source (accessible
-via GetBTJS()) is provided for reference. Users who need bt.js composites should
-use the gist source directly or bundle it for their use case.
 */
 package bt

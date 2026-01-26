@@ -92,39 +92,6 @@ try {
     tea = require('osm:bubbletea');
     pabt = require('osm:pabt');
     os = require('osm:os');
-    var fs;
-    try { fs = require('fs'); } catch (e) { log.warn("fs module not available, blueprint.json will not be written"); }
-
-    // Helper to dump state to blueprint.json or log
-    function dumpBlueprint(state, event) {
-        const actor = state.actors.get(state.activeActorId);
-        const bp = {
-            timestamp: new Date().toISOString(),
-            tick: state.tickCount,
-            event: event || 'tick',
-            mode: state.gameMode,
-            actor: { x: actor.x, y: actor.y, held: actor.heldItem },
-            manual: {
-                target: state.manualMoveTarget,
-                pathLength: state.manualPath.length,
-                stuckTicks: state.pathStuckTicks
-            }
-        };
-        const json = JSON.stringify(bp);
-
-        if (fs) {
-            try {
-                fs.writeFileSync('blueprint.json', json);
-            } catch (e) {
-                if (state.tickCount % 100 === 0) log.error("Failed to write blueprint.json: " + e.message);
-            }
-        } else {
-            // throttle log dumping to avoid spamming
-            if (event !== 'tick' || state.tickCount % 50 === 0) {
-                log.info("BLUEPRINT: " + json);
-            }
-        }
-    }
 
     // SCENARIO CONFIGURATION
     //
@@ -1250,8 +1217,6 @@ try {
         state.pabtState = pabt.newState(state.blackboard);
         setupPABTActions(state);
         syncToBlackboard(state);
-        dumpBlueprint(state, 'init');
-
 
         const goalConditions = [{ key: 'cubeDeliveredAtGoal', Match: v => v === true }];
         state.pabtPlan = pabt.newPlan(state.pabtState, goalConditions);
@@ -1276,7 +1241,6 @@ try {
                 const actor = state.actors.get(state.activeActorId);
                 log.debug("[SIM TICK]", { tick: state.tickCount, actorX: actor.x, actorY: actor.y, heldItemId: actor.heldItem ? actor.heldItem.id : -1, gameMode: state.gameMode });
             }
-            if (state.tickCount % 10 === 0) dumpBlueprint(state, 'tick');
             if (state.gameMode === 'manual' && state.manualPath.length > 0) {
                 const actor = state.actors.get(state.activeActorId);
                 const nextPoint = state.manualPath[0];
@@ -1389,7 +1353,6 @@ try {
                 calcX: clickX, calcY: clickY,
                 width: state.width, spaceWidth: state.spaceWidth
             });
-            dumpBlueprint(state, 'click');
 
             if (clickX < 0 || clickX >= state.spaceWidth || clickY < 0 || clickY >= state.height) {
                 log.warn("Click out of bounds: (" + clickX + "," + clickY + ") spaceWidth=" + state.spaceWidth + " height=" + state.height);

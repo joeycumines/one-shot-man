@@ -298,22 +298,10 @@ func TestPickAndPlaceError_ER003_NormalExecution(t *testing.T) {
 		console.log('✓ PA-BT state created successfully');
 
 		// Test action registration API
-		const node = bt.node(function(bb) { return pabt.success; });
+		const node = bt.node(function(bb) { return 'success'; });
 		const action = pabt.newAction('test_action', [], [], node);
 		state.RegisterAction('test_action', action);
 		console.log('✓ Action can be registered on state');
-
-		// Verify constants are defined
-		if (pabt.success !== 'success') {
-			throw new Error('pabt.success constant is not correct: ' + pabt.success);
-		}
-		if (pabt.failure !== 'failure') {
-			throw new Error('pabt.failure constant is not correct: ' + pabt.failure);
-		}
-		if (pabt.running !== 'running') {
-			throw new Error('pabt.running constant is not correct: ' + pabt.running);
-		}
-		console.log('✓ PA-BT status constants are correct');
 
 		console.log('');
 		console.log('=== NORMAL EXECUTION VERIFIED ===');
@@ -495,48 +483,6 @@ func TestPickAndPlaceError_ER004_PA_BT_Errors(t *testing.T) {
 			wantErr:     false, // Action registration should succeed
 			errContains: nil,
 			description: "Verify action registration handles errors gracefully",
-		},
-		{
-			name: "pabt_status_constants",
-			script: `
-		var pabt = require('osm:pabt');
-
-		// Test basic API availability - verify critical functions and constants exist
-		if (typeof pabt.newState !== 'function') {
-			throw new Error('pabt.newState not available');
-		}
-		console.log('✓ pabt.newState available');
-
-		// Verify status constants are strings
-		if (typeof pabt.Success !== 'string') {
-			throw new Error('pabt.Success not available as string, got type: ' + typeof pabt.Success);
-		}
-		console.log('✓ pabt.Success available: ' + pabt.Success);
-
-		if (typeof pabt.Running !== 'string') {
-			throw new Error('pabt.Running not available as string');
-		}
-		console.log('✓ pabt.Running available: ' + pabt.Running);
-
-		if (typeof pabt.Failure !== 'string') {
-			throw new Error('pabt.Failure not available as string');
-		}
-		console.log('✓ pabt.Failure available: ' + pabt.Failure);
-
-		// Test state blackboard - need bb
-		var bt = require('osm:bt');
-		const bb = new bt.Blackboard();
-		const state = pabt.newState(bb);
-		state.set('test', 'value');
-		const val = state.get('test');
-		if (val !== 'value') {
-			throw new Error('State get/set failed, got: ' + val);
-		}
-		console.log('✓ State blackboard works correctly');
-		`,
-			wantErr:     false,
-			errContains: nil,
-			description: "Verify that basic PA-BT API is available",
 		},
 	}
 

@@ -29,16 +29,6 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
-		// Status constants (match osm:bt)
-		// Uppercase (canonical)
-		_ = exports.Set("Running", "running")
-		_ = exports.Set("Success", "success")
-		_ = exports.Set("Failure", "failure")
-		// Lowercase aliases for JavaScript convenience
-		_ = exports.Set("running", "running")
-		_ = exports.Set("success", "success")
-		_ = exports.Set("failure", "failure")
-
 		// newState(blackboard) - Create a PA-BT state
 		_ = exports.Set("newState", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) < 1 {

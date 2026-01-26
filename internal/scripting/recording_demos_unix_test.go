@@ -1433,3 +1433,327 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 		t.Logf("GIF generated at: %s", gifPath)
 	}
 }
+
+// TestRecording_Script_BT_Shooter demonstrates the behavior tree shooter game.
+// This recording shows:
+// - Starting the game via osm script
+// - Moving the player with arrow keys
+// - Shooting with space bar
+func TestRecording_Script_BT_Shooter(t *testing.T) {
+	outputDir := getRecordingOutputDir()
+	tapePath := filepath.Join(outputDir, "script-example-bt-shooter.tape")
+	gifPath := filepath.Join(outputDir, "script-example-bt-shooter.gif")
+	// Calculate repo root from outputDir (docs/visuals/gifs -> repo root)
+	repoRoot := filepath.Clean(filepath.Join(outputDir, "..", "..", ".."))
+
+	// Create temp config to ensure isolation
+	tempConfig := filepath.Join(t.TempDir(), "config")
+	if err := os.WriteFile(tempConfig, []byte{}, 0644); err != nil {
+		t.Fatalf("Failed to create temp config: %v", err)
+	}
+	// Ensure process env is isolated
+	t.Setenv("OSM_CONFIG", tempConfig)
+	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
+	t.Setenv("OSM_STORE", "memory")
+	t.Setenv("OSM_SESSION", "demo-bt-shooter")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	settings := DefaultVHSRecordSettings()
+	settings.OutputGIF = filepath.Base(gifPath)
+
+	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
+		WithRecorderShell("bash"),
+		WithRecorderCommand("osm", "script", "scripts/example-04-bt-shooter.js"),
+		WithRecorderTimeout(90*time.Second),
+		WithRecorderDir(repoRoot),
+		WithRecorderEnv(
+			"OSM_SESSION=demo-bt-shooter",
+			"OSM_STORE=memory",
+			"OSM_CLIPBOARD=cat > /dev/null",
+			"OSM_CONFIG="+tempConfig,
+			"TERM=xterm-256color",
+		),
+		WithRecorderVHSSettings(settings),
+	)...)
+	if err != nil {
+		t.Fatalf("Failed to create recorder: %v", err)
+	}
+	defer func() {
+		if err := recorder.Close(); err != nil {
+			t.Errorf("Failed to close recorder: %v", err)
+		}
+	}()
+
+	cp := recorder.Console()
+
+	expect := func(snap termtest.Snapshot, target string, timeout time.Duration) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		if err := recorder.Expect(ctx, snap, termtest.Contains(target), fmt.Sprintf("wait for %q", target)); err != nil {
+			t.Fatalf("Expected %q: %v\nBuffer: %q", target, err, recorder.String())
+		}
+	}
+
+	// Wait for shell prompt
+	snap := recorder.Snapshot()
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
+	recorder.RecordSleep(200 * time.Millisecond)
+
+	// Type the command to start the game
+	recorder.RecordComment("Run osm script for BT Shooter game")
+	if err := recorder.TypeCommand(); err != nil {
+		t.Fatalf("Failed to type command: %v", err)
+	}
+	if err := recorder.SendKey("\r"); err != nil {
+		t.Fatalf("Failed to send enter: %v", err)
+	}
+
+	// Wait for game startup message
+	snap = recorder.Snapshot()
+	expect(snap, "BT SHOOTER", 20*time.Second)
+	recorder.RecordSleep(500 * time.Millisecond)
+
+	// Wait for menu to appear (Press SPACE to begin!)
+	snap = recorder.Snapshot()
+	expect(snap, "SPACE", 10*time.Second)
+	recorder.RecordSleep(300 * time.Millisecond)
+
+	// Start the game by pressing space
+	recorder.RecordComment("Press SPACE to start the game")
+	if err := recorder.SendKey(" "); err != nil {
+		t.Fatalf("Failed to send space: %v", err)
+	}
+	time.Sleep(500 * time.Millisecond)
+	recorder.RecordSleep(500 * time.Millisecond)
+
+	// Movement pattern: hold up for 2s, right for 1.5s, down for 1.5s, left for 1.5s
+	// With space presses mixed in
+	// Note: VHS uses Up, Down, Left, Right commands with count/delay syntax
+
+	// Move UP for ~2 seconds (press repeatedly with space mixed in)
+	recorder.RecordComment("Move UP and shoot")
+	for i := 0; i < 8; i++ {
+		if err := recorder.SendKey("\x1b[A"); err != nil { // Up arrow
+			t.Fatalf("Failed to send up: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+		if i%2 == 0 {
+			if err := recorder.SendKey(" "); err != nil { // Space - shoot
+				t.Fatalf("Failed to send space: %v", err)
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	recorder.RecordSleep(500 * time.Millisecond)
+
+	// Move RIGHT for ~1.5 seconds
+	recorder.RecordComment("Move RIGHT and shoot")
+	for i := 0; i < 6; i++ {
+		if err := recorder.SendKey("\x1b[C"); err != nil { // Right arrow
+			t.Fatalf("Failed to send right: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+		if i%2 == 0 {
+			if err := recorder.SendKey(" "); err != nil {
+				t.Fatalf("Failed to send space: %v", err)
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	recorder.RecordSleep(500 * time.Millisecond)
+
+	// Move DOWN for ~1.5 seconds
+	recorder.RecordComment("Move DOWN and shoot")
+	for i := 0; i < 6; i++ {
+		if err := recorder.SendKey("\x1b[B"); err != nil { // Down arrow
+			t.Fatalf("Failed to send down: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+		if i%2 == 0 {
+			if err := recorder.SendKey(" "); err != nil {
+				t.Fatalf("Failed to send space: %v", err)
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	recorder.RecordSleep(500 * time.Millisecond)
+
+	// Move LEFT for ~1.5 seconds
+	recorder.RecordComment("Move LEFT and shoot")
+	for i := 0; i < 6; i++ {
+		if err := recorder.SendKey("\x1b[D"); err != nil { // Left arrow
+			t.Fatalf("Failed to send left: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+		if i%2 == 0 {
+			if err := recorder.SendKey(" "); err != nil {
+				t.Fatalf("Failed to send space: %v", err)
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	recorder.RecordSleep(500 * time.Millisecond)
+
+	// Quit the game
+	recorder.RecordComment("Quit the game")
+	if err := recorder.SendKey("q"); err != nil {
+		t.Fatalf("Failed to send q: %v", err)
+	}
+	recorder.RecordSleep(300 * time.Millisecond)
+
+	// Wait for shell prompt to return
+	ensurePrompt(ctx, t, recorder, 10*time.Second)
+
+	// Exit the shell
+	typeString(t, recorder, "exit")
+	if err := recorder.SendKey("\r"); err != nil {
+		t.Fatalf("Failed to send enter: %v", err)
+	}
+
+	waitForProcessExit(ctx, t, cp, recorder)
+
+	if err := recorder.Close(); err != nil {
+		t.Fatalf("Failed to save tape: %v", err)
+	}
+
+	if recordingEnabled {
+		t.Logf("Recording tape saved to: %s", tapePath)
+	}
+
+	if executeVHSEnabled && recordingEnabled {
+		if err := executeVHSOnTape(ctx, tapePath); err != nil {
+			t.Fatalf("Failed to execute VHS: %v", err)
+		}
+		t.Logf("GIF generated at: %s", gifPath)
+	}
+}
+
+// TestRecording_Script_PickAndPlace demonstrates the PA-BT pick-and-place simulation.
+// This recording shows:
+// - Starting the automatic simulation via osm script
+// - Watching the AI solve the pick and place problem
+// - Verifying the WIN! condition is reached
+func TestRecording_Script_PickAndPlace(t *testing.T) {
+	outputDir := getRecordingOutputDir()
+	tapePath := filepath.Join(outputDir, "script-example-pick-and-place.tape")
+	gifPath := filepath.Join(outputDir, "script-example-pick-and-place.gif")
+	// Calculate repo root from outputDir (docs/visuals/gifs -> repo root)
+	repoRoot := filepath.Clean(filepath.Join(outputDir, "..", "..", ".."))
+
+	// Create temp config to ensure isolation
+	tempConfig := filepath.Join(t.TempDir(), "config")
+	if err := os.WriteFile(tempConfig, []byte{}, 0644); err != nil {
+		t.Fatalf("Failed to create temp config: %v", err)
+	}
+	// Ensure process env is isolated
+	t.Setenv("OSM_CONFIG", tempConfig)
+	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
+	t.Setenv("OSM_STORE", "memory")
+	t.Setenv("OSM_SESSION", "demo-pick-and-place")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	settings := DefaultVHSRecordSettings()
+	settings.OutputGIF = filepath.Base(gifPath)
+
+	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
+		WithRecorderShell("bash"),
+		WithRecorderCommand("osm", "script", "scripts/example-05-pick-and-place.js"),
+		WithRecorderTimeout(90*time.Second),
+		WithRecorderDir(repoRoot),
+		WithRecorderEnv(
+			"OSM_SESSION=demo-pick-and-place",
+			"OSM_STORE=memory",
+			"OSM_CLIPBOARD=cat > /dev/null",
+			"OSM_CONFIG="+tempConfig,
+			"TERM=xterm-256color",
+		),
+		WithRecorderVHSSettings(settings),
+	)...)
+	if err != nil {
+		t.Fatalf("Failed to create recorder: %v", err)
+	}
+	defer func() {
+		if err := recorder.Close(); err != nil {
+			t.Errorf("Failed to close recorder: %v", err)
+		}
+	}()
+
+	cp := recorder.Console()
+
+	expect := func(snap termtest.Snapshot, target string, timeout time.Duration) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		if err := recorder.Expect(ctx, snap, termtest.Contains(target), fmt.Sprintf("wait for %q", target)); err != nil {
+			t.Fatalf("Expected %q: %v\nBuffer: %q", target, err, recorder.String())
+		}
+	}
+
+	// Wait for shell prompt
+	snap := recorder.Snapshot()
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
+	recorder.RecordSleep(200 * time.Millisecond)
+
+	// Type the command to start the simulation
+	recorder.RecordComment("Run osm script for Pick-and-Place simulation")
+	if err := recorder.TypeCommand(); err != nil {
+		t.Fatalf("Failed to type command: %v", err)
+	}
+	if err := recorder.SendKey("\r"); err != nil {
+		t.Fatalf("Failed to send enter: %v", err)
+	}
+
+	// Wait for simulation to start - look for status line that appears in all terminal sizes
+	snap = recorder.Snapshot()
+	expect(snap, "Mode: AUTOMATIC", 20*time.Second)
+	recorder.RecordSleep(500 * time.Millisecond)
+
+	// The simulation runs automatically - wait for it to complete
+	// Simulation needs significant time (~25s simulation + margin for test env overhead)
+	recorder.RecordComment("Watching automatic PA-BT simulation...")
+	time.Sleep(60 * time.Second)
+	recorder.RecordSleep(50 * time.Second)
+
+	// Verify WIN! condition is reached (appears as "WIN!" in status line or "*** WIN! ***" in HUD)
+	snap = recorder.Snapshot()
+	expect(snap, "WIN!", 30*time.Second)
+	recorder.RecordSleep(1 * time.Second)
+
+	// Quit the simulation
+	recorder.RecordComment("Quit the simulation")
+	if err := recorder.SendKey("q"); err != nil {
+		t.Fatalf("Failed to send q: %v", err)
+	}
+	recorder.RecordSleep(300 * time.Millisecond)
+
+	// Wait for shell prompt to return
+	ensurePrompt(ctx, t, recorder, 10*time.Second)
+
+	// Exit the shell
+	typeString(t, recorder, "exit")
+	if err := recorder.SendKey("\r"); err != nil {
+		t.Fatalf("Failed to send enter: %v", err)
+	}
+
+	waitForProcessExit(ctx, t, cp, recorder)
+
+	if err := recorder.Close(); err != nil {
+		t.Fatalf("Failed to save tape: %v", err)
+	}
+
+	if recordingEnabled {
+		t.Logf("Recording tape saved to: %s", tapePath)
+	}
+
+	if executeVHSEnabled && recordingEnabled {
+		if err := executeVHSOnTape(ctx, tapePath); err != nil {
+			t.Fatalf("Failed to execute VHS: %v", err)
+		}
+		t.Logf("GIF generated at: %s", gifPath)
+	}
+}

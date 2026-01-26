@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -251,8 +252,27 @@ func (r *InputCaptureRecorder) TypeCommand() error {
 	}
 
 	// Build the full command line
-	cmdLine := r.typedCommand
-	for _, arg := range r.typedArgs {
+	// TODO: Real solution for the remapping of paths, also quoting of args is likely completely wrong
+	typedCommand := r.typedCommand
+	typedArgs := r.typedArgs
+	if typedCommand == "osm" {
+		var foundScript bool
+		for i, arg := range typedArgs {
+			if foundScript {
+				if strings.HasPrefix(arg, "scripts/") {
+					typedArgs = slices.Clone(typedArgs)
+					typedArgs[i] = "../../../" + arg
+					break
+				}
+			} else if arg == "script" {
+				foundScript = true
+			} else if !strings.HasPrefix(arg, "-") {
+				break
+			}
+		}
+	}
+	cmdLine := typedCommand
+	for _, arg := range typedArgs {
 		// Quote args with spaces
 		if strings.ContainsAny(arg, " \t") {
 			cmdLine += " " + fmt.Sprintf("%q", arg)

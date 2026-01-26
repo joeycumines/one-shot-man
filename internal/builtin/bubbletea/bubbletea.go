@@ -1013,17 +1013,9 @@ func (m *jsModel) extractTickCmd(obj *goja.Object) tea.Cmd {
 	}
 
 	slog.Debug("bubbletea: extractTickCmd: scheduling tick", "id", id, "durationMs", durationMs)
-	// DEBUG: Print to stderr to see if ticks are being scheduled after freeze
-	if id != "" {
-		fmt.Fprintf(os.Stderr, "[TICK] scheduling tick id=%s duration=%dms\n", id, durationMs)
-	}
 	duration := time.Duration(durationMs) * time.Millisecond
 	return tea.Tick(duration, func(t time.Time) tea.Msg {
 		slog.Debug("bubbletea: tick callback fired", "id", id, "time", t)
-		// DEBUG: Print to stderr when tick callback fires
-		if id != "" {
-			fmt.Fprintf(os.Stderr, "[TICK] callback fired id=%s\n", id)
-		}
 		return tickMsg{id: id, time: t}
 	})
 }

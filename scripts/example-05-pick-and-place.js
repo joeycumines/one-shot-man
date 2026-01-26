@@ -1548,7 +1548,36 @@ try {
             }
 
             const ignoreId = actor.heldItem ? actor.heldItem.id : -1;
-            const path = findPath(state, actor.x, actor.y, clickX, clickY, ignoreId);
+            let path = null;
+
+            // When holding an item, pathfind to an adjacent cell rather than the target
+            if (actor.heldItem) {
+                const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+                const neighbors = [];
+                for (const [dx, dy] of dirs) {
+                    const nx = clickX + dx;
+                    const ny = clickY + dy;
+                    if (nx >= 0 && nx < state.spaceWidth && ny >= 0 && ny < state.height) {
+                        const dist = Math.sqrt(Math.pow(nx - actor.x, 2) + Math.pow(ny - actor.y, 2));
+                        neighbors.push({x: nx, y: ny, dist: dist});
+                    }
+                }
+                neighbors.sort((a, b) => a.dist - b.dist);
+
+                for (const n of neighbors) {
+                    const p = findPath(state, actor.x, actor.y, n.x, n.y, ignoreId);
+                    if (p !== null) {
+                        path = p;
+                        break;
+                    }
+                }
+            }
+
+            // Fallback: If no path to neighbor found (or not holding item), path to target
+            if (path === null) {
+                path = findPath(state, actor.x, actor.y, clickX, clickY, ignoreId);
+            }
+
             if (path && path.length > 0) {
                 log.info("Path found", {targetX: clickX, targetY: clickY, pathLen: path.length});
                 state.manualPath = path;

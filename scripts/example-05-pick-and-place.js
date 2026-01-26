@@ -472,7 +472,7 @@ try {
 
     // Calculate full path for click-based movement (BFS).
     // Returns array of {x,y} waypoints.
-    function findPath(state, startX, startY, targetX, targetY, ignoreCubeId) {
+    function findPath(state, startX, startY, targetX, targetY, ignoreCubeId, searchLimit) {
         const blocked = buildBlockedSet(state, ignoreCubeId);
         const key = (x, y) => x + ',' + y;
         const iStartX = Math.round(startX);
@@ -491,13 +491,29 @@ try {
         let found = false;
         let finalNode = null;
 
+        let iterations = 0;
+        let bestNode = queue[0];
+        let bestDist = Infinity;
+
         while (queue.length > 0) {
+            if (searchLimit && iterations >= searchLimit) {
+                finalNode = bestNode;
+                break;
+            }
+            iterations++;
+
             const cur = queue.shift();
 
             if (cur.x === iTargetX && cur.y === iTargetY) {
                 found = true;
                 finalNode = cur;
                 break;
+            }
+
+            const dist = Math.abs(cur.x - iTargetX) + Math.abs(cur.y - iTargetY);
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestNode = cur;
             }
 
             for (const [ox, oy] of dirs) {
@@ -515,7 +531,7 @@ try {
             }
         }
 
-        if (!found) return null;
+        if (!found && !finalNode) return null;
 
         // Reconstruct path
         const path = [];
@@ -1549,6 +1565,7 @@ try {
 
             const ignoreId = actor.heldItem ? actor.heldItem.id : -1;
             let path = null;
+            const searchLimit = 1000;
 
             // When holding an item, pathfind to an adjacent cell rather than the target
             if (actor.heldItem) {
@@ -1565,7 +1582,7 @@ try {
                 neighbors.sort((a, b) => a.dist - b.dist);
 
                 for (const n of neighbors) {
-                    const p = findPath(state, actor.x, actor.y, n.x, n.y, ignoreId);
+                    const p = findPath(state, actor.x, actor.y, n.x, n.y, ignoreId, searchLimit);
                     if (p !== null) {
                         path = p;
                         break;
@@ -1575,7 +1592,7 @@ try {
 
             // Fallback: If no path to neighbor found (or not holding item), path to target
             if (path === null) {
-                path = findPath(state, actor.x, actor.y, clickX, clickY, ignoreId);
+                path = findPath(state, actor.x, actor.y, clickX, clickY, ignoreId, searchLimit);
             }
 
             if (path && path.length > 0) {

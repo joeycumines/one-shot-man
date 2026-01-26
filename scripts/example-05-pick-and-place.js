@@ -94,6 +94,18 @@ try {
     os = require('osm:os');
 
     // SCENARIO CONFIGURATION
+    //
+    // The actor must:
+    // 1. Enter the room
+    // 2. Clear movable blockades forming a ring around the goal
+    // 3. Pick the target cube
+    // 4. Deliver target to the multi-cell Goal Area
+    //
+    // TRUE PARAMETRIC ACTIONS:
+    // - MoveTo(entityId)
+    // - Pick(cubeId)
+    // - Place() / PlaceAt()
+
     const ENV_WIDTH = 80;
     const ENV_HEIGHT = 24;
 
@@ -107,15 +119,19 @@ try {
     // Goal Area Configuration (3x3)
     const GOAL_CENTER_X = 8;
     const GOAL_CENTER_Y = 18;
-    const GOAL_RADIUS = 1;
+    const GOAL_RADIUS = 1; // 3x3 area implies +/- 1 from center
 
     // Entity IDs
     const TARGET_ID = 1;
     const GOAL_ID = 1;
+    // NOTE: DUMPSTER_ID removed - obstacles placed at any free cell dynamically
+    // GOAL_BLOCKADE_IDS kept for visual counting only, not used in planning logic
     var GOAL_BLOCKADE_IDS = [];
 
     // Pick/Place thresholds
-    const PICK_THRESHOLD = 5.0;
+    const PICK_THRESHOLD = 5.0; // Distance threshold for picking up cubes
+    // MANUAL_MOVE_SPEED = 1.0 to match automatic mode movement (1 unit per tick)
+    // This ensures PERFECT CONSISTENCY between manual and automatic modes per bugreport.md
     const MANUAL_MOVE_SPEED = 1.0;
 
     // Helper: Check if point is within the Goal Area
@@ -126,10 +142,13 @@ try {
             y <= GOAL_CENTER_Y + GOAL_RADIUS;
     }
 
+    // NOTE: isInBlockadeRing() function REMOVED
+    // Dynamic obstacle detection now used instead of hardcoded geometry
+
     function initializeSimulation() {
         const cubesInit = [];
 
-        // 1. Target Cube
+        // 1. Target Cube (inside room, right side)
         cubesInit.push([TARGET_ID, {
             id: TARGET_ID,
             x: 45,
@@ -140,6 +159,7 @@ try {
         }]);
 
         // 2. Goal Blockade Ring
+        // Surround the 3x3 Goal Area with a movable ring
         let goalBlockadeId = 100;
         const ringMinX = GOAL_CENTER_X - GOAL_RADIUS - 1;
         const ringMaxX = GOAL_CENTER_X + GOAL_RADIUS + 1;
@@ -148,6 +168,7 @@ try {
 
         for (let y = ringMinY; y <= ringMaxY; y++) {
             for (let x = ringMinX; x <= ringMaxX; x++) {
+                // Skip the goal area itself (the hole in the donut)
                 if (isInGoalArea(x, y)) continue;
 
                 cubesInit.push([goalBlockadeId, {
@@ -155,14 +176,15 @@ try {
                     x: x,
                     y: y,
                     deleted: false,
-                    type: 'obstacle'
+                    // NOTE: isGoalBlockade removed - not needed for planning
+                    type: 'obstacle'  // Generic type, rendering uses position/context
                 }]);
                 GOAL_BLOCKADE_IDS.push(goalBlockadeId);
                 goalBlockadeId++;
             }
         }
 
-        // 3. Room Walls
+        // 3. Room Walls (static obstacles)
         let wallId = 1000;
 
         function addWall(x, y) {
@@ -187,7 +209,7 @@ try {
             addWall(ROOM_MAX_X, y);
         }
 
-        // Add standardized obstacle
+        // Add standardized obstacle at (7, 5) often used in tests
         cubesInit.push([803, {
             id: 803,
             x: 7,
@@ -200,7 +222,7 @@ try {
         return {
             width: ENV_WIDTH,
             height: ENV_HEIGHT,
-            spaceWidth: 55,
+            spaceWidth: 55, // Must accommodate ROOM_MAX_X=55; HUD conditionally hidden on narrow terminals
 
             actors: new Map([
                 [1, {id: 1, x: 5, y: 11, heldItem: null}]
@@ -208,6 +230,7 @@ try {
             cubes: new Map(cubesInit),
             goals: new Map([
                 [GOAL_ID, {id: GOAL_ID, x: GOAL_CENTER_X, y: GOAL_CENTER_Y, forTarget: true}]
+                // NOTE: Dumpster goal REMOVED - obstacles placed anywhere dynamically
             ]),
 
             blackboard: null,
@@ -222,37 +245,46 @@ try {
             pathStuckTicks: 0,
             winConditionMet: false,
             targetDelivered: false,
+
+            // Manual mode ticker for smooth BT-driven movement
             manualTicker: null,
+
             renderBuffer: null,
             renderBufferWidth: 0,
             renderBufferHeight: 0,
+
             debugMode: os.getenv('OSM_TEST_MODE') === '1'
         };
     }
 
     // Logic Helpers
 
+    // manualKeysMovement: Handle WASD movement in manual mode (discrete movement per key press)
+    // Returns true if movement occurred, false otherwise
     function manualKeysMovement(state, actor, dx, dy) {
         if (dx === 0 && dy === 0) return false;
+
+        // Calculate new position - with MANUAL_MOVE_SPEED = 1.0, this is integer-based
         const nx = actor.x + dx * MANUAL_MOVE_SPEED;
         const ny = actor.y + dy * MANUAL_MOVE_SPEED;
+
+        // Use integer position for collision detection (consistent with automatic mode)
         const inx = Math.round(nx);
         const iny = Math.round(ny);
         let blocked = false;
 
+        // Boundary check - MUST match pathfinding boundaries for consistency
+        // Pathfinding uses: nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1
+        // This is to ensure consistent behavior between manual and automatic modes
         if (inx < 1 || inx >= state.spaceWidth - 1 ||
             iny < 1 || iny >= state.height - 1) {
             blocked = true;
         }
 
+        // Fast collision check using cached blocked set (O(1) lookup)
         if (!blocked) {
-            for (const c of state.cubes.values()) {
-                if (!c.deleted && Math.round(c.x) === inx && Math.round(c.y) === iny) {
-                    if (actor.heldItem && c.id === actor.heldItem.id) continue;
-                    blocked = true;
-                    break;
-                }
-            }
+            const blockedSet = getManualBlockedSetCached(state, -1);
+            blocked = blockedSet.has(inx + ',' + iny);
         }
 
         if (!blocked) {
@@ -265,6 +297,7 @@ try {
         return false;
     }
 
+    // Find a free adjacent cell for generic placement
     function getFreeAdjacentCell(state, actorX, actorY, targetGoalArea = false) {
         const ax = Math.round(actorX);
         const ay = Math.round(actorY);
@@ -273,30 +306,46 @@ try {
         for (const [dx, dy] of dirs) {
             const nx = ax + dx;
             const ny = ay + dy;
+
+            // Bounds check
             if (nx < 0 || nx >= state.spaceWidth || ny < 0 || ny >= state.height) continue;
+
+            // If we are targeting the goal area specifically, skip cells not in it
             if (targetGoalArea && !isInGoalArea(nx, ny)) continue;
+
+            // Check occupancy
             let occupied = false;
+            // Check cubes
             for (const c of state.cubes.values()) {
                 if (!c.deleted && Math.round(c.x) === nx && Math.round(c.y) === ny) {
                     occupied = true;
                     break;
                 }
             }
+            // No additional occupancy check needed - dumpster concept removed
+            // Obstacles can be placed at any free cell
+
             if (!occupied) return {x: nx, y: ny};
         }
         return null;
     }
 
+    // Find the NEAREST pickable cube to the given position, within PICK_THRESHOLD.
+    // Returns null if no cube is within range.
+    // OPTIMIZED: Moved Map.get() call outside loop for better performance.
     function findNearestPickableCube(state, clickX, clickY) {
         let nearest = null;
         let nearestDist = PICK_THRESHOLD;
+
         const actor = state.actors.get(state.activeActorId);
 
         for (const c of state.cubes.values()) {
             if (c.deleted) continue;
             if (c.isStatic) continue;
             if (actor.heldItem && c.id === actor.heldItem.id) continue;
+
             const dist = Math.sqrt(Math.pow(c.x - clickX, 2) + Math.pow(c.y - clickY, 2));
+
             if (dist < nearestDist) {
                 nearest = c;
                 nearestDist = dist;
@@ -305,15 +354,20 @@ try {
         return nearest;
     }
 
+    // Find the NEAREST valid placement cell adjacent to actor.
+    // Returns a {x, y} object or null if no valid cell found.
+    // A placement cell is valid if it is within bounds and not occupied (except by ignoreId).
+    // OPTIMIZED: O(n) algorithm - builds Set of occupied positions for O(1) lookup.
     function findNearestValidPlacement(state, actorX, actorY, ignoreId) {
         const ax = Math.round(actorX);
         const ay = Math.round(actorY);
         const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
+        // Build position lookup Set ONCE instead of scanning all cubes 8 times
         const occupiedPositions = new Set();
         for (const c of state.cubes.values()) {
             if (!c.deleted && c.id !== ignoreId) {
-                const posKey = (Math.round(c.y) << 12) | Math.round(c.x);
+                const posKey = Math.round(c.x) + ',' + Math.round(c.y);
                 occupiedPositions.add(posKey);
             }
         }
@@ -324,15 +378,23 @@ try {
         for (const [dx, dy] of dirs) {
             const nx = ax + dx;
             const ny = ay + dy;
+
+            // Bounds check
             if (nx < 0 || nx >= state.spaceWidth || ny < 0 || ny >= state.height) continue;
-            const posKey = (ny << 12) | nx;
+
+            // O(1) lookup instead of O(n) scan!
+            const posKey = nx + ',' + ny;
             if (occupiedPositions.has(posKey)) continue;
+
+            // Calculate distance from actor to this placement cell
             const dist = Math.sqrt(Math.pow(nx - ax, 2) + Math.pow(ny - ay, 2));
+
             if (dist < nearestDist) {
                 nearest = {x: nx, y: ny};
                 nearestDist = dist;
             }
         }
+
         return nearest;
     }
 
@@ -340,264 +402,474 @@ try {
 
     function buildBlockedSet(state, ignoreCubeId) {
         const blocked = new Set();
+        const key = (x, y) => x + ',' + y;
         const actor = state.actors.get(state.activeActorId);
+
+        // DEBUG: Check if 6,18 blocker exists before building set
+        var blockerAt6_18 = null;
+        state.cubes.forEach(c => {
+            if (Math.round(c.x) === 6 && Math.round(c.y) === 18 && !c.deleted) {
+                blockerAt6_18 = c;
+            }
+        });
 
         state.cubes.forEach(c => {
             if (c.deleted) return;
             if (c.id === ignoreCubeId) return;
             if (actor.heldItem && c.id === actor.heldItem.id) return;
-            blocked.add((Math.round(c.y) << 12) | Math.round(c.x));
+            blocked.add(key(Math.round(c.x), Math.round(c.y)));
         });
+
+        // DEBUG: Log if (6,18) blocker exists but not in blocked set (no tick limit now)
+        if (blockerAt6_18 && !blocked.has('6,18')) {
+            log.warn("buildBlockedSet BUG: blockerAt6_18 exists (id=" + blockerAt6_18.id + ") but 6,18 not in blocked! ignoreCubeId=" + ignoreCubeId + " heldItem=" + (actor.heldItem ? actor.heldItem.id : 'null') + " tick=" + state.tickCount);
+        }
+
         return blocked;
     }
 
-    class MinHeap {
-        constructor() {
-            this.data = [];
-        }
-
-        clear() {
-            this.data.length = 0;
-        }
-
-        push(val) {
-            this.data.push(val);
-            this.up(this.data.length - 1);
-        }
-
-        pop() {
-            if (this.data.length === 0) return null;
-            const top = this.data[0];
-            const bottom = this.data.pop();
-            if (this.data.length > 0) {
-                this.data[0] = bottom;
-                this.down(0);
-            }
-            return top;
-        }
-
-        up(i) {
-            while (i > 0) {
-                const p = (i - 1) >>> 1;
-                if (this.data[i].f < this.data[p].f) {
-                    [this.data[i], this.data[p]] = [this.data[p], this.data[i]];
-                    i = p;
-                } else break;
-            }
-        }
-
-        down(i) {
-            while (true) {
-                let l = (i << 1) + 1, r = l + 1, min = i;
-                if (l < this.data.length && this.data[l].f < this.data[min].f) min = l;
-                if (r < this.data.length && this.data[r].f < this.data[min].f) min = r;
-                if (min === i) break;
-                [this.data[i], this.data[min]] = [this.data[min], this.data[i]];
-                i = min;
-            }
-        }
-
-        size() {
-            return this.data.length;
-        }
-    }
-
-    const manualPathfinder = {
-        version: 0,
-        grid: null,
-        gridWidth: 0,
-        gridHeight: 0,
-        gScore: null,
-        cameFrom: null,
-        heap: new MinHeap(),
-        budget: 2000,
-
-        invalidate() {
-            this.version++;
-        },
-
-        getGrid(state) {
-            const sz = state.width * state.height;
-            if (this.grid && this.gridWidth === state.width && this.gridHeight === state.height && this.gridVersion === this.version) {
-                return this.grid;
-            }
-            if (!this.grid || this.grid.length !== sz) {
-                this.grid = new Int32Array(sz);
-                this.gScore = new Uint16Array(sz);
-                this.cameFrom = new Int32Array(sz);
-            }
-            this.grid.fill(-1);
-            for (const c of state.cubes.values()) {
-                if (c.deleted) continue;
-                const idx = Math.round(c.y) * state.width + Math.round(c.x);
-                if (idx >= 0 && idx < sz) this.grid[idx] = c.id;
-            }
-            this.gridWidth = state.width;
-            this.gridHeight = state.height;
-            this.gridVersion = this.version;
-            return this.grid;
-        },
-
-        find(state, sx, sy, tx, ty, ignoreId) {
-            const w = state.width, h = state.height;
-            const startIdx = Math.round(sy) * w + Math.round(sx);
-            const targetIdx = Math.round(ty) * w + Math.round(tx);
-            if (startIdx === targetIdx) return [];
-
-            const grid = this.getGrid(state);
-            const size = w * h;
-
-            // Use cached arrays to prevent GC
-            this.gScore.fill(65535);
-            this.cameFrom.fill(-1);
-            this.heap.clear();
-
-            this.gScore[startIdx] = 0;
-            this.heap.push({idx: startIdx, f: Math.abs(tx - Math.round(sx)) + Math.abs(ty - Math.round(sy))});
-
-            const dirs = [w, -w, 1, -1];
-            let expansions = 0;
-            let bestNode = startIdx;
-            let bestDist = Math.abs(tx - Math.round(sx)) + Math.abs(ty - Math.round(sy));
-
-            const actor = state.actors.get(state.activeActorId);
-            const heldId = actor.heldItem ? actor.heldItem.id : -1;
-
-            while (this.heap.size() > 0) {
-                if (++expansions > this.budget) break;
-                const {idx: cIdx} = this.heap.pop();
-                if (cIdx === targetIdx) {
-                    bestNode = cIdx;
-                    break;
-                }
-
-                const cx = cIdx % w, cy = (cIdx / w) | 0;
-                const dist = Math.abs(tx - cx) + Math.abs(ty - cy);
-                if (dist < bestDist) {
-                    bestDist = dist;
-                    bestNode = cIdx;
-                }
-                const cg = this.gScore[cIdx];
-
-                for (const d of dirs) {
-                    const nIdx = cIdx + d;
-                    if (nIdx < 0 || nIdx >= size) continue;
-                    if (Math.abs(d) === 1 && ((nIdx / w) | 0) !== cy) continue;
-
-                    const nx = nIdx % w, ny = (nIdx / w) | 0;
-                    if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
-
-                    const cellId = grid[nIdx];
-                    if (cellId !== -1) {
-                        if (cellId !== ignoreId && cellId !== heldId && nIdx !== targetIdx) continue;
-                    }
-
-                    const ng = cg + 1;
-                    if (ng < this.gScore[nIdx]) {
-                        this.gScore[nIdx] = ng;
-                        this.cameFrom[nIdx] = cIdx;
-                        this.heap.push({idx: nIdx, f: ng + Math.abs(tx - nx) + Math.abs(ty - ny)});
-                    }
-                }
-            }
-
-            const path = [];
-            let curr = bestNode;
-            while (curr !== startIdx && curr !== -1) {
-                path.unshift({x: curr % w, y: (curr / w) | 0});
-                curr = this.cameFrom[curr];
-            }
-            return path;
-        }
-    };
-
     function getPathInfo(state, startX, startY, targetX, targetY, ignoreCubeId) {
         const blocked = buildBlockedSet(state, ignoreCubeId);
+        const key = (x, y) => x + ',' + y;
         const visited = new Set();
         const queue = [{x: Math.round(startX), y: Math.round(startY), dist: 0}];
-        visited.add((queue[0].y << 12) | queue[0].x);
+
+        visited.add(key(queue[0].x, queue[0].y));
 
         while (queue.length > 0) {
             const current = queue.shift();
+
+            // Distance check (approximate for area goals)
             const dx = Math.abs(current.x - Math.round(targetX));
             const dy = Math.abs(current.y - Math.round(targetY));
-            if (dx <= 1 && dy <= 1) return {reachable: true, distance: current.dist};
+
+            if (dx <= 1 && dy <= 1) {
+                return {reachable: true, distance: current.dist};
+            }
+
             const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
             for (const [ox, oy] of dirs) {
                 const nx = current.x + ox;
                 const ny = current.y + oy;
-                const nKey = (ny << 12) | nx;
+                const nKey = key(nx, ny);
+
                 if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
                 if (visited.has(nKey)) continue;
                 if (blocked.has(nKey)) continue;
+
                 visited.add(nKey);
                 queue.push({x: nx, y: ny, dist: current.dist + 1});
             }
         }
+
         return {reachable: false, distance: Infinity};
     }
 
+    // =========================================================================================
+    // MANUAL MODE PERFORMANCE OPTIMIZATIONS
+    // =========================================================================================
+    //
+    // This section contains performance-critical code for manual mode pathfinding.
+    // All structures and functions here are MANUAL-MODE-ONLY and do not affect automatic mode.
+    //
+    // Key optimizations:
+    // 1. Per-tick cached blocked set (avoids rebuilding O(n) cube scan per pathfind call)
+    // 2. Bounded A* with Manhattan heuristic (focused exploration vs blind BFS)
+    // 3. Hard node expansion budget (guarantees bounded computation per click)
+    // 4. Click generation counter (allows superseding obsolete path requests)
+    //
+    // Complexity bounds:
+    // - Pathfind per click: O(BUDGET * log(BUDGET)) where BUDGET = 500 nodes
+    // - Blocked set per tick: O(cubes), cached and reused within same tick
+    // - Collision check per movement tick: O(1) using cached set
+
+    const MANUAL_PATH_NODE_BUDGET = 500; // Max A* node expansions per click
+
+    // Manual mode cache (separate from simulation state)
+    const manualModeCache = {
+        // Blocked set cache - valid for one tick only
+        blockedSet: null,
+        blockedSetTick: -1,
+        blockedSetIgnoreId: -999,
+
+        // Click superseding - newer clicks invalidate older path requests
+        clickGeneration: 0
+    };
+
+    // Get cached blocked set for manual mode (valid for one tick, O(1) after first call)
+    function getManualBlockedSetCached(state, ignoreCubeId) {
+        const actor = state.actors.get(state.activeActorId);
+        const heldId = actor.heldItem ? actor.heldItem.id : -1;
+        // Use heldId as default ignore (held item shouldn't block holder)
+        const effectiveIgnore = ignoreCubeId !== undefined && ignoreCubeId !== -1 ? ignoreCubeId : heldId;
+
+        // Return cached if valid for this tick and same ignore ID
+        if (manualModeCache.blockedSet !== null &&
+            manualModeCache.blockedSetTick === state.tickCount &&
+            manualModeCache.blockedSetIgnoreId === effectiveIgnore) {
+            return manualModeCache.blockedSet;
+        }
+
+        // Rebuild blocked set
+        const blocked = new Set();
+        for (const c of state.cubes.values()) {
+            if (c.deleted) continue;
+            if (c.id === effectiveIgnore) continue;
+            if (heldId !== -1 && c.id === heldId) continue;
+            blocked.add(Math.round(c.x) + ',' + Math.round(c.y));
+        }
+
+        // Cache for reuse
+        manualModeCache.blockedSet = blocked;
+        manualModeCache.blockedSetTick = state.tickCount;
+        manualModeCache.blockedSetIgnoreId = effectiveIgnore;
+
+        return blocked;
+    }
+
+    // Invalidate manual blocked set cache (call after pick/place modifies cube state)
+    function invalidateManualBlockedCache() {
+        manualModeCache.blockedSetTick = -1;
+    }
+
+    // Bounded A* pathfinder for manual mode
+    // Uses Manhattan heuristic with hard node expansion budget
+    // Returns: array of {x,y} waypoints, empty array if at target, null if unreachable
+    function findPathManual(state, startX, startY, targetX, targetY, ignoreCubeId) {
+        const blocked = getManualBlockedSetCached(state, ignoreCubeId);
+
+        const iStartX = Math.round(startX), iStartY = Math.round(startY);
+        const iTargetX = Math.round(targetX), iTargetY = Math.round(targetY);
+
+        // Already at target
+        if (iStartX === iTargetX && iStartY === iTargetY) return [];
+
+        const key = (x, y) => x + ',' + y;
+        const h = (x, y) => Math.abs(x - iTargetX) + Math.abs(y - iTargetY); // Manhattan heuristic
+
+        // A* with array-based open set (linear scan OK for bounded search)
+        const open = [{x: iStartX, y: iStartY, g: 0, f: h(iStartX, iStartY), parent: null}];
+        const gScore = new Map();
+        const closed = new Set();
+        gScore.set(key(iStartX, iStartY), 0);
+
+        let expanded = 0;
+        let bestNode = open[0];
+        let bestH = h(iStartX, iStartY);
+
+        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+
+        while (open.length > 0 && expanded < MANUAL_PATH_NODE_BUDGET) {
+            // Find min-f node (linear scan, O(n) but n is bounded by budget)
+            let minIdx = 0;
+            for (let i = 1; i < open.length; i++) {
+                if (open[i].f < open[minIdx].f) minIdx = i;
+            }
+
+            // O(1) removal: swap with last and pop
+            const cur = open[minIdx];
+            open[minIdx] = open[open.length - 1];
+            open.pop();
+
+            const curKey = key(cur.x, cur.y);
+            if (closed.has(curKey)) continue;
+            closed.add(curKey);
+            expanded++;
+
+            // Goal reached
+            if (cur.x === iTargetX && cur.y === iTargetY) {
+                return reconstructManualPath(cur);
+            }
+
+            // Track best node for partial path on budget exhaustion
+            const curH = h(cur.x, cur.y);
+            if (curH < bestH) {
+                bestH = curH;
+                bestNode = cur;
+            }
+
+            // Expand neighbors
+            for (const [dx, dy] of dirs) {
+                const nx = cur.x + dx, ny = cur.y + dy;
+                const nKey = key(nx, ny);
+
+                // Bounds check (must match findNextStep boundaries for consistency)
+                if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
+                if (closed.has(nKey)) continue;
+                // Allow entering target cell even if blocked (for pick interactions)
+                if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
+
+                const ng = cur.g + 1;
+                const existingG = gScore.get(nKey);
+                if (existingG === undefined || ng < existingG) {
+                    gScore.set(nKey, ng);
+                    open.push({x: nx, y: ny, g: ng, f: ng + h(nx, ny), parent: cur});
+                }
+            }
+        }
+
+        // Budget exhausted or unreachable - log if budget was the limit
+        if (expanded >= MANUAL_PATH_NODE_BUDGET) {
+            log.debug("Manual pathfind budget exhausted", {
+                expanded: expanded,
+                bestH: bestH,
+                startH: h(iStartX, iStartY)
+            });
+        }
+
+        // Return best-effort partial path to closest reachable cell
+        if (bestNode && bestH < h(iStartX, iStartY)) {
+            return reconstructManualPath(bestNode);
+        }
+
+        return null; // No path found
+    }
+
+    // Reconstruct path from A* node chain
+    function reconstructManualPath(node) {
+        const path = [];
+        let n = node;
+        while (n && n.parent) {
+            path.unshift({x: n.x, y: n.y});
+            n = n.parent;
+        }
+        return path;
+    }
+
+    // =========================================================================================
+    // END MANUAL MODE PERFORMANCE OPTIMIZATIONS
+    // =========================================================================================
+
+    // Calculate full path for click-based movement (BFS).
+    // Returns array of {x,y} waypoints.
+    // NOTE: This function is kept for reference but manual mode now uses findPathManual()
     function findPath(state, startX, startY, targetX, targetY, ignoreCubeId, searchLimit) {
-        return manualPathfinder.find(state, startX, startY, targetX, targetY, ignoreCubeId);
+        const blocked = buildBlockedSet(state, ignoreCubeId);
+        const key = (x, y) => x + ',' + y;
+        const iStartX = Math.round(startX);
+        const iStartY = Math.round(startY);
+        const iTargetX = Math.round(targetX);
+        const iTargetY = Math.round(targetY);
+
+        if (iStartX === iTargetX && iStartY === iTargetY) return [];
+
+        const visited = new Map(); // Key -> Parent Key
+        const queue = [{x: iStartX, y: iStartY}];
+        const startKey = key(iStartX, iStartY);
+        visited.set(startKey, null);
+
+        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+        let found = false;
+        let finalNode = null;
+
+        let iterations = 0;
+        let bestNode = queue[0];
+        let bestDist = Infinity;
+
+        while (queue.length > 0) {
+            if (searchLimit && iterations >= searchLimit) {
+                finalNode = bestNode;
+                break;
+            }
+            iterations++;
+
+            const cur = queue.shift();
+
+            if (cur.x === iTargetX && cur.y === iTargetY) {
+                found = true;
+                finalNode = cur;
+                break;
+            }
+
+            const dist = Math.abs(cur.x - iTargetX) + Math.abs(cur.y - iTargetY);
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestNode = cur;
+            }
+
+            for (const [ox, oy] of dirs) {
+                const nx = cur.x + ox;
+                const ny = cur.y + oy;
+                const nKey = key(nx, ny);
+
+                if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
+                // Allow entering target cell even if technically blocked (e.g. picking item)
+                if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
+                if (visited.has(nKey)) continue;
+
+                visited.set(nKey, cur); // Store parent node object
+                queue.push({x: nx, y: ny, parent: cur});
+            }
+        }
+
+        if (!found && !finalNode) return null;
+
+        // Reconstruct path
+        const path = [];
+        let curr = finalNode; // The node from the queue which has .parent
+        while (curr.parent) {
+            path.unshift({x: curr.x, y: curr.y});
+            curr = curr.parent;
+        }
+        return path;
     }
 
     function findNextStep(state, startX, startY, targetX, targetY, ignoreCubeId) {
-        // Optimization: Use the cached grid A* pathfinder instead of ad-hoc BFS
+        // Keeps original implementation for Automatic mode
+        const blocked = buildBlockedSet(state, ignoreCubeId);
+        const key = (x, y) => x + ',' + y;
+        const iStartX = Math.round(startX);
+        const iStartY = Math.round(startY);
+        const iTargetX = Math.round(targetX);
+        const iTargetY = Math.round(targetY);
+
+        // DEBUG: Check if pathfinding from (5,18) to goal and (6,18) is blocked
+        if (iStartX === 5 && iStartY === 18 && iTargetX === 8 && iTargetY === 18) {
+            log.warn("findNextStep DEBUG: start=(5,18) target=(8,18) blocked.has('6,18')=" + blocked.has('6,18') + " ignoreCubeId=" + ignoreCubeId + " tick=" + state.tickCount);
+        }
+
+        // Simple reach check
         if (Math.abs(startX - targetX) < 1.0 && Math.abs(startY - targetY) < 1.0) {
             return {x: targetX, y: targetY};
         }
-        const path = manualPathfinder.find(state, startX, startY, targetX, targetY, ignoreCubeId);
-        if (path && path.length > 0) {
-            return path[0];
+
+        const visited = new Set();
+        const queue = [];
+        visited.add(key(iStartX, iStartY));
+
+        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
+        for (const [ox, oy] of dirs) {
+            const nx = iStartX + ox;
+            const ny = iStartY + oy;
+            const nKey = key(nx, ny);
+
+            if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
+            // Allow entering target cell
+            if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
+
+            if (nx === iTargetX && ny === iTargetY) {
+                return {x: nx, y: ny};
+            }
+
+            queue.push({x: nx, y: ny, firstX: ox, firstY: oy});
+            visited.add(nKey);
         }
+
+        while (queue.length > 0) {
+            const cur = queue.shift();
+
+            if (cur.x === iTargetX && cur.y === iTargetY) {
+                return {x: startX + cur.firstX, y: startY + cur.firstY};
+            }
+
+            for (const [ox, oy] of dirs) {
+                const nx = cur.x + ox;
+                const ny = cur.y + oy;
+                const nKey = key(nx, ny);
+
+                if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
+                if (blocked.has(nKey) && !(nx === iTargetX && ny === iTargetY)) continue;
+                if (visited.has(nKey)) continue;
+
+                visited.add(nKey);
+                queue.push({x: nx, y: ny, firstX: cur.firstX, firstY: cur.firstY});
+            }
+        }
+
         return null;
     }
 
+    // Dynamic Blocker Discovery (PA-BT Dynamic Obstacle Handling)
+
+    /**
+     * Finds the ID of the first MOVABLE cube blocking the path from start to target.
+     * Uses BFS to explore reachable area, then identifies the nearest blocking cube
+     * on the frontier.
+     *
+     * @param {Object} state - Simulation state
+     * @param {number} fromX - Starting X coordinate
+     * @param {number} fromY - Starting Y coordinate
+     * @param {number} toX - Target X coordinate
+     * @param {number} toY - Target Y coordinate
+     * @param {number} excludeId - Optional cube ID to exclude from blockers (e.g., TARGET)
+     * @returns {number|null} - ID of first blocking movable cube, or null if path is clear
+     */
     function findFirstBlocker(state, fromX, fromY, toX, toY, excludeId) {
+        const key = (x, y) => x + ',' + y;
         const actor = state.actors.get(state.activeActorId);
+
+        // Build cube position lookup: position -> cubeId (only MOVABLE cubes)
         const cubeAtPosition = new Map();
         state.cubes.forEach(c => {
             if (c.deleted) return;
-            if (c.isStatic) return;
-            if (actor.heldItem && c.id === actor.heldItem.id) return;
-            if (excludeId !== undefined && c.id === excludeId) return;
-            cubeAtPosition.set((Math.round(c.y) << 12) | Math.round(c.x), c.id);
+            if (c.isStatic) return; // Walls can't be moved - skip
+            if (actor.heldItem && c.id === actor.heldItem.id) return; // Ignore held item
+            if (excludeId !== undefined && c.id === excludeId) return; // Ignore excluded cube (e.g., target)
+            cubeAtPosition.set(key(Math.round(c.x), Math.round(c.y)), c.id);
         });
 
+        // DEBUG: Log ring blocker positions once per call (first 100 ticks only)
+        if (state.tickCount < 100 && toX === 8 && toY === 18) {
+            var positions = [];
+            cubeAtPosition.forEach(function (id, pos) {
+                positions.push(pos + ":" + id);
+            });
+        }
+
+        // Build blocked set for pathfinding (pass excludeId to exclude it from blocked cells)
         const blocked = buildBlockedSet(state, excludeId !== undefined ? excludeId : -1);
+
         const visited = new Set();
-        const frontier = [];
+        const frontier = []; // Cells we tried to enter but were blocked by movable cubes
         const queue = [{x: Math.round(fromX), y: Math.round(fromY)}];
-        visited.add((queue[0].y << 12) | queue[0].x);
+
+        visited.add(key(queue[0].x, queue[0].y));
+
         const targetIX = Math.round(toX);
         const targetIY = Math.round(toY);
 
+        // BFS to find path and collect frontier
         while (queue.length > 0) {
             const current = queue.shift();
+
+            // Check if we've reached adjacency to target
             const dx = Math.abs(current.x - targetIX);
             const dy = Math.abs(current.y - targetIY);
-            if (dx <= 1 && dy <= 1) return null;
+            if (dx <= 1 && dy <= 1) {
+                // DEBUG: Log when we reach adjacency
+                if (state.tickCount < 100 && targetIX === 8 && targetIY === 18) {
+                }
+                return null; // Path exists, no blocker
+            }
 
             const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
             for (const [ox, oy] of dirs) {
                 const nx = current.x + ox;
                 const ny = current.y + oy;
-                const nKey = (ny << 12) | nx;
+                const nKey = key(nx, ny);
+
                 if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
                 if (visited.has(nKey)) continue;
 
                 if (blocked.has(nKey)) {
+                    // This cell is blocked - check if by a movable cube
                     const blockerId = cubeAtPosition.get(nKey);
                     if (blockerId !== undefined) {
+                        // Found a movable blocker!
                         frontier.push({x: nx, y: ny, id: blockerId, dist: current.dist || 0});
                     }
                     continue;
                 }
+
                 visited.add(nKey);
                 queue.push({x: nx, y: ny, dist: (current.dist || 0) + 1});
             }
         }
 
+        // Path is blocked - return the blocker closest to the goal
+        // IMPORTANT: Sort by distance to GOAL, not to actor. This ensures we prioritize
+        // clearing blockers that are actually blocking access to the goal, rather than
+        // incidental blockers in the opposite direction from the goal.
         if (frontier.length > 0) {
             frontier.sort((a, b) => {
                 const distA = Math.abs(a.x - toX) + Math.abs(a.y - toY);
@@ -606,11 +878,15 @@ try {
             });
             return frontier[0].id;
         }
-        return null;
+
+        return null; // No movable blockers found (blocked by walls only)
     }
+
+    // Blackboard Synchronization
 
     function syncToBlackboard(state) {
         if (!state.blackboard) return;
+
         const bb = state.blackboard;
         const actor = state.actors.get(state.activeActorId);
         const ax = Math.round(actor.x);
@@ -620,16 +896,25 @@ try {
         bb.set('actorY', actor.y);
         bb.set('heldItemExists', actor.heldItem !== null);
         bb.set('heldItemId', actor.heldItem ? actor.heldItem.id : -1);
+        // REFACTORED: Removed heldItemIsBlockade - all items treated uniformly
 
+        // Entities - track proximity AND path blockers for TARGET cube
+        // FIX (review.md 4.1): Compute pathBlocker_to_Target every tick, not just when holding target.
+        // This prevents "Self-Blockage Blindness" - agent must know if target is blocked even when
+        // it's not holding the target (e.g., after dropping target to clear path).
         state.cubes.forEach(cube => {
             if (!cube.deleted) {
                 const dist = Math.sqrt(Math.pow(cube.x - ax, 2) + Math.pow(cube.y - ay, 2));
+                // 1.8 threshold for entity proximity (slightly larger than goal's 1.5)
                 const atEntity = dist <= 1.8;
                 bb.set('atEntity_' + cube.id, atEntity);
 
+                // For TARGET cube specifically, compute path blocker every tick
+                // This is needed because agent may need to re-acquire target after placing it
                 if (cube.id === TARGET_ID) {
                     const cubeX = Math.round(cube.x);
                     const cubeY = Math.round(cube.y);
+                    // Exclude TARGET_ID from being considered a blocker to itself
                     const blocker = findFirstBlocker(state, ax, ay, cubeX, cubeY, TARGET_ID);
                     bb.set('pathBlocker_entity_' + cube.id, blocker === null ? -1 : blocker);
                 }
@@ -641,11 +926,19 @@ try {
             }
         });
 
+        // Goals - track proximity and path blockers
+        // FIX (review.md 4.1): ALWAYS compute pathBlocker_to_Goal, regardless of what agent is holding.
+        // The old code only computed this when holding target - causing "Self-Blockage Blindness".
         state.goals.forEach(goal => {
             const dist = Math.sqrt(Math.pow(goal.x - ax, 2) + Math.pow(goal.y - ay, 2));
+            // 1.5 threshold ensures physical adjacency for goal area (stricter than entities)
             bb.set('atGoal_' + goal.id, dist <= 1.5);
+
+            // Compute path blocker to goal UNCONDITIONALLY every tick
+            // This allows the planner to plan ahead even when not yet holding target
             const goalX = Math.round(goal.x);
             const goalY = Math.round(goal.y);
+            // Exclude TARGET_ID from being considered a blocker (we carry target TO the goal)
             const blocker = findFirstBlocker(state, ax, ay, goalX, goalY, TARGET_ID);
             bb.set('pathBlocker_goal_' + goal.id, blocker === null ? -1 : blocker);
         });
@@ -653,8 +946,13 @@ try {
         bb.set('cubeDeliveredAtGoal', state.winConditionMet);
     }
 
+    // =========================================================================================
+    // MANUAL MODE BEHAVIOR TREE
+    // =========================================================================================
+
     function createManualMoveLeaf(state) {
         return bt.createLeafNode(() => {
+            // If no path, we are done moving
             if (state.manualPath.length === 0) return bt.success;
 
             const actor = state.actors.get(state.activeActorId);
@@ -668,26 +966,23 @@ try {
                 const nextX = actor.x + Math.sign(dx) * Math.min(MANUAL_MOVE_SPEED, Math.abs(dx));
                 const nextY = actor.y + Math.sign(dy) * Math.min(MANUAL_MOVE_SPEED, Math.abs(dy));
 
-                let nextBlocked = false;
-                for (const c of state.cubes.values()) {
-                    if (!c.deleted && Math.round(c.x) === Math.round(nextX) && Math.round(c.y) === Math.round(nextY)) {
-                        if (actor.heldItem && c.id === actor.heldItem.id) continue;
-                        nextBlocked = true;
-                        break;
-                    }
-                }
+                // O(1) collision check using cached blocked set
+                const blocked = getManualBlockedSetCached(state, -1);
+                const nextBlocked = blocked.has(Math.round(nextX) + ',' + Math.round(nextY));
 
                 if (nextBlocked) {
                     state.manualPath = [];
-                    state.manualMoveTarget = null;
+                    state.manualMoveTarget = null; // Abort target if path blocked
                     state.pathStuckTicks = 0;
                     return bt.failure;
                 }
 
+                // Move
                 const oldDist = dist;
                 actor.x += Math.sign(dx) * Math.min(MANUAL_MOVE_SPEED, Math.abs(dx));
                 actor.y += Math.sign(dy) * Math.min(MANUAL_MOVE_SPEED, Math.abs(dy));
 
+                // Check stuck
                 const newDist = Math.sqrt(Math.pow(nextPoint.x - actor.x, 2) + Math.pow(nextPoint.y - actor.y, 2));
                 if (newDist >= oldDist - 0.01) state.pathStuckTicks++;
                 else state.pathStuckTicks = 0;
@@ -699,6 +994,7 @@ try {
                     return bt.failure;
                 }
             } else {
+                // Arrived at waypoint
                 actor.x = nextPoint.x;
                 actor.y = nextPoint.y;
                 state.manualPath.shift();
@@ -712,6 +1008,7 @@ try {
     function createManualInteractLeaf(state) {
         return bt.createLeafNode(() => {
             if (!state.manualMoveTarget) return bt.success;
+            // If we still have a path, we shouldn't be interacting yet
             if (state.manualPath.length > 0) return bt.running;
 
             const clickX = state.manualMoveTarget.x;
@@ -731,6 +1028,7 @@ try {
             if (dist <= PICK_THRESHOLD) {
                 if (isHolding) {
                     const ignoreId = actor.heldItem.id;
+                    // ONLY place if we clicked on an EMPTY cell (not even a deleted one)
                     if (!clickedCube) {
                         const c = state.cubes.get(ignoreId);
                         if (c) {
@@ -738,27 +1036,31 @@ try {
                             c.x = clickX;
                             c.y = clickY;
                             actor.heldItem = null;
-                            manualPathfinder.invalidate();
+                            // Invalidate cache after placement changes occupancy
+                            invalidateManualBlockedCache();
                             if (ignoreId === TARGET_ID && isInGoalArea(clickX, clickY)) state.winConditionMet = true;
                         }
                     }
                 } else if (clickedCube && !clickedCube.isStatic && !clickedCube.deleted) {
                     clickedCube.deleted = true;
                     actor.heldItem = {id: clickedCube.id};
-                    manualPathfinder.invalidate();
+                    // Invalidate cache after pick changes occupancy
+                    invalidateManualBlockedCache();
                 } else if (!isHolding && !clickedCube) {
+                    // Try pick nearest if we clicked empty space near a cube
                     const nearestCube = findNearestPickableCube(state, clickX, clickY);
                     if (nearestCube) {
                         const actorToCubeDist = Math.sqrt(Math.pow(nearestCube.x - actor.x, 2) + Math.pow(nearestCube.y - actor.y, 2));
                         if (actorToCubeDist <= PICK_THRESHOLD) {
                             nearestCube.deleted = true;
                             actor.heldItem = {id: nearestCube.id};
-                            manualPathfinder.invalidate();
+                            // Invalidate cache after pick changes occupancy
+                            invalidateManualBlockedCache();
                         }
                     }
                 }
             }
-            state.manualMoveTarget = null;
+            state.manualMoveTarget = null; // Action complete
             return bt.success;
         });
     }
@@ -769,6 +1071,14 @@ try {
             createManualInteractLeaf(state)
         );
     }
+
+    // TRUE PARAMETRIC ACTIONS via ActionGenerator
+
+    // CRITICAL FIX (ISSUE-001): Removed actionCache entirely.
+    // PA-BT nodes are STATEFUL - they retain Running status or child indices.
+    // Caching and reusing nodes causes "zombie state" corruption where a node
+    // retains state from a previous execution context.
+    // Always create fresh Action/Node instances. GC cost is negligible.
 
     function createMoveToAction(state, entityType, entityId, extraPreconditions) {
         const name = 'MoveTo_' + entityType + '_' + entityId;
@@ -783,10 +1093,14 @@ try {
             pathBlockerKey = 'pathBlocker_goal_' + entityId;
         }
 
+        // DYNAMIC PRECONDITION for GOAL and TARGET MoveTo:
+        // - Requires clear path to trigger dynamic obstacle clearing (ClearPath/Bridge Actions)
+        // - For non-target entities, we skip this to prevent regression (only Target needs guaranteed path)
         const conditions = [];
         if (entityType === 'goal' || (entityType === 'cube' && entityId === TARGET_ID)) {
             conditions.push({key: pathBlockerKey, value: -1, Match: v => v === -1});
         }
+        // Add any extra preconditions (e.g., TARGET MoveTo needs pathBlocker_goal=-1)
         if (extraPreconditions) {
             conditions.push(...extraPreconditions);
         }
@@ -798,6 +1112,7 @@ try {
 
             const actor = state.actors.get(state.activeActorId);
 
+            // AGGRESSIVE DEBUG: Log ALL movements near tick 1000
             if (state.tickCount > 950 && state.tickCount < 1050) {
                 log.warn("TRACE-MOVETO " + name + " tick=" + state.tickCount + " actor=(" + actor.x.toFixed(2) + "," + actor.y.toFixed(2) + ") round=(" + Math.round(actor.x) + "," + Math.round(actor.y) + ")");
             }
@@ -822,6 +1137,10 @@ try {
             const dx = targetX - actor.x;
             const dy = targetY - actor.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
+
+            // CRITICAL FIX (ISSUE-002): Uniform threshold of 1.5 for all MoveTo actions.
+            // This is STRICTER than atEntity_X (1.8) and equal to atGoal_X (1.5),
+            // ensuring MoveTo success always implies the blackboard condition is met.
             const threshold = 1.5;
 
             if (dist <= threshold) {
@@ -836,11 +1155,14 @@ try {
                 var newX = actor.x + Math.sign(stepDx) * Math.min(1.0, Math.abs(stepDx));
                 var newY = actor.y + Math.sign(stepDy) * Math.min(1.0, Math.abs(stepDy));
 
+                // DEBUG: Check if destination is blocked
                 var checkBlocked = buildBlockedSet(state, ignoreCubeId);
-                var destKey = (Math.round(newY) << 12) | Math.round(newX);
+                var destKey = Math.round(newX) + ',' + Math.round(newY);
 
+                // DEBUG: Special check for the ring blocker at (6,18)
                 if (Math.round(newX) === 6 && Math.round(newY) === 18) {
                     log.warn("MoveTo " + name + " CRITICAL: Entering cell (6,18)! destKey=" + destKey + " blockedHas=" + checkBlocked.has(destKey) + " ignoreCubeId=" + ignoreCubeId);
+                    // Check what blocker is at (6,18)
                     state.cubes.forEach(function (c) {
                         if (Math.round(c.x) === 6 && Math.round(c.y) === 18) {
                             log.warn("  -> Cube at (6,18): id=" + c.id + " deleted=" + c.deleted);
@@ -850,6 +1172,7 @@ try {
 
                 if (checkBlocked.has(destKey)) {
                     log.warn("MoveTo " + name + " BUG: trying to move into blocked cell (" + Math.round(newX) + "," + Math.round(newY) + ") from (" + oldX + "," + oldY + ")");
+
                 }
 
                 actor.x = newX;
@@ -1405,7 +1728,7 @@ try {
 
                 for (const n of neighbors) {
                     const p = findPath(state, actor.x, actor.y, n.x, n.y, ignoreId, searchLimit);
-                    if (p !== null && p.length > 0) {
+                    if (p !== null) {
                         path = p;
                         break;
                     }

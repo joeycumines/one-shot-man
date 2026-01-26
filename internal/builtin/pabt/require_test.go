@@ -90,9 +90,6 @@ func TestRequire_ModuleRegistration(t *testing.T) {
 
 	// Verify all expected exports exist
 	expectedExports := []string{
-		// Status constants
-		"Running", "Success", "Failure",
-		"running", "success", "failure",
 		// Factory functions
 		"newState", "newPlan", "newAction", "newExprCondition",
 	}

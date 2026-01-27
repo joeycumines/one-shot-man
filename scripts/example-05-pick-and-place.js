@@ -418,7 +418,6 @@ try {
             const current = queue.shift();
             const dx = Math.abs(current.x - iTargetX);
             const dy = Math.abs(current.y - iTargetY);
-
             if (dx <= 1 && dy <= 1) {
                 return {reachable: true, distance: current.dist};
             }
@@ -709,6 +708,47 @@ try {
         }
     }
 
+    // [OPTIMIZATION] Single-Pass Reachability Map (Dijkstra Flood Fill)
+    // Replaces O(N) pathfinding calls with O(1) global flood fill.
+    function computeReachabilityMap(state, startX, startY) {
+        const visited = new Set();
+        const frontier = [];
+        const queue = [{x: Math.round(startX), y: Math.round(startY)}];
+        const keyInt = (x, y) => (y * state.width + x);
+        const startKey = keyInt(queue[0].x, queue[0].y);
+
+        visited.add(startKey);
+
+        const actor = state.actors.get(state.activeActorId);
+        const heldId = actor.heldItem ? actor.heldItem.id : -1;
+
+        while (queue.length > 0) {
+            const current = queue.shift();
+
+            for (const [ox, oy] of DIRS_4) {
+                const nx = current.x + ox;
+                const ny = current.y + oy;
+                const nKey = keyInt(nx, ny);
+
+                if (nx < 1 || nx >= state.spaceWidth - 1 || ny < 1 || ny >= state.height - 1) continue;
+                if (visited.has(nKey)) continue;
+
+                const blockId = state.spatialGrid.get(nx, ny);
+                // Treat held item as transparent
+                if (blockId !== undefined && (!heldId || blockId !== heldId)) {
+                    // Hit an obstacle: Add to frontier, do not traverse
+                    frontier.push({x: nx, y: ny, id: blockId});
+                    // We do NOT add to visited to allow re-discovery if needed, but for flood fill 'frontier' is sufficient
+                } else {
+                    // Open space
+                    visited.add(nKey);
+                    queue.push({x: nx, y: ny});
+                }
+            }
+        }
+        return {visited, frontier};
+    }
+
     function syncToBlackboard(state) {
         if (!state.blackboard) return;
 
@@ -723,19 +763,48 @@ try {
 
         // Expensive Geometry checks run ONLY when dirty
         if (state.gridDirty) {
+            // [OPTIMIZATION] Compute global reachability ONCE
+            const {visited, frontier} = computeReachabilityMap(state, ax, ay);
+            const keyInt = (x, y) => (y * state.width + x);
+
+            // Helper: Resolve blocker for any target using the pre-computed frontier
+            const resolveBlocker = (tx, ty) => {
+                const itx = Math.round(tx);
+                const ity = Math.round(ty);
+
+                // 1. Check if neighbor is reachable (Path Clear)
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        if (visited.has(keyInt(itx + dx, ity + dy))) return -1; // Clear
+                    }
+                }
+
+                // 2. If unreachable, find closest frontier obstacle
+                if (frontier.length === 0) return -2; // Totally isolated
+
+                let closestId = -2;
+                let minDist = Infinity;
+                for (const f of frontier) {
+                    const d = Math.abs(f.x - itx) + Math.abs(f.y - ity);
+                    if (d < minDist) {
+                        minDist = d;
+                        closestId = f.id;
+                    }
+                }
+                return closestId;
+            };
+
             state.cubes.forEach(cube => {
                 if (!cube.deleted) {
                     const dist = Math.sqrt(Math.pow(cube.x - ax, 2) + Math.pow(cube.y - ay, 2));
                     const atEntity = dist <= 1.8;
                     syncValue(state, 'atEntity_' + cube.id, atEntity);
 
-                    // [FIX] Generalized Path Blocker Logic: Include obstacles (ID >= 100), not just Target
+                    // [FIX] Generalized Path Blocker Logic using Optimization
+                    // Only compute for Target or Obstacles (ID >= 100)
                     if (cube.id === TARGET_ID || cube.id >= 100) {
-                        const cubeX = Math.round(cube.x);
-                        const cubeY = Math.round(cube.y);
-                        const blocker = findFirstBlocker(state, ax, ay, cubeX, cubeY, TARGET_ID);
-                        // [FIX] Distinct Return Value Handling: null -> -1 (Clear), -2 -> -2 (Unreachable), ID -> ID
-                        syncValue(state, 'pathBlocker_entity_' + cube.id, blocker === null ? -1 : blocker);
+                        const blocker = resolveBlocker(cube.x, cube.y);
+                        syncValue(state, 'pathBlocker_entity_' + cube.id, blocker);
                     }
                 } else {
                     syncValue(state, 'atEntity_' + cube.id, false);
@@ -749,11 +818,9 @@ try {
                 const dist = Math.sqrt(Math.pow(goal.x - ax, 2) + Math.pow(goal.y - ay, 2));
                 syncValue(state, 'atGoal_' + goal.id, dist <= 1.5);
 
-                const goalX = Math.round(goal.x);
-                const goalY = Math.round(goal.y);
-                const blocker = findFirstBlocker(state, ax, ay, goalX, goalY, TARGET_ID);
-                // [FIX] Distinct Return Value Handling: null -> -1 (Clear), -2 -> -2 (Unreachable), ID -> ID
-                syncValue(state, 'pathBlocker_goal_' + goal.id, blocker === null ? -1 : blocker);
+                // [FIX] Optimized Goal Blocker Logic
+                const blocker = resolveBlocker(goal.x, goal.y);
+                syncValue(state, 'pathBlocker_goal_' + goal.id, blocker);
             });
             state.gridDirty = false;
         }

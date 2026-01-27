@@ -10,6 +10,9 @@
       "status": "IN_PROGRESS",
       "subtasks": [
         "Fixed collision detection in TestPickAndPlaceCompletion - actor (5,11) is outside room bounds (20-55,6-16)",
+        "DIAGNOSING: Agent gets stuck at (11,18) holding target (ID=1), goal at (8,18), distance 3.0 units (threshold: 1.5)",
+        "DIAGNOSING: Path blocked by cube 107 (goal blockade), planner cannot progress",
+        "Need to determine if agent at (11,18) vs goal at (8,18) is deliberate scenario or bug",
         "Need to verify TestPickAndPlaceConflictResolution passes",
         "Need to verify other pick-and-place tests pass"
       ],
@@ -25,6 +28,7 @@
         "Fixed syncToBlackboard() path blocker computation in example-05-pick-and-place.js",
         "Fixed TypeCommand() script path resolution in vhs_record_unix_test.go (removed ../../../ prefix)",
         "Removed WithRecorderDir(repoRoot) from TestRecording_Script_BT_Shooter and TestRecording_Script_PickAndPlace",
+        "DIAGNOSING: Same stuck agent issue in Task 1 (agent at (11,18) cannot reach goal at (8,18))",
         "Need to verify PA-BT tests are now deterministic and sub-second",
         "Need to run tests 100 times - no flakes"
       ],

@@ -5,80 +5,19 @@
  * @description
  * Pick-and-Place Simulator demonstrating osm:pabt PA-BT planning integration.
  *
- * =========================================================================================
- * ARCHITECTURAL MANIFESTO: THE PA-BT STANDARD
- * =========================================================================================
+ * Implementation of Planning and Acting using Behavior Trees (PA-BT).
+ * The system functions as a dynamic planner that interleaves planning and execution.
  *
- * This implementation adheres strictly to "Behavior Trees in Robotics and AI" (Colledanchise & Ögren).
- * The system functions as a dynamic planner, not a scripted state machine.
+ * Precondition Ordering Strategy:
+ * 1. Conflict Resolution (Inter-Task): The planner dynamically handles dependencies between
+ * tasks (e.g., A clobbers B) by moving conflicting subtrees to the left (higher priority).
+ * 2. PPA Template (Intra-Task): Statically handles reactivity within an action unit using
+ * the fallback structure: Fallback(Goal Check, Sequence(Preconditions, Action)).
  *
- * 1. THE POSTCONDITION-PRECONDITION-ACTION (PPA) UNIT
- * The fundamental atom of this system is NOT the Action, but the PPA expansion.
- * Structure: `Fallback(Condition C, Sequence(Preconditions(A), A))`
- * The planner generates a tree that satisfies conditions, rather than a linear queue of tasks.
- *
- * 2. DESCRIPTIVE VS. OPERATIONAL MODELS
- * For the reactive loop to function, the "Descriptive Model" (what the planner thinks an action does)
- * MUST match the "Operational Model" (what the physics engine actually does).
- * Discrepancies here lead to Livelocks (infinite replanning) or Deadlocks.
- *
- * =========================================================================================
- * DEFINED ANTI-PATTERNS & REQUIRED FIXES
- * =========================================================================================
- *
- * To ensure architectural integrity, the following patterns are explicitly defined and prohibited:
- *
- * [A] THE "GOD-PRECONDITION" ANTI-PATTERN
- * Definition: A single action listing every potential global blockade in its preconditions.
- * Failure Mode: Violates **Lazy Expansion**. It forces the planner to "solve" the entire map layout
- * before execution begins, coupling atomic actions to global geometry.
- * Refutation: The planner must not expand subtrees for conditions that are not yet relevant.
- *
- * [B] THE "ATOMIC ACTION" ANTI-PATTERN
- * Definition: A single action (e.g., `AtomicClearPath`) that handles moving, picking, and placing
- * in one tick to avoid planning complexity.
- * Failure Mode: Violates **Reactive Granularity**. It creates a "Black Box" that prevents reactive repair.
- * If the atomic action fails mid-execution, the planner has no visibility into the partial state.
- *
- * [C] THE "COUPLED ACTION" ANTI-PATTERN (Violates Modularity)
- * Definition: An action (e.g., `Pick`) encoding preconditions for downstream tasks (e.g., `Deliver`).
- * Failure Mode: Creates hidden dependencies and circular logic (e.g., requiring a path to Goal to be
- * clear before Picking, when Picking might be required to clear the path).
- * Correction: Actions must only encode local requirements (e.g., Pick only cares that the object is reachable).
- *
- * [D] THE SOLUTION: THE "BRIDGE ACTION" PATTERN
- * Requirement: Use **Dynamic Discovery**.
- * Instead of hardcoding map data, the ActionGenerator must dynamically inject "Bridge Actions"
- * (e.g., `ClearBlocker_X`) only when a specific navigational condition (`reachable_Target`) fails.
- *
- * =========================================================================================
- * CRITICAL RUNTIME WARNINGS
- * =========================================================================================
- *
- * 1. TRUTHFUL EFFECTS (THE ANTI-LIVELOCK RULE)
- * Do not assert that an action satisfies a high-level condition unless it guarantees it physically.
- * * BAD: `Pick_Obstacle` claims Effect `isPathClear = true`. (Lying: picking one might not clear the path).
- * * GOOD: `Pick_Obstacle_A` claims Effect `isCleared(A) = true`.
- *
- * 2. NO "ZOMBIE STATE" (DISABLE CACHING)
- * BT Nodes contain internal state (`Running`, `childIndex`). Reusing node instances (Action Caching)
- * across branches creates "Zombie State," where a node behaves as if running from a previous context.
- * ALWAYS instantiate fresh BT nodes in the Generator.
- *
- * 3. AVOID "SELF-BLOCKAGE BLINDNESS"
- * The Blackboard must compute path blockers for ALL relevant destinations (Goal and Target) every tick.
- * Do not gate blocker detection behind `if (holding target)`. The agent must know the path is blocked
- * even if it has dropped the target to clear the way.
- *
- * 4. PREVENT "SILENT FAILURE"
- * An action must not secretly reject a target in its tick function if that restriction is not
- * declared in its Preconditions.
- * * If `Place_Obstacle` cannot handle the Target, it must explicitly Precondition: `!heldItemIsTarget`.
- *
- * **WARNING RE: LOGGING:** This is an *interactive* terminal application.
- * It sets the terminal to raw mode.
- * DO NOT use console logging within the program itself (tea.run).
- * Instead, use the built-in 'log' global, for application logs (slog).
+ * Runtime Constraints:
+ * - Truthful Effects: Actions must only report success if the physical state actually changed.
+ * - Fresh Nodes: BT nodes are instantiated fresh to avoid state pollution.
+ * - Reactive Sensing: The Blackboard updates path blockers every tick.
  *
  * @see {@link https://btirai.github.io/ | Behavior Trees in Robotics and AI}
  * @module PA-BT-Logic
@@ -909,9 +848,9 @@ try {
                         const c = state.cubes.get(ignoreId);
                         if (c) {
                             c.deleted = false;
-                            state.spatialGrid.add(c.id, clickX, clickY);
                             c.x = clickX;
                             c.y = clickY;
+                            state.spatialGrid.add(c.id, clickX, clickY);
                             actor.heldItem = null;
                             state.spritesDirty = true;
                             // [FIX] Placing an item dirties the grid cache
@@ -980,7 +919,9 @@ try {
 
             if (entityType === 'cube') {
                 const cube = state.cubes.get(entityId);
-                if (!cube || cube.deleted) {
+                // Fix: Non-existent entity check
+                if (!cube) return bt.failure;
+                if (cube.deleted) {
                     return bt.success;
                 }
                 targetX = cube.x;
@@ -1052,7 +993,11 @@ try {
             if (state.gameMode !== 'automatic') return bt.running;
             const actor = state.actors.get(state.activeActorId);
             const cube = state.cubes.get(cubeId);
-            if (!cube || cube.deleted) return bt.success;
+            // Fix: Critical correctness constraints
+            if (!cube) return bt.failure;
+            if (cube.deleted) return bt.success;
+            if (cube.isStatic) return bt.failure;
+
             const dx = cube.x - actor.x;
             const dy = cube.y - actor.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
@@ -1216,7 +1161,8 @@ try {
                 }
                 if (key.startsWith('pathBlocker_')) {
                     const destId = key.replace('pathBlocker_', ''), currentBlocker = state.blackboard.get(key);
-                    if (targetValue === -1 && typeof currentBlocker === 'number' && currentBlocker !== -1) {
+                    // Fix: Action Generation Validation to prevent ID -2
+                    if (targetValue === -1 && typeof currentBlocker === 'number' && currentBlocker > 0) {
                         actions.push(createPickGoalBlockadeAction(state, currentBlocker));
                         actions.push(createDepositGoalBlockadeAction(state, currentBlocker, destId));
                     }
@@ -1238,7 +1184,8 @@ try {
 
         reg('Pick_Target', [
             {k: 'heldItemExists', v: false},
-            // WARNING: pathBlocker_goal_<GOAL_ID> is required to break the dependency cycle
+            // Correctness Constraint: Required to break planning livelock (Pick -> Path Blocked -> Place to Clear -> Pick again).
+            // Ensures the path is cleared *before* the agent commits to holding the target.
             {k: 'pathBlocker_goal_' + GOAL_ID, v: -1},
             {k: 'atEntity_' + TARGET_ID, v: true}
         ], [{

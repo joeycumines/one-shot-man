@@ -1160,7 +1160,7 @@ try {
 
         reg('Pick_Target', [
             {k: 'heldItemExists', v: false},
-            // [FIX] Ordered Guard: Check Path Clearance BEFORE checking Position.
+            // Ordered Guard: Check Path Clearance BEFORE checking Position.
             // This prevents dithering by ensuring we don't try to go to the Target until the Goal path is clear.
             {k: 'pathBlocker_goal_' + GOAL_ID, v: -1},
             {k: 'atEntity_' + TARGET_ID, v: true}

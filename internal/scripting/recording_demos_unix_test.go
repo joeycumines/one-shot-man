@@ -1443,8 +1443,6 @@ func TestRecording_Script_BT_Shooter(t *testing.T) {
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "script-example-bt-shooter.tape")
 	gifPath := filepath.Join(outputDir, "script-example-bt-shooter.gif")
-	// Calculate repo root from outputDir (docs/visuals/gifs -> repo root)
-	repoRoot := filepath.Clean(filepath.Join(outputDir, "..", "..", ".."))
 
 	// Create temp config to ensure isolation
 	tempConfig := filepath.Join(t.TempDir(), "config")
@@ -1639,8 +1637,6 @@ func TestRecording_Script_PickAndPlace(t *testing.T) {
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "script-example-pick-and-place.tape")
 	gifPath := filepath.Join(outputDir, "script-example-pick-and-place.gif")
-	// Calculate repo root from outputDir (docs/visuals/gifs -> repo root)
-	repoRoot := filepath.Clean(filepath.Join(outputDir, "..", "..", ".."))
 
 	// Create temp config to ensure isolation
 	tempConfig := filepath.Join(t.TempDir(), "config")

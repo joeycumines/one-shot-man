@@ -125,6 +125,7 @@ try {
 
     // Capture global reference for FlatSpatialIndex dirty flagging
     var state;
+    var debugMessage = '';
 
     function initializeSimulation() {
         GOAL_BLOCKADE_IDS = []; // Fix: Clear before populating
@@ -229,10 +230,15 @@ try {
             pathStuckTicks: 0,
             winConditionMet: false,
             targetDelivered: false,
-            manualTicker: null,
+            manualBT: null,
 
             // INPUT REACTIVITY: Input Queue
             pendingInputs: [],
+
+            // Debug: last mouse click info
+            debugLastClick: null,
+            debugLastInteract: null,
+            debugInteractEntry: null,
 
             renderBuffer: null,
             renderBufferWidth: 0,
@@ -823,6 +829,11 @@ try {
 
     function createManualInteractLeaf(state) {
         return bt.createLeafNode(() => {
+            // Debug: Track leaf entry conditions
+            state.debugInteractEntry = {
+                hasTarget: state.manualMoveTarget ? 1 : 0,
+                pathLen: state.manualPath.length
+            };
             if (!state.manualMoveTarget) return bt.success;
             if (state.manualPath.length > 0) return bt.running;
 
@@ -838,12 +849,30 @@ try {
             }
 
             const dist = Math.sqrt(Math.pow(clickX - actor.x, 2) + Math.pow(clickY - actor.y, 2));
+            log.debug("[MANUAL_INTERACT]", {
+                clickX: clickX,
+                clickY: clickY,
+                actorX: actor.x,
+                actorY: actor.y,
+                dist: dist,
+                isHolding: isHolding,
+                heldId: isHolding ? actor.heldItem.id : -1,
+                targetId: targetId,
+                clickedCube: clickedCube ? clickedCube.id : null
+            });
             if (dist <= PICK_THRESHOLD) {
                 if (isHolding) {
                     const ignoreId = actor.heldItem.id;
                     // [FIX] Check for existing cube logic AND ensure spatial grid is empty at target
                     const targetCellId = state.spatialGrid.get(clickX, clickY);
-
+                    // Capture debug info in state for JSON output
+                    state.debugLastInteract = {
+                        ignoreId: ignoreId,
+                        clickedCube: clickedCube ? clickedCube.id : null,
+                        targetCellId: targetCellId === undefined ? -1 : targetCellId,
+                        canPlace: !clickedCube && targetCellId === undefined ? 1 : 0
+                    };
+                    log.debug("[MANUAL_INTERACT_PLACE]", state.debugLastInteract);
                     if (!clickedCube && targetCellId === undefined) {
                         const c = state.cubes.get(ignoreId);
                         if (c) {
@@ -1522,6 +1551,7 @@ try {
 
     // Process pending inputs from the queue with Stream Reduction
     function processPendingInputs(state) {
+        // Removed debugMessage for cleaner logs
         if (!state.pendingInputs || state.pendingInputs.length === 0) return [state, null];
 
         // Local accumulators - Zero Allocation
@@ -1581,12 +1611,9 @@ try {
             state.manualPath = [];
             state.pathStuckTicks = 0;
             if (state.gameMode === 'manual') {
-                state.manualTicker = bt.newTicker(16, createManualTree(state));
+                state.manualBT = createManualTree(state);
             } else {
-                if (state.manualTicker) {
-                    state.manualTicker.stop();
-                    state.manualTicker = null;
-                }
+                state.manualBT = null;
                 syncToBlackboard(state);
             }
         }
@@ -1615,15 +1642,23 @@ try {
             if (latestMouseMsg) {
                 const msg = latestMouseMsg;
                 const spaceX = Math.floor((state.width - state.spaceWidth) / 2);
+                // Grid (gx, gy) is rendered at buffer column (gx + spaceX + 1) and buffer row (gy)
+                // Bubbletea provides 0-indexed buffer coordinates in msg.x and msg.y
+                // So: gx = msg.x - spaceX - 1, gy = msg.y
                 const clickX = msg.x - spaceX - 1;
-                const clickY = msg.y;
+                const clickY = msg.y;  // msg.y is already 0-indexed buffer row = grid row
                 if (clickX >= 0 && clickX < state.spaceWidth && clickY >= 0 && clickY < state.height) {
                     const actor = state.actors.get(state.activeActorId);
                     const ignoreId = actor.heldItem ? actor.heldItem.id : -1;
                     let path = null;
 
-                    // If holding, check neighbors
-                    if (actor.heldItem) {
+                    // Check if click is at actor's current position (allow immediate interaction)
+                    const actorRoundX = Math.round(actor.x);
+                    const actorRoundY = Math.round(actor.y);
+                    const clickAtActorPos = (clickX === actorRoundX && clickY === actorRoundY);
+
+                    // If holding AND NOT clicking at actor position, check neighbors for placement
+                    if (actor.heldItem && !clickAtActorPos) {
                         const neighbors = [];
                         for (const [dx, dy] of DIRS_8) {
                             const nx = clickX + dx;
@@ -1649,12 +1684,15 @@ try {
                     }
 
                     state.manualMoveTarget = {x: clickX, y: clickY};
+                    state.debugLastClick = {msgX: latestMouseMsg.x, msgY: latestMouseMsg.y, gx: clickX, gy: clickY, spaceX: spaceX, h: state.height};
                     // Path is inverted stack from findPathManual
                     if (path && path.length > 0) {
                         state.manualPath = path;
                     } else {
                         state.manualPath = [];
                     }
+                } else {
+                    state.debugLastClick = {msgX: latestMouseMsg.x, msgY: latestMouseMsg.y, oob: true, spaceX: spaceX, h: state.height, sw: state.spaceWidth};
                 }
             }
         }
@@ -1688,13 +1726,19 @@ try {
 
             if (state.gameMode === 'automatic') {
                 syncToBlackboard(state);
-            } else if (state.blackboard) {
+            } else if (state.gameMode === 'manual') {
+                // Tick the manual BT tree for movement and interaction
+                if (state.manualBT) {
+                    bt.tick(state.manualBT);
+                }
                 // Optimized updates for manual mode (only key props)
-                const actor = state.actors.get(state.activeActorId);
-                syncValue(state, 'actorX', actor.x);
-                syncValue(state, 'actorY', actor.y);
-                syncValue(state, 'heldItemExists', actor.heldItem !== null);
-                syncValue(state, 'heldItemId', actor.heldItem ? actor.heldItem.id : -1);
+                if (state.blackboard) {
+                    const actor = state.actors.get(state.activeActorId);
+                    syncValue(state, 'actorX', actor.x);
+                    syncValue(state, 'actorY', actor.y);
+                    syncValue(state, 'heldItemExists', actor.heldItem !== null);
+                    syncValue(state, 'heldItemId', actor.heldItem ? actor.heldItem.id : -1);
+                }
             }
             return [state, tea.tick(16, 'tick')];
         }
@@ -1735,7 +1779,16 @@ try {
                 gr: goalReachable ? 1 : 0,
                 mt: state.manualMoveTarget ? 1 : 0,
                 mpl: state.manualPath.length,
-                pst: state.pathStuckTicks
+                pst: state.pathStuckTicks,
+                dm: debugMessage || '',
+                lcx: state.debugLastClick ? state.debugLastClick.gx : -1,
+                lcy: state.debugLastClick ? state.debugLastClick.gy : -1,
+                lch: state.debugLastClick ? state.debugLastClick.h : -1,
+                lid: state.debugLastInteract ? state.debugLastInteract.ignoreId : -1,
+                ltc: state.debugLastInteract ? state.debugLastInteract.targetCellId : -1,
+                lcp: state.debugLastInteract ? state.debugLastInteract.canPlace : -1,
+                iet: state.debugInteractEntry ? state.debugInteractEntry.hasTarget : -1,
+                iep: state.debugInteractEntry ? state.debugInteractEntry.pathLen : -1
             });
             output += '\n__place_debug_start__\n' + debugJSON + '\n__place_debug_end__';
         }

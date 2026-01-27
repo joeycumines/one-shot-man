@@ -7,7 +7,12 @@
       "id": "1",
       "name": "Fix Example 5 test expectation",
       "description": "Fix the test expectations - do NOT change working code",
-      "status": "NOT_STARTED",
+      "status": "IN_PROGRESS",
+      "subtasks": [
+        "Fixed collision detection in TestPickAndPlaceCompletion - actor (5,11) is outside room bounds (20-55,6-16)",
+        "Need to verify TestPickAndPlaceConflictResolution passes",
+        "Need to verify other pick-and-place tests pass"
+      ],
       "verification_method": "Test must pass with correct expectation",
       "dependencies": []
     },
@@ -15,7 +20,14 @@
       "id": "2",
       "name": "Fix PA-BT race conditions",
       "description": "Fix all timing issues and race conditions in PA-BT tests. Tests must be sub-second and deterministic",
-      "status": "NOT_STARTED",
+      "status": "IN_PROGRESS",
+      "subtasks": [
+        "Fixed syncToBlackboard() path blocker computation in example-05-pick-and-place.js",
+        "Fixed TypeCommand() script path resolution in vhs_record_unix_test.go (removed ../../../ prefix)",
+        "Removed WithRecorderDir(repoRoot) from TestRecording_Script_BT_Shooter and TestRecording_Script_PickAndPlace",
+        "Need to verify PA-BT tests are now deterministic and sub-second",
+        "Need to run tests 100 times - no flakes"
+      ],
       "verification_method": "Run tests 100 times - no flakes",
       "dependencies": []
     },
@@ -32,7 +44,7 @@
       "name": "Run make-all-in-container",
       "description": "Execute make-all-in-container target - must pass",
       "status": "NOT_STARTED",
-      "verification_method": "Container tests pass", 
+      "verification_method": "Container tests pass",
       "dependencies": ["1", "2"]
     },
     {

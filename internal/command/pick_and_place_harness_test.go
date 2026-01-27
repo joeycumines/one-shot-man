@@ -421,6 +421,8 @@ func TestPickAndPlaceCompletion(t *testing.T) {
 		// 3. Collision Check (Strict)
 		// Room Wall Definitions (must match script constants)
 		// New simplified scenario: Room from x=20-55, y=6-16 with entry gap at (20, 11)
+		// NOTE: Agent legitimately moves outside room (starts at 5,11; goal at 8,18 outside)
+		// Collision check only applies when agent is INSIDE room and tries to exit through non-gap
 		const (
 			RoomMinX = 20
 			RoomMaxX = 55
@@ -430,66 +432,75 @@ func TestPickAndPlaceCompletion(t *testing.T) {
 			GapY     = 11 // Gap Y position
 		)
 
-		// Check if actor is colliding with walls
-		// We approximate collision as being within 0.5 distance of a wall integer coordinate
-		// Wall coordinates:
-		// Top: (RoomMinX..RoomMaxX, RoomMinY)
-		// Bottom: (RoomMinX..RoomMaxX, RoomMaxY)
-		// Left: (RoomMinX, RoomMinY..RoomMaxY) EXCEPT Gap
-		// Right: (RoomMaxX, RoomMinY..RoomMaxY)
-
+		// Only check collision if agent is INSIDE the room
 		actorX := state.ActorX
 		actorY := state.ActorY
-		collision := false
-		wallDesc := ""
+		inRoom := actorX >= float64(RoomMinX)-1 && actorX <= float64(RoomMaxX)+1 &&
+			actorY >= float64(RoomMinY)-1 && actorY <= float64(RoomMaxY)+1
 
-		inGap := func(x, y float64) bool {
-			return ctxAlmostEqual(x, float64(GapX), 1.5) && ctxAlmostEqual(y, float64(GapY), 1.5)
-		}
+		if !inRoom {
+			// Agent legitimately outside room (start position or delivering to goal outside) - skip check
+			// Next iteration
+		} else {
+			// Check if actor is colliding with walls while inside room
+			// We approximate collision as being within 0.5 distance of a wall integer coordinate
+			// Wall coordinates:
+			// Top: (RoomMinX..RoomMaxX, RoomMinY)
+			// Bottom: (RoomMinX..RoomMaxX, RoomMaxY)
+			// Left: (RoomMinX, RoomMinY..RoomMaxY) EXCEPT Gap
+			// Right: (RoomMaxX, RoomMinY..RoomMaxY)
 
-		// Helper to check point against segment
-		checkSegment := func(x1, y1, x2, y2 float64, vertical bool) bool {
-			// Basic point-to-segment distance check
-			// Since walls are axis-aligned, simpler:
-			// If vertical, x must be close to x1, and y between y1 and y2
-			if vertical {
-				if math.Abs(actorX-x1) < 0.8 && actorY >= y1-0.5 && actorY <= y2+0.5 {
-					return true
-				}
-			} else {
-				if math.Abs(actorY-y1) < 0.8 && actorX >= x1-0.5 && actorX <= x2+0.5 {
-					return true
-				}
+			collision := false
+			wallDesc := ""
+
+			inGap := func(x, y float64) bool {
+				return ctxAlmostEqual(x, float64(GapX), 1.5) && ctxAlmostEqual(y, float64(GapY), 1.5)
 			}
-			return false
-		}
 
-		// Check walls
-		// Top
-		if checkSegment(float64(RoomMinX), float64(RoomMinY), float64(RoomMaxX), float64(RoomMinY), false) {
-			collision = true
-			wallDesc = "Top Wall"
-		}
-		// Bottom
-		if checkSegment(float64(RoomMinX), float64(RoomMaxY), float64(RoomMaxX), float64(RoomMaxY), false) {
-			collision = true
-			wallDesc = "Bottom Wall"
-		}
-		// Left (with gap)
-		if checkSegment(float64(RoomMinX), float64(RoomMinY), float64(RoomMinX), float64(RoomMaxY), true) {
-			if !inGap(actorX, actorY) {
+			// Helper to check point against segment
+			checkSegment := func(x1, y1, x2, y2 float64, vertical bool) bool {
+				// Basic point-to-segment distance check
+				// Since walls are axis-aligned, simpler:
+				// If vertical, x must be close to x1, and y between y1 and y2
+				if vertical {
+					if math.Abs(actorX-x1) < 0.8 && actorY >= y1-0.5 && actorY <= y2+0.5 {
+						return true
+					}
+				} else {
+					if math.Abs(actorY-y1) < 0.8 && actorX >= x1-0.5 && actorX <= x2+0.5 {
+						return true
+					}
+				}
+				return false
+			}
+
+			// Check walls
+			// Top
+			if checkSegment(float64(RoomMinX), float64(RoomMinY), float64(RoomMaxX), float64(RoomMinY), false) {
 				collision = true
-				wallDesc = "Left Wall"
+				wallDesc = "Top Wall"
 			}
-		}
-		// Right
-		if checkSegment(float64(RoomMaxX), float64(RoomMinY), float64(RoomMaxX), float64(RoomMaxY), true) {
-			collision = true
-			wallDesc = "Right Wall"
-		}
+			// Bottom
+			if checkSegment(float64(RoomMinX), float64(RoomMaxY), float64(RoomMaxX), float64(RoomMaxY), false) {
+				collision = true
+				wallDesc = "Bottom Wall"
+			}
+			// Left (with gap)
+			if checkSegment(float64(RoomMinX), float64(RoomMinY), float64(RoomMinX), float64(RoomMaxY), true) {
+				if !inGap(actorX, actorY) {
+					collision = true
+					wallDesc = "Left Wall"
+				}
+			}
+			// Right
+			if checkSegment(float64(RoomMaxX), float64(RoomMinY), float64(RoomMaxX), float64(RoomMaxY), true) {
+				collision = true
+				wallDesc = "Right Wall"
+			}
 
-		if collision {
-			t.Fatalf("FAILURE: Agent walked through wall! Pos: (%.1f, %.1f), Wall: %s", actorX, actorY, wallDesc)
+			if collision {
+				t.Fatalf("FAILURE: Agent walked through wall! Pos: (%.1f, %.1f), Wall: %s", actorX, actorY, wallDesc)
+			}
 		}
 
 		// 4. Limit Check

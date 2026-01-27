@@ -1467,7 +1467,6 @@ func TestRecording_Script_BT_Shooter(t *testing.T) {
 		WithRecorderShell("bash"),
 		WithRecorderCommand("osm", "script", "scripts/example-04-bt-shooter.js"),
 		WithRecorderTimeout(90*time.Second),
-		WithRecorderDir(repoRoot),
 		WithRecorderEnv(
 			"OSM_SESSION=demo-bt-shooter",
 			"OSM_STORE=memory",
@@ -1664,7 +1663,6 @@ func TestRecording_Script_PickAndPlace(t *testing.T) {
 		WithRecorderShell("bash"),
 		WithRecorderCommand("osm", "script", "scripts/example-05-pick-and-place.js"),
 		WithRecorderTimeout(90*time.Second),
-		WithRecorderDir(repoRoot),
 		WithRecorderEnv(
 			"OSM_SESSION=demo-pick-and-place",
 			"OSM_STORE=memory",

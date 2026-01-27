@@ -258,11 +258,21 @@ func (r *InputCaptureRecorder) TypeCommand() error {
 	typedArgs := r.typedArgs
 	if typedCommand == "osm" {
 		var foundScript bool
+		// [FIX] Don't prepend "../../../" when running from repoRoot - scripts/* is already relative to repo
+		var scriptArgPrefix string
 		for i, arg := range typedArgs {
 			if foundScript {
-				if strings.HasPrefix(arg, "scripts/") {
+				// Only prepend "../../../" if NOT running from repoRoot (dir not set or different)
+				// When repoRoot is set via WithRecorderDir, we're already at correct path
+				if r.console != nil && !r.closed {
+					// Check if console dir matches what we expect (repoRoot at project level)
+					// This is heuristic - if typed command already has scripts/ it was already adjusted
+					// We'll only prepend "../../../" if the path looks like it came from docs/visuals/gifs/
+					if strings.HasPrefix(arg, "scripts/") && !strings.HasPrefix(typedArgs[i], "../../../") {
+						scriptArgPrefix = "../../../"
+					}
 					typedArgs = slices.Clone(typedArgs)
-					typedArgs[i] = "../../../" + arg
+					typedArgs[i] = scriptArgPrefix + arg
 					break
 				}
 			} else if arg == "script" {

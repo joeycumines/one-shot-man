@@ -1,0 +1,47 @@
+{
+  "project": "one-shot-man",
+  "session_start": "2025-01-27_EMERGENCY",
+  "overall_status": "IN_PROGRESS",
+  "work_units": [
+    {
+      "id": "1",
+      "name": "Fix Example 5 test expectation",
+      "description": "Fix the test expectations - do NOT change working code",
+      "status": "NOT_STARTED",
+      "verification_method": "Test must pass with correct expectation",
+      "dependencies": []
+    },
+    {
+      "id": "2",
+      "name": "Fix PA-BT race conditions",
+      "description": "Fix all timing issues and race conditions in PA-BT tests. Tests must be sub-second and deterministic",
+      "status": "NOT_STARTED",
+      "verification_method": "Run tests 100 times - no flakes",
+      "dependencies": []
+    },
+    {
+      "id": "3",
+      "name": "Run make-all-with-log",
+      "description": "Execute make-all-with-log target - must pass with all checks",
+      "status": "NOT_STARTED",
+      "verification_method": "Review build.log - zero errors",
+      "dependencies": ["1", "2"]
+    },
+    {
+      "id": "4",
+      "name": "Run make-all-in-container",
+      "description": "Execute make-all-in-container target - must pass",
+      "status": "NOT_STARTED",
+      "verification_method": "Container tests pass", 
+      "dependencies": ["1", "2"]
+    },
+    {
+      "id": "5",
+      "name": "Final verification via subagent",
+      "description": "Use subagent to verify all targets pass and work is complete",
+      "status": "NOT_STARTED",
+      "verification_method": "Subagent confirmation",
+      "dependencies": ["3", "4"]
+    }
+  ]
+}

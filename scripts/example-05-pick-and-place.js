@@ -40,7 +40,13 @@
  * Failure Mode: Violates **Reactive Granularity**. It creates a "Black Box" that prevents reactive repair.
  * If the atomic action fails mid-execution, the planner has no visibility into the partial state.
  *
- * [C] THE SOLUTION: THE "BRIDGE ACTION" PATTERN
+ * [C] THE "COUPLED ACTION" ANTI-PATTERN (Violates Modularity)
+ * Definition: An action (e.g., `Pick`) encoding preconditions for downstream tasks (e.g., `Deliver`).
+ * Failure Mode: Creates hidden dependencies and circular logic (e.g., requiring a path to Goal to be
+ * clear before Picking, when Picking might be required to clear the path).
+ * Correction: Actions must only encode local requirements (e.g., Pick only cares that the object is reachable).
+ *
+ * [D] THE SOLUTION: THE "BRIDGE ACTION" PATTERN
  * Requirement: Use **Dynamic Discovery**.
  * Instead of hardcoding map data, the ActionGenerator must dynamically inject "Bridge Actions"
  * (e.g., `ClearBlocker_X`) only when a specific navigational condition (`reachable_Target`) fails.
@@ -657,7 +663,7 @@ try {
             const current = queue.shift();
             const dx = Math.abs(current.x - targetIX);
             const dy = Math.abs(current.y - targetIY);
-            if (dx <= 1 && dy <= 1) return null;
+            if (dx <= 1 && dy <= 1) return null; // Path Clear
 
             for (const [ox, oy] of DIRS_4) {
                 const nx = current.x + ox;
@@ -672,7 +678,8 @@ try {
                 if (blockId !== undefined) {
                     if ((excludeId === undefined || blockId !== excludeId) && (!heldId || blockId !== heldId)) {
                         blocked = true;
-                        frontier.push({x: nx, y: ny, id: blockId, dist: current.dist || 0});
+                        // [FIX] Removed unused 'dist' property (Dead Code)
+                        frontier.push({x: nx, y: ny, id: blockId});
                     }
                 }
 
@@ -691,7 +698,8 @@ try {
             });
             return frontier[0].id;
         }
-        return null;
+        // [FIX] Semantic Ambiguity: Return -2 for "Unreachable" (distinct from null "Clear")
+        return -2;
     }
 
     function syncValue(state, key, newValue) {
@@ -721,10 +729,12 @@ try {
                     const atEntity = dist <= 1.8;
                     syncValue(state, 'atEntity_' + cube.id, atEntity);
 
-                    if (cube.id === TARGET_ID) {
+                    // [FIX] Generalized Path Blocker Logic: Include obstacles (ID >= 100), not just Target
+                    if (cube.id === TARGET_ID || cube.id >= 100) {
                         const cubeX = Math.round(cube.x);
                         const cubeY = Math.round(cube.y);
                         const blocker = findFirstBlocker(state, ax, ay, cubeX, cubeY, TARGET_ID);
+                        // [FIX] Distinct Return Value Handling: null -> -1 (Clear), -2 -> -2 (Unreachable), ID -> ID
                         syncValue(state, 'pathBlocker_entity_' + cube.id, blocker === null ? -1 : blocker);
                     }
                 } else {
@@ -742,6 +752,7 @@ try {
                 const goalX = Math.round(goal.x);
                 const goalY = Math.round(goal.y);
                 const blocker = findFirstBlocker(state, ax, ay, goalX, goalY, TARGET_ID);
+                // [FIX] Distinct Return Value Handling: null -> -1 (Clear), -2 -> -2 (Unreachable), ID -> ID
                 syncValue(state, 'pathBlocker_goal_' + goal.id, blocker === null ? -1 : blocker);
             });
             state.gridDirty = false;
@@ -1160,9 +1171,8 @@ try {
 
         reg('Pick_Target', [
             {k: 'heldItemExists', v: false},
-            // Ordered Guard: Check Path Clearance BEFORE checking Position.
-            // This prevents dithering by ensuring we don't try to go to the Target until the Goal path is clear.
-            {k: 'pathBlocker_goal_' + GOAL_ID, v: -1},
+            // [FIX] Action Template Modularity Violation: Removed dependency on downstream goal path
+            // {k: 'pathBlocker_goal_' + GOAL_ID, v: -1}, // Removed
             {k: 'atEntity_' + TARGET_ID, v: true}
         ], [{
             k: 'heldItemId',

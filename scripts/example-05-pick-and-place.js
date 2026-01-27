@@ -1158,7 +1158,13 @@ try {
             state.pabtState.RegisterAction(name, pabt.newAction(name, conditions, effectList, node));
         };
 
-        reg('Pick_Target', [{k: 'heldItemExists', v: false}, {k: 'atEntity_' + TARGET_ID, v: true}], [{
+        reg('Pick_Target', [
+            {k: 'heldItemExists', v: false},
+            // [FIX] Ordered Guard: Check Path Clearance BEFORE checking Position.
+            // This prevents dithering by ensuring we don't try to go to the Target until the Goal path is clear.
+            {k: 'pathBlocker_goal_' + GOAL_ID, v: -1},
+            {k: 'atEntity_' + TARGET_ID, v: true}
+        ], [{
             k: 'heldItemId',
             v: TARGET_ID
         }, {k: 'heldItemExists', v: true}], function () {

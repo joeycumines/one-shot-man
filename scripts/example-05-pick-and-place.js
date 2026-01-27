@@ -1238,8 +1238,8 @@ try {
 
         reg('Pick_Target', [
             {k: 'heldItemExists', v: false},
-            // [FIX] Action Template Modularity Violation: Removed dependency on downstream goal path
-            // {k: 'pathBlocker_goal_' + GOAL_ID, v: -1}, // Removed
+            // WARNING: pathBlocker_goal_<GOAL_ID> is required to break the dependency cycle
+            {k: 'pathBlocker_goal_' + GOAL_ID, v: -1},
             {k: 'atEntity_' + TARGET_ID, v: true}
         ], [{
             k: 'heldItemId',

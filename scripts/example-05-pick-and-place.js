@@ -1185,9 +1185,9 @@ try {
             return bt.success;
         });
 
-        reg('Deliver_Target', [{k: 'atGoal_' + GOAL_ID, v: true}, {
-            k: 'heldItemId',
-            v: TARGET_ID
+        reg('Deliver_Target', [{k: 'heldItemId', v: TARGET_ID}, {
+            k: 'atGoal_' + GOAL_ID,
+            v: true
         }], [{k: 'cubeDeliveredAtGoal', v: true}], function () {
             const a = actor();
             if (!a.heldItem || a.heldItem.id !== TARGET_ID) return bt.failure;

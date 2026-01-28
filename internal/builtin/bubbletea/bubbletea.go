@@ -656,11 +656,7 @@ func (m *jsModel) updateDirect(jsMsg map[string]interface{}) tea.Cmd {
 
 	// Extract command
 	cmdVal := resultObj.Get("1")
-	cmd := m.valueToCmd(cmdVal)
-	if cmd == nil {
-		slog.Warn("bubbletea: updateDirect: valueToCmd returned nil", "cmdVal", cmdVal)
-	}
-	return cmd
+	return m.valueToCmd(cmdVal)
 }
 
 // View implements tea.Model.
@@ -870,8 +866,9 @@ func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 		slog.Warn("bubbletea: valueToCmd: nil model or runtime")
 		return nil
 	}
+	// Returning null or undefined for the command slot is valid and expected
+	// (e.g., [model, null] from JavaScript). No warning needed.
 	if goja.IsUndefined(val) || goja.IsNull(val) {
-		slog.Warn("bubbletea: valueToCmd: cmd value is undefined/null")
 		return nil
 	}
 

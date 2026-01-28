@@ -2,7 +2,7 @@
   "project": "one-shot-man",
   "session_start": "2025-01-27_EMERGENCY",
   "overall_status": "IN_PROGRESS",
-  "last_updated": "2025-01-28T03:00:00Z",
+  "last_updated": "2025-01-28T12:00:00Z",
   "work_units": [
     {
       "id": "1",
@@ -476,6 +476,62 @@
           "verification_method": "make generate-tapes-and-gifs completes, .tape files and GIFs are generated and valid",
           "dependencies": ["2"]
         },
+    {
+      "id": "9",
+      "name": "Remove spurious bubbletea warnings",
+      "description": "Eliminate spurious warning logs 'valueToCmd: cmd value is undefined/null' and 'updateDirect: valueToCmd returned nil' that occur during normal operation. When JavaScript returns [model, null] or [model, undefined] to indicate 'no command', the system logs WARN messages even though this is documented as correct behavior in the API documentation. These warnings appear frequently during mouse movement.",
+      "status": "DONE",
+      "summary": "Removed WARN log in updateDirect() that was logging when valueToCmd returned nil. Removed WARN log in valueToCmd() that was logging when JavaScript returned null/undefined for command slot. Added explanatory comment in valueToCmd() clarifying that returning null/undefined is valid.",
+      "subtasks": [
+        {
+          "id": "9.1",
+          "name": "Identify warning locations in bubbletea code",
+          "description": "Found warning logs in bubbletea.go at lines 661 and 874",
+          "status": "DONE",
+          "file": "internal/builtin/bubbletea/bubbletea.go",
+          "verification_method": "Found warning logs in bubbletea.go",
+          "dependencies": []
+        },
+        {
+          "id": "9.2",
+          "name": "Remove or downgrade the warnings in valueToCmd",
+          "description": "Removed warning 'valueToCmd: cmd value is undefined/null' and added explanatory comment. Returning [model, null] or [model, undefined] is the documented correct way to indicate no command.",
+          "status": "DONE",
+          "file": "internal/builtin/bubbletea/bubbletea.go",
+          "verification_method": "Warning removed, comment added explaining null/undefined is valid",
+          "dependencies": ["9.1"]
+        },
+        {
+          "id": "9.3",
+          "name": "Remove or downgrade the warnings in updateDirect",
+          "description": "Removed warning 'updateDirect: valueToCmd returned nil'. Many update operations intentionally return null/undefined for the command slot.",
+          "status": "DONE",
+          "file": "internal/builtin/bubbletea/bubbletea.go",
+          "verification_method": "Warning removed as null return is valid behavior",
+          "dependencies": ["9.1"]
+        },
+        {
+          "id": "9.4",
+          "name": "Verify warnings are gone during normal operation",
+          "description": "Verified no WARN logs for undefined/null appear during bubbletea tests.",
+          "status": "DONE",
+          "verification_method": "Test that emits mouse events shows no WARN logs for valueToCmd",
+          "verification_command": "go test -v ./internal/builtin/bubbletea -run Test",
+          "dependencies": ["9.2", "9.3"]
+        },
+        {
+          "id": "9.5",
+          "name": "Run full test suite to ensure no regressions",
+          "description": "Full test suite passed with 0 failures - no regressions",
+          "status": "DONE",
+          "verification_method": "make all-with-log passes with zero failures",
+          "verification_command": "make all-with-log",
+          "dependencies": ["9.2", "9.3"]
+        }
+      ],
+      "verification_method": "No WARN level messages about valueToCmd/updateDirect during normal operation",
+      "dependencies": []
+    }
   ],
   "test_failures_identified": {
     "example_5_tests": [
@@ -584,6 +640,16 @@
         "event": "make-all-with-log PASSED",
         "status": "DONE",
         "details": "All tests pass (0 failures) - Task 4 complete"
+      },
+      {
+        "event": "Added work unit 9: Remove spurious bubbletea warnings",
+        "status": "IN_PROGRESS",
+        "details": "New task added to eliminate spurious WARN messages about valueToCmd returning nil - warnings appear during mouse movement when JS returns [model, null]"
+      },
+      {
+        "event": "Task 9: Remove spurious bubbletea warnings",
+        "status": "DONE",
+        "details": "Removed WARN logs that appeared during normal operation when JavaScript returns [model, null] or [model, undefined]. These warnings appeared frequently during mouse movement."
       }
     ]
   },
@@ -595,14 +661,15 @@
     "Task 5 (make-all-in-container)": ["Task 1", "Task 2", "Task 3"],
     "Task 6 (Final subagent verification)": ["Task 4", "Task 5"],
     "Task 7 (pabt API rename)": [],
-    "Task 8 (generate tapes and gifs)": ["Task 2", "Task 7"]
+    "Task 8 (generate tapes and gifs)": ["Task 2", "Task 7"],
+    "Task 9 (Remove spurious bubbletea warnings)": []
   },
   "completion_status": {
-    "total_subtasks": 32,
-    "done": 16,
+    "total_subtasks": 37,
+    "done": 21,
     "in_progress": 0,
     "not_started": 16,
     "blocked": 0,
-    "completion_percentage": 50
+    "completion_percentage": 57
   }
 }

@@ -51,7 +51,69 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 			_ = bt.Set("running", 1)
 			_ = bt.Set("success", 2)
 			_ = bt.Set("failure", 3)
-			_ = bt.Set("createLeafNode", func(call goja.FunctionCall) goja.Value { return vm.NewObject() })
+			_ = bt.Set("sequence", 10) // Mock sequence type constant
+			_ = bt.Set("createLeafNode", func(call goja.FunctionCall) goja.Value {
+				// Return a mock leaf node that stores the callback for later ticking
+				leaf := vm.NewObject()
+				if len(call.Arguments) > 0 {
+					_ = leaf.Set("_callback", call.Arguments[0])
+				}
+				return leaf
+			})
+			_ = bt.Set("node", func(call goja.FunctionCall) goja.Value {
+				// Mock bt.node - just return a sequence-like node
+				node := vm.NewObject()
+				_ = node.Set("_type", "sequence")
+				children := make([]goja.Value, 0)
+				for i := 1; i < len(call.Arguments); i++ {
+					children = append(children, call.Arguments[i])
+				}
+				_ = node.Set("_children", vm.ToValue(children))
+				return node
+			})
+			_ = bt.Set("tick", func(call goja.FunctionCall) goja.Value {
+				// Mock bt.tick - execute the leaf callbacks in sequence
+				if len(call.Arguments) == 0 {
+					return goja.Undefined()
+				}
+				node := call.Arguments[0]
+				if goja.IsNull(node) || goja.IsUndefined(node) {
+					return goja.Undefined()
+				}
+				nodeObj := node.ToObject(vm)
+				childrenVal := nodeObj.Get("_children")
+				if goja.IsUndefined(childrenVal) || goja.IsNull(childrenVal) {
+					return goja.Undefined()
+				}
+				// Handle the children array - it could be []goja.Value or []interface{}
+				exported := childrenVal.Export()
+				var children []goja.Value
+				switch v := exported.(type) {
+				case []goja.Value:
+					children = v
+				case []interface{}:
+					for _, item := range v {
+						if gojaVal, ok := item.(goja.Value); ok {
+							children = append(children, gojaVal)
+						} else if gojaObj, ok := item.(*goja.Object); ok {
+							children = append(children, gojaObj)
+						}
+					}
+				}
+				for _, child := range children {
+					if goja.IsNull(child) || goja.IsUndefined(child) {
+						continue
+					}
+					childObj := child.ToObject(vm)
+					callback := childObj.Get("_callback")
+					if !goja.IsUndefined(callback) && !goja.IsNull(callback) {
+						if fn, ok := goja.AssertFunction(callback); ok {
+							_, _ = fn(goja.Undefined())
+						}
+					}
+				}
+				return goja.Undefined()
+			})
 			_ = bt.Set("newTicker", func(call goja.FunctionCall) goja.Value {
 				ticker := vm.NewObject()
 				_ = ticker.Set("err", func(call goja.FunctionCall) goja.Value { return goja.Null() })
@@ -149,7 +211,7 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 	_ = state.Set("spaceWidth", 60)
 	_ = state.Set("width", 80)
 	_ = state.Set("height", 24)
-	_ = state.Set("gameMode", "manual")
+	_ = state.Set("gameMode", "automatic") // Start in automatic mode
 	// Make sure debugMode is false to avoid JSON output clutter
 	_ = state.Set("debugMode", false)
 
@@ -162,7 +224,7 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 		return actorVal.ToObject(vm)
 	}
 
-	// Helper: Add Cube
+	// Helper: Add Cube (also adds to spatial grid)
 	addCube := func(id int64, x, y int64) {
 		cubes := state.Get("cubes").ToObject(vm)
 		cube := vm.NewObject()
@@ -175,9 +237,32 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 
 		setFn, _ := goja.AssertFunction(cubes.Get("set"))
 		_, _ = setFn(cubes, vm.ToValue(id), cube)
+
+		// Also add to spatial grid for script to find (only if valid position)
+		if x >= 0 && y >= 0 {
+			spatialGrid := state.Get("spatialGrid").ToObject(vm)
+			addSpatialFn, _ := goja.AssertFunction(spatialGrid.Get("add"))
+			_, _ = addSpatialFn(spatialGrid, vm.ToValue(id), vm.ToValue(x), vm.ToValue(y))
+		}
 	}
 
 	// TEST CASES
+
+	// Helper: Send Tick to process queued inputs
+	sendTick := func() {
+		tickMsg := map[string]interface{}{
+			"type": "Tick",
+			"id":   "tick",
+		}
+		_, _ = updateFn(goja.Undefined(), stateVal, vm.ToValue(tickMsg))
+	}
+
+	// Switch to manual mode FIRST (game starts in automatic mode)
+	modeSwitchMsg := map[string]interface{}{"type": "Key", "key": "m"}
+	_, err = updateFn(goja.Undefined(), stateVal, vm.ToValue(modeSwitchMsg))
+	require.NoError(t, err, "Mode switch event should work")
+	sendTick()
+	require.Equal(t, "manual", state.Get("gameMode").String(), "Should be in manual mode")
 
 	t.Run("Pick Closest Viable", func(t *testing.T) {
 		actor := getActor()
@@ -185,7 +270,7 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 		_ = actor.Set("y", 10)
 		_ = actor.Set("heldItem", goja.Null())
 
-		// Cube A (11, 10) - Right
+		// Cube A (11, 10) - Right (addCube already adds to spatialGrid)
 		addCube(101, 11, 10)
 
 		// Click coords: SimX=11, SimY=10
@@ -200,6 +285,8 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 
 		_, err = updateFn(goja.Undefined(), stateVal, vm.ToValue(msg))
 		assert.NoError(t, err)
+		// Process the queued mouse event by sending a Tick
+		sendTick()
 
 		heldItem := actor.Get("heldItem")
 		assert.False(t, goja.IsNull(heldItem), "Should be holding item")
@@ -236,6 +323,8 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 
 		_, err = updateFn(goja.Undefined(), stateVal, vm.ToValue(msg))
 		assert.NoError(t, err)
+		// Process the queued mouse event by sending a Tick
+		sendTick()
 
 		assert.True(t, goja.IsNull(actor.Get("heldItem")), "Should have placed item")
 
@@ -258,6 +347,10 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 
 		// Cube at 11, 10 (Close)
 		addCube(401, 11, 10)
+		// Also add to spatial grid for script to find
+		spatialGrid := state.Get("spatialGrid").ToObject(vm)
+		addSpatialFn, _ := goja.AssertFunction(spatialGrid.Get("add"))
+		_, _ = addSpatialFn(spatialGrid, vm.ToValue(401), vm.ToValue(11), vm.ToValue(10))
 
 		// Click Far Away: SimX=50, SimY=10. ScreenX = 50+10+1 = 61, SimY=10
 		msg := map[string]interface{}{
@@ -270,6 +363,8 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 
 		_, err = updateFn(goja.Undefined(), stateVal, vm.ToValue(msg))
 		assert.NoError(t, err)
+		// Process the queued mouse event by sending a Tick
+		sendTick()
 
 		assert.True(t, goja.IsNull(actor.Get("heldItem")), "Should not pick item (too far)")
 	})

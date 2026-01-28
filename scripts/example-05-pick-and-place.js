@@ -784,6 +784,25 @@ try {
             const dy = nextPoint.y - actor.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
+            // [FIX] Check if we're already within interaction range of the TARGET
+            // BUT only if there's something to interact with (holding item OR cube at target)
+            if (state.manualMoveTarget) {
+                const targetDist = Math.sqrt(
+                    Math.pow(state.manualMoveTarget.x - actor.x, 2) +
+                    Math.pow(state.manualMoveTarget.y - actor.y, 2)
+                );
+                const isHolding = actor.heldItem !== null;
+                const targetId = state.spatialGrid.get(state.manualMoveTarget.x, state.manualMoveTarget.y);
+                const hasCubeAtTarget = targetId !== undefined;
+
+                // Only apply early exit if there's something to interact with
+                if ((isHolding || hasCubeAtTarget) && targetDist <= PICK_THRESHOLD) {
+                    // Already within interaction range, clear path but keep target
+                    state.manualPath = [];
+                    return bt.success;
+                }
+            }
+
             if (dist >= 0.1) {
                 // Movement logic
                 const moveDist = Math.min(MANUAL_MOVE_SPEED, dist);
@@ -835,11 +854,17 @@ try {
                 pathLen: state.manualPath.length
             };
             if (!state.manualMoveTarget) return bt.success;
-            if (state.manualPath.length > 0) return bt.running;
 
             const clickX = state.manualMoveTarget.x;
             const clickY = state.manualMoveTarget.y;
             const actor = state.actors.get(state.activeActorId);
+
+            // [FIX] Calculate distance BEFORE path check - if within range, interact immediately
+            const dist = Math.sqrt(Math.pow(clickX - actor.x, 2) + Math.pow(clickY - actor.y, 2));
+
+            // Only wait for movement if we still have path AND are not within interaction range
+            if (state.manualPath.length > 0 && dist > PICK_THRESHOLD) return bt.running;
+
             const isHolding = actor.heldItem !== null;
 
             let clickedCube = null;
@@ -848,7 +873,6 @@ try {
                 clickedCube = state.cubes.get(targetId);
             }
 
-            const dist = Math.sqrt(Math.pow(clickX - actor.x, 2) + Math.pow(clickY - actor.y, 2));
             log.debug("[MANUAL_INTERACT]", {
                 clickX: clickX,
                 clickY: clickY,
@@ -1684,7 +1708,14 @@ try {
                     }
 
                     state.manualMoveTarget = {x: clickX, y: clickY};
-                    state.debugLastClick = {msgX: latestMouseMsg.x, msgY: latestMouseMsg.y, gx: clickX, gy: clickY, spaceX: spaceX, h: state.height};
+                    state.debugLastClick = {
+                        msgX: latestMouseMsg.x,
+                        msgY: latestMouseMsg.y,
+                        gx: clickX,
+                        gy: clickY,
+                        spaceX: spaceX,
+                        h: state.height
+                    };
                     // Path is inverted stack from findPathManual
                     if (path && path.length > 0) {
                         state.manualPath = path;
@@ -1692,7 +1723,14 @@ try {
                         state.manualPath = [];
                     }
                 } else {
-                    state.debugLastClick = {msgX: latestMouseMsg.x, msgY: latestMouseMsg.y, oob: true, spaceX: spaceX, h: state.height, sw: state.spaceWidth};
+                    state.debugLastClick = {
+                        msgX: latestMouseMsg.x,
+                        msgY: latestMouseMsg.y,
+                        oob: true,
+                        spaceX: spaceX,
+                        h: state.height,
+                        sw: state.spaceWidth
+                    };
                 }
             }
         }

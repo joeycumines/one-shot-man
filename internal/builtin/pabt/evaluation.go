@@ -243,8 +243,11 @@ func (c *ExprCondition) getOrCompileProgram() (*vm.Program, error) {
 	// Check global cache
 	if cached, ok := exprCache.Load(c.expression); ok {
 		program := cached.(*vm.Program)
+		// Double-check locking: another goroutine may have set it already
 		c.mu.Lock()
-		c.program = program
+		if c.program == nil {
+			c.program = program
+		}
 		c.mu.Unlock()
 		return program, nil
 	}
@@ -261,8 +264,11 @@ func (c *ExprCondition) getOrCompileProgram() (*vm.Program, error) {
 
 	// Store in global cache and instance
 	exprCache.Store(c.expression, program)
+	// Double-check locking: another goroutine may have set it already
 	c.mu.Lock()
-	c.program = program
+	if c.program == nil {
+		c.program = program
+	}
 	c.mu.Unlock()
 
 	return program, nil

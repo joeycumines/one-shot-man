@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -193,12 +194,15 @@ func (h *PickAndPlaceHarness) VerifyLogContent(substring string) error {
 // BuildPickAndPlaceTestBinary builds the osm test binary for pick-and-place tests
 func BuildPickAndPlaceTestBinary(t *testing.T) string {
 	t.Helper()
-	// Get the working directory and compute project root
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get working directory: %v", err)
+	// Use runtime.Caller to get the path of this file, then navigate to project root
+	// This is more robust than os.Getwd() which can change in parallel tests
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatalf("Failed to get caller info")
 	}
-	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+	// This file is at internal/command/pick_and_place_harness_test.go
+	// Project root is two directories up from internal/command
+	projectDir := filepath.Dir(filepath.Dir(filepath.Dir(thisFile)))
 
 	binaryPath := filepath.Join(t.TempDir(), "osm-pickplace-test")
 	cmd := exec.Command("go", "build", "-tags=integration", "-o", binaryPath, "./cmd/osm")
@@ -214,11 +218,12 @@ func BuildPickAndPlaceTestBinary(t *testing.T) string {
 // getPickAndPlaceScriptPath returns the absolute path to the pick-and-place script
 func getPickAndPlaceScriptPath(t *testing.T) string {
 	t.Helper()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get working directory: %v", err)
+	// Use runtime.Caller for robust path resolution in parallel tests
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatalf("Failed to get caller info")
 	}
-	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+	projectDir := filepath.Dir(filepath.Dir(filepath.Dir(thisFile)))
 	return filepath.Join(projectDir, "scripts", "example-05-pick-and-place.js")
 }
 

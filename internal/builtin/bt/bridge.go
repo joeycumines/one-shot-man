@@ -242,9 +242,9 @@ globalThis.bt = {
 // deadlock when tickers are blocked in RunOnLoopSync. Previously, manager.Stop() waited
 // for tickers while tickers were blocked waiting for Done() to close, causing a circular
 // wait. Now the sequence is:
-//   1. Set stopped=true (prevents new operations)
-//   2. Cancel context (closes Done() channel, unblocks RunOnLoopSync waiters)
-//   3. Stop manager (tickers can now exit cleanly)
+//  1. Set stopped=true (prevents new operations)
+//  2. Cancel context (closes Done() channel, unblocks RunOnLoopSync waiters)
+//  3. Stop manager (tickers can now exit cleanly)
 func (b *Bridge) Stop() {
 	b.mu.Lock()
 	if b.stopped {

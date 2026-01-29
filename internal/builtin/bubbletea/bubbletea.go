@@ -488,6 +488,11 @@ type jsModel struct {
 	throttleMu         sync.Mutex      // Protects throttle timer state
 	throttleTimerSet   bool            // True if a delayed render is already scheduled
 	program            *tea.Program    // Reference for sending delayed render messages
+
+	// Throttle timer cancellation - prevents goroutine leak on program exit
+	// Set when program starts, cancelled when program exits
+	throttleCtx    context.Context
+	throttleCancel context.CancelFunc
 }
 
 // registerCommand registers a command ID as valid.
@@ -688,13 +693,25 @@ func (m *jsModel) View() string {
 
 		if shouldThrottle {
 			// Schedule a delayed render if not already scheduled
-			if !m.throttleTimerSet && m.program != nil {
+			if !m.throttleTimerSet && m.program != nil && m.throttleCtx != nil {
 				m.throttleTimerSet = true
 				delay := intervalDur - elapsed
 				prog := m.program
+				throttleCtx := m.throttleCtx
 				go func() {
-					time.Sleep(delay)
-					prog.Send(renderRefreshMsg{})
+					timer := time.NewTimer(delay)
+					defer timer.Stop()
+					select {
+					case <-timer.C:
+						// Timer fired - send render refresh message
+						// prog.Send is documented as safe to call even after program
+						// exits (it becomes a no-op), but we check context to avoid
+						// unnecessary work
+						prog.Send(renderRefreshMsg{})
+					case <-throttleCtx.Done():
+						// Program is exiting - don't send, just return
+						return
+					}
 				}()
 			}
 			cached := m.cachedView
@@ -1661,8 +1678,19 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) (err er
 
 	// Also store program reference in jsModel for render throttling
 	if jm, ok := model.(*jsModel); ok {
+		// Set up throttle cancellation context to prevent goroutine leak
+		// when program exits while a throttle timer is sleeping
+		throttleCtx, throttleCancel := context.WithCancel(ctx)
+		jm.throttleCtx = throttleCtx
+		jm.throttleCancel = throttleCancel
 		jm.program = p
-		defer func() { jm.program = nil }()
+		defer func() {
+			// Cancel any pending throttle timers FIRST, then nil program
+			throttleCancel()
+			jm.throttleCtx = nil
+			jm.throttleCancel = nil
+			jm.program = nil
+		}()
 	}
 
 	// Setup signal handling

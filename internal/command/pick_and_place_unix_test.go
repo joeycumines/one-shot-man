@@ -1397,14 +1397,13 @@ func TestPickAndPlace_MousePlace_NearestEmpty(t *testing.T) {
 		t.Fatalf("Failed to send pick click: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
-	stateAfterPick := h.GetDebugState()
-
-	if stateAfterPick.HeldItemID < 100 {
-		t.Fatalf("Failed to pick up cube, held item is %d", stateAfterPick.HeldItemID)
+	// Wait for item to be picked up (poll instead of fixed sleep to avoid flakiness)
+	heldId := h.WaitForHeldItem(100, 3*time.Second)
+	if heldId < 100 {
+		stateAfterPick := h.GetDebugState()
+		t.Fatalf("Failed to pick up cube after 3s, held item is %d (state: %+v)", stateAfterPick.HeldItemID, stateAfterPick)
 	}
 
-	heldId := stateAfterPick.HeldItemID
 	t.Logf("Holding cube id=%d", heldId)
 
 	// Navigate to empty space away from walls
@@ -1473,11 +1472,12 @@ func TestPickAndPlace_MousePlace_BlockedCell(t *testing.T) {
 
 	// Pick up a cube
 	h.ClickGrid(7, 18) // Pick cube 100
-	time.Sleep(500 * time.Millisecond)
 
-	state := h.GetDebugState()
-	if state.HeldItemID < 100 {
-		t.Fatalf("Failed to pick up cube, held item is %d", state.HeldItemID)
+	// Wait for item to be picked up (poll instead of fixed sleep to avoid flakiness)
+	heldId := h.WaitForHeldItem(100, 3*time.Second)
+	if heldId < 100 {
+		state := h.GetDebugState()
+		t.Fatalf("Failed to pick up cube after 3s, held item is %d", state.HeldItemID)
 	}
 
 	// Navigate near another cube but not adjacent to it
@@ -1633,14 +1633,13 @@ func TestPickAndPlace_MousePlace_NoValidCell(t *testing.T) {
 
 	// Pick up a cube
 	h.ClickGrid(7, 18) // Pick cube 100
-	time.Sleep(500 * time.Millisecond)
 
-	state := h.GetDebugState()
-	if state.HeldItemID < 100 {
-		t.Fatalf("Failed to pick up cube, held item is %d", state.HeldItemID)
+	// Wait for item to be picked up (poll instead of fixed sleep to avoid flakiness)
+	heldIdBefore := h.WaitForHeldItem(100, 3*time.Second)
+	if heldIdBefore < 100 {
+		state := h.GetDebugState()
+		t.Fatalf("Failed to pick up cube after 3s, held item is %d", state.HeldItemID)
 	}
-
-	heldIdBefore := state.HeldItemID
 
 	// Navigate to a surrounded position (e.g., inside the blockade ring itself)
 	// Navigate to (8, 17) which is inside goal blockade ring but surrounded
@@ -2043,11 +2042,12 @@ func TestPickAndPlace_MouseNoAction_NoValidPlacement(t *testing.T) {
 
 	// Pick up a cube
 	h.ClickGrid(7, 18) // Cube 100 at (7, 18)
-	time.Sleep(500 * time.Millisecond)
 
-	stateAfterPick := h.GetDebugState()
-	if stateAfterPick.HeldItemID < 100 {
-		t.Fatalf("Failed to pick up cube, held item is %d", stateAfterPick.HeldItemID)
+	// Wait for item to be picked up (poll instead of fixed sleep to avoid flakiness)
+	heldId := h.WaitForHeldItem(100, 3*time.Second)
+	if heldId < 100 {
+		stateAfterPick := h.GetDebugState()
+		t.Fatalf("Failed to pick up cube after 3s, held item is %d", stateAfterPick.HeldItemID)
 	}
 
 	// Navigate to a surrounded position inside blockade ring
@@ -2217,11 +2217,12 @@ func TestPickAndPlace_MouseNoAction_AlreadyHeldCube(t *testing.T) {
 
 	// Pick up cube 100
 	h.ClickGrid(7, 18) // Cube 100 at (7, 18)
-	time.Sleep(500 * time.Millisecond)
 
-	stateAfterPick := h.GetDebugState()
-	if stateAfterPick.HeldItemID < 100 {
-		t.Fatalf("Failed to pick up cube, held item is %d", stateAfterPick.HeldItemID)
+	// Wait for item to be picked up (poll instead of fixed sleep to avoid flakiness)
+	heldId := h.WaitForHeldItem(100, 3*time.Second)
+	if heldId < 100 {
+		stateAfterPick := h.GetDebugState()
+		t.Fatalf("Failed to pick up cube after 3s, held item is %d", stateAfterPick.HeldItemID)
 	}
 
 	// Now click on the original cube position (it should be marked deleted: true)
@@ -2234,9 +2235,9 @@ func TestPickAndPlace_MouseNoAction_AlreadyHeldCube(t *testing.T) {
 	stateAfter := h.GetDebugState()
 
 	// Verify only one cube is held (can't pick multiple)
-	if stateAfter.HeldItemID != stateAfterPick.HeldItemID {
+	if stateAfter.HeldItemID != heldId {
 		t.Errorf("Clicked on held cube's original position, heldItemId changed from %d to %d (should stay same)",
-			stateAfterPick.HeldItemID, stateAfter.HeldItemID)
+			heldId, stateAfter.HeldItemID)
 	} else {
 		t.Logf("✓ Clicking on already-held cube's position correctly ignored (heldItemId=%d unchanged)",
 			stateAfter.HeldItemID)

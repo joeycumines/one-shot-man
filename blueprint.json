@@ -1,14 +1,15 @@
 {
   "policy": "ALL tasks and subtasks contained within this blueprint MUST be completed in their entirety. Deferring, skipping, or omitting any part of the plan is strictly prohibited. Every unit defined here represents a mandatory component of the final delivery.",
   "session": {
-    "started": "2026-01-29T01:13:36+11:00",
-    "ends": "2026-01-29T05:13:36+11:00",
-    "mandatory_duration_hours": 4
+    "started": "2026-01-30T00:50:11+11:00",
+    "target_end": "2026-01-30T04:50:11+11:00",
+    "mandatory_duration_hours": 4,
+    "status": "in_progress"
   },
   "change_summary": {
-    "files_changed": 81,
-    "lines_added": 21106,
-    "lines_removed": 2662
+    "files_changed": 0,
+    "lines_added": 0,
+    "lines_removed": 0
   },
   "review_protocol": {
     "description": "Each logical grouping requires three phases: Review (write to docs/reviews/), Fix (address all issues), Re-Review (verify; if issues remain, restart all three phases)",
@@ -18,53 +19,82 @@
     {
       "id": "G1",
       "name": "PABT Module",
-      "files": ["internal/builtin/pabt/*"],
+      "files": [
+        "internal/builtin/pabt/*"
+      ],
       "description": "New Planning and Behavior Tree integration module"
     },
     {
-      "id": "G2", 
+      "id": "G2",
       "name": "BubbleTea Changes",
-      "files": ["internal/builtin/bubbletea/*"],
+      "files": [
+        "internal/builtin/bubbletea/*"
+      ],
       "description": "TUI runtime improvements and new tests"
     },
     {
       "id": "G3",
       "name": "Mouse Harness",
-      "files": ["internal/mouseharness/*"],
+      "files": [
+        "internal/mouseharness/*"
+      ],
       "description": "New testing infrastructure for mouse events"
     },
     {
       "id": "G4",
       "name": "Pick & Place Tests",
-      "files": ["internal/command/pick_and_place_*.go", "internal/example/pickandplace/*"],
+      "files": [
+        "internal/command/pick_and_place_*.go",
+        "internal/example/pickandplace/*"
+      ],
       "description": "Extensive new integration tests for pick and place functionality"
     },
     {
       "id": "G5",
       "name": "Shooter Game",
-      "files": ["internal/command/shooter_game_*.go", "scripts/example-04-bt-shooter.js"],
+      "files": [
+        "internal/command/shooter_game_*.go",
+        "scripts/example-04-bt-shooter.js"
+      ],
       "description": "Shooter game test changes and script updates"
     },
     {
       "id": "G6",
       "name": "Scripting Engine",
-      "files": ["internal/scripting/*"],
+      "files": [
+        "internal/scripting/*"
+      ],
       "description": "Core scripting engine and API changes"
     },
     {
       "id": "G7",
       "name": "Documentation",
-      "files": ["docs/*"],
+      "files": [
+        "docs/*"
+      ],
       "description": "Architecture docs, references, visual GIFs"
     },
     {
       "id": "G8",
       "name": "Configuration & Build",
-      "files": [".deadcodeignore", "example.config.mk", "go.mod", "go.sum", "internal/builtin/register.go"],
+      "files": [
+        ".deadcodeignore",
+        "example.config.mk",
+        "go.mod",
+        "go.sum",
+        "internal/builtin/register.go"
+      ],
       "description": "Build configuration and module dependencies"
     }
   ],
   "tasks": [
+    {
+      "id": "DISCOVERY-1",
+      "phase": "discovery",
+      "title": "Codebase Structure Exploration",
+      "description": "Understand the overall architecture and identify main components, TODOs, and areas of concern",
+      "status": "in-progress"
+    },
     {
       "id": "G1-R1",
       "group": "G1",
@@ -361,7 +391,78 @@
       "description": "Commit all changes after two contiguous clean reviews",
       "status": "complete",
       "completed_at": "2026-01-29T04:55:00+11:00",
-      "notes": "All development work (96 files, 23,751 additions, 2,747 deletions) was already committed in previous commits. Final tracking commit (WIP.md, blueprint.json, commit.msg) completed as 00c751a0ba09291c9357676fbf098ac2c2d1b339. All verified work present: PABT (19 files), mouseharness (12 files), Pick & Place tests (4 files), Shooter tests (2 files), Documentation (10 reviews)."
+      "notes": "All development work (96 files, 23,751 additions, 2,747 deletions) was already committed in previous commits. Final tracking commit (WIP.md, blueprint.json, commit.msg) completed as 00c751a0ba09291c9357676fbf098ac2c2d1b339. (PREVIOUS SESSION)"
+    }
+  ],
+  "current_session_tasks": [
+    {
+      "id": "SESSION-SCRIPTING-EXHAUSTIVE",
+      "phase": "review",
+      "title": "Exhaustive Scripting Engine Code Review",
+      "description": "GUARANTEED comprehensive review for deadlocks, thread safety, race conditions, goroutine leaks",
+      "status": "complete",
+      "completed_at": "2026-01-30T01:00:00+11:00",
+      "output": "docs/reviews/021-scripting-engine-exhaustive.md",
+      "findings": {
+        "critical": 1,
+        "high": 3,
+        "medium": 4,
+        "low": 5
+      },
+      "notes": "CRIT-1: Shutdown ordering causes 5-second hang (not indefinite deadlock due to timeout). Fix: Cancel context before stopping dependent components."
+    },
+    {
+      "id": "SESSION-DEADLOCK-FIX",
+      "phase": "fix",
+      "title": "Fix Shutdown Deadlock in Bridge.Stop()",
+      "description": "Critical fix: Call cancel() BEFORE manager.Stop() to prevent deadlock when tickers are blocked in RunOnLoopSync",
+      "status": "complete",
+      "completed_at": "2026-01-30T01:25:00+11:00",
+      "files_modified": [
+        "internal/builtin/bt/bridge.go",
+        "internal/builtin/pabt/evaluation.go",
+        "internal/builtin/pabt/require.go"
+      ],
+      "notes": "Fixed root cause: Bridge.Stop() now cancels context first. Added early IsRunning() checks to JSCondition.Match and ActionGenerator."
+    },
+    {
+      "id": "SESSION-BUBBLETEA-THROTTLE-FIX",
+      "phase": "fix",
+      "title": "Fix BubbleTea Render Throttle Goroutine Leak",
+      "description": "Added throttle context cancellation to prevent goroutine leak when program exits while timer is sleeping",
+      "status": "complete",
+      "completed_at": "2026-01-30T01:30:00+11:00",
+      "files_modified": [
+        "internal/builtin/bubbletea/bubbletea.go"
+      ],
+      "notes": "Added throttleCtx/throttleCancel to jsModel. Timer goroutine now uses select with context.Done() for cancellation."
+    },
+    {
+      "id": "SESSION-TEST-FLAKINESS-FIX",
+      "phase": "fix",
+      "title": "Fix Pick & Place Test Flakiness",
+      "description": "Added WaitForHeldItem helper to poll for pickup state instead of using fixed sleeps",
+      "status": "complete",
+      "completed_at": "2026-01-30T01:37:00+11:00",
+      "files_modified": [
+        "internal/command/pick_and_place_harness_test.go",
+        "internal/command/pick_and_place_unix_test.go"
+      ],
+      "notes": "Replaced 5 instances of time.Sleep(500ms) + GetDebugState() with WaitForHeldItem(100, 3s) polling."
+    },
+    {
+      "id": "SESSION-REVIEW-1",
+      "phase": "final-review",
+      "title": "First Clean Review",
+      "description": "First of two contiguous clean reviews required before commit",
+      "status": "in-progress"
+    },
+    {
+      "id": "SESSION-REVIEW-2",
+      "phase": "final-review",
+      "title": "Second Clean Review",
+      "description": "Second of two contiguous clean reviews required before commit",
+      "status": "not-started"
     }
   ],
   "legacy_tasks": [
@@ -427,14 +528,6 @@
       "description": "Regenerate script-example-pick-and-place.gif using VHS",
       "status": "pending",
       "note": "To be validated during G7 review cycle"
-    }
-  ],
-  "known_issues": [
-    {
-      "id": "DEADLOCK-1",
-      "title": "Pre-existing deadlocks on stop",
-      "description": "Known deadlock issues when stopping the application. Must be fixed as part of review cycle.",
-      "priority": "critical"
     }
   ],
   "version": "2.0.0"

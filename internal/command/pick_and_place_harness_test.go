@@ -847,6 +847,30 @@ func (h *PickAndPlaceHarness) WaitForMode(expectedMode string, timeout time.Dura
 	return false
 }
 
+// WaitForHeldItem waits for the held item to match the expected condition.
+// Use minID >= 0 to wait for any item, or specific ID.
+// Use minID = -1 to wait for no item held.
+// Returns the actual held item ID, or -999 if timeout.
+func (h *PickAndPlaceHarness) WaitForHeldItem(minID int, timeout time.Duration) int {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		state := h.GetDebugState()
+		if minID < 0 {
+			// Waiting for no item held
+			if state.HeldItemID == -1 {
+				return state.HeldItemID
+			}
+		} else {
+			// Waiting for item held with ID >= minID
+			if state.HeldItemID >= minID {
+				return state.HeldItemID
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return -999 // Timeout sentinel
+}
+
 // WaitForFrames waits for simulator tick counter to advance by specified number
 func (h *PickAndPlaceHarness) WaitForFrames(frames int64) {
 	deadline := time.Now().Add(5 * time.Second)

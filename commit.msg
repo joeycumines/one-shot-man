@@ -1,27 +1,23 @@
-feat: Add comprehensive PABT and testing infrastructure
+fix(deadlock): resolve Bridge.Stop() deadlock by reordering cancel/manager.Stop
 
-Major new features:
-- Add PABT module (Planning and Behavior Tree) with full test coverage
-- Add mouseharness testing infrastructure for TUI applications
-- Comprehensive integration tests for Pick & Place workflow
-- Extensive BubbleTea runtime improvements with new tests
-- Enhanced scripting engine documentation and API
+CRITICAL FIX: Bridge.Stop() was calling manager.Stop() before cancel(), causing
+a circular deadlock:
+- manager.Stop() waited for ticker goroutines to finish
+- Ticker goroutines were blocked in RunOnLoopSync waiting on Done()
+- Done() never closed because cancel() was after manager.Stop()
 
-Review verification:
-- All 8 groups (G1-G8) completed full review cycles
-- All reviews passed with zero remaining issues
-- Final build verification: make-all-with-log PASSED
-- Total: 96 files changed, 23,751 additions, 2,747 deletions
+SOLUTION: Call cancel() BEFORE manager.Stop() so Done() channel closes first,
+allowing RunOnLoopSync to exit with "bridge stopped" error, releasing tickers.
 
-Groups reviewed:
-G1: PABT Module - Complete with expr integration tests
-G2: BubbleTea - Enhanced runtime and tests
-G3: Mouse Harness - New testing infrastructure
-G4: Pick & Place - 6,200+ lines of comprehensive tests
-G5: Shooter Game - E2E harness improvements
-G6: Scripting Engine - API documentation and validation
-G7: Documentation - Architecture, references, VHS tapes
-G8: Config & Build - Module dependencies and build config
+Additional defense-in-depth:
+- PABT: Added early IsRunning() checks before RunOnLoopSync calls
+- BubbleTea: Added throttleCtx to prevent render throttle goroutine leak
+- Tests: Added WaitForHeldItem polling helper to eliminate flaky timing
 
-This work represents a 4-hour development session with rigorous
-three-phase review (Review Fix Re-Review) for each component
+Changes:
+- internal/builtin/bt/bridge.go: Reorder Stop() to cancel() first
+- internal/builtin/pabt/evaluation.go: Early exit if bridge stopping
+- internal/builtin/pabt/require.go: Early exit in ActionGenerator
+- internal/builtin/bubbletea/bubbletea.go: Context-based throttle cancellation
+- internal/command/pick_and_place_harness_test.go: WaitForHeldItem helper
+- internal/command/pick_and_place_unix_test.go: Use polling instead of sleep

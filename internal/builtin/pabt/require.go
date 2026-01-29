@@ -143,6 +143,13 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 
 				// Create a Go ActionGeneratorFunc that calls the JS function
 				generator := func(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
+					// Early exit if bridge is stopping - avoids blocking in RunOnLoopSync
+					// during shutdown. This prevents deadlock where manager.Stop() waits
+					// for tickers while tickers are blocked here.
+					if !bridge.IsRunning() {
+						return nil, nil
+					}
+
 					var actions []pabtpkg.IAction
 					var genErr error
 

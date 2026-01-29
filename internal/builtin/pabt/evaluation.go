@@ -89,9 +89,19 @@ func (c *JSCondition) Key() any {
 // CRITICAL: This method is called from the bt.Ticker goroutine, but goja.Runtime
 // is NOT thread-safe. We MUST use Bridge.RunOnLoopSync to marshal the call to
 // the event loop goroutine where goja operations are safe.
+//
+// IMPORTANT: If the bridge is stopping, we return false immediately to avoid
+// blocking on RunOnLoopSync. The bridge's Done() channel is closed when stopping,
+// so RunOnLoopSync would return an error anyway, but early exit improves shutdown
+// responsiveness.
 func (c *JSCondition) Match(value any) bool {
 	// Defensive: check if condition is valid before calling matcher
 	if c == nil || c.matcher == nil || c.bridge == nil {
+		return false
+	}
+
+	// Early exit if bridge is stopping - avoids blocking in RunOnLoopSync
+	if !c.bridge.IsRunning() {
 		return false
 	}
 

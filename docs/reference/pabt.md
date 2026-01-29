@@ -55,10 +55,13 @@ Each action template has three components:
 pabt.newAction(
     'Pick',                                          // 1. Name (for debugging)
     [{key: 'atCube', match: v => v === true}],      // 2. Preconditions
-    [{key: 'heldItem', Value: 1}],                  // 3. Effects
+    [{key: 'heldItem', value: 1}],                  // 3. Effects (lowercase 'value' preferred)
     bt.createLeafNode(() => { /* execute */ })      // 4. Execution node
 )
 ```
+
+> **Note:** Effect objects support both `value` (lowercase, preferred) and `Value` (uppercase, legacy).
+> Use lowercase `value` for new code.
 
 | Component | Purpose | Example |
 |-----------|---------|---------|
@@ -153,8 +156,8 @@ const plan = pabt.newPlan(state, [
     {key: 'heldItem', match: v => v === 1}
 ]);
 
-// 5. Execute with BT ticker
-const ticker = bt.newTicker(100, plan.Node());
+// 5. Execute with BT ticker (use lowercase node() - Node() is deprecated)
+const ticker = bt.newTicker(100, plan.node());
 
 // 6. Game loop
 function tick() {
@@ -593,7 +596,7 @@ state.setActionGenerator(function(failedCondition) {
 | JSCondition.Match() | ~5μs | JavaScript evaluation + thread marshalling |
 | ExprCondition.Match() | ~100ns | Go-native compiled expression |
 | FuncCondition.Match() | ~50ns | Direct Go function call |
-| Plan.Node() tick | ~10μs | Depends on action count and complexity |
+| plan.node() tick | ~10μs | Depends on action count and complexity |
 
 ### Optimization Strategies
 

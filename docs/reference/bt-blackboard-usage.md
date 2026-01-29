@@ -622,6 +622,44 @@ const bb = new bt.Blackboard();
 
 ---
 
+## Reference: bt Module Functions
+
+### bt.tick(node)
+
+Manually tick a behavior tree node once and return the status synchronously.
+
+```javascript
+const status = bt.tick(myNode);
+// status is one of: bt.success, bt.failure, bt.running
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `node` | Node | Any behavior tree node |
+| **Returns** | Status | `bt.success`, `bt.failure`, or `bt.running` |
+
+**When to use**:
+
+- Manual control over tick timing
+- Testing individual nodes
+- Single-shot execution without a ticker
+
+**When NOT to use**:
+
+- For continuous execution, use `bt.newTicker(interval, node)` instead
+
+### bt.newTicker(interval, node)
+
+Create an automatic ticker that calls `tick()` on the node at the specified interval.
+
+```javascript
+const ticker = bt.newTicker(100, myNode); // Tick every 100ms
+// ...later...
+ticker.stop();
+```
+
+---
+
 ## Migration Guide
 
 ### From Pattern C to Pattern A

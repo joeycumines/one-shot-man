@@ -453,16 +453,49 @@
     {
       "id": "SESSION-REVIEW-1",
       "phase": "final-review",
-      "title": "First Clean Review",
-      "description": "First of two contiguous clean reviews required before commit",
-      "status": "in-progress"
+      "title": "First Clean Review for Deadlock Fix",
+      "description": "First of two contiguous clean reviews for commit cac7978",
+      "status": "complete",
+      "completed_at": "2026-01-30T01:40:00+11:00"
     },
     {
       "id": "SESSION-REVIEW-2",
       "phase": "final-review",
-      "title": "Second Clean Review",
-      "description": "Second of two contiguous clean reviews required before commit",
-      "status": "not-started"
+      "title": "Second Clean Review for Deadlock Fix",
+      "description": "Second of two contiguous clean reviews for commit cac7978",
+      "status": "complete",
+      "completed_at": "2026-01-30T01:41:00+11:00"
+    },
+    {
+      "id": "SESSION-COMPREHENSIVE-REVIEW",
+      "phase": "review",
+      "title": "Comprehensive Module Reviews",
+      "description": "Parallel reviews of PABT, mouseharness, Pick&Place, Scripting modules",
+      "status": "complete",
+      "completed_at": "2026-01-30T01:50:00+11:00",
+      "findings_count": {"high": 7, "medium": 10, "low": 8},
+      "findings_document": "docs/reviews/022-exhaustive-review-session.md"
+    },
+    {
+      "id": "SESSION-TEST-DETERMINISM-FIX",
+      "phase": "fix",
+      "title": "Fix Test Determinism Issues",
+      "description": "Fixed ClickElement initial check and TestPickAndPlaceInitialState polling",
+      "status": "complete",
+      "completed_at": "2026-01-30T02:00:00+11:00",
+      "files_modified": [
+        "internal/mouseharness/element.go",
+        "internal/command/pick_and_place_harness_test.go"
+      ],
+      "commit": "7fec5d8"
+    },
+    {
+      "id": "SESSION-REVIEW-3",
+      "phase": "final-review",
+      "title": "Clean Reviews for Test Determinism Fix",
+      "description": "Two contiguous clean reviews for commit 7fec5d8",
+      "status": "complete",
+      "completed_at": "2026-01-30T02:05:00+11:00"
     }
   ],
   "legacy_tasks": [

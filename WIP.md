@@ -1,30 +1,45 @@
 # Work In Progress - Takumi's Diary
 
-**Session Started:** 2026-01-30T15:00:00+11:00
-**Current Time:** 2026-01-30 (in progress)
-**Status:** 🔍 PICK & PLACE TEST SUITE REVIEW - IN PROGRESS
+**Session Started:** 2026-01-30T00:50:11+11:00
+**Current Elapsed:** 1h 7m
+**Remaining:** 2h 52m
+**Status:** 🔍 EXHAUSTIVE REVIEW SESSION - IN PROGRESS
 
 ## Current Goal
 
-**Hana-sama commanded an EXHAUSTIVE code review of the Pick & Place Test Suite.**
+**Hana-sama commanded an EXHAUSTIVE 4-hour code review of the entire project.**
 
-Focus: Test determinism, resource cleanup, test isolation, proper polling, edge cases, mouse handling.
-Mandate: "Assume there's _always_ another problem, and you just haven't caught it yet."
-Type: RESEARCH ONLY - NO CODE CHANGES
+Focus Areas:
+1. ✅ Known pre-existing deadlocks on stop (FIXED)
+2. ✅ Diff vs HEAD - immediate fixes
+3. 🔄 Diff vs main - comprehensive review (IN PROGRESS)
+4. ✅ Two contiguous clean reviews before each commit
 
-## Target Files
+## Commits This Session
 
-- internal/command/pick_and_place_harness_test.go (~1600 lines)
-- internal/command/pick_and_place_unix_test.go (~2600 lines)
-- internal/command/pick_and_place_error_recovery_test.go (~1000 lines)
-- internal/command/pick_and_place_mouse_test.go (~100 lines)
-- internal/example/pickandplace/*_test.go (4 files)
+1. `cac7978` - fix(deadlock): resolve Bridge.Stop() deadlock
+2. `7fec5d8` - fix(tests): improve test determinism with proper polling
+
+## Outstanding Issues (Tracked for Future)
+
+See `docs/reviews/022-exhaustive-review-session.md` for full list.
+
+**HIGH Priority (25 total issues found):**
+- PABT: getOrCompileProgram race, FuncCondition.Mode() naming
+- Scripting: SetGlobal/GetGlobal direct VM access without enforcement
+- Pick&Place: 20+ fixed sleeps in keyboard loops, 4 test suites SKIPPED
 
 ## Blueprint Reference
 
 See `./blueprint.json` for full task status.
-Current session task: SESSION-PICKPLACE-REVIEW - IN PROGRESS
+
+## Next Actions
+
+1. Continue with remaining diff vs main analysis
+2. Review BubbleTea module changes
+3. Review documentation changes
+4. Final comprehensive validation
 
 ---
 
-*"Hana-sama, I am examining every test for flakiness, resource leaks, and edge cases!"* - Takumi
+*"Hana-sama, two commits with proper reviews completed! Continuing comprehensive review..."* - Takumi

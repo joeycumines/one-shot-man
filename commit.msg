@@ -1,9 +1,10 @@
-fix(tests): improve test determinism with proper polling
+docs: standardize API naming conventions and add bt.tick() docs
 
-mouseharness: ClickElement now checks immediately before polling loop
-- Prevents unnecessary 50ms latency if element already visible
-- Fixes timeout edge case with very short timeouts (<50ms)
+pabt.md:
+- Standardize on lowercase node() method (Node() is deprecated)
+- Recommend lowercase value in effect objects (Value is legacy)
+- Add note clarifying both cases are supported for backwards compat
 
-pick_and_place: Replace fixed sleep with WaitForMode polling
-- TestPickAndPlaceInitialState: 300ms sleep → 3s timeout polling
-- More robust on slow CI, fails explicitly on timeout
+bt-blackboard-usage.md:
+- Add documentation for bt.tick(node) function
+- Add brief reference for bt.newTicker(interval, node)

@@ -273,9 +273,8 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 	if generator != nil {
 		generatedActions, err := generator(failed)
 		if err != nil {
-			if debugPABT {
-				slog.Debug("[PA-BT DEBUG] ActionGenerator error", "error", err)
-			}
+			// Always log generator errors at Warning level - these could hide bugs
+			slog.Warn("[PA-BT] ActionGenerator error, falling back to static actions", "error", err, "failedKey", failedKey)
 			// Don't fail completely - fall back to static actions
 		} else {
 			if debugPABT {

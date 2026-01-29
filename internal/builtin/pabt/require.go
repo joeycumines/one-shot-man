@@ -106,8 +106,7 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 				state.RegisterAction(name, action)
 				return goja.Undefined()
 			}
-			_ = jsObj.Set("RegisterAction", registerActionFn)
-			_ = jsObj.Set("registerAction", registerActionFn) // lowercase alias for JS convention
+			_ = jsObj.Set("registerAction", registerActionFn)
 
 			// Expose GetAction to retrieve registered actions by name
 			// This allows the action generator to return pre-registered actions
@@ -122,8 +121,7 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 				}
 				return runtime.ToValue(action)
 			}
-			_ = jsObj.Set("GetAction", getActionFn)
-			_ = jsObj.Set("getAction", getActionFn) // lowercase alias for JS convention
+			_ = jsObj.Set("getAction", getActionFn)
 
 			// Expose setActionGenerator for TRUE parametric actions
 			// The generator function receives (failedCondition) and returns an array of actions
@@ -217,7 +215,6 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 				return goja.Undefined()
 			}
 			_ = jsObj.Set("setActionGenerator", setActionGeneratorFn)
-			_ = jsObj.Set("SetActionGenerator", setActionGeneratorFn) // uppercase alias
 
 			// Store native reference for interop (e.g., newPlan)
 			_ = jsObj.Set("_native", state)
@@ -303,7 +300,29 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 				panic(runtime.NewGoError(fmt.Errorf("failed to create plan: %w", err)))
 			}
 
-			return runtime.ToValue(plan)
+			// Wrap the plan in a JS object with lowerCamelCase methods
+			// This ensures JS callers use plan.node() not plan.Node()
+			jsObj := runtime.NewObject()
+
+			// node() - returns the behavior tree node for this plan
+			_ = jsObj.Set("node", func(call goja.FunctionCall) goja.Value {
+				return runtime.ToValue(plan.Node())
+			})
+
+			// running() - returns whether the plan is currently running
+			_ = jsObj.Set("running", func(call goja.FunctionCall) goja.Value {
+				return runtime.ToValue(plan.Running())
+			})
+
+			// Store the native plan for internal use
+			_ = jsObj.Set("_native", plan)
+
+			// Also expose Node for backwards compatibility (deprecated)
+			_ = jsObj.Set("Node", func(call goja.FunctionCall) goja.Value {
+				return runtime.ToValue(plan.Node())
+			})
+
+			return jsObj
 		})
 
 		// newAction(name, conditions, effects, node) - Create an action (NOT registered yet)
@@ -410,8 +429,11 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 						continue
 					}
 
-					// Extract value
-					valueVal := effectObj.Get("Value")
+					// Extract value (prefer lowercase, fallback to uppercase for backwards compat)
+					valueVal := effectObj.Get("value")
+					if valueVal == nil || goja.IsUndefined(valueVal) {
+						valueVal = effectObj.Get("Value") // fallback to uppercase
+					}
 					if valueVal == nil || goja.IsUndefined(valueVal) {
 						slog.Debug("[PA-BT EFFECT PARSE] Effect Value undefined", "action", name, "index", i, "key", keyVal.Export())
 						continue

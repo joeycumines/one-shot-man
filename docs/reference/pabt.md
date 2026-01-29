@@ -335,8 +335,6 @@ state.registerAction('Pick', pickAction);
 - Fixed, finite set of actions
 - Actions known at initialization
 
-**Alias:** `state.RegisterAction` (uppercase)
-
 ---
 
 ### `state.setActionGenerator(generator)`
@@ -369,8 +367,6 @@ state.setActionGenerator(function(failedCondition) {
 - TRUE parametric actions like `MoveTo(entityId)`
 
 **Performance Note:** Generator is called during planning. Cache created actions to avoid recreation.
-
-**Alias:** `state.SetActionGenerator` (uppercase)
 
 **Thread Safety:** If generator accesses JavaScript state, it must use `Bridge.RunOnLoopSync` (handled automatically in `osm:pabt`).
 

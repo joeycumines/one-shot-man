@@ -22,3 +22,46 @@ Sleep 200ms
 # Run osm script for BT Shooter game
 Type "osm script ../../../scripts/example-04-bt-shooter.js"
 Enter
+Sleep 500ms
+Sleep 300ms
+# Press SPACE to start the game
+Sleep 500ms
+# Move UP and shoot
+Up
+Up
+Up
+Up
+Up
+Up
+Up
+Up
+Sleep 500ms
+# Move RIGHT and shoot
+Right
+Right
+Right
+Right
+Right
+Right
+Sleep 500ms
+# Move DOWN and shoot
+Down
+Down
+Down
+Down
+Down
+Down
+Sleep 500ms
+# Move LEFT and shoot
+Left
+Left
+Left
+Left
+Left
+Left
+Sleep 500ms
+# Quit the game
+Type "q"
+Sleep 300ms
+Type "exit"
+Enter

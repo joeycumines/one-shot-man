@@ -22,3 +22,12 @@ Sleep 200ms
 # Run osm script for Pick-and-Place simulation
 Type "osm script ../../../scripts/example-05-pick-and-place.js"
 Enter
+Sleep 500ms
+# Watching automatic PA-BT simulation...
+Sleep 50s
+Sleep 1s
+# Quit the simulation
+Type "q"
+Sleep 300ms
+Type "exit"
+Enter

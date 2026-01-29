@@ -521,7 +521,7 @@ func TestShooterE2E_EnemyMovement(t *testing.T) {
 		if finalState != nil {
 			ticksElapsed = finalState.Tick - initialTick
 		}
-		t.Errorf("CRITICAL: Enemy did NOT move! Position remained at (%d, %d) after %d ticks. "+
+		t.Fatalf("CRITICAL: Enemy did NOT move! Position remained at (%d, %d) after %d ticks. "+
 			"This indicates behavior tree tickers are not updating enemy positions. "+
 			"Check bt.newTicker() lifecycle and syncFromBlackboards().",
 			initialEnemyX, initialEnemyY, ticksElapsed)

@@ -521,6 +521,11 @@ func (sm *StateManager) Close() error {
 // AddListener registers a callback function to be invoked when any state key changes.
 // Returns a listener ID that can be used to remove the listener later.
 // The listener is invoked asynchronously after state updates (outside the main lock).
+//
+// WARNING: Listeners are called synchronously in sequence. A slow or blocking listener
+// will delay all subsequent notifications. For expensive operations, the listener should
+// spawn a goroutine (as done in engine_core.go for bubbletea state refresh).
+//
 // Listeners MUST NOT call back into StateManager methods to avoid deadlocks.
 func (sm *StateManager) AddListener(fn builtin.StateListener) int {
 	sm.listenerMu.Lock()

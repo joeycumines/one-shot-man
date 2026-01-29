@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/go-prompt/termtest"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // getExpectedShellPrompt returns the expected shell prompt character based on the user ID.
@@ -159,6 +160,7 @@ func typeStringFast(t *testing.T, recorder *InputCaptureRecorder, s string) {
 // - Navigating between documents
 // - Copying the prompt
 func TestRecording_SuperDocument_Visual(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-visual.tape")
 	gifPath := filepath.Join(outputDir, "super-document-visual.gif")
@@ -172,7 +174,7 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-super-doc-visual")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -185,7 +187,7 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 		WithRecorderCommand("osm", "super-document"),
 		WithRecorderTimeout(30*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-super-doc-visual",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -350,6 +352,7 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 
 // TestRecording_SuperDocument_Shell demonstrates the super-document shell mode.
 func TestRecording_SuperDocument_Shell(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-shell.tape")
 	gifPath := filepath.Join(outputDir, "super-document-shell.gif")
@@ -363,7 +366,7 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-super-doc-shell")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -376,7 +379,7 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 		WithRecorderCommand("osm", "super-document", "--shell"),
 		WithRecorderTimeout(30*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-super-doc-shell",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -511,6 +514,7 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 
 // TestRecording_SuperDocument_Interop demonstrates visual<->shell mode switching.
 func TestRecording_SuperDocument_Interop(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-interop.tape")
 	gifPath := filepath.Join(outputDir, "super-document-interop.gif")
@@ -524,7 +528,7 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-super-doc-interop")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -537,7 +541,7 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 		WithRecorderCommand("osm", "super-document"),
 		WithRecorderTimeout(30*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-super-doc-interop",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -700,6 +704,7 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 
 // TestRecording_CodeReview demonstrates the code-review command.
 func TestRecording_CodeReview(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "code-review.tape")
 	gifPath := filepath.Join(outputDir, "code-review.gif")
@@ -713,7 +718,7 @@ func TestRecording_CodeReview(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-code-review")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -727,7 +732,7 @@ func TestRecording_CodeReview(t *testing.T) {
 		WithRecorderTimeout(30*time.Second),
 		WithRecorderDir(outputDir),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-code-review",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -873,6 +878,7 @@ func TestRecording_CodeReview(t *testing.T) {
 
 // TestRecording_PromptFlow demonstrates the prompt-flow command.
 func TestRecording_PromptFlow(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "prompt-flow.tape")
 	gifPath := filepath.Join(outputDir, "prompt-flow.gif")
@@ -886,7 +892,7 @@ func TestRecording_PromptFlow(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-prompt-flow")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -899,7 +905,7 @@ func TestRecording_PromptFlow(t *testing.T) {
 		WithRecorderCommand("osm", "prompt-flow"),
 		WithRecorderTimeout(30*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-prompt-flow",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -1054,6 +1060,7 @@ func TestRecording_PromptFlow(t *testing.T) {
 
 // TestRecording_Goal demonstrates the goal command with a sample workflow.
 func TestRecording_Goal(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "goal.tape")
 	gifPath := filepath.Join(outputDir, "goal.gif")
@@ -1067,7 +1074,7 @@ func TestRecording_Goal(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-goal")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -1080,7 +1087,7 @@ func TestRecording_Goal(t *testing.T) {
 		WithRecorderCommand("osm", "goal", "test-generator"),
 		WithRecorderTimeout(30*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-goal",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -1191,6 +1198,7 @@ func TestRecording_Goal(t *testing.T) {
 
 // TestRecording_Quickstart is a quick overview demo.
 func TestRecording_Quickstart(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "quickstart.tape")
 	gifPath := filepath.Join(outputDir, "quickstart.gif")
@@ -1204,7 +1212,7 @@ func TestRecording_Quickstart(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-quickstart")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -1217,7 +1225,7 @@ func TestRecording_Quickstart(t *testing.T) {
 		WithRecorderCommand("osm", "help"),
 		WithRecorderTimeout(10*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-quickstart",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -1292,6 +1300,7 @@ func TestRecording_Quickstart(t *testing.T) {
 
 // TestRecording_SuperDocument_Visual_Light demonstrates light theme.
 func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-visual-light.tape")
 	gifPath := filepath.Join(outputDir, "super-document-visual-light.gif")
@@ -1305,7 +1314,7 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-super-doc-light")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -1320,7 +1329,7 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 		WithRecorderCommand("osm", "super-document"),
 		WithRecorderTimeout(30*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-super-doc-light",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -1440,6 +1449,7 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 // - Moving the player with arrow keys
 // - Shooting with space bar
 func TestRecording_Script_BT_Shooter(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "script-example-bt-shooter.tape")
 	gifPath := filepath.Join(outputDir, "script-example-bt-shooter.gif")
@@ -1453,7 +1463,7 @@ func TestRecording_Script_BT_Shooter(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-bt-shooter")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
@@ -1466,7 +1476,7 @@ func TestRecording_Script_BT_Shooter(t *testing.T) {
 		WithRecorderCommand("osm", "script", "scripts/example-04-bt-shooter.js"),
 		WithRecorderTimeout(90*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-bt-shooter",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -1634,6 +1644,7 @@ func TestRecording_Script_BT_Shooter(t *testing.T) {
 // - Watching the AI solve the pick and place problem
 // - Verifying the WIN! condition is reached
 func TestRecording_Script_PickAndPlace(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "script-example-pick-and-place.tape")
 	gifPath := filepath.Join(outputDir, "script-example-pick-and-place.gif")
@@ -1647,7 +1658,7 @@ func TestRecording_Script_PickAndPlace(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-pick-and-place")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
@@ -1660,7 +1671,7 @@ func TestRecording_Script_PickAndPlace(t *testing.T) {
 		WithRecorderCommand("osm", "script", "scripts/example-05-pick-and-place.js"),
 		WithRecorderTimeout(90*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-pick-and-place",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,

@@ -1182,12 +1182,12 @@ try {
             const key = failedCondition.key, targetValue = failedCondition.value;
             if (key && typeof key === 'string') {
                 if (key === 'cubeDeliveredAtGoal') {
-                    const a = state.pabtState.GetAction('Deliver_Target');
+                    const a = state.pabtState.getAction('Deliver_Target');
                     if (a) actions.push(a);
                 }
                 if (key === 'heldItemId') {
                     if (targetValue === TARGET_ID) {
-                        const a = state.pabtState.GetAction('Pick_Target');
+                        const a = state.pabtState.getAction('Pick_Target');
                         if (a) actions.push(a);
                     } else if (typeof targetValue === 'number' && targetValue !== -1) {
                         const cube = state.cubes.get(targetValue);
@@ -1195,9 +1195,9 @@ try {
                     }
                 }
                 if (key === 'heldItemExists' && targetValue === false) {
-                    const a1 = state.pabtState.GetAction('Place_Held_Item'),
-                        a2 = state.pabtState.GetAction('Place_Target_Temporary'),
-                        a3 = state.pabtState.GetAction('Place_Obstacle');
+                    const a1 = state.pabtState.getAction('Place_Held_Item'),
+                        a2 = state.pabtState.getAction('Place_Target_Temporary'),
+                        a3 = state.pabtState.getAction('Place_Obstacle');
                     if (a1) actions.push(a1);
                     if (a2) actions.push(a2);
                     if (a3) actions.push(a3);
@@ -1232,7 +1232,7 @@ try {
             }));
             const effectList = effects.map(e => ({key: e.k, Value: e.v}));
             const node = bt.createLeafNode(() => state.gameMode === 'automatic' ? tickFn() : bt.running);
-            state.pabtState.RegisterAction(name, pabt.newAction(name, conditions, effectList, node));
+            state.pabtState.registerAction(name, pabt.newAction(name, conditions, effectList, node));
         };
 
         reg('Pick_Target', [

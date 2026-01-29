@@ -184,6 +184,13 @@ func (e *Engine) SetTestMode(enabled bool) {
 }
 
 // SetGlobal sets a global variable in the JavaScript runtime.
+//
+// THREADING: This method directly accesses the goja.Runtime without going through
+// the event loop. It must ONLY be called:
+//   - During engine initialization (before any async operations)
+//   - From within script execution context (already on event loop goroutine)
+//
+// For thread-safe global access from arbitrary goroutines, use Runtime.SetGlobal instead.
 func (e *Engine) SetGlobal(name string, value interface{}) {
 	e.globals[name] = value
 	e.vm.Set(name, value)
@@ -191,6 +198,13 @@ func (e *Engine) SetGlobal(name string, value interface{}) {
 
 // GetGlobal retrieves a global variable from the JavaScript runtime.
 // Returns nil if the variable is not defined or is undefined.
+//
+// THREADING: This method directly accesses the goja.Runtime without going through
+// the event loop. It must ONLY be called:
+//   - During engine initialization (before any async operations)
+//   - From within script execution context (already on event loop goroutine)
+//
+// For thread-safe global access from arbitrary goroutines, use Runtime.GetGlobal instead.
 func (e *Engine) GetGlobal(name string) interface{} {
 	val := e.vm.Get(name)
 	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
@@ -239,6 +253,14 @@ func (e *Engine) LoadScriptFromString(name, content string) *Script {
 }
 
 // ExecuteScript executes a script in the engine.
+//
+// THREADING: This method directly accesses the goja.Runtime without going through
+// the event loop. It is designed for synchronous script execution and must ONLY be called:
+//   - During engine initialization (before any async operations)
+//   - From within the main goroutine during startup
+//   - From within existing script execution context (already on event loop goroutine)
+//
+// For async-safe script loading, use Runtime.LoadScript instead.
 func (e *Engine) ExecuteScript(script *Script) (err error) {
 	// Create execution context for this script
 	ctx := &ExecutionContext{

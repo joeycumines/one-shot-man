@@ -300,7 +300,7 @@ func TestPickAndPlaceError_ER003_NormalExecution(t *testing.T) {
 		// Test action registration API
 		const node = bt.node(function(bb) { return 'success'; });
 		const action = pabt.newAction('test_action', [], [], node);
-		state.RegisterAction('test_action', action);
+		state.registerAction('test_action', action);
 		console.log('✓ Action can be registered on state');
 
 		console.log('');
@@ -395,7 +395,7 @@ func TestPickAndPlaceError_ER004_PA_BT_Errors(t *testing.T) {
 			const state = pabt.newState(bb);
 			const node = bt.node(function(bb) { return pabt.success; });
 			const action = pabt.newAction('', [], [], node);
-			state.RegisterAction('', action);
+			state.registerAction('', action);
 			throw new Error('Should have failed for invalid action name');
 		} catch (e) {
 			console.log('Caught error: ' + e.message);
@@ -473,7 +473,7 @@ func TestPickAndPlaceError_ER004_PA_BT_Errors(t *testing.T) {
 			throw new Error('Action failed intentionally');
 		});
 		const failingAction = pabt.newAction('failing', [], [], failingNode);
-		state.RegisterAction('failing', failingAction);
+		state.registerAction('failing', failingAction);
 		console.log('✓ Failing action registered');
 
 		// Create a plan using the failing action

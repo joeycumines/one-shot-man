@@ -11,6 +11,19 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
+// shooterGetFloat64 converts a goja value to float64, handling both float64 and int64 types.
+// This is used throughout shooter game tests for extracting numeric values from JavaScript.
+func shooterGetFloat64(val interface{}) float64 {
+	switch v := val.(type) {
+	case float64:
+		return v
+	case int64:
+		return float64(v)
+	default:
+		return 0
+	}
+}
+
 // TestShooterGame_Distance tests the Euclidean distance calculation utility function
 func TestShooterGame_Distance(t *testing.T) {
 	ctx := context.Background()
@@ -1942,17 +1955,8 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	// Helper function to extract numeric value as float64 (handles both int64 and float64 from JS)
-	getFloat64 := func(val interface{}) float64 {
-		switch v := val.(type) {
-		case float64:
-			return v
-		case int64:
-			return float64(v)
-		default:
-			return 0
-		}
-	}
+	// Use file-level helper for extracting numeric values from JS
+	getFloat64 := shooterGetFloat64
 
 	// Load utility functions and mock behavior tree API
 	scriptContent := `
@@ -3296,17 +3300,8 @@ func TestShooterGame_InputHandling(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	// Helper function to extract numeric value as float64
-	getFloat64 := func(val interface{}) float64 {
-		switch v := val.(type) {
-		case float64:
-			return v
-		case int64:
-			return float64(v)
-		default:
-			return 0
-		}
-	}
+	// Use file-level helper for extracting numeric values from JS
+	getFloat64 := shooterGetFloat64
 
 	// Load game state and input handling functions
 	scriptContent := `
@@ -4535,17 +4530,8 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	// Helper function to extract numeric value as float64
-	getFloat64 := func(val interface{}) float64 {
-		switch v := val.(type) {
-		case float64:
-			return v
-		case int64:
-			return float64(v)
-		default:
-			return 0
-		}
-	}
+	// Use file-level helper for extracting numeric values from JS
+	getFloat64 := shooterGetFloat64
 
 	// Load mock behavior tree API and ticker wrapper
 	scriptContent := `
@@ -5043,17 +5029,8 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	// Helper function to extract numeric value as float64
-	getFloat64 := func(val interface{}) float64 {
-		switch v := val.(type) {
-		case float64:
-			return v
-		case int64:
-			return float64(v)
-		default:
-			return 0
-		}
-	}
+	// Use file-level helper for extracting numeric values from JS
+	getFloat64 := shooterGetFloat64
 
 	// Load game loop implementation
 	scriptContent := `
@@ -5474,17 +5451,8 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	// Helper function to extract numeric value as float64
-	getFloat64 := func(val interface{}) float64 {
-		switch v := val.(type) {
-		case float64:
-			return v
-		case int64:
-			return float64(v)
-		default:
-			return 0
-		}
-	}
+	// Use file-level helper for extracting numeric values from JS
+	getFloat64 := shooterGetFloat64
 
 	// Load edge case testing code
 	scriptContent := `
@@ -5901,17 +5869,8 @@ func TestShooterGame_BlackboardThreadSafety(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	// Helper function to extract numeric value as float64
-	getFloat64 := func(val interface{}) float64 {
-		switch v := val.(type) {
-		case float64:
-			return v
-		case int64:
-			return float64(v)
-		default:
-			return 0
-		}
-	}
+	// Use file-level helper for extracting numeric values from JS
+	getFloat64 := shooterGetFloat64
 
 	// Load simple blackboard test
 	scriptContent := `

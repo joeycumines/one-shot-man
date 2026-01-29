@@ -262,8 +262,10 @@ func TestPickAndPlaceInitialState(t *testing.T) {
 	// Send 'm' key to switch to manual mode first, to prevent actor from moving
 	harness.SendKey("m")
 
-	// Wait for mode switch to be processed (key handling is async)
-	time.Sleep(300 * time.Millisecond)
+	// Wait for mode switch to be processed using proper polling (not fixed sleep)
+	if !harness.WaitForMode("m", 3*time.Second) {
+		t.Fatalf("Timed out waiting for mode switch to 'm'")
+	}
 
 	// Wait for at least one frame to render with debug JSON
 	harness.WaitForFrames(3)

@@ -61,19 +61,27 @@ func (c *Console) ClickElement(ctx context.Context, content string, timeout time
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Poll for the element to appear
+	// Check immediately before waiting - if element is already visible, don't wait 50ms
 	var loc *ElementLocation
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
+	loc = c.FindElement(content)
+	if loc != nil {
+		goto found
+	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("element %q not found within timeout; buffer: %q", content, c.cp.String())
-		case <-ticker.C:
-			loc = c.FindElement(content)
-			if loc != nil {
-				goto found
+	// Poll for the element to appear
+	{
+		ticker := time.NewTicker(50 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("element %q not found within timeout; buffer: %q", content, c.cp.String())
+			case <-ticker.C:
+				loc = c.FindElement(content)
+				if loc != nil {
+					goto found
+				}
 			}
 		}
 	}

@@ -1,0 +1,448 @@
+{
+  "_meta": {
+    "title": "EXHAUSTIVE BLUEPRINT.CANONICAL.JSON VS GIT DIFF ANALYSIS",
+    "analysis_date": "2026-01-31T00:00:00Z",
+    "purpose": "Identify ALL discrepancies in blueprint.json categorization"
+  },
+  "git_diff_facts": {
+    "total_files": 99,
+    "insertions": 24439,
+    "deletions": 2756,
+    "net_change": "+21,683 lines",
+    "branch": "wip vs main"
+  },
+  "blueprint_claims": {
+    "categorized_files_claim": 82,
+    "categorized_files_actual": 74,
+    "lines_changed_claim": 19179,
+    "lines_changed_actual": "~21,683",
+    "category_count_claim": 10,
+    "category_count_actual": 8
+  },
+  "critical_discrepancies": [
+    {
+      "type": "FILE_COUNT_MISMATCH",
+      "severity": "CRITICAL",
+      "details": "Blueprint claims 82 files categorized but only 74 are actually listed. Git diff shows 99 files total, meaning 25 files (26%) are completely uncategorized."
+    },
+    {
+      "type": "LINE_COUNT_MISMATCH",
+      "severity": "CRITICAL",
+      "details": "Blueprint claims ~19,179 lines changed but actual diff shows ~27,195 total changes (24,439 + 2,756). Difference of ~8,016 lines (~42% underreported)."
+    },
+    {
+      "type": "MISSING_FILES",
+      "severity": "CRITICAL",
+      "details": "25 files from git diff are not accounted for in any category"
+    }
+  ],
+  "uncategorized_files": [
+    {
+      "file": ".agent/rules/core-code-quality-checks.md",
+      "change": "+11",
+      "category_suggested": "Metadata/Configuration",
+      "priority": "LOW"
+    },
+    {
+      "file": ".deadcodeignore",
+      "change": "+10",
+      "category_suggested": "Configuration",
+      "priority": "MEDIUM"
+    },
+    {
+      "file": "blueprint.json",
+      "change": "+291",
+      "category_suggested": "Metadata",
+      "priority": "SELF"
+    },
+    {
+      "file": "commit.msg",
+      "change": "+10",
+      "category_suggested": "Metadata",
+      "priority": "LOW"
+    },
+    {
+      "file": "docs/architecture.md",
+      "change": "+43",
+      "category_suggested": "Documentation",
+      "priority": "HIGH - Architecture review critical"
+    },
+    {
+      "file": "docs/visuals/gifs/script-example-bt-shooter.tape",
+      "change": "+67",
+      "category_suggested": "Documentation/Visuals",
+      "priority": "LOW"
+    },
+    {
+      "file": "docs/visuals/gifs/script-example-pick-and-place.tape",
+      "change": "+33",
+      "category_suggested": "Documentation/Visuals",
+      "priority": "LOW"
+    },
+    {
+      "file": "example.config.mk",
+      "change": "+19",
+      "category_suggested": "Configuration",
+      "priority": "HIGH - Config changes affect all tests"
+    },
+    {
+      "file": "go.mod",
+      "change": "+38",
+      "category_suggested": "Dependencies",
+      "priority": "HIGH - Dependency review mandatory"
+    },
+    {
+      "file": "go.sum",
+      "change": "+73",
+      "category_suggested": "Dependencies",
+      "priority": "MEDIUM"
+    },
+    {
+      "file": "internal/command/pick_and_place_mouse_test.go",
+      "change": "+98",
+      "category_suggested": "Pick-and-Place",
+      "priority": "HIGH - Missing from major component"
+    },
+    {
+      "file": "internal/command/prompt_flow_editor_test.go",
+      "change": "+10",
+      "category_suggested": "Other Tests",
+      "priority": "MEDIUM"
+    },
+    {
+      "file": "internal/command/scripting_command.go",
+      "change": "+43",
+      "category_suggested": "Scripting",
+      "priority": "HIGH - Core implementation change"
+    },
+    {
+      "file": "internal/command/scripting_command_test.go",
+      "change": "+38",
+      "category_suggested": "Scripting",
+      "priority": "HIGH - Test change"
+    },
+    {
+      "file": "internal/command/shooter_game_unix_test.go",
+      "change": "+12",
+      "category_suggested": "Shooter Game",
+      "priority": "MEDIUM - Missing from review"
+    },
+    {
+      "file": "internal/builtin/bt/adapter_test.go",
+      "change": "+10",
+      "category_suggested": "Behavior Tree",
+      "priority": "MEDIUM - Missing from review"
+    },
+    {
+      "file": "internal/builtin/bt/blackboard.go",
+      "change": "+4",
+      "category_suggested": "Behavior Tree",
+      "priority": "HIGH - Core behavior change"
+    },
+    {
+      "file": "internal/builtin/bt/bridge.go",
+      "change": "+27",
+      "category_suggested": "Behavior Tree",
+      "priority": "HIGH - Core behavior change"
+    },
+    {
+      "file": "internal/builtin/bubbletea/parsekey_test.go",
+      "change": "+7",
+      "category_suggested": "BubbleTea Builtin",
+      "priority": "MEDIUM - Missing from review"
+    },
+    {
+      "file": "internal/builtin/register.go",
+      "change": "+8",
+      "category_suggested": "Core Registration",
+      "priority": "HIGH - Affects all builtins"
+    },
+    {
+      "file": "internal/scripting/execution_context.go",
+      "change": "-2",
+      "category_suggested": "Scripting",
+      "priority": "MEDIUM - Deletion, verify impact"
+    },
+    {
+      "file": "internal/scripting/mouse_test_api_test.go",
+      "change": "+52",
+      "category_suggested": "Scripting",
+      "priority": "MEDIUM - Test change"
+    },
+    {
+      "file": "internal/scripting/state_manager.go",
+      "change": "+5",
+      "category_suggested": "Scripting",
+      "priority": "MEDIUM - State management change"
+    },
+    {
+      "file": "internal/scripting/super_document_click_after_scroll_integration_test.go",
+      "change": "+6",
+      "category_suggested": "Scripting",
+      "priority": "MEDIUM - Integration test change"
+    },
+    {
+      "file": "internal/scripting/super_document_unix_integration_test.go",
+      "change": "+26",
+      "category_suggested": "Scripting",
+      "priority": "MEDIUM - Integration test change"
+    },
+    {
+      "file": "scripts/benchmark-input-latency.js",
+      "change": "+62",
+      "category_suggested": "Other Scripts",
+      "priority": "LOW - Benchmark change"
+    }
+  ],
+  "category_verification": [
+    {
+      "category": "Pick-and-Place",
+      "claim": "8 files, 7200 lines",
+      "actual_analysis": {
+        "files_in_git_diff": [
+          "internal/command/pick_and_place_error_recovery_test.go (+1007)",
+          "internal/command/pick_and_place_harness_test.go (+1615)",
+          "internal/command/pick_and_place_mouse_test.go (+98) [MISSING FROM BLUEPRINT]",
+          "internal/command/pick_and_place_unix_test.go (+2578)",
+          "internal/example/pickandplace/bubbletea_test.go (+12) [MISSING FROM BLUEPRINT]",
+          "internal/example/pickandplace/pick_place_integration_test.go (+371) [MISSING FROM BLUEPRINT]",
+          "internal/example/pickandplace/pick_place_manual_mode_comprehensive_test.go (+1135)",
+          "internal/example/pickandplace/pick_place_simulation_consistency_test.go (+895)",
+          "scripts/example-05-pick-and-place.js (+1885)",
+          "internal/command/pick_and_place_test.go (if exists)"
+        ],
+        "actual_count": "9-10 files",
+        "actual_lines": "~9,796 lines",
+        "discrepancy": "Blueprint undercounts by 1-2 files and ~1,500-2,500 lines"
+      }
+    },
+    {
+      "category": "PABT Module",
+      "claim": "15 files, 5900 lines",
+      "actual_analysis": {
+        "files_in_git_diff": [
+          "internal/builtin/pabt/actions.go (+112)",
+          "internal/builtin/pabt/benchmark_test.go (+200)",
+          "internal/builtin/pabt/doc.go (+192)",
+          "internal/builtin/pabt/empty_actions_test.go (+139)",
+          "internal/builtin/pabt/evaluation.go (+354)",
+          "internal/builtin/pabt/evaluation_test.go (+439)",
+          "internal/builtin/pabt/expr_integration_test.go (+284)",
+          "internal/builtin/pabt/graph_test.go (+509)",
+          "internal/builtin/pabt/graphjsimpl_test.go (+480)",
+          "internal/builtin/pabt/integration_test.go (+239)",
+          "internal/builtin/pabt/memory_test.go (+204)",
+          "internal/builtin/pabt/pabt_test.go (+242)",
+          "internal/builtin/pabt/require.go (+503)",
+          "internal/builtin/pabt/require_test.go (+539)",
+          "internal/builtin/pabt/simple.go (+158)",
+          "internal/builtin/pabt/simple_test.go (+284)",
+          "internal/builtin/pabt/state.go (+365)",
+          "internal/builtin/pabt/state_test.go (+346)",
+          "internal/builtin/pabt/test_helpers_test.go (+48)"
+        ],
+        "actual_count": "19 files",
+        "actual_lines": "~6,966 lines",
+        "discrepancy": "Blueprint undercounts by 4 files and ~1,066 lines"
+      }
+    },
+    {
+      "category": "Documentation",
+      "claim": "19 files, 2400 lines",
+      "actual_analysis": {
+        "files_in_git_diff": [
+          "docs/architecture.md (+43) [MISSING FROM BLUEPRINT]",
+          "docs/design/shooter_e2e_harness_design.md (-815) [Listed as removal]",
+          "docs/reference/bt-blackboard-usage.md (+794)",
+          "docs/reference/pabt.md (+779)",
+          "docs/reviews/001-pabt-module.md (+221)",
+          "docs/reviews/002-pabt-module.md (+93)",
+          "docs/reviews/003-bubbletea.md (+161)",
+          "docs/reviews/004-mouseharness.md (+140)",
+          "docs/reviews/005-pickandplace.md (+153)",
+          "docs/reviews/006-shooter.md (+146)",
+          "docs/reviews/011-scripting.md (+451)",
+          "docs/reviews/013-documentation.md (+272)",
+          "docs/reviews/015-config.md (+113)",
+          "docs/reviews/021-scripting-engine-exhaustive.md (+459)",
+          "docs/reviews/022-exhaustive-review-session.md (+230)",
+          "docs/reviews/README.md (+21)",
+          "docs/todo.md (+3) [MISSING FROM BLUEPRINT]",
+          "docs/visuals/gifs/script-example-bt-shooter.tape (+67) [MISSING FROM BLUEPRINT]",
+          "docs/visuals/gifs/script-example-pick-and-place.tape (+33) [MISSING FROM BLUEPRINT]"
+        ],
+        "actual_count": "19 files",
+        "actual_lines": "~4,576 lines (net)",
+        "discrepancy": "File count matches but line count underreported by ~2,176 lines"
+      }
+    },
+    {
+      "category": "MouseHarness",
+      "claim": "11 files, 1800 lines",
+      "actual_analysis": {
+        "files_in_git_diff": [
+          "internal/mouseharness/console.go (+97)",
+          "internal/mouseharness/console_test.go (+293)",
+          "internal/mouseharness/element.go (+163)",
+          "internal/mouseharness/integration_test.go (+335)",
+          "internal/mouseharness/internal/dummy/main.go (+87)",
+          "internal/mouseharness/main_test.go (+73)",
+          "internal/mouseharness/mouse.go (+88)",
+          "internal/mouseharness/mouse_test.go (+122)",
+          "internal/mouseharness/options.go (+69)",
+          "internal/mouseharness/options_test.go (+140)",
+          "internal/mouseharness/terminal.go (+355)",
+          "internal/mouseharness/terminal_test.go (+248)"
+        ],
+        "actual_count": "12 files",
+        "actual_lines": "~2,070 lines",
+        "discrepancy": "Blueprint undercounts by 1 file and ~270 lines"
+      }
+    },
+    {
+      "category": "BubbleTea Builtin",
+      "claim": "6 files, 770 lines",
+      "actual_analysis": {
+        "files_in_git_diff": [
+          "internal/builtin/bubbletea/bubbletea.go (+97)",
+          "internal/builtin/bubbletea/core_logic_test.go (+141)",
+          "internal/builtin/bubbletea/js_model_logic_test.go (+149)",
+          "internal/builtin/bubbletea/message_conversion_test.go (+364)",
+          "internal/builtin/bubbletea/parsekey_test.go (+7) [MISSING FROM BLUEPRINT KEY FILES]",
+          "internal/builtin/bubbletea/render_throttle_test.go (+563 net change)",
+          "internal/builtin/bubbletea/run_program_test.go (+322)"
+        ],
+        "actual_count": "7 files",
+        "actual_lines": "~1,643 lines",
+        "discrepancy": "Blueprint undercounts by 1 file and ~873 lines"
+      }
+    },
+    {
+      "category": "Behavior Tree",
+      "claim": "4 files, 90 lines",
+      "actual_analysis": {
+        "files_in_git_diff": [
+          "internal/builtin/bt/adapter_test.go (+10) [MISSING FROM BLUEPRINT]",
+          "internal/builtin/bt/blackboard.go (+4) [MISSING FROM BLUEPRINT]",
+          "internal/builtin/bt/bridge.go (+27) [MISSING FROM BLUEPRINT]",
+          "internal/builtin/bt/doc.go (-7) [Listed as removal]",
+          "internal/builtin/bt/failure_mode_test.go (-73) [Listed as removal]"
+        ],
+        "actual_count": "5 files",
+        "actual_lines": "+41 lines (net from additions)",
+        "discrepancy": "Blueprint undercounts by 1 file (3 significant files missing)"
+      }
+    },
+    {
+      "category": "Scripting",
+      "claim": "9 files, 400 lines",
+      "actual_analysis": {
+        "files_in_git_diff": [
+          "internal/scripting/engine_core.go (+38)",
+          "internal/scripting/execution_context.go (-2) [MISSING FROM BLUEPRINT]",
+          "internal/scripting/js_logging_api.go (+22)",
+          "internal/scripting/js_state_accessor.go (+5)",
+          "internal/scripting/logging.go (+61)",
+          "internal/scripting/logging_test.go (+34)",
+          "internal/scripting/mouse_test_api_test.go (+52) [MISSING FROM BLUEPRINT]",
+          "internal/scripting/mouse_util_test.go (+663 net change)",
+          "internal/scripting/recording_demos_unix_test.go (+405)",
+          "internal/scripting/state_manager.go (+5) [MISSING FROM BLUEPRINT]",
+          "internal/scripting/super_document_click_after_scroll_integration_test.go (+6) [MISSING FROM BLUEPRINT]",
+          "internal/scripting/super_document_unix_integration_test.go (+26) [MISSING FROM BLUEPRINT]",
+          "internal/scripting/vhs_record_unix_test.go (+35)",
+          "scripts/example-04-bt-shooter.js (+626 net change)",
+          "scripts/benchmark-input-latency.js (+62) [MISSING FROM BLUEPRINT]"
+        ],
+        "actual_count": "15 files",
+        "actual_lines": "~2,278 lines (net from additions)",
+        "discrepancy": "Blueprint severely undercounts by 6 files and ~1,878 lines"
+      }
+    }
+  ],
+  "missing_major_removals_investigation": [
+    {
+      "file": "docs/design/shooter_e2e_harness_design.md",
+      "change": "-815",
+      "blueprint_status": "Listed for investigation",
+      "concern": "Design doc removed - verify content migrated to reference docs or reviews",
+      "action_required": "Confirm no critical design information lost"
+    },
+    {
+      "file": "internal/builtin/bt/failure_mode_test.go",
+      "change": "-73",
+      "blueprint_status": "Listed for investigation",
+      "concern": "Test removed - verify functionality correctly deprecated or replaced",
+      "action_required": "Confirm test coverage maintained elsewhere"
+    },
+    {
+      "file": "internal/builtin/bt/doc.go",
+      "change": "-7",
+      "blueprint_status": "Listed for investigation",
+      "concern": "Documentation removed - verify alternative documentation source",
+      "action_required": "Check pkg.go or pabt.md for替代信息"
+    },
+    {
+      "file": "internal/command/shooter_game_test.go",
+      "change": "+529 net (modified, not deletion)",
+      "blueprint_status": "INCORRECTLY LISTED AS REMOVAL",
+      "concern": "Blueprint states (-529 net) but actual diff shows modification, not deletion",
+      "action_required": "Correct blueprint classification, not a removal"
+    },
+    {
+      "file": "internal/scripting/mouse_util_test.go",
+      "change": "+663 net (modified, not deletion)",
+      "blueprint_status": "INCORRECTLY LISTED AS REMOVAL",
+      "concern": "Blueprint states (-663 net) but actual diff shows net addition, not pure deletion",
+      "action_required": "Correct blueprint classification, file was significantly refactored"
+    }
+  ],
+  "structural_issues": [
+    "Blueprint claims 10 categories but only defines 8",
+    "Summary statistics are inconsistent across different sections",
+    "key_files lists are incomplete - many significant files omitted",
+    "line_change calculations appear to be estimates rather than actual counts",
+    "net change calculations are inconsistent (some use net, some use additions only)",
+    "Missing entire category for 'Dependencies' (go.mod, go.sum)",
+    "Missing entire category for 'Configuration' (example.config.mk, .deadcodeignore)",
+    "Missing entire category for 'Metadata' (blueprint.json, commit.msg, WIP.md)",
+    "Missing entire category for 'Other Tests' (prompt_flow_editor_test.go, etc.)"
+  ],
+  "prioritization_concerns": [
+    "go.mod changes rated 'LOW' when dependency updates are security-critical",
+    "Architecture.md rated 'LOW' when architecture changes are scope-altering",
+    "Internal test deletions (failure_mode_test.go) not prioritized for verification",
+    "Many core implementation changes (blackboard.go, bridge.go) missing from review"
+  ],
+  "missing_review_areas": [
+    "Dependency security analysis (go.mod, go.sum changes)",
+    "Configuration validation (example.config.mk affects all tooling)",
+    "Architecture review (docs/architecture.md updates)",
+    "Registration system review (internal/builtin/register.go changes)",
+    "Test harness validation (multiple uncategorized test files)",
+    "Visual content verification (tape files for documentation)",
+    "Integration test coverage verification (all *_integration_test.go files)"
+  ],
+  "recommended_corrections": [
+    "Create 'Dependencies' category for go.mod, go.sum with HIGH priority",
+    "Create 'Configuration' category for example.config.mk, .deadcodeignore with MEDIUM priority",
+    "Create 'Metadata' category for blueprint.json, commit.msg, WIP.md with LOW priority",
+    "Add all missing files to existing categories where appropriate",
+    "Correct file counts and line counts to match actual git diff",
+    "Remove 'removal' status for files that were modified, not deleted",
+    "Add pick_and_place_mouse_test.go to Pick-and-Place category",
+    " Add internal/example/pickandplace/ test files to Pick-and-Place category",
+    "Add all Behavior Tree changes to Behavior Tree category",
+    "Split Scripting category into 'Core' and 'Integration Tests' subcategories",
+    "Correct Shooter Game test status from 'removal' to 'modification'",
+    "Update summary statistics to accurately reflect 99 files, ~27,195 total lines",
+    "Add architecture.md review to Documentation phase",
+    "Add register.go review to Core Infrastructure phase"
+  ],
+  "verification_status": {
+    "completeness": "FAILURE - 26% of files uncategorized",
+    "correctness": "FAILURE - Multiple factual errors in claims",
+    "structure": "WARNING - JSON valid but logically inconsistent",
+    "trustability": "LOW - Cannot trust any claim without independent verification"
+  }
+}

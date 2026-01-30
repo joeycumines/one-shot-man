@@ -1014,11 +1014,8 @@ func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
 // ============================================================================
 
 func TestManualMode_WASD_Movement_T13(t *testing.T) {
-	// SKIP: These tests have incorrect expectations. WASD keys are queued in pendingInputs
-	// and processed on Tick, not immediately on key press. The tests don't send a Tick after
-	// key presses, so movement never happens. This is a test design issue, not a script bug.
-	// The proper fix requires rewriting the tests to use sendInputAndTick pattern like T9-T12.
-	t.Skip("T13 tests have incorrect expectations - WASD movement requires Tick processing, not immediate key handling")
+	// NOTE: WASD keys are queued in pendingInputs and processed on Tick.
+	// This test uses sendInputAndTick to properly queue key presses and then tick.
 
 	_, vm, state, exports := setupPickAndPlaceTest(t)
 	updateFn := getUpdateFn(t, exports)
@@ -1033,14 +1030,14 @@ func TestManualMode_WASD_Movement_T13(t *testing.T) {
 		_ = actor.Set("x", 30)
 		_ = actor.Set("y", 12)
 
-		// Press 'W' key - movement happens immediately on key press (not in Tick)
+		// Press 'W' key and tick to process it
 		msg := map[string]interface{}{"type": "Key", "key": "w"}
-		_, err := updateFn(goja.Undefined(), state, vm.ToValue(msg))
+		err := sendInputAndTick(t, vm, state, updateFn, msg)
 		assert.NoError(t, err)
 
-		// Actor Y should have decreased immediately (moved up)
+		// Actor Y should have decreased (moved up) after tick processing
 		newY := actor.Get("y").ToFloat()
-		assert.Less(t, newY, 12.0, "Actor should have moved up immediately")
+		assert.Less(t, newY, 12.0, "Actor should have moved up")
 		assert.Equal(t, 11.0, newY, "Actor should have moved exactly 1 cell up")
 	})
 
@@ -1051,18 +1048,15 @@ func TestManualMode_WASD_Movement_T13(t *testing.T) {
 		_ = actor.Set("x", 30)
 		_ = actor.Set("y", 12)
 
-		// Press 'D' key 5 times (discrete movement)
-		msgKey := map[string]interface{}{"type": "Key", "key": "d"}
-		initialX := actor.Get("x").ToFloat()
-
+		// Press 'D' key 5 times (discrete movement) with tick after each
 		for i := 0; i < 5; i++ {
-			_, err := updateFn(goja.Undefined(), state, vm.ToValue(msgKey))
+			msgKey := map[string]interface{}{"type": "Key", "key": "d"}
+			err := sendInputAndTick(t, vm, state, updateFn, msgKey)
 			assert.NoError(t, err, "Key press %d should succeed", i)
 		}
 
 		// Actor should have moved 5 times (5 cells right)
 		finalX := actor.Get("x").ToFloat()
-		assert.Greater(t, finalX, initialX, "Actor should have moved right")
 		assert.Equal(t, 35.0, finalX, "Should have moved exactly 5 cells right")
 	})
 
@@ -1073,14 +1067,14 @@ func TestManualMode_WASD_Movement_T13(t *testing.T) {
 		_ = actor.Set("x", 30)
 		_ = actor.Set("y", 12)
 
-		// Press 'W' key (move up)
+		// Press 'W' key (move up) and tick
 		msgW := map[string]interface{}{"type": "Key", "key": "w"}
-		_, err1 := updateFn(goja.Undefined(), state, vm.ToValue(msgW))
+		err1 := sendInputAndTick(t, vm, state, updateFn, msgW)
 		assert.NoError(t, err1)
 
-		// Press 'D' key (move right)
+		// Press 'D' key (move right) and tick
 		msgD := map[string]interface{}{"type": "Key", "key": "d"}
-		_, err2 := updateFn(goja.Undefined(), state, vm.ToValue(msgD))
+		err2 := sendInputAndTick(t, vm, state, updateFn, msgD)
 		assert.NoError(t, err2)
 
 		// Actor should have moved up 1 and right 1 (2 key presses = 2 moves)
@@ -1100,14 +1094,9 @@ func TestManualMode_WASD_Movement_T13(t *testing.T) {
 		// Add an obstacle in front of actor
 		addCube(t, vm, state, 701, 31, 12, false, "obstacle")
 
-		// Press 'D' to move right
+		// Press 'D' to move right and tick
 		msg := map[string]interface{}{"type": "Key", "key": "d"}
-		_, err := updateFn(goja.Undefined(), state, vm.ToValue(msg))
-		assert.NoError(t, err)
-
-		// Trigger tick
-		msgTick := map[string]interface{}{"type": "Tick", "id": "tick"}
-		_, err = updateFn(goja.Undefined(), state, vm.ToValue(msgTick))
+		err := sendInputAndTick(t, vm, state, updateFn, msg)
 		assert.NoError(t, err)
 
 		// Actor should NOT have moved (blocked)
@@ -1122,14 +1111,9 @@ func TestManualMode_WASD_Movement_T13(t *testing.T) {
 		_ = actor.Set("x", 59)
 		_ = actor.Set("y", 12)
 
-		// Press 'D' to move right (would go to 60, out of bounds)
+		// Press 'D' to move right (would go to 60, out of bounds) and tick
 		msg := map[string]interface{}{"type": "Key", "key": "d"}
-		_, err := updateFn(goja.Undefined(), state, vm.ToValue(msg))
-		assert.NoError(t, err)
-
-		// Trigger tick
-		msgTick := map[string]interface{}{"type": "Tick", "id": "tick"}
-		_, err = updateFn(goja.Undefined(), state, vm.ToValue(msgTick))
+		err := sendInputAndTick(t, vm, state, updateFn, msg)
 		assert.NoError(t, err)
 
 		// Actor should stay at edge (or be clamped)
@@ -1140,12 +1124,9 @@ func TestManualMode_WASD_Movement_T13(t *testing.T) {
 		_ = actor.Set("x", 1)
 		_ = actor.Set("y", 12)
 
-		// Press 'A' to move left
+		// Press 'A' to move left and tick
 		msgA := map[string]interface{}{"type": "Key", "key": "a"}
-		_, err = updateFn(goja.Undefined(), state, vm.ToValue(msgA))
-		assert.NoError(t, err)
-
-		_, err = updateFn(goja.Undefined(), state, vm.ToValue(msgTick))
+		err = sendInputAndTick(t, vm, state, updateFn, msgA)
 		assert.NoError(t, err)
 
 		newX = actor.Get("x").ToFloat()

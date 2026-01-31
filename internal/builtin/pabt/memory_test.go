@@ -13,6 +13,7 @@ package pabt
 
 import (
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 
@@ -70,7 +71,8 @@ func TestActionRegistryConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
 				// Concurrent register
-				action := NewAction("test", nil, nil, nil)
+				node := bt.New(func(children []bt.Node) (bt.Status, error) { return bt.Success, nil })
+				action := NewAction("test", nil, nil, node)
 				registry.Register("action", action)
 
 				// Concurrent read
@@ -83,6 +85,28 @@ func TestActionRegistryConcurrentAccess(t *testing.T) {
 	wg.Wait()
 
 	// No deadlocks or panics = success
+}
+
+// TestNewAction_NilNodePanic verifies NewAction panics when node is nil
+func TestNewAction_NilNodePanic(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("Expected panic when node parameter is nil, but got none")
+		} else {
+			errMsg := ""
+			if str, ok := r.(string); ok {
+				errMsg = str
+			}
+			if errMsg == "" {
+				t.Errorf("Expected panic string, got %T", r)
+			} else if !strings.Contains(errMsg, "node parameter cannot be nil") {
+				t.Errorf("Expected panic message to contain 'node parameter cannot be nil', got '%s'", errMsg)
+			}
+		}
+	}()
+
+	// This should panic
+	NewAction("test", nil, nil, nil)
 }
 
 // TestFuncConditionNoLeak verifies FuncCondition doesn't leak closures

@@ -1,6 +1,7 @@
 package pabt
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 
@@ -102,7 +103,15 @@ func (a *Action) Node() bt.Node {
 //   - conditions: Preconditions (each slice is AND group, groups are OR logic)
 //   - effects: What this action achieves in the state
 //   - node: Behavior tree node implementing the action's logic
+//
+// SECURITY: node parameter cannot be nil. If passed as nil,
+// will cause runtime panic when the Action's Node() method is called.
+// Callers must provide a valid bt.Node or use pabt.newSimpleAction() which
+// provides a no-op placeholder node.
 func NewAction(name string, conditions []pabtpkg.IConditions, effects pabtpkg.Effects, node bt.Node) *Action {
+	if node == nil {
+		panic(fmt.Sprintf("pabt.NewAction: node parameter cannot be nil (action=%s)", name))
+	}
 	return &Action{
 		Name:       name,
 		conditions: conditions,

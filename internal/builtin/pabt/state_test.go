@@ -77,7 +77,7 @@ func TestState_Variable_FloatKey(t *testing.T) {
 	bb := new(btmod.Blackboard)
 	state := NewState(bb)
 
-	bb.Set("3.140000", "pi")
+	bb.Set("3.14", "pi")
 
 	val, err := state.Variable(3.14)
 	if err != nil {

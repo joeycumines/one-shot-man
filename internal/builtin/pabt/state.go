@@ -131,7 +131,7 @@ func (s *State) Variable(key any) (any, error) {
 	case uint, uint8, uint16, uint32, uint64:
 		keyStr = fmt.Sprintf("%d", k)
 	case float32, float64:
-		keyStr = fmt.Sprintf("%f", k)
+		keyStr = fmt.Sprintf("%g", k)
 	default:
 		// Try fmt.Stringer interface (for pabtpkg.Symbol or custom types)
 		if stringer, ok := key.(fmt.Stringer); ok {

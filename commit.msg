@@ -1,22 +1,20 @@
-exhaustive-review/phase-3: code quality and correctness fixes
+docs: phase-4 review findings - documentation verification
 
-All code quality fixes implemented: H2 (float formatting), H3 (nil node validation).
-H1 and H5 resolved as intentional design features (Goja pattern, intentional stderr).
-All tests passing with 2/2 perfect peer reviews.
+Verified 8+ FALSE POSITIVE issues from initial subagent review:
+- cmd.exe docs: CORRECT (cmd.exe in knownShells, not skipped)
+- session-storage: CORRECT (clearly marked as design proposal in archive/)
+- shell-completion: CORRECT (describes shells, not scripts)
+- goal -r flag: CORRECT (documented since commit 27130f1, Dec 2025)
+- SessionCommand: EXISTS at internal/command/session.go
 
-Phase 3 Code Quality Improvements:
-- H2 FIX: Float key formatting %f→%g in pabt/state.go (cleaner "3.14" vs "1.500000")
-- H3 FIX: Nil node validation with panic in pabt/actions.go (defensive programming)
-- H1 RESOLVED: Panic-based API is correct Goja pattern for JS-native functions
-- H5 RESOLVED: Stderr logging intentional for critical error visibility in tests
-- Test coverage: Added TestNewAction_NilNodePanic
-- Documentation: CODE_QUALITY_ISSUES.md updated with all resolutions
+Identified 2 REAL documentation issues requiring fixes:
+- D-H3: bt-blackboard-usage.md type constraint contradiction
+  (docs claim JSON-only forbid []byte, impl accepts ANY type)
+- D-H4: elm-commands-and-goja.md WrapCmd access gap
+  (docs don't clarify WrapCmd is Go-internal, not JS-accessible)
 
-Verification:
-- Review #1: PASS PERFECT (all fixes verified correctly)
-- Review #2: PASS PERFECT (all components correct, all tests passing)
-- Full test suite: PASS (100%)
-- Critical modules: PASS
+Verification files included:
+- blackboard_type_constraint_verification.json
+- wrapcmd_documentation_gap_analysis.json
 
-This completes the code quality and correctness phase, with all
-HIGH priority issues either fixed or properly resolved as design features.
+Related to PHASE_4 documentation review.

@@ -3,10 +3,12 @@
 219	0	.review_artifacts/review2_summary.md
 1	0	.review_session_start
 1030	0	CODE_QUALITY_ISSUES.md
-229	0	WIP.md
+248	0	WIP.md
+23	0	blackboard_type_constraint_verification.json
 557	0	blueprint.json
+0	0	build-git-diff-numstat.txt
 35	0	calculate_elapsed.sh
-22	0	commit.msg
+20	0	commit.msg
 43	0	docs/architecture.md
 0	815	docs/design/shooter_e2e_harness_design.md
 794	0	docs/reference/bt-blackboard-usage.md
@@ -103,3 +105,5 @@
 31	31	scripts/benchmark-input-latency.js
 228	398	scripts/example-04-bt-shooter.js
 1885	0	scripts/example-05-pick-and-place.js
+44	0	tmp_commit_phase4.sh
+102	0	wrapcmd_documentation_gap_analysis.json

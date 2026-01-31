@@ -17,24 +17,24 @@ tags:
 - **Use Standard JS Objects**: For pure JavaScript behavior trees, direct object access is faster and simpler
 - **JavaScript State is the Source of Truth**: The blackboard serves as a minimal bridge
 - **Sync Only Planning Inputs**: Copy primitive values to the blackboard before Go planning
-- **CRITICAL CONSTRAINT**: Blackboard ONLY supports types that `encoding/json` unmarshals to by default (bool, float64, int64, string, []interface{}, map[string]interface{}). NO custom structs, NO time.Time, NO channels.
+- **Type Guidance**: Blackboard accepts any Go type, but JSON-compatible types ensure predictable cross-boundary behavior. See [Type Recommendations](#blackboard-type-recommendations) for guidance.
 
 ---
 
-## CRITICAL: Blackboard Type Constraints
+## Blackboard Type Recommendations
 
-### The JSON Unmarshal Constraint
+### Type Guidance for Cross-Boundary Behavior
 
-**This is a hard architectural constraint.** The BT blackboard may ONLY support types that `encoding/json` unmarshals to by default when you unmarshal any valid JSON to a destination of type `any`.
+**The blackboard accepts any Go type** (it stores values as `any`), but using JSON-compatible types ensures predictable behavior across the Go-JavaScript boundary.
 
-This constraint exists because:
+This guidance exists because:
 
 1. **Go planner interfaces** (like `pabt.State[T]`) use `any` type for blackboard values
 2. **JSON unmarshal to `any`** has well-defined, limited type mappings
-3. **Type safety** requires predictable behavior across the Go-JavaScript boundary
-4. **Performance** avoids reflection overhead for custom types
+3. **Type safety** requires predictable behavior for values crossing the Go-JavaScript boundary
+4. **Performance** - JSON-compatible types avoid reflection overhead for custom types
 
-### Supported Types (JSON-Compatible)
+### Recommended Types (JSON-Compatible)
 
 These types are explicitly permitted in the blackboard:
 
@@ -47,19 +47,22 @@ These types are explicitly permitted in the blackboard:
 | `[]interface{}`      | array     | `bb.set('items', [1,2,3])`  |
 | `map[string]interface{}` | object | `bb.set('pos', {x:10,y:20})` |
 
-### Forbidden Types
+### Types That May Cause Issues
 
-These types are **explicitly prohibited** in the blackboard:
+The blackboard implementation accepts any type, but these types will behave unexpectedly when crossing the Go-JavaScript boundary:
 
-| Forbidden Type          | Reason                             |
-|-------------------------|------------------------------------|
-| Custom structs (e.g., `*Actor`) | Not JSON-unmarshalable to `any` |
+| Type                  | Issue                              |
+|-----------------------|------------------------------------|
+| Custom structs (e.g., `*Actor`) | Not JSON-unmarshalable from `any` without custom encoding |
 | Pointers to custom types | Same as above                     |
-| Interface types (other than `any`) | Ambiguous type resolution      |
-| `time.Time`             | JSON requires custom encoding     |
-| `chan`                  | Not serializable                  |
-| `func`                  | Not serializable                  |
-| `[]byte`                | Only []any allowed to support semantics closer to JS array |
+| Interface types (other than `any`) | Ambiguous type resolution on JavaScript side |
+| `time.Time`             | JSON requires custom encoding - becomes string/number, losing time methods |
+| `chan`                  | Not serializable across Go-JavaScript boundary |
+| `func`                  | Not serializable - cannot be represented in JSON or Goja |
+
+**Note**: The blackboard DOES accept []byte and other slice types, but JSON serialization round-trips may convert these to []any. For reliable cross-boundary data, stick to the recommended types above.
+
+**Example of unexpected behavior**: If you store `time.Time` in the blackboard and retrieve it on the JavaScript side, it becomes a string (ISO 8601 format) or number (Unix timestamp) rather than a JavaScript `Date` object. The time methods (`.Add()`, `.Sub()`, etc.) are lost, requiring re-parsing.
 
 ### Data Flow Diagram
 

@@ -57,6 +57,18 @@ func WrapCmd(runtime *goja.Runtime, cmd tea.Cmd) goja.Value {
 }
 ```
 
+**⚠️ IMPORTANT ACCESS BOUNDARY:** `WrapCmd()` is a **Go-internal helper function** and is **NOT exported to JavaScript**. Only Go code implementing native components (like viewport, textarea) needs to call this function. JavaScript users simply receive opaque wrapped commands as return values from component `Update()` methods - they never call `WrapCmd()` directly.
+
+**JavaScript usage:** `const [newVp, cmd] = viewport.update(msg);  // cmd is already wrapped`
+
+**Go implementation:** Only inside custom Go components do you need to call `WrapCmd()`:
+```go
+func (c *myComponent) update(msg tea.Msg) goja.Value {
+    newModel, cmd := c.Model.Update(msg)
+    return runtime.NewArray(c, bubbletea.WrapCmd(runtime, cmd))  // Go side only!
+}
+```
+
 **valueToCmd function** (handles both wrapped Go functions AND descriptor objects):
 
 ```go

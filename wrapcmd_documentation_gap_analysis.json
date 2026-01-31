@@ -1,0 +1,102 @@
+{
+  "wrapcmd_location": "internal/builtin/bubbletea/bubbletea.go:166",
+  "wrapcmd_function": {
+    "name": "WrapCmd",
+    "signature": "func WrapCmd(runtime *goja.Runtime, cmd tea.Cmd) goja.Value",
+    "implementation": "Uses runtime.ToValue(cmd) to wrap Go tea.Cmd functions as opaque JavaScript values. Returns goja.Null() for nil commands.",
+    "export_status": "Package-level Go function - NOT exported to JavaScript via Require()"
+  },
+  "bubbletea_registration": {
+    "file": "internal/builtin/register.go:66",
+    "registration_code": "registry.RegisterNativeModule(prefix+\"bubbletea\", bubbleteamod.Require(ctx, bubbleteaMgr))",
+    "module_name": "osm:bubbletea",
+    "exports": [
+      "isTTY",
+      "keys",
+      "keysByName",
+      "mouseButtons",
+      "mouseButtonsByName",
+      "mouseActions",
+      "mouseActionsByName",
+      "isValidTextareaInput",
+      "isValidLabelInput",
+      "newModel",
+      "run",
+      "quit",
+      "clearScreen",
+      "batch",
+      "sequence",
+      "tick",
+      "setWindowTitle",
+      "hideCursor",
+      "showCursor",
+      "enterAltScreen",
+      "exitAltScreen",
+      "enableBracketedPaste",
+      "disableBracketedPaste",
+      "enableReportFocus",
+      "disableReportFocus",
+      "windowSize"
+    ],
+    "wrapcmd_exported": false
+  },
+  "js_access_mechanism": {
+    "mechanism": "bubbletea.WrapCmd() is NOT accessible from JavaScript. It is a Go-internal helper function used internally by component implementations (viewport, textarea).",
+    "how_it_works": "Components call bubbletea.WrapCmd() internally before returning commands to JavaScript in their update() methods. JavaScript receives these opaque wrapped commands as return values.",
+    "example_flow": {
+      "go_component_code": "viewport.go:285-298 - vp.update() returns runtime.NewArray(obj, bubbletea.WrapCmd(runtime, cmd))",
+      "javascript_code": "const [newVp, cmd] = viewport.update(msg);",
+      "javascript_access": "JavaScript receives 'cmd' as an opaque value, cannot call bubbletea.WrapCmd() directly"
+    },
+    "internal_components_using_wrapcmd": [
+      "internal/builtin/bubbles/viewport/viewport.go",
+      "internal/builtin/bubbles/textarea/textarea.go"
+    ],
+    "javascript_can_access": [
+      "Opaque wrapped commands (returned from components)",
+      "tea.quit(), tea.batch(), etc. (JS-created commands)"
+    ],
+    "javascript_cannot_access": [
+      "bubbletea.WrapCmd() directly",
+      "Runtime.ToValue() or value.Export()"
+    ]
+  },
+  "documentation_adequacy": false,
+  "documentation_issues": [
+    "The documentation title 'Elm Architecture Commands and Goja Interop' is accurate, but the explanation creates a misleading impression about JavaScript's access to WrapCmd.",
+    "The section 'How It Works' shows Go code examples but does not clearly distinguish between what Go code can do (calling WrapCmd) vs. what JavaScript code can do (receiving wrapped commands).",
+    "The 'Implementation in osm' section shows the WrapCmd function definition but does not clarify that this is Go-internal, not accessible from JavaScript.",
+    "The 'Viewport Implementation' example shows viewport.update() returning bubblera.WrapCmd(runtime, cmd), which is correct for Go code but could be misinterpreted as JavaScript-accessible.",
+    "The 'Command Flow' diagram and comments suggest JavaScript users have direct access to WrapCmd mechanisms, when in fact they only receive the results.",
+    "No explicit statement: 'bubbletea.WrapCmd() is a Go-internal helper function used by component implementations. JavaScript users only use wrapped commands returned from components.'"
+  ],
+  "recommendation": "Add a clarifying section to docs/reference/elm-commands-and-goja.md explaining the access boundary between Go and JavaScript code.",
+  "suggested_documentation_enhancement": {
+    "new_section_title": "Access Boundary: Go vs JavaScript",
+    "key_points_to_add": [
+      "**bubbletea.WrapCmd() is Go-internal only**: This function is NOT exported to JavaScript. It's a helper used internally by Go component implementations (viewport, textarea).",
+      "**JavaScript receives, doesn't create**: JavaScript code receives opaque wrapped commands as return values from component update() methods. JavaScript cannot call WrapCmd() directly.",
+      "**Go side only**: Only Go code implementing custom components needs to call bubbletea.WrapCmd(). JavaScript users never access this function directly.",
+      "**What JavaScript CAN do**: JavaScript can store, batch, sequence, and return opaque wrapped commands. Example: `const [newVp, cmd] = viewport.update(msg); return [model, tea.batch(cmd, tea.tick(1000))];`",
+      "**When YOU need WrapCmd**: Only if you're implementing Go-native components in Go code. Pure JavaScript users never need this."
+    ],
+    "recommended_code_example": {
+      "note": "Add explicit Go vs JavaScript comparison to clarify accessibility.",
+      "go_only": "// GO CODE ONLY - internal component implementation\npackage viewport\n\nfunc (vp *viewportObject) update(msg tea.Msg) goja.Value {\n    newModel, cmd := vp.Model.Update(msg)\n    return runtime.NewArray(\n        vp,                                    // Return same JS object\n        bubbletea.WrapCmd(runtime, cmd),        // Wrap Go command for JS\n    )\n}",
+      "javascript_access_note": "// JAVASCRIPT CODE - user application\nconst viewport = require('osm:bubbles/viewport');\nconst vp = viewport.new(80, 24);\n\n// JavaScript CANNOT call bubbletea.WrapCmd()\n// JavaScript receives wrapped commands from component\nconst [newVp, cmd] = vp.update(msg);  // cmd is already wrapped\n\n// JavaScript CAN use the opaque command\nreturn [newModel, tea.batch(cmd, tea.tick(1000))];",
+      "explanation": "Notice the asymmetry: Go calls WrapCmd() internally, JavaScript just uses the result."
+    }
+  },
+  "existing_documentation_examples_that_are_correct": [
+    "Viewport and textarea update() methods correctly show internal use of WrapCmd()",
+    "Command Flow diagram correctly shows component -> Go -> WrapCmd -> JavaScript flow",
+    "valueToCmd() function correctly unwraps commands when JavaScript passes them back"
+  },
+  "clarification_needed_for": [
+    "Users reading the documentation for the first time who think they need to call WrapCmd() from JavaScript",
+    "Developers considering implementing custom components in Go (needs to know WrapCmd is Go-internal only)",
+    "Anyone debugging command flow who gets confused about where wrapping happens"
+  ],
+  "minimal_fix": "Add a single paragraph at the top of the 'Implementation in osm' section:\n\n'IMPORTANT: bubbletea.WrapCmd() is a Go-internal helper function and is NOT exported to JavaScript. Only Go code implementing native components (like viewport, textarea) needs to call this function. JavaScript users simply receive opaque wrapped commands as return values from component Update methods - they never call WrapCmd() directly.'",
+  "comprehensive_fix": "Add a dedicated section 'Go vs JavaScript Access Boundary' with three parts:\n1. What Go code does (calls WrapCmd in component implementations)\n2. What JavaScript does (receives and uses wrapped commands)\n3. When you need which (Go components only use WrapCmd, JS uses results)\n\nInclude side-by-side code examples showing the asymmetry clearly."
+}

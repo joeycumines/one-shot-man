@@ -1,0 +1,23 @@
+{
+  "issue_claim": "Documentation claims blackboard has strict JSON type constraints, explicitly forbidding []byte while allowing []any, but the implementation has no type validation at all - it stores 'any' value type without checking JSON compatibility",
+  "type_constraint_section_text": "These types are explicitly permitted in the blackboard:\n\n| Go Type              | JSON Type | Example in Blackboard       |\n|----------------------|-----------|------------------------------|\n| `bool`               | boolean   | `bb.set('isVisible', true)` |\n| `float64`            | number    | `bb.set('x', 15.5)`          |\n| `int64` (via float64)| number    | `bb.set('count', 42)`        |\n| `string`             | string    | `bb.set('name', 'robot1')`   |\n| `[]interface{}`      | array     | `bb.set('items', [1,2,3])`  |\n| `map[string]interface{}` | object | `bb.set('pos', {x:10,y:20})` |",
+  "forbidden_types_section_text": "These types are **explicitly prohibited** in the blackboard:\n\n| Forbidden Type          | Reason                             |\n|-------------------------|------------------------------------|\n| Custom structs (e.g., `*Actor`) | Not JSON-unmarshalable to `any` |\n| Pointers to custom types | Same as above                     |\n| Interface types (other than `any`) | Ambiguous type resolution      |\n| `time.Time`             | JSON requires custom encoding     |\n| `chan`                  | Not serializable                  |\n| `func`                  | Not serializable                  |\n| `[]byte`                | Only []any allowed to support semantics closer to JS array |",
+  "json_constraint_section_text": "**This is a hard architectural constraint.** The BT blackboard may ONLY support types that `encoding/json` unmarshals to by default when you unmarshal any valid JSON to a destination of type `any`.\n\nThis constraint exists because:\n\n1. **Go planner interfaces** (like `pabt.State[T]`) use `any` type for blackboard values\n2. **JSON unmarshal to `any`** has well-defined, limited type mappings\n3. **Type safety** requires predictable behavior across the Go-JavaScript boundary\n4. **Performance** avoids reflection overhead for custom types",
+  "contradiction_found": true,
+  "contradiction_details": {
+    "doc_vs_impl": "Documentation claims strict JSON-only type constraints with []byte forbidden, but implementation (blackboard.go Set method) accepts any type via 'any' parameter with zero validation",
+    "byte_slice_conflict": "Documentation lists []any (map to []interface{}) as supported in table, then forbids []byte claiming 'Only []any allowed' - but both []byte and []any are 'any' values that the implementation would accept without checking",
+    "no_enforcement": "No code in blackboard.go or pabt/state.go validates or rejects types based on JSON compatibility constraints - the constraint exists only in documentation, not in actual implementation"
+  },
+  "actual_implementation_summary": {
+    "blackboard.go": "Set method signature: `func (b *Blackboard) Set(key string, value any)` - takes any value type, stores in map[string]any with no validation, no type checking, no JSON compatibility enforcement",
+    "pabt/state.go": "Variable method retrieves values from blackboard via `Blackboard.Get(keyStr)` which returns `any` - no type validation, only normalizes keys to strings via interface checks",
+    "behavior": "Blackboard can and will store ANY Go type including []byte, custom structs, channels, functions, time.Time, etc. The 'JSON constraint' exists only in documentation, not in code"
+  },
+  "recommendation": {
+    "primary_issue": "Documentation describes constraints that don't exist in implementation",
+    "correct_fix": "Either: (1) Implement actual type validation to enforce JSON-only types, OR (2) Remove/constrain the documentation to reflect reality that blackboard is type-agnostic 'any' store",
+    "specific_doc_changes": "Remove false claims about []byte being forbidden vs []any being allowed, since implementation doesn't distinguish. Either implement actual type checking or reframe as 'best practices for PA-BT planning' rather than 'hard constraints'",
+    "test_evidence": "blackboard_test.go stores typed slices ([]int{}, map[string]int{}) showing implementation accepts more than just []interface{}, yet no tests violate the claimed constraints, suggesting documentation may describe intent not actual behavior"
+  }
+}

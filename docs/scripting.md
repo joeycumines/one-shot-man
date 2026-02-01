@@ -133,6 +133,10 @@ const sharedState = tui.createState("__shared__", {
 
 ## Native modules (`require("osm:...")`)
 
+### Overview
+
+TODO: These should get their own (brief) summaries / sections.
+
 `osm` registers a handful of Go-native modules:
 
 - `require("osm:os")`
@@ -162,6 +166,45 @@ const sharedState = tui.createState("__shared__", {
 - `require("osm:tview")` — TUI helpers (proof-of-concept, overlaps with bubbletea)
 
 Note: Better documentation for these modules is pending; see package comments in `./internal/builtin` and the root `README.md` for stability status.
+
+### osm:bt (Behavior Trees)
+
+Core behavior tree primitives:
+
+- `bt.Blackboard` - Thread-safe key-value store for BT nodes
+- `bt.newTicker(interval, node)` - Periodic BT execution
+- `bt.createLeafNode(fn)` - Create leaf nodes from JavaScript functions
+- Status constants: `bt.success`, `bt.failure`, `bt.running`
+
+See: [bt-blackboard-usage.md](reference/bt-blackboard-usage.md)
+
+### osm:pabt (Planning-Augmented Behavior Trees)
+
+PA-BT integration with [go-pabt](https://github.com/joeycumines/go-pabt):
+
+- `pabt.newState(blackboard)` - PA-BT state wrapping blackboard
+- `pabt.newAction(name, conditions, effects, node)` - Define planning actions
+- `pabt.newPlan(state, goalConditions)` - Create goal-directed plans
+- `pabt.newExprCondition(key, expr)` - Fast Go-native conditions
+
+**Architecture principle**: Application types (shapes, sprites, simulation) are defined in JavaScript only. The Go layer provides PA-BT primitives; JavaScript provides domain logic.
+
+See: [pabt.md](reference/pabt.md)
+
+### osm:bubbletea (TUI Framework)
+
+Terminal UI framework integration:
+
+- `tea.newModel(config)` - Create Elm-architecture model
+- `tea.run(model, opts)` - Run TUI application
+- Message types: `Tick`, `Key`, `Resize`
+
+### osm:time
+
+Time utilities:
+
+- `time.sleep(ms)` - Synchronous sleep
+- `time.now()` - Current timestamp
 
 ## Where to look for examples
 

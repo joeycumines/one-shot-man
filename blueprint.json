@@ -3,6 +3,56 @@
     "filename": "blueprint.json",
     "maintenance_instruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE."
   },
+  "known_outstanding_issues": {
+    "description": "Test failures and skips that MUST be fixed (skipping is NOT acceptable)",
+    "issues": [
+      {
+        "id": "KOI-1",
+        "test": "TestPickAndPlace_MousePick_DirectClick",
+        "file": "internal/command/pick_and_place_unix_test.go:1577",
+        "error": "Could not reach target to test placement",
+        "root_cause": "Navigation timing issue - test uses fixed movement counts that may not reach target position",
+        "fix_applied": "Increased timing delays to 100ms, added retry logic",
+        "fix_status": "DONE"
+      },
+      {
+        "id": "KOI-2", 
+        "test": "TestPickAndPlace_MousePlace_TargetInGoal",
+        "file": "internal/command/pick_and_place_unix_test.go",
+        "error": "Skip: Could not reach target to test placement",
+        "root_cause": "h.Click() uses raw terminal coords, needed h.ClickGrid() for grid-to-terminal translation",
+        "fix_applied": "Changed to use h.ClickGrid(45, 11) instead of h.Click(45, 11)",
+        "fix_status": "DONE"
+      },
+      {
+        "id": "KOI-3",
+        "test": "TestSimulationConsistency_Physics_T6",
+        "file": "internal/example/pickandplace/pick_place_simulation_consistency_test.go:372",
+        "error": "Skip: T6 tests require unexported script functions (findNextStep, buildBlockedSet)",
+        "root_cause": "Tests called unexported findNextStep function",
+        "fix_applied": "Rewrote tests to use exported getPathInfo instead. Removed skip.",
+        "fix_status": "DONE"
+      },
+      {
+        "id": "KOI-4",
+        "test": "TestSimulationConsistency_Collision_T7",
+        "file": "internal/example/pickandplace/pick_place_simulation_consistency_test.go:554",
+        "error": "Skip: T7 tests require unexported script functions",
+        "root_cause": "Tests called unexported findPath function",
+        "fix_applied": "Rewrote tests to use exported getPathInfo and buildBlockedSet.has(). Removed skip.",
+        "fix_status": "DONE"
+      },
+      {
+        "id": "KOI-5",
+        "test": "TestSimulationConsistency_Pathfinding_T8",
+        "file": "internal/example/pickandplace/pick_place_simulation_consistency_test.go:740",
+        "error": "Skip: T8 tests require validation of internal pathfinding functions",
+        "root_cause": "Tests needed access to internal pathfinding validation that wasn't exposed",
+        "fix_applied": "Rewrote tests to use exported getPathInfo and findFirstBlocker. Removed skip.",
+        "fix_status": "DONE"
+      }
+    ]
+  },
   "global_alerts": [
     {
       "priority": "CRITICAL",

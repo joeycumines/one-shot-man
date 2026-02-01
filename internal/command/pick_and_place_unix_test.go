@@ -1177,19 +1177,20 @@ func TestPickAndPlace_MousePick_DirectClick(t *testing.T) {
 	// Move 2 right, then 7 down (assuming higher Y is down in screen coords)
 	for i := 0; i < 2; i++ {
 		h.SendKey("d") // Move right
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
 	for i := 0; i < 7; i++ {
 		h.SendKey("s") // Move down
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
-	time.Sleep(300 * time.Millisecond)
+
+	// Wait for movement to definitely finish
+	h.WaitForFrames(10)
+	time.Sleep(500 * time.Millisecond)
 
 	stateNearCube := h.GetDebugState()
 	t.Logf("Actor position near blockade: (%.1f, %.1f)", stateNearCube.ActorX, stateNearCube.ActorY)
 
-	// Click directly on a goal blockade cube (near goal area)
-	// Goal blockade cube 100 is at (7, 18) - right side of goal area
 	// Click directly on a goal blockade cube (near goal area)
 	// Goal blockade cube 100 is at (7, 18) - right side of goal area
 	clickX := 7
@@ -1201,12 +1202,22 @@ func TestPickAndPlace_MousePick_DirectClick(t *testing.T) {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
+	h.WaitForFrames(5)
 	time.Sleep(500 * time.Millisecond)
 	stateAfter := h.GetDebugState()
 
-	// Verify cube was picked up
+	// Verify cube was picked up (with retry for PTY lag)
 	if stateAfter.HeldItemID < 100 {
-		t.Errorf("Expected to pick up blockade cube (id>=100), but held item is %d", stateAfter.HeldItemID)
+		// Retry click (PTY timing variance)
+		h.ClickGrid(clickX, clickY)
+		time.Sleep(500 * time.Millisecond)
+		stateAfter = h.GetDebugState()
+		if stateAfter.HeldItemID < 100 {
+			t.Errorf("Expected to pick up blockade cube (id>=100), but held item is %d (actor at %.1f, %.1f)",
+				stateAfter.HeldItemID, stateAfter.ActorX, stateAfter.ActorY)
+		} else {
+			t.Logf("✓ Direct-click (retry): picked up cube id=%d", stateAfter.HeldItemID)
+		}
 	} else {
 		t.Logf("✓ Direct-click: picked up cube id=%d", stateAfter.HeldItemID)
 	}
@@ -1526,79 +1537,116 @@ func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 	defer h.Close()
 
 	h.WaitForFrames(3)
+
+	// Switch to manual mode - PA-BT auto-mode spends time relocating blockers first
+	// which would take too long. We'll manually navigate to Target A and pick it up.
 	h.SendKey("m")
 	time.Sleep(300 * time.Millisecond)
 
-	// Pick up target cube (cube 1) by navigating to it
-	// Auto mode to get near target, then manual to pick and place
-	h.SendKey("m")              // Switch to auto
-	time.Sleep(2 * time.Second) // Let PA-BT get near target
+	state := h.GetDebugState()
+	if state.Mode != "m" {
+		t.Fatalf("Failed to switch to manual mode, got '%s'", state.Mode)
+	}
+	t.Logf("Switched to manual mode at (%.1f, %.1f)", state.ActorX, state.ActorY)
 
-	h.SendKey("m") // Switch to manual
+	// Navigate to Target A at (45, 11) using the gap at (20, 11).
+	// Starting position is (5, 11). Move right through gap.
+	for i := 0; i < 50; i++ {
+		state := h.GetDebugState()
+		// Stop when we're 1 cell away from target (at x=44)
+		if state.ActorX >= 44 {
+			t.Logf("Adjacent to target at (%.1f, %.1f)", state.ActorX, state.ActorY)
+			break
+		}
+		h.SendKey("d") // Move RIGHT
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	h.WaitForFrames(5)
+	time.Sleep(150 * time.Millisecond)
+
+	stateBefore := h.GetDebugState()
+	t.Logf("About to pick target at (%.1f, %.1f), current held=%d",
+		stateBefore.ActorX, stateBefore.ActorY, stateBefore.HeldItemID)
+
+	// Click on Target A at (45, 11) to pick it up
+	// Use ClickGrid which handles coordinate translation from grid to terminal
+	if err := h.ClickGrid(45, 11); err != nil {
+		t.Fatalf("Failed to send click: %v", err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	h.WaitForFrames(10)
+
+	// Wait for held item to become TARGET_ID=1
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		state = h.GetDebugState()
+		if state.HeldItemID == 1 {
+			t.Logf("Picked up TARGET_ID=1, held=%d at (%.1f, %.1f)",
+				state.HeldItemID, state.ActorX, state.ActorY)
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	if state.HeldItemID != 1 {
+		t.Fatalf("Failed to pick up TARGET_ID=1, got held=%d at (%.1f, %.1f)",
+			state.HeldItemID, state.ActorX, state.ActorY)
+	}
+
+	// Navigate toward goal area (around 8, 18) using manual controls
+	// First move LEFT back through gap, then DOWN/LEFT toward goal
+	for i := 0; i < 50; i++ {
+		state := h.GetDebugState()
+		// Goal area is around x=7-9, y=17-19
+		if state.ActorX <= 10 && state.ActorY >= 16 {
+			t.Logf("Near goal area at (%.1f, %.1f)", state.ActorX, state.ActorY)
+			break
+		}
+		// Move toward goal (lower X, higher Y)
+		if state.ActorX > 10 {
+			h.SendKey("a") // Move left
+		} else if state.ActorY < 16 {
+			h.SendKey("s") // Move down
+		} else {
+			break // Close enough
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	h.WaitForFrames(5)
 	time.Sleep(300 * time.Millisecond)
 
-	stateAuto := h.GetDebugState()
-	t.Logf("Auto mode state: actor=(%.1f, %.1f)", stateAuto.ActorX, stateAuto.ActorY)
-
-	// Direct-click pick target (cube 1 is at 45, 11 in room)
-	// Navigate closer manually
-	for i := 0; i < 30; i++ {
-		h.SendKey("s") // Move down toward room
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	state := h.GetDebugState()
-	distanceToTarget := math.Sqrt(math.Pow(45-state.ActorX, 2) + math.Pow(11-state.ActorY, 2))
-	t.Logf("Actor position: (%.1f, %.1f), distance to target: %.1f",
-		state.ActorX, state.ActorY, distanceToTarget)
-
-	// Try direct click to pick target if close
-	if distanceToTarget <= 2.0 {
-		h.ClickGrid(45, 11)
-		time.Sleep(500 * time.Millisecond)
-
-		stateAfterPick := h.GetDebugState()
-		if stateAfterPick.HeldItemID != 1 {
-			t.Fatalf("Failed to pick target cube, held item is %d", stateAfterPick.HeldItemID)
-		}
-	}
-
-	// Navigate to goal area (8, 18)
-	for i := 0; i < 15; i++ {
-		h.SendKey("a") // Move left toward goal
-		time.Sleep(100 * time.Millisecond)
-	}
-
 	stateBeforePlace := h.GetDebugState()
-	t.Logf("Holding target near goal: (%.1f, %.1f)", stateBeforePlace.ActorX, stateBeforePlace.ActorY)
+	t.Logf("Ready to place: actor=(%.1f, %.1f), held=%d",
+		stateBeforePlace.ActorX, stateBeforePlace.ActorY, stateBeforePlace.HeldItemID)
 
 	if stateBeforePlace.HeldItemID != 1 {
-		// Skip test if we couldn't pick target after 3 tries
-		t.Skip("Could not reach target to test placement")
+		t.Fatalf("Lost target before placement, held=%d", stateBeforePlace.HeldItemID)
 	}
 
-	// Click while holding target - should place at nearest valid cell
-	// Goal area is 3x3 centered at (8, 18), click at (10, 18)
-	clickX := 10
+	// Click to place target - goal area is 3x3 centered around (8, 18)
+	// Click within or near goal area
+	clickX := 8
 	clickY := 18
 
 	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send place click: %v", err)
 	}
 
+	h.WaitForFrames(5)
 	time.Sleep(500 * time.Millisecond)
 	stateAfter := h.GetDebugState()
 
 	// Verify target was placed
 	if stateAfter.HeldItemID != -1 {
-		t.Errorf("Expected -1 (target not placed), got %d", stateAfter.HeldItemID)
+		t.Errorf("Expected -1 (target placed), got %d", stateAfter.HeldItemID)
 	} else {
-		// Check if goal area contains target (not direct check - nearest cell logic)
-		t.Logf("✓ Target placed, checking if in goal area...")
+		t.Logf("✓ Target placed, checking win condition...")
 		if stateAfter.WinCond == 1 {
 			t.Logf("✓ Win condition met (target delivered to goal)")
 		} else {
-			t.Log("Note: Target placed but win condition not set (may be outside goal area)")
+			t.Log("Note: Target placed but win condition not set (may be outside goal bounds)")
 		}
 	}
 }

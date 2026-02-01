@@ -956,7 +956,7 @@ try {
 
         const conditions = [];
         if (entityType === 'goal' || (entityType === 'cube' && entityId === TARGET_ID)) {
-            conditions.push({key: pathBlockerKey, value: -1, match: v => v === -1});
+            conditions.push(pabt.newExprCondition(pathBlockerKey, 'Value == -1', -1));
         }
         if (extraPreconditions) {
             conditions.push(...extraPreconditions);
@@ -1035,8 +1035,8 @@ try {
     function createPickGoalBlockadeAction(state, cubeId) {
         const name = 'Pick_GoalBlockade_' + cubeId;
         const conditions = [
-            {key: 'heldItemExists', value: false, match: v => v === false},
-            {key: 'atEntity_' + cubeId, value: true, match: v => v === true}
+            pabt.newExprCondition('heldItemExists', 'Value == false', false),
+            pabt.newExprCondition('atEntity_' + cubeId, 'Value == true', true)
         ];
         const effects = [
             {key: 'heldItemId', Value: cubeId},
@@ -1082,7 +1082,7 @@ try {
 
     function createDepositGoalBlockadeAction(state, cubeId, destinationKey) {
         const name = 'Deposit_GoalBlockade_' + cubeId;
-        const conditions = [{key: 'heldItemId', value: cubeId, match: v => v === cubeId}];
+        const conditions = [pabt.newExprCondition('heldItemId', 'Value == ' + cubeId, cubeId)];
         const effects = [
             {key: 'heldItemExists', Value: false},
             {key: 'heldItemId', Value: -1},
@@ -1566,7 +1566,7 @@ try {
         setupPABTActions(state);
         syncToBlackboard(state);
 
-        const goalConditions = [{key: 'cubeDeliveredAtGoal', match: v => v === true}];
+        const goalConditions = [pabt.newExprCondition('cubeDeliveredAtGoal', 'Value == true', true)];
         state.pabtPlan = pabt.newPlan(state.pabtState, goalConditions);
         state.ticker = bt.newTicker(100, state.pabtPlan.Node());
 

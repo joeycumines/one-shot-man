@@ -163,9 +163,18 @@ type ExprCondition struct {
 	expression string
 	program    *vm.Program // Cached compiled program (nil until first use)
 	mu         sync.RWMutex
+	// jsObject stores the original JavaScript object for passthrough to action generator.
+	// This mirrors the behavior of JSCondition.
+	jsObject *goja.Object
 }
 
 var _ Condition = (*ExprCondition)(nil)
+
+// SetJSObject sets the backing JavaScript object for this condition.
+// This object is returned to the action generator when this condition fails.
+func (c *ExprCondition) SetJSObject(obj *goja.Object) {
+	c.jsObject = obj
+}
 
 // NewExprCondition creates a new expr-lang based condition.
 // The expression is compiled lazily on first Match call and cached globally.

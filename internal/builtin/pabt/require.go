@@ -162,6 +162,9 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 						if jsCond, ok := failed.(*JSCondition); ok && jsCond.jsObject != nil {
 							// Return the SAME JS object - preserves .value and all properties
 							condObj = jsCond.jsObject
+						} else if exprCond, ok := failed.(*ExprCondition); ok && exprCond.jsObject != nil {
+							// Handle ExprCondition - return the linked JS object
+							condObj = exprCond.jsObject
 						} else if failed != nil {
 							// Fallback: create minimal wrapper for non-JS conditions
 							condObj = vm.NewObject()
@@ -370,6 +373,17 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 						continue
 					}
 
+					// Check for native ExprCondition first (via _native property)
+					// This avoids wrapping efficient Go conditions in expensive JS wrappers
+					nativeVal := condObj.Get("_native")
+					if nativeVal != nil && !goja.IsUndefined(nativeVal) {
+						if exprCond, ok := nativeVal.Export().(*ExprCondition); ok {
+							// Use the native condition directly
+							conditionSlice = append(conditionSlice, pabtpkg.Condition(exprCond))
+							continue
+						}
+					}
+
 					// DEBUG: Log condition creation
 					slog.Debug("[PA-BT COND CREATE]", "action", name, "conditionKey", keyVal.Export())
 
@@ -473,8 +487,9 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 			panic(runtime.NewTypeError("node argument must be a bt.Node"))
 		})
 
-		// newExprCondition(key, expression) - Create a Go-native ExprCondition (fast path)
+		// newExprCondition(key, expression, [value]) - Create a Go-native ExprCondition (fast path)
 		// This creates a condition that uses expr-lang evaluation with ZERO Goja calls.
+		// The optional value argument is attached to the JS wrapper for access by action generators.
 		_ = exports.Set("newExprCondition", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) < 2 {
 				panic(runtime.NewTypeError("newExprCondition requires key and expression arguments"))
@@ -482,6 +497,12 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 
 			key := call.Arguments[0].Export()
 			expr := call.Arguments[1].String()
+
+			// Check for optional 3rd arg 'value'
+			var value goja.Value
+			if len(call.Arguments) > 2 && !goja.IsUndefined(call.Arguments[2]) {
+				value = call.Arguments[2]
+			}
 
 			condition := NewExprCondition(key, expr)
 
@@ -492,10 +513,18 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 				if len(call.Arguments) < 1 {
 					return runtime.ToValue(false)
 				}
-				value := call.Arguments[0].Export()
-				return runtime.ToValue(condition.Match(value))
+				v := call.Arguments[0].Export()
+				return runtime.ToValue(condition.Match(v))
 			})
 			_ = jsObj.Set("_native", condition)
+
+			// If optional value provided, set it on the JS object
+			if value != nil {
+				_ = jsObj.Set("value", value)
+			}
+
+			// Link the JS object to the condition for generator access
+			condition.SetJSObject(jsObj)
 
 			return jsObj
 		})

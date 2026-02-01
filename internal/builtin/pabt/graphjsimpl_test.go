@@ -57,7 +57,7 @@ func TestGraphJS_PlanCreation(t *testing.T) {
 					actions.push(pabt.newAction(
 						"move_" + source + "_" + target,
 						[{ key: "actor", value: source, match: (v) => v === source }],
-						[{ key: "actor", Value: target }],
+						[{ key: "actor", value: target }],
 						moveNode
 					));
 				}
@@ -118,7 +118,7 @@ func TestGraphJS_PlanExecution(t *testing.T) {
 					actions.push(pabt.newAction(
 						"move_" + source + "_" + target,
 						[{ key: "actor", value: source, match: (v) => v === source }],
-						[{ key: "actor", Value: target }],
+						[{ key: "actor", value: target }],
 						moveNode
 					));
 				}
@@ -203,7 +203,7 @@ func TestGraphJS_PathValidation(t *testing.T) {
 					actions.push(pabt.newAction(
 						"move_" + source + "_" + target,
 						[{ key: "actor", value: source, match: (v) => v === source }],
-						[{ key: "actor", Value: target }],
+						[{ key: "actor", value: target }],
 						moveNode
 					));
 				}
@@ -282,7 +282,7 @@ func TestGraphJS_UnreachableGoal(t *testing.T) {
 					actions.push(pabt.newAction(
 						"move_" + source + "_" + target,
 						[{ key: "actor", value: source, match: (v) => v === source }],
-						[{ key: "actor", Value: target }],
+						[{ key: "actor", value: target }],
 						moveNode
 					));
 				}
@@ -359,7 +359,7 @@ func TestGraphJS_MultipleGoals(t *testing.T) {
 					actions.push(pabt.newAction(
 						"move_" + source + "_" + target,
 						[{ key: "actor", value: source, match: (v) => v === source }],
-						[{ key: "actor", Value: target }],
+						[{ key: "actor", value: target }],
 						moveNode
 					));
 				}
@@ -439,7 +439,7 @@ func TestGraphJS_PlanIdempotent(t *testing.T) {
 					actions.push(pabt.newAction(
 						"move_" + source + "_" + target,
 						[{ key: "actor", value: source, match: (v) => v === source }],
-						[{ key: "actor", Value: target }],
+						[{ key: "actor", value: target }],
 						moveNode
 					));
 				}

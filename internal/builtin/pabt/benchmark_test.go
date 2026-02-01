@@ -10,7 +10,7 @@ func BenchmarkEvaluation_SimpleEquality(b *testing.B) {
 	ClearExprCache()
 
 	// Setup expr-lang condition
-	exprCond := NewExprCondition("key", "Value == 42")
+	exprCond := NewExprCondition("key", "value == 42")
 	// Pre-compile by running once
 	exprCond.Match(42)
 
@@ -39,7 +39,7 @@ func BenchmarkEvaluation_SimpleEquality(b *testing.B) {
 func BenchmarkEvaluation_Comparison(b *testing.B) {
 	ClearExprCache()
 
-	exprCond := NewExprCondition("key", "Value > 10")
+	exprCond := NewExprCondition("key", "value > 10")
 	exprCond.Match(15) // Pre-compile
 
 	funcCond := NewFuncCondition("key", func(v any) bool {
@@ -74,7 +74,7 @@ func BenchmarkEvaluation_FieldAccess(b *testing.B) {
 		Y int
 	}
 
-	exprCond := NewExprCondition("key", "Value.X > 0 && Value.Y > 0")
+	exprCond := NewExprCondition("key", "value.X > 0 && Value.Y > 0")
 	testPoint := Point{X: 5, Y: 10}
 	exprCond.Match(testPoint) // Pre-compile
 
@@ -130,7 +130,7 @@ func BenchmarkEvaluation_StringEquality(b *testing.B) {
 func BenchmarkEvaluation_NilCheck(b *testing.B) {
 	ClearExprCache()
 
-	exprCond := NewExprCondition("key", "Value != nil")
+	exprCond := NewExprCondition("key", "value != nil")
 	exprCond.Match("something") // Pre-compile
 
 	funcCond := NewFuncCondition("key", func(v any) bool {
@@ -159,7 +159,7 @@ func BenchmarkEvaluation_CompileTime(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			ClearExprCache() // Force recompilation
-			cond := NewExprCondition("key", "Value > 0")
+			cond := NewExprCondition("key", "value > 0")
 			cond.Match(1)
 		}
 	})
@@ -167,14 +167,14 @@ func BenchmarkEvaluation_CompileTime(b *testing.B) {
 	b.Run("ExprLang_CachedLookup", func(b *testing.B) {
 		ClearExprCache()
 		// Pre-populate cache
-		cond := NewExprCondition("key", "Value > 0")
+		cond := NewExprCondition("key", "value > 0")
 		cond.Match(1)
 
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			// New condition with same expression uses cache
-			cond2 := NewExprCondition("key2", "Value > 0")
+			cond2 := NewExprCondition("key2", "value > 0")
 			cond2.Match(1)
 		}
 	})

@@ -10,7 +10,7 @@ import (
 // TestExprCondition_SetJSObject verifies that SetJSObject correctly stores
 // JavaScript object reference in ExprCondition.
 func TestExprCondition_SetJSObjectNew(t *testing.T) {
-	cond := NewExprCondition("test-key", "Value == 42")
+	cond := NewExprCondition("test-key", "value == 42")
 
 	// Initially jsObject should be nil
 	assert.Nil(t, cond.jsObject, "jsObject should be nil initially")
@@ -39,7 +39,7 @@ func TestExprCondition_ThirdArgumentInteger(t *testing.T) {
 
 	res := executeJS(t, bridge, `
 		(() => {
-			const cond = pabt.newExprCondition("x", "Value == 42", 42);
+			const cond = pabt.newExprCondition("x", "value == 42", 42);
 			return {
 				hasKey: cond.key === "x",
 				hasMatch: typeof cond.match === 'function',
@@ -53,7 +53,7 @@ func TestExprCondition_ThirdArgumentInteger(t *testing.T) {
 	assert.True(t, obj["hasKey"].(bool), "Should have correct key")
 	assert.True(t, obj["hasMatch"].(bool), "Should have match function")
 	assert.True(t, obj["hasNative"].(bool), "Should have _native property")
-	assert.Equal(t, int64(42), obj["value"], "Value should be 42")
+	assert.Equal(t, int64(42), obj["value"], "value should be 42")
 }
 
 // TestExprCondition_ThirdArgumentString verifies that newExprCondition
@@ -63,7 +63,7 @@ func TestExprCondition_ThirdArgumentString(t *testing.T) {
 
 	res := executeJS(t, bridge, `
 		(() => {
-			const cond = pabt.newExprCondition("status", "Value == \"ready\"", "ready");
+			const cond = pabt.newExprCondition("status", "value == \"ready\"", "ready");
 			return {
 				key: cond.key,
 				value: cond.value
@@ -73,7 +73,7 @@ func TestExprCondition_ThirdArgumentString(t *testing.T) {
 
 	obj := res.Export().(map[string]interface{})
 	assert.Equal(t, "status", obj["key"])
-	assert.Equal(t, "ready", obj["value"], "Value should be 'ready'")
+	assert.Equal(t, "ready", obj["value"], "value should be 'ready'")
 }
 
 // TestExprCondition_ThirdArgumentBooleanTrue verifies that newExprCondition
@@ -83,7 +83,7 @@ func TestExprCondition_ThirdArgumentBooleanTrue(t *testing.T) {
 
 	res := executeJS(t, bridge, `
 		(() => {
-			const cond = pabt.newExprCondition("enabled", "Value == true", true);
+			const cond = pabt.newExprCondition("enabled", "value == true", true);
 			return {
 				value: cond.value
 			};
@@ -101,7 +101,7 @@ func TestExprCondition_ThirdArgumentBooleanFalse(t *testing.T) {
 
 	res := executeJS(t, bridge, `
 		(() => {
-			const cond = pabt.newExprCondition("disabled", "Value == false", false);
+			const cond = pabt.newExprCondition("disabled", "value == false", false);
 			return {
 				value: cond.value
 			};
@@ -119,7 +119,7 @@ func TestExprCondition_ThirdArgumentNegativeInteger(t *testing.T) {
 
 	res := executeJS(t, bridge, `
 		(() => {
-			const cond = pabt.newExprCondition("offset", "Value == -1", -1);
+			const cond = pabt.newExprCondition("offset", "value == -1", -1);
 			return {
 				value: cond.value
 			};
@@ -150,7 +150,7 @@ func TestExprCondition_JSObjectPassthroughToGenerator(t *testing.T) {
 			});
 
 			// Create an ExprCondition with a value property
-			const goal = pabt.newExprCondition("testValue", "Value == 42", 42);
+			const goal = pabt.newExprCondition("testValue", "value == 42", 42);
 
 			// Create a plan to trigger the generator
 			const plan = pabt.newPlan(state, [goal]);
@@ -191,7 +191,7 @@ func TestExprCondition_NoThirdArgument(t *testing.T) {
 
 	res := executeJS(t, bridge, `
 		(() => {
-			const cond = pabt.newExprCondition("key", "Value == 42");
+			const cond = pabt.newExprCondition("key", "value == 42");
 			return {
 				hasKey: cond.key === "key",
 				hasMatch: typeof cond.match === 'function',
@@ -213,7 +213,7 @@ func TestExprCondition_NativePropertyExists(t *testing.T) {
 
 	res := executeJS(t, bridge, `
 		(() => {
-			const cond = pabt.newExprCondition("key", "Value == 42");
+			const cond = pabt.newExprCondition("key", "value == 42");
 			return {
 				hasKey: cond.key === "key",
 				hasMatch: typeof cond.match === 'function',
@@ -239,7 +239,7 @@ func TestExprCondition_UsedInAction(t *testing.T) {
 			const state = pabt.newState(bb);
 			
 			// Create an ExprCondition
-			const exprCond = pabt.newExprCondition("prereq", "Value == true");
+			const exprCond = pabt.newExprCondition("prereq", "value == true");
 			
 			// Create an action with ExprCondition
 			const node = bt.node(() => bt.success);

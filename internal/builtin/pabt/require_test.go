@@ -293,7 +293,7 @@ func TestRequire_NewExprCondition(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
 		res := executeJS(t, bridge, `
 			(() => {
-				const cond = pabt.newExprCondition("x", "Value == 5");
+				const cond = pabt.newExprCondition("x", "value == 5");
 				return {
 					hasKey: cond.key === "x",
 					match5: cond.match(5),
@@ -311,7 +311,7 @@ func TestRequire_NewExprCondition(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
 		res := executeJS(t, bridge, `
 			(() => {
-				const cond = pabt.newExprCondition("status", 'Value == "ready"');
+				const cond = pabt.newExprCondition("status", 'value == "ready"');
 				return cond.match("ready");
 			})()
 		`)
@@ -322,7 +322,7 @@ func TestRequire_NewExprCondition(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
 		res := executeJS(t, bridge, `
 			(() => {
-				const cond = pabt.newExprCondition("x", "Value >= 0 && Value <= 10");
+				const cond = pabt.newExprCondition("x", "value >= 0 && Value <= 10");
 				return {
 					inRange: cond.match(5),
 					outOfRange: cond.match(15)
@@ -360,8 +360,7 @@ func TestNewPlan_Creation(t *testing.T) {
 				state.registerAction("move", action);
 
 				// Create goal condition using expr (no JS callback deadlock)
-				// Note: expr uses "Value" (capital V) not "value"
-				const goal = pabt.newExprCondition("x", "Value == 1");
+				const goal = pabt.newExprCondition("x", "value == 1");
 
 				// Create plan
 				const plan = pabt.newPlan(state, [goal]);
@@ -437,7 +436,7 @@ func TestPlanExecution(t *testing.T) {
 				);
 				state.registerAction("move", action);
 
-				const goal = pabt.newExprCondition("x", "Value == 1");
+				const goal = pabt.newExprCondition("x", "value == 1");
 				const plan = pabt.newPlan(state, [goal]);
 				const node = plan.Node();
 
@@ -477,13 +476,13 @@ func TestPlanExecution(t *testing.T) {
 				});
 				const action2 = pabt.newAction(
 					"step2",
-					[pabt.newExprCondition("step", "Value == 1")],
+					[pabt.newExprCondition("step", "value == 1")],
 					[{ key: "step", Value: 2 }],
 					step2Node
 				);
 				state.registerAction("step2", action2);
 
-				const goal = pabt.newExprCondition("step", "Value == 2");
+				const goal = pabt.newExprCondition("step", "value == 2");
 				const plan = pabt.newPlan(state, [goal]);
 				const node = plan.Node();
 

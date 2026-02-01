@@ -186,7 +186,7 @@ func (c *ExprCondition) SetJSObject(obj *goja.Object) {
 //   - String matching: Value.name contains "test"
 //   - Collection operations: all(Value.items, {.active})
 //
-// The environment provides a single "Value" variable containing the
+// The environment provides a single "value" variable containing the
 // condition input value.
 func NewExprCondition(key any, expression string) *ExprCondition {
 	return &ExprCondition{
@@ -201,9 +201,9 @@ func (c *ExprCondition) Key() any {
 }
 
 // ExprEnv is the environment struct for expr-lang evaluation.
-// It provides the condition input value as "Value".
+// It provides the condition input value as "value".
 type ExprEnv struct {
-	Value any
+	Value any `expr:"value"`
 }
 
 // Match implements pabtpkg.Condition.Match(value any) bool.

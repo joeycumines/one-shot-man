@@ -450,11 +450,8 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 						continue
 					}
 
-					// Extract value (prefer lowercase, fallback to uppercase for backwards compat)
+					// Extract value
 					valueVal := effectObj.Get("value")
-					if valueVal == nil || goja.IsUndefined(valueVal) {
-						valueVal = effectObj.Get("Value") // fallback to uppercase
-					}
 					if valueVal == nil || goja.IsUndefined(valueVal) {
 						slog.Debug("[PA-BT EFFECT PARSE] Effect Value undefined", "action", name, "index", i, "key", keyVal.Export())
 						continue

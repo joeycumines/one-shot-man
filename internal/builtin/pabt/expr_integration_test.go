@@ -18,7 +18,7 @@ func TestExprCondition_JSIntegration(t *testing.T) {
 		res := executeJS(t, bridge, `
 			(() => {
 				// Create ExprCondition via JS API
-				const cond = pabt.newExprCondition("testKey", "Value == 42");
+				const cond = pabt.newExprCondition("testKey", "value == 42");
 				
 				// Verify it has expected properties
 				return {
@@ -42,7 +42,7 @@ func TestExprCondition_JSIntegration(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
 		res := executeJS(t, bridge, `
 			(() => {
-				const cond = pabt.newExprCondition("status", 'Value == "active"');
+				const cond = pabt.newExprCondition("status", 'value == "active"');
 				return {
 					matchActive: cond.match("active"),
 					matchInactive: cond.match("inactive")
@@ -58,7 +58,7 @@ func TestExprCondition_JSIntegration(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
 		res := executeJS(t, bridge, `
 			(() => {
-				const cond = pabt.newExprCondition("distance", "Value < 100");
+				const cond = pabt.newExprCondition("distance", "value < 100");
 				return {
 					match50: cond.match(50),
 					match100: cond.match(100),
@@ -76,7 +76,7 @@ func TestExprCondition_JSIntegration(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
 		res := executeJS(t, bridge, `
 			(() => {
-				const cond = pabt.newExprCondition("range", "Value >= 10 && Value <= 20");
+				const cond = pabt.newExprCondition("range", "value >= 10 && Value <= 20");
 				return {
 					match5: cond.match(5),
 					match15: cond.match(15),
@@ -94,7 +94,7 @@ func TestExprCondition_JSIntegration(t *testing.T) {
 		bridge, _, _ := setupTestEnv(t)
 		res := executeJS(t, bridge, `
 			(() => {
-				const cond = pabt.newExprCondition("item", "Value != nil");
+				const cond = pabt.newExprCondition("item", "value != nil");
 				return {
 					matchNull: cond.match(null),
 					matchUndefined: cond.match(undefined),
@@ -124,7 +124,7 @@ func TestExprCondition_UsedInNewAction(t *testing.T) {
 				const node = bt.node(() => bt.success);
 				const action = pabt.newAction(
 					"testAction",
-					[pabt.newExprCondition("prereq", "Value == true")],
+					[pabt.newExprCondition("prereq", "value == true")],
 					[{ key: "result", value: 1 }],  // lowercase value
 					node
 				);
@@ -162,7 +162,7 @@ func TestExprCondition_UsedInNewAction(t *testing.T) {
 				state.registerAction("increment", action);
 				
 				// Create plan with ExprCondition goal
-				const goal = pabt.newExprCondition("counter", "Value == 1");
+				const goal = pabt.newExprCondition("counter", "value == 1");
 				const plan = pabt.newPlan(state, [goal]);
 				
 				// Verify plan was created and has expected methods
@@ -213,7 +213,7 @@ func TestExprCondition_ConcurrentJSIntegration(t *testing.T) {
 	ClearExprCache() // Clean state
 
 	// Create condition once
-	cond := NewExprCondition("concurrent", "Value > 0")
+	cond := NewExprCondition("concurrent", "value > 0")
 
 	var wg sync.WaitGroup
 	errors := make(chan error, 100)
@@ -248,7 +248,7 @@ func TestExprCondition_ZeroGojaCallsGuarantee(t *testing.T) {
 	ClearExprCache()
 
 	// ExprCondition should NOT need any Goja infrastructure
-	cond := NewExprCondition("pureGo", "Value == 42")
+	cond := NewExprCondition("pureGo", "value == 42")
 
 	// Call Match many times - none should touch Goja
 	for i := 0; i < 1000; i++ {
@@ -266,7 +266,7 @@ func TestExprCondition_ZeroGojaCallsGuarantee(t *testing.T) {
 func TestExprCondition_CacheSharing(t *testing.T) {
 	ClearExprCache()
 
-	expr := "Value >= 100 && Value <= 200"
+	expr := "value >= 100 && Value <= 200"
 
 	// Create multiple conditions with same expression
 	cond1 := NewExprCondition("key1", expr)

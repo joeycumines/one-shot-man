@@ -956,13 +956,13 @@ try {
 
         const conditions = [];
         if (entityType === 'goal' || (entityType === 'cube' && entityId === TARGET_ID)) {
-            conditions.push(pabt.newExprCondition(pathBlockerKey, 'Value == -1', -1));
+            conditions.push(pabt.newExprCondition(pathBlockerKey, 'value == -1', -1));
         }
         if (extraPreconditions) {
             conditions.push(...extraPreconditions);
         }
 
-        const effects = [{key: targetKey, Value: true}];
+        const effects = [{key: targetKey, value: true}];
 
         const tickFn = function () {
             if (state.gameMode !== 'automatic') return bt.running;
@@ -1035,12 +1035,12 @@ try {
     function createPickGoalBlockadeAction(state, cubeId) {
         const name = 'Pick_GoalBlockade_' + cubeId;
         const conditions = [
-            pabt.newExprCondition('heldItemExists', 'Value == false', false),
-            pabt.newExprCondition('atEntity_' + cubeId, 'Value == true', true)
+            pabt.newExprCondition('heldItemExists', 'value == false', false),
+            pabt.newExprCondition('atEntity_' + cubeId, 'value == true', true)
         ];
         const effects = [
-            {key: 'heldItemId', Value: cubeId},
-            {key: 'heldItemExists', Value: true}
+            {key: 'heldItemId', value: cubeId},
+            {key: 'heldItemExists', value: true}
         ];
         const tickFn = function () {
             if (state.gameMode !== 'automatic') return bt.running;
@@ -1082,11 +1082,11 @@ try {
 
     function createDepositGoalBlockadeAction(state, cubeId, destinationKey) {
         const name = 'Deposit_GoalBlockade_' + cubeId;
-        const conditions = [pabt.newExprCondition('heldItemId', 'Value == ' + cubeId, cubeId)];
+        const conditions = [pabt.newExprCondition('heldItemId', 'value == ' + cubeId, cubeId)];
         const effects = [
-            {key: 'heldItemExists', Value: false},
-            {key: 'heldItemId', Value: -1},
-            {key: 'pathBlocker_' + destinationKey, Value: -1}
+            {key: 'heldItemExists', value: false},
+            {key: 'heldItemId', value: -1},
+            {key: 'pathBlocker_' + destinationKey, value: -1}
         ];
         const tickFn = function () {
             if (state.gameMode !== 'automatic') return bt.running;
@@ -1230,7 +1230,7 @@ try {
                 value: c.v,
                 match: v => c.v === undefined ? v === true : v === c.v
             }));
-            const effectList = effects.map(e => ({key: e.k, Value: e.v}));
+            const effectList = effects.map(e => ({key: e.k, value: e.v}));
             const node = bt.createLeafNode(() => state.gameMode === 'automatic' ? tickFn() : bt.running);
             state.pabtState.registerAction(name, pabt.newAction(name, conditions, effectList, node));
         };
@@ -1566,7 +1566,7 @@ try {
         setupPABTActions(state);
         syncToBlackboard(state);
 
-        const goalConditions = [pabt.newExprCondition('cubeDeliveredAtGoal', 'Value == true', true)];
+        const goalConditions = [pabt.newExprCondition('cubeDeliveredAtGoal', 'value == true', true)];
         state.pabtPlan = pabt.newPlan(state.pabtState, goalConditions);
         state.ticker = bt.newTicker(100, state.pabtPlan.Node());
 

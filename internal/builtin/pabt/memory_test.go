@@ -205,8 +205,7 @@ func TestExprConditionNoCycleWithGoja(t *testing.T) {
 	// ExprCondition uses expr-lang (pure Go), NOT Goja
 	// This test verifies the expr-lang path doesn't create Goja dependencies
 
-	// Note: ExprEnv uses "Value" (capital V) as the environment variable
-	cond := NewExprCondition("testKey", "Value == 42")
+	cond := NewExprCondition("testKey", "value == 42")
 
 	// Match should work without any Goja involvement
 	result := cond.Match(42)

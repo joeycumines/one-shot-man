@@ -59,9 +59,6 @@ pabt.newAction(
 )
 ```
 
-> **Note:** Effect objects support both `value` (lowercase, preferred) and `Value` (uppercase, legacy).
-> Use lowercase `value` for new code.
-
 | Component | PA-BT Term | Purpose |
 | --- | --- | --- |
 | **Preconditions** | *Preconditions* | Conditions that must be `Success` for the Action to run. If these fail, they become new sub-goals for expansion. |
@@ -146,7 +143,7 @@ function syncToBlackboard() {
 // 3. Register static action templates
 state.registerAction('Pick', pabt.newAction('Pick',
     [{key: 'atCube', match: v => v === true}],   // preconditions
-    [{key: 'heldItem', Value: 1}],               // effects (postconditions)
+    [{key: 'heldItem', value: 1}],               // effects (postconditions)
     bt.createLeafNode(() => {
         cube.deleted = true;
         actor.heldItem = {id: 1};
@@ -259,7 +256,7 @@ const action = pabt.newAction(
         {key: 'reachable', match: v => v === true}
     ],
     [
-        {key: 'atTarget', Value: true}
+        {key: 'atTarget', value: true}
     ],
     bt.createLeafNode(() => {
         // Move actor toward target...
@@ -272,7 +269,7 @@ const action = pabt.newAction(
 
 * `name` (string) - Unique action identifier (for debugging).
 * `conditions` (array) - **Preconditions**. A list of `{key, match}` objects.
-* `effects` (array) - **Postconditions**. A list of `{key, Value}` objects.
+* `effects` (array) - **Postconditions**. A list of `{key, value}` objects.
 * `node` (bt.Node) - The **Action Node** logic.
 
 **Condition Format:**
@@ -291,13 +288,13 @@ const action = pabt.newAction(
 ```javascript
 {
     key: 'stateVariable',    // Blackboard key
-    Value: expectedValue     // Value action achieves (used for Backchaining)
+    value: expectedValue     // Value action achieves (used for Backchaining)
 }
 ```
 
 **Returns:** `Action` object implementing `pabt.IAction` interface.
 
-**Important**: The `Value` in effects is used **only** for the synthesis (planning) phase. The planner assumes that if this action succeeds, this key will hold this value. The actual state change must be implemented within the `node`.
+**Important**: The `value` in effects is used **only** for the synthesis (planning) phase. The planner assumes that if this action succeeds, this key will hold this value. The actual state change must be implemented within the `node`.
 
 ---
 
@@ -392,7 +389,7 @@ Creates a Go-native condition using `expr-lang` (fast path).
 {key: 'distance', match: v => v < 50}
 
 // Use:
-pabt.newExprCondition('distance', 'Value < 50')
+pabt.newExprCondition('distance', 'value < 50')
 ```
 
 **Parameters:**
@@ -402,22 +399,22 @@ pabt.newExprCondition('distance', 'Value < 50')
 
 **Expression Environment:**
 
-* `Value` - The input value from the blackboard.
+* `value` - The input value from the blackboard.
 
 **Expression Examples:**
 
 ```javascript
 // Equality
-pabt.newExprCondition('status', 'Value == "ready"')
+pabt.newExprCondition('status', 'value == "ready"')
 
 // Comparison
-pabt.newExprCondition('distance', 'Value < 50 && Value > 0')
+pabt.newExprCondition('distance', 'value < 50 && value > 0')
 
 // Null check
-pabt.newExprCondition('item', 'Value != nil')
+pabt.newExprCondition('item', 'value != nil')
 
 // Length check
-pabt.newExprCondition('items', 'len(Value) > 0')
+pabt.newExprCondition('items', 'len(value) > 0')
 ```
 
 **Performance:** 10-100x faster than JavaScript conditions (~100ns vs ~5μs).
@@ -439,7 +436,7 @@ This pattern combines pre-registered actions for common tasks with generated act
 // STATIC: Fixed actions (Pick, Place)
 state.registerAction('Pick', pabt.newAction('Pick',
     [{key: 'atCube', match: v => v === true}],
-    [{key: 'heldItem', Value: cubeId}],
+    [{key: 'heldItem', value: cubeId}],
     pickNode
 ));
 
@@ -470,9 +467,9 @@ In PA-BT, **Postconditions** (Effects) are used to guide the search. You can lis
 state.registerAction('PickBlockade_1', pabt.newAction('PickBlockade_1',
     [{key: 'atEntity_1', match: v => v === true}],
     [
-        {key: 'heldItem', Value: 1},
+        {key: 'heldItem', value: 1},
         // HEURISTIC: Suggest this helps reach target
-        {key: 'reachable_target', Value: true}
+        {key: 'reachable_target', value: true}
     ],
     pickNode
 ));
@@ -494,7 +491,7 @@ This resolves "Deadlock" situations where an agent holds an item but needs to pe
 // Effect: handsEmpty === true
 state.registerAction('PlaceTemporary', pabt.newAction('PlaceTemporary',
     [{key: 'heldItem', match: v => v === targetId}],
-    [{key: 'heldItem', Value: null}],  // Frees hands (Postcondition)
+    [{key: 'heldItem', value: null}],  // Frees hands (Postcondition)
     placeAtStagingNode
 ));
 
@@ -551,7 +548,7 @@ function syncToBlackboard(state) {
 {key: 'distance', match: v => v < 100}
 
 // Good: Expr condition (fast)
-pabt.newExprCondition('distance', 'Value < 100')
+pabt.newExprCondition('distance', 'value < 100')
 ```
 
 
@@ -620,36 +617,6 @@ const action = pabt.newAction('Pick',
 **Fix:**
 
 * The Action Node is responsible for **grounding** the symbolic effect. It must mutate the JS variables such that the next `syncToBlackboard` reflects the change.
-
----
-
-### Plan replans constantly (thrashing)
-
-**Symptoms:** The planner keeps re-expanding the tree, or the agent oscillates between actions.
-
-**Causes:**
-
-1. **Effect/State Mismatch**: The Action declares an Effect (`heldItem: 1`), but the Node execution fails to achieve it (or `syncToBlackboard` doesn't report it). The PPA structure checks the condition, sees it's still false, and re-triggers the action.
-2. **Volatile Preconditions**: A precondition becomes true and then immediately false (e.g., "AtLocation" jitters due to physics).
-
-**Debug:**
-
-```javascript
-// Check if effects match reality
-state.registerAction('Pick', pabt.newAction('Pick',
-    conditions,
-    [{key: 'heldItem', Value: 1}],  // POSTCONDITION says this will happen
-    bt.createLeafNode(() => {
-        actor.heldItem = {id: 1};   // CODE must actually make it happen!
-        return bt.success;
-    })
-));
-```
-
-**Fix:**
-
-* Ensure `syncToBlackboard` is called accurately.
-* Use hysteresis or looser tolerances in `match` functions to prevent jitter.
 
 ---
 

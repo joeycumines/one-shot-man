@@ -73,7 +73,7 @@ func TestJSCondition_Match_NilBridge(t *testing.T) {
 }
 
 func TestNewExprCondition(t *testing.T) {
-	cond := NewExprCondition("my-key", "Value == 42")
+	cond := NewExprCondition("my-key", "value == 42")
 
 	if cond.Key() != "my-key" {
 		t.Errorf("Key() = %v, want %q", cond.Key(), "my-key")
@@ -87,32 +87,32 @@ func TestNewExprCondition(t *testing.T) {
 func TestExprCondition_Match_SimpleEquality(t *testing.T) {
 	ClearExprCache() // Ensure clean state
 
-	cond := NewExprCondition("key", "Value == 42")
+	cond := NewExprCondition("key", "value == 42")
 
 	if !cond.Match(42) {
-		t.Error("Match(42) should return true for 'Value == 42'")
+		t.Error("Match(42) should return true for 'value == 42'")
 	}
 
 	if cond.Match(43) {
-		t.Error("Match(43) should return false for 'Value == 42'")
+		t.Error("Match(43) should return false for 'value == 42'")
 	}
 }
 
 func TestExprCondition_Match_Comparison(t *testing.T) {
 	ClearExprCache()
 
-	cond := NewExprCondition("key", "Value > 10")
+	cond := NewExprCondition("key", "value > 10")
 
 	if !cond.Match(15) {
-		t.Error("Match(15) should return true for 'Value > 10'")
+		t.Error("Match(15) should return true for 'value > 10'")
 	}
 
 	if cond.Match(5) {
-		t.Error("Match(5) should return false for 'Value > 10'")
+		t.Error("Match(5) should return false for 'value > 10'")
 	}
 
 	if cond.Match(10) {
-		t.Error("Match(10) should return false for 'Value > 10'")
+		t.Error("Match(10) should return false for 'value > 10'")
 	}
 }
 
@@ -124,18 +124,18 @@ func TestExprCondition_Match_FieldAccess(t *testing.T) {
 		Y int
 	}
 
-	cond := NewExprCondition("pos", "Value.X > 0 && Value.Y > 0")
+	cond := NewExprCondition("pos", "value.X > 0 && Value.Y > 0")
 
 	if !cond.Match(Point{X: 5, Y: 10}) {
-		t.Error("Match({5,10}) should return true for 'Value.X > 0 && Value.Y > 0'")
+		t.Error("Match({5,10}) should return true for 'value.X > 0 && Value.Y > 0'")
 	}
 
 	if cond.Match(Point{X: -1, Y: 10}) {
-		t.Error("Match({-1,10}) should return false for 'Value.X > 0 && Value.Y > 0'")
+		t.Error("Match({-1,10}) should return false for 'value.X > 0 && Value.Y > 0'")
 	}
 
 	if cond.Match(Point{X: 5, Y: -1}) {
-		t.Error("Match({5,-1}) should return false for 'Value.X > 0 && Value.Y > 0'")
+		t.Error("Match({5,-1}) should return false for 'value.X > 0 && Value.Y > 0'")
 	}
 }
 
@@ -186,7 +186,7 @@ func TestExprCondition_Match_NonBooleanResult(t *testing.T) {
 
 	// This would fail compilation with AsBool() option, so we test
 	// that it returns false gracefully
-	cond := NewExprCondition("key", "Value + 1")
+	cond := NewExprCondition("key", "value + 1")
 
 	if cond.Match(42) {
 		t.Error("Non-boolean expression should return false")
@@ -196,8 +196,8 @@ func TestExprCondition_Match_NonBooleanResult(t *testing.T) {
 func TestExprCondition_CachingWorks(t *testing.T) {
 	ClearExprCache()
 
-	cond1 := NewExprCondition("key1", "Value == 100")
-	cond2 := NewExprCondition("key2", "Value == 100") // Same expression
+	cond1 := NewExprCondition("key1", "value == 100")
+	cond2 := NewExprCondition("key2", "value == 100") // Same expression
 
 	// First call compiles
 	cond1.Match(100)
@@ -215,7 +215,7 @@ func TestExprCondition_CachingWorks(t *testing.T) {
 func TestExprCondition_ThreadSafety(t *testing.T) {
 	ClearExprCache()
 
-	cond := NewExprCondition("key", "Value > 0")
+	cond := NewExprCondition("key", "value > 0")
 	var wg sync.WaitGroup
 	var trueCount, falseCount atomic.Int64
 
@@ -315,14 +315,14 @@ func TestEffect_NilValues(t *testing.T) {
 
 func TestClearExprCache(t *testing.T) {
 	// Pre-populate cache
-	cond := NewExprCondition("key", "Value == 999")
+	cond := NewExprCondition("key", "value == 999")
 	cond.Match(999)
 
 	// Clear cache
 	ClearExprCache()
 
 	// Verify cache is empty by checking new condition compiles fresh
-	cond2 := NewExprCondition("key2", "Value == 999")
+	cond2 := NewExprCondition("key2", "value == 999")
 
 	// This should work (recompiles)
 	if !cond2.Match(999) {
@@ -340,7 +340,7 @@ func TestExprCondition_NoGojaCallsVerification(t *testing.T) {
 	panicBridge := &mockPanicBridge{t: t}
 
 	// This should NOT use the bridge at all
-	cond := NewExprCondition("key", "Value == 42")
+	cond := NewExprCondition("key", "value == 42")
 
 	// If this panics, it means ExprCondition is incorrectly calling Goja
 	if !cond.Match(42) {
@@ -380,31 +380,31 @@ func TestExprCondition_ComplexExpressions(t *testing.T) {
 	}{
 		{
 			name:  "nil check",
-			expr:  "Value == nil",
+			expr:  "value == nil",
 			value: nil,
 			want:  true,
 		},
 		{
 			name:  "nil check negative",
-			expr:  "Value == nil",
+			expr:  "value == nil",
 			value: 42,
 			want:  false,
 		},
 		{
 			name:  "not nil check",
-			expr:  "Value != nil",
+			expr:  "value != nil",
 			value: "something",
 			want:  true,
 		},
 		{
 			name:  "boolean true",
-			expr:  "Value == true",
+			expr:  "value == true",
 			value: true,
 			want:  true,
 		},
 		{
 			name:  "boolean false",
-			expr:  "Value == false",
+			expr:  "value == false",
 			value: false,
 			want:  true,
 		},
@@ -416,13 +416,13 @@ func TestExprCondition_ComplexExpressions(t *testing.T) {
 		},
 		{
 			name:  "float comparison",
-			expr:  "Value >= 1.5",
+			expr:  "value >= 1.5",
 			value: 1.5,
 			want:  true,
 		},
 		{
 			name:  "float less than",
-			expr:  "Value < 1.5",
+			expr:  "value < 1.5",
 			value: 1.0,
 			want:  true,
 		},

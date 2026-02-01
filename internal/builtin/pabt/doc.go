@@ -1,192 +1,108 @@
-// Package pabt provides integration between go-pabt (Planning-Augmented Behavior Trees)
-// and the bt module, exposing PA-BT planning as a JavaScript module "osm:pabt".
+// Package pabt implements the Planning and Acting using Behavior Trees (PA-BT)
+// algorithm, enabling autonomous agents to generate and refine reactive plans
+// online.
 //
-// # What is PA-BT?
+// This package provides a generic, type-safe implementation of the synthesis
+// and execution strategies described in "Behavior Trees in Robotics and AI:
+// An Introduction" (Colledanchise and Ögren, 2018).
 //
-// PA-BT (Planning-Augmented Behavior Trees) combines the reactive execution model of
-// Behavior Trees with the goal-directed planning of GOAP (Goal-Oriented Action Planning).
-// Unlike traditional BTs that require explicit tree structure, PA-BT uses declarative
-// action templates to automatically construct execution plans at runtime.
+// # Overview
 //
-// # Action Templates: The Core Concept
+// PA-BT blends the reactivity of Behavior Trees (BTs) with the goal-directed
+// nature of automated planning. Unlike classical planners that generate a
+// fixed sequence of actions offline, PA-BT iteratively expands a Behavior Tree
+// at runtime. It maintains a running plan and "grafts" new subtrees only when
+// the current plan fails to meet a precondition.
 //
-// An action template is a declarative specification of what an action DOES, independent
-// of when or how it will be used. Each template consists of three components:
+// This approach ensures the agent remains responsive to environmental changes
+// (reactivity) while ensuring long-term goal achievement (deliberation).
 //
-//  1. Preconditions: Constraints that must be satisfied BEFORE the action can execute
-//  2. Effects: Changes to state variables that the action ACHIEVES when successful
-//  3. Node: The actual behavior tree node that implements the action's logic
+// # The PPA Pattern (Postcondition-Precondition-Action)
 //
-// The planner uses these templates to construct action sequences that achieve goals.
-// When a goal condition fails, the planner searches for action templates whose effects
-// would satisfy that condition, then recursively plans for those actions' preconditions.
+// The core building block of a PA-BT plan is the PPA subtree. When a
+// condition C fails, the planner replaces it with a Fallback (Selector) node
+// structured as:
 //
-// Example:
+//	Fallback
+//	├── Check(C)                 (The Goal/Postcondition)
+//	└── Sequence
+//	    ├── Plan(Preconditions)  (Recursive expansion)
+//	    └── Action(A)            (The Action that achieves C)
 //
-//	Action Template: "Pick"
-//	  Preconditions: [atCube == true, handsEmpty == true]
-//	  Effects:       [heldItem == cube.id]
-//	  Node:          bt.createLeafNode(() => /* pick up cube */)
+// This structure guarantees "Lazy Planning": the action A is only executed
+// if C is not already met. If C becomes true due to external factors
+// (serendipity), the Fallback succeeds immediately, skipping the action.
 //
-//	Goal: heldItem == 1
-//	  → Planner finds "Pick" (effect satisfies goal)
-//	  → Plans for preconditions: atCube, handsEmpty
-//	  → Recursively plans for those...
+// # Integration with go-behaviortree
 //
-// This bridges BTs (reactive execution) with GOAP (declarative planning).
+// This package is built on top of github.com/joeycumines/go-behaviortree.
+// The resulting plans are standard BT nodes that can be ticked by a
+// bt.Ticker. The integration involves:
 //
-// # Static vs Parametric Action Templates
+//  1. Action.Node(): Returns a bt.Node representing the execution logic.
+//  2. Plan.Node(): Returns the root bt.Node of the generated tree.
+//  3. Plan.Running(): A hint for schedulers/tickers to optimize tick cycles.
 //
-// Action templates come in two forms:
+// # Implementing the Domain
 //
-// Static Templates: Registered once at initialization. Suitable for:
-//   - Actions with fixed parameters (Pick, Place, etc.)
-//   - Small finite sets (4 blockade cubes → 4 Pick_Blockade_X actions)
+// To use pabt, you must implement the State[T] interface and Action types
+// specific to your domain. This package uses Go generics, where T is your
+// specific Condition type.
 //
-// Parametric Templates: Generated dynamically via ActionGenerator. Required for:
-//   - Infinite or large action spaces (MoveTo for any of 1000s of entities)
-//   - Actions whose parameters depend on runtime world state
-//   - TRUE parametric actions like MoveTo(entityId) where entityId is a planning parameter
+//  1. Define your Condition type:
+//     Your conditions (e.g., predicates) must be comparable or identifiable
+//     so the planner can match failed conditions to action effects.
 //
-// Example of when to use which:
+//  2. Implement the State[T] interface:
+//     The State serves as the "Action Library". When the planner encounters
+//     a failure, it queries State.Actions(failedCondition).
 //
-//	Static:     Pick_Target, Deliver_Target (exactly 1 target)
-//	Static:     Pick_Blockade_1..4 (4 blockades, small finite set)
-//	Parametric: MoveTo(entityId) (unlimited entities, parameter chosen at planning time)
+//  3. Define Action Templates:
+//     An Action[T] defines:
+//     - Preconditions: What must hold true before execution.
+//     - Effects: What conditions this action satisfies (Postconditions).
+//     - Node: The executable behavior (bt.Node).
 //
-// # ActionGenerator: TRUE Parametric Actions
+// # Algorithm Details
 //
-// The ActionGenerator callback enables TRUE parametric actions by generating action
-// templates on-demand based on the failed condition. When the planner needs actions
-// to satisfy a condition like "atEntity_42", it calls the generator with that
-// condition, and the generator returns action templates for relevant entities.
+// The planner implements the standard PA-BT algorithms:
 //
-//	state.SetActionGenerator(func(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
-//	    key := failed.Key()
-//	    if key == "atEntity_42" {
-//	        // Generate MoveTo actions for entity 42
-//	        return []pabtpkg.IAction{createMoveToAction(42)}, nil
-//	    }
-//	    return nil, nil
-//	})
-//
-// The generator is called from the bt.Ticker goroutine. If it accesses JavaScript
-// state, it MUST use Bridge.RunOnLoopSync for thread-safe access.
-//
-// # Architecture: Go vs JavaScript Layers
-//
-// This package deliberately keeps the Go layer minimal - it provides only the PA-BT
-// primitives (State, Action, Condition, Effect). Application-specific types like
-// simulation state, sprites, shapes, etc. belong in the JavaScript layer where
-// they can be customized per-application.
-//
-//	┌─────────────────────────────────────────────────────────┐
-//	│              JavaScript Layer                            │
-//	│  • Application types (Actor, Cube, etc)                  │
-//	│  • Action definitions (pick, place, moveTo)              │
-//	│  • Blackboard sync (syncToBlackboard())                  │
-//	│  • Node execution (closures mutate JS state)             │
-//	└─────────────────────────────────────────────────────────┘
-//	                          ▼
-//	┌─────────────────────────────────────────────────────────┐
-//	│                Go Layer                                  │
-//	│  • pabt.State (wraps bt.Blackboard)                      │
-//	│  • pabt.Action (wraps conditions, effects, bt.Node)      │
-//	│  • pabt.ActionRegistry (thread-safe storage)             │
-//	│  • go-pabt planning algorithm                            │
-//	└─────────────────────────────────────────────────────────┘
-//
-// Key architectural principles:
-//   - One-way sync: JavaScript → Blackboard (no reverse sync)
-//   - Blackboard stores primitives only (numbers, strings, booleans)
-//   - BT nodes execute in JavaScript (closures over JS state)
-//   - Go layer reads primitives from blackboard for planning
-//
-// # Condition Evaluation Modes
-//
-// Conditions can be evaluated in different modes with different performance characteristics:
-//
-//   - JSCondition: JavaScript functions via Goja runtime. Supports complex logic and
-//     closure state. Requires Bridge.RunOnLoopSync for thread safety. ~5μs per evaluation.
-//
-//   - ExprCondition: Go-native expr-lang evaluation with ZERO Goja calls. Compiled
-//     expressions are cached. 10-100x faster than JSCondition. ~100ns per evaluation.
-//     Use for simple comparisons, arithmetic, boolean logic.
-//
-//   - FuncCondition: Direct Go function calls. Fastest option for Go-side conditions.
-//     ~50ns per evaluation.
-//
-// # Thread Safety
-//
-// The bt.Ticker runs in a separate goroutine from the event loop. All Goja runtime
-// operations MUST be marshalled to the event loop goroutine via Bridge.RunOnLoopSync.
-//
-// This affects:
-//   - JSCondition.match (called from ticker, uses RunOnLoopSync)
-//   - ActionGenerator callback (if accessing JS state, must use RunOnLoopSync)
-//   - Action Node execution (already runs on event loop, no special handling needed)
-//
-// For performance-critical conditions, prefer ExprCondition or FuncCondition which
-// execute natively in Go without any Goja overhead or thread synchronization.
+//   - Algorithm 5 (Execution Loop): Ticks the tree and monitors for failure.
+//   - Algorithm 6 (Expansion): Backchains from failed conditions to find
+//     actions in the State library. It handles multiple potential actions
+//     using a Memorize(Selector) structure to maintain commitment to a
+//     chosen strategy until it fails.
+//   - Algorithm 7 (Conflict Resolution): Ensures that newly grafted subtrees
+//     do not invalidate the preconditions of higher-priority goals. If a
+//     conflict is detected, the conflicting subtree is moved leftward
+//     (higher priority) to preserve logical consistency.
 //
 // # Usage Example
 //
-//	// Go layer setup
-//	bb := new(bt.Blackboard)
-//	state := pabt.NewState(bb)
+//	// 1. Define a concrete Condition type (e.g., a string or struct)
+//	type MyCond string
 //
-//	// Register a static action template
-//	pick := pabt.NewAction(
-//	    "Pick",
-//	    []pabtpkg.IConditions{{
-//	        pabt.NewSimpleCond("atCube", func(v any) bool { return v == true }),
-//	        pabt.NewSimpleCond("handsEmpty", func(v any) bool { return v == true }),
-//	    }},
-//	    pabtpkg.Effects{pabt.NewSimpleEffect("heldItem", 1)},
-//	    pickNode,
-//	)
-//	state.RegisterAction("Pick", pick)
+//	// 2. Create the State (the library of actions)
+//	state := NewMyState() // Implements pabt.State[MyCond]
 //
-//	// Create a plan with a goal
-//	goal := []pabtpkg.IConditions{{
-//	    pabt.NewSimpleCond("heldItem", func(v any) bool { return v == 1 }),
-//	}}
-//	plan, _ := pabtpkg.INew(state, goal)
+//	// 3. Define the high-level Goal
+//	goal := []MyCond{"DoorOpen", "RobotAtHome"}
 //
-//	// Execute via behavior tree ticker
-//	ticker := bt.NewTicker(context.Background(), time.Millisecond*100, plan.Node())
+//	// 4. Initialize the Planner
+//	plan, err := pabt.New(state, goal)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 //
-// # JavaScript Integration Example
+//	// 5. Run the Plan using the standard behavior tree ticker
+//	ticker := bt.NewTicker(context.Background(), 100*time.Millisecond, plan.Node())
+//	<-ticker.Done()
 //
-//	const pabt = require('osm:pabt');
-//	const bt = require('osm:bt');
+// # Dynamic vs Static Actions
 //
-//	// Setup
-//	const bb = new bt.Blackboard();
-//	const state = pabt.newState(bb);
-//
-//	// Static action template
-//	state.registerAction('Pick', pabt.newAction('Pick',
-//	    [{key: 'atCube', match: v => v === true}],  // preconditions
-//	    [{key: 'heldItem', Value: 1}],              // effects
-//	    bt.createLeafNode(() => { /* ... */ })      // execution node
-//	));
-//
-//	// Parametric action template (via generator)
-//	state.setActionGenerator(function(failedCondition) {
-//	    const key = failedCondition.key;
-//	    if (key.startsWith('atEntity_')) {
-//	        const entityId = parseInt(key.replace('atEntity_', ''));
-//	        return [createMoveToAction(entityId)];
-//	    }
-//	    return [];
-//	});
-//
-//	// Create plan with goal
-//	const plan = pabt.newPlan(state, [
-//	    {key: 'targetDelivered', match: v => v === true}
-//	]);
-//
-//	// Execute
-//	const ticker = bt.newTicker(100, plan.Node());
+// Unlike systems that require strict separation between static and parametric
+// actions, PA-BT relies on the State interface to resolve this. If a condition
+// requires a parametric response (e.g., "AtLocation(42)"), your State
+// implementation should dynamically generate or retrieve an Action instance
+// configured for that specific parameter (e.g., "MoveTo(42)").
 package pabt

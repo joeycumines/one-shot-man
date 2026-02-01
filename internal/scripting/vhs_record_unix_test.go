@@ -551,23 +551,26 @@ func (r *InputCaptureRecorder) inputToTape(input string) string {
 		}
 
 		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" {
+			orig := line
+			trimmed := strings.TrimSpace(line)
+
+			// If trimming yields empty but original isn't empty, it was whitespace-only input (e.g. a space).
+			if trimmed == "" {
+				if orig != "" {
+					// Preserve whitespace-only input as a Type command (e.g. Type " ")
+					result.WriteString(fmt.Sprintf("Type %s\n", quoteVHSString(orig)))
+				}
 				continue
 			}
 
-			// Check if it's a known command
-			isCommand := false
-			if _, ok := cmdSet[line]; ok {
-				result.WriteString(line + "\n")
-				isCommand = true
+			// Check if it's a known command (use trimmed form for matching)
+			if _, ok := cmdSet[trimmed]; ok {
+				result.WriteString(trimmed + "\n")
+				continue
 			}
 
-			if !isCommand {
-				// It's text to type
-				// Quote the text appropriately
-				result.WriteString(fmt.Sprintf("Type %s\n", quoteVHSString(line)))
-			}
+			// Otherwise it's text to type - preserve original spacing
+			result.WriteString(fmt.Sprintf("Type %s\n", quoteVHSString(orig)))
 		}
 	}
 
@@ -603,6 +606,31 @@ func TestInputToTape_EscapeSequenceOrdering(t *testing.T) {
 	got = r.inputToTape("\x1b[A")
 	if !strings.Contains(got, "Up\n") {
 		t.Fatalf("expected Up, got %q", got)
+	}
+}
+
+func TestInputToTape_PreservesSpace(t *testing.T) {
+	r := &InputCaptureRecorder{}
+	got := r.inputToTape(" ")
+	if !strings.Contains(got, "Type \" \"") {
+		t.Fatalf("expected Type \" \" for single space, got %q", got)
+	}
+}
+
+func TestInputToTape_SpaceAfterEscape(t *testing.T) {
+	r := &InputCaptureRecorder{}
+	got := r.inputToTape("\x1b[A ")
+	// Expect Up followed by a Type " " command
+	if !strings.Contains(got, "Up\nType \" \"") {
+		t.Fatalf("expected Up followed by Type \" \", got %q", got)
+	}
+}
+
+func TestInputToTape_PreservesMultipleSpaces(t *testing.T) {
+	r := &InputCaptureRecorder{}
+	got := r.inputToTape("   ")
+	if !strings.Contains(got, "Type \"   \"") {
+		t.Fatalf("expected Type \"   \" for multiple spaces, got %q", got)
 	}
 }
 

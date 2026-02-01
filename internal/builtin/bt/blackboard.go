@@ -12,10 +12,6 @@ import (
 	"github.com/dop251/goja"
 )
 
-// EnableBlackboardDebug controls debug output for blackboard operations.
-// Deprecated: verify log level instead.
-var EnableBlackboardDebug = false
-
 // Blackboard provides a thread-safe key-value store for behavior tree state.
 // It implements a shared state pattern where Go manages the state and exposes
 // it to JavaScript via accessor methods.

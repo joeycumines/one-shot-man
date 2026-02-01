@@ -617,8 +617,6 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	})
 	if err != nil {
 		// Event loop error - return current state unchanged
-		// NOTE: Using fmt.Fprintf to stderr so it's VISIBLE in test output (slog goes to file)
-		fmt.Fprintf(os.Stderr, "\n!!! CRITICAL: bubbletea Update RunJSSync error: %v (msgType=%v) - TICK LOOP BROKEN !!!\n", err, jsMsg["type"])
 		slog.Error("bubbletea: Update: RunJSSync error, returning nil cmd (breaks tick loop!)", "error", err, "msgType", jsMsg["type"])
 		return m, nil
 	}
@@ -636,7 +634,6 @@ func (m *jsModel) updateDirect(jsMsg map[string]interface{}) tea.Cmd {
 	result, err := m.updateFn(goja.Undefined(), m.runtime.ToValue(jsMsg), state)
 	if err != nil {
 		slog.Error("bubbletea: updateDirect: JS update function error", "error", err, "msgType", jsMsg["type"])
-		fmt.Fprintf(os.Stderr, "\n!!! JS UPDATE ERROR: %v (msgType=%v) !!!\n", err, jsMsg["type"])
 		return nil
 	}
 	slog.Debug("bubbletea: updateDirect: JS update returned successfully", "msgType", jsMsg["type"])

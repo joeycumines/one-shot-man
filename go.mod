@@ -13,7 +13,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/dop251/goja v0.0.0-20260106131823-651366fbe6e3
 	github.com/dop251/goja_nodejs v0.0.0-20251015164255-5e94316bedaf
-	github.com/gdamore/tcell/v2 v2.13.7
+	github.com/gdamore/tcell/v2 v2.13.8
 	github.com/joeycumines/go-prompt v0.0.0-20251229222625-118b9ef8ec20
 	github.com/rivo/tview v0.42.0
 	github.com/stretchr/testify v1.11.1
@@ -28,7 +28,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/expr-lang/expr v1.17.7
 	github.com/google/uuid v1.6.0
-	github.com/joeycumines/go-behaviortree v1.8.0
+	github.com/joeycumines/go-behaviortree v1.11.0
 	github.com/joeycumines/go-pabt v0.2.0
 	github.com/lrstanley/bubblezone v1.0.0
 	github.com/mattn/go-runewidth v0.0.19
@@ -45,9 +45,9 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.4 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.14 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
-	github.com/clipperhouse/displaywidth v0.7.0 // indirect
+	github.com/clipperhouse/displaywidth v0.8.0 // indirect
 	github.com/clipperhouse/stringish v0.1.1 // indirect
-	github.com/clipperhouse/uax29/v2 v2.3.1 // indirect
+	github.com/clipperhouse/uax29/v2 v2.4.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
@@ -66,14 +66,13 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/pkg/term v1.2.0-beta.2 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/xlab/treeprint v1.2.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yuin/goldmark v1.7.16 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/mod v0.32.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260116145544-c6413dc483f5 // indirect
+	golang.org/x/telemetry v0.0.0-20260128140115-fcf36f686977 // indirect
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

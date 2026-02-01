@@ -44,8 +44,3 @@ See:
 
 - [docs/visuals/architecture.md](visuals/architecture.md)
 - [docs/visuals/workflows.md](visuals/workflows.md)
-
-## Native Modules
-
-Native modules are registered under the `osm:` prefix and provide Go implementations accessible from JavaScript.
-

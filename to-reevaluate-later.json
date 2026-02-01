@@ -544,7 +544,6 @@
     "low_issues": [
       { "id": "L1", "file": "internal/builtin/pabt/evaluation.go", "issue": "Naming - JSCondition vs FuncCondition vs ExprCondition naming convention" },
       { "id": "L2", "file": "internal/mouseharness/mouse.go", "issue": "Magic Numbers - SGR mouse button constants (0, 1, 2, 64, 65)" },
-      { "id": "L3", "file": "internal/builtin/pabt/state.go", "issue": "Inconsistent Verbosity - DebugLogging OSM_DEBUG_PABT vs slog" },
       { "id": "L4", "file": "internal/builtin/bubbletea/testing.go", "issue": "Missing Documentation - Test utilities exposed in main API" },
       { "id": "L5", "file": "internal/builtin/bt/adapter.go, internal/builtin/bt/bridge.go", "issue": "Documentation Quality - Package doc missing examples for critical operations" }
     ]

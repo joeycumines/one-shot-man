@@ -578,9 +578,6 @@ pabt.newExprCondition('distance', 'Value < 100')
 // Check action registration
 console.log('Registered actions:', state.actions.All().length);
 
-// Enable PA-BT debugging
-// Set environment variable: OSM_DEBUG_PABT=1
-
 // Check blackboard state
 console.log('atCube:', bb.get('atCube'));
 ```

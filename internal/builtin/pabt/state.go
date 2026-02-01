@@ -3,8 +3,6 @@ package pabt
 import (
 	"fmt"
 	"log/slog"
-	"os"
-	"strings"
 	"sync"
 
 	pabtpkg "github.com/joeycumines/go-pabt"
@@ -13,10 +11,6 @@ import (
 
 // Compile-time interface check: State must implement pabtpkg.IState
 var _ pabtpkg.IState = (*State)(nil)
-
-// debugPABT controls verbose PA-BT debugging output.
-// Set OSM_DEBUG_PABT=1 to enable.
-var debugPABT = os.Getenv("OSM_DEBUG_PABT") == "1"
 
 // State implements pabtpkg.State (which is State[Condition]) interface backed by a bt.Blackboard.
 // It normalizes any key type to string for blackboard storage and provides
@@ -149,33 +143,6 @@ func (s *State) Variable(key any) (any, error) {
 	// Get value from blackboard (returns nil if not found, which is correct pabt semantics)
 	value := s.Blackboard.Get(keyStr)
 
-	if debugPABT {
-		slog.Debug("[PA-BT DEBUG] State.Variable called", "key", key, "keyStr", keyStr, "value", value, "type", fmt.Sprintf("%T", value))
-
-		// Moved detailed logging here to avoid excessive noise in standard debug level
-		slog.Debug("[PA-BT VAR]", "key", keyStr, "value", value)
-
-		// ALWAYS log key variables (as Debug, was [PA-BT ALWAYS])
-		if strings.HasPrefix(keyStr, "atGoal_") {
-			slog.Debug("[PA-BT ALWAYS] ATGOAL", "key", keyStr, "value", value)
-		}
-		if keyStr == "heldItemId" {
-			slog.Debug("[PA-BT ALWAYS] HELD", "key", "heldItemId", "value", value)
-		}
-
-		// CRITICAL: Track when atGoal_1 is checked - should happen after heldItemId passes
-		if strings.HasPrefix(keyStr, "atGoal_") {
-			slog.Debug("[PA-BT DEBUG] ATGOAL_VAR: Checking value (expected: false before reaching goal)", "key", keyStr, "value", value)
-		}
-
-		// CRITICAL: Track heldItemId values - especially non-negative ones
-		if keyStr == "heldItemId" {
-			if v, ok := value.(int64); ok && v >= 0 {
-				slog.Debug("[PA-BT DEBUG] HELD_POSITIVE: condition should PASS now!", "heldItemId", v)
-			}
-		}
-	}
-
 	return value, nil
 }
 
@@ -208,62 +175,6 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 
 	failedKey := failed.Key()
 
-	if debugPABT {
-		slog.Debug("[PA-BT DEBUG] State.Actions called", "failedKey", failedKey, "failedKeyType", fmt.Sprintf("%T", failedKey), "registeredActionCount", len(registeredActions))
-
-		// CRITICAL: Log when atGoal_X is requested - this is key for conflict resolution
-		if failedKeyStr, ok := failedKey.(string); ok {
-			if strings.HasPrefix(failedKeyStr, "atGoal_") {
-				slog.Debug("[PA-BT DEBUG] ATGOAL_CRITICAL: Actions() called - triggers MoveTo generation", "key", failedKeyStr)
-			}
-		}
-
-		// CUBE_DELIVERED: Log ALL actions when searching for cubeDeliveredAtGoal
-		if failedKeyStr, ok := failedKey.(string); ok {
-			if failedKeyStr == "cubeDeliveredAtGoal" {
-				slog.Debug("[PA-BT DEBUG] CUBE_DELIVERED: Searching for actions")
-				for _, a := range registeredActions {
-					if named, ok := a.(*Action); ok {
-						for _, e := range a.Effects() {
-							slog.Debug("[PA-BT DEBUG] CUBE_DELIVERED: Action detail", "action", named.Name, "effectKey", e.Key(), "effectValue", e.Value())
-						}
-					}
-				}
-			}
-		}
-
-		// Extra debug: log all registered action names
-		if failedKey == "reachable_goal_1" {
-			slog.Debug("[PA-BT DEBUG] SPECIAL: Searching for reachable_goal_1 actions")
-			for _, a := range registeredActions {
-				if named, ok := a.(*Action); ok {
-					slog.Debug("[PA-BT DEBUG]   Action", "name", named.Name, "effects", a.Effects())
-				}
-			}
-		}
-
-		// EXTRA: Check for goalBlockade conditions
-		if failedKeyStr, ok := failedKey.(string); ok {
-			if strings.HasPrefix(failedKeyStr, "goalBlockade_") && strings.HasSuffix(failedKeyStr, "_cleared") {
-				slog.Debug("[PA-BT DEBUG] GOALBLOCKADE: Looking for actions", "key", failedKeyStr)
-			}
-		}
-
-		// EXTRA: Check for heldItemExists/heldItemId - critical for conflict resolution
-		if failedKey == "heldItemExists" || failedKey == "heldItemId" {
-			slog.Debug("[PA-BT DEBUG] HANDS: Looking for actions", "failedKey", failedKey)
-			for _, a := range registeredActions {
-				if named, ok := a.(*Action); ok {
-					for _, e := range a.Effects() {
-						if e.Key() == failedKey {
-							slog.Debug("[PA-BT DEBUG] HANDS: Action has effect", "action", named.Name, "key", failedKey, "value", e.Value())
-						}
-					}
-				}
-			}
-		}
-	}
-
 	var relevantActions []pabtpkg.IAction
 
 	// Track whether ActionGenerator returned any actions for this condition.
@@ -282,9 +193,6 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 			slog.Warn("[PA-BT] ActionGenerator error, falling back to static actions", "error", err, "failedKey", failedKey)
 			// Don't fail completely - fall back to static actions
 		} else {
-			if debugPABT {
-				slog.Debug("[PA-BT DEBUG] ActionGenerator returned actions", "count", len(generatedActions))
-			}
 			// Filter generated actions for relevance
 			for _, action := range generatedActions {
 				if s.actionHasRelevantEffect(action, failedKey, failed) {
@@ -307,16 +215,6 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 				relevantActions = append(relevantActions, action)
 			}
 		}
-	}
-
-	if debugPABT {
-		actionNames := make([]string, 0, len(relevantActions))
-		for _, a := range relevantActions {
-			if named, ok := a.(*Action); ok {
-				actionNames = append(actionNames, named.Name)
-			}
-		}
-		slog.Debug("[PA-BT DEBUG] State.Actions result", "failedKey", failedKey, "relevantActionCount", len(relevantActions), "relevantActions", actionNames)
 	}
 
 	return relevantActions, nil
@@ -342,14 +240,6 @@ func (s *State) actionHasRelevantEffect(action pabtpkg.IAction, failedKey any, f
 		var valueMatch bool
 		if keyMatch {
 			valueMatch = failed.Match(effectValue)
-		}
-
-		if debugPABT {
-			var actionName string
-			if named, ok := action.(*Action); ok {
-				actionName = named.Name
-			}
-			slog.Debug("[PA-BT DEBUG] Effect comparison", "action", actionName, "effectKey", effectKey, "failedKey", failedKey, "keyMatch", keyMatch, "effectValue", effectValue, "valueMatch", valueMatch)
 		}
 
 		if keyMatch && valueMatch {

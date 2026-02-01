@@ -81,6 +81,24 @@ Curated prompt templates for common tasks. Extensible with custom goals discover
 
 </details>
 
+<details>
+<summary><strong>🎮 Behavior Tree Shooter (Scripting Demo)</strong></summary>
+
+A 2D top-down shooter running entirely in the terminal. Uses `osm:bt` (wrapping [go-behaviortree](https://github.com/joeycumines/go-behaviortree)) for enemy AI. Each type (grunt, sniper, pursuer, tank) has distinct behavior tree logic. Written in JavaScript, runs via `osm script` [scripts/example-04-bt-shooter.js](scripts/example-04-bt-shooter.js).
+
+![script-example-bt-shooter.gif](https://vhs.charm.sh/vhs-lVtFOSWPuuc5J2TDG9yb3.gif)
+
+</details>
+
+<details>
+<summary><strong>🤖 PA-BT Pick-and-Place (Scripting Demo)</strong></summary>
+
+An autonomous agent solving a pick-and-place puzzle. Uses `osm:pabt` (wrapping [go-pabt](https://github.com/joeycumines/go-pabt)) to generate plans on-the-fly. The agent uses backchaining to achieve its goal. No user input; just watch it resolve blocking items and complete the task. Written in JavaScript, runs via `osm script` [scripts/example-05-pick-and-place.js](scripts/example-05-pick-and-place.js).
+
+![script-example-pick-and-place.gif](https://vhs.charm.sh/vhs-CVwQJ064lUrQ6dWwoNj76.gif)
+
+</details>
+
 > **Note:** GIFs are auto-generated and reproducible. To regenerate: `make generate-tapes-and-gifs` (requires [VHS](https://github.com/charmbracelet/vhs)).
 
 ## Features
@@ -165,7 +183,7 @@ Future functionality based on merits.
 Fair warning: This may include features* which expand the scope of functionality.
 See also [docs/todo.md](docs/todo.md).
 
-(\*) Probably more along the lines of [Behavior Tree support](https://github.com/joeycumines/one-shot-man/pull/27) than [Tailwind SQL](https://tailwindsql.xyz/) - but I make no promises 😛.
+(\*) Probably more along the lines of [Behavior Tree support](https://github.com/joeycumines/one-shot-man/pull/27) ([+ PA-BT](https://github.com/joeycumines/one-shot-man/pull/28)) than [Tailwind SQL](https://tailwindsql.xyz/) - but I make no promises 😛.
 
 ## Quickstart
 

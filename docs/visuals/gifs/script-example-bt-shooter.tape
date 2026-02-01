@@ -25,39 +25,53 @@ Enter
 Sleep 500ms
 Sleep 300ms
 # Press SPACE to start the game
+Type " "
 Sleep 500ms
 # Move UP and shoot
 Up
+Type " "
 Up
 Up
+Type " "
 Up
 Up
+Type " "
 Up
 Up
+Type " "
 Up
 Sleep 500ms
 # Move RIGHT and shoot
 Right
+Type " "
 Right
 Right
+Type " "
 Right
 Right
+Type " "
 Right
 Sleep 500ms
 # Move DOWN and shoot
 Down
+Type " "
 Down
 Down
+Type " "
 Down
 Down
+Type " "
 Down
 Sleep 500ms
 # Move LEFT and shoot
 Left
+Type " "
 Left
 Left
+Type " "
 Left
 Left
+Type " "
 Left
 Sleep 500ms
 # Quit the game

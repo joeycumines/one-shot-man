@@ -1,0 +1,191 @@
+{
+  "_meta": {
+    "filename": "blueprint.json",
+    "maintenance_instruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE."
+  },
+  "global_alerts": [
+    {
+      "priority": "CRITICAL",
+      "warning": "ON TOOLS: Use `config.mk` to create custom targets to run with Make. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of those CRITICAL rules. Abide. OBEY."
+    },
+    {
+      "priority": "CRITICAL_REPEATED",
+      "warning": "ON TOOLS: Use `config.mk` to create custom targets to run with Make. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of those CRITICAL rules. Abide. OBEY."
+    }
+  ],
+  "mandatory_directives": {
+    "subagent_policy": "!! MANDATORY OPERATIONAL DIRECTIVE !!",
+    "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
+  },
+  "project_title": "EXHAUSTIVE REVIEW AND REFINEMENT: one-shot-man (Branch: wip)",
+  "api_review_section": {
+    "label": "API SURFACE REVIEW FINDINGS (PHASE 2.1)",
+    "completed_timestamp": "2026-01-31T00:00:00Z",
+    "review_file": "API_SURFACE_REVIEW.md",
+    "summary": {
+      "total_issues": 23,
+      "critical": 5,
+      "high": 8,
+      "medium": 5,
+      "low": 5,
+      "overall_assessment": "GOOD - API surface demonstrates sophisticated architecture with strong thread safety patterns, but requires focused refinement on error handling consistency, comprehensive documentation, and type safety before production deployment."
+    },
+    "critical_issues": [
+      {
+        "id": "C1",
+        "file": "internal/builtin/pabt/actions.go",
+        "lines": "75-85",
+        "issue": "Breaking Change - NewAction() factory function does not return error, breaking established pattern compared to State.Variable() which returns (any, error)",
+        "impact": "Callers cannot detect construction failures. Invalid nodes/conditions will panic at runtime instead of returning actionable errors.",
+        "fix_status": "NOT_STARTED"
+      },
+      {
+        "id": "C2",
+        "file": "internal/builtin/bt/adapter.go",
+        "lines": "390-400",
+        "issue": "Memory Leak Risk - defer func() to drain channel in BlockingJSLeaf may not execute if bridge.RunOnLoop fails (error path), leaving channel uncollectable",
+        "impact": "Goroutine leak persists when bridge.RunOnLoop returns ok=false. Channel receives value but no one drains it.",
+        "fix_status": "NOT_STARTED"
+      },
+      {
+        "id": "C3",
+        "file": "internal/builtin/bt/bridge.go",
+        "lines": "215-238",
+        "issue": "Data Race - bt.Bridge lifecycle invariant violated: Once Done() is closed, IsRunning() MUST return false, but implementation allows race window between setting stopped flag and calling b.cancel()",
+        "impact": "Race window where IsRunning() returns true but Done() is already closed. Violates documented invariant, can cause callers to wait on closed Done() channel after IsRunning() returned false.",
+        "fix_status": "NOT_STARTED"
+      },
+      {
+        "id": "C4",
+        "file": "internal/builtin/pabt/evaluation.go",
+        "lines": "105-107",
+        "issue": "Global Mutable State - exprCache is unbounded sync.Map with no limit or expiration",
+        "impact": "Unbounded growth. Every unique expression string creates cached entry. Long-running processes with dynamic expressions suffer unbounded memory growth.",
+        "fix_status": "NOT_STARTED"
+      },
+      {
+        "id": "C5",
+        "file": "internal/scripting/engine_core.go",
+        "lines": "156-170, 188-203",
+        "issue": "Missing Documentation Violation - SetGlobal/GetGlobal documentation claims MUST ONLY be called from event loop goroutine but implementation directly accesses e.vm without enforcement",
+        "impact": "Callers violating contract get data races with no enforcement. API is dishonest about its contracts.",
+        "fix_status": "NOT_STARTED"
+      }
+    ],
+    "high_issues": [
+      {
+        "id": "H1",
+        "file": "internal/builtin/pabt/actions.go",
+        "lines": "75-85",
+        "issue": "Missing Validation - NewAction() performs no input validation (nil checks for conditions, effects, node)",
+        "impact": "Invalid inputs create broken actions that fail at runtime with confusing errors. node==nil causes nil pointer dereference.",
+        "fix_status": "NOT_STARTED"
+      },
+      {
+        "id": "H2",
+        "file": "internal/builtin/pabt/state.go",
+        "lines": "100-150",
+        "issue": "Inconsistent Patterns - State.Variable() type conversion not documented properly. Converts int/uint/float to string via fmt.Sprintf with unclear rules",
+        "impact": "Callers don't know supported types. Float conversion with %f produces unexpected strings (e.g., 1.5→\"1.500000\").",
+        "fix_status": "NOT_STARTED"
+      },
+      {
+        "id": "H3",
+        "file": "internal/builtin/pabt/actions.go, internal/builtin/pabt/evaluation.go",
+        "lines": "Multiple",
+        "issue": "Missing Godoc - Most exported types/functions lack documentation: ActionRegistry, JSCondition, JSEffect, ExprCondition, FuncCondition",
+        "impact": "Poor discoverability. Users must read source code to understand API. IDE autocomplete shows no useful hints.",
+        "fix_status": "NOT_STARTED"
+      },
+      {
+        "id": "H4",
+        "file": "internal/builtin/pabt/evaluation.go",
+        "lines": "38-42, 66-78",
+        "issue": "Type Safety Gap - JSCondition exposes internal JS object (jsObject field) to action generators",
+        "impact": "Implementation detail leaks into API. Action generators depend on specific JS object structure creating tight coupling.",
+        "fix_status": "NOT_STARTED"
+      },
+      {
+        "id": "H5",
+        "file": "internal/mouseharness/mouse.go, internal/mouseharness/element.go",
+        "lines": "24-38, 88-102",
+        "issue": "Naming Inconsistency - MouseHarness conflation of viewport and buffer coordinates. ClickElement uses buffer-absolute FindElement result, passes to Click() which expects viewport-relative",
+        "impact": "Click operations fail when content scrolls beyond viewport height. No conversion from buffer to viewport coordinates.",
+        "fix_status": "NOT_STARTED"
+      },
+      {
+        "id": "H6",
+        "file": "internal/mouseharness/mouse.go",
+        "lines": "56-74",
+        "issue": "Missing Validation - ScrollWheel uses string direction parameter ('up'/'down') instead of typed constants",
+        "impact": "String-based direction is error-prone (typos, case sensitivity). No type-level guarantee of valid values.",
+        "fix_status": "NOT_STARTED"
+      },
+      {
+        "id": "H7",
+        "file": "internal/scripting/logging.go",
+        "lines": "104-131",
+        "issue": "Documentation Gap - TUILogger.PrintToTUI has complex synchronization behavior but godoc is minimal",
+        "impact": "Callers don't understand threading model. Risk of concurrent use errors. Unclear when to use PrintToTUI vs logger.Info().",
+        "fix_status": "NOT_STARTED"
+      },
+      {
+        "id": "H8",
+        "file": "internal/builtin/pabt/evaluation.go",
+        "lines": "61-92",
+        "issue": "Error Handling Inconsistency - JSCondition.Match defensive behavior silently returns false for invalid states (nil condition, nil bridge, bridge stopped)",
+        "impact": "Masks bugs (called before bridge initialized, called on nil condition). Makes conditions behave unexpectedly during shutdown.",
+        "fix_status": "NOT_STARTED"
+      }
+    ],
+    "medium_issues": [
+      {
+        "id": "M1",
+        "file": "internal/builtin/pabt/evaluation.go",
+        "issue": "Unnecessary Exposure - JSCondition.bridge field accessible but only used internally"
+      },
+      {
+        "id": "M2",
+        "file": "internal/builtin/pabt/state.go",
+        "issue": "Naming inconsistency minor issue - SetActionGenerator vs GetActionGenerator pattern"
+      },
+      {
+        "id": "M3",
+        "file": "internal/scripting/engine_core.go",
+        "issue": "Error Message Quality - Engine.ExecuteScript panic stack traces not formatted for programmatic consumption"
+      },
+      {
+        "id": "M4",
+        "file": "internal/mouseharness/terminal.go",
+        "issue": "Missing Helper - MouseHarness exposes ParseTerminalBuffer but no direct accessor to current buffer state"
+      },
+      {
+        "id": "M5",
+        "file": "internal/scripting/logging.go",
+        "issue": "Thread Safety Documentation - TUILogHandler.Enabled immutability not documented"
+      }
+    ],
+    "low_issues": [
+      {
+        "id": "L1",
+        "file": "internal/builtin/pabt/evaluation.go",
+        "issue": "Naming - JSCondition vs FuncCondition vs ExprCondition naming convention"
+      },
+      {
+        "id": "L2",
+        "file": "internal/mouseharness/mouse.go",
+        "issue": "Magic Numbers - SGR mouse button constants (0, 1, 2, 64, 65)"
+      },
+      {
+        "id": "L4",
+        "file": "internal/builtin/bubbletea/testing.go",
+        "issue": "Missing Documentation - Test utilities exposed in main API"
+      },
+      {
+        "id": "L5",
+        "file": "internal/builtin/bt/adapter.go, internal/builtin/bt/bridge.go",
+        "issue": "Documentation Quality - Package doc missing examples for critical operations"
+      }
+    ]
+  }
+}

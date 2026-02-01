@@ -189,7 +189,7 @@ PA-BT integration with [go-pabt](https://github.com/joeycumines/go-pabt):
 
 **Architecture principle**: Application types (shapes, sprites, simulation) are defined in JavaScript only. The Go layer provides PA-BT primitives; JavaScript provides domain logic.
 
-See: [pabt.md](reference/pabt.md)
+See: [planning-and-acting-using-behavior-trees.md](reference/planning-and-acting-using-behavior-trees.md)
 
 ### osm:bubbletea (TUI Framework)
 

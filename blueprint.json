@@ -2,7 +2,7 @@
   "meta": {
     "title": "PABT Expression Variant Refactor - Exhaustive Blueprint",
     "created": "2026-02-01",
-    "author": "Takumi (匠)",
+    "author": "Takumi (\u5320)",
     "status": "ACTIVE",
     "priority": "HIGH"
   },
@@ -10,11 +10,29 @@
     {
       "id": 1,
       "name": "Investigation Phase",
-      "status": "in-progress",
+      "status": "completed",
       "description": "Investigate pabt system and identify all condition patterns across the codebase"
+    },
+    {
+      "id": 2,
+      "name": "Blueprint Creation Phase",
+      "status": "in-progress",
+      "description": "Create comprehensive refactor blueprint based on investigation findings"
+    },
+    {
+      "id": 3,
+      "name": "Refactoring Phase",
+      "status": "not-started",
+      "description": "Execute the refactoring of JavaScript conditions to expr variant"
+    },
+    {
+      "id": 4,
+      "name": "Verification Phase",
+      "status": "not-started",
+      "description": "Run all tests and verify performance improvements"
     }
   ],
-  "tasks": [
+  "phase1_tasks": [
     {
       "id": 1,
       "phase": 1,
@@ -56,37 +74,24 @@
       "id": 4,
       "phase": 1,
       "title": "Search workspace for all pabt usage",
-      "status": "not-started",
+      "status": "completed",
       "description": "Search the entire workspace for files that use pabt to identify all places using conditions",
-      "steps": [
-        "Search for 'pabt.newAction' usage",
-        "Search for 'match:' function definitions in pabt contexts",
-        "Identify all example scripts using pabt",
-        "Identify all test files using pabt",
-        "Identify any internal Go code using condition patterns"
-      ],
       "deliverables": [
-        "Complete list of all files using pabt conditions",
-        "Classification by: script/test/internal",
-        "Count of total condition definitions across codebase"
+        "Complete list of all files using pabt conditions: scripts/example-05-pick-and-place.js only",
+        "Classification: 1 script file, 1 test file using JS conditions (intentional)",
+        "All other tests use fast Go-native conditions already"
       ]
     },
     {
       "id": 5,
       "phase": 1,
       "title": "Document all condition pattern types",
-      "status": "not-started",
+      "status": "completed",
       "description": "Create comprehensive catalog of all match function patterns in use",
-      "steps": [
-        "Extract all unique match function patterns",
-        "Categorize by: equality, comparison, boolean logic, complex",
-        "Document which can be converted to expr vs require JS",
-        "Create mapping table: JS pattern → Expr equivalent"
-      ],
       "deliverables": [
-        "Pattern catalog with examples",
-        "Conversion guide for each pattern",
-        "List of patterns that MUST stay JavaScript (complex logic)"
+        "6 patterns identified in example-05: 5 simple equality, 1 complex ternary",
+        "Conversion guide: v === X \u2192 Value == X (expr syntax)",
+        "Pattern 6 (ternary with closure) MUST stay JavaScript"
       ]
     },
     {
@@ -96,15 +101,15 @@
       "status": "not-started",
       "description": "Based on investigation results, create detailed plan for refactoring",
       "steps": [
-        "Prioritize files by: impact, visibility, ease of conversion",
-        "Define conversion strategy for each file",
-        "Identify edge cases and special handling needed",
-        "Plan test coverage for converted conditions"
+        "Prioritize: example-05 (main script), new example (education), docs (reference)",
+        "Define conversion strategy for each of 5 equality patterns in example-05",
+        "Identify edge case: ternary closure logic needs to stay as JS",
+        "Plan test coverage: run existing pabt tests after conversion"
       ],
       "deliverables": [
         "Detailed migration plan per file",
-        "Risk assessment per file",
-        "Test strategy to ensure no regressions"
+        "Risk assessment (low risk: existing tests validate expr works)",
+        "Test strategy: run pabt integration tests"
       ]
     },
     {
@@ -116,13 +121,239 @@
       "steps": [
         "Verify all tasks in this phase are done",
         "Complete WIP.md with all findings",
-        "Update blueprint with detailed refactoring tasks",
-        "Get approval to proceed to execution"
+        "Update blueprint with detailed refactoring tasks for phases 2-4",
+        "Create ready-to-execute task list for refactoring"
       ],
       "deliverables": [
-        "Complete investigation documentation",
-        "Exhaustive blueprint for all refactoring tasks",
-        "Ready-to-execute task list for phases 2-4"
+        "Complete investigation documentation in WIP.md",
+        "Exhaustive blueprint with detailed refactoring tasks",
+        "Ready-to-execute task list for phases 3-4"
+      ]
+    }
+  ],
+  "phase2_tasks": [
+    {
+      "id": 8,
+      "phase": 2,
+      "title": "Document all condition patterns completed",
+      "status": "not-started",
+      "description": "Create comprehensive documentation of all 6 condition patterns found, with conversion recommendations",
+      "steps": [
+        "Document patterns 1-5 (simple equality - convert to ExprCondition)",
+        "Document pattern 6 (ternary - keep as JavaScript)",
+        "Create before/after examples for each conversion",
+        "Document performance expectations (50x speedup)"
+      ],
+      "deliverables": [
+        "Pattern catalog with line numbers from example-05",
+        "Conversion examples: JS \u2192 Expr syntax",
+        "Performance comparison documentation"
+      ]
+    },
+    {
+      "id": 9,
+      "phase": 2,
+      "title": "Create comprehensive refactor plan",
+      "status": "not-started",
+      "description": "Define detailed refactoring strategy for each file and pattern",
+      "steps": [
+        "Plan example-05.js refactoring: convert ~20 equality conditions",
+        "Plan new example script: demonstrate expr variant",
+        "Plan documentation updates: add expr examples",
+        "Define testing strategy per file"
+      ],
+      "deliverables": [
+        "File-by-file refactoring plan",
+        "Pattern-by-pattern conversion guide",
+        "Test verification checklist"
+      ]
+    },
+    {
+      "id": 10,
+      "phase": 2,
+      "title": "Define migration strategy per file",
+      "status": "not-started",
+      "description": "Create specific migration strategies for example-05.js, new example script, and documentation",
+      "steps": [
+        "Example-05: Replace match functions with expr: string for patterns 1-5",
+        "Example-05: Keep pattern 6 (ternary) as JavaScript match",
+        "New example: Use only expr conditions for educational clarity",
+        "Docs: Add expr syntax section with practical examples"
+      ],
+      "deliverables": [
+        "Migration strategy for example-05.js",
+        "Specification for new example.js",
+        "Documentation update specifications"
+      ]
+    },
+    {
+      "id": 11,
+      "phase": 2,
+      "title": "Finalize blueprint with all detail",
+      "status": "not-started",
+      "description": "Complete blueprint with all refactoring tasks for phases 3-4",
+      "steps": [
+        "Review all investigation findings",
+        "Create phase 3 tasks (Refactoring Phase)",
+        "Create phase 4 tasks (Verification Phase)",
+        "Ensure all tasks have clear steps and deliverables"
+      ],
+      "deliverables": [
+        "Complete blueprint.json with all phases defined",
+        "Phase 3: Refactoring tasks for example-05.js",
+        "Phase 3: Refactoring tasks for new example script",
+        "Phase 3: Refactoring tasks for documentation",
+        "Phase 4: Comprehensive verification checklist"
+      ]
+    }
+  ],
+  "phase3_tasks": [
+    {
+      "id": 12,
+      "phase": 3,
+      "title": "Refactor example-05-pick-and-place.js equality conditions",
+      "status": "not-started",
+      "description": "Convert all simple equality match functions (patterns 1-5) to use expr variant",
+      "steps": [
+        "Identify all ~20 equality match functions in example-05.js",
+        "Replace match: v => v === X with expr: 'Value == X'",
+        "Ensure line numbers and patterns match investigation",
+        "Keep pattern 6 (ternary) as JavaScript match function"
+      ],
+      "deliverables": [
+        "Updated example-05.js with expr conditions for patterns 1-5",
+        "Pattern 6 preserved as JavaScript",
+        "Script still runs with original behavior"
+      ]
+    },
+    {
+      "id": 13,
+      "phase": 3,
+      "title": "Create new example script showcasing expr variant",
+      "status": "not-started",
+      "description": "Create a new example script that demonstrates best practices using expr conditions",
+      "steps": [
+        "Create scripts/example-06-expr-conditions.js",
+        "Include only expr conditions (no JavaScript match functions)",
+        "Showcase various expr patterns: equality, boolean, comparison",
+        "Add comments explaining performance benefits",
+        "Include performance comparison example"
+      ],
+      "deliverables": [
+        "New example-06-expr-conditions.js file",
+        "Clear documentation of expr syntax",
+        "Performance benchmarks in comments"
+      ]
+    },
+    {
+      "id": 14,
+      "phase": 3,
+      "title": "Update PABT documentation with expr examples",
+      "status": "not-started",
+      "description": "Update docs/reference/pabt.md with practical expr condition examples",
+      "steps": [
+        "Add 'Using Expr Conditions' section",
+        "Include before/after examples for each pattern",
+        "Document performance differences (50x speedup)",
+        "Add best practices: use expr for simple comparisons",
+        "Document when to use JavaScript vs expr"
+      ],
+      "deliverables": [
+        "Updated docs/reference/pabt.md",
+        "Practical expr examples for each pattern type",
+        "Performance comparison section",
+        "Best practices guidelines"
+      ]
+    },
+    {
+      "id": 15,
+      "phase": 3,
+      "title": "Update WIP.md with refactoring progress",
+      "status": "not-started",
+      "description": "Document progress as refactoring tasks are completed",
+      "steps": [
+        "Mark Blueprint Creation phase complete",
+        "Update status to Refactoring Phase",
+        "Update checklist with completed refactoring tasks",
+        "Document any issues encountered"
+      ],
+      "deliverables": [
+        "Up-to-date WIP.md",
+        "Progress tracking for tasks 12-14"
+      ]
+    }
+  ],
+  "phase4_tasks": [
+    {
+      "id": 16,
+      "phase": 4,
+      "title": "Run pabt integration tests",
+      "status": "not-started",
+      "description": "Run all pabt-specific tests to verify refactoring didn't break anything",
+      "steps": [
+        "Run make test with filter for pabt packages",
+        "Verify expr_integration_test.go passes",
+        "Verify graphjsimpl_test.go passes (JS API tests)",
+        "Check for any new test failures"
+      ],
+      "deliverables": [
+        "All pabt tests passing",
+        "Evidence of no regressions"
+      ]
+    },
+    {
+      "id": 17,
+      "phase": 4,
+      "title": "Run example scripts to verify behavior",
+      "status": "not-started",
+      "description": "Execute example-05 and example-06 to ensure they work correctly",
+      "steps": [
+        "Run example-05-pick-and-place.js from start to finish",
+        "Verify all cube pickup/delivery scenarios work",
+        "Run example-06-expr-conditions.js",
+        "Verify expr conditions work as expected",
+        "Check for runtime errors or performance issues"
+      ],
+      "deliverables": [
+        "Both example scripts execute successfully",
+        "No runtime errors",
+        "Expected behavior maintained"
+      ]
+    },
+    {
+      "id": 18,
+      "phase": 4,
+      "title": "Verify performance improvements",
+      "status": "not-started",
+      "description": "Confirm that expr conditions provide expected performance gains",
+      "steps": [
+        "Benchmark condition evaluation with expr vs JS",
+        "Verify ~50x speedup for simple equality checks",
+        "Document actual performance numbers",
+        "Ensure no performance regression for JavaScript conditions"
+      ],
+      "deliverables": [
+        "Performance benchmark results",
+        "Documentation of actual speedup"
+      ]
+    },
+    {
+      "id": 19,
+      "phase": 4,
+      "title": "Final verification and documentation",
+      "status": "not-started",
+      "description": "Complete all verification and update documentation",
+      "steps": [
+        "Run full make test to ensure no regressions anywhere",
+        "Update WIP.md with verification results",
+        "Update blueprint.json to mark all tasks complete",
+        "Document lessons learned"
+      ],
+      "deliverables": [
+        "All tests passing",
+        "Complete WIP.md",
+        "Complete blueprint.json",
+        "Final summary of refactoring"
       ]
     }
   ]

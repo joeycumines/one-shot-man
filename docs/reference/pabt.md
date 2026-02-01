@@ -1,6 +1,6 @@
 ---
 title: osm:pabt Module Reference
-description: PA-BT (Planning-Augmented Behavior Tree) integration for osm
+description: PA-BT (Planning and Acting using Behavior Trees) integration for osm
 tags:
   - pabt
   - planning
@@ -10,7 +10,7 @@ tags:
 
 # osm:pabt Module Reference
 
-The `osm:pabt` module provides a Planning-Augmented Behavior Tree (PA-BT) implementation for osm. It enables goal-directed planning using declarative action templates integrated with reactive behavior tree execution.
+The `osm:pabt` module provides a **Planning and Acting using Behavior Trees (PA-BT)** implementation for osm. It enables the dynamic synthesis of behavior trees at runtime using a library of declarative action templates.
 
 ## Table of Contents
 
@@ -27,25 +27,24 @@ The `osm:pabt` module provides a Planning-Augmented Behavior Tree (PA-BT) implem
 
 ## What is PA-BT?
 
-**PA-BT (Planning-Augmented Behavior Trees)** combines two powerful AI approaches:
+**PA-BT (Planning and Acting using Behavior Trees)** is a formalism for autonomous agents that unifies deliberative planning with reactive execution. It is distinct from traditional GOAP (Goal-Oriented Action Planning) or linear planners.
 
-1. **Behavior Trees (BTs)**: Reactive execution model that responds to changing conditions
-2. **GOAP (Goal-Oriented Action Planning)**: Declarative planning that constructs action sequences to achieve goals
+Rather than generating a fixed sequence of actions, PA-BT uses **backchaining** to iteratively synthesize a **Behavior Tree (BT)**. This tree structure inherently handles failure and unexpected success (serendipity) without requiring a separate "re-planning" trigger.
 
-Unlike traditional BTs where you manually construct the tree structure, PA-BT uses **action templates** to automatically build execution plans at runtime based on current state and desired goals.
+### Key Concepts
 
-### Key Benefits
-
-- **Declarative**: Specify WHAT actions do (effects), not WHEN to use them
-- **Automatic Planning**: Planner constructs action sequences to achieve goals
-- **Reactive**: Plans adapt when preconditions change or unexpected events occur
-- **Composable**: Action templates are reusable building blocks
+1.  **Backchaining**: The algorithm starts with a Goal. If the Goal is not met, it searches for an action whose **Postcondition (Effect)** satisfies the Goal. It then treats that action's **Preconditions** as new sub-goals.
+2.  **The PPA Pattern**: The fundamental building block of PA-BT is the **Postcondition-Precondition-Action (PPA)** subtree. 
+    * Instead of just running an action, the tree asks: *"Is the goal already done?"*
+    * Structure: `Fallback(Goal, Sequence(Preconditions, Action))`
+    * This ensures **reactivity**: if the `Goal` becomes true externally (e.g., a human hands the robot the item), the `Fallback` succeeds immediately, and the expensive `Action` is skipped.
+3.  **Lazy Planning**: The tree is expanded only as deep as necessary to find the first executable action, allowing for efficient real-time performance.
 
 ---
 
 ## Action Templates: Core Concept
 
-An **action template** is a declarative specification of what an action achieves, independent of when or how it will be used in the plan.
+An **Action Template** is the descriptive model of a capability. In PA-BT, this maps directly to the PPA structure: the planner uses the **Effects** (Postconditions) and **Preconditions** to wire the tree, while the **Node** contains the executable logic.
 
 ### Template Structure
 
@@ -53,71 +52,75 @@ Each action template has three components:
 
 ```javascript
 pabt.newAction(
-    'Pick',                                          // 1. Name (for debugging)
-    [{key: 'atCube', match: v => v === true}],      // 2. Preconditions
-    [{key: 'heldItem', value: 1}],                  // 3. Effects (lowercase 'value' preferred)
-    bt.createLeafNode(() => { /* execute */ })      // 4. Execution node
+    'Pick',                                         // 1. Name (for debugging)
+    [{key: 'atCube', match: v => v === true}],      // 2. Preconditions (Requirements)
+    [{key: 'heldItem', value: 1}],                  // 3. Effects (Postconditions)
+    bt.createLeafNode(() => { /* execute */ })      // 4. Execution node (The Action)
 )
 ```
 
 > **Note:** Effect objects support both `value` (lowercase, preferred) and `Value` (uppercase, legacy).
 > Use lowercase `value` for new code.
 
-| Component | Purpose | Example |
-|-----------|---------|---------|
-| **Name** | Identifies the action for debugging | `'Pick'`, `'MoveTo_42'` |
-| **Preconditions** | What must be true BEFORE executing | `atCube === true` |
-| **Effects** | What becomes true AFTER executing | `heldItem === 1` |
-| **Node** | BT node that implements the action | `bt.createLeafNode(...)` |
+| Component | PA-BT Term | Purpose |
+| --- | --- | --- |
+| **Preconditions** | *Preconditions* | Conditions that must be `Success` for the Action to run. If these fail, they become new sub-goals for expansion. |
+| **Effects** | *Postconditions* | The state guaranteed to be true after the Action succeeds. Used by the planner for backchaining. |
+| **Node** | *Action Node* | The primitive behavior (Leaf) that executes the logic. |
 
-### How Planning Works
+### How Synthesis Works
 
 When you specify a goal like `{key: 'heldItem', match: v => v === 1}`:
 
-1. **Goal Check**: Is `heldItem === 1` true? If not, planning begins
-2. **Find Actions**: Search for actions whose **effects** satisfy the goal (e.g., `Pick` has effect `heldItem: 1`)
-3. **Check Preconditions**: Does `Pick` have preconditions? (`atCube === true`)
-4. **Recursive Planning**: If preconditions fail, find actions to satisfy them (e.g., `MoveTo` makes `atCube === true`)
-5. **Construct Plan**: Build action sequence: `[MoveTo → Pick]`
-6. **Execute**: Run the plan via BT ticker, replanning when conditions change
+1. **Root Check**: The system creates a root `Fallback` node checking the goal.
+2. **Expansion (Backchaining)**: If the goal fails, the algorithm searches the library for an Action Template with a matching **Effect** (`Pick` sets `heldItem: 1`).
+3. **Grafting**: A PPA subtree is grafted into the tree: `Fallback(Goal, Sequence(Preconditions, Pick))`.
+4. **Recursion**: The `Preconditions` of `Pick` (e.g., `atCube`) are now checked.
+5. **Iterative Refinement**: If `atCube` fails, the planner pauses execution of `Pick`, searches for an action that achieves `atCube` (e.g., `MoveTo`), and expands the tree further.
+
+This results in a functional Behavior Tree that is executed by the standard ticker.
 
 ### Example: Pick-and-Place
 
-**Goal**: Deliver cube to goal (`cubeDeliveredAtGoal === true`)
+**Goal**: `cubeDeliveredAtGoal === true`
 
 **Action Templates**:
+
 ```javascript
-// MoveTo: Makes actor adjacent to entity
-MoveTo(entityId):
-    Preconditions: [reachable_cube_<id> === true]
-    Effects:       [atEntity_<id> === true]
+// MoveTo:
+//  Preconditions: [reachable_cube_<id>]
+//  Effects:       [atEntity_<id>]
 
-// Pick: Picks up item at location
-Pick:
-    Preconditions: [atCube === true, handsEmpty === true]
-    Effects:       [heldItem === cubeId]
+// Pick:
+//  Preconditions: [atCube, handsEmpty]
+//  Effects:       [heldItem]
 
-// Deliver: Places item at goal
-Deliver:
-    Preconditions: [atGoal === true, heldItem === cubeId]
-    Effects:       [cubeDeliveredAtGoal === true]
+// Deliver:
+//  Preconditions: [atGoal, heldItem]
+//  Effects:       [cubeDeliveredAtGoal]
 ```
 
-**Automatic Plan Construction**:
-```
-Goal: cubeDeliveredAtGoal === true
-  ↓ Find action with matching effect
-Deliver (effect satisfies goal)
-  ↓ Check preconditions
-Precondition: heldItem === cubeId (FALSE)
-  ↓ Find action with matching effect
-Pick (effect: heldItem === cubeId)
-  ↓ Check preconditions
-Precondition: atCube === true (FALSE)
-  ↓ Find action with matching effect
-MoveTo(cube) (effect: atEntity_cube === true)
-  ↓ All preconditions satisfied
-PLAN: [MoveTo(cube) → Pick → MoveTo(goal) → Deliver]
+**Synthesized Tree Structure**:
+The resulting execution logic is not a flat list, but a reactive tree:
+
+```text
+Fallback
+├── Condition: cubeDeliveredAtGoal? (Success -> Done)
+└── Sequence
+    ├── Fallback (Expansion for Precondition: atGoal)
+    │   ├── Condition: atGoal?
+    │   └── Sequence
+    │       ├── ... (MoveTo logic) ...
+    │       └── Action: MoveTo(goal)
+    ├── Fallback (Expansion for Precondition: heldItem)
+    │   ├── Condition: heldItem == cubeId?
+    │   └── Sequence
+    │       ├── Fallback (Expansion for Precondition: atCube)
+    │       │   ├── Condition: atCube?
+    │       │   └── Sequence
+    │       │       └── Action: MoveTo(cube)
+    │       └── Action: Pick
+    └── Action: Deliver
 ```
 
 ---
@@ -143,7 +146,7 @@ function syncToBlackboard() {
 // 3. Register static action templates
 state.registerAction('Pick', pabt.newAction('Pick',
     [{key: 'atCube', match: v => v === true}],   // preconditions
-    [{key: 'heldItem', Value: 1}],                // effects
+    [{key: 'heldItem', Value: 1}],               // effects (postconditions)
     bt.createLeafNode(() => {
         cube.deleted = true;
         actor.heldItem = {id: 1};
@@ -172,56 +175,52 @@ function tick() {
 
 ### Layered Design
 
+The module employs a hybrid architecture to separate the **Symbolic Reasoning** (Planning) from the **Execution** (Acting).
+
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                   JavaScript Layer                            │
-│  ┌────────────────┐     ┌─────────────────────────────────┐  │
-│  │ Application    │     │ Action Templates                │  │
+│                      JavaScript Layer                        │
+│  ┌────────────────┐      ┌─────────────────────────────────┐  │
+│  │ Application    │      │ Action Templates                │  │
 │  │ State          │────▶│ • Pick, Place, MoveTo           │  │
-│  │ (Actor, Cube)  │     │ • Defined in JavaScript         │  │
-│  └────────────────┘     │ • Closures over JS state        │  │
-│         │               └─────────────────────────────────┘  │
-│         │ syncToBlackboard()                                 │
-│         ▼                                                     │
+│  │ (Actor, Cube)  │      │ • Defined in JavaScript         │  │
+│  │                │      │ • Closures over JS state        │  │
+│  └────────────────┘      └─────────────────────────────────┘  │
+│          │                                                  │
+│          │ syncToBlackboard()                               │
+│          ▼                                                  │
 │  ┌──────────────────────────────────────────────────────┐    │
-│  │           bt.Blackboard (primitives only)            │    │
-│  │  • actorX: 10, atCube: true, heldItem: null         │    │
+│  │            bt.Blackboard (primitives only)           │    │
+│  │  • actorX: 10, atCube: true, heldItem: null          │    │
 │  └──────────────────────────────────────────────────────┘    │
-│         │                                                     │
-│         ▼                                                     │
+│          │                                                  │
+│          ▼                                                  │
 │  ┌──────────────────────────────────────────────────────┐    │
 │  │              pabt.State (wraps blackboard)           │    │
-│  │  • Variable(key) - read from blackboard             │    │
-│  │  • Actions(failed) - find relevant templates        │    │
+│  │  • Variable(key) - read from blackboard              │    │
+│  │  • Actions(failed) - find relevant templates         │    │
 │  └──────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────┘
                           │
                           ▼
 ┌──────────────────────────────────────────────────────────────┐
-│                      Go Layer                                 │
+│                      Go Layer                                │
 │  ┌──────────────────────────────────────────────────────┐    │
-│  │              go-pabt Planning Algorithm              │    │
-│  │  • Reads primitives from blackboard                 │    │
-│  │  • Evaluates conditions (match functions)           │    │
-│  │  • Constructs action sequence                       │    │
-│  │  • Returns bt.Node for execution                    │    │
+│  │              go-pabt Synthesis Engine                │    │
+│  │  • Reads primitives from blackboard                  │    │
+│  │  • Evaluates conditions (match functions)            │    │
+│  │  • Performs Backchaining & Tree Expansion            │    │
+│  │  • Returns bt.Node for execution                     │    │
 │  └──────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Principles
 
-1. **One-way sync**: JavaScript → Blackboard (no reverse)
-2. **Primitives only**: Blackboard stores numbers, strings, booleans
-3. **JavaScript execution**: Action nodes run in JS, mutate JS state
-4. **Go planning**: Planner reads primitives, builds action sequences
-
-### Why This Design?
-
-- **Separation of concerns**: Application logic (JS) vs planning (Go)
-- **Performance**: Planning in compiled Go, execution in flexible JS
-- **Type safety**: Primitives bridge the language boundary cleanly
-- **Composability**: Same planning algorithm for any application
+1. **One-way sync**: JavaScript → Blackboard. The planner treats the blackboard as the ground truth for the "World State".
+2. **Primitives only**: The blackboard stores symbolic state (numbers, strings, booleans) used for logic.
+3. **JavaScript execution**: The *Action Nodes* execute in the JS environment and mutate the actual application state.
+4. **Go planning**: The synthesis algorithm runs in compiled Go, rapidly expanding the BT structure based on the symbolic state.
 
 ---
 
@@ -237,19 +236,21 @@ const state = pabt.newState(bb);
 ```
 
 **Parameters:**
-- `blackboard` - A `bt.Blackboard` instance
+
+* `blackboard` - A `bt.Blackboard` instance
 
 **Returns:** `State` object with methods:
-- `variable(key)` - Get value from blackboard
-- `registerAction(name, action)` - Register a static action template
-- `setActionGenerator(fn)` - Set parametric action generator
-- `get(key)` / `set(key, value)` - Direct blackboard access
+
+* `variable(key)` - Get value from blackboard
+* `registerAction(name, action)` - Register a static action template
+* `setActionGenerator(fn)` - Set parametric action generator
+* `get(key)` / `set(key, value)` - Direct blackboard access
 
 ---
 
 ### `pabt.newAction(name, conditions, effects, node)`
 
-Creates a PA-BT action template.
+Creates a PA-BT Action Template.
 
 ```javascript
 const action = pabt.newAction(
@@ -268,38 +269,41 @@ const action = pabt.newAction(
 ```
 
 **Parameters:**
-- `name` (string) - Unique action identifier (for debugging)
-- `conditions` (array) - Preconditions as `{key, match}` objects
-- `effects` (array) - Effects as `{key, Value}` objects
-- `node` (bt.Node) - Behavior tree node for execution
+
+* `name` (string) - Unique action identifier (for debugging).
+* `conditions` (array) - **Preconditions**. A list of `{key, match}` objects.
+* `effects` (array) - **Postconditions**. A list of `{key, Value}` objects.
+* `node` (bt.Node) - The **Action Node** logic.
 
 **Condition Format:**
+
 ```javascript
 {
-    key: 'stateVariable',              // Blackboard key
-    match: function(value) {            // match function
+    key: 'stateVariable',             // Blackboard key
+    match: function(value) {          // match function
         return value === expectedValue;
     }
 }
 ```
 
 **Effect Format:**
+
 ```javascript
 {
     key: 'stateVariable',    // Blackboard key
-    Value: expectedValue     // Value action achieves (for planning only!)
+    Value: expectedValue     // Value action achieves (used for Backchaining)
 }
 ```
 
-**Returns:** `Action` object implementing `pabt.IAction` interface
+**Returns:** `Action` object implementing `pabt.IAction` interface.
 
-**Important**: The `Value` in effects is used ONLY for planning. The actual state change happens in the `node` execution!
+**Important**: The `Value` in effects is used **only** for the synthesis (planning) phase. The planner assumes that if this action succeeds, this key will hold this value. The actual state change must be implemented within the `node`.
 
 ---
 
 ### `pabt.newPlan(state, goalConditions)`
 
-Creates a PA-BT plan with goal conditions.
+Initializes a PA-BT plan structure rooted at the given Goal.
 
 ```javascript
 const plan = pabt.newPlan(state, [
@@ -308,13 +312,17 @@ const plan = pabt.newPlan(state, [
 ```
 
 **Parameters:**
-- `state` - A `pabt.State` object (from `pabt.newState`)
-- `goalConditions` - Array of conditions representing success
+
+* `state` - A `pabt.State` object (from `pabt.newState`)
+* `goalConditions` - Array of conditions representing success
 
 **Returns:** `Plan` object with methods:
-- `Node()` - Get the root `bt.Node` for execution (uppercase N!)
+
+* `Node()` - Get the root `bt.Node` for execution (uppercase N!)
 
 **Multiple Goals (OR logic):**
+PA-BT handles disjunctive goals naturally. If multiple conditions are provided, the root is a `Fallback` node that checks them in order.
+
 ```javascript
 // Success if EITHER condition is true
 const plan = pabt.newPlan(state, [
@@ -335,14 +343,15 @@ state.registerAction('Pick', pickAction);
 ```
 
 **When to use:**
-- Fixed, finite set of actions
-- Actions known at initialization
+
+* Actions with fixed targets (e.g., "Reload", "Crouch").
+* Actions where the parameters are known at initialization.
 
 ---
 
 ### `state.setActionGenerator(generator)`
 
-Sets a dynamic action generator for **parametric actions**.
+Sets a dynamic action generator for **Parametric Actions**. This is the mechanism for "Lazy Planning" where actions are instantiated only when a specific precondition fails.
 
 ```javascript
 state.setActionGenerator(function(failedCondition) {
@@ -351,7 +360,7 @@ state.setActionGenerator(function(failedCondition) {
     // Pattern match on condition key
     if (key && key.startsWith('atEntity_')) {
         const entityId = parseInt(key.replace('atEntity_', ''));
-        // Generate MoveTo action for this specific entity
+        // Generate MoveTo action specifically for this entity
         return [createMoveToAction(entityId)];
     }
 
@@ -360,16 +369,15 @@ state.setActionGenerator(function(failedCondition) {
 ```
 
 **Parameters:**
-- `generator` (function) - Called when planning needs actions
-  - Receives: `failedCondition` (object with `key` and `match` method)
-  - Returns: Array of actions (or empty array)
+
+* `generator` (function) - Called during tree expansion.
+* Receives: `failedCondition` (object with `key` and `match` method).
+* Returns: Array of actions (or empty array).
 
 **When to use:**
-- Infinite or very large action spaces
-- Actions parameterized by runtime data (e.g., entity IDs)
-- TRUE parametric actions like `MoveTo(entityId)`
 
-**Performance Note:** Generator is called during planning. Cache created actions to avoid recreation.
+* Actions parameterized by runtime data (e.g., `MoveTo(x, y)`).
+* Large or infinite action spaces where registering all templates is impossible.
 
 **Thread Safety:** If generator accesses JavaScript state, it must use `Bridge.RunOnLoopSync` (handled automatically in `osm:pabt`).
 
@@ -377,7 +385,7 @@ state.setActionGenerator(function(failedCondition) {
 
 ### `pabt.newExprCondition(key, expression)`
 
-Creates a Go-native condition using expr-lang (fast path).
+Creates a Go-native condition using `expr-lang` (fast path).
 
 ```javascript
 // Instead of:
@@ -388,13 +396,16 @@ pabt.newExprCondition('distance', 'Value < 50')
 ```
 
 **Parameters:**
-- `key` - Blackboard key
-- `expression` - expr-lang expression string
+
+* `key` - Blackboard key.
+* `expression` - `expr-lang` expression string.
 
 **Expression Environment:**
-- `Value` - The input value from blackboard
+
+* `Value` - The input value from the blackboard.
 
 **Expression Examples:**
+
 ```javascript
 // Equality
 pabt.newExprCondition('status', 'Value == "ready"')
@@ -409,17 +420,12 @@ pabt.newExprCondition('item', 'Value != nil')
 pabt.newExprCondition('items', 'len(Value) > 0')
 ```
 
-**Performance:** 10-100x faster than JavaScript conditions (~100ns vs ~5μs)
+**Performance:** 10-100x faster than JavaScript conditions (~100ns vs ~5μs).
 
 **When to use:**
-- Simple comparisons
-- Arithmetic expressions
-- Performance-critical conditions
 
-**When NOT to use:**
-- Complex JavaScript logic
-- Conditions requiring closure state
-- Conditions referencing multiple blackboard keys
+* Arithmetic expressions.
+* High-frequency condition checks (hot paths in the BT).
 
 ---
 
@@ -427,7 +433,7 @@ pabt.newExprCondition('items', 'len(Value) > 0')
 
 ### Pattern 1: Static + Parametric Actions
 
-Combine static actions for fixed operations with parametric actions for dynamic targets.
+This pattern combines pre-registered actions for common tasks with generated actions for dynamic targets.
 
 ```javascript
 // STATIC: Fixed actions (Pick, Place)
@@ -441,7 +447,7 @@ state.registerAction('Pick', pabt.newAction('Pick',
 state.setActionGenerator(function(failedCondition) {
     const key = failedCondition.key;
 
-    // Generate MoveTo actions on-demand
+    // Generate MoveTo actions on-demand during backchaining
     if (key.startsWith('atEntity_')) {
         const id = parseInt(key.replace('atEntity_', ''));
         return [createMoveToAction(id)];
@@ -449,23 +455,18 @@ state.setActionGenerator(function(failedCondition) {
 
     return [];
 });
-```
 
-**Why this works:**
-- Pick/Place actions don't need parameters (1 target)
-- MoveTo needs parameters (many possible targets)
-- Generator creates MoveTo actions dynamically based on which entity planner needs
+```
 
 ---
 
 ### Pattern 2: Heuristic Effects for Planning
 
-Use **heuristic effects** to guide the planner without strict guarantees.
+In PA-BT, **Postconditions** (Effects) are used to guide the search. You can list effects that are not strictly guaranteed but serve as heuristics to bias the planner.
 
 ```javascript
 // Picking a blockade cube MIGHT make target reachable
-// (depends on which blockade, world layout, etc.)
-// But we can use it as a HEURISTIC for planning
+// The planner uses this "Effect" to select this action when 'reachable_target' is needed.
 state.registerAction('PickBlockade_1', pabt.newAction('PickBlockade_1',
     [{key: 'atEntity_1', match: v => v === true}],
     [
@@ -477,44 +478,34 @@ state.registerAction('PickBlockade_1', pabt.newAction('PickBlockade_1',
 ));
 ```
 
-**When to use:**
-- Exact effects are hard to compute statically
-- Effect depends on complex world state
-- Want to bias planner toward certain actions
-
-**Trade-off:** May construct plans that don't work; rely on replanning when preconditions fail
+**Trade-off:** If the heuristic is wrong, the action will execute, but the condition `reachable_target` may still be false afterwards. The PA-BT framework handles this by re-evaluating the tree; if the condition is still unsatisfied, it may attempt the action again or fail, depending on the tree structure (retries/loops).
 
 ---
 
 ### Pattern 3: Conflict Resolution via Staging
 
-Use intermediate goals to resolve conflicts (e.g., "hands full but need to pick up obstacle").
+This resolves "Deadlock" situations where an agent holds an item but needs to perform an action requiring empty hands.
 
 ```javascript
-// Problem: Goal blocked, holding target, need to clear obstacle
-// Solution: Staging area + temporary placement
+// Problem: Goal blocked, holding target, need to pick up obstacle.
+// Precondition of PickObstacle is "handsEmpty".
 
-// Place target temporarily to free hands
+// Action: PlaceTemporary
+// Effect: handsEmpty === true
 state.registerAction('PlaceTemporary', pabt.newAction('PlaceTemporary',
     [{key: 'heldItem', match: v => v === targetId}],
-    [{key: 'heldItem', Value: null}],  // Frees hands
+    [{key: 'heldItem', Value: null}],  // Frees hands (Postcondition)
     placeAtStagingNode
 ));
 
-// Now hands free → can pick obstacle → can clear path → can retrieve target
+// The planner sees "handsEmpty" is failed, finds PlaceTemporary, and injects it.
 ```
-
-**Planning sequence:**
-1. Goal blocked, holding target
-2. Planner needs hands free to pick obstacle
-3. Finds `PlaceTemporary` (effect: hands free)
-4. After placing: picks obstacle, clears path, retrieves target, delivers
 
 ---
 
 ### Pattern 4: Blackboard Sync Strategy
 
-Efficient synchronization between JS state and blackboard.
+Efficient synchronization between JS state and the blackboard is critical for correct synthesis.
 
 ```javascript
 function syncToBlackboard(state) {
@@ -527,61 +518,15 @@ function syncToBlackboard(state) {
     bb.set('heldItem', actor.heldItem ? actor.heldItem.id : null);
 
     // CONDITIONALLY sync: Expensive computations
-    // Only sync reachability if planner might need it
+    // Use plan.Running() to distinguish execution ticks from planning ticks
     if (!state.plan || !state.plan.Running()) {
-        // Not in middle of action execution → might be planning
+        // Not in middle of action execution -> Planner is likely evaluating options
         entities.forEach(entity => {
             const reachable = isReachable(actor, entity);
             bb.set(`reachable_${entity.id}`, reachable);
         });
     }
 }
-```
-
-**Best practices:**
-- Sync primitives only (numbers, strings, booleans)
-- Sync derived state (distances, reachability) not raw positions
-- Batch updates in single sync function
-- Call sync BEFORE each ticker tick
-
----
-
-### Pattern 5: Action Caching for Parametric Actions
-
-Cache dynamically created actions to avoid recreation overhead.
-
-```javascript
-const actionCache = new Map();
-
-function createMoveToAction(entityId) {
-    const cacheKey = `MoveTo_${entityId}`;
-
-    // Return cached if exists
-    if (actionCache.has(cacheKey)) {
-        return actionCache.get(cacheKey);
-    }
-
-    // Create new action
-    const action = pabt.newAction(
-        cacheKey,
-        [{key: `reachable_${entityId}`, match: v => v === true}],
-        [{key: `atEntity_${entityId}`, Value: true}],
-        createExecutionNode(entityId)
-    );
-
-    // Cache for future use
-    actionCache.set(cacheKey, action);
-    return action;
-}
-
-state.setActionGenerator(function(failedCondition) {
-    const key = failedCondition.key;
-    if (key.startsWith('atEntity_')) {
-        const id = parseInt(key.replace('atEntity_', ''));
-        return [createMoveToAction(id)];  // Uses cache
-    }
-    return [];
-});
 ```
 
 ---
@@ -591,48 +536,28 @@ state.setActionGenerator(function(failedCondition) {
 ### Benchmarks (Approximate)
 
 | Operation | Time | Notes |
-|-----------|------|-------|
+| --- | --- | --- |
 | State.Variable() | ~500ns | Blackboard read with mutex |
 | JSCondition.Match() | ~5μs | JavaScript evaluation + thread marshalling |
 | ExprCondition.Match() | ~100ns | Go-native compiled expression |
 | FuncCondition.Match() | ~50ns | Direct Go function call |
-| plan.node() tick | ~10μs | Depends on action count and complexity |
+| plan.node() tick | ~10μs | Depends on tree depth |
 
 ### Optimization Strategies
 
-1. **Use ExprCondition for hot paths**
-   ```javascript
-   // Bad: JavaScript condition (slow)
-   {key: 'distance', match: v => v < 100}
+1. **Use ExprCondition for hot paths**:
+```javascript
+// Bad: JavaScript condition (slow)
+{key: 'distance', match: v => v < 100}
 
-   // Good: Expr condition (fast)
-   pabt.newExprCondition('distance', 'Value < 100')
-   ```
+// Good: Expr condition (fast)
+pabt.newExprCondition('distance', 'Value < 100')
+```
 
-2. **Minimize blackboard keys**
-   ```javascript
-   // Bad: Sync everything
-   bb.set('actor_x', actor.x);
-   bb.set('actor_y', actor.y);
-   bb.set('cube_x', cube.x);
-   bb.set('cube_y', cube.y);
-   bb.set('distance', Math.sqrt(...));  // Derived
 
-   // Good: Sync only what planner needs
-   bb.set('distance', computeDistance(actor, cube));
-   ```
-
-3. **Cache parametric actions**
-   - Don't recreate actions every time generator is called
-   - Use Map to cache by entity ID or parameters
-
-4. **Batch blackboard updates**
-   - Single `syncToBlackboard()` function per tick
-   - Avoid scattered `bb.set()` calls throughout code
-
-5. **Lazy sync expensive computations**
-   - Check `plan.Running()` to detect planning phase
-   - Only compute reachability, pathfinding during planning
+2. **Minimize blackboard keys**: Sync only the symbolic propositions required for planning, not the entire engine state.
+3. **Cache parametric actions**: Avoid object allocation during synthesis.
+4. **Batch blackboard updates**: Call `syncToBlackboard()` once per tick.
 
 ---
 
@@ -640,14 +565,15 @@ state.setActionGenerator(function(failedCondition) {
 
 ### Plan doesn't find any actions
 
-**Symptoms:** Plan immediately fails with no actions selected
+**Symptoms:** Plan immediately fails with no actions selected.
 
 **Causes:**
-1. Actions not registered
-2. Blackboard missing required keys
-3. Preconditions never satisfiable
+
+1. **Backchaining Failure**: No action exists with an **Effect** that matches the failed condition.
+2. **Blackboard Desync**: The blackboard key required by the condition is missing or has the wrong type.
 
 **Debug:**
+
 ```javascript
 // Check action registration
 console.log('Registered actions:', state.actions.All().length);
@@ -657,26 +583,26 @@ console.log('Registered actions:', state.actions.All().length);
 
 // Check blackboard state
 console.log('atCube:', bb.get('atCube'));
-console.log('handsEmpty:', bb.get('handsEmpty'));
 ```
 
 **Fix:**
-- Ensure `state.registerAction()` called for static actions
-- Verify `setActionGenerator()` returns non-empty array
-- Check blackboard has all keys referenced in preconditions
+
+* Verify that `Action.Effects` perfectly match the `Condition` keys and values.
+* Ensure `setActionGenerator` correctly identifies the condition pattern.
 
 ---
 
 ### Plan executes but state doesn't change
 
-**Symptoms:** Action nodes run but application state unchanged
+**Symptoms:** Action nodes return `Success` but the application state remains unchanged.
 
 **Causes:**
-1. Node doesn't mutate JavaScript state
-2. syncToBlackboard not called after execution
-3. Node returns wrong status
+
+1. **Logic Separation**: The Action Node logic does not mutate the JS state.
+2. **False Success**: The Node returns `bt.success` without doing the work.
 
 **Debug:**
+
 ```javascript
 const action = pabt.newAction('Pick',
     conditions,
@@ -695,79 +621,38 @@ const action = pabt.newAction('Pick',
 ```
 
 **Fix:**
-- Action node MUST mutate JavaScript state (not blackboard directly)
-- Call `syncToBlackboard()` BEFORE each tick
-- Ensure node returns `bt.success`, `bt.failure`, or `bt.running`
+
+* The Action Node is responsible for **grounding** the symbolic effect. It must mutate the JS variables such that the next `syncToBlackboard` reflects the change.
 
 ---
 
 ### Plan replans constantly (thrashing)
 
-**Symptoms:** Planner keeps restarting, never makes progress
+**Symptoms:** The planner keeps re-expanding the tree, or the agent oscillates between actions.
 
 **Causes:**
-1. Effects don't match actual state changes
-2. Preconditions fail unexpectedly during execution
-3. Goal condition never satisfied
+
+1. **Effect/State Mismatch**: The Action declares an Effect (`heldItem: 1`), but the Node execution fails to achieve it (or `syncToBlackboard` doesn't report it). The PPA structure checks the condition, sees it's still false, and re-triggers the action.
+2. **Volatile Preconditions**: A precondition becomes true and then immediately false (e.g., "AtLocation" jitters due to physics).
 
 **Debug:**
+
 ```javascript
 // Check if effects match reality
 state.registerAction('Pick', pabt.newAction('Pick',
     conditions,
-    [{key: 'heldItem', Value: 1}],  // EFFECT says this
+    [{key: 'heldItem', Value: 1}],  // POSTCONDITION says this will happen
     bt.createLeafNode(() => {
-        actor.heldItem = {id: 1};   // CODE must do this!
+        actor.heldItem = {id: 1};   // CODE must actually make it happen!
         return bt.success;
     })
 ));
-
-// Check goal is achievable
-const plan = pabt.newPlan(state, [
-    {key: 'heldItem', match: v => {
-        console.log('Goal check: heldItem =', v);
-        return v === 1;
-    }}
-]);
 ```
 
 **Fix:**
-- Effects MUST accurately describe state changes
-- Node implementation MUST match declared effects
-- Goal condition MUST be satisfiable by some action chain
 
----
-
-### ActionGenerator not called
-
-**Symptoms:** Parametric actions not generated
-
-**Causes:**
-1. Generator not set
-2. Condition key doesn't match generator pattern
-3. Static action already satisfies condition
-
-**Debug:**
-```javascript
-state.setActionGenerator(function(failedCondition) {
-    console.log('Generator called! Key:', failedCondition.key);
-
-    const key = failedCondition.key;
-    if (key.startsWith('atEntity_')) {
-        console.log('Generating MoveTo for:', key);
-        const id = parseInt(key.replace('atEntity_', ''));
-        return [createMoveToAction(id)];
-    }
-
-    console.log('No match for key:', key);
-    return [];
-});
-```
-
-**Fix:**
-- Verify generator is set: `state.setActionGenerator(...)`
-- Check condition keys match generator pattern matching
-- Ensure no static action already provides the effect
+* Ensure `syncToBlackboard` is called accurately.
+* Use hysteresis or looser tolerances in `match` functions to prevent jitter.
 
 ---
 

@@ -1,6 +1,9 @@
 package pabt
 
 import (
+	"container/list"
+	"fmt"
+	"os"
 	"sync"
 
 	"github.com/dop251/goja"
@@ -9,6 +12,184 @@ import (
 	pabtpkg "github.com/joeycumines/go-pabt"
 	btmod "github.com/joeycumines/one-shot-man/internal/builtin/bt"
 )
+
+// DefaultExprCacheSize is the default maximum number of entries in the expression cache.
+// This limits memory growth for long-running processes with dynamic expressions.
+const DefaultExprCacheSize = 1000
+
+// exprCache is a bounded LRU cache for compiled expr-lang programs.
+// It replaces the previous unbounded sync.Map to prevent memory growth.
+var exprCache = NewExprLRUCache(DefaultExprCacheSize)
+
+// exprCacheSize is the configurable maximum size for the expression cache.
+// It is protected by exprCacheMu for thread-safe updates.
+var exprCacheSize = DefaultExprCacheSize
+var exprCacheMu sync.RWMutex
+
+// SetExprCacheSize sets the maximum size of the expression cache.
+// If the new size is smaller than the current size, the cache is truncated.
+// Thread-safe and can be called at runtime.
+func SetExprCacheSize(size int) {
+	if size < 1 {
+		size = 1
+	}
+	exprCacheMu.Lock()
+	exprCacheSize = size
+	exprCacheMu.Unlock()
+	exprCache.Resize(size)
+}
+
+// GetExprCacheSize returns the current maximum size of the expression cache.
+func GetExprCacheSize() int {
+	exprCacheMu.RLock()
+	defer exprCacheMu.RUnlock()
+	return exprCacheSize
+}
+
+// ExprLRUCache is a thread-safe LRU cache for expr-lang compiled programs.
+// Uses sync.RWMutex to allow concurrent reads while serializing writes.
+type ExprLRUCache struct {
+	mu        sync.RWMutex
+	cache     map[string]*list.Element
+	lru       *list.List
+	maxSize   int
+	hitCount  int64
+	missCount int64
+}
+
+// NewExprLRUCache creates a new LRU cache with the specified maximum size.
+func NewExprLRUCache(maxSize int) *ExprLRUCache {
+	if maxSize < 1 {
+		maxSize = DefaultExprCacheSize
+	}
+	return &ExprLRUCache{
+		cache:   make(map[string]*list.Element, maxSize),
+		lru:     list.New(),
+		maxSize: maxSize,
+	}
+}
+
+// entry represents a cached expression program.
+type entry struct {
+	expression string
+	program    *vm.Program
+}
+
+// Get retrieves a compiled program from the cache.
+// Returns the program and true if found, nil and false otherwise.
+// Uses RLock for concurrent read access. Updates LRU order on reads
+// to ensure correct eviction behavior.
+func (c *ExprLRUCache) Get(expression string) (*vm.Program, bool) {
+	c.mu.RLock()
+	elem, ok := c.cache[expression]
+	c.mu.RUnlock()
+
+	if !ok {
+		c.mu.Lock()
+		c.missCount++
+		c.mu.Unlock()
+		return nil, false
+	}
+
+	// Read the program value (no lock needed for reading the pointer)
+	program := elem.Value.(*entry).program
+
+	c.mu.Lock()
+	c.hitCount++
+	// Update LRU order - move accessed element to front (most recently used)
+	// This ensures correct eviction behavior for LRU policy
+	if elem != c.lru.Front() {
+		c.lru.MoveToFront(elem)
+	}
+	c.mu.Unlock()
+	return program, true
+}
+
+// Put adds a compiled program to the cache.
+// If the cache is at capacity, the least recently used entry is evicted.
+// Thread-safe.
+func (c *ExprLRUCache) Put(expression string, program *vm.Program) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Check if already exists (update would be rare but handle it)
+	if _, ok := c.cache[expression]; ok {
+		return
+	}
+
+	// Add new entry at front (most recently used)
+	elem := c.lru.PushFront(&entry{
+		expression: expression,
+		program:    program,
+	})
+	c.cache[expression] = elem
+
+	// Evict LRU if over capacity
+	for c.lru.Len() > c.maxSize {
+		elem := c.lru.Back()
+		if elem != nil {
+			e := elem.Value.(*entry)
+			delete(c.cache, e.expression)
+			c.lru.Remove(elem)
+		}
+	}
+}
+
+// Resize changes the maximum size of the cache.
+// If the new size is smaller, entries are evicted immediately.
+func (c *ExprLRUCache) Resize(maxSize int) {
+	if maxSize < 1 {
+		maxSize = 1
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.maxSize = maxSize
+	// Evict entries until at capacity
+	for c.lru.Len() > c.maxSize {
+		elem := c.lru.Back()
+		if elem != nil {
+			e := elem.Value.(*entry)
+			delete(c.cache, e.expression)
+			c.lru.Remove(elem)
+		}
+	}
+}
+
+// Clear removes all entries from the cache.
+func (c *ExprLRUCache) Clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.cache = make(map[string]*list.Element)
+	c.lru.Init()
+}
+
+// Len returns the current number of entries in the cache.
+func (c *ExprLRUCache) Len() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.lru.Len()
+}
+
+// Stats returns cache statistics for monitoring.
+func (c *ExprLRUCache) Stats() (size int, hits, misses int64, ratio float64) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	total := c.hitCount + c.missCount
+	ratio = 0.0
+	if total > 0 {
+		ratio = float64(c.hitCount) / float64(total)
+	}
+	return c.lru.Len(), c.hitCount, c.missCount, ratio
+}
+
+// String returns a human-readable description of cache stats.
+func (c *ExprLRUCache) String() string {
+	size, hits, misses, ratio := c.Stats()
+	return fmt.Sprintf("ExprLRUCache{size=%d, hits=%d, misses=%d, hit_ratio=%.2f%%}",
+		size, hits, misses, ratio*100)
+}
 
 // EvaluationMode specifies how conditions are evaluated at runtime.
 // This is a critical performance decision: JavaScript evaluation requires
@@ -56,14 +237,18 @@ type Condition interface {
 // JSCondition implements pabtpkg.Condition using JavaScript match function.
 // This condition is evaluated via Goja runtime with thread-safe bridge access.
 //
-// The jsObject field stores the original JavaScript condition object, preserving
-// all its properties (including .value) so the action generator can access them
-// directly - equivalent to Go's type assertion for accessing internal state.
+// WARNING: The following fields are unexported and are internal implementation
+// details. They are subject to change without notice. Do not rely on them:
+//   - bridge: Used internally for thread-safe Goja access from the ticker goroutine
+//   - jsObject: Stores the original JavaScript object for action generator passthrough
+//
+// For action generators that need access to the condition's JS object, use the
+// GetJSObject() method instead of accessing jsObject directly.
 type JSCondition struct {
 	key      any
 	matcher  goja.Callable
-	bridge   *btmod.Bridge // Required for thread-safe goja access from ticker goroutine
-	jsObject *goja.Object  // Original JS object for passthrough to action generator
+	bridge   *btmod.Bridge // INTERNAL: Required for thread-safe goja access from ticker goroutine
+	jsObject *goja.Object  // INTERNAL: Original JS object for passthrough to action generator
 }
 
 var _ Condition = (*JSCondition)(nil)
@@ -76,6 +261,20 @@ func NewJSCondition(key any, matcher goja.Callable, bridge *btmod.Bridge) *JSCon
 		matcher: matcher,
 		bridge:  bridge,
 	}
+}
+
+// JSObject returns the backing JavaScript object for this condition,
+// or nil if not a JS-based condition or if the object is not set.
+// This provides controlled access for action generators that need
+// to inspect the original condition properties.
+func (c *JSCondition) JSObject() *goja.Object {
+	return c.jsObject
+}
+
+// SetJSObject sets the backing JavaScript object for this condition.
+// This is used by the parser to attach the original JS object.
+func (c *JSCondition) SetJSObject(obj *goja.Object) {
+	c.jsObject = obj
 }
 
 // Key implements pabtpkg.Variable.Key().
@@ -94,14 +293,33 @@ func (c *JSCondition) Key() any {
 // blocking on RunOnLoopSync. The bridge's Done() channel is closed when stopping,
 // so RunOnLoopSync would return an error anyway, but early exit improves shutdown
 // responsiveness.
+//
+// ERROR HANDLING (H8 fix): Errors are now logged to help distinguish from actual
+// false matches. This includes nil condition/bridge/matcher cases and bridge
+// stopped cases. Callers can use pabt.NewJSConditionWithValidation for stricter
+// error handling.
 func (c *JSCondition) Match(value any) bool {
 	// Defensive: check if condition is valid before calling matcher
-	if c == nil || c.matcher == nil || c.bridge == nil {
+	if c == nil {
+		// H8: Log nil condition to help distinguish from false match
+		fmt.Fprintf(os.Stderr, "pabt.JSCondition.Match: called on nil condition\n")
+		return false
+	}
+	if c.matcher == nil {
+		// H8: Log nil matcher to help distinguish from false match
+		fmt.Fprintf(os.Stderr, "pabt.JSCondition.Match: matcher is nil (key=%v)\n", c.key)
+		return false
+	}
+	if c.bridge == nil {
+		// H8: Log nil bridge to help distinguish from false match
+		fmt.Fprintf(os.Stderr, "pabt.JSCondition.Match: bridge is nil (key=%v)\n", c.key)
 		return false
 	}
 
 	// Early exit if bridge is stopping - avoids blocking in RunOnLoopSync
 	if !c.bridge.IsRunning() {
+		// H8: Log bridge stopped to help distinguish from false match
+		fmt.Fprintf(os.Stderr, "pabt.JSCondition.Match: bridge not running (key=%v)\n", c.key)
 		return false
 	}
 
@@ -115,8 +333,13 @@ func (c *JSCondition) Match(value any) bool {
 		return nil
 	})
 
-	// On error (including event loop not running), return false
-	return err == nil && result
+	if err != nil {
+		// H8: Log JS errors to help distinguish from false match
+		fmt.Fprintf(os.Stderr, "pabt.JSCondition.Match: JS error (key=%v, value=%v): %v\n", c.key, value, err)
+		return false
+	}
+
+	return result
 }
 
 // Mode returns EvalModeJavaScript.
@@ -151,10 +374,6 @@ func (e *JSEffect) Key() any {
 func (e *JSEffect) Value() any {
 	return e.value
 }
-
-// exprCache caches compiled expr-lang programs for performance.
-// The cache is keyed by the expression string for fast lookup.
-var exprCache sync.Map // map[string]*vm.Program
 
 // ExprCondition implements pabtpkg.Condition using expr-lang Go-native evaluation.
 // This condition is evaluated directly in Go with zero Goja calls.
@@ -249,9 +468,9 @@ func (c *ExprCondition) getOrCompileProgram() (*vm.Program, error) {
 	}
 	c.mu.RUnlock()
 
-	// Check global cache
-	if cached, ok := exprCache.Load(c.expression); ok {
-		program := cached.(*vm.Program)
+	// Check global LRU cache
+	if cached, ok := exprCache.Get(c.expression); ok {
+		program := cached
 		// Double-check locking: another goroutine may have set it already
 		c.mu.Lock()
 		if c.program == nil {
@@ -271,8 +490,8 @@ func (c *ExprCondition) getOrCompileProgram() (*vm.Program, error) {
 		return nil, err
 	}
 
-	// Store in global cache and instance
-	exprCache.Store(c.expression, program)
+	// Store in global LRU cache and instance
+	exprCache.Put(c.expression, program)
 	// Double-check locking: another goroutine may have set it already
 	c.mu.Lock()
 	if c.program == nil {
@@ -356,8 +575,5 @@ func (e *Effect) Value() any {
 // ClearExprCache clears the global expression cache.
 // This is useful for testing to ensure consistent state.
 func ClearExprCache() {
-	exprCache.Range(func(key, _ any) bool {
-		exprCache.Delete(key)
-		return true
-	})
+	exprCache.Clear()
 }

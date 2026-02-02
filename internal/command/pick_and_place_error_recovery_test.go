@@ -390,19 +390,14 @@ func TestPickAndPlaceError_ER004_PA_BT_Errors(t *testing.T) {
 		var bt = require('osm:bt');
 
 		// Try to create an action without a name
-		try {
-			const bb = new bt.Blackboard();
-			const state = pabt.newState(bb);
-			const node = bt.node(function(bb) { return pabt.success; });
-			const action = pabt.newAction('', [], [], node);
-			state.registerAction('', action);
-			throw new Error('Should have failed for invalid action name');
-		} catch (e) {
-			console.log('Caught error: ' + e.message);
-		}
+		const bb = new bt.Blackboard();
+		const state = pabt.newState(bb);
+		const node = bt.node(function(bb) { return pabt.success; });
+		const action = pabt.newAction('', [], [], node);
+		state.registerAction('', action);
 		`,
-			wantErr:     false, // Error is caught in try-catch
-			errContains: nil,
+			wantErr:     true, // Go panics are not caught by JS try-catch
+			errContains: []string{"name", "empty"},
 			description: "Verify action name validation",
 		},
 		{

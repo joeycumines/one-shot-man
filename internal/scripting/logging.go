@@ -74,6 +74,11 @@ type TUILogHandler struct {
 }
 
 // Enabled implements slog.Handler.
+// It returns true if the given level is at or above the logger's minimum level.
+// This method is thread-safe and does not modify state.
+//
+// Thread Safety: This method only reads the immutable level field, so it requires
+// no locking. The level is set once at construction and never changed.
 func (h *TUILogHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return level >= h.level
 }

@@ -238,33 +238,36 @@ globalThis.bt = {
 // Operations that were already scheduled may still execute after Stop returns.
 // Callers should not assume that no more work will happen after Stop returns.
 //
-// CRITICAL FIX (2026-01-30): Context is now cancelled BEFORE manager.Stop() to prevent
-// deadlock when tickers are blocked in RunOnLoopSync. Previously, manager.Stop() waited
-// for tickers while tickers were blocked waiting for Done() to close, causing a circular
-// wait. Now the sequence is:
-//  1. Set stopped=true (prevents new operations)
+// CRITICAL FIX (C3): The correct sequence is now:
+//  1. Acquire lock
 //  2. Cancel context (closes Done() channel, unblocks RunOnLoopSync waiters)
-//  3. Stop manager (tickers can now exit cleanly)
+//  3. Set stopped=true (atomic with cancellation, guarantees invariant)
+//  4. Release lock
+//  5. Stop manager (tickers can now exit cleanly)
 func (b *Bridge) Stop() {
 	b.mu.Lock()
 	if b.stopped {
 		b.mu.Unlock()
 		return
 	}
-	b.stopped = true
+
+	// CRITICAL FIX (C3): Perform BOTH cancel and stopped update atomically under lock.
+	// This guarantees the lifecycle invariant: "Once Done() is closed, IsRunning() MUST return false".
+	//
+	// The happens-before relationship from the mutex ensures that any goroutine that
+	// observes Done() being closed will also observe stopped=true, because both
+	// operations happen before we release the lock.
+	//
+	// Without this, there was a race window:
+	//   - Thread A calls cancel() → Done() closed
+	//   - Thread B observes Done() closed, checks IsRunning()
+	//   - Thread B sees stopped=false (not yet set) → VIOLATION
+	b.cancel()       // Close Done channel (unblocks waiters immediately)
+	b.stopped = true // Update state atomically with cancellation
 	b.mu.Unlock()
 
-	// CRITICAL: Cancel context FIRST to unblock any RunOnLoopSync calls
-	// that are waiting on Done(). This prevents deadlock where:
-	// - manager.Stop() waits for tickers
-	// - tickers are blocked in RunOnLoopSync (e.g., JSCondition.Match)
-	// - RunOnLoopSync waits for Done() or result
-	// - Done() never closes because cancel() is after manager.Stop()
-	b.cancel()
-
 	// Now stop the internal bt.Manager (stops all tickers)
-	// Tickers blocked in RunOnLoopSync will receive "bridge stopped" error
-	// and can exit cleanly
+	// Tickers blocked in RunOnLoopSync have already been unblocked by Done() closing
 	if b.manager != nil {
 		b.manager.Stop()
 	}

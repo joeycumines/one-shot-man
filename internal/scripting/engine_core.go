@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"runtime/debug"
+	"sync"
+	"sync/atomic"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
@@ -14,6 +16,7 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	tviewmod "github.com/joeycumines/one-shot-man/internal/builtin/tview"
+	"github.com/joeycumines/one-shot-man/internal/goroutineid"
 )
 
 // Engine represents a JavaScript scripting engine with deferred execution capabilities.
@@ -25,24 +28,64 @@ import (
 // The Engine now uses a shared Runtime with an event loop for all JavaScript execution,
 // enabling proper async/Promise support and safe integration with bt.
 
+// ScriptPanicError is a structured error type for script panics.
+// It implements the error interface and provides structured access to panic details
+// for programmatic consumption by callers.
+//
+// Example usage:
+//
+//	if err := engine.ExecuteScript(script); err != nil {
+//	    var panicErr *ScriptPanicError
+//	    if errors.As(err, &panicErr) {
+//	        log.Printf("script %q panicked: %v", panicErr.ScriptName, panicErr.Value)
+//	        // panicErr.StackTrace contains the full stack trace
+//	    }
+//	}
+type ScriptPanicError struct {
+	// Value is the value passed to panic() in the script
+	Value any
+	// StackTrace contains the Go runtime stack trace at the time of panic
+	StackTrace string
+	// ScriptName is the name of the script that panicked
+	ScriptName string
+}
+
+// Error returns a human-readable description of the panic error.
+func (e *ScriptPanicError) Error() string {
+	return fmt.Sprintf("script %q panicked: %v", e.ScriptName, e.Value)
+}
+
+// Unwrap returns the underlying panic value for errors.Is/As compatibility.
+// Note: The panic value may not implement the error interface, so this returns
+// the value directly when it does, or wraps it in an error when it doesn't.
+func (e *ScriptPanicError) Unwrap() error {
+	if err, ok := e.Value.(error); ok {
+		return err
+	}
+	return nil
+}
+
 type Engine struct {
-	runtime           *Runtime          // Shared runtime with event loop
-	vm                *goja.Runtime     // Direct VM reference (for sync operations)
-	registry          *require.Registry // CommonJS require registry
-	scripts           []*Script
-	ctx               context.Context
-	stdout            io.Writer
-	stderr            io.Writer
-	globals           map[string]interface{}
-	testMode          bool
-	tuiManager        *TUIManager
-	tviewManager      *tviewmod.Manager
-	contextManager    *ContextManager
-	logger            *TUILogger
-	terminalIO        *TerminalIO               // Shared terminal I/O for all TUI subsystems
-	bubbleteaManager  builtin.BubbleteaManager  // For sending state refresh messages to running TUI
-	btBridge          *bt.Bridge                // Behavior tree bridge for JS integration
-	bubblezoneManager builtin.BubblezoneManager // Zone-based mouse hit-testing for BubbleTea
+	runtime              *Runtime          // Shared runtime with event loop
+	vm                   *goja.Runtime     // Direct VM reference (for sync operations)
+	registry             *require.Registry // CommonJS require registry
+	scripts              []*Script
+	ctx                  context.Context
+	stdout               io.Writer
+	stderr               io.Writer
+	globals              map[string]interface{}
+	globalsMu            sync.RWMutex // Protects globals map access (C5 fix)
+	testMode             bool
+	threadCheckMode      bool  // If true, SetGlobal/GetGlobal panic on wrong goroutine
+	eventLoopGoroutineID int64 // Captured at initialization for thread checking (atomic)
+	tuiManager           *TUIManager
+	tviewManager         *tviewmod.Manager
+	contextManager       *ContextManager
+	logger               *TUILogger
+	terminalIO           *TerminalIO               // Shared terminal I/O for all TUI subsystems
+	bubbleteaManager     builtin.BubbleteaManager  // For sending state refresh messages to running TUI
+	btBridge             *bt.Bridge                // Behavior tree bridge for JS integration
+	bubblezoneManager    builtin.BubblezoneManager // Zone-based mouse hit-testing for BubbleTea
 }
 
 // Script represents a JavaScript script with metadata.
@@ -120,6 +163,9 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 		terminalIO:     terminalIO,
 	}
 
+	// Capture event loop goroutine ID using atomic store for thread-safe access (C5 fix)
+	atomic.StoreInt64(&engine.eventLoopGoroutineID, runtime.eventLoopGoroutineID.Load())
+
 	// Create tview manager WITHOUT terminal ops - let tview/tcell manage its own TTY.
 	// Using TerminalIO here conflicts with go-prompt's reader which is already consuming
 	// stdin. tcell expects raw os.Stdin access, not go-prompt's buffered reader.
@@ -183,6 +229,69 @@ func (e *Engine) SetTestMode(enabled bool) {
 	e.testMode = enabled
 }
 
+// QueueSetGlobal queues a SetGlobal operation to be executed on the event loop.
+// This is the thread-safe alternative to SetGlobal for use from arbitrary goroutines.
+//
+// The operation is asynchronous - it will be executed on the event loop but
+// this method returns immediately. If you need to wait for completion,
+// use Runtime.SetGlobal instead.
+//
+// For testing/debugging, you can enable strict thread-checking mode which
+// will cause SetGlobal/GetGlobal to panic if called from the wrong goroutine.
+// See SetThreadCheckMode.
+func (e *Engine) QueueSetGlobal(name string, value interface{}) {
+	// Queue the VM and local cache update to the event loop for thread safety
+	e.runtime.loop.RunOnLoop(func(vm *goja.Runtime) {
+		e.globals[name] = value
+		vm.Set(name, value)
+	})
+}
+
+// QueueGetGlobal queues a GetGlobal operation to be executed on the event loop.
+// This is the thread-safe alternative to GetGlobal for use from arbitrary goroutines.
+//
+// The operation is asynchronous - the callback is invoked with the result
+// once the operation completes on the event loop.
+// If you need synchronous access, use Runtime.GetGlobal instead.
+func (e *Engine) QueueGetGlobal(name string, callback func(value interface{})) {
+	// Queue the VM read to the event loop for thread safety
+	e.runtime.loop.RunOnLoop(func(vm *goja.Runtime) {
+		val := vm.Get(name)
+		var result interface{}
+		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+			result = nil
+		} else {
+			result = val.Export()
+		}
+		callback(result)
+	})
+}
+
+// SetThreadCheckMode enables or disables strict thread-checking mode.
+// When enabled, SetGlobal and GetGlobal will panic if called from a goroutine
+// other than the event loop goroutine. This helps catch threading bugs early.
+//
+// Default is disabled for performance. Enable during testing or debugging.
+func (e *Engine) SetThreadCheckMode(enabled bool) {
+	e.threadCheckMode = enabled
+	if enabled {
+		// Capture the event loop goroutine ID using atomic store
+		atomic.StoreInt64(&e.eventLoopGoroutineID, goroutineid.Get())
+	}
+}
+
+// checkEventLoopGoroutine panics if called from the wrong goroutine (when thread checking is enabled).
+func (e *Engine) checkEventLoopGoroutine(methodName string) {
+	currentID := goroutineid.Get()
+	// Use atomic load for thread-safe read of eventLoopGoroutineID
+	storedID := atomic.LoadInt64(&e.eventLoopGoroutineID)
+	if currentID != storedID {
+		panic(fmt.Sprintf("%s called from wrong goroutine: expected %d, got %d. "+
+			"Use QueueSetGlobal/QueueGetGlobal or Runtime.SetGlobal/Runtime.GetGlobal for thread-safe access.",
+			methodName, storedID, currentID))
+	}
+}
+
 // SetGlobal sets a global variable in the JavaScript runtime.
 //
 // THREADING: This method directly accesses the goja.Runtime without going through
@@ -190,10 +299,20 @@ func (e *Engine) SetTestMode(enabled bool) {
 //   - During engine initialization (before any async operations)
 //   - From within script execution context (already on event loop goroutine)
 //
-// For thread-safe global access from arbitrary goroutines, use Runtime.SetGlobal instead.
+// For thread-safe global access from arbitrary goroutines, use QueueSetGlobal
+// or Runtime.SetGlobal instead.
+//
+// PANIC: In debug mode (when ThreadCheckMode is enabled), this will panic
+// if called from a goroutine other than the event loop goroutine.
 func (e *Engine) SetGlobal(name string, value interface{}) {
+	if e.threadCheckMode {
+		e.checkEventLoopGoroutine("SetGlobal")
+	}
+	// Use mutex to protect globals map and VM access (C5 fix)
+	e.globalsMu.Lock()
 	e.globals[name] = value
 	e.vm.Set(name, value)
+	e.globalsMu.Unlock()
 }
 
 // GetGlobal retrieves a global variable from the JavaScript runtime.
@@ -204,9 +323,19 @@ func (e *Engine) SetGlobal(name string, value interface{}) {
 //   - During engine initialization (before any async operations)
 //   - From within script execution context (already on event loop goroutine)
 //
-// For thread-safe global access from arbitrary goroutines, use Runtime.GetGlobal instead.
+// For thread-safe global access from arbitrary goroutines, use QueueGetGlobal
+// or Runtime.GetGlobal instead.
+//
+// PANIC: In debug mode (when ThreadCheckMode is enabled), this will panic
+// if called from a goroutine other than the event loop goroutine.
 func (e *Engine) GetGlobal(name string) interface{} {
+	if e.threadCheckMode {
+		e.checkEventLoopGoroutine("GetGlobal")
+	}
+	// Use mutex to protect globals map access (C5 fix)
+	e.globalsMu.RLock()
 	val := e.vm.Get(name)
+	e.globalsMu.RUnlock()
 	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
 		return nil
 	}
@@ -288,10 +417,16 @@ func (e *Engine) ExecuteScript(script *Script) (err error) {
 	// Recover from top-level panics so scripts cannot crash the host
 	defer func() {
 		if r := recover(); r != nil {
-			stackTrace := debug.Stack()
-			err = fmt.Errorf("script panicked (fatal error): %v\n\nStack Trace:\n%s", r, string(stackTrace))
+			stackTrace := string(debug.Stack())
+			// Create a structured panic error for programmatic consumption
+			panicErr := &ScriptPanicError{
+				Value:      r,
+				StackTrace: stackTrace,
+				ScriptName: script.Name,
+			}
+			err = panicErr
 			// Also print to stderr for visibility
-			_, _ = fmt.Fprintf(e.stderr, "\n[PANIC] Script execution panic:\n  %v\n\nStack Trace:\n%s\n", r, string(stackTrace))
+			_, _ = fmt.Fprintf(e.stderr, "\n[PANIC] Script execution panic in %q:\n  %v\n\nStack Trace:\n%s\n", script.Name, r, stackTrace)
 		}
 	}()
 

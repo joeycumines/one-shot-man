@@ -108,6 +108,55 @@ func formatSGRMouseRelease(button, x, y int) string {
 	return "\x1b[<" + itoa(button) + ";" + itoa(x) + ";" + itoa(y) + "m"
 }
 
+// TestScrollDirection tests the ScrollDirection type and constants
+func TestScrollDirection(t *testing.T) {
+	// Test constants have correct values
+	assert.Equal(t, ScrollDirection(64), ScrollUp, "ScrollUp should be 64")
+	assert.Equal(t, ScrollDirection(65), ScrollDown, "ScrollDown should be 65")
+
+	// Test String() method
+	assert.Equal(t, "up", ScrollUp.String())
+	assert.Equal(t, "down", ScrollDown.String())
+
+	// Test unknown direction returns descriptive string
+	var unknown ScrollDirection = 99
+	assert.Equal(t, "ScrollDirection(99)", unknown.String())
+}
+
+// TestScrollWheelDirection tests that invalid directions are rejected
+func TestScrollWheelDirection(t *testing.T) {
+	// Create a minimal console for testing (no PTY needed for this test)
+	c := &Console{}
+
+	// Test invalid direction is rejected
+	err := c.ScrollWheelWithDirection(1, 1, ScrollDirection(99))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid scroll direction")
+
+	// Note: Testing valid directions requires a properly initialized Console with
+	// a termtest.Console (cp field). See TestScrollWheelOnElement_WithPTY for integration tests.
+	// We can only test the validation logic here.
+	assert.Equal(t, ScrollUp, ScrollDirection(64))
+	assert.Equal(t, ScrollDown, ScrollDirection(65))
+}
+
+// TestMouseButton tests the MouseButton type and constants
+func TestMouseButton(t *testing.T) {
+	// Test constants have correct values
+	assert.Equal(t, MouseButton(0), MouseButtonLeft, "MouseButtonLeft should be 0")
+	assert.Equal(t, MouseButton(1), MouseButtonMiddle, "MouseButtonMiddle should be 1")
+	assert.Equal(t, MouseButton(2), MouseButtonRight, "MouseButtonRight should be 2")
+
+	// Test String() method
+	assert.Equal(t, "left", MouseButtonLeft.String())
+	assert.Equal(t, "middle", MouseButtonMiddle.String())
+	assert.Equal(t, "right", MouseButtonRight.String())
+
+	// Test unknown button returns descriptive string
+	var unknown MouseButton = 99
+	assert.Equal(t, "MouseButton(99)", unknown.String())
+}
+
 // Simple integer to string for testing
 func itoa(n int) string {
 	if n == 0 {

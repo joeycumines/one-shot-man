@@ -96,21 +96,26 @@ func (a *Action) Node() bt.Node {
 }
 
 // NewAction creates a new Action with the specified components.
-// This is the preferred factory function for creating actions.
+// This is the factory function for creating actions.
+//
+// Panics if validation fails (empty name, nil node, or nil conditions).
 //
 // Parameters:
 //   - name: Unique identifier for debugging/logging
 //   - conditions: Preconditions (each slice is AND group, groups are OR logic)
 //   - effects: What this action achieves in the state
 //   - node: Behavior tree node implementing the action's logic
-//
-// SECURITY: node parameter cannot be nil. If passed as nil,
-// will cause runtime panic when the Action's Node() method is called.
-// Callers must provide a valid bt.Node or use pabt.newSimpleAction() which
-// provides a no-op placeholder node.
 func NewAction(name string, conditions []pabtpkg.IConditions, effects pabtpkg.Effects, node bt.Node) *Action {
+	if name == "" {
+		panic("pabt.NewAction: name cannot be empty")
+	}
 	if node == nil {
-		panic(fmt.Sprintf("pabt.NewAction: node parameter cannot be nil (action=%s)", name))
+		panic(fmt.Sprintf("pabt.NewAction: node cannot be nil (action=%q)", name))
+	}
+	for i, cond := range conditions {
+		if cond == nil {
+			panic(fmt.Sprintf("pabt.NewAction: conditions[%d] cannot be nil (action=%q)", i, name))
+		}
 	}
 	return &Action{
 		Name:       name,

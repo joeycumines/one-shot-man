@@ -435,6 +435,18 @@ func BlockingJSLeaf(ctx context.Context, bridge *Bridge, vm *goja.Runtime, tick 
 				once.Do(func() { ch <- r })
 			}
 
+			// MAJ-4 FIX PART 2: Install cleanup BEFORE RunOnLoop check.
+			// If bridge is stopped, RunOnLoop returns ok=false and we return early.
+			// The defer must be installed FIRST to guarantee cleanup runs on all paths.
+			defer func() {
+				select {
+				case <-ch:
+					// Drain if available
+				default:
+					// Not sent yet, safe to ignore
+				}
+			}()
+
 			ok := bridge.RunOnLoop(func(loopVM *goja.Runtime) {
 				defer func() {
 					if r := recover(); r != nil {
@@ -495,20 +507,6 @@ func BlockingJSLeaf(ctx context.Context, bridge *Bridge, vm *goja.Runtime, tick 
 			if !ok {
 				return bt.Failure, errors.New("event loop terminated")
 			}
-
-			// MAJ-4 FIX: Defer channel cleanup to prevent leak on early return
-			// If ctx.Done() or bridge.Done() wins in select below, the ch channel
-			// is never received from. The goroutine scheduled via RunOnLoop may still
-			// complete and send to ch. sync.Once prevents double-sends but channel leaks.
-			// Drain in deferred cleanup to reclaim the buffered channel.
-			defer func() {
-				select {
-				case <-ch:
-					// Drain if available
-				default:
-					// Not sent yet, safe to ignore
-				}
-			}()
 
 			// Wait with cancellation support to avoid deadlock if bridge stops
 			select {

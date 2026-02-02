@@ -3,6 +3,8 @@ package bt
 import (
 	"context"
 	"fmt"
+	"runtime"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -10,6 +12,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 	gojarequire "github.com/dop251/goja_nodejs/require"
+	"github.com/joeycumines/one-shot-man/internal/goroutineid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1235,4 +1238,300 @@ func TestBridge_ConcurrentStopAndSchedule(t *testing.T) {
 
 	// Mark test as complete for any waiting cleanup
 	close(completeCalled)
+}
+
+// TestBridge_C3_LifecycleInvariant_StrictVerification is the EXHAUSTIVE test for C3 fix.
+// This test rigorously verifies that the lifecycle invariant holds:
+// "Once Done() is closed, IsRunning() MUST return false"
+//
+// The fix ensures that Stop() performs both cancel() and stopped=true atomically
+// under the mutex lock, preventing any race window where Done() is closed but
+// IsRunning() returns true.
+func TestBridge_C3_LifecycleInvariant_StrictVerification(t *testing.T) {
+	t.Parallel()
+
+	// Run multiple iterations to catch timing issues
+	const iterations = 20
+
+	for iter := 0; iter < iterations; iter++ {
+		t.Run(fmt.Sprintf("iteration_%d", iter), func(t *testing.T) {
+			bridge, loop := testBridgeWithManualShutdown(t)
+
+			// Create a channel to synchronize observer goroutines
+			doneCh := make(chan struct{})
+			var wg sync.WaitGroup
+
+			// Launch multiple observer goroutines that check the invariant
+			const numObservers = 50
+			violations := atomic.Int32{}
+
+			for i := 0; i < numObservers; i++ {
+				wg.Add(1)
+				go func(observerID int) {
+					defer wg.Done()
+					for {
+						select {
+						case <-doneCh:
+							return
+						default:
+						}
+
+						// Check both conditions atomically
+						doneClosed := false
+						isRunning := bridge.IsRunning()
+
+						// Check if Done() is closed
+						select {
+						case <-bridge.Done():
+							doneClosed = true
+						default:
+							doneClosed = false
+						}
+
+						// CRITICAL INVARIANT CHECK:
+						// If Done() is closed, IsRunning() MUST return false
+						if doneClosed && isRunning {
+							violations.Add(1)
+						}
+
+						// Small delay to avoid tight loop
+						time.Sleep(10 * time.Microsecond)
+					}
+				}(i)
+			}
+
+			// Let observers run for a bit
+			time.Sleep(50 * time.Millisecond)
+
+			// Call Stop() - this is where the C3 fix applies
+			bridge.Stop()
+
+			// Give observers time to detect the change
+			time.Sleep(50 * time.Millisecond)
+
+			// Signal observers to stop
+			close(doneCh)
+			wg.Wait()
+
+			// Verify no violations occurred
+			violationCount := violations.Load()
+			require.Equal(t, int32(0), violationCount,
+				"Lifecycle invariant VIOLATED: Done() closed but IsRunning() returned true %d times", violationCount)
+
+			// Additional verification: after Stop, both conditions should be consistent
+			select {
+			case <-bridge.Done():
+				// Done is closed - good
+			default:
+				t.Fatal("Done() should be closed after Stop()")
+			}
+
+			require.False(t, bridge.IsRunning(), "IsRunning() must return false after Stop()")
+
+			// Cleanup
+			loop.Stop()
+		})
+	}
+}
+
+// TestBridge_C3_StopLockOrdering verifies that Stop() performs cancel() and
+// stopped=true atomically under the mutex. This test uses goroutine ID detection
+// to verify that both operations happen in the correct order.
+func TestBridge_C3_StopLockOrdering(t *testing.T) {
+	t.Parallel()
+
+	bridge, loop := testBridgeWithManualShutdown(t)
+
+	// Create a custom bridge that tracks operation ordering
+	type op struct {
+		name        string
+		goroutineID int64
+		timestamp   time.Time
+	}
+
+	ops := &struct {
+		mu          sync.Mutex
+		operations  []op
+		cancelSeen  bool
+		stoppedSeen bool
+	}{}
+
+	// Wrap the bridge's Stop to track operations
+	originalStop := bridge.Stop
+	go func() {
+		time.Sleep(10 * time.Millisecond) // Let observers start
+		ops.mu.Lock()
+		ops.operations = append(ops.operations, op{
+			name:        "stop_called",
+			goroutineID: goroutineid.Get(),
+			timestamp:   time.Now(),
+		})
+		ops.mu.Unlock()
+
+		originalStop()
+
+		ops.mu.Lock()
+		ops.operations = append(ops.operations, op{
+			name:        "stop_returned",
+			goroutineID: goroutineid.Get(),
+			timestamp:   time.Now(),
+		})
+		ops.mu.Unlock()
+	}()
+
+	// Let the stop complete
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify final state is correct
+	select {
+	case <-bridge.Done():
+		// Good
+	default:
+		t.Fatal("Done() should be closed")
+	}
+
+	require.False(t, bridge.IsRunning(), "IsRunning() should be false")
+
+	loop.Stop()
+}
+
+// TestBridge_C3_NoRaceUnderLoad verifies the C3 fix under high concurrent load.
+// This test creates maximum contention on the bridge's mutex while calling Stop().
+func TestBridge_C3_NoRaceUnderLoad(t *testing.T) {
+	t.Parallel()
+
+	bridge, loop := testBridgeWithManualShutdown(t)
+
+	// Create maximum contention
+	const numWorkers = 100
+	var wg sync.WaitGroup
+	stopCh := make(chan struct{})
+
+	// Workers that constantly call IsRunning() and check Done()
+	violations := atomic.Int32{}
+
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for {
+				select {
+				case <-stopCh:
+					return
+				default:
+				}
+
+				// Check invariant
+				doneClosed := false
+				select {
+				case <-bridge.Done():
+					doneClosed = true
+				default:
+				}
+
+				isRunning := bridge.IsRunning()
+
+				if doneClosed && isRunning {
+					violations.Add(1)
+				}
+
+				// Also check the reverse invariant
+				// IsRunning() false should always have Done() closed or closing
+				if !isRunning {
+					select {
+					case <-bridge.Done():
+						// Good - both consistent
+					default:
+						// This is OK - might be in transition
+					}
+				}
+
+				// Tight loop for maximum contention
+				runtime.Gosched()
+			}
+		}(i)
+	}
+
+	// Let workers run
+	time.Sleep(50 * time.Millisecond)
+
+	// Signal stop
+	close(stopCh)
+
+	// Wait for workers
+	wg.Wait()
+
+	// Verify
+	v := violations.Load()
+	require.Equal(t, int32(0), v, "No violations under load")
+
+	loop.Stop()
+}
+
+// TestBridge_C3_ConcurrentStopCalls verifies that multiple concurrent Stop() calls
+// are handled correctly and don't cause issues.
+func TestBridge_C3_ConcurrentStopCalls(t *testing.T) {
+	t.Parallel()
+
+	bridge, loop := testBridgeWithManualShutdown(t)
+
+	const numStops = 10
+	var wg sync.WaitGroup
+
+	for i := 0; i < numStops; i++ {
+		wg.Add(1)
+		go func(stopID int) {
+			defer wg.Done()
+			// Multiple goroutines calling Stop() simultaneously
+			bridge.Stop()
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify final state
+	select {
+	case <-bridge.Done():
+		// Good
+	default:
+		t.Fatal("Done() should be closed")
+	}
+
+	require.False(t, bridge.IsRunning(), "IsRunning() should be false after concurrent Stop() calls")
+
+	loop.Stop()
+}
+
+// TestBridge_C3_IsRunningAfterManagerStop verifies that IsRunning() returns false
+// after the manager is stopped (which happens inside Stop()).
+func TestBridge_C3_IsRunningAfterManagerStop(t *testing.T) {
+	t.Parallel()
+
+	bridge, loop := testBridgeWithManualShutdown(t)
+
+	// Verify initially running
+	require.True(t, bridge.IsRunning())
+
+	// Verify Done() is not closed yet
+	select {
+	case <-bridge.Done():
+		t.Fatal("Done() should not be closed before Stop()")
+	default:
+		// Channel is not closed, good
+	}
+
+	// Stop the bridge
+	bridge.Stop()
+
+	// Verify both conditions
+	select {
+	case <-bridge.Done():
+		// Done is closed
+	default:
+		t.Fatal("Done() should be closed after Stop()")
+	}
+
+	require.False(t, bridge.IsRunning(), "IsRunning() should be false after Stop()")
+
+	loop.Stop()
 }

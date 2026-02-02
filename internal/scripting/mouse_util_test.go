@@ -6,6 +6,7 @@ package scripting
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -74,18 +75,36 @@ func (m *MouseTestAPI) ClickAtBufferPosition(x, bufferY int) error {
 }
 
 // ClickWithButton sends a mouse click with a specific button.
-func (m *MouseTestAPI) ClickWithButton(x, y, button int) error {
+func (m *MouseTestAPI) ClickWithButton(x, y int, button mouseharness.MouseButton) error {
 	return m.console.ClickWithButton(x, y, button)
 }
 
 // ScrollWheel sends a mouse wheel event.
 func (m *MouseTestAPI) ScrollWheel(x, y int, direction string) error {
-	return m.console.ScrollWheel(x, y, direction)
+	var dir mouseharness.ScrollDirection
+	switch direction {
+	case "up":
+		dir = mouseharness.ScrollUp
+	case "down":
+		dir = mouseharness.ScrollDown
+	default:
+		return fmt.Errorf("unknown scroll direction: %s (use 'up' or 'down')", direction)
+	}
+	return m.console.ScrollWheelWithDirection(x, y, dir)
 }
 
 // ScrollWheelOnElement finds an element and sends a scroll wheel event on it.
 func (m *MouseTestAPI) ScrollWheelOnElement(_ context.Context, content string, direction string, _ time.Duration) error {
-	return m.console.ScrollWheelOnElement(content, direction)
+	var dir mouseharness.ScrollDirection
+	switch direction {
+	case "up":
+		dir = mouseharness.ScrollUp
+	case "down":
+		dir = mouseharness.ScrollDown
+	default:
+		return fmt.Errorf("unknown scroll direction: %s (use 'up' or 'down')", direction)
+	}
+	return m.console.ScrollWheelOnElementWithDirection(content, dir)
 }
 
 // ClickElementAndExpect clicks an element and waits for expected content.

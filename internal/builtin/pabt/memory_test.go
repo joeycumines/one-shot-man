@@ -99,8 +99,8 @@ func TestNewAction_NilNodePanic(t *testing.T) {
 			}
 			if errMsg == "" {
 				t.Errorf("Expected panic string, got %T", r)
-			} else if !strings.Contains(errMsg, "node parameter cannot be nil") {
-				t.Errorf("Expected panic message to contain 'node parameter cannot be nil', got '%s'", errMsg)
+			} else if !strings.Contains(errMsg, "node cannot be nil") {
+				t.Errorf("Expected panic message to contain 'node cannot be nil', got '%s'", errMsg)
 			}
 		}
 	}()

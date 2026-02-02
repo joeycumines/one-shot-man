@@ -73,6 +73,21 @@ func TestState_Variable_IntKey(t *testing.T) {
 	}
 }
 
+func TestState_Variable_UintKey(t *testing.T) {
+	bb := new(btmod.Blackboard)
+	state := NewState(bb)
+
+	bb.Set("456", "uint-value")
+
+	val, err := state.Variable(uint(456))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if val != "uint-value" {
+		t.Errorf("expected 'uint-value', got %v", val)
+	}
+}
+
 func TestState_Variable_FloatKey(t *testing.T) {
 	bb := new(btmod.Blackboard)
 	state := NewState(bb)
@@ -85,6 +100,37 @@ func TestState_Variable_FloatKey(t *testing.T) {
 	}
 	if val != "pi" {
 		t.Errorf("expected 'pi', got %v", val)
+	}
+}
+
+func TestState_Variable_FloatKey_Format(t *testing.T) {
+	// Test that float keys use %g format (compact, not %f with trailing zeros)
+	bb := new(btmod.Blackboard)
+	state := NewState(bb)
+
+	// Set values using the expected string format for each float key
+	// The key "1.5" should match when queried with float64 1.5
+	bb.Set("1.5", "result1")
+	bb.Set("100", "result2")
+	bb.Set("1e-06", "result3")
+
+	tests := []struct {
+		key      float64
+		expected string
+	}{
+		{1.5, "result1"},      // 1.5 converts to "1.5", finds "result1"
+		{100.0, "result2"},    // 100.0 converts to "100", finds "result2"
+		{0.000001, "result3"}, // 0.000001 converts to "1e-06", finds "result3"
+	}
+
+	for _, tt := range tests {
+		val, err := state.Variable(tt.key)
+		if err != nil {
+			t.Fatalf("unexpected error for key %v: %v", tt.key, err)
+		}
+		if val != tt.expected {
+			t.Errorf("key %v: expected %q, got %v", tt.key, tt.expected, val)
+		}
 	}
 }
 

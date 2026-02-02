@@ -108,8 +108,22 @@ func (s *State) GetActionGenerator() ActionGeneratorFunc {
 
 // Variable implements pabtpkg.State.Variable(key any).
 //
-// It normalizes the key to a string for blackboard lookup.
-// Returns (nil, nil) if key doesn't exist (pabt semantics).
+// # Key Normalization
+//
+// This method normalizes any key type to a string for blackboard lookup.
+// The following key types are supported:
+//
+//   - string: Used as-is (canonical form)
+//   - int, int8, int16, int32, int64: Converted to decimal string via fmt.Sprintf("%d")
+//   - uint, uint8, uint16, uint32, uint64: Converted to decimal string via fmt.Sprintf("%d")
+//   - float32, float64: Converted via fmt.Sprintf("%g") (compact notation, e.g., 1.5 → "1.5")
+//   - fmt.Stringer: Uses the String() method (for Symbol types or custom types)
+//
+// Note: Using %g for floats ensures compact representation (1.5 → "1.5", not "1.500000").
+// For parametric actions, prefer string keys for consistency.
+//
+// Returns (nil, nil) if key doesn't exist in the blackboard (this is intentional
+// PA-BT semantics - missing variables are treated as not having that property).
 func (s *State) Variable(key any) (any, error) {
 	if key == nil {
 		return nil, fmt.Errorf("variable key cannot be nil")

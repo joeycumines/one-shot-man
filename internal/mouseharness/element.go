@@ -87,22 +87,24 @@ func (c *Console) ClickElement(ctx context.Context, content string, timeout time
 	}
 
 found:
-	// Calculate center of element (screen coordinates)
+	// Calculate center of element (viewport-relative coordinates)
+	// NOTE: Click expects viewport-relative coordinates, not buffer-absolute.
+	// We must convert buffer row to viewport row using bufferRowToViewportRow.
 	centerX := loc.Col + loc.Width/2
-	screenY := loc.Row
+	viewportY := c.bufferRowToViewportRow(loc.Row)
 
 	// Check if row 0 is empty in the parsed buffer - this indicates a render issue
 	screen := parseTerminalBuffer(c.cp.String())
 	row0Empty := len(screen) > 0 && strings.TrimSpace(screen[0]) == ""
 	if row0Empty {
-		screenY++ // Compensate for missing title line
-		c.tb.Logf("[CLICK DEBUG] Row 0 is empty, adjusting screenY from %d to %d", screenY-1, screenY)
+		viewportY++ // Compensate for missing title line
+		c.tb.Logf("[CLICK DEBUG] Row 0 is empty, adjusting viewportY from %d to %d", viewportY-1, viewportY)
 	}
 
-	c.tb.Logf("[CLICK DEBUG] ClickElement %q: loc.Row=%d (1-indexed), centerX=%d, screenY=%d", content, loc.Row, centerX, screenY)
+	c.tb.Logf("[CLICK DEBUG] ClickElement %q: loc.Row=%d (buffer-absolute), viewportY=%d, centerX=%d", content, loc.Row, viewportY, centerX)
 
-	// Send mouse click using screen-relative coordinates
-	return c.Click(centerX, screenY)
+	// Send mouse click using viewport-relative coordinates
+	return c.Click(centerX, viewportY)
 }
 
 // ClickElementAndExpect clicks an element and waits for expected content to appear.

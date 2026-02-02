@@ -353,3 +353,36 @@ func (c *Console) bufferRowToViewportRow(bufferRow int) int {
 	}
 	return viewportY
 }
+
+// GetBuffer returns the current terminal buffer as a parsed screen.
+// This is useful for tests and verification to inspect the current state
+// of the terminal after interactions.
+//
+// Returns a slice of strings representing each row of the terminal screen,
+// with ANSI escape codes stripped. Rows are 1-indexed for consistency with
+// other coordinate systems in this package.
+//
+// Example:
+//
+//	screen := console.GetBuffer()
+//	if len(screen) == 0 {
+//	    t.Error("expected screen content")
+//	}
+//	if !strings.Contains(screen[0], "expected text") {
+//	    t.Error("expected text not found in first row")
+//	}
+func (c *Console) GetBuffer() []string {
+	if c.cp == nil {
+		return nil
+	}
+	return parseTerminalBuffer(c.cp.String())
+}
+
+// GetBufferRaw returns the raw terminal buffer string without parsing.
+// This returns the raw escape sequences and text as received from the PTY.
+func (c *Console) GetBufferRaw() string {
+	if c.cp == nil {
+		return ""
+	}
+	return c.cp.String()
+}

@@ -109,11 +109,15 @@ func TestSuperDocument_ClickAfterAutoScrollPlacesCursorCorrectly(t *testing.T) {
 		t.Fatalf("Failed to click marker element: %v", err)
 	}
 
+	// Give UI time to update cursor focus after click
+	// Docker/slower environments need longer to process cursor positioning
+	time.Sleep(100 * time.Millisecond)
+
 	// Insert text at click position and submit form
 	insert := "-INSERTED-"
 	for _, ch := range insert {
 		sendKey(t, cp, string(ch))
-		time.Sleep(4 * time.Millisecond)
+		time.Sleep(15 * time.Millisecond) // Typical delay used in other super-document tests
 	}
 
 	// Tab to Submit and press Enter

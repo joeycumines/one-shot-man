@@ -3,7 +3,6 @@ package pabt
 import (
 	"container/list"
 	"fmt"
-	"os"
 	"sync"
 
 	"github.com/dop251/goja"
@@ -301,25 +300,17 @@ func (c *JSCondition) Key() any {
 func (c *JSCondition) Match(value any) bool {
 	// Defensive: check if condition is valid before calling matcher
 	if c == nil {
-		// H8: Log nil condition to help distinguish from false match
-		fmt.Fprintf(os.Stderr, "pabt.JSCondition.Match: called on nil condition\n")
 		return false
 	}
 	if c.matcher == nil {
-		// H8: Log nil matcher to help distinguish from false match
-		fmt.Fprintf(os.Stderr, "pabt.JSCondition.Match: matcher is nil (key=%v)\n", c.key)
 		return false
 	}
 	if c.bridge == nil {
-		// H8: Log nil bridge to help distinguish from false match
-		fmt.Fprintf(os.Stderr, "pabt.JSCondition.Match: bridge is nil (key=%v)\n", c.key)
 		return false
 	}
 
 	// Early exit if bridge is stopping - avoids blocking in RunOnLoopSync
 	if !c.bridge.IsRunning() {
-		// H8: Log bridge stopped to help distinguish from false match
-		fmt.Fprintf(os.Stderr, "pabt.JSCondition.Match: bridge not running (key=%v)\n", c.key)
 		return false
 	}
 
@@ -334,8 +325,6 @@ func (c *JSCondition) Match(value any) bool {
 	})
 
 	if err != nil {
-		// H8: Log JS errors to help distinguish from false match
-		fmt.Fprintf(os.Stderr, "pabt.JSCondition.Match: JS error (key=%v, value=%v): %v\n", c.key, value, err)
 		return false
 	}
 

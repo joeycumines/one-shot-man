@@ -158,9 +158,6 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 			// Create a tea.MouseMsg for the InBounds check
 			mouseMsg := tea.MouseMsg{X: x, Y: y}
 			inBounds := zoneInfo.InBounds(mouseMsg)
-			// DEBUG: Log zone check (commented out - uncomment to debug mouse issues)
-			// fmt.Fprintf(os.Stderr, "[ZONE DEBUG] inBounds(%q, x=%d, y=%d) zone=[%d,%d]-[%d,%d] -> %v\n",
-			// 	id, x, y, zoneInfo.StartX, zoneInfo.StartY, zoneInfo.EndX, zoneInfo.EndY, inBounds)
 			return runtime.ToValue(inBounds)
 		})
 

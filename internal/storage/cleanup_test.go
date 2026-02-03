@@ -571,11 +571,15 @@ func TestCleaner_PreservesLockWhenRemoveFails(t *testing.T) {
 		t.Fatalf("failed to chtimes: %v", err)
 	}
 
-	// Make the directory read-only so os.Remove(sessionPath) will fail
-	if err := os.Chmod(dir, 0555); err != nil {
-		t.Fatalf("failed to chmod dir: %v", err)
+	// Replace session file with a directory to cause os.Remove(sessionPath) to fail.
+	// This works regardless of user permissions (even as root).
+	if err := os.RemoveAll(sessionPath); err != nil {
+		t.Fatalf("failed to remove session file: %v", err)
 	}
-	defer func() { _ = os.Chmod(dir, 0755) }()
+	if err := os.Mkdir(sessionPath, 0755); err != nil {
+		t.Fatalf("failed to create directory in place of file: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(sessionPath) }()
 
 	cleaner := &Cleaner{MaxAgeDays: 1, MaxCount: 0, MaxSizeMB: 0}
 	report, err := cleaner.ExecuteCleanup("")
@@ -583,9 +587,9 @@ func TestCleaner_PreservesLockWhenRemoveFails(t *testing.T) {
 		t.Fatalf("ExecuteCleanup failed: %v", err)
 	}
 
-	// The session file removal should have failed, so session file should still exist
+	// The session file removal should have failed, so session directory (now replacing file) should still exist
 	if _, err := os.Stat(sessionPath); os.IsNotExist(err) {
-		t.Fatalf("expected session file to remain after a failed remove")
+		t.Fatalf("expected session directory (simulating file removal failure) to exist after a failed remove")
 	}
 
 	// The lock file should still exist (we should NOT have unlinked it on failure)
@@ -594,6 +598,9 @@ func TestCleaner_PreservesLockWhenRemoveFails(t *testing.T) {
 	}
 
 	// The ID should be listed in report.Skipped
+	// Note: We replaced the session file with a directory to simulate
+	// removal failure, so the cleaner will attempt to remove the directory.
+	// The key is that it should be listed in report.Skipped, not Removed.
 	found := false
 	for _, id := range report.Skipped {
 		if id == "delete-fails" {
@@ -602,6 +609,6 @@ func TestCleaner_PreservesLockWhenRemoveFails(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("expected session id in report.Skipped when remove fails")
+		t.Fatalf("expected session id in report.Skipped when remove (simulation) fails")
 	}
 }

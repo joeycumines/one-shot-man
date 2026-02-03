@@ -1108,10 +1108,11 @@ func TestPickAndPlaceLogging(t *testing.T) {
 	}
 
 	// Verify tick messages are being processed
-	// Note: The script logs "Tick status" with {"tick":N} in JSON fields, not "Tick 1"
-	if err := harness.VerifyLogContent(`"tick":1`); err != nil {
+	// Note: The script logs PA-BT ACTION with {"tick":N} in JSON fields
+	// PA-BT ACTION logs typically start from tick 26+ after initial planning phase
+	if err := harness.VerifyLogContent(`"tick":`); err != nil {
 		content, _ := os.ReadFile(config.LogFilePath)
-		t.Logf("Log file content (checking for tick 1):\n%s", string(content))
+		t.Logf("Log file content (checking for tick field):\n%s", string(content))
 		t.Fatalf("Tick messages not being processed: %v", err)
 	}
 

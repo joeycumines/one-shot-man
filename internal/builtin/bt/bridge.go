@@ -309,6 +309,27 @@ func (b *Bridge) IsRunning() bool {
 	return b.started && !b.stopped
 }
 
+// GetLifecycleSnapshot returns a snapshot of both lifecycle state atomicly.
+// This is used by tests to verify the invariant: "If Done() is observed closed,
+// IsRunning() MUST return false". By capturing both under the same lock, observers
+// can check for violations without race windows.
+func (b *Bridge) GetLifecycleSnapshot() (doneClosed bool, isRunning bool) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	// Check if Done channel is closed (non-blocking select under read lock)
+	select {
+	case <-b.ctx.Done():
+		doneClosed = true
+	default:
+		doneClosed = false
+	}
+
+	// Read running state from same lock for atomic snapshot
+	isRunning = b.started && !b.stopped
+	return
+}
+
 // RunOnLoop schedules a function to run on the event loop goroutine.
 // Returns true if the function was successfully scheduled.
 // Returns false if the event loop is not running.

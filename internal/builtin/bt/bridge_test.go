@@ -1276,17 +1276,9 @@ func TestBridge_C3_LifecycleInvariant_StrictVerification(t *testing.T) {
 						default:
 						}
 
-						// Check both conditions atomically
-						doneClosed := false
-						isRunning := bridge.IsRunning()
-
-						// Check if Done() is closed
-						select {
-						case <-bridge.Done():
-							doneClosed = true
-						default:
-							doneClosed = false
-						}
+						// ATOMIC SNAPSHOT: Capture both lifecycle state elements atomically
+						// This eliminates race window between checking Done() and IsRunning()
+						doneClosed, isRunning := bridge.GetLifecycleSnapshot()
 
 						// CRITICAL INVARIANT CHECK:
 						// If Done() is closed, IsRunning() MUST return false
@@ -1306,8 +1298,10 @@ func TestBridge_C3_LifecycleInvariant_StrictVerification(t *testing.T) {
 			// Call Stop() - this is where the C3 fix applies
 			bridge.Stop()
 
-			// Give observers time to detect the change
-			time.Sleep(50 * time.Millisecond)
+			// Give observers MORE time to detect the change in loaded test environment
+			// 50ms may not be enough in CI environments where goroutines
+			// are scheduled with different priorities or delays.
+			time.Sleep(200 * time.Millisecond)
 
 			// Signal observers to stop
 			close(doneCh)

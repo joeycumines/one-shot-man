@@ -63,10 +63,12 @@ func TestAtomicWriteFile(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("Skipping temp-file-creation failure test on Windows")
 		}
-		// Arrange: Create a read-only directory so CreateTemp fails.
+		// Arrange: Create a file where we need a directory.
+		// This causes MkdirAll to fail regardless of user permissions.
 		tempDir := t.TempDir()
 		targetDir := filepath.Join(tempDir, "target")
-		if err := os.MkdirAll(targetDir, 0555); err != nil { // Read-only
+		// Create a file with the target directory name
+		if err := os.WriteFile(targetDir, []byte(""), 0644); err != nil {
 			t.Fatal(err)
 		}
 		filename := filepath.Join(targetDir, "test.txt")

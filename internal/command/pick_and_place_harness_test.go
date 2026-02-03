@@ -1,3 +1,5 @@
+//go:build unix
+
 package command
 
 import (
@@ -982,8 +984,6 @@ var pickPlaceDebugJSONRegex = regexp.MustCompile(`(?s)__place_debug_start__\s*(.
 // pickPlaceRawJSONRegex matches the debug JSON directly (fallback if markers are fragmented)
 // Updated to match both old format (without g) and new format (with g for goal blockade count)
 var pickPlaceRawJSONRegex = regexp.MustCompile(`\{"m":"[^"]+","t":\d+[^}]*\}`)
-
-// ansiRegex is defined in shooter_harness_test.go and shared across the package
 
 func (h *PickAndPlaceHarness) parseDebugJSON(buffer string) (*PickAndPlaceDebugJSON, error) {
 	// Check for debug JSON markers in full buffer first

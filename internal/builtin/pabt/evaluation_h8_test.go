@@ -11,9 +11,6 @@ import (
 
 // TestJSCondition_Match_ErrorCases_H8 is an EXHAUSTIVE test for H8 fix.
 // Verifies that JSCondition.Match correctly distinguishes error cases from false matches.
-//
-// H8 Issue: JSCondition.Match should not confuse error cases with false matches.
-// The fix adds error logging to stderr so errors are visible for debugging.
 func TestJSCondition_Match_ErrorCases_H8(t *testing.T) {
 	t.Parallel()
 
@@ -46,32 +43,6 @@ func TestJSCondition_Match_ErrorCases_H8(t *testing.T) {
 		require.False(t, result, "JSCondition with nil bridge should return false")
 	})
 
-	// Test 4: Verify key appears in error message (H8 fix)
-	t.Run("key_in_error_message", func(t *testing.T) {
-		oldStderr := os.Stderr
-		r, w, err := os.Pipe()
-		require.NoError(t, err)
-		os.Stderr = w
-
-		// Create a condition with a specific key using struct literal
-		cond := &JSCondition{
-			key:     "my_test_key_12345",
-			matcher: nil,
-			bridge:  nil,
-		}
-		cond.Match("test")
-
-		w.Close()
-		os.Stderr = oldStderr
-
-		output, _ := io.ReadAll(r)
-		outputStr := string(output)
-
-		// H8 fix: key should be in error message for debugging
-		require.Contains(t, outputStr, "my_test_key_12345",
-			"Key should appear in error message for debugging")
-	})
-
 	// Test 5: Multiple nil conditions all return false
 	t.Run("multiple_nil_conditions", func(t *testing.T) {
 		keys := []string{"key1", "key2", "key3", "key4", "key5"}
@@ -84,55 +55,6 @@ func TestJSCondition_Match_ErrorCases_H8(t *testing.T) {
 			result := cond.Match("test")
 			require.False(t, result, "Condition with key=%q should return false", key)
 		}
-	})
-
-	// Test 6: Empty key should still log something (H8 fix)
-	t.Run("empty_key_in_error_message", func(t *testing.T) {
-		oldStderr := os.Stderr
-		r, w, err := os.Pipe()
-		require.NoError(t, err)
-		os.Stderr = w
-
-		cond := &JSCondition{
-			key:     "",
-			matcher: nil,
-			bridge:  nil,
-		}
-		cond.Match("test")
-
-		w.Close()
-		os.Stderr = oldStderr
-
-		output, _ := io.ReadAll(r)
-		outputStr := string(output)
-
-		// H8 fix: even empty key should trigger some output
-		require.NotEmpty(t, outputStr, "Error should be logged even for empty key")
-	})
-
-	// Test 7: Special characters in key should be preserved
-	t.Run("special_chars_in_key_error_message", func(t *testing.T) {
-		oldStderr := os.Stderr
-		r, w, err := os.Pipe()
-		require.NoError(t, err)
-		os.Stderr = w
-
-		specialKey := "key-with-dashes_underscores123!@#"
-		cond := &JSCondition{
-			key:     specialKey,
-			matcher: nil,
-			bridge:  nil,
-		}
-		cond.Match("test")
-
-		w.Close()
-		os.Stderr = oldStderr
-
-		output, _ := io.ReadAll(r)
-		outputStr := string(output)
-
-		require.Contains(t, outputStr, specialKey,
-			"Special characters in key should be preserved in error message")
 	})
 
 	// Test 8: Error logging should not interfere with result

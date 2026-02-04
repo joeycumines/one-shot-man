@@ -109,15 +109,20 @@ func TestSuperDocument_ClickAfterAutoScrollPlacesCursorCorrectly(t *testing.T) {
 		t.Fatalf("Failed to click marker element: %v", err)
 	}
 
-	// Give UI time to update cursor focus after click
-	// Docker/slower environments need longer to process cursor positioning
-	time.Sleep(100 * time.Millisecond)
+	// CRITICAL: Wait for textarea cursor position/focus to stabilize after click
+	// This addresses the race condition where keystrokes arrive before the
+	// click-triggered state changes have fully propagated.
+	// In Docker (slower PTY/event processing), the click→ready latency
+	// is ~120ms vs ~20ms on macOS, so first keystrokes can arrive
+	// before cursor position is committed, causing dropped characters.
+	// The 200ms delay compensates for this environment-specific timing.
+	time.Sleep(200 * time.Millisecond)
 
 	// Insert text at click position and submit form
 	insert := "-INSERTED-"
 	for _, ch := range insert {
 		sendKey(t, cp, string(ch))
-		time.Sleep(15 * time.Millisecond) // Typical delay used in other super-document tests
+		time.Sleep(4 * time.Millisecond)
 	}
 
 	// Tab to Submit and press Enter

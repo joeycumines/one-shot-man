@@ -13,7 +13,7 @@ Refine reproducible one-shot prompts from your terminal, then paste them into th
 `osm` is an extensible scriptable local-first CLI (with optional TUI) for constructing single-shot prompts:
 files + diffs + notes + templates → prompt → clipboard.
 
-It does **not** call any model API. No keys, no "agent platform", no network required.
+It does **not** call any model API. No keys, no "[agent platform](docs/todo.md)", no network required.
 
 I use this tool almost every day (work + personal projects).
 Manually assembling and especially tweaking context was tiresome, so I built `osm` to help.

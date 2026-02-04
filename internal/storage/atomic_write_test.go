@@ -5,8 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
+
+// longDir is an excessively long path segment that, when combined
+// with temp directory path components, exceeds PATH_MAX,
+// causing MkdirAll to fail regardless of user permissions or root status.
+var longDir = strings.Repeat("x", 256)
 
 func TestAtomicWriteFile(t *testing.T) {
 	t.Run("successful write", func(t *testing.T) {
@@ -80,18 +86,6 @@ func TestAtomicWriteFile(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("Skipping temp-file-creation failure test on Windows")
 		}
-<<<<<<< HEAD
-		// Arrange: Make temp file creation fail by creating an impossibly
-		// long path that exceeds PATH_MAX. This causes os.CreateTemp to fail
-		// regardless of user permissions, even for root.
-		tempDir := t.TempDir()
-
-		// Create an excessively long path component to exceed filesystem limits
-		// PATH_MAX is typically 4096, so we go well beyond that
-		longDir := ""
-		for i := 0; i < 100; i++ {
-			longDir += "/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-=======
 		// Arrange: Create a file where we need a directory.
 		// This causes MkdirAll to fail regardless of user permissions.
 		tempDir := t.TempDir()
@@ -99,7 +93,6 @@ func TestAtomicWriteFile(t *testing.T) {
 		// Create a file with the target directory name
 		if err := os.WriteFile(targetDir, []byte(""), 0644); err != nil {
 			t.Fatal(err)
->>>>>>> 53ac41f (Fixes)
 		}
 		filename := filepath.Join(tempDir, longDir, "test.txt")
 		data := []byte("data")

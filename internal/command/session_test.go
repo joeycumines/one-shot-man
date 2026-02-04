@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"os"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/storage"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 type errReader struct{}
@@ -672,8 +672,9 @@ func TestSessionsDelete_UnknownFlagReturnsError(t *testing.T) {
 }
 
 func TestSessionsDeletePreservesLockOnRemoveFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("chmod-based remove failure tests skipped on Windows")
+	platform := testutil.DetectPlatform(t)
+	if platform.IsWindows {
+		testutil.SkipIfWindows(t, platform, "requires Unix directory operations")
 	}
 
 	dir := t.TempDir()

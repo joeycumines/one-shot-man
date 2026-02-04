@@ -2,7 +2,6 @@ package bt
 
 import (
 	"context"
-	"runtime"
 	"strings"
 	"testing"
 	"time"

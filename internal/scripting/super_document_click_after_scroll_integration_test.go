@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/go-prompt/termtest"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 func waitForBufferContains(ctx context.Context, cp *termtest.Console, target string, timeout time.Duration) error {
@@ -115,8 +116,8 @@ func TestSuperDocument_ClickAfterAutoScrollPlacesCursorCorrectly(t *testing.T) {
 	// In Docker (slower PTY/event processing), the click→ready latency
 	// is ~120ms vs ~20ms on macOS, so first keystrokes can arrive
 	// before cursor position is committed, causing dropped characters.
-	// The 200ms delay compensates for this environment-specific timing.
-	time.Sleep(200 * time.Millisecond)
+	// Uses DockerClickSyncDelay to compensate for environment-specific timing.
+	time.Sleep(testutil.DockerClickSyncDelay)
 
 	// Insert text at click position and submit form
 	insert := "-INSERTED-"

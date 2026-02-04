@@ -47,3 +47,21 @@ test-scripts/
 
 # ignore gif files - upload these to an issue to host them on https://user-images.githubusercontent.com/
 /docs/visuals/gifs/*.gif
+
+# Session management artifacts (not committed to production)
+WIP.md
+blueprint.json
+blueprint.json.backup.*
+.nine-hour-tracker.start
+COMMIT_DISCREPANCY_INVESTIGATION.md
+git-investigation-task.md
+git-investigation-report.md
+do-commit.sh
+execute-commit.sh
+run-commit.sh
+verify-merge.sh
+verify-merge.log
+super-doc-sync-fix.log
+
+# Temporary investigation scripts
+.make_targets/

@@ -241,9 +241,12 @@ func (e *Engine) SetTestMode(enabled bool) {
 // See SetThreadCheckMode.
 func (e *Engine) QueueSetGlobal(name string, value interface{}) {
 	// Queue the VM and local cache update to the event loop for thread safety
+	// Also acquire lock to synchronize with GetGlobal's Lock()
 	e.runtime.loop.RunOnLoop(func(vm *goja.Runtime) {
+		e.globalsMu.Lock()
 		e.globals[name] = value
 		vm.Set(name, value)
+		e.globalsMu.Unlock()
 	})
 }
 
@@ -255,8 +258,11 @@ func (e *Engine) QueueSetGlobal(name string, value interface{}) {
 // If you need synchronous access, use Runtime.GetGlobal instead.
 func (e *Engine) QueueGetGlobal(name string, callback func(value interface{})) {
 	// Queue the VM read to the event loop for thread safety
+	// Also acquire lock to synchronize with QueueSetGlobal's vm.Set() calls
 	e.runtime.loop.RunOnLoop(func(vm *goja.Runtime) {
+		e.globalsMu.Lock()
 		val := vm.Get(name)
+		e.globalsMu.Unlock()
 		var result interface{}
 		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
 			result = nil

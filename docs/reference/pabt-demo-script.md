@@ -329,7 +329,7 @@ function handlePABTResult(result) {
 
 ## References
 
-- **PA-BT Architecture**: `REVIEW_PABT.md`
-- **PA-BT Reference**: `docs/reference/planning-and-acting-using-behavior-trees.md`
+- **PA-BT Architecture**: `../../REVIEW_PABT.md`
+- **PA-BT Reference**: `planning-and-acting-using-behavior-trees.md`
 - **go-pabt Library**: https://github.com/joeycumines/go-pabt
 - **expr-lang**: https://expr-lang.org/

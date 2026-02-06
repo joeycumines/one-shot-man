@@ -1191,6 +1191,18 @@ func TestPickAndPlace_MousePick_DirectClick(t *testing.T) {
 	stateNearCube := h.GetDebugState()
 	t.Logf("Actor position near blockade: (%.1f, %.1f)", stateNearCube.ActorX, stateNearCube.ActorY)
 
+	// Verify actor is in position before clicking
+	// In CI environments, PTY may be slow so we may need to wait longer
+	targetY := 18.0
+	if stateNearCube.ActorY < targetY-1 {
+		t.Logf("Actor Y=%0.1f, waiting for movement to complete (target Y>=%0.1f)", stateNearCube.ActorY, targetY-1)
+		// Wait more and check again
+		h.WaitForFrames(10)
+		time.Sleep(500 * time.Millisecond)
+		stateNearCube = h.GetDebugState()
+		t.Logf("Actor position after extra wait: (%.1f, %.1f)", stateNearCube.ActorX, stateNearCube.ActorY)
+	}
+
 	// Click directly on a goal blockade cube (near goal area)
 	// Goal blockade cube 100 is at (7, 18) - right side of goal area
 	clickX := 7
@@ -1204,23 +1216,41 @@ func TestPickAndPlace_MousePick_DirectClick(t *testing.T) {
 
 	h.WaitForFrames(5)
 	time.Sleep(500 * time.Millisecond)
-	stateAfter := h.GetDebugState()
 
 	// Verify cube was picked up (with retry for PTY lag)
-	if stateAfter.HeldItemID < 100 {
-		// Retry click (PTY timing variance)
-		h.ClickGrid(clickX, clickY)
-		time.Sleep(500 * time.Millisecond)
-		stateAfter = h.GetDebugState()
-		if stateAfter.HeldItemID < 100 {
-			t.Errorf("Expected to pick up blockade cube (id>=100), but held item is %d (actor at %.1f, %.1f)",
-				stateAfter.HeldItemID, stateAfter.ActorX, stateAfter.ActorY)
-		} else {
-			t.Logf("✓ Direct-click (retry): picked up cube id=%d", stateAfter.HeldItemID)
+	maxRetries := 3
+	for retry := 0; retry < maxRetries; retry++ {
+		stateAfter := h.GetDebugState()
+		if stateAfter.HeldItemID >= 100 {
+			t.Logf("✓ Direct-click: picked up cube id=%d", stateAfter.HeldItemID)
+			return // Success
 		}
-	} else {
-		t.Logf("✓ Direct-click: picked up cube id=%d", stateAfter.HeldItemID)
+
+		// If actor isn't near the target, move closer
+		stateCurrent := h.GetDebugState()
+		if stateCurrent.ActorY < 16 {
+			t.Logf("Retry %d/%d: Actor Y=%0.1f too low, moving down", retry+1, maxRetries, stateCurrent.ActorY)
+			h.SendKey("s")
+			time.Sleep(200 * time.Millisecond)
+			h.WaitForFrames(5)
+			time.Sleep(300 * time.Millisecond)
+			continue
+		}
+
+		// Actor is in position but click failed - retry click
+		if retry < maxRetries-1 {
+			t.Logf("Retry %d/%d: Click may have missed, retrying", retry+1, maxRetries)
+			h.ClickGrid(clickX, clickY)
+			time.Sleep(500 * time.Millisecond)
+			h.WaitForFrames(5)
+			time.Sleep(300 * time.Millisecond)
+		}
 	}
+
+	// Final check after all retries
+	finalState := h.GetDebugState()
+	t.Errorf("Expected to pick up blockade cube (id>=100), but held item is %d (actor at %.1f, %.1f)",
+		finalState.HeldItemID, finalState.ActorX, finalState.ActorY)
 }
 
 // TestPickAndPlace_MousePick_HoldingItem verifies that clicking anywhere while

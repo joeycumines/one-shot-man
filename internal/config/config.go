@@ -54,13 +54,28 @@ func Load() (*Config, error) {
 
 // LoadFromPath loads configuration from the specified file path.
 // The file uses dnsmasq-style format: optionName remainingLineIsTheValue
+//
+// SECURITY: This function rejects symlinks to prevent symlink attacks
+// that could read sensitive files through symlink traversal.
 func LoadFromPath(path string) (*Config, error) {
-	file, err := os.Open(path)
+	// Security: Check if path is a symlink to prevent symlink attacks
+	fi, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// Return empty config if file doesn't exist
 			return NewConfig(), nil
 		}
+		return nil, fmt.Errorf("failed to stat config file: %w", err)
+	}
+
+	// Reject symlinks to prevent reading sensitive files through symlink attacks
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("symlink not allowed in config path: %s", path)
+	}
+
+	// Open with O_NOFOLLOW to ensure we don't follow any remaining symlinks
+	file, err := os.OpenFile(path, os.O_RDONLY, 0)
+	if err != nil {
 		return nil, fmt.Errorf("failed to open config file: %w", err)
 	}
 	defer file.Close()

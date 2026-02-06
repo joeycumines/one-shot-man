@@ -106,13 +106,18 @@ func (c *ExprLRUCache) Get(expression string) (*vm.Program, bool) {
 
 // Put adds a compiled program to the cache.
 // If the cache is at capacity, the least recently used entry is evicted.
+// If the expression already exists, it's updated (moved to front, program replaced).
 // Thread-safe.
 func (c *ExprLRUCache) Put(expression string, program *vm.Program) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Check if already exists (update would be rare but handle it)
-	if _, ok := c.cache[expression]; ok {
+	// Check if already exists - update it by moving to front and replacing program
+	if elem, ok := c.cache[expression]; ok {
+		// Move existing entry to front (most recently used)
+		c.lru.MoveToFront(elem)
+		// Update the program (allows recompilation with same expression)
+		elem.Value.(*entry).program = program
 		return
 	}
 
@@ -387,6 +392,8 @@ func (c *ExprCondition) SetJSObject(obj *goja.Object) {
 // NewExprCondition creates a new expr-lang based condition.
 // The expression is compiled lazily on first Match call and cached globally.
 //
+// Panics if expression is empty (m-3 fix).
+//
 // Expression syntax follows expr-lang (github.com/expr-lang/expr):
 //   - Field access: Value.x, Value.name
 //   - Comparisons: Value == 10, Value > 5, Value != nil
@@ -397,6 +404,9 @@ func (c *ExprCondition) SetJSObject(obj *goja.Object) {
 // The environment provides a single "value" variable containing the
 // condition input value.
 func NewExprCondition(key any, expression string) *ExprCondition {
+	if expression == "" {
+		panic("pabt.NewExprCondition: expression cannot be empty")
+	}
 	return &ExprCondition{
 		key:        key,
 		expression: expression,

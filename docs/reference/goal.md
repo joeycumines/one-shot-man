@@ -308,7 +308,7 @@ Authoring tip: Start with a `custom` handler only when you need custom runtime l
 
 **Integration with configuration**
 
-- Config keys relevant to `goal` discovery are outlined in: [docs/reference/config.md](docs/reference/config.md#goal-discovery) and include:
+- Config keys relevant to `goal` discovery are outlined in: [config.md](config.md#goal-discovery) and include:
     - `goal.autodiscovery` (bool, default true) — enable/disable upward traversal.
     - `goal.paths` (list) — additional explicit paths.
     - `goal.path-patterns` (list) — name patterns to search for when traversing up.

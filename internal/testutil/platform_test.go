@@ -12,6 +12,11 @@ import (
 func TestDetectPlatform_UnixNonRoot(t *testing.T) {
 	platform := DetectPlatform(t)
 
+	// This test requires Unix/macOS/Linux - skip on Windows
+	if platform.IsWindows {
+		t.Skip("Skipping: Test requires Unix/macOS/Linux platform")
+	}
+
 	if !platform.IsUnix {
 		t.Errorf("Expected IsUnix=true on macOS/Linux, got %v", platform.IsUnix)
 	}

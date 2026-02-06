@@ -332,10 +332,11 @@ func (e *Engine) GetGlobal(name string) interface{} {
 	if e.threadCheckMode {
 		e.checkEventLoopGoroutine("GetGlobal")
 	}
-	// Use mutex to protect globals map access (C5 fix)
-	e.globalsMu.RLock()
+	// Use mutex to protect both globals map and VM access (C5 fix)
+	// Using full Lock instead of RLock to synchronize with QueueSetGlobal's vm.Set() calls
+	e.globalsMu.Lock()
 	val := e.vm.Get(name)
-	e.globalsMu.RUnlock()
+	e.globalsMu.Unlock()
 	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
 		return nil
 	}

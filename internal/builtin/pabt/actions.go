@@ -117,6 +117,10 @@ func NewAction(name string, conditions []pabtpkg.IConditions, effects pabtpkg.Ef
 			panic(fmt.Sprintf("pabt.NewAction: conditions[%d] cannot be nil (action=%q)", i, name))
 		}
 	}
+	// Handle nil effects slice (minor issue m-1)
+	if effects == nil {
+		effects = pabtpkg.Effects{}
+	}
 	return &Action{
 		Name:       name,
 		conditions: conditions,

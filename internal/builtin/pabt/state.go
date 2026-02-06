@@ -238,7 +238,7 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 // satisfy the given failed condition.
 //
 // An effect is relevant if:
-// 1. effect.Key() equals the failed condition's key
+// 1. effect.Key() equals the failed condition's key (after normalization)
 // 2. failed.Match(effect.Value()) returns true
 func (s *State) actionHasRelevantEffect(action pabtpkg.IAction, failedKey any, failed pabtpkg.Condition) bool {
 	effects := action.Effects()
@@ -249,8 +249,19 @@ func (s *State) actionHasRelevantEffect(action pabtpkg.IAction, failedKey any, f
 		effectKey := effect.Key()
 		effectValue := effect.Value()
 
+		// Normalize both keys to string for comparison (fixes type mismatch bug M-1)
+		// Using the same normalization pattern as Variable() method
+		failedKeyStr, err := normalizeKey(failedKey)
+		if err != nil {
+			continue // Skip if failedKey cannot be normalized
+		}
+		effectKeyStr, err := normalizeKey(effectKey)
+		if err != nil {
+			continue // Skip if effectKey cannot be normalized
+		}
+
 		// Check if this effect's key matches the failed condition's key
-		keyMatch := effectKey == failedKey
+		keyMatch := failedKeyStr == effectKeyStr
 		var valueMatch bool
 		if keyMatch {
 			valueMatch = failed.Match(effectValue)
@@ -261,6 +272,40 @@ func (s *State) actionHasRelevantEffect(action pabtpkg.IAction, failedKey any, f
 		}
 	}
 	return false
+}
+
+// normalizeKey converts any supported key type to a string for consistent comparison.
+// This mirrors the key normalization in Variable() method.
+//
+// Supported key types:
+//   - string: Used as-is
+//   - int, int8, int16, int32, int64: Converted to decimal string
+//   - uint, uint8, uint16, uint32, uint64: Converted to decimal string
+//   - float32, float64: Converted via %g (compact notation)
+//   - fmt.Stringer: Uses String() method
+//
+// Returns empty string and error for nil or unsupported types.
+func normalizeKey(key any) (string, error) {
+	if key == nil {
+		return "", fmt.Errorf("key cannot be nil")
+	}
+
+	switch k := key.(type) {
+	case string:
+		return k, nil
+	case int, int8, int16, int32, int64:
+		return fmt.Sprintf("%d", k), nil
+	case uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprintf("%d", k), nil
+	case float32, float64:
+		return fmt.Sprintf("%g", k), nil
+	default:
+		// Try fmt.Stringer interface
+		if stringer, ok := key.(fmt.Stringer); ok {
+			return stringer.String(), nil
+		}
+		return "", fmt.Errorf("unsupported key type: %T", key)
+	}
 }
 
 // RegisterAction adds an action to the state's action registry.

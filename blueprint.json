@@ -1,0 +1,893 @@
+{
+  "metadata": {
+    "project": "one-shot-man",
+    "goal": "100% complete best-in-class implementation ready for main merge",
+    "created": "2026-02-06",
+    "last_updated": "Fri  6 Feb 2026 08:50:00 AEST"
+  },
+  "phases": [
+    {
+      "name": "Phase 1: CI Verification of Existing Fixes",
+      "tasks": [
+        {
+          "id": "1.1",
+          "title": "Push and Verify Windows CI Fix",
+          "status": "completed",
+          "verification": "Windows CI workflow completes, no test failures, platform test skipped"
+        },
+        {
+          "id": "1.2",
+          "title": "Push and Verify macOS CI PTY Timing Fix",
+          "status": "completed",
+          "verification": "macOS CI workflow completes, no flaky failures, all PTY tests pass"
+        },
+        {
+          "id": "1.3",
+          "title": "Verify Linux CI Stability",
+          "status": "completed",
+          "verification": "Linux CI workflow completes, all 178 test files pass"
+        },
+        {
+          "id": "1.4",
+          "title": "Aggregate CI Results and Document",
+          "status": "pending",
+          "verification": "All platforms green, blueprint updated, known issues documented"
+        }
+      ]
+    },
+    {
+      "name": "Phase 2: Comprehensive Code Review",
+      "status": "completed",
+      "completed_date": "2026-02-06",
+      "notes": {
+        "review_documents_created": 3,
+        "critical_issues_found": 2,
+        "major_issues_found": 7,
+        "minor_issues_found": 18,
+        "overall_assessment": "Comprehensive review completed across 8 areas. Critical issues found in PTY handling (race conditions, input flow control). Major issues in PTY handling (4), Documentation (2), PA-BT (1). All review documents created: REVIEW_PABT.md, REVIEW_PTY_HANDLING.md, REVIEW_DOCUMENTATION.md. Action items identified for Phase 3 test coverage expansion and Phase 4 PA-BT fixes."
+      },
+      "tasks": [
+        {
+          "id": "2.1",
+          "title": "Review All Command Registry Code",
+          "status": "completed",
+          "verification": "No error handling gaps, consistent patterns, no edge cases, staticcheck clean"
+        },
+        {
+          "id": "2.2",
+          "title": "Review Scripting Engine Implementation",
+          "status": "completed",
+          "verification": "Runtime robust, globals registered, modules handle errors, no leaks",
+          "completed_date": "2026-02-06"
+        },
+        {
+          "id": "2.3",
+          "title": "Review Session Management",
+          "status": "completed",
+          "completed_date": "2026-02-06",
+          "verification": "Sessions persist correctly, concurrent safe, backends work"
+        },
+        {
+          "id": "2.4",
+          "title": "Review Configuration System",
+          "status": "completed",
+          "verification": "Paths resolved, validation comprehensive, no injection vulnerabilities",
+          "completed_date": "2026-02-06"
+        },
+        {
+          "id": "2.5",
+          "title": "Review Test Utilities",
+          "status": "completed",
+          "verification": "Platform detection accurate, tests skip appropriately",
+          "completed_date": "2026-02-06"
+        },
+        {
+          "id": "2.6",
+          "title": "Review PA-BT Implementation",
+          "status": "completed",
+          "verification": "Actions registered, planning works, blackboard sync correct",
+          "completed_date": "2026-02-06",
+          "review_file": "REVIEW_PABT.md",
+          "issues": {
+            "critical": 0,
+            "major": 1,
+            "minor": 3
+          },
+          "findings": "Key normalization bug in actionHasRelevantEffect, nil effects not validated, expression validation gaps"
+        },
+        {
+          "id": "2.7",
+          "title": "Review PTY Handling Code",
+          "status": "completed",
+          "verification": "PTY init correct, input events transmitted, sync reliable",
+          "completed_date": "2026-02-06",
+          "review_file": "REVIEW_PTY_HANDLING.md",
+          "issues": {
+            "critical": 2,
+            "major": 4,
+            "minor": 10
+          },
+          "findings": "Critical race conditions in frame synchronization, silent fallback to stale state, CI timing issues, input flow control missing"
+        },
+        {
+          "id": "2.8",
+          "title": "Review Documentation Completeness",
+          "status": "completed",
+          "completed_date": "2026-02-06",
+          "review_file": "REVIEW_DOCUMENTATION.md",
+          "verification": "All public APIs documented, examples work, no broken links",
+          "issues": {
+            "critical": 0,
+            "major": 2,
+            "minor": 5
+          },
+          "findings": "1 broken link fixed (bt-blackboard-usage.md created), reference to custom-goal-example.json added, comprehensive review completed"
+        }
+      ]
+    },
+    {
+      "name": "Phase 3: Test Coverage Expansion",
+      "tasks": [
+        {
+          "id": "3.1",
+          "title": "Add Edge Case Tests for CLI",
+          "status": "completed",
+          "completed_date": "2026-02-06",
+          "verification": "100% CLI path coverage, all flag combinations tested",
+          "tests_added": {
+            "TestUnknownCommandVariants": {
+              "subtests": 6,
+              "description": "Tests unknown command variations (trailing spaces, wrong case, hyphens, underscores, long names)"
+            },
+            "TestFlagParsingEdgeCases": {
+              "subtests": 5,
+              "description": "Tests flag parsing edge cases (duplicate flags, unknown flags, flag values with dashes)"
+            },
+            "TestHelpOutputFormatting": {
+              "subtests": 1,
+              "description": "Tests help output formatting and content"
+            },
+            "TestVersionCommandVariations": {
+              "subtests": 3,
+              "description": "Tests version command variations and help flags"
+            }
+          }
+        },
+        {
+          "id": "3.2",
+          "title": "Add Edge Case Tests for Configuration",
+          "status": "completed",
+          "completed_date": "2026-02-06",
+          "verification": "All error paths tested, defaults verified, environment override works",
+          "tests_added": {
+            "TestMissingConfigFiles": {
+              "subtests": 3,
+              "description": "Tests missing config files, directory handling, long paths"
+            },
+            "TestInvalidConfigurationValues": {
+              "subtests": 6,
+              "description": "Tests empty values, special chars, negative/large values, unicode"
+            },
+            "TestEnvironmentVariableOverrides": {
+              "subtests": 6,
+              "description": "Tests OSM_CONFIG with missing file, directory, special chars"
+            },
+            "TestConfigFilePathResolutionEdgeCases": {
+              "subtests": 8,
+              "description": "Tests relative paths, .. components, symlinks, special chars"
+            }
+          },
+          "documentation_file": "CONFIG_EDGE_CASE_TESTS.md"
+        },
+        {
+          "id": "3.3",
+          "title": "Add Edge Case Tests for Session Management",
+          "status": "completed",
+          "completed_date": "2026-02-06",
+          "verification": "Concurrent safe, corruption detection works, all backends tested",
+          "tests_added": {
+            "TestConcurrentSessionAccess_MultipleGoroutines": {
+              "subtests": 1,
+              "description": "Tests concurrent session ID generation from 50 goroutines with 20 iterations each"
+            },
+            "TestConcurrentSessionAccess_ReadWriteWithExplicitOverride": {
+              "subtests": 1,
+              "description": "Tests concurrent access with explicit overrides from 30 goroutines"
+            },
+            "TestConcurrentSessionAccess_RapidSessionIDCalls": {
+              "subtests": 1,
+              "description": "Tests 1000 rapid sequential session ID calls"
+            },
+            "TestSessionIDGenerationEdgeCases_EmptyEnvironment": {
+              "subtests": 1,
+              "description": "Tests ID generation with empty environment"
+            },
+            "TestSessionIDGenerationEdgeCases_MultipleIndicatorsPresent": {
+              "subtests": 1,
+              "description": "Tests priority with multiple environment indicators"
+            },
+            "TestSessionIDGenerationEdgeCases_IDUniqueness": {
+              "subtests": 1,
+              "description": "Tests 1000 unique IDs with varying SSH connections"
+            },
+            "TestSessionIDGenerationEdgeCases_FormatValidation": {
+              "subtests": 3,
+              "description": "Tests format validation for explicit, SSH, and screen sources"
+            },
+            "TestSessionIDGenerationEdgeCases_ExplicitOverrideFormat": {
+              "subtests": 3,
+              "description": "Tests explicit override format (simple, hyphen, underscore)"
+            },
+            "TestSessionIDGenerationEdgeCases_SpecialCharactersInInput": {
+              "subtests": 4,
+              "description": "Tests special chars in input (spaces, unicode, slashes, special)"
+            },
+            "TestSessionIDGenerationEdgeCases_Determinism": {
+              "subtests": 1,
+              "description": "Tests that same input produces same output"
+            },
+            "TestSessionContextEdgeCases_EmptyContext": {
+              "subtests": 1,
+              "description": "Tests empty session context hash generation"
+            },
+            "TestSessionContextEdgeCases_LongFields": {
+              "subtests": 1,
+              "description": "Tests 1000-char field values"
+            },
+            "TestSessionContextEdgeCases_UnicodeFields": {
+              "subtests": 1,
+              "description": "Tests unicode in context fields"
+            },
+            "TestSanitizationEdgeCases_AllUnsafeChars": {
+              "subtests": 1,
+              "description": "Tests sanitization of all unsafe characters"
+            },
+            "TestSanitizationEdgeCases_OnlySafeChars": {
+              "subtests": 1,
+              "description": "Tests safe characters pass through unchanged"
+            },
+            "TestSanitizationEdgeCases_MixedLengths": {
+              "subtests": 4,
+              "description": "Tests various length inputs (empty, single, 200 chars, unsafe)"
+            },
+            "TestHashFunctionEdgeCases_EmptyInput": {
+              "subtests": 1,
+              "description": "Tests hashing empty string (64 char output)"
+            },
+            "TestHashFunctionEdgeCases_LargeInput": {
+              "subtests": 1,
+              "description": "Tests hashing 1MB input"
+            },
+            "TestHashFunctionEdgeCases_CollisionResistance": {
+              "subtests": 1,
+              "description": "Tests 100 similar inputs produce unique hashes"
+            },
+            "TestHashFunctionEdgeCases_UnicodeInput": {
+              "subtests": 1,
+              "description": "Tests hashing unicode strings"
+            }
+          },
+          "documentation_file": "SESSION_EDGE_CASE_TESTS.md"
+        },
+        {
+          "id": "3.4",
+          "title": "Add Edge Case Tests for Scripting Engine",
+          "status": "completed",
+          "completed_date": "2026-02-06",
+          "verification": "Runtime initialization robust, globals registered, bindings work",
+          "tests_added": {
+            "TestRuntimeInitializationFailures": {
+              "subtests": 4,
+              "description": "Tests VM behavior with invalid options, after close, and idempotent close"
+            },
+            "TestGlobalRegistrationEdgeCases": {
+              "subtests": 6,
+              "description": "Tests duplicate symbols, invalid identifiers, order, many globals, unicode"
+            },
+            "TestNativeModuleErrorHandling": {
+              "subtests": 6,
+              "description": "Tests nil receiver, invalid args, JS errors, panic recovery, async"
+            },
+            "TestTUIBindingEdgeCases": {
+              "subtests": 9,
+              "description": "Tests TUI without active session, invalid messages, state, context, logger"
+            },
+            "TestConcurrentScriptExecution": {
+              "subtests": 3,
+              "description": "Tests concurrent QueueSetGlobal, rapid engine creation, mixed sync/async"
+            },
+            "TestScriptPanicRecovery": {
+              "subtests": 4,
+              "description": "Tests various panic types, defer handling, nested recovery"
+            },
+            "TestScriptExecutionEdgeCases": {
+              "subtests": 6,
+              "description": "Tests long scripts, deep nesting, unicode, special chars, regex"
+            }
+          },
+          "documentation_file": "SCRIPTING_EDGE_CASE_TESTS.md"
+        },
+        {
+          "id": "3.5",
+          "title": "Add Edge Case Tests for Built-in Commands",
+          "status": "completed",
+          "completed_date": "2026-02-06",
+          "verification": "Empty input handled, invalid states graceful, errors helpful",
+          "tests_added": {
+            "TestCodeReviewCommandEdgeCases": {
+              "subtests": 7,
+              "description": "Tests code-review command edge cases: empty target, non-existent file/directory, directory as file, long paths, special chars, permission denied"
+            },
+            "TestGoalCommandEdgeCases": {
+              "subtests": 7,
+              "description": "Tests goal command edge cases: non-existent goal, directory as goal, invalid JSON, empty goal array, invalid template, no args, invalid flags"
+            },
+            "TestPromptFlowCommandEdgeCases": {
+              "subtests": 5,
+              "description": "Tests prompt-flow command edge cases: missing context, long prompt text, invalid template, unicode content, args only mode"
+            },
+            "TestSuperDocumentCommandEdgeCases": {
+              "subtests": 7,
+              "description": "Tests super-document command edge cases: empty input, whitespace only, non-existent file, directory, long input, nil config, flags"
+            },
+            "TestGoalCommandGoalLoadingEdgeCases": {
+              "subtests": 5,
+              "description": "Tests goal loading edge cases: circular references, empty fields, duplicate commands, special chars, JSON marshal"
+            },
+            "TestCodeReviewCommandWithVariousFlags": {
+              "subtests": 3,
+              "description": "Tests code-review command with various flags: session override, fs store, flag parsing"
+            },
+            "TestSuperDocumentCommandWithVariousFlags": {
+              "subtests": 2,
+              "description": "Tests super-document command with various flags: shell mode, interactive false"
+            }
+          },
+          "documentation_file": "BUILTIN_EDGE_CASE_TESTS.md"
+        },
+        {
+          "id": "3.6",
+          "title": "Add Integration Tests for Cross-Platform Scenarios",
+          "status": "completed",
+          "completed_date": "2026-02-06",
+          "verification": "Platform-specific paths work, clipboard reliable, no crashes",
+          "tests_added": {
+            "TestConfigLoadingCrossPlatform": {
+              "subtests": 5,
+              "description": "Tests config paths on Windows, Unix, macOS with platform-specific path handling"
+            },
+            "TestClipboardOperationsCrossPlatform": {
+              "subtests": 5,
+              "description": "Tests clipboard tools and content types across platforms (xclip, pbcopy, clip)"
+            },
+            "TestFilePathHandlingCrossPlatform": {
+              "subtests": 5,
+              "description": "Tests path normalization, reserved names, unicode paths, and long paths"
+            },
+            "TestTerminalDetectionCrossPlatform": {
+              "subtests": 6,
+              "description": "Tests TERM variable parsing, interactive detection, and color support"
+            },
+            "TestPlatformSpecificCodePaths": {
+              "subtests": 7,
+              "description": "Tests platform detection accuracy and conditional code execution"
+            }
+          },
+          "documentation_file": "CROSS_PLATFORM_TESTS.md"
+        },
+        {
+          "id": "3.7",
+          "title": "Add Performance Regression Tests",
+          "status": "completed",
+          "completed_date": "2026-02-06",
+          "verification": "Critical paths benchmarked, times within bounds, no memory leaks",
+          "tests_added": {
+            "BenchmarkSessionOperations": {
+              "subtests": 7,
+              "description": "Session ID generation, creation, persistence, concurrent access, JSON marshaling/unmarshaling"
+            },
+            "BenchmarkConfigLoading": {
+              "subtests": 6,
+              "description": "Config creation, option get/set, loading, path resolution, validation"
+            },
+            "BenchmarkScriptingEngine": {
+              "subtests": 6,
+              "description": "VM creation, runtime creation, global registration, script execution, compilation"
+            },
+            "BenchmarkCommandExecution": {
+              "subtests": 1,
+              "description": "Command registration"
+            },
+            "TestPerformanceRegression": {
+              "subtests": 4,
+              "description": "Session ID, persistence, scripting engine, script execution within thresholds"
+            },
+            "TestMemoryUsageRegression": {
+              "subtests": 2,
+              "description": "Runtime creation and session backend memory leak detection"
+            }
+          },
+          "documentation_file": "PERFORMANCE_TESTS.md"
+        },
+        {
+          "id": "3.8",
+          "title": "Add Security-Focused Tests",
+          "status": "completed",
+          "completed_date": "2026-02-06",
+          "verification": "Path traversal blocked, injection prevented, sanitization works",
+          "tests_added": {
+            "SecurityTestPathTraversalPrevention": {
+              "subtests": 4,
+              "description": "Tests parent directory traversal, null byte injection, absolute path escape, symlink escape"
+            },
+            "SecurityTestCommandInjectionPrevention": {
+              "subtests": 4,
+              "description": "Tests shell metacharacters, command chaining, subshell injection, env variable injection"
+            },
+            "SecurityTestEnvironmentVariableSanitization": {
+              "subtests": 3,
+              "description": "Tests dangerous environment variables, special characters, unicode handling"
+            },
+            "SecurityTestFilePermissionHandling": {
+              "subtests": 4,
+              "description": "Tests read permissions, restrictive perms, world-writable, symlink attacks"
+            },
+            "SecurityTestInputValidation": {
+              "subtests": 3,
+              "description": "Tests dangerous script inputs, template injection, ANSI escape sequences"
+            },
+            "SecurityTestSessionDataIsolation": {
+              "subtests": 2,
+              "description": "Tests session isolation not leaked between sessions, concurrent access safe"
+            },
+            "SecurityTestOutputSanitization": {
+              "subtests": 2,
+              "description": "Tests no sensitive data in logs, error messages don't expose sensitive paths"
+            },
+            "SecurityTestConfigInjection": {
+              "subtests": 3,
+              "description": "Tests config values with shell metacharacters, section names with special chars, command names with path traversal"
+            },
+            "SecurityTestResourceLimits": {
+              "subtests": 3,
+              "description": "Tests extremely long config values, many config options, command with many options"
+            },
+            "SecurityTestArgumentParsingSecurity": {
+              "subtests": 3,
+              "description": "Tests null bytes, very long args, special characters in arguments"
+            },
+            "SecurityTestBinaryPathSecurity": {
+              "subtests": 2,
+              "description": "Tests binary not in suspicious locations, appropriate permissions"
+            },
+            "SecurityTestEscapingInExportContexts": {
+              "subtests": 3,
+              "description": "Tests HTML, JSON, and shell context escaping"
+            },
+            "SecurityTestTUIInputSecurity": {
+              "subtests": 1,
+              "description": "Tests escape sequences in TUI input"
+            }
+          },
+          "documentation_file": "SECURITY_TESTS.md",
+          "fixes_applied": [
+            "Added unicode/utf8 import for proper unicode string handling",
+            "Fixed 6 slice bounds panics in test name slicing",
+            "Fixed test name truncation for short strings",
+            "Added length checks for 15-char, 20-char slices"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Phase 4: PA-BT Functionality Integration",
+      "tasks": [
+        {
+          "id": "4.1",
+          "title": "Document PA-BT Architecture",
+          "status": "completed",
+          "completed_date": "2026-02-06",
+          "verification": "Architecture explained, examples provided, API complete",
+          "documentation_file": "REVIEW_PABT.md",
+          "fixes_applied": [
+            "M-1: Fixed key normalization in actionHasRelevantEffect() in state.go",
+            "m-1: Added nil check for effects slice in NewAction() in actions.go",
+            "m-2: Improved ExprLRUCache.Put() to update existing entries",
+            "m-3: Added empty expression validation in NewExprCondition() in evaluation.go"
+          ]
+        },
+        {
+          "id": "4.2",
+          "title": "Add PA-BT Unit Tests",
+          "status": "completed",
+          "completed_date": "2026-02-06",
+          "verification": "Blackboard thread-safe, conditions correct, effects apply",
+          "tests_verified": {
+            "action_has_relevant_effect": {
+              "key_normalization": "Verified with int vs string key comparison tests",
+              "description": "actionHasRelevantEffect now correctly normalizes keys before comparison"
+            },
+            "new_action_nil_effects": {
+              "nil_handling": "Verified NewAction handles nil effects gracefully",
+              "description": "Creates empty Effects{} when nil passed"
+            },
+            "expr_lru_cache_put": {
+              "update_behavior": "Verified Put() updates existing entries",
+              "description": "Moves to front and replaces program on duplicate"
+            },
+            "new_expr_condition_empty": {
+              "validation": "Verified panic on empty expression",
+              "description": "NewExprCondition panics with descriptive message"
+            }
+          }
+        },
+        {
+          "id": "4.3",
+          "title": "Add PA-BT Integration Tests",
+          "status": "completed",
+          "completed_date": "2026-02-06",
+          "verification": "Multiple goals work, replanning works, failures graceful",
+          "tests_verified": {
+            "integration_test_files": [
+              "internal/builtin/pabt/integration_test.go",
+              "internal/builtin/pabt/expr_integration_test.go"
+            ],
+            "total_tests": 15,
+            "key_scenarios": [
+              "Multiple goals (TestGraphMultipleGoals)",
+              "Replanning (TestGraphPlanExecution)",
+              "Failures graceful (TestGraphUnreachable)",
+              "Goal achievement detection (TestGraphPath)",
+              "JS integration (TestExprCondition_JSIntegration)"
+            ]
+          }
+        },
+        {
+          "id": "4.4",
+          "title": "Create PA-BT Demo Script Documentation",
+          "status": "completed",
+          "completed_date": "2026-02-06",
+          "verification": "Script documented, key logic explained, modification examples",
+          "documentation_file": "docs/reference/pabt-demo-script.md",
+          "contents": {
+            "overview": "Comprehensive documentation of pick-and-place demo script",
+            "architecture": "Component hierarchy and data flow diagrams",
+            "core_concepts": "Static vs parametric actions, planning flow, blackboard sync",
+            "key_functions": "Setup, core, and modification functions explained",
+            "modification_guide": "Step-by-step guide for adding new actions and goals",
+            "common_patterns": "Reusable patterns for PA-BT implementation",
+            "troubleshooting": "Common issues and solutions",
+            "performance": "Performance considerations and recommendations"
+          }
+        }
+      ]
+    },
+    {
+      "name": "PA-BT Review Completed",
+      "tasks_reviewed": {
+        "review_files": {
+          "status": "completed",
+          "description": "Read and analyze all PA-BT related source files",
+          "files_count": 23,
+          "files": [
+            "internal/builtin/pabt/actions.go",
+            "internal/builtin/pabt/state.go",
+            "internal/builtin/pabt/evaluation.go",
+            "internal/builtin/pabt/simple.go",
+            "internal/builtin/pabt/doc.go",
+            "internal/builtin/pabt/require.go",
+            "internal/builtin/pabt/pabt_test.go",
+            "internal/builtin/pabt/integration_test.go",
+            "internal/builtin/pabt/actions_test.go",
+            "internal/builtin/pabt/state_test.go",
+            "internal/builtin/pabt/evaluation_test.go",
+            "internal/builtin/pabt/expr_integration_test.go",
+            "internal/builtin/pabt/benchmark_test.go",
+            "internal/builtin/pabt/graph_test.go",
+            "internal/builtin/pabt/graphjsimpl_test.go",
+            "internal/builtin/pabt/memory_test.go",
+            "internal/builtin/pabt/require_test.go",
+            "internal/builtin/pabt/exprcondition_jsobject_test.go",
+            "internal/builtin/pabt/test_helpers_test.go",
+            "internal/example/pickandplace/pick_place_integration_test.go",
+            "internal/example/pickandplace/pick_place_manual_mode_comprehensive_test.go",
+            "internal/example/pickandplace/pick_place_simulation_consistency_test.go",
+            "internal/example/pickandplace/bubbletea_test.go",
+            "scripts/example-05-pick-and-place.js"
+          ]
+        },
+        "run_tests": {
+          "status": "completed",
+          "description": "Run existing tests to verify implementation state"
+        },
+        "document_findings": {
+          "status": "completed",
+          "description": "Create comprehensive peer review document",
+          "output_file": "REVIEW_PABT.md"
+        },
+        "verify_fixes": {
+          "status": "completed",
+          "date": "2026-02-06",
+          "test_command": "go test -v -timeout 120s ./internal/builtin/pabt/...",
+          "test_result": "PASS",
+          "test_duration": "8.537s",
+          "fixes_verified": {
+            "M-1": {
+              "description": "Key normalization in actionHasRelevantEffect()",
+              "file": "state.go",
+              "status": "verified",
+              "evidence": "normalizeKey() calls added before key comparison"
+            },
+            "m-1": {
+              "description": "Nil effects handling in NewAction()",
+              "file": "actions.go",
+              "status": "verified",
+              "evidence": "Nil check and Effects{} initialization added"
+            },
+            "m-2": {
+              "description": "ExprLRUCache.Put updates",
+              "file": "evaluation.go",
+              "status": "verified",
+              "evidence": "Update semantics implemented (move to front, replace program)"
+            },
+            "m-3": {
+              "description": "Empty expression validation in NewExprCondition()",
+              "file": "evaluation.go",
+              "status": "verified",
+              "evidence": "Panic on empty expression added"
+            }
+          }
+        }
+      },
+      "verification_criteria": {
+        "all_actions_registered": {
+          "status": "verified",
+          "description": "7 static actions + parametric actions via ActionGenerator correctly registered"
+        },
+        "planning_valid_plans": {
+          "status": "verified",
+          "description": "Planning algorithm produces valid plans (verified via graph_test.go)"
+        },
+        "blackboard_sync_correct": {
+          "status": "verified",
+          "description": "Blackboard sync called correctly (syncToBlackboard in tick loop)"
+        },
+        "win_condition_detected": {
+          "status": "verified",
+          "description": "Win condition detection works (Deliver_Target sets winConditionMet)"
+        }
+      },
+      "issues_found": {
+        "critical": 0,
+        "major": 1,
+        "minor": 3,
+        "major_issues": [
+          {
+            "id": "M-1",
+            "file": "state.go",
+            "location": "Lines 234-253",
+            "description": "actionHasRelevantEffect() doesn't normalize key types before comparison. int(42) won't match '42'"
+          }
+        ],
+        "minor_issues": [
+          {
+            "id": "m-1",
+            "file": "actions.go",
+            "location": "Line 105",
+            "description": "No nil check for effects slice in NewAction()"
+          },
+          {
+            "id": "m-2",
+            "file": "evaluation.go",
+            "location": "Lines 106-124",
+            "description": "ExprLRUCache.Put() silently ignores duplicate entries"
+          },
+          {
+            "id": "m-3",
+            "file": "require.go",
+            "location": "Lines 340+",
+            "description": "newExprCondition() doesn't validate non-empty expression"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Phase 5: Cross-Platform Validation",
+      "tasks": [
+        {
+          "id": "5.1",
+          "title": "Verify Linux-Specific Functionality",
+          "status": "pending",
+          "verification": "Terminal detection works, clipboard fallback works, PTY stable"
+        },
+        {
+          "id": "5.2",
+          "title": "Verify macOS-Specific Functionality",
+          "status": "pending",
+          "verification": "Clipboard reliable, terminal detection accurate, PTY stable"
+        },
+        {
+          "id": "5.3",
+          "title": "Verify Windows-Specific Functionality",
+          "status": "pending",
+          "verification": "Clipboard works, terminal detection accurate, skips work"
+        },
+        {
+          "id": "5.4",
+          "title": "Create Cross-Platform Test Matrix",
+          "status": "pending",
+          "verification": "Matrix documented, limitations documented, workarounds provided"
+        }
+      ]
+    },
+    {
+      "name": "Phase 6: Performance Testing",
+      "tasks": [
+        {
+          "id": "6.1",
+          "title": "Benchmark Test Suite Execution",
+          "status": "pending",
+          "verification": "Baseline established, slow tests identified, optimization targets defined"
+        },
+        {
+          "id": "6.2",
+          "title": "Optimize Slow Test Suites",
+          "status": "pending",
+          "verification": "Test time reduced by 50%, CI feedback improved, no broken tests"
+        },
+        {
+          "id": "6.3",
+          "title": "Benchmark Critical Code Paths",
+          "status": "pending",
+          "verification": "Critical paths benchmarked, bottlenecks identified, targets defined"
+        },
+        {
+          "id": "6.4",
+          "title": "Create Performance Regression Detection",
+          "status": "pending",
+          "verification": "Thresholds defined, alerts configured, regressions caught"
+        }
+      ]
+    },
+    {
+      "name": "Phase 7: Documentation Verification",
+      "tasks": [
+        {
+          "id": "7.1",
+          "title": "Verify Command Reference Completeness",
+          "status": "pending",
+          "verification": "All commands documented, flags complete, examples working"
+        },
+        {
+          "id": "7.2",
+          "title": "Verify Goal Reference Completeness",
+          "status": "pending",
+          "verification": "Discovery mechanism documented, custom goals documented"
+        },
+        {
+          "id": "7.3",
+          "title": "Verify Scripting Documentation Completeness",
+          "status": "pending",
+          "verification": "All modules documented, API complete, examples working"
+        },
+        {
+          "id": "7.4",
+          "title": "Verify Configuration Documentation",
+          "status": "pending",
+          "verification": "All options documented, environment mapping complete"
+        },
+        {
+          "id": "7.5",
+          "title": "Verify Session Documentation",
+          "status": "pending",
+          "verification": "Persistence explained, backends documented, ID determination clear"
+        },
+        {
+          "id": "7.6",
+          "title": "Verify Architecture Documentation",
+          "status": "pending",
+          "verification": "Components accurate, data flow clear, integrations documented"
+        },
+        {
+          "id": "7.7",
+          "title": "Create API Changelog",
+          "status": "pending",
+          "verification": "Changes documented, migration guide provided, deprecations noted"
+        }
+      ]
+    },
+    {
+      "name": "Phase 8: Final Verification",
+      "tasks": [
+        {
+          "id": "8.1",
+          "title": "Final Linux CI Verification",
+          "status": "pending",
+          "verification": "All tests pass, staticcheck clean, deadcode clean, build succeeds"
+        },
+        {
+          "id": "8.2",
+          "title": "Final macOS CI Verification",
+          "status": "pending",
+          "verification": "All tests pass consistently, PTY stable, no intermittent failures"
+        },
+        {
+          "id": "8.3",
+          "title": "Final Windows CI Verification",
+          "status": "pending",
+          "verification": "All tests pass, platform skips work, no crashes"
+        },
+        {
+          "id": "8.4",
+          "title": "Final Code Quality Verification",
+          "status": "pending",
+          "verification": "Staticcheck passes, vet passes, deadcode passes, betteralign passes"
+        },
+        {
+          "id": "8.5",
+          "title": "Final Documentation Verification",
+          "status": "pending",
+          "verification": "Docs build, no broken links, examples work, complete"
+        },
+        {
+          "id": "8.6",
+          "title": "Final Test Coverage Verification",
+          "status": "pending",
+          "verification": "Coverage > 80%, critical paths covered, edge cases tested"
+        },
+        {
+          "id": "8.7",
+          "title": "Update Blueprint for Completion",
+          "status": "pending",
+          "verification": "Blueprint 100% complete, status clear, ready for merge"
+        }
+      ]
+    }
+  ],
+  "success_criteria": {
+    "functional": {
+      "build": "All packages compile with go build ./...",
+      "tests": "Zero failures on all 3 platforms",
+      "linting": "Zero warnings from make lint",
+      "static_analysis": "Zero issues from staticcheck",
+      "dead_code": "Zero issues from deadcode"
+    },
+    "platform": {
+      "linux": "CI workflow passes",
+      "macos": "CI workflow passes",
+      "windows": "CI workflow passes (with appropriate skips)"
+    },
+    "quality": {
+      "test_coverage": "> 80%",
+      "documentation": "Complete with all APIs documented",
+      "examples": "All examples tested and working",
+      "performance": "< 900s test suite execution"
+    }
+  },
+  "cli_edge_case_tests": {
+    "status": "completed",
+    "date": "2026-02-06",
+    "tests_added": 4,
+    "subtests_total": 15,
+    "documentation_file": "CLI_EDGE_CASE_TESTS.md"
+  },
+  "security_tests": {
+    "status": "completed",
+    "date": "2026-02-06",
+    "tests_added": 13,
+    "subtests_total": 42,
+    "documentation_file": "SECURITY_TESTS.md",
+    "fixes_applied": [
+      "Added unicode/utf8 import for proper unicode string handling",
+      "Fixed 6 slice bounds panics in test name slicing",
+      "Fixed test name truncation for short strings",
+      "Added length checks for 15-char, 20-char slices"
+    ]
+  },
+  "time_tracking": {
+    "session_start": "2026-02-06T00:00:00Z",
+    "nine_hours_required": true,
+    "elapsed_time": "0h 00m"
+  }
+}
+

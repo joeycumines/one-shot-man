@@ -289,6 +289,9 @@ Example (minimal):
 }
 ```
 
+A complete example demonstrating all available features is available at:
+[custom-goal-example.json](../../custom-goal-example.json)
+
 Authoring tip: Start with a `custom` handler only when you need custom runtime logic not provided by `contextManager`.
 
 ---

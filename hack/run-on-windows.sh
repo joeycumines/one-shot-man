@@ -1,201 +1,198 @@
 #!/bin/sh
 
-# run-on-windows.sh - Execute command on Windows via WSL
-# This script snapshots the git repo, transports it to Windows, and executes a command
-# Usage: ./hack/run-on-windows.sh <host> [command] [args...]
+# ==============================================================================
+# SCRIPT: run-on-windows.sh
+# PURPOSE:
+#   Executes a command on a remote Windows machine (running OpenSSH Server &
+#   PowerShell 7) within a temporary, ephemeral clone of the current local
+#   git repository state.
+#
+# FLOW:
+#   1. LOCAL:  Snapshot git repo -> tar -> base64.
+#   2. LOCAL:  Base64 encode user arguments to prevent quoting injection.
+#   3. LOCAL:  Construct a PowerShell payload that handles the logic.
+#   4. SSH:    Transport the payload and the data stream.
+#   5. REMOTE: PowerShell creates an isolated TEMP dir (Security Fix).
+#   6. REMOTE: PowerShell translates path using `wslpath`.
+#   7. REMOTE: Bash decodes/untars stream strictly into TEMP (Security Fix).
+#   8. REMOTE: Bash executes command using decoded arguments.
+#   9. REMOTE: PowerShell `finally` block guarantees cleanup.
+#
+# REQUIREMENTS:
+#   Local:  sh, git, tar, ssh, sed, base64
+#   Remote: OpenSSH Server, PowerShell 7 (default shell), WSL enabled (bash.exe)
+#
+# USAGE:
+#   ./run-on-windows.sh <destination> [command] [arguments...]
+#
+#   <destination> - The remote user@host (e.g., 'me@192.168.1.50')
+#   [command]     - Optional command to run (defaults to 'ls -la')
+#
+#   Examples:
+#     hack/run-on-windows.sh user@winbox make
+# ==============================================================================
 
 set -e
 
+# Enable pipefail if available to catch git/tar errors in the pipeline
+if set -o | grep -q "pipefail"; then set -o pipefail; fi
+
+# --- 1. Environment & Context Validation ---
+
 if [ -z "$1" ]; then
-  echo "Usage: $0 <host> [command] [args...]" >&2
+  echo "Usage: $0 <destination> [command] [arguments...]" >&2
+  echo "Example: $0 user@winbox make test" >&2
   exit 1
 fi
 
 SSH_HOST="$1"
 shift
 
-if [ ! -d ".git" ]; then
-  echo "Error: Must be run from git root" >&2
+# Fix: Resolve Repository Root to prevent CWD errors
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$REPO_ROOT" ]; then
+  echo "Error: Must be run from within a git repository." >&2
   exit 1
 fi
 
-# Serialize arguments (NUL-delimited)
-if [ $# -gt 0 ]; then
-  ARGS_B64=$(printf '%s\0' "$@" | base64 | tr -d '\n')
+# --- 2. Robust Argument Serialization ---
+
+if [ $# -eq 0 ]; then
+  # Default command: ls -Force (PowerShell syntax)
+  ARGS_B64=$(printf '%s\0' "ls" "-Force" | base64 | tr -d '\n')
 else
-  ARGS_B64=$(printf '%s\0' "ls" "-la" | base64 | tr -d '\n')
+  # Serialize args to NUL-delimited stream -> Base64
+  ARGS_B64=$(printf '%s\0' "$@" | base64 | tr -d '\n')
 fi
 
-# Create bash script that will run under bash.exe on Windows
-# Gets args from file, reads tar from stdin
-BASH_SCRIPT=$(mktemp -t osm-bash-XXXXXX)
-WRAPPER_B64_FILE=$(mktemp -t osm-wrapper-XXXXXX)
-trap "rm -f '$BASH_SCRIPT' '$WRAPPER_B64_FILE'" EXIT
+# --- 3. Construct Remote PowerShell Payload ---
 
-cat > "$BASH_SCRIPT" << 'EOF'
-#!/bin/bash
-set -e
-echo "[DEBUG] Bash script started" >&2
+REMOTE_PS_TEMPLATE=$(
+  cat <<'EOF'
+$ErrorActionPreference = 'Stop';
+$exitCode = 0;
 
-# Get args from file
-ARGS_B64=$(cat args.b64)
-if [ -z "$ARGS_B64" ]; then
-  echo "[ERROR] ARGS_B64 not set" >&2
-  exit 1
-fi
+$tempPath = Join-Path $env:TEMP "wsl-run-$([Guid]::NewGuid())";
+$tempDir  = New-Item -ItemType Directory -Path $tempPath -Force;
 
-# Create temp directory
-TEMP_DIR="$(mktemp -d)"
-echo "[DEBUG] Temp directory: $TEMP_DIR" >&2
-
-# Cleanup trap
-cleanup() {
-  rm -rf "$TEMP_DIR"
-}
-trap cleanup EXIT
-
-# Extract tar from stdin to temp directory
-echo "[DEBUG] Extracting tar to $TEMP_DIR..." >&2
-base64 -d | tar -x -C "$TEMP_DIR"
-
-# Change to temp directory
-cd "$TEMP_DIR"
-
-# Decode and execute arguments
-echo "$ARGS_B64" | base64 -d | xargs -0 sh -c 'exec "$@"' --
-EOF
-
-# Encode bash script
-BASH_B64=$(base64 < "$BASH_SCRIPT" | tr -d '\n')
-
-# Create simple PowerShell wrapper that:
-# 1. Sets environment variables
-# 2. Reads stdin (base64 tar)
-# 3. Pipes stdin to bash.exe with the script
-cat << 'PS_EOF' | base64 | tr -d '\n' > "$WRAPPER_B64_FILE"
-$ErrorActionPreference = "Stop";
-trap { Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue };
-
-# Create temp directory
-$tempDir = Join-Path $env:TEMP "osm-run-$([Guid]::NewGuid())";
-New-Item -ItemType Directory -Path $tempDir -Force | Out-Null;
-Write-Host "[DEBUG] Created temp dir: $tempDir";
-
-# Decode bash script
-$bashScriptPath = "$tempDir\script.sh";
-$bashScriptContent = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($env:BASH_B64));
-# Ensure LF line endings for bash
-$bashScriptContent = $bashScriptContent.Replace("`r`n", "`n");
-[System.IO.File]::WriteAllText($bashScriptPath, $bashScriptContent);
-Write-Host "[DEBUG] Wrote bash script to: $bashScriptPath";
-Write-Host "[DEBUG] Bash script content:`n$bashScriptContent";
-
-# Write args to file
-$argsPath = "$tempDir\args.b64";
-[System.IO.File]::WriteAllText($argsPath, $env:ARGS_B64);
-
-# Note: bash.exe on Windows doesn't require execute bit for scripts
-
-# Get wsl.exe path (preferred over bash.exe)
-$wslExe = "C:\Windows\system32\wsl.exe";
-if (!(Test-Path $wslExe)) {
-  [Console]::Error.WriteLine("[ERROR] wsl.exe not found");
-  exit 1
-}
-
-# Resolve WSL path for temp dir using bash to call wslpath
-$wslPathCmd = "wslpath -u '$tempDir'";
-$wslTempDir = (& $wslExe --exec bash -c $wslPathCmd);
-
-if ($null -eq $wslTempDir -or $wslTempDir -eq "") {
-    [Console]::Error.WriteLine("[ERROR] wslpath returned empty/null");
-    # Fallback to manual conversion assuming /mnt/c or /c
-    # Try to detect mount point
-    $mountPoint = (& $wslExe --exec bash -c "if [ -d /mnt/c ]; then echo /mnt/c; else echo /c; fi");
-    $wslTempDir = $tempDir.Replace('\', '/').Replace('C:', $mountPoint).Replace('c:', $mountPoint);
-    Write-Host "[DEBUG] Fallback WSL path: $wslTempDir";
-} else {
-    $wslTempDir = $wslTempDir.Trim();
-}
-Write-Host "[DEBUG] WSL temp dir: $wslTempDir";
-
-# Read all stdin (base64 tar data)
-$stdinData = [Console]::In.ReadToEnd();
-Write-Host "[DEBUG] Read stdin length: $($stdinData.Length)";
-
-# Execute: pipe stdin to wsl.exe
-# The wsl.exe process will inherit the environment variable
-$processInfo = New-Object System.Diagnostics.ProcessStartInfo;
-$processInfo.FileName = $wslExe;
-# Explicitly cd to the directory and run script
-$processInfo.Arguments = "--exec bash -c 'cd `"$wslTempDir`" && bash script.sh'";
-$processInfo.WorkingDirectory = $tempDir;
-$processInfo.RedirectStandardInput = $true;
-$processInfo.RedirectStandardOutput = $true;
-$processInfo.RedirectStandardError = $true;
-$processInfo.UseShellExecute = $false;
-# ARGS_B64 is now in a file
-
-$process = New-Object System.Diagnostics.Process;
-$process.StartInfo = $processInfo;
-$process.Start() | Out-Null;
-
-# Write stdin to the process
 try {
-    $process.StandardInput.Write($stdinData);
-    $process.StandardInput.Close();
-} catch {
-    [Console]::Error.WriteLine("[ERROR] Failed to write to stdin: $_");
-    if ($process.HasExited) {
-        $stderr = $process.StandardError.ReadToEnd();
-        $stdout = $process.StandardOutput.ReadToEnd();
-        [Console]::Error.WriteLine("[ERROR] Process exited early with code $($process.ExitCode). Stderr: $stderr");
-        [Console]::Write("STDOUT: $stdout");
+    # 1. Path Translation (Fix: Pass as argument to avoid Env/Injection issues)
+    # Uses Absolute Path to bash.exe for reliability
+    $bash = "C:\Windows\System32\bash.exe";
+
+    $wslPath = ($null | & $bash -c 'wslpath -u "$1"' -- "$($tempDir.FullName)").Trim();
+
+    if (-not $wslPath) { throw "Failed to translate Windows path to WSL path."; }
+
+    # 2. Stream Extraction (Stdin -> Tar)
+    # Fix: Enable pipefail in bash. Pass path as arg $1 to prevent injection.
+    $p = New-Object System.Diagnostics.Process;
+    $p.StartInfo.FileName = $bash;
+    # Note: Double quotes inside the PowerShell string must be escaped ("").
+    $p.StartInfo.Arguments = "-c 'set -o pipefail; base64 -d | tar -x -f - -C ""$1""' -- ""$wslPath""";
+    $p.StartInfo.UseShellExecute = $false;
+    $p.StartInfo.RedirectStandardInput = $true;
+    $p.StartInfo.RedirectStandardOutput = $false; # Inherit Console visibility
+    $p.StartInfo.RedirectStandardError = $false;  # Inherit Console visibility
+
+    $p.Start() | Out-Null;
+
+    # Explicitly pipe parent Stdin to Process Stdin as raw binary to prevent encoding corruption
+    $parentIn = [Console]::OpenStandardInput();
+    $childIn  = $p.StandardInput.BaseStream;
+    $buffer   = New-Object byte[] 81920;
+
+    do {
+        $count = $parentIn.Read($buffer, 0, $buffer.Length);
+        if ($count -gt 0) {
+            $childIn.Write($buffer, 0, $count);
+        }
+    } while ($count -gt 0);
+
+    $childIn.Flush();
+    $childIn.Close(); # Vital: Close Stdin to signal EOF to base64/tar
+
+    $p.WaitForExit();
+
+    if ($p.ExitCode -ne 0) { throw "Tar extraction failed (Exit Code: $($p.ExitCode))."; }
+
+    # 3. Argument Decoding
+    $b64Args = '__ARGS_B64__';
+    $bytes = [System.Convert]::FromBase64String($b64Args);
+    $decodedArgs = [System.Text.Encoding]::UTF8.GetString($bytes);
+
+    # Split by NULL char.
+    $allArgs = $decodedArgs.Split([char]0);
+
+    # Fix: Robust Slicing (Handle trailing empty string from split)
+    if ($allArgs.Length -gt 1) {
+        $cleanArgs = $allArgs[0..($allArgs.Length - 2)]
+    } else {
+        $cleanArgs = @()
+    }
+
+    if ($cleanArgs.Length -gt 0) {
+        $cmd = $cleanArgs[0];
+        $runArgs = @();
+        if ($cleanArgs.Length -gt 1) {
+            $runArgs = $cleanArgs[1..($cleanArgs.Length - 1)];
+        }
+
+        # 4. Execution
+        Set-Location -Path $tempDir.FullName;
+
+        # Fix: Use Splatting (@runArgs) to prevent array binding errors
+        & $cmd @runArgs;
+
+        $exitCode = $LASTEXITCODE;
     }
 }
+catch {
+    Write-Error $_.Exception.Message;
+    $exitCode = 1;
+}
+finally {
+    # 5. Cleanup
+    Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue;
+}
 
-# Read output BEFORE waiting to avoid deadlocks
-$stdout = $process.StandardOutput.ReadToEnd();
-$stderr = $process.StandardError.ReadToEnd();
-$process.WaitForExit();
-$exitCode = $process.ExitCode;
-Write-Host "[DEBUG] Exit code: $exitCode";
-[Console]::Write($stdout);
-if ($stderr) { [Console]::Error.WriteLine($stderr) };
+exit $exitCode;
+EOF
+)
 
-# Cleanup
-Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue;
-PS_EOF
+# Inject args
+REMOTE_PS_SCRIPT=$(echo "$REMOTE_PS_TEMPLATE" | sed "s|__ARGS_B64__|$ARGS_B64|")
 
-WRAPPER_B64=$(cat "$WRAPPER_B64_FILE")
+# --- 4. Transport Preparation ---
 
-echo ">>> Syncing to $SSH_HOST..." >&2
+PS_PAYLOAD_B64=$(printf '%s' "$REMOTE_PS_SCRIPT" | base64 | tr -d '\n')
 
-# Generate tar locally, pipe through SSH with wrapper script
-# Capture: tracked files (working dir versions) + untracked files
-# Note: Deleted files (working dir deleted but not staged) are filtered out
-FILELIST=$(mktemp -t osm-filelist-XXXXXX)
-trap "rm -f '$FILELIST'" EXIT
-
-# Get all tracked files that exist in working directory
-git ls-files -c -z | while IFS= read -r -d '' f; do
-  [ -e "$f" ] && printf '%s\0' "$f"
-done > "$FILELIST"
-
-# Add untracked files
-git ls-files -o --exclude-standard -z >> "$FILELIST"
-
-# Validate file list is not empty
-if [ ! -s "$FILELIST" ]; then
-  echo "Error: No files to transfer" >&2
+# SAFETY CHECK: Windows Command Line Limit
+# 32767 chars is the hard limit for CreateProcess.
+# We reserve ~2000 chars for the wrapper overhead.
+PAYLOAD_LEN=${#PS_PAYLOAD_B64}
+if [ "$PAYLOAD_LEN" -gt 30000 ]; then
+  echo "Error: Argument list too long ($PAYLOAD_LEN bytes)." >&2
+  echo "        Total serialized payload exceeds Windows command line limit (30KB)." >&2
   exit 1
 fi
 
-# Construct the PowerShell command directly
-PS_CMD="\$env:ARGS_B64='$ARGS_B64'; \$env:BASH_B64='$BASH_B64'; \$s = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('$WRAPPER_B64')); Invoke-Expression \$s"
+# Wrapper: Decodes and executes the payload.
+# Note: We use 'powershell' (v5.1+) for maximum compatibility, though 'pwsh' (v7) is preferred if available.
+REMOTE_WRAPPER="powershell -NoProfile -NonInteractive -Command \"\$encoded='$PS_PAYLOAD_B64'; \$script=[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(\$encoded)); Invoke-Expression \$script\""
 
-# Encode the PowerShell command as base64 (UTF-16LE for EncodedCommand)
-PS_CMD_B64=$(printf '%s' "$PS_CMD" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n')
+# --- 5. Execution Pipeline ---
+echo ">>> Syncing repository to $SSH_HOST..." >&2
 
-tar --null -T "$FILELIST" -c -f - | base64 | tr -d '\n' |
-  ssh "$SSH_HOST" "pwsh -NoProfile -NonInteractive -EncodedCommand $PS_CMD_B64" || exit $?
+# Pipeline Logic:
+# 1. git ls-files: List all files (Nul terminated) relative to root.
+# 2. perl: Filters out files that don't exist on disk (Fixes 'Ghost File' crash).
+# 3. tar: Archives files. Critical: -C "$REPO_ROOT" ensures correct context.
+# 4. base64: Encodes for transport.
+# 5. ssh: Executes wrapper.
+
+git ls-files -c -o --exclude-standard -z |
+  perl -0ne 'print if -e' |
+  tar -C "$REPO_ROOT" --null -T - -c -f - |
+  base64 |
+  ssh -T "$SSH_HOST" "$REMOTE_WRAPPER"

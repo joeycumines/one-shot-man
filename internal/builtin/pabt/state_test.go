@@ -1,6 +1,7 @@
 package pabt
 
 import (
+	"errors"
 	"sync"
 	"testing"
 
@@ -388,5 +389,194 @@ func TestState_canExecuteAction_ANDWithinGroup(t *testing.T) {
 
 	if canExecuteAction(state, action) {
 		t.Error("action should not be executable when any AND condition fails")
+	}
+}
+
+// TestActionGeneratorErrorMode_M2 tests the M-2 fix for configurable error handling.
+func TestActionGeneratorErrorMode_M2(t *testing.T) {
+	t.Parallel()
+
+	bb := new(btmod.Blackboard)
+	state := NewState(bb)
+
+	// Create a failed condition that matches the effect value we'll use
+	failedCond := NewSimpleCond("testKey", func(v any) bool { return true })
+
+	// Helper to create an action with an effect matching the test condition
+	createActionWithEffect := func(name string) pabtpkg.IAction {
+		effect := NewSimpleEffect("testKey", "anyValue") // Effect key matches failed condition key
+		return NewSimpleAction(nil, pabtpkg.Effects{effect}, nil)
+	}
+
+	// Test 1: Default mode is Fallback
+	t.Run("default_mode_is_fallback", func(t *testing.T) {
+		mode := state.GetActionGeneratorErrorMode()
+		if mode != ActionGeneratorErrorFallback {
+			t.Errorf("Expected default mode to be Fallback, got %v", mode)
+		}
+	})
+
+	// Test 2: Fallback mode - generator error falls back to static actions
+	t.Run("fallback_mode_falls_back_to_static", func(t *testing.T) {
+		state.SetActionGeneratorErrorMode(ActionGeneratorErrorFallback)
+
+		// Register a static action with matching effect
+		staticAction := createActionWithEffect("StaticAction")
+		state.RegisterAction("StaticAction", staticAction)
+
+		// Set generator that returns an error
+		state.SetActionGenerator(func(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
+			return nil, errors.New("generator failed")
+		})
+
+		actions, err := state.Actions(failedCond)
+		if err != nil {
+			t.Errorf("Fallback mode should not return error, got: %v", err)
+		}
+		if len(actions) != 1 {
+			t.Errorf("Expected 1 static action in fallback mode, got %d", len(actions))
+		}
+
+		// Clear the action and generator for next test
+		state.actions = NewActionRegistry()
+		state.SetActionGenerator(nil)
+	})
+
+	// Test 3: Strict mode - generator error is returned
+	t.Run("strict_mode_returns_error", func(t *testing.T) {
+		state.SetActionGeneratorErrorMode(ActionGeneratorErrorStrict)
+
+		// Set generator that returns an error
+		state.SetActionGenerator(func(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
+			return nil, errors.New("generator failed in strict mode")
+		})
+
+		actions, err := state.Actions(failedCond)
+		if err == nil {
+			t.Error("Strict mode should return error from generator")
+		}
+		if actions != nil {
+			t.Errorf("Strict mode should not return actions on error, got %d", len(actions))
+		}
+
+		// Clear generator for next test
+		state.SetActionGenerator(nil)
+	})
+
+	// Test 4: Strict mode - successful generator works normally
+	t.Run("strict_mode_success_works", func(t *testing.T) {
+		state.SetActionGeneratorErrorMode(ActionGeneratorErrorStrict)
+
+		// Set generator that succeeds with a matching action
+		generatedAction := createActionWithEffect("GeneratedAction")
+		state.SetActionGenerator(func(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
+			return []pabtpkg.IAction{generatedAction}, nil
+		})
+
+		actions, err := state.Actions(failedCond)
+		if err != nil {
+			t.Errorf("Strict mode should not return error on success, got: %v", err)
+		}
+		if len(actions) != 1 {
+			t.Errorf("Expected 1 generated action, got %d", len(actions))
+		}
+
+		// Clear generator for next test
+		state.SetActionGenerator(nil)
+	})
+
+	// Test 5: Fallback mode - successful generator works normally
+	t.Run("fallback_mode_success_works", func(t *testing.T) {
+		state.SetActionGeneratorErrorMode(ActionGeneratorErrorFallback)
+
+		// Set generator that succeeds with a matching action
+		generatedAction := createActionWithEffect("GeneratedAction2")
+		state.SetActionGenerator(func(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
+			return []pabtpkg.IAction{generatedAction}, nil
+		})
+
+		actions, err := state.Actions(failedCond)
+		if err != nil {
+			t.Errorf("Fallback mode should not return error on success, got: %v", err)
+		}
+		if len(actions) != 1 {
+			t.Errorf("Expected 1 generated action, got %d", len(actions))
+		}
+
+		// Clear generator for next test
+		state.SetActionGenerator(nil)
+	})
+
+	// Test 6: Mode can be changed dynamically
+	t.Run("mode_can_be_changed_dynamically", func(t *testing.T) {
+		// Start in fallback mode
+		state.SetActionGeneratorErrorMode(ActionGeneratorErrorFallback)
+		if state.GetActionGeneratorErrorMode() != ActionGeneratorErrorFallback {
+			t.Error("Failed to set mode to Fallback")
+		}
+
+		// Switch to strict mode
+		state.SetActionGeneratorErrorMode(ActionGeneratorErrorStrict)
+		if state.GetActionGeneratorErrorMode() != ActionGeneratorErrorStrict {
+			t.Error("Failed to set mode to Strict")
+		}
+
+		// Switch back to fallback
+		state.SetActionGeneratorErrorMode(ActionGeneratorErrorFallback)
+		if state.GetActionGeneratorErrorMode() != ActionGeneratorErrorFallback {
+			t.Error("Failed to set mode back to Fallback")
+		}
+	})
+
+	// Test 7: Thread safety of mode changes
+	t.Run("mode_changes_are_thread_safe", func(t *testing.T) {
+		var wg sync.WaitGroup
+
+		// Concurrent readers and writers
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for j := 0; j < 100; j++ {
+					state.GetActionGeneratorErrorMode()
+				}
+			}()
+		}
+
+		for i := 0; i < 5; i++ {
+			wg.Add(1)
+			go func(n int) {
+				defer wg.Done()
+				for j := 0; j < 100; j++ {
+					if n%2 == 0 {
+						state.SetActionGeneratorErrorMode(ActionGeneratorErrorFallback)
+					} else {
+						state.SetActionGeneratorErrorMode(ActionGeneratorErrorStrict)
+					}
+				}
+			}(i)
+		}
+
+		wg.Wait()
+	})
+}
+
+// TestActionGeneratorErrorMode_String tests String() method.
+func TestActionGeneratorErrorMode_String(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		mode   ActionGeneratorErrorMode
+		expect string
+	}{
+		{ActionGeneratorErrorFallback, "fallback"},
+		{ActionGeneratorErrorStrict, "strict"},
+		{ActionGeneratorErrorMode(99), "unknown"},
+	}
+
+	for _, tt := range tests {
+		if got := tt.mode.String(); got != tt.expect {
+			t.Errorf("ActionGeneratorErrorMode(%d).String() = %q, want %q", tt.mode, got, tt.expect)
+		}
 	}
 }

@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -16,6 +18,8 @@ type Config struct {
 	Commands map[string]map[string]string
 	// Sessions configuration controls automatic session cleanup and retention.
 	Sessions SessionConfig
+	// Warnings contains any warnings generated during config loading
+	Warnings []string
 }
 
 // NewConfig creates a new empty configuration.
@@ -30,6 +34,7 @@ func NewConfig() *Config {
 			AutoCleanupEnabled:   true,
 			CleanupIntervalHours: 24,
 		},
+		Warnings: make([]string, 0),
 	}
 }
 
@@ -89,6 +94,7 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 	scanner := bufio.NewScanner(r)
 
 	var currentCommand string
+	var inSessionsSection bool
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -98,11 +104,18 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 			continue
 		}
 
-		// Check for command section header [command_name]
+		// Check for section header [section_name]
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			currentCommand = strings.Trim(line, "[]")
-			if config.Commands[currentCommand] == nil {
-				config.Commands[currentCommand] = make(map[string]string)
+			sectionName := strings.Trim(line, "[]")
+			if sectionName == "sessions" {
+				inSessionsSection = true
+				currentCommand = ""
+			} else {
+				inSessionsSection = false
+				currentCommand = sectionName
+				if config.Commands[currentCommand] == nil {
+					config.Commands[currentCommand] = make(map[string]string)
+				}
 			}
 			continue
 		}
@@ -120,12 +133,25 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 		}
 
 		// Store in appropriate section
-		if currentCommand == "" {
+		if inSessionsSection {
+			// Session configuration option
+			if err := parseSessionOption(&config.Sessions, optionName, value); err != nil {
+				return nil, fmt.Errorf("invalid session option %q: %w", optionName, err)
+			}
+		} else if currentCommand == "" {
 			// Global option
 			config.Global[optionName] = value
+			// Validate global option name
+			if !isKnownGlobalOption(optionName) {
+				config.addWarning("unknown global option: %q (value: %q)", optionName, value)
+			}
 		} else {
 			// Command-specific option
 			config.Commands[currentCommand][optionName] = value
+			// Validate command option name
+			if !isKnownCommandOption(currentCommand, optionName) {
+				config.addWarning("unknown option for command %q: %q (value: %q)", currentCommand, optionName, value)
+			}
 		}
 	}
 
@@ -134,6 +160,145 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 	}
 
 	return config, nil
+}
+
+// Known global and command-specific configuration options.
+// This is used for schema validation to detect typos and unknown options.
+var knownGlobalOptions = map[string]bool{
+	"verbose":    true,
+	"color":      true,
+	"pager":      true,
+	"format":     true,
+	"timeout":    true,
+	"session.id": true,
+	"output":     true,
+	"editor":     true,
+	"debug":      true,
+	"quiet":      true,
+}
+
+// Known options per command.
+var knownCommandOptions = map[string]map[string]bool{
+	"help": {
+		"pager":  true,
+		"format": true,
+		"output": true,
+	},
+	"version": {
+		"format": true,
+		"output": true,
+	},
+	"prompt": {
+		"template":    true,
+		"output":      true,
+		"editor":      true,
+		"add-context": true,
+	},
+	"session": {
+		"list":   true,
+		"delete": true,
+		"export": true,
+		"import": true,
+	},
+}
+
+// isKnownGlobalOption checks if an option is a known global option.
+func isKnownGlobalOption(name string) bool {
+	return knownGlobalOptions[name]
+}
+
+// isKnownCommandOption checks if an option is known for a specific command.
+func isKnownCommandOption(command, name string) bool {
+	// Also check global options as they can be used in command sections
+	if knownGlobalOptions[name] {
+		return true
+	}
+	if cmdOpts, ok := knownCommandOptions[command]; ok {
+		return cmdOpts[name]
+	}
+	return false
+}
+
+// addWarning adds a warning to the config's warnings list.
+func (c *Config) addWarning(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	c.Warnings = append(c.Warnings, msg)
+	slog.Warn("[Config] " + msg)
+}
+
+// parseSessionOption parses a session configuration option and updates the SessionConfig.
+// Supported options:
+//   - maxAgeDays <int>: Maximum age of sessions in days (default: 90)
+//   - maxCount <int>: Maximum number of sessions to keep (default: 100)
+//   - maxSizeMB <int>: Maximum total size of sessions in MB (default: 500)
+//   - autoCleanupEnabled <bool>: Whether automatic cleanup is enabled (default: true)
+//   - cleanupIntervalHours <int>: Hours between cleanup runs (default: 24)
+func parseSessionOption(sc *SessionConfig, name, value string) error {
+	switch name {
+	case "maxAgeDays":
+		age, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid integer value %q: %w", value, err)
+		}
+		if age < 0 {
+			return fmt.Errorf("maxAgeDays cannot be negative: %d", age)
+		}
+		sc.MaxAgeDays = age
+
+	case "maxCount":
+		count, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid integer value %q: %w", value, err)
+		}
+		if count < 0 {
+			return fmt.Errorf("maxCount cannot be negative: %d", count)
+		}
+		sc.MaxCount = count
+
+	case "maxSizeMB":
+		size, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid integer value %q: %w", value, err)
+		}
+		if size < 0 {
+			return fmt.Errorf("maxSizeMB cannot be negative: %d", size)
+		}
+		sc.MaxSizeMB = size
+
+	case "autoCleanupEnabled":
+		enabled, err := parseBool(value)
+		if err != nil {
+			return fmt.Errorf("invalid boolean value %q: %w", value, err)
+		}
+		sc.AutoCleanupEnabled = enabled
+
+	case "cleanupIntervalHours":
+		interval, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid integer value %q: %w", value, err)
+		}
+		if interval < 1 {
+			return fmt.Errorf("cleanupIntervalHours must be at least 1: %d", interval)
+		}
+		sc.CleanupIntervalHours = interval
+
+	default:
+		return fmt.Errorf("unknown session option: %s", name)
+	}
+	return nil
+}
+
+// parseBool parses a boolean value from string.
+// Accepts: true, false, 1, 0, yes, no (case-insensitive)
+func parseBool(s string) (bool, error) {
+	switch strings.ToLower(s) {
+	case "true", "1", "yes", "on":
+		return true, nil
+	case "false", "0", "no", "off":
+		return false, nil
+	default:
+		return false, fmt.Errorf("invalid boolean value: %s", s)
+	}
 }
 
 // GetGlobalOption returns a global configuration option.
@@ -166,4 +331,14 @@ func (c *Config) SetCommandOption(command, name, value string) {
 		c.Commands[command] = make(map[string]string)
 	}
 	c.Commands[command][name] = value
+}
+
+// GetWarnings returns any warnings generated during config loading.
+func (c *Config) GetWarnings() []string {
+	return c.Warnings
+}
+
+// HasWarnings returns true if there are any warnings.
+func (c *Config) HasWarnings() bool {
+	return len(c.Warnings) > 0
 }

@@ -12,6 +12,34 @@ import (
 // Compile-time interface check: State must implement pabtpkg.IState
 var _ pabtpkg.IState = (*State)(nil)
 
+// ActionGeneratorErrorMode specifies how ActionGenerator errors are handled.
+// This allows users to choose between lenient fallback behavior and strict
+// error handling for debugging parametric action generation.
+type ActionGeneratorErrorMode int
+
+const (
+	// ActionGeneratorErrorFallback logs errors at Warning level and falls back
+	// to static actions. This is the default behavior for production use.
+	ActionGeneratorErrorFallback ActionGeneratorErrorMode = iota
+
+	// ActionGeneratorErrorStrict logs errors at Error level and returns the error
+	// to the caller, preventing fallback. This is useful for debugging generator
+	// bugs in development/testing.
+	ActionGeneratorErrorStrict
+)
+
+// String returns the string representation of the error mode.
+func (m ActionGeneratorErrorMode) String() string {
+	switch m {
+	case ActionGeneratorErrorFallback:
+		return "fallback"
+	case ActionGeneratorErrorStrict:
+		return "strict"
+	default:
+		return "unknown"
+	}
+}
+
 // State implements pabtpkg.State (which is State[Condition]) interface backed by a bt.Blackboard.
 // It normalizes any key type to string for blackboard storage and provides
 // access to a registry of actions.
@@ -46,7 +74,12 @@ type State struct {
 	// If it accesses JavaScript state, it MUST use Bridge.RunOnLoopSync.
 	actionGenerator ActionGeneratorFunc
 
-	// mu protects actionGenerator from concurrent read/write
+	// actionGeneratorErrorMode determines how ActionGenerator errors are handled.
+	// Defaults to ActionGeneratorErrorFallback (log warning, use static actions).
+	// Set to ActionGeneratorErrorStrict to return errors instead of falling back.
+	actionGeneratorErrorMode ActionGeneratorErrorMode
+
+	// mu protects actionGenerator and actionGeneratorErrorMode from concurrent read/write
 	mu sync.RWMutex
 }
 
@@ -79,8 +112,9 @@ type ActionGeneratorFunc func(failed pabtpkg.Condition) ([]pabtpkg.IAction, erro
 // NewState creates a new State backed by the provided blackboard.
 func NewState(bb *btmod.Blackboard) *State {
 	return &State{
-		Blackboard: bb,
-		actions:    NewActionRegistry(),
+		Blackboard:               bb,
+		actions:                  NewActionRegistry(),
+		actionGeneratorErrorMode: ActionGeneratorErrorFallback, // Default to lenient behavior
 	}
 }
 
@@ -104,6 +138,24 @@ func (s *State) GetActionGenerator() ActionGeneratorFunc {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.actionGenerator
+}
+
+// SetActionGeneratorErrorMode sets how ActionGenerator errors are handled.
+// Use ActionGeneratorErrorFallback for lenient behavior (log warning, use static actions).
+// Use ActionGeneratorErrorStrict for strict behavior (log error, return error).
+//
+// Thread safety: The mode is protected by a mutex and can be set/cleared at any time.
+func (s *State) SetActionGeneratorErrorMode(mode ActionGeneratorErrorMode) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.actionGeneratorErrorMode = mode
+}
+
+// GetActionGeneratorErrorMode returns the current ActionGenerator error handling mode.
+func (s *State) GetActionGeneratorErrorMode() ActionGeneratorErrorMode {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.actionGeneratorErrorMode
 }
 
 // Variable implements pabtpkg.State.Variable(key any).
@@ -198,14 +250,20 @@ func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
 	// 1. Call ActionGenerator if set (parametric actions)
 	s.mu.RLock()
 	generator := s.actionGenerator
+	errorMode := s.actionGeneratorErrorMode
 	s.mu.RUnlock()
 
 	if generator != nil {
 		generatedActions, err := generator(failed)
 		if err != nil {
-			// Always log generator errors at Warning level - these could hide bugs
+			// Handle error based on configured mode
+			if errorMode == ActionGeneratorErrorStrict {
+				// Strict mode: log error and return it to caller
+				slog.Error("[PA-BT] ActionGenerator error (strict mode)", "error", err, "failedKey", failedKey)
+				return nil, fmt.Errorf("[PA-BT] ActionGenerator failed for key %v: %w", failedKey, err)
+			}
+			// Fallback mode: log warning and continue to static actions
 			slog.Warn("[PA-BT] ActionGenerator error, falling back to static actions", "error", err, "failedKey", failedKey)
-			// Don't fail completely - fall back to static actions
 		} else {
 			// Filter generated actions for relevance
 			for _, action := range generatedActions {

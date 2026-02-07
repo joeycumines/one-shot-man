@@ -627,3 +627,413 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 		}
 	})
 }
+
+func TestSessionConfigParsing_M2(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ValidSessionConfig", func(t *testing.T) {
+		configContent := `[sessions]
+maxAgeDays 30
+maxCount 50
+maxSizeMB 200
+autoCleanupEnabled false
+cleanupIntervalHours 12`
+
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		// Check session config values
+		if cfg.Sessions.MaxAgeDays != 30 {
+			t.Errorf("expected MaxAgeDays=30, got %d", cfg.Sessions.MaxAgeDays)
+		}
+		if cfg.Sessions.MaxCount != 50 {
+			t.Errorf("expected MaxCount=50, got %d", cfg.Sessions.MaxCount)
+		}
+		if cfg.Sessions.MaxSizeMB != 200 {
+			t.Errorf("expected MaxSizeMB=200, got %d", cfg.Sessions.MaxSizeMB)
+		}
+		if cfg.Sessions.AutoCleanupEnabled != false {
+			t.Errorf("expected AutoCleanupEnabled=false, got %v", cfg.Sessions.AutoCleanupEnabled)
+		}
+		if cfg.Sessions.CleanupIntervalHours != 12 {
+			t.Errorf("expected CleanupIntervalHours=12, got %d", cfg.Sessions.CleanupIntervalHours)
+		}
+	})
+
+	t.Run("SessionConfigWithOtherSections", func(t *testing.T) {
+		configContent := `verbose true
+
+[sessions]
+maxAgeDays 60
+
+[help]
+pager less`
+
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		// Check global option
+		if value, ok := cfg.GetGlobalOption("verbose"); !ok || value != "true" {
+			t.Errorf("expected verbose=true, got %s", value)
+		}
+
+		// Check session config
+		if cfg.Sessions.MaxAgeDays != 60 {
+			t.Errorf("expected MaxAgeDays=60, got %d", cfg.Sessions.MaxAgeDays)
+		}
+
+		// Check command option
+		if value, ok := cfg.GetCommandOption("help", "pager"); !ok || value != "less" {
+			t.Errorf("expected help.pager=less, got %s", value)
+		}
+	})
+
+	t.Run("InvalidIntegerValues", func(t *testing.T) {
+		invalidValues := []struct {
+			name  string
+			input string
+		}{
+			{"invalidMaxAgeDays", "maxAgeDays notanumber"},
+			{"invalidMaxCount", "maxCount abc"},
+			{"invalidMaxSizeMB", "maxSizeMB 12.5.3"},
+			{"invalidCleanupInterval", "cleanupIntervalHours xyz"},
+		}
+
+		for _, tc := range invalidValues {
+			t.Run(tc.name, func(t *testing.T) {
+				configContent := "[sessions]\n" + tc.input
+				_, err := LoadFromReader(strings.NewReader(configContent))
+				if err == nil {
+					t.Errorf("expected error for invalid value %q", tc.input)
+				}
+			})
+		}
+	})
+
+	t.Run("InvalidBooleanValues", func(t *testing.T) {
+		configContent := "[sessions]\nautoCleanupEnabled maybe"
+		_, err := LoadFromReader(strings.NewReader(configContent))
+		if err == nil {
+			t.Error("expected error for invalid boolean value")
+		}
+	})
+
+	t.Run("NegativeIntegerValues", func(t *testing.T) {
+		negativeValues := []struct {
+			name  string
+			input string
+		}{
+			{"negativeMaxAgeDays", "maxAgeDays -1"},
+			{"negativeMaxCount", "maxCount -10"},
+			{"negativeMaxSizeMB", "maxSizeMB -100"},
+		}
+
+		for _, tc := range negativeValues {
+			t.Run(tc.name, func(t *testing.T) {
+				configContent := "[sessions]\n" + tc.input
+				_, err := LoadFromReader(strings.NewReader(configContent))
+				if err == nil {
+					t.Errorf("expected error for negative value %q", tc.input)
+				}
+			})
+		}
+	})
+
+	t.Run("ZeroCleanupInterval", func(t *testing.T) {
+		configContent := "[sessions]\ncleanupIntervalHours 0"
+		_, err := LoadFromReader(strings.NewReader(configContent))
+		if err == nil {
+			t.Error("expected error for cleanupIntervalHours=0")
+		}
+	})
+
+	t.Run("UnknownSessionOption", func(t *testing.T) {
+		configContent := "[sessions]\nunknownOption value"
+		_, err := LoadFromReader(strings.NewReader(configContent))
+		if err == nil {
+			t.Error("expected error for unknown session option")
+		}
+	})
+
+	t.Run("BooleanTrueVariations", func(t *testing.T) {
+		trueValues := []string{"true", "1", "yes", "on", "TRUE", "Yes", "ON"}
+
+		for _, val := range trueValues {
+			configContent := "[sessions]\nautoCleanupEnabled " + val
+			cfg, err := LoadFromReader(strings.NewReader(configContent))
+			if err != nil {
+				t.Errorf("expected no error for %q, got: %v", val, err)
+				continue
+			}
+			if !cfg.Sessions.AutoCleanupEnabled {
+				t.Errorf("expected AutoCleanupEnabled=true for value %q", val)
+			}
+		}
+	})
+
+	t.Run("BooleanFalseVariations", func(t *testing.T) {
+		falseValues := []string{"false", "0", "no", "off", "FALSE", "No", "OFF"}
+
+		for _, val := range falseValues {
+			configContent := "[sessions]\nautoCleanupEnabled " + val
+			cfg, err := LoadFromReader(strings.NewReader(configContent))
+			if err != nil {
+				t.Errorf("expected no error for %q, got: %v", val, err)
+				continue
+			}
+			if cfg.Sessions.AutoCleanupEnabled {
+				t.Errorf("expected AutoCleanupEnabled=false for value %q", val)
+			}
+		}
+	})
+
+	t.Run("EmptySessionsSection", func(t *testing.T) {
+		configContent := "[sessions]\n\n[global]\nverbose true"
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		// Should have default values
+		if cfg.Sessions.MaxAgeDays != 90 {
+			t.Errorf("expected default MaxAgeDays=90, got %d", cfg.Sessions.MaxAgeDays)
+		}
+	})
+
+	t.Run("PartialSessionConfig", func(t *testing.T) {
+		configContent := `[sessions]
+maxAgeDays 45
+autoCleanupEnabled true`
+
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		// Check specified values
+		if cfg.Sessions.MaxAgeDays != 45 {
+			t.Errorf("expected MaxAgeDays=45, got %d", cfg.Sessions.MaxAgeDays)
+		}
+		if !cfg.Sessions.AutoCleanupEnabled {
+			t.Errorf("expected AutoCleanupEnabled=true, got %v", cfg.Sessions.AutoCleanupEnabled)
+		}
+
+		// Check default values for unspecified options
+		if cfg.Sessions.MaxCount != 100 {
+			t.Errorf("expected default MaxCount=100, got %d", cfg.Sessions.MaxCount)
+		}
+		if cfg.Sessions.MaxSizeMB != 500 {
+			t.Errorf("expected default MaxSizeMB=500, got %d", cfg.Sessions.MaxSizeMB)
+		}
+	})
+
+	t.Run("DefaultValuesWhenNoSessionsSection", func(t *testing.T) {
+		configContent := "verbose true"
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		// Should have all default values
+		if cfg.Sessions.MaxAgeDays != 90 {
+			t.Errorf("expected default MaxAgeDays=90, got %d", cfg.Sessions.MaxAgeDays)
+		}
+		if cfg.Sessions.MaxCount != 100 {
+			t.Errorf("expected default MaxCount=100, got %d", cfg.Sessions.MaxCount)
+		}
+		if cfg.Sessions.MaxSizeMB != 500 {
+			t.Errorf("expected default MaxSizeMB=500, got %d", cfg.Sessions.MaxSizeMB)
+		}
+		if !cfg.Sessions.AutoCleanupEnabled {
+			t.Errorf("expected default AutoCleanupEnabled=true, got %v", cfg.Sessions.AutoCleanupEnabled)
+		}
+		if cfg.Sessions.CleanupIntervalHours != 24 {
+			t.Errorf("expected default CleanupIntervalHours=24, got %d", cfg.Sessions.CleanupIntervalHours)
+		}
+	})
+}
+
+func TestConfigSchemaValidation_M1(t *testing.T) {
+	t.Parallel()
+
+	t.Run("UnknownGlobalOption", func(t *testing.T) {
+		configContent := "verbos true" // typo of "verbose"
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		if !cfg.HasWarnings() {
+			t.Error("expected warnings for unknown global option")
+		}
+
+		warnings := cfg.GetWarnings()
+		found := false
+		for _, w := range warnings {
+			if strings.Contains(w, "unknown global option") && strings.Contains(w, "verbos") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected warning about 'verbos', got: %v", warnings)
+		}
+	})
+
+	t.Run("UnknownCommandOption", func(t *testing.T) {
+		configContent := `[help]
+pagr less` // typo of "pager"
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		if !cfg.HasWarnings() {
+			t.Error("expected warnings for unknown command option")
+		}
+
+		warnings := cfg.GetWarnings()
+		found := false
+		for _, w := range warnings {
+			if strings.Contains(w, "unknown option") && strings.Contains(w, "pagr") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected warning about 'pagr', got: %v", warnings)
+		}
+	})
+
+	t.Run("KnownGlobalOption", func(t *testing.T) {
+		configContent := "verbose true"
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		if cfg.HasWarnings() {
+			t.Errorf("expected no warnings for known option, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("KnownCommandOption", func(t *testing.T) {
+		configContent := `[help]
+pager less`
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		if cfg.HasWarnings() {
+			t.Errorf("expected no warnings for known option, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("GlobalOptionInCommandSection", func(t *testing.T) {
+		// Global options should be valid in command sections too
+		configContent := `[help]
+verbose true`
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		if cfg.HasWarnings() {
+			t.Errorf("expected no warnings when using global option in command section, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("MultipleWarnings", func(t *testing.T) {
+		configContent := `verbos true
+colr auto
+
+[help]
+pagr less
+formt detailed`
+
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		warnings := cfg.GetWarnings()
+		if len(warnings) < 4 {
+			t.Errorf("expected at least 4 warnings, got %d: %v", len(warnings), warnings)
+		}
+
+		// Check for specific typos
+		warningText := strings.Join(warnings, " ")
+		if !strings.Contains(warningText, "verbos") {
+			t.Error("expected warning about 'verbos'")
+		}
+		if !strings.Contains(warningText, "colr") {
+			t.Error("expected warning about 'colr'")
+		}
+		if !strings.Contains(warningText, "pagr") {
+			t.Error("expected warning about 'pagr'")
+		}
+		if !strings.Contains(warningText, "formt") {
+			t.Error("expected warning about 'formt'")
+		}
+	})
+
+	t.Run("UnknownCommandSection", func(t *testing.T) {
+		// Options in unknown command sections should still generate warnings
+		configContent := `[unknowncmd]
+weirdoption value`
+
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		if !cfg.HasWarnings() {
+			t.Error("expected warnings for options in unknown command section")
+		}
+
+		warnings := cfg.GetWarnings()
+		found := false
+		for _, w := range warnings {
+			if strings.Contains(w, "weirdoption") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected warning about 'weirdoption', got: %v", warnings)
+		}
+	})
+
+	t.Run("NoWarningsForEmptyConfig", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader(""))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		if cfg.HasWarnings() {
+			t.Errorf("expected no warnings for empty config, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("WarningsPreservedAcrossNewConfig", func(t *testing.T) {
+		// Each NewConfig should start with empty warnings
+		cfg1 := NewConfig()
+		if cfg1.HasWarnings() {
+			t.Error("new config should not have warnings")
+		}
+
+		// Loading config with unknown option should add warnings
+		configContent := "unknownoption value"
+		cfg2, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if !cfg2.HasWarnings() {
+			t.Error("expected warnings after loading config with unknown options")
+		}
+	})
+}

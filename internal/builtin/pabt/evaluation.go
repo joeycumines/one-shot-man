@@ -3,6 +3,7 @@ package pabt
 import (
 	"container/list"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/dop251/goja"
@@ -379,6 +380,9 @@ type ExprCondition struct {
 	// jsObject stores the original JavaScript object for passthrough to action generator.
 	// This mirrors the behavior of JSCondition.
 	jsObject *goja.Object
+	// lastErr tracks the most recent error during compilation or evaluation.
+	// This allows distinguishing between legitimate false results and errors.
+	lastErr error
 }
 
 var _ Condition = (*ExprCondition)(nil)
@@ -430,13 +434,29 @@ type ExprEnv struct {
 // CRITICAL: This method makes ZERO Goja calls. All evaluation is pure Go.
 // This provides 10-100x performance improvement over JavaScript evaluation
 // for equivalent conditions.
+//
+// ERROR HANDLING (M-3 fix): Compilation and evaluation errors are now tracked
+// and logged to help distinguish from actual false results. Use LastError()
+// to retrieve the most recent error.
 func (c *ExprCondition) Match(value any) bool {
+	// Check nil first before any field access
 	if c == nil || c.expression == "" {
 		return false
 	}
 
+	// Clear previous error on each match attempt
+	c.mu.Lock()
+	c.lastErr = nil
+	c.mu.Unlock()
+
 	program, err := c.getOrCompileProgram()
 	if err != nil {
+		c.mu.Lock()
+		c.lastErr = fmt.Errorf("expression compilation failed: %w", err)
+		c.mu.Unlock()
+		slog.Error("[PA-BT] ExprCondition compilation error",
+			"expression", c.expression,
+			"error", err)
 		return false
 	}
 
@@ -446,6 +466,13 @@ func (c *ExprCondition) Match(value any) bool {
 	// Run the compiled program
 	result, err := expr.Run(program, env)
 	if err != nil {
+		c.mu.Lock()
+		c.lastErr = fmt.Errorf("expression evaluation failed: %w", err)
+		c.mu.Unlock()
+		slog.Error("[PA-BT] ExprCondition evaluation error",
+			"expression", c.expression,
+			"value", fmt.Sprintf("%v", value),
+			"error", err)
 		return false
 	}
 
@@ -453,6 +480,14 @@ func (c *ExprCondition) Match(value any) bool {
 	if b, ok := result.(bool); ok {
 		return b
 	}
+	// Non-boolean result is treated as error
+	c.mu.Lock()
+	c.lastErr = fmt.Errorf("expression returned non-boolean result: %T", result)
+	c.mu.Unlock()
+	slog.Warn("[PA-BT] ExprCondition non-boolean result",
+		"expression", c.expression,
+		"resultType", fmt.Sprintf("%T", result),
+		"result", fmt.Sprintf("%v", result))
 	return false
 }
 
@@ -504,6 +539,27 @@ func (c *ExprCondition) getOrCompileProgram() (*vm.Program, error) {
 // Mode returns EvalModeExpr.
 func (c *ExprCondition) Mode() EvaluationMode {
 	return EvalModeExpr
+}
+
+// LastError returns the most recent error from compilation or evaluation.
+// Returns nil if the last Match() call succeeded without error.
+// This allows distinguishing between legitimate false results and errors.
+func (c *ExprCondition) LastError() error {
+	if c == nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.lastErr
+}
+
+// JSObject returns the backing JavaScript object for this condition,
+// or nil if not set.
+func (c *ExprCondition) JSObject() *goja.Object {
+	if c == nil {
+		return nil
+	}
+	return c.jsObject
 }
 
 // FuncCondition implements pabtpkg.Condition using a Go function.

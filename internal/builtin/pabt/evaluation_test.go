@@ -1,6 +1,7 @@
 package pabt
 
 import (
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -500,5 +501,175 @@ func TestJSCondition_Match_ErrorCases_H8(t *testing.T) {
 			result := cond.Match("test")
 			require.False(t, result, "Iteration %d: nil matcher should return false", i)
 		}
+	})
+}
+
+// TestExprCondition_LastError_M3 is a test for M-3 fix.
+// Verifies that ExprCondition.LastError() correctly tracks compilation and evaluation errors.
+func TestExprCondition_LastError_M3(t *testing.T) {
+	t.Parallel()
+
+	// Test 1: Successful match should return nil error
+	t.Run("successful_match_returns_nil_error", func(t *testing.T) {
+		ClearExprCache()
+		cond := NewExprCondition("key", "value == 42")
+
+		result := cond.Match(42)
+		require.True(t, result, "Match should return true")
+		require.Nil(t, cond.LastError(), "LastError should be nil after successful match")
+	})
+
+	// Test 2: Legitimate false should return nil error
+	t.Run("legitimate_false_returns_nil_error", func(t *testing.T) {
+		ClearExprCache()
+		cond := NewExprCondition("key", "value == 42")
+
+		result := cond.Match(43)
+		require.False(t, result, "Match should return false")
+		require.Nil(t, cond.LastError(), "LastError should be nil for legitimate false result")
+	})
+
+	// Test 3: Syntax error in expression should return error
+	t.Run("syntax_error_returns_error", func(t *testing.T) {
+		ClearExprCache()
+		cond := NewExprCondition("key", "this is not valid !@#$%")
+
+		result := cond.Match(42)
+		require.False(t, result, "Match should return false for invalid expression")
+
+		err := cond.LastError()
+		require.NotNil(t, err, "LastError should be non-nil for syntax error")
+		require.True(t, strings.Contains(err.Error(), "compilation failed"),
+			"Error should mention compilation failure")
+	})
+
+	// Test 4: Runtime error during evaluation should return error
+	t.Run("runtime_error_returns_error", func(t *testing.T) {
+		ClearExprCache()
+		// Expression that will fail at runtime (e.g., accessing non-existent field)
+		cond := NewExprCondition("key", "value.nonExistentField > 10")
+
+		result := cond.Match("string value") // string has no nonExistentField
+		require.False(t, result, "Match should return false for evaluation error")
+
+		err := cond.LastError()
+		require.NotNil(t, err, "LastError should be non-nil for evaluation error")
+		require.True(t, strings.Contains(err.Error(), "evaluation failed"),
+			"Error should mention evaluation failure")
+	})
+
+	// Test 5: Expression with type mismatch (non-boolean-like) should return compilation error
+	t.Run("non_boolean_result_returns_error", func(t *testing.T) {
+		ClearExprCache()
+		// Expression that returns a number instead of boolean
+		// Due to expr.AsBool(), this fails at compile time, not evaluation
+		cond := NewExprCondition("key", "value + 1")
+
+		result := cond.Match(42)
+		require.False(t, result, "Match should return false for non-boolean result")
+
+		err := cond.LastError()
+		require.NotNil(t, err, "LastError should be non-nil for non-boolean result")
+		// The error will be about compilation (type conversion), not evaluation
+		require.True(t, strings.Contains(err.Error(), "compilation failed") ||
+			strings.Contains(err.Error(), "bool"), "Error should mention compilation or boolean type issue")
+	})
+
+	// Test 6: Error should be cleared on subsequent successful match
+	t.Run("error_cleared_on_successful_match", func(t *testing.T) {
+		ClearExprCache()
+		cond := NewExprCondition("key", "value == 42")
+
+		// First call with wrong value - legitimate false, no error
+		cond.Match(43)
+		require.Nil(t, cond.LastError(), "LastError should be nil for legitimate false")
+
+		// Now cause an error
+		cond2 := NewExprCondition("key2", "invalid syntax !@#")
+		cond2.Match(42)
+		require.NotNil(t, cond2.LastError(), "LastError should be set after error")
+
+		// Successful match should have no error
+		cond.Match(42)
+		require.Nil(t, cond.LastError(), "LastError should be nil after successful match")
+	})
+
+	// Test 7: Nil condition should return nil error
+	t.Run("nil_condition_returns_nil_error", func(t *testing.T) {
+		var cond *ExprCondition
+		result := cond.Match("anything")
+		require.False(t, result, "Nil condition should return false")
+		require.Nil(t, cond.LastError(), "LastError should be nil for nil condition")
+	})
+
+	// Test 8: Empty expression should return nil error (handled gracefully)
+	t.Run("empty_expression_returns_nil_error", func(t *testing.T) {
+		cond := &ExprCondition{
+			key:        "test",
+			expression: "",
+		}
+		result := cond.Match("anything")
+		require.False(t, result, "Empty expression should return false")
+		// Empty expression is handled before any compilation, so no error is set
+		require.Nil(t, cond.LastError(), "LastError should be nil for empty expression")
+	})
+
+	// Test 9: Thread safety - concurrent matches with errors
+	t.Run("thread_safe_error_tracking", func(t *testing.T) {
+		ClearExprCache()
+		cond := NewExprCondition("key", "value > 0")
+
+		var wg sync.WaitGroup
+		for i := -10; i < 20; i++ {
+			wg.Add(1)
+			go func(val int) {
+				defer wg.Done()
+				cond.Match(val)
+			}(i)
+		}
+		wg.Wait()
+
+		// LastError should be settable and readable without races
+		_ = cond.LastError() // Should not cause data race
+	})
+
+	// Test 10: Error message should be informative
+	t.Run("error_message_is_informative", func(t *testing.T) {
+		ClearExprCache()
+		cond := NewExprCondition("testKey", "value.invalidField == 'test'")
+
+		cond.Match(42)
+		err := cond.LastError()
+		require.NotNil(t, err, "LastError should be set")
+
+		errMsg := err.Error()
+		require.Contains(t, errMsg, "evaluation failed", "Error should mention evaluation failed")
+		// The error message should also include context about the expression
+		require.NotEmpty(t, errMsg, "Error message should not be empty")
+	})
+}
+
+// TestExprCondition_JSObject_M3 verifies JSObject getter for consistency with JSCondition.
+func TestExprCondition_JSObject_M3(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil_condition_returns_nil", func(t *testing.T) {
+		var cond *ExprCondition
+		require.Nil(t, cond.JSObject(), "JSObject should return nil for nil condition")
+	})
+
+	t.Run("no_object_set_returns_nil", func(t *testing.T) {
+		cond := NewExprCondition("key", "value == 42")
+		require.Nil(t, cond.JSObject(), "JSObject should return nil when not set")
+	})
+
+	t.Run("set_and_get_jsobject", func(t *testing.T) {
+		cond := NewExprCondition("key", "value == 42")
+		// We can't create a real goja.Object without a runtime, but we can test the setter
+		// by verifying it doesn't panic and the getter returns something (even if nil)
+		require.NotPanics(t, func() {
+			cond.SetJSObject(nil)
+		}, "SetJSObject with nil should not panic")
+		require.Nil(t, cond.JSObject(), "JSObject should return nil after setting nil")
 	})
 }

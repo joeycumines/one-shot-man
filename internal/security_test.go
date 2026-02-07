@@ -434,6 +434,11 @@ func TestEnvironmentVariableSanitization_Unicode(t *testing.T) {
 func TestFilePermissionHandling_ReadPermissions(t *testing.T) {
 	t.Parallel()
 
+	// Skip if running as root since root can read any file regardless of permissions
+	if os.Geteuid() == 0 {
+		t.Skip("Skipping: Root user can read any file regardless of permissions")
+	}
+
 	tmpDir := t.TempDir()
 
 	noReadFile := filepath.Join(tmpDir, "no-read")

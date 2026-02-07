@@ -17,6 +17,9 @@ func TestDetectPlatform_UnixNonRoot(t *testing.T) {
 		t.Skip("Skipping: Test requires Unix/macOS/Linux platform")
 	}
 
+	// This test explicitly tests non-root behavior - skip if running as root
+	SkipIfRoot(t, platform, "test requires non-root Unix user")
+
 	if !platform.IsUnix {
 		t.Errorf("Expected IsUnix=true on macOS/Linux, got %v", platform.IsUnix)
 	}

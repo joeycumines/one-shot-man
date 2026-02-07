@@ -85,29 +85,14 @@ A major new feature for implementing autonomous agent behaviors with planning ca
 
 ### New Documentation Files
 
-1. **REVIEW_*.md** - Comprehensive code review documents
-   - `REVIEW_PABT.md` - PA-BT implementation review
-   - `REVIEW_PTY_HANDLING.md` - PTY handling code review
-   - `REVIEW_DOCUMENTATION.md` - Documentation completeness review
-   - `REVIEW_COMMAND_REGISTRY.md` - Command registry review
-   - `REVIEW_SCRIPTING_ENGINE.md` - Scripting engine review
-   - `REVIEW_SESSION_MANAGEMENT.md` - Session management review
-   - `REVIEW_CONFIGURATION.md` - Configuration system review
-   - `REVIEW_TEST_UTILITIES.md` - Test utilities review
-
-2. **Test Documentation**
-   - `BUILTIN_EDGE_CASE_TESTS.md` - Built-in command edge case tests
-   - `CLI_EDGE_CASE_TESTS.md` - CLI edge case tests
-   - `CONFIG_EDGE_CASE_TESTS.md` - Configuration edge case tests
-   - `SESSION_EDGE_CASE_TESTS.md` - Session edge case tests
-   - `SCRIPTING_EDGE_CASE_TESTS.md` - Scripting edge case tests
-   - `CROSS_PLATFORM_TESTS.md` - Cross-platform integration tests
-   - `PERFORMANCE_TESTS.md` - Performance regression tests
+1. **PA-BT Documentation**
+   - `docs/reference/planning-and-acting-using-behavior-trees.md` - Complete PA-BT API reference
+   - `docs/reference/pabt-demo-script.md` - Pick-and-place demo script documentation
+   - `docs/reference/bt-blackboard-usage.md` - Behavior tree blackboard usage guide
 
 ### Documentation Fixes
 
-1. Fixed broken link in `docs/reference/pabt-demo-script.md` (REVIEW_PABT.md path)
-2. Fixed redundant path in `docs/reference/goal.md` (config.md link)
+1. Fixed redundant path in `docs/reference/goal.md` (config.md link)
 
 ---
 

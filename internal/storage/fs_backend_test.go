@@ -396,11 +396,24 @@ func TestFileSystemBackend_ArchiveSession_ConcurrentExclusive(t *testing.T) {
 
 	// Run two concurrent archive attempts using the same destination path.
 	// The backend must ensure one succeeds and the other returns os.ErrExist.
+	// Use a start gate to ensure both goroutines begin execution at the same time,
+	// maximizing the chance of exposing race conditions in the implementation.
 	var err1, err2 error
+	start := make(chan struct{})
 	done := make(chan struct{}, 2)
 
-	go func() { err1 = backend.ArchiveSession(sessionID, destPath); done <- struct{}{} }()
-	go func() { err2 = backend.ArchiveSession(sessionID, destPath); done <- struct{}{} }()
+	go func() {
+		<-start // Wait for signal to start
+		err1 = backend.ArchiveSession(sessionID, destPath)
+		done <- struct{}{}
+	}()
+	go func() {
+		<-start // Wait for signal to start
+		err2 = backend.ArchiveSession(sessionID, destPath)
+		done <- struct{}{}
+	}()
+
+	close(start) // Signal both goroutines to start simultaneously
 
 	<-done
 	<-done

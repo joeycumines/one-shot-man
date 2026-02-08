@@ -72,7 +72,27 @@ Allowed values are named colors:
 black,darkred,darkgreen,brown,darkblue,purple,cyan,lightgray,
 darkgray,red,green,yellow,blue,fuchsia,turquoise,white
 ```
+### Session cleanup
 
+The `[sessions]` section controls session retention and cleanup thresholds:
+
+```text
+[sessions]
+maxAgeDays 90
+maxCount 100
+maxSizeMB 500
+autoCleanupEnabled true
+cleanupIntervalHours 24
+```
+
+Keys:
+- `maxAgeDays` (int, default `90`) — sessions older than this are eligible for cleanup
+- `maxCount` (int, default `100`) — maximum number of sessions to retain
+- `maxSizeMB` (int, default `500`) — maximum total size of all sessions in MB
+- `autoCleanupEnabled` (bool, default `true`) — *reserved for future use*; parsed and validated but no automatic cleanup scheduler exists yet
+- `cleanupIntervalHours` (int, default `24`) — *reserved for future use*; parsed and validated but no automatic cleanup scheduler exists yet
+
+All integer values must be non-negative (`cleanupIntervalHours` must be at least 1).
 ## Environment variables
 
 These are not “config file keys”, but they materially affect behavior:

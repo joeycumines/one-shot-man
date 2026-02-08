@@ -1,4 +1,4 @@
-// Package testutil provides cross-platform testing utilities for
+// Package testutil provides platform-specific testing utilities for
 // consistent platform detection and root user handling.
 //
 // This centralizes scattered platform-specific checks across tests,
@@ -14,9 +14,9 @@ import (
 	"testing"
 )
 
-// TestConfigLoadingCrossPlatform tests config loading across different platforms.
-// This verifies that config paths are correctly resolved on Windows, Unix, and macOS.
-func TestConfigLoadingCrossPlatform(t *testing.T) {
+// TestConfigLoadingPlatformSpecific tests config loading on the current platform.
+// Each subtest uses t.Skip() to only run on its respective platform.
+func TestConfigLoadingPlatformSpecific(t *testing.T) {
 	platform := DetectPlatform(t)
 
 	t.Run("WindowsConfigPaths", func(t *testing.T) {
@@ -131,9 +131,9 @@ func TestConfigLoadingCrossPlatform(t *testing.T) {
 	})
 }
 
-// TestClipboardOperationsCrossPlatform tests clipboard operations across platforms.
-// This verifies that clipboard functions work correctly on different operating systems.
-func TestClipboardOperationsCrossPlatform(t *testing.T) {
+// TestClipboardOperationsPlatformSpecific tests clipboard operations on the current platform.
+// Each subtest uses t.Skip() to only run on its respective platform.
+func TestClipboardOperationsPlatformSpecific(t *testing.T) {
 	platform := DetectPlatform(t)
 
 	t.Run("UnixClipboardTools", func(t *testing.T) {
@@ -233,9 +233,9 @@ func TestClipboardOperationsCrossPlatform(t *testing.T) {
 	})
 }
 
-// TestFilePathHandlingCrossPlatform tests file path handling across platforms.
-// This verifies that paths are correctly normalized and handled on different operating systems.
-func TestFilePathHandlingCrossPlatform(t *testing.T) {
+// TestFilePathHandlingPlatformSpecific tests file path handling on the current platform.
+// Each subtest uses t.Skip() to only run on its respective platform.
+func TestFilePathHandlingPlatformSpecific(t *testing.T) {
 	platform := DetectPlatform(t)
 
 	t.Run("PathNormalization", func(t *testing.T) {
@@ -359,9 +359,9 @@ func TestFilePathHandlingCrossPlatform(t *testing.T) {
 	})
 }
 
-// TestTerminalDetectionCrossPlatform tests terminal detection across platforms.
-// This verifies that terminal detection works correctly in different environments.
-func TestTerminalDetectionCrossPlatform(t *testing.T) {
+// TestTerminalDetectionPlatformSpecific tests terminal detection on the current platform.
+// Each subtest uses t.Skip() to only run on its respective platform.
+func TestTerminalDetectionPlatformSpecific(t *testing.T) {
 	platform := DetectPlatform(t)
 
 	t.Run("TERMEnvironmentVariable", func(t *testing.T) {

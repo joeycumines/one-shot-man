@@ -71,7 +71,7 @@ func TestPickAndPlaceE2E_ActionRegistration(t *testing.T) {
 	if err := h.SendKey("m"); err != nil {
 		t.Fatalf("Failed to send 'm': %v", err)
 	}
-	time.Sleep(500 * time.Millisecond)
+	h.WaitForMode("a", 3*time.Second)
 
 	// Monitor for any PA-BT activity (action selection requires registered actions)
 	observations := make([]PickAndPlaceDebugJSON, 0, 5)
@@ -138,7 +138,7 @@ func TestPickAndPlaceE2E_PlanCreation(t *testing.T) {
 	if err := h.SendKey("m"); err != nil {
 		t.Fatalf("Failed to switch to auto mode: %v", err)
 	}
-	time.Sleep(500 * time.Millisecond)
+	h.WaitForMode("a", 3*time.Second)
 
 	// Plan was created if PA-BT starts taking actions
 	afterSwitch := h.GetDebugState()
@@ -315,7 +315,11 @@ func TestPickAndPlaceE2E_ModeToggle(t *testing.T) {
 	}
 
 	// Wait for mode change to be processed
-	time.Sleep(500 * time.Millisecond)
+	expectedMode := "a"
+	if modeBefore == "a" {
+		expectedMode = "m"
+	}
+	h.WaitForMode(expectedMode, 3*time.Second)
 
 	// Get state after toggle
 	stateAfterToggle := h.GetDebugState()
@@ -362,7 +366,7 @@ func TestPickAndPlaceE2E_PABTPlanning_Detailed(t *testing.T) {
 		if err := h.SendKey("m"); err != nil {
 			t.Fatalf("Failed to switch to auto mode: %v", err)
 		}
-		time.Sleep(500 * time.Millisecond)
+		h.WaitForMode("a", 3*time.Second)
 	}
 
 	// Detailed observation of state changes
@@ -476,7 +480,7 @@ func TestPickAndPlaceE2E_PABTPlanning(t *testing.T) {
 		if err := h.SendKey("m"); err != nil {
 			t.Fatalf("Failed to send 'm' to switch to auto mode: %v", err)
 		}
-		time.Sleep(500 * time.Millisecond)
+		h.WaitForMode("a", 3*time.Second)
 	}
 
 	// Monitor state over time to verify PA-BT is taking actions
@@ -586,7 +590,7 @@ func TestPickAndPlaceE2E_PickAndPlaceActions(t *testing.T) {
 	if err := h.SendKey("m"); err != nil {
 		t.Fatalf("Failed to send 'm': %v", err)
 	}
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	// Get initial state
 	initialState := h.GetDebugState()
@@ -697,7 +701,7 @@ func TestPickAndPlaceE2E_WinCondition(t *testing.T) {
 	if err := h.SendKey("m"); err != nil {
 		t.Fatalf("Failed to send 'm': %v", err)
 	}
-	time.Sleep(500 * time.Millisecond)
+	h.WaitForMode("a", 3*time.Second)
 
 	// Monitor for win condition
 	monitorDuration := 10 * time.Second
@@ -757,7 +761,7 @@ func TestPickAndPlaceE2E_PauseResume(t *testing.T) {
 	if err := h.SendKey("m"); err != nil {
 		t.Fatalf("Failed to switch to auto mode: %v", err)
 	}
-	time.Sleep(500 * time.Millisecond)
+	h.WaitForMode("a", 3*time.Second)
 
 	// Get initial state before pause
 	stateBeforePause := h.GetDebugState()
@@ -775,7 +779,7 @@ func TestPickAndPlaceE2E_PauseResume(t *testing.T) {
 	if err := h.SendKey(" "); err != nil {
 		t.Fatalf("Failed to send SPACE to pause: %v", err)
 	}
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForFrames(3)
 
 	// Get state while paused
 	statePaused := h.GetDebugState()
@@ -850,7 +854,7 @@ func TestPickAndPlaceE2E_MultipleCubes(t *testing.T) {
 		if err := h.SendKey("m"); err != nil {
 			t.Fatalf("Failed to switch to auto mode: %v", err)
 		}
-		time.Sleep(500 * time.Millisecond)
+		h.WaitForMode("a", 3*time.Second)
 	}
 
 	// Monitor for activity with multiple cubes
@@ -930,7 +934,7 @@ func TestPickAndPlaceE2E_AdvancedScenarios(t *testing.T) {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForFrames(3)
 
 	// Verify state is still valid after mode toggles
 	stateAfterToggles := h.GetDebugState()
@@ -954,7 +958,7 @@ func TestPickAndPlaceE2E_AdvancedScenarios(t *testing.T) {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForFrames(3)
 
 	// Verify state is still valid after pause/resume cycles
 	stateAfterPauseResume := h.GetDebugState()
@@ -993,7 +997,7 @@ func TestPickAndPlace_MousePick_NearestTarget(t *testing.T) {
 	if err := h.SendKey("m"); err != nil {
 		t.Fatalf("Failed to send 'm': %v", err)
 	}
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	// Verify we're in manual mode
 	state := h.GetDebugState()
@@ -1018,7 +1022,7 @@ func TestPickAndPlace_MousePick_NearestTarget(t *testing.T) {
 		h.SendKey("d")                     // Move right
 		time.Sleep(100 * time.Millisecond) // Slower for reliability
 	}
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForFrames(5) // Let movement settle
 
 	stateNearCube := h.GetDebugState()
 	t.Logf("Actor position near cube: (%.1f, %.1f)", stateNearCube.ActorX, stateNearCube.ActorY)
@@ -1038,13 +1042,15 @@ func TestPickAndPlace_MousePick_NearestTarget(t *testing.T) {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
-	// Wait for action to be processed
-	time.Sleep(500 * time.Millisecond)
-
-	// Verify cube was picked up (heldItemId changed from -1 to target ID)
-	stateAfter := h.GetDebugState()
-	if stateAfter.HeldItemID != 1 {
-		t.Errorf("Expected to pick up target cube (id=1), but held item is %d", stateAfter.HeldItemID)
+	// Wait for cube pickup to be processed (deterministic poll instead of fixed sleep)
+	heldId := h.WaitForHeldItem(0, 5*time.Second)
+	if heldId == -999 {
+		stateAfter := h.GetDebugState()
+		t.Fatalf("Timed out waiting for cube pickup (state: mode=%s, x=%.1f, y=%.1f, h=%d, tick=%d)",
+			stateAfter.Mode, stateAfter.ActorX, stateAfter.ActorY, stateAfter.HeldItemID, stateAfter.Tick)
+	}
+	if heldId != 1 {
+		t.Errorf("Expected to pick up target cube (id=1), but held item is %d", heldId)
 	} else {
 		t.Logf("✓ Successfully picked up nearest cube (id=1)")
 	}
@@ -1064,7 +1070,7 @@ func TestPickAndPlace_MousePick_MultipleCubes(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	state := h.GetDebugState()
 	if state.Mode != "m" {
@@ -1083,7 +1089,7 @@ func TestPickAndPlace_MousePick_MultipleCubes(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForFrames(5) // Let movement settle
 	stateBeforeClick := h.GetDebugState()
 	actorBeforeX := stateBeforeClick.ActorX
 	actorBeforeY := stateBeforeClick.ActorY
@@ -1099,7 +1105,8 @@ func TestPickAndPlace_MousePick_MultipleCubes(t *testing.T) {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Wait sufficient ticks for click to be processed (negative test - expect no pickup)
+	h.WaitForFrames(10)
 	stateAfter := h.GetDebugState()
 
 	// Verify expected behavior: no cube picked (exceeds PICK_THRESHOLD)
@@ -1124,7 +1131,7 @@ func TestPickAndPlace_MousePick_NoTargetInRange(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	state := h.GetDebugState()
 	if state.Mode != "m" {
@@ -1140,7 +1147,8 @@ func TestPickAndPlace_MousePick_NoTargetInRange(t *testing.T) {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Wait sufficient ticks for click to be processed (negative test - expect no pickup)
+	h.WaitForFrames(10)
 	stateAfter := h.GetDebugState()
 
 	// Verify no cube was picked
@@ -1165,7 +1173,7 @@ func TestPickAndPlace_MousePick_DirectClick(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	state := h.GetDebugState()
 	if state.Mode != "m" {
@@ -1267,7 +1275,7 @@ func TestPickAndPlace_MousePick_HoldingItem(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	state := h.GetDebugState()
 	if state.Mode != "m" {
@@ -1356,7 +1364,7 @@ func TestPickAndPlace_MousePick_StaticObstacles(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	state := h.GetDebugState()
 	if state.Mode != "m" {
@@ -1411,7 +1419,7 @@ func TestPickAndPlace_MousePlace_NearestEmpty(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	state := h.GetDebugState()
 	if state.Mode != "m" {
@@ -1497,7 +1505,7 @@ func TestPickAndPlace_MousePlace_BlockedCell(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	// Navigate actor near the blockade cube at (7, 18)
 	for i := 0; i < 2; i++ {
@@ -1571,7 +1579,7 @@ func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 	// Switch to manual mode - PA-BT auto-mode spends time relocating blockers first
 	// which would take too long. We'll manually navigate to Target A and pick it up.
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	state := h.GetDebugState()
 	if state.Mode != "m" {
@@ -1695,7 +1703,7 @@ func TestPickAndPlace_MousePlace_NoValidCell(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	// Navigate actor near the blockade cube at (7, 18)
 	for i := 0; i < 2; i++ {
@@ -1771,7 +1779,7 @@ func TestPickAndPlace_MousePlace_NonTargetInGoal(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	// Navigate actor near the blockade cube at (7, 18)
 	for i := 0; i < 2; i++ {
@@ -1885,7 +1893,7 @@ func TestPickAndPlaceE2E_UnexpectedCircumstances(t *testing.T) {
 	if err := h.SendKey("m"); err != nil {
 		t.Fatalf("Failed to send 'm': %v", err)
 	}
-	time.Sleep(500 * time.Millisecond)
+	h.WaitForMode("a", 3*time.Second)
 
 	// Wait for robot to start moving toward cube
 	// We need to catch it mid-transit
@@ -1922,7 +1930,7 @@ func TestPickAndPlaceE2E_UnexpectedCircumstances(t *testing.T) {
 	if err := h.SendKey("x"); err != nil {
 		t.Fatalf("Failed to send 'x' to move cube: %v", err)
 	}
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForFrames(3)
 
 	// Get state after cube move
 	stateAfterMove := h.GetDebugState()
@@ -2051,7 +2059,7 @@ func TestPickAndPlace_MouseNoAction_NoCubesInRange(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	state := h.GetDebugState()
 	if state.Mode != "m" {
@@ -2104,7 +2112,7 @@ func TestPickAndPlace_MouseNoAction_NoValidPlacement(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	// Navigate actor near the blockade cube at (7, 18)
 	for i := 0; i < 2; i++ {
@@ -2177,7 +2185,7 @@ func TestPickAndPlace_MouseNoAction_StaticObstacle(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	state := h.GetDebugState()
 	if state.HeldItemID != -1 {
@@ -2279,7 +2287,7 @@ func TestPickAndPlace_MouseNoAction_AlreadyHeldCube(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	// Navigate actor near the blockade cube at (7, 18)
 	for i := 0; i < 2; i++ {
@@ -2336,7 +2344,7 @@ func TestPickAndPlace_MouseNoAction_RapidClicks(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	stateBefore := h.GetDebugState()
 
@@ -2384,7 +2392,7 @@ func TestPickAndPlace_MouseNoAction_BoundaryClicks(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	stateBefore := h.GetDebugState()
 	initialX := stateBefore.ActorX
@@ -2398,7 +2406,7 @@ func TestPickAndPlace_MouseNoAction_BoundaryClicks(t *testing.T) {
 		// This is expected - mouseharness might reject negative coordinates
 		t.Logf("✓ Left boundary click correctly rejected: %v", err)
 	} else {
-		time.Sleep(300 * time.Millisecond)
+		h.WaitForFrames(3)
 		stateAfter := h.GetDebugState()
 
 		// Verify no pick occurred
@@ -2417,7 +2425,7 @@ func TestPickAndPlace_MouseNoAction_BoundaryClicks(t *testing.T) {
 		// Expected - coordinates outside viewport
 		t.Logf("✓ Right boundary click correctly rejected: %v", err)
 	} else {
-		time.Sleep(300 * time.Millisecond)
+		h.WaitForFrames(3)
 		stateAfter := h.GetDebugState()
 
 		// Verify no pick occurred
@@ -2455,7 +2463,7 @@ func TestPickAndPlace_MouseNoAction_HUDArea(t *testing.T) {
 
 	h.WaitForFrames(3)
 	h.SendKey("m")
-	time.Sleep(300 * time.Millisecond)
+	h.WaitForMode("m", 3*time.Second)
 
 	stateBefore := h.GetDebugState()
 	tickBefore := stateBefore.Tick
@@ -2528,7 +2536,7 @@ func TestPickAndPlaceE2E_InfiniteLoopDetection(t *testing.T) {
 		if err := h.SendKey("m"); err != nil {
 			t.Fatalf("Failed to send 'm': %v", err)
 		}
-		time.Sleep(500 * time.Millisecond)
+		h.WaitForMode("a", 3*time.Second)
 	}
 
 	t.Logf("Initial state: tick=%d, actor=(%.1f,%.1f), held=%d, blockadeCount=%d",

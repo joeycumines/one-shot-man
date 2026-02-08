@@ -144,6 +144,41 @@ Unless disabled, `osm` searches these standard locations:
 
 When autodiscovery is enabled, it also traverses upward looking for directories matching `goal.path-patterns`.
 
+## Session cleanup (`[sessions]`)
+
+The `[sessions]` section controls session retention and cleanup thresholds.
+
+These settings drive the `osm session cleanup` workflow, which removes sessions that exceed the configured limits.
+
+### Keys
+
+- `maxAgeDays` (int, default `90`)
+  - Maximum age of sessions in days. Sessions older than this are eligible for cleanup.
+  - Must be non-negative (`0` means all sessions are eligible).
+- `maxCount` (int, default `100`)
+  - Maximum number of sessions to retain.
+  - Must be non-negative (`0` means no limit on count).
+- `maxSizeMB` (int, default `500`)
+  - Maximum total size of all sessions in megabytes.
+  - Must be non-negative (`0` means no limit on size).
+- `autoCleanupEnabled` (bool, default `true`)
+  - **Reserved for future use.** Parsed and validated but no automatic cleanup scheduler exists yet.
+  - Accepts: `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off` (case-insensitive).
+- `cleanupIntervalHours` (int, default `24`)
+  - **Reserved for future use.** Parsed and validated but no automatic cleanup scheduler exists yet.
+  - Must be at least `1`.
+
+Example:
+
+```text
+[sessions]
+maxAgeDays 30
+maxCount 50
+maxSizeMB 250
+autoCleanupEnabled true
+cleanupIntervalHours 12
+```
+
 ## Global keys you may see
 
 `osm init` writes a few global keys such as `verbose` and `color`.

@@ -156,9 +156,12 @@ func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPla
 		for _, pattern := range menuPatterns {
 			if err := h.console.Expect(h.ctx, snap, termtest.Contains(pattern), "simulator start"); err == nil {
 				t.Logf("Simulator started, detected: %s", pattern)
-				// Wait a moment for TUI to stabilize after alternate screen entry
-				// The TUI needs time to render at least one frame to the alternate screen buffer
-				time.Sleep(200 * time.Millisecond)
+				// Poll for TUI to stabilize after alternate screen entry — wait for
+				// at least one debug state to be available
+				_ = testutil.Poll(h.ctx, func() bool {
+					state := h.GetDebugState()
+					return state != nil
+				}, 3*time.Second, 50*time.Millisecond)
 				found = true
 				break
 			}
@@ -1095,8 +1098,20 @@ func TestPickAndPlaceLogging(t *testing.T) {
 	}
 	defer harness.Close()
 
-	// Let it run for a bit to generate some logs (planner thinking, moves, etc.)
-	time.Sleep(2 * time.Second)
+	// Wait for the log file to have initial content AND tick messages
+	// (polling replaces heuristic 2s sleep)
+	logFilePath := config.LogFilePath
+	if pollErr := testutil.Poll(context.Background(), func() bool {
+		content, readErr := os.ReadFile(logFilePath)
+		if readErr != nil {
+			return false
+		}
+		s := string(content)
+		return strings.Contains(s, "Pick-and-Place simulation initialized") &&
+			strings.Contains(s, `"tick":`)
+	}, 10*time.Second, 100*time.Millisecond); pollErr != nil {
+		t.Logf("Warning: log content not fully available: %v", pollErr)
+	}
 
 	// Check for a few expected log patterns
 	// "Pick-and-Place simulation initialized" from the script startup

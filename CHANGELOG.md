@@ -40,7 +40,7 @@ A major new feature for implementing autonomous agent behaviors with planning ca
 1. **Edge Case Tests**
    - `internal/command/builtin_edge_test.go` - 44 subtests for built-in commands
    - `internal/session/session_edge_test.go` - 20 test functions for session management
-   - `internal/testutil/cross_platform_test.go` - 28 subtests for cross-platform scenarios
+   - `internal/testutil/platform_specific_test.go` - 28 subtests for platform-specific scenarios
 
 2. **Performance Tests**
    - `internal/benchmark_test.go` - Benchmarks and regression tests

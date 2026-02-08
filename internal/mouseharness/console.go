@@ -1,11 +1,5 @@
 //go:build unix
 
-// Package mouseharness provides utilities for mouse interaction testing
-// with terminal-based applications via PTY.
-//
-// It wraps an externally-managed *termtest.Console and adds mouse-specific
-// utilities including SGR mouse event generation, terminal buffer parsing,
-// and element location finding.
 package mouseharness
 
 import (

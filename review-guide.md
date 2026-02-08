@@ -114,7 +114,7 @@ This guide groups and prioritizes what to review in the diff against `main` (122
 **Files:**
 - `internal/command/builtin_edge_test.go` (NEW - 945 lines, 44 subtests)
 - `internal/session/session_edge_test.go` (NEW - 630 lines, 20 test functions)
-- `internal/testutil/cross_platform_test.go` (NEW - 656 lines, 28 subtests)
+- `internal/testutil/platform_specific_test.go` (NEW - 656 lines, 28 subtests)
 
 **Review Checklist:**
 - [ ] Edge cases are comprehensive

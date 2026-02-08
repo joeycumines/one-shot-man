@@ -40,11 +40,15 @@ func NewConfig() *Config {
 
 // SessionConfig controls session lifecycle and cleanup behavior.
 type SessionConfig struct {
-	MaxAgeDays           int  `json:"maxAgeDays" default:"90"`
-	MaxCount             int  `json:"maxCount" default:"100"`
-	MaxSizeMB            int  `json:"maxSizeMb" default:"500"`
-	AutoCleanupEnabled   bool `json:"autoCleanupEnabled" default:"true"`
-	CleanupIntervalHours int  `json:"cleanupIntervalHours" default:"24"`
+	MaxAgeDays int `json:"maxAgeDays" default:"90"`
+	MaxCount   int `json:"maxCount" default:"100"`
+	MaxSizeMB  int `json:"maxSizeMb" default:"500"`
+	// TODO: AutoCleanupEnabled is parsed and validated but no automatic cleanup
+	// scheduler exists yet. Reserved for future auto-cleanup scheduler implementation.
+	AutoCleanupEnabled bool `json:"autoCleanupEnabled" default:"true"`
+	// TODO: CleanupIntervalHours is parsed and validated but no automatic cleanup
+	// scheduler exists yet. Reserved for future auto-cleanup scheduler implementation.
+	CleanupIntervalHours int `json:"cleanupIntervalHours" default:"24"`
 }
 
 // Load loads configuration from the default config file path.

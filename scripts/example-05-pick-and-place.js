@@ -125,7 +125,6 @@ try {
 
     // Capture global reference for FlatSpatialIndex dirty flagging
     var state;
-    var debugMessage = '';
 
     function initializeSimulation() {
         GOAL_BLOCKADE_IDS = []; // Fix: Clear before populating
@@ -1575,7 +1574,6 @@ try {
 
     // Process pending inputs from the queue with Stream Reduction
     function processPendingInputs(state) {
-        // Removed debugMessage for cleaner logs
         if (!state.pendingInputs || state.pendingInputs.length === 0) return [state, null];
 
         // Local accumulators - Zero Allocation
@@ -1818,7 +1816,6 @@ try {
                 mt: state.manualMoveTarget ? 1 : 0,
                 mpl: state.manualPath.length,
                 pst: state.pathStuckTicks,
-                dm: debugMessage || '',
                 lcx: state.debugLastClick ? state.debugLastClick.gx : -1,
                 lcy: state.debugLastClick ? state.debugLastClick.gy : -1,
                 lch: state.debugLastClick ? state.debugLastClick.h : -1,

@@ -77,24 +77,20 @@ type entry struct {
 
 // Get retrieves a compiled program from the cache.
 // Returns the program and true if found, nil and false otherwise.
-// Uses RLock for concurrent read access. Updates LRU order on reads
-// to ensure correct eviction behavior.
+// Uses Lock (not RLock) because Get must update LRU order and hit/miss
+// counters, and must read the program pointer under the same lock that
+// protects writes in Put to avoid data races.
 func (c *ExprLRUCache) Get(expression string) (*vm.Program, bool) {
-	c.mu.RLock()
+	c.mu.Lock()
 	elem, ok := c.cache[expression]
-	c.mu.RUnlock()
-
 	if !ok {
-		c.mu.Lock()
 		c.missCount++
 		c.mu.Unlock()
 		return nil, false
 	}
 
-	// Read the program value (no lock needed for reading the pointer)
+	// Read program under lock to avoid data race with Put updating the pointer
 	program := elem.Value.(*entry).program
-
-	c.mu.Lock()
 	c.hitCount++
 	// Update LRU order - move accessed element to front (most recently used)
 	// This ensures correct eviction behavior for LRU policy

@@ -135,7 +135,7 @@ If extending the scripting engine:
 
 ## Compatibility
 
-- **Go Version**: 1.21+
+- **Go Version**: 1.25+
 - **Platforms**: Linux, macOS, Windows
 - **Dependencies**: See `go.mod` for complete list
 

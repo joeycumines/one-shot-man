@@ -9,9 +9,6 @@
 //
 //	const zone = require('osm:bubblezone');
 //
-//	// Initialize the global zone manager (call once at program start)
-//	zone.newGlobal();
-//
 //	// Mark a region as a clickable zone
 //	const markedContent = zone.mark("button-id", "[ Click Me ]");
 //

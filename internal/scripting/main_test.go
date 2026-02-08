@@ -596,9 +596,13 @@ func TestTUIBindingEdgeCases(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		engine := mustNewEngine(t, ctx, &stdout, &stderr)
 
+		// Create a temp directory for testing instead of using /tmp
+		// which may contain directories with restricted permissions
+		tempDir := t.TempDir()
+
 		// Test context operations
 		script := engine.LoadScriptFromString("context_test", `
-			context.addPath("/tmp");
+			context.addPath("`+tempDir+`");
 			const paths = context.listPaths();
 			ctx.log("Paths: " + JSON.stringify(paths));
 		`)

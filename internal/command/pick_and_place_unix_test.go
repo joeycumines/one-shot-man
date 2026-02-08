@@ -1790,8 +1790,10 @@ func TestPickAndPlace_MousePlace_NonTargetInGoal(t *testing.T) {
 		h.SendKey("s") // Move down
 		time.Sleep(100 * time.Millisecond)
 	}
-	h.WaitForFrames(5)
-	time.Sleep(300 * time.Millisecond)
+	// Wait for movement to complete (path cleared)
+	if !h.WaitForManualPathEmpty(3 * time.Second) {
+		t.Fatalf("Timeout waiting for actor to reach position near cube at (7, 18)")
+	}
 
 	// Pick up a non-target cube (cube 100 at 7, 18)
 	h.ClickGrid(7, 18)
@@ -1814,8 +1816,11 @@ func TestPickAndPlace_MousePlace_NonTargetInGoal(t *testing.T) {
 		h.SendKey("d")
 		time.Sleep(100 * time.Millisecond)
 	}
+	// Wait for movement to complete
+	if !h.WaitForManualPathEmpty(3 * time.Second) {
+		t.Fatalf("Timeout waiting for actor to reach goal area")
+	}
 
-	time.Sleep(300 * time.Millisecond)
 	stateBeforePlace := h.GetDebugState()
 	t.Logf("Actor before place: (%.1f, %.1f)", stateBeforePlace.ActorX, stateBeforePlace.ActorY)
 

@@ -37,9 +37,11 @@ type PickAndPlaceDebugJSON struct {
 	BlockadeCount     int      `json:"n"`           // Number of blockade cubes remaining
 	GoalBlockadeCount int      `json:"g"`           // Number of goal blockade cubes (0-7)
 	// NOTE: DumpsterReachable removed - no dumpster in dynamic obstacle handling
-	GoalReachable int `json:"gr"` // Goal reachable (0 = false, 1 = true)
-	TotalWidth    int `json:"tw"` // Total terminal width
-	SpaceWidth    int `json:"sw"` // Width of the simulation space
+	GoalReachable      int `json:"gr"` // Goal reachable (0 = false, 1 = true)
+	TotalWidth         int `json:"tw"` // Total terminal width
+	SpaceWidth         int `json:"sw"` // Width of the simulation space
+	ManualPathLength   int `json:"mpl"` // Manual path length (0 = no movement pending)
+	PathStuckTicks     int `json:"pst"` // Path stuck counter
 }
 
 // PickAndPlaceConfig holds configuration for pick-and-place tests
@@ -881,6 +883,24 @@ func (h *PickAndPlaceHarness) WaitForHeldItem(minID int, timeout time.Duration) 
 		time.Sleep(50 * time.Millisecond)
 	}
 	return -999 // Timeout sentinel
+}
+
+// WaitForManualPathEmpty waits for the manual path to be empty (mpl=0).
+// This indicates the actor has reached its destination and movement is complete.
+func (h *PickAndPlaceHarness) WaitForManualPathEmpty(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		state := h.GetDebugState()
+		if state.ManualPathLength == 0 {
+			h.t.Logf("WaitForManualPathEmpty: path cleared at tick=%d, actor=(%.1f,%.1f)",
+				state.Tick, state.ActorX, state.ActorY)
+			return true
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	state := h.GetDebugState()
+	h.t.Logf("WaitForManualPathEmpty: timeout, mpl=%d at tick=%d", state.ManualPathLength, state.Tick)
+	return false
 }
 
 // WaitForFrames waits for simulator tick counter to advance by specified number

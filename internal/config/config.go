@@ -63,7 +63,10 @@ func Load() (*Config, error) {
 // SECURITY: This function rejects symlinks to prevent symlink attacks
 // that could read sensitive files through symlink traversal.
 func LoadFromPath(path string) (*Config, error) {
-	// Security: Check if path is a symlink to prevent symlink attacks
+	// Security: Lstat checks the final path component for symlinks.
+	// This prevents symlink-to-file attacks (e.g., config -> /etc/passwd).
+	// Intermediate directory symlinks are NOT checked, by design:
+	// the threat model targets direct file symlink substitution.
 	fi, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -78,7 +81,7 @@ func LoadFromPath(path string) (*Config, error) {
 		return nil, fmt.Errorf("symlink not allowed in config path: %s", path)
 	}
 
-	// Open with O_NOFOLLOW to ensure we don't follow any remaining symlinks
+	// Open the file (symlinks already rejected by Lstat check above)
 	file, err := os.OpenFile(path, os.O_RDONLY, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open config file: %w", err)

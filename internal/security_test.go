@@ -76,14 +76,9 @@ func TestPathTraversalPrevention_NullByteInjection(t *testing.T) {
 		t.Run("null-byte-"+path[:10], func(t *testing.T) {
 			cfg, err := config.LoadFromPath(path)
 			if err == nil {
-				if len(cfg.Global) > 0 {
-					t.Log("Config loaded with null byte in path (system-dependent behavior)")
-				} else {
-					t.Log("Config loaded with null byte in path but returned empty (acceptable)")
-				}
-			} else {
-				t.Logf("Config loading with null byte failed as expected: %v", err)
+				t.Errorf("LoadFromPath should reject path with null byte, but got nil error (config has %d global options)", len(cfg.Global))
 			}
+			_ = cfg
 		})
 	}
 }
@@ -136,14 +131,11 @@ func TestPathTraversalPrevention_SymlinkEscape(t *testing.T) {
 
 	cfg, err := config.LoadFromPath(linkPath)
 	if err == nil {
-		if val, ok := cfg.Global["sensitive"]; ok && val == "true" {
-			t.Logf("Config loaded via symlink (behavior depends on policy)")
-		} else {
-			t.Log("Symlink traversal worked - this is expected for legitimate symlinks")
-		}
-	} else {
-		t.Logf("Symlink access blocked: %v", err)
+		t.Errorf("LoadFromPath should reject symlink but succeeded: got config with %d global options", len(cfg.Global))
+	} else if !strings.Contains(err.Error(), "symlink not allowed") {
+		t.Errorf("Expected symlink rejection error, got: %v", err)
 	}
+	_ = cfg
 }
 
 // ============================================================================
@@ -305,10 +297,18 @@ func TestCommandInjectionPrevention_SubshellInjection(t *testing.T) {
 			err = engine.ExecuteScript(script)
 
 			if err != nil {
-				t.Logf("Execution error: %v", err)
+				t.Logf("Execution error (may be expected): %v", err)
 			} else {
 				output := stdout.String()
-				t.Logf("Subshell test output: %s", output)
+				// If subshell injection occurred, the output would contain the
+				// current username rather than the literal subshell syntax.
+				currentUser := os.Getenv("USER")
+				if currentUser == "" {
+					currentUser = os.Getenv("USERNAME")
+				}
+				if currentUser != "" && strings.Contains(output, currentUser) {
+					t.Errorf("Subshell injection may have occurred: output contains current user %q", currentUser)
+				}
 			}
 		})
 	}
@@ -509,13 +509,11 @@ func TestFilePermissionHandling_SymlinkAttacks(t *testing.T) {
 
 	cfg, err := config.LoadFromPath(linkPath)
 	if err == nil {
-		t.Log("Config loaded via symlink")
-		if _, ok := cfg.Global["SENSITIVE"]; ok {
-			t.Error("Symlink allowed access to sensitive file")
-		}
-	} else {
-		t.Logf("Symlink access blocked: %v", err)
+		t.Errorf("LoadFromPath should reject symlink but succeeded: got config with %d global options", len(cfg.Global))
+	} else if !strings.Contains(err.Error(), "symlink not allowed") {
+		t.Errorf("Expected symlink rejection error, got: %v", err)
 	}
+	_ = cfg
 }
 
 // ============================================================================
@@ -775,23 +773,11 @@ func TestSessionDataIsolation_ConcurrentAccess(t *testing.T) {
 // Output Sanitization Tests
 // ============================================================================
 
-func TestOutputSanitization_NoSensitiveDataInLogs(t *testing.T) {
+func TestOutputSanitization_ConfigValueStorage(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-
-	var stdout, stderr bytes.Buffer
-
-	engine, err := scripting.NewEngineWithConfig(
-		ctx, &stdout, &stderr,
-		testutil.NewTestSessionID("security", t.Name()),
-		"memory",
-	)
-	if err != nil {
-		t.Fatalf("Failed to create engine: %v", err)
-	}
-	defer engine.Close()
-
+	// Verify config correctly stores and retrieves sensitive-looking values.
+	// This is a functional test, not an output sanitization test.
 	cfg := config.NewConfig()
 	cfg.SetGlobalOption("api_key", "secret123")
 	cfg.SetGlobalOption("password", "supersecret")
@@ -800,12 +786,10 @@ func TestOutputSanitization_NoSensitiveDataInLogs(t *testing.T) {
 		val, ok := cfg.GetGlobalOption(key)
 		if !ok {
 			t.Errorf("Config key %s not found", key)
-		} else {
-			t.Logf("Key %s has value: %s", key, val)
+		} else if val == "" {
+			t.Errorf("Config key %s has empty value", key)
 		}
 	}
-
-	_ = cfg
 }
 
 func TestOutputSanitization_ErrorMessagesNoSensitivePaths(t *testing.T) {
@@ -948,14 +932,21 @@ func TestResourceLimits_ManyConfigOptions(t *testing.T) {
 func TestArgumentParsingSecurity_NullBytes(t *testing.T) {
 	t.Parallel()
 
+	// Test that null bytes in arguments are handled safely by the config system.
+	// Config keys/values containing null bytes should be stored and retrieved intact
+	// (the config layer does not parse or interpret null bytes).
 	args := []string{"hello\x00world", "test\x00value"}
 
 	for _, arg := range args {
 		t.Run(arg[:10], func(t *testing.T) {
-			if strings.Contains(arg, "\x00") {
-				t.Log("Null byte in argument (may be stripped)")
-			} else {
-				t.Log("Argument without null byte")
+			cfg := config.NewConfig()
+			cfg.SetGlobalOption("test", arg)
+
+			retrieved, ok := cfg.GetGlobalOption("test")
+			if !ok {
+				t.Error("Config key not stored")
+			} else if retrieved != arg {
+				t.Errorf("Null byte argument modified: got %q, want %q", retrieved, arg)
 			}
 		})
 	}

@@ -26,7 +26,7 @@ This guide groups and prioritizes what to review in the diff against `main` (122
 **Review Checklist:**
 - [ ] Verify `os.Lstat()` is called before `os.OpenFile()`
 - [ ] Confirm symlink rejection returns a clear error
-- [ ] Check that `O_NOFOLLOW` is used correctly
+- [ ] Check that symlinks are rejected before OpenFile is reached
 - [ ] Ensure all config loading paths are protected
 
 ### 1.3 Security Test Coverage

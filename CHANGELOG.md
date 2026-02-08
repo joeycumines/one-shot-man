@@ -68,7 +68,7 @@ A major new feature for implementing autonomous agent behaviors with planning ca
 2. **Symlink Vulnerability in Config Loading** (`internal/config/config.go`)
    - Added `os.Lstat()` check to detect symlinks
    - Added rejection of symlinks to prevent path traversal attacks
-   - Used `os.OpenFile()` with `O_NOFOLLOW` semantics
+   - Opens file only after confirming it is not a symlink
 
 ### Minor Fixes
 

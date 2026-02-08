@@ -1,6 +1,7 @@
 package pabt
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -8,6 +9,8 @@ import (
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // TestGraphJS_PlanCreation tests that a PA-BT plan can be created for the graph example
@@ -131,12 +134,29 @@ func TestGraphJS_PlanExecution(t *testing.T) {
 		})()
 	`)
 
-	// Wait for ticker to complete
-	time.Sleep(500 * time.Millisecond)
+	// Wait for ticker to reach goal (deterministic polling replaces heuristic sleep)
+	err := testutil.Poll(context.Background(), func() bool {
+		var actor string
+		_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+			bbObj := vm.Get("graphTestBB").ToObject(vm)
+			getFn, ok := goja.AssertFunction(bbObj.Get("get"))
+			if !ok {
+				return errors.New("get() not found")
+			}
+			res, err := getFn(bbObj, vm.ToValue("actor"))
+			if err != nil {
+				return err
+			}
+			actor = res.String()
+			return nil
+		})
+		return actor == "sg"
+	}, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, err, "Timed out waiting for actor to reach goal sg")
 
 	// Check final state
 	var finalActor string
-	err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
 		bbObj := vm.Get("graphTestBB").ToObject(vm)
 		getFn, ok := goja.AssertFunction(bbObj.Get("get"))
 		if !ok {
@@ -216,12 +236,29 @@ func TestGraphJS_PathValidation(t *testing.T) {
 		})()
 	`)
 
-	// Wait for completion
-	time.Sleep(500 * time.Millisecond)
+	// Wait for actor to reach goal (deterministic polling replaces heuristic sleep)
+	err := testutil.Poll(context.Background(), func() bool {
+		var actor string
+		_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+			bbObj := vm.Get("pathTestBB").ToObject(vm)
+			getFn, ok := goja.AssertFunction(bbObj.Get("get"))
+			if !ok {
+				return errors.New("get() not found")
+			}
+			res, err := getFn(bbObj, vm.ToValue("actor"))
+			if err != nil {
+				return err
+			}
+			actor = res.String()
+			return nil
+		})
+		return actor == "sg"
+	}, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, err, "Timed out waiting for actor to reach goal sg")
 
 	// Get the path
 	var path []interface{}
-	err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
 		pathVal := vm.Get("pathTaken")
 		path = pathVal.Export().([]interface{})
 		return nil
@@ -297,12 +334,30 @@ func TestGraphJS_UnreachableGoal(t *testing.T) {
 		})()
 	`)
 
-	// Wait for ticker (should fail or stall)
-	time.Sleep(300 * time.Millisecond)
+	// Set up completion tracking for the ticker (fails because goal is unreachable)
+	executeJS(t, bridge, `
+		globalThis.unreachableDone = false;
+		globalThis.unreachableTicker.done().then(
+			() => { globalThis.unreachableDone = true; },
+			() => { globalThis.unreachableDone = true; }
+		);
+	`)
+
+	// Wait for ticker to complete (deterministic polling replaces heuristic sleep)
+	err := testutil.Poll(context.Background(), func() bool {
+		var done bool
+		_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+			v := vm.Get("unreachableDone")
+			done = v != nil && !goja.IsUndefined(v) && v.ToBoolean()
+			return nil
+		})
+		return done
+	}, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, err, "Timed out waiting for unreachable goal ticker to complete")
 
 	// Check that actor didn't reach goal
 	var actorPos string
-	err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
 		bbObj := vm.Get("unreachableBB").ToObject(vm)
 		getFn, _ := goja.AssertFunction(bbObj.Get("get"))
 		res, _ := getFn(bbObj, vm.ToValue("actor"))
@@ -374,12 +429,29 @@ func TestGraphJS_MultipleGoals(t *testing.T) {
 		})()
 	`)
 
-	// Wait for completion
-	time.Sleep(500 * time.Millisecond)
+	// Wait for actor to reach a goal node (deterministic polling replaces heuristic sleep)
+	err := testutil.Poll(context.Background(), func() bool {
+		var actor string
+		_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+			bbObj := vm.Get("multiGoalBB").ToObject(vm)
+			getFn, ok := goja.AssertFunction(bbObj.Get("get"))
+			if !ok {
+				return errors.New("get() not found")
+			}
+			res, err := getFn(bbObj, vm.ToValue("actor"))
+			if err != nil {
+				return err
+			}
+			actor = res.String()
+			return nil
+		})
+		return actor == "s5" || actor == "sg"
+	}, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, err, "Timed out waiting for actor to reach a goal node")
 
 	// Check final position
 	var finalActor string
-	err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
 		bbObj := vm.Get("multiGoalBB").ToObject(vm)
 		getFn, _ := goja.AssertFunction(bbObj.Get("get"))
 		res, _ := getFn(bbObj, vm.ToValue("actor"))
@@ -452,12 +524,30 @@ func TestGraphJS_PlanIdempotent(t *testing.T) {
 		})()
 	`)
 
-	// The ticker should complete very quickly since we're already at the goal
-	time.Sleep(100 * time.Millisecond)
+	// Verify actor remains at goal. Since we start at the goal, the BT condition
+	// succeeds immediately (no actions needed). We poll once to confirm state is stable.
+	err := testutil.Poll(context.Background(), func() bool {
+		var actor string
+		_ = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+			bbObj := vm.Get("idempotentBB").ToObject(vm)
+			getFn, ok := goja.AssertFunction(bbObj.Get("get"))
+			if !ok {
+				return errors.New("get() not found")
+			}
+			res, err := getFn(bbObj, vm.ToValue("actor"))
+			if err != nil {
+				return err
+			}
+			actor = res.String()
+			return nil
+		})
+		return actor == "sg"
+	}, 5*time.Second, 10*time.Millisecond)
+	require.NoError(t, err, "Actor should remain at goal sg")
 
 	// Check state - should still be at sg
 	var actorPos string
-	err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
 		bbObj := vm.Get("idempotentBB").ToObject(vm)
 		getFn, _ := goja.AssertFunction(bbObj.Get("get"))
 		res, _ := getFn(bbObj, vm.ToValue("actor"))

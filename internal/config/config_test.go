@@ -503,6 +503,9 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 	})
 
 	t.Run("PathWithSymlink", func(t *testing.T) {
+		// This test verifies that a symlink in an INTERMEDIATE directory
+		// component does NOT block config loading. Only the final path
+		// component (the config file itself) is checked for symlinks.
 		dir := t.TempDir()
 		realDir := filepath.Join(dir, "real")
 		linkDir := filepath.Join(dir, "link")

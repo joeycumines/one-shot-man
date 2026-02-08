@@ -13,6 +13,7 @@ import (
 func TestCleaner_DoesNotRemoveLockForActiveSession(t *testing.T) {
 	dir := t.TempDir()
 	SetTestPaths(dir)
+	defer ResetPaths()
 
 	// Create a session file and a lock file (but don't hold any lock).
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -69,6 +70,7 @@ func TestCleaner_DoesNotRemoveLockForActiveSession(t *testing.T) {
 func TestCleaner_RemovesOrphanLock(t *testing.T) {
 	dir := t.TempDir()
 	SetTestPaths(dir)
+	defer ResetPaths()
 
 	sessionID := "orphan-session"
 	_, _ = sessionFilePath(sessionID)
@@ -133,6 +135,7 @@ func TestCleaner_RemovesOrphanLock(t *testing.T) {
 func TestCleaner_SkipsYoungOrphanLock(t *testing.T) {
 	dir := t.TempDir()
 	SetTestPaths(dir)
+	defer ResetPaths()
 
 	sessionID := "young-orphan"
 	_, _ = sessionFilePath(sessionID)
@@ -172,6 +175,7 @@ func TestCleaner_SkipsYoungOrphanLock(t *testing.T) {
 func TestCleaner_CustomMinOrphanAge_RemovesWhenSmaller(t *testing.T) {
 	dir := t.TempDir()
 	SetTestPaths(dir)
+	defer ResetPaths()
 
 	sessionID := "custom-age-remove"
 	_, _ = sessionFilePath(sessionID)
@@ -213,6 +217,7 @@ func TestCleaner_CustomMinOrphanAge_RemovesWhenSmaller(t *testing.T) {
 func TestCleaner_CustomMinOrphanAge_SkipsWhenLarger(t *testing.T) {
 	dir := t.TempDir()
 	SetTestPaths(dir)
+	defer ResetPaths()
 
 	sessionID := "custom-age-skip"
 	_, _ = sessionFilePath(sessionID)
@@ -259,6 +264,7 @@ func TestCleaner_CustomMinOrphanAge_SkipsWhenLarger(t *testing.T) {
 func TestCleaner_DoesNotRemoveLockWhenAcquirableAndSessionExists(t *testing.T) {
 	dir := t.TempDir()
 	SetTestPaths(dir)
+	defer ResetPaths()
 
 	sessionID := "acquirable-session"
 	sessionPath, _ := sessionFilePath(sessionID)
@@ -304,6 +310,7 @@ func TestCleaner_DoesNotRemoveLockWhenAcquirableAndSessionExists(t *testing.T) {
 func TestGlobalMetadataLoadUpdate(t *testing.T) {
 	dir := t.TempDir()
 	SetTestPaths(dir)
+	defer ResetPaths()
 	// No metadata -> zero value
 	m, err := loadGlobalMetadataTest()
 	if err != nil {
@@ -330,6 +337,7 @@ func TestGlobalMetadataLoadUpdate(t *testing.T) {
 func TestAcquireLockHandleAndScan(t *testing.T) {
 	dir := t.TempDir()
 	SetTestPaths(dir)
+	defer ResetPaths()
 
 	// Create a session file and lock
 	sessionID := "sess-A"
@@ -394,6 +402,7 @@ func TestAcquireLockHandle_CloseLeavesFile(t *testing.T) {
 	}
 	dir := t.TempDir()
 	SetTestPaths(dir)
+	defer ResetPaths()
 
 	id := "handle-close-test"
 	lockPath, _ := sessionLockFilePath(id)
@@ -424,6 +433,7 @@ func TestAcquireLockHandle_CloseLeavesFile(t *testing.T) {
 func TestCleanerRemovesByAgeAndCount(t *testing.T) {
 	dir := t.TempDir()
 	SetTestPaths(dir)
+	defer ResetPaths()
 
 	// Create 5 sessions with staggered modtimes and sizes
 	ids := []string{"a", "b", "c", "d", "e"}
@@ -461,6 +471,7 @@ func TestCleanerRemovesByAgeAndCount(t *testing.T) {
 func TestCleanup_IgnoresNonSessionLockFilesAndRemovesOrphans(t *testing.T) {
 	dir := t.TempDir()
 	SetTestPaths(dir)
+	defer ResetPaths()
 
 	// Create a file that ends with .lock but is not a session lock.
 	tempLock := filepath.Join(dir, "temp.lock")
@@ -502,6 +513,7 @@ func TestCleanup_IgnoresNonSessionLockFilesAndRemovesOrphans(t *testing.T) {
 func TestCleaner_DryRunReportsButDoesNotDelete(t *testing.T) {
 	dir := t.TempDir()
 	SetTestPaths(dir)
+	defer ResetPaths()
 
 	// Create a session file that's old enough to be eligible for age-based
 	// removal and do NOT create a lock so the session is not considered
@@ -552,6 +564,7 @@ func TestCleaner_PreservesLockWhenRemoveFails(t *testing.T) {
 	}
 	dir := t.TempDir()
 	SetTestPaths(dir)
+	defer ResetPaths()
 
 	id := "delete-fails"
 	sessionPath, _ := sessionFilePath(id)

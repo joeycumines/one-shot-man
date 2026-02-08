@@ -10,6 +10,7 @@ import (
 func TestArchiveSession_DestAlreadyExists_DoesNotOverwrite(t *testing.T) {
 	dir := t.TempDir()
 	SetTestPaths(dir)
+	defer ResetPaths()
 
 	sid := "sid-atomic-check"
 

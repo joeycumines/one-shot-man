@@ -66,6 +66,7 @@ func TestArchiveAndReset_RetriesOnCollision(t *testing.T) {
 	// Create a temporary sessions dir and ensure path helpers use it
 	dir := t.TempDir()
 	storage.SetTestPaths(dir)
+	defer storage.ResetPaths()
 
 	fb := &flakyBackend{sessionID: "sid"}
 
@@ -127,6 +128,7 @@ func (b *backendAlwaysExists) Close() error { return nil }
 func TestArchiveAndReset_ExhaustsAndAborts(t *testing.T) {
 	dir := t.TempDir()
 	storage.SetTestPaths(dir)
+	defer storage.ResetPaths()
 
 	fb := &backendAlwaysExists{sessionID: "sid"}
 
@@ -177,6 +179,7 @@ func TestArchiveAndReset_ExhaustsAndAborts(t *testing.T) {
 func TestArchiveAndReset_ConcurrentSafety(t *testing.T) {
 	dir := t.TempDir()
 	storage.SetTestPaths(dir)
+	defer storage.ResetPaths()
 
 	// Use a real filesystem backend to exercise the actual archive and reset logic
 	fb, err := storage.NewFileSystemBackend("concurrent")

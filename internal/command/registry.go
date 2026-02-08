@@ -10,7 +10,6 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -230,13 +229,8 @@ func (c *ScriptCommand) ExecuteWithContext(ctx context.Context, args []string, s
 	cmd.Stderr = stderr
 	cmd.Stdin = os.Stdin
 
-	// Set up process group on Unix systems for proper signal handling
-	if runtime.GOOS != "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			Setpgid: true, // Create new process group
-			// Pdeathsig: syscall.SIGTERM, // Send SIGTERM to children when parent dies
-		}
-	}
+	// Set up platform-specific process attributes
+	c.setupSysProcAttr(cmd)
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
@@ -262,25 +256,5 @@ func (c *ScriptCommand) ExecuteWithContext(ctx context.Context, args []string, s
 		case <-time.After(5 * time.Second):
 			return fmt.Errorf("timeout waiting for process to terminate after context cancellation")
 		}
-	}
-}
-
-// killProcessGroup kills the entire process group for a command.
-// This ensures that all child processes are also terminated.
-func (c *ScriptCommand) killProcessGroup(cmd *exec.Cmd) {
-	if cmd.Process == nil {
-		return
-	}
-
-	if runtime.GOOS == "windows" {
-		// Windows: use taskkill to terminate the process tree
-		_ = exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", cmd.Process.Pid)).Run()
-	} else {
-		// Unix: kill the entire process group
-		// Negative PID means kill the entire process group
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-		// Give processes a moment to terminate gracefully
-		time.Sleep(100 * time.Millisecond)
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
 }

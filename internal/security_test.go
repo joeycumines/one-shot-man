@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -433,6 +434,11 @@ func TestEnvironmentVariableSanitization_Unicode(t *testing.T) {
 
 func TestFilePermissionHandling_ReadPermissions(t *testing.T) {
 	t.Parallel()
+
+	// Windows uses ACLs, not Unix-style mode bits - skip this test
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping: Windows uses ACLs, not Unix-style file permissions")
+	}
 
 	// Skip if running as root since root can read any file regardless of permissions
 	if os.Geteuid() == 0 {

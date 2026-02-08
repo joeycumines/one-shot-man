@@ -37,11 +37,11 @@ type PickAndPlaceDebugJSON struct {
 	BlockadeCount     int      `json:"n"`           // Number of blockade cubes remaining
 	GoalBlockadeCount int      `json:"g"`           // Number of goal blockade cubes (0-7)
 	// NOTE: DumpsterReachable removed - no dumpster in dynamic obstacle handling
-	GoalReachable      int `json:"gr"` // Goal reachable (0 = false, 1 = true)
-	TotalWidth         int `json:"tw"` // Total terminal width
-	SpaceWidth         int `json:"sw"` // Width of the simulation space
-	ManualPathLength   int `json:"mpl"` // Manual path length (0 = no movement pending)
-	PathStuckTicks     int `json:"pst"` // Path stuck counter
+	GoalReachable    int `json:"gr"`  // Goal reachable (0 = false, 1 = true)
+	TotalWidth       int `json:"tw"`  // Total terminal width
+	SpaceWidth       int `json:"sw"`  // Width of the simulation space
+	ManualPathLength int `json:"mpl"` // Manual path length (0 = no movement pending)
+	PathStuckTicks   int `json:"pst"` // Path stuck counter
 }
 
 // PickAndPlaceConfig holds configuration for pick-and-place tests

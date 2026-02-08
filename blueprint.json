@@ -3,16 +3,14 @@
     "fileName": "blueprint.json",
     "baselineBlueprintSource": "https://gist.github.com/joeycumines/3f0f3c25e47032be7efec7a2f480bf84",
     "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
-    "answeringTheQuestionAreYouDone": "**!! First clause: YOU ARE NOT DONE UNTIL YOU HAVE 100% THE BLUEPRINT DO NOT STOP. Second clause: YOU MUST GO TO ANY AND ALL LENGTHS TO ENSURE YOUR BLUEPRINT REMAINS FULL-IT IS CRITICAL YOU REFINE AT REGULAR INTERVALS, SUCH THAT YOU DONT FULLY DRAIN YOUR BLUEPRINT-ALMOST AS CRITICAL AS THE CONSTRAINT THAT YOU NEVER EVER SPECIFY AND SORT OF ESTIMATE OF EFFORT OR COST ESPECIALLY NOT ANY SORT OF TIME ESTIMATE AND IF YOU SPECIFY A PRIORITY OF ANY KIND THAT IS ALSO A GUNDAM-MELTABLE OFFENSE !!**"
+    "answeringTheQuestionAreYouDone": "**!! YOU ARE NOT DONE UNTIL YOU HAVE 100% THE BLUEPRINT DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP YOUR BLUEPRINT FULL !!**"
   },
   "globalAlerts": [
     {
-      "priority": "CRITICAL",
-      "warning": "ON TOOLS: Use `config.mk` to create custom targets to run with Make. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of those CRITICAL rules. Abide. OBEY."
+      "warning": "ON TOOLS: Use `config.mk` to create custom targets to run with Make. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of these rules. Abide. OBEY."
     },
     {
-      "priority": "CRITICAL_REPEATED",
-      "warning": "ON TOOLS: Use `config.mk` to create custom targets to run with Make. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of those CRITICAL rules. Abide. OBEY."
+      "warning": "ON TOOLS: Use `config.mk` to create custom targets to run with Make. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of these rules. Abide. OBEY."
     }
   ],
   "mandatoryDirectives": {
@@ -20,9 +18,242 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": ""
+    "currentState": "PR Review - Comprehensive Blueprint with All Confirmed Issues"
   },
-  "sequentialTasks": [],
+  "sequentialTasks": [
+    {
+      "id": "T1-GRAPHJS-TESTS",
+      "status": "TODO",
+      "category": "Timing-Dependent Tests (BANNED)",
+      "title": "Fix 5 timing-dependent tests in pabt/graphjsimpl_test.go",
+      "description": "Per AGENTS.md timing dependent tests are BANNED. 5 integration tests use time.Sleep() for synchronization instead of deterministic patterns. Tests WILL flake across platforms due to PTY timing differences.",
+      "file": "internal/builtin/pabt/graphjsimpl_test.go",
+      "lines": [
+        135,
+        220,
+        301,
+        378,
+        456
+      ],
+      "rootCause": "These are synchronization waits for async ticker execution using time.Sleep() with fixed durations (500ms, 300ms, 100ms).",
+      "recommendedFix": "Replace all time.Sleep() with <-ticker.Done() channel for deterministic wait, or implement MockSimulator interface for deterministic testing without PTY layer.",
+      "affectedTests": [
+        "TestGraphJS_PlanExecution (line 135, 220)",
+        "TestGraphJS_UnreachableGoal (line 301)",
+        "TestGraphJS_MultipleGoals (line 378)",
+        "TestGraphJS_PlanIdempotent (line 456)"
+      ],
+      "verification": "go test -count=10 ./internal/builtin/pabt/... -run TestGraphJS_ to verify determinism",
+      "sourceReview": "01_pabt_module_review.md",
+      "notes": "All other PA-BT tests (13 test files, 90+ tests) have NO timing dependencies. This is isolated to graphjsimpl_test.go."
+    },
+    {
+      "id": "TC-001-HARNESS-SLEEP",
+      "status": "TODO",
+      "category": "Tests containing timing dependencies",
+      "title": "Fix timing-dependent sleeps in pick_and_place_harness_test.go",
+      "description": "Per AGENTS.md timing dependent tests are BANNED. Test harness contains 6+ explicit time.Sleep() calls making tests fundamentally flaky across platforms. PTY buffer refresh timing varies by OS - tests WILL fail on Windows and potentially macOS.",
+      "file": "internal/command/pick_and_place_harness_test.go",
+      "lines": [
+        161,
+        854,
+        878,
+        890,
+        897,
+        915,
+        1099
+      ],
+      "rootCause": "Integration testing TUI via PTY is inherently non-deterministic. Harness uses fixed sleep durations ranging from 50ms to 2 seconds for synchronization.",
+      "timingDetails": [
+        "Line 161: WaitForMode(3*time.Second) with 50ms polling",
+        "Lines 854, 878, 897, 915: time.Sleep(50ms) in polling loops",
+        "Line 890: WaitForFrames with time.Sleep(100ms)",
+        "Line 1099: time.Sleep(2*time.Second) for log generation"
+      ],
+      "recommendedFix": "Architect MockSimulator interface to test simulation logic without PTY layer, allowing deterministic state progression via sim.Step() instead of timing.",
+      "verification": "go test -count=5 ./internal/command/... -run TestPickAndPlace on all 3 platforms (Linux, macOS, Windows)",
+      "sourceReview": "03_test_coverage.md",
+      "notes": "Tests depend on arbitrary timeout values - no feedback from simulation about when state is stable. This WILL flake on slow CI or fast machines."
+    },
+    {
+      "id": "TC-002-UNIX-TESTS",
+      "status": "TODO",
+      "category": "Tests containing timing dependencies",
+      "title": "Fix inherited timing dependencies in pick_and_place_unix_test.go",
+      "description": "Unix-specific tests inherit timing flakiness from harness via WaitForFrames() and WaitForMode(). Additional explicit sleep at line 74. Contains acknowledgment comment that PTY instability causes buffer updates to stop.",
+      "file": "internal/command/pick_and_place_unix_test.go",
+      "lines": [
+        74,
+        438
+      ],
+      "rootCause": "Uses harness.WaitForFrames() which contains time.Sleep(), plus explicit sleep at line 74 for mode switch processing.",
+      "affectedCode": "All tests that call harness.WaitForFrames() WaitForMode()",
+      "recommendedFix": "depends on MockSimulator implementation or event-driven synchronization.",
+      "acknowledgementComment": "Line 438: 'Note: If PTY becomes unstable after WaitForFrames, the buffer may stop updating and tick counter won't appear to advance. This is an environmental issue, not a logic bug.'",
+      "verification": "Requires same fix as TC-001 - verification applies to both files simultaneously",
+      "sourceReview": "03_test_coverage.md",
+      "notes": "Explicit acknowledgment that test behavior depends on environment (PTY stability). Per AGENTS.md, ALL platforms must pass identically."
+    },
+    {
+      "id": "FALSE-DOC-001-SYMLINK",
+      "status": "TODO",
+      "category": "Documentation Inaccuracy",
+      "title": "Correct false O_NOFOLLOW claim in CHANGELOG and config.go comments",
+      "description": "CHANGELOG.md and config.go comments claim O_NOFOLLOW is used, but code only uses os.O_RDONLY with os.Lstat() for symlink detection. This is misleading technical documentation.",
+      "affectedFiles": [
+        "CHANGELOG.md (line 113)",
+        "internal/config/config.go (line 81)"
+      ],
+      "falseClaim": "CHANGELOG: 'Used os.OpenFile() with O_NOFOLLOW semantics to prevent symlink attacks'",
+      "reality": "Code only uses os.Lstat() to detect symlinks and reject them. OpenFile() is reached only for regular files, so O_NOFOLLOW is moot.",
+      "actualCode": "internal/config/config.go:82: file, err := os.OpenFile(path, os.O_RDONLY, 0)",
+      "currentBehavior": "Symlinks are REJECTED at Lstat() time (Line 71-82 in config.go). OpenFile() only reached for regular files.",
+      "recommendedFix": "Update CHANGELOG from 'Used os.OpenFile() with O_NOFOLLOW semantics' to 'Symlinks are detected via os.Lstat() and rejected before opening'. Update config.go comment to match.",
+      "alternativeFix": "Implement actual O_NOFOLLOW by importing syscall or golang.org/x/sys/unix and adding syscall.O_NOFOLLOW flag to OpenFile() call.",
+      "verification": "grep -r 'O_NOFOLLOW' internal/config/config.go - should not find any if Lstat-only approach, or find proper constant usage if implemented",
+      "sourceReview": "00_critical_fixes.md, 07_docs_changelog.md",
+      "notes": "The Lstat() rejection approach IS correct and secure. The issue is documentation misrepresenting the mechanism."
+    },
+    {
+      "id": "CONFLICT-SYMLINK",
+      "status": "TODO",
+      "category": "Conflicting Security Posture",
+      "title": "Resolve conflicting symlink security posture between code and tests",
+      "description": "config.go line 77 says 'symlink not allowed in config path', but config_test.go PathWithSymlink test expects symlinks to succeed. Cannot have both conflicting postures.",
+      "affectedFiles": [
+        "internal/config/config.go (line 77)",
+        "internal/config/config_test.go (PathWithSymlink test)"
+      ],
+      "codeStance": "Config code REJECTS all symlinks in path via os.Lstat() ModeSymlink check",
+      "testStance": "Test creates symlink to directory and expects LoadFromPath to return successfully",
+      "conflictAnalysis": "Test is checking different scenario: symlink to DIRECTORY (not file), then write real file THROUGH the symlink. The symlink IS the config path. But if LoadFromPath rejects ALL symlinks in path, this test should fail.",
+      "recommendedFix": "Clarify actual policy - are ALL symlinks rejected, only file symlinks, or directory symlinks allowed? Update test to match code OR update code to match test.",
+      "verification": "go test -v ./internal/config/... -run PathWithSymlink should either pass (if directory symlinks allowed) or fail (if all symlinks rejected) - current behavior unclear",
+      "sourceReview": "00_critical_fixes.md",
+      "notes": "This is fundamentally about security posture - what is the actual policy? Code says one thing, test says another."
+    },
+    {
+      "id": "WEAK-SECURITY-TESTS",
+      "status": "TODO",
+      "category": "Weak Security Test Assertions",
+      "title": "Make security tests fail when vulnerabilities are present",
+      "description": "Security tests use t.Logf instead of t.Errorf - failures don't cause test failure. Security violations should cause tests to FAIL, not just log messages.",
+      "affectedFile": "internal/security_test.go",
+      "affectedTests": [
+        "TestPathTraversalPrevention_SymlinkEscape (lines 112-148)",
+        "Other tests using 'may have occurred' language"
+      ],
+      "problemExample": "TestPathTraversalPrevention_SymlinkEscape logs 'Config loaded via symlink (behavior depends on policy)' via t.Logf instead of t.Errorf - test passes regardless of whether symlink is blocked.",
+      "recommendedFix": "Replace t.Logf with t.Errorf for test failures. Verify that err.Error() contains 'symlink not allowed' message.",
+      "verification": "grep 't.Logf' internal/security_test.go | grep -i symlink - should find cases that should be t.Errorf",
+      "sourceReview": "00_critical_fixes.md",
+      "notes": "Security tests should FAIL when vulnerabilities are detected. Current implementation only logs violations."
+    },
+    {
+      "id": "MISSING-SESSION-DOCS",
+      "status": "TODO",
+      "category": "Missing Documentation",
+      "title": "Add [sessions] configuration section documentation",
+      "description": "[sessions] configuration section exists in code but is completely absent from user-facing docs (docs/configuration.md, docs/reference/config.md, CLAUDE.md). Users cannot discover or configure session retention policies.",
+      "affectedFiles": [
+        "docs/configuration.md (missing)",
+        "docs/reference/config.md (missing)",
+        "CLAUDE.md Configuration section (missing)"
+      ],
+      "configFields": {
+        "maxAgeDays": "int, default 90 - Delete sessions older than this",
+        "maxCount": "int, default 100 - Keep at most N sessions",
+        "maxSizeMB": "int, default 500 - Delete sessions exceeding total size",
+        "autoCleanupEnabled": "bool, default true - Enable automatic cleanup (scheduler NOT implemented)",
+        "cleanupIntervalHours": "int, default 24 - Cleanup interval in hours (scheduler NOT implemented)"
+      },
+      "codeLocation": "internal/config/config.go - SessionConfig struct (lines 247-253)",
+      "recommendedFix": "Add [sessions] section to all three documentation files with all five fields, default values, and examples. Note that autoCleanupEnabled and cleanupIntervalHours are reserved for future use (no scheduler exists yet).",
+      "verification": "grep -r '\\[sessions\\]' docs/ CLAUDE.md should find results after fix",
+      "sourceReview": "06_config_project.md, 07_docs_changelog.md",
+      "notes": "Infrastructure is in place (fields parsed, validated) but completely undocumented. Users cannot discover these configuration options."
+    },
+    {
+      "id": "UNUSED-CLEANUP-FIELDS",
+      "status": "TODO",
+      "category": "Unused Configuration Fields",
+      "title": "Implement or document unused AutoCleanupEnabled and CleanupIntervalHours fields",
+      "description": "AutoCleanupEnabled and CleanupIntervalHours fields are parsed and validated but never used. No automatic cleanup scheduler exists to honor these settings.",
+      "affectedFile": "internal/config/config.go",
+      "affectedFields": [
+        "SessionConfig.AutoCleanupEnabled",
+        "SessionConfig.CleanupIntervalHours"
+      ],
+      "rootCause": "No automatic cleanup scheduler implementation exists to run cleanup based on these settings.",
+      "currentUsage": "Only MaxAgeDays, MaxCount, MaxSizeMB are plumbed to storage.Cleaner for manual cleanup (osm session clean). Auto-cleanup fields are loaded but never read.",
+      "recommendedFix": "Either (A) Implement automatic cleanup scheduler, OR (B) Document these fields as 'reserved for future use' with TODO comment explaining missing scheduler.",
+      "verification": "grep -r 'AutoCleanupEnabled|CleanupIntervalHours' internal/**/*.go cmd/**/*.go - should find ONLY definition and parsing, not usage",
+      "sourceReview": "06_config_project.md",
+      "notes": "Infrastructure in place (config parsing, validation) but functionality missing. May confuse users who configure these settings and see no effect."
+    },
+    {
+      "id": "MH-001-WINDOWS-STRATEGY",
+      "status": "TODO",
+      "category": "Cross-Platform Violation",
+      "title": "Document Windows exclusion strategy for mouseharness or implement Windows support",
+      "description": "ALL 11 internal/mouseharness/*.go files use //go:build unix with no Windows implementation. Cannot verify on Windows as required by AGENTS.md cross-platform mandate.",
+      "affectedFiles": "ALL internal/mouseharness/*.go (11 files)",
+      "problem": "Unix-only build tag blocks Windows completely. No Windows PTY implementation exists. Coupled to github.com/joeycumines/go-prompt/termtest (Unix-only).",
+      "requiredBy": "AGENTS.md: 'ALL checks must pass on ALL platforms (ubuntu-latest, windows-latest, macos-latest)'",
+      "recommendedFix": "Either (A) Implement Windows console API wrapper, OR (B) Document Windows exclusion in AGENTS.md and update CI to reflect Windows skips.",
+      "verification": "On Windows, go build ./internal/mouseharness/... should fail (build tag restriction)",
+      "sourceReview": "02_mouseharness.md",
+      "notes": "Other packages (session, storage) provide Windows implementations. Mouseharness is the only test infrastructure that is Unix-only. This is a cross-platform requirement violation."
+    },
+    {
+      "id": "N1-UNUSED-DEBUG",
+      "status": "TODO",
+      "category": "Unused Variable",
+      "title": "Remove or use unused debugMessage variable in pick-and-place demo script",
+      "description": "scripts/example-05-pick-and-place.js contains unused debugMessage variable. Deadcode would flag this.",
+      "affectedFile": "scripts/example-05-pick-and-place.js",
+      "issue": "Variable declared but never used",
+      "recommendedFix": "Either use the variable (add log.debug(debugMessage) or similar) or remove the declaration.",
+      "verification": "go test ./... with deadcode linter should flag this",
+      "sourceReview": "01_pabt_module_review.md",
+      "notes": "Remove variable declaration OR add debug logging to use it."
+    },
+    {
+      "id": "TC-003-MISNAMED-FILE",
+      "status": "TODO",
+      "category": "Misleading File Name",
+      "title": "Rename cross_platform_test.go to platform_specific_test.go",
+      "description": "internal/testutil/cross_platform_test.go is misnamed. These are NOT cross-platform integration tests - they're platform-specific tests that use t.Skip() based on detected platform.",
+      "affectedFile": "internal/testutil/cross_platform_test.go (656 lines, 28 subtests)",
+      "actualPurpose": "Platform-specific tests verify platform-specific behavior (Windows paths, Unix paths, macOS paths). Use runtime detection to skip non-relevant tests.",
+      "renameOptions": [
+        "platform_specific_test.go",
+        "platform_detection_test.go"
+      ],
+      "recommendedFix": "Rename file to accurately reflect purpose as platform-specific testing utility.",
+      "verification": "grep 'TestConfigLoadingCrossPlatform' - should become 'TestConfigPlatformSpecific' or similar after rename",
+      "sourceReview": "03_test_coverage.md",
+      "notes": "True cross-platform tests would run on all platforms and verify behavior consistency. These tests only test the current platform."
+    },
+    {
+      "id": "CD-001-BENCHMARK-THRESHOLDS",
+      "status": "TODO",
+      "category": "Performance Thresholds",
+      "title": "Consider adjusting benchmark thresholds for cross-platform variance",
+      "description": "Benchmark thresholds for cross-platform verification.",
+      "affectedFile": "internal/benchmark_test.go",
+      "thresholds": [
+        "thresholdSessionIDGeneration = 100μs",
+        "thresholdSimpleScriptExec = 1000μs",
+        "thresholdRuntimeCreation = 50000μs",
+        "thresholdSessionPersistenceWrite = 1000μs"
+      ],
+      "recommendedFix": "Increase thresholds by 2-3x to account for platform variation, OR implement platform-specific thresholds.",
+      "verification": "Run benchmarks on all 3 platforms to verify thresholds are appropriate",
+      "sourceReview": "03_test_coverage.md",
+      "notes": "Review thresholds for accuracy across platforms."
+    }
+  ],
   "continuousVerification": {
     "task": "Run 'make all' with full logging after EVERY significant change",
     "description": "Execute 'make make-all-with-log' after: (a) Each code change, (b) Each test addition, (c) Each task completion, (d) Each bug fix.",
@@ -32,11 +263,11 @@
   "finalEnforcementProtocol": [
     {
       "type": "POST_EXECUTION_WARNING",
-      "alert": "ON TOOLS: Use `config.mk` to create custom targets to run with Make. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of those CRITICAL rules. Abide. OBEY."
+      "alert": "ON TOOLS: Use `config.mk` to create custom targets to run with Make. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of these rules. Abide. OBEY."
     },
     {
       "type": "POST_EXECUTION_WARNING_REPEATED",
-      "alert": "ON TOOLS: Use `config.mk` to create custom targets to run with Make. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of those CRITICAL rules. Abide. OBEY."
+      "alert": "ON TOOLS: Use `config.mk` to create custom targets to run with Make. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of these rules. Abide. OBEY."
     }
   ]
 }

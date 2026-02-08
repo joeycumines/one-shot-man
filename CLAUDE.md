@@ -45,7 +45,9 @@ go test -v ./internal/session/... -run TestSessionLock
 
 ### Platform-Specific Testing
 
-See `example.config.mk` for `make-all-in-container` target to test Linux behavior from macOS.
+See `example.config.mk` for additional platform-specific targets:
+- `make-all-in-container` - Test Linux behavior from macOS using Docker
+- `make-all-run-windows` - Run all targets on Windows via `hack/run-on-windows.sh`
 
 ## Architecture
 

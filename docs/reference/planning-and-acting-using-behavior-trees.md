@@ -27,7 +27,9 @@ The `osm:pabt` module provides a **Planning and Acting using Behavior Trees (PA-
 
 ## What is PA-BT?
 
-<iframe src="https://drive.google.com/file/d/1sxj5ZqjtonkthBG60iPc8o-DVN8RZ5Y0/preview" width="640" height="480"></iframe>
+<p align="center" width="100%">
+<video src="https://drive.google.com/file/d/1sxj5ZqjtonkthBG60iPc8o-DVN8RZ5Y0/preview" width="80%" controls></video>
+</p>
 
 **PA-BT (Planning and Acting using Behavior Trees)** is a formalism for autonomous agents that unifies deliberative planning with reactive execution. It is distinct from traditional GOAP (Goal-Oriented Action Planning) or linear planners.
 

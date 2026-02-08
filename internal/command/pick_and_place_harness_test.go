@@ -887,19 +887,44 @@ func (h *PickAndPlaceHarness) WaitForHeldItem(minID int, timeout time.Duration) 
 
 // WaitForManualPathEmpty waits for the manual path to be empty (mpl=0).
 // This indicates the actor has reached its destination and movement is complete.
+// It also waits for actor stabilization to ensure all keys have been processed.
 func (h *PickAndPlaceHarness) WaitForManualPathEmpty(timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
+	const stabilizationTicks = 5 // Number of consecutive ticks with stable position
+	stableCount := 0
+	var lastActorX, lastActorY float64
+
 	for time.Now().Before(deadline) {
 		state := h.GetDebugState()
 		if state.ManualPathLength == 0 {
-			h.t.Logf("WaitForManualPathEmpty: path cleared at tick=%d, actor=(%.1f,%.1f)",
-				state.Tick, state.ActorX, state.ActorY)
-			return true
+			// Check if actor position has stabilized
+			if stableCount == 0 {
+				// First time seeing mpl=0, record position
+				lastActorX = state.ActorX
+				lastActorY = state.ActorY
+				stableCount = 1
+			} else if state.ActorX == lastActorX && state.ActorY == lastActorY {
+				// Position is stable
+				stableCount++
+				if stableCount >= stabilizationTicks {
+					h.t.Logf("WaitForManualPathEmpty: path cleared and stabilized at tick=%d, actor=(%.1f,%.1f)",
+						state.Tick, state.ActorX, state.ActorY)
+					return true
+				}
+			} else {
+				// Position changed, reset stabilization count
+				lastActorX = state.ActorX
+				lastActorY = state.ActorY
+				stableCount = 1
+			}
+		} else {
+			// Path not empty, reset stabilization
+			stableCount = 0
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	state := h.GetDebugState()
-	h.t.Logf("WaitForManualPathEmpty: timeout, mpl=%d at tick=%d", state.ManualPathLength, state.Tick)
+	h.t.Logf("WaitForManualPathEmpty: timeout, mpl=%d, stableCount=%d at tick=%d", state.ManualPathLength, stableCount, state.Tick)
 	return false
 }
 
@@ -938,6 +963,57 @@ func (h *PickAndPlaceHarness) WaitForFrames(frames int64) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	h.t.Logf("WaitForFrames: timeout reached, last tick=%d", initialTick)
+}
+
+// WaitForManualPathEmptyWithMinTicks waits for the manual path to be empty (mpl=0)
+// AND for a minimum number of ticks to elapse. This ensures that all pending inputs
+// have been processed before returning, which is important when sending multiple
+// keypresses in sequence.
+func (h *PickAndPlaceHarness) WaitForManualPathEmptyWithMinTicks(timeout time.Duration, minTicks int64) bool {
+	deadline := time.Now().Add(timeout)
+	const stabilizationTicks = 5 // Number of consecutive ticks with stable position
+	stableCount := 0
+	var lastActorX, lastActorY float64
+	initialState := h.GetDebugState()
+	startTick := initialState.Tick
+
+	for time.Now().Before(deadline) {
+		state := h.GetDebugState()
+		ticksElapsed := state.Tick - startTick
+
+		// Check if minimum ticks have elapsed
+		minTicksElapsed := ticksElapsed >= minTicks
+
+		if state.ManualPathLength == 0 {
+			// Check if actor position has stabilized
+			if stableCount == 0 {
+				// First time seeing mpl=0, record position
+				lastActorX = state.ActorX
+				lastActorY = state.ActorY
+				stableCount = 1
+			} else if state.ActorX == lastActorX && state.ActorY == lastActorY {
+				// Position is stable
+				stableCount++
+				if stableCount >= stabilizationTicks && minTicksElapsed {
+					h.t.Logf("WaitForManualPathEmptyWithMinTicks: path cleared and stabilized at tick=%d (minTicks=%d), actor=(%.1f,%.1f)",
+						state.Tick, minTicks, state.ActorX, state.ActorY)
+					return true
+				}
+			} else {
+				// Position changed, reset stabilization count
+				lastActorX = state.ActorX
+				lastActorY = state.ActorY
+				stableCount = 1
+			}
+		} else {
+			// Path not empty, reset stabilization
+			stableCount = 0
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	state := h.GetDebugState()
+	h.t.Logf("WaitForManualPathEmptyWithMinTicks: timeout, mpl=%d, stableCount=%d at tick=%d", state.ManualPathLength, stableCount, state.Tick)
+	return false
 }
 
 // GetDebugState returns the parsed debug state from the simulator

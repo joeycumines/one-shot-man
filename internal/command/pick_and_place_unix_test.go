@@ -1782,22 +1782,35 @@ func TestPickAndPlace_MousePlace_NonTargetInGoal(t *testing.T) {
 	h.WaitForMode("m", 3*time.Second)
 
 	// Navigate actor near the blockade cube at (7, 18)
-	for i := 0; i < 2; i++ {
-		h.SendKey("d") // Move right
-		time.Sleep(100 * time.Millisecond)
-	}
-	for i := 0; i < 7; i++ {
-		h.SendKey("s") // Move down
-		time.Sleep(100 * time.Millisecond)
-	}
-	// Wait for movement to complete (path cleared)
+	// Use direct clicking to trigger pathfinding instead of keypresses,
+	// as keypresses may not be reliably processed in all environments
+	h.ClickGrid(7, 18)
+	// Wait for the actor to reach the target location
+	time.Sleep(500 * time.Millisecond)
 	if !h.WaitForManualPathEmpty(3 * time.Second) {
 		t.Fatalf("Timeout waiting for actor to reach position near cube at (7, 18)")
 	}
+	// The pathfinding will stop at the blockade wall.
+	// Actor should be at (5, 18) or similar, need to move right to be adjacent to cube.
+	// Send 2 right keys to get to (7, 18) or adjacent position.
+	h.SendKey("d")
+	time.Sleep(100 * time.Millisecond)
+	h.SendKey("d")
+	time.Sleep(100 * time.Millisecond)
+	if !h.WaitForManualPathEmpty(3 * time.Second) {
+		t.Fatalf("Timeout waiting for actor to move adjacent to cube")
+	}
 
-	// Pick up a non-target cube (cube 100 at 7, 18)
-	h.ClickGrid(7, 18)
-	time.Sleep(500 * time.Millisecond)
+	// Check if we successfully picked up a blockade cube (ID >= 100)
+	// The actor should have picked up a cube during navigation or be adjacent to one
+	stateAfterNav := h.GetDebugState()
+	t.Logf("After navigation: actor=(%.1f, %.1f), heldItem=%d", stateAfterNav.ActorX, stateAfterNav.ActorY, stateAfterNav.HeldItemID)
+
+	// If not already holding a cube, click to pick up the cube at (7, 18)
+	if stateAfterNav.HeldItemID < 100 {
+		h.ClickGrid(7, 18)
+		time.Sleep(500 * time.Millisecond)
+	}
 
 	stateAfterPick := h.GetDebugState()
 	if stateAfterPick.HeldItemID < 100 {

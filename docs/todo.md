@@ -60,3 +60,4 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
 - Review `tview`/`tcell` support for refinement or removal (probably just leave it as-is for now, remove eventually - bubbletea is the winner of this one)
 - Plan system-style logging (file output, tailing) - likely deferred
 - Fix duplicate log lines for purged sessions etc?
+- Implement automatic session cleanup scheduler using SessionConfig (AutoCleanupEnabled, CleanupIntervalHours, MaxAgeDays, MaxCount, MaxSizeMB)

@@ -43,36 +43,36 @@ function createLatencyTracker() {
         pendingMeasurement: false,
         totalKeyPresses: 0,
         warmupComplete: false,
-        
+
         startMeasurement: function() {
             this.keyReceivedTime = Date.now();
             this.pendingMeasurement = true;
         },
-        
+
         endMeasurement: function() {
             if (!this.pendingMeasurement) return;
-            
+
             const latency = Date.now() - this.keyReceivedTime;
             this.pendingMeasurement = false;
             this.totalKeyPresses++;
-            
+
             // Skip warmup period
             if (this.totalKeyPresses <= WARMUP_KEYS) {
                 return;
             }
-            
+
             this.warmupComplete = true;
             this.samples.push(latency);
         },
-        
+
         getStats: function() {
             if (this.samples.length === 0) {
                 return { count: 0 };
             }
-            
+
             const sorted = [...this.samples].sort((a, b) => a - b);
             const sum = sorted.reduce((a, b) => a + b, 0);
-            
+
             return {
                 count: sorted.length,
                 min: sorted[0],
@@ -84,10 +84,10 @@ function createLatencyTracker() {
                 samples: sorted
             };
         },
-        
+
         getHistogram: function() {
             if (this.samples.length === 0) return '';
-            
+
             // Bucket into 0-5ms, 5-10ms, 10-20ms, 20-50ms, 50-100ms, 100ms+
             const buckets = {
                 '0-5ms': 0,
@@ -97,7 +97,7 @@ function createLatencyTracker() {
                 '50-100ms': 0,
                 '100ms+': 0
             };
-            
+
             for (const sample of this.samples) {
                 if (sample <= 5) buckets['0-5ms']++;
                 else if (sample <= 10) buckets['5-10ms']++;
@@ -106,18 +106,18 @@ function createLatencyTracker() {
                 else if (sample <= 100) buckets['50-100ms']++;
                 else buckets['100ms+']++;
             }
-            
+
             let histogram = '';
             const maxCount = Math.max(...Object.values(buckets));
             const barWidth = 40;
-            
+
             for (const [range, count] of Object.entries(buckets)) {
                 const barLen = Math.floor((count / maxCount) * barWidth);
                 const bar = '█'.repeat(barLen) + '░'.repeat(barWidth - barLen);
                 const pct = ((count / this.samples.length) * 100).toFixed(1);
                 histogram += `  ${range.padEnd(10)} ${bar} ${count} (${pct}%)\n`;
             }
-            
+
             return histogram;
         }
     };
@@ -133,7 +133,7 @@ function createTickTracker() {
         keyCount: 0,
         tickTimes: [],
         lastTickTime: 0,
-        
+
         recordTick: function() {
             this.tickCount++;
             const now = Date.now();
@@ -142,11 +142,11 @@ function createTickTracker() {
             }
             this.lastTickTime = now;
         },
-        
+
         recordKey: function() {
             this.keyCount++;
         },
-        
+
         getTickStats: function() {
             if (this.tickTimes.length === 0) {
                 return { avgInterval: 0, count: this.tickCount };
@@ -187,19 +187,19 @@ function update(state, msg) {
     if (msg.type === 'Tick' && msg.id === 'tick') {
         state.frameCount++;
         state.ticks.recordTick();
-        
+
         // End latency measurement when view is about to render
         state.latency.endMeasurement();
-        
+
         return [state, tea.tick(TICK_INTERVAL_MS, 'tick')];
     }
-    
+
     if (msg.type === 'Key') {
         // Start latency measurement immediately on key receipt
         state.latency.startMeasurement();
         state.ticks.recordKey();
         state.lastKey = msg.key;
-        
+
         switch (msg.key) {
             case 'q':
                 return [state, tea.quit()];
@@ -227,13 +227,13 @@ function update(state, msg) {
                 state.startTime = Date.now();
                 break;
         }
-        
+
         // Check if we have enough samples
         if (state.latency.samples.length >= TARGET_SAMPLES && !state.complete) {
             state.complete = true;
         }
     }
-    
+
     return [state, tea.tick(TICK_INTERVAL_MS, 'tick')];
 }
 
@@ -242,29 +242,29 @@ function view(state) {
     const stats = state.latency.getStats();
     const tickStats = state.ticks.getTickStats();
     const elapsed = ((Date.now() - state.startTime) / 1000).toFixed(1);
-    
+
     // Header
     lines.push('═'.repeat(SCREEN_WIDTH));
     lines.push('  INPUT LATENCY BENCHMARK - osm:bubbletea');
     lines.push('═'.repeat(SCREEN_WIDTH));
     lines.push('');
-    
+
     // Instructions
     lines.push('  Press WASD or Arrow keys to move. Press Q to quit. Press R to reset.');
     lines.push('  Collecting ' + TARGET_SAMPLES + ' samples after ' + WARMUP_KEYS + ' key warmup...');
     lines.push('');
-    
+
     // Current state
     lines.push('  Frame: ' + state.frameCount + ' | Elapsed: ' + elapsed + 's | Last Key: ' + (state.lastKey || 'none'));
     lines.push('  Player Position: (' + state.playerX + ', ' + state.playerY + ')');
     lines.push('');
-    
+
     // Tick stats
     lines.push('  ─── Tick Statistics ───');
     lines.push('  Total Ticks: ' + tickStats.count + ' | Key Events: ' + tickStats.keyCount);
     lines.push('  Tick:Key Ratio: ' + tickStats.ratio + ':1 | Avg Tick Interval: ' + tickStats.avgInterval + 'ms');
     lines.push('');
-    
+
     // Latency stats
     lines.push('  ─── Input Latency (Key→Render) ───');
     if (stats.count === 0) {
@@ -281,14 +281,14 @@ function view(state) {
         lines.push('  ─── Latency Histogram ───');
         lines.push(state.latency.getHistogram());
     }
-    
+
     // Completion message
     if (state.complete) {
         lines.push('');
         lines.push('  ★★★ BENCHMARK COMPLETE ★★★');
         lines.push('  Press R to reset and run again, or Q to quit.');
     }
-    
+
     // Simple play area with player marker
     lines.push('');
     lines.push('  ─── Play Area ───');
@@ -307,7 +307,7 @@ function view(state) {
         }
         lines.push(row);
     }
-    
+
     return lines.join('\n');
 }
 

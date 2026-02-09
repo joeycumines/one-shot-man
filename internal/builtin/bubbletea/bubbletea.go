@@ -124,6 +124,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"os"
 	"os/signal"
@@ -422,7 +423,7 @@ func JsToTeaMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
 	switch msgType {
 	case "Key":
 		keyVal := obj.Get("key")
-		if goja.IsUndefined(keyVal) || goja.IsNull(keyVal) {
+		if keyVal == nil || goja.IsUndefined(keyVal) || goja.IsNull(keyVal) {
 			return nil
 		}
 		key, _ := ParseKey(keyVal.String())
@@ -439,13 +440,13 @@ func JsToTeaMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
 		ctrl := false
 		shift := false
 
-		if v := obj.Get("alt"); !goja.IsUndefined(v) {
+		if v := obj.Get("alt"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 			alt = v.ToBoolean()
 		}
-		if v := obj.Get("ctrl"); !goja.IsUndefined(v) {
+		if v := obj.Get("ctrl"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 			ctrl = v.ToBoolean()
 		}
-		if v := obj.Get("shift"); !goja.IsUndefined(v) {
+		if v := obj.Get("shift"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 			shift = v.ToBoolean()
 		}
 
@@ -487,6 +488,11 @@ type jsModel struct {
 	throttleMu         sync.Mutex      // Protects throttle timer state
 	throttleTimerSet   bool            // True if a delayed render is already scheduled
 	program            *tea.Program    // Reference for sending delayed render messages
+
+	// Throttle timer cancellation - prevents goroutine leak on program exit
+	// Set when program starts, cancelled when program exits
+	throttleCtx    context.Context
+	throttleCancel context.CancelFunc
 }
 
 // registerCommand registers a command ID as valid.
@@ -582,6 +588,11 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Log Update calls for debugging tick loop issues
+	if msgType, ok := jsMsg["type"].(string); ok && msgType == "Tick" {
+		slog.Debug("bubbletea: Update called with Tick message", "id", jsMsg["id"])
+	}
+
 	// Check if this message type should force an immediate render
 	if m.throttleEnabled && m.alwaysRenderTypes != nil {
 		if msgType, ok := jsMsg["type"].(string); ok {
@@ -606,6 +617,7 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	})
 	if err != nil {
 		// Event loop error - return current state unchanged
+		slog.Error("bubbletea: Update: RunJSSync error, returning nil cmd (breaks tick loop!)", "error", err, "msgType", jsMsg["type"])
 		return m, nil
 	}
 	return m, cmd
@@ -621,12 +633,21 @@ func (m *jsModel) updateDirect(jsMsg map[string]interface{}) tea.Cmd {
 
 	result, err := m.updateFn(goja.Undefined(), m.runtime.ToValue(jsMsg), state)
 	if err != nil {
+		slog.Error("bubbletea: updateDirect: JS update function error", "error", err, "msgType", jsMsg["type"])
 		return nil
 	}
+	slog.Debug("bubbletea: updateDirect: JS update returned successfully", "msgType", jsMsg["type"])
 
 	// Result should be [newState, cmd] array
 	resultObj := result.ToObject(m.runtime)
 	if resultObj == nil || resultObj.ClassName() != "Array" {
+		slog.Error("bubbletea: updateDirect: update did not return [state, cmd] array", "resultObj", resultObj, "className", func() string {
+			if resultObj == nil {
+				return "nil"
+			} else {
+				return resultObj.ClassName()
+			}
+		}())
 		return nil
 	}
 
@@ -669,13 +690,25 @@ func (m *jsModel) View() string {
 
 		if shouldThrottle {
 			// Schedule a delayed render if not already scheduled
-			if !m.throttleTimerSet && m.program != nil {
+			if !m.throttleTimerSet && m.program != nil && m.throttleCtx != nil {
 				m.throttleTimerSet = true
 				delay := intervalDur - elapsed
 				prog := m.program
+				throttleCtx := m.throttleCtx
 				go func() {
-					time.Sleep(delay)
-					prog.Send(renderRefreshMsg{})
+					timer := time.NewTimer(delay)
+					defer timer.Stop()
+					select {
+					case <-timer.C:
+						// Timer fired - send render refresh message
+						// prog.Send is documented as safe to call even after program
+						// exits (it becomes a no-op), but we check context to avoid
+						// unnecessary work
+						prog.Send(renderRefreshMsg{})
+					case <-throttleCtx.Done():
+						// Program is exiting - don't send, just return
+						return
+					}
 				}()
 			}
 			cached := m.cachedView
@@ -844,8 +877,11 @@ func isCtrlKey(kt tea.KeyType) bool {
 // 2. Command descriptor objects (e.g., {_cmdType: "quit"} from JS tea.quit())
 func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 	if m == nil || m.runtime == nil {
+		slog.Warn("bubbletea: valueToCmd: nil model or runtime")
 		return nil
 	}
+	// Returning null or undefined for the command slot is valid and expected
+	// (e.g., [model, null] from JavaScript). No warning needed.
 	if goja.IsUndefined(val) || goja.IsNull(val) {
 		return nil
 	}
@@ -862,6 +898,7 @@ func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 	// Not a wrapped Go function - try command descriptor object
 	obj := val.ToObject(m.runtime)
 	if obj == nil {
+		slog.Warn("bubbletea: valueToCmd: cmd is not an object")
 		return nil
 	}
 
@@ -869,6 +906,7 @@ func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 	if m.runtime.Try(func() {
 		cmdType = obj.Get("_cmdType")
 	}) != nil || cmdType == nil || !cmdType.ToBoolean() {
+		slog.Warn("bubbletea: valueToCmd: cmd object has no _cmdType (may be a foreign Go func)")
 		return nil
 	}
 
@@ -929,7 +967,7 @@ func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 // extractBatchCmd extracts commands from a batch command object.
 func (m *jsModel) extractBatchCmd(obj *goja.Object) tea.Cmd {
 	cmdsVal := obj.Get("cmds")
-	if goja.IsUndefined(cmdsVal) || goja.IsNull(cmdsVal) {
+	if cmdsVal == nil || goja.IsUndefined(cmdsVal) || goja.IsNull(cmdsVal) {
 		return nil
 	}
 	cmdsObj := cmdsVal.ToObject(m.runtime)
@@ -947,7 +985,7 @@ func (m *jsModel) extractBatchCmd(obj *goja.Object) tea.Cmd {
 // extractSequenceCmd extracts commands from a sequence command object.
 func (m *jsModel) extractSequenceCmd(obj *goja.Object) tea.Cmd {
 	cmdsVal := obj.Get("cmds")
-	if goja.IsUndefined(cmdsVal) || goja.IsNull(cmdsVal) {
+	if cmdsVal == nil || goja.IsUndefined(cmdsVal) || goja.IsNull(cmdsVal) {
 		return nil
 	}
 	cmdsObj := cmdsVal.ToObject(m.runtime)
@@ -969,22 +1007,26 @@ func (m *jsModel) extractSequenceCmd(obj *goja.Object) tea.Cmd {
 // extractTickCmd extracts a tick command.
 func (m *jsModel) extractTickCmd(obj *goja.Object) tea.Cmd {
 	durationVal := obj.Get("duration")
-	if goja.IsUndefined(durationVal) || goja.IsNull(durationVal) {
+	if durationVal == nil || goja.IsUndefined(durationVal) || goja.IsNull(durationVal) {
+		slog.Warn("bubbletea: extractTickCmd: duration is nil/undefined")
 		return nil
 	}
 	durationMs := durationVal.ToInteger()
 	if durationMs <= 0 {
+		slog.Warn("bubbletea: extractTickCmd: duration <= 0", "durationMs", durationMs)
 		return nil
 	}
 
 	idVal := obj.Get("id")
 	id := ""
-	if !goja.IsUndefined(idVal) && !goja.IsNull(idVal) {
+	if idVal != nil && !goja.IsUndefined(idVal) && !goja.IsNull(idVal) {
 		id = idVal.String()
 	}
 
+	slog.Debug("bubbletea: extractTickCmd: scheduling tick", "id", id, "durationMs", durationMs)
 	duration := time.Duration(durationMs) * time.Millisecond
 	return tea.Tick(duration, func(t time.Time) tea.Msg {
+		slog.Debug("bubbletea: tick callback fired", "id", id, "time", t)
 		return tickMsg{id: id, time: t}
 	})
 }
@@ -1547,6 +1589,10 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) (err er
 	signalStop := m.signalStop
 	isTTY := m.isTTY
 	ttyFd := m.ttyFd
+	if m.program != nil {
+		m.mu.Unlock()
+		return fmt.Errorf("runProgram: program is already running")
+	}
 	m.mu.Unlock()
 
 	// Debug: validate required function pointers
@@ -1629,8 +1675,19 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) (err er
 
 	// Also store program reference in jsModel for render throttling
 	if jm, ok := model.(*jsModel); ok {
+		// Set up throttle cancellation context to prevent goroutine leak
+		// when program exits while a throttle timer is sleeping
+		throttleCtx, throttleCancel := context.WithCancel(ctx)
+		jm.throttleCtx = throttleCtx
+		jm.throttleCancel = throttleCancel
 		jm.program = p
-		defer func() { jm.program = nil }()
+		defer func() {
+			// Cancel any pending throttle timers FIRST, then nil program
+			throttleCancel()
+			jm.throttleCtx = nil
+			jm.throttleCancel = nil
+			jm.program = nil
+		}()
 	}
 
 	// Setup signal handling
@@ -1638,20 +1695,29 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) (err er
 	signalNotify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	defer signalStop(sigCh)
 
+	// Channel to signal that Run() has finished
+	programFinished := make(chan struct{})
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		select {
+		case <-programFinished:
+			// Program finished naturally, no need to call Quit
+			return
 		case <-ctx.Done():
+			// Context cancelled externally
 		case <-sigCh:
+			// OS Signal received
 		}
 		p.Quit()
 	}()
 
 	_, runErr := p.Run()
-	cancel(nil) // Signal the goroutine to exit
-	wg.Wait()   // Wait for the goroutine to finish
+	close(programFinished) // Signal that Run() returned
+	cancel(nil)            // Signal the goroutine to exit (via ctx.Done path if race, but programFinished priority)
+	wg.Wait()              // Wait for the goroutine to finish
 
 	if runErr != nil {
 		return fmt.Errorf("failed to run program: %w", runErr)

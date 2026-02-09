@@ -1,0 +1,372 @@
+package pabt
+
+import (
+	"fmt"
+	"log/slog"
+	"sync"
+
+	pabtpkg "github.com/joeycumines/go-pabt"
+	btmod "github.com/joeycumines/one-shot-man/internal/builtin/bt"
+)
+
+// Compile-time interface check: State must implement pabtpkg.IState
+var _ pabtpkg.IState = (*State)(nil)
+
+// ActionGeneratorErrorMode specifies how ActionGenerator errors are handled.
+// This allows users to choose between lenient fallback behavior and strict
+// error handling for debugging parametric action generation.
+type ActionGeneratorErrorMode int
+
+const (
+	// ActionGeneratorErrorFallback logs errors at Warning level and falls back
+	// to static actions. This is the default behavior for production use.
+	ActionGeneratorErrorFallback ActionGeneratorErrorMode = iota
+
+	// ActionGeneratorErrorStrict logs errors at Error level and returns the error
+	// to the caller, preventing fallback. This is useful for debugging generator
+	// bugs in development/testing.
+	ActionGeneratorErrorStrict
+)
+
+// String returns the string representation of the error mode.
+func (m ActionGeneratorErrorMode) String() string {
+	switch m {
+	case ActionGeneratorErrorFallback:
+		return "fallback"
+	case ActionGeneratorErrorStrict:
+		return "strict"
+	default:
+		return "unknown"
+	}
+}
+
+// State implements pabtpkg.State (which is State[Condition]) interface backed by a bt.Blackboard.
+// It normalizes any key type to string for blackboard storage and provides
+// access to a registry of actions.
+//
+// The osm:pabt Go layer is deliberately minimal - it provides only the PA-BT
+// primitives (State, Action, Condition, Effect). Application-specific types
+// like simulation state, sprites, shapes, etc. belong in the scripting layer
+// (JavaScript) where they can be customized per-application.
+//
+// ActionGenerator Support:
+// For TRUE parametric actions (like MoveTo(entityId)), set an ActionGenerator
+// callback via SetActionGenerator(). When Actions() is called with a failed
+// condition, the generator is invoked to produce actions dynamically based on
+// the current world state and the specific failed condition.
+type State struct {
+	// Embed bt.Blackboard for storage
+	*btmod.Blackboard
+
+	// Registry of available actions (static registration)
+	actions *ActionRegistry
+
+	// ActionGenerator is an optional callback for dynamic action generation.
+	// When set, it is called by Actions() to generate actions based on the
+	// failed condition. This enables TRUE parametric actions like MoveTo(entityId)
+	// where the entity parameter is determined at planning time.
+	//
+	// The generator receives the failed condition and should return a slice of
+	// actions that could potentially satisfy it. These are combined with any
+	// statically registered actions.
+	//
+	// Thread safety: The generator is called from the bt.Ticker goroutine.
+	// If it accesses JavaScript state, it MUST use Bridge.RunOnLoopSync.
+	actionGenerator ActionGeneratorFunc
+
+	// actionGeneratorErrorMode determines how ActionGenerator errors are handled.
+	// Defaults to ActionGeneratorErrorFallback (log warning, use static actions).
+	// Set to ActionGeneratorErrorStrict to return errors instead of falling back.
+	actionGeneratorErrorMode ActionGeneratorErrorMode
+
+	// mu protects actionGenerator and actionGeneratorErrorMode from concurrent read/write
+	mu sync.RWMutex
+}
+
+// ActionGeneratorFunc is a function that generates actions dynamically based on
+// the failed condition. This is the core of parametric action support.
+//
+// Parameters:
+//   - failed: The condition that failed (triggered planning). Contains the key
+//     and value that the planner is trying to achieve.
+//
+// Returns:
+//   - actions: Slice of actions that could potentially satisfy the failed condition.
+//     Each action should have effects that match the failed condition's key.
+//   - error: If action generation fails.
+//
+// Example usage for MoveTo(entityId):
+//
+//	generator := func(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
+//	    key := failed.Key()
+//	    if key == "atEntity" {
+//	        // Generate MoveTo actions for each reachable entity
+//	        for _, entity := range world.entities {
+//	            actions = append(actions, createMoveToAction(entity.id))
+//	        }
+//	    }
+//	    return actions, nil
+//	}
+type ActionGeneratorFunc func(failed pabtpkg.Condition) ([]pabtpkg.IAction, error)
+
+// NewState creates a new State backed by the provided blackboard.
+func NewState(bb *btmod.Blackboard) *State {
+	return &State{
+		Blackboard:               bb,
+		actions:                  NewActionRegistry(),
+		actionGeneratorErrorMode: ActionGeneratorErrorFallback, // Default to lenient behavior
+	}
+}
+
+// SetActionGenerator sets the dynamic action generator callback.
+// When set, Actions() will call this generator in addition to returning
+// statically registered actions.
+//
+// This enables TRUE parametric actions like MoveTo(entityId) where the
+// entity parameter is determined at planning time based on the failed condition.
+//
+// Thread safety: The generator is protected by a mutex and can be set/cleared
+// at any time. The generator itself is called from the bt.Ticker goroutine.
+func (s *State) SetActionGenerator(gen ActionGeneratorFunc) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.actionGenerator = gen
+}
+
+// GetActionGenerator returns the current action generator, or nil if none is set.
+func (s *State) GetActionGenerator() ActionGeneratorFunc {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.actionGenerator
+}
+
+// SetActionGeneratorErrorMode sets how ActionGenerator errors are handled.
+// Use ActionGeneratorErrorFallback for lenient behavior (log warning, use static actions).
+// Use ActionGeneratorErrorStrict for strict behavior (log error, return error).
+//
+// Thread safety: The mode is protected by a mutex and can be set/cleared at any time.
+func (s *State) SetActionGeneratorErrorMode(mode ActionGeneratorErrorMode) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.actionGeneratorErrorMode = mode
+}
+
+// GetActionGeneratorErrorMode returns the current ActionGenerator error handling mode.
+func (s *State) GetActionGeneratorErrorMode() ActionGeneratorErrorMode {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.actionGeneratorErrorMode
+}
+
+// Variable implements pabtpkg.State.Variable(key any).
+//
+// # Key Normalization
+//
+// This method normalizes any key type to a string for blackboard lookup.
+// The following key types are supported:
+//
+//   - string: Used as-is (canonical form)
+//   - int, int8, int16, int32, int64: Converted to decimal string via fmt.Sprintf("%d")
+//   - uint, uint8, uint16, uint32, uint64: Converted to decimal string via fmt.Sprintf("%d")
+//   - float32, float64: Converted via fmt.Sprintf("%g") (compact notation, e.g., 1.5 → "1.5")
+//   - fmt.Stringer: Uses the String() method (for Symbol types or custom types)
+//
+// Note: Using %g for floats ensures compact representation (1.5 → "1.5", not "1.500000").
+// For parametric actions, prefer string keys for consistency.
+//
+// Returns (nil, nil) if key doesn't exist in the blackboard (this is intentional
+// PA-BT semantics - missing variables are treated as not having that property).
+func (s *State) Variable(key any) (any, error) {
+	if key == nil {
+		return nil, fmt.Errorf("variable key cannot be nil")
+	}
+
+	// Normalize key to string for blackboard
+	var keyStr string
+	switch k := key.(type) {
+	case string:
+		keyStr = k
+	case int, int8, int16, int32, int64:
+		keyStr = fmt.Sprintf("%d", k)
+	case uint, uint8, uint16, uint32, uint64:
+		keyStr = fmt.Sprintf("%d", k)
+	case float32, float64:
+		keyStr = fmt.Sprintf("%g", k)
+	default:
+		// Try fmt.Stringer interface (for pabtpkg.Symbol or custom types)
+		if stringer, ok := key.(fmt.Stringer); ok {
+			keyStr = stringer.String()
+		} else {
+			return nil, fmt.Errorf("unsupported key type: %T", key)
+		}
+	}
+
+	// Safety check: Blackboard is required (should never be nil if using NewState)
+	if s.Blackboard == nil {
+		return nil, fmt.Errorf("State.Blackboard is nil - use NewState() to construct")
+	}
+
+	// Get value from blackboard (returns nil if not found, which is correct pabt semantics)
+	value := s.Blackboard.Get(keyStr)
+
+	return value, nil
+}
+
+// Actions implements pabtpkg.State.Actions(failed Condition).
+// Returns all actions whose effects could potentially satisfy the failed condition.
+//
+// PA-BT Algorithm: An action is relevant if it has an effect that:
+// 1. Has the same key as the failed condition
+// 2. Would satisfy the failed condition (failed.Match(effect.Value()) returns true)
+//
+// This is the core of PA-BT planning: find actions that can make progress
+// toward satisfying unsatisfied conditions.
+//
+// Action Sources (in order):
+// 1. ActionGenerator (if set) - generates parametric actions dynamically
+// 2. Static registry - returns pre-registered actions
+//
+// Both sources are filtered to only include actions with relevant effects.
+//
+// Special case: If failed is nil, returns all registered actions (for backward
+// compatibility and testing purposes).
+func (s *State) Actions(failed pabtpkg.Condition) ([]pabtpkg.IAction, error) {
+	// Get statically registered actions
+	registeredActions := s.actions.All()
+
+	// Special case: nil failed condition returns all registered actions
+	if failed == nil {
+		return registeredActions, nil
+	}
+
+	failedKey := failed.Key()
+
+	var relevantActions []pabtpkg.IAction
+
+	// Track whether ActionGenerator returned any actions for this condition.
+	// If so, the generator is authoritative and we don't scan the static registry.
+	generatorHandled := false
+
+	// 1. Call ActionGenerator if set (parametric actions)
+	s.mu.RLock()
+	generator := s.actionGenerator
+	errorMode := s.actionGeneratorErrorMode
+	s.mu.RUnlock()
+
+	if generator != nil {
+		generatedActions, err := generator(failed)
+		if err != nil {
+			// Handle error based on configured mode
+			if errorMode == ActionGeneratorErrorStrict {
+				// Strict mode: log error and return it to caller
+				slog.Error("[PA-BT] ActionGenerator error (strict mode)", "error", err, "failedKey", failedKey)
+				return nil, fmt.Errorf("[PA-BT] ActionGenerator failed for key %v: %w", failedKey, err)
+			}
+			// Fallback mode: log warning and continue to static actions
+			slog.Warn("[PA-BT] ActionGenerator error, falling back to static actions", "error", err, "failedKey", failedKey)
+		} else {
+			// Filter generated actions for relevance
+			for _, action := range generatedActions {
+				if s.actionHasRelevantEffect(action, failedKey, failed) {
+					relevantActions = append(relevantActions, action)
+				}
+			}
+			// If generator returned any actions (even if not all were relevant),
+			// it's authoritative for this condition
+			if len(generatedActions) > 0 {
+				generatorHandled = true
+			}
+		}
+	}
+
+	// 2. Filter static registry actions for relevance
+	// ONLY if ActionGenerator didn't handle this condition
+	if !generatorHandled {
+		for _, action := range registeredActions {
+			if s.actionHasRelevantEffect(action, failedKey, failed) {
+				relevantActions = append(relevantActions, action)
+			}
+		}
+	}
+
+	return relevantActions, nil
+}
+
+// actionHasRelevantEffect checks if an action has an effect that would
+// satisfy the given failed condition.
+//
+// An effect is relevant if:
+// 1. effect.Key() equals the failed condition's key (after normalization)
+// 2. failed.Match(effect.Value()) returns true
+func (s *State) actionHasRelevantEffect(action pabtpkg.IAction, failedKey any, failed pabtpkg.Condition) bool {
+	effects := action.Effects()
+	for _, effect := range effects {
+		if effect == nil {
+			continue
+		}
+		effectKey := effect.Key()
+		effectValue := effect.Value()
+
+		// Normalize both keys to string for comparison (fixes type mismatch bug M-1)
+		// Using the same normalization pattern as Variable() method
+		failedKeyStr, err := normalizeKey(failedKey)
+		if err != nil {
+			continue // Skip if failedKey cannot be normalized
+		}
+		effectKeyStr, err := normalizeKey(effectKey)
+		if err != nil {
+			continue // Skip if effectKey cannot be normalized
+		}
+
+		// Check if this effect's key matches the failed condition's key
+		keyMatch := failedKeyStr == effectKeyStr
+		var valueMatch bool
+		if keyMatch {
+			valueMatch = failed.Match(effectValue)
+		}
+
+		if keyMatch && valueMatch {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeKey converts any supported key type to a string for consistent comparison.
+// This mirrors the key normalization in Variable() method.
+//
+// Supported key types:
+//   - string: Used as-is
+//   - int, int8, int16, int32, int64: Converted to decimal string
+//   - uint, uint8, uint16, uint32, uint64: Converted to decimal string
+//   - float32, float64: Converted via %g (compact notation)
+//   - fmt.Stringer: Uses String() method
+//
+// Returns empty string and error for nil or unsupported types.
+func normalizeKey(key any) (string, error) {
+	if key == nil {
+		return "", fmt.Errorf("key cannot be nil")
+	}
+
+	switch k := key.(type) {
+	case string:
+		return k, nil
+	case int, int8, int16, int32, int64:
+		return fmt.Sprintf("%d", k), nil
+	case uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprintf("%d", k), nil
+	case float32, float64:
+		return fmt.Sprintf("%g", k), nil
+	default:
+		// Try fmt.Stringer interface
+		if stringer, ok := key.(fmt.Stringer); ok {
+			return stringer.String(), nil
+		}
+		return "", fmt.Errorf("unsupported key type: %T", key)
+	}
+}
+
+// RegisterAction adds an action to the state's action registry.
+func (s *State) RegisterAction(name string, action pabtpkg.IAction) {
+	s.actions.Register(name, action)
+}

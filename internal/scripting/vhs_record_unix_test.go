@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -251,8 +252,38 @@ func (r *InputCaptureRecorder) TypeCommand() error {
 	}
 
 	// Build the full command line
-	cmdLine := r.typedCommand
-	for _, arg := range r.typedArgs {
+	// WARNING: This filthy hack is CRITICAL for the recording of the .tape files, which need to resolve the script path correctly.
+	// TODO: Real solution for the remapping of paths, also quoting of args is likely completely wrong
+	typedCommand := r.typedCommand
+	typedArgs := r.typedArgs
+	if typedCommand == "osm" {
+		var foundScript bool
+		// [FIX] Don't prepend "../../../" when running from repoRoot - scripts/* is already relative to repo
+		var scriptArgPrefix string
+		for i, arg := range typedArgs {
+			if foundScript {
+				// Only prepend "../../../" if NOT running from repoRoot (dir not set or different)
+				// When repoRoot is set via WithRecorderDir, we're already at correct path
+				if r.console != nil && !r.closed {
+					// Check if console dir matches what we expect (repoRoot at project level)
+					// This is heuristic - if typed command already has scripts/ it was already adjusted
+					// We'll only prepend "../../../" if the path looks like it came from docs/visuals/gifs/
+					if strings.HasPrefix(arg, "scripts/") && !strings.HasPrefix(typedArgs[i], "../../../") {
+						scriptArgPrefix = "../../../"
+					}
+					typedArgs = slices.Clone(typedArgs)
+					typedArgs[i] = scriptArgPrefix + arg
+					break
+				}
+			} else if arg == "script" {
+				foundScript = true
+			} else if !strings.HasPrefix(arg, "-") {
+				break
+			}
+		}
+	}
+	cmdLine := typedCommand
+	for _, arg := range typedArgs {
 		// Quote args with spaces
 		if strings.ContainsAny(arg, " \t") {
 			cmdLine += " " + fmt.Sprintf("%q", arg)
@@ -520,23 +551,26 @@ func (r *InputCaptureRecorder) inputToTape(input string) string {
 		}
 
 		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" {
+			orig := line
+			trimmed := strings.TrimSpace(line)
+
+			// If trimming yields empty but original isn't empty, it was whitespace-only input (e.g. a space).
+			if trimmed == "" {
+				if orig != "" {
+					// Preserve whitespace-only input as a Type command (e.g. Type " ")
+					result.WriteString(fmt.Sprintf("Type %s\n", quoteVHSString(orig)))
+				}
 				continue
 			}
 
-			// Check if it's a known command
-			isCommand := false
-			if _, ok := cmdSet[line]; ok {
-				result.WriteString(line + "\n")
-				isCommand = true
+			// Check if it's a known command (use trimmed form for matching)
+			if _, ok := cmdSet[trimmed]; ok {
+				result.WriteString(trimmed + "\n")
+				continue
 			}
 
-			if !isCommand {
-				// It's text to type
-				// Quote the text appropriately
-				result.WriteString(fmt.Sprintf("Type %s\n", quoteVHSString(line)))
-			}
+			// Otherwise it's text to type - preserve original spacing
+			result.WriteString(fmt.Sprintf("Type %s\n", quoteVHSString(orig)))
 		}
 	}
 
@@ -572,6 +606,31 @@ func TestInputToTape_EscapeSequenceOrdering(t *testing.T) {
 	got = r.inputToTape("\x1b[A")
 	if !strings.Contains(got, "Up\n") {
 		t.Fatalf("expected Up, got %q", got)
+	}
+}
+
+func TestInputToTape_PreservesSpace(t *testing.T) {
+	r := &InputCaptureRecorder{}
+	got := r.inputToTape(" ")
+	if !strings.Contains(got, "Type \" \"") {
+		t.Fatalf("expected Type \" \" for single space, got %q", got)
+	}
+}
+
+func TestInputToTape_SpaceAfterEscape(t *testing.T) {
+	r := &InputCaptureRecorder{}
+	got := r.inputToTape("\x1b[A ")
+	// Expect Up followed by a Type " " command
+	if !strings.Contains(got, "Up\nType \" \"") {
+		t.Fatalf("expected Up followed by Type \" \", got %q", got)
+	}
+}
+
+func TestInputToTape_PreservesMultipleSpaces(t *testing.T) {
+	r := &InputCaptureRecorder{}
+	got := r.inputToTape("   ")
+	if !strings.Contains(got, "Type \"   \"") {
+		t.Fatalf("expected Type \"   \" for multiple spaces, got %q", got)
 	}
 }
 

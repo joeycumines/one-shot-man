@@ -114,9 +114,23 @@ func (sd *ScriptDiscovery) DiscoverScriptPaths() []string {
 		execDir = filepath.Dir(execPath)
 	}
 
-	sort.Slice(paths, func(i, j int) bool {
-		pi := sd.computePathScore(paths[i], cwd, configDir, execDir)
-		pj := sd.computePathScore(paths[j], cwd, configDir, execDir)
+	// Pre-compute path scores to avoid O(n log n) filesystem operations
+	type scoredPath struct {
+		path  string
+		score pathScore
+	}
+	scoredPaths := make([]scoredPath, len(paths))
+	for i, path := range paths {
+		scoredPaths[i] = scoredPath{
+			path:  path,
+			score: sd.computePathScore(path, cwd, configDir, execDir),
+		}
+	}
+
+	// Sort using pre-computed scores
+	sort.Slice(scoredPaths, func(i, j int) bool {
+		pi := scoredPaths[i].score
+		pj := scoredPaths[j].score
 
 		if pi.class != pj.class {
 			return pi.class < pj.class
@@ -130,8 +144,13 @@ func (sd *ScriptDiscovery) DiscoverScriptPaths() []string {
 			return pi.depth < pj.depth
 		}
 
-		return paths[i] < paths[j]
+		return scoredPaths[i].path < scoredPaths[j].path
 	})
+
+	// Extract sorted paths
+	for i, sp := range scoredPaths {
+		paths[i] = sp.path
+	}
 
 	return paths
 }

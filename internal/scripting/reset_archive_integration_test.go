@@ -31,6 +31,7 @@ func TestResetArchiveIntegration_FileSystemBackend(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	storage.SetTestPaths(tmpDir)
+	defer storage.ResetPaths()
 	// Test uses an isolated filesystem backend and a unique session id; do not
 	// clear global in-memory sessions to avoid races with other tests.
 
@@ -167,6 +168,7 @@ func TestResetCommand_WithArchive(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	storage.SetTestPaths(tmpDir)
+	defer storage.ResetPaths()
 
 	// Create a TUI manager with in-memory backend for testing
 	sessionID := testutil.NewTestSessionID("test-reset-cmd-session", t.Name())
@@ -229,6 +231,7 @@ func TestMultipleResets_ArchiveCounter(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	storage.SetTestPaths(tmpDir)
+	defer storage.ResetPaths()
 
 	sessionID := testutil.NewTestSessionID("test-multi-reset", t.Name())
 
@@ -302,6 +305,7 @@ func TestArchiveSessionFilename_Readability(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	storage.SetTestPaths(tmpDir)
+	defer storage.ResetPaths()
 
 	sessionID := "tmux-abc123-5"
 	ts := time.Date(2025, 11, 26, 15, 30, 45, 0, time.UTC)

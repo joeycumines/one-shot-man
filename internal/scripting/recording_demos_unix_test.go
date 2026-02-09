@@ -13,7 +13,17 @@ import (
 	"time"
 
 	"github.com/joeycumines/go-prompt/termtest"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
+
+// getExpectedShellPrompt returns the expected shell prompt character based on the user ID.
+// Returns '#' for root (uid 0) and '$' for others.
+func getExpectedShellPrompt() string {
+	if os.Geteuid() == 0 {
+		return "#"
+	}
+	return "$"
+}
 
 // Recording integration tests that generate VHS tapes as a side effect.
 // These tests ALWAYS run the application and verify correct behavior.
@@ -57,12 +67,13 @@ func ensurePrompt(ctx context.Context, t *testing.T, r *InputCaptureRecorder, ti
 
 	// 2. Define logic (unchanged)
 	isPrompt := func(buf string) bool {
-		idx := strings.LastIndex(buf, "$")
+		prompt := getExpectedShellPrompt()
+		idx := strings.LastIndex(buf, prompt)
 		if idx == -1 {
 			return false
 		}
 		tail := buf[idx:]
-		return strings.TrimRight(tail, " \t\r\n") == "$"
+		return strings.TrimRight(tail, " \t\r\n") == prompt
 	}
 
 	// 3. Check the captured state.
@@ -86,8 +97,8 @@ func ensurePrompt(ctx context.Context, t *testing.T, r *InputCaptureRecorder, ti
 		return isPrompt(output)
 	}
 
-	if err := r.Expect(promptCtx, snap, condition, "wait for strict prompt '$'"); err != nil {
-		t.Fatalf("Expected prompt '$' at tail: %v\nBuffer: %q", err, r.String())
+	if err := r.Expect(promptCtx, snap, condition, fmt.Sprintf("wait for strict prompt %q", getExpectedShellPrompt())); err != nil {
+		t.Fatalf("Expected prompt %q at tail: %v\nBuffer: %q", getExpectedShellPrompt(), err, r.String())
 	}
 }
 
@@ -149,6 +160,7 @@ func typeStringFast(t *testing.T, recorder *InputCaptureRecorder, s string) {
 // - Navigating between documents
 // - Copying the prompt
 func TestRecording_SuperDocument_Visual(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-visual.tape")
 	gifPath := filepath.Join(outputDir, "super-document-visual.gif")
@@ -162,7 +174,7 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-super-doc-visual")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -175,7 +187,7 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 		WithRecorderCommand("osm", "super-document"),
 		WithRecorderTimeout(30*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-super-doc-visual",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -205,7 +217,7 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -340,6 +352,7 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 
 // TestRecording_SuperDocument_Shell demonstrates the super-document shell mode.
 func TestRecording_SuperDocument_Shell(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-shell.tape")
 	gifPath := filepath.Join(outputDir, "super-document-shell.gif")
@@ -353,7 +366,7 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-super-doc-shell")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -366,7 +379,7 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 		WithRecorderCommand("osm", "super-document", "--shell"),
 		WithRecorderTimeout(30*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-super-doc-shell",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -396,7 +409,7 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -501,6 +514,7 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 
 // TestRecording_SuperDocument_Interop demonstrates visual<->shell mode switching.
 func TestRecording_SuperDocument_Interop(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-interop.tape")
 	gifPath := filepath.Join(outputDir, "super-document-interop.gif")
@@ -514,7 +528,7 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-super-doc-interop")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -527,7 +541,7 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 		WithRecorderCommand("osm", "super-document"),
 		WithRecorderTimeout(30*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-super-doc-interop",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -557,7 +571,7 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -662,7 +676,7 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 
 	// Wait for shell prompt to return
 	snap = recorder.Snapshot()
-	expect(snap, "$", 5*time.Second)
+	expect(snap, getExpectedShellPrompt(), 5*time.Second)
 
 	// Exit the shell
 	typeString(t, recorder, "exit")
@@ -690,6 +704,7 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 
 // TestRecording_CodeReview demonstrates the code-review command.
 func TestRecording_CodeReview(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "code-review.tape")
 	gifPath := filepath.Join(outputDir, "code-review.gif")
@@ -703,7 +718,7 @@ func TestRecording_CodeReview(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-code-review")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -717,7 +732,7 @@ func TestRecording_CodeReview(t *testing.T) {
 		WithRecorderTimeout(30*time.Second),
 		WithRecorderDir(outputDir),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-code-review",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -747,7 +762,7 @@ func TestRecording_CodeReview(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -835,7 +850,7 @@ func TestRecording_CodeReview(t *testing.T) {
 
 	// Wait for outer shell prompt
 	snap = recorder.Snapshot()
-	expect(snap, "$", 5*time.Second)
+	expect(snap, getExpectedShellPrompt(), 5*time.Second)
 
 	// Exit the outer shell
 	typeString(t, recorder, "exit")
@@ -863,6 +878,7 @@ func TestRecording_CodeReview(t *testing.T) {
 
 // TestRecording_PromptFlow demonstrates the prompt-flow command.
 func TestRecording_PromptFlow(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "prompt-flow.tape")
 	gifPath := filepath.Join(outputDir, "prompt-flow.gif")
@@ -876,7 +892,7 @@ func TestRecording_PromptFlow(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-prompt-flow")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -889,7 +905,7 @@ func TestRecording_PromptFlow(t *testing.T) {
 		WithRecorderCommand("osm", "prompt-flow"),
 		WithRecorderTimeout(30*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-prompt-flow",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -919,7 +935,7 @@ func TestRecording_PromptFlow(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -1016,7 +1032,7 @@ func TestRecording_PromptFlow(t *testing.T) {
 
 	// Wait for outer shell prompt
 	snap = recorder.Snapshot()
-	expect(snap, "$", 5*time.Second)
+	expect(snap, getExpectedShellPrompt(), 5*time.Second)
 
 	// Exit the outer shell
 	typeString(t, recorder, "exit")
@@ -1044,6 +1060,7 @@ func TestRecording_PromptFlow(t *testing.T) {
 
 // TestRecording_Goal demonstrates the goal command with a sample workflow.
 func TestRecording_Goal(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "goal.tape")
 	gifPath := filepath.Join(outputDir, "goal.gif")
@@ -1057,7 +1074,7 @@ func TestRecording_Goal(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-goal")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -1070,7 +1087,7 @@ func TestRecording_Goal(t *testing.T) {
 		WithRecorderCommand("osm", "goal", "test-generator"),
 		WithRecorderTimeout(30*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-goal",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -1100,7 +1117,7 @@ func TestRecording_Goal(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -1153,7 +1170,7 @@ func TestRecording_Goal(t *testing.T) {
 
 	// Wait for outer shell prompt
 	snap = recorder.Snapshot()
-	expect(snap, "$", 5*time.Second)
+	expect(snap, getExpectedShellPrompt(), 5*time.Second)
 
 	// Exit the outer shell
 	typeString(t, recorder, "exit")
@@ -1181,6 +1198,7 @@ func TestRecording_Goal(t *testing.T) {
 
 // TestRecording_Quickstart is a quick overview demo.
 func TestRecording_Quickstart(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "quickstart.tape")
 	gifPath := filepath.Join(outputDir, "quickstart.gif")
@@ -1194,7 +1212,7 @@ func TestRecording_Quickstart(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-quickstart")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -1207,7 +1225,7 @@ func TestRecording_Quickstart(t *testing.T) {
 		WithRecorderCommand("osm", "help"),
 		WithRecorderTimeout(10*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-quickstart",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -1237,7 +1255,7 @@ func TestRecording_Quickstart(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -1282,6 +1300,7 @@ func TestRecording_Quickstart(t *testing.T) {
 
 // TestRecording_SuperDocument_Visual_Light demonstrates light theme.
 func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-visual-light.tape")
 	gifPath := filepath.Join(outputDir, "super-document-visual-light.gif")
@@ -1295,7 +1314,7 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 	t.Setenv("OSM_CONFIG", tempConfig)
 	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
 	t.Setenv("OSM_STORE", "memory")
-	t.Setenv("OSM_SESSION", "demo-super-doc-light")
+	t.Setenv("OSM_SESSION", sessionID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -1310,7 +1329,7 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 		WithRecorderCommand("osm", "super-document"),
 		WithRecorderTimeout(30*time.Second),
 		WithRecorderEnv(
-			"OSM_SESSION=demo-super-doc-light",
+			"OSM_SESSION="+sessionID,
 			"OSM_STORE=memory",
 			"OSM_CLIPBOARD=cat > /dev/null",
 			"OSM_CONFIG="+tempConfig,
@@ -1340,7 +1359,7 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 
 	// Wait for shell prompt
 	snap := recorder.Snapshot()
-	expect(snap, "$", 10*time.Second)
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
 	recorder.RecordSleep(200 * time.Millisecond)
 
 	// Type the command
@@ -1398,7 +1417,327 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 
 	// Wait for shell prompt to return
 	snap = recorder.Snapshot()
-	expect(snap, "$", 5*time.Second)
+	expect(snap, getExpectedShellPrompt(), 5*time.Second)
+
+	// Exit the shell
+	typeString(t, recorder, "exit")
+	if err := recorder.SendKey("\r"); err != nil {
+		t.Fatalf("Failed to send enter: %v", err)
+	}
+
+	waitForProcessExit(ctx, t, cp, recorder)
+
+	if err := recorder.Close(); err != nil {
+		t.Fatalf("Failed to save tape: %v", err)
+	}
+
+	if recordingEnabled {
+		t.Logf("Recording tape saved to: %s", tapePath)
+	}
+
+	if executeVHSEnabled && recordingEnabled {
+		if err := executeVHSOnTape(ctx, tapePath); err != nil {
+			t.Fatalf("Failed to execute VHS: %v", err)
+		}
+		t.Logf("GIF generated at: %s", gifPath)
+	}
+}
+
+// TestRecording_Script_BT_Shooter demonstrates the behavior tree shooter game.
+// This recording shows:
+// - Starting the game via osm script
+// - Moving the player with arrow keys
+// - Shooting with space bar
+func TestRecording_Script_BT_Shooter(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
+	outputDir := getRecordingOutputDir()
+	tapePath := filepath.Join(outputDir, "script-example-bt-shooter.tape")
+	gifPath := filepath.Join(outputDir, "script-example-bt-shooter.gif")
+
+	// Create temp config to ensure isolation
+	tempConfig := filepath.Join(t.TempDir(), "config")
+	if err := os.WriteFile(tempConfig, []byte{}, 0644); err != nil {
+		t.Fatalf("Failed to create temp config: %v", err)
+	}
+	// Ensure process env is isolated
+	t.Setenv("OSM_CONFIG", tempConfig)
+	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
+	t.Setenv("OSM_STORE", "memory")
+	t.Setenv("OSM_SESSION", sessionID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	settings := DefaultVHSRecordSettings()
+	settings.OutputGIF = filepath.Base(gifPath)
+
+	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
+		WithRecorderShell("bash"),
+		WithRecorderCommand("osm", "script", "scripts/example-04-bt-shooter.js"),
+		WithRecorderTimeout(90*time.Second),
+		WithRecorderEnv(
+			"OSM_SESSION="+sessionID,
+			"OSM_STORE=memory",
+			"OSM_CLIPBOARD=cat > /dev/null",
+			"OSM_CONFIG="+tempConfig,
+			"TERM=xterm-256color",
+		),
+		WithRecorderVHSSettings(settings),
+	)...)
+	if err != nil {
+		t.Fatalf("Failed to create recorder: %v", err)
+	}
+	defer func() {
+		if err := recorder.Close(); err != nil {
+			t.Errorf("Failed to close recorder: %v", err)
+		}
+	}()
+
+	cp := recorder.Console()
+
+	expect := func(snap termtest.Snapshot, target string, timeout time.Duration) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		if err := recorder.Expect(ctx, snap, termtest.Contains(target), fmt.Sprintf("wait for %q", target)); err != nil {
+			t.Fatalf("Expected %q: %v\nBuffer: %q", target, err, recorder.String())
+		}
+	}
+
+	// Wait for shell prompt
+	snap := recorder.Snapshot()
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
+	recorder.RecordSleep(200 * time.Millisecond)
+
+	// Type the command to start the game
+	recorder.RecordComment("Run osm script for BT Shooter game")
+	if err := recorder.TypeCommand(); err != nil {
+		t.Fatalf("Failed to type command: %v", err)
+	}
+	if err := recorder.SendKey("\r"); err != nil {
+		t.Fatalf("Failed to send enter: %v", err)
+	}
+
+	// Wait for game startup message
+	snap = recorder.Snapshot()
+	expect(snap, "BT SHOOTER", 20*time.Second)
+	recorder.RecordSleep(500 * time.Millisecond)
+
+	// Wait for menu to appear (Press SPACE to begin!)
+	snap = recorder.Snapshot()
+	expect(snap, "SPACE", 10*time.Second)
+	recorder.RecordSleep(300 * time.Millisecond)
+
+	// Start the game by pressing space
+	recorder.RecordComment("Press SPACE to start the game")
+	if err := recorder.SendKey(" "); err != nil {
+		t.Fatalf("Failed to send space: %v", err)
+	}
+	time.Sleep(500 * time.Millisecond)
+	recorder.RecordSleep(500 * time.Millisecond)
+
+	// Movement pattern: hold up for 2s, right for 1.5s, down for 1.5s, left for 1.5s
+	// With space presses mixed in
+	// Note: VHS uses Up, Down, Left, Right commands with count/delay syntax
+
+	// Move UP for ~2 seconds (press repeatedly with space mixed in)
+	recorder.RecordComment("Move UP and shoot")
+	for i := 0; i < 8; i++ {
+		if err := recorder.SendKey("\x1b[A"); err != nil { // Up arrow
+			t.Fatalf("Failed to send up: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+		if i%2 == 0 {
+			if err := recorder.SendKey(" "); err != nil { // Space - shoot
+				t.Fatalf("Failed to send space: %v", err)
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	recorder.RecordSleep(500 * time.Millisecond)
+
+	// Move RIGHT for ~1.5 seconds
+	recorder.RecordComment("Move RIGHT and shoot")
+	for i := 0; i < 6; i++ {
+		if err := recorder.SendKey("\x1b[C"); err != nil { // Right arrow
+			t.Fatalf("Failed to send right: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+		if i%2 == 0 {
+			if err := recorder.SendKey(" "); err != nil {
+				t.Fatalf("Failed to send space: %v", err)
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	recorder.RecordSleep(500 * time.Millisecond)
+
+	// Move DOWN for ~1.5 seconds
+	recorder.RecordComment("Move DOWN and shoot")
+	for i := 0; i < 6; i++ {
+		if err := recorder.SendKey("\x1b[B"); err != nil { // Down arrow
+			t.Fatalf("Failed to send down: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+		if i%2 == 0 {
+			if err := recorder.SendKey(" "); err != nil {
+				t.Fatalf("Failed to send space: %v", err)
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	recorder.RecordSleep(500 * time.Millisecond)
+
+	// Move LEFT for ~1.5 seconds
+	recorder.RecordComment("Move LEFT and shoot")
+	for i := 0; i < 6; i++ {
+		if err := recorder.SendKey("\x1b[D"); err != nil { // Left arrow
+			t.Fatalf("Failed to send left: %v", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+		if i%2 == 0 {
+			if err := recorder.SendKey(" "); err != nil {
+				t.Fatalf("Failed to send space: %v", err)
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	recorder.RecordSleep(500 * time.Millisecond)
+
+	// Quit the game
+	recorder.RecordComment("Quit the game")
+	if err := recorder.SendKey("q"); err != nil {
+		t.Fatalf("Failed to send q: %v", err)
+	}
+	recorder.RecordSleep(300 * time.Millisecond)
+
+	// Wait for shell prompt to return
+	ensurePrompt(ctx, t, recorder, 10*time.Second)
+
+	// Exit the shell
+	typeString(t, recorder, "exit")
+	if err := recorder.SendKey("\r"); err != nil {
+		t.Fatalf("Failed to send enter: %v", err)
+	}
+
+	waitForProcessExit(ctx, t, cp, recorder)
+
+	if err := recorder.Close(); err != nil {
+		t.Fatalf("Failed to save tape: %v", err)
+	}
+
+	if recordingEnabled {
+		t.Logf("Recording tape saved to: %s", tapePath)
+	}
+
+	if executeVHSEnabled && recordingEnabled {
+		if err := executeVHSOnTape(ctx, tapePath); err != nil {
+			t.Fatalf("Failed to execute VHS: %v", err)
+		}
+		t.Logf("GIF generated at: %s", gifPath)
+	}
+}
+
+// TestRecording_Script_PickAndPlace demonstrates the PA-BT pick-and-place simulation.
+// This recording shows:
+// - Starting the automatic simulation via osm script
+// - Watching the AI solve the pick and place problem
+// - Verifying the WIN! condition is reached
+func TestRecording_Script_PickAndPlace(t *testing.T) {
+	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
+	outputDir := getRecordingOutputDir()
+	tapePath := filepath.Join(outputDir, "script-example-pick-and-place.tape")
+	gifPath := filepath.Join(outputDir, "script-example-pick-and-place.gif")
+
+	// Create temp config to ensure isolation
+	tempConfig := filepath.Join(t.TempDir(), "config")
+	if err := os.WriteFile(tempConfig, []byte{}, 0644); err != nil {
+		t.Fatalf("Failed to create temp config: %v", err)
+	}
+	// Ensure process env is isolated
+	t.Setenv("OSM_CONFIG", tempConfig)
+	t.Setenv("OSM_CLIPBOARD", "cat > /dev/null")
+	t.Setenv("OSM_STORE", "memory")
+	t.Setenv("OSM_SESSION", sessionID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	settings := DefaultVHSRecordSettings()
+	settings.OutputGIF = filepath.Base(gifPath)
+
+	recorder, err := NewInputCaptureRecorder(ctx, tapePath, buildRecorderOpts(
+		WithRecorderShell("bash"),
+		WithRecorderCommand("osm", "script", "scripts/example-05-pick-and-place.js"),
+		WithRecorderTimeout(90*time.Second),
+		WithRecorderEnv(
+			"OSM_SESSION="+sessionID,
+			"OSM_STORE=memory",
+			"OSM_CLIPBOARD=cat > /dev/null",
+			"OSM_CONFIG="+tempConfig,
+			"TERM=xterm-256color",
+		),
+		WithRecorderVHSSettings(settings),
+	)...)
+	if err != nil {
+		t.Fatalf("Failed to create recorder: %v", err)
+	}
+	defer func() {
+		if err := recorder.Close(); err != nil {
+			t.Errorf("Failed to close recorder: %v", err)
+		}
+	}()
+
+	cp := recorder.Console()
+
+	expect := func(snap termtest.Snapshot, target string, timeout time.Duration) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		if err := recorder.Expect(ctx, snap, termtest.Contains(target), fmt.Sprintf("wait for %q", target)); err != nil {
+			t.Fatalf("Expected %q: %v\nBuffer: %q", target, err, recorder.String())
+		}
+	}
+
+	// Wait for shell prompt
+	snap := recorder.Snapshot()
+	expect(snap, getExpectedShellPrompt(), 10*time.Second)
+	recorder.RecordSleep(200 * time.Millisecond)
+
+	// Type the command to start the simulation
+	recorder.RecordComment("Run osm script for Pick-and-Place simulation")
+	if err := recorder.TypeCommand(); err != nil {
+		t.Fatalf("Failed to type command: %v", err)
+	}
+	if err := recorder.SendKey("\r"); err != nil {
+		t.Fatalf("Failed to send enter: %v", err)
+	}
+
+	// Wait for simulation to start - look for status line that appears in all terminal sizes
+	snap = recorder.Snapshot()
+	expect(snap, "Mode: AUTOMATIC", 20*time.Second)
+	recorder.RecordSleep(500 * time.Millisecond)
+
+	// The simulation runs automatically - wait for it to complete
+	// Simulation needs significant time (~25s simulation + margin for test env overhead)
+	recorder.RecordComment("Watching automatic PA-BT simulation...")
+	time.Sleep(60 * time.Second)
+	recorder.RecordSleep(50 * time.Second)
+
+	// Verify WIN! condition is reached (appears as "WIN!" in status line or "*** WIN! ***" in HUD)
+	snap = recorder.Snapshot()
+	expect(snap, "WIN!", 30*time.Second)
+	recorder.RecordSleep(1 * time.Second)
+
+	// Quit the simulation
+	recorder.RecordComment("Quit the simulation")
+	if err := recorder.SendKey("q"); err != nil {
+		t.Fatalf("Failed to send q: %v", err)
+	}
+	recorder.RecordSleep(300 * time.Millisecond)
+
+	// Wait for shell prompt to return
+	ensurePrompt(ctx, t, recorder, 10*time.Second)
 
 	// Exit the shell
 	typeString(t, recorder, "exit")

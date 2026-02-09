@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"flag"
 	"io"
 )
@@ -23,6 +24,17 @@ type Command interface {
 	// Execute runs the command with the given arguments.
 	// args contains the arguments after flags have been parsed.
 	Execute(args []string, stdout, stderr io.Writer) error
+}
+
+// ContextCommand is an optional interface that commands can implement
+// to support context cancellation and timeout.
+type ContextCommand interface {
+	Command
+
+	// ExecuteWithContext runs the command with the given context and arguments.
+	// If a command implements this interface, it will be used instead of Execute()
+	// when a context is available (e.g., from signal handling).
+	ExecuteWithContext(ctx context.Context, args []string, stdout, stderr io.Writer) error
 }
 
 // BaseCommand provides a basic implementation that other commands can embed.

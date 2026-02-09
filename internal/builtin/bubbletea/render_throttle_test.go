@@ -6,392 +6,299 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dop251/goja"
+	"github.com/stretchr/testify/assert"
 )
 
-// TestRenderThrottleBasicFunctionality tests basic render throttling behavior
-func TestRenderThrottleBasicFunctionality(t *testing.T) {
-	viewCallCount := int32(0)
+// Helper to create a goja.Callable compatible view function
+func createViewFn(vm *goja.Runtime, fn func(state goja.Value) string) goja.Callable {
+	return func(this goja.Value, args ...goja.Value) (goja.Value, error) {
+		// args[0] is state
+		var state goja.Value
+		if len(args) > 0 {
+			state = args[0]
+		} else {
+			state = goja.Undefined()
+		}
+		result := fn(state)
+		return vm.ToValue(result), nil
+	}
+}
+
+// TestRenderThrottle_Disabled verifies behavior when throttling is disabled (default).
+func TestRenderThrottle_Disabled(t *testing.T) {
+	vm := goja.New()
+
+	// Create model with throttling disabled
 	model := &jsModel{
+		runtime:         vm,
+		throttleEnabled: false,
+		viewFn: createViewFn(vm, func(state goja.Value) string {
+			return "view_output"
+		}),
+		state: vm.NewObject(),
+	}
+
+	// Set sync mock runner
+	model.jsRunner = &SyncJSRunner{Runtime: vm}
+
+	// First call
+	output := model.View()
+	assert.Equal(t, "view_output", output)
+	assert.Empty(t, model.cachedView, "Should not cache when disabled")
+
+	// Verify state does not have throttle-related fields set
+	assert.True(t, model.lastRenderTime.IsZero())
+}
+
+// TestRenderThrottle_FirstRender verifies that the first render always goes through and caches.
+func TestRenderThrottle_FirstRender(t *testing.T) {
+	vm := goja.New()
+	callCount := int32(0)
+
+	model := &jsModel{
+		runtime:            vm,
 		throttleEnabled:    true,
-		throttleIntervalMs: 50, // 50ms throttle window
-		alwaysRenderTypes:  map[string]bool{"Tick": true, "WindowSize": true},
-		lastRenderTime:     time.Time{}, // Zero value = never rendered
-		cachedView:         "",
+		throttleIntervalMs: 1000, // Long interval
+		viewFn: createViewFn(vm, func(state goja.Value) string {
+			atomic.AddInt32(&callCount, 1)
+			return "view_output"
+		}),
+		state: vm.NewObject(),
 	}
+	model.jsRunner = &SyncJSRunner{Runtime: vm}
 
-	// Custom viewDirect function via closure that counts calls
-	viewResult := "view output"
-	originalViewDirect := func() string {
-		atomic.AddInt32(&viewCallCount, 1)
-		return viewResult
-	}
+	// Act
+	output := model.View()
 
-	// Test 1: First View() should always render (no cached view)
-	model.cachedView = ""
-	model.lastRenderTime = time.Time{}
-	result := simulateView(model, originalViewDirect)
-	if result != viewResult {
-		t.Errorf("First view expected %q, got %q", viewResult, result)
-	}
-	if atomic.LoadInt32(&viewCallCount) != 1 {
-		t.Errorf("First view should call viewDirect, got %d calls", viewCallCount)
-	}
+	// Assert
+	assert.Equal(t, "view_output", output)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&callCount), "Should call JS view function")
+	assert.Equal(t, "view_output", model.cachedView, "Should cache output")
+	assert.False(t, model.lastRenderTime.IsZero(), "Should update lastRenderTime")
+}
 
-	// Test 2: Immediate second View() should return cached
-	atomic.StoreInt32(&viewCallCount, 0)
-	model.lastRenderTime = time.Now() // Just rendered
-	model.cachedView = viewResult
-	result = simulateView(model, originalViewDirect)
-	if result != viewResult {
-		t.Errorf("Cached view expected %q, got %q", viewResult, result)
-	}
-	if atomic.LoadInt32(&viewCallCount) != 0 {
-		t.Errorf("Cached view should not call viewDirect, got %d calls", viewCallCount)
-	}
+// TestRenderThrottle_ReturnsCached verifies that rapid subsequent calls return cached view.
+func TestRenderThrottle_ReturnsCached(t *testing.T) {
+	vm := goja.New()
+	callCount := int32(0)
 
-	// Test 3: After throttle window, should render again
-	atomic.StoreInt32(&viewCallCount, 0)
-	model.lastRenderTime = time.Now().Add(-100 * time.Millisecond) // 100ms ago
-	result = simulateView(model, originalViewDirect)
-	if result != viewResult {
-		t.Errorf("After throttle expected %q, got %q", viewResult, result)
+	model := &jsModel{
+		runtime:            vm,
+		throttleEnabled:    true,
+		throttleIntervalMs: 1000, // Long interval
+		viewFn: createViewFn(vm, func(state goja.Value) string {
+			val := atomic.AddInt32(&callCount, 1)
+			if val == 1 {
+				return "first_render"
+			}
+			return "second_render"
+		}),
+		state: vm.NewObject(),
 	}
-	if atomic.LoadInt32(&viewCallCount) != 1 {
-		t.Errorf("After throttle should call viewDirect, got %d calls", viewCallCount)
-	}
+	model.jsRunner = &SyncJSRunner{Runtime: vm}
 
-	// Test 4: forceNextRender bypasses throttle
-	atomic.StoreInt32(&viewCallCount, 0)
-	model.lastRenderTime = time.Now() // Just rendered
+	// 1. First render
+	output1 := model.View()
+	assert.Equal(t, "first_render", output1)
+
+	// 2. Second render immediately (within 1000ms)
+	output2 := model.View()
+
+	// Assert
+	assert.Equal(t, "first_render", output2, "Should return cached view")
+	assert.Equal(t, int32(1), atomic.LoadInt32(&callCount), "Should NOT call JS view function again")
+}
+
+// TestRenderThrottle_Expires verifies that cached view expires after interval.
+func TestRenderThrottle_Expires(t *testing.T) {
+	vm := goja.New()
+	callCount := int32(0)
+	interval := int64(50)
+
+	model := &jsModel{
+		runtime:            vm,
+		throttleEnabled:    true,
+		throttleIntervalMs: interval,
+		viewFn: createViewFn(vm, func(state goja.Value) string {
+			count := atomic.AddInt32(&callCount, 1)
+			if count == 1 {
+				return "first"
+			}
+			return "second"
+		}),
+		state: vm.NewObject(),
+	}
+	model.jsRunner = &SyncJSRunner{Runtime: vm}
+
+	// 1. First render
+	model.View()
+
+	// 2. Simulate time passing by manually modifying lastRenderTime
+	// Set it to (Now - Interval - 1ms) so it is definitely expired
+	model.throttleMu.Lock()
+	model.lastRenderTime = time.Now().Add(time.Duration(-interval-10) * time.Millisecond)
+	model.throttleMu.Unlock()
+
+	// 3. Second render
+	output2 := model.View()
+
+	// Assert
+	assert.Equal(t, "second", output2, "Should re-render after expiration")
+	assert.Equal(t, int32(2), atomic.LoadInt32(&callCount), "Should call JS view function again")
+	assert.Equal(t, "second", model.cachedView, "Should update cache")
+}
+
+// TestRenderThrottle_ForceNextRender verifies that forceNextRender flag bypasses throttle.
+func TestRenderThrottle_ForceNextRender(t *testing.T) {
+	vm := goja.New()
+	callCount := int32(0)
+
+	model := &jsModel{
+		runtime:            vm,
+		throttleEnabled:    true,
+		throttleIntervalMs: 1000,
+		viewFn: createViewFn(vm, func(state goja.Value) string {
+			count := atomic.AddInt32(&callCount, 1)
+			if count == 1 {
+				return "first"
+			}
+			return "second"
+		}),
+		state: vm.NewObject(),
+	}
+	model.jsRunner = &SyncJSRunner{Runtime: vm}
+
+	// 1. First render
+	model.View()
+
+	// 2. Set forced flag manually (simulating what Update would do)
+	model.throttleMu.Lock()
 	model.forceNextRender = true
-	result = simulateView(model, originalViewDirect)
-	if result != viewResult {
-		t.Errorf("Forced view expected %q, got %q", viewResult, result)
-	}
-	if atomic.LoadInt32(&viewCallCount) != 1 {
-		t.Errorf("Forced view should call viewDirect, got %d calls", viewCallCount)
-	}
-	if model.forceNextRender {
-		t.Error("forceNextRender should be cleared after render")
-	}
+	model.throttleMu.Unlock()
+
+	// 3. Second render (should be forced)
+	output2 := model.View()
+
+	// Assert
+	assert.Equal(t, "second", output2, "Should re-render when forced")
+	assert.Equal(t, int32(2), atomic.LoadInt32(&callCount))
+	assert.False(t, model.forceNextRender, "Flag should be cleared after render")
 }
 
-// simulateView simulates the View() throttling logic for testing
-func simulateView(m *jsModel, viewFn func() string) string {
-	m.throttleMu.Lock()
-	now := time.Now()
-	elapsed := now.Sub(m.lastRenderTime)
-	intervalDur := time.Duration(m.throttleIntervalMs) * time.Millisecond
-
-	shouldThrottle := !m.forceNextRender && elapsed < intervalDur && m.cachedView != ""
-
-	if shouldThrottle {
-		cached := m.cachedView
-		m.throttleMu.Unlock()
-		return cached
-	}
-
-	m.forceNextRender = false
-	m.lastRenderTime = now
-	m.throttleMu.Unlock()
-
-	result := viewFn()
-	m.throttleMu.Lock()
-	m.cachedView = result
-	m.throttleMu.Unlock()
-	return result
-}
-
-// TestRenderThrottleAlwaysRenderTypes tests that certain message types bypass throttle
-func TestRenderThrottleAlwaysRenderTypes(t *testing.T) {
-	model := &jsModel{
-		throttleEnabled:    true,
-		throttleIntervalMs: 50,
-		alwaysRenderTypes:  map[string]bool{"Tick": true, "WindowSize": true},
-	}
-
-	// Test that Tick message sets forceNextRender
-	jsMsg := map[string]interface{}{"type": "Tick"}
-	if msgType, ok := jsMsg["type"].(string); ok {
-		if model.alwaysRenderTypes[msgType] {
-			model.forceNextRender = true
-		}
-	}
-	if !model.forceNextRender {
-		t.Error("Tick message should set forceNextRender")
-	}
-
-	// Test that WindowSize message sets forceNextRender
-	model.forceNextRender = false
-	jsMsg = map[string]interface{}{"type": "WindowSize"}
-	if msgType, ok := jsMsg["type"].(string); ok {
-		if model.alwaysRenderTypes[msgType] {
-			model.forceNextRender = true
-		}
-	}
-	if !model.forceNextRender {
-		t.Error("WindowSize message should set forceNextRender")
-	}
-
-	// Test that Key message does NOT set forceNextRender
-	model.forceNextRender = false
-	jsMsg = map[string]interface{}{"type": "Key"}
-	if msgType, ok := jsMsg["type"].(string); ok {
-		if model.alwaysRenderTypes[msgType] {
-			model.forceNextRender = true
-		}
-	}
-	if model.forceNextRender {
-		t.Error("Key message should NOT set forceNextRender")
-	}
-}
-
-// TestRenderRefreshMsgHandling tests that renderRefreshMsg is handled correctly
-func TestRenderRefreshMsgHandling(t *testing.T) {
+// TestRenderThrottle_UpdateClearsTimer verifies renderRefreshMsg clears timer/sets forced.
+func TestRenderThrottle_UpdateClearsTimer(t *testing.T) {
 	model := &jsModel{
 		throttleEnabled:  true,
-		throttleTimerSet: true, // Timer was set
+		throttleTimerSet: true, // Simulate timer active
 		forceNextRender:  false,
 	}
 
-	// Simulate handling renderRefreshMsg in Update
-	var msg tea.Msg = renderRefreshMsg{}
-	if _, ok := msg.(renderRefreshMsg); ok {
-		model.throttleMu.Lock()
-		model.throttleTimerSet = false
-		model.forceNextRender = true
-		model.throttleMu.Unlock()
-	}
+	// Simulate receiving the refresh message
+	msg := renderRefreshMsg{}
 
-	if model.throttleTimerSet {
-		t.Error("throttleTimerSet should be false after renderRefreshMsg")
+	// Call Update (we mock the runner/runtime since Update needs them)
+	vm := goja.New()
+	model.runtime = vm
+	model.updateFn = func(this goja.Value, args ...goja.Value) (goja.Value, error) {
+		panic("should not be called for internal msg")
 	}
-	if !model.forceNextRender {
-		t.Error("forceNextRender should be true after renderRefreshMsg")
-	}
+	// Update short-circuits internal messages before JS call, so we don't strictly need a valid runner/fn for this test
+	// but good practice to have them.
+
+	_, cmd := model.Update(msg)
+
+	assert.Nil(t, cmd)
+	assert.False(t, model.throttleTimerSet, "Timer flag should be cleared")
+	assert.True(t, model.forceNextRender, "Should force next render")
 }
 
-// TestRenderThrottleDelayedRender tests that delayed render is scheduled correctly
-func TestRenderThrottleDelayedRender(t *testing.T) {
+// TestRenderThrottle_Scheduling verifies that a delayed render IS scheduled.
+// This tests the logic branch: "if !m.throttleTimerSet && m.program != nil { ... }"
+func TestRenderThrottle_Scheduling(t *testing.T) {
+	vm := goja.New()
+
 	model := &jsModel{
+		runtime:            vm,
 		throttleEnabled:    true,
-		throttleIntervalMs: 20, // 20ms throttle
-		alwaysRenderTypes:  map[string]bool{"Tick": true},
-		cachedView:         "cached",
-		lastRenderTime:     time.Now(),
-		throttleTimerSet:   false,
+		throttleIntervalMs: 10000,
+		viewFn: createViewFn(vm, func(state goja.Value) string {
+			return "view"
+		}),
+		state: vm.NewObject(),
 	}
+	model.jsRunner = &SyncJSRunner{Runtime: vm}
 
-	// Simulate the throttle timer scheduling logic
-	// (We can't easily test the actual goroutine, so we verify the state)
+	// 1. Initial render
+	model.View()
 
-	// Scenario: Within throttle window, timer not set
-	if !model.throttleTimerSet {
-		// Would schedule timer here
-		model.throttleTimerSet = true
-	}
+	// Case A: No program -> No timer set
+	model.program = nil
+	model.throttleTimerSet = false
 
-	if !model.throttleTimerSet {
-		t.Error("Timer should be set")
-	}
-
-	// Scenario: Timer already set, should not schedule again
-	originalTimerSet := model.throttleTimerSet
-	if !model.throttleTimerSet {
-		model.throttleTimerSet = true
-	}
-	if model.throttleTimerSet != originalTimerSet {
-		t.Error("Timer should not be set again if already set")
-	}
+	// Call View again immediately
+	model.View()
+	assert.False(t, model.throttleTimerSet, "Should not set timer if program is nil")
 }
 
-// TestRenderThrottleDisabled tests behavior when throttling is disabled
-func TestRenderThrottleDisabled(t *testing.T) {
+// TestRenderThrottle_AlwaysRenderTypes verifies specific message types enable forceNextRender.
+func TestRenderThrottle_AlwaysRenderTypes(t *testing.T) {
+	vm := goja.New()
+
 	model := &jsModel{
-		throttleEnabled: false, // Disabled
-		cachedView:      "should not be used",
-		lastRenderTime:  time.Now(),
+		runtime:           vm,
+		throttleEnabled:   true,
+		alwaysRenderTypes: map[string]bool{"Tick": true, "WindowSize": true},
+	}
+	model.jsRunner = &SyncJSRunner{Runtime: vm} // Needed for Update safety check
+
+	tests := []struct {
+		name      string
+		msg       tea.Msg
+		shouldSet bool
+	}{
+		{"Tick", tickMsg{id: "1"}, true},
+		{"WindowSize", tea.WindowSizeMsg{Width: 80, Height: 24}, true},
+		{"Key", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}, false},
 	}
 
-	viewCallCount := int32(0)
-	viewFn := func() string {
-		atomic.AddInt32(&viewCallCount, 1)
-		return "new view"
-	}
-
-	// When disabled, should always call viewFn directly
-	// The actual View() method checks throttleEnabled first
-	if !model.throttleEnabled {
-		result := viewFn()
-		if result != "new view" {
-			t.Errorf("Expected 'new view', got %q", result)
-		}
-	}
-
-	if atomic.LoadInt32(&viewCallCount) != 1 {
-		t.Errorf("View should always be called when throttle disabled")
-	}
-}
-
-// TestRenderThrottleConfigParsing verifies the config object is parsed correctly
-// This is a unit test for the parsing logic, not the full integration
-func TestRenderThrottleConfigParsing(t *testing.T) {
-	// Test default values
-	model := &jsModel{}
-
-	// Simulate default config application
-	if !model.throttleEnabled {
-		model.throttleIntervalMs = 16 // Default
-		model.alwaysRenderTypes = map[string]bool{
-			"Tick":       true,
-			"WindowSize": true,
-		}
-	}
-
-	if model.throttleIntervalMs != 16 {
-		t.Errorf("Default interval should be 16, got %d", model.throttleIntervalMs)
-	}
-	if !model.alwaysRenderTypes["Tick"] {
-		t.Error("Tick should be in alwaysRenderTypes by default")
-	}
-	if !model.alwaysRenderTypes["WindowSize"] {
-		t.Error("WindowSize should be in alwaysRenderTypes by default")
-	}
-}
-
-// BenchmarkRenderThrottleViewSkip measures how much time is saved by skipping view() calls
-// when render throttling is active. This directly demonstrates the input latency improvement.
-func BenchmarkRenderThrottleViewSkip(b *testing.B) {
-	// Simulate an expensive view function (~500µs like shooter)
-	expensiveView := func() string {
-		// Simulate work (we can't use time.Sleep in benchmarks, so busy-wait)
-		start := time.Now()
-		for time.Since(start) < 200*time.Microsecond {
-			// Busy wait - simulating goja view() execution
-		}
-		return "expensive view output"
-	}
-
-	b.Run("WithoutThrottle", func(b *testing.B) {
-		// Without throttle: every View() call executes the expensive function
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_ = expensiveView()
-		}
-	})
-
-	b.Run("WithThrottle", func(b *testing.B) {
-		// With throttle: cached view is returned for rapid calls
-		model := &jsModel{
-			throttleEnabled:    true,
-			throttleIntervalMs: 16,
-			cachedView:         "cached output",
-			lastRenderTime:     time.Now(),
-			alwaysRenderTypes:  map[string]bool{"Tick": true},
-		}
-
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			// Simulate rapid key presses (should be throttled)
-			result := simulateView(model, expensiveView)
-			_ = result
-		}
-	})
-}
-
-// BenchmarkRenderThrottleInputBurst measures input processing with throttle vs without
-// This simulates the pathological case: 4 rapid key presses in quick succession
-func BenchmarkRenderThrottleInputBurst(b *testing.B) {
-	viewDuration := 467 * time.Microsecond // Based on benchmark data
-
-	simulateViewWithDuration := func() string {
-		start := time.Now()
-		for time.Since(start) < viewDuration {
-			// Busy wait
-		}
-		return "view"
-	}
-
-	b.Run("BurstWithoutThrottle", func(b *testing.B) {
-		// Without throttle: each key triggers a full view() call
-		for i := 0; i < b.N; i++ {
-			// 4 key presses, each triggers view
-			for k := 0; k < 4; k++ {
-				_ = simulateViewWithDuration()
-			}
-		}
-	})
-
-	b.Run("BurstWithThrottle", func(b *testing.B) {
-		// With throttle: only first key triggers view, rest are cached
-		for i := 0; i < b.N; i++ {
-			model := &jsModel{
-				throttleEnabled:    true,
-				throttleIntervalMs: 16,
-				cachedView:         "",
-				lastRenderTime:     time.Time{}, // Never rendered
-				alwaysRenderTypes:  map[string]bool{"Tick": true},
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			model.forceNextRender = false
+			model.updateFn = func(this goja.Value, args ...goja.Value) (goja.Value, error) {
+				return vm.NewArray(args[0], goja.Null()), nil
 			}
 
-			// 4 key presses in rapid succession
-			for k := 0; k < 4; k++ {
-				if model.cachedView == "" || model.forceNextRender {
-					// First call or forced: do actual render
-					model.cachedView = simulateViewWithDuration()
-					model.lastRenderTime = time.Now()
-					model.forceNextRender = false
-				}
-				// Subsequent calls use cache (no sleep)
+			model.Update(tc.msg)
+
+			if tc.shouldSet {
+				assert.True(t, model.forceNextRender, "Should set forceNextRender for %s", tc.name)
+			} else {
+				assert.False(t, model.forceNextRender, "Should NOT set forceNextRender for %s", tc.name)
 			}
-		}
-	})
+		})
+	}
 }
 
-// TestRenderThrottleInputLatencyImprovement verifies that render throttling
-// reduces input latency in pathological cases (rapid key presses)
-func TestRenderThrottleInputLatencyImprovement(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping latency test in short mode")
-	}
+// TestRenderThrottle_ViewError verifies error handling from JS view function.
+func TestRenderThrottle_ViewError(t *testing.T) {
+	vm := goja.New()
 
-	// Simulate expensive view (~500µs)
-	viewDuration := 400 * time.Microsecond
-	simulateExpensiveView := func() string {
-		time.Sleep(viewDuration)
-		return "view"
-	}
-
-	// Test WITHOUT throttle: 4 rapid keys = 4 expensive view() calls
-	start := time.Now()
-	for i := 0; i < 4; i++ {
-		_ = simulateExpensiveView()
-	}
-	withoutThrottle := time.Since(start)
-
-	// Test WITH throttle: 4 rapid keys = 1 view + 3 cached
 	model := &jsModel{
-		throttleEnabled:    true,
-		throttleIntervalMs: 16,
-		cachedView:         "",
-		lastRenderTime:     time.Time{},
-		alwaysRenderTypes:  map[string]bool{"Tick": true},
+		runtime:         vm,
+		throttleEnabled: true,
+		viewFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
+			return nil, assert.AnError
+		},
+		state: vm.NewObject(),
 	}
+	model.jsRunner = &SyncJSRunner{Runtime: vm}
 
-	start = time.Now()
-	for i := 0; i < 4; i++ {
-		result := simulateView(model, simulateExpensiveView)
-		_ = result
-	}
-	withThrottle := time.Since(start)
+	output := model.View()
+	assert.Contains(t, output, "View error")
+	assert.Contains(t, output, assert.AnError.Error())
 
-	t.Logf("Without throttle: %v (4 keys × ~%v view)", withoutThrottle, viewDuration)
-	t.Logf("With throttle:    %v (1 view + 3 cached)", withThrottle)
-	t.Logf("Improvement:      %.1fx faster", float64(withoutThrottle)/float64(withThrottle))
-
-	// The throttled version should be at least 2x faster (4 views vs 1 view)
-	// In practice it should be close to 4x faster
-	ratio := float64(withoutThrottle) / float64(withThrottle)
-	if ratio < 2.0 {
-		t.Errorf("Render throttle should provide at least 2x improvement, got %.1fx", ratio)
-	}
+	// Error outputs should probably not be cached, or they should?
+	// The current impl caches whatever viewDirect returns.
+	assert.Equal(t, output, model.cachedView)
 }

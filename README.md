@@ -13,7 +13,7 @@ Refine reproducible one-shot prompts from your terminal, then paste them into th
 `osm` is an extensible scriptable local-first CLI (with optional TUI) for constructing single-shot prompts:
 files + diffs + notes + templates → prompt → clipboard.
 
-It does **not** call any model API. No keys, no "agent platform", no network required.
+It does **not** call any model API. No keys, no "[agent platform](docs/todo.md)", no network required.
 
 I use this tool almost every day (work + personal projects).
 Manually assembling and especially tweaking context was tiresome, so I built `osm` to help.
@@ -78,6 +78,24 @@ Curated prompt templates for common tasks. Extensible with custom goals discover
 <summary><strong>☀️ Light Theme Variant</strong></summary>
 
 ![super-document-visual-light.gif](https://vhs.charm.sh/vhs-2FvzjqCUEbKdcIsqyFZ4vt.gif)
+
+</details>
+
+<details>
+<summary><strong>🎮 Behavior Tree Shooter (Scripting Demo)</strong></summary>
+
+A 2D top-down shooter running entirely in the terminal. Uses `osm:bt` (wrapping [go-behaviortree](https://github.com/joeycumines/go-behaviortree)) for enemy AI. Each type (grunt, sniper, pursuer, tank) has distinct behavior tree logic. Written in JavaScript, runs via `osm script` [scripts/example-04-bt-shooter.js](scripts/example-04-bt-shooter.js).
+
+![script-example-bt-shooter.gif](https://vhs.charm.sh/vhs-lVtFOSWPuuc5J2TDG9yb3.gif)
+
+</details>
+
+<details>
+<summary><strong>🤖 PA-BT Pick-and-Place (Scripting Demo)</strong></summary>
+
+An autonomous agent solving a pick-and-place puzzle. Uses `osm:pabt` (wrapping [go-pabt](https://github.com/joeycumines/go-pabt)) to generate plans on-the-fly. The agent uses backchaining to achieve its goal. No user input; just watch it resolve blocking items and complete the task. Written in JavaScript, runs via `osm script` [scripts/example-05-pick-and-place.js](scripts/example-05-pick-and-place.js).
+
+![script-example-pick-and-place.gif](https://vhs.charm.sh/vhs-CVwQJ064lUrQ6dWwoNj76.gif)
 
 </details>
 
@@ -165,7 +183,7 @@ Future functionality based on merits.
 Fair warning: This may include features* which expand the scope of functionality.
 See also [docs/todo.md](docs/todo.md).
 
-(\*) Probably more along the lines of [Behavior Tree support](https://github.com/joeycumines/one-shot-man/pull/27) than [Tailwind SQL](https://tailwindsql.xyz/) - but I make no promises 😛.
+(\*) Probably more along the lines of [Behavior Tree support](https://github.com/joeycumines/one-shot-man/pull/27) ([+ PA-BT](https://github.com/joeycumines/one-shot-man/pull/28)) than [Tailwind SQL](https://tailwindsql.xyz/) - but I make no promises 😛.
 
 ## Quickstart
 

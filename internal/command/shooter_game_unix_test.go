@@ -19,8 +19,16 @@ import (
 // buildTestBinary builds the osm test binary for command package tests
 func buildTestBinary(t *testing.T) string {
 	t.Helper()
+	// Get the working directory and compute project root
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
+
 	binaryPath := filepath.Join(t.TempDir(), "osm-test")
-	cmd := exec.Command("go", "build", "-tags=integration", "-o", binaryPath, "../../cmd/osm")
+	cmd := exec.Command("go", "build", "-tags=integration", "-o", binaryPath, "./cmd/osm")
+	cmd.Dir = projectDir // Critical: set working directory to project root
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -513,7 +521,7 @@ func TestShooterE2E_EnemyMovement(t *testing.T) {
 		if finalState != nil {
 			ticksElapsed = finalState.Tick - initialTick
 		}
-		t.Errorf("CRITICAL: Enemy did NOT move! Position remained at (%d, %d) after %d ticks. "+
+		t.Fatalf("CRITICAL: Enemy did NOT move! Position remained at (%d, %d) after %d ticks. "+
 			"This indicates behavior tree tickers are not updating enemy positions. "+
 			"Check bt.newTicker() lifecycle and syncFromBlackboards().",
 			initialEnemyX, initialEnemyY, ticksElapsed)

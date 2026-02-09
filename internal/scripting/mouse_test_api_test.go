@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/joeycumines/one-shot-man/internal/mouseharness"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -78,9 +79,6 @@ No documents yet. Press 'a' to add or 'l' to load from file.
 
 a:add  l:load  e:edit  r:rename  d:delete  v:view  c:copy  g:generate  ?:help  q:quit`
 
-	// Create a mock API just for testing FindElementInBuffer
-	api := &MouseTestAPI{t: t}
-
 	tests := []struct {
 		name        string
 		content     string
@@ -134,7 +132,7 @@ a:add  l:load  e:edit  r:rename  d:delete  v:view  c:copy  g:generate  ?:help  q
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loc := api.FindElementInBuffer(buffer, tt.content)
+			loc := findElementInParsedBuffer(buffer, tt.content)
 			require.NotNil(t, loc, "element %q not found in buffer", tt.content)
 			assert.Equal(t, tt.expectRow, loc.Row, "row mismatch")
 			assert.Equal(t, tt.expectCol, loc.Col, "col mismatch")
@@ -147,8 +145,6 @@ a:add  l:load  e:edit  r:rename  d:delete  v:view  c:copy  g:generate  ?:help  q
 func TestMouseTestAPI_FindElementInBuffer_WithANSI(t *testing.T) {
 	// Simulated buffer with ANSI escape codes (like real terminal output)
 	buffer := "\x1b[1m\x1b[38;5;99m📄 Super-Document Builder\x1b[0m\n\n\x1b[38;5;15mDocuments: 0\x1b[0m\n\n\x1b[38;5;102mNo documents yet.\x1b[0m\n\n\x1b[48;5;35m  [A]dd  \x1b[0m \x1b[48;5;35m  [L]oad File  \x1b[0m \x1b[1m\x1b[48;5;99m  [C]opy Prompt  \x1b[0m"
-
-	api := &MouseTestAPI{t: t}
 
 	tests := []struct {
 		name      string
@@ -184,7 +180,7 @@ func TestMouseTestAPI_FindElementInBuffer_WithANSI(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			loc := api.FindElementInBuffer(buffer, tt.content)
+			loc := findElementInParsedBuffer(buffer, tt.content)
 			if tt.expectNil {
 				assert.Nil(t, loc, "expected nil for %q", tt.content)
 			} else {
@@ -344,11 +340,7 @@ func TestMouseTestAPI_BufferRowToViewportRow(t *testing.T) {
 			}
 			buffer := strings.Join(bufferLines, "\n")
 
-			// Create API with explicit height (nil console, won't be used for this test)
-			_ = &MouseTestAPI{t: t, height: tt.terminalHeight}
-
-			// Override getBufferLineCount for this test
-			// We simulate by creating a buffer and calling the public helper
+			// Parse buffer
 			screen := parseTerminalBuffer(buffer)
 			actualLineCount := len(screen)
 			for actualLineCount > 0 && strings.TrimSpace(screen[actualLineCount-1]) == "" {
@@ -356,7 +348,7 @@ func TestMouseTestAPI_BufferRowToViewportRow(t *testing.T) {
 			}
 			assert.Equal(t, tt.bufferLineCount, actualLineCount, "buffer line count")
 
-			// Now calculate visibleTop manually and verify
+			// Calculate visibleTop manually and verify
 			visibleTop := 1
 			if actualLineCount > tt.terminalHeight {
 				visibleTop = actualLineCount - tt.terminalHeight + 1
@@ -377,8 +369,7 @@ func TestMouseTestAPI_BufferRowToViewportRow(t *testing.T) {
 
 func TestMouseTestAPI_ClickElement_AccountsForViewportOffset(t *testing.T) {
 	// This is a pure unit test that verifies the coordinate conversion logic
-	// without needing a real terminal. The goal is to ensure that when content
-	// is taller than the terminal, ClickElement uses viewport-relative Y.
+	// without needing a real terminal.
 	t.Parallel()
 
 	// Create a mock 40-line buffer with a target element at row 35
@@ -392,33 +383,44 @@ func TestMouseTestAPI_ClickElement_AccountsForViewportOffset(t *testing.T) {
 	}
 	buffer := strings.Join(lines, "\n")
 
-	api := &MouseTestAPI{t: t, height: 10}
+	height := 10
 	screen := parseTerminalBuffer(buffer)
 
 	// Verify the target is at buffer row 35
-	loc := api.FindElementInBuffer(buffer, "[Target Button]")
+	loc := findElementInParsedBuffer(buffer, "[Target Button]")
 	require.NotNil(t, loc, "target element not found")
 	assert.Equal(t, 35, loc.Row, "element should be at buffer row 35")
 
 	// Calculate expected viewport row
-	// With 40 lines and height 10:
-	// visibleTop = 40 - 10 + 1 = 31
-	// viewportY = 35 - (31 - 1) = 35 - 30 = 5
 	lineCount := len(screen)
 	for lineCount > 0 && strings.TrimSpace(screen[lineCount-1]) == "" {
 		lineCount--
 	}
 
 	visibleTop := 1
-	if lineCount > api.height {
-		visibleTop = lineCount - api.height + 1
+	if lineCount > height {
+		visibleTop = lineCount - height + 1
 	}
 	expectedViewportY := loc.Row - (visibleTop - 1)
 
 	assert.Equal(t, 31, visibleTop, "visibleTop")
 	assert.Equal(t, 5, expectedViewportY, "expected viewport Y for row 35")
+}
 
-	// Verify bufferRowToViewportRow gives same result
-	// (This requires mocking getBufferLineCount, which we can't easily do,
-	// so we verify the calculation manually matches the expected formula)
+// Helper function: find element in parsed buffer (unit test helper)
+func findElementInParsedBuffer(buffer, content string) *mouseharness.ElementLocation {
+	screen := parseTerminalBuffer(buffer)
+	for row, line := range screen {
+		colIdx := strings.Index(line, content)
+		if colIdx >= 0 {
+			return &mouseharness.ElementLocation{
+				Row:    row + 1,
+				Col:    colIdx + 1,
+				Width:  len(content),
+				Height: 1,
+				Text:   content,
+			}
+		}
+	}
+	return nil
 }

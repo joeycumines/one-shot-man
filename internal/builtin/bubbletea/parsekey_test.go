@@ -220,9 +220,10 @@ func TestParseKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			k, ok := ParseKey(tt.input)
 
-			// 1. Check Ambiguity (ok)
-			if tt.wantAmbiguous == ok {
-				t.Errorf("ParseKey(%q) unambiguous = %v, want %v", tt.input, ok, !tt.wantAmbiguous)
+			// 1. Check Ambiguity (ok). Note: ParseKey returns 'ok' meaning "unambiguous".
+			wantUnambiguous := !tt.wantAmbiguous
+			if ok != wantUnambiguous {
+				t.Errorf("ParseKey(%q) unambiguous = %v, want %v", tt.input, ok, wantUnambiguous)
 			}
 
 			// 2. Check KeyType

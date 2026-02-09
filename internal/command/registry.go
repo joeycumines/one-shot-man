@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 )
@@ -201,6 +203,13 @@ func NewScriptCommand(name, scriptPath string) *ScriptCommand {
 
 // Execute runs the script command.
 func (c *ScriptCommand) Execute(args []string, stdout, stderr io.Writer) error {
+	// Use background context for Execute without explicit context
+	return c.ExecuteWithContext(context.Background(), args, stdout, stderr)
+}
+
+// ExecuteWithContext runs the script command with context support.
+// When the context is cancelled, the command and its child processes are terminated.
+func (c *ScriptCommand) ExecuteWithContext(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	var cmd *exec.Cmd
 
 	// Windows: some script file types (like .bat/.cmd) must be launched
@@ -208,17 +217,44 @@ func (c *ScriptCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if runtime.GOOS == "windows" {
 		ext := strings.ToLower(filepath.Ext(c.scriptPath))
 		if ext == ".bat" || ext == ".cmd" {
-			cmd = exec.Command("cmd", append([]string{"/c", c.scriptPath}, args...)...)
+			cmd = exec.CommandContext(ctx, "cmd", append([]string{"/c", c.scriptPath}, args...)...)
 		}
 	}
 
 	if cmd == nil {
-		cmd = exec.Command(c.scriptPath, args...)
+		cmd = exec.CommandContext(ctx, c.scriptPath, args...)
 	}
 
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	cmd.Stdin = os.Stdin
 
-	return cmd.Run()
+	// Set up platform-specific process attributes
+	c.setupSysProcAttr(cmd)
+
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	// Wait for command to complete or context to be cancelled
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		// Context was cancelled - kill the entire process group
+		c.killProcessGroup(cmd)
+		// Wait for the process to actually exit
+		select {
+		case <-done:
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+			return fmt.Errorf("timeout waiting for process to terminate after context cancellation")
+		}
+	}
 }

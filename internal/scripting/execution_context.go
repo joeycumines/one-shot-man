@@ -12,7 +12,6 @@ type ExecutionContext struct {
 	engine   *Engine
 	script   *Script
 	name     string
-	parent   *ExecutionContext
 	failed   bool
 	output   strings.Builder
 	deferred []func()
@@ -24,7 +23,6 @@ func (ctx *ExecutionContext) Run(name string, fn goja.Callable) bool {
 		engine: ctx.engine,
 		script: ctx.script,
 		name:   fmt.Sprintf("%s/%s", ctx.name, name),
-		parent: ctx,
 	}
 
 	// Save current JS ctx and guarantee restoration even on panic

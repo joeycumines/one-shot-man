@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/go-prompt/termtest"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 func waitForBufferContains(ctx context.Context, cp *termtest.Console, target string, timeout time.Duration) error {
@@ -91,11 +92,11 @@ func TestSuperDocument_ClickAfterAutoScrollPlacesCursorCorrectly(t *testing.T) {
 		}
 		for _, ch := range line {
 			sendKey(t, cp, string(ch))
-			time.Sleep(5 * time.Millisecond) // Slightly slower typing to improve reliability
+			time.Sleep(10 * time.Millisecond) // Increased delay to prevent character drops
 		}
 		sendKey(t, cp, "\r")
-		// Slightly longer delay after each line to let the terminal fully process
-		time.Sleep(30 * time.Millisecond)
+		// Longer delay after each line to let the terminal fully process auto-scroll
+		time.Sleep(50 * time.Millisecond)
 	}
 
 	// Wait for the marker to appear in the buffer before attempting to click
@@ -108,6 +109,15 @@ func TestSuperDocument_ClickAfterAutoScrollPlacesCursorCorrectly(t *testing.T) {
 	if err := mouse.ClickElement(ctx, marker, 10*time.Second); err != nil {
 		t.Fatalf("Failed to click marker element: %v", err)
 	}
+
+	// CRITICAL: Wait for textarea cursor position/focus to stabilize after click
+	// This addresses the race condition where keystrokes arrive before the
+	// click-triggered state changes have fully propagated.
+	// In Docker (slower PTY/event processing), the click→ready latency
+	// is ~120ms vs ~20ms on macOS, so first keystrokes can arrive
+	// before cursor position is committed, causing dropped characters.
+	// Uses DockerClickSyncDelay to compensate for environment-specific timing.
+	time.Sleep(testutil.DockerClickSyncDelay)
 
 	// Insert text at click position and submit form
 	insert := "-INSERTED-"

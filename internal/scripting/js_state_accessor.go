@@ -35,6 +35,11 @@ func (e *Engine) jsCreateState(call goja.FunctionCall) goja.Value {
 	if commandName == "" {
 		panic(runtime.NewTypeError("createState first argument must be a command name"))
 	}
+	// Validate command name doesn't contain ':' as that's used as the key separator
+	// in the persistent storage format ("commandID:localKey")
+	if strings.Contains(commandName, ":") {
+		panic(runtime.NewTypeError("createState command name cannot contain ':' (reserved separator)"))
+	}
 
 	jsDefs := call.Argument(1).ToObject(runtime)
 	if jsDefs == nil {

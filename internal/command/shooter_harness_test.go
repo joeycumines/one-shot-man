@@ -204,9 +204,6 @@ var debugJSONRegex = regexp.MustCompile(`(?s)__JSON_START__\s*(.+?)\s*__JSON_END
 // Matches {"m":"...",... up to the closing brace, being careful about nesting
 var rawJSONRegex = regexp.MustCompile(`\{"m":"[^"]+","t":\d+[^}]*\}`)
 
-// ansiRegex matches ANSI escape sequences
-var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
-
 func (h *TestShooterHarness) parseDebugJSON(buffer string) (*ShooterDebugState, error) {
 	// Strip ANSI codes first to improve matching
 	cleanBuffer := ansiRegex.ReplaceAllString(buffer, "")

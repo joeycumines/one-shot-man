@@ -252,59 +252,54 @@ try {
             sprite: config.sprite,
             color: config.color,
             projectileSpeed: config.projectileSpeed,
-            blackboard: new bt.Blackboard(),
             tree: null,
             ticker: null
         };
 
-        // Initialize blackboard with type-specific values
-        enemy.blackboard.set('type', type);
-        enemy.blackboard.set('id', id);
-        enemy.blackboard.set('lastShotTime', 0);
+        // Common state for all enemies
+        enemy.lastShotTime = 0;
+        enemy.playerX = Math.floor(SCREEN_WIDTH / 2);
+        enemy.playerY = Math.floor(SCREEN_HEIGHT - 4);
 
-        // CRITICAL: Initialize position and health BEFORE ticker starts!
-        // Without this, the AI's first tick has undefined values and checkAlive fails.
-        enemy.blackboard.set('x', enemy.x);
-        enemy.blackboard.set('y', enemy.y);
-        enemy.blackboard.set('health', enemy.health);
-        // Set default player position (center-ish) so AI has a target before first syncToBlackboards
-        // This will be overwritten by syncToBlackboards with actual player position
-        enemy.blackboard.set('playerX', Math.floor(SCREEN_WIDTH / 2));
-        enemy.blackboard.set('playerY', Math.floor(SCREEN_HEIGHT - 4));
+        // AI output flags (set by behavior tree leaves)
+        enemy.newX = undefined;
+        enemy.newY = undefined;
+        enemy.fire = false;
+        enemy.fireTargetX = undefined;
+        enemy.fireTargetY = undefined;
 
         try {
-            // ALL enemy types need speed for movement
-            enemy.blackboard.set('speed', config.speed);
-
             if (type === 'grunt') {
-                enemy.blackboard.set('attackRange', config.attackRange);
-                enemy.blackboard.set('shootCooldown', config.shootCooldown);
-                enemy.blackboard.set('shootDamage', config.damage);
+                enemy.attackRange = config.attackRange;
+                enemy.shootCooldown = config.shootCooldown;
+                enemy.shootDamage = config.damage;
             } else if (type === 'sniper') {
-                enemy.blackboard.set('minRange', config.minRange);
-                enemy.blackboard.set('maxRange', config.maxRange);
-                enemy.blackboard.set('shootCooldown', config.shootCooldown);
-                enemy.blackboard.set('shootDamage', config.damage);
+                enemy.minRange = config.minRange;
+                enemy.maxRange = config.maxRange;
+                enemy.shootCooldown = config.shootCooldown;
+                enemy.shootDamage = config.damage;
             } else if (type === 'pursuer') {
-                enemy.blackboard.set('dashRange', config.dashRange);
-                enemy.blackboard.set('minDashRange', config.minDashRange);
-                enemy.blackboard.set('dashCooldown', config.dashCooldown);
-                enemy.blackboard.set('dashSpeed', config.dashSpeed);
-                enemy.blackboard.set('dashDamage', config.damage);
-                enemy.blackboard.set('lastDashTime', 0);
-                enemy.blackboard.set('dashProgress', 0);
+                enemy.dashRange = config.dashRange;
+                enemy.minDashRange = config.minDashRange;
+                enemy.dashCooldown = config.dashCooldown;
+                enemy.dashSpeed = config.dashSpeed;
+                enemy.dashDamage = config.damage;
+                enemy.lastDashTime = 0;
+                enemy.dashProgress = 0;
+                enemy.dashing = false;
+                enemy.telegraphing = false;
             } else if (type === 'tank') {
-                enemy.blackboard.set('burstCooldown', config.burstCooldown);
-                enemy.blackboard.set('burstCount', config.burstCount);
-                enemy.blackboard.set('shotDelay', config.shotDelay);
-                enemy.blackboard.set('shotDamage', config.damage);
-                enemy.blackboard.set('lastBurstTime', 0);
-                enemy.blackboard.set('burstIndex', 0);
-                enemy.blackboard.set('burstInProgress', false);
+                enemy.burstCooldown = config.burstCooldown;
+                enemy.burstCount = config.burstCount;
+                enemy.shotDelay = config.shotDelay;
+                enemy.shootDamage = config.damage;
+                enemy.lastBurstTime = 0;
+                enemy.burstIndex = 0;
+                enemy.burstInProgress = false;
             }
 
             // Build and start behavior tree ticker
-            enemy.tree = createEnemyTree(type, enemy.blackboard);
+            enemy.tree = createEnemyTree(type, enemy);
             enemy.ticker = bt.newTicker(AI_TICK_RATE, enemy.tree);
         } catch (e) {
             console.error('Error initializing enemy #' + id + ' (' + type + '): ' + e.message);
@@ -347,228 +342,134 @@ try {
 // Behavior Tree Leaf Functions (Lines 201-400)
 // ============================================================================
 
-// Common leaves - NOTE: bb is passed explicitly and captured via closure
-// because bt.createBlockingLeafNode doesn't pass context at tick time
-    function createCheckAliveLeaf(bb) {
+// Common leaves - enemy object passed via closure
+    function createCheckAliveLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
-            const health = bb.get('health');
-            // console.log('CheckAlive: health=' + health);
-            return health > 0 ? bt.success : bt.failure;
+            return enemy.health > 0 ? bt.success : bt.failure;
         });
     }
 
-    function createCheckInRangeLeaf(bb, rangeKey) {
+    function createCheckInRangeLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
-            const x = bb.get('x');
-            const y = bb.get('y');
-            const playerX = bb.get('playerX');
-            const playerY = bb.get('playerY');
-            const range = bb.get(rangeKey);
-
-            if (x === undefined || y === undefined || playerX === undefined || playerY === undefined) {
-                return bt.failure;
-            }
-
-            const dist = distance(x, y, playerX, playerY);
-            return dist < range ? bt.success : bt.failure;
+            const dist = distance(enemy.x, enemy.y, enemy.playerX, enemy.playerY);
+            return dist < enemy.attackRange ? bt.success : bt.failure;
         });
     }
 
-    function createMoveTowardLeaf(bb, speedKey) {
+    function createMoveTowardLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
-            const x = bb.get('x');
-            const y = bb.get('y');
-            const playerX = bb.get('playerX');
-            const playerY = bb.get('playerY');
-            const speed = bb.get(speedKey);
-
-            // DEBUG: Log to see if leaf is being executed
-            // console.log('MoveToward: x=' + x + ', y=' + y + ', px=' + playerX + ', py=' + playerY + ', speed=' + speed);
-
-            if (x === undefined || y === undefined || playerX === undefined || playerY === undefined) {
-                return bt.failure;
-            }
-
-            const dist = distance(x, y, playerX, playerY);
+            const dist = distance(enemy.x, enemy.y, enemy.playerX, enemy.playerY);
             if (dist < 0.5) {
                 return bt.running;
             }
 
-            const dx = (playerX - x) / dist;
-            const dy = (playerY - y) / dist;
+            const dx = (enemy.playerX - enemy.x) / dist;
+            const dy = (enemy.playerY - enemy.y) / dist;
 
-            const newX = clamp(x + dx * speed * 0.1, 1, SCREEN_WIDTH - 2);
-            const newY = clamp(y + dy * speed * 0.1, 1, SCREEN_HEIGHT - 2);
-            // console.log('MoveToward: setting newX=' + newX + ', newY=' + newY);
-            bb.set('newX', newX);
-            bb.set('newY', newY);
+            enemy.newX = clamp(enemy.x + dx * enemy.speed * 0.1, 1, SCREEN_WIDTH - 2);
+            enemy.newY = clamp(enemy.y + dy * enemy.speed * 0.1, 1, SCREEN_HEIGHT - 2);
             return bt.running;
         });
     }
 
-    function createShootLeaf(bb, cooldownKey, damageKey) {
+    function createShootLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
             const now = Date.now();
-            const lastShot = bb.get('lastShotTime');
-            const cooldown = bb.get(cooldownKey);
-
-            if (now - lastShot < cooldown) {
+            if (now - enemy.lastShotTime < enemy.shootCooldown) {
                 return bt.running;
             }
 
-            const playerX = bb.get('playerX');
-            const playerY = bb.get('playerY');
-
-            bb.set('fire', true);
-            bb.set('fireTargetX', playerX);
-            bb.set('fireTargetY', playerY);
-            bb.set('lastShotTime', now);
+            enemy.fire = true;
+            enemy.fireTargetX = enemy.playerX;
+            enemy.fireTargetY = enemy.playerY;
+            enemy.lastShotTime = now;
             return bt.success;
         });
     }
 
 // Sniper-specific leaves
-    function createCheckSniperRangeLeaf(bb) {
+    function createCheckSniperRangeLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
-            const x = bb.get('x');
-            const y = bb.get('y');
-            const playerX = bb.get('playerX');
-            const playerY = bb.get('playerY');
-            const minRange = bb.get('minRange');
-            const maxRange = bb.get('maxRange');
-
-            if (x === undefined || y === undefined || playerX === undefined || playerY === undefined) {
-                return bt.failure;
-            }
-
-            const dist = distance(x, y, playerX, playerY);
-            return dist >= minRange && dist <= maxRange ? bt.success : bt.failure;
+            const dist = distance(enemy.x, enemy.y, enemy.playerX, enemy.playerY);
+            return dist >= enemy.minRange && dist <= enemy.maxRange ? bt.success : bt.failure;
         });
     }
 
-    function createRetreatLeaf(bb, speedKey) {
+    function createRetreatLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
-            const x = bb.get('x');
-            const y = bb.get('y');
-            const playerX = bb.get('playerX');
-            const playerY = bb.get('playerY');
-            const speed = bb.get(speedKey);
+            const dist = distance(enemy.x, enemy.y, enemy.playerX, enemy.playerY);
+            const dx = (enemy.playerX - enemy.x) / dist;
+            const dy = (enemy.playerY - enemy.y) / dist;
 
-            if (x === undefined || y === undefined || playerX === undefined || playerY === undefined) {
-                return bt.failure;
-            }
-
-            const dist = distance(x, y, playerX, playerY);
-            const dx = (playerX - x) / dist;
-            const dy = (playerY - y) / dist;
-
-            bb.set('newX', clamp(x - dx * speed * 0.1, 1, SCREEN_WIDTH - 2));
-            bb.set('newY', clamp(y - dy * speed * 0.1, 1, SCREEN_HEIGHT - 2));
+            enemy.newX = clamp(enemy.x - dx * enemy.speed * 0.1, 1, SCREEN_WIDTH - 2);
+            enemy.newY = clamp(enemy.y - dy * enemy.speed * 0.1, 1, SCREEN_HEIGHT - 2);
             return bt.running;
         });
     }
 
-    function createAimAndShootLeaf(bb) {
+    function createAimAndShootLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
             const now = Date.now();
-            const lastShot = bb.get('lastShotTime');
-            const cooldown = bb.get('shootCooldown');
-
-            if (now - lastShot < cooldown) {
+            if (now - enemy.lastShotTime < enemy.shootCooldown) {
                 return bt.running;
             }
 
-            const playerX = bb.get('playerX');
-            const playerY = bb.get('playerY');
-
-            bb.set('fire', true);
-            bb.set('fireTargetX', playerX);
-            bb.set('fireTargetY', playerY);
-            bb.set('lastShotTime', now);
+            enemy.fire = true;
+            enemy.fireTargetX = enemy.playerX;
+            enemy.fireTargetY = enemy.playerY;
+            enemy.lastShotTime = now;
             return bt.success;
         });
     }
 
 // Pursuer-specific leaves
-    function createCheckTooCloseLeaf(bb, minRange) {
+    function createCheckTooCloseLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
-            const x = bb.get('x');
-            const y = bb.get('y');
-            const playerX = bb.get('playerX');
-            const playerY = bb.get('playerY');
-
-            if (x === undefined || y === undefined || playerX === undefined || playerY === undefined) {
-                return bt.failure;
-            }
-
-            const dist = distance(x, y, playerX, playerY);
-            return dist < minRange ? bt.success : bt.failure;
+            const dist = distance(enemy.x, enemy.y, enemy.playerX, enemy.playerY);
+            return dist < 8 ? bt.success : bt.failure;  // minDashRange = 8
         });
     }
 
-    function createCanDashLeaf(bb) {
+    function createCanDashLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
             const now = Date.now();
-            const lastDash = bb.get('lastDashTime');
-            const cooldown = bb.get('dashCooldown');
-
-            return now - lastDash >= cooldown ? bt.success : bt.failure;
+            return now - enemy.lastDashTime >= enemy.dashCooldown ? bt.success : bt.failure;
         });
     }
 
-    function createCheckDashRangeLeaf(bb) {
+    function createCheckDashRangeLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
-            const x = bb.get('x');
-            const y = bb.get('y');
-            const playerX = bb.get('playerX');
-            const playerY = bb.get('playerY');
-            const dashRange = bb.get('dashRange');
-            const minDashRange = bb.get('minDashRange');
-
-            if (x === undefined || y === undefined || playerX === undefined || playerY === undefined) {
-                return bt.failure;
-            }
-
-            const dist = distance(x, y, playerX, playerY);
-            return dist < dashRange && dist > minDashRange ? bt.success : bt.failure;
+            const dist = distance(enemy.x, enemy.y, enemy.playerX, enemy.playerY);
+            return dist < enemy.dashRange && dist > enemy.minDashRange ? bt.success : bt.failure;
         });
     }
 
-    function createExecuteDashLeaf(bb) {
+    function createExecuteDashLeaf(enemy) {
         return bt.createLeafNode(() => {
-            const dashProgress = bb.get('dashProgress') || 0;
-            const x = bb.get('x');
-            const y = bb.get('y');
-
-            if (dashProgress >= 1.0) {
-                bb.set('dashing', false);
-                bb.delete('dashProgress');
+            if (enemy.dashProgress >= 1.0) {
+                enemy.dashing = false;
+                enemy.dashProgress = 0;
+                enemy.dashTargetX = undefined;
+                enemy.dashTargetY = undefined;
                 return bt.success;
             }
 
-            let targetX = bb.get('dashTargetX');
-            let targetY = bb.get('dashTargetY');
-
-            if (dashProgress === 0) {
-                const playerX = bb.get('playerX');
-                const playerY = bb.get('playerY');
-                targetX = playerX;
-                targetY = playerY;
-                bb.set('dashTargetX', targetX);
-                bb.set('dashTargetY', targetY);
+            if (enemy.dashProgress === 0) {
+                enemy.dashTargetX = enemy.playerX;
+                enemy.dashTargetY = enemy.playerY;
             }
 
-            const progress = dashProgress + 0.2;
-            const newX = x + (targetX - x) * 0.2;
-            const newY = y + (targetY - y) * 0.2;
+            const progress = enemy.dashProgress + 0.2;
+            const newX = enemy.x + (enemy.dashTargetX - enemy.x) * 0.2;
+            const newY = enemy.y + (enemy.dashTargetY - enemy.y) * 0.2;
 
-            bb.set('newX', clamp(newX, 1, SCREEN_WIDTH - 2));
-            bb.set('newY', clamp(newY, 1, SCREEN_HEIGHT - 2));
-            bb.set('dashProgress', progress);
-            bb.set('dashing', true);
+            enemy.newX = clamp(newX, 1, SCREEN_WIDTH - 2);
+            enemy.newY = clamp(newY, 1, SCREEN_HEIGHT - 2);
+            enemy.dashProgress = progress;
+            enemy.dashing = true;
 
             if (progress >= 1.0) {
-                bb.set('lastDashTime', Date.now());
+                enemy.lastDashTime = Date.now();
             }
 
             return bt.running;
@@ -576,75 +477,54 @@ try {
     }
 
 // Tank-specific leaves
-    function createSlowChaseLeaf(bb) {
+    function createSlowChaseLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
-            const x = bb.get('x');
-            const y = bb.get('y');
-            const playerX = bb.get('playerX');
-            const playerY = bb.get('playerY');
-            const speed = 4;
-
-            if (x === undefined || y === undefined || playerX === undefined || playerY === undefined) {
-                return bt.failure;
-            }
-
-            const dist = distance(x, y, playerX, playerY);
+            const dist = distance(enemy.x, enemy.y, enemy.playerX, enemy.playerY);
             if (dist < 5) {
                 return bt.running;
             }
 
-            const dx = (playerX - x) / dist;
-            const dy = (playerY - y) / dist;
+            const dx = (enemy.playerX - enemy.x) / dist;
+            const dy = (enemy.playerY - enemy.y) / dist;
 
-            bb.set('newX', clamp(x + dx * speed * 0.1, 1, SCREEN_WIDTH - 2));
-            bb.set('newY', clamp(y + dy * speed * 0.1, 1, SCREEN_HEIGHT - 2));
+            enemy.newX = clamp(enemy.x + dx * 4 * 0.1, 1, SCREEN_WIDTH - 2);
+            enemy.newY = clamp(enemy.y + dy * 4 * 0.1, 1, SCREEN_HEIGHT - 2);
             return bt.running;
         });
     }
 
-    function createCheckBurstReadyLeaf(bb) {
+    function createCheckBurstReadyLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
             const now = Date.now();
-            const lastBurst = bb.get('lastBurstTime');
-            const cooldown = bb.get('burstCooldown');
-            const burstInProgress = bb.get('burstInProgress');
-
-            if (burstInProgress) {
+            if (enemy.burstInProgress) {
                 return bt.running;
             }
-
-            return now - lastBurst >= cooldown ? bt.success : bt.failure;
+            return now - enemy.lastBurstTime >= enemy.burstCooldown ? bt.success : bt.failure;
         });
     }
 
-    function createFireBurstLeaf(bb) {
+    function createFireBurstLeaf(enemy) {
         return bt.createLeafNode(() => {
-            const burstIndex = bb.get('burstIndex') || 0;
-            const burstCount = bb.get('burstCount');
-            const shotDelay = bb.get('shotDelay');
-            const lastShotTime = bb.get('lastShotTime') || 0;
             const now = Date.now();
+            const lastShotTime = enemy.lastShotTime || 0;
 
-            if (burstIndex >= burstCount) {
-                bb.set('burstInProgress', false);
-                bb.set('lastBurstTime', now);
-                bb.set('burstIndex', 0);
+            if (enemy.burstIndex >= enemy.burstCount) {
+                enemy.burstInProgress = false;
+                enemy.lastBurstTime = now;
+                enemy.burstIndex = 0;
                 return bt.success;
             }
 
-            if (burstIndex === 0) {
-                bb.set('burstInProgress', true);
+            if (enemy.burstIndex === 0) {
+                enemy.burstInProgress = true;
             }
 
-            if (now - lastShotTime >= shotDelay) {
-                const playerX = bb.get('playerX');
-                const playerY = bb.get('playerY');
-
-                bb.set('fire', true);
-                bb.set('fireTargetX', playerX);
-                bb.set('fireTargetY', playerY);
-                bb.set('lastShotTime', now);
-                bb.set('burstIndex', burstIndex + 1);
+            if (now - lastShotTime >= enemy.shotDelay) {
+                enemy.fire = true;
+                enemy.fireTargetX = enemy.playerX;
+                enemy.fireTargetY = enemy.playerY;
+                enemy.lastShotTime = now;
+                enemy.burstIndex = enemy.burstIndex + 1;
             }
 
             return bt.running;
@@ -657,17 +537,17 @@ try {
 
 // Uses bt.node(tick, ...children) to build composable trees with Go composites + JS leaves
 
-    function createEnemyTree(type, blackboard) {
+    function createEnemyTree(type, enemy) {
         try {
             switch (type) {
                 case 'grunt':
-                    return buildGruntTree(blackboard);
+                    return buildGruntTree(enemy);
                 case 'sniper':
-                    return buildSniperTree(blackboard);
+                    return buildSniperTree(enemy);
                 case 'pursuer':
-                    return buildPursuerTree(blackboard);
+                    return buildPursuerTree(enemy);
                 case 'tank':
-                    return buildTankTree(blackboard);
+                    return buildTankTree(enemy);
                 default:
                     throw new Error('Unknown enemy type: ' + type);
             }
@@ -682,57 +562,37 @@ try {
 // ============================================================================
 
     // Strafe leaf: Move perpendicular to player for evasive maneuvering
-    function createStrafeLeaf(bb) {
+    function createStrafeLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
-            const x = bb.get('x');
-            const y = bb.get('y');
-            const playerX = bb.get('playerX');
-            const playerY = bb.get('playerY');
-            const speed = bb.get('speed');
-
-            if (x === undefined || y === undefined || playerX === undefined || playerY === undefined) {
-                return bt.failure;
-            }
-
-            const dist = distance(x, y, playerX, playerY);
+            const dist = distance(enemy.x, enemy.y, enemy.playerX, enemy.playerY);
             if (dist < 0.5) return bt.running;
 
             // Calculate perpendicular vector (rotate 90 degrees)
-            const dx = (playerX - x) / dist;
-            const dy = (playerY - y) / dist;
+            const dx = (enemy.playerX - enemy.x) / dist;
+            const dy = (enemy.playerY - enemy.y) / dist;
 
             // Alternate strafe direction based on time (creates weaving pattern)
             const strafeDir = Math.sin(Date.now() / 500) > 0 ? 1 : -1;
             const perpX = -dy * strafeDir;  // Perpendicular vector
             const perpY = dx * strafeDir;
 
-            const newX = clamp(x + perpX * speed * 0.08, 1, SCREEN_WIDTH - 2);
-            const newY = clamp(y + perpY * speed * 0.08, 1, SCREEN_HEIGHT - 2);
-            bb.set('newX', newX);
-            bb.set('newY', newY);
+            const newX = clamp(enemy.x + perpX * enemy.speed * 0.08, 1, SCREEN_WIDTH - 2);
+            const newY = clamp(enemy.y + perpY * enemy.speed * 0.08, 1, SCREEN_HEIGHT - 2);
+            enemy.newX = newX;
+            enemy.newY = newY;
             return bt.running;
         });
     }
 
     // Flank leaf: Circle around to attack from the side
-    function createFlankLeaf(bb) {
+    function createFlankLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
-            const x = bb.get('x');
-            const y = bb.get('y');
-            const playerX = bb.get('playerX');
-            const playerY = bb.get('playerY');
-            const speed = bb.get('speed');
-
-            if (x === undefined || y === undefined || playerX === undefined || playerY === undefined) {
-                return bt.failure;
-            }
-
-            const dist = distance(x, y, playerX, playerY);
+            const dist = distance(enemy.x, enemy.y, enemy.playerX, enemy.playerY);
             if (dist < 3) return bt.success; // Close enough to flank
 
             // Move in a spiral pattern (combine forward + perpendicular)
-            const dx = (playerX - x) / dist;
-            const dy = (playerY - y) / dist;
+            const dx = (enemy.playerX - enemy.x) / dist;
+            const dy = (enemy.playerY - enemy.y) / dist;
 
             // Spiral coefficient: more perpendicular when far, more direct when close
             const spiralFactor = Math.min(0.7, dist / 20);
@@ -742,33 +602,23 @@ try {
             const moveX = dx * (1 - spiralFactor) + perpX * spiralFactor;
             const moveY = dy * (1 - spiralFactor) + perpY * spiralFactor;
 
-            const newX = clamp(x + moveX * speed * 0.1, 1, SCREEN_WIDTH - 2);
-            const newY = clamp(y + moveY * speed * 0.1, 1, SCREEN_HEIGHT - 2);
-            bb.set('newX', newX);
-            bb.set('newY', newY);
+            const newX = clamp(enemy.x + moveX * enemy.speed * 0.1, 1, SCREEN_WIDTH - 2);
+            const newY = clamp(enemy.y + moveY * enemy.speed * 0.1, 1, SCREEN_HEIGHT - 2);
+            enemy.newX = newX;
+            enemy.newY = newY;
             return bt.running;
         });
     }
 
     // Reposition leaf: Find optimal sniping distance
-    function createRepositionLeaf(bb) {
+    function createRepositionLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
-            const x = bb.get('x');
-            const y = bb.get('y');
-            const playerX = bb.get('playerX');
-            const playerY = bb.get('playerY');
-            const speed = bb.get('speed');
-            const optimalRange = bb.get('maxRange') - 3; // Prefer slightly closer than max
-
-            if (x === undefined || y === undefined || playerX === undefined || playerY === undefined) {
-                return bt.failure;
-            }
-
-            const dist = distance(x, y, playerX, playerY);
+            const optimalRange = enemy.maxRange - 3; // Prefer slightly closer than max
+            const dist = distance(enemy.x, enemy.y, enemy.playerX, enemy.playerY);
 
             // Calculate direction to/from player
-            const dx = (playerX - x) / dist;
-            const dy = (playerY - y) / dist;
+            const dx = (enemy.playerX - enemy.x) / dist;
+            const dy = (enemy.playerY - enemy.y) / dist;
 
             // Move to optimal range
             let moveDir;
@@ -782,37 +632,36 @@ try {
                 // At optimal range - strafe slightly
                 const perpX = -dy * (Math.sin(Date.now() / 800) > 0 ? 1 : -1);
                 const perpY = dx * (Math.sin(Date.now() / 800) > 0 ? 1 : -1);
-                bb.set('newX', clamp(x + perpX * speed * 0.05, 1, SCREEN_WIDTH - 2));
-                bb.set('newY', clamp(y + perpY * speed * 0.05, 1, SCREEN_HEIGHT - 2));
+                enemy.newX = clamp(enemy.x + perpX * enemy.speed * 0.05, 1, SCREEN_WIDTH - 2);
+                enemy.newY = clamp(enemy.y + perpY * enemy.speed * 0.05, 1, SCREEN_HEIGHT - 2);
                 return bt.success;
             }
 
-            const newX = clamp(x + dx * moveDir * speed * 0.08, 1, SCREEN_WIDTH - 2);
-            const newY = clamp(y + dy * moveDir * speed * 0.08, 1, SCREEN_HEIGHT - 2);
-            bb.set('newX', newX);
-            bb.set('newY', newY);
+            const newX = clamp(enemy.x + dx * moveDir * enemy.speed * 0.08, 1, SCREEN_WIDTH - 2);
+            const newY = clamp(enemy.y + dy * moveDir * enemy.speed * 0.08, 1, SCREEN_HEIGHT - 2);
+            enemy.newX = newX;
+            enemy.newY = newY;
             return bt.running;
         });
     }
 
     // Telegraph leaf: Brief pause before dash to give player warning
-    function createTelegraphLeaf(bb) {
+    function createTelegraphLeaf(enemy) {
         return bt.createLeafNode(() => {
-            const telegraphStart = bb.get('telegraphStart');
             const now = Date.now();
             const TELEGRAPH_DURATION = 300; // 300ms warning
 
-            if (!telegraphStart) {
+            if (!enemy.telegraphStart) {
                 // Start telegraph - set visual cue
-                bb.set('telegraphStart', now);
-                bb.set('telegraphing', true);
+                enemy.telegraphStart = now;
+                enemy.telegraphing = true;
                 return bt.running;
             }
 
-            if (now - telegraphStart >= TELEGRAPH_DURATION) {
+            if (now - enemy.telegraphStart >= TELEGRAPH_DURATION) {
                 // Telegraph complete - ready to dash
-                bb.delete('telegraphStart');
-                bb.set('telegraphing', false);
+                enemy.telegraphStart = undefined;
+                enemy.telegraphing = false;
                 return bt.success;
             }
 
@@ -821,48 +670,44 @@ try {
     }
 
     // Area denial: Tank moves to intercept player's likely path
-    function createInterceptLeaf(bb) {
+    function createInterceptLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
-            const x = bb.get('x');
-            const y = bb.get('y');
-            const playerX = bb.get('playerX');
-            const playerY = bb.get('playerY');
-            const lastPlayerX = bb.get('lastPlayerX') || playerX;
-            const lastPlayerY = bb.get('lastPlayerY') || playerY;
+            const lastPlayerX = enemy.lastPlayerX || enemy.playerX;
+            const lastPlayerY = enemy.lastPlayerY || enemy.playerY;
             const speed = 5; // Tank moves slowly but predictively
 
             // Calculate player's movement direction
-            const playerDx = playerX - lastPlayerX;
-            const playerDy = playerY - lastPlayerY;
+            const playerDx = enemy.playerX - lastPlayerX;
+            const playerDy = enemy.playerY - lastPlayerY;
 
             // Predict where player will be (lead the target)
             const leadFactor = 3;
-            const predictedX = playerX + playerDx * leadFactor;
-            const predictedY = playerY + playerDy * leadFactor;
+            const predictedX = enemy.playerX + playerDx * leadFactor;
+            const predictedY = enemy.playerY + playerDy * leadFactor;
 
             // Store current player pos for next tick
-            bb.set('lastPlayerX', playerX);
-            bb.set('lastPlayerY', playerY);
+            enemy.lastPlayerX = enemy.playerX;
+            enemy.lastPlayerY = enemy.playerY;
 
             // Move toward predicted position
-            const dist = distance(x, y, predictedX, predictedY);
+            const dist = distance(enemy.x, enemy.y, predictedX, predictedY);
             if (dist < 0.5) return bt.running;
 
-            const dx = (predictedX - x) / dist;
-            const dy = (predictedY - y) / dist;
+            const dx = (predictedX - enemy.x) / dist;
+            const dy = (predictedY - enemy.y) / dist;
 
-            const newX = clamp(x + dx * speed * 0.1, 1, SCREEN_WIDTH - 2);
-            const newY = clamp(y + dy * speed * 0.1, 1, SCREEN_HEIGHT - 2);
-            bb.set('newX', newX);
-            bb.set('newY', newY);
+            const newX = clamp(enemy.x + dx * speed * 0.1, 1, SCREEN_WIDTH - 2);
+            const newY = clamp(enemy.y + dy * speed * 0.1, 1, SCREEN_HEIGHT - 2);
+            enemy.newX = newX;
+            enemy.newY = newY;
             return bt.running;
         });
     }
 
     // Random chance check - adds unpredictability
-    function createRandomChanceLeaf(bb, probability) {
+    function createRandomChanceLeaf(enemy) {
         return bt.createBlockingLeafNode(() => {
-            return Math.random() < probability ? bt.success : bt.failure;
+            return Math.random() < 0.3 ? bt.success : bt.failure;
         });
     }
 
@@ -871,14 +716,14 @@ try {
 // ============================================================================
 
 // Grunt AI: Strafe while chasing, flank when close, shoot when in range
-    function buildGruntTree(bb) {
-        const checkAlive = createCheckAliveLeaf(bb);
-        const checkInRange = createCheckInRangeLeaf(bb, 'attackRange');
-        const shoot = createShootLeaf(bb, 'shootCooldown', 'shootDamage');
-        const strafe = createStrafeLeaf(bb);
-        const flank = createFlankLeaf(bb);
-        const moveToward = createMoveTowardLeaf(bb, 'speed');
-        const randomStrafe = createRandomChanceLeaf(bb, 0.3);
+    function buildGruntTree(enemy) {
+        const checkAlive = createCheckAliveLeaf(enemy);
+        const checkInRange = createCheckInRangeLeaf(enemy);
+        const shoot = createShootLeaf(enemy);
+        const strafe = createStrafeLeaf(enemy);
+        const flank = createFlankLeaf(enemy);
+        const moveToward = createMoveTowardLeaf(enemy);
+        const randomStrafe = createRandomChanceLeaf(enemy);
 
         // Attack sequence: in range AND shoot
         const attackSequence = bt.node(bt.sequence,
@@ -913,14 +758,14 @@ try {
     }
 
 // Sniper AI: Maintain optimal distance, reposition constantly, precise shots
-    function buildSniperTree(bb) {
-        const checkAlive = createCheckAliveLeaf(bb);
-        const checkTooClose = createCheckTooCloseLeaf(bb, bb.get('minRange'));
-        const retreat = createRetreatLeaf(bb, 'speed');
-        const checkSniperRange = createCheckSniperRangeLeaf(bb);
-        const aimAndShoot = createAimAndShootLeaf(bb);
-        const reposition = createRepositionLeaf(bb);
-        const moveToward = createMoveTowardLeaf(bb, 'speed');
+    function buildSniperTree(enemy) {
+        const checkAlive = createCheckAliveLeaf(enemy);
+        const checkTooClose = createCheckTooCloseLeaf(enemy);
+        const retreat = createRetreatLeaf(enemy);
+        const checkSniperRange = createCheckSniperRangeLeaf(enemy);
+        const aimAndShoot = createAimAndShootLeaf(enemy);
+        const reposition = createRepositionLeaf(enemy);
+        const moveToward = createMoveTowardLeaf(enemy);
 
         // Emergency retreat: too close, must escape
         const emergencyRetreat = bt.node(bt.sequence,
@@ -949,14 +794,14 @@ try {
     }
 
 // Pursuer AI: Telegraph before dash, making attacks more readable
-    function buildPursuerTree(bb) {
-        const checkAlive = createCheckAliveLeaf(bb);
-        const canDash = createCanDashLeaf(bb);
-        const checkDashRange = createCheckDashRangeLeaf(bb);
-        const telegraph = createTelegraphLeaf(bb);
-        const executeDash = createExecuteDashLeaf(bb);
-        const flank = createFlankLeaf(bb);
-        const moveToward = createMoveTowardLeaf(bb, 'speed');
+    function buildPursuerTree(enemy) {
+        const checkAlive = createCheckAliveLeaf(enemy);
+        const canDash = createCanDashLeaf(enemy);
+        const checkDashRange = createCheckDashRangeLeaf(enemy);
+        const telegraph = createTelegraphLeaf(enemy);
+        const executeDash = createExecuteDashLeaf(enemy);
+        const flank = createFlankLeaf(enemy);
+        const moveToward = createMoveTowardLeaf(enemy);
 
         // Full dash attack: can dash AND in range AND telegraph warning AND execute
         const dashAttackSequence = bt.node(bt.sequence,
@@ -985,12 +830,12 @@ try {
     }
 
 // Tank AI: Intercept player path, burst fire while moving
-    function buildTankTree(bb) {
-        const checkAlive = createCheckAliveLeaf(bb);
-        const intercept = createInterceptLeaf(bb);
-        const checkBurstReady = createCheckBurstReadyLeaf(bb);
-        const fireBurst = createFireBurstLeaf(bb);
-        const slowChase = createSlowChaseLeaf(bb);
+    function buildTankTree(enemy) {
+        const checkAlive = createCheckAliveLeaf(enemy);
+        const intercept = createInterceptLeaf(enemy);
+        const checkBurstReady = createCheckBurstReadyLeaf(enemy);
+        const fireBurst = createFireBurstLeaf(enemy);
+        const slowChase = createSlowChaseLeaf(enemy);
 
         // Burst fire sequence
         const burstSequence = bt.node(bt.sequence,
@@ -1066,32 +911,28 @@ try {
         }
     }
 
-    function syncToBlackboards(state) {
-        state.enemies.forEach((enemy, id) => {
-            enemy.blackboard.set('x', enemy.x);
-            enemy.blackboard.set('y', enemy.y);
-            enemy.blackboard.set('health', enemy.health);
-            enemy.blackboard.set('playerX', state.player.x);
-            enemy.blackboard.set('playerY', state.player.y);
-        });
-    }
+    function updateEnemies(state) {
+        const dt = state.deltaTime / 1000;
 
-    function syncFromBlackboards(state) {
         state.enemies.forEach((enemy, id) => {
+            // Sync player position to enemy
+            enemy.playerX = state.player.x;
+            enemy.playerY = state.player.y;
+
             // Update position if AI requested movement
-            if (enemy.blackboard.has('newX')) {
-                enemy.x = enemy.blackboard.get('newX');
-                enemy.blackboard.delete('newX');
+            if (enemy.newX !== undefined) {
+                enemy.x = enemy.newX;
+                enemy.newX = undefined;
             }
-            if (enemy.blackboard.has('newY')) {
-                enemy.y = enemy.blackboard.get('newY');
-                enemy.blackboard.delete('newY');
+            if (enemy.newY !== undefined) {
+                enemy.y = enemy.newY;
+                enemy.newY = undefined;
             }
 
             // Fire projectile if AI requested
-            if (enemy.blackboard.get('fire')) {
-                const targetX = enemy.blackboard.get('fireTargetX');
-                const targetY = enemy.blackboard.get('fireTargetY');
+            if (enemy.fire) {
+                const targetX = enemy.fireTargetX;
+                const targetY = enemy.fireTargetY;
                 const config = ENEMY_TYPES[enemy.type];
 
                 const dist = distance(enemy.x, enemy.y, targetX, targetY);
@@ -1111,21 +952,15 @@ try {
                 );
                 state.projectiles.set(projectile.id, projectile);
 
-                enemy.blackboard.delete('fire');
-                enemy.blackboard.delete('fireTargetX');
-                enemy.blackboard.delete('fireTargetY');
+                enemy.fire = false;
+                enemy.fireTargetX = undefined;
+                enemy.fireTargetY = undefined;
             }
-        });
-    }
 
-    function updateEnemies(state) {
-        const dt = state.deltaTime / 1000;
-
-        state.enemies.forEach((enemy, id) => {
-            // Update state based on blackboard
-            if (enemy.blackboard.has('dashing')) {
+            // Update enemy state for rendering
+            if (enemy.dashing) {
                 enemy.state = 'dashing';
-            } else if (enemy.blackboard.get('fire')) {
+            } else if (enemy.fire) {
                 enemy.state = 'attacking';
             } else {
                 enemy.state = 'chasing';
@@ -1391,10 +1226,10 @@ try {
             const y = Math.floor(enemy.y);
             if (y > 1 && y < height - 2 && x > 0 && x < width - 1) {
                 // Pursuer telegraph visual: flash when about to dash
-                if (enemy.type === 'pursuer' && enemy.blackboard.get('telegraphing')) {
+                if (enemy.type === 'pursuer' && enemy.telegraphing) {
                     // Rapid flash effect (! symbol as warning)
                     buffer[bufferIndex(x, y, width)] = Math.floor(Date.now() / 100) % 2 === 0 ? '!' : enemy.sprite;
-                } else if (enemy.blackboard.get('dashing')) {
+                } else if (enemy.dashing) {
                     // Dashing visual: show dash trail
                     buffer[bufferIndex(x, y, width)] = '»';
                 } else {
@@ -1520,8 +1355,7 @@ try {
 
         state.enemies.forEach((enemy, id) => {
             const dist = distance(enemy.x, enemy.y, state.player.x, state.player.y);
-            const lastShot = enemy.blackboard.get('lastShotTime');
-            const timeSinceShot = lastShot ? Math.floor((Date.now() - lastShot) / 1000) + 's' : 'N/A';
+            const timeSinceShot = enemy.lastShotTime ? Math.floor((Date.now() - enemy.lastShotTime) / 1000) + 's' : 'N/A';
 
             output += `Enemy #${id} [${enemy.type}]: ` +
                 `pos=(${enemy.x.toFixed(1)}, ${enemy.y.toFixed(1)}), ` +
@@ -1627,11 +1461,7 @@ try {
                 // Update player
                 updatePlayer(state);
 
-                // Sync state with enemy blackboards
-                syncToBlackboards(state);
-                syncFromBlackboards(state);
-
-                // Update enemies
+                // Update enemies (includes player pos sync and AI output handling)
                 updateEnemies(state);
 
                 // Update projectiles

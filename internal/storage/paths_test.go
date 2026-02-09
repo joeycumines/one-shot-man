@@ -203,6 +203,7 @@ func TestArchiveSessionFilePath(t *testing.T) {
 
 	// Override path functions to use temp dir
 	SetTestPaths(tmpDir)
+	defer ResetPaths()
 
 	ts := time.Date(2025, 11, 26, 14, 3, 0, 0, time.UTC)
 
@@ -268,6 +269,7 @@ func TestSessionArchiveDir(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	SetTestPaths(tmpDir)
+	defer ResetPaths()
 
 	// First call should create the directory
 	dir1, err := SessionArchiveDir()

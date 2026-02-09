@@ -11,6 +11,19 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
+// shooterGetFloat64 converts a goja value to float64, handling both float64 and int64 types.
+// This is used throughout shooter game tests for extracting numeric values from JavaScript.
+func shooterGetFloat64(val interface{}) float64 {
+	switch v := val.(type) {
+	case float64:
+		return v
+	case int64:
+		return float64(v)
+	default:
+		return 0
+	}
+}
+
 // TestShooterGame_Distance tests the Euclidean distance calculation utility function
 func TestShooterGame_Distance(t *testing.T) {
 	ctx := context.Background()
@@ -348,18 +361,18 @@ func TestShooterGame_InitialState(t *testing.T) {
 	scriptContent := `
 		// Entity ID counter
 		let nextEntityId = 1;
-		
+
 		// Game state
 		let gameState = null;
-		
+
 		// Terminal size constants
 		const TERMINAL_WIDTH = 80;
 		const TERMINAL_HEIGHT = 24;
-		
+
 		// Player constants
 		const PLAYER_MAX_HEALTH = 100;
 		const PLAYER_SHOT_COOLDOWN = 200; // ms
-		
+
 		// Enemy constants
 		const ENEMY_STATS = {
 			grunt: { health: 30, speed: 5, damage: 10 },
@@ -367,7 +380,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 			pursuer: { health: 40, speed: 8, damage: 15 },
 			tank: { health: 100, speed: 2, damage: 20 }
 		};
-		
+
 		// Initialize game state
 		function initializeGame() {
 			return {
@@ -390,7 +403,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 				nextEntityId: 1
 			};
 		}
-		
+
 		// Create player entity
 		function createPlayer() {
 			return {
@@ -405,7 +418,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 				shotCooldown: PLAYER_SHOT_COOLDOWN
 			};
 		}
-		
+
 		// Create enemy entity
 		function createEnemy(type) {
 			const stats = ENEMY_STATS[type];
@@ -422,7 +435,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 				tree: null // Would be bt.Node in real game
 			};
 		}
-		
+
 		// Create projectile
 		function createProjectile(x, y, vx, vy, owner, ownerId, damage) {
 			return {
@@ -438,7 +451,7 @@ func TestShooterGame_InitialState(t *testing.T) {
 				maxAge: 2000 // 2 seconds
 			};
 		}
-		
+
 		// Create particle
 		function createParticle(x, y, char, color) {
 			return {
@@ -833,7 +846,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 	// Define collision detection functions and state
 	scriptContent := `
 		let nextEntityId = 1;
-		
+
 		// Game state with entities
 		let gameState = {
 			enemies: [],
@@ -846,7 +859,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 				invincibleUntil: 0
 			}
 		};
-		
+
 		// Create enemy
 		function createEnemy(x, y, health) {
 			return {
@@ -857,7 +870,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 				maxHealth: health
 			};
 		}
-		
+
 		// Create projectile
 		function createProjectile(x, y, vx, vy, owner, ownerId, damage) {
 			return {
@@ -873,7 +886,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 				maxAge: 2000
 			};
 		}
-		
+
 		// Create particle
 		function createParticle(x, y, char, color) {
 			return {
@@ -885,7 +898,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 				maxAge: 500
 			};
 		}
-		
+
 		// Collision detection: player projectile vs enemy
 		function checkPlayerProjectileVsEnemy(projectile, enemy) {
 			const dx = projectile.x - enemy.x;
@@ -893,7 +906,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 			const distance = Math.sqrt(dx * dx + dy * dy);
 			return distance < 1.5; // Hit threshold
 		}
-		
+
 		// Collision detection: enemy projectile vs player
 		function checkEnemyProjectileVsPlayer(projectile, player) {
 			const dx = projectile.x - player.x;
@@ -901,7 +914,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 			const distance = Math.sqrt(dx * dx + dy * dy);
 			return distance < 1.5; // Hit threshold
 		}
-		
+
 		// Collision detection: player vs enemy contact
 		function checkPlayerVsEnemy(player, enemy) {
 			const dx = player.x - enemy.x;
@@ -909,25 +922,25 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 			const distance = Math.sqrt(dx * dx + dy * dy);
 			return distance < 2.0; // Contact threshold
 		}
-		
+
 		// Check if projectile is out of bounds
 		function isProjectileOutOfBounds(projectile, width, height) {
 			return projectile.x < 0 || projectile.x >= width ||
 			       projectile.y < 0 || projectile.y >= height;
 		}
-		
+
 		// Update projectile position and age
 		function updateProjectile(projectile, deltaTime) {
 			projectile.x += projectile.vx * (deltaTime / 1000);
 			projectile.y += projectile.vy * (deltaTime / 1000);
 			projectile.age += deltaTime;
 		}
-		
+
 		// Update particle age
 		function updateParticle(particle, deltaTime) {
 			particle.age += deltaTime;
 		}
-		
+
 		// Check if particle is expired
 		function isParticleExpired(particle) {
 			return particle.age >= particle.maxAge;
@@ -962,12 +975,12 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 				const projectileIndex = 0;
 				const enemy = gameState.enemies[enemyIndex];
 				const projectile = gameState.projectiles[projectileIndex];
-				
+
 				let hit = false;
 				if (projectile.owner === 'player') {
 					hit = checkPlayerProjectileVsEnemy(projectile, enemy);
 				}
-				
+
 				if (hit) {
 					enemy.health -= projectile.damage;
 					gameState.projectiles.splice(projectileIndex, 1);
@@ -976,7 +989,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 						gameState.particles.push(createParticle(enemy.x, enemy.y, '*', '#FF0000'));
 					}
 				}
-				
+
 				lastResult = {
 					hit: hit,
 					enemyHealth: enemy.health,
@@ -1059,17 +1072,17 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 					const now = 10000;
 					const player = gameState.player;
 					const projectile = gameState.projectiles[0];
-					
+
 					let hit = false;
 					if (projectile.owner === 'enemy') {
 						hit = checkEnemyProjectileVsPlayer(projectile, player);
 					}
-					
+
 					if (hit && player.invincibleUntil <= now) {
 						player.health -= projectile.damage;
 						gameState.projectiles.splice(0, 1);
 					}
-					
+
 					lastResult = {
 						hit: hit,
 						playerHealth: player.health,
@@ -1122,18 +1135,18 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 					const now = 10000;
 					const player = gameState.player;
 					const projectile = gameState.projectiles[0];
-					
+
 					let hit = false;
 					if (projectile.owner === 'enemy') {
 						hit = checkEnemyProjectileVsPlayer(projectile, player);
 					}
-					
+
 					let damaged = false;
 					if (hit && player.invincibleUntil <= now) {
 						player.health -= projectile.damage;
 						damaged = true;
 					}
-					
+
 					lastResult = {
 						hit: hit,
 						damaged: damaged,
@@ -1194,13 +1207,13 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 				const player = gameState.player;
 				const enemy = gameState.enemies[0];
 				const CONTACT_DAMAGE = 20;
-				
+
 				const contact = checkPlayerVsEnemy(player, enemy);
-				
+
 				if (contact && player.invincibleUntil <= 10000) {
 					player.health -= CONTACT_DAMAGE;
 					enemy.health -= CONTACT_DAMAGE;
-					
+
 					// Push player back
 					const dx = player.x - enemy.x;
 					const dy = player.y - enemy.y;
@@ -1210,7 +1223,7 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 						player.y += (dy / dist) * 2;
 					}
 				}
-				
+
 				lastResult = {
 					contact: contact,
 					playerHealth: player.health,
@@ -1394,7 +1407,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 	// Define wave configuration and management functions
 	scriptContent := `
 		let nextEntityId = 1;
-		
+
 		// Wave configuration from blueprint
 		const WAVES = [
 			{ wave: 1, enemies: [{type: 'grunt', count: 3}], spawnDelay: 500 },
@@ -1403,7 +1416,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 			{ wave: 4, enemies: [{type: 'grunt', count: 4}, {type: 'pursuer', count: 2}, {type: 'tank', count: 1}], spawnDelay: 250 },
 			{ wave: 5, enemies: [{type: 'sniper', count: 2}, {type: 'pursuer', count: 2}, {type: 'tank', count: 2}], spawnDelay: 200 }
 		];
-		
+
 		// Enemy stats
 		const ENEMY_STATS = {
 			grunt: { health: 30, speed: 5, damage: 10 },
@@ -1411,7 +1424,7 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 			pursuer: { health: 40, speed: 8, damage: 15 },
 			tank: { health: 100, speed: 2, damage: 20 }
 		};
-		
+
 		// Game state
 		let gameState = {
 			gameMode: "playing",
@@ -1429,12 +1442,12 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 			particles: [],
 			nextEntityId: 1
 		};
-		
+
 		// Helper to get enemy stats
 		function getEnemyStats(type) {
 			return ENEMY_STATS[type];
 		}
-		
+
 		// Create enemy
 		function createEnemy(type) {
 			const stats = ENEMY_STATS[type];
@@ -1450,33 +1463,33 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 				state: "idle"
 			};
 		}
-		
+
 		// Get total enemy count for a wave
 		function getWaveEnemyCount(waveNum) {
 			if (waveNum < 1 || waveNum > WAVES.length) return 0;
 			const wave = WAVES[waveNum - 1];
 			return wave.enemies.reduce((sum, e) => sum + e.count, 0);
 		}
-		
+
 		// Spawn all enemies for a specific wave
 		function spawnWave(waveNum) {
 			if (waveNum < 1 || waveNum > WAVES.length) {
 				return { success: false, message: 'Invalid wave number' };
 			}
-			
+
 			const wave = WAVES[waveNum - 1];
 			const enemies = [];
-			
+
 			for (const enemyConfig of wave.enemies) {
 				for (let i = 0; i < enemyConfig.count; i++) {
 					const enemy = createEnemy(enemyConfig.type);
 					enemies.push(enemy);
 				}
 			}
-			
+
 			return { success: true, enemies: enemies, waveConfig: wave };
 		}
-		
+
 		// Apply damage to enemy and return if killed
 		function damageEnemy(enemy, damage) {
 			enemy.health -= damage;
@@ -1486,65 +1499,65 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 			}
 			return { killed: false, healthRemaining: enemy.health };
 		}
-		
+
 		// Check if wave is complete (all enemies dead)
 		function isWaveComplete() {
 			return (gameState.waveState.inProgress && gameState.waveState.enemiesRemaining <= 0 &&
 			       gameState.enemies.length === 0) || gameState.waveState.complete;
 		}
-		
+
 		// Check if game is won (all waves complete)
 		function isVictory() {
-			return gameState.gameMode === 'victory' && 
+			return gameState.gameMode === 'victory' &&
 			       gameState.enemies.length === 0 &&
 			       gameState.waveState.complete;
 		}
-		
+
 		// Start next wave
 		function startNextWave() {
 			if (gameState.wave >= WAVES.length) {
 				gameState.gameMode = "victory";
 				return { started: false, reason: "All waves complete" };
 			}
-			
+
 			gameState.wave++;
 			const spawnResult = spawnWave(gameState.wave);
-			
+
 			if (!spawnResult.success) {
 				return { started: false, reason: spawnResult.message };
 			}
-			
+
 			const newEnemies = spawnResult.enemies;
 			gameState.enemies = newEnemies;
 			gameState.waveState.inProgress = true;
 			gameState.waveState.enemiesSpawned = newEnemies.length;
 			gameState.waveState.enemiesRemaining = newEnemies.length;
 			gameState.waveState.complete = false;
-			
+
 			return {
 				started: true,
 				wave: gameState.wave,
 				enemyCount: newEnemies.length
 			};
 		}
-		
+
 		// Kill enemy by ID
 		function killEnemy(enemyId) {
 			const index = gameState.enemies.findIndex(e => e.id === enemyId);
 			if (index === -1) {
 				return { success: false, reason: 'Enemy not found' };
 			}
-			
+
 			gameState.enemies.splice(index, 1);
 			gameState.score += 100;
 			gameState.waveState.enemiesRemaining = Math.max(0, gameState.waveState.enemiesRemaining - 1);
-			
+
 			// Check wave completion
 			if (gameState.waveState.enemiesRemaining <= 0 && gameState.enemies.length === 0) {
 				gameState.waveState.complete = true;
 				gameState.waveState.inProgress = false;
 			}
-			
+
 			return { success: true, score: gameState.score, remaining: gameState.enemies.length };
 		}
 	`
@@ -1942,17 +1955,8 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	// Helper function to extract numeric value as float64 (handles both int64 and float64 from JS)
-	getFloat64 := func(val interface{}) float64 {
-		switch v := val.(type) {
-		case float64:
-			return v
-		case int64:
-			return float64(v)
-		default:
-			return 0
-		}
-	}
+	// Use file-level helper for extracting numeric values from JS
+	getFloat64 := shooterGetFloat64
 
 	// Load utility functions and mock behavior tree API
 	scriptContent := `
@@ -1997,12 +2001,12 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('health', 30);
 					bb.set('playerX', 40);
 					bb.set('playerY', 15);
-					
+
 					// Define checkAlive leaf
 					const checkAlive = (bb, node) => {
 						return bb.get('health') > 0 ? bt.success : bt.failure;
 					};
-					
+
 					lastResult = {
 						status: checkAlive(bb, mockNode),
 						hasHealth: bb.has('health'),
@@ -2048,11 +2052,11 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('health', 0);
 					bb.set('playerX', 40);
 					bb.set('playerY', 15);
-					
+
 					const checkAlive = (bb, node) => {
 						return bb.get('health') > 0 ? bt.success : bt.failure;
 					};
-					
+
 					lastResult = {
 						status: checkAlive(bb, mockNode),
 						health: bb.get('health')
@@ -2084,12 +2088,12 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('playerX', 40);
 					bb.set('playerY', 15);
 					const attackRange = 10;
-					
+
 					const checkInRange = (bb, node) => {
 						const dist = distance(bb.get('x'), bb.get('y'), bb.get('playerX'), bb.get('playerY'));
 						return dist < attackRange ? bt.success : bt.failure;
 					};
-					
+
 					const dist = distance(40, 10, 40, 15);
 					lastResult = {
 						status: checkInRange(bb, mockNode),
@@ -2133,12 +2137,12 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('playerX', 40);
 					bb.set('playerY', 20);
 					const attackRange = 10;
-					
+
 					const checkInRange = (bb, node) => {
 						const dist = distance(bb.get('x'), bb.get('y'), bb.get('playerX'), bb.get('playerY'));
 						return dist < attackRange ? bt.success : bt.failure;
 					};
-					
+
 					const dist = distance(40, 0, 40, 20);
 					lastResult = {
 						status: checkInRange(bb, mockNode),
@@ -2182,7 +2186,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('playerX', 40);
 					bb.set('playerY', 15);
 					const speed = 5;
-					
+
 					const moveToward = (bb, node) => {
 						const dx = bb.get('playerX') - bb.get('x');
 						const dy = bb.get('playerY') - bb.get('y');
@@ -2195,7 +2199,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 						}
 						return bt.success;
 					};
-					
+
 					moveToward(bb, mockNode);
 					lastResult = {
 						moveToX: bb.get('moveToX'),
@@ -2246,7 +2250,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('lastShotTime', 0);
 					const now = 1500;
 					const cooldown = 500;
-					
+
 					const shoot = (bb, node) => {
 						const lastShot = bb.get('lastShotTime') || 0;
 						if (now - lastShot >= cooldown) {
@@ -2258,7 +2262,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 						}
 						return bt.running;
 					};
-					
+
 					const status = shoot(bb, mockNode);
 					lastResult = {
 						status: status,
@@ -2333,7 +2337,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('lastShotTime', 1000);
 					const now = 1200;
 					const cooldown = 500;
-					
+
 					const shoot = (bb, node) => {
 						const lastShot = bb.get('lastShotTime') || 0;
 						if (now - lastShot >= cooldown) {
@@ -2345,7 +2349,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 						}
 						return bt.running;
 					};
-					
+
 					const status = shoot(bb, mockNode);
 					lastResult = {
 						status: status,
@@ -2387,12 +2391,12 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('playerX', 40);
 					bb.set('playerY', 15);
 					const minRange = 15;
-					
+
 					const checkTooClose = (bb, node) => {
 						const dist = distance(bb.get('x'), bb.get('y'), bb.get('playerX'), bb.get('playerY'));
 						return dist < minRange ? bt.success : bt.failure;
 					};
-					
+
 					const dist = distance(40, 10, 40, 15);
 					lastResult = {
 						status: checkTooClose(bb, mockNode),
@@ -2436,12 +2440,12 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('playerX', 40);
 					bb.set('playerY', 30);
 					const minRange = 15;
-					
+
 					const checkTooClose = (bb, node) => {
 						const dist = distance(bb.get('x'), bb.get('y'), bb.get('playerX'), bb.get('playerY'));
 						return dist < minRange ? bt.success : bt.failure;
 					};
-					
+
 					const dist = distance(40, 0, 40, 30);
 					lastResult = {
 						status: checkTooClose(bb, mockNode),
@@ -2485,7 +2489,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('playerX', 40);
 					bb.set('playerY', 15);
 					const speed = 3;
-					
+
 					const retreat = (bb, node) => {
 						const dx = bb.get('x') - bb.get('playerX');
 						const dy = bb.get('y') - bb.get('playerY');
@@ -2498,7 +2502,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 						}
 						return bt.success;
 					};
-					
+
 					retreat(bb, mockNode);
 					lastResult = {
 						moveToX: bb.get('moveToX'),
@@ -2548,12 +2552,12 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('playerY', 20);
 					const minRange = 15;
 					const maxRange = 30;
-					
+
 					const checkSniperRange = (bb, node) => {
 						const dist = distance(bb.get('x'), bb.get('y'), bb.get('playerX'), bb.get('playerY'));
 						return dist >= minRange && dist <= maxRange ? bt.success : bt.failure;
 					};
-					
+
 					const dist = distance(40, 0, 40, 20);
 					lastResult = {
 						status: checkSniperRange(bb, mockNode),
@@ -2599,12 +2603,12 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('playerY', 15);
 					const minRange = 15;
 					const maxRange = 30;
-					
+
 					const checkSniperRange = (bb, node) => {
 						const dist = distance(bb.get('x'), bb.get('y'), bb.get('playerX'), bb.get('playerY'));
 						return dist >= minRange && dist <= maxRange ? bt.success : bt.failure;
 					};
-					
+
 					const dist = distance(40, 10, 40, 15);
 					lastResult = {
 						status: checkSniperRange(bb, mockNode),
@@ -2641,7 +2645,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('lastShotTime', 0);
 					const now = 3000;
 					const cooldown = 2000;
-					
+
 					const aimAndShoot = (bb, node) => {
 						const lastShot = bb.get('lastShotTime') || 0;
 						if (now - lastShot >= cooldown) {
@@ -2653,7 +2657,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 						}
 						return bt.running;
 					};
-					
+
 					const status = aimAndShoot(bb, mockNode);
 					lastResult = {
 						status: status,
@@ -2708,7 +2712,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('lastShotTime', 1000);
 					const now = 2000;
 					const cooldown = 2000;
-					
+
 					const aimAndShoot = (bb, node) => {
 						const lastShot = bb.get('lastShotTime') || 0;
 						if (now - lastShot >= cooldown) {
@@ -2720,7 +2724,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 						}
 						return bt.running;
 					};
-					
+
 					const status = aimAndShoot(bb, mockNode);
 					lastResult = {
 						status: status,
@@ -2760,12 +2764,12 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('lastDashTime', 0);
 					const now = 3000;
 					const dashCooldown = 2000;
-					
+
 					const canDash = (bb, node) => {
 						const lastDash = bb.get('lastDashTime') || 0;
 						return now - lastDash >= dashCooldown ? bt.success : bt.failure;
 					};
-					
+
 					lastResult = {
 						status: canDash(bb, mockNode),
 						timeSinceDash: now - bb.get('lastDashTime'),
@@ -2796,12 +2800,12 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('lastDashTime', 2000);
 					const now = 2500;
 					const dashCooldown = 2000;
-					
+
 					const canDash = (bb, node) => {
 						const lastDash = bb.get('lastDashTime') || 0;
 						return now - lastDash >= dashCooldown ? bt.success : bt.failure;
 					};
-					
+
 					lastResult = {
 						status: canDash(bb, mockNode),
 						timeSinceDash: now - bb.get('lastDashTime'),
@@ -2834,12 +2838,12 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('playerX', 40);
 					bb.set('playerY', 15);
 					const dashSpeed = 15;
-					
+
 					// Simulate dash in progress
 					bb.set('dashProgress', 0);
 					bb.set('dashDuration', 500);
 					bb.set('dashing', false);
-					
+
 					const executeDash = (bb, node) => {
 						// Start dash if not already dashing
 						if (!bb.get('dashing')) {
@@ -2852,19 +2856,19 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 							bb.set('dashProgress', 0);
 							return bt.running;
 						}
-						
+
 						// Dash in progress
 						const progress = bb.get('dashProgress') || 0;
 						if (progress < bb.get('dashDuration')) {
 							bb.set('dashProgress', progress + 16); // 16ms per frame
 							return bt.running;
 						}
-						
+
 						// Dash complete
 						bb.set('dashing', false);
 						return bt.success;
 					};
-					
+
 					const status1 = executeDash(bb, mockNode);
 					const status2 = executeDash(bb, mockNode);
 					lastResult = {
@@ -2934,12 +2938,12 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('y', 10);
 					bb.set('playerX', 40);
 					bb.set('playerY', 15);
-					
+
 					// Simulate complete dash
 					bb.set('dashProgress', 500);
 					bb.set('dashDuration', 500);
 					bb.set('dashing', true);
-					
+
 					const executeDash = (bb, node) => {
 						// Start dash if not already dashing
 						if (!bb.get('dashing')) {
@@ -2952,19 +2956,19 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 							bb.set('dashProgress', 0);
 							return bt.running;
 						}
-						
+
 						// Dash in progress
 						const progress = bb.get('dashProgress') || 0;
 						if (progress < bb.get('dashDuration')) {
 							bb.set('dashProgress', progress + 16);
 							return bt.running;
 						}
-						
+
 						// Dash complete
 						bb.set('dashing', false);
 						return bt.success;
 					};
-					
+
 					const status = executeDash(bb, mockNode);
 					lastResult = {
 						status: status,
@@ -2998,7 +3002,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('lastDashTime', 1500);
 					const now = 3000;
 					const dashCooldown = 2000;
-					
+
 					const checkDashCooldown = (bb, node) => {
 						const lastDash = bb.get('lastDashTime') || 0;
 						const cooldownRemaining = lastDash + dashCooldown - now;
@@ -3007,7 +3011,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 						}
 						return bt.failure;
 					};
-					
+
 					lastResult = {
 						status: checkDashCooldown(bb, mockNode),
 						timeSinceDash: now - bb.get('lastDashTime'),
@@ -3057,7 +3061,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('playerX', 40);
 					bb.set('playerY', 15);
 					const speed = 2; // Tank moves slowly
-					
+
 					const slowChase = (bb, node) => {
 						const dx = bb.get('playerX') - bb.get('x');
 						const dy = bb.get('playerY') - bb.get('y');
@@ -3070,7 +3074,7 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 						}
 						return bt.success;
 					};
-					
+
 					slowChase(bb, mockNode);
 					lastResult = {
 						moveToX: bb.get('moveToX'),
@@ -3121,12 +3125,12 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('lastBurstTime', 0);
 					const now = 4000;
 					const burstCooldown = 3000;
-					
+
 					const checkBurstReady = (bb, node) => {
 						const lastBurst = bb.get('lastBurstTime') || 0;
 						return now - lastBurst >= burstCooldown ? bt.success : bt.failure;
 					};
-					
+
 					lastResult = {
 						status: checkBurstReady(bb, mockNode),
 						timeSinceBurst: now - bb.get('lastBurstTime'),
@@ -3157,12 +3161,12 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('lastBurstTime', 2000);
 					const now = 4000;
 					const burstCooldown = 3000;
-					
+
 					const checkBurstReady = (bb, node) => {
 						const lastBurst = bb.get('lastBurstTime') || 0;
 						return now - lastBurst >= burstCooldown ? bt.success : bt.failure;
 					};
-					
+
 					lastResult = {
 						status: checkBurstReady(bb, mockNode),
 						timeSinceBurst: now - bb.get('lastBurstTime'),
@@ -3196,17 +3200,17 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 					bb.set('playerY', 15);
 					bb.set('burstIndex', 0);
 					bb.set('burstCount', 3);
-					
+
 					const fireBurst = (bb, node) => {
 						const burstIndex = bb.get('burstIndex') || 0;
 						const burstCount = bb.get('burstCount') || 3;
-						
+
 						if (burstIndex >= burstCount) {
 							// Burst complete
 							bb.set('burstIndex', 0);
 							return bt.success;
 						}
-						
+
 						// Fire next shot
 						bb.set('fire', true);
 						bb.set('fireTargetX', bb.get('playerX'));
@@ -3214,23 +3218,23 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 						bb.set('burstIndex', burstIndex + 1);
 						return bt.running;
 					};
-					
+
 					const status1 = fireBurst(bb, mockNode);
 					const firingAfter1 = bb.get('fire');
 					const burstIndex1 = bb.get('burstIndex');
-					
+
 					const status2 = fireBurst(bb, mockNode);
 					const firingAfter2 = bb.get('fire');
 					const burstIndex2 = bb.get('burstIndex');
-					
+
 					const status3 = fireBurst(bb, mockNode);
 					const firingAfter3 = bb.get('fire');
 					const burstIndex3 = bb.get('burstIndex');
-					
+
 					const status4 = fireBurst(bb, mockNode);
 					const firingAfter4 = bb.get('fire');
 					const burstIndex4 = bb.get('burstIndex');
-					
+
 					lastResult = {
 						shot1Status: status1,
 						shot2Status: status2,
@@ -3296,23 +3300,14 @@ func TestShooterGame_InputHandling(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	// Helper function to extract numeric value as float64
-	getFloat64 := func(val interface{}) float64 {
-		switch v := val.(type) {
-		case float64:
-			return v
-		case int64:
-			return float64(v)
-		default:
-			return 0
-		}
-	}
+	// Use file-level helper for extracting numeric values from JS
+	getFloat64 := shooterGetFloat64
 
 	// Load game state and input handling functions
 	scriptContent := `
 		const MOVE_SPEED = 8;
 		const SHOT_COOLDOWN = 200; // ms
-		
+
 		// Game state
 		let gameState = {
 			gameMode: "playing",
@@ -3337,12 +3332,12 @@ func TestShooterGame_InputHandling(t *testing.T) {
 				complete: true
 			}
 		};
-		
+
 		// Input key handling
 		function handleKeyPress(key, now) {
 			const state = gameState;
 			const player = state.player;
-			
+
 			// Playing state
 			if (state.gameMode === 'playing') {
 				switch (key) {
@@ -3370,7 +3365,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 					case 'q':
 						return { handled: true, action: 'quit' };
 				}
-			} 
+			}
 			// Paused state
 			else if (state.gameMode === 'paused') {
 				switch (key) {
@@ -3391,15 +3386,15 @@ func TestShooterGame_InputHandling(t *testing.T) {
 						return { handled: true, action: 'quit' };
 				}
 			}
-			
+
 			return { handled: false };
 		}
-		
+
 		// Handle shooting
 		function handleShoot(now) {
 			const player = gameState.player;
 			const timeSinceLastShot = now - player.lastShotTime;
-			
+
 			if (timeSinceLastShot >= player.shotCooldown) {
 				// Fire projectile
 				const projectile = {
@@ -3416,7 +3411,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 				};
 				gameState.projectiles.push(projectile);
 				player.lastShotTime = now;
-				
+
 				return {
 					handled: true,
 					action: 'shoot',
@@ -3436,7 +3431,7 @@ func TestShooterGame_InputHandling(t *testing.T) {
 				};
 			}
 		}
-		
+
 		// Initialize player
 		function initializePlayer() {
 			gameState.player = {
@@ -4005,7 +4000,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 	scriptContent := `
 		// Valid game modes
 		const VALID_MODES = ['menu', 'playing', 'paused', 'gameOver', 'victory'];
-		
+
 		// Valid transitions
 		const VALID_TRANSITIONS = {
 			'menu': ['playing'],
@@ -4032,17 +4027,17 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 			},
 			enemies: []
 		};
-		
+
 		// Check if transition is valid
 		function isValidTransition(fromMode, toMode) {
 			const allowed = VALID_TRANSITIONS[fromMode] || [];
 			return allowed.includes(toMode);
 		}
-		
+
 		// Attempt game mode transition
 		function transitionGameMode(toMode, reason) {
 			const fromMode = gameState.gameMode;
-			
+
 			if (!VALID_MODES.includes(toMode)) {
 				return {
 					success: false,
@@ -4051,7 +4046,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 					toMode: toMode
 				};
 			}
-			
+
 			if (!isValidTransition(fromMode, toMode)) {
 				return {
 					success: false,
@@ -4060,7 +4055,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 					toMode: toMode
 				};
 			}
-			
+
 			gameState.gameMode = toMode;
 			return {
 				success: true,
@@ -4069,7 +4064,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 				reason: reason || ''
 			};
 		}
-		
+
 		// Initialize game
 		function initializeGame() {
 			gameState.gameMode = 'menu';
@@ -4079,32 +4074,32 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 			gameState.player.health = 100;
 			gameState.enemies = [];
 		}
-		
+
 		// Start game (menu→playing)
 		function startGame() {
 			return transitionGameMode('playing', 'started');
 		}
-		
+
 		// Pause game (playing→paused)
 		function pauseGame() {
 			return transitionGameMode('paused', 'userPaused');
 		}
-		
+
 		// Resume game (paused→playing)
 		function resumeGame() {
 			return transitionGameMode('playing', 'userResumed');
 		}
-		
+
 		// Game over (playing→gameOver)
 		function setGameOver(reason) {
 			transitionGameMode('gameOver', reason || 'playerDied');
 		}
-		
+
 		// Victory (playing→victory)
 		function setVictory() {
 			transitionGameMode('victory', 'allWavesComplete');
 		}
-		
+
 		// Check health condition for game over
 		function checkPlayerHealth() {
 			if (gameState.player.health <= 0) {
@@ -4535,17 +4530,8 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	// Helper function to extract numeric value as float64
-	getFloat64 := func(val interface{}) float64 {
-		switch v := val.(type) {
-		case float64:
-			return v
-		case int64:
-			return float64(v)
-		default:
-			return 0
-		}
-	}
+	// Use file-level helper for extracting numeric values from JS
+	getFloat64 := shooterGetFloat64
 
 	// Load mock behavior tree API and ticker wrapper
 	scriptContent := `
@@ -4555,10 +4541,10 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 			failure: 0,
 			running: 2
 		};
-		
+
 		// Mock ticker state
 		let tickers = [];
-		
+
 		// Mock simple leaf node
 		const simpleLeaf = {
 			id: 'simple-leaf',
@@ -4568,7 +4554,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 				return bt.success;
 			}
 		};
-		
+
 		// Mock ticker implementation
 		function createTicker(intervalMs, tree) {
 			const ticker = {
@@ -4581,13 +4567,13 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 				error: null,
 				intervalHandle: null
 			};
-			
+
 			// Simulate ticker tick
 			ticker.tick = function() {
 				if (this.stopped || !this.running) {
 					return { stopped: true, count: this.tickCount };
 				}
-				
+
 				try {
 					const result = this.tree.tick();
 					this.tickCount++;
@@ -4597,7 +4583,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 					return { success: false, error: e };
 				}
 			};
-			
+
 			// Simulate ticker start
 			ticker.start = function() {
 				if (this.stopped) {
@@ -4606,33 +4592,33 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 				this.running = true;
 				return { success: true };
 			};
-			
+
 			// Simulate ticker stop
 			ticker.stop = function() {
 				this.running = false;
 				this.stopped = true;
 				return { success: true };
 			};
-			
+
 			// Simulate ticker done (would be async in real implementation)
 			ticker.done = function() {
 				return Promise.resolve({ stopped: this.stopped, tickCount: this.tickCount });
 			};
-			
+
 			// Simulate ticker error
 			ticker.err = function() {
 				return this.error;
 			};
-			
+
 			tickers.push(ticker);
 			return ticker;
 		}
-		
+
 		// Create a simple behavior tree
 		function createSimpleTree() {
 			return simpleLeaf;
 		}
-		
+
 		// Create a failing tree for error testing
 		function createFailingTree() {
 			return {
@@ -4654,7 +4640,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 			(() => {
 				const tree = createSimpleTree();
 				const ticker = createTicker(100, tree);
-				
+
 				lastResult = {
 					tickerId: ticker.id,
 					interval: ticker.interval,
@@ -4695,12 +4681,12 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 				const tree = createSimpleTree();
 				const ticker = createTicker(100, tree);
 				ticker.start();
-				
+
 				// Simulate multiple ticks
 				const tick1 = ticker.tick();
 				const tick2 = ticker.tick();
 				const tick3 = ticker.tick();
-				
+
 				lastResult = {
 					tick1Success: tick1.success,
 					tick1Status: tick1.status,
@@ -4752,17 +4738,17 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 				const tree = createSimpleTree();
 				const ticker = createTicker(100, tree);
 				ticker.start();
-				
+
 				// Tick a few times
 				ticker.tick();
 				ticker.tick();
-				
+
 				// Stop the ticker
 				const stopResult = ticker.stop();
-				
+
 				// Try to tick after stop
 				const tickAfterStop = ticker.tick();
-				
+
 				lastResult = {
 					stopSuccess: stopResult.success,
 					ticksBeforeStop: ticker.tickCount,
@@ -4807,16 +4793,16 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 				const ticker = createTicker(100, tree);
 				ticker.start();
 				ticker.tick();
-				
+
 				// Stop and check done (in real implementation, done returns a Promise)
 				ticker.stop();
-				
+
 				// Mock the done() behavior synchronously for testing
 				const doneResult = {
 					stopped: ticker.stopped,
 					tickCount: ticker.tickCount
 				};
-				
+
 				lastResult = {
 					doneStopped: doneResult.stopped,
 					doneTickCount: doneResult.tickCount,
@@ -4850,11 +4836,11 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 				const failingTree = createFailingTree();
 				const ticker = createTicker(100, failingTree);
 				ticker.start();
-				
+
 				// Tick should fail
 				const tickResult = ticker.tick();
 				const error = ticker.err();
-				
+
 				lastResult = {
 					tickSuccess: tickResult.success,
 					hasError: error !== null,
@@ -4891,15 +4877,15 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 				const tree1 = createSimpleTree();
 				const tree2 = createSimpleTree();
 				const tree3 = createSimpleTree();
-				
+
 				const ticker1 = createTicker(50, tree1);
 				const ticker2 = createTicker(100, tree2);
 				const ticker3 = createTicker(150, tree3);
-				
+
 				ticker1.start();
 				ticker2.start();
 				ticker3.start();
-				
+
 				// Simulate running all tickers multiple times
 				for (let i = 0; i < 5; i++) {
 					ticker1.tick();
@@ -4910,7 +4896,7 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 				for (let i = 0; i < 2; i++) {
 					ticker3.tick();
 				}
-				
+
 				lastResult = {
 					ticker1Id: ticker1.id,
 					ticker1Count: ticker1.tickCount,
@@ -4956,30 +4942,30 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 			(() => {
 				// Track ticker count before
 				const countBefore = tickers.length;
-				
+
 				// Create and cleanup multiple tickers
 				const ticker1 = createTicker(100, createSimpleTree());
 				ticker1.start();
 				ticker1.tick();
 				ticker1.stop();
-				
+
 				const ticker2 = createTicker(100, createSimpleTree());
 				ticker2.start();
 				ticker2.tick();
 				ticker2.stop();
-				
+
 				const ticker3 = createTicker(100, createSimpleTree());
 				ticker3.start();
 				ticker3.tick();
 				ticker3.stop();
-				
+
 				const countAfter = tickers.length;
-				
+
 				// Simulate cleanup - in real implementation, tickers would be removed from manager
 				// For this test, we just verify they're all stopped
 				const allStopped = ticker1.stopped && ticker2.stopped && ticker3.stopped;
 				const allNotRunning = !ticker1.running && !ticker2.running && !ticker3.running;
-				
+
 				lastResult = {
 					countBefore: countBefore,
 					countAfter: countAfter,
@@ -5031,44 +5017,6 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 	})
 }
 
-// TestShooterGame_EnemyAIIntegration tests integration of behavior tree with enemy AI
-// TEST-006: Skip this test with t.Skip() since leaf functions are tested individually
-func TestShooterGame_EnemyAIIntegration(t *testing.T) {
-	t.Skip("Leaf functions tested directly in TestShooterGame_BehaviorTreeLeaves")
-
-	ctx := context.Background()
-	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
-	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
-	}
-	defer engine.Close()
-	engine.SetTestMode(true)
-
-	// Load behavior tree integration test code
-	scriptContent := `
-		const bt = {
-			success: 1,
-			failure: 0,
-			running: 2
-		};
-
-		let gameState = {
-			player: { x: 40, y: 20 },
-			enemies: []
-		};
-	`
-	script := engine.LoadScriptFromString("enemy-ai-integration", scriptContent)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("Failed to load enemy AI integration code: %v", err)
-	}
-
-	// Placeholder for future integration testing
-	t.Run("Placeholder", func(t *testing.T) {
-		t.Skip("Leaf functions tested directly in TestShooterGame_BehaviorTreeLeaves")
-	})
-}
-
 // TestShooterGame_GameLoopIntegration tests full tick flow and game loop integration
 // TEST-007: Critical for ensuring game updates correctly over time
 func TestShooterGame_GameLoopIntegration(t *testing.T) {
@@ -5081,17 +5029,8 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	// Helper function to extract numeric value as float64
-	getFloat64 := func(val interface{}) float64 {
-		switch v := val.(type) {
-		case float64:
-			return v
-		case int64:
-			return float64(v)
-		default:
-			return 0
-		}
-	}
+	// Use file-level helper for extracting numeric values from JS
+	getFloat64 := shooterGetFloat64
 
 	// Load game loop implementation
 	scriptContent := `
@@ -5099,7 +5038,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 		const SHOT_COOLDOWN = 200;
 		const TERMINAL_WIDTH = 80;
 		const TERMINAL_HEIGHT = 24;
-		
+
 		// Game state
 		let gameState = {
 			gameMode: "playing",
@@ -5121,31 +5060,31 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 			lastTickTime: 1000,
 			deltaTime: 0
 		};
-		
+
 		// Full tick function: input → physics → AI sync → collision → rendering
 		function tick(now) {
 			// Calculate delta time
 			const deltaTime = now - gameState.lastTickTime;
 			gameState.deltaTime = deltaTime;
-			
+
 			// Step 1: Apply physics (player movement)
 			applyPlayerPhysics(deltaTime);
-			
+
 			// Step 2: AI ticker integration (tick all enemies)
 			tickEnemies(deltaTime);
-			
+
 			// Step 3: Collision detection
 			processCollisions();
-			
+
 			// Step 4: Update particles
 			updateParticles(deltaTime);
-			
+
 			// Step 5: Cleanup expired entities
 			cleanupEntities();
-			
+
 			// Update last tick time
 			gameState.lastTickTime = now;
-			
+
 			return {
 				deltaTime: deltaTime,
 				playerX: gameState.player.x,
@@ -5155,20 +5094,20 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 				enemyCount: gameState.enemies.length
 			};
 		}
-		
+
 		// Apply player physics
 		function applyPlayerPhysics(deltaTime) {
 			const player = gameState.player;
-			
+
 			// Apply velocity
 			player.x += player.vx * (deltaTime / 1000);
 			player.y += player.vy * (deltaTime / 1000);
-			
+
 			// Clamp to screen bounds
 			player.x = Math.max(0, Math.min(TERMINAL_WIDTH - 1, player.x));
 			player.y = Math.max(0, Math.min(TERMINAL_HEIGHT - 1, player.y));
 		}
-		
+
 		// Tick all enemy AI
 		function tickEnemies(deltaTime) {
 			const enemies = gameState.enemies;
@@ -5183,7 +5122,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 
 			return ticksExecuted;
 		}
-		
+
 		// Process collisions
 		function processCollisions() {
 			// Player projectiles vs enemies
@@ -5194,7 +5133,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 					const dx = proj.x - enemy.x;
 					const dy = proj.y - enemy.y;
 					const dist = Math.sqrt(dx*dx + dy*dy);
-					
+
 					if (dist < 1.5 && proj.owner === 'player') {
 						enemy.health -= proj.damage;
 						if (enemy.health <= 0) {
@@ -5217,19 +5156,19 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 				}
 			}
 		}
-		
+
 		// Update particles
 		function updateParticles(deltaTime) {
 			for (const particle of gameState.particles) {
 				particle.age += deltaTime;
 			}
 		}
-		
+
 		// Cleanup expired entities
 		function cleanupEntities() {
 			// Remove aged out particles
 			gameState.particles = gameState.particles.filter(p => p.age < p.maxAge);
-			
+
 			// Remove out of bounds projectiles
 			const width = gameState.terminalSize.width;
 			const height = gameState.terminalSize.height;
@@ -5512,23 +5451,14 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	// Helper function to extract numeric value as float64
-	getFloat64 := func(val interface{}) float64 {
-		switch v := val.(type) {
-		case float64:
-			return v
-		case int64:
-			return float64(v)
-		default:
-			return 0
-		}
-	}
+	// Use file-level helper for extracting numeric values from JS
+	getFloat64 := shooterGetFloat64
 
 	// Load edge case testing code
 	scriptContent := `
 		const TERMINAL_WIDTH = 80;
 		const TERMINAL_HEIGHT = 24;
-		
+
 		// Game state
 		let gameState = {
 			gameMode: "playing",
@@ -5545,25 +5475,25 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 			score: 0,
 			terminalSize: { width: TERMINAL_WIDTH, height: TERMINAL_HEIGHT }
 		};
-		
+
 		// Clamp utility
 		function clamp(value, min, max) {
 			return Math.max(min, Math.min(max, value));
 		}
-		
+
 		// Update player position with bounds checking
 		function updatePlayerPosition(newX, newY) {
 			gameState.player.x = clamp(newX, 0, TERMINAL_WIDTH - 1);
 			gameState.player.y = clamp(newY, 0, TERMINAL_HEIGHT - 1);
 		}
-		
+
 		// Update lives (no underflow below zero)
 		function updateLives(delta) {
 			const oldLives = gameState.player.lives;
 			gameState.player.lives = Math.max(0, oldLives + delta);
 			return { oldLives: oldLives, newLives: gameState.player.lives };
 		}
-		
+
 		// Read from blackboard (undefined returns undefined, not error)
 		function readFromBlackboard(blackboard, key) {
 			const value = blackboard.get(key);
@@ -5573,18 +5503,18 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 				isUndefined: value === undefined
 			};
 		}
-		
+
 		// Update terminal size
 		function updateTerminalSize(width, height) {
 			gameState.terminalSize.width = width;
 			gameState.terminalSize.height = height;
 		}
-		
+
 		// Check if player is invincible (no damage during invincibility)
 		function canTakeDamage(now) {
 			return !gameState.player.invincibleUntil || gameState.player.invincibleUntil <= now;
 		}
-		
+
 		// Apply damage with invincibility check
 		function applyDamage(damageAmount, now) {
 			if (!canTakeDamage(now)) {
@@ -5939,31 +5869,22 @@ func TestShooterGame_BlackboardThreadSafety(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	// Helper function to extract numeric value as float64
-	getFloat64 := func(val interface{}) float64 {
-		switch v := val.(type) {
-		case float64:
-			return v
-		case int64:
-			return float64(v)
-		default:
-			return 0
-		}
-	}
+	// Use file-level helper for extracting numeric values from JS
+	getFloat64 := shooterGetFloat64
 
 	// Load simple blackboard test
 	scriptContent := `
 		// Create a blackboard
 		const bb = new Map();
-		
+
 		// Test data: 10 keys with initial values
 		const testKeys = ['targetX', 'targetY', 'playerDist', 'cooldown', 'health', 'state', 'prevX', 'prevY', 'lastShot', 'moveDir'];
-		
+
 		// Initialize all keys
 		for (let i = 0; i < testKeys.length; i++) {
 			bb.set(testKeys[i], i * 100);
 		}
-		
+
 		// Simulate concurrent reads (simulate 20 goroutines)
 		function simulateConcurrentReads() {
 			const readResults = [];
@@ -5976,7 +5897,7 @@ func TestShooterGame_BlackboardThreadSafety(t *testing.T) {
 			}
 			return readResults;
 		}
-		
+
 		// Simulate concurrent writes (simulate 20 goroutines)
 		function simulateConcurrentWrites() {
 			const writeResults = [];

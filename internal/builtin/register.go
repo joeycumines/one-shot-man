@@ -17,6 +17,7 @@ import (
 	lipglossmod "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
 	"github.com/joeycumines/one-shot-man/internal/builtin/nextintegerid"
 	osmod "github.com/joeycumines/one-shot-man/internal/builtin/os"
+	pabtmod "github.com/joeycumines/one-shot-man/internal/builtin/pabt"
 	templatemod "github.com/joeycumines/one-shot-man/internal/builtin/template"
 	scrollbarmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/scrollbar"
 	timemod "github.com/joeycumines/one-shot-man/internal/builtin/time"
@@ -113,6 +114,10 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	// NewBridgeWithEventLoop registers the osm:bt module automatically.
 	btBridge := bt.NewBridgeWithEventLoop(ctx, eventLoopProvider.EventLoop(), eventLoopProvider.Registry())
 
+	// Register osm:pabt module for Planning-Augmented Behavior Trees.
+	// This depends on btBridge for thread-safe goja.Runtime access.
+	registry.RegisterNativeModule(prefix+"pabt", pabtmod.ModuleLoader(ctx, btBridge))
+
 	// Register bubbletea module with terminal ops if available.
 	// Bridge implements JSRunner directly - no adapter needed.
 	var bubbleInput io.Reader
@@ -145,6 +150,3 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 		BubblezoneManager: bubblezoneMgr,
 	}
 }
-
-// Note: bridgeJSRunner is no longer needed - *bt.Bridge directly implements
-// bubbleteamod.JSRunner via its RunJSSync method.

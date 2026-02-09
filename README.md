@@ -183,7 +183,7 @@ Future functionality based on merits.
 Fair warning: This may include features* which expand the scope of functionality.
 See also [docs/todo.md](docs/todo.md).
 
-(\*) Probably more along the lines of [Behavior Tree support](https://github.com/joeycumines/one-shot-man/pull/27) ([+ PA-BT](https://github.com/joeycumines/one-shot-man/pull/28)) than [Tailwind SQL](https://tailwindsql.xyz/) - but I make no promises 😛.
+(\*) Probably more along the lines of [Behavior Tree support](https://github.com/joeycumines/one-shot-man/pull/27) ([+ PA-BT](docs/reference/planning-and-acting-using-behavior-trees.md)) than [Tailwind SQL](https://tailwindsql.xyz/) though I make no promises 😛.
 
 ## Quickstart
 

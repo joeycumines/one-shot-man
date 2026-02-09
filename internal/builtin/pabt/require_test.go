@@ -377,7 +377,7 @@ func TestNewPlan_Creation(t *testing.T) {
 				const bb = new bt.Blackboard();
 				const state = pabt.newState(bb);
 				const plan = pabt.newPlan(state, []);
-				return typeof plan.Node === 'function';
+				return typeof plan.node === 'function';
 			})()
 		`)
 		assert.True(t, res.ToBoolean())
@@ -404,9 +404,9 @@ func TestNewPlan_Creation(t *testing.T) {
 	})
 }
 
-// TestPlanExecution verifies that Plan.Node() returns a valid bt.Node.
+// TestPlanExecution verifies that Plan.node() returns a valid bt.Node.
 //
-// NOTE: Calling bt.tick(plan.Node()) from within JS would deadlock because:
+// NOTE: Calling bt.tick(plan.node()) from within JS would deadlock because:
 // - bt.tick() is synchronous
 // - Action nodes contain JS callbacks that use RunOnLoopSync
 // - We're already on the event loop from executeJS()
@@ -438,7 +438,7 @@ func TestPlanExecution(t *testing.T) {
 
 				const goal = pabt.newExprCondition("x", "value == 1");
 				const plan = pabt.newPlan(state, [goal]);
-				const node = plan.Node();
+				const node = plan.node();
 
 				// Verify the node is a valid bt.Node (can be used with composites)
 				// We can't tick it synchronously from JS due to the architecture
@@ -484,7 +484,7 @@ func TestPlanExecution(t *testing.T) {
 
 				const goal = pabt.newExprCondition("step", "value == 2");
 				const plan = pabt.newPlan(state, [goal]);
-				const node = plan.Node();
+				const node = plan.node();
 
 				// Verify plan was created successfully with valid node
 				return node !== null && node !== undefined && typeof node === 'function';

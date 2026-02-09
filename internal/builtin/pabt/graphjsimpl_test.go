@@ -73,7 +73,7 @@ func TestGraphJS_PlanCreation(t *testing.T) {
 
 			return {
 				planCreated: plan !== null && plan !== undefined,
-				hasNode: typeof plan.Node === 'function',
+				hasNode: typeof plan.node === 'function',
 				initialActor: bb.get("actor")
 			};
 		})()
@@ -130,7 +130,7 @@ func TestGraphJS_PlanExecution(t *testing.T) {
 
 			const goal = { key: "actor", value: "sg", match: (v) => v === "sg" };
 			const plan = pabt.newPlan(state, [goal]);
-			globalThis.graphTestTicker = bt.newTicker(10, plan.Node(), { stopOnFailure: true });
+			globalThis.graphTestTicker = bt.newTicker(10, plan.node(), { stopOnFailure: true });
 		})()
 	`)
 
@@ -232,7 +232,7 @@ func TestGraphJS_PathValidation(t *testing.T) {
 
 			const goal = { key: "actor", value: "sg", match: (v) => v === "sg" };
 			const plan = pabt.newPlan(state, [goal]);
-			globalThis.pathTestTicker = bt.newTicker(10, plan.Node(), { stopOnFailure: true });
+			globalThis.pathTestTicker = bt.newTicker(10, plan.node(), { stopOnFailure: true });
 		})()
 	`)
 
@@ -330,7 +330,7 @@ func TestGraphJS_UnreachableGoal(t *testing.T) {
 			const goal = { key: "actor", value: "isolated", match: (v) => v === "isolated" };
 			const plan = pabt.newPlan(state, [goal]);
 			globalThis.unreachablePlanCreated = plan !== null;
-			globalThis.unreachableTicker = bt.newTicker(10, plan.Node(), { stopOnFailure: true });
+			globalThis.unreachableTicker = bt.newTicker(10, plan.node(), { stopOnFailure: true });
 		})()
 	`)
 
@@ -425,7 +425,7 @@ func TestGraphJS_MultipleGoals(t *testing.T) {
 			const goal1 = { key: "actor", value: "s5", match: (v) => v === "s5" };
 			const goal2 = { key: "actor", value: "sg", match: (v) => v === "sg" };
 			const plan = pabt.newPlan(state, [goal1, goal2]);
-			globalThis.multiGoalTicker = bt.newTicker(10, plan.Node(), { stopOnFailure: true });
+			globalThis.multiGoalTicker = bt.newTicker(10, plan.node(), { stopOnFailure: true });
 		})()
 	`)
 
@@ -520,7 +520,7 @@ func TestGraphJS_PlanIdempotent(t *testing.T) {
 
 			const goal = { key: "actor", value: "sg", match: (v) => v === "sg" };
 			const plan = pabt.newPlan(state, [goal]);
-			globalThis.idempotentTicker = bt.newTicker(10, plan.Node(), { stopOnFailure: true });
+			globalThis.idempotentTicker = bt.newTicker(10, plan.node(), { stopOnFailure: true });
 		})()
 	`)
 

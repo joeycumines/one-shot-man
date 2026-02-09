@@ -158,7 +158,7 @@ const plan = pabt.newPlan(state, [
     {key: 'heldItem', match: v => v === 1}
 ]);
 
-// 5. Execute with BT ticker (use lowercase node() - Node() is deprecated)
+// 5. Execute with BT ticker
 const ticker = bt.newTicker(100, plan.node());
 
 // 6. Game loop
@@ -220,6 +220,18 @@ The module employs a hybrid architecture to separate the **Symbolic Reasoning** 
 2. **Primitives only**: The blackboard stores symbolic state (numbers, strings, booleans) used for logic.
 3. **JavaScript execution**: The *Action Nodes* execute in the JS environment and mutate the actual application state.
 4. **Go planning**: The synthesis algorithm runs in compiled Go, rapidly expanding the BT structure based on the symbolic state.
+
+### Threading Model
+
+PA-BT planning uses Go goroutines for BT ticking. JavaScript code execution is coordinated through an automatic bridge:
+
+| Code Type | Runs In | Bridge Used |
+|-----------|---------|-------------|
+| Condition `match()` functions | Ticker goroutine → Event loop | RunOnLoopSync (automatic) |
+| Action generators | Ticker goroutine → Event loop | RunOnLoopSync (automatic) |
+| Action nodes (execution) | Event loop | None (normal JS context) |
+
+**Important:** Action generators should avoid expensive operations as they block the planning cycle.
 
 ---
 
@@ -317,7 +329,8 @@ const plan = pabt.newPlan(state, [
 
 **Returns:** `Plan` object with methods:
 
-* `Node()` - Get the root `bt.Node` for execution (uppercase N!)
+* `node()` - Get the root `bt.Node` for execution
+* `running()` - Check if the plan is currently executing (useful for conditional sync optimization)
 
 **Multiple Goals (OR logic):**
 PA-BT handles disjunctive goals naturally. If multiple conditions are provided, the root is a `Fallback` node that checks them in order.
@@ -379,6 +392,25 @@ state.setActionGenerator(function(failedCondition) {
 * Large or infinite action spaces where registering all templates is impossible.
 
 **Thread Safety:** If generator accesses JavaScript state, it must use `Bridge.RunOnLoopSync` (handled automatically in `osm:pabt`).
+
+### Condition Passthrough
+
+Custom properties on conditions are preserved when passed to action generators:
+
+```javascript
+const goal = {
+    key: 'atEntity',
+    entityId: 42,                    // Custom property
+    match: v => v === true
+};
+
+state.setActionGenerator(function(failed) {
+    const id = failed.entityId;      // Available via passthrough
+    return [createMoveToAction(id)];
+});
+```
+
+This enables action templating where the generator receives full context about what failed.
 
 ---
 
@@ -541,6 +573,18 @@ function syncToBlackboard(state) {
 | ExprCondition.Match() | ~100ns | Go-native compiled expression |
 | FuncCondition.Match() | ~50ns | Direct Go function call |
 | plan.node() tick | ~10μs | Depends on tree depth |
+
+### Condition Evaluation Modes
+
+PA-BT supports two condition evaluation modes with significantly different performance characteristics:
+
+| Feature | JavaScript Condition | ExprCondition |
+|---------|---------------------|---------------|
+| Syntax | `{key: 'x', match: v => v > 0}` | `pabt.newExprCondition('x', 'value > 0')` |
+| Performance | ~5μs | ~100ns (50x faster) |
+| Best for | Complex logic, closures | Simple comparisons, hot paths |
+
+Use `ExprCondition` for high-frequency checks and simple arithmetic expressions.
 
 ### Optimization Strategies
 

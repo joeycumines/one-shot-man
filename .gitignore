@@ -41,6 +41,7 @@ go.work.sum
 
 # Test artifacts and temporary files
 test-scripts/
+/scratch/
 
 # Log file for use w/ custom targets
 /build.log

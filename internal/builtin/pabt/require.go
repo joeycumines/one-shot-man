@@ -310,8 +310,7 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 				panic(runtime.NewGoError(fmt.Errorf("failed to create plan: %w", err)))
 			}
 
-			// Wrap the plan in a JS object with lowerCamelCase methods
-			// This ensures JS callers use plan.node() not plan.Node()
+			// Wrap the plan in a JS object for JavaScript interop
 			jsObj := runtime.NewObject()
 
 			// node() - returns the behavior tree node for this plan
@@ -326,11 +325,6 @@ func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoade
 
 			// Store the native plan for internal use
 			_ = jsObj.Set("_native", plan)
-
-			// Also expose Node for backwards compatibility (deprecated)
-			_ = jsObj.Set("Node", func(call goja.FunctionCall) goja.Value {
-				return runtime.ToValue(plan.Node())
-			})
 
 			return jsObj
 		})

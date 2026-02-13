@@ -50,3 +50,5 @@ test-scripts/
 /docs/visuals/gifs/*.gif
 
 /.claude/*.local.*
+
+/DIRECTIVE.txt

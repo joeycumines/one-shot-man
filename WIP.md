@@ -12,12 +12,14 @@
 - **T009**: ✅ DONE (commit b2c93d5) — Rule of Two PASSED
 - **T010**: ✅ DONE (commit 7f19318) — Rule of Two PASSED
 - **T011**: ✅ DONE (commit d50e796) — Rule of Two PASSED
-- **T012**: 🔄 NEXT — Implement VS Code prompt files support
+- **T012**: ✅ DONE (commit d825887) — Rule of Two PASSED
+- **T013**: 🔄 NEXT — Integrate hot-snippet configuration from config file
 
-## T012 Context
-- Add support for VS Code .prompt files
-- Implement parser for .prompt file format
-- Allow .prompt files as goal templates or context sources
-- Add config key for prompt file search paths (prompt.file-paths)
-- Register config key in schema.go
-- Add tests for parsing, discovery, and integration
+## T013 Context
+- Currently hot-snippets are passed as JS options to contextManager
+- Add Go-side [hot-snippets] config section support
+- Parse in internal/config/ and pass to contextManager via goal/command infra
+- Users define snippets in config without writing JS
+- JS-defined snippets merge with config-defined (JS wins on conflicts)
+- Add tests for config parsing and merge behavior
+- Key files: internal/config/config.go, internal/builtin/ctxutil/contextManager.js, goal.go

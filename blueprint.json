@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T011 COMPLETE. T011 committed as d50e796: feat(cleanup): implement automatic session cleanup scheduler. 11 files changed, 524 insertions(+), 4 deletions(-). Rule of Two passed. Next: T012 (Implement VS Code prompt files support)."
+    "currentState": "T001-T012 COMPLETE. T012 committed as d825887: feat(command): add VS Code .prompt.md file support with parser, discovery, and goal conversion. 5 files changed, 1003 insertions(+). Rule of Two passed. Next: T013 (Integrate hot-snippet configuration from config file)."
   },
   "sequentialTasks": [
     {
@@ -104,8 +104,8 @@
     },
     {
       "task": "T012: Implement VS Code prompt files support",
-      "description": "Add support for VS Code .prompt files (https://code.visualstudio.com/docs/copilot/customization/prompt-files). Implement a parser for the .prompt file format. Allow .prompt files to be used as goal templates or context sources via `osm goal` or `osm prompt-flow`. Add a config key for specifying prompt file search paths (prompt.file-paths). Register the config key in schema.go. Add tests covering .prompt file parsing, discovery, and integration with the goal system.",
-      "status": "Not Started"
+      "description": "Committed as d825887: Added VS Code .prompt.md file support. Implemented parser for .prompt.md format (YAML frontmatter + Markdown body), LoadPromptFile loader, PromptFileToGoal converter, FindPromptFiles discovery, expandPromptFileReferences for inline file expansion, and DiscoverPromptFilePaths for standard (.github/prompts) and configured search paths. Added prompt.file-paths config key to schema. Wired into DynamicGoalRegistry.Reload(). 30 tests covering parsing (frontmatter variants, edge cases, CRLF), loading, conversion, discovery, and file reference expansion.",
+      "status": "Done"
     },
     {
       "task": "T013: Integrate hot-snippet configuration from config file",

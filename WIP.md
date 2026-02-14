@@ -15,9 +15,7 @@
 - **T012**: ✅ DONE (commit d825887) — Rule of Two PASSED
 - **T013**: ✅ DONE (commit e9e2099) — Rule of Two PASSED
 - **T014**: ✅ DONE (commit cec53d8) — Rule of Two PASSED
-- **T015**: 🔄 NEXT — Git sync: implement push/pull operations
+- **T015**: ✅ DONE (commit b28e6a6) — Rule of Two PASSED
 
-## T015 Plan
-Per docs/archive/notes/git-sync-design.md, implement git push/pull operations for sync command.
-Currently only local save/list implemented (internal/command/sync.go).
-Add: init, push, pull operations with conflict detection.
+## Active Task
+Starting T016: MacosUseSDK integration — osm:grpc native module

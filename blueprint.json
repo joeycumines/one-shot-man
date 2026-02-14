@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T014 COMPLETE. T014 committed as cec53d8: feat(goal): add Tier 1 built-in goals from Anthropic prompt library. 4 files changed, 513 insertions(+), 1 deletion(-). Rule of Two passed. Next: T015 (Git sync: implement push/pull operations)."
+    "currentState": "T001-T015 COMPLETE. T015 committed as b28e6a6: feat(sync): implement git init/push/pull operations with conflict detection. 3 files changed, 612 insertions(+), 28 deletions(-). Rule of Two passed. Next: T016."
   },
   "sequentialTasks": [
     {
@@ -119,8 +119,8 @@
     },
     {
       "task": "T015: Git sync: implement push/pull operations",
-      "description": "Per docs/archive/notes/git-sync-design.md, implement git push/pull operations for the sync command. Currently only local save/list are implemented (internal/command/sync.go). Add: (1) `osm sync init <repo-url>` to clone/init a sync repo, (2) `osm sync push` to commit and push local changes, (3) `osm sync pull` to fetch and merge remote changes, (4) Conflict detection and user messaging. Use osm:exec (git CLI) for git operations. Wire sync.repository, sync.enabled, sync.auto-pull config keys. Add tests with temporary git repos.",
-      "status": "Not Started"
+      "description": "Committed as b28e6a6: Added init/push/pull subcommands to sync command. init clones a git repo from URL or sync.repository config. push stages all changes, commits with timestamp, pushes to origin. pull performs git pull --rebase or clones if not initialized. Conflict detection on pull with manual resolution messaging. Added config field to SyncCommand, syncRoot() method using sync.local-path config key. Updated notebooksDir() to derive from syncRoot. 16 new git integration tests with temporary bare repos. 3 files changed, 612 insertions(+), 28 deletions(-).",
+      "status": "Done"
     },
     {
       "task": "T016: MacosUseSDK integration: implement osm:grpc native module",

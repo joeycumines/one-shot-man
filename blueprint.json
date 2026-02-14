@@ -86,7 +86,8 @@
     {
       "task": "T032: Coverage audit: internal/builtin/tview and lipgloss",
       "description": "Run coverage for tview/ (2 test files, deprecated) and lipgloss/ (1 test file). Test Require functions, signal handling (tview), style creation/composition (lipgloss), color parsing, border/padding/margin helpers. Achieve 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage: tview 68.5% → 96.4%, lipgloss 58.0% → 99.0%. Fixed 1 bug in tview.go (nil guard for exportsVal in Require). ~80 new test functions total across 2 new coverage_gaps_test.go files. Remaining uncovered code is defensive dead code (tview: stopResize timing, getOrCreateScreen terminal path, Goja error return, app.Run error; lipgloss: getState nil returns in proto methods). Rule of Two passed."
     },
     {
       "task": "T033: Coverage audit: builtin template, time, nextintegerid, unicodetext, argv, scrollbar",

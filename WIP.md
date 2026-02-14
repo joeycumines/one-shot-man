@@ -14,5 +14,7 @@
 - **T029**: ✅ DONE — 27 new edge-case tests (99.2% unchanged, sole gap is defensive dead code), committed
 - **T030**: ✅ DONE — 15 new grpc tests (93.2%→96.2%), jsLoadDescriptorSet+jsDial now 100%, no bugs found
 - **T031**: ✅ DONE — 39 new bubblezone tests (0%→98.7%), 2 bug fixes (nil guards), created from scratch
-- **Next**: T032 — Coverage audit: internal/builtin/tview and lipgloss
+- **T032**: ✅ DONE — ~80 new tview+lipgloss tests (tview 68.5%→96.4%, lipgloss 58.0%→99.0%), 1 bug fix (nil guard in tview Require)
+- **Blueprint**: REWRITTEN — 71 tasks (T021-T091), exhaustive, flat, no estimates, no priorities
+- **Next**: T033 — Coverage audit: builtin template, time, nextintegerid, unicodetext, argv, scrollbar
 - **Approach**: Execute tasks sequentially, verify via Rule of Two, commit, continue

@@ -26,10 +26,6 @@ internal/scripting/engine_core.go:*: unreachable func: NewEngineWithConfig
 internal\scripting\engine_core.go:*: unreachable func: NewEngineWithConfig
 internal\scripting\integration_notunix.go:*: unreachable func: mustNewEngine
 
-# Diff splitter public API - used for code review chunking, tested but not yet wired into command
-internal/command/diff_splitter.go:*: unreachable func: *
-internal\command\diff_splitter.go:*: unreachable func: *
-
 # Runtime convenience constructor used by tests (production uses NewRuntimeWithRegistry)
 internal/scripting/runtime.go:*: unreachable func: NewRuntime
 internal\scripting\runtime.go:*: unreachable func: NewRuntime

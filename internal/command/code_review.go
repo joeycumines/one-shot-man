@@ -108,6 +108,23 @@ func (c *CodeReviewCommand) Execute(args []string, stdout, stderr io.Writer) err
 	engine.SetGlobal("args", args)
 	engine.SetGlobal("codeReviewTemplate", codeReviewTemplate)
 
+	// Expose diff splitter to JS for chunked code reviews.
+	engine.SetGlobal("defaultMaxDiffLines", DefaultMaxDiffLines)
+	engine.SetGlobal("splitDiff", func(diff string, maxLines int) []map[string]interface{} {
+		chunks := SplitDiff(diff, maxLines)
+		result := make([]map[string]interface{}, len(chunks))
+		for i, c := range chunks {
+			result[i] = map[string]interface{}{
+				"index":   c.Index,
+				"total":   c.Total,
+				"files":   c.Files,
+				"content": c.Content,
+				"lines":   c.Lines,
+			}
+		}
+		return result
+	})
+
 	// Load the embedded script
 	script := engine.LoadScriptFromString("code-review", codeReviewScript)
 	if err := engine.ExecuteScript(script); err != nil {

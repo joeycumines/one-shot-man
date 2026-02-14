@@ -27,6 +27,8 @@ func TestRegister(t *testing.T) {
 	req := registry.Enable(runtime)
 	modules := []string{
 		"osm:argv",
+		"osm:fetch",
+		"osm:flag",
 		"osm:nextIntegerId",
 		"osm:exec",
 		"osm:os",

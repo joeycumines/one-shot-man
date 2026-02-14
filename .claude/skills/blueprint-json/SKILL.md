@@ -72,10 +72,12 @@ The key sections are:
 Before marking a task "Done" or committing any code, you must strictly adhere to the **Rule of Two**:
 
 1. **First Review:** Invoke a subagent to review the work. Instruct it to be skeptical and guarantee correctness.
-2. **Action:** Fully address *all* issues raised.
-3. **Second Review:** Invoke a *new* subagent to review the fixed state.
-4. **Gate:** Only if **two contiguous, issue-free reviews** are achieved can you proceed to commit.
-5. **Serial Execution:** Subagents are for context management, not parallelization. They must run to completion.
+2. **Read the Review Yourself:** You—the caller—MUST read **EVERY WORD** of the subagent's review in full. Do not skim. Do not trust a summary. Verify each finding yourself.
+3. **Action:** Fully address *all* issues raised.
+4. **Second Review:** Invoke a *new* subagent to review the fixed state.
+5. **Read the Review Yourself (Again):** You—the caller—MUST read **EVERY WORD** of the second subagent's review in full.
+6. **Gate:** Only if **two contiguous reviews confirm the code is at the local maximum of quality**—no issues found AND no possible improvements—can you proceed to commit. A mere "no issues" is insufficient; the subagent must verify the code cannot be improved.
+7. **Serial Execution:** Subagents are for context management, not parallelization. They must run to completion.
 
 ### Produce / Refine Project Baseline
 

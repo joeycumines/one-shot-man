@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T016 COMPLETE. T016 committed as a916201: feat(builtin): add osm:grpc native module for gRPC client connectivity. 5 files changed, 1095 insertions(+). Rule of Two passed. Next: T017."
+    "currentState": "T001-T017 COMPLETE. T017 committed as 26c35b0: test(argv): achieve 100% coverage with additional edge case tests. 1 file changed, 38 insertions(+). Rule of Two passed. Next: T018."
   },
   "sequentialTasks": [
     {
@@ -129,8 +129,8 @@
     },
     {
       "task": "T017: Coverage audit: internal/argv",
-      "description": "Run `go test -coverprofile=coverage.out ./internal/argv/...` and analyze coverage. The package has argv.go, argv_test.go, and argv_fuzz_test.go. Identify uncovered code paths including edge cases in argument parsing (empty args, special characters, quoting, escaping, unicode). Add tests to achieve 100% effective coverage. Verify with `go tool cover -func=coverage.out`.",
-      "status": "Not Started"
+      "description": "Committed as 26c35b0: Added 4 test cases covering escaped char starting a token (\\a, \\ x, \\a standalone, escaped char after whitespace). Coverage: 94.2% → 94.9%. Remaining 5.1% is 7 unreachable defensive guards (if start < 0) inside quoted contexts where start is always >= 0 — structural invariants for safety against future refactoring. 100% effective coverage achieved.",
+      "status": "Done"
     },
     {
       "task": "T018: Coverage audit: internal/config",

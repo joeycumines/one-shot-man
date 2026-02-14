@@ -50,12 +50,14 @@
     {
       "task": "T026: Coverage audit: internal/builtin/pabt",
       "description": "Run coverage for internal/builtin/pabt/. Review 11+ test files. Note: entire package in .deadcodeignore (JS-callable). Focus on Go-level coverage of NewAction, NewActionGenerator, NewBlackboard, NewExprCondition, State ops, planning, tree construction. Target 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage 78.5% → 93.6%. ~40 new test functions in coverage_gaps_test.go. Covers actions.go (NewAction panics, ActionRegistry), evaluation.go (ExprLRUCache, JSCondition stopped bridge, ExprCondition errors, JSEffect), state.go (normalizeKey all types, Variable numeric keys, actionHasRelevantEffect nil/error), require.go (JS module edge cases). Remaining 6.4% is defensive dead code. Rule of Two passed."
     },
     {
       "task": "T027: Coverage audit: internal/builtin/bubbletea",
       "description": "Run coverage for internal/builtin/bubbletea/. Review 13 test files. Identify uncovered paths in JS↔Go model bridge, program lifecycle, window size handling. Target 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage ~75.8% → 91.2%. ~60 new test functions in coverage_gaps_test.go. Fixed 3 bugs in bubbletea.go (nil/undefined guards for setWindowTitle, newModel, run). Fixed pre-existing DATA RACE in 3 tests via syscall.Dup. Remaining ~8.8% is defensive/platform code (runProgram TTY setup, terminal state save/restore). Rule of Two passed."
     },
     {
       "task": "T028: Coverage audit: internal/builtin/fetch",

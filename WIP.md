@@ -7,7 +7,8 @@
 - **T023**: ✅ DONE — Coverage 76.5% → 86.0%, 14 new tests + nil-guard fix, committed as 3ba92c2
 - **T024**: ✅ DONE — 14 contextManager.js integration tests, committed as 3873afd
 - **T025**: ✅ DONE — 54 new bt tests (76.8%→91.3%), fixed 2 flaky TOCTOU tests, Rule of Two passed
+- **T026**: ✅ DONE — ~40 new pabt tests (78.5%→93.6%), coverage_gaps_test.go, committed as 45bf8cd
+- **T027**: ✅ DONE — ~60 new bubbletea tests (75.8%→91.2%), 3 bug fixes, fixed pre-existing data race
 - **Blueprint**: REWRITTEN — 71 tasks (T021-T091), exhaustive, flat, no estimates, no priorities
-- **Session**: Started 2026-02-15 01:29:37, ends 10:29:37 (9 hours)
-- **Next**: T026 — Coverage audit: internal/builtin/pabt
+- **Next**: T028 — Coverage audit: internal/builtin/fetch
 - **Approach**: Execute tasks sequentially, verify via Rule of Two, commit, continue

@@ -928,7 +928,7 @@ func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 
 	case "setWindowTitle":
 		titleVal := obj.Get("title")
-		if goja.IsUndefined(titleVal) || goja.IsNull(titleVal) {
+		if titleVal == nil || goja.IsUndefined(titleVal) || goja.IsNull(titleVal) {
 			return nil
 		}
 		return tea.SetWindowTitle(titleVal.String())
@@ -1254,7 +1254,12 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				return createError(ErrCodeInvalidArgs, "newModel requires a config object")
 			}
 
-			config := call.Argument(0).ToObject(runtime)
+			configArg := call.Argument(0)
+			if configArg == nil || goja.IsUndefined(configArg) || goja.IsNull(configArg) {
+				return createError(ErrCodeInvalidArgs, "config must be an object")
+			}
+
+			config := configArg.ToObject(runtime)
 			if config == nil {
 				return createError(ErrCodeInvalidArgs, "config must be an object")
 			}
@@ -1364,7 +1369,11 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				return createError(ErrCodeInvalidArgs, "run requires a model")
 			}
 
-			modelWrapper := call.Argument(0).ToObject(runtime)
+			argVal := call.Argument(0)
+			if goja.IsUndefined(argVal) || goja.IsNull(argVal) {
+				return createError(ErrCodeInvalidModel, "model must be an object")
+			}
+			modelWrapper := argVal.ToObject(runtime)
 			if modelWrapper == nil {
 				return createError(ErrCodeInvalidModel, "model must be an object")
 			}

@@ -1719,3 +1719,627 @@ func TestContextManagerHotSnippetsEmpty(t *testing.T) {
 		t.Errorf("expected 'No hot-snippets configured' message, got %q", outputs[0])
 	}
 }
+
+func TestContextManagerListCommand(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; },
+			fileExists: (path) => path !== 'deleted.txt'
+		});
+
+		items.push({id: 1, type: 'file', label: 'main.go', payload: ''});
+		items.push({id: 2, type: 'note', label: 'important', payload: 'text'});
+		items.push({id: 3, type: 'file', label: 'deleted.txt', payload: ''});
+		items.push({id: 4, type: 'lazy-diff', label: 'git diff HEAD', payload: ['HEAD']});
+
+		ctxmgr.commands.list.handler();
+		globalThis.__outputCalls = outputCalls;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	outputCalls := runtime.Get("__outputCalls").Export()
+	outputs, ok := outputCalls.([]interface{})
+	if !ok {
+		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
+	}
+	if len(outputs) != 4 {
+		t.Fatalf("expected 4 output lines, got %d: %v", len(outputs), outputs)
+	}
+	if !strings.Contains(outputs[0].(string), "[1]") || !strings.Contains(outputs[0].(string), "[file]") || !strings.Contains(outputs[0].(string), "main.go") {
+		t.Errorf("unexpected line 1: %q", outputs[0])
+	}
+	if strings.Contains(outputs[0].(string), "(missing)") {
+		t.Errorf("main.go should not be marked missing: %q", outputs[0])
+	}
+	if !strings.Contains(outputs[2].(string), "deleted.txt") || !strings.Contains(outputs[2].(string), "(missing)") {
+		t.Errorf("expected deleted.txt to be marked (missing): %q", outputs[2])
+	}
+}
+
+func TestContextManagerListEmpty(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		const ctxmgr = contextManager({
+			getItems: () => [],
+			setItems: () => {}
+		});
+		ctxmgr.commands.list.handler();
+		globalThis.__outputCalls = outputCalls;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	outputs := runtime.Get("__outputCalls").Export()
+	outputsSlice, ok := outputs.([]interface{})
+	if !ok {
+		t.Fatalf("expected slice, got %T", outputs)
+	}
+	if len(outputsSlice) != 0 {
+		t.Errorf("expected no output for empty list, got %d: %v", len(outputsSlice), outputsSlice)
+	}
+}
+
+func TestContextManagerEditEdgeCases(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; },
+			openEditor: (title, initial) => 'edited: ' + initial,
+			formatArgv: (argv) => argv.join(" "),
+			parseArgv: (str) => str.split(" ").filter(s => s !== "")
+		});
+
+		items.push({id: 1, type: 'file', label: 'main.go', payload: ''});
+		items.push({id: 2, type: 'note', label: 'note', payload: 'original text'});
+		items.push({id: 3, type: 'lazy-diff', label: 'git diff HEAD', payload: ['HEAD']});
+
+		// Test: no args
+		ctxmgr.commands.edit.handler([]);
+		globalThis.__noArgsOutput = outputCalls.slice();
+		outputCalls.length = 0;
+
+		// Test: invalid id
+		ctxmgr.commands.edit.handler(["abc"]);
+		globalThis.__invalidIdOutput = outputCalls.slice();
+		outputCalls.length = 0;
+
+		// Test: not found
+		ctxmgr.commands.edit.handler(["999"]);
+		globalThis.__notFoundOutput = outputCalls.slice();
+		outputCalls.length = 0;
+
+		// Test: edit file (not supported)
+		ctxmgr.commands.edit.handler(["1"]);
+		globalThis.__fileEditOutput = outputCalls.slice();
+		outputCalls.length = 0;
+
+		// Test: edit note
+		ctxmgr.commands.edit.handler(["2"]);
+		globalThis.__noteEditOutput = outputCalls.slice();
+		globalThis.__notePayloadAfter = items[1].payload;
+		outputCalls.length = 0;
+
+		// Test: edit lazy-diff
+		ctxmgr.commands.edit.handler(["3"]);
+		globalThis.__diffEditOutput = outputCalls.slice();
+		globalThis.__diffPayloadAfter = items[2].payload;
+		globalThis.__diffLabelAfter = items[2].label;
+		outputCalls.length = 0;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	noArgs := runtime.Get("__noArgsOutput").Export().([]interface{})
+	if len(noArgs) != 1 || !strings.Contains(noArgs[0].(string), "Usage: edit") {
+		t.Errorf("expected usage message for no args, got %v", noArgs)
+	}
+	invalidId := runtime.Get("__invalidIdOutput").Export().([]interface{})
+	if len(invalidId) != 1 || !strings.Contains(invalidId[0].(string), "Invalid id") {
+		t.Errorf("expected invalid id message, got %v", invalidId)
+	}
+	notFound := runtime.Get("__notFoundOutput").Export().([]interface{})
+	if len(notFound) != 1 || !strings.Contains(notFound[0].(string), "Not found") {
+		t.Errorf("expected not found message, got %v", notFound)
+	}
+	fileEdit := runtime.Get("__fileEditOutput").Export().([]interface{})
+	if len(fileEdit) != 1 || !strings.Contains(fileEdit[0].(string), "not supported") {
+		t.Errorf("expected 'not supported' message for file edit, got %v", fileEdit)
+	}
+	noteEdit := runtime.Get("__noteEditOutput").Export().([]interface{})
+	if len(noteEdit) != 1 || !strings.Contains(noteEdit[0].(string), "Edited [2]") {
+		t.Errorf("expected 'Edited [2]' message, got %v", noteEdit)
+	}
+	if got := runtime.Get("__notePayloadAfter").String(); got != "edited: original text" {
+		t.Errorf("expected edited payload, got %q", got)
+	}
+	diffEdit := runtime.Get("__diffEditOutput").Export().([]interface{})
+	if len(diffEdit) != 1 || !strings.Contains(diffEdit[0].(string), "Updated diff specification") {
+		t.Errorf("expected 'Updated diff specification' message, got %v", diffEdit)
+	}
+	if got := runtime.Get("__diffLabelAfter").String(); !strings.Contains(got, "git diff") {
+		t.Errorf("expected updated label to contain 'git diff', got %q", got)
+	}
+	diffPayload := runtime.Get("__diffPayloadAfter").Export()
+	if diffSlice, ok := diffPayload.([]interface{}); !ok || len(diffSlice) == 0 {
+		t.Errorf("expected non-empty diff payload after edit, got %v (%T)", diffPayload, diffPayload)
+	}
+}
+
+func TestContextManagerEditExecEmptyCommand(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; },
+			openEditor: (title, initial) => '',
+			formatArgv: (argv) => argv.join(" "),
+			parseArgv: (str) => str.split(" ").filter(s => s !== "")
+		});
+
+		items.push({id: 1, type: 'lazy-exec', label: 'ls', payload: ['ls']});
+
+		ctxmgr.commands.edit.handler(["1"]);
+		globalThis.__outputCalls = outputCalls;
+		globalThis.__payloadAfter = items[0].payload;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	outputs := runtime.Get("__outputCalls").Export().([]interface{})
+	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "Command cannot be empty") {
+		t.Errorf("expected 'Command cannot be empty' message, got %v", outputs)
+	}
+	payload := runtime.Get("__payloadAfter").Export().([]interface{})
+	if len(payload) != 1 || payload[0].(string) != "ls" {
+		t.Errorf("expected payload unchanged ['ls'], got %v", payload)
+	}
+}
+
+func TestContextManagerRemoveEdgeCases(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		globalThis.context = {
+			addPath: () => null,
+			removePath: (path) => { return { message: 'permission denied: ' + path }; },
+			toTxtar: () => ''
+		};
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; }
+		});
+
+		// Test: no args
+		ctxmgr.commands.remove.handler([]);
+		globalThis.__noArgsOutput = outputCalls.slice();
+		outputCalls.length = 0;
+
+		// Test: not found (no items)
+		ctxmgr.commands.remove.handler(["1"]);
+		globalThis.__notFoundOutput = outputCalls.slice();
+		outputCalls.length = 0;
+
+		// Test: generic removal error (not "path not found")
+		items.push({id: 1, type: 'file', label: 'protected.txt', payload: ''});
+		ctxmgr.commands.remove.handler(["1"]);
+		globalThis.__errorOutput = outputCalls.slice();
+		globalThis.__itemsAfterError = items.length;
+		outputCalls.length = 0;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	noArgs := runtime.Get("__noArgsOutput").Export().([]interface{})
+	if len(noArgs) != 1 || !strings.Contains(noArgs[0].(string), "Usage: remove") {
+		t.Errorf("expected usage message, got %v", noArgs)
+	}
+	notFound := runtime.Get("__notFoundOutput").Export().([]interface{})
+	if len(notFound) != 1 || !strings.Contains(notFound[0].(string), "Not found") {
+		t.Errorf("expected not found message, got %v", notFound)
+	}
+	errOutput := runtime.Get("__errorOutput").Export().([]interface{})
+	if len(errOutput) != 1 || !strings.Contains(errOutput[0].(string), "Error:") {
+		t.Errorf("expected error message, got %v", errOutput)
+	}
+	if got := runtime.Get("__itemsAfterError").ToInteger(); got != 1 {
+		t.Errorf("expected item NOT removed after generic error, got %d items", got)
+	}
+}
+
+func TestContextManagerRemoveThrowPath(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		globalThis.context = {
+			addPath: () => null,
+			removePath: (path) => { throw new Error('path not found: ' + path); },
+			toTxtar: () => ''
+		};
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; }
+		});
+
+		items.push({id: 1, type: 'file', label: 'gone.txt', payload: ''});
+		ctxmgr.commands.remove.handler(["1"]);
+		globalThis.__outputCalls = outputCalls;
+		globalThis.__itemsLen = items.length;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	outputs := runtime.Get("__outputCalls").Export().([]interface{})
+	hasInfo := false
+	hasRemoved := false
+	for _, o := range outputs {
+		s := o.(string)
+		if strings.Contains(s, "Info:") && strings.Contains(s, "not present") {
+			hasInfo = true
+		}
+		if strings.Contains(s, "Removed [1]") {
+			hasRemoved = true
+		}
+	}
+	if !hasInfo {
+		t.Errorf("expected info message about missing path, got %v", outputs)
+	}
+	if !hasRemoved {
+		t.Errorf("expected 'Removed [1]' message, got %v", outputs)
+	}
+	if got := runtime.Get("__itemsLen").ToInteger(); got != 0 {
+		t.Errorf("expected item removed, got %d items", got)
+	}
+}
+
+func TestContextManagerRemoveThrowGenericError(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		globalThis.context = {
+			addPath: () => null,
+			removePath: (path) => { throw new Error('disk full'); },
+			toTxtar: () => ''
+		};
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; }
+		});
+
+		items.push({id: 1, type: 'file', label: 'data.bin', payload: ''});
+		ctxmgr.commands.remove.handler(["1"]);
+		globalThis.__outputCalls = outputCalls;
+		globalThis.__itemsLen = items.length;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	outputs := runtime.Get("__outputCalls").Export().([]interface{})
+	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "Error:") {
+		t.Errorf("expected error message for generic throw, got %v", outputs)
+	}
+	if got := runtime.Get("__itemsLen").ToInteger(); got != 1 {
+		t.Errorf("expected item NOT removed for generic error, got %d items", got)
+	}
+}
+
+func TestContextManagerCopyClipboardError(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		const ctxmgr = contextManager({
+			getItems: () => [],
+			setItems: () => {},
+			buildPrompt: () => 'test prompt',
+			clipboardCopy: (text) => { throw new Error('clipboard unavailable'); }
+		});
+
+		ctxmgr.commands.copy.handler();
+		globalThis.__outputCalls = outputCalls;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	outputs := runtime.Get("__outputCalls").Export().([]interface{})
+	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "Clipboard error") {
+		t.Errorf("expected clipboard error message, got %v", outputs)
+	}
+}
+
+func TestContextManagerHotSnippetClipboardError(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		const ctxmgr = contextManager({
+			getItems: () => [],
+			setItems: () => {},
+			clipboardCopy: (text) => { throw new Error('denied'); },
+			hotSnippets: [
+				{ name: "test-snippet", text: "snippet text" }
+			]
+		});
+
+		ctxmgr.commands['test-snippet'].handler();
+		globalThis.__outputCalls = outputCalls;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	outputs := runtime.Get("__outputCalls").Export().([]interface{})
+	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "Clipboard error") {
+		t.Errorf("expected clipboard error message, got %v", outputs)
+	}
+}
+
+func TestContextManagerAddNoArgsEditor(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const addPathCalls = [];
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+		globalThis.context = {
+			addPath: (path) => { addPathCalls.push(path); return null; },
+			removePath: () => null,
+			toTxtar: () => ''
+		};
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; },
+			openEditor: (title, initial) => "src/main.go\n# comment line\n  src/util.go  \n\n"
+		});
+
+		ctxmgr.commands.add.handler([]);
+		globalThis.__addPathCalls = addPathCalls;
+		globalThis.__items = items;
+		globalThis.__outputCalls = outputCalls;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	addPathCalls := runtime.Get("__addPathCalls").Export().([]interface{})
+	if len(addPathCalls) != 2 {
+		t.Fatalf("expected 2 addPath calls (comments and blanks filtered), got %d: %v", len(addPathCalls), addPathCalls)
+	}
+	if addPathCalls[0].(string) != "src/main.go" {
+		t.Errorf("expected first path 'src/main.go', got %q", addPathCalls[0])
+	}
+	if addPathCalls[1].(string) != "src/util.go" {
+		t.Errorf("expected second path 'src/util.go', got %q", addPathCalls[1])
+	}
+}
+
+func TestContextManagerAddErrorInRegularPath(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+		globalThis.context = {
+			addPath: (path) => { throw new Error('cannot open: ' + path); },
+			removePath: () => null,
+			toTxtar: () => ''
+		};
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; }
+		});
+
+		ctxmgr.commands.add.handler(["nonexistent.txt"]);
+		globalThis.__outputCalls = outputCalls;
+		globalThis.__itemsLen = items.length;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	outputs := runtime.Get("__outputCalls").Export().([]interface{})
+	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "add error") {
+		t.Errorf("expected add error message, got %v", outputs)
+	}
+	if got := runtime.Get("__itemsLen").ToInteger(); got != 0 {
+		t.Errorf("expected 0 items after failure, got %d", got)
+	}
+}
+
+func TestContextManagerRefreshWithoutContextGlobal(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		let clipboardContent = '';
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		delete globalThis.context;
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; },
+			buildPrompt: () => 'prompt without context',
+			clipboardCopy: (text) => { clipboardContent = text; }
+		});
+
+		items.push({id: 1, type: 'file', label: 'test.txt', payload: ''});
+
+		ctxmgr.commands.copy.handler();
+		globalThis.__clipboardContent = clipboardContent;
+		globalThis.__outputCalls = outputCalls;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	if got := runtime.Get("__clipboardContent").String(); got != "prompt without context" {
+		t.Errorf("expected clipboard content, got %q", got)
+	}
+	outputs := runtime.Get("__outputCalls").Export().([]interface{})
+	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "Prompt copied to clipboard") {
+		t.Errorf("expected copy success message, got %v", outputs)
+	}
+}
+
+func TestContextManagerNoteViaEditor(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; },
+			openEditor: (title, initial) => 'editor note content'
+		});
+
+		ctxmgr.commands.note.handler([]);
+		globalThis.__outputCalls = outputCalls;
+		globalThis.__items = items;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	items := runtime.Get("__items").Export().([]interface{})
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	item := items[0].(map[string]interface{})
+	if item["payload"].(string) != "editor note content" {
+		t.Errorf("expected 'editor note content', got %q", item["payload"])
+	}
+}
+
+func TestContextManagerRemoveNonFileItem(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; }
+		});
+
+		items.push({id: 1, type: 'note', label: 'note', payload: 'text'});
+		items.push({id: 2, type: 'lazy-diff', label: 'diff', payload: ['HEAD']});
+
+		ctxmgr.commands.remove.handler(["1"]);
+		globalThis.__itemsAfterNote = items.length;
+
+		ctxmgr.commands.remove.handler(["2"]);
+		globalThis.__itemsAfterDiff = items.length;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	if got := runtime.Get("__itemsAfterNote").ToInteger(); got != 1 {
+		t.Errorf("expected 1 item after removing note, got %d", got)
+	}
+	if got := runtime.Get("__itemsAfterDiff").ToInteger(); got != 0 {
+		t.Errorf("expected 0 items after removing diff, got %d", got)
+	}
+}

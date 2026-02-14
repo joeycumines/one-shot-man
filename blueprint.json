@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T013 COMPLETE. T013 committed as e9e2099: feat(config): add [hot-snippets] config section with contextManager integration. 13 files changed, 452 insertions(+), 9 deletions(-). Rule of Two passed. Next: T014 (Implement Anthropic prompt library goals Tier 1)."
+    "currentState": "T001-T014 COMPLETE. T014 committed as cec53d8: feat(goal): add Tier 1 built-in goals from Anthropic prompt library. 4 files changed, 513 insertions(+), 1 deletion(-). Rule of Two passed. Next: T015 (Git sync: implement push/pull operations)."
   },
   "sequentialTasks": [
     {
@@ -114,8 +114,8 @@
     },
     {
       "task": "T014: Implement Anthropic prompt library goals (Tier 1)",
-      "description": "Per docs/archive/notes/anthropic-prompt-library-evaluation.md, implement 4 Tier 1 built-in goals: bug-buster, code-optimizer, code-explainer, meeting-notes. Follow the existing goal_builtin.go pattern. Each goal needs: a system prompt adapted from Anthropic's library, custom commands if appropriate, contextManager integration, and tests. Add the goals to the goal registry in goal_builtin.go. Add unit tests verifying each goal loads, its commands work, and prompt generation produces expected output.",
-      "status": "Not Started"
+      "description": "Committed as cec53d8: Added 4 Tier 1 built-in goals from Anthropic prompt library: bug-buster (code-quality), code-optimizer (code-quality), code-explainer (code-understanding with depth command), meeting-notes (productivity). Added missing help command to implementation-plan goal. Updated context header test and completion test for new goals. 6 new test functions. 4 files changed, 513 insertions(+), 1 deletion(-).",
+      "status": "Done"
     },
     {
       "task": "T015: Git sync: implement push/pull operations",

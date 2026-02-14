@@ -14,17 +14,10 @@
 - **T011**: ✅ DONE (commit d50e796) — Rule of Two PASSED
 - **T012**: ✅ DONE (commit d825887) — Rule of Two PASSED
 - **T013**: ✅ DONE (commit e9e2099) — Rule of Two PASSED
-- **T014**: 🔄 NEXT — Implement Anthropic prompt library goals (Tier 1)
+- **T014**: ✅ DONE (commit cec53d8) — Rule of Two PASSED
+- **T015**: 🔄 NEXT — Git sync: implement push/pull operations
 
-## T014 Plan
-Per docs/archive/notes/anthropic-prompt-library-evaluation.md, implement 4 Tier 1 built-in goals:
-1. bug-buster
-2. code-optimizer
-3. code-explainer
-4. meeting-notes
-
-Follow existing goal_builtin.go pattern. Each needs:
-- System prompt adapted from Anthropic's library
-- Custom commands if appropriate
-- contextManager integration
-- Tests
+## T015 Plan
+Per docs/archive/notes/git-sync-design.md, implement git push/pull operations for sync command.
+Currently only local save/list implemented (internal/command/sync.go).
+Add: init, push, pull operations with conflict detection.

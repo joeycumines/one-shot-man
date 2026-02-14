@@ -1464,7 +1464,7 @@ func TestIsInternalShortHex(t *testing.T) {
 
 		// False: wrong length
 		{"too short", "abcdef0123456789a", false}, // 17 chars
-		{"too long", "abcdef012345678", false},     // 15 chars
+		{"too long", "abcdef012345678", false},    // 15 chars
 		{"empty", "", false},
 		{"single char", "a", false},
 

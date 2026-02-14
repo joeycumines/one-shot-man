@@ -19,6 +19,7 @@ import (
 	execmod "github.com/joeycumines/one-shot-man/internal/builtin/exec"
 	fetchmod "github.com/joeycumines/one-shot-man/internal/builtin/fetch"
 	flagmod "github.com/joeycumines/one-shot-man/internal/builtin/flag"
+	grpcmod "github.com/joeycumines/one-shot-man/internal/builtin/grpc"
 	lipglossmod "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
 	"github.com/joeycumines/one-shot-man/internal/builtin/nextintegerid"
 	osmod "github.com/joeycumines/one-shot-man/internal/builtin/os"
@@ -98,6 +99,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require)
 	registry.RegisterNativeModule(prefix+"flag", flagmod.Require)
+	registry.RegisterNativeModule(prefix+"grpc", grpcmod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, tuiSink))
 	registry.RegisterNativeModule(prefix+"time", timemod.Require)
 	registry.RegisterNativeModule(prefix+"ctxutil", ctxutils.Require(ctx))

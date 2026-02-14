@@ -31,7 +31,7 @@ func (f *testFakeTerm) IsTerminal() bool                        { return true }
 
 func TestRequire_ExportsCorrectAPI(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
+	manager := NewManagerWithTerminal(ctx, nil, nil, nil, nil)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -55,7 +55,7 @@ func TestRequire_ExportsCorrectAPI(t *testing.T) {
 
 func TestInteractiveTable_RequiresConfig(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
+	manager := NewManagerWithTerminal(ctx, nil, nil, nil, nil)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -77,7 +77,7 @@ func TestInteractiveTable_RequiresConfig(t *testing.T) {
 
 func TestInteractiveTable_HandlesNullConfig(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
+	manager := NewManagerWithTerminal(ctx, nil, nil, nil, nil)
 
 	vm := goja.New()
 	module := vm.NewObject()
@@ -168,7 +168,7 @@ func TestGetStringProp_HandlesDefaults(t *testing.T) {
 }
 
 func TestManager_Creation(t *testing.T) {
-	manager := NewManager(t.Context(), nil, nil, nil, nil)
+	manager := NewManagerWithTerminal(t.Context(), nil, nil, nil, nil)
 	assert.NotNil(t, manager)
 	assert.True(t, t.Context() == manager.ctx)
 	assert.True(t, manager.screen == nil)
@@ -208,7 +208,7 @@ func TestTableConfig_Structure(t *testing.T) {
 
 func TestRequire_Integration(t *testing.T) {
 	ctx := context.Background()
-	manager := NewManager(ctx, nil, nil, nil, nil)
+	manager := NewManagerWithTerminal(ctx, nil, nil, nil, nil)
 
 	vm := goja.New()
 
@@ -242,7 +242,7 @@ func TestInteractiveTable_ValidConfig_NoActualDisplay(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(simScreen.Fini)
 
-	manager := NewManager(ctx, simScreen, nil, nil, nil)
+	manager := NewManagerWithTerminal(ctx, simScreen, nil, nil, nil)
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -358,7 +358,7 @@ func TestInteractiveTable_WithoutOnSelect(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(simScreen.Fini)
 
-	manager := NewManager(ctx, simScreen, nil, nil, nil)
+	manager := NewManagerWithTerminal(ctx, simScreen, nil, nil, nil)
 
 	var wg sync.WaitGroup
 	wg.Add(1)

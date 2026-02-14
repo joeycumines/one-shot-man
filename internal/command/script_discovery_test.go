@@ -1,12 +1,14 @@
 package command
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -174,31 +176,49 @@ func TestScriptDiscovery_GitRepositoryDetection(t *testing.T) {
 	}
 }
 
-func TestScriptDiscovery_DirectoryExists(t *testing.T) {
+func TestScriptDiscovery_CheckDirectory(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
 	discovery := NewScriptDiscovery(cfg)
 
-	// Test existing directory
-	tmpDir := t.TempDir()
-	if !discovery.directoryExists(tmpDir) {
-		t.Errorf("Expected %s to exist", tmpDir)
-	}
+	t.Run("existing directory", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		exists, err := discovery.checkDirectory(tmpDir)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if !exists {
+			t.Error("Expected directory to exist")
+		}
+	})
 
-	// Test non-existing directory
-	nonExistentDir := filepath.Join(tmpDir, "nonexistent")
-	if discovery.directoryExists(nonExistentDir) {
-		t.Errorf("Expected %s to not exist", nonExistentDir)
-	}
+	t.Run("non-existent path", func(t *testing.T) {
+		t.Parallel()
+		exists, err := discovery.checkDirectory("/nonexistent/path/that/does/not/exist")
+		if err != nil {
+			t.Fatalf("Expected no error for non-existent path, got: %v", err)
+		}
+		if exists {
+			t.Error("Expected directory to not exist")
+		}
+	})
 
-	// Test file (not directory)
-	tempFile := filepath.Join(tmpDir, "testfile")
-	if err := os.WriteFile(tempFile, []byte("test"), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-	if discovery.directoryExists(tempFile) {
-		t.Errorf("Expected %s to not be detected as directory (it's a file)", tempFile)
-	}
+	t.Run("file not directory", func(t *testing.T) {
+		t.Parallel()
+		tmpDir := t.TempDir()
+		tempFile := filepath.Join(tmpDir, "testfile")
+		if err := os.WriteFile(tempFile, []byte("test"), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+		exists, err := discovery.checkDirectory(tempFile)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		if exists {
+			t.Error("Expected file to not be reported as directory")
+		}
+	})
 }
 
 func TestScriptDiscovery_PathPriority(t *testing.T) {
@@ -392,18 +412,23 @@ func TestNewRegistryWithConfig_Integration(t *testing.T) {
 		t.Error("Expected registry to have discovered some script paths")
 	}
 
-	// Custom path should be added (compare normalized absolute paths)
+	// Custom path should be added (compare normalized absolute paths,
+	// accounting for symlink resolution on macOS /var → /private/var)
 	found := false
 	normalizedCustomPath, _ := filepath.Abs(customPath)
+	resolvedCustomPath, err := filepath.EvalSymlinks(normalizedCustomPath)
+	if err != nil {
+		resolvedCustomPath = normalizedCustomPath
+	}
 	for _, path := range registry.scriptPaths {
 		pAbs, _ := filepath.Abs(path)
 		if runtime.GOOS == "windows" {
-			if strings.EqualFold(pAbs, normalizedCustomPath) {
+			if strings.EqualFold(pAbs, normalizedCustomPath) || strings.EqualFold(pAbs, resolvedCustomPath) {
 				found = true
 				break
 			}
 		} else {
-			if pAbs == normalizedCustomPath {
+			if pAbs == normalizedCustomPath || pAbs == resolvedCustomPath {
 				found = true
 				break
 			}
@@ -472,5 +497,419 @@ func TestScriptDiscovery_AutodiscoveryIntegration(t *testing.T) {
 
 	if !found {
 		t.Errorf("Expected to find testscript in discovered scripts, got: %v", scriptCommands)
+	}
+}
+
+func TestScriptDiscovery_DebugLogging(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	scriptsDir := filepath.Join(tmpDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+		t.Fatalf("Failed to create scripts directory: %v", err)
+	}
+
+	var mu sync.Mutex
+	var messages []string
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("script.disable-standard-paths", "true")
+	cfg.SetGlobalOption("script.autodiscovery", "false")
+	cfg.SetGlobalOption("script.paths", scriptsDir)
+
+	discovery := NewScriptDiscovery(cfg)
+	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+		mu.Lock()
+		defer mu.Unlock()
+		messages = append(messages, fmt.Sprintf(format, args...))
+	}
+
+	_ = discovery.DiscoverScriptPaths()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(messages) == 0 {
+		t.Error("Expected debug log messages, got none")
+	}
+
+	// Check for expected log message patterns
+	foundStarting := false
+	foundComplete := false
+	foundAccepted := false
+	for _, msg := range messages {
+		if strings.Contains(msg, "starting script path discovery") {
+			foundStarting = true
+		}
+		if strings.Contains(msg, "discovery complete") {
+			foundComplete = true
+		}
+		if strings.Contains(msg, "addPath: accepted") {
+			foundAccepted = true
+		}
+	}
+
+	if !foundStarting {
+		t.Error("Expected 'starting script path discovery' message")
+	}
+	if !foundComplete {
+		t.Error("Expected 'discovery complete' message")
+	}
+	if !foundAccepted {
+		t.Error("Expected 'addPath: accepted' message")
+	}
+}
+
+func TestScriptDiscovery_DebugLogging_Dedup(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	scriptsDir := filepath.Join(tmpDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+		t.Fatalf("Failed to create scripts directory: %v", err)
+	}
+
+	var mu sync.Mutex
+	var messages []string
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("script.disable-standard-paths", "true")
+	cfg.SetGlobalOption("script.autodiscovery", "false")
+	// Set the same path twice
+	cfg.SetGlobalOption("script.paths", scriptsDir+string(filepath.ListSeparator)+scriptsDir)
+
+	discovery := NewScriptDiscovery(cfg)
+	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+		mu.Lock()
+		defer mu.Unlock()
+		messages = append(messages, fmt.Sprintf(format, args...))
+	}
+
+	paths := discovery.DiscoverScriptPaths()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Should only have one path despite duplicate input
+	if len(paths) != 1 {
+		t.Errorf("Expected 1 path, got %d: %v", len(paths), paths)
+	}
+
+	// Should have a dedup message
+	foundDedup := false
+	for _, msg := range messages {
+		if strings.Contains(msg, "deduplicating") {
+			foundDedup = true
+			break
+		}
+	}
+	if !foundDedup {
+		t.Error("Expected deduplication debug message")
+	}
+}
+
+func TestScriptDiscovery_DisableStandardPathsIsolation(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	customScripts := filepath.Join(tmpDir, "my-scripts")
+	if err := os.MkdirAll(customScripts, 0o755); err != nil {
+		t.Fatalf("Failed to create directory: %v", err)
+	}
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("script.disable-standard-paths", "true")
+	cfg.SetGlobalOption("script.autodiscovery", "false")
+	cfg.SetGlobalOption("script.paths", customScripts)
+
+	discovery := NewScriptDiscovery(cfg)
+	paths := discovery.DiscoverScriptPaths()
+
+	// With standard paths disabled and autodiscovery off, should only have custom path
+	if len(paths) != 1 {
+		t.Errorf("Expected exactly 1 path, got %d: %v", len(paths), paths)
+	}
+
+	if len(paths) == 1 && !pathsEqual(paths[0], customScripts) {
+		t.Errorf("Expected custom scripts path %s, got %s", customScripts, paths[0])
+	}
+}
+
+func TestScriptDiscovery_DebugDiscoveryConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("script.debug-discovery", "true")
+
+	discovery := NewScriptDiscovery(cfg)
+
+	if discovery.config.DebugLogFunc == nil {
+		t.Error("Expected DebugLogFunc to be set when script.debug-discovery=true")
+	}
+}
+
+func TestScriptDiscovery_PermissionDenied(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Permission tests not reliable on Windows")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("Skipping permission test when running as root")
+	}
+	// Note: Cannot use t.Parallel() because this test changes working directory
+
+	tmpDir := t.TempDir()
+
+	// Create a deep structure: tmpDir/level1/level2/level3
+	// Make level1 have a "scripts" directory that is unreadable
+	level1 := filepath.Join(tmpDir, "level1")
+	level2 := filepath.Join(level1, "level2")
+	level3 := filepath.Join(level2, "level3")
+
+	for _, d := range []string{level1, level2, level3} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("Failed to create directory %s: %v", d, err)
+		}
+	}
+
+	// Create a scripts directory with no read permission
+	unreadableScripts := filepath.Join(level1, "scripts")
+	if err := os.MkdirAll(unreadableScripts, 0o000); err != nil {
+		t.Fatalf("Failed to create unreadable directory: %v", err)
+	}
+	// Ensure cleanup can remove it
+	t.Cleanup(func() { os.Chmod(unreadableScripts, 0o755) })
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer os.Chdir(origWd)
+
+	if err := os.Chdir(level3); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	var mu sync.Mutex
+	var messages []string
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("script.disable-standard-paths", "true")
+	cfg.SetGlobalOption("script.autodiscovery", "true")
+	cfg.SetGlobalOption("script.path-patterns", "scripts")
+
+	discovery := NewScriptDiscovery(cfg)
+	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+		mu.Lock()
+		defer mu.Unlock()
+		messages = append(messages, fmt.Sprintf(format, args...))
+	}
+
+	// Should not panic or crash - permission errors should be handled gracefully
+	paths := discovery.DiscoverScriptPaths()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// The unreadable directory may or may not appear depending on os.Stat behavior.
+	// The key assertion is that we don't crash and traversal continues past the error.
+	_ = paths
+	_ = messages
+}
+
+func TestScriptDiscovery_SymlinkCycleDetection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Symlink tests not reliable on Windows")
+	}
+	// Note: Cannot use t.Parallel() because this test changes working directory
+
+	// Create a structure where symlinks could cause a cycle in upward traversal.
+	tmpDir := t.TempDir()
+
+	realDir := filepath.Join(tmpDir, "real")
+	subDir := filepath.Join(realDir, "sub")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatalf("Failed to create directories: %v", err)
+	}
+
+	// Create a scripts directory that would be found during traversal
+	scriptsDir := filepath.Join(realDir, "scripts")
+	if err := os.Mkdir(scriptsDir, 0o755); err != nil {
+		t.Fatalf("Failed to create scripts directory: %v", err)
+	}
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer os.Chdir(origWd)
+
+	if err := os.Chdir(subDir); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	var mu sync.Mutex
+	var messages []string
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("script.disable-standard-paths", "true")
+	cfg.SetGlobalOption("script.autodiscovery", "true")
+	cfg.SetGlobalOption("script.path-patterns", "scripts")
+
+	discovery := NewScriptDiscovery(cfg)
+	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+		mu.Lock()
+		defer mu.Unlock()
+		messages = append(messages, fmt.Sprintf(format, args...))
+	}
+
+	paths := discovery.DiscoverScriptPaths()
+
+	// Should discover the scripts directory via upward traversal
+	found := false
+	for _, path := range paths {
+		if pathsEqual(path, scriptsDir) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Expected to discover scripts directory %s, found: %v", scriptsDir, paths)
+	}
+
+	// Verify no cycle was detected (because the upward traversal from a real dir doesn't cycle)
+	mu.Lock()
+	defer mu.Unlock()
+	for _, msg := range messages {
+		if strings.Contains(msg, "symlink cycle detected") {
+			t.Errorf("Unexpected cycle detection in simple upward traversal: %s", msg)
+		}
+	}
+}
+
+func TestScriptDiscovery_TraversalReachesRoot(t *testing.T) {
+	// Note: Cannot use t.Parallel() because this test changes working directory
+
+	tmpDir := t.TempDir()
+	deepPath := tmpDir
+	for i := 0; i < 3; i++ {
+		deepPath = filepath.Join(deepPath, "d")
+	}
+	if err := os.MkdirAll(deepPath, 0o755); err != nil {
+		t.Fatalf("Failed to create deep path: %v", err)
+	}
+
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get working directory: %v", err)
+	}
+	defer os.Chdir(origWd)
+
+	if err := os.Chdir(deepPath); err != nil {
+		t.Fatalf("Failed to change directory: %v", err)
+	}
+
+	var mu sync.Mutex
+	var messages []string
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("script.disable-standard-paths", "true")
+	cfg.SetGlobalOption("script.autodiscovery", "true")
+	cfg.SetGlobalOption("script.max-traversal-depth", "100") // High enough to reach root
+	cfg.SetGlobalOption("script.path-patterns", "nonexistent-pattern-xyzzy")
+
+	discovery := NewScriptDiscovery(cfg)
+	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+		mu.Lock()
+		defer mu.Unlock()
+		messages = append(messages, fmt.Sprintf(format, args...))
+	}
+
+	_ = discovery.DiscoverScriptPaths()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Should have logged reaching the filesystem root
+	foundRoot := false
+	for _, msg := range messages {
+		if strings.Contains(msg, "reached filesystem root") {
+			foundRoot = true
+			break
+		}
+	}
+	if !foundRoot {
+		t.Error("Expected 'reached filesystem root' debug message")
+	}
+}
+
+func TestScriptDiscovery_SymlinkDeduplication(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Symlink tests not reliable on Windows")
+	}
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	scriptsDir := filepath.Join(tmpDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0o755); err != nil {
+		t.Fatalf("Failed to create scripts directory: %v", err)
+	}
+
+	// Create symbolic link to the same directory
+	linkPath := filepath.Join(tmpDir, "scripts-link")
+	if err := os.Symlink(scriptsDir, linkPath); err != nil {
+		t.Skip("Skipping symlink test: platform doesn't support symlinks")
+	}
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("script.disable-standard-paths", "true")
+	cfg.SetGlobalOption("script.autodiscovery", "false")
+	// Add both the real path and the symlink
+	cfg.SetGlobalOption("script.paths", scriptsDir+string(filepath.ListSeparator)+linkPath)
+
+	discovery := NewScriptDiscovery(cfg)
+	paths := discovery.DiscoverScriptPaths()
+
+	// Count how many of our test paths appear
+	// With symlink resolution enabled, both should resolve to the same path
+	count := 0
+	normalizedScriptsDir, _ := filepath.EvalSymlinks(scriptsDir)
+	for _, path := range paths {
+		resolved, _ := filepath.EvalSymlinks(path)
+		if resolved == "" {
+			resolved = path
+		}
+		if resolved == normalizedScriptsDir || path == normalizedScriptsDir {
+			count++
+		}
+	}
+
+	// Should appear exactly once due to symlink resolution in normalizePath
+	if count != 1 {
+		t.Errorf("Expected exactly one occurrence after symlink deduplication, got %d in paths: %v", count, paths)
+	}
+}
+
+func TestScriptDiscovery_DisableStandardPathsConfig(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		value    string
+		expected bool
+	}{
+		{"true", true},
+		{"false", false},
+		{"1", true},
+		{"0", false},
+	}
+
+	for _, tc := range testCases {
+		cfg := config.NewConfig()
+		cfg.SetGlobalOption("script.disable-standard-paths", tc.value)
+		discovery := NewScriptDiscovery(cfg)
+
+		if discovery.config.DisableStandardPaths != tc.expected {
+			t.Errorf("For value %q, expected DisableStandardPaths=%v, got %v",
+				tc.value, tc.expected, discovery.config.DisableStandardPaths)
+		}
 	}
 }

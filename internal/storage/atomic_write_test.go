@@ -2,6 +2,7 @@ package storage
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -168,4 +169,76 @@ func TestAtomicWriteFile(t *testing.T) {
 			t.Errorf("File content mismatch: got %q, want %q", string(readData), string(data))
 		}
 	})
+
+	t.Run("crash hook is invoked before rename", func(t *testing.T) {
+		tempDir := t.TempDir()
+		filename := filepath.Join(tempDir, "hook-test.txt")
+
+		hookCalled := false
+		SetTestHookCrashBeforeRename(func() {
+			hookCalled = true
+		})
+		defer SetTestHookCrashBeforeRename(nil)
+
+		err := AtomicWriteFile(filename, []byte("hooked"), 0644)
+		if err != nil {
+			t.Fatalf("AtomicWriteFile with hook failed: %v", err)
+		}
+		if !hookCalled {
+			t.Fatal("expected crash hook to be called")
+		}
+
+		// File should still be written successfully.
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			t.Fatalf("ReadFile failed: %v", err)
+		}
+		if string(data) != "hooked" {
+			t.Errorf("file content = %q, want %q", string(data), "hooked")
+		}
+	})
+}
+
+func TestRenameError_Methods(t *testing.T) {
+	inner := fmt.Errorf("some rename error")
+	re := RenameError{Err: inner, tempPath: "/tmp/foo"}
+
+	if got := re.Error(); got != "some rename error" {
+		t.Errorf("Error() = %q, want %q", got, "some rename error")
+	}
+	if got := re.TempPath(); got != "/tmp/foo" {
+		t.Errorf("TempPath() = %q, want %q", got, "/tmp/foo")
+	}
+	if got := re.Unwrap(); got != inner {
+		t.Errorf("Unwrap() returned %v, want %v", got, inner)
+	}
+
+	// Verify errors.Is works through Unwrap.
+	sentinel := fmt.Errorf("sentinel")
+	re2 := RenameError{Err: fmt.Errorf("wrapped: %w", sentinel), tempPath: "/tmp/bar"}
+	if !errors.Is(re2, sentinel) {
+		t.Error("expected errors.Is to find sentinel through Unwrap chain")
+	}
+}
+
+func TestSetTestHookCrashBeforeRename(t *testing.T) {
+	// Ensure we start clean.
+	SetTestHookCrashBeforeRename(nil)
+
+	// Set hook and verify it fires.
+	called := false
+	SetTestHookCrashBeforeRename(func() { called = true })
+	if testHookCrashBeforeRename == nil {
+		t.Fatal("expected hook to be set")
+	}
+	testHookCrashBeforeRename()
+	if !called {
+		t.Fatal("expected hook to be called")
+	}
+
+	// Clear and verify nil.
+	SetTestHookCrashBeforeRename(nil)
+	if testHookCrashBeforeRename != nil {
+		t.Fatal("expected hook to be nil after clearing")
+	}
 }

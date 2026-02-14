@@ -5,6 +5,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // Verify that flush writes messages verbatim as queued and that PrintToTUI provides newlines
@@ -14,7 +16,7 @@ func TestFlushQueuedOutput_WithSinkAndWriter_Newlines(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &out, &out)
 
 	// Create a manager instance that writes to our buffer (not stdout)
-	tm := NewTUIManagerWithConfig(context.Background(), eng, nil, &out, "", "")
+	tm := NewTUIManagerWithConfig(context.Background(), eng, nil, &out, testutil.NewTestSessionID("test-flush", t.Name()), "memory")
 
 	// Manually set a sink that appends to queue like Run() would do
 	tm.engine.logger.SetTUISink(func(msg string) {

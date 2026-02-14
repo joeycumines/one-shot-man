@@ -101,11 +101,28 @@ The `lint` target runs:
 - `betteralign` - Struct field alignment optimization
 - `deadcode` - Detects unused code (with optional ignore patterns)
 
+**Never add ignores to `.deadcodeignore`**. This defeats the entire purpose of the checker. This project is a CLI, not a library—all implementations MUST be wired up in `main.go` or their respective registries. Ignoring dead code just lets it accumulate. If `deadcode` fails, wire up the code or delete it—don't hide the problem. See `make help` for available check targets.
+
 ### Error Handling
 
 - Consistent error handling across all commands with proper exit codes
 - No swallowing errors or "best effort" approaches
 - All commands must handle platform differences (Unix vs Windows)
+
+### Internal API Discipline
+
+When modifying **internal code**—meaning any code that isn't depended on by external parties (includes all code under `internal/`, unreleased features, experimental code, etc.):
+
+- **No Shims**: Do NOT retain shims, wrappers, or backwards-compatibility stubs "just in case"
+- **One Implementation**: Do NOT accumulate variants of the same function (e.g., `Foo()` and `FooV2()`). Choose ONE and migrate all call sites
+- **Update Everything**: Update ALL test code and ALL call sites - this includes:
+  - Unit tests
+  - Integration tests
+  - All packages that call the function
+  - Any scripts that depend on the behavior
+- **Delete Boldly**: Remove deprecated functions entirely. If they're truly needed later, they can be re-added—but accumulated dead code is worse than temporary re-creation
+
+**Lazy is not acceptable**: Keeping old variants "because tests might break" or "because it's easier" creates technical debt. Fix the tests, fix the call sites, delete the old code.
 
 ### Testing
 
@@ -128,12 +145,3 @@ The `lint` target runs:
 - `docs/scripting.md` - JavaScript scripting guide
 - `docs/reference/command.md` - Command reference
 - `docs/reference/goal.md` - Goal system reference
-
-## Existing Rules
-
-The project has specific agent rules in `.github/copilot-instructions.md` and `.agent/rules/core-code-quality-checks.md`. Key points:
-
-- Zero tolerance for test failures on any platform
-- Verify everything, including "detours" and side tasks
-- Use structured memory protocol with `blueprint.json` and `WIP.md`
-- Default to implementing changes rather than only suggesting

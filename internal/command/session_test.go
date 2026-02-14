@@ -371,6 +371,46 @@ func TestSessionsPurge_AcceptsDryRunFlag(t *testing.T) {
 	}
 }
 
+// TestSessionsPurge_NoDuplicateLogLines verifies that each purged session
+// produces exactly one output line. Previously cleanup.go used fmt.Printf
+// (writing to OS stdout) while session.go also reported via the writer,
+// causing duplicate entries.
+func TestSessionsPurge_NoDuplicateLogLines(t *testing.T) {
+	dir := t.TempDir()
+	storage.SetTestPaths(dir)
+	defer storage.ResetPaths()
+
+	// Create 3 non-active sessions.
+	ids := []string{"dup-test-a", "dup-test-b", "dup-test-c"}
+	for _, id := range ids {
+		p, _ := storage.SessionFilePath(id)
+		if err := os.WriteFile(p, []byte("{}"), 0644); err != nil {
+			t.Fatalf("write session %s: %v", id, err)
+		}
+	}
+
+	cfg := config.NewConfig()
+	cmd := NewSessionCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"purge", "-y"}, &stdout, &stderr); err != nil {
+		t.Fatalf("purge failed: %v", err)
+	}
+
+	output := stdout.String()
+	for _, id := range ids {
+		count := strings.Count(output, id)
+		if count != 1 {
+			t.Errorf("expected session %q to appear exactly once in output, got %d times.\nFull output:\n%s", id, count, output)
+		}
+	}
+
+	// Verify no stray output on stderr (previous fmt.Printf leak).
+	if stderr.Len() != 0 {
+		t.Errorf("expected no stderr output during purge, got: %q", stderr.String())
+	}
+}
+
 func TestSessionsPurge_HelpShowsFlags(t *testing.T) {
 	cfg := config.NewConfig()
 	cmd := NewSessionCommand(cfg)

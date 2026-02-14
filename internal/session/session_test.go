@@ -1446,3 +1446,79 @@ func TestIsTrustedHexNamespace(t *testing.T) {
 		})
 	}
 }
+
+// =============================================================================
+// isInternalShortHex Tests
+// =============================================================================
+
+func TestIsInternalShortHex(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		// True cases: exactly 16 lowercase hex chars
+		{"valid all digits", "0123456789012345", true},
+		{"valid all lowercase hex", "abcdefabcdefabcd", true},
+		{"valid mixed", "a1b2c3d4e5f67890", true},
+
+		// False: wrong length
+		{"too short", "abcdef0123456789a", false}, // 17 chars
+		{"too long", "abcdef012345678", false},    // 15 chars
+		{"empty", "", false},
+		{"single char", "a", false},
+
+		// False: non-hex characters
+		{"uppercase hex", "ABCDEF0123456789", false},
+		{"mixed case", "aBcDeF0123456789", false},
+		{"with g", "abcdefg012345678", false},
+		{"with space", "abcdef 012345678", false},
+		{"with dash", "abcdef-012345678", false},
+		{"with underscore", "abcdef_012345678", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isInternalShortHex(tt.input); got != tt.want {
+				t.Errorf("isInternalShortHex(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// getTmuxSessionID Invalid Format Tests
+// =============================================================================
+
+// TestGetTmuxSessionID_InvalidPaneFormat verifies error for invalid TMUX_PANE values.
+func TestGetTmuxSessionID_InvalidPaneFormat(t *testing.T) {
+	tests := []struct {
+		name string
+		pane string
+	}{
+		{"bare percent", "%"},
+		{"non-numeric pane", "%abc"},
+		{"pane with spaces", "% 1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Clearenv()
+			defer func() {
+				os.Unsetenv("TMUX_PANE")
+				os.Unsetenv("TMUX")
+			}()
+
+			os.Setenv("TMUX_PANE", tt.pane)
+			os.Setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
+
+			_, err := getTmuxSessionID()
+			if err == nil {
+				t.Errorf("expected error for TMUX_PANE=%q, got nil", tt.pane)
+			}
+			if err != nil && !strings.Contains(err.Error(), "invalid TMUX_PANE format") {
+				t.Errorf("expected 'invalid TMUX_PANE format' error, got: %v", err)
+			}
+		})
+	}
+}

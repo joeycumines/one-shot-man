@@ -2,8 +2,11 @@ package builtin
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
 
+	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 	"github.com/dop251/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/builtin/argv"
@@ -14,6 +17,9 @@ import (
 	bubblezonemod "github.com/joeycumines/one-shot-man/internal/builtin/bubblezone"
 	ctxutils "github.com/joeycumines/one-shot-man/internal/builtin/ctxutil"
 	execmod "github.com/joeycumines/one-shot-man/internal/builtin/exec"
+	fetchmod "github.com/joeycumines/one-shot-man/internal/builtin/fetch"
+	flagmod "github.com/joeycumines/one-shot-man/internal/builtin/flag"
+	grpcmod "github.com/joeycumines/one-shot-man/internal/builtin/grpc"
 	lipglossmod "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
 	"github.com/joeycumines/one-shot-man/internal/builtin/nextintegerid"
 	osmod "github.com/joeycumines/one-shot-man/internal/builtin/os"
@@ -21,7 +27,7 @@ import (
 	templatemod "github.com/joeycumines/one-shot-man/internal/builtin/template"
 	scrollbarmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/scrollbar"
 	timemod "github.com/joeycumines/one-shot-man/internal/builtin/time"
-	tviewmod "github.com/joeycumines/one-shot-man/internal/builtin/tview"
+	tviewmod "github.com/joeycumines/one-shot-man/internal/builtin/tview" //lint:ignore SA1019 wiring deprecated module until removal
 	unicodetextmod "github.com/joeycumines/one-shot-man/internal/builtin/unicodetext"
 )
 
@@ -91,6 +97,9 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"argv", argv.Require)
 	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.Require)
 	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx))
+	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require)
+	registry.RegisterNativeModule(prefix+"flag", flagmod.Require)
+	registry.RegisterNativeModule(prefix+"grpc", grpcmod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, tuiSink))
 	registry.RegisterNativeModule(prefix+"time", timemod.Require)
 	registry.RegisterNativeModule(prefix+"ctxutil", ctxutils.Require(ctx))
@@ -98,10 +107,16 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"unicodetext", unicodetextmod.Require(ctx))
 
 	// Register tview module if provider is available
+	// Deprecated: osm:tview is deprecated in favor of osm:bubbletea.
+	// A deprecation warning is emitted to stderr when the module is loaded.
 	if tviewProvider != nil {
 		tviewMgr := tviewProvider.GetTViewManager()
 		if tviewMgr != nil {
-			registry.RegisterNativeModule(prefix+"tview", tviewmod.Require(ctx, tviewMgr))
+			tviewRequire := tviewmod.Require(ctx, tviewMgr) //lint:ignore SA1019 wiring deprecated module until removal
+			registry.RegisterNativeModule(prefix+"tview", func(runtime *goja.Runtime, module *goja.Object) {
+				fmt.Fprintln(os.Stderr, "osm: warning: osm:tview is deprecated and will be removed in a future release; use osm:bubbletea instead")
+				tviewRequire(runtime, module)
+			})
 		}
 	}
 

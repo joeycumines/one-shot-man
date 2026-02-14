@@ -96,6 +96,48 @@ func TestGoalCommand_ListGoals(t *testing.T) {
 	}
 }
 
+func TestGoalCommand_ListGoals_CustomCommandSummary(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	goalRegistry := newTestGoalRegistryForGoal()
+	cmd := NewGoalCommand(cfg, goalRegistry)
+	var stdout, stderr bytes.Buffer
+	cmd.list = true
+	cmd.store = "memory"
+	cmd.session = t.Name()
+
+	err := cmd.Execute([]string{}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	output := stdout.String()
+
+	// Goals with custom commands should show [cmds: ...] suffix
+	expectedSuffixes := map[string]string{
+		"doc-generator":       "[cmds: type]",
+		"test-generator":      "[cmds: type, framework]",
+		"morale-improver":     "[cmds: set-original, set-plan, set-failures]",
+		"implementation-plan": "[cmds: goal]",
+	}
+	for goalName, suffix := range expectedSuffixes {
+		if !strings.Contains(output, suffix) {
+			t.Errorf("Expected output to contain %q for goal %q, got:\n%s", suffix, goalName, output)
+		}
+	}
+
+	// Goals without custom commands should NOT have [cmds: ...]
+	goalsWithoutCustom := []string{"comment-stripper", "commit-message"}
+	lines := strings.Split(output, "\n")
+	for _, goalName := range goalsWithoutCustom {
+		for _, line := range lines {
+			if strings.Contains(line, goalName) && strings.Contains(line, "[cmds:") {
+				t.Errorf("Goal %q should NOT have [cmds: ...] suffix, but found: %s", goalName, line)
+			}
+		}
+	}
+}
+
 func TestGoalCommand_ListGoalsByCategory(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
@@ -355,6 +397,10 @@ func TestGoalCommand_GoToJSPipeline_ContextHeader(t *testing.T) {
 		"comment-stripper":    "CODE TO ANALYZE",
 		"morale-improver":     "CONTEXT",
 		"implementation-plan": "CONTEXT & REQUIREMENTS",
+		"bug-buster":          "CODE TO ANALYZE",
+		"code-optimizer":      "CODE TO OPTIMIZE",
+		"code-explainer":      "CODE TO EXPLAIN",
+		"meeting-notes":       "MEETING NOTES / TRANSCRIPT",
 	}
 
 	for _, goal := range goals {

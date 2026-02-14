@@ -173,36 +173,6 @@ func (tm *TUIManager) runWriter() {
 	}
 }
 
-// scheduleWrite queues a mutation task to be executed by the writer goroutine.
-// The task runs under tm.mu.Lock(). This method returns immediately without waiting
-// for the task to complete (fire-and-forget semantics).
-//
-// Use this for mutations where the caller does not need to know the result.
-// For mutations that must complete before proceeding, use scheduleWriteAndWait.
-//
-// IMPORTANT: This is the ONLY safe way for JS callbacks to perform mutations.
-// Never acquire tm.mu.Lock() directly from code called by JS.
-//
-// Uses queueMu to prevent the "check-then-send" race condition during shutdown.
-// CRITICAL: We unlock BEFORE the select to prevent deadlock when queue is full.
-func (tm *TUIManager) scheduleWrite(fn func() error) {
-	tm.queueMu.Lock()
-	if tm.writerShutdown.IsSet() {
-		tm.queueMu.Unlock()
-		return
-	}
-	tm.queueMu.Unlock() // Unlock BEFORE select to prevent deadlock
-
-	// We can safely send because writerQueue is never closed.
-	// The select on writerStop handles the race where shutdown happens after unlock.
-	task := writeTask{fn: fn, resultCh: nil}
-	select {
-	case tm.writerQueue <- task:
-	case <-tm.writerStop:
-		// Writer has shut down, drop the task safely
-	}
-}
-
 // scheduleWriteAndWait queues a mutation task and waits for it to complete.
 // The task runs under tm.mu.Lock(). This method blocks until the task finishes.
 //
@@ -473,12 +443,35 @@ func (tm *TUIManager) buildModeCommands(mode *ScriptMode) error {
 			}
 		}
 
+		var flagDefs []FlagDef
+		if fdVal := cmdObj.Get("flagDefs"); fdVal != nil && !goja.IsUndefined(fdVal) {
+			if fdObj := fdVal.ToObject(tm.engine.vm); fdObj != nil {
+				for _, k := range fdObj.Keys() {
+					if v := fdObj.Get(k); v != nil && !goja.IsUndefined(v) {
+						if itemObj := v.ToObject(tm.engine.vm); itemObj != nil {
+							var fd FlagDef
+							if nameVal := itemObj.Get("name"); nameVal != nil && !goja.IsUndefined(nameVal) {
+								fd.Name = nameVal.String()
+							}
+							if descVal := itemObj.Get("description"); descVal != nil && !goja.IsUndefined(descVal) {
+								fd.Description = descVal.String()
+							}
+							if fd.Name != "" {
+								flagDefs = append(flagDefs, fd)
+							}
+						}
+					}
+				}
+			}
+		}
+
 		cmd := Command{
 			Name:          key,
 			Description:   desc,
 			Usage:         usage,
 			IsGoCommand:   false,
 			ArgCompleters: argCompleters,
+			FlagDefs:      flagDefs,
 		}
 
 		if handlerVal := cmdObj.Get("handler"); handlerVal != nil && !goja.IsUndefined(handlerVal) {
@@ -651,18 +644,52 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		return suggestions, istrings.RuneNumber(start), istrings.RuneNumber(end)
 	}
 
+	p := tm.buildGoPrompt(promptBuildConfig{
+		prefixCallback:          func() string { return tm.getPromptString() },
+		colors:                  tm.defaultColors,
+		completer:               completer,
+		initialCommand:          tm.getInitialCommand(),
+		history:                 tm.commandHistory,
+		flushOutput:             true,
+		maxSuggestion:           10,
+		dynamicCompletion:       true,
+		executeHidesCompletions: true,
+		escapeToggle:            true,
+	})
+
+	// Store as active prompt
+	tm.mu.Lock()
+	tm.activePrompt = p
+	tm.mu.Unlock()
+
+	// Run the prompt (this will block until exit).
+	// Use RunNoExit to prevent go-prompt from calling os.Exit on SIGTERM.
+	p.RunNoExit()
+
+	// Clear active prompt when done
+	tm.mu.Lock()
+	tm.activePrompt = nil
+	tm.mu.Unlock()
+}
+
+// buildGoPrompt constructs a go-prompt instance from a promptBuildConfig.
+// This is the shared builder used by both runAdvancedPrompt (registerMode path)
+// and jsCreatePrompt (low-level JS API path) to ensure consistent feature support.
+func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
 	// Create the executor function.
 	// When executor returns false, signal the exit checker to terminate the prompt.
 	// We do NOT call os.Exit here - exit is handled gracefully via ExitChecker.
 	executor := func(line string) {
-		// Drain any pending output before executing the command
-		tm.flushQueuedOutput()
+		if cfg.flushOutput {
+			tm.flushQueuedOutput()
+		}
 		if !tm.executor(line) {
 			// Signal the prompt to exit via ExitChecker mechanism
 			tm.RequestExit()
 		}
-		// Flush any queued output synchronously after executing a line
-		tm.flushQueuedOutput()
+		if cfg.flushOutput {
+			tm.flushQueuedOutput()
+		}
 	}
 
 	// Create the exit checker that allows the prompt to exit when requested.
@@ -671,16 +698,16 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		return tm.IsExitRequested()
 	}
 
-	// Configure prompt options - full configuration for go-prompt
-	colors := tm.defaultColors
+	colors := cfg.colors
+
+	// Configure prompt options
 	options := []prompt.Option{
-		// Use a callback so the prompt prefix is evaluated at render time.
-		// This ensures the prefix reflects any changes made by an `initialCommand`.
-		prompt.WithPrefixCallback(func() string { return tm.getPromptString() }),
-		prompt.WithCompleter(completer),
-		prompt.WithExitChecker(exitChecker), // Allow graceful exit via RequestExit()
+		prompt.WithCompleter(cfg.completer),
+		prompt.WithExitChecker(exitChecker),
 		prompt.WithInputTextColor(colors.InputText),
+		prompt.WithInputBGColor(colors.InputBG),
 		prompt.WithPrefixTextColor(colors.PrefixText),
+		prompt.WithPrefixBackgroundColor(colors.PrefixBG),
 		prompt.WithSuggestionTextColor(colors.SuggestionText),
 		prompt.WithSuggestionBGColor(colors.SuggestionBG),
 		prompt.WithSelectedSuggestionTextColor(colors.SelectedSuggestionText),
@@ -689,16 +716,43 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		prompt.WithDescriptionBGColor(colors.DescriptionBG),
 		prompt.WithSelectedDescriptionTextColor(colors.SelectedDescriptionText),
 		prompt.WithSelectedDescriptionBGColor(colors.SelectedDescriptionBG),
-		prompt.WithMaxSuggestion(10),
-		prompt.WithDynamicCompletion(true),
-		// Enable auto-hiding completions when submitting input
-		prompt.WithExecuteHidesCompletions(true),
-		// Bind Escape key to toggle completion visibility
-		prompt.WithKeyBindings(
+		prompt.WithScrollbarThumbColor(colors.ScrollbarThumb),
+		prompt.WithScrollbarBGColor(colors.ScrollbarBG),
+	}
+
+	// Prefix: prefer callback over static
+	if cfg.prefixCallback != nil {
+		options = append(options, prompt.WithPrefixCallback(cfg.prefixCallback))
+	} else {
+		options = append(options, prompt.WithPrefix(cfg.prefix))
+	}
+
+	// Title (optional - only set when non-empty)
+	if cfg.title != "" {
+		options = append(options, prompt.WithTitle(cfg.title))
+	}
+
+	// MaxSuggestion (0 uses go-prompt default)
+	if cfg.maxSuggestion > 0 {
+		options = append(options, prompt.WithMaxSuggestion(cfg.maxSuggestion))
+	}
+
+	// Dynamic completion
+	if cfg.dynamicCompletion {
+		options = append(options, prompt.WithDynamicCompletion(true))
+	}
+
+	// Auto-hiding completions when submitting input
+	if cfg.executeHidesCompletions {
+		options = append(options, prompt.WithExecuteHidesCompletions(true))
+	}
+
+	// Bind Escape key to toggle completion visibility
+	if cfg.escapeToggle {
+		options = append(options, prompt.WithKeyBindings(
 			prompt.KeyBind{
 				Key: prompt.Escape,
 				Fn: func(p *prompt.Prompt) bool {
-					// Toggle: if hidden, show; if visible, hide
 					if p.Completion().IsHidden() {
 						p.Completion().Show()
 					} else {
@@ -707,14 +761,38 @@ func (tm *TUIManager) runAdvancedPrompt() {
 					return true
 				},
 			},
-		),
+		))
 	}
 
-	if initialCommand := tm.getInitialCommand(); initialCommand != "" {
-		options = append(options, prompt.WithInitialCommand(initialCommand, false))
+	// Initial command (optional)
+	if cfg.initialCommand != "" {
+		options = append(options, prompt.WithInitialCommand(cfg.initialCommand, false))
 	}
 
-	// this enables the sync protocol when built with the `integration` build tag
+	// Initial text pre-fills the input buffer (optional)
+	if cfg.initialText != "" {
+		options = append(options, prompt.WithInitialText(cfg.initialText))
+	}
+
+	// Show completion dropdown immediately on prompt start
+	if cfg.showCompletionAtStart {
+		options = append(options, prompt.WithShowCompletionAtStart())
+	}
+
+	// Allow Down arrow to trigger completion dropdown
+	if cfg.completionOnDown {
+		options = append(options, prompt.WithCompletionOnDown())
+	}
+
+	// Key binding mode (emacs or common)
+	switch strings.ToLower(cfg.keyBindMode) {
+	case "emacs":
+		options = append(options, prompt.WithKeyBindMode(prompt.EmacsKeyBind))
+	case "common":
+		options = append(options, prompt.WithKeyBindMode(prompt.CommonKeyBind))
+	}
+
+	// This enables the sync protocol when built with the `integration` build tag
 	options = append(options, staticGoPromptOptions...)
 
 	// CRITICAL: Inject the shared reader/writer into go-prompt.
@@ -725,9 +803,12 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		prompt.WithWriter(tm.writer),
 	)
 
-	// Add command history from persistent session
-	if len(tm.commandHistory) > 0 {
-		options = append(options, prompt.WithHistory(tm.commandHistory))
+	// Add command history
+	if len(cfg.history) > 0 {
+		options = append(options, prompt.WithHistory(cfg.history))
+	}
+	if cfg.historySize > 0 {
+		options = append(options, prompt.WithHistorySize(cfg.historySize))
 	}
 
 	// Add any registered key bindings
@@ -735,21 +816,7 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		options = append(options, prompt.WithKeyBind(keyBinds...))
 	}
 
-	// Create and run the prompt
-	p := prompt.New(executor, options...)
-
-	// Store as active prompt
-	tm.mu.Lock()
-	tm.activePrompt = p
-	tm.mu.Unlock()
-
-	// Run the prompt (this will block until exit)
-	p.Run()
-
-	// Clear active prompt when done
-	tm.mu.Lock()
-	tm.activePrompt = nil
-	tm.mu.Unlock()
+	return prompt.New(executor, options...)
 }
 
 // flushQueuedOutput writes any buffered output messages to the terminal

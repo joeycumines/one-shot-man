@@ -18,6 +18,7 @@ const stateKeys = {
     template: Symbol("template"),
     metaPrompt: Symbol("metaPrompt"),
     taskPrompt: Symbol("taskPrompt"),
+    footer: Symbol("footer"),
 };
 
 // Create the single state accessor
@@ -31,6 +32,7 @@ const state = tui.createState(COMMAND_NAME, {
     [stateKeys.template]: {defaultValue: null},
     [stateKeys.metaPrompt]: {defaultValue: ""},
     [stateKeys.taskPrompt]: {defaultValue: ""},
+    [stateKeys.footer]: {defaultValue: ""},
 });
 
 // Expose limited state hooks for automated tests (no-op for regular users)
@@ -117,6 +119,14 @@ function buildCommands(state) {
         state.set(stateKeys.taskPrompt, v);
     }
 
+    function getFooter() {
+        return state.get(stateKeys.footer);
+    }
+
+    function setFooter(v) {
+        state.set(stateKeys.footer, v);
+    }
+
     function buildContextTxtar() {
         return buildContext(state.get(shared.contextItems), {toTxtar: () => context.toTxtar()});
     }
@@ -135,11 +145,16 @@ function buildCommands(state) {
         if (p) parts.push(p.trim());
         parts.push("\n---\n## IMPLEMENTATIONS/CONTEXT\n---\n");
         parts.push(buildContextTxtar());
+        const f = getFooter();
+        if (f) {
+            parts.push("\n---\n");
+            parts.push(f.trim());
+        }
         return parts.join("\n");
     }
 
     // Create context manager with the injected state accessor (shared contextItems)
-    const ctxmgr = contextManager({
+    const ctxmgrOpts = {
         getItems: () => state.get(shared.contextItems) || [],
         setItems: (v) => state.set(shared.contextItems, v),
         nextIntegerId: nextIntegerId,
@@ -151,7 +166,12 @@ function buildCommands(state) {
                 return getMetaPrompt();
             }
         }
-    });
+    };
+    // Pass config-defined hot-snippets to contextManager if available.
+    if (typeof CONFIG_HOT_SNIPPETS !== 'undefined' && Array.isArray(CONFIG_HOT_SNIPPETS) && CONFIG_HOT_SNIPPETS.length > 0) {
+        ctxmgrOpts.hotSnippets = CONFIG_HOT_SNIPPETS;
+    }
+    const ctxmgr = contextManager(ctxmgrOpts);
 
     // Export for test access
     addItem = ctxmgr.addItem;
@@ -250,14 +270,11 @@ function buildCommands(state) {
             }
         },
         use: {
-            description: "Set the task prompt (phase: META_GENERATED -> TASK_PROMPT_SET)",
+            description: "Set the task prompt directly (or from LLM-generated output)",
             usage: "use [text...]",
             handler: function (args) {
-                const phase = getPhase();
-                if (phase !== "META_GENERATED" && phase !== "TASK_PROMPT_SET") {
-                    output.print("Please generate the meta-prompt first using 'generate'.");
-                    return;
-                }
+                // Allow 'use' from any phase - enables one-step mode
+                // (no need to go through goal → generate first)
                 let prompt;
                 if (args.length === 0) {
                     // No arguments: open editor to edit/set task prompt
@@ -294,6 +311,8 @@ function buildCommands(state) {
                     const tp = getTaskPrompt();
                     if (tp) output.print("[prompt] " + tp.substring(0, 80) + (tp.length > 80 ? "..." : ""));
                 }
+                const footer = getFooter();
+                if (footer) output.print("[footer] " + footer.substring(0, 80) + (footer.length > 80 ? "..." : ""));
 
                 output.print("");
                 // Delegate to base list command for context items
@@ -479,6 +498,22 @@ function buildCommands(state) {
                 }
             }
         },
+        footer: {
+            description: "Set footer text (appended after context in final output)",
+            usage: "footer [text...]",
+            handler: function (args) {
+                let text = args.join(" ");
+                if (!text) text = ctxmgr.openEditor("footer", getFooter() || "");
+                const trimmed = (text || "").trim();
+                if (!trimmed) {
+                    setFooter("");
+                    output.print("Footer cleared.");
+                    return;
+                }
+                setFooter(trimmed);
+                output.print("Footer set. Will be appended after context in final output.");
+            }
+        },
         // N.B. Gets the description from elsewhere, and runs after the built-in help.
         help: {handler: help}
     };
@@ -507,7 +542,7 @@ ctx.run("register-mode", function () {
 });
 
 function help() {
-    output.print("\nCommands: goal, add, diff, note, list, view, edit, remove, template, generate, use, show [meta|prompt], copy [meta|prompt], help, exit\n"
+    output.print("\nCommands: goal, add, diff, note, list, view, edit, remove, template, generate, use, footer, show [meta|prompt], copy [meta|prompt], help, exit\n"
         + "Tip: Use 'goal --prewritten' to see available pre-written goals\n"
         + "Tip: Use 'view' for an interactive TUI table of context items");
 }

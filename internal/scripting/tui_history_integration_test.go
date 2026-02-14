@@ -228,7 +228,7 @@ func TestNewTUIManager_LoadsHistoryFromSession(t *testing.T) {
 
 		// Create second TUI manager with same session ID - should load history
 		output.Reset()
-		tm2 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "")
+		tm2 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "memory")
 		if tm2 == nil {
 			t.Fatal("second NewTUIManager failed")
 		}
@@ -337,7 +337,7 @@ func TestNewTUIManager_StateManagerIntegration(t *testing.T) {
 
 		// Step 3: Create second TUI manager - should load persisted history
 		output.Reset()
-		tm2 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "")
+		tm2 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "memory")
 		if tm2 == nil {
 			t.Fatal("second NewTUIManager failed")
 		}
@@ -363,7 +363,7 @@ func TestNewTUIManager_StateManagerIntegration(t *testing.T) {
 		// Reload to confirm persistence
 		tm2.Close()
 		output.Reset()
-		tm3 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "")
+		tm3 := NewTUIManagerWithConfig(ctx, engine, io.NopCloser(strings.NewReader("")), &output, testSessionID, "memory")
 		if tm3 == nil {
 			t.Fatal("third NewTUIManager failed")
 		}

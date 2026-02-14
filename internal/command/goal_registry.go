@@ -72,6 +72,7 @@ func (r *DynamicGoalRegistry) Reload() error {
 	// Load goals from each discovered path
 	// Paths are pre-sorted by priority (highest first), so only keep first occurrence
 	for _, path := range paths {
+		// Scan for .json goal files.
 		candidates, err := FindGoalFiles(path)
 		if err != nil {
 			log.Printf("warning: failed to scan goal directory %s: %v", path, err)
@@ -86,6 +87,45 @@ func (r *DynamicGoalRegistry) Reload() error {
 			}
 
 			// Only add if not already present (first path wins = highest priority)
+			if _, exists := r.discoveredGoals[goal.Name]; !exists {
+				r.discoveredGoals[goal.Name] = goal
+			}
+		}
+
+		// Scan for .prompt.md files (VS Code prompt files).
+		promptCandidates, err := FindPromptFiles(path)
+		if err != nil {
+			log.Printf("warning: failed to scan prompt files in %s: %v", path, err)
+			continue
+		}
+		for _, candidate := range promptCandidates {
+			pf, err := LoadPromptFile(candidate.Path)
+			if err != nil {
+				log.Printf("warning: failed to load prompt file %s: %v", candidate.Path, err)
+				continue
+			}
+			goal := PromptFileToGoal(pf)
+			if _, exists := r.discoveredGoals[goal.Name]; !exists {
+				r.discoveredGoals[goal.Name] = goal
+			}
+		}
+	}
+
+	// Also scan dedicated prompt file paths (.github/prompts, configured paths).
+	promptPaths := r.goalDiscovery.DiscoverPromptFilePaths()
+	for _, path := range promptPaths {
+		promptCandidates, err := FindPromptFiles(path)
+		if err != nil {
+			log.Printf("warning: failed to scan prompt files in %s: %v", path, err)
+			continue
+		}
+		for _, candidate := range promptCandidates {
+			pf, err := LoadPromptFile(candidate.Path)
+			if err != nil {
+				log.Printf("warning: failed to load prompt file %s: %v", candidate.Path, err)
+				continue
+			}
+			goal := PromptFileToGoal(pf)
 			if _, exists := r.discoveredGoals[goal.Name]; !exists {
 				r.discoveredGoals[goal.Name] = goal
 			}

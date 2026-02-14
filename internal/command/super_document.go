@@ -21,12 +21,15 @@ var superDocumentScript string
 // SuperDocumentCommand provides the super-document TUI for document merging.
 type SuperDocumentCommand struct {
 	*BaseCommand
-	interactive bool
-	shellMode   bool // Use shell mode instead of visual TUI
-	testMode    bool
-	config      *config.Config
-	session     string
-	store       string
+	interactive   bool
+	shellMode     bool // Use shell mode instead of visual TUI
+	testMode      bool
+	config        *config.Config
+	session       string
+	store         string
+	logLevel      string
+	logPath       string
+	logBufferSize int
 }
 
 // NewSuperDocumentCommand creates a new super-document command.
@@ -49,18 +52,34 @@ func (c *SuperDocumentCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.testMode, "test", false, "Enable test mode with verbose output")
 	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
 	fs.StringVar(&c.store, "store", "", "Storage backend to use: 'fs' (default) or 'memory'")
+	fs.StringVar(&c.logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
+	fs.StringVar(&c.logPath, "log-file", "", "Path to log file (JSON output)")
+	fs.IntVar(&c.logBufferSize, "log-buffer", 1000, "Size of in-memory log buffer")
 }
 
 // Execute runs the super-document command.
 func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	ctx := context.Background()
 
-	// Create scripting engine with explicit session/storage configuration
-	engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.store)
+	// Resolve logging configuration via config + flags.
+	lc, err := resolveLogConfig(c.logPath, c.logLevel, c.logBufferSize, c.config)
+	if err != nil {
+		return err
+	}
+	if lc.logFile != nil {
+		defer lc.logFile.Close()
+	}
+
+	// Create scripting engine with explicit session/storage and logging configuration
+	engine, err := scripting.NewEngineDetailed(ctx, stdout, stderr, c.session, c.store, lc.logFile, lc.bufferSize, lc.level, modulePathOpts(c.config)...)
 	if err != nil {
 		return fmt.Errorf("failed to create scripting engine: %w", err)
 	}
 	defer engine.Close()
+
+	// Start background session cleanup if enabled in config.
+	stopCleanup := maybeStartCleanupScheduler(c.config, c.session)
+	defer stopCleanup()
 
 	if c.testMode {
 		engine.SetTestMode(true)
@@ -115,6 +134,9 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 			}
 		}
 	}
+
+	// Inject config-defined hot-snippets for contextManager.
+	injectConfigHotSnippets(engine, c.config)
 
 	// Inject command name and configuration for state namespacing
 	// The shellMode flag controls whether to start in shell or TUI mode

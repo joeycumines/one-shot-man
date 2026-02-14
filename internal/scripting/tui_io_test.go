@@ -10,6 +10,32 @@ import (
 	"golang.org/x/term"
 )
 
+// newTestTUIReader creates a TUIReader with a pre-configured Reader for testing.
+// This bypasses lazy initialization - the reader is immediately available.
+func newTestTUIReader(r prompt.Reader) *TUIReader {
+	return &TUIReader{
+		reader: r,
+	}
+}
+
+// newTUIWriterStderr creates a TUIWriter that lazily initializes to write to stderr.
+func newTUIWriterStderr() *TUIWriter {
+	return &TUIWriter{
+		initFn: func() prompt.Writer {
+			return prompt.NewStderrWriter()
+		},
+		isStdout: false,
+	}
+}
+
+// newTestTUIWriter creates a TUIWriter with a pre-configured Writer for testing.
+// This bypasses lazy initialization - the writer is immediately available.
+func newTestTUIWriter(w prompt.Writer) *TUIWriter {
+	return &TUIWriter{
+		writer: w,
+	}
+}
+
 // TestTUIWriterFromIO verifies NewTUIWriterFromIO wraps io.Writer correctly.
 func TestTUIWriterFromIO(t *testing.T) {
 	var buf bytes.Buffer
@@ -36,7 +62,7 @@ func TestNewTUIWriter(t *testing.T) {
 
 // TestNewTUIWriterStderr verifies NewTUIWriterStderr creates a lazy stderr writer.
 func TestNewTUIWriterStderr(t *testing.T) {
-	w := NewTUIWriterStderr()
+	w := newTUIWriterStderr()
 	if w == nil {
 		t.Fatal("NewTUIWriterStderr returned nil")
 	}
@@ -90,7 +116,7 @@ func (m *mockPromptWriter) SetDisplayAttributes(fg, bg prompt.Color, attrs ...pr
 // TestNewTestTUIReader verifies the test helper works correctly.
 func TestNewTestTUIReader(t *testing.T) {
 	mock := &mockPromptReader{}
-	r := NewTestTUIReader(mock)
+	r := newTestTUIReader(mock)
 
 	if r.GetReader() != mock {
 		t.Error("Expected GetReader to return the mock reader")
@@ -100,7 +126,7 @@ func TestNewTestTUIReader(t *testing.T) {
 // TestNewTestTUIWriter verifies the test helper works correctly.
 func TestNewTestTUIWriter(t *testing.T) {
 	mock := &mockPromptWriter{}
-	w := NewTestTUIWriter(mock)
+	w := newTestTUIWriter(mock)
 
 	if w.GetWriter() != mock {
 		t.Error("Expected GetWriter to return the mock writer")
@@ -140,7 +166,7 @@ func TestNewTUIReader(t *testing.T) {
 // TestTUIWriterMethods verifies TUIWriter method delegation works.
 func TestTUIWriterMethods(t *testing.T) {
 	mock := &mockPromptWriter{}
-	w := NewTestTUIWriter(mock)
+	w := newTestTUIWriter(mock)
 
 	// Test WriteString
 	_, _ = w.WriteString("world")
@@ -193,7 +219,7 @@ func TestTUIWriterMethods(t *testing.T) {
 // TestTUIReaderMethods verifies TUIReader method delegation works.
 func TestTUIReaderMethods(t *testing.T) {
 	mock := &mockPromptReader{}
-	r := NewTestTUIReader(mock)
+	r := newTestTUIReader(mock)
 
 	// Test GetWinSize
 	ws := r.GetWinSize()

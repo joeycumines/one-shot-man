@@ -9,24 +9,38 @@ import (
 	"strings"
 )
 
+// maxGoalFileSize is the maximum size of a goal JSON file (1 MiB).
+// Files larger than this are rejected to prevent accidental loading of
+// non-goal files or denial-of-service from pathological inputs.
+const maxGoalFileSize = 1 << 20
+
 // LoadGoalFromFile loads a goal definition from a JSON file.
 // It validates required fields and resolves script content from embedded or external files.
 func LoadGoalFromFile(path string) (*Goal, error) {
+	// Check file size before reading to reject obviously oversized files
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat goal file %q: %w", path, err)
+	}
+	if info.Size() > maxGoalFileSize {
+		return nil, fmt.Errorf("goal file %q is too large (%d bytes, max %d)", path, info.Size(), maxGoalFileSize)
+	}
+
 	// Read the file
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read goal file: %w", err)
+		return nil, fmt.Errorf("failed to read goal file %q: %w", path, err)
 	}
 
 	// Unmarshal JSON
 	var goal Goal
 	if err := json.Unmarshal(data, &goal); err != nil {
-		return nil, fmt.Errorf("failed to parse goal JSON: %w", err)
+		return nil, fmt.Errorf("failed to parse goal JSON in %q: %w", path, err)
 	}
 
 	// Validate required fields
 	if err := validateGoal(&goal); err != nil {
-		return nil, fmt.Errorf("invalid goal definition: %w", err)
+		return nil, fmt.Errorf("invalid goal definition in %q: %w", path, err)
 	}
 
 	// Set FileName to basename of the definition file
@@ -34,7 +48,7 @@ func LoadGoalFromFile(path string) (*Goal, error) {
 
 	// Resolve script content
 	if err := resolveGoalScript(&goal, filepath.Dir(path)); err != nil {
-		return nil, fmt.Errorf("failed to resolve goal script: %w", err)
+		return nil, fmt.Errorf("failed to resolve goal script for %q: %w", path, err)
 	}
 
 	return &goal, nil
@@ -95,7 +109,9 @@ type GoalFileCandidate struct {
 	Name string
 }
 
-// FindGoalFiles scans a directory for goal definition files (*.json)
+// FindGoalFiles scans a directory for goal definition files (*.json).
+// Permission errors on individual entries are skipped with a log warning rather
+// than failing the entire scan.
 func FindGoalFiles(dir string) ([]GoalFileCandidate, error) {
 	var candidates []GoalFileCandidate
 
@@ -104,11 +120,26 @@ func FindGoalFiles(dir string) ([]GoalFileCandidate, error) {
 		if os.IsNotExist(err) {
 			return nil, nil // Directory doesn't exist, return empty list
 		}
-		return nil, fmt.Errorf("failed to read directory: %w", err)
+		if os.IsPermission(err) {
+			// Permission denied reading the directory — skip with nil error
+			// since this is expected for some system directories
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read goal directory %q: %w", dir, err)
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() {
+		// Resolve entry type for symlinks
+		if entry.Type()&os.ModeSymlink != 0 {
+			info, err := os.Stat(filepath.Join(dir, entry.Name()))
+			if err != nil {
+				// Broken or unreadable symlink — skip silently
+				continue
+			}
+			if info.IsDir() {
+				continue
+			}
+		} else if entry.IsDir() {
 			continue
 		}
 

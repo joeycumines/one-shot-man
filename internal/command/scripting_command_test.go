@@ -334,3 +334,145 @@ func TestScriptingCommand_LogFile(t *testing.T) {
 		t.Errorf("log file missing attributes: %s", logContent)
 	}
 }
+
+func TestScriptingCommand_Execute_ArgsPassedToScript(t *testing.T) {
+	// NOT parallel: uses os.Chdir
+	cmd := NewScriptingCommand(config.NewConfig())
+	cmd.ctxFactory = testCtxFactory
+	cmd.testMode = true
+	cmd.store = "memory"
+	cmd.session = t.Name()
+
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "check-args.js")
+	if err := os.WriteFile(scriptPath, []byte(`ctx.log(JSON.stringify(args));`), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldwd) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	// Pass script file AND additional arguments
+	if err := cmd.Execute([]string{"check-args.js", "--verbose", "--name", "hello", "extra"}, &stdout, &stderr); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	out := stdout.String()
+	// The args global should contain everything AFTER the script filename
+	if !strings.Contains(out, `["--verbose","--name","hello","extra"]`) {
+		t.Fatalf("expected args to contain script arguments, got %q", out)
+	}
+}
+
+func TestScriptingCommand_Execute_ArgsEmptyForScriptOnly(t *testing.T) {
+	// NOT parallel: uses os.Chdir
+	cmd := NewScriptingCommand(config.NewConfig())
+	cmd.ctxFactory = testCtxFactory
+	cmd.testMode = true
+	cmd.store = "memory"
+	cmd.session = t.Name()
+
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "check-empty.js")
+	if err := os.WriteFile(scriptPath, []byte(`ctx.log("len=" + args.length);`), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldwd) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	// Pass only the script file - no additional args
+	if err := cmd.Execute([]string{"check-empty.js"}, &stdout, &stderr); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "len=0") {
+		t.Fatalf("expected args to be empty, got %q", out)
+	}
+}
+
+func TestScriptingCommand_Execute_ArgsWithInlineScript(t *testing.T) {
+	t.Parallel()
+	cmd := NewScriptingCommand(config.NewConfig())
+	cmd.ctxFactory = testCtxFactory
+	cmd.testMode = true
+	cmd.script = `ctx.log("len=" + args.length);`
+	cmd.store = "memory"
+	cmd.session = t.Name()
+
+	var stdout, stderr bytes.Buffer
+	// Inline script with no positional args - args should be empty
+	if err := cmd.Execute(nil, &stdout, &stderr); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "len=0") {
+		t.Fatalf("expected args to be empty for inline script, got %q", out)
+	}
+}
+
+func TestScriptingCommand_Execute_ArgsWithFlagModule(t *testing.T) {
+	// NOT parallel: uses os.Chdir
+	cmd := NewScriptingCommand(config.NewConfig())
+	cmd.ctxFactory = testCtxFactory
+	cmd.testMode = true
+	cmd.store = "memory"
+	cmd.session = t.Name()
+
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "flag-test.js")
+	scriptContent := `
+		var flag = require('osm:flag');
+		var fs = flag.newFlagSet('test');
+		fs.string('name', 'default', 'a name');
+		fs.bool('verbose', false, 'verbose mode');
+		var result = fs.parse(args);
+		if (result.error !== null) throw new Error('parse failed: ' + result.error);
+		ctx.log('name=' + fs.get('name') + ' verbose=' + fs.get('verbose') + ' remaining=' + fs.nArg());
+	`
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	defer func() { _ = os.Chdir(oldwd) }()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	// Pass script file + flags that the script will parse via osm:flag
+	if err := cmd.Execute([]string{"flag-test.js", "--name", "hello", "--verbose", "extra"}, &stdout, &stderr); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "name=hello") {
+		t.Fatalf("expected name=hello in output, got %q", out)
+	}
+	if !strings.Contains(out, "verbose=true") {
+		t.Fatalf("expected verbose=true in output, got %q", out)
+	}
+	if !strings.Contains(out, "remaining=1") {
+		t.Fatalf("expected remaining=1 in output, got %q", out)
+	}
+}

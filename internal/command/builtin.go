@@ -124,6 +124,10 @@ func NewVersionCommand(version string) *VersionCommand {
 
 // Execute displays version information.
 func (c *VersionCommand) Execute(args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 {
+		_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
+		return fmt.Errorf("unexpected arguments")
+	}
 	_, _ = fmt.Fprintf(stdout, "one-shot-man version %s\n", c.version)
 	return nil
 }
@@ -132,19 +136,27 @@ func (c *VersionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 type ConfigCommand struct {
 	*BaseCommand
 	config     *config.Config
+	configPath string
 	showGlobal bool
 	showAll    bool
 }
 
 // NewConfigCommand creates a new config command.
-func NewConfigCommand(cfg *config.Config) *ConfigCommand {
+// If configPath is empty, persistence to disk is skipped (useful for tests
+// and when the resolved path isn't known at construction time).
+func NewConfigCommand(cfg *config.Config, configPath ...string) *ConfigCommand {
+	var path string
+	if len(configPath) > 0 {
+		path = configPath[0]
+	}
 	return &ConfigCommand{
 		BaseCommand: NewBaseCommand(
 			"config",
 			"Manage configuration settings",
 			"config [options] [key] [value]",
 		),
-		config: cfg,
+		config:     cfg,
+		configPath: path,
 	}
 }
 
@@ -185,15 +197,30 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 			_, _ = fmt.Fprintln(stdout, "  config <key> <value>  - Set configuration value")
 			_, _ = fmt.Fprintln(stdout, "  config --global       - Show global configuration")
 			_, _ = fmt.Fprintln(stdout, "  config --all          - Show all configuration")
+			_, _ = fmt.Fprintln(stdout, "  config validate       - Validate configuration")
+			_, _ = fmt.Fprintln(stdout, "  config schema         - Show configuration schema")
 			return nil
 		}
 	}
 
+	// Handle subcommands.
+	switch args[0] {
+	case "validate":
+		return c.executeValidate(stdout)
+	case "schema":
+		_, _ = fmt.Fprint(stdout, config.DefaultSchema().FormatHelp())
+		return nil
+	}
+
 	if len(args) == 1 {
-		// Get configuration value
+		// Get configuration value (schema-aware: checks env → config → default).
 		key := args[0]
-		if value, exists := c.config.GetGlobalOption(key); exists {
+		value := config.DefaultSchema().Resolve(c.config, key)
+		if value != "" {
 			_, _ = fmt.Fprintf(stdout, "%s: %s\n", key, value)
+		} else if _, exists := c.config.GetGlobalOption(key); exists {
+			// Value exists but is empty string.
+			_, _ = fmt.Fprintf(stdout, "%s: \n", key)
 		} else {
 			_, _ = fmt.Fprintf(stdout, "Configuration key '%s' not found\n", key)
 		}
@@ -204,12 +231,39 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		// Set configuration value
 		key, value := args[0], args[1]
 		c.config.SetGlobalOption(key, value)
+
+		// Persist to disk if a config path is available
+		configPath := c.configPath
+		if configPath == "" {
+			// Best-effort resolve; if it fails, skip disk write
+			configPath, _ = config.GetConfigPath()
+		}
+		if configPath != "" {
+			if err := config.SetKeyInFile(configPath, key, value); err != nil {
+				_, _ = fmt.Fprintf(stderr, "Warning: failed to persist config to disk: %v\n", err)
+			}
+		}
+
 		_, _ = fmt.Fprintf(stdout, "Set configuration: %s = %s\n", key, value)
 		return nil
 	}
 
 	_, _ = fmt.Fprintln(stderr, "Invalid number of arguments")
 	return fmt.Errorf("invalid arguments")
+}
+
+// executeValidate validates the current config against the schema.
+func (c *ConfigCommand) executeValidate(stdout io.Writer) error {
+	issues := config.ValidateConfig(c.config, config.DefaultSchema())
+	if len(issues) == 0 {
+		_, _ = fmt.Fprintln(stdout, "Configuration is valid.")
+		return nil
+	}
+	_, _ = fmt.Fprintf(stdout, "Configuration has %d issue(s):\n", len(issues))
+	for _, issue := range issues {
+		_, _ = fmt.Fprintf(stdout, "  - %s\n", issue)
+	}
+	return nil
 }
 
 // InitCommand initializes the one-shot-man environment.
@@ -236,6 +290,10 @@ func (c *InitCommand) SetupFlags(fs *flag.FlagSet) {
 
 // Execute initializes the environment.
 func (c *InitCommand) Execute(args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 {
+		_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
+		return fmt.Errorf("unexpected arguments")
+	}
 	// Get config path and ensure directory exists
 	configPath, err := config.GetConfigPath()
 	if err != nil {

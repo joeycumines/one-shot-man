@@ -57,6 +57,9 @@ type Goal struct {
 	// Printed in the default banner
 	NotableVariables []string `json:"notableVariables"`
 
+	// Post-copy hint: if set, printed after successful copy
+	PostCopyHint string `json:"postCopyHint,omitempty"`
+
 	// Commands configuration
 	Commands []CommandConfig `json:"commands"`
 }
@@ -82,9 +85,12 @@ type GoalCommand struct {
 	registry    GoalRegistry
 	// testMode prevents launching the interactive TUI during tests while
 	// still executing JS (so onEnter hooks can print to stdout).
-	testMode bool
-	session  string
-	store    string
+	testMode      bool
+	session       string
+	store         string
+	logLevel      string
+	logPath       string
+	logBufferSize int
 }
 
 // NewGoalCommand creates a new goal command
@@ -108,6 +114,9 @@ func (c *GoalCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.run, "r", "", "Run specific goal directly")
 	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
 	fs.StringVar(&c.store, "store", "", "Storage backend to use: 'fs' (default) or 'memory'")
+	fs.StringVar(&c.logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
+	fs.StringVar(&c.logPath, "log-file", "", "Path to log file (JSON output)")
+	fs.IntVar(&c.logBufferSize, "log-buffer", 1000, "Size of in-memory log buffer")
 }
 
 // Execute runs the goal command
@@ -143,15 +152,33 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 
 	// Create a scripting engine to run the goal (allow explicit session/backend)
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.store)
+
+	// Resolve logging configuration via config + flags.
+	lc, err := resolveLogConfig(c.logPath, c.logLevel, c.logBufferSize, c.config)
+	if err != nil {
+		return err
+	}
+	if lc.logFile != nil {
+		defer lc.logFile.Close()
+	}
+
+	// Create scripting engine with explicit session/storage and logging configuration
+	engine, err := scripting.NewEngineDetailed(ctx, stdout, stderr, c.session, c.store, lc.logFile, lc.bufferSize, lc.level, modulePathOpts(c.config)...)
 	if err != nil {
 		return fmt.Errorf("failed to create scripting engine: %w", err)
 	}
 	defer engine.Close()
 
+	// Start background session cleanup if enabled in config.
+	stopCleanup := maybeStartCleanupScheduler(c.config, c.session)
+	defer stopCleanup()
+
 	if c.testMode {
 		engine.SetTestMode(true)
 	}
+
+	// Inject config-defined hot-snippets so goal.js can pass them to contextManager.
+	injectConfigHotSnippets(engine, c.config)
 
 	// Marshal goal configuration to JSON for the JavaScript interpreter
 	goalConfigJSON, err := json.Marshal(selectedGoal)
@@ -249,7 +276,17 @@ func (c *GoalCommand) listGoals(goals []Goal, stdout io.Writer) error {
 	for _, category := range sortedCategories {
 		_, _ = fmt.Fprintf(stdout, "%s:\n", cases.Title(language.Und).String(strings.ToLower(strings.ReplaceAll(category, "-", " "))))
 		for _, goal := range categories[category] {
-			_, _ = fmt.Fprintf(stdout, "  %-20s %s\n", goal.Name, goal.Description)
+			line := fmt.Sprintf("  %-20s %s", goal.Name, goal.Description)
+			var customCmds []string
+			for _, cmd := range goal.Commands {
+				if cmd.Type == "custom" {
+					customCmds = append(customCmds, cmd.Name)
+				}
+			}
+			if len(customCmds) > 0 {
+				line += "  [cmds: " + strings.Join(customCmds, ", ") + "]"
+			}
+			_, _ = fmt.Fprintln(stdout, line)
 		}
 		_, _ = fmt.Fprintf(stdout, "\n")
 	}

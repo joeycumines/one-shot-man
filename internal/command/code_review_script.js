@@ -26,7 +26,7 @@ let parseArgv, formatArgv, items, buildPrompt, commands;
 
 // Build commands with state accessor - called when mode is first used
 function buildCommands(stateArg) {
-    const ctxmgr = contextManager({
+    const ctxmgrOpts = {
         getItems: () => stateArg.get(shared.contextItems) || [],
         setItems: (v) => stateArg.set(shared.contextItems, v),
         nextIntegerId: nextIntegerId,
@@ -36,7 +36,12 @@ function buildCommands(stateArg) {
                 contextTxtar: fullContext
             });
         }
-    });
+    };
+    // Pass config-defined hot-snippets to contextManager if available.
+    if (typeof CONFIG_HOT_SNIPPETS !== 'undefined' && Array.isArray(CONFIG_HOT_SNIPPETS) && CONFIG_HOT_SNIPPETS.length > 0) {
+        ctxmgrOpts.hotSnippets = CONFIG_HOT_SNIPPETS;
+    }
+    const ctxmgr = contextManager(ctxmgrOpts);
 
     // Export for test access as both module-level and global variables
     parseArgv = ctxmgr.parseArgv;
@@ -94,6 +99,67 @@ function buildCommands(stateArg) {
         show: {
             ...ctxmgr.commands.show,
             description: "Show the code review prompt"
+        },
+        'review-chunks': {
+            description: "Split large diffs into LLM-sized chunks and copy",
+            usage: "review-chunks [N]",
+            handler: function (args) {
+                // Build the full prompt text and extract diff sections.
+                var text = buildPrompt();
+                var chunks = splitDiff(text, defaultMaxDiffLines);
+
+                if (!chunks || chunks.length <= 1) {
+                    output.print("Prompt fits in a single chunk (" +
+                        text.split('\n').length + " lines). Use 'copy' instead.");
+                    return;
+                }
+
+                // No argument: show chunk summary.
+                if (!args || args.length === 0) {
+                    output.print("Prompt splits into " + chunks.length + " chunks:");
+                    for (var i = 0; i < chunks.length; i++) {
+                        output.print("  Chunk " + (chunks[i].index + 1) + "/" +
+                            chunks[i].total + ": " +
+                            chunks[i].files.join(", ") +
+                            " (" + chunks[i].lines + " lines)");
+                    }
+                    output.print("");
+                    output.print("Usage: review-chunks <N>  — copy chunk N to clipboard");
+                    return;
+                }
+
+                // Copy a specific chunk.
+                var chunkNum = parseInt(args[0], 10);
+                if (isNaN(chunkNum) || chunkNum < 1 || chunkNum > chunks.length) {
+                    output.print("Invalid chunk number. Valid range: 1-" + chunks.length);
+                    return;
+                }
+
+                var chunk = chunks[chunkNum - 1];
+
+                // Re-use the review template with only this chunk's diff as context.
+                var chunkContext = "## Code Review — Chunk " + (chunk.index + 1) +
+                    "/" + chunk.total + "\n" +
+                    "Files: " + chunk.files.join(", ") + "\n\n" +
+                    "```diff\n" + chunk.content + "\n```";
+                var chunkPrompt = template.execute(codeReviewTemplate, {
+                    contextTxtar: chunkContext
+                });
+
+                try {
+                    ctxmgr.clipboardCopy(chunkPrompt);
+                    output.print("Chunk " + chunkNum + "/" + chunks.length +
+                        " copied to clipboard (" + chunk.lines + " lines, files: " +
+                        chunk.files.join(", ") + ").");
+                    if (chunkNum < chunks.length) {
+                        output.print("Next: review-chunks " + (chunkNum + 1));
+                    } else {
+                        output.print("All chunks copied.");
+                    }
+                } catch (e) {
+                    output.print("Clipboard error: " + (e && e.message ? e.message : e));
+                }
+            }
         },
     };
 

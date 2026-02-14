@@ -1040,3 +1040,304 @@ weirdoption value`
 		}
 	})
 }
+
+// TestLoadFromReader_TypeValidation verifies that LoadFromReader produces type
+// mismatch warnings (not just unknown-option warnings) via the post-parse
+// ValidateConfig integration.
+func TestLoadFromReader_TypeValidation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("InvalidBool", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader("verbose notabool"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !cfg.HasWarnings() {
+			t.Fatal("expected type warning for invalid bool")
+		}
+		found := false
+		for _, w := range cfg.GetWarnings() {
+			if strings.Contains(w, "expected bool") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected 'expected bool' warning, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("InvalidInt", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader("script.max-traversal-depth abc"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !cfg.HasWarnings() {
+			t.Fatal("expected type warning for invalid int")
+		}
+		found := false
+		for _, w := range cfg.GetWarnings() {
+			if strings.Contains(w, "expected int") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected 'expected int' warning, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("InvalidDuration", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader("timeout notaduration"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !cfg.HasWarnings() {
+			t.Fatal("expected type warning for invalid duration")
+		}
+		found := false
+		for _, w := range cfg.GetWarnings() {
+			if strings.Contains(w, "expected duration") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected 'expected duration' warning, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("ValidTypes", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader("verbose true\nscript.max-traversal-depth 5\ntimeout 30s"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.HasWarnings() {
+			t.Errorf("expected no warnings for valid types, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("MixedUnknownAndTypeMismatch", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader("unknownkey hello\nverbose maybe"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		warnings := cfg.GetWarnings()
+		if len(warnings) < 2 {
+			t.Fatalf("expected at least 2 warnings (unknown + type), got %d: %v", len(warnings), warnings)
+		}
+		warningText := strings.Join(warnings, " ")
+		if !strings.Contains(warningText, "unknown") {
+			t.Error("expected unknown option warning")
+		}
+		if !strings.Contains(warningText, "expected bool") {
+			t.Error("expected type mismatch warning")
+		}
+	})
+}
+
+func TestHotSnippetConfigParsing(t *testing.T) {
+	t.Run("BasicSnippet", func(t *testing.T) {
+		input := "[hot-snippets]\nfollowup Continue with the same context."
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(cfg.HotSnippets))
+		}
+		s := cfg.HotSnippets[0]
+		if s.Name != "followup" {
+			t.Errorf("name = %q, want %q", s.Name, "followup")
+		}
+		if s.Text != "Continue with the same context." {
+			t.Errorf("text = %q, want %q", s.Text, "Continue with the same context.")
+		}
+		if s.Description != "" {
+			t.Errorf("description = %q, want empty", s.Description)
+		}
+	})
+
+	t.Run("SnippetWithDescription", func(t *testing.T) {
+		input := "[hot-snippets]\nfollowup Continue with the same context.\nfollowup.description Follow-up prompt"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(cfg.HotSnippets))
+		}
+		s := cfg.HotSnippets[0]
+		if s.Name != "followup" {
+			t.Errorf("name = %q, want %q", s.Name, "followup")
+		}
+		if s.Text != "Continue with the same context." {
+			t.Errorf("text = %q, want %q", s.Text, "Continue with the same context.")
+		}
+		if s.Description != "Follow-up prompt" {
+			t.Errorf("description = %q, want %q", s.Description, "Follow-up prompt")
+		}
+	})
+
+	t.Run("MultipleSnippets", func(t *testing.T) {
+		input := "[hot-snippets]\nfollowup Continue with the same context.\nkickoff You are an expert software engineer.\nkickoff.description Kickoff prompt"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 2 {
+			t.Fatalf("expected 2 snippets, got %d", len(cfg.HotSnippets))
+		}
+		if cfg.HotSnippets[0].Name != "followup" {
+			t.Errorf("snippet 0 name = %q, want %q", cfg.HotSnippets[0].Name, "followup")
+		}
+		if cfg.HotSnippets[1].Name != "kickoff" {
+			t.Errorf("snippet 1 name = %q, want %q", cfg.HotSnippets[1].Name, "kickoff")
+		}
+		if cfg.HotSnippets[1].Description != "Kickoff prompt" {
+			t.Errorf("snippet 1 description = %q, want %q", cfg.HotSnippets[1].Description, "Kickoff prompt")
+		}
+	})
+
+	t.Run("EscapedNewlines", func(t *testing.T) {
+		input := "[hot-snippets]\nmultiline First line\\nSecond line\\nThird line"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(cfg.HotSnippets))
+		}
+		want := "First line\nSecond line\nThird line"
+		if cfg.HotSnippets[0].Text != want {
+			t.Errorf("text = %q, want %q", cfg.HotSnippets[0].Text, want)
+		}
+	})
+
+	t.Run("EmptySection", func(t *testing.T) {
+		input := "[hot-snippets]\n\n[prompt-flow]\ntemplate default"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 0 {
+			t.Errorf("expected 0 snippets, got %d", len(cfg.HotSnippets))
+		}
+	})
+
+	t.Run("DescriptionWithoutSnippet", func(t *testing.T) {
+		input := "[hot-snippets]\nnonexistent.description This should fail"
+		_, err := LoadFromReader(strings.NewReader(input))
+		if err == nil {
+			t.Fatal("expected error for description targeting nonexistent snippet")
+		}
+		if !strings.Contains(err.Error(), "not found") {
+			t.Errorf("error = %q, want to contain 'not found'", err.Error())
+		}
+	})
+
+	t.Run("SnippetNameOnly", func(t *testing.T) {
+		// A snippet with a name but no text
+		input := "[hot-snippets]\nemptytext"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(cfg.HotSnippets))
+		}
+		if cfg.HotSnippets[0].Text != "" {
+			t.Errorf("text = %q, want empty", cfg.HotSnippets[0].Text)
+		}
+	})
+
+	t.Run("MixedWithOtherSections", func(t *testing.T) {
+		input := "verbose true\n\n[hot-snippets]\nsnip1 hello world\n\n[sessions]\nmaxAgeDays 30\n\n[prompt-flow]\ntemplate default"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(cfg.HotSnippets))
+		}
+		if cfg.HotSnippets[0].Name != "snip1" {
+			t.Errorf("name = %q, want %q", cfg.HotSnippets[0].Name, "snip1")
+		}
+		if cfg.HotSnippets[0].Text != "hello world" {
+			t.Errorf("text = %q, want %q", cfg.HotSnippets[0].Text, "hello world")
+		}
+		// Verify other sections still work
+		if cfg.Sessions.MaxAgeDays != 30 {
+			t.Errorf("maxAgeDays = %d, want 30", cfg.Sessions.MaxAgeDays)
+		}
+		if cfg.GetString("verbose") != "true" {
+			t.Errorf("verbose = %q, want %q", cfg.GetString("verbose"), "true")
+		}
+	})
+
+	t.Run("SnippetsNotInCommands", func(t *testing.T) {
+		// Verify [hot-snippets] section is NOT stored in Commands map
+		input := "[hot-snippets]\nsnip1 text"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, exists := cfg.Commands["hot-snippets"]; exists {
+			t.Error("hot-snippets should not appear in Commands map")
+		}
+	})
+
+	t.Run("NewConfigInitializesHotSnippets", func(t *testing.T) {
+		cfg := NewConfig()
+		if cfg.HotSnippets == nil {
+			t.Error("HotSnippets should be initialized, not nil")
+		}
+		if len(cfg.HotSnippets) != 0 {
+			t.Errorf("expected empty HotSnippets, got %d", len(cfg.HotSnippets))
+		}
+	})
+
+	t.Run("DuplicateSnippetNames", func(t *testing.T) {
+		// Duplicate names are allowed — both are added (contextManager handles dedup if needed)
+		input := "[hot-snippets]\ndup First text\ndup Second text"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 2 {
+			t.Fatalf("expected 2 snippets, got %d", len(cfg.HotSnippets))
+		}
+		if cfg.HotSnippets[0].Text != "First text" {
+			t.Errorf("snippet 0 text = %q, want %q", cfg.HotSnippets[0].Text, "First text")
+		}
+		if cfg.HotSnippets[1].Text != "Second text" {
+			t.Errorf("snippet 1 text = %q, want %q", cfg.HotSnippets[1].Text, "Second text")
+		}
+	})
+
+	t.Run("DescriptionAppliesToLastMatch", func(t *testing.T) {
+		// When there are duplicates, .description applies to the last one with that name
+		input := "[hot-snippets]\ndup First\ndup Second\ndup.description Applies to second"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.HotSnippets[0].Description != "" {
+			t.Errorf("first dup should have no description, got %q", cfg.HotSnippets[0].Description)
+		}
+		if cfg.HotSnippets[1].Description != "Applies to second" {
+			t.Errorf("second dup description = %q, want %q", cfg.HotSnippets[1].Description, "Applies to second")
+		}
+	})
+
+	t.Run("CommentsInHotSnippetsSection", func(t *testing.T) {
+		input := "[hot-snippets]\n# This is a comment\nsnip1 text\n# Another comment"
+		cfg, err := LoadFromReader(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(cfg.HotSnippets) != 1 {
+			t.Fatalf("expected 1 snippet, got %d", len(cfg.HotSnippets))
+		}
+	})
+}

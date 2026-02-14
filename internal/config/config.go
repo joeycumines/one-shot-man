@@ -18,6 +18,10 @@ type Config struct {
 	Commands map[string]map[string]string
 	// Sessions configuration controls automatic session cleanup and retention.
 	Sessions SessionConfig
+	// HotSnippets are user-configured text snippets that can be copied to
+	// clipboard from interactive modes. Parsed from the [hot-snippets]
+	// config section.
+	HotSnippets []HotSnippet
 	// Warnings contains any warnings generated during config loading
 	Warnings []string
 }
@@ -34,8 +38,17 @@ func NewConfig() *Config {
 			AutoCleanupEnabled:   true,
 			CleanupIntervalHours: 24,
 		},
-		Warnings: make([]string, 0),
+		HotSnippets: make([]HotSnippet, 0),
+		Warnings:    make([]string, 0),
 	}
+}
+
+// HotSnippet represents a named text snippet that users can quickly copy
+// to the clipboard from interactive modes.
+type HotSnippet struct {
+	Name        string `json:"name"`
+	Text        string `json:"text"`
+	Description string `json:"description,omitempty"`
 }
 
 // SessionConfig controls session lifecycle and cleanup behavior.
@@ -43,11 +56,13 @@ type SessionConfig struct {
 	MaxAgeDays int `json:"maxAgeDays" default:"90"`
 	MaxCount   int `json:"maxCount" default:"100"`
 	MaxSizeMB  int `json:"maxSizeMb" default:"500"`
-	// TODO: AutoCleanupEnabled is parsed and validated but no automatic cleanup
-	// scheduler exists yet. Reserved for future auto-cleanup scheduler implementation.
+	// AutoCleanupEnabled controls whether commands that create sessions
+	// start a background cleanup scheduler. When true (the default),
+	// session cleanup runs on command startup and then at the configured
+	// interval (CleanupIntervalHours).
 	AutoCleanupEnabled bool `json:"autoCleanupEnabled" default:"true"`
-	// TODO: CleanupIntervalHours is parsed and validated but no automatic cleanup
-	// scheduler exists yet. Reserved for future auto-cleanup scheduler implementation.
+	// CleanupIntervalHours is the number of hours between automatic
+	// cleanup runs. Only used when AutoCleanupEnabled is true.
 	CleanupIntervalHours int `json:"cleanupIntervalHours" default:"24"`
 }
 
@@ -102,6 +117,7 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 
 	var currentCommand string
 	var inSessionsSection bool
+	var inHotSnippetsSection bool
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -114,11 +130,18 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 		// Check for section header [section_name]
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			sectionName := strings.Trim(line, "[]")
-			if sectionName == "sessions" {
+			switch sectionName {
+			case "sessions":
 				inSessionsSection = true
+				inHotSnippetsSection = false
 				currentCommand = ""
-			} else {
+			case "hot-snippets":
+				inHotSnippetsSection = true
 				inSessionsSection = false
+				currentCommand = ""
+			default:
+				inSessionsSection = false
+				inHotSnippetsSection = false
 				currentCommand = sectionName
 				if config.Commands[currentCommand] == nil {
 					config.Commands[currentCommand] = make(map[string]string)
@@ -145,20 +168,17 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 			if err := parseSessionOption(&config.Sessions, optionName, value); err != nil {
 				return nil, fmt.Errorf("invalid session option %q: %w", optionName, err)
 			}
+		} else if inHotSnippetsSection {
+			// Hot-snippet definition
+			if err := parseHotSnippetLine(&config.HotSnippets, optionName, value); err != nil {
+				return nil, fmt.Errorf("invalid hot-snippet %q: %w", optionName, err)
+			}
 		} else if currentCommand == "" {
 			// Global option
 			config.Global[optionName] = value
-			// Validate global option name
-			if !isKnownGlobalOption(optionName) {
-				config.addWarning("unknown global option: %q (value: %q)", optionName, value)
-			}
 		} else {
 			// Command-specific option
 			config.Commands[currentCommand][optionName] = value
-			// Validate command option name
-			if !isKnownCommandOption(currentCommand, optionName) {
-				config.addWarning("unknown option for command %q: %q (value: %q)", currentCommand, optionName, value)
-			}
 		}
 	}
 
@@ -166,64 +186,12 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 		return nil, fmt.Errorf("error reading config: %w", err)
 	}
 
+	// Validate config against schema: detect unknown options and type mismatches.
+	for _, issue := range ValidateConfig(config, DefaultSchema()) {
+		config.addWarning("%s", issue)
+	}
+
 	return config, nil
-}
-
-// Known global and command-specific configuration options.
-// This is used for schema validation to detect typos and unknown options.
-var knownGlobalOptions = map[string]bool{
-	"verbose":    true,
-	"color":      true,
-	"pager":      true,
-	"format":     true,
-	"timeout":    true,
-	"session.id": true,
-	"output":     true,
-	"editor":     true,
-	"debug":      true,
-	"quiet":      true,
-}
-
-// Known options per command.
-var knownCommandOptions = map[string]map[string]bool{
-	"help": {
-		"pager":  true,
-		"format": true,
-		"output": true,
-	},
-	"version": {
-		"format": true,
-		"output": true,
-	},
-	"prompt": {
-		"template":    true,
-		"output":      true,
-		"editor":      true,
-		"add-context": true,
-	},
-	"session": {
-		"list":   true,
-		"delete": true,
-		"export": true,
-		"import": true,
-	},
-}
-
-// isKnownGlobalOption checks if an option is a known global option.
-func isKnownGlobalOption(name string) bool {
-	return knownGlobalOptions[name]
-}
-
-// isKnownCommandOption checks if an option is known for a specific command.
-func isKnownCommandOption(command, name string) bool {
-	// Also check global options as they can be used in command sections
-	if knownGlobalOptions[name] {
-		return true
-	}
-	if cmdOpts, ok := knownCommandOptions[command]; ok {
-		return cmdOpts[name]
-	}
-	return false
 }
 
 // addWarning adds a warning to the config's warnings list.
@@ -292,6 +260,41 @@ func parseSessionOption(sc *SessionConfig, name, value string) error {
 	default:
 		return fmt.Errorf("unknown session option: %s", name)
 	}
+	return nil
+}
+
+// parseHotSnippetLine parses a single line from the [hot-snippets] config
+// section. Two formats are supported:
+//
+//	snippetName text of the snippet     → defines a snippet (literal \n → newline)
+//	snippetName.description Help text   → sets description on the last snippet named snippetName
+//
+// The name must not be empty. If a .description suffix targets a name that
+// has not yet been defined, an error is returned.
+func parseHotSnippetLine(snippets *[]HotSnippet, name, value string) error {
+	if name == "" {
+		return fmt.Errorf("empty snippet name")
+	}
+
+	// Check for .description suffix
+	if dotIdx := strings.LastIndex(name, "."); dotIdx > 0 {
+		baseName := name[:dotIdx]
+		suffix := name[dotIdx+1:]
+		if suffix == "description" {
+			// Set description on the last snippet with baseName
+			for i := len(*snippets) - 1; i >= 0; i-- {
+				if (*snippets)[i].Name == baseName {
+					(*snippets)[i].Description = value
+					return nil
+				}
+			}
+			return fmt.Errorf("snippet %q not found for .description", baseName)
+		}
+	}
+
+	// Convert literal \n sequences to actual newlines
+	text := strings.ReplaceAll(value, `\n`, "\n")
+	*snippets = append(*snippets, HotSnippet{Name: name, Text: text})
 	return nil
 }
 

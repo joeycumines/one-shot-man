@@ -236,6 +236,44 @@ var coreCases = []CoreCase{
 		WantBeforeCurrent:   Token{Text: "a\\", Start: 1, End: 3, Quote: '\'', Quoted: true},
 		WantTokens:          []Token{{Text: "a\\", Start: 1, End: 3, Quote: '\'', Quoted: true}},
 	},
+	{
+		Name:                "escaped char starts token",
+		In:                  "\\a b",
+		WantArgs:            []string{"a", "b"},
+		WantBeforeCompleted: []string{"a"},
+		WantBeforeCurrent:   Token{Text: "b", Start: 3, End: 4},
+		WantTokens: []Token{
+			{Text: "a", Start: 1, End: 2},
+			{Text: "b", Start: 3, End: 4},
+		},
+	},
+	{
+		Name:                "escaped space starts token",
+		In:                  "\\ x",
+		WantArgs:            []string{" x"},
+		WantBeforeCompleted: nil,
+		WantBeforeCurrent:   Token{Text: " x", Start: 1, End: 3},
+		WantTokens:          []Token{{Text: " x", Start: 1, End: 3}},
+	},
+	{
+		Name:                "just escaped char",
+		In:                  "\\a",
+		WantArgs:            []string{"a"},
+		WantBeforeCompleted: nil,
+		WantBeforeCurrent:   Token{Text: "a", Start: 1, End: 2},
+		WantTokens:          []Token{{Text: "a", Start: 1, End: 2}},
+	},
+	{
+		Name:                "escaped char after whitespace",
+		In:                  "x \\b",
+		WantArgs:            []string{"x", "b"},
+		WantBeforeCompleted: []string{"x"},
+		WantBeforeCurrent:   Token{Text: "b", Start: 3, End: 4},
+		WantTokens: []Token{
+			{Text: "x", Start: 0, End: 1},
+			{Text: "b", Start: 3, End: 4},
+		},
+	},
 }
 
 func TestParseSlice_UsingCoreCases(t *testing.T) {

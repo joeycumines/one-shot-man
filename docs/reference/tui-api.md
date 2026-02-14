@@ -77,24 +77,59 @@ N.B. Modes and commands do not implicitly create or own persisted state. State i
 
 ## Prompts and completion
 
-### `tui.createAdvancedPrompt(config): string` (returns prompt handle)
+### `tui.createPrompt(config): string` (returns prompt handle)
 
 Creates a configured `go-prompt` instance and returns a unique handle (string) used to reference the prompt. Supported config fields (facts):
 
 - `name` (string, optional) — handle name; if omitted a generated name is used.
 - `title`, `prefix` (strings)
-- `colors` (object) — overrides for color properties
+- `colors` (object) — overrides for color properties (see "Color properties" below)
 - `history` (object) — `{ enabled: bool, file: string, size: int }`
+- `maxSuggestion` (int, optional) — maximum number of completion suggestions shown (default: 10)
+- `dynamicCompletion` (bool, optional) — recompute completions on each keystroke (default: true)
+- `executeHidesCompletions` (bool, optional) — auto-hide completions when submitting input (default: true)
+- `escapeToggle` (bool, optional) — bind Escape key to toggle completion visibility (default: true)
+- `initialText` (string, optional) — pre-fill the prompt input buffer with text for the user to edit
+- `showCompletionAtStart` (bool, optional) — show completion dropdown immediately on prompt start (default: false)
+- `completionOnDown` (bool, optional) — allow Down arrow key to trigger completion dropdown (default: false)
+- `keyBindMode` (string, optional) — key binding preset: `"emacs"` or `"common"` (default: go-prompt default)
 
-What `createAdvancedPrompt` does:
+#### Color properties
 
-- Builds a `go-prompt` prompt with options for title, prefix, colors, history, completer dispatch, and key bindings.
+The `colors` object supports these properties:
+
+| Property | Description |
+|---|---|
+| `input` | Input text color |
+| `inputBackground` | Input area background color |
+| `prefix` | Prefix text color |
+| `prefixBackground` | Prefix background color |
+| `suggestionText` | Suggestion text color |
+| `suggestionBackground` | Suggestion background color |
+| `selectedSuggestionText` | Selected suggestion text color |
+| `selectedSuggestionBackground` | Selected suggestion background color |
+| `descriptionText` | Description text color |
+| `descriptionBackground` | Description background color |
+| `selectedDescriptionText` | Selected description text color |
+| `selectedDescriptionBackground` | Selected description background color |
+| `scrollbarThumb` | Scrollbar thumb color |
+| `scrollbarBackground` | Scrollbar background color |
+
+Supported color names: `black`, `darkred`, `darkgreen`, `brown`, `darkblue`, `purple`, `cyan`, `lightgray`, `darkgray`, `red`, `green`, `yellow`, `blue`, `fuchsia`, `turquoise`, `white`, `default`. Unknown color names resolve to `default` (terminal default).
+
+What `createPrompt` does:
+
+- Builds a `go-prompt` prompt via the shared `buildGoPrompt` builder (consistent feature support with `registerMode`).
+- Applies the given configuration options (max suggestions, completion behavior, key bind mode, initial text, etc.) with sensible defaults.
+- Enables reader/writer injection by default.
 - Registers the prompt instance under the returned handle in the manager's `prompts` map.
 - The prompt's completer is a dispatcher that will call a registered JavaScript completer when one is associated with the prompt (see `registerCompleter` / `setCompleter`).
 
+> **Deprecation note:** `tui.createAdvancedPrompt` is a backward-compatible alias for `tui.createPrompt` that prints a deprecation warning. Use `tui.createPrompt` for new code.
+
 ### `tui.runPrompt(name)`
 
-Runs the previously created prompt referenced by `name`. This sets the manager's `activePrompt`, then calls `p.Run()` (blocking until the prompt exits), and clears `activePrompt` when done.
+Runs the previously created prompt referenced by `name`. This sets the manager's `activePrompt`, then calls `p.RunNoExit()` (blocking until the prompt exits), and clears `activePrompt` when done. Uses `RunNoExit` to prevent `os.Exit` on SIGTERM, allowing graceful shutdown.
 
 N.B. `tui.runPrompt` blocks until the prompt exits.
 
@@ -143,10 +178,29 @@ Clears the runtime exit request flag. This can be used to cancel a previously re
 
 Registers a completer function under `name`. The function is stored and can be invoked by prompts via the completer dispatcher.
 
-Completer function contract (observed in examples):
+Completer function contract:
 
-- Signature: `function(document)` where `document` is the `go-prompt` document API exposed to JS.
+- Signature: `function(document)` where `document` is the go-prompt document API exposed to JS.
 - Return value: an array of suggestion objects of the form `{ text: string, description?: string }`.
+
+**Document object methods:**
+
+| Method | Return | Description |
+|---|---|---|
+| `getText()` | string | Full input text |
+| `getTextBeforeCursor()` | string | Text before cursor position |
+| `getTextAfterCursor()` | string | Text after cursor position |
+| `getWordBeforeCursor()` | string | Current word before cursor |
+| `getWordAfterCursor()` | string | Current word after cursor |
+| `getCurrentLine()` | string | Full text of the current line |
+| `getCurrentLineBeforeCursor()` | string | Current line text before cursor |
+| `getCurrentLineAfterCursor()` | string | Current line text after cursor |
+| `getCursorPositionCol()` | int | Cursor column position (0-based) |
+| `getCursorPositionRow()` | int | Cursor row position (0-based) |
+| `getLines()` | string[] | Array of all lines |
+| `getLineCount()` | int | Number of lines |
+| `onLastLine()` | bool | Whether cursor is on the last line |
+| `getCharRelativeToCursor(offset)` | string | Character at `offset` runes from cursor (empty string if out of bounds) |
 
 ### `tui.setCompleter(promptName, completerName)`
 
@@ -163,13 +217,48 @@ Implementation Notes:
 
 ### `tui.registerKeyBinding(key, fn)`
 
-Registers a JavaScript handler for a given key string (e.g., `"ctrl-h"`, `"escape"`, `"f1"`, `"up"`).
+Registers a JavaScript handler for a given key string. The handler receives a `prompt` object with methods for programmatic buffer manipulation.
 
-Implementation Notes:
+**Supported key strings:**
 
-- The manager maps the key string to a `prompt.Key` constant (see `parseKeyString` for supported key names).
-- The registered handler will be invoked from the prompt key binding. If it returns a truthy boolean, the key bind reports `true` (used by `go-prompt` to determine re-render behavior); otherwise it returns `false`.
-- Key bindings are included when prompts are created (they are converted into `prompt.KeyBind` objects by `buildKeyBinds`).
+| Category | Keys |
+|---|---|
+| Escape | `"escape"`, `"esc"` |
+| Control+letter | `"ctrl-a"` through `"ctrl-z"` (also `"control-a"`, `"ctrl+a"`, `"control+a"`) |
+| Control+special | `"ctrl-space"`, `"ctrl-\"`, `"ctrl-]"`, `"ctrl-^"`, `"ctrl-_"` |
+| Control+arrow | `"ctrl-left"`, `"ctrl-right"`, `"ctrl-up"`, `"ctrl-down"` |
+| Alt | `"alt-left"`, `"alt-right"`, `"alt-backspace"` |
+| Shift | `"shift-left"`, `"shift-right"`, `"shift-up"`, `"shift-down"`, `"shift-delete"`, `"shift-tab"` |
+| Control+delete | `"ctrl-delete"`, `"ctrl-del"` |
+| Arrows | `"up"`, `"down"`, `"left"`, `"right"` |
+| Navigation | `"home"`, `"end"`, `"pageup"`, `"page-up"`, `"pagedown"`, `"page-down"`, `"insert"`, `"ins"` |
+| Editing | `"delete"`, `"del"`, `"backspace"`, `"backtab"` |
+| Whitespace | `"tab"`, `"enter"`, `"return"` |
+| Function | `"f1"` through `"f24"` |
+| Special | `"any"` (matches any key), `"bracketed-paste"` |
+
+All key strings are case-insensitive. Both `-` and `+` separators are supported (e.g., `"ctrl-a"` and `"ctrl+a"`).
+
+**Handler signature:** `function(prompt) → boolean`
+
+The handler receives a `prompt` object with these methods:
+
+| Method | Description |
+|---|---|
+| `insertText(text)` | Insert text at cursor without moving cursor |
+| `insertTextMoveCursor(text)` | Insert text and move cursor after it |
+| `deleteBeforeCursor(count)` | Delete `count` graphemes before cursor, returns deleted text |
+| `delete(count)` | Delete `count` graphemes after cursor, returns deleted text |
+| `cursorLeft(count)` | Move cursor left by `count` graphemes, returns true if moved |
+| `cursorRight(count)` | Move cursor right by `count` graphemes, returns true if moved |
+| `cursorUp(count)` | Move cursor up by `count` lines, returns true if moved |
+| `cursorDown(count)` | Move cursor down by `count` lines, returns true if moved |
+| `getText()` | Get the current buffer text |
+| `terminalColumns()` | Get terminal width in columns |
+| `terminalRows()` | Get terminal height in rows |
+| `userInputColumns()` | Get available input width (excluding prefix) |
+
+If the handler returns a truthy boolean, go-prompt will re-render the display.
 
 ---
 

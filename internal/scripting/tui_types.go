@@ -7,6 +7,7 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
+	istrings "github.com/joeycumines/go-prompt/strings"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 )
 
@@ -138,6 +139,12 @@ type TUIConfig struct {
 	ValidatorFn  goja.Callable
 }
 
+// FlagDef describes a flag available for a command, used for tab-completion.
+type FlagDef struct {
+	Name        string // flag name without leading dashes
+	Description string // short description for completion hint
+}
+
 // Command represents a command that can be executed in the terminal.
 type Command struct {
 	Name          string
@@ -146,12 +153,15 @@ type Command struct {
 	Handler       interface{} // Can be goja.Callable or Go function
 	IsGoCommand   bool
 	ArgCompleters []string
+	FlagDefs      []FlagDef
 }
 
 // PromptColors represents color configuration for a prompt.
 type PromptColors struct {
 	InputText               prompt.Color
+	InputBG                 prompt.Color
 	PrefixText              prompt.Color
+	PrefixBG                prompt.Color
 	SuggestionText          prompt.Color
 	SuggestionBG            prompt.Color
 	SelectedSuggestionText  prompt.Color
@@ -169,4 +179,47 @@ type HistoryConfig struct {
 	Enabled bool
 	File    string
 	Size    int
+}
+
+// promptBuildConfig captures all variance points between the two prompt builders
+// (runAdvancedPrompt for registerMode, and jsCreatePrompt for the low-level API).
+// This struct is passed to buildGoPrompt to construct a go-prompt instance with
+// consistent feature support.
+type promptBuildConfig struct {
+	// prefix is used as a static prompt prefix when prefixCallback is nil.
+	prefix string
+	// prefixCallback, if set, provides a dynamic prefix evaluated at render time.
+	// Takes priority over prefix.
+	prefixCallback func() string
+	// title sets the terminal title via go-prompt.
+	title string
+	// colors controls the prompt color scheme.
+	colors PromptColors
+	// completer is the go-prompt completer function.
+	completer func(prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber)
+	// initialCommand is an optional command string to execute when starting the prompt.
+	initialCommand string
+	// history provides command history entries for up-arrow recall.
+	history []string
+	// flushOutput wraps the executor to flush queued output before/after execution.
+	flushOutput bool
+	// maxSuggestion sets the maximum number of completion suggestions shown.
+	// A value of 0 uses go-prompt's default.
+	maxSuggestion uint16
+	// dynamicCompletion enables recomputing completions on each keystroke.
+	dynamicCompletion bool
+	// executeHidesCompletions auto-hides completions when submitting input.
+	executeHidesCompletions bool
+	// escapeToggle binds the Escape key to toggle completion visibility.
+	escapeToggle bool
+	// historySize limits the number of history entries. 0 uses go-prompt default.
+	historySize int
+	// initialText pre-fills the prompt buffer with text for the user to edit.
+	initialText string
+	// showCompletionAtStart shows the completion dropdown immediately on prompt start.
+	showCompletionAtStart bool
+	// completionOnDown allows the Down arrow key to trigger the completion dropdown.
+	completionOnDown bool
+	// keyBindMode selects the key binding preset: "emacs" or "common" (default).
+	keyBindMode string
 }

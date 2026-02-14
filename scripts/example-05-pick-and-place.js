@@ -1567,7 +1567,7 @@ try {
 
         const goalConditions = [pabt.newExprCondition('cubeDeliveredAtGoal', 'value == true', true)];
         state.pabtPlan = pabt.newPlan(state.pabtState, goalConditions);
-        state.ticker = bt.newTicker(100, state.pabtPlan.Node());
+        state.ticker = bt.newTicker(100, state.pabtPlan.node());
 
         return [state, tea.tick(16, 'tick')];
     }

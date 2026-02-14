@@ -77,7 +77,7 @@ N.B. Modes and commands do not implicitly create or own persisted state. State i
 
 ## Prompts and completion
 
-### `tui.createAdvancedPrompt(config): string` (returns prompt handle)
+### `tui.createPrompt(config): string` (returns prompt handle)
 
 Creates a configured `go-prompt` instance and returns a unique handle (string) used to reference the prompt. Supported config fields (facts):
 
@@ -86,11 +86,14 @@ Creates a configured `go-prompt` instance and returns a unique handle (string) u
 - `colors` (object) — overrides for color properties
 - `history` (object) — `{ enabled: bool, file: string, size: int }`
 
-What `createAdvancedPrompt` does:
+What `createPrompt` does:
 
-- Builds a `go-prompt` prompt with options for title, prefix, colors, history, completer dispatch, and key bindings.
+- Builds a `go-prompt` prompt via the shared `buildGoPrompt` builder (consistent feature support with `registerMode`).
+- Enables max suggestions (10), dynamic completion, execute-hides-completions, escape toggle, and reader/writer injection by default.
 - Registers the prompt instance under the returned handle in the manager's `prompts` map.
 - The prompt's completer is a dispatcher that will call a registered JavaScript completer when one is associated with the prompt (see `registerCompleter` / `setCompleter`).
+
+> **Deprecation note:** `tui.createAdvancedPrompt` is a backward-compatible alias for `tui.createPrompt` that prints a deprecation warning. Use `tui.createPrompt` for new code.
 
 ### `tui.runPrompt(name)`
 

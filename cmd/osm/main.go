@@ -34,11 +34,14 @@ func run() error {
 	goalDiscovery := command.NewGoalDiscovery(cfg)
 	goalRegistry := command.NewDynamicGoalRegistry(command.GetBuiltInGoals(), goalDiscovery)
 
+	// Resolve config path for commands that need it
+	configPath, _ := config.GetConfigPath()
+
 	// Register built-in commands
 	helpCmd := command.NewHelpCommand(registry)
 	registry.Register(helpCmd)
 	registry.Register(command.NewVersionCommand(version))
-	registry.Register(command.NewConfigCommand(cfg))
+	registry.Register(command.NewConfigCommand(cfg, configPath))
 	registry.Register(command.NewInitCommand())
 	registry.Register(command.NewScriptingCommand(cfg))
 	registry.Register(command.NewSessionCommand(cfg))
@@ -47,6 +50,7 @@ func run() error {
 	registry.Register(command.NewSuperDocumentCommand(cfg))
 	registry.Register(command.NewCompletionCommand(registry, goalRegistry))
 	registry.Register(command.NewGoalCommand(cfg, goalRegistry))
+	registry.Register(command.NewSyncCommand())
 
 	// Parse global flags and command. Avoid manual inspection of args for
 	// help tokens; instead rely on the flag package so we consistently

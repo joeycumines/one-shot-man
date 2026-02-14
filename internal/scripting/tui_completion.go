@@ -3,6 +3,7 @@ package scripting
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -109,8 +110,72 @@ func getFilepathSuggestions(path string) []prompt.Suggest {
 	return suggestions
 }
 
+// getGitRefSuggestions provides completion suggestions for git refs (branches, tags, common refs).
+// It shells out to git for branch/tag names. If git commands fail (e.g. not in a git repo),
+// it silently falls back to common ref suggestions only.
+func getGitRefSuggestions(prefix string) []prompt.Suggest {
+	// Common refs always available
+	commonRefs := []struct {
+		text string
+		desc string
+	}{
+		{"HEAD", "current commit"},
+		{"HEAD~1", "1 commit before HEAD"},
+		{"HEAD~2", "2 commits before HEAD"},
+		{"HEAD~3", "3 commits before HEAD"},
+	}
+
+	var suggestions []prompt.Suggest
+	lowerPrefix := strings.ToLower(prefix)
+
+	// Add common refs filtered by prefix
+	for _, ref := range commonRefs {
+		if prefix == "" || strings.HasPrefix(strings.ToLower(ref.text), lowerPrefix) {
+			suggestions = append(suggestions, prompt.Suggest{
+				Text:        ref.text,
+				Description: ref.desc,
+			})
+		}
+	}
+
+	// Try to get branches from git
+	if branchOut, err := exec.Command("git", "branch", "--format=%(refname:short)").Output(); err == nil {
+		for _, line := range strings.Split(string(branchOut), "\n") {
+			name := strings.TrimSpace(line)
+			if name == "" {
+				continue
+			}
+			if prefix == "" || strings.HasPrefix(strings.ToLower(name), lowerPrefix) {
+				suggestions = append(suggestions, prompt.Suggest{
+					Text:        name,
+					Description: "branch",
+				})
+			}
+		}
+	}
+
+	// Try to get tags from git
+	if tagOut, err := exec.Command("git", "tag", "--list").Output(); err == nil {
+		for _, line := range strings.Split(string(tagOut), "\n") {
+			name := strings.TrimSpace(line)
+			if name == "" {
+				continue
+			}
+			if prefix == "" || strings.HasPrefix(strings.ToLower(name), lowerPrefix) {
+				suggestions = append(suggestions, prompt.Suggest{
+					Text:        name,
+					Description: "tag",
+				})
+			}
+		}
+	}
+
+	return suggestions
+}
+
 // getDefaultCompletionSuggestions provides default completion when no custom completer is set.
 func (tm *TUIManager) getDefaultCompletionSuggestions(document prompt.Document) []prompt.Suggest {
+
 	// Delegate to a helper that accepts explicit before/full text.
 	before := document.TextBeforeCursor()
 	if before == "" {
@@ -252,6 +317,19 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 							suggestions = append(suggestions, fileSuggestions...)
 							fileCompleterProcessed = true
 						}
+					case "flag":
+						for _, def := range cmd.FlagDefs {
+							flagText := "--" + def.Name
+							if currentWord == "" || strings.HasPrefix(strings.ToLower(flagText), strings.ToLower(currentWord)) {
+								suggestions = append(suggestions, prompt.Suggest{
+									Text:        flagText,
+									Description: def.Description,
+								})
+							}
+						}
+					case "gitref":
+						gitRefSuggestions := getGitRefSuggestions(currentWord)
+						suggestions = append(suggestions, gitRefSuggestions...)
 					// TODO: Add other arg completer types here (e.g., "command", "mode", etc.)
 					// and respect the order they appear in cmd.ArgCompleters
 					default:

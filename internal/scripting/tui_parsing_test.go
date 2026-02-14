@@ -132,3 +132,62 @@ func TestGetStringSliceTable(t *testing.T) {
 		})
 	}
 }
+
+func TestGetFlagDefsTable(t *testing.T) {
+	undef := goja.Undefined()
+	cases := []struct {
+		name    string
+		m       map[string]interface{}
+		key     string
+		want    []FlagDef
+		wantErr bool
+	}{
+		{"missing", map[string]interface{}{}, "flagDefs", nil, false},
+		{"undefined", map[string]interface{}{"flagDefs": undef}, "flagDefs", nil, false},
+		{"nil", map[string]interface{}{"flagDefs": nil}, "flagDefs", nil, false},
+		{"one_flag", map[string]interface{}{
+			"flagDefs": []interface{}{
+				map[string]interface{}{"name": "verbose", "description": "enable verbose output"},
+			},
+		}, "flagDefs", []FlagDef{{Name: "verbose", Description: "enable verbose output"}}, false},
+		{"two_flags", map[string]interface{}{
+			"flagDefs": []interface{}{
+				map[string]interface{}{"name": "out", "description": "output file"},
+				map[string]interface{}{"name": "fmt", "description": "format type"},
+			},
+		}, "flagDefs", []FlagDef{
+			{Name: "out", Description: "output file"},
+			{Name: "fmt", Description: "format type"},
+		}, false},
+		{"name_only", map[string]interface{}{
+			"flagDefs": []interface{}{
+				map[string]interface{}{"name": "quiet"},
+			},
+		}, "flagDefs", []FlagDef{{Name: "quiet", Description: ""}}, false},
+		{"skip_empty_name", map[string]interface{}{
+			"flagDefs": []interface{}{
+				map[string]interface{}{"name": ""},
+				map[string]interface{}{"name": "keep"},
+			},
+		}, "flagDefs", []FlagDef{{Name: "keep", Description: ""}}, false},
+		{"empty_array", map[string]interface{}{
+			"flagDefs": []interface{}{},
+		}, "flagDefs", nil, false},
+		{"not_array", map[string]interface{}{"flagDefs": "no"}, "flagDefs", nil, true},
+		{"bad_element", map[string]interface{}{
+			"flagDefs": []interface{}{"not_a_map"},
+		}, "flagDefs", nil, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defs, err := getFlagDefs(tc.m, tc.key)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("unexpected error state: %v", err)
+			}
+			if err == nil && !reflect.DeepEqual(defs, tc.want) {
+				t.Fatalf("expected %#v got %#v", tc.want, defs)
+			}
+		})
+	}
+}

@@ -473,12 +473,35 @@ func (tm *TUIManager) buildModeCommands(mode *ScriptMode) error {
 			}
 		}
 
+		var flagDefs []FlagDef
+		if fdVal := cmdObj.Get("flagDefs"); fdVal != nil && !goja.IsUndefined(fdVal) {
+			if fdObj := fdVal.ToObject(tm.engine.vm); fdObj != nil {
+				for _, k := range fdObj.Keys() {
+					if v := fdObj.Get(k); v != nil && !goja.IsUndefined(v) {
+						if itemObj := v.ToObject(tm.engine.vm); itemObj != nil {
+							var fd FlagDef
+							if nameVal := itemObj.Get("name"); nameVal != nil && !goja.IsUndefined(nameVal) {
+								fd.Name = nameVal.String()
+							}
+							if descVal := itemObj.Get("description"); descVal != nil && !goja.IsUndefined(descVal) {
+								fd.Description = descVal.String()
+							}
+							if fd.Name != "" {
+								flagDefs = append(flagDefs, fd)
+							}
+						}
+					}
+				}
+			}
+		}
+
 		cmd := Command{
 			Name:          key,
 			Description:   desc,
 			Usage:         usage,
 			IsGoCommand:   false,
 			ArgCompleters: argCompleters,
+			FlagDefs:      flagDefs,
 		}
 
 		if handlerVal := cmdObj.Get("handler"); handlerVal != nil && !goja.IsUndefined(handlerVal) {
@@ -651,92 +674,18 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		return suggestions, istrings.RuneNumber(start), istrings.RuneNumber(end)
 	}
 
-	// Create the executor function.
-	// When executor returns false, signal the exit checker to terminate the prompt.
-	// We do NOT call os.Exit here - exit is handled gracefully via ExitChecker.
-	executor := func(line string) {
-		// Drain any pending output before executing the command
-		tm.flushQueuedOutput()
-		if !tm.executor(line) {
-			// Signal the prompt to exit via ExitChecker mechanism
-			tm.RequestExit()
-		}
-		// Flush any queued output synchronously after executing a line
-		tm.flushQueuedOutput()
-	}
-
-	// Create the exit checker that allows the prompt to exit when requested.
-	// This is called by go-prompt after each input to determine if Run() should return.
-	exitChecker := func(_ string, _ bool) bool {
-		return tm.IsExitRequested()
-	}
-
-	// Configure prompt options - full configuration for go-prompt
-	colors := tm.defaultColors
-	options := []prompt.Option{
-		// Use a callback so the prompt prefix is evaluated at render time.
-		// This ensures the prefix reflects any changes made by an `initialCommand`.
-		prompt.WithPrefixCallback(func() string { return tm.getPromptString() }),
-		prompt.WithCompleter(completer),
-		prompt.WithExitChecker(exitChecker), // Allow graceful exit via RequestExit()
-		prompt.WithInputTextColor(colors.InputText),
-		prompt.WithPrefixTextColor(colors.PrefixText),
-		prompt.WithSuggestionTextColor(colors.SuggestionText),
-		prompt.WithSuggestionBGColor(colors.SuggestionBG),
-		prompt.WithSelectedSuggestionTextColor(colors.SelectedSuggestionText),
-		prompt.WithSelectedSuggestionBGColor(colors.SelectedSuggestionBG),
-		prompt.WithDescriptionTextColor(colors.DescriptionText),
-		prompt.WithDescriptionBGColor(colors.DescriptionBG),
-		prompt.WithSelectedDescriptionTextColor(colors.SelectedDescriptionText),
-		prompt.WithSelectedDescriptionBGColor(colors.SelectedDescriptionBG),
-		prompt.WithMaxSuggestion(10),
-		prompt.WithDynamicCompletion(true),
-		// Enable auto-hiding completions when submitting input
-		prompt.WithExecuteHidesCompletions(true),
-		// Bind Escape key to toggle completion visibility
-		prompt.WithKeyBindings(
-			prompt.KeyBind{
-				Key: prompt.Escape,
-				Fn: func(p *prompt.Prompt) bool {
-					// Toggle: if hidden, show; if visible, hide
-					if p.Completion().IsHidden() {
-						p.Completion().Show()
-					} else {
-						p.Completion().Hide()
-					}
-					return true
-				},
-			},
-		),
-	}
-
-	if initialCommand := tm.getInitialCommand(); initialCommand != "" {
-		options = append(options, prompt.WithInitialCommand(initialCommand, false))
-	}
-
-	// this enables the sync protocol when built with the `integration` build tag
-	options = append(options, staticGoPromptOptions...)
-
-	// CRITICAL: Inject the shared reader/writer into go-prompt.
-	// This ensures go-prompt uses the same terminal I/O as bubbletea and tview,
-	// preventing conflicts over stdin and ensuring proper terminal state cleanup.
-	options = append(options,
-		prompt.WithReader(tm.reader),
-		prompt.WithWriter(tm.writer),
-	)
-
-	// Add command history from persistent session
-	if len(tm.commandHistory) > 0 {
-		options = append(options, prompt.WithHistory(tm.commandHistory))
-	}
-
-	// Add any registered key bindings
-	if keyBinds := tm.buildKeyBinds(); len(keyBinds) > 0 {
-		options = append(options, prompt.WithKeyBind(keyBinds...))
-	}
-
-	// Create and run the prompt
-	p := prompt.New(executor, options...)
+	p := tm.buildGoPrompt(promptBuildConfig{
+		prefixCallback:          func() string { return tm.getPromptString() },
+		colors:                  tm.defaultColors,
+		completer:               completer,
+		initialCommand:          tm.getInitialCommand(),
+		history:                 tm.commandHistory,
+		flushOutput:             true,
+		maxSuggestion:           10,
+		dynamicCompletion:       true,
+		executeHidesCompletions: true,
+		escapeToggle:            true,
+	})
 
 	// Store as active prompt
 	tm.mu.Lock()
@@ -750,6 +699,125 @@ func (tm *TUIManager) runAdvancedPrompt() {
 	tm.mu.Lock()
 	tm.activePrompt = nil
 	tm.mu.Unlock()
+}
+
+// buildGoPrompt constructs a go-prompt instance from a promptBuildConfig.
+// This is the shared builder used by both runAdvancedPrompt (registerMode path)
+// and jsCreatePrompt (low-level JS API path) to ensure consistent feature support.
+func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
+	// Create the executor function.
+	// When executor returns false, signal the exit checker to terminate the prompt.
+	// We do NOT call os.Exit here - exit is handled gracefully via ExitChecker.
+	executor := func(line string) {
+		if cfg.flushOutput {
+			tm.flushQueuedOutput()
+		}
+		if !tm.executor(line) {
+			// Signal the prompt to exit via ExitChecker mechanism
+			tm.RequestExit()
+		}
+		if cfg.flushOutput {
+			tm.flushQueuedOutput()
+		}
+	}
+
+	// Create the exit checker that allows the prompt to exit when requested.
+	// This is called by go-prompt after each input to determine if Run() should return.
+	exitChecker := func(_ string, _ bool) bool {
+		return tm.IsExitRequested()
+	}
+
+	colors := cfg.colors
+
+	// Configure prompt options
+	options := []prompt.Option{
+		prompt.WithCompleter(cfg.completer),
+		prompt.WithExitChecker(exitChecker),
+		prompt.WithInputTextColor(colors.InputText),
+		prompt.WithPrefixTextColor(colors.PrefixText),
+		prompt.WithSuggestionTextColor(colors.SuggestionText),
+		prompt.WithSuggestionBGColor(colors.SuggestionBG),
+		prompt.WithSelectedSuggestionTextColor(colors.SelectedSuggestionText),
+		prompt.WithSelectedSuggestionBGColor(colors.SelectedSuggestionBG),
+		prompt.WithDescriptionTextColor(colors.DescriptionText),
+		prompt.WithDescriptionBGColor(colors.DescriptionBG),
+		prompt.WithSelectedDescriptionTextColor(colors.SelectedDescriptionText),
+		prompt.WithSelectedDescriptionBGColor(colors.SelectedDescriptionBG),
+		prompt.WithScrollbarThumbColor(colors.ScrollbarThumb),
+		prompt.WithScrollbarBGColor(colors.ScrollbarBG),
+	}
+
+	// Prefix: prefer callback over static
+	if cfg.prefixCallback != nil {
+		options = append(options, prompt.WithPrefixCallback(cfg.prefixCallback))
+	} else {
+		options = append(options, prompt.WithPrefix(cfg.prefix))
+	}
+
+	// Title (optional - only set when non-empty)
+	if cfg.title != "" {
+		options = append(options, prompt.WithTitle(cfg.title))
+	}
+
+	// MaxSuggestion (0 uses go-prompt default)
+	if cfg.maxSuggestion > 0 {
+		options = append(options, prompt.WithMaxSuggestion(cfg.maxSuggestion))
+	}
+
+	// Dynamic completion
+	if cfg.dynamicCompletion {
+		options = append(options, prompt.WithDynamicCompletion(true))
+	}
+
+	// Auto-hiding completions when submitting input
+	if cfg.executeHidesCompletions {
+		options = append(options, prompt.WithExecuteHidesCompletions(true))
+	}
+
+	// Bind Escape key to toggle completion visibility
+	if cfg.escapeToggle {
+		options = append(options, prompt.WithKeyBindings(
+			prompt.KeyBind{
+				Key: prompt.Escape,
+				Fn: func(p *prompt.Prompt) bool {
+					if p.Completion().IsHidden() {
+						p.Completion().Show()
+					} else {
+						p.Completion().Hide()
+					}
+					return true
+				},
+			},
+		))
+	}
+
+	// Initial command (optional)
+	if cfg.initialCommand != "" {
+		options = append(options, prompt.WithInitialCommand(cfg.initialCommand, false))
+	}
+
+	// This enables the sync protocol when built with the `integration` build tag
+	options = append(options, staticGoPromptOptions...)
+
+	// CRITICAL: Inject the shared reader/writer into go-prompt.
+	// This ensures go-prompt uses the same terminal I/O as bubbletea and tview,
+	// preventing conflicts over stdin and ensuring proper terminal state cleanup.
+	options = append(options,
+		prompt.WithReader(tm.reader),
+		prompt.WithWriter(tm.writer),
+	)
+
+	// Add command history
+	if len(cfg.history) > 0 {
+		options = append(options, prompt.WithHistory(cfg.history))
+	}
+
+	// Add any registered key bindings
+	if keyBinds := tm.buildKeyBinds(); len(keyBinds) > 0 {
+		options = append(options, prompt.WithKeyBind(keyBinds...))
+	}
+
+	return prompt.New(executor, options...)
 }
 
 // flushQueuedOutput writes any buffered output messages to the terminal

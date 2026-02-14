@@ -99,3 +99,33 @@ func getStringSlice(m map[string]interface{}, key string) ([]string, error) {
 	}
 	return nil, nil
 }
+
+// getFlagDefs extracts a []FlagDef from a map's key. Each element is expected
+// to be a map with "name" (required) and "description" (optional) fields.
+func getFlagDefs(m map[string]interface{}, key string) ([]FlagDef, error) {
+	val, exists := m[key]
+	if !exists {
+		return nil, nil
+	}
+	if isUndefined(val) {
+		return nil, nil
+	}
+	arr, ok := val.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("value for key '%s' is not an array: got %T", key, val)
+	}
+	var result []FlagDef
+	for i, item := range arr {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("value for key '%s' at index %d is not an object: got %T", key, i, item)
+		}
+		name, _ := getString(obj, "name", "")
+		if name == "" {
+			continue // skip entries without a name
+		}
+		desc, _ := getString(obj, "description", "")
+		result = append(result, FlagDef{Name: name, Description: desc})
+	}
+	return result, nil
+}

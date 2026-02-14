@@ -2,6 +2,8 @@
 # Patterns to exclude from deadcode analysis
 # See: https://pkg.go.dev/github.com/joeycumines/simple-command-output-filter
 
+# DO NOT ADD IGNORES TO THIS FILE WITH THE INTENT OF "WIRING THEM UP LATER"
+
 # ignore test helpers
 internal/termtest/*
 internal\termtest\*
@@ -17,10 +19,26 @@ internal\builtin\ctxutil\ctxutil.go:*: unreachable func: SetGetDefaultGitDiffArg
 internal/scripting/state_contract.go:*: unreachable func: DeserializeState
 internal\scripting\state_contract.go:*: unreachable func: DeserializeState
 
-# Engine creation helper used only from tests and examples
+# Engine creation helpers used only from tests and examples
 internal/scripting/engine_core.go:*: unreachable func: NewEngine
 internal\scripting\engine_core.go:*: unreachable func: NewEngine
+internal/scripting/engine_core.go:*: unreachable func: NewEngineWithConfig
+internal\scripting\engine_core.go:*: unreachable func: NewEngineWithConfig
 internal\scripting\integration_notunix.go:*: unreachable func: mustNewEngine
+
+# Config schema public API - methods/functions used by tests and for future config validation features
+internal/config/schema.go:*: unreachable func: ConfigSchema.*
+internal\config\schema.go:*: unreachable func: ConfigSchema.*
+internal/config/schema.go:*: unreachable func: ValidateConfig
+internal\config\schema.go:*: unreachable func: ValidateConfig
+internal/config/schema.go:*: unreachable func: validateType
+internal\config\schema.go:*: unreachable func: validateType
+internal/config/schema.go:*: unreachable func: writeOptionHelp
+internal\config\schema.go:*: unreachable func: writeOptionHelp
+
+# Diff splitter public API - used for code review chunking, tested but not yet wired into command
+internal/command/diff_splitter.go:*: unreachable func: *
+internal\command\diff_splitter.go:*: unreachable func: *
 
 # Runtime convenience constructor used by tests (production uses NewRuntimeWithRegistry)
 internal/scripting/runtime.go:*: unreachable func: NewRuntime

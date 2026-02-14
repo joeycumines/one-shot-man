@@ -89,6 +89,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 						desc, _ := getString(cmdObj, "description", "")
 						usage, _ := getString(cmdObj, "usage", "")
 						argCompleters, _ := getStringSlice(cmdObj, "argCompleters")
+						flagDefs, _ := getFlagDefs(cmdObj, "flagDefs")
 
 						cmd := Command{
 							Name:          key,
@@ -96,6 +97,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 							Usage:         usage,
 							IsGoCommand:   false,
 							ArgCompleters: argCompleters,
+							FlagDefs:      flagDefs,
 						}
 
 						if handler, exists := cmdObj["handler"]; exists {
@@ -158,12 +160,17 @@ func (tm *TUIManager) jsRegisterCommand(cmdConfig interface{}) error {
 		if err != nil {
 			return err
 		}
+		flagDefs, err := getFlagDefs(configMap, "flagDefs")
+		if err != nil {
+			return err
+		}
 		cmd := Command{
 			Name:          name,
 			Description:   desc,
 			Usage:         usage,
 			IsGoCommand:   false,
 			ArgCompleters: argCompleters,
+			FlagDefs:      flagDefs,
 		}
 
 		if handler, exists := configMap["handler"]; exists {
@@ -193,10 +200,13 @@ func (tm *TUIManager) jsListModes() []string {
 	return tm.ListModes()
 }
 
-// jsCreateAdvancedPrompt creates a new go-prompt instance with given configuration.
+// jsCreatePrompt creates a new go-prompt instance with given configuration.
+// This is the low-level prompt API (formerly createAdvancedPrompt). For most use cases,
+// prefer registerMode which provides richer integration (mode switching, state management, etc.).
+//
 // IMPORTANT: This is a JS mutator - it uses scheduleWriteAndWait to avoid deadlocks.
 // See TUIManager documentation for the locking strategy.
-func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error) {
+func (tm *TUIManager) jsCreatePrompt(config interface{}) (string, error) {
 	configMap, ok := config.(map[string]interface{})
 	if !ok {
 		return "", fmt.Errorf("invalid prompt configuration")
@@ -230,23 +240,6 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 		return "", err
 	}
 
-	// Create the executor function for this prompt.
-	// The executor runs the command; if it returns false, we set exitRequested
-	// so the ExitChecker (below) will cause the prompt to exit cleanly.
-	// We do NOT call os.Exit here - exit happens at the shell loop level.
-	executor := func(line string) {
-		if !tm.executor(line) {
-			// Signal the prompt to exit via ExitChecker mechanism
-			tm.RequestExit()
-		}
-	}
-
-	// Create the exit checker that allows the prompt to exit when requested.
-	// This is called by go-prompt after each input to determine if Run() should return.
-	exitChecker := func(_ string, _ bool) bool {
-		return tm.IsExitRequested()
-	}
-
 	// Create the completer function as a dispatcher that can call a JS completer
 	completer := func(document prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber) {
 		// Compute selection range around the current word
@@ -276,41 +269,24 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 		return suggestions, istrings.RuneNumber(start), istrings.RuneNumber(end)
 	}
 
-	// Configure prompt options
-	options := []prompt.Option{
-		prompt.WithTitle(title),
-		prompt.WithPrefix(prefix),
-		prompt.WithInputTextColor(colors.InputText),
-		prompt.WithPrefixTextColor(colors.PrefixText),
-		prompt.WithSuggestionTextColor(colors.SuggestionText),
-		prompt.WithSelectedSuggestionBGColor(colors.SelectedSuggestionBG),
-		prompt.WithSuggestionBGColor(colors.SuggestionBG),
-		prompt.WithSelectedSuggestionTextColor(colors.SelectedSuggestionText),
-		prompt.WithDescriptionBGColor(colors.DescriptionBG),
-		prompt.WithDescriptionTextColor(colors.DescriptionText),
-		prompt.WithSelectedDescriptionBGColor(colors.SelectedDescriptionBG),
-		prompt.WithSelectedDescriptionTextColor(colors.SelectedDescriptionText),
-		prompt.WithScrollbarThumbColor(colors.ScrollbarThumb),
-		prompt.WithScrollbarBGColor(colors.ScrollbarBG),
-		prompt.WithCompleter(completer),
-		prompt.WithExitChecker(exitChecker), // Allow graceful exit via RequestExit()
-	}
-
-	// this enables the sync protocol when built with the `integration` build tag
-	options = append(options, staticGoPromptOptions...)
-
-	// Add history if configured
+	// Build history from file if configured
+	var history []string
 	if historyConfig.Enabled && historyConfig.File != "" {
-		options = append(options, prompt.WithHistory(loadHistory(historyConfig.File)))
+		history = loadHistory(historyConfig.File)
 	}
 
-	// Add any registered key bindings
-	if keyBinds := tm.buildKeyBinds(); len(keyBinds) > 0 {
-		options = append(options, prompt.WithKeyBind(keyBinds...))
-	}
-
-	// Create the prompt instance
-	p := prompt.New(executor, options...)
+	// Use the shared builder with consistent feature support
+	p := tm.buildGoPrompt(promptBuildConfig{
+		prefix:                  prefix,
+		title:                   title,
+		colors:                  colors,
+		completer:               completer,
+		history:                 history,
+		maxSuggestion:           10,
+		dynamicCompletion:       true,
+		executeHidesCompletions: true,
+		escapeToggle:            true,
+	})
 
 	// Store the prompt via the writer queue to avoid deadlocks.
 	// JS callbacks run without holding locks, so we must not acquire
@@ -324,6 +300,13 @@ func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error)
 	}
 
 	return name, nil
+}
+
+// jsCreateAdvancedPrompt is a backward-compatible alias for jsCreatePrompt.
+// It logs a deprecation warning and delegates to jsCreatePrompt.
+func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error) {
+	_, _ = fmt.Fprintf(tm.writer, "Warning: tui.createAdvancedPrompt is deprecated, use tui.createPrompt instead\n")
+	return tm.jsCreatePrompt(config)
 }
 
 // jsRunPrompt runs a named prompt and returns the input.

@@ -7,11 +7,14 @@
 - **T004**: ✅ DONE (commit 9212fd1) — Rule of Two PASSED
 - **T005**: ✅ DONE (commit 6f18a1f) — Rule of Two PASSED
 - **T006**: ✅ DONE (commit 6b1b0b9) — Rule of Two PASSED
-- **T007**: 🔄 NEXT — Review and document tview/tcell deprecation
+- **T007**: ✅ DONE (commit 31a4c84) — Rule of Two PASSED
+- **T008**: 🔄 NEXT — Implement system-style file logging for script commands
 
-## T007 Context
-- Source: scratch/t040-tview-tcell-assessment.md (may exist)
-- Review internal/builtin/tview/ for current state
-- Document in docs/archive/notes/tview-deprecation.md
-- Mark tview module as deprecated in code and docs
-- Add deprecation warning log when require('osm:tview') is called
+## T008 Context
+- Extend internal/scripting/logging.go for structured JSON log entries to file
+- --log-file flag already exists on script-executing commands
+- Structured JSON: timestamp, level, message, fields
+- File opened with append mode
+- Log rotation/size limits via config keys
+- Concurrent-safe writes
+- Register new config keys in schema.go

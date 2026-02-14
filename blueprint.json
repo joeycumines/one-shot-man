@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T006 COMPLETE. T006 committed as 6b1b0b9: feat(tui): expose remaining go-prompt features — options, key constants, document API, prompt methods. 8 files changed, 613 insertions(+), 25 deletions(-). Rule of Two passed (deep code review + full test suite). Next: T007 (Review and document tview/tcell deprecation)."
+    "currentState": "T001-T007 COMPLETE. T007 committed as 31a4c84: chore: mark osm:tview as deprecated with warning, document deprecation plan. 7 files changed, 214 insertions(+), 4 deletions(-). Rule of Two passed. Next: T008 (Implement system-style file logging for script commands)."
   },
   "sequentialTasks": [
     {
@@ -79,8 +79,8 @@
     },
     {
       "task": "T007: Review and document tview/tcell deprecation",
-      "description": "Review internal/builtin/tview/ for its current state. Document in docs/architecture.md or a new docs/archive/notes/tview-deprecation.md what works, what doesn't, and the plan for eventual removal. Mark the tview module as deprecated in code comments and docs/scripting.md. Verify no critical code paths depend on tview (bubbletea is the winner). Ensure existing tview tests still pass. Add a deprecation warning log when require('osm:tview') is called. scratch/t040-tview-tcell-assessment.md may contain relevant assessment notes.",
-      "status": "Not Started"
+      "description": "Committed as 31a4c84: Added Deprecated: comments to tview package and Require function. Added runtime deprecation warning to stderr when osm:tview is loaded. Created docs/archive/notes/tview-deprecation.md with comprehensive deprecation plan. Updated docs/scripting.md and docs/reference/tui-lifecycle.md with deprecation notices. Added SA1019 lint ignores for intentional deprecated usage. Added TestRegister_TViewDeprecationWarning test. 7 files changed, 214 insertions(+), 4 deletions(-).",
+      "status": "Done"
     },
     {
       "task": "T008: Implement system-style file logging for script commands",

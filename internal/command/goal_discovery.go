@@ -21,6 +21,10 @@ type GoalDiscoveryConfig struct {
 	// CustomPaths are user-defined goal paths
 	CustomPaths []string
 
+	// PromptFilePaths are additional directories to search for .prompt.md files
+	// (in addition to .github/prompts which is always searched).
+	PromptFilePaths []string
+
 	// MaxTraversalDepth limits how many directories to traverse upward (default: 10)
 	MaxTraversalDepth int
 
@@ -85,6 +89,13 @@ func NewGoalDiscovery(cfg *config.Config) *GoalDiscovery {
 	if val, exists := cfg.GetGlobalOption("goal.path-patterns"); exists {
 		if patterns := parsePathList(val); len(patterns) > 0 {
 			discoveryConfig.GoalPathPatterns = patterns
+		}
+	}
+
+	// Load prompt file paths
+	if val, exists := cfg.GetGlobalOption("prompt.file-paths"); exists {
+		if paths := parsePathList(val); len(paths) > 0 {
+			discoveryConfig.PromptFilePaths = paths
 		}
 	}
 
@@ -471,4 +482,29 @@ func (gd *GoalDiscovery) matchesAncestorPattern(segments []string) bool {
 	}
 
 	return false
+}
+
+// DiscoverPromptFilePaths returns directories to search for .prompt.md files.
+// This always includes .github/prompts relative to the current working
+// directory (the VS Code standard location) plus any paths configured via
+// the prompt.file-paths option.
+func (gd *GoalDiscovery) DiscoverPromptFilePaths() []string {
+	var paths []string
+	seenPaths := make(map[string]bool)
+
+	if !gd.config.DisableStandardPaths {
+		// VS Code standard: .github/prompts relative to CWD.
+		if cwd, err := os.Getwd(); err == nil {
+			ghPrompts := filepath.Join(cwd, ".github", "prompts")
+			gd.addPath(&paths, seenPaths, ghPrompts)
+		}
+	}
+
+	// User-configured prompt file paths.
+	for _, p := range gd.config.PromptFilePaths {
+		expanded := gd.expandPath(p)
+		gd.addPath(&paths, seenPaths, expanded)
+	}
+
+	return paths
 }

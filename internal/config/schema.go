@@ -404,6 +404,9 @@ func defaultGlobalOptions() []ConfigOption {
 		{Key: "goal.path-patterns", Type: TypePathList, Default: "osm-goals,goals", Description: "Patterns for goal directories"},
 		{Key: "goal.debug-discovery", Type: TypeBool, Default: "false", Description: "Debug logging for goal discovery"},
 
+		// Prompt file options
+		{Key: "prompt.file-paths", Type: TypePathList, Default: "", Description: "Additional directories to search for .prompt.md files"},
+
 		// Sync options (reserved)
 		{Key: "sync.repository", Type: TypeString, Default: "", Description: "Git repository URL for sync"},
 		{Key: "sync.enabled", Type: TypeBool, Default: "false", Description: "Enable git synchronisation"},

@@ -1,10 +1,7 @@
 ---
 name: strict-review-gate
-description: >
-  Enforces the "Rule of Two" Paranoia Protocol — the mandatory gate before marking any task
-  "Done" or committing. Use when user says "review", "guarantee correctness", "check correctness",
-  "finalize task", "commit", "Rule of Two", or when ANY task is completed, **before** you move on.
-  This gate applies to ALL tasks, not only when explicitly requested.
+description: Enforces the "Rule of Two" Paranoia Protocol — the mandatory gate before marking any task "Done" or committing. Use when user says "review", "guarantee correctness", "check correctness", "finalize task", "commit", "Rule of Two", or when ANY task is completed, **before** you move on. This gate applies to ALL tasks, not only when explicitly requested.
+license: MIT
 ---
 
 # Strict Review Gate (Rule of Two)

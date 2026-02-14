@@ -74,7 +74,8 @@
     {
       "task": "T030: Coverage audit: internal/builtin/grpc",
       "description": "Run coverage for internal/builtin/grpc/. 24 existing tests. Test loadDescriptorSet, dial, conn.invoke, conn.close, status constants. Cover dynamicpb+protojson JS↔proto conversion. Target 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage 93.2% → 96.2%. 15 new test functions in coverage_gaps_test.go. jsLoadDescriptorSet 96.6%→100%, jsDial 88.9%→100%. Remaining 3.8% is 5 defensive dead code blocks (conn.Close error, json.Marshal on goja-exported values, non-gRPC-status error from conn.Invoke, protojson.Marshal on dynamicpb, json.Unmarshal on protojson output). No bugs found. Rule of Two passed."
     },
     {
       "task": "T031: Coverage audit: internal/builtin/bubblezone (ZERO tests)",

@@ -12,5 +12,6 @@
 - **Blueprint**: REWRITTEN — 71 tasks (T021-T091), exhaustive, flat, no estimates, no priorities
 - **T028**: ✅ DONE — 28 new fetch tests (91.4%→97.4%), no bugs found, Rule of Two passed
 - **T029**: ✅ DONE — 27 new edge-case tests (99.2% unchanged, sole gap is defensive dead code), committed
-- **Next**: T030 — Coverage audit: internal/builtin/grpc
+- **T030**: ✅ DONE — 15 new grpc tests (93.2%→96.2%), jsLoadDescriptorSet+jsDial now 100%, no bugs found
+- **Next**: T031 — Coverage audit: internal/builtin/bubblezone (ZERO tests)
 - **Approach**: Execute tasks sequentially, verify via Rule of Two, commit, continue

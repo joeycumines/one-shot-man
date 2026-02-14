@@ -80,7 +80,8 @@
     {
       "task": "T031: Coverage audit: internal/builtin/bubblezone (ZERO tests)",
       "description": "internal/builtin/bubblezone/ has ZERO test files. Create bubblezone_test.go. Test Require function, zone ID generation, zone marking, mouse event zone detection. Achieve 100% coverage from scratch.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage 0% → 98.7%. 39 test functions in bubblezone_test.go testing all 6 JS functions (mark, scan, inBounds, get, newPrefix, close) plus integration flows. Fixed 2 bugs: nil/undefined/null guard for mouseMsg in inBounds before ToObject, nil checks for xVal/yVal alongside IsUndefined checks. Used waitForZone Go-level helper for async Scan() synchronization. Sole uncovered block is defensive dead code (ToObject nil check after null/undefined guard). Rule of Two passed."
     },
     {
       "task": "T032: Coverage audit: internal/builtin/tview and lipgloss",

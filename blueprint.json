@@ -139,7 +139,7 @@
     },
     {
       "task": "T019: Coverage audit: internal/session",
-      "description": "Run coverage analysis for internal/session/. Cover all platform-specific session ID generation paths (session_linux.go, session_other.go, session_windows.go). Test edge cases in session locking, ID auto-determination, and fallback logic. Platform-specific code tested via build tags. Achieve 100% coverage on the current platform.",
+      "description": "Run coverage analysis for internal/session/. Cover all platform-specific session ID generation paths (session_linux.go, session_other.go, session_windows.go). Test edge cases in session locking, ID auto-determination, and fallback logic. Platform-specific code tested via build tags. Achieve 100% coverage on ALL platforms.",
       "status": "Not Started"
     },
     {

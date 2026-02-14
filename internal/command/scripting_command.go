@@ -84,30 +84,13 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	}
 	defer cancel()
 
-	// Parse log level
-	var level slog.Level
-	switch strings.ToLower(c.logLevel) {
-	case "debug":
-		level = slog.LevelDebug
-	case "info":
-		level = slog.LevelInfo
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		return fmt.Errorf("invalid log level: %s", c.logLevel)
+	// Resolve logging configuration via config + flags.
+	lc, err := resolveLogConfig(c.logPath, c.logLevel, c.logBufferSize, c.config)
+	if err != nil {
+		return err
 	}
-
-	// Prepare logging configuration
-	var logFile io.Writer
-	if c.logPath != "" {
-		f, err := os.OpenFile(c.logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return fmt.Errorf("failed to open log file %s: %w", c.logPath, err)
-		}
-		defer f.Close()
-		logFile = f
+	if lc.logFile != nil {
+		defer lc.logFile.Close()
 	}
 
 	// Create scripting engine with explicit session configuration (no globals!)
@@ -117,7 +100,7 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 		engineOpts := modulePathOpts(c.config)
 		// Use the new API with explicit parameters to avoid data races
 		engineFactory = func(ctx context.Context, stdout, stderr io.Writer) (*scripting.Engine, error) {
-			return scripting.NewEngineDetailed(ctx, stdout, stderr, c.session, c.store, logFile, c.logBufferSize, level, engineOpts...)
+			return scripting.NewEngineDetailed(ctx, stdout, stderr, c.session, c.store, lc.logFile, lc.bufferSize, lc.level, engineOpts...)
 		}
 	}
 

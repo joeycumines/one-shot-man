@@ -7,8 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log/slog"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -155,34 +153,17 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	// Create a scripting engine to run the goal (allow explicit session/backend)
 	ctx := context.Background()
 
-	// Parse log level
-	var level slog.Level
-	switch strings.ToLower(c.logLevel) {
-	case "debug":
-		level = slog.LevelDebug
-	case "info", "":
-		level = slog.LevelInfo
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		return fmt.Errorf("invalid log level: %s", c.logLevel)
+	// Resolve logging configuration via config + flags.
+	lc, err := resolveLogConfig(c.logPath, c.logLevel, c.logBufferSize, c.config)
+	if err != nil {
+		return err
 	}
-
-	// Open log file if configured
-	var logFile io.Writer
-	if c.logPath != "" {
-		f, err := os.OpenFile(c.logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return fmt.Errorf("failed to open log file %s: %w", c.logPath, err)
-		}
-		defer f.Close()
-		logFile = f
+	if lc.logFile != nil {
+		defer lc.logFile.Close()
 	}
 
 	// Create scripting engine with explicit session/storage and logging configuration
-	engine, err := scripting.NewEngineDetailed(ctx, stdout, stderr, c.session, c.store, logFile, c.logBufferSize, level, modulePathOpts(c.config)...)
+	engine, err := scripting.NewEngineDetailed(ctx, stdout, stderr, c.session, c.store, lc.logFile, lc.bufferSize, lc.level, modulePathOpts(c.config)...)
 	if err != nil {
 		return fmt.Errorf("failed to create scripting engine: %w", err)
 	}

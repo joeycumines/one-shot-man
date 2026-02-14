@@ -409,6 +409,13 @@ func defaultGlobalOptions() []ConfigOption {
 		{Key: "sync.enabled", Type: TypeBool, Default: "false", Description: "Enable git synchronisation"},
 		{Key: "sync.auto-pull", Type: TypeBool, Default: "false", Description: "Auto-pull on startup"},
 		{Key: "sync.local-path", Type: TypeString, Default: "", Description: "Local path for sync repository"},
+
+		// Logging options
+		{Key: "log.file", Type: TypeString, Default: "", Description: "Default log file path (JSON output)", EnvVar: "OSM_LOG_FILE"},
+		{Key: "log.level", Type: TypeString, Default: "info", Description: "Default log level: debug, info, warn, error", EnvVar: "OSM_LOG_LEVEL"},
+		{Key: "log.max-size-mb", Type: TypeInt, Default: "10", Description: "Max log file size in MB before rotation"},
+		{Key: "log.max-files", Type: TypeInt, Default: "5", Description: "Max number of rotated log backup files"},
+		{Key: "log.buffer-size", Type: TypeInt, Default: "1000", Description: "In-memory log buffer size (entries)"},
 	}
 }
 

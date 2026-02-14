@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T017 COMPLETE. T017 committed as 26c35b0: test(argv): achieve 100% coverage with additional edge case tests. 1 file changed, 38 insertions(+). Rule of Two passed. Next: T018."
+    "currentState": "T001-T018 COMPLETE. T018 committed as 12db2bf: test(config): achieve 100% coverage with additional edge case tests. 2 files changed, 54 insertions(+). Coverage: 96.6% → 97.2% (100% effective). Next: T019."
   },
   "sequentialTasks": [
     {
@@ -134,8 +134,8 @@
     },
     {
       "task": "T018: Coverage audit: internal/config",
-      "description": "Run coverage analysis for internal/config/. The package now includes config.go, schema.go, and write.go. Identify uncovered paths in: config parsing, location resolution, environment variable handling, default value logic, schema validation, typed getters, SetKeyInFile edge cases. Add tests to achieve 100% effective coverage across all files.",
-      "status": "Not Started"
+      "description": "Coverage: 96.6% → 97.2% (100% effective). Added 2 tests: UpdateExistingKeyToEmptyValue (found=true, value=\"\" branch), ReadError (directory-as-path triggers non-NotExist ReadFile error). Remaining 2.8%: 4 defensive guards — os.UserHomeDir() error (OS-dependent), EnsureConfigDir cascading error, FormatHelp len(opts)==0 (structurally unreachable), SetKeyInFile MkdirAll error (ReadFile catches first).",
+      "status": "Done"
     },
     {
       "task": "T019: Coverage audit: internal/session",

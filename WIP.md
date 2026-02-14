@@ -18,6 +18,7 @@
 - **T015**: ✅ DONE (commit b28e6a6) — Rule of Two PASSED
 - **T016**: ✅ DONE (commit a916201) — Rule of Two PASSED
 - **T017**: ✅ DONE (commit 26c35b0) — Rule of Two PASSED
+- **T018**: ✅ DONE (commit 12db2bf) — Rule of Two PASSED
 
 ## Active Task
-Starting T018: Coverage audit: internal/config
+Starting T019: Coverage audit: internal/session

@@ -300,6 +300,183 @@ func TestFileSystemBackend_ErrorScenarios(t *testing.T) {
 	})
 }
 
+func TestFileSystemBackend_ArchiveSession_ErrorPaths(t *testing.T) {
+	_, cleanup := setupTest(t)
+	defer cleanup()
+
+	t.Run("ID mismatch returns error", func(t *testing.T) {
+		backend, err := NewFileSystemBackend("archive-err-id")
+		if err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		defer backend.Close()
+
+		err = backend.ArchiveSession("wrong-id", "/tmp/somewhere")
+		if err == nil {
+			t.Fatal("expected error for ID mismatch")
+		}
+	})
+
+	t.Run("empty destPath returns error", func(t *testing.T) {
+		backend, err := NewFileSystemBackend("archive-err-dest")
+		if err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		defer backend.Close()
+
+		err = backend.ArchiveSession("archive-err-dest", "")
+		if err == nil {
+			t.Fatal("expected error for empty destPath")
+		}
+	})
+
+	t.Run("source does not exist is no-op", func(t *testing.T) {
+		backend, err := NewFileSystemBackend("archive-err-nosrc")
+		if err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		defer backend.Close()
+
+		// Do NOT save any session — source file doesn't exist.
+		err = backend.ArchiveSession("archive-err-nosrc", "/tmp/dest-noop")
+		if err != nil {
+			t.Fatalf("expected nil error for non-existent source, got: %v", err)
+		}
+	})
+}
+
+// Exercise error paths triggered by sessionDirectory failures
+// inside fs_backend methods after the backend is already constructed.
+// The public SessionFilePath/SessionLockFilePath functions call the
+// sessionDirectory func var, so overriding it propagates errors.
+func TestFileSystemBackend_FuncVarErrors(t *testing.T) {
+	_, cleanup := setupTest(t)
+	defer cleanup()
+
+	t.Run("LoadSession sessionDirectory error", func(t *testing.T) {
+		backend, err := NewFileSystemBackend("load-dir-err")
+		if err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		defer backend.Close()
+
+		orig := sessionDirectory
+		defer func() { sessionDirectory = orig }()
+		sessionDirectory = func() (string, error) {
+			return "", fmt.Errorf("injected dir error")
+		}
+
+		_, err = backend.LoadSession("load-dir-err")
+		if err == nil {
+			t.Fatal("expected error when sessionDirectory fails in LoadSession")
+		}
+	})
+
+	t.Run("SaveSession sessionDirectory error", func(t *testing.T) {
+		backend, err := NewFileSystemBackend("save-dir-err")
+		if err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		defer backend.Close()
+
+		orig := sessionDirectory
+		defer func() { sessionDirectory = orig }()
+		sessionDirectory = func() (string, error) {
+			return "", fmt.Errorf("injected dir error")
+		}
+
+		err = backend.SaveSession(&Session{ID: "save-dir-err"})
+		if err == nil {
+			t.Fatal("expected error when sessionDirectory fails in SaveSession")
+		}
+	})
+
+	t.Run("ArchiveSession sessionDirectory error", func(t *testing.T) {
+		backend, err := NewFileSystemBackend("arch-dir-err")
+		if err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		defer backend.Close()
+
+		orig := sessionDirectory
+		defer func() { sessionDirectory = orig }()
+		sessionDirectory = func() (string, error) {
+			return "", fmt.Errorf("injected dir error")
+		}
+
+		err = backend.ArchiveSession("arch-dir-err", "/tmp/somewhere")
+		if err == nil {
+			t.Fatal("expected error when sessionDirectory fails in ArchiveSession")
+		}
+	})
+
+	t.Run("NewFileSystemBackend sessionLockFilePath error", func(t *testing.T) {
+		// SessionLockFilePath calls sessionDirectory (func var), so if we
+		// override sessionDirectory to error after the first SessionDirectory()
+		// call succeeds (which uses the public function directly), the lock
+		// path resolution will fail.
+		orig := sessionDirectory
+		defer func() { sessionDirectory = orig }()
+		sessionDirectory = func() (string, error) {
+			return "", fmt.Errorf("injected dir error")
+		}
+
+		_, err := NewFileSystemBackend("lock-dir-err")
+		if err == nil {
+			t.Fatal("expected error when sessionDirectory fails for lock path")
+		}
+	})
+
+	t.Run("LoadSession non-ENOENT read error", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Skipping directory-as-file on Windows")
+		}
+		backend, err := NewFileSystemBackend("load-read-err")
+		if err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		defer backend.Close()
+
+		// Create a directory where the session file would be; ReadFile
+		// on a directory returns an error that is NOT os.IsNotExist.
+		sessionPath, _ := SessionFilePath("load-read-err")
+		if err := os.MkdirAll(sessionPath, 0755); err != nil {
+			t.Fatalf("mkdir at session path: %v", err)
+		}
+		defer os.RemoveAll(sessionPath)
+
+		_, err = backend.LoadSession("load-read-err")
+		if err == nil {
+			t.Fatal("expected error for non-ENOENT ReadFile failure")
+		}
+	})
+
+	t.Run("ArchiveSession MkdirAll dest failure", func(t *testing.T) {
+		backend, err := NewFileSystemBackend("arch-mkdir-err")
+		if err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		defer backend.Close()
+
+		// Save a session so source file exists.
+		if err := backend.SaveSession(&Session{ID: "arch-mkdir-err"}); err != nil {
+			t.Fatalf("save: %v", err)
+		}
+
+		// Create a regular file where the dest dir needs to be.
+		blocker := filepath.Join(t.TempDir(), "blocker")
+		if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+			t.Fatalf("write blocker: %v", err)
+		}
+
+		destPath := filepath.Join(blocker, "subdir", "file.json")
+		err = backend.ArchiveSession("arch-mkdir-err", destPath)
+		if err == nil {
+			t.Fatal("expected error when MkdirAll fails for dest directory")
+		}
+	})
+}
+
 func TestFileSystemBackend_ArchiveSession_ExclusiveCreate(t *testing.T) {
 	tmp, cleanup := setupTest(t)
 	defer cleanup()

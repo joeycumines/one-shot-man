@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -293,5 +294,69 @@ func TestSessionArchiveDir(t *testing.T) {
 
 	if dir1 != dir2 {
 		t.Errorf("SessionArchiveDir should return same path consistently: %s vs %s", dir1, dir2)
+	}
+}
+
+// Verify that public path functions propagate sessionDirectory errors.
+func TestSessionFilePath_SessionDirError(t *testing.T) {
+	orig := sessionDirectory
+	defer func() { sessionDirectory = orig }()
+	sessionDirectory = func() (string, error) { return "", fmt.Errorf("no home dir") }
+
+	_, err := SessionFilePath("test")
+	if err == nil {
+		t.Fatal("expected error from SessionFilePath when sessionDirectory fails")
+	}
+}
+
+func TestSessionLockFilePath_SessionDirError(t *testing.T) {
+	orig := sessionDirectory
+	defer func() { sessionDirectory = orig }()
+	sessionDirectory = func() (string, error) { return "", fmt.Errorf("no home dir") }
+
+	_, err := SessionLockFilePath("test")
+	if err == nil {
+		t.Fatal("expected error from SessionLockFilePath when sessionDirectory fails")
+	}
+}
+
+func TestSessionArchiveDir_SessionDirError(t *testing.T) {
+	orig := sessionDirectory
+	defer func() { sessionDirectory = orig }()
+	sessionDirectory = func() (string, error) { return "", fmt.Errorf("no home dir") }
+
+	_, err := SessionArchiveDir()
+	if err == nil {
+		t.Fatal("expected error from SessionArchiveDir when sessionDirectory fails")
+	}
+}
+
+func TestArchiveSessionFilePath_ArchiveDirError(t *testing.T) {
+	orig := sessionDirectory
+	defer func() { sessionDirectory = orig }()
+	sessionDirectory = func() (string, error) { return "", fmt.Errorf("no home dir") }
+
+	_, err := ArchiveSessionFilePath("test", time.Now(), 0)
+	if err == nil {
+		t.Fatal("expected error from ArchiveSessionFilePath when sessionDirectory fails")
+	}
+}
+
+func TestSessionArchiveDir_MkdirAllError(t *testing.T) {
+	tmpDir := t.TempDir()
+	archivePath := filepath.Join(tmpDir, "archive")
+
+	// Create a regular file where the archive subdirectory needs to be.
+	if err := os.WriteFile(archivePath, []byte("blocker"), 0644); err != nil {
+		t.Fatalf("write blocker: %v", err)
+	}
+
+	orig := sessionDirectory
+	defer func() { sessionDirectory = orig }()
+	sessionDirectory = func() (string, error) { return tmpDir, nil }
+
+	_, err := SessionArchiveDir()
+	if err == nil {
+		t.Fatal("expected error when MkdirAll fails for archive directory")
 	}
 }

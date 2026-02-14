@@ -312,6 +312,60 @@ func TestSetKeyInFile_EmptyValue(t *testing.T) {
 	}
 }
 
+func TestSetKeyInFile_UpdateExistingKeyToEmptyValue(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "config")
+
+	// Write initial config with a key that has a value
+	if err := os.WriteFile(path, []byte("session.id my-session\nverbose true\n"), 0644); err != nil {
+		t.Fatalf("failed to write initial config: %v", err)
+	}
+
+	// Update the key to empty value
+	if err := SetKeyInFile(path, "session.id", ""); err != nil {
+		t.Fatalf("SetKeyInFile returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read config file: %v", err)
+	}
+
+	content := string(data)
+	// Should have "session.id" without a value, not "session.id my-session"
+	if strings.Contains(content, "session.id my-session") {
+		t.Fatalf("expected old value to be replaced, got %q", content)
+	}
+	if !strings.Contains(content, "session.id") {
+		t.Fatalf("expected key to remain, got %q", content)
+	}
+	if !strings.Contains(content, "verbose true") {
+		t.Fatalf("expected other keys preserved, got %q", content)
+	}
+
+	cfg, err := LoadFromPath(path)
+	if err != nil {
+		t.Fatalf("LoadFromPath returned error: %v", err)
+	}
+	if v, ok := cfg.GetGlobalOption("session.id"); !ok || v != "" {
+		t.Fatalf("expected session.id='', got %q exists=%v", v, ok)
+	}
+}
+
+func TestSetKeyInFile_ReadError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// Use a directory as the path — os.ReadFile on a directory returns
+	// a non-NotExist error (EISDIR or equivalent) on all platforms.
+	err := SetKeyInFile(dir, "key", "value")
+	if err == nil {
+		t.Fatal("expected error when reading from a directory")
+	}
+	if !strings.Contains(err.Error(), "reading config file") {
+		t.Fatalf("expected 'reading config file' in error, got: %v", err)
+	}
+}
+
 func TestSetKeyInFile_MultipleSequentialWrites(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "config")

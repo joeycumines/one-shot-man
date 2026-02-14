@@ -9,12 +9,11 @@
 - **T006**: ✅ DONE (commit 6b1b0b9) — Rule of Two PASSED
 - **T007**: ✅ DONE (commit 31a4c84) — Rule of Two PASSED
 - **T008**: ✅ DONE (commit 293924c) — Rule of Two PASSED
-- **T009**: 🔄 NEXT — Implement log tailing capability
+- **T009**: ✅ DONE (commit b2c93d5) — Rule of Two PASSED
+- **T010**: 🔄 NEXT — Fix duplicate log lines for purged sessions
 
-## T009 Context
-- Add `osm log tail` or `osm log --follow` command
-- Opens configured log file, streams new lines to stdout
-- Support --lines N flag for initial line count
-- Handle log rotation gracefully (detect file truncation/rotation, re-open)
-- Must work on Linux, macOS, and Windows
-- Add tests using temp log files with simulated appends
+## T010 Context
+- Investigate and fix duplicate log lines during session purge
+- Trace logging through internal/storage/cleanup.go and internal/session/
+- Ensure each purge action produces exactly one log line
+- Add test capturing log output during purge asserting no duplicates

@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T008 COMPLETE. T008 committed as 293924c: feat(logging): add rotating file writer, config keys, and shared log resolution. 10 files changed, 813 insertions(+), 128 deletions(-). Rule of Two passed. Next: T009 (Implement log tailing capability)."
+    "currentState": "T001-T009 COMPLETE. T009 committed as b2c93d5: feat(command): add log tail command with follow mode and rotation detection. 3 files changed, 812 insertions(+). Rule of Two passed. Next: T010 (Fix duplicate log lines for purged sessions)."
   },
   "sequentialTasks": [
     {
@@ -89,8 +89,8 @@
     },
     {
       "task": "T009: Implement log tailing capability",
-      "description": "Add `osm log tail` command (or `osm log --follow`) that tails the log file in real-time. Implement as a new command in internal/command/ that opens the configured log file and streams new lines to stdout. Support --lines N flag for initial line count. Handle log rotation gracefully (detect file truncation/rotation and re-open). Must work on Linux, macOS, and Windows. Add tests using temp log files with simulated appends.",
-      "status": "Not Started"
+      "description": "Committed as b2c93d5: Added LogCommand with tail and follow modes, ring buffer for last-N lines, polling-based follow with rotation detection (file shrink/replacement), cross-platform (no inode/syscall), waitForFile with timeout, resolveLogPath with nil-config safety. 14 test cases with syncBuffer for race-free concurrent testing. Wired into main.go registry. 3 files changed, 812 insertions(+).",
+      "status": "Done"
     },
     {
       "task": "T010: Fix duplicate log lines for purged sessions",

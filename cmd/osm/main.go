@@ -51,6 +51,7 @@ func run() error {
 	registry.Register(command.NewCompletionCommand(registry, goalRegistry))
 	registry.Register(command.NewGoalCommand(cfg, goalRegistry))
 	registry.Register(command.NewSyncCommand())
+	registry.Register(command.NewLogCommand(cfg))
 
 	// Parse global flags and command. Avoid manual inspection of args for
 	// help tokens; instead rely on the flag package so we consistently

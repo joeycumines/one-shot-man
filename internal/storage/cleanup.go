@@ -225,9 +225,6 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 		// artifact — leave it in place. Only attempt to acquire the lock and
 		// remove the artifact when the session file does not exist (an orphan).
 		if _, err := os.Stat(sessionPath); err == nil {
-			// Log for debugging to ensure we don't remove artifacts for
-			// sessions that still have a session file present.
-			fmt.Printf("cleanup: session exists - skipping lock removal for %s\n", lockPath)
 			// Session file exists — do not remove the lock artifact.
 			report.Skipped = append(report.Skipped, base)
 			continue
@@ -275,7 +272,6 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 
 		if f, ok, err := AcquireLockHandle(lockPath); err == nil && ok {
 			if rerr := ReleaseLockHandle(f); rerr == nil {
-				fmt.Printf("cleanup: removed orphan lock %s\n", lockPath)
 				report.Removed = append(report.Removed, base)
 			} else {
 				report.Skipped = append(report.Skipped, base)

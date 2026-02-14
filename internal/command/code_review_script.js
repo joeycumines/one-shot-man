@@ -26,7 +26,7 @@ let parseArgv, formatArgv, items, buildPrompt, commands;
 
 // Build commands with state accessor - called when mode is first used
 function buildCommands(stateArg) {
-    const ctxmgr = contextManager({
+    const ctxmgrOpts = {
         getItems: () => stateArg.get(shared.contextItems) || [],
         setItems: (v) => stateArg.set(shared.contextItems, v),
         nextIntegerId: nextIntegerId,
@@ -36,7 +36,12 @@ function buildCommands(stateArg) {
                 contextTxtar: fullContext
             });
         }
-    });
+    };
+    // Pass config-defined hot-snippets to contextManager if available.
+    if (typeof CONFIG_HOT_SNIPPETS !== 'undefined' && Array.isArray(CONFIG_HOT_SNIPPETS) && CONFIG_HOT_SNIPPETS.length > 0) {
+        ctxmgrOpts.hotSnippets = CONFIG_HOT_SNIPPETS;
+    }
+    const ctxmgr = contextManager(ctxmgrOpts);
 
     // Export for test access as both module-level and global variables
     parseArgv = ctxmgr.parseArgv;

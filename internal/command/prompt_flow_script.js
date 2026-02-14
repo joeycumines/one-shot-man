@@ -154,7 +154,7 @@ function buildCommands(state) {
     }
 
     // Create context manager with the injected state accessor (shared contextItems)
-    const ctxmgr = contextManager({
+    const ctxmgrOpts = {
         getItems: () => state.get(shared.contextItems) || [],
         setItems: (v) => state.set(shared.contextItems, v),
         nextIntegerId: nextIntegerId,
@@ -166,7 +166,12 @@ function buildCommands(state) {
                 return getMetaPrompt();
             }
         }
-    });
+    };
+    // Pass config-defined hot-snippets to contextManager if available.
+    if (typeof CONFIG_HOT_SNIPPETS !== 'undefined' && Array.isArray(CONFIG_HOT_SNIPPETS) && CONFIG_HOT_SNIPPETS.length > 0) {
+        ctxmgrOpts.hotSnippets = CONFIG_HOT_SNIPPETS;
+    }
+    const ctxmgr = contextManager(ctxmgrOpts);
 
     // Export for test access
     addItem = ctxmgr.addItem;

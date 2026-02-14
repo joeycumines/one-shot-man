@@ -83,6 +83,9 @@ func (c *CodeReviewCommand) Execute(args []string, stdout, stderr io.Writer) err
 		engine.SetTestMode(true)
 	}
 
+	// Inject config-defined hot-snippets for contextManager.
+	injectConfigHotSnippets(engine, c.config)
+
 	// Inject command name for state namespacing
 	const commandName = "code-review"
 	engine.SetGlobal("config", map[string]interface{}{

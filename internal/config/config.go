@@ -18,6 +18,10 @@ type Config struct {
 	Commands map[string]map[string]string
 	// Sessions configuration controls automatic session cleanup and retention.
 	Sessions SessionConfig
+	// HotSnippets are user-configured text snippets that can be copied to
+	// clipboard from interactive modes. Parsed from the [hot-snippets]
+	// config section.
+	HotSnippets []HotSnippet
 	// Warnings contains any warnings generated during config loading
 	Warnings []string
 }
@@ -34,8 +38,17 @@ func NewConfig() *Config {
 			AutoCleanupEnabled:   true,
 			CleanupIntervalHours: 24,
 		},
-		Warnings: make([]string, 0),
+		HotSnippets: make([]HotSnippet, 0),
+		Warnings:    make([]string, 0),
 	}
+}
+
+// HotSnippet represents a named text snippet that users can quickly copy
+// to the clipboard from interactive modes.
+type HotSnippet struct {
+	Name        string `json:"name"`
+	Text        string `json:"text"`
+	Description string `json:"description,omitempty"`
 }
 
 // SessionConfig controls session lifecycle and cleanup behavior.
@@ -104,6 +117,7 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 
 	var currentCommand string
 	var inSessionsSection bool
+	var inHotSnippetsSection bool
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -116,11 +130,18 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 		// Check for section header [section_name]
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			sectionName := strings.Trim(line, "[]")
-			if sectionName == "sessions" {
+			switch sectionName {
+			case "sessions":
 				inSessionsSection = true
+				inHotSnippetsSection = false
 				currentCommand = ""
-			} else {
+			case "hot-snippets":
+				inHotSnippetsSection = true
 				inSessionsSection = false
+				currentCommand = ""
+			default:
+				inSessionsSection = false
+				inHotSnippetsSection = false
 				currentCommand = sectionName
 				if config.Commands[currentCommand] == nil {
 					config.Commands[currentCommand] = make(map[string]string)
@@ -146,6 +167,11 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 			// Session configuration option
 			if err := parseSessionOption(&config.Sessions, optionName, value); err != nil {
 				return nil, fmt.Errorf("invalid session option %q: %w", optionName, err)
+			}
+		} else if inHotSnippetsSection {
+			// Hot-snippet definition
+			if err := parseHotSnippetLine(&config.HotSnippets, optionName, value); err != nil {
+				return nil, fmt.Errorf("invalid hot-snippet %q: %w", optionName, err)
 			}
 		} else if currentCommand == "" {
 			// Global option
@@ -234,6 +260,41 @@ func parseSessionOption(sc *SessionConfig, name, value string) error {
 	default:
 		return fmt.Errorf("unknown session option: %s", name)
 	}
+	return nil
+}
+
+// parseHotSnippetLine parses a single line from the [hot-snippets] config
+// section. Two formats are supported:
+//
+//	snippetName text of the snippet     → defines a snippet (literal \n → newline)
+//	snippetName.description Help text   → sets description on the last snippet named snippetName
+//
+// The name must not be empty. If a .description suffix targets a name that
+// has not yet been defined, an error is returned.
+func parseHotSnippetLine(snippets *[]HotSnippet, name, value string) error {
+	if name == "" {
+		return fmt.Errorf("empty snippet name")
+	}
+
+	// Check for .description suffix
+	if dotIdx := strings.LastIndex(name, "."); dotIdx > 0 {
+		baseName := name[:dotIdx]
+		suffix := name[dotIdx+1:]
+		if suffix == "description" {
+			// Set description on the last snippet with baseName
+			for i := len(*snippets) - 1; i >= 0; i-- {
+				if (*snippets)[i].Name == baseName {
+					(*snippets)[i].Description = value
+					return nil
+				}
+			}
+			return fmt.Errorf("snippet %q not found for .description", baseName)
+		}
+	}
+
+	// Convert literal \n sequences to actual newlines
+	text := strings.ReplaceAll(value, `\n`, "\n")
+	*snippets = append(*snippets, HotSnippet{Name: name, Text: text})
 	return nil
 }
 

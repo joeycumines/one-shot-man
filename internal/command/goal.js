@@ -139,6 +139,25 @@
     if (config.postCopyHint) {
         ctxmgrOpts.postCopyHint = config.postCopyHint;
     }
+    // Merge config-defined hot-snippets with any goal-defined ones.
+    // Goal-defined snippets (from GOAL_CONFIG.hotSnippets) take precedence
+    // over config file snippets (CONFIG_HOT_SNIPPETS) on name conflicts.
+    var configSnippets = (typeof CONFIG_HOT_SNIPPETS !== 'undefined' && Array.isArray(CONFIG_HOT_SNIPPETS)) ? CONFIG_HOT_SNIPPETS : [];
+    var goalSnippets = Array.isArray(config.hotSnippets) ? config.hotSnippets : [];
+    if (configSnippets.length > 0 || goalSnippets.length > 0) {
+        var merged = [];
+        var seen = {};
+        for (var si = 0; si < goalSnippets.length; si++) {
+            seen[goalSnippets[si].name] = true;
+            merged.push(goalSnippets[si]);
+        }
+        for (var si = 0; si < configSnippets.length; si++) {
+            if (!seen[configSnippets[si].name]) {
+                merged.push(configSnippets[si]);
+            }
+        }
+        ctxmgrOpts.hotSnippets = merged;
+    }
     const ctxmgr = contextManager(ctxmgrOpts);
 
     function buildBaseTemplateData() {

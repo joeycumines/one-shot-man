@@ -177,6 +177,9 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		engine.SetTestMode(true)
 	}
 
+	// Inject config-defined hot-snippets so goal.js can pass them to contextManager.
+	injectConfigHotSnippets(engine, c.config)
+
 	// Marshal goal configuration to JSON for the JavaScript interpreter
 	goalConfigJSON, err := json.Marshal(selectedGoal)
 	if err != nil {

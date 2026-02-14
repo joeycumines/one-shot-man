@@ -135,6 +135,9 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	}
 	engine.SetGlobal("args", scriptArgs)
 
+	// Inject config-defined hot-snippets for contextManager in user scripts.
+	injectConfigHotSnippets(engine, c.config)
+
 	// PHASE 1: Configuration - Evaluate scripts to define modes and commands.
 	// Load the script file passed as the first argument
 	if scriptFile != "" {

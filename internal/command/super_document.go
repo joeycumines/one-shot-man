@@ -135,6 +135,9 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 		}
 	}
 
+	// Inject config-defined hot-snippets for contextManager.
+	injectConfigHotSnippets(engine, c.config)
+
 	// Inject command name and configuration for state namespacing
 	// The shellMode flag controls whether to start in shell or TUI mode
 	const commandName = "super-document"

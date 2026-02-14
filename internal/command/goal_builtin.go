@@ -735,6 +735,290 @@ Type 'help' for commands.`,
   output.print("Goal text updated. Use 'reset' to apply it to the context.");
 }`,
 				},
+				{Name: "help", Type: "help"},
+			},
+		},
+
+		// Bug Buster Goal — adapted from Anthropic Prompt Library
+		{
+			Name:        "bug-buster",
+			Description: "Detect and fix bugs in code",
+			Category:    "code-quality",
+			Usage:       "Analyzes code for bugs, errors, and anti-patterns, providing corrected versions with explanations",
+			Script:      goalScript,
+			FileName:    "goal.js",
+
+			TUITitle:  "Bug Buster",
+			TUIPrompt: "(bug-buster) > ",
+
+			StateVars: map[string]interface{}{},
+
+			PromptInstructions: `Analyze the provided code and identify any bugs, errors, or anti-patterns present. For each issue found:
+
+1. **Identify the bug** — describe what is wrong and where in the code it occurs
+2. **Explain the impact** — what incorrect behavior does this cause? Under what conditions does it manifest?
+3. **Provide the fix** — show the corrected code with the minimum change needed to resolve the issue
+4. **Explain the fix** — why does this correction resolve the issue? What was the root cause?
+
+Additionally consider:
+- **Race conditions** and concurrency issues
+- **Off-by-one errors** and boundary conditions
+- **Null/nil/undefined dereferences** and missing error handling
+- **Resource leaks** (unclosed files, connections, goroutines)
+- **Logic errors** that produce incorrect results silently
+- **Security vulnerabilities** (injection, path traversal, improper validation)
+
+The corrected code should be functional, efficient, and adhere to best practices for the language in use. Preserve the original code's intent and structure where possible. If no bugs are found, state that explicitly and suggest defensive improvements.`,
+
+			PromptTemplate: `**{{.description | upper}}**
+
+{{.promptInstructions}}
+
+## {{.contextHeader}}
+
+{{.contextTxtar}}`,
+
+			ContextHeader: "CODE TO ANALYZE",
+
+			Commands: []CommandConfig{
+				{Name: "add", Type: "contextManager"},
+				{Name: "diff", Type: "contextManager"},
+				{Name: "note", Type: "contextManager", Description: "Add a note about suspected bugs or areas of concern"},
+				{Name: "list", Type: "contextManager"},
+				{Name: "edit", Type: "contextManager"},
+				{Name: "remove", Type: "contextManager"},
+				{Name: "show", Type: "contextManager"},
+				{Name: "copy", Type: "contextManager"},
+				{Name: "help", Type: "help"},
+			},
+		},
+
+		// Code Optimizer Goal — adapted from Anthropic Prompt Library
+		{
+			Name:        "code-optimizer",
+			Description: "Suggest performance optimizations for code",
+			Category:    "code-quality",
+			Usage:       "Analyzes code for performance improvements, suggesting optimizations with complexity analysis",
+			Script:      goalScript,
+			FileName:    "goal.js",
+
+			TUITitle:  "Code Optimizer",
+			TUIPrompt: "(code-optimizer) > ",
+
+			StateVars: map[string]interface{}{},
+
+			PromptInstructions: `Analyze the provided code and suggest improvements to optimize its performance. For each optimization:
+
+1. **Identify the bottleneck** — describe the inefficient code and why it is slow or resource-intensive
+2. **Propose the optimization** — show the improved code
+3. **Explain the improvement** — quantify the benefit where possible (e.g., O(n²) → O(n log n))
+4. **Assess trade-offs** — note any readability, memory, or complexity trade-offs
+
+For key algorithms and data structures, calculate time and space complexity using Big O notation with step-by-step reasoning. Provide worst-case, average-case, and best-case analysis where relevant.
+
+Areas to examine:
+- **Algorithmic complexity** — unnecessary nested loops, redundant computation, suboptimal data structures
+- **Memory usage** — excessive allocations, large copies, unbounded growth
+- **I/O patterns** — unnecessary disk/network operations, missing batching or buffering
+- **Concurrency** — opportunities for parallelism, lock contention, unnecessary synchronization
+- **Caching opportunities** — repeated expensive computations that could be memoized
+- **Language-specific idioms** — using language features that are more efficient than manual implementations
+
+The optimized code must maintain identical functionality and correctness. Do not sacrifice correctness for performance.`,
+
+			PromptTemplate: `**{{.description | upper}}**
+
+{{.promptInstructions}}
+
+## {{.contextHeader}}
+
+{{.contextTxtar}}`,
+
+			ContextHeader: "CODE TO OPTIMIZE",
+
+			Commands: []CommandConfig{
+				{Name: "add", Type: "contextManager"},
+				{Name: "diff", Type: "contextManager"},
+				{Name: "note", Type: "contextManager", Description: "Add a note about performance concerns or requirements"},
+				{Name: "list", Type: "contextManager"},
+				{Name: "edit", Type: "contextManager"},
+				{Name: "remove", Type: "contextManager"},
+				{Name: "show", Type: "contextManager"},
+				{Name: "copy", Type: "contextManager"},
+				{Name: "help", Type: "help"},
+			},
+		},
+
+		// Code Explainer Goal — adapted from Anthropic Prompt Library
+		{
+			Name:        "code-explainer",
+			Description: "Explain code in plain language for onboarding and knowledge transfer",
+			Category:    "code-understanding",
+			Usage:       "Breaks down code functionality using plain terms and analogies, making it accessible to any reader",
+			Script:      goalScript,
+			FileName:    "goal.js",
+
+			TUITitle:  "Code Explainer",
+			TUIPrompt: "(code-explainer) > ",
+
+			NotableVariables: []string{"depth"},
+
+			StateVars: map[string]interface{}{
+				"depth": "detailed",
+			},
+
+			PromptInstructions: `Take the provided code and explain it in simple, easy-to-understand language at a {{.stateKeys.depth}} level.
+
+{{.depthInstructions}}
+
+**Explanation Standards:**
+- Use analogies and real-world examples to illustrate abstract concepts
+- Avoid jargon unless necessary; when jargon is used, define it immediately
+- Explain not just *what* the code does, but *why* it does it that way
+- Highlight any clever techniques, design patterns, or non-obvious behaviors
+- Note any potential gotchas or surprising behaviors a newcomer should know about
+- If the code interacts with external systems (files, network, databases), explain those interactions
+
+The goal is to help a reader understand both what the code does and how it works, enabling them to confidently modify or extend it.`,
+
+			PromptTemplate: `**{{.description | upper}}**
+
+{{.promptInstructions}}
+
+## {{.contextHeader}}
+
+{{.contextTxtar}}`,
+
+			ContextHeader: "CODE TO EXPLAIN",
+
+			PromptOptions: map[string]interface{}{
+				"depthInstructions": map[string]string{
+					"brief": `Provide a brief, high-level overview:
+- One-paragraph summary of the code's purpose
+- List the main components or functions and what each does in one sentence
+- Note any important dependencies or assumptions`,
+					"detailed": `Provide a detailed walkthrough:
+- Start with a high-level summary of the code's purpose and architecture
+- Break down each function, class, or module and explain its role
+- Trace the main execution flow step by step
+- Explain key data structures and why they were chosen
+- Describe error handling strategies and edge cases covered`,
+					"comprehensive": `Provide an exhaustive, teaching-level explanation:
+- Start with the problem this code solves and the approach taken
+- Explain every function, class, and module in detail with examples
+- Trace all execution paths including error and edge cases
+- Explain design decisions and trade-offs made
+- Describe how each piece connects to form the whole system
+- Include a "mental model" section with diagrams or analogies
+- Suggest prerequisite knowledge needed to fully understand the code
+- List concepts a reader should study further to deepen understanding`,
+				},
+			},
+
+			Commands: []CommandConfig{
+				{Name: "add", Type: "contextManager"},
+				{Name: "diff", Type: "contextManager"},
+				{Name: "note", Type: "contextManager", Description: "Add a note about what aspects need explanation"},
+				{Name: "list", Type: "contextManager"},
+				{Name: "edit", Type: "contextManager"},
+				{Name: "remove", Type: "contextManager"},
+				{Name: "show", Type: "contextManager"},
+				{Name: "copy", Type: "contextManager"},
+				{
+					Name:        "depth",
+					Type:        "custom",
+					Description: "Set explanation depth level",
+					Usage:       "depth <brief|detailed|comprehensive>",
+					Handler: `function (args) {
+                        if (args.length === 0) {
+                            output.print("Current depth: " + (state.get(stateKeys.depth) || "detailed"));
+                            output.print("Available depths: brief, detailed, comprehensive");
+                            return;
+                        }
+                        var depth = args[0].toLowerCase();
+                        var validDepths = ["brief", "detailed", "comprehensive"];
+                        if (validDepths.indexOf(depth) === -1) {
+                            output.print("Invalid depth. Available: " + validDepths.join(", "));
+                            return;
+                        }
+                        state.set(stateKeys.depth, depth);
+                        output.print("Explanation depth set to: " + depth);
+                    }`,
+				},
+				{Name: "help", Type: "help"},
+			},
+		},
+
+		// Meeting Notes Goal — adapted from Anthropic Prompt Library
+		{
+			Name:        "meeting-notes",
+			Description: "Generate structured meeting summaries with action items",
+			Category:    "productivity",
+			Usage:       "Creates concise meeting summaries with key takeaways, decisions, and action items from notes or transcripts",
+			Script:      goalScript,
+			FileName:    "goal.js",
+
+			TUITitle:  "Meeting Notes",
+			TUIPrompt: "(meeting-notes) > ",
+
+			StateVars: map[string]interface{}{},
+
+			PromptInstructions: `Review the provided meeting notes or transcript and create a concise, well-organized summary following this structure:
+
+## Meeting Summary
+A 2-3 sentence overview of the meeting's purpose and outcome.
+
+## Key Discussion Points
+Summarize the main topics discussed, organized by theme. For each:
+- What was discussed
+- Key arguments or perspectives raised
+- Any data or evidence referenced
+
+## Decisions Made
+List all decisions reached during the meeting:
+- The decision itself
+- The rationale behind it
+- Who approved or championed it
+
+## Action Items
+For each action item, clearly specify:
+- **What** needs to be done (specific, actionable task)
+- **Who** is responsible (by name or role)
+- **When** it is due (deadline if mentioned, or "TBD")
+- **Dependencies** on other items or external factors
+
+## Open Questions
+List any unresolved questions or topics deferred to future discussion.
+
+## Next Steps
+Note any follow-up meetings, check-ins, or milestones mentioned.
+
+**Formatting Standards:**
+- Use clear, professional language
+- Organize with headings, subheadings, and bullet points
+- Bold names and deadlines for quick scanning
+- If the notes are unclear or incomplete, flag ambiguities rather than guessing
+- Preserve the original meaning without editorializing`,
+
+			PromptTemplate: `**{{.description | upper}}**
+
+{{.promptInstructions}}
+
+## {{.contextHeader}}
+
+{{.contextTxtar}}`,
+
+			ContextHeader: "MEETING NOTES / TRANSCRIPT",
+
+			Commands: []CommandConfig{
+				{Name: "add", Type: "contextManager"},
+				{Name: "note", Type: "contextManager", Description: "Add notes about meeting context or attendees"},
+				{Name: "list", Type: "contextManager"},
+				{Name: "edit", Type: "contextManager"},
+				{Name: "remove", Type: "contextManager"},
+				{Name: "show", Type: "contextManager"},
+				{Name: "copy", Type: "contextManager"},
+				{Name: "help", Type: "help"},
 			},
 		},
 	}

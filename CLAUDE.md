@@ -141,6 +141,21 @@ The `lint` target runs:
 - No swallowing errors or "best effort" approaches
 - All commands must handle platform differences (Unix vs Windows)
 
+### Internal API Discipline
+
+When modifying **internal code**—meaning any code that isn't depended on by external parties (includes all code under `internal/`, unreleased features, experimental code, etc.):
+
+- **No Shims**: Do NOT retain shims, wrappers, or backwards-compatibility stubs "just in case"
+- **One Implementation**: Do NOT accumulate variants of the same function (e.g., `Foo()` and `FooV2()`). Choose ONE and migrate all call sites
+- **Update Everything**: Update ALL test code and ALL call sites - this includes:
+  - Unit tests
+  - Integration tests
+  - All packages that call the function
+  - Any scripts that depend on the behavior
+- **Delete Boldly**: Remove deprecated functions entirely. If they're truly needed later, they can be re-added—but accumulated dead code is worse than temporary re-creation
+
+**Lazy is not acceptable**: Keeping old variants "because tests might break" or "because it's easier" creates technical debt. Fix the tests, fix the call sites, delete the old code.
+
 ### Testing
 
 - Tests run with race detection

@@ -174,21 +174,6 @@ type TableConfig struct {
 	OnSelect func(rowIndex int) // Optional callback when a row is selected with Enter
 }
 
-// NewManager creates a new tview manager for an engine instance.
-// The provided screen is optional and mainly for testing purposes.
-// Similarly, custom signal handling functions can be provided for testing.
-// The terminal parameter is optional - if provided and screen is nil,
-// it will be used to create a screen via TcellAdapter.
-func NewManager(
-	ctx context.Context,
-	screen tcell.Screen,
-	terminal TerminalOps,
-	signalNotify func(c chan<- os.Signal, sig ...os.Signal),
-	signalStop func(c chan<- os.Signal),
-) *Manager {
-	return NewManagerWithTerminal(ctx, screen, terminal, signalNotify, signalStop)
-}
-
 // NewManagerWithTerminal creates a new tview manager with terminal ops support.
 // If screen is nil and terminal is provided, a screen will be created using
 // the TcellAdapter when needed.

@@ -173,36 +173,6 @@ func (tm *TUIManager) runWriter() {
 	}
 }
 
-// scheduleWrite queues a mutation task to be executed by the writer goroutine.
-// The task runs under tm.mu.Lock(). This method returns immediately without waiting
-// for the task to complete (fire-and-forget semantics).
-//
-// Use this for mutations where the caller does not need to know the result.
-// For mutations that must complete before proceeding, use scheduleWriteAndWait.
-//
-// IMPORTANT: This is the ONLY safe way for JS callbacks to perform mutations.
-// Never acquire tm.mu.Lock() directly from code called by JS.
-//
-// Uses queueMu to prevent the "check-then-send" race condition during shutdown.
-// CRITICAL: We unlock BEFORE the select to prevent deadlock when queue is full.
-func (tm *TUIManager) scheduleWrite(fn func() error) {
-	tm.queueMu.Lock()
-	if tm.writerShutdown.IsSet() {
-		tm.queueMu.Unlock()
-		return
-	}
-	tm.queueMu.Unlock() // Unlock BEFORE select to prevent deadlock
-
-	// We can safely send because writerQueue is never closed.
-	// The select on writerStop handles the race where shutdown happens after unlock.
-	task := writeTask{fn: fn, resultCh: nil}
-	select {
-	case tm.writerQueue <- task:
-	case <-tm.writerStop:
-		// Writer has shut down, drop the task safely
-	}
-}
-
 // scheduleWriteAndWait queues a mutation task and waits for it to complete.
 // The task runs under tm.mu.Lock(). This method blocks until the task finishes.
 //

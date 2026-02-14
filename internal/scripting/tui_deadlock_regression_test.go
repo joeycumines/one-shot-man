@@ -9,6 +9,26 @@ import (
 	"time"
 )
 
+// scheduleWrite queues a mutation task to be executed by the writer goroutine.
+// The task runs under tm.mu.Lock(). This method returns immediately without waiting
+// for the task to complete (fire-and-forget semantics).
+//
+// This is the fire-and-forget variant of scheduleWriteAndWait, used only in tests.
+func (tm *TUIManager) scheduleWrite(fn func() error) {
+	tm.queueMu.Lock()
+	if tm.writerShutdown.IsSet() {
+		tm.queueMu.Unlock()
+		return
+	}
+	tm.queueMu.Unlock()
+
+	task := writeTask{fn: fn, resultCh: nil}
+	select {
+	case tm.writerQueue <- task:
+	case <-tm.writerStop:
+	}
+}
+
 // TestTUIExitFromJSCommandNoDeadlock is a regression test for the deadlock scenario
 // where a JavaScript command handler calls tui.exit() while the manager is in a state
 // that would previously deadlock.
@@ -26,9 +46,9 @@ func TestTUIExitFromJSCommandNoDeadlock(t *testing.T) {
 	defer cancel()
 
 	var output bytes.Buffer
-	engine, err := NewEngine(ctx, &output, &output)
+	engine, err := NewEngineWithConfig(ctx, &output, &output, "", "")
 	if err != nil {
-		t.Fatalf("NewEngine failed: %v", err)
+		t.Fatalf("NewEngineWithConfig failed: %v", err)
 	}
 	manager := NewTUIManagerWithConfig(ctx, engine, strings.NewReader(""), &output, "test-deadlock", "memory")
 	defer manager.Close()
@@ -93,9 +113,9 @@ func TestTUIExitFromJSCommandNoDeadlock(t *testing.T) {
 func TestJSMutatorsUseWriterQueue(t *testing.T) {
 	ctx := context.Background()
 	var output bytes.Buffer
-	engine, err := NewEngine(ctx, &output, &output)
+	engine, err := NewEngineWithConfig(ctx, &output, &output, "", "")
 	if err != nil {
-		t.Fatalf("NewEngine failed: %v", err)
+		t.Fatalf("NewEngineWithConfig failed: %v", err)
 	}
 	manager := NewTUIManagerWithConfig(ctx, engine, strings.NewReader(""), &output, "test-mutators", "memory")
 	defer manager.Close()
@@ -135,9 +155,9 @@ func TestConcurrentJSMutators(t *testing.T) {
 	defer cancel()
 
 	var output bytes.Buffer
-	engine, err := NewEngine(ctx, &output, &output)
+	engine, err := NewEngineWithConfig(ctx, &output, &output, "", "")
 	if err != nil {
-		t.Fatalf("NewEngine failed: %v", err)
+		t.Fatalf("NewEngineWithConfig failed: %v", err)
 	}
 	manager := NewTUIManagerWithConfig(ctx, engine, strings.NewReader(""), &output, "test-concurrent", "memory")
 	defer manager.Close()
@@ -194,9 +214,9 @@ func TestConcurrentJSMutators(t *testing.T) {
 func TestWriterGoroutineShutdown(t *testing.T) {
 	ctx := context.Background()
 	var output bytes.Buffer
-	engine, err := NewEngine(ctx, &output, &output)
+	engine, err := NewEngineWithConfig(ctx, &output, &output, "", "")
 	if err != nil {
-		t.Fatalf("NewEngine failed: %v", err)
+		t.Fatalf("NewEngineWithConfig failed: %v", err)
 	}
 	manager := NewTUIManagerWithConfig(ctx, engine, strings.NewReader(""), &output, "test-shutdown", "memory")
 
@@ -227,9 +247,9 @@ func TestWriterGoroutineShutdown(t *testing.T) {
 func TestReadOperationsRemainReentrant(t *testing.T) {
 	ctx := context.Background()
 	var output bytes.Buffer
-	engine, err := NewEngine(ctx, &output, &output)
+	engine, err := NewEngineWithConfig(ctx, &output, &output, "", "")
 	if err != nil {
-		t.Fatalf("NewEngine failed: %v", err)
+		t.Fatalf("NewEngineWithConfig failed: %v", err)
 	}
 	manager := NewTUIManagerWithConfig(ctx, engine, strings.NewReader(""), &output, "test-reentrant", "memory")
 	defer manager.Close()

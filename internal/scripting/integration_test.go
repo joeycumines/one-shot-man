@@ -57,17 +57,16 @@ func newTestProcessEnv(tb testing.TB) []string {
 
 func mustNewEngine(tb testing.TB, ctx context.Context, stdout, stderr io.Writer) *Engine {
 	tb.Helper()
-	// Set memory storage backend to prevent session lock warnings in tests
-	tb.Setenv("OSM_STORE", "memory")
-	tb.Setenv("OSM_SESSION", testutil.NewTestSessionID("test", tb.Name()))
 
 	// Create a context that will be cancelled when the test ends to prevent goroutine leaks
 	ctx, cancel := context.WithCancel(ctx)
 	tb.Cleanup(cancel)
 
-	engine, err := NewEngine(ctx, stdout, stderr)
+	// Use explicit session configuration to prevent data races from env var mutation.
+	sessionID := testutil.NewTestSessionID("test", tb.Name())
+	engine, err := NewEngineWithConfig(ctx, stdout, stderr, sessionID, "memory")
 	if err != nil {
-		tb.Fatalf("NewEngine failed: %v", err)
+		tb.Fatalf("NewEngineWithConfig failed: %v", err)
 	}
 	tb.Cleanup(func() {
 		_ = engine.Close()

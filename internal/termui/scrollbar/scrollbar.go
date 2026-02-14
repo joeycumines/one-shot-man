@@ -48,43 +48,6 @@ func New(opts ...Option) Model {
 	return m
 }
 
-// WithContentHeight sets the total content height.
-func WithContentHeight(h int) Option {
-	return func(m *Model) {
-		m.ContentHeight = h
-	}
-}
-
-// WithViewportHeight sets the viewport height.
-func WithViewportHeight(h int) Option {
-	return func(m *Model) {
-		m.ViewportHeight = h
-	}
-}
-
-// WithYOffset sets the vertical scroll offset.
-func WithYOffset(y int) Option {
-	return func(m *Model) {
-		m.YOffset = y
-	}
-}
-
-// WithStyles sets the styles for the thumb and track.
-func WithStyles(thumb, track lipgloss.Style) Option {
-	return func(m *Model) {
-		m.ThumbStyle = thumb
-		m.TrackStyle = track
-	}
-}
-
-// WithChars sets the characters for the thumb and track.
-func WithChars(thumb, track string) Option {
-	return func(m *Model) {
-		m.ThumbChar = thumb
-		m.TrackChar = track
-	}
-}
-
 // View renders the scrollbar component strictly adhering to the calculated logic.
 // It returns a string exactly ViewportHeight tall.
 func (m Model) View() string {

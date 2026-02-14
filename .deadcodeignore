@@ -4,42 +4,30 @@
 
 # DO NOT ADD IGNORES TO THIS FILE WITH THE INTENT OF "WIRING THEM UP LATER"
 
-# ignore test helpers
+# Test helper packages — only used from test code across multiple packages.
 internal/termtest/*
 internal\termtest\*
 internal/testutil/*
 internal\testutil\*
+internal/mouseharness/*
+internal\mouseharness\*
 
+# Cross-package test helpers — exported for use by external test packages.
+# ctxutil: used from ctxutil_test (external package).
 internal/builtin/ctxutil/ctxutil.go:*: unreachable func: SetRunGitDiffFn
 internal\builtin\ctxutil\ctxutil.go:*: unreachable func: SetRunGitDiffFn
 internal/builtin/ctxutil/ctxutil.go:*: unreachable func: SetGetDefaultGitDiffArgsFn
 internal\builtin\ctxutil\ctxutil.go:*: unreachable func: SetGetDefaultGitDiffArgsFn
 
-# DeserializeState is part of the public API for state persistence (currently unused in production but tested)
-internal/scripting/state_contract.go:*: unreachable func: DeserializeState
-internal\scripting\state_contract.go:*: unreachable func: DeserializeState
-
-# Engine creation helpers used only from tests and examples
-internal/scripting/engine_core.go:*: unreachable func: NewEngine
-internal\scripting\engine_core.go:*: unreachable func: NewEngine
+# Engine creation helpers — used from security_test, integration_persistence_test, etc. (external packages).
 internal/scripting/engine_core.go:*: unreachable func: NewEngineWithConfig
 internal\scripting\engine_core.go:*: unreachable func: NewEngineWithConfig
-internal\scripting\integration_notunix.go:*: unreachable func: mustNewEngine
 
-# Runtime convenience constructor used by tests (production uses NewRuntimeWithRegistry)
+# Runtime convenience constructor — used from benchmark_test (external package).
 internal/scripting/runtime.go:*: unreachable func: NewRuntime
 internal\scripting\runtime.go:*: unreachable func: NewRuntime
 
-# Symbol registry helpers are part of the test-surface or public API that is
-# exercised from tests but not referenced in production builds.
-internal/scripting/state_contract.go:*: unreachable func: NewSymbolRegistry
-internal\scripting\state_contract.go:*: unreachable func: NewSymbolRegistry
-internal/scripting/state_contract.go:*: unreachable func: RegisterContract
-internal\scripting\state_contract.go:*: unreachable func: RegisterContract
-internal/scripting/state_contract.go:*: unreachable func: SerializeState
-internal\scripting\state_contract.go:*: unreachable func: SerializeState
-
-# These APIs are used for testing.
+# Storage test helpers — used from scripting_test, benchmark_test, etc. (external packages).
 internal/storage/atomic_write.go:*: unreachable func: SetTestHookCrashBeforeRename
 internal\storage\atomic_write.go:*: unreachable func: SetTestHookCrashBeforeRename
 internal/storage/memory_backend.go:*: unreachable func: ClearAllInMemorySessions
@@ -49,56 +37,17 @@ internal\storage\paths.go:*: unreachable func: SetTestPaths
 internal/storage/paths.go:*: unreachable func: ResetPaths
 internal\storage\paths.go:*: unreachable func: ResetPaths
 
-# Writer queue and debug assertions are part of the deadlock-prevention infrastructure.
-# scheduleWrite is the fire-and-forget variant tested but not yet used in production.
-# Debug assertions are compiled with -tags debug only but stubs exist for production.
+# Debug assertion stubs — part of build-tag infrastructure (-tags debug).
+# Production builds get no-op stubs; deadcode flags them because they're empty.
 internal/scripting/debug_assertions_stub.go:*: unreachable func: TUIManager.debugAssertNotInWriteContext
 internal\scripting\debug_assertions_stub.go:*: unreachable func: TUIManager.debugAssertNotInWriteContext
 internal/scripting/debug_assertions_stub.go:*: unreachable func: TUIManager.debugAssertInWriteContext
 internal\scripting\debug_assertions_stub.go:*: unreachable func: TUIManager.debugAssertInWriteContext
-internal/scripting/tui_manager.go:*: unreachable func: TUIManager.scheduleWrite
-internal\scripting\tui_manager.go:*: unreachable func: TUIManager.scheduleWrite
 
-# TUI I/O wrapper types - test helpers for injecting custom readers/writers
-internal/scripting/tui_io.go:*: unreachable func: NewTestTUIReader
-internal\scripting\tui_io.go:*: unreachable func: NewTestTUIReader
-internal/scripting/tui_io.go:*: unreachable func: NewTestTUIWriter
-internal\scripting\tui_io.go:*: unreachable func: NewTestTUIWriter
-internal/scripting/tui_io.go:*: unreachable func: NewTUIWriterStderr
-internal\scripting\tui_io.go:*: unreachable func: NewTUIWriterStderr
-
-# tview manager - backwards-compatible constructor used only from tests
-internal/builtin/tview/tview.go:*: unreachable func: NewManager
-internal\builtin\tview\tview.go:*: unreachable func: NewManager
-
-# Scrollbar Option constructors - used in tests and as part of public API
-internal/termui/scrollbar/scrollbar.go:*: unreachable func: WithContentHeight
-internal\termui\scrollbar\scrollbar.go:*: unreachable func: WithContentHeight
-internal/termui/scrollbar/scrollbar.go:*: unreachable func: WithViewportHeight
-internal\termui\scrollbar\scrollbar.go:*: unreachable func: WithViewportHeight
-internal/termui/scrollbar/scrollbar.go:*: unreachable func: WithYOffset
-internal\termui\scrollbar\scrollbar.go:*: unreachable func: WithYOffset
-internal/termui/scrollbar/scrollbar.go:*: unreachable func: WithStyles
-internal\termui\scrollbar\scrollbar.go:*: unreachable func: WithStyles
-internal/termui/scrollbar/scrollbar.go:*: unreachable func: WithChars
-internal\termui\scrollbar\scrollbar.go:*: unreachable func: WithChars
-
-# ParseMouseEvent is part of the public API for parsing mouse events from string representation
-# (parallels ParseKey for key events). Used in tests and available for external callers.
-internal/builtin/bubbletea/parsemouse.go:*: unreachable func: ParseMouseEvent
-internal\builtin\bubbletea\parsemouse.go:*: unreachable func: ParseMouseEvent
-
-# SyncJSRunner is a test helper for unit tests that need a JSRunner without a real event loop.
-# It's used by tests in bubbletea, bubbles/textarea, and bubbles/viewport packages.
+# SyncJSRunner — test helper used across bubbletea, textarea, pickandplace packages.
 internal/builtin/bubbletea/testing.go:*: unreachable func: SyncJSRunner.RunJSSync
 internal\builtin\bubbletea\testing.go:*: unreachable func: SyncJSRunner.RunJSSync
 
-# PA-BT module exports - called from JavaScript via Goja runtime (not visible to deadcode analyzer)
-# These are the core PA-BT primitives exposed to JavaScript via require.go ModuleLoader.
-# Using wildcard patterns for all pabt functions called from JavaScript.
+# PA-BT module exports — called from JavaScript via Goja runtime (not visible to deadcode analyzer).
 internal/builtin/pabt/*: unreachable func: *
 internal\builtin\pabt\*: unreachable func: *
-
-# Mouseharness is a test-only package
-internal/mouseharness/*
-internal\mouseharness\*

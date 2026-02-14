@@ -1,10 +1,81 @@
 package bubbletea
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// parseMouseEvent parses a string representation of a mouse event back into a MouseEvent.
+// This is used only in tests. The string format matches tea.MouseEvent.String().
+func parseMouseEvent(s string) (tea.MouseEvent, bool) {
+	var m tea.MouseEvent
+
+	if s == "" {
+		return m, false
+	}
+
+	// Parse modifiers
+	remaining := s
+	for {
+		if strings.HasPrefix(remaining, "ctrl+") {
+			m.Ctrl = true
+			remaining = remaining[5:]
+		} else if strings.HasPrefix(remaining, "alt+") {
+			m.Alt = true
+			remaining = remaining[4:]
+		} else if strings.HasPrefix(remaining, "shift+") {
+			m.Shift = true
+			remaining = remaining[6:]
+		} else {
+			break
+		}
+	}
+
+	if remaining == "motion" {
+		m.Button = tea.MouseButtonNone
+		m.Action = tea.MouseActionMotion
+		return m, true
+	}
+	if remaining == "release" {
+		m.Button = tea.MouseButtonNone
+		m.Action = tea.MouseActionRelease
+		return m, true
+	}
+
+	var bestButtonDef *MouseButtonDef
+	var bestButtonLen int
+	for buttonStr, def := range MouseButtonDefs {
+		if strings.HasPrefix(remaining, buttonStr) && len(buttonStr) > bestButtonLen {
+			defCopy := def
+			bestButtonDef = &defCopy
+			bestButtonLen = len(buttonStr)
+		}
+	}
+
+	if bestButtonDef == nil {
+		return m, false
+	}
+
+	m.Button = bestButtonDef.Button
+
+	after := remaining[bestButtonLen:]
+	after = strings.TrimPrefix(after, " ")
+
+	if after == "" {
+		m.Action = tea.MouseActionPress
+		return m, true
+	}
+
+	if actionDef, ok := MouseActionDefs[after]; ok {
+		m.Action = actionDef.Action
+		return m, true
+	}
+
+	m.Action = tea.MouseActionPress
+	return m, true
+}
 
 func TestParseMouseEvent(t *testing.T) {
 	tests := []struct {
@@ -229,28 +300,28 @@ func TestParseMouseEvent(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := ParseMouseEvent(tt.input)
+			got, ok := parseMouseEvent(tt.input)
 			if ok != tt.wantOk {
-				t.Errorf("ParseMouseEvent(%q) ok = %v, want %v", tt.input, ok, tt.wantOk)
+				t.Errorf("parseMouseEvent(%q) ok = %v, want %v", tt.input, ok, tt.wantOk)
 				return
 			}
 			if !tt.wantOk {
 				return
 			}
 			if got.Button != tt.want.Button {
-				t.Errorf("ParseMouseEvent(%q) button = %v, want %v", tt.input, got.Button, tt.want.Button)
+				t.Errorf("parseMouseEvent(%q) button = %v, want %v", tt.input, got.Button, tt.want.Button)
 			}
 			if got.Action != tt.want.Action {
-				t.Errorf("ParseMouseEvent(%q) action = %v, want %v", tt.input, got.Action, tt.want.Action)
+				t.Errorf("parseMouseEvent(%q) action = %v, want %v", tt.input, got.Action, tt.want.Action)
 			}
 			if got.Ctrl != tt.want.Ctrl {
-				t.Errorf("ParseMouseEvent(%q) ctrl = %v, want %v", tt.input, got.Ctrl, tt.want.Ctrl)
+				t.Errorf("parseMouseEvent(%q) ctrl = %v, want %v", tt.input, got.Ctrl, tt.want.Ctrl)
 			}
 			if got.Alt != tt.want.Alt {
-				t.Errorf("ParseMouseEvent(%q) alt = %v, want %v", tt.input, got.Alt, tt.want.Alt)
+				t.Errorf("parseMouseEvent(%q) alt = %v, want %v", tt.input, got.Alt, tt.want.Alt)
 			}
 			if got.Shift != tt.want.Shift {
-				t.Errorf("ParseMouseEvent(%q) shift = %v, want %v", tt.input, got.Shift, tt.want.Shift)
+				t.Errorf("parseMouseEvent(%q) shift = %v, want %v", tt.input, got.Shift, tt.want.Shift)
 			}
 		})
 	}

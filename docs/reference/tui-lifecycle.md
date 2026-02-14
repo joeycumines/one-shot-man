@@ -53,7 +53,7 @@ Defines the strategy and implementation details for terminal state management an
 
 ## Testing Support
 
-- `NewTestTUIReader`/`NewTestTUIWriter`: Bypass lazy init for pre-configured `go-prompt` instances.
+- `newTestTUIReader`/`newTestTUIWriter`: Bypass lazy init for pre-configured `go-prompt` instances (unexported, same-package test use only).
 - `NewTUIReaderFromIO`/`NewTUIWriterFromIO`: Wrap basic `io.Reader`/`io.Writer` for output capture.
 - `TcellAdapter`: Wraps `TerminalOps` for tcell in test scenarios.
 - `safeSimScreen`: Thread-safe tcell simulation screen for tests.

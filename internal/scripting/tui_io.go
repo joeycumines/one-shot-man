@@ -46,7 +46,7 @@ type TerminalOps interface {
 //
 // Usage:
 //   - Production: NewTUIReader() creates a reader that lazily initializes to stdin
-//   - Testing: NewTestTUIReader(customReader) creates a reader with a pre-configured implementation
+//   - Testing: Use newTestTUIReader(customReader) from test files, or NewTUIReaderFromIO(r)
 type TUIReader struct {
 	reader  prompt.Reader
 	once    sync.Once
@@ -62,14 +62,6 @@ func NewTUIReader() *TUIReader {
 			return prompt.NewStdinReader()
 		},
 		isStdin: true,
-	}
-}
-
-// NewTestTUIReader creates a TUIReader with a pre-configured Reader for testing.
-// This bypasses lazy initialization - the reader is immediately available.
-func NewTestTUIReader(r prompt.Reader) *TUIReader {
-	return &TUIReader{
-		reader: r,
 	}
 }
 
@@ -215,7 +207,7 @@ func (r *TUIReader) IsTerminal() bool {
 //
 // Usage:
 //   - Production: NewTUIWriter() creates a writer that lazily initializes to stdout
-//   - Testing: NewTestTUIWriter(customWriter) creates a writer with a pre-configured implementation
+//   - Testing: Use newTestTUIWriter(customWriter) from test files, or NewTUIWriterFromIO(w)
 //   - Basic testing: NewTUIWriterFromIO(ioWriter) wraps an io.Writer for basic output capture
 type TUIWriter struct {
 	writer   prompt.Writer
@@ -233,24 +225,6 @@ func NewTUIWriter() *TUIWriter {
 			return prompt.NewStdoutWriter()
 		},
 		isStdout: true,
-	}
-}
-
-// NewTUIWriterStderr creates a TUIWriter that lazily initializes to write to stderr.
-func NewTUIWriterStderr() *TUIWriter {
-	return &TUIWriter{
-		initFn: func() prompt.Writer {
-			return prompt.NewStderrWriter()
-		},
-		isStdout: false,
-	}
-}
-
-// NewTestTUIWriter creates a TUIWriter with a pre-configured Writer for testing.
-// This bypasses lazy initialization - the writer is immediately available.
-func NewTestTUIWriter(w prompt.Writer) *TUIWriter {
-	return &TUIWriter{
-		writer: w,
 	}
 }
 

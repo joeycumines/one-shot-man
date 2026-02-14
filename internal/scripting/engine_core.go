@@ -115,12 +115,6 @@ func WithModulePaths(paths ...string) EngineOption {
 	}
 }
 
-// NewEngine creates a new JavaScript scripting engine.
-// For test isolation and to avoid data races, use NewEngineWithConfig instead.
-func NewEngine(ctx context.Context, stdout, stderr io.Writer) (*Engine, error) {
-	return NewEngineWithConfig(ctx, stdout, stderr, "", "")
-}
-
 // NewEngineWithConfig creates a new JavaScript scripting engine with explicit session configuration.
 // sessionID and store parameters override environment-based discovery and avoid data races.
 func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionID, store string) (*Engine, error) {

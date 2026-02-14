@@ -760,7 +760,7 @@ func TestConcurrentScriptExecution(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			// Use mustNewEngine for proper cleanup, but we need to avoid cleanup conflicts
 			// when creating multiple engines in a loop. Create engine directly and close immediately.
-			engine, err := NewEngine(ctx, &stdout, &stderr)
+			engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, "", "")
 			if err != nil {
 				t.Fatalf("Engine %d creation failed: %v", i, err)
 			}

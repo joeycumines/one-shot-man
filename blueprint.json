@@ -62,7 +62,8 @@
     {
       "task": "T028: Coverage audit: internal/builtin/fetch",
       "description": "Run coverage for internal/builtin/fetch/. 26 existing tests. Identify uncovered paths: option parsing edge cases, header normalization, body handling, response status, timeout. Achieve 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage 91.4% → 97.4%. 28 new test functions in coverage_gaps_test.go. Covers int64 timeout branch (fetch+fetchStream), multi-value response headers, bad URL for fetchStream, non-string method/body/headers, null/undefined/non-object options, redirect for fetchStream, empty body, status text, DELETE/PATCH methods. Remaining 2.6% is 3 defensive error paths (io.ReadAll/readLine/readAll error after successful HTTP connection) unreachable via httptest. No bugs found. Rule of Two passed."
     },
     {
       "task": "T029: Coverage audit: internal/builtin/flag",

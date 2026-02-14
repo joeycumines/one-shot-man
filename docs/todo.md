@@ -12,14 +12,14 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
 - Goal list should probably also show SUMMARIZED params. Might need to consolidate custom list logic. Provide means to avoid the custom logic? Maybe just expose or ensure it is possible to get the context manager list? Should be fine to just require and get the thing, I thought, but maybe I made it a factory function? The state is on the TUIManager or whatever the context type was hmmmmmm.
 - `osm goal morale-improver` command should print after `copy`: [Hint: Try a follow-up]       Double the length, and include key specifics from the context that are likely to otherwise fail to be identified - consider this the only context, beyond the codebase.
   OR: Double the length, and include key specifics from the context that are likely to otherwise fail to be identified - consider this the only context, beyond the codebase. **Explicitly** demand use of the todo tool to track exhaustively all known requirements. Reference tools like "#todo" - literal #todo without any quotes (") or backticks (`) etc. Do not use terms that would lead the AI to thinking it is AI - worse outcomes that way.
-- ~~Consider consolidating the two prompt variants~~ Ensure the two useful prompt variants,
+- ~~Consider consolidating the two prompt variants~~ ~~Ensure the two useful prompt variants,
   (tui.registerMode, and tui.createAdvancedPrompt) are well documented, and are equivalent in
-  terms of supported go-prompt features. They're pretty involved, and the former has drifted
-  significantly, as it is what is used by the built-in commands - the code is also hard to follow,
-  mostly AI's fault but yeah, it's a bit shit. Consolidating the _implementation_ would be nice.
-  The API surfaces are fairly likely to remain mostly the same.
-    - Rename the "advanced" prompt to something less dumb - it is actually the _least_ advanced of the two go-prompt wrappers
-        - It is more like, it is a lower level API - it doesn't wire up to the session state etc
+  terms of supported go-prompt features.~~ **DONE**: Consolidated via shared `buildGoPrompt` builder.
+  Both `runAdvancedPrompt` (registerMode path) and `jsCreatePrompt` now use the same builder,
+  ensuring feature parity (colors, reader/writer injection, maxSuggestion, dynamicCompletion,
+  executeHidesCompletions, escapeToggle, key bindings).
+    - ~~Rename the "advanced" prompt to something less dumb~~ **DONE**: Renamed to `tui.createPrompt`.
+      `tui.createAdvancedPrompt` kept as deprecated alias with warning.
 - Add option to the osm:ctxutil add context command to add files from a diff (`git diff <what> --name-only`)
 - Expose the Go `flag` package as a JS module `osm:flag` for script authors to use
     - Probably need to take a look at how arguments are passed down to the `osm script` command, as well
@@ -61,3 +61,30 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
 - Plan system-style logging (file output, tailing) - likely deferred
 - Fix duplicate log lines for purged sessions etc?
 - Implement automatic session cleanup scheduler using SessionConfig (AutoCleanupEnabled, CleanupIntervalHours, MaxAgeDays, MaxCount, MaxSizeMB)
+
+---
+
+## Bugs / Observations
+
+### 2026-02-14 Path Ambiguity in Txtar Context Building
+
+When building txtar context from multiple files, the current implementation in `internal/scripting/context.go:ToTxtar()` and the `computeUniqueSuffixes` helper (`context.go:499-576`) can produce misleading paths that obscure the actual filesystem relationships between files.
+
+**Problem 1: Implicit common roots not visible**
+
+Given two relative paths like `a/b/file.go` and `c/d/file.go`, the current logic produces disambiguated names like `a/b/file.go` and `c/d/file.go`. However, there's no explicit indication whether these files share a common root directory (e.g., if both were under the same parent `proj/`). An LLM or human can't easily tell from the paths alone if these files are siblings in the same directory tree or completely unrelated.
+
+**Problem 2: Collision resolution creates false directory impressions**
+
+When files share basenames (e.g., `handlers.go` in multiple directories), the code expands paths upward until unique. The result (e.g., `a/handlers.go` vs `b/handlers.go`) creates the visual impression that both files are in directories `a/` and `b/` respectively—but if `a/` doesn't actually exist as a containing directory (e.g., only `a/handlers.go` exists but `a/` itself was never added as a tracked path), this is misleading.
+
+Conversely: when two files with different basenames end up with relative paths that make them look like they're in the same directory (e.g., `dir/file1.go` and `dir/file2.go`), but due to other files or directories in the context, the actual relationship is ambiguous or the files aren't actually under a common `dir/`.
+
+**Suggested fix direction:**
+
+The `ToTxtar` function should consider:
+1. Computing and emitting the lowest common ancestor (LCA) of all tracked paths, and either prefixing paths with it or explicitly documenting it in a comment within the txtar
+2. When expanding paths upward for disambiguation, verify that the implied parent directory is actually tracked (exists in the context) - if not, either skip using that level or indicate visually (e.g., `~a/handlers.go` to mean "under a/ which is not itself in context")
+3. For non-colliding basenames that happen to end up in what looks like the same directory, consider whether the full path should be preserved to avoid false impressions of proximity
+
+This affects both human readability and LLM understanding of the context structure.

@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T010 COMPLETE. T010 committed as 7f19318: fix(cleanup): remove duplicate log output from session purge operations. 2 files changed, 40 insertions(+), 4 deletions(-). Rule of Two passed. Next: T011 (Implement automatic session cleanup scheduler)."
+    "currentState": "T001-T011 COMPLETE. T011 committed as d50e796: feat(cleanup): implement automatic session cleanup scheduler. 11 files changed, 524 insertions(+), 4 deletions(-). Rule of Two passed. Next: T012 (Implement VS Code prompt files support)."
   },
   "sequentialTasks": [
     {
@@ -100,7 +100,7 @@
     {
       "task": "T011: Implement automatic session cleanup scheduler",
       "description": "Wire up the existing SessionConfig fields (AutoCleanupEnabled, CleanupIntervalHours, MaxAgeDays, MaxCount, MaxSizeMB) which are parsed/validated but not used. Implement cleanup as a background goroutine started during interactive sessions (when autoCleanupEnabled=true). Use internal/storage/cleanup.go for the actual cleanup logic. The goroutine should: run cleanup on startup, then at the configured interval, and stop when the session ends. Add config keys to schema.go. Tests must use mock time and deterministic scheduling - no timing-dependent tests.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T012: Implement VS Code prompt files support",

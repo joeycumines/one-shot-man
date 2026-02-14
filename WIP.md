@@ -8,8 +8,9 @@
 - **T024**: ✅ DONE — 14 contextManager.js integration tests, committed as 3873afd
 - **T025**: ✅ DONE — 54 new bt tests (76.8%→91.3%), fixed 2 flaky TOCTOU tests, Rule of Two passed
 - **T026**: ✅ DONE — ~40 new pabt tests (78.5%→93.6%), coverage_gaps_test.go, committed as 45bf8cd
-- **T027**: ✅ DONE — ~60 new bubbletea tests (75.8%→91.2%), 3 bug fixes, fixed pre-existing data race
+- **T027**: ✅ DONE — ~60 new bubbletea tests (75.8%→91.2%), 3 bug fixes, fixed pre-existing data race, committed as 78cf712
 - **Blueprint**: REWRITTEN — 71 tasks (T021-T091), exhaustive, flat, no estimates, no priorities
 - **T028**: ✅ DONE — 28 new fetch tests (91.4%→97.4%), no bugs found, Rule of Two passed
-- **Next**: T029 — Coverage audit: internal/builtin/flag
+- **T029**: ✅ DONE — 27 new edge-case tests (99.2% unchanged, sole gap is defensive dead code), committed
+- **Next**: T030 — Coverage audit: internal/builtin/grpc
 - **Approach**: Execute tasks sequentially, verify via Rule of Two, commit, continue

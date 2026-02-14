@@ -68,7 +68,8 @@
     {
       "task": "T029: Coverage audit: internal/builtin/flag",
       "description": "Run coverage for internal/builtin/flag/. ~20 existing tests. Identify uncovered paths: flag definition, parsing, getters, visit/visitAll, args-after--, error handling. Achieve 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage 99.2% (unchanged — already near-perfect). 27 new edge-case tests in coverage_gaps_test.go covering minimal args, undefined defaults, null newFlagSet arg, visit properties, visitAll ordering, multiple flag sets, error paths for bad int/bool/float values, pre-parse state, multiple parses. Sole uncovered block is defensive dead code (default case in get() switch — kind is always one of 4 known strings). No bugs found. Rule of Two passed."
     },
     {
       "task": "T030: Coverage audit: internal/builtin/grpc",

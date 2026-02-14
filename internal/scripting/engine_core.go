@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
@@ -86,6 +87,7 @@ type Engine struct {
 	bubbleteaManager     builtin.BubbleteaManager  // For sending state refresh messages to running TUI
 	btBridge             *bt.Bridge                // Behavior tree bridge for JS integration
 	bubblezoneManager    builtin.BubblezoneManager // Zone-based mouse hit-testing for BubbleTea
+	requireModule        *require.RequireModule    // CommonJS require module for file-based script execution
 }
 
 // Script represents a JavaScript script with metadata.
@@ -94,6 +96,23 @@ type Script struct {
 	Path        string
 	Content     string
 	Description string
+}
+
+// engineOptions holds optional configuration for engine creation.
+type engineOptions struct {
+	modulePaths []string
+}
+
+// EngineOption configures optional Engine settings.
+type EngineOption func(*engineOptions)
+
+// WithModulePaths configures additional module search paths for require().
+// These paths are searched when a bare module name is used (e.g., require('mylib')),
+// similar to NODE_PATH in Node.js. Relative and absolute paths are supported.
+func WithModulePaths(paths ...string) EngineOption {
+	return func(o *engineOptions) {
+		o.modulePaths = append(o.modulePaths, paths...)
+	}
 }
 
 // NewEngine creates a new JavaScript scripting engine.
@@ -112,7 +131,13 @@ func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionI
 // logFile: optional writer for log output (JSON).
 // logBufferSize: size of the in-memory log buffer (default 1000 if <= 0).
 // logLevel: minimum log level to capture (e.g. slog.LevelDebug).
-func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID, store string, logFile io.Writer, logBufferSize int, logLevel slog.Level) (*Engine, error) {
+// opts: optional engine configuration (e.g., WithModulePaths).
+func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID, store string, logFile io.Writer, logBufferSize int, logLevel slog.Level, opts ...EngineOption) (*Engine, error) {
+	// Apply options
+	var eopts engineOptions
+	for _, o := range opts {
+		o(&eopts)
+	}
 	// Get current working directory for context manager
 	workingDir, err := os.Getwd()
 	if err != nil {
@@ -128,8 +153,17 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 	// This is the single source of truth for terminal state management.
 	terminalIO := NewTerminalIOStdio()
 
-	// Create the require registry first - it will be shared
-	registry := require.NewRegistry()
+	// Create the require registry first - it will be shared.
+	// If module paths are configured, they are registered as global folders
+	// for bare module name resolution (similar to NODE_PATH).
+	// A custom source loader strips shebang lines (#!/...) from scripts,
+	// matching Node.js behavior so scripts with shebangs work through require().
+	var registryOpts []require.Option
+	registryOpts = append(registryOpts, require.WithLoader(shebangStrippingLoader))
+	if len(eopts.modulePaths) > 0 {
+		registryOpts = append(registryOpts, require.WithGlobalFolders(eopts.modulePaths...))
+	}
+	registry := require.NewRegistry(registryOpts...)
 
 	// Create the shared Runtime with event loop
 	// The Runtime owns the event loop and provides thread-safe JS execution
@@ -181,9 +215,11 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 	engine.btBridge = registerResult.BTBridge
 	engine.bubblezoneManager = registerResult.BubblezoneManager
 
-	// Enable the `require` function in the runtime (must be done on event loop)
+	// Enable the `require` function in the runtime (must be done on event loop).
+	// Store the RequireModule so we can use it for file-based script execution,
+	// which gives scripts proper __filename, __dirname, and relative require resolution.
 	err = runtime.RunOnLoopSync(func(r *goja.Runtime) error {
-		registry.Enable(r)
+		engine.requireModule = registry.Enable(r)
 		return nil
 	})
 	if err != nil {
@@ -437,9 +473,32 @@ func (e *Engine) ExecuteScript(script *Script) (err error) {
 		}
 	}()
 
-	// Execute the script
-	if _, runErr := e.vm.RunString(script.Content); runErr != nil {
-		return fmt.Errorf("script execution failed: %w", runErr)
+	// Execute the script. For file-based scripts, compile with the absolute file path
+	// as the source name. This makes goja_nodejs's getCurrentModulePath() resolve the
+	// correct directory for relative require() calls, while keeping the script in global
+	// scope (no module wrapper) so existing behavior is fully preserved.
+	// For inline/embedded scripts, use RunString as before.
+	if script.Path != "" && script.Path != "<string>" {
+		absPath, absErr := filepath.Abs(script.Path)
+		if absErr != nil {
+			return fmt.Errorf("failed to resolve script path: %w", absErr)
+		}
+		// Strip shebang from content if present (same as our SourceLoader does for require'd files)
+		content := script.Content
+		if len(content) >= 2 && content[0] == '#' && content[1] == '!' {
+			content = "//" + content[2:]
+		}
+		prg, compileErr := goja.Compile(absPath, content, false)
+		if compileErr != nil {
+			return fmt.Errorf("script compilation failed: %w", compileErr)
+		}
+		if _, runErr := e.vm.RunProgram(prg); runErr != nil {
+			return fmt.Errorf("script execution failed: %w", runErr)
+		}
+	} else {
+		if _, runErr := e.vm.RunString(script.Content); runErr != nil {
+			return fmt.Errorf("script execution failed: %w", runErr)
+		}
 	}
 
 	return err
@@ -608,7 +667,8 @@ func (e *Engine) setupGlobals() {
 		"registerCommand":      e.tuiManager.jsRegisterCommand,
 		"listModes":            e.tuiManager.jsListModes,
 		"createState":          e.jsCreateState,
-		"createAdvancedPrompt": e.tuiManager.jsCreateAdvancedPrompt,
+		"createPrompt":         e.tuiManager.jsCreatePrompt,
+		"createAdvancedPrompt": e.tuiManager.jsCreateAdvancedPrompt, // deprecated alias
 		"runPrompt":            e.tuiManager.jsRunPrompt,
 		"registerCompleter":    e.tuiManager.jsRegisterCompleter,
 		"setCompleter":         e.tuiManager.jsSetCompleter,
@@ -643,4 +703,21 @@ func readFile(path string) (string, error) {
 		return "", err
 	}
 	return string(content), nil
+}
+
+// shebangStrippingLoader is a SourceLoader that strips shebang lines from JavaScript files.
+// This matches Node.js behavior: if a file starts with "#!", the shebang is replaced with
+// a comment ("//") to preserve line numbers while making the source valid JavaScript.
+func shebangStrippingLoader(filename string) ([]byte, error) {
+	data, err := require.DefaultSourceLoader(filename)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) >= 2 && data[0] == '#' && data[1] == '!' {
+		// Replace "#!" with "//" to turn the shebang into a JS comment.
+		// This preserves the line so line numbers in error messages stay correct.
+		data[0] = '/'
+		data[1] = '/'
+	}
+	return data, nil
 }

@@ -171,56 +171,42 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 
 // Known global and command-specific configuration options.
 // This is used for schema validation to detect typos and unknown options.
-var knownGlobalOptions = map[string]bool{
-	"verbose":    true,
-	"color":      true,
-	"pager":      true,
-	"format":     true,
-	"timeout":    true,
-	"session.id": true,
-	"output":     true,
-	"editor":     true,
-	"debug":      true,
-	"quiet":      true,
-}
+//
+// These maps are derived from DefaultSchema() to provide backward-compatible
+// fast lookups. The schema is the single source of truth.
+var (
+	knownGlobalOptionsOnce  map[string]bool
+	knownCommandOptionsOnce map[string]map[string]bool
+)
 
-// Known options per command.
-var knownCommandOptions = map[string]map[string]bool{
-	"help": {
-		"pager":  true,
-		"format": true,
-		"output": true,
-	},
-	"version": {
-		"format": true,
-		"output": true,
-	},
-	"prompt": {
-		"template":    true,
-		"output":      true,
-		"editor":      true,
-		"add-context": true,
-	},
-	"session": {
-		"list":   true,
-		"delete": true,
-		"export": true,
-		"import": true,
-	},
+func init() {
+	s := DefaultSchema()
+	knownGlobalOptionsOnce = make(map[string]bool, len(s.byKey))
+	for k := range s.byKey {
+		knownGlobalOptionsOnce[k] = true
+	}
+	knownCommandOptionsOnce = make(map[string]map[string]bool, len(s.bySection))
+	for sec, opts := range s.bySection {
+		m := make(map[string]bool, len(opts))
+		for k := range opts {
+			m[k] = true
+		}
+		knownCommandOptionsOnce[sec] = m
+	}
 }
 
 // isKnownGlobalOption checks if an option is a known global option.
 func isKnownGlobalOption(name string) bool {
-	return knownGlobalOptions[name]
+	return knownGlobalOptionsOnce[name]
 }
 
 // isKnownCommandOption checks if an option is known for a specific command.
 func isKnownCommandOption(command, name string) bool {
 	// Also check global options as they can be used in command sections
-	if knownGlobalOptions[name] {
+	if knownGlobalOptionsOnce[name] {
 		return true
 	}
-	if cmdOpts, ok := knownCommandOptions[command]; ok {
+	if cmdOpts, ok := knownCommandOptionsOnce[command]; ok {
 		return cmdOpts[name]
 	}
 	return false

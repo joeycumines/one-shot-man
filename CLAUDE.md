@@ -135,6 +135,8 @@ The `lint` target runs:
 - `betteralign` - Struct field alignment optimization
 - `deadcode` - Detects unused code (with optional ignore patterns)
 
+**Never add ignores to `.deadcodeignore`**. This defeats the entire purpose of the checker. This project is a CLI, not a library—all implementations MUST be wired up in `main.go` or their respective registries. Ignoring dead code just lets it accumulate. If `deadcode` fails, wire up the code or delete it—don't hide the problem. See `make help` for available check targets.
+
 ### Error Handling
 
 - Consistent error handling across all commands with proper exit codes

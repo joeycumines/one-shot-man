@@ -242,10 +242,373 @@ func TestSanitizeFilename(t *testing.T) {
 		"ümlaut":        "mlaut",
 		"":              "untitled",
 		"***invalid***": "invalid",
+		"***":           "untitled",
+		"A_B-C.d":       "A_B-C.d",
+		"123":           "123",
 	}
 	for input, expected := range cases {
 		if got := sanitizeFilename(input); got != expected {
 			t.Fatalf("sanitizeFilename(%q) = %q, expected %q", input, got, expected)
 		}
+	}
+}
+
+func TestReadFile_EmptyPath(t *testing.T) {
+	runtime, exports := setupModule(t, nil)
+	readFile := requireCallable(t, exports, "readFile")
+
+	// No arguments → empty path error
+	res, err := readFile(goja.Undefined())
+	if err != nil {
+		t.Fatalf("readFile no args: %v", err)
+	}
+	r := exportMap(t, runtime, res)
+	if r["error"] != true || r["message"].(string) != "empty path" {
+		t.Fatalf("expected empty path error for no args, got %#v", r)
+	}
+
+	// Empty string argument → empty path error
+	res, err = readFile(goja.Undefined(), runtime.ToValue(""))
+	if err != nil {
+		t.Fatalf("readFile empty string: %v", err)
+	}
+	r = exportMap(t, runtime, res)
+	if r["error"] != true || r["message"].(string) != "empty path" {
+		t.Fatalf("expected empty path error for empty string, got %#v", r)
+	}
+}
+
+func TestFileExists_EmptyPath(t *testing.T) {
+	runtime, exports := setupModule(t, nil)
+	fileExists := requireCallable(t, exports, "fileExists")
+
+	// No arguments → false
+	res, err := fileExists(goja.Undefined())
+	if err != nil {
+		t.Fatalf("fileExists no args: %v", err)
+	}
+	if res.ToBoolean() {
+		t.Fatal("expected false for no args")
+	}
+
+	// Empty string argument → path="" → false
+	res, err = fileExists(goja.Undefined(), runtime.ToValue(""))
+	if err != nil {
+		t.Fatalf("fileExists empty string: %v", err)
+	}
+	if res.ToBoolean() {
+		t.Fatal("expected false for empty string")
+	}
+}
+
+func TestGetenv_EdgeCases(t *testing.T) {
+	_, exports := setupModule(t, nil)
+	getenv := requireCallable(t, exports, "getenv")
+
+	// No arguments → ""
+	res, err := getenv(goja.Undefined())
+	if err != nil {
+		t.Fatalf("getenv no args: %v", err)
+	}
+	if res.String() != "" {
+		t.Fatalf("expected empty for no args, got %q", res.String())
+	}
+
+	// Undefined argument → ""
+	res, err = getenv(goja.Undefined(), goja.Undefined())
+	if err != nil {
+		t.Fatalf("getenv undefined: %v", err)
+	}
+	if res.String() != "" {
+		t.Fatalf("expected empty for undefined, got %q", res.String())
+	}
+
+	// Null argument → ""
+	res, err = getenv(goja.Undefined(), goja.Null())
+	if err != nil {
+		t.Fatalf("getenv null: %v", err)
+	}
+	if res.String() != "" {
+		t.Fatalf("expected empty for null, got %q", res.String())
+	}
+}
+
+func TestOpenEditor_EmptyNameHint(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("test relies on POSIX shell")
+	}
+	script := writeScript(t, "#!/bin/sh\necho edited > \"$1\"")
+	t.Setenv("EDITOR", script)
+	t.Setenv("VISUAL", "")
+
+	result := openEditor(context.Background(), "", "initial")
+	if result != "edited\n" {
+		t.Fatalf("expected 'edited\\n', got %q", result)
+	}
+}
+
+func TestOpenEditor_VisualPrecedence(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("test relies on POSIX shell")
+	}
+	visualScript := writeScript(t, "#!/bin/sh\necho from-visual > \"$1\"")
+	editorScript := writeScript(t, "#!/bin/sh\necho from-editor > \"$1\"")
+	t.Setenv("VISUAL", visualScript)
+	t.Setenv("EDITOR", editorScript)
+
+	result := openEditor(context.Background(), "test", "")
+	if result != "from-visual\n" {
+		t.Fatalf("expected VISUAL to take precedence, got %q", result)
+	}
+}
+
+func TestOpenEditor_EditorFails_ModifiedFile(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("test relies on POSIX shell")
+	}
+	// Editor modifies the file then exits with error
+	script := writeScript(t, "#!/bin/sh\necho modified > \"$1\"\nexit 1")
+	t.Setenv("EDITOR", script)
+	t.Setenv("VISUAL", "")
+
+	result := openEditor(context.Background(), "test", "initial")
+	if result != "modified\n" {
+		t.Fatalf("expected modified content despite editor error, got %q", result)
+	}
+}
+
+func TestOpenEditor_EditorFails_EmptyFile(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("test relies on POSIX shell")
+	}
+	// Editor exits with error, initial content is empty
+	script := writeScript(t, "#!/bin/sh\nexit 1")
+	t.Setenv("EDITOR", script)
+	t.Setenv("VISUAL", "")
+
+	result := openEditor(context.Background(), "test", "")
+	if result != "" {
+		t.Fatalf("expected empty string for failed editor with empty initial, got %q", result)
+	}
+}
+
+func TestOpenEditor_MkdirTempFails(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("test relies on POSIX temp dir behavior")
+	}
+	t.Setenv("TMPDIR", "/nonexistent/path/for/testing/osm")
+
+	result := openEditor(context.Background(), "test", "fallback-content")
+	if result != "fallback-content" {
+		t.Fatalf("expected fallback when MkdirTemp fails, got %q", result)
+	}
+}
+
+func TestOpenEditor_DefaultEditorFallback(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("test relies on POSIX shell")
+	}
+	// Create a fake "nano" that writes to the file and exits
+	binDir := t.TempDir()
+	nanoScript := filepath.Join(binDir, "nano")
+	if err := os.WriteFile(nanoScript, []byte("#!/bin/sh\necho from-nano > \"$1\""), 0o755); err != nil {
+		t.Fatalf("failed to write fake nano: %v", err)
+	}
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "")
+	t.Setenv("PATH", binDir)
+
+	result := openEditor(context.Background(), "test", "initial")
+	if result != "from-nano\n" {
+		t.Fatalf("expected default nano fallback, got %q", result)
+	}
+}
+
+func TestOpenEditor_FallbackToVi(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("test relies on POSIX shell")
+	}
+	// PATH with vi but NOT nano
+	binDir := t.TempDir()
+	viScript := filepath.Join(binDir, "vi")
+	if err := os.WriteFile(viScript, []byte("#!/bin/sh\necho from-vi > \"$1\""), 0o755); err != nil {
+		t.Fatalf("failed to write fake vi: %v", err)
+	}
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "")
+	t.Setenv("PATH", binDir)
+
+	result := openEditor(context.Background(), "test", "initial")
+	if result != "from-vi\n" {
+		t.Fatalf("expected vi fallback, got %q", result)
+	}
+}
+
+func TestOpenEditor_FallbackToEd(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("test relies on POSIX shell")
+	}
+	// PATH with ed but NOT nano or vi
+	binDir := t.TempDir()
+	edScript := filepath.Join(binDir, "ed")
+	if err := os.WriteFile(edScript, []byte("#!/bin/sh\necho from-ed > \"$1\""), 0o755); err != nil {
+		t.Fatalf("failed to write fake ed: %v", err)
+	}
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "")
+	t.Setenv("PATH", binDir)
+
+	result := openEditor(context.Background(), "test", "initial")
+	if result != "from-ed\n" {
+		t.Fatalf("expected ed fallback, got %q", result)
+	}
+}
+
+func TestOpenEditor_ReadErrAfterSuccess(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("test relies on POSIX shell")
+	}
+	// Editor succeeds (exit 0) but deletes the temp file before exiting
+	script := writeScript(t, "#!/bin/sh\nrm \"$1\"\nexit 0")
+	t.Setenv("EDITOR", script)
+	t.Setenv("VISUAL", "")
+
+	result := openEditor(context.Background(), "test", "fallback-content")
+	if result != "fallback-content" {
+		t.Fatalf("expected fallback when file deleted after success, got %q", result)
+	}
+}
+
+func TestOpenEditor_NoArgs(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("test relies on POSIX shell")
+	}
+	// Test openEditor via JS binding with no arguments
+	script := writeScript(t, "#!/bin/sh\necho no-args > \"$1\"")
+	t.Setenv("EDITOR", script)
+	t.Setenv("VISUAL", "")
+
+	_, exports := setupModule(t, nil)
+	openEditorFn := requireCallable(t, exports, "openEditor")
+
+	res, err := openEditorFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("openEditor no args: %v", err)
+	}
+	if res.String() != "no-args\n" {
+		t.Fatalf("expected 'no-args\\n', got %q", res.String())
+	}
+}
+
+func TestClipboardCopy_OSMClipboardFails_Fallthrough(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("test relies on POSIX shell")
+	}
+	ctx := context.Background()
+	capture := filepath.Join(t.TempDir(), "capture.txt")
+
+	// Create fake platform clipboard utility
+	binDir := t.TempDir()
+	var utilName string
+	switch goruntime.GOOS {
+	case "darwin":
+		utilName = "pbcopy"
+	default:
+		utilName = "wl-copy"
+		t.Setenv("WAYLAND_DISPLAY", "wayland-test-0")
+	}
+	script := "#!/bin/sh\n/bin/cat >'" + strings.ReplaceAll(capture, "'", `'\''`) + "'\n"
+	binPath := filepath.Join(binDir, utilName)
+	if err := os.WriteFile(binPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("failed to write fake util: %v", err)
+	}
+
+	// Set OSM_CLIPBOARD to a command that always fails → falls through
+	t.Setenv("OSM_CLIPBOARD", "false")
+	t.Setenv("PATH", binDir)
+
+	if err := clipboardCopy(ctx, nil, "fallthrough-text"); err != nil {
+		t.Fatalf("clipboardCopy failed: %v", err)
+	}
+	data, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatalf("failed to read capture: %v", err)
+	}
+	if string(data) != "fallthrough-text" {
+		t.Fatalf("expected 'fallthrough-text', got %q", string(data))
+	}
+}
+
+func TestClipboardCopy_SystemUtilFails(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("test relies on POSIX shell")
+	}
+	ctx := context.Background()
+
+	// Create a fake system clipboard utility that always fails
+	binDir := t.TempDir()
+	var utilName string
+	switch goruntime.GOOS {
+	case "darwin":
+		utilName = "pbcopy"
+	default:
+		utilName = "wl-copy"
+		t.Setenv("WAYLAND_DISPLAY", "wayland-test-0")
+	}
+	failScript := "#!/bin/sh\nexit 1\n"
+	binPath := filepath.Join(binDir, utilName)
+	if err := os.WriteFile(binPath, []byte(failScript), 0o755); err != nil {
+		t.Fatalf("failed to write failing util: %v", err)
+	}
+
+	t.Setenv("OSM_CLIPBOARD", "")
+	t.Setenv("PATH", binDir)
+
+	// System util fails → falls through to sink
+	var sink []string
+	if err := clipboardCopy(ctx, func(msg string) { sink = append(sink, msg) }, "sink-text"); err != nil {
+		t.Fatalf("clipboardCopy failed: %v", err)
+	}
+	if len(sink) == 0 || !strings.Contains(sink[0], "No system clipboard available") {
+		t.Fatalf("expected sink fallback, got %#v", sink)
+	}
+}
+
+func TestClipboardCopy_PanicsWhenNoClipboard(t *testing.T) {
+	// Test the panic path through the JS binding (nil tuiSink + no clipboard)
+	runtime, exports := setupModule(t, nil)
+	clipboardFn := requireCallable(t, exports, "clipboardCopy")
+
+	t.Setenv("PATH", "")
+	t.Setenv("OSM_CLIPBOARD", "")
+
+	_, err := clipboardFn(goja.Undefined(), runtime.ToValue("text"))
+	if err == nil {
+		t.Fatal("expected error from clipboardCopy panic")
+	}
+	errStr := err.Error()
+	if !strings.Contains(errStr, "no system clipboard available") {
+		t.Fatalf("unexpected error message: %q", errStr)
+	}
+}
+
+func TestClipboardCopy_NoArgs(t *testing.T) {
+	// clipboardCopy with no arguments → empty text
+	outFile := filepath.Join(t.TempDir(), "clipboard.txt")
+	t.Setenv("OSM_CLIPBOARD", "cat > "+outFile)
+
+	_, exports := setupModule(t, nil)
+	clipboardFn := requireCallable(t, exports, "clipboardCopy")
+
+	_, err := clipboardFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("clipboardCopy no args: %v", err)
+	}
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("failed to read clipboard output: %v", err)
+	}
+	if string(data) != "" {
+		t.Fatalf("expected empty clipboard content, got %q", string(data))
 	}
 }

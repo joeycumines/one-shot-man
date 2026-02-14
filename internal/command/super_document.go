@@ -77,6 +77,10 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 	}
 	defer engine.Close()
 
+	// Start background session cleanup if enabled in config.
+	stopCleanup := maybeStartCleanupScheduler(c.config, c.session)
+	defer stopCleanup()
+
 	if c.testMode {
 		engine.SetTestMode(true)
 	}

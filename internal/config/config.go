@@ -43,11 +43,13 @@ type SessionConfig struct {
 	MaxAgeDays int `json:"maxAgeDays" default:"90"`
 	MaxCount   int `json:"maxCount" default:"100"`
 	MaxSizeMB  int `json:"maxSizeMb" default:"500"`
-	// TODO: AutoCleanupEnabled is parsed and validated but no automatic cleanup
-	// scheduler exists yet. Reserved for future auto-cleanup scheduler implementation.
+	// AutoCleanupEnabled controls whether commands that create sessions
+	// start a background cleanup scheduler. When true (the default),
+	// session cleanup runs on command startup and then at the configured
+	// interval (CleanupIntervalHours).
 	AutoCleanupEnabled bool `json:"autoCleanupEnabled" default:"true"`
-	// TODO: CleanupIntervalHours is parsed and validated but no automatic cleanup
-	// scheduler exists yet. Reserved for future auto-cleanup scheduler implementation.
+	// CleanupIntervalHours is the number of hours between automatic
+	// cleanup runs. Only used when AutoCleanupEnabled is true.
 	CleanupIntervalHours int `json:"cleanupIntervalHours" default:"24"`
 }
 

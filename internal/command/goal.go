@@ -169,6 +169,10 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	}
 	defer engine.Close()
 
+	// Start background session cleanup if enabled in config.
+	stopCleanup := maybeStartCleanupScheduler(c.config, c.session)
+	defer stopCleanup()
+
 	if c.testMode {
 		engine.SetTestMode(true)
 	}

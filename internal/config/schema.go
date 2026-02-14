@@ -441,5 +441,15 @@ func defaultCommandOptions() []ConfigOption {
 		{Key: "delete", Section: "session", Type: TypeString, Default: "", Description: "Session deletion mode"},
 		{Key: "export", Section: "session", Type: TypeString, Default: "", Description: "Session export format"},
 		{Key: "import", Section: "session", Type: TypeString, Default: "", Description: "Session import format"},
+
+		// [sessions] section — lifecycle and automatic cleanup settings.
+		// These options are parsed by the [sessions] config section handler
+		// (parseSessionOption) and stored in SessionConfig. The schema entries
+		// exist for documentation and the 'config schema' subcommand.
+		{Key: "maxAgeDays", Section: "sessions", Type: TypeInt, Default: "90", Description: "Maximum age of sessions in days before cleanup"},
+		{Key: "maxCount", Section: "sessions", Type: TypeInt, Default: "100", Description: "Maximum number of sessions to keep"},
+		{Key: "maxSizeMB", Section: "sessions", Type: TypeInt, Default: "500", Description: "Maximum total size of sessions in MB"},
+		{Key: "autoCleanupEnabled", Section: "sessions", Type: TypeBool, Default: "true", Description: "Enable automatic background session cleanup"},
+		{Key: "cleanupIntervalHours", Section: "sessions", Type: TypeInt, Default: "24", Description: "Hours between automatic cleanup runs"},
 	}
 }

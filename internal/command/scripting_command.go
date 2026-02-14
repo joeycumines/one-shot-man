@@ -110,6 +110,10 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	}
 	defer engine.Close()
 
+	// Start background session cleanup if enabled in config.
+	stopCleanup := maybeStartCleanupScheduler(c.config, c.session)
+	defer stopCleanup()
+
 	// Set global default logger
 	// Note: We access the internal logger getter. This is the "modular wiring" part -
 	// the engine provides the logger, and the command (entrypoint logic) wires it up.

@@ -124,6 +124,10 @@ func NewVersionCommand(version string) *VersionCommand {
 
 // Execute displays version information.
 func (c *VersionCommand) Execute(args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 {
+		_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
+		return fmt.Errorf("unexpected arguments")
+	}
 	_, _ = fmt.Fprintf(stdout, "one-shot-man version %s\n", c.version)
 	return nil
 }
@@ -132,19 +136,27 @@ func (c *VersionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 type ConfigCommand struct {
 	*BaseCommand
 	config     *config.Config
+	configPath string
 	showGlobal bool
 	showAll    bool
 }
 
 // NewConfigCommand creates a new config command.
-func NewConfigCommand(cfg *config.Config) *ConfigCommand {
+// If configPath is empty, persistence to disk is skipped (useful for tests
+// and when the resolved path isn't known at construction time).
+func NewConfigCommand(cfg *config.Config, configPath ...string) *ConfigCommand {
+	var path string
+	if len(configPath) > 0 {
+		path = configPath[0]
+	}
 	return &ConfigCommand{
 		BaseCommand: NewBaseCommand(
 			"config",
 			"Manage configuration settings",
 			"config [options] [key] [value]",
 		),
-		config: cfg,
+		config:     cfg,
+		configPath: path,
 	}
 }
 
@@ -204,6 +216,19 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		// Set configuration value
 		key, value := args[0], args[1]
 		c.config.SetGlobalOption(key, value)
+
+		// Persist to disk if a config path is available
+		configPath := c.configPath
+		if configPath == "" {
+			// Best-effort resolve; if it fails, skip disk write
+			configPath, _ = config.GetConfigPath()
+		}
+		if configPath != "" {
+			if err := config.SetKeyInFile(configPath, key, value); err != nil {
+				_, _ = fmt.Fprintf(stderr, "Warning: failed to persist config to disk: %v\n", err)
+			}
+		}
+
 		_, _ = fmt.Fprintf(stdout, "Set configuration: %s = %s\n", key, value)
 		return nil
 	}
@@ -236,6 +261,10 @@ func (c *InitCommand) SetupFlags(fs *flag.FlagSet) {
 
 // Execute initializes the environment.
 func (c *InitCommand) Execute(args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 {
+		_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
+		return fmt.Errorf("unexpected arguments")
+	}
 	// Get config path and ensure directory exists
 	configPath, err := config.GetConfigPath()
 	if err != nil {

@@ -420,6 +420,8 @@ Generate a commit message that follows these guidelines based on the provided di
 			TUITitle:    "The Beatings Will Continue Until Morale Improves",
 			TUIPrompt:   "(morale-improver) > ",
 
+			PostCopyHint: `[Hint] Try a follow-up prompt: "Now review each section of your plan. For each section, verify it directly addresses the failures listed above. Remove or rewrite any section that doesn't."`,
+
 			NotableVariables: []string{"originalInstructions", "failedPlan", "specificFailures"},
 
 			StateVars: map[string]interface{}{

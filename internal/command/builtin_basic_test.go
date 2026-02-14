@@ -120,6 +120,26 @@ func TestVersionCommandExecute(t *testing.T) {
 	}
 }
 
+func TestVersionCommandRejectsUnexpectedArgs(t *testing.T) {
+	t.Parallel()
+	cmd := NewVersionCommand("1.0.0")
+	var stdout, stderr bytes.Buffer
+
+	err := cmd.Execute([]string{"extra", "args"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for unexpected arguments")
+	}
+	if !strings.Contains(err.Error(), "unexpected arguments") {
+		t.Fatalf("expected 'unexpected arguments' error, got %q", err.Error())
+	}
+	if !strings.Contains(stderr.String(), "unexpected arguments") {
+		t.Fatalf("expected stderr to mention unexpected arguments, got %q", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout output, got %q", stdout.String())
+	}
+}
+
 func TestConfigCommandShowAll(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
@@ -172,7 +192,7 @@ func TestConfigCommandGetAndSet(t *testing.T) {
 		t.Fatalf("expected get output for color, got %q", stdout.String())
 	}
 
-	// set new key
+	// set new key (no config path → no disk write, memory-only)
 	stdout.Reset()
 	if err := cmd.Execute([]string{"theme", "dark"}, &stdout, &stderr); err != nil {
 		t.Fatalf("config execute returned error on set: %v", err)
@@ -193,6 +213,75 @@ func TestConfigCommandGetAndSet(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "Invalid number of arguments") {
 		t.Fatalf("expected invalid argument message, got %q", stderr.String())
+	}
+}
+
+func TestConfigCommandPersistsToDisk(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config")
+
+	// Seed with existing content
+	initial := "verbose true\n"
+	if err := os.WriteFile(configPath, []byte(initial), 0644); err != nil {
+		t.Fatalf("failed to write initial config: %v", err)
+	}
+
+	cfg, err := config.LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
+
+	cmd := NewConfigCommand(cfg, configPath)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"color", "always"}, &stdout, &stderr); err != nil {
+		t.Fatalf("config set returned error: %v", err)
+	}
+
+	if stderr.Len() > 0 {
+		t.Fatalf("unexpected stderr: %s", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Set configuration: color = always") {
+		t.Fatalf("expected confirmation, got %q", stdout.String())
+	}
+
+	// Verify the file was written
+	reloaded, err := config.LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("failed to reload config: %v", err)
+	}
+	if v, ok := reloaded.GetGlobalOption("color"); !ok || v != "always" {
+		t.Fatalf("expected color=always on disk, got %q exists=%v", v, ok)
+	}
+	if v, ok := reloaded.GetGlobalOption("verbose"); !ok || v != "true" {
+		t.Fatalf("expected verbose=true preserved, got %q exists=%v", v, ok)
+	}
+}
+
+func TestConfigCommandPersistsNewFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "nested", "config")
+
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg, configPath)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"editor", "nano"}, &stdout, &stderr); err != nil {
+		t.Fatalf("config set returned error: %v", err)
+	}
+
+	if stderr.Len() > 0 {
+		t.Fatalf("unexpected stderr: %s", stderr.String())
+	}
+
+	reloaded, err := config.LoadFromPath(configPath)
+	if err != nil {
+		t.Fatalf("failed to reload config: %v", err)
+	}
+	if v, ok := reloaded.GetGlobalOption("editor"); !ok || v != "nano" {
+		t.Fatalf("expected editor=nano on disk, got %q exists=%v", v, ok)
 	}
 }
 
@@ -227,6 +316,32 @@ func TestInitCommandExistingConfigWithoutForce(t *testing.T) {
 	}
 	if string(data) != "existing" {
 		t.Fatalf("expected config file to remain unchanged, got %q", string(data))
+	}
+}
+
+func TestInitCommandRejectsUnexpectedArgs(t *testing.T) {
+	t.Parallel()
+	cmd := NewInitCommand()
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	cmd.SetupFlags(fs)
+	if err := fs.Parse(nil); err != nil {
+		t.Fatalf("failed to parse flags: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+
+	err := cmd.Execute([]string{"unexpected"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for unexpected arguments")
+	}
+	if !strings.Contains(err.Error(), "unexpected arguments") {
+		t.Fatalf("expected 'unexpected arguments' error, got %q", err.Error())
+	}
+	if !strings.Contains(stderr.String(), "unexpected arguments") {
+		t.Fatalf("expected stderr to mention unexpected arguments, got %q", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout output, got %q", stdout.String())
 	}
 }
 

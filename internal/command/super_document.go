@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -21,12 +23,15 @@ var superDocumentScript string
 // SuperDocumentCommand provides the super-document TUI for document merging.
 type SuperDocumentCommand struct {
 	*BaseCommand
-	interactive bool
-	shellMode   bool // Use shell mode instead of visual TUI
-	testMode    bool
-	config      *config.Config
-	session     string
-	store       string
+	interactive   bool
+	shellMode     bool // Use shell mode instead of visual TUI
+	testMode      bool
+	config        *config.Config
+	session       string
+	store         string
+	logLevel      string
+	logPath       string
+	logBufferSize int
 }
 
 // NewSuperDocumentCommand creates a new super-document command.
@@ -49,14 +54,43 @@ func (c *SuperDocumentCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.testMode, "test", false, "Enable test mode with verbose output")
 	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
 	fs.StringVar(&c.store, "store", "", "Storage backend to use: 'fs' (default) or 'memory'")
+	fs.StringVar(&c.logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
+	fs.StringVar(&c.logPath, "log-file", "", "Path to log file (JSON output)")
+	fs.IntVar(&c.logBufferSize, "log-buffer", 1000, "Size of in-memory log buffer")
 }
 
 // Execute runs the super-document command.
 func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	ctx := context.Background()
 
-	// Create scripting engine with explicit session/storage configuration
-	engine, err := scripting.NewEngineWithConfig(ctx, stdout, stderr, c.session, c.store)
+	// Parse log level
+	var level slog.Level
+	switch strings.ToLower(c.logLevel) {
+	case "debug":
+		level = slog.LevelDebug
+	case "info", "":
+		level = slog.LevelInfo
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		return fmt.Errorf("invalid log level: %s", c.logLevel)
+	}
+
+	// Open log file if configured
+	var logFile io.Writer
+	if c.logPath != "" {
+		f, err := os.OpenFile(c.logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open log file %s: %w", c.logPath, err)
+		}
+		defer f.Close()
+		logFile = f
+	}
+
+	// Create scripting engine with explicit session/storage and logging configuration
+	engine, err := scripting.NewEngineDetailed(ctx, stdout, stderr, c.session, c.store, logFile, c.logBufferSize, level, modulePathOpts(c.config)...)
 	if err != nil {
 		return fmt.Errorf("failed to create scripting engine: %w", err)
 	}

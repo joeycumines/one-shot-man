@@ -130,12 +130,16 @@
     }
 
     // Create context manager
-    const ctxmgr = contextManager({
+    const ctxmgrOpts = {
         getItems: () => state.get(shared.contextItems) || [],
         setItems: (v) => state.set(shared.contextItems, v),
         nextIntegerId,
         buildPrompt,
-    });
+    };
+    if (config.postCopyHint) {
+        ctxmgrOpts.postCopyHint = config.postCopyHint;
+    }
+    const ctxmgr = contextManager(ctxmgrOpts);
 
     function buildBaseTemplateData() {
         // Prepare template data

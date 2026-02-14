@@ -113,9 +113,11 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	// Create scripting engine with explicit session configuration (no globals!)
 	engineFactory := c.engineFactory
 	if engineFactory == nil {
+		// Parse module paths from config for require() resolution
+		engineOpts := modulePathOpts(c.config)
 		// Use the new API with explicit parameters to avoid data races
 		engineFactory = func(ctx context.Context, stdout, stderr io.Writer) (*scripting.Engine, error) {
-			return scripting.NewEngineDetailed(ctx, stdout, stderr, c.session, c.store, logFile, c.logBufferSize, level)
+			return scripting.NewEngineDetailed(ctx, stdout, stderr, c.session, c.store, logFile, c.logBufferSize, level, engineOpts...)
 		}
 	}
 
@@ -135,40 +137,48 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	}
 
 	// Set up global variables
-	engine.SetGlobal("args", args)
-
-	// PHASE 1: Configuration - Evaluate all scripts to define modes and commands.
-	// Load any script files passed as arguments
+	// Convention: osm script [options] <script-file> [script-args...]
+	// The first positional argument is the script file. All subsequent
+	// positional arguments are passed to the script as the 'args' global.
+	var scriptFile string
+	var scriptArgs []string
 	if len(args) > 0 {
-		for _, scriptFile := range args {
-			// Resolve script path
-			if !filepath.IsAbs(scriptFile) {
-				locations := []string{
-					scriptFile,
-					filepath.Join("scripts", scriptFile),
-				}
-				var found bool
-				for _, path := range locations {
-					if _, err := os.Stat(path); err == nil {
-						scriptFile = path
-						found = true
-						break
-					}
-				}
-				if !found {
-					return fmt.Errorf("script file not found: %s", scriptFile)
-				}
-			}
+		scriptFile = args[0]
+		scriptArgs = args[1:]
+	}
+	engine.SetGlobal("args", scriptArgs)
 
-			// Load and execute the script
-			scriptName := filepath.Base(scriptFile)
-			script, err := engine.LoadScript(scriptName, scriptFile)
-			if err != nil {
-				return fmt.Errorf("failed to load script %s: %w", scriptFile, err)
+	// PHASE 1: Configuration - Evaluate scripts to define modes and commands.
+	// Load the script file passed as the first argument
+	if scriptFile != "" {
+		// Resolve script path
+		resolvedPath := scriptFile
+		if !filepath.IsAbs(resolvedPath) {
+			locations := []string{
+				resolvedPath,
+				filepath.Join("scripts", resolvedPath),
 			}
-			if err := engine.ExecuteScript(script); err != nil {
-				return fmt.Errorf("failed to evaluate script %s: %w", scriptFile, err)
+			var found bool
+			for _, path := range locations {
+				if _, err := os.Stat(path); err == nil {
+					resolvedPath = path
+					found = true
+					break
+				}
 			}
+			if !found {
+				return fmt.Errorf("script file not found: %s", scriptFile)
+			}
+		}
+
+		// Load and execute the script
+		scriptName := filepath.Base(resolvedPath)
+		script, err := engine.LoadScript(scriptName, resolvedPath)
+		if err != nil {
+			return fmt.Errorf("failed to load script %s: %w", resolvedPath, err)
+		}
+		if err := engine.ExecuteScript(script); err != nil {
+			return fmt.Errorf("failed to evaluate script %s: %w", resolvedPath, err)
 		}
 	}
 
@@ -209,7 +219,7 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	}
 
 	// If not interactive and no scripts were provided, it's an error.
-	if len(args) == 0 && c.script == "" {
+	if scriptFile == "" && c.script == "" {
 		fmt.Fprintln(stderr, "No script file specified. Use -i for interactive mode, -e for direct execution, or provide a script file.")
 		return fmt.Errorf("no script specified")
 	}

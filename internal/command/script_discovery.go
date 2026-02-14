@@ -1,6 +1,7 @@
 package command
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"os"
@@ -29,11 +30,27 @@ type ScriptDiscoveryConfig struct {
 
 	// ScriptPathPatterns are glob-like patterns for script directories (default: ["scripts"])
 	ScriptPathPatterns []string
+
+	// DisableStandardPaths disables standard script paths like ~/.one-shot-man/scripts,
+	// $exe/scripts, and ./scripts. Useful for tests to ensure determinism.
+	DisableStandardPaths bool
+
+	// DebugLogFunc is called with debug messages during discovery.
+	// If nil, debug logging is suppressed. Useful for troubleshooting
+	// why specific script directories are or aren't discovered.
+	DebugLogFunc func(format string, args ...interface{})
 }
 
 // ScriptDiscovery manages script path discovery with configurable rules
 type ScriptDiscovery struct {
 	config *ScriptDiscoveryConfig
+}
+
+// debugf logs a debug message if DebugLogFunc is configured.
+func (sd *ScriptDiscovery) debugf(format string, args ...interface{}) {
+	if sd.config.DebugLogFunc != nil {
+		sd.config.DebugLogFunc(format, args...)
+	}
 }
 
 // NewScriptDiscovery creates a new script discovery instance
@@ -73,6 +90,21 @@ func NewScriptDiscovery(cfg *config.Config) *ScriptDiscovery {
 		}
 	}
 
+	if val, exists := cfg.GetGlobalOption("script.disable-standard-paths"); exists {
+		if parsed, err := strconv.ParseBool(val); err == nil {
+			discoveryConfig.DisableStandardPaths = parsed
+		}
+	}
+
+	// Enable debug logging via config option
+	if val, exists := cfg.GetGlobalOption("script.debug-discovery"); exists {
+		if parsed, _ := strconv.ParseBool(val); parsed {
+			discoveryConfig.DebugLogFunc = func(format string, args ...interface{}) {
+				log.Printf("[script-discovery] "+format, args...)
+			}
+		}
+	}
+
 	return &ScriptDiscovery{config: discoveryConfig}
 }
 
@@ -81,15 +113,21 @@ func (sd *ScriptDiscovery) DiscoverScriptPaths() []string {
 	var paths []string
 	seenPaths := make(map[string]bool)
 
-	// Add legacy hardcoded paths for backward compatibility
-	legacyPaths := sd.getLegacyPaths()
-	for _, path := range legacyPaths {
+	sd.debugf("starting script path discovery (autodiscovery=%v, standardPaths=%v, gitTraversal=%v, patterns=%v, maxDepth=%d)",
+		sd.config.EnableAutodiscovery, !sd.config.DisableStandardPaths,
+		sd.config.EnableGitTraversal, sd.config.ScriptPathPatterns, sd.config.MaxTraversalDepth)
+
+	// Add legacy/standard paths for backward compatibility
+	standardPaths := sd.getLegacyPaths()
+	for _, path := range standardPaths {
+		sd.debugf("adding standard path candidate: %s", path)
 		sd.addPath(&paths, seenPaths, path)
 	}
 
 	// Add custom paths from configuration
 	for _, path := range sd.config.CustomPaths {
 		expandedPath := sd.expandPath(path)
+		sd.debugf("adding custom path candidate: %s (expanded from %s)", expandedPath, path)
 		sd.addPath(&paths, seenPaths, expandedPath)
 	}
 
@@ -97,6 +135,7 @@ func (sd *ScriptDiscovery) DiscoverScriptPaths() []string {
 	if sd.config.EnableAutodiscovery {
 		autoPaths := sd.autodiscoverPaths()
 		for _, path := range autoPaths {
+			sd.debugf("adding autodiscovered path candidate: %s", path)
 			sd.addPath(&paths, seenPaths, path)
 		}
 	}
@@ -152,6 +191,11 @@ func (sd *ScriptDiscovery) DiscoverScriptPaths() []string {
 		paths[i] = sp.path
 	}
 
+	sd.debugf("discovery complete: %d paths found", len(paths))
+	for i, p := range paths {
+		sd.debugf("  [%d] %s", i, p)
+	}
+
 	return paths
 }
 
@@ -159,21 +203,39 @@ func (sd *ScriptDiscovery) DiscoverScriptPaths() []string {
 func (sd *ScriptDiscovery) getLegacyPaths() []string {
 	var paths []string
 
+	// Allow disabling standard script paths via config (useful for tests)
+	if sd.config.DisableStandardPaths {
+		sd.debugf("standard paths disabled by configuration")
+		return paths
+	}
+
 	// 1. scripts/ directory relative to the executable
 	if execPath, err := os.Executable(); err == nil {
 		execDir := filepath.Dir(execPath)
-		paths = append(paths, filepath.Join(execDir, "scripts"))
+		p := filepath.Join(execDir, "scripts")
+		paths = append(paths, p)
+		sd.debugf("standard path [exec]: %s", p)
+	} else {
+		sd.debugf("standard path [exec]: skipped (executable path unavailable: %v)", err)
 	}
 
 	// 2. ~/.one-shot-man/scripts/ (user scripts)
 	if configPath, err := config.GetConfigPath(); err == nil {
 		configDir := filepath.Dir(configPath)
-		paths = append(paths, filepath.Join(configDir, "scripts"))
+		p := filepath.Join(configDir, "scripts")
+		paths = append(paths, p)
+		sd.debugf("standard path [config]: %s", p)
+	} else {
+		sd.debugf("standard path [config]: skipped (config path unavailable: %v)", err)
 	}
 
 	// 3. ./scripts/ (current directory scripts)
 	if cwd, err := os.Getwd(); err == nil {
-		paths = append(paths, filepath.Join(cwd, "scripts"))
+		p := filepath.Join(cwd, "scripts")
+		paths = append(paths, p)
+		sd.debugf("standard path [cwd]: %s", p)
+	} else {
+		sd.debugf("standard path [cwd]: skipped (getwd failed: %v)", err)
 	}
 
 	return paths
@@ -186,8 +248,11 @@ func (sd *ScriptDiscovery) autodiscoverPaths() []string {
 	// Start from current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
+		sd.debugf("autodiscover: skipped (getwd failed: %v)", err)
 		return paths
 	}
+
+	sd.debugf("autodiscover: starting from %s", cwd)
 
 	// Traverse up directory tree looking for git repositories and script directories
 	if sd.config.EnableGitTraversal {
@@ -200,21 +265,45 @@ func (sd *ScriptDiscovery) autodiscoverPaths() []string {
 	return paths
 }
 
-// traverseForGitRepos traverses up from the given directory looking for git repositories
+// traverseForGitRepos traverses up from the given directory looking for git repositories.
+// It tracks resolved real paths to detect symlink cycles that could cause infinite traversal.
 func (sd *ScriptDiscovery) traverseForGitRepos(startDir string) []string {
 	var paths []string
 	var gitRepos []string
 
+	// Track resolved real paths to detect symlink cycles in the upward traversal.
+	visitedReal := make(map[string]bool)
+
 	dir := startDir
 	for i := 0; i < sd.config.MaxTraversalDepth; i++ {
+		// Resolve the real path for cycle detection
+		realDir, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			if os.IsPermission(err) {
+				log.Printf("warning: permission denied resolving symlinks for %q, stopping git traversal", dir)
+				sd.debugf("git-traversal: permission denied at %s: %v", dir, err)
+			} else {
+				sd.debugf("git-traversal: symlink resolution failed at %s: %v", dir, err)
+			}
+			break
+		}
+
+		if visitedReal[realDir] {
+			sd.debugf("git-traversal: symlink cycle detected at %s (real: %s), stopping", dir, realDir)
+			break
+		}
+		visitedReal[realDir] = true
+
 		// Check if this directory is a git repository
 		if sd.isGitRepository(dir) {
+			sd.debugf("git-traversal: found git repository at %s", dir)
 			gitRepos = append(gitRepos, dir)
 		}
 
 		// Move up one directory
 		parent := filepath.Dir(dir)
 		if parent == dir {
+			sd.debugf("git-traversal: reached filesystem root at %s", dir)
 			break // Reached filesystem root
 		}
 		dir = parent
@@ -224,7 +313,18 @@ func (sd *ScriptDiscovery) traverseForGitRepos(startDir string) []string {
 	for _, repo := range gitRepos {
 		for _, pattern := range sd.config.ScriptPathPatterns {
 			scriptPath := filepath.Join(repo, pattern)
-			if sd.directoryExists(scriptPath) {
+			exists, checkErr := sd.checkDirectory(scriptPath)
+			if checkErr != nil {
+				if os.IsPermission(checkErr) {
+					log.Printf("warning: permission denied checking script directory %q", scriptPath)
+					sd.debugf("git-traversal: permission denied for %s", scriptPath)
+				} else {
+					sd.debugf("git-traversal: error checking %s: %v", scriptPath, checkErr)
+				}
+				continue
+			}
+			if exists {
+				sd.debugf("git-traversal: found script directory %s", scriptPath)
 				paths = append(paths, scriptPath)
 			}
 		}
@@ -233,16 +333,49 @@ func (sd *ScriptDiscovery) traverseForGitRepos(startDir string) []string {
 	return paths
 }
 
-// traverseForScriptDirs traverses up from the given directory looking for script directories
+// traverseForScriptDirs traverses up from the given directory looking for script directories.
+// It tracks resolved real paths to detect symlink cycles that could cause infinite traversal.
 func (sd *ScriptDiscovery) traverseForScriptDirs(startDir string) []string {
 	var paths []string
 
+	// Track resolved real paths to detect symlink cycles in the upward traversal.
+	visitedReal := make(map[string]bool)
+
 	dir := startDir
 	for i := 0; i < sd.config.MaxTraversalDepth; i++ {
+		// Resolve the real path for cycle detection
+		realDir, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			if os.IsPermission(err) {
+				log.Printf("warning: permission denied resolving symlinks for %q, stopping upward traversal", dir)
+				sd.debugf("traversal: permission denied at %s: %v", dir, err)
+			} else {
+				sd.debugf("traversal: symlink resolution failed at %s: %v", dir, err)
+			}
+			break
+		}
+
+		if visitedReal[realDir] {
+			sd.debugf("traversal: symlink cycle detected at %s (real: %s), stopping", dir, realDir)
+			break
+		}
+		visitedReal[realDir] = true
+
 		// Check for script directories using configured patterns
 		for _, pattern := range sd.config.ScriptPathPatterns {
 			scriptPath := filepath.Join(dir, pattern)
-			if sd.directoryExists(scriptPath) {
+			exists, checkErr := sd.checkDirectory(scriptPath)
+			if checkErr != nil {
+				if os.IsPermission(checkErr) {
+					log.Printf("warning: permission denied checking script directory %q", scriptPath)
+					sd.debugf("traversal: permission denied for %s", scriptPath)
+				} else {
+					sd.debugf("traversal: error checking %s: %v", scriptPath, checkErr)
+				}
+				continue
+			}
+			if exists {
+				sd.debugf("traversal: found script directory %s", scriptPath)
 				paths = append(paths, scriptPath)
 			}
 		}
@@ -250,9 +383,14 @@ func (sd *ScriptDiscovery) traverseForScriptDirs(startDir string) []string {
 		// Move up one directory
 		parent := filepath.Dir(dir)
 		if parent == dir {
+			sd.debugf("traversal: reached filesystem root at %s", dir)
 			break // Reached filesystem root
 		}
 		dir = parent
+	}
+
+	if len(paths) == 0 {
+		sd.debugf("traversal: no script directories found in %d levels from %s", sd.config.MaxTraversalDepth, startDir)
 	}
 
 	return paths
@@ -265,10 +403,19 @@ func (sd *ScriptDiscovery) isGitRepository(dir string) bool {
 	return cmd.Run() == nil
 }
 
-// directoryExists checks if a directory exists
-func (sd *ScriptDiscovery) directoryExists(path string) bool {
+// checkDirectory checks if a path is an existing directory.
+// Returns (exists, error) to allow callers to distinguish permission errors
+// from simple non-existence.
+func (sd *ScriptDiscovery) checkDirectory(path string) (bool, error) {
 	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		// Return the error (permission denied, I/O error, etc.) for the caller to handle
+		return false, err
+	}
+	return info.IsDir(), nil
 }
 
 // expandPath expands tilde and environment variables in paths
@@ -283,24 +430,68 @@ func (sd *ScriptDiscovery) expandPath(path string) string {
 
 func (sd *ScriptDiscovery) normalizePath(path string) (string, error) {
 	cleaned := filepath.Clean(path)
-	return filepath.Abs(cleaned)
+	absPath, err := filepath.Abs(cleaned)
+	if err != nil {
+		return "", err
+	}
+
+	// Resolve symlinks to ensure semantic deduplication
+	// (a directory and a symlink to it should be treated as the same path)
+	resolvedPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		// If symlink resolution fails (e.g., broken symlink, non-existent path),
+		// fall back to absolute path
+		return absPath, nil
+	}
+
+	// SECURITY: Validate that the resolved path is within the canonical parent directory.
+	baseDir := filepath.Dir(absPath)
+	resolvedBaseDir, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		// Fail closed if the base directory can't be validated.
+		return "", fmt.Errorf("failed to resolve base directory symlinks for %q: %w", baseDir, err)
+	}
+
+	// Clean up for stable comparisons.
+	rp := filepath.Clean(resolvedPath)
+	pb := filepath.Clean(resolvedBaseDir)
+
+	// Ensure pb ends with a path separator for strict prefix checking.
+	sep := string(filepath.Separator)
+	pbWithSep := pb
+	if !strings.HasSuffix(pbWithSep, sep) {
+		pbWithSep += sep
+	}
+
+	// Require the target to be a strict descendant of the parent directory.
+	if !strings.HasPrefix(rp, pbWithSep) {
+		return "", fmt.Errorf("symlink validation failed for %q: resolved path %q escapes parent %q", path, rp, pb)
+	}
+
+	return rp, nil
 }
 
 func (sd *ScriptDiscovery) addPath(paths *[]string, seenPaths map[string]bool, candidate string) {
 	if strings.TrimSpace(candidate) == "" {
+		sd.debugf("addPath: skipping empty candidate")
 		return
 	}
 
 	normalized, err := sd.normalizePath(candidate)
 	if err != nil {
 		log.Printf("warning: skipping script path %q: %v", candidate, err)
+		sd.debugf("addPath: normalization failed for %q: %v", candidate, err)
 		return
 	}
 
-	if !seenPaths[normalized] {
-		*paths = append(*paths, normalized)
-		seenPaths[normalized] = true
+	if seenPaths[normalized] {
+		sd.debugf("addPath: deduplicating %s (normalized: %s)", candidate, normalized)
+		return
 	}
+
+	*paths = append(*paths, normalized)
+	seenPaths[normalized] = true
+	sd.debugf("addPath: accepted %s (normalized: %s)", candidate, normalized)
 }
 
 type pathScore struct {

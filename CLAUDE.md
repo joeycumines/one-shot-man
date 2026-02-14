@@ -33,6 +33,40 @@ make help
 
 **Critical Requirement**: ALL checks must pass on ALL platforms (ubuntu-latest, windows-latest, macos-latest). Never accept failing tests—even timing-dependent or "flaky" tests must be properly fixed.
 
+## Commit Policy: The Rule of Two
+
+You are encouraged to **commit as you go**. However, commits require **two contiguous issue-free subagent reviews** using this exact instruction:
+
+> "Ensure, or rather GUARANTEE the correctness of my PR. Since you're _guaranteeing_ it, sink commensurate effort; you care deeply about keeping your word, after all. Even then, I expect you to think very VERY hard, significantly harder than you might expect. Assume, from start to finish, that there's _always_ another problem, and you just haven't caught it yet. Question all information provided - _only_ if it is simply impossible to verify are you allowed to trust, and if you trust you MUST specify that (as briefly as possible). Provide a succinct summary then more detailed analysis. Your succinct summary must be such that removing any single part, or applying any transformation or adjustment of wording, would make it materially worse."
+
+**Review scope**: diff vs HEAD
+
+**Review artifacts directory**: `./scratch/`
+
+**Process requirements**:
+- Avoid producing more than one review artifact
+- FULLY address the review BEFORE moving on—reviews that are not promptly actioned are wasted effort
+- For "general improvements": first COMPLETE the entire `blueprint.json` (inclusive of validation and iterative refinement), reach stable-state, THEN ideate and analyze, then continue your cycle
+- Cycle continually and indefinitely: always search for more work, including refinements, new features, and improvements, without ever concluding that the work is "done" or "good enough"
+
+### Task Review Requirements
+
+**ALL tasks from T001 onwards MUST be reviewed using Rule of Two** (2+ subagents per task).
+
+**Review failures include**:
+- Failing to meet **100% unit test coverage**
+- Failing to include **integration testing whenever useful**
+- Failing to explicitly verify these (you can use a separate subagent)
+- Failing to **verify that the FULL build—ALL checks—pass on ALL platforms** (Linux, macOS, Windows)
+
+**Task completion criteria**:
+- Do not mark any task "Done" until you have **two contiguous, issue-free reviews**
+- Reviews must be **issue-free** on **all three platforms** (Linux, macOS, Windows)
+- If there's even a small chance of a platform-specific issue, all three platforms must be verified
+- **Separately review for alignment and fitness for purpose**
+
+**Commit timing**: COMMIT immediately after all these conditions pass.
+
 ### Running Single Tests
 
 ```bash
@@ -128,12 +162,3 @@ The `lint` target runs:
 - `docs/scripting.md` - JavaScript scripting guide
 - `docs/reference/command.md` - Command reference
 - `docs/reference/goal.md` - Goal system reference
-
-## Existing Rules
-
-The project has specific agent rules in `.github/copilot-instructions.md` and `.agent/rules/core-code-quality-checks.md`. Key points:
-
-- Zero tolerance for test failures on any platform
-- Verify everything, including "detours" and side tasks
-- Use structured memory protocol with `blueprint.json` and `WIP.md`
-- Default to implementing changes rather than only suggesting

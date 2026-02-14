@@ -8,13 +8,13 @@
 - **T005**: ✅ DONE (commit 6f18a1f) — Rule of Two PASSED
 - **T006**: ✅ DONE (commit 6b1b0b9) — Rule of Two PASSED
 - **T007**: ✅ DONE (commit 31a4c84) — Rule of Two PASSED
-- **T008**: 🔄 NEXT — Implement system-style file logging for script commands
+- **T008**: ✅ DONE (commit 293924c) — Rule of Two PASSED
+- **T009**: 🔄 NEXT — Implement log tailing capability
 
-## T008 Context
-- Extend internal/scripting/logging.go for structured JSON log entries to file
-- --log-file flag already exists on script-executing commands
-- Structured JSON: timestamp, level, message, fields
-- File opened with append mode
-- Log rotation/size limits via config keys
-- Concurrent-safe writes
-- Register new config keys in schema.go
+## T009 Context
+- Add `osm log tail` or `osm log --follow` command
+- Opens configured log file, streams new lines to stdout
+- Support --lines N flag for initial line count
+- Handle log rotation gracefully (detect file truncation/rotation, re-open)
+- Must work on Linux, macOS, and Windows
+- Add tests using temp log files with simulated appends

@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T007 COMPLETE. T007 committed as 31a4c84: chore: mark osm:tview as deprecated with warning, document deprecation plan. 7 files changed, 214 insertions(+), 4 deletions(-). Rule of Two passed. Next: T008 (Implement system-style file logging for script commands)."
+    "currentState": "T001-T008 COMPLETE. T008 committed as 293924c: feat(logging): add rotating file writer, config keys, and shared log resolution. 10 files changed, 813 insertions(+), 128 deletions(-). Rule of Two passed. Next: T009 (Implement log tailing capability)."
   },
   "sequentialTasks": [
     {
@@ -84,8 +84,8 @@
     },
     {
       "task": "T008: Implement system-style file logging for script commands",
-      "description": "Extend internal/scripting/logging.go to support writing structured JSON log entries to a file. The --log-file flag already exists on script-executing commands. Ensure: (1) Log entries are structured JSON (timestamp, level, message, fields), (2) File is opened with append mode, (3) Log rotation or size limits are configurable via config keys (log.max-size-mb, log.max-files), (4) Concurrent writes are safe (file locking or serialized writes), (5) Register new config keys in schema.go. Add unit tests for file logging, rotation, and concurrent access.",
-      "status": "Not Started"
+      "description": "Committed as 293924c: Created RotatingFileWriter (size-based rotation with backup pruning, mutex-protected). Added 5 log.* config keys to schema (log.file, log.level, log.max-size-mb, log.max-files, log.buffer-size). Created resolveLogConfig helper consolidating log setup across 5 commands (code-review, goal, prompt-flow, scripting, super-document). Added nil-config safety. 9 rotation tests, 6 config tests (including nil config regression). 10 files changed, 813 insertions(+), 128 deletions(-).",
+      "status": "Done"
     },
     {
       "task": "T009: Implement log tailing capability",

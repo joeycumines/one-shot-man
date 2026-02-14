@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T015 COMPLETE. T015 committed as b28e6a6: feat(sync): implement git init/push/pull operations with conflict detection. 3 files changed, 612 insertions(+), 28 deletions(-). Rule of Two passed. Next: T016."
+    "currentState": "T001-T016 COMPLETE. T016 committed as a916201: feat(builtin): add osm:grpc native module for gRPC client connectivity. 5 files changed, 1095 insertions(+). Rule of Two passed. Next: T017."
   },
   "sequentialTasks": [
     {
@@ -124,8 +124,8 @@
     },
     {
       "task": "T016: MacosUseSDK integration: implement osm:grpc native module",
-      "description": "Per docs/archive/notes/macos-use-sdk-evaluation.md, implement an osm:grpc native module using github.com/joeycumines/goja-grpc for in-process gRPC channels. The module should allow JS scripts to: create gRPC channels, make unary RPC calls, handle streaming responses. This enables connecting to a running MacosUseSDK gRPC server from JS scripts. Add the module to internal/builtin/. Register in register.go. Add unit tests with a mock gRPC server.",
-      "status": "Not Started"
+      "description": "Committed as a916201: Added osm:grpc native module using google.golang.org/grpc directly (synchronous API). goja-grpc requires go-eventloop which is incompatible with current dop251/eventloop — documented as future migration path. Module provides: loadDescriptorSet(base64), dial(target, opts?), conn.invoke(method, request?), conn.close(), status constants. Uses dynamicpb + protojson for JS object ↔ proto message conversion. Registered in register.go. 24 tests with mock gRPC server. 5 files changed, 1095 insertions(+).",
+      "status": "Done"
     },
     {
       "task": "T017: Coverage audit: internal/argv",

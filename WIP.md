@@ -16,6 +16,7 @@
 - **T013**: ✅ DONE (commit e9e2099) — Rule of Two PASSED
 - **T014**: ✅ DONE (commit cec53d8) — Rule of Two PASSED
 - **T015**: ✅ DONE (commit b28e6a6) — Rule of Two PASSED
+- **T016**: ✅ DONE (commit a916201) — Rule of Two PASSED
 
 ## Active Task
-Starting T016: MacosUseSDK integration — osm:grpc native module
+Starting T017: Coverage audit: internal/argv

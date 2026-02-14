@@ -197,15 +197,30 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 			_, _ = fmt.Fprintln(stdout, "  config <key> <value>  - Set configuration value")
 			_, _ = fmt.Fprintln(stdout, "  config --global       - Show global configuration")
 			_, _ = fmt.Fprintln(stdout, "  config --all          - Show all configuration")
+			_, _ = fmt.Fprintln(stdout, "  config validate       - Validate configuration")
+			_, _ = fmt.Fprintln(stdout, "  config schema         - Show configuration schema")
 			return nil
 		}
 	}
 
+	// Handle subcommands.
+	switch args[0] {
+	case "validate":
+		return c.executeValidate(stdout)
+	case "schema":
+		_, _ = fmt.Fprint(stdout, config.DefaultSchema().FormatHelp())
+		return nil
+	}
+
 	if len(args) == 1 {
-		// Get configuration value
+		// Get configuration value (schema-aware: checks env → config → default).
 		key := args[0]
-		if value, exists := c.config.GetGlobalOption(key); exists {
+		value := config.DefaultSchema().Resolve(c.config, key)
+		if value != "" {
 			_, _ = fmt.Fprintf(stdout, "%s: %s\n", key, value)
+		} else if _, exists := c.config.GetGlobalOption(key); exists {
+			// Value exists but is empty string.
+			_, _ = fmt.Fprintf(stdout, "%s: \n", key)
 		} else {
 			_, _ = fmt.Fprintf(stdout, "Configuration key '%s' not found\n", key)
 		}
@@ -235,6 +250,20 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 
 	_, _ = fmt.Fprintln(stderr, "Invalid number of arguments")
 	return fmt.Errorf("invalid arguments")
+}
+
+// executeValidate validates the current config against the schema.
+func (c *ConfigCommand) executeValidate(stdout io.Writer) error {
+	issues := config.ValidateConfig(c.config, config.DefaultSchema())
+	if len(issues) == 0 {
+		_, _ = fmt.Fprintln(stdout, "Configuration is valid.")
+		return nil
+	}
+	_, _ = fmt.Fprintf(stdout, "Configuration has %d issue(s):\n", len(issues))
+	for _, issue := range issues {
+		_, _ = fmt.Fprintf(stdout, "  - %s\n", issue)
+	}
+	return nil
 }
 
 // InitCommand initializes the one-shot-man environment.

@@ -111,15 +111,6 @@ func (s *ConfigSchema) IsKnown(section, key string) bool {
 	return s.byKey[key] != nil
 }
 
-// Options returns a copy of all registered options.
-func (s *ConfigSchema) Options() []ConfigOption {
-	cp := make([]ConfigOption, len(s.options))
-	for i, o := range s.options {
-		cp[i] = *o
-	}
-	return cp
-}
-
 // GlobalOptions returns all registered global options (Section == "").
 func (s *ConfigSchema) GlobalOptions() []ConfigOption {
 	var out []ConfigOption
@@ -154,19 +145,6 @@ func (s *ConfigSchema) Sections() []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// Validate checks a loaded Config against this schema and returns a list of
-// human-readable issues (empty if the config is valid). This is the preferred
-// method-based API; see also ValidateConfig for the standalone function form.
-func (s *ConfigSchema) Validate(c *Config) []string {
-	return ValidateConfig(c, s)
-}
-
-// DumpHelp returns a formatted, human-readable reference of all registered
-// options in the schema, grouped by section. Alias for FormatHelp.
-func (s *ConfigSchema) DumpHelp() string {
-	return s.FormatHelp()
 }
 
 // Resolve returns the effective value for a global config key by checking,

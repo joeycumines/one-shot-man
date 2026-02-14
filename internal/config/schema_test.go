@@ -15,8 +15,8 @@ func TestNewSchema(t *testing.T) {
 	if s == nil {
 		t.Fatal("NewSchema returned nil")
 	}
-	if len(s.Options()) != 0 {
-		t.Fatalf("expected empty options, got %d", len(s.Options()))
+	if len(s.GlobalOptions()) != 0 {
+		t.Fatalf("expected empty global options, got %d", len(s.GlobalOptions()))
 	}
 }
 
@@ -45,8 +45,11 @@ func TestSchemaRegisterAll(t *testing.T) {
 		{Key: "b", Section: ""},
 		{Key: "c", Section: "sec"},
 	})
-	if len(s.Options()) != 3 {
-		t.Fatalf("expected 3 options, got %d", len(s.Options()))
+	if len(s.GlobalOptions()) != 2 {
+		t.Fatalf("expected 2 global options, got %d", len(s.GlobalOptions()))
+	}
+	if len(s.SectionOptions("sec")) != 1 {
+		t.Fatalf("expected 1 section option, got %d", len(s.SectionOptions("sec")))
 	}
 }
 
@@ -667,39 +670,6 @@ script.max-traversal-depth abc`
 	}
 }
 
-// --- Backward compatibility: knownGlobalOptions and knownCommandOptions still work ---
-
-func TestKnownOptionsBackwardCompatibility(t *testing.T) {
-	t.Parallel()
-
-	// All legacy global options must still be recognized.
-	legacyGlobals := []string{
-		"verbose", "color", "pager", "format", "timeout",
-		"session.id", "output", "editor", "debug", "quiet",
-	}
-	for _, key := range legacyGlobals {
-		if !isKnownGlobalOption(key) {
-			t.Errorf("isKnownGlobalOption(%q) = false, want true", key)
-		}
-	}
-
-	// Unknown option must still be rejected.
-	if isKnownGlobalOption("nonexistent") {
-		t.Error("isKnownGlobalOption(nonexistent) should be false")
-	}
-
-	// Legacy command options.
-	if !isKnownCommandOption("help", "pager") {
-		t.Error("isKnownCommandOption(help, pager) = false")
-	}
-	if !isKnownCommandOption("help", "verbose") {
-		t.Error("isKnownCommandOption(help, verbose) = false (global fallback)")
-	}
-	if isKnownCommandOption("help", "nonexistent") {
-		t.Error("isKnownCommandOption(help, nonexistent) = true")
-	}
-}
-
 // --- New schema-aware options: discovery keys no longer produce warnings ---
 
 func TestDiscoveryKeysNoLongerWarn(t *testing.T) {
@@ -746,9 +716,9 @@ sync.local-path /home/user/.osm-sync`
 	}
 }
 
-// --- Schema.Validate method tests ---
+// --- ValidateConfig via schema (was Validate method, now ValidateConfig only) ---
 
-func TestSchemaValidateMethod(t *testing.T) {
+func TestValidateConfigViaSchema(t *testing.T) {
 	t.Parallel()
 	s := NewSchema()
 	s.Register(ConfigOption{Key: "verbose", Type: TypeBool, Section: ""})
@@ -756,22 +726,22 @@ func TestSchemaValidateMethod(t *testing.T) {
 	c := NewConfig()
 	c.SetGlobalOption("verbose", "maybe") // invalid bool
 
-	issues := s.Validate(c)
+	issues := ValidateConfig(c, s)
 	if len(issues) != 1 || !strings.Contains(issues[0], "expected bool") {
-		t.Fatalf("expected 1 bool type issue from Validate method, got: %v", issues)
+		t.Fatalf("expected 1 bool type issue, got: %v", issues)
 	}
 
 	// Valid config produces no issues.
 	c2 := NewConfig()
 	c2.SetGlobalOption("verbose", "true")
-	if iss := s.Validate(c2); len(iss) != 0 {
+	if iss := ValidateConfig(c2, s); len(iss) != 0 {
 		t.Fatalf("expected no issues, got: %v", iss)
 	}
 }
 
-// --- Schema.DumpHelp method tests ---
+// --- FormatHelp tests (DumpHelp alias removed) ---
 
-func TestSchemaDumpHelp(t *testing.T) {
+func TestFormatHelpContainsAllDetails(t *testing.T) {
 	t.Parallel()
 	s := NewSchema()
 	s.Register(ConfigOption{
@@ -783,15 +753,12 @@ func TestSchemaDumpHelp(t *testing.T) {
 		Description: "Pager program", Section: "help",
 	})
 
-	help := s.DumpHelp()
-	if help != s.FormatHelp() {
-		t.Fatal("DumpHelp and FormatHelp should return identical output")
-	}
+	help := s.FormatHelp()
 	if !strings.Contains(help, "verbose") {
-		t.Error("expected 'verbose' in DumpHelp output")
+		t.Error("expected 'verbose' in FormatHelp output")
 	}
 	if !strings.Contains(help, "[help] Options:") {
-		t.Error("expected '[help] Options:' in DumpHelp output")
+		t.Error("expected '[help] Options:' in FormatHelp output")
 	}
 }
 
@@ -847,19 +814,19 @@ func TestSchemaResolve(t *testing.T) {
 	}
 }
 
-// --- Options returns copies ---
+// --- GlobalOptions returns copies ---
 
-func TestOptionsReturnsCopy(t *testing.T) {
+func TestGlobalOptionsReturnsCopy(t *testing.T) {
 	t.Parallel()
 	s := NewSchema()
 	s.Register(ConfigOption{Key: "a", Section: ""})
 
-	opts := s.Options()
+	opts := s.GlobalOptions()
 	opts[0].Key = "modified"
 
 	// Original should not be affected.
-	original := s.Options()
+	original := s.GlobalOptions()
 	if original[0].Key != "a" {
-		t.Fatal("Options() should return a copy, but original was modified")
+		t.Fatal("GlobalOptions() should return a copy, but original was modified")
 	}
 }

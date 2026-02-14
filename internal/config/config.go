@@ -148,17 +148,9 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 		} else if currentCommand == "" {
 			// Global option
 			config.Global[optionName] = value
-			// Validate global option name
-			if !isKnownGlobalOption(optionName) {
-				config.addWarning("unknown global option: %q (value: %q)", optionName, value)
-			}
 		} else {
 			// Command-specific option
 			config.Commands[currentCommand][optionName] = value
-			// Validate command option name
-			if !isKnownCommandOption(currentCommand, optionName) {
-				config.addWarning("unknown option for command %q: %q (value: %q)", currentCommand, optionName, value)
-			}
 		}
 	}
 
@@ -166,50 +158,12 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 		return nil, fmt.Errorf("error reading config: %w", err)
 	}
 
+	// Validate config against schema: detect unknown options and type mismatches.
+	for _, issue := range ValidateConfig(config, DefaultSchema()) {
+		config.addWarning("%s", issue)
+	}
+
 	return config, nil
-}
-
-// Known global and command-specific configuration options.
-// This is used for schema validation to detect typos and unknown options.
-//
-// These maps are derived from DefaultSchema() to provide backward-compatible
-// fast lookups. The schema is the single source of truth.
-var (
-	knownGlobalOptionsOnce  map[string]bool
-	knownCommandOptionsOnce map[string]map[string]bool
-)
-
-func init() {
-	s := DefaultSchema()
-	knownGlobalOptionsOnce = make(map[string]bool, len(s.byKey))
-	for k := range s.byKey {
-		knownGlobalOptionsOnce[k] = true
-	}
-	knownCommandOptionsOnce = make(map[string]map[string]bool, len(s.bySection))
-	for sec, opts := range s.bySection {
-		m := make(map[string]bool, len(opts))
-		for k := range opts {
-			m[k] = true
-		}
-		knownCommandOptionsOnce[sec] = m
-	}
-}
-
-// isKnownGlobalOption checks if an option is a known global option.
-func isKnownGlobalOption(name string) bool {
-	return knownGlobalOptionsOnce[name]
-}
-
-// isKnownCommandOption checks if an option is known for a specific command.
-func isKnownCommandOption(command, name string) bool {
-	// Also check global options as they can be used in command sections
-	if knownGlobalOptionsOnce[name] {
-		return true
-	}
-	if cmdOpts, ok := knownCommandOptionsOnce[command]; ok {
-		return cmdOpts[name]
-	}
-	return false
 }
 
 // addWarning adds a warning to the config's warnings list.

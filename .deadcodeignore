@@ -26,16 +26,6 @@ internal/scripting/engine_core.go:*: unreachable func: NewEngineWithConfig
 internal\scripting\engine_core.go:*: unreachable func: NewEngineWithConfig
 internal\scripting\integration_notunix.go:*: unreachable func: mustNewEngine
 
-# Config schema public API - methods/functions used by tests and for future config validation features
-internal/config/schema.go:*: unreachable func: ConfigSchema.*
-internal\config\schema.go:*: unreachable func: ConfigSchema.*
-internal/config/schema.go:*: unreachable func: ValidateConfig
-internal\config\schema.go:*: unreachable func: ValidateConfig
-internal/config/schema.go:*: unreachable func: validateType
-internal\config\schema.go:*: unreachable func: validateType
-internal/config/schema.go:*: unreachable func: writeOptionHelp
-internal\config\schema.go:*: unreachable func: writeOptionHelp
-
 # Diff splitter public API - used for code review chunking, tested but not yet wired into command
 internal/command/diff_splitter.go:*: unreachable func: *
 internal\command\diff_splitter.go:*: unreachable func: *

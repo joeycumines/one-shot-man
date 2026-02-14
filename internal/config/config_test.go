@@ -1040,3 +1040,98 @@ weirdoption value`
 		}
 	})
 }
+
+// TestLoadFromReader_TypeValidation verifies that LoadFromReader produces type
+// mismatch warnings (not just unknown-option warnings) via the post-parse
+// ValidateConfig integration.
+func TestLoadFromReader_TypeValidation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("InvalidBool", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader("verbose notabool"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !cfg.HasWarnings() {
+			t.Fatal("expected type warning for invalid bool")
+		}
+		found := false
+		for _, w := range cfg.GetWarnings() {
+			if strings.Contains(w, "expected bool") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected 'expected bool' warning, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("InvalidInt", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader("script.max-traversal-depth abc"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !cfg.HasWarnings() {
+			t.Fatal("expected type warning for invalid int")
+		}
+		found := false
+		for _, w := range cfg.GetWarnings() {
+			if strings.Contains(w, "expected int") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected 'expected int' warning, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("InvalidDuration", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader("timeout notaduration"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !cfg.HasWarnings() {
+			t.Fatal("expected type warning for invalid duration")
+		}
+		found := false
+		for _, w := range cfg.GetWarnings() {
+			if strings.Contains(w, "expected duration") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected 'expected duration' warning, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("ValidTypes", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader("verbose true\nscript.max-traversal-depth 5\ntimeout 30s"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if cfg.HasWarnings() {
+			t.Errorf("expected no warnings for valid types, got: %v", cfg.GetWarnings())
+		}
+	})
+
+	t.Run("MixedUnknownAndTypeMismatch", func(t *testing.T) {
+		cfg, err := LoadFromReader(strings.NewReader("unknownkey hello\nverbose maybe"))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		warnings := cfg.GetWarnings()
+		if len(warnings) < 2 {
+			t.Fatalf("expected at least 2 warnings (unknown + type), got %d: %v", len(warnings), warnings)
+		}
+		warningText := strings.Join(warnings, " ")
+		if !strings.Contains(warningText, "unknown") {
+			t.Error("expected unknown option warning")
+		}
+		if !strings.Contains(warningText, "expected bool") {
+			t.Error("expected type mismatch warning")
+		}
+	})
+}

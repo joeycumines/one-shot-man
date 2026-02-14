@@ -1415,29 +1415,12 @@ func TestBridge_C3_NoRaceUnderLoad(t *testing.T) {
 				default:
 				}
 
-				// Check invariant
-				doneClosed := false
-				select {
-				case <-bridge.Done():
-					doneClosed = true
-				default:
-				}
-
-				isRunning := bridge.IsRunning()
+				// Use atomic snapshot to avoid TOCTOU race between
+				// checking Done() and IsRunning() separately.
+				doneClosed, isRunning := bridge.GetLifecycleSnapshot()
 
 				if doneClosed && isRunning {
 					violations.Add(1)
-				}
-
-				// Also check the reverse invariant
-				// IsRunning() false should always have Done() closed or closing
-				if !isRunning {
-					select {
-					case <-bridge.Done():
-						// Good - both consistent
-					default:
-						// This is OK - might be in transition
-					}
 				}
 
 				// Tight loop for maximum contention

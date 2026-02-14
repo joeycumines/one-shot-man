@@ -32,17 +32,20 @@
     {
       "task": "T023: Coverage audit: internal/builtin/ctxutil (Go side)",
       "description": "Run coverage for internal/builtin/ctxutil/ Go code. Test Require, buildContext for all item types (note, diff, diff-error, lazy-diff, lazy-exec, file), calculateBacktickFence, content blocks, coercion utilities. Cover error paths: nil context, missing items, malformed types. Achieve 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage 76.5% → 86.0%. 14 new tests. runGitDiff 0%→100%, getDefaultGitDiffArgs 0%→100%. Fixed nil-dereference in Require when exportsVal is Go nil. Remaining uncovered code is defensive dead code (panic recovery, nil-after-ToObject, embedded-script error handling). Rule of Two passed."
     },
     {
       "task": "T024: Coverage audit: internal/builtin/ctxutil (JS integration)",
       "description": "Test contextManager.js integration via scripting engine. Cover all REPL commands: add, diff, exec, note, list, edit, remove, show, copy, snippets, hot-snippets. Test factory creation, item state, refresh, copy formatting, flag completers (file, gitref, flag). Achieve 100% effective JS path coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "14 new test functions covering all untested contextManager.js paths: list, edit edge cases, remove edge cases, clipboard errors, add editor mode, refresh without context, note editor, non-file removal. Committed as 3873afd."
     },
     {
       "task": "T025: Coverage audit: internal/builtin/bt",
       "description": "Run coverage for internal/builtin/bt/. Review 11 test files (blackboard, bridge, adapter, integration, stress, fuzz). Identify uncovered paths in JS-Go bridge, tick execution, status propagation, error recovery. Target 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage 76.8% → 91.3%. 54 new test functions in coverage_gaps_test.go. Fixed 2 pre-existing flaky tests (adapter_test.go, bridge_test.go) replacing TOCTOU IsRunning()/Done() with atomic GetLifecycleSnapshot(). Reduced bt suite time 15s → 10s. Rule of Two passed."
     },
     {
       "task": "T026: Coverage audit: internal/builtin/pabt",

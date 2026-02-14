@@ -733,14 +733,9 @@ func TestBridge_LifecycleInvariant_DoneClosedImpliesNotRunning(t *testing.T) {
 		go func() {
 			// Repeatedly check both IsRunning() and Done() channel state
 			for j := 0; j < 100; j++ {
-				isRunning := bridge.IsRunning()
-				doneClosed := false
-				select {
-				case <-bridge.Done():
-					doneClosed = true
-				default:
-					doneClosed = false
-				}
+				// Use atomic snapshot to avoid TOCTOU race between
+				// checking IsRunning() and Done() separately
+				doneClosed, isRunning := bridge.GetLifecycleSnapshot()
 
 				// CRITICAL INVARIANT CHECK:
 				// If Done() is closed, IsRunning() MUST be false

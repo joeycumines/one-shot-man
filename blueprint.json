@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T009 COMPLETE. T009 committed as b2c93d5: feat(command): add log tail command with follow mode and rotation detection. 3 files changed, 812 insertions(+). Rule of Two passed. Next: T010 (Fix duplicate log lines for purged sessions)."
+    "currentState": "T001-T010 COMPLETE. T010 committed as 7f19318: fix(cleanup): remove duplicate log output from session purge operations. 2 files changed, 40 insertions(+), 4 deletions(-). Rule of Two passed. Next: T011 (Implement automatic session cleanup scheduler)."
   },
   "sequentialTasks": [
     {
@@ -94,8 +94,8 @@
     },
     {
       "task": "T010: Fix duplicate log lines for purged sessions",
-      "description": "Investigate and fix duplicate log lines appearing during session purge operations. Trace the logging path through internal/storage/cleanup.go and internal/session/ code. Identify where double-logging occurs - likely both the cleanup function and the caller are logging the same event. Ensure each purge action produces exactly one log line. Add a test that captures log output during session purge and asserts no duplicates.",
-      "status": "Not Started"
+      "description": "Committed as 7f19318: Removed two fmt.Printf debug statements from cleanup.go that wrote directly to OS stdout, bypassing the writer architecture. session.go already reports purge actions via CleanupReport to the writer — the fmt.Printf calls caused duplicate output in production. Added TestSessionsPurge_NoDuplicateLogLines (3 sessions, separate stdout/stderr buffers, asserts each ID appears exactly once). 2 files changed, 40 insertions(+), 4 deletions(-).",
+      "status": "Done"
     },
     {
       "task": "T011: Implement automatic session cleanup scheduler",

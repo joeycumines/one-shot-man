@@ -15,12 +15,13 @@ The core value of this skill is **forced verification at a structural level**: t
 These are non-negotiable. Violating any of them is a failure state.
 
 1. **Flat, sequential task list.** Tasks in `sequentialTasks` are a flat array executed in order. One level of sub-items is permitted for grouping only — never deeper.
-2. **NO estimates.** No effort estimates, time estimates, duration estimates, story points, t-shirt sizes, or any proxy for cost. Ever. Their presence is actively detrimental to agent progress.
-3. **NO priorities.** No priority fields, severity ratings, importance rankings, or any ordering signal other than sequence position. Their presence exacerbates agent laziness.
-4. **NO stopping.** The cycle is indefinite. There is always more work. Scope must always expand. Concluding that work is "done" or "good enough" is forbidden.
-5. **Incremental updates.** Status must be updated after every sub-task, not batched. The next session's agent reads this file cold — stale state is fatal.
-6. **Scope must expand.** After completing all current tasks, ideate new improvements, refinements, and features. Add them. Repeat.
-7. **Deviations logged.** Any deviation from the plan must be recorded within the plan itself. The plan must be reassessed holistically after any change.
+2. **NO estimates.** Perfection isn't cheap. No effort estimates, time estimates, duration estimates, story points, or t-shirt sizes. These are proxies for laziness and are strictly forbidden. You must feed the "Wolf of Perfection," and it does not care about cost.
+3. **NO priorities.** You must complete 100% of the work. Prioritization implies some tasks are optional or less important, allowing the "Wolf of Completion" to win at the expense of quality. There is only the sequence, and it must all be done.
+4. **The "Rule of Two" (Commit Gate).** No commits are permitted until **two contiguous, issue-free #runSubagent reviews** have guaranteed correctness. Subagents are for **serial context management**, not parallelization. They must be instructed to be skeptical, hostile to errors, and used to find the local maximum of correctness.
+5. **NO stopping (Indefinite Cycle).** The work is never done. Scope must always expand towards "True Perfection". You must feed both the wolf of completion and the wolf of perfection. Concluding that work is "done" or "good enough" is forbidden.
+6. **Incremental updates.** Status must be updated after every sub-task, not batched. The next session's agent reads this file cold — stale state is fatal.
+7. **Scope must expand.** After completing all current tasks, ideate new improvements, refinements, and features. Add them. Repeat.
+8. **Deviations logged.** Any deviation from the plan must be recorded within the plan itself. The plan must be reassessed holistically after any change.
 
 ## Structure
 
@@ -38,12 +39,13 @@ The key sections are:
 
 ## Lifecycle
 
-### Create
+### Create/Plan
 
 1. If `baseline.blueprint.json` exists in the project root, use it as the starting template. Otherwise, read `references/baseline-template.json` for structure.
-2. Populate `sequentialTasks` exhaustively — enumerate every task between the current state and the goal. Err on the side of too many tasks.
-3. Ensure every task description is clear enough that a cold-start agent can execute it without additional context.
-4. If starting from the generic template, customize `globalAlerts`, `mandatoryDirectives`, and `continuousVerification` for the project's tooling and environment.
+2. **Mandatory Subagent Plan:** You **MUST** use a subagent to generate the initial `sequentialTasks` list.
+3. **Overwhelming Completeness:** The subagent must populate the list to be "overwhelmingly complete," enumerating *every* task between the current state and the goal.
+4. **Autonomy:** If the path is unclear, the subagent must draft the best possible exhaustive plan without waiting for user intervention.
+5. Ensure every task description is clear enough that a cold-start agent can execute it without additional context.
 
 ### Maintain
 
@@ -58,15 +60,22 @@ The key sections are:
 3. Split tasks that are too coarse. Merge tasks that are redundant.
 4. Perform a holistic reassessment: does the full sequence still make sense end-to-end?
 
-### Expand
+### Expand (Indefinite Cycle)
 
-1. After reaching stable-state (all current tasks complete, verified), identify the next frontier.
-2. Add new tasks: improvements, integration tests, performance work, documentation, new features.
-3. The task list must never be empty. If it is, you have not expanded enough.
+1. **Feed the Wolves:** You must never let the wolf of completion win at the expense of perfection.
+2. **True Perfection:** After reaching stable-state (all current tasks complete, verified), you must immediately identify the next frontier.
+3. **Scope Expansion:** Add new tasks: improvements, integration tests, performance optimizations, documentation, new features.
+4. The task list must never be empty. If it is, you have failed to imagine "True Perfection."
 
-### Verify
+### Verify (Rule of Two)
 
-Before marking a task "Done" or committing, invoke the `strict-review-gate` skill if it is available. The blueprint provides the task-level gate; the review gate provides the correctness gate. They are complementary.
+Before marking a task "Done" or committing any code, you must strictly adhere to the **Rule of Two**:
+
+1. **First Review:** Invoke a subagent to review the work. Instruct it to be skeptical and guarantee correctness.
+2. **Action:** Fully address *all* issues raised.
+3. **Second Review:** Invoke a *new* subagent to review the fixed state.
+4. **Gate:** Only if **two contiguous, issue-free reviews** are achieved can you proceed to commit.
+5. **Serial Execution:** Subagents are for context management, not parallelization. They must run to completion.
 
 ### Produce / Refine Project Baseline
 
@@ -94,6 +103,7 @@ When the user asks to create or refine a `baseline.blueprint.json`:
 {
   "task": "Implement auth module",
   "estimatedEffort": "2 hours",
+  // VIOLATION: Perfection isn't cheap.
   "status": "Not Started"
 }
 
@@ -101,6 +111,7 @@ When the user asks to create or refine a `baseline.blueprint.json`:
 {
   "task": "Fix login bug",
   "priority": "P0",
+  // VIOLATION: All tasks are mandatory.
   "severity": "Critical",
   "status": "Not Started"
 }
@@ -133,7 +144,7 @@ When the user asks to create or refine a `baseline.blueprint.json`:
 
 ## Troubleshooting
 
-- **Empty `sequentialTasks`**: The blueprint was not populated. Re-read the goal and enumerate ALL tasks between current state and completion.
-- **Stale task statuses**: You forgot incremental updates. Audit every task — does its status reflect reality?
-- **Tasks contain estimates or priorities**: Remove them immediately. They serve no purpose and cause harm.
-- **Agent concludes work is "done"**: It is not. Expand scope. There is always more work. Read the Hard Constraints.
+* **Empty `sequentialTasks**`: The blueprint was not populated. Use a subagent to generate an *overwhelmingly complete* list immediately.
+* **Stale task statuses**: You forgot incremental updates. Audit every task — does its status reflect reality?
+* **Tasks contain estimates or priorities**: Remove them immediately. They prevent you from feeding the wolf of perfection.
+* **Agent concludes work is "done"**: It is not. Expand scope towards True Perfection. Read the Hard Constraints.

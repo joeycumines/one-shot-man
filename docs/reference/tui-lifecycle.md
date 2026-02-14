@@ -34,6 +34,10 @@ Defines the strategy and implementation details for terminal state management an
 - Manages its own lifecycle - no external cleanup required.
 
 ### tview/tcell
+
+> **Deprecated.** The tview/tcell subsystem is deprecated in favor of BubbleTea.
+> It will be removed in a future release. See [tview-deprecation.md](../archive/notes/tview-deprecation.md) for the full plan.
+
 - Does NOT call `app.SetScreen()` in production - lets tview handle screen creation internally.
 - tview's `Run()` method calls `tcell.NewScreen()` which:
   - On Unix: Uses `NewTerminfoScreen()` -> opens `/dev/tty` internally with proper lifecycle.

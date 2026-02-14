@@ -1,3 +1,11 @@
+// Package tview provides an osm:tview native module exposing tview/tcell-based
+// interactive table widgets for terminal UIs.
+//
+// Deprecated: This package is superseded by osm:bubbletea which provides a
+// more capable, composable terminal UI framework based on the Elm architecture.
+// osm:tview will be removed in a future release. All new TUI work should use
+// osm:bubbletea instead. See docs/archive/notes/tview-deprecation.md for the
+// full deprecation plan.
 package tview
 
 import (
@@ -233,6 +241,9 @@ func (m *Manager) getOrCreateScreen() (tcell.Screen, error) {
 
 // Require returns a CommonJS native module under "osm:tview".
 // It exposes tview functionality for creating rich terminal UIs.
+//
+// Deprecated: Use osm:bubbletea instead. This module will be removed in a
+// future release. See the package-level deprecation notice for details.
 //
 // The key design principle is that TUI components are:
 // - Explicitly invoked by JavaScript code

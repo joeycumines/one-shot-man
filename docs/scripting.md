@@ -213,7 +213,7 @@ TODO: These should get their own (brief) summaries / sections.
     - `require("osm:bubbles/viewport")`, `require("osm:bubbles/textarea")` — bubble components
     - `require("osm:bubblezone")` — zone/mouse helpers
     - `require("osm:termui/scrollbar")` — scrollbar helper
-- `require("osm:tview")` — TUI helpers (proof-of-concept, overlaps with bubbletea)
+- `require("osm:tview")` — **Deprecated.** TUI helpers (proof-of-concept, superseded by `osm:bubbletea`). Will be removed in a future release. A deprecation warning is emitted to stderr when loaded. See [tview-deprecation.md](archive/notes/tview-deprecation.md).
 
 Note: Better documentation for these modules is pending; see package comments in `./internal/builtin` and the root `README.md` for stability status.
 

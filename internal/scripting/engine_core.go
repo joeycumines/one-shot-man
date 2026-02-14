@@ -16,7 +16,7 @@ import (
 	"github.com/dop251/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
-	tviewmod "github.com/joeycumines/one-shot-man/internal/builtin/tview"
+	tviewmod "github.com/joeycumines/one-shot-man/internal/builtin/tview" //lint:ignore SA1019 deprecated module still wired until removal
 	"github.com/joeycumines/one-shot-man/internal/goroutineid"
 )
 

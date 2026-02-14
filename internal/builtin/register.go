@@ -2,8 +2,11 @@ package builtin
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
 
+	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 	"github.com/dop251/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/builtin/argv"
@@ -23,7 +26,7 @@ import (
 	templatemod "github.com/joeycumines/one-shot-man/internal/builtin/template"
 	scrollbarmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/scrollbar"
 	timemod "github.com/joeycumines/one-shot-man/internal/builtin/time"
-	tviewmod "github.com/joeycumines/one-shot-man/internal/builtin/tview"
+	tviewmod "github.com/joeycumines/one-shot-man/internal/builtin/tview" //lint:ignore SA1019 wiring deprecated module until removal
 	unicodetextmod "github.com/joeycumines/one-shot-man/internal/builtin/unicodetext"
 )
 
@@ -102,10 +105,16 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"unicodetext", unicodetextmod.Require(ctx))
 
 	// Register tview module if provider is available
+	// Deprecated: osm:tview is deprecated in favor of osm:bubbletea.
+	// A deprecation warning is emitted to stderr when the module is loaded.
 	if tviewProvider != nil {
 		tviewMgr := tviewProvider.GetTViewManager()
 		if tviewMgr != nil {
-			registry.RegisterNativeModule(prefix+"tview", tviewmod.Require(ctx, tviewMgr))
+			tviewRequire := tviewmod.Require(ctx, tviewMgr) //lint:ignore SA1019 wiring deprecated module until removal
+			registry.RegisterNativeModule(prefix+"tview", func(runtime *goja.Runtime, module *goja.Object) {
+				fmt.Fprintln(os.Stderr, "osm: warning: osm:tview is deprecated and will be removed in a future release; use osm:bubbletea instead")
+				tviewRequire(runtime, module)
+			})
 		}
 	}
 

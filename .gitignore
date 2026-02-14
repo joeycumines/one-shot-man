@@ -52,3 +52,6 @@ test-scripts/
 /.claude/*.local.*
 
 /DIRECTIVE.txt
+
+# Session timer file
+/.session-start

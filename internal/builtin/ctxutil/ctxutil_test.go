@@ -287,6 +287,302 @@ func TestBuildContextLazyDiffExportedSlice(t *testing.T) {
 	}
 }
 
+func TestBuildContext_NoArgs(t *testing.T) {
+	t.Parallel()
+	runtime := setupBuildContext(t)
+
+	script := `globalThis.__result = exports.buildContext();`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	if got := runtime.Get("__result").String(); got != "" {
+		t.Fatalf("expected empty string for no-args buildContext, got %q", got)
+	}
+}
+
+func TestBuildContext_NullUndefinedItems(t *testing.T) {
+	t.Parallel()
+	runtime := setupBuildContext(t)
+
+	script := `
+		globalThis.__nullResult = exports.buildContext(null);
+		globalThis.__undefResult = exports.buildContext(undefined);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	if got := runtime.Get("__nullResult").String(); got != "" {
+		t.Fatalf("expected empty string for null items, got %q", got)
+	}
+	if got := runtime.Get("__undefResult").String(); got != "" {
+		t.Fatalf("expected empty string for undefined items, got %q", got)
+	}
+}
+
+func TestBuildContext_NonArrayObject(t *testing.T) {
+	t.Parallel()
+	runtime := setupBuildContext(t)
+
+	// A plain object {} is not an Array — ExportTo to []interface{} should fail.
+	script := `globalThis.__result = exports.buildContext({});`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	if got := runtime.Get("__result").String(); got != "" {
+		t.Fatalf("expected empty string for non-array object, got %q", got)
+	}
+}
+
+func TestBuildContext_EdgeCases(t *testing.T) {
+	t.Parallel()
+	runtime := setupBuildContext(t)
+
+	script := `
+		const items = [
+			// Note without label -> uses default "note" title
+			{ type: "note", payload: "unlabeled note" },
+			// Item with null type -> skipped
+			{ type: null, payload: "null type" },
+			// Item with missing type -> skipped
+			{ payload: "no type at all" },
+			// Null and undefined elements -> skipped
+			null,
+			undefined
+		];
+		globalThis.__result = exports.buildContext(items);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+
+	text := runtime.Get("__result").String()
+	if !strings.Contains(text, "### Note: note") {
+		t.Fatalf("expected '### Note: note' for unlabeled note, got:\n%s", text)
+	}
+	if !strings.Contains(text, "unlabeled note") {
+		t.Fatalf("expected unlabeled note content, got:\n%s", text)
+	}
+	if strings.Contains(text, "null type") || strings.Contains(text, "no type at all") {
+		t.Fatalf("expected null/missing type items to be skipped, got:\n%s", text)
+	}
+}
+
+func TestBuildContext_LazyDiffEmptyStringPayload(t *testing.T) {
+	runtime := setupBuildContext(t)
+
+	originalRun := runGitDiffFn
+	originalDefault := getDefaultGitDiffArgsFn
+	t.Cleanup(func() {
+		runGitDiffFn = originalRun
+		getDefaultGitDiffArgsFn = originalDefault
+	})
+
+	runGitDiffFn = func(ctx context.Context, args []string) (string, string, bool) {
+		return "default fallback diff", "", false
+	}
+	getDefaultGitDiffArgsFn = func(ctx context.Context) []string {
+		return []string{"FALLBACK_ARG"}
+	}
+
+	// Empty string payload → ParseSlice("") → [] → len(args)==0 → default fallback.
+	script := `
+		globalThis.__result = exports.buildContext([
+			{ type: "lazy-diff", payload: "" }
+		]);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+
+	text := runtime.Get("__result").String()
+	if !strings.Contains(text, "default fallback diff") {
+		t.Fatalf("expected default fallback diff for empty string payload, got:\n%s", text)
+	}
+	if !strings.Contains(text, "FALLBACK_ARG") {
+		t.Fatalf("expected label to contain fallback arg, got:\n%s", text)
+	}
+}
+
+func TestBuildContext_LazyDiffGoStringSlice(t *testing.T) {
+	runtime := setupBuildContext(t)
+
+	originalRun := runGitDiffFn
+	originalDefault := getDefaultGitDiffArgsFn
+	t.Cleanup(func() {
+		runGitDiffFn = originalRun
+		getDefaultGitDiffArgsFn = originalDefault
+	})
+
+	var capturedArgs []string
+	runGitDiffFn = func(ctx context.Context, args []string) (string, string, bool) {
+		capturedArgs = append([]string(nil), args...)
+		return "go-string-slice diff", "", false
+	}
+	getDefaultGitDiffArgsFn = func(ctx context.Context) []string {
+		return []string{"DEFAULT"}
+	}
+
+	// Set a Go []string (not []interface{}) as payload to hit the `case []string:` path.
+	if err := runtime.Set("__goStringPayload", []string{"--stat", "HEAD"}); err != nil {
+		t.Fatalf("failed to set payload: %v", err)
+	}
+
+	script := `
+		globalThis.__result = exports.buildContext([
+			{ type: "lazy-diff", payload: globalThis.__goStringPayload }
+		]);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+
+	text := runtime.Get("__result").String()
+	if !strings.Contains(text, "go-string-slice diff") {
+		t.Fatalf("expected diff output, got:\n%s", text)
+	}
+	if len(capturedArgs) != 2 || capturedArgs[0] != "--stat" || capturedArgs[1] != "HEAD" {
+		t.Fatalf("expected captured args [--stat HEAD], got %v", capturedArgs)
+	}
+}
+
+func TestBuildContext_LazyDiffNilInSlice(t *testing.T) {
+	runtime := setupBuildContext(t)
+
+	originalRun := runGitDiffFn
+	originalDefault := getDefaultGitDiffArgsFn
+	t.Cleanup(func() {
+		runGitDiffFn = originalRun
+		getDefaultGitDiffArgsFn = originalDefault
+	})
+
+	runGitDiffFn = func(ctx context.Context, args []string) (string, string, bool) {
+		return "", "should not be called", true
+	}
+	getDefaultGitDiffArgsFn = func(ctx context.Context) []string {
+		return []string{"DEFAULT"}
+	}
+
+	// JS array with null element — covers the `goja.IsNull(itemVal)` path in the
+	// Array iteration branch of lazy-diff processing.
+	script := `
+		globalThis.__result = exports.buildContext([
+			{ type: "lazy-diff", payload: ["good", null] }
+		]);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+
+	text := runtime.Get("__result").String()
+	if !strings.Contains(text, "non-string element at index 1") {
+		t.Fatalf("expected error about non-string element at index 1, got:\n%s", text)
+	}
+}
+
+func TestBuildContext_LazyDiffArrayNonString(t *testing.T) {
+	runtime := setupBuildContext(t)
+
+	originalRun := runGitDiffFn
+	originalDefault := getDefaultGitDiffArgsFn
+	t.Cleanup(func() {
+		runGitDiffFn = originalRun
+		getDefaultGitDiffArgsFn = originalDefault
+	})
+
+	runGitDiffFn = func(ctx context.Context, args []string) (string, string, bool) {
+		return "", "should not be called", true
+	}
+	getDefaultGitDiffArgsFn = func(ctx context.Context) []string {
+		return []string{"DEFAULT"}
+	}
+
+	// JS array with non-string element — covers the `!ok` branch with `exported != nil`
+	// in the arr != nil (Array) iteration path.
+	script := `
+		globalThis.__result = exports.buildContext([
+			{ type: "lazy-diff", payload: [123] }
+		]);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+
+	text := runtime.Get("__result").String()
+	if !strings.Contains(text, "non-string element at index 0") {
+		t.Fatalf("expected error about non-string element at index 0, got:\n%s", text)
+	}
+}
+
+func TestBuildContext_TxtarEdgeCases(t *testing.T) {
+	t.Parallel()
+	runtime := setupBuildContext(t)
+
+	// toTxtar returns empty string → no txtar block should appear
+	script := `
+		globalThis.__emptyResult = exports.buildContext(
+			[{ type: "note", payload: "test" }],
+			{ toTxtar: () => "" }
+		);
+		// toTxtar is not a function → silently ignored
+		globalThis.__nonFnResult = exports.buildContext(
+			[{ type: "note", payload: "test2" }],
+			{ toTxtar: "not a function" }
+		);
+		// options without toTxtar property → no txtar
+		globalThis.__noTxtarResult = exports.buildContext(
+			[{ type: "note", payload: "test3" }],
+			{ someOtherOption: true }
+		);
+		// toTxtar throws → silently ignored
+		globalThis.__throwResult = exports.buildContext(
+			[{ type: "note", payload: "test4" }],
+			{ toTxtar: () => { throw new Error("oops"); } }
+		);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		varName string
+	}{
+		{"empty toTxtar", "__emptyResult"},
+		{"non-function toTxtar", "__nonFnResult"},
+		{"missing toTxtar", "__noTxtarResult"},
+		{"throwing toTxtar", "__throwResult"},
+	} {
+		text := runtime.Get(tc.varName).String()
+		if strings.Contains(text, "txtar") {
+			t.Errorf("[%s] expected no txtar block, got:\n%s", tc.name, text)
+		}
+	}
+}
+
+func TestRequire_UndefinedExports(t *testing.T) {
+	t.Parallel()
+	runtime := goja.New()
+	module := runtime.NewObject()
+	// Intentionally do NOT set "exports" on module — the Require function should
+	// create exports internally when it detects undefined.
+
+	loader := Require(context.Background())
+	loader(runtime, module)
+
+	exportsVal := module.Get("exports")
+	if goja.IsUndefined(exportsVal) || goja.IsNull(exportsVal) {
+		t.Fatal("expected exports to be created by Require")
+	}
+
+	exports := exportsVal.ToObject(runtime)
+	if fn := exports.Get("buildContext"); goja.IsUndefined(fn) || goja.IsNull(fn) {
+		t.Fatal("expected buildContext to be defined on auto-created exports")
+	}
+	if fn := exports.Get("contextManager"); goja.IsUndefined(fn) || goja.IsNull(fn) {
+		t.Fatal("expected contextManager to be defined on auto-created exports")
+	}
+}
+
 func TestBuildContextDynamicFence(t *testing.T) {
 	t.Parallel()
 

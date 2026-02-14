@@ -13,13 +13,18 @@
 - **T010**: ✅ DONE (commit 7f19318) — Rule of Two PASSED
 - **T011**: ✅ DONE (commit d50e796) — Rule of Two PASSED
 - **T012**: ✅ DONE (commit d825887) — Rule of Two PASSED
-- **T013**: 🔄 NEXT — Integrate hot-snippet configuration from config file
+- **T013**: ✅ DONE (commit e9e2099) — Rule of Two PASSED
+- **T014**: 🔄 NEXT — Implement Anthropic prompt library goals (Tier 1)
 
-## T013 Context
-- Currently hot-snippets are passed as JS options to contextManager
-- Add Go-side [hot-snippets] config section support
-- Parse in internal/config/ and pass to contextManager via goal/command infra
-- Users define snippets in config without writing JS
-- JS-defined snippets merge with config-defined (JS wins on conflicts)
-- Add tests for config parsing and merge behavior
-- Key files: internal/config/config.go, internal/builtin/ctxutil/contextManager.js, goal.go
+## T014 Plan
+Per docs/archive/notes/anthropic-prompt-library-evaluation.md, implement 4 Tier 1 built-in goals:
+1. bug-buster
+2. code-optimizer
+3. code-explainer
+4. meeting-notes
+
+Follow existing goal_builtin.go pattern. Each needs:
+- System prompt adapted from Anthropic's library
+- Custom commands if appropriate
+- contextManager integration
+- Tests

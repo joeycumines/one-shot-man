@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T012 COMPLETE. T012 committed as d825887: feat(command): add VS Code .prompt.md file support with parser, discovery, and goal conversion. 5 files changed, 1003 insertions(+). Rule of Two passed. Next: T013 (Integrate hot-snippet configuration from config file)."
+    "currentState": "T001-T013 COMPLETE. T013 committed as e9e2099: feat(config): add [hot-snippets] config section with contextManager integration. 13 files changed, 452 insertions(+), 9 deletions(-). Rule of Two passed. Next: T014 (Implement Anthropic prompt library goals Tier 1)."
   },
   "sequentialTasks": [
     {
@@ -109,8 +109,8 @@
     },
     {
       "task": "T013: Integrate hot-snippet configuration from config file",
-      "description": "Currently hot-snippets are passed as JS options to contextManager. Add Go-side support for a [hot-snippets] config section that defines snippets in the config file. Parse the section in internal/config/ and pass the snippets to contextManager via the goal/command infrastructure. This allows users to define snippets without writing JS. Ensure JS-defined snippets merge with config-defined ones (JS takes precedence on name conflicts). Add tests for config parsing and merge behavior.",
-      "status": "Not Started"
+      "description": "Committed as e9e2099: Added [hot-snippets] config section. Parse hot-snippets in internal/config/, inject as CONFIG_HOT_SNIPPETS global via injectConfigHotSnippets() into all 5 commands. goal.js merges config+goal snippets (goal wins on name conflict). Other scripts pass config snippets directly. 13 config parsing tests + 6 JS conversion tests. 13 files changed, 452 insertions(+), 9 deletions(-).",
+      "status": "Done"
     },
     {
       "task": "T014: Implement Anthropic prompt library goals (Tier 1)",

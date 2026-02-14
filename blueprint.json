@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T004 COMPLETE. T004 committed as 9212fd1: refactor: audit and reduce .deadcodeignore — delete stale entries, unexport test-only symbols, remove duplicate wrappers. 18 files changed, 218 insertions(+), 338 deletions(-). Rule of Two passed (2 contiguous passes + fitness review). Next: T005 (fix go-prompt correctness issues)."
+    "currentState": "T001-T005 COMPLETE. T005 committed as 6f18a1f: fix(tui): wire WithHistorySize, add DefaultColor, pass prompt to key handlers, use RunNoExit. 6 files changed, 224 insertions(+), 7 deletions(-). Rule of Two passed (2 contiguous passes + fitness review). Next: T006 (Expose remaining go-prompt features)."
   },
   "sequentialTasks": [
     {
@@ -69,8 +69,8 @@
     },
     {
       "task": "T005: Fix go-prompt correctness issues from assessment",
-      "description": "scratch/t039-go-prompt-feature-alignment.md identifies 4 correctness issues: (1) WithHistorySize is parsed from config but never applied to go-prompt - find where history size is parsed and wire it into prompt.WithHistory(size), (2) DefaultColor is not parseable in parseColor - add 'default' to the color mapping in tui_colors.go, (3) Key binding handler lacks prompt reference - the handler function signature should receive the prompt instance for insertText/deleteBeforeCursor operations, (4) Run() may os.Exit on SIGTERM - switch to RunNoExit() variant if available in the go-prompt fork. Fix all 4, add unit tests for each fix, verify with `make all`.",
-      "status": "Not Started"
+      "description": "Committed as 6f18a1f: Fixed 4 correctness issues from scratch/t039-go-prompt-feature-alignment.md. (1) Wired WithHistorySize: added historySize field to promptBuildConfig, applied prompt.WithHistorySize option in buildGoPrompt, populated from historyConfig.Size in jsCreatePrompt. (2) Added DefaultColor: added 'default' case to parseColor, changed fallback from White to DefaultColor. (3) Prompt reference in key handlers: created buildPromptJSObject wrapping 9 prompt methods (insertText, delete, cursor, getText), passed to JS handlers in buildKeyBinds. (4) RunNoExit: switched p.Run() to p.RunNoExit() in both runAdvancedPrompt and jsRunPrompt. Added tui_colors_test.go and tui_keybind_test.go. 6 files changed, 224 insertions(+), 7 deletions(-).",
+      "status": "Done"
     },
     {
       "task": "T006: Expose remaining go-prompt features",

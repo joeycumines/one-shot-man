@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2025 Joseph Cumines
+# Copyright (c) 2026 Joseph Cumines
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -201,7 +201,7 @@ RUN_FLAGS ?=
 
 # determines the output of the debug-vars target
 # N.B. only _defined_ variables will be present in the output
-DEBUG_VARS ?= ROOT_MAKEFILE PROJECT_ROOT PROJECT_NAME IS_WINDOWS GO_MODULE_PATHS GO_MODULE_SLUGS GO_MODULE_SLUGS_NO_PACKAGES GO_MODULE_SLUGS_EXCL_NO_PACKAGES GO_MODULE_SLUGS_NO_UPDATE GO_MODULE_SLUGS_EXCL_NO_UPDATE GO_MODULE_SLUGS_GRIT_DST GO_MODULE_SLUGS_EXCL_GRIT_DST SUBDIR_MAKEFILE_PATHS SUBDIR_MAKEFILE_SLUGS GO_TARGET_PREFIX MAKEFILE_TARGET_PREFIXES $(MAKEFILE_TARGET_PREFIXES) $(foreach v,CLEAN_PATHS ALL_TARGETS BUILD_TARGETS LINT_TARGETS VET_TARGETS STATICCHECK_TARGETS BETTERALIGN_TARGETS DEADCODE_TARGETS TEST_TARGETS COVER_TARGETS FMT_TARGETS GENERATE_TARGETS FIX_TARGETS UPDATE_TARGETS TIDY_TARGETS GRIT_TARGETS,$(GO_MK_VAR_PREFIX)$v)
+$(eval $(GO_MK_VAR_PREFIX)DEBUG_VARS ?= ROOT_MAKEFILE PROJECT_ROOT PROJECT_NAME IS_WINDOWS GO_MODULE_PATHS GO_MODULE_SLUGS GO_MODULE_SLUGS_NO_PACKAGES GO_MODULE_SLUGS_EXCL_NO_PACKAGES GO_MODULE_SLUGS_NO_UPDATE GO_MODULE_SLUGS_EXCL_NO_UPDATE GO_MODULE_SLUGS_GRIT_DST GO_MODULE_SLUGS_EXCL_GRIT_DST SUBDIR_MAKEFILE_PATHS SUBDIR_MAKEFILE_SLUGS GO_TARGET_PREFIX MAKEFILE_TARGET_PREFIXES $$(MAKEFILE_TARGET_PREFIXES) $$(foreach v,CLEAN_PATHS ALL_TARGETS BUILD_TARGETS LINT_TARGETS VET_TARGETS STATICCHECK_TARGETS BETTERALIGN_TARGETS DEADCODE_TARGETS TEST_TARGETS COVER_TARGETS FMT_TARGETS GENERATE_TARGETS FIX_TARGETS UPDATE_TARGETS TIDY_TARGETS GO_DOC_TARGETS GRIT_TARGETS,$$(GO_MK_VAR_PREFIX)$$v))
 
 # ---
 
@@ -224,9 +224,7 @@ GO_FIX ?= $(GO) fix
 GO_COVERAGE_MODULE_FILE ?= coverage.out
 GO_COVERAGE_ALL_MODULES_FILE ?= coverage-all.out
 GO_TOOL_COVER ?= $(GO) tool cover
-GODOC ?= $(GO) tool $(GO_PKG_GODOC)
-_GODOC_FLAGS := -http=localhost:6060 # ignore this (use GODOC_FLAGS)
-GODOC_FLAGS ?= $(_GODOC_FLAGS)
+GO_DOC_FLAGS ?= -all
 GRIT ?= $(GO) tool $(GO_PKG_GRIT)
 GRIT_FLAGS ?= -push
 GRIT_BRANCH ?= main
@@ -249,6 +247,9 @@ DEADCODE_IGNORE_PATTERNS_FILE ?= # .deadcodeignore
 DEADCODE_ERROR_ON_UNIGNORED ?= false
 # for the tools target, to update the root go.mod (only relevant when setting up or updating this makefile)
 GO_TOOLS ?= $(GO_TOOLS_DEFAULT)
+# Used to prune _paths_ when searching for go modules. Single wildcard (%) supported. May match intermediate directories.
+# Example: %/vendor %/node_modules ./managed-separately
+GO_MODULE_PATHS_EXCLUDE_PATTERNS ?=
 # used to special-case modules for tools which fail if they find no packages (e.g. go vet)
 GO_MODULE_SLUGS_NO_PACKAGES ?=
 # used to exclude modules from the update* targets
@@ -267,12 +268,10 @@ SLUG_SEPARATOR ?= .
 GO_TOOLS_DEFAULT ?= \
 		$(GO_PKG_BETTERALIGN) \
 		$(GO_PKG_GRIT) \
-		$(GO_PKG_GODOC) \
 		$(GO_PKG_STATICCHECK) \
 		$(if $(GO_MODULE_SLUGS_USE_DEADCODE),$(GO_PKG_DEADCODE) $(if $(or $(filter true,$(DEADCODE_ERROR_ON_UNIGNORED)),$(DEADCODE_IGNORE_PATTERNS_FILE)),$(GO_PKG_SIMPLE_COMMAND_OUTPUT_FILTER),),)
 GO_PKG_BETTERALIGN ?= github.com/dkorunic/betteralign/cmd/betteralign
 GO_PKG_GRIT ?= github.com/grailbio/grit
-GO_PKG_GODOC ?= golang.org/x/tools/cmd/godoc
 GO_PKG_STATICCHECK ?= honnef.co/go/tools/cmd/staticcheck
 GO_PKG_DEADCODE ?= golang.org/x/tools/cmd/deadcode
 GO_PKG_SIMPLE_COMMAND_OUTPUT_FILTER ?= github.com/joeycumines/simple-command-output-filter
@@ -281,10 +280,21 @@ $(eval $(GO_MK_VAR_PREFIX)CLEAN_PATHS ?= $$(GO_COVERAGE_ALL_MODULES_FILE) $$(add
 
 # ---
 
-# recursive wildcard match function, $1 is the directory to search, $2 is the pattern to match
-# note 1: $1 requires a trailing slash
-# note 2: $2 does not support multiple wildcards
-rwildcard = $(wildcard $1$2) $(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2))
+# Recursive wildcard match function, with support for optional pruning.
+#
+# Signature: $(call rwildcard,<dir>,<pattern>,[filter-out])
+#
+# $1: directory to search (requires a trailing slash, e.g., "src/")
+# $2: pattern to match (e.g., "*.go")
+# $3: (optional) A whitespace-separated list of patterns to $(filter-out ...).
+#     Applied to both files and directories, "guarding" further recursion.
+rwildcard = \
+$(call _rwildcard_filter_out,$(wildcard $1$2),$3) \
+$(foreach d,\
+$(call _rwildcard_filter_out,$(patsubst %/./,%,$(wildcard $1*/./)),$3),\
+$(call rwildcard,$d/,$2,$3)\
+)
+_rwildcard_filter_out = $(if $2,$(filter-out $2,$1),$1)
 
 # looks up a value in a map, $1 is the map, $2 is the key associated with the value
 map_value_by_key = $(patsubst $2$(MAP_SEPARATOR)%,%,$(filter $2$(MAP_SEPARATOR)%,$1))
@@ -323,7 +333,7 @@ go_module_slug_to_grit_src = $(GRIT_SRC),$(patsubst ./%,%,$(or $(call go_module_
 go_module_slug_to_grit_dst = $(or $(call map_value_by_key,$(GRIT_DST),$1),$(error no GRIT_DST entry for $1)),,$(GRIT_BRANCH)
 
 # paths formatted like ". ./logiface ./logiface/logrus ./logiface/testsuite ./logiface/zerolog"
-GO_MODULE_PATHS := $(patsubst %/go.mod,%,$(call rwildcard,./,go.mod))
+GO_MODULE_PATHS := $(patsubst %/go.mod,%,$(call rwildcard,./,go.mod,$(GO_MODULE_PATHS_EXCLUDE_PATTERNS)))
 # used by go_module_path_to_slug and go_module_slug_to_path to lookup an associated path/slug
 _GO_MODULE_MAP := $(call map_transform_keys,$(GO_MODULE_PATHS),slug_transform)
 # example: root logiface logiface.logrus logiface.testsuite logiface.zerolog
@@ -613,6 +623,18 @@ $($(GO_MK_VAR_PREFIX)TIDY_TARGETS): $(GO_TARGET_PREFIX)tidy.%:
 $(GO_TARGET_PREFIX)_tidy:
 	$(GO) mod tidy
 
+# doc, doc.<go module slug>
+
+$(eval $(GO_MK_VAR_PREFIX)GO_DOC_TARGETS := $$(addprefix $$(GO_TARGET_PREFIX)doc.,$$(GO_MODULE_SLUGS)))
+
+.PHONY: $(GO_TARGET_PREFIX)doc
+$(GO_TARGET_PREFIX)doc: ## Runs the go doc tool specifying -http. Module variants default to text.
+	$(GO) -C $(PROJECT_ROOT) doc $(if $(filter -http --http -http=% --http=%,$(GO_DOC_FLAGS)),,-http) $(GO_DOC_FLAGS)
+
+.PHONY: $($(GO_MK_VAR_PREFIX)GO_DOC_TARGETS)
+$($(GO_MK_VAR_PREFIX)GO_DOC_TARGETS): $(GO_TARGET_PREFIX)doc.%:
+	$(GO) -C $(PROJECT_ROOT)/$(call go_module_slug_to_path,$*) doc $(GO_DOC_FLAGS)
+
 # grit, grit.<go module slug>
 
 $(eval $(GO_MK_VAR_PREFIX)GRIT_TARGETS := $$(addprefix $$(GO_TARGET_PREFIX)grit.,$$(GO_MODULE_SLUGS)))
@@ -667,17 +689,6 @@ $(GO) get -tool $(tool)
 
 endef
 
-.PHONY: $(GO_TARGET_PREFIX)godoc
-$(GO_TARGET_PREFIX)godoc: ## Runs the godoc tool, serving on localhost.
-ifeq ($(GODOC_FLAGS),$(_GODOC_FLAGS))
-	@echo '#################################################'
-	@echo '## Serving godoc on http://localhost:6060/pkg/ ##'
-	@echo '## Press Ctrl+C to stop godoc server.          ##'
-	@echo '#################################################'
-	@echo
-endif
-	$(GODOC) $(GODOC_FLAGS)
-
 .PHONY: $(GO_TARGET_PREFIX)grit-init
 $(GO_TARGET_PREFIX)grit-init: ## Runs grit to initialize a new GRIT_DST, see Makefile for docs.
 ifeq ($(IS_WINDOWS),true)
@@ -693,7 +704,7 @@ _grit_init_DST = $(GRIT_SRC),$(_grit_init_DIR)/,$(GRIT_BRANCH)
 
 .PHONY: $(GO_TARGET_PREFIX)debug-vars
 $(GO_TARGET_PREFIX)debug-vars: ## Prints the values of the specified variables.
-	$(foreach debug_var,$(DEBUG_VARS),$(_debug_vars_TEMPLATE))
+	$(foreach debug_var,$($(GO_MK_VAR_PREFIX)DEBUG_VARS),$(_debug_vars_TEMPLATE))
 define _debug_vars_TEMPLATE =
 @echo $(debug_var)=$(call escape_command_arg,$($(debug_var)))
 
@@ -905,7 +916,8 @@ END {
   }
 }
 ' &&
-help_text="$$(awk -v project_root=$(call escape_command_arg,$(PROJECT_ROOT)) "$$generate_help" $${MAKEFILE_LIST})" &&
+deduplicated_makefile_list="$$(printf '%s\n' "$$MAKEFILE_LIST" | awk '{for(i=NF;i>=1;i--)if(!a[$$i]++)s=$$i (s==""?"":" ")s;printf "%s",s}')" &&
+help_text="$$(awk -v project_root=$(call escape_command_arg,$(PROJECT_ROOT)) "$$generate_help" $${deduplicated_makefile_list})" &&
 help_text="$$(echo "$$help_text" | sed $(foreach target_prefix,GO_TARGET_PREFIX $(MAKEFILE_TARGET_PREFIXES), -e s/\$$\($(call escape_command_arg,$(target_prefix))\)/$(call escape_command_arg,$($(target_prefix)))/g\;))" &&
 run_with_smart_human_readable_output echo "$$help_text"
 endef

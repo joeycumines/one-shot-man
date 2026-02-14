@@ -12,8 +12,14 @@ func (pc *PromptColors) applyFromGetter(get func(string) (string, bool)) {
 	if v, ok := get("input"); ok && v != "" {
 		pc.InputText = parseColor(v)
 	}
+	if v, ok := get("inputBackground"); ok && v != "" {
+		pc.InputBG = parseColor(v)
+	}
 	if v, ok := get("prefix"); ok && v != "" {
 		pc.PrefixText = parseColor(v)
+	}
+	if v, ok := get("prefixBackground"); ok && v != "" {
+		pc.PrefixBG = parseColor(v)
 	}
 	if v, ok := get("suggestionText"); ok && v != "" {
 		pc.SuggestionText = parseColor(v)

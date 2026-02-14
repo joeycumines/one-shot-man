@@ -10,6 +10,7 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
+	istrings "github.com/joeycumines/go-prompt/strings"
 	"github.com/joeycumines/one-shot-man/internal/argv"
 )
 
@@ -384,6 +385,23 @@ func (tm *TUIManager) tryCallJSCompleter(callable goja.Callable, document prompt
 	_ = docObj.Set("getText", func() string { return document.Text })
 	_ = docObj.Set("getTextBeforeCursor", func() string { return document.TextBeforeCursor() })
 	_ = docObj.Set("getWordBeforeCursor", func() string { return currentWord(document.TextBeforeCursor()) })
+	_ = docObj.Set("getTextAfterCursor", func() string { return document.TextAfterCursor() })
+	_ = docObj.Set("getWordAfterCursor", func() string { return document.GetWordAfterCursor() })
+	_ = docObj.Set("getCurrentLine", func() string { return document.CurrentLine() })
+	_ = docObj.Set("getCurrentLineBeforeCursor", func() string { return document.CurrentLineBeforeCursor() })
+	_ = docObj.Set("getCurrentLineAfterCursor", func() string { return document.CurrentLineAfterCursor() })
+	_ = docObj.Set("getCursorPositionCol", func() int { return int(document.CursorPositionCol()) })
+	_ = docObj.Set("getCursorPositionRow", func() int { return int(document.CursorPositionRow()) })
+	_ = docObj.Set("getLines", func() []string { return document.Lines() })
+	_ = docObj.Set("getLineCount", func() int { return document.LineCount() })
+	_ = docObj.Set("onLastLine", func() bool { return document.OnLastLine() })
+	_ = docObj.Set("getCharRelativeToCursor", func(offset int) string {
+		r := document.GetCharRelativeToCursor(istrings.RuneNumber(offset))
+		if r == 0 {
+			return ""
+		}
+		return string(r)
+	})
 
 	// Call the JS completer: fn(document)
 	value, err := callable(goja.Undefined(), docObj)

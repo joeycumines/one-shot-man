@@ -705,7 +705,9 @@ func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
 		prompt.WithCompleter(cfg.completer),
 		prompt.WithExitChecker(exitChecker),
 		prompt.WithInputTextColor(colors.InputText),
+		prompt.WithInputBGColor(colors.InputBG),
 		prompt.WithPrefixTextColor(colors.PrefixText),
+		prompt.WithPrefixBackgroundColor(colors.PrefixBG),
 		prompt.WithSuggestionTextColor(colors.SuggestionText),
 		prompt.WithSuggestionBGColor(colors.SuggestionBG),
 		prompt.WithSelectedSuggestionTextColor(colors.SelectedSuggestionText),
@@ -765,6 +767,29 @@ func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
 	// Initial command (optional)
 	if cfg.initialCommand != "" {
 		options = append(options, prompt.WithInitialCommand(cfg.initialCommand, false))
+	}
+
+	// Initial text pre-fills the input buffer (optional)
+	if cfg.initialText != "" {
+		options = append(options, prompt.WithInitialText(cfg.initialText))
+	}
+
+	// Show completion dropdown immediately on prompt start
+	if cfg.showCompletionAtStart {
+		options = append(options, prompt.WithShowCompletionAtStart())
+	}
+
+	// Allow Down arrow to trigger completion dropdown
+	if cfg.completionOnDown {
+		options = append(options, prompt.WithCompletionOnDown())
+	}
+
+	// Key binding mode (emacs or common)
+	switch strings.ToLower(cfg.keyBindMode) {
+	case "emacs":
+		options = append(options, prompt.WithKeyBindMode(prompt.EmacsKeyBind))
+	case "common":
+		options = append(options, prompt.WithKeyBindMode(prompt.CommonKeyBind))
 	}
 
 	// This enables the sync protocol when built with the `integration` build tag

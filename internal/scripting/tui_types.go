@@ -159,7 +159,9 @@ type Command struct {
 // PromptColors represents color configuration for a prompt.
 type PromptColors struct {
 	InputText               prompt.Color
+	InputBG                 prompt.Color
 	PrefixText              prompt.Color
+	PrefixBG                prompt.Color
 	SuggestionText          prompt.Color
 	SuggestionBG            prompt.Color
 	SelectedSuggestionText  prompt.Color
@@ -212,4 +214,12 @@ type promptBuildConfig struct {
 	escapeToggle bool
 	// historySize limits the number of history entries. 0 uses go-prompt default.
 	historySize int
+	// initialText pre-fills the prompt buffer with text for the user to edit.
+	initialText string
+	// showCompletionAtStart shows the completion dropdown immediately on prompt start.
+	showCompletionAtStart bool
+	// completionOnDown allows the Down arrow key to trigger the completion dropdown.
+	completionOnDown bool
+	// keyBindMode selects the key binding preset: "emacs" or "common" (default).
+	keyBindMode string
 }

@@ -240,6 +240,40 @@ func (tm *TUIManager) jsCreatePrompt(config interface{}) (string, error) {
 		return "", err
 	}
 
+	// Parse prompt behavior options (overriding defaults)
+	maxSuggestionInt, err := getInt(configMap, "maxSuggestion", 10)
+	if err != nil {
+		return "", err
+	}
+	dynamicCompletion, err := getBool(configMap, "dynamicCompletion", true)
+	if err != nil {
+		return "", err
+	}
+	executeHidesCompletions, err := getBool(configMap, "executeHidesCompletions", true)
+	if err != nil {
+		return "", err
+	}
+	escapeToggle, err := getBool(configMap, "escapeToggle", true)
+	if err != nil {
+		return "", err
+	}
+	initialText, err := getString(configMap, "initialText", "")
+	if err != nil {
+		return "", err
+	}
+	showCompletionAtStart, err := getBool(configMap, "showCompletionAtStart", false)
+	if err != nil {
+		return "", err
+	}
+	completionOnDown, err := getBool(configMap, "completionOnDown", false)
+	if err != nil {
+		return "", err
+	}
+	keyBindMode, err := getString(configMap, "keyBindMode", "")
+	if err != nil {
+		return "", err
+	}
+
 	// Create the completer function as a dispatcher that can call a JS completer
 	completer := func(document prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber) {
 		// Compute selection range around the current word
@@ -283,10 +317,14 @@ func (tm *TUIManager) jsCreatePrompt(config interface{}) (string, error) {
 		completer:               completer,
 		history:                 history,
 		historySize:             historyConfig.Size,
-		maxSuggestion:           10,
-		dynamicCompletion:       true,
-		executeHidesCompletions: true,
-		escapeToggle:            true,
+		maxSuggestion:           uint16(maxSuggestionInt),
+		dynamicCompletion:       dynamicCompletion,
+		executeHidesCompletions: executeHidesCompletions,
+		escapeToggle:            escapeToggle,
+		initialText:             initialText,
+		showCompletionAtStart:   showCompletionAtStart,
+		completionOnDown:        completionOnDown,
+		keyBindMode:             keyBindMode,
 	})
 
 	// Store the prompt via the writer queue to avoid deadlocks.
@@ -492,6 +530,78 @@ func parseKeyString(keyStr string) prompt.Key {
 		return prompt.F11
 	case "f12":
 		return prompt.F12
+	case "f13":
+		return prompt.F13
+	case "f14":
+		return prompt.F14
+	case "f15":
+		return prompt.F15
+	case "f16":
+		return prompt.F16
+	case "f17":
+		return prompt.F17
+	case "f18":
+		return prompt.F18
+	case "f19":
+		return prompt.F19
+	case "f20":
+		return prompt.F20
+	case "f21":
+		return prompt.F21
+	case "f22":
+		return prompt.F22
+	case "f23":
+		return prompt.F23
+	case "f24":
+		return prompt.F24
+	case "ctrl-space", "control-space", "ctrl+space", "control+space":
+		return prompt.ControlSpace
+	case "ctrl-\\", "control-\\", "ctrl+\\", "control+\\":
+		return prompt.ControlBackslash
+	case "ctrl-]", "control-]", "ctrl+]", "control+]":
+		return prompt.ControlSquareClose
+	case "ctrl-^", "control-^", "ctrl+^", "control+^":
+		return prompt.ControlCircumflex
+	case "ctrl-_", "control-_", "ctrl+_", "control+_":
+		return prompt.ControlUnderscore
+	case "ctrl-left", "control-left", "ctrl+left", "control+left":
+		return prompt.ControlLeft
+	case "ctrl-right", "control-right", "ctrl+right", "control+right":
+		return prompt.ControlRight
+	case "ctrl-up", "control-up", "ctrl+up", "control+up":
+		return prompt.ControlUp
+	case "ctrl-down", "control-down", "ctrl+down", "control+down":
+		return prompt.ControlDown
+	case "alt-left", "alt+left":
+		return prompt.AltLeft
+	case "alt-right", "alt+right":
+		return prompt.AltRight
+	case "alt-backspace", "alt+backspace":
+		return prompt.AltBackspace
+	case "shift-left", "shift+left":
+		return prompt.ShiftLeft
+	case "shift-right", "shift+right":
+		return prompt.ShiftRight
+	case "shift-up", "shift+up":
+		return prompt.ShiftUp
+	case "shift-down", "shift+down":
+		return prompt.ShiftDown
+	case "shift-delete", "shift-del", "shift+delete", "shift+del":
+		return prompt.ShiftDelete
+	case "ctrl-delete", "ctrl-del", "control-delete", "control-del", "ctrl+delete", "ctrl+del", "control+delete", "control+del":
+		return prompt.ControlDelete
+	case "backtab", "shift-tab", "shift+tab":
+		return prompt.BackTab
+	case "insert", "ins":
+		return prompt.Insert
+	case "pageup", "page-up", "page+up":
+		return prompt.PageUp
+	case "pagedown", "page-down", "page+down":
+		return prompt.PageDown
+	case "any":
+		return prompt.Any
+	case "bracketed-paste", "bracketedpaste":
+		return prompt.BracketedPaste
 	default:
 		return prompt.NotDefined
 	}
@@ -565,6 +675,15 @@ func (tm *TUIManager) buildPromptJSObject(p *prompt.Prompt) goja.Value {
 	})
 	_ = obj.Set("getText", func() string {
 		return p.Buffer().Text()
+	})
+	_ = obj.Set("terminalColumns", func() int {
+		return int(p.TerminalColumns())
+	})
+	_ = obj.Set("terminalRows", func() int {
+		return p.TerminalRows()
+	})
+	_ = obj.Set("userInputColumns", func() int {
+		return int(p.UserInputColumns())
 	})
 	return obj
 }

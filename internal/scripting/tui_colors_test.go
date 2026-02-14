@@ -50,3 +50,48 @@ func TestParseColor(t *testing.T) {
 		})
 	}
 }
+
+func TestPromptColors_BackgroundFields(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ApplyFromInterfaceMap_sets_background_colors", func(t *testing.T) {
+		pc := PromptColors{}
+		pc.ApplyFromInterfaceMap(map[string]interface{}{
+			"inputBackground":  "red",
+			"prefixBackground": "blue",
+		})
+
+		if pc.InputBG != prompt.Red {
+			t.Errorf("InputBG = %v, want Red", pc.InputBG)
+		}
+		if pc.PrefixBG != prompt.Blue {
+			t.Errorf("PrefixBG = %v, want Blue", pc.PrefixBG)
+		}
+	})
+
+	t.Run("ApplyFromStringMap_sets_background_colors", func(t *testing.T) {
+		pc := PromptColors{}
+		pc.ApplyFromStringMap(map[string]string{
+			"inputBackground":  "cyan",
+			"prefixBackground": "darkgray",
+		})
+
+		if pc.InputBG != prompt.Cyan {
+			t.Errorf("InputBG = %v, want Cyan", pc.InputBG)
+		}
+		if pc.PrefixBG != prompt.DarkGray {
+			t.Errorf("PrefixBG = %v, want DarkGray", pc.PrefixBG)
+		}
+	})
+
+	t.Run("zero_value_is_DefaultColor", func(t *testing.T) {
+		pc := PromptColors{}
+		// All prompt.Color zero values = 0 = DefaultColor
+		if pc.InputBG != prompt.DefaultColor {
+			t.Errorf("InputBG zero = %v, want DefaultColor", pc.InputBG)
+		}
+		if pc.PrefixBG != prompt.DefaultColor {
+			t.Errorf("PrefixBG zero = %v, want DefaultColor", pc.PrefixBG)
+		}
+	})
+}

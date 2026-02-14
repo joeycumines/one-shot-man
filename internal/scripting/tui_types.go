@@ -210,4 +210,6 @@ type promptBuildConfig struct {
 	executeHidesCompletions bool
 	// escapeToggle binds the Escape key to toggle completion visibility.
 	escapeToggle bool
+	// historySize limits the number of history entries. 0 uses go-prompt default.
+	historySize int
 }

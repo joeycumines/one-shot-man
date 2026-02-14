@@ -282,6 +282,7 @@ func (tm *TUIManager) jsCreatePrompt(config interface{}) (string, error) {
 		colors:                  colors,
 		completer:               completer,
 		history:                 history,
+		historySize:             historyConfig.Size,
 		maxSuggestion:           10,
 		dynamicCompletion:       true,
 		executeHidesCompletions: true,
@@ -323,8 +324,9 @@ func (tm *TUIManager) jsRunPrompt(name string) error {
 	tm.activePrompt = p
 	tm.mu.Unlock()
 
-	// Start the prompt (this will block until exit)
-	p.Run()
+	// Start the prompt (this will block until exit).
+	// Use RunNoExit to prevent go-prompt from calling os.Exit on SIGTERM.
+	p.RunNoExit()
 
 	tm.mu.Lock()
 	tm.activePrompt = nil
@@ -509,8 +511,11 @@ func (tm *TUIManager) buildKeyBinds() []prompt.KeyBind {
 			keyBinds = append(keyBinds, prompt.KeyBind{
 				Key: key,
 				Fn: func(p *prompt.Prompt) bool {
-					// Call the JavaScript handler
-					result, err := jsHandler(goja.Undefined())
+					// Build a JS wrapper exposing prompt editing methods
+					promptObj := tm.buildPromptJSObject(p)
+
+					// Call the JavaScript handler with the prompt object
+					result, err := jsHandler(goja.Undefined(), promptObj)
 					if err != nil {
 						_, _ = fmt.Fprintf(tm.writer, "Key binding error: %v\n", err)
 						return false
@@ -527,4 +532,39 @@ func (tm *TUIManager) buildKeyBinds() []prompt.KeyBind {
 	}
 
 	return keyBinds
+}
+
+// buildPromptJSObject creates a goja object that wraps a *prompt.Prompt,
+// exposing editing and cursor methods to JavaScript key-binding handlers.
+func (tm *TUIManager) buildPromptJSObject(p *prompt.Prompt) goja.Value {
+	vm := tm.engine.vm
+	obj := vm.NewObject()
+	_ = obj.Set("insertText", func(text string) {
+		p.InsertText(text, false)
+	})
+	_ = obj.Set("insertTextMoveCursor", func(text string) {
+		p.InsertTextMoveCursor(text, false)
+	})
+	_ = obj.Set("deleteBeforeCursor", func(count int) string {
+		return p.DeleteBeforeCursor(istrings.GraphemeNumber(count))
+	})
+	_ = obj.Set("delete", func(count int) string {
+		return p.Delete(istrings.GraphemeNumber(count))
+	})
+	_ = obj.Set("cursorLeft", func(count int) bool {
+		return p.CursorLeft(istrings.GraphemeNumber(count))
+	})
+	_ = obj.Set("cursorRight", func(count int) bool {
+		return p.CursorRight(istrings.GraphemeNumber(count))
+	})
+	_ = obj.Set("cursorUp", func(count int) bool {
+		return p.CursorUp(count)
+	})
+	_ = obj.Set("cursorDown", func(count int) bool {
+		return p.CursorDown(count)
+	})
+	_ = obj.Set("getText", func() string {
+		return p.Buffer().Text()
+	})
+	return obj
 }

@@ -662,8 +662,9 @@ func (tm *TUIManager) runAdvancedPrompt() {
 	tm.activePrompt = p
 	tm.mu.Unlock()
 
-	// Run the prompt (this will block until exit)
-	p.Run()
+	// Run the prompt (this will block until exit).
+	// Use RunNoExit to prevent go-prompt from calling os.Exit on SIGTERM.
+	p.RunNoExit()
 
 	// Clear active prompt when done
 	tm.mu.Lock()
@@ -780,6 +781,9 @@ func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
 	// Add command history
 	if len(cfg.history) > 0 {
 		options = append(options, prompt.WithHistory(cfg.history))
+	}
+	if cfg.historySize > 0 {
+		options = append(options, prompt.WithHistorySize(cfg.historySize))
 	}
 
 	// Add any registered key bindings

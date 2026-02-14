@@ -123,7 +123,9 @@ func parseColor(colorStr string) prompt.Color {
 		return prompt.Turquoise
 	case "white":
 		return prompt.White
+	case "default":
+		return prompt.DefaultColor
 	default:
-		return prompt.White
+		return prompt.DefaultColor
 	}
 }

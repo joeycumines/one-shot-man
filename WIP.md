@@ -6,10 +6,12 @@
 - **T003**: ✅ DONE (commit aaf6173)
 - **T004**: ✅ DONE (commit 9212fd1) — Rule of Two PASSED
 - **T005**: ✅ DONE (commit 6f18a1f) — Rule of Two PASSED
-- **T006**: 🔄 NEXT — Expose remaining go-prompt features
+- **T006**: ✅ DONE (commit 6b1b0b9) — Rule of Two PASSED
+- **T007**: 🔄 NEXT — Review and document tview/tcell deprecation
 
-## T006 Context
-- Source: scratch/t039-go-prompt-feature-alignment.md
-- 9 missing go-prompt options, 16 missing key constants, document API methods
-- T005 already added key prompt methods (insertText, delete, cursor) to key binding handlers
-- T006 needs to: expose go-prompt options via JS, add missing key constants to parseKeyString, update tui-api.md docs
+## T007 Context
+- Source: scratch/t040-tview-tcell-assessment.md (may exist)
+- Review internal/builtin/tview/ for current state
+- Document in docs/archive/notes/tview-deprecation.md
+- Mark tview module as deprecated in code and docs
+- Add deprecation warning log when require('osm:tview') is called

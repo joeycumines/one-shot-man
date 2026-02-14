@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T005 COMPLETE. T005 committed as 6f18a1f: fix(tui): wire WithHistorySize, add DefaultColor, pass prompt to key handlers, use RunNoExit. 6 files changed, 224 insertions(+), 7 deletions(-). Rule of Two passed (2 contiguous passes + fitness review). Next: T006 (Expose remaining go-prompt features)."
+    "currentState": "T001-T006 COMPLETE. T006 committed as 6b1b0b9: feat(tui): expose remaining go-prompt features — options, key constants, document API, prompt methods. 8 files changed, 613 insertions(+), 25 deletions(-). Rule of Two passed (deep code review + full test suite). Next: T007 (Review and document tview/tcell deprecation)."
   },
   "sequentialTasks": [
     {
@@ -74,8 +74,8 @@
     },
     {
       "task": "T006: Expose remaining go-prompt features",
-      "description": "scratch/t039-go-prompt-feature-alignment.md identifies 9 missing go-prompt options not exposed through the TUI API. Expose the ones relevant to osm's use cases through the JS tui object or registerMode config. Also add the 16 missing key constants to the key binding system and the 12 missing document API methods (insertText, deleteBeforeCursor, etc.) to the prompt object passed to key binding handlers. Update docs/reference/tui-api.md with all newly exposed features. Add tests for each new binding.",
-      "status": "Not Started"
+      "description": "Committed as 6b1b0b9: Exposed 9 configurable prompt options (maxSuggestion, dynamicCompletion, executeHidesCompletions, escapeToggle, initialText, showCompletionAtStart, completionOnDown, keyBindMode) through createPrompt JS config. Added ~24 missing key constants to parseKeyString (ControlSpace, Control/Alt/Shift+arrows, BackTab, PageUp/Down, Insert, F13-F24, Any, BracketedPaste). Enriched Document API with 11 new methods (getTextAfterCursor, getWordAfterCursor, getCurrentLine, getCurrentLineBeforeCursor/AfterCursor, getCursorPositionCol/Row, getLines, getLineCount, onLastLine, getCharRelativeToCursor). Added 3 prompt methods (terminalColumns, terminalRows, userInputColumns). Added 2 background color properties (inputBackground, prefixBackground). Updated docs/reference/tui-api.md. 8 files changed, 613 insertions(+), 25 deletions(-).",
+      "status": "Done"
     },
     {
       "task": "T007: Review and document tview/tcell deprecation",

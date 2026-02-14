@@ -20,6 +20,5 @@
 - **T017**: ✅ DONE (commit 26c35b0) — Rule of Two PASSED
 - **T018**: ✅ DONE (commit 12db2bf) — Rule of Two PASSED
 - **T019**: ✅ DONE (commit 1519255) — Rule of Two PASSED
-
-## Active Task
-Starting T020: Coverage audit: internal/storage
+- **T020**: ✅ DONE (commit 12678ab) — Rule of Two PASSED
+Starting T021: Coverage audit: internal/builtin/exec

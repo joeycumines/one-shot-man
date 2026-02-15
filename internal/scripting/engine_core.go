@@ -243,11 +243,13 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 	// Set up the global context and APIs
 	engine.setupGlobals()
 
-	// Interrupt JS execution when context is canceled
+	// Interrupt JS execution when context is canceled.
+	// Capture vm locally to avoid racing with Close() which sets e.vm = nil.
+	// goja.Runtime.Interrupt is documented as safe to call from any goroutine.
+	vmForInterrupt := engine.vm
 	context.AfterFunc(ctx, func() {
-		if engine.vm != nil {
-			// N.B. It's safe to call Interrupt from another goroutine.
-			engine.vm.Interrupt(ctx.Err())
+		if vmForInterrupt != nil {
+			vmForInterrupt.Interrupt(ctx.Err())
 		}
 	})
 

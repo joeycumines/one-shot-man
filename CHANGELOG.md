@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Fix data race in scripting engine: `context.AfterFunc` closure was reading `engine.vm` while `Close()` sets it to nil on another goroutine; captured VM in local variable before the closure
+
 ## [v0.1.0] - 2026-02-10
 
 ### PA-BT (Planning-Augmented Behavior Trees)

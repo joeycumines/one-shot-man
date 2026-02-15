@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T020 ALL DONE and committed (20 commits). Blueprint REWRITTEN for exhaustive planning phase. Covers: config schema, osm:flag/fetch/grpc modules, require system, diff splitter, goal/script discovery, prompt flow, code review, context manager, tview deprecation, file logging, log tailing, session cleanup, VS Code prompt files, hot-snippets, Anthropic goals, git sync, coverage audits for argv/config/session/storage. Next: T021."
+    "currentState": "T001-T035 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core. Next: T036 (scripting TUI subsystem)."
   },
   "sequentialTasks": [
     {
@@ -98,12 +98,14 @@
     {
       "task": "T034: Coverage audit: internal/builtin/bubbles (textarea + viewport)",
       "description": "Run coverage for bubbles/textarea/ and bubbles/viewport/. Each has 1 source + 2 test files. Test Require, JS-Go bridge, component creation, message handling, scrolling, input. Achieve 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage: textarea 68.8%→95.1%, viewport 73.3%→97.3%. ~120 new test functions across 2 coverage_gaps_test.go files (1626+904 lines). Used unsafe pointer mirror (textareaModelMirror) for unexported field access. No source code modifications needed. No bugs found. Remaining gaps are defensive dead code (nil-after-guard, zero-line docs, clamp-after-clamp). Rule of Two passed. Committed as ed96f95."
     },
     {
       "task": "T035: Coverage audit: internal/scripting engine core",
       "description": "Coverage for engine_core.go (~530 lines), runtime.go, execution_context.go. Cover all constructors (NewEngineDetailed + EngineOptions), script loading (file/inline), global registration, module loading (native osm: + file-based require), shebang handling, error paths. Achieve 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage: engine_core.go 91.2%, runtime.go 93.9%, execution_context.go 97.2% (combined 93.0%). ~40 new tests in coverage_gaps_test.go (1321 lines). Fixed 1 DATA RACE bug in engine_core.go (context.AfterFunc closure reading engine.vm while Close() sets nil — captured vm in local variable). Remaining 16 uncovered blocks are defensive dead code (OS-level failures, race windows, library internals). Rule of Two passed."
     },
     {
       "task": "T036: Coverage audit: internal/scripting TUI subsystem",

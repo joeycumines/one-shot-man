@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T040 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal, command script-executing commands, command utility commands + data processing. Next: T041 (command registry, base, dispatch)."
+    "currentState": "T001-T041 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal, command script-executing commands, command utility commands + data processing, command registry/base/dispatch. Next: T042 (goroutineid, testutil, mouseharness)."
   },
   "sequentialTasks": [
     {
@@ -140,7 +140,8 @@
     {
       "task": "T041: Coverage audit: internal/command registry, base, dispatch",
       "description": "Coverage for registry.go, base.go, builtin.go, testutils.go. Cover registration, lookup, dispatch, base helpers, builtin wiring, test utilities. All dispatch scenarios: valid/invalid command, help flags, version, subcommand routing. Achieve 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage 86.3% → 88.0%. ~25 new tests in registry_base_coverage_gaps_test.go (~697 lines). Covers: base.go SetupFlags no-op + accessors, registry AddScriptPath duplicate detection, findScriptCommand/findScriptCommands filtering, List deduplication, removeDuplicates edge cases, ScriptCommand Execute/ExecuteWithContext (stdout/stderr/args/exit-code/not-found/cancellation/normal-completion), HelpCommand script hint + script listing, ConfigCommand --global + empty-string value + fallback resolve + persist failure, InitCommand force overwrite + loaded config verification, testutils ansiRegex strip/no-change, isExecutable Unix mode bits + Windows extensions, killProcessGroup nil Process guard. Remaining: SetupFlags 0% (empty body), InitCommand IO errors (OS-level), isExecutable Windows extensions (unreachable on macOS), ExecuteWithContext cmd.exe dispatch (Windows-only). Rule of Two passed."
     },
     {
       "task": "T042: Coverage audit: goroutineid, testutil, mouseharness",

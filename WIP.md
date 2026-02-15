@@ -22,5 +22,5 @@
 - **T038**: ✅ DONE — ~40 new tests in session_terminal_coverage_gaps_test.go, coverage 89.0% → 89.4%, logging.go all 100%, GetSessionID/initializeStateManager 100%, NewTerminal 100%, debug stubs verified, no bugs found
 - **T039**: ✅ DONE — 30 new tests in script_cmd_coverage_gaps_test.go, coverage 78.6% → 81.0%, GoalSetupFlags 0→100%, SuperDocument Execute 0→72.9%, injectConfigHotSnippets 66.7→100%, resolveLogConfig 92.5→97.5%, NewScriptingCommand 50→100%, no bugs found
 - **T040**: ✅ DONE — ~42 new tests in util_cmd_coverage_gaps_test.go, coverage 81.0% → 86.3%, no bugs found, Rule of Two passed
-- **Next**: T041 — Coverage audit: internal/command registry, base, dispatch
-- **Approach**: Execute tasks sequentially, verify via Rule of Two, commit, continue
+- **T041**: ✅ DONE — ~25 new tests in registry_base_coverage_gaps_test.go (~697 lines), coverage 86.3% → 88.0%, no bugs found, Rule of Two passed
+- **Next**: T042 — Coverage audit: goroutineid, testutil, mouseharness

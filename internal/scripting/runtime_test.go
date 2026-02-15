@@ -459,8 +459,8 @@ func TestRuntime_SetTimeout(t *testing.T) {
 	defer rt.Close()
 
 	// Default timeout
-	if rt.GetTimeout() != DefaultSyncTimeout {
-		t.Errorf("expected default timeout %v, got %v", DefaultSyncTimeout, rt.GetTimeout())
+	if rt.GetTimeout() != defaultSyncTimeout {
+		t.Errorf("expected default timeout %v, got %v", defaultSyncTimeout, rt.GetTimeout())
 	}
 
 	// Set custom timeout

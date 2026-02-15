@@ -125,18 +125,18 @@ func TestResetCommand_EndToEnd(t *testing.T) {
 	}
 
 	// Pre-set state: modify all state values
-	if err := tuiManager.SetStateViaJS("__shared__:sharedKey", "modifiedShared"); err != nil {
+	if err := tuiManager.SetStateForTest("__shared__:sharedKey", "modifiedShared"); err != nil {
 		t.Fatalf("Failed to set shared state: %v", err)
 	}
-	if err := tuiManager.SetStateViaJS("modeA:keyA", 100); err != nil {
+	if err := tuiManager.SetStateForTest("modeA:keyA", 100); err != nil {
 		t.Fatalf("Failed to set modeA state: %v", err)
 	}
-	if err := tuiManager.SetStateViaJS("modeB:keyB", "modifiedB"); err != nil {
+	if err := tuiManager.SetStateForTest("modeB:keyB", "modifiedB"); err != nil {
 		t.Fatalf("Failed to set modeB state: %v", err)
 	}
 
 	// Verify modified state values
-	sharedVal, err := tuiManager.GetStateViaJS("__shared__:sharedKey")
+	sharedVal, err := tuiManager.GetStateForTest("__shared__:sharedKey")
 	if err != nil {
 		t.Fatalf("Failed to get shared state: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestResetCommand_EndToEnd(t *testing.T) {
 		t.Errorf("Expected shared state to be 'modifiedShared', got %v", sharedVal)
 	}
 
-	modeAVal, err := tuiManager.GetStateViaJS("modeA:keyA")
+	modeAVal, err := tuiManager.GetStateForTest("modeA:keyA")
 	if err != nil {
 		t.Fatalf("Failed to get modeA state: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestResetCommand_EndToEnd(t *testing.T) {
 		t.Errorf("Expected modeA state to be 100, got %v (type %T)", modeAVal, modeAVal)
 	}
 
-	modeBVal, err := tuiManager.GetStateViaJS("modeB:keyB")
+	modeBVal, err := tuiManager.GetStateForTest("modeB:keyB")
 	if err != nil {
 		t.Fatalf("Failed to get modeB state: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestResetCommand_EndToEnd(t *testing.T) {
 	// and the JS accessor is responsible for providing the default.
 
 	// 1. Verify raw storage is empty (nil)
-	sharedVal, err = tuiManager.GetStateViaJS("__shared__:sharedKey")
+	sharedVal, err = tuiManager.GetStateForTest("__shared__:sharedKey")
 	if err != nil {
 		t.Fatalf("Failed to get shared state after reset: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestResetCommand_EndToEnd(t *testing.T) {
 		t.Errorf("Expected raw shared state to be nil (cleared), got %v", sharedVal)
 	}
 
-	modeAVal, err = tuiManager.GetStateViaJS("modeA:keyA")
+	modeAVal, err = tuiManager.GetStateForTest("modeA:keyA")
 	if err != nil {
 		t.Fatalf("Failed to get modeA state after reset: %v", err)
 	}

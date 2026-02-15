@@ -16,15 +16,15 @@ import (
 // ContextManager handles tracking and managing file paths and content as context
 // for building LLM prompts.
 type ContextManager struct {
-	paths      map[string]*ContextPath
+	paths      map[string]*contextPath
 	basePath   string
 	mutex      sync.RWMutex
 	ownerFiles map[string]map[string]struct{}
 	fileOwners map[string]int
 }
 
-// ContextPath represents a tracked file or directory with metadata.
-type ContextPath struct {
+// contextPath represents a tracked file or directory with metadata.
+type contextPath struct {
 	Path       string            `json:"path"`
 	Type       string            `json:"type"` // "file" or "directory"
 	Content    string            `json:"content,omitempty"`
@@ -41,7 +41,7 @@ func NewContextManager(basePath string) (*ContextManager, error) {
 	}
 
 	return &ContextManager{
-		paths:      make(map[string]*ContextPath),
+		paths:      make(map[string]*contextPath),
 		basePath:   absBase,
 		ownerFiles: make(map[string]map[string]struct{}),
 		fileOwners: make(map[string]int),
@@ -186,7 +186,7 @@ func (cm *ContextManager) addFileLocked(absPath, logicalPath, owner string, info
 
 	cp, exists := cm.paths[logicalPath]
 	if !exists || cp.Type != "file" {
-		cp = &ContextPath{
+		cp = &contextPath{
 			Path:     logicalPath,
 			Type:     "file",
 			Metadata: make(map[string]string),
@@ -227,7 +227,7 @@ func (cm *ContextManager) addDirectoryLocked(absPath, owner string, info fs.File
 		return fmt.Errorf("failed to scan directory %s: %w", absPath, err)
 	}
 
-	cm.paths[owner] = &ContextPath{
+	cm.paths[owner] = &contextPath{
 		Path:       owner,
 		Type:       "directory",
 		Metadata:   make(map[string]string),
@@ -439,7 +439,7 @@ func (cm *ContextManager) RemovePath(path string) error {
 }
 
 // GetPath returns information about a tracked path.
-func (cm *ContextManager) GetPath(path string) (*ContextPath, bool) {
+func (cm *ContextManager) GetPath(path string) (*contextPath, bool) {
 	cm.mutex.RLock()
 	defer cm.mutex.RUnlock()
 
@@ -618,12 +618,12 @@ func (cm *ContextManager) FromTxtar(archive *txtar.Archive) error {
 	defer cm.mutex.Unlock()
 
 	// Clear existing context
-	cm.paths = make(map[string]*ContextPath)
+	cm.paths = make(map[string]*contextPath)
 	cm.ownerFiles = make(map[string]map[string]struct{})
 	cm.fileOwners = make(map[string]int)
 
 	for _, file := range archive.Files {
-		contextPath := &ContextPath{
+		contextPath := &contextPath{
 			Path:     file.Name,
 			Type:     "file",
 			Content:  string(file.Data),
@@ -745,7 +745,7 @@ func (cm *ContextManager) Clear() {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 
-	cm.paths = make(map[string]*ContextPath)
+	cm.paths = make(map[string]*contextPath)
 	cm.ownerFiles = make(map[string]map[string]struct{})
 	cm.fileOwners = make(map[string]int)
 }

@@ -29,20 +29,20 @@ import (
 // The Engine now uses a shared Runtime with an event loop for all JavaScript execution,
 // enabling proper async/Promise support and safe integration with bt.
 
-// ScriptPanicError is a structured error type for script panics.
+// scriptPanicError is a structured error type for script panics.
 // It implements the error interface and provides structured access to panic details
 // for programmatic consumption by callers.
 //
 // Example usage:
 //
 //	if err := engine.ExecuteScript(script); err != nil {
-//	    var panicErr *ScriptPanicError
+//	    var panicErr *scriptPanicError
 //	    if errors.As(err, &panicErr) {
 //	        log.Printf("script %q panicked: %v", panicErr.ScriptName, panicErr.Value)
 //	        // panicErr.StackTrace contains the full stack trace
 //	    }
 //	}
-type ScriptPanicError struct {
+type scriptPanicError struct {
 	// Value is the value passed to panic() in the script
 	Value any
 	// StackTrace contains the Go runtime stack trace at the time of panic
@@ -52,14 +52,14 @@ type ScriptPanicError struct {
 }
 
 // Error returns a human-readable description of the panic error.
-func (e *ScriptPanicError) Error() string {
+func (e *scriptPanicError) Error() string {
 	return fmt.Sprintf("script %q panicked: %v", e.ScriptName, e.Value)
 }
 
 // Unwrap returns the underlying panic value for errors.Is/As compatibility.
 // Note: The panic value may not implement the error interface, so this returns
 // the value directly when it does, or wraps it in an error when it doesn't.
-func (e *ScriptPanicError) Unwrap() error {
+func (e *scriptPanicError) Unwrap() error {
 	if err, ok := e.Value.(error); ok {
 		return err
 	}
@@ -458,7 +458,7 @@ func (e *Engine) ExecuteScript(script *Script) (err error) {
 		if r := recover(); r != nil {
 			stackTrace := string(debug.Stack())
 			// Create a structured panic error for programmatic consumption
-			panicErr := &ScriptPanicError{
+			panicErr := &scriptPanicError{
 				Value:      r,
 				StackTrace: stackTrace,
 				ScriptName: script.Name,

@@ -507,7 +507,7 @@ func TestContextManager_ToTxtar_AbsolutePath(t *testing.T) {
 	cm, _ := NewContextManager(filepath.Join(tmpDir, "base"))
 	// Manually insert a path with absolute key
 	cm.mutex.Lock()
-	cm.paths[f] = &ContextPath{
+	cm.paths[f] = &contextPath{
 		Path:     f,
 		Type:     "file",
 		Content:  "outside",

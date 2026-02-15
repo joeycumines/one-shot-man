@@ -24,8 +24,8 @@ import (
 
 func TestTUILogHandler_WithAttrs_ReturnsSameHandler(t *testing.T) {
 	t.Parallel()
-	handler := &TUILogHandler{
-		entries: make([]LogEntry, 0),
+	handler := &tuiLogHandler{
+		entries: make([]logEntry, 0),
 		maxSize: 100,
 		level:   slog.LevelDebug,
 	}
@@ -40,8 +40,8 @@ func TestTUILogHandler_WithAttrs_ReturnsSameHandler(t *testing.T) {
 
 func TestTUILogHandler_WithGroup_ReturnsSameHandler(t *testing.T) {
 	t.Parallel()
-	handler := &TUILogHandler{
-		entries: make([]LogEntry, 0),
+	handler := &tuiLogHandler{
+		entries: make([]logEntry, 0),
 		maxSize: 100,
 		level:   slog.LevelDebug,
 	}
@@ -54,8 +54,8 @@ func TestTUILogHandler_WithGroup_ReturnsSameHandler(t *testing.T) {
 
 func TestTUILogHandler_Handle_WithPC(t *testing.T) {
 	t.Parallel()
-	handler := &TUILogHandler{
-		entries: make([]LogEntry, 0),
+	handler := &tuiLogHandler{
+		entries: make([]logEntry, 0),
 		maxSize: 100,
 		level:   slog.LevelDebug,
 	}
@@ -76,8 +76,8 @@ func TestTUILogHandler_Handle_WithPC(t *testing.T) {
 
 func TestTUILogHandler_Handle_WithZeroPC(t *testing.T) {
 	t.Parallel()
-	handler := &TUILogHandler{
-		entries: make([]LogEntry, 0),
+	handler := &tuiLogHandler{
+		entries: make([]logEntry, 0),
 		maxSize: 100,
 		level:   slog.LevelDebug,
 	}
@@ -97,8 +97,8 @@ func TestTUILogHandler_Handle_ForwardsToFileHandler(t *testing.T) {
 	var buf bytes.Buffer
 	fileHandler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
 
-	handler := &TUILogHandler{
-		entries:     make([]LogEntry, 0),
+	handler := &tuiLogHandler{
+		entries:     make([]logEntry, 0),
 		maxSize:     100,
 		level:       slog.LevelDebug,
 		fileHandler: fileHandler,
@@ -118,8 +118,8 @@ func TestTUILogHandler_Handle_ForwardsToFileHandler(t *testing.T) {
 
 func TestTUILogHandler_Handle_EvictsOldest(t *testing.T) {
 	t.Parallel()
-	handler := &TUILogHandler{
-		entries: make([]LogEntry, 0, 2),
+	handler := &tuiLogHandler{
+		entries: make([]logEntry, 0, 2),
 		maxSize: 2,
 		level:   slog.LevelDebug,
 	}
@@ -140,8 +140,8 @@ func TestTUILogHandler_Handle_EvictsOldest(t *testing.T) {
 
 func TestTUILogHandler_Handle_CapturesAttrs(t *testing.T) {
 	t.Parallel()
-	handler := &TUILogHandler{
-		entries: make([]LogEntry, 0),
+	handler := &tuiLogHandler{
+		entries: make([]logEntry, 0),
 		maxSize: 100,
 		level:   slog.LevelDebug,
 	}
@@ -164,7 +164,7 @@ func TestTUILogHandler_Handle_CapturesAttrs(t *testing.T) {
 
 func TestTUILogHandler_Enabled(t *testing.T) {
 	t.Parallel()
-	handler := &TUILogHandler{level: slog.LevelWarn}
+	handler := &tuiLogHandler{level: slog.LevelWarn}
 
 	assert.False(t, handler.Enabled(context.Background(), slog.LevelDebug))
 	assert.False(t, handler.Enabled(context.Background(), slog.LevelInfo))

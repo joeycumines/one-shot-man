@@ -15,12 +15,12 @@ import (
 )
 
 // =============================================================================
-// ScriptPanicError tests
+// scriptPanicError tests
 // =============================================================================
 
 func TestScriptPanicError_Error(t *testing.T) {
 	t.Parallel()
-	pe := &ScriptPanicError{
+	pe := &scriptPanicError{
 		Value:      "something broke",
 		StackTrace: "goroutine 1 [running]:\n...",
 		ScriptName: "test.js",
@@ -35,7 +35,7 @@ func TestScriptPanicError_Error(t *testing.T) {
 func TestScriptPanicError_Unwrap_WithError(t *testing.T) {
 	t.Parallel()
 	inner := errors.New("underlying error")
-	pe := &ScriptPanicError{
+	pe := &scriptPanicError{
 		Value:      inner,
 		ScriptName: "err.js",
 	}
@@ -51,7 +51,7 @@ func TestScriptPanicError_Unwrap_WithError(t *testing.T) {
 
 func TestScriptPanicError_Unwrap_NonError(t *testing.T) {
 	t.Parallel()
-	pe := &ScriptPanicError{
+	pe := &scriptPanicError{
 		Value:      "not an error",
 		ScriptName: "str.js",
 	}
@@ -63,7 +63,7 @@ func TestScriptPanicError_Unwrap_NonError(t *testing.T) {
 
 func TestScriptPanicError_Unwrap_NilValue(t *testing.T) {
 	t.Parallel()
-	pe := &ScriptPanicError{
+	pe := &scriptPanicError{
 		Value:      nil,
 		ScriptName: "nil.js",
 	}
@@ -75,14 +75,14 @@ func TestScriptPanicError_Unwrap_NilValue(t *testing.T) {
 
 func TestScriptPanicError_ErrorsAs(t *testing.T) {
 	t.Parallel()
-	pe := &ScriptPanicError{
+	pe := &scriptPanicError{
 		Value:      42,
 		ScriptName: "num.js",
 		StackTrace: "stack",
 	}
-	var target *ScriptPanicError
+	var target *scriptPanicError
 	if !errors.As(pe, &target) {
-		t.Fatal("errors.As should match ScriptPanicError")
+		t.Fatal("errors.As should match scriptPanicError")
 	}
 	if target.ScriptName != "num.js" {
 		t.Errorf("ScriptName = %q, want %q", target.ScriptName, "num.js")
@@ -385,9 +385,9 @@ func TestExecuteScript_PanicRecovery_GoPanic(t *testing.T) {
 		t.Fatal("expected error from Go panic")
 	}
 
-	var pe *ScriptPanicError
+	var pe *scriptPanicError
 	if !errors.As(err, &pe) {
-		t.Fatalf("expected ScriptPanicError, got: %T: %v", err, err)
+		t.Fatalf("expected scriptPanicError, got: %T: %v", err, err)
 	}
 	if pe.ScriptName != "go_panic" {
 		t.Errorf("ScriptName = %q, want %q", pe.ScriptName, "go_panic")
@@ -421,9 +421,9 @@ func TestExecuteScript_PanicRecovery_GoPanicWithError(t *testing.T) {
 		t.Fatal("expected error from Go panic")
 	}
 
-	var pe *ScriptPanicError
+	var pe *scriptPanicError
 	if !errors.As(err, &pe) {
-		t.Fatalf("expected ScriptPanicError, got: %T", err)
+		t.Fatalf("expected scriptPanicError, got: %T", err)
 	}
 	// Unwrap should return the inner error
 	if !errors.Is(pe, inner) {

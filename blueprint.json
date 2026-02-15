@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T051 ALL DONE. T051 added 4 fuzz tests (config, SplitDiff, buildContext, GojaRunString). Next: T052 (API surface optimization: scripting engine)."
+    "currentState": "T001-T052 ALL DONE. T052 reduced scripting API surface (deleted deprecated aliases, unexported 6 types/constants). Next: T053 (API surface optimization: command package)."
   },
   "sequentialTasks": [
     {
@@ -203,8 +203,11 @@
       "status": "Done",
       "outcome": "4 fuzz tests created: FuzzLoadFromReader (config parser, 494K execs/30s), FuzzSplitDiff (diff chunker, 1M execs/30s), FuzzBuildContext (ctxutil JS integration, 140K execs/30s), FuzzGojaRunString (Goja VM with arbitrary scripts, 758K execs/30s). Zero panics across all. Goja test uses SetMaxCallStackSize(64) for recursive JS protection and time.AfterFunc+vm.Interrupt for infinite loop timeout. Regression corpus entry committed for previously-hanging infinite loop input. Rule of Two passed."
     },
+    {
+      "task": "T052: API surface optimization: scripting engine",
       "description": "Review internal/scripting/ public API. Unexport unnecessary types/functions. Check constructor consistency. Verify .deadcodeignore entries justified. Reduce API to minimum for internal/command/. Update all callers.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Deleted 2 deprecated method aliases (GetStateViaJS/SetStateViaJS). Unexported 6 internal-only symbols: DefaultSyncTimeout→defaultSyncTimeout, ScriptPanicError→scriptPanicError, ContextPath→contextPath, LogEntry→logEntry, TUILogHandler→tuiLogHandler, HistoryConfig→historyConfig. All 18 callers of deprecated aliases updated. All test files updated. Net -9 lines. Remaining exported types (ContextManager, TUILogger, ExecutionContext, etc.) assessed but kept exported: heavily used internally (100+ refs), bounded by Go internal/ restriction. .deadcodeignore entries verified. Rule of Two passed."
     },
     {
       "task": "T053: API surface optimization: command package",

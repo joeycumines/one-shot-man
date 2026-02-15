@@ -902,15 +902,6 @@ func (tm *TUIManager) captureHistorySnapshot(commandName string, commandArgs []s
 // Unlike the removed tui.getState/setState production APIs, these are explicitly
 // test-only and use the same Symbol lookup mechanism that production code uses.
 
-// GetStateViaJS and SetStateViaJS - DEPRECATED aliases for backward compatibility with old tests
-func (tm *TUIManager) GetStateViaJS(persistentKey string) (interface{}, error) {
-	return tm.GetStateForTest(persistentKey)
-}
-
-func (tm *TUIManager) SetStateViaJS(persistentKey string, value interface{}) error {
-	return tm.SetStateForTest(persistentKey, value)
-}
-
 // TriggerExit programmatically stops the prompt for graceful shutdown.
 func (tm *TUIManager) TriggerExit() {
 	tm.mu.Lock()

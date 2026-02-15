@@ -873,12 +873,12 @@ func TestConcurrentAccess(t *testing.T) {
 
 			for j := 0; j < 100; j++ {
 				valueToSet := int64(id*100 + j)
-				if err := tuiManager.SetStateViaJS("concurrent-test:counter", valueToSet); err != nil {
+				if err := tuiManager.SetStateForTest("concurrent-test:counter", valueToSet); err != nil {
 					errors <- fmt.Errorf("goroutine %d: failed to set state at iteration %d: %v", id, j, err)
 					return
 				}
 
-				val, err := tuiManager.GetStateViaJS("concurrent-test:counter")
+				val, err := tuiManager.GetStateForTest("concurrent-test:counter")
 				if err != nil {
 					errors <- fmt.Errorf("goroutine %d: failed to get state at iteration %d: %v", id, j, err)
 					return
@@ -920,7 +920,7 @@ func TestConcurrentAccess(t *testing.T) {
 	default:
 	}
 
-	finalVal, err := tuiManager.GetStateViaJS("concurrent-test:counter")
+	finalVal, err := tuiManager.GetStateForTest("concurrent-test:counter")
 	if err != nil {
 		t.Fatalf("Failed to retrieve final counter value: %v", err)
 	}
@@ -1015,7 +1015,7 @@ func TestJavaScriptInteroperability(t *testing.T) {
 	}
 
 	// Verify state was set correctly using test helper
-	configValue, err := tuiManager.GetStateViaJS("complex-mode:config")
+	configValue, err := tuiManager.GetStateForTest("complex-mode:config")
 	if err != nil {
 		t.Fatalf("Failed to get config state: %v", err)
 	}
@@ -1283,7 +1283,7 @@ func TestTUIModeSystem(t *testing.T) {
 	}
 
 	// Verify state was set correctly using test helper
-	testValue, err := tuiManager.GetStateViaJS("test-mode:testValue")
+	testValue, err := tuiManager.GetStateForTest("test-mode:testValue")
 	if err != nil {
 		t.Fatalf("Failed to get testValue: %v", err)
 	}
@@ -1291,7 +1291,7 @@ func TestTUIModeSystem(t *testing.T) {
 		t.Errorf("Expected testValue to be 'initialized', got %v", testValue)
 	}
 
-	lastCommand, err := tuiManager.GetStateViaJS("test-mode:lastCommand")
+	lastCommand, err := tuiManager.GetStateForTest("test-mode:lastCommand")
 	if err != nil {
 		t.Fatalf("Failed to get lastCommand: %v", err)
 	}
@@ -1807,7 +1807,7 @@ func TestScriptStateVerification(t *testing.T) {
 	}
 
 	// Verify state using test helpers
-	counterValue, err := tuiManager.GetStateViaJS("state-test:counter")
+	counterValue, err := tuiManager.GetStateForTest("state-test:counter")
 	if err != nil {
 		t.Fatalf("Failed to get counter state: %v", err)
 	}
@@ -1815,7 +1815,7 @@ func TestScriptStateVerification(t *testing.T) {
 		t.Errorf("Expected counter to be 5, got %v (type %T)", counterValue, counterValue)
 	}
 
-	messagesValue, err := tuiManager.GetStateViaJS("state-test:messages")
+	messagesValue, err := tuiManager.GetStateForTest("state-test:messages")
 	if err != nil {
 		t.Fatalf("Failed to get messages state: %v", err)
 	}
@@ -1823,7 +1823,7 @@ func TestScriptStateVerification(t *testing.T) {
 		t.Errorf("Expected 3 messages, got %v (type %T)", messagesValue, messagesValue)
 	}
 
-	configValue, err := tuiManager.GetStateViaJS("state-test:config")
+	configValue, err := tuiManager.GetStateForTest("state-test:config")
 	if err != nil {
 		t.Fatalf("Failed to get config state: %v", err)
 	}

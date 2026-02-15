@@ -451,7 +451,7 @@ func TestNativeModuleErrorHandling(t *testing.T) {
 		if err == nil {
 			t.Error("Expected error from panic, got none")
 		} else {
-			// Verify it's a ScriptPanicError
+			// Verify it's a scriptPanicError
 			if !strings.Contains(err.Error(), "panic") {
 				t.Logf("Panic error message: %v", err)
 			}

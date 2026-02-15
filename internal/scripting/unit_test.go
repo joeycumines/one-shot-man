@@ -266,7 +266,7 @@ func TestCommandExecution(t *testing.T) {
 	}
 
 	// Verify command was executed using test helper
-	test1Executed, err := tuiManager.GetStateViaJS("command-test-mode:test1_executed")
+	test1Executed, err := tuiManager.GetStateForTest("command-test-mode:test1_executed")
 	if err != nil {
 		t.Fatalf("Failed to get test1_executed state: %v", err)
 	}

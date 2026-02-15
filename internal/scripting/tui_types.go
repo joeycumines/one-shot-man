@@ -174,8 +174,8 @@ type PromptColors struct {
 	ScrollbarBG             prompt.Color
 }
 
-// HistoryConfig represents history configuration for a prompt.
-type HistoryConfig struct {
+// historyConfig represents history configuration for a prompt.
+type historyConfig struct {
 	Enabled bool
 	File    string
 	Size    int

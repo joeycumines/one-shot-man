@@ -43,7 +43,7 @@ type Runtime struct {
 	registry *require.Registry
 
 	// timeout is the maximum duration to wait for RunOnLoopSync operations.
-	// Default is DefaultSyncTimeout. Set to 0 to disable timeout (not recommended).
+	// Default is defaultSyncTimeout. Set to 0 to disable timeout (not recommended).
 	timeout time.Duration
 
 	// eventLoopGoroutineID is captured at initialization for deadlock prevention.
@@ -60,8 +60,8 @@ type Runtime struct {
 	cancel context.CancelFunc
 }
 
-// DefaultSyncTimeout is the maximum duration to wait for RunOnLoopSync operations.
-const DefaultSyncTimeout = 5 * time.Second
+// defaultSyncTimeout is the maximum duration to wait for RunOnLoopSync operations.
+const defaultSyncTimeout = 5 * time.Second
 
 // NewRuntime creates a new Runtime with an initialized event loop.
 // The event loop is automatically started and runs in a background goroutine.
@@ -93,7 +93,7 @@ func NewRuntimeWithRegistry(ctx context.Context, registry *require.Registry) (*R
 		registry: registry,
 		ctx:      childCtx,
 		cancel:   cancel,
-		timeout:  DefaultSyncTimeout,
+		timeout:  defaultSyncTimeout,
 	}
 
 	// Start the event loop

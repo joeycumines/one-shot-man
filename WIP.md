@@ -9,12 +9,11 @@
 - **T025**: ✅ DONE — 54 new bt tests (76.8%→91.3%), fixed 2 flaky TOCTOU tests, Rule of Two passed
 - **T026**: ✅ DONE — ~40 new pabt tests (78.5%→93.6%), coverage_gaps_test.go, committed as 45bf8cd
 - **T027**: ✅ DONE — ~60 new bubbletea tests (75.8%→91.2%), 3 bug fixes, fixed pre-existing data race, committed as 78cf712
-- **Blueprint**: REWRITTEN — 71 tasks (T021-T091), exhaustive, flat, no estimates, no priorities
 - **T028**: ✅ DONE — 28 new fetch tests (91.4%→97.4%), no bugs found, Rule of Two passed
 - **T029**: ✅ DONE — 27 new edge-case tests (99.2% unchanged, sole gap is defensive dead code), committed
 - **T030**: ✅ DONE — 15 new grpc tests (93.2%→96.2%), jsLoadDescriptorSet+jsDial now 100%, no bugs found
 - **T031**: ✅ DONE — 39 new bubblezone tests (0%→98.7%), 2 bug fixes (nil guards), created from scratch
 - **T032**: ✅ DONE — ~80 new tview+lipgloss tests (tview 68.5%→96.4%, lipgloss 58.0%→99.0%), 1 bug fix (nil guard in tview Require)
-- **Blueprint**: REWRITTEN — 71 tasks (T021-T091), exhaustive, flat, no estimates, no priorities
-- **Next**: T033 — Coverage audit: builtin template, time, nextintegerid, unicodetext, argv, scrollbar
+- **T033**: ✅ DONE — ~42 new tests across 5 files, 6 bug fixes (template 80.9→95.7%, time 100%, nextintegerid 87.0→92.9%, unicodetext 92.5→100%, argv 82.8→86.2%, scrollbar 90.9→92.7%)
+- **Next**: T034 — Coverage audit: internal/builtin/bubbles (textarea + viewport)
 - **Approach**: Execute tasks sequentially, verify via Rule of Two, commit, continue

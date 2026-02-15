@@ -40,7 +40,7 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 		// Get or create exports object
 		exportsVal := module.Get("exports")
 		var exports *goja.Object
-		if goja.IsUndefined(exportsVal) || goja.IsNull(exportsVal) {
+		if exportsVal == nil || goja.IsUndefined(exportsVal) || goja.IsNull(exportsVal) {
 			exports = runtime.NewObject()
 			_ = module.Set("exports", exports)
 		} else {
@@ -155,13 +155,13 @@ func newTemplateWrapper(runtime *goja.Runtime, name string) map[string]interface
 	}
 
 	// option(...opts: string[]): Template
-	result["option"] = func(call goja.FunctionCall) map[string]interface{} {
+	result["option"] = func(call goja.FunctionCall) goja.Value {
 		opts := make([]string, len(call.Arguments))
 		for i, arg := range call.Arguments {
 			opts[i] = arg.String()
 		}
 		tw.tmpl = tw.tmpl.Option(opts...)
-		return result
+		return runtime.ToValue(result)
 	}
 
 	return result

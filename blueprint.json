@@ -92,7 +92,8 @@
     {
       "task": "T033: Coverage audit: builtin template, time, nextintegerid, unicodetext, argv, scrollbar",
       "description": "Coverage for 6 small packages (each 1 source + 1 test file). Template rendering, time APIs, integer ID gen, unicode text width, builtin argv parsing, scrollbar options/rendering. Achieve 100% effective coverage each.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage: template 80.9%→95.7%, time 100% (unchanged), nextintegerid 87.0%→92.9%, unicodetext 92.5%→100%, argv 82.8%→86.2%, scrollbar 90.9%→92.7%. Fixed 6 bugs: template nil-guard for exportsVal, template option() return type (map→goja.Value), unicodetext nil-guard for exportsVal, nextintegerid 4 nil-guards (listVal, lengthVal, itemVal, idVal). ~42 new tests across 5 coverage_gaps_test.go files. Remaining uncovered lines in all packages are defensive dead code (double-nil-guards after prior checks, recover blocks for goja-handled throws, clamp+re-clamp guards). Rule of Two passed."
     },
     {
       "task": "T034: Coverage audit: internal/builtin/bubbles (textarea + viewport)",

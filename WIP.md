@@ -19,5 +19,6 @@
 - **T035**: ✅ DONE — ~40 new tests, 1 data race fix (engine_core.go context.AfterFunc), coverage 93.0% combined
 - **T036**: ✅ DONE — ~80 new tests in tui_coverage_gaps_test.go (2387 lines), coverage 80.1% → 86.7%, 9 TUI files covered, no bugs found
 - **T037**: ✅ DONE — ~60 new tests in state_coverage_gaps_test.go (~1700 lines), coverage 86.7% → 89.0%, 6 state/context/API files covered, no bugs found
-- **Next**: T038 — Coverage audit: internal/scripting session and terminal
+- **T038**: ✅ DONE — ~40 new tests in session_terminal_coverage_gaps_test.go, coverage 89.0% → 89.4%, logging.go all 100%, GetSessionID/initializeStateManager 100%, NewTerminal 100%, debug stubs verified, no bugs found
+- **Next**: T039 — Coverage audit: internal/command script-executing commands
 - **Approach**: Execute tasks sequentially, verify via Rule of Two, commit, continue

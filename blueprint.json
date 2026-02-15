@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T037 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management. Next: T038 (scripting session and terminal)."
+    "currentState": "T001-T038 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal. Next: T039 (command script-executing commands)."
   },
   "sequentialTasks": [
     {
@@ -122,7 +122,8 @@
     {
       "task": "T038: Coverage audit: internal/scripting session and terminal",
       "description": "Coverage for session_id_common.go, terminal.go, logging.go, debug_assertions.go/stub. Cover session ID logic, terminal creation, logging infrastructure, debug assertion paths (both stub and enabled). Achieve 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage: scripting package 89.0% → 89.4%. ~40 new tests in session_terminal_coverage_gaps_test.go. logging.go all functions 100% (WithAttrs, WithGroup, Handle with PC/source/fileHandler/eviction, Enabled, GetRecentLogs edge cases, SearchLogs attr key/value/case-insensitive, ClearLogs, Logger, Printf, PrintfToTUI, all levels, SetTUISink). session_id_common.go GetSessionID 100%, initializeStateManager 100% (unknown backend, empty session, env override, override beats env, backend error cleanup via custom cleanupTrackingBackend, load error via loadErrorBackend). terminal.go NewTerminal 100%. debug_assertions_stub.go all 4 no-ops verified. Remaining: discoverSessionID 75% (defensive dead code), terminal.Run 0% (requires live terminal). No bugs found. Rule of Two passed."
     },
     {
       "task": "T039: Coverage audit: internal/command script-executing commands",

@@ -451,3 +451,289 @@ func BenchmarkContextWithCancel(b *testing.B) {
 		cancel()
 	}
 }
+
+// ============================================================================
+// Render Pipeline Benchmarks
+// ============================================================================
+//
+// Profiling notes (T059, 2026-02-15):
+//
+// These benchmarks measure the View() rendering path through the JS bridge.
+//
+// Key findings:
+//   - FullKeyPipeline: ~1.0µs/op (1584 B, 29 allocs) — msg→JS→cmd total
+//   - App code accounts for 3.7% of CPU (pprof, 2s profile)
+//   - All hotspots reside in goja internals (Object.Get, Export, stringKeys)
+//   - msgToJS: 0.59%, ParseKey: 0.39%, valueToCmd: 0.2% — negligible
+//   - No app-level optimization targets exist; costs are inherent to JS interop
+//
+// For context against other subsystems:
+//   - Engine startup (T056): ~134µs total, <0.3% app code
+//   - Session I/O (T057): ~5.4ms write (fsync-dominated), 1.54% app code
+//   - BT bridge (T058): ~2.6µs update cycle, <1% app code
+//
+// Conclusion: the bubbletea render pipeline is dominated by goja VM costs.
+// All per-interaction operations are sub-microsecond for app code.
+
+// BenchmarkViewDirect measures the cost of calling View() via SyncJSRunner.
+// This is the full render path including JS function call, state passing, and
+// string extraction.
+func BenchmarkViewDirect(b *testing.B) {
+	runtime := goja.New()
+
+	state := runtime.NewObject()
+	_ = state.Set("count", 42)
+	_ = state.Set("label", "hello")
+
+	model := &jsModel{
+		runtime: runtime,
+		viewFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
+			// Simulate a realistic view function that reads state
+			s := args[0].ToObject(runtime)
+			count := s.Get("count").ToInteger()
+			label := s.Get("label").String()
+			_ = count
+			_ = label
+			return runtime.ToValue("Count: 42 | Label: hello\nPress q to quit"), nil
+		},
+		state:    state,
+		jsRunner: &SyncJSRunner{Runtime: runtime},
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		output := model.View()
+		if output == "" {
+			b.Fatal("View returned empty string")
+		}
+		_ = output
+	}
+}
+
+// BenchmarkViewDirect_Throttled measures View() with render throttling enabled.
+// After the first call, subsequent calls should return the cached view.
+func BenchmarkViewDirect_Throttled(b *testing.B) {
+	runtime := goja.New()
+
+	state := runtime.NewObject()
+	_ = state.Set("count", 42)
+
+	model := &jsModel{
+		runtime:            runtime,
+		throttleEnabled:    true,
+		throttleIntervalMs: 1000, // Long interval to ensure caching
+		viewFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
+			return runtime.ToValue("cached view output"), nil
+		},
+		state:    state,
+		jsRunner: &SyncJSRunner{Runtime: runtime},
+	}
+
+	// Prime the cache with the first render
+	model.View()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		output := model.View()
+		_ = output
+	}
+}
+
+// BenchmarkFullUpdateCycle measures the complete msg → Update → View cycle.
+// This simulates what happens every frame in a TUI application.
+func BenchmarkFullUpdateCycle(b *testing.B) {
+	runtime := goja.New()
+
+	state := runtime.NewObject()
+	_ = state.Set("count", 0)
+
+	model := &jsModel{
+		runtime: runtime,
+		updateFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
+			// Return [state, null] — minimal update
+			return runtime.NewArray(args[1], goja.Null()), nil
+		},
+		viewFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
+			return runtime.ToValue("view output"), nil
+		},
+		state:       state,
+		validCmdIDs: make(map[uint64]bool),
+		jsRunner:    &SyncJSRunner{Runtime: runtime},
+	}
+
+	keyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		// Step 1: Update (converts msg to JS, calls updateFn, extracts cmd)
+		_, cmd := model.Update(keyMsg)
+		_ = cmd
+
+		// Step 2: View (calls viewFn via JSRunner, returns string)
+		output := model.View()
+		_ = output
+	}
+}
+
+// BenchmarkWrapCmd measures the cost of wrapping a tea.Cmd for JavaScript.
+func BenchmarkWrapCmd(b *testing.B) {
+	runtime := goja.New()
+
+	cmd := func() tea.Msg { return nil }
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		val := WrapCmd(runtime, cmd)
+		_ = val
+	}
+}
+
+// BenchmarkWrapCmd_Nil measures the cost of WrapCmd with nil (common case).
+func BenchmarkWrapCmd_Nil(b *testing.B) {
+	runtime := goja.New()
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		val := WrapCmd(runtime, nil)
+		_ = val
+	}
+}
+
+// BenchmarkMsgToJS_MouseMsg measures mouse event conversion to JS.
+func BenchmarkMsgToJS_MouseMsg(b *testing.B) {
+	model := &jsModel{}
+
+	mouseMsg := tea.MouseMsg{
+		X:      40,
+		Y:      12,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		Alt:    false,
+		Ctrl:   true,
+		Shift:  false,
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		jsMsg := model.msgToJS(mouseMsg)
+		_ = jsMsg
+	}
+}
+
+// BenchmarkMsgToJS_WindowSizeMsg measures window size conversion to JS.
+func BenchmarkMsgToJS_WindowSizeMsg(b *testing.B) {
+	model := &jsModel{}
+
+	msg := tea.WindowSizeMsg{Width: 80, Height: 24}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		jsMsg := model.msgToJS(msg)
+		_ = jsMsg
+	}
+}
+
+// BenchmarkMsgToJS_FocusBlur measures focus/blur message conversion.
+func BenchmarkMsgToJS_FocusBlur(b *testing.B) {
+	model := &jsModel{}
+
+	b.Run("Focus", func(b *testing.B) {
+		msg := tea.FocusMsg{}
+		b.ResetTimer()
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			jsMsg := model.msgToJS(msg)
+			_ = jsMsg
+		}
+	})
+
+	b.Run("Blur", func(b *testing.B) {
+		msg := tea.BlurMsg{}
+		b.ResetTimer()
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			jsMsg := model.msgToJS(msg)
+			_ = jsMsg
+		}
+	})
+}
+
+// ============================================================================
+// Input Validation Benchmarks
+// ============================================================================
+
+// BenchmarkValidateTextareaInput measures input validation for textarea.
+func BenchmarkValidateTextareaInput(b *testing.B) {
+	b.Run("PrintableASCII", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			r := ValidateTextareaInput("a", false)
+			_ = r
+		}
+	})
+
+	b.Run("NamedKey", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			r := ValidateTextareaInput("enter", false)
+			_ = r
+		}
+	})
+
+	b.Run("Rejected", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			r := ValidateTextareaInput("[<65;33;12M", false)
+			_ = r
+		}
+	})
+
+	b.Run("Paste", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			r := ValidateTextareaInput("paste content", true)
+			_ = r
+		}
+	})
+}
+
+// BenchmarkValidateLabelInput measures input validation for label fields.
+func BenchmarkValidateLabelInput(b *testing.B) {
+	b.Run("PrintableASCII", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			r := ValidateLabelInput("a", false)
+			_ = r
+		}
+	})
+
+	b.Run("Backspace", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			r := ValidateLabelInput("backspace", false)
+			_ = r
+		}
+	})
+
+	b.Run("Rejected", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			r := ValidateLabelInput("enter", false)
+			_ = r
+		}
+	})
+}

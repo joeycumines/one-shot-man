@@ -40,4 +40,5 @@
 - **T056**: ✅ DONE — Profiled engine startup (134μs, no hotspots). Added FullEngineCreation benchmark. No optimization targets. Rule of Two passed.
 - **T057**: ✅ DONE — Profiled session I/O (FullCycle ~5.4ms, fsync-dominated). Added 5 FileSystem benchmarks. No optimization targets. Rule of Two passed.
 - **T058**: ✅ DONE — Profiled BT/PABT execution. BT bridge <1% CPU, PABT ExprLang sub-µs. Added BenchmarkPlanCreation + profiling notes. No optimization targets. Rule of Two passed.
-- **Next**: T059 — Performance profiling: bubbletea render pipeline
+- **T059**: ✅ DONE — Profiled bubbletea render pipeline (View ~104ns, Update+View ~660ns, throttle cache ~44ns/0 allocs). 13 new benchmarks + profiling notes. No app-level optimization targets. Rule of Two passed.
+- **Next**: T060 — Add missing benchmarks

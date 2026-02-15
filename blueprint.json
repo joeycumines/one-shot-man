@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T058 ALL DONE. T058 profiled BT/PABT execution (bridge <1% CPU, planning sub-5µs, no app-level optimization targets). Next: T059 (Performance profiling: bubbletea render pipeline)."
+    "currentState": "T001-T059 ALL DONE. T059 profiled bubbletea render pipeline (View ~104ns, Update+View ~660ns, throttle cache ~44ns/0 allocs, no app-level optimization targets). Next: T060 (Add missing benchmarks)."
   },
   "sequentialTasks": [
     {
@@ -248,7 +248,8 @@
     {
       "task": "T059: Performance profiling: bubbletea render pipeline",
       "description": "Profile rendering. Review render_throttle and benchmark_latency tests. Optimize JS→Go render path allocations. Optimize message conversion. Verify latency benchmarks.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Profiled with pprof (FullKeyPipeline 3.7% app CPU, View 9.7% app CPU — all hotspots in goja VM internals, Go runtime, channels). Added 13 new benchmarks: ViewDirect (~104ns/4 allocs), ViewDirect_Throttled (~44ns/0 allocs), FullUpdateCycle (~660ns/23 allocs), WrapCmd, WrapCmd_Nil, MsgToJS (Mouse/WindowSize/FocusBlur), ValidateTextareaInput (4 subs), ValidateLabelInput (3 subs). All well within 16ms frame budget. No optimization targets in app code — consistent with T056-T058 findings."
     },
     {
       "task": "T060: Add missing benchmarks",

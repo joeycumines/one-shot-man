@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T044 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal, command script-executing commands, command utility commands + data processing, command registry/base/dispatch, goroutineid, testutil, mouseharness, pickandplace, cmd/osm. Next: T046 (.deadcodeignore audit)."
+    "currentState": "T001-T044 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal, command script-executing commands, command utility commands + data processing, command registry/base/dispatch, goroutineid, testutil, mouseharness, pickandplace, cmd/osm. Next: T047 (command boilerplate unification)."
   },
   "sequentialTasks": [
     {
@@ -170,7 +170,8 @@
     {
       "task": "T046: Audit .deadcodeignore for stale entries",
       "description": "Review all .deadcodeignore entries. Verify each symbol/package still exists in codebase. Remove stale entries. Verify inline comments justify each remaining entry. Run 'make deadcode' to confirm clean. Full lint suite must pass.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Removed stale internal/termtest/* entries (directory no longer exists). All 15 remaining entries verified: symbols confirmed via grep, packages confirmed via file_search, comments justify each exception. make deadcode and full lint suite pass. Rule of Two passed."
     },
     {
       "task": "T047: Command boilerplate unification",

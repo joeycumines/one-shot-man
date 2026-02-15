@@ -5,8 +5,6 @@
 # DO NOT ADD IGNORES TO THIS FILE WITH THE INTENT OF "WIRING THEM UP LATER"
 
 # Test helper packages — only used from test code across multiple packages.
-internal/termtest/*
-internal\termtest\*
 internal/testutil/*
 internal\testutil\*
 internal/mouseharness/*

@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T053 ALL DONE. T053 reduced command package API surface (deleted unused ContextCommand interface, unexported ListBuiltin/ListScript/ScriptCommand/NewScriptCommand). Next: T054 (API surface optimization: storage package)."
+    "currentState": "T001-T056 ALL DONE. T056 profiled engine startup (134μs, no hotspots, no optimization targets). Next: T057 (Performance profiling: session I/O)."
   },
   "sequentialTasks": [
     {
@@ -230,7 +230,8 @@
     {
       "task": "T056: Performance profiling: scripting engine startup",
       "description": "Profile startup with pprof. Identify expensive init: Goja VM, module registration, global setup, require system. Optimize (lazy init, caching, parallel where safe). Verify against benchmarks. No regressions.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Profiled with pprof (2s CPU profile). FullEngineCreation: ~134μs/op, ~161KB, ~862 allocs. App code <0.3% of CPU (runtime scheduling/GC dominant). VMCreation ~480ns, RuntimeCreation ~18μs, remaining ~116μs spread evenly across ContextManager, TerminalIO, TUIManager, builtin.Register (20 modules), require.Enable, setupGlobals, Close. No single function is a hotspot. No optimization targets. Added FullEngineCreation benchmark with profiling notes. Removed misleading ModuleRegistration benchmark (was identical to RuntimeCreation). Rule of Two passed."
     },
     {
       "task": "T057: Performance profiling: session I/O",

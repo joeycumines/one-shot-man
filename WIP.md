@@ -37,4 +37,5 @@
 - **T053**: ✅ DONE — Deleted unused ContextCommand interface (+context import). Unexported: ListBuiltin→listBuiltin, ListScript→listScript, ScriptCommand→scriptCommand, NewScriptCommand→newScriptCommand. Assessed but kept: BaseCommand (43+ refs), ScriptDiscovery (40+ refs). 10 files. Rule of Two passed.
 - **T054**: ✅ DONE — Unexported 4 symbols: SessionArchiveDir→sessionArchiveDir, SanitizeFilename→sanitizeFilename, RenameError→renameError, ErrWouldBlock→errWouldBlock. 9 files. Rule of Two passed.
 - **T055**: ✅ DONE — Renamed pabt.ModuleLoader→pabt.Require (naming consistency). Removed BTBridge type alias. 4 files, 29 test renames. Rule of Two passed.
-- **Next**: T056 — Performance profiling: scripting engine startup
+- **T056**: ✅ DONE — Profiled engine startup (134μs, no hotspots). Added FullEngineCreation benchmark. No optimization targets. Rule of Two passed.
+- **Next**: T057 — Performance profiling: session I/O

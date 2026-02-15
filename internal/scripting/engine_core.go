@@ -657,17 +657,17 @@ func (e *Engine) setupGlobals() {
 
 	// TUI and Mode management functions
 	_ = e.vm.Set("tui", map[string]interface{}{
-		"registerMode":         e.tuiManager.jsRegisterMode,
-		"switchMode":           e.tuiManager.jsSwitchMode,
-		"getCurrentMode":       e.tuiManager.jsGetCurrentMode,
-		"registerCommand":      e.tuiManager.jsRegisterCommand,
-		"listModes":            e.tuiManager.jsListModes,
-		"createState":          e.jsCreateState,
-		"createPrompt":         e.tuiManager.jsCreatePrompt,
-		"runPrompt":            e.tuiManager.jsRunPrompt,
-		"registerCompleter":    e.tuiManager.jsRegisterCompleter,
-		"setCompleter":         e.tuiManager.jsSetCompleter,
-		"registerKeyBinding":   e.tuiManager.jsRegisterKeyBinding,
+		"registerMode":       e.tuiManager.jsRegisterMode,
+		"switchMode":         e.tuiManager.jsSwitchMode,
+		"getCurrentMode":     e.tuiManager.jsGetCurrentMode,
+		"registerCommand":    e.tuiManager.jsRegisterCommand,
+		"listModes":          e.tuiManager.jsListModes,
+		"createState":        e.jsCreateState,
+		"createPrompt":       e.tuiManager.jsCreatePrompt,
+		"runPrompt":          e.tuiManager.jsRunPrompt,
+		"registerCompleter":  e.tuiManager.jsRegisterCompleter,
+		"setCompleter":       e.tuiManager.jsSetCompleter,
+		"registerKeyBinding": e.tuiManager.jsRegisterKeyBinding,
 		// requestExit signals that the shell loop should exit after the current command completes.
 		// This is checked by the exit checker configured on the prompt.
 		"requestExit": func() {

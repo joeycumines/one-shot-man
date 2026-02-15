@@ -1599,9 +1599,10 @@ func TestGitRefCompletion_Descriptions(t *testing.T) {
 	}
 }
 
-// TestGitRefCompletion_StagedRefAvailable verifies that --staged is included
-// as a common ref suggestion.
-func TestGitRefCompletion_StagedRefAvailable(t *testing.T) {
+// TestGitRefCompletion_StagedNotInGitRef verifies that --staged is NOT included
+// in gitref common refs (it belongs in command-level flagDefs to avoid
+// duplication with the flag completer).
+func TestGitRefCompletion_StagedNotInGitRef(t *testing.T) {
 	tmp := t.TempDir()
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -1610,23 +1611,16 @@ func TestGitRefCompletion_StagedRefAvailable(t *testing.T) {
 	}
 
 	sugg := getGitRefSuggestions("")
-	found := false
 	for _, s := range sugg {
 		if s.Text == "--staged" {
-			found = true
-			if s.Description != "staged changes (index vs HEAD)" {
-				t.Errorf("--staged: expected description 'staged changes (index vs HEAD)', got %q", s.Description)
-			}
+			t.Error("--staged should not be in gitref common refs; it belongs in diff command flagDefs")
 		}
-	}
-	if !found {
-		t.Error("expected --staged in common ref suggestions")
 	}
 }
 
-// TestGitRefCompletion_StagedRefPrefixFilter verifies that --staged is only
-// shown when the prefix matches.
-func TestGitRefCompletion_StagedRefPrefixFilter(t *testing.T) {
+// TestGitRefCompletion_DashDashPrefixNoMatches verifies that gitref returns
+// no suggestions for a "--" prefix since flags are handled by the flag completer.
+func TestGitRefCompletion_DashDashPrefixNoMatches(t *testing.T) {
 	tmp := t.TempDir()
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -1634,23 +1628,10 @@ func TestGitRefCompletion_StagedRefPrefixFilter(t *testing.T) {
 		t.Fatalf("chdir: %v", err)
 	}
 
-	// "--s" should include --staged
 	sugg := getGitRefSuggestions("--s")
-	found := false
 	for _, s := range sugg {
-		if s.Text == "--staged" {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("expected --staged for prefix '--s'")
-	}
-
-	// "HE" should NOT include --staged
-	sugg = getGitRefSuggestions("HE")
-	for _, s := range sugg {
-		if s.Text == "--staged" {
-			t.Error("unexpected --staged for prefix 'HE'")
+		if strings.HasPrefix(s.Text, "--") {
+			t.Errorf("unexpected flag %q in gitref suggestions; flags belong in flagDefs", s.Text)
 		}
 	}
 }
@@ -2217,5 +2198,223 @@ func TestExecutableCompletion_PrefixWithPartialArg(t *testing.T) {
 			names[i] = s.Text
 		}
 		t.Errorf("expected testexec in suggestions, got: %v", names)
+	}
+}
+
+// === Flag completion for diff command (T071) ===
+
+// TestDiffFlagCompletion_StagedViaFlagDefs verifies that --staged is available
+// as a flag definition on the diff command (not via gitref common refs).
+func TestDiffFlagCompletion_StagedViaFlagDefs(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"diff": {
+				Name:          "diff",
+				Description:   "Add git diff",
+				ArgCompleters: []string{"gitref", "flag"},
+				FlagDefs: []FlagDef{
+					{Name: "staged", Description: "Staged changes (index vs HEAD)"},
+					{Name: "stat", Description: "Show diffstat summary"},
+					{Name: "name-only", Description: "Show only names of changed files"},
+				},
+			},
+		},
+		commandOrder: []string{"diff"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "diff --" should show all three flags
+	sugg := tm.getDefaultCompletionSuggestionsFor("diff --", "diff --")
+	flagTexts := make(map[string]string) // text -> description
+	for _, s := range sugg {
+		if strings.HasPrefix(s.Text, "--") {
+			flagTexts[s.Text] = s.Description
+		}
+	}
+
+	expectedFlags := map[string]string{
+		"--staged":    "Staged changes (index vs HEAD)",
+		"--stat":      "Show diffstat summary",
+		"--name-only": "Show only names of changed files",
+	}
+	for flag, desc := range expectedFlags {
+		if got, ok := flagTexts[flag]; !ok {
+			t.Errorf("expected flag %q in suggestions", flag)
+		} else if got != desc {
+			t.Errorf("flag %q: expected description %q, got %q", flag, desc, got)
+		}
+	}
+}
+
+// TestDiffFlagCompletion_PrefixFilter verifies that flag suggestions are
+// filtered by the current prefix.
+func TestDiffFlagCompletion_PrefixFilter(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"diff": {
+				Name:          "diff",
+				Description:   "Add git diff",
+				ArgCompleters: []string{"gitref", "flag"},
+				FlagDefs: []FlagDef{
+					{Name: "staged", Description: "Staged changes"},
+					{Name: "stat", Description: "Show diffstat"},
+					{Name: "name-only", Description: "Names only"},
+				},
+			},
+		},
+		commandOrder: []string{"diff"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "--sta" should match --staged and --stat but not --name-only
+	sugg := tm.getDefaultCompletionSuggestionsFor("diff --sta", "diff --sta")
+	var flagTexts []string
+	for _, s := range sugg {
+		if strings.HasPrefix(s.Text, "--") {
+			flagTexts = append(flagTexts, s.Text)
+		}
+	}
+
+	sort.Strings(flagTexts)
+	if len(flagTexts) != 2 {
+		t.Fatalf("expected 2 flags matching '--sta', got %d: %v", len(flagTexts), flagTexts)
+	}
+	if flagTexts[0] != "--staged" || flagTexts[1] != "--stat" {
+		t.Errorf("expected [--staged, --stat], got %v", flagTexts)
+	}
+}
+
+// TestDiffFlagCompletion_GitrefAndFlagCombined verifies that the diff command
+// returns both gitref suggestions and flag suggestions simultaneously.
+func TestDiffFlagCompletion_GitrefAndFlagCombined(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"diff": {
+				Name:          "diff",
+				Description:   "Add git diff",
+				ArgCompleters: []string{"gitref", "flag"},
+				FlagDefs: []FlagDef{
+					{Name: "staged", Description: "Staged changes"},
+				},
+			},
+		},
+		commandOrder: []string{"diff"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "diff " with empty prefix should return both gitref and flag suggestions
+	sugg := tm.getDefaultCompletionSuggestionsFor("diff ", "diff ")
+	hasGitRef := false
+	hasFlag := false
+	for _, s := range sugg {
+		if s.Text == "HEAD" {
+			hasGitRef = true
+		}
+		if s.Text == "--staged" {
+			hasFlag = true
+		}
+	}
+	if !hasGitRef {
+		t.Error("expected gitref suggestion (HEAD) for diff command")
+	}
+	if !hasFlag {
+		t.Error("expected flag suggestion (--staged) for diff command")
+	}
+}
+
+// TestDiffFlagCompletion_NoDuplicateStaged verifies that --staged does not
+// appear twice (once from gitref, once from flagDefs).
+func TestDiffFlagCompletion_NoDuplicateStaged(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"diff": {
+				Name:          "diff",
+				Description:   "Add git diff",
+				ArgCompleters: []string{"gitref", "flag"},
+				FlagDefs: []FlagDef{
+					{Name: "staged", Description: "Staged changes"},
+				},
+			},
+		},
+		commandOrder: []string{"diff"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	sugg := tm.getDefaultCompletionSuggestionsFor("diff ", "diff ")
+	count := 0
+	for _, s := range sugg {
+		if s.Text == "--staged" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 --staged suggestion, got %d", count)
+	}
+}
+
+// TestFlagCompletion_GoalFlagDefsPassthrough verifies that the FlagDefs field
+// propagates correctly through the command registration pipeline (simulating
+// what goal.js does when passing flagDefs to custom commands).
+func TestFlagCompletion_GoalFlagDefsPassthrough(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"deploy": {
+				Name:          "deploy",
+				Description:   "Deploy to environment",
+				ArgCompleters: []string{"flag"},
+				FlagDefs: []FlagDef{
+					{Name: "env", Description: "Target environment"},
+					{Name: "dry-run", Description: "Simulate without changes"},
+					{Name: "force", Description: "Skip confirmation"},
+				},
+			},
+		},
+		commandOrder: []string{"deploy"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "deploy --" should show all three flags
+	sugg := tm.getDefaultCompletionSuggestionsFor("deploy --", "deploy --")
+	flagTexts := make(map[string]bool)
+	for _, s := range sugg {
+		if strings.HasPrefix(s.Text, "--") {
+			flagTexts[s.Text] = true
+		}
+	}
+
+	for _, expected := range []string{"--env", "--dry-run", "--force"} {
+		if !flagTexts[expected] {
+			t.Errorf("expected flag %q in suggestions", expected)
+		}
+	}
+}
+
+// TestFlagCompletion_EmptyFlagDefsSlice verifies that an empty flagDefs slice
+// produces no flag suggestions.
+func TestFlagCompletion_EmptyFlagDefsSlice(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"test": {
+				Name:          "test",
+				Description:   "Test command",
+				ArgCompleters: []string{"flag"},
+				FlagDefs:      []FlagDef{}, // empty
+			},
+		},
+		commandOrder: []string{"test"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	sugg := tm.getDefaultCompletionSuggestionsFor("test --", "test --")
+	for _, s := range sugg {
+		if strings.HasPrefix(s.Text, "--") {
+			t.Errorf("unexpected flag suggestion %q for command with empty flagDefs", s.Text)
+		}
 	}
 }

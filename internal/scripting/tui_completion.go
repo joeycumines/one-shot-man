@@ -208,7 +208,8 @@ func getExecutableSuggestions(prefix string) []prompt.Suggest {
 // commands fail (e.g. not in a git repo), it silently falls back to common ref
 // suggestions only.
 func getGitRefSuggestions(prefix string) []prompt.Suggest {
-	// Common refs and flags always available
+	// Common refs always available (flags like --staged belong in
+	// command-level flagDefs to avoid duplication with the flag completer).
 	commonRefs := []struct {
 		text string
 		desc string
@@ -217,7 +218,6 @@ func getGitRefSuggestions(prefix string) []prompt.Suggest {
 		{"HEAD~1", "1 commit before HEAD"},
 		{"HEAD~2", "2 commits before HEAD"},
 		{"HEAD~3", "3 commits before HEAD"},
-		{"--staged", "staged changes (index vs HEAD)"},
 	}
 
 	var suggestions []prompt.Suggest

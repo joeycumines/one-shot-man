@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 // syncBuffer is a thread-safe bytes.Buffer for use in concurrent follow tests.
@@ -413,6 +414,8 @@ func TestDetectRotation(t *testing.T) {
 
 func TestDetectRotation_FileDeleted(t *testing.T) {
 	t.Parallel()
+	platform := testutil.DetectPlatform(t)
+	testutil.SkipIfWindows(t, platform, "os.Remove on open file fails on Windows (sharing violation)")
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "deleted.log")
 

@@ -356,7 +356,7 @@
     {
       "task": "T077: Cross-platform: Windows",
       "description": "Run 'make make-all-run-windows' (host 'moo'). Fix Windows-specific failures. Verify platform paths (session_windows.go, registry_windows.go, atomic_write_windows.go, filelock_windows.go). Zero failures.",
-      "status": "Not Started"
+      "status": "In Progress"
     },
     {
       "task": "T078: Cross-platform: macOS CI parity",

@@ -874,10 +874,10 @@ func TestHasDirPrefix_Cases(t *testing.T) {
 		dir  string
 		want bool
 	}{
-		{"exact_match", "/foo/bar", "/foo/bar", true},
-		{"empty_dir", "/foo/bar", "", false},
-		{"proper_prefix", "/foo/bar/baz", "/foo/bar", true},
-		{"strict_boundary", "/foo/barista", "/foo/bar", false},
+		{"exact_match", filepath.FromSlash("/foo/bar"), filepath.FromSlash("/foo/bar"), true},
+		{"empty_dir", filepath.FromSlash("/foo/bar"), "", false},
+		{"proper_prefix", filepath.FromSlash("/foo/bar/baz"), filepath.FromSlash("/foo/bar"), true},
+		{"strict_boundary", filepath.FromSlash("/foo/barista"), filepath.FromSlash("/foo/bar"), false},
 	}
 
 	for _, tc := range tests {
@@ -900,10 +900,10 @@ func TestPathDepthRelative_Cases(t *testing.T) {
 		base string
 		want int
 	}{
-		{"empty_base", "/foo/bar", "", 0},
-		{"same_dir", "/foo/bar", "/foo/bar", 0},
-		{"one_down", "/foo/bar/baz", "/foo/bar", 1},
-		{"two_down", "/foo/bar/baz/qux", "/foo/bar", 2},
+		{"empty_base", filepath.FromSlash("/foo/bar"), "", 0},
+		{"same_dir", filepath.FromSlash("/foo/bar"), filepath.FromSlash("/foo/bar"), 0},
+		{"one_down", filepath.FromSlash("/foo/bar/baz"), filepath.FromSlash("/foo/bar"), 1},
+		{"two_down", filepath.FromSlash("/foo/bar/baz/qux"), filepath.FromSlash("/foo/bar"), 2},
 	}
 
 	for _, tc := range tests {

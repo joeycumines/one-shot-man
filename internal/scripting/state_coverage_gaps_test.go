@@ -260,7 +260,9 @@ func TestContextManager_WalkDirectory_Symlink(t *testing.T) {
 // TestContextManager_AddDirectoryLocked_WalkError tests addDirectoryLocked error path.
 func TestContextManager_AddDirectoryLocked_WalkError(t *testing.T) {
 	t.Parallel()
-	testutil.SkipIfRoot(t, testutil.DetectPlatform(t), "chmod-based permission test doesn't work as root")
+	platform := testutil.DetectPlatform(t)
+	testutil.SkipIfRoot(t, platform, "chmod-based permission test doesn't work as root")
+	testutil.SkipIfWindows(t, platform, "chmod-based permission test doesn't work on Windows")
 	tmpDir := t.TempDir()
 
 	subDir := filepath.Join(tmpDir, "unreadable")
@@ -557,7 +559,9 @@ func TestContextManager_ToTxtar_CollidingBasenames(t *testing.T) {
 // TestContextManager_AddFileLocked_ReadError tests addFileLocked when file can't be read.
 func TestContextManager_AddFileLocked_ReadError(t *testing.T) {
 	t.Parallel()
-	testutil.SkipIfRoot(t, testutil.DetectPlatform(t), "chmod-based permission test doesn't work as root")
+	platform := testutil.DetectPlatform(t)
+	testutil.SkipIfRoot(t, platform, "chmod-based permission test doesn't work as root")
+	testutil.SkipIfWindows(t, platform, "chmod-based permission test doesn't work on Windows")
 	tmpDir := t.TempDir()
 
 	// Create a file and make it unreadable
@@ -1524,12 +1528,14 @@ func TestContextManager_AbsolutePathFromOwner(t *testing.T) {
 	})
 
 	t.Run("absolute", func(t *testing.T) {
-		abs, err := cm.absolutePathFromOwner("/tmp/absolute.txt")
+		// Use a real absolute path that works on both Unix and Windows
+		absPath := filepath.Join(t.TempDir(), "absolute.txt")
+		abs, err := cm.absolutePathFromOwner(absPath)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if abs != "/tmp/absolute.txt" {
-			t.Errorf("expected /tmp/absolute.txt, got %q", abs)
+		if abs != absPath {
+			t.Errorf("expected %q, got %q", absPath, abs)
 		}
 	})
 }

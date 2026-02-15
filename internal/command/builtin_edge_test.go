@@ -317,11 +317,11 @@ func TestGoalCommandEdgeCases(t *testing.T) {
 		registry := NewDynamicGoalRegistry(GetBuiltInGoals(), discovery)
 
 		cmd := &GoalCommand{
-			BaseCommand: NewBaseCommand("goal", "Test goal command", "goal [options]"),
-			config:      cfg,
-			registry:    registry,
-			interactive: false,
-			list:        false,
+			BaseCommand:       NewBaseCommand("goal", "Test goal command", "goal [options]"),
+			scriptCommandBase: scriptCommandBase{config: cfg},
+			registry:          registry,
+			interactive:       false,
+			list:              false,
 		}
 
 		var stdout bytes.Buffer
@@ -346,11 +346,11 @@ func TestGoalCommandEdgeCases(t *testing.T) {
 		registry := NewDynamicGoalRegistry(GetBuiltInGoals(), discovery)
 
 		cmd := &GoalCommand{
-			BaseCommand: NewBaseCommand("goal", "Test goal command", "goal [options]"),
-			config:      cfg,
-			registry:    registry,
-			list:        true,
-			category:    "nonexistent-category",
+			BaseCommand:       NewBaseCommand("goal", "Test goal command", "goal [options]"),
+			scriptCommandBase: scriptCommandBase{config: cfg},
+			registry:          registry,
+			list:              true,
+			category:          "nonexistent-category",
 		}
 
 		var stdout bytes.Buffer

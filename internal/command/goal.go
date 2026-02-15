@@ -77,20 +77,12 @@ type CommandConfig struct {
 // GoalCommand provides access to pre-written goals
 type GoalCommand struct {
 	*BaseCommand
+	scriptCommandBase
 	interactive bool
 	list        bool
 	category    string
 	run         string
-	config      *config.Config
 	registry    GoalRegistry
-	// testMode prevents launching the interactive TUI during tests while
-	// still executing JS (so onEnter hooks can print to stdout).
-	testMode      bool
-	session       string
-	store         string
-	logLevel      string
-	logPath       string
-	logBufferSize int
 }
 
 // NewGoalCommand creates a new goal command
@@ -101,8 +93,8 @@ func NewGoalCommand(cfg *config.Config, registry GoalRegistry) *GoalCommand {
 			description: "Access pre-written goals for common development tasks",
 			usage:       "goal [options] [goal-name]",
 		},
-		config:   cfg,
-		registry: registry,
+		scriptCommandBase: scriptCommandBase{config: cfg},
+		registry:          registry,
 	}
 }
 
@@ -112,11 +104,7 @@ func (c *GoalCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.list, "l", false, "List available goals")
 	fs.StringVar(&c.category, "c", "", "Filter goals by category")
 	fs.StringVar(&c.run, "r", "", "Run specific goal directly")
-	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
-	fs.StringVar(&c.store, "store", "", "Storage backend to use: 'fs' (default) or 'memory'")
-	fs.StringVar(&c.logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
-	fs.StringVar(&c.logPath, "log-file", "", "Path to log file (JSON output)")
-	fs.IntVar(&c.logBufferSize, "log-buffer", 1000, "Size of in-memory log buffer")
+	c.RegisterFlags(fs)
 }
 
 // Execute runs the goal command
@@ -153,32 +141,11 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	// Create a scripting engine to run the goal (allow explicit session/backend)
 	ctx := context.Background()
 
-	// Resolve logging configuration via config + flags.
-	lc, err := resolveLogConfig(c.logPath, c.logLevel, c.logBufferSize, c.config)
+	engine, cleanup, err := c.PrepareEngine(ctx, stdout, stderr)
 	if err != nil {
 		return err
 	}
-	if lc.logFile != nil {
-		defer lc.logFile.Close()
-	}
-
-	// Create scripting engine with explicit session/storage and logging configuration
-	engine, err := scripting.NewEngineDetailed(ctx, stdout, stderr, c.session, c.store, lc.logFile, lc.bufferSize, lc.level, modulePathOpts(c.config)...)
-	if err != nil {
-		return fmt.Errorf("failed to create scripting engine: %w", err)
-	}
-	defer engine.Close()
-
-	// Start background session cleanup if enabled in config.
-	stopCleanup := maybeStartCleanupScheduler(c.config, c.session)
-	defer stopCleanup()
-
-	if c.testMode {
-		engine.SetTestMode(true)
-	}
-
-	// Inject config-defined hot-snippets so goal.js can pass them to contextManager.
-	injectConfigHotSnippets(engine, c.config)
+	defer cleanup()
 
 	// Marshal goal configuration to JSON for the JavaScript interpreter
 	goalConfigJSON, err := json.Marshal(selectedGoal)

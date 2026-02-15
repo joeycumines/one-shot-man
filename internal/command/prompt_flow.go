@@ -21,14 +21,8 @@ var promptFlowScript string
 // PromptFlowCommand provides the baked-in prompt-flow script functionality.
 type PromptFlowCommand struct {
 	*BaseCommand
-	interactive   bool
-	testMode      bool
-	config        *config.Config
-	session       string
-	store         string
-	logLevel      string
-	logPath       string
-	logBufferSize int
+	scriptCommandBase
+	interactive bool
 }
 
 // NewPromptFlowCommand creates a new prompt-flow command.
@@ -39,7 +33,7 @@ func NewPromptFlowCommand(cfg *config.Config) *PromptFlowCommand {
 			"Interactive prompt builder: goal/context/template -> generate -> assemble",
 			"prompt-flow [options]",
 		),
-		config: cfg,
+		scriptCommandBase: scriptCommandBase{config: cfg},
 	}
 }
 
@@ -47,44 +41,18 @@ func NewPromptFlowCommand(cfg *config.Config) *PromptFlowCommand {
 func (c *PromptFlowCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.interactive, "interactive", true, "Start interactive prompt flow mode (default)")
 	fs.BoolVar(&c.interactive, "i", true, "Start interactive prompt flow mode (short form, default)")
-	fs.BoolVar(&c.testMode, "test", false, "Enable test mode with verbose output")
-	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
-	fs.StringVar(&c.store, "store", "", "Storage backend to use: 'fs' (default) or 'memory'")
-	fs.StringVar(&c.logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
-	fs.StringVar(&c.logPath, "log-file", "", "Path to log file (JSON output)")
-	fs.IntVar(&c.logBufferSize, "log-buffer", 1000, "Size of in-memory log buffer")
+	c.RegisterFlags(fs)
 }
 
 // Execute runs the prompt-flow command.
 func (c *PromptFlowCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	ctx := context.Background()
 
-	// Resolve logging configuration via config + flags.
-	lc, err := resolveLogConfig(c.logPath, c.logLevel, c.logBufferSize, c.config)
+	engine, cleanup, err := c.PrepareEngine(ctx, stdout, stderr)
 	if err != nil {
 		return err
 	}
-	if lc.logFile != nil {
-		defer lc.logFile.Close()
-	}
-
-	// Create scripting engine with explicit session/storage and logging configuration
-	engine, err := scripting.NewEngineDetailed(ctx, stdout, stderr, c.session, c.store, lc.logFile, lc.bufferSize, lc.level, modulePathOpts(c.config)...)
-	if err != nil {
-		return fmt.Errorf("failed to create scripting engine: %w", err)
-	}
-	defer engine.Close()
-
-	// Start background session cleanup if enabled in config.
-	stopCleanup := maybeStartCleanupScheduler(c.config, c.session)
-	defer stopCleanup()
-
-	if c.testMode {
-		engine.SetTestMode(true)
-	}
-
-	// Inject config-defined hot-snippets for contextManager.
-	injectConfigHotSnippets(engine, c.config)
+	defer cleanup()
 
 	// Inject command name for state namespacing
 	const commandName = "prompt-flow"

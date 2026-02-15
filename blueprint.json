@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T044 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal, command script-executing commands, command utility commands + data processing, command registry/base/dispatch, goroutineid, testutil, mouseharness, pickandplace, cmd/osm. Next: T047 (command boilerplate unification)."
+    "currentState": "T001-T047 ALL DONE. Coverage audits complete. T047 command boilerplate unification complete (scriptCommandBase). Next: T048 (JS script boilerplate deduplication)."
   },
   "sequentialTasks": [
     {
@@ -176,7 +176,8 @@
     {
       "task": "T047: Command boilerplate unification",
       "description": "Extract shared boilerplate from 5 script commands. Create scriptCommandBase with: shared fields (config, session, store, logLevel, logPath, etc.), RegisterFlags(), PrepareEngine(). Add signal-aware context (only ScriptingCommand has ctxFactory). Standardize ContextCommand interface. Update all callers and tests.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Created scriptCommandBase struct with 7 shared fields, RegisterFlags(), and PrepareEngine(). All 5 JS script commands (ScriptingCommand, CodeReviewCommand, PromptFlowCommand, GoalCommand, SuperDocumentCommand) refactored to embed scriptCommandBase. 8 new tests for base struct. Fixed builtin_edge_test.go struct literals. Eliminated ~120 lines of duplicated boilerplate. ContextCommand interface unchanged (only used by shell ScriptCommand, not JS commands). Rule of Two passed."
     },
     {
       "task": "T048: JS script boilerplate deduplication",

@@ -28,4 +28,5 @@
 - **T044**: ✅ DONE — 2 new tests in coverage_gaps_test.go (91.4%→94.8%, run 94.5%→98.2%). ConfigLoadError via symlink, CommandFlagParseNonErrHelp via unknown flag. Remaining: main() os.Exit (untestable), global ErrHelp (dead code). No bugs found.
 - **T045**: ✅ DONE — Removed 3 unused threshold constants, verified all security test categories (15+ tests), no timing-dependent failures, fixed t045-test target, Rule of Two passed
 - **T046**: ✅ DONE — Removed stale internal/termtest/* from .deadcodeignore (directory doesn't exist), verified all 15 remaining entries, Rule of Two passed
-- **Next**: T047 — Command boilerplate unification
+- **T047**: ✅ DONE — Created scriptCommandBase with shared fields/RegisterFlags/PrepareEngine, refactored all 5 JS script commands, 8 new tests, Rule of Two passed
+- **Next**: T048 — JS script boilerplate deduplication

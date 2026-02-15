@@ -19,15 +19,9 @@ import (
 // ScriptingCommand provides JavaScript scripting capabilities.
 type ScriptingCommand struct {
 	*BaseCommand
+	scriptCommandBase
 	interactive     bool
 	script          string
-	testMode        bool
-	session         string
-	store           string
-	logPath         string
-	logBufferSize   int
-	logLevel        string
-	config          *config.Config
 	engineFactory   func(context.Context, io.Writer, io.Writer) (*scripting.Engine, error)
 	terminalFactory func(context.Context, *scripting.Engine) terminalRunner
 	// ctxFactory creates the execution context. If nil, uses signal.NotifyContext for proper
@@ -47,8 +41,10 @@ func NewScriptingCommand(cfg *config.Config) *ScriptingCommand {
 			"Execute JavaScript scripts with deferred/declarative API",
 			"script [options] [script-file]",
 		),
-		config:   cfg,
-		logLevel: "info", // Default log level - SetupFlags may override this
+		scriptCommandBase: scriptCommandBase{
+			config:   cfg,
+			logLevel: "info", // Default log level - SetupFlags may override this
+		},
 		// No default engineFactory - Execute() will create the correct one with session/storage params
 		terminalFactory: func(ctx context.Context, engine *scripting.Engine) terminalRunner {
 			return scripting.NewTerminal(ctx, engine)
@@ -62,12 +58,7 @@ func (c *ScriptingCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.interactive, "i", false, "Start interactive scripting terminal (short form)")
 	fs.StringVar(&c.script, "script", "", "JavaScript code to execute directly")
 	fs.StringVar(&c.script, "e", "", "JavaScript code to execute directly (short form)")
-	fs.BoolVar(&c.testMode, "test", false, "Enable test mode with verbose output")
-	fs.StringVar(&c.session, "session", "", "Session ID for state persistence (overrides auto-discovery)")
-	fs.StringVar(&c.store, "store", "", "Storage backend to use: 'fs' (default) or 'memory' (overrides OSM_STORE)")
-	fs.StringVar(&c.logPath, "log-file", "", "Path to log file (JSON output)")
-	fs.IntVar(&c.logBufferSize, "log-buffer", 1000, "Size of in-memory log buffer")
-	fs.StringVar(&c.logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
+	c.RegisterFlags(fs)
 }
 
 // Execute runs the scripting command.
@@ -84,44 +75,34 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	}
 	defer cancel()
 
-	// Resolve logging configuration via config + flags.
-	lc, err := resolveLogConfig(c.logPath, c.logLevel, c.logBufferSize, c.config)
-	if err != nil {
-		return err
-	}
-	if lc.logFile != nil {
-		defer lc.logFile.Close()
-	}
-
-	// Create scripting engine with explicit session configuration (no globals!)
-	engineFactory := c.engineFactory
-	if engineFactory == nil {
-		// Parse module paths from config for require() resolution
-		engineOpts := modulePathOpts(c.config)
-		// Use the new API with explicit parameters to avoid data races
-		engineFactory = func(ctx context.Context, stdout, stderr io.Writer) (*scripting.Engine, error) {
-			return scripting.NewEngineDetailed(ctx, stdout, stderr, c.session, c.store, lc.logFile, lc.bufferSize, lc.level, engineOpts...)
+	// Create scripting engine — use injected factory (tests) or shared base (production).
+	var engine *scripting.Engine
+	var cleanup func()
+	if c.engineFactory != nil {
+		var err error
+		engine, err = c.engineFactory(ctx, stdout, stderr)
+		if err != nil {
+			return fmt.Errorf("failed to create scripting engine: %w", err)
+		}
+		cleanup = func() { engine.Close() }
+		// Manual setup since PrepareEngine wasn't used.
+		if c.testMode {
+			engine.SetTestMode(true)
+		}
+		injectConfigHotSnippets(engine, c.config)
+	} else {
+		var err error
+		engine, cleanup, err = c.PrepareEngine(ctx, stdout, stderr)
+		if err != nil {
+			return err
 		}
 	}
-
-	engine, err := engineFactory(ctx, stdout, stderr)
-	if err != nil {
-		return fmt.Errorf("failed to create scripting engine: %w", err)
-	}
-	defer engine.Close()
-
-	// Start background session cleanup if enabled in config.
-	stopCleanup := maybeStartCleanupScheduler(c.config, c.session)
-	defer stopCleanup()
+	defer cleanup()
 
 	// Set global default logger
 	// Note: We access the internal logger getter. This is the "modular wiring" part -
 	// the engine provides the logger, and the command (entrypoint logic) wires it up.
 	slog.SetDefault(engine.Logger())
-
-	if c.testMode {
-		engine.SetTestMode(true)
-	}
 
 	// Set up global variables
 	// Convention: osm script [options] <script-file> [script-args...]
@@ -134,9 +115,6 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 		scriptArgs = args[1:]
 	}
 	engine.SetGlobal("args", scriptArgs)
-
-	// Inject config-defined hot-snippets for contextManager in user scripts.
-	injectConfigHotSnippets(engine, c.config)
 
 	// PHASE 1: Configuration - Evaluate scripts to define modes and commands.
 	// Load the script file passed as the first argument

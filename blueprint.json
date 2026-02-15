@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T042 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal, command script-executing commands, command utility commands + data processing, command registry/base/dispatch, goroutineid, testutil, mouseharness. Next: T043 (internal/example/pickandplace)."
+    "currentState": "T001-T044 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal, command script-executing commands, command utility commands + data processing, command registry/base/dispatch, goroutineid, testutil, mouseharness, pickandplace, cmd/osm. Next: T045 (benchmark and security tests)."
   },
   "sequentialTasks": [
     {
@@ -152,12 +152,14 @@
     {
       "task": "T043: Coverage audit: internal/example/pickandplace",
       "description": "Run coverage for test-only package (0 impl, 4 test files). Verify all test paths execute correctly. Verify integration, manual mode, bubbletea rendering, simulation consistency. Ensure tests are robust.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Test-only package — no source code to cover (0 .go files, 4 _test.go files). All 32 subtests pass (2.7s). Comprehensive integration test suite verifying: mouse interaction (pick/place/viability), mode switching (auto↔manual with state preservation), WASD movement (single/multi/diagonal/collision/boundary), simulation consistency (physics/collision/pathfinding with dual-VM parity checks). Tests are robust: no timing dependencies (tick-based processing), no race conditions (single-threaded Goja VM), proper boundary testing. No code changes needed."
     },
     {
       "task": "T044: Coverage audit: cmd/osm",
       "description": "Coverage for cmd/osm/ (main.go + main_test.go). Cover entry point, command dispatch, global flag parsing, error handling. Test: valid commands, invalid commands, help flags, version output, unknown flags. Achieve 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage 91.4% → 94.8%. run() 94.5% → 98.2%. 2 new tests in coverage_gaps_test.go. TestRun_ConfigLoadError covers config.Load error → NewConfig fallback (triggered via symlink detection). TestRun_CommandFlagParseNonErrHelp covers command-level fs.Parse returning non-ErrHelp error (triggered via unknown flag on version command). Remaining 2 uncovered blocks: main() os.Exit (structurally untestable) and global ErrHelp (dead code — -h/-help are defined flags, Parse never returns ErrHelp). No bugs found. Rule of Two passed."
     },
     {
       "task": "T045: Audit benchmark and security tests",

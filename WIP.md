@@ -24,4 +24,6 @@
 - **T040**: ✅ DONE — ~42 new tests in util_cmd_coverage_gaps_test.go, coverage 81.0% → 86.3%, no bugs found, Rule of Two passed
 - **T041**: ✅ DONE — ~25 new tests in registry_base_coverage_gaps_test.go (~697 lines), coverage 86.3% → 88.0%, no bugs found, Rule of Two passed
 - **T042**: ✅ DONE — ~45 new tests across 3 coverage_gaps_test.go files (goroutineid 91.3→100%, testutil 68.9→83.6%, mouseharness 75.9→83.1%), no bugs found, Rule of Two passed
-- **Next**: T043 — Coverage audit: internal/example/pickandplace
+- **T043**: ✅ DONE — Test-only package (0 source, 4 test files, 32 subtests). All pass. No code changes needed.
+- **T044**: ✅ DONE — 2 new tests in coverage_gaps_test.go (91.4%→94.8%, run 94.5%→98.2%). ConfigLoadError via symlink, CommandFlagParseNonErrHelp via unknown flag. Remaining: main() os.Exit (untestable), global ErrHelp (dead code). No bugs found.
+- **Next**: T045 — Audit benchmark and security tests

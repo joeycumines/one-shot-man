@@ -45,4 +45,6 @@
 - **T061**: ✅ DONE — Cross-platform benchmark stability verified. macOS variance <10% (max ~30% for sub-μs ops). Linux Docker all 7 thresholds pass with 400x-20,000x headroom. No adjustments needed. No platform-specific multipliers. Windows deferred to T077. Documentation added to benchmark_test.go. Rule of Two passed.
 - **Next**: T062 — Security review: input sanitization
 - **T062**: ✅ DONE — 34 new security input sanitization tests (14 categories), documenting unsandboxed security posture, Rule of Two passed
-- **Next**: T063 — Security review: JS sandbox boundaries
+- **T063**: ✅ DONE — 18 sandbox boundary tests (VM isolation, module API boundaries, global scope, context cancellation), docs/security.md created, committed as 3f6b728, Rule of Two passed
+- **T064**: ✅ DONE — Added computePathLCA + ToTxtar metadata comment + full-path preservation for collision groups. 19 new tests. All existing tests pass.
+- **Next**: T065 — Wire config persistence: osm config <key> <value>

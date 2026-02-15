@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T062 ALL DONE. T062 added 34 security input sanitization tests covering exec, readFile, config parser, require(), fetch, context manager, REPL, resource limits, and cross-module isolation. Next: T063 (security review: JS sandbox boundaries)."
+    "currentState": "T001-T063 ALL DONE. T063 added 18 JS sandbox boundary tests and docs/security.md documenting per-module security posture. Next: T064 (txtar path ambiguity fix)."
   },
   "sequentialTasks": [
     {
@@ -272,12 +272,14 @@
     {
       "task": "T063: Security review: JS sandbox boundaries",
       "description": "Audit Goja sandbox. Verify JS cannot access Go internals beyond APIs. Check osm:exec/os safeguards. Document security posture per module. Note: readFile has no path restrictions, exec exposes stdin — both by design.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "18 test functions in internal/security_sandbox_test.go verifying Goja VM isolation: Node builtin rejection (17 builtins, util excluded), Go reflect/unsafe/runtime access prevention, VM isolation (global/prototype/SetGlobal cross-engine), module API boundaries (exec/os/fetch/grpc), global scope minimality, context cancellation, exec no-shell, osm:os read-only, grpc client-only, template safety. docs/security.md created with per-module security analysis, intentional design decisions documented. Rule of Two passed."
     },
     {
       "task": "T064: Fix txtar path ambiguity in context building",
       "description": "Fix bug in internal/scripting/context.go computeUniqueSuffixes. (1) Compute+emit LCA of tracked paths. (2) Verify implied parent dirs are in context when expanding. (3) Preserve full path for non-colliding basenames to avoid false proximity. Add tests.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added computePathLCA function for lowest-common-ancestor directory computation. Modified ToTxtar to emit context metadata comment (context root, common path, tracked directories). Changed computeUniqueSuffixes to use full relative paths for all-relative collision groups instead of minimal unique suffixes, eliminating false proximity from stripped common prefixes. Suffix expansion retained for mixed/absolute path groups. 19 new tests in context_txtar_lca_test.go covering LCA computation (7 tests), comment format (5 tests), and full-path preservation (4 tests). All existing tests pass unchanged. Rule of Two passed."
     },
     {
       "task": "T065: Wire config persistence: osm config <key> <value>",

@@ -459,6 +459,53 @@ func (cm *ContextManager) ListPaths() []string {
 	return paths
 }
 
+// computePathLCA computes the lowest common ancestor directory prefix
+// shared by all given paths. Returns "" if there is no common directory
+// component (e.g. all files are at root level, or paths diverge immediately).
+func computePathLCA(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+
+	sep := string(filepath.Separator)
+
+	// Split each path into directory components (exclude the filename).
+	var allDirs [][]string
+	for _, p := range paths {
+		dir := filepath.Dir(filepath.Clean(p))
+		if dir == "." {
+			continue // no directory component
+		}
+		allDirs = append(allDirs, strings.Split(dir, sep))
+	}
+
+	if len(allDirs) == 0 {
+		return ""
+	}
+
+	// Find the longest common prefix across all directory component slices.
+	prefix := make([]string, len(allDirs[0]))
+	copy(prefix, allDirs[0])
+	for _, parts := range allDirs[1:] {
+		n := len(prefix)
+		if len(parts) < n {
+			n = len(parts)
+		}
+		for i := 0; i < n; i++ {
+			if prefix[i] != parts[i] {
+				n = i
+				break
+			}
+		}
+		prefix = prefix[:n]
+	}
+
+	if len(prefix) == 0 {
+		return ""
+	}
+	return strings.Join(prefix, sep)
+}
+
 // ToTxtar converts the context to txtar format.
 func (cm *ContextManager) ToTxtar() *txtar.Archive {
 	cm.mutex.RLock()
@@ -474,7 +521,15 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 	}
 	var files []entry
 	baseGroups := make(map[string][]entry)
+
+	// Collect tracked directory names for metadata.
+	var trackedDirs []string
+
 	for k, cp := range cm.paths {
+		if cp.Type == "directory" {
+			trackedDirs = append(trackedDirs, k)
+			continue
+		}
 		if cp.Type != "file" {
 			continue
 		}
@@ -494,25 +549,69 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 		baseGroups[base] = append(baseGroups[base], e)
 	}
 
-	// Helper: compute minimal unique suffixes for a set of paths that share the same basename.
-	// Returns map[key]exportName, where exportName uses OS separators; we'll normalize to '/'.
+	// Compute LCA of all relative file paths to provide structural context.
+	var relativePaths []string
+	for _, e := range files {
+		if !filepath.IsAbs(e.path) {
+			relativePaths = append(relativePaths, e.path)
+		}
+	}
+	lca := computePathLCA(relativePaths)
+
+	// Build txtar comment with context metadata. This helps LLMs and humans
+	// understand where the files originate and which directories are tracked.
+	var comment strings.Builder
+	comment.WriteString("context root: " + filepath.ToSlash(cm.basePath) + "\n")
+	if lca != "" {
+		comment.WriteString("common path: " + filepath.ToSlash(lca) + "\n")
+	}
+	if len(trackedDirs) > 0 {
+		slices.Sort(trackedDirs)
+		dirList := make([]string, len(trackedDirs))
+		for i, d := range trackedDirs {
+			dirList[i] = filepath.ToSlash(d) + "/"
+		}
+		comment.WriteString("tracked directories: " + strings.Join(dirList, ", ") + "\n")
+	}
+	archive.Comment = []byte(comment.String())
+
+	// Helper: compute export names for a set of paths that share the same basename.
+	// For relative paths in collision groups, full paths are always used to preserve
+	// directory structure and avoid false proximity impressions. For absolute paths,
+	// suffix expansion is used to keep names manageable.
 	computeUniqueSuffixes := func(group []entry) map[string]string {
 		out := make(map[string]string, len(group))
 		if len(group) == 1 {
-			// Use the full relative path to preserve meaningful directory structure
-			// But for absolute paths outside the base, prefer just the basename if it's unique
 			path := group[0].path
 			if filepath.IsAbs(path) {
-				// For absolute paths, prefer basename since the full absolute path
-				// is often not meaningful in the txtar context
 				out[group[0].key] = filepath.Base(path)
 			} else {
-				// For relative paths, preserve the full structure as it's meaningful
 				out[group[0].key] = path
 			}
 			return out
 		}
-		// Pre-split into path components (clean first).
+
+		// Check if all paths in the collision group are relative.
+		allRelative := true
+		for _, e := range group {
+			if filepath.IsAbs(e.path) {
+				allRelative = false
+				break
+			}
+		}
+
+		// For all-relative collision groups, always use the full relative path.
+		// Full relative paths are inherently unique (same map key) and preserve
+		// the complete directory structure, avoiding the false proximity that
+		// occurs when minimal unique suffixes strip common prefixes.
+		if allRelative {
+			for _, e := range group {
+				out[e.key] = filepath.Clean(e.path)
+			}
+			return out
+		}
+
+		// For mixed or all-absolute groups: use suffix expansion algorithm.
 		type comps struct {
 			key   string
 			parts []string
@@ -522,11 +621,7 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 		sep := string(filepath.Separator)
 		for _, e := range group {
 			clean := filepath.Clean(e.path)
-			// Split by OS separator into components
-			// Guard against volume names or leading separators by using strings.Split after trimming trailing sep
-			// filepath.Clean guarantees no trailing separator (except root), which is fine.
 			parts := strings.Split(clean, sep)
-			// Handle cases like Windows volume "C:" which may appear as part of first component; keep as-is.
 			arr = append(arr, comps{key: e.key, parts: parts})
 			if n := len(parts); n > maxDepth {
 				maxDepth = n
@@ -539,7 +634,6 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 			suffixes := make(map[string]string, len(arr))
 			for _, c := range arr {
 				n := len(c.parts)
-				// Use an effective depth per path; never mutate the outer loop counter
 				effectiveDepth := depth
 				if effectiveDepth > n {
 					effectiveDepth = n
@@ -552,7 +646,6 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 				suffixes[c.key] = suf
 				counts[suf]++
 			}
-			// Check uniqueness
 			unique := true
 			for _, cnt := range counts {
 				if cnt > 1 {

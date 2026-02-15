@@ -88,8 +88,16 @@
         // Post-copy hint: if set, printed after successful copy
         const postCopyHint = options.postCopyHint || "";
 
-        // Hot-snippet configuration
-        const hotSnippets = options.hotSnippets || [];
+        // Hot-snippet configuration: if not explicitly provided, auto-detect
+        // from CONFIG_HOT_SNIPPETS global (injected by Go via injectConfigHotSnippets).
+        var hotSnippets;
+        if ('hotSnippets' in options) {
+            hotSnippets = options.hotSnippets || [];
+        } else if (typeof CONFIG_HOT_SNIPPETS !== 'undefined' && Array.isArray(CONFIG_HOT_SNIPPETS) && CONFIG_HOT_SNIPPETS.length > 0) {
+            hotSnippets = CONFIG_HOT_SNIPPETS;
+        } else {
+            hotSnippets = [];
+        }
         const noSnippetWarning = !!options.noSnippetWarning;
 
         // Build standard commands

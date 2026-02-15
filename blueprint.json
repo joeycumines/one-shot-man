@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T047 ALL DONE. Coverage audits complete. T047 command boilerplate unification complete (scriptCommandBase). Next: T048 (JS script boilerplate deduplication)."
+    "currentState": "T001-T048 ALL DONE. T048 CONFIG_HOT_SNIPPETS auto-detect in contextManager.js. Next: T049 (Dead code elimination pass)."
   },
   "sequentialTasks": [
     {
@@ -182,7 +182,8 @@
     {
       "task": "T048: JS script boilerplate deduplication",
       "description": "Review duplicated patterns in embedded JS scripts. Identify shared: mode registration, buildCommands, state get/set, prompt building. Consider extracting shared utilities into requirable internal module. All tests must pass.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Moved CONFIG_HOT_SNIPPETS auto-detection into contextManager.js factory using 'hotSnippets in options' guard. Removed identical 3-4 line boilerplate from code_review_script.js, prompt_flow_script.js, super_document_script.js. goal.js unchanged (explicit merge logic). 3 new tests. Other patterns (mode registration, buildCommands, state) too script-specific to extract."
     },
     {
       "task": "T049: Dead code elimination pass",

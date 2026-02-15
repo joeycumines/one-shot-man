@@ -2303,10 +2303,6 @@ function buildCommands() {
         nextIntegerId: nextIntegerId,
         buildPrompt: buildFinalPrompt
     };
-    // Pass config-defined hot-snippets to contextManager if available.
-    if (typeof CONFIG_HOT_SNIPPETS !== 'undefined' && Array.isArray(CONFIG_HOT_SNIPPETS) && CONFIG_HOT_SNIPPETS.length > 0) {
-        ctxmgrOpts.hotSnippets = CONFIG_HOT_SNIPPETS;
-    }
     const ctxmgr = contextManager(ctxmgrOpts);
 
     return {

@@ -29,4 +29,5 @@
 - **T045**: ✅ DONE — Removed 3 unused threshold constants, verified all security test categories (15+ tests), no timing-dependent failures, fixed t045-test target, Rule of Two passed
 - **T046**: ✅ DONE — Removed stale internal/termtest/* from .deadcodeignore (directory doesn't exist), verified all 15 remaining entries, Rule of Two passed
 - **T047**: ✅ DONE — Created scriptCommandBase with shared fields/RegisterFlags/PrepareEngine, refactored all 5 JS script commands, 8 new tests, Rule of Two passed
-- **Next**: T048 — JS script boilerplate deduplication
+- **T048**: ✅ DONE — Moved CONFIG_HOT_SNIPPETS auto-detection into contextManager.js, removed boilerplate from 3 scripts, 3 new tests, Rule of Two passed
+- **Next**: T049 — Dead code elimination pass

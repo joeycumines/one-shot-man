@@ -2307,6 +2307,160 @@ func TestContextManagerNoteViaEditor(t *testing.T) {
 	}
 }
 
+func TestContextManagerHotSnippetAutoDetectFromGlobal(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		let clipboardContent = '';
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		// Set CONFIG_HOT_SNIPPETS on globalThis (simulating Go injection)
+		globalThis.CONFIG_HOT_SNIPPETS = [
+			{ name: "auto1", text: "Auto-detected snippet 1", description: "Auto desc" },
+			{ name: "auto2", text: "Auto-detected snippet 2" }
+		];
+
+		let items = [];
+		// Do NOT pass hotSnippets in options — contextManager should auto-detect from globalThis
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; },
+			buildPrompt: () => 'test',
+			clipboardCopy: (text) => { clipboardContent = text; }
+		});
+
+		globalThis.__hasAuto1 = typeof ctxmgr.commands.auto1 === 'object';
+		globalThis.__hasAuto2 = typeof ctxmgr.commands.auto2 === 'object';
+		globalThis.__auto1Desc = ctxmgr.commands.auto1.description;
+
+		// Execute auto1
+		ctxmgr.commands.auto1.handler();
+		globalThis.__clipboardContent = clipboardContent;
+		globalThis.__outputCalls = outputCalls;
+
+		// Cleanup
+		delete globalThis.CONFIG_HOT_SNIPPETS;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	if !runtime.Get("__hasAuto1").ToBoolean() {
+		t.Error("expected auto1 command to exist from auto-detected CONFIG_HOT_SNIPPETS")
+	}
+	if !runtime.Get("__hasAuto2").ToBoolean() {
+		t.Error("expected auto2 command to exist from auto-detected CONFIG_HOT_SNIPPETS")
+	}
+	if got := runtime.Get("__auto1Desc").String(); got != "Auto desc" {
+		t.Errorf("expected auto1 description 'Auto desc', got %q", got)
+	}
+	if got := runtime.Get("__clipboardContent").String(); got != "Auto-detected snippet 1" {
+		t.Errorf("expected clipboard content 'Auto-detected snippet 1', got %q", got)
+	}
+}
+
+func TestContextManagerHotSnippetExplicitOverridesGlobal(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		let clipboardContent = '';
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		// Set CONFIG_HOT_SNIPPETS on globalThis
+		globalThis.CONFIG_HOT_SNIPPETS = [
+			{ name: "global1", text: "From global" }
+		];
+
+		let items = [];
+		// Explicitly pass hotSnippets — should use these, NOT the global
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; },
+			buildPrompt: () => 'test',
+			clipboardCopy: (text) => { clipboardContent = text; },
+			hotSnippets: [
+				{ name: "explicit1", text: "From options" }
+			]
+		});
+
+		globalThis.__hasExplicit1 = typeof ctxmgr.commands.explicit1 === 'object';
+		globalThis.__hasGlobal1 = typeof ctxmgr.commands.global1 === 'object';
+
+		// Cleanup
+		delete globalThis.CONFIG_HOT_SNIPPETS;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	if !runtime.Get("__hasExplicit1").ToBoolean() {
+		t.Error("expected explicit1 command from options.hotSnippets")
+	}
+	if runtime.Get("__hasGlobal1").ToBoolean() {
+		t.Error("global1 should NOT exist — explicit options.hotSnippets should override globalThis")
+	}
+}
+
+func TestContextManagerHotSnippetNoGlobalNoOptions(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		const outputCalls = [];
+		globalThis.output = { print: (msg) => { outputCalls.push(msg); } };
+
+		// Ensure no CONFIG_HOT_SNIPPETS on globalThis
+		delete globalThis.CONFIG_HOT_SNIPPETS;
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; },
+			buildPrompt: () => 'test'
+		});
+
+		// snippets listing command always exists, but should report empty
+		ctxmgr.commands.snippets.handler();
+		globalThis.__outputCalls = outputCalls;
+
+		// No individual snippet commands should exist beyond the built-in set
+		const baseCommands = ['add', 'remove', 'list', 'copy', 'show', 'note', 'snippets', 'diff', 'exec', 'edit'];
+		const extraCommands = Object.keys(ctxmgr.commands).filter(k => baseCommands.indexOf(k) === -1);
+		globalThis.__extraCommands = extraCommands;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	outputCalls := runtime.Get("__outputCalls").Export()
+	outputs, ok := outputCalls.([]interface{})
+	if !ok {
+		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
+	}
+	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "No hot-snippets configured") {
+		t.Errorf("expected 'No hot-snippets configured' message, got %v", outputs)
+	}
+
+	extraCmds := runtime.Get("__extraCommands").Export()
+	extras, ok := extraCmds.([]interface{})
+	if !ok {
+		t.Fatalf("expected extraCommands to be a slice, got %T", extraCmds)
+	}
+	if len(extras) != 0 {
+		t.Errorf("expected no extra snippet commands, got %v", extras)
+	}
+}
+
 func TestContextManagerRemoveNonFileItem(t *testing.T) {
 	runtime := setupContextManager(t)
 

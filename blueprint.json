@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T035 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core. Next: T036 (scripting TUI subsystem)."
+    "currentState": "T001-T036 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem. Next: T037 (scripting state management)."
   },
   "sequentialTasks": [
     {
@@ -110,7 +110,8 @@
     {
       "task": "T036: Coverage audit: internal/scripting TUI subsystem",
       "description": "Coverage for tui_manager.go, tui_commands.go, tui_completion.go, tui_history.go, tui_io.go, tui_js_bridge.go, tui_parsing.go, tui_colors.go, tui_types.go. Cover mode registration, command dispatch, completion, history, I/O, JS bridge, colors, types. Achieve 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage: scripting package 80.1% → 86.7%. ~80 new tests in tui_coverage_gaps_test.go (2387 lines). Covers all 9 TUI source files: colors (all 14 keys + nil/non-string), commands (executor paths, builtin commands, help), completion (JS completer return types, document wrapper, mode/arg completion), history (config parsing, file loading), IO (reader/writer adapters, TerminalIO methods), JS bridge (mode/command/prompt/completer/keybinding registration, error paths), manager (exit/state/session, command dispatch with Go/JS handlers, writer lifecycle). No bugs found. Remaining uncovered: Run/runAdvancedPrompt (require live terminal), jsRunPrompt internals (requires prompt.Run). Rule of Two passed."
     },
     {
       "task": "T037: Coverage audit: internal/scripting state management",

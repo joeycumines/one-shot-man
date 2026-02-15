@@ -32,4 +32,5 @@
 - **T048**: ✅ DONE — Moved CONFIG_HOT_SNIPPETS auto-detection into contextManager.js, removed boilerplate from 3 scripts, 3 new tests, Rule of Two passed
 - **T049**: ✅ DONE — No dead code detected. All .deadcodeignore entries verified as legitimate. No changes needed.
 - **T050**: ✅ DONE — Fixed 3 %v→%w instances (lipgloss.go parseColor adaptive, tui_js_bridge.go initialCommand). All other areas clean.
-- **Next**: T051 — Expand fuzz testing
+- **T051**: ✅ DONE — 4 fuzz tests: config (494K execs), SplitDiff (1M execs), buildContext (140K execs), GojaRunString (758K execs). Zero panics. Goja uses SetMaxCallStackSize(64) + time.AfterFunc(100ms) vm.Interrupt for infinite loop protection.
+- **Next**: T052 — API surface optimization: scripting engine

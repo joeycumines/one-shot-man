@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T050 ALL DONE. T050 error handling audit found 3 %v→%w fixes. Next: T051 (Expand fuzz testing)."
+    "currentState": "T001-T051 ALL DONE. T051 added 4 fuzz tests (config, SplitDiff, buildContext, GojaRunString). Next: T052 (API surface optimization: scripting engine)."
   },
   "sequentialTasks": [
     {
@@ -200,10 +200,9 @@
     {
       "task": "T051: Expand fuzz testing",
       "description": "Add fuzz tests for: config parsing (malformed input), ctxutil buildContext (malformed items), scripting (random/malformed script input), diff_splitter SplitDiff (random diff content). Each must run 30s without panics.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "4 fuzz tests created: FuzzLoadFromReader (config parser, 494K execs/30s), FuzzSplitDiff (diff chunker, 1M execs/30s), FuzzBuildContext (ctxutil JS integration, 140K execs/30s), FuzzGojaRunString (Goja VM with arbitrary scripts, 758K execs/30s). Zero panics across all. Goja test uses SetMaxCallStackSize(64) for recursive JS protection and time.AfterFunc+vm.Interrupt for infinite loop timeout. Regression corpus entry committed for previously-hanging infinite loop input. Rule of Two passed."
     },
-    {
-      "task": "T052: API surface optimization: scripting engine",
       "description": "Review internal/scripting/ public API. Unexport unnecessary types/functions. Check constructor consistency. Verify .deadcodeignore entries justified. Reduce API to minimum for internal/command/. Update all callers.",
       "status": "Not Started"
     },

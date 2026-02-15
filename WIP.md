@@ -51,4 +51,7 @@
 - **T066**: ✅ DONE — Added autoGenerateOnCopy flag to prompt-flow. Auto-generates meta-prompt on first copy when goal set. 8 new tests + helper. Rule of Two passed.
 - **T067**: ✅ DONE — Fixed RefreshPath normalization (trailing slash, ./ prefix), 3 new tests, Rule of Two passed
 - **T068**: ✅ DONE — Extracted formatGoalLine helper, added [vars: key=val, ...] parameter summary, 10 new tests, Rule of Two passed
-- **Next**: T069 — Completion for exec context builder
+- **T069**: ✅ DONE — Added getExecutableSuggestions (PATH-based) + executable argCompleter type + 12 tests. contextManager.js exec updated from file to executable. Committed as 61c0d93.
+- **T070**: ✅ DONE — Improved getGitRefSuggestions (+--staged, remote branches, recent commits), 6 new tests. Committed as 679455f.
+- **T071**: ✅ DONE — Added CommandFlagDef struct + FlagDefs to CommandConfig. Moved --staged from gitref to diff flagDefs. Added --stat/--name-only flags. goal.js flagDefs passthrough. 6 new tests + 2 replaced.
+- **Next**: T072 — Hot-shortname aliases with mode-scoped activation

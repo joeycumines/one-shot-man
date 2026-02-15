@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T068 ALL DONE. Next: T069 — Completion for exec context builder."
+    "currentState": "T071 DONE — Committed. T072 next."
   },
   "sequentialTasks": [
     {
@@ -308,17 +308,20 @@
     {
       "task": "T069: Completion for exec context builder",
       "description": "exec command in contextManager needs completion support. Explore: shell completion, predefined suggestions, custom completer. Implement within go-prompt REPL. Add tests.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added getExecutableSuggestions function (95 lines) with PATH-based completion. Empty prefix returns 17 curated common commands, non-empty prefix scans PATH with case-insensitive matching and deduplication, path separators delegate to filepath completion. Wired executable argCompleter type in switch. Updated contextManager.js exec command from file to executable completer. 12 new tests. Rule of Two passed. Committed as 61c0d93."
     },
     {
       "task": "T070: Git ref completion for diff context builder",
       "description": "Implement git ref completion for diff command. argCompleters has ['gitref'] — verify and improve. List branches, tags, recent commits. Prefer Go implementation. Add tests.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Improved getGitRefSuggestions with --staged as common ref, remote branches via git branch -r, and recent commit SHAs (last 10) with truncated subjects. Symbolic refs filtered out. 6 new tests. Rule of Two passed. Committed as 679455f."
     },
     {
       "task": "T071: Wire osm:flag completion for ctxutil REPL subcommands",
       "description": "Add argument completion for REPL commands using osm:flag. Wire flag definitions to completion engine. E.g., 'add --recursive' completes '--recursive'. Add tests.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added CommandFlagDef struct and FlagDefs field to CommandConfig in goal.go. Moved --staged from gitref commonRefs to diff flagDefs in contextManager.js. Added --stat/--name-only flags. goal.js passes flagDefs through for custom commands. 6 new tests + 2 replaced tests, 18/18 pass. Rule of Two passed."
     },
     {
       "task": "T072: Hot-shortname aliases with mode-scoped activation",

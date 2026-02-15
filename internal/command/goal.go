@@ -64,14 +64,21 @@ type Goal struct {
 	Commands []CommandConfig `json:"commands"`
 }
 
+// CommandFlagDef describes a flag available for a command, used for tab-completion.
+type CommandFlagDef struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
 // CommandConfig defines a command available in a goal mode
 type CommandConfig struct {
-	Name          string   `json:"name"`
-	Type          string   `json:"type"` // "contextManager", "custom", "help"
-	Description   string   `json:"description,omitempty"`
-	Usage         string   `json:"usage,omitempty"`
-	ArgCompleters []string `json:"argCompleters,omitempty"`
-	Handler       string   `json:"handler,omitempty"` // JavaScript handler code for custom commands
+	Name          string           `json:"name"`
+	Type          string           `json:"type"` // "contextManager", "custom", "help"
+	Description   string           `json:"description,omitempty"`
+	Usage         string           `json:"usage,omitempty"`
+	ArgCompleters []string         `json:"argCompleters,omitempty"`
+	FlagDefs      []CommandFlagDef `json:"flagDefs,omitempty"`
+	Handler       string           `json:"handler,omitempty"` // JavaScript handler code for custom commands
 }
 
 // GoalCommand provides access to pre-written goals

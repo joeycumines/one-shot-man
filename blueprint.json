@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T044 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal, command script-executing commands, command utility commands + data processing, command registry/base/dispatch, goroutineid, testutil, mouseharness, pickandplace, cmd/osm. Next: T045 (benchmark and security tests)."
+    "currentState": "T001-T044 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal, command script-executing commands, command utility commands + data processing, command registry/base/dispatch, goroutineid, testutil, mouseharness, pickandplace, cmd/osm. Next: T046 (.deadcodeignore audit)."
   },
   "sequentialTasks": [
     {
@@ -164,7 +164,8 @@
     {
       "task": "T045: Audit benchmark and security tests",
       "description": "Audit internal/benchmark_test.go and security_test.go. Verify benchmark thresholds for all platforms. Verify security tests cover: path traversal, input sanitization, resource limits, command injection, symlink attacks, env var injection. No timing-dependent failures. Add missing coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Removed 3 unused threshold constants (thresholdSessionCreation, thresholdGlobalRegistration, thresholdVMCreation). All 7 remaining constants verified in use. Platform-specific thresholds confirmed (Unix vs Windows for SessionIDGeneration). All 15+ security test categories confirmed present: path traversal (4), input sanitization (3), resource limits (2), command injection (3), symlink attacks (2), env var injection (3), plus session isolation, output sanitization, config injection, arg parsing, binary path, escaping contexts, TUI input. No timing-dependent failures — thresholds 10-100x generous. Fixed t045-test target (./internal/ vs ./internal/...). Rule of Two passed."
     },
     {
       "task": "T046: Audit .deadcodeignore for stale entries",

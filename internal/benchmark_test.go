@@ -20,23 +20,20 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 
-// Performance thresholds (in microseconds) for regression detection
+// Performance thresholds (in microseconds) for regression detection.
+// Thresholds set generously to avoid intermittent failures due to system load variations
+// in CI/CD environments across different platforms.
 const (
 	// Session operation thresholds
-	// Thresholds set generously to avoid intermittent failures due to system load variations
-	// in CI/CD environments across different platforms
 	thresholdSessionIDGenerationUnix    = 10000
 	thresholdSessionIDGenerationWindows = 50000
-	thresholdSessionCreation            = 5000
 	thresholdSessionPersistenceWrite    = 10000
 	thresholdSessionPersistenceRead     = 5000
 	thresholdConcurrentSessionAccess    = 20000
 
 	// Scripting engine thresholds
-	thresholdRuntimeCreation    = 100000
-	thresholdGlobalRegistration = 1000
-	thresholdSimpleScriptExec   = 10000
-	thresholdVMCreation         = 20000
+	thresholdRuntimeCreation  = 100000
+	thresholdSimpleScriptExec = 10000
 )
 
 // BenchmarkSessionOperations benchmarks session operations.

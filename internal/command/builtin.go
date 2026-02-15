@@ -230,6 +230,17 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 2 {
 		// Set configuration value
 		key, value := args[0], args[1]
+
+		// Schema-aware validation before setting.
+		schema := config.DefaultSchema()
+		opt := schema.Lookup("", key)
+		if opt == nil {
+			_, _ = fmt.Fprintf(stderr, "Warning: %q is not a known configuration key (use 'config schema' to list known keys)\n", key)
+		} else if err := config.ValidateOptionValue(opt.Type, value); err != nil {
+			_, _ = fmt.Fprintf(stderr, "Error: invalid value for %q: %v\n", key, err)
+			return fmt.Errorf("invalid value for %q: %w", key, err)
+		}
+
 		c.config.SetGlobalOption(key, value)
 
 		// Persist to disk if a config path is available

@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T063 ALL DONE. T063 added 18 JS sandbox boundary tests and docs/security.md documenting per-module security posture. Next: T064 (txtar path ambiguity fix)."
+    "currentState": "T001-T064 ALL DONE. T065 implementing config persistence schema validation + integration tests. Full suite passes."
   },
   "sequentialTasks": [
     {
@@ -284,7 +284,8 @@
     {
       "task": "T065: Wire config persistence: osm config <key> <value>",
       "description": "config/write.go has SetKeyInFile(). Wire into ConfigCommand. Handle: schema validation, type coercion, file creation, error messages. Test full roundtrip: set→read back. Add integration tests.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added ValidateOptionValue exported function to schema.go. Modified ConfigCommand.Execute to perform schema-aware validation before setting: unknown keys emit warning (still set), known keys with invalid types return error (not set/persisted). Added 16 integration tests in config_persist_test.go covering: known bool/int/duration valid+invalid values, unknown key warning, string key (any value), bool accepted values (8 variants), full roundtrip (set→read→validate, multiple keys, update existing), type rejection prevents persistence, path-list type. ValidateOptionValue unit tests cover all 5 types. All existing tests pass unchanged. Rule of Two passed."
     },
     {
       "task": "T066: Prompt-flow QoL improvements",

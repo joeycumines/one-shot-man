@@ -47,4 +47,5 @@
 - **T062**: ✅ DONE — 34 new security input sanitization tests (14 categories), documenting unsandboxed security posture, Rule of Two passed
 - **T063**: ✅ DONE — 18 sandbox boundary tests (VM isolation, module API boundaries, global scope, context cancellation), docs/security.md created, committed as 3f6b728, Rule of Two passed
 - **T064**: ✅ DONE — Added computePathLCA + ToTxtar metadata comment + full-path preservation for collision groups. 19 new tests. All existing tests pass.
-- **Next**: T065 — Wire config persistence: osm config <key> <value>
+- **T065**: ✅ DONE — Added ValidateOptionValue to schema.go. ConfigCommand now validates type before set (unknown keys warn, invalid types error). 16 integration tests in config_persist_test.go. Full suite passes.
+- **Next**: T066 — Prompt-flow QoL improvements

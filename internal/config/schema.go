@@ -215,6 +215,14 @@ func ValidateConfig(c *Config, s *ConfigSchema) []string {
 	return issues
 }
 
+// ValidateOptionValue checks that a string value matches the expected
+// OptionType. It is the single implementation of type validation used by both
+// ValidateConfig (bulk validation) and callers that need to validate a single
+// value before setting it (e.g., the config command).
+func ValidateOptionValue(t OptionType, value string) error {
+	return validateType(t, value)
+}
+
 // validateType checks that a string value matches the expected OptionType.
 func validateType(t OptionType, value string) error {
 	switch t {

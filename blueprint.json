@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T039 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal, command script-executing commands. Next: T040 (command utility commands + data processing)."
+    "currentState": "T001-T040 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal, command script-executing commands, command utility commands + data processing. Next: T041 (command registry, base, dispatch)."
   },
   "sequentialTasks": [
     {
@@ -134,7 +134,8 @@
     {
       "task": "T040: Coverage audit: internal/command utility commands + data processing",
       "description": "Coverage for session.go, sync.go, log_tail.go, completion_command.go, diff_splitter.go, prompt_file.go, goal_discovery.go, goal_loader.go, goal_registry.go, goal_builtin.go, script_discovery.go. Cover all subcommands, algorithms, parsing, discovery. Achieve 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage 81.0% → 86.3%. ~42 new tests in util_cmd_coverage_gaps_test.go. Covers: SessionCommand SetupFlags/Info/Execute/List/Path, SyncCommand SetupFlags/SubcommandHelp/InitCloneFails/PullConflictDetection/PullGitFailure/PullCloneFailure/PushErrorPaths/TimeNow, LogCommand SetupFlags/TailFollow, diff_splitter extractFileName/countLines, prompt_file ParsePromptFile/LoadPromptFile/FindPromptFiles/expandPromptFileReferences, GoalDiscovery addPath/DiscoverPromptFilePaths, GoalLoader resolveGoalScript, GoalRegistry Reload/NewDynamicGoalRegistry, ScriptDiscovery traverseForGitRepos/helpers. No bugs found. Rule of Two passed."
     },
     {
       "task": "T041: Coverage audit: internal/command registry, base, dispatch",

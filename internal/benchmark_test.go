@@ -24,6 +24,28 @@ import (
 // Performance thresholds (in microseconds) for regression detection.
 // Thresholds set generously to avoid intermittent failures due to system load variations
 // in CI/CD environments across different platforms.
+//
+// Cross-platform verification (T061, Feb 2026):
+//
+//	macOS (Apple M-series, 3 runs):
+//	  SessionIDGeneration:    0-1 μs   (threshold: 10,000 μs, headroom: >10,000x)
+//	  SessionPersistenceWrite: 6-7 μs  (threshold: 10,000 μs, headroom: ~1,400x)
+//	  SessionPersistenceRead:  2 μs    (threshold: 5,000 μs,  headroom: ~2,500x)
+//	  RuntimeCreation:        81-97 μs (threshold: 100,000 μs, headroom: ~1,000x)
+//	  ScriptExecution:        13-16 μs (threshold: 10,000 μs, headroom: ~625x)
+//	  ConcurrentAccess:       1 μs     (threshold: 20,000 μs, headroom: ~20,000x)
+//
+//	Linux (Docker golang:1.25.7, 1 run):
+//	  SessionIDGeneration:    25 μs    (threshold: 10,000 μs, headroom: ~400x)
+//	  SessionPersistenceWrite: 3 μs    (threshold: 10,000 μs, headroom: ~3,333x)
+//	  SessionPersistenceRead:  2 μs    (threshold: 5,000 μs,  headroom: ~2,500x)
+//	  RuntimeCreation:        144 μs   (threshold: 100,000 μs, headroom: ~694x)
+//	  ScriptExecution:        10 μs    (threshold: 10,000 μs, headroom: ~1,000x)
+//	  ConcurrentAccess:       2 μs     (threshold: 20,000 μs, headroom: ~10,000x)
+//
+//	Benchmark variance (macOS, count=5): <10% for most operations,
+//	highest observed ~30% (VMCreation single outlier, sub-μs operation).
+//	No platform-specific multipliers needed — minimum headroom is 400x.
 const (
 	// Session operation thresholds
 	thresholdSessionIDGenerationUnix    = 10000

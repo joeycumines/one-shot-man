@@ -42,4 +42,5 @@
 - **T058**: ✅ DONE — Profiled BT/PABT execution. BT bridge <1% CPU, PABT ExprLang sub-µs. Added BenchmarkPlanCreation + profiling notes. No optimization targets. Rule of Two passed.
 - **T059**: ✅ DONE — Profiled bubbletea render pipeline (View ~104ns, Update+View ~660ns, throttle cache ~44ns/0 allocs). 13 new benchmarks + profiling notes. No app-level optimization targets. Rule of Two passed.
 - **T060**: ✅ DONE — 4 per-package benchmark files (config, template, command, scripting) with 40+ sub-benchmarks covering all 8 categories (context manager ops, config parsing, goal discovery, script discovery, require() loading, prompt building, template execution, SetKeyInFile). Rule of Two passed.
-- **Next**: T061 — Verify cross-platform benchmark stability
+- **T061**: ✅ DONE — Cross-platform benchmark stability verified. macOS variance <10% (max ~30% for sub-μs ops). Linux Docker all 7 thresholds pass with 400x-20,000x headroom. No adjustments needed. No platform-specific multipliers. Windows deferred to T077. Documentation added to benchmark_test.go. Rule of Two passed.
+- **Next**: T062 — Security review: input sanitization

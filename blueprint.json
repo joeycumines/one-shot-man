@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T059 ALL DONE. T059 profiled bubbletea render pipeline (View ~104ns, Update+View ~660ns, throttle cache ~44ns/0 allocs, no app-level optimization targets). Next: T060 (Add missing benchmarks)."
+    "currentState": "T001-T060 ALL DONE. T060 added 4 per-package benchmark files (40+ sub-benchmarks) covering all 8 specified categories. Next: T061 (cross-platform benchmark stability)."
   },
   "sequentialTasks": [
     {
@@ -254,7 +254,8 @@
     {
       "task": "T060: Add missing benchmarks",
       "description": "Add benchmarks for: context manager ops, config parsing, goal discovery, script discovery, require() loading, prompt building, template execution, SetKeyInFile. Appropriate thresholds for all paths.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added 4 per-package benchmark files with 40+ sub-benchmarks covering all 8 categories. Config: SetKeyInFile (4 subs, ~5ms fsync-dominated), ValidateConfig (3 subs, ~286ns valid), LoadFromReaderComplex (2 subs, ~10μs realistic). Template: 6 Goja benchmarks (simple ~4.4μs, pre-parsed ~4.4μs, custom funcs ~6.3μs) + Go baseline (~2.9μs, showing 1.5x Goja overhead). Context Manager: AddPath (single ~16μs, medium dir ~1ms), RemovePath (~4μs), RefreshPath (~17μs), ListPaths (~229ns), GetStats (~5.6μs), ToTxtar (5-50 files, ~70μs-826μs), Filter (~2.2μs). Command: GoalDiscovery (~24μs), ScriptDiscovery (~26μs), ParsePromptFile (~150ns simple, ~541ns complex), PromptFileToGoal (~1.2μs), ExpandPromptFileReferences (~28μs), PathScoring (splitPathSegments ~57ns, hasDirPrefix ~14ns, countRelSegments ~5.8ns). Rule of Two passed."
     },
     {
       "task": "T061: Verify cross-platform benchmark stability",

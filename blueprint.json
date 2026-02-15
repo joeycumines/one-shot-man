@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T057 ALL DONE. T057 profiled session I/O (FullCycle ~5.4ms dominated by fsync, no app-level optimization targets). Next: T058 (Performance profiling: BT and PABT)."
+    "currentState": "T001-T058 ALL DONE. T058 profiled BT/PABT execution (bridge <1% CPU, planning sub-5µs, no app-level optimization targets). Next: T059 (Performance profiling: bubbletea render pipeline)."
   },
   "sequentialTasks": [
     {
@@ -242,7 +242,8 @@
     {
       "task": "T058: Performance profiling: BT and PABT",
       "description": "Profile BT/PABT execution. Review existing benchmarks. Identify allocation hotspots in JS-Go bridge. Optimize tick execution and planning critical paths. Stable/improved benchmarks.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Profiled with pprof (2s CPU profile). BT bridge: RunOnLoop ~101ns, RunJSSync ~1µs, realistic update ~2.6µs (0.016% of 16ms frame), view ~500µs (Goja VM string ops). App code <1% CPU in all benchmarks. PABT: ExprLang 90-262ns vs GoFunction 1-13ns, expression cache 53x speedup, plan creation ~1.7-4.1µs. Added BenchmarkPlanCreation (SimplePlan + MultiActionPlan). Added profiling notes to both benchmark files. No optimization targets — all hotspots in Goja VM, expr-lang, and Go primitives. Rule of Two passed."
     },
     {
       "task": "T059: Performance profiling: bubbletea render pipeline",

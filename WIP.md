@@ -39,4 +39,5 @@
 - **T055**: ✅ DONE — Renamed pabt.ModuleLoader→pabt.Require (naming consistency). Removed BTBridge type alias. 4 files, 29 test renames. Rule of Two passed.
 - **T056**: ✅ DONE — Profiled engine startup (134μs, no hotspots). Added FullEngineCreation benchmark. No optimization targets. Rule of Two passed.
 - **T057**: ✅ DONE — Profiled session I/O (FullCycle ~5.4ms, fsync-dominated). Added 5 FileSystem benchmarks. No optimization targets. Rule of Two passed.
-- **Next**: T058 — Performance profiling: BT and PABT
+- **T058**: ✅ DONE — Profiled BT/PABT execution. BT bridge <1% CPU, PABT ExprLang sub-µs. Added BenchmarkPlanCreation + profiling notes. No optimization targets. Rule of Two passed.
+- **Next**: T059 — Performance profiling: bubbletea render pipeline

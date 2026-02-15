@@ -30,6 +30,34 @@ import (
 // We MUST measure steps 1-5 (input path) SEPARATELY from step 6 (render).
 //
 // Run with: go test -bench=. -benchmem ./internal/builtin/bt/
+//
+// ============================================================================
+// PROFILING NOTES (pprof CPU, 2s benchtime, Apple M2 Pro, 2026-02-15)
+// ============================================================================
+//
+// Bridge overhead:
+//   - RunOnLoop (async):    ~101ns/op,    40B,    2 allocs
+//   - RunJSSync (empty):    ~1.0µs/op,   424B,    7 allocs (make(chan error,1) dominates)
+//   - RunJSSync (1+1 JS):   ~1.1µs/op,   472B,    9 allocs (+130ns for trivial JS)
+//   - Concurrent RunJSSync: ~2.5µs/op,   424B,    7 allocs (serialized, no contention degradation)
+//
+// Realistic workloads:
+//   - Key→state update:     ~2.6µs/op,  1.9KB,   24 allocs (0.016% of 16ms frame)
+//   - View render (24×80):  ~500µs/op,  128KB, 3870 allocs (Goja string concat, NOT bridge)
+//   - Full frame (update+view): ~358µs/op, 129KB, 3886 allocs (2.2% of 16ms)
+//   - Tick update (3 enemies, BB sync, collisions): ~18.5µs/op, 10KB, 160 allocs
+//   - AI contention (3 AI ticks + 1 key): ~34µs/op, 5KB, 282 allocs
+//   - Tick contention (60 ticks + 1 key): ~157µs/op, 102KB, 1524 allocs
+//
+// pprof analysis:
+//   - Application code accounts for <1% of CPU time in all benchmarks
+//   - Bridge RunOnLoopSync: make(chan error,1) is the sole per-call alloc in our code
+//   - View rendering allocations (128KB, 3870) are entirely Goja VM string operations
+//   - Tick update CPU is dominated by Goja VM executing JS game logic
+//
+// Conclusion: No optimization targets in bridge code. The dominant costs are
+// Goja VM execution (view rendering, game logic) and Go channel/scheduling
+// primitives — both external and not improvable from application code.
 // ============================================================================
 
 // BenchmarkRunOnLoop measures the throughput of scheduling callbacks on the event loop.

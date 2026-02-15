@@ -88,8 +88,8 @@ func (r *Registry) List() []string {
 	return removeDuplicates(names)
 }
 
-// ListBuiltin returns only built-in commands.
-func (r *Registry) ListBuiltin() []string {
+// listBuiltin returns only built-in commands.
+func (r *Registry) listBuiltin() []string {
 	var names []string
 	for name := range r.commands {
 		names = append(names, name)
@@ -98,8 +98,8 @@ func (r *Registry) ListBuiltin() []string {
 	return names
 }
 
-// ListScript returns only script commands.
-func (r *Registry) ListScript() []string {
+// listScript returns only script commands.
+func (r *Registry) listScript() []string {
 	names := r.findScriptCommands()
 	sort.Strings(names)
 	return names
@@ -113,7 +113,7 @@ func (r *Registry) findScriptCommand(name string) (Command, error) {
 		// Check if the file exists and is executable
 		if info, err := os.Stat(scriptPath); err == nil && !info.IsDir() {
 			if isExecutable(info) {
-				return NewScriptCommand(name, scriptPath), nil
+				return newScriptCommand(name, scriptPath), nil
 			}
 		}
 	}
@@ -183,15 +183,15 @@ func removeDuplicates(sorted []string) []string {
 	return result
 }
 
-// ScriptCommand represents a script-based command.
-type ScriptCommand struct {
+// scriptCommand represents a script-based command.
+type scriptCommand struct {
 	*BaseCommand
 	scriptPath string
 }
 
-// NewScriptCommand creates a new script command.
-func NewScriptCommand(name, scriptPath string) *ScriptCommand {
-	return &ScriptCommand{
+// newScriptCommand creates a new script command.
+func newScriptCommand(name, scriptPath string) *scriptCommand {
+	return &scriptCommand{
 		BaseCommand: NewBaseCommand(
 			name,
 			fmt.Sprintf("Script command: %s", name),
@@ -202,14 +202,14 @@ func NewScriptCommand(name, scriptPath string) *ScriptCommand {
 }
 
 // Execute runs the script command.
-func (c *ScriptCommand) Execute(args []string, stdout, stderr io.Writer) error {
+func (c *scriptCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	// Use background context for Execute without explicit context
 	return c.ExecuteWithContext(context.Background(), args, stdout, stderr)
 }
 
 // ExecuteWithContext runs the script command with context support.
 // When the context is cancelled, the command and its child processes are terminated.
-func (c *ScriptCommand) ExecuteWithContext(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+func (c *scriptCommand) ExecuteWithContext(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	var cmd *exec.Cmd
 
 	// Windows: some script file types (like .bat/.cmd) must be launched

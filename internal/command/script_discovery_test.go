@@ -485,7 +485,7 @@ func TestScriptDiscovery_AutodiscoveryIntegration(t *testing.T) {
 	registry := NewRegistryWithConfig(cfg)
 
 	// Should find the test script
-	scriptCommands := registry.ListScript()
+	scriptCommands := registry.listScript()
 	found := false
 	expectedName := filepath.Base(testScript)
 	for _, script := range scriptCommands {

@@ -42,7 +42,7 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		w := tabwriter.NewWriter(stdout, 0, 8, 2, ' ', 0)
 
 		// List built-in commands
-		builtins := c.registry.ListBuiltin()
+		builtins := c.registry.listBuiltin()
 		if len(builtins) > 0 {
 			_, _ = fmt.Fprintln(w, "")
 			_, _ = fmt.Fprintln(w, "Built-in commands:")
@@ -54,7 +54,7 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		}
 
 		// List script commands
-		scripts := c.registry.ListScript()
+		scripts := c.registry.listScript()
 		if len(scripts) > 0 {
 			_, _ = fmt.Fprintln(w, "")
 			_, _ = fmt.Fprintln(w, "Script commands:")
@@ -95,7 +95,7 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		_, _ = fmt.Fprint(stdout, buf.String())
 	} else {
 		// If this is a script command, hint to run the script with -h
-		if _, isScript := cmd.(*ScriptCommand); isScript {
+		if _, isScript := cmd.(*scriptCommand); isScript {
 			_, _ = fmt.Fprintln(stdout, "")
 			_, _ = fmt.Fprintf(stdout, "Note: this is a script command; run 'osm %s -h' for its help (if supported).\n", cmd.Name())
 		}

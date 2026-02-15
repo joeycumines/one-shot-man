@@ -121,7 +121,7 @@ func TestRegistry_FindScriptCommands_Mixed(t *testing.T) {
 		scriptPaths: []string{dir},
 	}
 
-	scripts := r.ListScript()
+	scripts := r.listScript()
 	found := false
 	for _, n := range scripts {
 		if n == "runnable" {
@@ -214,7 +214,7 @@ func TestScriptCommand_Execute_RunsScript(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := NewScriptCommand("hello", scriptPath)
+	cmd := newScriptCommand("hello", scriptPath)
 	var stdout, stderr bytes.Buffer
 	if err := cmd.Execute(nil, &stdout, &stderr); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -236,7 +236,7 @@ func TestScriptCommand_Execute_PassesArgs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := NewScriptCommand("echo-args", scriptPath)
+	cmd := newScriptCommand("echo-args", scriptPath)
 	var stdout, stderr bytes.Buffer
 	if err := cmd.Execute([]string{"foo", "bar"}, &stdout, &stderr); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -258,7 +258,7 @@ func TestScriptCommand_Execute_CapturesStderr(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := NewScriptCommand("stderr-test", scriptPath)
+	cmd := newScriptCommand("stderr-test", scriptPath)
 	var stdout, stderr bytes.Buffer
 	if err := cmd.Execute(nil, &stdout, &stderr); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -280,7 +280,7 @@ func TestScriptCommand_Execute_ExitCode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cmd := NewScriptCommand("fail", scriptPath)
+	cmd := newScriptCommand("fail", scriptPath)
 	var stdout, stderr bytes.Buffer
 	err := cmd.Execute(nil, &stdout, &stderr)
 	if err == nil {
@@ -294,7 +294,7 @@ func TestScriptCommand_Execute_ExitCode(t *testing.T) {
 func TestScriptCommand_Execute_NotFound(t *testing.T) {
 	t.Parallel()
 
-	cmd := NewScriptCommand("noexist", "/nonexistent/path/to/script")
+	cmd := newScriptCommand("noexist", "/nonexistent/path/to/script")
 	var stdout, stderr bytes.Buffer
 	err := cmd.Execute(nil, &stdout, &stderr)
 	if err == nil {
@@ -315,7 +315,7 @@ func TestScriptCommand_ExecuteWithContext_Cancellation(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := NewScriptCommand("sleeper", scriptPath)
+	cmd := newScriptCommand("sleeper", scriptPath)
 	var stdout, stderr bytes.Buffer
 
 	done := make(chan error, 1)
@@ -350,7 +350,7 @@ func TestScriptCommand_ExecuteWithContext_NormalCompletion(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	cmd := NewScriptCommand("quick", scriptPath)
+	cmd := newScriptCommand("quick", scriptPath)
 	var stdout, stderr bytes.Buffer
 	if err := cmd.ExecuteWithContext(ctx, nil, &stdout, &stderr); err != nil {
 		t.Fatalf("ExecuteWithContext: %v", err)
@@ -690,7 +690,7 @@ func TestIsExecutable_WindowsExtensions(t *testing.T) {
 func TestScriptCommand_KillProcessGroup_NilProcess(t *testing.T) {
 	t.Parallel()
 	// killProcessGroup should handle cmd.Process == nil gracefully
-	sc := NewScriptCommand("test", "/nonexistent")
+	sc := newScriptCommand("test", "/nonexistent")
 	execCmd := &exec.Cmd{} // Process is nil (never started)
 	sc.killProcessGroup(execCmd)
 	// Should not panic — early return

@@ -52,7 +52,7 @@ func TestRegistry(t *testing.T) {
 	}
 
 	// Test listing commands
-	commands := registry.ListBuiltin()
+	commands := registry.listBuiltin()
 	found := false
 	for _, name := range commands {
 		if name == "test" {
@@ -138,7 +138,7 @@ echo "Test script output"
 	}
 
 	// Test script command creation
-	scriptCmd := NewScriptCommand("testscript", scriptPath)
+	scriptCmd := newScriptCommand("testscript", scriptPath)
 
 	if scriptCmd.Name() != "testscript" {
 		t.Errorf("Expected script name 'testscript', got '%s'", scriptCmd.Name())

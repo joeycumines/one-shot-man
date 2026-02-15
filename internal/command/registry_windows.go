@@ -8,12 +8,12 @@ import (
 )
 
 // setupSysProcAttr is a no-op on Windows.
-func (c *ScriptCommand) setupSysProcAttr(cmd *exec.Cmd) {
+func (c *scriptCommand) setupSysProcAttr(cmd *exec.Cmd) {
 	// Windows does not use Setpgid or process groups in the same way
 }
 
 // killProcessGroup kills the entire process group for a command on Windows.
-func (c *ScriptCommand) killProcessGroup(cmd *exec.Cmd) {
+func (c *scriptCommand) killProcessGroup(cmd *exec.Cmd) {
 	if cmd.Process == nil {
 		return
 	}

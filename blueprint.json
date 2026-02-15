@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T052 ALL DONE. T052 reduced scripting API surface (deleted deprecated aliases, unexported 6 types/constants). Next: T053 (API surface optimization: command package)."
+    "currentState": "T001-T053 ALL DONE. T053 reduced command package API surface (deleted unused ContextCommand interface, unexported ListBuiltin/ListScript/ScriptCommand/NewScriptCommand). Next: T054 (API surface optimization: storage package)."
   },
   "sequentialTasks": [
     {
@@ -212,7 +212,8 @@
     {
       "task": "T053: API surface optimization: command package",
       "description": "Review internal/command/ public API. Check registration, flag setup, execution interfaces for consistency (post T047). Remove unnecessary exports. Standardize Execute(args, stdout, stderr). Update callers.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Deleted unused ContextCommand interface (dead code detected by staticcheck after unexporting) + removed unused context import from base.go. Unexported 4 symbols: ListBuiltin→listBuiltin, ListScript→listScript, ScriptCommand→scriptCommand, NewScriptCommand→newScriptCommand. All 9 test file refs + 3 source file refs updated. Assessed but retained: BaseCommand/NewBaseCommand (43+ internal refs, marginal benefit), ScriptDiscovery/NewScriptDiscovery/ScriptDiscoveryConfig (40+ refs). Execute(args, stdout, stderr) pattern already consistent across all commands. 10 files changed. Vet+staticcheck+deadcode pass. Rule of Two passed."
     },
     {
       "task": "T054: API surface optimization: storage package",

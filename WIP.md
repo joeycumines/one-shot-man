@@ -52,7 +52,22 @@
 - Trimmed Done task outcomes to single lines
 - Added: T092 (one-step mode), T093 (footer), T094 (add from diff), T095 (duplicate logs), T096 (cleanup scheduler), T097 (tview removal plan), T098 (cross-ref validation), T099-T101 (final integration gates), T102 (scope expansion)
 
+## Session 2 Progress (continued)
+- **T077**: ✅ DONE — Fixed 2 Windows failures (echo builtin, tview Console API). Committed a3c9cb0. Rule of Two passed.
+- **T078**: ✅ DONE — `make all` zero failures on macOS. Clean baseline.
+- **T079**: ✅ DONE — CHANGELOG.md fully rewritten: 16 Added, 4 Changed, 6 Removed, 13 Fixed. v0.1.0 reformatted.
+- **T080**: ✅ DONE — scripting.md verified complete (all 20 modules documented). No changes needed.
+- **T081**: ✅ DONE — command.md updated: sync, log, super-document added. Missing flags added to all script commands.
+- **T082**: ✅ DONE — config.md updated: all 35 global keys, 14 command keys, hot-snippets format, env vars.
+- **T083**: ✅ DONE — goal.md updated: bannerTemplate, usageTemplate, hotSnippets, flagDefs, .prompt.md, 10-goal catalog.
+- **T084**: ✅ DONE — session.md updated: all 7 subcommands, cleanup config, storage backends.
+- **T085**: ✅ DONE — configuration.md updated: hot-snippets, logging, sync, prompt.file-paths, script.module-paths, env vars.
+- **T086**: ✅ DONE — architecture.md: replaced skeleton with full doc (entry point, commands, engine, 20 modules, session, config, goals, sync, data flow).
+- **T087**: ✅ DONE — docs/README.md: reorganized into categories, added 5 missing links, verified all resolve.
+
 ## Next Steps
-1. T077: Run `make make-all-run-windows` on host "moo"
-2. T078: Run `make all` on macOS — establish clean baseline
-3. T079: Populate CHANGELOG.md with comprehensive entries
+1. Commit documentation batch (T079-T087)
+2. T088: Shell completion extensions
+3. T089: Verify example scripts
+4. T090: Go module dependency audit
+5. T091+: Feature work and integration

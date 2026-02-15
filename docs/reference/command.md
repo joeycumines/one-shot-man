@@ -28,14 +28,19 @@ Creates the default config file (dnsmasq-style format).
 
 ### `osm config`
 
-Displays loaded configuration (global and command-specific).
+Manage configuration settings. Read, set, validate, and inspect the configuration schema.
 
 - Usage: `osm config [-all|-global] [key] [value]`
 - Flags:
   - `-all`: show global + command sections
   - `-global`: show only global
 
-Important: `osm config <key> <value>` sets config *in-memory for that run*; it does not write back to the config file.
+Subcommands:
+
+- `osm config <key>` — get a configuration value (schema-aware: resolves env var → config → default)
+- `osm config <key> <value>` — set a configuration value **persistently** (writes to the config file on disk). The value is validated against the schema before writing; unknown keys produce a warning and invalid values are rejected.
+- `osm config validate` — validate the current configuration against the schema and report any issues
+- `osm config schema` — print the full configuration schema with all known keys, types, defaults, and descriptions
 
 ### `osm completion`
 
@@ -54,8 +59,12 @@ Lists goals or runs a goal. Goals are curated prompt templates/workflows.
   - `-c <category>`: list by category
   - `-r <goal-name>`: run directly
   - `-i`: run interactively
+  - `-test`: enable test mode / verbose output
   - `-session <id>`: override session id
   - `-store <fs|memory>`: select storage backend
+  - `-log-level <level>`: log level (`debug`, `info`, `warn`, `error`; default `info`)
+  - `-log-file <path>`: path to log file (JSON output)
+  - `-log-buffer <n>`: size of in-memory log buffer (default `1000`)
 
 See also: [Goal reference](goal.md)
 
@@ -70,6 +79,9 @@ Runs JavaScript in the embedded runtime (Goja), with built-in helpers for contex
   - `-test`: enable test mode / verbose output
   - `-session <id>`: override session id
   - `-store <fs|memory>`: select storage backend
+  - `-log-level <level>`: log level (`debug`, `info`, `warn`, `error`; default `info`)
+  - `-log-file <path>`: path to log file (JSON output)
+  - `-log-buffer <n>`: size of in-memory log buffer (default `1000`)
 
 ### `osm prompt-flow`
 
@@ -81,6 +93,9 @@ Interactive prompt builder: goal/context/template → meta-prompt → task promp
   - `-test`: enable test mode / verbose output
   - `-session <id>`: override session id
   - `-store <fs|memory>`: select storage backend
+  - `-log-level <level>`: log level (`debug`, `info`, `warn`, `error`; default `info`)
+  - `-log-file <path>`: path to log file (JSON output)
+  - `-log-buffer <n>`: size of in-memory log buffer (default `1000`)
 
 ### `osm code-review`
 
@@ -92,6 +107,73 @@ Interactive “single prompt” code review builder.
   - `-test`: enable test mode / verbose output
   - `-session <id>`: override session id
   - `-store <fs|memory>`: select storage backend
+  - `-log-level <level>`: log level (`debug`, `info`, `warn`, `error`; default `info`)
+  - `-log-file <path>`: path to log file (JSON output)
+  - `-log-buffer <n>`: size of in-memory log buffer (default `1000`)
+
+### `osm super-document`
+
+TUI for merging documents into a single internally consistent super-document.
+
+- Usage: `osm super-document [options]`
+- Flags:
+  - `-i` / `-interactive`: start interactive TUI mode (default true; can disable via `-i=false`)
+  - `-shell`: use shell mode instead of visual TUI
+  - `-test`: enable test mode / verbose output
+  - `-session <id>`: override session id
+  - `-store <fs|memory>`: select storage backend
+  - `-log-level <level>`: log level (`debug`, `info`, `warn`, `error`; default `info`)
+  - `-log-file <path>`: path to log file (JSON output)
+  - `-log-buffer <n>`: size of in-memory log buffer (default `1000`)
+
+### `osm log`
+
+View and tail log files.
+
+- Usage: `osm log [tail] [options]`
+- Flags:
+  - `-n <lines>`: number of lines to show from the end of the file (default `10`)
+  - `-f` / `-follow`: follow the log file (like `tail -f`)
+  - `-file <path>`: path to log file (overrides config `log.file`)
+
+Subcommands:
+
+- `osm log` — print the last N lines of the log file
+- `osm log tail` — alias for `osm log -f`; prints last N lines then follows for new output
+
+The log file path is resolved from: `-file` flag → config key `log.file` → env var `OSM_LOG_FILE`. Follows log rotation automatically (detects file truncation/replacement).
+
+### `osm sync`
+
+Save and list prompt notebook entries; sync via git.
+
+- Usage: `osm sync <save|list|init|push|pull> [options]`
+
+Subcommands:
+
+- `osm sync save -title <title> -body <body> [-tags <tags>]`
+  - Save a prompt notebook entry as a Markdown file with YAML frontmatter.
+  - Flags:
+    - `-title`: entry title (required; used in filename slug)
+    - `-body`: prompt body text (required)
+    - `-tags`: comma-separated tags
+  - Files are written to `<sync-root>/notebooks/<YYYY>/<MM>/<date>-<slug>.md`.
+
+- `osm sync list [-limit <n>]`
+  - List saved notebook entries in reverse chronological order.
+  - Flags:
+    - `-limit`: maximum number of entries to show (0 = all)
+
+- `osm sync init [<repo-url>]`
+  - Clone a git repository as the sync root. The repository URL can be passed as an argument or read from the `sync.repository` config key.
+
+- `osm sync push`
+  - Stage all changes, commit with a timestamp message, and push to origin.
+
+- `osm sync pull`
+  - Fetch and rebase remote changes. If the sync directory is not initialized and `sync.repository` is configured, clones automatically. Reports merge conflicts with instructions to resolve.
+
+Configuration keys: `sync.repository` (remote URL), `sync.local-path` (local sync root; default `~/.one-shot-man/sync`).
 
 ### `osm session`
 

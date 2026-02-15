@@ -8,161 +8,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Strict argument validation for all commands and subcommands: GoalCommand, HelpCommand, ConfigCommand (validate/schema), SessionCommand (id/list/clean/purge/info/path), and SyncCommand (save/list/init/push/pull) now reject unexpected positional arguments with clear error messages
+- Summarized parameters in goal list: `osm goal -l` displays `[vars: key=val, ...]` suffix for non-nil state variable defaults
+- Strict argument validation for all commands and subcommands with clear error messages
+- Hot-snippets: `GoalHotSnippet` struct with `hot-` prefix convention and config-to-goal merge
+- `scriptCommandBase` extracting shared `RegisterFlags()` and `PrepareEngine()` across 5 commands, eliminating ~120 lines of boilerplate
+- Auto-generate meta-prompt on first copy via `autoGenerateOnCopy` state flag in prompt-flow
+- Schema-aware config validation via `ValidateOptionValue` before `config set`
+- `computePathLCA` for txtar path disambiguation with context metadata in `ToTxtar` output
+- PATH-based executable completion via `getExecutableSuggestions`
+- Git ref completion with remote branches and recent commits
+- `CommandFlagDef` struct and `FlagDefs` field for REPL flag completion
+- Atomic `GetLifecycleSnapshot()` for behavior tree lifecycle state queries
+- Fuzz tests for config parser, diff splitter, buildContext, and Goja runtime (zero panics across 2.4M+ executions)
+- Security test suites: 34 input sanitization tests and 18 JS sandbox boundary tests
+- `docs/security.md` documenting JavaScript sandbox boundaries and threat model
+- Performance benchmarks across engine creation, filesystem, PA-BT planning, bubbletea, and 8 additional categories (60+ new benchmarks total)
+- Test coverage expanded across 25+ packages with notable gains: bubblezone 0→98.7%, lipgloss 58→99%, tview 68.5→96.4%, bubbletea 75.8→91.2%, viewport 73.3→97.3%, overall cmd/osm 91.4→94.8%
+
+### Changed
+- Renamed `pabt.ModuleLoader` to `pabt.Require` for API consistency
+- Moved `CONFIG_HOT_SNIPPETS` auto-detection into `contextManager.js` reducing per-script boilerplate
+- Unexported 14 internal symbols across scripting, command, storage, and builtin packages
+- Refactored txtar collision handling to use full relative paths instead of filename-only deduplication
 
 ### Removed
-- Remove deprecated `tui.createAdvancedPrompt` alias: use `tui.createPrompt` instead (the alias has been printing a deprecation warning since the rename)
-- Show summarized parameters in goal list: `osm goal -l` now displays `[vars: key=val, ...]` suffix showing non-nil state variable defaults alongside the existing `[cmds: ...]` custom command summary
+- Deprecated `tui.createAdvancedPrompt` alias; use `tui.createPrompt` instead
+- Deprecated `GetStateViaJS`/`SetStateViaJS` aliases from scripting API
+- `ContextCommand` interface from command package
+- `BTBridge` alias from builtin package
+- 3 unused benchmark threshold constants
+- Stale `internal/termtest/*` entries from `.deadcodeignore`
 
 ### Fixed
-- Fix data race in scripting engine: `context.AfterFunc` closure was reading `engine.vm` while `Close()` sets it to nil on another goroutine; captured VM in local variable before the closure
-- Fix context refresh failing for paths with trailing slashes or `./` prefixes: `RefreshPath` now normalizes input via the same pipeline as `AddPath` to recover canonical owner keys
-- Fix TOCTOU race in mouseharness `ClickElement`: three separate `cp.String()` calls could each return different buffer states during rendering, causing wrong viewport coordinates and flaky mouse click tests in Docker; now captures buffer exactly once and derives all coordinates from the same snapshot
-- Fix permission-based tests failing under Docker root: `chmod 0000` tests for `AddFileLocked` and `AddDirectoryLocked` now skip when running as UID 0 (root bypasses filesystem permissions)
+- Data race in scripting engine: `context.AfterFunc` closure reading `engine.vm` while `Close()` sets nil; captured VM in local variable before closure
+- Data race in bubbletea module via `syscall.Dup` file descriptor handling
+- Context refresh failing for paths with trailing slashes or `./` prefixes: `RefreshPath` now normalizes input via `AddPath`'s pipeline
+- TOCTOU race in mouseharness `ClickElement`: captures buffer once instead of three separate `cp.String()` calls
+- 2 flaky behavior tree tests via atomic `GetLifecycleSnapshot()` replacing separate state queries
+- Nil-dereference in ctxutil `Require` when `exportsVal` is Go nil
+- 3 nil/undefined guard bugs in bubbletea module
+- 2 nil-guard bugs for `mouseMsg` in bubblezone `inBounds`
+- Nil guard in tview `Require` function
+- 6 nil-guard and return-type bugs across template, unicodetext, and nextintegerid packages
+- 3 error-wrapping format verbs corrected from `%v` to `%w` for proper error chain support
+- Permission-based tests failing under Docker root: tests skip when running as UID 0
+- 2 Windows test failures: echo builtin and tview Console API tests skip on unsupported platforms
 
 ## [v0.1.0] - 2026-02-10
 
-### PA-BT (Planning-Augmented Behavior Trees)
+### Added
+- PA-BT (Planning-Augmented Behavior Trees) module for autonomous agent behaviors with planning capabilities
+- `NewAction`, `NewActionGenerator`, `NewBlackboard`, `NewExprCondition` APIs for behavior tree planning
+- `scripts/example-05-pick-and-place.js` demonstrating PA-BT for pick-and-place tasks
+- `QueueGetGlobal(name, callback)` for thread-safe asynchronous global reads from scripting engine
+- PA-BT documentation: API reference, demo script guide, blackboard usage guide
+- Edge case test suites for commands, sessions, and platform-specific scenarios
+- Performance benchmarks and regression tests
+- Security test suite: 42 subtests covering path traversal, command injection, env sanitization, permissions, input validation, session isolation, and output sanitization
 
-A major new feature for implementing autonomous agent behaviors with planning capabilities.
+### Fixed
+- Race condition in scripting engine: `GetGlobal()` now uses full `Lock()` for synchronization with `QueueSetGlobal()`
+- Symlink vulnerability in config loading: `os.Lstat()` check rejects symlinks before opening config files
 
-**Files Added:**
-- `internal/builtin/pabt/` - Core PA-BT implementation
-  - `actions.go` - Action definitions and generators
-  - `state.go` - State management and blackboard
-  - `evaluation.go` - Expression condition evaluation
-  - `simple.go` - Simplified interfaces
-  - `require.go` - Requirement checking
-  - `doc.go` - Package documentation
-
-**Key APIs:**
-- `NewAction(name, preconditions, effects)` - Create a static action
-- `NewActionGenerator(createFunc)` - Create a parametric action generator
-- `NewBlackboard()` - Create a shared state store
-- `NewExprCondition(expression)` - Create a condition from an expression
-- `State` struct with `Get(key)`, `Set(key, value)`, `Del(key)` methods
-
-**Scripts:**
-- `scripts/example-05-pick-and-place.js` - Full demo of PA-BT for pick-and-place tasks
-
----
-
-## Test Coverage Expansions
-
-### New Test Files Added:
-
-1. **Edge Case Tests**
-   - `internal/command/builtin_edge_test.go` - 44 subtests for built-in commands
-   - `internal/session/session_edge_test.go` - 20 test functions for session management
-   - `internal/testutil/platform_specific_test.go` - 28 subtests for platform-specific scenarios
-
-2. **Performance Tests**
-   - `internal/benchmark_test.go` - Benchmarks and regression tests
-
-3. **Security Tests**
-   - `internal/security_test.go` - 42 subtests covering:
-     - Path traversal prevention
-     - Command injection prevention
-     - Environment variable sanitization
-     - File permission handling
-     - Input validation
-     - Session data isolation
-     - Output sanitization
-
----
-
-## Bug Fixes
-
-### Critical Fixes
-
-1. **Race Condition in Scripting Engine** (`internal/scripting/engine_core.go`)
-   - Fixed `GetGlobal()` to use full `Lock()` instead of `RLock()` for proper synchronization with `QueueSetGlobal()`
-   - Updated test to use `QueueGetGlobal()` for thread-safe concurrent access
-
-2. **Symlink Vulnerability in Config Loading** (`internal/config/config.go`)
-   - Added `os.Lstat()` check to detect symlinks
-   - Added rejection of symlinks to prevent path traversal attacks
-   - Opens file only after confirming it is not a symlink
-
-### Minor Fixes
-
-1. **Goal Loading** (`internal/command/builtin_edge_test.go`)
-   - Changed test name from "GoalWithSpecialCharactersInName" to "GoalWithHyphenInName"
-   - Changed test data from underscores to hyphens (validation only allows alphanumeric and hyphens)
-
-2. **Super-Document Empty Input** (`internal/command/builtin_edge_test.go`)
-   - Fixed "EmptyInput" test to set valid template instead of empty string
-
----
-
-## Documentation Changes
-
-### New Documentation Files
-
-1. **PA-BT Documentation**
-   - `docs/reference/planning-and-acting-using-behavior-trees.md` - Complete PA-BT API reference
-   - `docs/reference/pabt-demo-script.md` - Pick-and-place demo script documentation
-   - `docs/reference/bt-blackboard-usage.md` - Behavior tree blackboard usage guide
-
-### Documentation Fixes
-
-1. Fixed redundant path in `docs/reference/goal.md` (config.md link)
-
----
-
-## API Changes
-
-### New Global Functions
-
-#### Scripting Engine (`internal/scripting/`)
-
-- `QueueGetGlobal(name string, callback func(value interface{}))` - Asynchronous global read
-
-#### Session Management (`internal/session/`)
-
-- No new public APIs added, but extensive testing infrastructure added
-
----
-
-## Migration Guide
-
-### For Users
-
-No breaking changes for end users. All existing commands and configuration options remain compatible.
-
-### For Developers
-
-If extending the scripting engine:
-
-1. **Global Access**: Use `QueueSetGlobal()` and `QueueGetGlobal()` for thread-safe access from arbitrary goroutines
-2. **Configuration Loading**: Note that symlinks in config paths are now rejected for security
-
----
-
-## Performance Characteristics
-
-- **Test Suite Execution**: ~900 seconds full test suite
-- **Memory Usage**: No significant memory leaks detected
-- **Coverage**: Overall coverage >70%, core packages >75%
-
----
-
-## Compatibility
-
-- **Go Version**: 1.25+
-- **Platforms**: Linux, macOS, Windows
-- **Dependencies**: See `go.mod` for complete list
-
----
-
-## Known Limitations
-
-1. PTY tests may have timing sensitivity on CI systems
-2. Some tests are skipped on Windows (PTY-related functionality)
-3. Symlink attacks are now blocked - ensure config paths don't contain symlinks
-
----
-
-## Credits
-
-See `CONTRIBUTORS.md` or git history for complete attribution.
+### Security
+- Config file loading rejects symlinks to prevent path traversal attacks

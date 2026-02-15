@@ -87,24 +87,46 @@ func (c *Console) ClickElement(ctx context.Context, content string, timeout time
 	}
 
 found:
-	// Calculate center of element (viewport-relative coordinates)
-	// NOTE: Click expects viewport-relative coordinates, not buffer-absolute.
-	// We must convert buffer row to viewport row using bufferRowToViewportRow.
-	centerX := loc.Col + loc.Width/2
-	viewportY := c.bufferRowToViewportRow(loc.Row)
+	// IMPORTANT: Capture the buffer exactly once and derive ALL coordinates
+	// from it. Using multiple c.cp.String() calls creates a TOCTOU race
+	// where the buffer changes between reads, producing inconsistent
+	// viewport calculations and wrong click targets.
+	{
+		buffer := c.cp.String()
+		screen := parseTerminalBuffer(buffer)
 
-	// Check if row 0 is empty in the parsed buffer - this indicates a render issue
-	screen := parseTerminalBuffer(c.cp.String())
-	row0Empty := len(screen) > 0 && strings.TrimSpace(screen[0]) == ""
-	if row0Empty {
-		viewportY++ // Compensate for missing title line
-		c.tb.Logf("[CLICK DEBUG] Row 0 is empty, adjusting viewportY from %d to %d", viewportY-1, viewportY)
+		// Re-find the element in this specific buffer snapshot so the
+		// row/col are consistent with the viewport calculation below.
+		loc = c.FindElementInBuffer(buffer, content)
+		if loc == nil {
+			return fmt.Errorf("element %q disappeared between find and click; buffer: %q", content, buffer)
+		}
+
+		centerX := loc.Col + loc.Width/2
+
+		// Inline viewport calculation from the SAME screen snapshot.
+		totalRows := len(screen)
+		for totalRows > 0 && strings.TrimSpace(screen[totalRows-1]) == "" {
+			totalRows--
+		}
+		visibleTop := 1
+		if totalRows > c.height {
+			visibleTop = totalRows - c.height + 1
+		}
+		viewportY := loc.Row - (visibleTop - 1)
+		if viewportY < 1 {
+			viewportY = 1
+		}
+		if viewportY > c.height {
+			viewportY = c.height
+		}
+
+		c.tb.Logf("[CLICK DEBUG] ClickElement %q: loc.Row=%d (buffer-absolute), viewportY=%d, centerX=%d, totalRows=%d, visibleTop=%d",
+			content, loc.Row, viewportY, centerX, totalRows, visibleTop)
+
+		// Send mouse click using viewport-relative coordinates
+		return c.Click(centerX, viewportY)
 	}
-
-	c.tb.Logf("[CLICK DEBUG] ClickElement %q: loc.Row=%d (buffer-absolute), viewportY=%d, centerX=%d", content, loc.Row, viewportY, centerX)
-
-	// Send mouse click using viewport-relative coordinates
-	return c.Click(centerX, viewportY)
 }
 
 // ClickElementAndExpect clicks an element and waits for expected content to appear.

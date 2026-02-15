@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T075 DONE — committing. T074 was already done."
+    "currentState": "T076 done. T077 (Windows) next."
   },
   "sequentialTasks": [
     {
@@ -350,7 +350,8 @@
     {
       "task": "T076: Cross-platform: Linux via Docker",
       "description": "Run 'make make-all-in-container'. Fix Linux-specific failures. Verify platform code paths (session_linux.go, registry_unix.go, atomic_write.go, filelock_unix.go). Race detection. Zero failures.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Fixed 2 issues: (1) SkipIfRoot for 2 chmod-based permission tests that fail under Docker root. (2) TOCTOU fix in mouseharness ClickElement — single buffer snapshot instead of 3 separate cp.String() calls eliminates flaky viewport coordinate calculations. Both macOS and Linux Docker pass with zero failures."
     },
     {
       "task": "T077: Cross-platform: Windows",

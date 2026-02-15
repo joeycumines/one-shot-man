@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fix data race in scripting engine: `context.AfterFunc` closure was reading `engine.vm` while `Close()` sets it to nil on another goroutine; captured VM in local variable before the closure
 - Fix context refresh failing for paths with trailing slashes or `./` prefixes: `RefreshPath` now normalizes input via the same pipeline as `AddPath` to recover canonical owner keys
+- Fix TOCTOU race in mouseharness `ClickElement`: three separate `cp.String()` calls could each return different buffer states during rendering, causing wrong viewport coordinates and flaky mouse click tests in Docker; now captures buffer exactly once and derives all coordinates from the same snapshot
+- Fix permission-based tests failing under Docker root: `chmod 0000` tests for `AddFileLocked` and `AddDirectoryLocked` now skip when running as UID 0 (root bypasses filesystem permissions)
 
 ## [v0.1.0] - 2026-02-10
 

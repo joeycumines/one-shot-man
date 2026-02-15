@@ -260,6 +260,7 @@ func TestContextManager_WalkDirectory_Symlink(t *testing.T) {
 // TestContextManager_AddDirectoryLocked_WalkError tests addDirectoryLocked error path.
 func TestContextManager_AddDirectoryLocked_WalkError(t *testing.T) {
 	t.Parallel()
+	testutil.SkipIfRoot(t, testutil.DetectPlatform(t), "chmod-based permission test doesn't work as root")
 	tmpDir := t.TempDir()
 
 	subDir := filepath.Join(tmpDir, "unreadable")
@@ -556,6 +557,7 @@ func TestContextManager_ToTxtar_CollidingBasenames(t *testing.T) {
 // TestContextManager_AddFileLocked_ReadError tests addFileLocked when file can't be read.
 func TestContextManager_AddFileLocked_ReadError(t *testing.T) {
 	t.Parallel()
+	testutil.SkipIfRoot(t, testutil.DetectPlatform(t), "chmod-based permission test doesn't work as root")
 	tmpDir := t.TempDir()
 
 	// Create a file and make it unreadable

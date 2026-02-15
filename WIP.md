@@ -58,4 +58,5 @@
 - **T073**: ✅ DONE — Strict argument validation for all commands/subcommands, 21 new tests, committed as 6270284
 - **T074**: ✅ DONE — Already fully implemented (morale-improver + PostCopyHint), no changes needed
 - **T075**: ✅ DONE — Removed deprecated createAdvancedPrompt alias, -25 lines
-- **Next**: T076+
+- **T076**: ✅ DONE — Fixed 2 Linux Docker issues: SkipIfRoot for chmod tests + TOCTOU fix in mouseharness ClickElement (single buffer snapshot)
+- **Next**: T077 (Windows via 'make make-all-run-windows' on host 'moo')

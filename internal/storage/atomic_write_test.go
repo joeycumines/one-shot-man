@@ -135,9 +135,9 @@ func TestAtomicWriteFile(t *testing.T) {
 		// NEW, MORE ROBUST CHECK:
 		// This assumes the error returned from AtomicWriteFile can be inspected
 		// to find the temporary file path.
-		var renameErr RenameError
+		var renameErr renameError
 		if !errors.As(err, &renameErr) {
-			t.Fatalf("Expected error to be of type RenameError, but got %T: %v", err, err)
+			t.Fatalf("Expected error to be of type renameError, but got %T: %v", err, err)
 		}
 
 		// Now that we have the specific error type, check for cleanup.
@@ -201,7 +201,7 @@ func TestAtomicWriteFile(t *testing.T) {
 
 func TestRenameError_Methods(t *testing.T) {
 	inner := fmt.Errorf("some rename error")
-	re := RenameError{Err: inner, tempPath: "/tmp/foo"}
+	re := renameError{Err: inner, tempPath: "/tmp/foo"}
 
 	if got := re.Error(); got != "some rename error" {
 		t.Errorf("Error() = %q, want %q", got, "some rename error")
@@ -215,7 +215,7 @@ func TestRenameError_Methods(t *testing.T) {
 
 	// Verify errors.Is works through Unwrap.
 	sentinel := fmt.Errorf("sentinel")
-	re2 := RenameError{Err: fmt.Errorf("wrapped: %w", sentinel), tempPath: "/tmp/bar"}
+	re2 := renameError{Err: fmt.Errorf("wrapped: %w", sentinel), tempPath: "/tmp/bar"}
 	if !errors.Is(re2, sentinel) {
 		t.Error("expected errors.Is to find sentinel through Unwrap chain")
 	}

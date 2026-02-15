@@ -50,7 +50,7 @@ func TestAcquireLockHandle_ClosesOnError(t *testing.T) {
 	}
 }
 
-// When acquireFileLock returns ErrWouldBlock along with a non-nil file, the
+// When acquireFileLock returns errWouldBlock along with a non-nil file, the
 // implementation must still close the file before returning to avoid leaks.
 func TestAcquireLockHandle_ClosesOnWouldBlock(t *testing.T) {
 	dir := t.TempDir()
@@ -65,12 +65,12 @@ func TestAcquireLockHandle_ClosesOnWouldBlock(t *testing.T) {
 	defer func() { acquireFileLock = orig }()
 
 	acquireFileLock = func(p string) (*os.File, error) {
-		return f, ErrWouldBlock
+		return f, errWouldBlock
 	}
 
 	gotF, ok, err := AcquireLockHandle(path)
 	if err != nil {
-		t.Fatalf("expected no error for ErrWouldBlock fold, got: %v", err)
+		t.Fatalf("expected no error for errWouldBlock fold, got: %v", err)
 	}
 	if gotF != nil {
 		_ = gotF.Close()
@@ -81,6 +81,6 @@ func TestAcquireLockHandle_ClosesOnWouldBlock(t *testing.T) {
 	}
 
 	if _, werr := f.Write([]byte("x")); werr == nil {
-		t.Fatalf("expected stubbed file to be closed on ErrWouldBlock")
+		t.Fatalf("expected stubbed file to be closed on errWouldBlock")
 	}
 }

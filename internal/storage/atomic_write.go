@@ -18,15 +18,15 @@ func SetTestHookCrashBeforeRename(hook func()) {
 	testHookCrashBeforeRename = hook
 }
 
-// RenameError wraps a rename error with the temporary file path for testing purposes.
-type RenameError struct {
+// renameError wraps a rename error with the temporary file path for testing purposes.
+type renameError struct {
 	Err      error
 	tempPath string
 }
 
-func (e RenameError) Error() string    { return e.Err.Error() }
-func (e RenameError) TempPath() string { return e.tempPath }
-func (e RenameError) Unwrap() error    { return e.Err }
+func (e renameError) Error() string    { return e.Err.Error() }
+func (e renameError) TempPath() string { return e.tempPath }
+func (e renameError) Unwrap() error    { return e.Err }
 
 // AtomicWriteFile safely writes data by using a temporary file and an atomic rename.
 func AtomicWriteFile(filename string, data []byte, perm os.FileMode) error {
@@ -89,7 +89,7 @@ func AtomicWriteFile(filename string, data []byte, perm os.FileMode) error {
 		success = true
 	}
 	if renameErr != nil {
-		return RenameError{Err: renameErr, tempPath: tempFile.Name()}
+		return renameError{Err: renameErr, tempPath: tempFile.Name()}
 	}
 	return nil
 }

@@ -70,7 +70,7 @@ func lockFileWindows(f *os.File) error {
 	)
 	if err != nil {
 		if errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
-			return ErrWouldBlock
+			return errWouldBlock
 		}
 		return fmt.Errorf("LockFileEx failed: %w", err)
 	}

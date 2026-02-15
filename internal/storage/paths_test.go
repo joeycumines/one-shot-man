@@ -162,9 +162,9 @@ func TestSanitizeFilename(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := SanitizeFilename(tt.input)
+			got := sanitizeFilename(tt.input)
 			if got != tt.expected {
-				t.Errorf("SanitizeFilename(%q) = %q, want %q", tt.input, got, tt.expected)
+				t.Errorf("sanitizeFilename(%q) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
 	}
@@ -172,8 +172,8 @@ func TestSanitizeFilename(t *testing.T) {
 
 func TestSanitizeFilename_PreserveLeadingDot(t *testing.T) {
 	// Ensure leading dots are preserved and do not collide with non-dot names
-	a := SanitizeFilename(".config")
-	b := SanitizeFilename("config")
+	a := sanitizeFilename(".config")
+	b := sanitizeFilename("config")
 	if a == b {
 		t.Fatalf("expected leading dot to be preserved; got equal sanitized values %q", a)
 	}
@@ -184,8 +184,8 @@ func TestSanitizeFilename_UnicodeNormalization(t *testing.T) {
 	decomposed := "e\u0301-session"
 	precomposed := "é-session"
 
-	d := SanitizeFilename(decomposed)
-	p := SanitizeFilename(precomposed)
+	d := sanitizeFilename(decomposed)
+	p := sanitizeFilename(precomposed)
 
 	if d != p {
 		t.Fatalf("expected decomposed and precomposed forms to sanitize equally; got %q vs %q", d, p)
@@ -273,9 +273,9 @@ func TestSessionArchiveDir(t *testing.T) {
 	defer ResetPaths()
 
 	// First call should create the directory
-	dir1, err := SessionArchiveDir()
+	dir1, err := sessionArchiveDir()
 	if err != nil {
-		t.Fatalf("SessionArchiveDir failed: %v", err)
+		t.Fatalf("sessionArchiveDir failed: %v", err)
 	}
 
 	if !strings.Contains(dir1, "archive") {
@@ -287,13 +287,13 @@ func TestSessionArchiveDir(t *testing.T) {
 	}
 
 	// Second call should return the same path and not error
-	dir2, err := SessionArchiveDir()
+	dir2, err := sessionArchiveDir()
 	if err != nil {
-		t.Fatalf("Second SessionArchiveDir failed: %v", err)
+		t.Fatalf("Second sessionArchiveDir failed: %v", err)
 	}
 
 	if dir1 != dir2 {
-		t.Errorf("SessionArchiveDir should return same path consistently: %s vs %s", dir1, dir2)
+		t.Errorf("sessionArchiveDir should return same path consistently: %s vs %s", dir1, dir2)
 	}
 }
 
@@ -325,9 +325,9 @@ func TestSessionArchiveDir_SessionDirError(t *testing.T) {
 	defer func() { sessionDirectory = orig }()
 	sessionDirectory = func() (string, error) { return "", fmt.Errorf("no home dir") }
 
-	_, err := SessionArchiveDir()
+	_, err := sessionArchiveDir()
 	if err == nil {
-		t.Fatal("expected error from SessionArchiveDir when sessionDirectory fails")
+		t.Fatal("expected error from sessionArchiveDir when sessionDirectory fails")
 	}
 }
 
@@ -355,7 +355,7 @@ func TestSessionArchiveDir_MkdirAllError(t *testing.T) {
 	defer func() { sessionDirectory = orig }()
 	sessionDirectory = func() (string, error) { return tmpDir, nil }
 
-	_, err := SessionArchiveDir()
+	_, err := sessionArchiveDir()
 	if err == nil {
 		t.Fatal("expected error when MkdirAll fails for archive directory")
 	}

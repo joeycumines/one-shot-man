@@ -218,7 +218,8 @@
     {
       "task": "T054: API surface optimization: storage package",
       "description": "Review internal/storage/ public API. Clean backend interface, cleanup, file locking, atomic writes. Consolidate test helpers. Remove redundant exports. Update callers.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Unexported 4 symbols with zero external references: SessionArchiveDir→sessionArchiveDir, SanitizeFilename→sanitizeFilename, RenameError→renameError, ErrWouldBlock→errWouldBlock. 9 files changed. Assessed but retained: StorageBackend, Session, HistoryEntry, CurrentSchemaVersion, Cleaner, CleanupScheduler, CleanupReport, SessionInfo, ScanSessions, AcquireLockHandle, ReleaseLockHandle, NewFileSystemBackend, NewInMemoryBackend, BackendRegistry, GetBackend, SetTestPaths, ResetPaths, AtomicWriteFile, SetTestHookCrashBeforeRename, SessionFilePath, SessionLockFilePath, ArchiveSessionFilePath (all have external callers). SessionDirectory kept exported due to var naming collision. Vet+staticcheck+deadcode pass. Rule of Two passed."
     },
     {
       "task": "T055: API surface optimization: builtin module registration",

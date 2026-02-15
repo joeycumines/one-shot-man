@@ -24,7 +24,7 @@ var acquireFileLock = func(path string) (*os.File, error) {
 	if err != nil {
 		lockFile.Close()
 		if errors.Is(err, unix.EWOULDBLOCK) {
-			return nil, ErrWouldBlock
+			return nil, errWouldBlock
 		}
 		return nil, fmt.Errorf("failed to acquire file lock: %w", err)
 	}

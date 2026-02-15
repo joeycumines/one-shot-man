@@ -94,9 +94,9 @@ func SessionLockFilePath(sessionID string) (string, error) {
 	return filepath.Join(dir, sessionID+".session.lock"), nil
 }
 
-// SessionArchiveDir returns the directory where archived session files are stored.
+// sessionArchiveDir returns the directory where archived session files are stored.
 // Creates the archive subdirectory if it doesn't exist.
-func SessionArchiveDir() (string, error) {
+func sessionArchiveDir() (string, error) {
 	dir, err := sessionDirectory()
 	if err != nil {
 		return "", err
@@ -108,9 +108,9 @@ func SessionArchiveDir() (string, error) {
 	return archiveDir, nil
 }
 
-// SanitizeFilename replaces filesystem-unsafe characters with underscores.
+// sanitizeFilename replaces filesystem-unsafe characters with underscores.
 // This prevents path traversal and cross-platform filename issues.
-func SanitizeFilename(input string) string {
+func sanitizeFilename(input string) string {
 	// Normalize Unicode to NFKC to prevent Unicode normalization-based
 	// path traversal / bypass attacks where visually equivalent strings use
 	// different combining/compatibility forms.
@@ -152,11 +152,11 @@ func SanitizeFilename(input string) string {
 // ArchiveSessionFilePath returns the path where a session should be archived.
 // Filename format: {sessionDir}/archive/{sanitizedSessionID}--reset--{UTC-ISO8601}--{counter}.session.json
 func ArchiveSessionFilePath(sessionID string, ts time.Time, counter int) (string, error) {
-	archiveDir, err := SessionArchiveDir()
+	archiveDir, err := sessionArchiveDir()
 	if err != nil {
 		return "", err
 	}
-	sanitizedID := SanitizeFilename(sessionID)
+	sanitizedID := sanitizeFilename(sessionID)
 	// Format timestamp: 2025-11-26T14-03-00Z (hyphens instead of colons for cross-platform)
 	timestampStr := ts.UTC().Format("2006-01-02T15-04-05Z")
 	archiveFilename := filepath.Join(archiveDir,

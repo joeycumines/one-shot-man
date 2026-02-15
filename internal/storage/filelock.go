@@ -5,9 +5,9 @@ import (
 	"os"
 )
 
-// ErrWouldBlock signals that a non-blocking lock attempt failed due to the
+// errWouldBlock signals that a non-blocking lock attempt failed due to the
 // resource being locked by another process.
-var ErrWouldBlock = errors.New("file lock would block")
+var errWouldBlock = errors.New("file lock would block")
 
 // AcquireLockHandle attempts to acquire an exclusive lock on path and returns
 // the underlying file handle if successful. The caller may choose to call
@@ -19,7 +19,7 @@ func AcquireLockHandle(path string) (*os.File, bool, error) {
 		if f != nil {
 			_ = f.Close()
 		}
-		if errors.Is(err, ErrWouldBlock) {
+		if errors.Is(err, errWouldBlock) {
 			return nil, false, nil
 		}
 		return nil, false, err

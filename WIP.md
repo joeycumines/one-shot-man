@@ -35,4 +35,5 @@
 - **T051**: ✅ DONE — 4 fuzz tests: config (494K execs), SplitDiff (1M execs), buildContext (140K execs), GojaRunString (758K execs). Zero panics. Goja uses SetMaxCallStackSize(64) + time.AfterFunc(100ms) vm.Interrupt for infinite loop protection.
 - **T052**: ✅ DONE — Deleted 2 deprecated aliases (GetStateViaJS/SetStateViaJS). Unexported 6 internal-only symbols (DefaultSyncTimeout, ScriptPanicError, ContextPath, LogEntry, TUILogHandler, HistoryConfig). 16 files, net -9 lines. Remaining types assessed but kept (bounded by internal/). Rule of Two passed.
 - **T053**: ✅ DONE — Deleted unused ContextCommand interface (+context import). Unexported: ListBuiltin→listBuiltin, ListScript→listScript, ScriptCommand→scriptCommand, NewScriptCommand→newScriptCommand. Assessed but kept: BaseCommand (43+ refs), ScriptDiscovery (40+ refs). 10 files. Rule of Two passed.
-- **Next**: T054 — API surface optimization: storage package
+- **T054**: ✅ DONE — Unexported 4 symbols: SessionArchiveDir→sessionArchiveDir, SanitizeFilename→sanitizeFilename, RenameError→renameError, ErrWouldBlock→errWouldBlock. 9 files. Rule of Two passed.
+- **Next**: T055 — API surface optimization: builtin module registration

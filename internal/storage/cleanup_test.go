@@ -820,7 +820,7 @@ func TestCleaner_SessionDirError(t *testing.T) {
 }
 
 // ScanSessions should report Active=false (not crash) when AcquireLockHandle
-// encounters an unexpected error (not ErrWouldBlock).
+// encounters an unexpected error (not errWouldBlock).
 func TestScanSessions_AcquireLockError(t *testing.T) {
 	dir := t.TempDir()
 	SetTestPaths(dir)
@@ -831,7 +831,7 @@ func TestScanSessions_AcquireLockError(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	// Stub acquireFileLock to return a non-ErrWouldBlock error.
+	// Stub acquireFileLock to return a non-errWouldBlock error.
 	origLock := acquireFileLock
 	defer func() { acquireFileLock = origLock }()
 	acquireFileLock = func(path string) (*os.File, error) {

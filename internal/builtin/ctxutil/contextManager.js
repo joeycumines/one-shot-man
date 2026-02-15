@@ -185,7 +185,7 @@
                 exec: {
                     description: "Add command output to context (lazy: re-executed at prompt time)",
                     usage: "exec <command> [args...]",
-                    argCompleters: ["file"],
+                    argCompleters: ["executable"],
                     handler: function (args) {
                         if (args.length === 0) {
                             output.print("Usage: exec <command> [args...]");

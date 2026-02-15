@@ -7,6 +7,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -1595,5 +1596,373 @@ func TestGitRefCompletion_Descriptions(t *testing.T) {
 	}
 	if desc, ok := descMap["HEAD~1"]; !ok || desc != "1 commit before HEAD" {
 		t.Errorf("HEAD~1: expected description '1 commit before HEAD', got %q (present: %v)", desc, ok)
+	}
+}
+
+// === Executable completion tests ===
+
+// TestExecutableCompletion_EmptyPrefixReturnsCommon verifies that when no prefix
+// is given, getExecutableSuggestions returns curated common commands instead of
+// scanning the entire PATH (which would be slow and noisy).
+func TestExecutableCompletion_EmptyPrefixReturnsCommon(t *testing.T) {
+	sugg := getExecutableSuggestions("")
+	if len(sugg) == 0 {
+		t.Fatal("expected common command suggestions for empty prefix, got none")
+	}
+	// Verify curated commands are present
+	expected := map[string]bool{
+		"cat": false, "git": false, "grep": false, "ls": false, "make": false,
+	}
+	for _, s := range sugg {
+		if _, ok := expected[s.Text]; ok {
+			expected[s.Text] = true
+		}
+		// All common commands should have non-empty descriptions
+		if s.Description == "" {
+			t.Errorf("common command %q has empty description", s.Text)
+		}
+	}
+	for name, found := range expected {
+		if !found {
+			t.Errorf("expected common command %q in suggestions, not found", name)
+		}
+	}
+}
+
+// TestExecutableCompletion_CommonCommandsSorted verifies that the common command
+// suggestions returned for empty prefix are in sorted order (since they're hand-curated).
+func TestExecutableCompletion_CommonCommandsSorted(t *testing.T) {
+	sugg := getExecutableSuggestions("")
+	names := make([]string, len(sugg))
+	for i, s := range sugg {
+		names[i] = s.Text
+	}
+	if !sort.StringsAreSorted(names) {
+		t.Errorf("common commands not sorted: %v", names)
+	}
+}
+
+// TestExecutableCompletion_PrefixMatchFromPATH verifies that giving a non-empty
+// prefix triggers a PATH scan and returns matching executables.
+func TestExecutableCompletion_PrefixMatchFromPATH(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping Unix executable bit test on Windows")
+	}
+
+	// Create a temp dir with controlled executables
+	tmp := t.TempDir()
+	for _, name := range []string{"gitfoo", "gitbar", "notmatch"} {
+		f := filepath.Join(tmp, name)
+		if err := os.WriteFile(f, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	// Override PATH to only include our temp dir
+	t.Setenv("PATH", tmp)
+
+	sugg := getExecutableSuggestions("git")
+	if len(sugg) != 2 {
+		names := make([]string, len(sugg))
+		for i, s := range sugg {
+			names[i] = s.Text
+		}
+		t.Fatalf("expected 2 suggestions for prefix 'git', got %d: %v", len(sugg), names)
+	}
+	found := map[string]bool{}
+	for _, s := range sugg {
+		found[s.Text] = true
+		if s.Description != "executable" {
+			t.Errorf("expected description 'executable' for %q, got %q", s.Text, s.Description)
+		}
+	}
+	if !found["gitfoo"] || !found["gitbar"] {
+		t.Errorf("expected gitfoo and gitbar, got: %v", found)
+	}
+}
+
+// TestExecutableCompletion_CaseInsensitive verifies case-insensitive matching.
+func TestExecutableCompletion_CaseInsensitive(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping Unix executable bit test on Windows")
+	}
+
+	tmp := t.TempDir()
+	f := filepath.Join(tmp, "MyCommand")
+	if err := os.WriteFile(f, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	t.Setenv("PATH", tmp)
+
+	// Lowercase prefix should match uppercase name
+	sugg := getExecutableSuggestions("myc")
+	if len(sugg) != 1 {
+		t.Fatalf("expected 1 suggestion for prefix 'myc', got %d", len(sugg))
+	}
+	if sugg[0].Text != "MyCommand" {
+		t.Errorf("expected MyCommand, got %q", sugg[0].Text)
+	}
+}
+
+// TestExecutableCompletion_Deduplication verifies that executables appearing in
+// multiple PATH directories are only suggested once (first occurrence wins).
+func TestExecutableCompletion_Deduplication(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping Unix executable bit test on Windows")
+	}
+
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+
+	// Same executable name in both dirs
+	for _, dir := range []string{dir1, dir2} {
+		f := filepath.Join(dir, "dupexec")
+		if err := os.WriteFile(f, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatalf("write in %s: %v", dir, err)
+		}
+	}
+
+	t.Setenv("PATH", dir1+string(os.PathListSeparator)+dir2)
+
+	sugg := getExecutableSuggestions("dup")
+	if len(sugg) != 1 {
+		t.Fatalf("expected 1 deduplicated suggestion, got %d", len(sugg))
+	}
+	if sugg[0].Text != "dupexec" {
+		t.Errorf("expected dupexec, got %q", sugg[0].Text)
+	}
+}
+
+// TestExecutableCompletion_NonExecutableFiltered verifies that non-executable
+// files are excluded from suggestions.
+func TestExecutableCompletion_NonExecutableFiltered(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping Unix executable bit test on Windows")
+	}
+
+	tmp := t.TempDir()
+	// Executable file
+	if err := os.WriteFile(filepath.Join(tmp, "execfile"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Non-executable file
+	if err := os.WriteFile(filepath.Join(tmp, "execdata"), []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Directory
+	if err := os.MkdirAll(filepath.Join(tmp, "execdir"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("PATH", tmp)
+
+	sugg := getExecutableSuggestions("exec")
+	if len(sugg) != 1 {
+		names := make([]string, len(sugg))
+		for i, s := range sugg {
+			names[i] = s.Text
+		}
+		t.Fatalf("expected only 'execfile', got %d: %v", len(sugg), names)
+	}
+	if sugg[0].Text != "execfile" {
+		t.Errorf("expected execfile, got %q", sugg[0].Text)
+	}
+}
+
+// TestExecutableCompletion_PathSeparatorDelegatesToFilepath verifies that a prefix
+// containing a path separator delegates to file path completion instead of PATH scan.
+func TestExecutableCompletion_PathSeparatorDelegatesToFilepath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping path separator test on Windows")
+	}
+
+	tmp := t.TempDir()
+	// Create a file to verify filepath delegation
+	if err := os.WriteFile(filepath.Join(tmp, "runme.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	// Using "./" prefix triggers filepath completion rather than PATH scan.
+	// getFilepathSuggestions returns basenames when scanning "." directory.
+	sugg := getExecutableSuggestions("./run")
+	found := false
+	for _, s := range sugg {
+		if s.Text == "runme.sh" || s.Text == "./runme.sh" {
+			found = true
+		}
+	}
+	if !found {
+		names := make([]string, len(sugg))
+		for i, s := range sugg {
+			names[i] = s.Text
+		}
+		t.Errorf("expected runme.sh in filepath completion, got: %v", names)
+	}
+}
+
+// TestExecutableCompletion_EmptyPATH verifies that an empty PATH returns nil.
+func TestExecutableCompletion_EmptyPATH(t *testing.T) {
+	t.Setenv("PATH", "")
+
+	sugg := getExecutableSuggestions("git")
+	if sugg != nil {
+		t.Errorf("expected nil for empty PATH, got %d suggestions", len(sugg))
+	}
+}
+
+// TestExecutableCompletion_NonexistentPATHDir verifies that non-existent
+// directories in PATH are silently skipped.
+func TestExecutableCompletion_NonexistentPATHDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping Unix executable bit test on Windows")
+	}
+
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "realcmd"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// PATH includes a non-existent directory before the valid one
+	t.Setenv("PATH", "/nonexistent/bogus/path"+string(os.PathListSeparator)+tmp)
+
+	sugg := getExecutableSuggestions("real")
+	if len(sugg) != 1 {
+		t.Fatalf("expected 1 suggestion, got %d", len(sugg))
+	}
+	if sugg[0].Text != "realcmd" {
+		t.Errorf("expected realcmd, got %q", sugg[0].Text)
+	}
+}
+
+// TestExecutableCompletion_IntegrationWithTUIManager verifies that the executable
+// completer is properly wired into the TUI manager's completion logic via the
+// "executable" argCompleter type.
+func TestExecutableCompletion_IntegrationWithTUIManager(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"exec": {
+				Name:          "exec",
+				Description:   "Execute command",
+				ArgCompleters: []string{"executable"},
+			},
+		},
+		commandOrder: []string{"exec"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "exec " with no prefix should return common commands
+	sugg := tm.getDefaultCompletionSuggestionsFor("exec ", "exec ")
+	if len(sugg) == 0 {
+		t.Fatal("expected common command suggestions for 'exec '")
+	}
+	// Verify at least one common command is present
+	foundCommon := false
+	for _, s := range sugg {
+		if s.Text == "git" || s.Text == "ls" || s.Text == "cat" {
+			foundCommon = true
+			break
+		}
+	}
+	if !foundCommon {
+		t.Error("expected common commands (git, ls, cat) in suggestions")
+	}
+}
+
+// TestExecutableCompletion_MixedWithFile verifies that a command with both
+// "executable" and "file" completers returns results from both.
+func TestExecutableCompletion_MixedWithFile(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "testfile.txt"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"run": {
+				Name:          "run",
+				Description:   "Run something",
+				ArgCompleters: []string{"executable", "file"},
+			},
+		},
+		commandOrder: []string{"run"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "run " should show both executable suggestions and file suggestions
+	sugg := tm.getDefaultCompletionSuggestionsFor("run ", "run ")
+	hasExec := false
+	hasFile := false
+	for _, s := range sugg {
+		if s.Text == "git" || s.Text == "ls" || s.Description == "executable" {
+			hasExec = true
+		}
+		if s.Text == "testfile.txt" {
+			hasFile = true
+		}
+	}
+	if !hasExec {
+		t.Error("expected executable suggestions in mixed mode")
+	}
+	if !hasFile {
+		t.Error("expected file suggestions in mixed mode")
+	}
+}
+
+// TestExecutableCompletion_PrefixWithPartialArg verifies that executable
+// completion works when the user has typed a partial argument.
+func TestExecutableCompletion_PrefixWithPartialArg(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping Unix executable bit test on Windows")
+	}
+
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "testexec"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("PATH", tmp)
+
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"exec": {
+				Name:          "exec",
+				Description:   "Execute command",
+				ArgCompleters: []string{"executable"},
+			},
+		},
+		commandOrder: []string{"exec"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// "exec test" should match testexec from our PATH
+	sugg := tm.getDefaultCompletionSuggestionsFor("exec test", "exec test")
+	found := false
+	for _, s := range sugg {
+		if s.Text == "testexec" {
+			found = true
+		}
+	}
+	if !found {
+		names := make([]string, len(sugg))
+		for i, s := range sugg {
+			names[i] = s.Text
+		}
+		t.Errorf("expected testexec in suggestions, got: %v", names)
 	}
 }

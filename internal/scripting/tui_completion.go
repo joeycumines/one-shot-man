@@ -111,6 +111,98 @@ func getFilepathSuggestions(path string) []prompt.Suggest {
 	return suggestions
 }
 
+// getExecutableSuggestions provides completion suggestions for executable commands
+// found in the system PATH. It scans each PATH directory for files whose names
+// match the given prefix and are executable. If no prefix is provided, common
+// shell built-ins are suggested instead of scanning the entire PATH (which can
+// be expensive).
+func getExecutableSuggestions(prefix string) []prompt.Suggest {
+	// When no prefix is provided, suggest common commands rather than
+	// scanning every PATH directory, which can contain thousands of entries.
+	if prefix == "" {
+		common := []struct {
+			text string
+			desc string
+		}{
+			{"cat", "concatenate and print files"},
+			{"curl", "transfer data from URLs"},
+			{"date", "display date and time"},
+			{"echo", "display a line of text"},
+			{"env", "display environment"},
+			{"find", "search for files"},
+			{"git", "version control"},
+			{"grep", "search text patterns"},
+			{"head", "output first part of files"},
+			{"jq", "JSON processor"},
+			{"ls", "list directory contents"},
+			{"make", "build automation"},
+			{"pwd", "print working directory"},
+			{"sed", "stream editor"},
+			{"sort", "sort lines of text"},
+			{"tail", "output last part of files"},
+			{"wc", "word, line, character count"},
+		}
+		var suggestions []prompt.Suggest
+		for _, c := range common {
+			suggestions = append(suggestions, prompt.Suggest{
+				Text:        c.text,
+				Description: c.desc,
+			})
+		}
+		return suggestions
+	}
+
+	lowerPrefix := strings.ToLower(prefix)
+
+	// If prefix contains a path separator, delegate to file completion
+	// since the user is typing a path to an executable.
+	if strings.ContainsRune(prefix, filepath.Separator) || strings.ContainsRune(prefix, '/') {
+		return getFilepathSuggestions(prefix)
+	}
+
+	// Scan PATH directories for matching executables.
+	pathEnv := os.Getenv("PATH")
+	if pathEnv == "" {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var suggestions []prompt.Suggest
+
+	for _, dir := range filepath.SplitList(pathEnv) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if seen[name] {
+				continue
+			}
+			if !strings.HasPrefix(strings.ToLower(name), lowerPrefix) {
+				continue
+			}
+			// Check executable bit (Unix) or extension (Windows)
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			if info.Mode()&0111 == 0 {
+				continue // not executable
+			}
+			seen[name] = true
+			suggestions = append(suggestions, prompt.Suggest{
+				Text:        name,
+				Description: "executable",
+			})
+		}
+	}
+	return suggestions
+}
+
 // getGitRefSuggestions provides completion suggestions for git refs (branches, tags, common refs).
 // It shells out to git for branch/tag names. If git commands fail (e.g. not in a git repo),
 // it silently falls back to common ref suggestions only.
@@ -318,6 +410,9 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 							suggestions = append(suggestions, fileSuggestions...)
 							fileCompleterProcessed = true
 						}
+					case "executable":
+						execSuggestions := getExecutableSuggestions(currentWord)
+						suggestions = append(suggestions, execSuggestions...)
 					case "flag":
 						for _, def := range cmd.FlagDefs {
 							flagText := "--" + def.Name

@@ -43,20 +43,16 @@
 - **T059**: ✅ DONE — Profiled bubbletea render pipeline (View ~104ns, Update+View ~660ns, throttle cache ~44ns/0 allocs). 13 new benchmarks + profiling notes. No app-level optimization targets. Rule of Two passed.
 - **T060**: ✅ DONE — 4 per-package benchmark files (config, template, command, scripting) with 40+ sub-benchmarks covering all 8 categories (context manager ops, config parsing, goal discovery, script discovery, require() loading, prompt building, template execution, SetKeyInFile). Rule of Two passed.
 - **T061**: ✅ DONE — Cross-platform benchmark stability verified. macOS variance <10% (max ~30% for sub-μs ops). Linux Docker all 7 thresholds pass with 400x-20,000x headroom. No adjustments needed. No platform-specific multipliers. Windows deferred to T077. Documentation added to benchmark_test.go. Rule of Two passed.
-- **Next**: T062 — Security review: input sanitization
-- **T062**: ✅ DONE — 34 new security input sanitization tests (14 categories), documenting unsandboxed security posture, Rule of Two passed
-- **T063**: ✅ DONE — 18 sandbox boundary tests (VM isolation, module API boundaries, global scope, context cancellation), docs/security.md created, committed as 3f6b728, Rule of Two passed
-- **T064**: ✅ DONE — Added computePathLCA + ToTxtar metadata comment + full-path preservation for collision groups. 19 new tests. All existing tests pass.
-- **T065**: ✅ DONE — Added ValidateOptionValue to schema.go. ConfigCommand now validates type before set (unknown keys warn, invalid types error). 16 integration tests in config_persist_test.go. Full suite passes.
-- **T066**: ✅ DONE — Added autoGenerateOnCopy flag to prompt-flow. Auto-generates meta-prompt on first copy when goal set. 8 new tests + helper. Rule of Two passed.
-- **T067**: ✅ DONE — Fixed RefreshPath normalization (trailing slash, ./ prefix), 3 new tests, Rule of Two passed
-- **T068**: ✅ DONE — Extracted formatGoalLine helper, added [vars: key=val, ...] parameter summary, 10 new tests, Rule of Two passed
-- **T069**: ✅ DONE — Added getExecutableSuggestions (PATH-based) + executable argCompleter type + 12 tests. contextManager.js exec updated from file to executable. Committed as 61c0d93.
-- **T070**: ✅ DONE — Improved getGitRefSuggestions (+--staged, remote branches, recent commits), 6 new tests. Committed as 679455f.
-- **T071**: ✅ DONE — Added CommandFlagDef struct + FlagDefs to CommandConfig. Moved --staged from gitref to diff flagDefs. Added --stat/--name-only flags. goal.js flagDefs passthrough. 6 new tests + 2 replaced.
-- **T072**: ✅ DONE — Added GoalHotSnippet struct + HotSnippets field. hot- prefix in contextManager.js. morale-improver (review-plan, prove-it) + commit-message (review-response) embedded snippets. goal.js merge logic. hot-snippets.no-warning config. buildCommands propagation. 13 tests.
-- **T073**: ✅ DONE — Strict argument validation for all commands/subcommands, 21 new tests, committed as 6270284
-- **T074**: ✅ DONE — Already fully implemented (morale-improver + PostCopyHint), no changes needed
-- **T075**: ✅ DONE — Removed deprecated createAdvancedPrompt alias, -25 lines
-- **T076**: ✅ DONE — Fixed 2 Linux Docker issues: SkipIfRoot for chmod tests + TOCTOU fix in mouseharness ClickElement (single buffer snapshot)
-- **Next**: T077 (Windows via 'make make-all-run-windows' on host 'moo')
+- **T062-T076**: ✅ ALL DONE (security, txtar, config persistence, prompt-flow QoL, completions, hot-snippets, validation, Linux Docker)
+- **T077**: 🔄 IN PROGRESS — Code changes committed (307165b). Windows test run pending.
+- **T078-T102**: Planned (macOS CI, CHANGELOG, docs overhaul, shell completion, QoL features, session cleanup, dependency audit, final integration, scope expansion)
+
+## Blueprint Rewrite (this session)
+- Rewrote blueprint.json with 26 tasks (T077-T102) replacing prior 15-task plan (T077-T091)
+- Trimmed Done task outcomes to single lines
+- Added: T092 (one-step mode), T093 (footer), T094 (add from diff), T095 (duplicate logs), T096 (cleanup scheduler), T097 (tview removal plan), T098 (cross-ref validation), T099-T101 (final integration gates), T102 (scope expansion)
+
+## Next Steps
+1. T077: Run `make make-all-run-windows` on host "moo"
+2. T078: Run `make all` on macOS — establish clean baseline
+3. T079: Populate CHANGELOG.md with comprehensive entries

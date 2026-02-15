@@ -13,6 +13,7 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/gdamore/tcell/v2"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/term"
@@ -1140,6 +1141,8 @@ func TestInteractiveTable_GojaOnSelectAsFunction(t *testing.T) {
 func TestInteractiveTable_ShowInteractiveTableError(t *testing.T) {
 	// Tests the error return path from ShowInteractiveTable (line 387)
 	// When getOrCreateScreen fails, ShowInteractiveTable returns an error.
+	platform := testutil.DetectPlatform(t)
+	testutil.SkipIfWindows(t, platform, "tview uses Windows console API, TERM env var has no effect")
 	t.Setenv("TERM", "osm-nonexistent-terminal-type")
 
 	// Create a manager with a terminal (no screen) — getOrCreateScreen will try

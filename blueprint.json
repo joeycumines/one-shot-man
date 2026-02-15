@@ -14,418 +14,193 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T076 done. T077 (Windows) next."
+    "currentState": "T001-T076 completed (coverage audits, API optimization, profiling, security, bug fixes, features). T077 (Windows) In Progress — code changes committed (307165b), actual Windows test run pending. T078-T102 planned: platform verification, documentation overhaul, CHANGELOG, shell completion, QoL features, session cleanup, dependency audit, final integration, scope expansion."
   },
   "sequentialTasks": [
-    {
-      "task": "T021: Coverage audit: internal/builtin/exec",
-      "description": "Run coverage for internal/builtin/exec/. Test exec(), execv(), runExec(). Cover: command not found, non-string args, captured stdout/stderr, exit codes, context cancellation, empty command, platform-specific shell dispatch (cmd.exe vs sh). Note security: runExec sets c.Stdin=os.Stdin. Achieve 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Already at 100% statement coverage. Require=100%, runExec=100%. All edge cases covered. No changes needed."
-    },
-    {
-      "task": "T022: Coverage audit: internal/builtin/os",
-      "description": "Run coverage for internal/builtin/os/. Test readFile, fileExists, openEditor, clipboardCopy (with OSM_CLIPBOARD env override), getenv, sanitizeFilename. Cover platform-specific clipboard paths (darwin/windows/linux/wayland/termux). Achieve 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage 70.2% → 84.0%. Require=100%, sanitizeFilename=100%, openEditor=85.4%, clipboardCopy=55.9%. Remaining gaps are Windows/Linux platform-specific branches unreachable on macOS. 18 new tests added. Rule of Two passed."
-    },
-    {
-      "task": "T023: Coverage audit: internal/builtin/ctxutil (Go side)",
-      "description": "Run coverage for internal/builtin/ctxutil/ Go code. Test Require, buildContext for all item types (note, diff, diff-error, lazy-diff, lazy-exec, file), calculateBacktickFence, content blocks, coercion utilities. Cover error paths: nil context, missing items, malformed types. Achieve 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage 76.5% → 86.0%. 14 new tests. runGitDiff 0%→100%, getDefaultGitDiffArgs 0%→100%. Fixed nil-dereference in Require when exportsVal is Go nil. Remaining uncovered code is defensive dead code (panic recovery, nil-after-ToObject, embedded-script error handling). Rule of Two passed."
-    },
-    {
-      "task": "T024: Coverage audit: internal/builtin/ctxutil (JS integration)",
-      "description": "Test contextManager.js integration via scripting engine. Cover all REPL commands: add, diff, exec, note, list, edit, remove, show, copy, snippets, hot-snippets. Test factory creation, item state, refresh, copy formatting, flag completers (file, gitref, flag). Achieve 100% effective JS path coverage.",
-      "status": "Done",
-      "outcome": "14 new test functions covering all untested contextManager.js paths: list, edit edge cases, remove edge cases, clipboard errors, add editor mode, refresh without context, note editor, non-file removal. Committed as 3873afd."
-    },
-    {
-      "task": "T025: Coverage audit: internal/builtin/bt",
-      "description": "Run coverage for internal/builtin/bt/. Review 11 test files (blackboard, bridge, adapter, integration, stress, fuzz). Identify uncovered paths in JS-Go bridge, tick execution, status propagation, error recovery. Target 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage 76.8% → 91.3%. 54 new test functions in coverage_gaps_test.go. Fixed 2 pre-existing flaky tests (adapter_test.go, bridge_test.go) replacing TOCTOU IsRunning()/Done() with atomic GetLifecycleSnapshot(). Reduced bt suite time 15s → 10s. Rule of Two passed."
-    },
-    {
-      "task": "T026: Coverage audit: internal/builtin/pabt",
-      "description": "Run coverage for internal/builtin/pabt/. Review 11+ test files. Note: entire package in .deadcodeignore (JS-callable). Focus on Go-level coverage of NewAction, NewActionGenerator, NewBlackboard, NewExprCondition, State ops, planning, tree construction. Target 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage 78.5% → 93.6%. ~40 new test functions in coverage_gaps_test.go. Covers actions.go (NewAction panics, ActionRegistry), evaluation.go (ExprLRUCache, JSCondition stopped bridge, ExprCondition errors, JSEffect), state.go (normalizeKey all types, Variable numeric keys, actionHasRelevantEffect nil/error), require.go (JS module edge cases). Remaining 6.4% is defensive dead code. Rule of Two passed."
-    },
-    {
-      "task": "T027: Coverage audit: internal/builtin/bubbletea",
-      "description": "Run coverage for internal/builtin/bubbletea/. Review 13 test files. Identify uncovered paths in JS↔Go model bridge, program lifecycle, window size handling. Target 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage ~75.8% → 91.2%. ~60 new test functions in coverage_gaps_test.go. Fixed 3 bugs in bubbletea.go (nil/undefined guards for setWindowTitle, newModel, run). Fixed pre-existing DATA RACE in 3 tests via syscall.Dup. Remaining ~8.8% is defensive/platform code (runProgram TTY setup, terminal state save/restore). Rule of Two passed."
-    },
-    {
-      "task": "T028: Coverage audit: internal/builtin/fetch",
-      "description": "Run coverage for internal/builtin/fetch/. 26 existing tests. Identify uncovered paths: option parsing edge cases, header normalization, body handling, response status, timeout. Achieve 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage 91.4% → 97.4%. 28 new test functions in coverage_gaps_test.go. Covers int64 timeout branch (fetch+fetchStream), multi-value response headers, bad URL for fetchStream, non-string method/body/headers, null/undefined/non-object options, redirect for fetchStream, empty body, status text, DELETE/PATCH methods. Remaining 2.6% is 3 defensive error paths (io.ReadAll/readLine/readAll error after successful HTTP connection) unreachable via httptest. No bugs found. Rule of Two passed."
-    },
-    {
-      "task": "T029: Coverage audit: internal/builtin/flag",
-      "description": "Run coverage for internal/builtin/flag/. ~20 existing tests. Identify uncovered paths: flag definition, parsing, getters, visit/visitAll, args-after--, error handling. Achieve 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage 99.2% (unchanged — already near-perfect). 27 new edge-case tests in coverage_gaps_test.go covering minimal args, undefined defaults, null newFlagSet arg, visit properties, visitAll ordering, multiple flag sets, error paths for bad int/bool/float values, pre-parse state, multiple parses. Sole uncovered block is defensive dead code (default case in get() switch — kind is always one of 4 known strings). No bugs found. Rule of Two passed."
-    },
-    {
-      "task": "T030: Coverage audit: internal/builtin/grpc",
-      "description": "Run coverage for internal/builtin/grpc/. 24 existing tests. Test loadDescriptorSet, dial, conn.invoke, conn.close, status constants. Cover dynamicpb+protojson JS↔proto conversion. Target 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage 93.2% → 96.2%. 15 new test functions in coverage_gaps_test.go. jsLoadDescriptorSet 96.6%→100%, jsDial 88.9%→100%. Remaining 3.8% is 5 defensive dead code blocks (conn.Close error, json.Marshal on goja-exported values, non-gRPC-status error from conn.Invoke, protojson.Marshal on dynamicpb, json.Unmarshal on protojson output). No bugs found. Rule of Two passed."
-    },
-    {
-      "task": "T031: Coverage audit: internal/builtin/bubblezone (ZERO tests)",
-      "description": "internal/builtin/bubblezone/ has ZERO test files. Create bubblezone_test.go. Test Require function, zone ID generation, zone marking, mouse event zone detection. Achieve 100% coverage from scratch.",
-      "status": "Done",
-      "outcome": "Coverage 0% → 98.7%. 39 test functions in bubblezone_test.go testing all 6 JS functions (mark, scan, inBounds, get, newPrefix, close) plus integration flows. Fixed 2 bugs: nil/undefined/null guard for mouseMsg in inBounds before ToObject, nil checks for xVal/yVal alongside IsUndefined checks. Used waitForZone Go-level helper for async Scan() synchronization. Sole uncovered block is defensive dead code (ToObject nil check after null/undefined guard). Rule of Two passed."
-    },
-    {
-      "task": "T032: Coverage audit: internal/builtin/tview and lipgloss",
-      "description": "Run coverage for tview/ (2 test files, deprecated) and lipgloss/ (1 test file). Test Require functions, signal handling (tview), style creation/composition (lipgloss), color parsing, border/padding/margin helpers. Achieve 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage: tview 68.5% → 96.4%, lipgloss 58.0% → 99.0%. Fixed 1 bug in tview.go (nil guard for exportsVal in Require). ~80 new test functions total across 2 new coverage_gaps_test.go files. Remaining uncovered code is defensive dead code (tview: stopResize timing, getOrCreateScreen terminal path, Goja error return, app.Run error; lipgloss: getState nil returns in proto methods). Rule of Two passed."
-    },
-    {
-      "task": "T033: Coverage audit: builtin template, time, nextintegerid, unicodetext, argv, scrollbar",
-      "description": "Coverage for 6 small packages (each 1 source + 1 test file). Template rendering, time APIs, integer ID gen, unicode text width, builtin argv parsing, scrollbar options/rendering. Achieve 100% effective coverage each.",
-      "status": "Done",
-      "outcome": "Coverage: template 80.9%→95.7%, time 100% (unchanged), nextintegerid 87.0%→92.9%, unicodetext 92.5%→100%, argv 82.8%→86.2%, scrollbar 90.9%→92.7%. Fixed 6 bugs: template nil-guard for exportsVal, template option() return type (map→goja.Value), unicodetext nil-guard for exportsVal, nextintegerid 4 nil-guards (listVal, lengthVal, itemVal, idVal). ~42 new tests across 5 coverage_gaps_test.go files. Remaining uncovered lines in all packages are defensive dead code (double-nil-guards after prior checks, recover blocks for goja-handled throws, clamp+re-clamp guards). Rule of Two passed."
-    },
-    {
-      "task": "T034: Coverage audit: internal/builtin/bubbles (textarea + viewport)",
-      "description": "Run coverage for bubbles/textarea/ and bubbles/viewport/. Each has 1 source + 2 test files. Test Require, JS-Go bridge, component creation, message handling, scrolling, input. Achieve 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage: textarea 68.8%→95.1%, viewport 73.3%→97.3%. ~120 new test functions across 2 coverage_gaps_test.go files (1626+904 lines). Used unsafe pointer mirror (textareaModelMirror) for unexported field access. No source code modifications needed. No bugs found. Remaining gaps are defensive dead code (nil-after-guard, zero-line docs, clamp-after-clamp). Rule of Two passed. Committed as ed96f95."
-    },
-    {
-      "task": "T035: Coverage audit: internal/scripting engine core",
-      "description": "Coverage for engine_core.go (~530 lines), runtime.go, execution_context.go. Cover all constructors (NewEngineDetailed + EngineOptions), script loading (file/inline), global registration, module loading (native osm: + file-based require), shebang handling, error paths. Achieve 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage: engine_core.go 91.2%, runtime.go 93.9%, execution_context.go 97.2% (combined 93.0%). ~40 new tests in coverage_gaps_test.go (1321 lines). Fixed 1 DATA RACE bug in engine_core.go (context.AfterFunc closure reading engine.vm while Close() sets nil — captured vm in local variable). Remaining 16 uncovered blocks are defensive dead code (OS-level failures, race windows, library internals). Rule of Two passed."
-    },
-    {
-      "task": "T036: Coverage audit: internal/scripting TUI subsystem",
-      "description": "Coverage for tui_manager.go, tui_commands.go, tui_completion.go, tui_history.go, tui_io.go, tui_js_bridge.go, tui_parsing.go, tui_colors.go, tui_types.go. Cover mode registration, command dispatch, completion, history, I/O, JS bridge, colors, types. Achieve 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage: scripting package 80.1% → 86.7%. ~80 new tests in tui_coverage_gaps_test.go (2387 lines). Covers all 9 TUI source files: colors (all 14 keys + nil/non-string), commands (executor paths, builtin commands, help), completion (JS completer return types, document wrapper, mode/arg completion), history (config parsing, file loading), IO (reader/writer adapters, TerminalIO methods), JS bridge (mode/command/prompt/completer/keybinding registration, error paths), manager (exit/state/session, command dispatch with Go/JS handlers, writer lifecycle). No bugs found. Remaining uncovered: Run/runAdvancedPrompt (require live terminal), jsRunPrompt internals (requires prompt.Run). Rule of Two passed."
-    },
-    {
-      "task": "T037: Coverage audit: internal/scripting state management",
-      "description": "Coverage for state_manager.go, js_state_accessor.go, js_context_api.go, js_logging_api.go, js_output_api.go, context.go. Cover state ops, session persistence, context management (addPath/refreshPath/removePath/ToTxtar), all JS API bindings. Achieve 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage: scripting package 86.7% → 89.0%. ~60 new tests in state_coverage_gaps_test.go (~1700 lines). Per-file: FromTxtar/LoadFromTxtarString 0%→100%, jsContextGetPath/jsContextFromTxtar 0%→100%, mapToAttrs/jsLogClear 0%→100%, normalizeSymbolDescription 62.5%→100%, persistSessionInternal/AddListener 100%, many state_manager functions improved to 92-100%. No bugs found. Remaining uncovered lines are defensive dead code (OS-level errors, filepath.Abs/Rel failures, collision loop paths). Rule of Two passed."
-    },
-    {
-      "task": "T038: Coverage audit: internal/scripting session and terminal",
-      "description": "Coverage for session_id_common.go, terminal.go, logging.go, debug_assertions.go/stub. Cover session ID logic, terminal creation, logging infrastructure, debug assertion paths (both stub and enabled). Achieve 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage: scripting package 89.0% → 89.4%. ~40 new tests in session_terminal_coverage_gaps_test.go. logging.go all functions 100% (WithAttrs, WithGroup, Handle with PC/source/fileHandler/eviction, Enabled, GetRecentLogs edge cases, SearchLogs attr key/value/case-insensitive, ClearLogs, Logger, Printf, PrintfToTUI, all levels, SetTUISink). session_id_common.go GetSessionID 100%, initializeStateManager 100% (unknown backend, empty session, env override, override beats env, backend error cleanup via custom cleanupTrackingBackend, load error via loadErrorBackend). terminal.go NewTerminal 100%. debug_assertions_stub.go all 4 no-ops verified. Remaining: discoverSessionID 75% (defensive dead code), terminal.Run 0% (requires live terminal). No bugs found. Rule of Two passed."
-    },
-    {
-      "task": "T039: Coverage audit: internal/command script-executing commands",
-      "description": "Coverage for 5 commands (prompt_flow, code_review, goal, super_document, scripting_command) + helpers (log_config, module_paths, hot_snippets, cleanup_helper). Cover Execute(), flag parsing, engine setup, script execution, error handling, test mode. Achieve 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage 78.6% → 81.0%. 30 new tests in script_cmd_coverage_gaps_test.go. GoalCommand SetupFlags 0%→100%, listGoals 97.2%→100%. SuperDocumentCommand Execute 0%→72.9%. injectConfigHotSnippets 66.7%→100%. resolveLogConfig 92.5%→97.5%. NewScriptingCommand 50%→100%. Remaining uncovered: interactive terminal.Run() blocks (structurally untestable). Rule of Two passed."
-    },
-    {
-      "task": "T040: Coverage audit: internal/command utility commands + data processing",
-      "description": "Coverage for session.go, sync.go, log_tail.go, completion_command.go, diff_splitter.go, prompt_file.go, goal_discovery.go, goal_loader.go, goal_registry.go, goal_builtin.go, script_discovery.go. Cover all subcommands, algorithms, parsing, discovery. Achieve 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage 81.0% → 86.3%. ~42 new tests in util_cmd_coverage_gaps_test.go. Covers: SessionCommand SetupFlags/Info/Execute/List/Path, SyncCommand SetupFlags/SubcommandHelp/InitCloneFails/PullConflictDetection/PullGitFailure/PullCloneFailure/PushErrorPaths/TimeNow, LogCommand SetupFlags/TailFollow, diff_splitter extractFileName/countLines, prompt_file ParsePromptFile/LoadPromptFile/FindPromptFiles/expandPromptFileReferences, GoalDiscovery addPath/DiscoverPromptFilePaths, GoalLoader resolveGoalScript, GoalRegistry Reload/NewDynamicGoalRegistry, ScriptDiscovery traverseForGitRepos/helpers. No bugs found. Rule of Two passed."
-    },
-    {
-      "task": "T041: Coverage audit: internal/command registry, base, dispatch",
-      "description": "Coverage for registry.go, base.go, builtin.go, testutils.go. Cover registration, lookup, dispatch, base helpers, builtin wiring, test utilities. All dispatch scenarios: valid/invalid command, help flags, version, subcommand routing. Achieve 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage 86.3% → 88.0%. ~25 new tests in registry_base_coverage_gaps_test.go (~697 lines). Covers: base.go SetupFlags no-op + accessors, registry AddScriptPath duplicate detection, findScriptCommand/findScriptCommands filtering, List deduplication, removeDuplicates edge cases, ScriptCommand Execute/ExecuteWithContext (stdout/stderr/args/exit-code/not-found/cancellation/normal-completion), HelpCommand script hint + script listing, ConfigCommand --global + empty-string value + fallback resolve + persist failure, InitCommand force overwrite + loaded config verification, testutils ansiRegex strip/no-change, isExecutable Unix mode bits + Windows extensions, killProcessGroup nil Process guard. Remaining: SetupFlags 0% (empty body), InitCommand IO errors (OS-level), isExecutable Windows extensions (unreachable on macOS), ExecuteWithContext cmd.exe dispatch (Windows-only). Rule of Two passed."
-    },
-    {
-      "task": "T042: Coverage audit: goroutineid, testutil, mouseharness",
-      "description": "Coverage for 3 utility packages. goroutineid: ID extraction. testutil: polling, platform detection, test ID gen. mouseharness: event harness, terminal handling (7 source + 5 test files). Achieve 100% effective coverage each.",
-      "status": "Done",
-      "outcome": "Coverage: goroutineid 91.3%→100%, testutil 68.9%→83.6%, mouseharness 75.9%→83.1%. ~45 new tests across 3 coverage_gaps_test.go files. goroutineid: parseGoroutineIDFromStack all branches covered (short buffer, digits at EOF, prefix not found, concurrent Get). testutil: eventloop lifecycle 0%→100%, SkipIfWindows 0%→50%, Poll timeout-message branch 87.5%→100%, session ID truncation/unicode edges. mouseharness: exported wrappers 0%→100%, nil-cp guards for GetBuffer/GetBufferRaw, parseTerminalBuffer 14 edge cases (erase modes, OSC+ST, cursor clamping, control chars, incomplete escape), stripANSI 5 edge cases (charset designation, unknown escape), ScrollWheel invalid direction, New validation errors. Remaining uncovered: AssertCanBypassPermissions 0% (requires root), mouseharness PTY-dependent methods (String/Snapshot/WriteString/ClickViewport/ClickAtBufferPosition/ScrollWheelOnElement), internal/dummy 0% (test-only binary). Rule of Two passed."
-    },
-    {
-      "task": "T043: Coverage audit: internal/example/pickandplace",
-      "description": "Run coverage for test-only package (0 impl, 4 test files). Verify all test paths execute correctly. Verify integration, manual mode, bubbletea rendering, simulation consistency. Ensure tests are robust.",
-      "status": "Done",
-      "outcome": "Test-only package — no source code to cover (0 .go files, 4 _test.go files). All 32 subtests pass (2.7s). Comprehensive integration test suite verifying: mouse interaction (pick/place/viability), mode switching (auto↔manual with state preservation), WASD movement (single/multi/diagonal/collision/boundary), simulation consistency (physics/collision/pathfinding with dual-VM parity checks). Tests are robust: no timing dependencies (tick-based processing), no race conditions (single-threaded Goja VM), proper boundary testing. No code changes needed."
-    },
-    {
-      "task": "T044: Coverage audit: cmd/osm",
-      "description": "Coverage for cmd/osm/ (main.go + main_test.go). Cover entry point, command dispatch, global flag parsing, error handling. Test: valid commands, invalid commands, help flags, version output, unknown flags. Achieve 100% effective coverage.",
-      "status": "Done",
-      "outcome": "Coverage 91.4% → 94.8%. run() 94.5% → 98.2%. 2 new tests in coverage_gaps_test.go. TestRun_ConfigLoadError covers config.Load error → NewConfig fallback (triggered via symlink detection). TestRun_CommandFlagParseNonErrHelp covers command-level fs.Parse returning non-ErrHelp error (triggered via unknown flag on version command). Remaining 2 uncovered blocks: main() os.Exit (structurally untestable) and global ErrHelp (dead code — -h/-help are defined flags, Parse never returns ErrHelp). No bugs found. Rule of Two passed."
-    },
-    {
-      "task": "T045: Audit benchmark and security tests",
-      "description": "Audit internal/benchmark_test.go and security_test.go. Verify benchmark thresholds for all platforms. Verify security tests cover: path traversal, input sanitization, resource limits, command injection, symlink attacks, env var injection. No timing-dependent failures. Add missing coverage.",
-      "status": "Done",
-      "outcome": "Removed 3 unused threshold constants (thresholdSessionCreation, thresholdGlobalRegistration, thresholdVMCreation). All 7 remaining constants verified in use. Platform-specific thresholds confirmed (Unix vs Windows for SessionIDGeneration). All 15+ security test categories confirmed present: path traversal (4), input sanitization (3), resource limits (2), command injection (3), symlink attacks (2), env var injection (3), plus session isolation, output sanitization, config injection, arg parsing, binary path, escaping contexts, TUI input. No timing-dependent failures — thresholds 10-100x generous. Fixed t045-test target (./internal/ vs ./internal/...). Rule of Two passed."
-    },
-    {
-      "task": "T046: Audit .deadcodeignore for stale entries",
-      "description": "Review all .deadcodeignore entries. Verify each symbol/package still exists in codebase. Remove stale entries. Verify inline comments justify each remaining entry. Run 'make deadcode' to confirm clean. Full lint suite must pass.",
-      "status": "Done",
-      "outcome": "Removed stale internal/termtest/* entries (directory no longer exists). All 15 remaining entries verified: symbols confirmed via grep, packages confirmed via file_search, comments justify each exception. make deadcode and full lint suite pass. Rule of Two passed."
-    },
-    {
-      "task": "T047: Command boilerplate unification",
-      "description": "Extract shared boilerplate from 5 script commands. Create scriptCommandBase with: shared fields (config, session, store, logLevel, logPath, etc.), RegisterFlags(), PrepareEngine(). Add signal-aware context (only ScriptingCommand has ctxFactory). Standardize ContextCommand interface. Update all callers and tests.",
-      "status": "Done",
-      "outcome": "Created scriptCommandBase struct with 7 shared fields, RegisterFlags(), and PrepareEngine(). All 5 JS script commands (ScriptingCommand, CodeReviewCommand, PromptFlowCommand, GoalCommand, SuperDocumentCommand) refactored to embed scriptCommandBase. 8 new tests for base struct. Fixed builtin_edge_test.go struct literals. Eliminated ~120 lines of duplicated boilerplate. ContextCommand interface unchanged (only used by shell ScriptCommand, not JS commands). Rule of Two passed."
-    },
-    {
-      "task": "T048: JS script boilerplate deduplication",
-      "description": "Review duplicated patterns in embedded JS scripts. Identify shared: mode registration, buildCommands, state get/set, prompt building. Consider extracting shared utilities into requirable internal module. All tests must pass.",
-      "status": "Done",
-      "outcome": "Moved CONFIG_HOT_SNIPPETS auto-detection into contextManager.js factory using 'hotSnippets in options' guard. Removed identical 3-4 line boilerplate from code_review_script.js, prompt_flow_script.js, super_document_script.js. goal.js unchanged (explicit merge logic). 3 new tests. Other patterns (mode registration, buildCommands, state) too script-specific to extract."
-    },
-    {
-      "task": "T049: Dead code elimination pass",
-      "description": "Run 'make deadcode'. Cross-reference with .deadcodeignore. For new dead code: wire into production, move to test-only, or delete. No new .deadcodeignore entries. Run 'make lint' to confirm clean.",
-      "status": "Done",
-      "outcome": "No dead code detected by deadcode tool. All .deadcodeignore entries verified as legitimate (test helpers, debug stubs, Goja-called exports). No changes needed."
-    },
-    {
-      "task": "T050: Error handling consistency audit",
-      "description": "Audit entire codebase for error handling. Verify: (a) consistent %w wrapping, (b) proper exit codes, (c) no swallowed errors, (d) consistent message format (lowercase, no trailing period), (e) proper cleanup on error (defer close/unlock). Fix all inconsistencies.",
-      "status": "Done",
-      "outcome": "Fixed 3 instances of %v where %w should be used (2 in lipgloss.go parseColor adaptive, 1 in tui_js_bridge.go initialCommand). All other areas clean: exit codes consistent, no swallowed errors in production, messages lowercase (except proper nouns), defer patterns correct."
-    },
-    {
-      "task": "T051: Expand fuzz testing",
-      "description": "Add fuzz tests for: config parsing (malformed input), ctxutil buildContext (malformed items), scripting (random/malformed script input), diff_splitter SplitDiff (random diff content). Each must run 30s without panics.",
-      "status": "Done",
-      "outcome": "4 fuzz tests created: FuzzLoadFromReader (config parser, 494K execs/30s), FuzzSplitDiff (diff chunker, 1M execs/30s), FuzzBuildContext (ctxutil JS integration, 140K execs/30s), FuzzGojaRunString (Goja VM with arbitrary scripts, 758K execs/30s). Zero panics across all. Goja test uses SetMaxCallStackSize(64) for recursive JS protection and time.AfterFunc+vm.Interrupt for infinite loop timeout. Regression corpus entry committed for previously-hanging infinite loop input. Rule of Two passed."
-    },
-    {
-      "task": "T052: API surface optimization: scripting engine",
-      "description": "Review internal/scripting/ public API. Unexport unnecessary types/functions. Check constructor consistency. Verify .deadcodeignore entries justified. Reduce API to minimum for internal/command/. Update all callers.",
-      "status": "Done",
-      "outcome": "Deleted 2 deprecated method aliases (GetStateViaJS/SetStateViaJS). Unexported 6 internal-only symbols: DefaultSyncTimeout→defaultSyncTimeout, ScriptPanicError→scriptPanicError, ContextPath→contextPath, LogEntry→logEntry, TUILogHandler→tuiLogHandler, HistoryConfig→historyConfig. All 18 callers of deprecated aliases updated. All test files updated. Net -9 lines. Remaining exported types (ContextManager, TUILogger, ExecutionContext, etc.) assessed but kept exported: heavily used internally (100+ refs), bounded by Go internal/ restriction. .deadcodeignore entries verified. Rule of Two passed."
-    },
-    {
-      "task": "T053: API surface optimization: command package",
-      "description": "Review internal/command/ public API. Check registration, flag setup, execution interfaces for consistency (post T047). Remove unnecessary exports. Standardize Execute(args, stdout, stderr). Update callers.",
-      "status": "Done",
-      "outcome": "Deleted unused ContextCommand interface (dead code detected by staticcheck after unexporting) + removed unused context import from base.go. Unexported 4 symbols: ListBuiltin→listBuiltin, ListScript→listScript, ScriptCommand→scriptCommand, NewScriptCommand→newScriptCommand. All 9 test file refs + 3 source file refs updated. Assessed but retained: BaseCommand/NewBaseCommand (43+ internal refs, marginal benefit), ScriptDiscovery/NewScriptDiscovery/ScriptDiscoveryConfig (40+ refs). Execute(args, stdout, stderr) pattern already consistent across all commands. 10 files changed. Vet+staticcheck+deadcode pass. Rule of Two passed."
-    },
-    {
-      "task": "T054: API surface optimization: storage package",
-      "description": "Review internal/storage/ public API. Clean backend interface, cleanup, file locking, atomic writes. Consolidate test helpers. Remove redundant exports. Update callers.",
-      "status": "Done",
-      "outcome": "Unexported 4 symbols with zero external references: SessionArchiveDir→sessionArchiveDir, SanitizeFilename→sanitizeFilename, RenameError→renameError, ErrWouldBlock→errWouldBlock. 9 files changed. Assessed but retained: StorageBackend, Session, HistoryEntry, CurrentSchemaVersion, Cleaner, CleanupScheduler, CleanupReport, SessionInfo, ScanSessions, AcquireLockHandle, ReleaseLockHandle, NewFileSystemBackend, NewInMemoryBackend, BackendRegistry, GetBackend, SetTestPaths, ResetPaths, AtomicWriteFile, SetTestHookCrashBeforeRename, SessionFilePath, SessionLockFilePath, ArchiveSessionFilePath (all have external callers). SessionDirectory kept exported due to var naming collision. Vet+staticcheck+deadcode pass. Rule of Two passed."
-    },
-    {
-      "task": "T055: API surface optimization: builtin module registration",
-      "description": "Review internal/builtin/register.go. Ensure consistent Require signature and osm: naming. Check shared_symbols.go exports. Standardize require() integration. Verify no non-standard registration patterns.",
-      "status": "Done",
-      "outcome": "Renamed pabt.ModuleLoader→pabt.Require for consistency with all 16 other builtin modules. Removed BTBridge type alias (never referenced externally by name); RegisterResult.BTBridge field changed to *bt.Bridge directly. Updated call sites in register.go and require_test.go. Renamed 29 TestModuleLoader_ test functions to TestRequire_. Audit: all 17 modules use Require naming, all use osm: prefix, shared_symbols.go exports (StateListener, StateManager, StateManagerProvider, GetSharedSymbolsLoader) verified as required externally. bt.Bridge.ModuleLoader method retained (struct method, not package-level convention). BubbleteaManager/BubblezoneManager aliases retained (referenced externally). Vet+staticcheck+deadcode pass. Rule of Two passed."
-    },
-    {
-      "task": "T056: Performance profiling: scripting engine startup",
-      "description": "Profile startup with pprof. Identify expensive init: Goja VM, module registration, global setup, require system. Optimize (lazy init, caching, parallel where safe). Verify against benchmarks. No regressions.",
-      "status": "Done",
-      "outcome": "Profiled with pprof (2s CPU profile). FullEngineCreation: ~134μs/op, ~161KB, ~862 allocs. App code <0.3% of CPU (runtime scheduling/GC dominant). VMCreation ~480ns, RuntimeCreation ~18μs, remaining ~116μs spread evenly across ContextManager, TerminalIO, TUIManager, builtin.Register (20 modules), require.Enable, setupGlobals, Close. No single function is a hotspot. No optimization targets. Added FullEngineCreation benchmark with profiling notes. Removed misleading ModuleRegistration benchmark (was identical to RuntimeCreation). Rule of Two passed."
-    },
-    {
-      "task": "T057: Performance profiling: session I/O",
-      "description": "Profile session read/write/lock/cleanup. Identify bottlenecks in locking, JSON serialization, AtomicWriteFile write amplification. Optimize hot paths. Cross-platform verification.",
-      "status": "Done",
-      "outcome": "Profiled with pprof (2s CPU profile). FullCycle: ~5.4ms/op, ~16KB, 104 allocs (10 entries). Write dominates (~5.4ms), read is 47x faster (~115μs). AtomicWriteFile accounts for >99% of write cost — dominated by fsync (OS syscall, required for crash safety). App code = 1.54% CPU (json.Unmarshal). MarshalIndent is 2.6x slower than Marshal but only 2% of write cost — not worth switching. Added 5 FileSystem benchmarks (FullCycle, WriteOnly, ReadOnly, AtomicWriteFile, MarshalIndentVsMarshal). No optimization targets. Rule of Two passed."
-    },
-    {
-      "task": "T058: Performance profiling: BT and PABT",
-      "description": "Profile BT/PABT execution. Review existing benchmarks. Identify allocation hotspots in JS-Go bridge. Optimize tick execution and planning critical paths. Stable/improved benchmarks.",
-      "status": "Done",
-      "outcome": "Profiled with pprof (2s CPU profile). BT bridge: RunOnLoop ~101ns, RunJSSync ~1µs, realistic update ~2.6µs (0.016% of 16ms frame), view ~500µs (Goja VM string ops). App code <1% CPU in all benchmarks. PABT: ExprLang 90-262ns vs GoFunction 1-13ns, expression cache 53x speedup, plan creation ~1.7-4.1µs. Added BenchmarkPlanCreation (SimplePlan + MultiActionPlan). Added profiling notes to both benchmark files. No optimization targets — all hotspots in Goja VM, expr-lang, and Go primitives. Rule of Two passed."
-    },
-    {
-      "task": "T059: Performance profiling: bubbletea render pipeline",
-      "description": "Profile rendering. Review render_throttle and benchmark_latency tests. Optimize JS→Go render path allocations. Optimize message conversion. Verify latency benchmarks.",
-      "status": "Done",
-      "outcome": "Profiled with pprof (FullKeyPipeline 3.7% app CPU, View 9.7% app CPU — all hotspots in goja VM internals, Go runtime, channels). Added 13 new benchmarks: ViewDirect (~104ns/4 allocs), ViewDirect_Throttled (~44ns/0 allocs), FullUpdateCycle (~660ns/23 allocs), WrapCmd, WrapCmd_Nil, MsgToJS (Mouse/WindowSize/FocusBlur), ValidateTextareaInput (4 subs), ValidateLabelInput (3 subs). All well within 16ms frame budget. No optimization targets in app code — consistent with T056-T058 findings."
-    },
-    {
-      "task": "T060: Add missing benchmarks",
-      "description": "Add benchmarks for: context manager ops, config parsing, goal discovery, script discovery, require() loading, prompt building, template execution, SetKeyInFile. Appropriate thresholds for all paths.",
-      "status": "Done",
-      "outcome": "Added 4 per-package benchmark files with 40+ sub-benchmarks covering all 8 categories. Config: SetKeyInFile (4 subs, ~5ms fsync-dominated), ValidateConfig (3 subs, ~286ns valid), LoadFromReaderComplex (2 subs, ~10μs realistic). Template: 6 Goja benchmarks (simple ~4.4μs, pre-parsed ~4.4μs, custom funcs ~6.3μs) + Go baseline (~2.9μs, showing 1.5x Goja overhead). Context Manager: AddPath (single ~16μs, medium dir ~1ms), RemovePath (~4μs), RefreshPath (~17μs), ListPaths (~229ns), GetStats (~5.6μs), ToTxtar (5-50 files, ~70μs-826μs), Filter (~2.2μs). Command: GoalDiscovery (~24μs), ScriptDiscovery (~26μs), ParsePromptFile (~150ns simple, ~541ns complex), PromptFileToGoal (~1.2μs), ExpandPromptFileReferences (~28μs), PathScoring (splitPathSegments ~57ns, hasDirPrefix ~14ns, countRelSegments ~5.8ns). Rule of Two passed."
-    },
-    {
-      "task": "T061: Verify cross-platform benchmark stability",
-      "description": "Run benchmarks on macOS, Linux (Docker), Windows. Record variance. Adjust tight thresholds. Add platform-specific multipliers if needed. No timing-dependent CI failures.",
-      "status": "Done",
-      "outcome": "macOS (3 runs): variance <10% for most ops, max ~30% (sub-μs outlier). Linux Docker: all pass with 400x-20,000x headroom. All 7 thresholds safe (min headroom 400x on Linux SessionIDGeneration). No adjustments needed. No platform-specific multipliers needed. Windows deferred to T077. Documentation added to benchmark_test.go. Rule of Two passed."
-    },
-    {
-      "task": "T062: Security review: input sanitization",
-      "description": "Extend security_test.go. Audit all input paths: CLI args, config values, scripts, REPL, file paths, git specs, fetch URLs. Test: command injection via osm:exec (stdin exposure), path traversal via addPath, config parser malformed input, require() injection.",
-      "status": "Done",
-      "outcome": "Added 34 security input sanitization tests in internal/security_input_test.go (~600 lines). Covers 14 categories: exec (null bytes, control chars, shell metachar, empty command, stdin docs, execv validation), config parser (null bytes, oversized lines, binary input, malformed sections, session option injection, hot snippet injection, symlink rejection, null byte path, nonexistent path, control chars), script paths (path traversal, null byte, nonexistent), REPL (oversized script, deep recursion with 5s timeout, infinite loop with cancel), addPath (traversal allowed documented, symlinks followed, null bytes, nonexistent, symlink loop detection), fetch (file:// rejected, invalid URLs, SSRF documented), require (traversal allowed documented, non-JS content, shebang handling, nonexistent module), resource limits (large strings, many objects, regex backtracking), readFile (no sandbox documented, empty path, nonexistent), fileExists (special chars), cross-module isolation (require caching), git spec (ref name injection). Documents security posture: unsandboxed local tool, OS user permissions as security boundary. Rule of Two passed."
-    },
-    {
-      "task": "T063: Security review: JS sandbox boundaries",
-      "description": "Audit Goja sandbox. Verify JS cannot access Go internals beyond APIs. Check osm:exec/os safeguards. Document security posture per module. Note: readFile has no path restrictions, exec exposes stdin — both by design.",
-      "status": "Done",
-      "outcome": "18 test functions in internal/security_sandbox_test.go verifying Goja VM isolation: Node builtin rejection (17 builtins, util excluded), Go reflect/unsafe/runtime access prevention, VM isolation (global/prototype/SetGlobal cross-engine), module API boundaries (exec/os/fetch/grpc), global scope minimality, context cancellation, exec no-shell, osm:os read-only, grpc client-only, template safety. docs/security.md created with per-module security analysis, intentional design decisions documented. Rule of Two passed."
-    },
-    {
-      "task": "T064: Fix txtar path ambiguity in context building",
-      "description": "Fix bug in internal/scripting/context.go computeUniqueSuffixes. (1) Compute+emit LCA of tracked paths. (2) Verify implied parent dirs are in context when expanding. (3) Preserve full path for non-colliding basenames to avoid false proximity. Add tests.",
-      "status": "Done",
-      "outcome": "Added computePathLCA function for lowest-common-ancestor directory computation. Modified ToTxtar to emit context metadata comment (context root, common path, tracked directories). Changed computeUniqueSuffixes to use full relative paths for all-relative collision groups instead of minimal unique suffixes, eliminating false proximity from stripped common prefixes. Suffix expansion retained for mixed/absolute path groups. 19 new tests in context_txtar_lca_test.go covering LCA computation (7 tests), comment format (5 tests), and full-path preservation (4 tests). All existing tests pass unchanged. Rule of Two passed."
-    },
-    {
-      "task": "T065: Wire config persistence: osm config <key> <value>",
-      "description": "config/write.go has SetKeyInFile(). Wire into ConfigCommand. Handle: schema validation, type coercion, file creation, error messages. Test full roundtrip: set→read back. Add integration tests.",
-      "status": "Done",
-      "outcome": "Added ValidateOptionValue exported function to schema.go. Modified ConfigCommand.Execute to perform schema-aware validation before setting: unknown keys emit warning (still set), known keys with invalid types return error (not set/persisted). Added 16 integration tests in config_persist_test.go covering: known bool/int/duration valid+invalid values, unknown key warning, string key (any value), bool accepted values (8 variants), full roundtrip (set→read→validate, multiple keys, update existing), type rejection prevents persistence, path-list type. ValidateOptionValue unit tests cover all 5 types. All existing tests pass unchanged. Rule of Two passed."
-    },
-    {
-      "task": "T066: Prompt-flow QoL improvements",
-      "description": "Per docs/todo.md: (1) one-step mode (use without goal/generate), (2) footer support for second prompt, (3) auto-generate on first copy (clear flag after explicit generate). Add tests for each.",
-      "status": "Done",
-      "outcome": "Added autoGenerateOnCopy state flag (Symbol, defaultValue: true) to prompt_flow_script.js. Generate handler clears flag. Copy handler auto-generates meta-prompt on first copy when goal is set and no explicit generate called. Flag cleared by any copy or explicit generate. 8 new tests + newPromptFlowTestEngine helper. All tests pass with race detection. Rule of Two passed."
-    },
-    {
-      "task": "T067: Directory-aware context refresh on copy",
-      "description": "Fix: copy in osm:ctxutil should pick up new files added to tracked directories. Current _refreshFileItems() only refreshes existing items. Implement directory re-scanning on refresh. Add tests.",
-      "status": "Done",
-      "outcome": "Root cause: JS _refreshFileItems passes raw user label (e.g. 'src/') to Go RefreshPath, but ownerFiles key is normalized (e.g. 'src') by AddPath's filepath.Clean pipeline. Fix: RefreshPath now normalizes input via absolutePathFromOwner→normalizeOwnerPath (same pipeline as AddPath) when direct key lookup fails. Fast path preserved for exact matches. 3 new tests: DirectoryTrailingSlashNormalized, DotSlashPrefixNormalized, UnknownPathStillFails. All 6 RefreshPath subtests pass. Rule of Two passed."
-    },
-    {
-      "task": "T068: Show summarized parameters in goal list",
-      "description": "goal --list shows name/description/category but not parameters. Add parameter summary. Consider consolidating list logic. Add tests.",
-      "status": "Done",
-      "outcome": "Extracted formatGoalLine helper from listGoals inline code. Added [vars: key=val, ...] suffix showing non-nil, non-empty state variable defaults with sorted keys, truncated values (>30 chars). Custom command [cmds:] behavior preserved. 10 new tests (1 integration + 8 unit subtests). Rule of Two passed."
-    },
-    {
-      "task": "T069: Completion for exec context builder",
-      "description": "exec command in contextManager needs completion support. Explore: shell completion, predefined suggestions, custom completer. Implement within go-prompt REPL. Add tests.",
-      "status": "Done",
-      "outcome": "Added getExecutableSuggestions function (95 lines) with PATH-based completion. Empty prefix returns 17 curated common commands, non-empty prefix scans PATH with case-insensitive matching and deduplication, path separators delegate to filepath completion. Wired executable argCompleter type in switch. Updated contextManager.js exec command from file to executable completer. 12 new tests. Rule of Two passed. Committed as 61c0d93."
-    },
-    {
-      "task": "T070: Git ref completion for diff context builder",
-      "description": "Implement git ref completion for diff command. argCompleters has ['gitref'] — verify and improve. List branches, tags, recent commits. Prefer Go implementation. Add tests.",
-      "status": "Done",
-      "outcome": "Improved getGitRefSuggestions with --staged as common ref, remote branches via git branch -r, and recent commit SHAs (last 10) with truncated subjects. Symbolic refs filtered out. 6 new tests. Rule of Two passed. Committed as 679455f."
-    },
-    {
-      "task": "T071: Wire osm:flag completion for ctxutil REPL subcommands",
-      "description": "Add argument completion for REPL commands using osm:flag. Wire flag definitions to completion engine. E.g., 'add --recursive' completes '--recursive'. Add tests.",
-      "status": "Done",
-      "outcome": "Added CommandFlagDef struct and FlagDefs field to CommandConfig in goal.go. Moved --staged from gitref commonRefs to diff flagDefs in contextManager.js. Added --stat/--name-only flags. goal.js passes flagDefs through for custom commands. 6 new tests + 2 replaced tests, 18/18 pass. Rule of Two passed."
-    },
-    {
-      "task": "T072: Hot-shortname aliases with mode-scoped activation",
-      "description": "Add hot-<shortname> aliases that copy snippets per mode. Configurable. Command to output defaults. Warning for unoverridden built-ins (with disable config). Add tests.",
-      "status": "Done",
-      "outcome": "Added GoalHotSnippet struct + HotSnippets field on Goal. contextManager.js registers snippets with hot- prefix. morale-improver gets review-plan/prove-it, commit-message gets review-response. goal.js merges config+goal snippets (goal precedence, builtin:true marking). hot-snippets.no-warning config option. buildCommands propagates hot-/snippets to TUI. 13 tests (2 JSON serialization, 9 ctxutil hot- prefix updated, 2 goal integration). Rule of Two passed."
-    },
-    {
-      "task": "T073: Strict command/subcommand argument validation",
-      "description": "Commands must fail on unexpected args/options. Revalidate logging API wiring for all script commands. Consistent error messages for unknown flags. Add tests.",
-      "status": "Done",
-      "outcome": "Added argument validation to GoalCommand (-l, -r, positional), HelpCommand, ConfigCommand (validate/schema), SessionCommand (id, list, clean, purge, info, path), SyncCommand (save, list, init, push, pull). 21 new tests in arg_validation_test.go with executeWithFlags helper. Verified script commands pass args to JS (no Go validation needed). Logging API wiring confirmed consistent via scriptCommandBase. Rule of Two passed."
-    },
-    {
-      "task": "T074: Add morale-improver built-in goal",
-      "description": "Implement morale-improver goal with post-copy hint for follow-up prompts. Use PostCopyHint field. Create prompt template. Add tests.",
-      "status": "Done",
-      "outcome": "Already fully implemented in prior tasks. morale-improver goal exists in goal_builtin.go with PostCopyHint, prompt template, state variables, custom commands, hot-snippets. 6+ integration tests in goal_integration_test.go. PostCopyHint wired through goal.js → contextManager.js. No changes needed."
-    },
-    {
-      "task": "T075: Remove deprecated createAdvancedPrompt alias",
-      "description": "Remove tui.createAdvancedPrompt alias from engine_core.go. Update scripts/tests still referencing it. Update documentation.",
-      "status": "Done",
-      "outcome": "Removed jsCreateAdvancedPrompt method from tui_js_bridge.go, removed wiring from engine_core.go, removed test from tui_coverage_gaps_test.go, updated docs/reference/tui-api.md and docs/todo.md. Net -25 lines. Rule of Two passed."
-    },
-    {
-      "task": "T076: Cross-platform: Linux via Docker",
-      "description": "Run 'make make-all-in-container'. Fix Linux-specific failures. Verify platform code paths (session_linux.go, registry_unix.go, atomic_write.go, filelock_unix.go). Race detection. Zero failures.",
-      "status": "Done",
-      "outcome": "Fixed 2 issues: (1) SkipIfRoot for 2 chmod-based permission tests that fail under Docker root. (2) TOCTOU fix in mouseharness ClickElement — single buffer snapshot instead of 3 separate cp.String() calls eliminates flaky viewport coordinate calculations. Both macOS and Linux Docker pass with zero failures."
-    },
+    { "task": "T021: Coverage audit: internal/builtin/exec", "status": "Done", "outcome": "100% coverage already. No changes needed." },
+    { "task": "T022: Coverage audit: internal/builtin/os", "status": "Done", "outcome": "70.2%→84.0%. 18 new tests. Remaining gaps are platform branches." },
+    { "task": "T023: Coverage audit: internal/builtin/ctxutil (Go)", "status": "Done", "outcome": "76.5%→86.0%. 14 tests. Fixed nil-deref in Require." },
+    { "task": "T024: Coverage audit: internal/builtin/ctxutil (JS)", "status": "Done", "outcome": "14 integration tests covering all REPL commands." },
+    { "task": "T025: Coverage audit: internal/builtin/bt", "status": "Done", "outcome": "76.8%→91.3%. 54 tests. Fixed 2 flaky TOCTOU tests." },
+    { "task": "T026: Coverage audit: internal/builtin/pabt", "status": "Done", "outcome": "78.5%→93.6%. ~40 tests." },
+    { "task": "T027: Coverage audit: internal/builtin/bubbletea", "status": "Done", "outcome": "75.8%→91.2%. ~60 tests. Fixed 3 bugs + data race." },
+    { "task": "T028: Coverage audit: internal/builtin/fetch", "status": "Done", "outcome": "91.4%→97.4%. 28 tests." },
+    { "task": "T029: Coverage audit: internal/builtin/flag", "status": "Done", "outcome": "99.2%. 27 edge-case tests." },
+    { "task": "T030: Coverage audit: internal/builtin/grpc", "status": "Done", "outcome": "93.2%→96.2%. 15 tests." },
+    { "task": "T031: Coverage audit: internal/builtin/bubblezone", "status": "Done", "outcome": "0%→98.7%. 39 tests from scratch. Fixed 2 nil-guard bugs." },
+    { "task": "T032: Coverage audit: tview + lipgloss", "status": "Done", "outcome": "tview 68.5%→96.4%, lipgloss 58%→99%. ~80 tests. 1 bug fix." },
+    { "task": "T033: Coverage audit: 6 small packages", "status": "Done", "outcome": "template 80.9→95.7%, unicodetext 92.5→100%, etc. ~42 tests. 6 bug fixes." },
+    { "task": "T034: Coverage audit: bubbles (textarea+viewport)", "status": "Done", "outcome": "textarea 68.8→95.1%, viewport 73.3→97.3%. ~120 tests." },
+    { "task": "T035: Coverage audit: scripting engine core", "status": "Done", "outcome": "Combined 93.0%. ~40 tests. Fixed 1 data race in engine_core.go." },
+    { "task": "T036: Coverage audit: scripting TUI subsystem", "status": "Done", "outcome": "80.1%→86.7%. ~80 tests across 9 TUI files." },
+    { "task": "T037: Coverage audit: scripting state management", "status": "Done", "outcome": "86.7%→89.0%. ~60 tests across 6 files." },
+    { "task": "T038: Coverage audit: session and terminal", "status": "Done", "outcome": "89.0%→89.4%. ~40 tests. logging.go all 100%." },
+    { "task": "T039: Coverage audit: script-executing commands", "status": "Done", "outcome": "78.6%→81.0%. 30 tests." },
+    { "task": "T040: Coverage audit: utility commands + data processing", "status": "Done", "outcome": "81.0%→86.3%. ~42 tests." },
+    { "task": "T041: Coverage audit: registry, base, dispatch", "status": "Done", "outcome": "86.3%→88.0%. ~25 tests." },
+    { "task": "T042: Coverage audit: goroutineid, testutil, mouseharness", "status": "Done", "outcome": "goroutineid 91.3→100%, testutil 68.9→83.6%, mouseharness 75.9→83.1%." },
+    { "task": "T043: Coverage audit: example/pickandplace", "status": "Done", "outcome": "Test-only package. All 32 subtests pass." },
+    { "task": "T044: Coverage audit: cmd/osm", "status": "Done", "outcome": "91.4%→94.8%. 2 tests." },
+    { "task": "T045: Audit benchmark and security tests", "status": "Done", "outcome": "Removed 3 unused threshold constants. Verified 15+ security categories." },
+    { "task": "T046: Audit .deadcodeignore", "status": "Done", "outcome": "Removed stale entries. 15 remaining verified." },
+    { "task": "T047: Command boilerplate unification", "status": "Done", "outcome": "Created scriptCommandBase. 5 commands refactored. ~120 lines eliminated." },
+    { "task": "T048: JS script boilerplate dedup", "status": "Done", "outcome": "Moved CONFIG_HOT_SNIPPETS auto-detection into contextManager.js." },
+    { "task": "T049: Dead code elimination pass", "status": "Done", "outcome": "No dead code detected." },
+    { "task": "T050: Error handling consistency audit", "status": "Done", "outcome": "Fixed 3 %v→%w instances." },
+    { "task": "T051: Expand fuzz testing", "status": "Done", "outcome": "4 fuzz tests. Zero panics across 2.4M+ execs." },
+    { "task": "T052: API surface optimization: scripting", "status": "Done", "outcome": "Deleted 2 deprecated aliases. Unexported 6 symbols." },
+    { "task": "T053: API surface optimization: command", "status": "Done", "outcome": "Deleted ContextCommand interface. Unexported 4 symbols." },
+    { "task": "T054: API surface optimization: storage", "status": "Done", "outcome": "Unexported 4 symbols." },
+    { "task": "T055: API surface optimization: builtin", "status": "Done", "outcome": "Renamed pabt.ModuleLoader→pabt.Require. Removed BTBridge alias." },
+    { "task": "T056: Profile: scripting engine startup", "status": "Done", "outcome": "134μs/op. No hotspots. Added benchmark." },
+    { "task": "T057: Profile: session I/O", "status": "Done", "outcome": "5.4ms/op (fsync-dominated). No optimization targets." },
+    { "task": "T058: Profile: BT and PABT", "status": "Done", "outcome": "All <1% CPU. Added BenchmarkPlanCreation." },
+    { "task": "T059: Profile: bubbletea render pipeline", "status": "Done", "outcome": "View ~104ns, Update+View ~660ns. 13 benchmarks." },
+    { "task": "T060: Add missing benchmarks", "status": "Done", "outcome": "4 files, 40+ sub-benchmarks across 8 categories." },
+    { "task": "T061: Cross-platform benchmark stability", "status": "Done", "outcome": "macOS <10% variance. Linux 400x-20,000x headroom. Windows deferred to T077." },
+    { "task": "T062: Security review: input sanitization", "status": "Done", "outcome": "34 tests across 14 categories." },
+    { "task": "T063: Security review: JS sandbox boundaries", "status": "Done", "outcome": "18 tests. docs/security.md created." },
+    { "task": "T064: Fix txtar path ambiguity", "status": "Done", "outcome": "Added computePathLCA + metadata comment. 19 tests." },
+    { "task": "T065: Wire config persistence", "status": "Done", "outcome": "Schema-aware validation + persistence. 16 integration tests." },
+    { "task": "T066: Prompt-flow auto-generate on first copy", "status": "Done", "outcome": "autoGenerateOnCopy state flag. 8 tests." },
+    { "task": "T067: Directory-aware context refresh", "status": "Done", "outcome": "Fixed RefreshPath normalization. 3 tests." },
+    { "task": "T068: Show params in goal list", "status": "Done", "outcome": "formatGoalLine helper with [vars: ...] suffix. 10 tests." },
+    { "task": "T069: Completion for exec command", "status": "Done", "outcome": "PATH-based getExecutableSuggestions. 12 tests." },
+    { "task": "T070: Git ref completion for diff", "status": "Done", "outcome": "Remote branches + recent commits. 6 tests." },
+    { "task": "T071: osm:flag completion in REPL", "status": "Done", "outcome": "CommandFlagDef struct + FlagDefs field. 6 tests." },
+    { "task": "T072: Hot-shortname aliases", "status": "Done", "outcome": "GoalHotSnippet struct. hot- prefix. 13 tests." },
+    { "task": "T073: Strict argument validation", "status": "Done", "outcome": "All commands validated. 21 tests." },
+    { "task": "T074: Morale-improver goal", "status": "Done", "outcome": "Already fully implemented. No changes needed." },
+    { "task": "T075: Remove createAdvancedPrompt alias", "status": "Done", "outcome": "Removed. -25 lines." },
+    { "task": "T076: Cross-platform: Linux Docker", "status": "Done", "outcome": "Fixed SkipIfRoot + mouseharness TOCTOU." },
     {
       "task": "T077: Cross-platform: Windows",
-      "description": "Run 'make make-all-run-windows' (host 'moo'). Fix Windows-specific failures. Verify platform paths (session_windows.go, registry_windows.go, atomic_write_windows.go, filelock_windows.go). Zero failures.",
+      "description": "Run 'make make-all-run-windows' (host 'moo'). Fix Windows-specific failures. Verify platform paths (session_windows.go, registry_windows.go, atomic_write_windows.go, filelock_windows.go). Verify benchmark thresholds (deferred from T061). Zero failures.",
       "status": "In Progress"
     },
     {
       "task": "T078: Cross-platform: macOS CI parity",
-      "description": "Run 'make all'. Verify session_other.go paths, clipboard ops, PTY tests, symlink resolution (/private/var/folders). Zero failures.",
+      "description": "Run 'make all' on macOS. Verify session_other.go paths, clipboard ops (pbcopy), PTY tests, symlink resolution (/private/var/folders), SkipIfRoot tests run normally. Zero failures. This establishes the clean baseline before documentation and feature work.",
       "status": "Not Started"
     },
     {
-      "task": "T079: Documentation: scripting.md",
-      "description": "Update module table (22 modules from register.go). Document each osm: module with functions, params, return types, examples. Cover grpc, flag, fetch, exec. Document args global, shebang, require() resolution. Fix deprecated references.",
+      "task": "T079: Populate CHANGELOG.md [Unreleased] — comprehensive",
+      "description": "The current [Unreleased] section has only 6 entries despite 56 completed tasks (T021-T076). Add ALL missing entries using Keep a Changelog 1.1.0 format. Categories: Added (coverage tests, fuzz, benchmarks, security tests, config persistence, hot-snippets, completions, prompt-flow auto-generate, txtar LCA, goal params, PostCopyHint, goals, scriptCommandBase, RefreshPath normalization), Changed (API surface: unexported 16+ symbols, pabt.ModuleLoader→Require, BTBridge removal, CONFIG_HOT_SNIPPETS moved), Fixed (data race, %v→%w, nil guards, TOCTOU, SkipIfRoot, flaky BT tests), Removed (deprecated aliases, ContextCommand, BTBridge alias, unused constants, stale .deadcodeignore).",
       "status": "Not Started"
     },
     {
-      "task": "T080: Documentation: reference docs",
-      "description": "Update command.md (sync, review-chunks), config.md (sync.*, script.module-paths, log.*, hot-snippets.*), goal.md (Tier 1 goals), tui-api.md (createPrompt), tui-lifecycle.md. All refs current.",
+      "task": "T080: Documentation: scripting.md — complete module reference",
+      "description": "Update module reference table for all 22 registered modules in register.go. For EACH module, document: name, exported functions/methods, parameter types, return types, examples. Fill gaps: osm:grpc full API, osm:sharedStateSymbols, remove TODO markers, document osm:ctxutil factory/REPL, document args global, fix createAdvancedPrompt refs, verify osm:bt and osm:pabt sections.",
       "status": "Not Started"
     },
     {
-      "task": "T081: Documentation: session.md and configuration.md",
-      "description": "Update session lifecycle, storage backends, auto-cleanup config. Add all new config keys from schema.go. Document OSM_* env overrides. Working examples.",
+      "task": "T081: Documentation: reference/command.md — add missing commands",
+      "description": "Add: osm sync (init/push/pull/save/list), osm log (tail [-n/-f]), osm super-document (-i/-test/-session/-store). Update: osm config (now PERSISTENT per T065, schema-aware validation, validate/schema subcommands). Verify all command docs match current SetupFlags implementations.",
       "status": "Not Started"
     },
     {
-      "task": "T082: Documentation: architecture.md",
-      "description": "Update module structure (fetch, flag, grpc, sync), command pattern, scripting engine (require, EngineOption), data flow, session management. Fix stale descriptions/diagrams.",
+      "task": "T082: Documentation: reference/config.md — all config keys from schema.go",
+      "description": "Cross-reference schema.go DefaultSchema() with config.md. Add ALL missing config keys with type, default, description, env var override. Add [hot-snippets] section format documentation. Update env variables section.",
       "status": "Not Started"
     },
     {
-      "task": "T083: Populate CHANGELOG.md [Unreleased]",
-      "description": "Empty [Unreleased] despite 20 commits. Add entries for: config schema, osm:flag/fetch/grpc, require system, sync/diff splitter, go-prompt features, tview deprecation, logging/tailing, session cleanup, prompt files, hot-snippets, Anthropic goals, coverage expansions. Keep a Changelog format.",
+      "task": "T083: Documentation: reference/goal.md — new fields, prompt files, all goals",
+      "description": "Update with: HotSnippets field (GoalHotSnippet struct, merge behavior), PostCopyHint field, FlagDefs in CommandConfig, BannerTemplate/UsageTemplate, ALL 10 built-in goals documented, prompt file (.prompt.md) discovery section, updated example JSON.",
       "status": "Not Started"
     },
     {
-      "task": "T084: Shell completion improvements",
-      "description": "Extend completion_command.go for all shells. Cover: sync subcommands, config key/value, session list/get/purge, log tail/follow, goal names, script names, session IDs, config keys. Test by sourcing. Integration tests.",
+      "task": "T084: Documentation: session.md — update lifecycle details",
+      "description": "Document: session delete (-dry-run/-y), session info, session list flags, SessionConfig reserved fields, cross-reference auto-determination docs, verify storage backend docs.",
       "status": "Not Started"
     },
     {
-      "task": "T085: Verify example scripts execute",
-      "description": "Run all scripts/ through 'osm script --test'. Fix API change breakages. Update for createPrompt rename. Document interactive-only scripts.",
+      "task": "T085: Documentation: configuration.md — add new config sections",
+      "description": "Add: [hot-snippets] section, Logging (log.*), Sync (sync.*), prompt.file-paths, script.module-paths, updated env vars. Ensure consistency with reference/config.md.",
       "status": "Not Started"
     },
     {
-      "task": "T086: Go module dependency audit",
-      "description": "Run 'go list -m -u all' and 'govulncheck'. Update security-fix deps. Run 'go mod tidy'. Verify 'make all' passes. Document held-back deps.",
+      "task": "T086: Documentation: architecture.md — comprehensive overhaul",
+      "description": "Expand from ~30-line skeleton to cover: entry point wiring, command system (BaseCommand, scriptCommandBase), scripting engine (lifecycle, EngineOption, event loop, require, globals), 22 builtin modules by category, session/storage, configuration (dnsmasq-style, schema, env vars, persistence), goal system, sync subsystem, data flow diagram.",
       "status": "Not Started"
     },
     {
-      "task": "T087: Final docs cross-reference validation",
-      "description": "Verify all doc links valid. Check docs/README.md index. Every command/module/config key documented. Fix stale references. Annotate completed items in docs/todo.md.",
+      "task": "T087: Documentation: docs/README.md — complete index",
+      "description": "Add missing links: shell-completion.md, reference/tui-api.md, reference/tui-lifecycle.md, reference/bt-blackboard-usage.md, reference/planning-and-acting-using-behavior-trees.md, reference/pabt-demo-script.md, reference/elm-commands-and-goja.md. Organize by category. Verify ALL links resolve.",
       "status": "Not Started"
     },
     {
-      "task": "T088: Final integration: macOS",
-      "description": "Run 'make make-all-with-log'. Zero failures. Coverage meets 100% effective target. Final gate.",
+      "task": "T088: Shell completion: extend for all commands",
+      "description": "Extend completion_command.go for bash/zsh/fish/powershell: sync subcommands, config key completion from DefaultSchema(), session subcommands, goal name completion, log tail. Integration tests.",
       "status": "Not Started"
     },
     {
-      "task": "T089: Final integration: Linux",
-      "description": "Run 'make make-all-in-container'. Zero failures. Fix Linux-specific issues. Final gate.",
+      "task": "T089: Verify example scripts execute with current APIs",
+      "description": "Run ALL scripts/ through test mode. Fix API breakages from T075 etc. Update scripts/README.md. Document interactive-only vs test-mode scripts.",
       "status": "Not Started"
     },
     {
-      "task": "T090: Final integration: Windows",
-      "description": "Run 'make make-all-run-windows'. Zero failures. Fix Windows-specific issues. Final gate.",
+      "task": "T090: Go module dependency audit",
+      "description": "Run 'go list -m -u all', 'govulncheck ./...', 'go mod tidy'. Key deps: goja, goja_nodejs, go-prompt, tcell/tview, charmbracelet/*. Update security-fix deps. Verify 'make all' passes.",
       "status": "Not Started"
     },
     {
-      "task": "T091: Scope expansion: next-frontier tasks",
-      "description": "After all tasks done: holistic review, identify next improvements. Workflow engine, plugin system, MCP server, prompt marketplace, performance regression infra, new goals. Add new tasks. List never empty.",
+      "task": "T091: Annotate completed items in docs/todo.md",
+      "description": "Review every item in docs/todo.md. Add inline annotations like '**DONE (T065)**'. For partial items, add notes. Do NOT modify original text.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T092: Prompt-flow QoL: one-step mode",
+      "description": "Per docs/todo.md: use without goal/generate. If no goal, copy copies raw context. 'use' without 'goal' enters context management. Backward compatible. Tests + docs.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T093: Prompt-flow QoL: footer support",
+      "description": "Per docs/todo.md: footer for second prompt. Add promptFooter field to Goal. Wire through goal.js. Template interpolation. Tests + goal.md update.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T094: Context builder: add files from git diff --name-only",
+      "description": "Per docs/todo.md: add-diff-files command or add --from-diff. Execute git diff --name-only, addPath each file. Gitref completion. Edge cases + tests.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T095: Investigate duplicate log lines for purged sessions",
+      "description": "Per docs/todo.md. Investigate, reproduce, fix, regression test. Document findings if unable to reproduce.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T096: Implement session cleanup scheduler",
+      "description": "Wire SessionConfig (AutoCleanupEnabled, CleanupIntervalHours, MaxAgeDays, MaxCount, MaxSizeMB). Lightweight trigger on startup. Interval tracking. Policy application. Tests + docs.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T097: Plan tview/tcell module removal",
+      "description": "Audit all tview dependencies. Check example scripts. Write migration guide. Create deletion checklist. Do NOT execute removal.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T098: Final docs cross-reference validation",
+      "description": "Verify: all links resolve, all commands documented, all config keys documented, all modules documented, all goals mentioned, bidirectional cross-refs, README index complete, todo.md annotated, CHANGELOG populated.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T099: Final integration: macOS",
+      "description": "Run 'make make-all-with-log'. Zero failures. All linters pass, race detection clean, fuzz stable, benchmarks within thresholds, 100% effective coverage. Definitive final macOS gate.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T100: Final integration: Linux",
+      "description": "Run 'make make-all-in-container'. Zero failures. Verify Docker-specific behavior. Compare with macOS. Definitive final Linux gate.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T101: Final integration: Windows",
+      "description": "Run 'make make-all-run-windows' (host 'moo'). Zero failures. Verify paths, clipboard, separators, .exe, benchmarks. Definitive final Windows gate.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T102: Scope expansion: next-frontier ideation",
+      "description": "Holistic review. Generate T103+: MCP server, workflow engine, plugin system, prompt marketplace, perf regression CI, ESM modules, code review chunking, in-process gRPC, eventloop HTTP, tview removal execution, git sync, new goals, autodiscovery UX, go-prompt enhancements. List never empty.",
       "status": "Not Started"
     }
   ],

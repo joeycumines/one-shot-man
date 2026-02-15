@@ -481,6 +481,8 @@ func TestSandbox_ContextCancellationStopsExecution(t *testing.T) {
 
 func TestSandbox_ExecUsesCommandContextNotShell(t *testing.T) {
 	t.Parallel()
+	platform := testutil.DetectPlatform(t)
+	testutil.SkipIfWindows(t, platform, "echo is a shell builtin on Windows, not a standalone executable")
 	engine, _, _ := newSandboxTestEngine(t)
 	script := engine.LoadScriptFromString("exec-no-shell", `
 		var execmod = require('osm:exec');

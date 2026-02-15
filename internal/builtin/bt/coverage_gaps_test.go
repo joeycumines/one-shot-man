@@ -923,7 +923,7 @@ func TestNodeUnwrap_JSNodeWithChildren(t *testing.T) {
 }
 
 // ============================================================================
-// Bridge coverage tests  
+// Bridge coverage tests
 // These target specific uncovered branches in bridge.go.
 // ============================================================================
 
@@ -1048,7 +1048,7 @@ func TestBridge_RunJSSync(t *testing.T) {
 	assert.Equal(t, int64(42), result)
 }
 
-// TestBridge_LoadScriptRuntimeError verifies LoadScript with a script that compiles 
+// TestBridge_LoadScriptRuntimeError verifies LoadScript with a script that compiles
 // but throws at runtime.
 func TestBridge_LoadScriptRuntimeError(t *testing.T) {
 	t.Parallel()

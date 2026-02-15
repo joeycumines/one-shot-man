@@ -513,5 +513,3 @@ func TestRequire_ExportsAllFunctions(t *testing.T) {
 		assert.Equal(t, "function", v.String(), "%s should be a function", name)
 	}
 }
-
-

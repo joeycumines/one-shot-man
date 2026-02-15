@@ -22,9 +22,9 @@ func (r *errorJSRunner) RunJSSync(func(*goja.Runtime) error) error {
 // noopModel is a minimal tea.Model for creating *tea.Program test values.
 type noopModel struct{}
 
-func (noopModel) Init() tea.Cmd                         { return nil }
-func (noopModel) Update(tea.Msg) (tea.Model, tea.Cmd)   { return noopModel{}, nil }
-func (noopModel) View() string                          { return "" }
+func (noopModel) Init() tea.Cmd                       { return nil }
+func (noopModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return noopModel{}, nil }
+func (noopModel) View() string                        { return "" }
 
 // ========================================================================
 // valueToCmd — all cmd type descriptors
@@ -36,9 +36,9 @@ func TestValueToCmd_AllCmdTypes(t *testing.T) {
 	model := &jsModel{runtime: vm}
 
 	tests := []struct {
-		name     string
-		cmdType  string
-		extra    func(*goja.Object) // optional extra properties
+		name      string
+		cmdType   string
+		extra     func(*goja.Object) // optional extra properties
 		expectNil bool
 	}{
 		{"quit", "quit", nil, false},

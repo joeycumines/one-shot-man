@@ -135,9 +135,9 @@ func TestExprLRUCache_Stats(t *testing.T) {
 
 	// After put and get
 	cache.Put("x", nil)
-	cache.Get("x")    // hit
-	cache.Get("y")    // miss
-	cache.Get("x")    // hit
+	cache.Get("x") // hit
+	cache.Get("y") // miss
+	cache.Get("x") // hit
 
 	size, hits, misses, ratio = cache.Stats()
 	assert.Equal(t, 1, size)

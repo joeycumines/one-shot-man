@@ -63,10 +63,10 @@ func (t *errTerm) Close() error {
 }
 
 func (t *errTerm) Fd() uintptr                   { return 0 }
-func (t *errTerm) IsTerminal() bool               { return true }
-func (t *errTerm) MakeRaw() (*term.State, error)   { return &term.State{}, t.makeRawErr }
-func (t *errTerm) Restore(_ *term.State) error     { return t.restoreErr }
-func (t *errTerm) GetSize() (int, int, error)      { return t.getWidth, t.getHeight, t.getSizeErr }
+func (t *errTerm) IsTerminal() bool              { return true }
+func (t *errTerm) MakeRaw() (*term.State, error) { return &term.State{}, t.makeRawErr }
+func (t *errTerm) Restore(_ *term.State) error   { return t.restoreErr }
+func (t *errTerm) GetSize() (int, int, error)    { return t.getWidth, t.getHeight, t.getSizeErr }
 
 func TestTcellAdapter_Start_NilTerminal(t *testing.T) {
 	adapter := NewTcellAdapter(nil)
@@ -344,7 +344,7 @@ func TestInteractiveTable_RowWithNullElements(t *testing.T) {
 		Headers: []string{"Col"},
 		Rows: []TableRow{
 			{Cells: []string{"valid"}},
-			{Cells: nil},           // nil cells
+			{Cells: nil},          // nil cells
 			{Cells: []string{""}}, // empty cell
 		},
 	}

@@ -49,7 +49,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 		// This allows modes to specify a command to run automatically after entering.
 		if cmdStr, err := getString(configMap, "initialCommand", ""); err != nil {
 			_, _ = fmt.Fprintf(tm.writer, "%#v\n", configMap)
-			return fmt.Errorf("initialCommand: %v", err)
+			return fmt.Errorf("initialCommand: %w", err)
 		} else {
 			mode.InitialCommand = cmdStr
 		}

@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T048 ALL DONE. T048 CONFIG_HOT_SNIPPETS auto-detect in contextManager.js. Next: T049 (Dead code elimination pass)."
+    "currentState": "T001-T050 ALL DONE. T050 error handling audit found 3 %v→%w fixes. Next: T051 (Expand fuzz testing)."
   },
   "sequentialTasks": [
     {
@@ -188,12 +188,14 @@
     {
       "task": "T049: Dead code elimination pass",
       "description": "Run 'make deadcode'. Cross-reference with .deadcodeignore. For new dead code: wire into production, move to test-only, or delete. No new .deadcodeignore entries. Run 'make lint' to confirm clean.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "No dead code detected by deadcode tool. All .deadcodeignore entries verified as legitimate (test helpers, debug stubs, Goja-called exports). No changes needed."
     },
     {
       "task": "T050: Error handling consistency audit",
       "description": "Audit entire codebase for error handling. Verify: (a) consistent %w wrapping, (b) proper exit codes, (c) no swallowed errors, (d) consistent message format (lowercase, no trailing period), (e) proper cleanup on error (defer close/unlock). Fix all inconsistencies.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Fixed 3 instances of %v where %w should be used (2 in lipgloss.go parseColor adaptive, 1 in tui_js_bridge.go initialCommand). All other areas clean: exit codes consistent, no swallowed errors in production, messages lowercase (except proper nouns), defer patterns correct."
     },
     {
       "task": "T051: Expand fuzz testing",

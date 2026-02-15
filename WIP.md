@@ -30,4 +30,6 @@
 - **T046**: ✅ DONE — Removed stale internal/termtest/* from .deadcodeignore (directory doesn't exist), verified all 15 remaining entries, Rule of Two passed
 - **T047**: ✅ DONE — Created scriptCommandBase with shared fields/RegisterFlags/PrepareEngine, refactored all 5 JS script commands, 8 new tests, Rule of Two passed
 - **T048**: ✅ DONE — Moved CONFIG_HOT_SNIPPETS auto-detection into contextManager.js, removed boilerplate from 3 scripts, 3 new tests, Rule of Two passed
-- **Next**: T049 — Dead code elimination pass
+- **T049**: ✅ DONE — No dead code detected. All .deadcodeignore entries verified as legitimate. No changes needed.
+- **T050**: ✅ DONE — Fixed 3 %v→%w instances (lipgloss.go parseColor adaptive, tui_js_bridge.go initialCommand). All other areas clean.
+- **Next**: T051 — Expand fuzz testing

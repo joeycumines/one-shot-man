@@ -807,12 +807,12 @@ func parseColor(runtime *goja.Runtime, val goja.Value) (lipgloss.TerminalColor, 
 	// Recursive validation for inner colors
 	var lStr, dStr string
 	if _, err := parseColor(runtime, light); err != nil {
-		return nil, fmt.Errorf("invalid light color: %v", err)
+		return nil, fmt.Errorf("invalid light color: %w", err)
 	}
 	lStr = light.String()
 
 	if _, err := parseColor(runtime, dark); err != nil {
-		return nil, fmt.Errorf("invalid dark color: %v", err)
+		return nil, fmt.Errorf("invalid dark color: %w", err)
 	}
 	dStr = dark.String()
 

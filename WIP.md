@@ -56,3 +56,10 @@
 - **T071**: ✅ DONE — Added CommandFlagDef struct + FlagDefs to CommandConfig. Moved --staged from gitref to diff flagDefs. Added --stat/--name-only flags. goal.js flagDefs passthrough. 6 new tests + 2 replaced.
 - **T072**: ✅ DONE — Added GoalHotSnippet struct + HotSnippets field. hot- prefix in contextManager.js. morale-improver (review-plan, prove-it) + commit-message (review-response) embedded snippets. goal.js merge logic. hot-snippets.no-warning config. buildCommands propagation. 13 tests.
 - **Next**: T073 — Strict command/subcommand argument validation
+
+## T073 DONE
+- Source changes: COMPLETE across 4 files (goal.go, builtin.go, session.go, sync.go)
+- Test file: CREATED and PASSING — 21 tests in arg_validation_test.go
+- Full build: PASSED (make make-all-with-log, zero FAIL/panic/race)
+- Rule of Two: PASSED (Pass 1 + Pass 2 in scratch/)
+- Status: Ready to commit

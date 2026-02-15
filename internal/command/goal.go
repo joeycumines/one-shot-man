@@ -131,6 +131,10 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	goals := c.registry.GetAllGoals()
 
 	if c.list {
+		if len(args) > 0 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments with -l: %v\n", args)
+			return fmt.Errorf("unexpected arguments")
+		}
 		return c.listGoals(goals, stdout)
 	}
 
@@ -139,10 +143,18 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	shouldInteractive := false
 	switch {
 	case c.run != "":
+		if len(args) > 0 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments with -r: %v\n", args)
+			return fmt.Errorf("unexpected arguments")
+		}
 		goalName = c.run
 		// -r implies non-interactive by default, unless -i explicitly set
 		shouldInteractive = c.interactive
 	case len(args) > 0:
+		if len(args) > 1 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
+			return fmt.Errorf("unexpected arguments")
+		}
 		goalName = args[0]
 		// Positional goal defaults to interactive, per README
 		shouldInteractive = true

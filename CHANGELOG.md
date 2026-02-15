@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Strict argument validation for all commands and subcommands: GoalCommand, HelpCommand, ConfigCommand (validate/schema), SessionCommand (id/list/clean/purge/info/path), and SyncCommand (save/list/init/push/pull) now reject unexpected positional arguments with clear error messages
 - Show summarized parameters in goal list: `osm goal -l` now displays `[vars: key=val, ...]` suffix showing non-nil state variable defaults alongside the existing `[cmds: ...]` custom command summary
 
 ### Fixed

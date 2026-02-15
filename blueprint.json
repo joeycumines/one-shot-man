@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T072 DONE — committing. T073 next."
+    "currentState": "T073 DONE — committing. T074 next."
   },
   "sequentialTasks": [
     {
@@ -332,7 +332,8 @@
     {
       "task": "T073: Strict command/subcommand argument validation",
       "description": "Commands must fail on unexpected args/options. Revalidate logging API wiring for all script commands. Consistent error messages for unknown flags. Add tests.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added argument validation to GoalCommand (-l, -r, positional), HelpCommand, ConfigCommand (validate/schema), SessionCommand (id, list, clean, purge, info, path), SyncCommand (save, list, init, push, pull). 21 new tests in arg_validation_test.go with executeWithFlags helper. Verified script commands pass args to JS (no Go validation needed). Logging API wiring confirmed consistent via scriptCommandBase. Rule of Two passed."
     },
     {
       "task": "T074: Add morale-improver built-in goal",

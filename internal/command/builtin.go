@@ -71,6 +71,9 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	}
 
 	// Show help for a specific command
+	if len(args) > 1 {
+		return fmt.Errorf("unexpected arguments: %v", args[1:])
+	}
 	cmdName := args[0]
 	cmd, err := c.registry.Get(cmdName)
 	if err != nil {
@@ -206,8 +209,16 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	// Handle subcommands.
 	switch args[0] {
 	case "validate":
+		if len(args) > 1 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
+			return fmt.Errorf("unexpected arguments")
+		}
 		return c.executeValidate(stdout)
 	case "schema":
+		if len(args) > 1 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
+			return fmt.Errorf("unexpected arguments")
+		}
 		_, _ = fmt.Fprint(stdout, config.DefaultSchema().FormatHelp())
 		return nil
 	}

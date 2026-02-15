@@ -79,6 +79,9 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			}
 			return err
 		}
+		if rem := fs.Args(); len(rem) > 0 {
+			return fmt.Errorf("session id: unexpected arguments: %v", rem)
+		}
 		// Resolve session id using scripting package
 		id := scripting.GetSessionID(localSession)
 		fmt.Fprintln(stdout, id)
@@ -105,6 +108,9 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 				return nil
 			}
 			return err
+		}
+		if rem := fs.Args(); len(rem) > 0 {
+			return fmt.Errorf("session list: unexpected arguments: %v", rem)
 		}
 		return c.list(stdout, formatLocal, sortLocal)
 	case "clean":
@@ -133,6 +139,9 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 				return nil
 			}
 			return err
+		}
+		if rem := fs.Args(); len(rem) > 0 {
+			return fmt.Errorf("session clean: unexpected arguments: %v", rem)
 		}
 		// confirmation
 		if !c.dry && !c.yes && !yesLocal {
@@ -174,6 +183,9 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 				return nil
 			}
 			return err
+		}
+		if rem := fs.Args(); len(rem) > 0 {
+			return fmt.Errorf("session purge: unexpected arguments: %v", rem)
 		}
 		// confirmation
 		if !c.dry && !c.yes && !yesLocal {
@@ -338,6 +350,9 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		if len(rem) < 1 {
 			return fmt.Errorf("info requires a session id")
 		}
+		if len(rem) > 1 {
+			return fmt.Errorf("unexpected arguments after session id: %v", rem[1:])
+		}
 		return c.info(stdout, rem[0])
 	case "path":
 		fs := flag.NewFlagSet("session-path", flag.ContinueOnError)
@@ -361,6 +376,9 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			return err
 		}
 		rem := fs.Args()
+		if len(rem) > 1 {
+			return fmt.Errorf("unexpected arguments for path: %v", rem[1:])
+		}
 		if len(rem) == 0 {
 			// Use SessionFilePath to derive a directory using the package-local
 			// sessionDirectory helper (tests override this via SetTestPaths).

@@ -746,15 +746,33 @@ func (cm *ContextManager) LoadFromTxtarString(data string) error {
 }
 
 // RefreshPath updates the content of a tracked path.
+//
+// The provided path is matched against tracked owner keys. If the raw value
+// is not an exact match (e.g. the caller passes "src/" but the canonical
+// owner is "src"), RefreshPath normalizes the input via the same logic used
+// by AddPath to recover the canonical key.
 func (cm *ContextManager) RefreshPath(path string) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 
-	if _, tracked := cm.ownerFiles[path]; !tracked {
-		return fmt.Errorf("path %s is not a tracked owner", path)
+	owner := path
+	if _, tracked := cm.ownerFiles[owner]; !tracked {
+		// Normalize: the caller may provide a variant of the path
+		// (trailing slash, "./" prefix, etc.) that differs from the
+		// canonical key computed during AddPath. Resolve to absolute
+		// then re-normalize to recover the canonical owner.
+		absPath, err := cm.absolutePathFromOwner(path)
+		if err != nil {
+			return fmt.Errorf("path %s is not a tracked owner", path)
+		}
+		normalized := cm.normalizeOwnerPath(absPath)
+		if _, tracked := cm.ownerFiles[normalized]; !tracked {
+			return fmt.Errorf("path %s is not a tracked owner", path)
+		}
+		owner = normalized
 	}
 
-	absPath, err := cm.absolutePathFromOwner(path)
+	absPath, err := cm.absolutePathFromOwner(owner)
 	if err != nil {
 		return fmt.Errorf("failed to resolve path %s: %w", path, err)
 	}
@@ -764,7 +782,7 @@ func (cm *ContextManager) RefreshPath(path string) error {
 		return fmt.Errorf("failed to stat path %s: %w", path, err)
 	}
 
-	return cm.addPathWithOwnerLocked(absPath, path, info)
+	return cm.addPathWithOwnerLocked(absPath, owner, info)
 }
 
 // GetStats returns statistics about the context.

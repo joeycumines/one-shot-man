@@ -604,6 +604,94 @@ func TestContextManagerRefreshPath(t *testing.T) {
 			t.Fatalf("expected error mentioning tracked owner, got: %v", got)
 		}
 	})
+
+	t.Run("DirectoryTrailingSlashNormalized", func(t *testing.T) {
+		// When a directory is added via AddPath("root"), the canonical
+		// owner key is "root". RefreshPath should accept "root/" (with
+		// trailing separator) and normalize it to match.
+		base := t.TempDir()
+		root := filepath.Join(base, "root")
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatalf("failed to create root directory: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("a"), 0o644); err != nil {
+			t.Fatalf("failed to write initial file: %v", err)
+		}
+
+		cm, err := NewContextManager(base)
+		if err != nil {
+			t.Fatalf("NewContextManager failed: %v", err)
+		}
+		if err := cm.AddPath(root); err != nil {
+			t.Fatalf("AddPath(directory) failed: %v", err)
+		}
+
+		// Add a new file on disk after the initial scan.
+		if err := os.WriteFile(filepath.Join(root, "b.txt"), []byte("b"), 0o644); err != nil {
+			t.Fatalf("failed to write new file: %v", err)
+		}
+
+		// Refresh with trailing separator — this is the variant the JS
+		// layer passes when the user types "add root/".
+		if err := cm.RefreshPath("root" + string(filepath.Separator)); err != nil {
+			t.Fatalf("RefreshPath(root/) failed: %v", err)
+		}
+
+		logicalNew := filepath.Join("root", "b.txt")
+		if _, ok := cm.GetPath(logicalNew); !ok {
+			t.Fatalf("expected %q to be tracked after refresh with trailing slash", logicalNew)
+		}
+	})
+
+	t.Run("DotSlashPrefixNormalized", func(t *testing.T) {
+		// When AddPath is called with an absolute path, the owner key
+		// is the relative form (e.g. "note.txt"). RefreshPath should
+		// accept "./note.txt" and normalize it to "note.txt".
+		base := t.TempDir()
+		filePath := filepath.Join(base, "note.txt")
+		if err := os.WriteFile(filePath, []byte("initial"), 0o644); err != nil {
+			t.Fatalf("failed to write initial file: %v", err)
+		}
+
+		cm, err := NewContextManager(base)
+		if err != nil {
+			t.Fatalf("NewContextManager failed: %v", err)
+		}
+		if err := cm.AddPath(filePath); err != nil {
+			t.Fatalf("AddPath(file) failed: %v", err)
+		}
+
+		// Update content on disk.
+		if err := os.WriteFile(filePath, []byte("updated"), 0o644); err != nil {
+			t.Fatalf("failed to update file: %v", err)
+		}
+
+		// Refresh with "./" prefix variant.
+		if err := cm.RefreshPath("." + string(filepath.Separator) + "note.txt"); err != nil {
+			t.Fatalf("RefreshPath(./note.txt) failed: %v", err)
+		}
+
+		cp, ok := cm.GetPath("note.txt")
+		if !ok {
+			t.Fatalf("expected note.txt to remain tracked after refresh")
+		}
+		if cp.Content != "updated" {
+			t.Fatalf("expected refreshed content to be 'updated', got: %q", cp.Content)
+		}
+	})
+
+	t.Run("UnknownPathStillFails", func(t *testing.T) {
+		// Even with normalization, a genuinely untracked path must
+		// still return an error.
+		base := t.TempDir()
+		cm, err := NewContextManager(base)
+		if err != nil {
+			t.Fatalf("NewContextManager failed: %v", err)
+		}
+		if err := cm.RefreshPath("does-not-exist"); err == nil {
+			t.Fatalf("expected error for untracked path")
+		}
+	})
 }
 
 func TestContextManagerSymlinkHandling(t *testing.T) {

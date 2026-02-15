@@ -296,7 +296,8 @@
     {
       "task": "T067: Directory-aware context refresh on copy",
       "description": "Fix: copy in osm:ctxutil should pick up new files added to tracked directories. Current _refreshFileItems() only refreshes existing items. Implement directory re-scanning on refresh. Add tests.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Root cause: JS _refreshFileItems passes raw user label (e.g. 'src/') to Go RefreshPath, but ownerFiles key is normalized (e.g. 'src') by AddPath's filepath.Clean pipeline. Fix: RefreshPath now normalizes input via absolutePathFromOwner→normalizeOwnerPath (same pipeline as AddPath) when direct key lookup fails. Fast path preserved for exact matches. 3 new tests: DirectoryTrailingSlashNormalized, DotSlashPrefixNormalized, UnknownPathStillFails. All 6 RefreshPath subtests pass. Rule of Two passed."
     },
     {
       "task": "T068: Show summarized parameters in goal list",

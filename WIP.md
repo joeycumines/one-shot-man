@@ -49,4 +49,5 @@
 - **T064**: ✅ DONE — Added computePathLCA + ToTxtar metadata comment + full-path preservation for collision groups. 19 new tests. All existing tests pass.
 - **T065**: ✅ DONE — Added ValidateOptionValue to schema.go. ConfigCommand now validates type before set (unknown keys warn, invalid types error). 16 integration tests in config_persist_test.go. Full suite passes.
 - **T066**: ✅ DONE — Added autoGenerateOnCopy flag to prompt-flow. Auto-generates meta-prompt on first copy when goal set. 8 new tests + helper. Rule of Two passed.
-- **Next**: T067 — Directory-aware context refresh on copy
+- **T067**: ✅ DONE — Fixed RefreshPath normalization (trailing slash, ./ prefix), 3 new tests, Rule of Two passed
+- **Next**: T068 — Show summarized parameters in goal list

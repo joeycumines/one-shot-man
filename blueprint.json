@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T061 ALL DONE. T061 verified cross-platform benchmark stability: macOS variance <10%, Linux Docker all pass, 400x-20,000x headroom on all 7 thresholds, no adjustments needed. Next: T062 (security review: input sanitization)."
+    "currentState": "T001-T062 ALL DONE. T062 added 34 security input sanitization tests covering exec, readFile, config parser, require(), fetch, context manager, REPL, resource limits, and cross-module isolation. Next: T063 (security review: JS sandbox boundaries)."
   },
   "sequentialTasks": [
     {
@@ -266,7 +266,8 @@
     {
       "task": "T062: Security review: input sanitization",
       "description": "Extend security_test.go. Audit all input paths: CLI args, config values, scripts, REPL, file paths, git specs, fetch URLs. Test: command injection via osm:exec (stdin exposure), path traversal via addPath, config parser malformed input, require() injection.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added 34 security input sanitization tests in internal/security_input_test.go (~600 lines). Covers 14 categories: exec (null bytes, control chars, shell metachar, empty command, stdin docs, execv validation), config parser (null bytes, oversized lines, binary input, malformed sections, session option injection, hot snippet injection, symlink rejection, null byte path, nonexistent path, control chars), script paths (path traversal, null byte, nonexistent), REPL (oversized script, deep recursion with 5s timeout, infinite loop with cancel), addPath (traversal allowed documented, symlinks followed, null bytes, nonexistent, symlink loop detection), fetch (file:// rejected, invalid URLs, SSRF documented), require (traversal allowed documented, non-JS content, shebang handling, nonexistent module), resource limits (large strings, many objects, regex backtracking), readFile (no sandbox documented, empty path, nonexistent), fileExists (special chars), cross-module isolation (require caching), git spec (ref name injection). Documents security posture: unsandboxed local tool, OS user permissions as security boundary. Rule of Two passed."
     },
     {
       "task": "T063: Security review: JS sandbox boundaries",

@@ -15,6 +15,7 @@ If you want reference:
 If you want internals:
 
 - [Architecture](architecture.md)
+- [Security posture](security.md)
 - [Visuals](visuals/README.md)
 
 Deep references for more specifics or advanced topics:

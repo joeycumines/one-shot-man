@@ -1,0 +1,181 @@
+# Security Posture: JS Sandbox Boundaries
+
+> **TL;DR:** osm is a local developer tool. The Goja JS runtime provides
+> **language-level isolation** (JS cannot call arbitrary Go code), but
+> **not security isolation** (exec, readFile, fetch are intentionally unrestricted).
+> The security boundary is the OS user's permissions.
+
+## Design Philosophy
+
+osm runs scripts on the developer's own machine, with the developer's own
+credentials. It is **not** a sandbox, container, or multi-tenant execution
+environment. The threat model assumes the user trusts the scripts they choose
+to run — just like they trust shell scripts they execute.
+
+## Goja Runtime Isolation
+
+The [Goja](https://github.com/dop251/goja) JavaScript engine provides:
+
+| Property | Status |
+|---|---|
+| Separate VM per `Engine` instance | ✅ Verified |
+| No shared global state between VMs | ✅ Verified |
+| No prototype pollution across VMs | ✅ Verified |
+| No access to Go `reflect` package | ✅ Verified |
+| No access to Go `unsafe` package | ✅ Verified |
+| No access to Go `runtime` package | ✅ Verified |
+| No `os.Exit` / process termination | ✅ Verified |
+| No Node.js builtins (`fs`, `child_process`, `net`, etc.) | ✅ Verified |
+| No browser globals (`window`, `document`, `fetch`) | ✅ Verified |
+| Context cancellation interrupts execution | ✅ Verified |
+
+These properties are continuously verified by `internal/security_sandbox_test.go`.
+
+## Module Security Surface
+
+### Registered Modules
+
+All native modules use the `osm:` prefix and are registered in
+`internal/builtin/register.go`. The JS `require()` system only loads:
+
+1. **`osm:` prefixed modules** — explicitly registered Go functions
+2. **File-based modules** — `.js` files from configured module paths
+
+Attempts to `require('go:os')`, `require('node:fs')`, or other prefixes fail.
+
+### Module-by-Module Analysis
+
+#### `osm:exec` — Command Execution
+
+| API | Security Notes |
+|---|---|
+| `exec(cmd, ...args)` | Uses `exec.CommandContext` — **no shell**. Arguments are passed directly, not interpreted. Shell metacharacters like `$(id)` are literal strings. |
+| `execv(cmd, args[])` | Same as `exec` but takes args as array. |
+
+- **Stdin:** Wired to `os.Stdin` (by design — the user is the operator)
+- **No shell expansion:** `exec('echo', '$(id)')` outputs the literal `$(id)`
+- **No dangerous extras:** No `spawn`, `fork`, `kill`, `system`, or `popen`
+
+#### `osm:os` — File Operations
+
+| API | Security Notes |
+|---|---|
+| `readFile(path)` | Reads any file accessible to the user. **No path restrictions** — by design. |
+| `fileExists(path)` | Checks existence. No restrictions. |
+| `openEditor(path)` | Opens `$EDITOR`. Wires stdin/stdout/stderr. |
+| `clipboardCopy(text)` | Uses `pbcopy`/`clip`/`xclip` via `exec.CommandContext`. |
+| `getenv(name)` | Reads environment variables. No restrictions. |
+
+- **Read-only filesystem:** No `writeFile`, `unlink`, `mkdir`, `rename`, or any write operations
+- **No `setenv`/`unsetenv`:** Cannot modify the process environment
+
+#### `osm:fetch` — HTTP Client
+
+| API | Security Notes |
+|---|---|
+| `fetch(url, opts)` | Unrestricted HTTP client. No URL filtering, no SSRF mitigation. |
+| `fetchStream(url, opts)` | Streaming variant of `fetch`. Same properties. |
+
+- **No restrictions:** Intentional for a local dev tool. The user controls which scripts run.
+- **No server-side:** No `createServer`, `listen`, or socket APIs.
+
+#### `osm:grpc` — gRPC Client
+
+| API | Security Notes |
+|---|---|
+| `dial(target, opts)` | Opens gRPC connection. Supports insecure option. |
+| `loadDescriptorSet(path)` | Loads protobuf descriptor from file. |
+| `invoke(...)` | Sends gRPC request. |
+
+- **Client-only:** No `createServer`, `listen`, or `serve`.
+
+#### `osm:text/template` — Go Templates
+
+| API | Security Notes |
+|---|---|
+| `new(name)` | Creates a `text/template`. |
+| `parse(text)` | Parses template string. |
+| `execute(data)` | Renders with data. |
+
+- **`text/template`** (not `html/template`): No auto-escaping, but acceptable for a CLI tool.
+- JS functions can be registered as template funcs, but they execute in the same Goja VM.
+
+#### Low-Risk Modules
+
+| Module | API Surface | Risk |
+|---|---|---|
+| `osm:time` | `sleep(ms)` | Minimal — only delays |
+| `osm:argv` | `parseArgv`, `formatArgv` | String processing only |
+| `osm:nextIntegerId` | `new()` → counter | Pure computation |
+| `osm:flag` | Go `flag` wrapper | Argument parsing |
+| `osm:unicodetext` | `width`, `truncate` | String processing |
+| `osm:ctxutil` | Context manager | Uses git diff via exec |
+| `osm:lipgloss` | Terminal styling | Pure rendering |
+| `osm:bubbletea` | TUI framework | Terminal I/O |
+| `osm:bubblezone` | Mouse hit-testing | UI only |
+| `osm:bubbles/*` | Text input/viewport | UI only |
+| `osm:termui/*` | Scrollbar widget | UI only |
+| `osm:bt` | Behavior trees | JS orchestration |
+| `osm:pabt` | Planning-augmented BT | JS orchestration |
+
+#### `osm:tview` (Deprecated)
+
+Deprecated in favor of `osm:bubbletea`. Emits a warning to stderr when loaded.
+Only available if a tview manager is provided during registration.
+
+## Global Scope
+
+The Goja VM exposes exactly these globals:
+
+| Global | Purpose |
+|---|---|
+| `ctx` | Context management (alias) |
+| `context` | Context management (files, diffs, git state) |
+| `log` | Logging (debug, info, warn, error, printf) |
+| `output` | Output formatting (print, printf) |
+| `tui` | Terminal UI integration |
+| `require` | Module loading (CommonJS) |
+
+**Not present:** `process`, `Buffer`, `global`, `__filename`, `__dirname`,
+`window`, `document`, `navigator`, `Deno`, `exit`, `quit`.
+
+## Require System
+
+The `require()` function resolves modules in this order:
+
+1. Check registered `osm:` native modules
+2. Check file paths relative to the requiring module
+3. Check configured module search paths (`WithModulePaths`)
+
+Unknown prefixes (`go:`, `node:`, etc.) are rejected. The `shebangStrippingLoader`
+removes `#!` lines from loaded files for Unix compatibility.
+
+`__dirname` and `__filename` are set per-module by the CommonJS loader, not
+globally. They are not available in the top-level script scope.
+
+## Context Cancellation
+
+When the Go context is cancelled (e.g., Ctrl+C), `context.AfterFunc` calls
+`vm.Interrupt()` to halt JavaScript execution. This prevents runaway scripts
+and ensures clean shutdown.
+
+## Test Coverage
+
+Security properties are verified by three test files:
+
+| File | Focus | Tests |
+|---|---|---|
+| `internal/security_test.go` | Path traversal, command injection, env vars, TUI input | ~40 tests |
+| `internal/security_input_test.go` | Input validation across all entry points | 34 tests |
+| `internal/security_sandbox_test.go` | JS sandbox boundaries, VM isolation, module API surfaces | 18 tests |
+
+## Known Intentional "Risks"
+
+These are **not bugs** — they are design decisions for a local developer tool:
+
+1. **`readFile` can read any file** — the user is the operator
+2. **`exec` passes stdin from `os.Stdin`** — interactive commands need terminal input
+3. **`fetch` has no URL restrictions** — the user controls which scripts run
+4. **`getenv` reads all environment variables** — needed for tool/editor configuration
+5. **`openEditor` wires stdio** — that's literally what editors need
+6. **`clipboardCopy` executes system clipboard commands** — that's the tool's core purpose

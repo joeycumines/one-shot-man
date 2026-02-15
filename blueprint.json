@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T038 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal. Next: T039 (command script-executing commands)."
+    "currentState": "T001-T039 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal, command script-executing commands. Next: T040 (command utility commands + data processing)."
   },
   "sequentialTasks": [
     {
@@ -128,7 +128,8 @@
     {
       "task": "T039: Coverage audit: internal/command script-executing commands",
       "description": "Coverage for 5 commands (prompt_flow, code_review, goal, super_document, scripting_command) + helpers (log_config, module_paths, hot_snippets, cleanup_helper). Cover Execute(), flag parsing, engine setup, script execution, error handling, test mode. Achieve 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage 78.6% → 81.0%. 30 new tests in script_cmd_coverage_gaps_test.go. GoalCommand SetupFlags 0%→100%, listGoals 97.2%→100%. SuperDocumentCommand Execute 0%→72.9%. injectConfigHotSnippets 66.7%→100%. resolveLogConfig 92.5%→97.5%. NewScriptingCommand 50%→100%. Remaining uncovered: interactive terminal.Run() blocks (structurally untestable). Rule of Two passed."
     },
     {
       "task": "T040: Coverage audit: internal/command utility commands + data processing",

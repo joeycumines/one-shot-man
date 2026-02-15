@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"io"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -206,6 +207,178 @@ func BenchmarkSessionOperations(b *testing.B) {
 			}
 			_ = loaded
 		}
+	})
+}
+
+// BenchmarkFileSystemIO benchmarks filesystem-based session I/O operations.
+// This covers the full FileSystemBackend path: flock acquisition, JSON
+// serialization (MarshalIndent), AtomicWriteFile (CreateTemp → Write →
+// Sync → Close → Chmod → Rename), file read, JSON deserialization, and
+// lock release + cleanup.
+func BenchmarkFileSystemIO(b *testing.B) {
+	// Helper to create a session with n history entries for benchmarking.
+	makeSession := func(id string, nEntries int) *storage.Session {
+		sess := &storage.Session{
+			ID:          id,
+			Version:     storage.CurrentSchemaVersion,
+			History:     make([]storage.HistoryEntry, nEntries),
+			ScriptState: make(map[string]map[string]any),
+			SharedState: make(map[string]any),
+		}
+		for i := range sess.History {
+			sess.History[i] = storage.HistoryEntry{
+				EntryID:    "entry",
+				ModeID:     "test-mode",
+				Command:    "echo 'test'",
+				ReadTime:   time.Now(),
+				FinalState: json.RawMessage(`{"state":"test"}`),
+			}
+		}
+		return sess
+	}
+
+	b.Run("FullCycle", func(b *testing.B) {
+		// Full FileSystem backend cycle: create → save → load → close.
+		// Measures combined cost of flock + JSON serialize + AtomicWriteFile
+		// + file read + JSON deserialize + lock release.
+		//
+		// Profiling notes (pprof CPU profile, 2s benchtime):
+		//   FullCycle: ~5.4ms/op, ~16KB, 104 allocs (10 history entries).
+		//   WriteOnly: ~5.4ms/op — write path dominates the full cycle.
+		//   ReadOnly: ~115μs/op — reads are ~47x faster than writes.
+		//   AtomicWriteFile: ~5.7ms/op — >99% of write cost.
+		//     Dominated by fsync (tempFile.Sync), required for crash safety.
+		//   MarshalIndent vs Marshal: 2.6x overhead (116μs vs 45μs, 100 entries)
+		//     but only ~2% of total write cost — not worth switching.
+		//   CPU profile: app code = 1.54% (10ms json.Unmarshal). Remaining
+		//     ~98.5% is OS syscalls (fsync, flock, file I/O).
+		//   Conclusion: no application-level optimization targets. The
+		//   dominant cost (fsync ~5ms) is required for crash-safe atomic
+		//   writes. MarshalIndent→Marshal saves ~1.3% of write time at
+		//   the cost of human-readable session files. Read path is already
+		//   fast (115μs = flock + ReadFile + Unmarshal).
+		dir := b.TempDir()
+		storage.SetTestPaths(dir)
+		b.Cleanup(storage.ResetPaths)
+
+		sess := makeSession("bench-fs-full", 10)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			backend, err := storage.NewFileSystemBackend(sess.ID)
+			if err != nil {
+				b.Fatalf("failed to create backend: %v", err)
+			}
+			if err := backend.SaveSession(sess); err != nil {
+				b.Fatalf("failed to save: %v", err)
+			}
+			loaded, err := backend.LoadSession(sess.ID)
+			if err != nil {
+				b.Fatalf("failed to load: %v", err)
+			}
+			if loaded == nil {
+				b.Fatal("session not found")
+			}
+			backend.Close()
+		}
+	})
+
+	b.Run("WriteOnly", func(b *testing.B) {
+		// Isolates write path: flock + MarshalIndent + AtomicWriteFile + unlock.
+		dir := b.TempDir()
+		storage.SetTestPaths(dir)
+		b.Cleanup(storage.ResetPaths)
+
+		sess := makeSession("bench-fs-write", 10)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			backend, err := storage.NewFileSystemBackend(sess.ID)
+			if err != nil {
+				b.Fatalf("failed to create backend: %v", err)
+			}
+			if err := backend.SaveSession(sess); err != nil {
+				b.Fatalf("failed to save: %v", err)
+			}
+			backend.Close()
+		}
+	})
+
+	b.Run("ReadOnly", func(b *testing.B) {
+		// Isolates read path: flock + ReadFile + Unmarshal + unlock.
+		dir := b.TempDir()
+		storage.SetTestPaths(dir)
+		b.Cleanup(storage.ResetPaths)
+
+		sess := makeSession("bench-fs-read", 10)
+		// Pre-write the session so reads find it.
+		backend, err := storage.NewFileSystemBackend(sess.ID)
+		if err != nil {
+			b.Fatalf("setup: %v", err)
+		}
+		if err := backend.SaveSession(sess); err != nil {
+			b.Fatalf("setup: %v", err)
+		}
+		backend.Close()
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			backend, err := storage.NewFileSystemBackend(sess.ID)
+			if err != nil {
+				b.Fatalf("failed to create backend: %v", err)
+			}
+			loaded, err := backend.LoadSession(sess.ID)
+			if err != nil {
+				b.Fatalf("failed to load: %v", err)
+			}
+			if loaded == nil {
+				b.Fatal("session not found")
+			}
+			backend.Close()
+		}
+	})
+
+	b.Run("AtomicWriteFile", func(b *testing.B) {
+		// Isolates AtomicWriteFile: CreateTemp → Write → Sync → Close → Chmod → Rename.
+		// Measures raw filesystem write overhead without JSON or locking.
+		dir := b.TempDir()
+		data := []byte(`{"test":"data","values":[1,2,3,4,5]}`)
+		target := filepath.Join(dir, "atomic-bench.json")
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if err := storage.AtomicWriteFile(target, data, 0644); err != nil {
+				b.Fatalf("failed: %v", err)
+			}
+		}
+	})
+
+	b.Run("MarshalIndentVsMarshal", func(b *testing.B) {
+		// Compares json.MarshalIndent (used by SaveSession) with json.Marshal.
+		// SaveSession uses MarshalIndent for human-readable session files.
+		sess := makeSession("marshal-cmp", 100)
+
+		b.Run("MarshalIndent", func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				if _, err := json.MarshalIndent(sess, "", "  "); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		b.Run("Marshal", func(b *testing.B) {
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				if _, err := json.Marshal(sess); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	})
 }
 

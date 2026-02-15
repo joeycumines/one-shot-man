@@ -142,14 +142,21 @@
     // Merge config-defined hot-snippets with any goal-defined ones.
     // Goal-defined snippets (from GOAL_CONFIG.hotSnippets) take precedence
     // over config file snippets (CONFIG_HOT_SNIPPETS) on name conflicts.
+    // Goal-defined snippets are marked as builtin for the warning system.
     var configSnippets = (typeof CONFIG_HOT_SNIPPETS !== 'undefined' && Array.isArray(CONFIG_HOT_SNIPPETS)) ? CONFIG_HOT_SNIPPETS : [];
     var goalSnippets = Array.isArray(config.hotSnippets) ? config.hotSnippets : [];
     if (configSnippets.length > 0 || goalSnippets.length > 0) {
         var merged = [];
         var seen = {};
         for (var si = 0; si < goalSnippets.length; si++) {
-            seen[goalSnippets[si].name] = true;
-            merged.push(goalSnippets[si]);
+            var gs = goalSnippets[si];
+            // Mark goal-defined snippets as builtin so the warning fires
+            // unless the user overrides them in their config.
+            if (!('builtin' in gs)) {
+                gs.builtin = true;
+            }
+            seen[gs.name] = true;
+            merged.push(gs);
         }
         for (var si = 0; si < configSnippets.length; si++) {
             if (!seen[configSnippets[si].name]) {
@@ -157,6 +164,10 @@
             }
         }
         ctxmgrOpts.hotSnippets = merged;
+    }
+    // Pass through no-warning config if set.
+    if (typeof CONFIG_HOT_SNIPPETS_NO_WARNING !== 'undefined' && CONFIG_HOT_SNIPPETS_NO_WARNING) {
+        ctxmgrOpts.noSnippetWarning = true;
     }
     const ctxmgr = contextManager(ctxmgrOpts);
 
@@ -301,11 +312,23 @@
                         description: cmdConfig.description || "",
                         usage: cmdConfig.usage || "",
                         argCompleters: cmdConfig.argCompleters || [],
+                        flagDefs: cmdConfig.flagDefs || [],
                         handler: wrappedHandler
                     };
                 } catch (e) {
                     output.print("Error creating handler for command " + cmdConfig.name + ": " + e);
                     continue;
+                }
+            }
+        }
+
+        // Include dynamic commands from contextManager that aren't in config.commands:
+        // - hot-snippet commands (hot-<name>)
+        // - the snippets listing command
+        for (var key in ctxmgr.commands) {
+            if (Object.prototype.hasOwnProperty.call(ctxmgr.commands, key) && !commands[key]) {
+                if (key.indexOf("hot-") === 0 || key === "snippets") {
+                    commands[key] = ctxmgr.commands[key];
                 }
             }
         }

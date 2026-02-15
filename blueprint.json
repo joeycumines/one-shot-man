@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T071 DONE — Committed. T072 next."
+    "currentState": "T072 DONE — committing. T073 next."
   },
   "sequentialTasks": [
     {
@@ -326,7 +326,8 @@
     {
       "task": "T072: Hot-shortname aliases with mode-scoped activation",
       "description": "Add hot-<shortname> aliases that copy snippets per mode. Configurable. Command to output defaults. Warning for unoverridden built-ins (with disable config). Add tests.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added GoalHotSnippet struct + HotSnippets field on Goal. contextManager.js registers snippets with hot- prefix. morale-improver gets review-plan/prove-it, commit-message gets review-response. goal.js merges config+goal snippets (goal precedence, builtin:true marking). hot-snippets.no-warning config option. buildCommands propagates hot-/snippets to TUI. 13 tests (2 JSON serialization, 9 ctxutil hot- prefix updated, 2 goal integration). Rule of Two passed."
     },
     {
       "task": "T073: Strict command/subcommand argument validation",

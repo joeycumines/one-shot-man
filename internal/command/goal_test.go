@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -732,5 +733,58 @@ func TestGoalCommand_BannerIncludesNotableVariablesOnEnter(t *testing.T) {
 	}
 	if !strings.Contains(got, "framework=auto") {
 		t.Errorf("expected banner to include 'framework=auto', got: %s", got)
+	}
+}
+
+func TestGoalHotSnippet_JSONSerialization(t *testing.T) {
+	t.Parallel()
+
+	goal := Goal{
+		Name: "test",
+		HotSnippets: []GoalHotSnippet{
+			{Name: "ask", Text: "Ask this question.", Description: "Ask a follow-up"},
+			{Name: "verify", Text: "Verify the output."},
+		},
+	}
+
+	data, err := json.Marshal(goal)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+
+	s := string(data)
+	if !strings.Contains(s, `"hotSnippets"`) {
+		t.Errorf("expected JSON to contain hotSnippets key, got: %s", s)
+	}
+	if !strings.Contains(s, `"ask"`) || !strings.Contains(s, `"verify"`) {
+		t.Errorf("expected snippet names in JSON, got: %s", s)
+	}
+
+	// Roundtrip
+	var decoded Goal
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if len(decoded.HotSnippets) != 2 {
+		t.Fatalf("expected 2 snippets after roundtrip, got %d", len(decoded.HotSnippets))
+	}
+	if decoded.HotSnippets[0].Name != "ask" || decoded.HotSnippets[0].Description != "Ask a follow-up" {
+		t.Errorf("unexpected first snippet: %+v", decoded.HotSnippets[0])
+	}
+	if decoded.HotSnippets[1].Name != "verify" || decoded.HotSnippets[1].Description != "" {
+		t.Errorf("unexpected second snippet (expected empty description with omitempty): %+v", decoded.HotSnippets[1])
+	}
+}
+
+func TestGoalHotSnippet_OmittedWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	goal := Goal{Name: "no-snippets"}
+	data, err := json.Marshal(goal)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if strings.Contains(string(data), "hotSnippets") {
+		t.Errorf("expected hotSnippets to be omitted when empty, got: %s", string(data))
 	}
 }

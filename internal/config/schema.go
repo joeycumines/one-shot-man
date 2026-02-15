@@ -415,6 +415,9 @@ func defaultGlobalOptions() []ConfigOption {
 		// Prompt file options
 		{Key: "prompt.file-paths", Type: TypePathList, Default: "", Description: "Additional directories to search for .prompt.md files"},
 
+		// Hot-snippet options
+		{Key: "hot-snippets.no-warning", Type: TypeBool, Default: "false", Description: "Suppress warning when using embedded (builtin) hot-snippets"},
+
 		// Sync options (reserved)
 		{Key: "sync.repository", Type: TypeString, Default: "", Description: "Git repository URL for sync"},
 		{Key: "sync.enabled", Type: TypeBool, Default: "false", Description: "Enable git synchronisation"},

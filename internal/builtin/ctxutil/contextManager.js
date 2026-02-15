@@ -165,8 +165,13 @@
                 },
                 diff: {
                     description: "Add git diff output to context (default: HEAD)",
-                    usage: "diff [commit-spec]",
-                    argCompleters: ["gitref"],
+                    usage: "diff [--staged|--stat|--name-only] [commit-spec]",
+                    argCompleters: ["gitref", "flag"],
+                    flagDefs: [
+                        {name: "staged", description: "Staged changes (index vs HEAD)"},
+                        {name: "stat", description: "Show diffstat summary"},
+                        {name: "name-only", description: "Show only names of changed files"}
+                    ],
                     handler: function (args) {
                         // Don't bake the runtime default into the stored payload. Store an
                         // empty payload to indicate "no args provided" and let the Go
@@ -342,10 +347,11 @@
                 }
             };
 
-            // Add hot-snippet commands
+            // Add hot-snippet commands (prefixed with "hot-" to avoid collisions)
             for (var si = 0; si < hotSnippets.length; si++) {
                 (function(snippet) {
-                    cmds[snippet.name] = {
+                    var cmdName = "hot-" + snippet.name;
+                    cmds[cmdName] = {
                         description: snippet.description || ("Hot snippet: " + snippet.name),
                         handler: function () {
                             if (snippet.builtin && !noSnippetWarning) {
@@ -364,7 +370,7 @@
 
             // Add snippets listing command
             cmds['snippets'] = {
-                description: "List available hot-snippets",
+                description: "List available hot-snippets (use hot-<name> to copy)",
                 handler: function () {
                     if (hotSnippets.length === 0) {
                         output.print("No hot-snippets configured.");
@@ -374,7 +380,7 @@
                         var s = hotSnippets[i];
                         var marker = s.builtin ? " [embedded]" : "";
                         var preview = s.description || (s.text.length > 50 ? s.text.substring(0, 50) + "..." : s.text);
-                        output.print(s.name + marker + " - " + preview);
+                        output.print("hot-" + s.name + marker + " - " + preview);
                     }
                 }
             };

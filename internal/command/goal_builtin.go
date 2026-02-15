@@ -396,6 +396,14 @@ Generate a commit message that follows these guidelines based on the provided di
 
 			ContextHeader: "DIFF CONTEXT / CHANGES",
 
+			HotSnippets: []GoalHotSnippet{
+				{
+					Name:        "review-response",
+					Text:        "Review the commit message you generated. Does the subject line use imperative mood? Is the body wrapped at 72 characters? Does the body explain why, not how? Revise if needed.",
+					Description: "Follow-up: review and revise commit message",
+				},
+			},
+
 			Commands: []CommandConfig{
 				{Name: "add", Type: "contextManager"},
 				{Name: "diff", Type: "contextManager"},
@@ -421,6 +429,19 @@ Generate a commit message that follows these guidelines based on the provided di
 			TUIPrompt:   "(morale-improver) > ",
 
 			PostCopyHint: `[Hint] Try a follow-up prompt: "Now review each section of your plan. For each section, verify it directly addresses the failures listed above. Remove or rewrite any section that doesn't."`,
+
+			HotSnippets: []GoalHotSnippet{
+				{
+					Name:        "review-plan",
+					Text:        "Now review each section of your plan. For each section, verify it directly addresses the failures listed above. Remove or rewrite any section that doesn't.",
+					Description: "Follow-up: review plan sections against failures",
+				},
+				{
+					Name:        "prove-it",
+					Text:        "Prove the issue exists by reproducing it with a minimal test case. Then prove the fix works by running the same test case after. Do not skip either step.",
+					Description: "Follow-up: demand proof of issue and fix",
+				},
+			},
 
 			NotableVariables: []string{"originalInstructions", "failedPlan", "specificFailures"},
 

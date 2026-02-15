@@ -54,4 +54,5 @@
 - **T069**: ✅ DONE — Added getExecutableSuggestions (PATH-based) + executable argCompleter type + 12 tests. contextManager.js exec updated from file to executable. Committed as 61c0d93.
 - **T070**: ✅ DONE — Improved getGitRefSuggestions (+--staged, remote branches, recent commits), 6 new tests. Committed as 679455f.
 - **T071**: ✅ DONE — Added CommandFlagDef struct + FlagDefs to CommandConfig. Moved --staged from gitref to diff flagDefs. Added --stat/--name-only flags. goal.js flagDefs passthrough. 6 new tests + 2 replaced.
-- **Next**: T072 — Hot-shortname aliases with mode-scoped activation
+- **T072**: ✅ DONE — Added GoalHotSnippet struct + HotSnippets field. hot- prefix in contextManager.js. morale-improver (review-plan, prove-it) + commit-message (review-response) embedded snippets. goal.js merge logic. hot-snippets.no-warning config. buildCommands propagation. 13 tests.
+- **Next**: T073 — Strict command/subcommand argument validation

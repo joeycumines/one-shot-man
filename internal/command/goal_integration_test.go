@@ -547,3 +547,104 @@ func TestGoalScript_MoraleImprover_TUIElements(t *testing.T) {
 		t.Fatalf("failed to switch mode: %v", err)
 	}
 }
+
+func TestGoalScript_MoraleImprover_EmbeddedHotSnippets(t *testing.T) {
+	t.Parallel()
+
+	goalRegistry := newTestGoalRegistryForGoal()
+	g, err := goalRegistry.Get("morale-improver")
+	if err != nil {
+		t.Fatalf("failed to find morale-improver goal: %v", err)
+	}
+
+	// Verify goal has HotSnippets defined in Go
+	if len(g.HotSnippets) == 0 {
+		t.Fatal("expected morale-improver to have embedded HotSnippets")
+	}
+
+	expectedSnippets := map[string]string{
+		"review-plan": "Follow-up: review plan sections against failures",
+		"prove-it":    "Follow-up: demand proof of issue and fix",
+	}
+	for _, hs := range g.HotSnippets {
+		if desc, ok := expectedSnippets[hs.Name]; ok {
+			if hs.Description != desc {
+				t.Errorf("snippet %q expected description %q, got %q", hs.Name, desc, hs.Description)
+			}
+			if hs.Text == "" {
+				t.Errorf("snippet %q has empty text", hs.Name)
+			}
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	ctx := context.Background()
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal", t.Name()), "memory")
+	if err != nil {
+		t.Fatalf("NewEngine failed: %v", err)
+	}
+	defer engine.Close()
+	engine.SetTestMode(true)
+
+	cfgjson, err := json.Marshal(g)
+	if err != nil {
+		t.Fatalf("failed to marshal goal config: %v", err)
+	}
+
+	script := engine.LoadScriptFromString(g.Name, "var GOAL_CONFIG = "+string(cfgjson)+";\n\n"+g.Script)
+	if err := engine.ExecuteScript(script); err != nil {
+		t.Fatalf("failed to execute goal script: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
+	}
+
+	if err := engine.GetTUIManager().SwitchMode(g.Name); err != nil {
+		t.Fatalf("failed to switch mode: %v", err)
+	}
+
+	// Verify hot-snippet commands are registered with hot- prefix
+	for name := range expectedSnippets {
+		cmdName := "hot-" + name
+		stdout.Reset()
+		err := engine.GetTUIManager().ExecuteCommand(cmdName, []string{})
+		// The command may fail at clipboard copy (no clipboard in test),
+		// but the command should be recognized (not "unknown command")
+		if err != nil {
+			errStr := err.Error()
+			if strings.Contains(errStr, "unknown command") || strings.Contains(errStr, "not found") {
+				t.Errorf("expected hot-%s command to be registered, got error: %v", name, err)
+			}
+		}
+	}
+
+	// Verify snippets listing includes the hot-snippet names
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("snippets", []string{}); err != nil {
+		t.Fatalf("snippets command failed: %v", err)
+	}
+	snippetsOut := stdout.String()
+	for name := range expectedSnippets {
+		if !strings.Contains(snippetsOut, "hot-"+name) {
+			t.Errorf("expected snippets listing to contain 'hot-%s', got:\n%s", name, snippetsOut)
+		}
+	}
+	// Embedded snippets should show [embedded] marker
+	if !strings.Contains(snippetsOut, "[embedded]") {
+		t.Errorf("expected snippets listing to contain '[embedded]' marker, got:\n%s", snippetsOut)
+	}
+}
+
+func TestGoalScript_CommitMessage_EmbeddedHotSnippet(t *testing.T) {
+	t.Parallel()
+
+	goalRegistry := newTestGoalRegistryForGoal()
+	g, err := goalRegistry.Get("commit-message")
+	if err != nil {
+		t.Fatalf("failed to find commit-message goal: %v", err)
+	}
+
+	if len(g.HotSnippets) != 1 {
+		t.Fatalf("expected commit-message to have 1 HotSnippet, got %d", len(g.HotSnippets))
+	}
+	if g.HotSnippets[0].Name != "review-response" {
+		t.Errorf("expected snippet name 'review-response', got %q", g.HotSnippets[0].Name)
+	}
+}

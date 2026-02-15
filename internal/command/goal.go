@@ -60,6 +60,10 @@ type Goal struct {
 	// Post-copy hint: if set, printed after successful copy
 	PostCopyHint string `json:"postCopyHint,omitempty"`
 
+	// Hot-snippets embedded in this goal. These are merged with
+	// config-file hot-snippets; goal-defined ones take precedence.
+	HotSnippets []GoalHotSnippet `json:"hotSnippets,omitempty"`
+
 	// Commands configuration
 	Commands []CommandConfig `json:"commands"`
 }
@@ -68,6 +72,14 @@ type Goal struct {
 type CommandFlagDef struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+}
+
+// GoalHotSnippet describes an embedded hot-snippet for a goal.
+// These are registered as hot-<name> commands in the goal's mode.
+type GoalHotSnippet struct {
+	Name        string `json:"name"`
+	Text        string `json:"text"`
+	Description string `json:"description,omitempty"`
 }
 
 // CommandConfig defines a command available in a goal mode

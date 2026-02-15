@@ -1448,14 +1448,14 @@ func TestContextManagerHotSnippetBasic(t *testing.T) {
 			]
 		});
 
-		// Verify snippet commands exist
-		globalThis.__hasFollowup = typeof ctxmgr.commands.followup === 'object';
-		globalThis.__hasKickoff = typeof ctxmgr.commands.kickoff === 'object';
-		globalThis.__followupDesc = ctxmgr.commands.followup.description;
-		globalThis.__kickoffDesc = ctxmgr.commands.kickoff.description;
+		// Verify snippet commands exist (with hot- prefix)
+		globalThis.__hasFollowup = typeof ctxmgr.commands["hot-followup"] === 'object';
+		globalThis.__hasKickoff = typeof ctxmgr.commands["hot-kickoff"] === 'object';
+		globalThis.__followupDesc = ctxmgr.commands["hot-followup"].description;
+		globalThis.__kickoffDesc = ctxmgr.commands["hot-kickoff"].description;
 
 		// Execute the followup snippet
-		ctxmgr.commands.followup.handler();
+		ctxmgr.commands["hot-followup"].handler();
 		globalThis.__clipboardContent = clipboardContent;
 		globalThis.__outputCalls = outputCalls;
 	`
@@ -1465,10 +1465,10 @@ func TestContextManagerHotSnippetBasic(t *testing.T) {
 	}
 
 	if !runtime.Get("__hasFollowup").ToBoolean() {
-		t.Error("expected followup command to exist")
+		t.Error("expected hot-followup command to exist")
 	}
 	if !runtime.Get("__hasKickoff").ToBoolean() {
-		t.Error("expected kickoff command to exist")
+		t.Error("expected hot-kickoff command to exist")
 	}
 
 	if got := runtime.Get("__followupDesc").String(); got != "Follow-up prompt" {
@@ -1516,7 +1516,7 @@ func TestContextManagerHotSnippetWarning(t *testing.T) {
 			]
 		});
 
-		ctxmgr.commands.builtin1.handler();
+		ctxmgr.commands["hot-builtin1"].handler();
 		globalThis.__outputCalls = outputCalls;
 		globalThis.__clipboardContent = clipboardContent;
 	`
@@ -1572,7 +1572,7 @@ func TestContextManagerHotSnippetWarningDisabled(t *testing.T) {
 			noSnippetWarning: true
 		});
 
-		ctxmgr.commands.builtin1.handler();
+		ctxmgr.commands["hot-builtin1"].handler();
 		globalThis.__outputCalls = outputCalls;
 		globalThis.__clipboardContent = clipboardContent;
 	`
@@ -1650,25 +1650,25 @@ func TestContextManagerHotSnippetsList(t *testing.T) {
 		t.Fatalf("expected 3 output lines (one per snippet), got %d: %v", len(outputs), outputs)
 	}
 
-	// First snippet: has description
-	if !strings.Contains(outputs[0].(string), "followup") {
-		t.Errorf("expected first line to contain 'followup', got %q", outputs[0])
+	// First snippet: has description, shown with hot- prefix
+	if !strings.Contains(outputs[0].(string), "hot-followup") {
+		t.Errorf("expected first line to contain 'hot-followup', got %q", outputs[0])
 	}
 	if !strings.Contains(outputs[0].(string), "Follow-up prompt") {
 		t.Errorf("expected first line to contain description, got %q", outputs[0])
 	}
 
-	// Second snippet: builtin marker
-	if !strings.Contains(outputs[1].(string), "kickoff") {
-		t.Errorf("expected second line to contain 'kickoff', got %q", outputs[1])
+	// Second snippet: builtin marker, shown with hot- prefix
+	if !strings.Contains(outputs[1].(string), "hot-kickoff") {
+		t.Errorf("expected second line to contain 'hot-kickoff', got %q", outputs[1])
 	}
 	if !strings.Contains(outputs[1].(string), "[embedded]") {
 		t.Errorf("expected second line to contain '[embedded]' marker, got %q", outputs[1])
 	}
 
-	// Third snippet: no builtin marker, text preview
-	if !strings.Contains(outputs[2].(string), "review") {
-		t.Errorf("expected third line to contain 'review', got %q", outputs[2])
+	// Third snippet: no builtin marker, shown with hot- prefix
+	if !strings.Contains(outputs[2].(string), "hot-review") {
+		t.Errorf("expected third line to contain 'hot-review', got %q", outputs[2])
 	}
 	if strings.Contains(outputs[2].(string), "[embedded]") {
 		t.Errorf("expected third line NOT to contain '[embedded]' marker, got %q", outputs[2])
@@ -2136,7 +2136,7 @@ func TestContextManagerHotSnippetClipboardError(t *testing.T) {
 			]
 		});
 
-		ctxmgr.commands['test-snippet'].handler();
+		ctxmgr.commands['hot-test-snippet'].handler();
 		globalThis.__outputCalls = outputCalls;
 	`
 
@@ -2332,12 +2332,12 @@ func TestContextManagerHotSnippetAutoDetectFromGlobal(t *testing.T) {
 			clipboardCopy: (text) => { clipboardContent = text; }
 		});
 
-		globalThis.__hasAuto1 = typeof ctxmgr.commands.auto1 === 'object';
-		globalThis.__hasAuto2 = typeof ctxmgr.commands.auto2 === 'object';
-		globalThis.__auto1Desc = ctxmgr.commands.auto1.description;
+		globalThis.__hasAuto1 = typeof ctxmgr.commands["hot-auto1"] === 'object';
+		globalThis.__hasAuto2 = typeof ctxmgr.commands["hot-auto2"] === 'object';
+		globalThis.__auto1Desc = ctxmgr.commands["hot-auto1"].description;
 
 		// Execute auto1
-		ctxmgr.commands.auto1.handler();
+		ctxmgr.commands["hot-auto1"].handler();
 		globalThis.__clipboardContent = clipboardContent;
 		globalThis.__outputCalls = outputCalls;
 
@@ -2390,8 +2390,8 @@ func TestContextManagerHotSnippetExplicitOverridesGlobal(t *testing.T) {
 			]
 		});
 
-		globalThis.__hasExplicit1 = typeof ctxmgr.commands.explicit1 === 'object';
-		globalThis.__hasGlobal1 = typeof ctxmgr.commands.global1 === 'object';
+		globalThis.__hasExplicit1 = typeof ctxmgr.commands["hot-explicit1"] === 'object';
+		globalThis.__hasGlobal1 = typeof ctxmgr.commands["hot-global1"] === 'object';
 
 		// Cleanup
 		delete globalThis.CONFIG_HOT_SNIPPETS;

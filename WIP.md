@@ -18,5 +18,6 @@
 - **T034**: ✅ DONE — ~120 new tests across 2 files (textarea 68.8→95.1%, viewport 73.3→97.3%), no bugs found, committed as ed96f95
 - **T035**: ✅ DONE — ~40 new tests, 1 data race fix (engine_core.go context.AfterFunc), coverage 93.0% combined
 - **T036**: ✅ DONE — ~80 new tests in tui_coverage_gaps_test.go (2387 lines), coverage 80.1% → 86.7%, 9 TUI files covered, no bugs found
-- **Next**: T037 — Coverage audit: internal/scripting state management
+- **T037**: ✅ DONE — ~60 new tests in state_coverage_gaps_test.go (~1700 lines), coverage 86.7% → 89.0%, 6 state/context/API files covered, no bugs found
+- **Next**: T038 — Coverage audit: internal/scripting session and terminal
 - **Approach**: Execute tasks sequentially, verify via Rule of Two, commit, continue

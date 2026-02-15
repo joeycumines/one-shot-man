@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T036 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem. Next: T037 (scripting state management)."
+    "currentState": "T001-T037 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management. Next: T038 (scripting session and terminal)."
   },
   "sequentialTasks": [
     {
@@ -116,7 +116,8 @@
     {
       "task": "T037: Coverage audit: internal/scripting state management",
       "description": "Coverage for state_manager.go, js_state_accessor.go, js_context_api.go, js_logging_api.go, js_output_api.go, context.go. Cover state ops, session persistence, context management (addPath/refreshPath/removePath/ToTxtar), all JS API bindings. Achieve 100% effective coverage.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage: scripting package 86.7% → 89.0%. ~60 new tests in state_coverage_gaps_test.go (~1700 lines). Per-file: FromTxtar/LoadFromTxtarString 0%→100%, jsContextGetPath/jsContextFromTxtar 0%→100%, mapToAttrs/jsLogClear 0%→100%, normalizeSymbolDescription 62.5%→100%, persistSessionInternal/AddListener 100%, many state_manager functions improved to 92-100%. No bugs found. Remaining uncovered lines are defensive dead code (OS-level errors, filepath.Abs/Rel failures, collision loop paths). Rule of Two passed."
     },
     {
       "task": "T038: Coverage audit: internal/scripting session and terminal",

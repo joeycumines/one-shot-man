@@ -23,4 +23,5 @@
 - **T039**: ✅ DONE — 30 new tests in script_cmd_coverage_gaps_test.go, coverage 78.6% → 81.0%, GoalSetupFlags 0→100%, SuperDocument Execute 0→72.9%, injectConfigHotSnippets 66.7→100%, resolveLogConfig 92.5→97.5%, NewScriptingCommand 50→100%, no bugs found
 - **T040**: ✅ DONE — ~42 new tests in util_cmd_coverage_gaps_test.go, coverage 81.0% → 86.3%, no bugs found, Rule of Two passed
 - **T041**: ✅ DONE — ~25 new tests in registry_base_coverage_gaps_test.go (~697 lines), coverage 86.3% → 88.0%, no bugs found, Rule of Two passed
-- **Next**: T042 — Coverage audit: goroutineid, testutil, mouseharness
+- **T042**: ✅ DONE — ~45 new tests across 3 coverage_gaps_test.go files (goroutineid 91.3→100%, testutil 68.9→83.6%, mouseharness 75.9→83.1%), no bugs found, Rule of Two passed
+- **Next**: T043 — Coverage audit: internal/example/pickandplace

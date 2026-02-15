@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T041 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal, command script-executing commands, command utility commands + data processing, command registry/base/dispatch. Next: T042 (goroutineid, testutil, mouseharness)."
+    "currentState": "T001-T042 ALL DONE. Coverage audits complete for: exec, os, ctxutil (Go+JS), bt, pabt, bubbletea, fetch, flag, grpc, bubblezone, tview, lipgloss, template, time, nextintegerid, unicodetext, argv, scrollbar, textarea, viewport, scripting engine core, scripting TUI subsystem, scripting state management, scripting session and terminal, command script-executing commands, command utility commands + data processing, command registry/base/dispatch, goroutineid, testutil, mouseharness. Next: T043 (internal/example/pickandplace)."
   },
   "sequentialTasks": [
     {
@@ -146,7 +146,8 @@
     {
       "task": "T042: Coverage audit: goroutineid, testutil, mouseharness",
       "description": "Coverage for 3 utility packages. goroutineid: ID extraction. testutil: polling, platform detection, test ID gen. mouseharness: event harness, terminal handling (7 source + 5 test files). Achieve 100% effective coverage each.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Coverage: goroutineid 91.3%→100%, testutil 68.9%→83.6%, mouseharness 75.9%→83.1%. ~45 new tests across 3 coverage_gaps_test.go files. goroutineid: parseGoroutineIDFromStack all branches covered (short buffer, digits at EOF, prefix not found, concurrent Get). testutil: eventloop lifecycle 0%→100%, SkipIfWindows 0%→50%, Poll timeout-message branch 87.5%→100%, session ID truncation/unicode edges. mouseharness: exported wrappers 0%→100%, nil-cp guards for GetBuffer/GetBufferRaw, parseTerminalBuffer 14 edge cases (erase modes, OSC+ST, cursor clamping, control chars, incomplete escape), stripANSI 5 edge cases (charset designation, unknown escape), ScrollWheel invalid direction, New validation errors. Remaining uncovered: AssertCanBypassPermissions 0% (requires root), mouseharness PTY-dependent methods (String/Snapshot/WriteString/ClickViewport/ClickAtBufferPosition/ScrollWheelOnElement), internal/dummy 0% (test-only binary). Rule of Two passed."
     },
     {
       "task": "T043: Coverage audit: internal/example/pickandplace",

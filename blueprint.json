@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T064 ALL DONE. T065 implementing config persistence schema validation + integration tests. Full suite passes."
+    "currentState": "T001-T068 ALL DONE. Next: T069 — Completion for exec context builder."
   },
   "sequentialTasks": [
     {
@@ -302,7 +302,8 @@
     {
       "task": "T068: Show summarized parameters in goal list",
       "description": "goal --list shows name/description/category but not parameters. Add parameter summary. Consider consolidating list logic. Add tests.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Extracted formatGoalLine helper from listGoals inline code. Added [vars: key=val, ...] suffix showing non-nil, non-empty state variable defaults with sorted keys, truncated values (>30 chars). Custom command [cmds:] behavior preserved. 10 new tests (1 integration + 8 unit subtests). Rule of Two passed."
     },
     {
       "task": "T069: Completion for exec context builder",

@@ -138,6 +138,218 @@ func TestGoalCommand_ListGoals_CustomCommandSummary(t *testing.T) {
 	}
 }
 
+func TestGoalCommand_ListGoals_ParameterSummary(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	goalRegistry := newTestGoalRegistryForGoal()
+	cmd := NewGoalCommand(cfg, goalRegistry)
+	var stdout, stderr bytes.Buffer
+	cmd.list = true
+	cmd.store = "memory"
+	cmd.session = t.Name()
+
+	err := cmd.Execute([]string{}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	output := stdout.String()
+
+	// Goals with non-nil state vars should show [vars: ...] with defaults
+	expectedVars := map[string][]string{
+		"doc-generator":  {"type=comprehensive"},
+		"test-generator": {"framework=auto", "type=unit"},
+		"code-explainer": {"depth=detailed"},
+	}
+	for goalName, vars := range expectedVars {
+		for _, v := range vars {
+			if !strings.Contains(output, v) {
+				t.Errorf("Expected output to contain %q for goal %q, got:\n%s", v, goalName, output)
+			}
+		}
+	}
+
+	// Goals with empty or all-nil StateVars should NOT show [vars: ...]
+	goalsWithoutVars := []string{"comment-stripper", "commit-message", "bug-buster", "code-optimizer", "meeting-notes"}
+	lines := strings.Split(output, "\n")
+	for _, goalName := range goalsWithoutVars {
+		for _, line := range lines {
+			if strings.Contains(line, goalName) && strings.Contains(line, "[vars:") {
+				t.Errorf("Goal %q should NOT have [vars: ...] suffix, but found: %s", goalName, line)
+			}
+		}
+	}
+
+	// morale-improver has StateVars but all are nil — should NOT show [vars: ...]
+	for _, line := range lines {
+		if strings.Contains(line, "morale-improver") && strings.Contains(line, "[vars:") {
+			t.Errorf("morale-improver should NOT have [vars: ...] (all nil), but found: %s", line)
+		}
+	}
+}
+
+func TestFormatGoalLine(t *testing.T) {
+	t.Parallel()
+
+	t.Run("NoStateVarsNoCustomCmds", func(t *testing.T) {
+		goal := Goal{
+			Name:        "simple",
+			Description: "A simple goal",
+		}
+		line := formatGoalLine(goal)
+		if strings.Contains(line, "[vars:") {
+			t.Errorf("Expected no [vars:] suffix, got: %s", line)
+		}
+		if strings.Contains(line, "[cmds:") {
+			t.Errorf("Expected no [cmds:] suffix, got: %s", line)
+		}
+		if !strings.Contains(line, "simple") || !strings.Contains(line, "A simple goal") {
+			t.Errorf("Expected name and description, got: %s", line)
+		}
+	})
+
+	t.Run("WithStateVars", func(t *testing.T) {
+		goal := Goal{
+			Name:        "test",
+			Description: "Test goal",
+			StateVars: map[string]interface{}{
+				"mode":  "fast",
+				"level": 3,
+			},
+		}
+		line := formatGoalLine(goal)
+		if !strings.Contains(line, "[vars: level=3, mode=fast]") {
+			t.Errorf("Expected sorted vars summary, got: %s", line)
+		}
+	})
+
+	t.Run("NilVarsSkipped", func(t *testing.T) {
+		goal := Goal{
+			Name:        "test",
+			Description: "Test goal",
+			StateVars: map[string]interface{}{
+				"a": nil,
+				"b": "value",
+				"c": nil,
+			},
+		}
+		line := formatGoalLine(goal)
+		if !strings.Contains(line, "[vars: b=value]") {
+			t.Errorf("Expected only non-nil var, got: %s", line)
+		}
+		if strings.Contains(line, "a=") || strings.Contains(line, "c=") {
+			t.Errorf("Expected nil vars to be skipped, got: %s", line)
+		}
+	})
+
+	t.Run("EmptyStringVarsSkipped", func(t *testing.T) {
+		goal := Goal{
+			Name:        "test",
+			Description: "Test goal",
+			StateVars: map[string]interface{}{
+				"blank": "",
+				"valid": "ok",
+			},
+		}
+		line := formatGoalLine(goal)
+		if !strings.Contains(line, "[vars: valid=ok]") {
+			t.Errorf("Expected only non-empty var, got: %s", line)
+		}
+		if strings.Contains(line, "blank=") {
+			t.Errorf("Expected empty string var to be skipped, got: %s", line)
+		}
+	})
+
+	t.Run("LongValueTruncated", func(t *testing.T) {
+		goal := Goal{
+			Name:        "test",
+			Description: "Test goal",
+			StateVars: map[string]interface{}{
+				"text": "This is a very long default value that should be truncated for display",
+			},
+		}
+		line := formatGoalLine(goal)
+		if !strings.Contains(line, "...") {
+			t.Errorf("Expected truncated value with '...', got: %s", line)
+		}
+		// Truncated value should be at most 30 chars
+		// Format: text=<value> where value is at most 30 chars
+		start := strings.Index(line, "text=")
+		if start < 0 {
+			t.Fatalf("Expected 'text=' in line, got: %s", line)
+		}
+		valStart := start + len("text=")
+		end := strings.Index(line[valStart:], "]")
+		if end < 0 {
+			t.Fatalf("Expected ']' after value, got: %s", line)
+		}
+		val := line[valStart : valStart+end]
+		if len(val) > 30 {
+			t.Errorf("Expected value to be at most 30 chars, got %d: %q", len(val), val)
+		}
+	})
+
+	t.Run("BothVarsAndCmds", func(t *testing.T) {
+		goal := Goal{
+			Name:        "full",
+			Description: "Full goal",
+			StateVars: map[string]interface{}{
+				"mode": "default",
+			},
+			Commands: []CommandConfig{
+				{Name: "set-mode", Type: "custom"},
+				{Name: "add", Type: "contextManager"},
+			},
+		}
+		line := formatGoalLine(goal)
+		if !strings.Contains(line, "[vars: mode=default]") {
+			t.Errorf("Expected vars summary, got: %s", line)
+		}
+		if !strings.Contains(line, "[cmds: set-mode]") {
+			t.Errorf("Expected cmds summary, got: %s", line)
+		}
+		// [vars:] should appear before [cmds:]
+		varsIdx := strings.Index(line, "[vars:")
+		cmdsIdx := strings.Index(line, "[cmds:")
+		if varsIdx >= cmdsIdx {
+			t.Errorf("Expected [vars:] before [cmds:], got: %s", line)
+		}
+	})
+
+	t.Run("AllNilVarsProducesNoSuffix", func(t *testing.T) {
+		goal := Goal{
+			Name:        "test",
+			Description: "Test goal",
+			StateVars: map[string]interface{}{
+				"a": nil,
+				"b": nil,
+			},
+		}
+		line := formatGoalLine(goal)
+		if strings.Contains(line, "[vars:") {
+			t.Errorf("Expected no [vars:] for all-nil state vars, got: %s", line)
+		}
+	})
+
+	t.Run("NumericAndBoolValues", func(t *testing.T) {
+		goal := Goal{
+			Name:        "test",
+			Description: "Test goal",
+			StateVars: map[string]interface{}{
+				"count":   42,
+				"enabled": true,
+			},
+		}
+		line := formatGoalLine(goal)
+		if !strings.Contains(line, "count=42") {
+			t.Errorf("Expected numeric var, got: %s", line)
+		}
+		if !strings.Contains(line, "enabled=true") {
+			t.Errorf("Expected bool var, got: %s", line)
+		}
+	})
+}
+
 func TestGoalCommand_ListGoalsByCategory(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()

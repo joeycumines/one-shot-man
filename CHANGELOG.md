@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Show summarized parameters in goal list: `osm goal -l` now displays `[vars: key=val, ...]` suffix showing non-nil state variable defaults alongside the existing `[cmds: ...]` custom command summary
+
 ### Fixed
 - Fix data race in scripting engine: `context.AfterFunc` closure was reading `engine.vm` while `Close()` sets it to nil on another goroutine; captured VM in local variable before the closure
 - Fix context refresh failing for paths with trailing slashes or `./` prefixes: `RefreshPath` now normalizes input via the same pipeline as `AddPath` to recover canonical owner keys

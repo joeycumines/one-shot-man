@@ -50,4 +50,5 @@
 - **T065**: ✅ DONE — Added ValidateOptionValue to schema.go. ConfigCommand now validates type before set (unknown keys warn, invalid types error). 16 integration tests in config_persist_test.go. Full suite passes.
 - **T066**: ✅ DONE — Added autoGenerateOnCopy flag to prompt-flow. Auto-generates meta-prompt on first copy when goal set. 8 new tests + helper. Rule of Two passed.
 - **T067**: ✅ DONE — Fixed RefreshPath normalization (trailing slash, ./ prefix), 3 new tests, Rule of Two passed
-- **Next**: T068 — Show summarized parameters in goal list
+- **T068**: ✅ DONE — Extracted formatGoalLine helper, added [vars: key=val, ...] parameter summary, 10 new tests, Rule of Two passed
+- **Next**: T069 — Completion for exec context builder

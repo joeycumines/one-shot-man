@@ -243,17 +243,7 @@ func (c *GoalCommand) listGoals(goals []Goal, stdout io.Writer) error {
 	for _, category := range sortedCategories {
 		_, _ = fmt.Fprintf(stdout, "%s:\n", cases.Title(language.Und).String(strings.ToLower(strings.ReplaceAll(category, "-", " "))))
 		for _, goal := range categories[category] {
-			line := fmt.Sprintf("  %-20s %s", goal.Name, goal.Description)
-			var customCmds []string
-			for _, cmd := range goal.Commands {
-				if cmd.Type == "custom" {
-					customCmds = append(customCmds, cmd.Name)
-				}
-			}
-			if len(customCmds) > 0 {
-				line += "  [cmds: " + strings.Join(customCmds, ", ") + "]"
-			}
-			_, _ = fmt.Fprintln(stdout, line)
+			_, _ = fmt.Fprintln(stdout, formatGoalLine(goal))
 		}
 		_, _ = fmt.Fprintf(stdout, "\n")
 	}
@@ -264,4 +254,44 @@ func (c *GoalCommand) listGoals(goals []Goal, stdout io.Writer) error {
 	_, _ = fmt.Fprintf(stdout, "  osm goal -c <category>         List goals by category\n")
 
 	return nil
+}
+
+// formatGoalLine produces a single display line for a goal in the list output.
+// Format: "  <name>  <description>  [vars: k=v, ...]  [cmds: a, b, ...]"
+func formatGoalLine(goal Goal) string {
+	line := fmt.Sprintf("  %-20s %s", goal.Name, goal.Description)
+
+	// Summarize non-nil state variables with their default values.
+	var varParts []string
+	for key, val := range goal.StateVars {
+		if val == nil {
+			continue
+		}
+		s := fmt.Sprintf("%v", val)
+		if s == "" {
+			continue
+		}
+		const maxValLen = 30
+		if len(s) > maxValLen {
+			s = s[:maxValLen-3] + "..."
+		}
+		varParts = append(varParts, key+"="+s)
+	}
+	if len(varParts) > 0 {
+		sort.Strings(varParts) // deterministic order
+		line += "  [vars: " + strings.Join(varParts, ", ") + "]"
+	}
+
+	// Summarize custom commands.
+	var customCmds []string
+	for _, cmd := range goal.Commands {
+		if cmd.Type == "custom" {
+			customCmds = append(customCmds, cmd.Name)
+		}
+	}
+	if len(customCmds) > 0 {
+		line += "  [cmds: " + strings.Join(customCmds, ", ") + "]"
+	}
+
+	return line
 }

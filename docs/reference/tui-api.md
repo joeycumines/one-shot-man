@@ -125,8 +125,6 @@ What `createPrompt` does:
 - Registers the prompt instance under the returned handle in the manager's `prompts` map.
 - The prompt's completer is a dispatcher that will call a registered JavaScript completer when one is associated with the prompt (see `registerCompleter` / `setCompleter`).
 
-> **Deprecation note:** `tui.createAdvancedPrompt` is a backward-compatible alias for `tui.createPrompt` that prints a deprecation warning. Use `tui.createPrompt` for new code.
-
 ### `tui.runPrompt(name)`
 
 Runs the previously created prompt referenced by `name`. This sets the manager's `activePrompt`, then calls `p.RunNoExit()` (blocking until the prompt exits), and clears `activePrompt` when done. Uses `RunNoExit` to prevent `os.Exit` on SIGTERM, allowing graceful shutdown.

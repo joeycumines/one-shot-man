@@ -24,7 +24,7 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
   ensuring feature parity (colors, reader/writer injection, maxSuggestion, dynamicCompletion,
   executeHidesCompletions, escapeToggle, key bindings).
     - ~~Rename the "advanced" prompt to something less dumb~~ **DONE**: Renamed to `tui.createPrompt`.
-      `tui.createAdvancedPrompt` kept as deprecated alias with warning.
+      ~~`tui.createAdvancedPrompt` kept as deprecated alias with warning.~~ **DONE**: Deprecated alias removed.
 - Add option to the osm:ctxutil add context command to add files from a diff (`git diff <what> --name-only`)
 - Expose the Go `flag` package as a JS module `osm:flag` for script authors to use
     - Probably need to take a look at how arguments are passed down to the `osm script` command, as well

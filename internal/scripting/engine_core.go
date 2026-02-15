@@ -664,7 +664,6 @@ func (e *Engine) setupGlobals() {
 		"listModes":            e.tuiManager.jsListModes,
 		"createState":          e.jsCreateState,
 		"createPrompt":         e.tuiManager.jsCreatePrompt,
-		"createAdvancedPrompt": e.tuiManager.jsCreateAdvancedPrompt, // deprecated alias
 		"runPrompt":            e.tuiManager.jsRunPrompt,
 		"registerCompleter":    e.tuiManager.jsRegisterCompleter,
 		"setCompleter":         e.tuiManager.jsSetCompleter,

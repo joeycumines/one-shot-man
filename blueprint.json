@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T073 DONE — committing. T074 next."
+    "currentState": "T075 DONE — committing. T074 was already done."
   },
   "sequentialTasks": [
     {
@@ -338,12 +338,14 @@
     {
       "task": "T074: Add morale-improver built-in goal",
       "description": "Implement morale-improver goal with post-copy hint for follow-up prompts. Use PostCopyHint field. Create prompt template. Add tests.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Already fully implemented in prior tasks. morale-improver goal exists in goal_builtin.go with PostCopyHint, prompt template, state variables, custom commands, hot-snippets. 6+ integration tests in goal_integration_test.go. PostCopyHint wired through goal.js → contextManager.js. No changes needed."
     },
     {
       "task": "T075: Remove deprecated createAdvancedPrompt alias",
       "description": "Remove tui.createAdvancedPrompt alias from engine_core.go. Update scripts/tests still referencing it. Update documentation.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Removed jsCreateAdvancedPrompt method from tui_js_bridge.go, removed wiring from engine_core.go, removed test from tui_coverage_gaps_test.go, updated docs/reference/tui-api.md and docs/todo.md. Net -25 lines. Rule of Two passed."
     },
     {
       "task": "T076: Cross-platform: Linux via Docker",

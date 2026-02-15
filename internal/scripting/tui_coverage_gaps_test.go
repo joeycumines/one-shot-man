@@ -1000,27 +1000,6 @@ func TestJsRegisterMode_WithInlineCommands(t *testing.T) {
 	}
 }
 
-// TestJsCreateAdvancedPrompt_DeprecationWarning tests jsCreateAdvancedPrompt.
-func TestJsCreateAdvancedPrompt_DeprecationWarning(t *testing.T) {
-	ctx := context.Background()
-	var buf bytes.Buffer
-	eng := mustNewEngine(t, ctx, &buf, &buf)
-	tm := eng.GetTUIManager()
-	// Replace writer so output goes to buf instead of os.Stdout
-	tm.writer = NewTUIWriterFromIO(&buf)
-
-	_, err := tm.jsCreateAdvancedPrompt(map[string]interface{}{
-		"name":   "deprecated-test",
-		"prefix": ">>> ",
-	})
-	if err != nil {
-		t.Fatalf("jsCreateAdvancedPrompt failed: %v", err)
-	}
-	if !strings.Contains(buf.String(), "deprecated") {
-		t.Errorf("expected deprecation warning, got %q", buf.String())
-	}
-}
-
 // TestJsRunPrompt_NotFound tests jsRunPrompt with nonexistent prompt.
 func TestJsRunPrompt_NotFound(t *testing.T) {
 	ctx := context.Background()

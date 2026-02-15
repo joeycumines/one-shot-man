@@ -341,13 +341,6 @@ func (tm *TUIManager) jsCreatePrompt(config interface{}) (string, error) {
 	return name, nil
 }
 
-// jsCreateAdvancedPrompt is a backward-compatible alias for jsCreatePrompt.
-// It logs a deprecation warning and delegates to jsCreatePrompt.
-func (tm *TUIManager) jsCreateAdvancedPrompt(config interface{}) (string, error) {
-	_, _ = fmt.Fprintf(tm.writer, "Warning: tui.createAdvancedPrompt is deprecated, use tui.createPrompt instead\n")
-	return tm.jsCreatePrompt(config)
-}
-
 // jsRunPrompt runs a named prompt and returns the input.
 func (tm *TUIManager) jsRunPrompt(name string) error {
 	tm.mu.RLock()

@@ -203,11 +203,12 @@ func getExecutableSuggestions(prefix string) []prompt.Suggest {
 	return suggestions
 }
 
-// getGitRefSuggestions provides completion suggestions for git refs (branches, tags, common refs).
-// It shells out to git for branch/tag names. If git commands fail (e.g. not in a git repo),
-// it silently falls back to common ref suggestions only.
+// getGitRefSuggestions provides completion suggestions for git refs (branches, tags,
+// recent commits, and common refs). It shells out to git for dynamic data. If git
+// commands fail (e.g. not in a git repo), it silently falls back to common ref
+// suggestions only.
 func getGitRefSuggestions(prefix string) []prompt.Suggest {
-	// Common refs always available
+	// Common refs and flags always available
 	commonRefs := []struct {
 		text string
 		desc string
@@ -216,6 +217,7 @@ func getGitRefSuggestions(prefix string) []prompt.Suggest {
 		{"HEAD~1", "1 commit before HEAD"},
 		{"HEAD~2", "2 commits before HEAD"},
 		{"HEAD~3", "3 commits before HEAD"},
+		{"--staged", "staged changes (index vs HEAD)"},
 	}
 
 	var suggestions []prompt.Suggest
@@ -231,7 +233,7 @@ func getGitRefSuggestions(prefix string) []prompt.Suggest {
 		}
 	}
 
-	// Try to get branches from git
+	// Try to get local branches from git
 	if branchOut, err := exec.Command("git", "branch", "--format=%(refname:short)").Output(); err == nil {
 		for _, line := range strings.Split(string(branchOut), "\n") {
 			name := strings.TrimSpace(line)
@@ -242,6 +244,22 @@ func getGitRefSuggestions(prefix string) []prompt.Suggest {
 				suggestions = append(suggestions, prompt.Suggest{
 					Text:        name,
 					Description: "branch",
+				})
+			}
+		}
+	}
+
+	// Try to get remote branches from git
+	if remoteBranchOut, err := exec.Command("git", "branch", "-r", "--format=%(refname:short)").Output(); err == nil {
+		for _, line := range strings.Split(string(remoteBranchOut), "\n") {
+			name := strings.TrimSpace(line)
+			if name == "" || strings.Contains(name, "->") {
+				continue // skip HEAD -> origin/main symbolic refs
+			}
+			if prefix == "" || strings.HasPrefix(strings.ToLower(name), lowerPrefix) {
+				suggestions = append(suggestions, prompt.Suggest{
+					Text:        name,
+					Description: "remote branch",
 				})
 			}
 		}
@@ -258,6 +276,34 @@ func getGitRefSuggestions(prefix string) []prompt.Suggest {
 				suggestions = append(suggestions, prompt.Suggest{
 					Text:        name,
 					Description: "tag",
+				})
+			}
+		}
+	}
+
+	// Try to get recent commit SHAs with subject lines (last 10)
+	if commitOut, err := exec.Command("git", "log", "--oneline", "-10", "--format=%h %s").Output(); err == nil {
+		for _, line := range strings.Split(string(commitOut), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			// Split into SHA and subject
+			parts := strings.SplitN(line, " ", 2)
+			sha := parts[0]
+			subject := ""
+			if len(parts) > 1 {
+				subject = parts[1]
+				// Truncate long subjects for display
+				const maxSubjectLen = 50
+				if len(subject) > maxSubjectLen {
+					subject = subject[:maxSubjectLen-3] + "..."
+				}
+			}
+			if prefix == "" || strings.HasPrefix(strings.ToLower(sha), lowerPrefix) {
+				suggestions = append(suggestions, prompt.Suggest{
+					Text:        sha,
+					Description: subject,
 				})
 			}
 		}

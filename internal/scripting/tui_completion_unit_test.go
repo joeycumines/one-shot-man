@@ -1599,6 +1599,259 @@ func TestGitRefCompletion_Descriptions(t *testing.T) {
 	}
 }
 
+// TestGitRefCompletion_StagedRefAvailable verifies that --staged is included
+// as a common ref suggestion.
+func TestGitRefCompletion_StagedRefAvailable(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	sugg := getGitRefSuggestions("")
+	found := false
+	for _, s := range sugg {
+		if s.Text == "--staged" {
+			found = true
+			if s.Description != "staged changes (index vs HEAD)" {
+				t.Errorf("--staged: expected description 'staged changes (index vs HEAD)', got %q", s.Description)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected --staged in common ref suggestions")
+	}
+}
+
+// TestGitRefCompletion_StagedRefPrefixFilter verifies that --staged is only
+// shown when the prefix matches.
+func TestGitRefCompletion_StagedRefPrefixFilter(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	// "--s" should include --staged
+	sugg := getGitRefSuggestions("--s")
+	found := false
+	for _, s := range sugg {
+		if s.Text == "--staged" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected --staged for prefix '--s'")
+	}
+
+	// "HE" should NOT include --staged
+	sugg = getGitRefSuggestions("HE")
+	for _, s := range sugg {
+		if s.Text == "--staged" {
+			t.Error("unexpected --staged for prefix 'HE'")
+		}
+	}
+}
+
+// TestGitRefCompletion_RemoteBranches verifies that remote branches are
+// returned when inside a git repo with remotes configured.
+func TestGitRefCompletion_RemoteBranches(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	// Create a git repo and simulate a remote branch
+	cmds := [][]string{
+		{"git", "init"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "commit", "--allow-empty", "-m", "init"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmp
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git command %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	// Create a second repo that acts as a "remote"
+	remoteDir := t.TempDir()
+	remoteCmds := [][]string{
+		{"git", "init", "--bare"},
+	}
+	for _, args := range remoteCmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = remoteDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git command %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	// Add remote and push
+	setupCmds := [][]string{
+		{"git", "remote", "add", "origin", remoteDir},
+		{"git", "push", "origin", "HEAD:refs/heads/main"},
+		{"git", "fetch", "origin"},
+	}
+	for _, args := range setupCmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmp
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git command %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	sugg := getGitRefSuggestions("")
+	foundRemote := false
+	for _, s := range sugg {
+		if s.Text == "origin/main" && s.Description == "remote branch" {
+			foundRemote = true
+		}
+	}
+	if !foundRemote {
+		t.Error("expected remote branch 'origin/main' in suggestions")
+	}
+
+	// Prefix "ori" should match the remote branch
+	sugg = getGitRefSuggestions("ori")
+	foundRemote = false
+	for _, s := range sugg {
+		if s.Text == "origin/main" {
+			foundRemote = true
+		}
+	}
+	if !foundRemote {
+		t.Error("expected remote branch 'origin/main' for prefix 'ori'")
+	}
+}
+
+// TestGitRefCompletion_RecentCommits verifies that recent commit SHAs
+// with subject lines are returned inside a git repo.
+func TestGitRefCompletion_RecentCommits(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	// Create a git repo with some commits
+	cmds := [][]string{
+		{"git", "init"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "commit", "--allow-empty", "-m", "first commit"},
+		{"git", "commit", "--allow-empty", "-m", "second commit"},
+		{"git", "commit", "--allow-empty", "-m", "third commit"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmp
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git command %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	sugg := getGitRefSuggestions("")
+	// Should have at least 3 commit SHAs
+	commitCount := 0
+	for _, s := range sugg {
+		// Commit SHAs are 7+ hex chars, descriptions should be subject lines
+		if len(s.Text) >= 7 && s.Description != "" &&
+			s.Description != "current commit" &&
+			s.Description != "branch" && s.Description != "tag" &&
+			s.Description != "remote branch" &&
+			!strings.HasPrefix(s.Text, "HEAD") &&
+			!strings.HasPrefix(s.Text, "--") {
+			commitCount++
+		}
+	}
+	if commitCount < 3 {
+		t.Errorf("expected at least 3 recent commit SHAs, got %d", commitCount)
+	}
+
+	// Verify that subject lines are present
+	foundSubject := false
+	for _, s := range sugg {
+		if strings.Contains(s.Description, "third commit") {
+			foundSubject = true
+		}
+	}
+	if !foundSubject {
+		names := make([]string, len(sugg))
+		for i, s := range sugg {
+			names[i] = s.Text + " (" + s.Description + ")"
+		}
+		t.Errorf("expected a suggestion with 'third commit' description, got: %v", names)
+	}
+}
+
+// TestGitRefCompletion_RecentCommitsLongSubjectTruncated verifies that
+// long commit subjects are truncated for display.
+func TestGitRefCompletion_RecentCommitsLongSubjectTruncated(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	longMsg := "This is a very long commit message that should be truncated for display in the completion suggestions"
+	cmds := [][]string{
+		{"git", "init"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+		{"git", "commit", "--allow-empty", "-m", longMsg},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = tmp
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git command %v failed: %v\n%s", args, err, out)
+		}
+	}
+
+	sugg := getGitRefSuggestions("")
+	// Find the commit suggestion and verify truncation
+	for _, s := range sugg {
+		if strings.Contains(s.Description, "very long commit") {
+			if len(s.Description) > 50 {
+				t.Errorf("expected truncated description (max 50 chars), got %d chars: %q", len(s.Description), s.Description)
+			}
+			if !strings.HasSuffix(s.Description, "...") {
+				t.Errorf("expected truncated description to end with '...', got: %q", s.Description)
+			}
+			return
+		}
+	}
+	t.Error("expected a commit suggestion with truncated long subject")
+}
+
+// TestGitRefCompletion_SymbolicRefsSkipped verifies that symbolic refs
+// like HEAD -> origin/main are skipped in remote branch listing.
+func TestGitRefCompletion_SymbolicRefsSkipped(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	// In a non-git dir, only common refs should appear — no symbolic refs
+	sugg := getGitRefSuggestions("")
+	for _, s := range sugg {
+		if strings.Contains(s.Text, "->") {
+			t.Errorf("unexpected symbolic ref in suggestions: %q", s.Text)
+		}
+	}
+}
+
 // === Executable completion tests ===
 
 // TestExecutableCompletion_EmptyPrefixReturnsCommon verifies that when no prefix

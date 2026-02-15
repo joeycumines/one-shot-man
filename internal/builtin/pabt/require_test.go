@@ -35,7 +35,7 @@ func testBridge(t *testing.T) *btmod.Bridge {
 	})
 
 	// Register osm:pabt module
-	reg.RegisterNativeModule("osm:pabt", ModuleLoader(ctx, bridge))
+	reg.RegisterNativeModule("osm:pabt", Require(ctx, bridge))
 
 	return bridge
 }

@@ -36,4 +36,5 @@
 - **T052**: ✅ DONE — Deleted 2 deprecated aliases (GetStateViaJS/SetStateViaJS). Unexported 6 internal-only symbols (DefaultSyncTimeout, ScriptPanicError, ContextPath, LogEntry, TUILogHandler, HistoryConfig). 16 files, net -9 lines. Remaining types assessed but kept (bounded by internal/). Rule of Two passed.
 - **T053**: ✅ DONE — Deleted unused ContextCommand interface (+context import). Unexported: ListBuiltin→listBuiltin, ListScript→listScript, ScriptCommand→scriptCommand, NewScriptCommand→newScriptCommand. Assessed but kept: BaseCommand (43+ refs), ScriptDiscovery (40+ refs). 10 files. Rule of Two passed.
 - **T054**: ✅ DONE — Unexported 4 symbols: SessionArchiveDir→sessionArchiveDir, SanitizeFilename→sanitizeFilename, RenameError→renameError, ErrWouldBlock→errWouldBlock. 9 files. Rule of Two passed.
-- **Next**: T055 — API surface optimization: builtin module registration
+- **T055**: ✅ DONE — Renamed pabt.ModuleLoader→pabt.Require (naming consistency). Removed BTBridge type alias. 4 files, 29 test renames. Rule of Two passed.
+- **Next**: T056 — Performance profiling: scripting engine startup

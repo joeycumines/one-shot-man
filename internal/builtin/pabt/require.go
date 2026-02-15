@@ -12,7 +12,7 @@ import (
 	btmod "github.com/joeycumines/one-shot-man/internal/builtin/bt"
 )
 
-// ModuleLoader returns a require.ModuleLoader for "osm:pabt" module.
+// Require returns a require.ModuleLoader for "osm:pabt" module.
 // This loader exposes PA-BT planning functionality to JavaScript.
 //
 // The API surface includes:
@@ -25,7 +25,7 @@ import (
 // The bridge parameter is required for thread-safe goja.Runtime access.
 // JSCondition.Match is called from the bt.Ticker goroutine and must use
 // Bridge.RunOnLoopSync to marshal calls to the event loop goroutine.
-func ModuleLoader(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
+func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 

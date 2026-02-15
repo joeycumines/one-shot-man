@@ -63,10 +63,6 @@ type EventLoopProvider interface {
 // This can be used to send external messages (e.g., state refresh) to a running program.
 type BubbleteaManager = *bubbleteamod.Manager
 
-// BTBridge returns the bt.Bridge from RegisterResult.
-// This provides access to the behavior tree bridge for JS integration.
-type BTBridge = *bt.Bridge
-
 // BubblezoneManager returns -> *bubblezonemod.Manager from RegisterResult.
 // This provides zone-based mouse hit-testing for BubbleTea applications.
 type BubblezoneManager = *bubblezonemod.Manager
@@ -75,7 +71,7 @@ type BubblezoneManager = *bubblezonemod.Manager
 // All returned managers should be stored and cleaned up appropriately.
 type RegisterResult struct {
 	BubbleteaManager  BubbleteaManager
-	BTBridge          BTBridge
+	BTBridge          *bt.Bridge
 	BubblezoneManager BubblezoneManager
 }
 
@@ -131,7 +127,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 
 	// Register osm:pabt module for Planning-Augmented Behavior Trees.
 	// This depends on btBridge for thread-safe goja.Runtime access.
-	registry.RegisterNativeModule(prefix+"pabt", pabtmod.ModuleLoader(ctx, btBridge))
+	registry.RegisterNativeModule(prefix+"pabt", pabtmod.Require(ctx, btBridge))
 
 	// Register bubbletea module with terminal ops if available.
 	// Bridge implements JSRunner directly - no adapter needed.

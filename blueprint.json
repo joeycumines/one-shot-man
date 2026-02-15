@@ -224,7 +224,8 @@
     {
       "task": "T055: API surface optimization: builtin module registration",
       "description": "Review internal/builtin/register.go. Ensure consistent Require signature and osm: naming. Check shared_symbols.go exports. Standardize require() integration. Verify no non-standard registration patterns.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Renamed pabt.ModuleLoader→pabt.Require for consistency with all 16 other builtin modules. Removed BTBridge type alias (never referenced externally by name); RegisterResult.BTBridge field changed to *bt.Bridge directly. Updated call sites in register.go and require_test.go. Renamed 29 TestModuleLoader_ test functions to TestRequire_. Audit: all 17 modules use Require naming, all use osm: prefix, shared_symbols.go exports (StateListener, StateManager, StateManagerProvider, GetSharedSymbolsLoader) verified as required externally. bt.Bridge.ModuleLoader method retained (struct method, not package-level convention). BubbleteaManager/BubblezoneManager aliases retained (referenced externally). Vet+staticcheck+deadcode pass. Rule of Two passed."
     },
     {
       "task": "T056: Performance profiling: scripting engine startup",

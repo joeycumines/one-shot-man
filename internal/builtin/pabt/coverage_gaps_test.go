@@ -348,7 +348,7 @@ func (s stringerKey) String() string { return string(s) }
 // require.go JS module gap coverage
 // ========================================================================
 
-func TestModuleLoader_NewState_InvalidBlackboardNative(t *testing.T) {
+func TestRequire_NewState_InvalidBlackboardNative(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -366,7 +366,7 @@ func TestModuleLoader_NewState_InvalidBlackboardNative(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewState_MissingNative(t *testing.T) {
+func TestRequire_NewState_MissingNative(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -384,7 +384,7 @@ func TestModuleLoader_NewState_MissingNative(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewState_NoArgs(t *testing.T) {
+func TestRequire_NewState_NoArgs(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -402,7 +402,7 @@ func TestModuleLoader_NewState_NoArgs(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewAction_NonStringName(t *testing.T) {
+func TestRequire_NewAction_NonStringName(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -420,7 +420,7 @@ func TestModuleLoader_NewAction_NonStringName(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewAction_TooFewArgs(t *testing.T) {
+func TestRequire_NewAction_TooFewArgs(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -438,7 +438,7 @@ func TestModuleLoader_NewAction_TooFewArgs(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewAction_ConditionsMissingKey(t *testing.T) {
+func TestRequire_NewAction_ConditionsMissingKey(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -460,7 +460,7 @@ func TestModuleLoader_NewAction_ConditionsMissingKey(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewAction_EffectsEdgeCases(t *testing.T) {
+func TestRequire_NewAction_EffectsEdgeCases(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -481,7 +481,7 @@ func TestModuleLoader_NewAction_EffectsEdgeCases(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewAction_NullConditionsAndEffects(t *testing.T) {
+func TestRequire_NewAction_NullConditionsAndEffects(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -507,7 +507,7 @@ func TestModuleLoader_NewAction_NullConditionsAndEffects(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_SetActionGenerator_Null(t *testing.T) {
+func TestRequire_SetActionGenerator_Null(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -524,7 +524,7 @@ func TestModuleLoader_SetActionGenerator_Null(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_SetActionGenerator_NotFunction(t *testing.T) {
+func TestRequire_SetActionGenerator_NotFunction(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -545,7 +545,7 @@ func TestModuleLoader_SetActionGenerator_NotFunction(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_SetActionGenerator_NoArgs(t *testing.T) {
+func TestRequire_SetActionGenerator_NoArgs(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -566,7 +566,7 @@ func TestModuleLoader_SetActionGenerator_NoArgs(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewPlan_TooFewArgs(t *testing.T) {
+func TestRequire_NewPlan_TooFewArgs(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -584,7 +584,7 @@ func TestModuleLoader_NewPlan_TooFewArgs(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewPlan_InvalidState(t *testing.T) {
+func TestRequire_NewPlan_InvalidState(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -602,7 +602,7 @@ func TestModuleLoader_NewPlan_InvalidState(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewPlan_GoalMissingKey(t *testing.T) {
+func TestRequire_NewPlan_GoalMissingKey(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -623,7 +623,7 @@ func TestModuleLoader_NewPlan_GoalMissingKey(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewPlan_GoalMissingMatch(t *testing.T) {
+func TestRequire_NewPlan_GoalMissingMatch(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -644,7 +644,7 @@ func TestModuleLoader_NewPlan_GoalMissingMatch(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewPlan_GoalMatchNotFunction(t *testing.T) {
+func TestRequire_NewPlan_GoalMatchNotFunction(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -665,7 +665,7 @@ func TestModuleLoader_NewPlan_GoalMatchNotFunction(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewPlan_NullGoalSkipped(t *testing.T) {
+func TestRequire_NewPlan_NullGoalSkipped(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -688,7 +688,7 @@ func TestModuleLoader_NewPlan_NullGoalSkipped(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewExprCondition_TooFewArgs(t *testing.T) {
+func TestRequire_NewExprCondition_TooFewArgs(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -706,7 +706,7 @@ func TestModuleLoader_NewExprCondition_TooFewArgs(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewExprCondition_WithOptionalValue(t *testing.T) {
+func TestRequire_NewExprCondition_WithOptionalValue(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -722,7 +722,7 @@ func TestModuleLoader_NewExprCondition_WithOptionalValue(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_State_VariableError(t *testing.T) {
+func TestRequire_State_VariableError(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -744,7 +744,7 @@ func TestModuleLoader_State_VariableError(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_State_GetSetMethods(t *testing.T) {
+func TestRequire_State_GetSetMethods(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -787,7 +787,7 @@ func TestModuleLoader_State_GetSetMethods(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_RegisterAction_TooFewArgs(t *testing.T) {
+func TestRequire_RegisterAction_TooFewArgs(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -808,7 +808,7 @@ func TestModuleLoader_RegisterAction_TooFewArgs(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_RegisterAction_InvalidAction(t *testing.T) {
+func TestRequire_RegisterAction_InvalidAction(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -829,7 +829,7 @@ func TestModuleLoader_RegisterAction_InvalidAction(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_GetAction_TooFewArgs(t *testing.T) {
+func TestRequire_GetAction_TooFewArgs(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -850,7 +850,7 @@ func TestModuleLoader_GetAction_TooFewArgs(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_GetAction_NotFound(t *testing.T) {
+func TestRequire_GetAction_NotFound(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -867,7 +867,7 @@ func TestModuleLoader_GetAction_NotFound(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewAction_ExprConditionNativePath(t *testing.T) {
+func TestRequire_NewAction_ExprConditionNativePath(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -883,7 +883,7 @@ func TestModuleLoader_NewAction_ExprConditionNativePath(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleLoader_NewAction_InvalidNodeArg(t *testing.T) {
+func TestRequire_NewAction_InvalidNodeArg(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -1021,7 +1021,7 @@ func TestExprCondition_Match_EvaluationError(t *testing.T) {
 // NewPlan integration — test plan.running() method
 // ========================================================================
 
-func TestModuleLoader_PlanRunning(t *testing.T) {
+func TestRequire_PlanRunning(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 
@@ -1056,7 +1056,7 @@ func TestModuleLoader_PlanRunning(t *testing.T) {
 // NewPlan integration — newPlan with invalid state (_native is wrong type)
 // ========================================================================
 
-func TestModuleLoader_NewPlan_InvalidNativeState(t *testing.T) {
+func TestRequire_NewPlan_InvalidNativeState(t *testing.T) {
 	t.Parallel()
 	bridge := testBridge(t)
 

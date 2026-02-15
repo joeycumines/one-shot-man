@@ -290,7 +290,8 @@
     {
       "task": "T066: Prompt-flow QoL improvements",
       "description": "Per docs/todo.md: (1) one-step mode (use without goal/generate), (2) footer support for second prompt, (3) auto-generate on first copy (clear flag after explicit generate). Add tests for each.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added autoGenerateOnCopy state flag (Symbol, defaultValue: true) to prompt_flow_script.js. Generate handler clears flag. Copy handler auto-generates meta-prompt on first copy when goal is set and no explicit generate called. Flag cleared by any copy or explicit generate. 8 new tests + newPromptFlowTestEngine helper. All tests pass with race detection. Rule of Two passed."
     },
     {
       "task": "T067: Directory-aware context refresh on copy",

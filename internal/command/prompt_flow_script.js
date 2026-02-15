@@ -19,6 +19,7 @@ const stateKeys = {
     metaPrompt: Symbol("metaPrompt"),
     taskPrompt: Symbol("taskPrompt"),
     footer: Symbol("footer"),
+    autoGenerateOnCopy: Symbol("autoGenerateOnCopy"),
 };
 
 // Create the single state accessor
@@ -33,6 +34,7 @@ const state = tui.createState(COMMAND_NAME, {
     [stateKeys.metaPrompt]: {defaultValue: ""},
     [stateKeys.taskPrompt]: {defaultValue: ""},
     [stateKeys.footer]: {defaultValue: ""},
+    [stateKeys.autoGenerateOnCopy]: {defaultValue: true},
 });
 
 // Expose limited state hooks for automated tests (no-op for regular users)
@@ -125,6 +127,14 @@ function buildCommands(state) {
 
     function setFooter(v) {
         state.set(stateKeys.footer, v);
+    }
+
+    function getAutoGenerateOnCopy() {
+        return state.get(stateKeys.autoGenerateOnCopy);
+    }
+
+    function setAutoGenerateOnCopy(v) {
+        state.set(stateKeys.autoGenerateOnCopy, v);
     }
 
     function buildContextTxtar() {
@@ -262,6 +272,7 @@ function buildCommands(state) {
                 setMetaPrompt(metaPrompt);
                 setTaskPrompt("");
                 setPhase("META_GENERATED");
+                setAutoGenerateOnCopy(false);
                 output.print("Meta-prompt generated. You can 'show meta', 'copy meta', or provide the task prompt with 'use'.");
             }
         },
@@ -468,6 +479,24 @@ function buildCommands(state) {
                 const target = args[0] || "";
                 let text;
                 let label;
+
+                // Auto-generate on first copy: when the copy would produce
+                // meta-prompt content and no explicit generate has been run yet,
+                // automatically generate so the user doesn't copy an empty string.
+                // Clearing conditions: any copy invocation, any explicit generate.
+                if (getAutoGenerateOnCopy()) {
+                    const wouldCopyMeta = (target === 'meta' ||
+                        (target !== 'prompt' && getPhase() !== 'TASK_PROMPT_SET'));
+                    if (wouldCopyMeta && getGoal().trim() && !getMetaPrompt().trim()) {
+                        setPhase("CONTEXT_BUILDING");
+                        const metaPrompt = buildMetaPrompt();
+                        setMetaPrompt(metaPrompt);
+                        setTaskPrompt("");
+                        setPhase("META_GENERATED");
+                        output.print("(Auto-generated meta-prompt)");
+                    }
+                    setAutoGenerateOnCopy(false);
+                }
 
                 if (target === 'meta') {
                     text = getMetaPrompt();

@@ -48,4 +48,5 @@
 - **T063**: ✅ DONE — 18 sandbox boundary tests (VM isolation, module API boundaries, global scope, context cancellation), docs/security.md created, committed as 3f6b728, Rule of Two passed
 - **T064**: ✅ DONE — Added computePathLCA + ToTxtar metadata comment + full-path preservation for collision groups. 19 new tests. All existing tests pass.
 - **T065**: ✅ DONE — Added ValidateOptionValue to schema.go. ConfigCommand now validates type before set (unknown keys warn, invalid types error). 16 integration tests in config_persist_test.go. Full suite passes.
-- **Next**: T066 — Prompt-flow QoL improvements
+- **T066**: ✅ DONE — Added autoGenerateOnCopy flag to prompt-flow. Auto-generates meta-prompt on first copy when goal set. 8 new tests + helper. Rule of Two passed.
+- **Next**: T067 — Directory-aware context refresh on copy

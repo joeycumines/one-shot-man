@@ -597,3 +597,294 @@ func TestPromptFlowCommand_NoFooter(t *testing.T) {
 		t.Fatalf("expected no extra separator after context when no footer set, got:\n%s", showOut)
 	}
 }
+
+// newPromptFlowTestEngine creates a prompt-flow engine in test mode,
+// executes the script, and switches into prompt-flow mode.
+// Returns the engine and stdout/stderr buffers.
+func newPromptFlowTestEngine(t *testing.T) (*scripting.Engine, *bytes.Buffer, *bytes.Buffer) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	ctx := context.Background()
+	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory")
+	if err != nil {
+		t.Fatalf("NewEngine failed: %v", err)
+	}
+	engine.SetTestMode(true)
+	engine.SetGlobal("config", map[string]interface{}{"name": "prompt-flow"})
+	engine.SetGlobal("args", []string{})
+	engine.SetGlobal("promptFlowTemplate", promptFlowTemplate)
+
+	script := engine.LoadScriptFromString("prompt-flow", promptFlowScript)
+	if err := engine.ExecuteScript(script); err != nil {
+		t.Fatalf("ExecuteScript failed: %v; stdout=%s stderr=%s", err, stdout.String(), stderr.String())
+	}
+	if err := engine.GetTUIManager().SwitchMode("prompt-flow"); err != nil {
+		t.Fatalf("SwitchMode failed: %v", err)
+	}
+	stdout.Reset()
+	return engine, &stdout, &stderr
+}
+
+// TestPromptFlowCommand_AutoGenerateOnFirstCopy verifies that the first
+// copy (default target) auto-generates the meta-prompt when a goal is set
+// and no explicit generate has been called.
+func TestPromptFlowCommand_AutoGenerateOnFirstCopy(t *testing.T) {
+	t.Parallel()
+	engine, stdout, _ := newPromptFlowTestEngine(t)
+	defer engine.Close()
+
+	// Set a goal but do NOT call generate
+	if err := engine.GetTUIManager().ExecuteCommand("goal", []string{"Analyze", "the", "codebase"}); err != nil {
+		t.Fatalf("goal failed: %v", err)
+	}
+
+	// Copy (default) — should auto-generate meta-prompt first
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("copy", []string{}); err != nil {
+		t.Fatalf("copy failed: %v", err)
+	}
+	copyOut := stdout.String()
+	if !strings.Contains(copyOut, "(Auto-generated meta-prompt)") {
+		t.Fatalf("expected auto-generate message, got:\n%s", copyOut)
+	}
+
+	// Verify phase is now META_GENERATED
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("list", []string{}); err != nil {
+		t.Fatalf("list failed: %v", err)
+	}
+	listOut := stdout.String()
+	if !strings.Contains(listOut, "Phase: META_GENERATED") {
+		t.Fatalf("expected Phase: META_GENERATED after auto-generate, got:\n%s", listOut)
+	}
+
+	// Verify meta-prompt was actually generated (contains goal text)
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("show", []string{"meta"}); err != nil {
+		t.Fatalf("show meta failed: %v", err)
+	}
+	metaOut := stdout.String()
+	if !strings.Contains(metaOut, "Analyze the codebase") {
+		t.Fatalf("expected goal text in auto-generated meta-prompt, got:\n%s", metaOut)
+	}
+}
+
+// TestPromptFlowCommand_AutoGenerateNotOnSecondCopy verifies that only
+// the first copy triggers auto-generate, not subsequent copies.
+func TestPromptFlowCommand_AutoGenerateNotOnSecondCopy(t *testing.T) {
+	t.Parallel()
+	engine, stdout, _ := newPromptFlowTestEngine(t)
+	defer engine.Close()
+
+	// Set goal
+	if err := engine.GetTUIManager().ExecuteCommand("goal", []string{"Test", "multi-copy"}); err != nil {
+		t.Fatalf("goal failed: %v", err)
+	}
+
+	// First copy — auto-generates
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("copy", []string{}); err != nil {
+		t.Fatalf("first copy failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "(Auto-generated meta-prompt)") {
+		t.Fatalf("expected auto-generate on first copy, got:\n%s", stdout.String())
+	}
+
+	// Second copy — should NOT auto-generate
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("copy", []string{}); err != nil {
+		t.Fatalf("second copy failed: %v", err)
+	}
+	secondOut := stdout.String()
+	if strings.Contains(secondOut, "(Auto-generated meta-prompt)") {
+		t.Fatalf("expected NO auto-generate on second copy, got:\n%s", secondOut)
+	}
+}
+
+// TestPromptFlowCommand_ExplicitGenerateClearsAutoGenerate verifies that
+// calling generate explicitly clears the auto-generate flag, so subsequent
+// copy does NOT auto-generate.
+func TestPromptFlowCommand_ExplicitGenerateClearsAutoGenerate(t *testing.T) {
+	t.Parallel()
+	engine, stdout, _ := newPromptFlowTestEngine(t)
+	defer engine.Close()
+
+	// Set goal and explicitly generate
+	if err := engine.GetTUIManager().ExecuteCommand("goal", []string{"Explicit", "generate", "test"}); err != nil {
+		t.Fatalf("goal failed: %v", err)
+	}
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("generate", []string{}); err != nil {
+		t.Fatalf("generate failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Meta-prompt generated.") {
+		t.Fatalf("expected generate confirmation, got:\n%s", stdout.String())
+	}
+
+	// Copy after explicit generate — should NOT auto-generate
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("copy", []string{}); err != nil {
+		t.Fatalf("copy failed: %v", err)
+	}
+	copyOut := stdout.String()
+	if strings.Contains(copyOut, "(Auto-generated meta-prompt)") {
+		t.Fatalf("expected NO auto-generate after explicit generate, got:\n%s", copyOut)
+	}
+}
+
+// TestPromptFlowCommand_AutoGenerateRequiresGoal verifies that auto-generate
+// does NOT fire when no goal has been set.
+func TestPromptFlowCommand_AutoGenerateRequiresGoal(t *testing.T) {
+	t.Parallel()
+	engine, stdout, _ := newPromptFlowTestEngine(t)
+	defer engine.Close()
+
+	// Copy without setting a goal — should NOT auto-generate
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("copy", []string{}); err != nil {
+		t.Fatalf("copy failed: %v", err)
+	}
+	copyOut := stdout.String()
+	if strings.Contains(copyOut, "(Auto-generated meta-prompt)") {
+		t.Fatalf("expected NO auto-generate without goal, got:\n%s", copyOut)
+	}
+
+	// Phase should still be INITIAL
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("list", []string{}); err != nil {
+		t.Fatalf("list failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Phase: INITIAL") {
+		t.Fatalf("expected Phase: INITIAL without goal, got:\n%s", stdout.String())
+	}
+}
+
+// TestPromptFlowCommand_CopyMetaAutoGenerate verifies that 'copy meta'
+// also triggers auto-generate on first invocation.
+func TestPromptFlowCommand_CopyMetaAutoGenerate(t *testing.T) {
+	t.Parallel()
+	engine, stdout, _ := newPromptFlowTestEngine(t)
+	defer engine.Close()
+
+	// Set goal
+	if err := engine.GetTUIManager().ExecuteCommand("goal", []string{"Meta", "copy", "test"}); err != nil {
+		t.Fatalf("goal failed: %v", err)
+	}
+
+	// Copy meta — should auto-generate
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("copy", []string{"meta"}); err != nil {
+		t.Fatalf("copy meta failed: %v", err)
+	}
+	copyOut := stdout.String()
+	if !strings.Contains(copyOut, "(Auto-generated meta-prompt)") {
+		t.Fatalf("expected auto-generate on 'copy meta', got:\n%s", copyOut)
+	}
+
+	// Verify meta contains goal text
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("show", []string{"meta"}); err != nil {
+		t.Fatalf("show meta failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Meta copy test") {
+		t.Fatalf("expected goal text in meta, got:\n%s", stdout.String())
+	}
+}
+
+// TestPromptFlowCommand_CopyPromptNoAutoGenerate verifies that 'copy prompt'
+// does NOT trigger auto-generate (it copies task prompt, not meta).
+func TestPromptFlowCommand_CopyPromptNoAutoGenerate(t *testing.T) {
+	t.Parallel()
+	engine, stdout, _ := newPromptFlowTestEngine(t)
+	defer engine.Close()
+
+	// Set goal
+	if err := engine.GetTUIManager().ExecuteCommand("goal", []string{"Prompt", "copy", "test"}); err != nil {
+		t.Fatalf("goal failed: %v", err)
+	}
+
+	// Copy prompt — should NOT auto-generate (task prompt, not meta)
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("copy", []string{"prompt"}); err != nil {
+		t.Fatalf("copy prompt failed: %v", err)
+	}
+	copyOut := stdout.String()
+	if strings.Contains(copyOut, "(Auto-generated meta-prompt)") {
+		t.Fatalf("expected NO auto-generate on 'copy prompt', got:\n%s", copyOut)
+	}
+
+	// The auto-generate flag should now be cleared (any copy clears it)
+	// So a subsequent default copy should NOT auto-generate either
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("copy", []string{}); err != nil {
+		t.Fatalf("copy default failed: %v", err)
+	}
+	if strings.Contains(stdout.String(), "(Auto-generated meta-prompt)") {
+		t.Fatalf("expected NO auto-generate after previous copy prompt, got:\n%s", stdout.String())
+	}
+}
+
+// TestPromptFlowCommand_AutoGenerateSkipsNonEmptyMeta verifies that
+// auto-generate does not overwrite an existing meta-prompt (handles
+// backward compatibility with sessions saved before this feature).
+func TestPromptFlowCommand_AutoGenerateSkipsNonEmptyMeta(t *testing.T) {
+	t.Parallel()
+	engine, stdout, _ := newPromptFlowTestEngine(t)
+	defer engine.Close()
+
+	// Set goal and explicitly generate to populate meta-prompt
+	if err := engine.GetTUIManager().ExecuteCommand("goal", []string{"Original", "goal"}); err != nil {
+		t.Fatalf("goal failed: %v", err)
+	}
+	if err := engine.GetTUIManager().ExecuteCommand("generate", []string{}); err != nil {
+		t.Fatalf("generate failed: %v", err)
+	}
+
+	// Verify meta contains original goal
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("show", []string{"meta"}); err != nil {
+		t.Fatalf("show meta failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Original goal") {
+		t.Fatalf("expected original goal in meta, got:\n%s", stdout.String())
+	}
+
+	// Copy — auto-generate flag was already cleared by explicit generate,
+	// so there should be no auto-generate
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("copy", []string{}); err != nil {
+		t.Fatalf("copy failed: %v", err)
+	}
+	if strings.Contains(stdout.String(), "(Auto-generated meta-prompt)") {
+		t.Fatalf("expected NO auto-generate after explicit generate, got:\n%s", stdout.String())
+	}
+}
+
+// TestPromptFlowCommand_TaskPromptSetPhaseNoAutoGenerate verifies that
+// copy in TASK_PROMPT_SET phase does NOT auto-generate (it copies the
+// final assembled output, not meta-prompt).
+func TestPromptFlowCommand_TaskPromptSetPhaseNoAutoGenerate(t *testing.T) {
+	t.Parallel()
+	engine, stdout, _ := newPromptFlowTestEngine(t)
+	defer engine.Close()
+
+	// Use one-step mode to set task prompt directly (skips generate)
+	if err := engine.GetTUIManager().ExecuteCommand("goal", []string{"Some", "goal"}); err != nil {
+		t.Fatalf("goal failed: %v", err)
+	}
+	if err := engine.GetTUIManager().ExecuteCommand("use", []string{"My", "task", "prompt"}); err != nil {
+		t.Fatalf("use failed: %v", err)
+	}
+
+	// Copy in TASK_PROMPT_SET phase — should NOT auto-generate
+	// (phase is TASK_PROMPT_SET, so default copy produces final output)
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("copy", []string{}); err != nil {
+		t.Fatalf("copy failed: %v", err)
+	}
+	copyOut := stdout.String()
+	if strings.Contains(copyOut, "(Auto-generated meta-prompt)") {
+		t.Fatalf("expected NO auto-generate in TASK_PROMPT_SET phase, got:\n%s", copyOut)
+	}
+}

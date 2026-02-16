@@ -409,6 +409,132 @@ func TestCompletionCommandGoalDescriptions(t *testing.T) {
 	}
 }
 
+func TestCompletionCommandSyncSubcommand(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
+	registry.Register(NewHelpCommand(registry))
+
+	goalRegistry := newTestGoalRegistry()
+	completionCmd := NewCompletionCommand(registry, goalRegistry)
+
+	tests := []struct {
+		name        string
+		shell       string
+		expectedTxt []string
+	}{
+		{name: "bash sync", shell: "bash", expectedTxt: []string{"sync)", `COMPREPLY=($(compgen -W "save list init push pull"`}},
+		{name: "zsh sync", shell: "zsh", expectedTxt: []string{"sync)", "_values 'sync-subcommand' 'save' 'list' 'init' 'push' 'pull'"}},
+		{name: "fish sync", shell: "fish", expectedTxt: []string{"__fish_seen_subcommand_from sync", "save list init push pull"}},
+		{name: "powershell sync", shell: "powershell", expectedTxt: []string{"$subs = @('save','list','init','push','pull')", "sync'"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var output strings.Builder
+			var stderr strings.Builder
+
+			if err := completionCmd.Execute([]string{tt.shell}, &output, &stderr); err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			out := output.String()
+			for _, expected := range tt.expectedTxt {
+				if !strings.Contains(out, expected) {
+					t.Errorf("Expected %s completion to contain %q, got:\n%s", tt.shell, expected, out)
+				}
+			}
+		})
+	}
+}
+
+func TestCompletionCommandConfigSubcommand(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
+	registry.Register(NewHelpCommand(registry))
+
+	goalRegistry := newTestGoalRegistry()
+	completionCmd := NewCompletionCommand(registry, goalRegistry)
+
+	// Representative config keys that must appear in completions
+	configKeys := []string{"verbose", "color", "debug", "session.id", "log.level"}
+
+	tests := []struct {
+		name        string
+		shell       string
+		expectedTxt []string
+	}{
+		{name: "bash config", shell: "bash", expectedTxt: append([]string{"config)", "validate", "schema"}, configKeys...)},
+		{name: "zsh config", shell: "zsh", expectedTxt: append([]string{"config)", "_values 'config-subcommand' 'validate' 'schema'"}, configKeys...)},
+		{name: "fish config", shell: "fish", expectedTxt: append([]string{"__fish_seen_subcommand_from config", "validate", "schema"}, configKeys...)},
+		{name: "powershell config", shell: "powershell", expectedTxt: append([]string{"config'", "'validate'", "'schema'"}, configKeys...)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var output strings.Builder
+			var stderr strings.Builder
+
+			if err := completionCmd.Execute([]string{tt.shell}, &output, &stderr); err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			out := output.String()
+			for _, expected := range tt.expectedTxt {
+				if !strings.Contains(out, expected) {
+					t.Errorf("Expected %s completion to contain %q, got:\n%s", tt.shell, expected, out)
+				}
+			}
+		})
+	}
+}
+
+func TestCompletionCommandLogSubcommand(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
+	registry.Register(NewHelpCommand(registry))
+
+	goalRegistry := newTestGoalRegistry()
+	completionCmd := NewCompletionCommand(registry, goalRegistry)
+
+	tests := []struct {
+		name        string
+		shell       string
+		expectedTxt []string
+	}{
+		{name: "bash log", shell: "bash", expectedTxt: []string{"log)", `COMPREPLY=($(compgen -W "tail"`}},
+		{name: "zsh log", shell: "zsh", expectedTxt: []string{"log)", "_values 'log-subcommand' 'tail'"}},
+		{name: "fish log", shell: "fish", expectedTxt: []string{"__fish_seen_subcommand_from log", "tail"}},
+		{name: "powershell log", shell: "powershell", expectedTxt: []string{"$subs = @('tail')", "log'"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var output strings.Builder
+			var stderr strings.Builder
+
+			if err := completionCmd.Execute([]string{tt.shell}, &output, &stderr); err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			out := output.String()
+			for _, expected := range tt.expectedTxt {
+				if !strings.Contains(out, expected) {
+					t.Errorf("Expected %s completion to contain %q, got:\n%s", tt.shell, expected, out)
+				}
+			}
+		})
+	}
+}
+
 func TestCompletionCommandFishEscaping(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()

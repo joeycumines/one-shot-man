@@ -162,69 +162,91 @@ const sharedState = tui.createState("__shared__", {
 
 ## Native modules (`require("osm:...")`)
 
-### Overview
+### Module reference
 
-TODO: These should get their own (brief) summaries / sections.
+All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 
-`osm` registers a handful of Go-native modules:
+#### Core utilities
 
-- `require("osm:os")`
-    - `readFile(path) -> { content, error, message }`
-    - `fileExists(path) -> boolean`
-    - `openEditor(nameHint, initialContent) -> string`
-    - `clipboardCopy(text) -> void` (supports `OSM_CLIPBOARD` override)
-    - `getenv(key) -> string`
+| Module | Description | Key exports |
+|--------|-------------|-------------|
+| `osm:os` | OS interactions (files, clipboard, editor, environment) | `readFile(path) → {content, error, message}`, `fileExists(path) → bool`, `openEditor(nameHint, initialContent) → string`, `clipboardCopy(text)` (supports `OSM_CLIPBOARD` override), `getenv(key) → string` |
+| `osm:exec` | Process execution | `exec(cmd, ...args) → {stdout, stderr, code, error, message}`, `execv(argv[]) → {stdout, stderr, code, error, message}` |
+| `osm:flag` | Go `flag` package wrapper for argument parsing | `newFlagSet(name?) → FlagSet`; FlagSet methods: `.string(name, default, usage)`, `.int(…)`, `.bool(…)`, `.float64(…)`, `.parse(argv) → {error}`, `.get(name)`, `.args()`, `.nArg()`, `.nFlag()`, `.lookup(name)`, `.defaults()`, `.visit(fn)`, `.visitAll(fn)` |
+| `osm:time` | Time utilities | `sleep(ms)` — synchronous sleep (milliseconds) |
+| `osm:argv` | Command-line string parsing | `parseArgv(cmdline) → string[]`, `formatArgv(argv[]) → string` |
 
-- `require("osm:exec")`
-    - `exec(cmd, ...args) -> { stdout, stderr, code, error, message }`
-    - `execv(argvArray) -> { stdout, stderr, code, error, message }`
+#### Data & text processing
 
-- `require("osm:fetch")` — HTTP client for scripts (synchronous + streaming)
-    - `fetch(url, options?) -> Response` — synchronous fetch (reads entire body)
-    - `fetchStream(url, options?) -> StreamResponse` — streaming fetch (incremental reading)
-    - Options: `method` (default `"GET"`), `headers` (object), `body` (string), `timeout` (seconds, default 30)
-    - Response: `.status`, `.ok`, `.statusText`, `.url`, `.headers`, `.text()`, `.json()`
-    - StreamResponse: `.status`, `.ok`, `.statusText`, `.url`, `.headers`, `.readLine()`, `.readAll()`, `.close()`
+| Module | Description | Key exports |
+|--------|-------------|-------------|
+| `osm:text/template` | Go `text/template` wrapper | `new(name) → Template`, `execute(text, data) → string`; Template methods: `.parse(text)`, `.execute(data) → string`, `.funcs(funcMap)`, `.name()`, `.delims(left, right)`, `.option(...opts)` |
+| `osm:unicodetext` | Unicode text utilities | `width(s) → number` (monospace display width), `truncate(s, maxWidth, tail?) → string` |
+| `osm:fetch` | HTTP client (synchronous + streaming) | `fetch(url, opts?) → Response`, `fetchStream(url, opts?) → StreamResponse`; Options: `method`, `headers`, `body`, `timeout`; Response: `.status`, `.ok`, `.statusText`, `.url`, `.headers`, `.text()`, `.json()`; StreamResponse adds: `.readLine()`, `.readAll()`, `.close()` |
+| `osm:grpc` | gRPC client for proto-based services | `dial(target, opts?) → Connection`, `loadDescriptorSet(base64)`, `status` (code constants); Connection: `.invoke(method, request?) → object`, `.close()`, `.target` |
 
-- `require("osm:flag")` — Go `flag` package wrapper for script-level argument parsing
-    - `newFlagSet(name?) -> FlagSet` — create a new flag set
-    - `FlagSet.string(name, defaultValue, usage) -> FlagSet`
-    - `FlagSet.int(name, defaultValue, usage) -> FlagSet`
-    - `FlagSet.bool(name, defaultValue, usage) -> FlagSet`
-    - `FlagSet.float64(name, defaultValue, usage) -> FlagSet`
-    - `FlagSet.parse(argv) -> { error: string|null }`
-    - `FlagSet.get(name) -> any`
-    - `FlagSet.args() -> string[]` — remaining non-flag arguments
-    - `FlagSet.nArg() -> number`, `FlagSet.nFlag() -> number`
-    - `FlagSet.lookup(name) -> { name, usage, defValue, value } | null`
-    - `FlagSet.defaults() -> string` — formatted usage text
-    - `FlagSet.visit(fn)`, `FlagSet.visitAll(fn)` — iterate flags
+#### Workflow & state
 
-- `require("osm:text/template")` (Go `text/template` wrapper)
-- `require("osm:time")`
-- `require("osm:argv")`
-- `require("osm:nextIntegerId")`
-- `require("osm:ctxutil")` (workflow helpers used by built-ins)
-- `require("osm:unicodetext")` — unicode helpers
-- `require("osm:sharedStateSymbols")` — shared symbol helpers
-- Bubbletea-related modules for building your own TUI components (experimental, introduced for `osm super-document`):
-    - `require("osm:bubbletea")` — Bubbletea bindings (Charm JS API, WIP)
-    - `require("osm:lipgloss")` — Lipgloss styling helpers
-    - `require("osm:bubbles/viewport")`, `require("osm:bubbles/textarea")` — bubble components
-    - `require("osm:bubblezone")` — zone/mouse helpers
-    - `require("osm:termui/scrollbar")` — scrollbar helper
-- `require("osm:tview")` — **Deprecated.** TUI helpers (proof-of-concept, superseded by `osm:bubbletea`). Will be removed in a future release. A deprecation warning is emitted to stderr when loaded. See [tview-deprecation.md](archive/notes/tview-deprecation.md).
+| Module | Description | Key exports |
+|--------|-------------|-------------|
+| `osm:ctxutil` | Context building helpers (used by built-ins) | `buildContext(items, options?) → string`, `contextManager` (factory for reusable context management patterns) |
+| `osm:nextIntegerId` | Simple ID generator | Default export is a function: `nextId(list) → number` — finds max `.id` in array and returns max+1 |
+| `osm:sharedStateSymbols` | Cross-mode shared state symbols | Exports Symbol properties (e.g., `contextItems`) for use with `tui.createState("__shared__", …)` |
 
-Note: Better documentation for these modules is pending; see package comments in `./internal/builtin` and the root `README.md` for stability status.
+#### TUI framework (Charm/BubbleTea stack)
+
+| Module | Description | Key exports |
+|--------|-------------|-------------|
+| `osm:bubbletea` | BubbleTea TUI framework bindings | `newModel(config) → Model`, `run(model, opts?)`, `isTTY() → bool`; Commands: `quit()`, `clearScreen()`, `batch(…cmds)`, `sequence(…cmds)`, `tick(ms, id?)`, `setWindowTitle(s)`, `hideCursor()`, `showCursor()`, `enterAltScreen()`, `exitAltScreen()`, `enableBracketedPaste()`, `disableBracketedPaste()`, `enableReportFocus()`, `disableReportFocus()`, `windowSize()`; Metadata: `keys`, `keysByName`, `mouseButtons`, `mouseActions`; Validation: `isValidTextareaInput(key, paste?)`, `isValidLabelInput(key, paste?)` |
+| `osm:lipgloss` | Lipgloss terminal styling | `newStyle() → Style` (chainable, immutable); Style methods: `.bold()`, `.italic()`, `.foreground(color)`, `.background(color)`, `.padding(…)`, `.margin(…)`, `.width(n)`, `.height(n)`, `.border(type)`, `.align(pos)`, `.render(…strs) → string`, `.copy()`, `.inherit(other)`; Layout: `joinHorizontal(pos, …strs)`, `joinVertical(pos, …strs)`, `place(w, h, hPos, vPos, str)`, `width(str)`, `height(str)`, `size(str)`; Borders: `normalBorder()`, `roundedBorder()`, `doubleBorder()`, etc.; Constants: `Left`, `Center`, `Right`, `Top`, `Bottom` |
+| `osm:bubblezone` | Zone-based mouse hit-testing | `mark(id, content) → string`, `scan(renderedView) → string`, `inBounds(id, mouseMsg) → bool`, `get(id) → {startX, startY, endX, endY, width, height}`, `newPrefix() → string`, `close()` |
+| `osm:bubbles/viewport` | Scrollable viewport component | `new(width?, height?) → Viewport`; Viewport: `.setContent(s)`, `.setWidth(n)`, `.setHeight(n)`, `.scrollDown(n)`, `.scrollUp(n)`, `.gotoTop()`, `.gotoBottom()`, `.pageUp()`, `.pageDown()`, `.setYOffset(n)`, `.yOffset()`, `.scrollPercent()`, `.atTop()`, `.atBottom()`, `.totalLineCount()`, `.visibleLineCount()`, `.setStyle(lipglossStyle)`, `.update(msg)`, `.view()` |
+| `osm:bubbles/textarea` | Multi-line text input component | `new() → Textarea`; Textarea: `.setValue(s)`, `.value()`, `.setWidth(n)`, `.setHeight(n)`, `.focus()`, `.blur()`, `.focused()`, `.insertString(s)`, `.setCursor(col)`, `.setPosition(row, col)`, `.lineCount()`, `.lineInfo()`, `.cursorVisualLine()`, `.visualLineCount()`, `.performHitTest(x, y)`, `.handleClickAtScreenCoords(x, y)`, `.getScrollSyncInfo()`, `.update(msg)`, `.view()` |
+| `osm:termui/scrollbar` | Thin vertical scrollbar | `new(viewportHeight?) → Scrollbar`; Scrollbar: `.setViewportHeight(n)`, `.setContentHeight(n)`, `.setYOffset(n)`, `.setChars(thumb, track)`, `.setThumbForeground(color)`, `.setTrackForeground(color)`, `.view()` |
+
+#### Behavior trees & planning
+
+| Module | Description | Key exports |
+|--------|-------------|-------------|
+| `osm:bt` | Behavior tree primitives ([go-behaviortree](https://github.com/joeycumines/go-behaviortree)) | Status: `success`, `failure`, `running`; Nodes: `node(tick, ...children)`, `createLeafNode(fn)`, `createBlockingLeafNode(fn)`; Composites: `sequence(children)`, `fallback(children)` / `selector(children)`, `fork()`; Decorators: `memorize(tick)`, `async(tick)`, `not(tick)`, `interval(ms)`; Execution: `tick(node)`, `newTicker(ms, node, opts?)`, `newManager()`; State: `new Blackboard()`, `exposeBlackboard(bb)` |
+| `osm:pabt` | Planning-Augmented Behavior Trees ([go-pabt](https://github.com/joeycumines/go-pabt)) | `newState(blackboard) → State`, `newAction(name, conditions, effects, node) → Action`, `newPlan(state, goals) → Plan`, `newExprCondition(key, expr, value?) → Condition`; State: `.variable(key)`, `.get(key)`, `.set(key, value)`, `.registerAction(name, action)`, `.getAction(name)`, `.setActionGenerator(fn)`; Plan: `.node()`, `.running()` |
+
+#### Deprecated
+
+| Module | Description | Key exports |
+|--------|-------------|-------------|
+| `osm:tview` | **Deprecated.** TView TUI helpers (proof-of-concept, superseded by `osm:bubbletea`). Will be removed in a future release. A deprecation warning is emitted to stderr when loaded. See [tview-deprecation.md](archive/notes/tview-deprecation.md). | — |
 
 ### osm:bt (Behavior Trees)
 
-Core behavior tree primitives:
+Core behavior tree primitives from [go-behaviortree](https://github.com/joeycumines/go-behaviortree).
 
-- `bt.Blackboard` - Thread-safe key-value store for BT nodes
-- `bt.newTicker(interval, node)` - Periodic BT execution
-- `bt.createLeafNode(fn)` - Create leaf nodes from JavaScript functions
-- Status constants: `bt.success`, `bt.failure`, `bt.running`
+**Status constants**: `bt.success`, `bt.failure`, `bt.running`
+
+**Node creation**:
+- `bt.node(tick, ...children)` — Create a node from a tick function and optional children
+- `bt.createLeafNode(fn)` — Create a leaf node from a JS function (executed on event loop)
+- `bt.createBlockingLeafNode(fn)` — Create a blocking leaf node (for already-on-loop contexts)
+
+**Composites** (Go-native, children passed as arrays):
+- `bt.sequence(children)` — Tick children in order until one fails
+- `bt.fallback(children)` / `bt.selector(children)` — Tick children until one succeeds
+- `bt.fork()` — Returns a tick that runs all children in parallel
+
+**Decorators**:
+- `bt.memorize(tick)` — Cache non-running status per execution
+- `bt.async(tick)` — Wrap tick to run asynchronously
+- `bt.not(tick)` — Invert tick result (success ↔ failure)
+- `bt.interval(ms)` — Rate-limit tick to at most once per interval
+
+**Execution**:
+- `bt.tick(node) → status` — Tick a node and return status string
+- `bt.newTicker(ms, node, opts?) → Ticker` — Create periodic ticker (opts: `{stopOnFailure: bool}`)
+- `bt.newManager() → Manager` — Create a ticker manager for lifecycle grouping
+
+**State**: `new bt.Blackboard()` — Thread-safe key-value store with `.get(key)`, `.set(key, val)`, `.has(key)`, `.delete(key)`, `.keys()`, `.clear()`, `.snapshot()`
+
+**Architecture constraint**: Composite nodes (sequence, selector, fork) MUST use the Go primitives. JavaScript is used ONLY for leaf behaviors. This prevents deadlocks with the event loop.
 
 See: [bt-blackboard-usage.md](reference/bt-blackboard-usage.md)
 
@@ -301,18 +323,39 @@ See: [planning-and-acting-using-behavior-trees.md](reference/planning-and-acting
 
 ### osm:bubbletea (TUI Framework)
 
-Terminal UI framework integration:
+Terminal UI framework based on [Charm BubbleTea](https://github.com/charmbracelet/bubbletea).
 
-- `tea.newModel(config)` - Create Elm-architecture model
-- `tea.run(model, opts)` - Run TUI application
-- Message types: `Tick`, `Key`, `Resize`
+**Program lifecycle**:
+- `tea.newModel(config)` — Create an Elm-architecture model (`config`: `{init, update, view}` functions; optional `renderThrottle` config)
+- `tea.run(model, opts?)` — Run TUI program (blocks until exit); opts: `{altScreen, mouse, mouseCellMotion, bracketedPaste, reportFocus}`
+- `tea.isTTY() → bool` — Check if terminal is a TTY
+
+**Commands** (returned from update as second element of `[model, cmd]`):
+- `tea.quit()`, `tea.clearScreen()`
+- `tea.batch(...cmds)`, `tea.sequence(...cmds)` — Combine commands
+- `tea.tick(ms, id?)` — Timer command (delivers `{type: 'Tick', id, time}` message)
+- `tea.setWindowTitle(s)`, `tea.hideCursor()`, `tea.showCursor()`
+- `tea.enterAltScreen()`, `tea.exitAltScreen()`
+- `tea.enableBracketedPaste()`, `tea.disableBracketedPaste()`
+- `tea.enableReportFocus()`, `tea.disableReportFocus()`
+- `tea.windowSize()` — Query current terminal size
+
+**Message types** (received in `update(msg, model)`):
+- `Key` — `{type, key, runes, alt, ctrl, paste}`
+- `Mouse` — `{type, x, y, button, action, alt, ctrl, shift}`
+- `WindowSize` — `{type, width, height}`
+- `Focus` / `Blur` — `{type}` (requires `reportFocus` option)
+- `Tick` — `{type, id, time}` (from `tea.tick()` command)
+
+**Metadata objects**: `tea.keys`, `tea.keysByName`, `tea.mouseButtons`, `tea.mouseActions` — lookup tables for key/mouse definitions.
+
+**Input validation**: `tea.isValidTextareaInput(key, paste?)`, `tea.isValidLabelInput(key, paste?)` — whitelist-based input validators.
 
 ### osm:time
 
 Time utilities:
 
-- `time.sleep(ms)` - Synchronous sleep
-- `time.now()` - Current timestamp
+- `time.sleep(ms)` — Synchronous sleep (milliseconds)
 
 ## Where to look for examples
 

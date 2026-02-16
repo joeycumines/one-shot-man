@@ -3,7 +3,10 @@ package command
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
+
+	"github.com/joeycumines/one-shot-man/internal/config"
 )
 
 // CompletionCommand generates shell completion scripts.
@@ -57,6 +60,19 @@ func (c *CompletionCommand) Execute(args []string, stdout, stderr io.Writer) err
 	}
 }
 
+// configKeys returns a sorted list of all global configuration option keys
+// from the default schema, for use in shell completion scripts.
+func configKeys() []string {
+	schema := config.DefaultSchema()
+	opts := schema.GlobalOptions()
+	keys := make([]string, len(opts))
+	for i, o := range opts {
+		keys[i] = o.Key
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // generateBashCompletion generates a bash completion script.
 func (c *CompletionCommand) generateBashCompletion(w io.Writer) error {
 	commands := c.registry.List()
@@ -64,6 +80,9 @@ func (c *CompletionCommand) generateBashCompletion(w io.Writer) error {
 
 	goals := c.goalRegistry.List()
 	goalList := strings.Join(goals, " ")
+
+	keys := configKeys()
+	configKeyList := strings.Join(keys, " ")
 
 	script := fmt.Sprintf(`#!/bin/bash
 # Bash completion script for osm (one-shot-man)
@@ -97,6 +116,18 @@ _osm_completion() {
             COMPREPLY=($(compgen -W "list clean purge delete info path id" -- ${cur}))
             return 0
             ;;
+        sync)
+            COMPREPLY=($(compgen -W "save list init push pull" -- ${cur}))
+            return 0
+            ;;
+        config)
+            COMPREPLY=($(compgen -W "validate schema %s" -- ${cur}))
+            return 0
+            ;;
+        log)
+            COMPREPLY=($(compgen -W "tail" -- ${cur}))
+            return 0
+            ;;
         # For delete/info let shell default to filename completion (no session ids)
         *)
             COMPREPLY=($(compgen -f -- ${cur}))
@@ -114,7 +145,7 @@ complete -F _osm_completion osm
 #    or ~/.local/share/bash-completion/completions/osm (user-specific)
 # 2. Or source it directly in your ~/.bashrc:
 #    source <(osm completion bash)
-`, commandList, goalList)
+`, commandList, goalList, configKeyList)
 
 	_, err := w.Write([]byte(script))
 	return err
@@ -133,6 +164,13 @@ func (c *CompletionCommand) generateZshCompletion(w io.Writer) error {
 
 	goals := c.goalRegistry.List()
 	goalList := strings.Join(goals, "' '")
+
+	keys := configKeys()
+	zshConfigParts := make([]string, len(keys))
+	for i, k := range keys {
+		zshConfigParts[i] = fmt.Sprintf("'%s'", k)
+	}
+	zshConfigKeyList := strings.Join(zshConfigParts, " ")
 
 	script := fmt.Sprintf(`#compdef osm
 
@@ -169,6 +207,15 @@ _osm() {
                         _files
                     fi
                     ;;
+                sync)
+                    _values 'sync-subcommand' 'save' 'list' 'init' 'push' 'pull'
+                    ;;
+                config)
+                    _values 'config-subcommand' 'validate' 'schema' %s
+                    ;;
+                log)
+                    _values 'log-subcommand' 'tail'
+                    ;;
                 *)
                     _files
                     ;;
@@ -186,7 +233,7 @@ _osm "$@"
 #    fpath=(~/.zsh/completions $fpath)
 # 3. Regenerate completions: rm ~/.zcompdump && compinit
 # 4. Or source it directly: source <(osm completion zsh)
-`, commandDescriptions.String(), goalList)
+`, commandDescriptions.String(), goalList, zshConfigKeyList)
 
 	_, err := w.Write([]byte(script))
 	return err
@@ -219,6 +266,9 @@ func (c *CompletionCommand) generateFishCompletion(w io.Writer) error {
 	var sessionCompletions strings.Builder
 	sessionCompletions.WriteString("complete -c osm -n '__fish_seen_subcommand_from session' -a 'list clean purge delete info path id' -d 'Session subcommands'\n")
 
+	keys := configKeys()
+	configKeyList := strings.Join(keys, " ")
+
 	script := fmt.Sprintf(`# Fish completion script for osm (one-shot-man)
 
 # Complete commands
@@ -229,11 +279,21 @@ complete -c osm -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish po
 # Completion for 'goal' subcommand args (goal names)
 %s
 # Completion for 'session' subcommand
-%s# Installation instructions (as comments):
+%s
+# Completion for 'sync' subcommand
+complete -c osm -n '__fish_seen_subcommand_from sync' -a 'save list init push pull' -d 'Sync subcommands'
+
+# Completion for 'config' subcommand
+complete -c osm -n '__fish_seen_subcommand_from config' -a 'validate schema %s' -d 'Config subcommands'
+
+# Completion for 'log' subcommand
+complete -c osm -n '__fish_seen_subcommand_from log' -a 'tail' -d 'Log subcommands'
+
+# Installation instructions (as comments):
 # To install this completion script:
 # 1. Copy this script to ~/.config/fish/completions/osm.fish
 # 2. Or pipe it directly: osm completion fish > ~/.config/fish/completions/osm.fish
-`, completions.String(), goalCompletions.String(), sessionCompletions.String())
+`, completions.String(), goalCompletions.String(), sessionCompletions.String(), configKeyList)
 
 	_, err := w.Write([]byte(script))
 	return err
@@ -246,6 +306,13 @@ func (c *CompletionCommand) generatePowerShellCompletion(w io.Writer) error {
 
 	goals := c.goalRegistry.List()
 	goalList := strings.Join(goals, "', '")
+
+	keys := configKeys()
+	psConfigParts := make([]string, len(keys))
+	for i, k := range keys {
+		psConfigParts[i] = fmt.Sprintf("'%s'", k)
+	}
+	psConfigKeyList := strings.Join(psConfigParts, ",")
 
 	// No per-ID completions for session — only subcommand names are provided.
 
@@ -298,6 +365,30 @@ Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
         return
     }
 
+    if ($tokenCount -eq 3 -and $command -eq 'sync') {
+        $subs = @('save','list','init','push','pull')
+        $subs | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+        return
+    }
+
+    if ($tokenCount -eq 3 -and $command -eq 'config') {
+        $subs = @('validate','schema',%s)
+        $subs | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+        return
+    }
+
+    if ($tokenCount -eq 3 -and $command -eq 'log') {
+        $subs = @('tail')
+        $subs | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+        return
+    }
+
     # Default to file completion for other commands
     if ($command -ne 'completion') {
         Get-ChildItem -Path . -Name "$wordToComplete*" | ForEach-Object {
@@ -311,7 +402,7 @@ Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
 # 1. Add the above code to your PowerShell profile
 # 2. Find your profile location with: $PROFILE
 # 3. Or run directly: osm completion powershell | Invoke-Expression
-`, commandList, goalList)
+`, commandList, goalList, psConfigKeyList)
 
 	_, err := w.Write([]byte(script))
 	return err

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `writeFile(path, content, options?)` and `appendFile(path, content, options?)` functions in the `osm:os` module: write or append content to files from JavaScript scripts, with optional `mode` (default `0644`) and `createDirs` (default `false`) options; errors are thrown as JavaScript exceptions
 - `make bench-save` and `make bench-compare` targets for performance regression tracking: `bench-save` runs all benchmarks with `-count=5` and saves a filtered baseline to `bench-baseline.txt`; `bench-compare` re-runs benchmarks and compares against baseline using `benchstat` (with `diff` fallback)
 - `osm config list` subcommand: displays all configuration values with their effective sources (`default`, `config`, or `env`) in a formatted table
 - `osm config diff` subcommand: shows only non-default configuration values (overridden via config file or environment variable)

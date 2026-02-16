@@ -62,11 +62,13 @@ Attempts to `require('go:os')`, `require('node:fs')`, or other prefixes fail.
 |---|---|
 | `readFile(path)` | Reads any file accessible to the user. **No path restrictions** — by design. |
 | `fileExists(path)` | Checks existence. No restrictions. |
+| `writeFile(path, content, opts?)` | Writes/creates files. Path resolved to absolute. No path restrictions. |
+| `appendFile(path, content, opts?)` | Appends to files. Same behavior as `writeFile`. |
 | `openEditor(path)` | Opens `$EDITOR`. Wires stdin/stdout/stderr. |
 | `clipboardCopy(text)` | Uses `pbcopy`/`clip`/`xclip` via `exec.CommandContext`. |
 | `getenv(name)` | Reads environment variables. No restrictions. |
 
-- **Read-only filesystem:** No `writeFile`, `unlink`, `mkdir`, `rename`, or any write operations
+- **Controlled file writes:** `writeFile` and `appendFile` can create/modify files accessible to the user. No destructive operations (`unlink`, `mkdir`, `rename`, `chmod`, etc.)
 - **No `setenv`/`unsetenv`:** Cannot modify the process environment
 
 #### `osm:fetch` — HTTP Client

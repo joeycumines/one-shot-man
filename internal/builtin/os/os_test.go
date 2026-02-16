@@ -2,6 +2,7 @@ package os
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -17,6 +18,14 @@ func setupModule(t *testing.T, sink func(string)) (*goja.Runtime, *goja.Object) 
 	if goruntime.GOOS == "windows" {
 		t.Skip("os module tests rely on POSIX shell utilities")
 	}
+
+	return setupModuleAllPlatforms(t, sink)
+}
+
+// setupModuleAllPlatforms creates a Goja runtime with the os module loaded.
+// Unlike setupModule, it does NOT skip on Windows.
+func setupModuleAllPlatforms(t *testing.T, sink func(string)) (*goja.Runtime, *goja.Object) {
+	t.Helper()
 
 	runtime := goja.New()
 	module := runtime.NewObject()
@@ -610,5 +619,270 @@ func TestClipboardCopy_NoArgs(t *testing.T) {
 	}
 	if string(data) != "" {
 		t.Fatalf("expected empty clipboard content, got %q", string(data))
+	}
+}
+
+// --- writeFile and appendFile tests ---
+
+func TestWriteFile_CreatesNewFile(t *testing.T) {
+	t.Parallel()
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	writeFile := requireCallable(t, exports, "writeFile")
+
+	path := filepath.Join(t.TempDir(), "new.txt")
+	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("hello world"))
+	if err != nil {
+		t.Fatalf("writeFile failed: %v", err)
+	}
+
+	data, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("failed to read written file: %v", readErr)
+	}
+	if string(data) != "hello world" {
+		t.Fatalf("expected 'hello world', got %q", string(data))
+	}
+}
+
+func TestWriteFile_OverwritesExistingFile(t *testing.T) {
+	t.Parallel()
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	writeFile := requireCallable(t, exports, "writeFile")
+
+	path := filepath.Join(t.TempDir(), "existing.txt")
+	if err := os.WriteFile(path, []byte("old content"), 0644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("new content"))
+	if err != nil {
+		t.Fatalf("writeFile failed: %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	if string(data) != "new content" {
+		t.Fatalf("expected 'new content', got %q", string(data))
+	}
+}
+
+func TestWriteFile_CustomMode(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("file mode checks not reliable on Windows")
+	}
+	t.Parallel()
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	writeFile := requireCallable(t, exports, "writeFile")
+
+	path := filepath.Join(t.TempDir(), "mode.txt")
+	opts := runtime.NewObject()
+	_ = opts.Set("mode", 0600)
+	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("secret"), opts)
+	if err != nil {
+		t.Fatalf("writeFile with mode failed: %v", err)
+	}
+
+	info, statErr := os.Stat(path)
+	if statErr != nil {
+		t.Fatalf("stat: %v", statErr)
+	}
+	perm := info.Mode().Perm()
+	if perm != 0600 {
+		t.Fatalf("expected mode 0600, got %04o", perm)
+	}
+}
+
+func TestWriteFile_CreateDirs(t *testing.T) {
+	t.Parallel()
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	writeFile := requireCallable(t, exports, "writeFile")
+
+	path := filepath.Join(t.TempDir(), "a", "b", "c", "deep.txt")
+	opts := runtime.NewObject()
+	_ = opts.Set("createDirs", true)
+	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("deep"), opts)
+	if err != nil {
+		t.Fatalf("writeFile with createDirs failed: %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	if string(data) != "deep" {
+		t.Fatalf("expected 'deep', got %q", string(data))
+	}
+}
+
+func TestWriteFile_NonexistentDirFails(t *testing.T) {
+	t.Parallel()
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	writeFile := requireCallable(t, exports, "writeFile")
+
+	path := filepath.Join(t.TempDir(), "nonexistent", "dir", "file.txt")
+	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("fail"))
+	if err == nil {
+		t.Fatal("expected error for nonexistent directory without createDirs")
+	}
+	if !strings.Contains(err.Error(), "writeFile:") {
+		t.Fatalf("expected writeFile error prefix, got: %v", err)
+	}
+}
+
+func TestWriteFile_EmptyContent(t *testing.T) {
+	t.Parallel()
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	writeFile := requireCallable(t, exports, "writeFile")
+
+	path := filepath.Join(t.TempDir(), "empty.txt")
+	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue(""))
+	if err != nil {
+		t.Fatalf("writeFile empty content failed: %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	if len(data) != 0 {
+		t.Fatalf("expected empty file, got %d bytes", len(data))
+	}
+}
+
+func TestWriteFile_UnicodeContent(t *testing.T) {
+	t.Parallel()
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	writeFile := requireCallable(t, exports, "writeFile")
+
+	path := filepath.Join(t.TempDir(), "unicode.txt")
+	content := "こんにちは世界 🌍 — ñ é ü"
+	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue(content))
+	if err != nil {
+		t.Fatalf("writeFile unicode failed: %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	if string(data) != content {
+		t.Fatalf("expected %q, got %q", content, string(data))
+	}
+}
+
+func TestWriteFile_EmptyPath(t *testing.T) {
+	t.Parallel()
+	_, exports := setupModuleAllPlatforms(t, nil)
+	writeFile := requireCallable(t, exports, "writeFile")
+
+	// No arguments → error
+	_, err := writeFile(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected error for writeFile with no arguments")
+	}
+	if !strings.Contains(err.Error(), "path is required") {
+		t.Fatalf("expected 'path is required', got: %v", err)
+	}
+}
+
+func TestWriteFile_ReadOnlyDir(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("read-only directory behavior differs on Windows")
+	}
+	t.Parallel()
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	writeFile := requireCallable(t, exports, "writeFile")
+
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
+
+	path := filepath.Join(dir, "nope.txt")
+	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("fail"))
+	if err == nil {
+		t.Fatal("expected error writing to read-only directory")
+	}
+}
+
+func TestAppendFile_AppendsToExisting(t *testing.T) {
+	t.Parallel()
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	appendFile := requireCallable(t, exports, "appendFile")
+
+	path := filepath.Join(t.TempDir(), "append.txt")
+	if err := os.WriteFile(path, []byte("line1\n"), 0644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	_, err := appendFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("line2\n"))
+	if err != nil {
+		t.Fatalf("appendFile failed: %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	if string(data) != "line1\nline2\n" {
+		t.Fatalf("expected 'line1\\nline2\\n', got %q", string(data))
+	}
+}
+
+func TestAppendFile_CreatesFileIfNotExists(t *testing.T) {
+	t.Parallel()
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	appendFile := requireCallable(t, exports, "appendFile")
+
+	path := filepath.Join(t.TempDir(), "new-append.txt")
+	_, err := appendFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("first line"))
+	if err != nil {
+		t.Fatalf("appendFile create failed: %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	if string(data) != "first line" {
+		t.Fatalf("expected 'first line', got %q", string(data))
+	}
+}
+
+func TestAppendFile_MultipleAppendsAccumulate(t *testing.T) {
+	t.Parallel()
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	appendFile := requireCallable(t, exports, "appendFile")
+
+	path := filepath.Join(t.TempDir(), "multi.txt")
+	for i := 0; i < 5; i++ {
+		_, err := appendFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue(fmt.Sprintf("line%d\n", i)))
+		if err != nil {
+			t.Fatalf("appendFile iteration %d failed: %v", i, err)
+		}
+	}
+
+	data, _ := os.ReadFile(path)
+	expected := "line0\nline1\nline2\nline3\nline4\n"
+	if string(data) != expected {
+		t.Fatalf("expected %q, got %q", expected, string(data))
+	}
+}
+
+func TestAppendFile_CreateDirs(t *testing.T) {
+	t.Parallel()
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	appendFile := requireCallable(t, exports, "appendFile")
+
+	path := filepath.Join(t.TempDir(), "x", "y", "z", "append.txt")
+	opts := runtime.NewObject()
+	_ = opts.Set("createDirs", true)
+	_, err := appendFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("deep append"), opts)
+	if err != nil {
+		t.Fatalf("appendFile with createDirs failed: %v", err)
+	}
+
+	data, _ := os.ReadFile(path)
+	if string(data) != "deep append" {
+		t.Fatalf("expected 'deep append', got %q", string(data))
+	}
+}
+
+func TestAppendFile_EmptyPath(t *testing.T) {
+	t.Parallel()
+	_, exports := setupModuleAllPlatforms(t, nil)
+	appendFile := requireCallable(t, exports, "appendFile")
+
+	_, err := appendFile(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected error for appendFile with no arguments")
+	}
+	if !strings.Contains(err.Error(), "path is required") {
+		t.Fatalf("expected 'path is required', got: %v", err)
 	}
 }

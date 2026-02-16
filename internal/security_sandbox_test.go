@@ -288,14 +288,14 @@ func TestSandbox_OsModuleAPIBoundary(t *testing.T) {
 	engine, _, _ := newSandboxTestEngine(t)
 	script := engine.LoadScriptFromString("os-boundary", `
 		var osmod = require('osm:os');
-		var expected = ['readFile', 'fileExists', 'openEditor', 'clipboardCopy', 'getenv'];
+		var expected = ['readFile', 'fileExists', 'openEditor', 'clipboardCopy', 'getenv', 'writeFile', 'appendFile'];
 		for (var i = 0; i < expected.length; i++) {
 			if (typeof osmod[expected[i]] !== 'function') {
 				throw new Error('Missing expected export: ' + expected[i]);
 			}
 		}
-		var dangerous = ['writeFile', 'unlink', 'rmdir', 'mkdir', 'rename',
-			'chmod', 'chown', 'symlink', 'truncate', 'appendFile',
+		var dangerous = ['unlink', 'rmdir', 'mkdir', 'rename',
+			'chmod', 'chown', 'symlink', 'truncate',
 			'exit', 'kill', 'setenv', 'unsetenv'];
 		for (var i = 0; i < dangerous.length; i++) {
 			if (typeof osmod[dangerous[i]] !== 'undefined') {
@@ -497,25 +497,29 @@ func TestSandbox_ExecUsesCommandContextNotShell(t *testing.T) {
 	}
 }
 
-func TestSandbox_OsModuleReadOnlyFilesystem(t *testing.T) {
+func TestSandbox_OsModuleNoDestructiveOps(t *testing.T) {
 	t.Parallel()
 	engine, _, _ := newSandboxTestEngine(t)
-	script := engine.LoadScriptFromString("os-readonly", `
+	script := engine.LoadScriptFromString("os-no-destructive", `
 		var osmod = require('osm:os');
-		var writeOps = ['writeFile', 'appendFile', 'unlink', 'rmdir', 'mkdir',
+		// writeFile and appendFile are intentionally exposed for file output.
+		// These destructive/system-level ops should NOT exist:
+		var destructive = ['unlink', 'rmdir', 'mkdir',
 			'rename', 'chmod', 'chown', 'symlink', 'truncate',
 			'copyFile', 'link', 'mkdtemp'];
-		for (var i = 0; i < writeOps.length; i++) {
-			if (typeof osmod[writeOps[i]] !== 'undefined') {
-				throw new Error('osm:os should be read-only but has: ' + writeOps[i]);
+		for (var i = 0; i < destructive.length; i++) {
+			if (typeof osmod[destructive[i]] !== 'undefined') {
+				throw new Error('osm:os should not have destructive op: ' + destructive[i]);
 			}
 		}
 		if (typeof osmod.readFile !== 'function') throw new Error('readFile missing');
 		if (typeof osmod.fileExists !== 'function') throw new Error('fileExists missing');
 		if (typeof osmod.getenv !== 'function') throw new Error('getenv missing');
+		if (typeof osmod.writeFile !== 'function') throw new Error('writeFile missing');
+		if (typeof osmod.appendFile !== 'function') throw new Error('appendFile missing');
 	`)
 	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("OS read-only test failed: %v", err)
+		t.Fatalf("OS no-destructive-ops test failed: %v", err)
 	}
 }
 

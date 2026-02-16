@@ -89,7 +89,86 @@ func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runti
 			}
 			return runtime.ToValue(os.Getenv(call.Argument(0).String()))
 		})
+
+		// writeFile(path, content, options?): undefined
+		// options: { mode?: number (default 0644), createDirs?: boolean (default false) }
+		_ = exports.Set("writeFile", func(call goja.FunctionCall) goja.Value {
+			path, content, mode, createDirs := parseWriteArgs(runtime, call)
+			if path == "" {
+				panic(runtime.NewGoError(fmt.Errorf("writeFile: path is required")))
+			}
+			path = resolvePath(path)
+			if createDirs {
+				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+					panic(runtime.NewGoError(fmt.Errorf("writeFile: %w", err)))
+				}
+			}
+			if err := os.WriteFile(path, []byte(content), mode); err != nil {
+				panic(runtime.NewGoError(fmt.Errorf("writeFile: %w", err)))
+			}
+			return goja.Undefined()
+		})
+
+		// appendFile(path, content, options?): undefined
+		// options: { mode?: number (default 0644), createDirs?: boolean (default false) }
+		_ = exports.Set("appendFile", func(call goja.FunctionCall) goja.Value {
+			path, content, mode, createDirs := parseWriteArgs(runtime, call)
+			if path == "" {
+				panic(runtime.NewGoError(fmt.Errorf("appendFile: path is required")))
+			}
+			path = resolvePath(path)
+			if createDirs {
+				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+					panic(runtime.NewGoError(fmt.Errorf("appendFile: %w", err)))
+				}
+			}
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, mode)
+			if err != nil {
+				panic(runtime.NewGoError(fmt.Errorf("appendFile: %w", err)))
+			}
+			defer f.Close()
+			if _, err := f.WriteString(content); err != nil {
+				panic(runtime.NewGoError(fmt.Errorf("appendFile: %w", err)))
+			}
+			return goja.Undefined()
+		})
 	}
+}
+
+// parseWriteArgs extracts (path, content, mode, createDirs) from writeFile/appendFile calls.
+func parseWriteArgs(runtime *goja.Runtime, call goja.FunctionCall) (string, string, os.FileMode, bool) {
+	var path, content string
+	mode := os.FileMode(0644)
+	createDirs := false
+
+	if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+		path = call.Argument(0).String()
+	}
+	if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+		content = call.Argument(1).String()
+	}
+	if len(call.Arguments) > 2 && !goja.IsUndefined(call.Argument(2)) && !goja.IsNull(call.Argument(2)) {
+		opts := call.Argument(2).ToObject(runtime)
+		if modeVal := opts.Get("mode"); modeVal != nil && !goja.IsUndefined(modeVal) && !goja.IsNull(modeVal) {
+			mode = os.FileMode(modeVal.ToInteger())
+		}
+		if cdVal := opts.Get("createDirs"); cdVal != nil && !goja.IsUndefined(cdVal) && !goja.IsNull(cdVal) {
+			createDirs = cdVal.ToBoolean()
+		}
+	}
+	return path, content, mode, createDirs
+}
+
+// resolvePath converts a possibly relative path to absolute using the working directory.
+func resolvePath(path string) string {
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return filepath.Clean(path)
+	}
+	return filepath.Join(wd, path)
 }
 
 func openEditor(ctx context.Context, nameHint string, initialContent string) string {

@@ -337,7 +337,8 @@
     {
       "task": "T121: Add writeFile to osm:os module",
       "description": "Add writeFile and appendFile with opt-in safety model (write intent declaration or user confirmation). Enables scripts to generate output files directly.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added writeFile(path, content, options?) and appendFile(path, content, options?) to osm:os. Options: mode (default 0644), createDirs (default false). Path resolved to absolute. Errors thrown as JS exceptions. 14 new tests (create, overwrite, mode, createDirs, nonexistent dir, empty, unicode, read-only dir, append, accumulate). Updated 2 security sandbox tests. Docs: scripting.md, architecture.md, security.md, CHANGELOG.md."
     },
     {
       "task": "T122: Enhance go-prompt: multiline input support",

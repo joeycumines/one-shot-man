@@ -138,9 +138,9 @@ func TestConsole_Integration_ScrollWheel(t *testing.T) {
 
 	// Send scroll up events
 	snap = cp.Snapshot()
-	err = console.ScrollWheel(10, 5, "up")
+	err = console.ScrollWheelWithDirection(10, 5, ScrollUp)
 	require.NoError(t, err)
-	err = console.ScrollWheel(10, 5, "up")
+	err = console.ScrollWheelWithDirection(10, 5, ScrollUp)
 	require.NoError(t, err)
 
 	// Verify scroll counter increased
@@ -149,7 +149,7 @@ func TestConsole_Integration_ScrollWheel(t *testing.T) {
 
 	// Send scroll down
 	snap = cp.Snapshot()
-	err = console.ScrollWheel(10, 5, "down")
+	err = console.ScrollWheelWithDirection(10, 5, ScrollDown)
 	require.NoError(t, err)
 
 	err = cp.Expect(ctx, snap, termtest.Contains("Scroll: 1"), "wait for scroll count decrease")

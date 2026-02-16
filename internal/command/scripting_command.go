@@ -197,7 +197,7 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 
 	// If not interactive and no scripts were provided, it's an error.
 	if scriptFile == "" && c.script == "" {
-		fmt.Fprintln(stderr, "No script file specified. Use -i for interactive mode, -e for direct execution, or provide a script file.")
+		_, _ = fmt.Fprintln(stderr, "No script file specified. Use -i for interactive mode, -e for direct execution, or provide a script file.")
 		return fmt.Errorf("no script specified")
 	}
 

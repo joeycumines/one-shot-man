@@ -121,18 +121,26 @@ func (w *RotatingFileWriter) rotate() error {
 		src := w.backupPath(num)
 		if num+1 > w.maxFiles {
 			// Beyond retention limit — delete.
-			_ = os.Remove(src)
+			if err := os.Remove(src); err != nil {
+				_, _ = fmt.Fprintf(os.Stderr, "log_rotate: failed to remove old backup %s: %v\n", src, err)
+			}
 		} else {
 			dst := w.backupPath(num + 1)
-			_ = os.Rename(src, dst)
+			if err := os.Rename(src, dst); err != nil {
+				_, _ = fmt.Fprintf(os.Stderr, "log_rotate: failed to shift backup %s -> %s: %v\n", src, dst, err)
+			}
 		}
 	}
 
 	// Rename current file to .1 (unless maxFiles is 0, in which case just remove).
 	if w.maxFiles > 0 {
-		_ = os.Rename(w.path, w.backupPath(1))
+		if err := os.Rename(w.path, w.backupPath(1)); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "log_rotate: failed to rename current log to backup: %v\n", err)
+		}
 	} else {
-		_ = os.Remove(w.path)
+		if err := os.Remove(w.path); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "log_rotate: failed to remove current log (maxFiles=0): %v\n", err)
+		}
 	}
 
 	// Open a fresh file.

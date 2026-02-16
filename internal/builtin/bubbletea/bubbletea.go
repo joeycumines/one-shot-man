@@ -1359,7 +1359,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 					stackTrace := debug.Stack()
 					// Log detailed error to stderr if available
 					if manager != nil && manager.stderr != nil {
-						fmt.Fprintf(manager.stderr, "\n[PANIC] in bubbletea.run(): %v\n\nStack:\n%s\n", r, string(stackTrace))
+						_, _ = fmt.Fprintf(manager.stderr, "\n[PANIC] in bubbletea.run(): %v\n\nStack:\n%s\n", r, string(stackTrace))
 					}
 					result = createError(ErrCodePanic, fmt.Sprintf("panic in run: %v", r))
 				}

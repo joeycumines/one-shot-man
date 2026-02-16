@@ -66,11 +66,11 @@ func (t *Terminal) Run() {
 	// Persist session on ANY exit path (clean or signal-based).
 	// This centralizes the save logic.
 	if t.tuiManager.stateManager != nil {
-		fmt.Fprintln(t.tuiManager.writer, "Saving session...")
+		_, _ = fmt.Fprintln(t.tuiManager.writer, "Saving session...")
 		if err := t.tuiManager.stateManager.PersistSession(); err != nil {
 			_, _ = fmt.Fprintf(t.tuiManager.writer, "Warning: Failed to persist session: %v\n", err)
 		} else {
-			fmt.Fprintln(t.tuiManager.writer, "Session saved successfully.")
+			_, _ = fmt.Fprintln(t.tuiManager.writer, "Session saved successfully.")
 		}
 	}
 

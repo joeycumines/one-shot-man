@@ -36,7 +36,7 @@ type KeyDef struct {
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -58,7 +58,7 @@ func run() error {
 
 	if len(pkgs[0].Errors) > 0 {
 		for _, e := range pkgs[0].Errors {
-			fmt.Fprintf(os.Stderr, "Package error: %v\n", e)
+			_, _ = fmt.Fprintf(os.Stderr, "Package error: %v\n", e)
 		}
 		return fmt.Errorf("package has errors")
 	}

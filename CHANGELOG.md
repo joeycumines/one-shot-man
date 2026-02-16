@@ -78,8 +78,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 3 unused benchmark threshold constants
 - Stale `internal/termtest/*` entries from `.deadcodeignore`
 - 4 TODO comments in tui_completion.go: documented completion logic, resolved outdated arg completer precedence note, removed speculative types, added unknown-type warning
+- Deprecated `ScrollWheel` and `ScrollWheelOnElement` string-based methods from mouseharness; use type-safe `ScrollWheelWithDirection` and `ScrollWheelOnElementWithDirection` instead
 
 ### Fixed
+- Inconsistent `fmt.Fprint*` error handling: added `_, _ =` prefix to all unchecked calls across session, completion, scripting, terminal, and bubbletea source files for project-wide consistency
+- Silently swallowed errors during log file rotation: `RotatingFileWriter.rotate()` now logs backup shift, rename, and cleanup failures to stderr instead of discarding them
 - Flaky `TestSuperDocument_BacktabNavigation` PTY integration test: standardized inter-keystroke delay from inconsistent 4–20ms to a uniform 25ms constant (`ptyCharDelay`) across all character-typing loops in both PTY test files; under CPU load the previous delays caused the TUI to coalesce or drop keystrokes, producing garbled output
 - VHS recording path remapping: replaced hardcoded `../../../` prefix with dynamic `filepath.Rel` computation from tape output directory to repository root; argument quoting now uses VHS-compatible `quoteVHSString` instead of Go-style `fmt.Sprintf("%q")`
 - Data race in scripting engine: `context.AfterFunc` closure reading `engine.vm` while `Close()` sets nil; captured VM in local variable before closure

@@ -214,18 +214,6 @@ func TestStripANSI_CharSetAtEnd(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// mouse.go: ScrollWheel invalid direction (string API)
-// ─────────────────────────────────────────────────────────────────────
-
-func TestScrollWheel_InvalidDirection(t *testing.T) {
-	t.Parallel()
-	c := &Console{}
-	err := c.ScrollWheel(1, 1, "diagonal")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown scroll direction")
-}
-
-// ─────────────────────────────────────────────────────────────────────
 // console.go: New validation
 // ─────────────────────────────────────────────────────────────────────
 

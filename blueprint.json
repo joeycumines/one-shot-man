@@ -192,6 +192,81 @@
       "task": "T155: AI Orchestrator - Architectural design and approval",
       "description": "Complete architectural design phase with multiple implementation approaches (minimal changes, clean architecture, pragmatic balance). Compare trade-offs, create concrete implementation plan, seek user approval before implementation begins. This is the gate before T143-T154 implementation.",
       "status": "Not Started"
+    },
+    {
+      "task": "T156: Update user-visible 'one-shot-man' strings to 'osm'",
+      "description": "After T126 migrated config dir to ~/.osm, several user-visible strings still reference 'one-shot-man'. Update: builtin.go appName constant, os.go homeDir references, completion_command.go descriptions. Keep go.mod module path and internal package paths unchanged.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T157: Fix inconsistent fmt.Fprint* error handling",
+      "description": "4 call sites use bare fmt.Fprint/Fprintf without _, _ = prefix, inconsistent with project style. Fix all to use _, _ = or handle errors explicitly.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T158: Exec-safe shell quoting in osm:argv formatArgv",
+      "description": "TODO at internal/scripting/argv/argv_module.go line ~34: formatArgv needs exec-safe shell quoting. Currently joins with spaces but doesn't handle special chars. Implement proper POSIX shell quoting.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T159: Remove deprecated MouseTestAPI shim",
+      "description": "internal/mouseharness/mouse_util_test.go contains a deprecated MouseTestAPI compatibility shim. Remove it and update all call sites to use the current API directly.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T160: Migrate textarea runeWidth to uniseg grapheme clusters",
+      "description": "internal/scripting/textarea/textarea.go uses deprecated runeWidth function. Migrate to github.com/rivo/uniseg grapheme cluster width for proper Unicode support (emoji, ZWJ sequences, etc.).",
+      "status": "Not Started"
+    },
+    {
+      "task": "T161: Add error logging for log rotation failures",
+      "description": "internal/scripting/log_rotate.go silently swallows errors during log file rotation. Add stderr logging or return errors so rotation failures are visible.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T162: Remove deprecated VHS WithSettings method",
+      "description": "internal/scripting/vhs_recorder.go contains a deprecated WithSettings method. Remove it and update all call sites to use the current configuration API.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T163: Remove deprecated mouseharness ScrollWheel methods",
+      "description": "internal/mouseharness/ contains deprecated ScrollWheelUp/ScrollWheelDown methods. Remove them and update all call sites to use current scroll API.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T164: MCP server removeFile/clearContext tools",
+      "description": "Expand MCP server (internal/command/mcp.go) with removeFile and clearContext tools for context management. Currently only addFile exists for file addition.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T165: Detailed docs for underdocumented osm: modules",
+      "description": "Several osm: modules (osm:time, osm:nextIntegerId, osm:unicodetext, osm:scrollbar) have minimal documentation in scripting.md. Add detailed API docs with examples for each.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T166: Clean up suppress-unused-warning patterns in pickandplace tests",
+      "description": "internal/scripting/pickandplace/*_test.go files contain suppress-unused-warning patterns (var _ = someFunc). Replace with proper test usage or remove if the functions are tested elsewhere.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T167: Rename osm:nextIntegerId to osm:nextIntegerID",
+      "description": "Module name uses 'Id' suffix which is inconsistent with Go naming conventions (should be 'ID'). Rename module, update all imports and references. Maintain backward compatibility alias if needed.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T168: osm:regexp module (Go RE2 engine)",
+      "description": "Create osm:regexp module exposing Go's regexp package to JavaScript. Functions: match, find, findAll, replace, replaceAll, split, compile (for reuse). RE2 guarantees linear-time matching.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T169: osm:encoding module (base64/hex)",
+      "description": "Create osm:encoding module with base64Encode, base64Decode, hexEncode, hexDecode functions. Supports standard and URL-safe base64 variants.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T170: osm config reset subcommand",
+      "description": "Add 'osm config reset' subcommand to reset configuration to defaults. Should support resetting individual keys or all keys. Add shell completion, tests, and docs.",
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {

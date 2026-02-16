@@ -142,12 +142,14 @@
     {
       "task": "T088: Shell completion: extend for all commands",
       "description": "Extend completion_command.go for bash/zsh/fish/powershell: sync subcommands, config key completion from DefaultSchema(), session subcommands, goal name completion, log tail. Integration tests.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added sync/config/log completions. configKeys() helper extracts from DefaultSchema(). 3 new tests x 4 shells."
     },
     {
       "task": "T089: Verify example scripts execute with current APIs",
       "description": "Run ALL scripts/ through test mode. Fix API breakages from T075 etc. Update scripts/README.md. Document interactive-only vs test-mode scripts.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "10/11 scripts verified clean. Fixed test-shooter-error.js (.run→bt.tick). Updated README.md with catalog."
     },
     {
       "task": "T090: Go module dependency audit",

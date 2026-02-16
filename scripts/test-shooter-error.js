@@ -18,12 +18,17 @@ try {
         throw new Error('This is an intentional error to test exit code');
     }
 
-    // Try to run it - this should fail
+    // Try to run it - bt.tick() returns "failure" (never throws)
     const tree = bt.createBlockingLeafNode(failingLeaf);
-    tree.run(new bt.Blackboard());
+    var result = bt.tick(tree);
+
+    // bt.tick() swallows errors and returns "failure" as a string
+    if (result === "failure") {
+        throw new Error('BT node failed as expected — testing non-zero exit');
+    }
 
     // If we get here, something is wrong
-    console.error('ERROR: Expected failure but execution succeeded');
+    console.error('ERROR: Expected failure but tick returned:', result);
 
 } catch (e) {
     // This is expected - re-throw to trigger non-zero exit

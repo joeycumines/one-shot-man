@@ -71,6 +71,10 @@ type mcpBuildPromptInput struct {
 	GoalName string `json:"goalName,omitempty" jsonschema:"Optional goal name to include instructions for"`
 }
 
+type mcpRemoveFileInput struct {
+	Path string `json:"path" jsonschema:"File or directory path to remove from context"`
+}
+
 // mcpContextItem holds a note or diff added via MCP tools.
 type mcpContextItem struct {
 	itemType string // "note" or "diff"
@@ -91,7 +95,7 @@ type mcpGoalInfo struct {
 	Category    string `json:"category,omitempty"`
 }
 
-// newMCPServer creates a configured MCP server with all six tools.
+// newMCPServer creates a configured MCP server with all eight tools.
 // It is unexported for testability via InMemoryTransport.
 func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, version string) *mcp.Server {
 	var mu sync.Mutex
@@ -282,6 +286,40 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 		}
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
+		}, nil, nil
+	})
+
+	// --- removeFile ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "removeFile",
+		Description: "Remove a file or directory from the prompt context",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpRemoveFileInput) (*mcp.CallToolResult, any, error) {
+		if input.Path == "" {
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("path is required"))
+			return result, nil, nil
+		}
+		if err := cm.RemovePath(input.Path); err != nil {
+			result := &mcp.CallToolResult{}
+			result.SetError(err)
+			return result, nil, nil
+		}
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("removed: %s", input.Path)}},
+		}, nil, nil
+	})
+
+	// --- clearContext ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "clearContext",
+		Description: "Remove all files, diffs, and notes from the prompt context",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
+		cm.Clear()
+		mu.Lock()
+		items = nil
+		mu.Unlock()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: "context cleared"}},
 		}, nil, nil
 	})
 

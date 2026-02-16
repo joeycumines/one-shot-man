@@ -167,12 +167,14 @@ func TestMCPServer_ToolList(t *testing.T) {
 	}
 
 	expected := map[string]bool{
-		"addFile":     false,
-		"addDiff":     false,
-		"addNote":     false,
-		"listContext": false,
-		"buildPrompt": false,
-		"getGoals":    false,
+		"addFile":      false,
+		"addDiff":      false,
+		"addNote":      false,
+		"removeFile":   false,
+		"listContext":  false,
+		"clearContext": false,
+		"buildPrompt":  false,
+		"getGoals":     false,
 	}
 	for _, tool := range result.Tools {
 		if _, ok := expected[tool.Name]; ok {
@@ -184,8 +186,8 @@ func TestMCPServer_ToolList(t *testing.T) {
 			t.Errorf("tool %q not registered", name)
 		}
 	}
-	if len(result.Tools) != 6 {
-		t.Errorf("got %d tools, want 6", len(result.Tools))
+	if len(result.Tools) != 8 {
+		t.Errorf("got %d tools, want 8", len(result.Tools))
 	}
 }
 
@@ -325,6 +327,165 @@ func TestMCPServer_AddNote_Empty(t *testing.T) {
 	result := env.callTool(t, "addNote", map[string]any{"text": ""})
 	if !result.IsError {
 		t.Error("expected IsError for empty text")
+	}
+}
+
+// --- removeFile ---
+
+func TestMCPServer_RemoveFile(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	// Create and add a file
+	testFile := filepath.Join(env.dir, "remove-me.txt")
+	if err := os.WriteFile(testFile, []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	r := env.callTool(t, "addFile", map[string]any{"path": testFile})
+	if r.IsError {
+		t.Fatalf("addFile: %s", mcpResultText(t, r))
+	}
+
+	// Verify file is in context
+	r = env.callTool(t, "listContext", nil)
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "remove-me.txt") {
+		t.Fatalf("file not in context after add: %s", text)
+	}
+
+	// Remove it
+	r = env.callTool(t, "removeFile", map[string]any{"path": testFile})
+	if r.IsError {
+		t.Fatalf("removeFile returned error: %s", mcpResultText(t, r))
+	}
+	text = mcpResultText(t, r)
+	if !strings.Contains(text, "removed") {
+		t.Errorf("removeFile text = %q, want to contain 'removed'", text)
+	}
+
+	// Verify file is gone from context
+	r = env.callTool(t, "listContext", nil)
+	text = mcpResultText(t, r)
+	if strings.Contains(text, "remove-me.txt") {
+		t.Errorf("file still in context after remove: %s", text)
+	}
+}
+
+func TestMCPServer_RemoveFile_EmptyPath(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	result := env.callTool(t, "removeFile", map[string]any{"path": ""})
+	if !result.IsError {
+		t.Error("expected IsError for empty path")
+	}
+	text := mcpResultText(t, result)
+	if !strings.Contains(text, "path is required") {
+		t.Errorf("error text = %q, want to contain 'path is required'", text)
+	}
+}
+
+func TestMCPServer_RemoveFile_NotTracked(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	// Remove a file that was never added — RemovePath is idempotent,
+	// so this should succeed without error.
+	result := env.callTool(t, "removeFile", map[string]any{
+		"path": filepath.Join(env.dir, "never-added.txt"),
+	})
+	if result.IsError {
+		t.Errorf("removeFile for untracked path should be idempotent, got error: %s",
+			mcpResultText(t, result))
+	}
+	text := mcpResultText(t, result)
+	if !strings.Contains(text, "removed") {
+		t.Errorf("removeFile text = %q, want to contain 'removed'", text)
+	}
+}
+
+// --- clearContext ---
+
+func TestMCPServer_ClearContext_Empty(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	// Clear when already empty — should succeed without error
+	result := env.callTool(t, "clearContext", nil)
+	if result.IsError {
+		t.Fatalf("clearContext returned error: %s", mcpResultText(t, result))
+	}
+	text := mcpResultText(t, result)
+	if !strings.Contains(text, "context cleared") {
+		t.Errorf("clearContext text = %q, want to contain 'context cleared'", text)
+	}
+}
+
+func TestMCPServer_ClearContext_Populated(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	// Add a file, note, and diff
+	testFile := filepath.Join(env.dir, "clear-me.txt")
+	if err := os.WriteFile(testFile, []byte("content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	env.callTool(t, "addFile", map[string]any{"path": testFile})
+	env.callTool(t, "addNote", map[string]any{"text": "a note"})
+	env.callTool(t, "addDiff", map[string]any{"diff": "+change\n"})
+
+	// Verify context is populated
+	r := env.callTool(t, "listContext", nil)
+	var before struct {
+		Files []string              `json:"files"`
+		Items []mcpListContextEntry `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &before); err != nil {
+		t.Fatal(err)
+	}
+	if len(before.Files) != 1 || len(before.Items) != 2 {
+		t.Fatalf("before clear: files=%d items=%d, want 1,2", len(before.Files), len(before.Items))
+	}
+
+	// Clear everything
+	r = env.callTool(t, "clearContext", nil)
+	if r.IsError {
+		t.Fatalf("clearContext returned error: %s", mcpResultText(t, r))
+	}
+
+	// Verify context is empty
+	r = env.callTool(t, "listContext", nil)
+	var after struct {
+		Files []string              `json:"files"`
+		Items []mcpListContextEntry `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &after); err != nil {
+		t.Fatal(err)
+	}
+	if len(after.Files) != 0 {
+		t.Errorf("after clear: files = %v, want empty", after.Files)
+	}
+	if len(after.Items) != 0 {
+		t.Errorf("after clear: items = %v, want empty", after.Items)
+	}
+}
+
+func TestMCPServer_ClearContext_BuildPromptAfterClear(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	// Add content then clear
+	env.callTool(t, "addNote", map[string]any{"text": "important note", "label": "my-note"})
+	env.callTool(t, "clearContext", nil)
+
+	// buildPrompt should reflect empty context
+	r := env.callTool(t, "buildPrompt", nil)
+	text := mcpResultText(t, r)
+	if strings.Contains(text, "important note") {
+		t.Errorf("prompt still contains cleared note: %s", text)
+	}
+	if strings.Contains(text, "my-note") {
+		t.Errorf("prompt still contains cleared label: %s", text)
 	}
 }
 

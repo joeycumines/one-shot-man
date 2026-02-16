@@ -383,14 +383,16 @@ The `mcp` command starts a Model Context Protocol server over stdio, enabling ex
 
 ### Architecture
 
-The server is implemented as a pure Go command (no scripting engine). It creates a `ContextManager` rooted at the working directory and exposes six tools:
+The server is implemented as a pure Go command (no scripting engine). It creates a `ContextManager` rooted at the working directory and exposes eight tools:
 
 | Tool | Description |
 |------|-------------|
 | `addFile` | Add files/directories via `ContextManager.AddPath` |
 | `addDiff` | Store diffs in an in-memory list |
 | `addNote` | Store notes in an in-memory list |
+| `removeFile` | Remove file/directory via `ContextManager.RemovePath` |
 | `listContext` | Return JSON listing of files and items |
+| `clearContext` | Clear all files (via `ContextManager.Clear`) and in-memory items |
 | `buildPrompt` | Assemble prompt from goal instructions + notes/diffs + txtar context |
 | `getGoals` | Return JSON array of available goals |
 

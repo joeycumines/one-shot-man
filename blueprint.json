@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200 DONE (5b86238), T201 DONE (c5ecde8), T202 DONE. Session 2026-02-17. Proceeding to T203."
+    "currentState": "T200 DONE (5b86238), T201 DONE (c5ecde8), T202 DONE (54cc73d), T203 DONE. Session 2026-02-17. Proceeding to T204."
   },
   "sequentialTasks": [
     {
@@ -35,7 +35,7 @@
     {
       "task": "T203: MCP server removeFile and clearContext tools",
       "description": "Extend MCP server (internal/command/mcp.go) with two new tools: removeFile (removes file by path from context) and clearContext (removes all files/diffs/notes). Follow existing addFile/addDiff/addNote pattern. Update tool count in docs/tests (6->8). Add unit tests. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T204: osm:regexp module — Go RE2 regexp exposed to JS",

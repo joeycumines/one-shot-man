@@ -8,13 +8,14 @@
 ## Current State
 - T200: DONE (commit 5b86238) — exec-safe POSIX shell quoting
 - T201: DONE (commit c5ecde8) — rename osm:nextIntegerId → osm:nextIntegerID
-- T202: DONE — migrate textarea runeWidth to uniseg + hitTestColumn extraction
+- T202: DONE (commit 54cc73d) — migrate textarea runeWidth to uniseg + hitTestColumn extraction
+- T203: DONE — MCP server removeFile and clearContext tools
 - Blueprint updated
 
 ## Next Step
-- T203: MCP server removeFile and clearContext tools
-- File: internal/command/mcp.go
-- Add removeFile and clearContext tools following existing addFile/addDiff/addNote pattern
+- T204: osm:regexp module — Go RE2 regexp exposed to JS
+- File: internal/builtin/regexp/
+- Create native module with match, find, findAll, replace, split, compile
 
 ## Architecture Notes
 - Old tasks T128-T170 have been remapped to T200-T269
@@ -33,4 +34,6 @@
 - T201 Committed: c5ecde8
 - T202 Run 1: PASS (scratch/review-t202-run1.md)
 - T202 Run 2: PASS (scratch/review-t202-run2.md)
-- T202 Commit: pending
+- T202 Committed: 54cc73d
+- T203 Run 1: pending
+- T203 Run 2: pending

@@ -175,12 +175,12 @@ osm should be able to orchestrate Claude Code (and potentially other TUI-based A
 
 #### Component 2: MCP-Based Data Exfiltration
 
-- **Bidirectional MCP**: osm already has an MCP server (`internal/command/mcp.go`) with 6 tools
+- **Bidirectional MCP**: osm already has an MCP server (`internal/command/mcp.go`) with 8 tools
 - **Claude as MCP Client**: Claude Code runs with MCP client enabled, connecting back to osm
 - **Session Identification**: Each Claude instance must clearly identify which osm session it's communicating with
 - **Tool Exfiltration**: Claude uses MCP tools to send structured data back to osm (e.g., split PR descriptions, test results)
 
-**Key Insight**: The existing MCP server (`addFile`, `addDiff`, `addNote`, `listContext`, `buildPrompt`, `getGoals`) provides a solid foundation for bidirectional communication.
+**Key Insight**: The existing MCP server (`addFile`, `addDiff`, `addNote`, `removeFile`, `listContext`, `clearContext`, `buildPrompt`, `getGoals`) provides a solid foundation for bidirectional communication.
 
 #### Component 3: PTY Parsing for Setup/Init
 
@@ -340,7 +340,7 @@ go test -v -run TestClaudeIntegration -provider=ollama -model=gpt-oss:20b-cloud
 
 **Existing Building Blocks**:
 
-1. **MCP Server** (`internal/command/mcp.go`): 6 tools for context management, stdio transport
+1. **MCP Server** (`internal/command/mcp.go`): 8 tools for context management, stdio transport
 2. **TUI Manager** (`internal/scripting/tui_manager.go`): Mode switching, command registration, go-prompt integration
 3. **PTY Support** (`internal/scripting/pty_test.go`): Proof-of-concept PTY usage
 4. **Goal System** (`internal/command/goal_builtin.go`): Declarative workflow definitions with state variables

@@ -139,14 +139,16 @@ Start an MCP (Model Context Protocol) server over stdio. Exposes osm's context m
 - Usage: `osm mcp`
 - No flags
 
-The server provides 6 tools:
+The server provides 8 tools:
 
 | Tool | Description |
 |------|-------------|
 | `addFile` | Add a file or directory to the prompt context |
 | `addDiff` | Add a unified diff to the prompt context |
 | `addNote` | Add a freeform text note to the prompt context |
+| `removeFile` | Remove a file or directory from the prompt context |
 | `listContext` | List all files, diffs, and notes currently in context |
+| `clearContext` | Remove all files, diffs, and notes from the prompt context |
 | `buildPrompt` | Build the complete prompt from current context (optionally with a goal) |
 | `getGoals` | List all available goals with their descriptions |
 

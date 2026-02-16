@@ -331,7 +331,8 @@
     {
       "task": "T120: Performance regression CI via benchmark tracking",
       "description": "Add make bench-save (run benchmarks, save JSON). Add make bench-compare (compare against baseline via benchstat-style analysis). Store baseline in repo.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added bench-save and bench-compare targets in config.mk. bench-save runs go test -bench=. -benchmem -count=5 -timeout=300s, filters output to benchmark-relevant lines, saves to bench-baseline.txt (723 lines, 655 benchmarks). bench-compare checks baseline exists, runs current benchmarks, compares via benchstat (with diff fallback). bench-current.txt gitignored. Baseline committed."
     },
     {
       "task": "T121: Add writeFile to osm:os module",

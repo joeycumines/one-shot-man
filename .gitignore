@@ -55,3 +55,6 @@ test-scripts/
 
 # Session timer file
 /.session-start
+
+# Benchmark comparison (current run, not baseline)
+/bench-current.txt

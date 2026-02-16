@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `make bench-save` and `make bench-compare` targets for performance regression tracking: `bench-save` runs all benchmarks with `-count=5` and saves a filtered baseline to `bench-baseline.txt`; `bench-compare` re-runs benchmarks and compares against baseline using `benchstat` (with `diff` fallback)
 - `osm config list` subcommand: displays all configuration values with their effective sources (`default`, `config`, or `env`) in a formatted table
 - `osm config diff` subcommand: shows only non-default configuration values (overridden via config file or environment variable)
 - `ResolveAll` and `ResolveDiff` methods on `ConfigSchema` for programmatic access to resolved configuration with source tracking

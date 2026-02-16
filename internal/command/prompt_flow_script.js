@@ -330,64 +330,10 @@ function buildCommands(state) {
             }
         },
         view: {
-            description: "View context items in an interactive table (TUI)",
+            description: "View context items (use 'list' instead)",
             usage: "view",
             handler: function (args) {
-                // Try to load tview module
-                let tview;
-                try {
-                    tview = require('osm:tview');
-                } catch (e) {
-                    output.print("Error: TUI view not available. Use 'list' for text output.");
-                    return;
-                }
-
-                const items = state.get(shared.contextItems);
-                if (items.length === 0) {
-                    output.print("No context items to view.");
-                    return;
-                }
-
-                // Build table data
-                const headers = ["ID", "Type", "Label", "Status"];
-                const rows = [];
-
-                for (const it of items) {
-                    let label = it.label || "";
-                    let status = "";
-
-                    if (it.type === 'file' && it.label && !ctxmgr.fileExists(it.label)) {
-                        status = "missing";
-                    } else {
-                        status = "ok";
-                    }
-
-                    rows.push([
-                        String(it.id),
-                        it.type || "",
-                        label,
-                        status
-                    ]);
-                }
-
-                // Show the interactive table and surface any error to the user
-                var _tviewErr = tview.interactiveTable({
-                    title: "Context Items (" + items.length + " items) - Press Enter to edit, Escape/q to close",
-                    headers: headers,
-                    rows: rows,
-                    footer: "Use arrow keys to navigate | Press Enter to edit selected item | Press Escape or 'q' to close",
-                    onSelect: function (rowIndex) {
-                        // When user selects a row, edit that item
-                        const item = items[rowIndex];
-                        if (item) {
-                            // Call the edit command with the item's ID
-                            baseCommands.edit.handler([String(item.id)]);
-                        }
-                    }
-                });
-                if (_tviewErr) {
-                    output.print("TUI view error: " + _tviewErr);
-                }
+                output.print("The 'view' command has been removed. Use 'list' for context item output.");
             }
         },
         edit: {

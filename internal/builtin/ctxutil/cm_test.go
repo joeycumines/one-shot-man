@@ -28,7 +28,7 @@ func setupContextManager(t *testing.T) *goja.Runtime {
 			t.Logf("TUI: %s", s)
 		},
 		registry,
-		nil, nil, eventLoopProvider)
+		nil, eventLoopProvider)
 
 	registry.Enable(runtime)
 

@@ -211,12 +211,6 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:bt` | Behavior tree primitives ([go-behaviortree](https://github.com/joeycumines/go-behaviortree)) | Status: `success`, `failure`, `running`; Nodes: `node(tick, ...children)`, `createLeafNode(fn)`, `createBlockingLeafNode(fn)`; Composites: `sequence(children)`, `fallback(children)` / `selector(children)`, `fork()`; Decorators: `memorize(tick)`, `async(tick)`, `not(tick)`, `interval(ms)`; Execution: `tick(node)`, `newTicker(ms, node, opts?)`, `newManager()`; State: `new Blackboard()`, `exposeBlackboard(bb)` |
 | `osm:pabt` | Planning-Augmented Behavior Trees ([go-pabt](https://github.com/joeycumines/go-pabt)) | `newState(blackboard) → State`, `newAction(name, conditions, effects, node) → Action`, `newPlan(state, goals) → Plan`, `newExprCondition(key, expr, value?) → Condition`; State: `.variable(key)`, `.get(key)`, `.set(key, value)`, `.registerAction(name, action)`, `.getAction(name)`, `.setActionGenerator(fn)`; Plan: `.node()`, `.running()` |
 
-#### Deprecated
-
-| Module | Description | Key exports |
-|--------|-------------|-------------|
-| `osm:tview` | **Deprecated.** TView TUI helpers (proof-of-concept, superseded by `osm:bubbletea`). Will be removed in a future release. A deprecation warning is emitted to stderr when loaded. See [tview-deprecation.md](archive/notes/tview-deprecation.md). | — |
-
 ### osm:bt (Behavior Trees)
 
 Core behavior tree primitives from [go-behaviortree](https://github.com/joeycumines/go-behaviortree).

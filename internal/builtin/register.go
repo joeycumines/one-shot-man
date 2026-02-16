@@ -2,11 +2,8 @@ package builtin
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"os"
 
-	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/eventloop"
 	"github.com/dop251/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/builtin/argv"
@@ -27,17 +24,11 @@ import (
 	templatemod "github.com/joeycumines/one-shot-man/internal/builtin/template"
 	scrollbarmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/scrollbar"
 	timemod "github.com/joeycumines/one-shot-man/internal/builtin/time"
-	tviewmod "github.com/joeycumines/one-shot-man/internal/builtin/tview" //lint:ignore SA1019 wiring deprecated module until removal
 	unicodetextmod "github.com/joeycumines/one-shot-man/internal/builtin/unicodetext"
 )
 
-// TViewManagerProvider provides access to a tview manager instance.
-type TViewManagerProvider interface {
-	GetTViewManager() *tviewmod.Manager
-}
-
 // TerminalOpsProvider provides access to terminal I/O with proper lifecycle management.
-// This interface allows subsystems (bubbletea, tview) to share a single terminal
+// This interface allows subsystems (e.g. bubbletea) to share a single terminal
 // state manager instead of each creating their own, preventing conflicts.
 type TerminalOpsProvider interface {
 	// GetTerminalReader returns the terminal reader (implements io.Reader and provides Fd/IsTerminal)
@@ -77,7 +68,6 @@ type RegisterResult struct {
 
 // Register registers all native Go modules with the provided registry, wiring
 // modules that need host context or TUI output with the provided values.
-// The tviewProvider parameter is optional and can be nil if tview functionality is not needed.
 // The terminalProvider parameter is optional; if nil, bubbletea will use os.Stdin/os.Stdout.
 //
 // CRITICAL: eventLoopProvider is REQUIRED. Panics if nil.
@@ -85,7 +75,7 @@ type RegisterResult struct {
 // BubbleTea programs would cause data races when calling JS from their goroutine.
 //
 // Returns a RegisterResult containing references to created managers for further wiring.
-func Register(ctx context.Context, tuiSink func(string), registry *require.Registry, tviewProvider TViewManagerProvider, terminalProvider TerminalOpsProvider, eventLoopProvider EventLoopProvider) RegisterResult {
+func Register(ctx context.Context, tuiSink func(string), registry *require.Registry, terminalProvider TerminalOpsProvider, eventLoopProvider EventLoopProvider) RegisterResult {
 	if eventLoopProvider == nil {
 		panic("builtin.Register: eventLoopProvider is REQUIRED - cannot be nil; thread-safe JS execution requires an event loop")
 	}
@@ -101,20 +91,6 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"ctxutil", ctxutils.Require(ctx))
 	registry.RegisterNativeModule(prefix+"text/template", templatemod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"unicodetext", unicodetextmod.Require(ctx))
-
-	// Register tview module if provider is available
-	// Deprecated: osm:tview is deprecated in favor of osm:bubbletea.
-	// A deprecation warning is emitted to stderr when the module is loaded.
-	if tviewProvider != nil {
-		tviewMgr := tviewProvider.GetTViewManager()
-		if tviewMgr != nil {
-			tviewRequire := tviewmod.Require(ctx, tviewMgr) //lint:ignore SA1019 wiring deprecated module until removal
-			registry.RegisterNativeModule(prefix+"tview", func(runtime *goja.Runtime, module *goja.Object) {
-				fmt.Fprintln(os.Stderr, "osm: warning: osm:tview is deprecated and will be removed in a future release; use osm:bubbletea instead")
-				tviewRequire(runtime, module)
-			})
-		}
-	}
 
 	// Register lipgloss module - always available as it's stateless
 	lipglossMgr := lipglossmod.NewManager()

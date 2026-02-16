@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refactored txtar collision handling to use full relative paths instead of filename-only deduplication
 
 ### Removed
+- `osm:tview` native module and entire `internal/builtin/tview/` package (~2,100 lines): superseded by `osm:bubbletea`
+- `TViewManagerProvider` interface and `GetTViewManager()` method from scripting engine
+- `rivo/tview` and `gdamore/tcell/v2` Go module dependencies
 - Deprecated `tui.createAdvancedPrompt` alias; use `tui.createPrompt` instead
 - Deprecated `GetStateViaJS`/`SetStateViaJS` aliases from scripting API
 - `ContextCommand` interface from command package

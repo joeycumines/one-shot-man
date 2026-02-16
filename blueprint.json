@@ -232,7 +232,8 @@
     {
       "task": "T103: Execute tview/tcell module removal",
       "description": "Execute 11-step checklist from tview-removal-plan.md. Delete internal/builtin/tview/ (6 files, ~1,700 lines). Remove TViewManagerProvider from register.go and engine_core.go. Handle prompt_flow_script.js view command. go mod tidy. Verify all platforms.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Deleted 6 tview files (~2,100 lines). Removed TViewManagerProvider, GetTViewManager, tviewManager field. Updated Register() signature across 3 callers. Replaced view command with stub. go mod tidy removed rivo/tview and gdamore/tcell/v2. Updated 5 docs + CHANGELOG. Cleaned stale comments in tui_io.go, tui_manager.go, engine_core.go. Zero tview references in live code. Rule of Two passed."
     },
     {
       "task": "T104: Git sync notebook save and list (Phase 1)",

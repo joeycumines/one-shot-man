@@ -165,11 +165,10 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 | `osm:bubbles/textarea` | Multi-line text input component |
 | `osm:bubbles/viewport` | Scrollable content viewport |
 
-### TUI framework (legacy)
+### Other TUI components
 
 | Module | Description |
 |--------|-------------|
-| `osm:tview` | tview terminal UI (deprecated; scheduled for removal) |
 | `osm:termui/scrollbar` | Custom scrollbar widget |
 
 ### Behavior trees and planning

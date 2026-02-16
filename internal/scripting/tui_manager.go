@@ -796,7 +796,7 @@ func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
 	options = append(options, staticGoPromptOptions...)
 
 	// CRITICAL: Inject the shared reader/writer into go-prompt.
-	// This ensures go-prompt uses the same terminal I/O as bubbletea and tview,
+	// This ensures go-prompt uses the same terminal I/O as bubbletea,
 	// preventing conflicts over stdin and ensuring proper terminal state cleanup.
 	options = append(options,
 		prompt.WithReader(tm.reader),

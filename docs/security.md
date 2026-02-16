@@ -118,11 +118,6 @@ Attempts to `require('go:os')`, `require('node:fs')`, or other prefixes fail.
 | `osm:bt` | Behavior trees | JS orchestration |
 | `osm:pabt` | Planning-augmented BT | JS orchestration |
 
-#### `osm:tview` (Deprecated)
-
-Deprecated in favor of `osm:bubbletea`. Emits a warning to stderr when loaded.
-Only available if a tview manager is provided during registration.
-
 ## Global Scope
 
 The Goja VM exposes exactly these globals:

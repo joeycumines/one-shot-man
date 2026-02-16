@@ -16,7 +16,6 @@ import (
 	"github.com/dop251/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
-	tviewmod "github.com/joeycumines/one-shot-man/internal/builtin/tview" //lint:ignore SA1019 deprecated module still wired until removal
 	"github.com/joeycumines/one-shot-man/internal/goroutineid"
 )
 
@@ -80,7 +79,6 @@ type Engine struct {
 	threadCheckMode      bool  // If true, SetGlobal/GetGlobal panic on wrong goroutine
 	eventLoopGoroutineID int64 // Captured at initialization for thread checking (atomic)
 	tuiManager           *TUIManager
-	tviewManager         *tviewmod.Manager
 	contextManager       *ContextManager
 	logger               *TUILogger
 	terminalIO           *TerminalIO               // Shared terminal I/O for all TUI subsystems
@@ -194,17 +192,12 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 	// Capture event loop goroutine ID using atomic store for thread-safe access (C5 fix)
 	atomic.StoreInt64(&engine.eventLoopGoroutineID, runtime.eventLoopGoroutineID.Load())
 
-	// Create tview manager WITHOUT terminal ops - let tview/tcell manage its own TTY.
-	// Using TerminalIO here conflicts with go-prompt's reader which is already consuming
-	// stdin. tcell expects raw os.Stdin access, not go-prompt's buffered reader.
-	engine.tviewManager = tviewmod.NewManagerWithTerminal(ctx, nil, nil, nil, nil)
-
 	// Register native Go modules. These are all prefixed with "osm:".
 	// Pass through the engine's context and a TUI sink for modules that need them.
 	// Pass 'engine' as terminalProvider so bubbletea uses the unified TerminalIO
 	// instead of defaulting to raw os.Stdin (which would violate Single Source of Truth).
 	// Pass 'engine' as eventLoopProvider so bt shares the event loop.
-	registerResult := builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine, engine)
+	registerResult := builtin.Register(ctx, func(msg string) { engine.logger.PrintToTUI(msg) }, engine.registry, engine, engine)
 	engine.bubbleteaManager = registerResult.BubbleteaManager
 	engine.btBridge = registerResult.BTBridge
 	engine.bubblezoneManager = registerResult.BubblezoneManager
@@ -510,11 +503,6 @@ func (e *Engine) GetTUIManager() *TUIManager {
 	return e.tuiManager
 }
 
-// GetTViewManager returns the TView manager for this engine.
-func (e *Engine) GetTViewManager() *tviewmod.Manager {
-	return e.tviewManager
-}
-
 // GetTerminalReader returns the shared terminal reader.
 // This implements builtin.TerminalOpsProvider.
 func (e *Engine) GetTerminalReader() io.Reader {
@@ -579,7 +567,7 @@ func (e *Engine) Close() error {
 
 	// NOTE: We intentionally do NOT close terminalIO here.
 	// TerminalIO wraps stdin/stdout which are process-owned resources.
-	// Each subsystem (go-prompt, tview, bubbletea) manages its own terminal
+	// Each subsystem (go-prompt, bubbletea) manages its own terminal
 	// state lifecycle independently. Attempting to close terminalIO causes
 	// "bad file descriptor" errors because go-prompt's reader has already
 	// been closed when the prompt loop exits.

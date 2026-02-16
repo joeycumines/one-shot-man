@@ -1240,17 +1240,6 @@ func TestEngine_GetTUIManager(t *testing.T) {
 	}
 }
 
-func TestEngine_GetTViewManager(t *testing.T) {
-	t.Parallel()
-	var stdout, stderr bytes.Buffer
-	ctx := context.Background()
-	engine := newTestEngine(t, ctx, &stdout, &stderr)
-	tviewMgr := engine.GetTViewManager()
-	if tviewMgr == nil {
-		t.Fatal("GetTViewManager() should not return nil for initialized engine")
-	}
-}
-
 func TestEngine_SetTestMode(t *testing.T) {
 	t.Parallel()
 	var stdout, stderr bytes.Buffer

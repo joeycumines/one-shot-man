@@ -11,7 +11,7 @@ import (
 
 // TerminalOps defines the interface for terminal operations.
 // This interface captures the minimal set of operations required by TUI libraries
-// (go-prompt, bubbletea, tview/tcell) to manage terminal state.
+// (go-prompt, bubbletea) to manage terminal state.
 //
 // All subsystems must use implementations of this interface rather than
 // accessing os.Stdin/os.Stdout directly, ensuring proper lifecycle management
@@ -628,11 +628,11 @@ func NewTUIReaderFromIO(r io.Reader) *TUIReader {
 }
 
 // TerminalIO combines TUIReader and TUIWriter to implement the full TerminalOps interface.
-// This is the struct that should be passed to subsystems (bubbletea, tview) that need
+// This is the struct that should be passed to subsystems (e.g. bubbletea) that need
 // both read and write access to the terminal with proper lifecycle management.
 //
 // IMPORTANT: TerminalIO does NOT track terminal state (raw mode). Each subsystem
-// (go-prompt, tview, bubbletea) is responsible for its own MakeRaw/Restore calls.
+// (go-prompt, bubbletea) is responsible for its own MakeRaw/Restore calls.
 // This avoids double-restore issues when multiple subsystems share the same terminal.
 type TerminalIO struct {
 	*TUIReader
@@ -723,7 +723,7 @@ func (t *TerminalIO) IsTerminal() bool {
 // Close closes both the reader and writer.
 // This method is idempotent and thread-safe.
 // NOTE: TerminalIO does NOT restore terminal state on close. Each subsystem
-// (go-prompt, tview, bubbletea) is responsible for its own Restore() calls.
+// (go-prompt, bubbletea) is responsible for its own Restore() calls.
 func (t *TerminalIO) Close() error {
 	t.closeMu.Lock()
 	if t.closed {

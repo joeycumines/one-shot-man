@@ -830,3 +830,188 @@ func TestGlobalOptionsReturnsCopy(t *testing.T) {
 		t.Fatal("GlobalOptions() should return a copy, but original was modified")
 	}
 }
+
+// --- T119: ResolveAll and ResolveDiff tests ---
+
+func TestResolveAll_DefaultsOnly(t *testing.T) {
+	t.Parallel()
+	s := NewSchema()
+	s.Register(ConfigOption{Key: "verbose", Type: TypeBool, Default: "false"})
+	s.Register(ConfigOption{Key: "color", Type: TypeString, Default: "auto"})
+
+	c := NewConfig()
+	resolved := s.ResolveAll(c)
+
+	if len(resolved) != 2 {
+		t.Fatalf("expected 2 resolved options, got %d", len(resolved))
+	}
+	for _, ro := range resolved {
+		if ro.Source != SourceDefault {
+			t.Errorf("expected source=default for %q, got %q", ro.Key, ro.Source)
+		}
+	}
+	if resolved[0].Key != "verbose" || resolved[0].Value != "false" {
+		t.Errorf("expected verbose=false, got %s=%s", resolved[0].Key, resolved[0].Value)
+	}
+	if resolved[1].Key != "color" || resolved[1].Value != "auto" {
+		t.Errorf("expected color=auto, got %s=%s", resolved[1].Key, resolved[1].Value)
+	}
+}
+
+func TestResolveAll_ConfigOverride(t *testing.T) {
+	t.Parallel()
+	s := NewSchema()
+	s.Register(ConfigOption{Key: "verbose", Type: TypeBool, Default: "false"})
+	s.Register(ConfigOption{Key: "color", Type: TypeString, Default: "auto"})
+
+	c := NewConfig()
+	c.SetGlobalOption("color", "never")
+
+	resolved := s.ResolveAll(c)
+
+	// verbose should be default
+	if resolved[0].Source != SourceDefault {
+		t.Errorf("expected default for verbose, got %q", resolved[0].Source)
+	}
+	// color should be config
+	if resolved[1].Source != SourceConfig {
+		t.Errorf("expected config for color, got %q", resolved[1].Source)
+	}
+	if resolved[1].Value != "never" {
+		t.Errorf("expected color=never, got %q", resolved[1].Value)
+	}
+}
+
+func TestResolveAll_EnvOverride(t *testing.T) {
+	s := NewSchema()
+	s.Register(ConfigOption{Key: "editor", Type: TypeString, Default: "vi", EnvVar: "OSM_TEST_RESOLVE_ALL_EDITOR"})
+
+	c := NewConfig()
+	c.SetGlobalOption("editor", "vim")
+
+	t.Setenv("OSM_TEST_RESOLVE_ALL_EDITOR", "nano")
+
+	resolved := s.ResolveAll(c)
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved option, got %d", len(resolved))
+	}
+	if resolved[0].Source != SourceEnv {
+		t.Errorf("expected env source, got %q", resolved[0].Source)
+	}
+	if resolved[0].Value != "nano" {
+		t.Errorf("expected nano, got %q", resolved[0].Value)
+	}
+}
+
+func TestResolveAll_EnvPrecedenceOverConfig(t *testing.T) {
+	s := NewSchema()
+	s.Register(ConfigOption{Key: "level", Type: TypeString, Default: "info", EnvVar: "OSM_TEST_RESOLVE_LEVEL"})
+
+	c := NewConfig()
+	c.SetGlobalOption("level", "warn")
+
+	t.Setenv("OSM_TEST_RESOLVE_LEVEL", "debug")
+
+	resolved := s.ResolveAll(c)
+	if resolved[0].Source != SourceEnv {
+		t.Errorf("expected env source when both config and env are set, got %q", resolved[0].Source)
+	}
+	if resolved[0].Value != "debug" {
+		t.Errorf("expected debug from env, got %q", resolved[0].Value)
+	}
+}
+
+func TestResolveAll_SkipsCommandSectionOptions(t *testing.T) {
+	t.Parallel()
+	s := NewSchema()
+	s.Register(ConfigOption{Key: "verbose", Type: TypeBool, Default: "false"})
+	s.Register(ConfigOption{Key: "pager", Type: TypeString, Section: "help"})
+
+	c := NewConfig()
+	resolved := s.ResolveAll(c)
+	// Only global option should appear
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved option (global only), got %d", len(resolved))
+	}
+	if resolved[0].Key != "verbose" {
+		t.Errorf("expected verbose, got %q", resolved[0].Key)
+	}
+}
+
+func TestResolveDiff_AllDefaults(t *testing.T) {
+	t.Parallel()
+	s := NewSchema()
+	s.Register(ConfigOption{Key: "verbose", Type: TypeBool, Default: "false"})
+	s.Register(ConfigOption{Key: "color", Type: TypeString, Default: "auto"})
+
+	c := NewConfig()
+	diff := s.ResolveDiff(c)
+	if len(diff) != 0 {
+		t.Fatalf("expected empty diff for all defaults, got %d entries", len(diff))
+	}
+}
+
+func TestResolveDiff_ConfigOverrides(t *testing.T) {
+	t.Parallel()
+	s := NewSchema()
+	s.Register(ConfigOption{Key: "verbose", Type: TypeBool, Default: "false"})
+	s.Register(ConfigOption{Key: "color", Type: TypeString, Default: "auto"})
+	s.Register(ConfigOption{Key: "pager", Type: TypeString, Default: ""})
+
+	c := NewConfig()
+	c.SetGlobalOption("color", "never")
+
+	diff := s.ResolveDiff(c)
+	if len(diff) != 1 {
+		t.Fatalf("expected 1 diff entry, got %d", len(diff))
+	}
+	if diff[0].Key != "color" || diff[0].Value != "never" || diff[0].Source != SourceConfig {
+		t.Errorf("unexpected diff entry: %+v", diff[0])
+	}
+}
+
+func TestResolveDiff_EnvOverrides(t *testing.T) {
+	s := NewSchema()
+	s.Register(ConfigOption{Key: "session.id", Type: TypeString, Default: "", EnvVar: "OSM_TEST_RESOLVE_DIFF_SID"})
+	s.Register(ConfigOption{Key: "verbose", Type: TypeBool, Default: "false"})
+
+	c := NewConfig()
+	t.Setenv("OSM_TEST_RESOLVE_DIFF_SID", "my-session")
+
+	diff := s.ResolveDiff(c)
+	if len(diff) != 1 {
+		t.Fatalf("expected 1 diff entry, got %d", len(diff))
+	}
+	if diff[0].Key != "session.id" || diff[0].Source != SourceEnv {
+		t.Errorf("unexpected diff entry: %+v", diff[0])
+	}
+}
+
+func TestResolveAll_ConfigValueSameAsDefault(t *testing.T) {
+	t.Parallel()
+	s := NewSchema()
+	s.Register(ConfigOption{Key: "verbose", Type: TypeBool, Default: "false"})
+
+	c := NewConfig()
+	// Explicitly setting the same value as the default — still "config" source
+	c.SetGlobalOption("verbose", "false")
+
+	resolved := s.ResolveAll(c)
+	if resolved[0].Source != SourceConfig {
+		t.Errorf("expected config source even when value matches default, got %q", resolved[0].Source)
+	}
+}
+
+func TestResolvedOption_DefaultField(t *testing.T) {
+	t.Parallel()
+	s := NewSchema()
+	s.Register(ConfigOption{Key: "color", Type: TypeString, Default: "auto"})
+
+	c := NewConfig()
+	c.SetGlobalOption("color", "never")
+
+	resolved := s.ResolveAll(c)
+	if resolved[0].Default != "auto" {
+		t.Errorf("expected Default=auto, got %q", resolved[0].Default)
+	}
+}

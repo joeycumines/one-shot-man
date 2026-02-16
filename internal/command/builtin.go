@@ -202,6 +202,8 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 			_, _ = fmt.Fprintln(stdout, "  config --all          - Show all configuration")
 			_, _ = fmt.Fprintln(stdout, "  config validate       - Validate configuration")
 			_, _ = fmt.Fprintln(stdout, "  config schema         - Show configuration schema")
+			_, _ = fmt.Fprintln(stdout, "  config list           - List all values with sources")
+			_, _ = fmt.Fprintln(stdout, "  config diff           - Show non-default values")
 			return nil
 		}
 	}
@@ -221,6 +223,18 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		}
 		_, _ = fmt.Fprint(stdout, config.DefaultSchema().FormatHelp())
 		return nil
+	case "list":
+		if len(args) > 1 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
+			return fmt.Errorf("unexpected arguments")
+		}
+		return c.executeList(stdout)
+	case "diff":
+		if len(args) > 1 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
+			return fmt.Errorf("unexpected arguments")
+		}
+		return c.executeDiff(stdout)
 	}
 
 	if len(args) == 1 {
@@ -286,6 +300,36 @@ func (c *ConfigCommand) executeValidate(stdout io.Writer) error {
 		_, _ = fmt.Fprintf(stdout, "  - %s\n", issue)
 	}
 	return nil
+}
+
+// executeList shows all configuration values with their sources.
+func (c *ConfigCommand) executeList(stdout io.Writer) error {
+	schema := config.DefaultSchema()
+	resolved := schema.ResolveAll(c.config)
+	writeResolvedTable(stdout, resolved)
+	return nil
+}
+
+// executeDiff shows only non-default configuration values.
+func (c *ConfigCommand) executeDiff(stdout io.Writer) error {
+	schema := config.DefaultSchema()
+	diff := schema.ResolveDiff(c.config)
+	if len(diff) == 0 {
+		_, _ = fmt.Fprintln(stdout, "All values are at their defaults.")
+		return nil
+	}
+	writeResolvedTable(stdout, diff)
+	return nil
+}
+
+// writeResolvedTable writes a formatted table of ResolvedOptions.
+func writeResolvedTable(w io.Writer, resolved []config.ResolvedOption) {
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "KEY\tVALUE\tSOURCE")
+	for _, ro := range resolved {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", ro.Key, ro.Value, ro.Source)
+	}
+	_ = tw.Flush()
 }
 
 // InitCommand initializes the one-shot-man environment.

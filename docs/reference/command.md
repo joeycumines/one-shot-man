@@ -41,6 +41,8 @@ Subcommands:
 - `osm config <key> <value>` — set a configuration value **persistently** (writes to the config file on disk). The value is validated against the schema before writing; unknown keys produce a warning and invalid values are rejected.
 - `osm config validate` — validate the current configuration against the schema and report any issues
 - `osm config schema` — print the full configuration schema with all known keys, types, defaults, and descriptions
+- `osm config list` — list all configuration values with their sources (`default`, `config`, or `env`), formatted as a table
+- `osm config diff` — show only non-default values (overridden via config file or environment variable)
 
 ### `osm completion`
 

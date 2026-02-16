@@ -510,3 +510,266 @@ func TestValidateOptionValue_AllTypes(t *testing.T) {
 		})
 	}
 }
+
+// --- T119: config list and config diff subcommands ---
+
+func TestConfigList_ShowsAllKeys(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"list"}, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stdout.String()
+	// Must contain the header
+	if !strings.Contains(out, "KEY") || !strings.Contains(out, "VALUE") || !strings.Contains(out, "SOURCE") {
+		t.Fatalf("expected table header, got:\n%s", out)
+	}
+
+	// Check that all global schema keys appear
+	schema := config.DefaultSchema()
+	for _, opt := range schema.GlobalOptions() {
+		if !strings.Contains(out, opt.Key) {
+			t.Errorf("expected key %q in list output", opt.Key)
+		}
+	}
+}
+
+func TestConfigList_ShowsDefaultSource(t *testing.T) {
+	// Unset all schema env vars that could interfere.
+	// Can't use t.Parallel() because we modify environment directly.
+	envVars := []string{"OSM_SESSION_ID", "EDITOR", "OSM_LOG_FILE", "OSM_LOG_LEVEL"}
+	saved := make(map[string]string)
+	for _, e := range envVars {
+		if v, ok := os.LookupEnv(e); ok {
+			saved[e] = v
+		}
+		os.Unsetenv(e)
+	}
+	t.Cleanup(func() {
+		for _, e := range envVars {
+			if v, ok := saved[e]; ok {
+				os.Setenv(e, v)
+			} else {
+				os.Unsetenv(e)
+			}
+		}
+	})
+
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"list"}, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stdout.String()
+	// With no customizations and no env vars, everything should be "default"
+	for _, line := range strings.Split(out, "\n") {
+		if line == "" || strings.HasPrefix(line, "KEY") {
+			continue
+		}
+		if !strings.Contains(line, "default") {
+			t.Errorf("expected 'default' source in line: %q", line)
+		}
+	}
+}
+
+func TestConfigList_ShowsConfigSource(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("color", "always")
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"list"}, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stdout.String()
+	// Find the line with "color" — it should say "config"
+	found := false
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "color") {
+			found = true
+			if !strings.Contains(line, "config") {
+				t.Errorf("expected 'config' source for color, got: %q", line)
+			}
+			if !strings.Contains(line, "always") {
+				t.Errorf("expected value 'always' for color, got: %q", line)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected 'color' key in list output")
+	}
+}
+
+func TestConfigList_ShowsEnvSource(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg)
+
+	t.Setenv("OSM_SESSION_ID", "test-session-42")
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"list"}, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stdout.String()
+	found := false
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "session.id") {
+			found = true
+			if !strings.Contains(line, "env") {
+				t.Errorf("expected 'env' source for session.id, got: %q", line)
+			}
+			if !strings.Contains(line, "test-session-42") {
+				t.Errorf("expected value 'test-session-42' for session.id, got: %q", line)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected 'session.id' key in list output")
+	}
+}
+
+func TestConfigList_RejectsExtraArgs(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"list", "extra"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for extra args")
+	}
+	if !strings.Contains(err.Error(), "unexpected arguments") {
+		t.Fatalf("expected 'unexpected arguments' error, got: %v", err)
+	}
+}
+
+func TestConfigDiff_ShowsNonDefaults(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("verbose", "true")
+	cfg.SetGlobalOption("color", "never")
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"diff"}, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stdout.String()
+	// Header must be present
+	if !strings.Contains(out, "KEY") {
+		t.Fatalf("expected table header, got:\n%s", out)
+	}
+	// verbose and color should appear
+	if !strings.Contains(out, "verbose") {
+		t.Error("expected 'verbose' in diff output")
+	}
+	if !strings.Contains(out, "color") {
+		t.Error("expected 'color' in diff output")
+	}
+	// Keys that are at default should NOT appear — pick one that's definitely default
+	if strings.Contains(out, "pager") {
+		t.Error("expected default key 'pager' to NOT appear in diff output")
+	}
+}
+
+func TestConfigDiff_AllDefaults(t *testing.T) {
+	// Unset all schema env vars that could make diff show non-defaults.
+	envVars := []string{"OSM_SESSION_ID", "EDITOR", "OSM_LOG_FILE", "OSM_LOG_LEVEL"}
+	saved := make(map[string]string)
+	for _, e := range envVars {
+		if v, ok := os.LookupEnv(e); ok {
+			saved[e] = v
+		}
+		os.Unsetenv(e)
+	}
+	t.Cleanup(func() {
+		for _, e := range envVars {
+			if v, ok := saved[e]; ok {
+				os.Setenv(e, v)
+			} else {
+				os.Unsetenv(e)
+			}
+		}
+	})
+
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"diff"}, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "All values are at their defaults.") {
+		t.Fatalf("expected defaults message, got:\n%s", out)
+	}
+}
+
+func TestConfigDiff_IncludesEnvOverrides(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg)
+
+	t.Setenv("OSM_LOG_LEVEL", "debug")
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"diff"}, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "log.level") {
+		t.Error("expected 'log.level' in diff output when env overrides default")
+	}
+	if !strings.Contains(out, "debug") {
+		t.Error("expected value 'debug' in diff output")
+	}
+	if !strings.Contains(out, "env") {
+		t.Error("expected 'env' source in diff output")
+	}
+}
+
+func TestConfigDiff_RejectsExtraArgs(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"diff", "extra"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for extra args")
+	}
+	if !strings.Contains(err.Error(), "unexpected arguments") {
+		t.Fatalf("expected 'unexpected arguments' error, got: %v", err)
+	}
+}
+
+func TestConfigUsage_IncludesListAndDiff(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute(nil, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "config list") {
+		t.Error("expected usage to mention 'config list'")
+	}
+	if !strings.Contains(out, "config diff") {
+		t.Error("expected usage to mention 'config diff'")
+	}
+}

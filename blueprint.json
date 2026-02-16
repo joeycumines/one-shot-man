@@ -325,7 +325,8 @@
     {
       "task": "T119: Configuration model iteration: typed sections",
       "description": "Add osm config list (all values with sources), osm config diff (non-default values). Typed section support for schema declaration.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added config list and config diff subcommands with source tracking (default/config/env). ResolveAll/ResolveDiff on ConfigSchema. Shell completion updated (4 shells). 21 tests (11 schema + 10 command). Docs: command.md, CHANGELOG.md."
     },
     {
       "task": "T120: Performance regression CI via benchmark tracking",

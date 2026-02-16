@@ -247,6 +247,78 @@ func validateType(t OptionType, value string) error {
 	return nil
 }
 
+// ConfigSource indicates where a configuration value originated.
+type ConfigSource string
+
+const (
+	// SourceDefault means the value is the schema-declared default.
+	SourceDefault ConfigSource = "default"
+	// SourceConfig means the value was set in the configuration file.
+	SourceConfig ConfigSource = "config"
+	// SourceEnv means the value was set via an environment variable.
+	SourceEnv ConfigSource = "env"
+)
+
+// ResolvedOption holds the effective value for a config key along with
+// metadata about where the value came from.
+type ResolvedOption struct {
+	Key     string
+	Value   string
+	Default string
+	Source  ConfigSource
+	EnvVar  string
+}
+
+// ResolveAll returns a ResolvedOption for every global option in the schema,
+// in registration order. Each entry records the effective value and its source
+// (env → config → default).
+func (s *ConfigSchema) ResolveAll(c *Config) []ResolvedOption {
+	globals := s.GlobalOptions()
+	out := make([]ResolvedOption, 0, len(globals))
+	for _, opt := range globals {
+		ro := ResolvedOption{
+			Key:     opt.Key,
+			Default: opt.Default,
+			EnvVar:  opt.EnvVar,
+		}
+
+		// Determine source: env → config → default.
+		if opt.EnvVar != "" {
+			if envVal, ok := os.LookupEnv(opt.EnvVar); ok {
+				ro.Value = envVal
+				ro.Source = SourceEnv
+				out = append(out, ro)
+				continue
+			}
+		}
+		if cfgVal, ok := c.GetGlobalOption(opt.Key); ok {
+			ro.Value = cfgVal
+			// If the config value happens to equal the default, it's still
+			// "config" sourced because the user explicitly set it.
+			ro.Source = SourceConfig
+			out = append(out, ro)
+			continue
+		}
+		ro.Value = opt.Default
+		ro.Source = SourceDefault
+		out = append(out, ro)
+	}
+	return out
+}
+
+// ResolveDiff returns ResolvedOptions for global options whose effective value
+// differs from the schema default (i.e. overridden via config file or env).
+func (s *ConfigSchema) ResolveDiff(c *Config) []ResolvedOption {
+	all := s.ResolveAll(c)
+	diff := make([]ResolvedOption, 0, len(all))
+	for _, ro := range all {
+		if ro.Source != SourceDefault {
+			diff = append(diff, ro)
+		}
+	}
+	return diff
+}
+
 // --- Typed getter methods on Config ---
 
 // GetString returns the global option value for key, or "" if not set.

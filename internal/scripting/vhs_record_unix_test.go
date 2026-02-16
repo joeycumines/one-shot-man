@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -162,6 +163,7 @@ type InputCaptureRecorder struct {
 	input    *bytes.Buffer
 	config   VHSRecordSettings
 	tapePath string
+	repoRoot string // absolute path to repository root, for path remapping
 	closed   bool
 
 	// The command that was typed - for documentation in tape
@@ -206,11 +208,19 @@ func NewInputCaptureRecorder(ctx context.Context, tapePath string, opts ...Recor
 		return nil, fmt.Errorf("failed to create console: %w", err)
 	}
 
+	// Compute repository root from source file location (internal/scripting/ → ../..)
+	_, source, _, ok := runtime.Caller(0)
+	if !ok {
+		return nil, fmt.Errorf("failed to determine source file for repo root computation")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
+
 	return &InputCaptureRecorder{
 		console:        console,
 		input:          &bytes.Buffer{},
 		config:         cfg.vhsSettings,
 		tapePath:       tapePath,
+		repoRoot:       repoRoot,
 		typedCommand:   cfg.command,
 		typedArgs:      cfg.args,
 		skipTapeOutput: cfg.skipTapeOutput,
@@ -251,30 +261,29 @@ func (r *InputCaptureRecorder) TypeCommand() error {
 		return nil
 	}
 
-	// Build the full command line
-	// WARNING: This filthy hack is CRITICAL for the recording of the .tape files, which need to resolve the script path correctly.
-	// TODO: Real solution for the remapping of paths, also quoting of args is likely completely wrong
+	// Build the full command line.
+	// Remap relative file paths so generated .tape files resolve correctly
+	// when VHS replays from the tape's output directory. For example, if the
+	// tape lives at docs/visuals/gifs/demo.tape and the script is at
+	// scripts/example.js (repo-root-relative), the tape needs the path
+	// ../../../scripts/example.js (relative from docs/visuals/gifs/ to repo root).
 	typedCommand := r.typedCommand
 	typedArgs := r.typedArgs
 	if typedCommand == "osm" {
 		var foundScript bool
-		// [FIX] Don't prepend "../../../" when running from repoRoot - scripts/* is already relative to repo
-		var scriptArgPrefix string
 		for i, arg := range typedArgs {
 			if foundScript {
-				// Only prepend "../../../" if NOT running from repoRoot (dir not set or different)
-				// When repoRoot is set via WithRecorderDir, we're already at correct path
-				if r.console != nil && !r.closed {
-					// Check if console dir matches what we expect (repoRoot at project level)
-					// This is heuristic - if typed command already has scripts/ it was already adjusted
-					// We'll only prepend "../../../" if the path looks like it came from docs/visuals/gifs/
-					if strings.HasPrefix(arg, "scripts/") && !strings.HasPrefix(typedArgs[i], "../../../") {
-						scriptArgPrefix = "../../../"
+				if !filepath.IsAbs(arg) {
+					absFile := filepath.Join(r.repoRoot, arg)
+					absTapeDir, err := filepath.Abs(filepath.Dir(r.tapePath))
+					if err == nil {
+						if rel, err := filepath.Rel(absTapeDir, absFile); err == nil {
+							typedArgs = slices.Clone(typedArgs)
+							typedArgs[i] = rel
+						}
 					}
-					typedArgs = slices.Clone(typedArgs)
-					typedArgs[i] = scriptArgPrefix + arg
-					break
 				}
+				break
 			} else if arg == "script" {
 				foundScript = true
 			} else if !strings.HasPrefix(arg, "-") {
@@ -284,9 +293,8 @@ func (r *InputCaptureRecorder) TypeCommand() error {
 	}
 	cmdLine := typedCommand
 	for _, arg := range typedArgs {
-		// Quote args with spaces
 		if strings.ContainsAny(arg, " \t") {
-			cmdLine += " " + fmt.Sprintf("%q", arg)
+			cmdLine += " " + quoteVHSString(arg)
 		} else {
 			cmdLine += " " + arg
 		}

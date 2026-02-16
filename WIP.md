@@ -76,4 +76,5 @@
 8. T112: ✅ DONE — Added example-06-api-client.js (osm:fetch demo with GET, POST, streaming, errors, headers).
 9. T113: ✅ DONE — Added example-07-flag-parsing.js (osm:flag demo with typed flags, parse, defaults, lookup, visit/visitAll, positional args).
 10. T114: ✅ DONE — Upgraded bubbles v0.21.1→v1.0.0 (honorary release, zero API changes). Fixed stale context header test.
-11. Continue T115-T125
+11. T115: ✅ DONE — Replaced hardcoded path hack with dynamic filepath.Rel computation. Fixed arg quoting to use quoteVHSString.
+12. Continue T116-T125

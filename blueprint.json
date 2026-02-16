@@ -301,8 +301,8 @@
     },
     {
       "task": "T115: Fix VHS recording path hack",
-      "description": "Address TODO at vhs_record_unix_test.go:256 — implement proper path remapping and argument quoting, replacing the self-described 'filthy hack'.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Replaced hardcoded ../../../ path prefix with dynamic filepath.Rel computation from tape directory to repo root. Added repoRoot field computed via runtime.Caller. Fixed arg quoting from fmt.Sprintf(%q) to quoteVHSString (VHS lexer compatible). Removed TODO and WARNING comments. All recording tests pass."
     },
     {
       "task": "T116: Add osm:path module for cross-platform path manipulation",

@@ -527,6 +527,8 @@ claude-mux.debug=false
 
 ### Implementation Files
 
+> **Note**: File paths and module organization are illustrative. Actual structure should follow existing osm patterns (e.g., check `internal/scripting/` for existing module patterns).
+
 - **Native Go modules**:
   - `internal/scripting/ollama.go` — Ollama API client
   - `internal/scripting/claude.go` — Claude Code wrapper/parser

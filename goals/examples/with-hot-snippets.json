@@ -1,0 +1,72 @@
+{
+  "name": "security-audit",
+  "description": "Perform a security audit on code to identify vulnerabilities",
+  "category": "security",
+  "usage": "Add source files, copy the audit prompt, then use hot-snippets for follow-ups",
+  "tuiTitle": "Security Audit",
+  "tuiPrompt": "(security) > ",
+  "bannerTemplate": "╔══════════════════════════════════════╗\n║       SECURITY AUDIT MODE            ║\n╠══════════════════════════════════════╣\n║  Add files to audit, then 'copy'.    ║\n║  Use hot-* commands for follow-ups.  ║\n╚══════════════════════════════════════╝",
+  "promptInstructions": "Perform a thorough security audit of the provided code. Analyze for:\n\n1. **Injection vulnerabilities** — SQL injection, XSS, command injection, path traversal\n2. **Authentication/Authorization flaws** — missing auth checks, privilege escalation, insecure token handling\n3. **Data exposure** — hardcoded secrets, sensitive data in logs, unencrypted storage\n4. **Input validation** — missing validation, type confusion, buffer overflows\n5. **Dependency risks** — known CVEs, outdated libraries, supply chain concerns\n6. **Cryptographic issues** — weak algorithms, improper key management, predictable randomness\n\nFor each finding, report:\n- **Severity**: Critical / High / Medium / Low / Info\n- **Location**: File and line reference\n- **Description**: What the vulnerability is\n- **Impact**: What an attacker could achieve\n- **Recommendation**: How to fix it\n- **CWE**: The relevant CWE identifier if applicable\n\nSort findings by severity (critical first).",
+  "promptTemplate": "**{{.description | upper}}**\n\n{{.promptInstructions}}\n\n## {{.contextHeader}}\n\n{{.contextTxtar}}",
+  "contextHeader": "CODE UNDER AUDIT",
+  "postCopyHint": "[Hint] After receiving the audit report, use 'hot-severity-report' for a summary table or 'hot-remediation-plan' for a fix plan.",
+  "hotSnippets": [
+    {
+      "name": "severity-report",
+      "text": "Create a summary table of all findings from the security audit above.\n\nFormat as a markdown table with columns:\n| # | Severity | Category | File | Line(s) | CWE | One-line Description |\n\nSort by severity (Critical > High > Medium > Low > Info).\nInclude a count summary at the bottom: X critical, Y high, Z medium, etc.\nInclude an overall risk rating: Critical / High / Moderate / Low.",
+      "description": "Generate a severity summary table from the audit findings"
+    },
+    {
+      "name": "remediation-plan",
+      "text": "Based on the security audit findings above, create a prioritized remediation plan.\n\nFor each finding (ordered by severity and effort):\n1. **Finding reference**: Link back to the finding number\n2. **Fix description**: Specific code changes needed\n3. **Effort estimate**: Quick fix (< 1 hour) / Moderate (1-4 hours) / Significant (> 4 hours)\n4. **Verification**: How to confirm the fix works\n5. **Regression risk**: What could break when applying the fix\n\nGroup into phases:\n- **Phase 1 (Immediate)**: Critical and high-severity quick fixes\n- **Phase 2 (This sprint)**: Remaining high-severity and medium quick fixes\n- **Phase 3 (Planned)**: Medium/low items requiring significant effort",
+      "description": "Generate a prioritized remediation plan for audit findings"
+    }
+  ],
+  "commands": [
+    {
+      "name": "add",
+      "type": "contextManager",
+      "description": "Add files to audit",
+      "argCompleters": ["file"]
+    },
+    {
+      "name": "diff",
+      "type": "contextManager",
+      "description": "Add a diff to audit"
+    },
+    {
+      "name": "note",
+      "type": "contextManager",
+      "description": "Add security concerns or notes"
+    },
+    {
+      "name": "list",
+      "type": "contextManager",
+      "description": "List context items"
+    },
+    {
+      "name": "edit",
+      "type": "contextManager",
+      "description": "Edit a context item"
+    },
+    {
+      "name": "remove",
+      "type": "contextManager",
+      "description": "Remove a context item"
+    },
+    {
+      "name": "show",
+      "type": "contextManager",
+      "description": "Preview the prompt"
+    },
+    {
+      "name": "copy",
+      "type": "contextManager",
+      "description": "Copy prompt to clipboard"
+    },
+    {
+      "name": "help",
+      "type": "help"
+    }
+  ]
+}

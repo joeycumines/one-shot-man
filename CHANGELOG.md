@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Example JSON goal files in `goals/examples/` demonstrating all goal schema features: minimal, stateVars, hotSnippets, flagDefs, and full-featured — with a README explaining each example and how to use them
 - Multiline input support for go-prompt: `multiline` option on `tui.createPrompt()` and `tui.registerMode()` — when enabled, Alt+Enter inserts a newline into the prompt buffer while Enter still submits normally; the prompt JS object also exposes a `newLine()` method for programmatic newline insertion from key-binding handlers
 - `writeFile(path, content, options?)` and `appendFile(path, content, options?)` functions in the `osm:os` module: write or append content to files from JavaScript scripts, with optional `mode` (default `0644`) and `createDirs` (default `false`) options; errors are thrown as JavaScript exceptions
 - `make bench-save` and `make bench-compare` targets for performance regression tracking: `bench-save` runs all benchmarks with `-count=5` and saves a filtered baseline to `bench-baseline.txt`; `bench-compare` re-runs benchmarks and compares against baseline using `benchstat` (with `diff` fallback)

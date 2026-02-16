@@ -343,12 +343,14 @@
     {
       "task": "T122: Enhance go-prompt: multiline input support",
       "description": "Add multiline input mode (Alt+Enter for newline, Enter to submit). Improves UX for note and goal commands where users write multi-line content.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added multiline bool to promptBuildConfig and ScriptMode. ASCIICodeBind for ESC+CR/ESC+LF. newLine() JS method. Wired through createPrompt and registerMode. 7 tests. Docs updated."
     },
     {
       "task": "T123: Add example JSON goal files for community reference",
       "description": "Create goals/examples/ with 4-6 example JSON goal files demonstrating full goal schema: simple, stateVars, hotSnippets, flagDefs, promptOptions. README.md explaining each.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Created 5 example JSON goal files in goals/examples/ (minimal, with-state-vars, with-hot-snippets, with-flag-defs, full-featured) plus README.md. Updated goal.md with link and CHANGELOG.md. All JSON validated against Goal struct."
     },
     {
       "task": "T124: Code review chunking for large diffs",

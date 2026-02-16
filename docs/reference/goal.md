@@ -452,6 +452,8 @@ Example (minimal):
 A complete example demonstrating all available features is available at:
 [custom-goal-example.json](../../custom-goal-example.json)
 
+Additional examples demonstrating specific schema features (stateVars, hotSnippets, flagDefs, etc.) are available in the [goals/examples/](../../goals/examples/) directory.
+
 Authoring tip: Start with a `custom` handler only when you need custom runtime logic not provided by `contextManager`.
 
 ---

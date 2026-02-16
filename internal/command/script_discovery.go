@@ -31,7 +31,7 @@ type ScriptDiscoveryConfig struct {
 	// ScriptPathPatterns are glob-like patterns for script directories (default: ["scripts"])
 	ScriptPathPatterns []string
 
-	// DisableStandardPaths disables standard script paths like ~/.one-shot-man/scripts,
+	// DisableStandardPaths disables standard script paths like ~/.osm/scripts,
 	// $exe/scripts, and ./scripts. Useful for tests to ensure determinism.
 	DisableStandardPaths bool
 
@@ -307,7 +307,7 @@ func (sd *ScriptDiscovery) getLegacyPaths() []string {
 		sd.debugf("standard path [exec]: skipped (executable path unavailable: %v)", err)
 	}
 
-	// 2. ~/.one-shot-man/scripts/ (user scripts)
+	// 2. ~/.osm/scripts/ (user scripts)
 	if configPath, err := config.GetConfigPath(); err == nil {
 		configDir := filepath.Dir(configPath)
 		p := filepath.Join(configDir, "scripts")

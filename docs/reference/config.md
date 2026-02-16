@@ -6,7 +6,7 @@ If you just want the basics, start with [Configuration](../configuration.md).
 
 ## Location
 
-- Default: `~/.one-shot-man/config`
+- Default: `~/.osm/config`
 - Override: `OSM_CONFIG=/path/to/config`
 
 Create a starter config:
@@ -116,7 +116,7 @@ script.paths ~/my-scripts:/opt/shared-scripts
 `osm` always starts with a small set of “legacy” locations, then optionally adds configured and autodiscovered paths:
 
 1. `scripts/` next to the `osm` executable
-2. `scripts/` next to the config file (e.g. `~/.one-shot-man/scripts/`)
+2. `scripts/` next to the config file (e.g. `~/.osm/scripts/`)
 3. `./scripts/` in the current working directory
 4. `script.paths` (if set)
 5. Autodiscovery results (if enabled)
@@ -148,7 +148,7 @@ Environment override:
 
 Unless disabled, `osm` searches these standard locations:
 
-1. `goals/` next to the config file (e.g. `~/.one-shot-man/goals/`)
+1. `goals/` next to the config file (e.g. `~/.osm/goals/`)
 2. `goals/` next to the `osm` executable
 3. `./osm-goals/` in the current working directory
 
@@ -360,7 +360,7 @@ These environment variables are not config-file keys but affect runtime behavior
 
 | Env var | Description |
 |---------|-------------|
-| `OSM_CONFIG` | Config file path override (default: `~/.one-shot-man/config`) |
+| `OSM_CONFIG` | Config file path override (default: `~/.osm/config`) |
 | `OSM_SESSION` | Override session ID selection |
 | `OSM_STORE` | Storage backend name (`fs` default, or `memory`) |
 | `OSM_CLIPBOARD` | Override clipboard-copy command (used by JS module `osm:os`) |

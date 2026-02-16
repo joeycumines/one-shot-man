@@ -85,11 +85,7 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
 - Plan system-style logging (file output, tailing) - likely deferred **DONE (T111) — `osm log` command with `tail`/`follow` subcommands, `-f`/`-follow` flags, rotation detection, `log.file`/`log.level`/`log.buffer-size`/`log.max-size-mb`/`log.max-files` config keys. JS `log` API stabilized with 8 methods documented.**
 - Fix duplicate log lines for purged sessions etc? **DONE (T095) — Already fixed: cleanup.go returns CleanupReport, session.go writes through io.Writer. Regression test `TestSessionsPurge_NoDuplicateLogLines` confirms no duplication.**
 - Implement automatic session cleanup scheduler using SessionConfig (AutoCleanupEnabled, CleanupIntervalHours, MaxAgeDays, MaxCount, MaxSizeMB) **DONE (T096) — CleanupScheduler wired via cleanup_helper.go into scriptCommandBase. 7+3 tests. All 5 SessionConfig fields respected.**
-- Breaking change / migration while the going is good: align on `~/.osm` as the config directory
-    - Rationale: `one-shot-man`, as fun as that name is, is too long, and too conspicuous, as it were
-    - Consolidate configuration of the `osm` command, to align with the model used by https://code.claude.com/docs/en/settings — which is fortunately quite similar to the current state
-    - This change will ALSO include changing the behavior of script and goal discovery, to aggressively cull / tidy up the functionality
-    - STRICTLY support discovery within project-level directories (up-the-CWD discovery that terminates at the nearest parent) and in the user and system-level directories (implementation details TBD — need to review what was originally implemented for user and system discovery paths)
+- Breaking change / migration while the going is good: align on `~/.osm` as the config directory **DONE (T126) — Default config directory migrated from `~/.one-shot-man/` to `~/.osm/` with backward-compatible fallback. Session storage migrated from `{UserConfigDir}/one-shot-man/sessions/` to `{UserConfigDir}/osm/sessions/`. Sync default from `~/.one-shot-man/sync` to `~/.osm/sync`. All docs updated.**
 - Add "which one is better" builtin goal to internal/command/goal_builtin.go
     - Implement exhaustive options analysis, tailored for a wide range of use cases
     - Needs specific use case variants, much like many of the existing goals (morale-improver, bug-buster, code-optimizer, etc.)

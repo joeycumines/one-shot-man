@@ -120,7 +120,7 @@ title: Auth Module Refactor    # Human-readable title (optional, derived from sl
 sync.repository    <git-url>    # Git repository URL for sync
 sync.enabled       true|false   # Enable/disable sync (default: false)
 sync.auto-pull     true|false   # Auto-pull on osm startup (default: false)
-sync.local-path    <path>       # Local clone path (default: ~/.one-shot-man/sync)
+sync.local-path    <path>       # Local clone path (default: ~/.osm/sync)
 ```
 
 ### Push/Pull Operations
@@ -178,7 +178,7 @@ Conflicted files:
   - config/config
   - goals/my-goal.json
 
-Resolve conflicts manually in: ~/.one-shot-man/sync
+Resolve conflicts manually in: ~/.osm/sync
 Then run: osm sync push
 ```
 

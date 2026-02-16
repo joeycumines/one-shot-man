@@ -27,7 +27,7 @@ To implement a robust, safe, and configurable session lifecycle management syste
 
   - Introduce a lightweight global state file to track the last cleanup execution timestamp. This prevents the cleanup logic from running on every command invocation (performance optimization).
   - **File**: `internal/storage/global_metadata.go`
-  - **Path**: `~/.one-shot-man/metadata.json`
+  - **Path**: `~/.osm/metadata.json`
   - **Struct**:
     ```go
     type GlobalMetadata struct {
@@ -104,7 +104,7 @@ To implement a robust, safe, and configurable session lifecycle management syste
     }
     ```
   - **Function**: `ScanSessions(dir string) ([]SessionInfo, error)`
-      - Iterates `~/.one-shot-man/sessions/*.session.json`.
+      - Iterates `~/.osm/sessions/*.session.json`.
       - Calls `AcquireLockHandle` on the corresponding lock file.
       - If lock acquisition fails (already locked), mark `Active = true`.
       - If lock acquisition succeeds, release immediately and mark `Active = false`.
@@ -129,7 +129,7 @@ To implement a robust, safe, and configurable session lifecycle management syste
 ### **3.2 Safe Deletion Execution**
 
   - Implement the deletion routine with a "Global Cleanup Lock" to prevent multiple `osm` instances from racing to delete files.
-  - **Lock Path**: `~/.one-shot-man/cleanup.lock`
+  - **Lock Path**: `~/.osm/cleanup.lock`
   - **Function**: `ExecuteCleanup(candidates []SessionInfo) Report`
       - Acquire Global Cleanup Lock (Wait or Fail).
       - For each candidate:
@@ -221,7 +221,7 @@ To implement a robust, safe, and configurable session lifecycle management syste
 
 ## Current State
 
-The storage system currently lacks any automatic cleanup mechanisms for session files. Sessions are persisted indefinitely as individual JSON files in the user's configuration directory (`{UserConfigDir}/one-shot-man/sessions/{sessionID}.session.json`). While history entries within each session are pruned to a maximum of 200 entries using a ring buffer implementation, the session files themselves accumulate without bound.
+The storage system currently lacks any automatic cleanup mechanisms for session files. Sessions are persisted indefinitely as individual JSON files in the user's configuration directory (`{UserConfigDir}/osm/sessions/{sessionID}.session.json`). While history entries within each session are pruned to a maximum of 200 entries using a ring buffer implementation, the session files themselves accumulate without bound.
 
 **Key Observations:**
 - No TTL (time-to-live) or expiration mechanism for sessions
@@ -433,7 +433,7 @@ This allows:
 ### FileSystem Backend
 
   - **Purpose**: Production persistent storage
-  - **Location**: Session files are stored under the user's config directory. The code uses `os.UserConfigDir()` and places files in `{UserConfigDir}/one-shot-man/sessions/` with filenames of the form `{sessionID}.session.json` (for example, on macOS the base config dir is typically `~/Library/Application Support`).
+  - **Location**: Session files are stored under the user's config directory. The code uses `os.UserConfigDir()` and places files in `{UserConfigDir}/osm/sessions/` with filenames of the form `{sessionID}.session.json` (for example, on macOS the base config dir is typically `~/Library/Application Support`).
   - **Features**:
       - Atomic writes using temporary files and rename operations
       - Exclusive file locking to prevent concurrent access (Unix: flock, Windows: LockFileEx)
@@ -1404,7 +1404,7 @@ Potential improvements to the storage system:
 
 ### Current State
 
-The storage system currently lacks any automatic cleanup mechanisms for session files. Sessions are persisted indefinitely as individual JSON files in the user's configuration directory (`{UserConfigDir}/one-shot-man/sessions/{sessionID}.session.json`). While history entries within each session are pruned to a maximum of 200 entries using a ring buffer implementation, the session files themselves accumulate without bound.
+The storage system currently lacks any automatic cleanup mechanisms for session files. Sessions are persisted indefinitely as individual JSON files in the user's configuration directory (`{UserConfigDir}/osm/sessions/{sessionID}.session.json`). While history entries within each session are pruned to a maximum of 200 entries using a ring buffer implementation, the session files themselves accumulate without bound.
 
 **Key Observations:**
 - No TTL (time-to-live) or expiration mechanism for sessions
@@ -1507,7 +1507,7 @@ Using an `archive/` subdirectory keeps the main sessions dir tidy and helps the 
   - `internal/scripting/tui_manager.go` — in `resetAllState` replace the simple clear-without-history behavior with the archive+reinitialize workflow described above.
     - Before mutating the in-memory state, ensure current state persisted and call backend.ArchiveSession(sessionID, archivePath) while holding the session lock.
     - Reinitialize the session in-memory (new CreateTime/UpdateTime, new or small history entry describing the reset), then `PersistSession()` to write a new `{sessionID}.session.json` atomically.
-    - Update global metadata (e.g. `~/.one-shot-man/metadata.json`) with an entry describing the reset event for auditing.
+    - Update global metadata (e.g. `~/.osm/metadata.json`) with an entry describing the reset event for auditing.
 
 5. Locking and concurrency rules
   - The reset operation must only be allowed from the process that owns the session lock (the normal case inside an interactive REPL). If invoked from another process, fail unless `--force` is explicitly provided.

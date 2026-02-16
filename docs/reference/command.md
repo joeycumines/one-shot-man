@@ -214,7 +214,7 @@ Subcommands:
 - `osm sync pull`
   - Fetch and rebase remote changes. If the sync directory is not initialized and `sync.repository` is configured, clones automatically. Reports merge conflicts with instructions to resolve.
 
-Configuration keys: `sync.repository` (remote URL), `sync.local-path` (local sync root; default `~/.one-shot-man/sync`), `sync.auto-pull` (auto-pull on startup).
+Configuration keys: `sync.repository` (remote URL), `sync.local-path` (local sync root; default `~/.osm/sync`), `sync.auto-pull` (auto-pull on startup).
 
 ### `osm session`
 

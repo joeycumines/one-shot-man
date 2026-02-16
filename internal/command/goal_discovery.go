@@ -39,7 +39,7 @@ type GoalDiscoveryConfig struct {
 	// GoalPathPatterns are patterns for goal directories (default: ["osm-goals", "goals"])
 	GoalPathPatterns []string
 
-	// DisableStandardPaths disables standard goal paths like ~/.one-shot-man/goals,
+	// DisableStandardPaths disables standard goal paths like ~/.osm/goals,
 	// $exe/goals, and ./osm-goals. Useful for tests to ensure determinism.
 	DisableStandardPaths bool
 
@@ -294,7 +294,7 @@ func (gd *GoalDiscovery) getStandardPaths() []string {
 		return paths
 	}
 
-	// 1. ~/.one-shot-man/goals/ (user goals)
+	// 1. ~/.osm/goals/ (user goals)
 	if configPath, err := config.GetConfigPath(); err == nil {
 		configDir := filepath.Dir(configPath)
 		p := filepath.Join(configDir, "goals")

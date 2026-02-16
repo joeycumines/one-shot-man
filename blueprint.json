@@ -390,6 +390,11 @@
       "status": "Not Started"
     },
     {
+      "task": "T132: Verify TestSuperDocument_BacktabNavigation for flakiness",
+      "description": "Run TestSuperDocument_BacktabNavigation multiple times in parallel (e.g., 5-10 iterations) and on Linux via Docker to verify stability. ANY flakiness MUST be fixed immediately. VERIFY FIXES by re-running the same parallel/Linux tests until NO flakes occur for minimum 5 consecutive runs. Document any changes made and confirm stability.",
+      "status": "Not Started"
+    },
+    {
       "task": "T131: Remove unused sync.enabled config key",
       "description": "Remove sync.enabled from internal/config/schema.go (line 495) - it's defined but never used anywhere in the codebase. Also update any tests or documentation referencing it.",
       "status": "Not Started"

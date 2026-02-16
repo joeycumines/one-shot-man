@@ -677,8 +677,8 @@ func TestSyncCommand_SyncRootDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("syncRoot failed: %v", err)
 	}
-	if !strings.HasSuffix(root, filepath.Join(".one-shot-man", "sync")) {
-		t.Fatalf("expected path ending in .one-shot-man/sync, got %q", root)
+	if !strings.HasSuffix(root, filepath.Join(".osm", "sync")) {
+		t.Fatalf("expected path ending in .osm/sync, got %q", root)
 	}
 }
 

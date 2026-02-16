@@ -39,7 +39,7 @@ type CleanupReport struct {
 // excludeID is a session id to never delete (e.g., current session).
 func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 	// Acquire a global cleanup lock to avoid concurrent cleaners.
-	// Place lock at {UserConfigDir}/one-shot-man/cleanup.lock
+	// Place lock at {UserConfigDir}/osm/cleanup.lock
 	sessionsDir, err := sessionDirectory()
 	if err != nil {
 		return nil, err

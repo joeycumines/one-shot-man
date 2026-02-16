@@ -369,7 +369,7 @@ func (c *SyncCommand) syncRoot() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cannot determine home directory: %w", err)
 	}
-	return filepath.Join(home, ".one-shot-man", "sync"), nil
+	return filepath.Join(home, ".osm", "sync"), nil
 }
 
 // runGit executes a git command. If dir is empty, CWD is used.

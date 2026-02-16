@@ -190,7 +190,7 @@ func TestSyncRootFromConfig_Default(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
 	got := syncRootFromConfig(cfg)
-	if !strings.HasSuffix(got, filepath.Join(".one-shot-man", "sync")) {
+	if !strings.HasSuffix(got, filepath.Join(".osm", "sync")) {
 		t.Fatalf("expected default path, got %q", got)
 	}
 }

@@ -8,7 +8,7 @@ This document describes the internal architecture of `osm` — how the major sub
 
 `cmd/osm/main.go` is the sole entry point. It performs all top-level wiring in a single `run()` function:
 
-1. **Configuration loading.** `config.Load()` reads the dnsmasq-style config file (default: `~/.one-shot-man/config`). If the file doesn't exist, an empty `Config` is used.
+1. **Configuration loading.** `config.Load()` reads the dnsmasq-style config file (default: `~/.osm/config`). If the file doesn't exist, an empty `Config` is used.
 
 2. **Command registry.** `command.NewRegistryWithConfig(cfg)` creates the registry that maps command names to `Command` implementations.
 
@@ -311,7 +311,7 @@ Goals are pre-written interactive workflows for common tasks. Each goal defines 
 
 `GoalDiscovery` scans multiple directories for goal files:
 
-- Standard paths: `~/.one-shot-man/goals/`, `<exe-dir>/goals/`, `./osm-goals/`
+- Standard paths: `~/.osm/goals/`, `<exe-dir>/goals/`, `./osm-goals/`
 - Configured paths: `goal.paths`
 - Autodiscovery: upward traversal from CWD matching `goal.path-patterns` (default: `osm-goals,goals`)
 - `.prompt.md` paths: `.github/prompts`, `prompt.file-paths`
@@ -368,7 +368,7 @@ At program startup (in `main.go`), two sync-related hooks run before goal/script
 ### Architecture
 
 - Notebooks are saved to `<sync-root>/notebooks/<YYYY>/<MM>/<date>-<slug>.md` with YAML frontmatter.
-- The sync root defaults to `~/.one-shot-man/sync` and can be configured via `sync.local-path`.
+- The sync root defaults to `~/.osm/sync` and can be configured via `sync.local-path`.
 - `init` clones a repository URL (from argument or `sync.repository` config key).
 - `push`/`pull` use shell `git` commands for transport.
 - `load` strips YAML frontmatter and outputs the entry body.

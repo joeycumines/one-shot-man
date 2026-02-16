@@ -48,7 +48,7 @@ func ResetPaths() {
 }
 
 // SessionDirectory returns the directory where session files are stored.
-// Uses os.UserConfigDir() to resolve to {UserConfigDir}/one-shot-man/sessions/
+// Uses os.UserConfigDir() to resolve to {UserConfigDir}/osm/sessions/
 //
 // In test environments where UserConfigDir() fails, this will create an isolated,
 // unpredictable temporary directory using os.MkdirTemp(). The fallback directory
@@ -61,7 +61,7 @@ func ResetPaths() {
 func SessionDirectory() (string, error) {
 	configDir, err := os.UserConfigDir()
 	if err == nil {
-		return filepath.Join(configDir, "one-shot-man", "sessions"), nil
+		return filepath.Join(configDir, "osm", "sessions"), nil
 	}
 
 	// Fallback for environments where UserConfigDir fails (e.g., CI with no $HOME).

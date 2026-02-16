@@ -8,7 +8,7 @@ N.B. A small set of environment variables also affect behavior; see below.
 
 ## Location
 
-- Default: `~/.one-shot-man/config`
+- Default: `~/.osm/config`
 - Override: `OSM_CONFIG=/path/to/config`
 
 Create a starter config:
@@ -126,7 +126,7 @@ Configure the git-based notebook synchronization:
 - `sync.repository` (string) — Git repository URL for sync (used by `osm sync init` and auto-clone on `osm sync pull`)
 - `sync.enabled` (bool, default `false`) — enable git synchronisation
 - `sync.auto-pull` (bool, default `false`) — automatically run `git pull --rebase` on program startup when the sync repository is initialized
-- `sync.local-path` (string) — local path for sync repository (default: `~/.one-shot-man/sync`)
+- `sync.local-path` (string) — local path for sync repository (default: `~/.osm/sync`)
 
 When the sync directory contains `goals/` or `scripts/` subdirectories, those paths are automatically added to goal and script discovery paths at startup.
 
@@ -170,7 +170,7 @@ These environment variables are not config-file keys but affect runtime behavior
 
 | Env var | Description |
 |---------|-------------|
-| `OSM_CONFIG` | Config file path override (default: `~/.one-shot-man/config`) |
+| `OSM_CONFIG` | Config file path override (default: `~/.osm/config`) |
 | `OSM_SESSION` | Override session ID selection |
 | `OSM_STORE` | Storage backend name (`fs` default, or `memory`) |
 | `OSM_CLIPBOARD` | Override clipboard-copy command (used by JS module `osm:os`) |

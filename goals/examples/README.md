@@ -6,14 +6,14 @@ This directory contains example JSON goal files demonstrating the `osm goal` sch
 
 ```bash
 # Option 1: Copy to your user goals directory
-cp goals/examples/minimal.json ~/.one-shot-man/goals/
+cp goals/examples/minimal.json ~/.osm/goals/
 
 # Option 2: Copy to a project-local goals directory
 mkdir -p osm-goals
 cp goals/examples/with-state-vars.json osm-goals/
 
 # Option 3: Configure a custom goal path
-echo "goal.paths=/path/to/your/goals" >> ~/.one-shot-man/config
+echo "goal.paths=/path/to/your/goals" >> ~/.osm/config
 
 # Then run the goal
 osm goal quick-question

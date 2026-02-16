@@ -657,11 +657,11 @@ This illustrates the required level of detail and structure:
 ### **1.1 Goal Definition Format**
 - Introduce a **standardized file format** for goal definitions (e.g., ` + "`goal.json`" + `).
 - File must contain all fields currently defined in the ` + "`Goal`" + ` struct.
-- File must be placed in a **well-known directory** (e.g., ` + "`~/.one-shot-man/goals/`" + `).
+- File must be placed in a **well-known directory** (e.g., ` + "`~/.osm/goals/`" + `).
 
 ### **1.2 Goal Discovery Paths**
 - Extend ` + "`ScriptDiscovery`" + ` logic to include **goal discovery paths**:
-  - ` + "`~/.one-shot-man/goals/`" + `
+  - ` + "`~/.osm/goals/`" + `
   - ` + "`<exec-dir>/goals/`" + `
   - Additional paths via config: ` + "`goal.paths = /custom/path`" + `
 

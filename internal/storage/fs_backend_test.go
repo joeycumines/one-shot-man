@@ -21,7 +21,7 @@ func setupTest(t *testing.T) (string, func()) {
 	originalSessionLockFunc := sessionLockFilePath
 
 	tmpDir := t.TempDir()
-	sessionsDir := filepath.Join(tmpDir, "one-shot-man", "sessions")
+	sessionsDir := filepath.Join(tmpDir, "osm", "sessions")
 
 	// Create the sessions directory
 	if err := os.MkdirAll(sessionsDir, 0755); err != nil {

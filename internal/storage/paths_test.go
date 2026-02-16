@@ -22,7 +22,7 @@ func TestPaths(t *testing.T) {
 		// If os.UserConfigDir succeeds we expect the standard suffix. Otherwise
 		// the code falls back to a temp directory and we assert that pattern.
 		if _, err := os.UserConfigDir(); err == nil {
-			expectedSuffix := filepath.Join("one-shot-man", "sessions")
+			expectedSuffix := filepath.Join("osm", "sessions")
 			if !strings.HasSuffix(dir, expectedSuffix) {
 				t.Errorf("Expected path to end with %q, but got %q", expectedSuffix, dir)
 			}

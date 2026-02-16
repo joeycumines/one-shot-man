@@ -83,7 +83,7 @@ func syncRootFromConfig(cfg *config.Config) string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".one-shot-man", "sync")
+	return filepath.Join(home, ".osm", "sync")
 }
 
 // appendConfigPath appends a path to a colon-separated config key value.

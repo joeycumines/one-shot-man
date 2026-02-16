@@ -39,9 +39,131 @@ func TestGetConfigPathDefault(t *testing.T) {
 		t.Fatalf("GetConfigPath returned error: %v", err)
 	}
 
-	expected := filepath.Join(dir, ".one-shot-man", "config")
+	// Neither ~/.osm nor ~/.one-shot-man exist, so the new default is used.
+	expected := filepath.Join(dir, DefaultConfigDir, "config")
 	if got != expected {
 		t.Fatalf("expected default path %q, got %q", expected, got)
+	}
+}
+
+func TestGetConfigPathNewDirExists(t *testing.T) {
+	dir := t.TempDir()
+
+	homeVar := "HOME"
+	if runtime.GOOS == "windows" {
+		homeVar = "USERPROFILE"
+	}
+	t.Setenv(homeVar, dir)
+	t.Setenv("OSM_CONFIG", "")
+
+	// Create ~/.osm/
+	if err := os.MkdirAll(filepath.Join(dir, DefaultConfigDir), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	got, err := GetConfigPath()
+	if err != nil {
+		t.Fatalf("GetConfigPath returned error: %v", err)
+	}
+
+	expected := filepath.Join(dir, DefaultConfigDir, "config")
+	if got != expected {
+		t.Fatalf("expected new path %q, got %q", expected, got)
+	}
+}
+
+func TestGetConfigPathLegacyFallback(t *testing.T) {
+	dir := t.TempDir()
+
+	homeVar := "HOME"
+	if runtime.GOOS == "windows" {
+		homeVar = "USERPROFILE"
+	}
+	t.Setenv(homeVar, dir)
+	t.Setenv("OSM_CONFIG", "")
+
+	// Create only ~/.one-shot-man/config (legacy)
+	legacyDir := filepath.Join(dir, LegacyConfigDir)
+	if err := os.MkdirAll(legacyDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "config"), []byte("# legacy"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	got, err := GetConfigPath()
+	if err != nil {
+		t.Fatalf("GetConfigPath returned error: %v", err)
+	}
+
+	expected := filepath.Join(dir, LegacyConfigDir, "config")
+	if got != expected {
+		t.Fatalf("expected legacy path %q, got %q", expected, got)
+	}
+}
+
+func TestGetConfigPathNewOverridesLegacy(t *testing.T) {
+	dir := t.TempDir()
+
+	homeVar := "HOME"
+	if runtime.GOOS == "windows" {
+		homeVar = "USERPROFILE"
+	}
+	t.Setenv(homeVar, dir)
+	t.Setenv("OSM_CONFIG", "")
+
+	// Create both ~/.osm/ and ~/.one-shot-man/config
+	if err := os.MkdirAll(filepath.Join(dir, DefaultConfigDir), 0755); err != nil {
+		t.Fatalf("mkdir .osm: %v", err)
+	}
+	legacyDir := filepath.Join(dir, LegacyConfigDir)
+	if err := os.MkdirAll(legacyDir, 0755); err != nil {
+		t.Fatalf("mkdir legacy: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "config"), []byte("# legacy"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	got, err := GetConfigPath()
+	if err != nil {
+		t.Fatalf("GetConfigPath returned error: %v", err)
+	}
+
+	// New directory takes precedence
+	expected := filepath.Join(dir, DefaultConfigDir, "config")
+	if got != expected {
+		t.Fatalf("expected new path %q (should override legacy), got %q", expected, got)
+	}
+}
+
+func TestGetConfigPathNeitherExists(t *testing.T) {
+	dir := t.TempDir()
+
+	homeVar := "HOME"
+	if runtime.GOOS == "windows" {
+		homeVar = "USERPROFILE"
+	}
+	t.Setenv(homeVar, dir)
+	t.Setenv("OSM_CONFIG", "")
+
+	got, err := GetConfigPath()
+	if err != nil {
+		t.Fatalf("GetConfigPath returned error: %v", err)
+	}
+
+	// Neither exists — should default to new path
+	expected := filepath.Join(dir, DefaultConfigDir, "config")
+	if got != expected {
+		t.Fatalf("expected new default path %q, got %q", expected, got)
+	}
+}
+
+func TestConfigDirConstants(t *testing.T) {
+	if DefaultConfigDir != ".osm" {
+		t.Fatalf("DefaultConfigDir = %q, want %q", DefaultConfigDir, ".osm")
+	}
+	if LegacyConfigDir != ".one-shot-man" {
+		t.Fatalf("LegacyConfigDir = %q, want %q", LegacyConfigDir, ".one-shot-man")
 	}
 }
 

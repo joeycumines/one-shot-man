@@ -204,7 +204,7 @@ The above sample mirrors the built-in `doc-generator` goal (with added illustrat
     - `goal.max-traversal-depth` default is `10`.
 
 - Standard paths (unless `goal.disable-standard-paths` is set):
-    1. The `goals/` directory next to the config file (e.g., `~/.one-shot-man/goals/`)
+    1. The `goals/` directory next to the config file (e.g., `~/.osm/goals/`)
     2. The `goals/` directory next to the executable directory (e.g., `/usr/local/bin/goals/`)
     3. `./osm-goals/` in the current working directory
 
@@ -219,7 +219,7 @@ The above sample mirrors the built-in `doc-generator` goal (with added illustrat
 - `DiscoverGoalPaths` returns paths sorted by priority (closest to CWD first), computed using `computePathScore` which classifies paths as:
     - Class 0: CWD descendants (closest priority)
     - Class 1: Ancestor directories matching configured patterns
-    - Class 2: Config directory `~/.one-shot-man/goals`
+    - Class 2: Config directory `~/.osm/goals`
     - Class 3: Executable directory `goals/` next to executable
     - Class 4: Other paths
 
@@ -233,7 +233,7 @@ Use `osm goal paths` to display all resolved goal discovery paths with source an
 $ osm goal paths
 Goal Discovery Paths:
 
-  ✓ [standard]       /Users/alice/.one-shot-man/goals
+  ✓ [standard]       /Users/alice/.osm/goals
   ✗ [custom]         /opt/team-goals
   ✓ [autodiscovered] /home/alice/project/osm-goals
 
@@ -422,7 +422,7 @@ Note: custom handlers are created from user-supplied source strings (via `new Fu
 
 **Authoring goals (practical guidance)**
 
-- Create a JSON file with at least `name` and `description` and put it in one of the discovered goal paths (e.g., `~/.one-shot-man/goals`, `./osm-goals/`, or a configured custom path via `goal.paths`).
+- Create a JSON file with at least `name` and `description` and put it in one of the discovered goal paths (e.g., `~/.osm/goals`, `./osm-goals/`, or a configured custom path via `goal.paths`).
 - Start with a minimal skeleton and incrementally add `commands` and `stateVars`.
 - Use `contextManager` commands for file and diff management unless you need custom behavior.
 - Keep `Script` empty unless you need a completely custom JS handler/per-mode implementation; otherwise rely on the default interpreter.

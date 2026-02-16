@@ -106,7 +106,7 @@
                 add: {
                     description: "Add file content to context",
                     usage: "add [--from-diff [commit-spec]] [file ...]",
-                    argCompleters: ["file", "flag"],
+                    argCompleters: ["file", "gitref", "flag"],
                     flagDefs: [
                         {name: "from-diff", description: "Add all files changed in a git diff"}
                     ],

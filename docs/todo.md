@@ -25,7 +25,7 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
   executeHidesCompletions, escapeToggle, key bindings).
     - ~~Rename the "advanced" prompt to something less dumb~~ **DONE**: Renamed to `tui.createPrompt`.
       ~~`tui.createAdvancedPrompt` kept as deprecated alias with warning.~~ **DONE (T075)**: Deprecated alias removed.
-- Add option to the osm:ctxutil add context command to add files from a diff (`git diff <what> --name-only`)
+- Add option to the osm:ctxutil add context command to add files from a diff (`git diff <what> --name-only`) **DONE (T094) — `add --from-diff [commit-spec]` with gitref completion, 6 tests**
 - Expose the Go `flag` package as a JS module `osm:flag` for script authors to use **DONE (T029 — verified via coverage audit)**
     - Probably need to take a look at how arguments are passed down to the `osm script` command, as well
     - _COULD_ Leverage the "lazy init" pattern I originally intended for declarative-style scripts - buuuuut I've since moved to more imperative style ones, so perhaps not

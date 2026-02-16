@@ -1333,6 +1333,57 @@ func TestContextManagerAddFromDiffPartialFailure(t *testing.T) {
 	}
 }
 
+func TestContextManagerAddArgCompletersIncludeGitref(t *testing.T) {
+	t.Parallel()
+	runtime := setupContextManager(t)
+
+	script := `
+		const { contextManager } = exports;
+
+		globalThis.output = { print: () => {} };
+		globalThis.context = { addPath: () => null, removePath: () => null, toTxtar: () => '' };
+
+		const ctxmgr = contextManager({
+			getItems: () => [],
+			setItems: () => {}
+		});
+
+		globalThis.__addCompleters = ctxmgr.commands.add.argCompleters;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	completers := runtime.Get("__addCompleters").Export()
+	cslice, ok := completers.([]interface{})
+	if !ok {
+		t.Fatalf("expected argCompleters to be a slice, got %T", completers)
+	}
+	hasGitref := false
+	hasFile := false
+	hasFlag := false
+	for _, c := range cslice {
+		switch c.(string) {
+		case "gitref":
+			hasGitref = true
+		case "file":
+			hasFile = true
+		case "flag":
+			hasFlag = true
+		}
+	}
+	if !hasGitref {
+		t.Error("expected 'gitref' in add command argCompleters for --from-diff git ref completion")
+	}
+	if !hasFile {
+		t.Error("expected 'file' in add command argCompleters")
+	}
+	if !hasFlag {
+		t.Error("expected 'flag' in add command argCompleters")
+	}
+}
+
 func TestContextManagerPostCopyHint(t *testing.T) {
 	runtime := setupContextManager(t)
 

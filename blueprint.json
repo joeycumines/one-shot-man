@@ -178,7 +178,8 @@
     {
       "task": "T094: Context builder: add files from git diff --name-only",
       "description": "Per docs/todo.md: add-diff-files command or add --from-diff. Execute git diff --name-only, addPath each file. Gitref completion. Edge cases + tests.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Already implemented: add --from-diff [commit-spec] with 5 existing tests. Added gitref completer to add command. 1 new test verifying argCompleters."
     },
     {
       "task": "T095: Investigate duplicate log lines for purged sessions",

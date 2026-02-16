@@ -14,18 +14,23 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "Blueprint fully rewritten 2026-02-17. Session started 01:38 AEDT. All 70 tasks Not Started. Beginning with foundation tasks (T200-T213). Clean working tree on wip branch."
+    "currentState": "T200 DONE (5b86238), T201 DONE (c5ecde8), T202 DONE. Session 2026-02-17. Proceeding to T203."
   },
   "sequentialTasks": [
     {
       "task": "T200: Exec-safe shell quoting in osm:argv formatArgv",
       "description": "Fix the TODO at internal/builtin/argv/argv.go line 34. The formatArgv function currently joins arguments with spaces but does not handle special characters (spaces, quotes, backslashes, glob chars, semicolons, pipes, etc.). Implement proper POSIX shell quoting: single-quote arguments containing special characters, escape embedded single quotes with the '\\'' idiom. Add unit tests in argv_test.go covering all edge cases. Verify existing fuzz tests pass. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
+    },
+    {
+      "task": "T201: Rename osm:nextIntegerId to osm:nextIntegerID",
+      "description": "Rename the native module osm:nextIntegerId to osm:nextIntegerID (Go naming convention). Keep osm:nextIntegerId as a deprecated alias. Update all references in docs, register.go, and tests. Run 'make' to confirm.",
+      "status": "Done"
     },
     {
       "task": "T202: Migrate textarea runeWidth to uniseg grapheme clusters",
       "description": "In internal/builtin/bubbles/textarea/textarea.go, replace runewidth-based width calculation with github.com/rivo/uniseg grapheme cluster iteration (already in go.mod). Replace all runeWidth calls with uniseg equivalents. Add unit tests for emoji, combining characters, ZWJ sequences. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T203: MCP server removeFile and clearContext tools",

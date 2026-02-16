@@ -45,22 +45,78 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dop251/goja"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
-	"github.com/mattn/go-runewidth"
+	"github.com/rivo/uniseg"
 )
 
-// runeWidth returns the visual width of a rune, accounting for multi-width
-// characters (CJK, emojis, etc.). This is essential for proper cursor positioning.
-//
-// Deprecated: Use [github.com/rivo/uniseg] for grapheme cluster support. I'll deal with this later.
-// NOTE: This currently maps zero-width combining marks to width 1, which can
-// cause misalignment in complex scripts; replace with grapheme-cluster-aware
-// logic in a follow-up.
+// runeWidth returns the visual width of a rune using Unicode grapheme cluster
+// width tables from [github.com/rivo/uniseg]. This correctly reports zero-width
+// combining marks as width 0 (they attach to the preceding base character)
+// and CJK/fullwidth characters as width 2.
 func runeWidth(r rune) int {
-	w := runewidth.RuneWidth(r)
-	if w < 1 {
-		return 1 // Control characters and zero-width chars take at least 1 cell for our purposes
+	return uniseg.StringWidth(string(r))
+}
+
+// hitTestColumn maps a visual position (wrapped segment index + visual X
+// coordinate) to a logical rune column within a line. It uses greedy wrapping
+// simulation to skip past earlier wrapped segments, then finds the rune index
+// closest to the given visual X position within the target segment.
+//
+// Parameters:
+//   - line: the runes of the logical line
+//   - width: the content width in cells (must be > 0 for wrapping to apply)
+//   - targetSegment: the 0-indexed wrapped segment to hit test within
+//   - visualX: the X coordinate within that segment (in cells)
+//
+// Returns the rune column index within the line. If width <= 0 or the line is
+// empty, visualX is clamped to [0, len(line)] and returned directly.
+func hitTestColumn(line []rune, width int, targetSegment int, visualX int) int {
+	if width <= 0 || len(line) == 0 {
+		col := visualX
+		if col < 0 {
+			col = 0
+		}
+		if col > len(line) {
+			col = len(line)
+		}
+		return col
 	}
-	return w
+
+	charsConsumed := 0
+
+	// Phase 1: Skip characters belonging to wrapped segments before the target.
+	for segment := 0; segment < targetSegment && charsConsumed < len(line); segment++ {
+		segmentWidth := 0
+		for charsConsumed < len(line) {
+			rw := runeWidth(line[charsConsumed])
+			// If adding this char exceeds width AND we already have content, wrap.
+			if segmentWidth > 0 && segmentWidth+rw > width {
+				break
+			}
+			segmentWidth += rw
+			charsConsumed++
+			// After consuming, if we've filled the line, break for wrap.
+			if segmentWidth >= width {
+				break
+			}
+		}
+	}
+
+	// Phase 2: Find the column within the current wrapped segment by advancing
+	// until we've consumed enough visual width to reach visualX.
+	widthConsumed := 0
+	for charsConsumed < len(line) && widthConsumed < visualX {
+		rw := runeWidth(line[charsConsumed])
+		if widthConsumed+rw > width {
+			break // Would exceed segment boundary
+		}
+		widthConsumed += rw
+		charsConsumed++
+	}
+
+	if charsConsumed > len(line) {
+		charsConsumed = len(line)
+	}
+	return charsConsumed
 }
 
 // textareaModelMirror is a memory-layout-compatible mirror of textarea.Model.
@@ -548,57 +604,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 		// Calculate column within the logical line
 		// Account for the wrapped segment we're in
 		line := mirror.value[targetRow]
-		targetCol := 0
-
-		if contentWidth > 0 && len(line) > 0 {
-			// Calculate the starting character index for this wrapped segment
-			// by summing visual widths of characters in previous segments
-			charsConsumed := 0
-
-			// Skip characters from previous wrapped segments
-			for segment := 0; segment < targetWrappedSegment && charsConsumed < len(line); segment++ {
-				segmentWidth := 0
-				for charsConsumed < len(line) {
-					rw := runeWidth(line[charsConsumed])
-					// If adding this char exceeds width AND we already have content, wrap
-					if segmentWidth > 0 && segmentWidth+rw > contentWidth {
-						break
-					}
-					segmentWidth += rw
-					charsConsumed++
-					// After consuming, if we've filled the line, break for wrap
-					if segmentWidth >= contentWidth {
-						break
-					}
-				}
-			}
-
-			// Now find the column within the current wrapped segment
-			widthConsumed := 0
-
-			for charsConsumed < len(line) && widthConsumed < visualX {
-				rw := runeWidth(line[charsConsumed])
-				if widthConsumed+rw > contentWidth {
-					// Wrapped to next visual line
-					break
-				}
-				widthConsumed += rw
-				charsConsumed++
-			}
-
-			targetCol = charsConsumed
-
-			// Clamp to line length
-			if targetCol > len(line) {
-				targetCol = len(line)
-			}
-		} else {
-			// No width constraint or empty line
-			targetCol = visualX
-			if targetCol > len(line) {
-				targetCol = len(line)
-			}
-		}
+		targetCol := hitTestColumn(line, contentWidth, targetWrappedSegment, visualX)
 
 		_ = result.Set("row", targetRow)
 		_ = result.Set("col", targetCol)
@@ -661,52 +667,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 
 		// Calculate column accounting for wrapped segment and multi-width characters
 		line := mirror.value[targetRow]
-		targetCol := 0
-
-		if mirror.width > 0 && len(line) > 0 {
-			// Skip characters from previous wrapped segments
-			charsConsumed := 0
-			for segment := 0; segment < targetWrappedSegment && charsConsumed < len(line); segment++ {
-				segmentWidth := 0
-				for charsConsumed < len(line) {
-					rw := runeWidth(line[charsConsumed])
-					// If adding this char exceeds width AND we already have content, wrap
-					if segmentWidth > 0 && segmentWidth+rw > mirror.width {
-						break
-					}
-					segmentWidth += rw
-					charsConsumed++
-					// After consuming, if we've filled the line, break for wrap
-					if segmentWidth >= mirror.width {
-						break
-					}
-				}
-			}
-
-			// Find column within current segment
-			widthConsumed := 0
-			for charsConsumed < len(line) && widthConsumed < clickX {
-				rw := runeWidth(line[charsConsumed])
-				if widthConsumed+rw > mirror.width {
-					break
-				}
-				widthConsumed += rw
-				charsConsumed++
-			}
-
-			targetCol = charsConsumed
-			if targetCol > len(line) {
-				targetCol = len(line)
-			}
-		} else {
-			targetCol = clickX
-			if targetCol < 0 {
-				targetCol = 0
-			}
-			if targetCol > len(line) {
-				targetCol = len(line)
-			}
-		}
+		targetCol := hitTestColumn(line, mirror.width, targetWrappedSegment, clickX)
 
 		// Set the cursor position
 		mirror.row = targetRow
@@ -1167,48 +1128,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 
 		// Step 8: Calculate column within the logical line
 		line := mirror.value[targetRow]
-		targetCol := 0
-
-		if contentWidth > 0 && len(line) > 0 {
-			charsConsumed := 0
-
-			for segment := 0; segment < targetWrappedSegment && charsConsumed < len(line); segment++ {
-				segmentWidth := 0
-				for charsConsumed < len(line) {
-					rw := runeWidth(line[charsConsumed])
-					// If adding this char exceeds width AND we already have content, wrap
-					if segmentWidth > 0 && segmentWidth+rw > contentWidth {
-						break
-					}
-					segmentWidth += rw
-					charsConsumed++
-					// After consuming, if we've filled the line, break for wrap
-					if segmentWidth >= contentWidth {
-						break
-					}
-				}
-			}
-
-			widthConsumed := 0
-			for charsConsumed < len(line) && widthConsumed < visualX {
-				rw := runeWidth(line[charsConsumed])
-				if widthConsumed+rw > contentWidth {
-					break
-				}
-				widthConsumed += rw
-				charsConsumed++
-			}
-
-			targetCol = charsConsumed
-			if targetCol > len(line) {
-				targetCol = len(line)
-			}
-		} else {
-			targetCol = visualX
-			if targetCol > len(line) {
-				targetCol = len(line)
-			}
-		}
+		targetCol := hitTestColumn(line, contentWidth, targetWrappedSegment, visualX)
 
 		// Step 9: Set cursor position
 		mirror.row = targetRow

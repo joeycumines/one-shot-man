@@ -23,25 +23,86 @@ func TestRuneWidth_CJK(t *testing.T) {
 	}
 }
 
+func TestRuneWidth_Emoji(t *testing.T) {
+	// Basic emoji (non-ZWJ) — typically 2 cells wide.
+	if w := runeWidth('😀'); w != 2 {
+		t.Errorf("expected 2 for emoji, got %d", w)
+	}
+}
+
+// =============================================================================
+// hitTestColumn tests
+// =============================================================================
+
+func TestHitTestColumn_Basic(t *testing.T) {
+	line := []rune("ABCDEFGHIJ") // 10 runes, all width 1
+	// No wrapping at width 20: segment 0, click at X=5 → col 5
+	if col := hitTestColumn(line, 20, 0, 5); col != 5 {
+		t.Errorf("expected 5, got %d", col)
+	}
+}
+
+func TestHitTestColumn_WrappedSegment(t *testing.T) {
+	line := []rune("ABCDEFGHIJ") // width 5 → 2 segments
+	// Segment 1 starts at rune 5; X=2 → col 7
+	if col := hitTestColumn(line, 5, 1, 2); col != 7 {
+		t.Errorf("expected 7, got %d", col)
+	}
+}
+
+func TestHitTestColumn_CJK(t *testing.T) {
+	line := []rune("A你好B") // widths: 1,2,2,1 = 6 cells
+	// Width 3: segment 0 = A你(3), segment 1 = 好B(3)
+	// Click segment 1, X=0 → col 2 (the '好')
+	if col := hitTestColumn(line, 3, 1, 0); col != 2 {
+		t.Errorf("expected 2, got %d", col)
+	}
+}
+
+func TestHitTestColumn_ZeroWidth(t *testing.T) {
+	line := []rune("Hello")
+	// Width 0 → no wrapping, clamped to [0, len(line)]
+	if col := hitTestColumn(line, 0, 0, 3); col != 3 {
+		t.Errorf("expected 3, got %d", col)
+	}
+	// Clamp below
+	if col := hitTestColumn(line, 0, 0, -5); col != 0 {
+		t.Errorf("expected 0, got %d", col)
+	}
+	// Clamp above
+	if col := hitTestColumn(line, 0, 0, 100); col != 5 {
+		t.Errorf("expected 5, got %d", col)
+	}
+}
+
+func TestHitTestColumn_EmptyLine(t *testing.T) {
+	if col := hitTestColumn(nil, 10, 0, 5); col != 0 {
+		t.Errorf("expected 0, got %d", col)
+	}
+	if col := hitTestColumn([]rune{}, 10, 0, 5); col != 0 {
+		t.Errorf("expected 0, got %d", col)
+	}
+}
+
 func TestRuneWidth_ZeroWidth(t *testing.T) {
-	// Combining marks (zero-width in runewidth) should return 1
-	// U+0300 COMBINING GRAVE ACCENT has zero width
-	if w := runeWidth('\u0300'); w != 1 {
-		t.Errorf("expected 1 for combining mark, got %d", w)
+	// Combining marks have zero visual width (they attach to a base character).
+	// U+0300 COMBINING GRAVE ACCENT
+	if w := runeWidth('\u0300'); w != 0 {
+		t.Errorf("expected 0 for combining mark, got %d", w)
 	}
 }
 
 func TestRuneWidth_ControlChar(t *testing.T) {
-	// Control characters like BEL have 0 width in runewidth
-	if w := runeWidth('\x07'); w != 1 {
-		t.Errorf("expected 1 for control char, got %d", w)
+	// Control characters like BEL have zero visual width.
+	if w := runeWidth('\x07'); w != 0 {
+		t.Errorf("expected 0 for control char, got %d", w)
 	}
 }
 
 func TestRuneWidth_NullChar(t *testing.T) {
-	// Null byte
-	if w := runeWidth('\x00'); w != 1 {
-		t.Errorf("expected 1 for null char, got %d", w)
+	// Null byte has zero visual width.
+	if w := runeWidth('\x00'); w != 0 {
+		t.Errorf("expected 0 for null char, got %d", w)
 	}
 }
 

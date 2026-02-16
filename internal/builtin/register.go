@@ -14,6 +14,7 @@ import (
 	bubblezonemod "github.com/joeycumines/one-shot-man/internal/builtin/bubblezone"
 	cryptomod "github.com/joeycumines/one-shot-man/internal/builtin/crypto"
 	ctxutils "github.com/joeycumines/one-shot-man/internal/builtin/ctxutil"
+	encodingmod "github.com/joeycumines/one-shot-man/internal/builtin/encoding"
 	execmod "github.com/joeycumines/one-shot-man/internal/builtin/exec"
 	fetchmod "github.com/joeycumines/one-shot-man/internal/builtin/fetch"
 	flagmod "github.com/joeycumines/one-shot-man/internal/builtin/flag"
@@ -86,6 +87,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	const prefix = "osm:"
 	registry.RegisterNativeModule(prefix+"argv", argv.Require)
 	registry.RegisterNativeModule(prefix+"crypto", cryptomod.Require)
+	registry.RegisterNativeModule(prefix+"encoding", encodingmod.Require)
 	registry.RegisterNativeModule(prefix+"json", jsonmod.Require)
 	registry.RegisterNativeModule(prefix+"nextIntegerID", nextintegerid.Require)
 	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.Require) // Deprecated: use osm:nextIntegerID

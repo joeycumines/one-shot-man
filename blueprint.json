@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200 DONE (5b86238), T201 DONE (c5ecde8), T202 DONE (54cc73d), T203 DONE (14fa5dd), T204 DONE. Session 2026-02-17. Proceeding to T205."
+    "currentState": "T200 DONE (5b86238), T201 DONE (c5ecde8), T202 DONE (54cc73d), T203 DONE (14fa5dd), T204 DONE (879930c), T205 DONE. Session 2026-02-17. Proceeding to T206."
   },
   "sequentialTasks": [
     {
@@ -45,7 +45,7 @@
     {
       "task": "T205: osm:encoding module — base64/hex encode/decode",
       "description": "Create osm:encoding native module in internal/builtin/encoding/. Functions: base64Encode, base64Decode, base64URLEncode, base64URLDecode, hexEncode, hexDecode. Handle decode errors with JS Error. Register in register.go. Add unit tests for round-trips, invalid input, empty strings. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T206: osm config reset subcommand",

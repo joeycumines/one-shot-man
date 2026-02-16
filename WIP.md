@@ -10,13 +10,12 @@
 - T201: DONE (commit c5ecde8) — rename osm:nextIntegerId → osm:nextIntegerID
 - T202: DONE (commit 54cc73d) — migrate textarea runeWidth to uniseg + hitTestColumn extraction
 - T203: DONE (commit 14fa5dd) — MCP server removeFile and clearContext tools
-- T204: DONE — osm:regexp module
+- T204: DONE (commit 879930c) — osm:regexp module
+- T205: DONE — osm:encoding module
 - Blueprint updated
 
 ## Next Step
-- T205: osm:encoding module — base64/hex encode/decode
-- File: internal/builtin/encoding/
-- Create native module with base64Encode, base64Decode, hexEncode, hexDecode
+- T206: osm config reset subcommand
 
 ## Architecture Notes
 - Old tasks T128-T170 have been remapped to T200-T269
@@ -43,4 +42,7 @@
 - T204 Run 1: PASS (but misleading comment found — fixed, counter reset)
 - T204 Run 1 v2: PASS (scratch/review-t204-run1.md)
 - T204 Run 2: PASS (scratch/review-t204-run2.md)
-- T204 Committed: pending
+- T204 Committed: 879930c
+- T205 Run 1: PASS (scratch/review-t205-run1.md)
+- T205 Run 2: PASS (scratch/review-t205-run2.md)
+- T205 Committed: pending

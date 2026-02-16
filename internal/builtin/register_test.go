@@ -28,6 +28,7 @@ func TestRegister(t *testing.T) {
 	modules := []string{
 		"osm:argv",
 		"osm:crypto",
+		"osm:encoding",
 		"osm:json",
 		"osm:fetch",
 		"osm:flag",

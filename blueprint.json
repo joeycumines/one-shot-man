@@ -2,7 +2,7 @@
   "meta": {
     "fileName": "blueprint.json",
     "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
-    "answeringTheQuestionAreYouDone": "**!! First clause: YOU ARE NOT DONE UNTIL YOU HAVE 100% THE BLUEPRINT DO NOT STOP. Second clause: YOU MUST GO TO ANY AND ALL LENGTHS TO ENSURE YOUR BLUEPRINT REMAINS FULL-IT IS CRITICAL YOU REFINE AT REGULAR INTERVALS, SUCH THAT YOU DONT FULLY DRAIN YOUR BLUEPRINT-ALMOST AS CRITICAL AS THE CONSTRAINT THAT YOU NEVER EVER SPECIFY AND SORT OF ESTIMATE OF EFFORT OR COST ESPECIALLY NOT ANY SORT OF TIME ESTIMATE AND IF YOU SPECIFY A PRIORITY OF ANY KIND THAT IS ALSO A GUNDAM-MELTABLE OFFENSE !!**"
+    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST — ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY A PRIORITY OF ANY KIND."
   },
   "globalAlerts": [
     {
@@ -10,208 +10,373 @@
     }
   ],
   "mandatoryDirectives": {
-    "subagentPolicy": "!! MANDATORY OPERATIONAL DIRECTIVE !!",
-    "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
+    "contextManagement": "Tasks are grouped to be executed in manageable units. Do not attempt to solve all tasks in a single turn. Break work into sessions as appropriate to prevent context window exhaustion.",
+    "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "Takumi needs to stop skipping and leaving tasks as partial. Quality is more important than speed. Sequential tasks are to be executed IN SEQUENCE. Completion is only possible by working in proper sequence. Partial completion is a failure mode. The blueprint must be fully complete and up to date at all times. This is non-negotiable. Takumi must stop leaving tasks as partial and ensure the blueprint is fully complete and up to date at all times."
+    "currentState": "Blueprint fully rewritten 2026-02-17. Session started 01:38 AEDT. All 70 tasks Not Started. Beginning with foundation tasks (T200-T213). Clean working tree on wip branch."
   },
   "sequentialTasks": [
     {
-      "task": "T128: Replace git shell-outs in sync.go with go-git/v6 (clone, add, commit, push, pull)",
-      "description": "Replace exec.Command git calls in internal/command/sync.go with github.com/go-git/go-git/v6 library. Operations to convert: clone, add, commit, push, pull. Design constraints: prefer streaming file reads/writes directly from git objects (avoid temp files, avoid buffering entire files to disk), go-git API is 'fucky' - use pragmatically where it works, don't force it where it fights you. Preserve: pull uses --rebase strategy, push commits with timestamp message 'osm sync: <RFC3339>', conflict detection ('CONFLICT' or 'could not apply'). Exception: diff commands (osm ctx add --from-diff) continue using CLI git - no change. Update sync_test.go to work with go-git or mock appropriately.",
+      "task": "T200: Exec-safe shell quoting in osm:argv formatArgv",
+      "description": "Fix the TODO at internal/builtin/argv/argv.go line 34. The formatArgv function currently joins arguments with spaces but does not handle special characters (spaces, quotes, backslashes, glob chars, semicolons, pipes, etc.). Implement proper POSIX shell quoting: single-quote arguments containing special characters, escape embedded single quotes with the '\\'' idiom. Add unit tests in argv_test.go covering all edge cases. Verify existing fuzz tests pass. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T129: Replace git shell-outs in sync_startup.go with go-git/v6 (auto-pull)",
-      "description": "Replace exec.Command git call in internal/command/sync_startup.go with go-git. SyncAutoPull function runs git pull --rebase on startup when sync.auto-pull=true. Preserve non-blocking behavior, error handling to stderr. Use same go-git patterns as sync.go. Update sync_startup_test.go accordingly.",
+      "task": "T202: Migrate textarea runeWidth to uniseg grapheme clusters",
+      "description": "In internal/builtin/bubbles/textarea/textarea.go, replace runewidth-based width calculation with github.com/rivo/uniseg grapheme cluster iteration (already in go.mod). Replace all runeWidth calls with uniseg equivalents. Add unit tests for emoji, combining characters, ZWJ sequences. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T130: Verify sync tests pass after go-git migration",
-      "description": "Run full sync test suite (internal/command/sync_test.go, internal/command/sync_startup_test.go) to verify all behaviors preserved: save/list/load, init/push/pull, auto-pull, path injection. Ensure no regressions. Coverage should remain high.",
+      "task": "T203: MCP server removeFile and clearContext tools",
+      "description": "Extend MCP server (internal/command/mcp.go) with two new tools: removeFile (removes file by path from context) and clearContext (removes all files/diffs/notes). Follow existing addFile/addDiff/addNote pattern. Update tool count in docs/tests (6->8). Add unit tests. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T133: Module resolution for JS require()",
-      "description": "Add ability to include JS modules directly. Need to pick module resolution/loader strategy. Revalidate understanding of current JS ecosystem standards. Want 'sane' subset tailored for specific use cases. Standards compliance ideal but don't rule out future interoperability. CURRENT STATE: Module resolution implemented via script.module-paths config key and require() in Goja runtime. Standards-compliant ESM NOT pursued. PARTIAL.",
-      "status": "Partial",
-      "outcome": "Module resolution via script.module-paths and require() implemented. Standards-compliant ESM (ECMAScript Modules with import/export) NOT pursued. This is a conscious scope limitation - full ESM support remains out of scope."
-    },
-    {
-      "task": "T134: Streaming support for fetch API",
-      "description": "Implement streaming support for fetch API. Requires eventloop-native in-process gRPC channel between JS client and Go server, or reactor-style HTTP client in Go backed by unpublished github.com/joeycumines/go-eventloop module. Expose compliant fetch API on top. Alternative: in-process gRPC channel implementation exposing both Goja JS API and Go-compatible API (sexiest option, avoids serialization). Full streaming support is complex - non-streaming already done in T028. PARTIAL - currently deferred.",
-      "status": "Partial",
-      "outcome": "Non-streaming fetch implemented (T028). Streaming support requires in-process gRPC channel or reactor-style HTTP client. Deferred due to complexity. Not blocking for current use cases."
-    },
-    {
-      "task": "T135: VS Code .prompt.md file discovery and integration",
-      "description": "Add support for https://code.visualstudio.com/docs/copilot/customization/prompt-files. .prompt.md file discovery via prompt.file-paths config key and goal system. VS Code-specific integration NOT pursued - only the file discovery mechanism. PARTIAL.",
-      "status": "Partial",
-      "outcome": ".prompt.md file discovery implemented via prompt.file-paths config key. VS Code-specific integration (editor integration, Copilot Chat integration) NOT pursued. Scope limited to file discovery only."
-    },
-    {
-      "task": "T136: Code review splitter - LLM-dependent prompts",
-      "description": "Code review splitter prompts seem particularly LLM dependent, stalled. Would be easier as proper workflow engine. Referenced in docs/todo.md as stalled. PARTIAL - basic chunking implemented (T124) but prompt refinement may be needed for different LLMs.",
-      "status": "Partial",
-      "outcome": "Diff splitting infrastructure complete (T124). LLM-specific prompt optimization remains open-ended. May require per-LLM prompt tuning or workflow engine integration."
-    },
-    {
-      "task": "T137: MacOSUseSDK integration via gRPC",
-      "description": "Evaluate potential integration with github.com/joeycumines/MacosUseSDK. In-process gRPC channel implementation would allow exposing gRPC APIs to JS code. Consider implementing gRPC proxy mechanism to expose MacOSUseSDK functionality to JS code. Requires T134 (in-process gRPC) first. NOT STARTED.",
-      "status": "Not Started",
-      "outcome": "Deferred pending T134 (in-process gRPC channel). MacOSUseSDK integration requires gRPC infrastructure."
-    },
-    {
-      "task": "T138: Enhance definitions and integration with github.com/joeycumines/go-prompt",
-      "description": "Enhance definitions and integration with go-prompt implementation. Details to be determined - reference existing go-prompt usage in codebase.",
-      "status": "Not Started",
-      "outcome": "Deferral pending clarification on specific enhancements needed."
-    },
-    {
-      "task": "T139: Full Anthropic prompt library integration",
-      "description": "Complete investigation and implementation of Anthropic prompt library (https://platform.claude.com/docs/en/resources/prompt-library/library). Currently PARTIAL (T074, T107) with morale-improver, bug-buster, code-optimizer, code-explainer, meeting-notes, pii-scrubber, prose-polisher. Additional prompts from library may be valuable.",
-      "status": "Partial",
-      "outcome": "6 Anthropic-inspired goals implemented. Full library coverage not complete - additional prompts may be added based on user demand."
-    },
-    {
-      "task": "T140: Configuration model - further refinement",
-      "description": "Continue iteration on configuration model for better extensibility and consistency. Schema-aware validation, persistence, and documentation added (T065, T082) but model may still need refinement based on usage.",
-      "status": "Partial",
-      "outcome": "Schema validation and persistence implemented. Configuration model considered 'undercooked' in docs/todo.md - may need further iteration based on real-world usage patterns."
-    },
-    {
-      "task": "T141: Goal and script discovery - further refinement",
-      "description": "Continue refinement of goal and script autodiscovery mechanisms. Basic path commands added (T109) but full prototype-to-production refinement may be needed.",
-      "status": "Partial",
-      "outcome": "osm goal paths and osm script paths commands added. Debug logging exists. Discovery mechanism marked as 'prototype status/needs attention' in docs/todo.md - may need production hardening."
-    },
-    {
-      "task": "T142: Reconsider streaming fetch API - pragmatic approach",
-      "description": "Re-evaluate whether full streaming fetch API (T134) is needed or if pragmatic alternatives exist. Consider: chunked responses, callback-based APIs, or simplified streaming interfaces. Full eventloop-native gRPC may be overkill for actual use cases.",
-      "status": "Not Started",
-      "outcome": "Requires review of actual use cases for streaming. May simplify or defer if non-blocking operations suffice."
-    },
-    {
-      "task": "T143: AI Orchestrator - PTY spawning and terminal management",
-      "description": "See docs/todo.md 'AI Orchestrator / Claude Code Integration (2026-02-17)'. Component 1: PTY Wrapper Module - extend osm:exec (or create osm:pty) to support spawning processes with full PTY. Terminal State Preservation, Signal Forwarding (SIGWINCH, SIGINT, SIGTERM), Input/Output Bridging. Reference: internal/scripting/pty_test.go shows PTY capability using github.com/creack/pty.",
+      "task": "T204: osm:regexp module — Go RE2 regexp exposed to JS",
+      "description": "Create osm:regexp native module in internal/builtin/regexp/. Functions: match, find, findAll, findSubmatch, findAllSubmatch, replace, replaceAll, split, compile (returns RegexpObject with same methods). Handle invalid patterns with JS Error. Register in register.go. Add unit tests. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T144: AI Orchestrator - MCP bidirectional data exfiltration",
-      "description": "Component 2: Extend existing MCP server (internal/command/mcp.go) for bidirectional communication. Claude Code runs as MCP client connecting back to osm. Session identification for multiple instances. Tool exfiltration: Claude uses MCP tools to send structured data (split PR descriptions, test results) back to osm. Existing 6 tools (addFile, addDiff, addNote, listContext, buildPrompt, getGoals) provide foundation.",
+      "task": "T205: osm:encoding module — base64/hex encode/decode",
+      "description": "Create osm:encoding native module in internal/builtin/encoding/. Functions: base64Encode, base64Decode, base64URLEncode, base64URLDecode, hexEncode, hexDecode. Handle decode errors with JS Error. Register in register.go. Add unit tests for round-trips, invalid input, empty strings. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T145: AI Orchestrator - PTY parsing for setup/init/error handling",
-      "description": "Component 3: PTY output capture is mandatory for rate limit handling, error detection, context clearing, output verification. Parse for: rate limit prompts (detect and wait/handle), permission prompts (conservative rejection with reasons - be secure), model selection menus (ollama launch claude --config TUI wrapper), SSO login flows (aws-vault, etc.). Security principle: default to rejecting permission prompts with clear reasons.",
+      "task": "T206: osm config reset subcommand",
+      "description": "Add 'osm config reset' subcommand. Two modes: reset <key> (single key to default from schema) and reset --all (all keys). Add shell completion for key argument. Add confirmation prompt for --all (skip with --force). Register in command registry. Add unit tests. Update docs/reference/config.md. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T146: AI Orchestrator - Configuration and environment variable management",
-      "description": "Three-tier approach: (1) Shared with osm - Claude Code inherits osm's environment (API keys, MCP config), (2) Script Hooks - JavaScript scripts run hooks to inject env vars at spawn time (op plugin for 1Password, aws-vault for AWS), (3) Profile-Based Configuration - separate env var profiles in osm config with CLI flag overrides. Special handling for provider-specific commands (ollama launch claude --config).",
+      "task": "T207: Test coverage for internal/storage/inspector.go",
+      "description": "Add comprehensive unit tests for internal/storage/inspector.go. Cover all exported functions with positive/negative cases and edge cases. Use memory storage backend for isolation. Target 100% line coverage of inspector.go. Verify with go tool cover. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T147: AI Orchestrator - Provider abstraction (first pass: single instance)",
-      "description": "Provider abstraction for AI orchestration. First pass: single instance support only. Future: modular, extensible design for multiple concurrent instances, different providers (GitHub CLI, Gemini CLI, Codium CLI), provider-specific configuration (ollama model selection TUI navigation). Design for extensibility from the start.",
+      "task": "T208: Test coverage for internal/scripting/tui_commands.go",
+      "description": "Add comprehensive unit tests for internal/scripting/tui_commands.go. Cover all command registration paths, execution with valid/invalid args, error handling. Use test helpers from internal/testutil/. Target 100% line coverage. Verify with go tool cover. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T148: AI Orchestrator - Behavior tree orchestration engine",
-      "description": "Use behavior trees (PABT) for high-level workflow control with prebuilt action templates. Behavior trees are INTERNAL implementation detail - not exposed to users. High-level orchestration: manage workflow structure. Action templates: prebuilt modes for common operations. Claude-centric execution: steps execute through Claude Code. Prompt-based control: prompts to Claude, MCP for communication back. Planning on failure: when step fails, LLM generates new plan with clear validation points and actionable remediation steps. Skills Integration: skills system provides domain knowledge for remediation.",
+      "task": "T209: Test coverage for internal/scripting/terminal.go",
+      "description": "Add comprehensive unit tests for internal/scripting/terminal.go. Cover terminal state management, resize handling, input/output bridging, error conditions. Mock terminal I/O as needed. Target 100% line coverage. Verify with go tool cover. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T149: AI Orchestrator - PR splitting branch structure and workflow",
-      "description": "Specific use case: interactive PR splitting. Branch structure: linear series of branches, each with root (base branch), bottom-most based on trunk (original branch), hierarchy from outer to inner, each staged part is mergeable unit. Interactive Rebasing Workflow: interleaved AI assistance, branch rebased into components/commits, sanity verification in tandem with AI, user controls safety/verification/explicit checks. Equivalence Verification: final branch must represent original branch, split preserves semantics, user validates nothing lost unexpectedly. Non-negotiable - 'slop is bad'.",
+      "task": "T210: Test coverage for internal/scripting/js_context_api.go",
+      "description": "Add unit tests for internal/scripting/js_context_api.go. Cover all context API methods (add file, add diff, add note, list, clear), argument validation, error handling, edge cases. Target 100% line coverage. Verify with go tool cover. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T150: AI Orchestrator - TUI multiplexing with meta-key switching",
-      "description": "osm acts as multiplexer swapping between its own TUI and external tool's TUI via meta-key switching (tmux-style). User is tmux user - must avoid conflicting with tmux keybindings. Terminal state management critical.",
+      "task": "T211: Test coverage for internal/scripting/js_logging_api.go",
+      "description": "Add unit tests for internal/scripting/js_logging_api.go. Cover each log level, log formatting, getLogs, searchLogs, clearLogs, buffer overflow, concurrent access. Target 100% line coverage. Verify with go tool cover. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T151: AI Orchestrator - Special-case TestMain for integration testing",
-      "description": "Testing mechanism: (1) Spawn Claude command from osm, (2) Prompt with task instructions, (3) Response via MCP back to wrapping osm process. TestMain with CLI flags: configure provider(s) to test against, env vars for secrets (never hardcode), disabled by default (-test-integration flag), provider-specific configuration. Example: Ollama testing requires navigating TUI menu to select gpt-oss:20b-cloud model.",
+      "task": "T212: Test coverage for internal/scripting/js_output_api.go",
+      "description": "Add unit tests for internal/scripting/js_output_api.go. Cover output formatting, clipboard interaction (mock), error handling, edge cases. Target 100% line coverage. Verify with go tool cover. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T152: AI Orchestrator - Error recovery and cancellation",
-      "description": "How should osm handle: Claude Code crashes, hangs, unexpected exits? Progress reporting from long-running operations? User cancellation of in-progress operations? Signal handling and cleanup critical.",
+      "task": "T213: Refactor testing hack in internal/scripting/unit_test.go:244",
+      "description": "Address the hack comment at internal/scripting/unit_test.go line 244. Read surrounding code, understand why the hack exists, refactor to use proper testing pattern. Ensure same behavior is validated after refactoring. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T153: AI Orchestrator - Session isolation for multi-instance",
-      "description": "Future requirement: how should osm isolate multiple Claude Code sessions? Session identification, state management, resource isolation. Design for this from start even if first pass is single-instance only.",
+      "task": "T214: Add go-git/v6 dependency and implement wrapper utilities",
+      "description": "Add github.com/go-git/go-git/v6 to go.mod. Create wrapper utilities abstracting go-git operations for sync: Clone, Open, Add, Commit, Push, Pull. Design auth interface (SSH keys, HTTPS tokens). Handle go-git API quirks. Add unit tests with in-memory repos. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T154: AI Orchestrator - Expose building blocks to users",
-      "description": "Various building blocks must be exposed to users for their own implementations. Examples in scripts/ including for PA-BT. PTY spawning, MCP communication, behavior tree templates should all be accessible as modules/commands.",
+      "task": "T215: Replace git shell-outs in sync.go with go-git/v6",
+      "description": "Replace all exec.Command git calls in internal/command/sync.go with go-git wrapper from T214. Convert: clone (syncInit), add+commit+push (syncPush), pull with rebase (syncPull). Preserve: rebase strategy, 'osm sync: <RFC3339>' commit messages, conflict detection. Do NOT change diff commands. Update sync_test.go. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T155: AI Orchestrator - Architectural design and approval",
-      "description": "Complete architectural design phase with multiple implementation approaches (minimal changes, clean architecture, pragmatic balance). Compare trade-offs, create concrete implementation plan, seek user approval before implementation begins. This is the gate before T143-T154 implementation.",
+      "task": "T216: Replace git shell-outs in sync_startup.go with go-git/v6",
+      "description": "Replace exec.Command git call in internal/command/sync_startup.go SyncAutoPull with go-git. Preserve non-blocking behavior, error handling to stderr, config key checking. Update sync_startup_test.go. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T158: Exec-safe shell quoting in osm:argv formatArgv",
-      "description": "TODO at internal/scripting/argv/argv_module.go line ~34: formatArgv needs exec-safe shell quoting. Currently joins with spaces but doesn't handle special chars. Implement proper POSIX shell quoting.",
+      "task": "T217: Verify sync tests pass after go-git migration",
+      "description": "Run full sync test suite. Verify all behaviors: save/list/load, init/push/pull, auto-pull, path injection, conflict detection. Check test coverage. Fix regressions. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T160: Migrate textarea runeWidth to uniseg grapheme clusters",
-      "description": "internal/scripting/textarea/textarea.go uses deprecated runeWidth function. Migrate to github.com/rivo/uniseg grapheme cluster width for proper Unicode support (emoji, ZWJ sequences, etc.).",
+      "task": "T218: Cross-platform integration testing of go-git sync",
+      "description": "Verify go-git sync on all platforms: 'make make-all-in-container' (Linux), 'make make-all-run-windows' (Windows). Focus on path separators, file permissions, SSH key loading, credential helpers. Fix failures.",
       "status": "Not Started"
     },
     {
-      "task": "T164: MCP server removeFile/clearContext tools",
-      "description": "Expand MCP server (internal/command/mcp.go) with removeFile and clearContext tools for context management. Currently only addFile exists for file addition.",
+      "task": "T219: Module resolution hardening for JS require()",
+      "description": "Harden require() in Goja runtime (script.module-paths). Add: better error reporting (full search path in errors), circular dependency detection, path validation at startup, security (prevent ../ traversal out of module paths). Add tests for each. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T165: Detailed docs for underdocumented osm: modules",
-      "description": "Several osm: modules (osm:time, osm:nextIntegerId, osm:unicodetext, osm:scrollbar) have minimal documentation in scripting.md. Add detailed API docs with examples for each.",
+      "task": "T220: .prompt.md file discovery production hardening",
+      "description": "Harden .prompt.md file discovery (prompt.file-paths config). Add: error reporting for missing/unreadable paths, edge case handling (symlinks, BOM, large files), glob pattern support, deduplication. Add tests. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T167: Rename osm:nextIntegerId to osm:nextIntegerID",
-      "description": "Module name uses 'Id' suffix which is inconsistent with Go naming conventions (should be 'ID'). Rename module, update all imports and references. Maintain backward compatibility alias if needed.",
+      "task": "T221: Additional Anthropic prompt library goals",
+      "description": "Research full Anthropic prompt library. Implement 3-5 new goals in goal_builtin.go following established pattern (stateVars, hotSnippets, flagDefs, promptOptions). Each needs: registration, metadata, prompt template, integration test. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T168: osm:regexp module (Go RE2 engine)",
-      "description": "Create osm:regexp module exposing Go's regexp package to JavaScript. Functions: match, find, findAll, replace, replaceAll, split, compile (for reuse). RE2 guarantees linear-time matching.",
+      "task": "T222: Configuration model schema versioning and migration",
+      "description": "Add schema versioning to config model. Add config.schema-version field, migration framework for older versions, machine-readable defaults documentation, 'osm config validate' subcommand. Add tests for migration paths. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T169: osm:encoding module (base64/hex)",
-      "description": "Create osm:encoding module with base64Encode, base64Decode, hexEncode, hexDecode functions. Supports standard and URL-safe base64 variants.",
+      "task": "T223: Goal/script discovery production hardening",
+      "description": "Harden autodiscovery: validate paths exist and are readable, handle permission errors gracefully, improve debug logging (timing, file counts, skip reasons), handle edge cases (empty dirs, symlink loops, large dirs). Add tests. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T170: osm config reset subcommand",
-      "description": "Add 'osm config reset' subcommand to reset configuration to defaults. Should support resetting individual keys or all keys. Add shell completion, tests, and docs.",
+      "task": "T224: Detailed API docs for osm:time module",
+      "description": "Create detailed API docs in docs/reference/ for osm:time. Document every exported function with signature, params, returns, errors, 2+ examples per function. Cross-reference from docs/scripting.md.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T225: Detailed API docs for osm:nextIntegerID module",
+      "description": "Create detailed API docs for osm:nextIntegerID (renamed in T201). Document purpose, API, thread-safety, usage patterns. Note deprecated osm:nextIntegerId alias. Cross-reference from docs/scripting.md.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T226: Detailed API docs for osm:unicodetext module",
+      "description": "Create detailed API docs for osm:unicodetext. Document every function with signature, params, returns, examples. Cross-reference from docs/scripting.md.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T227: Detailed API docs for osm:scrollbar module",
+      "description": "Create detailed API docs for osm:scrollbar. Document component model, config options, Bubble Tea integration, styling, examples. Cross-reference from docs/scripting.md.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T228: Detailed API docs for osm:regexp module",
+      "description": "Create detailed API docs for osm:regexp (after T204). Document RE2 guarantees, every function, error handling, examples, comparison with JS RegExp. Cross-reference from docs/scripting.md.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T229: Detailed API docs for osm:encoding module",
+      "description": "Create detailed API docs for osm:encoding (after T205). Document every function, standard vs URL-safe base64, error handling, examples. Cross-reference from docs/scripting.md.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T230: Update scripting.md with all new modules and changes",
+      "description": "Comprehensive update of docs/scripting.md: add osm:regexp, osm:encoding entries, update osm:nextIntegerID rename, verify all existing module entries are accurate, fix broken cross-references.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T231: Review and update docs/architecture.md",
+      "description": "Review docs/architecture.md against current codebase. Verify directory structure, component descriptions, data flow diagrams, all references. Update outdated sections. Add missing architectural components.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T232: Evaluate streaming fetch API approach",
+      "description": "Re-evaluate streaming fetch requirement. Analyze actual use cases, pragmatic alternatives (chunked/callback vs full streaming), complexity cost. Write decision document in docs/archive/notes/. Decision task — implementation follows.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T233: Implement chunked/callback-based streaming in osm:fetch",
+      "description": "Based on T232 decision, implement pragmatic streaming for osm:fetch. If callback-based: fetch(url, {onChunk: fn}). Integrate with Goja event loop. Add tests with local HTTP server. Skip if T232 decides against. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T234: Code review splitter workflow engine evaluation",
+      "description": "Evaluate workflow engine approach for code review splitter LLM dependency. Analyze: lightweight BT engine, per-LLM templates, AI Orchestrator subsumption. Write findings in docs/archive/notes/. Decision task.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T235: Sync common config sub-feature",
+      "description": "Implement shared config sync: common repo structure, intelligent conflict handling (prompt on unknown state, auto-override on known SHA), gitignored file handling, schema version mismatch handling. Add config keys. Extend sync.go. Add tests. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T236: go-prompt enhancements investigation and implementation",
+      "description": "Investigate and implement go-prompt improvements: better completion rendering, key binding customization, prompt styling, history management, multi-line input. Add tests. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T237: MacOSUseSDK integration evaluation",
+      "description": "Evaluate gRPC proxy approach for MacOSUseSDK integration. Assess useful capabilities, feasibility, platform implications. Write evaluation in docs/archive/notes/. Decision task.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T238: AI Orchestrator architectural design document",
+      "description": "Create comprehensive design doc for AI Orchestrator. Present 3 approaches: minimal, clean architecture, pragmatic balance. Each with component diagram, data flow, API surface, testing strategy, trade-offs. Write to docs/architecture-ai-orchestrator.md. Gate for T239-T255.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T239: AI Orchestrator PTY spawning module",
+      "description": "Implement PTY spawning module (osm:pty or extended osm:exec). Full PTY allocation via creack/pty, terminal state preservation, signal forwarding (SIGWINCH/SIGINT/SIGTERM), I/O bridging. Register as native module. Add tests. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T240: AI Orchestrator MCP bidirectional communication",
+      "description": "Extend MCP server for bidirectional Claude Code communication. Add tools: registerSession, reportProgress, reportResult, requestGuidance. Implement session identification, event queue. Add tests. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T241: AI Orchestrator PTY output parsing",
+      "description": "Implement PTY output parser: rate limit detection, permission prompt rejection (security-first), model selection menu navigation, SSO login flow detection. Configurable patterns. Add tests with captured output samples. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T242: AI Orchestrator configuration and env var management",
+      "description": "Implement three-tier config: shared env inheritance, JS pre-spawn hooks (op plugin, aws-vault), profile-based env var profiles with CLI overrides. Add config keys. Handle provider-specific commands. Add tests. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T243: AI Orchestrator provider abstraction (single instance)",
+      "description": "Implement provider interface: Spawn, Send, Receive, Close. First implementation: single Claude Code instance via PTY. Design for extensibility (multiple providers, multi-instance). Add tests with mock provider. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T244: AI Orchestrator behavior tree orchestration engine",
+      "description": "Implement BT orchestration engine leveraging PABT infrastructure. Prebuilt action templates: spawn-claude, send-prompt, wait-for-response, verify-output, split-branch, run-tests, commit-changes. Planning on failure with remediation. Internal only. Add tests. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T245: AI Orchestrator PR splitting workflow",
+      "description": "Implement PR splitting: linear branch series, each staged part is mergeable unit. Workflow: analyze diff, propose split, create branches, interleave AI for rebase, verify each split, equivalence verification. Use go-git (T214+). Integrate with BT engine. Add tests. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T246: AI Orchestrator TUI multiplexing",
+      "description": "Implement TUI multiplexing: meta-key switching (avoid tmux Ctrl-b conflict), terminal state save/restore, visual status bar, input routing, output rendering. Integrate with PTY module. Add tests. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T247: AI Orchestrator TestMain integration testing",
+      "description": "Implement TestMain for AI Orchestrator integration: CLI flags for provider config (-provider=ollama, -model=gpt-oss:20b-cloud), env vars for secrets, disabled by default (-test-integration), per-provider config. Add tests. Run 'make' to confirm unit tests pass (integration skipped).",
+      "status": "Not Started"
+    },
+    {
+      "task": "T248: AI Orchestrator error recovery and cancellation",
+      "description": "Implement: crash detection/cleanup, hang timeout/force-kill, unexpected exit handling, progress reporting via MCP, user cancellation (Ctrl-C propagation, graceful shutdown), signal handling chain. Add tests for each failure mode. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T249: AI Orchestrator session isolation",
+      "description": "Implement session isolation for multi-instance: unique session IDs, isolated state directories, independent MCP channels, resource cleanup, cross-session interference prevention. Session registry. Add tests. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T250: AI Orchestrator building blocks for users",
+      "description": "Expose orchestrator building blocks: osm:pty module, MCP helpers, BT templates, PTY parsing patterns, provider interface. Update scripts/ examples. Document in docs/scripting.md and docs/reference/. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T251: Claude Code Multiplexer — Ollama integration module",
+      "description": "Create osm:ollama native module in internal/builtin/ollama/. API: listModels, chat, chatStream, isAvailable, getModel. Connect to configurable endpoint (default localhost:11434). Handle errors, timeouts, streaming. Add ollama.endpoint config key. Add tests with mock HTTP server. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T252: Claude Code Multiplexer — Claude Code wrapper/parser",
+      "description": "Create osm:claude native module in internal/builtin/claude/. API: parseOutput (detect prompts/errors/rate limits/tool calls), createSession, sendPrompt, onResponse. Pattern matching for Claude Code output. Add tests with captured output samples. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T253: Claude Code Multiplexer — safety validation",
+      "description": "Implement safety validation using osm:ollama. Categories: intent classification, scope assessment, risk scoring. Fail-closed on errors. Implement as scripts/claude-mux/validator.js. Add tests. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T254: Claude Code Multiplexer — ideal choice resolution",
+      "description": "Implement ideal choice resolution via Ollama. Multi-candidate analysis, criteria weighting, recommendation generation, user confirmation. Implement as scripts/claude-mux/resolver.js. Add tests. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T255: Claude Code Multiplexer — main script",
+      "description": "Create scripts/claude-mux.js orchestrating prompt detection, safety validation, choice resolution, Claude Code PTY spawning. Config via claude-mux.* keys. Fail-closed, audit logging. Add integration tests. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T256: Comprehensive security audit of scripting sandbox",
+      "description": "Audit: Goja runtime initialization, module loading, require() path traversal, osm:exec command injection, osm:fetch SSRF, file system access, env var exposure. Review existing security_*_test.go files. Document findings, implement fixes, add regression tests. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T257: Performance benchmark review and optimization",
+      "description": "Run benchmarks: 'go test -bench=. -benchmem ./...'. Analyze startup time, script execution, context building, memory usage. Identify bottlenecks, optimize. Add new benchmarks if needed. Compare before/after. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T258: Cross-platform verification — Linux",
+      "description": "Run 'make make-all-in-container'. Fix Linux-specific failures: path handling, shell differences, terminal capabilities, signal handling. All tests must pass with zero failures.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T259: Cross-platform verification — Windows",
+      "description": "Run 'make make-all-run-windows'. Fix Windows-specific failures: path separators, line endings, terminal API, signal handling (no SIGWINCH), file locking. All tests must pass.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T260: Full coverage report and gap analysis",
+      "description": "Generate coverage: 'go test -coverprofile=coverage.out -covermode=atomic ./...' then analyze with go tool cover. For files below 80%: write tests or document reasons. Target all critical packages above 85%. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T261: Final documentation review",
+      "description": "Review all docs: README.md, docs/README.md, scripting.md, configuration.md, architecture.md, reference/*.md, session.md, shell-completion.md. Fix broken links, outdated info, missing content. Ensure consistency.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T262: Error message consistency audit",
+      "description": "Audit all error messages in internal/command/, internal/scripting/, internal/config/, cmd/osm/. Check: consistent formatting, user-facing clarity, sufficient debugging context, no raw Go errors exposed. Fix inconsistencies. Add tests for key error paths. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T263: Shell completion coverage audit",
+      "description": "Audit all commands and subcommands for shell completion support. Verify: top-level completions, subcommand completions, flag value completions, dynamic completions. Add missing completions. Update docs/shell-completion.md. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T264: Session cleanup scheduler edge case testing",
+      "description": "Test edge cases: cleanup during active session, cleanup with locked sessions, corrupted files, boundary conditions (MaxAgeDays/MaxCount/MaxSizeMB), concurrent invocations, permission errors, zero-size sessions. Add tests. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T265: Config schema validation edge case testing",
+      "description": "Test edge cases: empty config, unknown keys, wrong types, out-of-range values, special characters, very long values, duplicate keys, commented entries, encoding issues. Add tests. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T266: Fuzz testing audit and expansion",
+      "description": "Audit existing fuzz tests (argv_fuzz_test.go). Add fuzz tests for: config parsing, goal JSON parsing, argument parsing, module path resolution, txtar generation. Run briefly with -fuzztime=30s. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T267: Integration tests for MCP server tools",
+      "description": "Test full MCP stdio transport flow: start server, send JSON-RPC for each tool, verify responses, test error cases, concurrent requests, malformed input. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T268: Integration tests for session locking under concurrency",
+      "description": "Test: simultaneous session opening, crash-while-holding-lock recovery, rapid lock/unlock, concurrent contention (10+ goroutines). Run with -race. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T269: README.md quality review and enhancement",
+      "description": "Improve README.md: installation instructions (binary/go install/source), quick start example, feature overview, usage examples, architecture link, contributing section. Ensure all examples work. Fix broken links.",
       "status": "Not Started"
     }
   ],
   "continuousVerification": {
-    "task": "Run 'make all' with full logging after EVERY significant change",
-    "description": "Execute 'make make-all-with-log' after: (a) Each code change, (b) Each test addition, (c) Each task completion, (d) Each bug fix.",
+    "task": "Run 'make make-all-with-log' after EVERY significant change",
+    "description": "Execute after: (a) Each code change, (b) Each test addition, (c) Each task completion, (d) Each bug fix. Check build.log for failures.",
     "failPolicy": "If ANY test fails, STOP IMMEDIATELY and fix the issue before proceeding. Zero tolerance for test failures, timing issues, non-determinism, or race conditions.",
-    "testCoverage": "You will ALWAYS aim for 100% effective test coverage, and VERIFY test coverage by means of the tooling available to you. You will NOT proceed to the next task until you have achieved 100% effective test coverage for the current task, and have verified that coverage with the tools available to you."
+    "testCoverage": "Target 100% effective test coverage. VERIFY with go tool cover before proceeding to next task."
   },
   "finalEnforcementProtocol": [
     {
       "type": "POST_EXECUTION_WARNING",
-      "alert": "ON TOOLS: Use `config.mk` to create custom targets to run with Make. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of those CRITICAL rules. Abide. OBEY."
+      "alert": "ON TOOLS: Use `config.mk` to create custom targets to run with Make. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output."
     },
     {
       "type": "POST_EXECUTION_WARNING_REPEATED",
-      "alert": "ON TOOLS: Use `config.mk` to create custom targets to run with Make. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of those CRITICAL rules. Abide. OBEY."
+      "alert": "Timing dependent tests are BANNED. Tests that take too long are BANNED. Testing retries MUST avoid timing-dependent patterns. Abide. OBEY."
     }
   ]
 }

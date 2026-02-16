@@ -2,9 +2,9 @@
 
 This is not an actual TODO list. Consider it as much a TODO list as your Product Manager's project roadmap.
 
-- Built-in first-class Git synchronisation support (optional, configurable)
-    - Add support to synchronise configuration including goals to a Git repository
-    - A _structured_ Git repository format that can also act as a notebook (largely chronological) for prompts and notes - including multi-file prompts similar to GitHub gists (or even using GitHub gists as a backend?) sounds good to me tbh
+- Built-in first-class Git synchronisation support (optional, configurable) **DONE (T104-T106)**
+    - Add support to synchronise configuration including goals to a Git repository **DONE (T106)** — sync repo `goals/` and `scripts/` auto-discovered at startup
+    - A _structured_ Git repository format that can also act as a notebook (largely chronological) for prompts and notes - including multi-file prompts similar to GitHub gists (or even using GitHub gists as a backend?) sounds good to me tbh **DONE (T104-T105)** — `osm sync save/list/load/init/push/pull` implemented with dated Markdown + YAML frontmatter format
     - This requires some proper designing - don't want to half-bake this one (I have a clear use case for it personally, so I will probably just align with that)
     - Consider adding a sub-feature for syncing "common" config (system prompts, personal preferences, etc.) to a common repo structure, with intelligent conflict handling:
         - Prompt for override when file exists and state is unknown

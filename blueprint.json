@@ -238,17 +238,20 @@
     {
       "task": "T104: Git sync notebook save and list (Phase 1)",
       "description": "Implement osm sync save (write session context as dated Markdown entry) and osm sync list (display entries chronologically). Local-only, no git operations. Tests.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Already fully implemented. save writes YAML frontmatter + markdown body to <sync-root>/notebooks/YYYY/MM/<date>-<slug>.md. list discovers entries in reverse chronological order with --limit flag. Deduplication, slug generation, tag parsing all covered. 20+ tests including SaveCreatesEntry, ListShowsEntries, ListWithLimit, SaveDeduplicates, SaveAndList."
     },
     {
       "task": "T105: Git sync push/pull (Phase 2)",
       "description": "Implement osm sync push (git add/commit/push) and osm sync pull (clone/pull --rebase). Conflict detection. Wire sync.repository, sync.auto-pull config keys. Tests with mock git repos.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Already fully implemented. init clones from arg or config. push stages/commits/pushes with timestamp. pull rebases or auto-clones from config. Conflict detection with user messaging. sync.repository and sync.local-path config keys wired. 10+ git tests including PushPullRoundTrip, InitAlreadyInitialized, PullCloneFromConfig, PushNoChanges."
     },
     {
       "task": "T106: Git sync load and integration (Phase 3)",
       "description": "Implement osm sync load to restore notebook entries. Wire goal/script discovery from sync repo paths. Auto-pull on startup when sync.auto-pull=true.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added executeLoad with matchEntry (exact/slug/date/partial cascade). Added SyncAutoPull and ApplySyncDiscoveryPaths in sync_startup.go, wired in main.go before goal discovery. Updated all 4 shell completions. 28 new tests. Rule of Two passed."
     },
     {
       "task": "T107: Add Tier 2 built-in goals: pii-scrubber, prose-polisher",

@@ -423,10 +423,10 @@ func TestCompletionCommandSyncSubcommand(t *testing.T) {
 		shell       string
 		expectedTxt []string
 	}{
-		{name: "bash sync", shell: "bash", expectedTxt: []string{"sync)", `COMPREPLY=($(compgen -W "save list init push pull"`}},
-		{name: "zsh sync", shell: "zsh", expectedTxt: []string{"sync)", "_values 'sync-subcommand' 'save' 'list' 'init' 'push' 'pull'"}},
-		{name: "fish sync", shell: "fish", expectedTxt: []string{"__fish_seen_subcommand_from sync", "save list init push pull"}},
-		{name: "powershell sync", shell: "powershell", expectedTxt: []string{"$subs = @('save','list','init','push','pull')", "sync'"}},
+		{name: "bash sync", shell: "bash", expectedTxt: []string{"sync)", `COMPREPLY=($(compgen -W "save list load init push pull"`}},
+		{name: "zsh sync", shell: "zsh", expectedTxt: []string{"sync)", "_values 'sync-subcommand' 'save' 'list' 'load' 'init' 'push' 'pull'"}},
+		{name: "fish sync", shell: "fish", expectedTxt: []string{"__fish_seen_subcommand_from sync", "save list load init push pull"}},
+		{name: "powershell sync", shell: "powershell", expectedTxt: []string{"$subs = @('save','list','load','init','push','pull')", "sync'"}},
 	}
 
 	for _, tt := range tests {

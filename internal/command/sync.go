@@ -42,7 +42,7 @@ func NewSyncCommand(cfg *config.Config, syncDir ...string) *SyncCommand {
 		BaseCommand: NewBaseCommand(
 			"sync",
 			"Save and list prompt notebook entries; sync via git",
-			"sync <save|list|init|push|pull> [options]",
+			"sync <save|list|load|init|push|pull> [options]",
 		),
 		config: cfg,
 	}
@@ -60,11 +60,12 @@ func (c *SyncCommand) SetupFlags(fs *flag.FlagSet) {
 // Execute dispatches to the appropriate subcommand.
 func (c *SyncCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stderr, "Usage: osm sync <save|list|init|push|pull>")
+		_, _ = fmt.Fprintln(stderr, "Usage: osm sync <save|list|load|init|push|pull>")
 		_, _ = fmt.Fprintln(stderr, "")
 		_, _ = fmt.Fprintln(stderr, "Subcommands:")
 		_, _ = fmt.Fprintln(stderr, "  save   Save a prompt notebook entry")
 		_, _ = fmt.Fprintln(stderr, "  list   List saved notebook entries")
+		_, _ = fmt.Fprintln(stderr, "  load   Load a saved notebook entry")
 		_, _ = fmt.Fprintln(stderr, "  init   Clone a sync repository")
 		_, _ = fmt.Fprintln(stderr, "  push   Commit and push local changes")
 		_, _ = fmt.Fprintln(stderr, "  pull   Fetch and merge remote changes")
@@ -77,6 +78,8 @@ func (c *SyncCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		return c.executeSave(args[1:], stdout, stderr)
 	case "list":
 		return c.executeList(args[1:], stdout, stderr)
+	case "load":
+		return c.executeLoad(args[1:], stdout, stderr)
 	case "init":
 		return c.executeInit(args[1:], stdout, stderr)
 	case "push":
@@ -436,6 +439,110 @@ func discoverEntries(dir string) ([]notebookEntry, error) {
 	})
 
 	return entries, err
+}
+
+// executeLoad reads a saved notebook entry and writes its body to stdout.
+// The query can be a date (YYYY-MM-DD), a slug, or a date-slug combination.
+func (c *SyncCommand) executeLoad(args []string, stdout, stderr io.Writer) error {
+	if len(args) != 1 {
+		_, _ = fmt.Fprintln(stderr, "Usage: osm sync load <slug-or-date>")
+		return fmt.Errorf("load requires exactly one argument")
+	}
+	query := args[0]
+
+	dir, err := c.notebooksDir()
+	if err != nil {
+		return fmt.Errorf("resolving notebooks directory: %w", err)
+	}
+
+	entries, err := discoverEntries(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("no notebook entries found")
+		}
+		return fmt.Errorf("listing notebook entries: %w", err)
+	}
+
+	if len(entries) == 0 {
+		return fmt.Errorf("no notebook entries found")
+	}
+
+	// Find matching entry: try exact date-slug, then slug-only, then date-only.
+	match := matchEntry(entries, query)
+	if match == nil {
+		return fmt.Errorf("no entry matching %q", query)
+	}
+
+	entryPath := filepath.Join(dir, match.path)
+	data, err := os.ReadFile(entryPath)
+	if err != nil {
+		return fmt.Errorf("reading entry: %w", err)
+	}
+
+	body := stripFrontmatter(string(data))
+	_, _ = fmt.Fprint(stdout, body)
+	return nil
+}
+
+// matchEntry finds a notebook entry matching the query. Tries exact
+// date-slug match first, then slug-only, then date prefix.
+func matchEntry(entries []notebookEntry, query string) *notebookEntry {
+	if query == "" {
+		return nil
+	}
+
+	// Exact date-slug match (e.g., "2025-01-15-my-review").
+	for i := range entries {
+		dateSlug := entries[i].date + "-" + entries[i].slug
+		if dateSlug == query {
+			return &entries[i]
+		}
+	}
+
+	// Slug-only match (e.g., "my-review"). Returns most recent if ambiguous.
+	// Sort reverse chronological first.
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].path > entries[j].path
+	})
+	for i := range entries {
+		if entries[i].slug == query {
+			return &entries[i]
+		}
+	}
+
+	// Date prefix match (e.g., "2025-01-15"). Returns first match.
+	for i := range entries {
+		if entries[i].date == query {
+			return &entries[i]
+		}
+	}
+
+	// Partial slug match (e.g., "review" matches "my-code-review").
+	for i := range entries {
+		if strings.Contains(entries[i].slug, query) {
+			return &entries[i]
+		}
+	}
+
+	return nil
+}
+
+// stripFrontmatter removes YAML frontmatter delimited by "---" lines
+// and any leading blank lines from the remaining content.
+func stripFrontmatter(content string) string {
+	if !strings.HasPrefix(content, "---\n") {
+		return content
+	}
+	// Find closing "---\n".
+	rest := content[4:]
+	idx := strings.Index(rest, "---\n")
+	if idx < 0 {
+		return content // no closing delimiter, return as-is
+	}
+	body := rest[idx+4:]
+	// Trim leading blank lines.
+	body = strings.TrimLeft(body, "\n")
+	return body
 }
 
 // notebooksDir returns the path to the notebooks directory.

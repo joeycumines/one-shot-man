@@ -119,14 +119,16 @@ Keys:
 - `log.max-files` (int, default `5`) — max number of rotated log backup files
 - `log.buffer-size` (int, default `1000`) — in-memory log buffer size (entries)
 
-### Sync (reserved)
+### Sync
 
-These keys are parsed and validated but the sync feature is not yet implemented:
+Configure the git-based notebook synchronization:
 
-- `sync.repository` (string) — Git repository URL for sync
+- `sync.repository` (string) — Git repository URL for sync (used by `osm sync init` and auto-clone on `osm sync pull`)
 - `sync.enabled` (bool, default `false`) — enable git synchronisation
-- `sync.auto-pull` (bool, default `false`) — auto-pull on startup
-- `sync.local-path` (string) — local path for sync repository
+- `sync.auto-pull` (bool, default `false`) — automatically run `git pull --rebase` on program startup when the sync repository is initialized
+- `sync.local-path` (string) — local path for sync repository (default: `~/.one-shot-man/sync`)
+
+When the sync directory contains `goals/` or `scripts/` subdirectories, those paths are automatically added to goal and script discovery paths at startup.
 
 ### Session cleanup
 

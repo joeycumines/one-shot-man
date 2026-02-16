@@ -774,3 +774,301 @@ func TestParseTags(t *testing.T) {
 		})
 	}
 }
+
+// --- Load subcommand tests ---
+
+func TestSyncCommand_LoadExactDateSlug(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	// Create an entry manually.
+	month := filepath.Join(dir, "2025", "03")
+	if err := os.MkdirAll(month, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\ndate: 2025-03-15T10:30:00Z\ntitle: \"My Review\"\n---\n\n# My Review\n\nReview the auth module.\n"
+	if err := os.WriteFile(filepath.Join(month, "2025-03-15-my-review.md"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "2025-03-15-my-review"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("load failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "# My Review") {
+		t.Fatalf("expected heading in output, got %q", output)
+	}
+	if !strings.Contains(output, "Review the auth module.") {
+		t.Fatalf("expected body text, got %q", output)
+	}
+	// Frontmatter should be stripped.
+	if strings.Contains(output, "date: 2025-03-15") {
+		t.Fatalf("expected frontmatter to be stripped, got %q", output)
+	}
+}
+
+func TestSyncCommand_LoadBySlugOnly(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	month := filepath.Join(dir, "2025", "06")
+	if err := os.MkdirAll(month, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\ntitle: \"API Design\"\n---\n\n# API Design\n\nDesign the new API.\n"
+	if err := os.WriteFile(filepath.Join(month, "2025-06-01-api-design.md"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "api-design"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("load by slug failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Design the new API.") {
+		t.Fatalf("expected body text, got %q", stdout.String())
+	}
+}
+
+func TestSyncCommand_LoadByDateOnly(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	month := filepath.Join(dir, "2025", "01")
+	if err := os.MkdirAll(month, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\ntitle: \"First Entry\"\n---\n\n# First Entry\n\nHello world.\n"
+	if err := os.WriteFile(filepath.Join(month, "2025-01-10-first-entry.md"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "2025-01-10"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("load by date failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Hello world.") {
+		t.Fatalf("expected body text, got %q", stdout.String())
+	}
+}
+
+func TestSyncCommand_LoadByPartialSlug(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	month := filepath.Join(dir, "2025", "04")
+	if err := os.MkdirAll(month, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\ntitle: \"Code Review Auth\"\n---\n\n# Code Review Auth\n\nReview auth changes.\n"
+	if err := os.WriteFile(filepath.Join(month, "2025-04-20-code-review-auth.md"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "review-auth"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("load by partial slug failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Review auth changes.") {
+		t.Fatalf("expected body text, got %q", stdout.String())
+	}
+}
+
+func TestSyncCommand_LoadNoMatch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	month := filepath.Join(dir, "2025", "01")
+	if err := os.MkdirAll(month, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(month, "2025-01-01-aaa.md"), []byte("---\n---\n\nbody\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "nonexistent"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for no match")
+	}
+	if !strings.Contains(err.Error(), "no entry matching") {
+		t.Fatalf("expected 'no entry matching' error, got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_LoadNoEntries(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "anything"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for empty dir")
+	}
+	if !strings.Contains(err.Error(), "no notebook entries found") {
+		t.Fatalf("expected 'no notebook entries found', got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_LoadNoArgs(t *testing.T) {
+	t.Parallel()
+	cmd := NewSyncCommand(nil, t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for no args")
+	}
+	if !strings.Contains(err.Error(), "load requires exactly one argument") {
+		t.Fatalf("expected argument error, got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_LoadEmptyQuery(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	// Create an entry.
+	month := filepath.Join(dir, "2025", "01")
+	if err := os.MkdirAll(month, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(month, "2025-01-01-aaa.md"), []byte("---\n---\n\nbody\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", ""}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for empty query")
+	}
+	if !strings.Contains(err.Error(), "no entry matching") {
+		t.Fatalf("expected 'no entry matching' error, got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_LoadTooManyArgs(t *testing.T) {
+	t.Parallel()
+	cmd := NewSyncCommand(nil, t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "a", "b"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for too many args")
+	}
+	if !strings.Contains(err.Error(), "load requires exactly one argument") {
+		t.Fatalf("expected argument error, got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_LoadMostRecentSlugMatch(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+
+	// Create two entries with the same slug in different months.
+	for _, m := range []struct{ month, date, body string }{
+		{"01", "2025-01-01", "old content"},
+		{"06", "2025-06-15", "new content"},
+	} {
+		mDir := filepath.Join(dir, "2025", m.month)
+		if err := os.MkdirAll(mDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		content := "---\ntitle: \"Dup\"\n---\n\n" + m.body + "\n"
+		if err := os.WriteFile(filepath.Join(mDir, m.date+"-same-slug.md"), []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"load", "same-slug"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+	// Should return the most recent (June) entry.
+	if !strings.Contains(stdout.String(), "new content") {
+		t.Fatalf("expected most recent entry, got %q", stdout.String())
+	}
+}
+
+func TestSyncCommand_SaveThenLoad(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	cmd := NewSyncCommand(nil, dir)
+	cmd.TimeNow = func() time.Time { return time.Date(2025, 8, 1, 14, 0, 0, 0, time.UTC) }
+
+	// Save.
+	var sOut, sErr bytes.Buffer
+	if err := cmd.Execute([]string{"save", "--title", "Round Trip", "--body", "This is a round-trip test."}, &sOut, &sErr); err != nil {
+		t.Fatalf("save failed: %v", err)
+	}
+
+	// Load.
+	var lOut, lErr bytes.Buffer
+	if err := cmd.Execute([]string{"load", "round-trip"}, &lOut, &lErr); err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+	if !strings.Contains(lOut.String(), "This is a round-trip test.") {
+		t.Fatalf("expected body, got %q", lOut.String())
+	}
+}
+
+// --- stripFrontmatter unit tests ---
+
+func TestStripFrontmatter(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "with frontmatter",
+			input: "---\ntitle: \"Test\"\ndate: 2025-01-01\n---\n\n# Heading\n\nBody text.\n",
+			want:  "# Heading\n\nBody text.\n",
+		},
+		{
+			name:  "no frontmatter",
+			input: "Just plain text.\n",
+			want:  "Just plain text.\n",
+		},
+		{
+			name:  "unclosed frontmatter",
+			input: "---\ntitle: \"Test\"\nno closing delimiter\n",
+			want:  "---\ntitle: \"Test\"\nno closing delimiter\n",
+		},
+		{
+			name:  "empty frontmatter",
+			input: "---\n---\n\nBody.\n",
+			want:  "Body.\n",
+		},
+		{
+			name:  "frontmatter with tags",
+			input: "---\ntags: [a, b]\n---\n\n# Title\n",
+			want:  "# Title\n",
+		},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := stripFrontmatter(tc.input)
+			if got != tc.want {
+				t.Fatalf("stripFrontmatter(...) = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

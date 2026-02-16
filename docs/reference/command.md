@@ -145,9 +145,9 @@ The log file path is resolved from: `-file` flag → config key `log.file` → e
 
 ### `osm sync`
 
-Save and list prompt notebook entries; sync via git.
+Save, list, and load prompt notebook entries; sync via git.
 
-- Usage: `osm sync <save|list|init|push|pull> [options]`
+- Usage: `osm sync <save|list|load|init|push|pull> [options]`
 
 Subcommands:
 
@@ -164,6 +164,9 @@ Subcommands:
   - Flags:
     - `-limit`: maximum number of entries to show (0 = all)
 
+- `osm sync load <slug-or-date>`
+  - Load a saved notebook entry and output its body (YAML frontmatter stripped). The query can be a full date-slug (`2025-01-15-my-review`), slug only (`my-review`), date only (`2025-01-15`), or partial slug (`review`). When multiple entries match by slug, the most recent is returned.
+
 - `osm sync init [<repo-url>]`
   - Clone a git repository as the sync root. The repository URL can be passed as an argument or read from the `sync.repository` config key.
 
@@ -173,7 +176,7 @@ Subcommands:
 - `osm sync pull`
   - Fetch and rebase remote changes. If the sync directory is not initialized and `sync.repository` is configured, clones automatically. Reports merge conflicts with instructions to resolve.
 
-Configuration keys: `sync.repository` (remote URL), `sync.local-path` (local sync root; default `~/.one-shot-man/sync`).
+Configuration keys: `sync.repository` (remote URL), `sync.local-path` (local sync root; default `~/.one-shot-man/sync`), `sync.auto-pull` (auto-pull on startup).
 
 ### `osm session`
 

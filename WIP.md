@@ -66,8 +66,9 @@
 - **T087**: ✅ DONE — docs/README.md: reorganized into categories, added 5 missing links, verified all resolve.
 
 ## Next Steps
-1. Commit T095-T098 documentation batch
-2. T099: Final integration macOS (make make-all-with-log)
-3. T100: Final integration Linux (make make-all-in-container)
-4. T101: Final integration Windows (make make-all-run-windows)
-5. T102: Scope expansion
+1. T103: ✅ DONE — Committed 847a8a5. Removed tview/tcell (24 files, -2,947 lines). Rule of Two passed.
+2. T104: Git sync notebook save/list (Phase 1)
+3. T105: Git sync push/pull (Phase 2)
+4. T106: Git sync load/integration (Phase 3)
+5. T107-T108: Tier 2 goals
+6. Continue T109-T125

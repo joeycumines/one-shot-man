@@ -30,6 +30,10 @@ func run() error {
 	// Create command registry with configuration
 	registry := command.NewRegistryWithConfig(cfg)
 
+	// Sync startup: auto-pull if configured, then inject discovery paths.
+	command.SyncAutoPull(cfg, os.Stderr)
+	command.ApplySyncDiscoveryPaths(cfg)
+
 	// Create goal registry
 	goalDiscovery := command.NewGoalDiscovery(cfg)
 	goalRegistry := command.NewDynamicGoalRegistry(command.GetBuiltInGoals(), goalDiscovery)

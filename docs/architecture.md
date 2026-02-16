@@ -342,26 +342,35 @@ See [Goal reference](reference/goal.md) for the complete catalog of 10 built-in 
 
 ## Sync subsystem
 
-The `sync` command provides local notebook save/list operations and git-based synchronization for session notebooks.
+The `sync` command provides local notebook save/list/load operations and git-based synchronization for prompt notebooks.
 
 ### Subcommands
 
 | Subcommand | Description |
 |------------|-------------|
-| `save` | Save the current session as a timestamped Markdown notebook |
-| `list` | List saved notebooks |
-| `init` | Initialize a git-backed sync repository |
-| `push` | Commit and push notebooks to the remote |
-| `pull` | Pull and merge remote notebooks |
+| `save` | Save a prompt as a timestamped Markdown notebook entry |
+| `list` | List saved notebook entries in reverse chronological order |
+| `load` | Load a saved entry by slug, date, or partial match |
+| `init` | Clone a git repository as the sync root |
+| `push` | Stage, commit, and push notebooks to the remote |
+| `pull` | Pull and rebase remote notebooks; auto-clones if configured |
+
+### Startup integration
+
+At program startup (in `main.go`), two sync-related hooks run before goal/script discovery:
+
+1. **Auto-pull** (`SyncAutoPull`): if `sync.auto-pull = true` and the sync directory is an initialized git repo, runs `git pull --rebase` silently. Errors are logged to stderr but do not prevent startup.
+2. **Discovery path injection** (`ApplySyncDiscoveryPaths`): if the sync directory contains `goals/` or `scripts/` subdirectories, those paths are appended to `goal.paths`, `script.paths`, and `script.module-paths` so they participate in goal/script autodiscovery.
 
 ### Architecture
 
-- Notebooks are saved to `~/.local/share/osm/sync/notebooks/` (or configured path).
-- `init` creates a bare git repository for syncing.
+- Notebooks are saved to `<sync-root>/notebooks/<YYYY>/<MM>/<date>-<slug>.md` with YAML frontmatter.
+- The sync root defaults to `~/.one-shot-man/sync` and can be configured via `sync.local-path`.
+- `init` clones a repository URL (from argument or `sync.repository` config key).
 - `push`/`pull` use shell `git` commands for transport.
-- The `-session` flag scopes operations to a specific session.
+- `load` strips YAML frontmatter and outputs the entry body.
 
-Source: [internal/command/sync.go](../internal/command/sync.go)
+Source: [internal/command/sync.go](../internal/command/sync.go), [internal/command/sync_startup.go](../internal/command/sync_startup.go)
 
 ---
 

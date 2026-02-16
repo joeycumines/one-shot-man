@@ -191,29 +191,29 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 
 		// Test 6: Test formatArgv function
 		const formatTest1 =  formatArgv(["git", "diff", "feature/my feature"]);
-		if (formatTest1 !== 'git diff "feature/my feature"') {
-			throw new Error("formatArgv failed to quote spaces, expected 'git diff \"feature/my feature\"', got: " + formatTest1);
+		if (formatTest1 !== "git diff 'feature/my feature'") {
+			throw new Error("formatArgv failed to quote spaces, expected \"git diff 'feature/my feature'\", got: " + formatTest1);
 		}
 
 		const formatTest2 =  formatArgv(["git", "log", "--grep", ""]);
-		if (formatTest2 !== 'git log --grep ""') {
-			throw new Error("formatArgv failed with empty string, expected 'git log --grep \"\"', got: " + formatTest2);
+		if (formatTest2 !== "git log --grep ''") {
+			throw new Error("formatArgv failed with empty string, expected \"git log --grep ''\", got: " + formatTest2);
 		}
 
 		const formatTest3 =  formatArgv(["git", "diff", 'He said "hello"']);
-		if (formatTest3 !== 'git diff "He said \\"hello\\""') {
-			throw new Error("formatArgv failed to escape quotes, expected 'git diff \"He said \\\"hello\\\"\"', got: " + formatTest3);
+		if (formatTest3 !== "git diff 'He said \"hello\"'") {
+			throw new Error("formatArgv failed to escape quotes, expected \"git diff 'He said \\\"hello\\\"'\", got: " + formatTest3);
 		}
 
 		// NBSP regression: should be quoted
 		const formatTest4 =  formatArgv(["git", "diff", "arg\u00A0with\u00A0nbsp"]);
-		if (formatTest4 !== 'git diff "arg\u00A0with\u00A0nbsp"') {
+		if (formatTest4 !== "git diff 'arg\u00A0with\u00A0nbsp'") {
 			throw new Error("formatArgv failed NBSP quoting, got: " + formatTest4);
 		}
 
 		// Vertical tab regression: should be quoted
 		const formatTest5 =  formatArgv(["git", "diff", "arg with \u000Bvertical tab"]);
-		if (formatTest5 !== 'git diff "arg with \u000Bvertical tab"') {
+		if (formatTest5 !== "git diff 'arg with \u000Bvertical tab'") {
 			throw new Error("formatArgv failed vertical tab quoting, got: " + formatTest5);
 		}
 

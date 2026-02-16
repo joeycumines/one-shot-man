@@ -63,7 +63,7 @@ func TestFormatArgv_EmptyStringInArray(t *testing.T) {
 	if err != nil {
 		t.Fatalf("formatArgv returned error: %v", err)
 	}
-	expected := `cmd "" arg`
+	expected := `cmd '' arg`
 	if result.String() != expected {
 		t.Errorf("expected %q, got %q", expected, result.String())
 	}
@@ -79,13 +79,13 @@ func TestFormatArgv_EmbeddedQuotes(t *testing.T) {
 		t.Fatalf("formatArgv export is not a function")
 	}
 
-	// Args with spaces AND embedded quotes should escape the quotes
+	// Args with spaces AND embedded quotes should be single-quoted
 	input := runtime.ToValue([]string{`say "hello world"`})
 	result, err := formatFn(goja.Undefined(), input)
 	if err != nil {
 		t.Fatalf("formatArgv returned error: %v", err)
 	}
-	expected := `"say \"hello world\""`
+	expected := `'say "hello world"'`
 	if result.String() != expected {
 		t.Errorf("expected %q, got %q", expected, result.String())
 	}
@@ -101,13 +101,13 @@ func TestFormatArgv_TabCharacter(t *testing.T) {
 		t.Fatalf("formatArgv export is not a function")
 	}
 
-	// Tab character should trigger quoting (jsWhitespace regex match)
+	// Tab character should trigger quoting
 	input := runtime.ToValue([]string{"cmd", "arg\twith\ttabs"})
 	result, err := formatFn(goja.Undefined(), input)
 	if err != nil {
 		t.Fatalf("formatArgv returned error: %v", err)
 	}
-	expected := "cmd \"arg\twith\ttabs\""
+	expected := "cmd 'arg\twith\ttabs'"
 	if result.String() != expected {
 		t.Errorf("expected %q, got %q", expected, result.String())
 	}
@@ -128,7 +128,7 @@ func TestFormatArgv_NewlineCharacter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("formatArgv returned error: %v", err)
 	}
-	expected := "echo \"hello\nworld\""
+	expected := "echo 'hello\nworld'"
 	if result.String() != expected {
 		t.Errorf("expected %q, got %q", expected, result.String())
 	}
@@ -184,13 +184,13 @@ func TestFormatArgv_UnicodeWhitespace(t *testing.T) {
 		t.Fatalf("formatArgv export is not a function")
 	}
 
-	// \u00A0 is non-breaking space (NBSP), matched by \p{Zs}
+	// \u00A0 is non-breaking space (NBSP), matched by ShellQuote as unsafe
 	input := runtime.ToValue([]string{"cmd", "arg\u00A0val"})
 	result, err := formatFn(goja.Undefined(), input)
 	if err != nil {
 		t.Fatalf("formatArgv returned error: %v", err)
 	}
-	expected := "cmd \"arg\u00A0val\""
+	expected := "cmd 'arg\u00A0val'"
 	if result.String() != expected {
 		t.Errorf("expected %q, got %q", expected, result.String())
 	}

@@ -506,3 +506,95 @@ func slicesEqual(a, b []string) bool {
 }
 
 func itox(i int) string { return strconv.Itoa(i) }
+
+func TestShellQuote(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		Name string
+		In   string
+		Want string
+	}{
+		{"empty string", "", "''"},
+		{"simple word", "hello", "hello"},
+		{"word with space", "hello world", "'hello world'"},
+		{"word with single quote", "it's", `"it's"`},
+		{"word with double quote", `say "hi"`, `'say "hi"'`},
+		{"word with dollar", "$HOME", "'$HOME'"},
+		{"word with backtick", "`command`", "'`command`'"},
+		{"word with asterisk", "*.go", "'*.go'"},
+		{"word with pipe", "a|b", "'a|b'"},
+		{"word with semicolon", "a;b", "'a;b'"},
+		{"word with backslash", "a\\b", "'a\\b'"},
+		{"word with newline", "a\nb", "'a\nb'"},
+		{"word with tab", "a\tb", "'a\tb'"},
+		{"word with hash", "#comment", "'#comment'"},
+		{"word with tilde", "~user", "'~user'"},
+		{"word with parentheses", "(test)", "'(test)'"},
+		{"safe characters only", "file.go", "file.go"},
+		{"path-like string", "/usr/local/bin", "/usr/local/bin"},
+		{"email-like", "user@host", "user@host"},
+		{"mixed safe chars", "a-b_c.d:e", "a-b_c.d:e"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.Name, func(t *testing.T) {
+			t.Parallel()
+			got := ShellQuote(tc.In)
+			if got != tc.Want {
+				t.Fatalf("ShellQuote(%q)\n  got:  %s\n  want: %s", tc.In, got, tc.Want)
+			}
+		})
+	}
+}
+
+func TestShellQuoteJoin(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		Name string
+		In   []string
+		Want string
+	}{
+		{"nil slice", nil, ""},
+		{"empty slice", []string{}, ""},
+		{"single safe arg", []string{"ls"}, "ls"},
+		{"multiple safe args", []string{"ls", "-la", "/tmp"}, "ls -la /tmp"},
+		{"arg needing quoting", []string{"echo", "hello world"}, "echo 'hello world'"},
+		{"mixed args", []string{"cmd", "it's", "plain", "$VAR"}, `cmd "it's" plain '$VAR'`},
+		{"empty arg in list", []string{"cmd", "", "arg"}, "cmd '' arg"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.Name, func(t *testing.T) {
+			t.Parallel()
+			got := ShellQuoteJoin(tc.In)
+			if got != tc.Want {
+				t.Fatalf("ShellQuoteJoin(%#v)\n  got:  %s\n  want: %s", tc.In, got, tc.Want)
+			}
+		})
+	}
+}
+
+// TestShellQuoteRoundTrip verifies that ShellQuote output roundtrips through ParseSlice.
+func TestShellQuoteRoundTrip(t *testing.T) {
+	t.Parallel()
+	cases := [][]string{
+		{"hello", "world"},
+		{"it's", "a", "test"},
+		{`say "hello"`, "world"},
+		{"$HOME", "/tmp"},
+		{"a b", "c\td", "e\nf"},
+		{"", "nonempty"},
+		{`it's a "complex" $tring with \ and ` + "`backtick`"},
+		{"simple"},
+		{"arg\u00A0with\u00A0nbsp"},
+		{"feature/my feature", "--stat"},
+	}
+	for i, args := range cases {
+		t.Run("case_"+strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+			joined := ShellQuoteJoin(args)
+			roundtripped := ParseSlice(joined)
+			if !slicesEqual(roundtripped, args) {
+				t.Fatalf("roundtrip failed:\n  input:  %#v\n  quoted: %q\n  parsed: %#v", args, joined, roundtripped)
+			}
+		})
+	}
+}

@@ -24,7 +24,7 @@ type LogCommand struct {
 // NewLogCommand creates a new log command.
 func NewLogCommand(cfg *config.Config) *LogCommand {
 	return &LogCommand{
-		BaseCommand: NewBaseCommand("log", "View and tail log files", "log [tail] [options]"),
+		BaseCommand: NewBaseCommand("log", "View and tail log files", "log [tail|follow] [options]"),
 		config:      cfg,
 	}
 }
@@ -39,8 +39,8 @@ func (c *LogCommand) SetupFlags(fs *flag.FlagSet) {
 
 // Execute runs the log command.
 func (c *LogCommand) Execute(args []string, stdout, stderr io.Writer) error {
-	// Handle subcommand: "log tail" is an alias for "log --follow".
-	if len(args) > 0 && args[0] == "tail" {
+	// Handle subcommands: "log tail" and "log follow" are aliases for "log --follow".
+	if len(args) > 0 && (args[0] == "tail" || args[0] == "follow") {
 		c.follow = true
 		args = args[1:]
 	}

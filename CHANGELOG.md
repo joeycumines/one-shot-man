@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `osm log follow` subcommand as alias for `osm log tail` / `osm log -f` (continuous log tailing)
+- Expanded `log` JavaScript API documentation: all 8 methods documented with parameter types, log destination details (in-memory ring buffer + JSON file rotation), and cross-reference to `osm log` command
 - Warning log for unknown arg completer types in REPL completion (aids debugging custom goal definitions)
 - `osm goal paths` subcommand: displays all resolved goal discovery paths with source annotations (`standard`/`custom`/`autodiscovered`), existence status (`✓`/`✗`), and config validation warnings for missing custom paths
 - `osm script paths` subcommand: displays all resolved script discovery paths with the same annotated format
@@ -40,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test coverage expanded across 25+ packages with notable gains: bubblezone 0→98.7%, lipgloss 58→99%, tview 68.5→96.4%, bubbletea 75.8→91.2%, viewport 73.3→97.3%, overall cmd/osm 91.4→94.8%
 
 ### Changed
+- Stabilized `log` JavaScript API: removed \"undercooked\" label from scripting.md, updated CLAUDE.md to list all methods
 - Renamed `pabt.ModuleLoader` to `pabt.Require` for API consistency
 - Moved `CONFIG_HOT_SNIPPETS` auto-detection into `contextManager.js` reducing per-script boilerplate
 - Unexported 14 internal symbols across scripting, command, storage, and builtin packages

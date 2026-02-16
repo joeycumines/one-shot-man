@@ -129,7 +129,7 @@ _osm_completion() {
             return 0
             ;;
         log)
-            COMPREPLY=($(compgen -W "tail" -- ${cur}))
+            COMPREPLY=($(compgen -W "tail follow" -- ${cur}))
             return 0
             ;;
         # For delete/info let shell default to filename completion (no session ids)
@@ -221,7 +221,7 @@ _osm() {
                     _values 'config-subcommand' 'validate' 'schema' %s
                     ;;
                 log)
-                    _values 'log-subcommand' 'tail'
+                    _values 'log-subcommand' 'tail' 'follow'
                     ;;
                 *)
                     _files
@@ -297,7 +297,7 @@ complete -c osm -n '__fish_seen_subcommand_from sync' -a 'save list load init pu
 complete -c osm -n '__fish_seen_subcommand_from config' -a 'validate schema %s' -d 'Config subcommands'
 
 # Completion for 'log' subcommand
-complete -c osm -n '__fish_seen_subcommand_from log' -a 'tail' -d 'Log subcommands'
+complete -c osm -n '__fish_seen_subcommand_from log' -a 'tail follow' -d 'Log subcommands'
 
 # Installation instructions (as comments):
 # To install this completion script:
@@ -400,7 +400,7 @@ Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
     }
 
     if ($tokenCount -eq 3 -and $command -eq 'log') {
-        $subs = @('tail')
+        $subs = @('tail','follow')
         $subs | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
             [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
         }

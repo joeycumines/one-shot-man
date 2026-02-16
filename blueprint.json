@@ -280,7 +280,8 @@
     {
       "task": "T111: Logging API hardening and system-level logging",
       "description": "Audit log.level/log.file across all script-executing commands. Add osm log follow (tail -f equivalent). Document stabilized API. Ensure consistent behavior.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "All 5 commands share scriptCommandBase.PrepareEngine() with unified log flags. Added 'follow' subcommand alias (4 shell completions updated). Stabilized JS log API: expanded docs from 3 bullets to full reference, removed 'undercooked' label. Fixed stale goal completion test. 2 todo.md items annotated DONE."
     },
     {
       "task": "T112: Add example script: osm:fetch HTTP client demo",

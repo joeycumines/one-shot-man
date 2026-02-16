@@ -72,4 +72,5 @@
 4. T108: ✅ DONE — Committed f6b1e7f. data-to-json + cite-sources goals.
 5. T109: ✅ DONE — osm goal paths + osm script paths subcommands. Annotated discovery. Shell completions.
 6. T110: ✅ DONE — Resolved 4 TODO comments in tui_completion.go. Added unknown completer warning + 2 tests.
-7. Continue T111-T125
+7. T111: ✅ DONE — Logging API hardening. Added follow subcommand, stabilized JS log API docs, fixed stale goal completion test.
+8. Continue T112-T125

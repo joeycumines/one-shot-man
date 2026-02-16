@@ -250,14 +250,19 @@ func TestCompletionCommandGoalSubcommand(t *testing.T) {
 
 	goalNames := []string{
 		"bug-buster",
+		"cite-sources",
 		"code-explainer",
 		"code-optimizer",
 		"comment-stripper",
+		"data-to-json",
 		"doc-generator",
 		"test-generator",
 		"commit-message",
 		"meeting-notes",
 		"morale-improver",
+		"pii-scrubber",
+		"prose-polisher",
+		"implementation-plan",
 	}
 
 	tests := []struct {
@@ -271,7 +276,7 @@ func TestCompletionCommandGoalSubcommand(t *testing.T) {
 			expectedText: append([]string{
 				"goal)",
 				// Verify exact format: sorted, space-delimited list in compgen -W
-				"COMPREPLY=($(compgen -W \"bug-buster code-explainer code-optimizer comment-stripper commit-message doc-generator implementation-plan meeting-notes morale-improver test-generator\"",
+				"COMPREPLY=($(compgen -W \"paths bug-buster cite-sources code-explainer code-optimizer comment-stripper commit-message data-to-json doc-generator implementation-plan meeting-notes morale-improver pii-scrubber prose-polisher test-generator\"",
 			}, goalNames...),
 		},
 		{
@@ -508,10 +513,10 @@ func TestCompletionCommandLogSubcommand(t *testing.T) {
 		shell       string
 		expectedTxt []string
 	}{
-		{name: "bash log", shell: "bash", expectedTxt: []string{"log)", `COMPREPLY=($(compgen -W "tail"`}},
-		{name: "zsh log", shell: "zsh", expectedTxt: []string{"log)", "_values 'log-subcommand' 'tail'"}},
-		{name: "fish log", shell: "fish", expectedTxt: []string{"__fish_seen_subcommand_from log", "tail"}},
-		{name: "powershell log", shell: "powershell", expectedTxt: []string{"$subs = @('tail')", "log'"}},
+		{name: "bash log", shell: "bash", expectedTxt: []string{"log)", `COMPREPLY=($(compgen -W "tail follow"`}},
+		{name: "zsh log", shell: "zsh", expectedTxt: []string{"log)", "_values 'log-subcommand' 'tail' 'follow'"}},
+		{name: "fish log", shell: "fish", expectedTxt: []string{"__fish_seen_subcommand_from log", "tail follow"}},
+		{name: "powershell log", shell: "powershell", expectedTxt: []string{"$subs = @('tail','follow')", "log'"}},
 	}
 
 	for _, tt := range tests {

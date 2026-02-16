@@ -94,11 +94,20 @@ osm script -e 'context.addPath("go.mod"); output.print(context.toTxtar())'
 
 ### `log` (application logging)
 
-- `log.debug/info/warn/error(...)`
-- `log.printf(...)`
-- `log.getLogs()`, `log.searchLogs(q)`, `log.clearLogs()`
+- `log.debug(msg)` — log at DEBUG level (only recorded when log.level ≤ debug)
+- `log.info(msg)` — log at INFO level (default threshold)
+- `log.warn(msg)` — log at WARN level
+- `log.error(msg)` — log at ERROR level
+- `log.printf(format, ...)` — log a formatted message at INFO level
+- `log.getLogs()` — return all in-memory log entries (array of `{time, level, message, attrs}`)
+- `log.searchLogs(query)` — search log entries by message or attribute content (case-insensitive)
+- `log.clearLogs()` — clear all in-memory log entries
 
-Note: the logging API is functional, but currently considered undercooked (see docs/todo.md).
+Logs are written to:
+1. **In-memory ring buffer** (configurable size via `log.buffer-size`, default 1000) — accessible via `getLogs()`/`searchLogs()`
+2. **JSON file** (when `log.file` is configured) — with size-based rotation (`log.max-size-mb`, `log.max-files`)
+
+View logs externally with `osm log` (last N lines) or `osm log follow` / `osm log tail` (continuous tail).
 
 ### `tui` (modes, prompts, and terminal UI)
 

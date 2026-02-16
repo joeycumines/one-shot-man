@@ -105,6 +105,35 @@ func TestLogCommand_TailSubcommand(t *testing.T) {
 
 func TestLogCommand_NoLogFileConfigured(t *testing.T) {
 	t.Parallel()
+
+	// Verify "follow" subcommand is recognized (sets follow=true like "tail").
+	t.Run("FollowSubcommandRecognized", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		logPath := filepath.Join(dir, "follow.log")
+		if err := os.WriteFile(logPath, []byte("data\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		cfg := config.NewConfig()
+		cmd := NewLogCommand(cfg)
+		cmd.file = logPath
+		cmd.lines = 1
+
+		// "follow" should not return "unknown subcommand" error.
+		// It will block indefinitely due to follow mode, so we test by
+		// verifying that a subsequent unknown arg after "follow" is rejected
+		// as an unknown subcommand (proving "follow" was consumed).
+		var stdout, stderr bytes.Buffer
+		err := cmd.Execute([]string{"follow", "extra"}, &stdout, &stderr)
+		if err == nil {
+			t.Fatal("expected error for extra arg after follow")
+		}
+		if !strings.Contains(err.Error(), "unknown subcommand") {
+			t.Fatalf("expected 'unknown subcommand' error, got: %v", err)
+		}
+	})
+
 	cfg := config.NewConfig()
 	cmd := NewLogCommand(cfg)
 

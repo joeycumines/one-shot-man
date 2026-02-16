@@ -134,7 +134,7 @@ TUI for merging documents into a single internally consistent super-document.
 
 View and tail log files.
 
-- Usage: `osm log [tail] [options]`
+- Usage: `osm log [tail|follow] [options]`
 - Flags:
   - `-n <lines>`: number of lines to show from the end of the file (default `10`)
   - `-f` / `-follow`: follow the log file (like `tail -f`)
@@ -144,6 +144,7 @@ Subcommands:
 
 - `osm log` — print the last N lines of the log file
 - `osm log tail` — alias for `osm log -f`; prints last N lines then follows for new output
+- `osm log follow` — alias for `osm log -f`; same as `osm log tail`
 
 The log file path is resolved from: `-file` flag → config key `log.file` → env var `OSM_LOG_FILE`. Follows log rotation automatically (detects file truncation/replacement).
 

@@ -118,7 +118,6 @@ title: Auth Module Refactor    # Human-readable title (optional, derived from sl
 
 ```
 sync.repository    <git-url>    # Git repository URL for sync
-sync.enabled       true|false   # Enable/disable sync (default: false)
 sync.auto-pull     true|false   # Auto-pull on osm startup (default: false)
 sync.local-path    <path>       # Local clone path (default: ~/.osm/sync)
 ```

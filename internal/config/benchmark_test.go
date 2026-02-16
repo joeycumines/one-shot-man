@@ -210,7 +210,6 @@ log.buffer-size 1000
 
 # Sync
 sync.repository git@github.com:user/osm-config.git
-sync.enabled false
 
 [sessions]
 maxAgeDays 90

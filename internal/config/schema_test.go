@@ -702,7 +702,6 @@ goal.debug-discovery false`
 func TestSyncKeysNoLongerWarn(t *testing.T) {
 	t.Parallel()
 	configContent := `sync.repository https://github.com/user/config.git
-sync.enabled false
 sync.auto-pull false
 sync.local-path /home/user/.osm-sync`
 

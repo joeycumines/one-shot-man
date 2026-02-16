@@ -492,7 +492,6 @@ func defaultGlobalOptions() []ConfigOption {
 
 		// Sync options (reserved)
 		{Key: "sync.repository", Type: TypeString, Default: "", Description: "Git repository URL for sync"},
-		{Key: "sync.enabled", Type: TypeBool, Default: "false", Description: "Enable git synchronisation"},
 		{Key: "sync.auto-pull", Type: TypeBool, Default: "false", Description: "Auto-pull on startup"},
 		{Key: "sync.local-path", Type: TypeString, Default: "", Description: "Local path for sync repository"},
 

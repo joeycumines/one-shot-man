@@ -27,7 +27,7 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
             - sync.local-path config key for custom sync root
             - sync.auto-pull runs non-blocking pull on osm startup
         - Implementation files: internal/command/sync.go, internal/command/sync_startup.go
-    - Remove unused sync.enabled config key from internal/config/schema.go (line 495). It is defined but never read or used anywhere in the codebase. Also clean up any test or documentation references.
+    - ~~Remove unused sync.enabled config key from internal/config/schema.go (line 495). It is defined but never read or used anywhere in the codebase. Also clean up any test or documentation references.~~ **DONE (T131)**
 - Add `hot-<shortname>` aliases to copy snippets, activating them based on the name of the... mode? Seems reasonable - that'd cover the fairly coupled/integrated variants of custom scripts, and the builtins which all use it. Integrated nicely, it could be configurable, and there could be a command to output the embedded ones. Examples of intended use case include situational follow-up prompts, e.g. "critical next steps: prove the issue exists and that it is fixed" prompt. Will be important to disclaimer that they are subject to arbitrary change as I tweak it. Maybe a warning if you use it w/o overriding it? Would need another config option to disable the warning lol. **DONE (T072)**
     - I'd personally use this for variants of agentic session kickoff prompts, which I tend to use when I have a populated blueprint.json
 - Fix behavior when you use `copy` to copy context using `osm:ctxutil`/`contextManager` - all the current built-in scripts use this implementation in some capacity. It is desirable to support "refreshing" on demand in a just-in-time fashion, just prior to copy. To pick up new files added to a directory, specifically. **DONE (T067)**
@@ -119,3 +119,253 @@ The `ToTxtar` function should consider:
 3. For non-colliding basenames that happen to end up in what looks like the same directory, consider whether the full path should be preserved to avoid false impressions of proximity
 
 This affects both human readability and LLM understanding of the context structure.
+
+---
+
+## AI Orchestrator / Claude Code Integration (2026-02-17)
+
+### Vision Statement
+
+osm should be able to orchestrate Claude Code (and potentially other TUI-based AI assistants) as a subprocess, using it as a tool for performing complex, multi-step operations. The primary use case is **interactive PR splitting**: breaking down very large AI-generated change sets into reviewable, verifiable, mergeable chunks.
+
+### Original Problem Statement (User's Description)
+
+> "With AI it is very easy to have this very, very large change set which no human has reviewed. This is annoying to unfuck to validate to verify. But if you don't verify, it turns into slop. Slop is bad.
+>
+> Ideally each stage of the PR would be something which works. And if it was something which was being wholly AI generated. It would. It would be viable, most likely, to interleave a sort of interactive rebasing, as it were. Where the branch gets essentially rebased into individual components or commits. And the process of making sure that they're sane could become something which is done in tandem with the AI. The AI doing the leg work.
+>
+> Once once changes are split out into a coherent, reviewable, ideally mergeable separately chunks. Then it is a lot easier to process. Even with LLMs it comes. Much, much easier. Because this contact size is smaller and also more reliable to even validate with LLMs."
+
+### Key Design Principles
+
+1. **No Direct API Integration**: Avoid adding API keys or network calls to osm. Leverage existing TUI tools (Claude Code, gh CLI, gemini CLI, codium CLI, etc.)
+2. **Minimal Configuration Burden**: Don't require users to set up complex workflow systems. Use existing tools that "just work"
+3. **TUI Multiplexing**: osm acts as a multiplexer that can swap between its own TUI and the external tool's TUI, potentially via meta-key switching (tmux-style)
+4. **Behavior Tree Orchestration**: Use behavior trees (PABT) for high-level workflow control with prebuilt action templates
+5. **Hybrid Communication**: MCP for data exfiltration (Claude → osm), PTY parsing for setup/init/permission handling
+
+### Integration Architecture: Hybrid Approach
+
+#### Component 1: PTY Spawning and Terminal Management
+
+- **PTY Wrapper Module**: Extend `osm:exec` (or create `osm:pty`) to support spawning processes with full PTY
+- **Terminal State Preservation**: Save/restore terminal state before/after external app
+- **Signal Forwarding**: Forward SIGWINCH, SIGINT, SIGTERM to external process
+- **Input/Output Bridging**: Bridge terminal input to external process and output back to osm
+
+**Reference**: `internal/scripting/pty_test.go` shows PTY capability using `github.com/creack/pty`
+
+#### Component 2: MCP-Based Data Exfiltration
+
+- **Bidirectional MCP**: osm already has an MCP server (`internal/command/mcp.go`) with 6 tools
+- **Claude as MCP Client**: Claude Code runs with MCP client enabled, connecting back to osm
+- **Session Identification**: Each Claude instance must clearly identify which osm session it's communicating with
+- **Tool Exfiltration**: Claude uses MCP tools to send structured data back to osm (e.g., split PR descriptions, test results)
+
+**Key Insight**: The existing MCP server (`addFile`, `addDiff`, `addNote`, `listContext`, `buildPrompt`, `getGoals`) provides a solid foundation for bidirectional communication.
+
+#### Component 3: PTY Parsing for Setup/Init
+
+Numerous conditions require PTY parsing:
+- **Rate limit prompts**: Detect and wait/handle rate limit messages
+- **Permission prompts**: Conservative rejection with reasons (be secure)
+- **Model selection menus**: Handle `ollama launch claude --config` TUI wrapper to select model before launching Claude
+- **SSO login flows**: Handle authentication prompts for tools like AWS
+
+**Security Principle**: Default to rejecting permission prompts with clear reasons. Be secure by default.
+
+### Configuration and Environment Variables
+
+Three-tier approach:
+
+1. **Shared with osm**: Claude Code inherits osm's environment (API keys, MCP config, etc.)
+2. **Script Hooks**: JavaScript scripts run hooks to inject env vars at spawn time
+   - Example: `op plugin` to inject secrets from 1Password CLI
+   - Example: AWS SSO login via `aws-vault` or similar
+3. **Profile-Based Configuration**: Separate env var profiles configurable in osm config
+   - Command-line flags/options override
+   - Special handling for provider-specific commands (e.g., `ollama launch claude --config`)
+
+### Provider Abstraction
+
+**First Pass**: Single instance support only
+
+**Future**: Modular, extensible design for:
+- Multiple concurrent Claude Code instances (parallel PR processing)
+- Different providers (GitHub CLI, Gemini CLI, Codium CLI, etc.)
+- Provider-specific configuration (e.g., ollama model selection TUI navigation)
+
+### Orchestration: Behavior Trees (Internal Implementation Detail)
+
+Behavior trees are an **internal implementation detail** for workflow orchestration. Key characteristics:
+
+- **High-level orchestration**: Behavior trees manage the workflow structure
+- **Action templates**: Prebuilt modes for common operations
+- **Claude-centric execution**: Most steps involve executing operations through Claude Code
+- **Prompt-based control**: Provide prompts to Claude, which uses MCP to communicate back
+
+**Planning on Failure**: When a step fails, the LLM should be able to generate a new plan. This requires:
+- Clear validation points (state checks)
+- Actionable remediation steps
+- **Skills Integration**: Skills system (e.g., "board" skill) provides domain knowledge for remediation
+  - Skills contain knowledge of how to perform specific tasks
+  - Skills are invoked when steps fail to guide corrective action
+  - Context from the running osm session is available to skills for task-specific actions
+
+### PR Splitting: Specific Requirements
+
+#### Branch Structure
+
+The splitting process creates a **linear series of branches**:
+- Each branch has a root (base branch) it merges into
+- The bottom-most branch is based on the trunk (original branch)
+- Branches form a hierarchy from "inner" to "outer" (list outer → most inner)
+- Each staged part becomes its own mergeable unit
+
+#### Interactive Rebasing Workflow
+
+The workflow interleaves AI assistance with interactive rebasing:
+- Branch gets rebased into individual components or commits
+- Process of ensuring sanity is done in tandem with AI ("AI doing the leg work")
+- Specific example: "making sure that it is a same slice" (test validation)
+- User controls safety, verification, and explicit checks
+
+#### Equivalence Verification
+
+Critical verification requirement:
+- **Final branch must be representative of the original branch that was split out**
+- The split-out changes must preserve the semantics of the original
+- User explicitly validates that nothing is lost or changed unexpectedly
+- This verification step is non-negotiable — "slop is bad"
+
+#### Context Size Benefits
+
+Why splitting matters for LLMs:
+- Smaller context size is more reliable to validate with LLMs
+- Each chunk can be independently verified and tested
+- Reviewable chunks are easier to process (for humans and LLMs)
+- Prevents "slop" from accumulating in large unreviewed changesets
+
+### Specific Tool References
+
+#### Provider-Specific Commands
+
+**Ollama Integration**:
+- Command: `ollama launch claude --config`
+- Must navigate through ollama's TUI menu
+- Select model (e.g., `gpt-oss:20b-cloud`)
+- Get to the common "entrypoint" (Claude Code TUI)
+- Model selection happens before Claude Code launches
+
+**AWS Integration**:
+- Tool: `aws-vault` — specifically mentioned by user ("I forget what it's called. aws vault?")
+- Runs command that provides environment variables just for that session
+- Doesn't leak credentials into system environment
+- Used when Claude Code needs AWS permissions
+
+**1Password Integration**:
+- Tool: `op plugin` (1Password CLI)
+- Connects to 1Password app on macOS
+- Injects secrets at spawn time
+- Avoids storing API keys in plain text
+
+### Rejected Alternatives
+
+**Explicitly Out of Scope**:
+
+1. **MacOS Automation**: Requires system daemon with gRPC API access — explicitly rejected
+2. **Direct API Integration**: User stated "I'd actually really like not to integrate any APIs" — tool calling harness "gets really tricky really quickly"
+3. **Complex Workflow Systems**: User stated "I really do not want to make the configuration burden for this kind of tool any worse" — not attractive for "average biggest developer to go all in and setting up a workflow system"
+4. **Agentic Flows Without Data Return**: User noted "the problem is of course with agentic flows is that it is really hard to get data back" — this must be solved via MCP
+
+**Why Claude Code?**
+
+User's assessment: "Claude code just works. Claude code is sound, it isn't the best, it does a lot of things and it doesn't do the best at a lot of things. But it does work effectively. And it is a tool which could be integrated."
+
+This pragmatic endorsement drives the choice — it works, it's available, and it avoids the configuration burden of alternatives.
+
+### Testing Requirements: Special-Case TestMain
+
+#### Testing Mechanism
+
+The integration mechanism being tested:
+1. **Spawn Claude command**: osm spawns Claude Code (or provider-specific wrapper)
+2. **Prompt with task instructions**: Provide prompt that instructs on the task
+3. **Response via MCP**: Claude uses MCP to communicate back to wrapping osm process
+
+This specific flow must be testable in isolation.
+
+#### TestMain Implementation
+
+- **TestMain with CLI flags**: Configure provider(s) to test against
+- **Environment variables for secrets**: Use env vars for API keys (never hardcode)
+- **Disabled by default**: Tests must be explicitly enabled (e.g., `-test-integration` flag)
+- **Provider-specific configuration**: Each provider may have specific config requirements
+
+**Example: Ollama Testing**
+```bash
+# Test with ollama provider
+go test -v -run TestClaudeIntegration -provider=ollama -model=gpt-oss:20b-cloud
+
+# Special handling required:
+# - Navigate through ollama's TUI menu
+# - Select the model
+# - Get to the common "entrypoint" (Claude Code TUI)
+```
+
+### Codebase Analysis Summary
+
+**Existing Building Blocks**:
+
+1. **MCP Server** (`internal/command/mcp.go`): 6 tools for context management, stdio transport
+2. **TUI Manager** (`internal/scripting/tui_manager.go`): Mode switching, command registration, go-prompt integration
+3. **PTY Support** (`internal/scripting/pty_test.go`): Proof-of-concept PTY usage
+4. **Goal System** (`internal/command/goal_builtin.go`): Declarative workflow definitions with state variables
+5. **Scripting Runtime** (`internal/scripting/runtime.go`): Goja with event loop, thread-safe execution
+6. **Process Execution** (`internal/builtin/exec/exec.go`): Current implementation doesn't use PTY (captures stdout/stderr)
+
+**Key Patterns**:
+
+- **Event Loop Model**: All JavaScript execution on single event loop goroutine
+- **Provider Interfaces**: Components implement interfaces (TerminalOpsProvider, EventLoopProvider)
+- **Shared State**: ContextManager provides unified file/diff/notes state
+- **Thread Safety**: Atomic operations, mutexes, goroutine ID tracking prevent races
+- **Lifecycle Management**: Context-based cleanup with proper shutdown sequences
+
+### Use Cases Beyond PR Splitting
+
+- **Multi-step code generation**: Generate, test, validate, refine
+- **Documentation generation**: Analyze code, generate docs, validate examples
+- **Refactoring orchestration**: Identify refactoring opportunities, apply changes, verify tests
+- **Test generation**: Generate tests, run them, fix failures iteratively
+
+### Open Questions for Architectural Design
+
+1. **Meta-key switching**: Should osm support tmux-style meta-key switching between osm TUI and Claude Code TUI?
+2. **Session isolation**: How should osm isolate multiple Claude Code sessions (future multi-instance)?
+3. **Error recovery**: How should osm handle Claude Code crashes, hangs, or unexpected exits?
+4. **Progress reporting**: How should osm report progress from long-running Claude operations?
+5. **Cancellation**: How should users cancel in-progress Claude operations from osm?
+
+### Related Items in TODO
+
+- "Code review splitter - prompts seem particularly LLM dependent, stalled" — **This is the precursor** to the AI orchestrator vision
+- "Add `exec` context builder command" — May need extension for PTY-based execution
+- "Implement partially-compliant fetch API" — May be relevant for certain API operations (though we want to avoid direct API integration)
+
+---
+
+### Next Steps: Architectural Design Phase
+
+This ideation document preserves the vision, requirements, and constraints. The next phase is **architectural design**, where:
+
+1. Multiple implementation approaches will be explored (minimal changes, clean architecture, pragmatic balance)
+2. Trade-offs will be compared
+3. A concrete implementation plan will be created
+4. User approval will be sought before implementation begins
+
+**Preserved Context for Planner**:
+- User's original detailed description (above)
+- Clarifying question answers (hybrid integration, configurable automation, multi-tier config, modular design)
+- Codebase patterns (MCP, TUI, PTY, goal system, scripting runtime)
+- Testing requirements (TestMain, provider-specific config, ollama example)

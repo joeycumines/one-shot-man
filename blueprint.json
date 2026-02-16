@@ -64,7 +64,8 @@
     {
       "task": "T131: Remove unused sync.enabled config key",
       "description": "Remove sync.enabled from internal/config/schema.go (line 495) - it's defined but never used anywhere in the codebase. Also update any tests or documentation referencing it.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Removed sync.enabled from schema.go, schema_test.go, benchmark_test.go, config.md, configuration.md, git-sync-design.md. CHANGELOG entry added. todo.md annotated. Also fixed pre-existing completion test missing which-one-is-better goal."
     }
   ],
   "continuousVerification": {

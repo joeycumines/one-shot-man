@@ -90,3 +90,5 @@
 22. T125: ✅ DONE — osm:json module (7 functions, 80+ tests). Rule of Two passed.
 23. T126: ✅ DONE — Committed 58094c9. Config dir migration ~/.one-shot-man→~/.osm. 26 files, 212 insertions. Rule of Two passed.
 24. Continue T127+
+25. T127: ✅ DONE — which-one-is-better goal added.
+26. T131: ✅ DONE — Removed sync.enabled from schema, tests, docs. Fixed pre-existing completion test. 8 files changed.

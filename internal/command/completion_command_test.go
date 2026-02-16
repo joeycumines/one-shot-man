@@ -276,7 +276,7 @@ func TestCompletionCommandGoalSubcommand(t *testing.T) {
 			expectedText: append([]string{
 				"goal)",
 				// Verify exact format: sorted, space-delimited list in compgen -W
-				"COMPREPLY=($(compgen -W \"paths bug-buster cite-sources code-explainer code-optimizer comment-stripper commit-message data-to-json doc-generator implementation-plan meeting-notes morale-improver pii-scrubber prose-polisher test-generator\"",
+				"COMPREPLY=($(compgen -W \"paths bug-buster cite-sources code-explainer code-optimizer comment-stripper commit-message data-to-json doc-generator implementation-plan meeting-notes morale-improver pii-scrubber prose-polisher test-generator which-one-is-better\"",
 			}, goalNames...),
 		},
 		{

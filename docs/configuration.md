@@ -124,7 +124,6 @@ Keys:
 Configure the git-based notebook synchronization:
 
 - `sync.repository` (string) — Git repository URL for sync (used by `osm sync init` and auto-clone on `osm sync pull`)
-- `sync.enabled` (bool, default `false`) — enable git synchronisation
 - `sync.auto-pull` (bool, default `false`) — automatically run `git pull --rebase` on program startup when the sync repository is initialized
 - `sync.local-path` (string) — local path for sync repository (default: `~/.osm/sync`)
 

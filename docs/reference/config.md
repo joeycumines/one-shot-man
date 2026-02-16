@@ -257,12 +257,9 @@ log.max-files 3
 
 ### Sync options (reserved)
 
-These keys are parsed and validated but the sync feature is not yet implemented.
-
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `sync.repository` | string | _(empty)_ | Git repository URL for sync |
-| `sync.enabled` | bool | `false` | Enable git synchronisation |
 | `sync.auto-pull` | bool | `false` | Auto-pull on startup |
 | `sync.local-path` | string | _(empty)_ | Local path for sync repository |
 

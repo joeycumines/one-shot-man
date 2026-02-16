@@ -1287,6 +1287,7 @@ func TestBuildPromptJSObject(t *testing.T) {
 		"insertText", "insertTextMoveCursor", "deleteBeforeCursor",
 		"delete", "cursorLeft", "cursorRight", "cursorUp", "cursorDown",
 		"getText", "terminalColumns", "terminalRows", "userInputColumns",
+		"newLine",
 	}
 	for _, m := range methods {
 		v := gojaObj.Get(m)

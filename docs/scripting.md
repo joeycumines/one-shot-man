@@ -115,11 +115,11 @@ The `tui` object lets scripts register modes, commands, completions, and run pro
 
 High-level calls:
 
-- `tui.registerMode({...})`
+- `tui.registerMode({...})` — supports `multiline: true` for Alt+Enter newline insertion
 - `tui.switchMode(name)` / `tui.getCurrentMode()`
 - `tui.registerCommand({...})`
 - `tui.createState(commandName, definitions)`
-- `tui.createPrompt({...})` + `tui.runPrompt(name)`
+- `tui.createPrompt({...})` + `tui.runPrompt(name)` — `createPrompt` supports `multiline: true` for Alt+Enter newline insertion
 - `tui.requestExit()` / `tui.isExitRequested()` / `tui.clearExitRequest()`
 - `tui.registerCompleter(name, fn)` + `tui.setCompleter(promptName, completerName)`
 - `tui.registerKeyBinding(key, fn)`

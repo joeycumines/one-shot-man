@@ -21,6 +21,7 @@ Options in `config`:
 - `name` (string) — mode name (required).
 - `tui` (object, optional) — UI presentation settings; supported keys include `title`, `prompt`.
 - `initialCommand` (string, optional) — when set, the manager passes this string to `go-prompt` using `prompt.WithInitialCommand(cmd, false)`. The `visible=false` argument means the initial command runs without rendering the prompt until the command completes (the prompt is deferred and not visible while the command runs).
+- `multiline` (bool, optional) — enable multiline input support; when true, Alt+Enter inserts a newline while Enter still submits normally (default: false)
 - `onEnter`, `onExit` (functions, optional) — lifecycle callbacks; if provided they are stored and later invoked by the manager when entering/exiting the mode.
 - `commands` (object, optional) — an inline map of command definitions (see "Commands" below).
 - `commands` may be a function (a commands builder); if a function is provided it is stored as a builder and can be invoked to construct the mode's commands.
@@ -93,6 +94,7 @@ Creates a configured `go-prompt` instance and returns a unique handle (string) u
 - `showCompletionAtStart` (bool, optional) — show completion dropdown immediately on prompt start (default: false)
 - `completionOnDown` (bool, optional) — allow Down arrow key to trigger completion dropdown (default: false)
 - `keyBindMode` (string, optional) — key binding preset: `"emacs"` or `"common"` (default: go-prompt default)
+- `multiline` (bool, optional) — enable multiline input support; when true, Alt+Enter inserts a newline into the buffer while Enter still submits normally (default: false)
 
 #### Color properties
 
@@ -255,6 +257,7 @@ The handler receives a `prompt` object with these methods:
 | `terminalColumns()` | Get terminal width in columns |
 | `terminalRows()` | Get terminal height in rows |
 | `userInputColumns()` | Get available input width (excluding prefix) |
+| `newLine()` | Insert a newline into the buffer (for multiline editing) |
 
 If the handler returns a truthy boolean, go-prompt will re-render the display.
 

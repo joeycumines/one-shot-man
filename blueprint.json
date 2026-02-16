@@ -359,6 +359,16 @@
       "task": "T125: Add osm:json module for structured JSON manipulation",
       "description": "Go-backed JSON utilities: jsonpath queries, json merge-patch (RFC 7386), json diff, json schema validation. For data transformation workflows.",
       "status": "Not Started"
+    },
+    {
+      "task": "T126: Config directory migration to ~/.osm and discovery path consolidation",
+      "description": "Migrate config directory from current location to ~/.osm (per docs/todo.md). Consolidate osm configuration to align with https://code.claude.com/docs/en/settings model. Change script and goal discovery behavior: aggressively cull/tidy functionality, STRICTLY support discovery within project-level directories (up-the-CWD discovery that terminates at the nearest parent) and in user/system-level directories. Review current implementation for user and system discovery paths.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T127: Add 'which one is better' builtin goal",
+      "description": "Add 'which one is better' builtin goal to internal/command/goal_builtin.go. Implement exhaustive options analysis, tailored for a wide range of use cases. Create specific use case variants, leveraging existing patterns (stateVars, hotSnippets, flagDefs, promptOptions) like morale-improver, bug-buster, code-optimizer. Target maximizing utility and general usefulness. MUST be integration tested properly.",
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {

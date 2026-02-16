@@ -644,6 +644,14 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		return suggestions, istrings.RuneNumber(start), istrings.RuneNumber(end)
 	}
 
+	// Read multiline setting from the current mode (if any)
+	var multiline bool
+	if tm.currentMode != nil {
+		tm.currentMode.mu.RLock()
+		multiline = tm.currentMode.Multiline
+		tm.currentMode.mu.RUnlock()
+	}
+
 	p := tm.buildGoPrompt(promptBuildConfig{
 		prefixCallback:          func() string { return tm.getPromptString() },
 		colors:                  tm.defaultColors,
@@ -655,6 +663,7 @@ func (tm *TUIManager) runAdvancedPrompt() {
 		dynamicCompletion:       true,
 		executeHidesCompletions: true,
 		escapeToggle:            true,
+		multiline:               multiline,
 	})
 
 	// Store as active prompt
@@ -809,6 +818,20 @@ func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
 	}
 	if cfg.historySize > 0 {
 		options = append(options, prompt.WithHistorySize(cfg.historySize))
+	}
+
+	// Multiline support: Alt+Enter inserts a newline into the buffer
+	if cfg.multiline {
+		altEnterNewLine := func(p *prompt.Prompt) bool {
+			p.Buffer().NewLine(p.TerminalColumns(), p.TerminalRows(), false)
+			return true
+		}
+		options = append(options, prompt.WithASCIICodeBind(
+			// ESC + CR: most POSIX terminals
+			prompt.ASCIICodeBind{ASCIICode: []byte{0x1b, 0x0d}, Fn: altEnterNewLine},
+			// ESC + LF: some terminals
+			prompt.ASCIICodeBind{ASCIICode: []byte{0x1b, 0x0a}, Fn: altEnterNewLine},
+		))
 	}
 
 	// Add any registered key bindings

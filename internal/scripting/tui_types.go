@@ -128,7 +128,9 @@ type ScriptMode struct {
 	// InitialCommand is an optional command string  to execute when starting the prompt.
 	// Basically, it defers _visibly_ starting the prompt, until after the initial command is run.
 	InitialCommand string
-	mu             sync.RWMutex
+	// Multiline enables multiline input support for this mode's prompt.
+	Multiline bool
+	mu        sync.RWMutex
 }
 
 // TUIConfig defines the configuration for a rich TUI interface.
@@ -222,4 +224,7 @@ type promptBuildConfig struct {
 	completionOnDown bool
 	// keyBindMode selects the key binding preset: "emacs" or "common" (default).
 	keyBindMode string
+	// multiline enables multiline input support. When true, Alt+Enter inserts
+	// a newline into the buffer instead of submitting. Enter always submits.
+	multiline bool
 }

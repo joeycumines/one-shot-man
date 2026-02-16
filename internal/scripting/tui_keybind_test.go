@@ -54,11 +54,11 @@ func TestBuildPromptJSObject_Methods(t *testing.T) {
 		engine: &Engine{vm: vm},
 	}
 
-	// Use a helper that checks ALL expected methods including new ones from T006.
+	// Use a helper that checks ALL expected methods including new ones from T006/T122.
 	val, err := vm.RunString(`(function(obj) {
 		var methods = ['insertText', 'insertTextMoveCursor', 'deleteBeforeCursor',
 			'delete', 'cursorLeft', 'cursorRight', 'cursorUp', 'cursorDown', 'getText',
-			'terminalColumns', 'terminalRows', 'userInputColumns'];
+			'terminalColumns', 'terminalRows', 'userInputColumns', 'newLine'];
 		var missing = [];
 		for (var i = 0; i < methods.length; i++) {
 			if (typeof obj[methods[i]] !== 'function') {

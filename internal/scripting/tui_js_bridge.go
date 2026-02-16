@@ -54,6 +54,13 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 			mode.InitialCommand = cmdStr
 		}
 
+		// Parse multiline option for the mode's prompt.
+		if multiline, err := getBool(configMap, "multiline", false); err != nil {
+			return fmt.Errorf("multiline: %w", err)
+		} else {
+			mode.Multiline = multiline
+		}
+
 		// Process onEnter and onExit lifecycle callbacks
 		if onEnter, exists := configMap["onEnter"]; exists {
 			if onEnterVal := tm.engine.vm.ToValue(onEnter); onEnterVal != nil {
@@ -273,6 +280,10 @@ func (tm *TUIManager) jsCreatePrompt(config interface{}) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	multiline, err := getBool(configMap, "multiline", false)
+	if err != nil {
+		return "", err
+	}
 
 	// Create the completer function as a dispatcher that can call a JS completer
 	completer := func(document prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber) {
@@ -325,6 +336,7 @@ func (tm *TUIManager) jsCreatePrompt(config interface{}) (string, error) {
 		showCompletionAtStart:   showCompletionAtStart,
 		completionOnDown:        completionOnDown,
 		keyBindMode:             keyBindMode,
+		multiline:               multiline,
 	})
 
 	// Store the prompt via the writer queue to avoid deadlocks.
@@ -677,6 +689,9 @@ func (tm *TUIManager) buildPromptJSObject(p *prompt.Prompt) goja.Value {
 	})
 	_ = obj.Set("userInputColumns", func() int {
 		return int(p.UserInputColumns())
+	})
+	_ = obj.Set("newLine", func() {
+		p.Buffer().NewLine(p.TerminalColumns(), p.TerminalRows(), false)
 	})
 	return obj
 }

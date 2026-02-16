@@ -9,13 +9,14 @@
 - T200: DONE (commit 5b86238) — exec-safe POSIX shell quoting
 - T201: DONE (commit c5ecde8) — rename osm:nextIntegerId → osm:nextIntegerID
 - T202: DONE (commit 54cc73d) — migrate textarea runeWidth to uniseg + hitTestColumn extraction
-- T203: DONE — MCP server removeFile and clearContext tools
+- T203: DONE (commit 14fa5dd) — MCP server removeFile and clearContext tools
+- T204: DONE — osm:regexp module
 - Blueprint updated
 
 ## Next Step
-- T204: osm:regexp module — Go RE2 regexp exposed to JS
-- File: internal/builtin/regexp/
-- Create native module with match, find, findAll, replace, split, compile
+- T205: osm:encoding module — base64/hex encode/decode
+- File: internal/builtin/encoding/
+- Create native module with base64Encode, base64Decode, hexEncode, hexDecode
 
 ## Architecture Notes
 - Old tasks T128-T170 have been remapped to T200-T269
@@ -35,5 +36,11 @@
 - T202 Run 1: PASS (scratch/review-t202-run1.md)
 - T202 Run 2: PASS (scratch/review-t202-run2.md)
 - T202 Committed: 54cc73d
-- T203 Run 1: pending
-- T203 Run 2: pending
+- T203 Run 1: FAIL (stale tool list in todo.md Key Insight)
+- T203 Run 1 v2: PASS (scratch/review-t203-run1-v2.md)
+- T203 Run 2: PASS (scratch/review-t203-run2.md)
+- T203 Committed: 14fa5dd
+- T204 Run 1: PASS (but misleading comment found — fixed, counter reset)
+- T204 Run 1 v2: PASS (scratch/review-t204-run1.md)
+- T204 Run 2: PASS (scratch/review-t204-run2.md)
+- T204 Committed: pending

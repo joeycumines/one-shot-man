@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200 DONE (5b86238), T201 DONE (c5ecde8), T202 DONE (54cc73d), T203 DONE. Session 2026-02-17. Proceeding to T204."
+    "currentState": "T200 DONE (5b86238), T201 DONE (c5ecde8), T202 DONE (54cc73d), T203 DONE (14fa5dd), T204 DONE. Session 2026-02-17. Proceeding to T205."
   },
   "sequentialTasks": [
     {
@@ -40,7 +40,7 @@
     {
       "task": "T204: osm:regexp module — Go RE2 regexp exposed to JS",
       "description": "Create osm:regexp native module in internal/builtin/regexp/. Functions: match, find, findAll, findSubmatch, findAllSubmatch, replace, replaceAll, split, compile (returns RegexpObject with same methods). Handle invalid patterns with JS Error. Register in register.go. Add unit tests. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T205: osm:encoding module — base64/hex encode/decode",

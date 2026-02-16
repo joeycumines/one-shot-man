@@ -147,6 +147,7 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 | `osm:flag` | Flag parsing with tab-completion support |
 | `osm:os` | File I/O (read, write, append), environment variables, clipboard, editor |
 | `osm:path` | Path manipulation (join, dir, base, ext, abs, rel, glob) |
+| `osm:regexp` | RE2 regular expressions (match, find, replace, split, compile) |
 | `osm:time` | Time utilities, sleep, duration formatting |
 | `osm:fetch` | HTTP client (GET, POST, etc.) |
 | `osm:grpc` | gRPC client with protobuf descriptor loading |

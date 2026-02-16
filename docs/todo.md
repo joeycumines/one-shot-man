@@ -386,3 +386,174 @@ This ideation document preserves the vision, requirements, and constraints. The 
 - Clarifying question answers (hybrid integration, configurable automation, multi-tier config, modular design)
 - Codebase patterns (MCP, TUI, PTY, goal system, scripting runtime)
 - Testing requirements (TestMain, provider-specific config, ollama example)
+
+---
+
+## Claude Code Multiplexer with Ollama Safety Validation
+
+> **Note**: This section is demonstrative and non-authoritative. It represents initial brainstorming rather than a finalized design. The specifics (configuration keys, file paths, API surface, architecture) require proper validation against actual requirements and constraints before implementation. Avoid treating this as specification.
+
+### Purpose
+
+Create a script that acts as a multiplexer between Claude Code prompts and the actual Claude Code execution, using a local Ollama-powered mechanism to:
+1. Identify and categorize Claude Code prompts
+2. Validate the safety/suitability of prompts before execution
+3. Resolve the "ideal choice" when multiple options exist
+4. Wrap Claude Code itself for controlled execution
+
+This is distinct from the broader AI Orchestrator (above) — this is a focused, lightweight multiplexer that runs locally with Ollama, without requiring external APIs or complex workflow orchestration.
+
+### Core Behavior: Prompt Multiplexing
+
+The script intercepts/detects Claude Code prompts and routes them appropriately:
+
+1. **Prompt Identification**: Detect when Claude Code is being invoked and parse the incoming prompt/session
+2. **Categorization**: Classify prompts into categories (e.g., code review, refactoring, documentation, testing, general Q&A)
+3. **Routing**: Route prompts based on category to appropriate handling strategies
+4. **Aggregation**: When multiple prompts are detected, aggregate and prioritize them
+
+### Ollama-Powered Validation
+
+**Critical Design Constraint**: All validation happens locally via Ollama — no external API calls (only the local Ollama HTTP API), no network dependency beyond downloading Ollama models initially.
+
+**Integration Method**: Use Ollama's HTTP API (`http://localhost:11434` by default) for chat completions. Tool calling support is optional — simpler prompting with structured output parsing may suffice for validation tasks; if needed, consider:
+1. **Function calling** (if supported by the model): Leverage Ollama's built-in tool/function calling
+2. **JSON mode**: Use `json` format with structured prompts for parsing responses
+3. **Split prompts**: Separate classification, scoring, and recommendation into sequential calls
+
+#### Safety Validation Categories
+
+1. **Intent Classification**: Determine if the prompt is:
+   - A legitimate development task (code change, review, refactor, test)
+   - A potentially destructive operation (force push, delete, drop data)
+   - A security-sensitive operation (credential handling, secrets, permissions)
+   - An external network request (API calls, fetching URLs)
+
+2. **Scope Assessment**: Evaluate the scope of changes:
+   - File-level changes (single file modifications)
+   - Module-level changes (multiple related files)
+   - Repository-level changes (widespread changes across codebase)
+   - Infrastructure changes (config files, dependencies, CI/CD)
+
+3. **Risk Scoring**: Assign risk scores based on:
+   - Destructive potential (force operations, deletions)
+   - Scope breadth (how much code is affected)
+   - Reversibility (can changes be easily undone?)
+   - External dependencies (network calls, API keys, third-party services)
+
+#### Ideal Choice Resolution
+
+When multiple approaches exist for a given prompt, use Ollama to determine the ideal choice:
+
+1. **Multi-candidate analysis**: Present multiple solution approaches to Ollama
+2. **Criteria weighting**: Apply weighted criteria (correctness, efficiency, maintainability, safety)
+3. **Recommendation generation**: Output a recommended approach with justification
+4. **User confirmation**: Require explicit user confirmation before execution
+
+### Claude Code Wrapper
+
+The script must wrap Claude Code execution with controlled invocation:
+
+1. **Spawn mechanism**: Use PTY spawning (via `osm:pty` or extended `osm:exec`) to run Claude Code
+2. **Environment isolation**: Control environment variables passed to Claude Code
+3. **Session management**: Manage Claude Code sessions with proper cleanup
+4. **Input/output bridging**: Bridge stdin/stdout/stderr between osm and Claude Code
+5. **Signal handling**: Forward signals (SIGINT, SIGTERM) appropriately
+
+### Native Go Support Requirements
+
+The script requires native Go code support for:
+
+1. **PTY Module Extension** (`osm:pty` or extend `osm:exec`):
+   - Full PTY support with terminal state preservation
+   - Signal forwarding (SIGWINCH, SIGINT, SIGTERM)
+   - Input/output streaming with proper buffering
+
+2. **Ollama Integration** (`osm:ollama` or similar):
+   - Local HTTP client to Ollama API (typically `http://localhost:11434`)
+   - Model listing and selection
+   - Chat completion API integration
+   - Streaming response support (for interactive use)
+   - Connection health checking
+
+3. **Prompt Parsing** (`osm:claude` or similar):
+   - Claude Code output parsing (detect prompts, errors, rate limits)
+   - Session state tracking
+   - Tool call interception (for MCP integration)
+
+### Script Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Claude Code Multiplexer                     │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐  │
+│  │   Prompt    │    │   Ollama     │    │   Claude Code    │  │
+│  │ Detector/   │───▶│   Safety     │───▶│   Wrapper        │  │
+│  │ Parser      │    │   Validator  │    │   (PTY Spawn)    │  │
+│  └──────────────┘    └──────────────┘    └──────────────────┘  │
+│         │                   │                     │             │
+│         ▼                   ▼                     ▼             │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐  │
+│  │  Category   │    │   Ideal      │    │   Output/        │  │
+│  │  Classifier │    │   Choice     │    │   Response       │  │
+│  └──────────────┘    │   Resolver   │    │   Handler        │  │
+│                      └──────────────┘    └──────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Configuration
+
+> **Note**: The configuration keys below are illustrative only. Actual keys should align with osm's existing config patterns and schema validation.
+
+```
+# Claude Code Multiplexer configuration
+
+# Ollama endpoint (default: http://localhost:11434)
+claude-mux.ollama-endpoint=http://localhost:11434
+
+# Default model to use for validation
+claude-mux.ollama-model=llama3.2:latest
+
+# Auto-approve safe prompts without Ollama validation
+claude-mux.auto-approve=false
+
+# Require explicit confirmation for high-risk operations
+claude-mux.confirm-destructive=true
+
+# Enable detailed logging of Ollama interactions
+claude-mux.debug=false
+```
+
+### Implementation Files
+
+- **Native Go modules**:
+  - `internal/scripting/ollama.go` — Ollama API client
+  - `internal/scripting/claude.go` — Claude Code wrapper/parser
+  - `internal/scripting/pty.go` — PTY support extension
+
+- **Script implementation**:
+  - `scripts/claude-mux.js` — Main multiplexer script
+  - `scripts/claude-mux/validator.js` — Safety validation logic
+  - `scripts/claude-mux/resolver.js` — Ideal choice resolution
+
+### Safety Guarantees
+
+1. **Fail-closed**: On any error (Ollama unavailable, parsing failure), default to blocking execution
+2. **Explicit confirmation**: Never auto-execute destructive operations
+3. **Audit logging**: Log all decisions (prompt categorization, risk scores, recommendations)
+4. **Timeout handling**: Set reasonable timeouts for Ollama responses
+5. **Model validation**: Verify Ollama model is available before relying on it
+
+### Testing Requirements
+
+1. **Ollama connectivity**: Test with various Ollama states (running, stopped, no model)
+2. **Prompt classification**: Test classification accuracy across different prompt types
+3. **Claude Code wrapper**: Test PTY spawning, signal handling, cleanup
+4. **End-to-end**: Test full flow with real Claude Code invocation
+
+### Related Items
+
+- AI Orchestrator / Claude Code Integration (above) — This is a focused, lightweight version
+- PTY Spawning and Terminal Management (above) — Required for Claude Code wrapper
+- MCP-Based Data Exfiltration (above) — Complementary for bidirectional communication

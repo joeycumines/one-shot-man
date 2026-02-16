@@ -520,4 +520,3 @@ func TestSHA256UnicodeString(t *testing.T) {
 		t.Fatalf("expected %q, got %q", expected, v.String())
 	}
 }
-

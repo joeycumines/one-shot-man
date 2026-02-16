@@ -319,7 +319,8 @@
     {
       "task": "T118: Add MCP (Model Context Protocol) server mode",
       "description": "Implement osm mcp command exposing context management as MCP server (stdio transport). Tools: addFile, addDiff, addNote, listContext, buildPrompt, getGoals. Integration with Claude Desktop, VS Code Copilot.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Created internal/command/mcp.go with newMCPServer(), 6 tools via MCP SDK v1.3.0 (github.com/modelcontextprotocol/go-sdk/mcp). SetError for application errors, mcpBacktickFence for safe fencing. 21 tests in mcp_test.go covering all tools + full workflow integration. Wired into cmd/osm/main.go. All lints pass (staticcheck, vet, deadcode, betteralign)."
     },
     {
       "task": "T119: Configuration model iteration: typed sections",

@@ -14,8 +14,8 @@ This document describes the internal architecture of `osm` — how the major sub
 
 3. **Goal subsystem.** `command.NewGoalDiscovery(cfg)` builds the discovery engine, then `command.NewDynamicGoalRegistry(builtIns, discovery)` merges built-in goals with user-discovered goals.
 
-4. **Command registration.** All 14 built-in commands are registered:
-   `help`, `version`, `config`, `init`, `script`, `session`, `prompt-flow`, `code-review`, `super-document`, `completion`, `goal`, `sync`, `log`, plus the completion command which receives both the registry and goal registry for tab-completion data.
+4. **Command registration.** All 15 built-in commands are registered:
+   `help`, `version`, `config`, `init`, `script`, `session`, `prompt-flow`, `code-review`, `super-document`, `completion`, `goal`, `sync`, `log`, `mcp`, plus the completion command which receives both the registry and goal registry for tab-completion data.
 
 5. **Flag parsing.** A global `FlagSet` parses top-level `-h`/`-help`; remaining args identify the command name and its arguments. Each command gets its own `FlagSet` (with `ContinueOnError`) so `SetupFlags` can register command-specific flags before `fs.Parse(cmdArgs)`.
 
@@ -376,6 +376,33 @@ Source: [internal/command/sync.go](../internal/command/sync.go), [internal/comma
 
 ---
 
+## MCP server
+
+The `mcp` command starts a Model Context Protocol server over stdio, enabling external MCP clients (Claude Desktop, VS Code Copilot, etc.) to use osm's context management and prompt building programmatically.
+
+### Architecture
+
+The server is implemented as a pure Go command (no scripting engine). It creates a `ContextManager` rooted at the working directory and exposes six tools:
+
+| Tool | Description |
+|------|-------------|
+| `addFile` | Add files/directories via `ContextManager.AddPath` |
+| `addDiff` | Store diffs in an in-memory list |
+| `addNote` | Store notes in an in-memory list |
+| `listContext` | Return JSON listing of files and items |
+| `buildPrompt` | Assemble prompt from goal instructions + notes/diffs + txtar context |
+| `getGoals` | Return JSON array of available goals |
+
+### Design
+
+- **`newMCPServer()`** is an unexported factory function that creates the configured `*mcp.Server`. It is separated from `Execute()` for testability — tests use `mcp.NewInMemoryTransports()` to create paired transports without stdio.
+- **Thread safety:** Notes and diffs are stored in-memory behind a `sync.Mutex`. File context is managed by the existing `ContextManager`.
+- **Error handling:** Application-level errors (missing file, empty input) use `CallToolResult.SetError()` so the MCP client sees `isError: true` without the transport disconnecting. Only transport-level errors return Go errors.
+
+Source: [internal/command/mcp.go](../internal/command/mcp.go)
+
+---
+
 ## Data flow
 
 ```
@@ -390,7 +417,7 @@ CLI args → main.go → Registry.Get(cmd)
         Go commands              JS commands
      (config, session,      (script, prompt-flow,
       init, version,         code-review, goal,
-      help, log,             super-document)
+      help, log, mcp,       super-document)
       completion)                  ↓
                            PrepareEngine()
                                   ↓

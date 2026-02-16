@@ -30,6 +30,7 @@ require (
 	github.com/joeycumines/go-pabt v0.2.0
 	github.com/lrstanley/bubblezone v1.0.0
 	github.com/mattn/go-runewidth v0.0.19
+	github.com/modelcontextprotocol/go-sdk v1.3.0
 	github.com/muesli/termenv v0.16.0
 	github.com/rivo/uniseg v0.4.7
 	golang.org/x/sys v0.40.0
@@ -52,6 +53,7 @@ require (
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
+	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/pprof v0.0.0-20260202012954-cb029daf43ef // indirect
 	github.com/joeycumines/go-bigbuff v1.21.0 // indirect
 	github.com/joeycumines/simple-command-output-filter v0.2.1 // indirect
@@ -66,11 +68,13 @@ require (
 	github.com/pkg/term v1.2.0-beta.2 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yuin/goldmark v1.7.16 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/mod v0.32.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
+	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260205145544-86a5c4bf3c8d // indirect
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect

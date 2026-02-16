@@ -79,4 +79,5 @@
 11. T115: ✅ DONE — Replaced hardcoded path hack with dynamic filepath.Rel computation. Fixed arg quoting to use quoteVHSString.
 12. T116: ✅ DONE — Created osm:path module (pathmod pkg). 42 tests, 97.7% coverage. join/dir/base/ext/abs/rel/clean/isAbs/match/glob/separator/listSeparator. Registered. Docs + CHANGELOG updated.
 13. T117: ✅ DONE — Created osm:crypto module (cryptomod pkg). sha256/sha1/md5/hmacSHA256/hmacSHA1. 35 tests with RFC/NIST vectors. Registered. Docs updated.
-14. Continue T118-T125
+14. T118: ✅ DONE — Created osm mcp command (MCP server mode). 6 tools: addFile, addDiff, addNote, listContext, buildPrompt, getGoals. MCP SDK v1.3.0. 21 tests via InMemoryTransport. Full build+lint passes.
+15. Continue T119-T125

@@ -130,6 +130,37 @@ TUI for merging documents into a single internally consistent super-document.
   - `-log-file <path>`: path to log file (JSON output)
   - `-log-buffer <n>`: size of in-memory log buffer (default `1000`)
 
+### `osm mcp`
+
+Start an MCP (Model Context Protocol) server over stdio. Exposes osm's context management and prompt building as MCP tools for integration with Claude Desktop, VS Code Copilot, and other MCP-compatible clients.
+
+- Usage: `osm mcp`
+- No flags
+
+The server provides 6 tools:
+
+| Tool | Description |
+|------|-------------|
+| `addFile` | Add a file or directory to the prompt context |
+| `addDiff` | Add a unified diff to the prompt context |
+| `addNote` | Add a freeform text note to the prompt context |
+| `listContext` | List all files, diffs, and notes currently in context |
+| `buildPrompt` | Build the complete prompt from current context (optionally with a goal) |
+| `getGoals` | List all available goals with their descriptions |
+
+Example MCP client configuration (Claude Desktop `claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "osm": {
+      "command": "osm",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
 ### `osm log`
 
 View and tail log files.

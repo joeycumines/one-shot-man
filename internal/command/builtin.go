@@ -33,7 +33,7 @@ func NewHelpCommand(registry *Registry) *HelpCommand {
 func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		// Show general help and list all commands
-		_, _ = fmt.Fprintln(stdout, "one-shot-man - refine reproducible one-shot prompts from your terminal")
+		_, _ = fmt.Fprintln(stdout, "osm - refine reproducible one-shot prompts from your terminal")
 		_, _ = fmt.Fprintln(stdout, "")
 		_, _ = fmt.Fprintln(stdout, "Usage: osm <command> [options] [args...]")
 		_, _ = fmt.Fprintln(stdout, "")
@@ -131,7 +131,7 @@ func (c *VersionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
 		return fmt.Errorf("unexpected arguments")
 	}
-	_, _ = fmt.Fprintf(stdout, "one-shot-man version %s\n", c.version)
+	_, _ = fmt.Fprintf(stdout, "osm version %s\n", c.version)
 	return nil
 }
 
@@ -332,7 +332,7 @@ func writeResolvedTable(w io.Writer, resolved []config.ResolvedOption) {
 	_ = tw.Flush()
 }
 
-// InitCommand initializes the one-shot-man environment.
+// InitCommand initializes the osm environment.
 type InitCommand struct {
 	*BaseCommand
 	force bool
@@ -343,7 +343,7 @@ func NewInitCommand() *InitCommand {
 	return &InitCommand{
 		BaseCommand: NewBaseCommand(
 			"init",
-			"Initialize one-shot-man environment",
+			"Initialize osm environment",
 			"init [options]",
 		),
 	}
@@ -379,7 +379,7 @@ func (c *InitCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	}
 
 	// Create default configuration
-	defaultConfig := `# one-shot-man configuration file
+	defaultConfig := `# osm configuration file
 # Format: optionName remainingLineIsTheValue
 # Use [command_name] sections for command-specific options
 
@@ -430,6 +430,6 @@ format full
 		}
 	}
 
-	_, _ = fmt.Fprintf(stdout, "Initialized one-shot-man configuration at: %s\n", configPath)
+	_, _ = fmt.Fprintf(stdout, "Initialized osm configuration at: %s\n", configPath)
 	return nil
 }

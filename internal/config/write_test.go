@@ -400,7 +400,7 @@ func TestSetKeyInFile_ComplexConfigRoundTrip(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "config")
 
-	initial := "# one-shot-man configuration file\n" +
+	initial := "# osm configuration file\n" +
 		"# Format: optionName remainingLineIsTheValue\n" +
 		"\n" +
 		"# Global options\n" +
@@ -458,7 +458,7 @@ func TestSetKeyInFile_ComplexConfigRoundTrip(t *testing.T) {
 		t.Fatalf("failed to read config: %v", err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "# one-shot-man configuration file") {
+	if !strings.Contains(content, "# osm configuration file") {
 		t.Fatalf("expected header comment preserved, got %q", content)
 	}
 	if !strings.Contains(content, "# prompt.color.input green") {

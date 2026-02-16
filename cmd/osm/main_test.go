@@ -75,7 +75,7 @@ func TestRunVersionCommand(t *testing.T) {
 		t.Fatalf("run returned error: %v", err)
 	}
 
-	if !strings.Contains(stdout, "one-shot-man version") {
+	if !strings.Contains(stdout, "osm version") {
 		t.Fatalf("expected version output, got %q", stdout)
 	}
 
@@ -294,7 +294,7 @@ func TestVersionCommandVariations(t *testing.T) {
 				if err != nil {
 					t.Fatalf("version command returned error: %v", err)
 				}
-				if !strings.Contains(stdout, "one-shot-man version") {
+				if !strings.Contains(stdout, "osm version") {
 					t.Fatalf("expected version output, got stdout=%q stderr=%q", stdout, stderr)
 				}
 			}

@@ -85,7 +85,7 @@ func (c *CompletionCommand) generateBashCompletion(w io.Writer) error {
 	configKeyList := strings.Join(keys, " ")
 
 	script := fmt.Sprintf(`#!/bin/bash
-# Bash completion script for osm (one-shot-man)
+# Bash completion script for osm
 
 _osm_completion() {
     local cur prev commands
@@ -178,7 +178,7 @@ func (c *CompletionCommand) generateZshCompletion(w io.Writer) error {
 
 	script := fmt.Sprintf(`#compdef osm
 
-# Zsh completion script for osm (one-shot-man)
+# Zsh completion script for osm
 
 _osm() {
     local state line
@@ -276,7 +276,7 @@ func (c *CompletionCommand) generateFishCompletion(w io.Writer) error {
 	keys := configKeys()
 	configKeyList := strings.Join(keys, " ")
 
-	script := fmt.Sprintf(`# Fish completion script for osm (one-shot-man)
+	script := fmt.Sprintf(`# Fish completion script for osm
 
 # Complete commands
 %s
@@ -326,7 +326,7 @@ func (c *CompletionCommand) generatePowerShellCompletion(w io.Writer) error {
 
 	// No per-ID completions for session — only subcommand names are provided.
 
-	script := fmt.Sprintf(`# PowerShell completion script for osm (one-shot-man)
+	script := fmt.Sprintf(`# PowerShell completion script for osm
 
 Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
     param($commandName, $wordToComplete, $cursorPosition)

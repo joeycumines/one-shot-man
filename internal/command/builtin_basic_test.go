@@ -115,7 +115,7 @@ func TestVersionCommandExecute(t *testing.T) {
 		t.Fatalf("version execute returned error: %v", err)
 	}
 
-	if !strings.Contains(stdout.String(), "one-shot-man version 0.0.1-test") {
+	if !strings.Contains(stdout.String(), "osm version 0.0.1-test") {
 		t.Fatalf("expected version output, got %q", stdout.String())
 	}
 }
@@ -502,7 +502,7 @@ func TestInitCommandForceCreatesConfig(t *testing.T) {
 	}
 
 	output := stdout.String()
-	if !strings.Contains(output, "Initialized one-shot-man configuration") {
+	if !strings.Contains(output, "Initialized osm configuration") {
 		t.Fatalf("expected initialization message, got %q", output)
 	}
 

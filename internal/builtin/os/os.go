@@ -175,7 +175,7 @@ func openEditor(ctx context.Context, nameHint string, initialContent string) str
 	if nameHint == "" {
 		nameHint = "oneshot"
 	}
-	dir, err := os.MkdirTemp("", "one-shot-man-editor-*")
+	dir, err := os.MkdirTemp("", "osm-editor-*")
 	if err != nil {
 		return initialContent
 	}

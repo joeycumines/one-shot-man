@@ -552,7 +552,7 @@ func TestInitCommand_ForceOverwritesExisting(t *testing.T) {
 	if string(data) == "old content" {
 		t.Fatal("expected config to be overwritten")
 	}
-	if !strings.Contains(string(data), "# one-shot-man configuration file") {
+	if !strings.Contains(string(data), "# osm configuration file") {
 		t.Fatalf("expected default config content, got: %q", string(data))
 	}
 }

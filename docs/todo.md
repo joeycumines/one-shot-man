@@ -140,9 +140,19 @@ osm should be able to orchestrate Claude Code (and potentially other TUI-based A
 
 1. **No Direct API Integration**: Avoid adding API keys or network calls to osm. Leverage existing TUI tools (Claude Code, gh CLI, gemini CLI, codium CLI, etc.)
 2. **Minimal Configuration Burden**: Don't require users to set up complex workflow systems. Use existing tools that "just work"
+   - User's stance: "I really do not want to make the configuration burden for this kind of tool any worse"
+   - Not attractive for "average biggest developer to go all in and setting up a workflow system"
 3. **TUI Multiplexing**: osm acts as a multiplexer that can swap between its own TUI and the external tool's TUI, potentially via meta-key switching (tmux-style)
-4. **Behavior Tree Orchestration**: Use behavior trees (PABT) for high-level workflow control with prebuilt action templates
+   - User is a tmux user: "I use tmux, so make sure to note that and avoid conflicts"
+   - Must avoid conflicting with tmux keybindings
+4. **Modular Implementation**: Subprocess orchestration is ONE of the means. All implementations must be modular and flexible. The system should support multiple interaction models (spawn + PTY, external process monitoring, TTY transfer), with users choosing the approach that fits their workflow.
+5. **Configuration Strategy Alignment**: Per the todo items - align with Claude's high-level configuration strategy for osm
+6. **Building Blocks Exposed**: Various building blocks must be exposed to users of osm for their own implementations. There's various examples in scripts/, including for PA-BT.
+7. **Behavior Tree Orchestration**: Use behavior trees (PABT) for high-level workflow control with prebuilt action templates
 5. **Hybrid Communication**: MCP for data exfiltration (Claude → osm), PTY parsing for setup/init/permission handling
+   - **PTY output capture is mandatory**: Required for rate limit handling, error detection, context clearing, and output verification
+   - User's explicit requirement: "Always verify any inputs (as in, sent over the PTY) result in the expected outputs"
+6. **Slop Prevention**: "Slop is bad" — unverified AI-generated changes accumulate into unmaintainable codebases
 
 ### Integration Architecture: Hybrid Approach
 

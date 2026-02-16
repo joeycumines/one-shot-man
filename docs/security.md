@@ -108,7 +108,7 @@ Attempts to `require('go:os')`, `require('node:fs')`, or other prefixes fail.
 |---|---|---|
 | `osm:time` | `sleep(ms)` | Minimal — only delays |
 | `osm:argv` | `parseArgv`, `formatArgv` | String processing only |
-| `osm:nextIntegerId` | `new()` → counter | Pure computation |
+| `osm:nextIntegerID` | `new()` → counter | Pure computation |
 | `osm:flag` | Go `flag` wrapper | Argument parsing |
 | `osm:unicodetext` | `width`, `truncate` | String processing |
 | `osm:ctxutil` | Context manager | Uses git diff via exec |

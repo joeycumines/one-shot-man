@@ -55,7 +55,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 		// Register the test mode with context manager
 		script := `
 			const {contextManager} = require('osm:ctxutil');
-			const nextIntegerId = require('osm:nextIntegerId');
+			const nextIntegerId = require('osm:nextIntegerID');
 			const sharedSymbols = require('osm:sharedStateSymbols');
 
 			const state = tui.createState("ctx-test", {
@@ -159,7 +159,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 		// This triggers the rehydration process
 		script := `
 			const {contextManager} = require('osm:ctxutil');
-			const nextIntegerId = require('osm:nextIntegerId');
+			const nextIntegerId = require('osm:nextIntegerID');
 			const shared = require('osm:sharedStateSymbols');
 
 			const state = tui.createState("ctx-test", {
@@ -292,7 +292,7 @@ func TestContextRehydrationWithSharedState(t *testing.T) {
 	// Register mode with shared state contract
 	script := `
 		const {contextManager} = require('osm:ctxutil');
-		const nextIntegerId = require('osm:nextIntegerId');
+		const nextIntegerId = require('osm:nextIntegerID');
 		const shared = require('osm:sharedStateSymbols');
 
 		const SharedStateKeys = {

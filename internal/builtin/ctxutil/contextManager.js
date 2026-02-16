@@ -7,7 +7,7 @@
 //   const ctxmgr = contextManager({
 //     getItems: function() { return tui.getState("items") || []; },
 //     setItems: function(v) { tui.setState("items", v); },
-//     nextIntegerId: require('osm:nextIntegerId'),
+//     nextIntegerId: require('osm:nextIntegerID'),
 //     addItem: function(type, label, payload) { ... }
 //   });
 //
@@ -29,7 +29,7 @@
 
     function contextManager(options) {
         // N.B. These can't be until after init is complete.
-        const _nextIntegerId = require('osm:nextIntegerId');
+        const _nextIntegerId = require('osm:nextIntegerID');
         const {openEditor: _openEditor, clipboardCopy: _clipboardCopy, fileExists: _fileExists} = require('osm:os');
         const {formatArgv: _formatArgv, parseArgv: _parseArgv} = require('osm:argv');
         const {execv: _execv} = require('osm:exec');

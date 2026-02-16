@@ -31,7 +31,8 @@ func TestRegister(t *testing.T) {
 		"osm:json",
 		"osm:fetch",
 		"osm:flag",
-		"osm:nextIntegerId",
+		"osm:nextIntegerID",
+		"osm:nextIntegerId", // Deprecated alias — must still resolve
 		"osm:exec",
 		"osm:os",
 		"osm:path",

@@ -2,7 +2,7 @@
 // This is the built-in version of the prompt-flow script with embedded template
 
 const {buildContext, contextManager} = require('osm:ctxutil');
-const nextIntegerId = require('osm:nextIntegerId');
+const nextIntegerId = require('osm:nextIntegerID');
 const template = require('osm:text/template');
 
 // Import shared symbols

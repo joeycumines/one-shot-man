@@ -153,7 +153,7 @@
 // ============================================================================
 
 const {buildContext, contextManager} = require('osm:ctxutil');
-const nextIntegerId = require('osm:nextIntegerId');
+const nextIntegerId = require('osm:nextIntegerID');
 const template = require('osm:text/template');
 const tea = require('osm:bubbletea');
 const lipgloss = require('osm:lipgloss');

@@ -1,7 +1,7 @@
 // Code Review: Single-prompt code review with context (baked-in version)
 // This is the built-in version of the code-review script with embedded template
 
-const nextIntegerId = require('osm:nextIntegerId');
+const nextIntegerId = require('osm:nextIntegerID');
 const {buildContext, contextManager} = require('osm:ctxutil');
 const template = require('osm:text/template');
 

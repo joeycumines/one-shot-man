@@ -86,7 +86,8 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"argv", argv.Require)
 	registry.RegisterNativeModule(prefix+"crypto", cryptomod.Require)
 	registry.RegisterNativeModule(prefix+"json", jsonmod.Require)
-	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.Require)
+	registry.RegisterNativeModule(prefix+"nextIntegerID", nextintegerid.Require)
+	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.Require) // Deprecated: use osm:nextIntegerID
 	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require)
 	registry.RegisterNativeModule(prefix+"flag", flagmod.Require)

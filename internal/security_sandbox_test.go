@@ -409,7 +409,7 @@ func TestSandbox_RequireOnlyLoadsRegisteredModules(t *testing.T) {
 			'osm:bubbles/textarea', 'osm:bubbles/viewport',
 			'osm:termui/scrollbar', 'osm:lipgloss',
 			'osm:bt', 'osm:pabt', 'osm:grpc',
-			'osm:nextIntegerId',
+			'osm:nextIntegerID',
 		];
 		var loaded = 0;
 		for (var i = 0; i < modules.length; i++) {

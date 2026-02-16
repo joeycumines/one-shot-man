@@ -14,7 +14,7 @@
     const config = GOAL_CONFIG;
     const tuiTitle = config.tuiTitle || config.name;
 
-    const nextIntegerId = require('osm:nextIntegerId');
+    const nextIntegerId = require('osm:nextIntegerID');
     const {buildContext, contextManager} = require('osm:ctxutil');
     const template = require('osm:text/template');
     const shared = require('osm:sharedStateSymbols');

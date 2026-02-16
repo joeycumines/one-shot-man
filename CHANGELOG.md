@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test coverage expanded across 25+ packages with notable gains: bubblezone 0→98.7%, lipgloss 58→99%, tview 68.5→96.4%, bubbletea 75.8→91.2%, viewport 73.3→97.3%, overall cmd/osm 91.4→94.8%
 
 ### Changed
+- Renamed `osm:nextIntegerId` native module to `osm:nextIntegerID` (Go naming convention); the old name is kept as a deprecated alias
 - All user-visible strings updated from "one-shot-man" to "osm" — help text, version output, `osm init` messages, generated config file header, shell completion script comments, and temp directory prefixes now consistently use "osm"
 - Default configuration directory migrated from `~/.one-shot-man/` to `~/.osm/` — existing `~/.one-shot-man/config` files are still read as a fallback if `~/.osm/` does not exist; new installations use `~/.osm/` by default
 - Session storage directory migrated from `{UserConfigDir}/one-shot-man/sessions/` to `{UserConfigDir}/osm/sessions/`
@@ -65,6 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved `CONFIG_HOT_SNIPPETS` auto-detection into `contextManager.js` reducing per-script boilerplate
 - Unexported 14 internal symbols across scripting, command, storage, and builtin packages
 - Refactored txtar collision handling to use full relative paths instead of filename-only deduplication
+
+### Deprecated
+- `osm:nextIntegerId` module name: use `osm:nextIntegerID` instead (old name still works as an alias)
 
 ### Removed
 - Unused `sync.enabled` configuration key (was defined but never read)

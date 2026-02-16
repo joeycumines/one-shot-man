@@ -202,7 +202,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | Module | Description | Key exports |
 |--------|-------------|-------------|
 | `osm:ctxutil` | Context building helpers (used by built-ins) | `buildContext(items, options?) → string`, `contextManager` (factory for reusable context management patterns) |
-| `osm:nextIntegerId` | Simple ID generator | Default export is a function: `nextId(list) → number` — finds max `.id` in array and returns max+1 |
+| `osm:nextIntegerID` | Simple ID generator | Default export is a function: `nextId(list) → number` — finds max `.id` in array and returns max+1. _(Deprecated alias: `osm:nextIntegerId`)_ |
 | `osm:sharedStateSymbols` | Cross-mode shared state symbols | Exports Symbol properties (e.g., `contextItems`) for use with `tui.createState("__shared__", …)` |
 
 #### TUI framework (Charm/BubbleTea stack)

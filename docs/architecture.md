@@ -185,7 +185,7 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 
 | Module | Description |
 |--------|-------------|
-| `osm:nextIntegerId` | Thread-safe monotonic integer ID generator |
+| `osm:nextIntegerID` | Thread-safe monotonic integer ID generator |
 | `osm:sharedStateSymbols` | Shared state symbol constants for cross-module state |
 
 ### Context management

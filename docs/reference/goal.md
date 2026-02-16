@@ -99,6 +99,8 @@ State & prompt building:
 
 - `promptOptions` (`object`): further directives used to influence prompt generation, and especially dynamic templates keyed to state values (like `typeInstructions` mapping state `type` -> instruction string).
 
+- `promptFooter` (string, optional): footer text appended after context in the final prompt. This string is itself rendered as a template (like `promptInstructions`), so it can reference state variables (e.g., `{{index .stateKeys "outputFormat"}}`). The rendered result is available as `{{.promptFooter}}` in the `promptTemplate`. Useful for adding reminders, constraints, or follow-up instructions that should appear at the end of the generated prompt.
+
 - `postCopyHint` (string, optional): if set, this text is printed to the terminal after the user successfully copies the prompt to clipboard. Useful for suggesting follow-up actions (e.g., "Try pasting into Claude and asking it to review the output.").
 
 Hot-snippets:
@@ -141,7 +143,8 @@ Example:
     "type"
   ],
   "promptInstructions": "Create {{.stateKeys.type}} documentation for the codebase.",
-  "promptTemplate": "**{{.description | upper}}**\n\n{{.promptInstructions}}\n\n## {{.contextHeader}}\n\n{{.contextTxtar}}",
+  "promptFooter": "Remember: all code examples must be runnable.",
+  "promptTemplate": "**{{.description | upper}}**\n\n{{.promptInstructions}}\n\n## {{.contextHeader}}\n\n{{.contextTxtar}}{{if .promptFooter}}\n\n---\n{{.promptFooter}}{{end}}",
   "promptOptions": {
     "typeInstructions": {
       "comprehensive": "Generate comprehensive documentation including...",

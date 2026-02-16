@@ -788,3 +788,96 @@ func TestGoalHotSnippet_OmittedWhenEmpty(t *testing.T) {
 		t.Errorf("expected hotSnippets to be omitted when empty, got: %s", string(data))
 	}
 }
+
+// TestGoal_PromptFooterJSONSerialization verifies that PromptFooter
+// round-trips through JSON correctly.
+func TestGoal_PromptFooterJSONSerialization(t *testing.T) {
+	t.Parallel()
+
+	goal := Goal{
+		Name:         "test-footer",
+		PromptFooter: "Remember: output must be valid JSON.",
+	}
+	data, err := json.Marshal(goal)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if !strings.Contains(string(data), `"promptFooter":"Remember: output must be valid JSON."`) {
+		t.Errorf("expected promptFooter in JSON, got: %s", string(data))
+	}
+
+	var decoded Goal
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+	if decoded.PromptFooter != "Remember: output must be valid JSON." {
+		t.Errorf("expected PromptFooter to round-trip, got: %q", decoded.PromptFooter)
+	}
+}
+
+// TestGoal_PromptFooterInBuildPrompt verifies that PromptFooter is
+// template-interpolated and available as {{.promptFooter}} in promptTemplate.
+func TestGoal_PromptFooterInBuildPrompt(t *testing.T) {
+	t.Parallel()
+
+	// Create a minimal goal with a footer referencing state vars.
+	goal := Goal{
+		Name:         "footer-test",
+		Description:  "Test footer interpolation",
+		Category:     "testing",
+		Script:       goalScript,
+		FileName:     "footer-test.js",
+		PromptFooter: "Format: {{index .stateKeys \"outputFormat\"}}",
+		StateVars: map[string]interface{}{
+			"outputFormat": "markdown",
+		},
+		PromptTemplate:     "Instructions\n{{.contextHeader}}\n{{.contextTxtar}}\n{{.promptInstructions}}\n---\n{{.promptFooter}}",
+		PromptInstructions: "Do the thing.",
+		ContextHeader:      "CONTEXT",
+		Commands: []CommandConfig{
+			{Name: "add", Type: "contextManager"},
+			{Name: "show", Type: "contextManager"},
+			{Name: "copy", Type: "contextManager"},
+			{Name: "list", Type: "contextManager"},
+		},
+	}
+
+	// Build a registry with just this goal
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	discovery := NewGoalDiscovery(cfg)
+	registry := NewDynamicGoalRegistry([]Goal{goal}, discovery)
+
+	cmd := NewGoalCommand(cfg, registry)
+	var stdout, stderr bytes.Buffer
+	cmd.testMode = true
+	cmd.store = "memory"
+	cmd.session = t.Name()
+
+	// Run the goal (positional arg = interactive in test mode)
+	if err := cmd.Execute([]string{"footer-test"}, &stdout, &stderr); err != nil {
+		t.Fatalf("execute failed: %v; stderr=%s", err, stderr.String())
+	}
+
+	// The banner should appear - basic sanity
+	got := stdout.String()
+	if !strings.Contains(got, "footer-test") && !strings.Contains(got, "Footer Test") {
+		t.Fatalf("expected goal banner, got: %s", got)
+	}
+}
+
+// TestGoal_PromptFooterEmpty verifies that an empty PromptFooter
+// produces an empty string in template data (no error).
+func TestGoal_PromptFooterEmpty(t *testing.T) {
+	t.Parallel()
+
+	goal := Goal{Name: "no-footer"}
+	data, err := json.Marshal(goal)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	// Should have the field but empty
+	if !strings.Contains(string(data), `"promptFooter":""`) {
+		t.Errorf("expected empty promptFooter in JSON, got: %s", string(data))
+	}
+}

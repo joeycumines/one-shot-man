@@ -121,6 +121,12 @@
         instructionsTmpl.parse(config.promptInstructions || "");
         templateData.promptInstructions = instructionsTmpl.execute(templateData);
 
+        // Process promptFooter as a template (same as promptInstructions)
+        const footerTmpl = template.new("footer");
+        footerTmpl.funcs(templateFuncs);
+        footerTmpl.parse(config.promptFooter || "");
+        templateData.promptFooter = footerTmpl.execute(templateData);
+
         // Create template with custom functions
         const tmpl = template.new("goal");
         tmpl.funcs(templateFuncs);

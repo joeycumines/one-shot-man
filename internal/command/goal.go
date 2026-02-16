@@ -47,6 +47,7 @@ type Goal struct {
 	// Prompt building
 	PromptInstructions string                 `json:"promptInstructions"` // Main goal instructions
 	PromptTemplate     string                 `json:"promptTemplate"`     // Template for final prompt
+	PromptFooter       string                 `json:"promptFooter"`       // Footer text appended after context (template-interpolated)
 	PromptOptions      map[string]interface{} `json:"promptOptions"`      // Additional options for prompt building
 	ContextHeader      string                 `json:"contextHeader"`      // Header for context section
 

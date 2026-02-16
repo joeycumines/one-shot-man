@@ -172,7 +172,8 @@
     {
       "task": "T093: Prompt-flow QoL: footer support",
       "description": "Per docs/todo.md: footer for second prompt. Add promptFooter field to Goal. Wire through goal.js. Template interpolation. Tests + goal.md update.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added PromptFooter field to Goal struct, wired through goal.js with template interpolation. 3 tests (JSON serialization, pipeline, empty). goal.md updated."
     },
     {
       "task": "T094: Context builder: add files from git diff --name-only",

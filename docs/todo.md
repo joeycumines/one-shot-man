@@ -122,6 +122,12 @@ This affects both human readability and LLM understanding of the context structu
 
 ---
 
+### osm:ctxutil txtar diff context root formatting
+
+When using `osm:ctxutil` to generate a txtar diff, the context root should be placed **outside** the txtar code block, with the path wrapped in backticks around it (e.g., `` `path/to/root` ``). The current implementation embeds the context root inside the code block without backticks around the path.
+
+---
+
 ## AI Orchestrator / Claude Code Integration (2026-02-17)
 
 ### Vision Statement

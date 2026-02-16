@@ -614,6 +614,10 @@ func TestGoalCommand_GoToJSPipeline_ContextHeader(t *testing.T) {
 		"code-optimizer":      "CODE TO OPTIMIZE",
 		"code-explainer":      "CODE TO EXPLAIN",
 		"meeting-notes":       "MEETING NOTES / TRANSCRIPT",
+		"pii-scrubber":        "CONTENT TO SCRUB",
+		"prose-polisher":      "PROSE TO POLISH",
+		"data-to-json":        "RAW DATA / UNSTRUCTURED INPUT",
+		"cite-sources":        "SOURCE MATERIAL",
 	}
 
 	for _, goal := range goals {

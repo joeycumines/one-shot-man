@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test coverage expanded across 25+ packages with notable gains: bubblezone 0→98.7%, lipgloss 58→99%, tview 68.5→96.4%, bubbletea 75.8→91.2%, viewport 73.3→97.3%, overall cmd/osm 91.4→94.8%
 
 ### Changed
+- Upgraded `charmbracelet/bubbles` dependency from v0.21.1 to v1.0.0 (honorary release, zero API changes)
 - Stabilized `log` JavaScript API: removed \"undercooked\" label from scripting.md, updated CLAUDE.md to list all methods
 - Renamed `pabt.ModuleLoader` to `pabt.Require` for API consistency
 - Moved `CONFIG_HOT_SNIPPETS` auto-detection into `contextManager.js` reducing per-script boilerplate

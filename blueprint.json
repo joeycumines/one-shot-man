@@ -296,8 +296,8 @@
     },
     {
       "task": "T114: Upgrade charmbracelet/bubbles to v1.0",
-      "description": "Evaluate breaking API changes in bubbles v1.0. Update internal/builtin/bubbles/ (textarea, viewport) and all consumers. Verify example scripts. Full test suite.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Upgraded v0.21.1→v1.0.0. Honorary release — zero API changes. Fixed pre-existing stale goal_test.go (10→14 context headers). make-all-with-log passes."
     },
     {
       "task": "T115: Fix VHS recording path hack",

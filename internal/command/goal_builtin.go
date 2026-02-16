@@ -1335,5 +1335,259 @@ Note any follow-up meetings, check-ins, or milestones mentioned.
 				{Name: "help", Type: "help"},
 			},
 		},
+
+		// Data to JSON Goal
+		{
+			Name:        "data-to-json",
+			Description: "Extract structured JSON from unstructured text, logs, or data",
+			Category:    "data-transformation",
+			Usage:       "Analyzes unstructured input (logs, emails, reports, tables) and produces well-typed, validated JSON output with a schema",
+			Script:      goalScript,
+			FileName:    "goal.js",
+
+			TUITitle:  "Data to JSON",
+			TUIPrompt: "(data-to-json) > ",
+
+			NotableVariables: []string{"mode"},
+
+			StateVars: map[string]interface{}{
+				"mode": "auto",
+			},
+
+			PromptInstructions: `Extract structured JSON from the provided unstructured content using the {{.stateKeys.mode}} extraction mode.
+
+{{.modeInstructions}}
+
+**Extraction Principles:**
+
+1. **Type Inference** — Infer the most specific type for each value:
+   - Numbers: distinguish between integers and floats; preserve precision
+   - Dates/times: normalize to ISO 8601 (` + "`2024-01-15T14:30:00Z`" + `)
+   - Booleans: recognize "yes"/"no", "true"/"false", "1"/"0", "on"/"off"
+   - Null: use ` + "`null`" + ` for missing or explicitly empty values, not empty strings
+   - Arrays: when a field contains multiple values (comma-separated, line-separated, etc.)
+   - Nested objects: when data has clear hierarchical structure
+
+2. **Key Naming** — Use consistent, idiomatic JSON key names:
+   - camelCase by default (e.g., ` + "`firstName`" + `, ` + "`createdAt`" + `)
+   - Descriptive but concise — avoid both abbreviations and excessive verbosity
+   - Consistent pluralization for arrays (` + "`items`" + `, not ` + "`item`" + ` for a list)
+
+3. **Completeness** — Extract ALL data present in the source:
+   - Do not silently drop fields because they seem unimportant
+   - Preserve relationships between data points
+   - If data is ambiguous, extract both interpretations and flag the ambiguity
+
+4. **Validation** — The output must be valid, parseable JSON:
+   - No trailing commas
+   - Strings properly escaped
+   - No comments (JSON does not support comments)
+   - Unicode characters properly encoded
+
+**Output Format:**
+
+1. **JSON Schema** — a JSON Schema (draft-07 or later) describing the output structure, with descriptions for each field
+2. **Extracted JSON** — the complete JSON data, properly formatted with 2-space indentation
+3. **Extraction Notes** — confidence assessment per field, any assumptions made, ambiguities encountered, and data that was present but could not be meaningfully structured`,
+
+			PromptTemplate: `**{{.description | upper}}**
+
+{{.promptInstructions}}
+
+## {{.contextHeader}}
+
+{{.contextTxtar}}`,
+
+			ContextHeader: "RAW DATA / UNSTRUCTURED INPUT",
+
+			PromptOptions: map[string]interface{}{
+				"modeInstructions": map[string]string{
+					"auto": `**Auto Mode:** Analyze the input and automatically determine the best JSON structure.
+- Detect patterns, repeating structures, and implicit schemas
+- Infer whether the data represents a single object, an array of objects, or a nested hierarchy
+- Use structural cues (headers, indentation, delimiters) to guide extraction`,
+					"tabular": `**Tabular Mode:** Treat the input as tabular data (CSV, TSV, fixed-width, or table-formatted).
+- First row (or detected header) becomes field names
+- Each subsequent row becomes an object in an array
+- Handle inconsistent delimiters and quoted fields
+- Detect and handle multi-line cell values`,
+					"log": `**Log Mode:** Parse structured or semi-structured log entries.
+- Each log line becomes an object with timestamp, level, message, and metadata fields
+- Extract structured data embedded in log messages (JSON payloads, key=value pairs)
+- Group related log entries (e.g., request/response pairs, stack traces)
+- Normalize timestamps across different formats`,
+					"document": `**Document Mode:** Extract entities and relationships from natural language documents.
+- Identify named entities (people, organizations, dates, locations, amounts)
+- Extract factual claims and their subjects
+- Build a structured representation of the document's information content
+- Preserve context and attribution for extracted facts`,
+				},
+			},
+
+			Commands: []CommandConfig{
+				{Name: "add", Type: "contextManager"},
+				{Name: "diff", Type: "contextManager"},
+				{Name: "note", Type: "contextManager", Description: "Add a note about expected structure or schema requirements"},
+				{Name: "list", Type: "contextManager"},
+				{Name: "edit", Type: "contextManager"},
+				{Name: "remove", Type: "contextManager"},
+				{Name: "show", Type: "contextManager"},
+				{Name: "copy", Type: "contextManager"},
+				{
+					Name:        "mode",
+					Type:        "custom",
+					Description: "Set extraction mode",
+					Usage:       "mode <auto|tabular|log|document>",
+					Handler: `function (args) {
+                        if (args.length === 0) {
+                            output.print("Current mode: " + (state.get(stateKeys.mode) || "auto"));
+                            output.print("Available modes: auto, tabular, log, document");
+                            return;
+                        }
+                        var mode = args[0].toLowerCase();
+                        var validModes = ["auto", "tabular", "log", "document"];
+                        if (validModes.indexOf(mode) === -1) {
+                            output.print("Invalid mode. Available: " + validModes.join(", "));
+                            return;
+                        }
+                        state.set(stateKeys.mode, mode);
+                        output.print("Extraction mode set to: " + mode);
+                    }`,
+				},
+				{Name: "help", Type: "help"},
+			},
+		},
+
+		// Cite Sources Goal
+		{
+			Name:        "cite-sources",
+			Description: "Answer questions with numbered inline citations from provided source material",
+			Category:    "research",
+			Usage:       "Generates well-sourced answers to questions using provided documents, with numbered inline citations and a bibliography",
+			Script:      goalScript,
+			FileName:    "goal.js",
+
+			TUITitle:  "Cite Sources",
+			TUIPrompt: "(cite-sources) > ",
+
+			NotableVariables: []string{"format"},
+
+			StateVars: map[string]interface{}{
+				"format": "numbered",
+			},
+
+			PromptInstructions: `Answer the question or address the topic using ONLY the provided source material. Every factual claim must be supported by an inline citation in {{.stateKeys.format}} format.
+
+{{.formatInstructions}}
+
+**Citation Rules:**
+
+1. **Source Fidelity** — Only cite information that is explicitly present in the provided sources. Do NOT:
+   - Infer facts not stated in the sources
+   - Combine partial information from multiple sources to create claims neither source makes alone
+   - Use your general knowledge to supplement the sources (if the sources don't cover it, say so)
+
+2. **Citation Granularity** — Cite at the claim level, not the paragraph level:
+   - Each distinct factual claim gets its own citation
+   - If multiple sources support the same claim, cite all of them
+   - If a sentence contains multiple claims, each gets a separate citation
+
+3. **Direct Quotes** — Use direct quotes when:
+   - The exact wording is significant or contested
+   - You want to preserve the author's original framing
+   - The source makes a particularly strong or precise statement
+   - Always include the source citation immediately after the quote
+
+4. **Handling Contradictions** — When sources disagree:
+   - Present both positions with their respective citations
+   - Note the contradiction explicitly
+   - Do not silently choose one source over another
+   - If possible, note which source is more authoritative and why
+
+5. **Gaps in Coverage** — When the sources do not address a question:
+   - State explicitly: "The provided sources do not address [topic]"
+   - Do NOT fill gaps with general knowledge
+   - Suggest what additional sources might be needed
+
+**Output Structure:**
+
+1. **Answer** — the response with inline citations throughout
+2. **Bibliography** — a numbered list of all sources cited, with enough detail to locate the original (filename, section, page if available)
+3. **Coverage Assessment** — which aspects of the question were fully covered, partially covered, or not covered by the sources`,
+
+			PromptTemplate: `**{{.description | upper}}**
+
+{{.promptInstructions}}
+
+## {{.contextHeader}}
+
+{{.contextTxtar}}`,
+
+			ContextHeader: "SOURCE MATERIAL",
+
+			PromptOptions: map[string]interface{}{
+				"formatInstructions": map[string]string{
+					"numbered": `**Numbered Citation Format:**
+- Use bracketed numbers inline: [1], [2], [3]
+- Multiple citations for one claim: [1][3] or [1, 3]
+- Direct quotes: "exact text" [2]
+- Bibliography: numbered list matching inline citations
+- Example: "The system processes requests asynchronously [1], achieving throughput of 10,000 req/s [2]."`,
+					"author-date": `**Author-Date Citation Format:**
+- Use parenthetical author-date inline: (Smith, 2024), (Jones & Lee, 2023)
+- Multiple citations: (Smith, 2024; Jones, 2023)
+- Direct quotes: "exact text" (Smith, 2024, p. 15)
+- Bibliography: alphabetical by author, full reference
+- Example: "The architecture follows microservice principles (Chen, 2024), with each service independently deployable (Kumar & Patel, 2023)."`,
+					"footnote": `**Footnote Citation Format:**
+- Use superscript numbers inline: text¹, claim²
+- Group citations at end of each section or end of document
+- Direct quotes: "exact text"³
+- Footnotes contain full reference information
+- Example: "The protocol ensures message delivery¹ with at-least-once semantics² under normal operating conditions."`,
+				},
+			},
+
+			HotSnippets: []GoalHotSnippet{
+				{
+					Name:        "challenge-claims",
+					Text:        "Review your answer critically. For each claim, verify the citation actually supports it. Flag any claims where the source only partially supports the assertion, or where you may have over-interpreted the source material.",
+					Description: "Follow-up: verify citations actually support claims",
+				},
+			},
+
+			Commands: []CommandConfig{
+				{Name: "add", Type: "contextManager"},
+				{Name: "diff", Type: "contextManager"},
+				{Name: "note", Type: "contextManager", Description: "Add a question or topic to address using the sources"},
+				{Name: "list", Type: "contextManager"},
+				{Name: "edit", Type: "contextManager"},
+				{Name: "remove", Type: "contextManager"},
+				{Name: "show", Type: "contextManager"},
+				{Name: "copy", Type: "contextManager"},
+				{
+					Name:        "format",
+					Type:        "custom",
+					Description: "Set citation format style",
+					Usage:       "format <numbered|author-date|footnote>",
+					Handler: `function (args) {
+                        if (args.length === 0) {
+                            output.print("Current format: " + (state.get(stateKeys.format) || "numbered"));
+                            output.print("Available formats: numbered, author-date, footnote");
+                            return;
+                        }
+                        var format = args[0].toLowerCase();
+                        var validFormats = ["numbered", "author-date", "footnote"];
+                        if (validFormats.indexOf(format) === -1) {
+                            output.print("Invalid format. Available: " + validFormats.join(", "));
+                            return;
+                        }
+                        state.set(stateKeys.format, format);
+                        output.print("Citation format set to: " + format);
+                    }`,
+				},
+				{Name: "help", Type: "help"},
+			},
+		},
 	}
 }

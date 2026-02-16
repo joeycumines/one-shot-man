@@ -294,7 +294,7 @@ See: [internal/command/prompt_file.go](../../internal/command/prompt_file.go), [
 
 **Built-in goals (complete catalog)**
 
-`osm` ships with 12 built-in goals across 9 categories. All use the standard `goalScript` interpreter and provide `contextManager` commands for managing context items.
+`osm` ships with 14 built-in goals across 13 categories. All use the standard `goalScript` interpreter and provide `contextManager` commands for managing context items.
 
 | Name | Category | Description | State Variables | Custom Commands |
 |------|----------|-------------|-----------------|-----------------|
@@ -310,12 +310,15 @@ See: [internal/command/prompt_file.go](../../internal/command/prompt_file.go), [
 | `meeting-notes` | productivity | Generate structured meeting summaries with action items | — | — |
 | `pii-scrubber` | data-privacy | Redact PII from code, logs, and data | `level` (strict) | `level` |
 | `prose-polisher` | writing | Seven-step copyediting pipeline for prose | `style` (technical) | `style` |
+| `data-to-json` | data-transformation | Extract structured JSON from unstructured text | `mode` (auto) | `mode` |
+| `cite-sources` | research | Answer questions with numbered inline citations | `format` (numbered) | `format` |
 
 **Goals with hot-snippets:**
 
 - `commit-message`: `hot-review-response` — "Review the commit message you generated…"
 - `morale-improver`: `hot-review-plan` — "Now review each section of your plan…"; `hot-prove-it` — "Prove the issue exists by reproducing it…"
 - `prose-polisher`: `hot-expand-section` — "The section I highlighted is too thin. Expand it…"
+- `cite-sources`: `hot-challenge-claims` — "Review your answer critically. For each claim, verify the citation…"
 
 **Goals with PostCopyHint:**
 
@@ -332,6 +335,8 @@ See: [internal/command/prompt_file.go](../../internal/command/prompt_file.go), [
 - `morale-improver`: `originalInstructions`, `failedPlan`, `specificFailures`
 - `pii-scrubber`: `level`
 - `prose-polisher`: `style`
+- `data-to-json`: `mode`
+- `cite-sources`: `format`
 
 See: [internal/command/goal_builtin.go](../../internal/command/goal_builtin.go) for the full definitions.
 

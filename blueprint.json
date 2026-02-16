@@ -262,7 +262,8 @@
     {
       "task": "T108: Add Tier 2 built-in goals: data-to-json, cite-sources",
       "description": "Add data-to-json (structured JSON from unstructured text) and cite-sources (Q&A with numbered citations) as built-in goals. Tests + goal.md update.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added 2 goals (12→14 total, 11→13 categories). data-to-json: data-transformation, mode state (auto/tabular/log/document), modeInstructions PromptOptions. cite-sources: research, format state (numbered/author-date/footnote), formatInstructions PromptOptions, hot-challenge-claims snippet. 4 new tests. Docs: goal.md, architecture.md, CHANGELOG."
     },
     {
       "task": "T109: Refine goal and script autodiscovery UX",

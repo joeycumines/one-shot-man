@@ -95,6 +95,18 @@ func TestBuiltInGoal_Tier1GoalsExist(t *testing.T) {
 			contextHeader: "PROSE TO POLISH",
 			wantCommands:  []string{"add", "diff", "note", "style", "list", "edit", "remove", "show", "copy", "help"},
 		},
+		{
+			name:          "data-to-json",
+			category:      "data-transformation",
+			contextHeader: "RAW DATA / UNSTRUCTURED INPUT",
+			wantCommands:  []string{"add", "diff", "note", "mode", "list", "edit", "remove", "show", "copy", "help"},
+		},
+		{
+			name:          "cite-sources",
+			category:      "research",
+			contextHeader: "SOURCE MATERIAL",
+			wantCommands:  []string{"add", "diff", "note", "format", "list", "edit", "remove", "show", "copy", "help"},
+		},
 	}
 
 	for _, tc := range tier1 {
@@ -459,5 +471,185 @@ func TestBuiltInGoal_ProsePolisherHotSnippets(t *testing.T) {
 	}
 	if expandSnippet.Description == "" {
 		t.Error("expected non-empty Description for expand-section snippet")
+	}
+}
+
+func TestBuiltInGoal_DataToJsonModeState(t *testing.T) {
+	goals := GetBuiltInGoals()
+
+	var found *Goal
+	for i := range goals {
+		if goals[i].Name == "data-to-json" {
+			found = &goals[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("data-to-json goal not found")
+	}
+
+	// Must have mode in StateVars with default "auto"
+	v, ok := found.StateVars["mode"]
+	if !ok {
+		t.Fatalf("expected stateVars to contain 'mode'")
+	}
+	if sv, ok := v.(string); !ok || sv != "auto" {
+		t.Fatalf("expected default stateVars['mode'] == 'auto', got: %#v", v)
+	}
+
+	// Must have NotableVariables containing "mode"
+	foundNotable := false
+	for _, nv := range found.NotableVariables {
+		if nv == "mode" {
+			foundNotable = true
+			break
+		}
+	}
+	if !foundNotable {
+		t.Fatalf("expected NotableVariables to contain 'mode', got: %v", found.NotableVariables)
+	}
+
+	// Must have PromptOptions with modeInstructions
+	if found.PromptOptions == nil {
+		t.Fatalf("expected non-nil PromptOptions")
+	}
+	mi, ok := found.PromptOptions["modeInstructions"]
+	if !ok {
+		t.Fatalf("expected PromptOptions to contain 'modeInstructions'")
+	}
+	modeMap, ok := mi.(map[string]string)
+	if !ok {
+		t.Fatalf("expected modeInstructions to be map[string]string, got: %T", mi)
+	}
+	for _, mode := range []string{"auto", "tabular", "log", "document"} {
+		if _, ok := modeMap[mode]; !ok {
+			t.Errorf("expected modeInstructions to contain key %q", mode)
+		}
+	}
+
+	// Must have mode custom command with handler
+	var modeCmd *CommandConfig
+	for i := range found.Commands {
+		if found.Commands[i].Name == "mode" {
+			modeCmd = &found.Commands[i]
+			break
+		}
+	}
+	if modeCmd == nil {
+		t.Fatalf("expected 'mode' command in data-to-json")
+	}
+	if modeCmd.Type != "custom" {
+		t.Errorf("expected mode command type 'custom', got %q", modeCmd.Type)
+	}
+	if modeCmd.Handler == "" {
+		t.Error("expected non-empty handler for mode command")
+	}
+}
+
+func TestBuiltInGoal_CiteSourcesFormatState(t *testing.T) {
+	goals := GetBuiltInGoals()
+
+	var found *Goal
+	for i := range goals {
+		if goals[i].Name == "cite-sources" {
+			found = &goals[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("cite-sources goal not found")
+	}
+
+	// Must have format in StateVars with default "numbered"
+	v, ok := found.StateVars["format"]
+	if !ok {
+		t.Fatalf("expected stateVars to contain 'format'")
+	}
+	if sv, ok := v.(string); !ok || sv != "numbered" {
+		t.Fatalf("expected default stateVars['format'] == 'numbered', got: %#v", v)
+	}
+
+	// Must have NotableVariables containing "format"
+	foundNotable := false
+	for _, nv := range found.NotableVariables {
+		if nv == "format" {
+			foundNotable = true
+			break
+		}
+	}
+	if !foundNotable {
+		t.Fatalf("expected NotableVariables to contain 'format', got: %v", found.NotableVariables)
+	}
+
+	// Must have PromptOptions with formatInstructions
+	if found.PromptOptions == nil {
+		t.Fatalf("expected non-nil PromptOptions")
+	}
+	fi, ok := found.PromptOptions["formatInstructions"]
+	if !ok {
+		t.Fatalf("expected PromptOptions to contain 'formatInstructions'")
+	}
+	formatMap, ok := fi.(map[string]string)
+	if !ok {
+		t.Fatalf("expected formatInstructions to be map[string]string, got: %T", fi)
+	}
+	for _, format := range []string{"numbered", "author-date", "footnote"} {
+		if _, ok := formatMap[format]; !ok {
+			t.Errorf("expected formatInstructions to contain key %q", format)
+		}
+	}
+
+	// Must have format custom command with handler
+	var formatCmd *CommandConfig
+	for i := range found.Commands {
+		if found.Commands[i].Name == "format" {
+			formatCmd = &found.Commands[i]
+			break
+		}
+	}
+	if formatCmd == nil {
+		t.Fatalf("expected 'format' command in cite-sources")
+	}
+	if formatCmd.Type != "custom" {
+		t.Errorf("expected format command type 'custom', got %q", formatCmd.Type)
+	}
+	if formatCmd.Handler == "" {
+		t.Error("expected non-empty handler for format command")
+	}
+}
+
+func TestBuiltInGoal_CiteSourcesHotSnippets(t *testing.T) {
+	goals := GetBuiltInGoals()
+
+	var found *Goal
+	for i := range goals {
+		if goals[i].Name == "cite-sources" {
+			found = &goals[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("cite-sources goal not found")
+	}
+
+	if len(found.HotSnippets) == 0 {
+		t.Fatal("expected at least one hot-snippet for cite-sources")
+	}
+
+	var challengeSnippet *GoalHotSnippet
+	for i := range found.HotSnippets {
+		if found.HotSnippets[i].Name == "challenge-claims" {
+			challengeSnippet = &found.HotSnippets[i]
+			break
+		}
+	}
+	if challengeSnippet == nil {
+		t.Fatal("expected hot-snippet 'challenge-claims' in cite-sources")
+	}
+	if challengeSnippet.Text == "" {
+		t.Error("expected non-empty Text for challenge-claims snippet")
+	}
+	if challengeSnippet.Description == "" {
+		t.Error("expected non-empty Description for challenge-claims snippet")
 	}
 }

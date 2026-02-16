@@ -336,7 +336,7 @@ Source: [internal/command/goal.go](../internal/command/goal.go), [internal/comma
 
 ### Built-in goals
 
-See [Goal reference](reference/goal.md) for the complete catalog of 12 built-in goals.
+See [Goal reference](reference/goal.md) for the complete catalog of 14 built-in goals.
 
 ---
 

@@ -14,6 +14,14 @@ import (
 	"github.com/joeycumines/go-prompt/termtest"
 )
 
+// ptyCharDelay is the inter-keystroke delay used when typing characters one at
+// a time through the PTY. Under CPU load (CI, parallel tests, Docker), delays
+// below ~20ms can cause the TUI to coalesce or drop keystrokes, producing
+// garbled output (e.g. "ShTabst" instead of "ShiftTabTest"). 25ms is fast
+// enough to keep tests snappy while being robust across macOS, Linux, and
+// Windows.
+const ptyCharDelay = 25 * time.Millisecond
+
 // sendKey sends a raw key string (character or escape sequence) to the console.
 // Use this for single characters, escape sequences, and control characters.
 // For bubbletea-named keys like "ctrl+c", use cp.Send() instead.
@@ -40,7 +48,7 @@ func addDocumentNewUI(t *testing.T, cp *termtest.Console, content string) {
 		} else {
 			sendKey(t, cp, string(ch))
 		}
-		time.Sleep(15 * time.Millisecond)
+		time.Sleep(ptyCharDelay)
 	}
 
 	// Tab to Submit button and press Enter
@@ -219,7 +227,7 @@ func TestSuperDocument_AddDocumentViaKeyboard(t *testing.T) {
 	content := "Hello World"
 	for _, ch := range content {
 		sendKey(t, cp, string(ch))
-		time.Sleep(20 * time.Millisecond) // Small delay between characters
+		time.Sleep(ptyCharDelay)
 	}
 
 	// Tab to Submit button and press Enter
@@ -437,7 +445,7 @@ func TestSuperDocument_LoadFileViaKeyboard(t *testing.T) {
 	// Type the file path character by character
 	for _, ch := range testFilePath {
 		sendKey(t, cp, string(ch))
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(ptyCharDelay)
 	}
 
 	// Tab to Submit and press Enter to confirm
@@ -513,7 +521,7 @@ func TestSuperDocument_CopyPromptWithDocuments(t *testing.T) {
 	content := "Test document content"
 	for _, ch := range content {
 		sendKey(t, cp, string(ch))
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(ptyCharDelay)
 	}
 
 	// Tab to Submit and confirm
@@ -1090,7 +1098,7 @@ func TestSuperDocument_REPLTUIToggle(t *testing.T) {
 	// (renamed from 'doc-list' per AGENTS.md consolidation)
 	for _, ch := range "list" {
 		sendKey(t, cp, string(ch))
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(ptyCharDelay)
 	}
 	snap = cp.Snapshot()
 	sendKey(t, cp, "\r")
@@ -1102,7 +1110,7 @@ func TestSuperDocument_REPLTUIToggle(t *testing.T) {
 	snap = cp.Snapshot()
 	for _, ch := range "tui" {
 		sendKey(t, cp, string(ch))
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(ptyCharDelay)
 	}
 	sendKey(t, cp, "\r")
 
@@ -1350,7 +1358,7 @@ func TestSuperDocument_MouseClickTextareaFocus(t *testing.T) {
 	content := "ClickFocusTest"
 	for _, ch := range content {
 		sendKey(t, cp, string(ch))
-		time.Sleep(15 * time.Millisecond)
+		time.Sleep(ptyCharDelay)
 	}
 
 	// Submit the form
@@ -1427,7 +1435,7 @@ func TestSuperDocument_BacktabNavigation(t *testing.T) {
 	content := "ShiftTabTest"
 	for _, ch := range content {
 		sendKey(t, cp, string(ch))
-		time.Sleep(15 * time.Millisecond)
+		time.Sleep(ptyCharDelay)
 	}
 
 	// Tab to Submit and submit
@@ -1468,7 +1476,7 @@ func addMultipleDocumentsNewUI(t *testing.T, cp *termtest.Console, count int) {
 		content := fmt.Sprintf("ScrollDoc%d", i+1)
 		for _, ch := range content {
 			sendKey(t, cp, string(ch))
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(ptyCharDelay)
 		}
 
 		// Tab to Submit and press Enter

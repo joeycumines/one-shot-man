@@ -59,7 +59,8 @@
     {
       "task": "T132: Verify TestSuperDocument_BacktabNavigation for flakiness",
       "description": "Run TestSuperDocument_BacktabNavigation multiple times in parallel (e.g., 5-10 iterations) and on Linux via Docker to verify stability. ANY flakiness MUST be fixed immediately. VERIFY FIXES by re-running the same parallel/Linux tests until NO flakes occur for minimum 5 consecutive runs. Document any changes made and confirm stability.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Root cause: inconsistent inter-keystroke delays (4-20ms) across PTY integration tests caused character drops under CPU load. Fix: added ptyCharDelay constant (25ms) and replaced all 13 character-typing delays across both test files. 5/5 consecutive passes verified."
     },
     {
       "task": "T131: Remove unused sync.enabled config key",

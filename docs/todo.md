@@ -128,6 +128,8 @@ This affects both human readability and LLM understanding of the context structu
 
 osm should be able to orchestrate Claude Code (and potentially other TUI-based AI assistants) as a subprocess, using it as a tool for performing complex, multi-step operations. The primary use case is **interactive PR splitting**: breaking down very large AI-generated change sets into reviewable, verifiable, mergeable chunks.
 
+**Critical Constraint**: This is intended to support focused workflows leveraging existing tools. The most critical constraint is: **no interest in building yet another agentic harness that no one will use**.
+
 ### Original Problem Statement (User's Description)
 
 > "With AI it is very easy to have this very, very large change set which no human has reviewed. This is annoying to unfuck to validate to verify. But if you don't verify, it turns into slop. Slop is bad.
@@ -149,10 +151,10 @@ osm should be able to orchestrate Claude Code (and potentially other TUI-based A
 5. **Configuration Strategy Alignment**: Per the todo items - align with Claude's high-level configuration strategy for osm
 6. **Building Blocks Exposed**: Various building blocks must be exposed to users of osm for their own implementations. There's various examples in scripts/, including for PA-BT.
 7. **Behavior Tree Orchestration**: Use behavior trees (PABT) for high-level workflow control with prebuilt action templates
-5. **Hybrid Communication**: MCP for data exfiltration (Claude → osm), PTY parsing for setup/init/permission handling
+8. **Hybrid Communication**: MCP for data exfiltration (Claude → osm), PTY parsing for setup/init/permission handling
    - **PTY output capture is mandatory**: Required for rate limit handling, error detection, context clearing, and output verification
    - User's explicit requirement: "Always verify any inputs (as in, sent over the PTY) result in the expected outputs"
-6. **Slop Prevention**: "Slop is bad" — unverified AI-generated changes accumulate into unmaintainable codebases
+9. **Slop Prevention**: "Slop is bad" — unverified AI-generated changes accumulate into unmaintainable codebases
 
 ### Integration Architecture: Hybrid Approach
 
@@ -206,6 +208,8 @@ Three-tier approach:
 - Provider-specific configuration (e.g., ollama model selection TUI navigation)
 
 ### Orchestration: Behavior Trees (Internal Implementation Detail)
+
+> User's original insight: "And I guess I think that using PABT would be ideal. However, that requires the LLM to have an understanding of how to build PABT and how to generate the plan essentially on failure. That honestly sounds like a good idea. Because what that would mean is that there are clear points at which the state can be validated. And which action can be taken? Honestly, that sounds like an amazing idea."
 
 Behavior trees are an **internal implementation detail** for workflow orchestration. Key characteristics:
 
@@ -311,6 +315,9 @@ This specific flow must be testable in isolation.
 - **Environment variables for secrets**: Use env vars for API keys (never hardcode)
 - **Disabled by default**: Tests must be explicitly enabled (e.g., `-test-integration` flag)
 - **Provider-specific configuration**: Each provider may have specific config requirements
+
+**User's Original Testing Requirements**:
+> "Write up a full on task like: For testing purposes of this ([specific mechanism to end up with a running claude command] -> Prompt that instructs on the task and response mechanism via MCP back to the wrapping osm process) it will be necessary to implement a special-case `TestMain` with CLI flags and environment variables (the latter for secrets, CLI flags to specify options) to configure provider(s) to test against (disabled by default). Individual providers may have specific configuration. For testing purposes, specify the requirement to use that `ollama launch claude --config` command, and to navigate through the menu to select `gpt-oss:20b-cloud`, and whatever else is necessary to get it to the common 'entrypoint'."
 
 **Example: Ollama Testing**
 ```bash

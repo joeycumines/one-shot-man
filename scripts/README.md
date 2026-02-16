@@ -15,6 +15,7 @@ They are not intended to be useful on their own — see the builtin commands for
 | `example-04-bt-shooter.js` | Behavior tree game loop with BubbleTea rendering | Interactive (BubbleTea) |
 | `example-05-pick-and-place.js` | PA-BT (Planning-Augmented Behavior Trees) robot demo | Interactive (BubbleTea) |
 | `example-06-api-client.js` | HTTP client demo: GET, POST, streaming, error handling, timeouts | Non-interactive |
+| `example-07-flag-parsing.js` | Flag parsing demo: typed flags, introspection, visit/visitAll | Non-interactive |
 
 ## Tests & Benchmarks
 

@@ -129,6 +129,15 @@ func (c *GoalCommand) SetupFlags(fs *flag.FlagSet) {
 
 // Execute runs the goal command
 func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
+	// Handle "paths" subcommand: show annotated discovery paths
+	if len(args) > 0 && args[0] == "paths" {
+		if len(args) > 1 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments with paths: %v\n", args[1:])
+			return fmt.Errorf("unexpected arguments")
+		}
+		return c.showGoalPaths(stdout, stderr)
+	}
+
 	goals := c.registry.GetAllGoals()
 
 	if c.list {
@@ -284,6 +293,44 @@ func (c *GoalCommand) listGoals(goals []Goal, stdout io.Writer) error {
 	_, _ = fmt.Fprintf(stdout, "  osm goal <goal-name>           Run a goal interactively\n")
 	_, _ = fmt.Fprintf(stdout, "  osm goal -r <goal-name>        Run a goal directly\n")
 	_, _ = fmt.Fprintf(stdout, "  osm goal -c <category>         List goals by category\n")
+
+	return nil
+}
+
+// showGoalPaths displays annotated goal discovery paths with source and existence status.
+func (c *GoalCommand) showGoalPaths(stdout, stderr io.Writer) error {
+	discovery := NewGoalDiscovery(c.config)
+	paths := discovery.DiscoverAnnotatedGoalPaths()
+
+	if len(paths) == 0 {
+		_, _ = fmt.Fprintln(stdout, "No goal paths discovered.")
+		return nil
+	}
+
+	_, _ = fmt.Fprintln(stdout, "Goal Discovery Paths:")
+	_, _ = fmt.Fprintln(stdout)
+
+	var missingCustom int
+	for _, ap := range paths {
+		status := "✓"
+		if !ap.Exists {
+			status = "✗"
+			if ap.Source == "custom" {
+				missingCustom++
+			}
+		}
+		_, _ = fmt.Fprintf(stdout, "  %s %-14s %s\n", status, "["+ap.Source+"]", ap.Path)
+	}
+
+	_, _ = fmt.Fprintln(stdout)
+	_, _ = fmt.Fprintf(stdout, "%d path(s) total\n", len(paths))
+
+	// Emit config validation warnings for missing custom paths
+	if missingCustom > 0 {
+		_, _ = fmt.Fprintln(stderr)
+		_, _ = fmt.Fprintf(stderr, "Warning: %d configured goal path(s) do not exist on disk.\n", missingCustom)
+		_, _ = fmt.Fprintln(stderr, "Check the goal.paths option in your config file.")
+	}
 
 	return nil
 }

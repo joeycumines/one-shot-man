@@ -63,6 +63,15 @@ func (c *ScriptingCommand) SetupFlags(fs *flag.FlagSet) {
 
 // Execute runs the scripting command.
 func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) error {
+	// Handle "paths" subcommand: show annotated discovery paths
+	if len(args) > 0 && args[0] == "paths" {
+		if len(args) > 1 {
+			_, _ = fmt.Fprintf(stderr, "unexpected arguments with paths: %v\n", args[1:])
+			return fmt.Errorf("unexpected arguments")
+		}
+		return c.showScriptPaths(stdout, stderr)
+	}
+
 	// Create execution context. Use injected factory if available (for tests),
 	// otherwise use signal.NotifyContext for proper signal handling.
 	var ctx context.Context
@@ -190,6 +199,44 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	if scriptFile == "" && c.script == "" {
 		fmt.Fprintln(stderr, "No script file specified. Use -i for interactive mode, -e for direct execution, or provide a script file.")
 		return fmt.Errorf("no script specified")
+	}
+
+	return nil
+}
+
+// showScriptPaths displays annotated script discovery paths with source and existence status.
+func (c *ScriptingCommand) showScriptPaths(stdout, stderr io.Writer) error {
+	discovery := NewScriptDiscovery(c.config)
+	paths := discovery.DiscoverAnnotatedScriptPaths()
+
+	if len(paths) == 0 {
+		_, _ = fmt.Fprintln(stdout, "No script paths discovered.")
+		return nil
+	}
+
+	_, _ = fmt.Fprintln(stdout, "Script Discovery Paths:")
+	_, _ = fmt.Fprintln(stdout)
+
+	var missingCustom int
+	for _, ap := range paths {
+		status := "✓"
+		if !ap.Exists {
+			status = "✗"
+			if ap.Source == "custom" {
+				missingCustom++
+			}
+		}
+		_, _ = fmt.Fprintf(stdout, "  %s %-14s %s\n", status, "["+ap.Source+"]", ap.Path)
+	}
+
+	_, _ = fmt.Fprintln(stdout)
+	_, _ = fmt.Fprintf(stdout, "%d path(s) total\n", len(paths))
+
+	// Emit config validation warnings for missing custom paths
+	if missingCustom > 0 {
+		_, _ = fmt.Fprintln(stderr)
+		_, _ = fmt.Fprintf(stderr, "Warning: %d configured script path(s) do not exist on disk.\n", missingCustom)
+		_, _ = fmt.Fprintln(stderr, "Check the script.paths option in your config file.")
 	}
 
 	return nil

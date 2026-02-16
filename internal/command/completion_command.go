@@ -109,7 +109,11 @@ _osm_completion() {
             return 0
             ;;
         goal)
-            COMPREPLY=($(compgen -W "%s" -- ${cur}))
+            COMPREPLY=($(compgen -W "paths %s" -- ${cur}))
+            return 0
+            ;;
+        script)
+            COMPREPLY=($(compgen -W "paths" -- ${cur}))
             return 0
             ;;
         session)
@@ -198,7 +202,10 @@ _osm() {
                     _values 'shell' 'bash' 'zsh' 'fish' 'powershell'
                     ;;
                 goal)
-                    _values 'goal-name' '%s'
+                    _values 'goal-name' 'paths' '%s'
+                    ;;
+                script)
+                    _values 'script-subcommand' 'paths'
                     ;;
                 session)
                     if (( CURRENT == 3 )); then
@@ -277,7 +284,10 @@ func (c *CompletionCommand) generateFishCompletion(w io.Writer) error {
 complete -c osm -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish powershell' -d 'Shell'
 
 # Completion for 'goal' subcommand args (goal names)
+complete -c osm -n '__fish_seen_subcommand_from goal' -a 'paths' -d 'Show discovery paths'
 %s
+# Completion for 'script' subcommand args
+complete -c osm -n '__fish_seen_subcommand_from script' -a 'paths' -d 'Show discovery paths'
 # Completion for 'session' subcommand
 %s
 # Completion for 'sync' subcommand
@@ -351,7 +361,15 @@ Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
     }
 
     if ($tokenCount -eq 3 -and $command -eq 'goal') {
-        $goals | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+        @('paths') + $goals | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+        return
+    }
+
+    if ($tokenCount -eq 3 -and $command -eq 'script') {
+        $subs = @('paths')
+        $subs | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
             [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
         }
         return

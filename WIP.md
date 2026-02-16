@@ -67,8 +67,8 @@
 
 ## Next Steps
 1. T103: ✅ DONE — Committed 847a8a5. Removed tview/tcell (24 files, -2,947 lines). Rule of Two passed.
-2. T104: Git sync notebook save/list (Phase 1)
-3. T105: Git sync push/pull (Phase 2)
-4. T106: Git sync load/integration (Phase 3)
-5. T107-T108: Tier 2 goals
-6. Continue T109-T125
+2. T104-T106: ✅ DONE — Committed 2c7ae61. Sync load/auto-pull/discovery.
+3. T107: ✅ DONE — Committed b3df03e. pii-scrubber + prose-polisher goals.
+4. T108: ✅ DONE — Committed f6b1e7f. data-to-json + cite-sources goals.
+5. T109: ✅ DONE — osm goal paths + osm script paths subcommands. Annotated discovery. Shell completions.
+6. Continue T110-T125

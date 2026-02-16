@@ -225,6 +225,26 @@ The above sample mirrors the built-in `doc-generator` goal (with added illustrat
 
 See [internal/command/goal_discovery.go](../../internal/command/goal_discovery.go) for the full algorithm and sorting details.
 
+**Inspecting discovery paths**
+
+Use `osm goal paths` to display all resolved goal discovery paths with source annotations and existence status:
+
+```
+$ osm goal paths
+Goal Discovery Paths:
+
+  ✓ [standard]       /Users/alice/.one-shot-man/goals
+  ✗ [custom]         /opt/team-goals
+  ✓ [autodiscovered] /home/alice/project/osm-goals
+
+3 path(s) total
+
+Warning: 1 configured goal path(s) do not exist on disk.
+Check the goal.paths option in your config file.
+```
+
+Similarly, `osm script paths` displays script discovery paths.
+
 ---
 
 **Goal registry & precedence**

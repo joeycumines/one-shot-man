@@ -54,6 +54,8 @@ Prints shell completion scripts.
 Lists goals or runs a goal. Goals are curated prompt templates/workflows.
 
 - Usage: `osm goal [options] [goal-name]`
+- Subcommands:
+  - `osm goal paths`: show resolved goal discovery paths with source annotations (`standard`, `custom`, `autodiscovered`) and existence status (`✓`/`✗`). Warns on stderr about missing configured paths.
 - Flags:
   - `-l`: list available goals
   - `-c <category>`: list by category
@@ -73,6 +75,8 @@ See also: [Goal reference](goal.md)
 Runs JavaScript in the embedded runtime (Goja), with built-in helpers for context management, editor/clipboard integration, and TUI.
 
 - Usage: `osm script [options] [script-file]`
+- Subcommands:
+  - `osm script paths`: show resolved script discovery paths with source annotations (`standard`, `custom`, `autodiscovered`) and existence status (`✓`/`✗`). Warns on stderr about missing configured paths.
 - Flags:
   - `-e <js>` / `-script <js>`: execute inline JavaScript
   - `-i` / `-interactive`: start interactive scripting terminal

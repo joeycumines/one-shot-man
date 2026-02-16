@@ -13,6 +13,14 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/config"
 )
 
+// AnnotatedPath represents a discovery path with source annotation and existence status.
+// Used by "osm goal paths" and "osm script paths" subcommands.
+type AnnotatedPath struct {
+	Path   string // Resolved absolute path
+	Source string // "standard", "custom", "autodiscovered"
+	Exists bool   // Whether the path exists on disk
+}
+
 // GoalDiscoveryConfig holds configuration for goal path discovery
 type GoalDiscoveryConfig struct {
 	// EnableAutodiscovery enables advanced autodiscovery features (default: true for goals)
@@ -186,6 +194,94 @@ func (gd *GoalDiscovery) DiscoverGoalPaths() []string {
 	}
 
 	return paths
+}
+
+// DiscoverAnnotatedGoalPaths returns all goal paths with source annotations
+// and existence status. This is used by the "osm goal paths" subcommand to
+// show users exactly which paths are discovered, where they come from, and
+// whether they exist on disk.
+func (gd *GoalDiscovery) DiscoverAnnotatedGoalPaths() []AnnotatedPath {
+	type candidate struct {
+		path   string
+		source string
+	}
+
+	var candidates []candidate
+	seenPaths := make(map[string]bool)
+
+	addCandidate := func(raw, source string) {
+		if strings.TrimSpace(raw) == "" {
+			return
+		}
+		normalized, err := gd.normalizePath(raw)
+		if err != nil {
+			return
+		}
+		if seenPaths[normalized] {
+			return
+		}
+		candidates = append(candidates, candidate{path: normalized, source: source})
+		seenPaths[normalized] = true
+	}
+
+	// Standard paths
+	for _, p := range gd.getStandardPaths() {
+		addCandidate(p, "standard")
+	}
+
+	// Custom paths from configuration
+	for _, p := range gd.config.CustomPaths {
+		addCandidate(gd.expandPath(p), "custom")
+	}
+
+	// Autodiscovered paths
+	if gd.config.EnableAutodiscovery {
+		for _, p := range gd.autodiscoverPaths() {
+			addCandidate(p, "autodiscovered")
+		}
+	}
+
+	// Sort using same logic as DiscoverGoalPaths
+	cwd, _ := os.Getwd()
+
+	var configDir string
+	if configPath, err := config.GetConfigPath(); err == nil {
+		configDir = filepath.Dir(configPath)
+	}
+
+	var execDir string
+	if execPath, err := os.Executable(); err == nil {
+		execDir = filepath.Dir(execPath)
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		pi := gd.computePathScore(candidates[i].path, cwd, configDir, execDir)
+		pj := gd.computePathScore(candidates[j].path, cwd, configDir, execDir)
+
+		if pi.class != pj.class {
+			return pi.class < pj.class
+		}
+		if pi.distance != pj.distance {
+			return pi.distance < pj.distance
+		}
+		if pi.depth != pj.depth {
+			return pi.depth < pj.depth
+		}
+		return candidates[i].path < candidates[j].path
+	})
+
+	// Build result with existence check
+	result := make([]AnnotatedPath, len(candidates))
+	for i, c := range candidates {
+		_, statErr := os.Stat(c.path)
+		result[i] = AnnotatedPath{
+			Path:   c.path,
+			Source: c.source,
+			Exists: statErr == nil,
+		}
+	}
+
+	return result
 }
 
 // getStandardPaths returns the standard goal discovery paths

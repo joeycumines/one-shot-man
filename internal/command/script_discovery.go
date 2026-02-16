@@ -199,6 +199,94 @@ func (sd *ScriptDiscovery) DiscoverScriptPaths() []string {
 	return paths
 }
 
+// DiscoverAnnotatedScriptPaths returns all script paths with source annotations
+// and existence status. This is used by the "osm script paths" subcommand to
+// show users exactly which paths are discovered, where they come from, and
+// whether they exist on disk.
+func (sd *ScriptDiscovery) DiscoverAnnotatedScriptPaths() []AnnotatedPath {
+	type candidate struct {
+		path   string
+		source string
+	}
+
+	var candidates []candidate
+	seenPaths := make(map[string]bool)
+
+	addCandidate := func(raw, source string) {
+		if strings.TrimSpace(raw) == "" {
+			return
+		}
+		normalized, err := sd.normalizePath(raw)
+		if err != nil {
+			return
+		}
+		if seenPaths[normalized] {
+			return
+		}
+		candidates = append(candidates, candidate{path: normalized, source: source})
+		seenPaths[normalized] = true
+	}
+
+	// Standard/legacy paths
+	for _, p := range sd.getLegacyPaths() {
+		addCandidate(p, "standard")
+	}
+
+	// Custom paths from configuration
+	for _, p := range sd.config.CustomPaths {
+		addCandidate(sd.expandPath(p), "custom")
+	}
+
+	// Autodiscovered paths
+	if sd.config.EnableAutodiscovery {
+		for _, p := range sd.autodiscoverPaths() {
+			addCandidate(p, "autodiscovered")
+		}
+	}
+
+	// Sort using same logic as DiscoverScriptPaths
+	cwd, _ := os.Getwd()
+
+	var configDir string
+	if configPath, err := config.GetConfigPath(); err == nil {
+		configDir = filepath.Dir(configPath)
+	}
+
+	var execDir string
+	if execPath, err := os.Executable(); err == nil {
+		execDir = filepath.Dir(execPath)
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		pi := sd.computePathScore(candidates[i].path, cwd, configDir, execDir)
+		pj := sd.computePathScore(candidates[j].path, cwd, configDir, execDir)
+
+		if pi.class != pj.class {
+			return pi.class < pj.class
+		}
+		if pi.distance != pj.distance {
+			return pi.distance < pj.distance
+		}
+		if pi.depth != pj.depth {
+			return pi.depth < pj.depth
+		}
+		return candidates[i].path < candidates[j].path
+	})
+
+	// Build result with existence check
+	result := make([]AnnotatedPath, len(candidates))
+	for i, c := range candidates {
+		_, statErr := os.Stat(c.path)
+		result[i] = AnnotatedPath{
+			Path:   c.path,
+			Source: c.source,
+			Exists: statErr == nil,
+		}
+	}
+
+	return result
+}
+
 // getLegacyPaths returns the original hardcoded paths for backward compatibility
 func (sd *ScriptDiscovery) getLegacyPaths() []string {
 	var paths []string

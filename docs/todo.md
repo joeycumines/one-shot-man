@@ -60,7 +60,7 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
 - Add support for https://code.visualstudio.com/docs/copilot/customization/prompt-files ? **PARTIAL — `.prompt.md` file discovery implemented via `prompt.file-paths` config key and goal system; VS Code-specific integration not pursued**
 - Code review splitter - prompts seem particularly LLM dependent, stalled
     - This would be far easier as a proper workflow engine lol
-- Refine "goal" and "script" autodiscovery mechanisms (currently prototype status/needs attention)
+- Refine "goal" and "script" autodiscovery mechanisms (currently prototype status/needs attention) **PARTIAL (T109) — added `osm goal paths` and `osm script paths` subcommands with source annotations, existence status, config validation warnings, and shell completions. Debug logging already existed via goal.debug-discovery and script.debug-discovery config keys.**
 - Investigate implementing Anthropic prompt library (https://platform.claude.com/docs/en/resources/prompt-library/library) **PARTIAL (T074, T107) — morale-improver, bug-buster, code-optimizer, code-explainer, meeting-notes adapted from Anthropic Prompt Library; pii-scrubber and prose-polisher added as Tier 2 goals**
 - Iterate on configuration model for better extensibility and consistency (feels undercooked) **PARTIAL (T065, T082) — schema-aware validation, persistence, and comprehensive documentation added**
 - Enhance definitions and integration with `github.com/joeycumines/go-prompt` implementation

@@ -268,7 +268,8 @@
     {
       "task": "T109: Refine goal and script autodiscovery UX",
       "description": "Add osm goal paths and osm script paths subcommands showing resolved discovery paths with source annotations. Debug logging. Config validation warnings for missing paths.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added AnnotatedPath type and DiscoverAnnotatedGoalPaths/DiscoverAnnotatedScriptPaths methods. osm goal paths and osm script paths subcommands show source annotations (standard/custom/autodiscovered), existence status (✓/✗), and stderr warnings for missing custom paths. Shell completions updated (bash/zsh/fish/powershell). 17 tests. Docs: command.md, goal.md, todo.md, CHANGELOG."
     },
     {
       "task": "T110: Resolve TODO comments in tui_completion.go",

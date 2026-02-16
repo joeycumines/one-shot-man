@@ -88,4 +88,5 @@
 20. T123: ✅ DONE — Committed 63289ac. 5 example JSON goal files in goals/examples/.
 21. T124: ✅ DONE — Already implemented. diff_splitter.go with SplitDiff.
 22. T125: ✅ DONE — osm:json module (7 functions, 80+ tests). Rule of Two passed.
-23. Continue T126-T127
+23. T126: ✅ DONE — Committed 58094c9. Config dir migration ~/.one-shot-man→~/.osm. 26 files, 212 insertions. Rule of Two passed.
+24. Continue T127+

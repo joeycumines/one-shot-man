@@ -618,6 +618,7 @@ func TestGoalCommand_GoToJSPipeline_ContextHeader(t *testing.T) {
 		"prose-polisher":      "PROSE TO POLISH",
 		"data-to-json":        "RAW DATA / UNSTRUCTURED INPUT",
 		"cite-sources":        "SOURCE MATERIAL",
+		"which-one-is-better": "OPTIONS & CONTEXT",
 	}
 
 	for _, goal := range goals {
@@ -867,6 +868,346 @@ func TestGoal_PromptFooterInBuildPrompt(t *testing.T) {
 	got := stdout.String()
 	if !strings.Contains(got, "footer-test") && !strings.Contains(got, "Footer Test") {
 		t.Fatalf("expected goal banner, got: %s", got)
+	}
+}
+
+func TestGoalBuiltin_WhichOneIsBetter_Metadata(t *testing.T) {
+	t.Parallel()
+
+	goals := GetBuiltInGoals()
+
+	var wib *Goal
+	for i := range goals {
+		if goals[i].Name == "which-one-is-better" {
+			wib = &goals[i]
+			break
+		}
+	}
+
+	if wib == nil {
+		t.Fatalf("which-one-is-better goal not found in built-ins")
+	}
+
+	// Basic metadata
+	if wib.Description == "" {
+		t.Error("expected non-empty description")
+	}
+	if wib.Category != "decision-making" {
+		t.Errorf("expected category 'decision-making', got %q", wib.Category)
+	}
+	if wib.TUITitle == "" {
+		t.Error("expected non-empty TUITitle")
+	}
+	if wib.TUIPrompt == "" {
+		t.Error("expected non-empty TUIPrompt")
+	}
+	if wib.Script == "" {
+		t.Error("expected non-empty Script")
+	}
+	if wib.FileName == "" {
+		t.Error("expected non-empty FileName")
+	}
+	if wib.ContextHeader != "OPTIONS & CONTEXT" {
+		t.Errorf("expected ContextHeader 'OPTIONS & CONTEXT', got %q", wib.ContextHeader)
+	}
+}
+
+func TestGoalBuiltin_WhichOneIsBetter_StateVars(t *testing.T) {
+	t.Parallel()
+
+	goals := GetBuiltInGoals()
+
+	var wib *Goal
+	for i := range goals {
+		if goals[i].Name == "which-one-is-better" {
+			wib = &goals[i]
+			break
+		}
+	}
+	if wib == nil {
+		t.Fatalf("which-one-is-better goal not found")
+	}
+
+	// Must have comparisonType state var with default "general"
+	v, ok := wib.StateVars["comparisonType"]
+	if !ok {
+		t.Fatalf("expected stateVars to contain 'comparisonType'")
+	}
+	if sv, ok := v.(string); !ok || sv != "general" {
+		t.Fatalf("expected default comparisonType='general', got %#v", v)
+	}
+
+	// NotableVariables must include comparisonType
+	found := false
+	for _, nv := range wib.NotableVariables {
+		if nv == "comparisonType" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected NotableVariables to contain 'comparisonType', got %v", wib.NotableVariables)
+	}
+}
+
+func TestGoalBuiltin_WhichOneIsBetter_PromptOptions(t *testing.T) {
+	t.Parallel()
+
+	goals := GetBuiltInGoals()
+
+	var wib *Goal
+	for i := range goals {
+		if goals[i].Name == "which-one-is-better" {
+			wib = &goals[i]
+			break
+		}
+	}
+	if wib == nil {
+		t.Fatalf("which-one-is-better goal not found")
+	}
+
+	// PromptOptions must have comparisonTypeInstructions map
+	raw, ok := wib.PromptOptions["comparisonTypeInstructions"]
+	if !ok {
+		t.Fatalf("expected PromptOptions to contain 'comparisonTypeInstructions'")
+	}
+
+	instructions, ok := raw.(map[string]string)
+	if !ok {
+		t.Fatalf("expected comparisonTypeInstructions to be map[string]string, got %T", raw)
+	}
+
+	// Must cover all 5 variants
+	expectedVariants := []string{"general", "technology", "architecture", "strategy", "design"}
+	for _, variant := range expectedVariants {
+		if _, exists := instructions[variant]; !exists {
+			t.Errorf("expected comparisonTypeInstructions to contain %q", variant)
+		}
+	}
+
+	// Each variant should have non-trivial content
+	for variant, text := range instructions {
+		if len(text) < 50 {
+			t.Errorf("variant %q has suspiciously short instructions (%d chars)", variant, len(text))
+		}
+	}
+}
+
+func TestGoalBuiltin_WhichOneIsBetter_Commands(t *testing.T) {
+	t.Parallel()
+
+	goals := GetBuiltInGoals()
+
+	var wib *Goal
+	for i := range goals {
+		if goals[i].Name == "which-one-is-better" {
+			wib = &goals[i]
+			break
+		}
+	}
+	if wib == nil {
+		t.Fatalf("which-one-is-better goal not found")
+	}
+
+	// Must have set-type custom command
+	var setTypeCmd *CommandConfig
+	for i := range wib.Commands {
+		if wib.Commands[i].Name == "set-type" {
+			setTypeCmd = &wib.Commands[i]
+			break
+		}
+	}
+	if setTypeCmd == nil {
+		t.Fatalf("expected 'set-type' custom command")
+	}
+	if setTypeCmd.Type != "custom" {
+		t.Errorf("expected set-type type 'custom', got %q", setTypeCmd.Type)
+	}
+	if setTypeCmd.Handler == "" {
+		t.Error("expected set-type to have a non-empty Handler")
+	}
+
+	// Must have standard contextManager commands
+	expectedCM := []string{"add", "diff", "note", "list", "edit", "remove", "show", "copy"}
+	cmdNames := make(map[string]bool)
+	for _, cmd := range wib.Commands {
+		cmdNames[cmd.Name] = true
+	}
+	for _, name := range expectedCM {
+		if !cmdNames[name] {
+			t.Errorf("expected contextManager command %q", name)
+		}
+	}
+
+	// Must have help command
+	if !cmdNames["help"] {
+		t.Error("expected 'help' command")
+	}
+}
+
+func TestGoalBuiltin_WhichOneIsBetter_HotSnippets(t *testing.T) {
+	t.Parallel()
+
+	goals := GetBuiltInGoals()
+
+	var wib *Goal
+	for i := range goals {
+		if goals[i].Name == "which-one-is-better" {
+			wib = &goals[i]
+			break
+		}
+	}
+	if wib == nil {
+		t.Fatalf("which-one-is-better goal not found")
+	}
+
+	if len(wib.HotSnippets) < 2 {
+		t.Fatalf("expected at least 2 hot-snippets, got %d", len(wib.HotSnippets))
+	}
+
+	snippetNames := make(map[string]bool)
+	for _, hs := range wib.HotSnippets {
+		snippetNames[hs.Name] = true
+		if hs.Text == "" {
+			t.Errorf("hot-snippet %q has empty text", hs.Name)
+		}
+		if hs.Description == "" {
+			t.Errorf("hot-snippet %q has empty description", hs.Name)
+		}
+	}
+
+	if !snippetNames["deeper-analysis"] {
+		t.Error("expected hot-snippet 'deeper-analysis'")
+	}
+	if !snippetNames["devils-advocate"] {
+		t.Error("expected hot-snippet 'devils-advocate'")
+	}
+}
+
+func TestGoalBuiltin_WhichOneIsBetter_PostCopyHint(t *testing.T) {
+	t.Parallel()
+
+	goals := GetBuiltInGoals()
+
+	var wib *Goal
+	for i := range goals {
+		if goals[i].Name == "which-one-is-better" {
+			wib = &goals[i]
+			break
+		}
+	}
+	if wib == nil {
+		t.Fatalf("which-one-is-better goal not found")
+	}
+
+	if wib.PostCopyHint == "" {
+		t.Error("expected non-empty PostCopyHint")
+	}
+	if !strings.Contains(wib.PostCopyHint, "deeper-analysis") {
+		t.Errorf("expected PostCopyHint to mention deeper-analysis, got %q", wib.PostCopyHint)
+	}
+	if !strings.Contains(wib.PostCopyHint, "devils-advocate") {
+		t.Errorf("expected PostCopyHint to mention devils-advocate, got %q", wib.PostCopyHint)
+	}
+}
+
+func TestGoalBuiltin_WhichOneIsBetter_UniqueName(t *testing.T) {
+	t.Parallel()
+
+	goals := GetBuiltInGoals()
+	names := make(map[string]int)
+	for _, g := range goals {
+		names[g.Name]++
+	}
+	if count := names["which-one-is-better"]; count != 1 {
+		t.Errorf("expected exactly 1 'which-one-is-better' goal, found %d", count)
+	}
+	for name, count := range names {
+		if count > 1 {
+			t.Errorf("duplicate goal name %q (count: %d)", name, count)
+		}
+	}
+}
+
+func TestGoalBuiltin_WhichOneIsBetter_JSONRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	goals := GetBuiltInGoals()
+
+	var wib *Goal
+	for i := range goals {
+		if goals[i].Name == "which-one-is-better" {
+			wib = &goals[i]
+			break
+		}
+	}
+	if wib == nil {
+		t.Fatalf("which-one-is-better goal not found")
+	}
+
+	data, err := json.Marshal(wib)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+
+	var decoded Goal
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+
+	if decoded.Name != "which-one-is-better" {
+		t.Errorf("expected name 'which-one-is-better' after roundtrip, got %q", decoded.Name)
+	}
+	if decoded.Category != "decision-making" {
+		t.Errorf("expected category 'decision-making' after roundtrip, got %q", decoded.Category)
+	}
+	if len(decoded.HotSnippets) != 2 {
+		t.Errorf("expected 2 HotSnippets after roundtrip, got %d", len(decoded.HotSnippets))
+	}
+	if decoded.PostCopyHint == "" {
+		t.Error("expected PostCopyHint to survive roundtrip")
+	}
+}
+
+func TestGoalBuiltin_WhichOneIsBetter_ListOutput(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	discovery := NewGoalDiscovery(cfg)
+	goalRegistry := NewDynamicGoalRegistry(GetBuiltInGoals(), discovery)
+
+	cmd := NewGoalCommand(cfg, goalRegistry)
+	var stdout, stderr bytes.Buffer
+	cmd.list = true
+	cmd.store = "memory"
+	cmd.session = t.Name()
+
+	err := cmd.Execute([]string{}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	output := stdout.String()
+
+	// Goal should appear in list
+	if !strings.Contains(output, "which-one-is-better") {
+		t.Errorf("expected list to contain 'which-one-is-better', got:\n%s", output)
+	}
+
+	// Category should appear
+	if !strings.Contains(output, "Decision Making") {
+		t.Errorf("expected list to contain 'Decision Making' category, got:\n%s", output)
+	}
+
+	// Should show vars
+	if !strings.Contains(output, "comparisonType=general") {
+		t.Errorf("expected list to show comparisonType=general, got:\n%s", output)
+	}
+
+	// Should show custom commands
+	if !strings.Contains(output, "[cmds: set-type]") {
+		t.Errorf("expected list to show [cmds: set-type], got:\n%s", output)
 	}
 }
 

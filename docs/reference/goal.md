@@ -314,7 +314,7 @@ See: [internal/command/prompt_file.go](../../internal/command/prompt_file.go), [
 
 **Built-in goals (complete catalog)**
 
-`osm` ships with 14 built-in goals across 13 categories. All use the standard `goalScript` interpreter and provide `contextManager` commands for managing context items.
+`osm` ships with 15 built-in goals across 14 categories. All use the standard `goalScript` interpreter and provide `contextManager` commands for managing context items.
 
 | Name | Category | Description | State Variables | Custom Commands |
 |------|----------|-------------|-----------------|-----------------|
@@ -332,6 +332,7 @@ See: [internal/command/prompt_file.go](../../internal/command/prompt_file.go), [
 | `prose-polisher` | writing | Seven-step copyediting pipeline for prose | `style` (technical) | `style` |
 | `data-to-json` | data-transformation | Extract structured JSON from unstructured text | `mode` (auto) | `mode` |
 | `cite-sources` | research | Answer questions with numbered inline citations | `format` (numbered) | `format` |
+| `which-one-is-better` | decision-making | Exhaustive comparative analysis of options, designs, or approaches | `comparisonType` (general) | `set-type` |
 
 **Goals with hot-snippets:**
 
@@ -339,10 +340,12 @@ See: [internal/command/prompt_file.go](../../internal/command/prompt_file.go), [
 - `morale-improver`: `hot-review-plan` — "Now review each section of your plan…"; `hot-prove-it` — "Prove the issue exists by reproducing it…"
 - `prose-polisher`: `hot-expand-section` — "The section I highlighted is too thin. Expand it…"
 - `cite-sources`: `hot-challenge-claims` — "Review your answer critically. For each claim, verify the citation…"
+- `which-one-is-better`: `hot-deeper-analysis` — "Go deeper on the winning option: enumerate concrete implementation steps…"; `hot-devils-advocate` — "Now argue the opposite position: find the strongest case for the runner-up…"
 
 **Goals with PostCopyHint:**
 
 - `morale-improver`: suggests a follow-up review prompt after copying.
+- `which-one-is-better`: suggests deeper-analysis or devils-advocate follow-ups.
 
 **Goals with BannerTemplate / UsageTemplate:**
 
@@ -357,6 +360,7 @@ See: [internal/command/prompt_file.go](../../internal/command/prompt_file.go), [
 - `prose-polisher`: `style`
 - `data-to-json`: `mode`
 - `cite-sources`: `format`
+- `which-one-is-better`: `comparisonType`
 
 See: [internal/command/goal_builtin.go](../../internal/command/goal_builtin.go) for the full definitions.
 

@@ -305,7 +305,7 @@ Goals are pre-written interactive workflows for common tasks. Each goal defines 
 
 1. **User-discovered JSON goals** — from goal directories (highest priority, override built-ins)
 2. **User-discovered `.prompt.md` goals** — VS Code prompt files converted to goals
-3. **Built-in goals** — 10 goals compiled into the binary (lowest priority)
+3. **Built-in goals** — 15 goals compiled into the binary (lowest priority)
 
 ### Discovery
 
@@ -339,7 +339,7 @@ Source: [internal/command/goal.go](../internal/command/goal.go), [internal/comma
 
 ### Built-in goals
 
-See [Goal reference](reference/goal.md) for the complete catalog of 14 built-in goals.
+See [Goal reference](reference/goal.md) for the complete catalog of 15 built-in goals.
 
 ---
 

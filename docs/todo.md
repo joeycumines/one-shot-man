@@ -86,12 +86,12 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
 - Fix duplicate log lines for purged sessions etc? **DONE (T095) — Already fixed: cleanup.go returns CleanupReport, session.go writes through io.Writer. Regression test `TestSessionsPurge_NoDuplicateLogLines` confirms no duplication.**
 - Implement automatic session cleanup scheduler using SessionConfig (AutoCleanupEnabled, CleanupIntervalHours, MaxAgeDays, MaxCount, MaxSizeMB) **DONE (T096) — CleanupScheduler wired via cleanup_helper.go into scriptCommandBase. 7+3 tests. All 5 SessionConfig fields respected.**
 - Breaking change / migration while the going is good: align on `~/.osm` as the config directory **DONE (T126) — Default config directory migrated from `~/.one-shot-man/` to `~/.osm/` with backward-compatible fallback. Session storage migrated from `{UserConfigDir}/one-shot-man/sessions/` to `{UserConfigDir}/osm/sessions/`. Sync default from `~/.one-shot-man/sync` to `~/.osm/sync`. All docs updated.**
-- Add "which one is better" builtin goal to internal/command/goal_builtin.go
-    - Implement exhaustive options analysis, tailored for a wide range of use cases
-    - Needs specific use case variants, much like many of the existing goals (morale-improver, bug-buster, code-optimizer, etc.)
-    - Leverage the same patterns already established in goal_builtin.go (stateVars, hotSnippets, flagDefs, promptOptions)
-    - Target maximizing utility and general usefulness across different decision-making scenarios
-    - MUST be integration tested properly
+- Add "which one is better" builtin goal to internal/command/goal_builtin.go **DONE (T127)**
+    - Implement exhaustive options analysis, tailored for a wide range of use cases **DONE (T127)** — 5 comparison types (general/technology/architecture/strategy/design), weighted scoring matrices, 6-phase analysis methodology
+    - Needs specific use case variants, much like many of the existing goals (morale-improver, bug-buster, code-optimizer, etc.) **DONE (T127)**
+    - Leverage the same patterns already established in goal_builtin.go (stateVars, hotSnippets, flagDefs, promptOptions) **DONE (T127)** — comparisonType stateVar, comparisonTypeInstructions promptOptions, set-type command, deeper-analysis and devils-advocate hot-snippets
+    - Target maximizing utility and general usefulness across different decision-making scenarios **DONE (T127)**
+    - MUST be integration tested properly **DONE (T127)** — 8 tests covering metadata, stateVars, promptOptions, commands, hotSnippets, postCopyHint, uniqueness, JSON roundtrip, list output
 
 ---
 

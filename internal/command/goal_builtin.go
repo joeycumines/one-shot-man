@@ -1589,5 +1589,202 @@ Note any follow-up meetings, check-ins, or milestones mentioned.
 				{Name: "help", Type: "help"},
 			},
 		},
+
+		// Which One Is Better Goal
+		{
+			Name:        "which-one-is-better",
+			Description: "Exhaustive comparative analysis of options, designs, or approaches",
+			Category:    "decision-making",
+			Usage:       "Compares 2+ options (technologies, architectures, strategies, designs) with weighted criteria, scoring matrices, and confidence-rated recommendations",
+			Script:      goalScript,
+			FileName:    "goal.js",
+
+			TUITitle:  "Which One Is Better",
+			TUIPrompt: "(which-one-is-better) > ",
+
+			NotableVariables: []string{"comparisonType"},
+
+			PostCopyHint: "Try: hot-deeper-analysis for implementation details, or hot-devils-advocate to challenge the verdict",
+
+			HotSnippets: []GoalHotSnippet{
+				{
+					Name:        "deeper-analysis",
+					Text:        "Go deeper on the winning option: enumerate concrete implementation steps, estimate effort/risk for each step, and identify the top 3 hidden risks that could flip the verdict.",
+					Description: "Follow-up: implementation steps, effort, and hidden risks for the winner",
+				},
+				{
+					Name:        "devils-advocate",
+					Text:        "Now argue the opposite position: find the strongest case for the runner-up. What conditions or constraints would make the losing option actually the better choice? Be specific — name the exact scenarios, team compositions, timelines, or requirements that would reverse the recommendation.",
+					Description: "Follow-up: argue for the runner-up and identify verdict-flipping conditions",
+				},
+			},
+
+			StateVars: map[string]interface{}{
+				"comparisonType": "general",
+			},
+
+			PromptInstructions: `Perform an exhaustive comparative analysis of the provided options using the {{.stateKeys.comparisonType}} comparison framework.
+
+{{.comparisonTypeInstructions}}
+
+---
+
+## Analysis Methodology
+
+Follow this structured methodology for every comparison, regardless of domain:
+
+### Phase 1: Clarify Options
+- Restate each option in your own words to confirm understanding
+- Identify any implicit assumptions or constraints in how the options are framed
+- If the options are not directly comparable (apples vs oranges), state this explicitly and explain how you will normalize the comparison
+- Ask yourself: are these truly the only options, or is there a hybrid or alternative being overlooked? Note this but proceed with the given options
+
+### Phase 2: Establish Criteria
+- Define 5-10 evaluation criteria specific to the decision domain
+- Assign each criterion a **weight** (1-5 scale, where 5 = critical) based on typical importance for this type of decision
+- Justify the weighting: why does criterion X matter more than criterion Y in this context?
+- If the user's notes or context suggest specific priorities, adjust weights accordingly and note the adjustment
+
+### Phase 3: Deep Per-Option Analysis
+For each option:
+- **Strengths**: what does this option do better than all alternatives? Be specific — cite concrete capabilities, not vague adjectives
+- **Weaknesses**: what are the real costs, limitations, and failure modes? Do not soft-pedal
+- **Edge cases**: under what unusual but plausible conditions does this option break down or excel unexpectedly?
+- **Maturity & track record**: how battle-tested is this option? What is the evidence base?
+- **Hidden costs**: what costs are not immediately obvious? (migration, training, maintenance, opportunity cost, lock-in)
+
+### Phase 4: Side-by-Side Comparison Matrix
+Produce a **comparison matrix** (table format) with:
+- Rows = criteria (with weights)
+- Columns = options
+- Cells = score (1-10) with a brief justification phrase
+- Final row = **weighted total** for each option
+- Ensure scores are honest and differentiated — avoid giving everything 7/10
+
+### Phase 5: Contextual Recommendation
+- Declare a **winner** with a **confidence level** (Low / Medium / High / Very High)
+- Explain what "winning" means in context: is it the best general choice, the safest, the most innovative, or the best for specific constraints?
+- State the **conditions under which this recommendation holds** — what must be true for this to be the right call?
+- State the **conditions under which this recommendation would change** — what would flip the verdict?
+
+### Phase 6: Risk & Uncertainty Analysis
+- For the recommended option: what are the top 3 risks, and how would you mitigate each?
+- For the runner-up: what is the single strongest argument in its favor that almost tipped the scales?
+- **Uncertainty disclosure**: which criteria had the weakest evidence base? Where are you most likely to be wrong?
+- **Reversal triggers**: name 2-3 concrete events or discoveries that should trigger a re-evaluation of this decision`,
+
+			PromptTemplate: `**{{.description | upper}}**
+
+{{.promptInstructions}}
+
+## {{.contextHeader}}
+
+{{.contextTxtar}}`,
+
+			ContextHeader: "OPTIONS & CONTEXT",
+
+			PromptOptions: map[string]interface{}{
+				"comparisonTypeInstructions": map[string]string{
+					"general": `**General Comparison Mode**
+
+This is a general-purpose comparison framework. Adapt your criteria and analysis depth to whatever is being compared — products, services, approaches, tools, ideas, or anything else.
+
+Focus on:
+- Fitness for purpose: how well does each option solve the stated problem?
+- Total cost of ownership: upfront cost, ongoing cost, switching cost
+- Risk profile: what can go wrong, and how badly?
+- Flexibility: how well does each option adapt to changing requirements?
+- Opportunity cost: what do you give up by choosing each option?`,
+
+					"technology": `**Technology Comparison Mode**
+
+You are comparing libraries, frameworks, tools, languages, platforms, or other technical choices.
+
+In addition to the general methodology, specifically evaluate:
+- **API surface & developer experience**: how pleasant and productive is daily usage? Quality of documentation, error messages, debugging tools
+- **Performance characteristics**: latency, throughput, memory footprint, startup time — with concrete benchmarks or estimates where possible
+- **Ecosystem & community**: package ecosystem size, community activity (GitHub stars/issues velocity, Stack Overflow coverage), corporate backing
+- **Integration & compatibility**: how well does it play with existing stack? Migration path from current tooling
+- **Long-term viability**: release cadence, breaking change history, bus factor, license stability
+- **Learning curve**: time to first meaningful output, time to proficiency, availability of learning resources
+- **Operational burden**: deployment complexity, monitoring/observability support, failure modes in production`,
+
+					"architecture": `**Architecture Comparison Mode**
+
+You are comparing system designs, architectural patterns, infrastructure choices, or deployment strategies.
+
+In addition to the general methodology, specifically evaluate:
+- **Scalability model**: how does each architecture scale horizontally and vertically? What are the bottlenecks?
+- **Failure modes & resilience**: what happens when components fail? Blast radius, recovery time, data durability guarantees
+- **Operational complexity**: how many moving parts? What expertise is required to operate? On-call burden
+- **Data consistency model**: eventual vs strong consistency, CAP theorem trade-offs, conflict resolution
+- **Latency profile**: end-to-end latency characteristics, tail latency behavior under load
+- **Cost curve**: how does infrastructure cost change with scale? Linear, sub-linear, or super-linear?
+- **Migration path**: can you adopt incrementally, or is it all-or-nothing? Reversibility
+- **Organizational fit**: does the architecture match team structure (Conway's Law)? Does it require re-org?`,
+
+					"strategy": `**Strategy Comparison Mode**
+
+You are comparing business strategies, product strategies, go-to-market plans, or operational approaches.
+
+In addition to the general methodology, specifically evaluate:
+- **Market fit**: how well does each strategy address the target market's needs and pain points?
+- **Competitive positioning**: how does each strategy differentiate from competitors? Sustainability of the advantage
+- **Resource requirements**: capital, headcount, expertise, partnerships needed for execution
+- **Time to impact**: how quickly does each strategy produce measurable results?
+- **Reversibility**: if the strategy doesn't work, how easily can you pivot? Sunk cost exposure
+- **Second-order effects**: what unintended consequences might each strategy trigger? Cannibalization, market signals, team morale
+- **Measurability**: how will you know if the strategy is working? Leading vs lagging indicators
+- **Risk distribution**: is risk concentrated in one bet or spread across multiple bets?`,
+
+					"design": `**Design Comparison Mode**
+
+You are comparing UI/UX designs, visual approaches, interaction patterns, or information architectures.
+
+In addition to the general methodology, specifically evaluate:
+- **Usability**: task completion rate, time-on-task, error rate for key user journeys
+- **Accessibility**: WCAG compliance level, screen reader compatibility, keyboard navigability, color contrast
+- **Learnability**: how quickly can a new user accomplish their first meaningful task? Discoverability of features
+- **Consistency**: alignment with platform conventions, internal design system coherence, pattern reuse
+- **Emotional response**: does the design evoke the intended brand feeling? Trust, delight, professionalism
+- **Scalability of the design**: does it hold up with more content, more features, or different screen sizes?
+- **Implementation complexity**: how difficult is each design to build, maintain, and iterate on?
+- **Information hierarchy**: is the most important information visually prominent? Does the layout guide the eye correctly?`,
+				},
+			},
+
+			Commands: []CommandConfig{
+				{Name: "add", Type: "contextManager"},
+				{Name: "diff", Type: "contextManager"},
+				{Name: "note", Type: "contextManager", Description: "Add a note about options, context, or decision constraints"},
+				{Name: "list", Type: "contextManager"},
+				{Name: "edit", Type: "contextManager"},
+				{Name: "remove", Type: "contextManager"},
+				{Name: "show", Type: "contextManager"},
+				{Name: "copy", Type: "contextManager"},
+				{
+					Name:        "set-type",
+					Type:        "custom",
+					Description: "Set comparison type",
+					Usage:       "set-type <general|technology|architecture|strategy|design>",
+					Handler: `function (args) {
+                        if (args.length === 0) {
+                            output.print("Current type: " + (state.get(stateKeys.comparisonType) || "general"));
+                            output.print("Available types: general, technology, architecture, strategy, design");
+                            return;
+                        }
+                        var type = args[0].toLowerCase();
+                        var validTypes = ["general", "technology", "architecture", "strategy", "design"];
+                        if (validTypes.indexOf(type) === -1) {
+                            output.print("Invalid type. Available: " + validTypes.join(", "));
+                            return;
+                        }
+                        state.set(stateKeys.comparisonType, type);
+                        output.print("Comparison type set to: " + type);
+                    }`,
+				},
+				{Name: "help", Type: "help"},
+			},
+		},
 	}
 }

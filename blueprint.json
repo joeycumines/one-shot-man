@@ -286,7 +286,8 @@
     {
       "task": "T112: Add example script: osm:fetch HTTP client demo",
       "description": "Add example-06-api-client.js showing synchronous fetch, streaming, error handling, timeout usage. Update scripts/README.md.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Created example-06-api-client.js with 5 sections: simple GET, POST with JSON body/headers, streaming (fetchStream + readLine), error handling (HTTP errors vs network exceptions), response headers. Updated README.md."
     },
     {
       "task": "T113: Add example script: osm:flag argument parsing demo",

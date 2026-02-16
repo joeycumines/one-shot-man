@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Example script `example-06-api-client.js`: demonstrates `osm:fetch` HTTP client API (GET, POST with JSON, streaming, error handling, timeouts, response headers)
 - `osm log follow` subcommand as alias for `osm log tail` / `osm log -f` (continuous log tailing)
 - Expanded `log` JavaScript API documentation: all 8 methods documented with parameter types, log destination details (in-memory ring buffer + JSON file rotation), and cross-reference to `osm log` command
 - Warning log for unknown arg completer types in REPL completion (aids debugging custom goal definitions)

@@ -12,6 +12,7 @@ import (
 	viewportmod "github.com/joeycumines/one-shot-man/internal/builtin/bubbles/viewport"
 	bubbleteamod "github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	bubblezonemod "github.com/joeycumines/one-shot-man/internal/builtin/bubblezone"
+	cryptomod "github.com/joeycumines/one-shot-man/internal/builtin/crypto"
 	ctxutils "github.com/joeycumines/one-shot-man/internal/builtin/ctxutil"
 	execmod "github.com/joeycumines/one-shot-man/internal/builtin/exec"
 	fetchmod "github.com/joeycumines/one-shot-man/internal/builtin/fetch"
@@ -82,6 +83,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	}
 	const prefix = "osm:"
 	registry.RegisterNativeModule(prefix+"argv", argv.Require)
+	registry.RegisterNativeModule(prefix+"crypto", cryptomod.Require)
 	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.Require)
 	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require)

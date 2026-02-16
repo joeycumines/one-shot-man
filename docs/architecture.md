@@ -141,6 +141,7 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 | Module | Description |
 |--------|-------------|
 | `osm:argv` | Command-line argument parsing |
+| `osm:crypto` | Cryptographic hash functions (SHA-256, SHA-1, MD5, HMAC) |
 | `osm:exec` | Execute shell commands with stdout/stderr capture |
 | `osm:flag` | Flag parsing with tab-completion support |
 | `osm:os` | File I/O, environment variables, OS information |
@@ -395,7 +396,7 @@ CLI args → main.go → Registry.Get(cmd)
                                   ↓
                           Engine created with:
                           - Goja VM + event loop
-                          - 21 native modules
+                          - 22 native modules
                           - TUI manager + state
                           - Session persistence
                           - Context manager

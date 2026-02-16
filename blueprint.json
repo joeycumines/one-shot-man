@@ -313,7 +313,8 @@
     {
       "task": "T117: Implement osm:crypto module for hash/checksum operations",
       "description": "Add osm:crypto module: sha256, sha1, md5, hmac. For file integrity verification, cache keys, content-addressable operations. Minimal surface.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Created cryptomod package (crypto.go + crypto_test.go). 35 tests covering all 5 functions with RFC/NIST test vectors, empty strings, null/undefined, byte arrays, unicode, determinism, output format. Registered as osm:crypto. Updated scripting.md, architecture.md, CHANGELOG.md."
     },
     {
       "task": "T118: Add MCP (Model Context Protocol) server mode",

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Warning log for unknown arg completer types in REPL completion (aids debugging custom goal definitions)
 - `osm goal paths` subcommand: displays all resolved goal discovery paths with source annotations (`standard`/`custom`/`autodiscovered`), existence status (`✓`/`✗`), and config validation warnings for missing custom paths
 - `osm script paths` subcommand: displays all resolved script discovery paths with the same annotated format
 - `AnnotatedPath` type in discovery subsystem with `Path`, `Source`, and `Exists` fields
@@ -54,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BTBridge` alias from builtin package
 - 3 unused benchmark threshold constants
 - Stale `internal/termtest/*` entries from `.deadcodeignore`
+- 4 TODO comments in tui_completion.go: documented completion logic, resolved outdated arg completer precedence note, removed speculative types, added unknown-type warning
 
 ### Fixed
 - Data race in scripting engine: `context.AfterFunc` closure reading `engine.vm` while `Close()` sets nil; captured VM in local variable before closure

@@ -2,6 +2,7 @@ package scripting
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"os/user"
@@ -340,18 +341,17 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 
 	// currentWord already refers to the token content at the cursor (quotes removed)
 
-	// TODO: CRITICAL COMPLETION LOGIC DOCUMENTATION
-	// This function handles completion with the following precedence:
+	// Completion precedence:
 	// 1. Command completion (for first word)
 	// 2. Argument completion (for subsequent words)
 	// 3. File completion fallback (when arg completers exist but current arg has no matches)
 	//
-	// The precedence for commands is: mode commands > registered commands > built-in commands
-	// The precedence for arg completers is based on their order in cmd.ArgCompleters array
+	// Command precedence: mode commands > registered commands > built-in commands.
+	// Arg completer precedence: order in cmd.ArgCompleters slice.
 	//
-	// IMPORTANT: When a command has file arg completers, we suggest files even if:
-	// - Only the command is typed (e.g., "add" suggests files after command suggestions)
-	// - Current file argument has no matches (suggests new args from CWD)
+	// When a command has file arg completers, files are suggested even if:
+	// - Only the command is typed (after trailing space moves cursor to arg position)
+	// - Current file argument has no matches (suggests from CWD)
 
 	// Provide command completion for first word
 	if len(words) == 0 {
@@ -440,10 +440,8 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 			}
 
 			if cmd != nil {
-				// TODO: CRITICAL - Handle multiple arg completers with proper precedence
-				// The order in cmd.ArgCompleters should determine priority.
-				// Currently we only handle "file" type, but future types should be processed
-				// in the order they appear in the slice for proper precedence.
+				// Arg completers are processed in the order they appear in the
+				// ArgCompleters slice. Supported types: file, executable, flag, gitref.
 				var hasFileCompleters bool
 				var fileCompleterProcessed bool
 
@@ -472,11 +470,8 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 					case "gitref":
 						gitRefSuggestions := getGitRefSuggestions(currentWord)
 						suggestions = append(suggestions, gitRefSuggestions...)
-					// TODO: Add other arg completer types here (e.g., "command", "mode", etc.)
-					// and respect the order they appear in cmd.ArgCompleters
 					default:
-						// Unknown completer type - ignore for now but log for future implementation
-						// TODO: Add logging or warning for unknown completer types
+						log.Printf("warning: unknown arg completer type %q for command %q", argCompleter, cmd.Name)
 					}
 				}
 

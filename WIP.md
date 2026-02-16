@@ -71,4 +71,5 @@
 3. T107: ✅ DONE — Committed b3df03e. pii-scrubber + prose-polisher goals.
 4. T108: ✅ DONE — Committed f6b1e7f. data-to-json + cite-sources goals.
 5. T109: ✅ DONE — osm goal paths + osm script paths subcommands. Annotated discovery. Shell completions.
-6. Continue T110-T125
+6. T110: ✅ DONE — Resolved 4 TODO comments in tui_completion.go. Added unknown completer warning + 2 tests.
+7. Continue T111-T125

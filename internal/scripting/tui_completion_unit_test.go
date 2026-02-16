@@ -2418,3 +2418,63 @@ func TestFlagCompletion_EmptyFlagDefsSlice(t *testing.T) {
 		}
 	}
 }
+
+// TestUnknownCompleter_DoesNotPanic verifies that an unknown arg completer type
+// does not crash and produces no suggestions (it only logs a warning).
+func TestUnknownCompleter_DoesNotPanic(t *testing.T) {
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"custom": {
+				Name:          "custom",
+				Description:   "Command with unknown completer",
+				ArgCompleters: []string{"unicorn"},
+			},
+		},
+		commandOrder: []string{"custom"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	// Should not panic and should produce no suggestions for unknown type
+	sugg := tm.getDefaultCompletionSuggestionsFor("custom ", "custom ")
+	if len(sugg) != 0 {
+		t.Errorf("expected 0 suggestions for unknown completer type, got %d", len(sugg))
+	}
+}
+
+// TestUnknownCompleter_MixedWithKnown verifies that unknown completer types
+// are silently skipped while known types still produce suggestions.
+func TestUnknownCompleter_MixedWithKnown(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmp, "test.txt"), []byte(""), 0o644)
+
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	tm := &TUIManager{
+		writer: NewTUIWriterFromIO(io.Discard),
+		commands: map[string]Command{
+			"hybrid": {
+				Name:          "hybrid",
+				Description:   "Mixed completers",
+				ArgCompleters: []string{"unicorn", "file", "dragon"},
+			},
+		},
+		commandOrder: []string{"hybrid"},
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	sugg := tm.getDefaultCompletionSuggestionsFor("hybrid ", "hybrid ")
+	hasFile := false
+	for _, s := range sugg {
+		if s.Text == "test.txt" {
+			hasFile = true
+		}
+	}
+	if !hasFile {
+		t.Error("expected file suggestion 'test.txt' despite unknown completers in mix")
+	}
+}

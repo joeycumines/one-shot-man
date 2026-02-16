@@ -366,6 +366,256 @@ func TestSetKeyInFile_ReadError(t *testing.T) {
 	}
 }
 
+// --- DeleteKeyInFile tests ---
+
+func TestDeleteKeyInFile_ExistingKey(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "config")
+
+	if err := os.WriteFile(path, []byte("verbose true\ncolor auto\neditor vim\n"), 0644); err != nil {
+		t.Fatalf("failed to write initial config: %v", err)
+	}
+
+	if err := DeleteKeyInFile(path, "color"); err != nil {
+		t.Fatalf("DeleteKeyInFile returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read config file: %v", err)
+	}
+
+	content := string(data)
+	if strings.Contains(content, "color") {
+		t.Fatalf("expected 'color' to be removed, got %q", content)
+	}
+	if !strings.Contains(content, "verbose true") {
+		t.Fatalf("expected 'verbose true' to be preserved, got %q", content)
+	}
+	if !strings.Contains(content, "editor vim") {
+		t.Fatalf("expected 'editor vim' to be preserved, got %q", content)
+	}
+
+	cfg, err := LoadFromPath(path)
+	if err != nil {
+		t.Fatalf("LoadFromPath returned error: %v", err)
+	}
+	if _, ok := cfg.GetGlobalOption("color"); ok {
+		t.Fatal("expected 'color' to not exist after deletion")
+	}
+	if v, ok := cfg.GetGlobalOption("verbose"); !ok || v != "true" {
+		t.Fatalf("expected verbose=true, got %q exists=%v", v, ok)
+	}
+}
+
+func TestDeleteKeyInFile_KeyNotFound(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "config")
+
+	initial := "verbose true\n"
+	if err := os.WriteFile(path, []byte(initial), 0644); err != nil {
+		t.Fatalf("failed to write initial config: %v", err)
+	}
+
+	if err := DeleteKeyInFile(path, "nonexistent"); err != nil {
+		t.Fatalf("DeleteKeyInFile returned error for missing key: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read config file: %v", err)
+	}
+	if string(data) != initial {
+		t.Fatalf("file should be unchanged, got %q", string(data))
+	}
+}
+
+func TestDeleteKeyInFile_FileNotExist(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "nonexistent-config")
+
+	if err := DeleteKeyInFile(path, "anykey"); err != nil {
+		t.Fatalf("DeleteKeyInFile should not error for nonexistent file: %v", err)
+	}
+}
+
+func TestDeleteKeyInFile_PreservesCommentsAndSections(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "config")
+
+	initial := "# Global config\nverbose true\ncolor auto\n\n[help]\npager less\n"
+	if err := os.WriteFile(path, []byte(initial), 0644); err != nil {
+		t.Fatalf("failed to write initial config: %v", err)
+	}
+
+	if err := DeleteKeyInFile(path, "color"); err != nil {
+		t.Fatalf("DeleteKeyInFile returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read config file: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "# Global config") {
+		t.Fatalf("expected comment preserved, got %q", content)
+	}
+	if strings.Contains(content, "color") {
+		t.Fatalf("expected 'color' removed, got %q", content)
+	}
+	if !strings.Contains(content, "[help]") {
+		t.Fatalf("expected section header preserved, got %q", content)
+	}
+	if !strings.Contains(content, "pager less") {
+		t.Fatalf("expected section content preserved, got %q", content)
+	}
+}
+
+func TestDeleteKeyInFile_DoesNotDeleteSectionKey(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "config")
+
+	initial := "verbose true\n\n[version]\nformat short\n"
+	if err := os.WriteFile(path, []byte(initial), 0644); err != nil {
+		t.Fatalf("failed to write initial config: %v", err)
+	}
+
+	// Try to delete "format" — should only target global section.
+	if err := DeleteKeyInFile(path, "format"); err != nil {
+		t.Fatalf("DeleteKeyInFile returned error: %v", err)
+	}
+
+	cfg, err := LoadFromPath(path)
+	if err != nil {
+		t.Fatalf("LoadFromPath returned error: %v", err)
+	}
+	// Section key should be preserved.
+	if v, ok := cfg.GetCommandOption("version", "format"); !ok || v != "short" {
+		t.Fatalf("expected version.format=short preserved, got %q exists=%v", v, ok)
+	}
+}
+
+func TestDeleteKeyInFile_ReadError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	err := DeleteKeyInFile(dir, "key")
+	if err == nil {
+		t.Fatal("expected error when reading from a directory")
+	}
+	if !strings.Contains(err.Error(), "reading config file") {
+		t.Fatalf("expected 'reading config file' in error, got: %v", err)
+	}
+}
+
+// --- DeleteAllGlobalKeysInFile tests ---
+
+func TestDeleteAllGlobalKeysInFile_RemovesAllGlobalKeys(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "config")
+
+	initial := "verbose true\ncolor auto\neditor vim\n"
+	if err := os.WriteFile(path, []byte(initial), 0644); err != nil {
+		t.Fatalf("failed to write initial config: %v", err)
+	}
+
+	count, err := DeleteAllGlobalKeysInFile(path)
+	if err != nil {
+		t.Fatalf("DeleteAllGlobalKeysInFile returned error: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("expected 3 keys removed, got %d", count)
+	}
+
+	cfg, err := LoadFromPath(path)
+	if err != nil {
+		t.Fatalf("LoadFromPath returned error: %v", err)
+	}
+	if len(cfg.Global) != 0 {
+		t.Fatalf("expected no global keys, got %v", cfg.Global)
+	}
+}
+
+func TestDeleteAllGlobalKeysInFile_PreservesCommentsAndSections(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "config")
+
+	initial := "# Config file\nverbose true\n\n[help]\npager less\n"
+	if err := os.WriteFile(path, []byte(initial), 0644); err != nil {
+		t.Fatalf("failed to write initial config: %v", err)
+	}
+
+	count, err := DeleteAllGlobalKeysInFile(path)
+	if err != nil {
+		t.Fatalf("DeleteAllGlobalKeysInFile returned error: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 key removed, got %d", count)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read config file: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "# Config file") {
+		t.Fatalf("expected comment preserved, got %q", content)
+	}
+	if !strings.Contains(content, "[help]") {
+		t.Fatalf("expected section header preserved, got %q", content)
+	}
+	if !strings.Contains(content, "pager less") {
+		t.Fatalf("expected section content preserved, got %q", content)
+	}
+	if strings.Contains(content, "verbose") {
+		t.Fatalf("expected 'verbose' removed, got %q", content)
+	}
+}
+
+func TestDeleteAllGlobalKeysInFile_NoGlobalKeys(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "config")
+
+	initial := "# Just comments\n\n[help]\npager less\n"
+	if err := os.WriteFile(path, []byte(initial), 0644); err != nil {
+		t.Fatalf("failed to write initial config: %v", err)
+	}
+
+	count, err := DeleteAllGlobalKeysInFile(path)
+	if err != nil {
+		t.Fatalf("DeleteAllGlobalKeysInFile returned error: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 keys removed, got %d", count)
+	}
+}
+
+func TestDeleteAllGlobalKeysInFile_FileNotExist(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "nonexistent-config")
+
+	count, err := DeleteAllGlobalKeysInFile(path)
+	if err != nil {
+		t.Fatalf("DeleteAllGlobalKeysInFile should not error for nonexistent file: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected 0 keys removed, got %d", count)
+	}
+}
+
+func TestDeleteAllGlobalKeysInFile_ReadError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	_, err := DeleteAllGlobalKeysInFile(dir)
+	if err == nil {
+		t.Fatal("expected error when reading from a directory")
+	}
+	if !strings.Contains(err.Error(), "reading config file") {
+		t.Fatalf("expected 'reading config file' in error, got: %v", err)
+	}
+}
+
 func TestSetKeyInFile_MultipleSequentialWrites(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "config")

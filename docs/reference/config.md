@@ -33,7 +33,41 @@ optionName remainingLineIsTheValue
 Notes:
 - Lines starting with `#` are comments.
 - Values are not quoted/escaped; the “value” is the remainder of the line.
+## Subcommands
 
+The `osm config` command supports the following subcommands:
+
+| Subcommand | Description |
+|------------|-------------|
+| `config <key>` | Get the effective value for a key |
+| `config <key> <value>` | Set a configuration value |
+| `config validate` | Validate configuration against the schema |
+| `config schema` | Show the full configuration schema |
+| `config list` | List all values with their sources |
+| `config diff` | Show only non-default values |
+| `config reset <key>` | Reset a single key to its schema default |
+| `config reset --all --force` | Reset all global keys to their defaults |
+
+### `config reset`
+
+Reset configuration keys to their schema defaults. The key is removed from
+both the in-memory configuration and the config file on disk.
+
+```sh
+# Reset a single key
+osm config reset color
+
+# Reset all global keys (requires --force)
+osm config reset --all --force
+```
+
+When resetting a single key, the key must be a known schema key (use
+`osm config schema` to list all known keys). The command prints the default
+value after the reset.
+
+When resetting all keys with `--all`, the `--force` flag is required as a
+safety measure. All global option lines are removed from the config file;
+comments, section headers, and command-specific options are preserved.
 ## Prompt colors (`prompt.color.*`)
 
 Interactive flows (`osm script -i`, `osm prompt-flow`, `osm code-review`, `osm goal -i`) support optional prompt color overrides.

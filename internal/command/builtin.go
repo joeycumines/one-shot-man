@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -204,6 +205,8 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 			_, _ = fmt.Fprintln(stdout, "  config schema         - Show configuration schema")
 			_, _ = fmt.Fprintln(stdout, "  config list           - List all values with sources")
 			_, _ = fmt.Fprintln(stdout, "  config diff           - Show non-default values")
+			_, _ = fmt.Fprintln(stdout, "  config reset <key>    - Reset key to schema default")
+			_, _ = fmt.Fprintln(stdout, "  config reset --all    - Reset all keys (requires --force)")
 			return nil
 		}
 	}
@@ -235,6 +238,8 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 			return fmt.Errorf("unexpected arguments")
 		}
 		return c.executeDiff(stdout)
+	case "reset":
+		return c.executeReset(args[1:], stdout, stderr)
 	}
 
 	if len(args) == 1 {
@@ -330,6 +335,110 @@ func writeResolvedTable(w io.Writer, resolved []config.ResolvedOption) {
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", ro.Key, ro.Value, ro.Source)
 	}
 	_ = tw.Flush()
+}
+
+// executeReset handles the "config reset" subcommand.
+// Syntax:
+//
+//	config reset <key>              — reset a single key to its schema default
+//	config reset --all [--force]    — reset all keys (requires --force)
+func (c *ConfigCommand) executeReset(args []string, stdout, stderr io.Writer) error {
+	var resetAll, force bool
+	var key string
+
+	for _, a := range args {
+		switch a {
+		case "--all":
+			resetAll = true
+		case "--force":
+			force = true
+		default:
+			if strings.HasPrefix(a, "-") {
+				_, _ = fmt.Fprintf(stderr, "unknown flag: %s\n", a)
+				return fmt.Errorf("unknown flag: %s", a)
+			}
+			if key != "" {
+				_, _ = fmt.Fprintf(stderr, "unexpected argument: %s\n", a)
+				return fmt.Errorf("unexpected argument: %s", a)
+			}
+			key = a
+		}
+	}
+
+	if resetAll && key != "" {
+		_, _ = fmt.Fprintln(stderr, "Error: cannot specify both --all and a key name")
+		return fmt.Errorf("cannot specify both --all and a key name")
+	}
+
+	if !resetAll && key == "" {
+		_, _ = fmt.Fprintln(stdout, "Usage:")
+		_, _ = fmt.Fprintln(stdout, "  config reset <key>              - Reset key to schema default")
+		_, _ = fmt.Fprintln(stdout, "  config reset --all [--force]    - Reset all keys to defaults")
+		return nil
+	}
+
+	if resetAll {
+		if !force {
+			_, _ = fmt.Fprintln(stderr, "Error: reset --all requires --force to confirm")
+			return fmt.Errorf("reset --all requires --force")
+		}
+		return c.executeResetAll(stdout, stderr)
+	}
+
+	return c.executeResetKey(key, stdout, stderr)
+}
+
+// executeResetKey resets a single global key to its schema default.
+func (c *ConfigCommand) executeResetKey(key string, stdout, stderr io.Writer) error {
+	schema := config.DefaultSchema()
+	opt := schema.Lookup("", key)
+	if opt == nil {
+		_, _ = fmt.Fprintf(stderr, "Error: %q is not a known configuration key (use 'config schema' to list known keys)\n", key)
+		return fmt.Errorf("unknown configuration key: %q", key)
+	}
+
+	// Remove from in-memory config.
+	delete(c.config.Global, key)
+
+	// Remove from disk.
+	configPath := c.configPath
+	if configPath == "" {
+		configPath, _ = config.GetConfigPath()
+	}
+	if configPath != "" {
+		if err := config.DeleteKeyInFile(configPath, key); err != nil {
+			_, _ = fmt.Fprintf(stderr, "Warning: failed to persist reset to disk: %v\n", err)
+		}
+	}
+
+	_, _ = fmt.Fprintf(stdout, "Reset %s to default: %s\n", key, opt.Default)
+	return nil
+}
+
+// executeResetAll resets all global keys to their schema defaults.
+func (c *ConfigCommand) executeResetAll(stdout, stderr io.Writer) error {
+	// Clear all global keys from in-memory config.
+	count := len(c.config.Global)
+	c.config.Global = make(map[string]string)
+
+	// Remove all global keys from disk.
+	configPath := c.configPath
+	if configPath == "" {
+		configPath, _ = config.GetConfigPath()
+	}
+	if configPath != "" {
+		diskCount, err := config.DeleteAllGlobalKeysInFile(configPath)
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "Warning: failed to persist reset to disk: %v\n", err)
+		}
+		// Use disk count if larger (some keys may only exist on disk).
+		if diskCount > count {
+			count = diskCount
+		}
+	}
+
+	_, _ = fmt.Fprintf(stdout, "Reset %d key(s) to defaults.\n", count)
+	return nil
 }
 
 // InitCommand initializes the osm environment.

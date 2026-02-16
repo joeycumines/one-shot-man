@@ -125,7 +125,7 @@ _osm_completion() {
             return 0
             ;;
         config)
-            COMPREPLY=($(compgen -W "validate schema list diff %s" -- ${cur}))
+            COMPREPLY=($(compgen -W "validate schema list diff reset %s" -- ${cur}))
             return 0
             ;;
         log)
@@ -218,7 +218,7 @@ _osm() {
                     _values 'sync-subcommand' 'save' 'list' 'load' 'init' 'push' 'pull'
                     ;;
                 config)
-                    _values 'config-subcommand' 'validate' 'schema' 'list' 'diff' %s
+                    _values 'config-subcommand' 'validate' 'schema' 'list' 'diff' 'reset' %s
                     ;;
                 log)
                     _values 'log-subcommand' 'tail' 'follow'
@@ -294,7 +294,7 @@ complete -c osm -n '__fish_seen_subcommand_from script' -a 'paths' -d 'Show disc
 complete -c osm -n '__fish_seen_subcommand_from sync' -a 'save list load init push pull' -d 'Sync subcommands'
 
 # Completion for 'config' subcommand
-complete -c osm -n '__fish_seen_subcommand_from config' -a 'validate schema list diff %s' -d 'Config subcommands'
+complete -c osm -n '__fish_seen_subcommand_from config' -a 'validate schema list diff reset %s' -d 'Config subcommands'
 
 # Completion for 'log' subcommand
 complete -c osm -n '__fish_seen_subcommand_from log' -a 'tail follow' -d 'Log subcommands'
@@ -392,7 +392,7 @@ Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
     }
 
     if ($tokenCount -eq 3 -and $command -eq 'config') {
-        $subs = @('validate','schema','list','diff',%s)
+        $subs = @('validate','schema','list','diff','reset',%s)
         $subs | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
             [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
         }

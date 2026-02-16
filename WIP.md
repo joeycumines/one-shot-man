@@ -11,11 +11,12 @@
 - T202: DONE (commit 54cc73d) — migrate textarea runeWidth to uniseg + hitTestColumn extraction
 - T203: DONE (commit 14fa5dd) — MCP server removeFile and clearContext tools
 - T204: DONE (commit 879930c) — osm:regexp module
-- T205: DONE — osm:encoding module
+- T205: DONE (commit 3894d38) — osm:encoding module
+- T206: DONE — osm config reset subcommand
 - Blueprint updated
 
 ## Next Step
-- T206: osm config reset subcommand
+- T207: Test coverage for internal/storage/inspector.go
 
 ## Architecture Notes
 - Old tasks T128-T170 have been remapped to T200-T269
@@ -45,4 +46,4 @@
 - T204 Committed: 879930c
 - T205 Run 1: PASS (scratch/review-t205-run1.md)
 - T205 Run 2: PASS (scratch/review-t205-run2.md)
-- T205 Committed: pending
+- T205 Committed: 3894d38

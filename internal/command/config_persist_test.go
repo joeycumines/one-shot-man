@@ -772,4 +772,239 @@ func TestConfigUsage_IncludesListAndDiff(t *testing.T) {
 	if !strings.Contains(out, "config diff") {
 		t.Error("expected usage to mention 'config diff'")
 	}
+	if !strings.Contains(out, "config reset") {
+		t.Error("expected usage to mention 'config reset'")
+	}
+}
+
+// --- T206: config reset subcommand ---
+
+func TestConfigReset_SingleKey(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config")
+
+	if err := os.WriteFile(configPath, []byte("verbose true\ncolor always\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.LoadFromPath(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewConfigCommand(cfg, configPath)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"reset", "color"}, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stderr.Len() > 0 {
+		t.Fatalf("unexpected stderr: %q", stderr.String())
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Reset color to default:") {
+		t.Fatalf("expected reset confirmation, got: %q", out)
+	}
+
+	// Verify in-memory removal.
+	if _, ok := cfg.GetGlobalOption("color"); ok {
+		t.Fatal("expected 'color' removed from in-memory config")
+	}
+	// Other keys should be preserved.
+	if v, ok := cfg.GetGlobalOption("verbose"); !ok || v != "true" {
+		t.Fatalf("expected verbose=true preserved, got %q exists=%v", v, ok)
+	}
+
+	// Verify on disk.
+	reloaded, err := config.LoadFromPath(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reloaded.GetGlobalOption("color"); ok {
+		t.Fatal("expected 'color' removed from disk config")
+	}
+	if v, ok := reloaded.GetGlobalOption("verbose"); !ok || v != "true" {
+		t.Fatalf("expected verbose=true preserved on disk, got %q exists=%v", v, ok)
+	}
+}
+
+func TestConfigReset_SingleKey_UnknownKey(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("unknown-key", "foo")
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"reset", "unknown-key"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for unknown key")
+	}
+	if !strings.Contains(err.Error(), "unknown configuration key") {
+		t.Fatalf("expected 'unknown configuration key' in error, got: %v", err)
+	}
+}
+
+func TestConfigReset_SingleKey_NotSet(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config")
+
+	if err := os.WriteFile(configPath, []byte("verbose true\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.LoadFromPath(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewConfigCommand(cfg, configPath)
+
+	// Reset a key that exists in schema but is not set in config.
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"reset", "color"}, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Reset color to default:") {
+		t.Fatalf("expected reset confirmation, got: %q", out)
+	}
+}
+
+func TestConfigReset_AllKeys_RequiresForce(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("verbose", "true")
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"reset", "--all"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error without --force")
+	}
+	if !strings.Contains(err.Error(), "requires --force") {
+		t.Fatalf("expected 'requires --force' in error, got: %v", err)
+	}
+
+	// Verify value was NOT cleared.
+	if v, ok := cfg.GetGlobalOption("verbose"); !ok || v != "true" {
+		t.Fatal("expected value preserved when --force is missing")
+	}
+}
+
+func TestConfigReset_AllKeys_WithForce(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config")
+
+	if err := os.WriteFile(configPath, []byte("verbose true\ncolor always\neditor vim\n\n[help]\npager less\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.LoadFromPath(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewConfigCommand(cfg, configPath)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"reset", "--all", "--force"}, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if stderr.Len() > 0 {
+		t.Fatalf("unexpected stderr: %q", stderr.String())
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Reset") && !strings.Contains(out, "key(s) to defaults") {
+		t.Fatalf("expected reset confirmation, got: %q", out)
+	}
+
+	// Verify in-memory: no global keys.
+	if len(cfg.Global) != 0 {
+		t.Fatalf("expected no global keys in memory, got %v", cfg.Global)
+	}
+
+	// Verify on disk: global keys removed, section preserved.
+	reloaded, err := config.LoadFromPath(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.Global) != 0 {
+		t.Fatalf("expected no global keys on disk, got %v", reloaded.Global)
+	}
+	if v, ok := reloaded.GetCommandOption("help", "pager"); !ok || v != "less" {
+		t.Fatalf("expected help.pager=less preserved on disk, got %q exists=%v", v, ok)
+	}
+}
+
+func TestConfigReset_NoArgs_ShowsUsage(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"reset"}, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Usage:") {
+		t.Fatalf("expected usage text, got: %q", out)
+	}
+	if !strings.Contains(out, "config reset <key>") {
+		t.Fatalf("expected single key usage, got: %q", out)
+	}
+	if !strings.Contains(out, "config reset --all") {
+		t.Fatalf("expected --all usage, got: %q", out)
+	}
+}
+
+func TestConfigReset_UnknownFlag(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"reset", "--bogus"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for unknown flag")
+	}
+	if !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("expected 'unknown flag' in error, got: %v", err)
+	}
+}
+
+func TestConfigReset_AllAndKey_Conflict(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"reset", "--all", "verbose"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for --all with key")
+	}
+	if !strings.Contains(err.Error(), "cannot specify both") {
+		t.Fatalf("expected 'cannot specify both' in error, got: %v", err)
+	}
+}
+
+func TestConfigReset_DuplicateKeyArg(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"reset", "verbose", "color"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for multiple keys")
+	}
+	if !strings.Contains(err.Error(), "unexpected argument") {
+		t.Fatalf("expected 'unexpected argument' in error, got: %v", err)
+	}
 }

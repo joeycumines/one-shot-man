@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `osm:path` native module: cross-platform path manipulation wrapping Go's `path/filepath` — `join`, `dir`, `base`, `ext`, `abs`, `rel`, `clean`, `isAbs`, `match`, `glob`, `separator`, `listSeparator`
 - `osm:regexp` native module: Go RE2 regular expressions — `match`, `find`, `findAll`, `findSubmatch`, `findAllSubmatch`, `replace`, `replaceAll`, `split`, `compile` (returns `RegexpObject` with bound methods); invalid patterns throw JS errors
 - `osm:encoding` native module: base64 and hex encoding/decoding — `base64Encode`, `base64Decode`, `base64URLEncode` (URL-safe, no padding), `base64URLDecode`, `hexEncode`, `hexDecode`; decode errors throw JS errors; input accepts strings or byte arrays
+- `osm config reset <key>` subcommand: reset a single configuration key to its schema default, removing it from both in-memory config and the config file on disk
+- `osm config reset --all --force` subcommand: reset all global configuration keys to their schema defaults; comments, section headers, and command-specific options are preserved; `--force` is required as a safety measure
+- `DeleteKeyInFile` and `DeleteAllGlobalKeysInFile` functions in config package for removing global keys from the config file while preserving comments and sections
 - Example script `example-07-flag-parsing.js`: demonstrates `osm:flag` argument parsing (typed flags, defaults, lookup, visit/visitAll, positional args)
 - Example script `example-06-api-client.js`: demonstrates `osm:fetch` HTTP client API (GET, POST with JSON, streaming, error handling, timeouts, response headers)
 - `osm log follow` subcommand as alias for `osm log tail` / `osm log -f` (continuous log tailing)

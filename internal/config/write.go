@@ -97,3 +97,120 @@ func SetKeyInFile(path, key, value string) error {
 
 	return storage.AtomicWriteFile(path, []byte(result), 0644)
 }
+
+// DeleteKeyInFile removes a global option key from the config file.
+// It preserves comments, formatting, and section content. Only global-section
+// keys are matched; keys inside [section] blocks are left untouched.
+// If the key is not found or the file does not exist, no error is returned.
+func DeleteKeyInFile(path, key string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // nothing to delete
+		}
+		return fmt.Errorf("reading config file: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	inGlobalSection := true
+	deleteIndex := -1
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Track section boundaries.
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			inGlobalSection = false
+			continue
+		}
+
+		if !inGlobalSection {
+			continue
+		}
+
+		// Skip comments and empty lines.
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		parts := strings.SplitN(trimmed, " ", 2)
+		if parts[0] == key {
+			deleteIndex = i
+			break
+		}
+	}
+
+	if deleteIndex < 0 {
+		return nil // key not found, nothing to do
+	}
+
+	// Remove the line.
+	lines = append(lines[:deleteIndex], lines[deleteIndex+1:]...)
+
+	result := strings.Join(lines, "\n")
+
+	// Ensure parent directory exists.
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("creating config directory: %w", err)
+	}
+
+	return storage.AtomicWriteFile(path, []byte(result), 0644)
+}
+
+// DeleteAllGlobalKeysInFile removes all global option key lines from the
+// config file. Comments, empty lines, section headers, and section contents
+// are preserved. Returns the number of keys removed.
+// If the file does not exist, returns (0, nil).
+func DeleteAllGlobalKeysInFile(path string) (int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("reading config file: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	inGlobalSection := true
+	kept := make([]string, 0, len(lines))
+	removed := 0
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Track section boundaries.
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			inGlobalSection = false
+			kept = append(kept, line)
+			continue
+		}
+
+		// Preserve everything outside the global section.
+		if !inGlobalSection {
+			kept = append(kept, line)
+			continue
+		}
+
+		// Preserve comments and empty lines in the global section.
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			kept = append(kept, line)
+			continue
+		}
+
+		// This is a global key line — remove it.
+		removed++
+	}
+
+	if removed == 0 {
+		return 0, nil
+	}
+
+	result := strings.Join(kept, "\n")
+
+	// Ensure parent directory exists.
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return 0, fmt.Errorf("creating config directory: %w", err)
+	}
+
+	return removed, storage.AtomicWriteFile(path, []byte(result), 0644)
+}

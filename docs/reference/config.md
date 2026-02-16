@@ -172,10 +172,10 @@ These settings drive the `osm session cleanup` workflow, which removes sessions 
   - Maximum total size of all sessions in megabytes.
   - Must be non-negative (`0` means no limit on size).
 - `autoCleanupEnabled` (bool, default `true`)
-  - **Reserved for future use.** Parsed and validated but no automatic cleanup scheduler exists yet.
+  - Enables automatic session cleanup on startup. When true, the cleanup scheduler runs before each script-executing command, applying `maxAgeDays`, `maxCount`, and `maxSizeMB` thresholds.
   - Accepts: `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off` (case-insensitive).
 - `cleanupIntervalHours` (int, default `24`)
-  - **Reserved for future use.** Parsed and validated but no automatic cleanup scheduler exists yet.
+  - Minimum hours between automatic cleanup runs. The scheduler skips cleanup if less than this interval has elapsed since the last run.
   - Must be at least `1`.
 
 Example:

@@ -45,7 +45,7 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
     - Need to revalidate how the logging API is wired up - the option for log level and output path was added to `osm script`, but should be configurable for _all_ script-like commands, that exercise the scripting engine, could probably use some additional means to configure them, and probably need refactor to wire up more sane (I was using it for debugging / as a means to implement integration tests w/o depending on scraping PTYs - I didn't properly validate it)
     - Consider making commands and subcommands correctly fail upon receiving unexpected arguments or options **DONE (T073)**
 - Investigate/fix/implement `osm config <key> <value>` to persist config changes to disk **DONE (T065)**
-- Add ability to include JS modules directly
+- Add ability to include JS modules directly **PARTIAL — Module resolution implemented via `script.module-paths` config key and `require()` in Goja runtime; standards-compliant ESM not pursued**
     - Need to pick the module resolution / loader strategy. Need to revalidate my understanding of the current standards in the JS ecosystem. Almost certainly want to pick a "sane" subset, tailored for the specific intended use cases. Standards compliance is ideal, however-want to avoid ruling out future interoperability.
 - Implement partially-compliant fetch API backed by the Go http client **DONE (T028 — verified via coverage audit)**
     - If no streaming is required, this is actually quite straightforward: https://gist.github.com/joeycumines/c7da3dbb786428dcaf45f5884cd99798
@@ -57,17 +57,17 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
         - Explore alternative: An eventloop-native in-process gRPC channel implementation, that exposes a Goja JS API _and_ a Go-compatible API <--- This is the sexiest option, but various challenges exist. Seriously attractive to be able to avoid serializing messages at all, though - this can support by far the lowest overhead e.g. allocation implementation.
 - Evaluate potential integration with `github.com/joeycumines/MacosUseSDK`
     - The in-process gRPC channel implementation idea would allow for exposing gRPC APIs to JS code - strongly consider implementing that then using a gRPC proxy mechanism to expose MacOSUseSDK functionality to JS code
-- Add support for https://code.visualstudio.com/docs/copilot/customization/prompt-files ?
+- Add support for https://code.visualstudio.com/docs/copilot/customization/prompt-files ? **PARTIAL — `.prompt.md` file discovery implemented via `prompt.file-paths` config key and goal system; VS Code-specific integration not pursued**
 - Code review splitter - prompts seem particularly LLM dependent, stalled
     - This would be far easier as a proper workflow engine lol
 - Refine "goal" and "script" autodiscovery mechanisms (currently prototype status/needs attention)
 - Investigate implementing Anthropic prompt library (https://platform.claude.com/docs/en/resources/prompt-library/library)
 - Iterate on configuration model for better extensibility and consistency (feels undercooked) **PARTIAL (T065, T082) — schema-aware validation, persistence, and comprehensive documentation added**
 - Enhance definitions and integration with `github.com/joeycumines/go-prompt` implementation
-- Review `tview`/`tcell` support for refinement or removal (probably just leave it as-is for now, remove eventually - bubbletea is the winner of this one)
+- Review `tview`/`tcell` support for refinement or removal (probably just leave it as-is for now, remove eventually - bubbletea is the winner of this one) **PARTIAL (T097) — Full audit completed: 6 tview files (~1,700 lines), 1 JS consumer, 0 example scripts. Migration plan at docs/archive/notes/tview-removal-plan.md with 11-step deletion checklist.**
 - Plan system-style logging (file output, tailing) - likely deferred **PARTIAL — `osm log` command implemented and documented (T081); broader system logging TBD**
-- Fix duplicate log lines for purged sessions etc?
-- Implement automatic session cleanup scheduler using SessionConfig (AutoCleanupEnabled, CleanupIntervalHours, MaxAgeDays, MaxCount, MaxSizeMB)
+- Fix duplicate log lines for purged sessions etc? **DONE (T095) — Already fixed: cleanup.go returns CleanupReport, session.go writes through io.Writer. Regression test `TestSessionsPurge_NoDuplicateLogLines` confirms no duplication.**
+- Implement automatic session cleanup scheduler using SessionConfig (AutoCleanupEnabled, CleanupIntervalHours, MaxAgeDays, MaxCount, MaxSizeMB) **DONE (T096) — CleanupScheduler wired via cleanup_helper.go into scriptCommandBase. 7+3 tests. All 5 SessionConfig fields respected.**
 
 ---
 

@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hot-snippets: `GoalHotSnippet` struct with `hot-` prefix convention and config-to-goal merge
 - `scriptCommandBase` extracting shared `RegisterFlags()` and `PrepareEngine()` across 5 commands, eliminating ~120 lines of boilerplate
 - Auto-generate meta-prompt on first copy via `autoGenerateOnCopy` state flag in prompt-flow
+- Prompt-flow one-step mode: `copy` and `show` work without `goal`/`generate`, outputting raw context when no goal is set
+- `PromptFooter` field in Goal struct with template variable interpolation, appended after generated meta-prompt in prompt-flow and goal CLI
 - Schema-aware config validation via `ValidateOptionValue` before `config set`
 - `computePathLCA` for txtar path disambiguation with context metadata in `ToTxtar` output
 - PATH-based executable completion via `getExecutableSuggestions`

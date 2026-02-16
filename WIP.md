@@ -66,8 +66,8 @@
 - **T087**: ✅ DONE — docs/README.md: reorganized into categories, added 5 missing links, verified all resolve.
 
 ## Next Steps
-1. Commit documentation batch (T079-T087)
-2. T088: Shell completion extensions
-3. T089: Verify example scripts
-4. T090: Go module dependency audit
-5. T091+: Feature work and integration
+1. Commit T095-T098 documentation batch
+2. T099: Final integration macOS (make make-all-with-log)
+3. T100: Final integration Linux (make make-all-in-container)
+4. T101: Final integration Windows (make make-all-run-windows)
+5. T102: Scope expansion

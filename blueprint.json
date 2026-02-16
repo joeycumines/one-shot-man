@@ -184,22 +184,26 @@
     {
       "task": "T095: Investigate duplicate log lines for purged sessions",
       "description": "Per docs/todo.md. Investigate, reproduce, fix, regression test. Document findings if unable to reproduce.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Already fixed. cleanup.go returns CleanupReport, session.go writes through io.Writer. TestSessionsPurge_NoDuplicateLogLines regression test exists and passes."
     },
     {
       "task": "T096: Implement session cleanup scheduler",
       "description": "Wire SessionConfig (AutoCleanupEnabled, CleanupIntervalHours, MaxAgeDays, MaxCount, MaxSizeMB). Lightweight trigger on startup. Interval tracking. Policy application. Tests + docs.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Already implemented. CleanupScheduler runs via cleanup_helper.go, wired into scriptCommandBase. 7 scheduler tests + 3 helper tests. All 5 SessionConfig fields respected. Documented in session.md."
     },
     {
       "task": "T097: Plan tview/tcell module removal",
       "description": "Audit all tview dependencies. Check example scripts. Write migration guide. Create deletion checklist. Do NOT execute removal.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Full audit: 6 tview files (~1,700 lines), 1 JS consumer (prompt_flow_script.js view cmd), 0 example scripts. Migration plan at docs/archive/notes/tview-removal-plan.md with 11-step checklist."
     },
     {
       "task": "T098: Final docs cross-reference validation",
       "description": "Verify: all links resolve, all commands documented, all config keys documented, all modules documented, all goals mentioned, bidirectional cross-refs, README index complete, todo.md annotated, CHANGELOG populated.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Full audit: README ✅, 13 commands ✅, 21 modules ✅, all config keys ✅, 10 goals ✅. Fixed: CHANGELOG missing T092/T093 entries, stale 'reserved for future use' on autoCleanupEnabled/cleanupIntervalHours in configuration.md and config.md, 3 missing todo.md annotations (prompt files, tview T097, JS modules)."
     },
     {
       "task": "T099: Final integration: macOS",

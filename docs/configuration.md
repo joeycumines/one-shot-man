@@ -145,8 +145,8 @@ Keys:
 - `maxAgeDays` (int, default `90`) — sessions older than this are eligible for cleanup
 - `maxCount` (int, default `100`) — maximum number of sessions to retain
 - `maxSizeMB` (int, default `500`) — maximum total size of all sessions in MB
-- `autoCleanupEnabled` (bool, default `true`) — *reserved for future use*; parsed and validated but no automatic cleanup scheduler exists yet
-- `cleanupIntervalHours` (int, default `24`) — *reserved for future use*; parsed and validated but no automatic cleanup scheduler exists yet
+- `autoCleanupEnabled` (bool, default `true`) — enables automatic session cleanup on startup; when true, the cleanup scheduler runs before each script-executing command
+- `cleanupIntervalHours` (int, default `24`) — minimum hours between automatic cleanup runs; the scheduler skips cleanup if less than this interval has elapsed since the last run
 
 All integer values must be non-negative (`cleanupIntervalHours` must be at least 1).
 ## Environment variables

@@ -14,33 +14,9 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T132 completed (coverage audits, API optimization, profiling, security, bug fixes, features, sync implementation, config migration, TUI removal, logging system, session cleanup). T133-T142 are PARTIAL (module resolution, fetch streaming, VS Code integration, code review splitter, prompt library, config refinement). T143-T155: AI Orchestrator / Claude Code Integration (NEW - architectural design phase). T156-T158: go-git migration for sync operations."
+    "currentState": "Takumi needs to stop skipping and leaving tasks as partial. Quality is more important than speed. Sequential tasks are to be executed IN SEQUENCE. Completion is only possible by working in proper sequence. Partial completion is a failure mode. The blueprint must be fully complete and up to date at all times. This is non-negotiable. Takumi must stop leaving tasks as partial and ensure the blueprint is fully complete and up to date at all times."
   },
   "sequentialTasks": [
-    {
-      "task": "T124: Code review chunking for large diffs",
-      "description": "Implement automatic splitting of large diffs into LLM-digestible chunks in code-review command. Configurable token/line budget per chunk. Series of prompts (chunk 1/N...) with shared context header.",
-      "status": "Done",
-      "outcome": "Already fully implemented. diff_splitter.go with SplitDiff (500-line default, bin-packing, hunk-level splitting). review-chunks JS command in code_review_script.js. 13 tests across diff_splitter_test.go and code_review_chunk_test.go."
-    },
-    {
-      "task": "T125: Add osm:json module for structured JSON manipulation",
-      "description": "Go-backed JSON utilities: jsonpath queries, json merge-patch (RFC 7386), json diff, json schema validation. For data transformation workflows.",
-      "status": "Done",
-      "outcome": "Created osm:json module (jsonmod pkg) with 7 functions: parse, stringify, query (dot/bracket/wildcard), mergePatch (RFC 7386), diff (JSON Pointer), flatten, unflatten. 80+ tests. Registered in register.go. Docs updated."
-    },
-    {
-      "task": "T126: Config directory migration to ~/.osm and discovery path consolidation",
-      "description": "Migrate config directory from current location to ~/.osm (per docs/todo.md). Consolidate osm configuration to align with https://code.claude.com/docs/en/settings model. Change script and goal discovery behavior: aggressively cull/tidy functionality, STRICTLY support discovery within project-level directories (up-the-CWD discovery that terminates at the nearest parent) and in user/system-level directories. Review current implementation for user and system discovery paths.",
-      "status": "Done",
-      "outcome": "Migrated ~/.one-shot-man→~/.osm (config), one-shot-man/sessions→osm/sessions (storage), .one-shot-man/sync→.osm/sync (sync). GetConfigPath() with 4-level fallback: env→new dir→legacy file→new default. 6 new tests. 26 files changed, 212 insertions. Committed 58094c9."
-    },
-    {
-      "task": "T127: Add 'which one is better' builtin goal",
-      "description": "Add 'which one is better' builtin goal to internal/command/goal_builtin.go. Implement exhaustive options analysis, tailored for a wide range of use cases. Create specific use case variants, leveraging existing patterns (stateVars, hotSnippets, flagDefs, promptOptions) like morale-improver, bug-buster, code-optimizer. Target maximizing utility and general usefulness. MUST be integration tested properly.",
-      "status": "Done",
-      "outcome": "Added which-one-is-better goal (14→15 builtins, 13→14 categories). 5 comparison types (general/technology/architecture/strategy/design) via comparisonTypeInstructions PromptOptions. set-type command. 2 hot-snippets (deeper-analysis, devils-advocate). PostCopyHint. 6-phase analysis methodology. 8 new tests + 1 updated test. Docs: goal.md, architecture.md, CHANGELOG.md, todo.md."
-    },
     {
       "task": "T128: Replace git shell-outs in sync.go with go-git/v6 (clone, add, commit, push, pull)",
       "description": "Replace exec.Command git calls in internal/command/sync.go with github.com/go-git/go-git/v6 library. Operations to convert: clone, add, commit, push, pull. Design constraints: prefer streaming file reads/writes directly from git objects (avoid temp files, avoid buffering entire files to disk), go-git API is 'fucky' - use pragmatically where it works, don't force it where it fights you. Preserve: pull uses --rebase strategy, push commits with timestamp message 'osm sync: <RFC3339>', conflict detection ('CONFLICT' or 'could not apply'). Exception: diff commands (osm ctx add --from-diff) continue using CLI git - no change. Update sync_test.go to work with go-git or mock appropriately.",
@@ -55,18 +31,6 @@
       "task": "T130: Verify sync tests pass after go-git migration",
       "description": "Run full sync test suite (internal/command/sync_test.go, internal/command/sync_startup_test.go) to verify all behaviors preserved: save/list/load, init/push/pull, auto-pull, path injection. Ensure no regressions. Coverage should remain high.",
       "status": "Not Started"
-    },
-    {
-      "task": "T131: Remove unused sync.enabled config key",
-      "description": "Remove sync.enabled from internal/config/schema.go (line 495) - it's defined but never used anywhere in the codebase. Also update any tests or documentation referencing it.",
-      "status": "Done",
-      "outcome": "Removed sync.enabled from schema.go, schema_test.go, benchmark_test.go, config.md, configuration.md, git-sync-design.md. CHANGELOG entry added. todo.md annotated. Also fixed pre-existing completion test missing which-one-is-better goal."
-    },
-    {
-      "task": "T132: Verify TestSuperDocument_BacktabNavigation for flakiness",
-      "description": "Run TestSuperDocument_BacktabNavigation multiple times in parallel (e.g., 5-10 iterations) and on Linux via Docker to verify stability. ANY flakiness MUST be fixed immediately. VERIFY FIXES by re-running the same parallel/Linux tests until NO flakes occur for minimum 5 consecutive runs. Document any changes made and confirm stability.",
-      "status": "Done",
-      "outcome": "Root cause: inconsistent inter-keystroke delays (4-20ms) across PTY integration tests caused character drops under CPU load. Fix: added ptyCharDelay constant (25ms) and replaced all 13 character-typing delays across both test files. 5/5 consecutive passes verified."
     },
     {
       "task": "T133: Module resolution for JS require()",
@@ -194,43 +158,13 @@
       "status": "Not Started"
     },
     {
-      "task": "T156: Update user-visible 'one-shot-man' strings to 'osm'",
-      "description": "After T126 migrated config dir to ~/.osm, several user-visible strings still reference 'one-shot-man'. Update: builtin.go appName constant, os.go homeDir references, completion_command.go descriptions. Keep go.mod module path and internal package paths unchanged.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T157: Fix inconsistent fmt.Fprint* error handling",
-      "description": "4 call sites use bare fmt.Fprint/Fprintf without _, _ = prefix, inconsistent with project style. Fix all to use _, _ = or handle errors explicitly.",
-      "status": "Not Started"
-    },
-    {
       "task": "T158: Exec-safe shell quoting in osm:argv formatArgv",
       "description": "TODO at internal/scripting/argv/argv_module.go line ~34: formatArgv needs exec-safe shell quoting. Currently joins with spaces but doesn't handle special chars. Implement proper POSIX shell quoting.",
       "status": "Not Started"
     },
     {
-      "task": "T159: Remove deprecated MouseTestAPI shim",
-      "description": "internal/mouseharness/mouse_util_test.go contains a deprecated MouseTestAPI compatibility shim. Remove it and update all call sites to use the current API directly.",
-      "status": "Not Started"
-    },
-    {
       "task": "T160: Migrate textarea runeWidth to uniseg grapheme clusters",
       "description": "internal/scripting/textarea/textarea.go uses deprecated runeWidth function. Migrate to github.com/rivo/uniseg grapheme cluster width for proper Unicode support (emoji, ZWJ sequences, etc.).",
-      "status": "Not Started"
-    },
-    {
-      "task": "T161: Add error logging for log rotation failures",
-      "description": "internal/scripting/log_rotate.go silently swallows errors during log file rotation. Add stderr logging or return errors so rotation failures are visible.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T162: Remove deprecated VHS WithSettings method",
-      "description": "internal/scripting/vhs_recorder.go contains a deprecated WithSettings method. Remove it and update all call sites to use the current configuration API.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T163: Remove deprecated mouseharness ScrollWheel methods",
-      "description": "internal/mouseharness/ contains deprecated ScrollWheelUp/ScrollWheelDown methods. Remove them and update all call sites to use current scroll API.",
       "status": "Not Started"
     },
     {
@@ -241,11 +175,6 @@
     {
       "task": "T165: Detailed docs for underdocumented osm: modules",
       "description": "Several osm: modules (osm:time, osm:nextIntegerId, osm:unicodetext, osm:scrollbar) have minimal documentation in scripting.md. Add detailed API docs with examples for each.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T166: Clean up suppress-unused-warning patterns in pickandplace tests",
-      "description": "internal/scripting/pickandplace/*_test.go files contain suppress-unused-warning patterns (var _ = someFunc). Replace with proper test usage or remove if the functions are tested elsewhere.",
       "status": "Not Started"
     },
     {

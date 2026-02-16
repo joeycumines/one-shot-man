@@ -14,7 +14,7 @@
     "constraint": "The use of subagents via the `runSubagent` tool is MANDATORY for the execution of the tasks below. Tasks are grouped specifically to be run in distinct subagent contexts to prevent context window exhaustion. Do not attempt to solve all groups in a single turn."
   },
   "statusSection": {
-    "currentState": "T001-T076 completed (coverage audits, API optimization, profiling, security, bug fixes, features). T077 (Windows) In Progress — code changes committed (307165b), actual Windows test run pending. T078-T102 planned: platform verification, documentation overhaul, CHANGELOG, shell completion, QoL features, session cleanup, dependency audit, final integration, scope expansion."
+    "currentState": "T001-T132 completed (coverage audits, API optimization, profiling, security, bug fixes, features, sync implementation, config migration, TUI removal, logging system, session cleanup). T133-T142 are PARTIAL (module resolution, fetch streaming, VS Code integration, code review splitter, prompt library, config refinement). T143-T155: AI Orchestrator / Claude Code Integration (NEW - architectural design phase). T156-T158: go-git migration for sync operations."
   },
   "sequentialTasks": [
     {
@@ -57,16 +57,141 @@
       "status": "Not Started"
     },
     {
+      "task": "T131: Remove unused sync.enabled config key",
+      "description": "Remove sync.enabled from internal/config/schema.go (line 495) - it's defined but never used anywhere in the codebase. Also update any tests or documentation referencing it.",
+      "status": "Done",
+      "outcome": "Removed sync.enabled from schema.go, schema_test.go, benchmark_test.go, config.md, configuration.md, git-sync-design.md. CHANGELOG entry added. todo.md annotated. Also fixed pre-existing completion test missing which-one-is-better goal."
+    },
+    {
       "task": "T132: Verify TestSuperDocument_BacktabNavigation for flakiness",
       "description": "Run TestSuperDocument_BacktabNavigation multiple times in parallel (e.g., 5-10 iterations) and on Linux via Docker to verify stability. ANY flakiness MUST be fixed immediately. VERIFY FIXES by re-running the same parallel/Linux tests until NO flakes occur for minimum 5 consecutive runs. Document any changes made and confirm stability.",
       "status": "Done",
       "outcome": "Root cause: inconsistent inter-keystroke delays (4-20ms) across PTY integration tests caused character drops under CPU load. Fix: added ptyCharDelay constant (25ms) and replaced all 13 character-typing delays across both test files. 5/5 consecutive passes verified."
     },
     {
-      "task": "T131: Remove unused sync.enabled config key",
-      "description": "Remove sync.enabled from internal/config/schema.go (line 495) - it's defined but never used anywhere in the codebase. Also update any tests or documentation referencing it.",
-      "status": "Done",
-      "outcome": "Removed sync.enabled from schema.go, schema_test.go, benchmark_test.go, config.md, configuration.md, git-sync-design.md. CHANGELOG entry added. todo.md annotated. Also fixed pre-existing completion test missing which-one-is-better goal."
+      "task": "T133: Module resolution for JS require()",
+      "description": "Add ability to include JS modules directly. Need to pick module resolution/loader strategy. Revalidate understanding of current JS ecosystem standards. Want 'sane' subset tailored for specific use cases. Standards compliance ideal but don't rule out future interoperability. CURRENT STATE: Module resolution implemented via script.module-paths config key and require() in Goja runtime. Standards-compliant ESM NOT pursued. PARTIAL.",
+      "status": "Partial",
+      "outcome": "Module resolution via script.module-paths and require() implemented. Standards-compliant ESM (ECMAScript Modules with import/export) NOT pursued. This is a conscious scope limitation - full ESM support remains out of scope."
+    },
+    {
+      "task": "T134: Streaming support for fetch API",
+      "description": "Implement streaming support for fetch API. Requires eventloop-native in-process gRPC channel between JS client and Go server, or reactor-style HTTP client in Go backed by unpublished github.com/joeycumines/go-eventloop module. Expose compliant fetch API on top. Alternative: in-process gRPC channel implementation exposing both Goja JS API and Go-compatible API (sexiest option, avoids serialization). Full streaming support is complex - non-streaming already done in T028. PARTIAL - currently deferred.",
+      "status": "Partial",
+      "outcome": "Non-streaming fetch implemented (T028). Streaming support requires in-process gRPC channel or reactor-style HTTP client. Deferred due to complexity. Not blocking for current use cases."
+    },
+    {
+      "task": "T135: VS Code .prompt.md file discovery and integration",
+      "description": "Add support for https://code.visualstudio.com/docs/copilot/customization/prompt-files. .prompt.md file discovery via prompt.file-paths config key and goal system. VS Code-specific integration NOT pursued - only the file discovery mechanism. PARTIAL.",
+      "status": "Partial",
+      "outcome": ".prompt.md file discovery implemented via prompt.file-paths config key. VS Code-specific integration (editor integration, Copilot Chat integration) NOT pursued. Scope limited to file discovery only."
+    },
+    {
+      "task": "T136: Code review splitter - LLM-dependent prompts",
+      "description": "Code review splitter prompts seem particularly LLM dependent, stalled. Would be easier as proper workflow engine. Referenced in docs/todo.md as stalled. PARTIAL - basic chunking implemented (T124) but prompt refinement may be needed for different LLMs.",
+      "status": "Partial",
+      "outcome": "Diff splitting infrastructure complete (T124). LLM-specific prompt optimization remains open-ended. May require per-LLM prompt tuning or workflow engine integration."
+    },
+    {
+      "task": "T137: MacOSUseSDK integration via gRPC",
+      "description": "Evaluate potential integration with github.com/joeycumines/MacosUseSDK. In-process gRPC channel implementation would allow exposing gRPC APIs to JS code. Consider implementing gRPC proxy mechanism to expose MacOSUseSDK functionality to JS code. Requires T134 (in-process gRPC) first. NOT STARTED.",
+      "status": "Not Started",
+      "outcome": "Deferred pending T134 (in-process gRPC channel). MacOSUseSDK integration requires gRPC infrastructure."
+    },
+    {
+      "task": "T138: Enhance definitions and integration with github.com/joeycumines/go-prompt",
+      "description": "Enhance definitions and integration with go-prompt implementation. Details to be determined - reference existing go-prompt usage in codebase.",
+      "status": "Not Started",
+      "outcome": "Deferral pending clarification on specific enhancements needed."
+    },
+    {
+      "task": "T139: Full Anthropic prompt library integration",
+      "description": "Complete investigation and implementation of Anthropic prompt library (https://platform.claude.com/docs/en/resources/prompt-library/library). Currently PARTIAL (T074, T107) with morale-improver, bug-buster, code-optimizer, code-explainer, meeting-notes, pii-scrubber, prose-polisher. Additional prompts from library may be valuable.",
+      "status": "Partial",
+      "outcome": "6 Anthropic-inspired goals implemented. Full library coverage not complete - additional prompts may be added based on user demand."
+    },
+    {
+      "task": "T140: Configuration model - further refinement",
+      "description": "Continue iteration on configuration model for better extensibility and consistency. Schema-aware validation, persistence, and documentation added (T065, T082) but model may still need refinement based on usage.",
+      "status": "Partial",
+      "outcome": "Schema validation and persistence implemented. Configuration model considered 'undercooked' in docs/todo.md - may need further iteration based on real-world usage patterns."
+    },
+    {
+      "task": "T141: Goal and script discovery - further refinement",
+      "description": "Continue refinement of goal and script autodiscovery mechanisms. Basic path commands added (T109) but full prototype-to-production refinement may be needed.",
+      "status": "Partial",
+      "outcome": "osm goal paths and osm script paths commands added. Debug logging exists. Discovery mechanism marked as 'prototype status/needs attention' in docs/todo.md - may need production hardening."
+    },
+    {
+      "task": "T142: Reconsider streaming fetch API - pragmatic approach",
+      "description": "Re-evaluate whether full streaming fetch API (T134) is needed or if pragmatic alternatives exist. Consider: chunked responses, callback-based APIs, or simplified streaming interfaces. Full eventloop-native gRPC may be overkill for actual use cases.",
+      "status": "Not Started",
+      "outcome": "Requires review of actual use cases for streaming. May simplify or defer if non-blocking operations suffice."
+    },
+    {
+      "task": "T143: AI Orchestrator - PTY spawning and terminal management",
+      "description": "See docs/todo.md 'AI Orchestrator / Claude Code Integration (2026-02-17)'. Component 1: PTY Wrapper Module - extend osm:exec (or create osm:pty) to support spawning processes with full PTY. Terminal State Preservation, Signal Forwarding (SIGWINCH, SIGINT, SIGTERM), Input/Output Bridging. Reference: internal/scripting/pty_test.go shows PTY capability using github.com/creack/pty.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T144: AI Orchestrator - MCP bidirectional data exfiltration",
+      "description": "Component 2: Extend existing MCP server (internal/command/mcp.go) for bidirectional communication. Claude Code runs as MCP client connecting back to osm. Session identification for multiple instances. Tool exfiltration: Claude uses MCP tools to send structured data (split PR descriptions, test results) back to osm. Existing 6 tools (addFile, addDiff, addNote, listContext, buildPrompt, getGoals) provide foundation.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T145: AI Orchestrator - PTY parsing for setup/init/error handling",
+      "description": "Component 3: PTY output capture is mandatory for rate limit handling, error detection, context clearing, output verification. Parse for: rate limit prompts (detect and wait/handle), permission prompts (conservative rejection with reasons - be secure), model selection menus (ollama launch claude --config TUI wrapper), SSO login flows (aws-vault, etc.). Security principle: default to rejecting permission prompts with clear reasons.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T146: AI Orchestrator - Configuration and environment variable management",
+      "description": "Three-tier approach: (1) Shared with osm - Claude Code inherits osm's environment (API keys, MCP config), (2) Script Hooks - JavaScript scripts run hooks to inject env vars at spawn time (op plugin for 1Password, aws-vault for AWS), (3) Profile-Based Configuration - separate env var profiles in osm config with CLI flag overrides. Special handling for provider-specific commands (ollama launch claude --config).",
+      "status": "Not Started"
+    },
+    {
+      "task": "T147: AI Orchestrator - Provider abstraction (first pass: single instance)",
+      "description": "Provider abstraction for AI orchestration. First pass: single instance support only. Future: modular, extensible design for multiple concurrent instances, different providers (GitHub CLI, Gemini CLI, Codium CLI), provider-specific configuration (ollama model selection TUI navigation). Design for extensibility from the start.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T148: AI Orchestrator - Behavior tree orchestration engine",
+      "description": "Use behavior trees (PABT) for high-level workflow control with prebuilt action templates. Behavior trees are INTERNAL implementation detail - not exposed to users. High-level orchestration: manage workflow structure. Action templates: prebuilt modes for common operations. Claude-centric execution: steps execute through Claude Code. Prompt-based control: prompts to Claude, MCP for communication back. Planning on failure: when step fails, LLM generates new plan with clear validation points and actionable remediation steps. Skills Integration: skills system provides domain knowledge for remediation.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T149: AI Orchestrator - PR splitting branch structure and workflow",
+      "description": "Specific use case: interactive PR splitting. Branch structure: linear series of branches, each with root (base branch), bottom-most based on trunk (original branch), hierarchy from outer to inner, each staged part is mergeable unit. Interactive Rebasing Workflow: interleaved AI assistance, branch rebased into components/commits, sanity verification in tandem with AI, user controls safety/verification/explicit checks. Equivalence Verification: final branch must represent original branch, split preserves semantics, user validates nothing lost unexpectedly. Non-negotiable - 'slop is bad'.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T150: AI Orchestrator - TUI multiplexing with meta-key switching",
+      "description": "osm acts as multiplexer swapping between its own TUI and external tool's TUI via meta-key switching (tmux-style). User is tmux user - must avoid conflicting with tmux keybindings. Terminal state management critical.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T151: AI Orchestrator - Special-case TestMain for integration testing",
+      "description": "Testing mechanism: (1) Spawn Claude command from osm, (2) Prompt with task instructions, (3) Response via MCP back to wrapping osm process. TestMain with CLI flags: configure provider(s) to test against, env vars for secrets (never hardcode), disabled by default (-test-integration flag), provider-specific configuration. Example: Ollama testing requires navigating TUI menu to select gpt-oss:20b-cloud model.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T152: AI Orchestrator - Error recovery and cancellation",
+      "description": "How should osm handle: Claude Code crashes, hangs, unexpected exits? Progress reporting from long-running operations? User cancellation of in-progress operations? Signal handling and cleanup critical.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T153: AI Orchestrator - Session isolation for multi-instance",
+      "description": "Future requirement: how should osm isolate multiple Claude Code sessions? Session identification, state management, resource isolation. Design for this from start even if first pass is single-instance only.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T154: AI Orchestrator - Expose building blocks to users",
+      "description": "Various building blocks must be exposed to users for their own implementations. Examples in scripts/ including for PA-BT. PTY spawning, MCP communication, behavior tree templates should all be accessible as modules/commands.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T155: AI Orchestrator - Architectural design and approval",
+      "description": "Complete architectural design phase with multiple implementation approaches (minimal changes, clean architecture, pragmatic balance). Compare trade-offs, create concrete implementation plan, seek user approval before implementation begins. This is the gate before T143-T154 implementation.",
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {

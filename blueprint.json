@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200 DONE (5b86238), T201 DONE (c5ecde8), T202 DONE (54cc73d), T203 DONE (14fa5dd), T204 DONE (879930c), T205 DONE (3894d38), T206 DONE. Session 2026-02-17. Proceeding to T207."
+    "currentState": "T200 DONE (5b86238), T201 DONE (c5ecde8), T202 DONE (54cc73d), T203 DONE (14fa5dd), T204 DONE (879930c), T205 DONE (3894d38), T206 DONE (36f6403), T207 PENDING REVIEW. Session 2026-02-17."
   },
   "sequentialTasks": [
     {
@@ -55,7 +55,7 @@
     {
       "task": "T207: Test coverage for internal/storage/inspector.go",
       "description": "Add comprehensive unit tests for internal/storage/inspector.go. Cover all exported functions with positive/negative cases and edge cases. Use memory storage backend for isolation. Target 100% line coverage of inspector.go. Verify with go tool cover. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T208: Test coverage for internal/scripting/tui_commands.go",

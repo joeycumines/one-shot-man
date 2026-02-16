@@ -3,6 +3,7 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -39,12 +40,12 @@ func ScanSessions() ([]SessionInfo, error) {
 			continue
 		}
 		name := e.Name()
-		if filepath.Ext(name) != ".json" {
+		const suffix = ".session.json"
+		if !strings.HasSuffix(name, suffix) {
 			continue
 		}
 
-		// Expect name format: {id}.session.json
-		base := name[:len(name)-len(".session.json")]
+		base := name[:len(name)-len(suffix)]
 		path := filepath.Join(dir, name)
 
 		fi, err := os.Stat(path)

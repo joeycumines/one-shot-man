@@ -154,12 +154,14 @@
     {
       "task": "T090: Go module dependency audit",
       "description": "Run 'go list -m -u all', 'govulncheck ./...', 'go mod tidy'. Key deps: goja, goja_nodejs, go-prompt, tcell/tview, charmbracelet/*. Update security-fix deps. Verify 'make all' passes.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Zero vulnerabilities. go.mod clean. 5 minor updates available, 1 major (bubbles v1.0). No security-critical updates."
     },
     {
       "task": "T091: Annotate completed items in docs/todo.md",
       "description": "Review every item in docs/todo.md. Add inline annotations like '**DONE (T065)**'. For partial items, add notes. Do NOT modify original text.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "14 items annotated DONE, 3 PARTIAL. Cross-referenced against T021-T090 outcomes."
     },
     {
       "task": "T092: Prompt-flow QoL: one-step mode",

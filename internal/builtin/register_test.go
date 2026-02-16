@@ -32,6 +32,7 @@ func TestRegister(t *testing.T) {
 		"osm:nextIntegerId",
 		"osm:exec",
 		"osm:os",
+		"osm:path",
 		"osm:time",
 		"osm:ctxutil",
 	}

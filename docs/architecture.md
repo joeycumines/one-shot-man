@@ -144,6 +144,7 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 | `osm:exec` | Execute shell commands with stdout/stderr capture |
 | `osm:flag` | Flag parsing with tab-completion support |
 | `osm:os` | File I/O, environment variables, OS information |
+| `osm:path` | Path manipulation (join, dir, base, ext, abs, rel, glob) |
 | `osm:time` | Time utilities, sleep, duration formatting |
 | `osm:fetch` | HTTP client (GET, POST, etc.) |
 | `osm:grpc` | gRPC client with protobuf descriptor loading |
@@ -394,7 +395,7 @@ CLI args → main.go → Registry.Get(cmd)
                                   ↓
                           Engine created with:
                           - Goja VM + event loop
-                          - 20 native modules
+                          - 21 native modules
                           - TUI manager + state
                           - Session persistence
                           - Context manager

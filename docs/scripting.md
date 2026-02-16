@@ -182,6 +182,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:os` | OS interactions (files, clipboard, editor, environment) | `readFile(path) → {content, error, message}`, `fileExists(path) → bool`, `openEditor(nameHint, initialContent) → string`, `clipboardCopy(text)` (supports `OSM_CLIPBOARD` override), `getenv(key) → string` |
 | `osm:exec` | Process execution | `exec(cmd, ...args) → {stdout, stderr, code, error, message}`, `execv(argv[]) → {stdout, stderr, code, error, message}` |
 | `osm:flag` | Go `flag` package wrapper for argument parsing | `newFlagSet(name?) → FlagSet`; FlagSet methods: `.string(name, default, usage)`, `.int(…)`, `.bool(…)`, `.float64(…)`, `.parse(argv) → {error}`, `.get(name)`, `.args()`, `.nArg()`, `.nFlag()`, `.lookup(name)`, `.defaults()`, `.visit(fn)`, `.visitAll(fn)` |
+| `osm:path` | Go `path/filepath` wrapper for path manipulation | `join(...args) → string`, `dir(path) → string`, `base(path) → string`, `ext(path) → string`, `abs(path) → {result, error}`, `rel(basepath, targpath) → {result, error}`, `clean(path) → string`, `isAbs(path) → bool`, `match(pattern, name) → {matched, error}`, `glob(pattern) → {matches, error}`, `separator`, `listSeparator` |
 | `osm:time` | Time utilities | `sleep(ms)` — synchronous sleep (milliseconds) |
 | `osm:argv` | Command-line string parsing | `parseArgv(cmdline) → string[]`, `formatArgv(argv[]) → string` |
 

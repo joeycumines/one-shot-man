@@ -77,4 +77,5 @@
 9. T113: ✅ DONE — Added example-07-flag-parsing.js (osm:flag demo with typed flags, parse, defaults, lookup, visit/visitAll, positional args).
 10. T114: ✅ DONE — Upgraded bubbles v0.21.1→v1.0.0 (honorary release, zero API changes). Fixed stale context header test.
 11. T115: ✅ DONE — Replaced hardcoded path hack with dynamic filepath.Rel computation. Fixed arg quoting to use quoteVHSString.
-12. Continue T116-T125
+12. T116: ✅ DONE — Created osm:path module (pathmod pkg). 42 tests, 97.7% coverage. join/dir/base/ext/abs/rel/clean/isAbs/match/glob/separator/listSeparator. Registered. Docs + CHANGELOG updated.
+13. Continue T117-T125

@@ -307,7 +307,8 @@
     {
       "task": "T116: Add osm:path module for cross-platform path manipulation",
       "description": "Expose Go path/filepath: Join, Dir, Base, Ext, Abs, Rel, Clean, Match, Glob, IsAbs, separator constants. Enables portable scripts across Windows/macOS/Linux.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Created pathmod package (path.go + path_test.go). 42 tests, 97.7% coverage. Registered as osm:path. Updated scripting.md, architecture.md, CHANGELOG.md."
     },
     {
       "task": "T117: Implement osm:crypto module for hash/checksum operations",

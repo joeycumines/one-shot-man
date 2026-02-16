@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ResolveAll` and `ResolveDiff` methods on `ConfigSchema` for programmatic access to resolved configuration with source tracking
 - `ConfigSource`, `ResolvedOption` types in config package for structured source metadata
 - `osm mcp` command: MCP (Model Context Protocol) server mode over stdio transport with 6 tools — `addFile`, `addDiff`, `addNote`, `listContext`, `buildPrompt`, `getGoals` — enabling integration with Claude Desktop, VS Code Copilot, and other MCP clients
+- `osm:json` native module: JSON utilities — `parse`, `stringify`, `query` (dot-notation/array-indexing/wildcard path queries), `mergePatch` (RFC 7386), `diff` (JSON Pointer paths), `flatten`/`unflatten` (nested↔flat conversion)
 - `osm:crypto` native module: cryptographic hash functions wrapping Go's `crypto` package — `sha256`, `sha1`, `md5`, `hmacSHA256`, `hmacSHA1` — all return hex-encoded lowercase strings; input accepts strings or byte arrays
 - `osm:path` native module: cross-platform path manipulation wrapping Go's `path/filepath` — `join`, `dir`, `base`, `ext`, `abs`, `rel`, `clean`, `isAbs`, `match`, `glob`, `separator`, `listSeparator`
 - Example script `example-07-flag-parsing.js`: demonstrates `osm:flag` argument parsing (typed flags, defaults, lookup, visit/visitAll, positional args)

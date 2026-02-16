@@ -142,6 +142,7 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 |--------|-------------|
 | `osm:argv` | Command-line argument parsing |
 | `osm:crypto` | Cryptographic hash functions (SHA-256, SHA-1, MD5, HMAC) |
+| `osm:json` | JSON utilities (parse, stringify, query, mergePatch, diff, flatten/unflatten) |
 | `osm:exec` | Execute shell commands with stdout/stderr capture |
 | `osm:flag` | Flag parsing with tab-completion support |
 | `osm:os` | File I/O (read, write, append), environment variables, clipboard, editor |

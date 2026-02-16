@@ -83,3 +83,9 @@
 15. T119: ✅ DONE — Added config list and config diff subcommands with source tracking (default/config/env). ResolveAll/ResolveDiff on ConfigSchema. Shell completion updated. 21 tests.
 16. T120: ✅ DONE — Added bench-save and bench-compare Make targets. bench-save runs all benchmarks (count=5, timeout=300s), filters to benchstat-compatible format, saves bench-baseline.txt (655 benchmarks). bench-compare compares against baseline via benchstat (with diff fallback). bench-current.txt gitignored.
 17. Continue T121-T125
+18. T121: ✅ DONE — Committed b198c33. writeFile/appendFile in osm:os.
+19. T122: ✅ DONE — Committed 754fff1. Multiline input (Alt+Enter) in go-prompt.
+20. T123: ✅ DONE — Committed 63289ac. 5 example JSON goal files in goals/examples/.
+21. T124: ✅ DONE — Already implemented. diff_splitter.go with SplitDiff.
+22. T125: ✅ DONE — osm:json module (7 functions, 80+ tests). Rule of Two passed.
+23. Continue T126-T127

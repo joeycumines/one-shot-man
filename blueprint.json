@@ -355,12 +355,14 @@
     {
       "task": "T124: Code review chunking for large diffs",
       "description": "Implement automatic splitting of large diffs into LLM-digestible chunks in code-review command. Configurable token/line budget per chunk. Series of prompts (chunk 1/N...) with shared context header.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Already fully implemented. diff_splitter.go with SplitDiff (500-line default, bin-packing, hunk-level splitting). review-chunks JS command in code_review_script.js. 13 tests across diff_splitter_test.go and code_review_chunk_test.go."
     },
     {
       "task": "T125: Add osm:json module for structured JSON manipulation",
       "description": "Go-backed JSON utilities: jsonpath queries, json merge-patch (RFC 7386), json diff, json schema validation. For data transformation workflows.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Created osm:json module (jsonmod pkg) with 7 functions: parse, stringify, query (dot/bracket/wildcard), mergePatch (RFC 7386), diff (JSON Pointer), flatten, unflatten. 80+ tests. Registered in register.go. Docs updated."
     },
     {
       "task": "T126: Config directory migration to ~/.osm and discovery path consolidation",

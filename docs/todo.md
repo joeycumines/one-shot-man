@@ -11,6 +11,23 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
         - Auto-override for files that exist and are in a known state (tracked via commit SHA)
         - Handle gitignored files specially - personal preference files may need manual updates (since they're typically gitignored and therefore won't receive auto-updates from pulls)
         - Consider special-case handling for resolving compatibility concerns (e.g., schema version mismatches, deprecated fields, etc.)
+    - Replace shell-out to system `git` binary with github.com/go-git/go-git/v6 library for core sync operations
+        - Current implementation shells out to `git` binary (exec.Command) in sync.go and sync_startup.go. This adds a system dependency and complicates testing.
+        - Replace with go-git for: clone, add, commit, push, pull operations
+        - Exception: diff commands (`osm ctx add --from-diff`, etc.) continue using CLI git — no change needed there
+        - Design constraints for go-git usage:
+            - Prefer streaming file reads/writes directly from git objects — avoid temp files, avoid buffering entire files to disk unnecessarily
+            - Use case is syncing configuration files — should be small, shouldn't need streaming-large-file support, but don't add unnecessary disk I/O
+            - go-git API is "fucky" (their words, not mine) — use pragmatically, don't force it where it fights you
+            - Particularly problematic areas to watch: tree traversal, blob reading, working directory management
+        - Key current behaviors to preserve:
+            - pull uses --rebase strategy (not merge)
+            - push commits with timestamp message: "osm sync: <RFC3339>"
+            - Conflict detection from stderr output ("CONFLICT" or "could not apply")
+            - sync.local-path config key for custom sync root
+            - sync.auto-pull runs non-blocking pull on osm startup
+        - Implementation files: internal/command/sync.go, internal/command/sync_startup.go
+    - Remove unused sync.enabled config key from internal/config/schema.go (line 495). It is defined but never read or used anywhere in the codebase. Also clean up any test or documentation references.
 - Add `hot-<shortname>` aliases to copy snippets, activating them based on the name of the... mode? Seems reasonable - that'd cover the fairly coupled/integrated variants of custom scripts, and the builtins which all use it. Integrated nicely, it could be configurable, and there could be a command to output the embedded ones. Examples of intended use case include situational follow-up prompts, e.g. "critical next steps: prove the issue exists and that it is fixed" prompt. Will be important to disclaimer that they are subject to arbitrary change as I tweak it. Maybe a warning if you use it w/o overriding it? Would need another config option to disable the warning lol. **DONE (T072)**
     - I'd personally use this for variants of agentic session kickoff prompts, which I tend to use when I have a populated blueprint.json
 - Fix behavior when you use `copy` to copy context using `osm:ctxutil`/`contextManager` - all the current built-in scripts use this implementation in some capacity. It is desirable to support "refreshing" on demand in a just-in-time fashion, just prior to copy. To pick up new files added to a directory, specifically. **DONE (T067)**

@@ -373,6 +373,26 @@
       "task": "T127: Add 'which one is better' builtin goal",
       "description": "Add 'which one is better' builtin goal to internal/command/goal_builtin.go. Implement exhaustive options analysis, tailored for a wide range of use cases. Create specific use case variants, leveraging existing patterns (stateVars, hotSnippets, flagDefs, promptOptions) like morale-improver, bug-buster, code-optimizer. Target maximizing utility and general usefulness. MUST be integration tested properly.",
       "status": "Not Started"
+    },
+    {
+      "task": "T128: Replace git shell-outs in sync.go with go-git/v6 (clone, add, commit, push, pull)",
+      "description": "Replace exec.Command git calls in internal/command/sync.go with github.com/go-git/go-git/v6 library. Operations to convert: clone, add, commit, push, pull. Design constraints: prefer streaming file reads/writes directly from git objects (avoid temp files, avoid buffering entire files to disk), go-git API is 'fucky' - use pragmatically where it works, don't force it where it fights you. Preserve: pull uses --rebase strategy, push commits with timestamp message 'osm sync: <RFC3339>', conflict detection ('CONFLICT' or 'could not apply'). Exception: diff commands (osm ctx add --from-diff) continue using CLI git - no change. Update sync_test.go to work with go-git or mock appropriately.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T129: Replace git shell-outs in sync_startup.go with go-git/v6 (auto-pull)",
+      "description": "Replace exec.Command git call in internal/command/sync_startup.go with go-git. SyncAutoPull function runs git pull --rebase on startup when sync.auto-pull=true. Preserve non-blocking behavior, error handling to stderr. Use same go-git patterns as sync.go. Update sync_startup_test.go accordingly.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T130: Verify sync tests pass after go-git migration",
+      "description": "Run full sync test suite (internal/command/sync_test.go, internal/command/sync_startup_test.go) to verify all behaviors preserved: save/list/load, init/push/pull, auto-pull, path injection. Ensure no regressions. Coverage should remain high.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T131: Remove unused sync.enabled config key",
+      "description": "Remove sync.enabled from internal/config/schema.go (line 495) - it's defined but never used anywhere in the codebase. Also update any tests or documentation referencing it.",
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {

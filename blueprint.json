@@ -208,21 +208,140 @@
     {
       "task": "T099: Final integration: macOS",
       "description": "Run 'make make-all-with-log'. Zero failures. All linters pass, race detection clean, fuzz stable, benchmarks within thresholds, 100% effective coverage. Definitive final macOS gate.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "make make-all-with-log: zero failures, zero FAIL/ERROR/panic in build.log. All cached. Clean."
     },
     {
       "task": "T100: Final integration: Linux",
       "description": "Run 'make make-all-in-container'. Zero failures. Verify Docker-specific behavior. Compare with macOS. Definitive final Linux gate.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "make make-all-in-container (golang:1.25.7): zero failures. internal/command 468s, internal/scripting 458s. All ok."
     },
     {
       "task": "T101: Final integration: Windows",
       "description": "Run 'make make-all-run-windows' (host 'moo'). Zero failures. Verify paths, clipboard, separators, .exe, benchmarks. Definitive final Windows gate.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "make make-all-run-windows (host moo): zero failures. SSH exit code 0. internal/command 5.4s, internal/scripting 6.9s. All ok."
     },
     {
       "task": "T102: Scope expansion: next-frontier ideation",
       "description": "Holistic review. Generate T103+: MCP server, workflow engine, plugin system, prompt marketplace, perf regression CI, ESM modules, code review chunking, in-process gRPC, eventloop HTTP, tview removal execution, git sync, new goals, autodiscovery UX, go-prompt enhancements. List never empty.",
+      "status": "Done",
+      "outcome": "Generated T103-T125 (23 tasks) across 4 categories: feature implementation (9), new capabilities (7), tech debt (3), developer experience (4). Highest value: T103 (tview removal), T104-T106 (git sync), T118 (MCP server)."
+    },
+    {
+      "task": "T103: Execute tview/tcell module removal",
+      "description": "Execute 11-step checklist from tview-removal-plan.md. Delete internal/builtin/tview/ (6 files, ~1,700 lines). Remove TViewManagerProvider from register.go and engine_core.go. Handle prompt_flow_script.js view command. go mod tidy. Verify all platforms.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T104: Git sync notebook save and list (Phase 1)",
+      "description": "Implement osm sync save (write session context as dated Markdown entry) and osm sync list (display entries chronologically). Local-only, no git operations. Tests.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T105: Git sync push/pull (Phase 2)",
+      "description": "Implement osm sync push (git add/commit/push) and osm sync pull (clone/pull --rebase). Conflict detection. Wire sync.repository, sync.auto-pull config keys. Tests with mock git repos.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T106: Git sync load and integration (Phase 3)",
+      "description": "Implement osm sync load to restore notebook entries. Wire goal/script discovery from sync repo paths. Auto-pull on startup when sync.auto-pull=true.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T107: Add Tier 2 built-in goals: pii-scrubber, prose-polisher",
+      "description": "Add pii-scrubber (redact PII from code/logs) and prose-polisher (7-step copyediting for docs) as built-in goals. Tests + goal.md update.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T108: Add Tier 2 built-in goals: data-to-json, cite-sources",
+      "description": "Add data-to-json (structured JSON from unstructured text) and cite-sources (Q&A with numbered citations) as built-in goals. Tests + goal.md update.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T109: Refine goal and script autodiscovery UX",
+      "description": "Add osm goal paths and osm script paths subcommands showing resolved discovery paths with source annotations. Debug logging. Config validation warnings for missing paths.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T110: Resolve TODO comments in tui_completion.go",
+      "description": "Address 4 TODO comments: document critical completion logic, implement proper arg completer precedence, add support for additional completer types, add logging for unknown types. Tests.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T111: Logging API hardening and system-level logging",
+      "description": "Audit log.level/log.file across all script-executing commands. Add osm log follow (tail -f equivalent). Document stabilized API. Ensure consistent behavior.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T112: Add example script: osm:fetch HTTP client demo",
+      "description": "Add example-06-api-client.js showing synchronous fetch, streaming, error handling, timeout usage. Update scripts/README.md.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T113: Add example script: osm:flag argument parsing demo",
+      "description": "Add example-07-flag-parsing.js demonstrating structured flag parsing with osm:flag including string/bool/int/float flags, defaults, usage display. Update scripts/README.md.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T114: Upgrade charmbracelet/bubbles to v1.0",
+      "description": "Evaluate breaking API changes in bubbles v1.0. Update internal/builtin/bubbles/ (textarea, viewport) and all consumers. Verify example scripts. Full test suite.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T115: Fix VHS recording path hack",
+      "description": "Address TODO at vhs_record_unix_test.go:256 — implement proper path remapping and argument quoting, replacing the self-described 'filthy hack'.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T116: Add osm:path module for cross-platform path manipulation",
+      "description": "Expose Go path/filepath: Join, Dir, Base, Ext, Abs, Rel, Clean, Match, Glob, IsAbs, separator constants. Enables portable scripts across Windows/macOS/Linux.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T117: Implement osm:crypto module for hash/checksum operations",
+      "description": "Add osm:crypto module: sha256, sha1, md5, hmac. For file integrity verification, cache keys, content-addressable operations. Minimal surface.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T118: Add MCP (Model Context Protocol) server mode",
+      "description": "Implement osm mcp command exposing context management as MCP server (stdio transport). Tools: addFile, addDiff, addNote, listContext, buildPrompt, getGoals. Integration with Claude Desktop, VS Code Copilot.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T119: Configuration model iteration: typed sections",
+      "description": "Add osm config list (all values with sources), osm config diff (non-default values). Typed section support for schema declaration.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T120: Performance regression CI via benchmark tracking",
+      "description": "Add make bench-save (run benchmarks, save JSON). Add make bench-compare (compare against baseline via benchstat-style analysis). Store baseline in repo.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T121: Add writeFile to osm:os module",
+      "description": "Add writeFile and appendFile with opt-in safety model (write intent declaration or user confirmation). Enables scripts to generate output files directly.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T122: Enhance go-prompt: multiline input support",
+      "description": "Add multiline input mode (Alt+Enter for newline, Enter to submit). Improves UX for note and goal commands where users write multi-line content.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T123: Add example JSON goal files for community reference",
+      "description": "Create goals/examples/ with 4-6 example JSON goal files demonstrating full goal schema: simple, stateVars, hotSnippets, flagDefs, promptOptions. README.md explaining each.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T124: Code review chunking for large diffs",
+      "description": "Implement automatic splitting of large diffs into LLM-digestible chunks in code-review command. Configurable token/line budget per chunk. Series of prompts (chunk 1/N...) with shared context header.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T125: Add osm:json module for structured JSON manipulation",
+      "description": "Go-backed JSON utilities: jsonpath queries, json merge-patch (RFC 7386), json diff, json schema validation. For data transformation workflows.",
       "status": "Not Started"
     }
   ],

@@ -172,6 +172,9 @@ function buildCommands(state) {
             // Phase-dependent prompt building
             if (getPhase() === 'TASK_PROMPT_SET') {
                 return assembleFinal();
+            } else if (!getGoal().trim()) {
+                // One-step mode: no goal set, return raw context
+                return buildContextTxtar();
             } else {
                 return getMetaPrompt();
             }
@@ -509,6 +512,10 @@ function buildCommands(state) {
                     if (getPhase() === 'TASK_PROMPT_SET') {
                         text = assembleFinal();
                         label = "Final output";
+                    } else if (!getGoal().trim()) {
+                        // One-step mode: no goal set, copy raw context
+                        text = buildContextTxtar();
+                        label = "Context";
                     } else {
                         text = getMetaPrompt();
                         label = "Meta prompt";

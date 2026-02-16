@@ -888,3 +888,112 @@ func TestPromptFlowCommand_TaskPromptSetPhaseNoAutoGenerate(t *testing.T) {
 		t.Fatalf("expected NO auto-generate in TASK_PROMPT_SET phase, got:\n%s", copyOut)
 	}
 }
+
+// TestPromptFlowCommand_OneStepCopyRawContext verifies that copy without
+// a goal outputs raw context (txtar) instead of empty meta-prompt.
+func TestPromptFlowCommand_OneStepCopyRawContext(t *testing.T) {
+	t.Parallel()
+	engine, stdout, _ := newPromptFlowTestEngine(t)
+	defer engine.Close()
+
+	// Add context items without setting a goal
+	if err := engine.GetTUIManager().ExecuteCommand("note", []string{"This", "is", "a", "test", "note"}); err != nil {
+		t.Fatalf("note failed: %v", err)
+	}
+
+	// Verify phase is still INITIAL (no goal set)
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("list", []string{}); err != nil {
+		t.Fatalf("list failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Phase: INITIAL") {
+		t.Fatalf("expected Phase: INITIAL without goal, got:\n%s", stdout.String())
+	}
+
+	// Copy (default) — should output raw context, not empty meta-prompt
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("copy", []string{}); err != nil {
+		t.Fatalf("copy failed: %v", err)
+	}
+	copyOut := stdout.String()
+	// Should label as "Context" not "Meta prompt"
+	if !strings.Contains(copyOut, "Context") {
+		t.Fatalf("expected 'Context' label in copy output, got:\n%s", copyOut)
+	}
+	if strings.Contains(copyOut, "Meta prompt") {
+		t.Fatalf("should NOT show 'Meta prompt' label in one-step mode, got:\n%s", copyOut)
+	}
+}
+
+// TestPromptFlowCommand_OneStepShowRawContext verifies that show without
+// a goal outputs raw context (txtar) instead of empty meta-prompt.
+func TestPromptFlowCommand_OneStepShowRawContext(t *testing.T) {
+	t.Parallel()
+	engine, stdout, _ := newPromptFlowTestEngine(t)
+	defer engine.Close()
+
+	// Add context items without setting a goal
+	if err := engine.GetTUIManager().ExecuteCommand("note", []string{"Show", "test", "note"}); err != nil {
+		t.Fatalf("note failed: %v", err)
+	}
+
+	// Show (default) — should output raw context containing the note
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("show", []string{}); err != nil {
+		t.Fatalf("show failed: %v", err)
+	}
+	showOut := stdout.String()
+	// Raw context should contain the note text
+	if !strings.Contains(showOut, "Show test note") {
+		t.Fatalf("expected note text in show output for one-step mode, got:\n%s", showOut)
+	}
+}
+
+// TestPromptFlowCommand_OneStepBackwardCompat verifies that one-step mode
+// doesn't break existing goal-based workflow (backward compatibility).
+func TestPromptFlowCommand_OneStepBackwardCompat(t *testing.T) {
+	t.Parallel()
+	engine, stdout, _ := newPromptFlowTestEngine(t)
+	defer engine.Close()
+
+	// Set goal — should still produce meta-prompt via auto-generate
+	if err := engine.GetTUIManager().ExecuteCommand("goal", []string{"Backward", "compat", "test"}); err != nil {
+		t.Fatalf("goal failed: %v", err)
+	}
+
+	// Copy — should auto-generate (goal is set)
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("copy", []string{}); err != nil {
+		t.Fatalf("copy failed: %v", err)
+	}
+	copyOut := stdout.String()
+	if !strings.Contains(copyOut, "(Auto-generated meta-prompt)") {
+		t.Fatalf("expected auto-generate with goal set, got:\n%s", copyOut)
+	}
+	// Should label as "Meta prompt" not "Context"
+	if !strings.Contains(copyOut, "Meta prompt") {
+		t.Fatalf("expected 'Meta prompt' label with goal set, got:\n%s", copyOut)
+	}
+}
+
+// TestPromptFlowCommand_OneStepEmptyContext verifies that copy with
+// no items and no goal outputs gracefully (empty context).
+func TestPromptFlowCommand_OneStepEmptyContext(t *testing.T) {
+	t.Parallel()
+	engine, stdout, _ := newPromptFlowTestEngine(t)
+	defer engine.Close()
+
+	// Copy with no items and no goal — should produce "Context" label, not error
+	stdout.Reset()
+	if err := engine.GetTUIManager().ExecuteCommand("copy", []string{}); err != nil {
+		t.Fatalf("copy failed: %v", err)
+	}
+	copyOut := stdout.String()
+	if strings.Contains(copyOut, "(Auto-generated meta-prompt)") {
+		t.Fatalf("expected NO auto-generate with no goal, got:\n%s", copyOut)
+	}
+	// Should use "Context" label even when empty
+	if !strings.Contains(copyOut, "Context") {
+		t.Fatalf("expected 'Context' label for empty one-step mode, got:\n%s", copyOut)
+	}
+}

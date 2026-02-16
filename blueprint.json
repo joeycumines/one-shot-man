@@ -166,7 +166,8 @@
     {
       "task": "T092: Prompt-flow QoL: one-step mode",
       "description": "Per docs/todo.md: use without goal/generate. If no goal, copy copies raw context. 'use' without 'goal' enters context management. Backward compatible. Tests + docs.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added !getGoal().trim() branches to buildPrompt and copy handler. 4 tests: copy raw context, show raw context, backward compat, empty context."
     },
     {
       "task": "T093: Prompt-flow QoL: footer support",

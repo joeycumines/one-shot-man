@@ -14,12 +14,12 @@
 - T205: DONE (commit 3894d38) — osm:encoding module
 - T206: DONE (commit 36f6403) — osm config reset subcommand
 - T207: DONE (commit be70be9) — inspector.go bug fix + 100% test coverage
-- T208: PENDING COMMIT — tui_commands.go coverage 88.9%→97.2%
+- T208: DONE (commit fe3e073) — tui_commands.go coverage 88.9%→97.2%
+- T209: PENDING COMMIT — terminal.go Run() coverage 0%→84.6%
 - Blueprint updated
 
 ## Next Step
-- T208: Commit
-- T209: Test coverage for internal/scripting/terminal.go
+- T210: Test coverage for internal/scripting/js_context_api.go
 
 ## Architecture Notes
 - Old tasks T128-T170 have been remapped to T200-T269
@@ -57,3 +57,8 @@
 - T207 Run 1 v2: PASS (scratch/review-t207-run1-v2.md)
 - T207 Run 2: PASS (scratch/review-t207-run2.md)
 - T207 Committed: be70be9
+- T208 Run 1: PASS (scratch/review-t208-run1.md)
+- T208 Run 2: PASS (scratch/review-t208-run2.md)
+- T208 Committed: fe3e073
+- T209 Run 1: PASS (scratch/review-t209-run1.md)
+- T209 Run 2: PASS (scratch/review-t209-run2.md)

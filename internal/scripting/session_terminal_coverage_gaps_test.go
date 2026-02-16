@@ -612,12 +612,13 @@ func (b *cleanupTrackingBackend) Close() error {
 // terminal.go coverage gaps
 // ============================================================================
 
-// NewTerminal and Run() require a full engine with TUIManager.
-// Run() itself requires a live terminal, signals, and a running TUI.
-// Testing Run() is inherently integration-level (same as TUIManager.Run
-// which was left uncovered in T036).
-//
-// We CAN test NewTerminal to verify struct initialization.
+// NewTerminal is straightforward struct initialization.
+// Run() is tested by swapping the TUIManager's reader with an in-memory
+// reader that returns EOF immediately. go-prompt interprets EOF as a
+// synthetic Ctrl-D, which causes an immediate clean exit when the input
+// buffer is empty. This avoids requiring a real terminal or PTY while
+// still exercising the full shutdown sequence (signal handler registration,
+// session persistence, TUIManager close, terminal state restore guard).
 
 func TestNewTerminal_StructInitialization(t *testing.T) {
 	t.Parallel()
@@ -634,6 +635,160 @@ func TestNewTerminal_StructInitialization(t *testing.T) {
 	assert.Equal(t, engine, terminal.engine)
 	assert.NotNil(t, terminal.tuiManager)
 	assert.Equal(t, ctx, terminal.ctx)
+}
+
+// TestTerminalRun_NormalExit_WithStateManager verifies that Terminal.Run()
+// completes cleanly via EOF and persists the session when stateManager exists.
+func TestTerminalRun_NormalExit_WithStateManager(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows — go-prompt uses different reader")
+	}
+
+	var engineOut bytes.Buffer
+	ctx := t.Context()
+	sessionID := testutil.NewTestSessionID("test", t.Name())
+
+	engine, err := NewEngineWithConfig(ctx, &engineOut, &engineOut, sessionID, "memory")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = engine.Close() })
+
+	// Replace the TUI I/O with in-memory adapters.
+	// bytes.NewReader(nil) returns EOF on every Read, causing go-prompt
+	// to synthesize Ctrl-D and exit cleanly (empty buffer → shouldExit).
+	engine.tuiManager.reader = NewTUIReaderFromIO(bytes.NewReader(nil))
+	var tuiOut bytes.Buffer
+	engine.tuiManager.writer = NewTUIWriterFromIO(&tuiOut)
+
+	terminal := NewTerminal(ctx, engine)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		terminal.Run()
+	}()
+
+	select {
+	case <-done:
+		// Run completed normally.
+	case <-time.After(10 * time.Second):
+		t.Fatal("Terminal.Run() did not exit within timeout")
+	}
+
+	output := tuiOut.String()
+	assert.Contains(t, output, "Saving session...")
+	assert.Contains(t, output, "Session saved successfully.")
+}
+
+// TestTerminalRun_NilStateManager verifies that Terminal.Run() skips
+// session persistence when stateManager is nil.
+func TestTerminalRun_NilStateManager(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows — go-prompt uses different reader")
+	}
+
+	var engineOut bytes.Buffer
+	ctx := t.Context()
+	sessionID := testutil.NewTestSessionID("test", t.Name())
+
+	engine, err := NewEngineWithConfig(ctx, &engineOut, &engineOut, sessionID, "memory")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = engine.Close() })
+
+	// Replace TUI I/O with in-memory adapters.
+	engine.tuiManager.reader = NewTUIReaderFromIO(bytes.NewReader(nil))
+	var tuiOut bytes.Buffer
+	engine.tuiManager.writer = NewTUIWriterFromIO(&tuiOut)
+
+	// Nil out stateManager. Terminal.Run() should skip persistence entirely.
+	engine.tuiManager.stateManager = nil
+
+	terminal := NewTerminal(ctx, engine)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		terminal.Run()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Terminal.Run() did not exit within timeout")
+	}
+
+	output := tuiOut.String()
+	assert.NotContains(t, output, "Saving session...")
+	assert.NotContains(t, output, "Session saved successfully.")
+}
+
+// TestTerminalRun_PersistAndCloseErrors verifies error messages when
+// PersistSession and TUIManager.Close both fail.
+func TestTerminalRun_PersistAndCloseErrors(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows — go-prompt uses different reader")
+	}
+
+	var engineOut bytes.Buffer
+	ctx := t.Context()
+	sessionID := testutil.NewTestSessionID("test", t.Name())
+
+	engine, err := NewEngineWithConfig(ctx, &engineOut, &engineOut, sessionID, "memory")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = engine.Close() })
+
+	// Replace TUI I/O with in-memory adapters.
+	engine.tuiManager.reader = NewTUIReaderFromIO(bytes.NewReader(nil))
+	var tuiOut bytes.Buffer
+	engine.tuiManager.writer = NewTUIWriterFromIO(&tuiOut)
+
+	// Replace the backend with one whose SaveSession always fails.
+	// This triggers both the PersistSession error path AND the Close error
+	// path (because StateManager.Close also calls persistSessionInternal).
+	sm := engine.tuiManager.stateManager.(*StateManager)
+	sm.backend = &saveErrorBackend{}
+
+	terminal := NewTerminal(ctx, engine)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		terminal.Run()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Terminal.Run() did not exit within timeout")
+	}
+
+	output := tuiOut.String()
+	assert.Contains(t, output, "Saving session...")
+	assert.Contains(t, output, "Warning: Failed to persist session:")
+	assert.Contains(t, output, "Warning: Failed to close TUI manager:")
+}
+
+// saveErrorBackend is a storage backend whose SaveSession always errors.
+// Close and other operations succeed. Used to test error paths in
+// Terminal.Run()'s shutdown sequence.
+type saveErrorBackend struct{}
+
+func (b *saveErrorBackend) LoadSession(string) (*storage.Session, error) {
+	return &storage.Session{}, nil
+}
+
+func (b *saveErrorBackend) SaveSession(*storage.Session) error {
+	return assert.AnError
+}
+
+func (b *saveErrorBackend) ArchiveSession(string, string) error {
+	return nil
+}
+
+func (b *saveErrorBackend) Close() error {
+	return nil
 }
 
 // ============================================================================

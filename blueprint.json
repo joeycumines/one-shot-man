@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200 DONE (5b86238), T201 DONE (c5ecde8), T202 DONE (54cc73d), T203 DONE (14fa5dd), T204 DONE (879930c), T205 DONE (3894d38), T206 DONE (36f6403), T207 DONE (be70be9), T208 PENDING COMMIT. Session 2026-02-17."
+    "currentState": "T200 DONE (5b86238), T201 DONE (c5ecde8), T202 DONE (54cc73d), T203 DONE (14fa5dd), T204 DONE (879930c), T205 DONE (3894d38), T206 DONE (36f6403), T207 DONE (be70be9), T208 DONE (fe3e073). T209 PENDING REVIEW. Session 2026-02-17."
   },
   "sequentialTasks": [
     {
@@ -363,7 +363,12 @@
       "status": "Not Started"
     },
     {
-      "task": "T269: README.md quality review and enhancement",
+      "task": "T270: Fix data race in storage path globals with cleanup scheduler",
+      "description": "Fix data race in internal/storage/paths.go where SetTestPaths() modifies global state (pathsDataDir, pathsLockDir) while cleanup scheduler goroutine reads them via ScanSessions(). Root cause: tests call SetTestPaths() which modifies global variables while a separate test's cleanup scheduler is running. Solutions: (a) add mutex protection to path globals, (b) make paths instance-based rather than global, (c) ensure tests don't run concurrently. Recommended: add RWMutex to protect path globals with RLock for reads (SessionLockFilePath, ScanSessions) and Lock for writes (SetTestPaths, ResetPaths). Add proper synchronization or convert to test cleanup. Run tests with -race to verify. Run 'make' to confirm.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T271: README.md quality review and enhancement",
       "description": "Improve README.md: installation instructions (binary/go install/source), quick start example, feature overview, usage examples, architecture link, contributing section. Ensure all examples work. Fix broken links.",
       "status": "Not Started"
     }

@@ -1042,5 +1042,298 @@ Note any follow-up meetings, check-ins, or milestones mentioned.
 				{Name: "help", Type: "help"},
 			},
 		},
+
+		// PII Scrubber Goal
+		{
+			Name:        "pii-scrubber",
+			Description: "Redact personally identifiable information from code, logs, and data",
+			Category:    "data-privacy",
+			Usage:       "Scans provided content for PII (emails, names, IPs, tokens, etc.) and produces a redacted version with a mapping table",
+			Script:      goalScript,
+			FileName:    "goal.js",
+
+			TUITitle:  "PII Scrubber",
+			TUIPrompt: "(pii-scrubber) > ",
+
+			NotableVariables: []string{"level"},
+
+			StateVars: map[string]interface{}{
+				"level": "strict",
+			},
+
+			PromptInstructions: `Scan the provided content for personally identifiable information (PII) and produce a fully redacted version at the {{.stateKeys.level}} level.
+
+{{.levelInstructions}}
+
+**PII Categories to Detect:**
+
+1. **Direct Identifiers**
+   - Full names, usernames, screen names, handles
+   - Email addresses (including plus-addressed variants like user+tag@domain.com)
+   - Phone numbers (all formats: international, domestic, extensions)
+   - Government IDs (SSN, passport, driver's license, national ID numbers)
+   - Financial identifiers (credit card numbers, bank account numbers, routing numbers)
+
+2. **Network & Technical Identifiers**
+   - IP addresses (IPv4 and IPv6, including CIDR notation)
+   - MAC addresses
+   - URLs containing user-specific paths or query parameters (e.g., /users/jsmith/settings)
+   - API keys, tokens, secrets, passwords (including base64-encoded values that decode to credentials)
+   - Database connection strings with embedded credentials
+   - AWS ARNs, GCP resource paths, or Azure resource IDs containing account-specific information
+
+3. **Location & Temporal Identifiers**
+   - Physical addresses (street, city, ZIP/postal code)
+   - GPS coordinates and geolocation data
+   - Dates of birth (when associated with other identifiers)
+
+4. **Contextual PII**
+   - Biometric data references (fingerprints, facial recognition hashes)
+   - Medical record numbers or health information
+   - Employee IDs, student IDs, or organizational identifiers
+   - Hostnames that reveal internal infrastructure naming conventions
+
+**Redaction Rules:**
+- Replace each PII instance with a deterministic placeholder: ` + "`[TYPE-N]`" + ` where TYPE is the category (e.g., EMAIL, NAME, IP) and N is a sequential counter
+- Use the SAME placeholder for identical values across the document (consistency is critical for readability)
+- Preserve the structure and formatting of the original content exactly
+- Do NOT alter non-PII content — comments, code logic, log structure must remain intact
+- When in doubt about whether something is PII, redact it and note it in the mapping table
+
+**Output Format:**
+
+1. **Redacted Content** — the full content with all PII replaced by placeholders
+2. **Redaction Mapping Table** — a table mapping each placeholder to a description of what was redacted (do NOT include the original value, just the type and context)
+3. **Summary** — total count by category, confidence assessment, and notes on any ambiguous cases`,
+
+			PromptTemplate: `**{{.description | upper}}**
+
+{{.promptInstructions}}
+
+## {{.contextHeader}}
+
+{{.contextTxtar}}`,
+
+			ContextHeader: "CONTENT TO SCRUB",
+
+			PromptOptions: map[string]interface{}{
+				"levelInstructions": map[string]string{
+					"strict": `**Strict Mode:** Redact ALL potential PII aggressively. When in doubt, redact.
+- Include quasi-identifiers that could be combined to re-identify individuals
+- Redact internal hostnames, project names that reveal organizational structure
+- Redact timestamps that could correlate with specific individuals' activities
+- Treat any string that resembles a token, hash, or encoded credential as PII`,
+					"moderate": `**Moderate Mode:** Redact clear PII but preserve operational context.
+- Redact direct identifiers (names, emails, IPs, credentials)
+- Preserve generic hostnames and project names unless they contain personal information
+- Preserve timestamps unless directly tied to a specific individual
+- Preserve non-sensitive infrastructure details (generic service names, ports)`,
+					"minimal": `**Minimal Mode:** Redact only unambiguous, high-risk PII.
+- Redact credentials, API keys, tokens, and secrets (always high-risk)
+- Redact email addresses and phone numbers
+- Redact government and financial identifiers
+- Preserve names, IPs, and hostnames unless they appear alongside other high-risk PII`,
+				},
+			},
+
+			Commands: []CommandConfig{
+				{Name: "add", Type: "contextManager"},
+				{Name: "diff", Type: "contextManager"},
+				{Name: "note", Type: "contextManager", Description: "Add a note about specific PII concerns or exceptions"},
+				{Name: "list", Type: "contextManager"},
+				{Name: "edit", Type: "contextManager"},
+				{Name: "remove", Type: "contextManager"},
+				{Name: "show", Type: "contextManager"},
+				{Name: "copy", Type: "contextManager"},
+				{
+					Name:        "level",
+					Type:        "custom",
+					Description: "Set PII redaction level",
+					Usage:       "level <strict|moderate|minimal>",
+					Handler: `function (args) {
+                        if (args.length === 0) {
+                            output.print("Current level: " + (state.get(stateKeys.level) || "strict"));
+                            output.print("Available levels: strict, moderate, minimal");
+                            return;
+                        }
+                        var level = args[0].toLowerCase();
+                        var validLevels = ["strict", "moderate", "minimal"];
+                        if (validLevels.indexOf(level) === -1) {
+                            output.print("Invalid level. Available: " + validLevels.join(", "));
+                            return;
+                        }
+                        state.set(stateKeys.level, level);
+                        output.print("PII redaction level set to: " + level);
+                    }`,
+				},
+				{Name: "help", Type: "help"},
+			},
+		},
+
+		// Prose Polisher Goal
+		{
+			Name:        "prose-polisher",
+			Description: "Seven-step copyediting pipeline for technical and non-technical prose",
+			Category:    "writing",
+			Usage:       "Applies a structured 7-step editorial process to documents, producing polished prose with tracked changes",
+			Script:      goalScript,
+			FileName:    "goal.js",
+
+			TUITitle:  "Prose Polisher",
+			TUIPrompt: "(prose-polisher) > ",
+
+			NotableVariables: []string{"style"},
+
+			StateVars: map[string]interface{}{
+				"style": "technical",
+			},
+
+			PromptInstructions: `Apply the following 7-step copyediting pipeline to the provided content, targeting the {{.stateKeys.style}} style.
+
+{{.styleInstructions}}
+
+---
+
+## The Seven Steps
+
+### Step 1: Structural Review
+- Evaluate the overall organization and flow of the document
+- Identify sections that are out of order, redundant, or missing
+- Check that headings form a logical hierarchy
+- Verify the document has a clear beginning, middle, and end
+- Flag any structural issues before proceeding (do not fix yet — just note them)
+
+### Step 2: Clarity Pass
+- Rewrite sentences that are ambiguous, convoluted, or passive where active voice would be stronger
+- Break up run-on sentences and overly complex compound sentences
+- Replace vague language with precise terms (e.g., "things" → specific nouns, "it" → explicit referent)
+- Eliminate weasel words ("somewhat", "arguably", "it could be said that")
+- Ensure each paragraph has a single clear topic
+
+### Step 3: Consistency Enforcement
+- Normalize terminology: pick ONE term for each concept and use it throughout (e.g., don't alternate between "user", "client", and "customer" unless they mean different things)
+- Standardize formatting: bullet style, heading casing, code formatting, list punctuation
+- Verify consistent tense (present for documentation, past for changelogs)
+- Check number formatting (spell out below ten, digits for 10+, or whatever the document's convention is)
+- Normalize abbreviations (define on first use, use consistently after)
+
+### Step 4: Concision Pass
+- Remove filler phrases ("In order to" → "To", "Due to the fact that" → "Because")
+- Eliminate redundant modifiers ("completely finished", "very unique", "absolutely essential")
+- Collapse verbose constructions ("make a decision" → "decide", "at this point in time" → "now")
+- Cut sentences or paragraphs that add no new information
+- Target a minimum 10% word count reduction without losing meaning
+
+### Step 5: Correctness Check
+- Fix grammar, spelling, and punctuation errors
+- Verify subject-verb agreement
+- Check proper use of commas, semicolons, colons, em dashes, and en dashes
+- Fix dangling modifiers and misplaced phrases
+- Verify that all lists are parallel in structure
+
+### Step 6: Tone & Voice Alignment
+- Ensure the tone matches the target style consistently throughout
+- Remove inappropriate humor, slang, or formality mismatches
+- Verify that the author's voice feels natural and confident, not robotic or over-edited
+- Check that transitions between sections are smooth and intentional
+
+### Step 7: Final Polish
+- Read the complete revised text as a whole — does it flow?
+- Check opening and closing: does the opening hook the reader? Does the closing provide closure or a clear call to action?
+- Verify all cross-references, links, and citations are correct
+- Produce the final edited version
+
+---
+
+**Output Format:**
+
+1. **Change Summary** — a bulleted list of the most significant changes made at each step, with brief rationale
+2. **Polished Version** — the complete revised text, ready to use
+3. **Statistics** — original word count, revised word count, reduction percentage, number of changes by category (structural, clarity, consistency, concision, correctness, tone, polish)`,
+
+			PromptTemplate: `**{{.description | upper}}**
+
+{{.promptInstructions}}
+
+## {{.contextHeader}}
+
+{{.contextTxtar}}`,
+
+			ContextHeader: "PROSE TO POLISH",
+
+			PromptOptions: map[string]interface{}{
+				"styleInstructions": map[string]string{
+					"technical": `**Target Style: Technical**
+- Favor precision over elegance — every term should have a specific, unambiguous meaning
+- Use imperative mood for instructions ("Run the command", not "You should run the command")
+- Keep sentences short and scannable; prefer lists over paragraphs where appropriate
+- Code references should use inline code formatting
+- Acronyms must be defined on first use
+- Avoid anthropomorphizing software ("the system wants" → "the system requires")`,
+					"casual": `**Target Style: Casual**
+- Write as if explaining to a knowledgeable friend — conversational but accurate
+- Contractions are encouraged ("don't", "it's", "you'll")
+- Light humor is acceptable if it doesn't undermine the message
+- Use second person ("you") freely
+- Keep jargon to a minimum; when used, explain it naturally rather than with formal definitions
+- Shorter paragraphs, more white space, more personality`,
+					"academic": `**Target Style: Academic**
+- Formal register — avoid contractions, colloquialisms, and first person
+- Use hedging language appropriately ("suggests", "indicates", "may") but avoid excessive hedging
+- Follow discipline conventions for citations and terminology
+- Maintain objectivity — present evidence, not opinions
+- Complex sentence structures are acceptable where they aid precision
+- Use parallel structure rigorously in lists and comparisons`,
+					"marketing": `**Target Style: Marketing**
+- Lead with benefits, not features — what does the reader gain?
+- Use power words that create urgency and excitement without being hyperbolic
+- Every sentence should earn its place — if it doesn't sell, cut it
+- Use social proof and concrete numbers where available
+- Short paragraphs, punchy sentences, clear calls to action
+- Avoid jargon unless your audience expects it; when in doubt, simplify`,
+				},
+			},
+
+			HotSnippets: []GoalHotSnippet{
+				{
+					Name:        "expand-section",
+					Text:        "The section I highlighted is too thin. Expand it with concrete examples, deeper explanation, and practical guidance. Maintain the same tone and style as the surrounding text.",
+					Description: "Follow-up: expand a thin section with examples and depth",
+				},
+			},
+
+			Commands: []CommandConfig{
+				{Name: "add", Type: "contextManager"},
+				{Name: "diff", Type: "contextManager"},
+				{Name: "note", Type: "contextManager", Description: "Add a note about style preferences or specific areas to focus on"},
+				{Name: "list", Type: "contextManager"},
+				{Name: "edit", Type: "contextManager"},
+				{Name: "remove", Type: "contextManager"},
+				{Name: "show", Type: "contextManager"},
+				{Name: "copy", Type: "contextManager"},
+				{
+					Name:        "style",
+					Type:        "custom",
+					Description: "Set target writing style",
+					Usage:       "style <technical|casual|academic|marketing>",
+					Handler: `function (args) {
+                        if (args.length === 0) {
+                            output.print("Current style: " + (state.get(stateKeys.style) || "technical"));
+                            output.print("Available styles: technical, casual, academic, marketing");
+                            return;
+                        }
+                        var style = args[0].toLowerCase();
+                        var validStyles = ["technical", "casual", "academic", "marketing"];
+                        if (validStyles.indexOf(style) === -1) {
+                            output.print("Invalid style. Available: " + validStyles.join(", "));
+                            return;
+                        }
+                        state.set(stateKeys.style, style);
+                        output.print("Writing style set to: " + style);
+                    }`,
+				},
+				{Name: "help", Type: "help"},
+			},
+		},
 	}
 }

@@ -256,7 +256,8 @@
     {
       "task": "T107: Add Tier 2 built-in goals: pii-scrubber, prose-polisher",
       "description": "Add pii-scrubber (redact PII from code/logs) and prose-polisher (7-step copyediting for docs) as built-in goals. Tests + goal.md update.",
-      "status": "Not Started"
+      "status": "Done",
+      "outcome": "Added 2 goals (10→12 total). pii-scrubber: data-privacy, level state (strict/moderate/minimal), levelInstructions PromptOptions. prose-polisher: writing, style state (technical/casual/academic/marketing), styleInstructions PromptOptions, hot-expand-section snippet. 5 new tests. Docs: goal.md, architecture.md, todo.md, CHANGELOG."
     },
     {
       "task": "T108: Add Tier 2 built-in goals: data-to-json, cite-sources",

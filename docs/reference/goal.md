@@ -294,7 +294,7 @@ See: [internal/command/prompt_file.go](../../internal/command/prompt_file.go), [
 
 **Built-in goals (complete catalog)**
 
-`osm` ships with 10 built-in goals across 7 categories. All use the standard `goalScript` interpreter and provide `contextManager` commands for managing context items.
+`osm` ships with 12 built-in goals across 9 categories. All use the standard `goalScript` interpreter and provide `contextManager` commands for managing context items.
 
 | Name | Category | Description | State Variables | Custom Commands |
 |------|----------|-------------|-----------------|-----------------|
@@ -308,11 +308,14 @@ See: [internal/command/prompt_file.go](../../internal/command/prompt_file.go), [
 | `code-optimizer` | code-quality | Suggest performance optimizations for code | — | — |
 | `code-explainer` | code-understanding | Explain code in plain language for onboarding | `depth` (detailed) | `depth` |
 | `meeting-notes` | productivity | Generate structured meeting summaries with action items | — | — |
+| `pii-scrubber` | data-privacy | Redact PII from code, logs, and data | `level` (strict) | `level` |
+| `prose-polisher` | writing | Seven-step copyediting pipeline for prose | `style` (technical) | `style` |
 
 **Goals with hot-snippets:**
 
 - `commit-message`: `hot-review-response` — "Review the commit message you generated…"
 - `morale-improver`: `hot-review-plan` — "Now review each section of your plan…"; `hot-prove-it` — "Prove the issue exists by reproducing it…"
+- `prose-polisher`: `hot-expand-section` — "The section I highlighted is too thin. Expand it…"
 
 **Goals with PostCopyHint:**
 
@@ -327,6 +330,8 @@ See: [internal/command/prompt_file.go](../../internal/command/prompt_file.go), [
 - `test-generator`: `type`, `framework`
 - `code-explainer`: `depth`
 - `morale-improver`: `originalInstructions`, `failedPlan`, `specificFailures`
+- `pii-scrubber`: `level`
+- `prose-polisher`: `style`
 
 See: [internal/command/goal_builtin.go](../../internal/command/goal_builtin.go) for the full definitions.
 

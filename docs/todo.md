@@ -61,7 +61,7 @@ This is not an actual TODO list. Consider it as much a TODO list as your Product
 - Code review splitter - prompts seem particularly LLM dependent, stalled
     - This would be far easier as a proper workflow engine lol
 - Refine "goal" and "script" autodiscovery mechanisms (currently prototype status/needs attention)
-- Investigate implementing Anthropic prompt library (https://platform.claude.com/docs/en/resources/prompt-library/library)
+- Investigate implementing Anthropic prompt library (https://platform.claude.com/docs/en/resources/prompt-library/library) **PARTIAL (T074, T107) — morale-improver, bug-buster, code-optimizer, code-explainer, meeting-notes adapted from Anthropic Prompt Library; pii-scrubber and prose-polisher added as Tier 2 goals**
 - Iterate on configuration model for better extensibility and consistency (feels undercooked) **PARTIAL (T065, T082) — schema-aware validation, persistence, and comprehensive documentation added**
 - Enhance definitions and integration with `github.com/joeycumines/go-prompt` implementation
 - Review `tview`/`tcell` support for refinement or removal (probably just leave it as-is for now, remove eventually - bubbletea is the winner of this one) **DONE (T103) — Full audit (T097), then executed removal: deleted 6 tview files (~2,100 lines), removed TViewManagerProvider, go mod tidy removed tview/tcell deps, updated all docs.**

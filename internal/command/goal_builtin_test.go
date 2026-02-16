@@ -83,6 +83,18 @@ func TestBuiltInGoal_Tier1GoalsExist(t *testing.T) {
 			contextHeader: "MEETING NOTES / TRANSCRIPT",
 			wantCommands:  []string{"add", "note", "list", "edit", "remove", "show", "copy", "help"},
 		},
+		{
+			name:          "pii-scrubber",
+			category:      "data-privacy",
+			contextHeader: "CONTENT TO SCRUB",
+			wantCommands:  []string{"add", "diff", "note", "level", "list", "edit", "remove", "show", "copy", "help"},
+		},
+		{
+			name:          "prose-polisher",
+			category:      "writing",
+			contextHeader: "PROSE TO POLISH",
+			wantCommands:  []string{"add", "diff", "note", "style", "list", "edit", "remove", "show", "copy", "help"},
+		},
 	}
 
 	for _, tc := range tier1 {
@@ -267,5 +279,185 @@ func TestBuiltInGoal_AllGoalsHaveCopyAndHelp(t *testing.T) {
 		if !hasHelp {
 			t.Errorf("goal %q is missing 'help' command", g.Name)
 		}
+	}
+}
+
+func TestBuiltInGoal_PIIScrubberLevelState(t *testing.T) {
+	goals := GetBuiltInGoals()
+
+	var found *Goal
+	for i := range goals {
+		if goals[i].Name == "pii-scrubber" {
+			found = &goals[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("pii-scrubber goal not found")
+	}
+
+	// Must have level in StateVars with default "strict"
+	v, ok := found.StateVars["level"]
+	if !ok {
+		t.Fatalf("expected stateVars to contain 'level'")
+	}
+	if sv, ok := v.(string); !ok || sv != "strict" {
+		t.Fatalf("expected default stateVars['level'] == 'strict', got: %#v", v)
+	}
+
+	// Must have NotableVariables containing "level"
+	foundNotable := false
+	for _, nv := range found.NotableVariables {
+		if nv == "level" {
+			foundNotable = true
+			break
+		}
+	}
+	if !foundNotable {
+		t.Fatalf("expected NotableVariables to contain 'level', got: %v", found.NotableVariables)
+	}
+
+	// Must have PromptOptions with levelInstructions
+	if found.PromptOptions == nil {
+		t.Fatalf("expected non-nil PromptOptions")
+	}
+	li, ok := found.PromptOptions["levelInstructions"]
+	if !ok {
+		t.Fatalf("expected PromptOptions to contain 'levelInstructions'")
+	}
+	levelMap, ok := li.(map[string]string)
+	if !ok {
+		t.Fatalf("expected levelInstructions to be map[string]string, got: %T", li)
+	}
+	for _, level := range []string{"strict", "moderate", "minimal"} {
+		if _, ok := levelMap[level]; !ok {
+			t.Errorf("expected levelInstructions to contain key %q", level)
+		}
+	}
+
+	// Must have level custom command with handler
+	var levelCmd *CommandConfig
+	for i := range found.Commands {
+		if found.Commands[i].Name == "level" {
+			levelCmd = &found.Commands[i]
+			break
+		}
+	}
+	if levelCmd == nil {
+		t.Fatalf("expected 'level' command in pii-scrubber")
+	}
+	if levelCmd.Type != "custom" {
+		t.Errorf("expected level command type 'custom', got %q", levelCmd.Type)
+	}
+	if levelCmd.Handler == "" {
+		t.Error("expected non-empty handler for level command")
+	}
+}
+
+func TestBuiltInGoal_ProsePolisherStyleState(t *testing.T) {
+	goals := GetBuiltInGoals()
+
+	var found *Goal
+	for i := range goals {
+		if goals[i].Name == "prose-polisher" {
+			found = &goals[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("prose-polisher goal not found")
+	}
+
+	// Must have style in StateVars with default "technical"
+	v, ok := found.StateVars["style"]
+	if !ok {
+		t.Fatalf("expected stateVars to contain 'style'")
+	}
+	if sv, ok := v.(string); !ok || sv != "technical" {
+		t.Fatalf("expected default stateVars['style'] == 'technical', got: %#v", v)
+	}
+
+	// Must have NotableVariables containing "style"
+	foundNotable := false
+	for _, nv := range found.NotableVariables {
+		if nv == "style" {
+			foundNotable = true
+			break
+		}
+	}
+	if !foundNotable {
+		t.Fatalf("expected NotableVariables to contain 'style', got: %v", found.NotableVariables)
+	}
+
+	// Must have PromptOptions with styleInstructions
+	if found.PromptOptions == nil {
+		t.Fatalf("expected non-nil PromptOptions")
+	}
+	si, ok := found.PromptOptions["styleInstructions"]
+	if !ok {
+		t.Fatalf("expected PromptOptions to contain 'styleInstructions'")
+	}
+	styleMap, ok := si.(map[string]string)
+	if !ok {
+		t.Fatalf("expected styleInstructions to be map[string]string, got: %T", si)
+	}
+	for _, style := range []string{"technical", "casual", "academic", "marketing"} {
+		if _, ok := styleMap[style]; !ok {
+			t.Errorf("expected styleInstructions to contain key %q", style)
+		}
+	}
+
+	// Must have style custom command with handler
+	var styleCmd *CommandConfig
+	for i := range found.Commands {
+		if found.Commands[i].Name == "style" {
+			styleCmd = &found.Commands[i]
+			break
+		}
+	}
+	if styleCmd == nil {
+		t.Fatalf("expected 'style' command in prose-polisher")
+	}
+	if styleCmd.Type != "custom" {
+		t.Errorf("expected style command type 'custom', got %q", styleCmd.Type)
+	}
+	if styleCmd.Handler == "" {
+		t.Error("expected non-empty handler for style command")
+	}
+}
+
+func TestBuiltInGoal_ProsePolisherHotSnippets(t *testing.T) {
+	goals := GetBuiltInGoals()
+
+	var found *Goal
+	for i := range goals {
+		if goals[i].Name == "prose-polisher" {
+			found = &goals[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("prose-polisher goal not found")
+	}
+
+	if len(found.HotSnippets) == 0 {
+		t.Fatal("expected at least one hot-snippet for prose-polisher")
+	}
+
+	var expandSnippet *GoalHotSnippet
+	for i := range found.HotSnippets {
+		if found.HotSnippets[i].Name == "expand-section" {
+			expandSnippet = &found.HotSnippets[i]
+			break
+		}
+	}
+	if expandSnippet == nil {
+		t.Fatal("expected hot-snippet 'expand-section' in prose-polisher")
+	}
+	if expandSnippet.Text == "" {
+		t.Error("expected non-empty Text for expand-section snippet")
+	}
+	if expandSnippet.Description == "" {
+		t.Error("expected non-empty Description for expand-section snippet")
 	}
 }

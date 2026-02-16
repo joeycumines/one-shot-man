@@ -636,6 +636,25 @@ func TestBuiltinCommand_Mode(t *testing.T) {
 			t.Errorf("expected 'not found' message, got %q", buf.String())
 		}
 	})
+
+	t.Run("success", func(t *testing.T) {
+		var buf bytes.Buffer
+		mode := &ScriptMode{Name: "target", Commands: make(map[string]Command)}
+		tm := &TUIManager{
+			writer:       NewTUIWriterFromIO(&buf),
+			commands:     make(map[string]Command),
+			commandOrder: make([]string, 0),
+			modes:        map[string]*ScriptMode{"target": mode},
+		}
+		tm.registerBuiltinCommands()
+		err := tm.ExecuteCommand("mode", []string{"target"})
+		if err != nil {
+			t.Errorf("expected nil error for valid mode, got %v", err)
+		}
+		if tm.currentMode != mode {
+			t.Errorf("expected currentMode to be set to 'target'")
+		}
+	})
 }
 
 // ============================================================================
@@ -2132,6 +2151,32 @@ func TestBuiltinCommand_Reset_ArchiveError(t *testing.T) {
 	err := tm.ExecuteCommand("reset", []string{"extra-arg"})
 	if err == nil || !strings.Contains(err.Error(), "usage: reset") {
 		t.Errorf("expected usage error for reset with args, got: %v", err)
+	}
+}
+
+// TestBuiltinCommand_Reset_StateManagerNil tests reset when stateManager is nil.
+func TestBuiltinCommand_Reset_StateManagerNil(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	tm := &TUIManager{
+		writer:       NewTUIWriterFromIO(&buf),
+		commands:     make(map[string]Command),
+		commandOrder: make([]string, 0),
+		modes:        make(map[string]*ScriptMode),
+		stateManager: nil, // triggers "no state manager" error from resetAllState
+	}
+	tm.registerBuiltinCommands()
+
+	err := tm.ExecuteCommand("reset", nil)
+	if err != nil {
+		t.Fatalf("reset handler should not return error, got %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "WARNING") {
+		t.Errorf("expected WARNING in output, got %q", output)
+	}
+	if !strings.Contains(output, "reset aborted") {
+		t.Errorf("expected 'reset aborted' in output, got %q", output)
 	}
 }
 

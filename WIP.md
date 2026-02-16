@@ -13,12 +13,13 @@
 - T204: DONE (commit 879930c) — osm:regexp module
 - T205: DONE (commit 3894d38) — osm:encoding module
 - T206: DONE (commit 36f6403) — osm config reset subcommand
-- T207: PENDING REVIEW — inspector.go bug fix + 100% test coverage
+- T207: DONE (commit be70be9) — inspector.go bug fix + 100% test coverage
+- T208: PENDING COMMIT — tui_commands.go coverage 88.9%→97.2%
 - Blueprint updated
 
 ## Next Step
-- T207: Rule of Two verification, then commit
-- T208: Test coverage for internal/scripting/tui_commands.go
+- T208: Commit
+- T209: Test coverage for internal/scripting/terminal.go
 
 ## Architecture Notes
 - Old tasks T128-T170 have been remapped to T200-T269
@@ -52,3 +53,7 @@
 - T206 Run 1: PASS (scratch/review-t206-run1.md)
 - T206 Run 2: PASS (scratch/review-t206-run2.md)
 - T206 Committed: 36f6403
+- T207 Run 1: PASS (scratch/review-t207-run1.md) — found CHANGELOG inaccuracy, fixed, counter reset
+- T207 Run 1 v2: PASS (scratch/review-t207-run1-v2.md)
+- T207 Run 2: PASS (scratch/review-t207-run2.md)
+- T207 Committed: be70be9

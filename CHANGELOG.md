@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/security.md` documenting JavaScript sandbox boundaries and threat model
 - Performance benchmarks across engine creation, filesystem, PA-BT planning, bubbletea, and 8 additional categories (60+ new benchmarks total)
 - Test coverage expanded across 25+ packages with notable gains: bubblezone 0→98.7%, lipgloss 58→99%, tview 68.5→96.4%, bubbletea 75.8→91.2%, viewport 73.3→97.3%, overall cmd/osm 91.4→94.8%
+- `tui_commands.go` `registerBuiltinCommands` coverage 88.9%→97.2%: added `mode` success path and `reset` stateManager-nil error path tests; remaining 2.8% is an unreachable defensive `else` branch
 
 ### Changed
 - `osm:argv` `formatArgv` now applies POSIX shell quoting for arguments containing special characters (spaces, quotes, backslashes, glob chars, pipes, semicolons); arguments without special characters are passed through unquoted

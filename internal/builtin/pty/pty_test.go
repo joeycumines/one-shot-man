@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -174,7 +175,9 @@ func TestSpawn_WorkingDirectory(t *testing.T) {
 	outStr = strings.ReplaceAll(outStr, "\r", "")
 
 	// macOS may resolve /var -> /private/var via symlinks.
-	resolvedDir, resolveErr := os.Readlink(dir)
+	// filepath.EvalSymlinks resolves the full chain, unlike os.Readlink
+	// which only reads a single symlink target.
+	resolvedDir, resolveErr := filepath.EvalSymlinks(dir)
 	if resolveErr != nil {
 		resolvedDir = dir
 	}

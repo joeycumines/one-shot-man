@@ -779,6 +779,9 @@ func TestWriteFile_ReadOnlyDir(t *testing.T) {
 	if goruntime.GOOS == "windows" {
 		t.Skip("read-only directory behavior differs on Windows")
 	}
+	if os.Getuid() == 0 {
+		t.Skip("root can write to read-only directories")
+	}
 	t.Parallel()
 	runtime, exports := setupModuleAllPlatforms(t, nil)
 	writeFile := requireCallable(t, exports, "writeFile")

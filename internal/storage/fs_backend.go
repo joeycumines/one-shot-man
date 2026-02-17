@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -12,6 +13,7 @@ import (
 type FileSystemBackend struct {
 	sessionID string
 	lockFile  *os.File
+	mu        sync.Mutex // guards file operations that modify session state
 }
 
 // NewFileSystemBackend creates a new file system storage backend.
@@ -114,6 +116,9 @@ func (b *FileSystemBackend) SaveSession(session *Session) error {
 // Uses atomic os.Rename when both files are on the same filesystem.
 // If the source session file doesn't exist, returns nil (no-op).
 func (b *FileSystemBackend) ArchiveSession(sessionID string, destPath string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	if sessionID != b.sessionID {
 		return fmt.Errorf("session ID mismatch: backend is locked for %q, archive requested for %q", b.sessionID, sessionID)
 	}

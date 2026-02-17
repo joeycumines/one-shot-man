@@ -1,23 +1,29 @@
-# WIP — Session (T238)
+# WIP — Session (T239)
 
 ## Current State
 
-- **T200-T238**: Done (committed)
-  - T236=5e153de, T237=977e6c7, T238=pending commit
-- **T239**: Next — AI Orchestrator PTY spawning module
+- **T200-T239**: Done
+- **T239**: PTY spawning module — COMPLETE ✓
+  - `make build` ✓
+  - `make test` ✓ (internal/builtin/pty 3.414s)
+  - `make lint` ✓ (vet, staticcheck, deadcode)
+  - Rule of Two: 2/2 PASS ✓
+  - Ready to commit
 
-## T238 Summary
+## T239 Summary
 
-Created comprehensive AI Orchestrator design doc at docs/architecture-ai-orchestrator.md.
-Three approaches presented:
-- A: Minimal (Script-First) — max JS leverage, minimal Go
-- B: Clean Architecture (Module-First) — full Go module system
-- C: Pragmatic Balance (Recommended) — Go for safety, JS for workflow
+Created `internal/builtin/pty/` package with 5 files:
+- `pty.go` — Core types (Process, SpawnConfig, processHandle), Spawn(), all Process methods
+- `pty_unix.go` — Unix implementation using creack/pty
+- `pty_windows.go` — Windows stub (ErrNotSupported)
+- `module.go` — JS `osm:pty` module registration (spawn/read/write/resize/signal/wait/close/isAlive/pid)
+- `pty_test.go` — 19 tests covering all functionality
 
-Decision: Approach C — Go for safety-critical paths (PTY, output parsing,
-permission rejection, signal forwarding), JS for workflow logic.
+Modified:
+- `internal/builtin/register.go` — Added ptymod import and registration
+- `internal/builtin/register_test.go` — Added "osm:pty" to modules list
 
 ## Immediate Next Step
 
-1. Commit T238
-2. Start T239 (PTY spawning module implementation)
+1. Commit T239
+2. Start T240

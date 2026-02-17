@@ -37,6 +37,7 @@ func TestRegister(t *testing.T) {
 		"osm:exec",
 		"osm:os",
 		"osm:path",
+		"osm:pty",
 		"osm:regexp",
 		"osm:time",
 		"osm:ctxutil",

@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T238 DONE. T239 next."
+    "currentState": "T200-T239 DONE. T240 next."
   },
   "sequentialTasks": [
     {
@@ -215,7 +215,7 @@
     {
       "task": "T239: AI Orchestrator PTY spawning module",
       "description": "Implement PTY spawning module (osm:pty or extended osm:exec). Full PTY allocation via creack/pty, terminal state preservation, signal forwarding (SIGWINCH/SIGINT/SIGTERM), I/O bridging. Register as native module. Add tests. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T240: AI Orchestrator MCP bidirectional communication",

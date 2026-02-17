@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T221 DONE. Session 2026-02-17. T221 added 4 new builtin goals (sql-generator, report-analyzer, review-classifier, adaptive-editor). Proceeding IN STRICT SEQUENCE."
+    "currentState": "T200-T222 DONE. Session 2026-02-17. T222 config schema versioning complete. Proceeding IN STRICT SEQUENCE."
   },
   "sequentialTasks": [
     {
@@ -130,7 +130,7 @@
     {
       "task": "T222: Configuration model schema versioning and migration",
       "description": "Add schema versioning to config model. Add config.schema-version field, migration framework for older versions, machine-readable defaults documentation, 'osm config validate' subcommand. Add tests for migration paths. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T223: Goal/script discovery production hardening",

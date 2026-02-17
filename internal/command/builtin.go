@@ -220,6 +220,18 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		}
 		return c.executeValidate(stdout)
 	case "schema":
+		if len(args) > 1 && args[1] == "--json" {
+			if len(args) > 2 {
+				_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[2:])
+				return fmt.Errorf("unexpected arguments")
+			}
+			data, err := config.DefaultSchema().FormatSchemaJSON()
+			if err != nil {
+				return fmt.Errorf("failed to format schema as JSON: %w", err)
+			}
+			_, _ = fmt.Fprintln(stdout, string(data))
+			return nil
+		}
 		if len(args) > 1 {
 			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
 			return fmt.Errorf("unexpected arguments")
@@ -296,6 +308,10 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 // executeValidate validates the current config against the schema.
 func (c *ConfigCommand) executeValidate(stdout io.Writer) error {
 	issues := config.ValidateConfig(c.config, config.DefaultSchema())
+
+	// Check schema version.
+	issues = append(issues, config.CheckSchemaVersion(c.config)...)
+
 	if len(issues) == 0 {
 		_, _ = fmt.Fprintln(stdout, "Configuration is valid.")
 		return nil

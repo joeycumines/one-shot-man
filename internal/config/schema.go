@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -440,6 +441,32 @@ func writeOptionHelp(b *strings.Builder, o ConfigOption) {
 	b.WriteString("\n")
 }
 
+// SchemaEntry is a JSON-serializable representation of a ConfigOption.
+type SchemaEntry struct {
+	Key         string `json:"key"`
+	Type        string `json:"type"`
+	Default     string `json:"default"`
+	Description string `json:"description"`
+	Section     string `json:"section,omitempty"`
+	EnvVar      string `json:"envVar,omitempty"`
+}
+
+// FormatSchemaJSON returns a JSON representation of all registered options.
+func (s *ConfigSchema) FormatSchemaJSON() ([]byte, error) {
+	var entries []SchemaEntry
+	for _, o := range s.options {
+		entries = append(entries, SchemaEntry{
+			Key:         o.Key,
+			Type:        string(o.Type),
+			Default:     o.Default,
+			Description: o.Description,
+			Section:     o.Section,
+			EnvVar:      o.EnvVar,
+		})
+	}
+	return json.MarshalIndent(entries, "", "  ")
+}
+
 // --- Default schema for osm ---
 
 // DefaultSchema returns the canonical schema declaring all known osm
@@ -454,6 +481,9 @@ func DefaultSchema() *ConfigSchema {
 
 func defaultGlobalOptions() []ConfigOption {
 	return []ConfigOption{
+		// Schema versioning
+		{Key: "config.schema-version", Type: TypeInt, Default: "1", Description: "Configuration schema version (do not edit manually)"},
+
 		// Core global options
 		{Key: "verbose", Type: TypeBool, Default: "false", Description: "Enable verbose output"},
 		{Key: "color", Type: TypeString, Default: "auto", Description: "Color mode: auto, always, never"},

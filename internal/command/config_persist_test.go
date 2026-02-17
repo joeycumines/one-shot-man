@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -259,6 +260,13 @@ func TestConfigSet_FullRoundtrip_SetReadValidate(t *testing.T) {
 
 	// Set a known key
 	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"config.schema-version", "1"}, &stdout, &stderr); err != nil {
+		t.Fatalf("set config.schema-version: %v", err)
+	}
+
+	// Set a known key
+	stdout.Reset()
+	stderr.Reset()
 	if err := cmd.Execute([]string{"verbose", "true"}, &stdout, &stderr); err != nil {
 		t.Fatalf("set verbose: %v", err)
 	}
@@ -1006,5 +1014,112 @@ func TestConfigReset_DuplicateKeyArg(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unexpected argument") {
 		t.Fatalf("expected 'unexpected argument' in error, got: %v", err)
+	}
+}
+
+// --- T222: config validate schema version tests ---
+
+func TestConfigValidate_SchemaVersion_Current(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("config.schema-version", "1")
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"validate"}, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "Configuration is valid") {
+		t.Fatalf("expected valid config when schema version is current, got: %q", out)
+	}
+	if strings.Contains(out, "schema version") {
+		t.Fatalf("expected no schema version warning for current version, got: %q", out)
+	}
+}
+
+func TestConfigValidate_SchemaVersion_Old(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	// No config.schema-version → version 0 (outdated)
+
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"validate"}, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "outdated") {
+		t.Fatalf("expected 'outdated' warning for old schema version, got: %q", out)
+	}
+}
+
+func TestConfigValidate_SchemaVersion_Future(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("config.schema-version", "999")
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"validate"}, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "newer than supported") {
+		t.Fatalf("expected 'newer than supported' warning for future version, got: %q", out)
+	}
+}
+
+// --- T222: config schema --json tests ---
+
+func TestConfigSchema_JSON(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"schema", "--json"}, &stdout, &stderr); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stdout.String()
+	var entries []config.SchemaEntry
+	if err := json.Unmarshal([]byte(out), &entries); err != nil {
+		t.Fatalf("schema --json output is not valid JSON: %v\noutput: %s", err, out)
+	}
+
+	if len(entries) == 0 {
+		t.Fatal("expected non-empty schema entries")
+	}
+
+	// Verify config.schema-version is present.
+	found := false
+	for _, e := range entries {
+		if e.Key == "config.schema-version" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected config.schema-version in JSON schema output")
+	}
+}
+
+func TestConfigSchema_JSON_ExtraArgs(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"schema", "--json", "extra"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for extra args after --json")
+	}
+	if !strings.Contains(err.Error(), "unexpected arguments") {
+		t.Fatalf("expected 'unexpected arguments' error, got: %v", err)
 	}
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -1012,5 +1013,71 @@ func TestResolvedOption_DefaultField(t *testing.T) {
 	resolved := s.ResolveAll(c)
 	if resolved[0].Default != "auto" {
 		t.Errorf("expected Default=auto, got %q", resolved[0].Default)
+	}
+}
+
+// --- FormatSchemaJSON tests ---
+
+func TestFormatSchemaJSON_ValidJSON(t *testing.T) {
+	t.Parallel()
+	s := NewSchema()
+	s.RegisterAll([]ConfigOption{
+		{Key: "verbose", Type: TypeBool, Default: "false", Description: "Verbose output"},
+		{Key: "pager", Type: TypeString, Section: "help", Description: "Pager program"},
+	})
+
+	data, err := s.FormatSchemaJSON()
+	if err != nil {
+		t.Fatalf("FormatSchemaJSON returned error: %v", err)
+	}
+
+	var entries []SchemaEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		t.Fatalf("FormatSchemaJSON output is not valid JSON: %v\noutput: %s", err, string(data))
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+}
+
+func TestFormatSchemaJSON_ContainsAllOptions(t *testing.T) {
+	t.Parallel()
+	s := DefaultSchema()
+
+	data, err := s.FormatSchemaJSON()
+	if err != nil {
+		t.Fatalf("FormatSchemaJSON returned error: %v", err)
+	}
+
+	var entries []SchemaEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	globals := s.GlobalOptions()
+	var sectionCount int
+	for _, sec := range s.Sections() {
+		sectionCount += len(s.SectionOptions(sec))
+	}
+	expectedTotal := len(globals) + sectionCount
+
+	if len(entries) != expectedTotal {
+		t.Fatalf("expected %d entries (globals=%d + section=%d), got %d",
+			expectedTotal, len(globals), sectionCount, len(entries))
+	}
+}
+
+func TestDefaultSchema_ContainsSchemaVersion(t *testing.T) {
+	t.Parallel()
+	s := DefaultSchema()
+	opt := s.Lookup("", "config.schema-version")
+	if opt == nil {
+		t.Fatal("expected config.schema-version option in DefaultSchema")
+	}
+	if opt.Type != TypeInt {
+		t.Errorf("expected TypeInt for config.schema-version, got %q", opt.Type)
+	}
+	if opt.Default != "1" {
+		t.Errorf("expected default '1', got %q", opt.Default)
 	}
 }

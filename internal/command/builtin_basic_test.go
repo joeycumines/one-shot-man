@@ -299,6 +299,7 @@ func TestConfigCommandValidate(t *testing.T) {
 		cfg := config.NewConfig()
 		cfg.SetGlobalOption("verbose", "true")
 		cfg.SetGlobalOption("color", "auto")
+		cfg.SetGlobalOption("config.schema-version", "1")
 		cmd := NewConfigCommand(cfg)
 
 		var stdout, stderr bytes.Buffer

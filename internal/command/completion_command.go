@@ -127,8 +127,10 @@ _osm_completion() {
         config)
             COMPREPLY=($(compgen -W "validate schema list diff reset %s" -- ${cur}))
             return 0
-            ;;
-        log)
+            ;;        schema)
+            COMPREPLY=($(compgen -W "--json" -- ${cur}))
+            return 0
+            ;;        log)
             COMPREPLY=($(compgen -W "tail follow" -- ${cur}))
             return 0
             ;;
@@ -220,6 +222,9 @@ _osm() {
                 config)
                     _values 'config-subcommand' 'validate' 'schema' 'list' 'diff' 'reset' %s
                     ;;
+                schema)
+                    _values 'schema-flag' '--json'
+                    ;;
                 log)
                     _values 'log-subcommand' 'tail' 'follow'
                     ;;
@@ -295,6 +300,9 @@ complete -c osm -n '__fish_seen_subcommand_from sync' -a 'save list load init pu
 
 # Completion for 'config' subcommand
 complete -c osm -n '__fish_seen_subcommand_from config' -a 'validate schema list diff reset %s' -d 'Config subcommands'
+
+# Completion for 'config schema' --json flag
+complete -c osm -n '__fish_seen_subcommand_from schema' -a '--json' -d 'Output schema as JSON'
 
 # Completion for 'log' subcommand
 complete -c osm -n '__fish_seen_subcommand_from log' -a 'tail follow' -d 'Log subcommands'
@@ -397,6 +405,17 @@ Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
             [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
         }
         return
+    }
+
+    if ($tokenCount -eq 4 -and $command -eq 'config') {
+        $sub2 = if ($tokens.Count -ge 3) { $tokens[2] } else { '' }
+        if ($sub2 -eq 'schema') {
+            $flags = @('--json')
+            $flags | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+                [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+            }
+            return
+        }
     }
 
     if ($tokenCount -eq 3 -and $command -eq 'log') {

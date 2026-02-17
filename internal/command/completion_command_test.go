@@ -477,10 +477,10 @@ func TestCompletionCommandConfigSubcommand(t *testing.T) {
 		shell       string
 		expectedTxt []string
 	}{
-		{name: "bash config", shell: "bash", expectedTxt: append([]string{"config)", "validate", "schema", "list", "diff", "reset"}, configKeys...)},
-		{name: "zsh config", shell: "zsh", expectedTxt: append([]string{"config)", "_values 'config-subcommand' 'validate' 'schema' 'list' 'diff' 'reset'"}, configKeys...)},
-		{name: "fish config", shell: "fish", expectedTxt: append([]string{"__fish_seen_subcommand_from config", "validate", "schema", "list", "diff", "reset"}, configKeys...)},
-		{name: "powershell config", shell: "powershell", expectedTxt: append([]string{"config'", "'validate'", "'schema'", "'list'", "'diff'", "'reset'"}, configKeys...)},
+		{name: "bash config", shell: "bash", expectedTxt: append([]string{"config)", "validate", "schema", "list", "diff", "reset", "schema)", "--json"}, configKeys...)},
+		{name: "zsh config", shell: "zsh", expectedTxt: append([]string{"config)", "_values 'config-subcommand' 'validate' 'schema' 'list' 'diff' 'reset'", "schema)", "'--json'"}, configKeys...)},
+		{name: "fish config", shell: "fish", expectedTxt: append([]string{"__fish_seen_subcommand_from config", "validate", "schema", "list", "diff", "reset", "__fish_seen_subcommand_from schema", "--json"}, configKeys...)},
+		{name: "powershell config", shell: "powershell", expectedTxt: append([]string{"config'", "'validate'", "'schema'", "'list'", "'diff'", "'reset'", "'--json'"}, configKeys...)},
 	}
 
 	for _, tt := range tests {

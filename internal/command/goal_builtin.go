@@ -1786,5 +1786,674 @@ In addition to the general methodology, specifically evaluate:
 				{Name: "help", Type: "help"},
 			},
 		},
+
+		// SQL Generator Goal
+		{
+			Name:        "sql-generator",
+			Description: "Generate SQL queries from natural language descriptions",
+			Category:    "data-engineering",
+			Usage:       "Transforms natural language requests into valid SQL queries, with schema-aware context from provided DDL or table definitions",
+			Script:      goalScript,
+			FileName:    "goal.js",
+
+			TUITitle:  "SQL Generator",
+			TUIPrompt: "(sql-gen) > ",
+
+			NotableVariables: []string{"dialect"},
+
+			StateVars: map[string]interface{}{
+				"dialect": "auto",
+			},
+
+			PromptInstructions: `Generate SQL queries from the natural language request, targeting the {{.stateKeys.dialect}} dialect.
+
+{{.dialectInstructions}}
+
+---
+
+## Analysis & Generation Process
+
+### Phase 1: Schema Understanding
+- Analyze the provided schema (DDL, CREATE TABLE statements, ERD descriptions, or sample data)
+- Identify all tables, columns, data types, primary keys, foreign keys, and constraints
+- Map relationships between tables (one-to-one, one-to-many, many-to-many)
+- Note any indexes, views, or stored procedures that may be relevant
+- If no schema is provided, state your assumptions explicitly
+
+### Phase 2: Request Interpretation
+- Parse the natural language request into discrete data requirements
+- Identify: which tables are involved, what columns are needed, what filters apply, what aggregations are requested
+- Resolve ambiguities: if the request could be interpreted multiple ways, state the ambiguity and choose the most likely interpretation
+- Identify implicit requirements (e.g., "active users" implies a status filter, "recent orders" implies a date range)
+
+### Phase 3: Query Construction
+- Build the SQL query incrementally: FROM → JOIN → WHERE → GROUP BY → HAVING → SELECT → ORDER BY
+- Use explicit JOIN syntax (INNER JOIN, LEFT JOIN, etc.) — never implicit comma joins
+- Alias all tables with meaningful short names (e.g., ` + "`o`" + ` for orders, ` + "`u`" + ` for users)
+- Handle NULLs explicitly with IS NULL / IS NOT NULL or COALESCE where appropriate
+- Use parameterized placeholders for user-supplied values where applicable
+
+### Phase 4: Quality Checks
+- Verify the query avoids common anti-patterns:
+  - No SELECT * — always enumerate columns explicitly
+  - No implicit type conversions that could defeat index usage
+  - No Cartesian products (missing JOIN conditions)
+  - No correlated subqueries where a JOIN would suffice
+  - No unnecessary DISTINCT (usually indicates a JOIN problem)
+- Check for potential performance issues: missing WHERE clauses on large tables, non-sargable predicates, functions on indexed columns
+
+---
+
+**Output Format:**
+
+1. **The SQL Query** — properly formatted with consistent indentation
+2. **Query Explanation** — brief explanation of the logic: what each JOIN does, what the WHERE clause filters, what the aggregation produces
+3. **Assumptions** — any assumptions made about the schema or request
+4. **Performance Notes** — index recommendations, potential bottlenecks, estimated complexity
+5. **Alternative Approaches** — if there are multiple valid ways to write the query, briefly note alternatives and why you chose this approach`,
+
+			PromptTemplate: `**{{.description | upper}}**
+
+{{.promptInstructions}}
+
+## {{.contextHeader}}
+
+{{.contextTxtar}}`,
+
+			ContextHeader: "SCHEMA & QUERY REQUEST",
+
+			PromptOptions: map[string]interface{}{
+				"dialectInstructions": map[string]string{
+					"auto": `**Dialect: Auto-Detect**
+Detect the SQL dialect from the provided schema, DDL syntax, or context clues (e.g., backtick quoting suggests MySQL, double-colon casting suggests PostgreSQL). If no dialect can be inferred, default to standard ANSI SQL and note the assumption.`,
+					"postgresql": `**Dialect: PostgreSQL**
+Use PostgreSQL-specific syntax and features where appropriate:
+- ILIKE for case-insensitive matching
+- Array operations (ANY, ALL, array_agg, unnest)
+- CTEs (WITH clauses) for complex queries
+- Window functions (ROW_NUMBER, RANK, LAG, LEAD, NTILE)
+- Type casting with :: operator (e.g., column::text)
+- DISTINCT ON for selecting first row per group
+- RETURNING clause for INSERT/UPDATE/DELETE
+- LATERAL joins for correlated subqueries
+- FILTER clause for conditional aggregation
+- Generate_series for sequence generation`,
+					"mysql": `**Dialect: MySQL**
+Use MySQL-specific syntax and features where appropriate:
+- Backtick quoting for identifiers
+- LIMIT syntax (LIMIT offset, count)
+- GROUP_CONCAT for string aggregation
+- IF() and IFNULL() functions
+- AUTO_INCREMENT for identity columns
+- STRAIGHT_JOIN hint when optimizer chooses wrong plan
+- INSERT ... ON DUPLICATE KEY UPDATE for upserts
+- Use DATE_FORMAT, STR_TO_DATE for date handling
+- INDEX hints (USE INDEX, FORCE INDEX) when needed
+- Note: window functions require MySQL 8.0+`,
+					"sqlite": `**Dialect: SQLite**
+Use SQLite-specific syntax and be aware of limitations:
+- Limited type system (TEXT, INTEGER, REAL, BLOB, NULL)
+- No RIGHT JOIN or FULL OUTER JOIN — rewrite with LEFT JOIN
+- No ALTER TABLE DROP COLUMN (prior to 3.35.0)
+- Window functions require SQLite 3.25.0+
+- Use GROUP_CONCAT for string aggregation
+- UPSERT via INSERT OR REPLACE or ON CONFLICT
+- Date/time functions: date(), time(), datetime(), strftime()
+- No native BOOLEAN type — use INTEGER 0/1
+- AUTOINCREMENT keyword (different from AUTO_INCREMENT)
+- Be conservative with advanced features — note version requirements`,
+					"mssql": `**Dialect: SQL Server (MSSQL)**
+Use SQL Server-specific syntax and features where appropriate:
+- Square bracket quoting for identifiers ([table].[column])
+- TOP instead of LIMIT (SELECT TOP 10 ...)
+- CROSS APPLY and OUTER APPLY for correlated table-valued functions
+- STRING_AGG for string aggregation (SQL Server 2017+)
+- FORMAT function for date/number formatting
+- OFFSET ... FETCH NEXT for pagination (SQL Server 2012+)
+- MERGE statement for upserts
+- TRY_CAST, TRY_CONVERT for safe type conversion
+- CTE and window functions fully supported
+- ISNULL() instead of IFNULL() or COALESCE (though COALESCE is preferred for portability)`,
+				},
+			},
+
+			HotSnippets: []GoalHotSnippet{
+				{
+					Name:        "explain-plan",
+					Text:        "Add an EXPLAIN ANALYZE prefixed version of the query and explain the execution plan. Identify potential full table scans, index usage, join strategies, and estimated vs actual row counts. Suggest optimizations based on the plan.",
+					Description: "Follow-up: generate EXPLAIN ANALYZE and interpret the execution plan",
+				},
+			},
+
+			Commands: []CommandConfig{
+				{Name: "add", Type: "contextManager"},
+				{Name: "diff", Type: "contextManager"},
+				{Name: "note", Type: "contextManager", Description: "Add a natural language query request or schema notes"},
+				{Name: "list", Type: "contextManager"},
+				{Name: "edit", Type: "contextManager"},
+				{Name: "remove", Type: "contextManager"},
+				{Name: "show", Type: "contextManager"},
+				{Name: "copy", Type: "contextManager"},
+				{
+					Name:        "dialect",
+					Type:        "custom",
+					Description: "Set SQL dialect",
+					Usage:       "dialect <auto|postgresql|mysql|sqlite|mssql>",
+					Handler: `function (args) {
+                        if (args.length === 0) {
+                            output.print("Current dialect: " + (state.get(stateKeys.dialect) || "auto"));
+                            output.print("Available dialects: auto, postgresql, mysql, sqlite, mssql");
+                            return;
+                        }
+                        var dialect = args[0].toLowerCase();
+                        var validDialects = ["auto", "postgresql", "mysql", "sqlite", "mssql"];
+                        if (validDialects.indexOf(dialect) === -1) {
+                            output.print("Invalid dialect. Available: " + validDialects.join(", "));
+                            return;
+                        }
+                        state.set(stateKeys.dialect, dialect);
+                        output.print("SQL dialect set to: " + dialect);
+                    }`,
+				},
+				{Name: "help", Type: "help"},
+			},
+		},
+
+		// Report Analyzer Goal
+		{
+			Name:        "report-analyzer",
+			Description: "Extract insights, risks, and key information from long documents into concise memos",
+			Category:    "business-analysis",
+			Usage:       "Analyzes long corporate reports, technical documents, or research papers and produces structured memos with key findings, risks, and recommendations",
+			Script:      goalScript,
+			FileName:    "goal.js",
+
+			TUITitle:  "Report Analyzer",
+			TUIPrompt: "(report-analyzer) > ",
+
+			NotableVariables: []string{"focus"},
+
+			StateVars: map[string]interface{}{
+				"focus": "general",
+			},
+
+			PromptInstructions: `Read the entire document provided and produce a structured analysis memo with a {{.stateKeys.focus}} focus.
+
+{{.focusInstructions}}
+
+---
+
+## Memo Structure
+
+### 1. Executive Summary
+2-3 sentences capturing the document's core message, most important finding, and overall assessment. A busy executive should be able to read only this section and understand the key takeaway.
+
+### 2. Key Findings
+Bulleted list of the most significant findings, insights, or data points from the document. For each:
+- **Finding**: clear, specific statement of the finding
+- **Evidence**: cite the specific section, page, or data point that supports it
+- **Significance**: why this matters — what are the implications?
+
+### 3. Risks & Concerns
+Categorize each risk by severity:
+- 🔴 **HIGH**: immediate threats or critical issues requiring urgent attention
+- 🟡 **MEDIUM**: significant concerns that need monitoring or near-term action
+- 🟢 **LOW**: minor issues or long-term considerations
+
+For each risk: describe the risk, its potential impact, likelihood, and any mitigating factors mentioned in the document.
+
+### 4. Opportunities
+Positive developments, growth areas, or strategic advantages identified in the document. Be specific about what the opportunity is and what would be needed to capitalize on it.
+
+### 5. Financial Highlights
+(If applicable — skip if the document contains no financial information)
+- Revenue, profit, margin, and cash flow figures with period-over-period comparisons
+- Key financial ratios or metrics
+- Forward-looking projections or guidance
+- Notable changes in financial position
+
+### 6. Strategic Implications
+What does this document mean for strategic decision-making? Connect the findings to broader context:
+- How does this affect competitive positioning?
+- What trends does this confirm or contradict?
+- What decisions should this information inform?
+
+### 7. Recommended Actions
+Concrete, actionable recommendations based on the analysis. Each should specify:
+- **Action**: what specifically should be done
+- **Rationale**: why, based on the document's content
+- **Urgency**: immediate, near-term, or long-term
+
+### 8. Open Questions
+Questions raised by the document that are not answered within it. Flag information gaps, unclear statements, or areas requiring further investigation.
+
+---
+
+**Analysis Standards:**
+- Cite specific sections, pages, or paragraphs when referencing document content
+- Quantify claims wherever the document provides numbers — avoid vague language when data exists
+- Clearly distinguish between facts stated in the document and your own interpretive analysis
+- Flag contradictions within the document (e.g., optimistic narrative vs concerning data)
+- Maintain analytical objectivity — do not editorialize beyond what the evidence supports`,
+
+			PromptTemplate: `**{{.description | upper}}**
+
+{{.promptInstructions}}
+
+## {{.contextHeader}}
+
+{{.contextTxtar}}`,
+
+			ContextHeader: "REPORT / DOCUMENT",
+
+			PromptOptions: map[string]interface{}{
+				"focusInstructions": map[string]string{
+					"general": `**Focus: General Analysis**
+Perform a balanced analysis covering all aspects of the document. Weight all sections of the memo equally and surface whatever is most significant regardless of category.`,
+					"financial": `**Focus: Financial Analysis**
+Prioritize financial metrics, revenue trends, cost structures, margins, cash flow dynamics, and financial projections. Pay special attention to:
+- Year-over-year and quarter-over-quarter comparisons
+- Key financial ratios (P/E, debt-to-equity, current ratio, etc.)
+- Revenue mix and segment performance
+- CapEx vs OpEx trends
+- Working capital changes
+- Guidance and forward-looking statements vs actual performance`,
+					"risk": `**Focus: Risk Analysis**
+Prioritize identification of risks, threats, compliance issues, and operational concerns. Perform a thorough risk assessment:
+- Regulatory and compliance risks
+- Operational risks (supply chain, key personnel, technology)
+- Market and competitive risks
+- Financial risks (liquidity, credit, currency)
+- Reputational risks
+- Emerging risks not yet fully materialized
+Weight the Risks & Concerns section most heavily in your output.`,
+					"strategic": `**Focus: Strategic Analysis**
+Prioritize strategy, competitive positioning, market trends, and growth opportunities. Evaluate:
+- Competitive moat and differentiation
+- Market share trends and total addressable market
+- Strategic initiatives and their progress
+- M&A activity or potential
+- Partnership and ecosystem development
+- Innovation pipeline and R&D direction
+Weight the Strategic Implications and Opportunities sections most heavily.`,
+					"technical": `**Focus: Technical Analysis**
+Prioritize technical architecture, capabilities, limitations, and scalability. Evaluate:
+- Technical architecture and design decisions
+- Performance characteristics and benchmarks
+- Scalability constraints and growth capacity
+- Technical debt and maintenance burden
+- Integration capabilities and API surface
+- Security posture and vulnerability surface
+- Technology stack choices and their implications`,
+				},
+			},
+
+			Commands: []CommandConfig{
+				{Name: "add", Type: "contextManager"},
+				{Name: "diff", Type: "contextManager"},
+				{Name: "note", Type: "contextManager", Description: "Add notes about what to focus on or questions to answer"},
+				{Name: "list", Type: "contextManager"},
+				{Name: "edit", Type: "contextManager"},
+				{Name: "remove", Type: "contextManager"},
+				{Name: "show", Type: "contextManager"},
+				{Name: "copy", Type: "contextManager"},
+				{
+					Name:        "focus",
+					Type:        "custom",
+					Description: "Set analysis focus area",
+					Usage:       "focus <general|financial|risk|strategic|technical>",
+					Handler: `function (args) {
+                        if (args.length === 0) {
+                            output.print("Current focus: " + (state.get(stateKeys.focus) || "general"));
+                            output.print("Available focus areas: general, financial, risk, strategic, technical");
+                            return;
+                        }
+                        var focus = args[0].toLowerCase();
+                        var validFocuses = ["general", "financial", "risk", "strategic", "technical"];
+                        if (validFocuses.indexOf(focus) === -1) {
+                            output.print("Invalid focus. Available: " + validFocuses.join(", "));
+                            return;
+                        }
+                        state.set(stateKeys.focus, focus);
+                        output.print("Analysis focus set to: " + focus);
+                    }`,
+				},
+				{Name: "help", Type: "help"},
+			},
+		},
+
+		// Review Classifier Goal
+		{
+			Name:        "review-classifier",
+			Description: "Categorize feedback and reviews with sentiment analysis",
+			Category:    "product-analysis",
+			Usage:       "Analyzes user feedback, product reviews, or support tickets and categorizes them into structured tags with positive/negative/neutral sentiment per category",
+			Script:      goalScript,
+			FileName:    "goal.js",
+
+			TUITitle:  "Review Classifier",
+			TUIPrompt: "(review-classifier) > ",
+
+			NotableVariables: []string{"outputFormat"},
+
+			StateVars: map[string]interface{}{
+				"outputFormat": "detailed",
+			},
+
+			PromptInstructions: `Analyze the provided feedback and classify it into structured categories with sentiment analysis.
+
+{{.outputFormatInstructions}}
+
+---
+
+## Classification Process
+
+### Step 1: Read & Segment
+- Read each piece of feedback in its entirety
+- Segment multi-topic feedback into individual topic units
+- Identify the primary subject of each segment
+
+### Step 2: Categorize
+Assign each segment to one or more categories from this taxonomy:
+
+**Product Features**
+- Core Functionality — primary features and capabilities
+- New Features — feature requests or reactions to new additions
+- Missing Features — gaps compared to expectations or competitors
+- Feature Quality — depth, polish, and completeness of existing features
+
+**User Experience**
+- Onboarding — first-time setup, learning curve, getting started
+- Navigation — finding features, information architecture, menu structure
+- Design & Aesthetics — visual design, layout, branding
+- Accessibility — disability access, internationalization, readability
+
+**Performance**
+- Speed — response times, loading, lag
+- Reliability — crashes, errors, downtime, data loss
+- Scalability — behavior under load, large data sets, concurrent users
+
+**Customer Support**
+- Response Time — speed of support responses
+- Resolution Quality — effectiveness of solutions provided
+- Communication — clarity, tone, helpfulness of support interactions
+- Self-Service — documentation, FAQs, knowledge base quality
+
+**Pricing**
+- Value for Money — perceived value relative to cost
+- Plan Structure — tier design, feature gating, upgrade path
+- Billing — invoicing, payment methods, refund experience
+
+**Security**
+- Data Privacy — data handling, GDPR, permissions
+- Authentication — login, MFA, SSO experience
+- Trust — confidence in the product's security posture
+
+**Mobile**
+- App Quality — native app experience, responsiveness
+- Cross-Platform — consistency between mobile and desktop
+- Offline — functionality without connectivity
+
+**Integrations**
+- Third-Party — connections with other tools and services
+- API — developer experience, documentation, reliability
+- Import/Export — data portability, migration tools
+
+### Step 3: Sentiment Analysis
+For each category assignment, determine sentiment:
+- **Positive** 👍 — praise, satisfaction, delight
+- **Negative** 👎 — complaint, frustration, disappointment
+- **Neutral** 😐 — observation, question, suggestion without clear sentiment
+
+### Step 4: Extract Evidence
+For each categorization, identify the specific verbatim quote or paraphrase that supports the classification. This creates an audit trail for the analysis.
+
+### Step 5: Synthesize
+- Identify recurring themes across all feedback
+- Calculate sentiment distribution (% positive, negative, neutral)
+- Determine the most-discussed categories
+- Surface actionable insights: what should be improved, what should be preserved, what should be built
+
+---
+
+**Handling Edge Cases:**
+- **Mixed sentiment**: a single segment can praise one aspect while criticizing another — split into separate category assignments
+- **Implicit complaints**: "I wish it could..." or "It would be nice if..." — classify as negative/feature request even without explicit negativity
+- **Feature requests vs bug reports**: distinguish between "this doesn't work" (bug → negative) and "I want this to exist" (feature request → neutral/negative)
+- **Sarcasm**: look for tonal indicators; when uncertain, flag as ambiguous
+- **Comparative feedback**: "better than X but worse than Y" — note the comparison context`,
+
+			PromptTemplate: `**{{.description | upper}}**
+
+{{.promptInstructions}}
+
+## {{.contextHeader}}
+
+{{.contextTxtar}}`,
+
+			ContextHeader: "FEEDBACK / REVIEWS",
+
+			PromptOptions: map[string]interface{}{
+				"outputFormatInstructions": map[string]string{
+					"detailed": `**Output Format: Detailed**
+Provide full analysis with:
+- Each feedback item analyzed individually with verbatim quotes
+- Category assignments with reasoning for each classification
+- Confidence level for each sentiment judgment (high/medium/low)
+- Cross-references between related feedback items
+- Comprehensive summary with statistical breakdown`,
+					"summary": `**Output Format: Summary Table**
+Provide a condensed table format:
+
+| # | Category | Subcategory | Sentiment | Key Point | Source |
+|---|----------|-------------|-----------|-----------|--------|
+| 1 | UX       | Navigation  | 👎 Negative | Hard to find settings | Review #3 |
+
+Follow the table with a brief (3-5 sentence) overall summary and top 3 actionable recommendations.`,
+					"json": `**Output Format: Structured JSON**
+Output as a valid JSON object with this structure:
+` + "```json" + `
+{
+  "totalItems": 0,
+  "sentimentSummary": { "positive": 0, "negative": 0, "neutral": 0 },
+  "items": [
+    {
+      "id": 1,
+      "source": "Review #1",
+      "categories": [
+        {
+          "category": "Product Features",
+          "subcategory": "Core Functionality",
+          "sentiment": "positive",
+          "confidence": "high",
+          "quote": "verbatim text",
+          "insight": "brief interpretation"
+        }
+      ]
+    }
+  ],
+  "themes": ["theme1", "theme2"],
+  "recommendations": ["action1", "action2"]
+}
+` + "```",
+				},
+			},
+
+			Commands: []CommandConfig{
+				{Name: "add", Type: "contextManager"},
+				{Name: "note", Type: "contextManager", Description: "Add notes about product context or classification priorities"},
+				{Name: "list", Type: "contextManager"},
+				{Name: "edit", Type: "contextManager"},
+				{Name: "remove", Type: "contextManager"},
+				{Name: "show", Type: "contextManager"},
+				{Name: "copy", Type: "contextManager"},
+				{
+					Name:        "output-format",
+					Type:        "custom",
+					Description: "Set output format for classification results",
+					Usage:       "output-format <detailed|summary|json>",
+					Handler: `function (args) {
+                        if (args.length === 0) {
+                            output.print("Current format: " + (state.get(stateKeys.outputFormat) || "detailed"));
+                            output.print("Available formats: detailed, summary, json");
+                            return;
+                        }
+                        var fmt = args[0].toLowerCase();
+                        var validFormats = ["detailed", "summary", "json"];
+                        if (validFormats.indexOf(fmt) === -1) {
+                            output.print("Invalid format. Available: " + validFormats.join(", "));
+                            return;
+                        }
+                        state.set(stateKeys.outputFormat, fmt);
+                        output.print("Output format set to: " + fmt);
+                    }`,
+				},
+				{Name: "help", Type: "help"},
+			},
+		},
+
+		// Adaptive Editor Goal
+		{
+			Name:        "adaptive-editor",
+			Description: "Rewrite text following specific instructions for tone, audience, or style",
+			Category:    "writing",
+			Usage:       "Rewrites provided text according to specified instructions — change tone, simplify for a different audience, translate register, or apply specific style guidelines",
+			Script:      goalScript,
+			FileName:    "goal.js",
+
+			TUITitle:  "Adaptive Editor",
+			TUIPrompt: "(adaptive-editor) > ",
+
+			NotableVariables: []string{"instruction"},
+
+			StateVars: map[string]interface{}{
+				"instruction": "",
+			},
+
+			PromptInstructions: `Rewrite the provided text following the user's editing instructions.
+
+{{if .stateKeys.instruction}}**Active Instruction:** {{.stateKeys.instruction}}{{else}}**⚠ No instruction set.** Use the ` + "`instruct`" + ` command to set the rewriting instruction before copying the prompt. Example: ` + "`instruct simplify for a non-technical audience`" + `{{end}}
+
+---
+
+## Rewriting Guidelines
+
+### Core Principles
+- **Preserve core meaning**: the rewritten text must convey the same essential information and arguments as the original
+- **Maintain factual accuracy**: do not introduce, remove, or alter facts, figures, dates, or claims
+- **Adapt the vessel, not the cargo**: change vocabulary, sentence structure, tone, and register to match the instruction — but the underlying message stays the same
+- **Preserve proper nouns and technical terms** unless the instruction specifically asks to simplify or replace them
+- **Maintain document structure**: preserve headings, lists, numbered items, and other structural elements unless the instruction calls for restructuring
+
+### Adaptation Dimensions
+Depending on the instruction, you may need to adjust one or more of these:
+
+**Vocabulary Level**
+- Simplify: replace jargon with everyday language, define necessary technical terms inline
+- Elevate: introduce precise terminology, domain-specific vocabulary, formal register
+- Match audience: use vocabulary appropriate for the target reader (child, executive, specialist, general public)
+
+**Sentence Structure**
+- Simplify: shorter sentences, active voice, one idea per sentence, minimal subordinate clauses
+- Formalize: more complex constructions where they aid precision, proper use of semicolons and em dashes
+- Match reading level: adjust Flesch-Kincaid level to match the target audience
+
+**Tone & Register**
+- Formal ↔ Informal: adjust contractions, colloquialisms, directness
+- Serious ↔ Humorous: adjust wit, levity, gravity as instructed
+- Objective ↔ Persuasive: adjust from neutral reporting to advocacy or vice versa
+- Confident ↔ Cautious: adjust hedging language, certainty markers
+
+**Length & Density**
+- Concise: reduce word count while preserving all key points — target minimum 20% reduction
+- Expanded: add explanations, examples, transitions, and context to aid understanding
+- Maintain: keep approximately the same length, changing only the expression
+
+### Common Instruction Types
+These are examples of instructions you should be able to handle:
+- "Simplify for a 10-year-old"
+- "Make this suitable for a board presentation"
+- "Rewrite as a casual blog post"
+- "Add humor while keeping it professional"
+- "Translate from marketing-speak to technical documentation"
+- "Make this more persuasive"
+- "Adjust to a 6th-grade reading level"
+- "Remove all jargon"
+- "Make this sound like [specific author/publication style]"
+
+---
+
+**Output Format:**
+
+1. **Rewritten Text** — the complete rewritten version, ready to use
+2. **Change Summary** — brief notes on what was adapted and why:
+   - What vocabulary changes were made
+   - How sentence structure was adjusted
+   - What tone/register shifts were applied
+   - Approximate reading level of the result
+   - Word count: original vs rewritten`,
+
+			PromptTemplate: `**{{.description | upper}}**
+
+{{.promptInstructions}}
+
+## {{.contextHeader}}
+
+{{.contextTxtar}}`,
+
+			ContextHeader: "TEXT TO REWRITE",
+
+			HotSnippets: []GoalHotSnippet{
+				{
+					Name:        "compare-versions",
+					Text:        "Show the original and rewritten text side-by-side with annotations highlighting what changed and why. For each significant change, explain the reasoning behind the adaptation.",
+					Description: "Follow-up: side-by-side comparison with change annotations",
+				},
+			},
+
+			Commands: []CommandConfig{
+				{Name: "add", Type: "contextManager"},
+				{Name: "diff", Type: "contextManager"},
+				{Name: "note", Type: "contextManager", Description: "Add notes about target audience or style preferences"},
+				{Name: "list", Type: "contextManager"},
+				{Name: "edit", Type: "contextManager"},
+				{Name: "remove", Type: "contextManager"},
+				{Name: "show", Type: "contextManager"},
+				{Name: "copy", Type: "contextManager"},
+				{
+					Name:        "instruct",
+					Type:        "custom",
+					Description: "Set the rewriting instruction",
+					Usage:       "instruct <instruction text>",
+					Handler: `function (args) {
+                        var current = state.get(stateKeys.instruction) || "";
+                        var text;
+                        if (args.length === 0) {
+                            var edited = ctxmgr.openEditor("rewriting-instruction", current);
+                            text = (edited || "").trim();
+                        } else {
+                            text = args.join(" ").trim();
+                        }
+                        if (!text) {
+                            var wasSet = current !== "";
+                            if (wasSet) {
+                                state.set(stateKeys.instruction, "");
+                                output.print("Instruction cleared");
+                            } else {
+                                output.print("Instruction not updated (no content provided).");
+                            }
+                            return;
+                        }
+                        if (text !== current) {
+                            state.set(stateKeys.instruction, text);
+                            output.print("Instruction set to: " + text);
+                        } else {
+                            output.print("Instruction unchanged");
+                        }
+                    }`,
+				},
+				{Name: "help", Type: "help"},
+			},
+		},
 	}
 }

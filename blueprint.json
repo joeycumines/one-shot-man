@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T220 DONE. Session 2026-02-17. T220 .prompt.md discovery hardening complete. Proceeding IN STRICT SEQUENCE."
+    "currentState": "T200-T221 DONE. Session 2026-02-17. T221 added 4 new builtin goals (sql-generator, report-analyzer, review-classifier, adaptive-editor). Proceeding IN STRICT SEQUENCE."
   },
   "sequentialTasks": [
     {
@@ -125,7 +125,7 @@
     {
       "task": "T221: Additional Anthropic prompt library goals",
       "description": "Research full Anthropic prompt library. Implement 3-5 new goals in goal_builtin.go following established pattern (stateVars, hotSnippets, flagDefs, promptOptions). Each needs: registration, metadata, prompt template, integration test. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T222: Configuration model schema versioning and migration",

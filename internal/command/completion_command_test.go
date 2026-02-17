@@ -249,20 +249,25 @@ func TestCompletionCommandGoalSubcommand(t *testing.T) {
 	registry.Register(NewGoalCommand(cfg, goalRegistry))
 
 	goalNames := []string{
+		"adaptive-editor",
 		"bug-buster",
 		"cite-sources",
 		"code-explainer",
 		"code-optimizer",
 		"comment-stripper",
+		"commit-message",
 		"data-to-json",
 		"doc-generator",
-		"test-generator",
-		"commit-message",
+		"implementation-plan",
 		"meeting-notes",
 		"morale-improver",
 		"pii-scrubber",
 		"prose-polisher",
-		"implementation-plan",
+		"report-analyzer",
+		"review-classifier",
+		"sql-generator",
+		"test-generator",
+		"which-one-is-better",
 	}
 
 	tests := []struct {
@@ -276,7 +281,7 @@ func TestCompletionCommandGoalSubcommand(t *testing.T) {
 			expectedText: append([]string{
 				"goal)",
 				// Verify exact format: sorted, space-delimited list in compgen -W
-				"COMPREPLY=($(compgen -W \"paths bug-buster cite-sources code-explainer code-optimizer comment-stripper commit-message data-to-json doc-generator implementation-plan meeting-notes morale-improver pii-scrubber prose-polisher test-generator which-one-is-better\"",
+				"COMPREPLY=($(compgen -W \"paths adaptive-editor bug-buster cite-sources code-explainer code-optimizer comment-stripper commit-message data-to-json doc-generator implementation-plan meeting-notes morale-improver pii-scrubber prose-polisher report-analyzer review-classifier sql-generator test-generator which-one-is-better\"",
 			}, goalNames...),
 		},
 		{

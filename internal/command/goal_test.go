@@ -619,6 +619,10 @@ func TestGoalCommand_GoToJSPipeline_ContextHeader(t *testing.T) {
 		"data-to-json":        "RAW DATA / UNSTRUCTURED INPUT",
 		"cite-sources":        "SOURCE MATERIAL",
 		"which-one-is-better": "OPTIONS & CONTEXT",
+		"sql-generator":       "SCHEMA & QUERY REQUEST",
+		"report-analyzer":     "REPORT / DOCUMENT",
+		"review-classifier":   "FEEDBACK / REVIEWS",
+		"adaptive-editor":     "TEXT TO REWRITE",
 	}
 
 	for _, goal := range goals {

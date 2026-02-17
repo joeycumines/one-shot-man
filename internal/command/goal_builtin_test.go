@@ -107,6 +107,30 @@ func TestBuiltInGoal_Tier1GoalsExist(t *testing.T) {
 			contextHeader: "SOURCE MATERIAL",
 			wantCommands:  []string{"add", "diff", "note", "format", "list", "edit", "remove", "show", "copy", "help"},
 		},
+		{
+			name:          "sql-generator",
+			category:      "data-engineering",
+			contextHeader: "SCHEMA & QUERY REQUEST",
+			wantCommands:  []string{"add", "diff", "note", "dialect", "list", "edit", "remove", "show", "copy", "help"},
+		},
+		{
+			name:          "report-analyzer",
+			category:      "business-analysis",
+			contextHeader: "REPORT / DOCUMENT",
+			wantCommands:  []string{"add", "diff", "note", "focus", "list", "edit", "remove", "show", "copy", "help"},
+		},
+		{
+			name:          "review-classifier",
+			category:      "product-analysis",
+			contextHeader: "FEEDBACK / REVIEWS",
+			wantCommands:  []string{"add", "note", "output-format", "list", "edit", "remove", "show", "copy", "help"},
+		},
+		{
+			name:          "adaptive-editor",
+			category:      "writing",
+			contextHeader: "TEXT TO REWRITE",
+			wantCommands:  []string{"add", "diff", "note", "instruct", "list", "edit", "remove", "show", "copy", "help"},
+		},
 	}
 
 	for _, tc := range tier1 {
@@ -651,5 +675,369 @@ func TestBuiltInGoal_CiteSourcesHotSnippets(t *testing.T) {
 	}
 	if challengeSnippet.Description == "" {
 		t.Error("expected non-empty Description for challenge-claims snippet")
+	}
+}
+
+func TestBuiltInGoal_SQLGeneratorDialectState(t *testing.T) {
+	goals := GetBuiltInGoals()
+
+	var found *Goal
+	for i := range goals {
+		if goals[i].Name == "sql-generator" {
+			found = &goals[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("sql-generator goal not found")
+	}
+
+	// Must have dialect in StateVars with default "auto"
+	v, ok := found.StateVars["dialect"]
+	if !ok {
+		t.Fatalf("expected stateVars to contain 'dialect'")
+	}
+	if sv, ok := v.(string); !ok || sv != "auto" {
+		t.Fatalf("expected default stateVars['dialect'] == 'auto', got: %#v", v)
+	}
+
+	// Must have NotableVariables containing "dialect"
+	foundNotable := false
+	for _, nv := range found.NotableVariables {
+		if nv == "dialect" {
+			foundNotable = true
+			break
+		}
+	}
+	if !foundNotable {
+		t.Fatalf("expected NotableVariables to contain 'dialect', got: %v", found.NotableVariables)
+	}
+
+	// Must have PromptOptions with dialectInstructions
+	if found.PromptOptions == nil {
+		t.Fatalf("expected non-nil PromptOptions")
+	}
+	di, ok := found.PromptOptions["dialectInstructions"]
+	if !ok {
+		t.Fatalf("expected PromptOptions to contain 'dialectInstructions'")
+	}
+	dialectMap, ok := di.(map[string]string)
+	if !ok {
+		t.Fatalf("expected dialectInstructions to be map[string]string, got: %T", di)
+	}
+	for _, dialect := range []string{"auto", "postgresql", "mysql", "sqlite", "mssql"} {
+		if _, ok := dialectMap[dialect]; !ok {
+			t.Errorf("expected dialectInstructions to contain key %q", dialect)
+		}
+	}
+
+	// Must have dialect custom command with handler
+	var dialectCmd *CommandConfig
+	for i := range found.Commands {
+		if found.Commands[i].Name == "dialect" {
+			dialectCmd = &found.Commands[i]
+			break
+		}
+	}
+	if dialectCmd == nil {
+		t.Fatalf("expected 'dialect' command in sql-generator")
+	}
+	if dialectCmd.Type != "custom" {
+		t.Errorf("expected dialect command type 'custom', got %q", dialectCmd.Type)
+	}
+	if dialectCmd.Handler == "" {
+		t.Error("expected non-empty handler for dialect command")
+	}
+}
+
+func TestBuiltInGoal_ReportAnalyzerFocusState(t *testing.T) {
+	goals := GetBuiltInGoals()
+
+	var found *Goal
+	for i := range goals {
+		if goals[i].Name == "report-analyzer" {
+			found = &goals[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("report-analyzer goal not found")
+	}
+
+	// Must have focus in StateVars with default "general"
+	v, ok := found.StateVars["focus"]
+	if !ok {
+		t.Fatalf("expected stateVars to contain 'focus'")
+	}
+	if sv, ok := v.(string); !ok || sv != "general" {
+		t.Fatalf("expected default stateVars['focus'] == 'general', got: %#v", v)
+	}
+
+	// Must have NotableVariables containing "focus"
+	foundNotable := false
+	for _, nv := range found.NotableVariables {
+		if nv == "focus" {
+			foundNotable = true
+			break
+		}
+	}
+	if !foundNotable {
+		t.Fatalf("expected NotableVariables to contain 'focus', got: %v", found.NotableVariables)
+	}
+
+	// Must have PromptOptions with focusInstructions
+	if found.PromptOptions == nil {
+		t.Fatalf("expected non-nil PromptOptions")
+	}
+	fi, ok := found.PromptOptions["focusInstructions"]
+	if !ok {
+		t.Fatalf("expected PromptOptions to contain 'focusInstructions'")
+	}
+	focusMap, ok := fi.(map[string]string)
+	if !ok {
+		t.Fatalf("expected focusInstructions to be map[string]string, got: %T", fi)
+	}
+	for _, focus := range []string{"general", "financial", "risk", "strategic", "technical"} {
+		if _, ok := focusMap[focus]; !ok {
+			t.Errorf("expected focusInstructions to contain key %q", focus)
+		}
+	}
+
+	// Must have focus custom command with handler
+	var focusCmd *CommandConfig
+	for i := range found.Commands {
+		if found.Commands[i].Name == "focus" {
+			focusCmd = &found.Commands[i]
+			break
+		}
+	}
+	if focusCmd == nil {
+		t.Fatalf("expected 'focus' command in report-analyzer")
+	}
+	if focusCmd.Type != "custom" {
+		t.Errorf("expected focus command type 'custom', got %q", focusCmd.Type)
+	}
+	if focusCmd.Handler == "" {
+		t.Error("expected non-empty handler for focus command")
+	}
+}
+
+func TestBuiltInGoal_ReviewClassifierOutputFormatState(t *testing.T) {
+	goals := GetBuiltInGoals()
+
+	var found *Goal
+	for i := range goals {
+		if goals[i].Name == "review-classifier" {
+			found = &goals[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("review-classifier goal not found")
+	}
+
+	// Must have outputFormat in StateVars with default "detailed"
+	v, ok := found.StateVars["outputFormat"]
+	if !ok {
+		t.Fatalf("expected stateVars to contain 'outputFormat'")
+	}
+	if sv, ok := v.(string); !ok || sv != "detailed" {
+		t.Fatalf("expected default stateVars['outputFormat'] == 'detailed', got: %#v", v)
+	}
+
+	// Must have NotableVariables containing "outputFormat"
+	foundNotable := false
+	for _, nv := range found.NotableVariables {
+		if nv == "outputFormat" {
+			foundNotable = true
+			break
+		}
+	}
+	if !foundNotable {
+		t.Fatalf("expected NotableVariables to contain 'outputFormat', got: %v", found.NotableVariables)
+	}
+
+	// Must have PromptOptions with outputFormatInstructions
+	if found.PromptOptions == nil {
+		t.Fatalf("expected non-nil PromptOptions")
+	}
+	ofi, ok := found.PromptOptions["outputFormatInstructions"]
+	if !ok {
+		t.Fatalf("expected PromptOptions to contain 'outputFormatInstructions'")
+	}
+	formatMap, ok := ofi.(map[string]string)
+	if !ok {
+		t.Fatalf("expected outputFormatInstructions to be map[string]string, got: %T", ofi)
+	}
+	for _, format := range []string{"detailed", "summary", "json"} {
+		if _, ok := formatMap[format]; !ok {
+			t.Errorf("expected outputFormatInstructions to contain key %q", format)
+		}
+	}
+
+	// Must have output-format custom command with handler
+	var fmtCmd *CommandConfig
+	for i := range found.Commands {
+		if found.Commands[i].Name == "output-format" {
+			fmtCmd = &found.Commands[i]
+			break
+		}
+	}
+	if fmtCmd == nil {
+		t.Fatalf("expected 'output-format' command in review-classifier")
+	}
+	if fmtCmd.Type != "custom" {
+		t.Errorf("expected output-format command type 'custom', got %q", fmtCmd.Type)
+	}
+	if fmtCmd.Handler == "" {
+		t.Error("expected non-empty handler for output-format command")
+	}
+}
+
+func TestBuiltInGoal_ReviewClassifierNoDiffCommand(t *testing.T) {
+	goals := GetBuiltInGoals()
+
+	var found *Goal
+	for i := range goals {
+		if goals[i].Name == "review-classifier" {
+			found = &goals[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("review-classifier goal not found")
+	}
+
+	// review-classifier should NOT have a diff command (not relevant for feedback text)
+	for _, c := range found.Commands {
+		if c.Name == "diff" {
+			t.Fatal("review-classifier should not have a 'diff' command — diffs are not relevant for feedback classification")
+		}
+	}
+}
+
+func TestBuiltInGoal_AdaptiveEditorInstructState(t *testing.T) {
+	goals := GetBuiltInGoals()
+
+	var found *Goal
+	for i := range goals {
+		if goals[i].Name == "adaptive-editor" {
+			found = &goals[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("adaptive-editor goal not found")
+	}
+
+	// Must have instruction in StateVars with default "" (empty string)
+	v, ok := found.StateVars["instruction"]
+	if !ok {
+		t.Fatalf("expected stateVars to contain 'instruction'")
+	}
+	if sv, ok := v.(string); !ok || sv != "" {
+		t.Fatalf("expected default stateVars['instruction'] == '', got: %#v", v)
+	}
+
+	// Must have NotableVariables containing "instruction"
+	foundNotable := false
+	for _, nv := range found.NotableVariables {
+		if nv == "instruction" {
+			foundNotable = true
+			break
+		}
+	}
+	if !foundNotable {
+		t.Fatalf("expected NotableVariables to contain 'instruction', got: %v", found.NotableVariables)
+	}
+
+	// Must have instruct custom command with handler
+	var instructCmd *CommandConfig
+	for i := range found.Commands {
+		if found.Commands[i].Name == "instruct" {
+			instructCmd = &found.Commands[i]
+			break
+		}
+	}
+	if instructCmd == nil {
+		t.Fatalf("expected 'instruct' command in adaptive-editor")
+	}
+	if instructCmd.Type != "custom" {
+		t.Errorf("expected instruct command type 'custom', got %q", instructCmd.Type)
+	}
+	if instructCmd.Handler == "" {
+		t.Error("expected non-empty handler for instruct command")
+	}
+}
+
+func TestBuiltInGoal_SQLGeneratorHotSnippets(t *testing.T) {
+	goals := GetBuiltInGoals()
+
+	var found *Goal
+	for i := range goals {
+		if goals[i].Name == "sql-generator" {
+			found = &goals[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("sql-generator goal not found")
+	}
+
+	if len(found.HotSnippets) == 0 {
+		t.Fatal("expected at least one hot-snippet for sql-generator")
+	}
+
+	var explainSnippet *GoalHotSnippet
+	for i := range found.HotSnippets {
+		if found.HotSnippets[i].Name == "explain-plan" {
+			explainSnippet = &found.HotSnippets[i]
+			break
+		}
+	}
+	if explainSnippet == nil {
+		t.Fatal("expected hot-snippet 'explain-plan' in sql-generator")
+	}
+	if explainSnippet.Text == "" {
+		t.Error("expected non-empty Text for explain-plan snippet")
+	}
+	if explainSnippet.Description == "" {
+		t.Error("expected non-empty Description for explain-plan snippet")
+	}
+}
+
+func TestBuiltInGoal_AdaptiveEditorHotSnippets(t *testing.T) {
+	goals := GetBuiltInGoals()
+
+	var found *Goal
+	for i := range goals {
+		if goals[i].Name == "adaptive-editor" {
+			found = &goals[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("adaptive-editor goal not found")
+	}
+
+	if len(found.HotSnippets) == 0 {
+		t.Fatal("expected at least one hot-snippet for adaptive-editor")
+	}
+
+	var compareSnippet *GoalHotSnippet
+	for i := range found.HotSnippets {
+		if found.HotSnippets[i].Name == "compare-versions" {
+			compareSnippet = &found.HotSnippets[i]
+			break
+		}
+	}
+	if compareSnippet == nil {
+		t.Fatal("expected hot-snippet 'compare-versions' in adaptive-editor")
+	}
+	if compareSnippet.Text == "" {
+		t.Error("expected non-empty Text for compare-versions snippet")
+	}
+	if compareSnippet.Description == "" {
+		t.Error("expected non-empty Description for compare-versions snippet")
 	}
 }

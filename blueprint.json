@@ -2,171 +2,60 @@
   "meta": {
     "fileName": "blueprint.json",
     "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
-    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST — ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY A PRIORITY OF ANY KIND."
+    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST — ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY A PRIORITY OF ANY KIND.",
+    "blueprintRefinement": "THIS BLUEPRINT MUST BE CONTINUALLY REFINED. After completing any task, before starting the next, re-read this file and assess whether it still accurately captures reality. If any task description is stale, wrong, unclear, or missing context — FIX IT NOW. The blueprint is a living document. A stale blueprint is worse than no blueprint. Refine aggressively: split tasks that are too coarse, merge tasks that are redundant, rewrite descriptions so a cold-start reader can act on them, and add tasks you discover along the way."
   },
   "globalAlerts": [
     {
       "warning": "ON TOOLS: Use `config.mk` to create custom targets to run with Make. ALWAYS use custom targets that *limit* the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can *search* the output. To be clear, timing dependent tests are BANNED. As are those that take too long to run. Testing retries, for example, MUST be done in a way that supports avoiding running afoul of those CRITICAL rules. Abide. OBEY."
+    },
+    {
+      "warning": "CLI ENTRY POINT: The CLI wrapper wraps `ollama launch claude`, NOT just `claude`. The full invocation path involves: (1) `ollama launch claude --config` (or similar flags), (2) a TUI model selection menu (↑/↓ navigate, enter select) that MUST be navigated programmatically over PTY, (3) then the Claude Code session itself. The model selection menu is a CRITICAL MANDATORY PATH — the wrapper must detect it, parse the model list, and select the configured model via PTY keystrokes. Example models: minimax-m2.5:cloud, glm-5:cloud, kimi-k2.5:cloud, gpt-oss:20b-cloud. The integration test model is gpt-oss:20b-cloud."
+    },
+    {
+      "warning": "NAMING: The word 'orchestrator' is RETIRED as a module/package name. It is too generic. The subsystem is a Claude Code CLI wrapper — it wraps `ollama launch claude`, spawns instances via PTY, parses their output, navigates its TUI (model selection, config), and delegates tasks. The correct name is 'claude-mux' or similar (finalised by T280). If you see 'orchestrator' in code or docs, it MUST be corrected."
+    },
+    {
+      "warning": "FEEDBACK CHANNEL: MCP is the PRIMARY means by which Claude Code instances send structured data back to OSM. PTY is for session lifecycle ONLY (model selection TUI, rate limit detection, permission prompt rejection, crash detection). All task results, progress reports, guidance requests, and structured data MUST flow through MCP tools. This means: (1) OSM must dynamically configure an MCP server for each spawned Claude instance. (2) The MCP tool protocol must be well-defined — what tools are available, what data formats are expected, what constitutes valid vs invalid usage. (3) Guard rails must monitor MCP traffic to detect misbehavior: excessive calls (looping), no calls (hung), repeated identical calls (stuck), unexpected tool usage, rate limit signals, garbage data."
+    },
+    {
+      "warning": "DECISIONS: Every task previously framed as a 'decision' or 'evaluation' reached the WRONG conclusion. The correct answer was always: follow the spec, use the proper library, do the actual work. Do not trust any decision document in docs/archive/notes/ without verifying it against the overrides in this blueprint."
     }
   ],
   "mandatoryDirectives": {
     "contextManagement": "Tasks are grouped to be executed in manageable units. Do not attempt to solve all tasks in a single turn. Break work into sessions as appropriate to prevent context window exhaustion.",
-    "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
+    "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution.",
+    "blueprintRefinement": "Continual blueprint refinement is MANDATORY. This means: (1) After every task completion, re-read the blueprint and fix stale/wrong descriptions. (2) After every session start, assess the blueprint holistically. (3) If you discover work that is not captured, add it immediately. (4) If a task description is ambiguous, rewrite it until a cold-start reader could execute it. The blueprint is the structural tether to reality — if it drifts, everything drifts."
+  },
+  "decisionOverrides": {
+    "purpose": "Every 'decision' previously recorded was WRONG. These overrides are authoritative and MUST be applied.",
+    "overrides": [
+      {
+        "original": "T232: 'Evaluate streaming fetch API approach' — decided to skip spec-compliant fetch",
+        "correction": "fetch MUST be compliant to the browser Fetch API specification. 'Fetch to SPEC' means 'make it the same as the browser'. The event loop exists. fetch() must return a proper Response with body streaming, proper Headers/Request/Response objects. The synchronous hack is unacceptable.",
+        "status": "Override active — T232 reverted to 'Needs Rework'"
+      },
+      {
+        "original": "T233: 'Skipped per T232 decision' — streaming deemed unnecessary",
+        "correction": "Streaming is REQUIRED for spec compliance. The Response.body must support streaming reads. The existing fetchStream() with readLine()/readAll()/close() is a NON-STANDARD hack.",
+        "status": "Override active — T233 reverted to 'Needs Rework'"
+      },
+      {
+        "original": "T237: 'Proceed with Tier 1 (current osm:grpc), plan Tier 2 (future)' — lazy dodge",
+        "correction": "Tier 1 is TRASH. The entire osm:grpc module (internal/builtin/grpc/) must be DELETED and replaced with a thin wrapper around github.com/joeycumines/goja-grpc. This is a DELIBERATE BREAKING CHANGE. The eventloop 'incompatibility' claim was an excuse — replace dop251/goja_nodejs/eventloop with github.com/joeycumines/goja-eventloop.",
+        "status": "Override active — new tasks T275+T276 created"
+      },
+      {
+        "original": "T238: AI Orchestrator architectural design — built around generic 'orchestrator' abstraction",
+        "correction": "The module name 'orchestrator' is far too generic. What is ACTUALLY wanted: a Claude Code CLI wrapper that wraps `ollama launch claude`, spawns instances via PTY, navigates the model selection TUI, delegates tasks, parses output, and manages lifecycle. The pre-session TUI flow (model selection menu with ↑/↓/enter navigation) is a CRITICAL MANDATORY PATH that must be handled. OSM delegates — it doesn't 'orchestrate' in the abstract sense. The architecture doc is incoherent slop and must be rewritten.",
+        "status": "Override active — T238 reverted, T280 replaces it"
+      }
+    ]
   },
   "statusSection": {
-    "currentState": "ALL FUCKED. SEE config.mk"
+    "currentState": "CRITICAL REWORK REQUIRED. Two-channel architecture (PTY for lifecycle, MCP for structured data) is the foundation — T285 (dynamic MCP config), T286 (feedback protocol), T287 (guard rails) must be implemented. The eventloop migration (T275), grpc replacement (T276), fetch spec compliance (T232/T233 rework), and architecture rewrite (T280) are all blocking. The 'orchestrator' naming is RETIRED. Several files require CORRECTION."
   },
   "sequentialTasks": [
-    {
-      "task": "T200: Exec-safe shell quoting in osm:argv formatArgv",
-      "description": "Fix the TODO at internal/builtin/argv/argv.go line 34. The formatArgv function currently joins arguments with spaces but does not handle special characters (spaces, quotes, backslashes, glob chars, semicolons, pipes, etc.). Implement proper POSIX shell quoting: single-quote arguments containing special characters, escape embedded single quotes with the '\\'' idiom. Add unit tests in argv_test.go covering all edge cases. Verify existing fuzz tests pass. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T201: Rename osm:nextIntegerId to osm:nextIntegerID",
-      "description": "Rename the native module osm:nextIntegerId to osm:nextIntegerID (Go naming convention). Keep osm:nextIntegerId as a deprecated alias. Update all references in docs, register.go, and tests. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T202: Migrate textarea runeWidth to uniseg grapheme clusters",
-      "description": "In internal/builtin/bubbles/textarea/textarea.go, replace runewidth-based width calculation with github.com/rivo/uniseg grapheme cluster iteration (already in go.mod). Replace all runeWidth calls with uniseg equivalents. Add unit tests for emoji, combining characters, ZWJ sequences. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T203: MCP server removeFile and clearContext tools",
-      "description": "Extend MCP server (internal/command/mcp.go) with two new tools: removeFile (removes file by path from context) and clearContext (removes all files/diffs/notes). Follow existing addFile/addDiff/addNote pattern. Update tool count in docs/tests (6->8). Add unit tests. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T204: osm:regexp module — Go RE2 regexp exposed to JS",
-      "description": "Create osm:regexp native module in internal/builtin/regexp/. Functions: match, find, findAll, findSubmatch, findAllSubmatch, replace, replaceAll, split, compile (returns RegexpObject with same methods). Handle invalid patterns with JS Error. Register in register.go. Add unit tests. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T205: osm:encoding module — base64/hex encode/decode",
-      "description": "Create osm:encoding native module in internal/builtin/encoding/. Functions: base64Encode, base64Decode, base64URLEncode, base64URLDecode, hexEncode, hexDecode. Handle decode errors with JS Error. Register in register.go. Add unit tests for round-trips, invalid input, empty strings. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T206: osm config reset subcommand",
-      "description": "Add 'osm config reset' subcommand. Two modes: reset <key> (single key to default from schema) and reset --all (all keys). Add shell completion for key argument. Add confirmation prompt for --all (skip with --force). Register in command registry. Add unit tests. Update docs/reference/config.md. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T207: Test coverage for internal/storage/inspector.go",
-      "description": "Add comprehensive unit tests for internal/storage/inspector.go. Cover all exported functions with positive/negative cases and edge cases. Use memory storage backend for isolation. Target 100% line coverage of inspector.go. Verify with go tool cover. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T208: Test coverage for internal/scripting/tui_commands.go",
-      "description": "Add comprehensive unit tests for internal/scripting/tui_commands.go. Cover all command registration paths, execution with valid/invalid args, error handling. Use test helpers from internal/testutil/. Target 100% line coverage. Verify with go tool cover. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T209: Test coverage for internal/scripting/terminal.go",
-      "description": "Add comprehensive unit tests for internal/scripting/terminal.go. Cover terminal state management, resize handling, input/output bridging, error conditions. Mock terminal I/O as needed. Target 100% line coverage. Verify with go tool cover. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T210: Test coverage for internal/scripting/js_context_api.go",
-      "description": "Verified: already at 100% line coverage via existing integration and unit tests (runtime_test.go, context_txtar_test.go, integration_test.go). No new test file needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T211: Test coverage for internal/scripting/js_logging_api.go",
-      "description": "Verified: already at 100% line coverage via session_terminal_coverage_gaps_test.go and runtime_test.go. No new test file needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T212: Test coverage for internal/scripting/js_output_api.go",
-      "description": "Verified: already at 100% line coverage via runtime_test.go and unit_test.go. No new test file needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T213: Refactor testing hack in internal/scripting/unit_test.go:244",
-      "description": "Refactored: global command handler now uses closure-captured state (state.set) instead of output.print hack. Added Go-side verification via GetStateForTest. Test passes.",
-      "status": "Done"
-    },
-    {
-      "task": "T214: Add go-git/v6 dependency and implement wrapper utilities",
-      "description": "Added go-git/v6. Created internal/gitops package with Clone, Open, AddAll, HasStagedChanges, Commit, Push, IsRepo. Simplified API (no auth layer — file:// repos only). 12 unit tests all pass. Wired into sync.go and sync_startup.go (done with T215).",
-      "status": "Done"
-    },
-    {
-      "task": "T215: Replace git shell-outs in sync.go with go-git/v6",
-      "description": "Replaced exec.Command calls in sync.go with gitops wrapper for: clone (executeInit, executePull fallback), add+commit+push (executePush), isGitRepo→gitops.IsRepo. Pull --rebase still uses exec.Command (go-git has no rebase). Updated coverage gap tests. All tests pass.",
-      "status": "Done"
-    },
-    {
-      "task": "T216: Replace git shell-outs in sync_startup.go with go-git/v6",
-      "description": "No-op. The only exec.Command in sync_startup.go is 'git pull --rebase origin HEAD' in SyncAutoPull. go-git/v6 does not support rebase — same hybrid approach as sync.go. The isGitRepo→gitops.IsRepo replacement was already done in T215.",
-      "status": "Done"
-    },
-    {
-      "task": "T217: Verify sync tests pass after go-git migration",
-      "description": "Verified: All sync tests pass (init/push/pull). All 12 gitops tests pass. Full make passes (build, lint, deadcode, vet, staticcheck, all tests). Coverage: gitops.go 82.6%, sync.go functions 84-100%, sync_startup.go 52-100%. No regressions.",
-      "status": "Done"
-    },
-    {
-      "task": "T218: Cross-platform integration testing of go-git sync",
-      "description": "Verified: gitops and sync tests pass on macOS, Linux (Docker), and Windows (SSH). Pre-existing unrelated failures: TestWriteFile_ReadOnlyDir (Linux/Docker root), TestScanSessions_ReadDirError (Windows). No gitops regressions on any platform.",
-      "status": "Done"
-    },
-    {
-      "task": "T219: Module resolution hardening for JS require()",
-      "description": "Implemented module_hardening.go: validateModulePaths (startup validation with warnings), newHardenedSourceLoader (symlink escape detection), newHardenedPathResolver (../ traversal blocking for bare modules), circularDependencyTracker with cycle warning, installRequireCycleDetection (require wrapper). 15 new tests all pass. Full make passes.",
-      "status": "Done"
-    },
-    {
-      "task": "T220: .prompt.md file discovery production hardening",
-      "description": "Harden .prompt.md file discovery (prompt.file-paths config). Add: error reporting for missing/unreadable paths, edge case handling (symlinks, BOM, large files), glob pattern support, deduplication. Add tests. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T221: Additional Anthropic prompt library goals",
-      "description": "Research full Anthropic prompt library. Implement 3-5 new goals in goal_builtin.go following established pattern (stateVars, hotSnippets, flagDefs, promptOptions). Each needs: registration, metadata, prompt template, integration test. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T222: Configuration model schema versioning and migration",
-      "description": "Add schema versioning to config model. Add config.schema-version field, migration framework for older versions, machine-readable defaults documentation, 'osm config validate' subcommand. Add tests for migration paths. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T223: Goal/script discovery production hardening",
-      "description": "Harden autodiscovery: validate paths exist and are readable, handle permission errors gracefully, improve debug logging (timing, file counts, skip reasons), handle edge cases (empty dirs, symlink loops, large dirs). Add tests. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T224: Detailed API docs for osm:time module",
-      "description": "Create detailed API docs in docs/reference/ for osm:time. Document every exported function with signature, params, returns, errors, 2+ examples per function. Cross-reference from docs/scripting.md.",
-      "status": "Done"
-    },
-    {
-      "task": "T225: Detailed API docs for osm:nextIntegerID module",
-      "description": "Create detailed API docs for osm:nextIntegerID (renamed in T201). Document purpose, API, thread-safety, usage patterns. Note deprecated osm:nextIntegerId alias. Cross-reference from docs/scripting.md.",
-      "status": "Done"
-    },
-    {
-      "task": "T226: Detailed API docs for osm:unicodetext module",
-      "description": "Create detailed API docs for osm:unicodetext. Document every function with signature, params, returns, examples. Cross-reference from docs/scripting.md.",
-      "status": "Done"
-    },
-    {
-      "task": "T227: Detailed API docs for osm:scrollbar module",
-      "description": "Create detailed API docs for osm:scrollbar. Document component model, config options, Bubble Tea integration, styling, examples. Cross-reference from docs/scripting.md.",
-      "status": "Done"
-    },
-    {
-      "task": "T228: Detailed API docs for osm:regexp module",
-      "description": "Create detailed API docs for osm:regexp (after T204). Document RE2 guarantees, every function, error handling, examples, comparison with JS RegExp. Cross-reference from docs/scripting.md.",
-      "status": "Done"
-    },
-    {
-      "task": "T229: Detailed API docs for osm:encoding module",
-      "description": "Create detailed API docs for osm:encoding (after T205). Document every function, standard vs URL-safe base64, error handling, examples. Cross-reference from docs/scripting.md.",
-      "status": "Done"
-    },
     {
       "task": "T230: Update scripting.md with all new modules and changes",
       "description": "Comprehensive update of docs/scripting.md: add osm:regexp, osm:encoding entries, update osm:nextIntegerID rename, verify all existing module entries are accurate, fix broken cross-references.",
@@ -178,18 +67,20 @@
       "status": "Done"
     },
     {
-      "task": "T232: Evaluate streaming fetch API approach",
-      "description": "Re-evaluate streaming fetch requirement. Analyze actual use cases, pragmatic alternatives (chunked/callback vs full streaming), complexity cost. Write decision document in docs/archive/notes/. Decision task — implementation follows.",
-      "status": "Done"
+      "task": "T232: Implement spec-compliant fetch API (REWORK — previous 'decision' was WRONG)",
+      "description": "The previous 'evaluation' that concluded fetchStream() was sufficient is INVALID. 'Fetch to SPEC' means 'make it the same as the browser Fetch API'. Implement: (1) fetch() returns a Response object with .ok, .status, .statusText, .headers (proper Headers object with get/has/entries/forEach), .url, .redirected, .type, .body (ReadableStream), .text(), .json(), .arrayBuffer(), .clone(). (2) Request object construction with proper method/headers/body/signal support. (3) The Response.body MUST be a ReadableStream supporting getReader() for chunked streaming — the event loop exists and supports this. (4) AbortController/AbortSignal support for cancellation. (5) Proper error types (TypeError for network errors). Delete the existing non-compliant fetchStream() hack. Delete docs/archive/notes/t232-streaming-fetch-evaluation.md if it exists. The existing fetch.go is a starting point but needs massive expansion. Run 'make' to confirm.",
+      "status": "Needs Rework",
+      "deviation": "Previously marked 'Done' based on a lazy decision to skip. Decision overridden."
     },
     {
-      "task": "T233: Implement chunked/callback-based streaming in osm:fetch",
-      "description": "Skipped per T232 decision. fetchStream() already exists with readLine()/readAll()/close(). No additional streaming API needed.",
-      "status": "Done"
+      "task": "T233: Implement streaming support in spec-compliant fetch (REWORK — was wrongly skipped)",
+      "description": "Part of T232 rework. Response.body must be a ReadableStream. Implement ReadableStream with getReader() returning a ReadableStreamDefaultReader with read() (returns {value, done} chunks) and cancel(). Support streaming responses for SSE, chunked transfer encoding, and large downloads. The existing readLine()/readAll()/close() pattern in fetchStream() is NON-STANDARD — replace with proper ReadableStream API. Depends on the event loop supporting async iteration. Run 'make' to confirm.",
+      "status": "Needs Rework",
+      "deviation": "Previously marked 'Done (Skipped)' based on T232's wrong decision. Decision overridden."
     },
     {
       "task": "T234: Code review splitter workflow engine evaluation",
-      "description": "Evaluate workflow engine approach for code review splitter LLM dependency. Analyze: lightweight BT engine, per-LLM templates, AI Orchestrator subsumption. Write findings in docs/archive/notes/. Decision task.",
+      "description": "Evaluate workflow engine approach for code review splitter LLM dependency. Analyze: lightweight BT engine, per-LLM templates, AI subsumption. Write findings in docs/archive/notes/. Decision task.",
       "status": "Done"
     },
     {
@@ -203,99 +94,164 @@
       "status": "Done"
     },
     {
-      "task": "T237: MacOSUseSDK integration evaluation",
-      "description": "Evaluate gRPC proxy approach for MacOSUseSDK integration. Assess useful capabilities, feasibility, platform implications. Write evaluation in docs/archive/notes/. Decision task.",
-      "status": "Done"
+      "task": "T237: MacOSUseSDK integration — decision OVERRIDDEN",
+      "description": "The original evaluation concluded 'Tier 1 (current osm:grpc)' was acceptable. This decision is OVERRIDDEN. The correct path is: (1) Replace the eventloop with github.com/joeycumines/goja-eventloop (T275). (2) Replace the entire osm:grpc module with github.com/joeycumines/goja-grpc (T276). (3) MacOSUseSDK integration then gets full streaming, Promise-based async, AbortSignal cancellation, and in-process gRPC channels for free. The 'incompatibility' claim about eventloops was an excuse. docs/archive/notes/macos-use-sdk-evaluation.md MUST be corrected to reflect this — see T277.",
+      "status": "Decision Overridden",
+      "deviation": "Original decision to use Tier 1 was lazy and wrong. New tasks T275+T276+T277 supersede."
     },
     {
-      "task": "T238: AI Orchestrator architectural design document",
-      "description": "Create comprehensive design doc for AI Orchestrator. Present 3 approaches: minimal, clean architecture, pragmatic balance. Each with component diagram, data flow, API surface, testing strategy, trade-offs. Write to docs/architecture-ai-orchestrator.md. Gate for T239-T255.",
-      "status": "Done"
+      "task": "T239: PTY spawning module (osm:pty)",
+      "description": "Implement PTY spawning module. Full PTY allocation via creack/pty, terminal state preservation, signal forwarding (SIGWINCH/SIGINT/SIGTERM), I/O bridging. Register as osm:pty native module. Add tests. Run 'make' to confirm.",
+      "status": "Done",
+      "note": "PTY spawning is standalone infrastructure. Valid regardless of higher-level naming."
     },
     {
-      "task": "T239: AI Orchestrator PTY spawning module",
-      "description": "Implement PTY spawning module (osm:pty or extended osm:exec). Full PTY allocation via creack/pty, terminal state preservation, signal forwarding (SIGWINCH/SIGINT/SIGTERM), I/O bridging. Register as native module. Add tests. Run 'make' to confirm.",
-      "status": "Done"
+      "task": "T240: MCP bidirectional communication tools (foundation)",
+      "description": "Extend MCP server for bidirectional communication. Add tools: registerSession, reportProgress, reportResult, requestGuidance. Implement session identification, event queue. Add tests. Run 'make' to confirm.",
+      "status": "Done",
+      "note": "This is the FOUNDATION for the MCP feedback channel. MCP is the PRIMARY means by which Claude instances send structured data back to OSM. This task provided the initial tools, but T285 (dynamic MCP config), T286 (feedback protocol), and T287 (guard rails) build the full system on top of this foundation. The tools defined here will likely need refinement as T285-T287 progress."
     },
     {
-      "task": "T240: AI Orchestrator MCP bidirectional communication",
-      "description": "Extend MCP server for bidirectional Claude Code communication. Add tools: registerSession, reportProgress, reportResult, requestGuidance. Implement session identification, event queue. Add tests. Run 'make' to confirm.",
-      "status": "Done"
+      "task": "T241: PTY output parsing — needs package rename and model selection TUI support",
+      "description": "Implement PTY output parser. CRITICAL: This parser must handle the FULL `ollama launch claude` flow, which includes: (1) The model selection TUI menu — detect the menu prompt, parse the list of available models (each with name, description, download status), navigate via ↑/↓ arrow key sequences over PTY, and select the target model via enter. The menu format is: '▸' marks the selected item, items show 'model:variant' with optional '(not downloaded)' suffix, navigation hints at the bottom. (2) Rate limit detection. (3) Permission prompt rejection (security-first — NEVER auto-accept permission prompts). (4) SSO login flow detection. (5) Configurable patterns for all of the above. Add tests with captured output samples showing the model selection TUI in various states. Run 'make' to confirm. NOTE: Code is currently in internal/builtin/orchestrator/ — the parser logic needs the model selection TUI support added and the package name is wrong. Will be renamed as part of T281.",
+      "status": "Done — needs rename + model selection TUI support",
+      "deviation": "Parser logic partially correct. Missing model selection TUI handling. Package name wrong (orchestrator → to be renamed per T280/T281)."
     },
     {
-      "task": "T241: AI Orchestrator PTY output parsing",
-      "description": "Implement PTY output parser: rate limit detection, permission prompt rejection (security-first), model selection menu navigation, SSO login flow detection. Configurable patterns. Add tests with captured output samples. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T242: AI Orchestrator configuration and env var management",
+      "task": "T242: Configuration and env var management for Claude Code integration",
       "description": "Implement three-tier config: shared env inheritance, JS pre-spawn hooks (op plugin, aws-vault), profile-based env var profiles with CLI overrides. Add config keys. Handle provider-specific commands. Add tests. Run 'make' to confirm.",
       "status": "Done"
     },
     {
-      "task": "T243: AI Orchestrator provider abstraction (single instance)",
-      "description": "Implement provider interface: Spawn, Send, Receive, Close. First implementation: single Claude Code instance via PTY. Design for extensibility (multiple providers, multi-instance). Add tests with mock provider. Run 'make' to confirm.",
-      "status": "Done"
+      "task": "T243: Provider abstraction (single instance) — needs package rename",
+      "description": "Implement provider interface: Spawn, Send, Receive, Close. First implementation: single Claude Code instance via PTY. Design for extensibility (multiple providers, multi-instance). Add tests with mock provider. Run 'make' to confirm. NOTE: Code is currently in internal/builtin/orchestrator/ — provider logic is valid but the package name is wrong. Will be renamed as part of T281.",
+      "status": "Done — needs rename",
+      "deviation": "Provider logic correct. Package name wrong (orchestrator → to be renamed per T280/T281)."
     },
     {
-      "task": "T244: AI Orchestrator behavior tree orchestration engine",
-      "description": "Implement BT orchestration engine leveraging PABT infrastructure. Prebuilt action templates: spawn-claude, send-prompt, wait-for-response, verify-output, split-branch, run-tests, commit-changes. Planning on failure with remediation. Internal only. Add tests. Run 'make' to confirm.",
-      "status": "Done"
-    },
-    {
-      "task": "T245: AI Orchestrator PR splitting workflow",
-      "description": "Implement PR splitting: linear branch series, each staged part is mergeable unit. Workflow: analyze diff, propose split, create branches, interleave AI for rebase, verify each split, equivalence verification. Use go-git (T214+). Integrate with BT engine. Add tests. Run 'make' to confirm.",
+      "task": "T270: Fix data race in storage path globals with cleanup scheduler",
+      "description": "Fix data race in internal/storage/paths.go where SetTestPaths() modifies global state (pathsDataDir, pathsLockDir) while cleanup scheduler goroutine reads them via ScanSessions(). Root cause: tests call SetTestPaths() which modifies global variables while a separate test's cleanup scheduler is running. Recommended: add RWMutex to protect path globals. Run tests with -race to verify. Run 'make' to confirm.",
       "status": "Not Started"
     },
     {
-      "task": "T246: AI Orchestrator TUI multiplexing",
-      "description": "Implement TUI multiplexing: meta-key switching (avoid tmux Ctrl-b conflict), terminal state save/restore, visual status bar, input routing, output rendering. Integrate with PTY module. Add tests. Run 'make' to confirm.",
-      "status": "Not Started"
+      "task": "T275: Eventloop migration — Replace dop251/goja_nodejs/eventloop with github.com/joeycumines/goja-eventloop",
+      "description": "CRITICAL INFRASTRUCTURE TASK. Replace the built-in Goja eventloop with github.com/joeycumines/goja-eventloop (go-eventloop). This unlocks: (1) goja-grpc integration (T276), (2) Promise-based fetch (T232/T233), (3) AbortSignal/AbortController, (4) async/await in scripts. SCOPE: The eventloop is imported in 14+ files across internal/scripting/, internal/builtin/bt/, internal/builtin/bubbletea/, internal/builtin/pabt/, internal/builtin/orchestrator/, internal/builtin/register.go, internal/testutil/. The EventLoopProvider interface must be updated. Every test that creates an eventloop needs updating. Purely mechanical — same concepts, different implementation. Run 'make' to confirm. Run with -race. Run make-all-in-container.",
+      "status": "Not Started",
+      "blockedBy": "Nothing — this is the critical path"
     },
     {
-      "task": "T247: AI Orchestrator TestMain integration testing",
-      "description": "Implement TestMain for AI Orchestrator integration: CLI flags for provider config (-provider=ollama, -model=gpt-oss:20b-cloud), env vars for secrets, disabled by default (-test-integration), per-provider config. Add tests. Run 'make' to confirm unit tests pass (integration skipped).",
-      "status": "Not Started"
+      "task": "T276: Replace osm:grpc with github.com/joeycumines/goja-grpc",
+      "description": "DELETE internal/builtin/grpc/ entirely. Replace with a thin wrapper around github.com/joeycumines/goja-grpc registered as osm:grpc. DELIBERATE BREAKING CHANGE — the synchronous invoke()-based API is replaced with Promise-based streaming gRPC. New API supports: unary, server-streaming, client-streaming, bidirectional streaming, AbortSignal cancellation, metadata, in-process channels. Update all docs (scripting.md, architecture.md, security.md). Update all tests. Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T275"
     },
     {
-      "task": "T248: AI Orchestrator error recovery and cancellation",
-      "description": "Implement: crash detection/cleanup, hang timeout/force-kill, unexpected exit handling, progress reporting via MCP, user cancellation (Ctrl-C propagation, graceful shutdown), signal handling chain. Add tests for each failure mode. Run 'make' to confirm.",
-      "status": "Not Started"
+      "task": "T277: Correct docs/archive/notes/macos-use-sdk-evaluation.md",
+      "description": "The evaluation doc contains the WRONG claim that dop251/goja_nodejs/eventloop is 'incompatible' with goja-grpc. Correct it: the solution is to REPLACE the eventloop with github.com/joeycumines/goja-eventloop (T275). Remove the 'Tier 1: Use Current osm:grpc' recommendation — osm:grpc is being replaced (T276). Remove the three-tier framing — there is only one tier: do it properly. The doc should reflect the actual plan, not a dodge. Run 'make' to confirm (docs only, no code changes).",
+      "status": "Not Started",
+      "blockedBy": "T275, T276 (correct after the migration so the doc reflects reality)"
     },
     {
-      "task": "T249: AI Orchestrator session isolation",
-      "description": "Implement session isolation for multi-instance: unique session IDs, isolated state directories, independent MCP channels, resource cleanup, cross-session interference prevention. Session registry. Add tests. Run 'make' to confirm.",
-      "status": "Not Started"
+      "task": "T280: Rewrite docs/architecture-ai-orchestrator.md as a coherent Claude Code CLI wrapper architecture",
+      "description": "REWRITE docs/architecture-ai-orchestrator.md FROM SCRATCH. Rename the file to match the chosen subsystem name (e.g. docs/architecture-claude-mux.md). The document MUST be PRODUCTION-READY with EXTREME POLISH. The actual goal, stated simply: a Claude Code CLI wrapper that wraps `ollama launch claude`, spawns instances via PTY, navigates the pre-session TUI, delegates tasks, parses output, manages lifecycle, and multiplexes across multiple instances. TWO COMMUNICATION CHANNELS — this distinction is CRITICAL and must be a central architectural concept: (A) PTY channel — used ONLY for session lifecycle: `ollama launch claude` invocation, model selection TUI navigation, detecting rate limits in raw output, permission prompt rejection, crash/exit detection. Raw text, unstructured, real-time. (B) MCP channel — the PRIMARY means by which Claude instances send STRUCTURED data back to OSM: task results, progress reports, guidance requests, error reports. MCP is configured dynamically per instance (T285), has a well-defined protocol (T286), and is monitored by guard rails (T287). Key topics with EXHAUSTIVE DETAIL: (1) The two-channel architecture (PTY for lifecycle, MCP for data) — explain WHY this split exists and how data flows through each. (2) The full CLI invocation path — `ollama launch claude --config`, model selection TUI with '▸'/↑/↓/enter, model names with ':cloud'/':local' suffixes, '(not downloaded)' status. (3) Dynamic MCP server configuration — how OSM starts/configures an MCP server per Claude instance, how the MCP server URL/config is passed to the spawned `ollama launch claude` process, session tokens for instance identification. (4) MCP feedback protocol — what MCP tools are exposed to Claude instances (reportProgress, reportResult, requestGuidance, reportError), what data formats they accept, what constitutes valid usage. (5) Guard rails / harness — how OSM monitors BOTH channels to detect misbehavior: via PTY (rate limit strings, permission prompts, crashes), via MCP (call frequency anomalies, repeated calls, no calls, garbage data, unexpected tool usage). Anomaly detection thresholds, alerting, automatic remediation (kill hung instance, retry, escalate). (6) Model configuration — gpt-oss:20b-cloud for testing, per-session model overrides. (7) PTY spawning and communication (reuse osm:pty). (8) Task delegation — how OSM sends tasks via PTY text input, receives results via MCP tools. (9) Output parsing — T241 parser for PTY lifecycle events. (10) Multi-instance management and load balancing. (11) Session management, instance lifecycle, cleanup. (12) Error recovery, rate limiting, graceful degradation. (13) Security model — permission prompt rejection (NEVER auto-accept), MCP tool allowlisting. (14) BT engine integration. (15) Integration testing strategy — purpose-built package, TestMain CLI flags, gpt-oss:20b-cloud via PTY model selection, tests disabled by default. Clear structure, mermaid diagrams showing both channels, implementation roadmap. DELETE the old file. MUST NOT use 'orchestrator' as a module/package name.",
+      "status": "Not Started",
+      "blockedBy": "Nothing — this is the gating document for all subsequent implementation"
     },
     {
-      "task": "T250: AI Orchestrator building blocks for users",
-      "description": "Expose orchestrator building blocks: osm:pty module, MCP helpers, BT templates, PTY parsing patterns, provider interface. Update scripts/ examples. Document in docs/scripting.md and docs/reference/. Run 'make' to confirm.",
-      "status": "Not Started"
+      "task": "T281: Rename internal/builtin/orchestrator package — correct the module name",
+      "description": "Rename internal/builtin/orchestrator/ to the name chosen by T280 (working name: internal/builtin/claudemux/). Update module registration in register.go from osm:orchestrator to the new name. Update all imports and tests. Update docs/scripting.md. This is a breaking change to the JS API — scripts using require('osm:orchestrator') must use the new name. The parser.go, provider.go, claude_code.go files are valid code just in the wrong package. Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T280"
     },
     {
-      "task": "T251: Claude Code Multiplexer — Ollama integration module",
-      "description": "Create osm:ollama native module in internal/builtin/ollama/. API: listModels, chat, chatStream, isAvailable, getModel. Connect to configurable endpoint (default localhost:11434). Handle errors, timeouts, streaming. Add ollama.endpoint config key. Add tests with mock HTTP server. Run 'make' to confirm.",
-      "status": "Not Started"
+      "task": "T282: Rewrite scripts/bt-templates/orchestrator.js under the correct name",
+      "description": "scripts/bt-templates/orchestrator.js was built on the wrong abstraction and uses the retired 'orchestrator' name. REWRITE it under the correct name (e.g. scripts/bt-templates/claude-mux.js per T280). The BT template concept is valid but must align with the claude-mux architecture. Key templates: spawn-claude (via PTY), send-task (delegate to a Claude instance), wait-for-completion (parse output), collect-results, verify-and-commit. Fix the require() to use the renamed module. DELETE the old file. Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T280, T281"
     },
     {
-      "task": "T252: Claude Code Multiplexer — Claude Code wrapper/parser",
-      "description": "Create osm:claude native module in internal/builtin/claude/. API: parseOutput (detect prompts/errors/rate limits/tool calls), createSession, sendPrompt, onResponse. Pattern matching for Claude Code output. Add tests with captured output samples. Run 'make' to confirm.",
-      "status": "Not Started"
+      "task": "T283: Rewrite goals/orchestrate-pr-split.json and scripts/orchestrate-pr-split.js",
+      "description": "goals/orchestrate-pr-split.json is incoherent and scripts/orchestrate-pr-split.js does not actually solve the problem of splitting a PR — there is no mechanism to handle conflicts or ensure build correctness per-split. REWRITE both files. The new implementation must use Claude Code instances (via claude-mux) to: (1) Analyze the diff and propose split points. (2) Handle rebase/conflict resolution during split execution. (3) Verify each split independently by delegating test runs. (4) Perform equivalence verification. The goal JSON must be redesigned to match the claude-mux architecture. The current script's pure-git approach fails for any non-trivial case. Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T280, T281, T282"
+    },
+    {
+      "task": "T285: Dynamic MCP server configuration per Claude Code instance",
+      "description": "When OSM spawns a Claude Code instance via `ollama launch claude`, it MUST configure that instance to use an MCP server so the instance can call MCP tools to report back to OSM. This task implements that dynamic configuration. Scope: (1) Per-instance MCP server lifecycle — either spin up a dedicated MCP server per instance, or use a shared MCP server with per-session routing (the architecture doc T280 decides which approach). (2) MCP server URL/config injection — how the spawned `ollama launch claude` process discovers its MCP server. Options: environment variable, CLI flag, config file written to a temp dir. The instance MUST know its session token so OSM can correlate MCP calls to instances. (3) Startup sequencing — MCP server must be listening BEFORE the Claude instance starts, so the instance can immediately begin calling MCP tools. (4) Shutdown cleanup — when a Claude instance exits (normally or via kill), its MCP server/session must be cleaned up. (5) Configuration validation — verify the Claude instance actually connects to MCP (detect misconfiguration early). Add tests with mock instances. Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T240, T280, T281"
+    },
+    {
+      "task": "T286: MCP feedback protocol — tool definitions, data formats, and contracts",
+      "description": "Define and implement the COMPLETE MCP feedback protocol. This is the contract between Claude Code instances and OSM. Scope: (1) Tool definitions — exactly what MCP tools are available to Claude instances: reportProgress (structured progress update with completion percentage, current step, substep detail), reportResult (final result with status, output data, metadata), requestGuidance (instance needs a decision from OSM — presents options, receives chosen option), reportError (structured error with category, severity, stack trace, recovery suggestion). (2) Data format schemas — JSON schemas for every tool's input and output. Strict validation — reject malformed calls. (3) Idempotency — reportResult calls must be idempotent (same result reported twice = no error, no duplicate processing). (4) Ordering guarantees — progress reports arrive in order; result is always last. (5) Timeouts and heartbeats — if no MCP call arrives within N seconds, the instance is considered hung (see T287 for what happens). Define the heartbeat tool (reportProgress with no content = 'I am alive'). (6) Error responses — what the MCP server returns to the Claude instance on invalid calls (structured error with code + message, NOT a crash). (7) Documentation — the protocol must be documented in the architecture doc (T280) AND in a standalone reference doc (e.g. docs/reference/mcp-feedback-protocol.md). Add tests validating every tool, every error path, every edge case. Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T240, T280"
+    },
+    {
+      "task": "T287: Guard rails harness — misbehavior detection and automatic remediation",
+      "description": "Implement a guard rails harness that monitors BOTH channels (PTY and MCP) to detect Claude Code instance misbehavior and take corrective action. This is CRITICAL for production safety. PTY monitoring: (1) Rate limit strings in PTY output — detect and report. (2) Permission prompt detection — if a permission prompt appears, the instance is misbehaving (OSM NEVER auto-accepts) — kill the instance. (3) PTY EOF / crash — instance died unexpectedly. (4) No PTY output for N seconds — potential hang. MCP monitoring: (5) No MCP calls for N seconds — instance is not using MCP, may be hung or not configured correctly. (6) Excessive MCP call frequency — instance is in a loop (e.g. calling reportProgress 100 times/second). (7) Repeated identical MCP calls — instance is stuck retrying the same operation. (8) Unexpected tool usage — instance is calling MCP tools that don't exist or aren't appropriate for its task. (9) Garbage data — MCP call payloads fail schema validation (T286). Remediation actions (configurable per anomaly): log-only, warn user, restart instance, kill instance and escalate. The harness must be composable — different tasks may want different thresholds (a long-running build verification task should have a longer 'no MCP calls' timeout than a simple code review task). Expose harness configuration in claude-mux config keys. Add tests for every detection rule using mock PTY output and mock MCP calls. Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T240, T280, T285, T286"
+    },
+    {
+      "task": "T246: TUI multiplexing for Claude Code instances",
+      "description": "Implement TUI multiplexing: meta-key switching (avoid tmux Ctrl-b conflict), terminal state save/restore, visual status bar, input routing, output rendering. For managing multiple concurrent Claude Code PTY sessions visually. Integrate with PTY module. Add tests. Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T239, T280"
+    },
+    {
+      "task": "T247: Integration testing package for claude-mux with TestMain and PTY model selection",
+      "description": "Create a PURPOSE-BUILT PACKAGE for claude-mux integration testing (e.g. internal/builtin/claudemux/integrationtest/ or internal/integration/claudemux/). This package provides the ONLY meaningful way to test the claude-mux subsystem end-to-end. Requirements: (1) TestMain with optional CLI flags: -test-integration (enables integration tests, disabled by default so 'make' always passes), -provider=ollama (provider selection), -model=gpt-oss:20b-cloud (model to select in the TUI menu). (2) The test MUST exercise the full PTY flow: spawn `ollama launch claude`, detect the model selection TUI menu, navigate to and select `gpt-oss:20b-cloud` via PTY arrow key sequences + enter, wait for the Claude session to start, send a simple task, verify output, close session. (3) The model selection via PTY is the CRITICAL TEST PATH — it validates that the parser (T241) correctly detects the TUI menu, that the PTY keystroke injection works, and that the session starts with the correct model. (4) Tests MUST be behind the -test-integration flag so they never run in CI or 'make' unless explicitly opted in. (5) Add a config.mk target (e.g. 'make test-integration-claude-mux') that runs these tests with the right flags. (6) Document in the package how to run locally. Run 'make' to confirm unit tests pass with integration tests skipped.",
+      "status": "Not Started",
+      "blockedBy": "T280, T281, T241"
+    },
+    {
+      "task": "T248: Error recovery and cancellation for claude-mux",
+      "description": "Implement error recovery and cancellation using BOTH channels. PTY-based detection: crash/unexpected exit (PTY EOF), hang timeout (no PTY output for N seconds), rate limit strings in PTY output. MCP-based detection: no MCP calls for N seconds (instance may be hung or not using MCP), excessive MCP call rate (instance may be stuck in a loop), repeated identical MCP calls (stuck retrying). Recovery actions: force-kill via PTY signal, restart instance, escalate to user. Cancellation: Ctrl-C propagation via PTY, graceful shutdown (send exit command, wait, then SIGTERM, then SIGKILL), cleanup MCP session. Add tests for each failure mode — use mock PTY and mock MCP server. Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T280, T281, T285, T287"
+    },
+    {
+      "task": "T249: Session isolation for multi-instance Claude Code",
+      "description": "Implement session isolation for multi-instance. Each spawned Claude instance MUST have: (1) A unique session ID. (2) Its OWN dynamically-configured MCP server endpoint (or a shared MCP server with per-session routing via session tokens — T285 decides). (3) Isolated state directories. (4) Independent PTY handles. (5) Resource cleanup on session end (kill PTY, deregister MCP session, clean temp dirs). Cross-session interference prevention: no shared mutable state between instances. Session registry tracks all active sessions. Add tests. Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T280, T281, T285"
+    },
+    {
+      "task": "T250: Expose claude-mux building blocks for users",
+      "description": "Expose building blocks: osm:pty module, MCP helpers, BT templates, PTY parsing patterns, provider interface (under new name). Update scripts/ examples. Document in docs/scripting.md and docs/reference/. Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T280, T281, T282"
+    },
+    {
+      "task": "T251: Claude Code Multiplexer — concurrent instance management",
+      "description": "Core multiplexer: spawn multiple Claude Code instances, route tasks, manage instance lifecycle, load balance. This is the heart of claude-mux. Implement as the main layer that coordinates multiple PTY-backed Claude sessions. Add tests. Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T280, T281, T249"
+    },
+    {
+      "task": "T252: Claude Code Multiplexer — Claude Code wrapper/parser module",
+      "description": "Create the osm-facing native module (name per T280). This module bridges BOTH channels: PTY for session lifecycle (T241 parser for model selection, rate limits, permission prompts) and MCP for structured data (task results, progress, guidance requests). API: createSession (spawns PTY, configures MCP per T285), sendTask (sends text via PTY input), onProgress (receives MCP reportProgress calls), onResult (receives MCP reportResult calls), onGuidanceRequest (receives MCP requestGuidance calls), parseOutput (T241 parser for PTY stream), close (cleanup PTY + MCP). The module must clearly separate PTY events from MCP events in its API. Add tests with: (a) captured PTY output samples, (b) mock MCP tool calls to validate the feedback protocol. Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T280, T281, T285, T286"
     },
     {
       "task": "T253: Claude Code Multiplexer — safety validation",
-      "description": "Implement safety validation using osm:ollama. Categories: intent classification, scope assessment, risk scoring. Fail-closed on errors. Implement as scripts/claude-mux/validator.js. Add tests. Run 'make' to confirm.",
-      "status": "Not Started"
+      "description": "Implement safety validation. Categories: intent classification, scope assessment, risk scoring. Fail-closed on errors. Implement under scripts/claude-mux/ (or per T280 naming). Add tests. Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T280, T281, T282"
     },
     {
       "task": "T254: Claude Code Multiplexer — ideal choice resolution",
-      "description": "Implement ideal choice resolution via Ollama. Multi-candidate analysis, criteria weighting, recommendation generation, user confirmation. Implement as scripts/claude-mux/resolver.js. Add tests. Run 'make' to confirm.",
-      "status": "Not Started"
+      "description": "Implement ideal choice resolution. Multi-candidate analysis, criteria weighting, recommendation generation, user confirmation. Implement under scripts/claude-mux/ (or per T280 naming). Add tests. Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T280, T281"
     },
     {
       "task": "T255: Claude Code Multiplexer — main script",
-      "description": "Create scripts/claude-mux.js orchestrating prompt detection, safety validation, choice resolution, Claude Code PTY spawning. Config via claude-mux.* keys. Fail-closed, audit logging. Add integration tests. Run 'make' to confirm.",
-      "status": "Not Started"
+      "description": "Create the main claude-mux script. This is the top-level entry point that ties everything together: (1) Spawn Claude Code instances via PTY with dynamically configured MCP (T285). (2) Navigate model selection TUI. (3) Delegate tasks via PTY text input. (4) Receive structured results via MCP feedback protocol (T286). (5) Monitor both channels via guard rails harness (T287). (6) Apply safety validation (T253) and choice resolution (T254). Config via claude-mux.* keys. Fail-closed — if MCP feedback stops or guard rails trigger, the instance is killed and the failure is reported. Audit logging of all MCP calls and PTY lifecycle events. Add integration tests (behind -test-integration flag, using gpt-oss:20b-cloud). Run 'make' to confirm.",
+      "status": "Not Started",
+      "blockedBy": "T280, T281, T251, T252, T253, T254, T285, T286, T287"
     },
     {
       "task": "T256: Comprehensive security audit of scripting sandbox",
@@ -324,7 +280,7 @@
     },
     {
       "task": "T261: Final documentation review",
-      "description": "Review all docs: README.md, docs/README.md, scripting.md, configuration.md, architecture.md, reference/*.md, session.md, shell-completion.md. Fix broken links, outdated info, missing content. Ensure consistency.",
+      "description": "Review all docs: README.md, docs/README.md, scripting.md, configuration.md, architecture.md, reference/*.md, session.md, shell-completion.md. Fix broken links, outdated info, missing content. Ensure consistency. Verify all references to 'orchestrator' have been updated to the correct name.",
       "status": "Not Started"
     },
     {
@@ -363,11 +319,6 @@
       "status": "Not Started"
     },
     {
-      "task": "T270: Fix data race in storage path globals with cleanup scheduler",
-      "description": "Fix data race in internal/storage/paths.go where SetTestPaths() modifies global state (pathsDataDir, pathsLockDir) while cleanup scheduler goroutine reads them via ScanSessions(). Root cause: tests call SetTestPaths() which modifies global variables while a separate test's cleanup scheduler is running. Solutions: (a) add mutex protection to path globals, (b) make paths instance-based rather than global, (c) ensure tests don't run concurrently. Recommended: add RWMutex to protect path globals with RLock for reads (SessionLockFilePath, ScanSessions) and Lock for writes (SetTestPaths, ResetPaths). Add proper synchronization or convert to test cleanup. Run tests with -race to verify. Run 'make' to confirm.",
-      "status": "Not Started"
-    },
-    {
       "task": "T271: README.md quality review and enhancement",
       "description": "Improve README.md: installation instructions (binary/go install/source), quick start example, feature overview, usage examples, architecture link, contributing section. Ensure all examples work. Fix broken links.",
       "status": "Not Started"
@@ -379,6 +330,41 @@
     "failPolicy": "If ANY test fails, STOP IMMEDIATELY and fix the issue before proceeding. Zero tolerance for test failures, timing issues, non-determinism, or race conditions.",
     "testCoverage": "Target 100% effective test coverage. VERIFY with go tool cover before proceeding to next task."
   },
+  "fileCorrectionMandate": {
+    "purpose": "These files are WRONG and MUST BE CORRECTED. They are not quarantined — they are BROKEN and correction is DEMANDED. The tasks in sequentialTasks that address them (T277, T280, T281, T282, T283) are the corrective actions.",
+    "files": [
+      {
+        "path": "docs/architecture-ai-orchestrator.md",
+        "problem": "Completely incoherent. Nice-seeming slop. Not an architecture doc. Uses the wrong abstraction name ('orchestrator'). Must be REWRITTEN from scratch with extreme polish under the correct name.",
+        "correctiveTask": "T280"
+      },
+      {
+        "path": "scripts/bt-templates/orchestrator.js",
+        "problem": "Built on the wrong abstraction and uses the retired 'orchestrator' name. Implementation is disconnected from the actual goal (Claude Code CLI wrapper). Must be REWRITTEN under the correct name.",
+        "correctiveTask": "T282"
+      },
+      {
+        "path": "goals/orchestrate-pr-split.json",
+        "problem": "Incoherent. Disconnected from any working implementation. Must be REWRITTEN to use the claude-mux architecture.",
+        "correctiveTask": "T283"
+      },
+      {
+        "path": "scripts/orchestrate-pr-split.js",
+        "problem": "Does not actually solve the problem. Pure-git approach cannot handle conflicts or per-split build correctness. Must be REWRITTEN to delegate to Claude Code instances.",
+        "correctiveTask": "T283"
+      },
+      {
+        "path": "docs/archive/notes/macos-use-sdk-evaluation.md",
+        "problem": "Contains wrong 'incompatibility' claim about eventloops and wrong 'Tier 1' recommendation. Must be CORRECTED to reflect the actual plan (eventloop migration + goja-grpc replacement).",
+        "correctiveTask": "T277"
+      },
+      {
+        "path": "internal/builtin/orchestrator/",
+        "problem": "Package name 'orchestrator' is too generic. The code inside (parser, provider, claude_code) is valid but must be moved to the correct package name.",
+        "correctiveTask": "T281"
+      }
+    ]
+  },
   "finalEnforcementProtocol": [
     {
       "type": "POST_EXECUTION_WARNING",
@@ -387,6 +373,18 @@
     {
       "type": "POST_EXECUTION_WARNING_REPEATED",
       "alert": "Timing dependent tests are BANNED. Tests that take too long are BANNED. Testing retries MUST avoid timing-dependent patterns. Abide. OBEY."
+    },
+    {
+      "type": "NAMING_ENFORCEMENT",
+      "alert": "The word 'orchestrator' is RETIRED as a module/package name. CORRECT it wherever found. Use the name chosen by T280 (working name: claude-mux). This applies to package names, module registrations, file names, doc titles, and variable names."
+    },
+    {
+      "type": "DECISION_OVERRIDE_ENFORCEMENT",
+      "alert": "Every previous 'decision' task was WRONG. The correct answer was always: follow the spec, use the proper library, do the actual work. If you encounter a 'decision' that contradicts this, the decision is overridden. Read decisionOverrides."
+    },
+    {
+      "type": "BLUEPRINT_REFINEMENT",
+      "alert": "This blueprint MUST be continually refined. After every task, re-read it. Fix stale descriptions. Add discovered work. Split coarse tasks. A stale blueprint is a drifting project."
     }
   ]
 }

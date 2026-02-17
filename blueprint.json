@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T243 DONE. T244 next."
+    "currentState": "T200-T244 DONE. T245 next."
   },
   "sequentialTasks": [
     {
@@ -240,7 +240,7 @@
     {
       "task": "T244: AI Orchestrator behavior tree orchestration engine",
       "description": "Implement BT orchestration engine leveraging PABT infrastructure. Prebuilt action templates: spawn-claude, send-prompt, wait-for-response, verify-output, split-branch, run-tests, commit-changes. Planning on failure with remediation. Internal only. Add tests. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T245: AI Orchestrator PR splitting workflow",

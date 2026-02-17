@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T226 DONE. Session 2026-02-17. T224-T226 API docs for osm:time, osm:nextIntegerID, osm:unicodetext complete. Proceeding IN STRICT SEQUENCE."
+    "currentState": "T200-T229 DONE. Session 2026-02-17. T227-T229 API docs for osm:scrollbar, osm:regexp, osm:encoding complete. Proceeding IN STRICT SEQUENCE."
   },
   "sequentialTasks": [
     {
@@ -155,17 +155,17 @@
     {
       "task": "T227: Detailed API docs for osm:scrollbar module",
       "description": "Create detailed API docs for osm:scrollbar. Document component model, config options, Bubble Tea integration, styling, examples. Cross-reference from docs/scripting.md.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T228: Detailed API docs for osm:regexp module",
       "description": "Create detailed API docs for osm:regexp (after T204). Document RE2 guarantees, every function, error handling, examples, comparison with JS RegExp. Cross-reference from docs/scripting.md.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T229: Detailed API docs for osm:encoding module",
       "description": "Create detailed API docs for osm:encoding (after T205). Document every function, standard vs URL-safe base64, error handling, examples. Cross-reference from docs/scripting.md.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T230: Update scripting.md with all new modules and changes",

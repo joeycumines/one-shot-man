@@ -79,7 +79,7 @@ func initTestGitRepo(t *testing.T) string {
 
 	dir := t.TempDir()
 
-	runGit(t, dir, "init")
+	runGit(t, dir, "init", "-b", "main")
 	runGit(t, dir, "config", "user.email", "test@test.com")
 	runGit(t, dir, "config", "user.name", "Test User")
 
@@ -618,6 +618,10 @@ func TestPRSplit_AnalyzeDiff_NoChanges(t *testing.T) {
 	runJS(`var prSplit = require('` + sp + `');`)
 
 	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
+
+	errVal := runJS(`analysis.error`)
+	assert.True(t, goja.IsNull(errVal) || goja.IsUndefined(errVal), "error should be null for no-changes case")
+
 	filesLen := runJS(`analysis.files.length`)
 	assert.Equal(t, int64(0), filesLen.ToInteger())
 }

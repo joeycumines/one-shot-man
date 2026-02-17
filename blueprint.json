@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T244 DONE. T245 next."
+    "currentState": "ALL FUCKED. SEE config.mk"
   },
   "sequentialTasks": [
     {

@@ -415,7 +415,7 @@ func TestSandbox_RequireOnlyLoadsRegisteredModules(t *testing.T) {
 			'osm:bubbletea', 'osm:bubblezone',
 			'osm:bubbles/textarea', 'osm:bubbles/viewport',
 			'osm:termui/scrollbar', 'osm:lipgloss',
-			'osm:bt', 'osm:pabt', 'osm:grpc',
+			'osm:bt', 'osm:pabt', 'osm:grpc', 'osm:protobuf',
 			'osm:nextIntegerID',
 		];
 		var loaded = 0;
@@ -535,13 +535,14 @@ func TestSandbox_GrpcModuleAPIBoundary(t *testing.T) {
 	engine, _, _ := newSandboxTestEngine(t)
 	script := engine.LoadScriptFromString("grpc-boundary", `
 		var grpcmod = require('osm:grpc');
-		var expected = ['dial', 'loadDescriptorSet', 'status'];
+		var expected = ['createClient', 'createServer', 'dial', 'status', 'metadata', 'enableReflection', 'createReflectionClient'];
 		for (var i = 0; i < expected.length; i++) {
 			if (typeof grpcmod[expected[i]] === 'undefined') {
 				throw new Error('Missing expected grpc export: ' + expected[i]);
 			}
 		}
-		var dangerous = ['createServer', 'Server', 'listen', 'serve'];
+		// goja-grpc uses in-process channels only — no raw network server APIs
+		var dangerous = ['Server', 'listen', 'serve'];
 		for (var i = 0; i < dangerous.length; i++) {
 			if (typeof grpcmod[dangerous[i]] !== 'undefined') {
 				throw new Error('SANDBOX_BREACH: osm:grpc.' + dangerous[i] + ' exists');

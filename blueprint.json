@@ -335,6 +335,17 @@
       "blockedBy": "T170"
     },
     {
+      "task": "T172: Implement `osm mcp parent` - Claude Code wrapper with stdio MCP + session socket",
+      "description": "IMPLEMENT THE AGENTIC WORKFLOW. Create `osm mcp parent` (or pick short descriptive name like `osm mcp agent`) that WRAPS CLAUDE CODE as a child process. This is the CORE enabling infrastructure for the claude-mux agentic workflow. Steps: (1) Name selection: choose short descriptive name for the API surface - consider `osm mcp agent`, `osm mcp wrap`, `osm mcp claude`, or `osm mcp parent`. The name should clearly indicate it spawns/manages a child Claude Code instance. (2) Child process spawning: spawn Claude Code as child process with stdio MCP support enabled (`--mcp-stdio` or equivalent). (3) MCP stdio: child Claude Code communicates with parent MCP via stdio transport. (4) Session socket: child Claude Code ALSO connects to the session-tied Unix socket (from T171) for bidirectional communication with parent - this enables steering, enqueue, and control. (5) Bidirectional messaging: parent can send messages to child via session socket, child sends progress/results back. (6) Lifecycle management: proper startup sequencing, graceful shutdown, crash recovery, session cleanup. (7) Tool schema: expose tools for spawning, messaging, status, kill of child Claude instances. (8) Integration with osm session system: session-bound lifecycle, lock file coordination. (9) Tests: spawning, stdio communication, socket communication, shutdown, crash recovery. This is BLOCKING for the claude-mux agentic workflow - it is how Claude Code instances are wrapped and controlled. Run make.",
+      "status": "Not Started",
+      "blockedBy": "T171"
+    },
+    {
+      "task": "T173: Implement macOS process hierarchy fallback for session ID detection",
+      "description": "IMPLEMENT DEEP ANCHOR FOR MACOS. Currently macOS is the only OS without full process hierarchy fallback - per docs/reference/sophisticated-auto-determination-of-session-id.md it falls back to UUID when TERM_SESSION_ID is not set (e.g., Alacritty, Kitty, WezTerm, IDEs). Use cases: IDEs and tools that dont set the terminal ID env var. Steps: (1) Implement Darwin-specific Deep Anchor walk similar to Linux implementation. (2) Use sysctl or libproc APIs to walk process tree (macOS lacks /proc). (3) Identify stable anchor: skip ephemeral wrappers (sudo, su, setsid, osm, etc.), find shell boundaries (bash, zsh, fish), detect root boundaries (login, sshd). (4) Use process start time for PID recycling detection (via sysctl or libproc). (5) Integrate with existing session ID framework - use same namespace `anchor` and hash format. (6) Update docs/reference/sophisticated-auto-determination-of-session-id.md to mark macOS as Complete. (7) Tests: verify session persistence across terminal restarts in non-Terminal.app environments, verify IDE integration. Run make.",
+      "status": "Not Started"
+    },
+    {
       "task": "T168: Anthropic prompt library expansion",
       "description": "Add 3-5 additional built-in goals. stateVars, hotSnippets, flagDefs. Tests. Run make.",
       "status": "Not Started"

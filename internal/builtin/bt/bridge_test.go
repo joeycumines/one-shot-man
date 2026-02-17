@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+	gojanodejsconsole "github.com/dop251/goja_nodejs/console"
 	gojarequire "github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
@@ -30,6 +31,8 @@ func testBridge(t *testing.T) *Bridge {
 		t.Fatal(err)
 	}
 	vm := goja.New()
+	reg.Enable(vm)
+	gojanodejsconsole.Enable(vm)
 	adapter, err := gojaeventloop.New(loop, vm)
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +40,6 @@ func testBridge(t *testing.T) *Bridge {
 	if err := adapter.Bind(); err != nil {
 		t.Fatal(err)
 	}
-	reg.Enable(vm)
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
 
@@ -88,6 +90,8 @@ func testBridgeWithManualShutdown(t *testing.T) (*Bridge, func()) {
 		t.Fatal(err)
 	}
 	vm := goja.New()
+	reg.Enable(vm)
+	gojanodejsconsole.Enable(vm)
 	adapter, err := gojaeventloop.New(loop, vm)
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +99,6 @@ func testBridgeWithManualShutdown(t *testing.T) (*Bridge, func()) {
 	if err := adapter.Bind(); err != nil {
 		t.Fatal(err)
 	}
-	reg.Enable(vm)
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
 

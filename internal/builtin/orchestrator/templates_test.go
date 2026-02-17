@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/dop251/goja"
+	gojanodejsconsole "github.com/dop251/goja_nodejs/console"
 	goeventloop "github.com/joeycumines/go-eventloop"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	gojarequire "github.com/dop251/goja_nodejs/require"
@@ -34,6 +35,8 @@ func templateTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 		t.Fatal(err)
 	}
 	vm := goja.New()
+	reg.Enable(vm)
+	gojanodejsconsole.Enable(vm)
 	adapter, err := gojaeventloop.New(loop, vm)
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +44,6 @@ func templateTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	if err := adapter.Bind(); err != nil {
 		t.Fatal(err)
 	}
-	reg.Enable(vm)
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
 	t.Cleanup(func() {

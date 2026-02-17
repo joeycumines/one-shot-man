@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"github.com/dop251/goja"
+	gojanodejsconsole "github.com/dop251/goja_nodejs/console"
 	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
@@ -29,6 +30,8 @@ func NewTestEventLoopProvider() *TestEventLoopProvider {
 		panic("failed to create event loop: " + err.Error())
 	}
 	vm := goja.New()
+	registry.Enable(vm)
+	gojanodejsconsole.Enable(vm)
 	adapter, err := gojaeventloop.New(loop, vm)
 	if err != nil {
 		panic("failed to create goja adapter: " + err.Error())
@@ -36,7 +39,6 @@ func NewTestEventLoopProvider() *TestEventLoopProvider {
 	if err := adapter.Bind(); err != nil {
 		panic("failed to bind JS globals: " + err.Error())
 	}
-	registry.Enable(vm)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go loop.Run(ctx)

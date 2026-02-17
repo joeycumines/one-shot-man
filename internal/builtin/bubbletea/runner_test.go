@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+	gojanodejsconsole "github.com/dop251/goja_nodejs/console"
 	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
@@ -29,6 +30,7 @@ func setupRunnerTest(t *testing.T) bubbletea.JSRunner {
 	}
 	vm := goja.New()
 	registry.Enable(vm)
+	gojanodejsconsole.Enable(vm)
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
 	t.Cleanup(func() {
@@ -283,6 +285,8 @@ func TestJSRunner_StoppedBridgeReturnsError(t *testing.T) {
 		t.Fatal(err)
 	}
 	vm := goja.New()
+	registry.Enable(vm)
+	gojanodejsconsole.Enable(vm)
 	adapter, adapterErr := gojaeventloop.New(loop, vm)
 	if adapterErr != nil {
 		t.Fatal(adapterErr)
@@ -290,7 +294,6 @@ func TestJSRunner_StoppedBridgeReturnsError(t *testing.T) {
 	if adapterErr = adapter.Bind(); adapterErr != nil {
 		t.Fatal(adapterErr)
 	}
-	registry.Enable(vm)
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
 	t.Cleanup(func() {

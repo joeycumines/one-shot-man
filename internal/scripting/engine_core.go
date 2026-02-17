@@ -228,6 +228,19 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 	// which gives scripts proper __filename, __dirname, and relative require resolution.
 	err = runtime.RunOnLoopSync(func(r *goja.Runtime) error {
 		engine.requireModule = registry.Enable(r)
+
+		// Extend the console object (created by adapter.Bind() with timer methods)
+		// with console.log/warn/error/info/debug from goja_nodejs/console module.
+		// adapter.Bind() only provides console.time/timeEnd/timeLog/count/etc.
+		// The goja_nodejs/console module provides the standard logging methods.
+		// We load the module and copy its methods to the existing console object
+		// so both sets of methods coexist.
+		consoleModule := require.Require(r, "console").(*goja.Object)
+		existingConsole := r.Get("console").ToObject(r)
+		for _, method := range []string{"log", "warn", "error", "info", "debug"} {
+			existingConsole.Set(method, consoleModule.Get(method))
+		}
+
 		// Install circular dependency detection by wrapping the require function.
 		// This must happen after Enable() since it wraps the require function that
 		// Enable() installs. goja_nodejs caches modules before execution, so cycles

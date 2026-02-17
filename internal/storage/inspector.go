@@ -21,7 +21,7 @@ type SessionInfo struct {
 // ScanSessions inspects the configured sessions directory and returns a slice
 // of SessionInfo describing each session it finds.
 func ScanSessions() ([]SessionInfo, error) {
-	dir, err := sessionDirectory()
+	dir, err := getSessionDirectory()
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func ScanSessions() ([]SessionInfo, error) {
 			continue
 		}
 
-		lockPath, _ := sessionLockFilePath(base)
+		lockPath, _ := getSessionLockFilePath(base)
 
 		// Try to acquire lock non-blocking. If we succeed, close the
 		// descriptor and mark Active=false. Crucially, do NOT remove the

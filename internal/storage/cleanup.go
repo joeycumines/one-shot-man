@@ -40,7 +40,7 @@ type CleanupReport struct {
 func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 	// Acquire a global cleanup lock to avoid concurrent cleaners.
 	// Place lock at {UserConfigDir}/osm/cleanup.lock
-	sessionsDir, err := sessionDirectory()
+	sessionsDir, err := getSessionDirectory()
 	if err != nil {
 		return nil, err
 	}

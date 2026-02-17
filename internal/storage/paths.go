@@ -18,6 +18,12 @@ var (
 	fallbackErr  error
 )
 
+// pathsMu guards the function-variable overrides below against concurrent
+// reads (from cleanup/inspector goroutines) and writes (from SetTestPaths /
+// ResetPaths in tests). Every access to the three function variables MUST go
+// through the get* accessors or the Set/Reset helpers.
+var pathsMu sync.RWMutex
+
 // To enable testing without polluting the user's home directory,
 // these functions are defined as variables. The test suite can then
 // override them to point to a temporary directory.
@@ -27,9 +33,38 @@ var (
 	sessionLockFilePath = SessionLockFilePath
 )
 
+// getSessionDirectory returns the session directory via the (possibly
+// overridden) function variable, under a read-lock.
+func getSessionDirectory() (string, error) {
+	pathsMu.RLock()
+	fn := sessionDirectory
+	pathsMu.RUnlock()
+	return fn()
+}
+
+// getSessionFilePath returns the session file path via the (possibly
+// overridden) function variable, under a read-lock.
+func getSessionFilePath(id string) (string, error) {
+	pathsMu.RLock()
+	fn := sessionFilePath
+	pathsMu.RUnlock()
+	return fn(id)
+}
+
+// getSessionLockFilePath returns the session lock file path via the (possibly
+// overridden) function variable, under a read-lock.
+func getSessionLockFilePath(id string) (string, error) {
+	pathsMu.RLock()
+	fn := sessionLockFilePath
+	pathsMu.RUnlock()
+	return fn(id)
+}
+
 // SetTestPaths overrides the path functions for testing.
 // This should only be used in tests.
 func SetTestPaths(dir string) {
+	pathsMu.Lock()
+	defer pathsMu.Unlock()
 	sessionDirectory = func() (string, error) { return dir, nil }
 	sessionFilePath = func(id string) (string, error) {
 		return filepath.Join(dir, id+".session.json"), nil
@@ -42,6 +77,8 @@ func SetTestPaths(dir string) {
 // ResetPaths resets the path functions to their defaults.
 // This should only be used in tests.
 func ResetPaths() {
+	pathsMu.Lock()
+	defer pathsMu.Unlock()
 	sessionDirectory = SessionDirectory
 	sessionFilePath = SessionFilePath
 	sessionLockFilePath = SessionLockFilePath
@@ -77,7 +114,7 @@ func SessionDirectory() (string, error) {
 // SessionFilePath returns the absolute path to a session file.
 // File naming: {session_id}.session.json
 func SessionFilePath(sessionID string) (string, error) {
-	dir, err := sessionDirectory()
+	dir, err := getSessionDirectory()
 	if err != nil {
 		return "", err
 	}
@@ -87,7 +124,7 @@ func SessionFilePath(sessionID string) (string, error) {
 // SessionLockFilePath returns the absolute path to a session lock file.
 // File naming: {session_id}.session.lock
 func SessionLockFilePath(sessionID string) (string, error) {
-	dir, err := sessionDirectory()
+	dir, err := getSessionDirectory()
 	if err != nil {
 		return "", err
 	}
@@ -97,7 +134,7 @@ func SessionLockFilePath(sessionID string) (string, error) {
 // sessionArchiveDir returns the directory where archived session files are stored.
 // Creates the archive subdirectory if it doesn't exist.
 func sessionArchiveDir() (string, error) {
-	dir, err := sessionDirectory()
+	dir, err := getSessionDirectory()
 	if err != nil {
 		return "", err
 	}

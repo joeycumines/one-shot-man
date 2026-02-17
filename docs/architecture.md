@@ -14,8 +14,8 @@ This document describes the internal architecture of `osm` — how the major sub
 
 3. **Goal subsystem.** `command.NewGoalDiscovery(cfg)` builds the discovery engine, then `command.NewDynamicGoalRegistry(builtIns, discovery)` merges built-in goals with user-discovered goals.
 
-4. **Command registration.** All 15 built-in commands are registered:
-   `help`, `version`, `config`, `init`, `script`, `session`, `prompt-flow`, `code-review`, `super-document`, `completion`, `goal`, `sync`, `log`, `mcp`, plus the completion command which receives both the registry and goal registry for tab-completion data.
+4. **Command registration.** All 14 built-in commands are registered:
+   `help`, `version`, `config`, `init`, `script`, `session`, `prompt-flow`, `code-review`, `super-document`, `completion`, `goal`, `sync`, `log`, `mcp`. The completion command receives both the registry and goal registry for tab-completion data.
 
 5. **Flag parsing.** A global `FlagSet` parses top-level `-h`/`-help`; remaining args identify the command name and its arguments. Each command gets its own `FlagSet` (with `ContinueOnError`) so `SetupFlags` can register command-specific flags before `fs.Parse(cmdArgs)`.
 
@@ -149,7 +149,7 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 | `osm:os` | File I/O (read, write, append), environment variables, clipboard, editor |
 | `osm:path` | Path manipulation (join, dir, base, ext, abs, rel, glob) |
 | `osm:regexp` | RE2 regular expressions (match, find, replace, split, compile) |
-| `osm:time` | Time utilities, sleep, duration formatting |
+| `osm:time` | Sleep (millisecond-precision delay) |
 | `osm:fetch` | HTTP client (GET, POST, etc.) |
 | `osm:grpc` | gRPC client with protobuf descriptor loading |
 
@@ -180,6 +180,7 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 
 | Module | Description |
 |--------|-------------|
+| `osm:bt` | Behavior tree primitives (node, sequence, selector, fork, blackboard) |
 | `osm:pabt` | Planning and Acting using Behavior Trees |
 | `osm:ctxutil` | Context manager factory and REPL command helpers |
 
@@ -307,7 +308,7 @@ Goals are pre-written interactive workflows for common tasks. Each goal defines 
 
 1. **User-discovered JSON goals** — from goal directories (highest priority, override built-ins)
 2. **User-discovered `.prompt.md` goals** — VS Code prompt files converted to goals
-3. **Built-in goals** — 15 goals compiled into the binary (lowest priority)
+3. **Built-in goals** — 19 goals compiled into the binary (lowest priority)
 
 ### Discovery
 
@@ -341,7 +342,7 @@ Source: [internal/command/goal.go](../internal/command/goal.go), [internal/comma
 
 ### Built-in goals
 
-See [Goal reference](reference/goal.md) for the complete catalog of 15 built-in goals.
+See [Goal reference](reference/goal.md) for the complete catalog of 19 built-in goals.
 
 ---
 
@@ -423,12 +424,12 @@ CLI args → main.go → Registry.Get(cmd)
      (config, session,      (script, prompt-flow,
       init, version,         code-review, goal,
       help, log, mcp,       super-document)
-      completion)                  ↓
+      sync, completion)            ↓
                            PrepareEngine()
                                   ↓
                           Engine created with:
                           - Goja VM + event loop
-                          - 22 native modules
+                          - 25 native modules
                           - TUI manager + state
                           - Session persistence
                           - Context manager

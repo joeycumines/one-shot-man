@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T229 DONE. Session 2026-02-17. T227-T229 API docs for osm:scrollbar, osm:regexp, osm:encoding complete. Proceeding IN STRICT SEQUENCE."
+    "currentState": "T200-T231 DONE. Session 2026-02-17. Architecture.md corrected: 14 commands, 25 modules, 19 goals, osm:time desc, added osm:bt. Proceeding IN STRICT SEQUENCE."
   },
   "sequentialTasks": [
     {
@@ -170,12 +170,12 @@
     {
       "task": "T230: Update scripting.md with all new modules and changes",
       "description": "Comprehensive update of docs/scripting.md: add osm:regexp, osm:encoding entries, update osm:nextIntegerID rename, verify all existing module entries are accurate, fix broken cross-references.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T231: Review and update docs/architecture.md",
       "description": "Review docs/architecture.md against current codebase. Verify directory structure, component descriptions, data flow diagrams, all references. Update outdated sections. Add missing architectural components.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T232: Evaluate streaming fetch API approach",

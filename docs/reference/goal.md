@@ -314,7 +314,7 @@ See: [internal/command/prompt_file.go](../../internal/command/prompt_file.go), [
 
 **Built-in goals (complete catalog)**
 
-`osm` ships with 15 built-in goals across 14 categories. All use the standard `goalScript` interpreter and provide `contextManager` commands for managing context items.
+`osm` ships with 19 built-in goals across 17 categories. All use the standard `goalScript` interpreter and provide `contextManager` commands for managing context items.
 
 | Name | Category | Description | State Variables | Custom Commands |
 |------|----------|-------------|-----------------|-----------------|
@@ -333,6 +333,10 @@ See: [internal/command/prompt_file.go](../../internal/command/prompt_file.go), [
 | `data-to-json` | data-transformation | Extract structured JSON from unstructured text | `mode` (auto) | `mode` |
 | `cite-sources` | research | Answer questions with numbered inline citations | `format` (numbered) | `format` |
 | `which-one-is-better` | decision-making | Exhaustive comparative analysis of options, designs, or approaches | `comparisonType` (general) | `set-type` |
+| `sql-generator` | data-engineering | Generate SQL queries from natural language descriptions | `dialect` (auto) | `dialect` |
+| `report-analyzer` | business-analysis | Extract insights, risks, and key information from long documents | `focus` (general) | `focus` |
+| `review-classifier` | product-analysis | Categorize feedback and reviews with sentiment analysis | `outputFormat` (detailed) | `output-format` |
+| `adaptive-editor` | writing | Rewrite text following specific instructions for tone/audience/style | `instruction` ("") | `instruct` |
 
 **Goals with hot-snippets:**
 
@@ -341,6 +345,8 @@ See: [internal/command/prompt_file.go](../../internal/command/prompt_file.go), [
 - `prose-polisher`: `hot-expand-section` — "The section I highlighted is too thin. Expand it…"
 - `cite-sources`: `hot-challenge-claims` — "Review your answer critically. For each claim, verify the citation…"
 - `which-one-is-better`: `hot-deeper-analysis` — "Go deeper on the winning option: enumerate concrete implementation steps…"; `hot-devils-advocate` — "Now argue the opposite position: find the strongest case for the runner-up…"
+- `sql-generator`: `hot-explain-plan` — "Add an EXPLAIN ANALYZE prefixed version of the query and interpret the execution plan…"
+- `adaptive-editor`: `hot-compare-versions` — "Show the original and rewritten text side-by-side with change annotations…"
 
 **Goals with PostCopyHint:**
 
@@ -361,6 +367,10 @@ See: [internal/command/prompt_file.go](../../internal/command/prompt_file.go), [
 - `data-to-json`: `mode`
 - `cite-sources`: `format`
 - `which-one-is-better`: `comparisonType`
+- `sql-generator`: `dialect`
+- `report-analyzer`: `focus`
+- `review-classifier`: `outputFormat`
+- `adaptive-editor`: `instruction`
 
 See: [internal/command/goal_builtin.go](../../internal/command/goal_builtin.go) for the full definitions.
 

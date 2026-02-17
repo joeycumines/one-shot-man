@@ -58,8 +58,8 @@
     },
     {
       "task": "T011: Eventloop migration — replace with github.com/joeycumines/goja-eventloop",
-      "description": "CRITICAL INFRASTRUCTURE. Replace dop251/goja_nodejs/eventloop with github.com/joeycumines/goja-eventloop. Unlocks: goja-grpc (T012), Promise-based fetch (T013), AbortSignal (T015). PRODUCTION FILES DONE (4/4): register.go, runtime.go, engine_core.go, bridge.go. Remaining: update test files, go get new deps, go mod tidy, run make.",
-      "status": "In Progress"
+      "description": "DONE. Replaced dop251/goja_nodejs/eventloop with github.com/joeycumines/go-eventloop + goja-eventloop adapter. Production files (5): register.go, runtime.go, engine_core.go, bridge.go, require.go. Test files (9): testutil/eventloop.go, bt/bridge_test.go, bt/benchmark_throughput_test.go, bt/integration_test.go, bubbletea/runner_test.go, orchestrator/templates_test.go, orchestrator/pr_split_test.go, pabt/require_test.go. Additional fixes: coverage_gaps_test.go, sandbox tests, memory threshold. Key: console.Enable(vm) provides console.log/warn/error; adapter.Bind() extends with timer methods. All core tests pass with -race.",
+      "status": "Done"
     },
     {
       "task": "T012: Replace osm:grpc with github.com/joeycumines/goja-grpc",

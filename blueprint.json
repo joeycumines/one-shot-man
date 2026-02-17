@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T236 DONE. T237 next."
+    "currentState": "T200-T237 DONE. T238 next."
   },
   "sequentialTasks": [
     {
@@ -205,7 +205,7 @@
     {
       "task": "T237: MacOSUseSDK integration evaluation",
       "description": "Evaluate gRPC proxy approach for MacOSUseSDK integration. Assess useful capabilities, feasibility, platform implications. Write evaluation in docs/archive/notes/. Decision task.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T238: AI Orchestrator architectural design document",

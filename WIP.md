@@ -1,27 +1,20 @@
-# WIP — Session (T236)
+# WIP — Session (T237)
 
 ## Current State
 
-- **T200-T236**: Done (committed)
-  - T235=74de76f, T236=pending commit
-- **T237**: Next — MacOSUseSDK integration evaluation
+- **T200-T237**: Done (committed)
+  - T236=5e153de, T237=pending commit
+- **T238**: Next — AI Orchestrator architectural design document
 
-## T236 Summary
+## T237 Summary
 
-Implemented go-prompt enhancements:
-1. History persistence via saveHistory (dedup, trim, MkdirAll, 0600 perms)
-2. completionWordSeparator config field
-3. indentSize config field
-4. promptHistoryConfigs map for tracking per-prompt history configs
-
-Bug fixes during review gate:
-- Fixed saveHistory dedup panic when first entry is empty (len(deduped)==0 vs i==0)
-- Added Windows skip for file permissions test
-- Added regression test for first-entry-empty scenario
-
-Review Gate: 2 contiguous passes + fitness review passed.
+Decision task: Evaluated MacosUseSDK integration via gRPC proxy.
+- Tier 1 (current osm:grpc → MacosUseSDK server): Works NOW, zero code changes
+- Tier 2 (go-eventloop + goja-grpc): Feasible, blocked on event loop migration
+- Decision: Proceed with Tier 1 (immediate), plan Tier 2 as future epic
+- Evaluation written to docs/archive/notes/macos-use-sdk-evaluation.md
 
 ## Immediate Next Step
 
-1. Commit T236
-2. Start T237 (evaluation/decision task)
+1. Commit T237
+2. Start T238 (AI Orchestrator arch design)

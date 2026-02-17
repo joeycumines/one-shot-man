@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T233 DONE (T233 skipped per T232 decision). Session 2026-02-17. Proceeding to T234."
+    "currentState": "T200-T234 DONE (T233 skipped, T234 deferred to AI Orchestrator). Session 2026-02-17. Proceeding to T235."
   },
   "sequentialTasks": [
     {
@@ -190,7 +190,7 @@
     {
       "task": "T234: Code review splitter workflow engine evaluation",
       "description": "Evaluate workflow engine approach for code review splitter LLM dependency. Analyze: lightweight BT engine, per-LLM templates, AI Orchestrator subsumption. Write findings in docs/archive/notes/. Decision task.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T235: Sync common config sub-feature",

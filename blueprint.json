@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T237 DONE. T238 next."
+    "currentState": "T200-T238 DONE. T239 next."
   },
   "sequentialTasks": [
     {
@@ -210,7 +210,7 @@
     {
       "task": "T238: AI Orchestrator architectural design document",
       "description": "Create comprehensive design doc for AI Orchestrator. Present 3 approaches: minimal, clean architecture, pragmatic balance. Each with component diagram, data flow, API surface, testing strategy, trade-offs. Write to docs/architecture-ai-orchestrator.md. Gate for T239-T255.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T239: AI Orchestrator PTY spawning module",

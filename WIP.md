@@ -1,20 +1,23 @@
-# WIP — Session (T237)
+# WIP — Session (T238)
 
 ## Current State
 
-- **T200-T237**: Done (committed)
-  - T236=5e153de, T237=pending commit
-- **T238**: Next — AI Orchestrator architectural design document
+- **T200-T238**: Done (committed)
+  - T236=5e153de, T237=977e6c7, T238=pending commit
+- **T239**: Next — AI Orchestrator PTY spawning module
 
-## T237 Summary
+## T238 Summary
 
-Decision task: Evaluated MacosUseSDK integration via gRPC proxy.
-- Tier 1 (current osm:grpc → MacosUseSDK server): Works NOW, zero code changes
-- Tier 2 (go-eventloop + goja-grpc): Feasible, blocked on event loop migration
-- Decision: Proceed with Tier 1 (immediate), plan Tier 2 as future epic
-- Evaluation written to docs/archive/notes/macos-use-sdk-evaluation.md
+Created comprehensive AI Orchestrator design doc at docs/architecture-ai-orchestrator.md.
+Three approaches presented:
+- A: Minimal (Script-First) — max JS leverage, minimal Go
+- B: Clean Architecture (Module-First) — full Go module system
+- C: Pragmatic Balance (Recommended) — Go for safety, JS for workflow
+
+Decision: Approach C — Go for safety-critical paths (PTY, output parsing,
+permission rejection, signal forwarding), JS for workflow logic.
 
 ## Immediate Next Step
 
-1. Commit T237
-2. Start T238 (AI Orchestrator arch design)
+1. Commit T238
+2. Start T239 (PTY spawning module implementation)

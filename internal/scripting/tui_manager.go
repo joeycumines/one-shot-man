@@ -67,20 +67,21 @@ func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reade
 	}
 
 	manager := &TUIManager{
-		engine:           engine,
-		ctx:              ctx,
-		modes:            make(map[string]*ScriptMode),
-		commands:         make(map[string]Command),
-		commandOrder:     make([]string, 0),
-		reader:           reader,
-		writer:           writer,
-		prompts:          make(map[string]*prompt.Prompt),
-		completers:       make(map[string]goja.Callable),
-		keyBindings:      make(map[string]goja.Callable),
-		promptCompleters: make(map[string]string),
-		writerQueue:      make(chan writeTask, 64),
-		writerStop:       make(chan struct{}),
-		writerDone:       make(chan struct{}),
+		engine:               engine,
+		ctx:                  ctx,
+		modes:                make(map[string]*ScriptMode),
+		commands:             make(map[string]Command),
+		commandOrder:         make([]string, 0),
+		reader:               reader,
+		writer:               writer,
+		prompts:              make(map[string]*prompt.Prompt),
+		completers:           make(map[string]goja.Callable),
+		keyBindings:          make(map[string]goja.Callable),
+		promptCompleters:     make(map[string]string),
+		promptHistoryConfigs: make(map[string]historyConfig),
+		writerQueue:          make(chan writeTask, 64),
+		writerStop:           make(chan struct{}),
+		writerDone:           make(chan struct{}),
 		defaultColors: PromptColors{
 			// Choose a readable default for input that is not yellow/white-adjacent
 			InputText:               prompt.Green,
@@ -799,6 +800,16 @@ func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
 		options = append(options, prompt.WithKeyBindMode(prompt.EmacsKeyBind))
 	case "common":
 		options = append(options, prompt.WithKeyBindMode(prompt.CommonKeyBind))
+	}
+
+	// Completion word separator (empty uses go-prompt default: space only)
+	if cfg.completionWordSeparator != "" {
+		options = append(options, prompt.WithCompletionWordSeparator(cfg.completionWordSeparator))
+	}
+
+	// Indent size for multiline input (0 uses go-prompt default: 2)
+	if cfg.indentSize > 0 {
+		options = append(options, prompt.WithIndentSize(cfg.indentSize))
 	}
 
 	// This enables the sync protocol when built with the `integration` build tag

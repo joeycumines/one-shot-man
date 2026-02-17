@@ -85,7 +85,7 @@ Creates a configured `go-prompt` instance and returns a unique handle (string) u
 - `name` (string, optional) — handle name; if omitted a generated name is used.
 - `title`, `prefix` (strings)
 - `colors` (object) — overrides for color properties (see "Color properties" below)
-- `history` (object) — `{ enabled: bool, file: string, size: int }`
+- `history` (object) — `{ enabled: bool, file: string, size: int }`. When `enabled` is true and `file` is set, history is loaded from the file on prompt creation and persisted back on prompt exit (with deduplication and size limiting).
 - `maxSuggestion` (int, optional) — maximum number of completion suggestions shown (default: 10)
 - `dynamicCompletion` (bool, optional) — recompute completions on each keystroke (default: true)
 - `executeHidesCompletions` (bool, optional) — auto-hide completions when submitting input (default: true)
@@ -95,6 +95,8 @@ Creates a configured `go-prompt` instance and returns a unique handle (string) u
 - `completionOnDown` (bool, optional) — allow Down arrow key to trigger completion dropdown (default: false)
 - `keyBindMode` (string, optional) — key binding preset: `"emacs"` or `"common"` (default: go-prompt default)
 - `multiline` (bool, optional) — enable multiline input support; when true, Alt+Enter inserts a newline into the buffer while Enter still submits normally (default: false)
+- `completionWordSeparator` (string, optional) — override the default word separator for completion boundary detection; empty uses go-prompt default (space only)
+- `indentSize` (int, optional) — number of spaces per indent level for multiline input; 0 uses go-prompt default (2)
 
 #### Color properties
 

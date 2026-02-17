@@ -284,6 +284,14 @@ func (tm *TUIManager) jsCreatePrompt(config interface{}) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	completionWordSeparator, err := getString(configMap, "completionWordSeparator", "")
+	if err != nil {
+		return "", err
+	}
+	indentSizeInt, err := getInt(configMap, "indentSize", 0)
+	if err != nil {
+		return "", err
+	}
 
 	// Create the completer function as a dispatcher that can call a JS completer
 	completer := func(document prompt.Document) ([]prompt.Suggest, istrings.RuneNumber, istrings.RuneNumber) {
@@ -337,6 +345,8 @@ func (tm *TUIManager) jsCreatePrompt(config interface{}) (string, error) {
 		completionOnDown:        completionOnDown,
 		keyBindMode:             keyBindMode,
 		multiline:               multiline,
+		completionWordSeparator: completionWordSeparator,
+		indentSize:              indentSizeInt,
 	})
 
 	// Store the prompt via the writer queue to avoid deadlocks.
@@ -344,6 +354,10 @@ func (tm *TUIManager) jsCreatePrompt(config interface{}) (string, error) {
 	// tm.mu.Lock() directly here.
 	err = tm.scheduleWriteAndWait(func() error {
 		tm.prompts[name] = p
+		// Store history config for persistence on prompt exit
+		if historyConfig.Enabled && historyConfig.File != "" {
+			tm.promptHistoryConfigs[name] = historyConfig
+		}
 		return nil
 	})
 	if err != nil {
@@ -357,6 +371,7 @@ func (tm *TUIManager) jsCreatePrompt(config interface{}) (string, error) {
 func (tm *TUIManager) jsRunPrompt(name string) error {
 	tm.mu.RLock()
 	p, exists := tm.prompts[name]
+	histCfg, hasHistCfg := tm.promptHistoryConfigs[name]
 	tm.mu.RUnlock()
 
 	if !exists {
@@ -370,6 +385,14 @@ func (tm *TUIManager) jsRunPrompt(name string) error {
 	// Start the prompt (this will block until exit).
 	// Use RunNoExit to prevent go-prompt from calling os.Exit on SIGTERM.
 	p.RunNoExit()
+
+	// Persist history to file if configured
+	if hasHistCfg && histCfg.File != "" {
+		entries := p.History().Entries()
+		if err := saveHistory(histCfg.File, entries, histCfg.Size); err != nil {
+			_, _ = fmt.Fprintf(tm.writer, "Warning: failed to save history to %s: %v\n", histCfg.File, err)
+		}
+	}
 
 	tm.mu.Lock()
 	tm.activePrompt = nil

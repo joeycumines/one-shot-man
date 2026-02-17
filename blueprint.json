@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T235 DONE. T236 next."
+    "currentState": "T200-T236 DONE. T237 next."
   },
   "sequentialTasks": [
     {
@@ -200,7 +200,7 @@
     {
       "task": "T236: go-prompt enhancements investigation and implementation",
       "description": "Investigate and implement go-prompt improvements: better completion rendering, key binding customization, prompt styling, history management, multi-line input. Add tests. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T237: MacOSUseSDK integration evaluation",

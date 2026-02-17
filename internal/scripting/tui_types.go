@@ -42,20 +42,21 @@ func (b *atomicBool) IsSet() bool {
 //     (RLock) are safe but must not perform mutations. Schedule mutations via the
 //     writer queue.
 type TUIManager struct {
-	engine           *Engine
-	ctx              context.Context
-	currentMode      *ScriptMode
-	modes            map[string]*ScriptMode
-	commands         map[string]Command
-	commandOrder     []string // maintains insertion order of commands
-	mu               sync.RWMutex
-	reader           *TUIReader                // Concrete reader type with lazy initialization
-	writer           *TUIWriter                // Concrete writer type with lazy initialization
-	prompts          map[string]*prompt.Prompt // Manages named prompt instances
-	activePrompt     *prompt.Prompt            // Pointer to the currently active prompt
-	completers       map[string]goja.Callable  // JavaScript completion functions
-	keyBindings      map[string]goja.Callable  // JavaScript key binding handlers
-	promptCompleters map[string]string         // Maps prompt names to completer names
+	engine               *Engine
+	ctx                  context.Context
+	currentMode          *ScriptMode
+	modes                map[string]*ScriptMode
+	commands             map[string]Command
+	commandOrder         []string // maintains insertion order of commands
+	mu                   sync.RWMutex
+	reader               *TUIReader                // Concrete reader type with lazy initialization
+	writer               *TUIWriter                // Concrete writer type with lazy initialization
+	prompts              map[string]*prompt.Prompt // Manages named prompt instances
+	activePrompt         *prompt.Prompt            // Pointer to the currently active prompt
+	completers           map[string]goja.Callable  // JavaScript completion functions
+	keyBindings          map[string]goja.Callable  // JavaScript key binding handlers
+	promptCompleters     map[string]string         // Maps prompt names to completer names
+	promptHistoryConfigs map[string]historyConfig  // History config per named prompt for persistence
 	// defaultColors controls the default color scheme used when running prompts
 	// without explicit color configuration. It is initialized with sensible
 	// defaults and can be overridden by configuration (e.g., config file).
@@ -227,4 +228,10 @@ type promptBuildConfig struct {
 	// multiline enables multiline input support. When true, Alt+Enter inserts
 	// a newline into the buffer instead of submitting. Enter always submits.
 	multiline bool
+	// completionWordSeparator overrides the default word separator used for
+	// completion boundary detection. Empty string uses go-prompt's default (space only).
+	completionWordSeparator string
+	// indentSize sets the number of spaces per indent level for multiline input.
+	// 0 uses go-prompt's default (2).
+	indentSize int
 }

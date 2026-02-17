@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `tui_commands.go` `registerBuiltinCommands` coverage 88.9%→97.2%: added `mode` success path and `reset` stateManager-nil error path tests; remaining 2.8% is an unreachable defensive `else` branch
 
 ### Changed
+- Migrated JavaScript event loop from `dop251/goja_nodejs/eventloop` to `joeycumines/go-eventloop` + `joeycumines/goja-eventloop` — enables proper Promise/setTimeout/setInterval integration via adapter pattern; adds AbortController, TextEncoder/Decoder, URL, crypto, and process.nextTick as JS globals; console.log/warn/error/info/debug provided via goja_nodejs/console module with adapter-provided timer methods (console.time/timeEnd/timeLog)
 - `osm:argv` `formatArgv` now applies POSIX shell quoting for arguments containing special characters (spaces, quotes, backslashes, glob chars, pipes, semicolons); arguments without special characters are passed through unquoted
 - Migrated textarea `runeWidth` from `go-runewidth` to `uniseg.StringWidth` for correct Unicode grapheme cluster width — combining marks and control characters now correctly report zero width instead of being clamped to 1; extracted shared `hitTestColumn` helper eliminating 3× code duplication across `performHitTest`, `handleClick`, and `handleClickAtScreenCoords`
 - Renamed `osm:nextIntegerId` native module to `osm:nextIntegerID` (Go naming convention); the old name is kept as a deprecated alias
@@ -79,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `osm:nextIntegerId` module name: use `osm:nextIntegerID` instead (old name still works as an alias)
 
 ### Removed
+- Direct dependency on `dop251/goja_nodejs/eventloop` — replaced by `joeycumines/go-eventloop` + `joeycumines/goja-eventloop` adapter
 - Unused `sync.enabled` configuration key (was defined but never read)
 - `osm:tview` native module and entire `internal/builtin/tview/` package (~2,100 lines): superseded by `osm:bubbletea`
 - `TViewManagerProvider` interface and `GetTViewManager()` method from scripting engine
@@ -93,10 +95,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deprecated `ScrollWheel` and `ScrollWheelOnElement` string-based methods from mouseharness; use type-safe `ScrollWheelWithDirection` and `ScrollWheelOnElementWithDirection` instead
 
 ### Fixed
+- Data race in storage path globals: added `sync.RWMutex` guarding `getSessionDirectory` and `getSessionLockFilePath` accessor functions in `paths.go`, preventing concurrent read/write of function-variable overrides during cleanup scheduling
 - `ScanSessions` incorrectly accepted non-session `.json` files (e.g. `notes.json`, `config.json`) — the filter used `filepath.Ext` (`.json`) then subtracted `.session.json` length, which could produce wrong session IDs or panic for short filenames; now uses `strings.HasSuffix(name, ".session.json")` with length-based slicing for base extraction
 - Inconsistent `fmt.Fprint*` error handling: added `_, _ =` prefix to all unchecked calls across session, completion, scripting, terminal, and bubbletea source files for project-wide consistency
 - Silently swallowed errors during log file rotation: `RotatingFileWriter.rotate()` now logs backup shift, rename, and cleanup failures to stderr instead of discarding them
 - Flaky `TestSuperDocument_BacktabNavigation` PTY integration test: standardized inter-keystroke delay from inconsistent 4–20ms to a uniform 25ms constant (`ptyCharDelay`) across all character-typing loops in both PTY test files; under CPU load the previous delays caused the TUI to coalesce or drop keystrokes, producing garbled output
+- macOS PTY data loss: slave fd is now kept alive in parent process until child exits, preventing buffered output from being lost on macOS when the slave fd closes before the master reads; also fixed `EvalSymlinks` for macOS `/var` → `/private/var` resolution
 - VHS recording path remapping: replaced hardcoded `../../../` prefix with dynamic `filepath.Rel` computation from tape output directory to repository root; argument quoting now uses VHS-compatible `quoteVHSString` instead of Go-style `fmt.Sprintf("%q")`
 - Data race in scripting engine: `context.AfterFunc` closure reading `engine.vm` while `Close()` sets nil; captured VM in local variable before closure
 - Data race in bubbletea module via `syscall.Dup` file descriptor handling
@@ -110,6 +114,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 6 nil-guard and return-type bugs across template, unicodetext, and nextintegerid packages
 - 3 error-wrapping format verbs corrected from `%v` to `%w` for proper error chain support
 - Permission-based tests failing under Docker root: tests skip when running as UID 0
+- Concurrent session archival race: `ArchiveSession` now uses mutex and checks if source file still exists before rename, preventing double-archive panics when multiple goroutines archive simultaneously
+- `ETXTBSY` error on overlayfs (Docker): `exec` module uses atomic write-then-rename pattern instead of in-place modification for script execution on copy-on-write filesystems
+- `ScanSessions` on Windows: added explicit directory check before `ReadDir`, preventing silent no-op on non-directory paths
 - 2 Windows test failures: echo builtin and tview Console API tests skip on unsupported platforms
 
 ## [v0.1.0] - 2026-02-10

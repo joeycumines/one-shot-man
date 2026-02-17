@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
-	goeventloop "github.com/joeycumines/go-eventloop"
 	bt "github.com/joeycumines/go-behaviortree"
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/stretchr/testify/require"
 )
 

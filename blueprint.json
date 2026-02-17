@@ -300,8 +300,8 @@
     },
     {
       "task": "T164: CHANGELOG.md completeness",
-      "description": "Keep a Changelog 1.1.0.  Document all features, breaking changes, fixes. Update [Unreleased].",
-      "status": "Not Started"
+      "description": "DONE. Added T011 eventloop migration (Changed + Removed), T001 storage race fix, T002 macOS PTY fix, T104 concurrent archive race + ETXTBSY overlayfs fix, T105 ScanSessions Windows fix. All entries follow Keep a Changelog 1.1.0 spec.",
+      "status": "Done"
     },
     {
       "task": "T165: CI/CD verification",

@@ -102,6 +102,8 @@ github.com/joeycumines/go-catrate v0.0.0-20260210130411-ef1b624f3188 h1:+LKd8MlK
 github.com/joeycumines/go-catrate v0.0.0-20260210130411-ef1b624f3188/go.mod h1:SCSVDCdd2wYb7cnI5MPUvMx1EZzJ3JCMxcw8JIxKdyg=
 github.com/joeycumines/go-eventloop v0.0.0-20260213164852-99e8a33a69b7 h1:62PpJ5Vu+0yMp1gKUP+k7CmMbwZfeoZKRzFCdKAdS5w=
 github.com/joeycumines/go-eventloop v0.0.0-20260213164852-99e8a33a69b7/go.mod h1:C4lyFEzQRggi7Iyjx15N6L9EFKoOvlfJ+hEfnAaodME=
+github.com/joeycumines/go-inprocgrpc v0.0.0-20260213164927-0dc92b109371 h1:3xSZTv96Bh++QtXj6mA2k5tklMe3nYIPvx0+LMC3GaQ=
+github.com/joeycumines/go-inprocgrpc v0.0.0-20260213164927-0dc92b109371/go.mod h1:M6UhfmVpFTXIvMZ6Yye/08MVS+5VeTbPOXYoWonvWDI=
 github.com/joeycumines/go-pabt v0.2.0 h1:wKlj9wY9al/tBAtWtlIirxDnpimBEZME9AFAA/RKwdk=
 github.com/joeycumines/go-pabt v0.2.0/go.mod h1:ZkTHK9//CRrDKmhcNh6AYiw0uLVR+UTrxGBtMd6OFew=
 github.com/joeycumines/go-prompt v0.0.0-20260210130944-94c9ffd2e013 h1:5jCv/hKpNhJYD2uP9DricKtAtf5S/caT2ptkBhoWAq4=
@@ -110,6 +112,12 @@ github.com/joeycumines/go-utilpkg/jsonenc v0.0.0-20230803131503-0fe828ecefae h1:
 github.com/joeycumines/go-utilpkg/jsonenc v0.0.0-20230803131503-0fe828ecefae/go.mod h1:CunLunFiy6ZyhuiuwK5K6z9n1DsFLOvNd5Cu0KgK420=
 github.com/joeycumines/goja-eventloop v0.0.0-20260213164906-b3f83ceccca4 h1:k/FObwffaCby+sbcefUg4tUbvhbVq/rVrI7o/hz6EAo=
 github.com/joeycumines/goja-eventloop v0.0.0-20260213164906-b3f83ceccca4/go.mod h1:bAPPHYL4LMMO7DYoQXyIsutM5wPF6yxV97akXPKrH+M=
+github.com/joeycumines/goja-grpc v0.0.0-20260213164910-f82bd4072549 h1:zZ7YYDVGMtMzI7AtfPP+ETjVPdODFYn42VfCNiMboak=
+github.com/joeycumines/goja-grpc v0.0.0-20260213164910-f82bd4072549/go.mod h1:e77lRJJdvEwbTa19FY8iHPcuSwcLK9IQWvzn7L2ccDI=
+github.com/joeycumines/goja-protobuf v0.0.0-20260213164915-e7601209bd26 h1:7Qpl2ZsE4eJU3er10rNDgfjNShjWJcZLh3/mM9aF33g=
+github.com/joeycumines/goja-protobuf v0.0.0-20260213164915-e7601209bd26/go.mod h1:8RKamMLBvEoENsgBu90FRnDnyATVNb2YjetATjQzbyA=
+github.com/joeycumines/goja-protojson v0.0.0-20260213164919-c434665d6fbf h1:m4PzbCVpgYBnrFIhA1AP+dWYu1f2hwKIZhrE7ALMlVw=
+github.com/joeycumines/goja-protojson v0.0.0-20260213164919-c434665d6fbf/go.mod h1:65WnEkvPfmTuna6EqHF9XDaIAmwrIPjZGL1Z5iSez14=
 github.com/joeycumines/logiface v0.5.0 h1:4fm7M1b6XLWByJ215bqUqGGbPExKBbTEG9ugUkrCZPk=
 github.com/joeycumines/logiface v0.5.0/go.mod h1:ivS8dtJp7dLyHPZjloZXdDs1AJ50ZTj9hXnwHzLFXb8=
 github.com/joeycumines/simple-command-output-filter v0.2.1 h1:JAFCaVqp6X1/eXsOeLXBijJDBRLO5mb3my7UiWzXBqo=

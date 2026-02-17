@@ -7,9 +7,9 @@ import (
 
 	"github.com/dop251/goja"
 	gojanodejsconsole "github.com/dop251/goja_nodejs/console"
+	gojarequire "github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
-	gojarequire "github.com/dop251/goja_nodejs/require"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 

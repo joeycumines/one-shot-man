@@ -10,9 +10,9 @@ import (
 	"github.com/dop251/goja"
 	gojanodejsconsole "github.com/dop251/goja_nodejs/console"
 	gojarequire "github.com/dop251/goja_nodejs/require"
+	bt "github.com/joeycumines/go-behaviortree"
 	goeventloop "github.com/joeycumines/go-eventloop"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
-	bt "github.com/joeycumines/go-behaviortree"
 	"github.com/stretchr/testify/require"
 )
 

@@ -18,6 +18,7 @@ type TestEventLoopProvider struct {
 	loop     *goeventloop.Loop
 	vm       *goja.Runtime
 	registry *require.Registry
+	adapter  *gojaeventloop.Adapter
 	cancel   context.CancelFunc
 }
 
@@ -47,6 +48,7 @@ func NewTestEventLoopProvider() *TestEventLoopProvider {
 		loop:     loop,
 		vm:       vm,
 		registry: registry,
+		adapter:  adapter,
 		cancel:   cancel,
 	}
 }
@@ -64,6 +66,11 @@ func (p *TestEventLoopProvider) Runtime() *goja.Runtime {
 // Registry implements builtin.EventLoopProvider.
 func (p *TestEventLoopProvider) Registry() *require.Registry {
 	return p.registry
+}
+
+// Adapter implements builtin.EventLoopProvider.
+func (p *TestEventLoopProvider) Adapter() *gojaeventloop.Adapter {
+	return p.adapter
 }
 
 // Stop stops the event loop. Call this in test cleanup.

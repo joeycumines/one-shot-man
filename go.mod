@@ -29,15 +29,16 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/joeycumines/go-behaviortree v1.11.0
 	github.com/joeycumines/go-eventloop v0.0.0
+	github.com/joeycumines/go-inprocgrpc v0.0.0-20260213164927-0dc92b109371
 	github.com/joeycumines/go-pabt v0.2.0
 	github.com/joeycumines/goja-eventloop v0.0.0-20260213164906-b3f83ceccca4
+	github.com/joeycumines/goja-grpc v0.0.0-20260213164910-f82bd4072549
+	github.com/joeycumines/goja-protobuf v0.0.0-20260213164915-e7601209bd26
 	github.com/lrstanley/bubblezone v1.0.0
 	github.com/modelcontextprotocol/go-sdk v1.3.0
 	github.com/muesli/termenv v0.16.0
 	github.com/rivo/uniseg v0.4.7
 	golang.org/x/sys v0.41.0
-	google.golang.org/grpc v1.79.1
-	google.golang.org/protobuf v1.36.11
 )
 
 require (
@@ -66,6 +67,7 @@ require (
 	github.com/google/pprof v0.0.0-20260202012954-cb029daf43ef // indirect
 	github.com/joeycumines/go-bigbuff v1.21.0 // indirect
 	github.com/joeycumines/go-catrate v0.0.0-20260210130411-ef1b624f3188 // indirect
+	github.com/joeycumines/goja-protojson v0.0.0-20260213164919-c434665d6fbf // indirect
 	github.com/joeycumines/logiface v0.5.0 // indirect
 	github.com/joeycumines/simple-command-output-filter v0.2.1 // indirect
 	github.com/kevinburke/ssh_config v1.5.0 // indirect
@@ -96,6 +98,8 @@ require (
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260209200024-4cfbd4190f57 // indirect
+	google.golang.org/grpc v1.79.1 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.7.0 // indirect
 )

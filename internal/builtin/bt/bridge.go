@@ -10,8 +10,8 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
-	goeventloop "github.com/joeycumines/go-eventloop"
 	bt "github.com/joeycumines/go-behaviortree"
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/goroutineid"
 )
 

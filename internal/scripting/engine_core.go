@@ -15,6 +15,7 @@ import (
 	_ "github.com/dop251/goja_nodejs/console" // init() registers "console" core module
 	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	gojaEventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	"github.com/joeycumines/one-shot-man/internal/goroutineid"
@@ -582,6 +583,15 @@ func (e *Engine) Runtime() *goja.Runtime {
 // This implements builtin.EventLoopProvider.
 func (e *Engine) Registry() *require.Registry {
 	return e.registry
+}
+
+// Adapter returns the goja-eventloop adapter for promise-based async operations.
+// This implements builtin.EventLoopProvider.
+func (e *Engine) Adapter() *gojaEventloop.Adapter {
+	if e.runtime == nil {
+		return nil
+	}
+	return e.runtime.Adapter()
 }
 
 // GetScripts returns all loaded scripts.

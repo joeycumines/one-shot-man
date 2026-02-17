@@ -35,6 +35,8 @@ func TestRegister(t *testing.T) {
 		"osm:nextIntegerID",
 		"osm:nextIntegerId", // Deprecated alias — must still resolve
 		"osm:exec",
+		"osm:grpc",
+		"osm:protobuf",
 		"osm:orchestrator",
 		"osm:os",
 		"osm:path",

@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
 	gojaEventloop "github.com/joeycumines/goja-eventloop"
-	"github.com/dop251/goja_nodejs/require"
 	"github.com/joeycumines/one-shot-man/internal/goroutineid"
 )
 
@@ -162,6 +162,13 @@ func NewRuntimeWithRegistry(ctx context.Context, registry *require.Registry) (*R
 	}
 
 	return rt, nil
+}
+
+// Adapter returns the goja-eventloop adapter that binds JS globals
+// (setTimeout, Promise, etc.) to this runtime's event loop.
+// Returns nil if the runtime has not been fully initialized.
+func (rt *Runtime) Adapter() *gojaEventloop.Adapter {
+	return rt.adapter
 }
 
 // Registry returns the require.Registry for module registration.

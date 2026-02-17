@@ -7,6 +7,9 @@ import (
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	inprocgrpc "github.com/joeycumines/go-inprocgrpc"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
+	gojaprotobuf "github.com/joeycumines/goja-protobuf"
 	"github.com/joeycumines/one-shot-man/internal/builtin/argv"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	textareamod "github.com/joeycumines/one-shot-man/internal/builtin/bubbles/textarea"
@@ -58,6 +61,8 @@ type EventLoopProvider interface {
 	Runtime() *goja.Runtime
 	// Registry returns the require.Registry for module registration.
 	Registry() *require.Registry
+	// Adapter returns the goja-eventloop adapter for promise and timer support.
+	Adapter() *gojaeventloop.Adapter
 }
 
 // BubbleteaManager returns the bubbletea manager from RegisterResult.
@@ -99,7 +104,22 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require)
 	registry.RegisterNativeModule(prefix+"flag", flagmod.Require)
-	registry.RegisterNativeModule(prefix+"grpc", grpcmod.Require(ctx))
+
+	// Create shared protobuf module for gRPC and osm:protobuf.
+	// The SAME Module instance is used by both so descriptors loaded via
+	// require('osm:protobuf').loadDescriptorSet(...) are visible to the
+	// gRPC client created via require('osm:grpc').createClient(...).
+	pbMod, pbErr := gojaprotobuf.New(eventLoopProvider.Runtime())
+	if pbErr != nil {
+		panic("builtin.Register: failed to create protobuf module: " + pbErr.Error())
+	}
+	ch := inprocgrpc.NewChannel(inprocgrpc.WithLoop(eventLoopProvider.Loop()))
+	registry.RegisterNativeModule(prefix+"protobuf", func(runtime *goja.Runtime, module *goja.Object) {
+		exports := module.Get("exports").(*goja.Object)
+		pbMod.SetupExports(exports)
+	})
+	registry.RegisterNativeModule(prefix+"grpc", grpcmod.Require(ch, pbMod, eventLoopProvider.Adapter()))
+
 	registry.RegisterNativeModule(prefix+"orchestrator", orchestratormod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, tuiSink))
 	registry.RegisterNativeModule(prefix+"path", pathmod.Require)

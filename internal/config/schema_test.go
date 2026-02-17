@@ -495,6 +495,71 @@ func TestDefaultSchema_ContainsDiscoveryOptions(t *testing.T) {
 	}
 }
 
+func TestDefaultSchema_ContainsOrchestratorOptions(t *testing.T) {
+	t.Parallel()
+	s := DefaultSchema()
+
+	// Global orchestrator options
+	orchestratorGlobals := []string{
+		"orchestrator.provider",
+		"orchestrator.model",
+		"orchestrator.work-dir",
+		"orchestrator.env-inherit",
+		"orchestrator.env-profile",
+		"orchestrator.pre-spawn-hook",
+		"orchestrator.permission-policy",
+		"orchestrator.rate-limit-backoff-sec",
+		"orchestrator.max-agents",
+		"orchestrator.pty-rows",
+		"orchestrator.pty-cols",
+		"orchestrator.provider-command",
+		"orchestrator.mcp-servers",
+	}
+	for _, key := range orchestratorGlobals {
+		if !s.IsKnown("", key) {
+			t.Errorf("orchestrator global option %q not in DefaultSchema", key)
+		}
+	}
+
+	// Section options for [orchestrator]
+	orchestratorSection := []string{
+		"provider", "model", "work-dir", "env-inherit", "env",
+		"env-profile", "pre-spawn-hook", "permission-policy",
+		"rate-limit-backoff-sec", "max-agents", "pty-rows",
+		"pty-cols", "provider-command", "mcp-servers",
+	}
+	for _, key := range orchestratorSection {
+		if !s.IsKnown("orchestrator", key) {
+			t.Errorf("orchestrator section option %q not in DefaultSchema", key)
+		}
+	}
+}
+
+func TestDefaultSchema_OrchestratorOptionTypes(t *testing.T) {
+	t.Parallel()
+	s := DefaultSchema()
+
+	checks := map[string]OptionType{
+		"orchestrator.env-inherit":           TypeBool,
+		"orchestrator.rate-limit-backoff-sec": TypeInt,
+		"orchestrator.max-agents":            TypeInt,
+		"orchestrator.pty-rows":              TypeInt,
+		"orchestrator.pty-cols":              TypeInt,
+		"orchestrator.provider":              TypeString,
+		"orchestrator.model":                 TypeString,
+	}
+	for key, wantType := range checks {
+		opt := s.Lookup("", key)
+		if opt == nil {
+			t.Errorf("option %q not found", key)
+			continue
+		}
+		if opt.Type != wantType {
+			t.Errorf("option %q type = %q, want %q", key, opt.Type, wantType)
+		}
+	}
+}
+
 func TestDefaultSchema_OptionTypes(t *testing.T) {
 	t.Parallel()
 	s := DefaultSchema()

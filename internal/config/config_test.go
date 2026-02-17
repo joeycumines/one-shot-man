@@ -1341,3 +1341,365 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 		}
 	})
 }
+
+func TestOrchestratorConfigParsing(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ValidOrchestratorConfig", func(t *testing.T) {
+		t.Parallel()
+		configContent := `[orchestrator]
+provider claude-code
+model claude-sonnet-4-20250514
+work-dir /tmp/agents
+env-inherit false
+env API_KEY=secret123
+env REGION=us-west-2
+env-profile production
+pre-spawn-hook /path/to/hook.js
+permission-policy ask
+rate-limit-backoff-sec 60
+max-agents 8
+pty-rows 40
+pty-cols 120
+provider-command /usr/local/bin/claude
+mcp-servers mcp-server-github,mcp-server-filesystem`
+
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		oc := cfg.Orchestrator
+		if oc.Provider != "claude-code" {
+			t.Errorf("Provider = %q, want %q", oc.Provider, "claude-code")
+		}
+		if oc.Model != "claude-sonnet-4-20250514" {
+			t.Errorf("Model = %q, want %q", oc.Model, "claude-sonnet-4-20250514")
+		}
+		if oc.WorkDir != "/tmp/agents" {
+			t.Errorf("WorkDir = %q, want %q", oc.WorkDir, "/tmp/agents")
+		}
+		if oc.EnvInherit != false {
+			t.Errorf("EnvInherit = %v, want false", oc.EnvInherit)
+		}
+		if len(oc.EnvVars) != 2 {
+			t.Fatalf("EnvVars length = %d, want 2", len(oc.EnvVars))
+		}
+		if oc.EnvVars["API_KEY"] != "secret123" {
+			t.Errorf("EnvVars[API_KEY] = %q, want %q", oc.EnvVars["API_KEY"], "secret123")
+		}
+		if oc.EnvVars["REGION"] != "us-west-2" {
+			t.Errorf("EnvVars[REGION] = %q, want %q", oc.EnvVars["REGION"], "us-west-2")
+		}
+		if oc.EnvProfile != "production" {
+			t.Errorf("EnvProfile = %q, want %q", oc.EnvProfile, "production")
+		}
+		if oc.PreSpawnHook != "/path/to/hook.js" {
+			t.Errorf("PreSpawnHook = %q, want %q", oc.PreSpawnHook, "/path/to/hook.js")
+		}
+		if oc.PermissionPolicy != "ask" {
+			t.Errorf("PermissionPolicy = %q, want %q", oc.PermissionPolicy, "ask")
+		}
+		if oc.RateLimitBackoffSec != 60 {
+			t.Errorf("RateLimitBackoffSec = %d, want 60", oc.RateLimitBackoffSec)
+		}
+		if oc.MaxAgents != 8 {
+			t.Errorf("MaxAgents = %d, want 8", oc.MaxAgents)
+		}
+		if oc.PTYRows != 40 {
+			t.Errorf("PTYRows = %d, want 40", oc.PTYRows)
+		}
+		if oc.PTYCols != 120 {
+			t.Errorf("PTYCols = %d, want 120", oc.PTYCols)
+		}
+		if oc.ProviderCommand != "/usr/local/bin/claude" {
+			t.Errorf("ProviderCommand = %q, want %q", oc.ProviderCommand, "/usr/local/bin/claude")
+		}
+		if oc.MCPServers != "mcp-server-github,mcp-server-filesystem" {
+			t.Errorf("MCPServers = %q, want %q", oc.MCPServers, "mcp-server-github,mcp-server-filesystem")
+		}
+	})
+
+	t.Run("OrchestratorDefaults", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		oc := cfg.Orchestrator
+
+		if oc.Provider != "claude-code" {
+			t.Errorf("default Provider = %q, want %q", oc.Provider, "claude-code")
+		}
+		if oc.Model != "" {
+			t.Errorf("default Model = %q, want empty", oc.Model)
+		}
+		if oc.WorkDir != "" {
+			t.Errorf("default WorkDir = %q, want empty", oc.WorkDir)
+		}
+		if oc.EnvInherit != true {
+			t.Errorf("default EnvInherit = %v, want true", oc.EnvInherit)
+		}
+		if oc.EnvVars == nil {
+			t.Error("default EnvVars should not be nil")
+		}
+		if len(oc.EnvVars) != 0 {
+			t.Errorf("default EnvVars should be empty, got %d entries", len(oc.EnvVars))
+		}
+		if oc.EnvProfile != "" {
+			t.Errorf("default EnvProfile = %q, want empty", oc.EnvProfile)
+		}
+		if oc.PreSpawnHook != "" {
+			t.Errorf("default PreSpawnHook = %q, want empty", oc.PreSpawnHook)
+		}
+		if oc.PermissionPolicy != "reject" {
+			t.Errorf("default PermissionPolicy = %q, want %q", oc.PermissionPolicy, "reject")
+		}
+		if oc.RateLimitBackoffSec != 30 {
+			t.Errorf("default RateLimitBackoffSec = %d, want 30", oc.RateLimitBackoffSec)
+		}
+		if oc.MaxAgents != 4 {
+			t.Errorf("default MaxAgents = %d, want 4", oc.MaxAgents)
+		}
+		if oc.PTYRows != 24 {
+			t.Errorf("default PTYRows = %d, want 24", oc.PTYRows)
+		}
+		if oc.PTYCols != 80 {
+			t.Errorf("default PTYCols = %d, want 80", oc.PTYCols)
+		}
+		if oc.ProviderCommand != "" {
+			t.Errorf("default ProviderCommand = %q, want empty", oc.ProviderCommand)
+		}
+		if oc.MCPServers != "" {
+			t.Errorf("default MCPServers = %q, want empty", oc.MCPServers)
+		}
+	})
+
+	t.Run("OrchestratorEnvVars", func(t *testing.T) {
+		t.Parallel()
+		configContent := `[orchestrator]
+env FOO=bar
+env BAZ=qux=quux
+env EMPTY=`
+
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		oc := cfg.Orchestrator
+		if len(oc.EnvVars) != 3 {
+			t.Fatalf("EnvVars length = %d, want 3", len(oc.EnvVars))
+		}
+		if oc.EnvVars["FOO"] != "bar" {
+			t.Errorf("EnvVars[FOO] = %q, want %q", oc.EnvVars["FOO"], "bar")
+		}
+		// Second = is part of the value
+		if oc.EnvVars["BAZ"] != "qux=quux" {
+			t.Errorf("EnvVars[BAZ] = %q, want %q", oc.EnvVars["BAZ"], "qux=quux")
+		}
+		// Empty value after =
+		if oc.EnvVars["EMPTY"] != "" {
+			t.Errorf("EnvVars[EMPTY] = %q, want empty", oc.EnvVars["EMPTY"])
+		}
+	})
+
+	t.Run("OrchestratorEnvVarInvalid", func(t *testing.T) {
+		t.Parallel()
+		configContent := "[orchestrator]\nenv NOEQUALSSIGN"
+		_, err := LoadFromReader(strings.NewReader(configContent))
+		if err == nil {
+			t.Fatal("expected error for env without = sign")
+		}
+		if !strings.Contains(err.Error(), "KEY=VALUE") {
+			t.Errorf("error = %q, want to contain 'KEY=VALUE'", err.Error())
+		}
+	})
+
+	t.Run("OrchestratorInvalidPermissionPolicy", func(t *testing.T) {
+		t.Parallel()
+		configContent := "[orchestrator]\npermission-policy allow"
+		_, err := LoadFromReader(strings.NewReader(configContent))
+		if err == nil {
+			t.Fatal("expected error for invalid permission-policy")
+		}
+		if !strings.Contains(err.Error(), "reject") || !strings.Contains(err.Error(), "ask") {
+			t.Errorf("error = %q, want to mention 'reject' and 'ask'", err.Error())
+		}
+	})
+
+	t.Run("OrchestratorInvalidIntOptions", func(t *testing.T) {
+		t.Parallel()
+		intOptions := []struct {
+			name  string
+			input string
+		}{
+			{"invalidRateLimitBackoff", "rate-limit-backoff-sec abc"},
+			{"invalidMaxAgents", "max-agents notanumber"},
+			{"invalidPtyRows", "pty-rows 12.5"},
+			{"invalidPtyCols", "pty-cols xyz"},
+		}
+
+		for _, tc := range intOptions {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				configContent := "[orchestrator]\n" + tc.input
+				_, err := LoadFromReader(strings.NewReader(configContent))
+				if err == nil {
+					t.Errorf("expected error for invalid value %q", tc.input)
+				}
+			})
+		}
+	})
+
+	t.Run("OrchestratorPartialConfig", func(t *testing.T) {
+		t.Parallel()
+		configContent := `[orchestrator]
+model gpt-4o
+max-agents 2`
+
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		oc := cfg.Orchestrator
+		// Specified values
+		if oc.Model != "gpt-4o" {
+			t.Errorf("Model = %q, want %q", oc.Model, "gpt-4o")
+		}
+		if oc.MaxAgents != 2 {
+			t.Errorf("MaxAgents = %d, want 2", oc.MaxAgents)
+		}
+
+		// Default values for unspecified options
+		if oc.Provider != "claude-code" {
+			t.Errorf("default Provider = %q, want %q", oc.Provider, "claude-code")
+		}
+		if oc.EnvInherit != true {
+			t.Errorf("default EnvInherit = %v, want true", oc.EnvInherit)
+		}
+		if oc.PermissionPolicy != "reject" {
+			t.Errorf("default PermissionPolicy = %q, want %q", oc.PermissionPolicy, "reject")
+		}
+		if oc.RateLimitBackoffSec != 30 {
+			t.Errorf("default RateLimitBackoffSec = %d, want 30", oc.RateLimitBackoffSec)
+		}
+		if oc.PTYRows != 24 {
+			t.Errorf("default PTYRows = %d, want 24", oc.PTYRows)
+		}
+		if oc.PTYCols != 80 {
+			t.Errorf("default PTYCols = %d, want 80", oc.PTYCols)
+		}
+	})
+
+	t.Run("OrchestratorWithOtherSections", func(t *testing.T) {
+		t.Parallel()
+		configContent := `verbose true
+
+[orchestrator]
+provider openai
+max-agents 6
+
+[sessions]
+maxAgeDays 45
+
+[help]
+pager less`
+
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		// Check orchestrator
+		if cfg.Orchestrator.Provider != "openai" {
+			t.Errorf("Orchestrator.Provider = %q, want %q", cfg.Orchestrator.Provider, "openai")
+		}
+		if cfg.Orchestrator.MaxAgents != 6 {
+			t.Errorf("Orchestrator.MaxAgents = %d, want 6", cfg.Orchestrator.MaxAgents)
+		}
+
+		// Check other sections still work
+		if cfg.Sessions.MaxAgeDays != 45 {
+			t.Errorf("Sessions.MaxAgeDays = %d, want 45", cfg.Sessions.MaxAgeDays)
+		}
+		if cfg.GetString("verbose") != "true" {
+			t.Errorf("verbose = %q, want %q", cfg.GetString("verbose"), "true")
+		}
+		if v, ok := cfg.GetCommandOption("help", "pager"); !ok || v != "less" {
+			t.Errorf("help.pager = %q, want %q", v, "less")
+		}
+	})
+
+	t.Run("OrchestratorNotInCommands", func(t *testing.T) {
+		t.Parallel()
+		configContent := "[orchestrator]\nprovider test-provider"
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if _, exists := cfg.Commands["orchestrator"]; exists {
+			t.Error("orchestrator should not appear in Commands map")
+		}
+	})
+
+	t.Run("OrchestratorUnknownOption", func(t *testing.T) {
+		t.Parallel()
+		configContent := "[orchestrator]\nunknown-option value"
+		_, err := LoadFromReader(strings.NewReader(configContent))
+		if err == nil {
+			t.Fatal("expected error for unknown orchestrator option")
+		}
+		if !strings.Contains(err.Error(), "unknown orchestrator option") {
+			t.Errorf("error = %q, want to contain 'unknown orchestrator option'", err.Error())
+		}
+	})
+
+	t.Run("OrchestratorPermissionPolicyReject", func(t *testing.T) {
+		t.Parallel()
+		configContent := "[orchestrator]\npermission-policy reject"
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if cfg.Orchestrator.PermissionPolicy != "reject" {
+			t.Errorf("PermissionPolicy = %q, want %q", cfg.Orchestrator.PermissionPolicy, "reject")
+		}
+	})
+
+	t.Run("OrchestratorBooleanVariations", func(t *testing.T) {
+		t.Parallel()
+		trueValues := []string{"true", "1", "yes", "on", "TRUE", "Yes", "ON"}
+		for _, val := range trueValues {
+			configContent := "[orchestrator]\nenv-inherit " + val
+			cfg, err := LoadFromReader(strings.NewReader(configContent))
+			if err != nil {
+				t.Errorf("expected no error for %q, got: %v", val, err)
+				continue
+			}
+			if !cfg.Orchestrator.EnvInherit {
+				t.Errorf("expected EnvInherit=true for value %q", val)
+			}
+		}
+
+		falseValues := []string{"false", "0", "no", "off", "FALSE", "No", "OFF"}
+		for _, val := range falseValues {
+			configContent := "[orchestrator]\nenv-inherit " + val
+			cfg, err := LoadFromReader(strings.NewReader(configContent))
+			if err != nil {
+				t.Errorf("expected no error for %q, got: %v", val, err)
+				continue
+			}
+			if cfg.Orchestrator.EnvInherit {
+				t.Errorf("expected EnvInherit=false for value %q", val)
+			}
+		}
+	})
+
+	t.Run("OrchestratorInvalidBooleanValue", func(t *testing.T) {
+		t.Parallel()
+		configContent := "[orchestrator]\nenv-inherit maybe"
+		_, err := LoadFromReader(strings.NewReader(configContent))
+		if err == nil {
+			t.Fatal("expected error for invalid boolean value")
+		}
+	})
+}

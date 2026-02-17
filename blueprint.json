@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T241 DONE. T242 next."
+    "currentState": "T200-T242 DONE. T243 next."
   },
   "sequentialTasks": [
     {
@@ -230,7 +230,7 @@
     {
       "task": "T242: AI Orchestrator configuration and env var management",
       "description": "Implement three-tier config: shared env inheritance, JS pre-spawn hooks (op plugin, aws-vault), profile-based env var profiles with CLI overrides. Add config keys. Handle provider-specific commands. Add tests. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T243: AI Orchestrator provider abstraction (single instance)",

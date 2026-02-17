@@ -533,6 +533,21 @@ func defaultGlobalOptions() []ConfigOption {
 		{Key: "log.max-size-mb", Type: TypeInt, Default: "10", Description: "Max log file size in MB before rotation"},
 		{Key: "log.max-files", Type: TypeInt, Default: "5", Description: "Max number of rotated log backup files"},
 		{Key: "log.buffer-size", Type: TypeInt, Default: "1000", Description: "In-memory log buffer size (entries)"},
+
+		// Orchestrator options (AI agent management)
+		{Key: "orchestrator.provider", Type: TypeString, Default: "claude-code", Description: "Default AI provider name"},
+		{Key: "orchestrator.model", Type: TypeString, Default: "", Description: "Default model identifier"},
+		{Key: "orchestrator.work-dir", Type: TypeString, Default: "", Description: "Default working directory for agents (empty = CWD)"},
+		{Key: "orchestrator.env-inherit", Type: TypeBool, Default: "true", Description: "Agents inherit parent environment variables"},
+		{Key: "orchestrator.env-profile", Type: TypeString, Default: "", Description: "Active environment variable profile name"},
+		{Key: "orchestrator.pre-spawn-hook", Type: TypeString, Default: "", Description: "JS file path executed before agent spawn (for credential injection)"},
+		{Key: "orchestrator.permission-policy", Type: TypeString, Default: "reject", Description: "Permission prompt handling: reject (default) or ask"},
+		{Key: "orchestrator.rate-limit-backoff-sec", Type: TypeInt, Default: "30", Description: "Initial rate limit backoff in seconds"},
+		{Key: "orchestrator.max-agents", Type: TypeInt, Default: "4", Description: "Maximum concurrent agents"},
+		{Key: "orchestrator.pty-rows", Type: TypeInt, Default: "24", Description: "Default PTY row count"},
+		{Key: "orchestrator.pty-cols", Type: TypeInt, Default: "80", Description: "Default PTY column count"},
+		{Key: "orchestrator.provider-command", Type: TypeString, Default: "", Description: "Override provider executable path"},
+		{Key: "orchestrator.mcp-servers", Type: TypeString, Default: "", Description: "Comma-separated MCP server commands for agents"},
 	}
 }
 
@@ -568,5 +583,21 @@ func defaultCommandOptions() []ConfigOption {
 		{Key: "maxSizeMB", Section: "sessions", Type: TypeInt, Default: "500", Description: "Maximum total size of sessions in MB"},
 		{Key: "autoCleanupEnabled", Section: "sessions", Type: TypeBool, Default: "true", Description: "Enable automatic background session cleanup"},
 		{Key: "cleanupIntervalHours", Section: "sessions", Type: TypeInt, Default: "24", Description: "Hours between automatic cleanup runs"},
+
+		// [orchestrator] section — special keys parsed by parseOrchestratorOption
+		{Key: "provider", Section: "orchestrator", Type: TypeString, Default: "claude-code", Description: "AI provider name"},
+		{Key: "model", Section: "orchestrator", Type: TypeString, Default: "", Description: "Model identifier"},
+		{Key: "work-dir", Section: "orchestrator", Type: TypeString, Default: "", Description: "Working directory for agents"},
+		{Key: "env-inherit", Section: "orchestrator", Type: TypeBool, Default: "true", Description: "Agents inherit parent env"},
+		{Key: "env", Section: "orchestrator", Type: TypeString, Default: "", Description: "Additional env var (KEY=VALUE)"},
+		{Key: "env-profile", Section: "orchestrator", Type: TypeString, Default: "", Description: "Active env profile name"},
+		{Key: "pre-spawn-hook", Section: "orchestrator", Type: TypeString, Default: "", Description: "Pre-spawn JS hook path"},
+		{Key: "permission-policy", Section: "orchestrator", Type: TypeString, Default: "reject", Description: "Permission handling policy"},
+		{Key: "rate-limit-backoff-sec", Section: "orchestrator", Type: TypeInt, Default: "30", Description: "Rate limit backoff seconds"},
+		{Key: "max-agents", Section: "orchestrator", Type: TypeInt, Default: "4", Description: "Max concurrent agents"},
+		{Key: "pty-rows", Section: "orchestrator", Type: TypeInt, Default: "24", Description: "PTY row count"},
+		{Key: "pty-cols", Section: "orchestrator", Type: TypeInt, Default: "80", Description: "PTY column count"},
+		{Key: "provider-command", Section: "orchestrator", Type: TypeString, Default: "", Description: "Override provider command"},
+		{Key: "mcp-servers", Section: "orchestrator", Type: TypeString, Default: "", Description: "MCP server commands"},
 	}
 }

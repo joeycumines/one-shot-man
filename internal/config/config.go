@@ -18,6 +18,8 @@ type Config struct {
 	Commands map[string]map[string]string
 	// Sessions configuration controls automatic session cleanup and retention.
 	Sessions SessionConfig
+	// Orchestrator controls AI Orchestrator behavior.
+	Orchestrator OrchestratorConfig
 	// HotSnippets are user-configured text snippets that can be copied to
 	// clipboard from interactive modes. Parsed from the [hot-snippets]
 	// config section.
@@ -38,6 +40,16 @@ func NewConfig() *Config {
 			AutoCleanupEnabled:   true,
 			CleanupIntervalHours: 24,
 		},
+		Orchestrator: OrchestratorConfig{
+			Provider:            "claude-code",
+			EnvInherit:          true,
+			PermissionPolicy:    "reject",
+			RateLimitBackoffSec: 30,
+			MaxAgents:           4,
+			PTYRows:             24,
+			PTYCols:             80,
+			EnvVars:             make(map[string]string),
+		},
 		HotSnippets: make([]HotSnippet, 0),
 		Warnings:    make([]string, 0),
 	}
@@ -49,6 +61,40 @@ type HotSnippet struct {
 	Name        string `json:"name"`
 	Text        string `json:"text"`
 	Description string `json:"description,omitempty"`
+}
+
+// OrchestratorConfig controls AI Orchestrator behavior.
+type OrchestratorConfig struct {
+	// Provider is the default AI provider name (e.g., "claude-code").
+	Provider string `json:"provider" default:"claude-code"`
+	// Model is the default model identifier.
+	Model string `json:"model"`
+	// WorkDir is the default working directory for agents (empty = CWD).
+	WorkDir string `json:"workDir"`
+	// EnvInherit controls whether agents inherit the parent environment.
+	EnvInherit bool `json:"envInherit" default:"true"`
+	// EnvVars are additional environment variables for all agents.
+	// Parsed from KEY=VALUE entries in the [orchestrator] config section.
+	EnvVars map[string]string `json:"envVars"`
+	// EnvProfile is the active environment variable profile name.
+	EnvProfile string `json:"envProfile"`
+	// PreSpawnHook is a path to a JS file executed before agent spawn.
+	// Used for credential injection (e.g., op plugin, aws-vault wrappers).
+	PreSpawnHook string `json:"preSpawnHook"`
+	// PermissionPolicy is the default permission handling: "reject" (default) or "ask".
+	PermissionPolicy string `json:"permissionPolicy" default:"reject"`
+	// RateLimitBackoffSec is the initial rate limit backoff in seconds.
+	RateLimitBackoffSec int `json:"rateLimitBackoffSec" default:"30"`
+	// MaxAgents is the maximum number of concurrent agents.
+	MaxAgents int `json:"maxAgents" default:"4"`
+	// PTYRows is the default PTY row count.
+	PTYRows int `json:"ptyRows" default:"24"`
+	// PTYCols is the default PTY column count.
+	PTYCols int `json:"ptyCols" default:"80"`
+	// ProviderCommand overrides the provider's default executable path.
+	ProviderCommand string `json:"providerCommand"`
+	// MCPServers is a comma-separated list of MCP server commands to attach.
+	MCPServers string `json:"mcpServers"`
 }
 
 // SessionConfig controls session lifecycle and cleanup behavior.
@@ -118,6 +164,7 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 	var currentCommand string
 	var inSessionsSection bool
 	var inHotSnippetsSection bool
+	var inOrchestratorSection bool
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -134,14 +181,22 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 			case "sessions":
 				inSessionsSection = true
 				inHotSnippetsSection = false
+				inOrchestratorSection = false
 				currentCommand = ""
 			case "hot-snippets":
 				inHotSnippetsSection = true
 				inSessionsSection = false
+				inOrchestratorSection = false
+				currentCommand = ""
+			case "orchestrator":
+				inOrchestratorSection = true
+				inSessionsSection = false
+				inHotSnippetsSection = false
 				currentCommand = ""
 			default:
 				inSessionsSection = false
 				inHotSnippetsSection = false
+				inOrchestratorSection = false
 				currentCommand = sectionName
 				if config.Commands[currentCommand] == nil {
 					config.Commands[currentCommand] = make(map[string]string)
@@ -172,6 +227,11 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 			// Hot-snippet definition
 			if err := parseHotSnippetLine(&config.HotSnippets, optionName, value); err != nil {
 				return nil, fmt.Errorf("invalid hot-snippet %q: %w", optionName, err)
+			}
+		} else if inOrchestratorSection {
+			// Orchestrator configuration option
+			if err := parseOrchestratorOption(&config.Orchestrator, optionName, value); err != nil {
+				return nil, fmt.Errorf("invalid orchestrator option %q: %w", optionName, err)
 			}
 		} else if currentCommand == "" {
 			// Global option
@@ -259,6 +319,106 @@ func parseSessionOption(sc *SessionConfig, name, value string) error {
 
 	default:
 		return fmt.Errorf("unknown session option: %s", name)
+	}
+	return nil
+}
+
+// parseOrchestratorOption parses an orchestrator configuration option and
+// updates the OrchestratorConfig. Supported options:
+//   - provider <string>: Default AI provider name (default: "claude-code")
+//   - model <string>: Default model identifier
+//   - work-dir <string>: Default working directory for agents
+//   - env-inherit <bool>: Agents inherit parent environment (default: true)
+//   - env <KEY=VALUE>: Additional environment variable (can appear multiple times)
+//   - env-profile <string>: Active environment variable profile name
+//   - pre-spawn-hook <string>: JS file path executed before agent spawn
+//   - permission-policy <string>: "reject" (default) or "ask"
+//   - rate-limit-backoff-sec <int>: Initial rate limit backoff in seconds (default: 30)
+//   - max-agents <int>: Maximum concurrent agents (default: 4)
+//   - pty-rows <int>: Default PTY row count (default: 24)
+//   - pty-cols <int>: Default PTY column count (default: 80)
+//   - provider-command <string>: Override provider executable path
+//   - mcp-servers <string>: Comma-separated MCP server commands
+func parseOrchestratorOption(oc *OrchestratorConfig, name, value string) error {
+	switch name {
+	case "provider":
+		oc.Provider = value
+
+	case "model":
+		oc.Model = value
+
+	case "work-dir":
+		oc.WorkDir = value
+
+	case "env-inherit":
+		enabled, err := parseBool(value)
+		if err != nil {
+			return fmt.Errorf("invalid boolean value %q: %w", value, err)
+		}
+		oc.EnvInherit = enabled
+
+	case "env":
+		idx := strings.Index(value, "=")
+		if idx < 0 {
+			return fmt.Errorf("env requires KEY=VALUE format, got %q", value)
+		}
+		key := value[:idx]
+		val := value[idx+1:]
+		if oc.EnvVars == nil {
+			oc.EnvVars = make(map[string]string)
+		}
+		oc.EnvVars[key] = val
+
+	case "env-profile":
+		oc.EnvProfile = value
+
+	case "pre-spawn-hook":
+		oc.PreSpawnHook = value
+
+	case "permission-policy":
+		switch value {
+		case "reject", "ask":
+			oc.PermissionPolicy = value
+		default:
+			return fmt.Errorf("permission-policy must be \"reject\" or \"ask\", got %q", value)
+		}
+
+	case "rate-limit-backoff-sec":
+		sec, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid integer value %q: %w", value, err)
+		}
+		oc.RateLimitBackoffSec = sec
+
+	case "max-agents":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid integer value %q: %w", value, err)
+		}
+		oc.MaxAgents = n
+
+	case "pty-rows":
+		rows, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid integer value %q: %w", value, err)
+		}
+		oc.PTYRows = rows
+
+	case "pty-cols":
+		cols, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid integer value %q: %w", value, err)
+		}
+		oc.PTYCols = cols
+
+	case "provider-command":
+		oc.ProviderCommand = value
+
+	case "mcp-servers":
+		oc.MCPServers = value
+
+	default:
+		return fmt.Errorf("unknown orchestrator option: %s", name)
 	}
 	return nil
 }

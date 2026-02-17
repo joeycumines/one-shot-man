@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 )
@@ -126,6 +127,8 @@ func NewGoalDiscovery(cfg *config.Config) *GoalDiscovery {
 
 // DiscoverGoalPaths returns all goal paths based on configuration
 func (gd *GoalDiscovery) DiscoverGoalPaths() []string {
+	discoveryStart := time.Now()
+
 	var paths []string
 	seenPaths := make(map[string]bool)
 
@@ -188,7 +191,7 @@ func (gd *GoalDiscovery) DiscoverGoalPaths() []string {
 		return paths[i] < paths[j]
 	})
 
-	gd.debugf("discovery complete: %d paths found", len(paths))
+	gd.debugf("discovery complete: %d paths found in %s", len(paths), time.Since(discoveryStart))
 	for i, p := range paths {
 		gd.debugf("  [%d] %s", i, p)
 	}
@@ -201,6 +204,11 @@ func (gd *GoalDiscovery) DiscoverGoalPaths() []string {
 // show users exactly which paths are discovered, where they come from, and
 // whether they exist on disk.
 func (gd *GoalDiscovery) DiscoverAnnotatedGoalPaths() []AnnotatedPath {
+	annotatedStart := time.Now()
+	defer func() {
+		gd.debugf("annotated discovery complete in %s", time.Since(annotatedStart))
+	}()
+
 	type candidate struct {
 		path   string
 		source string
@@ -328,6 +336,8 @@ func (gd *GoalDiscovery) getStandardPaths() []string {
 
 // autodiscoverPaths discovers goal paths using advanced rules
 func (gd *GoalDiscovery) autodiscoverPaths() []string {
+	autodiscoverStart := time.Now()
+
 	var paths []string
 
 	// Start from current working directory
@@ -342,13 +352,18 @@ func (gd *GoalDiscovery) autodiscoverPaths() []string {
 	// Look for goal directories in current path and parent directories
 	paths = append(paths, gd.traverseForGoalDirs(cwd)...)
 
+	gd.debugf("autodiscover complete: %d paths in %s", len(paths), time.Since(autodiscoverStart))
+
 	return paths
 }
 
 // traverseForGoalDirs traverses up from the given directory looking for goal directories.
 // It tracks resolved real paths to detect symlink cycles that could cause infinite traversal.
 func (gd *GoalDiscovery) traverseForGoalDirs(startDir string) []string {
+	traversalStart := time.Now()
+
 	var paths []string
+	var dirCount int
 
 	// Track resolved real paths to detect symlink cycles in the upward traversal.
 	// A cycle can occur if a directory component is a symlink pointing to a descendant.
@@ -356,6 +371,7 @@ func (gd *GoalDiscovery) traverseForGoalDirs(startDir string) []string {
 
 	dir := startDir
 	for i := 0; i < gd.config.MaxTraversalDepth; i++ {
+		dirCount++
 		// Resolve the real path for cycle detection
 		realDir, err := filepath.EvalSymlinks(dir)
 		if err != nil {
@@ -406,6 +422,8 @@ func (gd *GoalDiscovery) traverseForGoalDirs(startDir string) []string {
 	if len(paths) == 0 {
 		gd.debugf("traversal: no goal directories found in %d levels from %s", gd.config.MaxTraversalDepth, startDir)
 	}
+
+	gd.debugf("traversal complete: checked %d directories, found %d goal paths in %s", dirCount, len(paths), time.Since(traversalStart))
 
 	return paths
 }

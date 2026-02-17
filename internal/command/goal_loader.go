@@ -3,6 +3,7 @@ package command
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +14,11 @@ import (
 // Files larger than this are rejected to prevent accidental loading of
 // non-goal files or denial-of-service from pathological inputs.
 const maxGoalFileSize = 1 << 20
+
+// maxDirEntries is the maximum number of directory entries to scan in a
+// single goal directory. Directories exceeding this limit are truncated
+// with a warning to prevent excessive scanning in pathological cases.
+const maxDirEntries = 10000
 
 // LoadGoalFromFile loads a goal definition from a JSON file.
 // It validates required fields and resolves script content from embedded or external files.
@@ -128,24 +134,36 @@ func FindGoalFiles(dir string) ([]GoalFileCandidate, error) {
 		return nil, fmt.Errorf("failed to read goal directory %q: %w", dir, err)
 	}
 
+	// Protect against extremely large directories
+	if len(entries) > maxDirEntries {
+		log.Printf("warning: goal directory %q contains %d entries (limit %d), truncating scan", dir, len(entries), maxDirEntries)
+		entries = entries[:maxDirEntries]
+	}
+
+	var skippedDirs, skippedNonJSON, skippedSymlinks int
+
 	for _, entry := range entries {
 		// Resolve entry type for symlinks
 		if entry.Type()&os.ModeSymlink != 0 {
 			info, err := os.Stat(filepath.Join(dir, entry.Name()))
 			if err != nil {
-				// Broken or unreadable symlink — skip silently
+				log.Printf("warning: skipping broken symlink %q in %q: %v", entry.Name(), dir, err)
+				skippedSymlinks++
 				continue
 			}
 			if info.IsDir() {
+				skippedDirs++
 				continue
 			}
 		} else if entry.IsDir() {
+			skippedDirs++
 			continue
 		}
 
 		name := entry.Name()
 		// Look for .json files
 		if !strings.HasSuffix(strings.ToLower(name), ".json") {
+			skippedNonJSON++
 			continue
 		}
 
@@ -157,6 +175,11 @@ func FindGoalFiles(dir string) ([]GoalFileCandidate, error) {
 			Path: path,
 			Name: goalName,
 		})
+	}
+
+	if len(candidates) == 0 && len(entries) > 0 {
+		log.Printf("warning: goal directory %q exists but contains no .json goal files (%d entries: %d dirs, %d non-json, %d broken symlinks)",
+			dir, len(entries), skippedDirs, skippedNonJSON, skippedSymlinks)
 	}
 
 	return candidates, nil

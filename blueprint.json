@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T222 DONE. Session 2026-02-17. T222 config schema versioning complete. Proceeding IN STRICT SEQUENCE."
+    "currentState": "T200-T223 DONE. Session 2026-02-17. T223 discovery hardening complete. Proceeding IN STRICT SEQUENCE."
   },
   "sequentialTasks": [
     {
@@ -135,7 +135,7 @@
     {
       "task": "T223: Goal/script discovery production hardening",
       "description": "Harden autodiscovery: validate paths exist and are readable, handle permission errors gracefully, improve debug logging (timing, file counts, skip reasons), handle edge cases (empty dirs, symlink loops, large dirs). Add tests. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T224: Detailed API docs for osm:time module",

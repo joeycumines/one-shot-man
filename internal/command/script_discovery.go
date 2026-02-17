@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 )
@@ -110,6 +111,8 @@ func NewScriptDiscovery(cfg *config.Config) *ScriptDiscovery {
 
 // DiscoverScriptPaths returns all script paths based on configuration
 func (sd *ScriptDiscovery) DiscoverScriptPaths() []string {
+	discoveryStart := time.Now()
+
 	var paths []string
 	seenPaths := make(map[string]bool)
 
@@ -191,7 +194,7 @@ func (sd *ScriptDiscovery) DiscoverScriptPaths() []string {
 		paths[i] = sp.path
 	}
 
-	sd.debugf("discovery complete: %d paths found", len(paths))
+	sd.debugf("discovery complete: %d paths found in %s", len(paths), time.Since(discoveryStart))
 	for i, p := range paths {
 		sd.debugf("  [%d] %s", i, p)
 	}
@@ -204,6 +207,11 @@ func (sd *ScriptDiscovery) DiscoverScriptPaths() []string {
 // show users exactly which paths are discovered, where they come from, and
 // whether they exist on disk.
 func (sd *ScriptDiscovery) DiscoverAnnotatedScriptPaths() []AnnotatedPath {
+	annotatedStart := time.Now()
+	defer func() {
+		sd.debugf("annotated discovery complete in %s", time.Since(annotatedStart))
+	}()
+
 	type candidate struct {
 		path   string
 		source string
@@ -356,6 +364,8 @@ func (sd *ScriptDiscovery) autodiscoverPaths() []string {
 // traverseForGitRepos traverses up from the given directory looking for git repositories.
 // It tracks resolved real paths to detect symlink cycles that could cause infinite traversal.
 func (sd *ScriptDiscovery) traverseForGitRepos(startDir string) []string {
+	gitTraversalStart := time.Now()
+
 	var paths []string
 	var gitRepos []string
 
@@ -397,6 +407,8 @@ func (sd *ScriptDiscovery) traverseForGitRepos(startDir string) []string {
 		dir = parent
 	}
 
+	sd.debugf("git-traversal complete: found %d git repos in %s", len(gitRepos), time.Since(gitTraversalStart))
+
 	// Add script paths from git repositories (innermost first - highest priority)
 	for _, repo := range gitRepos {
 		for _, pattern := range sd.config.ScriptPathPatterns {
@@ -424,13 +436,17 @@ func (sd *ScriptDiscovery) traverseForGitRepos(startDir string) []string {
 // traverseForScriptDirs traverses up from the given directory looking for script directories.
 // It tracks resolved real paths to detect symlink cycles that could cause infinite traversal.
 func (sd *ScriptDiscovery) traverseForScriptDirs(startDir string) []string {
+	traversalStart := time.Now()
+
 	var paths []string
+	var dirCount int
 
 	// Track resolved real paths to detect symlink cycles in the upward traversal.
 	visitedReal := make(map[string]bool)
 
 	dir := startDir
 	for i := 0; i < sd.config.MaxTraversalDepth; i++ {
+		dirCount++
 		// Resolve the real path for cycle detection
 		realDir, err := filepath.EvalSymlinks(dir)
 		if err != nil {
@@ -480,6 +496,8 @@ func (sd *ScriptDiscovery) traverseForScriptDirs(startDir string) []string {
 	if len(paths) == 0 {
 		sd.debugf("traversal: no script directories found in %d levels from %s", sd.config.MaxTraversalDepth, startDir)
 	}
+
+	sd.debugf("traversal complete: checked %d directories, found %d script paths in %s", dirCount, len(paths), time.Since(traversalStart))
 
 	return paths
 }

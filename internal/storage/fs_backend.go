@@ -135,7 +135,12 @@ func (b *FileSystemBackend) ArchiveSession(sessionID string, destPath string) er
 	// Check if source session file exists
 	if _, err := os.Stat(sessionPath); err != nil {
 		if os.IsNotExist(err) {
-			return nil // No-op: session doesn't exist
+			// Source is gone. If another caller already archived to destPath,
+			// report the conflict so the caller can retry with a different counter.
+			if _, dstErr := os.Stat(destPath); dstErr == nil {
+				return os.ErrExist
+			}
+			return nil // No-op: session doesn't exist and no competing archive
 		}
 		return fmt.Errorf("failed to stat session file: %w", err)
 	}

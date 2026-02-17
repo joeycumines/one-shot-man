@@ -10,6 +10,7 @@ import (
 	"github.com/dop251/goja"
 	gojarequire "github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	bt "github.com/joeycumines/go-behaviortree"
 	"github.com/stretchr/testify/require"
 )
@@ -317,6 +318,13 @@ func TestIntegration_SharedModeManagerShutdown(t *testing.T) {
 		t.Fatal(err)
 	}
 	vm := goja.New()
+	adapter, err := gojaeventloop.New(loop, vm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatal(err)
+	}
 	reg.Enable(vm)
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
@@ -453,6 +461,13 @@ func TestIntegration_SharedModeTickerShutdown(t *testing.T) {
 		t.Fatal(err)
 	}
 	vm := goja.New()
+	adapter, err := gojaeventloop.New(loop, vm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Bind(); err != nil {
+		t.Fatal(err)
+	}
 	reg.Enable(vm)
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)

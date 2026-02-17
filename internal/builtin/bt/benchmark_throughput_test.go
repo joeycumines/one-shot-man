@@ -10,6 +10,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
 // ============================================================================
@@ -69,9 +70,17 @@ func setupBenchBridge(tb testing.TB) *Bridge {
 		tb.Fatal(err)
 	}
 	vm := goja.New()
+	adapter, err := gojaeventloop.New(loop, vm)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := adapter.Bind(); err != nil {
+		tb.Fatal(err)
+	}
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)
 	registry := require.NewRegistry()
+	registry.Enable(vm)
 	bridge := NewBridgeWithEventLoop(context.Background(), loop, vm, registry)
 	tb.Cleanup(func() {
 		bridge.Stop()

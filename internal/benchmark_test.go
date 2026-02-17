@@ -825,7 +825,7 @@ func TestMemoryUsageRegression(t *testing.T) {
 		runtime.GC()
 		runtime.ReadMemStats(&m2)
 
-		const maxMemoryIncrease = 100 * 1024 * 1024
+		const maxMemoryIncrease = 200 * 1024 * 1024 // Increased for goja-eventloop adapter (binds Web Platform APIs)
 		memoryIncrease := m2.TotalAlloc - m1.TotalAlloc
 
 		if memoryIncrease > maxMemoryIncrease {

@@ -11,6 +11,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	"github.com/stretchr/testify/assert"
@@ -282,6 +283,13 @@ func TestJSRunner_StoppedBridgeReturnsError(t *testing.T) {
 		t.Fatal(err)
 	}
 	vm := goja.New()
+	adapter, adapterErr := gojaeventloop.New(loop, vm)
+	if adapterErr != nil {
+		t.Fatal(adapterErr)
+	}
+	if adapterErr = adapter.Bind(); adapterErr != nil {
+		t.Fatal(adapterErr)
+	}
 	registry.Enable(vm)
 	loopCtx, loopCancel := context.WithCancel(context.Background())
 	go loop.Run(loopCtx)

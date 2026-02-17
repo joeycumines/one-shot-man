@@ -1,64 +1,26 @@
-# WIP — Takumi's Desperate Diary
-
-## Session Info
-- Started: 2026-02-17 01:38:19 AEDT
-- End: 2026-02-17 10:38:19 AEDT  
-- Session file: .session-start
+# WIP — Session 2026-02-17 (continued)
 
 ## Current State
-- T200: DONE (commit 5b86238) — exec-safe POSIX shell quoting
-- T201: DONE (commit c5ecde8) — rename osm:nextIntegerId → osm:nextIntegerID
-- T202: DONE (commit 54cc73d) — migrate textarea runeWidth to uniseg + hitTestColumn extraction
-- T203: DONE (commit 14fa5dd) — MCP server removeFile and clearContext tools
-- T204: DONE (commit 879930c) — osm:regexp module
-- T205: DONE (commit 3894d38) — osm:encoding module
-- T206: DONE (commit 36f6403) — osm config reset subcommand
-- T207: DONE (commit be70be9) — inspector.go bug fix + 100% test coverage
-- T208: DONE (commit fe3e073) — tui_commands.go coverage 88.9%→97.2%
-- T209: PENDING COMMIT — terminal.go Run() coverage 0%→84.6%
-- Blueprint updated
 
-## Next Step
-- T210: Test coverage for internal/scripting/js_context_api.go
+- **T200-T209**: Done (committed)
+- **T210-T212**: Done — all three files already have 100% line coverage via existing integration/unit tests. No new test files needed.
+- **T213**: Done — refactored hack at `internal/scripting/unit_test.go:244`. Global command handler now uses closure-captured state (`state.set(stateKeys.global_executed, true)`) instead of `output.print()`. Added Go-side verification via `GetStateForTest`.
+- **T270**: Next — fix data race in `internal/storage/paths.go` (`SetTestPaths` vs cleanup scheduler goroutine)
 
-## Architecture Notes
-- Old tasks T128-T170 have been remapped to T200-T269
-- Dependencies flow top-to-bottom in the blueprint
-- T214 (go-git) is required before T215-T218
-- T238 (AI Orchestrator design) is gate for T239-T255
+## Immediate Next Step
 
-## Review Gate Log
-- T200 Run 1: FAIL (roundtrip defect found)
-- T200 Run 1 retry: PASS (scratch/review-run1-retry.md)
-- T200 Run 2: PASS (scratch/review-run2.md)
-- T200 Committed: 5b86238
-- T201 Run 1: FAIL (incomplete migration, 7 files stale)
-- T201 Run 1 v2: PASS
-- T201 Run 2: PASS
-- T201 Committed: c5ecde8
-- T202 Run 1: PASS (scratch/review-t202-run1.md)
-- T202 Run 2: PASS (scratch/review-t202-run2.md)
-- T202 Committed: 54cc73d
-- T203 Run 1: FAIL (stale tool list in todo.md Key Insight)
-- T203 Run 1 v2: PASS (scratch/review-t203-run1-v2.md)
-- T203 Run 2: PASS (scratch/review-t203-run2.md)
-- T203 Committed: 14fa5dd
-- T204 Run 1: PASS (but misleading comment found — fixed, counter reset)
-- T204 Run 1 v2: PASS (scratch/review-t204-run1.md)
-- T204 Run 2: PASS (scratch/review-t204-run2.md)
-- T204 Committed: 879930c
-- T205 Run 1: PASS (scratch/review-t205-run1.md)
-- T205 Run 2: PASS (scratch/review-t205-run2.md)
-- T205 Committed: 3894d38
-- T206 Run 1: PASS (scratch/review-t206-run1.md)
-- T206 Run 2: PASS (scratch/review-t206-run2.md)
-- T206 Committed: 36f6403
-- T207 Run 1: PASS (scratch/review-t207-run1.md) — found CHANGELOG inaccuracy, fixed, counter reset
-- T207 Run 1 v2: PASS (scratch/review-t207-run1-v2.md)
-- T207 Run 2: PASS (scratch/review-t207-run2.md)
-- T207 Committed: be70be9
-- T208 Run 1: PASS (scratch/review-t208-run1.md)
-- T208 Run 2: PASS (scratch/review-t208-run2.md)
-- T208 Committed: fe3e073
-- T209 Run 1: PASS (scratch/review-t209-run1.md)
-- T209 Run 2: PASS (scratch/review-t209-run2.md)
+1. Run Review Gate (Rule of Two) for T213 changes
+2. Proceed to T270: Fix data race in storage path globals
+
+## Files Modified This Session
+
+- `internal/scripting/unit_test.go` — T213 refactoring
+- `config.mk` — added test-t213, cover-t210, test-t210 targets
+- `blueprint.json` — status updates (pending)
+- `WIP.md` — this file
+
+## Key Observations
+
+- js_context_api.go: 10/10 functions at 100% — covered by runtime_test.go TUIContextOperations, integration_test.go FullLLMWorkflow, context_txtar_test.go, etc.
+- js_logging_api.go: 9/9 functions at 100% — covered by session_terminal_coverage_gaps_test.go and runtime_test.go TUILoggerOperations
+- js_output_api.go: 2/2 functions at 100% — covered by runtime_test.go and unit_test.go

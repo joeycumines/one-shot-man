@@ -187,7 +187,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:crypto` | Cryptographic hash functions | `sha256(input) → string`, `sha1(input) → string`, `md5(input) → string`, `hmacSHA256(key, message) → string`, `hmacSHA1(key, message) → string` — all return hex-encoded lowercase strings; input accepts strings or byte arrays |
 | `osm:encoding` | Base64 and hex encoding/decoding | `base64Encode(input) → string`, `base64Decode(encoded) → string`, `base64URLEncode(input) → string`, `base64URLDecode(encoded) → string`, `hexEncode(input) → string`, `hexDecode(encoded) → string` — decode errors throw JS errors; input accepts strings or byte arrays |
 | `osm:json` | JSON utilities | `parse(str) → any`, `stringify(value, indent?) → string`, `query(obj, path) → any` (dot-notation, `[n]`, `[*]` wildcard), `mergePatch(target, patch) → any` (RFC 7386), `diff(a, b) → [{op, path, value?, oldValue?}]` (JSON Pointer paths), `flatten(obj, sep?) → object`, `unflatten(obj, sep?) → object` |
-| `osm:time` | Time utilities | `sleep(ms)` — synchronous sleep (milliseconds) |
+| `osm:time` | Time utilities | `sleep(ms)` — synchronous sleep (milliseconds). [Reference →](reference/time.md) |
 | `osm:argv` | Command-line string parsing | `parseArgv(cmdline) → string[]`, `formatArgv(argv[]) → string` |
 
 #### Data & text processing
@@ -195,7 +195,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | Module | Description | Key exports |
 |--------|-------------|-------------|
 | `osm:text/template` | Go `text/template` wrapper | `new(name) → Template`, `execute(text, data) → string`; Template methods: `.parse(text)`, `.execute(data) → string`, `.funcs(funcMap)`, `.name()`, `.delims(left, right)`, `.option(...opts)` |
-| `osm:unicodetext` | Unicode text utilities | `width(s) → number` (monospace display width), `truncate(s, maxWidth, tail?) → string` |
+| `osm:unicodetext` | Unicode text utilities | `width(s) → number` (monospace display width), `truncate(s, maxWidth, tail?) → string`. [Reference →](reference/unicodetext.md) |
 | `osm:fetch` | HTTP client (synchronous + streaming) | `fetch(url, opts?) → Response`, `fetchStream(url, opts?) → StreamResponse`; Options: `method`, `headers`, `body`, `timeout`; Response: `.status`, `.ok`, `.statusText`, `.url`, `.headers`, `.text()`, `.json()`; StreamResponse adds: `.readLine()`, `.readAll()`, `.close()` |
 | `osm:grpc` | gRPC client for proto-based services | `dial(target, opts?) → Connection`, `loadDescriptorSet(base64)`, `status` (code constants); Connection: `.invoke(method, request?) → object`, `.close()`, `.target` |
 
@@ -204,7 +204,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | Module | Description | Key exports |
 |--------|-------------|-------------|
 | `osm:ctxutil` | Context building helpers (used by built-ins) | `buildContext(items, options?) → string`, `contextManager` (factory for reusable context management patterns) |
-| `osm:nextIntegerID` | Simple ID generator | Default export is a function: `nextId(list) → number` — finds max `.id` in array and returns max+1. _(Deprecated alias: `osm:nextIntegerId`)_ |
+| `osm:nextIntegerID` | Simple ID generator | Default export is a function: `nextId(list) → number` — finds max `.id` in array and returns max+1. _(Deprecated alias: `osm:nextIntegerId`)_ [Reference →](reference/nextintegerid.md) |
 | `osm:sharedStateSymbols` | Cross-mode shared state symbols | Exports Symbol properties (e.g., `contextItems`) for use with `tui.createState("__shared__", …)` |
 
 #### TUI framework (Charm/BubbleTea stack)

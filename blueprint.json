@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T223 DONE. Session 2026-02-17. T223 discovery hardening complete. Proceeding IN STRICT SEQUENCE."
+    "currentState": "T200-T226 DONE. Session 2026-02-17. T224-T226 API docs for osm:time, osm:nextIntegerID, osm:unicodetext complete. Proceeding IN STRICT SEQUENCE."
   },
   "sequentialTasks": [
     {
@@ -140,17 +140,17 @@
     {
       "task": "T224: Detailed API docs for osm:time module",
       "description": "Create detailed API docs in docs/reference/ for osm:time. Document every exported function with signature, params, returns, errors, 2+ examples per function. Cross-reference from docs/scripting.md.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T225: Detailed API docs for osm:nextIntegerID module",
       "description": "Create detailed API docs for osm:nextIntegerID (renamed in T201). Document purpose, API, thread-safety, usage patterns. Note deprecated osm:nextIntegerId alias. Cross-reference from docs/scripting.md.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T226: Detailed API docs for osm:unicodetext module",
       "description": "Create detailed API docs for osm:unicodetext. Document every function with signature, params, returns, examples. Cross-reference from docs/scripting.md.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T227: Detailed API docs for osm:scrollbar module",

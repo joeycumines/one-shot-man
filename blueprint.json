@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T215 DONE. Session 2026-02-17. T214+T215 combined — gitops wrapper wired into sync.go. Proceeding IN STRICT SEQUENCE."
+    "currentState": "T200-T219 DONE. Session 2026-02-17. T219 module hardening complete. Proceeding IN STRICT SEQUENCE."
   },
   "sequentialTasks": [
     {
@@ -99,23 +99,23 @@
     },
     {
       "task": "T216: Replace git shell-outs in sync_startup.go with go-git/v6",
-      "description": "Replace exec.Command git call in internal/command/sync_startup.go SyncAutoPull with go-git. Preserve non-blocking behavior, error handling to stderr, config key checking. Update sync_startup_test.go. Run 'make' to confirm.",
-      "status": "Not Started"
+      "description": "No-op. The only exec.Command in sync_startup.go is 'git pull --rebase origin HEAD' in SyncAutoPull. go-git/v6 does not support rebase — same hybrid approach as sync.go. The isGitRepo→gitops.IsRepo replacement was already done in T215.",
+      "status": "Done"
     },
     {
       "task": "T217: Verify sync tests pass after go-git migration",
-      "description": "Run full sync test suite. Verify all behaviors: save/list/load, init/push/pull, auto-pull, path injection, conflict detection. Check test coverage. Fix regressions. Run 'make' to confirm.",
-      "status": "Not Started"
+      "description": "Verified: All sync tests pass (init/push/pull). All 12 gitops tests pass. Full make passes (build, lint, deadcode, vet, staticcheck, all tests). Coverage: gitops.go 82.6%, sync.go functions 84-100%, sync_startup.go 52-100%. No regressions.",
+      "status": "Done"
     },
     {
       "task": "T218: Cross-platform integration testing of go-git sync",
-      "description": "Verify go-git sync on all platforms: 'make make-all-in-container' (Linux), 'make make-all-run-windows' (Windows). Focus on path separators, file permissions, SSH key loading, credential helpers. Fix failures.",
-      "status": "Not Started"
+      "description": "Verified: gitops and sync tests pass on macOS, Linux (Docker), and Windows (SSH). Pre-existing unrelated failures: TestWriteFile_ReadOnlyDir (Linux/Docker root), TestScanSessions_ReadDirError (Windows). No gitops regressions on any platform.",
+      "status": "Done"
     },
     {
       "task": "T219: Module resolution hardening for JS require()",
-      "description": "Harden require() in Goja runtime (script.module-paths). Add: better error reporting (full search path in errors), circular dependency detection, path validation at startup, security (prevent ../ traversal out of module paths). Add tests for each. Run 'make' to confirm.",
-      "status": "Not Started"
+      "description": "Implemented module_hardening.go: validateModulePaths (startup validation with warnings), newHardenedSourceLoader (symlink escape detection), newHardenedPathResolver (../ traversal blocking for bare modules), circularDependencyTracker with cycle warning, installRequireCycleDetection (require wrapper). 15 new tests all pass. Full make passes.",
+      "status": "Done"
     },
     {
       "task": "T220: .prompt.md file discovery production hardening",

@@ -145,15 +145,36 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 	// This is the single source of truth for terminal state management.
 	terminalIO := NewTerminalIOStdio()
 
+	// Create a temporary slog.Logger for startup validation (the TUILogger isn't
+	// constructed yet). Warnings go to stderr so they're visible immediately.
+	startupLogger := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
 	// Create the require registry first - it will be shared.
 	// If module paths are configured, they are registered as global folders
 	// for bare module name resolution (similar to NODE_PATH).
 	// A custom source loader strips shebang lines (#!/...) from scripts,
 	// matching Node.js behavior so scripts with shebangs work through require().
 	var registryOpts []require.Option
-	registryOpts = append(registryOpts, require.WithLoader(shebangStrippingLoader))
+
 	if len(eopts.modulePaths) > 0 {
-		registryOpts = append(registryOpts, require.WithGlobalFolders(eopts.modulePaths...))
+		// Validate paths at startup: drop invalid/missing/non-directory entries
+		// with a warning rather than failing hard.
+		validPaths := validateModulePaths(eopts.modulePaths, startupLogger)
+
+		// Use a hardened loader that adds symlink escape security and better
+		// error messages, and a hardened path resolver for path-traversal security.
+		registryOpts = append(registryOpts,
+			require.WithLoader(newHardenedSourceLoader(validPaths, eopts.modulePaths)),
+		)
+
+		if len(validPaths) > 0 {
+			registryOpts = append(registryOpts, require.WithGlobalFolders(validPaths...))
+			registryOpts = append(registryOpts,
+				require.WithPathResolver(newHardenedPathResolver(validPaths)),
+			)
+		}
+	} else {
+		registryOpts = append(registryOpts, require.WithLoader(shebangStrippingLoader))
 	}
 	registry := require.NewRegistry(registryOpts...)
 
@@ -207,6 +228,11 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 	// which gives scripts proper __filename, __dirname, and relative require resolution.
 	err = runtime.RunOnLoopSync(func(r *goja.Runtime) error {
 		engine.requireModule = registry.Enable(r)
+		// Install circular dependency detection by wrapping the require function.
+		// This must happen after Enable() since it wraps the require function that
+		// Enable() installs. goja_nodejs caches modules before execution, so cycles
+		// cannot be detected at the SourceLoader level—they must be detected here.
+		installRequireCycleDetection(r, startupLogger)
 		return nil
 	})
 	if err != nil {

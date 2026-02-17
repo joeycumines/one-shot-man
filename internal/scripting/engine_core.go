@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"github.com/dop251/goja"
+	_ "github.com/dop251/goja_nodejs/console" // init() registers "console" core module
 	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/builtin"

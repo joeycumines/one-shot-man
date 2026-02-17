@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
@@ -95,11 +96,91 @@ type mcpGoalInfo struct {
 	Category    string `json:"category,omitempty"`
 }
 
-// newMCPServer creates a configured MCP server with all eight tools.
+// --- MCP session types (bidirectional agent communication) ---
+
+// mcpSession tracks an active agent session.
+type mcpSession struct {
+	SessionID    string            `json:"sessionId"`
+	Capabilities []string          `json:"capabilities"`
+	Status       string            `json:"status"`
+	Progress     float64           `json:"progress"`
+	LastUpdate   time.Time         `json:"lastUpdate"`
+	Events       []mcpSessionEvent `json:"-"` // drained on getSession
+}
+
+// mcpSessionEvent is a queued event from an agent session.
+type mcpSessionEvent struct {
+	Type      string    `json:"type"` // "progress", "result", "guidance"
+	Timestamp time.Time `json:"timestamp"`
+	Data      any       `json:"data"`
+}
+
+// mcpGetSessionResponse is the JSON response for getSession.
+type mcpGetSessionResponse struct {
+	SessionID    string            `json:"sessionId"`
+	Capabilities []string          `json:"capabilities"`
+	Status       string            `json:"status"`
+	Progress     float64           `json:"progress"`
+	LastUpdate   time.Time         `json:"lastUpdate"`
+	Events       []mcpSessionEvent `json:"events"`
+}
+
+// mcpSessionSummary is a JSON-serializable session summary for listSessions.
+type mcpSessionSummary struct {
+	SessionID    string    `json:"sessionId"`
+	Capabilities []string  `json:"capabilities"`
+	Status       string    `json:"status"`
+	Progress     float64   `json:"progress"`
+	LastUpdate   time.Time `json:"lastUpdate"`
+	EventCount   int       `json:"eventCount"`
+}
+
+// --- MCP session input types ---
+
+type mcpRegisterSessionInput struct {
+	SessionID    string   `json:"sessionId" jsonschema:"Unique session identifier"`
+	Capabilities []string `json:"capabilities" jsonschema:"List of agent capabilities"`
+}
+
+type mcpReportProgressInput struct {
+	SessionID string  `json:"sessionId" jsonschema:"Session identifier"`
+	Status    string  `json:"status" jsonschema:"Current status (working, blocked, waiting, idle)"`
+	Progress  float64 `json:"progress" jsonschema:"Completion percentage (0-100)"`
+	Message   string  `json:"message" jsonschema:"Human-readable progress message"`
+}
+
+type mcpReportResultInput struct {
+	SessionID    string   `json:"sessionId" jsonschema:"Session identifier"`
+	Success      bool     `json:"success" jsonschema:"Whether the task succeeded"`
+	Output       string   `json:"output" jsonschema:"Task output or error message"`
+	FilesChanged []string `json:"filesChanged,omitempty" jsonschema:"List of modified files"`
+}
+
+type mcpRequestGuidanceInput struct {
+	SessionID string   `json:"sessionId" jsonschema:"Session identifier"`
+	Question  string   `json:"question" jsonschema:"Question for the human operator"`
+	Options   []string `json:"options,omitempty" jsonschema:"Available options"`
+	Context   string   `json:"context,omitempty" jsonschema:"Additional context"`
+}
+
+type mcpGetSessionInput struct {
+	SessionID string `json:"sessionId" jsonschema:"Session identifier"`
+}
+
+// mcpValidProgressStatuses is the set of allowed status values for reportProgress.
+var mcpValidProgressStatuses = map[string]bool{
+	"working": true,
+	"blocked": true,
+	"waiting": true,
+	"idle":    true,
+}
+
+// newMCPServer creates a configured MCP server with all fourteen tools.
 // It is unexported for testability via InMemoryTransport.
 func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, version string) *mcp.Server {
 	var mu sync.Mutex
 	var items []mcpContextItem
+	sessions := make(map[string]*mcpSession)
 
 	server := mcp.NewServer(
 		&mcp.Implementation{
@@ -320,6 +401,221 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 		mu.Unlock()
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: "context cleared"}},
+		}, nil, nil
+	})
+
+	// --- registerSession ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "registerSession",
+		Description: "Register a new agent session with capabilities",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpRegisterSessionInput) (*mcp.CallToolResult, any, error) {
+		if input.SessionID == "" {
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("sessionId is required"))
+			return result, nil, nil
+		}
+		caps := input.Capabilities
+		if caps == nil {
+			caps = []string{}
+		}
+		mu.Lock()
+		sessions[input.SessionID] = &mcpSession{
+			SessionID:    input.SessionID,
+			Capabilities: caps,
+			Status:       "idle",
+			Progress:     0,
+			LastUpdate:   time.Now(),
+		}
+		mu.Unlock()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("session registered: %s", input.SessionID)}},
+		}, nil, nil
+	})
+
+	// --- reportProgress ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "reportProgress",
+		Description: "Report progress from an agent session",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpReportProgressInput) (*mcp.CallToolResult, any, error) {
+		if !mcpValidProgressStatuses[input.Status] {
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("invalid status %q: must be one of working, blocked, waiting, idle", input.Status))
+			return result, nil, nil
+		}
+		progress := input.Progress
+		if progress < 0 {
+			progress = 0
+		}
+		if progress > 100 {
+			progress = 100
+		}
+		mu.Lock()
+		sess, ok := sessions[input.SessionID]
+		if !ok {
+			mu.Unlock()
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			return result, nil, nil
+		}
+		now := time.Now()
+		sess.Status = input.Status
+		sess.Progress = progress
+		sess.LastUpdate = now
+		sess.Events = append(sess.Events, mcpSessionEvent{
+			Type:      "progress",
+			Timestamp: now,
+			Data: map[string]any{
+				"status":   input.Status,
+				"progress": progress,
+				"message":  input.Message,
+			},
+		})
+		mu.Unlock()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("progress reported: %s %.0f%%", input.Status, progress)}},
+		}, nil, nil
+	})
+
+	// --- reportResult ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "reportResult",
+		Description: "Report task completion from an agent session",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpReportResultInput) (*mcp.CallToolResult, any, error) {
+		mu.Lock()
+		sess, ok := sessions[input.SessionID]
+		if !ok {
+			mu.Unlock()
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			return result, nil, nil
+		}
+		now := time.Now()
+		if input.Success {
+			sess.Status = "idle"
+		}
+		sess.LastUpdate = now
+		filesChanged := input.FilesChanged
+		if filesChanged == nil {
+			filesChanged = []string{}
+		}
+		sess.Events = append(sess.Events, mcpSessionEvent{
+			Type:      "result",
+			Timestamp: now,
+			Data: map[string]any{
+				"success":      input.Success,
+				"output":       input.Output,
+				"filesChanged": filesChanged,
+			},
+		})
+		mu.Unlock()
+		outcome := "succeeded"
+		if !input.Success {
+			outcome = "failed"
+		}
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("result reported: %s", outcome)}},
+		}, nil, nil
+	})
+
+	// --- requestGuidance ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "requestGuidance",
+		Description: "Request guidance from the human operator",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpRequestGuidanceInput) (*mcp.CallToolResult, any, error) {
+		if input.Question == "" {
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("question is required"))
+			return result, nil, nil
+		}
+		mu.Lock()
+		sess, ok := sessions[input.SessionID]
+		if !ok {
+			mu.Unlock()
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			return result, nil, nil
+		}
+		now := time.Now()
+		sess.LastUpdate = now
+		options := input.Options
+		if options == nil {
+			options = []string{}
+		}
+		sess.Events = append(sess.Events, mcpSessionEvent{
+			Type:      "guidance",
+			Timestamp: now,
+			Data: map[string]any{
+				"question": input.Question,
+				"options":  options,
+				"context":  input.Context,
+			},
+		})
+		mu.Unlock()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("guidance requested: %s", input.Question)}},
+		}, nil, nil
+	})
+
+	// --- getSession ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "getSession",
+		Description: "Get session info and drain queued events",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpGetSessionInput) (*mcp.CallToolResult, any, error) {
+		mu.Lock()
+		sess, ok := sessions[input.SessionID]
+		if !ok {
+			mu.Unlock()
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			return result, nil, nil
+		}
+		events := sess.Events
+		if events == nil {
+			events = []mcpSessionEvent{}
+		}
+		sess.Events = nil // drain
+		resp := mcpGetSessionResponse{
+			SessionID:    sess.SessionID,
+			Capabilities: sess.Capabilities,
+			Status:       sess.Status,
+			Progress:     sess.Progress,
+			LastUpdate:   sess.LastUpdate,
+			Events:       events,
+		}
+		mu.Unlock()
+		data, err := json.Marshal(resp)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal session: %w", err)
+		}
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
+		}, nil, nil
+	})
+
+	// --- listSessions ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "listSessions",
+		Description: "List all registered agent sessions",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input struct{}) (*mcp.CallToolResult, any, error) {
+		mu.Lock()
+		summaries := make([]mcpSessionSummary, 0, len(sessions))
+		for _, sess := range sessions {
+			summaries = append(summaries, mcpSessionSummary{
+				SessionID:    sess.SessionID,
+				Capabilities: sess.Capabilities,
+				Status:       sess.Status,
+				Progress:     sess.Progress,
+				LastUpdate:   sess.LastUpdate,
+				EventCount:   len(sess.Events),
+			})
+		}
+		mu.Unlock()
+		data, err := json.Marshal(summaries)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to marshal sessions: %w", err)
+		}
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
 		}, nil, nil
 	})
 

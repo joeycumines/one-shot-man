@@ -10,9 +10,9 @@ import (
 // windowsProcessHandle is a stub for Windows.
 type windowsProcessHandle struct{}
 
-func (h *windowsProcessHandle) Wait() error          { return ErrNotSupported }
+func (h *windowsProcessHandle) Wait() error              { return ErrNotSupported }
 func (h *windowsProcessHandle) Signal(_ os.Signal) error { return ErrNotSupported }
-func (h *windowsProcessHandle) Pid() int              { return 0 }
+func (h *windowsProcessHandle) Pid() int                 { return 0 }
 
 // Spawn returns ErrNotSupported on Windows.
 // ConPTY integration is planned for a follow-up task.

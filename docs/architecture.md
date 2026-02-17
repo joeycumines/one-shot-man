@@ -386,7 +386,7 @@ The `mcp` command starts a Model Context Protocol server over stdio, enabling ex
 
 ### Architecture
 
-The server is implemented as a pure Go command (no scripting engine). It creates a `ContextManager` rooted at the working directory and exposes eight tools:
+The server is implemented as a pure Go command (no scripting engine). It creates a `ContextManager` rooted at the working directory and exposes fourteen tools:
 
 | Tool | Description |
 |------|-------------|
@@ -398,12 +398,19 @@ The server is implemented as a pure Go command (no scripting engine). It creates
 | `clearContext` | Clear all files (via `ContextManager.Clear`) and in-memory items |
 | `buildPrompt` | Assemble prompt from goal instructions + notes/diffs + txtar context |
 | `getGoals` | Return JSON array of available goals |
+| `registerSession` | Register a new agent session with capabilities |
+| `reportProgress` | Report progress (status, percentage, message) from an agent session |
+| `reportResult` | Report task completion (success, output, changed files) from an agent session |
+| `requestGuidance` | Request human guidance (question, options, context) from an agent session |
+| `getSession` | Get session info and drain queued events for a given session |
+| `listSessions` | List all registered agent sessions with summary info |
 
 ### Design
 
 - **`newMCPServer()`** is an unexported factory function that creates the configured `*mcp.Server`. It is separated from `Execute()` for testability — tests use `mcp.NewInMemoryTransports()` to create paired transports without stdio.
-- **Thread safety:** Notes and diffs are stored in-memory behind a `sync.Mutex`. File context is managed by the existing `ContextManager`.
-- **Error handling:** Application-level errors (missing file, empty input) use `CallToolResult.SetError()` so the MCP client sees `isError: true` without the transport disconnecting. Only transport-level errors return Go errors.
+- **Thread safety:** Notes, diffs, and the session registry are stored in-memory behind a single `sync.Mutex`. File context is managed by the existing `ContextManager`.
+- **Session registry:** Active agent sessions are tracked in a map keyed by session ID. Each session stores capabilities, status, progress, last update time, and an event queue. Events (progress, result, guidance) are queued per session and drained on `getSession` read, enabling a polling pattern for orchestration scripts.
+- **Error handling:** Application-level errors (missing file, empty input, unknown session) use `CallToolResult.SetError()` so the MCP client sees `isError: true` without the transport disconnecting. Only transport-level errors return Go errors.
 
 Source: [internal/command/mcp.go](../internal/command/mcp.go)
 

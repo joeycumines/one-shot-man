@@ -167,14 +167,20 @@ func TestMCPServer_ToolList(t *testing.T) {
 	}
 
 	expected := map[string]bool{
-		"addFile":      false,
-		"addDiff":      false,
-		"addNote":      false,
-		"removeFile":   false,
-		"listContext":  false,
-		"clearContext": false,
-		"buildPrompt":  false,
-		"getGoals":     false,
+		"addFile":         false,
+		"addDiff":         false,
+		"addNote":         false,
+		"removeFile":      false,
+		"listContext":     false,
+		"clearContext":    false,
+		"buildPrompt":     false,
+		"getGoals":        false,
+		"registerSession": false,
+		"reportProgress":  false,
+		"reportResult":    false,
+		"requestGuidance": false,
+		"getSession":      false,
+		"listSessions":    false,
 	}
 	for _, tool := range result.Tools {
 		if _, ok := expected[tool.Name]; ok {
@@ -186,8 +192,8 @@ func TestMCPServer_ToolList(t *testing.T) {
 			t.Errorf("tool %q not registered", name)
 		}
 	}
-	if len(result.Tools) != 8 {
-		t.Errorf("got %d tools, want 8", len(result.Tools))
+	if len(result.Tools) != 14 {
+		t.Errorf("got %d tools, want 14", len(result.Tools))
 	}
 }
 
@@ -834,5 +840,618 @@ func TestMCPServer_FullWorkflow(t *testing.T) {
 	}
 	if len(goalInfos) != 1 || goalInfos[0].Name != "review" {
 		t.Errorf("getGoals = %+v, want [{review ...}]", goalInfos)
+	}
+}
+
+// --- registerSession ---
+
+func TestMCPServer_RegisterSession(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	r := env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "agent-1",
+		"capabilities": []string{"code", "test"},
+	})
+	if r.IsError {
+		t.Fatalf("registerSession returned error: %s", mcpResultText(t, r))
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "agent-1") {
+		t.Errorf("registerSession text = %q, want to contain 'agent-1'", text)
+	}
+
+	// Verify via getSession
+	r = env.callTool(t, "getSession", map[string]any{"sessionId": "agent-1"})
+	if r.IsError {
+		t.Fatalf("getSession returned error: %s", mcpResultText(t, r))
+	}
+	var sess mcpGetSessionResponse
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &sess); err != nil {
+		t.Fatalf("unmarshal session: %v", err)
+	}
+	if sess.SessionID != "agent-1" {
+		t.Errorf("sessionId = %q, want agent-1", sess.SessionID)
+	}
+	if len(sess.Capabilities) != 2 || sess.Capabilities[0] != "code" {
+		t.Errorf("capabilities = %v, want [code test]", sess.Capabilities)
+	}
+	if sess.Status != "idle" {
+		t.Errorf("status = %q, want idle", sess.Status)
+	}
+
+	// Re-register same session — should succeed (overwrite)
+	r = env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "agent-1",
+		"capabilities": []string{"updated"},
+	})
+	if r.IsError {
+		t.Fatalf("re-register returned error: %s", mcpResultText(t, r))
+	}
+}
+
+func TestMCPServer_RegisterSession_EmptyID(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	r := env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "",
+		"capabilities": []string{},
+	})
+	if !r.IsError {
+		t.Error("expected IsError for empty sessionId")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "sessionId is required") {
+		t.Errorf("error text = %q, want to contain 'sessionId is required'", text)
+	}
+}
+
+// --- reportProgress ---
+
+func TestMCPServer_ReportProgress(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	// Register first
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "prog-1",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportProgress", map[string]any{
+		"sessionId": "prog-1",
+		"status":    "working",
+		"progress":  42.5,
+		"message":   "Compiling tests",
+	})
+	if r.IsError {
+		t.Fatalf("reportProgress returned error: %s", mcpResultText(t, r))
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "working") {
+		t.Errorf("reportProgress text = %q, want to contain 'working'", text)
+	}
+
+	// Verify session state via getSession
+	r = env.callTool(t, "getSession", map[string]any{"sessionId": "prog-1"})
+	var sess mcpGetSessionResponse
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &sess); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if sess.Status != "working" {
+		t.Errorf("status = %q, want working", sess.Status)
+	}
+	if sess.Progress != 42.5 {
+		t.Errorf("progress = %f, want 42.5", sess.Progress)
+	}
+}
+
+func TestMCPServer_ReportProgress_UnknownSession(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	r := env.callTool(t, "reportProgress", map[string]any{
+		"sessionId": "nonexistent",
+		"status":    "working",
+		"progress":  50,
+		"message":   "test",
+	})
+	if !r.IsError {
+		t.Error("expected IsError for unknown session")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "session not found") {
+		t.Errorf("error text = %q, want to contain 'session not found'", text)
+	}
+}
+
+func TestMCPServer_ReportProgress_InvalidStatus(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{"sessionId": "s1", "capabilities": []string{}})
+
+	r := env.callTool(t, "reportProgress", map[string]any{
+		"sessionId": "s1",
+		"status":    "dancing",
+		"progress":  50,
+		"message":   "test",
+	})
+	if !r.IsError {
+		t.Error("expected IsError for invalid status")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "invalid status") {
+		t.Errorf("error text = %q, want to contain 'invalid status'", text)
+	}
+}
+
+func TestMCPServer_ReportProgress_ClampedProgress(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{"sessionId": "clamp-1", "capabilities": []string{}})
+
+	// Progress > 100 should be clamped to 100
+	env.callTool(t, "reportProgress", map[string]any{
+		"sessionId": "clamp-1",
+		"status":    "working",
+		"progress":  150,
+		"message":   "over",
+	})
+	r := env.callTool(t, "getSession", map[string]any{"sessionId": "clamp-1"})
+	var sess mcpGetSessionResponse
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &sess); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if sess.Progress != 100 {
+		t.Errorf("progress = %f, want 100 (clamped from 150)", sess.Progress)
+	}
+
+	// Progress < 0 should be clamped to 0
+	env.callTool(t, "reportProgress", map[string]any{
+		"sessionId": "clamp-1",
+		"status":    "working",
+		"progress":  -10,
+		"message":   "under",
+	})
+	r = env.callTool(t, "getSession", map[string]any{"sessionId": "clamp-1"})
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &sess); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if sess.Progress != 0 {
+		t.Errorf("progress = %f, want 0 (clamped from -10)", sess.Progress)
+	}
+}
+
+// --- reportResult ---
+
+func TestMCPServer_ReportResult(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{"sessionId": "res-1", "capabilities": []string{}})
+
+	r := env.callTool(t, "reportResult", map[string]any{
+		"sessionId":    "res-1",
+		"success":      true,
+		"output":       "All tests passed",
+		"filesChanged": []string{"main.go", "main_test.go"},
+	})
+	if r.IsError {
+		t.Fatalf("reportResult returned error: %s", mcpResultText(t, r))
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "succeeded") {
+		t.Errorf("reportResult text = %q, want to contain 'succeeded'", text)
+	}
+
+	// Verify via getSession
+	r = env.callTool(t, "getSession", map[string]any{"sessionId": "res-1"})
+	var sess mcpGetSessionResponse
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &sess); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(sess.Events) != 1 {
+		t.Fatalf("events = %d, want 1", len(sess.Events))
+	}
+	if sess.Events[0].Type != "result" {
+		t.Errorf("event type = %q, want result", sess.Events[0].Type)
+	}
+	data, ok := sess.Events[0].Data.(map[string]any)
+	if !ok {
+		t.Fatalf("event data type = %T, want map[string]any", sess.Events[0].Data)
+	}
+	if data["success"] != true {
+		t.Errorf("event success = %v, want true", data["success"])
+	}
+	if data["output"] != "All tests passed" {
+		t.Errorf("event output = %v, want 'All tests passed'", data["output"])
+	}
+}
+
+func TestMCPServer_ReportResult_UnknownSession(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	r := env.callTool(t, "reportResult", map[string]any{
+		"sessionId": "nonexistent",
+		"success":   true,
+		"output":    "done",
+	})
+	if !r.IsError {
+		t.Error("expected IsError for unknown session")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "session not found") {
+		t.Errorf("error text = %q, want to contain 'session not found'", text)
+	}
+}
+
+// --- requestGuidance ---
+
+func TestMCPServer_RequestGuidance(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{"sessionId": "guid-1", "capabilities": []string{}})
+
+	r := env.callTool(t, "requestGuidance", map[string]any{
+		"sessionId": "guid-1",
+		"question":  "Should I refactor the parser?",
+		"options":   []string{"yes", "no", "partial"},
+		"context":   "Parser has cyclomatic complexity 25",
+	})
+	if r.IsError {
+		t.Fatalf("requestGuidance returned error: %s", mcpResultText(t, r))
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "guidance requested") {
+		t.Errorf("requestGuidance text = %q, want to contain 'guidance requested'", text)
+	}
+
+	// Verify event in getSession
+	r = env.callTool(t, "getSession", map[string]any{"sessionId": "guid-1"})
+	var sess mcpGetSessionResponse
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &sess); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(sess.Events) != 1 {
+		t.Fatalf("events = %d, want 1", len(sess.Events))
+	}
+	if sess.Events[0].Type != "guidance" {
+		t.Errorf("event type = %q, want guidance", sess.Events[0].Type)
+	}
+	data, ok := sess.Events[0].Data.(map[string]any)
+	if !ok {
+		t.Fatalf("event data type = %T, want map[string]any", sess.Events[0].Data)
+	}
+	if data["question"] != "Should I refactor the parser?" {
+		t.Errorf("question = %v", data["question"])
+	}
+}
+
+func TestMCPServer_RequestGuidance_EmptyQuestion(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{"sessionId": "guid-2", "capabilities": []string{}})
+
+	r := env.callTool(t, "requestGuidance", map[string]any{
+		"sessionId": "guid-2",
+		"question":  "",
+	})
+	if !r.IsError {
+		t.Error("expected IsError for empty question")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "question is required") {
+		t.Errorf("error text = %q, want to contain 'question is required'", text)
+	}
+}
+
+// --- getSession ---
+
+func TestMCPServer_GetSession(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	registered := time.Now()
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "full-1",
+		"capabilities": []string{"analyze"},
+	})
+
+	// Report progress
+	env.callTool(t, "reportProgress", map[string]any{
+		"sessionId": "full-1",
+		"status":    "working",
+		"progress":  25,
+		"message":   "Analyzing",
+	})
+
+	// Report result
+	env.callTool(t, "reportResult", map[string]any{
+		"sessionId":    "full-1",
+		"success":      true,
+		"output":       "Analysis complete",
+		"filesChanged": []string{"report.md"},
+	})
+
+	// getSession should return everything
+	r := env.callTool(t, "getSession", map[string]any{"sessionId": "full-1"})
+	if r.IsError {
+		t.Fatalf("getSession returned error: %s", mcpResultText(t, r))
+	}
+	var sess mcpGetSessionResponse
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &sess); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if sess.SessionID != "full-1" {
+		t.Errorf("sessionId = %q, want full-1", sess.SessionID)
+	}
+	if len(sess.Capabilities) != 1 || sess.Capabilities[0] != "analyze" {
+		t.Errorf("capabilities = %v, want [analyze]", sess.Capabilities)
+	}
+	if len(sess.Events) != 2 {
+		t.Fatalf("events = %d, want 2 (progress + result)", len(sess.Events))
+	}
+	if sess.Events[0].Type != "progress" {
+		t.Errorf("events[0].type = %q, want progress", sess.Events[0].Type)
+	}
+	if sess.Events[1].Type != "result" {
+		t.Errorf("events[1].type = %q, want result", sess.Events[1].Type)
+	}
+	if time.Since(registered) > time.Hour {
+		t.Error("lastUpdate is unreasonably old")
+	}
+}
+
+func TestMCPServer_GetSession_Unknown(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	r := env.callTool(t, "getSession", map[string]any{"sessionId": "ghost"})
+	if !r.IsError {
+		t.Error("expected IsError for unknown session")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "session not found") {
+		t.Errorf("error text = %q, want to contain 'session not found'", text)
+	}
+}
+
+func TestMCPServer_GetSession_DrainsEvents(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{"sessionId": "drain-1", "capabilities": []string{}})
+	env.callTool(t, "reportProgress", map[string]any{
+		"sessionId": "drain-1",
+		"status":    "working",
+		"progress":  50,
+		"message":   "halfway",
+	})
+
+	// First getSession: should have 1 event
+	r := env.callTool(t, "getSession", map[string]any{"sessionId": "drain-1"})
+	var sess1 mcpGetSessionResponse
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &sess1); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(sess1.Events) != 1 {
+		t.Fatalf("first read: events = %d, want 1", len(sess1.Events))
+	}
+
+	// Second getSession: events should be drained (empty)
+	r = env.callTool(t, "getSession", map[string]any{"sessionId": "drain-1"})
+	var sess2 mcpGetSessionResponse
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &sess2); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(sess2.Events) != 0 {
+		t.Errorf("second read: events = %d, want 0 (drained)", len(sess2.Events))
+	}
+
+	// Session state should still be intact
+	if sess2.Status != "working" {
+		t.Errorf("status after drain = %q, want working", sess2.Status)
+	}
+	if sess2.Progress != 50 {
+		t.Errorf("progress after drain = %f, want 50", sess2.Progress)
+	}
+}
+
+// --- listSessions ---
+
+func TestMCPServer_ListSessions(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "ls-1",
+		"capabilities": []string{"code"},
+	})
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "ls-2",
+		"capabilities": []string{"test"},
+	})
+	env.callTool(t, "reportProgress", map[string]any{
+		"sessionId": "ls-1",
+		"status":    "working",
+		"progress":  75,
+		"message":   "busy",
+	})
+
+	r := env.callTool(t, "listSessions", nil)
+	if r.IsError {
+		t.Fatalf("listSessions returned error: %s", mcpResultText(t, r))
+	}
+	var summaries []mcpSessionSummary
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &summaries); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("sessions = %d, want 2", len(summaries))
+	}
+
+	found := map[string]mcpSessionSummary{}
+	for _, s := range summaries {
+		found[s.SessionID] = s
+	}
+	if s, ok := found["ls-1"]; !ok {
+		t.Error("missing session ls-1")
+	} else {
+		if s.Status != "working" {
+			t.Errorf("ls-1 status = %q, want working", s.Status)
+		}
+		if s.EventCount != 1 {
+			t.Errorf("ls-1 eventCount = %d, want 1", s.EventCount)
+		}
+	}
+	if s, ok := found["ls-2"]; !ok {
+		t.Error("missing session ls-2")
+	} else {
+		if s.Status != "idle" {
+			t.Errorf("ls-2 status = %q, want idle", s.Status)
+		}
+	}
+}
+
+func TestMCPServer_ListSessions_Empty(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	r := env.callTool(t, "listSessions", nil)
+	if r.IsError {
+		t.Fatalf("listSessions returned error: %s", mcpResultText(t, r))
+	}
+	var summaries []mcpSessionSummary
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &summaries); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if summaries == nil {
+		t.Error("listSessions returned nil, want empty array")
+	}
+	if len(summaries) != 0 {
+		t.Errorf("sessions = %d, want 0", len(summaries))
+	}
+}
+
+// --- Orchestrator workflow (full E2E) ---
+
+func TestMCPServer_OrchestratorWorkflow(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	// 1. Register session
+	r := env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "orch-agent",
+		"capabilities": []string{"code-review", "testing", "refactor"},
+	})
+	if r.IsError {
+		t.Fatalf("registerSession: %s", mcpResultText(t, r))
+	}
+
+	// 2. Report progress × 3
+	for i, step := range []struct {
+		status   string
+		progress float64
+		message  string
+	}{
+		{"working", 10, "Starting analysis"},
+		{"working", 50, "Running tests"},
+		{"blocked", 80, "Waiting for dependency"},
+	} {
+		r = env.callTool(t, "reportProgress", map[string]any{
+			"sessionId": "orch-agent",
+			"status":    step.status,
+			"progress":  step.progress,
+			"message":   step.message,
+		})
+		if r.IsError {
+			t.Fatalf("reportProgress[%d]: %s", i, mcpResultText(t, r))
+		}
+	}
+
+	// 3. Request guidance
+	r = env.callTool(t, "requestGuidance", map[string]any{
+		"sessionId": "orch-agent",
+		"question":  "Dependency X is unavailable. Skip or wait?",
+		"options":   []string{"skip", "wait", "mock"},
+		"context":   "Integration test phase",
+	})
+	if r.IsError {
+		t.Fatalf("requestGuidance: %s", mcpResultText(t, r))
+	}
+
+	// 4. Report result
+	r = env.callTool(t, "reportResult", map[string]any{
+		"sessionId":    "orch-agent",
+		"success":      true,
+		"output":       "All tasks completed successfully",
+		"filesChanged": []string{"pkg/main.go", "pkg/main_test.go"},
+	})
+	if r.IsError {
+		t.Fatalf("reportResult: %s", mcpResultText(t, r))
+	}
+
+	// 5. getSession — verify full event history
+	r = env.callTool(t, "getSession", map[string]any{"sessionId": "orch-agent"})
+	if r.IsError {
+		t.Fatalf("getSession: %s", mcpResultText(t, r))
+	}
+	var sess mcpGetSessionResponse
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &sess); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if sess.SessionID != "orch-agent" {
+		t.Errorf("sessionId = %q, want orch-agent", sess.SessionID)
+	}
+	if len(sess.Capabilities) != 3 {
+		t.Errorf("capabilities = %v, want 3 items", sess.Capabilities)
+	}
+	// After successful result, status should be idle
+	if sess.Status != "idle" {
+		t.Errorf("status = %q, want idle (after successful result)", sess.Status)
+	}
+
+	// Should have 5 events: 3 progress + 1 guidance + 1 result
+	if len(sess.Events) != 5 {
+		t.Fatalf("events = %d, want 5", len(sess.Events))
+	}
+	expectedTypes := []string{"progress", "progress", "progress", "guidance", "result"}
+	for i, et := range expectedTypes {
+		if sess.Events[i].Type != et {
+			t.Errorf("events[%d].type = %q, want %q", i, sess.Events[i].Type, et)
+		}
+	}
+
+	// 6. Verify events are drained
+	r = env.callTool(t, "getSession", map[string]any{"sessionId": "orch-agent"})
+	var sess2 mcpGetSessionResponse
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &sess2); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(sess2.Events) != 0 {
+		t.Errorf("events after drain = %d, want 0", len(sess2.Events))
+	}
+
+	// 7. Verify it shows in listSessions
+	r = env.callTool(t, "listSessions", nil)
+	var summaries []mcpSessionSummary
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &summaries); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("listSessions = %d, want 1", len(summaries))
+	}
+	if summaries[0].SessionID != "orch-agent" {
+		t.Errorf("listSessions[0].sessionId = %q, want orch-agent", summaries[0].SessionID)
+	}
+	if summaries[0].EventCount != 0 {
+		t.Errorf("eventCount = %d, want 0 (events were drained)", summaries[0].EventCount)
 	}
 }

@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T239 DONE. T240 next."
+    "currentState": "T200-T240 DONE. T241 next."
   },
   "sequentialTasks": [
     {
@@ -220,7 +220,7 @@
     {
       "task": "T240: AI Orchestrator MCP bidirectional communication",
       "description": "Extend MCP server for bidirectional Claude Code communication. Add tools: registerSession, reportProgress, reportResult, requestGuidance. Implement session identification, event queue. Add tests. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T241: AI Orchestrator PTY output parsing",

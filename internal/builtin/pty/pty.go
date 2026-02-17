@@ -43,9 +43,9 @@ type SpawnConfig struct {
 // Process represents a running process attached to a pseudo-terminal.
 // All methods are safe for concurrent use unless otherwise noted.
 type Process struct {
-	mu      sync.Mutex
-	ptyFile *os.File // Platform-specific PTY master file descriptor.
-	closed  bool
+	mu       sync.Mutex
+	ptyFile  *os.File // Platform-specific PTY master file descriptor.
+	closed   bool
 	done     chan struct{}
 	exitCode int
 	exitErr  error

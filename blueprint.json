@@ -329,6 +329,12 @@
       "status": "Not Started"
     },
     {
+      "task": "T171: Active agent steering via MCP enqueue + session-tied Unix socket communication (gRPC)",
+      "description": "CRITICAL INFRASTRUCTURE. Implement active steering of Claude Code agents via `osm mcp make` tool preemption/interrupt/guard. ALLOW USERS TO ENQUEUE MESSAGES TO RUNNING AGENTS. Steps: (1) Session-tied communication mechanism: MCP process creates and listens on a Unix socket (session-bound), discovered via session directory. Windows fallback: TCP port. Communication MUST be gRPC. MANDATORY BASELINE FILES TO PORT: (a) https://github.com/joeycumines/MacosUseSDK/blob/main/make/buf.mk - gRPC code generation integration, (b) https://github.com/joeycumines/MacosUseSDK/blob/main/make/go.mk - Go build pattern (identical to root Makefile), (c) https://github.com/joeycumines/MacosUseSDK/blob/main/Makefile - different pattern, (d) https://github.com/joeycumines/MacosUseSDK/blob/main/buf.gen.yaml - gRPC generator config, (e) https://github.com/joeycumines/MacosUseSDK/blob/main/google-api-linter.yaml - mandatory linting rules, (f) https://github.com/joeycumines/MacosUseSDK/tree/main/hack - build helpers and scripts. (2) File-based session locking for synchronization - use existing osm session lock files to coordinate access and indicate pending messages. (3) Implement enqueue protocol: user invokes make tool with special target (e.g., `make steer MSG=\"...\"`) that writes to session's communication channel, MCP server reads and forwards to Claude Code. (4) Preemption: when enqueue is detected, MCP server sends interrupt/guard signal to Claude Code, forcing it to respond to the enqueued message before continuing. (5) Tool schema: add `enqueue`, `interrupt`, `status` tools to mcp-make. (6) Integration with session lifecycle: cleanup sockets on session end. (7) Tests: enqueue during agent execution, preemption response, socket cleanup, cross-platform (Unix socket vs TCP). This is a LARGE task spanning MCP, session management, gRPC, IPC, and PTY control. Document architecture decisions. Run make.",
+      "status": "Not Started",
+      "blockedBy": "T170"
+    },
+    {
       "task": "T168: Anthropic prompt library expansion",
       "description": "Add 3-5 additional built-in goals. stateVars, hotSnippets, flagDefs. Tests. Run make.",
       "status": "Not Started"

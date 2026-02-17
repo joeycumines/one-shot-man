@@ -45,6 +45,7 @@ type SpawnConfig struct {
 type Process struct {
 	mu       sync.Mutex
 	ptyFile  *os.File // Platform-specific PTY master file descriptor.
+	ttyFile  *os.File // Slave PTY fd, kept alive to prevent macOS EIO data loss. May be nil.
 	closed   bool
 	done     chan struct{}
 	exitCode int
@@ -184,6 +185,7 @@ func (p *Process) Close() error {
 	p.closed = true
 	cmd := p.cmd
 	f := p.ptyFile
+	tty := p.ttyFile
 	p.mu.Unlock()
 
 	// Try graceful shutdown first.
@@ -201,7 +203,10 @@ func (p *Process) Close() error {
 		}
 	}
 
-	// Close PTY file descriptor.
+	// Close slave PTY first (if kept alive), then master.
+	if tty != nil {
+		_ = tty.Close()
+	}
 	return f.Close()
 }
 

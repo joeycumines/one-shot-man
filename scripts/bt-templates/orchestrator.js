@@ -288,9 +288,10 @@ exports.verifyAndCommit = function(bb, opts) {
 //
 // The planner backchains from the goal:
 //   committed=true → CommitChanges (needs testsPassed)
-//     → RunTests (needs codeReady)
-//       → SendPrompt (needs agentSpawned)
-//         → SpawnClaude (no preconditions)
+//     → RunTests (needs responseReceived)
+//       → WaitForResponse (needs promptSent)
+//         → SendPrompt (needs agentSpawned)
+//           → SpawnClaude (no preconditions)
 //
 // If RunTests fails and codeReady stays false, the planner's PPA structure
 // re-evaluates and can re-run the prompt→test cycle (remediation).

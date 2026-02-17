@@ -7,6 +7,7 @@
  *
  * Implementation of Planning and Acting using Behavior Trees (PA-BT).
  * The system functions as a dynamic planner that interleaves planning and execution.
+ * See also {@code ../docs/reference/planning-and-acting-using-behavior-trees.md}
  *
  * Precondition Ordering Strategy:
  * 1. Conflict Resolution (Inter-Task): The planner dynamically handles dependencies between

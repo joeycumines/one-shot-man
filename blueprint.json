@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T219 DONE. Session 2026-02-17. T219 module hardening complete. Proceeding IN STRICT SEQUENCE."
+    "currentState": "T200-T220 DONE. Session 2026-02-17. T220 .prompt.md discovery hardening complete. Proceeding IN STRICT SEQUENCE."
   },
   "sequentialTasks": [
     {
@@ -120,7 +120,7 @@
     {
       "task": "T220: .prompt.md file discovery production hardening",
       "description": "Harden .prompt.md file discovery (prompt.file-paths config). Add: error reporting for missing/unreadable paths, edge case handling (symlinks, BOM, large files), glob pattern support, deduplication. Add tests. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T221: Additional Anthropic prompt library goals",

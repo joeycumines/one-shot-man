@@ -3,6 +3,7 @@ package command
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -500,5 +501,120 @@ func TestPromptFileToGoal_TUIFields(t *testing.T) {
 	}
 	if goal.TUIPrompt != "(code-review) > " {
 		t.Errorf("expected TUI prompt %q, got %q", "(code-review) > ", goal.TUIPrompt)
+	}
+}
+
+func TestParsePromptFile_UTF8BOM(t *testing.T) {
+	// BOM prefix (EF BB BF) followed by plain body content.
+	bom := []byte{0xEF, 0xBB, 0xBF}
+	body := "Hello, world!\nLine two."
+	data := append(bom, []byte(body)...)
+
+	pf, err := ParsePromptFile(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pf.Body != body {
+		t.Errorf("expected body %q, got %q", body, pf.Body)
+	}
+	if pf.Name != "" || pf.Description != "" {
+		t.Errorf("expected empty metadata, got name=%q description=%q", pf.Name, pf.Description)
+	}
+}
+
+func TestParsePromptFile_BOMWithFrontmatter(t *testing.T) {
+	// BOM prefix + full frontmatter document.
+	bom := []byte{0xEF, 0xBB, 0xBF}
+	content := "---\nname: bom-test\ndescription: BOM with frontmatter\n---\nBody after BOM.\n"
+	data := append(bom, []byte(content)...)
+
+	pf, err := ParsePromptFile(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pf.Name != "bom-test" {
+		t.Errorf("expected name %q, got %q", "bom-test", pf.Name)
+	}
+	if pf.Description != "BOM with frontmatter" {
+		t.Errorf("expected description %q, got %q", "BOM with frontmatter", pf.Description)
+	}
+	if strings.TrimSpace(pf.Body) != "Body after BOM." {
+		t.Errorf("expected body %q, got %q", "Body after BOM.", strings.TrimSpace(pf.Body))
+	}
+}
+
+func TestFindPromptFiles_DeduplicatesSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink tests not reliable on Windows")
+	}
+
+	dir := t.TempDir()
+
+	// Create a real .prompt.md file.
+	realFile := filepath.Join(dir, "real.prompt.md")
+	if err := os.WriteFile(realFile, []byte("body"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create two symlinks to the same file.
+	link1 := filepath.Join(dir, "link1.prompt.md")
+	link2 := filepath.Join(dir, "link2.prompt.md")
+	if err := os.Symlink(realFile, link1); err != nil {
+		t.Fatalf("failed to create symlink: %v", err)
+	}
+	if err := os.Symlink(realFile, link2); err != nil {
+		t.Fatalf("failed to create symlink: %v", err)
+	}
+
+	candidates, err := FindPromptFiles(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// All three entries (real + 2 symlinks) resolve to the same file,
+	// so dedup should keep only one.
+	if len(candidates) != 1 {
+		var names []string
+		for _, c := range candidates {
+			names = append(names, filepath.Base(c.Path))
+		}
+		t.Errorf("expected 1 candidate after dedup, got %d: %v", len(candidates), names)
+	}
+}
+
+func TestFindPromptFiles_SymlinkToRegularFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink tests not reliable on Windows")
+	}
+
+	dir := t.TempDir()
+
+	// Create a regular .prompt.md file.
+	realFile := filepath.Join(dir, "real.prompt.md")
+	if err := os.WriteFile(realFile, []byte("body"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a symlink to that regular file (also .prompt.md).
+	link := filepath.Join(dir, "link.prompt.md")
+	if err := os.Symlink(realFile, link); err != nil {
+		t.Fatalf("failed to create symlink: %v", err)
+	}
+
+	candidates, err := FindPromptFiles(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// After dedup, only one should remain since symlink resolves to the same file.
+	if len(candidates) != 1 {
+		t.Errorf("expected 1 candidate, got %d", len(candidates))
+	}
+
+	// The first file encountered (real.prompt.md) should be kept.
+	if len(candidates) > 0 && filepath.Base(candidates[0].Path) != "real.prompt.md" {
+		// This is somewhat implementation-dependent (readdir order),
+		// but we at least verify the count.
+		t.Logf("kept file: %s", filepath.Base(candidates[0].Path))
 	}
 }

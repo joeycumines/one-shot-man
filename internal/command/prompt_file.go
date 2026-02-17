@@ -29,10 +29,23 @@ type PromptFile struct {
 	SourcePath string `json:"-"`
 }
 
+// utf8BOM is the byte-order mark prefix for UTF-8 encoded files.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+// stripBOM removes a UTF-8 byte-order mark from the beginning of data.
+func stripBOM(data []byte) []byte {
+	if bytes.HasPrefix(data, utf8BOM) {
+		return data[len(utf8BOM):]
+	}
+	return data
+}
+
 // ParsePromptFile parses a .prompt.md file from raw bytes.
 // It extracts optional YAML frontmatter delimited by --- lines
 // and the Markdown body that follows.
 func ParsePromptFile(data []byte) (*PromptFile, error) {
+	data = stripBOM(data)
+
 	pf := &PromptFile{}
 
 	content := string(data)
@@ -416,5 +429,23 @@ func FindPromptFiles(dir string) ([]GoalFileCandidate, error) {
 		})
 	}
 
-	return candidates, nil
+	// Deduplicate by resolved absolute path to prevent loading the same
+	// file twice (e.g. via symlinks or overlapping search directories).
+	seen := make(map[string]bool)
+	var deduped []GoalFileCandidate
+	for _, c := range candidates {
+		resolved, err := filepath.EvalSymlinks(c.Path)
+		if err != nil {
+			resolved = c.Path // fallback
+		}
+		abs, err := filepath.Abs(resolved)
+		if err != nil {
+			abs = resolved
+		}
+		if !seen[abs] {
+			seen[abs] = true
+			deduped = append(deduped, c)
+		}
+	}
+	return deduped, nil
 }

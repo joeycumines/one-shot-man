@@ -1,7 +1,9 @@
 package command
 
 import (
+	"bytes"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1174,5 +1176,153 @@ func TestGoalDiscovery_TraversalReachesRoot(t *testing.T) {
 	}
 	if !foundRoot {
 		t.Error("Expected 'reached filesystem root' debug message")
+	}
+}
+
+func TestDiscoverPromptFilePaths_GlobExpansion(t *testing.T) {
+	// Note: Cannot use t.Parallel() because glob patterns depend on filesystem state
+
+	tmpDir := t.TempDir()
+
+	// Create two directories matching the glob pattern.
+	dir1 := filepath.Join(tmpDir, "prompts-a")
+	dir2 := filepath.Join(tmpDir, "prompts-b")
+	// Also create a file (should be skipped by glob validation).
+	fileNotDir := filepath.Join(tmpDir, "prompts-c")
+
+	for _, d := range []string{dir1, dir2} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatalf("Failed to create directory %s: %v", d, err)
+		}
+	}
+	if err := os.WriteFile(fileNotDir, []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "false")
+
+	// Use a glob pattern that matches our directories.
+	globPattern := filepath.Join(tmpDir, "prompts-*")
+	discovery := NewGoalDiscovery(cfg)
+	discovery.config.PromptFilePaths = []string{globPattern}
+
+	paths := discovery.DiscoverPromptFilePaths()
+
+	// Should find exactly 2 directories (not the file).
+	if len(paths) != 2 {
+		t.Errorf("expected 2 paths from glob, got %d: %v", len(paths), paths)
+	}
+
+	// Verify both directories are present.
+	found := make(map[string]bool)
+	for _, p := range paths {
+		for _, d := range []string{dir1, dir2} {
+			if pathsEqual(p, d) {
+				found[d] = true
+			}
+		}
+	}
+	if !found[dir1] {
+		t.Errorf("expected glob to expand to %s", dir1)
+	}
+	if !found[dir2] {
+		t.Errorf("expected glob to expand to %s", dir2)
+	}
+}
+
+func TestDiscoverPromptFilePaths_MissingConfiguredPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	missingPath := filepath.Join(tmpDir, "does-not-exist")
+
+	// Capture log output to check for warning.
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "false")
+
+	discovery := NewGoalDiscovery(cfg)
+	discovery.config.PromptFilePaths = []string{missingPath}
+
+	paths := discovery.DiscoverPromptFilePaths()
+
+	// Should return no paths.
+	if len(paths) != 0 {
+		t.Errorf("expected 0 paths for missing configured path, got %d: %v", len(paths), paths)
+	}
+
+	// Should have logged a warning.
+	logOutput := buf.String()
+	if !strings.Contains(logOutput, "does not exist") {
+		t.Errorf("expected warning log about missing path, got: %q", logOutput)
+	}
+}
+
+func TestDiscoverPromptFilePaths_NotADirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "a-file")
+	if err := os.WriteFile(filePath, []byte("content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Capture log output.
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "false")
+
+	discovery := NewGoalDiscovery(cfg)
+	discovery.config.PromptFilePaths = []string{filePath}
+
+	paths := discovery.DiscoverPromptFilePaths()
+
+	// Should return no paths.
+	if len(paths) != 0 {
+		t.Errorf("expected 0 paths when configured path is a file, got %d: %v", len(paths), paths)
+	}
+
+	// Should have logged a warning about not being a directory.
+	logOutput := buf.String()
+	if !strings.Contains(logOutput, "not a directory") {
+		t.Errorf("expected warning log about not-a-directory, got: %q", logOutput)
+	}
+}
+
+func TestDiscoverPromptFilePaths_Deduplication(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink tests not reliable on Windows")
+	}
+
+	tmpDir := t.TempDir()
+	realDir := filepath.Join(tmpDir, "prompts")
+	if err := os.MkdirAll(realDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a symlink to the same directory.
+	linkDir := filepath.Join(tmpDir, "prompts-link")
+	if err := os.Symlink(realDir, linkDir); err != nil {
+		t.Fatalf("failed to create symlink: %v", err)
+	}
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "false")
+
+	discovery := NewGoalDiscovery(cfg)
+	discovery.config.PromptFilePaths = []string{realDir, linkDir}
+
+	paths := discovery.DiscoverPromptFilePaths()
+
+	// Both resolve to the same real directory, so should be deduped to 1.
+	if len(paths) != 1 {
+		t.Errorf("expected 1 path after dedup, got %d: %v", len(paths), paths)
 	}
 }

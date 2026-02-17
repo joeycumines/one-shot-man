@@ -584,6 +584,10 @@ func (gd *GoalDiscovery) matchesAncestorPattern(segments []string) bool {
 // This always includes .github/prompts relative to the current working
 // directory (the VS Code standard location) plus any paths configured via
 // the prompt.file-paths option.
+//
+// Configured paths support glob patterns (e.g., ~/prompts/*/). Each
+// expanded glob result is validated and non-directory results are skipped.
+// Missing or unreadable configured paths emit a warning log.
 func (gd *GoalDiscovery) DiscoverPromptFilePaths() []string {
 	var paths []string
 	seenPaths := make(map[string]bool)
@@ -596,11 +600,63 @@ func (gd *GoalDiscovery) DiscoverPromptFilePaths() []string {
 		}
 	}
 
-	// User-configured prompt file paths.
+	// User-configured prompt file paths (may contain glob patterns).
 	for _, p := range gd.config.PromptFilePaths {
 		expanded := gd.expandPath(p)
+
+		// Check if the path contains glob metacharacters.
+		if containsGlobMeta(expanded) {
+			matches, err := filepath.Glob(expanded)
+			if err != nil {
+				log.Printf("warning: invalid glob pattern in prompt.file-paths %q: %v", p, err)
+				gd.debugf("prompt paths: invalid glob %q: %v", expanded, err)
+				continue
+			}
+			if len(matches) == 0 {
+				gd.debugf("prompt paths: glob %q matched no paths", expanded)
+			}
+			for _, m := range matches {
+				info, err := os.Stat(m)
+				if err != nil {
+					gd.debugf("prompt paths: glob match %q unreadable: %v", m, err)
+					continue
+				}
+				if !info.IsDir() {
+					gd.debugf("prompt paths: glob match %q is not a directory, skipping", m)
+					continue
+				}
+				gd.addPath(&paths, seenPaths, m)
+			}
+			continue
+		}
+
+		// Non-glob path: validate and report missing/unreadable.
+		info, err := os.Stat(expanded)
+		if err != nil {
+			if os.IsNotExist(err) {
+				log.Printf("warning: configured prompt path does not exist: %s", expanded)
+				gd.debugf("prompt paths: configured path %q does not exist", expanded)
+			} else if os.IsPermission(err) {
+				log.Printf("warning: configured prompt path is not readable: %s", expanded)
+				gd.debugf("prompt paths: configured path %q permission denied", expanded)
+			} else {
+				log.Printf("warning: cannot access configured prompt path %s: %v", expanded, err)
+				gd.debugf("prompt paths: configured path %q error: %v", expanded, err)
+			}
+			continue
+		}
+		if !info.IsDir() {
+			log.Printf("warning: configured prompt path is not a directory: %s", expanded)
+			gd.debugf("prompt paths: configured path %q is not a directory", expanded)
+			continue
+		}
 		gd.addPath(&paths, seenPaths, expanded)
 	}
 
 	return paths
+}
+
+// containsGlobMeta reports whether the path contains glob metacharacters.
+func containsGlobMeta(path string) bool {
+	return strings.ContainsAny(path, "*?[")
 }

@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T231 DONE. Session 2026-02-17. Architecture.md corrected: 14 commands, 25 modules, 19 goals, osm:time desc, added osm:bt. Proceeding IN STRICT SEQUENCE."
+    "currentState": "T200-T233 DONE (T233 skipped per T232 decision). Session 2026-02-17. Proceeding to T234."
   },
   "sequentialTasks": [
     {
@@ -180,12 +180,12 @@
     {
       "task": "T232: Evaluate streaming fetch API approach",
       "description": "Re-evaluate streaming fetch requirement. Analyze actual use cases, pragmatic alternatives (chunked/callback vs full streaming), complexity cost. Write decision document in docs/archive/notes/. Decision task — implementation follows.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T233: Implement chunked/callback-based streaming in osm:fetch",
-      "description": "Based on T232 decision, implement pragmatic streaming for osm:fetch. If callback-based: fetch(url, {onChunk: fn}). Integrate with Goja event loop. Add tests with local HTTP server. Skip if T232 decides against. Run 'make' to confirm.",
-      "status": "Not Started"
+      "description": "Skipped per T232 decision. fetchStream() already exists with readLine()/readAll()/close(). No additional streaming API needed.",
+      "status": "Done"
     },
     {
       "task": "T234: Code review splitter workflow engine evaluation",

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
+	"github.com/joeycumines/one-shot-man/internal/gitops"
 )
 
 // requireGit skips the test if git is not available.
@@ -388,7 +389,7 @@ func TestSyncCommand_InitFromArg(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Sync repository initialized:") {
 		t.Fatalf("expected init confirmation, got %q", stdout.String())
 	}
-	if !isGitRepo(localPath) {
+	if !gitops.IsRepo(localPath) {
 		t.Fatalf("expected .git directory in %s", localPath)
 	}
 }
@@ -411,7 +412,7 @@ func TestSyncCommand_InitFromConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init from config failed: %v\nstderr: %s", err, stderr.String())
 	}
-	if !isGitRepo(localPath) {
+	if !gitops.IsRepo(localPath) {
 		t.Fatalf("expected .git directory in %s", localPath)
 	}
 }
@@ -575,7 +576,7 @@ func TestSyncCommand_PullCloneFromConfig(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Sync repository cloned:") {
 		t.Fatalf("expected clone confirmation, got %q", stdout.String())
 	}
-	if !isGitRepo(localPath) {
+	if !gitops.IsRepo(localPath) {
 		t.Fatalf("expected .git directory in %s", localPath)
 	}
 }
@@ -696,24 +697,6 @@ func TestSyncCommand_NotebooksDirDerivedFromSyncRoot(t *testing.T) {
 	expected := filepath.Join(path, "notebooks")
 	if nbDir != expected {
 		t.Fatalf("expected %q, got %q", expected, nbDir)
-	}
-}
-
-func TestIsGitRepo(t *testing.T) {
-	t.Parallel()
-
-	// Not a repo.
-	if isGitRepo(t.TempDir()) {
-		t.Fatal("expected false for empty dir")
-	}
-
-	// Create a .git directory.
-	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if !isGitRepo(dir) {
-		t.Fatal("expected true for dir with .git")
 	}
 }
 

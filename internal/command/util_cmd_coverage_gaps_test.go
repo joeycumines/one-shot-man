@@ -302,24 +302,15 @@ exit 128
 }
 
 func TestSyncCommand_PullCloneFailure(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires Unix shell script for fake git")
-	}
 	t.Parallel()
 
-	dir := t.TempDir()
-	fakeGit := writeFakeGit(t, dir, `echo 'fatal: repository not found' >&2
-exit 128
-`)
-
-	// No .git dir → isGitRepo returns false → clone path
-	syncRoot := filepath.Join(dir, "sync")
+	// No .git dir → gitops.IsRepo returns false → clone path.
+	syncRoot := filepath.Join(t.TempDir(), "sync")
 
 	cfg := config.NewConfig()
 	cfg.SetGlobalOption("sync.local-path", syncRoot)
-	cfg.SetGlobalOption("sync.repository", "https://example.com/repo.git")
+	cfg.SetGlobalOption("sync.repository", "/nonexistent/repo.git")
 	cmd := NewSyncCommand(cfg)
-	cmd.GitBin = fakeGit
 
 	var stdout, stderr bytes.Buffer
 	err := cmd.Execute([]string{"pull"}, &stdout, &stderr)
@@ -332,42 +323,59 @@ exit 128
 }
 
 func TestSyncCommand_PushErrorPaths(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires Unix shell script for fake git")
-	}
 	t.Parallel()
 
 	tests := []struct {
 		name   string
-		script string
+		setup  func(t *testing.T) string // returns syncRoot
 		errMsg string
 	}{
 		{
-			name:   "git_add_fails",
-			script: "exit 1\n",
-			errMsg: "git add failed",
+			name: "open_fails_not_real_repo",
+			setup: func(t *testing.T) string {
+				t.Helper()
+				syncRoot := filepath.Join(t.TempDir(), "sync")
+				if err := os.MkdirAll(filepath.Join(syncRoot, ".git"), 0755); err != nil {
+					t.Fatal(err)
+				}
+				return syncRoot
+			},
+			errMsg: "opening sync repo",
 		},
 		{
-			name: "git_commit_fails",
-			script: `case "$1" in
-  add) exit 0 ;;
-  diff) exit 1 ;;
-  commit) echo "commit failed" >&2; exit 1 ;;
-  *) exit 0 ;;
-esac
-`,
-			errMsg: "git commit failed",
-		},
-		{
-			name: "git_push_fails",
-			script: `case "$1" in
-  add) exit 0 ;;
-  diff) exit 1 ;;
-  commit) exit 0 ;;
-  push) echo "push denied" >&2; exit 1 ;;
-  *) exit 0 ;;
-esac
-`,
+			name: "push_fails_no_remote",
+			setup: func(t *testing.T) string {
+				t.Helper()
+				requireGit(t)
+				syncRoot := filepath.Join(t.TempDir(), "sync")
+				cmds := [][]string{
+					{"git", "init", syncRoot},
+					{"git", "-C", syncRoot, "config", "user.email", "test@test.com"},
+					{"git", "-C", syncRoot, "config", "user.name", "Test"},
+				}
+				for _, c := range cmds {
+					if err := exec.Command(c[0], c[1:]...).Run(); err != nil {
+						t.Fatalf("setup cmd %v failed: %v", c, err)
+					}
+				}
+				// Create initial commit so repo is valid.
+				if err := os.WriteFile(filepath.Join(syncRoot, "init.txt"), []byte("init"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				for _, c := range [][]string{
+					{"git", "-C", syncRoot, "add", "-A"},
+					{"git", "-C", syncRoot, "commit", "-m", "init"},
+				} {
+					if err := exec.Command(c[0], c[1:]...).Run(); err != nil {
+						t.Fatalf("setup cmd %v failed: %v", c, err)
+					}
+				}
+				// Create a new file so push has changes to commit.
+				if err := os.WriteFile(filepath.Join(syncRoot, "new.txt"), []byte("new"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				return syncRoot
+			},
 			errMsg: "git push failed",
 		},
 	}
@@ -375,18 +383,12 @@ esac
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			dir := t.TempDir()
-			fakeGit := writeFakeGit(t, dir, tc.script)
-
-			syncRoot := filepath.Join(dir, "sync")
-			if err := os.MkdirAll(filepath.Join(syncRoot, ".git"), 0755); err != nil {
-				t.Fatal(err)
-			}
+			syncRoot := tc.setup(t)
 
 			cfg := config.NewConfig()
 			cfg.SetGlobalOption("sync.local-path", syncRoot)
 			cmd := NewSyncCommand(cfg)
-			cmd.GitBin = fakeGit
+			cmd.TimeNow = func() time.Time { return time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC) }
 
 			var stdout, stderr bytes.Buffer
 			err := cmd.Execute([]string{"push"}, &stdout, &stderr)
@@ -401,24 +403,15 @@ esac
 }
 
 func TestSyncCommand_InitCloneFails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires Unix shell script for fake git")
-	}
 	t.Parallel()
 
-	dir := t.TempDir()
-	fakeGit := writeFakeGit(t, dir, `echo 'fatal: clone failed' >&2
-exit 128
-`)
-
-	syncRoot := filepath.Join(dir, "sync")
+	syncRoot := filepath.Join(t.TempDir(), "sync")
 	cfg := config.NewConfig()
 	cfg.SetGlobalOption("sync.local-path", syncRoot)
 	cmd := NewSyncCommand(cfg)
-	cmd.GitBin = fakeGit
 
 	var stdout, stderr bytes.Buffer
-	err := cmd.Execute([]string{"init", "https://example.com/repo.git"}, &stdout, &stderr)
+	err := cmd.Execute([]string{"init", "/nonexistent/repo.git"}, &stdout, &stderr)
 	if err == nil {
 		t.Fatal("expected error from clone failure")
 	}

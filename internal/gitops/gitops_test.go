@@ -1,0 +1,379 @@
+package gitops
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	git "github.com/go-git/go-git/v6"
+	gitconfig "github.com/go-git/go-git/v6/config"
+	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/object"
+)
+
+// initRepoWithCommit creates a non-bare repo with one committed file.
+// Returns the *git.Repository and its path.
+func initRepoWithCommit(t *testing.T) (*git.Repository, string) {
+	t.Helper()
+	dir := t.TempDir()
+
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("PlainInit: %v", err)
+	}
+
+	// Create a file and commit it.
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# test\n"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree: %v", err)
+	}
+
+	if _, err := wt.Add("README.md"); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	sig := &object.Signature{
+		Name:  "test",
+		Email: "test@test.com",
+		When:  time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC),
+	}
+	if _, err := wt.Commit("init", &git.CommitOptions{Author: sig, Committer: sig}); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	return repo, dir
+}
+
+// initBareRepo creates a bare repo at the given path.
+func initBareRepo(t *testing.T, path string) *git.Repository {
+	t.Helper()
+	repo, err := git.PlainInit(path, true)
+	if err != nil {
+		t.Fatalf("PlainInit --bare: %v", err)
+	}
+	return repo
+}
+
+func TestIsRepo(t *testing.T) {
+	t.Parallel()
+
+	// Empty dir → false.
+	if IsRepo(t.TempDir()) {
+		t.Fatal("expected false for empty dir")
+	}
+
+	// Dir with .git → true.
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if !IsRepo(dir) {
+		t.Fatal("expected true for dir with .git")
+	}
+
+	// Nonexistent dir → false.
+	if IsRepo(filepath.Join(t.TempDir(), "nope")) {
+		t.Fatal("expected false for nonexistent dir")
+	}
+}
+
+func TestClone(t *testing.T) {
+	t.Parallel()
+
+	// Create source repo with a commit, push to bare, clone from bare.
+	srcRepo, srcDir := initRepoWithCommit(t)
+
+	bareDir := filepath.Join(t.TempDir(), "bare.git")
+	initBareRepo(t, bareDir)
+
+	// Configure origin on source and push.
+	if _, err := srcRepo.CreateRemote(&gitconfig.RemoteConfig{
+		Name: "origin",
+		URLs: []string{bareDir},
+	}); err != nil {
+		t.Fatalf("CreateRemote: %v", err)
+	}
+	if err := srcRepo.Push(&git.PushOptions{RemoteName: "origin"}); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	_ = srcDir
+
+	// Clone from bare.
+	destDir := filepath.Join(t.TempDir(), "clone")
+	repo, err := Clone(context.Background(), bareDir, destDir)
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	_ = repo
+	if !IsRepo(destDir) {
+		t.Fatal("expected .git in cloned dir")
+	}
+
+	// Verify file exists.
+	data, err := os.ReadFile(filepath.Join(destDir, "README.md"))
+	if err != nil {
+		t.Fatalf("README.md not found: %v", err)
+	}
+	if string(data) != "# test\n" {
+		t.Fatalf("unexpected content: %q", string(data))
+	}
+}
+
+func TestClone_InvalidURL(t *testing.T) {
+	t.Parallel()
+	dest := filepath.Join(t.TempDir(), "clone")
+	_, err := Clone(context.Background(), "/nonexistent/repo", dest)
+	if err == nil {
+		t.Fatal("expected error for invalid URL")
+	}
+}
+
+func TestOpen(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	_ = repo
+}
+
+func TestOpen_NotARepo(t *testing.T) {
+	t.Parallel()
+	_, err := Open(t.TempDir())
+	if err == nil {
+		t.Fatal("expected error for non-repo dir")
+	}
+	if !isErrNotRepo(err) {
+		t.Fatalf("expected ErrNotRepo, got %v", err)
+	}
+}
+
+func isErrNotRepo(err error) bool {
+	return err != nil && err.Error() != "" && containsStr(err.Error(), "not a git repository")
+}
+
+func containsStr(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(s) > 0 && findSubstring(s, sub))
+}
+
+func findSubstring(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
+func TestAddAll(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	// Create a new file.
+	if err := os.WriteFile(filepath.Join(dir, "new.txt"), []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := repo.AddAll(); err != nil {
+		t.Fatalf("AddAll: %v", err)
+	}
+
+	// Verify staged.
+	has, err := repo.HasStagedChanges()
+	if err != nil {
+		t.Fatalf("HasStagedChanges: %v", err)
+	}
+	if !has {
+		t.Fatal("expected staged changes after AddAll")
+	}
+}
+
+func TestHasStagedChanges_Clean(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	has, err := repo.HasStagedChanges()
+	if err != nil {
+		t.Fatalf("HasStagedChanges: %v", err)
+	}
+	if has {
+		t.Fatal("expected no staged changes on clean repo")
+	}
+}
+
+func TestCommit(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	// Stage a new file.
+	if err := os.WriteFile(filepath.Join(dir, "commit-test.txt"), []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.AddAll(); err != nil {
+		t.Fatalf("AddAll: %v", err)
+	}
+
+	when := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+	hash, err := repo.Commit("test commit", when)
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if hash == plumbing.ZeroHash {
+		t.Fatal("expected non-zero hash")
+	}
+
+	// Repo should be clean after commit.
+	has, err := repo.HasStagedChanges()
+	if err != nil {
+		t.Fatalf("HasStagedChanges: %v", err)
+	}
+	if has {
+		t.Fatal("expected clean after commit")
+	}
+}
+
+func TestCommit_NothingStaged(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	_, err = repo.Commit("empty", time.Now())
+	if err == nil {
+		t.Fatal("expected error for nothing to commit")
+	}
+	if err != ErrNothingToCommit {
+		t.Fatalf("expected ErrNothingToCommit, got %v", err)
+	}
+}
+
+func TestPush(t *testing.T) {
+	t.Parallel()
+
+	// Set up: repo with commit → push to bare → clone → add file → push.
+	srcRepo, srcDir := initRepoWithCommit(t)
+
+	bareDir := filepath.Join(t.TempDir(), "bare.git")
+	initBareRepo(t, bareDir)
+
+	// Configure origin on source and push.
+	if _, err := srcRepo.CreateRemote(&gitconfig.RemoteConfig{
+		Name: "origin",
+		URLs: []string{bareDir},
+	}); err != nil {
+		t.Fatalf("CreateRemote: %v", err)
+	}
+	if err := srcRepo.Push(&git.PushOptions{RemoteName: "origin"}); err != nil {
+		t.Fatalf("Push seed: %v", err)
+	}
+	_ = srcDir
+
+	// Clone from bare.
+	cloneDir := filepath.Join(t.TempDir(), "clone")
+	repo, err := Clone(context.Background(), bareDir, cloneDir)
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+
+	// Add a file and commit.
+	if err := os.WriteFile(filepath.Join(cloneDir, "pushed.txt"), []byte("pushed"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.AddAll(); err != nil {
+		t.Fatalf("AddAll: %v", err)
+	}
+	when := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := repo.Commit("push test", when); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	// Push to bare.
+	if err := repo.Push(context.Background()); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+
+	// Verify by cloning again.
+	verifyDir := filepath.Join(t.TempDir(), "verify")
+	vRepo, err := Clone(context.Background(), bareDir, verifyDir)
+	if err != nil {
+		t.Fatalf("Clone verify: %v", err)
+	}
+	_ = vRepo
+	data, err := os.ReadFile(filepath.Join(verifyDir, "pushed.txt"))
+	if err != nil {
+		t.Fatalf("pushed.txt not found: %v", err)
+	}
+	if string(data) != "pushed" {
+		t.Fatalf("unexpected content: %q", string(data))
+	}
+}
+
+func TestPush_NothingToPush(t *testing.T) {
+	t.Parallel()
+
+	srcRepo, _ := initRepoWithCommit(t)
+
+	bareDir := filepath.Join(t.TempDir(), "bare.git")
+	initBareRepo(t, bareDir)
+
+	if _, err := srcRepo.CreateRemote(&gitconfig.RemoteConfig{
+		Name: "origin",
+		URLs: []string{bareDir},
+	}); err != nil {
+		t.Fatalf("CreateRemote: %v", err)
+	}
+	if err := srcRepo.Push(&git.PushOptions{RemoteName: "origin"}); err != nil {
+		t.Fatalf("Push seed: %v", err)
+	}
+
+	// Clone and push without changes — should be no-op.
+	cloneDir := filepath.Join(t.TempDir(), "clone")
+	repo, err := Clone(context.Background(), bareDir, cloneDir)
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+
+	if err := repo.Push(context.Background()); err != nil {
+		t.Fatalf("Push no-op should not error, got %v", err)
+	}
+}
+
+func TestErrNotRepo(t *testing.T) {
+	t.Parallel()
+	if ErrNotRepo.Error() != "not a git repository" {
+		t.Fatalf("unexpected ErrNotRepo message: %q", ErrNotRepo.Error())
+	}
+}
+
+func TestErrNothingToCommit(t *testing.T) {
+	t.Parallel()
+	if ErrNothingToCommit.Error() != "nothing to commit" {
+		t.Fatalf("unexpected ErrNothingToCommit message: %q", ErrNothingToCommit.Error())
+	}
+}

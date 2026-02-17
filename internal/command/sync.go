@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
+	"github.com/joeycumines/one-shot-man/internal/gitops"
 )
 
 // SyncCommand provides local notebook save/list operations and git-based
@@ -261,11 +263,11 @@ func (c *SyncCommand) executeInit(args []string, stdout, stderr io.Writer) error
 		return err
 	}
 
-	if isGitRepo(root) {
+	if gitops.IsRepo(root) {
 		return fmt.Errorf("sync directory already initialized: %s", root)
 	}
 
-	if err := c.runGit("", stdout, stderr, "clone", repoURL, root); err != nil {
+	if _, err := gitops.Clone(context.Background(), repoURL, root); err != nil {
 		return fmt.Errorf("git clone failed: %w", err)
 	}
 
@@ -282,29 +284,39 @@ func (c *SyncCommand) executePush(args []string, stdout, stderr io.Writer) error
 	if err != nil {
 		return err
 	}
-	if !isGitRepo(root) {
+	if !gitops.IsRepo(root) {
 		return fmt.Errorf("sync directory not initialized: run 'osm sync init' first")
 	}
 
+	repo, err := gitops.Open(root)
+	if err != nil {
+		return fmt.Errorf("opening sync repo: %w", err)
+	}
+
 	// Stage all changes.
-	if err := c.runGit(root, io.Discard, stderr, "add", "-A"); err != nil {
+	if err := repo.AddAll(); err != nil {
 		return fmt.Errorf("git add failed: %w", err)
 	}
 
-	// Check for staged changes. git diff --cached --quiet exits 0 = clean.
-	if err := c.runGit(root, io.Discard, io.Discard, "diff", "--cached", "--quiet"); err == nil {
+	// Check for staged changes.
+	hasChanges, err := repo.HasStagedChanges()
+	if err != nil {
+		return fmt.Errorf("checking staged changes: %w", err)
+	}
+	if !hasChanges {
 		_, _ = fmt.Fprintln(stdout, "Nothing to push — no changes.")
 		return nil
 	}
 
 	// Commit with timestamp.
-	timestamp := c.timeNow().Format(time.RFC3339)
-	if err := c.runGit(root, io.Discard, stderr, "commit", "-m", fmt.Sprintf("osm sync: %s", timestamp)); err != nil {
+	now := c.timeNow()
+	timestamp := now.Format(time.RFC3339)
+	if _, err := repo.Commit(fmt.Sprintf("osm sync: %s", timestamp), now); err != nil {
 		return fmt.Errorf("git commit failed: %w", err)
 	}
 
 	// Push.
-	if err := c.runGit(root, io.Discard, stderr, "push", "origin", "HEAD"); err != nil {
+	if err := repo.Push(context.Background()); err != nil {
 		return fmt.Errorf("git push failed: %w", err)
 	}
 
@@ -322,7 +334,7 @@ func (c *SyncCommand) executePull(args []string, stdout, stderr io.Writer) error
 		return err
 	}
 
-	if !isGitRepo(root) {
+	if !gitops.IsRepo(root) {
 		// Not initialized — attempt to clone from config.
 		repoURL := ""
 		if c.config != nil {
@@ -331,7 +343,7 @@ func (c *SyncCommand) executePull(args []string, stdout, stderr io.Writer) error
 		if repoURL == "" {
 			return fmt.Errorf("sync directory not initialized and no sync.repository configured")
 		}
-		if err := c.runGit("", stdout, stderr, "clone", repoURL, root); err != nil {
+		if _, err := gitops.Clone(context.Background(), repoURL, root); err != nil {
 			return fmt.Errorf("git clone failed: %w", err)
 		}
 		_, _ = fmt.Fprintf(stdout, "Sync repository cloned: %s\n", root)
@@ -385,15 +397,6 @@ func (c *SyncCommand) runGit(dir string, stdout, stderr io.Writer, args ...strin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	return cmd.Run()
-}
-
-// isGitRepo checks whether dir contains a .git directory.
-func isGitRepo(dir string) bool {
-	info, err := os.Stat(filepath.Join(dir, ".git"))
-	if err != nil {
-		return false
-	}
-	return info.IsDir()
 }
 
 // discoverEntries walks the notebooks directory and returns all entries.

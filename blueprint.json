@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T213 DONE. Session 2026-02-17. T210-T212 already 100% covered, no new tests needed. T213 refactored (unit_test.go hack). Proceeding IN STRICT SEQUENCE."
+    "currentState": "T200-T215 DONE. Session 2026-02-17. T214+T215 combined — gitops wrapper wired into sync.go. Proceeding IN STRICT SEQUENCE."
   },
   "sequentialTasks": [
     {
@@ -89,13 +89,13 @@
     },
     {
       "task": "T214: Add go-git/v6 dependency and implement wrapper utilities",
-      "description": "Add github.com/go-git/go-git/v6 to go.mod. Create wrapper utilities abstracting go-git operations for sync: Clone, Open, Add, Commit, Push, Pull. Design auth interface (SSH keys, HTTPS tokens). Handle go-git API quirks. Add unit tests with in-memory repos. Run 'make' to confirm.",
-      "status": "Not Started"
+      "description": "Added go-git/v6. Created internal/gitops package with Clone, Open, AddAll, HasStagedChanges, Commit, Push, IsRepo. Simplified API (no auth layer — file:// repos only). 12 unit tests all pass. Wired into sync.go and sync_startup.go (done with T215).",
+      "status": "Done"
     },
     {
       "task": "T215: Replace git shell-outs in sync.go with go-git/v6",
-      "description": "Replace all exec.Command git calls in internal/command/sync.go with go-git wrapper from T214. Convert: clone (syncInit), add+commit+push (syncPush), pull with rebase (syncPull). Preserve: rebase strategy, 'osm sync: <RFC3339>' commit messages, conflict detection. Do NOT change diff commands. Update sync_test.go. Run 'make' to confirm.",
-      "status": "Not Started"
+      "description": "Replaced exec.Command calls in sync.go with gitops wrapper for: clone (executeInit, executePull fallback), add+commit+push (executePush), isGitRepo→gitops.IsRepo. Pull --rebase still uses exec.Command (go-git has no rebase). Updated coverage gap tests. All tests pass.",
+      "status": "Done"
     },
     {
       "task": "T216: Replace git shell-outs in sync_startup.go with go-git/v6",

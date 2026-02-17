@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
+	"github.com/joeycumines/one-shot-man/internal/gitops"
 )
 
 // SyncAutoPull runs a non-blocking git pull --rebase on the sync repository
@@ -27,7 +28,7 @@ func SyncAutoPull(cfg *config.Config, stderr io.Writer) {
 		return
 	}
 
-	if !isGitRepo(root) {
+	if !gitops.IsRepo(root) {
 		return
 	}
 

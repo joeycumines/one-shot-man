@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T234 DONE (T233 skipped, T234 deferred to AI Orchestrator). Session 2026-02-17. Proceeding to T235."
+    "currentState": "T200-T235 DONE. T236 next."
   },
   "sequentialTasks": [
     {
@@ -195,7 +195,7 @@
     {
       "task": "T235: Sync common config sub-feature",
       "description": "Implement shared config sync: common repo structure, intelligent conflict handling (prompt on unknown state, auto-override on known SHA), gitignored file handling, schema version mismatch handling. Add config keys. Extend sync.go. Add tests. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T236: go-prompt enhancements investigation and implementation",

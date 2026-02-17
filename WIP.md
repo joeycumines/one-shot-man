@@ -1,43 +1,71 @@
-# WIP — Session 2026-02-17 (T214+T215)
+# WIP — Session (T235)
 
 ## Current State
 
-- **T200-T213**: Done (committed in prior sessions)
-- **T214+T215**: Done — combined in one step due to deadcode constraint.
-  - Created `internal/gitops/gitops.go` with simplified go-git/v6 wrapper
-  - Functions: Clone, Open, AddAll, HasStagedChanges, Commit, Push, IsRepo
-  - No auth layer (file:// repos only, auth deferred to T235)
-  - Wired into `sync.go`: executeInit (clone), executePush (add+commit+push), executePull (fallback clone), isGitRepo→gitops.IsRepo
-  - Wired into `sync_startup.go`: isGitRepo→gitops.IsRepo
-  - Deleted private `isGitRepo()` from sync.go (replaced by gitops.IsRepo)
-  - Pull --rebase still uses exec.Command (go-git has no rebase support)
-  - Updated `util_cmd_coverage_gaps_test.go`: PushErrorPaths, InitCloneFails, PullCloneFailure no longer use fake git binaries
-  - Updated `sync_test.go`: removed TestIsGitRepo, replaced isGitRepo→gitops.IsRepo in assertions
-  - Created `gitops_test.go`: 12 tests all pass
-  - `make make-all-with-log` passes fully (build, lint, deadcode, vet, staticcheck, all tests)
+- **T200-T234**: Done (committed in prior sessions)
+  - T233 skipped per T232 decision, T234 deferred to AI Orchestrator
+  - Key commits: T230-T231=bd2caca, T232=1060c63, T234=b83bf5e
+- **T235**: IN PROGRESS — Sync common config sub-feature
+
+## T235 Design
+
+### Feature: Shared config sync via sync repo
+
+**New subcommands**: `osm sync config-push`, `osm sync config-pull`
+
+**New config keys** (schema.go):
+- `sync.config-sync` (bool, default false) — Enable config syncing
+- `sync.config-sha` (string) — SHA256 of shared.conf at last sync (internal tracking)
+
+**Sync repo structure** (`<sync-root>/`):
+```
+config/
+  shared.conf          # Shared configuration (dnsmasq-format)
+notebooks/
+  YYYY/MM/...          # Existing notebook entries
+```
+
+**shared.conf format**:
+```
+# osm-shared-config-version 1
+key value
+...
+```
+
+**config-push behavior**:
+1. Read local config Global options
+2. Filter out sensitive/local-only keys (sync.*, log.file, session.*)
+3. Write to `<sync-root>/config/shared.conf` with schema version header
+4. Compute SHA256 of written content → store as `sync.config-sha`
+
+**config-pull behavior**:
+1. Read `<sync-root>/config/shared.conf`
+2. Validate schema version (reject if unknown)
+3. Check `sync.config-sha`:
+   - No stored SHA → "unknown state" → require --force
+   - Stored SHA matches remote file SHA → already applied, no-op
+   - Stored SHA differs → remote changed, auto-apply (known state)
+4. Merge remote keys into local config (in-memory only, report to user)
+5. Update `sync.config-sha`
+
+**Sensitive keys (never synced)**: Keys matching `sync.*`, `log.file`, `session.*`
+
+**Schema version**:
+- Line 1 of shared.conf: `# osm-shared-config-version 1`
+- Higher version → error "shared config requires newer osm version"
+
+## Files to Modify
+
+- `internal/command/sync_config.go` — NEW: config-push, config-pull implementations
+- `internal/command/sync.go` — Wire new subcommands in Execute dispatch
+- `internal/config/schema.go` — Register new sync.* config keys
+- `internal/command/sync_config_test.go` — NEW: comprehensive tests
+- `docs/reference/config.md` — Document new keys
 
 ## Immediate Next Step
 
-1. Run Review Gate (Rule of Two) for T214+T215
-2. Commit T214+T215
-3. Proceed to T216: Replace git shell-outs in sync_startup.go
-
-## Files Modified This Session
-
-- `internal/gitops/gitops.go` — simplified wrapper (no auth, no Path, no Pull)
-- `internal/gitops/gitops_test.go` — 12 tests
-- `internal/command/sync.go` — wired in gitops for clone/add/commit/push/isGitRepo
-- `internal/command/sync_startup.go` — wired in gitops.IsRepo
-- `internal/command/sync_test.go` — removed TestIsGitRepo, replaced isGitRepo calls
-- `internal/command/util_cmd_coverage_gaps_test.go` — rewrote PushErrorPaths/InitCloneFails/PullCloneFailure for go-git
-- `blueprint.json` — T214+T215 marked Done
-- `config.mk` — added build-check, test-sync targets
-- `WIP.md` — this file
-
-## Key Technical Decisions
-
-1. **No auth**: Simplified API — no AuthProvider/WithAuth/HTTPTokenAuth. Auth deferred to T235.
-2. **No Path()**: Removed from Repo struct — dead code. Callers already know the path.
-3. **No Pull**: go-git v6 Pull lacks rebase. executePull still uses exec.Command.
-4. **Hybrid approach**: go-git for clone/add/commit/push, exec.Command for pull --rebase.
-5. **Combined T214+T215**: Deadcode checker (DEADCODE_ERROR_ON_UNIGNORED=true) requires all exports to be reachable from main. Can't have standalone gitops package without wiring.
+1. Create sync_config.go with config-push and config-pull
+2. Wire into sync.go
+3. Add schema keys
+4. Write tests
+5. make, Review Gate, commit

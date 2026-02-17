@@ -289,13 +289,36 @@ log.max-size-mb 25
 log.max-files 3
 ```
 
-### Sync options (reserved)
+### Sync options
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `sync.repository` | string | _(empty)_ | Git repository URL for sync |
 | `sync.auto-pull` | bool | `false` | Auto-pull on startup |
 | `sync.local-path` | string | _(empty)_ | Local path for sync repository |
+| `sync.config-sync` | bool | `false` | Enable shared config syncing |
+| `sync.config-sha` | string | _(empty)_ | SHA256 of last synced shared config (internal) |
+
+#### Shared config sync
+
+The sync repository can store a shared configuration file at `config/shared.conf`. This enables syncing non-sensitive configuration keys across machines.
+
+**Config push** (`osm sync config-push`): Writes shareable global config keys to the sync repo. Sensitive keys (`sync.*`, `log.file`, `session.*`) are automatically excluded.
+
+**Config pull** (`osm sync config-pull [--force]`): Reads shared config from the sync repo and merges keys into the running configuration. Conflict handling:
+
+- **First pull (no stored SHA):** Requires `--force` flag to prevent accidental overwrite of manually configured settings.
+- **Already applied (SHA matches):** No-op — shared config is up to date.
+- **Remote changed (SHA differs):** Auto-applies the new shared config.
+
+The shared config file uses a versioned format:
+```
+# osm-shared-config-version 1
+goal.autodiscovery true
+prompt.template my-template
+```
+
+Schema version mismatches (newer version than supported) produce a clear error message.
 
 ## Hot-snippets (`[hot-snippets]`)
 

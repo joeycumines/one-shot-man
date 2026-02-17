@@ -1,0 +1,861 @@
+package command
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/config"
+)
+
+// --- config-push tests ---
+
+func TestSyncCommand_ConfigPushDisabled(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	// sync.config-sync not set (default false)
+	cmd := NewSyncCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-push"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for disabled config sync")
+	}
+	if !strings.Contains(err.Error(), "config sync disabled") {
+		t.Fatalf("expected 'config sync disabled', got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_ConfigPushNoConfig(t *testing.T) {
+	t.Parallel()
+	cmd := NewSyncCommand(nil, t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-push"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for nil config")
+	}
+	if !strings.Contains(err.Error(), "no configuration loaded") {
+		t.Fatalf("expected 'no configuration loaded', got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_ConfigPushUnexpectedArgs(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cmd := NewSyncCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-push", "extra"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for extra args")
+	}
+	if !strings.Contains(err.Error(), "unexpected arguments") {
+		t.Fatalf("expected 'unexpected arguments', got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_ConfigPushNoKeys(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+	cmd := NewSyncCommand(cfg)
+
+	// Clear all global options — only sync.local-path is set, which is sensitive.
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-push"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("config-push failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "No shareable config keys") {
+		t.Fatalf("expected 'No shareable config keys', got %q", stdout.String())
+	}
+}
+
+func TestSyncCommand_ConfigPushWritesSharedConf(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "true")
+	cfg.SetGlobalOption("prompt.template", "my-template")
+	cmd := NewSyncCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-push"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("config-push failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Pushed") {
+		t.Fatalf("expected push confirmation, got %q", output)
+	}
+	if !strings.Contains(output, "SHA:") {
+		t.Fatalf("expected SHA in output, got %q", output)
+	}
+
+	// Verify the file was created.
+	sharedPath := filepath.Join(root, "config", "shared.conf")
+	data, err := os.ReadFile(sharedPath)
+	if err != nil {
+		t.Fatalf("shared.conf not created: %v", err)
+	}
+
+	content := string(data)
+	if !strings.HasPrefix(content, "# osm-shared-config-version 1\n") {
+		t.Fatalf("expected version header, got %q", content)
+	}
+	if !strings.Contains(content, "goal.autodiscovery true") {
+		t.Fatalf("expected goal.autodiscovery key, got %q", content)
+	}
+	if !strings.Contains(content, "prompt.template my-template") {
+		t.Fatalf("expected prompt.template key, got %q", content)
+	}
+}
+
+func TestSyncCommand_ConfigPushExcludesSensitiveKeys(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+	cfg.SetGlobalOption("sync.repository", "git@github.com:test/repo.git")
+	cfg.SetGlobalOption("sync.auto-pull", "true")
+	cfg.SetGlobalOption("sync.config-sha", "abc123")
+	cfg.SetGlobalOption("log.file", "/var/log/osm.log")
+	cfg.SetGlobalOption("session.max-age-days", "30")
+	cfg.SetGlobalOption("goal.autodiscovery", "true") // shareable
+	cmd := NewSyncCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-push"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("config-push failed: %v", err)
+	}
+
+	sharedPath := filepath.Join(root, "config", "shared.conf")
+	data, err := os.ReadFile(sharedPath)
+	if err != nil {
+		t.Fatalf("shared.conf not created: %v", err)
+	}
+
+	content := string(data)
+	// Sensitive keys should NOT be present.
+	if strings.Contains(content, "sync.repository") {
+		t.Fatalf("sync.repository should be excluded, got %q", content)
+	}
+	if strings.Contains(content, "sync.auto-pull") {
+		t.Fatalf("sync.auto-pull should be excluded, got %q", content)
+	}
+	if strings.Contains(content, "sync.config-sha") {
+		t.Fatalf("sync.config-sha should be excluded, got %q", content)
+	}
+	if strings.Contains(content, "log.file") {
+		t.Fatalf("log.file should be excluded, got %q", content)
+	}
+	if strings.Contains(content, "session.") {
+		t.Fatalf("session.* should be excluded, got %q", content)
+	}
+	// Shareable key should be present.
+	if !strings.Contains(content, "goal.autodiscovery true") {
+		t.Fatalf("expected goal.autodiscovery, got %q", content)
+	}
+}
+
+func TestSyncCommand_ConfigPushStoresSHA(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+	cfg.SetGlobalOption("goal.paths", "/my/goals")
+	cmd := NewSyncCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-push"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("config-push failed: %v", err)
+	}
+
+	sha := cfg.GetString("sync.config-sha")
+	if sha == "" {
+		t.Fatal("expected sync.config-sha to be set after push")
+	}
+	if len(sha) != 64 { // SHA256 hex is 64 chars
+		t.Fatalf("expected 64 char SHA, got %d: %q", len(sha), sha)
+	}
+}
+
+func TestSyncCommand_ConfigPushKeysSorted(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+	cfg.SetGlobalOption("zebra.key", "z")
+	cfg.SetGlobalOption("alpha.key", "a")
+	cfg.SetGlobalOption("middle.key", "m")
+	cmd := NewSyncCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	if err := cmd.Execute([]string{"config-push"}, &stdout, &stderr); err != nil {
+		t.Fatalf("config-push failed: %v", err)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(root, "config", "shared.conf"))
+	lines := strings.Split(string(data), "\n")
+	// Lines should be: version header, alpha.key, middle.key, zebra.key, trailing empty
+	if len(lines) < 4 {
+		t.Fatalf("expected at least 4 lines, got %d: %q", len(lines), string(data))
+	}
+	if !strings.HasPrefix(lines[1], "alpha.key") {
+		t.Fatalf("expected alpha.key first, got %q", lines[1])
+	}
+	if !strings.HasPrefix(lines[2], "middle.key") {
+		t.Fatalf("expected middle.key second, got %q", lines[2])
+	}
+	if !strings.HasPrefix(lines[3], "zebra.key") {
+		t.Fatalf("expected zebra.key third, got %q", lines[3])
+	}
+}
+
+// --- config-pull tests ---
+
+func TestSyncCommand_ConfigPullNoConfig(t *testing.T) {
+	t.Parallel()
+	cmd := NewSyncCommand(nil, t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-pull"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for nil config")
+	}
+	if !strings.Contains(err.Error(), "no configuration loaded") {
+		t.Fatalf("expected 'no configuration loaded', got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_ConfigPullDisabled(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	// sync.config-sync not set (default false)
+	cmd := NewSyncCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-pull"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for disabled config sync")
+	}
+	if !strings.Contains(err.Error(), "config sync disabled") {
+		t.Fatalf("expected 'config sync disabled', got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_ConfigPullNoSharedConf(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+	cmd := NewSyncCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-pull"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for missing shared.conf")
+	}
+	if !strings.Contains(err.Error(), "shared config not found") {
+		t.Fatalf("expected 'shared config not found', got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_ConfigPullFirstTimeNoForce(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+
+	// Create shared.conf.
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# osm-shared-config-version 1\ngoal.autodiscovery true\n"
+	if err := os.WriteFile(filepath.Join(configDir, "shared.conf"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewSyncCommand(cfg)
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-pull"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for first pull without --force")
+	}
+	if !strings.Contains(err.Error(), "unknown sync state") {
+		t.Fatalf("expected 'unknown sync state', got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_ConfigPullFirstTimeWithForce(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# osm-shared-config-version 1\ngoal.autodiscovery true\nprompt.template shared-tmpl\n"
+	if err := os.WriteFile(filepath.Join(configDir, "shared.conf"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewSyncCommand(cfg)
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-pull", "--force"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("config-pull --force failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Applied 2 config keys") {
+		t.Fatalf("expected 'Applied 2 config keys', got %q", output)
+	}
+
+	// Verify keys were applied.
+	if v := cfg.GetString("goal.autodiscovery"); v != "true" {
+		t.Fatalf("expected goal.autodiscovery=true, got %q", v)
+	}
+	if v := cfg.GetString("prompt.template"); v != "shared-tmpl" {
+		t.Fatalf("expected prompt.template=shared-tmpl, got %q", v)
+	}
+
+	// SHA should be stored.
+	sha := cfg.GetString("sync.config-sha")
+	if sha == "" {
+		t.Fatal("expected sync.config-sha to be set")
+	}
+}
+
+func TestSyncCommand_ConfigPullAlreadyUpToDate(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# osm-shared-config-version 1\ngoal.autodiscovery true\n"
+	if err := os.WriteFile(filepath.Join(configDir, "shared.conf"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-set the SHA to match.
+	cfg.SetGlobalOption("sync.config-sha", sha256Hex(content))
+
+	cmd := NewSyncCommand(cfg)
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-pull"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("config-pull failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "already up to date") {
+		t.Fatalf("expected 'already up to date', got %q", stdout.String())
+	}
+}
+
+func TestSyncCommand_ConfigPullRemoteChanged(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Old content — SHA was stored against this.
+	oldContent := "# osm-shared-config-version 1\ngoal.autodiscovery false\n"
+	cfg.SetGlobalOption("sync.config-sha", sha256Hex(oldContent))
+
+	// New content — remote changed.
+	newContent := "# osm-shared-config-version 1\ngoal.autodiscovery true\nprompt.template updated\n"
+	if err := os.WriteFile(filepath.Join(configDir, "shared.conf"), []byte(newContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewSyncCommand(cfg)
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-pull"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("config-pull failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Applied 2 config keys") {
+		t.Fatalf("expected 'Applied 2 config keys', got %q", output)
+	}
+
+	// Verify updated values.
+	if v := cfg.GetString("goal.autodiscovery"); v != "true" {
+		t.Fatalf("expected goal.autodiscovery=true, got %q", v)
+	}
+	if v := cfg.GetString("prompt.template"); v != "updated" {
+		t.Fatalf("expected prompt.template=updated, got %q", v)
+	}
+
+	// SHA should be updated to new content.
+	if cfg.GetString("sync.config-sha") != sha256Hex(newContent) {
+		t.Fatal("expected SHA to be updated to new content SHA")
+	}
+}
+
+func TestSyncCommand_ConfigPullSkipsSensitiveKeys(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Shared config with a sensitive key that should be skipped.
+	content := "# osm-shared-config-version 1\nsync.repository should-be-skipped\ngoal.autodiscovery true\n"
+	if err := os.WriteFile(filepath.Join(configDir, "shared.conf"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewSyncCommand(cfg)
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-pull", "--force"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("config-pull failed: %v", err)
+	}
+
+	// sync.repository should NOT be applied (sensitive).
+	if v := cfg.GetString("sync.repository"); v == "should-be-skipped" {
+		t.Fatal("sensitive key sync.repository should NOT be applied from shared config")
+	}
+
+	// Non-sensitive key should be applied.
+	if v := cfg.GetString("goal.autodiscovery"); v != "true" {
+		t.Fatalf("expected goal.autodiscovery=true, got %q", v)
+	}
+
+	// Warning should appear.
+	if !strings.Contains(stderr.String(), "skipping sensitive key") {
+		t.Fatalf("expected warning about sensitive key, got stderr %q", stderr.String())
+	}
+
+	// Applied count should be 1 (only goal.autodiscovery), not 2.
+	if !strings.Contains(stdout.String(), "Applied 1 config keys") {
+		t.Fatalf("expected 'Applied 1 config keys', got %q", stdout.String())
+	}
+}
+
+func TestSyncCommand_ConfigPullSchemaVersionTooNew(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# osm-shared-config-version 999\ngoal.autodiscovery true\n"
+	if err := os.WriteFile(filepath.Join(configDir, "shared.conf"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewSyncCommand(cfg)
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-pull", "--force"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for unsupported version")
+	}
+	if !strings.Contains(err.Error(), "unsupported shared config version") {
+		t.Fatalf("expected version error, got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_ConfigPullBadVersionHeader(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		content string
+		errMsg  string
+	}{
+		{
+			name:    "empty file",
+			content: "",
+			errMsg:  "empty shared config file",
+		},
+		{
+			name:    "missing version header",
+			content: "# some other comment\nkey value\n",
+			errMsg:  "missing version header",
+		},
+		{
+			name:    "no version number",
+			content: "# osm-shared-config-version\n",
+			errMsg:  "version header missing version number",
+		},
+		{
+			name:    "invalid version number",
+			content: "# osm-shared-config-version abc\n",
+			errMsg:  "invalid version number",
+		},
+		{
+			name:    "zero version",
+			content: "# osm-shared-config-version 0\n",
+			errMsg:  "invalid version number 0",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			cfgLocal := config.NewConfig()
+			cfgLocal.SetGlobalOption("sync.local-path", dir)
+			cfgLocal.SetGlobalOption("sync.config-sync", "true")
+			cfgLocal.SetGlobalOption("sync.config-sha", "dummy")
+
+			d := filepath.Join(dir, "config")
+			if err := os.MkdirAll(d, 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(d, "shared.conf"), []byte(tc.content), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			cmd := NewSyncCommand(cfgLocal)
+			var stdout, stderr bytes.Buffer
+			err := cmd.Execute([]string{"config-pull"}, &stdout, &stderr)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tc.errMsg) {
+				t.Fatalf("expected error containing %q, got %q", tc.errMsg, err.Error())
+			}
+		})
+	}
+}
+
+func TestSyncCommand_ConfigPullUnexpectedArg(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "shared.conf"), []byte("# osm-shared-config-version 1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewSyncCommand(cfg)
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-pull", "--bad"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for bad arg")
+	}
+	if !strings.Contains(err.Error(), "unexpected argument") {
+		t.Fatalf("expected 'unexpected argument', got %q", err.Error())
+	}
+}
+
+func TestSyncCommand_ConfigPullShortForceFlag(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# osm-shared-config-version 1\ngoal.autodiscovery true\n"
+	if err := os.WriteFile(filepath.Join(configDir, "shared.conf"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewSyncCommand(cfg)
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-pull", "-f"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("config-pull -f failed: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "Applied") {
+		t.Fatalf("expected 'Applied', got %q", stdout.String())
+	}
+}
+
+// --- Push+Pull round trip ---
+
+func TestSyncCommand_ConfigPushPullRoundTrip(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "true")
+	cfg.SetGlobalOption("prompt.template", "my-template")
+	cfg.SetGlobalOption("hot-snippets.no-warning", "true")
+	cmd := NewSyncCommand(cfg)
+
+	// Push.
+	var pOut, pErr bytes.Buffer
+	if err := cmd.Execute([]string{"config-push"}, &pOut, &pErr); err != nil {
+		t.Fatalf("push failed: %v", err)
+	}
+	pushSHA := cfg.GetString("sync.config-sha")
+	if pushSHA == "" {
+		t.Fatal("expected SHA after push")
+	}
+
+	// Simulate a different machine: new config with the same SHA.
+	cfg2 := config.NewConfig()
+	cfg2.SetGlobalOption("sync.local-path", root)
+	cfg2.SetGlobalOption("sync.config-sync", "true")
+	cfg2.SetGlobalOption("sync.config-sha", "different-sha-from-old-version")
+	cmd2 := NewSyncCommand(cfg2)
+
+	// Pull — should apply because SHA differs.
+	var rOut, rErr bytes.Buffer
+	if err := cmd2.Execute([]string{"config-pull"}, &rOut, &rErr); err != nil {
+		t.Fatalf("pull failed: %v\nstderr: %s", err, rErr.String())
+	}
+
+	if cfg2.GetString("goal.autodiscovery") != "true" {
+		t.Fatal("expected goal.autodiscovery=true after pull")
+	}
+	if cfg2.GetString("prompt.template") != "my-template" {
+		t.Fatal("expected prompt.template=my-template after pull")
+	}
+	if cfg2.GetString("hot-snippets.no-warning") != "true" {
+		t.Fatal("expected hot-snippets.no-warning=true after pull")
+	}
+
+	// Pull again — should be no-op (SHA matches).
+	var r2Out, r2Err bytes.Buffer
+	if err := cmd2.Execute([]string{"config-pull"}, &r2Out, &r2Err); err != nil {
+		t.Fatalf("second pull failed: %v", err)
+	}
+	if !strings.Contains(r2Out.String(), "already up to date") {
+		t.Fatalf("expected 'already up to date' on second pull, got %q", r2Out.String())
+	}
+}
+
+// --- parseSharedConfig unit tests ---
+
+func TestParseSharedConfig_Valid(t *testing.T) {
+	t.Parallel()
+	content := "# osm-shared-config-version 1\ngoal.autodiscovery true\nprompt.template default\n"
+	version, keys, err := parseSharedConfig(content)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if version != 1 {
+		t.Fatalf("expected version 1, got %d", version)
+	}
+	if len(keys) != 2 {
+		t.Fatalf("expected 2 keys, got %d", len(keys))
+	}
+	if keys[0].key != "goal.autodiscovery" || keys[0].value != "true" {
+		t.Fatalf("expected goal.autodiscovery=true, got %q=%q", keys[0].key, keys[0].value)
+	}
+}
+
+func TestParseSharedConfig_WithComments(t *testing.T) {
+	t.Parallel()
+	content := "# osm-shared-config-version 1\n# comment line\n\ngoal.paths /my/path\n# another comment\n"
+	version, keys, err := parseSharedConfig(content)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if version != 1 {
+		t.Fatalf("expected version 1, got %d", version)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("expected 1 key, got %d", len(keys))
+	}
+	if keys[0].key != "goal.paths" || keys[0].value != "/my/path" {
+		t.Fatalf("expected goal.paths=/my/path, got %q=%q", keys[0].key, keys[0].value)
+	}
+}
+
+func TestParseSharedConfig_KeyWithoutValue(t *testing.T) {
+	t.Parallel()
+	content := "# osm-shared-config-version 1\nsomekey\n"
+	version, keys, err := parseSharedConfig(content)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if version != 1 {
+		t.Fatalf("expected version 1, got %d", version)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("expected 1 key, got %d", len(keys))
+	}
+	if keys[0].key != "somekey" || keys[0].value != "" {
+		t.Fatalf("expected somekey=<empty>, got %q=%q", keys[0].key, keys[0].value)
+	}
+}
+
+func TestParseSharedConfig_ValueWithSpaces(t *testing.T) {
+	t.Parallel()
+	content := "# osm-shared-config-version 1\nprompt.template this is a long value with spaces\n"
+	_, keys, err := parseSharedConfig(content)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("expected 1 key, got %d", len(keys))
+	}
+	if keys[0].value != "this is a long value with spaces" {
+		t.Fatalf("expected full value, got %q", keys[0].value)
+	}
+}
+
+// --- isSensitiveKey unit tests ---
+
+func TestIsSensitiveKey(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		key  string
+		want bool
+	}{
+		{"sync.repository", true},
+		{"sync.auto-pull", true},
+		{"sync.config-sha", true},
+		{"sync.local-path", true},
+		{"log.file", true},
+		{"session.max-age-days", true},
+		{"session.cleanup", true},
+		{"goal.autodiscovery", false},
+		{"prompt.template", false},
+		{"hot-snippets.no-warning", false},
+		{"log.level", false},
+		{"log.max-size-mb", false},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.key, func(t *testing.T) {
+			t.Parallel()
+			got := isSensitiveKey(tc.key)
+			if got != tc.want {
+				t.Fatalf("isSensitiveKey(%q) = %v, want %v", tc.key, got, tc.want)
+			}
+		})
+	}
+}
+
+// --- sha256Hex unit test ---
+
+func TestSha256Hex(t *testing.T) {
+	t.Parallel()
+	// Known value: SHA256 of "hello"
+	got := sha256Hex("hello")
+	want := "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+	if got != want {
+		t.Fatalf("sha256Hex(\"hello\") = %q, want %q", got, want)
+	}
+}
+
+// --- parseVersionHeader unit tests ---
+
+func TestParseVersionHeader(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		line    string
+		want    int
+		wantErr string
+	}{
+		{"# osm-shared-config-version 1", 1, ""},
+		{"# osm-shared-config-version 2", 2, ""},
+		{"# osm-shared-config-version 42", 42, ""},
+		{"# wrong prefix", 0, "missing version header"},
+		{"# osm-shared-config-version", 0, "version header missing version number"},
+		{"# osm-shared-config-version abc", 0, "invalid version number"},
+		{"# osm-shared-config-version 0", 0, "invalid version number 0"},
+		{"# osm-shared-config-version -1", 0, "invalid version number -1"},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.line, func(t *testing.T) {
+			t.Parallel()
+			got, err := parseVersionHeader(tc.line)
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q, got nil", tc.wantErr)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("expected error containing %q, got %q", tc.wantErr, err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("parseVersionHeader(%q) = %d, want %d", tc.line, got, tc.want)
+			}
+		})
+	}
+}
+
+// --- Usage text update test ---
+
+func TestSyncCommand_NoSubcommandShowsConfigSubcommands(t *testing.T) {
+	t.Parallel()
+	cmd := NewSyncCommand(nil, t.TempDir())
+
+	var stdout, stderr bytes.Buffer
+	_ = cmd.Execute(nil, &stdout, &stderr)
+
+	usage := stderr.String()
+	if !strings.Contains(usage, "config-push") {
+		t.Fatalf("expected 'config-push' in usage, got %q", usage)
+	}
+	if !strings.Contains(usage, "config-pull") {
+		t.Fatalf("expected 'config-pull' in usage, got %q", usage)
+	}
+}

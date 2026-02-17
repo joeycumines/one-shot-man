@@ -62,15 +62,17 @@ func (c *SyncCommand) SetupFlags(fs *flag.FlagSet) {
 // Execute dispatches to the appropriate subcommand.
 func (c *SyncCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stderr, "Usage: osm sync <save|list|load|init|push|pull>")
+		_, _ = fmt.Fprintln(stderr, "Usage: osm sync <save|list|load|init|push|pull|config-push|config-pull>")
 		_, _ = fmt.Fprintln(stderr, "")
 		_, _ = fmt.Fprintln(stderr, "Subcommands:")
-		_, _ = fmt.Fprintln(stderr, "  save   Save a prompt notebook entry")
-		_, _ = fmt.Fprintln(stderr, "  list   List saved notebook entries")
-		_, _ = fmt.Fprintln(stderr, "  load   Load a saved notebook entry")
-		_, _ = fmt.Fprintln(stderr, "  init   Clone a sync repository")
-		_, _ = fmt.Fprintln(stderr, "  push   Commit and push local changes")
-		_, _ = fmt.Fprintln(stderr, "  pull   Fetch and merge remote changes")
+		_, _ = fmt.Fprintln(stderr, "  save          Save a prompt notebook entry")
+		_, _ = fmt.Fprintln(stderr, "  list          List saved notebook entries")
+		_, _ = fmt.Fprintln(stderr, "  load          Load a saved notebook entry")
+		_, _ = fmt.Fprintln(stderr, "  init          Clone a sync repository")
+		_, _ = fmt.Fprintln(stderr, "  push          Commit and push local changes")
+		_, _ = fmt.Fprintln(stderr, "  pull          Fetch and merge remote changes")
+		_, _ = fmt.Fprintln(stderr, "  config-push   Push local config to sync repository")
+		_, _ = fmt.Fprintln(stderr, "  config-pull   Pull shared config from sync repository")
 		return fmt.Errorf("no subcommand specified")
 	}
 
@@ -88,6 +90,10 @@ func (c *SyncCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		return c.executePush(args[1:], stdout, stderr)
 	case "pull":
 		return c.executePull(args[1:], stdout, stderr)
+	case "config-push":
+		return c.executeConfigPush(args[1:], stdout, stderr)
+	case "config-pull":
+		return c.executeConfigPull(args[1:], stdout, stderr)
 	default:
 		_, _ = fmt.Fprintf(stderr, "unknown sync subcommand: %s\n", sub)
 		return fmt.Errorf("unknown sync subcommand: %s", sub)

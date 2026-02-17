@@ -121,7 +121,7 @@ _osm_completion() {
             return 0
             ;;
         sync)
-            COMPREPLY=($(compgen -W "save list load init push pull" -- ${cur}))
+            COMPREPLY=($(compgen -W "save list load init push pull config-push config-pull" -- ${cur}))
             return 0
             ;;
         config)
@@ -217,7 +217,7 @@ _osm() {
                     fi
                     ;;
                 sync)
-                    _values 'sync-subcommand' 'save' 'list' 'load' 'init' 'push' 'pull'
+                    _values 'sync-subcommand' 'save' 'list' 'load' 'init' 'push' 'pull' 'config-push' 'config-pull'
                     ;;
                 config)
                     _values 'config-subcommand' 'validate' 'schema' 'list' 'diff' 'reset' %s
@@ -296,7 +296,7 @@ complete -c osm -n '__fish_seen_subcommand_from script' -a 'paths' -d 'Show disc
 # Completion for 'session' subcommand
 %s
 # Completion for 'sync' subcommand
-complete -c osm -n '__fish_seen_subcommand_from sync' -a 'save list load init push pull' -d 'Sync subcommands'
+complete -c osm -n '__fish_seen_subcommand_from sync' -a 'save list load init push pull config-push config-pull' -d 'Sync subcommands'
 
 # Completion for 'config' subcommand
 complete -c osm -n '__fish_seen_subcommand_from config' -a 'validate schema list diff reset %s' -d 'Config subcommands'
@@ -392,7 +392,7 @@ Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
     }
 
     if ($tokenCount -eq 3 -and $command -eq 'sync') {
-        $subs = @('save','list','load','init','push','pull')
+        $subs = @('save','list','load','init','push','pull','config-push','config-pull')
         $subs | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
             [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
         }

@@ -520,10 +520,12 @@ func defaultGlobalOptions() []ConfigOption {
 		// Hot-snippet options
 		{Key: "hot-snippets.no-warning", Type: TypeBool, Default: "false", Description: "Suppress warning when using embedded (builtin) hot-snippets"},
 
-		// Sync options (reserved)
+		// Sync options
 		{Key: "sync.repository", Type: TypeString, Default: "", Description: "Git repository URL for sync"},
 		{Key: "sync.auto-pull", Type: TypeBool, Default: "false", Description: "Auto-pull on startup"},
 		{Key: "sync.local-path", Type: TypeString, Default: "", Description: "Local path for sync repository"},
+		{Key: "sync.config-sync", Type: TypeBool, Default: "false", Description: "Enable shared config syncing"},
+		{Key: "sync.config-sha", Type: TypeString, Default: "", Description: "SHA256 of last synced shared config (internal)"},
 
 		// Logging options
 		{Key: "log.file", Type: TypeString, Default: "", Description: "Default log file path (JSON output)", EnvVar: "OSM_LOG_FILE"},

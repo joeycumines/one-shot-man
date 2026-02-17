@@ -134,9 +134,15 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 	// 4. Program should exit
 	select {
 	case err := <-errCh:
+		// Allow bubbletea's internal goroutines (handleResize) to finish
+		// before closing the PTY fd. bubbletea.Run() may return before all
+		// its internal goroutines have exited, so closing the fd immediately
+		// races with handleResize calling Fd().
+		time.Sleep(50 * time.Millisecond)
 		slaveForBT.Close()
 		require.NoError(t, err)
 	case <-time.NewTimer(1 * time.Second).C:
+		time.Sleep(50 * time.Millisecond)
 		slaveForBT.Close()
 		t.Fatal("Program did not exit")
 	}

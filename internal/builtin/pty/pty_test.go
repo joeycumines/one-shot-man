@@ -3,8 +3,6 @@ package pty
 import (
 	"context"
 	"errors"
-	"io"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -34,14 +32,21 @@ func TestSpawn_EchoHello(t *testing.T) {
 	}
 	defer proc.Close()
 
+	// Wait for process to complete first — echo is instant and may exit
+	// before Read() is called. On macOS, reading from a PTY master after
+	// the slave closes can return EIO without delivering buffered data if
+	// the read was already blocked when the slave closed.
+	code, waitErr := proc.Wait()
+	if waitErr != nil {
+		t.Fatalf("Wait returned error: %v", waitErr)
+	}
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+
+	// Drain the PTY output buffer.
 	var output strings.Builder
-	deadline := time.After(5 * time.Second)
 	for {
-		select {
-		case <-deadline:
-			t.Fatalf("timed out waiting for output, got so far: %q", output.String())
-		default:
-		}
 		data, readErr := proc.Read()
 		if data != "" {
 			output.WriteString(data)
@@ -50,23 +55,12 @@ func TestSpawn_EchoHello(t *testing.T) {
 			break
 		}
 		if readErr != nil {
-			if readErr == io.EOF || errors.Is(readErr, os.ErrClosed) {
-				break
-			}
 			break
 		}
 	}
 
 	if !strings.Contains(output.String(), "hello") {
 		t.Fatalf("expected output to contain %q, got %q", "hello", output.String())
-	}
-
-	code, waitErr := proc.Wait()
-	if waitErr != nil {
-		t.Fatalf("Wait returned error: %v", waitErr)
-	}
-	if code != 0 {
-		t.Fatalf("expected exit code 0, got %d", code)
 	}
 }
 

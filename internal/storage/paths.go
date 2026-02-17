@@ -42,15 +42,6 @@ func getSessionDirectory() (string, error) {
 	return fn()
 }
 
-// getSessionFilePath returns the session file path via the (possibly
-// overridden) function variable, under a read-lock.
-func getSessionFilePath(id string) (string, error) {
-	pathsMu.RLock()
-	fn := sessionFilePath
-	pathsMu.RUnlock()
-	return fn(id)
-}
-
 // getSessionLockFilePath returns the session lock file path via the (possibly
 // overridden) function variable, under a read-lock.
 func getSessionLockFilePath(id string) (string, error) {

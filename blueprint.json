@@ -319,6 +319,16 @@
       "status": "Not Started"
     },
     {
+      "task": "T169: Implement `osm mcp prompt` polymorphic terminal wrapper",
+      "description": "Create `osm mcp` subcommand system with `osm mcp prompt` as polymorphic terminal wrapper. Style DIRECTLY after Anthropic's computer use interface for Claude - extensive research REQUIRED. Implementation must include: (1) Dynamic tool/command availability that changes based on context/mode - as user navigates between built-in commands (code-review, prompt-flow, goal, etc.), the available tools must morph. (2) Terminal UI that presents available tools, accepts commands, displays results. (3) Mode detection - infer current mode from context (git state, file changes, goal stage). (4) go-prompt integration with custom completers per mode. (5) Tool schema generation per mode. Research: Study Anthropic's computer use demo, their tool calling protocol, how they handle dynamic tool availability, their terminal presentation. This is NOT a simple CLI wrapper - it should feel like an intelligent assistant that knows what tools are relevant at each moment. Document research findings. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T170: Implement `osm mcp make` as port of mcp-server-make",
+      "description": "Port github.com/joeycumines/mcp-server-make to osm as `osm mcp make` subcommand. Steps: (1) Research mcp-server-make - study its implementation, tool definitions, Makefile parsing, target discovery, execution model. (2) Analyze how it integrates with Claude Code / MCP clients. (3) Implement within osm codebase - integrate with existing command registry and MCP infrastructure. (4) Refactor/improve where beneficial: better error messages, improved target caching, cross-platform make detection, integration with osm's session system. (5) Ensure MCP protocol compliance - proper tool schema, notifications, state management. (6) Tests: target discovery, execution, error handling, cross-platform. Run make.",
+      "status": "Not Started"
+    },
+    {
       "task": "T168: Anthropic prompt library expansion",
       "description": "Add 3-5 additional built-in goals. stateVars, hotSnippets, flagDefs. Tests. Run make.",
       "status": "Not Started"

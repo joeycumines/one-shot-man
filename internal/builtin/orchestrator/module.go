@@ -1,12 +1,15 @@
 package orchestrator
 
 import (
+	"context"
+	"io"
+
 	"github.com/dop251/goja"
 )
 
 // Require returns a module loader for `osm:orchestrator` that exposes the
-// PTY output parser to JavaScript scripts.
-func Require() func(runtime *goja.Runtime, module *goja.Object) {
+// PTY output parser and provider registry to JavaScript scripts.
+func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
@@ -34,6 +37,24 @@ func Require() func(runtime *goja.Runtime, module *goja.Object) {
 			}
 			t := EventType(call.Argument(0).ToInteger())
 			return runtime.ToValue(EventTypeName(t))
+		})
+
+		// newRegistry(): creates a new provider Registry.
+		_ = exports.Set("newRegistry", func(call goja.FunctionCall) goja.Value {
+			r := NewRegistry()
+			return wrapRegistry(runtime, r, ctx)
+		})
+
+		// claudeCode(opts?): creates a ClaudeCodeProvider.
+		_ = exports.Set("claudeCode", func(call goja.FunctionCall) goja.Value {
+			p := &ClaudeCodeProvider{}
+			if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+				opts := call.Argument(0).ToObject(runtime)
+				if v := opts.Get("command"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					p.Command = v.String()
+				}
+			}
+			return wrapProvider(runtime, p)
 		})
 	}
 }
@@ -87,4 +108,166 @@ func eventToJS(runtime *goja.Runtime, ev OutputEvent) goja.Value {
 	}
 
 	return result
+}
+
+// wrapRegistry creates a JS object wrapping a *Registry with methods.
+func wrapRegistry(runtime *goja.Runtime, r *Registry, ctx context.Context) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("register", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("register: provider argument is required"))
+		}
+		prov := unwrapProvider(runtime, call.Argument(0))
+		if err := r.Register(prov); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("get", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("get: name argument is required"))
+		}
+		name := call.Argument(0).String()
+		p, err := r.Get(name)
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return wrapProvider(runtime, p)
+	})
+
+	_ = obj.Set("list", func(call goja.FunctionCall) goja.Value {
+		return runtime.ToValue(r.List())
+	})
+
+	_ = obj.Set("spawn", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(runtime.NewTypeError("spawn: provider name argument is required"))
+		}
+		name := call.Argument(0).String()
+		opts := SpawnOpts{}
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+			parseSpawnOpts(runtime, call.Argument(1).ToObject(runtime), &opts)
+		}
+		handle, err := r.Spawn(ctx, name, opts)
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return wrapAgentHandle(runtime, handle)
+	})
+
+	return obj
+}
+
+// wrapProvider creates a JS object wrapping a Provider with methods.
+func wrapProvider(runtime *goja.Runtime, p Provider) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("name", func() goja.Value { return runtime.ToValue(p.Name()) })
+	_ = obj.Set("capabilities", func() goja.Value {
+		caps := p.Capabilities()
+		result := runtime.NewObject()
+		_ = result.Set("mcp", caps.MCP)
+		_ = result.Set("streaming", caps.Streaming)
+		_ = result.Set("multiTurn", caps.MultiTurn)
+		return result
+	})
+	// Store the Go provider for later use by registry.register().
+	_ = obj.Set("_goProvider", p)
+	return obj
+}
+
+// unwrapProvider extracts a Go Provider from a wrapped JS object.
+func unwrapProvider(runtime *goja.Runtime, val goja.Value) Provider {
+	obj := val.ToObject(runtime)
+	goP := obj.Get("_goProvider")
+	if goP == nil || goja.IsUndefined(goP) || goja.IsNull(goP) {
+		panic(runtime.NewTypeError("register: argument is not a valid provider"))
+	}
+	p, ok := goP.Export().(Provider)
+	if !ok {
+		panic(runtime.NewTypeError("register: argument is not a valid provider"))
+	}
+	return p
+}
+
+// wrapAgentHandle creates a JS object wrapping an AgentHandle with methods.
+func wrapAgentHandle(runtime *goja.Runtime, h AgentHandle) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("send", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("send: input argument is required"))
+		}
+		if err := h.Send(call.Argument(0).String()); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("receive", func(call goja.FunctionCall) goja.Value {
+		data, err := h.Receive()
+		if err != nil {
+			if err == io.EOF {
+				return runtime.ToValue("")
+			}
+			if data != "" {
+				return runtime.ToValue(data)
+			}
+			return runtime.ToValue("")
+		}
+		return runtime.ToValue(data)
+	})
+
+	_ = obj.Set("close", func(call goja.FunctionCall) goja.Value {
+		if err := h.Close(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	_ = obj.Set("isAlive", func(call goja.FunctionCall) goja.Value {
+		return runtime.ToValue(h.IsAlive())
+	})
+
+	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
+		code, err := h.Wait()
+		result := map[string]interface{}{"code": code, "error": nil}
+		if err != nil {
+			result["error"] = err.Error()
+		}
+		return runtime.ToValue(result)
+	})
+
+	return obj
+}
+
+// parseSpawnOpts extracts SpawnOpts fields from a JS options object.
+func parseSpawnOpts(runtime *goja.Runtime, obj *goja.Object, opts *SpawnOpts) {
+	if v := obj.Get("model"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		opts.Model = v.String()
+	}
+	if v := obj.Get("dir"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		opts.Dir = v.String()
+	}
+	if v := obj.Get("rows"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		opts.Rows = uint16(v.ToInteger())
+	}
+	if v := obj.Get("cols"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		opts.Cols = uint16(v.ToInteger())
+	}
+	if v := obj.Get("env"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		envMap := make(map[string]string)
+		if err := runtime.ExportTo(v, &envMap); err != nil {
+			panic(runtime.NewTypeError("spawn: env must be a {string: string} object"))
+		}
+		opts.Env = envMap
+	}
+	if v := obj.Get("args"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		var args []string
+		if err := runtime.ExportTo(v, &args); err != nil {
+			panic(runtime.NewTypeError("spawn: args must be an array of strings"))
+		}
+		opts.Args = args
+	}
 }

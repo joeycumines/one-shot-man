@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T242 DONE. T243 next."
+    "currentState": "T200-T243 DONE. T244 next."
   },
   "sequentialTasks": [
     {
@@ -235,7 +235,7 @@
     {
       "task": "T243: AI Orchestrator provider abstraction (single instance)",
       "description": "Implement provider interface: Spawn, Send, Receive, Close. First implementation: single Claude Code instance via PTY. Design for extensibility (multiple providers, multi-instance). Add tests with mock provider. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T244: AI Orchestrator behavior tree orchestration engine",

@@ -186,6 +186,7 @@ func (p *Process) Close() error {
 	cmd := p.cmd
 	f := p.ptyFile
 	tty := p.ttyFile
+	p.ttyFile = nil // prevent double-close with Wait goroutine
 	p.mu.Unlock()
 
 	// Try graceful shutdown first.

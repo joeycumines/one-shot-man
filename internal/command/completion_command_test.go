@@ -15,6 +15,9 @@ func newTestGoalRegistry() GoalRegistry {
 	cfg := config.NewConfig()
 	// Avoid external goals leaking into tests
 	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	// Disable autodiscovery to prevent filesystem goals (e.g. goals/orchestrate-pr-split.json)
+	// from leaking into tests when run from the project root
+	cfg.SetGlobalOption("goal.autodiscovery", "false")
 	discovery := NewGoalDiscovery(cfg)
 	return NewDynamicGoalRegistry(GetBuiltInGoals(), discovery)
 }

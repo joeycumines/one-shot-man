@@ -14,7 +14,7 @@
     "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only — no parallel subagent execution."
   },
   "statusSection": {
-    "currentState": "T200-T240 DONE. T241 next."
+    "currentState": "T200-T241 DONE. T242 next."
   },
   "sequentialTasks": [
     {
@@ -225,7 +225,7 @@
     {
       "task": "T241: AI Orchestrator PTY output parsing",
       "description": "Implement PTY output parser: rate limit detection, permission prompt rejection (security-first), model selection menu navigation, SSO login flow detection. Configurable patterns. Add tests with captured output samples. Run 'make' to confirm.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T242: AI Orchestrator configuration and env var management",

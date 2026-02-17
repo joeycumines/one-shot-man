@@ -6,24 +6,38 @@
 - **T104+T105**: ALL DONE. Rule of Two passed (2/2). Cross-platform zero failures.
 - **T135+T136**: ALL DONE. Deadcode + betteralign audits clean.
 - **T011**: ALL DONE. Rule of Two passed (2/2). Full `make` zero failures.
-- **Branch**: `wip` (225+ commits ahead of `main`). All changes committed as "test commit".
+- **T012**: Implementation COMPLETE. Full `make make-all-with-log` passed with zero test failures. Docs + CHANGELOG updated. Rule of Two pending.
+- **T164**: DONE. CHANGELOG entries for T011, T001, T002, T104, T105.
+- **Branch**: `wip` (225+ commits ahead of `main`). 
 
-## T011: Eventloop Migration — VERIFIED COMPLETE
+## T012: goja-grpc Migration — IMPLEMENTATION COMPLETE
 
-### Rule of Two Results
-- Run 1: `scratch/review-t011-run1.md` — PASS
-- Run 2: `scratch/review-t011-run2.md` — PASS
-- Full `make make-all-with-log` — ZERO test failures across ALL packages
-- Build + lint + vet + staticcheck + deadcode — ALL PASS
-- Zero remnants of old `dop251/goja_nodejs/eventloop` import
+### What Changed
+1. **grpc.go**: Rewritten as thin wrapper — `Require(ch, pb, adapter)` delegates to `gojagrpc.Require()`
+2. **register.go**: Creates `inprocgrpc.Channel`, `gojaprotobuf.Module`, wires goja-grpc with `WithChannel/WithProtobuf/WithAdapter`. Registers both `osm:grpc` and `osm:protobuf`.
+3. **EventLoopProvider**: Extended with `Adapter() *gojaeventloop.Adapter` method
+4. **Runtime/Engine**: Added `Adapter()` methods
+5. **testutil/eventloop.go**: Added adapter storage + `Adapter()` method
+6. **grpc_test.go**: Rewritten with Promise-based echo round-trip via inprocgrpc
+7. **coverage_gaps_test.go**: Emptied (no custom logic — goja-grpc has its own coverage)
+8. **security_sandbox_test.go**: Updated API boundary test for new exports; added `osm:protobuf` to module list
+9. **register_test.go**: Added `osm:grpc` and `osm:protobuf` to module list
+10. **docs**: scripting.md, security.md, architecture.md updated for new API
 
-### Key Architectural Decisions (for future Takumi)
-1. **Console binding order (tests)**: `reg.Enable(vm)` → `console.Enable(vm)` → `adapter.Bind()`
-2. **Console binding (production)**: adapter runs first on event loop, then copy log/warn/error/info/debug from console module
-3. **go.mod replace**: `go-eventloop v0.0.0 => v0.0.0-20260213164852-99e8a33a69b7`
+### Verification
+- `make build` ✅
+- `make lint` ✅
+- `make make-all-with-log` ✅ (zero test failures via `make find-test-failures`)
+- Rule of Two: PENDING
+
+### go.mod new deps
+- `github.com/joeycumines/goja-grpc v0.0.0-20260213164910-f82bd4072549`
+- `github.com/joeycumines/go-inprocgrpc v0.0.0-20260213164927-0dc92b109371`
+- `github.com/joeycumines/goja-protobuf v0.0.0-20260213164915-e7601209bd26`
+- `github.com/joeycumines/goja-protojson v0.0.0-20260213164919-c434665d6fbf`
 
 ## Immediate Next Step
 
-1. ~~Rule of Two verification for T011~~ ✅ DONE
-2. Pick next task: T164 (CHANGELOG) or T012 (goja-grpc) or T161 (goal autodiscovery)
+1. Rule of Two verification for T012
+2. Pick next task: T013 (fetch API) or T161 (goal autodiscovery)
 3. Continue blueprint refinement

@@ -635,35 +635,22 @@ Custom patterns can be added via `parser.addPattern()` for provider-specific pro
 
 ## 9. Event Loop Migration Path
 
-### Current State
+> **Status: COMPLETE.** Both the event loop migration (T011) and goja-grpc integration (T012) are done. This section is retained for historical context.
 
-osm uses `dop251/goja_nodejs/eventloop` for JavaScript execution. This event loop supports `setTimeout`, `setInterval`, and `setImmediate`. It does **not** support Promises, async/await, or the `go-eventloop` interface required by `goja-grpc`.
+### Completed: Event Loop Migration (T011)
 
-The `osm:grpc` module (`internal/builtin/grpc/grpc.go`) works around this by using `google.golang.org/grpc` directly with synchronous `conn.invoke()` calls. This provides unary RPC but no streaming.
+Replaced `dop251/goja_nodejs/eventloop` with `github.com/joeycumines/go-eventloop` + `goja-eventloop` adapter. The new event loop supports Promises, async/await, AbortController, TextEncoder/Decoder, URL, and process.nextTick.
 
-### Migration Target
+### Completed: goja-grpc Integration (T012)
 
-Replace `dop251/goja_nodejs/eventloop` with `github.com/joeycumines/goja-eventloop` (`go-eventloop`). This unlocks:
+Replaced the synchronous `osm:grpc` module (raw `google.golang.org/grpc` with `conn.invoke()`) with a thin wrapper around `joeycumines/goja-grpc`. The new module provides:
 
-1. **`goja-grpc` integration** — Replace `osm:grpc` with a thin wrapper around `joeycumines/goja-grpc` for Promise-based streaming RPCs (unary, server-streaming, client-streaming, bidirectional). The existing `osm:grpc` module using raw `google.golang.org/grpc` should be deleted entirely and replaced.
-2. **Promise support** — Enable `fetch()` to return Promises instead of blocking.
-3. **AbortSignal** — Cancel in-flight operations via `AbortController`.
+1. **Promise-based RPC** — All gRPC calls return Promises (unary, server-streaming, client-streaming, bidirectional).
+2. **In-process channel** — Uses `go-inprocgrpc` for zero-network-overhead internal communication.
+3. **Separate protobuf module** — `osm:protobuf` (via `goja-protobuf`) handles `FileDescriptorSet` loading.
+4. **Full API** — `createClient`, `createServer`, `dial`, `status`, `metadata`, `enableReflection`, `createReflectionClient`.
 
-### Migration Scope
-
-The event loop is imported in 20+ files across the codebase:
-- `internal/scripting/` (runtime, engine)
-- `internal/builtin/bt/` (bridge, tests)
-- `internal/builtin/bubbletea/` (runner tests)
-- `internal/builtin/pabt/` (tests)
-- `internal/builtin/orchestrator/` (tests)
-- `internal/builtin/register.go` (central registration — `EventLoopProvider` interface)
-
-The migration requires updating the `EventLoopProvider` interface and every test that creates an event loop. The Go module APIs (`osm:pty`, `osm:orchestrator` parser) are synchronous and unaffected.
-
-### Impact on Orchestrator
-
-The orchestrator is designed to work with **either** event loop. All Go APIs are synchronous. The JS templates use `bt.createBlockingLeafNode` which is compatible with both. The migration is orthogonal to orchestrator functionality.
+### Remaining
 
 Post-migration, the orchestrator gains:
 - Streaming output parsing (event-driven instead of polling `Read()`)

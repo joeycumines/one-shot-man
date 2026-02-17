@@ -197,7 +197,8 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:text/template` | Go `text/template` wrapper | `new(name) → Template`, `execute(text, data) → string`; Template methods: `.parse(text)`, `.execute(data) → string`, `.funcs(funcMap)`, `.name()`, `.delims(left, right)`, `.option(...opts)` |
 | `osm:unicodetext` | Unicode text utilities | `width(s) → number` (monospace display width), `truncate(s, maxWidth, tail?) → string`. [Reference →](reference/unicodetext.md) |
 | `osm:fetch` | HTTP client (synchronous + streaming) | `fetch(url, opts?) → Response`, `fetchStream(url, opts?) → StreamResponse`; Options: `method`, `headers`, `body`, `timeout`; Response: `.status`, `.ok`, `.statusText`, `.url`, `.headers`, `.text()`, `.json()`; StreamResponse adds: `.readLine()`, `.readAll()`, `.close()` |
-| `osm:grpc` | gRPC client for proto-based services | `dial(target, opts?) → Connection`, `loadDescriptorSet(base64)`, `status` (code constants); Connection: `.invoke(method, request?) → object`, `.close()`, `.target` |
+| `osm:grpc` | Promise-based gRPC client and server (via [goja-grpc](https://github.com/joeycumines/goja-grpc)) | `createClient(service) → Client` (methods return `Promise`), `createServer(service, handler) → Server`, `dial(target, opts?) → Channel`, `status` (code constants: `OK`, `CANCELLED`, `NOT_FOUND`, etc.), `metadata`, `enableReflection(server)`, `createReflectionClient(channel)` |
+| `osm:protobuf` | Protocol Buffers for goja (via [goja-protobuf](https://github.com/joeycumines/goja-protobuf)) | `loadDescriptorSet(bytes)` — loads binary `FileDescriptorSet` for use with `osm:grpc` |
 
 #### Workflow & state
 

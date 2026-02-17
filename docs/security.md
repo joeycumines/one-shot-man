@@ -81,15 +81,29 @@ Attempts to `require('go:os')`, `require('node:fs')`, or other prefixes fail.
 - **No restrictions:** Intentional for a local dev tool. The user controls which scripts run.
 - **No server-side:** No `createServer`, `listen`, or socket APIs.
 
-#### `osm:grpc` — gRPC Client
+#### `osm:grpc` — gRPC Client & Server (via goja-grpc)
 
 | API | Security Notes |
 |---|---|
-| `dial(target, opts)` | Opens gRPC connection. Supports insecure option. |
-| `loadDescriptorSet(path)` | Loads protobuf descriptor from file. |
-| `invoke(...)` | Sends gRPC request. |
+| `createClient(service)` | Creates gRPC client stub. Methods return Promises. |
+| `createServer(service, handler)` | Creates in-process gRPC server (no network binding). |
+| `dial(target, opts)` | Opens gRPC channel. Supports insecure option. |
+| `status` | gRPC status code constants. |
+| `metadata` | gRPC metadata construction. |
+| `enableReflection(server)` | Enables gRPC reflection on a server. |
+| `createReflectionClient(channel)` | Creates reflection client for service discovery. |
 
-- **Client-only:** No `createServer`, `listen`, or `serve`.
+- **In-process channel:** Uses `go-inprocgrpc` — server runs in-process without binding a network port.
+- **No raw network server:** No `listen`, `serve`, or `Server` constructor. `createServer` registers handlers on the in-process channel only.
+- **Promise-based:** All RPC calls return Promises (unary, server-streaming, client-streaming, bidirectional).
+
+#### `osm:protobuf` — Protocol Buffers
+
+| API | Security Notes |
+|---|---|
+| `loadDescriptorSet(bytes)` | Loads binary FileDescriptorSet into the protobuf registry. |
+
+- **Read-only registry:** Only loads descriptors for use with `osm:grpc`. No file system access.
 
 #### `osm:text/template` — Go Templates
 

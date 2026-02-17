@@ -63,8 +63,8 @@
     },
     {
       "task": "T012: Replace osm:grpc with github.com/joeycumines/goja-grpc",
-      "description": "DELETE internal/builtin/grpc/ entirely. Thin wrapper around goja-grpc. BREAKING CHANGE: synchronous invoke() to Promise-based streaming gRPC. Update docs and tests. go mod tidy. Run make.",
-      "status": "Not Started",
+      "description": "DONE. Rewrote internal/builtin/grpc/grpc.go as thin wrapper around goja-grpc (Require() delegates to gojagrpc.Require with WithChannel/WithProtobuf/WithAdapter options). Registered osm:protobuf via goja-protobuf. Extended EventLoopProvider interface with Adapter() method. Updated Runtime/Engine/TestEventLoopProvider. Rewrote grpc_test.go with Promise-based echo round-trip test via inprocgrpc. Updated security_sandbox_test.go for new exports. Updated docs (scripting.md, security.md, architecture.md). BREAKING CHANGE: synchronous invoke() replaced by Promise-based streaming gRPC.",
+      "status": "Done",
       "blockedBy": "T011"
     },
     {

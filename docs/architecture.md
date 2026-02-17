@@ -151,7 +151,8 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 | `osm:regexp` | RE2 regular expressions (match, find, replace, split, compile) |
 | `osm:time` | Sleep (millisecond-precision delay) |
 | `osm:fetch` | HTTP client (GET, POST, etc.) |
-| `osm:grpc` | gRPC client with protobuf descriptor loading |
+| `osm:grpc` | Promise-based gRPC client/server (via goja-grpc, in-process channel) |
+| `osm:protobuf` | Protocol Buffers descriptor loading (via goja-protobuf) |
 
 ### Text and templates
 

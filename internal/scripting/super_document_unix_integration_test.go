@@ -871,6 +871,9 @@ func TestSuperDocument_MouseClickCopyPrompt(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if os.Getuid() == 0 {
+		t.Skip("mouse TUI tests unreliable as root (e.g. Docker)")
+	}
 
 	binaryPath := buildTestBinary(t)
 

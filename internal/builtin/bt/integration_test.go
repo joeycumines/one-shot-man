@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/eventloop"
 	gojarequire "github.com/dop251/goja_nodejs/require"
+	goeventloop "github.com/joeycumines/go-eventloop"
 	bt "github.com/joeycumines/go-behaviortree"
 	"github.com/stretchr/testify/require"
 )
@@ -312,15 +312,22 @@ func TestIntegration_SharedModeManagerShutdown(t *testing.T) {
 
 	// Create external event loop (shared mode owner)
 	reg := gojarequire.NewRegistry()
-	loop := eventloop.NewEventLoop(eventloop.WithRegistry(reg))
-	loop.Start()
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vm := goja.New()
+	reg.Enable(vm)
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
 
 	// Create bridge in shared mode (does NOT own the loop)
 	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, reg)
+	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg)
 	defer func() {
 		bridge.Stop()
-		loop.Stop() // We own the loop, so we must stop it
+		loopCancel()
+		loop.Shutdown(context.Background())
 	}()
 
 	// Create a Manager via bt.newManager()
@@ -398,7 +405,7 @@ func TestIntegration_SharedModeManagerShutdown(t *testing.T) {
 	// The fallback mechanism should trigger and call bridge.loop.RunOnLoop()
 	// to settle the promise.
 	stopCh := make(chan error, 1)
-	scheduled := loop.RunOnLoop(func(vm *goja.Runtime) {
+	submitErr := loop.Submit(func() {
 		managerObj := vm.Get("testManager").ToObject(vm)
 		stopFn := managerObj.Get("stop")
 		stopCallable, ok := goja.AssertFunction(stopFn)
@@ -409,7 +416,7 @@ func TestIntegration_SharedModeManagerShutdown(t *testing.T) {
 		_, stopErr := stopCallable(managerObj)
 		stopCh <- stopErr
 	})
-	require.True(t, scheduled, "Failed to schedule manager.stop() on loop")
+	require.NoError(t, submitErr, "Failed to schedule manager.stop() on loop")
 	select {
 	case stopErr := <-stopCh:
 		require.NoError(t, stopErr)
@@ -441,15 +448,22 @@ func TestIntegration_SharedModeTickerShutdown(t *testing.T) {
 
 	// Create external event loop (shared mode owner)
 	reg := gojarequire.NewRegistry()
-	loop := eventloop.NewEventLoop(eventloop.WithRegistry(reg))
-	loop.Start()
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vm := goja.New()
+	reg.Enable(vm)
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
 
 	// Create bridge in shared mode
 	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, reg)
+	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg)
 	defer func() {
 		bridge.Stop()
-		loop.Stop()
+		loopCancel()
+		loop.Shutdown(context.Background())
 	}()
 
 	// Create a ticker

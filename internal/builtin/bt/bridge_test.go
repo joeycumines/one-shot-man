@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/eventloop"
 	gojarequire "github.com/dop251/goja_nodejs/require"
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/goroutineid"
 	"github.com/stretchr/testify/require"
 )
@@ -24,18 +24,22 @@ import (
 // use NewBridgeWithEventLoop with a shared event loop.
 func testBridge(t *testing.T) *Bridge {
 	reg := gojarequire.NewRegistry()
-	loop := eventloop.NewEventLoop(
-		eventloop.WithRegistry(reg),
-		eventloop.EnableConsole(true),
-	)
-	loop.Start()
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vm := goja.New()
+	reg.Enable(vm)
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
 
 	ctx := context.Background()
 	t.Cleanup(func() {
-		loop.Stop()
+		loopCancel()
+		loop.Shutdown(context.Background())
 	})
 
-	bridge := NewBridgeWithEventLoop(ctx, loop, reg)
+	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg)
 	t.Cleanup(func() {
 		bridge.Stop()
 	})
@@ -50,34 +54,43 @@ func TestBridgeWithManualShutdown_CleanupSafetyNet(t *testing.T) {
 	t.Parallel()
 
 	// Create bridge but do NOT call Stop()
-	bridge, loop := testBridgeWithManualShutdown(t)
+	bridge, stopLoop := testBridgeWithManualShutdown(t)
 
 	// Verify it's running
 	require.True(t, bridge.IsRunning())
 
-	// Do NOT call bridge.Stop() or loop.Stop() here
+	// Do NOT call bridge.Stop() or stopLoop() here
 	// The t.Cleanup safety net will handle it when the test function ends
 	// This test verifies that resources don't leak even if we forget to clean up
-	_ = loop // Use the loop variable to avoid "declared and not used" error
+	_ = stopLoop // Use the variable to avoid "declared and not used" error
 }
 
 // testBridgeWithManualShutdown creates a new Bridge without automatic cleanup.
-// The test is responsible for calling bridge.Stop() and loop.Stop().
+// The test is responsible for calling bridge.Stop() and stopLoop().
 // This is needed for tests that need to control the shutdown timing precisely.
 //
-// Returns a tuple (*Bridge, *eventloop.EventLoop) for explicit control.
+// Returns a tuple (*Bridge, func()) for explicit control. The returned function
+// stops the event loop (cancel + shutdown).
 // Even though cleanup is manual, a safety net is registered via t.Cleanup
 // to prevent resource leaks if the test forgets to call Stop().
-func testBridgeWithManualShutdown(t *testing.T) (*Bridge, *eventloop.EventLoop) {
+func testBridgeWithManualShutdown(t *testing.T) (*Bridge, func()) {
 	reg := gojarequire.NewRegistry()
-	loop := eventloop.NewEventLoop(
-		eventloop.WithRegistry(reg),
-		eventloop.EnableConsole(true),
-	)
-	loop.Start()
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vm := goja.New()
+	reg.Enable(vm)
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
 
 	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, reg)
+	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg)
+
+	stopLoop := func() {
+		loopCancel()
+		loop.Shutdown(context.Background())
+	}
 
 	// Safety cleanup in case test forgets to call Stop()
 	// Uses generous 30-second timeout for graceful shutdown
@@ -100,18 +113,18 @@ func testBridgeWithManualShutdown(t *testing.T) (*Bridge, *eventloop.EventLoop) 
 		// Stop the event loop
 		stopDone := make(chan struct{})
 		go func() {
-			loop.Stop()
+			stopLoop()
 			close(stopDone)
 		}()
 		select {
 		case <-stopDone:
 			// Loop stopped cleanly
 		case <-time.After(30 * time.Second):
-			t.Logf("WARNING: loop.Stop() timed out after 30s in test cleanup")
+			t.Logf("WARNING: stopLoop() timed out after 30s in test cleanup")
 		}
 	})
 
-	return bridge, loop
+	return bridge, stopLoop
 }
 
 func TestBridge_NewAndStop(t *testing.T) {
@@ -135,14 +148,20 @@ func TestBridge_ContextCancellation(t *testing.T) {
 	t.Cleanup(cancel)
 
 	reg := gojarequire.NewRegistry()
-	loop := eventloop.NewEventLoop(
-		eventloop.WithRegistry(reg),
-		eventloop.EnableConsole(true),
-	)
-	loop.Start()
-	t.Cleanup(func() { loop.Stop() })
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vm := goja.New()
+	reg.Enable(vm)
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
+	t.Cleanup(func() {
+		loopCancel()
+		loop.Shutdown(context.Background())
+	})
 
-	bridge := NewBridgeWithEventLoop(ctx, loop, reg)
+	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg)
 	require.True(t, bridge.IsRunning())
 
 	// Cancel context
@@ -184,15 +203,21 @@ func TestBridge_RunOnLoopAfterStop(t *testing.T) {
 
 	// Create a bridge without using the helper to control stop timing
 	reg := gojarequire.NewRegistry()
-	loop := eventloop.NewEventLoop(
-		eventloop.WithRegistry(reg),
-		eventloop.EnableConsole(true),
-	)
-	loop.Start()
-	defer loop.Stop()
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vm := goja.New()
+	reg.Enable(vm)
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
+	defer func() {
+		loopCancel()
+		loop.Shutdown(context.Background())
+	}()
 
 	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, reg)
+	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg)
 
 	bridge.Stop()
 
@@ -1108,7 +1133,7 @@ func TestBridge_ConcurrentStopAndSchedule(t *testing.T) {
 	t.Parallel()
 
 	// Create a bridge with manual shutdown control for precise timing
-	bridge, loop := testBridgeWithManualShutdown(t)
+	bridge, stopLoop := testBridgeWithManualShutdown(t)
 
 	// Configuration for stress test
 	const (
@@ -1232,9 +1257,9 @@ func TestBridge_ConcurrentStopAndSchedule(t *testing.T) {
 	require.Contains(t, err.Error(), "not running",
 		"Error should mention event loop not running")
 
-	// Verify the event loop is still functional for other operations
+	// Verify the stopLoop handle is still valid
 	// (we didn't stop it, only the bridge)
-	require.True(t, loop != nil, "Event loop should still exist")
+	require.True(t, stopLoop != nil, "Event loop stop handle should still exist")
 
 	// Mark test as complete for any waiting cleanup
 	close(completeCalled)
@@ -1255,7 +1280,7 @@ func TestBridge_C3_LifecycleInvariant_StrictVerification(t *testing.T) {
 
 	for iter := 0; iter < iterations; iter++ {
 		t.Run(fmt.Sprintf("iteration_%d", iter), func(t *testing.T) {
-			bridge, loop := testBridgeWithManualShutdown(t)
+			bridge, stopLoop := testBridgeWithManualShutdown(t)
 
 			// Create a channel to synchronize observer goroutines
 			doneCh := make(chan struct{})
@@ -1323,7 +1348,7 @@ func TestBridge_C3_LifecycleInvariant_StrictVerification(t *testing.T) {
 			require.False(t, bridge.IsRunning(), "IsRunning() must return false after Stop()")
 
 			// Cleanup
-			loop.Stop()
+			stopLoop()
 		})
 	}
 }
@@ -1334,7 +1359,7 @@ func TestBridge_C3_LifecycleInvariant_StrictVerification(t *testing.T) {
 func TestBridge_C3_StopLockOrdering(t *testing.T) {
 	t.Parallel()
 
-	bridge, loop := testBridgeWithManualShutdown(t)
+	bridge, stopLoop := testBridgeWithManualShutdown(t)
 
 	// Create a custom bridge that tracks operation ordering
 	type op struct {
@@ -1386,7 +1411,7 @@ func TestBridge_C3_StopLockOrdering(t *testing.T) {
 
 	require.False(t, bridge.IsRunning(), "IsRunning() should be false")
 
-	loop.Stop()
+	stopLoop()
 }
 
 // TestBridge_C3_NoRaceUnderLoad verifies the C3 fix under high concurrent load.
@@ -1394,7 +1419,7 @@ func TestBridge_C3_StopLockOrdering(t *testing.T) {
 func TestBridge_C3_NoRaceUnderLoad(t *testing.T) {
 	t.Parallel()
 
-	bridge, loop := testBridgeWithManualShutdown(t)
+	bridge, stopLoop := testBridgeWithManualShutdown(t)
 
 	// Create maximum contention
 	const numWorkers = 100
@@ -1442,7 +1467,7 @@ func TestBridge_C3_NoRaceUnderLoad(t *testing.T) {
 	v := violations.Load()
 	require.Equal(t, int32(0), v, "No violations under load")
 
-	loop.Stop()
+	stopLoop()
 }
 
 // TestBridge_C3_ConcurrentStopCalls verifies that multiple concurrent Stop() calls
@@ -1450,7 +1475,7 @@ func TestBridge_C3_NoRaceUnderLoad(t *testing.T) {
 func TestBridge_C3_ConcurrentStopCalls(t *testing.T) {
 	t.Parallel()
 
-	bridge, loop := testBridgeWithManualShutdown(t)
+	bridge, stopLoop := testBridgeWithManualShutdown(t)
 
 	const numStops = 10
 	var wg sync.WaitGroup
@@ -1476,7 +1501,7 @@ func TestBridge_C3_ConcurrentStopCalls(t *testing.T) {
 
 	require.False(t, bridge.IsRunning(), "IsRunning() should be false after concurrent Stop() calls")
 
-	loop.Stop()
+	stopLoop()
 }
 
 // TestBridge_C3_IsRunningAfterManagerStop verifies that IsRunning() returns false
@@ -1484,7 +1509,7 @@ func TestBridge_C3_ConcurrentStopCalls(t *testing.T) {
 func TestBridge_C3_IsRunningAfterManagerStop(t *testing.T) {
 	t.Parallel()
 
-	bridge, loop := testBridgeWithManualShutdown(t)
+	bridge, stopLoop := testBridgeWithManualShutdown(t)
 
 	// Verify initially running
 	require.True(t, bridge.IsRunning())
@@ -1510,5 +1535,5 @@ func TestBridge_C3_IsRunningAfterManagerStop(t *testing.T) {
 
 	require.False(t, bridge.IsRunning(), "IsRunning() should be false after Stop()")
 
-	loop.Stop()
+	stopLoop()
 }

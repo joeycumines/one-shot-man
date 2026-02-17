@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/eventloop"
+	goeventloop "github.com/joeycumines/go-eventloop"
 	gojarequire "github.com/dop251/goja_nodejs/require"
 	btmod "github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	execmod "github.com/joeycumines/one-shot-man/internal/builtin/exec"
@@ -28,15 +28,21 @@ func templateTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	}
 
 	reg := gojarequire.NewRegistry()
-	loop := eventloop.NewEventLoop(
-		eventloop.WithRegistry(reg),
-		eventloop.EnableConsole(true),
-	)
-	loop.Start()
-	t.Cleanup(func() { loop.Stop() })
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vm := goja.New()
+	reg.Enable(vm)
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
+	t.Cleanup(func() {
+		loopCancel()
+		loop.Shutdown(context.Background())
+	})
 
 	ctx := context.Background()
-	bridge := btmod.NewBridgeWithEventLoop(ctx, loop, reg)
+	bridge := btmod.NewBridgeWithEventLoop(ctx, loop, vm, reg)
 	t.Cleanup(func() { bridge.Stop() })
 
 	// Register additional modules.

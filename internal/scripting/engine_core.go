@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 
 	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/eventloop"
 	"github.com/dop251/goja_nodejs/require"
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	"github.com/joeycumines/one-shot-man/internal/goroutineid"
@@ -293,7 +293,8 @@ func (e *Engine) SetTestMode(enabled bool) {
 func (e *Engine) QueueSetGlobal(name string, value interface{}) {
 	// Queue the VM and local cache update to the event loop for thread safety
 	// Also acquire lock to synchronize with GetGlobal's Lock()
-	e.runtime.loop.RunOnLoop(func(vm *goja.Runtime) {
+	vm := e.vm
+	e.runtime.loop.Submit(func() {
 		e.globalsMu.Lock()
 		e.globals[name] = value
 		vm.Set(name, value)
@@ -310,7 +311,8 @@ func (e *Engine) QueueSetGlobal(name string, value interface{}) {
 func (e *Engine) QueueGetGlobal(name string, callback func(value interface{})) {
 	// Queue the VM read to the event loop for thread safety
 	// Also acquire lock to synchronize with QueueSetGlobal's vm.Set() calls
-	e.runtime.loop.RunOnLoop(func(vm *goja.Runtime) {
+	vm := e.vm
+	e.runtime.loop.Submit(func() {
 		e.globalsMu.Lock()
 		val := vm.Get(name)
 		e.globalsMu.Unlock()
@@ -547,13 +549,19 @@ func (e *Engine) GetTerminalWriter() io.Writer {
 	return e.terminalIO.TUIWriter
 }
 
-// EventLoop returns the shared event loop.
+// Loop returns the shared event loop.
 // This implements builtin.EventLoopProvider.
-func (e *Engine) EventLoop() *eventloop.EventLoop {
+func (e *Engine) Loop() *goeventloop.Loop {
 	if e.runtime == nil {
 		return nil
 	}
-	return e.runtime.EventLoop()
+	return e.runtime.Loop()
+}
+
+// Runtime returns the goja.Runtime for JavaScript execution.
+// This implements builtin.EventLoopProvider.
+func (e *Engine) Runtime() *goja.Runtime {
+	return e.vm
 }
 
 // Registry returns the require.Registry for module registration.

@@ -406,9 +406,15 @@ func TestScanSessions_ReadDirError(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
+	pathsMu.Lock()
 	orig := sessionDirectory
-	defer func() { sessionDirectory = orig }()
 	sessionDirectory = func() (string, error) { return filePath, nil }
+	pathsMu.Unlock()
+	defer func() {
+		pathsMu.Lock()
+		sessionDirectory = orig
+		pathsMu.Unlock()
+	}()
 
 	_, err := ScanSessions()
 	if err == nil {

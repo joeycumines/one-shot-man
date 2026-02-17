@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/eventloop"
+	goeventloop "github.com/joeycumines/go-eventloop"
 	gojarequire "github.com/dop251/goja_nodejs/require"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,18 +18,21 @@ import (
 // Registers both osm:bt and osm:pabt modules.
 func testBridge(t *testing.T) *btmod.Bridge {
 	reg := gojarequire.NewRegistry()
-	loop := eventloop.NewEventLoop(
-		eventloop.WithRegistry(reg),
-		eventloop.EnableConsole(true),
-	)
-	loop.Start()
-
-	ctx := context.Background()
+	loop, err := goeventloop.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vm := goja.New()
+	reg.Enable(vm)
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
 	t.Cleanup(func() {
-		loop.Stop()
+		loopCancel()
+		loop.Shutdown(context.Background())
 	})
 
-	bridge := btmod.NewBridgeWithEventLoop(ctx, loop, reg)
+	ctx := context.Background()
+	bridge := btmod.NewBridgeWithEventLoop(ctx, loop, vm, reg)
 	t.Cleanup(func() {
 		bridge.Stop()
 	})

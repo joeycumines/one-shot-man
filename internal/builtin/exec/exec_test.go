@@ -43,8 +43,24 @@ func writeScript(t *testing.T, contents string) string {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "script.sh")
-	if err := os.WriteFile(path, []byte(contents), 0o700); err != nil {
+
+	// Use write-to-temp + rename to avoid ETXTBSY on Docker's overlayfs.
+	// The target path was never opened for writing, so exec cannot see
+	// a stale inode marked as "text busy".
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o700)
+	if err != nil {
+		t.Fatalf("failed to create temp script: %v", err)
+	}
+	if _, err := f.Write([]byte(contents)); err != nil {
+		f.Close()
 		t.Fatalf("failed to write script: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("failed to close script: %v", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		t.Fatalf("failed to rename script: %v", err)
 	}
 	return path
 }

@@ -4,8 +4,9 @@ import (
 	"context"
 	"io"
 
-	"github.com/dop251/goja_nodejs/eventloop"
+	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"github.com/joeycumines/one-shot-man/internal/builtin/argv"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
 	textareamod "github.com/joeycumines/one-shot-man/internal/builtin/bubbles/textarea"
@@ -51,8 +52,10 @@ type TerminalOpsProvider interface {
 // CRITICAL: This is REQUIRED for Register(). Without an event loop, thread-safe
 // JavaScript execution is impossible, and BubbleTea programs would cause data races.
 type EventLoopProvider interface {
-	// EventLoop returns the shared event loop. The loop must already be started.
-	EventLoop() *eventloop.EventLoop
+	// Loop returns the shared event loop. The loop must already be started.
+	Loop() *goeventloop.Loop
+	// Runtime returns the goja.Runtime for JavaScript execution.
+	Runtime() *goja.Runtime
 	// Registry returns the require.Registry for module registration.
 	Registry() *require.Registry
 }
@@ -114,7 +117,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	// Register bt module FIRST for behavior tree integration with JavaScript.
 	// This must happen before bubbletea so we can wire the JSRunner for thread-safe JS calls.
 	// NewBridgeWithEventLoop registers the osm:bt module automatically.
-	btBridge := bt.NewBridgeWithEventLoop(ctx, eventLoopProvider.EventLoop(), eventLoopProvider.Registry())
+	btBridge := bt.NewBridgeWithEventLoop(ctx, eventLoopProvider.Loop(), eventLoopProvider.Runtime(), eventLoopProvider.Registry())
 
 	// Register osm:pabt module for Planning-Augmented Behavior Trees.
 	// This depends on btBridge for thread-safe goja.Runtime access.

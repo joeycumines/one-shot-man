@@ -2,25 +2,43 @@
 
 ## Current State
 
-- **T001-T005**: ALL DONE. Rule of Two passed (2/2 contiguous PASS). All committed on `wip` branch.
-- **Branch**: `wip` (216 commits ahead of `main`). Working tree clean.
-- **All tests passing**: `make make-all-with-log` exits 0, zero failures.
-- **Review artifacts**: `scratch/review-run1.md`, `scratch/review-run2.md`
+- **T001-T005**: ALL DONE. Rule of Two passed (2/2).
+- **T104+T105**: ALL DONE. Rule of Two passed (2/2). Cross-platform zero failures.
+- **T135+T136**: ALL DONE. Deadcode + betteralign audits clean.
+- **Branch**: `wip` (ahead of `main`). All changes committed.
+- **All tests passing**: macOS + Linux Docker + Windows all zero failures.
 
-## Completed This Session
+## T011: Eventloop Migration — IN PROGRESS
 
-- T001: Storage RWMutex for path globals
-- T002: PTY slave fd lifecycle fix (manual Open+Start)
-- T003: Verified TestPRSplit not broken (load flake)
-- T004: BubbleTea handleResize race fix (50ms sleep)
-- T005: Race detection sweep -count=3 all pass
-- Rule of Two: 2/2 PASS
+**Status**: Modifying 4 production files (tests handled separately).
+
+### Files to modify (in order):
+1. `internal/builtin/register.go` — EventLoopProvider interface + bt call
+2. `internal/scripting/runtime.go` — Core Runtime struct + constructor + methods
+3. `internal/scripting/engine_core.go` — QueueSetGlobal/QueueGetGlobal + EventLoop→Loop
+4. `internal/builtin/bt/bridge.go` — Bridge struct + constructor + RunOnLoop→Submit
+
+### API mapping:
+- `*eventloop.EventLoop` → `*goeventloop.Loop`
+- `loop.Start()` → `go loop.Run(ctx)`
+- `loop.Stop()` → `loop.Shutdown(ctx)` + cancel run context
+- `loop.RunOnLoop(func(*goja.Runtime))` → `loop.Submit(func())`
+- Goja adapter: `gojaEventloop.New(loop, vm)` + `adapter.Bind()`
+
+### Import aliases:
+```go
+goeventloop "github.com/joeycumines/go-eventloop"
+gojaEventloop "github.com/joeycumines/goja-eventloop"
+```
 
 ## Immediate Next Step
 
-Pick next task from blueprint.json. Candidates:
-1. T011: Eventloop migration (CRITICAL — unblocks T012, T013, T015)
-2. T135: Deadcode audit (quick win)
-3. T136: Struct alignment (quick win)
-4. T104: Linux cross-platform verification
-5. T031: Architecture doc rewrite (gates claude-mux)
+1. T011: Migrate test files (9 files) — IN PROGRESS
+   - testutil/eventloop.go
+   - bt/bridge_test.go, adapter_test.go, integration_test.go, benchmark_throughput_test.go
+   - bubbletea/runner_test.go
+   - orchestrator/templates_test.go, pr_split_test.go
+   - pabt/require_test.go
+2. T011: go get new deps, go mod tidy, run make
+3. T164: CHANGELOG completeness  
+4. T161: Goal autodiscovery test hardening

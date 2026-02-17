@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,12 @@ func ScanSessions() ([]SessionInfo, error) {
 	dir, err := getSessionDirectory()
 	if err != nil {
 		return nil, err
+	}
+
+	// On some platforms (notably Windows), os.ReadDir on a non-directory path
+	// may not return an error. Explicitly verify the path is a directory.
+	if info, statErr := os.Stat(dir); statErr == nil && !info.IsDir() {
+		return nil, fmt.Errorf("sessions path is not a directory: %s", dir)
 	}
 
 	entries, err := os.ReadDir(dir)

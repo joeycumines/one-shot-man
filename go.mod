@@ -28,7 +28,9 @@ require (
 	github.com/go-git/go-git/v6 v6.0.0-20260216160506-e6a3f881772f
 	github.com/google/uuid v1.6.0
 	github.com/joeycumines/go-behaviortree v1.11.0
+	github.com/joeycumines/go-eventloop v0.0.0
 	github.com/joeycumines/go-pabt v0.2.0
+	github.com/joeycumines/goja-eventloop v0.0.0-20260213164906-b3f83ceccca4
 	github.com/lrstanley/bubblezone v1.0.0
 	github.com/modelcontextprotocol/go-sdk v1.3.0
 	github.com/muesli/termenv v0.16.0
@@ -63,10 +65,11 @@ require (
 	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/pprof v0.0.0-20260202012954-cb029daf43ef // indirect
 	github.com/joeycumines/go-bigbuff v1.21.0 // indirect
+	github.com/joeycumines/go-catrate v0.0.0-20260210130411-ef1b624f3188 // indirect
+	github.com/joeycumines/logiface v0.5.0 // indirect
 	github.com/joeycumines/simple-command-output-filter v0.2.1 // indirect
 	github.com/kevinburke/ssh_config v1.5.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -96,3 +99,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.7.0 // indirect
 )
+
+// goja-eventloop's go.mod requires go-eventloop v0.0.0 with a local replace
+// directive (../eventloop), which is invalid for non-main modules. Override
+// with the actual pseudo-version so the dependency resolves correctly.
+replace github.com/joeycumines/go-eventloop v0.0.0 => github.com/joeycumines/go-eventloop v0.0.0-20260213164852-99e8a33a69b7

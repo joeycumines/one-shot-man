@@ -30,7 +30,7 @@ func TestNewRuntime(t *testing.T) {
 		t.Error("registry should not be nil")
 	}
 
-	if rt.EventLoop() == nil {
+	if rt.Loop() == nil {
 		t.Error("event loop should not be nil")
 	}
 }

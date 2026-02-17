@@ -331,7 +331,7 @@ func TestIntegration_SharedModeManagerShutdown(t *testing.T) {
 	}()
 
 	// Create a Manager via bt.newManager()
-	err := bridge.LoadScript("manager.js", `
+	err = bridge.LoadScript("manager.js", `
 		const bt = require('osm:bt');
 		// Create a ticker that keeps running (returns "running" forever)
 		globalThis.testTicker = bt.newTicker(50, bt.node(() => "running"));
@@ -467,7 +467,7 @@ func TestIntegration_SharedModeTickerShutdown(t *testing.T) {
 	}()
 
 	// Create a ticker
-	err := bridge.LoadScript("ticker.js", `
+	err = bridge.LoadScript("ticker.js", `
 		const bt = require('osm:bt');
 		globalThis.testTicker = bt.newTicker(100, bt.node(() => "running"));
 	`)

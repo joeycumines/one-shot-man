@@ -932,7 +932,7 @@ func TestBridge_NewBridgeWithEventLoop_NilLoopPanic(t *testing.T) {
 	t.Parallel()
 
 	assert.PanicsWithValue(t, "event loop must not be nil", func() {
-		NewBridgeWithEventLoop(context.Background(), nil, nil)
+		NewBridgeWithEventLoop(context.Background(), nil, nil, nil)
 	})
 }
 
@@ -1012,7 +1012,7 @@ func TestBridge_RunOnLoopSync_DoneDuringWait(t *testing.T) {
 		t.Fatal("RunOnLoopSync should have unblocked when bridge stopped")
 	}
 
-	loop.Stop()
+	loop()
 }
 
 // TestBridge_TryRunOnLoopSync_BridgeStopped verifies TryRunOnLoopSync with stopped bridge.

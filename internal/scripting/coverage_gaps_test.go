@@ -165,7 +165,7 @@ func TestEngine_GetTerminalWriter_NilTerminalIO(t *testing.T) {
 func TestEngine_EventLoop_NilRuntime(t *testing.T) {
 	t.Parallel()
 	e := &Engine{} // runtime is nil
-	if el := e.EventLoop(); el != nil {
+	if el := e.Loop(); el != nil {
 		t.Error("EventLoop() should return nil when runtime is nil")
 	}
 }

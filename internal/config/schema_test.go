@@ -540,13 +540,13 @@ func TestDefaultSchema_OrchestratorOptionTypes(t *testing.T) {
 	s := DefaultSchema()
 
 	checks := map[string]OptionType{
-		"orchestrator.env-inherit":           TypeBool,
+		"orchestrator.env-inherit":            TypeBool,
 		"orchestrator.rate-limit-backoff-sec": TypeInt,
-		"orchestrator.max-agents":            TypeInt,
-		"orchestrator.pty-rows":              TypeInt,
-		"orchestrator.pty-cols":              TypeInt,
-		"orchestrator.provider":              TypeString,
-		"orchestrator.model":                 TypeString,
+		"orchestrator.max-agents":             TypeInt,
+		"orchestrator.pty-rows":               TypeInt,
+		"orchestrator.pty-cols":               TypeInt,
+		"orchestrator.provider":               TypeString,
+		"orchestrator.model":                  TypeString,
 	}
 	for key, wantType := range checks {
 		opt := s.Lookup("", key)

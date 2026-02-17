@@ -1,1511 +1,741 @@
-# AI Orchestrator — Architecture Design Document
+# AI Orchestrator — Architecture
 
-> **Status:** Proposal  
-> **Date:** 2026-02-17  
-> **Scope:** T238 (this document), gates T239–T255  
-> **Author:** Generated from blueprint analysis
+> **Status:** Active — Foundation implemented (T238–T245), advancing (T246–T255)  
+> **Last updated:** 2026-02-17
 
----
+## Contents
 
-## Table of Contents
-
-1. [Executive Summary](#1-executive-summary)
-2. [Problem Statement](#2-problem-statement)
-3. [Architecture Approach A: Minimal (Script-First)](#3-architecture-approach-a-minimal-script-first)
-4. [Architecture Approach B: Clean Architecture (Module-First)](#4-architecture-approach-b-clean-architecture-module-first)
-5. [Architecture Approach C: Pragmatic Balance (Recommended)](#5-architecture-approach-c-pragmatic-balance-recommended)
-6. [Cross-Cutting Concerns](#6-cross-cutting-concerns)
-7. [Implementation Roadmap](#7-implementation-roadmap)
-8. [Decision](#8-decision)
-
----
-
-## 1. Executive Summary
-
-The **AI Orchestrator** is a subsystem of `osm` that enables programmatic spawning, monitoring, and coordination of AI coding agents — primarily Claude Code — from within JavaScript workflows. It extends osm's existing behavior tree engine, MCP server, and scripting infrastructure to automate multi-agent development workflows: spawning agents in isolated PTY sessions, feeding them prompts, monitoring their output for rate limits and permission prompts, and orchestrating complex workflows like PR splitting.
-
-The orchestrator does **not** replace osm's clipboard-first philosophy. It is an opt-in capability layer for power users who want to automate repetitive multi-step AI workflows while retaining full control over prompt construction and verification.
-
-### Why Now?
-
-1. **T234 Decision:** The [code-review-splitter evaluation](archive/notes/t234-code-review-workflow-evaluation.md) explicitly deferred LLM-calling capabilities to the AI Orchestrator, confirming that building per-command LLM integrations would be wasteful duplication.
-2. **Infrastructure Ready:** The behavior tree engine (`osm:bt`, `osm:pabt`), MCP server (`osm mcp`), session isolation (`internal/session`), and scripting engine are all production-quality. The orchestrator builds on top of them, not beside them.
-3. **User Demand:** Workflows that require spawning multiple Claude Code instances (one per microservice, one per PR chunk) are currently manual. The orchestrator automates the tedium while keeping humans in the loop for verification.
+1. [Overview](#1-overview)
+2. [Design Philosophy](#2-design-philosophy)
+3. [Architecture](#3-architecture)
+4. [Module Reference](#4-module-reference)
+   - [osm:pty](#41-osmpty)
+   - [osm:orchestrator](#42-osmorchestrator)
+   - [BT Orchestration Templates](#43-bt-orchestration-templates)
+   - [PR Splitting Workflow](#44-pr-splitting-workflow)
+5. [Data Flow](#5-data-flow)
+6. [Security Model](#6-security-model)
+7. [Platform Support](#7-platform-support)
+8. [Testing](#8-testing)
+9. [Event Loop Migration Path](#9-event-loop-migration-path)
+10. [Roadmap](#10-roadmap)
+11. [Design History](#11-design-history)
 
 ---
 
-## 2. Problem Statement
+## 1. Overview
 
-### What osm Can Do Today
+The AI Orchestrator is a subsystem of `osm` for programmatic spawning, monitoring, and coordination of AI coding agents from within JavaScript workflows. It extends osm's behavior tree engine (`osm:bt`, `osm:pabt`), MCP server, and scripting infrastructure to automate multi-agent development workflows.
 
-```
-User → osm → [build prompt] → clipboard → paste into LLM UI → read response → repeat
-```
+**What the orchestrator provides:**
 
-osm excels at constructing structured prompts from diffs, files, and templates. It has no knowledge of — and no dependency on — any AI provider. This is a feature, not a limitation.
+- **PTY management** — Spawn processes in pseudo-terminals with full read/write/resize/signal control (`osm:pty`).
+- **Output classification** — Parse agent terminal output into typed events: rate limits, permission prompts, model selection, SSO flows, tool invocations, errors (`osm:orchestrator`).
+- **Provider abstraction** — Pluggable provider registry with a Claude Code implementation backed by PTY (`osm:orchestrator`).
+- **Workflow scripts** — Composable JavaScript workflows using BT templates for multi-step agent orchestration.
+- **PR splitting** — Automated splitting of large diffs into linear branch series with equivalence verification.
 
-### What osm Cannot Do Today
+**What the orchestrator does not do:**
 
-1. **Spawn and manage AI agent processes.** No PTY allocation, no process lifecycle management.
-2. **Communicate bidirectionally with running agents.** The MCP server is unidirectional (agent → osm). There is no osm → agent channel.
-3. **Detect and respond to agent output patterns.** Rate limit errors, permission prompts, model selection menus, and SSO login flows all require manual intervention.
-4. **Orchestrate multi-agent workflows.** Splitting a large change into multiple PRs, running each through a separate agent, verifying results, and rebasing — all manual.
-5. **Isolate concurrent agent sessions.** Running two agents simultaneously risks session state corruption.
-
-### What the AI Orchestrator Enables
-
-```
-User → osm orchestrate → [spawn N agents] → [feed prompts via BT] → [monitor PTY output]
-                              ↓                     ↓                      ↓
-                        PTY per agent          MCP bidirectional      Pattern matching
-                              ↓                     ↓                      ↓
-                        [detect rate limits] → [auto-retry] → [collect results] → [PR split]
-```
-
-The orchestrator turns osm from a prompt-construction tool into a prompt-execution coordinator — while keeping prompts themselves as first-class, human-inspectable artifacts.
+- Replace osm's clipboard-first philosophy. It is opt-in for power users.
+- Call any AI API directly. Communication happens through PTY I/O.
+- Manage API keys or credentials. All secrets remain in the parent environment.
 
 ---
 
-## 3. Architecture Approach A: Minimal (Script-First)
+## 2. Design Philosophy
 
-### Philosophy
+**Go for infrastructure and safety. JavaScript for workflow logic.**
 
-Maximum leverage of existing JavaScript scripting infrastructure. All orchestration logic lives in JS scripts. Go adds only the thinnest possible native modules (`osm:pty`, `osm:mcp/client`). No new Go command, no new Go abstractions. Users write orchestration scripts the same way they write any osm script.
+Safety-critical paths — PTY lifecycle, signal handling, permission prompt rejection, output parsing — are implemented in Go with type safety and comprehensive tests. Workflow orchestration, prompt construction, and user customization remain in JavaScript, leveraging the existing BT engine.
+
+This matches osm's existing pattern: Go provides the native modules; JavaScript composes them into workflows.
+
+| Concern | Layer | Rationale |
+|---------|-------|-----------|
+| PTY spawn, resize, signal, close | Go (`internal/builtin/pty`) | OS-specific, safety-critical, requires `creack/pty` |
+| Output pattern matching | Go (`internal/builtin/orchestrator`) | Compiled regex, table-driven, extensible from JS |
+| Permission prompt rejection | Go (default-reject policy) | Too critical for dynamic JS — must never accidentally approve |
+| Provider abstraction | Go (`Provider`, `AgentHandle` interfaces) | Type-safe contract for multiple backends |
+| Agent lifecycle monitoring | Go (goroutine + channel) | Process exit detection requires OS-level wait |
+| BT tree composition | JS (`scripts/bt-templates/orchestrator.js`) | User-modifiable, leverages existing `osm:bt` |
+| Workflow scripts | JS (`scripts/orchestrate-*.js`) | User-facing, goal-discoverable, require()-able |
+| Prompt construction | JS (existing `context` / `output` globals) | Unchanged — same API as all osm scripts |
+
+---
+
+## 3. Architecture
 
 ### Component Diagram
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                          JavaScript Layer                            │
+│                        JavaScript Layer                              │
 │                                                                      │
-│  orchestrate.js (user script)                                        │
+│  Workflow Scripts (user-modifiable, goal-discoverable)               │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  const pty = require('osm:pty');                               │  │
-│  │  const bt  = require('osm:bt');                                │  │
-│  │  const mcp = require('osm:mcp/client');                       │  │
-│  │                                                                │  │
-│  │  // Spawn Claude Code in a PTY                                │  │
-│  │  const session = pty.spawn('claude', ['--mcp', ...]);         │  │
-│  │  // Build prompt, write to PTY stdin                          │  │
-│  │  session.write(prompt);                                       │  │
-│  │  // Read output, parse for patterns                           │  │
-│  │  const line = session.readLine();                             │  │
-│  │  if (patterns.isRateLimit(line)) { ... }                      │  │
-│  │                                                                │  │
-│  │  // BT orchestration (existing infrastructure)                │  │
-│  │  const tree = bt.sequence([spawnNode, promptNode, verifyNode]);│  │
-│  │  bt.newTicker(1000, tree);                                    │  │
+│  │  scripts/orchestrate-pr-split.js     — PR splitting workflow  │  │
+│  │  goals/orchestrate-pr-split.json     — goal discovery config  │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 │                                                                      │
-│  Pattern Library (JS modules, require-able)                          │
+│  BT Orchestration Templates (require-able, composable)              │
 │  ┌────────────────────────────────────────────────────────────────┐  │
-│  │  patterns/rate-limit.js     → regex matchers for 429/backoff  │  │
-│  │  patterns/permission.js     → detect Y/N prompts, reject      │  │
-│  │  patterns/model-select.js   → navigate model selection menu   │  │
-│  │  patterns/sso-login.js      → detect SSO flows                │  │
+│  │  scripts/bt-templates/orchestrator.js                         │  │
+│  │   ├── 7 leaf factories (spawn, prompt, wait, verify, ...)     │  │
+│  │   ├── 2 workflow composers (spawnAndPrompt, verifyAndCommit)  │  │
+│  │   └── PA-BT action library (7 actions with preconditions)     │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 │                                                                      │
+│  Uses: osm:bt, osm:pabt, osm:exec, osm:pty, osm:orchestrator      │
 └──────────────────────────────────────────────────────────────────────┘
                               │
-                    require('osm:pty')
-                    require('osm:mcp/client')
+                     require('osm:pty')
+                     require('osm:orchestrator')
                               │
 ┌──────────────────────────────────────────────────────────────────────┐
-│                            Go Layer                                  │
+│                     Go Layer (Safety-Critical)                       │
 │                                                                      │
-│  internal/builtin/pty/        ← NEW: PTY spawning module            │
-│  ├── pty.go                   (spawn, read, write, resize, close)   │
-│  ├── pty_unix.go              (creack/pty on macOS/Linux)           │
-│  ├── pty_windows.go           (ConPTY via golang.org/x/sys)        │
-│  └── pty_test.go                                                    │
+│  internal/builtin/pty/                                              │
+│  ├── pty.go            Process, SpawnConfig, Read/Write/Signal/Wait │
+│  ├── pty_unix.go       creack/pty (macOS + Linux)                   │
+│  ├── pty_windows.go    Stub (ConPTY planned)                        │
+│  └── module.go         osm:pty Goja bridge                          │
 │                                                                      │
-│  internal/builtin/mcpclient/  ← NEW: MCP client module             │
-│  ├── client.go                (connect, call tools, subscribe)      │
-│  └── client_test.go                                                 │
+│  internal/builtin/orchestrator/                                      │
+│  ├── parser.go         OutputParser (20+ Claude Code patterns)      │
+│  ├── provider.go       Provider / AgentHandle / Registry interfaces │
+│  ├── claude_code.go    ClaudeCodeProvider (PTY-backed)              │
+│  └── module.go         osm:orchestrator Goja bridge                 │
 │                                                                      │
-│  (everything else: existing — bt, pabt, exec, session, etc.)        │
+│  Existing modules (unchanged)                                        │
+│  ├── internal/builtin/bt/     — BT bridge (thread-safe JS↔Go)      │
+│  ├── internal/builtin/pabt/   — PA-BT planning engine              │
+│  ├── internal/builtin/exec/   — Shell command execution             │
+│  ├── internal/session/        — Session ID & locking                │
+│  └── internal/command/mcp.go  — MCP server                         │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-### Data Flow
+### Module Dependency Graph
 
 ```
-1. User runs: osm script orchestrate.js
-2. Script requires osm:pty → Go allocates PTY via creack/pty
-3. Script spawns "claude --mcp-server osm" in PTY
-4. Script writes prompt to PTY stdin (session.write)
-5. Script reads PTY stdout line-by-line (session.readLine)
-6. JS pattern matchers test each line:
-   - Rate limit → sleep + retry
-   - Permission prompt → send "N\n"
-   - Model selection → send arrow keys + enter
-   - SSO login → abort with error
-7. Completed output → collected, verified, optionally committed
-8. Multiple agents: repeat steps 2–7 per agent, orchestrated by osm:bt
+osm:orchestrator ──► osm:pty (claude_code.go imports pty.Spawn)
+       │
+       ▼
+  Provider / AgentHandle interfaces
+       │
+       ▼
+  bt-templates/orchestrator.js ──► osm:bt, osm:orchestrator, osm:exec
+       │
+       ▼
+  orchestrate-pr-split.js ──► osm:bt, osm:exec
+       │
+       ▼
+  goals/orchestrate-pr-split.json (discovery)
 ```
-
-### API Surface
-
-#### `osm:pty` Module
-
-```go
-// internal/builtin/pty/pty.go
-
-// PTYSession represents a spawned process in a pseudo-terminal.
-type PTYSession struct {
-    mu      sync.Mutex
-    cmd     *exec.Cmd
-    pty     *os.File     // creack/pty file descriptor (Unix)
-    done    chan struct{}
-    exitErr error
-}
-
-// Spawn creates a new PTY session for the given command.
-// JS: pty.spawn(command, args, opts?) → PTYSession
-func Spawn(ctx context.Context, command string, args []string, opts SpawnOpts) (*PTYSession, error)
-
-// SpawnOpts configures PTY spawning.
-type SpawnOpts struct {
-    Env     map[string]string  // Additional environment variables
-    Dir     string             // Working directory
-    Rows    int                // Terminal rows (default: 24)
-    Cols    int                // Terminal cols (default: 80)
-}
-
-// Write sends data to the PTY stdin.
-// JS: session.write(data)
-func (s *PTYSession) Write(data string) error
-
-// ReadLine reads a line from PTY stdout (blocking, with timeout).
-// JS: session.readLine(timeoutMs?) → string | null
-func (s *PTYSession) ReadLine(timeout time.Duration) (string, error)
-
-// Read reads up to n bytes from PTY stdout.
-// JS: session.read(n) → string
-func (s *PTYSession) Read(n int) (string, error)
-
-// Resize changes the PTY window size.
-// JS: session.resize(rows, cols)
-func (s *PTYSession) Resize(rows, cols int) error
-
-// Close terminates the PTY session.
-// JS: session.close()
-func (s *PTYSession) Close() error
-
-// Wait blocks until the process exits.
-// JS: session.wait() → {code: number, error: string|null}
-func (s *PTYSession) Wait() (int, error)
-
-// IsAlive returns whether the subprocess is still running.
-// JS: session.isAlive() → bool
-func (s *PTYSession) IsAlive() bool
-```
-
-#### `osm:mcp/client` Module
-
-```go
-// internal/builtin/mcpclient/client.go
-
-// MCPClient connects to an MCP server (typically running inside Claude Code).
-type MCPClient struct {
-    transport *mcp.StdioTransport
-    // ...
-}
-
-// Connect establishes a connection to an MCP server.
-// JS: mcpClient.connect(transport) → MCPClient
-func Connect(ctx context.Context, r io.Reader, w io.Writer) (*MCPClient, error)
-
-// CallTool invokes an MCP tool on the connected server.
-// JS: client.callTool(name, args) → result
-func (c *MCPClient) CallTool(name string, args map[string]any) (any, error)
-
-// ListTools returns available tools from the server.
-// JS: client.listTools() → [{name, description, inputSchema}]
-func (c *MCPClient) ListTools() ([]ToolInfo, error)
-```
-
-### Testing Strategy
-
-1. **PTY module:** Unit tests spawn `/bin/echo` and `/bin/cat` (not real AI agents). Test read/write/close/resize. Platform-specific tests for Unix vs Windows (ConPTY).
-2. **Pattern matching:** Pure JS unit tests — feed known strings through matchers, assert detection.
-3. **Integration:** `TestMain`-gated tests (T247) with real Claude Code, disabled by default, enabled via env var in CI.
-4. **BT orchestration:** Existing `osm:bt` tests cover tree execution. Orchestration scripts tested with mock PTY sessions (`/bin/cat` echo server).
-
-### Trade-offs
-
-| Aspect | Assessment |
-|--------|------------|
-| **Minimal Go changes** | ✅ Only 2 new modules (~400 LOC each). Leverages all existing infra. |
-| **User flexibility** | ✅ Full scriptability. Users customize everything via JS. |
-| **Safety-critical paths in JS** | ❌ Rate limit handling, permission rejection, signal forwarding — all in JS. A bug in pattern matching could accept a dangerous permission prompt. |
-| **No type safety for orchestration** | ❌ Complex orchestration logic in dynamic JS. Refactoring is fragile. |
-| **Testing** | ⚠️ JS pattern matchers need extensive test coverage. No compile-time guarantees. |
-| **Platform compat** | ⚠️ PTY module needs careful platform abstraction in Go, but orchestration scripts are platform-independent. |
-| **Discoverability** | ❌ Users must know to write orchestration scripts. No built-in `osm orchestrate` command. |
 
 ---
 
-## 4. Architecture Approach B: Clean Architecture (Module-First)
+## 4. Module Reference
 
-### Philosophy
+### 4.1. `osm:pty`
 
-Full Go module system with strongly-typed interfaces, clear package boundaries, and dependency injection. Every concern — PTY management, output parsing, provider abstraction, workflow orchestration — is a Go package with an explicit interface. JavaScript is relegated to leaf-node behaviors and user customization.
+**Package:** `internal/builtin/pty`  
+**Status:** Implemented (T239). Unix complete, Windows stub.
 
-### Component Diagram
+Spawns processes in pseudo-terminals with full bidirectional I/O, window resizing, and signal delivery.
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                      osm CLI                                         │
-│                                                                      │
-│  cmd/osm/main.go                                                    │
-│  ├── OrchestrateCommand (NEW Go command)                            │
-│  │   ├── --provider=claude-code|ollama                              │
-│  │   ├── --workflow=pr-split|single-prompt|multi-agent              │
-│  │   └── --config=orchestrator.json                                 │
-│  └── [all existing commands unchanged]                              │
-└──────────────────────┬───────────────────────────────────────────────┘
-                       │
-┌──────────────────────▼───────────────────────────────────────────────┐
-│                internal/orchestrator/                                 │
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐    │
-│  │  orchestrator.go — Top-level Orchestrator                    │    │
-│  │                                                              │    │
-│  │  type Orchestrator struct {                                  │    │
-│  │      providers  ProviderRegistry                             │    │
-│  │      sessions   SessionManager                               │    │
-│  │      parser     OutputParser                                 │    │
-│  │      recovery   RecoveryPolicy                               │    │
-│  │      workflow   WorkflowEngine                               │    │
-│  │  }                                                           │    │
-│  └──────────────────────────────────────────────────────────────┘    │
-│                                                                      │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐   │
-│  │  provider/       │  │  parser/         │  │  recovery/       │   │
-│  │                  │  │                  │  │                  │   │
-│  │ Provider iface   │  │ OutputParser     │  │ RecoveryPolicy   │   │
-│  │ ClaudeCodeProv   │  │ RateLimitDet     │  │ CrashDetector    │   │
-│  │ OllamaProv       │  │ PermissionDet    │  │ HangTimeout      │   │
-│  │ ProviderRegistry │  │ ModelSelectDet   │  │ GraceShutdown    │   │
-│  └──────────────────┘  │ SSODetector      │  └──────────────────┘   │
-│                         └──────────────────┘                         │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐   │
-│  │  workflow/       │  │  pty/            │  │  session/        │   │
-│  │                  │  │                  │  │                  │   │
-│  │ WorkflowEngine   │  │ PTYManager       │  │ AgentSession     │   │
-│  │ PRSplitWorkflow  │  │ PTYSession       │  │ SessionIsolator  │   │
-│  │ SinglePrompt     │  │ SignalForwarder  │  │ MCPChannel       │   │
-│  └──────────────────┘  └──────────────────┘  └──────────────────┘   │
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐    │
-│  │  mcp/                                                        │    │
-│  │  MCPBridge — bidirectional MCP for agent communication       │    │
-│  │  registerSession, reportProgress, reportResult,              │    │
-│  │  requestGuidance                                             │    │
-│  └──────────────────────────────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-### Data Flow
-
-```
-1. User runs: osm orchestrate --provider=claude-code --workflow=pr-split
-2. OrchestrateCommand creates Orchestrator with injected dependencies
-3. Orchestrator.Run():
-   a. ProviderRegistry.Get("claude-code") → ClaudeCodeProvider
-   b. SessionIsolator.NewSession() → AgentSession{id, stateDir, mcpChannel}
-   c. PTYManager.Spawn("claude", args, env) → PTYSession
-   d. WorkflowEngine.Execute(workflow, ptySession):
-      i.  Write prompt to PTY
-      ii. OutputParser.ParseStream(ptySession.Stdout):
-          - Lines → RateLimitDetector → pause/retry
-          - Lines → PermissionDetector → reject
-          - Lines → ModelSelectDetector → navigate
-          - Lines → SSODetector → abort
-          - Lines → CompletionDetector → collect result
-      iii. RecoveryPolicy monitors for crash/hang
-      iv.  On success → verify → commit (or queue next chunk)
-   e. Repeat for each workflow step (PR chunk, branch, etc.)
-4. Results aggregated, cleanup, exit
-```
-
-### API Surface
-
-#### Core Interfaces
+#### Go API
 
 ```go
-// internal/orchestrator/provider/provider.go
+// SpawnConfig configures a PTY session.
+type SpawnConfig struct {
+    Command string            // Executable path or name (required)
+    Args    []string          // Command arguments
+    Env     map[string]string // Additional env vars (merged with os.Environ)
+    Dir     string            // Working directory (default: caller's CWD)
+    Rows    uint16            // Terminal rows (default: 24)
+    Cols    uint16            // Terminal columns (default: 80)
+    Term    string            // TERM env var (default: "xterm-256color")
+}
 
+// Process represents a running process attached to a PTY.
+// All methods are goroutine-safe.
+type Process struct { /* ... */ }
+
+func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error)
+func (p *Process) Write(data string) error
+func (p *Process) Read() (string, error)      // Up to 4096 bytes, non-blocking
+func (p *Process) Resize(rows, cols uint16) error
+func (p *Process) Signal(sig string) error     // "SIGINT", "SIGTERM", etc.
+func (p *Process) Wait() (exitCode int, err error)
+func (p *Process) IsAlive() bool
+func (p *Process) Pid() int
+func (p *Process) Close() error               // SIGTERM → 5s wait → SIGKILL
+```
+
+#### JavaScript API
+
+```javascript
+var pty = require('osm:pty');
+
+var proc = pty.spawn('bash', ['-l'], {
+    rows: 24, cols: 80,
+    dir: '/path/to/project',
+    env: { TERM: 'xterm-256color' }
+});
+
+proc.write('echo hello\n');
+var output = proc.read();          // "" on EOF, up to 4096 bytes
+proc.resize(48, 120);
+proc.signal('SIGINT');
+
+var result = proc.wait();          // { code: 0, error: null }
+proc.close();                      // Idempotent cleanup
+```
+
+#### Platform Implementation
+
+| Platform | Backend | Status |
+|----------|---------|--------|
+| macOS / Linux | `creack/pty` via `pty.StartWithSize` | ✅ Implemented |
+| Windows | `ErrNotSupported` (ConPTY planned) | ⬜ Stub |
+
+Process lifecycle: a background goroutine calls `cmd.Wait()` and closes the `done` channel, allowing concurrent `Wait()` and `IsAlive()` callers to observe exit.
+
+### 4.2. `osm:orchestrator`
+
+**Package:** `internal/builtin/orchestrator`  
+**Status:** Implemented (T241 parser, T243 provider).
+
+Provides output classification, provider abstraction, and agent lifecycle management.
+
+#### Output Parser
+
+Classifies raw terminal output lines into typed events via compiled regex patterns.
+
+**Event types:**
+
+| Constant | Value | Description | Example Match |
+|----------|-------|-------------|---------------|
+| `EVENT_TEXT` | 0 | Normal text (no pattern matched) | — |
+| `EVENT_RATE_LIMIT` | 1 | Rate limit / 429 / backoff | `"try again in 30 seconds"` |
+| `EVENT_PERMISSION` | 2 | Permission prompt (Y/N) | `"Allow? [y/N]"` |
+| `EVENT_MODEL_SELECT` | 3 | Model selection menu | `"Select a model"` |
+| `EVENT_SSO_LOGIN` | 4 | SSO / OAuth flow | `"Opening your browser"` |
+| `EVENT_COMPLETION` | 5 | Task completed | `"Task completed"` |
+| `EVENT_TOOL_USE` | 6 | MCP tool invocation | `"Calling tool: readFile"` |
+| `EVENT_ERROR` | 7 | Error message | `"Error: file not found"` |
+| `EVENT_THINKING` | 8 | Thinking indicator | `"Thinking..."` |
+
+**Built-in patterns** (20+): Rate limit detection (`try again in N`, `rate limit`, `too many requests`, `429`, `quota exceeded`), permission prompts (`Allow? [y/N]`, `do you want to allow`), model selection, SSO/OAuth flows (`opening browser`, `visit https://`), completion signals, tool use parsing, error prefixes, thinking indicators.
+
+```javascript
+var orc = require('osm:orchestrator');
+
+var parser = orc.newParser();
+var event = parser.parse('Try again in 30 seconds');
+// event.type === orc.EVENT_RATE_LIMIT
+// event.fields.retryAfter === "30"
+// event.pattern === "rate-limit-try-again"
+
+// Add custom patterns
+parser.addPattern('my-done', 'BUILD SUCCESSFUL', orc.EVENT_COMPLETION);
+```
+
+**Go API:**
+
+```go
+func NewParser() *Parser
+func (p *Parser) Parse(line string) OutputEvent
+func (p *Parser) AddPattern(name, pattern string, eventType EventType) error
+```
+
+#### Provider Abstraction
+
+```go
 // Provider abstracts an AI agent backend.
 type Provider interface {
-    // Name returns the provider identifier (e.g., "claude-code", "ollama").
     Name() string
-
-    // Spawn starts an agent session and returns a handle.
     Spawn(ctx context.Context, opts SpawnOpts) (AgentHandle, error)
-
-    // Capabilities returns what this provider supports.
     Capabilities() ProviderCapabilities
 }
 
 // AgentHandle represents a running agent instance.
 type AgentHandle interface {
-    // Send writes input to the agent.
-    Send(ctx context.Context, input string) error
-
-    // Receive returns a channel that emits parsed output events.
-    Receive() <-chan OutputEvent
-
-    // Close terminates the agent.
+    Send(input string) error
+    Receive() (string, error)    // Returns ("", io.EOF) on exit
     Close() error
-
-    // SessionID returns the isolated session identifier.
-    SessionID() string
+    IsAlive() bool
+    Wait() (int, error)
 }
 
-// ProviderCapabilities declares what a provider supports.
-type ProviderCapabilities struct {
-    MCP       bool // Supports MCP tool calling
-    Streaming bool // Supports streaming output
-    MultiTurn bool // Supports multi-turn conversation
-}
-
-// ProviderRegistry manages available providers.
-type ProviderRegistry interface {
-    Register(p Provider)
-    Get(name string) (Provider, error)
-    List() []string
+// SpawnOpts configures agent spawning.
+type SpawnOpts struct {
+    Model string
+    Env   map[string]string
+    Dir   string
+    Rows  uint16
+    Cols  uint16
+    Args  []string
 }
 ```
+
+**Registry** manages named providers. Thread-safe via `sync.RWMutex`.
 
 ```go
-// internal/orchestrator/parser/parser.go
-
-// OutputEvent represents a parsed event from agent output.
-type OutputEvent struct {
-    Type      EventType
-    Raw       string            // Original text
-    Parsed    map[string]string // Extracted fields
-    Timestamp time.Time
-}
-
-type EventType int
-
-const (
-    EventText          EventType = iota // Normal text output
-    EventRateLimit                      // 429 / rate limit detected
-    EventPermission                     // Permission prompt (Y/N)
-    EventModelSelect                    // Model selection menu
-    EventSSOLogin                       // SSO/OAuth redirect
-    EventCompletion                     // Task completed signal
-    EventError                          // Error output
-)
-
-// OutputParser transforms raw PTY output into structured events.
-type OutputParser interface {
-    // Parse processes a line of output and returns zero or more events.
-    Parse(line string) []OutputEvent
-
-    // RegisterPattern adds a custom detection pattern.
-    RegisterPattern(name string, pattern *regexp.Regexp, eventType EventType)
-}
+func NewRegistry() *Registry
+func (r *Registry) Register(p Provider) error    // ErrProviderExists if duplicate
+func (r *Registry) Get(name string) (Provider, error)
+func (r *Registry) List() []string               // Sorted names
+func (r *Registry) Spawn(ctx context.Context, name string, opts SpawnOpts) (AgentHandle, error)
 ```
 
-```go
-// internal/orchestrator/workflow/workflow.go
+**Claude Code provider** (`ClaudeCodeProvider`):
 
-// Workflow defines a multi-step orchestration plan.
-type Workflow interface {
-    // Name returns the workflow identifier.
-    Name() string
+- Name: `"claude-code"`
+- Capabilities: `{MCP: true, Streaming: true, MultiTurn: true}`
+- Spawn: Creates a PTY session running `claude` (configurable) with optional `--model` flag
+- AgentHandle backed by `pty.Process` — `Send()` writes to PTY, `Receive()` reads from PTY
 
-    // Steps returns the ordered execution steps.
-    Steps() []Step
+```javascript
+var orc = require('osm:orchestrator');
 
-    // OnStepComplete is called after each step finishes.
-    OnStepComplete(step Step, result StepResult) error
-}
+var registry = orc.newRegistry();
+var claude = orc.claudeCode({ command: '/usr/local/bin/claude' });
+registry.register(claude);
 
-// Step represents a single unit of work in a workflow.
-type Step interface {
-    // Execute runs this step with the given agent.
-    Execute(ctx context.Context, agent AgentHandle) (StepResult, error)
-}
+var agent = registry.spawn('claude-code', {
+    model: 'claude-sonnet-4-20250514',
+    dir: '/path/to/project'
+});
 
-// StepResult contains the outcome of executing a step.
-type StepResult struct {
-    Success bool
-    Output  string
-    Metrics StepMetrics
-}
+agent.send('Fix the failing test\n');
+var output = agent.receive();   // Read agent output
+agent.close();                  // Graceful shutdown
 ```
 
-```go
-// internal/orchestrator/recovery/recovery.go
+### 4.3. BT Orchestration Templates
 
-// RecoveryPolicy defines how failures are handled.
-type RecoveryPolicy interface {
-    // OnCrash handles agent process crash.
-    OnCrash(ctx context.Context, agent AgentHandle, err error) RecoveryAction
+**File:** `scripts/bt-templates/orchestrator.js`  
+**Status:** Implemented (T244).  
+**Dependencies:** `osm:bt`, `osm:orchestrator`, `osm:exec`
 
-    // OnHang handles agent timeout (no output for N seconds).
-    OnHang(ctx context.Context, agent AgentHandle, duration time.Duration) RecoveryAction
+Reusable behavior tree building blocks for AI orchestration workflows. All leaf factories use `bt.createBlockingLeafNode` for sequential execution semantics.
 
-    // OnRateLimit handles rate limit detection.
-    OnRateLimit(ctx context.Context, event OutputEvent) RecoveryAction
-}
+#### Leaf Node Factories
 
-type RecoveryAction int
+Each factory returns a `bt.Node` and communicates via a shared `bt.Blackboard`.
 
-const (
-    ActionRetry   RecoveryAction = iota // Retry the current step
-    ActionSkip                          // Skip and continue
-    ActionAbort                         // Abort the workflow
-    ActionWait                          // Wait and retry after delay
-)
+| Factory | Blackboard Reads | Blackboard Writes | Purpose |
+|---------|-----------------|-------------------|---------|
+| `spawnClaude(bb, registry, providerName?, spawnOpts?)` | — | `agent`, `parser`, `agentSpawned` | Spawn agent via provider registry |
+| `sendPrompt(bb, prompt)` | `agent` | `promptSent` | Write prompt to agent stdin |
+| `waitForResponse(bb, opts?)` | `agent`, `parser` | `response`, `responseReceived`, `rateLimited` | Read/parse output until completion |
+| `verifyOutput(bb, command)` | — | `verifyCode`, `verified` | Run shell command, check exit |
+| `runTests(bb, command?)` | — | `testCode`, `testsPassed` | Run test command |
+| `commitChanges(bb, message)` | — | `commitOutput`, `committed` | `git add -A && git commit` |
+| `splitBranch(bb, branchName)` | — | `currentBranch`, `branchCreated` | `git checkout -b` |
+
+**Security:** `waitForResponse` automatically sends `"n\n"` to any detected permission prompt (`EVENT_PERMISSION`), rejecting it and setting `permissionRejected` on the blackboard. This is the JS-level safety net; the Go-level parser classification is the primary defense.
+
+#### Workflow Composers
+
+```javascript
+// Sequence: spawn → send prompt → wait for response
+templates.spawnAndPrompt(bb, registry, {
+    provider: 'claude-code',
+    prompt: 'Fix the bug in foo.go',
+    spawnOpts: { dir: '/project' }
+});
+
+// Sequence: run tests → [verify] → commit
+templates.verifyAndCommit(bb, {
+    testCommand: 'make test',
+    verifyCommand: 'git diff --check',
+    message: 'Fix: resolve test failure'
+});
 ```
+
+#### PA-BT Action Library
+
+`createPlanningActions(pabt, bb, registry, config)` returns 7 named actions with preconditions and effects for automatic plan synthesis via backchaining:
+
+```
+Goal: committed=true
+  └─ CommitChanges (needs testsPassed=true)
+       └─ RunTests (needs responseReceived=true)
+            └─ WaitForResponse (needs promptSent=true)
+                 └─ SendPrompt (needs agentSpawned=true)
+                      └─ SpawnClaude (no preconditions)
+```
+
+The PA-BT planner synthesizes this chain automatically. If `RunTests` fails, the planner's PPA structure re-evaluates and can re-run the prompt→test cycle.
+
+### 4.4. PR Splitting Workflow
+
+**Script:** `scripts/orchestrate-pr-split.js`  
+**Goal:** `goals/orchestrate-pr-split.json`  
+**Status:** Implemented (T245).  
+**Dependencies:** `osm:bt`, `osm:exec`
+
+Splits a large diff into a linear series of stacked, independently-reviewable branches.
+
+#### Architecture
+
+The workflow has four functional layers:
+
+```
+Analysis ──► Grouping ──► Planning ──► Execution ──► Verification
+   │             │            │             │              │
+analyzeDiff   groupBy*    createSplit   executeSplit   verifyEquivalence
+analyzeDiff     (4         Plan          (linear         (tree hash
+  Stats       strategies)               stacking)       comparison)
+```
+
+#### Analysis
+
+`analyzeDiff(config)` and `analyzeDiffStats(config)` detect changed files between branches using `git merge-base` for accuracy (handles diverged branches correctly).
+
+```javascript
+var analysis = prSplit.analyzeDiff({ baseBranch: 'main', dir: '.' });
+// { files: ['pkg/a.go', 'cmd/b.go'], error: null,
+//   baseBranch: 'main', currentBranch: 'feature' }
+
+var stats = prSplit.analyzeDiffStats({ baseBranch: 'main' });
+// { files: [{name: 'pkg/a.go', additions: 42, deletions: 7}, ...] }
+```
+
+#### Grouping Strategies
+
+| Strategy | Function | Use Case |
+|----------|----------|----------|
+| **Directory** | `groupByDirectory(files, depth)` | Group by top-level package (`depth=1`) or sub-package (`depth=2`) |
+| **Extension** | `groupByExtension(files)` | Separate `.go` from `.js` from `.md` |
+| **Pattern** | `groupByPattern(files, patterns)` | Named regex patterns, e.g., `{tests: /test/, docs: /\.md$/}` |
+| **Chunks** | `groupByChunks(files, maxPerGroup)` | Fixed-size groups for uniform PR sizes |
+
+All return `{ groupName: [file1, file2, ...] }`.
+
+#### Planning & Validation
+
+`createSplitPlan(groups, config)` produces a plan with ordered splits, each containing a branch name, file list, and commit message. Groups are sorted alphabetically.
+
+`validatePlan(plan)` checks: at least one split, no empty splits, no duplicate files across splits, all splits named.
+
+#### Execution: Linear Branch Stacking
+
+`executeSplit(plan)` creates branches where each builds on the previous:
+
+```
+main → split/01-cmd → split/02-docs → split/03-pkg
+  │         │               │               │
+  └─────────┘               │               │
+  base for 01          base for 02      base for 03
+```
+
+For each split:
+1. Check out the current base branch
+2. Create a new branch (`git checkout -b split/NN-name`)
+3. Check out files from the source branch (`git checkout source -- file`)
+4. Stage and commit
+5. The new branch becomes the base for the next split
+
+The original branch is restored after all splits are created.
+
+#### Verification
+
+- **`verifySplit(branch, config)`** — Check out a branch and run a command (e.g., `make test`).
+- **`verifySplits(plan)`** — Run verification on all split branches.
+- **`verifyEquivalence(plan)`** — Compare tree hashes: the last split branch should have an identical git tree to the source branch. If `splitTree === sourceTree`, no content was lost or duplicated.
+- **`cleanupBranches(plan)`** — Delete all split branches.
+
+#### BT Integration
+
+Six node factories wrap each layer for behavior tree composition:
+
+```javascript
+var bb = new bt.Blackboard();
+var tree = prSplit.createWorkflowTree(bb, {
+    baseBranch: 'main',
+    groupStrategy: 'directory',
+    branchPrefix: 'split/'
+});
+bt.tick(tree);  // analyze → group → plan → split → equivalence
+```
+
+#### Goal Definition
+
+`goals/orchestrate-pr-split.json` enables `osm goal pr-split` with:
+- TUI prompt-building workflow
+- Custom commands: `set-base`, `set-group`, `set-max`
+- Hot snippets: `split-review`, `split-reorder`
+- State variables: `baseBranch`, `groupStrategy`, `maxFilesPerSplit`
+
+---
+
+## 5. Data Flow
+
+### Agent Orchestration (BT Templates)
+
+```
+User runs: osm script workflow.js
+  │
+  ▼
+JS: Build BT tree using templates
+  │  templates.spawnAndPrompt(bb, registry, config)
+  │
+  ▼
+JS→Go: registry.spawn('claude-code', opts)
+  │  → ClaudeCodeProvider.Spawn()
+  │  → pty.Spawn(ctx, cfg)                          ← PTY allocation
+  │  → background goroutine monitors process exit
+  │
+  ▼
+JS→Go: agent.send(prompt)
+  │  → pty.Process.Write()                           ← Write to PTY fd
+  │
+  ▼
+JS→Go: agent.receive()
+  │  → pty.Process.Read()                            ← Read from PTY fd
+  │  → parser.Parse(line)                            ← Classify output
+  │
+  ├─ EVENT_RATE_LIMIT → return bt.running (re-tick after delay)
+  ├─ EVENT_PERMISSION → agent.send('n\n'), set permissionRejected
+  ├─ EVENT_COMPLETION → set response, return bt.success
+  └─ EVENT_TEXT       → accumulate output
+  │
+  ▼
+JS: Verify (exec tests, git diff --check)
+  │
+  ▼
+JS: Commit (git add -A, git commit)
+```
+
+### PR Splitting (Direct Git Workflow)
+
+```
+User runs: osm goal pr-split  (or osm script orchestrate-pr-split.js)
+  │
+  ▼
+analyzeDiff({ baseBranch: 'main' })
+  │  → git merge-base main feature
+  │  → git diff --name-only <merge-base> feature
+  │
+  ▼
+groupByDirectory(files, 1)
+  │  → { 'cmd': [...], 'pkg': [...], 'docs': [...] }
+  │
+  ▼
+createSplitPlan(groups, config)
+  │  → validatePlan(plan) ✓
+  │
+  ▼
+executeSplit(plan)
+  │  → for each split:
+  │       git checkout <base>
+  │       git checkout -b split/NN-name
+  │       git checkout source -- file1 file2 ...
+  │       git add -A && git commit -m "..."
+  │       base = split/NN-name (stacking)
+  │
+  ▼
+verifyEquivalence(plan)
+  │  → git rev-parse split/03-docs^{tree}
+  │  → git rev-parse feature^{tree}
+  │  → assert: splitTree === sourceTree
+```
+
+---
+
+## 6. Security Model
+
+### Permission Prompt Rejection
+
+**This is the most safety-critical code in the orchestrator.**
+
+When an AI agent requests file deletion, network access, or code execution, it produces a permission prompt on stdout. The orchestrator must detect and reject these.
+
+**Defense in depth:**
+
+1. **Go parser (primary):** `Parser.Parse()` classifies lines containing permission patterns as `EVENT_PERMISSION`. Three built-in patterns match `Allow? [y/N]`, `do you want to allow/proceed/continue`, and `permission required/needed/denied`.
+
+2. **JS templates (secondary):** `waitForResponse` sends `"n\n"` when it encounters `EVENT_PERMISSION`. This rejects the prompt.
+
+3. **Default-reject policy:** If a permission prompt matches no pattern, it is classified as `EVENT_TEXT` and the agent receives no `"y"` response. The absence of a response does not equal approval — most agents treat silence as rejection or timeout.
+
+Custom patterns can be added via `parser.addPattern()` for provider-specific prompt formats.
+
+### PTY Isolation
+
+- Each agent runs in its own PTY with an independent file descriptor.
+- PTY output is read in Go (`Process.Read()`) and passed to the parser before reaching JS.
+- `Close()` sends SIGTERM, waits 5 seconds, then SIGKILL. Resource leaks are prevented by explicit cleanup.
+
+### Credential Handling
+
+- Agents inherit environment from the parent process. No credentials are stored.
+- The `Env` field in `SpawnOpts` adds variables but never removes inherited ones.
+- MCP session registration (when implemented) will not transmit credentials.
+
+---
+
+## 7. Platform Support
+
+| Component | macOS | Linux | Windows |
+|-----------|-------|-------|---------|
+| `osm:pty` spawn/read/write/resize/signal | ✅ `creack/pty` | ✅ `creack/pty` | ⬜ `ErrNotSupported` |
+| `osm:orchestrator` parser | ✅ | ✅ | ✅ |
+| `osm:orchestrator` provider/registry | ✅ | ✅ | ✅ |
+| `osm:orchestrator` Claude Code provider | ✅ | ✅ | ⬜ (needs PTY) |
+| BT templates | ✅ | ✅ | ✅ (except spawn) |
+| PR splitting workflow | ✅ | ✅ | ✅ (pure `osm:exec` git) |
+| Goal discovery | ✅ | ✅ | ✅ |
+
+**Windows PTY:** ConPTY support via `golang.org/x/sys/windows` is planned. The `Process` struct and `processHandle` interface are designed for platform-specific backends. Windows will require `pty_windows.go` to implement `Spawn()` using `CreatePseudoConsole`.
+
+**Build tags:** PTY uses `//go:build !windows` / `//go:build windows` for platform separation. No conditional compilation elsewhere — the orchestrator parser and provider abstraction are pure Go.
+
+---
+
+## 8. Testing
+
+### Test Files
+
+| File | Tests | Coverage |
+|------|-------|----------|
+| `internal/builtin/orchestrator/parser_test.go` | Parser patterns, custom patterns, event type names | Core parser logic |
+| `internal/builtin/orchestrator/provider_test.go` | Registry CRUD, concurrent access, error cases | Provider abstraction |
+| `internal/builtin/orchestrator/templates_test.go` | BT template loading, leaf execution, PA-BT actions | T244 templates |
+| `internal/builtin/orchestrator/pr_split_test.go` | Grouping, validation, analysis, execution, equivalence, BT workflow | T245 workflow |
+| `internal/builtin/pty/pty_test.go` | PTY spawn, read/write, resize, signal, close | PTY module |
 
 ### Testing Strategy
 
-1. **Interface-driven mocking:** Every interface (`Provider`, `AgentHandle`, `OutputParser`, `RecoveryPolicy`, `Workflow`) has a test double. No real AI providers in unit tests.
-2. **Table-driven parser tests:** Hundreds of test cases mapping raw output strings to expected `OutputEvent` types. Patterns extracted from real Claude Code output.
-3. **Integration tests via TestMain:** T247 — `go test -tags=integration` with real Claude Code, gated by env var.
-4. **Workflow simulation:** Mock `AgentHandle` that replays recorded output sequences, allowing full workflow testing without any external process.
-5. **Platform tests:** PTY spawning tests run on all three CI platforms.
+**Layer 1 — Go unit tests (safety-critical paths):**
+- Parser: Table-driven tests mapping raw output lines to expected `EventType` values.
+- Provider: Registry operations, concurrent registration, error wrapping.
+- PTY: Spawn `/bin/echo` and `/bin/cat`, test read/write/close lifecycle.
 
-### Trade-offs
+**Layer 2 — JS integration tests (workflow logic):**
+- BT templates: Load `orchestrator.js` in a Goja runtime, verify exports, execute nodes with mocked dependencies.
+- PR splitting: Create temporary git repos, execute full split workflows, verify tree hash equivalence.
+- Goal definition: Validate JSON structure, command handlers, state variables.
 
-| Aspect | Assessment |
-|--------|------------|
-| **Type safety** | ✅ All interfaces have compile-time guarantees. Refactoring is safe. |
-| **Testability** | ✅ Interface-driven design enables comprehensive mocking. |
-| **Separation of concerns** | ✅ Each package has a single responsibility. |
-| **Code volume** | ❌ Massive. 8+ new packages, 2000+ LOC before any real logic. Interface ceremony dominates early development. |
-| **User customization** | ❌ Users can't modify workflow logic without writing Go code. JS scripting is an afterthought. |
-| **Contradicts osm's DNA** | ❌ osm is a scripting-first tool. This approach buries the scripting engine under enterprise abstractions. |
-| **Velocity** | ❌ T239–T255 would take 3× longer due to interface design, mock generation, and package wiring. |
-| **Learning curve** | ⚠️ New contributors must understand the full dependency graph before modifying any component. |
-| **Over-engineering risk** | ❌ Designing provider abstractions before knowing what Ollama/other providers actually need leads to abstraction inversion. |
+**Layer 3 — Integration tests (real agents, T247):**
+- Gated by `OSM_INTEGRATION_PROVIDER` environment variable.
+- Disabled by default in CI — requires actual Claude Code binary.
+- Tests spawn real agents, send prompts, parse output.
+
+**Test helpers:**
+- `prSplitTestEnv(t)` — Creates a Goja runtime with `osm:bt`, `osm:exec`, and `osm:orchestrator` registered, loads `orchestrate-pr-split.js` and returns the exports object.
+- `initTestGitRepo(t, dir)` — Creates a git repo with `git init -b main` (portable across platforms), configures user identity, and makes an initial commit.
 
 ---
 
-## 5. Architecture Approach C: Pragmatic Balance (Recommended)
+## 9. Event Loop Migration Path
 
-### Philosophy
+### Current State
 
-**Go for infrastructure and safety. JavaScript for workflow logic and user customization.**
+osm uses `dop251/goja_nodejs/eventloop` for JavaScript execution. This event loop supports `setTimeout`, `setInterval`, and `setImmediate`. It does **not** support Promises, async/await, or the `go-eventloop` interface required by `goja-grpc`.
 
-Safety-critical paths — PTY management, signal forwarding, output parsing for security-sensitive patterns (permission rejection), and session isolation — are implemented in Go with strong typing and comprehensive tests. Workflow orchestration, BT composition, prompt construction, and user-facing customization remain in JavaScript, leveraging the existing `osm:bt`/`osm:pabt` infrastructure and the `tui` API.
+The `osm:grpc` module (`internal/builtin/grpc/grpc.go`) works around this by using `google.golang.org/grpc` directly with synchronous `conn.invoke()` calls. This provides unary RPC but no streaming.
 
-The key insight: **the BT engine already exists and works**. We don't need a new "workflow engine" in Go. We need Go modules that expose PTY and MCP capabilities to the *existing* BT engine.
+### Migration Target
 
-### Component Diagram
+Replace `dop251/goja_nodejs/eventloop` with `github.com/joeycumines/goja-eventloop` (`go-eventloop`). This unlocks:
 
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                         JavaScript Layer                                  │
-│                                                                          │
-│  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │  BT Orchestration (existing osm:bt + osm:pabt)                  │    │
-│  │                                                                  │    │
-│  │  const bt   = require('osm:bt');                                │    │
-│  │  const pty  = require('osm:pty');                               │    │
-│  │  const orc  = require('osm:orchestrator');                      │    │
-│  │                                                                  │    │
-│  │  // BT Template: spawn-and-prompt                               │    │
-│  │  bt.sequence([                                                  │    │
-│  │    spawnAgent(provider, config),    // osm:pty                  │    │
-│  │    sendPrompt(agent, prompt),       // osm:pty write            │    │
-│  │    waitForResponse(agent, parser),  // osm:orchestrator parse   │    │
-│  │    verifyOutput(agent, checks),     // osm:exec (run tests)    │    │
-│  │    commitChanges(message),          // osm:exec (git commit)   │    │
-│  │  ]);                                                            │    │
-│  └──────────────────────────────────────────────────────────────────┘    │
-│                                                                          │
-│  ┌──────────────────────────────────────────────────────────────────┐    │
-│  │  Workflow Scripts (user-modifiable, goal-discoverable)           │    │
-│  │                                                                  │    │
-│  │  scripts/orchestrate-pr-split.js                                │    │
-│  │  scripts/orchestrate-multi-agent.js                             │    │
-│  │  scripts/orchestrate-code-review.js                             │    │
-│  │  goals/orchestrate.json (goal definition)                       │    │
-│  └──────────────────────────────────────────────────────────────────┘    │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
-                              │
-                     require('osm:pty')
-                     require('osm:orchestrator')
-                              │
-┌──────────────────────────────────────────────────────────────────────────┐
-│                          Go Layer (Safety-Critical)                       │
-│                                                                          │
-│  ┌──────────────────────────────────────────────────────────────┐        │
-│  │  internal/builtin/pty/               ← NEW MODULE (T239)    │        │
-│  │                                                              │        │
-│  │  // PTY lifecycle management with signal forwarding          │        │
-│  │  pty.go          — Spawn, Read, Write, Resize, Close         │        │
-│  │  pty_unix.go     — creack/pty (macOS + Linux)                │        │
-│  │  pty_windows.go  — ConPTY (Windows)                          │        │
-│  │  signal.go       — SIGINT/SIGTERM forwarding                 │        │
-│  │  require.go      — osm:pty module registration               │        │
-│  └──────────────────────────────────────────────────────────────┘        │
-│                                                                          │
-│  ┌──────────────────────────────────────────────────────────────┐        │
-│  │  internal/builtin/orchestrator/      ← NEW MODULE (T241+)   │        │
-│  │                                                              │        │
-│  │  // Output parsing + agent abstraction + session isolation   │        │
-│  │  parser.go       — OutputParser (rate limits, permissions)   │        │
-│  │  patterns.go     — Compiled regex patterns for Claude Code   │        │
-│  │  provider.go     — Provider interface + registry             │        │
-│  │  claude_code.go  — Claude Code provider (PTY-based)          │        │
-│  │  session.go      — AgentSession isolation                    │        │
-│  │  recovery.go     — Error recovery policies                   │        │
-│  │  safety.go       — Permission prompt rejection (CRITICAL)    │        │
-│  │  require.go      — osm:orchestrator module registration      │        │
-│  └──────────────────────────────────────────────────────────────┘        │
-│                                                                          │
-│  ┌──────────────────────────────────────────────────────────────┐        │
-│  │  internal/command/mcp.go             ← EXTENDED (T240)       │        │
-│  │                                                              │        │
-│  │  // New MCP tools for bidirectional agent communication      │        │
-│  │  + registerSession(sessionID, capabilities)                  │        │
-│  │  + reportProgress(sessionID, status, data)                   │        │
-│  │  + reportResult(sessionID, result)                           │        │
-│  │  + requestGuidance(sessionID, question, options)             │        │
-│  └──────────────────────────────────────────────────────────────┘        │
-│                                                                          │
-│  [Existing modules — unchanged]                                          │
-│  internal/builtin/bt/         — BT bridge (thread-safe JS↔Go)          │
-│  internal/builtin/pabt/       — PA-BT planning engine                   │
-│  internal/builtin/exec/       — Shell command execution                  │
-│  internal/session/            — Session ID & isolation                   │
-│  internal/storage/            — Session persistence                      │
-│  internal/command/mcp.go      — MCP server (existing tools)             │
-│  internal/config/             — Configuration management                 │
-└──────────────────────────────────────────────────────────────────────────┘
-```
+1. **`goja-grpc` integration** — Replace `osm:grpc` with a thin wrapper around `joeycumines/goja-grpc` for Promise-based streaming RPCs (unary, server-streaming, client-streaming, bidirectional). The existing `osm:grpc` module using raw `google.golang.org/grpc` should be deleted entirely and replaced.
+2. **Promise support** — Enable `fetch()` to return Promises instead of blocking.
+3. **AbortSignal** — Cancel in-flight operations via `AbortController`.
 
-### Data Flow
+### Migration Scope
 
-```
-                  ┌─────────────────┐
-                  │  User invokes   │
-                  │  osm script     │
-                  │  orchestrate.js │
-                  └────────┬────────┘
-                           │
-                           ▼
-              ┌────────────────────────┐
-              │  JS: Build prompt from │
-              │  context (existing     │
-              │  context manager)      │
-              └────────────┬───────────┘
-                           │
-                           ▼
-              ┌────────────────────────┐
-              │  JS: BT tree setup     │
-              │  bt.sequence([...])    │
-              │  with osm:pty leaves   │
-              └────────────┬───────────┘
-                           │
-              ┌────────────▼───────────┐
-              │  osm:pty.spawn()       │
-              │  Go: creack/pty alloc  │◄─── PTY allocation (Go, safety-critical)
-              │  Go: signal forwarding │
-              └────────────┬───────────┘
-                           │
-              ┌────────────▼───────────┐
-              │  osm:pty.write(prompt) │
-              │  Go: write to PTY fd   │
-              └────────────┬───────────┘
-                           │
-              ┌────────────▼───────────────────────────┐
-              │  Output parsing pipeline               │
-              │                                        │
-              │  PTY stdout ──► Go: OutputParser        │
-              │                    │                    │
-              │        ┌───────────┼───────────┐       │
-              │        ▼           ▼           ▼       │
-              │  RateLimit    Permission    ModelSel   │
-              │  Detector     Rejector      Navigator  │◄── Pattern matching (Go)
-              │  (pause+      (send "N",   (arrow+    │
-              │   retry)       CRITICAL)    enter)     │
-              │                                        │
-              │  Unmatched lines ──► JS callback       │◄── Content routing (JS)
-              │                      (user-defined     │
-              │                       processing)      │
-              └────────────────────┬───────────────────┘
-                                   │
-              ┌────────────────────▼──────────────────┐
-              │  JS: BT verification step             │
-              │  exec("make test")                    │
-              │  exec("git diff --check")             │
-              └────────────────────┬──────────────────┘
-                                   │
-              ┌────────────────────▼──────────────────┐
-              │  JS: Commit / PR creation             │
-              │  exec("git commit -m '...'")         │
-              └───────────────────────────────────────┘
-```
+The event loop is imported in 20+ files across the codebase:
+- `internal/scripting/` (runtime, engine)
+- `internal/builtin/bt/` (bridge, tests)
+- `internal/builtin/bubbletea/` (runner tests)
+- `internal/builtin/pabt/` (tests)
+- `internal/builtin/orchestrator/` (tests)
+- `internal/builtin/register.go` (central registration — `EventLoopProvider` interface)
 
-### API Surface
+The migration requires updating the `EventLoopProvider` interface and every test that creates an event loop. The Go module APIs (`osm:pty`, `osm:orchestrator` parser) are synchronous and unaffected.
 
-#### `osm:pty` Module (Go — T239)
+### Impact on Orchestrator
 
-The PTY module is a thin, safe Go wrapper around `creack/pty` (Unix) and ConPTY (Windows). It handles the OS-specific details and exposes a clean JavaScript API.
+The orchestrator is designed to work with **either** event loop. All Go APIs are synchronous. The JS templates use `bt.createBlockingLeafNode` which is compatible with both. The migration is orthogonal to orchestrator functionality.
 
-```go
-// internal/builtin/pty/pty.go
-package pty
-
-import (
-    "context"
-    "io"
-    "os/exec"
-    "sync"
-    "time"
-)
-
-// Session represents a process running in a pseudo-terminal.
-// The zero value is not usable; create via Spawn().
-type Session struct {
-    mu       sync.Mutex
-    cmd      *exec.Cmd
-    ptyFile  io.ReadWriteCloser // platform-specific PTY handle
-    done     chan struct{}
-    exitCode int
-    exitErr  error
-    cancel   context.CancelFunc
-
-    // Output buffer for line-based reading
-    scanner  *bufio.Scanner
-    lineCh   chan string
-}
-
-// SpawnConfig configures a PTY session.
-type SpawnConfig struct {
-    Command string            // Executable path or name
-    Args    []string          // Command arguments
-    Env     map[string]string // Additional environment variables (merged with os.Environ)
-    Dir     string            // Working directory (default: caller's CWD)
-    Rows    uint16            // Terminal rows (default: 24)
-    Cols    uint16            // Terminal cols (default: 80)
-}
-
-// Spawn allocates a PTY and starts the command.
-// The returned Session must be closed to prevent resource leaks.
-func Spawn(ctx context.Context, cfg SpawnConfig) (*Session, error)
-
-// Write sends data to the PTY (agent's stdin).
-func (s *Session) Write(data []byte) (int, error)
-
-// WriteString is a convenience for Write([]byte(str)).
-func (s *Session) WriteString(str string) error
-
-// ReadLine reads the next line of output (blocking).
-// Returns ("", io.EOF) when the process exits.
-// Timeout of 0 means block indefinitely.
-func (s *Session) ReadLine(timeout time.Duration) (string, error)
-
-// Resize changes the PTY window dimensions (SIGWINCH).
-func (s *Session) Resize(rows, cols uint16) error
-
-// Signal sends a signal to the child process.
-func (s *Session) Signal(sig os.Signal) error
-
-// Close terminates the child process and releases the PTY.
-// Sends SIGTERM, waits 5s, then SIGKILL.
-func (s *Session) Close() error
-
-// Wait blocks until the child process exits.
-// Returns the exit code (0 for success).
-func (s *Session) Wait() (exitCode int, err error)
-
-// IsAlive returns true if the child process is running.
-func (s *Session) IsAlive() bool
-
-// Pid returns the child process PID. Returns 0 if not started.
-func (s *Session) Pid() int
-```
-
-JavaScript exposure:
-
-```javascript
-const pty = require('osm:pty');
-
-// Spawn a process in a PTY
-const session = pty.spawn({
-    command: 'claude',
-    args: ['--print', '--mcp-server', 'osm mcp'],
-    env: { CLAUDE_MODEL: 'claude-sonnet-4-20250514' },
-    rows: 40,
-    cols: 120,
-});
-
-// Write to agent
-session.writeString('Fix the failing test in internal/foo/bar_test.go\n');
-
-// Read output line by line
-while (session.isAlive()) {
-    const line = session.readLine(30000); // 30s timeout
-    if (line === null) break; // EOF
-    log.debug('agent: ' + line);
-}
-
-// Get exit code
-const result = session.wait();
-log.info('exit code: ' + result.code);
-
-// Always close
-session.close();
-```
-
-#### `osm:orchestrator` Module (Go — T241, T243, T248, T249)
-
-This module provides the output parsing pipeline, provider abstraction, error recovery, and session isolation — all the safety-critical orchestration logic.
-
-```go
-// internal/builtin/orchestrator/provider.go
-package orchestrator
-
-import "context"
-
-// Provider is the abstraction for AI agent backends.
-// First implementation: Claude Code via PTY.
-// Design supports future providers (Ollama, API-based agents).
-type Provider interface {
-    // Name returns the provider identifier.
-    Name() string
-
-    // Spawn starts an agent and returns a handle for interaction.
-    Spawn(ctx context.Context, cfg AgentConfig) (Agent, error)
-}
-
-// Agent represents a running AI agent instance.
-type Agent interface {
-    // ID returns the unique session identifier for this agent.
-    ID() string
-
-    // Send writes a prompt/instruction to the agent.
-    Send(ctx context.Context, input string) error
-
-    // ReadLine reads the next line of output (blocking with timeout).
-    ReadLine(timeout time.Duration) (string, error)
-
-    // IsAlive returns whether the agent process is running.
-    IsAlive() bool
-
-    // Close terminates the agent gracefully.
-    Close() error
-
-    // PTY returns the underlying PTY session (if applicable).
-    // Returns nil for non-PTY providers (e.g., API-based).
-    PTY() *pty.Session
-}
-
-// AgentConfig is the configuration for spawning an agent.
-type AgentConfig struct {
-    Provider    string            // Provider name (for registry lookup)
-    Model       string            // Model identifier
-    WorkDir     string            // Working directory for the agent
-    Env         map[string]string // Additional environment variables
-    MCPServers  []string          // MCP server commands to attach
-    SessionID   string            // Isolated session ID (auto-generated if empty)
-    Rows        uint16            // Terminal rows
-    Cols        uint16            // Terminal cols
-}
-```
-
-```go
-// internal/builtin/orchestrator/parser.go
-package orchestrator
-
-import (
-    "regexp"
-    "time"
-)
-
-// EventType classifies a parsed output event.
-type EventType int
-
-const (
-    EventText         EventType = iota // Normal text output
-    EventRateLimit                     // Rate limit / 429 / backoff
-    EventPermission                    // Permission prompt requiring Y/N
-    EventModelSelect                   // Model selection menu
-    EventSSOLogin                      // SSO / OAuth login flow
-    EventCompletion                    // Agent signaled completion
-    EventToolUse                       // MCP tool invocation
-    EventError                         // Error message
-    EventThinking                      // Agent thinking/processing indicator
-)
-
-// OutputEvent represents a parsed, classified line of agent output.
-type OutputEvent struct {
-    Type      EventType
-    Line      string            // Raw line text
-    Fields    map[string]string // Extracted fields (e.g., "retryAfter": "30")
-    Timestamp time.Time
-}
-
-// Parser transforms raw PTY output lines into classified events.
-// It is NOT safe for concurrent use from multiple goroutines.
-type Parser struct {
-    patterns []patternEntry
-}
-
-type patternEntry struct {
-    name     string
-    re       *regexp.Regexp
-    typ      EventType
-    extract  func([]string) map[string]string // submatch → fields
-}
-
-// NewParser creates a parser pre-loaded with Claude Code output patterns.
-func NewParser() *Parser
-
-// Parse classifies a single line of output.
-// Returns EventText if no pattern matches.
-func (p *Parser) Parse(line string) OutputEvent
-
-// AddPattern registers a custom detection pattern.
-// This is exposed to JS for user-defined pattern extensions.
-func (p *Parser) AddPattern(name string, pattern string, eventType EventType) error
-```
-
-```go
-// internal/builtin/orchestrator/safety.go
-package orchestrator
-
-// PermissionPolicy defines how permission prompts are handled.
-// THIS IS THE MOST SAFETY-CRITICAL CODE IN THE ORCHESTRATOR.
-//
-// By default, ALL permission prompts are REJECTED.
-// Users must explicitly opt-in to auto-approval patterns.
-type PermissionPolicy struct {
-    // DefaultAction is applied when no rule matches.
-    // MUST be ActionReject for safety.
-    DefaultAction PermissionAction
-
-    // Rules are evaluated in order. First match wins.
-    Rules []PermissionRule
-}
-
-type PermissionAction int
-
-const (
-    // ActionReject sends "N" to the permission prompt (DEFAULT, SAFE).
-    ActionReject PermissionAction = iota
-
-    // ActionApprove sends "Y" to the permission prompt (DANGEROUS).
-    // Only allowed for explicitly whitelisted patterns.
-    ActionApprove
-
-    // ActionAsk pauses and asks the human operator (SAFEST but blocks).
-    ActionAsk
-)
-
-// PermissionRule matches a permission prompt pattern to an action.
-type PermissionRule struct {
-    Pattern *regexp.Regexp
-    Action  PermissionAction
-    Reason  string // Human-readable explanation for audit log
-}
-
-// DefaultPermissionPolicy returns the safe default: reject everything.
-func DefaultPermissionPolicy() PermissionPolicy {
-    return PermissionPolicy{DefaultAction: ActionReject}
-}
-```
-
-```go
-// internal/builtin/orchestrator/recovery.go
-package orchestrator
-
-import "time"
-
-// RecoveryConfig defines error recovery behavior.
-type RecoveryConfig struct {
-    // MaxRetries is the maximum number of retries for a single operation.
-    MaxRetries int // default: 3
-
-    // RateLimitBackoff is the initial wait after a rate limit.
-    RateLimitBackoff time.Duration // default: 30s
-
-    // HangTimeout is the maximum time to wait for agent output.
-    HangTimeout time.Duration // default: 5m
-
-    // CrashRestartDelay is the wait before restarting a crashed agent.
-    CrashRestartDelay time.Duration // default: 5s
-
-    // GraceShutdownTimeout is the time to wait for graceful shutdown
-    // before sending SIGKILL.
-    GraceShutdownTimeout time.Duration // default: 10s
-}
-
-// DefaultRecoveryConfig returns sensible defaults.
-func DefaultRecoveryConfig() RecoveryConfig {
-    return RecoveryConfig{
-        MaxRetries:           3,
-        RateLimitBackoff:     30 * time.Second,
-        HangTimeout:          5 * time.Minute,
-        CrashRestartDelay:    5 * time.Second,
-        GraceShutdownTimeout: 10 * time.Second,
-    }
-}
-```
-
-```go
-// internal/builtin/orchestrator/session.go
-package orchestrator
-
-import (
-    "fmt"
-    "os"
-    "path/filepath"
-)
-
-// AgentSession provides isolated state for a single agent instance.
-// Each agent gets its own:
-// - Session ID (unique, non-colliding with other agents)
-// - State directory (for temporary files, logs)
-// - MCP channel (independent communication)
-type AgentSession struct {
-    ID       string // Unique session identifier
-    StateDir string // Isolated directory for this agent's state
-    LogFile  string // Agent-specific log file path
-}
-
-// NewAgentSession creates an isolated session for an agent.
-// The state directory is created under the osm data directory.
-func NewAgentSession(baseDir string) (*AgentSession, error) {
-    id := generateAgentSessionID()
-    stateDir := filepath.Join(baseDir, "agents", id)
-    if err := os.MkdirAll(stateDir, 0o700); err != nil {
-        return nil, fmt.Errorf("create agent state dir: %w", err)
-    }
-    return &AgentSession{
-        ID:       id,
-        StateDir: stateDir,
-        LogFile:  filepath.Join(stateDir, "agent.log"),
-    }, nil
-}
-```
-
-JavaScript exposure (unified module):
-
-```javascript
-const orc = require('osm:orchestrator');
-
-// --- Provider ---
-// Create a Claude Code agent
-const agent = orc.spawnAgent({
-    provider: 'claude-code',
-    model: 'claude-sonnet-4-20250514',
-    workDir: '/path/to/project',
-    mcpServers: ['osm mcp'],
-});
-
-// --- Output Parsing ---
-// Create a parser (pre-loaded with Claude Code patterns)
-const parser = orc.newParser();
-
-// Read and parse output
-while (agent.isAlive()) {
-    const line = agent.readLine(30000);
-    if (line === null) break;
-
-    const event = parser.parse(line);
-    switch (event.type) {
-        case orc.EVENT_RATE_LIMIT:
-            log.warn('Rate limited, waiting ' + event.fields.retryAfter + 's');
-            time.sleep(parseInt(event.fields.retryAfter) * 1000);
-            break;
-        case orc.EVENT_PERMISSION:
-            // Go-side safety: permission is auto-rejected by default
-            // JS only sees the event AFTER rejection
-            log.warn('Permission prompt rejected: ' + event.line);
-            break;
-        case orc.EVENT_COMPLETION:
-            log.info('Agent completed task');
-            break;
-        default:
-            output.print(event.line);
-    }
-}
-
-// --- Recovery ---
-const recovery = orc.newRecovery({
-    maxRetries: 3,
-    rateLimitBackoff: 30000, // ms
-    hangTimeout: 300000,     // ms
-});
-
-// --- Session Isolation ---
-// Each agent gets isolated state automatically via agent.id
-log.info('Agent session: ' + agent.id());
-```
-
-#### MCP Extension (Go — T240)
-
-Extend the existing `internal/command/mcp.go` with new tools for bidirectional agent communication:
-
-```go
-// Added to newMCPServer() in internal/command/mcp.go
-
-// --- registerSession ---
-// Agent registers itself with osm, declaring capabilities
-type mcpRegisterSessionInput struct {
-    SessionID    string   `json:"sessionId" jsonschema:"Unique session identifier"`
-    Capabilities []string `json:"capabilities" jsonschema:"List of agent capabilities"`
-}
-
-// --- reportProgress ---
-// Agent reports progress on current task
-type mcpReportProgressInput struct {
-    SessionID string  `json:"sessionId" jsonschema:"Session identifier"`
-    Status    string  `json:"status" jsonschema:"Current status (working, blocked, waiting)"`
-    Progress  float64 `json:"progress" jsonschema:"Completion percentage (0-100)"`
-    Message   string  `json:"message" jsonschema:"Human-readable progress message"`
-}
-
-// --- reportResult ---
-// Agent reports completion of a task
-type mcpReportResultInput struct {
-    SessionID string `json:"sessionId" jsonschema:"Session identifier"`
-    Success   bool   `json:"success" jsonschema:"Whether the task succeeded"`
-    Output    string `json:"output" jsonschema:"Task output or error message"`
-    FilesChanged []string `json:"filesChanged,omitempty" jsonschema:"List of modified files"`
-}
-
-// --- requestGuidance ---
-// Agent requests human guidance on an ambiguous situation
-type mcpRequestGuidanceInput struct {
-    SessionID string   `json:"sessionId" jsonschema:"Session identifier"`
-    Question  string   `json:"question" jsonschema:"Question for the human operator"`
-    Options   []string `json:"options,omitempty" jsonschema:"Available options"`
-    Context   string   `json:"context,omitempty" jsonschema:"Additional context"`
-}
-```
-
-#### BT Templates (JS — T244)
-
-Pre-built behavior tree patterns exposed as reusable functions. These use the existing `osm:bt` and `osm:pabt` infrastructure — no new Go code.
-
-```javascript
-// scripts/bt-templates/orchestrator.js
-// Require-able BT templates for AI orchestration workflows
-
-const bt = require('osm:bt');
-const pty = require('osm:pty');
-const orc = require('osm:orchestrator');
-const exec = require('osm:exec');
-
-// Template: Spawn an agent, send a prompt, wait for completion
-exports.spawnAndPrompt = function(config, prompt) {
-    const bb = new bt.Blackboard();
-
-    return bt.sequence([
-        // Step 1: Spawn agent
-        bt.createLeafNode(function() {
-            const agent = orc.spawnAgent(config);
-            bb.set('agent', agent);
-            bb.set('parser', orc.newParser());
-            return bt.success;
-        }),
-
-        // Step 2: Send prompt
-        bt.createLeafNode(function() {
-            const agent = bb.get('agent');
-            agent.send(prompt);
-            return bt.success;
-        }),
-
-        // Step 3: Wait for completion (with parsed output monitoring)
-        bt.createLeafNode(function() {
-            const agent = bb.get('agent');
-            const parser = bb.get('parser');
-
-            while (agent.isAlive()) {
-                const line = agent.readLine(30000);
-                if (line === null) break;
-
-                const event = parser.parse(line);
-                if (event.type === orc.EVENT_COMPLETION) {
-                    bb.set('result', event);
-                    return bt.success;
-                }
-                if (event.type === orc.EVENT_RATE_LIMIT) {
-                    return bt.running; // BT will re-tick
-                }
-            }
-            return bt.failure;
-        }),
-
-        // Step 4: Cleanup
-        bt.createLeafNode(function() {
-            const agent = bb.get('agent');
-            agent.close();
-            return bt.success;
-        }),
-    ]);
-};
-
-// Template: Run tests and verify output
-exports.verifyOutput = function(command) {
-    return bt.createLeafNode(function() {
-        const result = exec.exec('sh', '-c', command);
-        return result.code === 0 ? bt.success : bt.failure;
-    });
-};
-
-// Template: Git commit with message
-exports.commitChanges = function(message) {
-    return bt.createLeafNode(function() {
-        const addResult = exec.exec('git', 'add', '-A');
-        if (addResult.code !== 0) return bt.failure;
-        const commitResult = exec.exec('git', 'commit', '-m', message);
-        return commitResult.code === 0 ? bt.success : bt.failure;
-    });
-};
-
-// Template: Split diffs into branches (T245)
-exports.prSplit = function(branches) {
-    return bt.sequence(branches.map(function(branch) {
-        return bt.sequence([
-            bt.createLeafNode(function() {
-                const result = exec.exec('git', 'checkout', '-b', branch.name);
-                return result.code === 0 ? bt.success : bt.failure;
-            }),
-            exports.spawnAndPrompt(branch.config, branch.prompt),
-            exports.verifyOutput(branch.verify || 'make test'),
-            exports.commitChanges(branch.message),
-        ]);
-    }));
-};
-```
-
-### Testing Strategy (Layered)
-
-#### Layer 1: Go Unit Tests (safety-critical paths)
-
-| Package | Test Focus | Method |
-|---------|-----------|--------|
-| `internal/builtin/pty/` | PTY spawn, read, write, resize, close, signal | Spawn `/bin/cat`, `/bin/echo`; platform tests for Windows ConPTY |
-| `internal/builtin/orchestrator/parser.go` | Pattern matching accuracy | Table-driven: 100+ real Claude Code output lines → expected EventType |
-| `internal/builtin/orchestrator/safety.go` | Permission rejection | **CRITICAL**: Every known permission prompt format MUST be rejected |
-| `internal/builtin/orchestrator/recovery.go` | Retry logic, timeout handling | Time-based tests with short durations |
-| `internal/builtin/orchestrator/session.go` | Isolation guarantees | Concurrent session creation, directory cleanup |
-
-#### Layer 2: JS Integration Tests (workflow logic)
-
-| Script | Test Focus | Method |
-|--------|-----------|--------|
-| BT templates | Tree composition and execution | Mock agent (echo server PTY) |
-| Orchestration scripts | End-to-end workflow | Scripted `/bin/cat` simulating agent responses |
-| Pattern library | JS-side pattern extensions | Pure JS unit tests |
-
-#### Layer 3: TestMain Integration Tests (T247 — real agents)
-
-```go
-// cmd/osm/orchestrator_integration_test.go
-// +build integration
-
-func TestMain(m *testing.M) {
-    if os.Getenv("OSM_INTEGRATION_PROVIDER") == "" {
-        fmt.Println("Skipping integration tests (set OSM_INTEGRATION_PROVIDER)")
-        os.Exit(0)
-    }
-    os.Exit(m.Run())
-}
-
-func TestClaudeCodeSpawnAndPrompt(t *testing.T) {
-    // Only runs with: OSM_INTEGRATION_PROVIDER=claude-code go test -tags=integration
-}
-```
-
-### Trade-offs
-
-| Aspect | Assessment |
-|--------|------------|
-| **Safety** | ✅ Permission rejection, PTY management, signal forwarding — all in Go with compile-time guarantees. |
-| **Flexibility** | ✅ BT composition, workflow customization, prompt construction — all in JS, user-modifiable. |
-| **Code volume** | ✅ ~800 LOC Go (2 modules), ~400 LOC JS (templates). No interface ceremony. |
-| **Existing infra** | ✅ Uses osm:bt, osm:pabt, osm:exec, session, MCP — no reinvention. |
-| **Testability** | ✅ Go safety tests are table-driven. JS workflows tested with mock PTYs. Integration tests gated. |
-| **Platform compat** | ✅ PTY abstraction in Go handles Unix/Windows. JS scripts are platform-independent. |
-| **Discoverability** | ✅ BT templates are require-able. Orchestration scripts can be goals (auto-discovered). |
-| **Learning curve** | ⚠️ Users need to understand both Go module APIs and BT patterns. But BT is already documented. |
-| **Future providers** | ⚠️ Provider interface is minimal. Adding Ollama requires implementing Agent interface. Not over-designed for unknown requirements. |
+Post-migration, the orchestrator gains:
+- Streaming output parsing (event-driven instead of polling `Read()`)
+- Promise-based agent communication
+- `goja-grpc` for MacosUseSDK streaming integration (observation streams, real-time UI monitoring)
 
 ---
 
-## 6. Cross-Cutting Concerns
+## 10. Roadmap
 
-### 6.1 Security
+### Completed
 
-#### PTY Injection
+| Task | Description | Deliverable |
+|------|-------------|-------------|
+| **T238** | Architecture document | This document |
+| **T239** | PTY module | `internal/builtin/pty/` — `osm:pty` |
+| **T240** | MCP bidirectional tools | Extended `internal/command/mcp.go` |
+| **T241** | PTY output parsing | `internal/builtin/orchestrator/parser.go` |
+| **T242** | Configuration management | Extended `internal/config/` |
+| **T243** | Provider abstraction | Provider/AgentHandle/Registry + ClaudeCodeProvider |
+| **T244** | BT orchestration templates | `scripts/bt-templates/orchestrator.js` |
+| **T245** | PR splitting workflow | `scripts/orchestrate-pr-split.js` + goal definition |
 
-**Risk:** Malicious agent output containing ANSI escape sequences that alter terminal state, inject keystrokes, or execute commands when displayed.
+### Planned
 
-**Mitigation:**
-- Output parsing in Go strips known dangerous escape sequences before passing raw lines to JS.
-- The `Parser` operates on sanitized text. Raw bytes are only accessible through explicit opt-in (`session.readRaw()`).
-- ANSI sequences needed for TUI multiplexing (T246) are processed in Go, not passed through to user scripts.
-
-#### Permission Prompt Handling
-
-**Risk:** Agent requests file deletion, network access, or code execution that the user hasn't approved.
-
-**Mitigation:**
-- `PermissionPolicy` defaults to `ActionReject` (hardcoded, not configurable via config file).
-- Every permission prompt is logged to the audit log with full context.
-- `ActionApprove` rules require explicit code-level opt-in (not configurable via environment variables or config files to prevent accidental exposure).
-- The safety module is the **one exception** to osm's "all logic in JS" principle — it MUST remain in Go.
-
-#### Credential Handling
-
-**Risk:** API keys, tokens, or credentials exposed in logs, prompts, or agent output.
-
-**Mitigation:**
-- Environment variables containing secrets (matching patterns like `*_KEY`, `*_TOKEN`, `*_SECRET`) are redacted in log output.
-- Agent spawn environment is inherited from the parent process — no credential storage in osm.
-- MCP session registration does not transmit credentials.
-
-### 6.2 Platform Compatibility
-
-| Component | macOS/Linux | Windows |
-|-----------|-------------|---------|
-| PTY allocation | `creack/pty` (POSIX `openpty()`) | `golang.org/x/sys/windows` ConPTY |
-| Signal forwarding | `SIGINT`, `SIGTERM`, `SIGWINCH` | `GenerateConsoleCtrlEvent` (Ctrl+C), `TerminateProcess` |
-| Session isolation | Standard `os.MkdirAll`, `/` paths | `filepath.Join`, `%LOCALAPPDATA%` |
-| Process management | `syscall.Kill`, `os.Process.Signal` | `windows.OpenProcess`, `windows.TerminateProcess` |
-| MCP transport | Stdio (pipe-based) | Stdio (pipe-based, identical) |
-
-The PTY module (`internal/builtin/pty/`) uses build-tagged files (`pty_unix.go`, `pty_windows.go`) for platform-specific implementation. All exported functions have identical signatures — the platform difference is encapsulated.
-
-**go.mod dependency:** `github.com/creack/pty v1.1.24` is already in go.mod (used by tests today). No new dependency for Unix PTY. Windows ConPTY requires only `golang.org/x/sys` (also already present).
-
-### 6.3 Session Isolation (T249)
-
-Each spawned agent gets an `AgentSession` with:
-
-1. **Unique ID:** Generated via `session.GetSessionID()` with an `agent--` namespace prefix to prevent collisions with user sessions.
-2. **Isolated state directory:** `~/.local/share/osm/agents/<agent-id>/` containing the agent's logs, temporary files, and state.
-3. **Independent MCP channel:** Each agent connects to its own MCP server instance (or shares one with session-scoped tool namespacing).
-4. **Environment isolation:** Agent environment inherits from parent but adds `OSM_SESSION=<agent-id>` to prevent cross-agent state pollution.
-
-Concurrent agents are safe because:
-- PTY file descriptors are per-process (no sharing).
-- Blackboard state is per-BT-tree (no global state).
-- Agent sessions use distinct directories (no file contention).
-- MCP sessions are identified by `sessionId` (multiplexed on single server if needed).
-
-### 6.4 Error Recovery (T248)
-
-The recovery system operates at two levels:
-
-**Go level (automatic, non-configurable safety):**
-- Process crash detection via `Wait()` + exit code analysis.
-- SIGKILL escalation after grace timeout.
-- PTY file descriptor cleanup on crash (prevent FD leaks).
-
-**JS level (configurable, user-customizable):**
-- Rate limit backoff (exponential, configurable via `RecoveryConfig`).
-- Hang detection (no output for N seconds → restart or abort).
-- Retry logic (BT `fallback` nodes naturally retry failed branches).
-- User-defined recovery handlers via BT tree composition.
-
-```javascript
-// Example: Retry with exponential backoff
-const retryWithBackoff = bt.fallback([
-    attemptTask,                                  // Try once
-    bt.sequence([                                  // On failure:
-        bt.createLeafNode(() => {
-            time.sleep(recovery.rateLimitBackoff);
-            return bt.success;
-        }),
-        attemptTask,                               // Retry
-    ]),
-    bt.createLeafNode(() => {
-        log.error('Task failed after retries');
-        return bt.failure;
-    }),
-]);
-```
-
-### 6.5 Performance
-
-| Operation | Expected Latency | Notes |
-|-----------|-----------------|-------|
-| PTY spawn | ~50ms | Fork + exec + PTY allocation |
-| PTY write | ~1ms | Write syscall to PTY fd |
-| PTY readLine | Blocking | Depends on agent output speed |
-| Parser.Parse | ~5μs | Pre-compiled regex matching |
-| BT tick | ~10μs | Depends on tree depth |
-| Agent startup | ~2-5s | Claude Code initialization time |
-
-The performance bottleneck is the AI agent itself, not the orchestrator. PTY I/O and parsing are negligible compared to LLM inference time.
-
----
-
-## 7. Implementation Roadmap
+| Task | Description | Dependencies |
+|------|-------------|-------------|
+| **T246** | TUI multiplexing — meta-key switching, terminal state save/restore, visual status bar | T239 |
+| **T247** | Integration testing — TestMain with real Claude Code, env-gated | T243 |
+| **T248** | Error recovery — crash detection, rate limit backoff, hang timeout | T243 |
+| **T249** | Session isolation — per-agent state directory, namespace prefix | Existing session |
+| **T250** | User building blocks — documentation, module exposure | T239, T243, T244 |
+| **T251** | Claude Code multiplexer — concurrent agent management | T243, T249 |
+| **T252** | Ollama provider — local LLM backend | T243 |
+| **T253** | Production parser — Claude Code output corpus | T241 |
+| **T254** | Safety validation — comprehensive permission prompt coverage | T241, T248 |
+| **T255** | Ideal choice resolution — intelligent provider selection | T251, T252 |
 
 ### Dependency Graph
 
 ```
-T238 (this doc) ─┐
-                  ├──► T239 (PTY module) ────────────────────────────────┐
-                  │                                                      │
-                  ├──► T240 (MCP bidirectional) ──┐                      │
-                  │                               │                      │
-                  ├──► T242 (Config & env mgmt)   │                      │
-                  │                               │                      │
-                  └──► T241 (PTY output parsing) ─┤                      │
-                                                  │                      │
-                       T243 (Provider abstraction)◄┘                     │
-                            │                                            │
-                            ├──► T244 (BT templates) ◄───────────────────┘
-                            │         │
-                            │         ├──► T245 (PR splitting workflow)
-                            │         │
-                            │         └──► T250 (User building blocks)
-                            │
-                            ├──► T246 (TUI multiplexing)
-                            │
-                            ├──► T247 (Integration testing)
-                            │
-                            ├──► T248 (Error recovery)
-                            │
-                            └──► T249 (Session isolation)
-                            
-T251 (Claude Code multiplexer) ◄── T243 + T244 + T249
-T252 (Ollama module) ◄── T243
-T253 (Claude Code parser prod) ◄── T241
-T254 (Safety validation) ◄── T241 + T248
-T255 (Ideal choice resolution) ◄── T251 + T252
+T246 (TUI mux) ◄── T239
+T247 (Integration tests) ◄── T243
+T248 (Error recovery) ◄── T243
+T249 (Session isolation) ◄── existing session
+T250 (Building blocks) ◄── T239, T243, T244
+T251 (Multiplexer) ◄── T243, T249
+T252 (Ollama) ◄── T243
+T253 (Production parser) ◄── T241
+T254 (Safety validation) ◄── T241, T248
+T255 (Ideal choice) ◄── T251, T252
 ```
 
-### Phase 1: Foundation (T239, T240, T241, T242)
-
-**Goal:** PTY spawning works, MCP is bidirectional, output can be parsed.
-
-| Task | Package | LOC Estimate | Dependencies |
-|------|---------|-------------|--------------|
-| T239 | `internal/builtin/pty/` | ~400 | `creack/pty` (in go.mod) |
-| T240 | `internal/command/mcp.go` (extend) | ~200 | Existing MCP server |
-| T241 | `internal/builtin/orchestrator/parser.go` | ~300 | None |
-| T242 | `internal/config/` (extend) | ~150 | Existing config |
-
-**Deliverable:** `osm script -e 'var pty = require("osm:pty"); var s = pty.spawn({command: "echo", args: ["hello"]}); output.print(s.readLine(1000)); s.close();'`
-
-### Phase 2: Orchestration (T243, T244, T248, T249)
-
-**Goal:** Agent abstraction, BT templates, recovery, and isolation.
-
-| Task | Package | LOC Estimate | Dependencies |
-|------|---------|-------------|--------------|
-| T243 | `internal/builtin/orchestrator/provider.go`, `claude_code.go` | ~300 | T239, T241 |
-| T244 | `scripts/bt-templates/orchestrator.js` | ~400 (JS) | T243, existing osm:bt |
-| T248 | `internal/builtin/orchestrator/recovery.go` | ~200 | T243 |
-| T249 | `internal/builtin/orchestrator/session.go` | ~150 | Existing session infra |
-
-**Deliverable:** `osm script orchestrate-single-prompt.js` spawns Claude Code, sends a prompt, parses output, handles rate limits, and collects the result.
-
-### Phase 3: Advanced Workflows (T245, T246, T247, T250)
-
-**Goal:** PR splitting, TUI multiplexing, integration tests, user-facing API.
-
-| Task | Package | LOC Estimate | Dependencies |
-|------|---------|-------------|--------------|
-| T245 | `scripts/orchestrate-pr-split.js` | ~500 (JS) | T244 |
-| T246 | `internal/builtin/orchestrator/tui.go` (or `internal/termui/`) | ~600 | T239, existing bubbletea |
-| T247 | `cmd/osm/orchestrator_integration_test.go` | ~300 | T243 |
-| T250 | Documentation + module exposure | ~200 | T239, T243, T244 |
-
-**Deliverable:** Full PR splitting workflow with TUI showing active agent sessions.
-
-### Phase 4: Multi-Provider (T251, T252, T253, T254, T255)
-
-**Goal:** Claude Code multiplexer, Ollama, production parser, safety validation.
-
-| Task | Package | LOC Estimate | Dependencies |
-|------|---------|-------------|--------------|
-| T251 | `internal/builtin/orchestrator/multiplexer.go` | ~400 | T243, T244, T249 |
-| T252 | `internal/builtin/orchestrator/ollama.go` | ~250 | T243 |
-| T253 | `internal/builtin/orchestrator/patterns.go` (production) | ~300 | T241 |
-| T254 | `internal/builtin/orchestrator/safety.go` (hardened) | ~200 | T241, T248 |
-| T255 | `scripts/ideal-choice-resolution.js` | ~300 (JS) | T251, T252 |
-
-**Deliverable:** Run multiple Claude Code instances simultaneously, with Ollama as a local testing alternative, full safety validation, and intelligent provider selection.
-
 ---
 
-## 8. Decision
+## 11. Design History
 
-### Recommended: Approach C (Pragmatic Balance)
+### Approach Selection (T238)
 
-**Rationale:**
+Three architectures were evaluated:
 
-1. **Matches osm's DNA.** osm is a scripting-first tool with Go infrastructure. The orchestrator follows the same pattern: Go for safety, JS for logic. This is not a new architecture — it's the existing architecture extended.
+| Approach | Name | Verdict |
+|----------|------|---------|
+| A | Script-First (all orchestration in JS, Go adds only `osm:pty`) | Rejected: safety-critical paths in dynamic JS |
+| B | Module-First (full Go module system with interfaces, DI, 8+ packages) | Rejected: 2000+ LOC of interface ceremony, contradicts osm's scripting-first DNA |
+| **C** | **Pragmatic Balance (Go for safety, JS for logic)** | **Selected** |
 
-2. **Leverages existing infrastructure.** The BT engine (`osm:bt`, `osm:pabt`), MCP server, session system, and scripting engine are production-quality. Approach C builds on top of them rather than replacing or duplicating them.
+Approach C was selected because:
+1. It matches osm's existing architecture — Go provides native modules, JS composes them.
+2. Safety-critical paths (PTY, permission rejection) are in compiled Go with type safety.
+3. Workflow logic remains in user-modifiable JS, leveraging the existing BT engine.
+4. Minimal new Go code (~800 LOC for two modules) — no interface ceremony.
+5. BT templates and workflow scripts are goal-discoverable and `require()`-able.
 
-3. **Safety where it matters.** Permission prompt rejection and PTY lifecycle management are too critical for dynamic JS. These MUST be in compiled, type-checked Go with extensive test coverage. Approach A puts safety in JS (risky). Approach B puts everything in Go (unnecessary).
-
-4. **Pragmatic scope.** Approach C requires ~800 LOC of new Go code (2 modules) and ~400 LOC of JS templates. Approach B would require 2000+ LOC of Go interface ceremony before any real logic. The Go interfaces in Approach C are minimal — `Provider`, `Agent`, `Parser` — and will grow only when real requirements (Ollama, multi-provider) demand it.
-
-5. **User customization is preserved.** Orchestration scripts are goals — users can discover, copy, modify, and share them. The BT templates are `require()`-able. Users who want different workflows write JS, not Go.
-
-6. **T234 alignment.** The code-review-splitter evaluation explicitly chose "defer to AI Orchestrator." Approach C delivers on that promise with minimal wasted effort.
-
-### What This Decision Means for T239–T255
-
-- **T239 (PTY):** Implement `internal/builtin/pty/` as described. This is the foundation.
-- **T240 (MCP):** Extend `internal/command/mcp.go` with 4 new tools. No new package.
-- **T241 (Parser):** Implement `internal/builtin/orchestrator/parser.go`. Table-driven pattern matching with Claude Code output corpus.
-- **T242 (Config):** Extend `internal/config/schema.go` with orchestrator config keys. No new package.
-- **T243 (Provider):** Implement `Provider` and `Agent` interfaces in `internal/builtin/orchestrator/`. First impl: Claude Code via PTY.
-- **T244 (BT templates):** JS scripts using existing `osm:bt`. No Go code. BT templates are `require()`-able.
-- **T245 (PR split):** JS orchestration script using T244 templates. Goal-discoverable.
-- **T246 (TUI mux):** Extends existing bubbletea infrastructure. May need a thin Go layer for PTY output multiplexing.
-- **T247 (Testing):** TestMain integration tests. Gated by env var. Standard Go testing patterns.
-- **T248 (Recovery):** Go-level safety (crash detection, SIGKILL escalation) + JS-level policy (retry, backoff).
-- **T249 (Isolation):** Build on existing `internal/session/` with agent namespace prefix.
-- **T250 (Building blocks):** Documentation + module exposure. The modules from T239/T243 ARE the building blocks.
-- **T251–T255 (Advanced):** Multiplexer, Ollama, production parser, safety hardening. These extend the foundation without changing the architecture.
-
-### File Location Summary
-
-| New File | Purpose | Task |
-|----------|---------|------|
-| `internal/builtin/pty/pty.go` | PTY session management | T239 |
-| `internal/builtin/pty/pty_unix.go` | Unix PTY (creack/pty) | T239 |
-| `internal/builtin/pty/pty_windows.go` | Windows ConPTY | T239 |
-| `internal/builtin/pty/signal.go` | Signal forwarding | T239 |
-| `internal/builtin/pty/require.go` | `osm:pty` module registration | T239 |
-| `internal/builtin/orchestrator/parser.go` | Output event parser | T241 |
-| `internal/builtin/orchestrator/patterns.go` | Compiled regex patterns | T241/T253 |
-| `internal/builtin/orchestrator/provider.go` | Provider + Agent interfaces | T243 |
-| `internal/builtin/orchestrator/claude_code.go` | Claude Code provider | T243 |
-| `internal/builtin/orchestrator/session.go` | Agent session isolation | T249 |
-| `internal/builtin/orchestrator/recovery.go` | Error recovery policies | T248 |
-| `internal/builtin/orchestrator/safety.go` | Permission rejection (**CRITICAL**) | T254 |
-| `internal/builtin/orchestrator/require.go` | `osm:orchestrator` module registration | T243 |
-| `scripts/bt-templates/orchestrator.js` | BT orchestration templates | T244 |
-| `scripts/orchestrate-pr-split.js` | PR splitting workflow | T245 |
-
-### Risks and Mitigations
-
-| Risk | Probability | Impact | Mitigation |
-|------|-------------|--------|------------|
-| Claude Code output format changes break parser | High | Medium | Version-specific pattern sets. Parser extensible via `AddPattern`. CI integration tests detect breakage. |
-| Permission prompt format not recognized → auto-approved | Low | **CRITICAL** | Default-reject policy. Unknown prompts are rejected. Safety tests cover every known format. |
-| ConPTY on Windows is flaky | Medium | Medium | Windows CI testing. Graceful fallback to non-PTY `exec` mode (degraded but functional). |
-| Event loop migration (T237 Tier 2) changes scripting semantics | Low | High | Orchestrator modules use synchronous Go APIs exposed to sync JS calls. No async dependency. Migration is orthogonal. |
-| BT is wrong abstraction for long-running workflows | Medium | Low | BT `running` status + ticker pattern handles long waits naturally. `createBlockingLeafNode` prevents event loop starvation. |
-
----
-
-*This document is the gate for T239–T255. All implementation tasks should reference this architecture and follow the recommended Approach C patterns.*
+The full three-approach analysis was part of the original document. It served its purpose during the design phase and has been archived.

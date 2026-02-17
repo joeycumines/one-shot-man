@@ -17,8 +17,11 @@ import (
 func TestTestEventLoopProvider_Lifecycle(t *testing.T) {
 	provider := NewTestEventLoopProvider()
 
-	// EventLoop returns a non-nil event loop
-	require.NotNil(t, provider.EventLoop())
+	// Loop returns a non-nil event loop
+	require.NotNil(t, provider.Loop())
+
+	// Runtime returns a non-nil goja runtime
+	require.NotNil(t, provider.Runtime())
 
 	// Registry returns a non-nil registry
 	require.NotNil(t, provider.Registry())

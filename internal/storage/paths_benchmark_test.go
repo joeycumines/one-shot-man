@@ -7,12 +7,8 @@ import (
 )
 
 // BenchmarkSanitizeFilename benchmarks the sanitizeFilename function at
-// various input profiles.
-//
-// NOTE: sanitizeFilename compiles three regexp.MustCompile calls on every
-// invocation (unsafePattern, collapsePattern, reservedPattern). This is a
-// known performance characteristic — benchmarks expose the per-call regex
-// compilation cost, which dominates for short/safe inputs.
+// various input profiles. The three regex patterns (unsafePattern,
+// collapsePattern, reservedPattern) are compiled once at package level.
 func BenchmarkSanitizeFilename(b *testing.B) {
 	b.Run("SafeInput", func(b *testing.B) {
 		b.ReportAllocs()

@@ -16,6 +16,11 @@ var (
 	fallbackOnce sync.Once
 	fallbackDir  string
 	fallbackErr  error
+
+	// Pre-compiled regexes for sanitizeFilename (compiled once, used per call).
+	unsafePattern   = regexp.MustCompile(`[/\\:*?"<>|\x00]`)
+	collapsePattern = regexp.MustCompile(`_+`)
+	reservedPattern = regexp.MustCompile(`(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$`)
 )
 
 // pathsMu guards the function-variable overrides below against concurrent
@@ -144,10 +149,8 @@ func sanitizeFilename(input string) string {
 	// different combining/compatibility forms.
 	input = norm.NFKC.String(input)
 	// Replace problematic characters: /, \, :, *, ?, ", <, >, |, null, etc.
-	unsafePattern := regexp.MustCompile(`[/\\:*?"<>|\x00]`)
 	sanitized := unsafePattern.ReplaceAllString(input, "_")
 	// Also collapse multiple underscores into one for cleanliness
-	collapsePattern := regexp.MustCompile(`_+`)
 	sanitized = collapsePattern.ReplaceAllString(sanitized, "_")
 
 	// Trim trailing dots/spaces which are problematic on Windows.
@@ -170,7 +173,6 @@ func sanitizeFilename(input string) string {
 
 	// COM[1-9] and LPT[1-9] - these are reserved even when followed by an extension
 	// e.g. COM1, COM1.txt are reserved names on Windows.
-	reservedPattern := regexp.MustCompile(`(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$`)
 	if reservedPattern.MatchString(sanitized) {
 		return "_" + sanitized
 	}

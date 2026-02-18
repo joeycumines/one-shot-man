@@ -563,9 +563,9 @@ func TestValidateConfig_DurationBoundaries(t *testing.T) {
 		{"nanosecond", "1ns", true},
 		{"large", "876000h", true},
 		{"negative", "-5m", true},
-		{"bare_zero", "0", true},       // "0" is special-cased valid in ParseDuration
-		{"bare_number", "100", false},  // "100" without unit fails ParseDuration
-		{"empty_string", "", false},    // empty string fails ParseDuration
+		{"bare_zero", "0", true},      // "0" is special-cased valid in ParseDuration
+		{"bare_number", "100", false}, // "100" without unit fails ParseDuration
+		{"empty_string", "", false},   // empty string fails ParseDuration
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

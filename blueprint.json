@@ -154,8 +154,8 @@
     },
     {
       "task": "T110: Config schema edge cases",
-      "description": "Added CheckSchemaVersion tests (current, outdated, future, no-mutation). Added ValidateOptionValue tests (valid/invalid combos). Existing tests already cover: empty config, unknown keys, wrong types, comments, duplicate keys. Remaining for full T110: out-of-range values, special chars, long values, non-UTF8. Config coverage improved.",
-      "status": "In Progress"
+      "description": "Added 31 edge case tests in internal/config/schema_edge_test.go covering: out-of-range int values (overflow, MaxInt64, MinInt64, boundaries), special characters (tab, equals, colons, hash, emoji, CJK, mixed unicode), long values (10KB path list, 100-segment colon paths), non-UTF8/binary content (Latin-1, high bytes 0x80/0xFF), and parsing edge cases (CRLF, multiple spaces, leading/trailing whitespace, empty values, dotted keys, section names, comments, empty sections, back-to-back sections). Also includes duration boundary tests (0s, 1ns, 876000h, -5m, bare 0, bare number, empty string) and typed getter tests (GetInt boundaries, GetDuration large/zero). All pass with -race.",
+      "status": "Done"
     },
     {
       "task": "T111: Fuzz testing expansion",

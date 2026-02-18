@@ -196,7 +196,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 |--------|-------------|-------------|
 | `osm:text/template` | Go `text/template` wrapper | `new(name) → Template`, `execute(text, data) → string`; Template methods: `.parse(text)`, `.execute(data) → string`, `.funcs(funcMap)`, `.name()`, `.delims(left, right)`, `.option(...opts)` |
 | `osm:unicodetext` | Unicode text utilities | `width(s) → number` (monospace display width), `truncate(s, maxWidth, tail?) → string`. [Reference →](reference/unicodetext.md) |
-| `osm:fetch` | HTTP client (synchronous + streaming) | `fetch(url, opts?) → Response`, `fetchStream(url, opts?) → StreamResponse`; Options: `method`, `headers`, `body`, `timeout`; Response: `.status`, `.ok`, `.statusText`, `.url`, `.headers`, `.text()`, `.json()`; StreamResponse adds: `.readLine()`, `.readAll()`, `.close()` |
+| `osm:fetch` | Promise-based HTTP client (browser Fetch API) | `fetch(url, opts?) → Promise<Response>`; Options: `method`, `headers`, `body`, `timeout`; Response: `.status`, `.ok`, `.statusText`, `.url`, `.headers` (Headers object with `.get()`, `.has()`, `.entries()`, `.keys()`, `.values()`, `.forEach()`), `.text() → Promise<string>`, `.json() → Promise<any>` |
 | `osm:grpc` | Promise-based gRPC client and server (via [goja-grpc](https://github.com/joeycumines/goja-grpc)) | `createClient(service) → Client` (methods return `Promise`), `createServer(service, handler) → Server`, `dial(target, opts?) → Channel`, `status` (code constants: `OK`, `CANCELLED`, `NOT_FOUND`, etc.), `metadata`, `enableReflection(server)`, `createReflectionClient(channel)` |
 | `osm:protobuf` | Protocol Buffers for goja (via [goja-protobuf](https://github.com/joeycumines/goja-protobuf)) | `loadDescriptorSet(bytes)` — loads binary `FileDescriptorSet` for use with `osm:grpc` |
 
@@ -261,21 +261,21 @@ See: [bt-blackboard-usage.md](reference/bt-blackboard-usage.md)
 
 ### osm:fetch (HTTP Client)
 
-Synchronous HTTP client for making API calls from scripts.
+Promise-based HTTP client following the browser Fetch API. HTTP requests run asynchronously in a goroutine and resolve on the event loop.
 
-#### `fetch(url, options?)` — Synchronous fetch
+#### `fetch(url, options?)` → `Promise<Response>`
 
-Reads the entire response body into memory. Best for small responses (JSON APIs, etc.).
+Returns a Promise that resolves with a Response object once the HTTP request completes.
 
 ```js
-var f = require('osm:fetch');
+const f = require('osm:fetch');
 
 // Simple GET
-var resp = f.fetch('https://api.example.com/data');
-var data = resp.json();
+const resp = await f.fetch('https://api.example.com/data');
+const data = await resp.json();
 
 // POST with headers
-var resp = f.fetch('https://api.example.com/submit', {
+const resp = await f.fetch('https://api.example.com/submit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ key: 'value' }),
@@ -283,39 +283,17 @@ var resp = f.fetch('https://api.example.com/submit', {
 });
 if (resp.ok) {
     output.print('Status: ' + resp.status);
-    output.print('Body: ' + resp.text());
+    output.print('Body: ' + await resp.text());
 }
 ```
 
-**Response properties**: `.status` (number), `.ok` (boolean), `.statusText` (string), `.url` (string after redirects), `.headers` (object, lowercase keys), `.text()` (body as string), `.json()` (parsed JSON).
+**Options**: `method` (string, default `"GET"`), `headers` (object), `body` (string), `timeout` (number in seconds, default `30`).
 
-#### `fetchStream(url, options?)` — Streaming fetch
+**Response properties**: `.status` (number), `.ok` (boolean, true if 200-299), `.statusText` (string), `.url` (string, final URL after redirects).
 
-Returns a StreamResponse with incremental reading. Best for SSE streams, NDJSON, large responses, or LLM API streaming endpoints.
+**Response.headers** (Headers object): `.get(name) → string|null`, `.has(name) → boolean`, `.entries() → Array<[name, value]>`, `.keys() → Array<string>`, `.values() → Array<string>`, `.forEach(callback)`.
 
-```js
-var f = require('osm:fetch');
-
-// Stream an LLM response line by line
-var resp = f.fetchStream('https://api.example.com/stream', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: 'Hello', stream: true })
-});
-
-while (true) {
-    var line = resp.readLine();
-    if (line === null) break;  // EOF
-    if (line === '') continue;  // skip empty lines (SSE)
-    log.debug('stream line: ' + line);
-}
-resp.close();  // Important: release HTTP connection
-```
-
-**StreamResponse properties**: `.status`, `.ok`, `.statusText`, `.url`, `.headers` (same as fetch), plus:
-- `.readLine()` → `string | null` — reads next line (stripped of trailing `\n`/`\r`), returns `null` at EOF
-- `.readAll()` → `string` — reads remaining body (useful after partial readLine calls)
-- `.close()` → `void` — releases the HTTP connection; **always call this when done**
+**Response methods**: `.text() → Promise<string>` (body as string), `.json() → Promise<any>` (parsed JSON, rejects on parse error).
 
 ### osm:pabt (Planning-Augmented Behavior Trees)
 

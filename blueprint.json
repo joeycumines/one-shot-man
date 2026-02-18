@@ -28,7 +28,7 @@
     "blueprintRefinement": "Continual blueprint refinement is MANDATORY. After every task completion, re-read the blueprint and fix stale descriptions. Add discovered work. Split coarse tasks."
   },
   "statusSection": {
-    "currentState": "T001-T005 COMPLETE, T104+T105 COMPLETE (Linux+Windows), T135/T136 audits COMPLETE. ALL THREE PLATFORMS ZERO FAILURES. Next: Rule of Two on cross-platform fixes, then T011 (eventloop migration). Session timer: 9 hours from 2026-02-18 01:28:15."
+    "currentState": "T001-T005 COMPLETE, T104+T105 COMPLETE (Linux+Windows), T135/T136 audits COMPLETE. T011 (eventloop migration) DONE. T012 (goja-grpc) DONE. T013 (fetch API) DONE. T164 (CHANGELOG) DONE. ALL THREE PLATFORMS ZERO FAILURES. Next: T014 (ReadableStream), T015 (AbortController), T016 (macos docs), or T161 (goal autodiscovery)."
   },
   "sequentialTasks": [
     {
@@ -69,8 +69,8 @@
     },
     {
       "task": "T013: Implement spec-compliant fetch API",
-      "description": "Rework internal/builtin/fetch/ for browser Fetch API compliance. fetch() returns Promise<Response>. Response/Headers/Request objects. Proper error types. Delete fetchStream() hack. Run make.",
-      "status": "Not Started",
+      "description": "DONE. Rewrote internal/builtin/fetch/fetch.go for browser Fetch API compliance. fetch(url, opts?) returns Promise<Response> via goja-eventloop adapter. Response has .status, .ok, .statusText, .url, .headers (Headers object with get/has/entries/keys/values/forEach), .text()→Promise<string>, .json()→Promise<any>. HTTP runs in goroutine, response built on loop thread. Deleted fetchStream(). Rewrote fetch_test.go + coverage_gaps_test.go as external package with TestEventLoopProvider. Updated register.go, security_sandbox_test.go, example-06-api-client.js, docs/scripting.md, docs/security.md, CHANGELOG.md. 38 tests pass with -race. Full make test passes.",
+      "status": "Done",
       "blockedBy": "T011"
     },
     {

@@ -1,24 +1,79 @@
-package fetch
+package fetch_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
+	fetchmod "github.com/joeycumines/one-shot-man/internal/builtin/fetch"
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
-func setup(t *testing.T) *goja.Runtime {
+// runOnLoop submits fn to the event loop and waits for it to complete.
+func runOnLoop(t *testing.T, provider *testutil.TestEventLoopProvider, fn func()) {
 	t.Helper()
-	runtime := goja.New()
-	module := runtime.NewObject()
-	exports := runtime.NewObject()
-	_ = module.Set("exports", exports)
-	Require(runtime, module)
-	_ = runtime.Set("fetchMod", module.Get("exports"))
-	return runtime
+	done := make(chan struct{})
+	err := provider.Loop().Submit(func() {
+		defer close(done)
+		fn()
+	})
+	if err != nil {
+		t.Fatalf("failed to submit to event loop: %v", err)
+	}
+	<-done
+}
+
+// loadModule creates the fetch module exports on the event loop and sets fetchMod global.
+func loadModule(t *testing.T, provider *testutil.TestEventLoopProvider) {
+	t.Helper()
+	runOnLoop(t, provider, func() {
+		vm := provider.Runtime()
+		adapter := provider.Adapter()
+		loader := fetchmod.Require(adapter)
+		module := vm.NewObject()
+		exports := vm.NewObject()
+		_ = module.Set("exports", exports)
+		loader(vm, module)
+		_ = vm.Set("fetchMod", exports)
+	})
+}
+
+// runAsync wraps JS code in an async IIFE, executes it on the event loop,
+// and waits for the Promise to settle. Fails the test on rejection or timeout.
+func runAsync(t *testing.T, provider *testutil.TestEventLoopProvider, js string) {
+	t.Helper()
+	done := make(chan error, 1)
+	err := provider.Loop().Submit(func() {
+		vm := provider.Runtime()
+		_ = vm.Set("__asyncDone", func() {
+			done <- nil
+		})
+		_ = vm.Set("__asyncFail", func(msg string) {
+			done <- fmt.Errorf("%s", msg)
+		})
+		wrapped := `(async function() { ` + js + ` })()
+			.then(function() { __asyncDone(); })
+			.catch(function(e) { __asyncFail(e.message || String(e)); });`
+		if _, runErr := vm.RunString(wrapped); runErr != nil {
+			done <- runErr
+		}
+	})
+	if err != nil {
+		t.Fatalf("failed to submit to event loop: %v", err)
+	}
+	select {
+	case result := <-done:
+		if result != nil {
+			t.Fatal(result)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("async test timed out")
+	}
 }
 
 func TestBasicGet(t *testing.T) {
@@ -32,17 +87,21 @@ func TestBasicGet(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetch(url);
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
 		if (resp.status !== 200) throw new Error("expected 200, got " + resp.status);
 		if (resp.ok !== true) throw new Error("expected ok=true");
-		if (resp.text() !== "hello world") throw new Error("unexpected body: " + resp.text());
+		var body = await resp.text();
+		if (body !== "hello world") throw new Error("unexpected body: " + body);
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestPostWithBodyAndHeaders(t *testing.T) {
@@ -61,20 +120,24 @@ func TestPostWithBodyAndHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetch(url, {
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: '{"key":"value"}'
 		});
 		if (resp.status !== 200) throw new Error("expected 200");
-		if (resp.text() !== "ok") throw new Error("unexpected body");
+		var body = await resp.text();
+		if (body !== "ok") throw new Error("unexpected body");
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	if receivedMethod != "POST" {
 		t.Errorf("expected POST method, got %s", receivedMethod)
@@ -102,11 +165,17 @@ func TestJsonResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetch(url);
-		var data = resp.json();
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		var data = await resp.json();
 		if (data.name !== "test") throw new Error("bad name: " + data.name);
 		if (data.count !== 42) throw new Error("bad count: " + data.count);
 		if (data.active !== true) throw new Error("bad active");
@@ -116,26 +185,30 @@ func TestJsonResponse(t *testing.T) {
 		if (data.nested.key !== "val") throw new Error("bad nested.key");
 		if (data.nothing !== null) throw new Error("bad nothing: " + data.nothing);
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestBadURL(t *testing.T) {
 	t.Parallel()
-	runtime := setup(t)
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
 
-	_, err := runtime.RunString(`
-		try {
-			fetchMod.fetch("://invalid-url");
-			throw new Error("expected error");
-		} catch(e) {
-			if (e.message === "expected error") throw e;
+	// http.NewRequest rejects URLs like "://invalid-url" synchronously,
+	// which causes a panic caught by goja as a GoError.
+	runOnLoop(t, provider, func() {
+		vm := provider.Runtime()
+		_, err := vm.RunString(`
+			try {
+				fetchMod.fetch("://invalid-url");
+				throw new Error("expected error");
+			} catch(e) {
+				if (e.message === "expected error") throw e;
+			}
+		`)
+		if err != nil {
+			t.Fatal(err)
 		}
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
+	})
 }
 
 func TestCustomTimeout(t *testing.T) {
@@ -147,20 +220,22 @@ func TestCustomTimeout(t *testing.T) {
 	defer server.Close()
 	defer close(blocker)
 
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
 
-	_, err := runtime.RunString(`
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
 		try {
-			fetchMod.fetch(url, { timeout: 0.1 });
+			await fetchMod.fetch(url, { timeout: 0.1 });
 			throw new Error("expected timeout");
 		} catch(e) {
 			if (e.message === "expected timeout") throw e;
 		}
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestStatusCode404(t *testing.T) {
@@ -170,16 +245,19 @@ func TestStatusCode404(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetch(url);
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
 		if (resp.status !== 404) throw new Error("expected 404, got " + resp.status);
 		if (resp.ok !== false) throw new Error("expected ok=false for 404");
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestStatusCode500(t *testing.T) {
@@ -190,17 +268,21 @@ func TestStatusCode500(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetch(url);
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
 		if (resp.status !== 500) throw new Error("expected 500, got " + resp.status);
 		if (resp.ok !== false) throw new Error("expected ok=false for 500");
-		if (resp.text() !== "internal server error") throw new Error("unexpected body");
+		var body = await resp.text();
+		if (body !== "internal server error") throw new Error("unexpected body");
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestResponseHeaders(t *testing.T) {
@@ -212,20 +294,93 @@ func TestResponseHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetch(url);
-		if (resp.headers["x-custom-header"] !== "custom-value") {
-			throw new Error("bad x-custom-header: " + resp.headers["x-custom-header"]);
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		if (resp.headers.get("x-custom-header") !== "custom-value") {
+			throw new Error("bad x-custom-header: " + resp.headers.get("x-custom-header"));
 		}
-		if (resp.headers["x-another"] !== "another-value") {
-			throw new Error("bad x-another: " + resp.headers["x-another"]);
+		if (resp.headers.get("x-another") !== "another-value") {
+			throw new Error("bad x-another: " + resp.headers.get("x-another"));
+		}
+		if (resp.headers.has("x-custom-header") !== true) {
+			throw new Error("has should return true for existing header");
+		}
+		if (resp.headers.has("x-missing") !== false) {
+			throw new Error("has should return false for missing header");
+		}
+		if (resp.headers.get("x-missing") !== null) {
+			throw new Error("get should return null for missing header");
 		}
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
+}
+
+func TestHeadersForEach(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Test", "value1")
+		w.WriteHeader(200)
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		var found = false;
+		resp.headers.forEach(function(value, name) {
+			if (name === "x-test" && value === "value1") found = true;
+		});
+		if (!found) throw new Error("forEach did not iterate over x-test header");
+	`)
+}
+
+func TestHeadersEntriesKeysValues(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Only", "single")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		var entries = resp.headers.entries();
+		if (!Array.isArray(entries)) throw new Error("entries should return array");
+		var keys = resp.headers.keys();
+		if (!Array.isArray(keys)) throw new Error("keys should return array");
+		var values = resp.headers.values();
+		if (!Array.isArray(values)) throw new Error("values should return array");
+
+		// Verify x-only is in keys
+		var foundKey = false;
+		for (var i = 0; i < keys.length; i++) {
+			if (keys[i] === "x-only") foundKey = true;
+		}
+		if (!foundKey) throw new Error("x-only not found in keys");
+	`)
 }
 
 func TestRedirectUrl(t *testing.T) {
@@ -239,19 +394,24 @@ func TestRedirectUrl(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL+"/redirect")
-	_ = runtime.Set("expectedUrl", server.URL+"/final")
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetch(url);
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		vm := provider.Runtime()
+		_ = vm.Set("url", server.URL+"/redirect")
+		_ = vm.Set("expectedUrl", server.URL+"/final")
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
 		if (resp.url !== expectedUrl) {
 			throw new Error("expected url " + expectedUrl + ", got " + resp.url);
 		}
-		if (resp.text() !== "final") throw new Error("unexpected body after redirect");
+		var body = await resp.text();
+		if (body !== "final") throw new Error("unexpected body after redirect");
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestDefaultMethod(t *testing.T) {
@@ -263,14 +423,18 @@ func TestDefaultMethod(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		fetchMod.fetch(url);
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		await fetchMod.fetch(url);
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
+
 	if receivedMethod != "GET" {
 		t.Errorf("expected default GET, got %s", receivedMethod)
 	}
@@ -283,18 +447,21 @@ func TestStatusText(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetch(url);
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
 		if (resp.status !== 201) throw new Error("expected 201");
 		if (resp.statusText.indexOf("201") === -1) {
 			throw new Error("statusText should contain 201: " + resp.statusText);
 		}
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestJsonParseError(t *testing.T) {
@@ -304,21 +471,25 @@ func TestJsonParseError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetch(url);
-		if (resp.text() !== "not json") throw new Error("unexpected text");
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		var body = await resp.text();
+		if (body !== "not json") throw new Error("unexpected text");
 		try {
-			resp.json();
+			await resp.json();
 			throw new Error("expected json parse error");
 		} catch(e) {
 			if (e.message === "expected json parse error") throw e;
 		}
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestMethodCaseInsensitive(t *testing.T) {
@@ -330,14 +501,18 @@ func TestMethodCaseInsensitive(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		fetchMod.fetch(url, { method: 'put' });
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		await fetchMod.fetch(url, { method: 'put' });
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
+
 	if receivedMethod != "PUT" {
 		t.Errorf("expected PUT (uppercased), got %s", receivedMethod)
 	}
@@ -345,363 +520,52 @@ func TestMethodCaseInsensitive(t *testing.T) {
 
 func TestConnectionRefused(t *testing.T) {
 	t.Parallel()
-	runtime := setup(t)
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	url := server.URL
 	server.Close()
 
-	_ = runtime.Set("url", url)
-	_, err := runtime.RunString(`
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", url)
+	})
+
+	// Connection refused is an async error caught by the Promise rejection.
+	runAsync(t, provider, `
 		try {
-			fetchMod.fetch(url);
+			await fetchMod.fetch(url);
 			throw new Error("expected connection error");
 		} catch(e) {
 			if (e.message === "expected connection error") throw e;
 		}
 	`)
-	if err != nil {
-		t.Fatal(err)
-	}
 }
 
-func TestStreamBasicReadLine(t *testing.T) {
-	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte("line one\nline two\nline three\n"))
-	}))
-	defer server.Close()
+func TestRequire_ExportsPresent(t *testing.T) {
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
 
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetchStream(url);
-		var lines = [];
-		while (true) {
-			var line = resp.readLine();
-			if (line === null) break;
-			lines.push(line);
+	runOnLoop(t, provider, func() {
+		vm := provider.Runtime()
+		fetchVal := vm.Get("fetchMod")
+		if fetchVal == nil || goja.IsUndefined(fetchVal) {
+			t.Fatal("fetchMod should be defined")
 		}
-		resp.close();
-		if (lines.length !== 3) throw new Error("expected 3 lines, got " + lines.length);
-		if (lines[0] !== "line one") throw new Error("bad line 0: " + lines[0]);
-		if (lines[1] !== "line two") throw new Error("bad line 1: " + lines[1]);
-		if (lines[2] !== "line three") throw new Error("bad line 2: " + lines[2]);
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
+		obj := fetchVal.(*goja.Object)
 
-func TestStreamEOF(t *testing.T) {
-	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte("only line\n"))
-	}))
-	defer server.Close()
-
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetchStream(url);
-		var first = resp.readLine();
-		if (first !== "only line") throw new Error("bad first: " + first);
-		var second = resp.readLine();
-		if (second !== null) throw new Error("expected null at EOF, got: " + second);
-		// Multiple calls after EOF should keep returning null
-		var third = resp.readLine();
-		if (third !== null) throw new Error("expected null on repeated EOF, got: " + third);
-		resp.close();
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestStreamClose(t *testing.T) {
-	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte("data\n"))
-	}))
-	defer server.Close()
-
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-
-	// Verify close can be called without reading the body; no panic
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetchStream(url);
-		if (resp.status !== 200) throw new Error("expected status 200");
-		resp.close();
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestStreamReadAll(t *testing.T) {
-	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte("first\nsecond\nthird\n"))
-	}))
-	defer server.Close()
-
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetchStream(url);
-		// Read one line first
-		var first = resp.readLine();
-		if (first !== "first") throw new Error("bad first: " + first);
-		// readAll gets the remaining body
-		var rest = resp.readAll();
-		if (rest !== "second\nthird\n") throw new Error("bad readAll: " + JSON.stringify(rest));
-		resp.close();
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestStreamHeaders(t *testing.T) {
-	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Stream-Id", "abc123")
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte("data: hello\n"))
-	}))
-	defer server.Close()
-
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetchStream(url);
-		if (resp.status !== 200) throw new Error("expected 200");
-		if (resp.ok !== true) throw new Error("expected ok=true");
-		if (resp.headers["x-stream-id"] !== "abc123") {
-			throw new Error("bad x-stream-id: " + resp.headers["x-stream-id"]);
+		// fetch should be exported
+		v := obj.Get("fetch")
+		if v == nil || goja.IsUndefined(v) {
+			t.Fatal("fetch should be exported")
 		}
-		if (resp.headers["content-type"] !== "text/event-stream") {
-			throw new Error("bad content-type: " + resp.headers["content-type"]);
+
+		// fetchStream should NOT be exported (removed)
+		v = obj.Get("fetchStream")
+		if v != nil && !goja.IsUndefined(v) {
+			t.Fatal("fetchStream should not be exported")
 		}
-		var line = resp.readLine();
-		if (line !== "data: hello") throw new Error("bad line: " + line);
-		resp.close();
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestStreamChunked(t *testing.T) {
-	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		flusher, ok := w.(http.Flusher)
-		if !ok {
-			http.Error(w, "flushing not supported", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Transfer-Encoding", "chunked")
-		w.WriteHeader(200)
-		// Simulate SSE-style chunked data
-		_, _ = w.Write([]byte("event: start\n"))
-		flusher.Flush()
-		_, _ = w.Write([]byte("data: chunk1\n"))
-		flusher.Flush()
-		_, _ = w.Write([]byte("data: chunk2\n"))
-		flusher.Flush()
-	}))
-	defer server.Close()
-
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetchStream(url);
-		if (resp.status !== 200) throw new Error("expected 200");
-		var lines = [];
-		while (true) {
-			var line = resp.readLine();
-			if (line === null) break;
-			lines.push(line);
-		}
-		resp.close();
-		if (lines.length !== 3) throw new Error("expected 3 lines, got " + lines.length + ": " + JSON.stringify(lines));
-		if (lines[0] !== "event: start") throw new Error("bad line 0: " + lines[0]);
-		if (lines[1] !== "data: chunk1") throw new Error("bad line 1: " + lines[1]);
-		if (lines[2] !== "data: chunk2") throw new Error("bad line 2: " + lines[2]);
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestStreamPostWithOptions(t *testing.T) {
-	t.Parallel()
-	var receivedMethod string
-	var receivedBody string
-	var receivedContentType string
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedMethod = r.Method
-		receivedContentType = r.Header.Get("Content-Type")
-		body, _ := io.ReadAll(r.Body)
-		receivedBody = string(body)
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte("response line 1\nresponse line 2\n"))
-	}))
-	defer server.Close()
-
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetchStream(url, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: '{"prompt":"hello"}'
-		});
-		var lines = [];
-		while (true) {
-			var line = resp.readLine();
-			if (line === null) break;
-			lines.push(line);
-		}
-		resp.close();
-		if (lines.length !== 2) throw new Error("expected 2 lines, got " + lines.length);
-		if (lines[0] !== "response line 1") throw new Error("bad line 0");
-		if (lines[1] !== "response line 2") throw new Error("bad line 1");
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if receivedMethod != "POST" {
-		t.Errorf("expected POST, got %s", receivedMethod)
-	}
-	if receivedContentType != "application/json" {
-		t.Errorf("expected application/json, got %s", receivedContentType)
-	}
-	if receivedBody != `{"prompt":"hello"}` {
-		t.Errorf("unexpected body: %q", receivedBody)
-	}
-}
-
-func TestStreamNoTrailingNewline(t *testing.T) {
-	t.Parallel()
-	// Test that a final line without a trailing newline is still returned
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte("line one\nline two without newline"))
-	}))
-	defer server.Close()
-
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetchStream(url);
-		var lines = [];
-		while (true) {
-			var line = resp.readLine();
-			if (line === null) break;
-			lines.push(line);
-		}
-		resp.close();
-		if (lines.length !== 2) throw new Error("expected 2 lines, got " + lines.length);
-		if (lines[0] !== "line one") throw new Error("bad line 0: " + lines[0]);
-		if (lines[1] !== "line two without newline") throw new Error("bad line 1: " + lines[1]);
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestStreamConnectionError(t *testing.T) {
-	t.Parallel()
-	runtime := setup(t)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	url := server.URL
-	server.Close()
-
-	_ = runtime.Set("url", url)
-	_, err := runtime.RunString(`
-		try {
-			fetchMod.fetchStream(url);
-			throw new Error("expected connection error");
-		} catch(e) {
-			if (e.message === "expected connection error") throw e;
-		}
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestStreamErrorStatus(t *testing.T) {
-	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(500)
-		_, _ = w.Write([]byte("error details\n"))
-	}))
-	defer server.Close()
-
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetchStream(url);
-		if (resp.status !== 500) throw new Error("expected 500, got " + resp.status);
-		if (resp.ok !== false) throw new Error("expected ok=false");
-		var line = resp.readLine();
-		if (line !== "error details") throw new Error("expected error body, got: " + line);
-		resp.close();
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestStreamEmptyBody(t *testing.T) {
-	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(204)
-	}))
-	defer server.Close()
-
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetchStream(url);
-		if (resp.status !== 204) throw new Error("expected 204");
-		var line = resp.readLine();
-		if (line !== null) throw new Error("expected null for empty body, got: " + line);
-		resp.close();
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestStreamReadAllWithoutReadLine(t *testing.T) {
-	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		_, _ = w.Write([]byte("full body content"))
-	}))
-	defer server.Close()
-
-	runtime := setup(t)
-	_ = runtime.Set("url", server.URL)
-	_, err := runtime.RunString(`
-		var resp = fetchMod.fetchStream(url);
-		var body = resp.readAll();
-		if (body !== "full body content") throw new Error("bad readAll: " + JSON.stringify(body));
-		resp.close();
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
+	})
 }

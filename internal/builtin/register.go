@@ -102,7 +102,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"nextIntegerID", nextintegerid.Require)
 	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.Require) // Deprecated: use osm:nextIntegerID
 	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx))
-	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require)
+	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require(eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"flag", flagmod.Require)
 
 	// Create shared protobuf module for gRPC and osm:protobuf.

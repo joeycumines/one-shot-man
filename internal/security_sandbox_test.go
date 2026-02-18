@@ -320,7 +320,7 @@ func TestSandbox_FetchModuleAPIBoundary(t *testing.T) {
 	engine, _, _ := newSandboxTestEngine(t)
 	script := engine.LoadScriptFromString("fetch-boundary", `
 		var fetchmod = require('osm:fetch');
-		var expected = ['fetch', 'fetchStream'];
+		var expected = ['fetch'];
 		for (var i = 0; i < expected.length; i++) {
 			if (typeof fetchmod[expected[i]] !== 'function') {
 				throw new Error('Missing expected export: ' + expected[i]);

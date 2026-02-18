@@ -75,8 +75,7 @@ Attempts to `require('go:os')`, `require('node:fs')`, or other prefixes fail.
 
 | API | Security Notes |
 |---|---|
-| `fetch(url, opts)` | Unrestricted HTTP client. No URL filtering, no SSRF mitigation. |
-| `fetchStream(url, opts)` | Streaming variant of `fetch`. Same properties. |
+| `fetch(url, opts)` | Promise-based HTTP client. Unrestricted — no URL filtering, no SSRF mitigation. |
 
 - **No restrictions:** Intentional for a local dev tool. The user controls which scripts run.
 - **No server-side:** No `createServer`, `listen`, or socket APIs.

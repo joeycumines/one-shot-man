@@ -127,11 +127,17 @@ _osm_completion() {
         config)
             COMPREPLY=($(compgen -W "validate schema list diff reset %s" -- ${cur}))
             return 0
-            ;;        schema)
+            ;;
+        schema)
             COMPREPLY=($(compgen -W "--json" -- ${cur}))
             return 0
-            ;;        log)
+            ;;
+        log)
             COMPREPLY=($(compgen -W "tail follow" -- ${cur}))
+            return 0
+            ;;
+        help)
+            COMPREPLY=($(compgen -W "${commands}" -- ${cur}))
             return 0
             ;;
         # For delete/info let shell default to filename completion (no session ids)
@@ -190,11 +196,12 @@ _osm() {
         '1: :->commands' \
         '*: :->args' && return 0
 
+    local commands
+    commands=(
+%s    )
+
     case "$state" in
         commands)
-            local commands
-            commands=(
-%s            )
             _describe 'commands' commands
             ;;
         args)
@@ -227,6 +234,9 @@ _osm() {
                     ;;
                 log)
                     _values 'log-subcommand' 'tail' 'follow'
+                    ;;
+                help)
+                    _describe 'commands' commands
                     ;;
                 *)
                     _files
@@ -281,6 +291,8 @@ func (c *CompletionCommand) generateFishCompletion(w io.Writer) error {
 	keys := configKeys()
 	configKeyList := strings.Join(keys, " ")
 
+	commandList := strings.Join(commands, " ")
+
 	script := fmt.Sprintf(`# Fish completion script for osm
 
 # Complete commands
@@ -307,11 +319,14 @@ complete -c osm -n '__fish_seen_subcommand_from schema' -a '--json' -d 'Output s
 # Completion for 'log' subcommand
 complete -c osm -n '__fish_seen_subcommand_from log' -a 'tail follow' -d 'Log subcommands'
 
+# Completion for 'help' subcommand (command names)
+complete -c osm -n '__fish_seen_subcommand_from help' -a '%s' -d 'Command'
+
 # Installation instructions (as comments):
 # To install this completion script:
 # 1. Copy this script to ~/.config/fish/completions/osm.fish
 # 2. Or pipe it directly: osm completion fish > ~/.config/fish/completions/osm.fish
-`, completions.String(), goalCompletions.String(), sessionCompletions.String(), configKeyList)
+`, completions.String(), goalCompletions.String(), sessionCompletions.String(), configKeyList, commandList)
 
 	_, err := w.Write([]byte(script))
 	return err
@@ -421,6 +436,13 @@ Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
     if ($tokenCount -eq 3 -and $command -eq 'log') {
         $subs = @('tail','follow')
         $subs | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+        return
+    }
+
+    if ($tokenCount -eq 3 -and $command -eq 'help') {
+        $commands | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
             [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
         }
         return

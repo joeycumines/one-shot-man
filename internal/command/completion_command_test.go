@@ -599,3 +599,87 @@ func TestCompletionCommandFishEscaping(t *testing.T) {
 		t.Errorf("Fish completion contains unescaped single quote which would break shell syntax")
 	}
 }
+
+func TestCompletionCommandPwshAlias(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
+	registry.Register(NewHelpCommand(registry))
+
+	goalRegistry := newTestGoalRegistry()
+	completionCmd := NewCompletionCommand(registry, goalRegistry)
+
+	var output strings.Builder
+	var stderr strings.Builder
+
+	err := completionCmd.Execute([]string{"pwsh"}, &output, &stderr)
+	if err != nil {
+		t.Fatalf("Unexpected error for 'pwsh' alias: %v", err)
+	}
+
+	if !strings.Contains(output.String(), "Register-ArgumentCompleter") {
+		t.Error("Expected 'pwsh' alias to produce PowerShell completion output")
+	}
+}
+
+func TestCompletionCommandHelpSubcommand(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
+	registry.Register(NewHelpCommand(registry))
+	registry.Register(NewVersionCommand("1.0.0"))
+
+	goalRegistry := newTestGoalRegistry()
+	completionCmd := NewCompletionCommand(registry, goalRegistry)
+
+	shells := []string{"bash", "zsh", "fish", "powershell"}
+	for _, shell := range shells {
+		t.Run(shell, func(t *testing.T) {
+			t.Parallel()
+			var output strings.Builder
+			var stderr strings.Builder
+
+			if err := completionCmd.Execute([]string{shell}, &output, &stderr); err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			out := output.String()
+			if !strings.Contains(out, "help") {
+				t.Errorf("%s completion should contain 'help' for help subcommand completion", shell)
+			}
+			// The help completion block should reference registered command names
+			// so that "osm help <TAB>" suggests them. We registered "version",
+			// so it must appear in help-related completion output.
+			if !strings.Contains(out, "version") {
+				t.Errorf("%s completion should include registered commands like 'version' for help subcommand", shell)
+			}
+		})
+	}
+}
+
+func TestCompletionCommandIncludesMCPCommand(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
+	goalRegistry := newTestGoalRegistry()
+	registry.Register(NewHelpCommand(registry))
+	registry.Register(NewMCPCommand(cfg, goalRegistry, "1.0.0"))
+	completionCmd := NewCompletionCommand(registry, goalRegistry)
+
+	shells := []string{"bash", "zsh", "fish", "powershell"}
+	for _, shell := range shells {
+		t.Run(shell, func(t *testing.T) {
+			t.Parallel()
+			var output strings.Builder
+			var stderr strings.Builder
+
+			if err := completionCmd.Execute([]string{shell}, &output, &stderr); err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			if !strings.Contains(output.String(), "mcp") {
+				t.Errorf("%s completion should include 'mcp' command", shell)
+			}
+		})
+	}
+}

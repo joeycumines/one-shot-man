@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `osm script paths` subcommand: displays all resolved script discovery paths with the same annotated format
 - `AnnotatedPath` type in discovery subsystem with `Path`, `Source`, and `Exists` fields
 - Shell completion for `paths` subcommand in `osm goal` and `osm script` (bash, zsh, fish, powershell)
+- Shell completion for `help` subcommand: `osm help <TAB>` now suggests available command names in bash, zsh, fish, and PowerShell
 - Built-in goal `pii-scrubber` (category: data-privacy): redacts personally identifiable information from code, logs, and data with three redaction levels (strict/moderate/minimal) and deterministic placeholder mapping
 - Built-in goal `prose-polisher` (category: writing): 7-step copyediting pipeline (structural review, clarity, consistency, concision, correctness, tone alignment, final polish) with four target styles (technical/casual/academic/marketing) and `hot-expand-section` snippet
 - Built-in goal `data-to-json` (category: data-transformation): extracts structured JSON from unstructured text, logs, or data with four extraction modes (auto/tabular/log/document) and JSON Schema output
@@ -104,6 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deprecated `ScrollWheel` and `ScrollWheelOnElement` string-based methods from mouseharness; use type-safe `ScrollWheelWithDirection` and `ScrollWheelOnElementWithDirection` instead
 
 ### Fixed
+- Bash completion formatting: `;;` case terminators for `schema)` and `log)` were concatenated on the same line as the next case pattern — split to separate lines
+- Zsh completion `commands` array scoping: array was declared inside the `commands)` case branch, making it inaccessible to the `args)` branch where `help)` needs it — hoisted to function scope
 - Data race in storage path globals: added `sync.RWMutex` guarding `getSessionDirectory` and `getSessionLockFilePath` accessor functions in `paths.go`, preventing concurrent read/write of function-variable overrides during cleanup scheduling
 - `ScanSessions` incorrectly accepted non-session `.json` files (e.g. `notes.json`, `config.json`) — the filter used `filepath.Ext` (`.json`) then subtracted `.session.json` length, which could produce wrong session IDs or panic for short filenames; now uses `strings.HasSuffix(name, ".session.json")` with length-based slicing for base extraction
 - Inconsistent `fmt.Fprint*` error handling: added `_, _ =` prefix to all unchecked calls across session, completion, scripting, terminal, and bubbletea source files for project-wide consistency

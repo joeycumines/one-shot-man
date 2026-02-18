@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- AbortSignal support in `osm:fetch`: `fetch(url, { signal })` option wires `AbortController.signal` to HTTP request cancellation — supports pre-aborted signals (immediate rejection), mid-request abort via `ac.abort()`, and `AbortSignal.timeout(ms)` for automatic deadline-based cancellation
 - `osm:protobuf` native module: Protocol Buffers for goja via [goja-protobuf](https://github.com/joeycumines/goja-protobuf) — `loadDescriptorSet(bytes)` loads binary `FileDescriptorSet` for use with `osm:grpc` client/server operations
 - `EventLoopProvider.Adapter()` method exposing the goja-eventloop adapter to native modules that need Promise integration (required by goja-grpc)
 - Example JSON goal files in `goals/examples/` demonstrating all goal schema features: minimal, stateVars, hotSnippets, flagDefs, and full-featured — with a README explaining each example and how to use them

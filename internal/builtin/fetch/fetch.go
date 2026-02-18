@@ -8,6 +8,7 @@
 package fetch
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
+	goeventloop "github.com/joeycumines/go-eventloop"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
@@ -39,6 +41,7 @@ func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
 //	headers - object of header key/value pairs
 //	body    - request body string
 //	timeout - request timeout in seconds (default: 30)
+//	signal  - AbortSignal for cancelling the request
 //
 // The returned Promise resolves with a Response object:
 //
@@ -52,7 +55,7 @@ func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
 func jsFetch(runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		url := call.Argument(0).String()
-		method, timeout, bodyReader, reqHeaders := parseOptions(call)
+		method, timeout, bodyReader, reqHeaders, signal := parseOptions(call)
 
 		req, err := http.NewRequest(method, url, bodyReader)
 		if err != nil {
@@ -64,10 +67,28 @@ func jsFetch(runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call go
 			}
 		}
 
+		// Set up context for request cancellation.
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+
+		// Wire AbortSignal to cancel the request context.
+		if signal != nil {
+			if signal.Aborted() {
+				cancel()
+				promise, _, reject := adapter.JS().NewChainedPromise()
+				reject(signal.Reason())
+				return adapter.GojaWrapPromise(promise)
+			}
+			signal.OnAbort(func(reason any) {
+				cancel()
+			})
+		}
+
+		req = req.WithContext(ctx)
 		promise, resolve, reject := adapter.JS().NewChainedPromise()
 
 		go func() {
-			client := &http.Client{Timeout: timeout}
+			defer cancel()
+			client := &http.Client{}
 			resp, doErr := client.Do(req)
 			if doErr != nil {
 				reject(doErr)
@@ -93,7 +114,7 @@ func jsFetch(runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call go
 }
 
 // parseOptions extracts HTTP request parameters from the optional second argument.
-func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration, bodyReader io.Reader, reqHeaders map[string]interface{}) {
+func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration, bodyReader io.Reader, reqHeaders map[string]interface{}, signal *goeventloop.AbortSignal) {
 	method = "GET"
 	timeout = 30 * time.Second
 
@@ -132,6 +153,24 @@ func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration,
 			reqHeaders = m
 		}
 	}
+
+	// Extract AbortSignal from the options object via the raw goja value.
+	// The signal is stored as a native Go *goeventloop.AbortSignal on the
+	// JS object's "_signal" property, set by the goja-eventloop adapter.
+	if len(call.Arguments) > 1 {
+		if argObj, ok := call.Arguments[1].(*goja.Object); ok {
+			if signalVal := argObj.Get("signal"); signalVal != nil && !goja.IsUndefined(signalVal) && !goja.IsNull(signalVal) {
+				if signalObj, ok := signalVal.(*goja.Object); ok {
+					if nativeVal := signalObj.Get("_signal"); nativeVal != nil && !goja.IsUndefined(nativeVal) {
+						if s, ok := nativeVal.Export().(*goeventloop.AbortSignal); ok {
+							signal = s
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return
 }
 

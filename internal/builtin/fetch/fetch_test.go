@@ -569,3 +569,105 @@ func TestRequire_ExportsPresent(t *testing.T) {
 		}
 	})
 }
+
+// --- AbortController / AbortSignal tests ---
+
+func TestFetch_AbortSignalCancelsRequest(t *testing.T) {
+	t.Parallel()
+	// Server that blocks until told to respond.
+	// The abort should cancel the request before the server responds.
+	blocker := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-blocker
+		w.WriteHeader(200)
+	}))
+	defer server.Close()
+	defer close(blocker)
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	// AbortController.abort() should cause the fetch promise to reject.
+	runAsync(t, provider, `
+		var ac = new AbortController();
+		var p = fetchMod.fetch(url, { signal: ac.signal });
+		// Abort after a short delay
+		setTimeout(function() { ac.abort(); }, 50);
+		try {
+			await p;
+			throw new Error("expected abort error");
+		} catch(e) {
+			if (e.message === "expected abort error") throw e;
+			// The error should be from the aborted request
+		}
+	`)
+}
+
+func TestFetch_AlreadyAbortedSignal(t *testing.T) {
+	t.Parallel()
+	var received bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received = true
+		w.WriteHeader(200)
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	// If the signal is already aborted before fetch is called,
+	// the promise should reject immediately without making a request.
+	runAsync(t, provider, `
+		var ac = new AbortController();
+		ac.abort("cancelled before start");
+		try {
+			await fetchMod.fetch(url, { signal: ac.signal });
+			throw new Error("expected rejection");
+		} catch(e) {
+			if (e.message === "expected rejection") throw e;
+		}
+	`)
+
+	if received {
+		t.Error("server should NOT have received a request when signal is already aborted")
+	}
+}
+
+func TestFetch_AbortSignalTimeout(t *testing.T) {
+	t.Parallel()
+	// Server that never responds.
+	blocker := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-blocker
+	}))
+	defer server.Close()
+	defer close(blocker)
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	// AbortSignal.timeout(ms) should abort after the specified time.
+	runAsync(t, provider, `
+		try {
+			await fetchMod.fetch(url, { signal: AbortSignal.timeout(100) });
+			throw new Error("expected timeout abort");
+		} catch(e) {
+			if (e.message === "expected timeout abort") throw e;
+		}
+	`)
+}

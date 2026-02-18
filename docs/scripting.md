@@ -196,7 +196,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 |--------|-------------|-------------|
 | `osm:text/template` | Go `text/template` wrapper | `new(name) → Template`, `execute(text, data) → string`; Template methods: `.parse(text)`, `.execute(data) → string`, `.funcs(funcMap)`, `.name()`, `.delims(left, right)`, `.option(...opts)` |
 | `osm:unicodetext` | Unicode text utilities | `width(s) → number` (monospace display width), `truncate(s, maxWidth, tail?) → string`. [Reference →](reference/unicodetext.md) |
-| `osm:fetch` | Promise-based HTTP client (browser Fetch API) | `fetch(url, opts?) → Promise<Response>`; Options: `method`, `headers`, `body`, `timeout`; Response: `.status`, `.ok`, `.statusText`, `.url`, `.headers` (Headers object with `.get()`, `.has()`, `.entries()`, `.keys()`, `.values()`, `.forEach()`), `.text() → Promise<string>`, `.json() → Promise<any>` |
+| `osm:fetch` | Promise-based HTTP client (browser Fetch API) | `fetch(url, opts?) → Promise<Response>`; Options: `method`, `headers`, `body`, `timeout`, `signal`; Response: `.status`, `.ok`, `.statusText`, `.url`, `.headers` (Headers object with `.get()`, `.has()`, `.entries()`, `.keys()`, `.values()`, `.forEach()`), `.text() → Promise<string>`, `.json() → Promise<any>` |
 | `osm:grpc` | Promise-based gRPC client and server (via [goja-grpc](https://github.com/joeycumines/goja-grpc)) | `createClient(service) → Client` (methods return `Promise`), `createServer(service, handler) → Server`, `dial(target, opts?) → Channel`, `status` (code constants: `OK`, `CANCELLED`, `NOT_FOUND`, etc.), `metadata`, `enableReflection(server)`, `createReflectionClient(channel)` |
 | `osm:protobuf` | Protocol Buffers for goja (via [goja-protobuf](https://github.com/joeycumines/goja-protobuf)) | `loadDescriptorSet(bytes)` — loads binary `FileDescriptorSet` for use with `osm:grpc` |
 
@@ -287,7 +287,17 @@ if (resp.ok) {
 }
 ```
 
-**Options**: `method` (string, default `"GET"`), `headers` (object), `body` (string), `timeout` (number in seconds, default `30`).
+**Options**: `method` (string, default `"GET"`), `headers` (object), `body` (string), `timeout` (number in seconds, default `30`), `signal` (AbortSignal for cancelling the request).
+
+**Cancellation with AbortController**:
+```js
+const ac = new AbortController();
+setTimeout(() => ac.abort(), 5000); // abort after 5s
+const resp = await f.fetch(url, { signal: ac.signal });
+
+// Or use AbortSignal.timeout() for a simpler timeout:
+const resp = await f.fetch(url, { signal: AbortSignal.timeout(5000) });
+```
 
 **Response properties**: `.status` (number), `.ok` (boolean, true if 200-299), `.statusText` (string), `.url` (string, final URL after redirects).
 

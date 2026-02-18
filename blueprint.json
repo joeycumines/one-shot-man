@@ -28,7 +28,7 @@
     "blueprintRefinement": "Continual blueprint refinement is MANDATORY. After every task completion, re-read the blueprint and fix stale descriptions. Add discovered work. Split coarse tasks."
   },
   "statusSection": {
-    "currentState": "T001-T005 COMPLETE, T104+T105 COMPLETE (Linux+Windows), T135/T136 audits COMPLETE. T011 (eventloop migration) DONE. T012 (goja-grpc) DONE. T013 (fetch API) DONE. T164 (CHANGELOG) DONE. ALL THREE PLATFORMS ZERO FAILURES. Next: T014 (ReadableStream), T015 (AbortController), T016 (macos docs), or T161 (goal autodiscovery)."
+    "currentState": "T001-T005 COMPLETE, T104+T105 COMPLETE (Linux+Windows), T135/T136 audits COMPLETE. T011 (eventloop migration) DONE. T012 (goja-grpc) DONE. T013 (fetch API) DONE. T015 (AbortSignal in fetch) DONE. T016 (macos docs) DONE. T164 (CHANGELOG) DONE. ALL THREE PLATFORMS ZERO FAILURES. Next: T014 (ReadableStream), T017 (go-git v6 audit), or T161 (goal autodiscovery)."
   },
   "sequentialTasks": [
     {
@@ -80,15 +80,15 @@
       "blockedBy": "T013"
     },
     {
-      "task": "T015: AbortController and AbortSignal globals",
-      "description": "AbortController/AbortSignal as JS globals. Wire into fetch and goja-grpc. timeout(ms), any([signals]). Register in runtime. Tests. Run make.",
-      "status": "Not Started",
+      "task": "T015: AbortController and AbortSignal wired into fetch",
+      "description": "DONE. AbortController/AbortSignal globals already available from T011 (adapter.Bind() installs them). Already wired into goja-grpc (from T012). Wired into osm:fetch: added signal option to parseOptions(), new applySignal() function extracts native *goeventloop.AbortSignal via _signal property, cancels HTTP request context on abort. Supports pre-aborted signals (immediate reject), mid-request abort, and AbortSignal.timeout(ms). 3 new tests: TestFetch_AbortSignalCancelsRequest, TestFetch_AlreadyAbortedSignal, TestFetch_AbortSignalTimeout. Updated docs/scripting.md with signal option and AbortController examples. All 34 fetch tests pass with -race.",
+      "status": "Done",
       "blockedBy": "T011, T013"
     },
     {
       "task": "T016: Correct macos-use-sdk evaluation doc",
-      "description": "Rewrite docs/archive/notes/macos-use-sdk-evaluation.md. Remove wrong incompatibility claim and Tier 1 recommendation. Reflect actual plan: eventloop migration + goja-grpc replacement. Docs only.",
-      "status": "Not Started",
+      "description": "DONE. Rewrote docs/archive/notes/macos-use-sdk-evaluation.md. Removed wrong Tier 1/2/3 approach. Updated Section 2 to document completed T011/T012/T013 work. Updated capabilities table to show full compliance. Removed stale 'Requires Tier 2' and 'AI Orchestrator' references. Updated feasibility to 'Zero code changes needed'.",
+      "status": "Done",
       "blockedBy": "T011, T012"
     },
     {

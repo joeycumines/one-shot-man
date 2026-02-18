@@ -33,141 +33,6 @@
   },
   "sequentialTasks": [
     {
-      "task": "T001: Fix data race in storage path globals",
-      "description": "Added sync.RWMutex guarding function-variable overrides in paths.go. Created accessor functions. All call sites updated.",
-      "status": "Done"
-    },
-    {
-      "task": "T002: Fix PTY test failures (WorkingDirectory + EchoHello)",
-      "description": "Fixed macOS PTY buffered data loss. Fixed EvalSymlinks for /var -> /private/var. Manual pty.Open() + cmd.Start() for slave fd control.",
-      "status": "Done"
-    },
-    {
-      "task": "T003: Verify TestPRSplit_CleanupBranches",
-      "description": "Test passes 3x with -race. Original failure was load-dependent flake.",
-      "status": "Done"
-    },
-    {
-      "task": "T004: Full make pass — all tests green",
-      "description": "make make-all-with-log zero failures. All linters pass. Fixed bubbletea TestRunProgram_Lifecycle race.",
-      "status": "Done"
-    },
-    {
-      "task": "T005: Race detection sweep",
-      "description": "go test -race -count=3 on critical packages. Full make passes.",
-      "status": "Done"
-    },
-    {
-      "task": "T011: Eventloop migration — goja-eventloop",
-      "description": "Replaced dop251/goja_nodejs/eventloop with joeycumines/go-eventloop + goja-eventloop adapter. 5 production files, 9 test files. All platforms zero failures.",
-      "status": "Done"
-    },
-    {
-      "task": "T012: Replace osm:grpc with goja-grpc",
-      "description": "Rewrote grpc.go as thin wrapper around goja-grpc. Registered osm:protobuf. Extended EventLoopProvider. BREAKING: Promise-based streaming gRPC.",
-      "status": "Done"
-    },
-    {
-      "task": "T013: Implement spec-compliant fetch API",
-      "description": "Browser Fetch API compliance. fetch() returns Promise<Response> with Headers, .text()/.json(). 38 tests pass with -race.",
-      "status": "Done"
-    },
-    {
-      "task": "T015: AbortController and AbortSignal wired into fetch",
-      "description": "Signal option in fetch, applySignal(), pre-aborted/mid-request/timeout support. 3 tests. Docs updated.",
-      "status": "Done"
-    },
-    {
-      "task": "T016: Correct macos-use-sdk evaluation doc",
-      "description": "Rewrote docs/archive/notes/macos-use-sdk-evaluation.md. Removed stale Tier references.",
-      "status": "Done"
-    },
-    {
-      "task": "T104: Cross-platform — Linux",
-      "description": "Fixed 4 Docker/Linux failures. make-all-in-container: zero failures.",
-      "status": "Done"
-    },
-    {
-      "task": "T105: Cross-platform — Windows",
-      "description": "Fixed 2 Windows failures. make-all-run-windows: zero failures.",
-      "status": "Done"
-    },
-    {
-      "task": "T135: Deadcode audit",
-      "description": "deadcode linter zero issues.",
-      "status": "Done"
-    },
-    {
-      "task": "T136: Struct alignment optimization",
-      "description": "betteralign zero issues.",
-      "status": "Done"
-    },
-    {
-      "task": "T164: CHANGELOG.md completeness",
-      "description": "Entries for T011-T013, T001, T002, T104, T105. Keep a Changelog 1.1.0 spec.",
-      "status": "Done"
-    },
-    {
-      "task": "T178: Fix .DS_Store tracking and gitignore hygiene",
-      "description": "Added .DS_Store to .gitignore. Added /.session-timer to .gitignore. Removed 4 .DS_Store files from git tracking via git rm --cached.",
-      "status": "Done"
-    },
-    {
-      "task": "T179: Restore baseline.blueprint.json",
-      "description": "Recreated baseline.blueprint.json with osm-specific globalAlerts, mandatoryDirectives, continuousVerification, finalEnforcementProtocol. Empty sequentialTasks and blank statusSection per skill spec.",
-      "status": "Done"
-    },
-    {
-      "task": "T017: Audit go-git v6 migration for sync",
-      "description": "Audited: go-git v6 supports clone/add/commit/push (already native). Pull --rebase NOT supported by go-git. Created gitops.PullRebase() wrapper consolidating two shell-out sites (sync.go executePull, sync_startup.go SyncAutoPull) into single function with PullRebaseOptions struct and ErrConflict sentinel. 6 tests (success, already-up-to-date, conflict, invalid-dir, stderr-capture, custom-git-bin). Removed runGit method from sync.go. Cleaned imports.",
-      "status": "Done"
-    },
-    {
-      "task": "T102: Security audit of scripting sandbox",
-      "description": "Comprehensive security audit: (1) Runtime init — no ambient authority leaks. (2) require() traversal — module_hardening.go path escape prevention. (3) osm:exec — command injection vectors. (4) osm:fetch — SSRF (internal network, metadata endpoints). (5) osm:pty — spawn restrictions. (6) osm:os writeFile/appendFile — path restrictions. (7) Env var exposure — secret leakage. (8) MCP tool surface — privilege escalation. Review existing security_test.go, security_sandbox_test.go, security_input_test.go. Fix vulnerabilities. Regression tests. Update docs/security.md. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T103: Performance benchmarks",
-      "description": "Surveyed 116+ existing benchmark scenarios across 8 files. Added 30+ new benchmarks in 4 files: (1) mcp_benchmark_test.go — BenchmarkMCPBuildPrompt (4 scales), BenchmarkMCPToolLatency (5 tools), BenchmarkMCPBacktickFence (4 variants). (2) paths_benchmark_test.go — BenchmarkSanitizeFilename (6 input types). (3) context_path_benchmark_test.go — BenchmarkComputePathLCA (6 path counts). (4) session_benchmark_test.go — BenchmarkSanitizePayload (5 input types). Finding: sanitizeFilename compiles 3 regexes per call. All pass with -race.",
-      "status": "Done"
-    },
-    {
-      "task": "T106: Coverage report and gap analysis",
-      "description": "Overall coverage: 87.3%. Key gaps: MCP Execute (20%), code_review Execute (46.9%), prompt_flow Execute (52.0%), config CheckSchemaVersion (0%), config ValidateOptionValue (0%), orchestrator module (67.4%), PTY wrapProcess (34%). Path to 90%: MCP + code_review + prompt_flow tests. Path to 95%: add all Tier 2 items (~15-20 test functions). Quick wins: config tests, PTY tests.",
-      "status": "Done"
-    },
-    {
-      "task": "T107: MCP server integration tests",
-      "description": "Added 4 integration tests to internal/command/mcp_test.go: (1) ConcurrentToolCalls — 20 goroutines (10 addNote + 10 addDiff) racing, verify all 20 items via listContext. (2) ConcurrentSessions — 5 sessions registered + progress reported concurrently, listSessions verification. (3) LargePayloads — 100KB note + 50KB diff, verify buildPrompt contains both verbatim. (4) BacktickFenceInPrompt — diff with triple backticks, verify fence upgraded to quadruple in prompt pipeline. Existing tests already covered all 14 tools, success/error, malformed input. All pass with -race.",
-      "status": "Done"
-    },
-    {
-      "task": "T108: Session locking concurrency tests",
-      "description": "Added 6 concurrency tests in internal/storage/filelock_concurrency_test.go: (1) ConcurrentAcquisition — 20 goroutines race for same lock, exactly 1 wins. (2) RapidCycling — 100 acquire/release cycles, no resource leaks. (3) CrashRecovery — fd close without release, re-acquire succeeds (flock release-on-close). (4) ConcurrentAcquireRelease — 10×20 contention loop under race detector. (5) AcquireLockHandle_ConcurrentAccess — public API, 20 goroutines. (6) FSBackend_ConcurrentOpen — concurrent backend creation. All pass with -race -count=3.",
-      "status": "Done"
-    },
-    {
-      "task": "T109: Session cleanup edge cases",
-      "description": "Added 8 edge case tests in internal/storage/cleanup_edge_test.go: (1) MaxCount=1 boundary — keep newest, remove 4. (2) All-zero policies — disabled = no cleaning. (3) ConcurrentCleaners — global lock serialization, race-safe. (4) LargeSessionSet — 200 sessions, age+count pruning. (5) CombinedPolicies — age+count union, 3 newest survive. (6) ZeroByteSessionFile — empty file handled without crash. (7) ExcludeNonExistentID — non-matching exclude is no-op. (8) ManyOrphanLocks — 20 orphan locks removed. All pass with -race.",
-      "status": "Done"
-    },
-    {
-      "task": "T110: Config schema edge cases",
-      "description": "Added 31 edge case tests in internal/config/schema_edge_test.go covering: out-of-range int values (overflow, MaxInt64, MinInt64, boundaries), special characters (tab, equals, colons, hash, emoji, CJK, mixed unicode), long values (10KB path list, 100-segment colon paths), non-UTF8/binary content (Latin-1, high bytes 0x80/0xFF), and parsing edge cases (CRLF, multiple spaces, leading/trailing whitespace, empty values, dotted keys, section names, comments, empty sections, back-to-back sections). Also includes duration boundary tests (0s, 1ns, 876000h, -5m, bare 0, bare number, empty string) and typed getter tests (GetInt boundaries, GetDuration large/zero). All pass with -race.",
-      "status": "Done"
-    },
-    {
-      "task": "T111: Fuzz testing expansion",
-      "description": "Added 5 fuzz targets: (1) FuzzGoalJSONParsing — JSON unmarshal + validateGoal + isValidGoalName (internal/command/goal_loader_fuzz_test.go). (2) FuzzSanitizeFilename — filesystem safety invariants (internal/storage/paths_fuzz_test.go). (3) FuzzSanitizePayload — whitelist enforcement (internal/session/session_fuzz_test.go). (4) FuzzMCPBacktickFence — Markdown fence safety (internal/command/mcp_fuzz_test.go). (5) FuzzComputePathLCA — path LCA correctness (internal/scripting/context_fuzz_test.go). All pass with -race.",
-      "status": "Done"
-    },
-    {
-      "task": "T161: Goal autodiscovery test hardening",
-      "description": "Created newIsolatedGoalConfig() helper in goal_test_helpers_test.go. Fixed 4 tests in goal_registry_test.go, 5 subtests in builtin_edge_test.go, and 2 tests in goal_test.go to disable autodiscovery. Tightened assertions: GetAllGoals checks exactly 2 goals, EmptyGoalArray is a hard error. Added 3 cross-platform tests in goal_discovery_crossplatform_test.go (isolation, custom paths, path normalization). All tests pass with -race on macOS.",
-      "status": "Done"
-    },
-    {
       "task": "T162: Sync common config enhancement",
       "description": "Enhance sync for common config: (1) Conflict handling — prompt override vs skip for unknown-state files. (2) Schema versioning in sync metadata. (3) Gitignored file handling. (4) Edge cases: empty repo, partial failure, concurrent sync. Run make.",
       "status": "Not Started"
@@ -175,11 +40,6 @@
     {
       "task": "T163: Autodiscovery refinement",
       "description": "Verify osm goal paths / osm script paths. Test: config key respect, symlink traversal, permission errors, performance with many paths, debug logging. Edge case tests. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T166: Module resolution / ESM investigation",
-      "description": "Document require() algorithm (internal/scripting/module_hardening.go). Verify path traversal protection. Assess ESM feasibility in Goja. Document limitations. Verify script.module-paths config key. Run make.",
       "status": "Not Started"
     },
     {
@@ -191,7 +51,9 @@
       "task": "T014: Implement ReadableStream for Response.body streaming",
       "description": "Add ReadableStream to fetch Response.body. getReader() returns ReadableStreamDefaultReader. reader.read() returns Promise<{value: Uint8Array, done: boolean}>. Support: SSE, chunked encoding, large downloads without full buffering. Back-pressure via io.Reader goroutine pause. Tests with httptest. Integrate with fetch.go Response constructor. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T013"]
+      "blockedBy": [
+        "T013"
+      ]
     },
     {
       "task": "T173: macOS process hierarchy fallback for session ID",
@@ -212,97 +74,148 @@
       "task": "T032: Rename orchestrator package to claudemux",
       "description": "Rename internal/builtin/orchestrator/ to internal/builtin/claudemux/. Update: package declarations, register.go, imports, docs, JS require() (osm:orchestrator -> osm:claudemux). BREAKING JS API. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T031"]
+      "blockedBy": [
+        "T031"
+      ]
     },
     {
       "task": "T033: Model selection TUI parser",
       "description": "Extend parser.go in claudemux: detect model selection menu in PTY output, parse models, identify selection, generate navigation keystrokes. Handle: single model, model not found, timeout. Tests with captured samples. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T032"]
+      "blockedBy": [
+        "T032"
+      ]
     },
     {
       "task": "T034: Rewrite BT templates as claude-mux.js",
       "description": "Rewrite scripts/bt-templates/orchestrator.js as claude-mux.js. Templates: spawn-claude, navigate-model-selection, send-task, wait-for-result, monitor-health. DELETE old file. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T031", "T032"]
+      "blockedBy": [
+        "T031",
+        "T032"
+      ]
     },
     {
       "task": "T035: Rewrite PR split goal and script",
       "description": "Rewrite goals/orchestrate-pr-split.json and scripts/orchestrate-pr-split.js for claude-mux. Analyze diff splits, handle conflicts via Claude, verify independently, equivalence check. Update tests. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T031", "T032", "T034"]
+      "blockedBy": [
+        "T031",
+        "T032",
+        "T034"
+      ]
     },
     {
       "task": "T061: Dynamic MCP server config per Claude instance",
       "description": "Per-instance MCP lifecycle: unique endpoint URL, startup sequencing (MCP before Claude), shutdown cleanup, config validation, config generation for Claude's MCP client. Tests with mocks. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T031", "T032"]
+      "blockedBy": [
+        "T031",
+        "T032"
+      ]
     },
     {
       "task": "T062: MCP feedback protocol",
       "description": "New MCP tools: reportProgress, reportResult, requestGuidance, reportError. JSON schemas. Idempotent. Sequence numbers. Heartbeat. Error responses. Docs. Tests. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T031"]
+      "blockedBy": [
+        "T031"
+      ]
     },
     {
       "task": "T063: Guard rails harness",
       "description": "PTY monitors: rate limits, permission prompts, crashes, timeout. MCP monitors: no calls, excessive frequency, repeated calls, unexpected tools, schema violations. Remediation: warn/pause/restart/kill/escalate. Composable thresholds. Config keys. Tests. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T061", "T062"]
+      "blockedBy": [
+        "T061",
+        "T062"
+      ]
     },
     {
       "task": "T064: TUI multiplexing",
       "description": "Multi-instance TUI. Meta-key switching (avoid tmux Ctrl-B). State save/restore. Status bar. Input routing. Output rendering. BubbleTea integration. Tests. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T032"]
+      "blockedBy": [
+        "T032"
+      ]
     },
     {
       "task": "T065: Error recovery and cancellation",
       "description": "PTY + MCP detection. Recovery: force-kill, restart, escalate. Cancellation: Ctrl-C, graceful shutdown, MCP cleanup. Tests. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T061", "T062", "T063"]
+      "blockedBy": [
+        "T061",
+        "T062",
+        "T063"
+      ]
     },
     {
       "task": "T066: Session isolation for multi-instance",
       "description": "Unique session IDs, own MCP endpoints, isolated state dirs, independent PTY handles, resource cleanup. No shared mutable state. Session registry. Tests with -race. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T061", "T032"]
+      "blockedBy": [
+        "T061",
+        "T032"
+      ]
     },
     {
       "task": "T067: Expose claude-mux building blocks as JS API",
       "description": "JS APIs: osm:pty docs, MCP helpers, BT templates (require-able), parsing patterns, provider interface, guard rails middleware. Examples. Docs. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T032", "T034", "T062"]
+      "blockedBy": [
+        "T032",
+        "T034",
+        "T062"
+      ]
     },
     {
       "task": "T068: Concurrent instance management",
       "description": "Instance pool, task queue, health tracking, load balancing, recycling, draining. Go + JS API. Tests with mocks. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T066", "T063"]
+      "blockedBy": [
+        "T066",
+        "T063"
+      ]
     },
     {
       "task": "T069: Claude Code wrapper/parser native module",
       "description": "JS module: createSession, sendTask, onProgress, onResult, onGuidanceRequest, parseOutput, close. Register in register.go. Tests. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T032", "T033", "T061", "T062"]
+      "blockedBy": [
+        "T032",
+        "T033",
+        "T061",
+        "T062"
+      ]
     },
     {
       "task": "T070: Safety validation",
       "description": "Intent classification, scope assessment, risk scoring, policy enforcement. Composable validator. Optional Ollama. Config keys. Tests. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T032", "T062"]
+      "blockedBy": [
+        "T032",
+        "T062"
+      ]
     },
     {
       "task": "T071: Ideal choice resolution",
       "description": "Multi-candidate analysis, criteria weighting, recommendations, user confirmation. requestGuidance integration. Optional Ollama. Tests. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T032"]
+      "blockedBy": [
+        "T032"
+      ]
     },
     {
       "task": "T072: Main claude-mux entry point",
       "description": "Top-level command. Config keys claude-mux.*. Fail-closed. Audit logging. Register as built-in. Wire: T068+T069+T070+T071+T063. Tests. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T068", "T069", "T070", "T071", "T063"]
+      "blockedBy": [
+        "T068",
+        "T069",
+        "T070",
+        "T071",
+        "T063"
+      ]
     },
     {
       "task": "T169: osm mcp prompt — polymorphic terminal wrapper",
@@ -318,30 +231,43 @@
       "task": "T171: Agent steering via MCP enqueue + session gRPC",
       "description": "Session-tied Unix socket (gRPC), Windows TCP fallback. Port MacosUseSDK baseline (buf.mk, go.mk, buf.gen.yaml, google-api-linter.yaml, hack/). Enqueue protocol. Preemption. Tools: enqueue, interrupt, status. Socket cleanup. Tests. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T170"]
+      "blockedBy": [
+        "T170"
+      ]
     },
     {
       "task": "T172: osm mcp parent — Claude Code wrapper + stdio MCP + session socket",
       "description": "Wrap Claude Code as child process. Stdio MCP transport. Session socket bidirectional messaging. Lifecycle management. Tools: spawn, message, status, kill. Session integration. Tests. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T171"]
-    },
-    {
-      "task": "T101: Integration testing for claude-mux",
-      "description": "TestMain with -test-integration flag. -provider=ollama, -model=gpt-oss:20b-cloud. Full PTY flow. Config.mk target. Properly skipped when flag unset. Run make.",
-      "status": "Not Started",
-      "blockedBy": ["T072"]
+      "blockedBy": [
+        "T171"
+      ]
     },
     {
       "task": "T174: Sync go-git v6 migration",
       "description": "Based on T017 audit, migrate sync operations from shell-out to go-git v6: clone, add, commit, push. Preserve pull --rebase (shell out if needed), conflict detection, config keys, auto-pull, timestamps. Tests. Run make.",
       "status": "Not Started",
-      "blockedBy": ["T017"]
+      "blockedBy": [
+        "T017"
+      ]
     },
     {
-      "task": "T132: Error message consistency audit",
-      "description": "Audited all production Go files for error message inconsistencies. Found and fixed 6 issues: (1) pabt/state.go — lowercase error + pkg prefix. (2-4) gitops/gitops.go — added 'gitops:' prefix to 3 sentinel errors (ErrNotRepo, ErrNothingToCommit, ErrConflict). (5-6) scripting/engine_core.go + tui_manager.go — changed %v to %w for error wrapping, enabling errors.Is/errors.As chains. Updated all test assertions (gitops_test.go, pabt/coverage_gaps_test.go). All pass with -race.",
-      "status": "Done"
+      "task": "T102: Security audit of scripting sandbox",
+      "description": "Comprehensive security audit: (1) Runtime init — no ambient authority leaks. (2) require() traversal — module_hardening.go path escape prevention. (3) osm:exec — command injection vectors. (4) osm:fetch — SSRF (internal network, metadata endpoints). (5) osm:pty — spawn restrictions. (6) osm:os writeFile/appendFile — path restrictions. (7) Env var exposure — secret leakage. (8) MCP tool surface — privilege escalation. Review existing security_test.go, security_sandbox_test.go, security_input_test.go. Fix vulnerabilities. Regression tests. Update docs/security.md. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T101: Integration testing for claude-mux",
+      "description": "TestMain with -integration flag. -provider=ollama, -model=gpt-oss:20b-cloud. Full PTY flow. Config.mk target. Properly skipped when flag unset. Run make.",
+      "status": "Not Started",
+      "blockedBy": [
+        "T072"
+      ]
+    },
+    {
+      "task": "T166: Module resolution / ESM investigation",
+      "description": "Document require() algorithm (internal/scripting/module_hardening.go). Verify path traversal protection. Assess ESM feasibility in Goja. Document limitations. Verify script.module-paths config key. Run make.",
+      "status": "Not Started"
     },
     {
       "task": "T177: Full cross-platform verification",

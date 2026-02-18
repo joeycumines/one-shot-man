@@ -33,3 +33,6 @@ Session nearing completion (17 tasks done). Next candidates:
 - Consider committing WIP.md, blueprint.json, CHANGELOG.md updates and wrapping session
 - T133: Shell completion audit
 - T175: CHANGELOG update for remaining work
+
+## Actions (2026-02-19)
+- 2026-02-19  — Moved task T166 ("Module resolution / ESM investigation") to the end of sequentialTasks in blueprint.json; verified single occurrence. Next: run make or commit when ready.

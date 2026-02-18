@@ -164,8 +164,8 @@
     },
     {
       "task": "T161: Goal autodiscovery test hardening",
-      "description": "Verify autodiscovery=false fix is comprehensive. Search all GoalRegistry instantiations — ensure tests not needing autodiscovery disable it. Cross-platform path resolution test. Helper assertion function. Run make all platforms.",
-      "status": "Not Started"
+      "description": "Created newIsolatedGoalConfig() helper in goal_test_helpers_test.go. Fixed 4 tests in goal_registry_test.go, 5 subtests in builtin_edge_test.go, and 2 tests in goal_test.go to disable autodiscovery. Tightened assertions: GetAllGoals checks exactly 2 goals, EmptyGoalArray is a hard error. Added 3 cross-platform tests in goal_discovery_crossplatform_test.go (isolation, custom paths, path normalization). All tests pass with -race on macOS.",
+      "status": "Done"
     },
     {
       "task": "T162: Sync common config enhancement",

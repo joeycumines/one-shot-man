@@ -2,18 +2,21 @@
 
 ## Current State (2026-02-18)
 
-- **Completed this session**: T178 (gitignore hygiene), T179 (baseline.blueprint.json), T017 (PullRebase consolidation)
-- **Branch**: `wip` (232+ commits ahead of `main`)
+- **Completed this session**: T178, T179, T017, T106, T110 (partial), T161
+- **Branch**: `wip` (235+ commits ahead of `main`)
 - **macOS tests**: All pass (zero failures, full make-all-with-log)
 - **Session timer**: .session-timer, check with `make check-session-time`
 
-## T017 Summary
+## Recent Commits
 
-- Created `gitops.PullRebase()` with `PullRebaseOptions` struct and `ErrConflict` sentinel
-- Consolidated two shell-out sites (sync.go `runGit` + sync_startup.go `exec.Command`) into single function
-- 6 tests: Success, AlreadyUpToDate, Conflict, InvalidDir, StderrCapture, CustomGitBin
-- Removed `runGit` method from sync.go, cleaned imports in both files
+- `6e47d4a Harden goal discovery test isolation` (T161)
+- `4c556c1 Add coverage gap tests for config and shared symbols` (T106/T110)
+- `8b29125 Consolidate pull --rebase into gitops.PullRebase` (T017)
 
 ## Immediate Next Step
 
-Rule of Two review gate for T017+T178+T179, then commit. After commit, proceed to next task (T102 security audit or T161 goal autodiscovery).
+Move to next blueprint task. Candidates by impact:
+- T132: Error message consistency audit
+- T110: Complete remaining config edge cases (out-of-range, special chars, non-UTF8)
+- T107: MCP server integration tests (biggest coverage gap at 20%)
+- T102: Security audit of scripting sandbox

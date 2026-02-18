@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `osm config diff` subcommand: shows only non-default configuration values (overridden via config file or environment variable)
 - `ResolveAll` and `ResolveDiff` methods on `ConfigSchema` for programmatic access to resolved configuration with source tracking
 - `ConfigSource`, `ResolvedOption` types in config package for structured source metadata
-- `osm mcp` command: MCP (Model Context Protocol) server mode over stdio transport with 8 tools — `addFile`, `addDiff`, `addNote`, `removeFile`, `listContext`, `clearContext`, `buildPrompt`, `getGoals` — enabling integration with Claude Desktop, VS Code Copilot, and other MCP clients
+- `osm mcp` command: MCP (Model Context Protocol) server mode over stdio transport with 14 tools — `addFile`, `addDiff`, `addNote`, `removeFile`, `listContext`, `clearContext`, `buildPrompt`, `getGoals` (context management), `registerSession`, `reportProgress`, `reportResult`, `requestGuidance`, `getSession`, `listSessions` (session coordination) — enabling integration with Claude Desktop, VS Code Copilot, and other MCP clients
 - `osm:json` native module: JSON utilities — `parse`, `stringify`, `query` (dot-notation/array-indexing/wildcard path queries), `mergePatch` (RFC 7386), `diff` (JSON Pointer paths), `flatten`/`unflatten` (nested↔flat conversion)
 - `osm:crypto` native module: cryptographic hash functions wrapping Go's `crypto` package — `sha256`, `sha1`, `md5`, `hmacSHA256`, `hmacSHA1` — all return hex-encoded lowercase strings; input accepts strings or byte arrays
 - `osm:path` native module: cross-platform path manipulation wrapping Go's `path/filepath` — `join`, `dir`, `base`, `ext`, `abs`, `rel`, `clean`, `isAbs`, `match`, `glob`, `separator`, `listSeparator`
@@ -57,14 +57,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git ref completion with remote branches and recent commits
 - `CommandFlagDef` struct and `FlagDefs` field for REPL flag completion
 - Atomic `GetLifecycleSnapshot()` for behavior tree lifecycle state queries
-- Fuzz tests for config parser, diff splitter, buildContext, and Goja runtime (zero panics across 2.4M+ executions)
+- Fuzz tests for config parser, diff splitter, buildContext, and Goja runtime (zero panics across 2.4M+ executions); additionally FuzzGoalJSONParsing, FuzzSanitizeFilename, FuzzSanitizePayload, FuzzMCPBacktickFence, FuzzComputePathLCA covering goal loading, filesystem safety, session payload, Markdown fence, and path LCA correctness
 - Security test suites: 34 input sanitization tests and 18 JS sandbox boundary tests
 - `docs/security.md` documenting JavaScript sandbox boundaries and threat model
-- Performance benchmarks across engine creation, filesystem, PA-BT planning, bubbletea, and 8 additional categories (60+ new benchmarks total)
+- Performance benchmarks across engine creation, filesystem, PA-BT planning, bubbletea, MCP tool latency/prompt building/backtick fencing, sanitizeFilename, computePathLCA, sanitizePayload, and 8 additional categories (90+ benchmark scenarios total)
 - Test coverage expanded across 25+ packages with notable gains: bubblezone 0→98.7%, lipgloss 58→99%, tview 68.5→96.4%, bubbletea 75.8→91.2%, viewport 73.3→97.3%, overall cmd/osm 91.4→94.8%
 - `tui_commands.go` `registerBuiltinCommands` coverage 88.9%→97.2%: added `mode` success path and `reset` stateManager-nil error path tests; remaining 2.8% is an unreachable defensive `else` branch
 
 ### Changed
+- Consolidated two shell-out `git pull --rebase` call sites (`sync.go executePull`, `sync_startup.go SyncAutoPull`) into `gitops.PullRebase()` with `PullRebaseOptions` struct and `ErrConflict` sentinel — properly captures stderr, validates directory, and supports custom git binary path
 - **BREAKING:** `osm:fetch` module reworked to browser Fetch API compliance — `fetch(url, opts?)` now returns `Promise<Response>` (async) instead of synchronous Response; Response.headers is now a proper Headers object with `.get()`, `.has()`, `.entries()`, `.keys()`, `.values()`, `.forEach()` methods; `.text()` and `.json()` now return Promises; HTTP requests run in goroutines with Promise resolution on the event loop
 - **BREAKING:** Replaced `osm:grpc` synchronous API with Promise-based gRPC via [goja-grpc](https://github.com/joeycumines/goja-grpc) — `dial`/`loadDescriptorSet`/`invoke` replaced by `createClient`/`createServer`/`dial`/`status`/`metadata`/`enableReflection`/`createReflectionClient`; all RPC calls now return Promises supporting unary, server-streaming, client-streaming, and bidirectional streaming; protobuf descriptor loading moved to new `osm:protobuf` module (`loadDescriptorSet`); uses in-process gRPC channel (`go-inprocgrpc`) for zero-network-overhead internal communication
 - Migrated JavaScript event loop from `dop251/goja_nodejs/eventloop` to `joeycumines/go-eventloop` + `joeycumines/goja-eventloop` — enables proper Promise/setTimeout/setInterval integration via adapter pattern; adds AbortController, TextEncoder/Decoder, URL, crypto, and process.nextTick as JS globals; console.log/warn/error/info/debug provided via goja_nodejs/console module with adapter-provided timer methods (console.time/timeEnd/timeLog)
@@ -126,6 +127,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ETXTBSY` error on overlayfs (Docker): `exec` module uses atomic write-then-rename pattern instead of in-place modification for script execution on copy-on-write filesystems
 - `ScanSessions` on Windows: added explicit directory check before `ReadDir`, preventing silent no-op on non-directory paths
 - 2 Windows test failures: echo builtin and tview Console API tests skip on unsupported platforms
+- `sanitizeFilename` compiled 3 regexes (`regexp.MustCompile`) on every call — hoisted to package-level vars for single compilation at init time
+- Error message consistency: lowercased error string in `pabt/state.go` with `pabt:` prefix; added `gitops:` prefix to `ErrNotRepo`, `ErrNothingToCommit`, `ErrConflict` sentinel errors
+- 5 documentation inaccuracies: MCP tool count 8→14 in `docs/reference/command.md`; session config key format (kebab-case→camelCase) in `docs/session.md`; stale event loop reference in `docs/architecture.md`; wrong config path (`~/.config/osm`→`~/.osm`) in `docs/scripting.md`; stale TView reference in `AGENTS.md`
 
 ## [v0.1.0] - 2026-02-10
 

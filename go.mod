@@ -1,6 +1,6 @@
 module github.com/joeycumines/one-shot-man
 
-go 1.25.7
+go 1.26.0
 
 tool (
 	github.com/joeycumines/simple-command-output-filter
@@ -10,35 +10,32 @@ tool (
 )
 
 require (
-	github.com/creack/pty v1.1.24
-	github.com/dop251/goja v0.0.0-20260106131823-651366fbe6e3
-	github.com/dop251/goja_nodejs v0.0.0-20260212111938-1f56ff5bcf14
-	github.com/joeycumines/go-prompt v0.0.0-20260210130944-94c9ffd2e013
-	github.com/stretchr/testify v1.11.1
-	golang.org/x/term v0.40.0
-	golang.org/x/text v0.34.0
-	golang.org/x/tools v0.42.0
-)
-
-require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/creack/pty v1.1.24
+	github.com/dop251/goja v0.0.0-20260216154549-8b74ce4618c5
+	github.com/dop251/goja_nodejs v0.0.0-20260212111938-1f56ff5bcf14
 	github.com/expr-lang/expr v1.17.8
-	github.com/go-git/go-git/v6 v6.0.0-20260216160506-e6a3f881772f
+	github.com/go-git/go-git/v6 v6.0.0-20260217223433-8b943fe3eb84
 	github.com/google/uuid v1.6.0
 	github.com/joeycumines/go-behaviortree v1.11.0
-	github.com/joeycumines/go-eventloop v0.0.0
-	github.com/joeycumines/go-inprocgrpc v0.0.0-20260213164927-0dc92b109371
+	github.com/joeycumines/go-eventloop v0.0.0-20260218170455-c2bbded118fe
+	github.com/joeycumines/go-inprocgrpc v0.0.0-20260218170531-ae6e64c702a6
 	github.com/joeycumines/go-pabt v0.2.0
-	github.com/joeycumines/goja-eventloop v0.0.0-20260213164906-b3f83ceccca4
-	github.com/joeycumines/goja-grpc v0.0.0-20260213164910-f82bd4072549
-	github.com/joeycumines/goja-protobuf v0.0.0-20260213164915-e7601209bd26
+	github.com/joeycumines/go-prompt v0.0.0-20260218230448-b4014dead4ea
+	github.com/joeycumines/goja-eventloop v0.0.0-20260218170510-72bd5e8f518b
+	github.com/joeycumines/goja-grpc v0.0.0-20260218230359-a7374a476055
+	github.com/joeycumines/goja-protobuf v0.0.0-20260218170518-e9a6a30d7a98
 	github.com/lrstanley/bubblezone v1.0.0
-	github.com/modelcontextprotocol/go-sdk v1.3.0
+	github.com/modelcontextprotocol/go-sdk v1.3.1
 	github.com/muesli/termenv v0.16.0
 	github.com/rivo/uniseg v0.4.7
+	github.com/stretchr/testify v1.11.1
 	golang.org/x/sys v0.41.0
+	golang.org/x/term v0.40.0
+	golang.org/x/text v0.34.0
+	golang.org/x/tools v0.42.0
 )
 
 require (
@@ -52,44 +49,45 @@ require (
 	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.10.0 // indirect
-	github.com/clipperhouse/uax29/v2 v2.6.0 // indirect
-	github.com/cloudflare/circl v1.6.1 // indirect
+	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/go-git/gcfg/v2 v2.0.2 // indirect
-	github.com/go-git/go-billy/v6 v6.0.0-20260114122816-19306b749ecc // indirect
+	github.com/go-git/go-billy/v6 v6.0.0-20260209124918-37866f83c2d3 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/pprof v0.0.0-20260202012954-cb029daf43ef // indirect
 	github.com/joeycumines/go-bigbuff v1.21.0 // indirect
-	github.com/joeycumines/go-catrate v0.0.0-20260210130411-ef1b624f3188 // indirect
-	github.com/joeycumines/goja-protojson v0.0.0-20260213164919-c434665d6fbf // indirect
+	github.com/joeycumines/go-catrate v0.0.0-20260218170450-94df13f979e9 // indirect
 	github.com/joeycumines/logiface v0.5.0 // indirect
 	github.com/joeycumines/simple-command-output-filter v0.2.1 // indirect
-	github.com/kevinburke/ssh_config v1.5.0 // indirect
+	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
-	github.com/mattn/go-runewidth v0.0.19 // indirect
+	github.com/mattn/go-runewidth v0.0.20 // indirect
 	github.com/mattn/go-tty v0.0.7 // indirect
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/pjbgf/sha1cd v0.5.0 // indirect
 	github.com/pkg/term v1.2.0-beta.2 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/segmentio/asm v1.2.1 // indirect
+	github.com/segmentio/encoding v0.5.3 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yuin/goldmark v1.7.16 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
-	golang.org/x/exp v0.0.0-20260212183809-81e46e3db34a // indirect
-	golang.org/x/exp/typeparams v0.0.0-20260212183809-81e46e3db34a // indirect
+	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
+	golang.org/x/exp/typeparams v0.0.0-20260218203240-3dfff04db8fa // indirect
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
@@ -97,14 +95,9 @@ require (
 	golang.org/x/telemetry v0.0.0-20260213145524-e0ab670178e1 // indirect
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260209200024-4cfbd4190f57 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260217215200-42d3e9bedb6d // indirect
 	google.golang.org/grpc v1.79.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.7.0 // indirect
 )
-
-// goja-eventloop's go.mod requires go-eventloop v0.0.0 with a local replace
-// directive (../eventloop), which is invalid for non-main modules. Override
-// with the actual pseudo-version so the dependency resolves correctly.
-replace github.com/joeycumines/go-eventloop v0.0.0 => github.com/joeycumines/go-eventloop v0.0.0-20260213164852-99e8a33a69b7

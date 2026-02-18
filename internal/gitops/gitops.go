@@ -30,13 +30,13 @@ import (
 // Sentinel errors.
 var (
 	// ErrNotRepo is returned when the path is not a git repository.
-	ErrNotRepo = errors.New("not a git repository")
+	ErrNotRepo = errors.New("gitops: not a git repository")
 
 	// ErrNothingToCommit is returned when there are no staged changes.
-	ErrNothingToCommit = errors.New("nothing to commit")
+	ErrNothingToCommit = errors.New("gitops: nothing to commit")
 
 	// ErrConflict is returned when a pull --rebase encounters merge conflicts.
-	ErrConflict = errors.New("merge conflict")
+	ErrConflict = errors.New("gitops: merge conflict")
 )
 
 // Repo wraps a go-git Repository with simplified operations.

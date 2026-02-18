@@ -159,7 +159,7 @@ func TestOpen_NotARepo(t *testing.T) {
 }
 
 func isErrNotRepo(err error) bool {
-	return err != nil && err.Error() != "" && containsStr(err.Error(), "not a git repository")
+	return err != nil && err.Error() != "" && containsStr(err.Error(), "gitops: not a git repository")
 }
 
 func containsStr(s, sub string) bool {
@@ -368,21 +368,21 @@ func TestPush_NothingToPush(t *testing.T) {
 
 func TestErrNotRepo(t *testing.T) {
 	t.Parallel()
-	if ErrNotRepo.Error() != "not a git repository" {
+	if ErrNotRepo.Error() != "gitops: not a git repository" {
 		t.Fatalf("unexpected ErrNotRepo message: %q", ErrNotRepo.Error())
 	}
 }
 
 func TestErrNothingToCommit(t *testing.T) {
 	t.Parallel()
-	if ErrNothingToCommit.Error() != "nothing to commit" {
+	if ErrNothingToCommit.Error() != "gitops: nothing to commit" {
 		t.Fatalf("unexpected ErrNothingToCommit message: %q", ErrNothingToCommit.Error())
 	}
 }
 
 func TestErrConflict(t *testing.T) {
 	t.Parallel()
-	if ErrConflict.Error() != "merge conflict" {
+	if ErrConflict.Error() != "gitops: merge conflict" {
 		t.Fatalf("unexpected ErrConflict message: %q", ErrConflict.Error())
 	}
 }

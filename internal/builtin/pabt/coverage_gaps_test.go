@@ -246,7 +246,7 @@ func TestVariable_NilBlackboard(t *testing.T) {
 	}
 	_, err := state.Variable("key")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "State.Blackboard is nil")
+	assert.Contains(t, err.Error(), "pabt: state blackboard is nil")
 }
 
 func TestActionHasRelevantEffect_NilEffect(t *testing.T) {

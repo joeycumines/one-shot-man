@@ -482,7 +482,7 @@ func (e *Engine) ExecuteScript(script *Script) (err error) {
 	defer func() {
 		if dErr := ctx.runDeferred(); dErr != nil {
 			if err != nil {
-				err = fmt.Errorf("execution error: %v; deferred error: %v", err, dErr)
+				err = fmt.Errorf("execution error: %w; deferred error: %w", err, dErr)
 			} else {
 				err = dErr
 			}

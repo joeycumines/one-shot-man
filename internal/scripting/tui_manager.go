@@ -563,7 +563,7 @@ func (tm *TUIManager) executeCommand(cmd Command, args []string) error {
 		}()
 		if dErr != nil {
 			if execErr != nil {
-				execErr = fmt.Errorf("%v; deferred error: %v", execErr, dErr)
+				execErr = fmt.Errorf("%w; deferred error: %w", execErr, dErr)
 			} else {
 				execErr = dErr
 			}

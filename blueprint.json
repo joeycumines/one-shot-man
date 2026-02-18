@@ -139,8 +139,8 @@
     },
     {
       "task": "T107: MCP server integration tests",
-      "description": "Integration tests for MCP server (internal/command/mcp.go). Full stdio transport: (1) JSON-RPC for all 8 tools (addFile, addDiff, addNote, removeFile, listContext, clearContext, buildPrompt, getGoals). (2) Success and error responses. (3) Concurrent tool calls. (4) Malformed input (invalid JSON-RPC, missing params, wrong types). (5) Large payloads. Run make.",
-      "status": "Not Started"
+      "description": "Added 4 integration tests to internal/command/mcp_test.go: (1) ConcurrentToolCalls — 20 goroutines (10 addNote + 10 addDiff) racing, verify all 20 items via listContext. (2) ConcurrentSessions — 5 sessions registered + progress reported concurrently, listSessions verification. (3) LargePayloads — 100KB note + 50KB diff, verify buildPrompt contains both verbatim. (4) BacktickFenceInPrompt — diff with triple backticks, verify fence upgraded to quadruple in prompt pipeline. Existing tests already covered all 14 tools, success/error, malformed input. All pass with -race.",
+      "status": "Done"
     },
     {
       "task": "T108: Session locking concurrency tests",
@@ -159,8 +159,8 @@
     },
     {
       "task": "T111: Fuzz testing expansion",
-      "description": "Expand fuzz tests beyond existing (config_fuzz_test.go, diff_splitter_fuzz_test.go, goja_fuzz_test.go). New targets: (1) Goal JSON loading. (2) Session ID sanitization. (3) ToTxtar generation. (4) Module path resolution. (5) MCP JSON-RPC parsing. Run -fuzztime=30s each. Fix panics. Run make.",
-      "status": "Not Started"
+      "description": "Added 5 fuzz targets: (1) FuzzGoalJSONParsing — JSON unmarshal + validateGoal + isValidGoalName (internal/command/goal_loader_fuzz_test.go). (2) FuzzSanitizeFilename — filesystem safety invariants (internal/storage/paths_fuzz_test.go). (3) FuzzSanitizePayload — whitelist enforcement (internal/session/session_fuzz_test.go). (4) FuzzMCPBacktickFence — Markdown fence safety (internal/command/mcp_fuzz_test.go). (5) FuzzComputePathLCA — path LCA correctness (internal/scripting/context_fuzz_test.go). All pass with -race.",
+      "status": "Done"
     },
     {
       "task": "T161: Goal autodiscovery test hardening",

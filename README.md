@@ -177,7 +177,14 @@ Command `osm` is a scripting engine.
 
 - **Powered by Goja:** An embedded JavaScript runtime powers the core workflows.
 - **Native Bindings:** Includes native bindings for **Go Prompt** (Shell TUI), **Bubble Tea** (Arbitrary TUI), **Lipgloss** (styling), and the system clipboard.
+- **Native Modules:** `osm:fetch` (browser-compatible Fetch API with AbortController), `osm:grpc` (Promise-based gRPC), `osm:exec` (child processes), `osm:os` (filesystem), `osm:pty` (terminal), `osm:bt` (behavior trees), `osm:pabt` (planning acting).
 - **Customizable:** You can write your own interactive workflows in JavaScript that run natively in `osm`. The built-in commands (`code-review`, `goal`, etc) are actually scripts that you can inspect and modify.
+
+### MCP Server
+
+`osm mcp` exposes an [MCP](https://modelcontextprotocol.io/) server over stdio with 14 tools for context management and session coordination. This is the primary integration point for IDE-based workflows (e.g., Claude Code, VS Code Copilot).
+
+Tools: `addFile`, `addDiff`, `addNote`, `removeFile`, `listContext`, `clearContext`, `buildPrompt`, `getGoals`, `registerSession`, `reportProgress`, `reportResult`, `requestGuidance`, `getSession`, `listSessions`.
 
 Future functionality based on merits.
 Fair warning: This may include features* which expand the scope of functionality.
@@ -271,12 +278,15 @@ N.B. The `osm` tool includes a scripting environment as a core component.
 ## Docs
 
 - [docs/README.md](docs/README.md)
+- [docs/architecture.md](docs/architecture.md) — high-level architecture
 - [docs/shell-completion.md](docs/shell-completion.md)
 - [docs/reference/command.md](docs/reference/command.md)
 - [docs/reference/goal.md](docs/reference/goal.md)
 - [docs/configuration.md](docs/configuration.md) (deep: [docs/reference/config.md](docs/reference/config.md))
 - [docs/session.md](docs/session.md)
 - [docs/scripting.md](docs/scripting.md)
+- [docs/security.md](docs/security.md)
+- [CHANGELOG.md](CHANGELOG.md)
 
 ## Visuals
 
@@ -288,6 +298,26 @@ N.B. The `osm` tool includes a scripting environment as a core component.
 ```sh
 make help # note: gmake on macOS (brew install make)
 ```
+
+Build, lint, and test everything:
+
+```sh
+make         # default: build + lint + test
+make test    # tests only (add GO_TEST_FLAGS=-race for race detection)
+make lint    # vet + staticcheck + deadcode
+make cover   # coverage report
+```
+
+Cross-platform testing (requires targets from `example.config.mk`):
+
+```sh
+make make-all-in-container   # Linux (Docker)
+make make-all-run-windows    # Windows (remote host)
+```
+
+## Contributing
+
+Contributions welcome. Please ensure `make` passes with zero failures on all three platforms (macOS, Linux, Windows) before submitting a PR. See [AGENTS.md](AGENTS.md) for detailed development guidance.
 
 ## License
 

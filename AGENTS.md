@@ -75,7 +75,7 @@ The JavaScript environment provides these globals:
 - `ctx` / `context` - Context management (files, diffs, git state)
 - `output` - Output formatting and clipboard
 - `log` - Logging (debug, info, warn, error, printf, getLogs, searchLogs, clearLogs)
-- `tui` - Terminal UI integration (TView, Bubble Tea, Lipgloss)
+- `tui` - Terminal UI integration (Bubble Tea, Lipgloss)
 
 Native modules are available under `osm:` prefix (see `docs/scripting.md`).
 

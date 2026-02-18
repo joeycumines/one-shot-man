@@ -101,7 +101,7 @@ Currently one option: `WithModulePaths(paths...)` configures additional module s
 
 ### Event loop
 
-The engine uses `goja_nodejs/eventloop` for async JavaScript execution. All JS code runs on the event loop goroutine. The `Runtime` wrapper provides:
+The engine uses `go-eventloop` (with `goja-eventloop` adapter) for async JavaScript execution. All JS code runs on the event loop goroutine. The `Runtime` wrapper provides:
 
 - `RunOnLoopSync(fn)` — run synchronous code on the event loop, blocking until complete
 - `RunOnLoop(fn)` — queue code asynchronously
@@ -109,7 +109,7 @@ The engine uses `goja_nodejs/eventloop` for async JavaScript execution. All JS c
 
 ### require() and module resolution
 
-CommonJS `require()` is enabled via `goja_nodejs/require`. Resolution order:
+CommonJS `require()` is enabled via `goja_nodejs/require` (retained for module resolution). Resolution order:
 
 1. **Native modules** (`osm:` prefix): Go-implemented modules registered via `RegisterNativeModule`
 2. **Absolute paths**: `/path/to/module.js`

@@ -416,7 +416,7 @@ through configured **module search paths**, similar to `NODE_PATH` in Node.js.
 var mylib = require('mylib');  // searches configured paths for mylib.js or mylib/index.js
 ```
 
-Configure search paths via the `script.module-paths` setting in `~/.config/osm/config`:
+Configure search paths via the `script.module-paths` setting in `~/.osm/config`:
 
 ```
 script.module-paths=/home/user/osm-libs,/opt/shared-scripts

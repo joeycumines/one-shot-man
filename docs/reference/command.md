@@ -139,7 +139,7 @@ Start an MCP (Model Context Protocol) server over stdio. Exposes osm's context m
 - Usage: `osm mcp`
 - No flags
 
-The server provides 8 tools:
+The server provides 14 tools:
 
 | Tool | Description |
 |------|-------------|
@@ -151,6 +151,12 @@ The server provides 8 tools:
 | `clearContext` | Remove all files, diffs, and notes from the prompt context |
 | `buildPrompt` | Build the complete prompt from current context (optionally with a goal) |
 | `getGoals` | List all available goals with their descriptions |
+| `registerSession` | Register a new agent session with capabilities |
+| `reportProgress` | Report progress from an agent session |
+| `reportResult` | Report task completion from an agent session |
+| `requestGuidance` | Request guidance from the human operator |
+| `getSession` | Get session info and drain queued events |
+| `listSessions` | List all registered agent sessions |
 
 Example MCP client configuration (Claude Desktop `claude_desktop_config.json`):
 

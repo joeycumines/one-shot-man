@@ -112,7 +112,7 @@ osm session delete -y session-1 session-2 session-3
 
 ### `session clean`
 
-Run automatic cleanup based on configured retention policies (`sessions.max-age-days`, `sessions.max-count`, `sessions.max-size-mb`).
+Run automatic cleanup based on configured retention policies (`maxAgeDays`, `maxCount`, `maxSizeMB` under `[sessions]`).
 
 ```sh
 osm session clean -dry-run   # Preview
@@ -169,17 +169,17 @@ osm session delete -dry-run <session-id>
 
 ### Automatic cleanup
 
-When `sessions.auto-cleanup-enabled` is `true` (the default), commands that create sessions (`script`, `prompt-flow`, `code-review`, `goal`) start a background cleanup scheduler. Cleanup runs on startup and then at the interval configured by `sessions.cleanup-interval-hours` (default: 24).
+When `autoCleanupEnabled` (under `[sessions]`) is `true` (the default), commands that create sessions (`script`, `prompt-flow`, `code-review`, `goal`) start a background cleanup scheduler. Cleanup runs on startup and then at the interval configured by `cleanupIntervalHours` (default: 24).
 
-Configuration keys:
+Configuration keys (under `[sessions]` section):
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `sessions.max-age-days` | 90 | Remove sessions older than this |
-| `sessions.max-count` | 100 | Keep at most this many sessions |
-| `sessions.max-size-mb` | 500 | Total size cap for all sessions |
-| `sessions.auto-cleanup-enabled` | true | Enable background cleanup |
-| `sessions.cleanup-interval-hours` | 24 | Hours between cleanup runs |
+| `maxAgeDays` | 90 | Remove sessions older than this |
+| `maxCount` | 100 | Keep at most this many sessions |
+| `maxSizeMB` | 500 | Total size cap for all sessions |
+| `autoCleanupEnabled` | true | Enable background cleanup |
+| `cleanupIntervalHours` | 24 | Hours between cleanup runs |
 
 ## Storage backends
 

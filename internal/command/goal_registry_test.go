@@ -21,7 +21,7 @@ func TestDynamicGoalRegistry_List(t *testing.T) {
 	}
 
 	// Create a mock discovery that returns no paths
-	cfg := config.NewConfig()
+	cfg := newIsolatedGoalConfig()
 	discovery := NewGoalDiscovery(cfg)
 
 	registry := NewDynamicGoalRegistry(builtIn, discovery)
@@ -57,7 +57,7 @@ func TestDynamicGoalRegistry_Get(t *testing.T) {
 		},
 	}
 
-	cfg := config.NewConfig()
+	cfg := newIsolatedGoalConfig()
 	discovery := NewGoalDiscovery(cfg)
 	registry := NewDynamicGoalRegistry(builtIn, discovery)
 
@@ -72,7 +72,7 @@ func TestDynamicGoalRegistry_Get(t *testing.T) {
 }
 
 func TestDynamicGoalRegistry_GetNonExistent(t *testing.T) {
-	cfg := config.NewConfig()
+	cfg := newIsolatedGoalConfig()
 	discovery := NewGoalDiscovery(cfg)
 	registry := NewDynamicGoalRegistry([]Goal{}, discovery)
 
@@ -152,14 +152,14 @@ func TestDynamicGoalRegistry_GetAllGoals(t *testing.T) {
 		},
 	}
 
-	cfg := config.NewConfig()
+	cfg := newIsolatedGoalConfig()
 	discovery := NewGoalDiscovery(cfg)
 	registry := NewDynamicGoalRegistry(builtIn, discovery)
 
 	goals := registry.GetAllGoals()
 
-	if len(goals) < 2 {
-		t.Fatalf("Expected at least 2 goals, got %d", len(goals))
+	if len(goals) != 2 {
+		t.Fatalf("Expected exactly 2 goals, got %d", len(goals))
 	}
 
 	// Verify goals are sorted by name

@@ -197,7 +197,7 @@ func TestGoalCommandEdgeCases(t *testing.T) {
 	t.Parallel()
 
 	t.Run("NonExistentGoalFile", func(t *testing.T) {
-		cfg := config.NewConfig()
+		cfg := newIsolatedGoalConfig()
 		discovery := NewGoalDiscovery(cfg)
 		registry := NewDynamicGoalRegistry(GetBuiltInGoals(), discovery)
 
@@ -211,7 +211,7 @@ func TestGoalCommandEdgeCases(t *testing.T) {
 	})
 
 	t.Run("GoalFileIsDirectory", func(t *testing.T) {
-		cfg := config.NewConfig()
+		cfg := newIsolatedGoalConfig()
 		discovery := NewGoalDiscovery(cfg)
 		_ = NewDynamicGoalRegistry(GetBuiltInGoals(), discovery)
 
@@ -261,7 +261,7 @@ func TestGoalCommandEdgeCases(t *testing.T) {
 	})
 
 	t.Run("EmptyGoalArray", func(t *testing.T) {
-		cfg := config.NewConfig()
+		cfg := newIsolatedGoalConfig()
 		discovery := NewGoalDiscovery(cfg)
 
 		// Create registry with no built-in goals
@@ -269,7 +269,7 @@ func TestGoalCommandEdgeCases(t *testing.T) {
 
 		goals := registry.List()
 		if len(goals) != 0 {
-			t.Logf("Registry has %d goals (may have discovered goals)", len(goals))
+			t.Errorf("expected 0 goals with empty array and no discovery, got %d", len(goals))
 		}
 
 		// Should return empty list without error
@@ -312,7 +312,7 @@ func TestGoalCommandEdgeCases(t *testing.T) {
 	})
 
 	t.Run("GoalCommandWithNoArgsAndNoInteractive", func(t *testing.T) {
-		cfg := config.NewConfig()
+		cfg := newIsolatedGoalConfig()
 		discovery := NewGoalDiscovery(cfg)
 		registry := NewDynamicGoalRegistry(GetBuiltInGoals(), discovery)
 
@@ -341,7 +341,7 @@ func TestGoalCommandEdgeCases(t *testing.T) {
 	})
 
 	t.Run("GoalCommandInvalidFlagCombination", func(t *testing.T) {
-		cfg := config.NewConfig()
+		cfg := newIsolatedGoalConfig()
 		discovery := NewGoalDiscovery(cfg)
 		registry := NewDynamicGoalRegistry(GetBuiltInGoals(), discovery)
 

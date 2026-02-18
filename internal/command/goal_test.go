@@ -857,6 +857,7 @@ func TestGoal_PromptFooterInBuildPrompt(t *testing.T) {
 	// Build a registry with just this goal
 	cfg := config.NewConfig()
 	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "false")
 	discovery := NewGoalDiscovery(cfg)
 	registry := NewDynamicGoalRegistry([]Goal{goal}, discovery)
 
@@ -1181,6 +1182,7 @@ func TestGoalBuiltin_WhichOneIsBetter_ListOutput(t *testing.T) {
 
 	cfg := config.NewConfig()
 	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "false")
 	discovery := NewGoalDiscovery(cfg)
 	goalRegistry := NewDynamicGoalRegistry(GetBuiltInGoals(), discovery)
 

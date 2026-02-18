@@ -109,8 +109,8 @@ P024 → P025 (integration tests)
 
 ## Hostile Reviewer Notes
 (Things to check carefully before committing any batch)
-- `make deadcode` — ensure no dead code lurks after renames
-- `make betteralign` — struct alignment
-- `make staticcheck` — catching subtle issues
-- `go test -race ./...` — data race detection
+- `make make-all-with-log` — ALL checks, macOS
+- `make make-all-in-container` — ALL checks, Linux
+- `make make-all-run-windows` — ALL checks, Windows
+- `make-all-with-log GO_TEST_FLAGS='-timeout=12m -race -count=1'` — data race detection
 - All three platforms must pass

@@ -171,15 +171,15 @@ type PullRebaseOptions struct {
 // This is the ONLY shell-out in the gitops package — go-git v6 does not
 // support rebase, so this operation cannot be implemented natively.
 //
-// Returns ErrConflict (wrapping the underlying exec error) if stderr
-// contains conflict indicators. Returns nil on success.
+// Returns ErrConflict (wrapping the underlying exec error) if stdout or stderr
+// contain conflict indicators. Returns nil on success.
 func PullRebase(ctx context.Context, opts PullRebaseOptions) error {
 	gitBin := opts.GitBin
 	if gitBin == "" {
 		gitBin = "git"
 	}
 
-	var stderrBuf bytes.Buffer
+	var stderrBuf, stdoutBuf bytes.Buffer
 	var stderrWriter io.Writer = &stderrBuf
 	if opts.Stderr != nil {
 		stderrWriter = io.MultiWriter(opts.Stderr, &stderrBuf)
@@ -189,12 +189,16 @@ func PullRebase(ctx context.Context, opts PullRebaseOptions) error {
 	if opts.Dir != "" {
 		cmd.Dir = opts.Dir
 	}
-	cmd.Stdout = io.Discard
+	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = stderrWriter
 
 	if err := cmd.Run(); err != nil {
-		errOutput := stderrBuf.String()
-		if strings.Contains(errOutput, "CONFLICT") || strings.Contains(errOutput, "could not apply") {
+		// Combine stdout + stderr for conflict detection.  git may write
+		// conflict information to either stream depending on version and
+		// platform (e.g. Windows git sometimes writes CONFLICT markers to
+		// stdout).  Use case-insensitive matching and handle CRLF endings.
+		combined := strings.ToLower(stderrBuf.String() + stdoutBuf.String())
+		if strings.Contains(combined, "conflict") || strings.Contains(combined, "could not apply") {
 			return fmt.Errorf("%w: %w", ErrConflict, err)
 		}
 		return fmt.Errorf("pull --rebase: %w", err)

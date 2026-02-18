@@ -37,7 +37,7 @@ func TestRegister(t *testing.T) {
 		"osm:exec",
 		"osm:grpc",
 		"osm:protobuf",
-		"osm:orchestrator",
+		"osm:claudemux",
 		"osm:os",
 		"osm:path",
 		"osm:pty",

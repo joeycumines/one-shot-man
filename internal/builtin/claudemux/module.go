@@ -1,4 +1,4 @@
-package orchestrator
+package claudemux
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"github.com/dop251/goja"
 )
 
-// Require returns a module loader for `osm:orchestrator` that exposes the
+// Require returns a module loader for `osm:claudemux` that exposes the
 // PTY output parser and provider registry to JavaScript scripts.
 func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {

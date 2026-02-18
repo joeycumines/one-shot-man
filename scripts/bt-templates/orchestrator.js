@@ -17,7 +17,7 @@
 'use strict';
 
 var bt = require('osm:bt');
-var orc = require('osm:orchestrator');
+var orc = require('osm:claudemux');
 var exec = require('osm:exec');
 
 // ---------------------------------------------------------------------------

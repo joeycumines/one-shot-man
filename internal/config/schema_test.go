@@ -495,58 +495,58 @@ func TestDefaultSchema_ContainsDiscoveryOptions(t *testing.T) {
 	}
 }
 
-func TestDefaultSchema_ContainsOrchestratorOptions(t *testing.T) {
+func TestDefaultSchema_ContainsClaudeMuxOptions(t *testing.T) {
 	t.Parallel()
 	s := DefaultSchema()
 
-	// Global orchestrator options
-	orchestratorGlobals := []string{
-		"orchestrator.provider",
-		"orchestrator.model",
-		"orchestrator.work-dir",
-		"orchestrator.env-inherit",
-		"orchestrator.env-profile",
-		"orchestrator.pre-spawn-hook",
-		"orchestrator.permission-policy",
-		"orchestrator.rate-limit-backoff-sec",
-		"orchestrator.max-agents",
-		"orchestrator.pty-rows",
-		"orchestrator.pty-cols",
-		"orchestrator.provider-command",
-		"orchestrator.mcp-servers",
+	// Global claude-mux options
+	claudemuxGlobals := []string{
+		"claude-mux.provider",
+		"claude-mux.model",
+		"claude-mux.work-dir",
+		"claude-mux.env-inherit",
+		"claude-mux.env-profile",
+		"claude-mux.pre-spawn-hook",
+		"claude-mux.permission-policy",
+		"claude-mux.rate-limit-backoff-sec",
+		"claude-mux.max-agents",
+		"claude-mux.pty-rows",
+		"claude-mux.pty-cols",
+		"claude-mux.provider-command",
+		"claude-mux.mcp-servers",
 	}
-	for _, key := range orchestratorGlobals {
+	for _, key := range claudemuxGlobals {
 		if !s.IsKnown("", key) {
-			t.Errorf("orchestrator global option %q not in DefaultSchema", key)
+			t.Errorf("claude-mux global option %q not in DefaultSchema", key)
 		}
 	}
 
-	// Section options for [orchestrator]
-	orchestratorSection := []string{
+	// Section options for [claude-mux]
+	claudemuxSection := []string{
 		"provider", "model", "work-dir", "env-inherit", "env",
 		"env-profile", "pre-spawn-hook", "permission-policy",
 		"rate-limit-backoff-sec", "max-agents", "pty-rows",
 		"pty-cols", "provider-command", "mcp-servers",
 	}
-	for _, key := range orchestratorSection {
-		if !s.IsKnown("orchestrator", key) {
-			t.Errorf("orchestrator section option %q not in DefaultSchema", key)
+	for _, key := range claudemuxSection {
+		if !s.IsKnown("claude-mux", key) {
+			t.Errorf("claude-mux section option %q not in DefaultSchema", key)
 		}
 	}
 }
 
-func TestDefaultSchema_OrchestratorOptionTypes(t *testing.T) {
+func TestDefaultSchema_ClaudeMuxOptionTypes(t *testing.T) {
 	t.Parallel()
 	s := DefaultSchema()
 
 	checks := map[string]OptionType{
-		"orchestrator.env-inherit":            TypeBool,
-		"orchestrator.rate-limit-backoff-sec": TypeInt,
-		"orchestrator.max-agents":             TypeInt,
-		"orchestrator.pty-rows":               TypeInt,
-		"orchestrator.pty-cols":               TypeInt,
-		"orchestrator.provider":               TypeString,
-		"orchestrator.model":                  TypeString,
+		"claude-mux.env-inherit":            TypeBool,
+		"claude-mux.rate-limit-backoff-sec": TypeInt,
+		"claude-mux.max-agents":             TypeInt,
+		"claude-mux.pty-rows":               TypeInt,
+		"claude-mux.pty-cols":               TypeInt,
+		"claude-mux.provider":               TypeString,
+		"claude-mux.model":                  TypeString,
 	}
 	for key, wantType := range checks {
 		opt := s.Lookup("", key)

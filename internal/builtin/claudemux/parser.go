@@ -1,8 +1,8 @@
-// Package orchestrator provides a PTY output parser for classifying Claude Code
+// Package claudemux provides a PTY output parser for classifying Claude Code
 // terminal output into typed events. It detects rate limits, permission prompts,
 // model selection menus, SSO login flows, tool invocations, errors, and more.
 // Configurable custom patterns allow extension beyond the built-in set.
-package orchestrator
+package claudemux
 
 import (
 	"fmt"
@@ -83,7 +83,7 @@ func (p *Parser) Parse(line string) OutputEvent {
 func (p *Parser) AddPattern(name string, pattern string, eventType EventType) error {
 	re, err := regexp.Compile(pattern)
 	if err != nil {
-		return fmt.Errorf("orchestrator: invalid pattern %q: %w", name, err)
+		return fmt.Errorf("claudemux: invalid pattern %q: %w", name, err)
 	}
 	p.patterns = append(p.patterns, patternEntry{
 		name: name,

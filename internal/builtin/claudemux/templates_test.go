@@ -1,4 +1,4 @@
-package orchestrator
+package claudemux
 
 import (
 	"context"
@@ -19,14 +19,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// templateTestEnv sets up a full JS environment with osm:bt, osm:orchestrator,
+// templateTestEnv sets up a full JS environment with osm:bt, osm:claudemux,
 // osm:exec, and osm:pabt modules registered. Returns the bridge and a function
 // to run JS code on the event loop.
 func templateTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	t.Helper()
 
 	if runtime.GOOS == "windows" {
-		t.Skip("orchestrator templates use sh -c; skipping on Windows")
+		t.Skip("claudemux templates use sh -c; skipping on Windows")
 	}
 
 	reg := gojarequire.NewRegistry()
@@ -56,7 +56,7 @@ func templateTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	t.Cleanup(func() { bridge.Stop() })
 
 	// Register additional modules.
-	reg.RegisterNativeModule("osm:orchestrator", Require(ctx))
+	reg.RegisterNativeModule("osm:claudemux", Require(ctx))
 	reg.RegisterNativeModule("osm:exec", execmod.Require(ctx))
 	reg.RegisterNativeModule("osm:pabt", pabtmod.Require(ctx, bridge))
 
@@ -80,7 +80,7 @@ func templateTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 // relative to this test file's package directory.
 func templatePath(t *testing.T) string {
 	t.Helper()
-	// Test CWD is internal/builtin/orchestrator
+	// Test CWD is internal/builtin/claudemux
 	wd, err := os.Getwd()
 	require.NoError(t, err)
 	p := filepath.Join(wd, "..", "..", "..", "scripts", "bt-templates", "orchestrator.js")
@@ -418,7 +418,7 @@ func TestTemplates_CreatePlanningActions(t *testing.T) {
 		var pabt = require('osm:pabt');
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
-		var orc = require('osm:orchestrator');
+		var orc = require('osm:claudemux');
 		var registry = orc.newRegistry();
 		var actions = templates.createPlanningActions(pabt, bb, registry, {
 			testCommand: 'echo ok',
@@ -444,7 +444,7 @@ func TestTemplates_PlanningActions_RegisterWithState(t *testing.T) {
 		var pabt = require('osm:pabt');
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
-		var orc = require('osm:orchestrator');
+		var orc = require('osm:claudemux');
 		var registry = orc.newRegistry();
 		var actions = templates.createPlanningActions(pabt, bb, registry, {});
 		var state = pabt.newState(bb);
@@ -467,7 +467,7 @@ func TestTemplates_SpawnClaude_UnknownProvider(t *testing.T) {
 
 	runJS(`
 		var bt = require('osm:bt');
-		var orc = require('osm:orchestrator');
+		var orc = require('osm:claudemux');
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
 		var registry = orc.newRegistry();
@@ -495,7 +495,7 @@ func TestTemplates_SpawnClaude_WithEchoProvider(t *testing.T) {
 
 	runJS(`
 		var bt = require('osm:bt');
-		var orc = require('osm:orchestrator');
+		var orc = require('osm:claudemux');
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
 		var registry = orc.newRegistry();

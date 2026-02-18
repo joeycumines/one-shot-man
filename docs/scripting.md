@@ -447,3 +447,76 @@ top-level scripts and modules loaded via `require()`.
 **Circular dependencies**: Partially supported (as in Node.js CommonJS). If module A
 requires module B, and B requires A, B will see A's `exports` as they were at the
 point where execution left A. Avoid relying on this.
+
+### Module security (path-traversal protection)
+
+The `osm` scripting engine enforces two layers of protection against path-traversal
+attacks within bare module name resolution (global folder lookups only):
+
+**1. Path resolver check (pre-read)**
+
+Before the file is read, the path resolver verifies that the candidate file path stays
+within the configured module search directories. If a bare module name like
+`require('../../etc/passwd')` somehow resolves to a path outside the allowed directories,
+the resolver returns a sentinel path (`.osm-blocked-traversal`) that will never exist,
+causing `require()` to fail with a "module not found" error.
+
+> Note: This check applies _only_ to bare module names looked up through global search
+> folders. Relative requires (`./`, `../`) from within a script's own directory are
+> **not** subject to this check, because the calling script's directory is trusted.
+
+**2. Symlink escape check (post-read)**
+
+Symlinks can bypass the pre-read check: a symlink inside an allowed directory might
+point to a target outside it. After goja resolves the file path and just before reading
+the file, the hardened source loader resolves the final path through `filepath.EvalSymlinks`
+and verifies the real path is still within an allowed directory. If the real path has
+escaped, the read is blocked with an explicit error:
+
+```
+path traversal blocked: "../../etc/passwd" resolves via symlink outside allowed module paths [/home/user/osm-libs]
+```
+
+**3. Path validation at startup**
+
+All configured `script.module-paths` entries are validated at engine startup via
+`os.Stat` + `filepath.EvalSymlinks`. Invalid entries (nonexistent, not a directory,
+permission denied, unresolvable symlinks) are skipped with a warning rather than
+failing hard. Only successfully validated paths are registered as global search folders.
+
+**Scope**: Path-traversal protection applies to the global-folder (bare name) resolution
+path only. Absolute `require('/path/to/script.js')` calls bypass all containment checks.
+Users with `script.module-paths` configured should therefore not grant write access to
+those directories to untrusted code.
+
+### ES module syntax (ESM) limitations
+
+The `osm` scripting runtime uses [Goja](https://github.com/dop251/goja), which
+implements a CommonJS module system via [goja_nodejs](https://github.com/nicois/goja_nodejs).
+
+**ESM is not supported.** The following ES module syntax will cause a parse error:
+
+```js
+// NOT SUPPORTED — will throw a SyntaxError at load time
+import { exec } from 'osm:exec';
+export function helper() { return 42; }
+export default { key: 'value' };
+```
+
+Use CommonJS `require()` and `module.exports` instead:
+
+```js
+// SUPPORTED — CommonJS require/exports
+var exec = require('osm:exec');
+module.exports = { helper: function() { return 42; } };
+module.exports = { key: 'value' };
+```
+
+**Note on `import()` expressions**: Dynamic `import()` expressions are also not
+supported. Use `require()` for all module loading, including conditional or lazy loads.
+
+**Why not ESM?** Goja implements the ES5.1 spec with many ES2015+ extensions, but its
+module system predates WHATWG ESM and uses the CommonJS `require`/`module.exports`
+conventions. ESM support (static `import`/`export` declarations) is tracked upstream
+in goja but is not yet implemented. If ESM support is added to goja in a future
+release, `osm` will evaluate adopting it.

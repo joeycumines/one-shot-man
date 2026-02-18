@@ -23,6 +23,7 @@ If you just want to try it, see the [root README](../README.md).
 ## Architecture & internals
 
 - [Architecture](architecture.md)
+- [Claude-Mux Architecture](architecture-claude-mux.md)
 - [Security posture](security.md)
 - [Elm commands and Goja](reference/elm-commands-and-goja.md)
 - [Planning and acting using behavior trees](reference/planning-and-acting-using-behavior-trees.md)

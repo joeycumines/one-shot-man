@@ -1342,12 +1342,12 @@ func TestHotSnippetConfigParsing(t *testing.T) {
 	})
 }
 
-func TestOrchestratorConfigParsing(t *testing.T) {
+func TestClaudeMuxConfigParsing(t *testing.T) {
 	t.Parallel()
 
-	t.Run("ValidOrchestratorConfig", func(t *testing.T) {
+	t.Run("ValidClaudeMuxConfig", func(t *testing.T) {
 		t.Parallel()
-		configContent := `[orchestrator]
+		configContent := `[claude-mux]
 provider claude-code
 model claude-sonnet-4-20250514
 work-dir /tmp/agents
@@ -1369,7 +1369,7 @@ mcp-servers mcp-server-github,mcp-server-filesystem`
 			t.Fatalf("expected no error, got: %v", err)
 		}
 
-		oc := cfg.Orchestrator
+		oc := cfg.ClaudeMux
 		if oc.Provider != "claude-code" {
 			t.Errorf("Provider = %q, want %q", oc.Provider, "claude-code")
 		}
@@ -1420,10 +1420,10 @@ mcp-servers mcp-server-github,mcp-server-filesystem`
 		}
 	})
 
-	t.Run("OrchestratorDefaults", func(t *testing.T) {
+	t.Run("ClaudeMuxDefaults", func(t *testing.T) {
 		t.Parallel()
 		cfg := NewConfig()
-		oc := cfg.Orchestrator
+		oc := cfg.ClaudeMux
 
 		if oc.Provider != "claude-code" {
 			t.Errorf("default Provider = %q, want %q", oc.Provider, "claude-code")
@@ -1472,9 +1472,9 @@ mcp-servers mcp-server-github,mcp-server-filesystem`
 		}
 	})
 
-	t.Run("OrchestratorEnvVars", func(t *testing.T) {
+	t.Run("ClaudeMuxEnvVars", func(t *testing.T) {
 		t.Parallel()
-		configContent := `[orchestrator]
+		configContent := `[claude-mux]
 env FOO=bar
 env BAZ=qux=quux
 env EMPTY=`
@@ -1484,7 +1484,7 @@ env EMPTY=`
 			t.Fatalf("expected no error, got: %v", err)
 		}
 
-		oc := cfg.Orchestrator
+		oc := cfg.ClaudeMux
 		if len(oc.EnvVars) != 3 {
 			t.Fatalf("EnvVars length = %d, want 3", len(oc.EnvVars))
 		}
@@ -1501,9 +1501,9 @@ env EMPTY=`
 		}
 	})
 
-	t.Run("OrchestratorEnvVarInvalid", func(t *testing.T) {
+	t.Run("ClaudeMuxEnvVarInvalid", func(t *testing.T) {
 		t.Parallel()
-		configContent := "[orchestrator]\nenv NOEQUALSSIGN"
+		configContent := "[claude-mux]\nenv NOEQUALSSIGN"
 		_, err := LoadFromReader(strings.NewReader(configContent))
 		if err == nil {
 			t.Fatal("expected error for env without = sign")
@@ -1513,9 +1513,9 @@ env EMPTY=`
 		}
 	})
 
-	t.Run("OrchestratorInvalidPermissionPolicy", func(t *testing.T) {
+	t.Run("ClaudeMuxInvalidPermissionPolicy", func(t *testing.T) {
 		t.Parallel()
-		configContent := "[orchestrator]\npermission-policy allow"
+		configContent := "[claude-mux]\npermission-policy allow"
 		_, err := LoadFromReader(strings.NewReader(configContent))
 		if err == nil {
 			t.Fatal("expected error for invalid permission-policy")
@@ -1525,7 +1525,7 @@ env EMPTY=`
 		}
 	})
 
-	t.Run("OrchestratorInvalidIntOptions", func(t *testing.T) {
+	t.Run("ClaudeMuxInvalidIntOptions", func(t *testing.T) {
 		t.Parallel()
 		intOptions := []struct {
 			name  string
@@ -1540,7 +1540,7 @@ env EMPTY=`
 		for _, tc := range intOptions {
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
-				configContent := "[orchestrator]\n" + tc.input
+				configContent := "[claude-mux]\n" + tc.input
 				_, err := LoadFromReader(strings.NewReader(configContent))
 				if err == nil {
 					t.Errorf("expected error for invalid value %q", tc.input)
@@ -1549,9 +1549,9 @@ env EMPTY=`
 		}
 	})
 
-	t.Run("OrchestratorPartialConfig", func(t *testing.T) {
+	t.Run("ClaudeMuxPartialConfig", func(t *testing.T) {
 		t.Parallel()
-		configContent := `[orchestrator]
+		configContent := `[claude-mux]
 model gpt-4o
 max-agents 2`
 
@@ -1560,7 +1560,7 @@ max-agents 2`
 			t.Fatalf("expected no error, got: %v", err)
 		}
 
-		oc := cfg.Orchestrator
+		oc := cfg.ClaudeMux
 		// Specified values
 		if oc.Model != "gpt-4o" {
 			t.Errorf("Model = %q, want %q", oc.Model, "gpt-4o")
@@ -1590,11 +1590,11 @@ max-agents 2`
 		}
 	})
 
-	t.Run("OrchestratorWithOtherSections", func(t *testing.T) {
+	t.Run("ClaudeMuxWithOtherSections", func(t *testing.T) {
 		t.Parallel()
 		configContent := `verbose true
 
-[orchestrator]
+[claude-mux]
 provider openai
 max-agents 6
 
@@ -1609,12 +1609,12 @@ pager less`
 			t.Fatalf("expected no error, got: %v", err)
 		}
 
-		// Check orchestrator
-		if cfg.Orchestrator.Provider != "openai" {
-			t.Errorf("Orchestrator.Provider = %q, want %q", cfg.Orchestrator.Provider, "openai")
+		// Check claude-mux
+		if cfg.ClaudeMux.Provider != "openai" {
+			t.Errorf("ClaudeMux.Provider = %q, want %q", cfg.ClaudeMux.Provider, "openai")
 		}
-		if cfg.Orchestrator.MaxAgents != 6 {
-			t.Errorf("Orchestrator.MaxAgents = %d, want 6", cfg.Orchestrator.MaxAgents)
+		if cfg.ClaudeMux.MaxAgents != 6 {
+			t.Errorf("ClaudeMux.MaxAgents = %d, want 6", cfg.ClaudeMux.MaxAgents)
 		}
 
 		// Check other sections still work
@@ -1629,74 +1629,74 @@ pager less`
 		}
 	})
 
-	t.Run("OrchestratorNotInCommands", func(t *testing.T) {
+	t.Run("ClaudeMuxNotInCommands", func(t *testing.T) {
 		t.Parallel()
-		configContent := "[orchestrator]\nprovider test-provider"
+		configContent := "[claude-mux]\nprovider test-provider"
 		cfg, err := LoadFromReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
-		if _, exists := cfg.Commands["orchestrator"]; exists {
-			t.Error("orchestrator should not appear in Commands map")
+		if _, exists := cfg.Commands["claude-mux"]; exists {
+			t.Error("claude-mux should not appear in Commands map")
 		}
 	})
 
-	t.Run("OrchestratorUnknownOption", func(t *testing.T) {
+	t.Run("ClaudeMuxUnknownOption", func(t *testing.T) {
 		t.Parallel()
-		configContent := "[orchestrator]\nunknown-option value"
+		configContent := "[claude-mux]\nunknown-option value"
 		_, err := LoadFromReader(strings.NewReader(configContent))
 		if err == nil {
-			t.Fatal("expected error for unknown orchestrator option")
+			t.Fatal("expected error for unknown claude-mux option")
 		}
-		if !strings.Contains(err.Error(), "unknown orchestrator option") {
-			t.Errorf("error = %q, want to contain 'unknown orchestrator option'", err.Error())
+		if !strings.Contains(err.Error(), "unknown claude-mux option") {
+			t.Errorf("error = %q, want to contain 'unknown claude-mux option'", err.Error())
 		}
 	})
 
-	t.Run("OrchestratorPermissionPolicyReject", func(t *testing.T) {
+	t.Run("ClaudeMuxPermissionPolicyReject", func(t *testing.T) {
 		t.Parallel()
-		configContent := "[orchestrator]\npermission-policy reject"
+		configContent := "[claude-mux]\npermission-policy reject"
 		cfg, err := LoadFromReader(strings.NewReader(configContent))
 		if err != nil {
 			t.Fatalf("expected no error, got: %v", err)
 		}
-		if cfg.Orchestrator.PermissionPolicy != "reject" {
-			t.Errorf("PermissionPolicy = %q, want %q", cfg.Orchestrator.PermissionPolicy, "reject")
+		if cfg.ClaudeMux.PermissionPolicy != "reject" {
+			t.Errorf("PermissionPolicy = %q, want %q", cfg.ClaudeMux.PermissionPolicy, "reject")
 		}
 	})
 
-	t.Run("OrchestratorBooleanVariations", func(t *testing.T) {
+	t.Run("ClaudeMuxBooleanVariations", func(t *testing.T) {
 		t.Parallel()
 		trueValues := []string{"true", "1", "yes", "on", "TRUE", "Yes", "ON"}
 		for _, val := range trueValues {
-			configContent := "[orchestrator]\nenv-inherit " + val
+			configContent := "[claude-mux]\nenv-inherit " + val
 			cfg, err := LoadFromReader(strings.NewReader(configContent))
 			if err != nil {
 				t.Errorf("expected no error for %q, got: %v", val, err)
 				continue
 			}
-			if !cfg.Orchestrator.EnvInherit {
+			if !cfg.ClaudeMux.EnvInherit {
 				t.Errorf("expected EnvInherit=true for value %q", val)
 			}
 		}
 
 		falseValues := []string{"false", "0", "no", "off", "FALSE", "No", "OFF"}
 		for _, val := range falseValues {
-			configContent := "[orchestrator]\nenv-inherit " + val
+			configContent := "[claude-mux]\nenv-inherit " + val
 			cfg, err := LoadFromReader(strings.NewReader(configContent))
 			if err != nil {
 				t.Errorf("expected no error for %q, got: %v", val, err)
 				continue
 			}
-			if cfg.Orchestrator.EnvInherit {
+			if cfg.ClaudeMux.EnvInherit {
 				t.Errorf("expected EnvInherit=false for value %q", val)
 			}
 		}
 	})
 
-	t.Run("OrchestratorInvalidBooleanValue", func(t *testing.T) {
+	t.Run("ClaudeMuxInvalidBooleanValue", func(t *testing.T) {
 		t.Parallel()
-		configContent := "[orchestrator]\nenv-inherit maybe"
+		configContent := "[claude-mux]\nenv-inherit maybe"
 		_, err := LoadFromReader(strings.NewReader(configContent))
 		if err == nil {
 			t.Fatal("expected error for invalid boolean value")

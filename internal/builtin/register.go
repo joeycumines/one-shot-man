@@ -26,7 +26,7 @@ import (
 	jsonmod "github.com/joeycumines/one-shot-man/internal/builtin/json"
 	lipglossmod "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
 	"github.com/joeycumines/one-shot-man/internal/builtin/nextintegerid"
-	orchestratormod "github.com/joeycumines/one-shot-man/internal/builtin/orchestrator"
+	claudemuxmod "github.com/joeycumines/one-shot-man/internal/builtin/claudemux"
 	osmod "github.com/joeycumines/one-shot-man/internal/builtin/os"
 	pabtmod "github.com/joeycumines/one-shot-man/internal/builtin/pabt"
 	pathmod "github.com/joeycumines/one-shot-man/internal/builtin/path"
@@ -120,7 +120,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	})
 	registry.RegisterNativeModule(prefix+"grpc", grpcmod.Require(ch, pbMod, eventLoopProvider.Adapter()))
 
-	registry.RegisterNativeModule(prefix+"orchestrator", orchestratormod.Require(ctx))
+	registry.RegisterNativeModule(prefix+"claudemux", claudemuxmod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, tuiSink))
 	registry.RegisterNativeModule(prefix+"path", pathmod.Require)
 	registry.RegisterNativeModule(prefix+"pty", ptymod.Require(ctx))

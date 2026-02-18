@@ -1,4 +1,4 @@
-package orchestrator
+package claudemux
 
 import (
 	"context"
@@ -64,11 +64,11 @@ type Registry struct {
 
 var (
 	// ErrProviderNotFound is returned when a provider name is not registered.
-	ErrProviderNotFound = errors.New("orchestrator: provider not found")
+	ErrProviderNotFound = errors.New("claudemux: provider not found")
 	// ErrProviderExists is returned when registering a provider whose name is already taken.
-	ErrProviderExists = errors.New("orchestrator: provider already registered")
+	ErrProviderExists = errors.New("claudemux: provider already registered")
 	// ErrNoProviders is returned when an operation requires at least one registered provider.
-	ErrNoProviders = errors.New("orchestrator: no providers registered")
+	ErrNoProviders = errors.New("claudemux: no providers registered")
 )
 
 // NewRegistry creates an empty provider registry.

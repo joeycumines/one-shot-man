@@ -39,7 +39,7 @@
     "runMakeAfterEveryChange": "Run 'make make-all-with-log' (via config.mk target) after EVERY code change. Check 'make find-test-failures'. Zero failures required before proceeding."
   },
   "statusSection": {
-    "currentState": "DEEP ARCHITECTURAL PLANNING PHASE COMPLETE. Blueprint rewritten 2026-02-18. macOS baseline passes (make-all-with-log green). Branch wip is 251 commits ahead of main. Session timer started 2026-02-18T14:49:00Z. Next task: P004 (Linux baseline).",
+    "currentState": "Cross-platform baseline COMPLETE. All three platforms green (macOS, Linux via Docker, Windows via moo). Fixes: exec_test.go ETXTBSY, filelock_windows.go best-effort Remove, gitops.go PullRebase stdout+stderr conflict detection. Next task: P006 (DS_Store audit), then P007 (module resolution docs).",
     "sessionTimer": "File: .session-timer | Check with: make check-session-time",
     "completedPriorWork": "T001-T005 (races/PTY/make), T011-T016 (eventloop/gRPC/fetch/AbortSignal), T029-T096 (osm:flag, exec ctx, git diff, config persist, prompt-flow, hot-snippets, tview removal, cleanup sched, logging, etc.), T104-T106 (cross-platform, sync), T126-T127 (~/.osm, which-is-better), T135-T136 (deadcode/betteralign), T164 (CHANGELOG)"
   },
@@ -62,27 +62,31 @@
     {
       "task": "P004: Linux baseline verification",
       "description": "Run 'make make-all-in-container'. This uses Docker with golang container to run all checks on Linux. Verify with 'make find-test-failures'. Zero failures required. If failures found, fix before proceeding.",
-      "status": "Not Started"
+      "status": "Done",
+      "completionNote": "Fixed ETXTBSY in internal/builtin/exec/exec_test.go (multi-element array test uses osexec.LookPath('echo') instead of shell script). Linux all-green."
     },
     {
       "task": "P005: Windows baseline verification",
       "description": "Run 'make make-all-run-windows'. This uses hack/run-on-windows.sh to run all checks on Windows host 'moo'. Verify with 'make find-test-failures'. Zero failures required. If failures found, fix before proceeding.",
-      "status": "Not Started"
+      "status": "Done",
+      "completionNote": "Fixed filelock_windows.go best-effort Remove (silences SHARING_VIOLATION/ACCESS_DENIED). Fixed PullRebase in gitops.go to capture stdout for conflict detection and use case-insensitive matching. Windows all-green."
     },
     {
       "task": "P006: T178 - .DS_Store hygiene audit",
       "description": "Run 'make check-ds-store'. If any .DS_Store files are tracked, run 'make remove-ds-store' and commit removal. Verify .gitignore contains '.DS_Store'. Currently confirmed: no tracked files. Mark done.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "P007: T166 - Module resolution documentation",
       "description": "Document the require() algorithm: read internal/scripting/module_hardening.go, document path traversal protection, script.module-paths config key behavior, ESM feasibility in Goja (document limitations). Update docs/scripting.md or add docs/reference/module-resolution.md. Verify docs are accurate against code. Run make.",
-      "status": "Not Started"
+      "status": "Done",
+      "completionNote": "Added 'Module security (path-traversal protection)' and 'ES module syntax (ESM) limitations' sections to docs/scripting.md, accurately documenting all three security layers (path resolver check, symlink escape check, startup validation) and ESM non-support in Goja."
     },
     {
       "task": "P008: T031 - Rewrite architecture doc as claude-mux",
       "description": "REWRITE docs/architecture-ai-orchestrator.md FROM SCRATCH as docs/architecture-claude-mux.md. Cover: two-channel architecture (PTY + MCP), full invocation path (ollama launch claude -> model selection TUI -> Claude Code), dynamic MCP config per instance, MCP feedback protocol (reportProgress/reportResult/requestGuidance/reportError), guard rails, PTY spawning, multi-instance session isolation, security model, BT integration patterns, integration testing approach. Include Mermaid diagrams. NEVER use 'orchestrator'. DELETE the old file. Run make.",
-      "status": "Not Started"
+      "status": "Done",
+      "completionNote": "Created docs/architecture-claude-mux.md with two-channel architecture, full invocation path, MCP protocol, security model, session isolation, platform support, roadmap. Deleted docs/architecture-ai-orchestrator.md. Added to docs/README.md."
     },
     {
       "task": "P009: T032 - Rename orchestrator package to claudemux",

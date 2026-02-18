@@ -18,8 +18,8 @@ type Config struct {
 	Commands map[string]map[string]string
 	// Sessions configuration controls automatic session cleanup and retention.
 	Sessions SessionConfig
-	// Orchestrator controls AI Orchestrator behavior.
-	Orchestrator OrchestratorConfig
+	// ClaudeMux controls Claude-Mux (agent orchestration, PTY, MCP) behavior.
+	ClaudeMux ClaudeMuxConfig
 	// HotSnippets are user-configured text snippets that can be copied to
 	// clipboard from interactive modes. Parsed from the [hot-snippets]
 	// config section.
@@ -40,7 +40,7 @@ func NewConfig() *Config {
 			AutoCleanupEnabled:   true,
 			CleanupIntervalHours: 24,
 		},
-		Orchestrator: OrchestratorConfig{
+		ClaudeMux: ClaudeMuxConfig{
 			Provider:            "claude-code",
 			EnvInherit:          true,
 			PermissionPolicy:    "reject",
@@ -63,8 +63,8 @@ type HotSnippet struct {
 	Description string `json:"description,omitempty"`
 }
 
-// OrchestratorConfig controls AI Orchestrator behavior.
-type OrchestratorConfig struct {
+// ClaudeMuxConfig controls Claude-Mux (claude-code orchestration) behavior.
+type ClaudeMuxConfig struct {
 	// Provider is the default AI provider name (e.g., "claude-code").
 	Provider string `json:"provider" default:"claude-code"`
 	// Model is the default model identifier.
@@ -74,7 +74,7 @@ type OrchestratorConfig struct {
 	// EnvInherit controls whether agents inherit the parent environment.
 	EnvInherit bool `json:"envInherit" default:"true"`
 	// EnvVars are additional environment variables for all agents.
-	// Parsed from KEY=VALUE entries in the [orchestrator] config section.
+	// Parsed from KEY=VALUE entries in the [claude-mux] config section.
 	EnvVars map[string]string `json:"envVars"`
 	// EnvProfile is the active environment variable profile name.
 	EnvProfile string `json:"envProfile"`
@@ -164,7 +164,7 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 	var currentCommand string
 	var inSessionsSection bool
 	var inHotSnippetsSection bool
-	var inOrchestratorSection bool
+	var inClaudeMuxSection bool
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -181,22 +181,22 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 			case "sessions":
 				inSessionsSection = true
 				inHotSnippetsSection = false
-				inOrchestratorSection = false
+				inClaudeMuxSection = false
 				currentCommand = ""
 			case "hot-snippets":
 				inHotSnippetsSection = true
 				inSessionsSection = false
-				inOrchestratorSection = false
+				inClaudeMuxSection = false
 				currentCommand = ""
-			case "orchestrator":
-				inOrchestratorSection = true
+			case "claude-mux":
+				inClaudeMuxSection = true
 				inSessionsSection = false
 				inHotSnippetsSection = false
 				currentCommand = ""
 			default:
 				inSessionsSection = false
 				inHotSnippetsSection = false
-				inOrchestratorSection = false
+				inClaudeMuxSection = false
 				currentCommand = sectionName
 				if config.Commands[currentCommand] == nil {
 					config.Commands[currentCommand] = make(map[string]string)
@@ -228,10 +228,10 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 			if err := parseHotSnippetLine(&config.HotSnippets, optionName, value); err != nil {
 				return nil, fmt.Errorf("invalid hot-snippet %q: %w", optionName, err)
 			}
-		} else if inOrchestratorSection {
-			// Orchestrator configuration option
-			if err := parseOrchestratorOption(&config.Orchestrator, optionName, value); err != nil {
-				return nil, fmt.Errorf("invalid orchestrator option %q: %w", optionName, err)
+		} else if inClaudeMuxSection {
+			// Claude-Mux configuration option
+			if err := parseClaudeMuxOption(&config.ClaudeMux, optionName, value); err != nil {
+				return nil, fmt.Errorf("invalid claude-mux option %q: %w", optionName, err)
 			}
 		} else if currentCommand == "" {
 			// Global option
@@ -323,8 +323,8 @@ func parseSessionOption(sc *SessionConfig, name, value string) error {
 	return nil
 }
 
-// parseOrchestratorOption parses an orchestrator configuration option and
-// updates the OrchestratorConfig. Supported options:
+// parseClaudeMuxOption parses a claude-mux configuration option and
+// updates the ClaudeMuxConfig. Supported options:
 //   - provider <string>: Default AI provider name (default: "claude-code")
 //   - model <string>: Default model identifier
 //   - work-dir <string>: Default working directory for agents
@@ -339,7 +339,7 @@ func parseSessionOption(sc *SessionConfig, name, value string) error {
 //   - pty-cols <int>: Default PTY column count (default: 80)
 //   - provider-command <string>: Override provider executable path
 //   - mcp-servers <string>: Comma-separated MCP server commands
-func parseOrchestratorOption(oc *OrchestratorConfig, name, value string) error {
+func parseClaudeMuxOption(oc *ClaudeMuxConfig, name, value string) error {
 	switch name {
 	case "provider":
 		oc.Provider = value
@@ -418,7 +418,7 @@ func parseOrchestratorOption(oc *OrchestratorConfig, name, value string) error {
 		oc.MCPServers = value
 
 	default:
-		return fmt.Errorf("unknown orchestrator option: %s", name)
+		return fmt.Errorf("unknown claude-mux option: %s", name)
 	}
 	return nil
 }

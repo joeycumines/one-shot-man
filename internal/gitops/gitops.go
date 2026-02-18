@@ -4,17 +4,22 @@
 //
 // Design constraints:
 //   - go-git/v6 for clone, add, commit, push (no exec.Command)
-//   - Pull with rebase is NOT supported by go-git; callers must use
-//     exec.Command("git", "pull", "--rebase", ...) for that operation
+//   - Pull with rebase is NOT supported by go-git; PullRebase uses
+//     exec.Command("git", "pull", "--rebase", ...) as a consolidated
+//     shell-out wrapper — the only shell-out in this package
 //   - Auth is nil by default (works for local file:// repos)
 package gitops
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	git "github.com/go-git/go-git/v6"
@@ -29,6 +34,9 @@ var (
 
 	// ErrNothingToCommit is returned when there are no staged changes.
 	ErrNothingToCommit = errors.New("nothing to commit")
+
+	// ErrConflict is returned when a pull --rebase encounters merge conflicts.
+	ErrConflict = errors.New("merge conflict")
 )
 
 // Repo wraps a go-git Repository with simplified operations.
@@ -143,6 +151,53 @@ func (r *Repo) Push(ctx context.Context) error {
 			return nil // nothing to push
 		}
 		return fmt.Errorf("push: %w", err)
+	}
+	return nil
+}
+
+// PullRebaseOptions configures a PullRebase operation.
+type PullRebaseOptions struct {
+	// Dir is the working directory (repository root). Required.
+	Dir string
+
+	// GitBin overrides the git binary path. Default: "git".
+	GitBin string
+
+	// Stderr receives git's stderr output. May be nil.
+	Stderr io.Writer
+}
+
+// PullRebase executes "git pull --rebase origin HEAD" via shell-out.
+// This is the ONLY shell-out in the gitops package — go-git v6 does not
+// support rebase, so this operation cannot be implemented natively.
+//
+// Returns ErrConflict (wrapping the underlying exec error) if stderr
+// contains conflict indicators. Returns nil on success.
+func PullRebase(ctx context.Context, opts PullRebaseOptions) error {
+	gitBin := opts.GitBin
+	if gitBin == "" {
+		gitBin = "git"
+	}
+
+	var stderrBuf bytes.Buffer
+	var stderrWriter io.Writer = &stderrBuf
+	if opts.Stderr != nil {
+		stderrWriter = io.MultiWriter(opts.Stderr, &stderrBuf)
+	}
+
+	cmd := exec.CommandContext(ctx, gitBin, "pull", "--rebase", "origin", "HEAD")
+	if opts.Dir != "" {
+		cmd.Dir = opts.Dir
+	}
+	cmd.Stdout = io.Discard
+	cmd.Stderr = stderrWriter
+
+	if err := cmd.Run(); err != nil {
+		errOutput := stderrBuf.String()
+		if strings.Contains(errOutput, "CONFLICT") || strings.Contains(errOutput, "could not apply") {
+			return fmt.Errorf("%w: %w", ErrConflict, err)
+		}
+		return fmt.Errorf("pull --rebase: %w", err)
 	}
 	return nil
 }

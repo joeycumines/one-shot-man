@@ -1,13 +1,12 @@
 package command
 
 import (
-	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -356,17 +355,19 @@ func (c *SyncCommand) executePull(args []string, stdout, stderr io.Writer) error
 		return nil
 	}
 
-	// Pull with rebase.
-	var gitStderr bytes.Buffer
-	multiStderr := io.MultiWriter(stderr, &gitStderr)
-	if err := c.runGit(root, io.Discard, multiStderr, "pull", "--rebase", "origin", "HEAD"); err != nil {
-		// Check for conflict indicators.
-		errOutput := gitStderr.String()
-		if strings.Contains(errOutput, "CONFLICT") || strings.Contains(errOutput, "could not apply") {
+	// Pull with rebase — delegated to gitops.PullRebase (the only
+	// shell-out in the sync flow; go-git v6 does not support rebase).
+	err = gitops.PullRebase(context.Background(), gitops.PullRebaseOptions{
+		Dir:    root,
+		GitBin: c.GitBin,
+		Stderr: stderr,
+	})
+	if err != nil {
+		if errors.Is(err, gitops.ErrConflict) {
 			_, _ = fmt.Fprintln(stderr, "")
 			_, _ = fmt.Fprintf(stderr, "Resolve conflicts manually in: %s\n", root)
 			_, _ = fmt.Fprintln(stderr, "Then run: osm sync push")
-			return fmt.Errorf("sync pull encountered merge conflicts")
+			return fmt.Errorf("sync pull encountered merge conflicts: %w", err)
 		}
 		return fmt.Errorf("git pull failed: %w", err)
 	}
@@ -388,21 +389,6 @@ func (c *SyncCommand) syncRoot() (string, error) {
 		return "", fmt.Errorf("cannot determine home directory: %w", err)
 	}
 	return filepath.Join(home, ".osm", "sync"), nil
-}
-
-// runGit executes a git command. If dir is empty, CWD is used.
-func (c *SyncCommand) runGit(dir string, stdout, stderr io.Writer, args ...string) error {
-	gitBin := "git"
-	if c.GitBin != "" {
-		gitBin = c.GitBin
-	}
-	cmd := exec.Command(gitBin, args...)
-	if dir != "" {
-		cmd.Dir = dir
-	}
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	return cmd.Run()
 }
 
 // discoverEntries walks the notebooks directory and returns all entries.

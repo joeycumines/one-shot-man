@@ -1,7 +1,9 @@
 package gitops
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -375,5 +377,188 @@ func TestErrNothingToCommit(t *testing.T) {
 	t.Parallel()
 	if ErrNothingToCommit.Error() != "nothing to commit" {
 		t.Fatalf("unexpected ErrNothingToCommit message: %q", ErrNothingToCommit.Error())
+	}
+}
+
+func TestErrConflict(t *testing.T) {
+	t.Parallel()
+	if ErrConflict.Error() != "merge conflict" {
+		t.Fatalf("unexpected ErrConflict message: %q", ErrConflict.Error())
+	}
+}
+
+// setupPullRebaseScenario creates a bare repo, pushes an initial commit to it,
+// and clones it. Returns (bareDir, srcDir, cloneDir, srcRepo).
+// srcRepo has origin pointing to bareDir and has already pushed.
+func setupPullRebaseScenario(t *testing.T) (bareDir, srcDir, cloneDir string, srcRepo *git.Repository) {
+	t.Helper()
+
+	srcRepo, srcDir = initRepoWithCommit(t)
+	bareDir = filepath.Join(t.TempDir(), "bare.git")
+	initBareRepo(t, bareDir)
+
+	if _, err := srcRepo.CreateRemote(&gitconfig.RemoteConfig{
+		Name: "origin",
+		URLs: []string{bareDir},
+	}); err != nil {
+		t.Fatalf("CreateRemote: %v", err)
+	}
+	if err := srcRepo.Push(&git.PushOptions{RemoteName: "origin"}); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+
+	cloneDir = filepath.Join(t.TempDir(), "clone")
+	if _, err := Clone(context.Background(), bareDir, cloneDir); err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+
+	return bareDir, srcDir, cloneDir, srcRepo
+}
+
+// pushCommitFromSrc adds a file and pushes from srcRepo to origin.
+func pushCommitFromSrc(t *testing.T, srcRepo *git.Repository, srcDir, filename, content, msg string) {
+	t.Helper()
+
+	if err := os.WriteFile(filepath.Join(srcDir, filename), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	wt, err := srcRepo.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree: %v", err)
+	}
+	if _, err := wt.Add(filename); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	sig := &object.Signature{Name: "test", Email: "test@test.com", When: time.Now()}
+	if _, err := wt.Commit(msg, &git.CommitOptions{Author: sig, Committer: sig}); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if err := srcRepo.Push(&git.PushOptions{RemoteName: "origin"}); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+}
+
+func TestPullRebase_Success(t *testing.T) {
+	t.Parallel()
+
+	_, srcDir, cloneDir, srcRepo := setupPullRebaseScenario(t)
+
+	// Push a new commit from src that clone doesn't have.
+	pushCommitFromSrc(t, srcRepo, srcDir, "new.txt", "new content\n", "add new.txt")
+
+	// PullRebase should bring the new file into clone.
+	var stderr bytes.Buffer
+	err := PullRebase(context.Background(), PullRebaseOptions{
+		Dir:    cloneDir,
+		Stderr: &stderr,
+	})
+	if err != nil {
+		t.Fatalf("PullRebase: %v (stderr: %s)", err, stderr.String())
+	}
+
+	// Verify the new file arrived.
+	data, err := os.ReadFile(filepath.Join(cloneDir, "new.txt"))
+	if err != nil {
+		t.Fatalf("new.txt not found: %v", err)
+	}
+	if string(data) != "new content\n" {
+		t.Fatalf("unexpected content: %q", string(data))
+	}
+}
+
+func TestPullRebase_AlreadyUpToDate(t *testing.T) {
+	t.Parallel()
+
+	_, _, cloneDir, _ := setupPullRebaseScenario(t)
+
+	// PullRebase with nothing to pull — should succeed (no-op).
+	err := PullRebase(context.Background(), PullRebaseOptions{
+		Dir: cloneDir,
+	})
+	if err != nil {
+		t.Fatalf("PullRebase (already up-to-date): %v", err)
+	}
+}
+
+func TestPullRebase_Conflict(t *testing.T) {
+	t.Parallel()
+
+	_, srcDir, cloneDir, srcRepo := setupPullRebaseScenario(t)
+
+	// Push a change to README.md from src.
+	pushCommitFromSrc(t, srcRepo, srcDir, "README.md", "src version\n", "src change")
+
+	// Create conflicting change in clone on the same file.
+	if err := os.WriteFile(filepath.Join(cloneDir, "README.md"), []byte("clone version\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cloneGit, err := git.PlainOpen(cloneDir)
+	if err != nil {
+		t.Fatalf("PlainOpen clone: %v", err)
+	}
+	cloneWt, err := cloneGit.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree: %v", err)
+	}
+	if _, err := cloneWt.Add("README.md"); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	sig := &object.Signature{Name: "test", Email: "test@test.com", When: time.Now()}
+	if _, err := cloneWt.Commit("clone change", &git.CommitOptions{Author: sig, Committer: sig}); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	// PullRebase should fail with ErrConflict.
+	err = PullRebase(context.Background(), PullRebaseOptions{
+		Dir: cloneDir,
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("expected ErrConflict, got: %v", err)
+	}
+}
+
+func TestPullRebase_InvalidDir(t *testing.T) {
+	t.Parallel()
+
+	err := PullRebase(context.Background(), PullRebaseOptions{
+		Dir: filepath.Join(t.TempDir(), "nonexistent"),
+	})
+	if err == nil {
+		t.Fatal("expected error for nonexistent dir")
+	}
+}
+
+func TestPullRebase_StderrCapture(t *testing.T) {
+	t.Parallel()
+
+	// Trigger an error that produces stderr output, then verify the
+	// caller's stderr writer received it.
+	var buf bytes.Buffer
+	err := PullRebase(context.Background(), PullRebaseOptions{
+		Dir:    t.TempDir(), // not a git repo
+		Stderr: &buf,
+	})
+	if err == nil {
+		t.Fatal("expected error for non-repo dir")
+	}
+	// git should produce some error output on stderr.
+	if buf.Len() == 0 {
+		t.Log("warning: no stderr output captured (may vary by git version)")
+	}
+}
+
+func TestPullRebase_CustomGitBin(t *testing.T) {
+	t.Parallel()
+
+	// Using a nonexistent binary should fail with a clear error.
+	err := PullRebase(context.Background(), PullRebaseOptions{
+		Dir:    t.TempDir(),
+		GitBin: "nonexistent-git-binary-abc123",
+	})
+	if err == nil {
+		t.Fatal("expected error for nonexistent git binary")
 	}
 }

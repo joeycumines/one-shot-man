@@ -1,10 +1,10 @@
 package command
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -32,12 +32,10 @@ func SyncAutoPull(cfg *config.Config, stderr io.Writer) {
 		return
 	}
 
-	gitBin := "git"
-	cmd := exec.Command(gitBin, "pull", "--rebase", "origin", "HEAD")
-	cmd.Dir = root
-	cmd.Stdout = io.Discard
-	cmd.Stderr = stderr
-	if err := cmd.Run(); err != nil {
+	if err := gitops.PullRebase(context.Background(), gitops.PullRebaseOptions{
+		Dir:    root,
+		Stderr: stderr,
+	}); err != nil {
 		_, _ = fmt.Fprintf(stderr, "sync auto-pull failed: %v\n", err)
 	}
 }

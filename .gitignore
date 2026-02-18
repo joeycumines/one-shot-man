@@ -1,6 +1,9 @@
 # If you prefer the allow list template instead of the deny list, see community template:
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
+# macOS metadata
+.DS_Store
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
@@ -53,6 +56,7 @@ test-scripts/
 
 # Session timer file
 /.session-start
+/.session-timer
 
 /.claude/*.local.*
 /.github/copilot-instructions.md

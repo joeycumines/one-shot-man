@@ -1,24 +1,19 @@
 # WIP — Session Continuation
 
-## Current State
+## Current State (2026-02-18)
 
-- **T001-T005**: ALL DONE. Rule of Two passed (2/2).
-- **T104+T105**: ALL DONE. Rule of Two passed (2/2). Cross-platform zero failures.
-- **T135+T136**: ALL DONE. Deadcode + betteralign audits clean.
-- **T011**: ALL DONE. Rule of Two passed (2/2).
-- **T012**: ALL DONE. Rule of Two passed (2/2).
-- **T013**: ALL DONE. Rule of Two passed (2/2). Promise-based fetch. All platforms zero failures.
-- **T164**: DONE. CHANGELOG entries for T011-T013, T001, T002, T104, T105.
-- **Windows throttle fix**: DONE. coverage_gaps_test.go 1ms→500ms.
-- **T015**: DONE. AbortSignal wired into osm:fetch (signal option, applySignal, 3 tests). Docs updated.
-- **T016**: DONE. Rewrote macos-use-sdk-evaluation.md.
-- **Branch**: `wip` (230+ commits ahead of `main`).
+- **Completed this session**: T178 (gitignore hygiene), T179 (baseline.blueprint.json), T017 (PullRebase consolidation)
+- **Branch**: `wip` (232+ commits ahead of `main`)
+- **macOS tests**: All pass (zero failures, full make-all-with-log)
+- **Session timer**: .session-timer, check with `make check-session-time`
 
-## Uncommitted Changes
+## T017 Summary
 
-- T015: internal/builtin/fetch/fetch.go (signal support), fetch_test.go (3 abort tests), docs/scripting.md (signal option + examples)
-- T016: docs/archive/notes/macos-use-sdk-evaluation.md (rewritten)
+- Created `gitops.PullRebase()` with `PullRebaseOptions` struct and `ErrConflict` sentinel
+- Consolidated two shell-out sites (sync.go `runGit` + sync_startup.go `exec.Command`) into single function
+- 6 tests: Success, AlreadyUpToDate, Conflict, InvalidDir, StderrCapture, CustomGitBin
+- Removed `runGit` method from sync.go, cleaned imports in both files
 
 ## Immediate Next Step
 
-Run full make. Rule of Two. Commit T015+T016. Then proceed to next task (T014 ReadableStream, T017 go-git v6 audit, T161 goal autodiscovery).
+Rule of Two review gate for T017+T178+T179, then commit. After commit, proceed to next task (T102 security audit or T161 goal autodiscovery).

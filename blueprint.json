@@ -340,8 +340,8 @@
     },
     {
       "task": "T132: Error message consistency audit",
-      "description": "All packages: consistent 'pkg: message' formatting. User clarity. Debug context. No raw Go errors. Consistent exit codes. Sentinel errors. Tests for error paths. Run make.",
-      "status": "Not Started"
+      "description": "Audited all production Go files for error message inconsistencies. Found and fixed 6 issues: (1) pabt/state.go — lowercase error + pkg prefix. (2-4) gitops/gitops.go — added 'gitops:' prefix to 3 sentinel errors (ErrNotRepo, ErrNothingToCommit, ErrConflict). (5-6) scripting/engine_core.go + tui_manager.go — changed %v to %w for error wrapping, enabling errors.Is/errors.As chains. Updated all test assertions (gitops_test.go, pabt/coverage_gaps_test.go). All pass with -race.",
+      "status": "Done"
     },
     {
       "task": "T133: Shell completion audit",

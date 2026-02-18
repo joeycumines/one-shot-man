@@ -41,8 +41,8 @@ func FuzzSanitizeFilename(f *testing.F) {
 		`"quoted"`,
 		"trailing.  ",
 		"trailing...",
-		"con",       // lowercase reserved
-		"Con.txt",   // mixed case reserved
+		"con",     // lowercase reserved
+		"Con.txt", // mixed case reserved
 		"nul.tar.gz",
 		"_",
 		"__",

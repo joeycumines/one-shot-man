@@ -10,7 +10,7 @@
       "warning": "ON TOOLS: Use config.mk to create custom targets to run with Make. ALWAYS use custom targets that limit the amount of output you receive. For example, piping through tail, with FEW lines output. Prior to tail, pipe to tee. The file ./build.log in the root of the project is gitignored, so use that. That way you can search the output. Timing dependent tests are BANNED. As are those that take too long to run. Abide. OBEY."
     },
     {
-      "warning": "CLI ENTRY POINT: The CLI wrapper wraps ollama launch claude, NOT just claude. The full invocation path involves: (1) ollama launch claude --config, (2) a TUI model selection menu that MUST be navigated programmatically over PTY, (3) then the Claude Code session itself. The model selection menu is a CRITICAL MANDATORY PATH."
+      "warning": "CLI ENTRY POINT: The CLI wrapper wraps ollama launch claude, NOT just claude. The full invocation path involves: (1) ollama launch claude --config, (2) a TUI model selection menu that MUST be navigated programmatically over PTY, (3) then the Claude Code session itself. The model selection menu is a CRITICAL PATH."
     },
     {
       "warning": "NAMING: The word 'orchestrator' is RETIRED as a module/package name. The correct name is 'claude-mux' or similar (finalised by T031). If you see 'orchestrator' in code or docs, it MUST be corrected."
@@ -20,12 +20,15 @@
     },
     {
       "warning": "DECISIONS: Every task previously framed as a 'decision' or 'evaluation' reached the WRONG conclusion. The correct answer was always: follow the spec, use the proper library, do the actual work."
+    },
+    {
+      "warning": "IMMEDIATE FOCUS: ALL claude-mux related work is the immediate top priority. The strong desire is to COMPLETE 100% of claude code wrapper related work with END-TO-END EXTREMELY WELL INTEGRATION. Integration testing (T101) is required - it is the ONLY way this implementation will succeed. There is no success without full integration testing."
     }
   ],
   "mandatoryDirectives": {
     "contextManagement": "Tasks are grouped to be executed in manageable units. Do not attempt to solve all tasks in a single turn.",
-    "subagentPolicy": "Use subagents for execution of distinct task groups, and for the mandatory Rule of Two review gate. Serial only.",
-    "blueprintRefinement": "Continual blueprint refinement is MANDATORY. After every task completion, re-read the blueprint and fix stale descriptions. Add discovered work. Split coarse tasks."
+    "subagentPolicy": "Use subagents for execution of distinct task groups, and for the Rule of Two review gate. Serial only.",
+    "blueprintRefinement": "Continual blueprint refinement is required. After every task completion, re-read the blueprint and fix stale descriptions. Add discovered work. Split coarse tasks."
   },
   "statusSection": {
     "currentState": "PLANNING PHASE COMPLETE. Branch wip is 232 commits ahead of main. All macOS tests pass (zero failures). Prior completed work spans: T001-T005 (race fixes, PTY fixes, make pass), T011-T016 (eventloop migration, goja-grpc, fetch API, AbortSignal, macos docs), T029-T096 (osm:flag, exec context, git diff completion, config persist, prompt-flow QoL, hot-snippets, tview removal, cleanup scheduler, logging, etc.), T104-T105 (cross-platform Linux/Windows), T126-T127 (~/.osm migration, which-one-is-better goal), T135-T136 (deadcode/betteralign audits), T164 (CHANGELOG). Session started 2026-02-18 14:11:26, ends 23:11:26.",
@@ -33,37 +36,31 @@
   },
   "sequentialTasks": [
     {
-      "task": "T162: Sync common config enhancement",
-      "description": "Enhance sync for common config: (1) Conflict handling — prompt override vs skip for unknown-state files. (2) Schema versioning in sync metadata. (3) Gitignored file handling. (4) Edge cases: empty repo, partial failure, concurrent sync. Run make.",
+      "task": "T999: Cross-platform verification (all three platforms)",
+      "description": "CRITICAL: Ensure ALL checks pass reliably on all three platforms. Execute: (1) macOS: make-all-with-log, (2) Linux: make-all-in-container (runs in Docker golang container), (3) Windows: make-all-run-windows (uses host 'moo'). Zero failures required on ALL platforms before any claude-mux integration work is considered complete. This is the required quality gate. Record results in build.log and search for failures via make find-test-failures.",
       "status": "Not Started"
     },
     {
-      "task": "T163: Autodiscovery refinement",
-      "description": "Verify osm goal paths / osm script paths. Test: config key respect, symlink traversal, permission errors, performance with many paths, debug logging. Edge case tests. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T167: Prompt file (.prompt.md) enhancement",
-      "description": "Verify .prompt.md discovery via prompt.file-paths config. Test: goal references, VS Code conventions, composition, templating. Add missing tests. Update docs. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T014: Implement ReadableStream for Response.body streaming",
-      "description": "Add ReadableStream to fetch Response.body. getReader() returns ReadableStreamDefaultReader. reader.read() returns Promise<{value: Uint8Array, done: boolean}>. Support: SSE, chunked encoding, large downloads without full buffering. Back-pressure via io.Reader goroutine pause. Tests with httptest. Integrate with fetch.go Response constructor. Run make.",
+      "task": "T072: Main claude-mux entry point",
+      "description": "Top-level command. Config keys claude-mux.*. Fail-closed. Audit logging. Register as built-in. Wire: T068+T069+T070+T071+T063. Tests. Run make. CRITICAL: This is the integration point for ALL claude-mux components. MUST pass full integration testing (T101).",
       "status": "Not Started",
       "blockedBy": [
-        "T013"
-      ]
+        "T068",
+        "T069",
+        "T070",
+        "T071",
+        "T063"
+      ],
+      "notes": "This is the endpoint. Integration testing (T101) is required to validate this implementation."
     },
     {
-      "task": "T173: macOS process hierarchy fallback for session ID",
-      "description": "macOS falls back to UUID when TERM_SESSION_ID unset. Implement Darwin Deep Anchor walk: (1) sysctl/libproc for process tree. (2) Skip ephemeral wrappers. (3) Shell boundaries (bash, zsh, fish). (4) Root boundaries (login, sshd, launchd). (5) Start time for PID recycling. (6) session_darwin.go with build tag. (7) Update session_other.go build tag. (8) Update doc. (9) Tests for persistence. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T168: Anthropic prompt library expansion",
-      "description": "Add 3-5 built-in goals to goal_builtin.go. Review https://platform.claude.com/docs/en/resources/prompt-library/library for gaps. Each: stateVars, hotSnippets, flagDefs, promptOptions. Tests for metadata, state, commands, uniqueness, JSON roundtrip. Run make.",
-      "status": "Not Started"
+      "task": "T101: Integration testing for claude-mux",
+      "description": "CRITICAL: Integration testing is THE ONLY WAY THIS IMPLEMENTATION WILL SUCCEED. TestMain with -integration flag. -provider=ollama, -model=gpt-oss:20b-cloud. Full PTY flow. Config.mk target. Properly skipped when flag unset. MUST test: PTY spawn, model selection navigation, MCP startup, tool calls, result parsing, guard rails, error recovery, multi-instance. Without integration testing there is NO success. Run make.",
+      "status": "Not Started",
+      "blockedBy": [
+        "T072"
+      ],
+      "notes": "This is the ONLY way to validate claude-mux works end-to-end. No integration test = no valid implementation. Execute Rule of Two verification for this task specifically."
     },
     {
       "task": "T031: Rewrite architecture doc as claude-mux",
@@ -179,14 +176,15 @@
     },
     {
       "task": "T069: Claude Code wrapper/parser native module",
-      "description": "JS module: createSession, sendTask, onProgress, onResult, onGuidanceRequest, parseOutput, close. Register in register.go. Tests. Run make.",
+      "description": "JS module: createSession, sendTask, onProgress, onResult, onGuidanceRequest, parseOutput, close. Register in register.go. Tests. Run make. CRITICAL: This is the core claude code wrapper - integration testing is required.",
       "status": "Not Started",
       "blockedBy": [
         "T032",
         "T033",
         "T061",
         "T062"
-      ]
+      ],
+      "notes": "Core claude code wrapper - MUST have 100% end-to-end integration testing to validate correctness."
     },
     {
       "task": "T070: Safety validation",
@@ -206,16 +204,37 @@
       ]
     },
     {
-      "task": "T072: Main claude-mux entry point",
-      "description": "Top-level command. Config keys claude-mux.*. Fail-closed. Audit logging. Register as built-in. Wire: T068+T069+T070+T071+T063. Tests. Run make.",
+      "task": "T162: Sync common config enhancement",
+      "description": "Enhance sync for common config: (1) Conflict handling — prompt override vs skip for unknown-state files. (2) Schema versioning in sync metadata. (3) Gitignored file handling. (4) Edge cases: empty repo, partial failure, concurrent sync. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T163: Autodiscovery refinement",
+      "description": "Verify osm goal paths / osm script paths. Test: config key respect, symlink traversal, permission errors, performance with many paths, debug logging. Edge case tests. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T167: Prompt file (.prompt.md) enhancement",
+      "description": "Verify .prompt.md discovery via prompt.file-paths config. Test: goal references, VS Code conventions, composition, templating. Add missing tests. Update docs. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T014: Implement ReadableStream for Response.body streaming",
+      "description": "Add ReadableStream to fetch Response.body. getReader() returns ReadableStreamDefaultReader. reader.read() returns Promise<{value: Uint8Array, done: boolean}>. Support: SSE, chunked encoding, large downloads without full buffering. Back-pressure via io.Reader goroutine pause. Tests with httptest. Integrate with fetch.go Response constructor. Run make.",
       "status": "Not Started",
       "blockedBy": [
-        "T068",
-        "T069",
-        "T070",
-        "T071",
-        "T063"
+        "T013"
       ]
+    },
+    {
+      "task": "T173: macOS process hierarchy fallback for session ID",
+      "description": "macOS falls back to UUID when TERM_SESSION_ID unset. Implement Darwin Deep Anchor walk: (1) sysctl/libproc for process tree. (2) Skip ephemeral wrappers. (3) Shell boundaries (bash, zsh, fish). (4) Root boundaries (login, sshd, launchd). (5) Start time for PID recycling. (6) session_darwin.go with build tag. (7) Update session_other.go build tag. (8) Update doc. (9) Tests for persistence. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T168: Anthropic prompt library expansion",
+      "description": "Add 3-5 built-in goals to goal_builtin.go. Review https://platform.claude.com/docs/en/resources/prompt-library/library for gaps. Each: stateVars, hotSnippets, flagDefs, promptOptions. Tests for metadata, state, commands, uniqueness, JSON roundtrip. Run make.",
+      "status": "Not Started"
     },
     {
       "task": "T169: osm mcp prompt — polymorphic terminal wrapper",
@@ -257,14 +276,6 @@
       "status": "Not Started"
     },
     {
-      "task": "T101: Integration testing for claude-mux",
-      "description": "TestMain with -integration flag. -provider=ollama, -model=gpt-oss:20b-cloud. Full PTY flow. Config.mk target. Properly skipped when flag unset. Run make.",
-      "status": "Not Started",
-      "blockedBy": [
-        "T072"
-      ]
-    },
-    {
       "task": "T166: Module resolution / ESM investigation",
       "description": "Document require() algorithm (internal/scripting/module_hardening.go). Verify path traversal protection. Assess ESM feasibility in Goja. Document limitations. Verify script.module-paths config key. Run make.",
       "status": "Not Started"
@@ -280,7 +291,7 @@
     "description": "Execute after: (a) Each code change, (b) Each test addition, (c) Each task completion, (d) Each bug fix. Check build.log via 'make find-test-failures'.",
     "failPolicy": "If ANY test fails, STOP IMMEDIATELY and fix before proceeding. Zero tolerance.",
     "testCoverage": "Target 100% effective test coverage. VERIFY with go tool cover.",
-    "crossPlatform": "Periodically run make-all-in-container (Linux) and make-all-run-windows (Windows). All three platforms must pass."
+    "crossPlatform": "Periodically run make-all-in-container (Linux) and make-all-run-windows (Windows). All three platforms must pass. Windows host 'moo' is available for make-all-run-windows."
   },
   "fileCorrectionMandate": {
     "purpose": "These files are WRONG and MUST BE CORRECTED.",
@@ -333,6 +344,14 @@
     {
       "type": "BLUEPRINT_REFINEMENT",
       "alert": "Continually refine. After every task, re-read. Fix stale descriptions. Add discovered work."
+    },
+    {
+      "type": "CRITICAL_INTEGRATION_NOTICE",
+      "alert": "Integration testing (T101) is required for claude-mux success. There is NO success without it. Execute Rule of Two verification for T101 specifically."
+    },
+    {
+      "type": "CROSS_PLATFORM_GATE",
+      "alert": "T999 (cross-platform verification) MUST pass on ALL three platforms before claude-mux work is considered complete. Use make-all-with-log (macOS), make-all-in-container (Linux), make-all-run-windows (Windows via 'moo')."
     }
   ]
 }

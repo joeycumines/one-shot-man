@@ -91,7 +91,7 @@
     {
       "task": "P009: T032 - Rename orchestrator package to claudemux",
       "description": "Rename internal/builtin/orchestrator/ to internal/builtin/claudemux/. Steps: (1) Rename directory. (2) Change all 'package orchestrator' to 'package claudemux'. (3) Update import path in internal/builtin/register.go and all other importers. (4) Change JS module name 'osm:orchestrator' to 'osm:claudemux' in module.go. (5) Update all test files in the package. (6) Update internal/builtin/register_test.go. (7) Update scripts/bt-templates/orchestrator.js require() calls. Run 'make make-all-with-log' and fix any issues.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "P010: T034 - Rename BT templates file to claude-mux.js",

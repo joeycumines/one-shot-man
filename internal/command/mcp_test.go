@@ -1340,9 +1340,9 @@ func TestMCPServer_ListSessions_Empty(t *testing.T) {
 	}
 }
 
-// --- Orchestrator workflow (full E2E) ---
+// --- ClaudeMux workflow (full E2E) ---
 
-func TestMCPServer_OrchestratorWorkflow(t *testing.T) {
+func TestMCPServer_ClaudeMuxWorkflow(t *testing.T) {
 	t.Parallel()
 	env := newMCPTestEnv(t, nil)
 

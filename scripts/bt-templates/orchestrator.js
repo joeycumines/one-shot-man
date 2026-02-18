@@ -37,7 +37,7 @@ var exec = require('osm:exec');
 //
 // Parameters:
 //   bb           — bt.Blackboard instance
-//   registry     — provider Registry from osm:orchestrator
+//   registry     — provider Registry from osm:claudemux
 //   providerName — provider name (default: 'claude-code')
 //   spawnOpts    — optional SpawnOpts object {model, dir, rows, cols, env, args}
 exports.spawnClaude = function(bb, registry, providerName, spawnOpts) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	goruntime "runtime"
 	"testing"
@@ -44,9 +45,15 @@ func writeScript(t *testing.T, contents string) string {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "script.sh")
 
-	// Use write-to-temp + rename to avoid ETXTBSY on Docker's overlayfs.
-	// The target path was never opened for writing, so exec cannot see
-	// a stale inode marked as "text busy".
+	// Two-step write: commit to a staging file, then rename to the target.
+	// On some Docker overlayfs configurations, a file that is the direct
+	// target of an open-write-close sequence can still receive ETXTBSY on
+	// exec in the same process.  Using a different staging name + rename
+	// reduces the likelihood because the exec-facing path was never the
+	// destination of a write syscall (only its now-replaced staging twin
+	// was).  When this is still insufficient (kernel/overlayfs bug), tests
+	// that need system binaries should call osexec.LookPath() directly
+	// rather than writing a shell wrapper script.
 	tmp := path + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o700)
 	if err != nil {
@@ -259,10 +266,15 @@ func TestExecv_EdgeCases(t *testing.T) {
 	})
 
 	t.Run("multi-element array passes args", func(t *testing.T) {
-		script := writeScript(t, "#!/bin/sh\necho \"$@\"")
-		res, err := execvFn(goja.Undefined(), runtime.ToValue([]string{script, "foo", "bar"}))
+		// Use the system 'echo' binary rather than a script file to avoid
+		// ETXTBSY on Docker's overlayfs when exec'ing a newly-written file.
+		echoBin, err := osexec.LookPath("echo")
 		if err != nil {
-			t.Fatalf("execv returned unexpected Go error: %v", err)
+			t.Skipf("echo not found in PATH, skipping: %v", err)
+		}
+		res, goErr := execvFn(goja.Undefined(), runtime.ToValue([]string{echoBin, "foo", "bar"}))
+		if goErr != nil {
+			t.Fatalf("execv returned unexpected Go error: %v", goErr)
 		}
 		r := exportResult(t, runtime, res)
 		if r["error"] != false || toInt64(r["code"]) != 0 {

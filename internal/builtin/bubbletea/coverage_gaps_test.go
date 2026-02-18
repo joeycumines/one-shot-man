@@ -1153,7 +1153,7 @@ func TestView_ThrottleSchedulesCancelledCtx(t *testing.T) {
 	model := &jsModel{
 		runtime:            vm,
 		throttleEnabled:    true,
-		throttleIntervalMs: 1, // Very short interval
+		throttleIntervalMs: 500, // Long enough interval for Windows timer resolution
 		viewFn: createViewFn(vm, func(state goja.Value) string {
 			return "view"
 		}),

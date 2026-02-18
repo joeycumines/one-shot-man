@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -121,5 +122,58 @@ func TestSchemaVersion_InDefaultSchema(t *testing.T) {
 	}
 	if opt.Default != "1" {
 		t.Errorf("expected default '1', got %q", opt.Default)
+	}
+}
+
+func TestCheckSchemaVersion_Current(t *testing.T) {
+	t.Parallel()
+	c := NewConfig()
+	c.SetGlobalOption("config.schema-version", "1")
+
+	issues := CheckSchemaVersion(c)
+	if len(issues) != 0 {
+		t.Fatalf("expected no issues for current version, got: %v", issues)
+	}
+}
+
+func TestCheckSchemaVersion_Outdated(t *testing.T) {
+	t.Parallel()
+	c := NewConfig()
+	// No config.schema-version → version 0 → outdated.
+
+	issues := CheckSchemaVersion(c)
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue for outdated version, got %d: %v", len(issues), issues)
+	}
+	if !strings.Contains(issues[0], "outdated") {
+		t.Errorf("expected 'outdated' in issue message, got: %s", issues[0])
+	}
+}
+
+func TestCheckSchemaVersion_FutureVersion(t *testing.T) {
+	t.Parallel()
+	c := NewConfig()
+	c.SetGlobalOption("config.schema-version", "999")
+
+	issues := CheckSchemaVersion(c)
+	if len(issues) != 1 {
+		t.Fatalf("expected 1 issue for future version, got %d: %v", len(issues), issues)
+	}
+	if !strings.Contains(issues[0], "newer than supported") {
+		t.Errorf("expected 'newer than supported' in issue message, got: %s", issues[0])
+	}
+}
+
+func TestCheckSchemaVersion_DoesNotMutateOriginal(t *testing.T) {
+	t.Parallel()
+	c := NewConfig()
+	// No version → outdated → migration would set version.
+
+	_ = CheckSchemaVersion(c)
+
+	// Original config should NOT have been modified.
+	_, ok := c.GetGlobalOption("config.schema-version")
+	if ok {
+		t.Fatal("CheckSchemaVersion mutated the original config")
 	}
 }

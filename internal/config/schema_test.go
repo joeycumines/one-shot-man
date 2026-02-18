@@ -694,6 +694,45 @@ func TestValidateType_UnknownType(t *testing.T) {
 	}
 }
 
+// --- ValidateOptionValue tests (exported wrapper) ---
+
+func TestValidateOptionValue_Valid(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		typ   OptionType
+		value string
+	}{
+		{TypeString, "hello"},
+		{TypeBool, "true"},
+		{TypeInt, "42"},
+		{TypeDuration, "5m"},
+		{TypePathList, "/a:/b"},
+	}
+	for _, tc := range tests {
+		if err := ValidateOptionValue(tc.typ, tc.value); err != nil {
+			t.Errorf("ValidateOptionValue(%q, %q): unexpected error: %v", tc.typ, tc.value, err)
+		}
+	}
+}
+
+func TestValidateOptionValue_Invalid(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		typ   OptionType
+		value string
+	}{
+		{TypeBool, "maybe"},
+		{TypeInt, "abc"},
+		{TypeDuration, "notduration"},
+		{"unknowntype", "anything"},
+	}
+	for _, tc := range tests {
+		if err := ValidateOptionValue(tc.typ, tc.value); err == nil {
+			t.Errorf("ValidateOptionValue(%q, %q): expected error, got nil", tc.typ, tc.value)
+		}
+	}
+}
+
 // --- Schema-aware config loading integration test ---
 
 func TestLoadAndValidateWithSchema(t *testing.T) {

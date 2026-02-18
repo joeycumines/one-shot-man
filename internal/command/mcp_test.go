@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1453,5 +1454,224 @@ func TestMCPServer_OrchestratorWorkflow(t *testing.T) {
 	}
 	if summaries[0].EventCount != 0 {
 		t.Errorf("eventCount = %d, want 0 (events were drained)", summaries[0].EventCount)
+	}
+}
+
+// --- Concurrency tests ---
+
+func TestMCPServer_ConcurrentToolCalls(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	const perType = 10
+	var wg sync.WaitGroup
+	wg.Add(perType * 2)
+
+	// 10 concurrent addNote calls
+	for i := 0; i < perType; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			env.callTool(t, "addNote", map[string]any{
+				"text":  fmt.Sprintf("concurrent-note-%d", idx),
+				"label": fmt.Sprintf("note-%d", idx),
+			})
+		}(i)
+	}
+
+	// 10 concurrent addDiff calls
+	for i := 0; i < perType; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			env.callTool(t, "addDiff", map[string]any{
+				"diff":  fmt.Sprintf("+diff-line-%d\n", idx),
+				"label": fmt.Sprintf("diff-%d", idx),
+			})
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify all 20 items are present via listContext
+	r := env.callTool(t, "listContext", nil)
+	var data struct {
+		Files []string              `json:"files"`
+		Items []mcpListContextEntry `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &data); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(data.Items) != 20 {
+		t.Fatalf("items count = %d, want 20", len(data.Items))
+	}
+
+	noteCount, diffCount := 0, 0
+	for _, item := range data.Items {
+		switch item.Type {
+		case "note":
+			noteCount++
+		case "diff":
+			diffCount++
+		}
+	}
+	if noteCount != perType {
+		t.Errorf("note count = %d, want %d", noteCount, perType)
+	}
+	if diffCount != perType {
+		t.Errorf("diff count = %d, want %d", diffCount, perType)
+	}
+}
+
+func TestMCPServer_ConcurrentSessions(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	const numSessions = 5
+
+	// Register 5 sessions concurrently
+	var wg sync.WaitGroup
+	wg.Add(numSessions)
+	for i := 0; i < numSessions; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			env.callTool(t, "registerSession", map[string]any{
+				"sessionId":    fmt.Sprintf("concurrent-%d", idx),
+				"capabilities": []string{"cap"},
+			})
+		}(i)
+	}
+	wg.Wait()
+
+	// Report progress on all 5 concurrently
+	wg.Add(numSessions)
+	for i := 0; i < numSessions; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			env.callTool(t, "reportProgress", map[string]any{
+				"sessionId": fmt.Sprintf("concurrent-%d", idx),
+				"status":    "working",
+				"progress":  float64(idx * 20),
+				"message":   fmt.Sprintf("session %d working", idx),
+			})
+		}(i)
+	}
+	wg.Wait()
+
+	// Verify all 5 sessions are present via listSessions
+	r := env.callTool(t, "listSessions", nil)
+	var summaries []mcpSessionSummary
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &summaries); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(summaries) != numSessions {
+		t.Fatalf("sessions = %d, want %d", len(summaries), numSessions)
+	}
+
+	found := make(map[string]bool, numSessions)
+	for _, s := range summaries {
+		found[s.SessionID] = true
+		if s.Status != "working" {
+			t.Errorf("session %q status = %q, want working", s.SessionID, s.Status)
+		}
+		if s.EventCount != 1 {
+			t.Errorf("session %q eventCount = %d, want 1", s.SessionID, s.EventCount)
+		}
+	}
+	for i := 0; i < numSessions; i++ {
+		id := fmt.Sprintf("concurrent-%d", i)
+		if !found[id] {
+			t.Errorf("session %q not found in listSessions", id)
+		}
+	}
+}
+
+// --- Large payload tests ---
+
+func TestMCPServer_LargePayloads(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	// 100KB note
+	largeNote := strings.Repeat("A", 100*1024)
+	r := env.callTool(t, "addNote", map[string]any{
+		"text":  largeNote,
+		"label": "large-note",
+	})
+	if r.IsError {
+		t.Fatalf("addNote(100KB) returned error: %s", mcpResultText(t, r))
+	}
+
+	// 50KB diff
+	largeDiff := strings.Repeat("+added line\n", 50*1024/len("+added line\n"))
+	if len(largeDiff) < 50*1024 {
+		largeDiff += strings.Repeat("X", 50*1024-len(largeDiff))
+	}
+	r = env.callTool(t, "addDiff", map[string]any{
+		"diff":  largeDiff,
+		"label": "large-diff",
+	})
+	if r.IsError {
+		t.Fatalf("addDiff(50KB) returned error: %s", mcpResultText(t, r))
+	}
+
+	// Build prompt and verify both payloads are present
+	r = env.callTool(t, "buildPrompt", nil)
+	if r.IsError {
+		t.Fatalf("buildPrompt returned error: %s", mcpResultText(t, r))
+	}
+	prompt := mcpResultText(t, r)
+
+	if !strings.Contains(prompt, "### large-note") {
+		t.Error("prompt missing large-note section header")
+	}
+	if !strings.Contains(prompt, "### large-diff") {
+		t.Error("prompt missing large-diff section header")
+	}
+	if !strings.Contains(prompt, largeNote) {
+		t.Error("prompt missing 100KB note content")
+	}
+	if !strings.Contains(prompt, largeDiff) {
+		t.Error("prompt missing 50KB diff content")
+	}
+}
+
+// --- Backtick fence integration test ---
+
+func TestMCPServer_BacktickFenceInPrompt(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	// Diff content that contains triple backticks
+	diffWithBackticks := "--- a/README.md\n+++ b/README.md\n@@ -1,3 +1,5 @@\n # Title\n+```go\n+fmt.Println(\"hello\")\n+```\n"
+	r := env.callTool(t, "addDiff", map[string]any{
+		"diff":  diffWithBackticks,
+		"label": "backtick-diff",
+	})
+	if r.IsError {
+		t.Fatalf("addDiff returned error: %s", mcpResultText(t, r))
+	}
+
+	// Build prompt
+	r = env.callTool(t, "buildPrompt", nil)
+	if r.IsError {
+		t.Fatalf("buildPrompt returned error: %s", mcpResultText(t, r))
+	}
+	prompt := mcpResultText(t, r)
+
+	// The fence must be upgraded to 4 backticks since content has ```
+	if !strings.Contains(prompt, "````diff") {
+		t.Errorf("prompt should use quadruple backtick fence for diff containing triple backticks;\ngot prompt:\n%s", prompt)
+	}
+
+	// The closing fence must also be 4 backticks
+	if strings.Count(prompt, "````") < 2 {
+		t.Errorf("prompt should have at least 2 quadruple backtick fences (open + close);\ngot prompt:\n%s", prompt)
+	}
+
+	// Original content must still be present
+	if !strings.Contains(prompt, "```go") {
+		t.Error("prompt missing original triple backtick content from diff")
+	}
+	if !strings.Contains(prompt, "### backtick-diff") {
+		t.Error("prompt missing diff section header")
 	}
 }

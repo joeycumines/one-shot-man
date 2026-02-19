@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T014 Done. T015 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
+    "currentState": "T001-T015 Done. T016 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -114,8 +114,8 @@
     },
     {
       "task": "T015: Safety validation",
-      "description": "In claudemux/: intent classification (code/destructive/network/credential), scope assessment (file/repo/infra), risk scoring, policy enforcement (block/warn/confirm). Composable validator interface. Optional Ollama integration (localhost:11434). Config: claude-mux.safety.*. Tests. Run make.",
-      "status": "Not Started"
+      "description": "Added safety.go: Intent classification (Unknown/ReadOnly/Code/Destructive/Network/Credential), Scope assessment (Unknown/File/Repo/Infra), Risk scoring (0.0-1.0 with intent×scope multiplier + sensitive pattern bonus), Policy enforcement (Allow/Warn/Confirm/Block with configurable thresholds). SafetyConfig: enabled, thresholds, blockedTools, blockedPaths, allowedPaths, sensitivePatterns. SafetyValidator: rule-based with built-in intent patterns (destructive/credential/network/readOnly/code) and scope patterns (infra/repo). CompositeValidator: chains validators, returns most restrictive. Validator interface for composability. Stats tracking (total/allow/warn/confirm/block/intent/scope counts). JS bindings: INTENT_*/SCOPE_*/RISK_*/POLICY_* constants, intentName/scopeName/riskLevelName/policyActionName, defaultSafetyConfig, newSafetyValidator (validate/stats/config), newCompositeValidator. 40+ tests: intent/scope/risk/policy name fns, default config, disabled validator, read-only/code/destructive/network/credential classification, sensitive patterns, blocked tools/paths, allowlist enforcement, infra/repo/file scope detection, risk scoring comparison, policy enforcement thresholds, stats tracking, tool name heuristics, file type classification, concurrent validate/stats, edge cases. 309 claudemux tests pass. Build green.",
+      "status": "Done"
     },
     {
       "task": "T016: Ideal choice resolution",

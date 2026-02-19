@@ -404,6 +404,24 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			cv := NewCompositeValidator(validators...)
 			return wrapCompositeValidator(runtime, cv)
 		})
+
+		// --- Choice Resolution ---
+
+		// defaultChoiceConfig(): object
+		_ = exports.Set("defaultChoiceConfig", func(call goja.FunctionCall) goja.Value {
+			cfg := DefaultChoiceConfig()
+			return choiceConfigToJS(runtime, cfg)
+		})
+
+		// newChoiceResolver(config?: object): object
+		_ = exports.Set("newChoiceResolver", func(call goja.FunctionCall) goja.Value {
+			cfg := DefaultChoiceConfig()
+			if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+				cfg = jsToChoiceConfig(runtime, call.Argument(0))
+			}
+			cr := NewChoiceResolver(cfg)
+			return wrapChoiceResolver(runtime, cr)
+		})
 	}
 }
 
@@ -2207,6 +2225,216 @@ func wrapCompositeValidator(runtime *goja.Runtime, cv *CompositeValidator) goja.
 		action := jsToSafetyAction(runtime, call.Argument(0))
 		a := cv.Validate(action)
 		return safetyAssessmentToJS(runtime, a)
+	})
+
+	return obj
+}
+
+// --- Choice Resolver JS Bindings ---
+
+// choiceConfigToJS converts a ChoiceConfig to a JS object.
+func choiceConfigToJS(runtime *goja.Runtime, cfg ChoiceConfig) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("confirmThreshold", cfg.ConfirmThreshold)
+	_ = obj.Set("minCandidates", cfg.MinCandidates)
+
+	criteria := runtime.NewArray()
+	for i, c := range cfg.DefaultCriteria {
+		item := runtime.NewObject()
+		_ = item.Set("name", c.Name)
+		_ = item.Set("weight", c.Weight)
+		_ = item.Set("description", c.Description)
+		_ = criteria.Set(fmt.Sprintf("%d", i), item)
+	}
+	_ = obj.Set("defaultCriteria", criteria)
+
+	return obj
+}
+
+// jsToChoiceConfig converts a JS object to a ChoiceConfig.
+func jsToChoiceConfig(runtime *goja.Runtime, val goja.Value) ChoiceConfig {
+	cfg := DefaultChoiceConfig()
+	obj := val.ToObject(runtime)
+
+	if v := obj.Get("confirmThreshold"); v != nil && !goja.IsUndefined(v) {
+		cfg.ConfirmThreshold = v.ToFloat()
+	}
+	if v := obj.Get("minCandidates"); v != nil && !goja.IsUndefined(v) {
+		cfg.MinCandidates = int(v.ToInteger())
+	}
+	if v := obj.Get("defaultCriteria"); v != nil && !goja.IsUndefined(v) {
+		arr := v.ToObject(runtime)
+		length := int(arr.Get("length").ToInteger())
+		criteria := make([]Criterion, 0, length)
+		for i := 0; i < length; i++ {
+			item := arr.Get(fmt.Sprintf("%d", i)).ToObject(runtime)
+			crit := Criterion{}
+			if n := item.Get("name"); n != nil && !goja.IsUndefined(n) {
+				crit.Name = n.String()
+			}
+			if w := item.Get("weight"); w != nil && !goja.IsUndefined(w) {
+				crit.Weight = w.ToFloat()
+			}
+			if d := item.Get("description"); d != nil && !goja.IsUndefined(d) {
+				crit.Description = d.String()
+			}
+			criteria = append(criteria, crit)
+		}
+		cfg.DefaultCriteria = criteria
+	}
+
+	return cfg
+}
+
+// choiceResultToJS converts a ChoiceResult to a JS object.
+func choiceResultToJS(runtime *goja.Runtime, r ChoiceResult) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("recommendedID", r.RecommendedID)
+	_ = obj.Set("justification", r.Justification)
+	_ = obj.Set("needsConfirm", r.NeedsConfirm)
+
+	rankings := runtime.NewArray()
+	for i, cs := range r.Rankings {
+		item := runtime.NewObject()
+		_ = item.Set("candidateID", cs.CandidateID)
+		_ = item.Set("name", cs.Name)
+		_ = item.Set("totalScore", cs.TotalScore)
+		_ = item.Set("rank", cs.Rank)
+		_ = item.Set("justification", cs.Justification)
+
+		scores := runtime.NewObject()
+		for k, v := range cs.Scores {
+			_ = scores.Set(k, v)
+		}
+		_ = item.Set("scores", scores)
+
+		_ = rankings.Set(fmt.Sprintf("%d", i), item)
+	}
+	_ = obj.Set("rankings", rankings)
+
+	return obj
+}
+
+// choiceStatsToJS converts ChoiceStats to a JS object.
+func choiceStatsToJS(runtime *goja.Runtime, s ChoiceStats) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("totalAnalyses", s.TotalAnalyses)
+	_ = obj.Set("totalCandidates", s.TotalCandidates)
+	_ = obj.Set("confirmCount", s.ConfirmCount)
+	return obj
+}
+
+// jsToCandidates converts a JS array to a Go []Candidate slice.
+func jsToCandidates(runtime *goja.Runtime, val goja.Value) []Candidate {
+	arr := val.ToObject(runtime)
+	length := int(arr.Get("length").ToInteger())
+	candidates := make([]Candidate, 0, length)
+	for i := 0; i < length; i++ {
+		item := arr.Get(fmt.Sprintf("%d", i)).ToObject(runtime)
+		c := Candidate{}
+		if v := item.Get("id"); v != nil && !goja.IsUndefined(v) {
+			c.ID = v.String()
+		}
+		if v := item.Get("name"); v != nil && !goja.IsUndefined(v) {
+			c.Name = v.String()
+		}
+		if v := item.Get("description"); v != nil && !goja.IsUndefined(v) {
+			c.Description = v.String()
+		}
+		if v := item.Get("attributes"); v != nil && !goja.IsUndefined(v) {
+			attrs := make(map[string]string)
+			if err := runtime.ExportTo(v, &attrs); err == nil {
+				c.Attributes = attrs
+			}
+		}
+		candidates = append(candidates, c)
+	}
+	return candidates
+}
+
+// jsToCriteria converts a JS array to a Go []Criterion slice.
+func jsToCriteria(runtime *goja.Runtime, val goja.Value) []Criterion {
+	arr := val.ToObject(runtime)
+	length := int(arr.Get("length").ToInteger())
+	criteria := make([]Criterion, 0, length)
+	for i := 0; i < length; i++ {
+		item := arr.Get(fmt.Sprintf("%d", i)).ToObject(runtime)
+		c := Criterion{}
+		if v := item.Get("name"); v != nil && !goja.IsUndefined(v) {
+			c.Name = v.String()
+		}
+		if v := item.Get("weight"); v != nil && !goja.IsUndefined(v) {
+			c.Weight = v.ToFloat()
+		}
+		if v := item.Get("description"); v != nil && !goja.IsUndefined(v) {
+			c.Description = v.String()
+		}
+		criteria = append(criteria, c)
+	}
+	return criteria
+}
+
+// wrapChoiceResolver creates a JS object wrapping a *ChoiceResolver.
+func wrapChoiceResolver(runtime *goja.Runtime, cr *ChoiceResolver) goja.Value {
+	obj := runtime.NewObject()
+
+	// analyze(candidates: object[], criteria?: object[], scoreFn?: function): object
+	_ = obj.Set("analyze", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("analyze: candidates argument is required"))
+		}
+		candidates := jsToCandidates(runtime, call.Argument(0))
+
+		var criteria []Criterion
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+			criteria = jsToCriteria(runtime, call.Argument(1))
+		}
+
+		var scoreFn ScoreFunc
+		if len(call.Arguments) > 2 && !goja.IsUndefined(call.Argument(2)) && !goja.IsNull(call.Argument(2)) {
+			fn, ok := goja.AssertFunction(call.Argument(2))
+			if !ok {
+				panic(runtime.NewTypeError("analyze: scoreFn must be a function"))
+			}
+			scoreFn = func(cand Candidate, crit Criterion) float64 {
+				candObj := runtime.NewObject()
+				_ = candObj.Set("id", cand.ID)
+				_ = candObj.Set("name", cand.Name)
+				_ = candObj.Set("description", cand.Description)
+				attrs := runtime.NewObject()
+				for k, v := range cand.Attributes {
+					_ = attrs.Set(k, v)
+				}
+				_ = candObj.Set("attributes", attrs)
+
+				critObj := runtime.NewObject()
+				_ = critObj.Set("name", crit.Name)
+				_ = critObj.Set("weight", crit.Weight)
+				_ = critObj.Set("description", crit.Description)
+
+				result, err := fn(goja.Undefined(), candObj, critObj)
+				if err != nil {
+					return 0.5
+				}
+				return result.ToFloat()
+			}
+		}
+
+		r, err := cr.Analyze(candidates, criteria, scoreFn)
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return choiceResultToJS(runtime, r)
+	})
+
+	// stats(): object
+	_ = obj.Set("stats", func() goja.Value {
+		return choiceStatsToJS(runtime, cr.Stats())
+	})
+
+	// config(): object
+	_ = obj.Set("config", func() goja.Value {
+		return choiceConfigToJS(runtime, cr.Config())
 	})
 
 	return obj

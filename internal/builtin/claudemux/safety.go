@@ -476,7 +476,24 @@ func (cv *CompositeValidator) Validate(action SafetyAction) SafetyAssessment {
 
 // classifyIntent determines the primary intent of an action.
 func (sv *SafetyValidator) classifyIntent(action SafetyAction) Intent {
-	// Check action type first (explicit classification).
+	// Build search text from all fields.
+	searchText := buildSearchText(action)
+
+	// Check sensitive patterns FIRST — credential access overrides type-based classification.
+	for _, re := range sv.sensitivePatterns {
+		if re.MatchString(searchText) {
+			return IntentCredential
+		}
+	}
+
+	// Check intent patterns (destructive, credential, network, etc.) before type fallback.
+	for _, ip := range sv.intentPatterns {
+		if ip.pattern.MatchString(searchText) {
+			return ip.intent
+		}
+	}
+
+	// Check action type (explicit classification).
 	switch action.Type {
 	case "file_delete":
 		return IntentDestructive
@@ -486,23 +503,6 @@ func (sv *SafetyValidator) classifyIntent(action SafetyAction) Intent {
 		return IntentReadOnly
 	case "network", "fetch", "api_call":
 		return IntentNetwork
-	}
-
-	// Build search text from all fields.
-	searchText := buildSearchText(action)
-
-	// Check sensitive patterns for credential detection.
-	for _, re := range sv.sensitivePatterns {
-		if re.MatchString(searchText) {
-			return IntentCredential
-		}
-	}
-
-	// Check intent patterns (order matters — first match wins, destructive first).
-	for _, ip := range sv.intentPatterns {
-		if ip.pattern.MatchString(searchText) {
-			return ip.intent
-		}
 	}
 
 	// Default based on tool name heuristics.

@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T011 Done. T012 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
+    "currentState": "T001-T012 Done. T013 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -99,8 +99,8 @@
     },
     {
       "task": "T012: TUI multiplexing — multi-instance panel",
-      "description": "In claudemux/: meta-key switching (Alt+1..9, NOT Ctrl-B), per-instance state save/restore, status bar with health indicators, input routing, scrollback per session. BubbleTea model. Tests for input routing, state mgmt, meta-key detection. Run make.",
-      "status": "Not Started"
+      "description": "Added panel.go: Panel state machine (Idle/Active/Closed) with multi-instance TUI coordination. PanelConfig (MaxPanes 1-9 default 9, ScrollbackSize default 10000). Pane per instance with ID/Title/Scrollback/ScrollPos/Health. Alt+1..9 switching via RouteInput key routing. PgUp/PgDown scrollback navigation (20-line jumps). Per-pane health tracking with PaneHealth (state/errorCount/taskCount/lastUpdate). StatusBar with Unicode health indicators (● running, ✖ error, ○ idle, ■ stopped) and [active] brackets. GetVisibleLines(paneID, height) for viewport rendering with scroll offset. PanelSnapshot for full state observability. AddPane/RemovePane with activeIdx adjustment. JS bindings: defaultPanelConfig, newPanel with start/addPane/removePane/routeInput/setActive/activeIndex/activePane/paneCount/appendOutput/updateHealth/statusBar/getVisibleLines/snapshot/close/config. 40+ tests: state names, config clamping, start, addPane (first/full/duplicate/closed), removePane (adjustActive/notFound), input routing (altSwitch/altOutOfRange/forward/pgUp/pgDown/noPanes/notActive), setActive (valid/outOfRange), appendOutput (basic/trim/notFound), updateHealth (basic/notFound), statusBar (noPanes/single/multiple with indicators), getVisibleLines (basic/scrolled/empty/notFound), snapshot, close, healthIndicator, concurrent appendOutput/routeInput/snapshot. Deadcode clean, full build green.",
+      "status": "Done"
     },
     {
       "task": "T013: Expose claude-mux building blocks as JS API",

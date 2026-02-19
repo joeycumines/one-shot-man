@@ -16,6 +16,7 @@ They are not intended to be useful on their own — see the builtin commands for
 | `example-05-pick-and-place.js` | PA-BT (Planning-Augmented Behavior Trees) robot demo | Interactive (BubbleTea) |
 | `example-06-api-client.js` | HTTP client demo: GET, POST, streaming, error handling, timeouts | Non-interactive |
 | `example-07-flag-parsing.js` | Flag parsing demo: typed flags, introspection, visit/visitAll | Non-interactive |
+| `example-08-claude-mux-api.js` | Claude-mux building blocks: parser, guard, pool, panel, supervisor | Non-interactive |
 
 ## Tests & Benchmarks
 

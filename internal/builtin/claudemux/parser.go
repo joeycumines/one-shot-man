@@ -94,6 +94,26 @@ func (p *Parser) AddPattern(name string, pattern string, eventType EventType) er
 	return nil
 }
 
+// PatternInfo describes a registered parser pattern.
+type PatternInfo struct {
+	Name      string
+	EventType EventType
+	Pattern   string // regex source
+}
+
+// Patterns returns information about all registered patterns.
+func (p *Parser) Patterns() []PatternInfo {
+	result := make([]PatternInfo, len(p.patterns))
+	for i, pe := range p.patterns {
+		result[i] = PatternInfo{
+			Name:      pe.name,
+			EventType: pe.typ,
+			Pattern:   pe.re.String(),
+		}
+	}
+	return result
+}
+
 // EventTypeName returns the string name for an EventType constant.
 func EventTypeName(t EventType) string {
 	switch t {

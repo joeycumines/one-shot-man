@@ -418,6 +418,53 @@ func TestAddPattern_AppendedAfterBuiltin(t *testing.T) {
 	}
 }
 
+func TestPatterns_BuiltinReturned(t *testing.T) {
+	t.Parallel()
+	p := NewParser()
+
+	infos := p.Patterns()
+	if len(infos) == 0 {
+		t.Fatal("Patterns() returned empty slice for fresh parser")
+	}
+	// All builtins should have non-empty names and patterns.
+	for i, info := range infos {
+		if info.Name == "" {
+			t.Errorf("Patterns()[%d]: empty name", i)
+		}
+		if info.Pattern == "" {
+			t.Errorf("Patterns()[%d] %q: empty pattern", i, info.Name)
+		}
+	}
+}
+
+func TestPatterns_IncludesCustom(t *testing.T) {
+	t.Parallel()
+	p := NewParser()
+
+	builtinCount := len(p.Patterns())
+
+	err := p.AddPattern("custom-xyz", `xyz-marker`, EventCompletion)
+	if err != nil {
+		t.Fatalf("AddPattern: %v", err)
+	}
+
+	infos := p.Patterns()
+	if len(infos) != builtinCount+1 {
+		t.Fatalf("expected %d patterns, got %d", builtinCount+1, len(infos))
+	}
+
+	last := infos[len(infos)-1]
+	if last.Name != "custom-xyz" {
+		t.Errorf("last pattern name = %q, want %q", last.Name, "custom-xyz")
+	}
+	if last.Pattern != "xyz-marker" {
+		t.Errorf("last pattern regex = %q, want %q", last.Pattern, "xyz-marker")
+	}
+	if last.EventType != EventCompletion {
+		t.Errorf("last pattern type = %d, want EventCompletion(%d)", last.EventType, EventCompletion)
+	}
+}
+
 func TestEventTypeName_AllTypes(t *testing.T) {
 	t.Parallel()
 

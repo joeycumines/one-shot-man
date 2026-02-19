@@ -303,6 +303,21 @@ func wrapParser(runtime *goja.Runtime, p *Parser) goja.Value {
 		return goja.Undefined()
 	})
 
+	// patterns(): { name: string, eventType: number, pattern: string }[]
+	_ = obj.Set("patterns", func(call goja.FunctionCall) goja.Value {
+		infos := p.Patterns()
+		arr := runtime.NewArray()
+		for i, info := range infos {
+			item := runtime.NewObject()
+			_ = item.Set("name", info.Name)
+			_ = item.Set("eventType", int(info.EventType))
+			_ = item.Set("eventTypeName", EventTypeName(info.EventType))
+			_ = item.Set("pattern", info.Pattern)
+			_ = arr.Set(fmt.Sprintf("%d", i), item)
+		}
+		return arr
+	})
+
 	return obj
 }
 

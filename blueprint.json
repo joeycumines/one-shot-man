@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T016 Done. T017 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
+    "currentState": "T001-T017 Done. T018 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -124,8 +124,8 @@
     },
     {
       "task": "T017: Rewrite PR split goal and script for claudemux",
-      "description": "Rewrite goals/orchestrate-pr-split.json with stateVars, hotSnippets, flagDefs. Rewrite scripts/orchestrate-pr-split.js: require('osm:claudemux'), conflict handling, equivalence verification. Update pr_split_test.go. Run make.",
-      "status": "Not Started"
+      "description": "Enhanced orchestrate-pr-split.json: category orchestrator→claudemux, added 'run' command with flagDefs (--base/--strategy/--max/--prefix/--verify/--dry-run), updated usageTemplate and postCopyHint for v2.0.0. Enhanced orchestrate-pr-split.js v2.0.0: added require('osm:claudemux') with graceful fallback, selectStrategy() using ChoiceResolver (4 strategies scored on splitCount/groupBalance/maxSize via custom scoreFn), conflict classification in executeSplit (errorType: missing/conflict/checkout), verifyEquivalenceDetailed() with diff --stat/--name-only on mismatch, createSelectStrategyNode BT leaf. Updated pr_split_test.go: registered osm:claudemux in test env, updated VERSION assertion to 2.0.0, updated export list (+selectStrategy/verifyEquivalenceDetailed/createSelectStrategyNode), added TestSelectStrategy (strategy in known set), TestSelectStrategy_Scored (4 scored rankings), TestVerifyEquivalenceDetailed_Equivalent (diffFiles empty), TestExecuteSplit_MissingFile (errorType=missing). 4,533 tests pass. Build green.",
+      "status": "Done"
     },
     {
       "task": "T018: Main claude-mux entry point command",

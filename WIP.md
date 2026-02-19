@@ -35,6 +35,7 @@
 - **T014**: ManagedSession composing Parser+Guard+MCPGuard+Supervisor (session_mgr.go, 20+ tests, JS bindings with SESSION_* constants, full lifecycle)
 - **T015**: Safety validation (safety.go, intent/scope/risk/policy classification, composable Validator interface, CompositeValidator, SafetyConfig, SafetyStats, JS bindings, 40+ tests)
 - **T016**: Choice resolution (choice.go, Candidate+Criterion+ChoiceConfig+ChoiceResolver, 25+ tests, JS bindings). ALSO FIXED: ManagedSession race condition — Guard/MCPGuard calls now under s.mu in ProcessLine/ProcessCrash/ProcessToolCall/CheckTimeout/Snapshot (callbacks remain outside lock to prevent deadlock). 4,529 tests pass with -race.
+- **T017**: PR split rewrite for claudemux (orchestrate-pr-split.json: category→claudemux, run cmd with flagDefs; orchestrate-pr-split.js v2.0.0: claudemux integration via selectStrategy+ChoiceResolver, conflict classification in executeSplit, verifyEquivalenceDetailed with diff, createSelectStrategyNode BT leaf; pr_split_test.go: +4 tests). 4,533 tests pass.
 
 ### Known pre-existing flaky tests:
 - **TestRecording_Goal** (internal/scripting): TUI timing
@@ -44,7 +45,7 @@
 - **TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping** (internal/scripting): PTY hang under load
 - All pass on re-run.
 
-### Next task: T017
-Rewrite PR split goal and script for claudemux.
+### Next task: T018
+Main claude-mux entry point command.
 
 ### No commits made yet this session. Rule of Two needed before committing.

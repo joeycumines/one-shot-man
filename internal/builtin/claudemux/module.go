@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/dop251/goja"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Require returns a module loader for `osm:claudemux` that exposes the
@@ -89,6 +90,21 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 				panic(runtime.NewGoError(err))
 			}
 			return runtime.ToValue(keys)
+		})
+
+		// newMCPInstance(sessionId: string): object
+		// Creates a per-instance MCP server config for spawning a Claude Code
+		// instance with a dedicated MCP endpoint.
+		_ = exports.Set("newMCPInstance", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("newMCPInstance: sessionId argument is required"))
+			}
+			sessionID := call.Argument(0).String()
+			cfg, err := NewMCPInstanceConfig(sessionID)
+			if err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return wrapMCPInstance(runtime, cfg)
 		})
 	}
 }
@@ -337,4 +353,74 @@ func jsToModelMenu(runtime *goja.Runtime, val goja.Value) *ModelMenu {
 		menu.SelectedIndex = int(v.ToInteger())
 	}
 	return menu
+}
+
+// wrapMCPInstance creates a JS object wrapping an *MCPInstanceConfig.
+func wrapMCPInstance(runtime *goja.Runtime, cfg *MCPInstanceConfig) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("sessionId", cfg.SessionID)
+
+	// listenAndServe(): void — starts the MCP HTTP server on a unique endpoint.
+	// Creates a minimal MCP server instance. Call before writeConfigFile.
+	_ = obj.Set("listenAndServe", func() goja.Value {
+		server := mcp.NewServer(&mcp.Implementation{
+			Name:    "osm-claudemux",
+			Version: "0.0.0",
+		}, nil)
+		if err := cfg.ListenAndServe(server); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// endpoint(): string — returns the MCP endpoint URL (empty if not listening).
+	_ = obj.Set("endpoint", func() goja.Value {
+		return runtime.ToValue(cfg.Endpoint())
+	})
+
+	// listenerAddr(): string — returns the raw network address, or empty string.
+	_ = obj.Set("listenerAddr", func() goja.Value {
+		addr := cfg.ListenerAddr()
+		if addr == nil {
+			return runtime.ToValue("")
+		}
+		return runtime.ToValue(addr.String())
+	})
+
+	// configPath(): string — returns the config file path.
+	_ = obj.Set("configPath", func() goja.Value {
+		return runtime.ToValue(cfg.ConfigPath())
+	})
+
+	// spawnArgs(): string[] — returns CLI args for Claude Code.
+	_ = obj.Set("spawnArgs", func() goja.Value {
+		return runtime.ToValue(cfg.SpawnArgs())
+	})
+
+	// writeConfigFile(): void — generates the MCP config JSON file.
+	_ = obj.Set("writeConfigFile", func() goja.Value {
+		if err := cfg.WriteConfigFile(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// validate(): void — checks config is usable before spawn.
+	_ = obj.Set("validate", func() goja.Value {
+		if err := cfg.Validate(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// close(): void — stops listener, removes temp files.
+	_ = obj.Set("close", func() goja.Value {
+		if err := cfg.Close(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	return obj
 }

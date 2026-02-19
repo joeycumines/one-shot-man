@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T007 Done. T008 next. Pre-existing flaky: TestRecording_Goal, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean (all timing-dep, pass on rerun).",
+    "currentState": "T001-T008 Done. T009 next. Pre-existing flaky: TestRecording_Goal, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean (all timing-dep, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -79,8 +79,8 @@
     },
     {
       "task": "T008: Guard rails — PTY monitors",
-      "description": "In claudemux/: rate-limit detection (pause+backoff), permission prompt (fail-closed reject), crash detection (restart/escalate), output timeout. Config: claude-mux.guard.*. Tests with synthetic PTY output. Run make.",
-      "status": "Not Started"
+      "description": "Added guard.go: Guard type (event-driven, explicit time for deterministic testing), GuardAction (None/Pause/Reject/Restart/Escalate/Timeout), GuardEvent (action/reason/details), GuardConfig with 4 sub-configs: RateLimitGuardConfig (exponential backoff with multiplier/cap/retryAfter hint/idle reset), PermissionGuardConfig (policy: Deny fail-closed, Allow), CrashGuardConfig (MaxRestarts then escalate, ResetCrashCount), OutputTimeoutGuardConfig (idle duration threshold). ProcessEvent/ProcessCrash/CheckTimeout API. DefaultGuardConfig with production defaults. GuardState for observability. 40+ tests in guard_test.go covering all monitors, backoff math, cap, retryAfter hint, idle reset, policy fail-closed, crash escalation, timeout, integration with parser. JS bindings: GUARD_ACTION_* and PERMISSION_POLICY_* constants, guardActionName, defaultGuardConfig, newGuard with processEvent/processCrash/checkTimeout/resetCrashCount/state/config. Deadcode clean, 6.57s claudemux tests pass.",
+      "status": "Done"
     },
     {
       "task": "T009: Guard rails — MCP monitors",

@@ -158,6 +158,22 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			g := NewGuard(cfg)
 			return wrapGuard(runtime, g)
 		})
+
+		// defaultMCPGuardConfig(): object — returns the default MCP guard config.
+		_ = exports.Set("defaultMCPGuardConfig", func(call goja.FunctionCall) goja.Value {
+			cfg := DefaultMCPGuardConfig()
+			return mcpGuardConfigToJS(runtime, cfg)
+		})
+
+		// newMCPGuard(config?: object): object — creates an MCP guard monitor.
+		_ = exports.Set("newMCPGuard", func(call goja.FunctionCall) goja.Value {
+			var cfg MCPGuardConfig
+			if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+				cfg = jsToMCPGuardConfig(runtime, call.Argument(0))
+			}
+			g := NewMCPGuard(cfg)
+			return wrapMCPGuard(runtime, g)
+		})
 	}
 }
 
@@ -765,6 +781,164 @@ func wrapGuard(runtime *goja.Runtime, g *Guard) goja.Value {
 	// config(): object
 	_ = obj.Set("config", func() goja.Value {
 		return guardConfigToJS(runtime, g.Config())
+	})
+
+	return obj
+}
+
+// mcpGuardConfigToJS converts an MCPGuardConfig to a JS object.
+func mcpGuardConfigToJS(runtime *goja.Runtime, cfg MCPGuardConfig) goja.Value {
+	obj := runtime.NewObject()
+
+	nct := runtime.NewObject()
+	_ = nct.Set("enabled", cfg.NoCallTimeout.Enabled)
+	_ = nct.Set("timeoutMs", cfg.NoCallTimeout.Timeout.Milliseconds())
+	_ = obj.Set("noCallTimeout", nct)
+
+	fl := runtime.NewObject()
+	_ = fl.Set("enabled", cfg.FrequencyLimit.Enabled)
+	_ = fl.Set("windowMs", cfg.FrequencyLimit.Window.Milliseconds())
+	_ = fl.Set("maxCalls", cfg.FrequencyLimit.MaxCalls)
+	_ = obj.Set("frequencyLimit", fl)
+
+	rd := runtime.NewObject()
+	_ = rd.Set("enabled", cfg.RepeatDetection.Enabled)
+	_ = rd.Set("maxRepeats", cfg.RepeatDetection.MaxRepeats)
+	_ = rd.Set("windowSize", cfg.RepeatDetection.WindowSize)
+	_ = rd.Set("matchTool", cfg.RepeatDetection.MatchTool)
+	_ = rd.Set("matchArgHash", cfg.RepeatDetection.MatchArgHash)
+	_ = obj.Set("repeatDetection", rd)
+
+	al := runtime.NewObject()
+	_ = al.Set("enabled", cfg.ToolAllowlist.Enabled)
+	if cfg.ToolAllowlist.AllowedTools != nil {
+		tools := make([]interface{}, len(cfg.ToolAllowlist.AllowedTools))
+		for i, t := range cfg.ToolAllowlist.AllowedTools {
+			tools[i] = t
+		}
+		_ = al.Set("allowedTools", runtime.ToValue(tools))
+	}
+	_ = obj.Set("toolAllowlist", al)
+
+	return obj
+}
+
+// jsToMCPGuardConfig converts a JS object to an MCPGuardConfig.
+func jsToMCPGuardConfig(runtime *goja.Runtime, val goja.Value) MCPGuardConfig {
+	obj := val.ToObject(runtime)
+	var cfg MCPGuardConfig
+
+	if v := obj.Get("noCallTimeout"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		nct := v.ToObject(runtime)
+		if b := nct.Get("enabled"); b != nil && !goja.IsUndefined(b) {
+			cfg.NoCallTimeout.Enabled = b.ToBoolean()
+		}
+		if d := nct.Get("timeoutMs"); d != nil && !goja.IsUndefined(d) {
+			cfg.NoCallTimeout.Timeout = time.Duration(d.ToInteger()) * time.Millisecond
+		}
+	}
+
+	if v := obj.Get("frequencyLimit"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		fl := v.ToObject(runtime)
+		if b := fl.Get("enabled"); b != nil && !goja.IsUndefined(b) {
+			cfg.FrequencyLimit.Enabled = b.ToBoolean()
+		}
+		if d := fl.Get("windowMs"); d != nil && !goja.IsUndefined(d) {
+			cfg.FrequencyLimit.Window = time.Duration(d.ToInteger()) * time.Millisecond
+		}
+		if m := fl.Get("maxCalls"); m != nil && !goja.IsUndefined(m) {
+			cfg.FrequencyLimit.MaxCalls = int(m.ToInteger())
+		}
+	}
+
+	if v := obj.Get("repeatDetection"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		rd := v.ToObject(runtime)
+		if b := rd.Get("enabled"); b != nil && !goja.IsUndefined(b) {
+			cfg.RepeatDetection.Enabled = b.ToBoolean()
+		}
+		if m := rd.Get("maxRepeats"); m != nil && !goja.IsUndefined(m) {
+			cfg.RepeatDetection.MaxRepeats = int(m.ToInteger())
+		}
+		if w := rd.Get("windowSize"); w != nil && !goja.IsUndefined(w) {
+			cfg.RepeatDetection.WindowSize = int(w.ToInteger())
+		}
+		if b := rd.Get("matchTool"); b != nil && !goja.IsUndefined(b) {
+			cfg.RepeatDetection.MatchTool = b.ToBoolean()
+		}
+		if b := rd.Get("matchArgHash"); b != nil && !goja.IsUndefined(b) {
+			cfg.RepeatDetection.MatchArgHash = b.ToBoolean()
+		}
+	}
+
+	if v := obj.Get("toolAllowlist"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		al := v.ToObject(runtime)
+		if b := al.Get("enabled"); b != nil && !goja.IsUndefined(b) {
+			cfg.ToolAllowlist.Enabled = b.ToBoolean()
+		}
+		if t := al.Get("allowedTools"); t != nil && !goja.IsUndefined(t) && !goja.IsNull(t) {
+			var tools []string
+			if err := runtime.ExportTo(t, &tools); err == nil {
+				cfg.ToolAllowlist.AllowedTools = tools
+			}
+		}
+	}
+
+	return cfg
+}
+
+// wrapMCPGuard creates a JS object wrapping an *MCPGuard with methods.
+func wrapMCPGuard(runtime *goja.Runtime, g *MCPGuard) goja.Value {
+	obj := runtime.NewObject()
+
+	// processToolCall(call: object): object|null
+	// call: { toolName: string, arguments?: string, timestampMs?: number }
+	_ = obj.Set("processToolCall", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("processToolCall: call argument is required"))
+		}
+		callObj := call.Argument(0).ToObject(runtime)
+		tc := MCPToolCall{Timestamp: time.Now()}
+
+		if v := callObj.Get("toolName"); v != nil && !goja.IsUndefined(v) {
+			tc.ToolName = v.String()
+		}
+		if v := callObj.Get("arguments"); v != nil && !goja.IsUndefined(v) {
+			tc.Arguments = v.String()
+		}
+		if v := callObj.Get("timestampMs"); v != nil && !goja.IsUndefined(v) {
+			tc.Timestamp = time.UnixMilli(v.ToInteger())
+		}
+
+		ge := g.ProcessToolCall(tc)
+		return guardEventToJS(runtime, ge)
+	})
+
+	// checkNoCallTimeout(nowMs?: number): object|null
+	_ = obj.Set("checkNoCallTimeout", func(call goja.FunctionCall) goja.Value {
+		now := time.Now()
+		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) {
+			now = time.UnixMilli(call.Argument(0).ToInteger())
+		}
+		ge := g.CheckNoCallTimeout(now)
+		return guardEventToJS(runtime, ge)
+	})
+
+	// state(): object
+	_ = obj.Set("state", func() goja.Value {
+		st := g.State()
+		obj := runtime.NewObject()
+		_ = obj.Set("totalCalls", st.TotalCalls)
+		_ = obj.Set("recentCount", st.RecentCount)
+		_ = obj.Set("started", st.Started)
+		if !st.LastCallTime.IsZero() {
+			_ = obj.Set("lastCallTimeMs", st.LastCallTime.UnixMilli())
+		}
+		return obj
+	})
+
+	// config(): object
+	_ = obj.Set("config", func() goja.Value {
+		return mcpGuardConfigToJS(runtime, g.Config())
 	})
 
 	return obj

@@ -190,7 +190,20 @@ func (s *Supervisor) HandleError(errMsg string, class ErrorClass) RecoveryDecisi
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Check context cancellation first.
+	// If already stopped or draining, abort.
+	if s.state == SupervisorStopped || s.state == SupervisorDraining {
+		return RecoveryDecision{
+			Action:   RecoveryAbort,
+			Reason:   fmt.Sprintf("error during %s state", SupervisorStateName(s.state)),
+			NewState: s.state,
+			Details: map[string]string{
+				"errorClass": ErrorClassName(class),
+				"error":      errMsg,
+			},
+		}
+	}
+
+	// Check context cancellation.
 	if s.ctx.Err() != nil {
 		s.state = SupervisorDraining
 		return RecoveryDecision{
@@ -206,20 +219,6 @@ func (s *Supervisor) HandleError(errMsg string, class ErrorClass) RecoveryDecisi
 
 	s.lastError = errMsg
 	s.lastErrorClass = class
-
-	// If already stopped or draining, abort.
-	if s.state == SupervisorStopped || s.state == SupervisorDraining {
-		return RecoveryDecision{
-			Action:   RecoveryAbort,
-			Reason:   fmt.Sprintf("error during %s state", SupervisorStateName(s.state)),
-			NewState: s.state,
-			Details: map[string]string{
-				"errorClass": ErrorClassName(class),
-				"error":      errMsg,
-			},
-		}
-	}
-
 	s.state = SupervisorRecovering
 
 	switch class {

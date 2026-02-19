@@ -16,7 +16,7 @@
 
 ---
 
-## Current State (2026-02-20, session 2)
+## Current State (2026-02-20, session 2+)
 
 ### Completed this session:
 - **T001**: macOS baseline passes
@@ -26,14 +26,18 @@
 - **T005**: MCP session docs (command.md session coordination section, architecture-claude-mux.md §6)
 - **T006**: Dynamic MCP config per instance (mcp_config.go, Unix socket/TCP, config JSON gen, JS bindings)
 - **T007**: Session isolation (instance.go, InstanceRegistry sync.Map, isolated state dirs, tests with -race)
+- **T008**: Guard rails — PTY monitors (guard.go, GuardAction/GuardConfig/Guard, JS bindings, 40+ tests)
+- **T009**: Guard rails — MCP monitors (mcp_guard.go, MCPGuard, frequency/repeat/allowlist, JS bindings, 30+ tests)
+- **T010**: Error recovery and cancellation (recovery.go, Supervisor state machine, ErrorClass/RecoveryAction/RecoveryDecision, context propagation, graceful shutdown, JS bindings, 30+ tests)
 
-### Known pre-existing issues:
-- **TestRecording_Goal** (internal/scripting): Flaky timing-dependent TUI test
-- **TestPickAndPlace_MousePick_HoldingItem** (internal/command): Flaky PTY mouse timing
+### Known pre-existing flaky tests:
+- **TestRecording_Goal** (internal/scripting): TUI timing
+- **TestPickAndPlace_MousePick_HoldingItem** (internal/command): PTY mouse timing
 - **TestSessionsListAndClean** (internal/command): TempDir cleanup race
+- **TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping** (internal/scripting): PTY hang under load
 - All pass on re-run.
 
-### Next task (T008):
-Guard rails — PTY monitors.
+### Next task: T011
+Concurrent instance management — pool. In claudemux/: Pool struct, configurable max size, Submit(task), buffered channel, health tracking, round-robin, recycling, Drain(), Close(), Stats().
 
 ### No commits made yet this session. Rule of Two needed before committing.

@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T009 Done. T010 next. Pre-existing flaky: TestRecording_Goal, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean (all timing-dep, pass on rerun).",
+    "currentState": "T001-T010 Done. T011 next. Pre-existing flaky: TestRecording_Goal, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -89,8 +89,8 @@
     },
     {
       "task": "T010: Error recovery and cancellation",
-      "description": "In claudemux/: PTY error (EOF, crash, unexpected exit), MCP error (timeout, malformed). Recovery: force-kill+restart (max retries), escalate. Cancellation: context propagation. Graceful shutdown: drain, notify, close. Tests: normal shutdown, crash recovery, max retries, ctx cancel, concurrent shutdown. Run make.",
-      "status": "Not Started"
+      "description": "Added recovery.go: Supervisor state machine (Idle/Running/Recovering/Draining/Stopped) with HandleError decision engine. ErrorClass (None/PTY-EOF/PTY-Crash/PTY-Error/MCP-Timeout/MCP-Malformed/Cancelled). RecoveryAction (None/Retry/Restart/ForceKill/Escalate/Abort/Drain). RecoveryDecision with action+reason+details+newState. SupervisorConfig (MaxRetries/MaxForceKills/RetryDelay/ShutdownTimeout/ForceKillTimeout). Context-based cancellation via NewSupervisor(ctx, cfg). HandleError routes: PTY-EOF→restart/escalate, PTY-Crash→force-kill/restart/escalate, PTY-Error→retry/restart/escalate (threshold-based), MCP-Timeout→retry/restart/escalate, MCP-Malformed→retry-once/escalate. Shutdown: first→Drain, second→ForceKill, already-stopped→Abort. ConfirmRecovery/ConfirmStopped/Reset lifecycle. SupervisorSnapshot for observability. JS bindings: defaultSupervisorConfig, newSupervisor with start/handleError/shutdown/confirmRecovery/confirmStopped/snapshot/reset/cancelled. 30+ tests: state names, error class names, action names, start/start-from-non-idle, PTY-EOF restart+escalate, PTY-Crash force-kill+then-restart, PTY-Error retry-then-restart-then-escalate, MCP-Timeout retry-then-restart, MCP-Malformed retry-once-then-escalate, cancelled-error, context-cancel-during-error, context-propagation, shutdown-normal/double-force-kill/already-stopped, confirm-recovery/stopped, reset, error-during-stopped/draining, unknown-error-class, snapshot, concurrent-shutdown (20 goroutines: 1 drain + 1 force-kill + 18 abort), concurrent-errors. Deadcode clean, all claudemux tests pass in 7.6s.",
+      "status": "Done"
     },
     {
       "task": "T011: Concurrent instance management — pool",

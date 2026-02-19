@@ -2,6 +2,7 @@ package claudemux
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"time"
 
@@ -238,6 +239,22 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			}
 			s := NewSupervisor(ctx, cfg)
 			return wrapSupervisor(ctx, runtime, s)
+		})
+
+		// defaultPoolConfig(): object
+		_ = exports.Set("defaultPoolConfig", func(call goja.FunctionCall) goja.Value {
+			cfg := DefaultPoolConfig()
+			return poolConfigToJS(runtime, cfg)
+		})
+
+		// newPool(config?: object): object
+		_ = exports.Set("newPool", func(call goja.FunctionCall) goja.Value {
+			cfg := DefaultPoolConfig()
+			if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+				cfg = jsToPoolConfig(runtime, call.Argument(0))
+			}
+			p := NewPool(cfg)
+			return wrapPool(runtime, p)
 		})
 	}
 }
@@ -1128,6 +1145,190 @@ func wrapSupervisor(ctx context.Context, runtime *goja.Runtime, s *Supervisor) g
 	// cancelled(): boolean — whether the supervisor context is done
 	_ = obj.Set("cancelled", func() goja.Value {
 		return runtime.ToValue(s.Context().Err() != nil)
+	})
+
+	return obj
+}
+
+// poolConfigToJS converts a PoolConfig to a JS object.
+func poolConfigToJS(runtime *goja.Runtime, cfg PoolConfig) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("maxSize", cfg.MaxSize)
+	return obj
+}
+
+// jsToPoolConfig converts a JS object to a PoolConfig.
+func jsToPoolConfig(runtime *goja.Runtime, val goja.Value) PoolConfig {
+	obj := val.ToObject(runtime)
+	cfg := DefaultPoolConfig()
+
+	if v := obj.Get("maxSize"); v != nil && !goja.IsUndefined(v) {
+		cfg.MaxSize = int(v.ToInteger())
+	}
+
+	return cfg
+}
+
+// workerStatsToJS converts a WorkerStats to a JS object.
+func workerStatsToJS(runtime *goja.Runtime, ws WorkerStats) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("id", ws.ID)
+	_ = obj.Set("state", int(ws.State))
+	_ = obj.Set("stateName", ws.StateName)
+	_ = obj.Set("taskCount", ws.TaskCount)
+	_ = obj.Set("errorCount", ws.ErrorCount)
+	if !ws.LastTaskAt.IsZero() {
+		_ = obj.Set("lastTaskAt", ws.LastTaskAt.UnixMilli())
+	}
+	return obj
+}
+
+// poolStatsToJS converts a PoolStats to a JS object.
+func poolStatsToJS(runtime *goja.Runtime, stats PoolStats) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("state", int(stats.State))
+	_ = obj.Set("stateName", stats.StateName)
+	_ = obj.Set("workerCount", stats.WorkerCount)
+	_ = obj.Set("maxSize", stats.MaxSize)
+	_ = obj.Set("inflight", stats.Inflight)
+
+	workers := runtime.NewArray()
+	for i, ws := range stats.Workers {
+		_ = workers.Set(fmt.Sprintf("%d", i), workerStatsToJS(runtime, ws))
+	}
+	_ = obj.Set("workers", workers)
+	return obj
+}
+
+// wrapPoolWorker creates a JS object wrapping a *PoolWorker.
+func wrapPoolWorker(runtime *goja.Runtime, w *PoolWorker) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("id", w.ID)
+	_ = obj.Set("state", func() goja.Value {
+		return runtime.ToValue(int(w.State))
+	})
+	_ = obj.Set("stateName", func() goja.Value {
+		return runtime.ToValue(WorkerStateName(w.State))
+	})
+	_ = obj.Set("taskCount", func() goja.Value {
+		return runtime.ToValue(w.TaskCount)
+	})
+	_ = obj.Set("errorCount", func() goja.Value {
+		return runtime.ToValue(w.ErrorCount)
+	})
+	return obj
+}
+
+// wrapPool creates a JS object wrapping a *Pool with methods.
+func wrapPool(runtime *goja.Runtime, p *Pool) goja.Value {
+	obj := runtime.NewObject()
+
+	// start(): void
+	_ = obj.Set("start", func() goja.Value {
+		if err := p.Start(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// addWorker(id: string, inst?: object): object
+	_ = obj.Set("addWorker", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("addWorker: id argument required"))
+		}
+		id := call.Argument(0).String()
+		// Instance is optional — nil is valid for testing.
+		w, err := p.AddWorker(id, nil)
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return wrapPoolWorker(runtime, w)
+	})
+
+	// removeWorker(id: string): void
+	_ = obj.Set("removeWorker", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("removeWorker: id argument required"))
+		}
+		id := call.Argument(0).String()
+		if _, err := p.RemoveWorker(id); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// acquire(): object — blocks until worker available
+	_ = obj.Set("acquire", func() goja.Value {
+		w, err := p.Acquire()
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return wrapPoolWorker(runtime, w)
+	})
+
+	// tryAcquire(): object | null — non-blocking
+	_ = obj.Set("tryAcquire", func() goja.Value {
+		w, err := p.TryAcquire()
+		if err != nil {
+			return goja.Null()
+		}
+		return wrapPoolWorker(runtime, w)
+	})
+
+	// release(worker: object, error?: string): void
+	_ = obj.Set("release", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("release: worker argument required"))
+		}
+		workerObj := call.Argument(0).ToObject(runtime)
+		idVal := workerObj.Get("id")
+		if idVal == nil || goja.IsUndefined(idVal) {
+			panic(runtime.NewTypeError("release: worker must have id property"))
+		}
+
+		target := p.FindWorker(idVal.String())
+		if target == nil {
+			panic(runtime.NewTypeError("release: worker not found in pool"))
+		}
+
+		var taskErr error
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+			taskErr = fmt.Errorf("%s", call.Argument(1).String())
+		}
+		p.Release(target, taskErr, time.Now())
+		return goja.Undefined()
+	})
+
+	// drain(): void
+	_ = obj.Set("drain", func() goja.Value {
+		p.Drain()
+		return goja.Undefined()
+	})
+
+	// waitDrained(): void — blocks until all in-flight tasks are released
+	_ = obj.Set("waitDrained", func() goja.Value {
+		p.WaitDrained()
+		return goja.Undefined()
+	})
+
+	// close(): object[] — returns closed workers
+	_ = obj.Set("close", func() goja.Value {
+		workers := p.Close()
+		arr := runtime.NewArray()
+		for i, w := range workers {
+			_ = arr.Set(fmt.Sprintf("%d", i), wrapPoolWorker(runtime, w))
+		}
+		return arr
+	})
+
+	// stats(): object
+	_ = obj.Set("stats", func() goja.Value {
+		return poolStatsToJS(runtime, p.Stats())
+	})
+
+	// config(): object
+	_ = obj.Set("config", func() goja.Value {
+		return poolConfigToJS(runtime, p.Config())
 	})
 
 	return obj

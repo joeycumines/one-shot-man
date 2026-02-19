@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T005 Done. T006 next. Pre-existing flaky: TestRecording_Goal (timing-dep TUI test, passes on rerun).",
+    "currentState": "T001-T006 Done. T007 next. Pre-existing flaky: TestRecording_Goal, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean (all timing-dep, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -69,8 +69,8 @@
     },
     {
       "task": "T006: Dynamic MCP server config per Claude instance",
-      "description": "In claudemux/: unique endpoint per instance (Unix socket default, TCP fallback Windows), startup sequencing (MCP ready before spawn), config generation (temp JSON), shutdown cleanup. Config validation before spawn. Tests with mocks. Run make.",
-      "status": "Not Started"
+      "description": "Added mcp_config.go: MCPInstanceConfig type with Unix socket (default) / TCP (Windows) endpoints, StreamableHTTPHandler-based serving, temp dir lifecycle, config JSON generation (mcpServers format), SpawnArgs (--mcp-config), Validate (listener+file checks), Close (cleanup socket+dir). JS bindings: newMCPInstance(sessionId) with listenAndServe/endpoint/listenerAddr/configPath/spawnArgs/writeConfigFile/validate/close methods. 228 claudemux tests pass (18 new mcp_config tests). Deadcode clean.",
+      "status": "Done"
     },
     {
       "task": "T007: Session isolation for multi-instance",

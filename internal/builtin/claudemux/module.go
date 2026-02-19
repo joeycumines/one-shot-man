@@ -106,6 +106,20 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			}
 			return wrapMCPInstance(runtime, cfg)
 		})
+
+		// newInstanceRegistry(baseDir: string): object
+		// Creates an instance registry for managing isolated Claude Code instances.
+		_ = exports.Set("newInstanceRegistry", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("newInstanceRegistry: baseDir argument is required"))
+			}
+			baseDir := call.Argument(0).String()
+			reg, err := NewInstanceRegistry(baseDir)
+			if err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return wrapInstanceRegistry(runtime, reg)
+		})
 	}
 }
 
@@ -417,6 +431,96 @@ func wrapMCPInstance(runtime *goja.Runtime, cfg *MCPInstanceConfig) goja.Value {
 	// close(): void — stops listener, removes temp files.
 	_ = obj.Set("close", func() goja.Value {
 		if err := cfg.Close(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	return obj
+}
+
+// wrapInstanceRegistry creates a JS object wrapping an *InstanceRegistry.
+func wrapInstanceRegistry(runtime *goja.Runtime, reg *InstanceRegistry) goja.Value {
+	obj := runtime.NewObject()
+
+	// create(sessionId: string): object — creates a new isolated instance.
+	_ = obj.Set("create", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("create: sessionId argument is required"))
+		}
+		sessionID := call.Argument(0).String()
+		inst, err := reg.Create(sessionID)
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return wrapInstance(runtime, inst)
+	})
+
+	// get(sessionId: string): object|null — retrieves an instance.
+	_ = obj.Set("get", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("get: sessionId argument is required"))
+		}
+		inst, ok := reg.Get(call.Argument(0).String())
+		if !ok {
+			return goja.Null()
+		}
+		return wrapInstance(runtime, inst)
+	})
+
+	// close(sessionId: string): void — closes and deregisters an instance.
+	_ = obj.Set("close", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("close: sessionId argument is required"))
+		}
+		if err := reg.Close(call.Argument(0).String()); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// closeAll(): void — closes all instances.
+	_ = obj.Set("closeAll", func() goja.Value {
+		if err := reg.CloseAll(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// list(): string[] — returns active session IDs.
+	_ = obj.Set("list", func() goja.Value {
+		return runtime.ToValue(reg.List())
+	})
+
+	// len(): number — returns count of active instances.
+	_ = obj.Set("len", func() goja.Value {
+		return runtime.ToValue(reg.Len())
+	})
+
+	// baseDir(): string — returns the base directory.
+	_ = obj.Set("baseDir", func() goja.Value {
+		return runtime.ToValue(reg.BaseDir())
+	})
+
+	return obj
+}
+
+// wrapInstance creates a JS object wrapping an *Instance.
+func wrapInstance(runtime *goja.Runtime, inst *Instance) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("id", inst.ID)
+	_ = obj.Set("stateDir", inst.StateDir)
+	_ = obj.Set("createdAt", inst.CreatedAt.Format("2006-01-02T15:04:05Z07:00"))
+
+	// isClosed(): boolean
+	_ = obj.Set("isClosed", func() goja.Value {
+		return runtime.ToValue(inst.IsClosed())
+	})
+
+	// close(): void — releases all instance resources.
+	_ = obj.Set("close", func() goja.Value {
+		if err := inst.Close(); err != nil {
 			panic(runtime.NewGoError(err))
 		}
 		return goja.Undefined()

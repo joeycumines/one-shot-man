@@ -11,11 +11,11 @@ import (
 type ManagedSessionState int
 
 const (
-	SessionIdle    ManagedSessionState = iota // Created, not yet started
-	SessionActive                             // Running and processing events
-	SessionPaused                             // Temporarily paused (rate-limit backoff)
-	SessionFailed                             // Failed, needs recovery or close
-	SessionClosed                             // Fully closed
+	SessionIdle   ManagedSessionState = iota // Created, not yet started
+	SessionActive                            // Running and processing events
+	SessionPaused                            // Temporarily paused (rate-limit backoff)
+	SessionFailed                            // Failed, needs recovery or close
+	SessionClosed                            // Fully closed
 )
 
 // ManagedSessionStateName returns a human-readable name for a session state.
@@ -55,9 +55,9 @@ func DefaultManagedSessionConfig() ManagedSessionConfig {
 // LineResult is the result of processing a single output line through
 // the monitoring pipeline.
 type LineResult struct {
-	Event      OutputEvent  // Parsed event
-	GuardEvent *GuardEvent  // Non-nil if guard triggered
-	Action     string       // Summary action: "none", "pause", "reject", "restart", "escalate", "timeout"
+	Event      OutputEvent // Parsed event
+	GuardEvent *GuardEvent // Non-nil if guard triggered
+	Action     string      // Summary action: "none", "pause", "reject", "restart", "escalate", "timeout"
 }
 
 // ToolCallResult is the result of processing a tool call through guards.
@@ -94,11 +94,11 @@ type ManagedSession struct {
 	mcpGuard   *MCPGuard
 	supervisor *Supervisor
 
-	mu              sync.Mutex
-	state           ManagedSessionState
-	linesProcessed  int64
-	eventCounts     map[string]int64
-	lastEvent       *OutputEvent
+	mu             sync.Mutex
+	state          ManagedSessionState
+	linesProcessed int64
+	eventCounts    map[string]int64
+	lastEvent      *OutputEvent
 
 	// OnEvent is called synchronously for every parsed event (if set).
 	// The callback must not block.
@@ -155,53 +155,50 @@ func (s *ManagedSession) ProcessLine(line string, now time.Time) LineResult {
 	evCopy := ev
 	s.lastEvent = &evCopy
 	state := s.state
+
+	// Guard call under lock — Guard is not internally thread-safe.
+	var ge *GuardEvent
+	if state == SessionActive {
+		ge = s.guard.ProcessEvent(ev, now)
+		if ge != nil {
+			switch ge.Action {
+			case GuardActionPause:
+				s.state = SessionPaused
+			case GuardActionRestart, GuardActionEscalate, GuardActionTimeout:
+				s.state = SessionFailed
+			}
+		}
+	}
 	s.mu.Unlock()
 
-	// Notify event callback.
+	// Callbacks outside lock to avoid deadlock.
 	if s.OnEvent != nil {
 		s.OnEvent(ev)
 	}
-
-	// Skip guard processing if not active.
-	if state != SessionActive {
-		return LineResult{Event: ev, Action: "none"}
-	}
-
-	ge := s.guard.ProcessEvent(ev, now)
-	if ge == nil {
-		return LineResult{Event: ev, Action: "none"}
-	}
-
-	// Notify guard callback.
-	if s.OnGuardAction != nil {
+	if ge != nil && s.OnGuardAction != nil {
 		s.OnGuardAction(ge)
 	}
 
-	action := guardActionToString(ge.Action)
-
-	// Update session state based on guard action.
-	s.mu.Lock()
-	switch ge.Action {
-	case GuardActionPause:
-		s.state = SessionPaused
-	case GuardActionRestart, GuardActionEscalate, GuardActionTimeout:
-		s.state = SessionFailed
+	if ge == nil {
+		return LineResult{Event: ev, Action: "none"}
 	}
-	s.mu.Unlock()
-
-	return LineResult{Event: ev, GuardEvent: ge, Action: action}
+	return LineResult{Event: ev, GuardEvent: ge, Action: guardActionToString(ge.Action)}
 }
 
 // ProcessCrash reports a crash (non-zero exit) to the guard and supervisor.
 func (s *ManagedSession) ProcessCrash(exitCode int, now time.Time) (*GuardEvent, RecoveryDecision) {
+	// Guard call under lock — Guard is not internally thread-safe.
+	s.mu.Lock()
 	ge := s.guard.ProcessCrash(exitCode, now)
+	s.mu.Unlock()
 
-	// Also inform the supervisor.
+	// Supervisor has its own internal synchronization.
 	d := s.supervisor.HandleError(
 		fmt.Sprintf("exit code %d", exitCode),
 		ErrorClassPTYCrash,
 	)
 
+	// Callbacks outside lock.
 	if s.OnGuardAction != nil && ge != nil {
 		s.OnGuardAction(ge)
 	}
@@ -223,11 +220,16 @@ func (s *ManagedSession) ProcessCrash(exitCode int, now time.Time) (*GuardEvent,
 
 // ProcessToolCall routes an MCP tool call through the MCP guard.
 func (s *ManagedSession) ProcessToolCall(call MCPToolCall) ToolCallResult {
+	// MCPGuard call under lock — MCPGuard is not internally thread-safe.
+	s.mu.Lock()
 	ge := s.mcpGuard.ProcessToolCall(call)
+	s.mu.Unlock()
+
 	if ge == nil {
 		return ToolCallResult{Action: "none"}
 	}
 
+	// Callback outside lock.
 	if s.OnGuardAction != nil {
 		s.OnGuardAction(ge)
 	}
@@ -237,20 +239,20 @@ func (s *ManagedSession) ProcessToolCall(call MCPToolCall) ToolCallResult {
 
 // CheckTimeout checks for both output timeout and MCP no-call timeout.
 func (s *ManagedSession) CheckTimeout(now time.Time) *GuardEvent {
-	// Check output timeout.
+	// Guard/MCPGuard calls under lock — not internally thread-safe.
+	s.mu.Lock()
 	ge := s.guard.CheckTimeout(now)
 	if ge != nil {
+		s.state = SessionFailed
+		s.mu.Unlock()
 		if s.OnGuardAction != nil {
 			s.OnGuardAction(ge)
 		}
-		s.mu.Lock()
-		s.state = SessionFailed
-		s.mu.Unlock()
 		return ge
 	}
-
-	// Check MCP no-call timeout.
 	ge = s.mcpGuard.CheckNoCallTimeout(now)
+	s.mu.Unlock()
+
 	if ge != nil {
 		if s.OnGuardAction != nil {
 			s.OnGuardAction(ge)
@@ -344,6 +346,9 @@ func (s *ManagedSession) Snapshot() ManagedSessionSnapshot {
 	}
 	state := s.state
 	lines := s.linesProcessed
+	// Guard/MCPGuard State under lock — not internally thread-safe.
+	guardState := s.guard.State()
+	mcpGuardState := s.mcpGuard.State()
 	s.mu.Unlock()
 
 	return ManagedSessionSnapshot{
@@ -353,8 +358,8 @@ func (s *ManagedSession) Snapshot() ManagedSessionSnapshot {
 		LinesProcessed:  lines,
 		EventCounts:     counts,
 		LastEvent:       lastEvCopy,
-		GuardState:      s.guard.State(),
-		MCPGuardState:   s.mcpGuard.State(),
+		GuardState:      guardState,
+		MCPGuardState:   mcpGuardState,
 		SupervisorState: s.supervisor.Snapshot(),
 	}
 }

@@ -362,11 +362,11 @@ func (p *Pool) Close() []*PoolWorker {
 
 // PoolStats holds observable pool statistics.
 type PoolStats struct {
-	State       PoolState `json:"state"`
-	StateName   string    `json:"stateName"`
-	WorkerCount int       `json:"workerCount"`
-	MaxSize     int       `json:"maxSize"`
-	Inflight    int       `json:"inflight"`
+	State       PoolState     `json:"state"`
+	StateName   string        `json:"stateName"`
+	WorkerCount int           `json:"workerCount"`
+	MaxSize     int           `json:"maxSize"`
+	Inflight    int           `json:"inflight"`
 	Workers     []WorkerStats `json:"workers"`
 }
 

@@ -25,20 +25,20 @@ type Criterion struct {
 
 // CandidateScore holds the evaluation result for a single candidate.
 type CandidateScore struct {
-	CandidateID string
-	Name        string
-	TotalScore  float64            // Weighted total score (0.0 to 1.0)
-	Scores      map[string]float64 // Per-criterion raw scores (0.0 to 1.0)
-	Rank        int                // 1-based rank (1 = best)
-	Justification string           // Human-readable justification
+	CandidateID   string
+	Name          string
+	TotalScore    float64            // Weighted total score (0.0 to 1.0)
+	Scores        map[string]float64 // Per-criterion raw scores (0.0 to 1.0)
+	Rank          int                // 1-based rank (1 = best)
+	Justification string             // Human-readable justification
 }
 
 // ChoiceResult holds the output of a choice analysis.
 type ChoiceResult struct {
-	RecommendedID string            // ID of the top-ranked candidate
-	Rankings      []CandidateScore  // All candidates sorted by score desc
-	Justification string            // Overall justification for the recommendation
-	NeedsConfirm  bool              // Whether user confirmation is required
+	RecommendedID string           // ID of the top-ranked candidate
+	Rankings      []CandidateScore // All candidates sorted by score desc
+	Justification string           // Overall justification for the recommendation
+	NeedsConfirm  bool             // Whether user confirmation is required
 }
 
 // ScoreFunc evaluates a candidate on a specific criterion and returns
@@ -156,8 +156,8 @@ func (cr *ChoiceResolver) Analyze(candidates []Candidate, criteria []Criterion, 
 
 	needsConfirm := len(rankings) > 0 && rankings[0].TotalScore < cr.config.ConfirmThreshold
 	result := ChoiceResult{
-		Rankings:      rankings,
-		NeedsConfirm:  needsConfirm,
+		Rankings:     rankings,
+		NeedsConfirm: needsConfirm,
 	}
 
 	if len(rankings) > 0 {

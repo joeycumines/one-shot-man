@@ -12,12 +12,12 @@ import (
 type Intent int
 
 const (
-	IntentUnknown    Intent = iota // Unable to classify
-	IntentReadOnly                 // Read-only operations (view, list, search)
-	IntentCode                     // Code modifications (edit, create, refactor)
-	IntentDestructive              // Destructive operations (delete, overwrite, format disk)
-	IntentNetwork                  // Network access (fetch, API calls, download)
-	IntentCredential               // Credential/secret access (keys, tokens, passwords)
+	IntentUnknown     Intent = iota // Unable to classify
+	IntentReadOnly                  // Read-only operations (view, list, search)
+	IntentCode                      // Code modifications (edit, create, refactor)
+	IntentDestructive               // Destructive operations (delete, overwrite, format disk)
+	IntentNetwork                   // Network access (fetch, API calls, download)
+	IntentCredential                // Credential/secret access (keys, tokens, passwords)
 )
 
 // IntentName returns a human-readable name for an Intent.
@@ -71,10 +71,10 @@ type RiskLevel int
 
 const (
 	RiskNone     RiskLevel = iota // No risk
-	RiskLow                      // Low risk — proceed freely
-	RiskMedium                   // Medium risk — log/warn
-	RiskHigh                     // High risk — require confirmation
-	RiskCritical                 // Critical risk — block
+	RiskLow                       // Low risk — proceed freely
+	RiskMedium                    // Medium risk — log/warn
+	RiskHigh                      // High risk — require confirmation
+	RiskCritical                  // Critical risk — block
 )
 
 // RiskLevelName returns a human-readable name for a RiskLevel.
@@ -222,13 +222,13 @@ type SafetyValidator struct {
 
 // SafetyStats tracks safety validation statistics.
 type SafetyStats struct {
-	TotalChecks   int64
-	AllowCount    int64
-	WarnCount     int64
-	ConfirmCount  int64
-	BlockCount    int64
-	IntentCounts  map[string]int64 // IntentName -> count
-	ScopeCounts   map[string]int64 // ScopeName -> count
+	TotalChecks  int64
+	AllowCount   int64
+	WarnCount    int64
+	ConfirmCount int64
+	BlockCount   int64
+	IntentCounts map[string]int64 // IntentName -> count
+	ScopeCounts  map[string]int64 // ScopeName -> count
 }
 
 // NewSafetyValidator creates a safety validator with the given configuration.

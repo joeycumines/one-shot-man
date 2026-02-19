@@ -11,9 +11,9 @@ import (
 type PanelState int
 
 const (
-	PanelIdle    PanelState = iota // Not yet started
-	PanelActive                    // Active and rendering
-	PanelClosed                    // Shut down
+	PanelIdle   PanelState = iota // Not yet started
+	PanelActive                   // Active and rendering
+	PanelClosed                   // Shut down
 )
 
 // PanelStateName returns a human-readable name for a PanelState.
@@ -32,7 +32,7 @@ func PanelStateName(s PanelState) string {
 
 // PaneHealth tracks health indicators for a single instance pane.
 type PaneHealth struct {
-	State      string    `json:"state"`      // "running", "error", "idle", "stopped"
+	State      string    `json:"state"` // "running", "error", "idle", "stopped"
 	ErrorCount int64     `json:"errorCount"`
 	TaskCount  int64     `json:"taskCount"`
 	LastUpdate time.Time `json:"lastUpdate,omitempty"`
@@ -192,7 +192,7 @@ func (p *Panel) RouteInput(key string) InputResult {
 
 	// Alt+1..9 switches panes.
 	if len(key) == 5 && key[:4] == "alt+" && key[4] >= '1' && key[4] <= '9' {
-		idx := int(key[4]-'1')
+		idx := int(key[4] - '1')
 		if idx < len(p.panes) {
 			p.activeIdx = idx
 			return InputResult{
@@ -343,21 +343,21 @@ func healthIndicator(state string) string {
 
 // PanelSnapshot holds the complete panel state for rendering.
 type PanelSnapshot struct {
-	State     PanelState `json:"state"`
-	StateName string     `json:"stateName"`
-	ActiveIdx int        `json:"activeIdx"`
+	State     PanelState     `json:"state"`
+	StateName string         `json:"stateName"`
+	ActiveIdx int            `json:"activeIdx"`
 	Panes     []PaneSnapshot `json:"panes"`
-	StatusBar string     `json:"statusBar"`
+	StatusBar string         `json:"statusBar"`
 }
 
 // PaneSnapshot holds a pane's state for rendering.
 type PaneSnapshot struct {
-	ID         string     `json:"id"`
-	Title      string     `json:"title"`
-	Lines      int        `json:"lines"`
-	ScrollPos  int        `json:"scrollPos"`
-	Health     PaneHealth `json:"health"`
-	IsActive   bool       `json:"isActive"`
+	ID        string     `json:"id"`
+	Title     string     `json:"title"`
+	Lines     int        `json:"lines"`
+	ScrollPos int        `json:"scrollPos"`
+	Health    PaneHealth `json:"health"`
+	IsActive  bool       `json:"isActive"`
 }
 
 // Snapshot returns the complete panel state.

@@ -38,10 +38,10 @@ type Instance struct {
 
 // InstanceState is the JSON-serializable metadata written to state.json.
 type InstanceState struct {
-	ID        string    `json:"id"`
-	CreatedAt time.Time `json:"createdAt"`
-	Status    string    `json:"status"` // "active", "closed"
-	MCPEndpoint string  `json:"mcpEndpoint,omitempty"`
+	ID          string    `json:"id"`
+	CreatedAt   time.Time `json:"createdAt"`
+	Status      string    `json:"status"` // "active", "closed"
+	MCPEndpoint string    `json:"mcpEndpoint,omitempty"`
 }
 
 // Close releases all resources held by this instance: stops the agent,

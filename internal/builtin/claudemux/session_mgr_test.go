@@ -209,27 +209,16 @@ func TestManagedSession_ProcessCrash_Escalate(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	cfg := DefaultManagedSessionConfig()
-	cfg.Guard.Crash.MaxRestarts = 1
-	cfg.Supervisor.MaxForceKills = 0
+	cfg.Guard.Crash.MaxRestarts = 0 // First crash → escalate from guard
 	s := NewManagedSession(ctx, "pc2", cfg)
 	_ = s.Start()
 
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	// First crash → restart.
+	// First crash → guard escalates (0 restarts allowed).
 	ge1, _ := s.ProcessCrash(1, now)
-	if ge1.Action != GuardActionRestart {
-		t.Fatalf("expected Restart on first crash, got %s", GuardActionName(ge1.Action))
-	}
-
-	// Reset guard crash count and confirm supervisor recovery for second crash.
-	s.guard.ResetCrashCount()
-	s.supervisor.ConfirmRecovery()
-
-	// Second crash → escalate.
-	ge2, _ := s.ProcessCrash(1, now.Add(time.Second))
-	if ge2.Action != GuardActionEscalate {
-		t.Errorf("expected Escalate on second crash, got %s", GuardActionName(ge2.Action))
+	if ge1.Action != GuardActionEscalate {
+		t.Errorf("expected Escalate from guard, got %s", GuardActionName(ge1.Action))
 	}
 
 	// Session should be Failed after escalation.
@@ -347,14 +336,21 @@ func TestManagedSession_HandleError_Escalate(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	cfg := DefaultManagedSessionConfig()
-	cfg.Supervisor.MaxRetries = 0
+	cfg.Supervisor.MaxRetries = 1
 	s := NewManagedSession(ctx, "he2", cfg)
 	_ = s.Start()
 
-	d := s.HandleError("fatal", ErrorClassPTYError)
+	// First error → Retry (retryCount=1 <= retryThreshold=1).
+	d1 := s.HandleError("try1", ErrorClassPTYError)
+	if d1.Action != RecoveryRetry {
+		t.Fatalf("first error: Action = %s, want Retry", RecoveryActionName(d1.Action))
+	}
+	s.ConfirmRecovery()
 
-	if d.Action != RecoveryEscalate {
-		t.Errorf("Action = %s, want Escalate", RecoveryActionName(d.Action))
+	// Second error → Escalate (retryCount=2 > maxRetries=1).
+	d2 := s.HandleError("try2", ErrorClassPTYError)
+	if d2.Action != RecoveryEscalate {
+		t.Errorf("second error: Action = %s, want Escalate", RecoveryActionName(d2.Action))
 	}
 	if s.State() != SessionFailed {
 		t.Errorf("State() = %s, want Failed", ManagedSessionStateName(s.State()))

@@ -174,6 +174,71 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			g := NewMCPGuard(cfg)
 			return wrapMCPGuard(runtime, g)
 		})
+
+		// Supervisor state constants.
+		_ = exports.Set("SUPERVISOR_IDLE", int(SupervisorIdle))
+		_ = exports.Set("SUPERVISOR_RUNNING", int(SupervisorRunning))
+		_ = exports.Set("SUPERVISOR_RECOVERING", int(SupervisorRecovering))
+		_ = exports.Set("SUPERVISOR_DRAINING", int(SupervisorDraining))
+		_ = exports.Set("SUPERVISOR_STOPPED", int(SupervisorStopped))
+
+		// Error class constants.
+		_ = exports.Set("ERROR_CLASS_NONE", int(ErrorClassNone))
+		_ = exports.Set("ERROR_CLASS_PTY_EOF", int(ErrorClassPTYEOF))
+		_ = exports.Set("ERROR_CLASS_PTY_CRASH", int(ErrorClassPTYCrash))
+		_ = exports.Set("ERROR_CLASS_PTY_ERROR", int(ErrorClassPTYError))
+		_ = exports.Set("ERROR_CLASS_MCP_TIMEOUT", int(ErrorClassMCPTimeout))
+		_ = exports.Set("ERROR_CLASS_MCP_MALFORMED", int(ErrorClassMCPMalformed))
+		_ = exports.Set("ERROR_CLASS_CANCELLED", int(ErrorClassCancelled))
+
+		// Recovery action constants.
+		_ = exports.Set("RECOVERY_NONE", int(RecoveryNone))
+		_ = exports.Set("RECOVERY_RETRY", int(RecoveryRetry))
+		_ = exports.Set("RECOVERY_RESTART", int(RecoveryRestart))
+		_ = exports.Set("RECOVERY_FORCE_KILL", int(RecoveryForceKill))
+		_ = exports.Set("RECOVERY_ESCALATE", int(RecoveryEscalate))
+		_ = exports.Set("RECOVERY_ABORT", int(RecoveryAbort))
+		_ = exports.Set("RECOVERY_DRAIN", int(RecoveryDrain))
+
+		// supervisorStateName(state: number): string
+		_ = exports.Set("supervisorStateName", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("supervisorStateName: state argument is required"))
+			}
+			return runtime.ToValue(SupervisorStateName(SupervisorState(call.Argument(0).ToInteger())))
+		})
+
+		// errorClassName(class: number): string
+		_ = exports.Set("errorClassName", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("errorClassName: class argument is required"))
+			}
+			return runtime.ToValue(ErrorClassName(ErrorClass(call.Argument(0).ToInteger())))
+		})
+
+		// recoveryActionName(action: number): string
+		_ = exports.Set("recoveryActionName", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("recoveryActionName: action argument is required"))
+			}
+			return runtime.ToValue(RecoveryActionName(RecoveryAction(call.Argument(0).ToInteger())))
+		})
+
+		// defaultSupervisorConfig(): object
+		_ = exports.Set("defaultSupervisorConfig", func(call goja.FunctionCall) goja.Value {
+			cfg := DefaultSupervisorConfig()
+			return supervisorConfigToJS(runtime, cfg)
+		})
+
+		// newSupervisor(config?: object): object
+		_ = exports.Set("newSupervisor", func(call goja.FunctionCall) goja.Value {
+			cfg := DefaultSupervisorConfig()
+			if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+				cfg = jsToSupervisorConfig(runtime, call.Argument(0))
+			}
+			s := NewSupervisor(ctx, cfg)
+			return wrapSupervisor(ctx, runtime, s)
+		})
 	}
 }
 
@@ -939,6 +1004,130 @@ func wrapMCPGuard(runtime *goja.Runtime, g *MCPGuard) goja.Value {
 	// config(): object
 	_ = obj.Set("config", func() goja.Value {
 		return mcpGuardConfigToJS(runtime, g.Config())
+	})
+
+	return obj
+}
+
+// supervisorConfigToJS converts a SupervisorConfig to a JS object.
+func supervisorConfigToJS(runtime *goja.Runtime, cfg SupervisorConfig) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("maxRetries", cfg.MaxRetries)
+	_ = obj.Set("maxForceKills", cfg.MaxForceKills)
+	_ = obj.Set("retryDelayMs", cfg.RetryDelay.Milliseconds())
+	_ = obj.Set("shutdownTimeoutMs", cfg.ShutdownTimeout.Milliseconds())
+	_ = obj.Set("forceKillTimeoutMs", cfg.ForceKillTimeout.Milliseconds())
+	return obj
+}
+
+// jsToSupervisorConfig converts a JS object to a SupervisorConfig.
+func jsToSupervisorConfig(runtime *goja.Runtime, val goja.Value) SupervisorConfig {
+	obj := val.ToObject(runtime)
+	cfg := DefaultSupervisorConfig()
+
+	if v := obj.Get("maxRetries"); v != nil && !goja.IsUndefined(v) {
+		cfg.MaxRetries = int(v.ToInteger())
+	}
+	if v := obj.Get("maxForceKills"); v != nil && !goja.IsUndefined(v) {
+		cfg.MaxForceKills = int(v.ToInteger())
+	}
+	if v := obj.Get("retryDelayMs"); v != nil && !goja.IsUndefined(v) {
+		cfg.RetryDelay = time.Duration(v.ToInteger()) * time.Millisecond
+	}
+	if v := obj.Get("shutdownTimeoutMs"); v != nil && !goja.IsUndefined(v) {
+		cfg.ShutdownTimeout = time.Duration(v.ToInteger()) * time.Millisecond
+	}
+	if v := obj.Get("forceKillTimeoutMs"); v != nil && !goja.IsUndefined(v) {
+		cfg.ForceKillTimeout = time.Duration(v.ToInteger()) * time.Millisecond
+	}
+
+	return cfg
+}
+
+// recoveryDecisionToJS converts a RecoveryDecision to a JS object.
+func recoveryDecisionToJS(runtime *goja.Runtime, d RecoveryDecision) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("action", int(d.Action))
+	_ = obj.Set("actionName", RecoveryActionName(d.Action))
+	_ = obj.Set("reason", d.Reason)
+	_ = obj.Set("newState", int(d.NewState))
+	_ = obj.Set("newStateName", SupervisorStateName(d.NewState))
+	if d.Details != nil {
+		details := runtime.NewObject()
+		for k, v := range d.Details {
+			_ = details.Set(k, v)
+		}
+		_ = obj.Set("details", details)
+	} else {
+		_ = obj.Set("details", runtime.NewObject())
+	}
+	return obj
+}
+
+// wrapSupervisor creates a JS object wrapping a *Supervisor with methods.
+func wrapSupervisor(ctx context.Context, runtime *goja.Runtime, s *Supervisor) goja.Value {
+	obj := runtime.NewObject()
+
+	// start(): void
+	_ = obj.Set("start", func() goja.Value {
+		if err := s.Start(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// handleError(msg: string, errorClass: number): object
+	_ = obj.Set("handleError", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("handleError: msg and errorClass arguments required"))
+		}
+		msg := call.Argument(0).String()
+		class := ErrorClass(call.Argument(1).ToInteger())
+		d := s.HandleError(msg, class)
+		return recoveryDecisionToJS(runtime, d)
+	})
+
+	// shutdown(): object
+	_ = obj.Set("shutdown", func() goja.Value {
+		d := s.Shutdown()
+		return recoveryDecisionToJS(runtime, d)
+	})
+
+	// confirmRecovery(): void
+	_ = obj.Set("confirmRecovery", func() goja.Value {
+		s.ConfirmRecovery()
+		return goja.Undefined()
+	})
+
+	// confirmStopped(): void
+	_ = obj.Set("confirmStopped", func() goja.Value {
+		s.ConfirmStopped()
+		return goja.Undefined()
+	})
+
+	// snapshot(): object
+	_ = obj.Set("snapshot", func() goja.Value {
+		snap := s.Snapshot()
+		obj := runtime.NewObject()
+		_ = obj.Set("state", int(snap.State))
+		_ = obj.Set("stateName", snap.StateName)
+		_ = obj.Set("retryCount", snap.RetryCount)
+		_ = obj.Set("forceKillCount", snap.ForceKillCount)
+		_ = obj.Set("lastError", snap.LastError)
+		_ = obj.Set("lastErrorClass", int(snap.LastErrorClass))
+		_ = obj.Set("cancelled", snap.Cancelled)
+		return obj
+	})
+
+	// reset(): void — resets supervisor to Idle for reuse
+	_ = obj.Set("reset", func() goja.Value {
+		s.Reset(ctx)
+		return goja.Undefined()
+	})
+
+	// cancelled(): boolean — whether the supervisor context is done
+	_ = obj.Set("cancelled", func() goja.Value {
+		return runtime.ToValue(s.Context().Err() != nil)
 	})
 
 	return obj

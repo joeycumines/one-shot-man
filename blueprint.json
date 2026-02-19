@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T008 Done. T009 next. Pre-existing flaky: TestRecording_Goal, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean (all timing-dep, pass on rerun).",
+    "currentState": "T001-T009 Done. T010 next. Pre-existing flaky: TestRecording_Goal, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean (all timing-dep, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -84,8 +84,8 @@
     },
     {
       "task": "T009: Guard rails — MCP monitors",
-      "description": "In claudemux/: no-calls timeout, excessive frequency, repeated calls, unexpected tools, schema violations. Remediation: warn/pause/restart/kill/escalate. Tests. Run make.",
-      "status": "Not Started"
+      "description": "Added mcp_guard.go: MCPGuard type (event-driven, explicit timestamps). MCPGuardConfig with 4 sub-configs: MCPNoCallTimeoutConfig (idle agent detection), MCPFrequencyLimitConfig (sliding window call counting), MCPRepeatDetectionConfig (consecutive identical call detection with tool+args matching, configurable window), MCPToolAllowlistConfig (tool name validation). ProcessToolCall checks in priority: allowlist→frequency→repetition. CheckNoCallTimeout for periodic polling. DefaultMCPGuardConfig with production defaults (10m timeout, 50 calls/10s, 5 max repeats, allowlist disabled). MCPGuardState for observability. 30+ tests in mcp_guard_test.go covering all monitors, window sliding, chain breaking, priority order, edge cases. JS bindings: defaultMCPGuardConfig, newMCPGuard with processToolCall/checkNoCallTimeout/state/config. Deadcode clean, full build green.",
+      "status": "Done"
     },
     {
       "task": "T010: Error recovery and cancellation",

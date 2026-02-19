@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T004 Done. T005 next. Pre-existing flaky: TestRecording_Goal (timing-dep TUI test, passes on rerun).",
+    "currentState": "T001-T005 Done. T006 next. Pre-existing flaky: TestRecording_Goal (timing-dep TUI test, passes on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -64,8 +64,8 @@
     },
     {
       "task": "T005: MCP session coordination documentation",
-      "description": "Add section to docs/reference/command.md: all MCP session tools with JSON schema examples, usage patterns, error codes. Update docs/architecture-claude-mux.md to reference MCP protocol. Run make.",
-      "status": "Not Started"
+      "description": "Updated docs/reference/command.md: tool count 14→15, added heartbeat to table, added Session Coordination section with lifecycle, validation rules, seq number idempotency, heartbeat, full JSON schemas for all 7 session tools, getSession response example. Updated docs/architecture-claude-mux.md §6 MCP Feedback Protocol: replaced stale reportError/sequenceNumber docs with actual registerSession/reportProgress/reportResult/requestGuidance/heartbeat/getSession schemas, corrected idempotency docs.",
+      "status": "Done"
     },
     {
       "task": "T006: Dynamic MCP server config per Claude instance",

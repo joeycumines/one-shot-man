@@ -100,14 +100,14 @@ type mcpGoalInfo struct {
 
 // mcpSession tracks an active agent session.
 type mcpSession struct {
-	SessionID    string            `json:"sessionId"`
-	Capabilities []string          `json:"capabilities"`
-	Status       string            `json:"status"`
-	Progress     float64           `json:"progress"`
-	LastUpdate   time.Time         `json:"lastUpdate"`
-	LastHeartbeat time.Time        `json:"lastHeartbeat"`
-	LastSeq      int64             `json:"-"` // highest processed sequence number
-	Events       []mcpSessionEvent `json:"-"` // drained on getSession
+	SessionID     string            `json:"sessionId"`
+	Capabilities  []string          `json:"capabilities"`
+	Status        string            `json:"status"`
+	Progress      float64           `json:"progress"`
+	LastUpdate    time.Time         `json:"lastUpdate"`
+	LastHeartbeat time.Time         `json:"lastHeartbeat"`
+	LastSeq       int64             `json:"-"` // highest processed sequence number
+	Events        []mcpSessionEvent `json:"-"` // drained on getSession
 }
 
 // mcpSessionEvent is a queued event from an agent session.

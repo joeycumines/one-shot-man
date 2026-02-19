@@ -23,11 +23,12 @@
 - **T002**: Renamed orchestrator.js → claude-mux.js, updated all references
 - **T003**: Model selection TUI parser extension (model_nav.go, enhanced parser, JS bindings)
 - **T004**: MCP session coordination hardening (validation, seq numbers, heartbeat, 20 new tests, fuzz)
+- **T005**: MCP session docs (command.md session coordination section, architecture-claude-mux.md §6)
 
 ### Known pre-existing issues:
 - **TestRecording_Goal** (internal/scripting): Flaky timing-dependent TUI test. Passes on re-run.
 
-### Next task (T005):
-MCP session coordination documentation — add section to docs/reference/command.md.
+### Next task (T006):
+Dynamic MCP server config per Claude instance.
 
 ### No commits made yet this session. Rule of Two needed before committing.

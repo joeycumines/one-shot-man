@@ -31,6 +31,7 @@
 - **T010**: Error recovery and cancellation (recovery.go, Supervisor state machine, ErrorClass/RecoveryAction/RecoveryDecision, context propagation, graceful shutdown, JS bindings, 30+ tests)
 - **T011**: Concurrent instance management — pool (pool.go, Pool with acquire/release dispatch, round-robin, sync.Cond blocking, Drain/WaitDrained/Close, health tracking, JS bindings, 30+ tests)
 - **T012**: TUI multiplexing — multi-instance panel (panel.go, Panel with Alt+1..9 switching, per-pane scrollback, PgUp/PgDown, health indicators, StatusBar, getVisibleLines, JS bindings, 40+ tests)
+- **T013**: Expose building blocks as JS API (Parser.Patterns() + JS binding, example-08-claude-mux-api.js, scripts/README.md)
 
 ### Known pre-existing flaky tests:
 - **TestRecording_Goal** (internal/scripting): TUI timing
@@ -40,7 +41,7 @@
 - **TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping** (internal/scripting): PTY hang under load
 - All pass on re-run.
 
-### Next task: T013
-Expose claude-mux building blocks as JS API.
+### Next task: T014
+Claude Code wrapper/parser JS native module.
 
 ### No commits made yet this session. Rule of Two needed before committing.

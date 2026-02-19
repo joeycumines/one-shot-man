@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T012 Done. T013 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
+    "currentState": "T001-T013 Done. T014 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -104,8 +104,8 @@
     },
     {
       "task": "T013: Expose claude-mux building blocks as JS API",
-      "description": "Expand osm:claudemux module.go: pool management (createPool, submit, drain, stats), MCP helpers (waitForResult, getProgress), BT template access, parser patterns list, guard config from JS. Update scripts/ examples. Run make.",
-      "status": "Not Started"
+      "description": "Added Parser.Patterns() method (PatternInfo struct: Name/EventType/Pattern) returning all registered patterns. JS binding: parser.patterns() returns [{name, eventType, eventTypeName, pattern}]. Tests: TestPatterns_BuiltinReturned, TestPatterns_IncludesCustom. Created scripts/example-08-claude-mux-api.js exercising all building blocks (parser+patterns, guard, MCP guard, supervisor, pool, panel). Updated scripts/README.md. Note: pool/guard/supervisor/panel JS bindings were completed in T008-T012; MCP helpers deferred to T014/T018 where session state access is available. BT templates already accessible via require(). All claudemux tests pass. Build green.",
+      "status": "Done"
     },
     {
       "task": "T014: Claude Code wrapper/parser JS native module",

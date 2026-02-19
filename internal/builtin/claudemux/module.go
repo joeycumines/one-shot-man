@@ -272,6 +272,41 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			panel := NewPanel(cfg)
 			return wrapPanel(runtime, panel)
 		})
+
+		// Managed session state constants.
+		_ = exports.Set("SESSION_IDLE", int(SessionIdle))
+		_ = exports.Set("SESSION_ACTIVE", int(SessionActive))
+		_ = exports.Set("SESSION_PAUSED", int(SessionPaused))
+		_ = exports.Set("SESSION_FAILED", int(SessionFailed))
+		_ = exports.Set("SESSION_CLOSED", int(SessionClosed))
+
+		// managedSessionStateName(state: number): string
+		_ = exports.Set("managedSessionStateName", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("managedSessionStateName: state argument is required"))
+			}
+			return runtime.ToValue(ManagedSessionStateName(ManagedSessionState(call.Argument(0).ToInteger())))
+		})
+
+		// defaultManagedSessionConfig(): object
+		_ = exports.Set("defaultManagedSessionConfig", func(call goja.FunctionCall) goja.Value {
+			cfg := DefaultManagedSessionConfig()
+			return managedSessionConfigToJS(runtime, cfg)
+		})
+
+		// createSession(id: string, config?: object): object
+		_ = exports.Set("createSession", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("createSession: id argument is required"))
+			}
+			id := call.Argument(0).String()
+			cfg := DefaultManagedSessionConfig()
+			if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+				cfg = jsToManagedSessionConfig(runtime, call.Argument(1))
+			}
+			s := NewManagedSession(ctx, id, cfg)
+			return wrapManagedSession(runtime, s)
+		})
 	}
 }
 
@@ -1593,6 +1628,275 @@ func wrapPanel(runtime *goja.Runtime, panel *Panel) goja.Value {
 	// config(): object
 	_ = obj.Set("config", func() goja.Value {
 		return panelConfigToJS(runtime, panel.Config())
+	})
+
+	return obj
+}
+
+// managedSessionConfigToJS converts a ManagedSessionConfig to a JS object.
+func managedSessionConfigToJS(runtime *goja.Runtime, cfg ManagedSessionConfig) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("guard", guardConfigToJS(runtime, cfg.Guard))
+	_ = obj.Set("mcpGuard", mcpGuardConfigToJS(runtime, cfg.MCPGuard))
+	_ = obj.Set("supervisor", supervisorConfigToJS(runtime, cfg.Supervisor))
+	return obj
+}
+
+// jsToManagedSessionConfig converts a JS object to a ManagedSessionConfig.
+func jsToManagedSessionConfig(runtime *goja.Runtime, val goja.Value) ManagedSessionConfig {
+	obj := val.ToObject(runtime)
+	cfg := DefaultManagedSessionConfig()
+
+	if v := obj.Get("guard"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		cfg.Guard = jsToGuardConfig(runtime, v)
+	}
+	if v := obj.Get("mcpGuard"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		cfg.MCPGuard = jsToMCPGuardConfig(runtime, v)
+	}
+	if v := obj.Get("supervisor"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		cfg.Supervisor = jsToSupervisorConfig(runtime, v)
+	}
+
+	return cfg
+}
+
+// lineResultToJS converts a LineResult to a JS object.
+func lineResultToJS(runtime *goja.Runtime, r LineResult) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("event", eventToJS(runtime, r.Event))
+	_ = obj.Set("guardEvent", guardEventToJS(runtime, r.GuardEvent))
+	_ = obj.Set("action", r.Action)
+	return obj
+}
+
+// toolCallResultToJS converts a ToolCallResult to a JS object.
+func toolCallResultToJS(runtime *goja.Runtime, r ToolCallResult) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("guardEvent", guardEventToJS(runtime, r.GuardEvent))
+	_ = obj.Set("action", r.Action)
+	return obj
+}
+
+// managedSessionSnapshotToJS converts a ManagedSessionSnapshot to a JS object.
+func managedSessionSnapshotToJS(runtime *goja.Runtime, snap ManagedSessionSnapshot) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("id", snap.ID)
+	_ = obj.Set("state", int(snap.State))
+	_ = obj.Set("stateName", snap.StateName)
+	_ = obj.Set("linesProcessed", snap.LinesProcessed)
+
+	counts := runtime.NewObject()
+	for k, v := range snap.EventCounts {
+		_ = counts.Set(k, v)
+	}
+	_ = obj.Set("eventCounts", counts)
+
+	if snap.LastEvent != nil {
+		_ = obj.Set("lastEvent", eventToJS(runtime, *snap.LastEvent))
+	} else {
+		_ = obj.Set("lastEvent", goja.Null())
+	}
+
+	// Guard state.
+	gs := runtime.NewObject()
+	_ = gs.Set("rateLimitCount", snap.GuardState.RateLimitCount)
+	_ = gs.Set("crashCount", snap.GuardState.CrashCount)
+	_ = gs.Set("started", snap.GuardState.Started)
+	_ = obj.Set("guardState", gs)
+
+	// MCP guard state.
+	ms := runtime.NewObject()
+	_ = ms.Set("totalCalls", snap.MCPGuardState.TotalCalls)
+	_ = ms.Set("recentCount", snap.MCPGuardState.RecentCount)
+	_ = ms.Set("started", snap.MCPGuardState.Started)
+	_ = obj.Set("mcpGuardState", ms)
+
+	// Supervisor state.
+	ss := runtime.NewObject()
+	_ = ss.Set("state", int(snap.SupervisorState.State))
+	_ = ss.Set("stateName", snap.SupervisorState.StateName)
+	_ = ss.Set("retryCount", snap.SupervisorState.RetryCount)
+	_ = ss.Set("forceKillCount", snap.SupervisorState.ForceKillCount)
+	_ = ss.Set("lastError", snap.SupervisorState.LastError)
+	_ = ss.Set("cancelled", snap.SupervisorState.Cancelled)
+	_ = obj.Set("supervisorState", ss)
+
+	return obj
+}
+
+// wrapManagedSession creates a JS object wrapping a *ManagedSession with methods.
+func wrapManagedSession(runtime *goja.Runtime, s *ManagedSession) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("id", s.ID())
+
+	// start(): void
+	_ = obj.Set("start", func() goja.Value {
+		if err := s.Start(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// processLine(line: string, nowMs?: number): object
+	_ = obj.Set("processLine", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("processLine: line argument is required"))
+		}
+		line := call.Argument(0).String()
+		now := time.Now()
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) {
+			now = time.UnixMilli(call.Argument(1).ToInteger())
+		}
+		r := s.ProcessLine(line, now)
+		return lineResultToJS(runtime, r)
+	})
+
+	// processCrash(exitCode: number, nowMs?: number): object
+	_ = obj.Set("processCrash", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("processCrash: exitCode argument is required"))
+		}
+		exitCode := int(call.Argument(0).ToInteger())
+		now := time.Now()
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) {
+			now = time.UnixMilli(call.Argument(1).ToInteger())
+		}
+		ge, d := s.ProcessCrash(exitCode, now)
+		result := runtime.NewObject()
+		_ = result.Set("guardEvent", guardEventToJS(runtime, ge))
+		_ = result.Set("recovery", recoveryDecisionToJS(runtime, d))
+		return result
+	})
+
+	// processToolCall(call: object): object
+	_ = obj.Set("processToolCall", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("processToolCall: call argument is required"))
+		}
+		callObj := call.Argument(0).ToObject(runtime)
+		tc := MCPToolCall{Timestamp: time.Now()}
+		if v := callObj.Get("toolName"); v != nil && !goja.IsUndefined(v) {
+			tc.ToolName = v.String()
+		}
+		if v := callObj.Get("arguments"); v != nil && !goja.IsUndefined(v) {
+			tc.Arguments = v.String()
+		}
+		if v := callObj.Get("timestampMs"); v != nil && !goja.IsUndefined(v) {
+			tc.Timestamp = time.UnixMilli(v.ToInteger())
+		}
+		r := s.ProcessToolCall(tc)
+		return toolCallResultToJS(runtime, r)
+	})
+
+	// checkTimeout(nowMs?: number): object|null
+	_ = obj.Set("checkTimeout", func(call goja.FunctionCall) goja.Value {
+		now := time.Now()
+		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) {
+			now = time.UnixMilli(call.Argument(0).ToInteger())
+		}
+		ge := s.CheckTimeout(now)
+		return guardEventToJS(runtime, ge)
+	})
+
+	// handleError(msg: string, errorClass: number): object
+	_ = obj.Set("handleError", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("handleError: msg and errorClass arguments required"))
+		}
+		msg := call.Argument(0).String()
+		class := ErrorClass(call.Argument(1).ToInteger())
+		d := s.HandleError(msg, class)
+		return recoveryDecisionToJS(runtime, d)
+	})
+
+	// confirmRecovery(): void
+	_ = obj.Set("confirmRecovery", func() goja.Value {
+		s.ConfirmRecovery()
+		return goja.Undefined()
+	})
+
+	// resume(): void
+	_ = obj.Set("resume", func() goja.Value {
+		if err := s.Resume(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// shutdown(): object
+	_ = obj.Set("shutdown", func() goja.Value {
+		d := s.Shutdown()
+		return recoveryDecisionToJS(runtime, d)
+	})
+
+	// close(): void
+	_ = obj.Set("close", func() goja.Value {
+		s.Close()
+		return goja.Undefined()
+	})
+
+	// state(): number
+	_ = obj.Set("state", func() goja.Value {
+		return runtime.ToValue(int(s.State()))
+	})
+
+	// snapshot(): object
+	_ = obj.Set("snapshot", func() goja.Value {
+		return managedSessionSnapshotToJS(runtime, s.Snapshot())
+	})
+
+	// parser(): object — returns the session's parser for custom patterns
+	_ = obj.Set("parser", func() goja.Value {
+		return wrapParser(runtime, s.Parser())
+	})
+
+	// onEvent(callback): void — set event callback
+	_ = obj.Set("onEvent", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 || goja.IsNull(call.Argument(0)) || goja.IsUndefined(call.Argument(0)) {
+			s.OnEvent = nil
+			return goja.Undefined()
+		}
+		fn, ok := goja.AssertFunction(call.Argument(0))
+		if !ok {
+			panic(runtime.NewTypeError("onEvent: argument must be a function"))
+		}
+		s.OnEvent = func(ev OutputEvent) {
+			_, _ = fn(goja.Undefined(), eventToJS(runtime, ev))
+		}
+		return goja.Undefined()
+	})
+
+	// onGuardAction(callback): void — set guard action callback
+	_ = obj.Set("onGuardAction", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 || goja.IsNull(call.Argument(0)) || goja.IsUndefined(call.Argument(0)) {
+			s.OnGuardAction = nil
+			return goja.Undefined()
+		}
+		fn, ok := goja.AssertFunction(call.Argument(0))
+		if !ok {
+			panic(runtime.NewTypeError("onGuardAction: argument must be a function"))
+		}
+		s.OnGuardAction = func(ge *GuardEvent) {
+			_, _ = fn(goja.Undefined(), guardEventToJS(runtime, ge))
+		}
+		return goja.Undefined()
+	})
+
+	// onRecoveryDecision(callback): void — set recovery decision callback
+	_ = obj.Set("onRecoveryDecision", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 || goja.IsNull(call.Argument(0)) || goja.IsUndefined(call.Argument(0)) {
+			s.OnRecoveryDecision = nil
+			return goja.Undefined()
+		}
+		fn, ok := goja.AssertFunction(call.Argument(0))
+		if !ok {
+			panic(runtime.NewTypeError("onRecoveryDecision: argument must be a function"))
+		}
+		s.OnRecoveryDecision = func(d RecoveryDecision) {
+			_, _ = fn(goja.Undefined(), recoveryDecisionToJS(runtime, d))
+		}
+		return goja.Undefined()
 	})
 
 	return obj

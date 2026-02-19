@@ -55,9 +55,25 @@ var (
 //
 // Lines that do not match any model item pattern are ignored. The returned
 // ModelMenu may have an empty Models slice if no items were detected.
+//
+// A two-pass approach is used: the first pass checks for any explicit
+// indicator (selection arrow or numbered item). If found, the second pass
+// also recognizes indented lines without indicators as model names. This
+// prevents false positives on random indented text while correctly parsing
+// menus where unselected items appear before the selected one.
 func ParseModelMenu(lines []string) *ModelMenu {
 	menu := &ModelMenu{SelectedIndex: -1}
 
+	// First pass: check if any line has a selection indicator or numbered item.
+	hasIndicator := false
+	for _, line := range lines {
+		if reSelectedArrow.MatchString(line) || reNumberedItem.MatchString(line) {
+			hasIndicator = true
+			break
+		}
+	}
+
+	// Second pass: parse all items.
 	for _, line := range lines {
 		// Check for selected arrow indicator (> or ❯).
 		if m := reSelectedArrow.FindStringSubmatch(line); m != nil {
@@ -72,10 +88,9 @@ func ParseModelMenu(lines []string) *ModelMenu {
 			continue
 		}
 
-		// Check for unselected indented items.
-		// Only match if we have already found at least one model to reduce
-		// false positives from random indented text.
-		if len(menu.Models) > 0 {
+		// Check for unselected indented items. Only enabled when we have
+		// confirmed this block contains a model menu (via indicators).
+		if hasIndicator {
 			if m := reUnselectedItem.FindStringSubmatch(line); m != nil {
 				menu.Models = append(menu.Models, strings.TrimSpace(m[1]))
 				continue

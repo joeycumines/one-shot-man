@@ -1,7 +1,7 @@
-// orchestrator.js — Reusable BT action templates for AI orchestration workflows.
+// claude-mux.js — Reusable BT action templates for AI orchestration workflows.
 //
 // Usage:
-//   var templates = require('./scripts/bt-templates/orchestrator.js');
+//   var templates = require('./scripts/bt-templates/claude-mux.js');
 //   var bb = new bt.Blackboard();
 //   var node = templates.verifyOutput(bb, 'make test');
 //   bt.tick(node);

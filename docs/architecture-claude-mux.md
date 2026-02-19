@@ -367,7 +367,7 @@ func (r *Registry) Spawn(ctx, name, opts) (AgentHandle, error)
 ### 5.3. BT Templates
 
 **File:** `scripts/bt-templates/claude-mux.js`
-**Status:** Implemented (renaming from `orchestrator.js` in P010).
+**Status:** Implemented as `scripts/bt-templates/claude-mux.js`.
 **Dependencies:** `osm:bt`, `osm:claudemux`, `osm:exec`
 
 Reusable behavior tree building blocks for Claude-Mux workflows.
@@ -679,7 +679,7 @@ backends. The `pty_windows.go` stub returns `ErrNotSupported` until ConPTY is wi
 | Task | Description |
 |------|-------------|
 | **P009** | Rename `orchestrator` package → `claudemux`, module `osm:orchestrator` → `osm:claudemux` |
-| **P010** | Rename `scripts/bt-templates/orchestrator.js` → `claude-mux.js` |
+| **P010** | ~~Rename `scripts/bt-templates/orchestrator.js` → `claude-mux.js`~~ **Done** |
 | **P013** | MCP feedback protocol — `reportProgress`, `reportResult`, `requestGuidance`, `reportError` |
 | **P014** | Dynamic MCP config per Claude instance — startup sequencing, per-port config, cleanup |
 | **P015** | Session isolation — `~/.osm/claude-sessions/<id>/`, independent state dirs |

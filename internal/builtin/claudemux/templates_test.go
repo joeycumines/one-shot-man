@@ -76,18 +76,18 @@ func templateTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	return bridge, runJS
 }
 
-// templatePath returns the absolute path to scripts/bt-templates/orchestrator.js
+// templatePath returns the absolute path to scripts/bt-templates/claude-mux.js
 // relative to this test file's package directory.
 func templatePath(t *testing.T) string {
 	t.Helper()
 	// Test CWD is internal/builtin/claudemux
 	wd, err := os.Getwd()
 	require.NoError(t, err)
-	p := filepath.Join(wd, "..", "..", "..", "scripts", "bt-templates", "orchestrator.js")
+	p := filepath.Join(wd, "..", "..", "..", "scripts", "bt-templates", "claude-mux.js")
 	absP, err := filepath.Abs(p)
 	require.NoError(t, err)
 	_, err = os.Stat(absP)
-	require.NoError(t, err, "orchestrator.js template not found at %s", absP)
+	require.NoError(t, err, "claude-mux.js template not found at %s", absP)
 	return absP
 }
 

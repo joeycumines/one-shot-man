@@ -209,9 +209,11 @@ func (s *ManagedSession) ProcessCrash(exitCode int, now time.Time) (*GuardEvent,
 		s.OnRecoveryDecision(d)
 	}
 
-	// Update state.
+	// Update state based on guard OR supervisor escalation.
 	s.mu.Lock()
 	if d.Action == RecoveryEscalate || d.Action == RecoveryAbort {
+		s.state = SessionFailed
+	} else if ge != nil && (ge.Action == GuardActionEscalate || ge.Action == GuardActionTimeout) {
 		s.state = SessionFailed
 	}
 	s.mu.Unlock()

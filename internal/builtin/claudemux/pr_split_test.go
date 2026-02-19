@@ -59,6 +59,9 @@ func prSplitTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	// Register exec module (bt is auto-registered by bridge).
 	reg.RegisterNativeModule("osm:exec", execmod.Require(ctx))
 
+	// Register claudemux module for strategy selection.
+	reg.RegisterNativeModule("osm:claudemux", Require(ctx))
+
 	runJS := func(script string) goja.Value {
 		t.Helper()
 		var res goja.Value
@@ -160,7 +163,7 @@ func TestPRSplit_ModuleLoads(t *testing.T) {
 
 	runJS(`var prSplit = require('` + sp + `');`)
 	val := runJS(`prSplit.VERSION`)
-	assert.Equal(t, "1.0.0", val.String())
+	assert.Equal(t, "2.0.0", val.String())
 }
 
 func TestPRSplit_ExportedFunctions(t *testing.T) {
@@ -172,11 +175,14 @@ func TestPRSplit_ExportedFunctions(t *testing.T) {
 	fns := []string{
 		"analyzeDiff", "analyzeDiffStats",
 		"groupByDirectory", "groupByExtension", "groupByPattern", "groupByChunks",
+		"selectStrategy",
 		"createSplitPlan", "validatePlan",
 		"executeSplit",
-		"verifySplit", "verifySplits", "verifyEquivalence", "cleanupBranches",
+		"verifySplit", "verifySplits", "verifyEquivalence", "verifyEquivalenceDetailed",
+		"cleanupBranches",
 		"createAnalyzeNode", "createGroupNode", "createPlanNode",
 		"createSplitNode", "createVerifyNode", "createEquivalenceNode",
+		"createSelectStrategyNode",
 		"createWorkflowTree",
 	}
 	for _, fn := range fns {
@@ -651,4 +657,125 @@ func TestPRSplit_ExecuteSplit_InvalidPlan(t *testing.T) {
 	runJS(`var result = prSplit.executeSplit({ splits: [] });`)
 	errVal := runJS(`result.error`)
 	assert.Contains(t, errVal.String(), "invalid plan")
+}
+
+// ---------------------------------------------------------------------------
+//  Strategy selection tests (claudemux integration)
+// ---------------------------------------------------------------------------
+
+func TestPRSplit_SelectStrategy(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+
+	val := runJS(`JSON.stringify(prSplit.selectStrategy(
+		['pkg/a.go', 'pkg/b.go', 'cmd/main.go', 'docs/readme.md', 'Makefile']
+	))`)
+	s := val.String()
+	assert.Contains(t, s, `"strategy"`)
+	assert.Contains(t, s, `"reason"`)
+	assert.Contains(t, s, `"groups"`)
+
+	// Strategy should be one of the known values.
+	stratVal := runJS(`prSplit.selectStrategy(
+		['pkg/a.go', 'pkg/b.go', 'cmd/main.go', 'docs/readme.md', 'Makefile']
+	).strategy`)
+	known := []string{"directory", "directory-deep", "extension", "chunks"}
+	assert.Contains(t, known, stratVal.String())
+}
+
+func TestPRSplit_SelectStrategy_Scored(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+
+	// With many files across multiple directories, scored should have entries.
+	runJS(`var result = prSplit.selectStrategy([
+		'pkg/a.go', 'pkg/b.go', 'pkg/c.go',
+		'cmd/main.go', 'cmd/run.go',
+		'docs/readme.md', 'docs/guide.md',
+		'internal/foo.go', 'internal/bar.go',
+		'tests/test_a.go'
+	]);`)
+
+	scoredLen := runJS(`result.scored.length`)
+	assert.Equal(t, int64(4), scoredLen.ToInteger(), "should score 4 strategies")
+}
+
+// ---------------------------------------------------------------------------
+//  Enhanced equivalence verification tests
+// ---------------------------------------------------------------------------
+
+func TestPRSplit_VerifyEquivalenceDetailed_Equivalent(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+
+	dir := initTestGitRepo(t)
+	addFeatureFiles(t, dir)
+
+	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
+	runJS(`var prSplit = require('` + sp + `');`)
+
+	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
+	runJS(`var groups = prSplit.groupByDirectory(analysis.files, 1);`)
+	runJS(`var plan = prSplit.createSplitPlan(groups, {
+		baseBranch: 'main',
+		sourceBranch: 'feature',
+		dir: '` + escapedDir + `',
+		branchPrefix: 'split/'
+	});`)
+	runJS(`prSplit.executeSplit(plan);`)
+
+	runJS(`var equiv = prSplit.verifyEquivalenceDetailed(plan);`)
+
+	equivVal := runJS(`equiv.equivalent`)
+	assert.Equal(t, true, equivVal.ToBoolean())
+
+	// When equivalent, diffFiles should be empty.
+	diffLen := runJS(`equiv.diffFiles.length`)
+	assert.Equal(t, int64(0), diffLen.ToInteger())
+
+	diffSummary := runJS(`equiv.diffSummary`)
+	assert.Equal(t, "", diffSummary.String())
+}
+
+// ---------------------------------------------------------------------------
+//  Conflict handling tests
+// ---------------------------------------------------------------------------
+
+func TestPRSplit_ExecuteSplit_MissingFile(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+
+	dir := initTestGitRepo(t)
+	addFeatureFiles(t, dir)
+
+	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
+	runJS(`var prSplit = require('` + sp + `');`)
+
+	// Create a plan with a non-existent file.
+	runJS(`var plan = {
+		baseBranch: 'main',
+		sourceBranch: 'feature',
+		dir: '` + escapedDir + `',
+		verifyCommand: 'true',
+		splits: [{
+			name: 'split/01-bad',
+			files: ['does-not-exist.go'],
+			message: 'missing file'
+		}]
+	};`)
+	runJS(`var result = prSplit.executeSplit(plan);`)
+
+	errVal := runJS(`result.error`)
+	assert.Contains(t, errVal.String(), "checkout file")
+	assert.Contains(t, errVal.String(), "does-not-exist.go")
+
+	// Error type should be classified.
+	errType := runJS(`result.results[0].errorType`)
+	assert.Equal(t, "missing", errType.String())
 }

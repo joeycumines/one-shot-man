@@ -42,6 +42,14 @@
 var bt = require('osm:bt');
 var exec = require('osm:exec');
 
+// Optional: claudemux ChoiceResolver for intelligent strategy selection.
+var claudemux;
+try {
+    claudemux = require('osm:claudemux');
+} catch (e) {
+    claudemux = null;
+}
+
 // ---------------------------------------------------------------------------
 //  Internal Helpers
 // ---------------------------------------------------------------------------
@@ -317,6 +325,121 @@ exports.groupByChunks = function(files, maxPerGroup) {
 };
 
 // ---------------------------------------------------------------------------
+//  Strategy Selection (claudemux integration)
+// ---------------------------------------------------------------------------
+
+// selectStrategy evaluates grouping strategies and recommends the best one
+// using the claudemux ChoiceResolver. Falls back to directory grouping
+// when claudemux is unavailable.
+//
+// Parameters:
+//   files:   string[]  — list of changed file paths
+//   options: { maxPerGroup?: number }
+//
+// Returns:
+//   { strategy: string, groups: object, reason: string,
+//     needsConfirm: bool, scored: array }
+exports.selectStrategy = function(files, options) {
+    options = options || {};
+    var maxPerGroup = options.maxPerGroup || 10;
+
+    // Compute groups for each strategy.
+    var strategies = [
+        { name: 'directory', groups: exports.groupByDirectory(files, 1) },
+        { name: 'directory-deep', groups: exports.groupByDirectory(files, 2) },
+        { name: 'extension', groups: exports.groupByExtension(files) },
+        { name: 'chunks', groups: exports.groupByChunks(files, maxPerGroup) }
+    ];
+
+    if (!claudemux) {
+        return {
+            strategy: 'directory',
+            groups: strategies[0].groups,
+            reason: 'claudemux not available, using default directory strategy',
+            needsConfirm: false,
+            scored: []
+        };
+    }
+
+    // Build candidates from strategy results.
+    var candidates = [];
+    for (var i = 0; i < strategies.length; i++) {
+        var s = strategies[i];
+        var groupNames = Object.keys(s.groups);
+        var totalFiles = 0;
+        var maxGroupSize = 0;
+        for (var j = 0; j < groupNames.length; j++) {
+            var gsize = s.groups[groupNames[j]].length;
+            totalFiles += gsize;
+            if (gsize > maxGroupSize) maxGroupSize = gsize;
+        }
+        var avgGroupSize = groupNames.length > 0 ? totalFiles / groupNames.length : 0;
+        var balance = groupNames.length > 0
+            ? 1 - Math.abs(maxGroupSize - avgGroupSize) / Math.max(maxGroupSize, 1)
+            : 0;
+
+        candidates.push({
+            id: s.name,
+            name: s.name,
+            description: groupNames.length + ' groups, max ' + maxGroupSize + ' files',
+            attributes: {
+                groupCount: String(groupNames.length),
+                maxGroupSize: String(maxGroupSize),
+                avgGroupSize: String(Math.round(avgGroupSize * 100) / 100),
+                balance: String(Math.round(balance * 100) / 100)
+            }
+        });
+    }
+
+    var resolver = claudemux.newChoiceResolver({
+        minCandidates: 2,
+        confirmThreshold: 0.15
+    });
+
+    var criteria = [
+        { name: 'splitCount', weight: 0.4 },
+        { name: 'groupBalance', weight: 0.3 },
+        { name: 'maxSize', weight: 0.3 }
+    ];
+
+    var result = resolver.analyze(candidates, criteria, function(cand, crit) {
+        switch (crit.name) {
+            case 'splitCount':
+                var n = parseInt(cand.attributes.groupCount, 10) || 0;
+                if (n <= 0) return 0;
+                if (n >= 3 && n <= 7) return 1.0;
+                if (n < 3) return n / 3;
+                return Math.max(0, 1.0 - (n - 7) * 0.1);
+            case 'groupBalance':
+                return parseFloat(cand.attributes.balance) || 0;
+            case 'maxSize':
+                var mx = parseInt(cand.attributes.maxGroupSize, 10) || 0;
+                if (mx <= maxPerGroup) return 1.0;
+                return Math.max(0, 1.0 - (mx - maxPerGroup) * 0.05);
+            default:
+                return 0.5;
+        }
+    });
+
+    var winnerName = result.rankings[0].name;
+    var winnerGroups = null;
+    for (var k = 0; k < strategies.length; k++) {
+        if (strategies[k].name === winnerName) {
+            winnerGroups = strategies[k].groups;
+            break;
+        }
+    }
+
+    return {
+        strategy: winnerName,
+        groups: winnerGroups,
+        reason: result.justification,
+        needsConfirm: result.needsConfirm,
+        scored: result.rankings
+    };
+};
+
+// ---------------------------------------------------------------------------
 //  Planning
 // ---------------------------------------------------------------------------
 
@@ -485,7 +608,18 @@ exports.executeSplit = function(plan) {
             var file = split.files[j];
             var checkout = gitExec(dir, ['checkout', plan.sourceBranch, '--', file]);
             if (checkout.code !== 0) {
+                // Classify the error for conflict handling.
+                var stderrLower = checkout.stderr.toLowerCase();
+                var errorType = 'checkout';
+                if (stderrLower.indexOf('did not match any') !== -1 ||
+                    stderrLower.indexOf('pathspec') !== -1) {
+                    errorType = 'missing';
+                } else if (stderrLower.indexOf('conflict') !== -1 ||
+                           stderrLower.indexOf('overwritten') !== -1) {
+                    errorType = 'conflict';
+                }
                 splitResult.error = 'checkout file ' + file + ': ' + checkout.stderr.trim();
+                splitResult.errorType = errorType;
                 results.push(splitResult);
                 gitExec(dir, ['checkout', restoreBranch]);
                 return { error: splitResult.error, results: results };
@@ -640,6 +774,40 @@ exports.verifyEquivalence = function(plan) {
         sourceTree: sourceTree,
         error: null
     };
+};
+
+// verifyEquivalenceDetailed performs tree-hash equivalence checking and,
+// on mismatch, provides a detailed diff showing which files differ between
+// the final split branch and the source branch.
+//
+// Returns:
+//   { equivalent, splitTree, sourceTree, error,
+//     diffFiles: string[], diffSummary: string }
+exports.verifyEquivalenceDetailed = function(plan) {
+    var dir = plan.dir || '.';
+    var base = exports.verifyEquivalence(plan);
+
+    if (base.error || base.equivalent) {
+        base.diffFiles = [];
+        base.diffSummary = '';
+        return base;
+    }
+
+    // Trees differ — find which files are different.
+    var lastSplit = plan.splits[plan.splits.length - 1].name;
+    var diffResult = gitExec(dir, ['diff', '--stat', lastSplit, plan.sourceBranch]);
+    base.diffSummary = diffResult.code === 0 ? diffResult.stdout.trim() : '';
+
+    var diffNamesResult = gitExec(dir, ['diff', '--name-only', lastSplit, plan.sourceBranch]);
+    if (diffNamesResult.code === 0 && diffNamesResult.stdout.trim() !== '') {
+        base.diffFiles = diffNamesResult.stdout.trim().split('\n').filter(function(f) {
+            return f !== '';
+        });
+    } else {
+        base.diffFiles = [];
+    }
+
+    return base;
 };
 
 // cleanupBranches deletes all split branches created by a plan.
@@ -873,7 +1041,25 @@ exports.createWorkflowTree = function(bb, config) {
     );
 };
 
+// createSelectStrategyNode creates a BT leaf that selects the best grouping
+// strategy using the claudemux ChoiceResolver. Stores the selected strategy
+// and resulting file groups on the blackboard.
+exports.createSelectStrategyNode = function(bb, options) {
+    return bt.createBlockingLeafNode(function() {
+        var analysis = bb.get('analysisResult');
+        if (!analysis || !analysis.files || analysis.files.length === 0) {
+            bb.set('lastError', 'no analysis result available for strategy selection');
+            return bt.failure;
+        }
+
+        var result = exports.selectStrategy(analysis.files, options);
+        bb.set('selectedStrategy', result);
+        bb.set('fileGroups', result.groups);
+        return bt.success;
+    });
+};
+
 // ---------------------------------------------------------------------------
 //  Module version
 // ---------------------------------------------------------------------------
-exports.VERSION = '1.0.0';
+exports.VERSION = '2.0.0';

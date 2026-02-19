@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T015 Done. T016 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
+    "currentState": "T001-T016 Done. T017 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -119,8 +119,8 @@
     },
     {
       "task": "T016: Ideal choice resolution",
-      "description": "In claudemux/: multi-candidate analysis, criteria weighting, recommendation with justification, user confirmation via requestGuidance MCP tool. Optional Ollama. Config: claude-mux.choice.*. Tests. Run make.",
-      "status": "Not Started"
+      "description": "Added choice.go: Candidate (ID/Name/Description/Attributes), Criterion (Name/Weight/ScoreFunc), ChoiceConfig (DefaultCriteria 4x@0.25 — complexity/risk/maintainability/performance, MinCandidates=2, ConfirmThreshold=0.3), ChoiceResolver with Analyze(candidates,criteria)→ChoiceResult (Winner/Scored/NeedsConfirm/ConfirmReason/Justification), Stats (AnalysesPerformed/TotalCandidatesEvaluated), Config. ScoredCandidate with per-criterion scores. normalizeCriteriaWeights, attributeScoreFunc, clampScore helpers. JS bindings: defaultChoiceConfig, newChoiceResolver with analyze/stats/config. 25+ tests: defaults, resolver creation with clamping, too-few candidates, basic/custom/customScoreFunc analysis, NeedsConfirm, Stats, Justification, EqualScores, MissingAttributes, ZeroWeights, NegativeWeight, ManyCandidates (10), NormalizeCriteriaWeights, ClampScore (incl NaN), AttributeScoreFunc, ConcurrentAnalyze (50 goroutines). Also FIXED: ManagedSession race condition — Guard/MCPGuard calls now under s.mu in ProcessLine/ProcessCrash/ProcessToolCall/CheckTimeout/Snapshot (callbacks outside lock). 4,529 tests pass with -race. Build green.",
+      "status": "Done"
     },
     {
       "task": "T017: Rewrite PR split goal and script for claudemux",

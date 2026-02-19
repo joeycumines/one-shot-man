@@ -1,7 +1,7 @@
 {
   "name": "pr-split",
   "description": "Analyze and split a large PR into reviewable incremental stacked branches",
-  "category": "orchestrator",
+  "category": "claudemux",
   "usage": "Add changed files and diffs, describe splitting goals, generate a split strategy prompt",
   "tuiTitle": "PR Split Planner",
   "tuiPrompt": "(pr-split) > ",
@@ -24,8 +24,8 @@
   },
   "contextHeader": "PR CHANGES",
   "bannerTemplate": "┌─────────────────────────────────────────┐\n│          PR SPLIT PLANNER               │\n├─────────────────────────────────────────┤\n│  Commands:                              │\n│    add <file>    Add changed files      │\n│    diff          Add diff context       │\n│    set-base <b>  Set base branch        │\n│    set-group <s> Set grouping strategy  │\n│    copy          Generate split plan    │\n│    help          Full command list      │\n└─────────────────────────────────────────┘",
-  "usageTemplate": "  set-base <branch>    Set base branch (default: main)\n  set-group <strategy> Set grouping strategy: directory, extension, logical, minimal\n  set-max <n>          Set max files per split",
-  "postCopyHint": "[Hint] The generated split plan can be consumed by scripts/orchestrate-pr-split.js for automated execution.",
+  "usageTemplate": "  set-base <branch>    Set base branch (default: main)\n  set-group <strategy> Set grouping strategy: directory, extension, logical, minimal\n  set-max <n>          Set max files per split\n  run [-base b] [-strategy s] [-max n] [-dry-run]  Execute split workflow",
+  "postCopyHint": "[Hint] The generated split plan can be consumed by scripts/orchestrate-pr-split.js (v2.0.0) for automated execution. With osm:claudemux loaded, intelligent strategy selection is available via selectStrategy().",
   "hotSnippets": [
     {
       "name": "split-review",
@@ -95,6 +95,21 @@
       "description": "Set maximum files per split",
       "usage": "set-max <number>",
       "handler": "function (args) {\n  if (!args || args.length === 0) {\n    output.print('Current max files per split: ' + state.get(stateKeys.maxFilesPerSplit));\n    return;\n  }\n  var n = parseInt(args[0], 10);\n  if (isNaN(n) || n < 1) {\n    output.print('Invalid number: ' + args[0]);\n    return;\n  }\n  state.set(stateKeys.maxFilesPerSplit, String(n));\n  output.print('Max files per split set to: ' + n);\n}"
+    },
+    {
+      "name": "run",
+      "type": "custom",
+      "description": "Execute the full split workflow with configurable options",
+      "usage": "run [-base <branch>] [-strategy <s>] [-max <n>] [-prefix <p>] [-verify <cmd>] [-dry-run]",
+      "flagDefs": [
+        { "name": "base", "description": "Base branch (default: main)" },
+        { "name": "strategy", "description": "Grouping strategy: directory, extension, logical, minimal, auto" },
+        { "name": "max", "description": "Max files per split" },
+        { "name": "prefix", "description": "Branch prefix (default: split/)" },
+        { "name": "verify", "description": "Verification command (default: make test)" },
+        { "name": "dry-run", "description": "Preview the plan without executing" }
+      ],
+      "handler": "function (args) {\n  var base = state.get(stateKeys.baseBranch);\n  var strategy = state.get(stateKeys.groupStrategy);\n  var maxFiles = parseInt(state.get(stateKeys.maxFilesPerSplit), 10);\n  var prefix = 'split/';\n  var verify = 'make test';\n  var dryRun = false;\n  var i = 0;\n  while (i < args.length) {\n    if (args[i] === '-base' && i + 1 < args.length) { base = args[i+1]; i += 2; }\n    else if (args[i] === '-strategy' && i + 1 < args.length) { strategy = args[i+1]; i += 2; }\n    else if (args[i] === '-max' && i + 1 < args.length) { maxFiles = parseInt(args[i+1], 10); i += 2; }\n    else if (args[i] === '-prefix' && i + 1 < args.length) { prefix = args[i+1]; i += 2; }\n    else if (args[i] === '-verify' && i + 1 < args.length) { verify = args[i+1]; i += 2; }\n    else if (args[i] === '-dry-run') { dryRun = true; i++; }\n    else { i++; }\n  }\n  output.print('Split config:');\n  output.print('  Base:      ' + base);\n  output.print('  Strategy:  ' + strategy);\n  output.print('  Max files: ' + maxFiles);\n  output.print('  Prefix:    ' + prefix);\n  output.print('  Verify:    ' + verify);\n  output.print('  Dry run:   ' + dryRun);\n  output.print('');\n  if (dryRun) {\n    output.print('[dry-run] Would execute split with above settings.');\n  } else {\n    output.print('Use the orchestrate-pr-split.js script for automated execution.');\n  }\n}"
     },
     {
       "name": "help",

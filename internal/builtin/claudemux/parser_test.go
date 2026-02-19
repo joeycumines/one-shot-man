@@ -118,6 +118,46 @@ func TestParse_ModelSelect(t *testing.T) {
 	}
 }
 
+func TestParse_ModelItemSelected(t *testing.T) {
+	t.Parallel()
+	p := NewParser()
+
+	tests := []struct {
+		name          string
+		line          string
+		wantModelName string
+	}{
+		{"arrow selected", "❯ claude-sonnet-4-20250514", "claude-sonnet-4-20250514"},
+		{"gt selected", "> llama3.2", "llama3.2"},
+		{"indented arrow", "  ❯ model-name", "model-name"},
+		{"indented gt", "  > codellama:7b", "codellama:7b"},
+		{"trailing space", "> model-with-trailing   ", "model-with-trailing"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ev := p.Parse(tc.line)
+			if ev.Type != EventModelSelect {
+				t.Errorf("line %q: expected EventModelSelect, got %s (pattern=%s)",
+					tc.line, EventTypeName(ev.Type), ev.Pattern)
+			}
+			if ev.Pattern != "model-item-selected" {
+				t.Errorf("expected pattern 'model-item-selected', got %q", ev.Pattern)
+			}
+			if ev.Fields == nil {
+				t.Fatalf("expected non-nil Fields for model-item-selected")
+			}
+			if got := ev.Fields["modelName"]; got != tc.wantModelName {
+				t.Errorf("expected modelName=%q, got %q", tc.wantModelName, got)
+			}
+			if got := ev.Fields["selected"]; got != "true" {
+				t.Errorf("expected selected='true', got %q", got)
+			}
+		})
+	}
+}
+
 func TestParse_SSOLogin(t *testing.T) {
 	t.Parallel()
 	p := NewParser()

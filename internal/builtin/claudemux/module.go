@@ -56,6 +56,40 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			}
 			return wrapProvider(runtime, p)
 		})
+
+		// Keystroke constants for TUI navigation.
+		_ = exports.Set("KEY_ARROW_UP", KeyArrowUp)
+		_ = exports.Set("KEY_ARROW_DOWN", KeyArrowDown)
+		_ = exports.Set("KEY_ENTER", KeyEnter)
+
+		// parseModelMenu(lines: string[]): { models: string[], selectedIndex: number }
+		// Parses model selection TUI output into a structured ModelMenu.
+		_ = exports.Set("parseModelMenu", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("parseModelMenu: lines argument is required"))
+			}
+			var lines []string
+			if err := runtime.ExportTo(call.Argument(0), &lines); err != nil {
+				panic(runtime.NewTypeError("parseModelMenu: lines must be an array of strings"))
+			}
+			menu := ParseModelMenu(lines)
+			return modelMenuToJS(runtime, menu)
+		})
+
+		// navigateToModel(menu: object, target: string): string
+		// Returns keystroke sequence to navigate to the target model.
+		_ = exports.Set("navigateToModel", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 2 {
+				panic(runtime.NewTypeError("navigateToModel: menu and target arguments are required"))
+			}
+			menu := jsToModelMenu(runtime, call.Argument(0))
+			target := call.Argument(1).String()
+			keys, err := NavigateToModel(menu, target)
+			if err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return runtime.ToValue(keys)
+		})
 	}
 }
 
@@ -270,4 +304,37 @@ func parseSpawnOpts(runtime *goja.Runtime, obj *goja.Object, opts *SpawnOpts) {
 		}
 		opts.Args = args
 	}
+}
+
+// modelMenuToJS converts a *ModelMenu to a JS object.
+func modelMenuToJS(runtime *goja.Runtime, menu *ModelMenu) goja.Value {
+	obj := runtime.NewObject()
+	models := make([]interface{}, len(menu.Models))
+	for i, m := range menu.Models {
+		models[i] = m
+	}
+	_ = obj.Set("models", runtime.ToValue(models))
+	_ = obj.Set("selectedIndex", menu.SelectedIndex)
+	return obj
+}
+
+// jsToModelMenu converts a JS object back to a *ModelMenu.
+func jsToModelMenu(runtime *goja.Runtime, val goja.Value) *ModelMenu {
+	if goja.IsUndefined(val) || goja.IsNull(val) {
+		panic(runtime.NewTypeError("navigateToModel: menu argument must be an object"))
+	}
+	obj := val.ToObject(runtime)
+	menu := &ModelMenu{SelectedIndex: -1}
+
+	if v := obj.Get("models"); v != nil && !goja.IsUndefined(v) {
+		var models []string
+		if err := runtime.ExportTo(v, &models); err != nil {
+			panic(runtime.NewTypeError("navigateToModel: menu.models must be an array of strings"))
+		}
+		menu.Models = models
+	}
+	if v := obj.Get("selectedIndex"); v != nil && !goja.IsUndefined(v) {
+		menu.SelectedIndex = int(v.ToInteger())
+	}
+	return menu
 }

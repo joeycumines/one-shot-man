@@ -7,6 +7,7 @@ package claudemux
 import (
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // EventType classifies a parsed output event.
@@ -144,6 +145,19 @@ func (p *Parser) loadBuiltinPatterns() {
 	p.addBuiltin("model-select", `(?i)select\s+(a\s+)?model`, EventModelSelect, nil)
 	p.addBuiltin("model-choose", `(?i)choose\s+(a\s+)?model`, EventModelSelect, nil)
 	p.addBuiltin("model-available", `(?i)available\s+models?:`, EventModelSelect, nil)
+	// Model list item with selection indicator (❯ or > prefix). Extracts
+	// the model name and marks it as selected. Used to detect individual
+	// lines within an interactive model selection TUI menu.
+	p.addBuiltin("model-item-selected", `^\s*[❯>]\s+(\S.+)`, EventModelSelect,
+		func(m []string) map[string]string {
+			if len(m) > 1 {
+				return map[string]string{
+					"modelName": strings.TrimSpace(m[1]),
+					"selected":  "true",
+				}
+			}
+			return nil
+		})
 
 	// --- SSO/Login patterns ---
 	p.addBuiltin("sso-browser", `(?i)(open|opening)\s+(your\s+)?browser`, EventSSOLogin, nil)

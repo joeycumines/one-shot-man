@@ -45,12 +45,12 @@
     {
       "task": "T001: macOS baseline verification",
       "description": "Run 'make make-all-with-log'. Check 'make find-test-failures'. Zero failures required. Gate for this session.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T002: Rename BT templates file orchestrator.js -> claude-mux.js",
       "description": "mv scripts/bt-templates/orchestrator.js -> claude-mux.js. Update templatePath() in claudemux/templates_test.go. Update file header comment. Update require() calls from osm:orchestrator to osm:claudemux if any remain. Update scripts/README.md. Update docs/architecture-claude-mux.md reference. Run make.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T003: Model selection TUI parser extension",

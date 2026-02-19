@@ -1,329 +1,310 @@
 {
   "meta": {
     "fileName": "blueprint.json",
-    "sourceRef": "DIRECTIVE.txt + docs/todo.md, session 2026-02-18",
+    "sourceRef": "DIRECTIVE.txt + docs/todo.md, session 2026-02-20",
     "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
-    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST — ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY A PRIORITY OF ANY KIND.",
-    "blueprintRefinement": "THIS BLUEPRINT MUST BE CONTINUALLY REFINED. After completing any task, before starting the next, re-read this file and assess whether it still accurately captures reality. If any task description is stale, wrong, unclear, or missing context — FIX IT NOW. The blueprint is a living document. A stale blueprint is worse than no blueprint. Refine aggressively: split tasks that are too coarse, merge tasks that are redundant, rewrite descriptions so a cold-start reader can act on them, and add tasks you discover along the way."
+    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST. NEVER SPECIFY A PRIORITY OF ANY KIND.",
+    "blueprintRefinement": "THIS BLUEPRINT MUST BE CONTINUALLY REFINED. After completing any task, before starting the next, re-read this file and assess whether it still accurately captures reality. If any task description is stale, wrong, unclear, or missing context — FIX IT NOW."
   },
   "globalAlerts": [
     {
-      "warning": "ON TOOLS: Use config.mk to create custom targets to run with Make. ALWAYS use custom targets that limit the amount of output you receive. Pipe through tail (with FEW lines output) after tee to build.log at path ./build.log (gitignored). Use 'make find-test-failures' to check for failures."
+      "warning": "ON TOOLS: Use config.mk custom targets. Limit output. Pipe through tail after tee to build.log. Use 'make find-test-failures'."
     },
     {
-      "warning": "NAMING: The word 'orchestrator' is RETIRED as a module/package name. The correct name is 'claudemux'. If you see 'orchestrator' in code or docs, it MUST be corrected. The JS module is 'osm:claudemux', the Go package is 'claudemux', the directory is internal/builtin/claudemux/."
+      "warning": "NAMING: 'orchestrator' is RETIRED. Use 'claudemux' (Go), 'claude-mux' (user-facing), 'osm:claudemux' (JS module)."
     },
     {
-      "warning": "FEEDBACK CHANNEL: MCP is the PRIMARY means by which Claude Code instances send structured data back to OSM. PTY is for session lifecycle ONLY."
+      "warning": "CROSS-PLATFORM: ALL checks must pass on macOS, Linux (Docker), Windows (host 'moo'). Zero tolerance."
     },
     {
-      "warning": "CLI ENTRY POINT: The CLI wrapper wraps ollama launch claude, NOT just claude. The full invocation path involves: (1) ollama launch claude --config, (2) a TUI model selection menu that MUST be navigated programmatically over PTY, (3) then the Claude Code session itself. The model selection menu is a CRITICAL PATH."
+      "warning": "TIMING: Tests MUST NOT be timing-dependent. No long-running tests. Race detector must pass."
     },
     {
-      "warning": "CROSS-PLATFORM: ALL checks must pass on ALL three platforms: macOS (make-all-with-log), Linux (make-all-in-container via Docker), Windows (make-all-run-windows via host 'moo'). Zero tolerance for failures on ANY platform."
+      "warning": "SESSION TIMER: Started 2026-02-20T08:00:00Z. 9h mandate. Verify: make check-session-time."
     },
     {
-      "warning": "TIMING: Tests MUST NOT be timing-dependent. Long-running tests are BANNED. Race detector must pass (-race flag). Abide. OBEY."
+      "warning": "RULE OF TWO: Two contiguous issue-free subagent reviews before any commit. Same diff. No exceptions."
     },
     {
-      "warning": "SESSION TIMER: Session started 2026-02-18T14:49:00Z. 9-hour mandate ends 2026-02-18T23:49:00Z. Verify with 'make check-session-time'."
-    },
-    {
-      "warning": "RULE OF TWO: Two contiguous, issue-free subagent review cycles are REQUIRED before any commit. Each review covers: diff vs HEAD, all platform checks, lint, tests. No exceptions."
+      "warning": "DEADCODE: NEVER add ignores to .deadcodeignore. Wire up the code or delete it."
     }
   ],
   "mandatoryDirectives": {
-    "contextManagement": "Tasks are designed to be executed in isolation. Do not attempt to solve all tasks in a single turn. One task at a time, in order.",
-    "subagentPolicy": "Use subagents for the Rule of Two review gate ONLY. Work subagents do NOT self-review. TOP-LEVEL ORCHESTRATOR owns the gate.",
-    "blueprintRefinement": "Continual blueprint refinement is required. After every task completion, re-read the blueprint and fix stale descriptions. Add discovered work. Split coarse tasks.",
-    "runMakeAfterEveryChange": "Run 'make make-all-with-log' (via config.mk target) after EVERY code change. Check 'make find-test-failures'. Zero failures required before proceeding."
+    "contextManagement": "One task at a time, in order. Do not attempt to solve all tasks in a single turn.",
+    "subagentPolicy": "Use subagents for Rule of Two review gate ONLY. Work subagents do NOT self-review.",
+    "blueprintRefinement": "Continual refinement required. After every task, re-read and fix stale descriptions.",
+    "runMakeAfterEveryChange": "Run 'make make-all-with-log' after EVERY code change. Zero failures before proceeding.",
+    "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "Cross-platform baseline COMPLETE. All three platforms green (macOS, Linux via Docker, Windows via moo). Fixes: exec_test.go ETXTBSY, filelock_windows.go best-effort Remove, gitops.go PullRebase stdout+stderr conflict detection. Next task: P006 (DS_Store audit), then P007 (module resolution docs).",
-    "sessionTimer": "File: .session-timer | Check with: make check-session-time",
-    "completedPriorWork": "T001-T005 (races/PTY/make), T011-T016 (eventloop/gRPC/fetch/AbortSignal), T029-T096 (osm:flag, exec ctx, git diff, config persist, prompt-flow, hot-snippets, tview removal, cleanup sched, logging, etc.), T104-T106 (cross-platform, sync), T126-T127 (~/.osm, which-is-better), T135-T136 (deadcode/betteralign), T164 (CHANGELOG)"
+    "currentState": "Blueprint rewritten for session 2026-02-20. Prior P001-P009 complete. Next: T001 macOS baseline.",
+    "sessionTimer": ".session-timer | make check-session-time",
+    "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
   "sequentialTasks": [
     {
-      "task": "P001: macOS baseline verification",
-      "description": "Run 'make make-all-with-log'. Check 'make find-test-failures'. Zero failures required. This is the baseline gate for all subsequent work.",
-      "status": "Done"
-    },
-    {
-      "task": "P002: Session timer initialization",
-      "description": "Run 'make session-timer-init' to write .session-timer. Verify with 'make check-session-time'. The 9-hour mandate requires this file to persist. If the file is lost, the clock restarts from zero.",
-      "status": "Done"
-    },
-    {
-      "task": "P003: Create WIP.md",
-      "description": "Write WIP.md capturing: current branch state (wip, 251 commits ahead of main), session timer reference, immediate next task, key file paths, and any stack state for the next Takumi to resume from cold start.",
-      "status": "Done"
-    },
-    {
-      "task": "P004: Linux baseline verification",
-      "description": "Run 'make make-all-in-container'. This uses Docker with golang container to run all checks on Linux. Verify with 'make find-test-failures'. Zero failures required. If failures found, fix before proceeding.",
-      "status": "Done",
-      "completionNote": "Fixed ETXTBSY in internal/builtin/exec/exec_test.go (multi-element array test uses osexec.LookPath('echo') instead of shell script). Linux all-green."
-    },
-    {
-      "task": "P005: Windows baseline verification",
-      "description": "Run 'make make-all-run-windows'. This uses hack/run-on-windows.sh to run all checks on Windows host 'moo'. Verify with 'make find-test-failures'. Zero failures required. If failures found, fix before proceeding.",
-      "status": "Done",
-      "completionNote": "Fixed filelock_windows.go best-effort Remove (silences SHARING_VIOLATION/ACCESS_DENIED). Fixed PullRebase in gitops.go to capture stdout for conflict detection and use case-insensitive matching. Windows all-green."
-    },
-    {
-      "task": "P006: T178 - .DS_Store hygiene audit",
-      "description": "Run 'make check-ds-store'. If any .DS_Store files are tracked, run 'make remove-ds-store' and commit removal. Verify .gitignore contains '.DS_Store'. Currently confirmed: no tracked files. Mark done.",
-      "status": "Done"
-    },
-    {
-      "task": "P007: T166 - Module resolution documentation",
-      "description": "Document the require() algorithm: read internal/scripting/module_hardening.go, document path traversal protection, script.module-paths config key behavior, ESM feasibility in Goja (document limitations). Update docs/scripting.md or add docs/reference/module-resolution.md. Verify docs are accurate against code. Run make.",
-      "status": "Done",
-      "completionNote": "Added 'Module security (path-traversal protection)' and 'ES module syntax (ESM) limitations' sections to docs/scripting.md, accurately documenting all three security layers (path resolver check, symlink escape check, startup validation) and ESM non-support in Goja."
-    },
-    {
-      "task": "P008: T031 - Rewrite architecture doc as claude-mux",
-      "description": "REWRITE docs/architecture-ai-orchestrator.md FROM SCRATCH as docs/architecture-claude-mux.md. Cover: two-channel architecture (PTY + MCP), full invocation path (ollama launch claude -> model selection TUI -> Claude Code), dynamic MCP config per instance, MCP feedback protocol (reportProgress/reportResult/requestGuidance/reportError), guard rails, PTY spawning, multi-instance session isolation, security model, BT integration patterns, integration testing approach. Include Mermaid diagrams. NEVER use 'orchestrator'. DELETE the old file. Run make.",
-      "status": "Done",
-      "completionNote": "Created docs/architecture-claude-mux.md with two-channel architecture, full invocation path, MCP protocol, security model, session isolation, platform support, roadmap. Deleted docs/architecture-ai-orchestrator.md. Added to docs/README.md."
-    },
-    {
-      "task": "P009: T032 - Rename orchestrator package to claudemux",
-      "description": "Rename internal/builtin/orchestrator/ to internal/builtin/claudemux/. Steps: (1) Rename directory. (2) Change all 'package orchestrator' to 'package claudemux'. (3) Update import path in internal/builtin/register.go and all other importers. (4) Change JS module name 'osm:orchestrator' to 'osm:claudemux' in module.go. (5) Update all test files in the package. (6) Update internal/builtin/register_test.go. (7) Update scripts/bt-templates/orchestrator.js require() calls. Run 'make make-all-with-log' and fix any issues.",
-      "status": "Done"
-    },
-    {
-      "task": "P010: T034 - Rename BT templates file to claude-mux.js",
-      "description": "Rename scripts/bt-templates/orchestrator.js to scripts/bt-templates/claude-mux.js. Update templatePath() in templates_test.go to point to 'claude-mux.js'. Update file header comment. Update scripts/README.md. Update docs/architecture-claude-mux.md reference. Run make.",
+      "task": "T001: macOS baseline verification",
+      "description": "Run 'make make-all-with-log'. Check 'make find-test-failures'. Zero failures required. Gate for this session.",
       "status": "Not Started"
     },
     {
-      "task": "P011: T033 - Model selection TUI parser extension",
-      "description": "Extend parser.go in claudemux package to detect ollama model selection menu: detect available models list (e.g. lines like '> gpt-oss:20b-cloud'), parse selected model, generate navigation keystrokes to select a specific model (arrow keys + enter). Handle: single model, model not found, navigation timeout. Add modelSelect event fields: {modelName, availableModels, selectedIndex}. Add tests with representative PTY output samples. Run make.",
+      "task": "T002: Rename BT templates file orchestrator.js -> claude-mux.js",
+      "description": "mv scripts/bt-templates/orchestrator.js -> claude-mux.js. Update templatePath() in claudemux/templates_test.go. Update file header comment. Update require() calls from osm:orchestrator to osm:claudemux if any remain. Update scripts/README.md. Update docs/architecture-claude-mux.md reference. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P012: T035 - Rewrite PR split goal and script",
-      "description": "Rewrite goals/orchestrate-pr-split.json for claude-mux with proper stateVars, hotSnippets, flagDefs, promptOptions. Rewrite scripts/orchestrate-pr-split.js: use require('osm:claudemux'), implement conflict handling via Claude, add equivalence verification step. Update tests (package now 'claudemux'). Run make.",
+      "task": "T003: Model selection TUI parser extension",
+      "description": "Extend claudemux/parser.go: detect ollama model selection menu (lines like '> model-name'), parse model list, generate navigation keystrokes (arrow+enter). Handle: single model, model not found, navigation timeout. Add modelSelect event. Tests with PTY output samples. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P013: T062 - MCP feedback protocol",
-      "description": "Add new MCP tools to internal/command/mcp.go: reportProgress(sessionId, step, message, percent), reportResult(sessionId, resultType, data), requestGuidance(sessionId, question, options), reportError(sessionId, errorType, message, recoverable). JSON schemas. Idempotent via sequence numbers. Heartbeat mechanism. Documentation. Tests including fuzz tests for schema validation. Run make.",
+      "task": "T004: MCP session coordination hardening",
+      "description": "Harden MCP session tools in internal/command/mcp.go (registerSession, reportProgress, reportResult, requestGuidance, getSession, listSessions): JSON schema validation, idempotent ops via sequence numbers, heartbeat mechanism. Fuzz: FuzzMCPSessionTools. Unit tests: happy path, invalid input, missing session, concurrent access. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P014: T061 - Dynamic MCP server config per Claude instance",
-      "description": "Per-instance MCP lifecycle: unique endpoint URL per instance (Unix socket or TCP random port), startup sequencing (MCP ready before Claude spawn), config generation (write JSON config for Claude's MCP client to temp location), shutdown cleanup (remove temp config, kill orphaned MCP). Config validation before spawn. Tests with mocks for startup/shutdown cycle. Run make.",
+      "task": "T005: MCP session coordination documentation",
+      "description": "Add section to docs/reference/command.md: all MCP session tools with JSON schema examples, usage patterns, error codes. Update docs/architecture-claude-mux.md to reference MCP protocol. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P015: T066 - Session isolation for multi-instance",
-      "description": "Unique session ID per Claude instance, per-instance MCP endpoint (from P014), isolated state dirs under ~/.osm/claude-sessions/<id>/, independent PTY handles, resource cleanup on Close(), session registry (concurrent map). No shared mutable state between instances. Tests with -race flag. Run make.",
+      "task": "T006: Dynamic MCP server config per Claude instance",
+      "description": "In claudemux/: unique endpoint per instance (Unix socket default, TCP fallback Windows), startup sequencing (MCP ready before spawn), config generation (temp JSON), shutdown cleanup. Config validation before spawn. Tests with mocks. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P016: T063 - Guard rails harness",
-      "description": "PTY monitors: rate-limit detection (pause + backoff), permission prompt (fail-closed reject), crash detection (restart or escalate), timeout. MCP monitors: no-calls timeout, excessive frequency, repeated calls, unexpected tools, schema violations. Remediation: warn/pause/restart/kill/escalate. Composable threshold config (claude-mux.guard.*). Tests. Run make.",
+      "task": "T007: Session isolation for multi-instance",
+      "description": "In claudemux/: unique session ID per instance, per-instance MCP endpoint, isolated state dirs ~/.osm/claude-sessions/<id>/, independent PTY handles, cleanup on Close(), session registry (sync.Map). No shared mutable state. Tests with -race. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P017: T065 - Error recovery and cancellation",
-      "description": "PTY error detection (EOF, crash, unexpected exit). MCP error detection (timeout, malformed response). Recovery strategies: force-kill + restart (configurable max retries), escalate to caller. Cancellation: propagate context cancellation. Graceful shutdown: drain output, send final MCP notification, close PTY. Tests covering all recovery paths. Run make.",
+      "task": "T008: Guard rails — PTY monitors",
+      "description": "In claudemux/: rate-limit detection (pause+backoff), permission prompt (fail-closed reject), crash detection (restart/escalate), output timeout. Config: claude-mux.guard.*. Tests with synthetic PTY output. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P018: T068 - Concurrent instance management",
-      "description": "Instance pool with configurable size. Task queue (buffered channel). Health tracking per instance. Load balancing (round-robin or least-loaded). Instance recycling after N tasks or on error. Graceful drain on shutdown. Go API: Pool struct with Submit(task), Drain(), Close(). Tests with mocks. Run make.",
+      "task": "T009: Guard rails — MCP monitors",
+      "description": "In claudemux/: no-calls timeout, excessive frequency, repeated calls, unexpected tools, schema violations. Remediation: warn/pause/restart/kill/escalate. Tests. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P019: T064 - TUI multiplexing",
-      "description": "Multi-instance TUI panel: meta-key switching (Alt/Escape prefix, NOT Ctrl-B to avoid tmux conflict), state save/restore, status bar with health indicators, input routing, output rendering with scrollback per session. BubbleTea integration. Tests for input routing and state management. Run make.",
+      "task": "T010: Error recovery and cancellation",
+      "description": "In claudemux/: PTY error (EOF, crash, unexpected exit), MCP error (timeout, malformed). Recovery: force-kill+restart (max retries), escalate. Cancellation: context propagation. Graceful shutdown: drain, notify, close. Tests: normal shutdown, crash recovery, max retries, ctx cancel, concurrent shutdown. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P020: T067 - Expose claude-mux building blocks as JS API",
-      "description": "Expand osm:claudemux module (module.go): instance pool management, MCP helpers (waitForResult, getProgress), BT action template access, parser patterns list, custom provider interface from JS, guard rails config from JS. Update scripts/ examples. Update docs/scripting.md. Run make.",
+      "task": "T011: Concurrent instance management — pool",
+      "description": "In claudemux/: Pool struct, configurable max size, Submit(task), buffered channel, health tracking (heartbeat, error count, task count), round-robin load balancing, instance recycling, Drain(), Close(), Stats(). Tests with mocks, -race. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P021: T069 - Claude Code wrapper/parser JS native module",
-      "description": "Expand osm:claudemux: createSession(opts)->handle, sendTask(sessionId, prompt, opts)->Promise, onProgress(sessionId, cb), onResult(sessionId, cb), onGuidanceRequest(sessionId, cb), parseOutput(line)->event, close(sessionId). Register in register.go. Tests covering full JS API surface. Run make.",
+      "task": "T012: TUI multiplexing — multi-instance panel",
+      "description": "In claudemux/: meta-key switching (Alt+1..9, NOT Ctrl-B), per-instance state save/restore, status bar with health indicators, input routing, scrollback per session. BubbleTea model. Tests for input routing, state mgmt, meta-key detection. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P022: T070 - Safety validation",
-      "description": "Intent classification (code change / destructive / network / credential), scope assessment (file vs repo), risk scoring (destructive potential + scope + reversibility + external deps), policy enforcement (block/warn/require-confirmation). Composable validator interface. Optional Ollama integration (localhost:11434). Config keys: claude-mux.safety.*. Tests. Run make.",
+      "task": "T013: Expose claude-mux building blocks as JS API",
+      "description": "Expand osm:claudemux module.go: pool management (createPool, submit, drain, stats), MCP helpers (waitForResult, getProgress), BT template access, parser patterns list, guard config from JS. Update scripts/ examples. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P023: T071 - Ideal choice resolution",
-      "description": "Multi-candidate analysis with criteria, criteria weighting (correctness, efficiency, maintainability, safety), recommendation with justification, user confirmation hook via requestGuidance MCP tool. Optional Ollama integration. Config keys: claude-mux.choice.*. Tests. Run make.",
+      "task": "T014: Claude Code wrapper/parser JS native module",
+      "description": "Expand osm:claudemux: createSession(opts)->handle, sendTask(id, prompt, opts)->Promise, onProgress/onResult/onGuidanceRequest callbacks, parseOutput(line)->event, close(id). Tests covering full JS API, Promise resolution. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P024: T072 - Main claude-mux entry point command",
-      "description": "Create 'osm claude-mux' command in internal/command/. Config keys: claude-mux.*. Wire together: instance pool (P018), MCP feedback (P013), guard rails (P016), session isolation (P015), error recovery (P017). Audit logging. Fail-closed on errors. Register as built-in in registry.go. Tests. Run make.",
+      "task": "T015: Safety validation",
+      "description": "In claudemux/: intent classification (code/destructive/network/credential), scope assessment (file/repo/infra), risk scoring, policy enforcement (block/warn/confirm). Composable validator interface. Optional Ollama integration (localhost:11434). Config: claude-mux.safety.*. Tests. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P025: T101 - Integration testing for claude-mux",
-      "description": "CRITICAL: TestMain + -integration flag (disabled by default). Flags: -provider=ollama, -model=gpt-oss:20b-cloud. Test: PTY spawn of 'ollama launch claude --config', navigate model menu to select 'gpt-oss:20b-cloud', MCP startup, send test task, verify result via MCP, test guard rails (inject synthetic rate-limit), test error recovery (kill PTY). Config.mk target 'make integration-test'. Skipped when flag unset. Run make.",
+      "task": "T016: Ideal choice resolution",
+      "description": "In claudemux/: multi-candidate analysis, criteria weighting, recommendation with justification, user confirmation via requestGuidance MCP tool. Optional Ollama. Config: claude-mux.choice.*. Tests. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P026: T162 - Sync common config enhancement",
-      "description": "Enhance sync.go/sync_config.go: conflict handling (prompt user for unknown-state files, auto-override for SHA-tracked files), schema versioning in YAML frontmatter, edge cases (empty repo, partial failure, concurrent sync), gitignored file handling (detect and warn). Tests for each new behavior. Run make.",
+      "task": "T017: Rewrite PR split goal and script for claudemux",
+      "description": "Rewrite goals/orchestrate-pr-split.json with stateVars, hotSnippets, flagDefs. Rewrite scripts/orchestrate-pr-split.js: require('osm:claudemux'), conflict handling, equivalence verification. Update pr_split_test.go. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P027: T163 - Autodiscovery refinement",
-      "description": "Verify 'osm goal paths' and 'osm script paths'. Test: config key respect, symlink traversal, permission error handling (warn not crash), performance with many paths (benchmark), debug logging via goal.debug-discovery and script.debug-discovery. Add missing edge case tests. Run make.",
+      "task": "T018: Main claude-mux entry point command",
+      "description": "Create 'osm claude-mux' in internal/command/. Wire: pool (T011), MCP (T004), guard rails (T008+T009), session isolation (T007), error recovery (T010). Audit logging. Fail-closed. Register in registry.go. Shell completion. Tests: start, stop, status, submit. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P028: T167 - Prompt file enhancement",
-      "description": "Verify .prompt.md discovery via prompt.file-paths config in prompt_file.go. Test: goal references, VS Code conventions, composition, templating. Add missing tests. Update docs/reference/config.md with prompt.file-paths documentation. Run make.",
+      "task": "T019: Shell completion for claude-mux command",
+      "description": "Add completions in internal/command/completion.go: bash/zsh/fish/powershell for claude-mux subcommands and flags (--provider, --model, --pool-size). Test completion output. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P029: T014 - ReadableStream for Response.body streaming",
-      "description": "Add ReadableStream to Response.body in internal/builtin/fetch/. getReader() returns ReadableStreamDefaultReader. reader.read() returns Promise<{value: Uint8Array, done: boolean}>. Support SSE, chunked encoding. Back-pressure via goroutine. Tests with httptest.Server sending chunked/SSE responses. Verify works from Goja JS. Run make.",
+      "task": "T020: Claude-mux documentation",
+      "description": "Update docs/architecture-claude-mux.md with actual API, config keys, MCP schemas, guard thresholds, pool mgmt, TUI keys. Add docs/reference/claude-mux.md. Update docs/scripting.md osm:claudemux section. Update docs/README.md. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P030: T173 - macOS process hierarchy fallback for session ID",
-      "description": "Implement Darwin Deep Anchor walk in session_darwin.go (//go:build darwin): sysctl/libproc for process tree, skip ephemeral wrappers, find shell boundaries (bash, zsh, fish), root boundaries (login, sshd, launchd), PID + start-time for recycling safety. Update session_other.go build tag. Update session docs. Tests for persistence using same anchor process. Run make.",
+      "task": "T021: Fuzz tests for claude-mux",
+      "description": "In claudemux/: FuzzParseOutput, FuzzMCPPayload, FuzzGuardRuleEval, FuzzSafetyClassify. Target: zero panics across 100K+ executions. Run fuzz then make.",
       "status": "Not Started"
     },
     {
-      "task": "P031: T168 - Anthropic prompt library expansion",
-      "description": "Add 3-5 new built-in goals to goal_builtin.go. Review https://platform.claude.com/docs/en/resources/prompt-library/library for best candidates not yet implemented. Each goal: stateVars, hotSnippets, flagDefs, promptOptions. Test: metadata, stateVars, promptOptions, commands, hotSnippets, postCopyHint, uniqueness, JSON roundtrip, list output. Run make.",
+      "task": "T022: Performance benchmarks for claude-mux",
+      "description": "In claudemux/: BenchmarkParseOutput, BenchmarkMCPDispatch, BenchmarkPoolSubmit, BenchmarkGuardRuleEval, BenchmarkSafetyClassify. Establish baselines. Run benchmarks then make.",
       "status": "Not Started"
     },
     {
-      "task": "P032: T102 - Security audit of scripting sandbox",
-      "description": "Audit: (1) no ambient authority leaks at runtime init, (2) require() path traversal (test ../../etc/passwd etc), (3) osm:exec command injection vectors, (4) osm:fetch SSRF (localhost/169.254.169.254/internal IPs), (5) osm:pty spawn restrictions, (6) osm:os writeFile/appendFile path restrictions, (7) env var secret exposure, (8) MCP tool privilege escalation via args. Review security_test.go, security_sandbox_test.go, security_input_test.go. Fix vulnerabilities. Add regression tests. Update docs/security.md. Run make.",
+      "task": "T023: Security tests for MCP protocol",
+      "description": "In security test files: MCP tool injection, session ID spoofing, privilege escalation via args, large/nested payloads, concurrent session manipulation. Add to mcp_security_test.go or security_test.go. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P033: txtar context root formatting fix",
-      "description": "Fix internal/scripting/context.go ToTxtar(): context root path must be placed OUTSIDE the txtar code block, wrapped in backticks (`path/to/root`), not embedded inside. Write a failing test first demonstrating current behavior. Fix. Verify test passes. Run make.",
+      "task": "T024: Integration testing for claude-mux",
+      "description": "TestMain + -integration flag (disabled by default). Flags: -provider=ollama, -model=gpt-oss:20b-cloud. Test: spawn, menu navigation, MCP startup, task, result, guard rails, recovery. Config.mk target: make integration-test-claudemux. Skipped when flag unset. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P034: txtar path ambiguity fix",
-      "description": "Fix computeUniqueSuffixes() in context.go: (1) Compute and include LCA of all tracked paths in txtar header comment. (2) When expanding paths upward for disambiguation, verify implied parent directory is actually tracked. (3) Preserve full paths for non-colliding basenames that appear to share a directory. Write failing tests demonstrating all three scenarios from docs/todo.md. Fix. Run make.",
+      "task": "T025: Cross-platform checkpoint — post claude-mux",
+      "description": "macOS: make make-all-with-log. Linux: make make-all-in-container. Windows: make make-all-run-windows. Zero failures on ALL platforms.",
       "status": "Not Started"
     },
     {
-      "task": "P035: T170 - osm mcp make - port of mcp-server-make",
-      "description": "Implement 'osm mcp make' subcommand. Research github.com/joeycumines/mcp-server-make. Integrate with command registry + MCP server. Improvements: better error messages, target caching (parse Makefile once per invocation), cross-platform make detection (gmake vs make), session integration (use session working dir). MCP compliance. Tests. Run make.",
+      "task": "T026: CHANGELOG — claude-mux milestone",
+      "description": "Update CHANGELOG.md [Unreleased] with T002-T024. Keep-a-Changelog format. Added/Changed/Fixed/Removed. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P036: T171 - Agent steering via MCP enqueue + session gRPC",
-      "description": "Session-tied Unix socket (gRPC transport), Windows TCP fallback. Proto definitions for enqueue protocol (task, interrupt, status). Port MacosUseSDK baseline patterns. MCP tools: enqueue (add task), interrupt (stop current task), status query. Socket cleanup on session exit. Tests. Run make.",
+      "task": "T027: Sync common config enhancement",
+      "description": "Enhance sync.go/sync_config.go: conflict handling (prompt for unknown, auto-override for SHA-tracked), schema versioning in YAML frontmatter, edge cases (empty repo, partial failure, concurrent sync), gitignored file handling. Tests. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P037: T172 - osm mcp parent - Claude Code wrapper + stdio MCP + session socket",
-      "description": "Implement 'osm mcp parent' subcommand: wrap Claude Code as child process, stdio MCP transport (expose MCP tools to Claude via stdin/stdout), session socket bidirectional messaging (from P036), lifecycle management (start/monitor/restart). MCP tools to Claude: enqueue, interrupt, status. Session integration. Tests. Run make.",
+      "task": "T028: Autodiscovery refinement",
+      "description": "Harden osm goal/script paths: config key respect, symlink traversal (follow but detect cycles), permission errors (warn not crash), benchmarks, debug logging verification. Edge case tests. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P038: T169 - osm mcp prompt - polymorphic terminal wrapper",
-      "description": "Create 'osm mcp prompt' subcommand. Research Anthropic computer use interface. Document research in docs/ first. Dynamic tool availability per mode, BubbleTea terminal UI, mode detection, go-prompt REPL integration, MCP tool schema adapts per mode. Run make.",
+      "task": "T029: Prompt file enhancement",
+      "description": "Harden .prompt.md discovery: goal references, VS Code conventions, composition, templating. Tests. Update docs/reference/config.md. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P039: T174 - Sync go-git v6 migration",
-      "description": "Migrate sync.go and sync_startup.go from shell-out git to go-git v6 for: clone, add, commit. Keep pull --rebase as shell-out. Preserve: pull --rebase strategy, conflict detection from 'CONFLICT' in stderr, sync.local-path config, auto-pull on startup, timestamp commit messages 'osm sync: <RFC3339>'. Tests verifying all preserved behaviors. Run make.",
+      "task": "T030: ReadableStream for Response.body streaming",
+      "description": "In fetch/: ReadableStream on Response.body, getReader(), reader.read()->Promise<{value,done}>, SSE parsing, chunked encoding, back-pressure via bounded channel. Tests with httptest. Goja JS verification. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P040: CHANGELOG update batch 1",
-      "description": "Update CHANGELOG.md with all changes implemented from P006 through P039. Follow Keep-a-Changelog 1.1.0 format. Group: Added, Changed, Fixed, Removed. Use present-tense imperative. No PR references. Stays [Unreleased]. Run make.",
+      "task": "T031: macOS process hierarchy fallback for session ID",
+      "description": "session_darwin.go (//go:build darwin): sysctl/libproc process tree, skip ephemeral wrappers, shell/root boundaries, PID+start-time. Update session_other.go build tag. Update docs/session.md. Tests. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P041: T177 - Final cross-platform verification",
-      "description": "Run all three: (1) macOS: make make-all-with-log. (2) Linux: make make-all-in-container. (3) Windows: make make-all-run-windows. Check 'make find-test-failures' for each. Zero failures required on ALL platforms. Fix any platform-specific regressions. This is the FINAL quality gate.",
+      "task": "T032: Anthropic prompt library expansion",
+      "description": "Add 3-5 new built-in goals to goal_builtin.go. Candidates from Anthropic prompt library NOT yet implemented. Each: stateVars, hotSnippets, flagDefs, promptOptions. Full test suite. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "P042: Final CHANGELOG update and commit",
-      "description": "Final CHANGELOG.md update. Verify two contiguous issue-free Rule of Two review cycles against full diff vs main. Execute Rule of Two: spawn subagent, review diff, check all platforms pass, no lint errors. Second subagent, same diff. Only after TWO consecutive PASSes: commit all staged changes with Kubernetes-style message.",
+      "task": "T033: Security audit of scripting sandbox",
+      "description": "Audit: ambient authority leaks, require() traversal, exec injection, fetch SSRF, os write restrictions, env secrets, MCP privilege escalation. Fix vulnerabilities. Regression tests. Update docs/security.md. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T034: txtar context root formatting fix",
+      "description": "Fix context.go ToTxtar(): root path outside code block, wrapped in backticks. Failing test first. Fix. Verify. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T035: txtar path ambiguity fix",
+      "description": "Fix computeUniqueSuffixes() in context.go: LCA computation, verify parent tracking, preserve full paths for non-colliding basenames. Failing tests for all 3 scenarios. Fix. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T036: osm mcp make — port of mcp-server-make",
+      "description": "Implement 'osm mcp make' subcommand. Research mcp-server-make. Target caching, cross-platform make detection, session integration. MCP tool: make_run. Shell completion. Tests. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T037: Agent steering via MCP enqueue + session gRPC",
+      "description": "Session-tied Unix socket (gRPC), Windows TCP fallback. Proto: EnqueueTask, InterruptCurrent, GetStatus. Socket: ~/.osm/sessions/<id>/control.sock. Cleanup. Tests with in-process gRPC. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T038: osm mcp parent — Claude Code wrapper + stdio MCP + session socket",
+      "description": "Implement 'osm mcp parent': wrap Claude Code child process, stdio MCP transport, session socket messaging (T037), lifecycle mgmt. MCP tools: enqueue, interrupt, status. Tests. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T039: osm mcp prompt — polymorphic terminal wrapper",
+      "description": "Implement 'osm mcp prompt': Anthropic computer use research (document first), dynamic tool availability, BubbleTea UI, mode detection, go-prompt REPL, adaptive MCP schema. Tests. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T040: Sync go-git v6 migration",
+      "description": "Migrate sync.go/sync_startup.go to go-git v6 for clone/add/commit. Keep pull --rebase as shell-out. Preserve: rebase strategy, conflict detection, sync.local-path, auto-pull, timestamp messages. Tests. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T041: Cross-platform checkpoint — post infrastructure",
+      "description": "macOS + Linux + Windows. Zero failures on ALL platforms. Fix regressions from T027-T040.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T042: CHANGELOG — infrastructure milestone",
+      "description": "Update CHANGELOG.md [Unreleased] with T027-T040. Keep-a-Changelog format. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T043: Test coverage gap analysis and remediation",
+      "description": "Run 'make cover'. Identify packages below 90%. Add tests focused on error paths, edge cases, platform-specific code, concurrency. Target: 100% effective coverage. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T044: README.md update",
+      "description": "Update root README.md: full feature set, claude-mux, MCP server, JS modules list, goal system, sync, sessions. Badges. Installation. Quick-start. Verify links. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T045: Shell completion audit",
+      "description": "Audit completion for ALL commands/subcommands in bash/zsh/fish/powershell. Fix gaps. Test output format. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T046: Documentation index and cross-references",
+      "description": "Review docs/README.md: every doc indexed. Cross-references valid. docs/reference/ complete for all commands and config keys. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T047: Deadcode and betteralign audit",
+      "description": "Run 'make lint' checking deadcode and betteralign. Fix issues. No .deadcodeignore changes. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T048: Final cross-platform verification",
+      "description": "macOS + Linux + Windows. Zero failures. FINAL quality gate before commit.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T049: Final CHANGELOG update",
+      "description": "Final CHANGELOG.md covering T043-T047. Verify completeness and format. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T050: Rule of Two commit gate",
+      "description": "Execute Rule of Two: subagent #1 reviews full diff vs HEAD. If PASS: freeze, subagent #2 same diff. Both PASS: commit with Kubernetes-style message. Either FAIL: fix, reset to 0, restart.",
       "status": "Not Started"
     }
   ],
   "continuousVerification": {
     "task": "Run 'make make-all-with-log' after EVERY significant change",
-    "description": "Execute after: (a) Each code change, (b) Each test addition, (c) Each task completion, (d) Each bug fix. Check build.log via 'make find-test-failures'.",
-    "failPolicy": "If ANY test fails, STOP IMMEDIATELY and fix before proceeding. Zero tolerance.",
-    "testCoverage": "Target 100% effective test coverage. VERIFY with go tool cover.",
-    "crossPlatform": "Run make-all-in-container (Linux) and make-all-run-windows (Windows) at P004/P005 and again at P041. All three platforms must pass."
-  },
-  "fileCorrectionMandate": {
-    "purpose": "These files are WRONG and MUST BE CORRECTED.",
-    "files": [
-      {
-        "path": "docs/architecture-ai-orchestrator.md",
-        "problem": "Wrong name. Must be REWRITTEN as docs/architecture-claude-mux.md.",
-        "correctiveTask": "P008"
-      },
-      {
-        "path": "scripts/bt-templates/orchestrator.js",
-        "problem": "Wrong name. Must be RENAMED to claude-mux.js.",
-        "correctiveTask": "P010"
-      },
-      {
-        "path": "goals/orchestrate-pr-split.json",
-        "problem": "Must be REWRITTEN for claude-mux.",
-        "correctiveTask": "P012"
-      },
-      {
-        "path": "scripts/orchestrate-pr-split.js",
-        "problem": "Pure-git approach. Must be REWRITTEN.",
-        "correctiveTask": "P012"
-      },
-      {
-        "path": "internal/builtin/orchestrator/",
-        "problem": "Package name retired. Must be renamed to claudemux.",
-        "correctiveTask": "P009"
-      }
-    ]
+    "failPolicy": "If ANY test fails, STOP and fix. Zero tolerance.",
+    "testCoverage": "Target 100%. Verify with go tool cover.",
+    "crossPlatform": "Checkpoints at T025, T041, T048."
   },
   "finalEnforcementProtocol": [
-    {
-      "type": "POST_EXECUTION_WARNING",
-      "alert": "ON TOOLS: Use config.mk custom targets. Limit output (pipe to tail). Tee to build.log. Use make find-test-failures."
-    },
-    {
-      "type": "TIMING_ENFORCEMENT",
-      "alert": "Timing dependent tests are BANNED. Long-running tests are BANNED. Abide. OBEY."
-    },
-    {
-      "type": "NAMING_ENFORCEMENT",
-      "alert": "The word 'orchestrator' is RETIRED. Use 'claude-mux' (user-facing), 'claudemux' (Go identifiers), 'osm:claudemux' (JS module name)."
-    },
-    {
-      "type": "BLUEPRINT_REFINEMENT",
-      "alert": "Continually refine. After every task, re-read. Fix stale descriptions. Add discovered work. Split coarse tasks. Never prune unless genuinely done."
-    },
-    {
-      "type": "RULE_OF_TWO",
-      "alert": "Two contiguous, issue-free subagent reviews BEFORE any commit. Both reviews examine the SAME diff. If code changes between reviews, reset counter to 0."
-    },
-    {
-      "type": "SESSION_TIMER",
-      "alert": "The 9-hour mandate is enforced. If .session-timer is missing, the clock restarts from zero. 'make check-session-time' to verify."
-    },
-    {
-      "type": "CROSS_PLATFORM_GATE",
-      "alert": "P041 (final cross-platform) MUST pass on ALL three platforms before work is considered complete."
-    }
+    {"type": "TOOLS", "alert": "Use config.mk custom targets. Limit output. Tee to build.log."},
+    {"type": "TIMING", "alert": "No timing-dependent tests. No long-running tests."},
+    {"type": "NAMING", "alert": "'orchestrator' is RETIRED. Use claudemux/claude-mux/osm:claudemux."},
+    {"type": "REFINEMENT", "alert": "Continually refine. After every task fix stale descriptions."},
+    {"type": "RULE_OF_TWO", "alert": "Two contiguous reviews. Same diff. Reset on any code change."},
+    {"type": "DEADCODE", "alert": "NEVER add .deadcodeignore entries. Wire up or delete."}
   ]
 }

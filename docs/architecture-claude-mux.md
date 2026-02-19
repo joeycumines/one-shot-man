@@ -475,32 +475,48 @@ to `osm`. PTY is for session lifecycle only.
 ### Tools
 
 All MCP feedback tools are scoped to a `sessionId` to support concurrent instances.
+See [`osm mcp` reference](reference/command.md#osm-mcp) for full JSON schemas.
 
-#### `reportProgress`
+#### `registerSession`
 
-Signals ongoing work with optional percent completion.
+Creates a new agent session with a unique ID and capability list. The session ID
+is validated (non-empty, max 256 chars, no control characters).
 
 ```json
 {
-  "sessionId": "sess_abc123",
-  "step": "analyzing-diff",
-  "message": "Found 47 changed files across 8 packages",
-  "percent": 15
+  "sessionId": "agent-1",
+  "capabilities": ["code-review", "testing"]
 }
 ```
 
-#### `reportResult`
+#### `reportProgress`
 
-Signals task completion with structured result data.
+Signals ongoing work with status and percent completion.
 
 ```json
 {
-  "sessionId": "sess_abc123",
-  "resultType": "code-change",
-  "data": {
-    "filesModified": ["pkg/parser.go", "pkg/parser_test.go"],
-    "commitSha": "a1b2c3d"
-  }
+  "sessionId": "agent-1",
+  "status": "working",
+  "progress": 45.0,
+  "message": "Found 47 changed files across 8 packages",
+  "seq": 1
+}
+```
+
+Status must be one of: `working`, `blocked`, `waiting`, `idle`. Progress is clamped
+to 0–100.
+
+#### `reportResult`
+
+Signals task completion with success/failure and output.
+
+```json
+{
+  "sessionId": "agent-1",
+  "success": true,
+  "output": "All tests passed",
+  "filesChanged": ["pkg/parser.go", "pkg/parser_test.go"],
+  "seq": 2
 }
 ```
 
@@ -510,32 +526,42 @@ Pauses the agent and asks the orchestrating workflow for a decision.
 
 ```json
 {
-  "sessionId": "sess_abc123",
+  "sessionId": "agent-1",
   "question": "Should I rewrite pkg/parser.go from scratch or patch in-place?",
-  "options": ["rewrite", "patch", "skip"]
+  "options": ["rewrite", "patch", "skip"],
+  "context": "The current code has 12 known issues.",
+  "seq": 3
 }
 ```
 
 The JavaScript workflow receives this via the MCP server and can pause the BT tree
 until the user (or another automated decision-maker) provides the answer.
 
-#### `reportError`
+#### `heartbeat`
 
-Reports a recoverable or fatal error.
+Updates the session's heartbeat timestamp to signal the agent is still alive.
+Orchestrators detect stale agents by comparing `lastHeartbeat` against a timeout.
 
 ```json
 {
-  "sessionId": "sess_abc123",
-  "errorType": "compilation-failure",
-  "message": "pkg/parser.go:42: undefined: TokenType",
-  "recoverable": true
+  "sessionId": "agent-1"
 }
 ```
 
+#### `getSession` / `listSessions`
+
+`getSession` retrieves full session state and **drains** queued events (progress,
+result, guidance). `listSessions` returns summaries with event counts.
+
 ### Idempotency
 
-All tools include a `sequenceNumber` for deduplication. The MCP server maintains a
-per-session sequence counter; out-of-order or duplicate calls are silently discarded.
+The `reportProgress`, `reportResult`, and `requestGuidance` tools accept an optional
+`seq` field for deduplication. The MCP server maintains a per-session `lastSeq`
+counter. When `seq` > 0:
+
+- If `seq` > `lastSeq`: processed normally, `lastSeq` updated
+- If `seq` ≤ `lastSeq`: silently skipped as duplicate (returns `"duplicate seq N"`)
+- If `seq` = 0 or omitted: no deduplication, always processed
 
 ---
 

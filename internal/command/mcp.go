@@ -105,6 +105,8 @@ type mcpSession struct {
 	Status       string            `json:"status"`
 	Progress     float64           `json:"progress"`
 	LastUpdate   time.Time         `json:"lastUpdate"`
+	LastHeartbeat time.Time        `json:"lastHeartbeat"`
+	LastSeq      int64             `json:"-"` // highest processed sequence number
 	Events       []mcpSessionEvent `json:"-"` // drained on getSession
 }
 
@@ -117,22 +119,25 @@ type mcpSessionEvent struct {
 
 // mcpGetSessionResponse is the JSON response for getSession.
 type mcpGetSessionResponse struct {
-	SessionID    string            `json:"sessionId"`
-	Capabilities []string          `json:"capabilities"`
-	Status       string            `json:"status"`
-	Progress     float64           `json:"progress"`
-	LastUpdate   time.Time         `json:"lastUpdate"`
-	Events       []mcpSessionEvent `json:"events"`
+	SessionID     string            `json:"sessionId"`
+	Capabilities  []string          `json:"capabilities"`
+	Status        string            `json:"status"`
+	Progress      float64           `json:"progress"`
+	LastUpdate    time.Time         `json:"lastUpdate"`
+	LastHeartbeat time.Time         `json:"lastHeartbeat"`
+	LastSeq       int64             `json:"lastSeq"`
+	Events        []mcpSessionEvent `json:"events"`
 }
 
 // mcpSessionSummary is a JSON-serializable session summary for listSessions.
 type mcpSessionSummary struct {
-	SessionID    string    `json:"sessionId"`
-	Capabilities []string  `json:"capabilities"`
-	Status       string    `json:"status"`
-	Progress     float64   `json:"progress"`
-	LastUpdate   time.Time `json:"lastUpdate"`
-	EventCount   int       `json:"eventCount"`
+	SessionID     string    `json:"sessionId"`
+	Capabilities  []string  `json:"capabilities"`
+	Status        string    `json:"status"`
+	Progress      float64   `json:"progress"`
+	LastUpdate    time.Time `json:"lastUpdate"`
+	LastHeartbeat time.Time `json:"lastHeartbeat"`
+	EventCount    int       `json:"eventCount"`
 }
 
 // --- MCP session input types ---
@@ -147,6 +152,7 @@ type mcpReportProgressInput struct {
 	Status    string  `json:"status" jsonschema:"Current status (working, blocked, waiting, idle)"`
 	Progress  float64 `json:"progress" jsonschema:"Completion percentage (0-100)"`
 	Message   string  `json:"message" jsonschema:"Human-readable progress message"`
+	Seq       int64   `json:"seq,omitempty" jsonschema:"Sequence number for idempotency (0 = no dedup)"`
 }
 
 type mcpReportResultInput struct {
@@ -154,6 +160,7 @@ type mcpReportResultInput struct {
 	Success      bool     `json:"success" jsonschema:"Whether the task succeeded"`
 	Output       string   `json:"output" jsonschema:"Task output or error message"`
 	FilesChanged []string `json:"filesChanged,omitempty" jsonschema:"List of modified files"`
+	Seq          int64    `json:"seq,omitempty" jsonschema:"Sequence number for idempotency (0 = no dedup)"`
 }
 
 type mcpRequestGuidanceInput struct {
@@ -161,9 +168,14 @@ type mcpRequestGuidanceInput struct {
 	Question  string   `json:"question" jsonschema:"Question for the human operator"`
 	Options   []string `json:"options,omitempty" jsonschema:"Available options"`
 	Context   string   `json:"context,omitempty" jsonschema:"Additional context"`
+	Seq       int64    `json:"seq,omitempty" jsonschema:"Sequence number for idempotency (0 = no dedup)"`
 }
 
 type mcpGetSessionInput struct {
+	SessionID string `json:"sessionId" jsonschema:"Session identifier"`
+}
+
+type mcpHeartbeatInput struct {
 	SessionID string `json:"sessionId" jsonschema:"Session identifier"`
 }
 
@@ -175,7 +187,44 @@ var mcpValidProgressStatuses = map[string]bool{
 	"idle":    true,
 }
 
-// newMCPServer creates a configured MCP server with all fourteen tools.
+// mcpMaxSessionIDLen is the maximum length for a session identifier.
+const mcpMaxSessionIDLen = 256
+
+// mcpValidateSessionID checks that a session ID is non-empty, within length
+// limits, and contains only printable non-whitespace characters (except space
+// in the middle).
+func mcpValidateSessionID(id string) error {
+	if id == "" {
+		return fmt.Errorf("sessionId is required")
+	}
+	if len(id) > mcpMaxSessionIDLen {
+		return fmt.Errorf("sessionId exceeds maximum length of %d characters", mcpMaxSessionIDLen)
+	}
+	for _, r := range id {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("sessionId contains invalid character: %q", string(r))
+		}
+	}
+	return nil
+}
+
+// mcpCheckSeq returns true if the operation should be processed based on the
+// sequence number. If seq > 0 and <= sess.LastSeq, the operation is a duplicate
+// and should be skipped (returns false). If seq > sess.LastSeq, updates LastSeq
+// (returns true). If seq == 0, always processes (returns true, no dedup).
+// Caller must hold mu.
+func mcpCheckSeq(sess *mcpSession, seq int64) bool {
+	if seq <= 0 {
+		return true // no dedup
+	}
+	if seq <= sess.LastSeq {
+		return false // duplicate
+	}
+	sess.LastSeq = seq
+	return true
+}
+
+// newMCPServer creates a configured MCP server with all fifteen tools.
 // It is unexported for testability via InMemoryTransport.
 func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, version string) *mcp.Server {
 	var mu sync.Mutex
@@ -409,22 +458,24 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 		Name:        "registerSession",
 		Description: "Register a new agent session with capabilities",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpRegisterSessionInput) (*mcp.CallToolResult, any, error) {
-		if input.SessionID == "" {
+		if err := mcpValidateSessionID(input.SessionID); err != nil {
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("sessionId is required"))
+			result.SetError(err)
 			return result, nil, nil
 		}
 		caps := input.Capabilities
 		if caps == nil {
 			caps = []string{}
 		}
+		now := time.Now()
 		mu.Lock()
 		sessions[input.SessionID] = &mcpSession{
-			SessionID:    input.SessionID,
-			Capabilities: caps,
-			Status:       "idle",
-			Progress:     0,
-			LastUpdate:   time.Now(),
+			SessionID:     input.SessionID,
+			Capabilities:  caps,
+			Status:        "idle",
+			Progress:      0,
+			LastUpdate:    now,
+			LastHeartbeat: now,
 		}
 		mu.Unlock()
 		return &mcp.CallToolResult{
@@ -457,6 +508,12 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
 			return result, nil, nil
 		}
+		if !mcpCheckSeq(sess, input.Seq) {
+			mu.Unlock()
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("duplicate seq %d (idempotent skip)", input.Seq)}},
+			}, nil, nil
+		}
 		now := time.Now()
 		sess.Status = input.Status
 		sess.Progress = progress
@@ -488,6 +545,12 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 			result := &mcp.CallToolResult{}
 			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
 			return result, nil, nil
+		}
+		if !mcpCheckSeq(sess, input.Seq) {
+			mu.Unlock()
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("duplicate seq %d (idempotent skip)", input.Seq)}},
+			}, nil, nil
 		}
 		now := time.Now()
 		if input.Success {
@@ -535,6 +598,12 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
 			return result, nil, nil
 		}
+		if !mcpCheckSeq(sess, input.Seq) {
+			mu.Unlock()
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("duplicate seq %d (idempotent skip)", input.Seq)}},
+			}, nil, nil
+		}
 		now := time.Now()
 		sess.LastUpdate = now
 		options := input.Options
@@ -575,12 +644,14 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 		}
 		sess.Events = nil // drain
 		resp := mcpGetSessionResponse{
-			SessionID:    sess.SessionID,
-			Capabilities: sess.Capabilities,
-			Status:       sess.Status,
-			Progress:     sess.Progress,
-			LastUpdate:   sess.LastUpdate,
-			Events:       events,
+			SessionID:     sess.SessionID,
+			Capabilities:  sess.Capabilities,
+			Status:        sess.Status,
+			Progress:      sess.Progress,
+			LastUpdate:    sess.LastUpdate,
+			LastHeartbeat: sess.LastHeartbeat,
+			LastSeq:       sess.LastSeq,
+			Events:        events,
 		}
 		mu.Unlock()
 		data, err := json.Marshal(resp)
@@ -601,12 +672,13 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 		summaries := make([]mcpSessionSummary, 0, len(sessions))
 		for _, sess := range sessions {
 			summaries = append(summaries, mcpSessionSummary{
-				SessionID:    sess.SessionID,
-				Capabilities: sess.Capabilities,
-				Status:       sess.Status,
-				Progress:     sess.Progress,
-				LastUpdate:   sess.LastUpdate,
-				EventCount:   len(sess.Events),
+				SessionID:     sess.SessionID,
+				Capabilities:  sess.Capabilities,
+				Status:        sess.Status,
+				Progress:      sess.Progress,
+				LastUpdate:    sess.LastUpdate,
+				LastHeartbeat: sess.LastHeartbeat,
+				EventCount:    len(sess.Events),
 			})
 		}
 		mu.Unlock()
@@ -616,6 +688,33 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 		}
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
+		}, nil, nil
+	})
+
+	// --- heartbeat ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "heartbeat",
+		Description: "Update session heartbeat timestamp to indicate the agent is still alive",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpHeartbeatInput) (*mcp.CallToolResult, any, error) {
+		if err := mcpValidateSessionID(input.SessionID); err != nil {
+			result := &mcp.CallToolResult{}
+			result.SetError(err)
+			return result, nil, nil
+		}
+		mu.Lock()
+		sess, ok := sessions[input.SessionID]
+		if !ok {
+			mu.Unlock()
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			return result, nil, nil
+		}
+		now := time.Now()
+		sess.LastHeartbeat = now
+		sess.LastUpdate = now
+		mu.Unlock()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("heartbeat: %s", input.SessionID)}},
 		}, nil, nil
 	})
 

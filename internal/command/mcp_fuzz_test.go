@@ -1,8 +1,13 @@
 package command
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/scripting"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // FuzzMCPBacktickFence fuzzes mcpBacktickFence to verify that the returned
@@ -62,5 +67,104 @@ func FuzzMCPBacktickFence(f *testing.F) {
 				run = 0
 			}
 		}
+	})
+}
+
+// FuzzMCPSessionTools fuzzes the session-related MCP tools (registerSession,
+// reportProgress, reportResult, requestGuidance, heartbeat) with random inputs
+// to ensure no panics and consistent error handling.
+func FuzzMCPSessionTools(f *testing.F) {
+	seeds := []struct {
+		tool    string
+		payload string
+	}{
+		{"registerSession", `{"sessionId":"s1","capabilities":[]}`},
+		{"registerSession", `{"sessionId":"","capabilities":[]}`},
+		{"registerSession", `{"sessionId":"` + strings.Repeat("x", 300) + `","capabilities":[]}`},
+		{"reportProgress", `{"sessionId":"s1","status":"working","progress":50,"message":"hi","seq":1}`},
+		{"reportProgress", `{"sessionId":"s1","status":"invalid","progress":-1,"message":"","seq":0}`},
+		{"reportResult", `{"sessionId":"s1","success":true,"output":"done","seq":1}`},
+		{"reportResult", `{"sessionId":"ghost","success":false,"output":"fail","seq":5}`},
+		{"requestGuidance", `{"sessionId":"s1","question":"what?","options":["a","b"],"seq":1}`},
+		{"requestGuidance", `{"sessionId":"s1","question":"","seq":0}`},
+		{"heartbeat", `{"sessionId":"s1"}`},
+		{"heartbeat", `{"sessionId":""}`},
+		{"heartbeat", `{"sessionId":"ghost"}`},
+		{"getSession", `{"sessionId":"s1"}`},
+		{"getSession", `{"sessionId":"nonexistent"}`},
+	}
+	for _, s := range seeds {
+		f.Add(s.tool, s.payload)
+	}
+
+	f.Fuzz(func(t *testing.T, tool, payload string) {
+		// Only fuzz the session tools; skip unknown tool names entirely.
+		allowed := map[string]bool{
+			"registerSession": true,
+			"reportProgress":  true,
+			"reportResult":    true,
+			"requestGuidance": true,
+			"heartbeat":       true,
+			"getSession":      true,
+			"listSessions":    true,
+		}
+		if !allowed[tool] {
+			return
+		}
+
+		cwd := t.TempDir()
+		cm, err := scripting.NewContextManager(cwd)
+		if err != nil {
+			t.Skip("failed to create context manager:", err)
+		}
+		server := newMCPServer(cm, &mcpTestGoalRegistry{}, "0.0.0-fuzz")
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		serverTransport, clientTransport := mcp.NewInMemoryTransports()
+		serverDone := make(chan error, 1)
+		go func() {
+			serverDone <- server.Run(ctx, serverTransport)
+		}()
+
+		client := mcp.NewClient(&mcp.Implementation{Name: "fuzz-client", Version: "test"}, nil)
+		sess, err := client.Connect(ctx, clientTransport, nil)
+		if err != nil {
+			cancel()
+			t.Skip("failed to connect:", err)
+		}
+		defer func() {
+			_ = sess.Close()
+			cancel()
+			<-serverDone
+		}()
+
+		// Ensure there's a session for tools that need one.
+		if tool != "registerSession" && tool != "listSessions" {
+			_, _ = sess.CallTool(ctx, &mcp.CallToolParams{
+				Name: "registerSession",
+				Arguments: map[string]any{
+					"sessionId":    "fuzz-sess",
+					"capabilities": []string{},
+				},
+			})
+		}
+
+		// Parse the fuzz payload as map, falling back to a minimal args map.
+		var args map[string]any
+		if json.Valid([]byte(payload)) {
+			if err := json.Unmarshal([]byte(payload), &args); err != nil {
+				args = map[string]any{"sessionId": payload}
+			}
+		} else {
+			args = map[string]any{"sessionId": payload}
+		}
+
+		// The key invariant: no panic.
+		_, _ = sess.CallTool(ctx, &mcp.CallToolParams{
+			Name:      tool,
+			Arguments: args,
+		})
 	})
 }

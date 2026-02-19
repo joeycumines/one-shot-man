@@ -182,6 +182,7 @@ func TestMCPServer_ToolList(t *testing.T) {
 		"requestGuidance": false,
 		"getSession":      false,
 		"listSessions":    false,
+		"heartbeat":       false,
 	}
 	for _, tool := range result.Tools {
 		if _, ok := expected[tool.Name]; ok {
@@ -193,8 +194,8 @@ func TestMCPServer_ToolList(t *testing.T) {
 			t.Errorf("tool %q not registered", name)
 		}
 	}
-	if len(result.Tools) != 14 {
-		t.Errorf("got %d tools, want 14", len(result.Tools))
+	if len(result.Tools) != 15 {
+		t.Errorf("got %d tools, want 15", len(result.Tools))
 	}
 }
 
@@ -1673,5 +1674,351 @@ func TestMCPServer_BacktickFenceInPrompt(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "### backtick-diff") {
 		t.Error("prompt missing diff section header")
+	}
+}
+
+// --- heartbeat ---
+
+func TestMCPServer_Heartbeat(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "hb-1",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "heartbeat", map[string]any{"sessionId": "hb-1"})
+	if r.IsError {
+		t.Fatalf("heartbeat returned error: %s", mcpResultText(t, r))
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "heartbeat") {
+		t.Errorf("heartbeat text = %q, want to contain 'heartbeat'", text)
+	}
+
+	// Verify lastHeartbeat is updated via getSession
+	r = env.callTool(t, "getSession", map[string]any{"sessionId": "hb-1"})
+	var sess mcpGetSessionResponse
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &sess); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if sess.LastHeartbeat.IsZero() {
+		t.Error("lastHeartbeat should not be zero after heartbeat call")
+	}
+}
+
+func TestMCPServer_Heartbeat_UnknownSession(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	r := env.callTool(t, "heartbeat", map[string]any{"sessionId": "ghost"})
+	if !r.IsError {
+		t.Error("expected IsError for unknown session")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "session not found") {
+		t.Errorf("error text = %q, want to contain 'session not found'", text)
+	}
+}
+
+func TestMCPServer_Heartbeat_EmptyID(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	r := env.callTool(t, "heartbeat", map[string]any{"sessionId": ""})
+	if !r.IsError {
+		t.Error("expected IsError for empty sessionId")
+	}
+}
+
+// --- Sequence number idempotency ---
+
+func TestMCPServer_SequenceNumber_ReportProgress(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "seq-p",
+		"capabilities": []string{},
+	})
+
+	// seq=1: should process
+	r := env.callTool(t, "reportProgress", map[string]any{
+		"sessionId": "seq-p",
+		"status":    "working",
+		"progress":  25,
+		"message":   "first",
+		"seq":       1,
+	})
+	if r.IsError {
+		t.Fatalf("reportProgress seq=1: %s", mcpResultText(t, r))
+	}
+	text := mcpResultText(t, r)
+	if strings.Contains(text, "duplicate") {
+		t.Errorf("seq=1 should not be duplicate, got: %s", text)
+	}
+
+	// seq=1 again: should skip (idempotent)
+	r = env.callTool(t, "reportProgress", map[string]any{
+		"sessionId": "seq-p",
+		"status":    "blocked",
+		"progress":  50,
+		"message":   "duplicate",
+		"seq":       1,
+	})
+	text = mcpResultText(t, r)
+	if !strings.Contains(text, "duplicate") {
+		t.Errorf("seq=1 repeat should be duplicate, got: %s", text)
+	}
+
+	// seq=2: should process
+	r = env.callTool(t, "reportProgress", map[string]any{
+		"sessionId": "seq-p",
+		"status":    "blocked",
+		"progress":  50,
+		"message":   "second",
+		"seq":       2,
+	})
+	text = mcpResultText(t, r)
+	if strings.Contains(text, "duplicate") {
+		t.Errorf("seq=2 should not be duplicate, got: %s", text)
+	}
+
+	// Verify only 2 events (seq=1 first call + seq=2)
+	r = env.callTool(t, "getSession", map[string]any{"sessionId": "seq-p"})
+	var sess mcpGetSessionResponse
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &sess); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(sess.Events) != 2 {
+		t.Errorf("events = %d, want 2 (seq=1 duplicate should be skipped)", len(sess.Events))
+	}
+	if sess.LastSeq != 2 {
+		t.Errorf("lastSeq = %d, want 2", sess.LastSeq)
+	}
+}
+
+func TestMCPServer_SequenceNumber_ReportResult(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "seq-r",
+		"capabilities": []string{},
+	})
+
+	// seq=5: should process
+	r := env.callTool(t, "reportResult", map[string]any{
+		"sessionId": "seq-r",
+		"success":   true,
+		"output":    "done",
+		"seq":       5,
+	})
+	text := mcpResultText(t, r)
+	if strings.Contains(text, "duplicate") {
+		t.Errorf("seq=5 should not be duplicate: %s", text)
+	}
+
+	// seq=3: old seq, should skip
+	r = env.callTool(t, "reportResult", map[string]any{
+		"sessionId": "seq-r",
+		"success":   false,
+		"output":    "old",
+		"seq":       3,
+	})
+	text = mcpResultText(t, r)
+	if !strings.Contains(text, "duplicate") {
+		t.Errorf("seq=3 (< lastSeq=5) should be duplicate: %s", text)
+	}
+}
+
+func TestMCPServer_SequenceNumber_RequestGuidance(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "seq-g",
+		"capabilities": []string{},
+	})
+
+	// seq=1
+	env.callTool(t, "requestGuidance", map[string]any{
+		"sessionId": "seq-g",
+		"question":  "first?",
+		"seq":       1,
+	})
+
+	// seq=1 duplicate
+	r := env.callTool(t, "requestGuidance", map[string]any{
+		"sessionId": "seq-g",
+		"question":  "duplicate?",
+		"seq":       1,
+	})
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "duplicate") {
+		t.Errorf("seq=1 repeat should be duplicate: %s", text)
+	}
+
+	// Verify only 1 guidance event
+	r = env.callTool(t, "getSession", map[string]any{"sessionId": "seq-g"})
+	var sess mcpGetSessionResponse
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &sess); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(sess.Events) != 1 {
+		t.Errorf("events = %d, want 1", len(sess.Events))
+	}
+}
+
+func TestMCPServer_SequenceNumber_ZeroDisablesDedup(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "seq-0",
+		"capabilities": []string{},
+	})
+
+	// seq=0 (default): no dedup, both should process
+	env.callTool(t, "reportProgress", map[string]any{
+		"sessionId": "seq-0",
+		"status":    "working",
+		"progress":  10,
+		"message":   "first",
+	})
+	env.callTool(t, "reportProgress", map[string]any{
+		"sessionId": "seq-0",
+		"status":    "working",
+		"progress":  20,
+		"message":   "second",
+	})
+
+	r := env.callTool(t, "getSession", map[string]any{"sessionId": "seq-0"})
+	var sess mcpGetSessionResponse
+	if err := json.Unmarshal([]byte(mcpResultText(t, r)), &sess); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(sess.Events) != 2 {
+		t.Errorf("events = %d, want 2 (seq=0 should not dedup)", len(sess.Events))
+	}
+}
+
+// --- Session ID validation ---
+
+func TestMCPServer_RegisterSession_ControlCharInID(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	r := env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "bad\x00id",
+		"capabilities": []string{},
+	})
+	if !r.IsError {
+		t.Error("expected IsError for sessionId with control character")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "invalid character") {
+		t.Errorf("error text = %q, want to contain 'invalid character'", text)
+	}
+}
+
+func TestMCPServer_RegisterSession_TooLongID(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	longID := strings.Repeat("x", mcpMaxSessionIDLen+1)
+	r := env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    longID,
+		"capabilities": []string{},
+	})
+	if !r.IsError {
+		t.Error("expected IsError for sessionId exceeding max length")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "exceeds maximum length") {
+		t.Errorf("error text = %q, want to contain 'exceeds maximum length'", text)
+	}
+}
+
+// --- mcpValidateSessionID unit tests ---
+
+func TestMCPValidateSessionID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		id      string
+		wantErr bool
+	}{
+		{"valid simple", "agent-1", false},
+		{"valid with spaces", "my agent session", false},
+		{"valid max length", strings.Repeat("a", mcpMaxSessionIDLen), false},
+		{"empty", "", true},
+		{"too long", strings.Repeat("a", mcpMaxSessionIDLen+1), true},
+		{"null byte", "bad\x00id", true},
+		{"newline", "bad\nid", true},
+		{"tab", "bad\tid", true},
+		{"del", "bad\x7fid", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := mcpValidateSessionID(tc.id)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("mcpValidateSessionID(%q) error = %v, wantErr %v", tc.id, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// --- mcpCheckSeq unit tests ---
+
+func TestMCPCheckSeq(t *testing.T) {
+	t.Parallel()
+
+	sess := &mcpSession{}
+
+	// seq=0: always process
+	if !mcpCheckSeq(sess, 0) {
+		t.Error("seq=0 should always return true")
+	}
+	if sess.LastSeq != 0 {
+		t.Errorf("lastSeq = %d, want 0 (seq=0 should not update)", sess.LastSeq)
+	}
+
+	// seq=5: process and update
+	if !mcpCheckSeq(sess, 5) {
+		t.Error("seq=5 should return true (first call)")
+	}
+	if sess.LastSeq != 5 {
+		t.Errorf("lastSeq = %d, want 5", sess.LastSeq)
+	}
+
+	// seq=3: skip (old)
+	if mcpCheckSeq(sess, 3) {
+		t.Error("seq=3 should return false (< lastSeq=5)")
+	}
+	if sess.LastSeq != 5 {
+		t.Errorf("lastSeq = %d, want 5 (unchanged)", sess.LastSeq)
+	}
+
+	// seq=5: skip (equal to lastSeq)
+	if mcpCheckSeq(sess, 5) {
+		t.Error("seq=5 should return false (= lastSeq=5)")
+	}
+
+	// seq=6: process
+	if !mcpCheckSeq(sess, 6) {
+		t.Error("seq=6 should return true (> lastSeq=5)")
+	}
+	if sess.LastSeq != 6 {
+		t.Errorf("lastSeq = %d, want 6", sess.LastSeq)
+	}
+
+	// seq=-1: always process (treated as no dedup)
+	if !mcpCheckSeq(sess, -1) {
+		t.Error("seq=-1 should return true (negative = no dedup)")
 	}
 }

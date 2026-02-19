@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "Blueprint rewritten for session 2026-02-20. Prior P001-P009 complete. Next: T001 macOS baseline.",
+    "currentState": "T001-T004 Done. T005 next. Pre-existing flaky: TestRecording_Goal (timing-dep TUI test, passes on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -54,13 +54,13 @@
     },
     {
       "task": "T003: Model selection TUI parser extension",
-      "description": "Extend claudemux/parser.go: detect ollama model selection menu (lines like '> model-name'), parse model list, generate navigation keystrokes (arrow+enter). Handle: single model, model not found, navigation timeout. Add modelSelect event. Tests with PTY output samples. Run make.",
-      "status": "Not Started"
+      "description": "Added model_nav.go: ParseModelMenu (two-pass, arrow/numbered/indented), NavigateToModel (exact/case-insensitive/substring match, ErrNoModels/ErrModelNotFound/ErrNavigationTooLong, MaxNavigationSteps=100). Enhanced parser.go: model-item-selected pattern with modelName+selected fields. JS bindings: parseModelMenu, navigateToModel, KEY_* constants. 180 claudemux tests pass.",
+      "status": "Done"
     },
     {
       "task": "T004: MCP session coordination hardening",
-      "description": "Harden MCP session tools in internal/command/mcp.go (registerSession, reportProgress, reportResult, requestGuidance, getSession, listSessions): JSON schema validation, idempotent ops via sequence numbers, heartbeat mechanism. Fuzz: FuzzMCPSessionTools. Unit tests: happy path, invalid input, missing session, concurrent access. Run make.",
-      "status": "Not Started"
+      "description": "Hardened MCP session tools in internal/command/mcp.go: mcpValidateSessionID (control char rejection, length limit 256), idempotent ops via mcpCheckSeq (seq numbers in reportProgress/reportResult/requestGuidance), heartbeat tool (15th tool), LastSeq+LastHeartbeat fields in session/response types. Tests: 20 new tests (heartbeat happy/error/empty, seq number progress/result/guidance/zero-dedup, session ID validation, mcpValidateSessionID table, mcpCheckSeq unit). FuzzMCPSessionTools with random tool/payload pairs. 158 command tests pass with -race.",
+      "status": "Done"
     },
     {
       "task": "T005: MCP session coordination documentation",

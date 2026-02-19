@@ -139,7 +139,7 @@ Start an MCP (Model Context Protocol) server over stdio. Exposes osm's context m
 - Usage: `osm mcp`
 - No flags
 
-The server provides 14 tools:
+The server provides 15 tools:
 
 | Tool | Description |
 |------|-------------|
@@ -157,6 +157,7 @@ The server provides 14 tools:
 | `requestGuidance` | Request guidance from the human operator |
 | `getSession` | Get session info and drain queued events |
 | `listSessions` | List all registered agent sessions |
+| `heartbeat` | Update session heartbeat timestamp (keepalive) |
 
 Example MCP client configuration (Claude Desktop `claude_desktop_config.json`):
 
@@ -170,6 +171,121 @@ Example MCP client configuration (Claude Desktop `claude_desktop_config.json`):
   }
 }
 ```
+
+#### Session coordination
+
+The MCP session tools enable bidirectional communication between osm and AI agents. An agent registers a session, reports progress/results, and can request human guidance — all through the MCP protocol.
+
+**Session lifecycle:**
+
+1. Agent calls `registerSession` with a unique ID and capabilities list
+2. Agent reports work via `reportProgress` (status updates) and `reportResult` (completion)
+3. Agent calls `heartbeat` periodically to signal liveness
+4. Orchestrator polls via `getSession` (drains queued events) or `listSessions` (summaries)
+5. Agent can ask the human operator questions via `requestGuidance`
+
+**Session ID validation:**
+
+- Must be non-empty, max 256 characters
+- No control characters (< 0x20) or DEL (0x7F)
+- Spaces and printable Unicode are allowed
+- Invalid IDs return an error immediately
+
+**Sequence numbers (idempotency):**
+
+The `reportProgress`, `reportResult`, and `requestGuidance` tools accept an optional `seq` field for idempotent operation. This prevents duplicate events when retrying after network failures.
+
+- `seq` = 0 (or omitted): no deduplication, always processed
+- `seq` > 0 and > last processed seq: processed, updates the session's `lastSeq`
+- `seq` > 0 and ≤ last processed seq: skipped as duplicate, returns `"duplicate seq N (idempotent skip)"`
+
+The `lastSeq` value is visible in `getSession` responses.
+
+**Heartbeat:**
+
+Call `heartbeat` with a `sessionId` to update the session's `lastHeartbeat` timestamp. This allows orchestrators to detect stale/dead agents by comparing `lastHeartbeat` against a timeout threshold.
+
+**Tool schemas:**
+
+`registerSession`:
+```json
+{
+  "sessionId": "agent-1",
+  "capabilities": ["code-review", "testing"]
+}
+```
+
+`reportProgress`:
+```json
+{
+  "sessionId": "agent-1",
+  "status": "working",
+  "progress": 45.0,
+  "message": "Running test suite",
+  "seq": 3
+}
+```
+Status must be one of: `working`, `blocked`, `waiting`, `idle`. Progress is clamped to 0–100.
+
+`reportResult`:
+```json
+{
+  "sessionId": "agent-1",
+  "success": true,
+  "output": "All 42 tests passed",
+  "filesChanged": ["internal/foo/bar.go", "internal/foo/bar_test.go"],
+  "seq": 4
+}
+```
+
+`requestGuidance`:
+```json
+{
+  "sessionId": "agent-1",
+  "question": "Should I refactor the error handling or keep the current approach?",
+  "options": ["refactor", "keep current"],
+  "context": "The current approach uses sentinel errors; refactoring would use error wrapping.",
+  "seq": 5
+}
+```
+
+`heartbeat`:
+```json
+{
+  "sessionId": "agent-1"
+}
+```
+
+`getSession`:
+```json
+{
+  "sessionId": "agent-1"
+}
+```
+Returns session state and **drains** all queued events (progress, result, guidance). Subsequent calls return an empty events array until new events arrive.
+
+Response:
+```json
+{
+  "sessionId": "agent-1",
+  "capabilities": ["code-review", "testing"],
+  "status": "working",
+  "progress": 45.0,
+  "lastUpdate": "2025-01-15T10:30:00Z",
+  "lastHeartbeat": "2025-01-15T10:29:55Z",
+  "lastSeq": 5,
+  "events": [
+    {
+      "type": "progress",
+      "timestamp": "2025-01-15T10:30:00Z",
+      "data": {"status": "working", "progress": 45.0, "message": "Running test suite"}
+    }
+  ]
+}
+```
+
+`listSessions` (no input):
+Returns an array of session summaries with `sessionId`, `capabilities`, `status`, `progress`, `lastUpdate`, `lastHeartbeat`, and `eventCount`.
 
 ### `osm log`
 

@@ -256,6 +256,22 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			p := NewPool(cfg)
 			return wrapPool(runtime, p)
 		})
+
+		// defaultPanelConfig(): object
+		_ = exports.Set("defaultPanelConfig", func(call goja.FunctionCall) goja.Value {
+			cfg := DefaultPanelConfig()
+			return panelConfigToJS(runtime, cfg)
+		})
+
+		// newPanel(config?: object): object
+		_ = exports.Set("newPanel", func(call goja.FunctionCall) goja.Value {
+			cfg := DefaultPanelConfig()
+			if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+				cfg = jsToPanelConfig(runtime, call.Argument(0))
+			}
+			panel := NewPanel(cfg)
+			return wrapPanel(runtime, panel)
+		})
 	}
 }
 
@@ -1329,6 +1345,239 @@ func wrapPool(runtime *goja.Runtime, p *Pool) goja.Value {
 	// config(): object
 	_ = obj.Set("config", func() goja.Value {
 		return poolConfigToJS(runtime, p.Config())
+	})
+
+	return obj
+}
+
+// panelConfigToJS converts a PanelConfig to a JS object.
+func panelConfigToJS(runtime *goja.Runtime, cfg PanelConfig) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("maxPanes", cfg.MaxPanes)
+	_ = obj.Set("scrollbackSize", cfg.ScrollbackSize)
+	return obj
+}
+
+// jsToPanelConfig converts a JS object to a PanelConfig.
+func jsToPanelConfig(runtime *goja.Runtime, val goja.Value) PanelConfig {
+	obj := val.ToObject(runtime)
+	cfg := DefaultPanelConfig()
+
+	if v := obj.Get("maxPanes"); v != nil && !goja.IsUndefined(v) {
+		cfg.MaxPanes = int(v.ToInteger())
+	}
+	if v := obj.Get("scrollbackSize"); v != nil && !goja.IsUndefined(v) {
+		cfg.ScrollbackSize = int(v.ToInteger())
+	}
+
+	return cfg
+}
+
+// inputResultToJS converts an InputResult to a JS object.
+func inputResultToJS(runtime *goja.Runtime, r InputResult) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("targetPaneID", r.TargetPaneID)
+	_ = obj.Set("consumed", r.Consumed)
+	_ = obj.Set("action", r.Action)
+	return obj
+}
+
+// paneSnapshotToJS converts a PaneSnapshot to a JS object.
+func paneSnapshotToJS(runtime *goja.Runtime, ps PaneSnapshot) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("id", ps.ID)
+	_ = obj.Set("title", ps.Title)
+	_ = obj.Set("lines", ps.Lines)
+	_ = obj.Set("scrollPos", ps.ScrollPos)
+	_ = obj.Set("isActive", ps.IsActive)
+
+	health := runtime.NewObject()
+	_ = health.Set("state", ps.Health.State)
+	_ = health.Set("errorCount", ps.Health.ErrorCount)
+	_ = health.Set("taskCount", ps.Health.TaskCount)
+	if !ps.Health.LastUpdate.IsZero() {
+		_ = health.Set("lastUpdate", ps.Health.LastUpdate.UnixMilli())
+	}
+	_ = obj.Set("health", health)
+	return obj
+}
+
+// panelSnapshotToJS converts a PanelSnapshot to a JS object.
+func panelSnapshotToJS(runtime *goja.Runtime, snap PanelSnapshot) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("state", int(snap.State))
+	_ = obj.Set("stateName", snap.StateName)
+	_ = obj.Set("activeIdx", snap.ActiveIdx)
+	_ = obj.Set("statusBar", snap.StatusBar)
+
+	panes := runtime.NewArray()
+	for i, ps := range snap.Panes {
+		_ = panes.Set(fmt.Sprintf("%d", i), paneSnapshotToJS(runtime, ps))
+	}
+	_ = obj.Set("panes", panes)
+	return obj
+}
+
+// wrapPanel creates a JS object wrapping a *Panel with methods.
+func wrapPanel(runtime *goja.Runtime, panel *Panel) goja.Value {
+	obj := runtime.NewObject()
+
+	// start(): void
+	_ = obj.Set("start", func() goja.Value {
+		if err := panel.Start(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// addPane(id: string, title: string): number — returns index
+	_ = obj.Set("addPane", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("addPane: id and title arguments required"))
+		}
+		id := call.Argument(0).String()
+		title := call.Argument(1).String()
+		idx, err := panel.AddPane(id, title)
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return runtime.ToValue(idx)
+	})
+
+	// removePane(id: string): void
+	_ = obj.Set("removePane", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("removePane: id argument required"))
+		}
+		if err := panel.RemovePane(call.Argument(0).String()); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// routeInput(key: string): object
+	_ = obj.Set("routeInput", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("routeInput: key argument required"))
+		}
+		result := panel.RouteInput(call.Argument(0).String())
+		return inputResultToJS(runtime, result)
+	})
+
+	// setActive(index: number): void
+	_ = obj.Set("setActive", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("setActive: index argument required"))
+		}
+		if err := panel.SetActive(int(call.Argument(0).ToInteger())); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// activeIndex(): number
+	_ = obj.Set("activeIndex", func() goja.Value {
+		return runtime.ToValue(panel.ActiveIndex())
+	})
+
+	// activePane(): object | null
+	_ = obj.Set("activePane", func() goja.Value {
+		pane := panel.ActivePane()
+		if pane == nil {
+			return goja.Null()
+		}
+		obj := runtime.NewObject()
+		_ = obj.Set("id", pane.ID)
+		_ = obj.Set("title", pane.Title)
+		_ = obj.Set("scrollPos", pane.ScrollPos)
+		_ = obj.Set("lines", len(pane.Scrollback))
+		health := runtime.NewObject()
+		_ = health.Set("state", pane.Health.State)
+		_ = health.Set("errorCount", pane.Health.ErrorCount)
+		_ = health.Set("taskCount", pane.Health.TaskCount)
+		_ = obj.Set("health", health)
+		return obj
+	})
+
+	// paneCount(): number
+	_ = obj.Set("paneCount", func() goja.Value {
+		return runtime.ToValue(panel.PaneCount())
+	})
+
+	// appendOutput(paneID: string, line: string): void
+	_ = obj.Set("appendOutput", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("appendOutput: paneID and line arguments required"))
+		}
+		if err := panel.AppendOutput(call.Argument(0).String(), call.Argument(1).String()); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// updateHealth(paneID: string, health: object): void
+	_ = obj.Set("updateHealth", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("updateHealth: paneID and health arguments required"))
+		}
+		paneID := call.Argument(0).String()
+		hObj := call.Argument(1).ToObject(runtime)
+
+		health := PaneHealth{}
+		if v := hObj.Get("state"); v != nil && !goja.IsUndefined(v) {
+			health.State = v.String()
+		}
+		if v := hObj.Get("errorCount"); v != nil && !goja.IsUndefined(v) {
+			health.ErrorCount = v.ToInteger()
+		}
+		if v := hObj.Get("taskCount"); v != nil && !goja.IsUndefined(v) {
+			health.TaskCount = v.ToInteger()
+		}
+
+		if err := panel.UpdateHealth(paneID, health); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// statusBar(): string
+	_ = obj.Set("statusBar", func() goja.Value {
+		return runtime.ToValue(panel.StatusBar())
+	})
+
+	// getVisibleLines(paneID: string, height: number): string[]
+	_ = obj.Set("getVisibleLines", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("getVisibleLines: paneID and height arguments required"))
+		}
+		lines, err := panel.GetVisibleLines(
+			call.Argument(0).String(),
+			int(call.Argument(1).ToInteger()),
+		)
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		arr := runtime.NewArray()
+		for i, line := range lines {
+			_ = arr.Set(fmt.Sprintf("%d", i), line)
+		}
+		return arr
+	})
+
+	// snapshot(): object
+	_ = obj.Set("snapshot", func() goja.Value {
+		return panelSnapshotToJS(runtime, panel.Snapshot())
+	})
+
+	// close(): void
+	_ = obj.Set("close", func() goja.Value {
+		panel.Close()
+		return goja.Undefined()
+	})
+
+	// config(): object
+	_ = obj.Set("config", func() goja.Value {
+		return panelConfigToJS(runtime, panel.Config())
 	})
 
 	return obj

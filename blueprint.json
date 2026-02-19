@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T010 Done. T011 next. Pre-existing flaky: TestRecording_Goal, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
+    "currentState": "T001-T011 Done. T012 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -94,8 +94,8 @@
     },
     {
       "task": "T011: Concurrent instance management — pool",
-      "description": "In claudemux/: Pool struct, configurable max size, Submit(task), buffered channel, health tracking (heartbeat, error count, task count), round-robin load balancing, instance recycling, Drain(), Close(), Stats(). Tests with mocks, -race. Run make.",
-      "status": "Not Started"
+      "description": "Added pool.go: Pool state machine (Idle/Running/Draining/Closed) with acquire/release dispatch pattern. PoolConfig (MaxSize, default 4). PoolWorker (ID/Instance/TaskCount/ErrorCount/LastTaskAt/State). WorkerState (Idle/Busy/Closed). Acquire() round-robin with blocking via sync.Cond when all workers busy. TryAcquire() non-blocking variant. Release(worker, taskErr, now) records stats and wakes blocked acquires. AddWorker/RemoveWorker with duplicate/full/busy checks. Drain() prevents new acquires, WaitDrained() blocks until inflight=0. Close() returns all workers for cleanup. FindWorker(id) for JS binding lookup. PoolStats/WorkerStats for observability. JS bindings: defaultPoolConfig, newPool with start/addWorker/removeWorker/acquire/tryAcquire/release/drain/waitDrained/close/stats/config. 30+ tests: state names, default config, new pool with min size clamp, start/startFromNonIdle, addWorker/addWorkerFull/Duplicate/Closed, removeWorker/removeWorkerBusy/NotFound, acquire+release with stats, release with error, round-robin ordering (6 cycles), acquire notRunning/empty/closed, tryAcquire success/allBusy, acquire blocks until release, drain/drain waits for inflight/drain unblocks acquire, close/close unblocks acquire, stats, config, concurrent acquire+release (50 goroutines), concurrent drain while acquiring, concurrent add+remove (10 each), round-robin after remove. All with -race. Deadcode clean.",
+      "status": "Done"
     },
     {
       "task": "T012: TUI multiplexing — multi-instance panel",

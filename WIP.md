@@ -29,15 +29,17 @@
 - **T008**: Guard rails — PTY monitors (guard.go, GuardAction/GuardConfig/Guard, JS bindings, 40+ tests)
 - **T009**: Guard rails — MCP monitors (mcp_guard.go, MCPGuard, frequency/repeat/allowlist, JS bindings, 30+ tests)
 - **T010**: Error recovery and cancellation (recovery.go, Supervisor state machine, ErrorClass/RecoveryAction/RecoveryDecision, context propagation, graceful shutdown, JS bindings, 30+ tests)
+- **T011**: Concurrent instance management — pool (pool.go, Pool with acquire/release dispatch, round-robin, sync.Cond blocking, Drain/WaitDrained/Close, health tracking, JS bindings, 30+ tests)
 
 ### Known pre-existing flaky tests:
 - **TestRecording_Goal** (internal/scripting): TUI timing
+- **TestRecording_PromptFlow** (internal/scripting): TUI timing
 - **TestPickAndPlace_MousePick_HoldingItem** (internal/command): PTY mouse timing
 - **TestSessionsListAndClean** (internal/command): TempDir cleanup race
 - **TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping** (internal/scripting): PTY hang under load
 - All pass on re-run.
 
-### Next task: T011
-Concurrent instance management — pool. In claudemux/: Pool struct, configurable max size, Submit(task), buffered channel, health tracking, round-robin, recycling, Drain(), Close(), Stats().
+### Next task: T012
+TUI multiplexing — multi-instance panel.
 
 ### No commits made yet this session. Rule of Two needed before committing.

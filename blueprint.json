@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T013 Done. T014 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
+    "currentState": "T001-T014 Done. T015 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -109,8 +109,8 @@
     },
     {
       "task": "T014: Claude Code wrapper/parser JS native module",
-      "description": "Expand osm:claudemux: createSession(opts)->handle, sendTask(id, prompt, opts)->Promise, onProgress/onResult/onGuidanceRequest callbacks, parseOutput(line)->event, close(id). Tests covering full JS API, Promise resolution. Run make.",
-      "status": "Not Started"
+      "description": "Added session_mgr.go: ManagedSession type composing Parser+Guard+MCPGuard+Supervisor into unified monitoring pipeline. ManagedSessionState (Idle/Active/Paused/Failed/Closed). ManagedSessionConfig bundles Guard/MCPGuard/Supervisor configs. ProcessLine(line, now) → LineResult (event+guardEvent+action). ProcessCrash(exitCode, now) → guardEvent+recoveryDecision with dual escalation (guard OR supervisor). ProcessToolCall(call) → ToolCallResult. CheckTimeout(now). HandleError(msg, class). ConfirmRecovery/Resume/Shutdown/Close lifecycle. ManagedSessionSnapshot for full observability. OnEvent/OnGuardAction/OnRecoveryDecision callbacks. JS bindings: SESSION_* constants, managedSessionStateName, defaultManagedSessionConfig, createSession(id, config?) with processLine/processCrash/processToolCall/checkTimeout/handleError/confirmRecovery/resume/shutdown/close/state/snapshot/parser/onEvent/onGuardAction/onRecoveryDecision. 30+ tests covering all states, transitions, callbacks, concurrent access. Build green.",
+      "status": "Done"
     },
     {
       "task": "T015: Safety validation",

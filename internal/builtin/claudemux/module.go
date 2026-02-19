@@ -307,6 +307,103 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			s := NewManagedSession(ctx, id, cfg)
 			return wrapManagedSession(runtime, s)
 		})
+
+		// --- Safety Validation ---
+
+		// Intent constants.
+		_ = exports.Set("INTENT_UNKNOWN", int(IntentUnknown))
+		_ = exports.Set("INTENT_READ_ONLY", int(IntentReadOnly))
+		_ = exports.Set("INTENT_CODE", int(IntentCode))
+		_ = exports.Set("INTENT_DESTRUCTIVE", int(IntentDestructive))
+		_ = exports.Set("INTENT_NETWORK", int(IntentNetwork))
+		_ = exports.Set("INTENT_CREDENTIAL", int(IntentCredential))
+
+		// Scope constants.
+		_ = exports.Set("SCOPE_UNKNOWN", int(ScopeUnknown))
+		_ = exports.Set("SCOPE_FILE", int(ScopeFile))
+		_ = exports.Set("SCOPE_REPO", int(ScopeRepo))
+		_ = exports.Set("SCOPE_INFRA", int(ScopeInfra))
+
+		// Risk level constants.
+		_ = exports.Set("RISK_NONE", int(RiskNone))
+		_ = exports.Set("RISK_LOW", int(RiskLow))
+		_ = exports.Set("RISK_MEDIUM", int(RiskMedium))
+		_ = exports.Set("RISK_HIGH", int(RiskHigh))
+		_ = exports.Set("RISK_CRITICAL", int(RiskCritical))
+
+		// Policy action constants.
+		_ = exports.Set("POLICY_ALLOW", int(PolicyAllow))
+		_ = exports.Set("POLICY_WARN", int(PolicyWarn))
+		_ = exports.Set("POLICY_CONFIRM", int(PolicyConfirm))
+		_ = exports.Set("POLICY_BLOCK", int(PolicyBlock))
+
+		// intentName(intent: number): string
+		_ = exports.Set("intentName", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("intentName: intent argument is required"))
+			}
+			return runtime.ToValue(IntentName(Intent(call.Argument(0).ToInteger())))
+		})
+
+		// scopeName(scope: number): string
+		_ = exports.Set("scopeName", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("scopeName: scope argument is required"))
+			}
+			return runtime.ToValue(ScopeName(Scope(call.Argument(0).ToInteger())))
+		})
+
+		// riskLevelName(level: number): string
+		_ = exports.Set("riskLevelName", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("riskLevelName: level argument is required"))
+			}
+			return runtime.ToValue(RiskLevelName(RiskLevel(call.Argument(0).ToInteger())))
+		})
+
+		// policyActionName(action: number): string
+		_ = exports.Set("policyActionName", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("policyActionName: action argument is required"))
+			}
+			return runtime.ToValue(PolicyActionName(PolicyAction(call.Argument(0).ToInteger())))
+		})
+
+		// defaultSafetyConfig(): object
+		_ = exports.Set("defaultSafetyConfig", func(call goja.FunctionCall) goja.Value {
+			cfg := DefaultSafetyConfig()
+			return safetyConfigToJS(runtime, cfg)
+		})
+
+		// newSafetyValidator(config?: object): object
+		_ = exports.Set("newSafetyValidator", func(call goja.FunctionCall) goja.Value {
+			cfg := DefaultSafetyConfig()
+			if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+				cfg = jsToSafetyConfig(runtime, call.Argument(0))
+			}
+			sv := NewSafetyValidator(cfg)
+			return wrapSafetyValidator(runtime, sv)
+		})
+
+		// newCompositeValidator(validators: object[]): object
+		_ = exports.Set("newCompositeValidator", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("newCompositeValidator: validators argument is required"))
+			}
+			arr := call.Argument(0).ToObject(runtime)
+			length := int(arr.Get("length").ToInteger())
+			validators := make([]Validator, 0, length)
+			for i := 0; i < length; i++ {
+				item := arr.Get(fmt.Sprintf("%d", i)).ToObject(runtime)
+				v := item.Get("__goValidator")
+				if v == nil || goja.IsUndefined(v) {
+					panic(runtime.NewTypeError("newCompositeValidator: each element must be a validator"))
+				}
+				validators = append(validators, v.Export().(Validator))
+			}
+			cv := NewCompositeValidator(validators...)
+			return wrapCompositeValidator(runtime, cv)
+		})
 	}
 }
 
@@ -1897,6 +1994,219 @@ func wrapManagedSession(runtime *goja.Runtime, s *ManagedSession) goja.Value {
 			_, _ = fn(goja.Undefined(), recoveryDecisionToJS(runtime, d))
 		}
 		return goja.Undefined()
+	})
+
+	return obj
+}
+
+// --- Safety Validator JS Bindings ---
+
+// safetyConfigToJS converts a SafetyConfig to a JS object.
+func safetyConfigToJS(runtime *goja.Runtime, cfg SafetyConfig) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("enabled", cfg.Enabled)
+	_ = obj.Set("defaultAction", int(cfg.DefaultAction))
+	_ = obj.Set("warnThreshold", cfg.WarnThreshold)
+	_ = obj.Set("confirmThreshold", cfg.ConfirmThreshold)
+	_ = obj.Set("blockThreshold", cfg.BlockThreshold)
+
+	blocked := runtime.NewArray()
+	for i, t := range cfg.BlockedTools {
+		_ = blocked.Set(fmt.Sprintf("%d", i), t)
+	}
+	_ = obj.Set("blockedTools", blocked)
+
+	blockedPaths := runtime.NewArray()
+	for i, p := range cfg.BlockedPaths {
+		_ = blockedPaths.Set(fmt.Sprintf("%d", i), p)
+	}
+	_ = obj.Set("blockedPaths", blockedPaths)
+
+	allowedPaths := runtime.NewArray()
+	for i, p := range cfg.AllowedPaths {
+		_ = allowedPaths.Set(fmt.Sprintf("%d", i), p)
+	}
+	_ = obj.Set("allowedPaths", allowedPaths)
+
+	patterns := runtime.NewArray()
+	for i, p := range cfg.SensitivePatterns {
+		_ = patterns.Set(fmt.Sprintf("%d", i), p)
+	}
+	_ = obj.Set("sensitivePatterns", patterns)
+
+	return obj
+}
+
+// jsToSafetyConfig converts a JS object to a SafetyConfig.
+func jsToSafetyConfig(runtime *goja.Runtime, val goja.Value) SafetyConfig {
+	cfg := DefaultSafetyConfig()
+	obj := val.ToObject(runtime)
+
+	if v := obj.Get("enabled"); v != nil && !goja.IsUndefined(v) {
+		cfg.Enabled = v.ToBoolean()
+	}
+	if v := obj.Get("defaultAction"); v != nil && !goja.IsUndefined(v) {
+		cfg.DefaultAction = PolicyAction(v.ToInteger())
+	}
+	if v := obj.Get("warnThreshold"); v != nil && !goja.IsUndefined(v) {
+		cfg.WarnThreshold = v.ToFloat()
+	}
+	if v := obj.Get("confirmThreshold"); v != nil && !goja.IsUndefined(v) {
+		cfg.ConfirmThreshold = v.ToFloat()
+	}
+	if v := obj.Get("blockThreshold"); v != nil && !goja.IsUndefined(v) {
+		cfg.BlockThreshold = v.ToFloat()
+	}
+	if v := obj.Get("blockedTools"); v != nil && !goja.IsUndefined(v) {
+		var tools []string
+		if err := runtime.ExportTo(v, &tools); err == nil {
+			cfg.BlockedTools = tools
+		}
+	}
+	if v := obj.Get("blockedPaths"); v != nil && !goja.IsUndefined(v) {
+		var paths []string
+		if err := runtime.ExportTo(v, &paths); err == nil {
+			cfg.BlockedPaths = paths
+		}
+	}
+	if v := obj.Get("allowedPaths"); v != nil && !goja.IsUndefined(v) {
+		var paths []string
+		if err := runtime.ExportTo(v, &paths); err == nil {
+			cfg.AllowedPaths = paths
+		}
+	}
+	if v := obj.Get("sensitivePatterns"); v != nil && !goja.IsUndefined(v) {
+		var patterns []string
+		if err := runtime.ExportTo(v, &patterns); err == nil {
+			cfg.SensitivePatterns = patterns
+		}
+	}
+
+	return cfg
+}
+
+// safetyAssessmentToJS converts a SafetyAssessment to a JS object.
+func safetyAssessmentToJS(runtime *goja.Runtime, a SafetyAssessment) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("intent", int(a.Intent))
+	_ = obj.Set("intentName", IntentName(a.Intent))
+	_ = obj.Set("scope", int(a.Scope))
+	_ = obj.Set("scopeName", ScopeName(a.Scope))
+	_ = obj.Set("riskScore", a.RiskScore)
+	_ = obj.Set("riskLevel", int(a.RiskLevel))
+	_ = obj.Set("riskLevelName", RiskLevelName(a.RiskLevel))
+	_ = obj.Set("action", int(a.Action))
+	_ = obj.Set("actionName", PolicyActionName(a.Action))
+	_ = obj.Set("reason", a.Reason)
+
+	details := runtime.NewObject()
+	for k, v := range a.Details {
+		_ = details.Set(k, v)
+	}
+	_ = obj.Set("details", details)
+
+	return obj
+}
+
+// safetyStatsToJS converts SafetyStats to a JS object.
+func safetyStatsToJS(runtime *goja.Runtime, s SafetyStats) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("totalChecks", s.TotalChecks)
+	_ = obj.Set("allowCount", s.AllowCount)
+	_ = obj.Set("warnCount", s.WarnCount)
+	_ = obj.Set("confirmCount", s.ConfirmCount)
+	_ = obj.Set("blockCount", s.BlockCount)
+
+	intents := runtime.NewObject()
+	for k, v := range s.IntentCounts {
+		_ = intents.Set(k, v)
+	}
+	_ = obj.Set("intentCounts", intents)
+
+	scopes := runtime.NewObject()
+	for k, v := range s.ScopeCounts {
+		_ = scopes.Set(k, v)
+	}
+	_ = obj.Set("scopeCounts", scopes)
+
+	return obj
+}
+
+// jsToSafetyAction converts a JS object to a SafetyAction.
+func jsToSafetyAction(runtime *goja.Runtime, val goja.Value) SafetyAction {
+	obj := val.ToObject(runtime)
+	action := SafetyAction{}
+
+	if v := obj.Get("type"); v != nil && !goja.IsUndefined(v) {
+		action.Type = v.String()
+	}
+	if v := obj.Get("name"); v != nil && !goja.IsUndefined(v) {
+		action.Name = v.String()
+	}
+	if v := obj.Get("raw"); v != nil && !goja.IsUndefined(v) {
+		action.Raw = v.String()
+	}
+	if v := obj.Get("args"); v != nil && !goja.IsUndefined(v) {
+		args := make(map[string]string)
+		if err := runtime.ExportTo(v, &args); err == nil {
+			action.Args = args
+		}
+	}
+	if v := obj.Get("filePaths"); v != nil && !goja.IsUndefined(v) {
+		var paths []string
+		if err := runtime.ExportTo(v, &paths); err == nil {
+			action.FilePaths = paths
+		}
+	}
+
+	return action
+}
+
+// wrapSafetyValidator creates a JS object wrapping a *SafetyValidator.
+func wrapSafetyValidator(runtime *goja.Runtime, sv *SafetyValidator) goja.Value {
+	obj := runtime.NewObject()
+
+	// Store Go validator reference for composite validator extraction.
+	_ = obj.Set("__goValidator", runtime.ToValue(sv))
+
+	// validate(action: object): object
+	_ = obj.Set("validate", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("validate: action argument is required"))
+		}
+		action := jsToSafetyAction(runtime, call.Argument(0))
+		a := sv.Validate(action)
+		return safetyAssessmentToJS(runtime, a)
+	})
+
+	// stats(): object
+	_ = obj.Set("stats", func() goja.Value {
+		return safetyStatsToJS(runtime, sv.Stats())
+	})
+
+	// config(): object
+	_ = obj.Set("config", func() goja.Value {
+		return safetyConfigToJS(runtime, sv.Config())
+	})
+
+	return obj
+}
+
+// wrapCompositeValidator creates a JS object wrapping a *CompositeValidator.
+func wrapCompositeValidator(runtime *goja.Runtime, cv *CompositeValidator) goja.Value {
+	obj := runtime.NewObject()
+
+	// Store Go validator reference for nested composite extraction.
+	_ = obj.Set("__goValidator", runtime.ToValue(cv))
+
+	// validate(action: object): object
+	_ = obj.Set("validate", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("validate: action argument is required"))
+		}
+		action := jsToSafetyAction(runtime, call.Argument(0))
+		a := cv.Validate(action)
+		return safetyAssessmentToJS(runtime, a)
 	})
 
 	return obj

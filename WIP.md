@@ -25,6 +25,7 @@
 - **T004**: MCP session coordination hardening (validation, seq numbers, heartbeat, 20 new tests, fuzz)
 - **T005**: MCP session docs (command.md session coordination section, architecture-claude-mux.md §6)
 - **T006**: Dynamic MCP config per instance (mcp_config.go, Unix socket/TCP, config JSON gen, JS bindings)
+- **T007**: Session isolation (instance.go, InstanceRegistry sync.Map, isolated state dirs, tests with -race)
 
 ### Known pre-existing issues:
 - **TestRecording_Goal** (internal/scripting): Flaky timing-dependent TUI test
@@ -32,7 +33,7 @@
 - **TestSessionsListAndClean** (internal/command): TempDir cleanup race
 - All pass on re-run.
 
-### Next task (T007):
-Session isolation for multi-instance.
+### Next task (T008):
+Guard rails — PTY monitors.
 
 ### No commits made yet this session. Rule of Two needed before committing.

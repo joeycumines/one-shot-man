@@ -3,6 +3,7 @@ package claudemux
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -119,6 +120,43 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 				panic(runtime.NewGoError(err))
 			}
 			return wrapInstanceRegistry(runtime, reg)
+		})
+
+		// Guard action constants.
+		_ = exports.Set("GUARD_ACTION_NONE", int(GuardActionNone))
+		_ = exports.Set("GUARD_ACTION_PAUSE", int(GuardActionPause))
+		_ = exports.Set("GUARD_ACTION_REJECT", int(GuardActionReject))
+		_ = exports.Set("GUARD_ACTION_RESTART", int(GuardActionRestart))
+		_ = exports.Set("GUARD_ACTION_ESCALATE", int(GuardActionEscalate))
+		_ = exports.Set("GUARD_ACTION_TIMEOUT", int(GuardActionTimeout))
+
+		// Permission policy constants.
+		_ = exports.Set("PERMISSION_POLICY_DENY", int(PermissionPolicyDeny))
+		_ = exports.Set("PERMISSION_POLICY_ALLOW", int(PermissionPolicyAllow))
+
+		// guardActionName(action: number): string
+		_ = exports.Set("guardActionName", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("guardActionName: action argument is required"))
+			}
+			a := GuardAction(call.Argument(0).ToInteger())
+			return runtime.ToValue(GuardActionName(a))
+		})
+
+		// defaultGuardConfig(): object — returns the default production guard config.
+		_ = exports.Set("defaultGuardConfig", func(call goja.FunctionCall) goja.Value {
+			cfg := DefaultGuardConfig()
+			return guardConfigToJS(runtime, cfg)
+		})
+
+		// newGuard(config?: object): object — creates a guard monitor.
+		_ = exports.Set("newGuard", func(call goja.FunctionCall) goja.Value {
+			var cfg GuardConfig
+			if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+				cfg = jsToGuardConfig(runtime, call.Argument(0))
+			}
+			g := NewGuard(cfg)
+			return wrapGuard(runtime, g)
 		})
 	}
 }
@@ -524,6 +562,209 @@ func wrapInstance(runtime *goja.Runtime, inst *Instance) goja.Value {
 			panic(runtime.NewGoError(err))
 		}
 		return goja.Undefined()
+	})
+
+	return obj
+}
+
+// guardConfigToJS converts a GuardConfig to a JS object.
+func guardConfigToJS(runtime *goja.Runtime, cfg GuardConfig) goja.Value {
+	obj := runtime.NewObject()
+
+	rl := runtime.NewObject()
+	_ = rl.Set("enabled", cfg.RateLimit.Enabled)
+	_ = rl.Set("initialDelayMs", cfg.RateLimit.InitialDelay.Milliseconds())
+	_ = rl.Set("maxDelayMs", cfg.RateLimit.MaxDelay.Milliseconds())
+	_ = rl.Set("multiplier", cfg.RateLimit.Multiplier)
+	_ = rl.Set("resetAfterMs", cfg.RateLimit.ResetAfter.Milliseconds())
+	_ = obj.Set("rateLimit", rl)
+
+	perm := runtime.NewObject()
+	_ = perm.Set("enabled", cfg.Permission.Enabled)
+	_ = perm.Set("policy", int(cfg.Permission.Policy))
+	_ = obj.Set("permission", perm)
+
+	crash := runtime.NewObject()
+	_ = crash.Set("enabled", cfg.Crash.Enabled)
+	_ = crash.Set("maxRestarts", cfg.Crash.MaxRestarts)
+	_ = obj.Set("crash", crash)
+
+	timeout := runtime.NewObject()
+	_ = timeout.Set("enabled", cfg.OutputTimeout.Enabled)
+	_ = timeout.Set("timeoutMs", cfg.OutputTimeout.Timeout.Milliseconds())
+	_ = obj.Set("outputTimeout", timeout)
+
+	return obj
+}
+
+// jsToGuardConfig converts a JS object to a GuardConfig.
+func jsToGuardConfig(runtime *goja.Runtime, val goja.Value) GuardConfig {
+	obj := val.ToObject(runtime)
+	var cfg GuardConfig
+
+	if v := obj.Get("rateLimit"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		rl := v.ToObject(runtime)
+		if b := rl.Get("enabled"); b != nil && !goja.IsUndefined(b) {
+			cfg.RateLimit.Enabled = b.ToBoolean()
+		}
+		if d := rl.Get("initialDelayMs"); d != nil && !goja.IsUndefined(d) {
+			cfg.RateLimit.InitialDelay = time.Duration(d.ToInteger()) * time.Millisecond
+		}
+		if d := rl.Get("maxDelayMs"); d != nil && !goja.IsUndefined(d) {
+			cfg.RateLimit.MaxDelay = time.Duration(d.ToInteger()) * time.Millisecond
+		}
+		if m := rl.Get("multiplier"); m != nil && !goja.IsUndefined(m) {
+			cfg.RateLimit.Multiplier = m.ToFloat()
+		}
+		if d := rl.Get("resetAfterMs"); d != nil && !goja.IsUndefined(d) {
+			cfg.RateLimit.ResetAfter = time.Duration(d.ToInteger()) * time.Millisecond
+		}
+	}
+
+	if v := obj.Get("permission"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		perm := v.ToObject(runtime)
+		if b := perm.Get("enabled"); b != nil && !goja.IsUndefined(b) {
+			cfg.Permission.Enabled = b.ToBoolean()
+		}
+		if p := perm.Get("policy"); p != nil && !goja.IsUndefined(p) {
+			cfg.Permission.Policy = PermissionPolicy(p.ToInteger())
+		}
+	}
+
+	if v := obj.Get("crash"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		cr := v.ToObject(runtime)
+		if b := cr.Get("enabled"); b != nil && !goja.IsUndefined(b) {
+			cfg.Crash.Enabled = b.ToBoolean()
+		}
+		if m := cr.Get("maxRestarts"); m != nil && !goja.IsUndefined(m) {
+			cfg.Crash.MaxRestarts = int(m.ToInteger())
+		}
+	}
+
+	if v := obj.Get("outputTimeout"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		ot := v.ToObject(runtime)
+		if b := ot.Get("enabled"); b != nil && !goja.IsUndefined(b) {
+			cfg.OutputTimeout.Enabled = b.ToBoolean()
+		}
+		if d := ot.Get("timeoutMs"); d != nil && !goja.IsUndefined(d) {
+			cfg.OutputTimeout.Timeout = time.Duration(d.ToInteger()) * time.Millisecond
+		}
+	}
+
+	return cfg
+}
+
+// guardEventToJS converts a *GuardEvent to a JS object, or null if nil.
+func guardEventToJS(runtime *goja.Runtime, ge *GuardEvent) goja.Value {
+	if ge == nil {
+		return goja.Null()
+	}
+	obj := runtime.NewObject()
+	_ = obj.Set("action", int(ge.Action))
+	_ = obj.Set("actionName", GuardActionName(ge.Action))
+	_ = obj.Set("reason", ge.Reason)
+	if ge.Details != nil {
+		details := runtime.NewObject()
+		for k, v := range ge.Details {
+			_ = details.Set(k, v)
+		}
+		_ = obj.Set("details", details)
+	} else {
+		_ = obj.Set("details", runtime.NewObject())
+	}
+	return obj
+}
+
+// wrapGuard creates a JS object wrapping a *Guard with methods.
+func wrapGuard(runtime *goja.Runtime, g *Guard) goja.Value {
+	obj := runtime.NewObject()
+
+	// processEvent(event: object, nowMs?: number): object|null
+	// event must have {type: number, line: string, fields?: object, pattern?: string}
+	_ = obj.Set("processEvent", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("processEvent: event argument is required"))
+		}
+		evObj := call.Argument(0).ToObject(runtime)
+		var ev OutputEvent
+		if t := evObj.Get("type"); t != nil && !goja.IsUndefined(t) {
+			ev.Type = EventType(t.ToInteger())
+		}
+		if l := evObj.Get("line"); l != nil && !goja.IsUndefined(l) {
+			ev.Line = l.String()
+		}
+		if p := evObj.Get("pattern"); p != nil && !goja.IsUndefined(p) {
+			ev.Pattern = p.String()
+		}
+		if f := evObj.Get("fields"); f != nil && !goja.IsUndefined(f) && !goja.IsNull(f) {
+			fields := make(map[string]string)
+			if err := runtime.ExportTo(f, &fields); err == nil {
+				ev.Fields = fields
+			}
+		}
+
+		now := time.Now()
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) {
+			nowMs := call.Argument(1).ToInteger()
+			now = time.UnixMilli(nowMs)
+		}
+
+		ge := g.ProcessEvent(ev, now)
+		return guardEventToJS(runtime, ge)
+	})
+
+	// processCrash(exitCode: number, nowMs?: number): object|null
+	_ = obj.Set("processCrash", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("processCrash: exitCode argument is required"))
+		}
+		exitCode := int(call.Argument(0).ToInteger())
+		now := time.Now()
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) {
+			nowMs := call.Argument(1).ToInteger()
+			now = time.UnixMilli(nowMs)
+		}
+		ge := g.ProcessCrash(exitCode, now)
+		return guardEventToJS(runtime, ge)
+	})
+
+	// checkTimeout(nowMs?: number): object|null
+	_ = obj.Set("checkTimeout", func(call goja.FunctionCall) goja.Value {
+		now := time.Now()
+		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) {
+			nowMs := call.Argument(0).ToInteger()
+			now = time.UnixMilli(nowMs)
+		}
+		ge := g.CheckTimeout(now)
+		return guardEventToJS(runtime, ge)
+	})
+
+	// resetCrashCount(): void
+	_ = obj.Set("resetCrashCount", func() goja.Value {
+		g.ResetCrashCount()
+		return goja.Undefined()
+	})
+
+	// state(): object
+	_ = obj.Set("state", func() goja.Value {
+		st := g.State()
+		obj := runtime.NewObject()
+		_ = obj.Set("rateLimitCount", st.RateLimitCount)
+		_ = obj.Set("currentDelayMs", st.CurrentDelay.Milliseconds())
+		_ = obj.Set("crashCount", st.CrashCount)
+		_ = obj.Set("started", st.Started)
+		if !st.LastEventTime.IsZero() {
+			_ = obj.Set("lastEventTimeMs", st.LastEventTime.UnixMilli())
+		}
+		if !st.LastRateLimitTime.IsZero() {
+			_ = obj.Set("lastRateLimitTimeMs", st.LastRateLimitTime.UnixMilli())
+		}
+		return obj
+	})
+
+	// config(): object
+	_ = obj.Set("config", func() goja.Value {
+		return guardConfigToJS(runtime, g.Config())
 	})
 
 	return obj

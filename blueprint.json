@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T006 Done. T007 next. Pre-existing flaky: TestRecording_Goal, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean (all timing-dep, pass on rerun).",
+    "currentState": "T001-T007 Done. T008 next. Pre-existing flaky: TestRecording_Goal, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean (all timing-dep, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -74,8 +74,8 @@
     },
     {
       "task": "T007: Session isolation for multi-instance",
-      "description": "In claudemux/: unique session ID per instance, per-instance MCP endpoint, isolated state dirs ~/.osm/claude-sessions/<id>/, independent PTY handles, cleanup on Close(), session registry (sync.Map). No shared mutable state. Tests with -race. Run make.",
-      "status": "Not Started"
+      "description": "Added instance.go: Instance type (ID, StateDir, MCP, Agent, CreatedAt, Close, IsClosed, writeState), InstanceState JSON (state.json with id/createdAt/status/mcpEndpoint), InstanceRegistry (sync.Map-backed, Create/Get/Close/CloseAll/List/Len/BaseDir), ErrInstanceNotFound/ErrInstanceIDExists/ErrInstanceIDEmpty. Atomic Create via LoadOrStore (correct concurrent duplicate rejection). JS bindings: newInstanceRegistry(baseDir) with create/get/close/closeAll/list/len/baseDir; wrapInstance with id/stateDir/createdAt/isClosed/close. 16 new tests incl concurrent create/duplicate with -race. 244 claudemux tests pass. Deadcode clean.",
+      "status": "Done"
     },
     {
       "task": "T008: Guard rails — PTY monitors",

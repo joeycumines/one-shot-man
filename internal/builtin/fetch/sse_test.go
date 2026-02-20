@@ -340,7 +340,6 @@ func TestSSEParser_BlankLinesWithoutData(t *testing.T) {
 
 func TestSSEParser_RetryField(t *testing.T) {
 	t.Parallel()
-	// retry field is validated as numeric but we don't store it.
 	input := "retry: 3000\ndata: with-retry\n\n"
 	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
 	reader, err := rs.GetReader()
@@ -360,6 +359,9 @@ func TestSSEParser_RetryField(t *testing.T) {
 	if ev.Data != "with-retry" {
 		t.Errorf("Data = %q, want %q", ev.Data, "with-retry")
 	}
+	if ev.Retry != 3000 {
+		t.Errorf("Retry = %d, want 3000", ev.Retry)
+	}
 }
 
 func TestSSEParser_IDWithNullByte(t *testing.T) {
@@ -377,5 +379,61 @@ func TestSSEParser_IDWithNullByte(t *testing.T) {
 	ev, _, _ := parser.Next()
 	if ev.ID != "" {
 		t.Errorf("ID = %q, want empty (null byte should be rejected)", ev.ID)
+	}
+}
+
+func TestSSEParser_CRLFAcrossChunkBoundary(t *testing.T) {
+	t.Parallel()
+	// Simulate a \r\n sequence split across two chunks: the first
+	// chunk ends with \r and the second starts with \n.  Without
+	// lastCharWasCR handling, this would produce a phantom blank line.
+	chunk1 := "data: hello\r"
+	chunk2 := "\n\ndata: world\n\n"
+
+	pr, pw := io.Pipe()
+	rs := NewReadableStream(pr)
+
+	go func() {
+		_, _ = pw.Write([]byte(chunk1))
+		_, _ = pw.Write([]byte(chunk2))
+		pw.Close()
+	}()
+
+	reader, err := rs.GetReader()
+	if err != nil {
+		t.Fatalf("GetReader: %v", err)
+	}
+	defer reader.ReleaseLock()
+
+	parser := NewSSEParser(reader)
+
+	ev1, done1, err1 := parser.Next()
+	if err1 != nil {
+		t.Fatalf("Next: %v", err1)
+	}
+	if done1 {
+		t.Fatal("unexpected done for first event")
+	}
+	if ev1.Data != "hello" {
+		t.Errorf("first event Data = %q, want %q", ev1.Data, "hello")
+	}
+
+	ev2, done2, err2 := parser.Next()
+	if err2 != nil {
+		t.Fatalf("Next: %v", err2)
+	}
+	if done2 {
+		t.Fatal("unexpected done for second event")
+	}
+	if ev2.Data != "world" {
+		t.Errorf("second event Data = %q, want %q", ev2.Data, "world")
+	}
+
+	_, done3, err3 := parser.Next()
+	if err3 != nil {
+		t.Fatalf("Next: %v", err3)
+	}
+	if !done3 {
+		t.Fatal("expected done after all events")
 	}
 }

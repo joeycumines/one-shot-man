@@ -6,6 +6,12 @@
 //   - Lines starting with ":" are comments (ignored).
 //   - Fields: event, data, id, retry.
 //   - Multiple data: lines are joined with \n.
+//
+// Deviation from spec: when the stream ends without a trailing blank
+// line, the parser flushes any accumulated data as a final event.  The
+// W3C spec (step 3 "If the line is empty") would discard it.
+// This is intentional — LLM streaming APIs frequently omit the final
+// delimiter, and discarding the last event is worse than emitting it.
 package fetch
 
 import (
@@ -28,18 +34,20 @@ type SSEEvent struct {
 
 // SSEParser reads chunks from a ReadableStreamDefaultReader and
 // produces parsed SSEEvent values.  It handles partial lines across
-// chunk boundaries.
+// chunk boundaries, including \r\n sequences that straddle chunks.
 type SSEParser struct {
 	reader *ReadableStreamDefaultReader
 
-	mu     sync.Mutex
-	buf    string // unparsed remainder from previous chunk
-	lastID string
+	mu            sync.Mutex
+	buf           string // unparsed remainder from previous chunk
+	lastID        string
+	lastCharWasCR bool // true when previous chunk ended with \r
 
 	// current event being accumulated
 	eventType string
 	dataLines []string
 	hasData   bool
+	retryMs   int // reconnection time from most recent retry field
 }
 
 // NewSSEParser wraps a ReadableStreamDefaultReader in an SSE parser.
@@ -70,7 +78,15 @@ func (p *SSEParser) Next() (ev SSEEvent, done bool, err error) {
 			return SSEEvent{}, true, nil
 		}
 		p.mu.Lock()
-		p.buf += string(data)
+		chunk := string(data)
+		// Handle \r\n split across chunk boundaries: if the previous
+		// chunk ended with \r and this one starts with \n, drop the \n
+		// to avoid producing a phantom blank line.
+		if p.lastCharWasCR && len(chunk) > 0 && chunk[0] == '\n' {
+			chunk = chunk[1:]
+		}
+		p.lastCharWasCR = len(chunk) > 0 && chunk[len(chunk)-1] == '\r'
+		p.buf += chunk
 		p.mu.Unlock()
 	}
 }
@@ -105,6 +121,7 @@ func (p *SSEParser) extractEvent() (SSEEvent, bool) {
 					Event: p.eventType,
 					Data:  strings.Join(p.dataLines, "\n"),
 					ID:    p.lastID,
+					Retry: p.retryMs,
 				}
 				if ev.Event == "" {
 					ev.Event = "message"
@@ -112,10 +129,12 @@ func (p *SSEParser) extractEvent() (SSEEvent, bool) {
 				p.eventType = ""
 				p.dataLines = nil
 				p.hasData = false
+				p.retryMs = 0
 				return ev, true
 			}
 			// Reset fields even without data.
 			p.eventType = ""
+			p.retryMs = 0
 			continue
 		}
 
@@ -139,6 +158,7 @@ func (p *SSEParser) flush() (SSEEvent, bool) {
 			Event: p.eventType,
 			Data:  strings.Join(p.dataLines, "\n"),
 			ID:    p.lastID,
+			Retry: p.retryMs,
 		}
 		if ev.Event == "" {
 			ev.Event = "message"
@@ -146,6 +166,7 @@ func (p *SSEParser) flush() (SSEEvent, bool) {
 		p.eventType = ""
 		p.dataLines = nil
 		p.hasData = false
+		p.retryMs = 0
 		return ev, true
 	}
 	return SSEEvent{}, false
@@ -179,9 +200,8 @@ func (p *SSEParser) processLine(line string) {
 			p.lastID = value
 		}
 	case "retry":
-		if _, err := strconv.Atoi(value); err == nil {
-			// We don't store retry here since it's reconnection-specific.
-			// Just validate the field is numeric per spec.
+		if n, err := strconv.Atoi(value); err == nil {
+			p.retryMs = n
 		}
 	}
 }

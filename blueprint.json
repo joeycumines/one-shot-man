@@ -1,7 +1,7 @@
 {
   "meta": {
     "fileName": "blueprint.json",
-    "sourceRef": "DIRECTIVE.txt + docs/todo.md + scratch/black-orange/final/consolidated-analysis.md + full codebase analysis 2026-02-20",
+    "sourceRef": "DIRECTIVE.txt + docs/todo.md",
     "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
     "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST. NEVER SPECIFY A PRIORITY OF ANY KIND.",
     "blueprintRefinement": "THIS BLUEPRINT MUST BE CONTINUALLY REFINED. After completing any task, before starting the next, re-read this file and assess whether it still accurately captures reality. If any task description is stale, wrong, unclear, or missing context — FIX IT NOW."

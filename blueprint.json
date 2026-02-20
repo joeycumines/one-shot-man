@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T023 Done. T024 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
+    "currentState": "T001-T024 Done. T025 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -159,8 +159,8 @@
     },
     {
       "task": "T024: Integration testing for claude-mux",
-      "description": "TestMain + -integration flag (disabled by default). Flags: -provider=ollama, -model=gpt-oss:20b-cloud. Test: spawn, menu navigation, MCP startup, task, result, guard rails, recovery. Config.mk target: make integration-test-claudemux. Skipped when flag unset. Run make.",
-      "status": "Not Started"
+      "description": "Added integration_test.go with TestMain (-integration, -provider, -model flags). 6 live agent tests (skipped without -integration): ProviderSpawn, MenuNavigation, MCPStartup, TaskSubmitAndResult, GuardRails, Recovery. 4 simulated CI tests: FullPipelineLifecycle (8-phase: registry→pool→panel→session→crash→safety→choice→shutdown), ConcurrentMultiSessionPipeline (4 workers×50 events), ErrorRecoveryEscalation (Retry→Restart→Escalate), SafetyIntoPipeline. Config.mk target: integration-test-claudemux. Build green.",
+      "status": "Done"
     },
     {
       "task": "T025: Cross-platform checkpoint — post claude-mux",

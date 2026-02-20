@@ -52,7 +52,9 @@
 
 - **T023**: Security tests for MCP protocol (mcp_security_test.go in claudemux: 13 tests — guard injection, tool injection, privilege escalation, blocked paths, allowlist, disabled safety, sensitive patterns, concurrent guard, session isolation, instance registry IDs, frequency burst, repeat detection, composite validator; mcp_security_test.go in command: 7 tests — session spoofing, ID validation, seq replay, large payloads, concurrent manipulation, tool name injection, session overwrite). Build green.
 
-### Next task: T024
-Integration testing for claude-mux.
+- **T024**: Integration testing for claude-mux (integration_test.go: TestMain with -integration/-provider/-model flags; 6 live agent tests skipped in CI; 4 simulated CI tests covering full 8-phase pipeline, concurrent multi-session, error recovery escalation, safety-into-pipeline; config.mk target integration-test-claudemux). Build green.
 
-### No commits made yet this session. Rule of Two needed before committing. 22+ tasks accumulated.
+### Next task: T025
+Cross-platform checkpoint — post claude-mux.
+
+### No commits made yet this session. Rule of Two needed before committing. 24+ tasks accumulated.

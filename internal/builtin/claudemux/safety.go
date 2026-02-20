@@ -540,10 +540,11 @@ func (sv *SafetyValidator) assessScope(action SafetyAction) Scope {
 	}
 
 	// Heuristic: path depth and system directories.
+	// Normalize to forward slashes for consistent cross-platform matching.
 	for _, p := range action.FilePaths {
-		clean := filepath.Clean(p)
+		clean := filepath.ToSlash(filepath.Clean(p))
 		if strings.HasPrefix(clean, "/etc") || strings.HasPrefix(clean, "/usr") ||
-			strings.HasPrefix(clean, "/system") || strings.HasPrefix(strings.ToUpper(clean), "C:\\WINDOWS") {
+			strings.HasPrefix(clean, "/system") || strings.HasPrefix(strings.ToUpper(clean), "C:/WINDOWS") {
 			return ScopeInfra
 		}
 	}

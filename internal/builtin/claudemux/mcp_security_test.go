@@ -245,9 +245,9 @@ func TestSafetySecurity_PrivilegeEscalationViaArgs(t *testing.T) {
 	validator := NewSafetyValidator(cfg)
 
 	escalationAttempts := []struct {
-		name     string
-		action   SafetyAction
-		minRisk  string // "warn", "confirm", or "block"
+		name    string
+		action  SafetyAction
+		minRisk string // "warn", "confirm", or "block"
 	}{
 		{
 			"rm -rf root",

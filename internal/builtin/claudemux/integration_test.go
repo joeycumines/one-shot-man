@@ -734,13 +734,13 @@ func TestSimulated_SafetyIntoPipeline(t *testing.T) {
 
 	// Scenario: tool call arrives → safety validates → MCP guard checks allowlist.
 	calls := []struct {
-		tool       string
-		args       string
-		wantSafe   bool
-		wantMCPOK  bool
+		tool      string
+		args      string
+		wantSafe  bool
+		wantMCPOK bool
 	}{
 		{"readFile", "cat /tmp/readme.txt", true, true},
-		{"execute", "rm -rf /", false, true},    // allowed by MCP but unsafe
+		{"execute", "rm -rf /", false, true},            // allowed by MCP but unsafe
 		{"dropTable", "DROP TABLE users", false, false}, // blocked by MCP AND unsafe
 	}
 

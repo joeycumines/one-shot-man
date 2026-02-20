@@ -2,13 +2,130 @@ package command
 
 import (
 	"bytes"
+	"context"
 	"flag"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
+	"github.com/joeycumines/one-shot-man/internal/builtin/claudemux"
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// syncWriter wraps an io.Writer with a mutex for goroutine-safe writes.
+// Used in tests where concurrent goroutines write to the same buffer.
+type syncWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (sw *syncWriter) Write(p []byte) (int, error) {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+	return sw.w.Write(p)
+}
+
+// --- Mock provider for testing ---
+
+// mockProvider implements claudemux.Provider with configurable behavior.
+type mockProvider struct {
+	name     string
+	spawnFn  func(ctx context.Context, opts claudemux.SpawnOpts) (claudemux.AgentHandle, error)
+	spawnErr error
+}
+
+func (p *mockProvider) Name() string { return p.name }
+func (p *mockProvider) Capabilities() claudemux.ProviderCapabilities {
+	return claudemux.ProviderCapabilities{MCP: false, Streaming: true, MultiTurn: false}
+}
+func (p *mockProvider) Spawn(ctx context.Context, opts claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+	if p.spawnErr != nil {
+		return nil, p.spawnErr
+	}
+	if p.spawnFn != nil {
+		return p.spawnFn(ctx, opts)
+	}
+	return newEchoAgent(), nil
+}
+
+// echoAgent is a mock AgentHandle that echoes one input then exits cleanly.
+// This simulates a one-shot agent that processes a task and terminates.
+type echoAgent struct {
+	mu      sync.Mutex
+	output  chan string
+	done    chan struct{}
+	closed  bool
+	exiting sync.Once
+}
+
+func newEchoAgent() *echoAgent {
+	return &echoAgent{
+		output: make(chan string, 4),
+		done:   make(chan struct{}),
+	}
+}
+
+func (a *echoAgent) Send(input string) error {
+	a.mu.Lock()
+	if a.closed {
+		a.mu.Unlock()
+		return fmt.Errorf("agent closed")
+	}
+	a.mu.Unlock()
+	a.output <- fmt.Sprintf("echo: %s", input)
+	// Schedule exit after the output is produced.
+	a.exiting.Do(func() {
+		go func() {
+			close(a.done)
+		}()
+	})
+	return nil
+}
+
+func (a *echoAgent) Receive() (string, error) {
+	// Try output first (non-blocking), then wait for either.
+	select {
+	case msg := <-a.output:
+		return msg, nil
+	default:
+	}
+	select {
+	case msg := <-a.output:
+		return msg, nil
+	case <-a.done:
+		return "", io.EOF
+	}
+}
+
+func (a *echoAgent) Close() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.closed {
+		a.closed = true
+		a.exiting.Do(func() { close(a.done) })
+	}
+	return nil
+}
+
+func (a *echoAgent) IsAlive() bool {
+	select {
+	case <-a.done:
+		return false
+	default:
+		return true
+	}
+}
+
+func (a *echoAgent) Wait() (int, error) {
+	<-a.done
+	return 0, nil
+}
 
 func TestNewClaudeMuxCommand(t *testing.T) {
 	t.Parallel()
@@ -144,4 +261,347 @@ func TestClaudeMux_Submit_EmptyTask(t *testing.T) {
 	err := cmd.Execute([]string{"submit", "  ", " "}, &stdout, &stderr)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "cannot be empty")
+}
+
+// --- Run subcommand tests ---
+
+func TestClaudeMux_Run_NoTasks(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.providerOverride = &mockProvider{name: "mock"}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run"}, &stdout, &stderr)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no tasks provided")
+}
+
+func TestClaudeMux_Run_SingleTask(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.providerOverride = &mockProvider{name: "mock"}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run", "fix the login bug"}, &stdout, &stderr)
+	assert.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "[audit] tasks loaded: 1")
+	assert.Contains(t, out, "[audit] provider: mock")
+	assert.Contains(t, out, "[audit] pool started: max_size=1")
+	assert.Contains(t, out, "worker slots ready")
+	assert.Contains(t, out, "[task 0] dispatched")
+	assert.Contains(t, out, "fix the login bug")
+	assert.Contains(t, out, "[task 0] completed (exit 0)")
+	assert.Contains(t, out, "[summary]")
+	assert.Contains(t, out, "succeeded=1")
+	assert.Contains(t, out, "failed=0")
+}
+
+func TestClaudeMux_Run_MultipleTasks(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 2
+	cmd.providerOverride = &mockProvider{name: "mock"}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute([]string{"run", "task-one", "task-two", "task-three"}, stdout, stderr)
+	assert.NoError(t, err)
+
+	out := stdoutBuf.String()
+	assert.Contains(t, out, "[audit] tasks loaded: 3")
+	assert.Contains(t, out, "worker slots ready, dispatching 3 tasks")
+	assert.Contains(t, out, "succeeded=3")
+}
+
+func TestClaudeMux_Run_TasksFile(t *testing.T) {
+	t.Parallel()
+
+	// Write tasks file.
+	tmpDir := t.TempDir()
+	tasksPath := filepath.Join(tmpDir, "tasks.txt")
+	content := "fix the bug\n# comment line\noptimize query\n\nadd tests\n"
+	require.NoError(t, os.WriteFile(tasksPath, []byte(content), 0600))
+
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = tmpDir
+	cmd.poolSize = 2
+	cmd.tasksFile = tasksPath
+	cmd.providerOverride = &mockProvider{name: "mock"}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute([]string{"run"}, stdout, stderr)
+	assert.NoError(t, err)
+
+	out := stdoutBuf.String()
+	assert.Contains(t, out, "[audit] tasks loaded: 3") // 3 non-empty, non-comment lines
+	assert.Contains(t, out, "succeeded=3")
+}
+
+func TestClaudeMux_Run_TasksFileAndArgs(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	tasksPath := filepath.Join(tmpDir, "tasks.txt")
+	require.NoError(t, os.WriteFile(tasksPath, []byte("from-file"), 0600))
+
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = tmpDir
+	cmd.poolSize = 2
+	cmd.tasksFile = tasksPath
+	cmd.providerOverride = &mockProvider{name: "mock"}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute([]string{"run", "from-args"}, stdout, stderr)
+	assert.NoError(t, err)
+	assert.Contains(t, stdoutBuf.String(), "[audit] tasks loaded: 2")
+}
+
+func TestClaudeMux_Run_SpawnFailure(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.providerOverride = &mockProvider{
+		name:     "broken",
+		spawnErr: fmt.Errorf("process not found"),
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run", "do-something"}, &stdout, &stderr)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "tasks failed")
+	assert.Contains(t, stderr.String(), "spawn agent")
+	assert.Contains(t, stderr.String(), "process not found")
+}
+
+func TestClaudeMux_Run_UnknownProvider(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.runProvider = "nonexistent-ai"
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run", "task"}, &stdout, &stderr)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown provider")
+}
+
+func TestClaudeMux_Run_TasksFileNotFound(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.tasksFile = "/nonexistent/tasks.txt"
+	cmd.providerOverride = &mockProvider{name: "mock"}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run"}, &stdout, &stderr)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "open tasks file")
+}
+
+func TestClaudeMux_Run_PoolSizeLimitedByTasks(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 10 // Much larger than task count.
+	cmd.providerOverride = &mockProvider{name: "mock"}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run", "single-task"}, &stdout, &stderr)
+	assert.NoError(t, err)
+
+	out := stdout.String()
+	// Should only create 1 slot (min of pool-size=10 and tasks=1).
+	assert.Contains(t, out, "[audit] 1 worker slots ready, dispatching 1 tasks")
+}
+
+func TestClaudeMux_Run_WhitespaceOnlyTasks(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.providerOverride = &mockProvider{name: "mock"}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run", "  ", "\t"}, &stdout, &stderr)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no tasks provided")
+}
+
+func TestClaudeMux_Run_AgentExitNonZero(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.providerOverride = &mockProvider{
+		name: "failing-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			return &failingAgent{exitCode: 1}, nil
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run", "failing-task"}, &stdout, &stderr)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "tasks failed")
+	assert.Contains(t, stderr.String(), "agent exited: code=1")
+}
+
+// failingAgent accepts a Send then exits with a non-zero code.
+type failingAgent struct {
+	exitCode int
+	done     chan struct{}
+	once     sync.Once
+	sendOnce sync.Once
+}
+
+func (a *failingAgent) init() {
+	a.once.Do(func() {
+		a.done = make(chan struct{})
+	})
+}
+
+func (a *failingAgent) Send(string) error {
+	a.init()
+	// Accept the first send, then trigger exit.
+	a.sendOnce.Do(func() {
+		go func() {
+			// Small delay to let Receive be called.
+			close(a.done)
+		}()
+	})
+	return nil
+}
+
+func (a *failingAgent) Receive() (string, error) {
+	a.init()
+	<-a.done
+	return "", io.EOF
+}
+
+func (a *failingAgent) Close() error {
+	a.init()
+	return nil
+}
+
+func (a *failingAgent) IsAlive() bool {
+	a.init()
+	select {
+	case <-a.done:
+		return false
+	default:
+		return true
+	}
+}
+
+func (a *failingAgent) Wait() (int, error) {
+	a.init()
+	<-a.done
+	return a.exitCode, nil
+}
+
+func TestClaudeMux_SetupFlags_RunFlags(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetupFlags(fs)
+
+	err := fs.Parse([]string{
+		"-pool-size", "3",
+		"-provider", "claude-code",
+		"-model", "haiku",
+		"-dir", "/tmp/work",
+		"-command", "/usr/local/bin/claude",
+		"-tasks-file", "/tmp/tasks.txt",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 3, cmd.poolSize)
+	assert.Equal(t, "claude-code", cmd.runProvider)
+	assert.Equal(t, "haiku", cmd.runModel)
+	assert.Equal(t, "/tmp/work", cmd.runDir)
+	assert.Equal(t, "/usr/local/bin/claude", cmd.runCommand)
+	assert.Equal(t, "/tmp/tasks.txt", cmd.tasksFile)
+}
+
+func TestClaudeMux_Run_ResolveProvider_Default(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+
+	p, err := cmd.resolveProvider()
+	require.NoError(t, err)
+	assert.Equal(t, "claude-code", p.Name())
+}
+
+func TestClaudeMux_Run_ResolveProvider_Override(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	mock := &mockProvider{name: "test-provider"}
+	cmd.providerOverride = mock
+
+	p, err := cmd.resolveProvider()
+	require.NoError(t, err)
+	assert.Equal(t, "test-provider", p.Name())
+}
+
+func TestTruncateTask(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "short", truncateTask("short", 80))
+	assert.Equal(t, strings.Repeat("x", 80), truncateTask(strings.Repeat("x", 80), 80))
+	long := strings.Repeat("x", 100)
+	result := truncateTask(long, 80)
+	assert.Len(t, result, 80)
+	assert.True(t, strings.HasSuffix(result, "..."))
+}
+
+func TestClaudeMux_Help_IncludesRun(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute(nil, &stdout, &stderr)
+	assert.NoError(t, err)
+	assert.Contains(t, stdout.String(), "run")
+}
+
+func TestClaudeMux_Run_GatherTasks_EmptyFile(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	tasksPath := filepath.Join(tmpDir, "empty.txt")
+	require.NoError(t, os.WriteFile(tasksPath, []byte("# only comments\n\n"), 0600))
+
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = tmpDir
+	cmd.tasksFile = tasksPath
+	cmd.providerOverride = &mockProvider{name: "mock"}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run"}, &stdout, &stderr)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no tasks provided")
 }

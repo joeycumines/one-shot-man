@@ -222,9 +222,8 @@ func (c *ClaudeMuxCommand) start(_ []string, stdout, stderr io.Writer) error {
 //  1. Positional arguments (one task per arg after "run")
 //  2. --tasks-file flag (one task per line)
 //
-// Each task is sent to an available worker via the Pool's round-robin
-// dispatch. The command blocks until all workers have finished or a
-// SIGINT/SIGTERM signal triggers graceful draining.
+// Each task spawns a fresh agent via the configured Provider. The Pool
+// limits concurrency to at most pool-size simultaneous agents.
 func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 	// Gather tasks.
 	tasks, err := c.gatherTasks(args)
@@ -238,11 +237,11 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 	_, _ = fmt.Fprintf(stdout, "[audit] tasks loaded: %d\n", len(tasks))
 
 	// Resolve provider.
-	provider, err := c.resolveProvider()
+	prov, err := c.resolveProvider()
 	if err != nil {
 		return fmt.Errorf("claude-mux run: %w", err)
 	}
-	_, _ = fmt.Fprintf(stdout, "[audit] provider: %s\n", provider.Name())
+	_, _ = fmt.Fprintf(stdout, "[audit] provider: %s\n", prov.Name())
 
 	// Resolve instance base directory.
 	base := c.baseDir
@@ -263,7 +262,7 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 	defer func() { _ = registry.CloseAll() }()
 	_, _ = fmt.Fprintf(stdout, "[audit] instance registry: %s\n", registry.BaseDir())
 
-	// Create and start pool.
+	// Create and start pool with worker slots for concurrency control.
 	poolCfg := claudemux.DefaultPoolConfig()
 	if c.poolSize > 0 {
 		poolCfg.MaxSize = c.poolSize
@@ -272,7 +271,22 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 	if err := pool.Start(); err != nil {
 		return fmt.Errorf("claude-mux run: pool: %w", err)
 	}
+	defer pool.Close()
 	_, _ = fmt.Fprintf(stdout, "[audit] pool started: max_size=%d\n", poolCfg.MaxSize)
+
+	// Pre-create worker slots (no agents yet — spawned per-task).
+	slotCount := poolCfg.MaxSize
+	if slotCount > len(tasks) {
+		slotCount = len(tasks)
+	}
+	for i := 0; i < slotCount; i++ {
+		slotID := fmt.Sprintf("slot-%d", i)
+		if _, err := pool.AddWorker(slotID, nil); err != nil {
+			_, _ = fmt.Fprintf(stderr, "[error] add slot %d: %v\n", i, err)
+		}
+	}
+	_, _ = fmt.Fprintf(stdout, "[audit] %d worker slots ready, dispatching %d tasks\n",
+		slotCount, len(tasks))
 
 	// Set up cancellation context for signal handling.
 	ctx, cancel := context.WithCancel(context.Background())
@@ -290,57 +304,12 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 	}()
 	defer signal.Stop(sigCh)
 
-	// Spawn worker instances (up to min(poolSize, len(tasks))).
-	workerCount := poolCfg.MaxSize
-	if workerCount > len(tasks) {
-		workerCount = len(tasks)
-	}
-
 	spawnOpts := claudemux.SpawnOpts{
 		Model: c.runModel,
 		Dir:   c.runDir,
 	}
 
-	instances := make([]*claudemux.Instance, 0, workerCount)
-	for i := 0; i < workerCount; i++ {
-		if ctx.Err() != nil {
-			break
-		}
-
-		instanceID := fmt.Sprintf("run-%d-%d", os.Getpid(), i)
-		inst, err := registry.Create(instanceID)
-		if err != nil {
-			_, _ = fmt.Fprintf(stderr, "[error] create instance %d: %v\n", i, err)
-			continue
-		}
-
-		agent, err := provider.Spawn(ctx, spawnOpts)
-		if err != nil {
-			_, _ = fmt.Fprintf(stderr, "[error] spawn instance %d: %v\n", i, err)
-			_ = registry.Close(instanceID)
-			continue
-		}
-		inst.Agent = agent
-		instances = append(instances, inst)
-
-		if _, err := pool.AddWorker(instanceID, inst); err != nil {
-			_, _ = fmt.Fprintf(stderr, "[error] add worker %d: %v\n", i, err)
-			_ = agent.Close()
-			_ = registry.Close(instanceID)
-			continue
-		}
-
-		_, _ = fmt.Fprintf(stdout, "[audit] worker spawned: id=%s pid=%d\n",
-			instanceID, agentPID(agent))
-	}
-
-	if len(instances) == 0 {
-		return fmt.Errorf("claude-mux run: failed to spawn any workers")
-	}
-	_, _ = fmt.Fprintf(stdout, "[audit] %d workers ready, dispatching %d tasks\n",
-		len(instances), len(tasks))
-
-	// Dispatch tasks to workers.
+	// Dispatch tasks — each gets a fresh agent spawn.
 	var wg sync.WaitGroup
 	taskResults := make([]taskResult, len(tasks))
 
@@ -352,7 +321,7 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 
 		worker, err := pool.Acquire()
 		if err != nil {
-			_, _ = fmt.Fprintf(stderr, "[error] acquire worker for task %d: %v\n", i, err)
+			_, _ = fmt.Fprintf(stderr, "[error] acquire slot for task %d: %v\n", i, err)
 			taskResults[i] = taskResult{err: err}
 			continue
 		}
@@ -362,19 +331,13 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			result := c.executeTask(ctx, worker, taskText, idx, stdout, stderr)
+			result := c.dispatchTask(ctx, prov, registry, spawnOpts, worker, taskText, idx, stdout, stderr)
 			taskResults[idx] = result
 			pool.Release(worker, result.err, time.Now())
 		}()
 	}
 
 	wg.Wait()
-
-	// Graceful shutdown.
-	pool.Drain()
-	pool.WaitDrained()
-	closedWorkers := pool.Close()
-	_, _ = fmt.Fprintf(stdout, "[audit] pool closed: %d workers released\n", len(closedWorkers))
 
 	// Print summary.
 	succeeded, failed := 0, 0
@@ -401,31 +364,46 @@ type taskResult struct {
 	err        error
 }
 
-// executeTask sends a task to a worker's agent and monitors for completion
-// or context cancellation (shutdown signal).
-func (c *ClaudeMuxCommand) executeTask(
+// dispatchTask spawns a fresh agent for a single task, sends the task,
+// monitors output until the agent exits, and cleans up.
+func (c *ClaudeMuxCommand) dispatchTask(
 	ctx context.Context,
+	prov claudemux.Provider,
+	registry *claudemux.InstanceRegistry,
+	spawnOpts claudemux.SpawnOpts,
 	worker *claudemux.PoolWorker,
 	task string,
 	taskIdx int,
 	stdout, stderr io.Writer,
 ) taskResult {
-	if worker.Instance == nil || worker.Instance.Agent == nil {
-		return taskResult{dispatched: true, err: fmt.Errorf("worker %s has no agent", worker.ID)}
+	// Create instance for this task.
+	instanceID := fmt.Sprintf("task-%d-%d", os.Getpid(), taskIdx)
+	inst, err := registry.Create(instanceID)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "[task %d] create instance: %v\n", taskIdx, err)
+		return taskResult{dispatched: false, err: err}
 	}
+	defer func() { _ = registry.Close(instanceID) }()
 
-	agent := worker.Instance.Agent
+	// Spawn fresh agent.
+	agent, err := prov.Spawn(ctx, spawnOpts)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "[task %d] spawn agent: %v\n", taskIdx, err)
+		return taskResult{dispatched: false, err: err}
+	}
+	inst.Agent = agent
+	defer func() { _ = agent.Close() }()
 
-	_, _ = fmt.Fprintf(stdout, "[task %d] dispatched to %s: %q\n", taskIdx, worker.ID, truncateTask(task, 80))
+	_, _ = fmt.Fprintf(stdout, "[task %d] dispatched to %s: %q\n",
+		taskIdx, worker.ID, truncateTask(task, 80))
 
-	// Send the task text to the agent's stdin (followed by newline).
+	// Send the task text to the agent's stdin.
 	if err := agent.Send(task + "\n"); err != nil {
 		_, _ = fmt.Fprintf(stderr, "[task %d] send error: %v\n", taskIdx, err)
 		return taskResult{dispatched: true, err: err}
 	}
 
 	// Monitor agent output until it exits or context is cancelled.
-	// The agent is a PTY process — we read its output and forward to stdout.
 	for {
 		select {
 		case <-ctx.Done():
@@ -435,25 +413,13 @@ func (c *ClaudeMuxCommand) executeTask(
 		}
 
 		if !agent.IsAlive() {
-			exitCode, exitErr := agent.Wait()
-			if exitCode != 0 {
-				_, _ = fmt.Fprintf(stderr, "[task %d] agent exited: code=%d\n", taskIdx, exitCode)
-				return taskResult{dispatched: true, err: fmt.Errorf("agent exited with code %d", exitCode)}
-			}
-			_, _ = fmt.Fprintf(stdout, "[task %d] completed (exit 0)\n", taskIdx)
-			return taskResult{dispatched: true, err: exitErr}
+			return c.handleAgentExit(agent, taskIdx, stdout, stderr)
 		}
 
 		output, err := agent.Receive()
 		if err != nil {
 			if !agent.IsAlive() {
-				exitCode, _ := agent.Wait()
-				if exitCode == 0 {
-					_, _ = fmt.Fprintf(stdout, "[task %d] completed (exit 0)\n", taskIdx)
-					return taskResult{dispatched: true, err: nil}
-				}
-				_, _ = fmt.Fprintf(stderr, "[task %d] agent exited: code=%d\n", taskIdx, exitCode)
-				return taskResult{dispatched: true, err: fmt.Errorf("agent exited with code %d", exitCode)}
+				return c.handleAgentExit(agent, taskIdx, stdout, stderr)
 			}
 			_, _ = fmt.Fprintf(stderr, "[task %d] receive error: %v\n", taskIdx, err)
 			return taskResult{dispatched: true, err: err}
@@ -462,6 +428,21 @@ func (c *ClaudeMuxCommand) executeTask(
 			_, _ = fmt.Fprintf(stdout, "[task %d] %s", taskIdx, output)
 		}
 	}
+}
+
+// handleAgentExit processes the agent's exit and returns the appropriate result.
+func (c *ClaudeMuxCommand) handleAgentExit(
+	agent claudemux.AgentHandle,
+	taskIdx int,
+	stdout, stderr io.Writer,
+) taskResult {
+	exitCode, exitErr := agent.Wait()
+	if exitCode != 0 {
+		_, _ = fmt.Fprintf(stderr, "[task %d] agent exited: code=%d\n", taskIdx, exitCode)
+		return taskResult{dispatched: true, err: fmt.Errorf("agent exited with code %d", exitCode)}
+	}
+	_, _ = fmt.Fprintf(stdout, "[task %d] completed (exit 0)\n", taskIdx)
+	return taskResult{dispatched: true, err: exitErr}
 }
 
 // gatherTasks collects tasks from arguments and/or --tasks-file.
@@ -515,18 +496,6 @@ func (c *ClaudeMuxCommand) resolveProvider() (claudemux.Provider, error) {
 	default:
 		return nil, fmt.Errorf("unknown provider %q; available: claude-code", c.runProvider)
 	}
-}
-
-// agentPID extracts the PID from an AgentHandle if it has a PID method.
-// Returns 0 for mock agents without PIDs.
-func agentPID(h claudemux.AgentHandle) int {
-	type pider interface {
-		Pid() int
-	}
-	if p, ok := h.(pider); ok {
-		return p.Pid()
-	}
-	return 0
 }
 
 // truncateTask returns at most maxLen characters of a task string.

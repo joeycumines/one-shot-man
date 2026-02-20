@@ -40,7 +40,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T101-T109 Done. Build GREEN. Proceeding to T110.",
+    "currentState": "T101-T110 Done. Build GREEN. Proceeding to T111.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
   },
@@ -97,8 +97,8 @@
     },
     {
       "task": "T110: Implement osm claudemux run — PTY subprocess spawning",
-      "description": "CRITICAL: Create native Go command 'osm claudemux run' that actually spawns Claude Code (or other TUI tools) as PTY subprocesses. Read task list from stdin or directory. Use claudemux.Pool for instance management. Use claudemux.SpawnOpts for configuration. Wire creack/pty for PTY allocation. Register in main.go. This replaces the inert 'claude-mux start'. Run make.",
-      "status": "Not Started"
+      "description": "DONE: Added 'run' subcommand to ClaudeMuxCommand. Per-task agent spawning via Provider interface (ClaudeCodeProvider wraps creack/pty). Pool used as concurrency limiter (worker slots). Task sources: positional args + --tasks-file (one per line, # comments). Signal handling (SIGINT/SIGTERM → context cancellation). Flags: --provider, --model, --dir, --command, --tasks-file. providerOverride field for test injection. dispatchTask creates fresh Instance+Agent per task. handleAgentExit for clean exit code reporting. 16 tests with mockProvider + echoAgent + failingAgent mocks. Build GREEN.",
+      "status": "Done"
     },
     {
       "task": "T111: Wire Pool dispatch into claudemux run",

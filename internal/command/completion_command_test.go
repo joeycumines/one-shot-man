@@ -548,6 +548,48 @@ func TestCompletionCommandLogSubcommand(t *testing.T) {
 	}
 }
 
+func TestCompletionCommandClaudeMuxSubcommand(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	registry := NewRegistryWithConfig(cfg)
+	registry.Register(NewHelpCommand(registry))
+	registry.Register(NewClaudeMuxCommand(cfg))
+
+	goalRegistry := newTestGoalRegistry()
+	completionCmd := NewCompletionCommand(registry, goalRegistry)
+
+	tests := []struct {
+		name        string
+		shell       string
+		expectedTxt []string
+	}{
+		{name: "bash claude-mux", shell: "bash", expectedTxt: []string{"claude-mux)", `COMPREPLY=($(compgen -W "status start stop submit"`}},
+		{name: "zsh claude-mux", shell: "zsh", expectedTxt: []string{"claude-mux)", "_values 'claude-mux-subcommand' 'status' 'start' 'stop' 'submit'"}},
+		{name: "fish claude-mux", shell: "fish", expectedTxt: []string{"__fish_seen_subcommand_from claude-mux", "status start stop submit"}},
+		{name: "powershell claude-mux", shell: "powershell", expectedTxt: []string{"$subs = @('status','start','stop','submit')", "claude-mux'"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var output strings.Builder
+			var stderr strings.Builder
+
+			if err := completionCmd.Execute([]string{tt.shell}, &output, &stderr); err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+
+			out := output.String()
+			for _, expected := range tt.expectedTxt {
+				if !strings.Contains(out, expected) {
+					t.Errorf("Expected %s completion to contain %q, got:\n%s", tt.shell, expected, out)
+				}
+			}
+		})
+	}
+}
+
 func TestCompletionCommandFishEscaping(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()

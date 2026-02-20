@@ -36,6 +36,9 @@
 - **T015**: Safety validation (safety.go, intent/scope/risk/policy classification, composable Validator interface, CompositeValidator, SafetyConfig, SafetyStats, JS bindings, 40+ tests)
 - **T016**: Choice resolution (choice.go, Candidate+Criterion+ChoiceConfig+ChoiceResolver, 25+ tests, JS bindings). ALSO FIXED: ManagedSession race condition — Guard/MCPGuard calls now under s.mu in ProcessLine/ProcessCrash/ProcessToolCall/CheckTimeout/Snapshot (callbacks remain outside lock to prevent deadlock). 4,529 tests pass with -race.
 - **T017**: PR split rewrite for claudemux (orchestrate-pr-split.json: category→claudemux, run cmd with flagDefs; orchestrate-pr-split.js v2.0.0: claudemux integration via selectStrategy+ChoiceResolver, conflict classification in executeSplit, verifyEquivalenceDetailed with diff, createSelectStrategyNode BT leaf; pr_split_test.go: +4 tests). 4,533 tests pass.
+- **T018**: Main claude-mux entry point command (claude_mux.go: ClaudeMuxCommand with status/start/stop/submit subcommands, poolSize flag, audit logging, fail-closed policy; claude_mux_test.go: 9 tests; registered in main.go). ALSO FIXED: TestPRSplit_BTWorkflow_EndToEnd flaky timeout — increased bridge timeout from 5s→30s for git-heavy E2E test. All 41 packages pass.
+- **T019**: Shell completion for claude-mux (status/start/stop/submit in bash/zsh/fish/powershell; TestCompletionCommandClaudeMuxSubcommand 4 subtests). Build green.
+- **T020**: Claude-mux documentation (reference/claude-mux.md, command.md, scripting.md, architecture-claude-mux.md, README.md).
 
 ### Known pre-existing flaky tests:
 - **TestRecording_Goal** (internal/scripting): TUI timing
@@ -45,7 +48,7 @@
 - **TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping** (internal/scripting): PTY hang under load
 - All pass on re-run.
 
-### Next task: T018
-Main claude-mux entry point command.
+### Next task: T021
+Fuzz tests for claude-mux.
 
 ### No commits made yet this session. Rule of Two needed before committing.

@@ -367,6 +367,41 @@ Subcommands:
 - `osm session path [session-id]`
   - prints sessions directory, or a specific session file path
 
+### `osm claude-mux`
+
+Multi-instance Claude Code orchestration. Manages pools of Claude Code instances with guard rails, MCP integration, error recovery, and audit logging.
+
+- Usage: `osm claude-mux <subcommand> [options]`
+- Flags:
+  - `-pool-size <n>`: maximum concurrent Claude instances (default `4`)
+
+Subcommands:
+
+- `osm claude-mux status`
+  - Show current configuration and system health. Displays pool size, guard rail settings (rate-limit, permission policy, crash handling, output timeout), MCP guard settings (frequency limit, repeat detection, no-call timeout, tool allowlist), supervisor settings (max retries), and the fail-closed security policy.
+
+- `osm claude-mux start`
+  - Initialize the orchestration infrastructure. Creates an instance registry, starts the pool, validates all building blocks (Guard, MCPGuard, Supervisor, ManagedSession) by processing a test event, and reports audit trail. Exits after validation; actual agent spawning requires `osm mcp parent` (planned).
+
+- `osm claude-mux stop`
+  - Shut down all managed instances. Currently a placeholder — reports no running instances since agent lifecycle management requires `osm mcp parent`.
+
+- `osm claude-mux submit <task description>`
+  - Submit a task for processing. Validates the task description is non-empty. Task queuing requires a running orchestrator.
+
+Infrastructure wired by `start`:
+
+| Component | Source | Purpose |
+|-----------|--------|---------|
+| InstanceRegistry | T007 | Isolated state directories per instance |
+| Pool | T011 | Concurrent instance management with acquire/release |
+| Guard | T008 | PTY output monitors (rate-limit, permission, crash, timeout) |
+| MCPGuard | T009 | MCP call monitors (frequency, repeat, allowlist, timeout) |
+| Supervisor | T010 | Error recovery state machine (retry, restart, escalate) |
+| ManagedSession | T014 | Unified monitoring pipeline composing all guards |
+| Safety | T015 | Intent/scope/risk classification and policy enforcement |
+| ChoiceResolver | T016 | Multi-criteria decision analysis for strategy selection |
+
 ## Script commands (discovered)
 
 Any executable file discovered in the configured script paths can appear as `osm <name>`.

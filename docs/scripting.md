@@ -226,6 +226,12 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | `osm:bt` | Behavior tree primitives ([go-behaviortree](https://github.com/joeycumines/go-behaviortree)) | Status: `success`, `failure`, `running`; Nodes: `node(tick, ...children)`, `createLeafNode(fn)`, `createBlockingLeafNode(fn)`; Composites: `sequence(children)`, `fallback(children)` / `selector(children)`, `fork()`; Decorators: `memorize(tick)`, `async(tick)`, `not(tick)`, `interval(ms)`; Execution: `tick(node)`, `newTicker(ms, node, opts?)`, `newManager()`; State: `new Blackboard()`, `exposeBlackboard(bb)` |
 | `osm:pabt` | Planning-Augmented Behavior Trees ([go-pabt](https://github.com/joeycumines/go-pabt)) | `newState(blackboard) → State`, `newAction(name, conditions, effects, node) → Action`, `newPlan(state, goals) → Plan`, `newExprCondition(key, expr, value?) → Condition`; State: `.variable(key)`, `.get(key)`, `.set(key, value)`, `.registerAction(name, action)`, `.getAction(name)`, `.setActionGenerator(fn)`; Plan: `.node()`, `.running()` |
 
+#### Claude-mux orchestration
+
+| Module | Description | Key exports |
+|--------|-------------|-------------|
+| `osm:claudemux` | Multi-instance Claude Code orchestration building blocks | Parser: `newParser()`, `eventTypeName(type)`, `KEY_*` constants; Guard: `newGuard(config)`, `defaultGuardConfig()`, `guardActionName(action)`, `GUARD_ACTION_*`/`PERMISSION_POLICY_*` constants; MCPGuard: `newMCPGuard(config)`, `defaultMCPGuardConfig()`; Supervisor: `newSupervisor(config)`, `defaultSupervisorConfig()`, error/action/state constants; Pool: `newPool(config)`, `defaultPoolConfig()`; Panel: `newPanel(config)`, `defaultPanelConfig()`; Session: `createSession(id, config?)`, `defaultManagedSessionConfig()`, `managedSessionStateName(state)`, `SESSION_*` constants; Safety: `newSafetyValidator(config)`, `defaultSafetyConfig()`, `newCompositeValidator()`, intent/scope/risk/policy constants; Choice: `newChoiceResolver(config)`, `defaultChoiceConfig()`; Instance: `newInstanceRegistry(baseDir)` |
+
 ### osm:bt (Behavior Trees)
 
 Core behavior tree primitives from [go-behaviortree](https://github.com/joeycumines/go-behaviortree).
@@ -353,6 +359,77 @@ Terminal UI framework based on [Charm BubbleTea](https://github.com/charmbracele
 Time utilities:
 
 - `time.sleep(ms)` — Synchronous sleep (milliseconds)
+
+### osm:claudemux (Claude-Mux Orchestration)
+
+Building blocks for multi-instance Claude Code management. See [Claude-Mux Architecture](architecture-claude-mux.md) for the full design.
+
+**Parser** — PTY output classification:
+- `cm.newParser()` — Create a parser with built-in Claude Code output patterns
+- `parser.parse(line)` — Classify a line → `{type, line, fields, pattern}`
+- `parser.addPattern(name, regex, eventType, extractFn?)` — Register custom patterns
+- `parser.patterns()` — List registered patterns
+- `cm.eventTypeName(type)` — Human-readable event type name
+- Constants: `cm.EVENT_TEXT`, `cm.EVENT_RATE_LIMIT`, `cm.EVENT_PERMISSION`, `cm.EVENT_MODEL_SELECT`, `cm.EVENT_SSO_LOGIN`, `cm.EVENT_COMPLETION`, `cm.EVENT_TOOL_USE`, `cm.EVENT_ERROR`, `cm.EVENT_THINKING`
+- Key constants: `cm.KEY_UP`, `cm.KEY_DOWN`, `cm.KEY_ENTER`, `cm.KEY_Y`, `cm.KEY_N`
+
+**Guard** — PTY output monitors:
+- `cm.newGuard(config)` — Create a guard with rate-limit, permission, crash, and timeout monitors
+- `guard.processEvent(event, now)` — Evaluate an output event → `{action, reason, details}` or null
+- `guard.processCrash(exitCode, now)` — Report a crash → guard event
+- `guard.checkTimeout(now)` — Check for output timeout → guard event or null
+- `cm.defaultGuardConfig()` — Production defaults
+- `cm.guardActionName(action)` — Human-readable action name
+- Constants: `cm.GUARD_ACTION_NONE`, `cm.GUARD_ACTION_PAUSE`, `cm.GUARD_ACTION_REJECT`, `cm.GUARD_ACTION_RESTART`, `cm.GUARD_ACTION_ESCALATE`, `cm.GUARD_ACTION_TIMEOUT`; `cm.PERMISSION_POLICY_DENY`, `cm.PERMISSION_POLICY_ALLOW`
+
+**MCPGuard** — MCP call monitors:
+- `cm.newMCPGuard(config)` — Create an MCP guard with frequency, repeat, allowlist, and timeout monitors
+- `mcpGuard.processToolCall(call)` — Evaluate a tool call → `{action, reason, details}` or null
+- `mcpGuard.checkNoCallTimeout(now)` — Check for no-call timeout
+- `cm.defaultMCPGuardConfig()` — Production defaults
+
+**Supervisor** — Error recovery:
+- `cm.newSupervisor(config)` — Create a supervisor state machine
+- `supervisor.start()` — Transition to Running
+- `supervisor.handleError(msg, errorClass)` — Get recovery decision
+- `supervisor.shutdown()` — Initiate graceful drain
+- `cm.defaultSupervisorConfig()` — Production defaults
+- Error class constants: `cm.ERROR_CLASS_*`; Recovery action constants: `cm.RECOVERY_*`
+
+**Pool** — Concurrent instance management:
+- `cm.newPool(config)` — Create a pool with acquire/release dispatch
+- `pool.start()`, `pool.addWorker(worker)`, `pool.acquire()`, `pool.tryAcquire()`, `pool.release(worker, err, now)`, `pool.drain()`, `pool.close()`, `pool.stats()`
+- `cm.defaultPoolConfig()` — Default max size 4
+
+**Panel** — TUI multi-instance display:
+- `cm.newPanel(config)` — Create a panel with Alt+1..9 switching
+- `panel.start()`, `panel.addPane(id, title)`, `panel.routeInput(key)`, `panel.appendOutput(id, text)`, `panel.updateHealth(id, health)`, `panel.statusBar()`, `panel.getVisibleLines(id, height)`, `panel.snapshot()`, `panel.close()`
+- `cm.defaultPanelConfig()` — Default 9 panes, 10000 scrollback
+
+**ManagedSession** — Unified monitoring pipeline:
+- `cm.createSession(id, config?)` — Create a session composing Parser+Guard+MCPGuard+Supervisor
+- `session.processLine(line, now)` → `{event, guardEvent, action}`
+- `session.processCrash(exitCode, now)` → `{guardEvent, recoveryDecision}`
+- `session.processToolCall(call)` → tool call result
+- `session.shutdown()`, `session.close()`
+- `session.onEvent(fn)`, `session.onGuardAction(fn)`, `session.onRecoveryDecision(fn)` — Callbacks
+- `cm.defaultManagedSessionConfig()`, `cm.managedSessionStateName(state)`
+- Constants: `cm.SESSION_IDLE`, `cm.SESSION_ACTIVE`, `cm.SESSION_PAUSED`, `cm.SESSION_FAILED`, `cm.SESSION_CLOSED`
+
+**Safety** — Intent/scope/risk classification:
+- `cm.newSafetyValidator(config)` — Create a rule-based safety validator
+- `validator.validate(toolName, args)` → `{intent, scope, risk, riskLevel, action, reason}`
+- `cm.defaultSafetyConfig()`, `cm.newCompositeValidator()`
+- Constants: `cm.INTENT_*`, `cm.SCOPE_*`, `cm.RISK_*`, `cm.POLICY_*`
+
+**Choice** — Multi-criteria decision analysis:
+- `cm.newChoiceResolver(config)` — Create a resolver with configurable criteria
+- `resolver.analyze(candidates, criteria?)` → `{recommendedID, rankings, justification, needsConfirm}`
+- `cm.defaultChoiceConfig()` — Default 4 criteria (complexity/risk/maintainability/performance)
+
+**Instance** — Session isolation:
+- `cm.newInstanceRegistry(baseDir)` — Create a registry for isolated instance state
+- `registry.create(id)`, `registry.get(id)`, `registry.close(id)`, `registry.closeAll()`, `registry.list()`, `registry.len()`, `registry.baseDir()`
 
 ## Where to look for examples
 

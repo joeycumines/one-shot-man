@@ -1,7 +1,7 @@
 # Claude-Mux Architecture
 
-> **Status:** Foundation implemented (P008–P010). Active development.
-> **Last updated:** 2026-02-18
+> **Status:** Core building blocks implemented (T001–T019). CLI entry point (`osm claude-mux`) operational.
+> **Last updated:** 2026-02-20
 
 ## Contents
 
@@ -272,9 +272,15 @@ func (p *Process) Close() error
 ### 5.2. `osm:claudemux`
 
 **Package:** `internal/builtin/claudemux`
-**Status:** Foundation implemented. Renaming from `orchestrator` in progress (P009).
+**Status:** Core building blocks implemented (T003–T019). CLI: `osm claude-mux`.
 
-Provides output classification, provider abstraction, and agent lifecycle management.
+Provides output classification, guard rails, error recovery, concurrent instance
+management, TUI multiplexing, safety validation, choice resolution, and session
+isolation for multi-instance Claude Code orchestration.
+
+See [Claude-Mux Reference](reference/claude-mux.md) for complete API documentation
+and [Scripting](scripting.md#osmclaudemux-claude-mux-orchestration) for the
+JavaScript API.
 
 #### Output Parser
 

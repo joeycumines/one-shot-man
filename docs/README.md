@@ -14,6 +14,7 @@ If you just want to try it, see the [root README](../README.md).
 ## Reference
 
 - [Command reference](reference/command.md)
+- [Claude-Mux reference](reference/claude-mux.md)
 - [Goal reference](reference/goal.md)
 - [Configuration reference](reference/config.md)
 - [TUI API reference](reference/tui-api.md)

@@ -136,6 +136,10 @@ _osm_completion() {
             COMPREPLY=($(compgen -W "tail follow" -- ${cur}))
             return 0
             ;;
+        claude-mux)
+            COMPREPLY=($(compgen -W "status start stop submit" -- ${cur}))
+            return 0
+            ;;
         help)
             COMPREPLY=($(compgen -W "${commands}" -- ${cur}))
             return 0
@@ -235,6 +239,9 @@ _osm() {
                 log)
                     _values 'log-subcommand' 'tail' 'follow'
                     ;;
+                claude-mux)
+                    _values 'claude-mux-subcommand' 'status' 'start' 'stop' 'submit'
+                    ;;
                 help)
                     _describe 'commands' commands
                     ;;
@@ -318,6 +325,9 @@ complete -c osm -n '__fish_seen_subcommand_from schema' -a '--json' -d 'Output s
 
 # Completion for 'log' subcommand
 complete -c osm -n '__fish_seen_subcommand_from log' -a 'tail follow' -d 'Log subcommands'
+
+# Completion for 'claude-mux' subcommand
+complete -c osm -n '__fish_seen_subcommand_from claude-mux' -a 'status start stop submit' -d 'Claude-mux subcommands'
 
 # Completion for 'help' subcommand (command names)
 complete -c osm -n '__fish_seen_subcommand_from help' -a '%s' -d 'Command'
@@ -435,6 +445,14 @@ Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
 
     if ($tokenCount -eq 3 -and $command -eq 'log') {
         $subs = @('tail','follow')
+        $subs | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+        return
+    }
+
+    if ($tokenCount -eq 3 -and $command -eq 'claude-mux') {
+        $subs = @('status','start','stop','submit')
         $subs | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
             [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
         }

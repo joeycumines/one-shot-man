@@ -1,7 +1,7 @@
 {
     "meta": {
         "fileName": "blueprint.json",
-        "sourceRef": "DIRECTIVE.txt + docs/todo.md, session 2026-02-20 + scratch/black-orange/final/consolidated-analysis.md",
+        "sourceRef": "DIRECTIVE.txt + docs/todo.md + scratch/black-orange/final/consolidated-analysis.md + full codebase analysis 2026-02-20",
         "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
         "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST. NEVER SPECIFY A PRIORITY OF ANY KIND.",
         "blueprintRefinement": "THIS BLUEPRINT MUST BE CONTINUALLY REFINED. After completing any task, before starting the next, re-read this file and assess whether it still accurately captures reality. If any task description is stale, wrong, unclear, or missing context — FIX IT NOW."
@@ -20,13 +20,16 @@
             "warning": "TIMING: Tests MUST NOT be timing-dependent. No long-running tests. Race detector must pass."
         },
         {
-            "warning": "SESSION TIMER: Started 2026-02-20T08:00:00Z. 9h mandate. Verify: make check-session-time."
+            "warning": "SESSION TIMER: Started 2026-02-20T08:21:58Z. 9h mandate. Verify: make check-session-time."
         },
         {
             "warning": "RULE OF TWO: Two contiguous issue-free subagent reviews before any commit. Same diff. No exceptions."
         },
         {
             "warning": "DEADCODE: NEVER add ignores to .deadcodeignore. Wire up the code or delete it."
+        },
+        {
+            "warning": "BUILD: Run 'make make-all-with-log' after EVERY code change. Zero failures before proceeding."
         }
     ],
     "mandatoryDirectives": {
@@ -37,129 +40,384 @@
         "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
     },
     "statusSection": {
-        "currentState": "Analysis completed. T001-T029 verified and dropped. Initializing new action items (T051-T053) based on consolidated analysis, then continuing T030.",
+        "currentState": "Blueprint rewritten. Build GREEN (all 41 packages). Ready to execute T101. Session timer active.",
         "sessionTimer": ".session-timer | make check-session-time",
-        "priorCompletedWork": "T001-T029 completed. P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
+        "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
     },
     "sequentialTasks": [
         {
-            "task": "T051: Subprocess MCP Handlers (osm mcp-instance)",
-            "description": "Shift per-instance MCP auto-configuration from HTTP listener to stdio subprocess. Update mcp_config.go to generate mcpServers config with `command: osm` and `args: [mcp-instance, --session, xyz]` universally compatible with mcp.json specs.",
+            "task": "T101: Fix txtar context root formatting",
+            "description": "Fix context.go ToTxtar(): root path must appear OUTSIDE the code block, wrapped in backticks. Write a failing test first in context_test.go that asserts the root path is not inside the txtar code block. Fix the formatting in ToTxtar(). Verify with 'make make-all-with-log'.",
             "status": "Not Started"
         },
         {
-            "task": "T052: Native Go Multiplexing Command (osm claudemux run)",
-            "description": "Create a CLI command matching the behavior of example-08-claude-mux-api.js but fully executed in Go. Read tasks/stdin, partition work via NewPool, auto-provision SpawnOpts, intercept stdout, and launch NewPanel as the user TUI.",
+            "task": "T102: Fix txtar path ambiguity in computeUniqueSuffixes",
+            "description": "Fix computeUniqueSuffixes() in context.go: (1) compute and emit lowest common ancestor of all tracked paths, (2) verify parent directory is actually tracked when expanding paths upward, (3) preserve full paths for non-colliding basenames. Write failing tests for all 3 scenarios (implicit common roots, false directory impressions, non-colliding basenames). Fix. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T053: Session Interlock for TUI and MCP",
-            "description": "Wire PTY's NavigateToModel directly into `osm claudemux run`. Ensure TUI renders prompts dynamically, autosolves selection, and synchronizes the MCP handshake via heartbeat verification.",
+            "task": "T103: Fix MCP auto-config to use command/stdio instead of URL/HTTP",
+            "description": "CRITICAL: mcp_config.go currently generates {mcpServers: {osm: {url: 'http://...'}}} which violates the mcp.json standard. Fix GenerateMCPConfig to produce {command: 'osm', args: ['mcp-instance', '--session', '<id>']} format. Update all tests in mcp_config_test.go. Verify the output JSON matches the Claude Code mcp.json specification. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T030: ReadableStream for Response.body streaming",
-            "description": "In fetch/: ReadableStream on Response.body, getReader(), reader.read()->Promise<{value,done}>, SSE parsing, chunked encoding, back-pressure via bounded channel. Tests with httptest. Goja JS verification. Run make.",
+            "task": "T104: Implement osm mcp-instance subcommand (stdio MCP server)",
+            "description": "Create a new subcommand 'osm mcp-instance' that runs an MCP server over stdio (stdin/stdout) for a specific session. Accept --session flag. Reuse existing MCP tools from internal/command/mcp.go but with stdio transport instead of HTTP. Register in main.go. Add tests. Shell completion. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T031: macOS process hierarchy fallback for session ID",
-            "description": "session_darwin.go (//go:build darwin): sysctl/libproc process tree, skip ephemeral wrappers, shell/root boundaries, PID+start-time. Update session_other.go build tag. Update docs/session.md. Tests. Run make.",
+            "task": "T105: Implement ReadableStream type for fetch Response.body",
+            "description": "Re-create internal/builtin/fetch/readable_stream.go: ReadableStream backed by io.ReadCloser with bounded channel (back-pressure). Implement getReader() returning ReadableStreamDefaultReader, locked property, cancel(). Pump goroutine with lazy init. MUST be wired into fetch.go Response object. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T032: Anthropic prompt library expansion",
-            "description": "Add 3-5 new built-in goals to goal_builtin.go. Candidates from Anthropic prompt library NOT yet implemented. Each: stateVars, hotSnippets, flagDefs, promptOptions. Full test suite. Run make.",
+            "task": "T106: Implement reader.read() with Promise resolution",
+            "description": "ReadableStreamDefaultReader.read() must return Promise<{value: string, done: boolean}>. Each call reads one chunk from bounded channel. Use adapter.JS().NewChainedPromise() for proper async. releaseLock() releases reader. Wire into Response.body. Add unit tests for read/done/cancel/releaseLock. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T033: Security audit of scripting sandbox",
-            "description": "Audit: ambient authority leaks, require() traversal, exec injection, fetch SSRF, os write restrictions, env secrets, MCP privilege escalation. Fix vulnerabilities. Regression tests. Update docs/security.md. Run make.",
+            "task": "T107: Implement SSE parser for ReadableStream",
+            "description": "Create sseParser that consumes ReadableStream chunks and emits parsed SSEEvent structs (event, data, id, retry). Parse per W3C SSE spec: double-newline delimiters, colon field parsing, comment lines. Handle \\r\\n and \\n. Expose as JS reader object with read() returning Promise. Add comprehensive tests with httptest SSE server. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T034: txtar context root formatting fix",
-            "description": "Fix context.go ToTxtar(): root path outside code block, wrapped in backticks. Failing test first. Fix. Verify. Run make.",
+            "task": "T108: End-to-end Goja integration tests for ReadableStream + SSE",
+            "description": "Write E2E tests that exercise ReadableStream from JS: (1) fetch() a chunked endpoint, read body via getReader(), verify chunks arrive. (2) fetch() an SSE endpoint, parse events via SSE reader. (3) Test back-pressure by slow consumer. (4) Test cancel() mid-stream. Use httptest for server. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T035: txtar path ambiguity fix",
-            "description": "Fix computeUniqueSuffixes() in context.go: LCA computation, verify parent tracking, preserve full paths for non-colliding basenames. Failing tests for all 3 scenarios. Fix. Run make.",
+            "task": "T109: macOS process hierarchy fallback for session ID",
+            "description": "Create session_darwin.go (//go:build darwin): use sysctl/libproc for process tree traversal, skip ephemeral wrappers, detect shell/root boundaries, use PID+start-time for stability. Update session_other.go build tag to exclude darwin. Update docs/session.md. Write tests using mock process trees. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T036: osm mcp make — port of mcp-server-make",
-            "description": "Implement 'osm mcp make' subcommand. Research mcp-server-make. Target caching, cross-platform make detection, session integration. MCP tool: make_run. Shell completion. Tests. Run make.",
+            "task": "T110: Implement osm claudemux run — PTY subprocess spawning",
+            "description": "CRITICAL: Create native Go command 'osm claudemux run' that actually spawns Claude Code (or other TUI tools) as PTY subprocesses. Read task list from stdin or directory. Use claudemux.Pool for instance management. Use claudemux.SpawnOpts for configuration. Wire creack/pty for PTY allocation. Register in main.go. This replaces the inert 'claude-mux start'. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T037: Agent steering via MCP enqueue + session gRPC",
-            "description": "Session-tied Unix socket (gRPC), Windows TCP fallback. Proto: EnqueueTask, InterruptCurrent, GetStatus. Socket: ~/.osm/sessions/<id>/control.sock. Cleanup. Tests with in-process gRPC. Run make.",
+            "task": "T111: Wire Pool dispatch into claudemux run",
+            "description": "Connect the Pool's acquire/release/dispatch cycle to actual PTY instances in 'claudemux run'. Implement round-robin task assignment. Health tracking via PTY output monitoring. Graceful drain on shutdown. Tests with mock PTY processes. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T038: osm mcp parent — Claude Code wrapper + stdio MCP + session socket",
-            "description": "Implement 'osm mcp parent': wrap Claude Code child process, stdio MCP transport, session socket messaging (T037), lifecycle mgmt. MCP tools: enqueue, interrupt, status. Tests. Run make.",
+            "task": "T112: Wire Panel TUI into claudemux run",
+            "description": "Launch claudemux.Panel as the interactive TUI for 'claudemux run'. Alt+1..9 switching between instances. Per-pane scrollback. Health indicators in status bar. PgUp/PgDown navigation. Verify no tmux keybinding conflicts. Tests. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T039: osm mcp prompt — polymorphic terminal wrapper",
-            "description": "Implement 'osm mcp prompt': Anthropic computer use research (document first), dynamic tool availability, BubbleTea UI, mode detection, go-prompt REPL, adaptive MCP schema. Tests. Run make.",
+            "task": "T113: Integration tests for claudemux run end-to-end",
+            "description": "Write integration tests for the full 'claudemux run' pipeline: spawn mock processes, dispatch tasks, verify Pool allocation, verify Panel renders output, verify graceful shutdown. Use simulated CI tests (no real Claude needed). Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T040: Sync go-git v6 migration",
-            "description": "Migrate sync.go/sync_startup.go to go-git v6 for clone/add/commit. Keep pull --rebase as shell-out. Preserve: rebase strategy, conflict detection, sync.local-path, auto-pull, timestamp messages. Tests. Run make.",
+            "task": "T114: Session interlock — TUI and MCP synchronization",
+            "description": "Wire PTY's NavigateToModel into 'osm claudemux run'. Ensure TUI renders prompts dynamically. Autosolve model selection. Synchronize MCP handshake via heartbeat verification. Test MCP session coordination with TUI lifecycle. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T041: Cross-platform checkpoint — post infrastructure",
-            "description": "macOS + Linux + Windows. Zero failures on ALL platforms. Fix regressions from T027-T040.",
+            "task": "T115: Implement osm mcp make subcommand",
+            "description": "Port mcp-server-make functionality: implement 'osm mcp make' that provides MCP tools for running Make targets. Target caching, cross-platform make detection (make vs gmake), session integration. MCP tool: make_run with target and workdir params. Shell completion for make targets. Tests. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T042: CHANGELOG — infrastructure milestone",
-            "description": "Update CHANGELOG.md [Unreleased] with T027-T040. Keep-a-Changelog format. Run make.",
+            "task": "T116: Agent steering — session control socket (Unix/TCP)",
+            "description": "Session-tied Unix socket (gRPC), Windows TCP fallback. Proto definitions: EnqueueTask, InterruptCurrent, GetStatus. Socket path: ~/.osm/sessions/<id>/control.sock. Proper cleanup on session end. Tests with in-process gRPC server. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T043: Test coverage gap analysis and remediation",
-            "description": "Run 'make cover'. Identify packages below 90%. Add tests focused on error paths, edge cases, platform-specific code, concurrency. Target: 100% effective coverage. Run make.",
+            "task": "T117: Agent steering — gRPC service implementation",
+            "description": "Implement the gRPC service for EnqueueTask (adds task to session queue), InterruptCurrent (sends cancellation to active task), GetStatus (returns session state, active task, queue depth). Wire into session lifecycle. Tests. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T044: README.md update",
-            "description": "Update root README.md: full feature set, claude-mux, MCP server, JS modules list, goal system, sync, sessions. Badges. Installation. Quick-start. Verify links. Run make.",
+            "task": "T118: Implement osm mcp parent — Claude Code wrapper",
+            "description": "Create 'osm mcp parent' command: wrap Claude Code child process with stdio MCP transport. Session socket messaging (T116-T117). Lifecycle management: spawn, monitor, restart on crash. MCP tools: enqueue, interrupt, status. Tests with mock Claude process. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T045: Shell completion audit",
-            "description": "Audit completion for ALL commands/subcommands in bash/zsh/fish/powershell. Fix gaps. Test output format. Run make.",
+            "task": "T119: Implement osm mcp prompt — polymorphic terminal wrapper",
+            "description": "Create 'osm mcp prompt': Anthropic computer use research (document findings first). Dynamic tool availability based on context. BubbleTea UI for interactive prompting. Mode detection (interactive vs pipe). go-prompt REPL integration. Adaptive MCP schema generation. Tests. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T046: Documentation index and cross-references",
-            "description": "Review docs/README.md: every doc indexed. Cross-references valid. docs/reference/ complete for all commands and config keys. Run make.",
+            "task": "T120: Cross-platform checkpoint — post MCP/claudemux activation",
+            "description": "Verify ALL packages pass on macOS + Linux (Docker via make-all-in-container) + Windows (host moo via make-all-run-windows). Zero failures. Fix any regressions from T101-T119. Run make on all platforms.",
             "status": "Not Started"
         },
         {
-            "task": "T047: Deadcode and betteralign audit",
-            "description": "Run 'make lint' checking deadcode and betteralign. Fix issues. No .deadcodeignore changes. Run make.",
+            "task": "T121: CHANGELOG — MCP and claudemux activation milestone",
+            "description": "Update CHANGELOG.md [Unreleased] with entries for T101-T119. Keep-a-Changelog 1.1.0 format. Added/Changed/Fixed sections. Verify format. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T048: Final cross-platform verification",
-            "description": "macOS + Linux + Windows. Zero failures. FINAL quality gate before commit.",
+            "task": "T122: go-git v6 dependency setup",
+            "description": "Add github.com/go-git/go-git/v6 to go.mod. Verify compatibility. Create internal/gitops/gogit.go with thin wrapper around go-git API for clone, add, commit, push, pull operations. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T049: Final CHANGELOG update",
-            "description": "Final CHANGELOG.md covering T043-T047. Verify completeness and format. Run make.",
+            "task": "T123: Migrate sync.go to go-git for clone/add/commit/push",
+            "description": "Replace exec.Command('git', ...) shell-outs in sync.go with go-git v6 calls for: clone, add, commit, push. Preserve: push commits with 'osm sync: <RFC3339>' message. Preserve sync.local-path config key. EXCEPTION: Keep shell-out for pull --rebase (go-git rebase support is limited). Tests. Run make.",
             "status": "Not Started"
         },
         {
-            "task": "T050: Rule of Two commit gate",
-            "description": "Execute Rule of Two: subagent #1 reviews full diff vs HEAD. If PASS: freeze, subagent #2 same diff. Both PASS: commit with Kubernetes-style message. Either FAIL: fix, reset to 0, restart.",
+            "task": "T124: Migrate sync_startup.go to go-git for auto-pull",
+            "description": "Replace exec.Command('git', 'pull', '--rebase') in sync_startup.go with go-git where feasible. Preserve: non-blocking auto-pull on startup, conflict detection from stderr. If go-git rebase is unreliable, keep as shell-out with documentation. Tests. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T125: go-git migration — integration tests with real repos",
+            "description": "Write integration tests that clone to temp dirs, add files, commit, push to bare repos, pull with rebase. Verify conflict detection still works. Verify timestamp messages. Verify sync.local-path. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T126: Anthropic prompt library expansion — 3 new goals",
+            "description": "Add 3 new built-in goals to goal_builtin.go from Anthropic prompt library NOT already implemented (existing: morale-improver, bug-buster, code-optimizer, code-explainer, meeting-notes, pii-scrubber, prose-polisher, compare-options). Each goal needs: stateVars, hotSnippets, flagDefs, promptOptions. Integration tests for each. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T127: Security audit — require() path traversal",
+            "description": "Audit require() in the Goja runtime for directory traversal attacks. Verify that require('../../etc/passwd') and similar paths are blocked. Add regression tests for all known traversal patterns (../, symlinks, null bytes). Fix any vulnerabilities. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T128: Security audit — exec injection",
+            "description": "Audit osm:exec and osm:pty modules for command injection. Verify that shell metacharacters in arguments are properly escaped. Test with payloads: semicolons, pipes, backticks, $(), etc. Fix any vulnerabilities. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T129: Security audit — fetch SSRF prevention",
+            "description": "Audit osm:fetch for SSRF vulnerabilities. Verify that localhost, 169.254.169.254 (AWS metadata), internal IPs, file:// URLs are blocked or configurable. Add tests. Fix vulnerabilities. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T130: Security audit — environment variable secrets",
+            "description": "Audit all points where environment variables are exposed to JS scripts. Verify sensitive vars (API keys, tokens, passwords) are filtered. Check MCP privilege escalation vectors. Update docs/security.md with complete threat model. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T131: Security audit — os module write restrictions",
+            "description": "Audit osm:os module for unrestricted filesystem writes. Verify sandbox boundaries. Test symlink escape, /tmp races, write to sensitive paths. Fix vulnerabilities. Regression tests. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T132: Module resolution refinement",
+            "description": "Review and refine the JS module resolution strategy (script.module-paths config key, require() in Goja). Ensure consistent behavior: relative paths resolve from script dir, absolute paths work, module-paths are searched in order. Document the resolution algorithm in docs/scripting.md. Add edge case tests. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T133: Configuration model audit and cleanup",
+            "description": "Audit all config keys in internal/config/schema.go. Verify each key is: (1) documented in docs/reference/config.md, (2) actually read and used in the codebase, (3) has correct default values, (4) has validation. Remove any dead config keys. Add missing documentation. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T134: go-prompt integration enhancement",
+            "description": "Review and enhance the go-prompt integration in internal/scripting/. Verify feature parity between registerMode and createPrompt paths. Test dynamic completion, key bindings, color support. Ensure cross-platform terminal compatibility. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T135: Code review splitter refinement",
+            "description": "Review and refine the code review splitter in internal/command/diff_splitter.go. Ensure it handles all git diff formats correctly. Test with large diffs, binary files, renames, mode changes. Improve splitting heuristics. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T136: Cross-platform checkpoint — post expansion",
+            "description": "Verify ALL packages pass on macOS + Linux (Docker) + Windows (moo). Zero failures. Fix regressions from T122-T135. Run make on all platforms.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T137: Test coverage gap analysis",
+            "description": "Run 'make cover'. Generate coverage report. Identify ALL packages below 90%. List specific functions/methods with missing coverage. Produce coverage-gaps.md in scratch/ with actionable items. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T138: Coverage remediation — internal/command package",
+            "description": "Address coverage gaps in internal/command/. Focus on: error paths, edge cases, platform-specific code, concurrency scenarios. Add tests for every uncovered function. Target 100%. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T139: Coverage remediation — internal/scripting package",
+            "description": "Address coverage gaps in internal/scripting/. Focus on: TUI lifecycle, event loop edge cases, module loading errors, runtime panics. Add tests. Target 100%. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T140: Coverage remediation — internal/builtin packages",
+            "description": "Address coverage gaps across ALL internal/builtin/ sub-packages (claudemux, fetch, exec, pty, bt, etc.). Focus on error paths, boundary conditions, nil inputs. Add tests. Target 100%. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T141: Coverage remediation — internal/storage and internal/session",
+            "description": "Address coverage gaps in storage and session packages. Test file locking edge cases, concurrent access, cleanup race conditions, backend switching. Target 100%. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T142: Coverage remediation — remaining packages",
+            "description": "Address coverage gaps in: internal/config, internal/gitops, internal/argv, internal/termui, internal/testutil, cmd/osm. Target 100% across all packages. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T143: Shell completion audit — all commands and subcommands",
+            "description": "Audit shell completion for ALL commands/subcommands in bash/zsh/fish/powershell. List every command and verify completion is registered. Fix gaps. Test output format for each shell. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T144: Documentation — README.md comprehensive update",
+            "description": "Update root README.md: full feature set, claude-mux system, MCP server (both HTTP and stdio), JS modules list, goal system, sync, sessions, shell completion. Badges. Installation. Quick-start. Verify ALL links work. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T145: Documentation — docs/README.md index completeness",
+            "description": "Review docs/README.md: ensure every document in docs/ is indexed. Cross-references must be valid. docs/reference/ must be complete for ALL commands and ALL config keys. Add missing entries. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T146: Documentation — docs/reference/ completeness",
+            "description": "Audit docs/reference/: verify reference docs exist for every command, every config key, every JS module (osm:fetch, osm:exec, osm:pty, osm:flag, osm:ctxutil, osm:claudemux, etc.). Add missing reference docs. Verify accuracy of existing ones. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T147: Documentation — docs/scripting.md update",
+            "description": "Update docs/scripting.md: complete JS module listing, module resolution algorithm, event loop behavior, Promise support, require() patterns, global objects (ctx, output, log, tui). Add examples for each module. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T148: Documentation — docs/security.md comprehensive update",
+            "description": "Update docs/security.md with findings from T127-T131 security audit. Complete threat model. Document sandbox boundaries. Document allowed/blocked operations. Document MCP security model. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T149: Deadcode audit",
+            "description": "Run 'make lint' focusing on deadcode checker output. Fix ALL issues. Remove unused functions, types, variables. NO .deadcodeignore changes — wire up or delete. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T150: Betteralign audit",
+            "description": "Run betteralign across ALL packages. Fix ALL struct field alignment issues. Verify no performance regressions. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T151: Staticcheck audit — resolve all warnings",
+            "description": "Run staticcheck across ALL packages. Resolve every single warning (S1017, SA*, QF*, etc.). No suppressions. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T152: API surface cleanup — internal/builtin/claudemux",
+            "description": "Review all exported types and functions in claudemux package. Remove any that are unused or misdesigned. Consolidate overlapping APIs. Ensure JS bindings match Go API 1:1. Remove deprecated aliases. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T153: API surface cleanup — internal/command",
+            "description": "Review all exported types and functions in command package. Remove deprecated code. Consolidate command registration patterns. Ensure consistent error handling across all commands. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T154: API surface cleanup — internal/scripting",
+            "description": "Review all exported types and functions in scripting package. Remove unused exports. Ensure TUI manager API is clean. Verify event loop integration points. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T155: Error handling audit",
+            "description": "Audit ALL packages for: swallowed errors, missing error returns, panics instead of error returns, inconsistent error wrapping. Fix all issues. Ensure proper exit codes from CLI commands. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T156: Performance benchmarks — expand coverage",
+            "description": "Review existing benchmarks in benchmark_test.go files. Add benchmarks for: fetch HTTP client, session locking, config parsing, goal loading, diff splitting, context building, txtar generation. Use ReportAllocs. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T157: Fuzz testing expansion",
+            "description": "Review existing fuzz tests. Add fuzz tests for: config parsing, goal JSON loading, txtar generation, diff splitting, shell completion, MCP message parsing, SSE parsing. Ensure all fuzz seeds pass. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T158: Race condition audit",
+            "description": "Run 'go test -race ./...' with focus on concurrent scenarios. Add race-condition-specific tests for: session locking, Pool dispatch, Panel concurrent updates, MCP session coordination, cleanup scheduler. Fix any races. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T159: Memory and resource leak audit",
+            "description": "Audit all goroutine-spawning code for leaks. Verify all io.Closers are closed. Check for channel leaks. Add tests with runtime.NumGoroutine() assertions where appropriate. Fix leaks. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T160: Cross-platform checkpoint — post quality gates",
+            "description": "Verify ALL packages pass on macOS + Linux (Docker) + Windows (moo). Zero failures. Fix regressions from T137-T159. Run make on all platforms.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T161: CHANGELOG — quality and expansion milestone",
+            "description": "Update CHANGELOG.md [Unreleased] with entries for T122-T159. Keep-a-Changelog 1.1.0 format. Added/Changed/Fixed/Security sections. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T162: MacosUseSDK integration research",
+            "description": "Research github.com/joeycumines/MacosUseSDK. Document capabilities. Assess feasibility of integration via in-process gRPC channel. Write findings to docs/archive/notes/macos-use-sdk-integration.md. If feasible, outline implementation tasks and add to blueprint. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T163: PR split behavior tree refinement",
+            "description": "Review orchestrate-pr-split.js and orchestrate-pr-split.json. Verify BT nodes execute correctly. Test failure recovery paths. Ensure equivalence verification step works. Add tests for BT leaf nodes. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T164: Provider abstraction for multi-tool support",
+            "description": "Design and implement provider abstraction layer for claudemux to support multiple TUI tools (Claude Code, gh CLI, gemini CLI, codium CLI). Define ProviderConfig interface. Implement ClaudeCodeProvider. Tests. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T165: Ollama validation integration",
+            "description": "Implement Ollama HTTP client for local validation (osm:ollama module or similar). Connect to localhost:11434. Chat completion API. Streaming responses. Connection health checking. Use for safety validation in claudemux. Tests. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T166: Environment variable management for subprocess spawning",
+            "description": "Implement three-tier env management: (1) inherit osm env, (2) script hooks for injection (op plugin, aws-vault), (3) profile-based config. Wire into claudemux spawn. Tests. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T167: Session cleanup scheduler hardening",
+            "description": "Review CleanupScheduler implementation. Verify all 5 SessionConfig fields are properly respected (AutoCleanupEnabled, CleanupIntervalHours, MaxAgeDays, MaxCount, MaxSizeMB). Add edge case tests: zero values, negative values, concurrent cleanup. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T168: docs/architecture.md refresh",
+            "description": "Update docs/architecture.md to reflect current codebase: claudemux system, MCP integration, session management, fetch module, go-git integration. Ensure diagrams are accurate. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T169: docs/architecture-claude-mux.md refresh",
+            "description": "Update docs/architecture-claude-mux.md to reflect actual implementation state after T110-T114. Remove speculative content. Add concrete PTY spawn and Pool dispatch documentation. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T170: Final cross-platform verification — macOS",
+            "description": "Run 'make make-all-with-log' on macOS. Zero failures. Document results.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T171: Final cross-platform verification — Linux",
+            "description": "Run 'make make-all-in-container' for Linux via Docker. Zero failures. Document results.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T172: Final cross-platform verification — Windows",
+            "description": "Run 'make make-all-run-windows' on host moo. Zero failures. Document results.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T173: Final CHANGELOG update",
+            "description": "Final comprehensive CHANGELOG.md update covering ALL work since last release. Verify completeness — every added feature, every fix, every breaking change documented. Keep-a-Changelog 1.1.0 format. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T174: Final Rule of Two commit gate",
+            "description": "Execute Rule of Two: subagent #1 reviews full diff vs main. If PASS: freeze scope, subagent #2 reviews same diff. Both PASS: commit with Kubernetes-style message. Either FAIL: fix, reset counter to 0, restart gate.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T175: Scope expansion — identify next improvement frontier",
+            "description": "After T174 passes, step back and identify the NEXT frontier of improvements. Add new tasks to blueprint. Areas to consider: performance optimization, new JS modules, additional goals, UI/UX refinements, new MCP tools, telemetry, plugin system. The blueprint must NEVER be empty.",
             "status": "Not Started"
         }
     ],
@@ -167,7 +425,7 @@
         "task": "Run 'make make-all-with-log' after EVERY significant change",
         "failPolicy": "If ANY test fails, STOP and fix. Zero tolerance.",
         "testCoverage": "Target 100%. Verify with go tool cover.",
-        "crossPlatform": "Checkpoints at T025, T041, T048."
+        "crossPlatform": "Checkpoints at T120, T136, T160, T170-T172."
     },
     "finalEnforcementProtocol": [
         {
@@ -193,6 +451,10 @@
         {
             "type": "DEADCODE",
             "alert": "NEVER add .deadcodeignore entries. Wire up or delete."
+        },
+        {
+            "type": "BUILD",
+            "alert": "Run make after EVERY change. Zero failures before proceeding."
         }
     ]
 }

@@ -376,11 +376,53 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 				}
 			}
 
-			// Append txtar block if present
+			// Append txtar block if present.
+			// Extract metadata lines (context root, common path, tracked directories)
+			// and render them OUTSIDE the code fence for better readability.
 			if txtarContent != "" {
+				var metaLines []string
+				var bodyLines []string
+				inMeta := true
+				for _, line := range strings.Split(txtarContent, "\n") {
+					if inMeta {
+						trimmed := strings.TrimSpace(line)
+						if strings.HasPrefix(trimmed, "context root:") ||
+							strings.HasPrefix(trimmed, "common path:") ||
+							strings.HasPrefix(trimmed, "tracked directories:") {
+							metaLines = append(metaLines, line)
+							continue
+						}
+						// Empty lines before first file marker are still metadata region.
+						if trimmed == "" {
+							continue
+						}
+						inMeta = false
+					}
+					bodyLines = append(bodyLines, line)
+				}
+
+				// Render metadata above the fence, with paths in backticks.
+				for _, ml := range metaLines {
+					if idx := strings.Index(ml, ": "); idx >= 0 {
+						key := strings.TrimSpace(ml[:idx])
+						val := strings.TrimSpace(ml[idx+2:])
+						buf.WriteString(key)
+						buf.WriteString(": `")
+						buf.WriteString(val)
+						buf.WriteString("`\n")
+					} else {
+						buf.WriteString(ml)
+						buf.WriteString("\n")
+					}
+				}
+				if len(metaLines) > 0 {
+					buf.WriteString("\n")
+				}
+
+				body := strings.Join(bodyLines, "\n")
 				buf.WriteString(fence)
 				buf.WriteString("txtar\n")
-				buf.WriteString(txtarContent)
+				buf.WriteString(body)
 				buf.WriteString("\n")
 				buf.WriteString(fence)
 			}

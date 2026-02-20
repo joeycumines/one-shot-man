@@ -689,3 +689,88 @@ func TestBuildContextDynamicFence(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildContext_TxtarMetadataOutsideFence(t *testing.T) {
+	t.Parallel()
+	runtime := setupBuildContext(t)
+
+	t.Run("MetadataExtracted", func(t *testing.T) {
+		// Simulate realistic txtar output with metadata in comment section.
+		txtarContent := "context root: /Users/dev/project\ncommon path: src/pkg\ntracked directories: src/, tests/\n-- src/pkg/main.go --\npackage main\n"
+		script := `
+			globalThis.__result = exports.buildContext([], {
+				toTxtar: () => ` + "`" + txtarContent + "`" + `
+			});
+		`
+		if _, err := runtime.RunString(script); err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+
+		text := runtime.Get("__result").String()
+
+		// Context root should be OUTSIDE the code fence, with path in backticks.
+		if !strings.Contains(text, "context root: `/Users/dev/project`") {
+			t.Fatalf("expected context root outside fence with backticked path, got:\n%s", text)
+		}
+		if !strings.Contains(text, "common path: `src/pkg`") {
+			t.Fatalf("expected common path outside fence with backticked value, got:\n%s", text)
+		}
+		if !strings.Contains(text, "tracked directories: `src/, tests/`") {
+			t.Fatalf("expected tracked directories outside fence, got:\n%s", text)
+		}
+
+		// Metadata should NOT be inside the txtar code fence.
+		fenceStart := strings.Index(text, "`````txtar\n")
+		if fenceStart < 0 {
+			t.Fatalf("expected txtar code fence, got:\n%s", text)
+		}
+		fencedContent := text[fenceStart:]
+		if strings.Contains(fencedContent, "context root:") {
+			t.Fatalf("context root should NOT be inside the code fence, got:\n%s", fencedContent)
+		}
+
+		// File entries should still be inside the fence.
+		if !strings.Contains(fencedContent, "-- src/pkg/main.go --") {
+			t.Fatalf("expected file entries inside fence, got:\n%s", fencedContent)
+		}
+	})
+
+	t.Run("NoMetadata", func(t *testing.T) {
+		// Txtar content WITHOUT metadata should work as before.
+		script := `
+			globalThis.__result = exports.buildContext([], {
+				toTxtar: () => "-- file.go --\npackage main\n"
+			});
+		`
+		if _, err := runtime.RunString(script); err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+
+		text := runtime.Get("__result").String()
+		// No metadata rendered above fence.
+		if strings.Contains(text, "context root:") {
+			t.Fatalf("expected no metadata for content without it, got:\n%s", text)
+		}
+		// File entry should be in fence.
+		if !strings.Contains(text, "`````txtar\n-- file.go --") {
+			t.Fatalf("expected file content in fence, got:\n%s", text)
+		}
+	})
+
+	t.Run("MetadataOnly", func(t *testing.T) {
+		// Edge case: only metadata, no file entries.
+		script := `
+			globalThis.__result = exports.buildContext([], {
+				toTxtar: () => "context root: /tmp/test\n"
+			});
+		`
+		if _, err := runtime.RunString(script); err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+
+		text := runtime.Get("__result").String()
+		if !strings.Contains(text, "context root: `/tmp/test`") {
+			t.Fatalf("expected context root with backticked path, got:\n%s", text)
+		}
+	})
+}

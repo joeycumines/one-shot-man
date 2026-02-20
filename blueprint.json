@@ -40,15 +40,15 @@
         "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
     },
     "statusSection": {
-        "currentState": "Blueprint rewritten. Build GREEN (all 41 packages). Ready to execute T101. Session timer active.",
+        "currentState": "T101 Done. Build GREEN. Proceeding to T102.",
         "sessionTimer": ".session-timer | make check-session-time",
         "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
     },
     "sequentialTasks": [
         {
             "task": "T101: Fix txtar context root formatting",
-            "description": "Fix context.go ToTxtar(): root path must appear OUTSIDE the code block, wrapped in backticks. Write a failing test first in context_test.go that asserts the root path is not inside the txtar code block. Fix the formatting in ToTxtar(). Verify with 'make make-all-with-log'.",
-            "status": "Not Started"
+            "description": "Fixed in ctxutil.go buildContext(): metadata lines (context root, common path, tracked directories) are now extracted and rendered OUTSIDE the code fence with paths in backticks. 3 new test cases (MetadataExtracted, NoMetadata, MetadataOnly). Build GREEN.",
+            "status": "Done"
         },
         {
             "task": "T102: Fix txtar path ambiguity in computeUniqueSuffixes",

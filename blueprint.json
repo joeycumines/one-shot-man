@@ -169,7 +169,7 @@
     },
     {
       "task": "T026: CHANGELOG — claude-mux milestone",
-      "description": "Updated CHANGELOG.md [Unreleased] Added section with 18 claude-mux entries (orchestration system, command, parser, guard, MCP guard, error recovery, pool, panel, instance, MCP config, session coordination, safety, choice, managed session, JS API, PR split rewrite, shell completion, docs, fuzzing, benchmarks, security, integration). Changed section: orchestrator→claudemux rename. Fixed section: cross-platform filepath.ToSlash safety fix. Keep-a-Changelog 1.1.0 format verified.",
+      "description": "Updated CHANGELOG.md [Unreleased] Added section with 22 claude-mux entries (orchestration system, command, parser, guard, MCP guard, error recovery, pool, panel, instance, MCP config, session coordination, safety, choice, managed session, JS API, PR split rewrite, shell completion, docs, fuzzing, benchmarks, security, integration). Changed section: orchestrator→claudemux rename. Fixed section: cross-platform filepath.ToSlash safety fix. Keep-a-Changelog 1.1.0 format verified.",
       "status": "Done"
     },
     {

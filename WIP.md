@@ -50,7 +50,9 @@
 - **TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping** (internal/scripting): PTY hang under load
 - All pass on re-run.
 
-### Next task: T023
-Security tests for MCP protocol.
+- **T023**: Security tests for MCP protocol (mcp_security_test.go in claudemux: 13 tests — guard injection, tool injection, privilege escalation, blocked paths, allowlist, disabled safety, sensitive patterns, concurrent guard, session isolation, instance registry IDs, frequency burst, repeat detection, composite validator; mcp_security_test.go in command: 7 tests — session spoofing, ID validation, seq replay, large payloads, concurrent manipulation, tool name injection, session overwrite). Build green.
 
-### No commits made yet this session. Rule of Two needed before committing.
+### Next task: T024
+Integration testing for claude-mux.
+
+### No commits made yet this session. Rule of Two needed before committing. 22+ tasks accumulated.

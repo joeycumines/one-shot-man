@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T022 Done. T023 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
+    "currentState": "T001-T023 Done. T024 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -154,8 +154,8 @@
     },
     {
       "task": "T023: Security tests for MCP protocol",
-      "description": "In security test files: MCP tool injection, session ID spoofing, privilege escalation via args, large/nested payloads, concurrent session manipulation. Add to mcp_security_test.go or security_test.go. Run make.",
-      "status": "Not Started"
+      "description": "Two new test files: internal/builtin/claudemux/mcp_security_test.go (13 tests: guard injection, MCP guard tool injection, safety privilege escalation, blocked path bypass, allowlist enforcement, disabled safety, sensitive patterns, concurrent guard safety, session isolation, instance registry special IDs, frequency burst, repeat detection, composite validator) and internal/command/mcp_security_test.go (7 tests: session ID spoofing, ID validation, sequence replay, large payloads, concurrent manipulation, tool name injection, session overwrite). Build green.",
+      "status": "Done"
     },
     {
       "task": "T024: Integration testing for claude-mux",

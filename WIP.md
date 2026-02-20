@@ -26,8 +26,9 @@
 - **T115**: mcp-make command (MCP-exposed Make tools, 12 tests, committed 779341b)
 - **T116**: Control socket (ControlServer/ControlClient, Unix domain socket, JSON protocol, 17 tests, wired into run/submit/stop/status, committed dc51df5)
 
-### Next task: T117
-Agent steering — service handler wiring. Wire dynamicTaskCh into the run loop for external task dispatch. Wire activeTask/interruptFn on controlAdapter per-task.
+- **T117**: Dynamic task dispatch wiring (dynamicDispatchLoop, controlAdapter methods, 3 tests, committed b8ffd13)
+
+### Next task: T118
 
 ### Build state: GREEN (all packages pass)
 

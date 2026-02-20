@@ -40,7 +40,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T101-T116 Done. Build GREEN. Proceeding to T117.",
+    "currentState": "T101-T117 Done. Build GREEN. Proceeding to T118.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
   },
@@ -172,8 +172,8 @@
     },
     {
       "task": "T117: Agent steering — service handler wiring",
-      "description": "Wire ControlHandler into the run loop for dynamic task dispatch. controlAdapter already implements ControlHandler but dynamicTaskCh is write-only — read it in the dispatch loop to process externally-submitted tasks. Wire activeTask/interruptFn on controlAdapter per-task. Add test: submit task via control socket while run loop is active. Run make.",
-      "status": "Not Started"
+      "description": "DONE: Wired dynamic task dispatch into claude-mux run loop. dynamicDispatchLoop reads from dynamicTaskCh, acquires pool workers, dispatches through dispatchTask pipeline. controlAdapter: setActive/clearActive/dequeue methods. dynamicTaskResults for concurrent tracking. Run loop restructured: initialWg for batch, cancel() after initialWg.Wait() to stop dynamic loop. Summary includes both initial and dynamic results. 3 new tests. Commit b8ffd13.",
+      "status": "Done"
     },
     {
       "task": "T118: Implement osm mcp parent — Claude Code wrapper",

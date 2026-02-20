@@ -795,11 +795,11 @@ func (c *ClaudeMuxCommand) controlSockPath() string {
 // controlAdapter bridges the ControlHandler interface to the run loop's
 // task queue, allowing external clients to enqueue tasks dynamically.
 type controlAdapter struct {
-	mu         sync.Mutex
-	queue      []string
-	activeTask string
-	taskCh     chan<- string // signals the run loop of new tasks (unbuffered or small)
-	interruptFn func() error // optional: interrupt the active task
+	mu          sync.Mutex
+	queue       []string
+	activeTask  string
+	taskCh      chan<- string // signals the run loop of new tasks (unbuffered or small)
+	interruptFn func() error  // optional: interrupt the active task
 }
 
 func (a *controlAdapter) EnqueueTask(task string) (int, error) {

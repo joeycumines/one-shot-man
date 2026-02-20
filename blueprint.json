@@ -40,7 +40,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T101-T117 Done. Build GREEN. Proceeding to T118.",
+    "currentState": "T101-T118 Done. Build GREEN. Proceeding to T119.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
   },
@@ -176,9 +176,9 @@
       "status": "Done"
     },
     {
-      "task": "T118: Implement osm mcp parent — Claude Code wrapper",
-      "description": "Create 'osm mcp parent' command: wrap Claude Code child process with stdio MCP transport. Session socket messaging (T116-T117). Lifecycle management: spawn, monitor, restart on crash. MCP tools: enqueue, interrupt, status. Tests with mock Claude process. Run make.",
-      "status": "Not Started"
+      "task": "T118: Implement osm mcp-parent — MCP agent steering server",
+      "description": "DONE: Created osm mcp-parent command — stdio MCP server bridging claude-mux control socket (T116-T117) to MCP protocol. 3 tools: enqueue_task, interrupt_current, get_status. mcpParentClient interface for testability. Follows mcp_make.go MCP SDK patterns. 13 tests (5 unit + 8 MCP InMemoryTransport integration). Commit 9609a98.",
+      "status": "Done"
     },
     {
       "task": "T119: Implement osm mcp prompt — polymorphic terminal wrapper",

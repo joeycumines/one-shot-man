@@ -70,9 +70,9 @@ type ControlServer struct {
 	handler  ControlHandler
 	sockPath string
 
-	mu       sync.Mutex
-	closed   bool
-	connWg   sync.WaitGroup
+	mu     sync.Mutex
+	closed bool
+	connWg sync.WaitGroup
 }
 
 // NewControlServer creates a control server bound to the given Unix socket

@@ -1102,8 +1102,8 @@ func TestClaudeMux_Run_Integration_PoolConcurrency(t *testing.T) {
 	// Track maximum concurrent agents.
 	var (
 		concurrencyMu sync.Mutex
-		concurrent     int
-		maxConcurrent  int
+		concurrent    int
+		maxConcurrent int
 	)
 
 	gate := make(chan struct{})

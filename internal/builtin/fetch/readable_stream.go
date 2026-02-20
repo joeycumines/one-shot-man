@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/dop251/goja"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
 const (
@@ -170,8 +171,11 @@ func (r *ReadableStreamDefaultReader) ReleaseLock() {
 
 // wrapReadableStreamJS returns a goja.Object exposing the ReadableStream
 // to JavaScript with the standard locked/getReader()/cancel() surface.
-func wrapReadableStreamJS(rt *goja.Runtime, rs *ReadableStream) *goja.Object {
+func wrapReadableStreamJS(rt *goja.Runtime, adapter *gojaeventloop.Adapter, rs *ReadableStream) *goja.Object {
 	obj := rt.NewObject()
+
+	// Stash the Go ReadableStream for internal access (e.g., sseReader).
+	_ = obj.Set("_goStream", rs)
 
 	// locked — accessor property (dynamic getter, no setter).
 	getter := rt.ToValue(func(goja.FunctionCall) goja.Value {
@@ -186,7 +190,7 @@ func wrapReadableStreamJS(rt *goja.Runtime, rs *ReadableStream) *goja.Object {
 		if err != nil {
 			panic(rt.NewGoError(err))
 		}
-		return wrapReaderJS(rt, reader)
+		return wrapReaderJS(rt, adapter, reader)
 	})
 
 	// cancel() — cancels the stream.
@@ -203,25 +207,36 @@ func wrapReadableStreamJS(rt *goja.Runtime, rs *ReadableStream) *goja.Object {
 // wrapReaderJS returns a goja.Object exposing the
 // ReadableStreamDefaultReader to JavaScript.
 //
-// read() returns {value: <string>, done: <boolean>} synchronously.
-// T106 will upgrade this to return a Promise.
-func wrapReaderJS(rt *goja.Runtime, reader *ReadableStreamDefaultReader) *goja.Object {
+// read() returns Promise<{value: string, done: boolean}>.  The blocking
+// Read() call runs in a goroutine; the Promise resolves on the event loop.
+func wrapReaderJS(rt *goja.Runtime, adapter *gojaeventloop.Adapter, reader *ReadableStreamDefaultReader) *goja.Object {
 	obj := rt.NewObject()
 
 	_ = obj.Set("read", func(call goja.FunctionCall) goja.Value {
-		data, done, err := reader.Read()
-		if err != nil {
-			panic(rt.NewGoError(err))
-		}
-		result := rt.NewObject()
-		if done {
-			_ = result.Set("value", goja.Undefined())
-			_ = result.Set("done", true)
-		} else {
-			_ = result.Set("value", string(data))
-			_ = result.Set("done", false)
-		}
-		return result
+		promise, resolve, reject := adapter.JS().NewChainedPromise()
+
+		go func() {
+			data, done, err := reader.Read()
+			if err != nil {
+				reject(err)
+				return
+			}
+			if submitErr := adapter.Loop().Submit(func() {
+				result := rt.NewObject()
+				if done {
+					_ = result.Set("value", goja.Undefined())
+					_ = result.Set("done", true)
+				} else {
+					_ = result.Set("value", string(data))
+					_ = result.Set("done", false)
+				}
+				resolve(result)
+			}); submitErr != nil {
+				reject(fmt.Errorf("event loop not running"))
+			}
+		}()
+
+		return adapter.GojaWrapPromise(promise)
 	})
 
 	_ = obj.Set("releaseLock", func(call goja.FunctionCall) goja.Value {

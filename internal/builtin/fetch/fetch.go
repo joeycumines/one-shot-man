@@ -29,6 +29,7 @@ func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 		_ = exports.Set("fetch", jsFetch(runtime, adapter))
+		_ = exports.Set("sseReader", jsSSEReader(runtime, adapter))
 	}
 }
 
@@ -104,13 +105,46 @@ func jsFetch(runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call go
 			}
 
 			if submitErr := adapter.Loop().Submit(func() {
-				resolve(buildResponse(runtime, resp, body))
+				resolve(buildResponse(runtime, adapter, resp, body))
 			}); submitErr != nil {
 				reject(fmt.Errorf("event loop not running"))
 			}
 		}()
 
 		return adapter.GojaWrapPromise(promise)
+	}
+}
+
+// jsSSEReader returns a factory function: sseReader(body) → SSE reader object.
+// body must be a ReadableStream JS object (response.body).  The returned reader
+// has a read() method returning Promise<{value: {event, data, id}, done: boolean}>.
+func jsSSEReader(runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		bodyArg := call.Argument(0)
+		if bodyArg == nil || goja.IsUndefined(bodyArg) || goja.IsNull(bodyArg) {
+			panic(runtime.NewTypeError("sseReader requires a ReadableStream body argument"))
+		}
+		bodyObj, ok := bodyArg.(*goja.Object)
+		if !ok {
+			panic(runtime.NewTypeError("sseReader argument must be a ReadableStream object"))
+		}
+
+		// Retrieve the Go ReadableStream stashed on the JS object.
+		goStreamVal := bodyObj.Get("_goStream")
+		if goStreamVal == nil || goja.IsUndefined(goStreamVal) {
+			panic(runtime.NewTypeError("body does not have a Go ReadableStream"))
+		}
+		goStream, ok := goStreamVal.Export().(*ReadableStream)
+		if !ok {
+			panic(runtime.NewTypeError("_goStream is not a *ReadableStream"))
+		}
+
+		reader, err := goStream.GetReader()
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		parser := NewSSEParser(reader)
+		return wrapSSEParserJS(runtime, adapter, parser)
 	}
 }
 
@@ -177,7 +211,7 @@ func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration,
 
 // buildResponse constructs the JS Response object with the full body buffered.
 // Must be called on the event loop goroutine.
-func buildResponse(runtime *goja.Runtime, resp *http.Response, body []byte) *goja.Object {
+func buildResponse(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, resp *http.Response, body []byte) *goja.Object {
 	result := runtime.NewObject()
 	_ = result.Set("status", resp.StatusCode)
 	_ = result.Set("ok", resp.StatusCode >= 200 && resp.StatusCode < 300)
@@ -186,10 +220,9 @@ func buildResponse(runtime *goja.Runtime, resp *http.Response, body []byte) *goj
 	_ = result.Set("headers", buildHeaders(runtime, resp.Header))
 
 	// body — ReadableStream backed by the already-buffered bytes.
-	// The stream provides getReader()/locked/cancel() API surface;
-	// T106 will upgrade reader.read() to return Promises.
+	// reader.read() returns Promise<{value: string, done: boolean}>.
 	stream := NewReadableStream(io.NopCloser(bytes.NewReader(body)))
-	_ = result.Set("body", wrapReadableStreamJS(runtime, stream))
+	_ = result.Set("body", wrapReadableStreamJS(runtime, adapter, stream))
 
 	// text() returns a Promise<string> that resolves with the body as a string.
 	// Since the body is fully buffered, the Promise resolves immediately.

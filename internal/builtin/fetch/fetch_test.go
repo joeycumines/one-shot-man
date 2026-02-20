@@ -671,3 +671,347 @@ func TestFetch_AbortSignalTimeout(t *testing.T) {
 		}
 	`)
 }
+
+// --- ReadableStream / Response.body tests ---
+
+func TestResponseBody_GetReader_ReadAll(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("streaming body content"))
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		if (!resp.body) throw new Error("response.body should exist");
+
+		var reader = resp.body.getReader();
+		var chunks = [];
+		while (true) {
+			var result = await reader.read();
+			if (result.done) break;
+			chunks.push(result.value);
+		}
+		var body = chunks.join('');
+		if (body !== 'streaming body content') {
+			throw new Error('unexpected body: ' + body);
+		}
+		reader.releaseLock();
+	`)
+}
+
+func TestResponseBody_Locked(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("x"))
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		if (resp.body.locked) throw new Error("should not be locked initially");
+
+		var reader = resp.body.getReader();
+		if (!resp.body.locked) throw new Error("should be locked after getReader");
+
+		// Second getReader should throw.
+		var threw = false;
+		try { resp.body.getReader(); } catch(e) { threw = true; }
+		if (!threw) throw new Error("expected error on second getReader");
+
+		reader.releaseLock();
+		if (resp.body.locked) throw new Error("should be unlocked after releaseLock");
+	`)
+}
+
+func TestResponseBody_Cancel(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("cancel me"))
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		resp.body.cancel();
+
+		// After cancel, getReader should throw.
+		var threw = false;
+		try { resp.body.getReader(); } catch(e) { threw = true; }
+		if (!threw) throw new Error("expected error after cancel");
+	`)
+}
+
+func TestResponseBody_EmptyBody(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(204)
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		var reader = resp.body.getReader();
+		var result = await reader.read();
+		if (!result.done) throw new Error("expected done for empty body");
+		reader.releaseLock();
+	`)
+}
+
+func TestResponseBody_TextAndBodyIndependent(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("dual read"))
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	// Both text() and body.getReader() should work since body is pre-buffered.
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		var text = await resp.text();
+		if (text !== 'dual read') throw new Error('unexpected text: ' + text);
+
+		var reader = resp.body.getReader();
+		var chunks = [];
+		while (true) {
+			var result = await reader.read();
+			if (result.done) break;
+			chunks.push(result.value);
+		}
+		var body = chunks.join('');
+		if (body !== 'dual read') throw new Error('unexpected body: ' + body);
+		reader.releaseLock();
+	`)
+}
+
+// --- E2E: ReadableStream + SSE integration tests ---
+
+func TestE2E_SSEReader_ParsesEvents(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(200)
+		// Write two SSE events.
+		_, _ = fmt.Fprint(w, "event: greeting\ndata: hello\n\n")
+		_, _ = fmt.Fprint(w, "data: world\n\n")
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		var reader = fetchMod.sseReader(resp.body);
+
+		var ev1 = await reader.read();
+		if (ev1.done) throw new Error('unexpected done for first event');
+		if (ev1.value.event !== 'greeting') throw new Error('ev1.event = ' + ev1.value.event);
+		if (ev1.value.data !== 'hello') throw new Error('ev1.data = ' + ev1.value.data);
+
+		var ev2 = await reader.read();
+		if (ev2.done) throw new Error('unexpected done for second event');
+		if (ev2.value.event !== 'message') throw new Error('ev2.event = ' + ev2.value.event);
+		if (ev2.value.data !== 'world') throw new Error('ev2.data = ' + ev2.value.data);
+
+		var ev3 = await reader.read();
+		if (!ev3.done) throw new Error('expected done after all events');
+	`)
+}
+
+func TestE2E_SSEReader_MultiLineData(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		_, _ = fmt.Fprint(w, "data: line1\ndata: line2\ndata: line3\n\n")
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		var reader = fetchMod.sseReader(resp.body);
+		var ev = await reader.read();
+		if (ev.done) throw new Error('unexpected done');
+		if (ev.value.data !== 'line1\nline2\nline3') {
+			throw new Error('unexpected data: ' + JSON.stringify(ev.value.data));
+		}
+	`)
+}
+
+func TestE2E_SSEReader_WithID(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		_, _ = fmt.Fprint(w, "id: 42\ndata: with-id\n\n")
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		var reader = fetchMod.sseReader(resp.body);
+		var ev = await reader.read();
+		if (ev.done) throw new Error('unexpected done');
+		if (ev.value.id !== '42') throw new Error('id = ' + ev.value.id);
+		if (ev.value.data !== 'with-id') throw new Error('data = ' + ev.value.data);
+	`)
+}
+
+func TestE2E_SSEReader_EmptyStream(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		// Write nothing — empty SSE stream.
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		var reader = fetchMod.sseReader(resp.body);
+		var ev = await reader.read();
+		if (!ev.done) throw new Error('expected done for empty stream');
+	`)
+}
+
+func TestE2E_ReadableStream_ChunkedBody(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Transfer-Encoding", "chunked")
+		w.WriteHeader(200)
+		flusher, ok := w.(http.Flusher)
+		_, _ = w.Write([]byte("chunk1"))
+		if ok {
+			flusher.Flush()
+		}
+		_, _ = w.Write([]byte("chunk2"))
+		if ok {
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	// Fetch the chunked endpoint and read body via getReader().
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		var reader = resp.body.getReader();
+		var chunks = [];
+		while (true) {
+			var result = await reader.read();
+			if (result.done) break;
+			chunks.push(result.value);
+		}
+		var body = chunks.join('');
+		if (body !== 'chunk1chunk2') throw new Error('unexpected body: ' + body);
+		reader.releaseLock();
+	`)
+}
+
+func TestE2E_ReadableStream_CancelMidStream(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("data to cancel"))
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url);
+		resp.body.cancel();
+		// After cancel, getReader should throw.
+		var threw = false;
+		try { resp.body.getReader(); } catch(e) { threw = true; }
+		if (!threw) throw new Error('expected error after cancel');
+	`)
+}

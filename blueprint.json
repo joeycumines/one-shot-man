@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T020 Done. T021 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
+    "currentState": "T001-T021 Done. T022 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -144,8 +144,8 @@
     },
     {
       "task": "T021: Fuzz tests for claude-mux",
-      "description": "In claudemux/: FuzzParseOutput, FuzzMCPPayload, FuzzGuardRuleEval, FuzzSafetyClassify. Target: zero panics across 100K+ executions. Run fuzz then make.",
-      "status": "Not Started"
+      "description": "Added fuzz_test.go with 4 fuzz targets: FuzzParseOutput (24 seeds, validates event type range 0-8, line preservation, EventTypeName non-empty, pattern/type consistency), FuzzGuardRuleEval (11 seeds, validates GuardAction range, GuardActionName, State), FuzzMCPPayload (11 seeds, 10 repeated calls per input testing repeat detection, validates MCPToolCall with Timestamp, CheckNoCallTimeout, State), FuzzSafetyClassify (12 seeds, 3 corpus dimensions actionType/name/raw, validates Intent/Scope/RiskScore[0,1]/PolicyAction ranges, name helpers non-empty, TotalChecks>0). All seeds pass. Build green.",
+      "status": "Done"
     },
     {
       "task": "T022: Performance benchmarks for claude-mux",

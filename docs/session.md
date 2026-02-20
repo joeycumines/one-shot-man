@@ -46,6 +46,15 @@ For a deep dive into how session ids are determined, see:
 
 - [Sophisticated session-id auto-determination](reference/sophisticated-auto-determination-of-session-id.md)
 
+The auto-determination hierarchy (highest to lowest priority):
+
+1. **Explicit override** (`--session` flag or `OSM_SESSION` env)
+2. **Multiplexer** (tmux, GNU Screen)
+3. **SSH context** (`SSH_CONNECTION`)
+4. **macOS GUI terminal** (`TERM_SESSION_ID`, darwin only)
+5. **Deep Anchor** — process tree walk (Linux via `/proc`, macOS via `sysctl`, Windows via `CreateToolhelp32Snapshot`)
+6. **UUID fallback**
+
 ## Subcommands
 
 ### `session list`

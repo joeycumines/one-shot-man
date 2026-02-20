@@ -314,7 +314,7 @@ func TestStableShellsDarwin_NoOverlapWithSkipList(t *testing.T) {
 }
 
 func TestRootBoundariesDarwin_ContainsExpected(t *testing.T) {
-	expected := []string{"launchd", "login", "sshd", "WindowServer"}
+	expected := []string{"launchd", "login", "sshd", "windowserver"}
 	for _, boundary := range expected {
 		if !rootBoundariesDarwin[boundary] {
 			t.Errorf("expected %q in rootBoundariesDarwin", boundary)

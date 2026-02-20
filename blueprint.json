@@ -40,7 +40,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T101-T108 Done + test-commit verified. Build GREEN. Committing T101-T108 batch, then T109.",
+    "currentState": "T101-T109 Done. Build GREEN. Proceeding to T110.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
   },
@@ -92,8 +92,8 @@
     },
     {
       "task": "T109: macOS process hierarchy fallback for session ID",
-      "description": "Create session_darwin.go (//go:build darwin): use sysctl/libproc for process tree traversal, skip ephemeral wrappers, detect shell/root boundaries, use PID+start-time for stability. Update session_other.go build tag to exclude darwin. Update docs/session.md. Write tests using mock process trees. Run make.",
-      "status": "Not Started"
+      "description": "DONE: Created session_darwin.go (//go:build darwin) with Deep Anchor using sysctl via unix.SysctlKinfoProc for process tree traversal — DarwinProcInfo extraction, getBootSessionUUID, TTY via /dev/fd/N, findStableAnchorDarwin with skip/shell/root lists and terminal device boundary detection. Updated session_other.go+test build tag to !linux && !windows && !darwin. 30 tests in session_darwin_test.go. Updated docs (session.md hierarchy, sophisticated-auto-determination §3b). Build GREEN.",
+      "status": "Done"
     },
     {
       "task": "T110: Implement osm claudemux run — PTY subprocess spawning",

@@ -32,10 +32,10 @@ var stableShellsDarwin = map[string]bool{
 
 // rootBoundariesDarwin defines system processes that terminate the walk.
 var rootBoundariesDarwin = map[string]bool{
-	"launchd":     true,
-	"login":       true,
-	"sshd":        true,
-	"WindowServer": true,
+	"launchd":      true,
+	"login":        true,
+	"sshd":         true,
+	"windowserver": true,
 }
 
 // DarwinProcInfo holds parsed process information from sysctl.
@@ -43,9 +43,9 @@ type DarwinProcInfo struct {
 	PID       int
 	PPID      int
 	Comm      string
-	StartSec  int64  // start time seconds since epoch
-	StartUsec int32  // start time microseconds
-	Tdev      int32  // terminal device
+	StartSec  int64 // start time seconds since epoch
+	StartUsec int32 // start time microseconds
+	Tdev      int32 // terminal device
 }
 
 // getDarwinProcInfo retrieves process information via sysctl.

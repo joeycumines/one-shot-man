@@ -1,310 +1,198 @@
 {
-  "meta": {
-    "fileName": "blueprint.json",
-    "sourceRef": "DIRECTIVE.txt + docs/todo.md, session 2026-02-20",
-    "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
-    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST. NEVER SPECIFY A PRIORITY OF ANY KIND.",
-    "blueprintRefinement": "THIS BLUEPRINT MUST BE CONTINUALLY REFINED. After completing any task, before starting the next, re-read this file and assess whether it still accurately captures reality. If any task description is stale, wrong, unclear, or missing context — FIX IT NOW."
-  },
-  "globalAlerts": [
-    {
-      "warning": "ON TOOLS: Use config.mk custom targets. Limit output. Pipe through tail after tee to build.log. Use 'make find-test-failures'."
+    "meta": {
+        "fileName": "blueprint.json",
+        "sourceRef": "DIRECTIVE.txt + docs/todo.md, session 2026-02-20 + scratch/black-orange/final/consolidated-analysis.md",
+        "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
+        "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST. NEVER SPECIFY A PRIORITY OF ANY KIND.",
+        "blueprintRefinement": "THIS BLUEPRINT MUST BE CONTINUALLY REFINED. After completing any task, before starting the next, re-read this file and assess whether it still accurately captures reality. If any task description is stale, wrong, unclear, or missing context — FIX IT NOW."
     },
-    {
-      "warning": "NAMING: 'orchestrator' is RETIRED. Use 'claudemux' (Go), 'claude-mux' (user-facing), 'osm:claudemux' (JS module)."
+    "globalAlerts": [
+        {
+            "warning": "ON TOOLS: Use config.mk custom targets. Limit output. Pipe through tail after tee to build.log. Use 'make find-test-failures'."
+        },
+        {
+            "warning": "NAMING: 'orchestrator' is RETIRED. Use 'claudemux' (Go), 'claude-mux' (user-facing), 'osm:claudemux' (JS module)."
+        },
+        {
+            "warning": "CROSS-PLATFORM: ALL checks must pass on macOS, Linux (Docker), Windows (host 'moo'). Zero tolerance."
+        },
+        {
+            "warning": "TIMING: Tests MUST NOT be timing-dependent. No long-running tests. Race detector must pass."
+        },
+        {
+            "warning": "SESSION TIMER: Started 2026-02-20T08:00:00Z. 9h mandate. Verify: make check-session-time."
+        },
+        {
+            "warning": "RULE OF TWO: Two contiguous issue-free subagent reviews before any commit. Same diff. No exceptions."
+        },
+        {
+            "warning": "DEADCODE: NEVER add ignores to .deadcodeignore. Wire up the code or delete it."
+        }
+    ],
+    "mandatoryDirectives": {
+        "contextManagement": "One task at a time, in order. Do not attempt to solve all tasks in a single turn.",
+        "subagentPolicy": "Use subagents for Rule of Two review gate ONLY. Work subagents do NOT self-review.",
+        "blueprintRefinement": "Continual refinement required. After every task, re-read and fix stale descriptions.",
+        "runMakeAfterEveryChange": "Run 'make make-all-with-log' after EVERY code change. Zero failures before proceeding.",
+        "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
     },
-    {
-      "warning": "CROSS-PLATFORM: ALL checks must pass on macOS, Linux (Docker), Windows (host 'moo'). Zero tolerance."
+    "statusSection": {
+        "currentState": "Analysis completed. T001-T029 verified and dropped. Initializing new action items (T051-T053) based on consolidated analysis, then continuing T030.",
+        "sessionTimer": ".session-timer | make check-session-time",
+        "priorCompletedWork": "T001-T029 completed. P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
     },
-    {
-      "warning": "TIMING: Tests MUST NOT be timing-dependent. No long-running tests. Race detector must pass."
+    "sequentialTasks": [
+        {
+            "task": "T051: Subprocess MCP Handlers (osm mcp-instance)",
+            "description": "Shift per-instance MCP auto-configuration from HTTP listener to stdio subprocess. Update mcp_config.go to generate mcpServers config with `command: osm` and `args: [mcp-instance, --session, xyz]` universally compatible with mcp.json specs.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T052: Native Go Multiplexing Command (osm claudemux run)",
+            "description": "Create a CLI command matching the behavior of example-08-claude-mux-api.js but fully executed in Go. Read tasks/stdin, partition work via NewPool, auto-provision SpawnOpts, intercept stdout, and launch NewPanel as the user TUI.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T053: Session Interlock for TUI and MCP",
+            "description": "Wire PTY's NavigateToModel directly into `osm claudemux run`. Ensure TUI renders prompts dynamically, autosolves selection, and synchronizes the MCP handshake via heartbeat verification.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T030: ReadableStream for Response.body streaming",
+            "description": "In fetch/: ReadableStream on Response.body, getReader(), reader.read()->Promise<{value,done}>, SSE parsing, chunked encoding, back-pressure via bounded channel. Tests with httptest. Goja JS verification. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T031: macOS process hierarchy fallback for session ID",
+            "description": "session_darwin.go (//go:build darwin): sysctl/libproc process tree, skip ephemeral wrappers, shell/root boundaries, PID+start-time. Update session_other.go build tag. Update docs/session.md. Tests. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T032: Anthropic prompt library expansion",
+            "description": "Add 3-5 new built-in goals to goal_builtin.go. Candidates from Anthropic prompt library NOT yet implemented. Each: stateVars, hotSnippets, flagDefs, promptOptions. Full test suite. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T033: Security audit of scripting sandbox",
+            "description": "Audit: ambient authority leaks, require() traversal, exec injection, fetch SSRF, os write restrictions, env secrets, MCP privilege escalation. Fix vulnerabilities. Regression tests. Update docs/security.md. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T034: txtar context root formatting fix",
+            "description": "Fix context.go ToTxtar(): root path outside code block, wrapped in backticks. Failing test first. Fix. Verify. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T035: txtar path ambiguity fix",
+            "description": "Fix computeUniqueSuffixes() in context.go: LCA computation, verify parent tracking, preserve full paths for non-colliding basenames. Failing tests for all 3 scenarios. Fix. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T036: osm mcp make — port of mcp-server-make",
+            "description": "Implement 'osm mcp make' subcommand. Research mcp-server-make. Target caching, cross-platform make detection, session integration. MCP tool: make_run. Shell completion. Tests. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T037: Agent steering via MCP enqueue + session gRPC",
+            "description": "Session-tied Unix socket (gRPC), Windows TCP fallback. Proto: EnqueueTask, InterruptCurrent, GetStatus. Socket: ~/.osm/sessions/<id>/control.sock. Cleanup. Tests with in-process gRPC. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T038: osm mcp parent — Claude Code wrapper + stdio MCP + session socket",
+            "description": "Implement 'osm mcp parent': wrap Claude Code child process, stdio MCP transport, session socket messaging (T037), lifecycle mgmt. MCP tools: enqueue, interrupt, status. Tests. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T039: osm mcp prompt — polymorphic terminal wrapper",
+            "description": "Implement 'osm mcp prompt': Anthropic computer use research (document first), dynamic tool availability, BubbleTea UI, mode detection, go-prompt REPL, adaptive MCP schema. Tests. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T040: Sync go-git v6 migration",
+            "description": "Migrate sync.go/sync_startup.go to go-git v6 for clone/add/commit. Keep pull --rebase as shell-out. Preserve: rebase strategy, conflict detection, sync.local-path, auto-pull, timestamp messages. Tests. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T041: Cross-platform checkpoint — post infrastructure",
+            "description": "macOS + Linux + Windows. Zero failures on ALL platforms. Fix regressions from T027-T040.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T042: CHANGELOG — infrastructure milestone",
+            "description": "Update CHANGELOG.md [Unreleased] with T027-T040. Keep-a-Changelog format. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T043: Test coverage gap analysis and remediation",
+            "description": "Run 'make cover'. Identify packages below 90%. Add tests focused on error paths, edge cases, platform-specific code, concurrency. Target: 100% effective coverage. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T044: README.md update",
+            "description": "Update root README.md: full feature set, claude-mux, MCP server, JS modules list, goal system, sync, sessions. Badges. Installation. Quick-start. Verify links. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T045: Shell completion audit",
+            "description": "Audit completion for ALL commands/subcommands in bash/zsh/fish/powershell. Fix gaps. Test output format. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T046: Documentation index and cross-references",
+            "description": "Review docs/README.md: every doc indexed. Cross-references valid. docs/reference/ complete for all commands and config keys. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T047: Deadcode and betteralign audit",
+            "description": "Run 'make lint' checking deadcode and betteralign. Fix issues. No .deadcodeignore changes. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T048: Final cross-platform verification",
+            "description": "macOS + Linux + Windows. Zero failures. FINAL quality gate before commit.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T049: Final CHANGELOG update",
+            "description": "Final CHANGELOG.md covering T043-T047. Verify completeness and format. Run make.",
+            "status": "Not Started"
+        },
+        {
+            "task": "T050: Rule of Two commit gate",
+            "description": "Execute Rule of Two: subagent #1 reviews full diff vs HEAD. If PASS: freeze, subagent #2 same diff. Both PASS: commit with Kubernetes-style message. Either FAIL: fix, reset to 0, restart.",
+            "status": "Not Started"
+        }
+    ],
+    "continuousVerification": {
+        "task": "Run 'make make-all-with-log' after EVERY significant change",
+        "failPolicy": "If ANY test fails, STOP and fix. Zero tolerance.",
+        "testCoverage": "Target 100%. Verify with go tool cover.",
+        "crossPlatform": "Checkpoints at T025, T041, T048."
     },
-    {
-      "warning": "SESSION TIMER: Started 2026-02-20T08:00:00Z. 9h mandate. Verify: make check-session-time."
-    },
-    {
-      "warning": "RULE OF TWO: Two contiguous issue-free subagent reviews before any commit. Same diff. No exceptions."
-    },
-    {
-      "warning": "DEADCODE: NEVER add ignores to .deadcodeignore. Wire up the code or delete it."
-    }
-  ],
-  "mandatoryDirectives": {
-    "contextManagement": "One task at a time, in order. Do not attempt to solve all tasks in a single turn.",
-    "subagentPolicy": "Use subagents for Rule of Two review gate ONLY. Work subagents do NOT self-review.",
-    "blueprintRefinement": "Continual refinement required. After every task, re-read and fix stale descriptions.",
-    "runMakeAfterEveryChange": "Run 'make make-all-with-log' after EVERY code change. Zero failures before proceeding.",
-    "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
-  },
-  "statusSection": {
-    "currentState": "T001-T029 Done. T030 next.",
-    "sessionTimer": ".session-timer | make check-session-time",
-    "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
-  },
-  "sequentialTasks": [
-    {
-      "task": "T001: macOS baseline verification",
-      "description": "Run 'make make-all-with-log'. Check 'make find-test-failures'. Zero failures required. Gate for this session.",
-      "status": "Done"
-    },
-    {
-      "task": "T002: Rename BT templates file orchestrator.js -> claude-mux.js",
-      "description": "mv scripts/bt-templates/orchestrator.js -> claude-mux.js. Update templatePath() in claudemux/templates_test.go. Update file header comment. Update require() calls from osm:orchestrator to osm:claudemux if any remain. Update scripts/README.md. Update docs/architecture-claude-mux.md reference. Run make.",
-      "status": "Done"
-    },
-    {
-      "task": "T003: Model selection TUI parser extension",
-      "description": "Added model_nav.go: ParseModelMenu (two-pass, arrow/numbered/indented), NavigateToModel (exact/case-insensitive/substring match, ErrNoModels/ErrModelNotFound/ErrNavigationTooLong, MaxNavigationSteps=100). Enhanced parser.go: model-item-selected pattern with modelName+selected fields. JS bindings: parseModelMenu, navigateToModel, KEY_* constants. 180 claudemux tests pass.",
-      "status": "Done"
-    },
-    {
-      "task": "T004: MCP session coordination hardening",
-      "description": "Hardened MCP session tools in internal/command/mcp.go: mcpValidateSessionID (control char rejection, length limit 256), idempotent ops via mcpCheckSeq (seq numbers in reportProgress/reportResult/requestGuidance), heartbeat tool (15th tool), LastSeq+LastHeartbeat fields in session/response types. Tests: 20 new tests (heartbeat happy/error/empty, seq number progress/result/guidance/zero-dedup, session ID validation, mcpValidateSessionID table, mcpCheckSeq unit). FuzzMCPSessionTools with random tool/payload pairs. 158 command tests pass with -race.",
-      "status": "Done"
-    },
-    {
-      "task": "T005: MCP session coordination documentation",
-      "description": "Updated docs/reference/command.md: tool count 14→15, added heartbeat to table, added Session Coordination section with lifecycle, validation rules, seq number idempotency, heartbeat, full JSON schemas for all 7 session tools, getSession response example. Updated docs/architecture-claude-mux.md §6 MCP Feedback Protocol: replaced stale reportError/sequenceNumber docs with actual registerSession/reportProgress/reportResult/requestGuidance/heartbeat/getSession schemas, corrected idempotency docs.",
-      "status": "Done"
-    },
-    {
-      "task": "T006: Dynamic MCP server config per Claude instance",
-      "description": "Added mcp_config.go: MCPInstanceConfig type with Unix socket (default) / TCP (Windows) endpoints, StreamableHTTPHandler-based serving, temp dir lifecycle, config JSON generation (mcpServers format), SpawnArgs (--mcp-config), Validate (listener+file checks), Close (cleanup socket+dir). JS bindings: newMCPInstance(sessionId) with listenAndServe/endpoint/listenerAddr/configPath/spawnArgs/writeConfigFile/validate/close methods. 228 claudemux tests pass (18 new mcp_config tests). Deadcode clean.",
-      "status": "Done"
-    },
-    {
-      "task": "T007: Session isolation for multi-instance",
-      "description": "Added instance.go: Instance type (ID, StateDir, MCP, Agent, CreatedAt, Close, IsClosed, writeState), InstanceState JSON (state.json with id/createdAt/status/mcpEndpoint), InstanceRegistry (sync.Map-backed, Create/Get/Close/CloseAll/List/Len/BaseDir), ErrInstanceNotFound/ErrInstanceIDExists/ErrInstanceIDEmpty. Atomic Create via LoadOrStore (correct concurrent duplicate rejection). JS bindings: newInstanceRegistry(baseDir) with create/get/close/closeAll/list/len/baseDir; wrapInstance with id/stateDir/createdAt/isClosed/close. 16 new tests incl concurrent create/duplicate with -race. 244 claudemux tests pass. Deadcode clean.",
-      "status": "Done"
-    },
-    {
-      "task": "T008: Guard rails — PTY monitors",
-      "description": "Added guard.go: Guard type (event-driven, explicit time for deterministic testing), GuardAction (None/Pause/Reject/Restart/Escalate/Timeout), GuardEvent (action/reason/details), GuardConfig with 4 sub-configs: RateLimitGuardConfig (exponential backoff with multiplier/cap/retryAfter hint/idle reset), PermissionGuardConfig (policy: Deny fail-closed, Allow), CrashGuardConfig (MaxRestarts then escalate, ResetCrashCount), OutputTimeoutGuardConfig (idle duration threshold). ProcessEvent/ProcessCrash/CheckTimeout API. DefaultGuardConfig with production defaults. GuardState for observability. 40+ tests in guard_test.go covering all monitors, backoff math, cap, retryAfter hint, idle reset, policy fail-closed, crash escalation, timeout, integration with parser. JS bindings: GUARD_ACTION_* and PERMISSION_POLICY_* constants, guardActionName, defaultGuardConfig, newGuard with processEvent/processCrash/checkTimeout/resetCrashCount/state/config. Deadcode clean, 6.57s claudemux tests pass.",
-      "status": "Done"
-    },
-    {
-      "task": "T009: Guard rails — MCP monitors",
-      "description": "Added mcp_guard.go: MCPGuard type (event-driven, explicit timestamps). MCPGuardConfig with 4 sub-configs: MCPNoCallTimeoutConfig (idle agent detection), MCPFrequencyLimitConfig (sliding window call counting), MCPRepeatDetectionConfig (consecutive identical call detection with tool+args matching, configurable window), MCPToolAllowlistConfig (tool name validation). ProcessToolCall checks in priority: allowlist→frequency→repetition. CheckNoCallTimeout for periodic polling. DefaultMCPGuardConfig with production defaults (10m timeout, 50 calls/10s, 5 max repeats, allowlist disabled). MCPGuardState for observability. 30+ tests in mcp_guard_test.go covering all monitors, window sliding, chain breaking, priority order, edge cases. JS bindings: defaultMCPGuardConfig, newMCPGuard with processToolCall/checkNoCallTimeout/state/config. Deadcode clean, full build green.",
-      "status": "Done"
-    },
-    {
-      "task": "T010: Error recovery and cancellation",
-      "description": "Added recovery.go: Supervisor state machine (Idle/Running/Recovering/Draining/Stopped) with HandleError decision engine. ErrorClass (None/PTY-EOF/PTY-Crash/PTY-Error/MCP-Timeout/MCP-Malformed/Cancelled). RecoveryAction (None/Retry/Restart/ForceKill/Escalate/Abort/Drain). RecoveryDecision with action+reason+details+newState. SupervisorConfig (MaxRetries/MaxForceKills/RetryDelay/ShutdownTimeout/ForceKillTimeout). Context-based cancellation via NewSupervisor(ctx, cfg). HandleError routes: PTY-EOF→restart/escalate, PTY-Crash→force-kill/restart/escalate, PTY-Error→retry/restart/escalate (threshold-based), MCP-Timeout→retry/restart/escalate, MCP-Malformed→retry-once/escalate. Shutdown: first→Drain, second→ForceKill, already-stopped→Abort. ConfirmRecovery/ConfirmStopped/Reset lifecycle. SupervisorSnapshot for observability. JS bindings: defaultSupervisorConfig, newSupervisor with start/handleError/shutdown/confirmRecovery/confirmStopped/snapshot/reset/cancelled. 30+ tests: state names, error class names, action names, start/start-from-non-idle, PTY-EOF restart+escalate, PTY-Crash force-kill+then-restart, PTY-Error retry-then-restart-then-escalate, MCP-Timeout retry-then-restart, MCP-Malformed retry-once-then-escalate, cancelled-error, context-cancel-during-error, context-propagation, shutdown-normal/double-force-kill/already-stopped, confirm-recovery/stopped, reset, error-during-stopped/draining, unknown-error-class, snapshot, concurrent-shutdown (20 goroutines: 1 drain + 1 force-kill + 18 abort), concurrent-errors. Deadcode clean, all claudemux tests pass in 7.6s.",
-      "status": "Done"
-    },
-    {
-      "task": "T011: Concurrent instance management — pool",
-      "description": "Added pool.go: Pool state machine (Idle/Running/Draining/Closed) with acquire/release dispatch pattern. PoolConfig (MaxSize, default 4). PoolWorker (ID/Instance/TaskCount/ErrorCount/LastTaskAt/State). WorkerState (Idle/Busy/Closed). Acquire() round-robin with blocking via sync.Cond when all workers busy. TryAcquire() non-blocking variant. Release(worker, taskErr, now) records stats and wakes blocked acquires. AddWorker/RemoveWorker with duplicate/full/busy checks. Drain() prevents new acquires, WaitDrained() blocks until inflight=0. Close() returns all workers for cleanup. FindWorker(id) for JS binding lookup. PoolStats/WorkerStats for observability. JS bindings: defaultPoolConfig, newPool with start/addWorker/removeWorker/acquire/tryAcquire/release/drain/waitDrained/close/stats/config. 30+ tests: state names, default config, new pool with min size clamp, start/startFromNonIdle, addWorker/addWorkerFull/Duplicate/Closed, removeWorker/removeWorkerBusy/NotFound, acquire+release with stats, release with error, round-robin ordering (6 cycles), acquire notRunning/empty/closed, tryAcquire success/allBusy, acquire blocks until release, drain/drain waits for inflight/drain unblocks acquire, close/close unblocks acquire, stats, config, concurrent acquire+release (50 goroutines), concurrent drain while acquiring, concurrent add+remove (10 each), round-robin after remove. All with -race. Deadcode clean.",
-      "status": "Done"
-    },
-    {
-      "task": "T012: TUI multiplexing — multi-instance panel",
-      "description": "Added panel.go: Panel state machine (Idle/Active/Closed) with multi-instance TUI coordination. PanelConfig (MaxPanes 1-9 default 9, ScrollbackSize default 10000). Pane per instance with ID/Title/Scrollback/ScrollPos/Health. Alt+1..9 switching via RouteInput key routing. PgUp/PgDown scrollback navigation (20-line jumps). Per-pane health tracking with PaneHealth (state/errorCount/taskCount/lastUpdate). StatusBar with Unicode health indicators (● running, ✖ error, ○ idle, ■ stopped) and [active] brackets. GetVisibleLines(paneID, height) for viewport rendering with scroll offset. PanelSnapshot for full state observability. AddPane/RemovePane with activeIdx adjustment. JS bindings: defaultPanelConfig, newPanel with start/addPane/removePane/routeInput/setActive/activeIndex/activePane/paneCount/appendOutput/updateHealth/statusBar/getVisibleLines/snapshot/close/config. 40+ tests: state names, config clamping, start, addPane (first/full/duplicate/closed), removePane (adjustActive/notFound), input routing (altSwitch/altOutOfRange/forward/pgUp/pgDown/noPanes/notActive), setActive (valid/outOfRange), appendOutput (basic/trim/notFound), updateHealth (basic/notFound), statusBar (noPanes/single/multiple with indicators), getVisibleLines (basic/scrolled/empty/notFound), snapshot, close, healthIndicator, concurrent appendOutput/routeInput/snapshot. Deadcode clean, full build green.",
-      "status": "Done"
-    },
-    {
-      "task": "T013: Expose claude-mux building blocks as JS API",
-      "description": "Added Parser.Patterns() method (PatternInfo struct: Name/EventType/Pattern) returning all registered patterns. JS binding: parser.patterns() returns [{name, eventType, eventTypeName, pattern}]. Tests: TestPatterns_BuiltinReturned, TestPatterns_IncludesCustom. Created scripts/example-08-claude-mux-api.js exercising all building blocks (parser+patterns, guard, MCP guard, supervisor, pool, panel). Updated scripts/README.md. Note: pool/guard/supervisor/panel JS bindings were completed in T008-T012; MCP helpers deferred to T014/T018 where session state access is available. BT templates already accessible via require(). All claudemux tests pass. Build green.",
-      "status": "Done"
-    },
-    {
-      "task": "T014: Claude Code wrapper/parser JS native module",
-      "description": "Added session_mgr.go: ManagedSession type composing Parser+Guard+MCPGuard+Supervisor into unified monitoring pipeline. ManagedSessionState (Idle/Active/Paused/Failed/Closed). ManagedSessionConfig bundles Guard/MCPGuard/Supervisor configs. ProcessLine(line, now) → LineResult (event+guardEvent+action). ProcessCrash(exitCode, now) → guardEvent+recoveryDecision with dual escalation (guard OR supervisor). ProcessToolCall(call) → ToolCallResult. CheckTimeout(now). HandleError(msg, class). ConfirmRecovery/Resume/Shutdown/Close lifecycle. ManagedSessionSnapshot for full observability. OnEvent/OnGuardAction/OnRecoveryDecision callbacks. JS bindings: SESSION_* constants, managedSessionStateName, defaultManagedSessionConfig, createSession(id, config?) with processLine/processCrash/processToolCall/checkTimeout/handleError/confirmRecovery/resume/shutdown/close/state/snapshot/parser/onEvent/onGuardAction/onRecoveryDecision. 30+ tests covering all states, transitions, callbacks, concurrent access. Build green.",
-      "status": "Done"
-    },
-    {
-      "task": "T015: Safety validation",
-      "description": "Added safety.go: Intent classification (Unknown/ReadOnly/Code/Destructive/Network/Credential), Scope assessment (Unknown/File/Repo/Infra), Risk scoring (0.0-1.0 with intent×scope multiplier + sensitive pattern bonus), Policy enforcement (Allow/Warn/Confirm/Block with configurable thresholds). SafetyConfig: enabled, thresholds, blockedTools, blockedPaths, allowedPaths, sensitivePatterns. SafetyValidator: rule-based with built-in intent patterns (destructive/credential/network/readOnly/code) and scope patterns (infra/repo). CompositeValidator: chains validators, returns most restrictive. Validator interface for composability. Stats tracking (total/allow/warn/confirm/block/intent/scope counts). JS bindings: INTENT_*/SCOPE_*/RISK_*/POLICY_* constants, intentName/scopeName/riskLevelName/policyActionName, defaultSafetyConfig, newSafetyValidator (validate/stats/config), newCompositeValidator. 40+ tests: intent/scope/risk/policy name fns, default config, disabled validator, read-only/code/destructive/network/credential classification, sensitive patterns, blocked tools/paths, allowlist enforcement, infra/repo/file scope detection, risk scoring comparison, policy enforcement thresholds, stats tracking, tool name heuristics, file type classification, concurrent validate/stats, edge cases. 309 claudemux tests pass. Build green.",
-      "status": "Done"
-    },
-    {
-      "task": "T016: Ideal choice resolution",
-      "description": "Added choice.go: Candidate (ID/Name/Description/Attributes), Criterion (Name/Weight/ScoreFunc), ChoiceConfig (DefaultCriteria 4x@0.25 — complexity/risk/maintainability/performance, MinCandidates=2, ConfirmThreshold=0.3), ChoiceResolver with Analyze(candidates,criteria)→ChoiceResult (Winner/Scored/NeedsConfirm/ConfirmReason/Justification), Stats (AnalysesPerformed/TotalCandidatesEvaluated), Config. ScoredCandidate with per-criterion scores. normalizeCriteriaWeights, attributeScoreFunc, clampScore helpers. JS bindings: defaultChoiceConfig, newChoiceResolver with analyze/stats/config. 25+ tests: defaults, resolver creation with clamping, too-few candidates, basic/custom/customScoreFunc analysis, NeedsConfirm, Stats, Justification, EqualScores, MissingAttributes, ZeroWeights, NegativeWeight, ManyCandidates (10), NormalizeCriteriaWeights, ClampScore (incl NaN), AttributeScoreFunc, ConcurrentAnalyze (50 goroutines). Also FIXED: ManagedSession race condition — Guard/MCPGuard calls now under s.mu in ProcessLine/ProcessCrash/ProcessToolCall/CheckTimeout/Snapshot (callbacks outside lock). 4,529 tests pass with -race. Build green.",
-      "status": "Done"
-    },
-    {
-      "task": "T017: Rewrite PR split goal and script for claudemux",
-      "description": "Enhanced orchestrate-pr-split.json: category orchestrator→claudemux, added 'run' command with flagDefs (--base/--strategy/--max/--prefix/--verify/--dry-run), updated usageTemplate and postCopyHint for v2.0.0. Enhanced orchestrate-pr-split.js v2.0.0: added require('osm:claudemux') with graceful fallback, selectStrategy() using ChoiceResolver (4 strategies scored on splitCount/groupBalance/maxSize via custom scoreFn), conflict classification in executeSplit (errorType: missing/conflict/checkout), verifyEquivalenceDetailed() with diff --stat/--name-only on mismatch, createSelectStrategyNode BT leaf. Updated pr_split_test.go: registered osm:claudemux in test env, updated VERSION assertion to 2.0.0, updated export list (+selectStrategy/verifyEquivalenceDetailed/createSelectStrategyNode), added TestSelectStrategy (strategy in known set), TestSelectStrategy_Scored (4 scored rankings), TestVerifyEquivalenceDetailed_Equivalent (diffFiles empty), TestExecuteSplit_MissingFile (errorType=missing). 4,533 tests pass. Build green.",
-      "status": "Done"
-    },
-    {
-      "task": "T018: Main claude-mux entry point command",
-      "description": "Added claude_mux.go: ClaudeMuxCommand with BaseCommand embed, cfg *config.Config, poolSize flag. Subcommands: status (shows config summary — Pool/Guard/MCPGuard/Supervisor params, fail-closed policy), start (creates InstanceRegistry+Pool+ManagedSession, validates all building blocks, audit logging with [audit] prefix), stop (placeholder — reports no running instances), submit (validates+receives task description). Execute dispatches to subcommands with error on unknown. showHelp prints usage. Registered in cmd/osm/main.go. Tests: claude_mux_test.go (9 tests: NewClaudeMuxCommand, SetupFlags default+parse, NoArgs help, UnknownSubcommand error+stderr, Status output, Start with TempDir audit trail, Stop, Submit with task+noArgs+emptyTask). Also FIXED: TestPRSplit_BTWorkflow_EndToEnd flaky timeout — increased bridge timeout from 5s→30s for git-heavy E2E test. Build green, all 41 packages pass.",
-      "status": "Done"
-    },
-    {
-      "task": "T019: Shell completion for claude-mux command",
-      "description": "Added claude-mux subcommand completions (status/start/stop/submit) to all 4 shell generators in completion_command.go: bash (case in prev block), zsh (_values clause), fish (__fish_seen_subcommand_from), powershell ($tokenCount block). Test: TestCompletionCommandClaudeMuxSubcommand (4 subtests, one per shell, checking exact snippets). Build green, all packages pass.",
-      "status": "Done"
-    },
-    {
-      "task": "T020: Claude-mux documentation",
-      "description": "Updated docs/architecture-claude-mux.md: status to T001-T019, module status updated. Created docs/reference/claude-mux.md: complete reference with command flags, subcommands, all building blocks (Parser/Guard/MCPGuard/Supervisor/Pool/Panel/ManagedSession/Safety/Choice/Instance), config keys table, shell completion instructions, see-also links. Updated docs/scripting.md: added osm:claudemux to module reference table (Behavior trees & planning section) + full detailed section (Parser/Guard/MCPGuard/Supervisor/Pool/Panel/Session/Safety/Choice/Instance with all exports). Updated docs/reference/command.md: added full osm claude-mux entry with subcommand descriptions and infrastructure table. Updated docs/README.md: added link to claude-mux reference.",
-      "status": "Done"
-    },
-    {
-      "task": "T021: Fuzz tests for claude-mux",
-      "description": "Added fuzz_test.go with 4 fuzz targets: FuzzParseOutput (24 seeds, validates event type range 0-8, line preservation, EventTypeName non-empty, pattern/type consistency), FuzzGuardRuleEval (11 seeds, validates GuardAction range, GuardActionName, State), FuzzMCPPayload (11 seeds, 10 repeated calls per input testing repeat detection, validates MCPToolCall with Timestamp, CheckNoCallTimeout, State), FuzzSafetyClassify (12 seeds, 3 corpus dimensions actionType/name/raw, validates Intent/Scope/RiskScore[0,1]/PolicyAction ranges, name helpers non-empty, TotalChecks>0). All seeds pass. Build green.",
-      "status": "Done"
-    },
-    {
-      "task": "T022: Performance benchmarks for claude-mux",
-      "description": "Added benchmark_test.go with 8 benchmarks: BenchmarkParseOutput (9 line types), BenchmarkGuardProcessEvent (5 event types), BenchmarkMCPGuardProcessToolCall (3 call types), BenchmarkSafetyClassify (5 action types), BenchmarkPoolAcquireRelease (acquire/release cycle), BenchmarkManagedSessionProcessLine (3 line types through full pipeline), BenchmarkPanelAppendOutput (3 text sizes), BenchmarkChoiceResolverAnalyze (2/3/10 candidates). All use b.ReportAllocs(). Build green.",
-      "status": "Done"
-    },
-    {
-      "task": "T023: Security tests for MCP protocol",
-      "description": "Two new test files: internal/builtin/claudemux/mcp_security_test.go (13 tests: guard injection, MCP guard tool injection, safety privilege escalation, blocked path bypass, allowlist enforcement, disabled safety, sensitive patterns, concurrent guard safety, session isolation, instance registry special IDs, frequency burst, repeat detection, composite validator) and internal/command/mcp_security_test.go (7 tests: session ID spoofing, ID validation, sequence replay, large payloads, concurrent manipulation, tool name injection, session overwrite). Build green.",
-      "status": "Done"
-    },
-    {
-      "task": "T024: Integration testing for claude-mux",
-      "description": "Added integration_test.go with TestMain (-integration, -provider, -model flags). 6 live agent tests (skipped without -integration): ProviderSpawn, MenuNavigation, MCPStartup, TaskSubmitAndResult, GuardRails, Recovery. 4 simulated CI tests: FullPipelineLifecycle (8-phase: registry→pool→panel→session→crash→safety→choice→shutdown), ConcurrentMultiSessionPipeline (4 workers×50 events), ErrorRecoveryEscalation (Retry→Restart→Escalate), SafetyIntoPipeline. Config.mk target: integration-test-claudemux. Build green.",
-      "status": "Done"
-    },
-    {
-      "task": "T025: Cross-platform checkpoint — post claude-mux",
-      "description": "macOS: all claudemux/command tests pass (only pre-existing PTY flaky TestSuperDocument_MouseClickTextareaFocus). Linux Docker: two pre-existing PTY timing flakeys (TestTemplates_VerifyAndCommit_WorkflowComposer 5s JS timeout, TestRecording_SuperDocument_Interop 37s PTY deadline). Windows: ALL GREEN after filepath.ToSlash fix in safety.go classifyScope for cross-platform system path detection.",
-      "status": "Done"
-    },
-    {
-      "task": "T026: CHANGELOG — claude-mux milestone",
-      "description": "Updated CHANGELOG.md [Unreleased] Added section with 22 claude-mux entries (orchestration system, command, parser, guard, MCP guard, error recovery, pool, panel, instance, MCP config, session coordination, safety, choice, managed session, JS API, PR split rewrite, shell completion, docs, fuzzing, benchmarks, security, integration). Changed section: orchestrator→claudemux rename. Fixed section: cross-platform filepath.ToSlash safety fix. Keep-a-Changelog 1.1.0 format verified.",
-      "status": "Done"
-    },
-    {
-      "task": "T027: Sync common config enhancement",
-      "description": "Enhanced sync_config.go with 6 improvements: (1) Conflict summary on pull — computeConfigDiff shows added/updated/unchanged keys before applying. (2) Dry-run mode — --dry-run flag previews changes without applying or updating SHA. (3) Atomic write for push — writes to .tmp then os.Rename for crash safety. (4) Sync lockfile — O_CREATE|O_EXCL advisory lock with PID+timestamp prevents concurrent push/pull corruption. (5) Gitignore detection — warns if shared.conf is gitignored after push. (6) Empty sync root detection — clear error on pull when directory missing. 9 new tests: DryRun, ConflictSummary, AtomicWrite, LockAcquisition, LockCleanup, GitignoreWarning, ComputeConfigDiff, EmptySyncRoot, DryRunDoesNotUpdateSHA. Build green.",
-      "status": "Done"
-    },
-    {
-      "task": "T028: Autodiscovery refinement",
-      "description": "Added discovery_refinement_test.go with 19 tests across 7 categories: (1) config key enforcement — MaxTraversalDepthRespected for goals+scripts, CustomPathPatternsOverride, EnvVarOverride (OSM_DISABLE_GOAL_AUTODISCOVERY). (2) Symlink traversal — SymlinkToParentCreatesUpwardCycle (calls traverseForGoalDirs directly with unresolved path to trigger cycle detection), SymlinkCycleInTraversal (scripts), SymlinkToGoalDir dedup. (3) Permission resilience — UnreadableDirectoryInTraversal, UnreadableDirInCheckDirectory. (4) normalizePath edge cases — EmptyInput, DotDotTraversal, BrokenSymlinkFallback, SecurityValidation (escape parent). (5) parsePositiveInt table-driven (8 cases). (6) expandPath — HomeTilde, EnvVar, NoExpansion. (7) Debug log coverage — all categories verified for goal+script. Added BenchmarkNormalizePath (Simple/WithSymlink) and BenchmarkAnnotatedPaths (GoalPaths/ScriptPaths). Fixed symlink cycle tests: call traverseForGoalDirs/traverseForScriptDirs directly with unresolved path because macOS os.Getwd() resolves symlinks. Build green.",
-      "status": "Done"
-    },
-    {
-      "task": "T029: Prompt file enhancement",
-      "description": "Hardened .prompt.md discovery with 6 enhancements: (1) mode frontmatter key — parsed and forwarded to Goal.PromptOptions['mode'] (VS Code convention: ask/edit/agent). (2) Recursive FindPromptFiles — dedicated prompt paths (.github/prompts, configured paths) scanned recursively up to 10 levels deep with symlink cycle protection and hidden directory skipping, matching VS Code behavior. (3) prompt.recursive config key (bool, default true) in config schema + GoalDiscoveryConfig. (4) File reference security — expandPromptFileReferences hardened with directory traversal prevention (resolved path must be under baseDir via isUnderDir), max single file size (256 KiB), max expansion count (50). (5) Directory reference skipping — directories are no longer attempted for expansion. 14 new tests: ParsePromptFile_Mode, ParsePromptFile_ModeQuoted, PromptFileToGoal_WithMode, PromptFileToGoal_ModeOnly, FindPromptFiles_Recursive, FindPromptFiles_RecursiveSkipsHiddenDirs, FindPromptFiles_RecursiveDepthLimit, FindPromptFiles_RecursiveSymlinkCycle, ExpandPromptFileReferences_DirectoryTraversal, ExpandPromptFileReferences_MaxExpansions, ExpandPromptFileReferences_LargeFileSkipped, ExpandPromptFileReferences_DirectorySkipped, IsUnderDir, PromptRecursiveConfig. Updated docs: config.md prompt section with prompt.recursive docs, goal.md prompt file section with mode key, recursive scanning, security hardening details. Build green (lint/vet/staticcheck pass; pre-existing PTY flakeys only).",
-      "status": "Done"
-    },
-    {
-      "task": "T030: ReadableStream for Response.body streaming",
-      "description": "In fetch/: ReadableStream on Response.body, getReader(), reader.read()->Promise<{value,done}>, SSE parsing, chunked encoding, back-pressure via bounded channel. Tests with httptest. Goja JS verification. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T031: macOS process hierarchy fallback for session ID",
-      "description": "session_darwin.go (//go:build darwin): sysctl/libproc process tree, skip ephemeral wrappers, shell/root boundaries, PID+start-time. Update session_other.go build tag. Update docs/session.md. Tests. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T032: Anthropic prompt library expansion",
-      "description": "Add 3-5 new built-in goals to goal_builtin.go. Candidates from Anthropic prompt library NOT yet implemented. Each: stateVars, hotSnippets, flagDefs, promptOptions. Full test suite. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T033: Security audit of scripting sandbox",
-      "description": "Audit: ambient authority leaks, require() traversal, exec injection, fetch SSRF, os write restrictions, env secrets, MCP privilege escalation. Fix vulnerabilities. Regression tests. Update docs/security.md. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T034: txtar context root formatting fix",
-      "description": "Fix context.go ToTxtar(): root path outside code block, wrapped in backticks. Failing test first. Fix. Verify. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T035: txtar path ambiguity fix",
-      "description": "Fix computeUniqueSuffixes() in context.go: LCA computation, verify parent tracking, preserve full paths for non-colliding basenames. Failing tests for all 3 scenarios. Fix. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T036: osm mcp make — port of mcp-server-make",
-      "description": "Implement 'osm mcp make' subcommand. Research mcp-server-make. Target caching, cross-platform make detection, session integration. MCP tool: make_run. Shell completion. Tests. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T037: Agent steering via MCP enqueue + session gRPC",
-      "description": "Session-tied Unix socket (gRPC), Windows TCP fallback. Proto: EnqueueTask, InterruptCurrent, GetStatus. Socket: ~/.osm/sessions/<id>/control.sock. Cleanup. Tests with in-process gRPC. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T038: osm mcp parent — Claude Code wrapper + stdio MCP + session socket",
-      "description": "Implement 'osm mcp parent': wrap Claude Code child process, stdio MCP transport, session socket messaging (T037), lifecycle mgmt. MCP tools: enqueue, interrupt, status. Tests. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T039: osm mcp prompt — polymorphic terminal wrapper",
-      "description": "Implement 'osm mcp prompt': Anthropic computer use research (document first), dynamic tool availability, BubbleTea UI, mode detection, go-prompt REPL, adaptive MCP schema. Tests. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T040: Sync go-git v6 migration",
-      "description": "Migrate sync.go/sync_startup.go to go-git v6 for clone/add/commit. Keep pull --rebase as shell-out. Preserve: rebase strategy, conflict detection, sync.local-path, auto-pull, timestamp messages. Tests. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T041: Cross-platform checkpoint — post infrastructure",
-      "description": "macOS + Linux + Windows. Zero failures on ALL platforms. Fix regressions from T027-T040.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T042: CHANGELOG — infrastructure milestone",
-      "description": "Update CHANGELOG.md [Unreleased] with T027-T040. Keep-a-Changelog format. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T043: Test coverage gap analysis and remediation",
-      "description": "Run 'make cover'. Identify packages below 90%. Add tests focused on error paths, edge cases, platform-specific code, concurrency. Target: 100% effective coverage. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T044: README.md update",
-      "description": "Update root README.md: full feature set, claude-mux, MCP server, JS modules list, goal system, sync, sessions. Badges. Installation. Quick-start. Verify links. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T045: Shell completion audit",
-      "description": "Audit completion for ALL commands/subcommands in bash/zsh/fish/powershell. Fix gaps. Test output format. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T046: Documentation index and cross-references",
-      "description": "Review docs/README.md: every doc indexed. Cross-references valid. docs/reference/ complete for all commands and config keys. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T047: Deadcode and betteralign audit",
-      "description": "Run 'make lint' checking deadcode and betteralign. Fix issues. No .deadcodeignore changes. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T048: Final cross-platform verification",
-      "description": "macOS + Linux + Windows. Zero failures. FINAL quality gate before commit.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T049: Final CHANGELOG update",
-      "description": "Final CHANGELOG.md covering T043-T047. Verify completeness and format. Run make.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T050: Rule of Two commit gate",
-      "description": "Execute Rule of Two: subagent #1 reviews full diff vs HEAD. If PASS: freeze, subagent #2 same diff. Both PASS: commit with Kubernetes-style message. Either FAIL: fix, reset to 0, restart.",
-      "status": "Not Started"
-    }
-  ],
-  "continuousVerification": {
-    "task": "Run 'make make-all-with-log' after EVERY significant change",
-    "failPolicy": "If ANY test fails, STOP and fix. Zero tolerance.",
-    "testCoverage": "Target 100%. Verify with go tool cover.",
-    "crossPlatform": "Checkpoints at T025, T041, T048."
-  },
-  "finalEnforcementProtocol": [
-    {"type": "TOOLS", "alert": "Use config.mk custom targets. Limit output. Tee to build.log."},
-    {"type": "TIMING", "alert": "No timing-dependent tests. No long-running tests."},
-    {"type": "NAMING", "alert": "'orchestrator' is RETIRED. Use claudemux/claude-mux/osm:claudemux."},
-    {"type": "REFINEMENT", "alert": "Continually refine. After every task fix stale descriptions."},
-    {"type": "RULE_OF_TWO", "alert": "Two contiguous reviews. Same diff. Reset on any code change."},
-    {"type": "DEADCODE", "alert": "NEVER add .deadcodeignore entries. Wire up or delete."}
-  ]
+    "finalEnforcementProtocol": [
+        {
+            "type": "TOOLS",
+            "alert": "Use config.mk custom targets. Limit output. Tee to build.log."
+        },
+        {
+            "type": "TIMING",
+            "alert": "No timing-dependent tests. No long-running tests."
+        },
+        {
+            "type": "NAMING",
+            "alert": "'orchestrator' is RETIRED. Use claudemux/claude-mux/osm:claudemux."
+        },
+        {
+            "type": "REFINEMENT",
+            "alert": "Continually refine. After every task fix stale descriptions."
+        },
+        {
+            "type": "RULE_OF_TWO",
+            "alert": "Two contiguous reviews. Same diff. Reset on any code change."
+        },
+        {
+            "type": "DEADCODE",
+            "alert": "NEVER add .deadcodeignore entries. Wire up or delete."
+        }
+    ]
 }

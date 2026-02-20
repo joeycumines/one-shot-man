@@ -915,8 +915,8 @@ func TestSyncCommand_ConfigPullConflictSummary(t *testing.T) {
 	cfg.SetGlobalOption("sync.config-sync", "true")
 
 	// Local state: one key matches remote, one differs, one is absent in remote.
-	cfg.SetGlobalOption("goal.autodiscovery", "true")    // same as remote → unchanged
-	cfg.SetGlobalOption("prompt.template", "old-value")   // differs → updated
+	cfg.SetGlobalOption("goal.autodiscovery", "true")   // same as remote → unchanged
+	cfg.SetGlobalOption("prompt.template", "old-value") // differs → updated
 	// "hot-snippets.no-warning" not set locally → added
 
 	// Set stored SHA to something different so pull proceeds.
@@ -1107,12 +1107,12 @@ func TestComputeConfigDiff(t *testing.T) {
 	t.Parallel()
 
 	local := map[string]string{
-		"goal.autodiscovery":     "true",
-		"prompt.template":        "old",
+		"goal.autodiscovery":      "true",
+		"prompt.template":         "old",
 		"hot-snippets.no-warning": "true",
 	}
 	remote := []configKeyValue{
-		{key: "goal.autodiscovery", value: "true"},      // unchanged
+		{key: "goal.autodiscovery", value: "true"},       // unchanged
 		{key: "prompt.template", value: "new"},           // updated
 		{key: "editor.font-size", value: "14"},           // added
 		{key: "sync.repository", value: "git@host:repo"}, // sensitive — should be excluded

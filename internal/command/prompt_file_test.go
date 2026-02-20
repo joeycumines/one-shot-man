@@ -717,11 +717,11 @@ func TestFindPromptFiles_Recursive(t *testing.T) {
 
 	// Create prompt files at various levels.
 	files := map[string]string{
-		filepath.Join(dir, "root.prompt.md"):              "root",
-		filepath.Join(subDir1, "frontend.prompt.md"):      "frontend",
-		filepath.Join(subDir2, "api-review.prompt.md"):    "api",
-		filepath.Join(dir, "not-a-prompt.txt"):            "ignored",
-		filepath.Join(subDir1, "also-not.json"):           "ignored",
+		filepath.Join(dir, "root.prompt.md"):           "root",
+		filepath.Join(subDir1, "frontend.prompt.md"):   "frontend",
+		filepath.Join(subDir2, "api-review.prompt.md"): "api",
+		filepath.Join(dir, "not-a-prompt.txt"):         "ignored",
+		filepath.Join(subDir1, "also-not.json"):        "ignored",
 	}
 	for path, content := range files {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -972,9 +972,9 @@ func TestIsUnderDir(t *testing.T) {
 		{"/a/b/c", "/a/b", true},
 		{"/a/b", "/a/b", true},
 		{"/a/b/c", "/a/b/c", true},
-		{"/a/bc", "/a/b", false},      // not a prefix match
-		{"/a", "/a/b", false},          // parent is not "under"
-		{"/a/b/../c", "/a", true},      // after Clean
+		{"/a/bc", "/a/b", false},  // not a prefix match
+		{"/a", "/a/b", false},     // parent is not "under"
+		{"/a/b/../c", "/a", true}, // after Clean
 		{"/x/y/z", "/a/b", false},
 	}
 	for _, tc := range tests {

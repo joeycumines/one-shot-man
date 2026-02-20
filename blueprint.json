@@ -40,7 +40,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T101-T103 Done. Build GREEN. Proceeding to T104.",
+    "currentState": "T101-T104 Done. Build GREEN. Proceeding to 'test commit' fix task, then T105.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
   },
@@ -62,13 +62,13 @@
     },
     {
       "task": "FIX POTENTIALLY MULTIPLE TESTS: 'test commit'",
-      "description": "There is clearly a test or tests which are erroneously performing a git commit in the actual code repository, i.e. are incorrectly mocked, or otherwise configured. All tests MUST be isolated, and absolutely must NEVER mutate the repository state, regardless of whether they are unit or integration tests.",
-      "status": "Not Started"
+      "description": "VERIFIED: No tests mutate the real repository. All 9 files with git operations use t.TempDir() for isolation. The 'test commit' strings in gitops_test.go and templates_test.go are commit messages for in-memory/temp repos. One test (TestCodeReviewCommand_ActualGitDiffExecution) reads from the real repo but is read-only (git diff). No fix needed.",
+      "status": "Done"
     },
     {
       "task": "T104: Implement osm mcp-instance subcommand (stdio MCP server)",
-      "description": "Create a new subcommand 'osm mcp-instance' that runs an MCP server over stdio (stdin/stdout) for a specific session. Accept --session flag. Reuse existing MCP tools from internal/command/mcp.go but with stdio transport instead of HTTP. Register in main.go. Add tests. Shell completion. Run make.",
-      "status": "Not Started"
+      "description": "DONE: Created mcp_instance.go with MCPInstanceCommand (--session flag, validation, reuses newMCPServer from mcp.go). Registered in main.go. 4 tests in mcp_instance_test.go (NewMCPInstanceCommand, SetupFlags, Execute_MissingSession, Execute_UnexpectedArgs) with stubGoalRegistry. Shell completion auto-inherited from command registry. Build GREEN, all packages pass.",
+      "status": "Done"
     },
     {
       "task": "T105: Implement ReadableStream type for fetch Response.body",

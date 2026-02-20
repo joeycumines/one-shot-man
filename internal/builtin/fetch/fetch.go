@@ -8,6 +8,7 @@
 package fetch
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -183,6 +184,12 @@ func buildResponse(runtime *goja.Runtime, resp *http.Response, body []byte) *goj
 	_ = result.Set("statusText", resp.Status)
 	_ = result.Set("url", resp.Request.URL.String())
 	_ = result.Set("headers", buildHeaders(runtime, resp.Header))
+
+	// body — ReadableStream backed by the already-buffered bytes.
+	// The stream provides getReader()/locked/cancel() API surface;
+	// T106 will upgrade reader.read() to return Promises.
+	stream := NewReadableStream(io.NopCloser(bytes.NewReader(body)))
+	_ = result.Set("body", wrapReadableStreamJS(runtime, stream))
 
 	// text() returns a Promise<string> that resolves with the body as a string.
 	// Since the body is fully buffered, the Promise resolves immediately.

@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -857,5 +858,339 @@ func TestSyncCommand_NoSubcommandShowsConfigSubcommands(t *testing.T) {
 	}
 	if !strings.Contains(usage, "config-pull") {
 		t.Fatalf("expected 'config-pull' in usage, got %q", usage)
+	}
+}
+
+// --- New enhancement tests ---
+
+func TestSyncCommand_ConfigPullDryRun(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "old-value")
+
+	// Set a stored SHA that differs from what we'll write, so pull proceeds.
+	cfg.SetGlobalOption("sync.config-sha", "stale-sha")
+
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# osm-shared-config-version 1\ngoal.autodiscovery new-value\nprompt.template added-key\n"
+	if err := os.WriteFile(filepath.Join(configDir, "shared.conf"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewSyncCommand(cfg)
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-pull", "--dry-run"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("config-pull --dry-run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Dry run: no changes applied") {
+		t.Fatalf("expected dry-run message, got %q", output)
+	}
+	if !strings.Contains(output, "Config diff:") {
+		t.Fatalf("expected diff summary, got %q", output)
+	}
+
+	// Values must NOT have been applied.
+	if v := cfg.GetString("goal.autodiscovery"); v != "old-value" {
+		t.Fatalf("expected goal.autodiscovery=old-value (unchanged), got %q", v)
+	}
+	if v := cfg.GetString("prompt.template"); v != "" {
+		t.Fatalf("expected prompt.template to be unset (dry-run), got %q", v)
+	}
+}
+
+func TestSyncCommand_ConfigPullConflictSummary(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+
+	// Local state: one key matches remote, one differs, one is absent in remote.
+	cfg.SetGlobalOption("goal.autodiscovery", "true")    // same as remote → unchanged
+	cfg.SetGlobalOption("prompt.template", "old-value")   // differs → updated
+	// "hot-snippets.no-warning" not set locally → added
+
+	// Set stored SHA to something different so pull proceeds.
+	cfg.SetGlobalOption("sync.config-sha", "old-sha")
+
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# osm-shared-config-version 1\ngoal.autodiscovery true\nhot-snippets.no-warning true\nprompt.template new-value\n"
+	if err := os.WriteFile(filepath.Join(configDir, "shared.conf"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewSyncCommand(cfg)
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-pull"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("config-pull failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	output := stdout.String()
+	// Should contain the summary line with correct counts.
+	if !strings.Contains(output, "1 added") {
+		t.Fatalf("expected '1 added' in summary, got %q", output)
+	}
+	if !strings.Contains(output, "1 updated") {
+		t.Fatalf("expected '1 updated' in summary, got %q", output)
+	}
+	if !strings.Contains(output, "1 unchanged") {
+		t.Fatalf("expected '1 unchanged' in summary, got %q", output)
+	}
+
+	// Verify changes were actually applied.
+	if !strings.Contains(output, "Applied 3 config keys") {
+		t.Fatalf("expected 'Applied 3 config keys', got %q", output)
+	}
+}
+
+func TestSyncCommand_ConfigPushAtomicWrite(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "true")
+	cmd := NewSyncCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-push"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("config-push failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	// Verify the final file exists.
+	sharedPath := filepath.Join(root, "config", "shared.conf")
+	if _, err := os.Stat(sharedPath); err != nil {
+		t.Fatalf("shared.conf not created: %v", err)
+	}
+
+	// Verify no .tmp file remains.
+	tmpPath := sharedPath + ".tmp"
+	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
+		t.Fatalf("expected .tmp file to be cleaned up, but it exists")
+	}
+}
+
+func TestSyncCommand_ConfigLockAcquisition(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	// Acquire lock.
+	unlock, err := syncConfigLock(root)
+	if err != nil {
+		t.Fatalf("first lock acquisition failed: %v", err)
+	}
+
+	// Verify lock file exists.
+	lockPath := syncConfigLockPath(root)
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("lock file does not exist: %v", err)
+	}
+
+	// Verify lock file contains PID and timestamp.
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("reading lock file: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "pid=") {
+		t.Fatalf("lock file missing pid, got %q", content)
+	}
+	if !strings.Contains(content, "time=") {
+		t.Fatalf("lock file missing time, got %q", content)
+	}
+
+	// Second acquisition must fail.
+	_, err = syncConfigLock(root)
+	if err == nil {
+		t.Fatal("expected error on second lock acquisition")
+	}
+	if !strings.Contains(err.Error(), "another sync operation is in progress") {
+		t.Fatalf("expected 'another sync operation' error, got %q", err.Error())
+	}
+
+	// Release first lock.
+	unlock()
+}
+
+func TestSyncCommand_ConfigLockCleanup(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	unlock, err := syncConfigLock(root)
+	if err != nil {
+		t.Fatalf("lock acquisition failed: %v", err)
+	}
+
+	lockPath := syncConfigLockPath(root)
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("lock file does not exist after acquisition: %v", err)
+	}
+
+	// Release the lock.
+	unlock()
+
+	// Lock file should be gone.
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Fatalf("lock file should be removed after unlock, stat returned: %v", err)
+	}
+
+	// Should be able to acquire again.
+	unlock2, err := syncConfigLock(root)
+	if err != nil {
+		t.Fatalf("re-acquisition after cleanup failed: %v", err)
+	}
+	unlock2()
+}
+
+func TestSyncCommand_ConfigPushGitignoreWarning(t *testing.T) {
+	t.Parallel()
+
+	// checkGitignored depends on git. Test the function directly.
+	// In a non-git directory, checkGitignored should return false (git fails).
+	root := t.TempDir()
+	if checkGitignored(root, filepath.Join(root, "somefile")) {
+		t.Fatal("expected checkGitignored=false in non-git directory")
+	}
+
+	// Set up a git repo with a .gitignore that ignores shared.conf.
+	gitDir := t.TempDir()
+	// Check if git is available.
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available, skipping gitignore test")
+	}
+
+	// git init
+	gitInit := exec.Command("git", "init", gitDir)
+	if out, err := gitInit.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v\n%s", err, out)
+	}
+
+	// Create .gitignore that ignores shared.conf.
+	if err := os.WriteFile(filepath.Join(gitDir, ".gitignore"), []byte("shared.conf\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	sharedPath := filepath.Join(gitDir, "shared.conf")
+	if err := os.WriteFile(sharedPath, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if !checkGitignored(gitDir, sharedPath) {
+		t.Fatal("expected checkGitignored=true for gitignored file")
+	}
+
+	// A file not in the gitignore should return false.
+	otherPath := filepath.Join(gitDir, "other.txt")
+	if err := os.WriteFile(otherPath, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if checkGitignored(gitDir, otherPath) {
+		t.Fatal("expected checkGitignored=false for non-ignored file")
+	}
+}
+
+func TestComputeConfigDiff(t *testing.T) {
+	t.Parallel()
+
+	local := map[string]string{
+		"goal.autodiscovery":     "true",
+		"prompt.template":        "old",
+		"hot-snippets.no-warning": "true",
+	}
+	remote := []configKeyValue{
+		{key: "goal.autodiscovery", value: "true"},      // unchanged
+		{key: "prompt.template", value: "new"},           // updated
+		{key: "editor.font-size", value: "14"},           // added
+		{key: "sync.repository", value: "git@host:repo"}, // sensitive — should be excluded
+	}
+
+	summary := computeConfigDiff(local, remote)
+
+	if len(summary.unchanged) != 1 || summary.unchanged[0] != "goal.autodiscovery" {
+		t.Fatalf("expected 1 unchanged (goal.autodiscovery), got %v", summary.unchanged)
+	}
+	if len(summary.updated) != 1 || summary.updated[0].key != "prompt.template" {
+		t.Fatalf("expected 1 updated (prompt.template), got %v", summary.updated)
+	}
+	if len(summary.added) != 1 || summary.added[0].key != "editor.font-size" {
+		t.Fatalf("expected 1 added (editor.font-size), got %v", summary.added)
+	}
+}
+
+func TestSyncCommand_ConfigPullEmptySyncRoot(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	// Point to a path that does NOT exist.
+	nonexistent := filepath.Join(t.TempDir(), "does-not-exist")
+	cfg.SetGlobalOption("sync.local-path", nonexistent)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+	cfg.SetGlobalOption("sync.config-sha", "dummy")
+
+	cmd := NewSyncCommand(cfg)
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-pull"}, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error for nonexistent sync root")
+	}
+	if !strings.Contains(err.Error(), "sync directory does not exist") {
+		t.Fatalf("expected 'sync directory does not exist', got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), nonexistent) {
+		t.Fatalf("expected error to contain path %q, got %q", nonexistent, err.Error())
+	}
+}
+
+func TestSyncCommand_ConfigPullDryRunDoesNotUpdateSHA(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	root := t.TempDir()
+	cfg.SetGlobalOption("sync.local-path", root)
+	cfg.SetGlobalOption("sync.config-sync", "true")
+
+	originalSHA := "original-test-sha"
+	cfg.SetGlobalOption("sync.config-sha", originalSHA)
+
+	configDir := filepath.Join(root, "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := "# osm-shared-config-version 1\ngoal.autodiscovery true\n"
+	if err := os.WriteFile(filepath.Join(configDir, "shared.conf"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := NewSyncCommand(cfg)
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"config-pull", "--dry-run"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("config-pull --dry-run failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	if !strings.Contains(stdout.String(), "Dry run") {
+		t.Fatalf("expected dry-run output, got %q", stdout.String())
+	}
+
+	// SHA must remain unchanged.
+	if got := cfg.GetString("sync.config-sha"); got != originalSHA {
+		t.Fatalf("expected SHA to remain %q after dry-run, got %q", originalSHA, got)
+	}
+
+	// Config values must NOT have been applied.
+	if v := cfg.GetString("goal.autodiscovery"); v == "true" {
+		t.Fatal("expected goal.autodiscovery to NOT be set after dry-run")
 	}
 }

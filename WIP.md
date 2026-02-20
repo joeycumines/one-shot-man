@@ -58,7 +58,7 @@
 
 - **T026**: CHANGELOG — claude-mux milestone (18 Added entries for all building blocks, 1 Changed entry for orchestrator→claudemux rename, 1 Fixed entry for cross-platform filepath.ToSlash). Keep-a-Changelog 1.1.0 format.
 
-### Next task: T027
-Sync common config enhancement — conflict handling, schema versioning, edge cases.
+- **T027**: Sync common config enhancement (6 improvements: conflict summary on pull, --dry-run flag, atomic write for push, sync lockfile, gitignore detection, empty sync root; 9 new tests). Build green.
 
-### CRITICAL: 26 tasks accumulated with NO COMMITS. Rule of Two MUST execute ASAP.
+### Next task: T028
+Autodiscovery refinement — config key respect, symlink traversal, permission errors, debug logging.

@@ -3,6 +3,7 @@ package command
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -312,6 +313,98 @@ func BenchmarkPathScoring(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			up, down := countRelSegments(segments)
 			_, _ = up, down
+		}
+	})
+}
+
+// BenchmarkNormalizePath benchmarks path normalization with symlink resolution.
+// Expected performance class: ~5-50μs/op (EvalSymlinks + string ops).
+func BenchmarkNormalizePath(b *testing.B) {
+	b.Run("Simple", func(b *testing.B) {
+		// Normalize a simple temp directory path (no symlinks involved).
+		dir := b.TempDir()
+		subDir := filepath.Join(dir, "sub")
+		os.MkdirAll(subDir, 0755)
+
+		cfg := config.NewConfig()
+		gd := NewGoalDiscovery(cfg)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			p, err := gd.normalizePath(subDir)
+			_, _ = p, err
+		}
+	})
+
+	if runtime.GOOS != "windows" {
+		b.Run("WithSymlink", func(b *testing.B) {
+			dir := b.TempDir()
+			realDir := filepath.Join(dir, "real")
+			os.MkdirAll(realDir, 0755)
+			linkDir := filepath.Join(dir, "link")
+			if err := os.Symlink(realDir, linkDir); err != nil {
+				b.Skipf("Symlink not supported: %v", err)
+			}
+
+			cfg := config.NewConfig()
+			gd := NewGoalDiscovery(cfg)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				p, err := gd.normalizePath(linkDir)
+				_, _ = p, err
+			}
+		})
+	}
+}
+
+// BenchmarkAnnotatedPaths benchmarks annotated path discovery.
+func BenchmarkAnnotatedPaths(b *testing.B) {
+	b.Run("GoalPaths", func(b *testing.B) {
+		dir := b.TempDir()
+		goalDir := filepath.Join(dir, "goals")
+		os.MkdirAll(goalDir, 0755)
+		for _, name := range []string{"review.json", "refactor.json"} {
+			os.WriteFile(filepath.Join(goalDir, name), []byte(`{}`), 0644)
+		}
+
+		cfg := config.NewConfig()
+		cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+		cfg.SetGlobalOption("goal.autodiscovery", "false")
+		cfg.SetGlobalOption("goal.paths", goalDir)
+
+		gd := NewGoalDiscovery(cfg)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			paths := gd.DiscoverAnnotatedGoalPaths()
+			_ = paths
+		}
+	})
+
+	b.Run("ScriptPaths", func(b *testing.B) {
+		dir := b.TempDir()
+		scriptDir := filepath.Join(dir, "scripts")
+		os.MkdirAll(scriptDir, 0755)
+		for _, name := range []string{"build.js", "deploy.js"} {
+			os.WriteFile(filepath.Join(scriptDir, name), []byte(`ok`), 0644)
+		}
+
+		cfg := config.NewConfig()
+		cfg.SetGlobalOption("script.disable-standard-paths", "true")
+		cfg.SetGlobalOption("script.autodiscovery", "false")
+		cfg.SetGlobalOption("script.paths", scriptDir)
+
+		sd := NewScriptDiscovery(cfg)
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			paths := sd.DiscoverAnnotatedScriptPaths()
+			_ = paths
 		}
 	})
 }

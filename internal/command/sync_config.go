@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // sharedConfigVersion is the current schema version for shared config files.
@@ -61,6 +63,13 @@ func (c *SyncCommand) executeConfigPush(args []string, stdout, stderr io.Writer)
 		return err
 	}
 
+	// Acquire sync lock.
+	unlock, err := syncConfigLock(root)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	// Collect shareable keys.
 	keys := make([]string, 0, len(c.config.Global))
 	for k := range c.config.Global {
@@ -89,9 +98,21 @@ func (c *SyncCommand) executeConfigPush(args []string, stdout, stderr io.Writer)
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
+	// Atomic write: write to temp file, then rename.
 	sharedPath := filepath.Join(root, sharedConfigRelPath)
-	if err := os.WriteFile(sharedPath, []byte(content), 0644); err != nil {
-		return fmt.Errorf("writing shared config: %w", err)
+	tmpPath := sharedPath + ".tmp"
+	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("writing shared config temp file: %w", err)
+	}
+	if err := os.Rename(tmpPath, sharedPath); err != nil {
+		// Clean up temp file on rename failure.
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("renaming shared config temp file: %w", err)
+	}
+
+	// Check if shared.conf is gitignored.
+	if checkGitignored(root, sharedPath) {
+		_, _ = fmt.Fprintln(stderr, "Warning: shared.conf is gitignored and won't be committed")
 	}
 
 	// Store SHA for conflict detection.
@@ -111,10 +132,14 @@ func (c *SyncCommand) executeConfigPush(args []string, stdout, stderr io.Writer)
 //   - Stored SHA differs             → remote changed, auto-apply
 func (c *SyncCommand) executeConfigPull(args []string, stdout, stderr io.Writer) error {
 	var force bool
+	var dryRun bool
 	for _, a := range args {
-		if a == "--force" || a == "-f" {
+		switch a {
+		case "--force", "-f":
 			force = true
-		} else {
+		case "--dry-run":
+			dryRun = true
+		default:
 			return fmt.Errorf("unexpected argument for config-pull: %s", a)
 		}
 	}
@@ -131,6 +156,20 @@ func (c *SyncCommand) executeConfigPull(args []string, stdout, stderr io.Writer)
 	root, err := c.syncRoot()
 	if err != nil {
 		return err
+	}
+
+	// Check that the sync root directory exists (pull requires it).
+	if _, statErr := os.Stat(root); os.IsNotExist(statErr) {
+		return fmt.Errorf("sync directory does not exist: %s", root)
+	}
+
+	// Acquire sync lock (unless dry-run, which is read-only).
+	if !dryRun {
+		unlock, lockErr := syncConfigLock(root)
+		if lockErr != nil {
+			return lockErr
+		}
+		defer unlock()
 	}
 
 	sharedPath := filepath.Join(root, sharedConfigRelPath)
@@ -169,8 +208,18 @@ func (c *SyncCommand) executeConfigPull(args []string, stdout, stderr io.Writer)
 		return fmt.Errorf("unknown sync state: use --force for first pull")
 	}
 
-	if storedSHA == remoteSHA {
+	if storedSHA == remoteSHA && !dryRun {
 		_, _ = fmt.Fprintln(stdout, "Shared config already up to date (SHA matches).")
+		return nil
+	}
+
+	// Compute and print conflict summary.
+	summary := computeConfigDiff(c.config.Global, configKeys)
+	printConfigDiffSummary(stdout, summary)
+
+	// In dry-run mode, stop here — do not apply or update SHA.
+	if dryRun {
+		_, _ = fmt.Fprintln(stdout, "Dry run: no changes applied.")
 		return nil
 	}
 
@@ -272,4 +321,88 @@ func parseVersionHeader(line string) (int, error) {
 func sha256Hex(s string) string {
 	h := sha256.Sum256([]byte(s))
 	return fmt.Sprintf("%x", h)
+}
+
+// configDiffSummary describes the differences between local and remote config.
+type configDiffSummary struct {
+	added     []configKeyValue // keys in remote but not in local
+	updated   []configKeyValue // keys in both but different values
+	unchanged []string         // keys in both with same values
+}
+
+// computeConfigDiff compares local config values against remote key-value
+// pairs. Only non-sensitive remote keys are considered.
+func computeConfigDiff(localConfig map[string]string, remoteKeys []configKeyValue) configDiffSummary {
+	var s configDiffSummary
+	for _, kv := range remoteKeys {
+		if isSensitiveKey(kv.key) {
+			continue
+		}
+		localVal, exists := localConfig[kv.key]
+		if !exists {
+			s.added = append(s.added, kv)
+		} else if localVal != kv.value {
+			s.updated = append(s.updated, kv)
+		} else {
+			s.unchanged = append(s.unchanged, kv.key)
+		}
+	}
+	return s
+}
+
+// printConfigDiffSummary writes a human-readable diff summary to w.
+func printConfigDiffSummary(w io.Writer, summary configDiffSummary) {
+	_, _ = fmt.Fprintf(w, "Config diff: %d added, %d updated, %d unchanged\n",
+		len(summary.added), len(summary.updated), len(summary.unchanged))
+	for _, kv := range summary.added {
+		_, _ = fmt.Fprintf(w, "  + %s = %s\n", kv.key, kv.value)
+	}
+	for _, kv := range summary.updated {
+		_, _ = fmt.Fprintf(w, "  ~ %s = %s\n", kv.key, kv.value)
+	}
+	for _, k := range summary.unchanged {
+		_, _ = fmt.Fprintf(w, "  = %s\n", k)
+	}
+}
+
+// syncConfigLockPath returns the path of the sync-config lock file.
+func syncConfigLockPath(root string) string {
+	return filepath.Join(root, "config", ".sync-config.lock")
+}
+
+// syncConfigLock acquires an advisory lock file in the sync config directory.
+// Returns a cleanup function that releases the lock.
+func syncConfigLock(root string) (func(), error) {
+	lockPath := syncConfigLockPath(root)
+
+	// Ensure the parent directory exists.
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0755); err != nil {
+		return nil, fmt.Errorf("creating lock directory: %w", err)
+	}
+
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	if err != nil {
+		if os.IsExist(err) {
+			return nil, fmt.Errorf("another sync operation is in progress (lock: %s)", lockPath)
+		}
+		return nil, fmt.Errorf("acquiring sync lock: %w", err)
+	}
+
+	// Write debugging info.
+	_, _ = fmt.Fprintf(f, "pid=%d\ntime=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339))
+	_ = f.Close()
+
+	cleanup := func() {
+		_ = os.Remove(lockPath)
+	}
+	return cleanup, nil
+}
+
+// checkGitignored returns true if the given path is ignored by git in the
+// given root directory. Returns false if git is not available or on any error.
+func checkGitignored(root, path string) bool {
+	cmd := exec.Command("git", "check-ignore", "-q", path)
+	cmd.Dir = root
+	err := cmd.Run()
+	return err == nil // exit 0 means the file IS gitignored
 }

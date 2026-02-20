@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T026 Done. 26 tasks accumulated — MUST COMMIT NOW. Rule of Two required before commit. Then T027 next.",
+    "currentState": "T001-T027 Done. T028 next. Commit T027 changes pending.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -174,8 +174,8 @@
     },
     {
       "task": "T027: Sync common config enhancement",
-      "description": "Enhance sync.go/sync_config.go: conflict handling (prompt for unknown, auto-override for SHA-tracked), schema versioning in YAML frontmatter, edge cases (empty repo, partial failure, concurrent sync), gitignored file handling. Tests. Run make.",
-      "status": "Not Started"
+      "description": "Enhanced sync_config.go with 6 improvements: (1) Conflict summary on pull — computeConfigDiff shows added/updated/unchanged keys before applying. (2) Dry-run mode — --dry-run flag previews changes without applying or updating SHA. (3) Atomic write for push — writes to .tmp then os.Rename for crash safety. (4) Sync lockfile — O_CREATE|O_EXCL advisory lock with PID+timestamp prevents concurrent push/pull corruption. (5) Gitignore detection — warns if shared.conf is gitignored after push. (6) Empty sync root detection — clear error on pull when directory missing. 9 new tests: DryRun, ConflictSummary, AtomicWrite, LockAcquisition, LockCleanup, GitignoreWarning, ComputeConfigDiff, EmptySyncRoot, DryRunDoesNotUpdateSHA. Build green.",
+      "status": "Done"
     },
     {
       "task": "T028: Autodiscovery refinement",

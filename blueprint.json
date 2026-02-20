@@ -8,6 +8,12 @@
   },
   "globalAlerts": [
     {
+      "warning": "ABSOLUTE IMMEDIATE PRIORITY: Integration tests testing against REAL claude (via ollama) are critical. OLLAMA IS AVAILABLE IN THE HOST ENVIRONMENT. YOU MUST RUN THE INTEGRATION TESTS. The code MUST do something useful when tested end-to-end. Without real testing against models, the code is USELESS FUCKING SLOP."
+    },
+    {
+      "warning": "CRITICAL REPETITION: OLLAMA IS IN THE AVAILABLE HOST ENVIRONMENT. INTEGRATION TESTS STRICTLY MUST BE RUN. YOU MUST PROVE IT WORKS AGAINST RECORDED REAL-WORLD MODELS. THIS IS NON-NEGOTIABLE."
+    },
+    {
       "warning": "ON TOOLS: Use config.mk custom targets. Limit output. Pipe through tail after tee to build.log. Use 'make find-test-failures'."
     },
     {
@@ -36,7 +42,7 @@
     "contextManagement": "One task at a time, in order. Do not attempt to solve all tasks in a single turn.",
     "subagentPolicy": "Use subagents for Rule of Two review gate ONLY. Work subagents do NOT self-review.",
     "blueprintRefinement": "Continual refinement required. After every task, re-read and fix stale descriptions.",
-    "runMakeAfterEveryChange": "Run 'make make-all-with-log' after EVERY code change. Zero failures before proceeding.",
+    "runMakeAfterEveryChange": "Run 'make make-all-with-log' after EVERY code change. Zero failures before proceeding. OLLAMA IS AVAILABLE IN THE HOST ENVIRONMENT. RUN THE INTEGRATION TESTS!",
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
@@ -45,6 +51,56 @@
     "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
   },
   "sequentialTasks": [
+    {
+      "task": "T090: Setup real Ollama Integration Test Foundation",
+      "description": "Establish a dedicated, aggressive integration-test pipeline designed specifically for `-provider=ollama` and `gpt-oss:20b-cloud`. Ensure it checks for actual usefulness and model interaction. RULE OF TWO BAKED IN: Execute strict-review-gate subagent #1 to assess the test rigor. Execute subagent #2 for identical review. Proceed only when both PASS.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T091: Fix TUI regex incompatibility (Ollama cursor)",
+      "description": "Update `internal/builtin/claudemux/model_nav.go:reSelectedArrow` to match `▸` used by Ollama. Parse unselected items cleanly. See `scratch/gap-analysis/investigation-model-nav.md` and `index.md`. RULE OF TWO BAKED IN: Subagent #1 validates the regex coverage against Ollama TUI output. Subagent #2 performs an independent blind review. No completion without two PASS verdicts.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T092: Implement native OllamaProvider in claudemux",
+      "description": "Create `provider_ollama.go` implementing `Provider`. Do not automatically inject `--model` flag into arguments, preventing TUI bypass/crash. See `scratch/gap-analysis/investigation-cli-args-vs-tui.md`. RULE OF TWO BAKED IN: Spawn strict-review-gate subagent #1 to analyze struct implementation. Subagent #2 corroborates. Both must PASS.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T093: Wire OllamaProvider into command registry",
+      "description": "Update `resolveProvider` in `internal/command/claude_mux.go` to support `\"ollama\"` switch case. Eliminate the rigid `claude-code` default enforcement. See `scratch/gap-analysis/investigation-provider-registry.md`. RULE OF TWO BAKED IN: Subagent #1 checks the switch branching logic. Subagent #2 does the same. Both must PASS.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T094: Command Parameter Shell Word-splitting (Unix)",
+      "description": "Update `internal/builtin/pty/pty_unix.go`. If `cfg.Command` contains spaces and `cfg.Args` is functionally empty, use `shlex`-style splitting so `-command=\"ollama launch claude --config\"` resolves the binary properly without crashing `exec.CommandContext`. See `scratch/gap-analysis/investigation-pty-command.md`. RULE OF TWO BAKED IN: Subagent #1 tests splitting edge cases. Subagent #2 validates robustness. PASS both.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T095: Command Parameter Shell Word-splitting (Windows)",
+      "description": "Implement analogous word-splitting logic for `internal/builtin/pty/pty_windows.go` to ensure cross-platform parity for custom shell commands. RULE OF TWO BAKED IN: Subagent #1 reviews Windows-specific argument formatting. Subagent #2 confirms parity. Both must PASS.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T096: Implement end-to-end integration test for TUI navigation",
+      "description": "Write a `TestIntegration_Ollama_TUI_Navigation` using the real agent. Assert it correctly navigates the menu with arrow keys and `Enter` via PTY boundaries. Assert it actually talks to `gpt-oss:20b-cloud`. RULE OF TWO BAKED IN: Subagent #1 executes test pipeline logic checks. Subagent #2 confirms. Both must PASS.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T097: Validate PR split goal end-to-end execution",
+      "description": "Load `goals/orchestrate-pr-split.json` and use the Muxer to actually run it end-to-end against `-provider=ollama`. The integration tests MUST PROVE the software is working, end-to-end, and actively useful. RULE OF TWO BAKED IN: Subagent #1 assesses functional utility of the output. Subagent #2 confirms it handles real code splitting. Both PASS.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T098: Document integration test framework findings",
+      "description": "Produce `scratch/gap-analysis/integration-findings.md` logging exactly how the system behaves when interacting with real models. Identify edge cases where the model unexpectedly deviates or streaming hangs. RULE OF TWO BAKED IN: Subagent #1 verifies findings map to reality. Subagent #2 double checks. Both PASS.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T099: Extend testing infrastructure permanently",
+      "description": "Embed the requirement for real integration tests into the `continuousVerification` mandate permanently. Add a make target explicitly for `make test-live-ollama` (define it in project.mk) that CI runs (conditionally) or devs run locally. RULE OF TWO BAKED IN: Subagent #1 reviews Makefile modifications. Subagent #2 validates test execution boundaries. Both PASS.",
+      "status": "Not Started"
+    },
     {
       "task": "T101: Fix txtar context root formatting",
       "description": "Fixed in ctxutil.go buildContext(): metadata lines (context root, common path, tracked directories) are now extracted and rendered OUTSIDE the code fence with paths in backticks. 3 new test cases (MetadataExtracted, NoMetadata, MetadataOnly). Build GREEN.",
@@ -467,8 +523,8 @@
     }
   ],
   "continuousVerification": {
-    "task": "Run 'make make-all-with-log' after EVERY significant change",
-    "failPolicy": "If ANY test fails, STOP and fix. Zero tolerance.",
+    "task": "Run 'make make-all-with-log' after EVERY significant change, and run INTEGRATION TESTS with REAL claude (ollama target) CONSTANTLY. OLLAMA IS AVAILABLE IN THE HOST ENVIRONMENT. YOU MUST RUN IT.",
+    "failPolicy": "If ANY test fails, STOP and fix. Zero tolerance. If the software is not proven USEFUL end-to-end against a REAL model (e.g. gpt-oss:20b-cloud via ollama), YOU FAIL. OLLAMA IS AVAILABLE. INTEGRATION TESTS STRICTLY MUST BE RUN.",
     "testCoverage": "Target 100%. Verify with go tool cover.",
     "crossPlatform": "Checkpoints at T120, T136, T160, T170-T172."
   },

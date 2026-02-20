@@ -1,18 +1,13 @@
 package claudemux
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestNewMCPInstanceConfig(t *testing.T) {
@@ -38,6 +33,9 @@ func TestNewMCPInstanceConfig(t *testing.T) {
 	}
 	if !strings.HasSuffix(c.ConfigPath(), "mcp-config.json") {
 		t.Errorf("ConfigPath = %q, want to end with mcp-config.json", c.ConfigPath())
+	}
+	if c.OsmBinary == "" {
+		t.Error("OsmBinary is empty")
 	}
 }
 
@@ -80,100 +78,6 @@ func TestNewMCPInstanceConfig_LongSessionID(t *testing.T) {
 	}
 }
 
-func TestMCPInstanceConfig_Endpoint_BeforeListen(t *testing.T) {
-	t.Parallel()
-
-	c, err := NewMCPInstanceConfig("ep-test")
-	if err != nil {
-		t.Fatalf("NewMCPInstanceConfig: %v", err)
-	}
-	defer func() { _ = c.Close() }()
-
-	if ep := c.Endpoint(); ep != "" {
-		t.Errorf("Endpoint before listen = %q, want empty", ep)
-	}
-	if addr := c.ListenerAddr(); addr != nil {
-		t.Errorf("ListenerAddr before listen = %v, want nil", addr)
-	}
-}
-
-func testMCPServer() *mcp.Server {
-	return mcp.NewServer(&mcp.Implementation{Name: "test", Version: "0.0.0"}, nil)
-}
-
-func TestMCPInstanceConfig_ListenAndServe(t *testing.T) {
-	t.Parallel()
-
-	c, err := NewMCPInstanceConfig("listen-test")
-	if err != nil {
-		t.Fatalf("NewMCPInstanceConfig: %v", err)
-	}
-	defer func() { _ = c.Close() }()
-
-	server := testMCPServer()
-	if err := c.ListenAndServe(server); err != nil {
-		t.Fatalf("ListenAndServe: %v", err)
-	}
-
-	ep := c.Endpoint()
-	if ep == "" {
-		t.Fatal("Endpoint is empty after ListenAndServe")
-	}
-	if runtime.GOOS == "windows" {
-		if !strings.HasPrefix(ep, "http://127.0.0.1:") {
-			t.Errorf("Endpoint = %q, want http://127.0.0.1:... on Windows", ep)
-		}
-	} else {
-		if !strings.HasPrefix(ep, "http+unix://") {
-			t.Errorf("Endpoint = %q, want http+unix://... on Unix", ep)
-		}
-	}
-	if !strings.HasSuffix(ep, "/mcp") {
-		t.Errorf("Endpoint = %q, want to end with /mcp", ep)
-	}
-
-	addr := c.ListenerAddr()
-	if addr == nil {
-		t.Fatal("ListenerAddr is nil after ListenAndServe")
-	}
-}
-
-func TestMCPInstanceConfig_ListenAndServe_Double(t *testing.T) {
-	t.Parallel()
-
-	c, err := NewMCPInstanceConfig("double-listen")
-	if err != nil {
-		t.Fatalf("NewMCPInstanceConfig: %v", err)
-	}
-	defer func() { _ = c.Close() }()
-
-	server := testMCPServer()
-	if err := c.ListenAndServe(server); err != nil {
-		t.Fatalf("first ListenAndServe: %v", err)
-	}
-
-	err = c.ListenAndServe(server)
-	if !errors.Is(err, ErrAlreadyListening) {
-		t.Errorf("second ListenAndServe: got %v, want ErrAlreadyListening", err)
-	}
-}
-
-func TestMCPInstanceConfig_ListenAndServe_AfterClose(t *testing.T) {
-	t.Parallel()
-
-	c, err := NewMCPInstanceConfig("closed-listen")
-	if err != nil {
-		t.Fatalf("NewMCPInstanceConfig: %v", err)
-	}
-	_ = c.Close()
-
-	server := testMCPServer()
-	err = c.ListenAndServe(server)
-	if !errors.Is(err, ErrInstanceClosed) {
-		t.Errorf("ListenAndServe after Close: got %v, want ErrInstanceClosed", err)
-	}
-}
-
 func TestMCPInstanceConfig_WriteConfigFile(t *testing.T) {
 	t.Parallel()
 
@@ -183,10 +87,8 @@ func TestMCPInstanceConfig_WriteConfigFile(t *testing.T) {
 	}
 	defer func() { _ = c.Close() }()
 
-	server := testMCPServer()
-	if err := c.ListenAndServe(server); err != nil {
-		t.Fatalf("ListenAndServe: %v", err)
-	}
+	// Override binary for predictable test output.
+	c.OsmBinary = "/usr/local/bin/osm"
 
 	if err := c.WriteConfigFile(); err != nil {
 		t.Fatalf("WriteConfigFile: %v", err)
@@ -207,11 +109,22 @@ func TestMCPInstanceConfig_WriteConfigFile(t *testing.T) {
 	if !ok {
 		t.Fatal("config missing 'osm' server entry")
 	}
-	if osm.URL == "" {
-		t.Error("osm URL is empty")
+	if osm.Command != "/usr/local/bin/osm" {
+		t.Errorf("osm Command = %q, want %q", osm.Command, "/usr/local/bin/osm")
 	}
-	if osm.URL != c.Endpoint() {
-		t.Errorf("osm URL = %q, want %q", osm.URL, c.Endpoint())
+	wantArgs := []string{"mcp-instance", "--session", "config-test"}
+	if len(osm.Args) != len(wantArgs) {
+		t.Fatalf("osm Args len = %d, want %d", len(osm.Args), len(wantArgs))
+	}
+	for i, arg := range wantArgs {
+		if osm.Args[i] != arg {
+			t.Errorf("osm Args[%d] = %q, want %q", i, osm.Args[i], arg)
+		}
+	}
+
+	// Verify no "url" field in the output.
+	if strings.Contains(string(data), `"url"`) {
+		t.Errorf("config should not contain url field, got:\n%s", data)
 	}
 
 	// Verify file permissions on Unix.
@@ -227,18 +140,49 @@ func TestMCPInstanceConfig_WriteConfigFile(t *testing.T) {
 	}
 }
 
-func TestMCPInstanceConfig_WriteConfigFile_BeforeListen(t *testing.T) {
+func TestMCPInstanceConfig_WriteConfigFile_AfterClose(t *testing.T) {
 	t.Parallel()
 
-	c, err := NewMCPInstanceConfig("no-listen")
+	c, err := NewMCPInstanceConfig("closed-write")
+	if err != nil {
+		t.Fatalf("NewMCPInstanceConfig: %v", err)
+	}
+	_ = c.Close()
+
+	err = c.WriteConfigFile()
+	if !errors.Is(err, ErrInstanceClosed) {
+		t.Errorf("WriteConfigFile after Close: got %v, want ErrInstanceClosed", err)
+	}
+}
+
+func TestMCPInstanceConfig_WriteConfigFile_SessionIDInArgs(t *testing.T) {
+	t.Parallel()
+
+	// Test that the original session ID is preserved in the args.
+	c, err := NewMCPInstanceConfig("session-with-special_chars.123")
 	if err != nil {
 		t.Fatalf("NewMCPInstanceConfig: %v", err)
 	}
 	defer func() { _ = c.Close() }()
 
-	err = c.WriteConfigFile()
-	if !errors.Is(err, ErrNotListening) {
-		t.Errorf("WriteConfigFile before listen: got %v, want ErrNotListening", err)
+	c.OsmBinary = "osm"
+	if err := c.WriteConfigFile(); err != nil {
+		t.Fatalf("WriteConfigFile: %v", err)
+	}
+
+	data, err := os.ReadFile(c.ConfigPath())
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	var cfg mcpConfigFile
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	osm := cfg.MCPServers["osm"]
+	if len(osm.Args) < 3 || osm.Args[2] != "session-with-special_chars.123" {
+		t.Errorf("session ID not preserved in args: %v", osm.Args)
 	}
 }
 
@@ -272,28 +216,34 @@ func TestMCPInstanceConfig_Validate(t *testing.T) {
 	}
 	defer func() { _ = c.Close() }()
 
-	// Validate before listen should fail.
-	if err := c.Validate(); !errors.Is(err, ErrNotListening) {
-		t.Errorf("Validate before listen: got %v, want ErrNotListening", err)
-	}
-
-	server := testMCPServer()
-	if err := c.ListenAndServe(server); err != nil {
-		t.Fatalf("ListenAndServe: %v", err)
-	}
-
 	// Validate without config file should fail.
 	if err := c.Validate(); err == nil {
 		t.Error("Validate without config file: expected error")
 	}
 
+	c.OsmBinary = "osm"
 	if err := c.WriteConfigFile(); err != nil {
 		t.Fatalf("WriteConfigFile: %v", err)
 	}
 
-	// Validate with listener + config should pass.
+	// Validate with config should pass.
 	if err := c.Validate(); err != nil {
 		t.Errorf("Validate: %v", err)
+	}
+}
+
+func TestMCPInstanceConfig_Validate_AfterClose(t *testing.T) {
+	t.Parallel()
+
+	c, err := NewMCPInstanceConfig("validate-closed")
+	if err != nil {
+		t.Fatalf("NewMCPInstanceConfig: %v", err)
+	}
+	_ = c.Close()
+
+	err = c.Validate()
+	if !errors.Is(err, ErrInstanceClosed) {
+		t.Errorf("Validate after Close: got %v, want ErrInstanceClosed", err)
 	}
 }
 
@@ -305,10 +255,7 @@ func TestMCPInstanceConfig_Close(t *testing.T) {
 		t.Fatalf("NewMCPInstanceConfig: %v", err)
 	}
 
-	server := testMCPServer()
-	if err := c.ListenAndServe(server); err != nil {
-		t.Fatalf("ListenAndServe: %v", err)
-	}
+	c.OsmBinary = "osm"
 	if err := c.WriteConfigFile(); err != nil {
 		t.Fatalf("WriteConfigFile: %v", err)
 	}
@@ -337,10 +284,10 @@ func TestMCPInstanceConfig_Close(t *testing.T) {
 	}
 }
 
-func TestMCPInstanceConfig_Close_BeforeListen(t *testing.T) {
+func TestMCPInstanceConfig_Close_BeforeWrite(t *testing.T) {
 	t.Parallel()
 
-	c, err := NewMCPInstanceConfig("close-no-listen")
+	c, err := NewMCPInstanceConfig("close-no-write")
 	if err != nil {
 		t.Fatalf("NewMCPInstanceConfig: %v", err)
 	}
@@ -351,114 +298,6 @@ func TestMCPInstanceConfig_Close_BeforeListen(t *testing.T) {
 	}
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Errorf("temp dir should be removed, stat: %v", err)
-	}
-}
-
-func TestMCPInstanceConfig_HTTPEndpointResponds(t *testing.T) {
-	t.Parallel()
-
-	c, err := NewMCPInstanceConfig("http-test")
-	if err != nil {
-		t.Fatalf("NewMCPInstanceConfig: %v", err)
-	}
-	defer func() { _ = c.Close() }()
-
-	server := testMCPServer()
-	if err := c.ListenAndServe(server); err != nil {
-		t.Fatalf("ListenAndServe: %v", err)
-	}
-
-	// The MCP HTTP endpoint should be reachable.
-	addr := c.ListenerAddr()
-	if addr == nil {
-		t.Fatal("no listener address")
-	}
-
-	var url string
-	switch addr.Network() {
-	case "unix":
-		// For Unix sockets, use a custom dialer.
-		sockPath := addr.String()
-		client := &http.Client{
-			Transport: &http.Transport{
-				DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-					return net.Dial("unix", sockPath)
-				},
-			},
-		}
-		resp, err := client.Get("http://unix/mcp")
-		if err != nil {
-			t.Fatalf("GET unix socket: %v", err)
-		}
-		_ = resp.Body.Close()
-		// StreamableHTTPHandler returns a non-500 response for GET; the exact
-		// status varies by SDK version (400, 405, etc.). We just verify the
-		// server is reachable and doesn't crash.
-		if resp.StatusCode >= 500 {
-			t.Errorf("GET /mcp status = %d, want non-5xx (server is reachable)", resp.StatusCode)
-		}
-		return
-	default:
-		url = "http://" + addr.String() + "/mcp"
-	}
-
-	resp, err := http.Get(url)
-	if err != nil {
-		t.Fatalf("GET %s: %v", url, err)
-	}
-	_ = resp.Body.Close()
-	// See above: we only check the server is reachable, not the specific status.
-	if resp.StatusCode >= 500 {
-		t.Errorf("GET /mcp status = %d, want non-5xx (server is reachable)", resp.StatusCode)
-	}
-}
-
-func TestEndpointType(t *testing.T) {
-	t.Parallel()
-
-	et := endpointType()
-	switch runtime.GOOS {
-	case "windows":
-		if et != "tcp" {
-			t.Errorf("endpointType on windows = %q, want tcp", et)
-		}
-	default:
-		if et != "unix" {
-			t.Errorf("endpointType on %s = %q, want unix", runtime.GOOS, et)
-		}
-	}
-}
-
-func TestMCPInstanceConfig_SocketPath(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Unix sockets not available on Windows")
-	}
-	t.Parallel()
-
-	c, err := NewMCPInstanceConfig("socket-test")
-	if err != nil {
-		t.Fatalf("NewMCPInstanceConfig: %v", err)
-	}
-	defer func() { _ = c.Close() }()
-
-	server := testMCPServer()
-	if err := c.ListenAndServe(server); err != nil {
-		t.Fatalf("ListenAndServe: %v", err)
-	}
-
-	addr := c.ListenerAddr()
-	if addr.Network() != "unix" {
-		t.Errorf("network = %q, want unix", addr.Network())
-	}
-
-	sockPath := addr.String()
-	if !strings.Contains(sockPath, "mcp.sock") {
-		t.Errorf("socket path = %q, want to contain mcp.sock", sockPath)
-	}
-
-	// Verify socket file exists.
-	if _, err := os.Stat(sockPath); err != nil {
-		t.Errorf("socket file should exist: %v", err)
 	}
 }
 
@@ -480,5 +319,89 @@ func TestMCPInstanceConfig_ConfigDir(t *testing.T) {
 	base := filepath.Base(c.configDir)
 	if !strings.Contains(base, "osm-mcp-dir-test") {
 		t.Errorf("configDir base = %q, want to contain osm-mcp-dir-test", base)
+	}
+}
+
+func TestMCPInstanceConfig_ConfigJSON_Structure(t *testing.T) {
+	t.Parallel()
+
+	c, err := NewMCPInstanceConfig("json-test")
+	if err != nil {
+		t.Fatalf("NewMCPInstanceConfig: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	c.OsmBinary = "/path/to/osm"
+	if err := c.WriteConfigFile(); err != nil {
+		t.Fatalf("WriteConfigFile: %v", err)
+	}
+
+	data, err := os.ReadFile(c.ConfigPath())
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	// Parse as generic JSON to verify exact structure.
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	mcpServers, ok := raw["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected mcpServers object, got: %T", raw["mcpServers"])
+	}
+
+	osmEntry, ok := mcpServers["osm"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected osm entry object, got: %T", mcpServers["osm"])
+	}
+
+	// Must have "command" and "args" fields.
+	if _, ok := osmEntry["command"]; !ok {
+		t.Error("osm entry missing 'command' field")
+	}
+	if _, ok := osmEntry["args"]; !ok {
+		t.Error("osm entry missing 'args' field")
+	}
+
+	// Must NOT have "url" field.
+	if _, ok := osmEntry["url"]; ok {
+		t.Error("osm entry should not have 'url' field")
+	}
+
+	// Verify indented output (pretty-printed).
+	if !strings.Contains(string(data), "  ") {
+		t.Error("config should be indented")
+	}
+}
+
+func TestMCPInstanceConfig_OsmBinaryOverride(t *testing.T) {
+	t.Parallel()
+
+	c, err := NewMCPInstanceConfig("binary-override")
+	if err != nil {
+		t.Fatalf("NewMCPInstanceConfig: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	// Override the binary path.
+	c.OsmBinary = "/custom/path/to/osm-dev"
+	if err := c.WriteConfigFile(); err != nil {
+		t.Fatalf("WriteConfigFile: %v", err)
+	}
+
+	data, err := os.ReadFile(c.ConfigPath())
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	var cfg mcpConfigFile
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	if cfg.MCPServers["osm"].Command != "/custom/path/to/osm-dev" {
+		t.Errorf("command = %q, want /custom/path/to/osm-dev", cfg.MCPServers["osm"].Command)
 	}
 }

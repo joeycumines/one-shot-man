@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Require returns a module loader for `osm:claudemux` that exposes the
@@ -692,31 +691,9 @@ func wrapMCPInstance(runtime *goja.Runtime, cfg *MCPInstanceConfig) goja.Value {
 
 	_ = obj.Set("sessionId", cfg.SessionID)
 
-	// listenAndServe(): void — starts the MCP HTTP server on a unique endpoint.
-	// Creates a minimal MCP server instance. Call before writeConfigFile.
-	_ = obj.Set("listenAndServe", func() goja.Value {
-		server := mcp.NewServer(&mcp.Implementation{
-			Name:    "osm-claudemux",
-			Version: "0.0.0",
-		}, nil)
-		if err := cfg.ListenAndServe(server); err != nil {
-			panic(runtime.NewGoError(err))
-		}
-		return goja.Undefined()
-	})
-
-	// endpoint(): string — returns the MCP endpoint URL (empty if not listening).
-	_ = obj.Set("endpoint", func() goja.Value {
-		return runtime.ToValue(cfg.Endpoint())
-	})
-
-	// listenerAddr(): string — returns the raw network address, or empty string.
-	_ = obj.Set("listenerAddr", func() goja.Value {
-		addr := cfg.ListenerAddr()
-		if addr == nil {
-			return runtime.ToValue("")
-		}
-		return runtime.ToValue(addr.String())
+	// osmBinary(): string — returns the path to the osm binary used in config.
+	_ = obj.Set("osmBinary", func() goja.Value {
+		return runtime.ToValue(cfg.OsmBinary)
 	})
 
 	// configPath(): string — returns the config file path.

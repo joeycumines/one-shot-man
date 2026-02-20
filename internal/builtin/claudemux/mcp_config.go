@@ -4,55 +4,40 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sync"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// MCPInstanceConfig manages a per-instance MCP server endpoint and its
-// Claude Code configuration file. Each Claude Code instance gets a unique
-// MCP server endpoint (TCP on all platforms, Unix socket where supported)
-// and a generated config file that tells Claude Code how to connect.
+// MCPInstanceConfig manages a per-instance MCP configuration file for
+// Claude Code. Each Claude Code instance spawns its own MCP server process
+// via the "command" + "args" config format (stdio transport). This replaces
+// the previous HTTP-based approach with the standard MCP specification.
 //
 // Lifecycle:
-//  1. NewMCPInstanceConfig(sessionID) — allocates temp dir
-//  2. ListenAndServe(server) — starts HTTP listener, blocks until ready
-//  3. WriteConfigFile() — generates JSON config pointing to the endpoint
-//  4. (caller spawns Claude Code with SpawnArgs())
-//  5. Close() — stops listener, removes temp dir + socket
+//  1. NewMCPInstanceConfig(sessionID) — allocates temp dir, resolves binary
+//  2. WriteConfigFile() — generates JSON config with command/args
+//  3. (caller spawns Claude Code with SpawnArgs())
+//  4. Close() — removes temp dir
 type MCPInstanceConfig struct {
 	SessionID string
 
-	// configDir is the temp directory holding socket + config.
-	configDir string
+	// OsmBinary is the path to the osm binary. Defaults to os.Executable().
+	// Can be overridden for testing or custom deployments.
+	OsmBinary string
 
-	// listener is the active network listener (TCP or Unix).
-	listener net.Listener
+	// configDir is the temp directory holding the config.
+	configDir string
 
 	// configPath is the path to the generated config JSON file.
 	configPath string
-
-	// httpServer is the HTTP server wrapping the MCP handler.
-	httpServer *http.Server
 
 	mu     sync.Mutex
 	closed bool
 }
 
 var (
-	// ErrNotListening is returned when an operation requires an active listener
-	// but ListenAndServe has not been called.
-	ErrNotListening = errors.New("claudemux: MCP endpoint not listening")
-
-	// ErrAlreadyListening is returned when ListenAndServe is called twice.
-	ErrAlreadyListening = errors.New("claudemux: MCP endpoint already listening")
-
 	// ErrInstanceClosed is returned after Close() has been called.
 	ErrInstanceClosed = errors.New("claudemux: MCP instance closed")
 )
@@ -61,8 +46,8 @@ var (
 var mcpSessionIDSafe = regexp.MustCompile(`[^a-zA-Z0-9_.-]`)
 
 // NewMCPInstanceConfig creates a new per-instance MCP configuration.
-// It allocates a temporary directory for the socket and config file.
-// The sessionID is sanitized for filesystem safety.
+// It allocates a temporary directory for the config file and resolves
+// the osm binary path via os.Executable().
 func NewMCPInstanceConfig(sessionID string) (*MCPInstanceConfig, error) {
 	if sessionID == "" {
 		return nil, fmt.Errorf("claudemux: session ID is required")
@@ -79,109 +64,26 @@ func NewMCPInstanceConfig(sessionID string) (*MCPInstanceConfig, error) {
 		return nil, fmt.Errorf("claudemux: failed to create temp dir: %w", err)
 	}
 
+	// Resolve the current osm binary path.
+	osmBin, err := os.Executable()
+	if err != nil {
+		// Fall back to "osm" and hope it's on PATH.
+		osmBin = "osm"
+	}
+
 	return &MCPInstanceConfig{
 		SessionID:  sessionID,
+		OsmBinary:  osmBin,
 		configDir:  tmpDir,
 		configPath: filepath.Join(tmpDir, "mcp-config.json"),
 	}, nil
 }
 
-// endpointType returns "unix" on Unix systems and "tcp" on Windows.
-func endpointType() string {
-	if runtime.GOOS == "windows" {
-		return "tcp"
-	}
-	return "unix"
-}
-
-// ListenAndServe starts an HTTP server for the MCP endpoint. On Unix, it
-// listens on a Unix domain socket; on Windows, it listens on TCP localhost
-// with an auto-assigned port. The function returns once the listener is
-// ready (startup sequencing guarantee). The HTTP server runs until Close()
-// is called.
-func (c *MCPInstanceConfig) ListenAndServe(server *mcp.Server) error {
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		return ErrInstanceClosed
-	}
-	if c.listener != nil {
-		c.mu.Unlock()
-		return ErrAlreadyListening
-	}
-	c.mu.Unlock()
-
-	handler := mcp.NewStreamableHTTPHandler(
-		func(r *http.Request) *mcp.Server { return server },
-		&mcp.StreamableHTTPOptions{
-			Stateless: true, // Each instance is dedicated; no session tracking needed
-		},
-	)
-
-	mux := http.NewServeMux()
-	mux.Handle("/mcp", handler)
-
-	var ln net.Listener
-	var err error
-	if endpointType() == "unix" {
-		sockPath := filepath.Join(c.configDir, "mcp.sock")
-		ln, err = net.Listen("unix", sockPath)
-	} else {
-		ln, err = net.Listen("tcp", "127.0.0.1:0")
-	}
-	if err != nil {
-		return fmt.Errorf("claudemux: failed to listen: %w", err)
-	}
-
-	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
-		_ = ln.Close()
-		return ErrInstanceClosed
-	}
-	c.listener = ln
-	c.httpServer = &http.Server{Handler: mux}
-	c.mu.Unlock()
-
-	// Start serving in background. Serve blocks until the listener is closed.
-	go func() {
-		_ = c.httpServer.Serve(ln)
-	}()
-
-	return nil
-}
-
-// Endpoint returns the URL of the active MCP endpoint, or an empty string
-// if not listening. The format is suitable for use in MCP client configs.
-func (c *MCPInstanceConfig) Endpoint() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.listener == nil {
-		return ""
-	}
-	addr := c.listener.Addr()
-	switch addr.Network() {
-	case "unix":
-		return "http+unix://" + addr.String() + "/mcp"
-	default:
-		return "http://" + addr.String() + "/mcp"
-	}
-}
-
-// ListenerAddr returns the raw network address of the listener, or nil
-// if not listening. Useful for tests that need the actual net.Addr.
-func (c *MCPInstanceConfig) ListenerAddr() net.Addr {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.listener == nil {
-		return nil
-	}
-	return c.listener.Addr()
-}
-
 // mcpServerEntry is the JSON structure for a single MCP server in the config.
+// Uses the standard MCP "command" + "args" format for stdio transport.
 type mcpServerEntry struct {
-	URL string `json:"url"`
+	Command string   `json:"command"`
+	Args    []string `json:"args"`
 }
 
 // mcpConfigFile is the JSON structure of the generated config file.
@@ -190,24 +92,22 @@ type mcpConfigFile struct {
 }
 
 // WriteConfigFile generates the MCP config JSON file at ConfigPath().
-// Must be called after ListenAndServe. The generated file tells Claude Code
-// how to connect to this instance's MCP server.
+// The generated file tells Claude Code to spawn an osm MCP server process
+// for this session using stdio transport.
 func (c *MCPInstanceConfig) WriteConfigFile() error {
 	c.mu.Lock()
-	if c.closed {
-		c.mu.Unlock()
+	closed := c.closed
+	c.mu.Unlock()
+	if closed {
 		return ErrInstanceClosed
 	}
-	if c.listener == nil {
-		c.mu.Unlock()
-		return ErrNotListening
-	}
-	c.mu.Unlock()
 
-	endpoint := c.Endpoint()
 	cfg := mcpConfigFile{
 		MCPServers: map[string]mcpServerEntry{
-			"osm": {URL: endpoint},
+			"osm": {
+				Command: c.OsmBinary,
+				Args:    []string{"mcp-instance", "--session", c.SessionID},
+			},
 		},
 	}
 
@@ -235,16 +135,13 @@ func (c *MCPInstanceConfig) SpawnArgs() []string {
 }
 
 // Validate checks that the configuration is usable before spawning Claude.
-// It verifies the listener is active and the config file exists.
+// It verifies the config file exists and is not closed.
 func (c *MCPInstanceConfig) Validate() error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.closed {
+	closed := c.closed
+	c.mu.Unlock()
+	if closed {
 		return ErrInstanceClosed
-	}
-	if c.listener == nil {
-		return ErrNotListening
 	}
 	if _, err := os.Stat(c.configPath); err != nil {
 		return fmt.Errorf("claudemux: config file not found: %w", err)
@@ -252,8 +149,8 @@ func (c *MCPInstanceConfig) Validate() error {
 	return nil
 }
 
-// Close stops the HTTP server, closes the listener, and removes the temp
-// directory containing the socket and config file. Safe to call multiple times.
+// Close removes the temp directory containing the config file. Safe to
+// call multiple times.
 func (c *MCPInstanceConfig) Close() error {
 	c.mu.Lock()
 	if c.closed {
@@ -261,25 +158,13 @@ func (c *MCPInstanceConfig) Close() error {
 		return nil
 	}
 	c.closed = true
-	srv := c.httpServer
-	ln := c.listener
 	dir := c.configDir
 	c.mu.Unlock()
 
-	var errs []error
-	if srv != nil {
-		if err := srv.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("close http server: %w", err))
-		}
-	} else if ln != nil {
-		if err := ln.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("close listener: %w", err))
-		}
-	}
 	if dir != "" {
 		if err := os.RemoveAll(dir); err != nil {
-			errs = append(errs, fmt.Errorf("remove temp dir: %w", err))
+			return fmt.Errorf("claudemux: remove temp dir: %w", err)
 		}
 	}
-	return errors.Join(errs...)
+	return nil
 }

@@ -95,7 +95,7 @@ func (inst *Instance) writeState(status string) error {
 		Status:    status,
 	}
 	if inst.MCP != nil {
-		state.MCPEndpoint = inst.MCP.Endpoint()
+		state.MCPEndpoint = inst.MCP.OsmBinary + " mcp-instance --session " + inst.MCP.SessionID
 	}
 
 	data, err := json.MarshalIndent(state, "", "  ")

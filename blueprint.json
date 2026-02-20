@@ -40,7 +40,7 @@
         "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
     },
     "statusSection": {
-        "currentState": "T101 Done. Build GREEN. Proceeding to T102.",
+        "currentState": "T101-T102 Done. Build GREEN. Proceeding to T103.",
         "sessionTimer": ".session-timer | make check-session-time",
         "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
     },
@@ -52,8 +52,8 @@
         },
         {
             "task": "T102: Fix txtar path ambiguity in computeUniqueSuffixes",
-            "description": "Fix computeUniqueSuffixes() in context.go: (1) compute and emit lowest common ancestor of all tracked paths, (2) verify parent directory is actually tracked when expanding paths upward, (3) preserve full paths for non-colliding basenames. Write failing tests for all 3 scenarios (implicit common roots, false directory impressions, non-colliding basenames). Fix. Run make.",
-            "status": "Not Started"
+            "description": "VERIFIED: All 3 bug scenarios already fixed + tested in context_txtar_lca_test.go from prior sessions. (1) LCA computed and emitted in txtar Comment via computePathLCA — 7 test cases. (2) All-relative collision groups use full relative paths (allRelative check, false proximity fix) — 2 test cases. (3) Non-colliding basenames preserve full paths for relative entries — 2 test cases. Removed duplicate tests from state_coverage_gaps_test.go. Build GREEN.",
+            "status": "Done"
         },
         {
             "task": "T103: Fix MCP auto-config to use command/stdio instead of URL/HTTP",

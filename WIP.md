@@ -60,5 +60,7 @@
 
 - **T027**: Sync common config enhancement (6 improvements: conflict summary on pull, --dry-run flag, atomic write for push, sync lockfile, gitignore detection, empty sync root; 9 new tests). Build green.
 
-### Next task: T028
-Autodiscovery refinement — config key respect, symlink traversal, permission errors, debug logging.
+- **T028**: Autodiscovery refinement (discovery_refinement_test.go: 19 tests — config key enforcement, symlink cycle via direct traverseForGoalDirs/traverseForScriptDirs calls, permission resilience, normalizePath edge cases, parsePositiveInt table, expandPath, debug log coverage; BenchmarkNormalizePath + BenchmarkAnnotatedPaths). Fixed symlink cycle tests — macOS os.Getwd() resolves symlinks. Build green.
+
+### Next task: T029
+Prompt file enhancement — .prompt.md discovery hardening, goal references, VS Code conventions.

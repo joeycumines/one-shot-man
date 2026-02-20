@@ -251,7 +251,8 @@ func TestGoalDiscovery_SymlinkToParentCreatesUpwardCycle(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Symlink tests not reliable on Windows")
 	}
-	// Changes working directory — not parallel.
+	// Does NOT need chdir — we call traverseForGoalDirs directly.
+	t.Parallel()
 
 	tmpDir := t.TempDir()
 
@@ -268,18 +269,17 @@ func TestGoalDiscovery_SymlinkToParentCreatesUpwardCycle(t *testing.T) {
 		t.Fatalf("Symlink: %v", err)
 	}
 
-	// Now chdir into link/sub/ which is the same as real/sub/ via the symlink.
+	// Use the UNRESOLVED symlink path as the start directory.
+	// On macOS, os.Getwd() resolves symlinks, so chdir won't preserve the
+	// unresolved path. We bypass that by calling traverseForGoalDirs directly.
+	//
+	// Trace: startDir = .../real/sub/link/sub
+	//   i=0: EvalSymlinks(.../real/sub/link/sub) = .../real/sub → visited
+	//        parent = Dir(.../real/sub/link/sub) = .../real/sub/link
+	//   i=1: EvalSymlinks(.../real/sub/link) = .../real → visited
+	//        parent = Dir(.../real/sub/link) = .../real/sub
+	//   i=2: EvalSymlinks(.../real/sub) = .../real/sub → CYCLE DETECTED
 	startDir := filepath.Join(linkPath, "sub")
-
-	origWd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd: %v", err)
-	}
-	defer os.Chdir(origWd)
-
-	if err := os.Chdir(startDir); err != nil {
-		t.Fatalf("Chdir: %v", err)
-	}
 
 	var mu sync.Mutex
 	var messages []string
@@ -297,8 +297,10 @@ func TestGoalDiscovery_SymlinkToParentCreatesUpwardCycle(t *testing.T) {
 		messages = append(messages, fmt.Sprintf(format, args...))
 	}
 
+	// Call traverseForGoalDirs directly with the unresolved path.
 	// Must not infinite-loop.
-	_ = discovery.DiscoverGoalPaths()
+	paths := discovery.traverseForGoalDirs(startDir)
+	_ = paths
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -322,7 +324,8 @@ func TestScriptDiscovery_SymlinkCycleInTraversal(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Symlink tests not reliable on Windows")
 	}
-	// Changes working directory — not parallel.
+	// Does NOT need chdir — we call traverseForScriptDirs directly.
+	t.Parallel()
 
 	tmpDir := t.TempDir()
 
@@ -337,17 +340,8 @@ func TestScriptDiscovery_SymlinkCycleInTraversal(t *testing.T) {
 		t.Fatalf("Symlink: %v", err)
 	}
 
+	// Use unresolved symlink path to trigger cycle detection.
 	startDir := filepath.Join(linkPath, "sub")
-
-	origWd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd: %v", err)
-	}
-	defer os.Chdir(origWd)
-
-	if err := os.Chdir(startDir); err != nil {
-		t.Fatalf("Chdir: %v", err)
-	}
 
 	var mu sync.Mutex
 	var messages []string
@@ -365,7 +359,9 @@ func TestScriptDiscovery_SymlinkCycleInTraversal(t *testing.T) {
 		messages = append(messages, fmt.Sprintf(format, args...))
 	}
 
-	_ = discovery.DiscoverScriptPaths()
+	// Call traverseForScriptDirs directly with the unresolved path.
+	paths := discovery.traverseForScriptDirs(startDir)
+	_ = paths
 
 	mu.Lock()
 	defer mu.Unlock()

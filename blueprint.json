@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T027 Done. T028 next. Commit T027 changes pending.",
+    "currentState": "T001-T028 Done. T029 next. Commit T027-T028 changes pending.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -179,8 +179,8 @@
     },
     {
       "task": "T028: Autodiscovery refinement",
-      "description": "Harden osm goal/script paths: config key respect, symlink traversal (follow but detect cycles), permission errors (warn not crash), benchmarks, debug logging verification. Edge case tests. Run make.",
-      "status": "Not Started"
+      "description": "Added discovery_refinement_test.go with 19 tests across 7 categories: (1) config key enforcement — MaxTraversalDepthRespected for goals+scripts, CustomPathPatternsOverride, EnvVarOverride (OSM_DISABLE_GOAL_AUTODISCOVERY). (2) Symlink traversal — SymlinkToParentCreatesUpwardCycle (calls traverseForGoalDirs directly with unresolved path to trigger cycle detection), SymlinkCycleInTraversal (scripts), SymlinkToGoalDir dedup. (3) Permission resilience — UnreadableDirectoryInTraversal, UnreadableDirInCheckDirectory. (4) normalizePath edge cases — EmptyInput, DotDotTraversal, BrokenSymlinkFallback, SecurityValidation (escape parent). (5) parsePositiveInt table-driven (8 cases). (6) expandPath — HomeTilde, EnvVar, NoExpansion. (7) Debug log coverage — all categories verified for goal+script. Added BenchmarkNormalizePath (Simple/WithSymlink) and BenchmarkAnnotatedPaths (GoalPaths/ScriptPaths). Fixed symlink cycle tests: call traverseForGoalDirs/traverseForScriptDirs directly with unresolved path because macOS os.Getwd() resolves symlinks. Build green.",
+      "status": "Done"
     },
     {
       "task": "T029: Prompt file enhancement",

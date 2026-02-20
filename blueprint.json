@@ -106,6 +106,46 @@
       "status": "Not Started"
     },
     {
+      "task": "Design orchestration IPC architecture",
+      "description": "Create schema and transport mechanism (Unix domain sockets or similar) to allow CLI `submit` to push commands to a running background orchestrator daemon. REMEMBER: Unix domain sockets ARE preferred, but Windows must also be supported.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Implement Orchestrator Daemon",
+      "description": "Update `claude_mux.go` `start` command to run an actual persistent event loop that binds the `Pool`, `Guard`, `MCPGuard`, and `Panel`. Ensure it does not exit prematurely.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Implement `submit` to queue tasks",
+      "description": "Rewrite `submit` subcommand to execute an RPC call to the daemon's socket, passing the task description. Block on acknowledgment of receipt.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Implement concrete `claude` execution bindings",
+      "description": "Integrate the logic into the Go binary to physically start `ollama launch claude` (or the local binary) via a PTY pipe. Connect local PTY stdout to `Parser` and local PTY stdin to orchestration signals.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Expose integrated TUI mode via CLI",
+      "description": "Provide a CLI flag or command (`osm claude-mux tui` or natively bind to `start`) that renders the built-in JS/Go `Panel` to the local terminal, enabling direct interaction.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Implement `mcp parent` or configure isolated MCP endpoints",
+      "description": "Implement the logic described in `T037-T038` to handle auto-configuration of `.claude.json` tool-servers mapping back to `osm mcp` for each isolated Claude Code session.",
+      "status": "Not Started"
+    },
+    {
+      "task": "End-to-End Verification of CLI functionality",
+      "description": "Run `osm claude-mux start` in background, `osm claude-mux submit \"task\"` from another terminal, and `osm claude-mux tui` from another, asserting all interact correctly. Verify via automated integration test.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Rule of Two Strict Review",
+      "description": "Validate the entire implementation using two contiguous issue-free subagent reviews per the `strict-review-gate` protocol.",
+      "status": "Not Started"
+    },
+    {
       "task": "T112: Wire Panel TUI into claudemux run",
       "description": "Launch claudemux.Panel as the interactive TUI for 'claudemux run'. Alt+1..9 switching between instances. Per-pane scrollback. Health indicators in status bar. PgUp/PgDown navigation. Verify no tmux keybinding conflicts. Tests. Run make.",
       "status": "Not Started"

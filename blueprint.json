@@ -40,7 +40,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T101-T113 Done. Build GREEN. Proceeding to T114.",
+    "currentState": "T101-T114 Done. Build GREEN. Proceeding to T115.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
   },
@@ -157,8 +157,8 @@
     },
     {
       "task": "T114: Auto-navigate model selection in claudemux run",
-      "description": "Wire ParseModelMenu + NavigateToModel into dispatchTask output loop. When --model flag is set and PTY output contains a model selection menu, auto-navigate to the target model by sending keystrokes. Sliding window buffer for menu detection. Once-per-task navigation guard. Tests with mock agents producing model menu output. MCP heartbeat handshake deferred (not implemented yet). Run make.",
-      "status": "Not Started"
+      "description": "DONE: Added tryNavigateModel to dispatchTask output loop. Sliding window buffer (menuWindowSize=20) of recent PTY lines feeds ParseModelMenu. When target model appears in parsed menu, NavigateToModel generates keystrokes sent via agent.Send(). Once-per-task modelNavigated guard prevents repeats. Key safety: requires target model in parsed menu before navigating (prevents premature single-model auto-select on partial menus). 5 tests with modelMenuAgent mock: AutoSelectsModel, NoModelFlag_SkipsDetection, ModelNotFound_SkipsNavigation, SingleModelAutoSelects, NavigateOncePerTask. Build GREEN.",
+      "status": "Done"
     },
     {
       "task": "T115: Implement osm mcp make subcommand",

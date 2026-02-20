@@ -58,6 +58,7 @@ func run() error {
 	registry.Register(command.NewLogCommand(cfg))
 	registry.Register(command.NewMCPCommand(cfg, goalRegistry, version))
 	registry.Register(command.NewMCPInstanceCommand(goalRegistry, version))
+	registry.Register(command.NewMCPMakeCommand())
 	registry.Register(command.NewClaudeMuxCommand(cfg))
 
 	// Parse global flags and command. Avoid manual inspection of args for

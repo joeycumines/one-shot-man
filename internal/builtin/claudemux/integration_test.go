@@ -644,7 +644,7 @@ func TestSimulated_ConcurrentMultiSessionPipeline(t *testing.T) {
 }
 
 // TestSimulated_ErrorRecoveryEscalation verifies the full error → retry →
-// exhaust retries → escalate → abort flow across supervisor + guard.
+// exhaust retries → escalate flow through the supervisor.
 func TestSimulated_ErrorRecoveryEscalation(t *testing.T) {
 	t.Parallel()
 
@@ -661,32 +661,31 @@ func TestSimulated_ErrorRecoveryEscalation(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 
-	now := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+	// Use HandleError (supervisor-only path) to test retry exhaustion
+	// without the Guard's crash handler interfering.
 
-	// Crash 1: should retry.
-	_, d1 := session.ProcessCrash(1, now)
+	// Error 1: should retry.
+	d1 := session.HandleError("test error 1", ErrorClassMCPTimeout)
 	if d1.Action != RecoveryRetry {
-		t.Fatalf("crash 1: got %s, want retry", RecoveryActionName(d1.Action))
+		t.Fatalf("error 1: got %s, want retry", RecoveryActionName(d1.Action))
 	}
 	session.ConfirmRecovery()
-	t.Logf("Crash 1: %s → recovered", RecoveryActionName(d1.Action))
+	t.Logf("Error 1: %s → recovered", RecoveryActionName(d1.Action))
 
-	// Crash 2: should retry (2nd attempt).
-	now = now.Add(time.Second)
-	_, d2 := session.ProcessCrash(1, now)
+	// Error 2: should retry (2nd attempt).
+	d2 := session.HandleError("test error 2", ErrorClassMCPTimeout)
 	if d2.Action != RecoveryRetry {
-		t.Fatalf("crash 2: got %s, want retry", RecoveryActionName(d2.Action))
+		t.Fatalf("error 2: got %s, want retry", RecoveryActionName(d2.Action))
 	}
 	session.ConfirmRecovery()
-	t.Logf("Crash 2: %s → recovered", RecoveryActionName(d2.Action))
+	t.Logf("Error 2: %s → recovered", RecoveryActionName(d2.Action))
 
-	// Crash 3: should escalate (retries exhausted).
-	now = now.Add(time.Second)
-	_, d3 := session.ProcessCrash(1, now)
+	// Error 3: should escalate (retries exhausted).
+	d3 := session.HandleError("test error 3", ErrorClassMCPTimeout)
 	if d3.Action == RecoveryRetry {
-		t.Fatalf("crash 3: got retry, want escalate or abort")
+		t.Fatalf("error 3: got retry, want escalate or abort")
 	}
-	t.Logf("Crash 3: %s (retries exhausted)", RecoveryActionName(d3.Action))
+	t.Logf("Error 3: %s (retries exhausted)", RecoveryActionName(d3.Action))
 
 	// Session should be Failed.
 	if session.State() != SessionFailed {

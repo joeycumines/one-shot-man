@@ -40,7 +40,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T101-T115 Done. Build GREEN. Proceeding to T116.",
+    "currentState": "T101-T116 Done. Build GREEN. Proceeding to T117.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
   },
@@ -167,12 +167,12 @@
     },
     {
       "task": "T116: Agent steering — session control socket",
-      "description": "Implement ControlServer and ControlClient in claudemux package for inter-process orchestration control. Unix domain socket with JSON newline-delimited protocol (no gRPC — too heavy for internal IPC). Methods: EnqueueTask, InterruptCurrent, GetStatus. ControlServer listens on configurable socket path, handles concurrent connections. ControlClient connects and sends typed requests. Socket cleanup on Close. Tests with in-process server/client pairs. Run make.",
-      "status": "Not Started"
+      "description": "DONE: Implemented ControlServer and ControlClient in claudemux package (control.go, 314 lines). Unix domain socket with JSON newline-delimited protocol. Methods: EnqueueTask, InterruptCurrent, GetStatus. ControlHandler interface for orchestrator integration. Server: concurrent connection handling (WaitGroup lifecycle), stale socket cleanup, idempotent Close. Client: typed methods, connect-per-request. Wired into claude-mux: run (ControlServer via controlAdapter), submit (ControlClient.EnqueueTask), stop (InterruptCurrent), status (GetStatus). 17 tests. Commit dc51df5.",
+      "status": "Done"
     },
     {
-      "task": "T117: Agent steering — gRPC service implementation",
-      "description": "Implement the gRPC service for EnqueueTask (adds task to session queue), InterruptCurrent (sends cancellation to active task), GetStatus (returns session state, active task, queue depth). Wire into session lifecycle. Tests. Run make.",
+      "task": "T117: Agent steering — service handler wiring",
+      "description": "Wire ControlHandler into the run loop for dynamic task dispatch. controlAdapter already implements ControlHandler but dynamicTaskCh is write-only — read it in the dispatch loop to process externally-submitted tasks. Wire activeTask/interruptFn on controlAdapter per-task. Add test: submit task via control socket while run loop is active. Run make.",
       "status": "Not Started"
     },
     {

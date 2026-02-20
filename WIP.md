@@ -23,11 +23,11 @@
 - **T112**: Panel TUI data layer wiring (output routing, health indicators, StatusBar, committed ab94850)
 - **T113**: Integration tests for claudemux run (8 tests, 2 mock agents, committed 588c5d6)
 - **T114**: Model auto-navigation (tryNavigateModel, sliding window, 5 tests, committed 81a7422)
-
 - **T115**: mcp-make command (MCP-exposed Make tools, 12 tests, committed 779341b)
+- **T116**: Control socket (ControlServer/ControlClient, Unix domain socket, JSON protocol, 17 tests, wired into run/submit/stop/status, committed dc51df5)
 
-### Next task: T116
-Agent steering — session control socket (Unix/TCP).
+### Next task: T117
+Agent steering — service handler wiring. Wire dynamicTaskCh into the run loop for external task dispatch. Wire activeTask/interruptFn on controlAdapter per-task.
 
 ### Build state: GREEN (all packages pass)
 

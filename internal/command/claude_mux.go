@@ -366,7 +366,7 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 	}
 
 	// Dispatch tasks — each gets a fresh agent spawn + ManagedSession.
-	var wg sync.WaitGroup
+	var initialWg sync.WaitGroup
 	taskResults := make([]taskResult, len(tasks))
 
 	for i, task := range tasks {
@@ -385,10 +385,12 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 		idx := i
 		taskText := task
 		paneID := fmt.Sprintf("task-%d", i)
-		wg.Add(1)
+		initialWg.Add(1)
 		go func() {
-			defer wg.Done()
+			defer initialWg.Done()
+			adapter.setActive(taskText)
 			result := c.dispatchTask(ctx, prov, registry, spawnOpts, worker, taskText, idx, paneID, panel, stdout, stderr)
+			adapter.clearActive()
 			taskResults[idx] = result
 			pool.Release(worker, result.err, time.Now())
 
@@ -406,7 +408,15 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 		}()
 	}
 
-	wg.Wait()
+	// Dynamic task dispatch: process tasks submitted via control socket.
+	var dynamicResults dynamicTaskResults
+	go func() {
+		c.dynamicDispatchLoop(ctx, dynamicTaskCh, adapter, prov, registry, spawnOpts, pool, panel, &dynamicResults, stdout, stderr)
+	}()
+
+	// Wait for initial batch to complete, then shut down.
+	initialWg.Wait()
+	cancel() // stops dynamic dispatch loop and signal handler
 	pool.WaitDrained()
 
 	// Print summary with Panel status bar.
@@ -421,9 +431,16 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 		totalGuardEvents += r.guardEvents
 	}
 
+	// Include dynamic task results.
+	dynSucceeded, dynFailed, dynGuardEvents := dynamicResults.summary()
+	succeeded += dynSucceeded
+	failed += dynFailed
+	totalGuardEvents += dynGuardEvents
+	totalTasks := len(tasks) + dynamicResults.count()
+
 	_, _ = fmt.Fprintf(stdout, "\n[panel] %s\n", panel.StatusBar())
 	_, _ = fmt.Fprintf(stdout, "[summary] tasks=%d dispatched=%d succeeded=%d failed=%d guard_events=%d\n",
-		len(tasks), succeeded+failed, succeeded, failed, totalGuardEvents)
+		totalTasks, succeeded+failed, succeeded, failed, totalGuardEvents)
 
 	if failed > 0 {
 		return fmt.Errorf("claude-mux run: %d/%d tasks failed", failed, succeeded+failed)
@@ -825,5 +842,129 @@ func (a *controlAdapter) GetStatus() claudemux.GetStatusResult {
 		ActiveTask: a.activeTask,
 		QueueDepth: len(q),
 		Queue:      q,
+	}
+}
+
+func (a *controlAdapter) setActive(task string) {
+	a.mu.Lock()
+	a.activeTask = task
+	a.mu.Unlock()
+}
+
+func (a *controlAdapter) clearActive() {
+	a.mu.Lock()
+	a.activeTask = ""
+	a.mu.Unlock()
+}
+
+func (a *controlAdapter) dequeue() {
+	a.mu.Lock()
+	if len(a.queue) > 0 {
+		a.queue = a.queue[1:]
+	}
+	a.mu.Unlock()
+}
+
+// dynamicTaskResults tracks outcomes of tasks submitted via control socket.
+type dynamicTaskResults struct {
+	mu      sync.Mutex
+	results []taskResult
+}
+
+func (d *dynamicTaskResults) add(r taskResult) {
+	d.mu.Lock()
+	d.results = append(d.results, r)
+	d.mu.Unlock()
+}
+
+func (d *dynamicTaskResults) summary() (succeeded, failed, guardEvents int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, r := range d.results {
+		if r.err != nil {
+			failed++
+		} else if r.dispatched {
+			succeeded++
+		}
+		guardEvents += r.guardEvents
+	}
+	return
+}
+
+func (d *dynamicTaskResults) count() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return len(d.results)
+}
+
+// dynamicDispatchLoop reads tasks from dynamicTaskCh and dispatches each
+// via the same dispatchTask pipeline. It runs until ctx is done.
+func (c *ClaudeMuxCommand) dynamicDispatchLoop(
+	ctx context.Context,
+	taskCh <-chan string,
+	adapter *controlAdapter,
+	prov claudemux.Provider,
+	registry *claudemux.InstanceRegistry,
+	spawnOpts claudemux.SpawnOpts,
+	pool *claudemux.Pool,
+	panel *claudemux.Panel,
+	results *dynamicTaskResults,
+	stdout, stderr io.Writer,
+) {
+	dynamicIdx := 1000 // offset from initial tasks
+	var taskWg sync.WaitGroup
+	defer taskWg.Wait()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case task, ok := <-taskCh:
+			if !ok {
+				return
+			}
+			adapter.dequeue()
+
+			worker, err := pool.Acquire()
+			if err != nil {
+				_, _ = fmt.Fprintf(stderr, "[dynamic] acquire slot: %v\n", err)
+				results.add(taskResult{err: err})
+				continue
+			}
+
+			idx := dynamicIdx
+			dynamicIdx++
+			paneID := fmt.Sprintf("dyn-%d", idx)
+
+			// Add dynamic pane if panel has room.
+			title := truncateTask(task, 30)
+			if _, addErr := panel.AddPane(paneID, title); addErr != nil {
+				paneID = "" // no pane — output still goes to stdout
+			}
+
+			taskWg.Add(1)
+			taskText := task
+			go func() {
+				defer taskWg.Done()
+				adapter.setActive(taskText)
+				result := c.dispatchTask(ctx, prov, registry, spawnOpts, worker, taskText, idx, paneID, panel, stdout, stderr)
+				adapter.clearActive()
+				results.add(result)
+				pool.Release(worker, result.err, time.Now())
+
+				if paneID != "" {
+					health := claudemux.PaneHealth{
+						State:      "stopped",
+						TaskCount:  1,
+						ErrorCount: int64(result.guardEvents),
+						LastUpdate: time.Now(),
+					}
+					if result.err != nil {
+						health.State = "error"
+					}
+					_ = panel.UpdateHealth(paneID, health)
+				}
+			}()
+		}
 	}
 }

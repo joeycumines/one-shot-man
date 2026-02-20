@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/claudemux"
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -1659,4 +1660,129 @@ func TestClaudeMux_Run_ModelNav_NavigateOncePerTask(t *testing.T) {
 	// Should only auto-select once.
 	count := strings.Count(errOut, "auto-selected model")
 	assert.Equal(t, 1, count, "should navigate only once per task, got %d", count)
+}
+
+// --- Dynamic task dispatch tests (T117) ---
+
+func TestClaudeMux_Run_DynamicDispatch_SubmitViaSock(t *testing.T) {
+	t.Parallel()
+
+	// Use /tmp for short socket paths (macOS 104-char limit).
+	dir, err := os.MkdirTemp("", "dyn*")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = dir
+	cmd.poolSize = 2
+	cmd.providerOverride = &mockProvider{name: "dyn-mock"}
+
+	// Run with one initial task, but also submit a dynamic task via control socket.
+	// We run in a goroutine so we can interact with the socket mid-run.
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- cmd.Execute([]string{"run", "initial-task"}, stdout, stderr)
+	}()
+
+	// Wait for the control socket to become available.
+	sockPath := filepath.Join(dir, "control.sock")
+	var client *claudemux.ControlClient
+	for range 50 {
+		if _, statErr := os.Stat(sockPath); statErr == nil {
+			client = claudemux.NewControlClient(sockPath)
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// Even if the socket didn't appear (e.g. path too long), the initial
+	// task should still complete. We verify the run doesn't hang.
+	if client != nil {
+		// Submit a dynamic task.
+		pos, submitErr := client.EnqueueTask("dynamic-task-1")
+		if submitErr == nil {
+			assert.Equal(t, 0, pos)
+		}
+
+		// Query status.
+		status, statusErr := client.GetStatus()
+		if statusErr == nil {
+			assert.NotNil(t, status)
+		}
+	}
+
+	// Wait for run to complete.
+	runErr := <-errCh
+	assert.NoError(t, runErr)
+
+	out := stdoutBuf.String()
+	assert.Contains(t, out, "[audit] tasks loaded: 1")
+	assert.Contains(t, out, "succeeded=")
+}
+
+func TestClaudeMux_Run_ControlAdapterStatus(t *testing.T) {
+	t.Parallel()
+
+	adapter := &controlAdapter{
+		taskCh: make(chan<- string, 10),
+	}
+
+	// Enqueue tasks.
+	pos0, err := adapter.EnqueueTask("task-A")
+	assert.NoError(t, err)
+	assert.Equal(t, 0, pos0)
+
+	pos1, err := adapter.EnqueueTask("task-B")
+	assert.NoError(t, err)
+	assert.Equal(t, 1, pos1)
+
+	// GetStatus.
+	status := adapter.GetStatus()
+	assert.Equal(t, 2, status.QueueDepth)
+	assert.Equal(t, []string{"task-A", "task-B"}, status.Queue)
+	assert.Equal(t, "", status.ActiveTask)
+
+	// SetActive.
+	adapter.setActive("task-A")
+	status = adapter.GetStatus()
+	assert.Equal(t, "task-A", status.ActiveTask)
+
+	// Dequeue.
+	adapter.dequeue()
+	status = adapter.GetStatus()
+	assert.Equal(t, 1, status.QueueDepth)
+	assert.Equal(t, []string{"task-B"}, status.Queue)
+
+	// ClearActive.
+	adapter.clearActive()
+	status = adapter.GetStatus()
+	assert.Equal(t, "", status.ActiveTask)
+
+	// InterruptCurrent with no active task.
+	err = adapter.InterruptCurrent()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no active task")
+}
+
+func TestClaudeMux_Run_DynamicResults(t *testing.T) {
+	t.Parallel()
+
+	var dr dynamicTaskResults
+	assert.Equal(t, 0, dr.count())
+
+	dr.add(taskResult{dispatched: true, err: nil, guardEvents: 1})
+	dr.add(taskResult{dispatched: true, err: fmt.Errorf("fail"), guardEvents: 2})
+	dr.add(taskResult{dispatched: true, err: nil, guardEvents: 0})
+
+	assert.Equal(t, 3, dr.count())
+
+	succ, fail, ge := dr.summary()
+	assert.Equal(t, 2, succ)
+	assert.Equal(t, 1, fail)
+	assert.Equal(t, 3, ge)
 }

@@ -1,0 +1,29 @@
+Add control socket for agent steering over Unix sockets
+
+Implement ControlServer and ControlClient in the claudemux package
+for inter-process agent steering via Unix domain sockets.
+
+Protocol:
+- JSON-RPC-like framing (newline-delimited JSON)
+- Three methods: EnqueueTask, InterruptCurrent, GetStatus
+- One request per connection (connect, send, receive, disconnect)
+- Concurrent connection handling with WaitGroup lifecycle
+
+Server:
+- Binds net.Listener on Unix socket path
+- Stale socket cleanup on Start, file removal on Close
+- Idempotent Close with graceful connection drain
+
+Client:
+- Typed methods for each RPC (EnqueueTask, InterruptCurrent, GetStatus)
+- Connect-per-request pattern (no persistent connection)
+
+Integration:
+- run: Starts ControlServer with controlAdapter for dynamic task submission
+- submit: Uses ControlClient to enqueue tasks to running orchestrator
+- stop: Sends InterruptCurrent via ControlClient
+- status: Queries live orchestrator state via ControlClient.GetStatus
+
+Tests: 17 unit/integration tests covering protocol round-trips, loopback
+server/client, concurrent clients, socket lifecycle, error paths, and
+edge cases. Short /tmp paths for macOS 104-char socket limit.

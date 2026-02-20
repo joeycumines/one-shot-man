@@ -488,6 +488,14 @@ func (c *ClaudeMuxCommand) dispatchTask(
 		return taskResult{dispatched: true, err: err, guardEvents: guardEvents}
 	}
 
+	// Model auto-navigation state: sliding window of recent lines for menu
+	// detection. Once navigated, the flag prevents repeat attempts.
+	const menuWindowSize = 20
+	var (
+		menuBuffer     []string
+		modelNavigated bool
+	)
+
 	// Monitor agent output through ManagedSession health pipeline.
 	for {
 		select {
@@ -521,6 +529,21 @@ func (c *ClaudeMuxCommand) dispatchTask(
 				}
 				// Route to Panel scrollback.
 				_ = panel.AppendOutput(paneID, line)
+
+				// Model auto-navigation: detect model selection menus.
+				if c.runModel != "" && !modelNavigated {
+					menuBuffer = append(menuBuffer, line)
+					if len(menuBuffer) > menuWindowSize {
+						menuBuffer = menuBuffer[len(menuBuffer)-menuWindowSize:]
+					}
+					if keys := c.tryNavigateModel(menuBuffer, taskIdx, stderr); keys != "" {
+						modelNavigated = true
+						if sendErr := agent.Send(keys); sendErr != nil {
+							_, _ = fmt.Fprintf(stderr, "[task %d] model nav send: %v\n", taskIdx, sendErr)
+						}
+					}
+				}
+
 				result := session.ProcessLine(line, now)
 				if result.GuardEvent != nil {
 					switch result.GuardEvent.Action {
@@ -563,6 +586,45 @@ func (c *ClaudeMuxCommand) handleAgentExit(
 	}
 	_, _ = fmt.Fprintf(stdout, "[task %d] completed (exit 0)\n", taskIdx)
 	return taskResult{dispatched: true, err: exitErr, guardEvents: *guardEvents}
+}
+
+// tryNavigateModel attempts to detect a model selection menu in the recent
+// output buffer and generate navigation keystrokes to select c.runModel.
+// Returns the keystroke string on success, or "" if no menu was detected,
+// the target model was not found yet, or navigation was not needed.
+//
+// The method requires the target model to be present in the parsed menu
+// before attempting navigation. This prevents premature navigation when
+// only a partial menu is visible in the sliding window buffer.
+func (c *ClaudeMuxCommand) tryNavigateModel(buf []string, taskIdx int, stderr io.Writer) string {
+	menu := claudemux.ParseModelMenu(buf)
+	if len(menu.Models) == 0 {
+		return ""
+	}
+	// Require that the target model actually appears in the parsed menu
+	// before attempting navigation. This avoids premature navigation when
+	// only a partial menu is visible in the sliding window — NavigateToModel
+	// would auto-select a single-model menu even when the target doesn't
+	// match, which is wrong in a streaming context.
+	targetLower := strings.ToLower(c.runModel)
+	found := false
+	for _, m := range menu.Models {
+		ml := strings.ToLower(m)
+		if m == c.runModel || ml == targetLower || strings.Contains(ml, targetLower) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return ""
+	}
+	keys, err := claudemux.NavigateToModel(menu, c.runModel)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "[task %d] model nav: %v\n", taskIdx, err)
+		return ""
+	}
+	_, _ = fmt.Fprintf(stderr, "[task %d] auto-selected model %q\n", taskIdx, c.runModel)
+	return keys
 }
 
 // gatherTasks collects tasks from arguments and/or --tasks-file.

@@ -40,7 +40,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T101-T112 Done. Build GREEN. Proceeding to T113.",
+    "currentState": "T101-T113 Done. Build GREEN. Proceeding to T114.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
   },
@@ -152,12 +152,12 @@
     },
     {
       "task": "T113: Integration tests for claudemux run end-to-end",
-      "description": "Write integration tests for the full 'claudemux run' pipeline: spawn mock processes, dispatch tasks, verify Pool allocation, verify Panel renders output, verify graceful shutdown. Use simulated CI tests (no real Claude needed). Run make.",
-      "status": "Not Started"
+      "description": "DONE: 8 integration tests + 2 new mock agent types (blockedAgent, sendErrorAgent). Tests: PoolConcurrency (max-concurrent respects pool-size), CRLFOutputHandling (Windows \\r\\n), SendError (broken pipe), ExceedMaxPanes (12 tasks caps at 9), ErrorOutputGuardEvent (error pattern through pipeline), LargeSequentialBatch (8 serial tasks), InstanceRegistryCreatesPerTask, AllSubsystems (capstone: verbose+crash+echo). Build GREEN.",
+      "status": "Done"
     },
     {
-      "task": "T114: Session interlock — TUI and MCP synchronization",
-      "description": "Wire PTY's NavigateToModel into 'osm claudemux run'. Ensure TUI renders prompts dynamically. Autosolve model selection. Synchronize MCP handshake via heartbeat verification. Test MCP session coordination with TUI lifecycle. Run make.",
+      "task": "T114: Auto-navigate model selection in claudemux run",
+      "description": "Wire ParseModelMenu + NavigateToModel into dispatchTask output loop. When --model flag is set and PTY output contains a model selection menu, auto-navigate to the target model by sending keystrokes. Sliding window buffer for menu detection. Once-per-task navigation guard. Tests with mock agents producing model menu output. MCP heartbeat handshake deferred (not implemented yet). Run make.",
       "status": "Not Started"
     },
     {

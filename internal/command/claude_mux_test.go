@@ -1342,3 +1342,279 @@ func TestClaudeMux_Run_Integration_AllSubsystems(t *testing.T) {
 	assert.Contains(t, out, "succeeded=2")
 	assert.Contains(t, out, "failed=1")
 }
+
+// --- Model auto-navigation tests (T114) ---
+
+// modelMenuAgent outputs model menu lines then exits. It captures all
+// input sent via Send so tests can verify navigation keystrokes.
+type modelMenuAgent struct {
+	output  chan string
+	done    chan struct{}
+	once    sync.Once
+	mu      sync.Mutex
+	sentLog []string // all inputs received via Send
+}
+
+func newModelMenuAgent(lines []string) *modelMenuAgent {
+	a := &modelMenuAgent{
+		output: make(chan string, len(lines)+1),
+		done:   make(chan struct{}),
+	}
+	for _, line := range lines {
+		a.output <- line + "\n"
+	}
+	return a
+}
+
+func (a *modelMenuAgent) Send(input string) error {
+	a.mu.Lock()
+	a.sentLog = append(a.sentLog, input)
+	a.mu.Unlock()
+	// Accept the task text, then drain remaining output if any.
+	// If output is exhausted after this send, schedule exit.
+	if len(a.output) == 0 {
+		a.once.Do(func() { close(a.done) })
+	}
+	return nil
+}
+
+func (a *modelMenuAgent) Receive() (string, error) {
+	select {
+	case msg := <-a.output:
+		if len(a.output) == 0 {
+			// All output consumed; schedule exit so IsAlive returns false.
+			a.once.Do(func() { close(a.done) })
+		}
+		return msg, nil
+	default:
+	}
+	select {
+	case msg := <-a.output:
+		if len(a.output) == 0 {
+			a.once.Do(func() { close(a.done) })
+		}
+		return msg, nil
+	case <-a.done:
+		return "", io.EOF
+	}
+}
+
+func (a *modelMenuAgent) Close() error {
+	a.once.Do(func() { close(a.done) })
+	return nil
+}
+
+func (a *modelMenuAgent) IsAlive() bool {
+	select {
+	case <-a.done:
+		return false
+	default:
+		return true
+	}
+}
+
+func (a *modelMenuAgent) Wait() (int, error) {
+	<-a.done
+	return 0, nil
+}
+
+func (a *modelMenuAgent) getSentLog() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cp := make([]string, len(a.sentLog))
+	copy(cp, a.sentLog)
+	return cp
+}
+
+func TestClaudeMux_Run_ModelNav_AutoSelectsModel(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.runModel = "opus"
+
+	var agent *modelMenuAgent
+	cmd.providerOverride = &mockProvider{
+		name: "model-nav-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			// Model menu: haiku selected, opus is 2 down.
+			agent = newModelMenuAgent([]string{
+				"Select a model:",
+				"❯ haiku",
+				"  sonnet",
+				"  opus",
+			})
+			return agent, nil
+		},
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute([]string{"run", "nav-test"}, stdout, stderr)
+	assert.NoError(t, err)
+
+	errOut := stderrBuf.String()
+	// Should log auto-selection.
+	assert.Contains(t, errOut, `auto-selected model "opus"`)
+
+	// Verify keystrokes were sent: 2x ArrowDown + Enter.
+	sentLog := agent.getSentLog()
+	assert.GreaterOrEqual(t, len(sentLog), 2)
+	// First send is the task text, subsequent sends include navigation.
+	found := false
+	for _, s := range sentLog {
+		if strings.Contains(s, "\x1b[B") { // ArrowDown
+			found = true
+			assert.Contains(t, s, "\r") // Must end with Enter
+		}
+	}
+	assert.True(t, found, "should have sent arrow-down keystrokes")
+}
+
+func TestClaudeMux_Run_ModelNav_NoModelFlag_SkipsDetection(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.runModel = "" // No model flag.
+
+	var agent *modelMenuAgent
+	cmd.providerOverride = &mockProvider{
+		name: "no-model-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			agent = newModelMenuAgent([]string{
+				"Select a model:",
+				"❯ haiku",
+				"  sonnet",
+			})
+			return agent, nil
+		},
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute([]string{"run", "no-nav-test"}, stdout, stderr)
+	assert.NoError(t, err)
+
+	// No auto-selection should occur.
+	assert.NotContains(t, stderrBuf.String(), "auto-selected model")
+
+	// Only the task text should have been sent.
+	sentLog := agent.getSentLog()
+	for _, s := range sentLog {
+		assert.NotContains(t, s, "\x1b[", "should not send ANSI escape sequences without --model")
+	}
+}
+
+func TestClaudeMux_Run_ModelNav_ModelNotFound_SkipsNavigation(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.runModel = "nonexistent-model"
+
+	cmd.providerOverride = &mockProvider{
+		name: "missing-model-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			return newModelMenuAgent([]string{
+				"Select a model:",
+				"❯ haiku",
+				"  sonnet",
+			}), nil
+		},
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute([]string{"run", "missing-model-test"}, stdout, stderr)
+	assert.NoError(t, err)
+
+	errOut := stderrBuf.String()
+	// In streaming mode, target model is never found in the parsed menu.
+	// tryNavigateModel silently returns "" each time, so no navigation
+	// happens and no error is logged — the task completes normally.
+	assert.NotContains(t, errOut, "auto-selected model")
+	// Task should still complete.
+	assert.Contains(t, stdoutBuf.String(), "succeeded=1")
+}
+
+func TestClaudeMux_Run_ModelNav_SingleModelAutoSelects(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.runModel = "only-model"
+
+	var agent *modelMenuAgent
+	cmd.providerOverride = &mockProvider{
+		name: "single-model-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			// Single model in menu — auto-select with Enter only.
+			agent = newModelMenuAgent([]string{
+				"❯ only-model",
+			})
+			return agent, nil
+		},
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute([]string{"run", "single-model-test"}, stdout, stderr)
+	assert.NoError(t, err)
+
+	errOut := stderrBuf.String()
+	assert.Contains(t, errOut, `auto-selected model "only-model"`)
+
+	// Single-model menu: NavigateToModel returns just Enter (\r).
+	sentLog := agent.getSentLog()
+	foundEnter := false
+	for _, s := range sentLog {
+		if s == "\r" {
+			foundEnter = true
+		}
+	}
+	assert.True(t, foundEnter, "should have sent Enter keystroke for single-model menu")
+}
+func TestClaudeMux_Run_ModelNav_NavigateOncePerTask(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.runModel = "sonnet"
+
+	var agent *modelMenuAgent
+	cmd.providerOverride = &mockProvider{
+		name: "double-menu-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			// Menu appears twice in output.
+			agent = newModelMenuAgent([]string{
+				"❯ haiku",
+				"  sonnet",
+				"Some output...",
+				"❯ haiku",
+				"  sonnet",
+			})
+			return agent, nil
+		},
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute([]string{"run", "double-menu-test"}, stdout, stderr)
+	assert.NoError(t, err)
+
+	errOut := stderrBuf.String()
+	// Should only auto-select once.
+	count := strings.Count(errOut, "auto-selected model")
+	assert.Equal(t, 1, count, "should navigate only once per task, got %d", count)
+}

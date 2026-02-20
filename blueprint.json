@@ -40,7 +40,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T101-T111 Done. Build GREEN. Proceeding to T112.",
+    "currentState": "T101-T112 Done. Build GREEN. Proceeding to T113.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
   },
@@ -147,8 +147,8 @@
     },
     {
       "task": "T112: Wire Panel TUI into claudemux run",
-      "description": "Launch claudemux.Panel as the interactive TUI for 'claudemux run'. Alt+1..9 switching between instances. Per-pane scrollback. Health indicators in status bar. PgUp/PgDown navigation. Verify no tmux keybinding conflicts. Tests. Run make.",
-      "status": "Not Started"
+      "description": "DONE: Wired claudemux.Panel as multi-pane output tracker for run subcommand. Panel created in run() after pool setup, one pane per task (capped at 9 for Alt+1..9). dispatchTask routes output via AppendOutput, sets pane health running/stopped/error. OnGuardAction updates Panel health in real-time with cumulative ErrorCount. StatusBar printed in summary. Graceful degradation for >9 tasks. 5 new tests (StatusBarInOutput, PaneCountMatchesTasks, OutputRoutedToPanes, HealthErrorOnCrash, MixedHealthStates) + 2 updated. Build GREEN.",
+      "status": "Done"
     },
     {
       "task": "T113: Integration tests for claudemux run end-to-end",

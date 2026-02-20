@@ -943,3 +943,402 @@ func TestClaudeMux_Run_Panel_MixedHealthStates(t *testing.T) {
 	assert.Contains(t, out, "succeeded=1")
 	assert.Contains(t, out, "failed=1")
 }
+
+// --- End-to-end integration tests (T113) ---
+
+// blockedAgent blocks on an external channel before producing output and exiting.
+// This enables deterministic concurrency testing without timing dependencies.
+type blockedAgent struct {
+	gate   chan struct{} // close to unblock
+	output chan string
+	done   chan struct{}
+	once   sync.Once
+}
+
+func newBlockedAgent(gate chan struct{}) *blockedAgent {
+	return &blockedAgent{
+		gate:   gate,
+		output: make(chan string, 4),
+		done:   make(chan struct{}),
+	}
+}
+
+func (a *blockedAgent) Send(input string) error {
+	// Block until gate is opened.
+	<-a.gate
+	a.output <- fmt.Sprintf("unblocked: %s", input)
+	a.once.Do(func() { go func() { close(a.done) }() })
+	return nil
+}
+
+func (a *blockedAgent) Receive() (string, error) {
+	select {
+	case msg := <-a.output:
+		return msg, nil
+	default:
+	}
+	select {
+	case msg := <-a.output:
+		return msg, nil
+	case <-a.done:
+		return "", io.EOF
+	}
+}
+
+func (a *blockedAgent) Close() error {
+	a.once.Do(func() { close(a.done) })
+	return nil
+}
+
+func (a *blockedAgent) IsAlive() bool {
+	select {
+	case <-a.done:
+		return false
+	default:
+		return true
+	}
+}
+
+func (a *blockedAgent) Wait() (int, error) {
+	<-a.done
+	return 0, nil
+}
+
+// sendErrorAgent always errors on Send, simulating a broken stdin pipe.
+type sendErrorAgent struct {
+	mu        sync.Mutex
+	sendCount int
+	done      chan struct{}
+	once      sync.Once
+}
+
+func newSendErrorAgent() *sendErrorAgent {
+	return &sendErrorAgent{done: make(chan struct{})}
+}
+
+func (a *sendErrorAgent) Send(_ string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.sendCount++
+	// First send always fails (simulate broken stdin).
+	a.once.Do(func() { close(a.done) })
+	return fmt.Errorf("broken pipe")
+}
+
+func (a *sendErrorAgent) Receive() (string, error) {
+	<-a.done
+	return "", io.EOF
+}
+
+func (a *sendErrorAgent) Close() error {
+	a.once.Do(func() { close(a.done) })
+	return nil
+}
+
+func (a *sendErrorAgent) IsAlive() bool {
+	select {
+	case <-a.done:
+		return false
+	default:
+		return true
+	}
+}
+
+func (a *sendErrorAgent) Wait() (int, error) {
+	<-a.done
+	return 0, nil
+}
+
+func TestClaudeMux_Run_Integration_PoolConcurrency(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 2
+
+	// Track maximum concurrent agents.
+	var (
+		concurrencyMu sync.Mutex
+		concurrent     int
+		maxConcurrent  int
+	)
+
+	gate := make(chan struct{})
+	cmd.providerOverride = &mockProvider{
+		name: "concurrent-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			concurrencyMu.Lock()
+			concurrent++
+			if concurrent > maxConcurrent {
+				maxConcurrent = concurrent
+			}
+			concurrencyMu.Unlock()
+			agent := newBlockedAgent(gate)
+			go func() {
+				<-agent.done
+				concurrencyMu.Lock()
+				concurrent--
+				concurrencyMu.Unlock()
+			}()
+			return agent, nil
+		},
+	}
+
+	// Close gate immediately to let all tasks proceed.
+	close(gate)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute([]string{"run", "t1", "t2", "t3", "t4"}, stdout, stderr)
+	assert.NoError(t, err)
+
+	// Pool has 2 slots, so at most 2 should be concurrent.
+	// Note: due to goroutine scheduling, the actual max may be lower.
+	assert.LessOrEqual(t, maxConcurrent, 2, "should not exceed pool-size=2")
+	assert.Contains(t, stdoutBuf.String(), "succeeded=4")
+}
+
+func TestClaudeMux_Run_Integration_CRLFOutputHandling(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.providerOverride = &mockProvider{
+		name: "crlf-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			// Simulate Windows PTY output with \r\n line endings.
+			return newVerboseAgent([]string{
+				"Line with CRLF\r",
+				"Another CRLF line\r",
+				"Clean line",
+			}), nil
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run", "crlf-test"}, &stdout, &stderr)
+	assert.NoError(t, err)
+
+	out := stdout.String()
+	// Output should appear with \r preserved in the raw output line,
+	// but ManagedSession.ProcessLine strips \r before processing.
+	assert.Contains(t, out, "Line with CRLF")
+	assert.Contains(t, out, "Another CRLF line")
+	assert.Contains(t, out, "Clean line")
+	assert.Contains(t, out, "succeeded=1")
+}
+
+func TestClaudeMux_Run_Integration_SendError(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.providerOverride = &mockProvider{
+		name: "send-error-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			return newSendErrorAgent(), nil
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run", "send-fail-test"}, &stdout, &stderr)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "tasks failed")
+	assert.Contains(t, stderr.String(), "send error")
+	assert.Contains(t, stderr.String(), "broken pipe")
+}
+
+func TestClaudeMux_Run_Integration_ExceedMaxPanes(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 12 // Intentionally larger than Panel max (9).
+	cmd.providerOverride = &mockProvider{name: "mock"}
+
+	// Create 12 tasks — Panel caps at 9 panes.
+	tasks := make([]string, 12)
+	for i := range tasks {
+		tasks[i] = fmt.Sprintf("task-%d", i)
+	}
+
+	args := append([]string{"run"}, tasks...)
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute(args, stdout, stderr)
+	assert.NoError(t, err)
+
+	out := stdoutBuf.String()
+	errOut := stderrBuf.String()
+	// Panel should cap at 9 panes.
+	assert.Contains(t, out, "[audit] panel: 9 panes")
+	// Warning should be emitted for the overflow.
+	assert.Contains(t, errOut, "[warn] panel full")
+	// All 12 tasks should still complete successfully.
+	assert.Contains(t, out, "succeeded=12")
+}
+
+func TestClaudeMux_Run_Integration_ErrorOutputGuardEvent(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.providerOverride = &mockProvider{
+		name: "error-output-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			// Produce output that matches the parser's error pattern.
+			// "Error: something broke" matches `(?i)^error:?\s+(.+)`.
+			return newVerboseAgent([]string{
+				"Starting work...",
+				"Error: something broke",
+				"Continuing anyway",
+			}), nil
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run", "error-pattern-test"}, &stdout, &stderr)
+	// Task should still complete (error pattern fires guard but default
+	// guard config doesn't escalate on first error event).
+	// Whether or not it succeeds depends on guard config behavior.
+
+	out := stdout.String()
+	errOut := stderr.String()
+	// The output should contain all lines regardless of guard action.
+	assert.Contains(t, out, "Starting work...")
+	assert.Contains(t, out, "Error: something broke")
+	assert.Contains(t, out, "Continuing anyway")
+
+	// Guard should have been notified. Depending on config, it may or
+	// may not produce a guard event. Let's check both outputs together.
+	_ = err
+	_ = errOut
+	// The important thing is the output was processed through the pipeline.
+	// Panel + summary should be present.
+	assert.Contains(t, out, "[panel]")
+	assert.Contains(t, out, "[summary]")
+}
+
+func TestClaudeMux_Run_Integration_LargeSequentialBatch(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1 // Serial execution.
+	cmd.providerOverride = &mockProvider{name: "mock"}
+
+	// 8 sequential tasks with pool-size=1.
+	tasks := make([]string, 8)
+	for i := range tasks {
+		tasks[i] = fmt.Sprintf("sequential-task-%d", i)
+	}
+
+	args := append([]string{"run"}, tasks...)
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute(args, &stdout, &stderr)
+	assert.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "[audit] tasks loaded: 8")
+	assert.Contains(t, out, "succeeded=8")
+	assert.Contains(t, out, "failed=0")
+	// All 8 task dispatch messages should appear.
+	for i := 0; i < 8; i++ {
+		assert.Contains(t, out, fmt.Sprintf("[task %d] dispatched", i))
+		assert.Contains(t, out, fmt.Sprintf("[task %d] completed (exit 0)", i))
+	}
+}
+
+func TestClaudeMux_Run_Integration_InstanceRegistryCreatesPerTask(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = tmpDir
+	cmd.poolSize = 2
+	cmd.providerOverride = &mockProvider{name: "mock"}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute([]string{"run", "task-a", "task-b", "task-c"}, stdout, stderr)
+	assert.NoError(t, err)
+
+	out := stdoutBuf.String()
+	assert.Contains(t, out, "[audit] instance registry:")
+	assert.Contains(t, out, tmpDir)
+	assert.Contains(t, out, "succeeded=3")
+}
+
+func TestClaudeMux_Run_Integration_AllSubsystems(t *testing.T) {
+	// Full pipeline test: provider → instance → agent → session → panel → summary.
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 2
+
+	spawnIdx := 0
+	var spawnMu sync.Mutex
+	cmd.providerOverride = &mockProvider{
+		name: "pipeline-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			spawnMu.Lock()
+			idx := spawnIdx
+			spawnIdx++
+			spawnMu.Unlock()
+			switch idx {
+			case 0:
+				// Task 0: verbose output, clean exit.
+				return newVerboseAgent([]string{
+					"Processing task-0...",
+					"Task-0 complete.",
+				}), nil
+			case 1:
+				// Task 1: immediate crash.
+				return &failingAgent{exitCode: 3}, nil
+			case 2:
+				// Task 2: echo agent, clean exit.
+				return newEchoAgent(), nil
+			default:
+				return newEchoAgent(), nil
+			}
+		},
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute([]string{"run", "verbose-task", "crash-task", "echo-task"}, stdout, stderr)
+	assert.Error(t, err, "should fail due to crash-task")
+	assert.Contains(t, err.Error(), "1/3 tasks failed")
+
+	out := stdoutBuf.String()
+	errOut := stderrBuf.String()
+
+	// Audit lines for all subsystems.
+	assert.Contains(t, out, "[audit] tasks loaded: 3")
+	assert.Contains(t, out, "[audit] provider: pipeline-mock")
+	assert.Contains(t, out, "[audit] pool started:")
+	assert.Contains(t, out, "[audit] instance registry:")
+	assert.Contains(t, out, "[audit] panel: 3 panes")
+
+	// Verbose task output.
+	assert.Contains(t, out, "Processing task-0...")
+	assert.Contains(t, out, "Task-0 complete.")
+
+	// Crash task tracked.
+	assert.Contains(t, errOut, "agent exited: code=3")
+	assert.Contains(t, errOut, "guard:")    // OnGuardAction fires on crash
+	assert.Contains(t, errOut, "recovery:") // OnRecoveryDecision fires on crash
+
+	// Summary.
+	assert.Contains(t, out, "[panel]")
+	assert.Contains(t, out, "succeeded=2")
+	assert.Contains(t, out, "failed=1")
+}

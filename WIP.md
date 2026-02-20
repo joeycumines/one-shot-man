@@ -8,7 +8,7 @@
 ---
 
 ## Session Identity
-- **Branch**: wip (300+ commits ahead of main)
+- **Branch**: wip (30+ commits ahead of main)
 - **Session timer file**: `.session-timer`
 
 ---
@@ -19,10 +19,13 @@
 - **T101-T108**: SSE, ReadableStream, MCP, txtar fixes (prior in session)
 - **T109**: macOS Deep Anchor (sysctl, committed f086711)
 - **T110**: claude-mux run subcommand (PTY dispatch, committed ca9cd6e)
+- **T111**: ManagedSession health tracking (guard events, ProcessCrash, committed 1d62cb1)
+- **T112**: Panel TUI data layer wiring (output routing, health indicators, StatusBar, committed ab94850)
 
-### Next task: T111
-Wire Pool dispatch into claudemux run — round-robin task assignment,
-health tracking via PTY output monitoring, graceful drain on shutdown.
+### Next task: T113
+Write integration tests for the full 'claudemux run' pipeline: spawn mock
+processes, dispatch tasks, verify Pool allocation, verify Panel renders output,
+verify graceful shutdown. Use simulated CI tests (no real Claude needed).
 
 ### Build state: GREEN (all packages pass)
 

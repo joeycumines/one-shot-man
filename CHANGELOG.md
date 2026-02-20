@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Claude-mux orchestration system**: multi-instance Claude Code management framework with building blocks for PTY output parsing, guard rails, MCP monitoring, error recovery, concurrent instance pooling, TUI multiplexing, safety validation, and choice resolution
+- `osm claude-mux` command with `status`, `start`, `stop`, `submit` subcommands for lifecycle management, pool sizing (`-pool-size`), audit logging, and fail-closed security policy
+- PTY output parser (`parser.go`): pattern-based classifier for Claude Code output — rate limits, permission prompts, tool calls, errors, model selection, cost updates, and text; extensible via `Parser.Patterns()`
+- Guard rails — PTY monitors (`guard.go`): `Guard` pipeline with `GuardConfig` for rate-limit detection, permission policy (deny/allow), crash restart limits, and output timeout; emits `GuardEvent` actions (pause, restart, escalate, timeout)
+- Guard rails — MCP monitors (`mcp_guard.go`): `MCPGuard` for tool call frequency limiting, repeat detection, no-call timeout, and tool allowlist enforcement
+- Error recovery and cancellation (`recovery.go`): `Supervisor` state machine with retry→restart→escalate→abort flow, per-error-class strategies (PTY crash, MCP timeout, cancellation), context propagation, and graceful drain/shutdown
+- Concurrent instance management (`pool.go`): `Pool` with acquire/release dispatch, round-robin scheduling, `sync.Cond` blocking, health tracking, `Drain`/`WaitDrained`/`Close` lifecycle
+- TUI multiplexing (`panel.go`): `Panel` with Alt+1..9 pane switching, per-pane scrollback, PgUp/PgDown navigation, health indicators, and status bar
+- Session isolation (`instance.go`): `InstanceRegistry` with per-instance state directories, `state.json` persistence, and `sync.Map`-based concurrent management
+- Dynamic MCP config per instance (`mcp_config.go`): auto-port Unix socket/TCP listeners, session-scoped config JSON generation, and endpoint management
+- MCP session coordination hardening: session ID validation (empty, >256 chars, control chars), sequence number deduplication, heartbeat tracking, 20+ new tests, and fuzz coverage
+- Safety validation (`safety.go`): intent classification (read-only, code, destructive, credential, network), scope assessment (file, project, infra, unknown), risk scoring (0.0–1.0), policy actions (allow, confirm, block, deny), composable `Validator` interface with `CompositeValidator`, `SafetyConfig` with blocked paths, sensitive patterns, and per-intent thresholds
+- Choice resolution (`choice.go`): `ChoiceResolver` with `Candidate`/`Criterion`/`ChoiceConfig`, weighted scoring via `ScoreFunc`, ranked results with justification, and confirmation threshold
+- Managed session compositor (`session_mgr.go`): `ManagedSession` composing Parser+Guard+MCPGuard+Supervisor into a unified pipeline with callbacks (`OnEvent`, `OnGuardAction`, `OnRecoveryDecision`) and thread-safe `Snapshot()`
+- `osm:claudemux` JavaScript module: full JS bindings for all building blocks (parser, guard, MCP guard, supervisor, pool, panel, instance registry, safety, choice resolver, managed session) with `SESSION_IDLE`/`SESSION_ACTIVE`/`SESSION_PAUSED`/`SESSION_FAILED`/`SESSION_CLOSED` constants
+- PR split rewrite: `orchestrate-pr-split.js` v2.0.0 with claudemux integration (selectStrategy+ChoiceResolver, conflict classification, equivalence verification with diff, createSelectStrategyNode BT leaf)
+- Shell completion for `claude-mux` subcommands (status/start/stop/submit) in bash, zsh, fish, and PowerShell
+- Claude-mux documentation: `docs/reference/claude-mux.md` (full API reference), `docs/architecture-claude-mux.md` (11-section architecture doc), updates to `command.md`, `scripting.md`, and `README.md`
+- Fuzz tests for claude-mux: `FuzzParseOutput`, `FuzzGuardRuleEval`, `FuzzMCPPayload`, `FuzzSafetyClassify` in `fuzz_test.go`
+- Performance benchmarks for claude-mux: 8 benchmarks in `benchmark_test.go` covering parser, guard, MCP guard, safety, pool, managed session, panel, and choice resolver (all with `b.ReportAllocs()`)
+- Security tests for MCP protocol: 20 tests across `claudemux/mcp_security_test.go` (guard injection, tool injection, privilege escalation, blocked paths, allowlist, disabled safety, sensitive patterns, concurrent guard, session isolation, instance registry IDs, frequency burst, repeat detection, composite validator) and `command/mcp_security_test.go` (session spoofing, ID validation, sequence replay, large payloads, concurrent manipulation, tool name injection, session overwrite)
+- Integration testing infrastructure: TestMain with `-integration`, `-provider`, `-model` flags; 6 live agent tests (disabled by default); 4 simulated CI tests (full pipeline lifecycle, concurrent multi-session, error recovery escalation, safety-into-pipeline); `make integration-test-claudemux` target
 - AbortSignal support in `osm:fetch`: `fetch(url, { signal })` option wires `AbortController.signal` to HTTP request cancellation — supports pre-aborted signals (immediate rejection), mid-request abort via `ac.abort()`, and `AbortSignal.timeout(ms)` for automatic deadline-based cancellation
 - `osm:protobuf` native module: Protocol Buffers for goja via [goja-protobuf](https://github.com/joeycumines/goja-protobuf) — `loadDescriptorSet(bytes)` loads binary `FileDescriptorSet` for use with `osm:grpc` client/server operations
 - `EventLoopProvider.Adapter()` method exposing the goja-eventloop adapter to native modules that need Promise integration (required by goja-grpc)
@@ -66,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `tui_commands.go` `registerBuiltinCommands` coverage 88.9%→97.2%: added `mode` success path and `reset` stateManager-nil error path tests; remaining 2.8% is an unreachable defensive `else` branch
 
 ### Changed
+- **BREAKING:** Renamed internal "orchestrator" package to `claudemux` (Go) / `claude-mux` (user-facing) / `osm:claudemux` (JS module) — all imports, docs, and CLI references updated
 - Consolidated two shell-out `git pull --rebase` call sites (`sync.go executePull`, `sync_startup.go SyncAutoPull`) into `gitops.PullRebase()` with `PullRebaseOptions` struct and `ErrConflict` sentinel — properly captures stderr, validates directory, and supports custom git binary path
 - **BREAKING:** `osm:fetch` module reworked to browser Fetch API compliance — `fetch(url, opts?)` now returns `Promise<Response>` (async) instead of synchronous Response; Response.headers is now a proper Headers object with `.get()`, `.has()`, `.entries()`, `.keys()`, `.values()`, `.forEach()` methods; `.text()` and `.json()` now return Promises; HTTP requests run in goroutines with Promise resolution on the event loop
 - **BREAKING:** Replaced `osm:grpc` synchronous API with Promise-based gRPC via [goja-grpc](https://github.com/joeycumines/goja-grpc) — `dial`/`loadDescriptorSet`/`invoke` replaced by `createClient`/`createServer`/`dial`/`status`/`metadata`/`enableReflection`/`createReflectionClient`; all RPC calls now return Promises supporting unary, server-streaming, client-streaming, and bidirectional streaming; protobuf descriptor loading moved to new `osm:protobuf` module (`loadDescriptorSet`); uses in-process gRPC channel (`go-inprocgrpc`) for zero-network-overhead internal communication
@@ -105,6 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deprecated `ScrollWheel` and `ScrollWheelOnElement` string-based methods from mouseharness; use type-safe `ScrollWheelWithDirection` and `ScrollWheelOnElementWithDirection` instead
 
 ### Fixed
+- Cross-platform safety validator: `filepath.Clean` on Windows converts `/etc/hosts` to `\etc\hosts` — added `filepath.ToSlash` normalization so system path detection works correctly on all platforms
 - Bash completion formatting: `;;` case terminators for `schema)` and `log)` were concatenated on the same line as the next case pattern — split to separate lines
 - Zsh completion `commands` array scoping: array was declared inside the `commands)` case branch, making it inaccessible to the `args)` branch where `help)` needs it — hoisted to function scope
 - Data race in storage path globals: added `sync.RWMutex` guarding `getSessionDirectory` and `getSessionLockFilePath` accessor functions in `paths.go`, preventing concurrent read/write of function-variable overrides during cleanup scheduling

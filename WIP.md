@@ -54,7 +54,11 @@
 
 - **T024**: Integration testing for claude-mux (integration_test.go: TestMain with -integration/-provider/-model flags; 6 live agent tests skipped in CI; 4 simulated CI tests covering full 8-phase pipeline, concurrent multi-session, error recovery escalation, safety-into-pipeline; config.mk target integration-test-claudemux). Build green.
 
-### Next task: T025
-Cross-platform checkpoint — post claude-mux.
+- **T025**: Cross-platform checkpoint (macOS: all claudemux/command green; Linux Docker: two pre-existing PTY timing flakeys not my changes; Windows: ALL GREEN after filepath.ToSlash fix in safety.go classifyScope). Build green on macOS + Windows.
 
-### No commits made yet this session. Rule of Two needed before committing. 24+ tasks accumulated.
+- **T026**: CHANGELOG — claude-mux milestone (18 Added entries for all building blocks, 1 Changed entry for orchestrator→claudemux rename, 1 Fixed entry for cross-platform filepath.ToSlash). Keep-a-Changelog 1.1.0 format.
+
+### Next task: T027
+Sync common config enhancement — conflict handling, schema versioning, edge cases.
+
+### CRITICAL: 26 tasks accumulated with NO COMMITS. Rule of Two MUST execute ASAP.

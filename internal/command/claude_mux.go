@@ -290,6 +290,26 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 	_, _ = fmt.Fprintf(stdout, "[audit] %d worker slots ready, dispatching %d tasks\n",
 		slotCount, len(tasks))
 
+	// Create the Panel for multi-instance output tracking.
+	panelCfg := claudemux.DefaultPanelConfig()
+	panel := claudemux.NewPanel(panelCfg)
+	if err := panel.Start(); err != nil {
+		return fmt.Errorf("claude-mux run: panel: %w", err)
+	}
+	defer panel.Close()
+
+	// Add a pane per task (capped at Panel's max, which is 9 for Alt+1..9).
+	for i, task := range tasks {
+		paneID := fmt.Sprintf("task-%d", i)
+		title := truncateTask(task, 30)
+		if _, err := panel.AddPane(paneID, title); err != nil {
+			// Panel is full — remaining tasks won't have dedicated panes.
+			_, _ = fmt.Fprintf(stderr, "[warn] panel full at pane %d: %v\n", i, err)
+			break
+		}
+	}
+	_, _ = fmt.Fprintf(stdout, "[audit] panel: %d panes\n", panel.PaneCount())
+
 	// Set up cancellation context for signal handling.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -331,19 +351,32 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 
 		idx := i
 		taskText := task
+		paneID := fmt.Sprintf("task-%d", i)
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			result := c.dispatchTask(ctx, prov, registry, spawnOpts, worker, taskText, idx, stdout, stderr)
+			result := c.dispatchTask(ctx, prov, registry, spawnOpts, worker, taskText, idx, paneID, panel, stdout, stderr)
 			taskResults[idx] = result
 			pool.Release(worker, result.err, time.Now())
+
+			// Update Panel health after task completion.
+			health := claudemux.PaneHealth{
+				State:      "stopped",
+				TaskCount:  1,
+				ErrorCount: int64(result.guardEvents),
+				LastUpdate: time.Now(),
+			}
+			if result.err != nil {
+				health.State = "error"
+			}
+			_ = panel.UpdateHealth(paneID, health)
 		}()
 	}
 
 	wg.Wait()
 	pool.WaitDrained()
 
-	// Print summary.
+	// Print summary with Panel status bar.
 	succeeded, failed := 0, 0
 	var totalGuardEvents int
 	for _, r := range taskResults {
@@ -355,7 +388,8 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 		totalGuardEvents += r.guardEvents
 	}
 
-	_, _ = fmt.Fprintf(stdout, "\n[summary] tasks=%d dispatched=%d succeeded=%d failed=%d guard_events=%d\n",
+	_, _ = fmt.Fprintf(stdout, "\n[panel] %s\n", panel.StatusBar())
+	_, _ = fmt.Fprintf(stdout, "[summary] tasks=%d dispatched=%d succeeded=%d failed=%d guard_events=%d\n",
 		len(tasks), succeeded+failed, succeeded, failed, totalGuardEvents)
 
 	if failed > 0 {
@@ -375,7 +409,8 @@ type taskResult struct {
 // monitors output through a ManagedSession health pipeline, and cleans up.
 // Each output line is passed through Parser → Guard → Supervisor for
 // health tracking. Guard actions (pause/escalate/timeout) are logged
-// and may abort the task.
+// and may abort the task. Output is also routed to the Panel for
+// multi-pane scrollback tracking.
 func (c *ClaudeMuxCommand) dispatchTask(
 	ctx context.Context,
 	prov claudemux.Provider,
@@ -384,6 +419,8 @@ func (c *ClaudeMuxCommand) dispatchTask(
 	worker *claudemux.PoolWorker,
 	task string,
 	taskIdx int,
+	paneID string,
+	panel *claudemux.Panel,
 	stdout, stderr io.Writer,
 ) taskResult {
 	// Create instance for this task.
@@ -415,6 +452,12 @@ func (c *ClaudeMuxCommand) dispatchTask(
 		guardEvents++
 		_, _ = fmt.Fprintf(stderr, "[task %d] guard: action=%s reason=%q\n",
 			taskIdx, claudemux.GuardActionName(ge.Action), ge.Reason)
+		// Update Panel health in real-time on guard events.
+		_ = panel.UpdateHealth(paneID, claudemux.PaneHealth{
+			State:      "error",
+			ErrorCount: int64(guardEvents),
+			LastUpdate: time.Now(),
+		})
 	}
 	session.OnRecoveryDecision = func(d claudemux.RecoveryDecision) {
 		_, _ = fmt.Fprintf(stderr, "[task %d] recovery: action=%s reason=%q\n",
@@ -429,6 +472,12 @@ func (c *ClaudeMuxCommand) dispatchTask(
 		session.Shutdown()
 		session.Close()
 	}()
+
+	// Update panel pane health to running.
+	_ = panel.UpdateHealth(paneID, claudemux.PaneHealth{
+		State:      "running",
+		LastUpdate: time.Now(),
+	})
 
 	_, _ = fmt.Fprintf(stdout, "[task %d] dispatched to %s: %q\n",
 		taskIdx, worker.ID, truncateTask(task, 80))
@@ -463,13 +512,15 @@ func (c *ClaudeMuxCommand) dispatchTask(
 		if output != "" {
 			_, _ = fmt.Fprintf(stdout, "[task %d] %s", taskIdx, output)
 
-			// Pipe each line through the health monitoring pipeline.
+			// Pipe each line through the health monitoring pipeline and panel.
 			now := time.Now()
 			for _, line := range strings.Split(output, "\n") {
 				line = strings.TrimRight(line, "\r")
 				if line == "" {
 					continue
 				}
+				// Route to Panel scrollback.
+				_ = panel.AppendOutput(paneID, line)
 				result := session.ProcessLine(line, now)
 				if result.GuardEvent != nil {
 					switch result.GuardEvent.Action {

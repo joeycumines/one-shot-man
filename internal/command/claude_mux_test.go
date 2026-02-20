@@ -295,9 +295,11 @@ func TestClaudeMux_Run_SingleTask(t *testing.T) {
 	assert.Contains(t, out, "[audit] provider: mock")
 	assert.Contains(t, out, "[audit] pool started: max_size=1")
 	assert.Contains(t, out, "worker slots ready")
+	assert.Contains(t, out, "[audit] panel: 1 panes")
 	assert.Contains(t, out, "[task 0] dispatched")
 	assert.Contains(t, out, "fix the login bug")
 	assert.Contains(t, out, "[task 0] completed (exit 0)")
+	assert.Contains(t, out, "[panel]")
 	assert.Contains(t, out, "[summary]")
 	assert.Contains(t, out, "succeeded=1")
 	assert.Contains(t, out, "failed=0")
@@ -321,6 +323,8 @@ func TestClaudeMux_Run_MultipleTasks(t *testing.T) {
 	out := stdoutBuf.String()
 	assert.Contains(t, out, "[audit] tasks loaded: 3")
 	assert.Contains(t, out, "worker slots ready, dispatching 3 tasks")
+	assert.Contains(t, out, "[audit] panel: 3 panes")
+	assert.Contains(t, out, "[panel]")
 	assert.Contains(t, out, "succeeded=3")
 	assert.Contains(t, out, "guard_events=0")
 }
@@ -808,4 +812,134 @@ func TestClaudeMux_Run_PoolDrainOnClose(t *testing.T) {
 	// Verify pool was properly drained (all tasks completed cleanly).
 	assert.Contains(t, stdout.String(), "succeeded=1")
 	assert.Contains(t, stdout.String(), "failed=0")
+}
+
+// --- Panel TUI wiring tests (T112) ---
+
+func TestClaudeMux_Run_Panel_StatusBarInOutput(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 2
+	cmd.providerOverride = &mockProvider{name: "mock"}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute([]string{"run", "alpha-task", "beta-task"}, stdout, stderr)
+	assert.NoError(t, err)
+
+	out := stdoutBuf.String()
+	// Panel status bar should appear before the summary line.
+	assert.Contains(t, out, "[panel]")
+	// Status bar should reference pane titles (truncated to 30 chars).
+	assert.Contains(t, out, "alpha-task")
+	assert.Contains(t, out, "beta-task")
+}
+
+func TestClaudeMux_Run_Panel_PaneCountMatchesTasks(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 4
+	cmd.providerOverride = &mockProvider{name: "mock"}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute([]string{"run", "t1", "t2", "t3", "t4"}, stdout, stderr)
+	assert.NoError(t, err)
+	assert.Contains(t, stdoutBuf.String(), "[audit] panel: 4 panes")
+}
+
+func TestClaudeMux_Run_Panel_OutputRoutedToPanes(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.providerOverride = &mockProvider{
+		name: "verbose-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			return newVerboseAgent([]string{
+				"Line one for pane",
+				"Line two for pane",
+			}), nil
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run", "pane-output-test"}, &stdout, &stderr)
+	assert.NoError(t, err)
+
+	out := stdout.String()
+	// Output should appear in stdout (piped from agent).
+	assert.Contains(t, out, "Line one for pane")
+	assert.Contains(t, out, "Line two for pane")
+	// Panel pane should have been created and status bar printed.
+	assert.Contains(t, out, "[audit] panel: 1 panes")
+	assert.Contains(t, out, "[panel]")
+}
+
+func TestClaudeMux_Run_Panel_HealthErrorOnCrash(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.providerOverride = &mockProvider{
+		name: "crash-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			return &failingAgent{exitCode: 5}, nil
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run", "crash-pane-test"}, &stdout, &stderr)
+	assert.Error(t, err)
+
+	out := stdout.String()
+	// Panel status bar should indicate the error state.
+	assert.Contains(t, out, "[panel]")
+	assert.Contains(t, out, "[audit] panel: 1 panes")
+	// Summary should show the failure.
+	assert.Contains(t, out, "failed=1")
+}
+
+func TestClaudeMux_Run_Panel_MixedHealthStates(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 2
+
+	spawnCount := 0
+	var spawnMu sync.Mutex
+	cmd.providerOverride = &mockProvider{
+		name: "mixed-panel",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			spawnMu.Lock()
+			idx := spawnCount
+			spawnCount++
+			spawnMu.Unlock()
+			if idx == 1 {
+				return &failingAgent{exitCode: 2}, nil
+			}
+			return newEchoAgent(), nil
+		},
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute([]string{"run", "ok-task", "crash-task"}, stdout, stderr)
+	assert.Error(t, err)
+
+	out := stdoutBuf.String()
+	assert.Contains(t, out, "[audit] panel: 2 panes")
+	assert.Contains(t, out, "[panel]")
+	assert.Contains(t, out, "succeeded=1")
+	assert.Contains(t, out, "failed=1")
 }

@@ -40,7 +40,7 @@
         "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
     },
     "statusSection": {
-        "currentState": "T101-T102 Done. Build GREEN. Proceeding to T103.",
+        "currentState": "T101-T103 Done. Build GREEN. Proceeding to T104.",
         "sessionTimer": ".session-timer | make check-session-time",
         "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
     },
@@ -57,8 +57,8 @@
         },
         {
             "task": "T103: Fix MCP auto-config to use command/stdio instead of URL/HTTP",
-            "description": "CRITICAL: mcp_config.go currently generates {mcpServers: {osm: {url: 'http://...'}}} which violates the mcp.json standard. Fix GenerateMCPConfig to produce {command: 'osm', args: ['mcp-instance', '--session', '<id>']} format. Update all tests in mcp_config_test.go. Verify the output JSON matches the Claude Code mcp.json specification. Run make.",
-            "status": "Not Started"
+            "description": "DONE: Rewrote MCPInstanceConfig to use command/args format (stdio transport) instead of URL/HTTP. Removed: ListenAndServe, Endpoint, ListenerAddr, ErrNotListening, ErrAlreadyListening, endpointType, HTTP server, Unix socket. Added: OsmBinary field (defaults to os.Executable()), command/args in mcpServerEntry. Updated JS bindings in module.go (removed HTTP methods, added osmBinary). Updated instance.go state writing. 15 tests covering new format. Build GREEN.",
+            "status": "Done"
         },
         {
             "task": "T104: Implement osm mcp-instance subcommand (stdio MCP server)",

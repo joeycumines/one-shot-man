@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T021 Done. T022 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
+    "currentState": "T001-T022 Done. T023 next. Pre-existing flaky: TestRecording_Goal, TestRecording_PromptFlow, TestPickAndPlace_MousePick_HoldingItem, TestSessionsListAndClean, TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping (all timing-dep/PTY-based, pass on rerun).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -149,8 +149,8 @@
     },
     {
       "task": "T022: Performance benchmarks for claude-mux",
-      "description": "In claudemux/: BenchmarkParseOutput, BenchmarkMCPDispatch, BenchmarkPoolSubmit, BenchmarkGuardRuleEval, BenchmarkSafetyClassify. Establish baselines. Run benchmarks then make.",
-      "status": "Not Started"
+      "description": "Added benchmark_test.go with 8 benchmarks: BenchmarkParseOutput (9 line types), BenchmarkGuardProcessEvent (5 event types), BenchmarkMCPGuardProcessToolCall (3 call types), BenchmarkSafetyClassify (5 action types), BenchmarkPoolAcquireRelease (acquire/release cycle), BenchmarkManagedSessionProcessLine (3 line types through full pipeline), BenchmarkPanelAppendOutput (3 text sizes), BenchmarkChoiceResolverAnalyze (2/3/10 candidates). All use b.ReportAllocs(). Build green.",
+      "status": "Done"
     },
     {
       "task": "T023: Security tests for MCP protocol",

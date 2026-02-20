@@ -39,6 +39,8 @@
 - **T018**: Main claude-mux entry point command (claude_mux.go: ClaudeMuxCommand with status/start/stop/submit subcommands, poolSize flag, audit logging, fail-closed policy; claude_mux_test.go: 9 tests; registered in main.go). ALSO FIXED: TestPRSplit_BTWorkflow_EndToEnd flaky timeout — increased bridge timeout from 5s→30s for git-heavy E2E test. All 41 packages pass.
 - **T019**: Shell completion for claude-mux (status/start/stop/submit in bash/zsh/fish/powershell; TestCompletionCommandClaudeMuxSubcommand 4 subtests). Build green.
 - **T020**: Claude-mux documentation (reference/claude-mux.md, command.md, scripting.md, architecture-claude-mux.md, README.md).
+- **T021**: Fuzz tests (fuzz_test.go: FuzzParseOutput, FuzzGuardRuleEval, FuzzMCPPayload, FuzzSafetyClassify — all seeds pass)
+- **T022**: Performance benchmarks (benchmark_test.go: 8 benchmarks covering parser, guard, MCPGuard, safety, pool, session, panel, choice — all with ReportAllocs)
 
 ### Known pre-existing flaky tests:
 - **TestRecording_Goal** (internal/scripting): TUI timing
@@ -48,7 +50,7 @@
 - **TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping** (internal/scripting): PTY hang under load
 - All pass on re-run.
 
-### Next task: T021
-Fuzz tests for claude-mux.
+### Next task: T023
+Security tests for MCP protocol.
 
 ### No commits made yet this session. Rule of Two needed before committing.

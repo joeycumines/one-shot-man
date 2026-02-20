@@ -223,7 +223,9 @@ func (c *ClaudeMuxCommand) start(_ []string, stdout, stderr io.Writer) error {
 //  2. --tasks-file flag (one task per line)
 //
 // Each task spawns a fresh agent via the configured Provider. The Pool
-// limits concurrency to at most pool-size simultaneous agents.
+// limits concurrency to at most pool-size simultaneous agents. Each task
+// gets a ManagedSession for health tracking — PTY output is piped through
+// the Parser → Guard → Supervisor pipeline.
 func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 	// Gather tasks.
 	tasks, err := c.gatherTasks(args)
@@ -298,6 +300,7 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 		select {
 		case sig := <-sigCh:
 			_, _ = fmt.Fprintf(stderr, "\n[info] received %s, draining...\n", sig)
+			pool.Drain()
 			cancel()
 		case <-ctx.Done():
 		}
@@ -309,7 +312,7 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 		Dir:   c.runDir,
 	}
 
-	// Dispatch tasks — each gets a fresh agent spawn.
+	// Dispatch tasks — each gets a fresh agent spawn + ManagedSession.
 	var wg sync.WaitGroup
 	taskResults := make([]taskResult, len(tasks))
 
@@ -338,19 +341,22 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 	}
 
 	wg.Wait()
+	pool.WaitDrained()
 
 	// Print summary.
 	succeeded, failed := 0, 0
+	var totalGuardEvents int
 	for _, r := range taskResults {
 		if r.err != nil {
 			failed++
 		} else if r.dispatched {
 			succeeded++
 		}
+		totalGuardEvents += r.guardEvents
 	}
 
-	_, _ = fmt.Fprintf(stdout, "\n[summary] tasks=%d dispatched=%d succeeded=%d failed=%d\n",
-		len(tasks), succeeded+failed, succeeded, failed)
+	_, _ = fmt.Fprintf(stdout, "\n[summary] tasks=%d dispatched=%d succeeded=%d failed=%d guard_events=%d\n",
+		len(tasks), succeeded+failed, succeeded, failed, totalGuardEvents)
 
 	if failed > 0 {
 		return fmt.Errorf("claude-mux run: %d/%d tasks failed", failed, succeeded+failed)
@@ -360,12 +366,16 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 
 // taskResult tracks the outcome of a single task dispatch.
 type taskResult struct {
-	dispatched bool
-	err        error
+	dispatched  bool
+	err         error
+	guardEvents int // number of guard events triggered during task
 }
 
 // dispatchTask spawns a fresh agent for a single task, sends the task,
-// monitors output until the agent exits, and cleans up.
+// monitors output through a ManagedSession health pipeline, and cleans up.
+// Each output line is passed through Parser → Guard → Supervisor for
+// health tracking. Guard actions (pause/escalate/timeout) are logged
+// and may abort the task.
 func (c *ClaudeMuxCommand) dispatchTask(
 	ctx context.Context,
 	prov claudemux.Provider,
@@ -394,55 +404,114 @@ func (c *ClaudeMuxCommand) dispatchTask(
 	inst.Agent = agent
 	defer func() { _ = agent.Close() }()
 
+	// Create ManagedSession for health tracking.
+	sessionCfg := claudemux.DefaultManagedSessionConfig()
+	session := claudemux.NewManagedSession(ctx, instanceID, sessionCfg)
+
+	var guardEvents int
+
+	// Wire health callbacks.
+	session.OnGuardAction = func(ge *claudemux.GuardEvent) {
+		guardEvents++
+		_, _ = fmt.Fprintf(stderr, "[task %d] guard: action=%s reason=%q\n",
+			taskIdx, claudemux.GuardActionName(ge.Action), ge.Reason)
+	}
+	session.OnRecoveryDecision = func(d claudemux.RecoveryDecision) {
+		_, _ = fmt.Fprintf(stderr, "[task %d] recovery: action=%s reason=%q\n",
+			taskIdx, claudemux.RecoveryActionName(d.Action), d.Reason)
+	}
+
+	if err := session.Start(); err != nil {
+		_, _ = fmt.Fprintf(stderr, "[task %d] session start: %v\n", taskIdx, err)
+		return taskResult{dispatched: false, err: err}
+	}
+	defer func() {
+		session.Shutdown()
+		session.Close()
+	}()
+
 	_, _ = fmt.Fprintf(stdout, "[task %d] dispatched to %s: %q\n",
 		taskIdx, worker.ID, truncateTask(task, 80))
 
 	// Send the task text to the agent's stdin.
 	if err := agent.Send(task + "\n"); err != nil {
 		_, _ = fmt.Fprintf(stderr, "[task %d] send error: %v\n", taskIdx, err)
-		return taskResult{dispatched: true, err: err}
+		return taskResult{dispatched: true, err: err, guardEvents: guardEvents}
 	}
 
-	// Monitor agent output until it exits or context is cancelled.
+	// Monitor agent output through ManagedSession health pipeline.
 	for {
 		select {
 		case <-ctx.Done():
 			_, _ = fmt.Fprintf(stderr, "[task %d] cancelled (shutdown)\n", taskIdx)
-			return taskResult{dispatched: true, err: ctx.Err()}
+			return taskResult{dispatched: true, err: ctx.Err(), guardEvents: guardEvents}
 		default:
 		}
 
 		if !agent.IsAlive() {
-			return c.handleAgentExit(agent, taskIdx, stdout, stderr)
+			return c.handleAgentExit(agent, session, taskIdx, &guardEvents, stdout, stderr)
 		}
 
 		output, err := agent.Receive()
 		if err != nil {
 			if !agent.IsAlive() {
-				return c.handleAgentExit(agent, taskIdx, stdout, stderr)
+				return c.handleAgentExit(agent, session, taskIdx, &guardEvents, stdout, stderr)
 			}
 			_, _ = fmt.Fprintf(stderr, "[task %d] receive error: %v\n", taskIdx, err)
-			return taskResult{dispatched: true, err: err}
+			return taskResult{dispatched: true, err: err, guardEvents: guardEvents}
 		}
 		if output != "" {
 			_, _ = fmt.Fprintf(stdout, "[task %d] %s", taskIdx, output)
+
+			// Pipe each line through the health monitoring pipeline.
+			now := time.Now()
+			for _, line := range strings.Split(output, "\n") {
+				line = strings.TrimRight(line, "\r")
+				if line == "" {
+					continue
+				}
+				result := session.ProcessLine(line, now)
+				if result.GuardEvent != nil {
+					switch result.GuardEvent.Action {
+					case claudemux.GuardActionEscalate, claudemux.GuardActionTimeout:
+						// Fatal guard action — abort the task.
+						_, _ = fmt.Fprintf(stderr, "[task %d] guard escalated, aborting\n", taskIdx)
+						return taskResult{dispatched: true, err: fmt.Errorf("guard %s: %s",
+							claudemux.GuardActionName(result.GuardEvent.Action),
+							result.GuardEvent.Reason), guardEvents: guardEvents}
+					case claudemux.GuardActionPause:
+						// Non-fatal: session paused, resume and continue.
+						if resumeErr := session.Resume(); resumeErr != nil {
+							_, _ = fmt.Fprintf(stderr, "[task %d] resume: %v\n", taskIdx, resumeErr)
+						}
+					}
+				}
+			}
 		}
 	}
 }
 
-// handleAgentExit processes the agent's exit and returns the appropriate result.
+// handleAgentExit processes the agent's exit, reports crashes to the
+// ManagedSession, and returns the appropriate result. guardEvents is a
+// pointer so that crash-triggered guard callbacks increment the counter
+// visible to the caller.
 func (c *ClaudeMuxCommand) handleAgentExit(
 	agent claudemux.AgentHandle,
+	session *claudemux.ManagedSession,
 	taskIdx int,
+	guardEvents *int,
 	stdout, stderr io.Writer,
 ) taskResult {
 	exitCode, exitErr := agent.Wait()
 	if exitCode != 0 {
 		_, _ = fmt.Fprintf(stderr, "[task %d] agent exited: code=%d\n", taskIdx, exitCode)
-		return taskResult{dispatched: true, err: fmt.Errorf("agent exited with code %d", exitCode)}
+		// Report crash to ManagedSession for recovery tracking.
+		// This may trigger OnGuardAction, which increments *guardEvents.
+		session.ProcessCrash(exitCode, time.Now())
+		return taskResult{dispatched: true, err: fmt.Errorf("agent exited with code %d", exitCode), guardEvents: *guardEvents}
 	}
 	_, _ = fmt.Fprintf(stdout, "[task %d] completed (exit 0)\n", taskIdx)
-	return taskResult{dispatched: true, err: exitErr}
+	return taskResult{dispatched: true, err: exitErr, guardEvents: *guardEvents}
 }
 
 // gatherTasks collects tasks from arguments and/or --tasks-file.

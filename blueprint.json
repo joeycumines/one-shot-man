@@ -40,7 +40,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T101-T110 Done. Build GREEN. Proceeding to T111.",
+    "currentState": "T101-T111 Done. Build GREEN. Proceeding to T112.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
   },
@@ -102,8 +102,8 @@
     },
     {
       "task": "T111: Wire Pool dispatch into claudemux run",
-      "description": "Connect the Pool's acquire/release/dispatch cycle to actual PTY instances in 'claudemux run'. Implement round-robin task assignment. Health tracking via PTY output monitoring. Graceful drain on shutdown. Tests with mock PTY processes. Run make.",
-      "status": "Not Started"
+      "description": "DONE: Wired ManagedSession health tracking into dispatchTask — each task gets Parser→Guard→Supervisor pipeline via ProcessLine(). Guard actions: escalate/timeout abort task, pause resumes. ProcessCrash() on non-zero exit. Guard event counting via *int pointer (avoids stale copy). Summary includes guard_events. Pool.Drain() in signal handler for graceful shutdown. Pool.WaitDrained() after task completion. CR-stripped line splitting for Windows PTY. 5 new tests + 2 updated (verboseAgent, crash reporting, mixed success/failure). Build GREEN.",
+      "status": "Done"
     },
     {
       "task": "Design orchestration IPC architecture",

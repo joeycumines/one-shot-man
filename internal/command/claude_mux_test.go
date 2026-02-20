@@ -301,6 +301,7 @@ func TestClaudeMux_Run_SingleTask(t *testing.T) {
 	assert.Contains(t, out, "[summary]")
 	assert.Contains(t, out, "succeeded=1")
 	assert.Contains(t, out, "failed=0")
+	assert.Contains(t, out, "guard_events=0")
 }
 
 func TestClaudeMux_Run_MultipleTasks(t *testing.T) {
@@ -321,6 +322,7 @@ func TestClaudeMux_Run_MultipleTasks(t *testing.T) {
 	assert.Contains(t, out, "[audit] tasks loaded: 3")
 	assert.Contains(t, out, "worker slots ready, dispatching 3 tasks")
 	assert.Contains(t, out, "succeeded=3")
+	assert.Contains(t, out, "guard_events=0")
 }
 
 func TestClaudeMux_Run_TasksFile(t *testing.T) {
@@ -604,4 +606,206 @@ func TestClaudeMux_Run_GatherTasks_EmptyFile(t *testing.T) {
 	err := cmd.Execute([]string{"run"}, &stdout, &stderr)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no tasks provided")
+}
+
+// --- Health tracking tests (T111) ---
+
+// verboseAgent produces multiple lines of output before exiting.
+// Output is pre-filled in the channel; done is closed only after all
+// lines have been consumed by Receive, preventing a race where IsAlive()
+// returns false before all output is read.
+type verboseAgent struct {
+	output chan string
+	done   chan struct{}
+	once   sync.Once
+}
+
+func newVerboseAgent(lines []string) *verboseAgent {
+	a := &verboseAgent{
+		output: make(chan string, len(lines)),
+		done:   make(chan struct{}),
+	}
+	for _, line := range lines {
+		a.output <- line + "\n"
+	}
+	return a
+}
+
+func (a *verboseAgent) Send(_ string) error {
+	// Output is pre-filled; Send is a no-op.
+	return nil
+}
+
+func (a *verboseAgent) Receive() (string, error) {
+	// Try output first (non-blocking).
+	select {
+	case msg := <-a.output:
+		if len(a.output) == 0 {
+			a.once.Do(func() { close(a.done) })
+		}
+		return msg, nil
+	default:
+	}
+	// Blocking: wait for either more output or done.
+	select {
+	case msg := <-a.output:
+		if len(a.output) == 0 {
+			a.once.Do(func() { close(a.done) })
+		}
+		return msg, nil
+	case <-a.done:
+		return "", io.EOF
+	}
+}
+
+func (a *verboseAgent) Close() error {
+	a.once.Do(func() { close(a.done) })
+	return nil
+}
+
+func (a *verboseAgent) IsAlive() bool {
+	select {
+	case <-a.done:
+		return false
+	default:
+		return true
+	}
+}
+
+func (a *verboseAgent) Wait() (int, error) {
+	<-a.done
+	return 0, nil
+}
+
+func TestClaudeMux_Run_HealthTracking_OutputProcessed(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.providerOverride = &mockProvider{
+		name: "verbose-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			return newVerboseAgent([]string{
+				"Starting analysis...",
+				"Processing file: main.go",
+				"Done.",
+			}), nil
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run", "analyze code"}, &stdout, &stderr)
+	assert.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "Starting analysis...")
+	assert.Contains(t, out, "Processing file: main.go")
+	assert.Contains(t, out, "Done.")
+	assert.Contains(t, out, "[task 0] completed (exit 0)")
+	assert.Contains(t, out, "guard_events=0")
+}
+
+func TestClaudeMux_Run_HealthTracking_NonZeroExitReportsCrash(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.providerOverride = &mockProvider{
+		name: "crash-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			return &failingAgent{exitCode: 42}, nil
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run", "crash-task"}, &stdout, &stderr)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "tasks failed")
+
+	errOut := stderr.String()
+	assert.Contains(t, errOut, "agent exited: code=42")
+	// ProcessCrash triggers guard + recovery callbacks.
+	assert.Contains(t, errOut, "guard:")
+	assert.Contains(t, errOut, "recovery:")
+
+	// Crash-triggered guard events must appear in summary.
+	out := stdout.String()
+	assert.NotContains(t, out, "guard_events=0", "crash should produce guard events")
+}
+
+func TestClaudeMux_Run_HealthTracking_SummaryCountsGuardEvents(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.providerOverride = &mockProvider{
+		name: "mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			return newEchoAgent(), nil
+		},
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run", "clean-task"}, &stdout, &stderr)
+	assert.NoError(t, err)
+
+	out := stdout.String()
+	// Successful task with echo agent should have zero guard events.
+	assert.Contains(t, out, "guard_events=0")
+}
+
+func TestClaudeMux_Run_HealthTracking_MultipleTasksWithCrash(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 2
+
+	spawnCount := 0
+	var spawnMu sync.Mutex
+	cmd.providerOverride = &mockProvider{
+		name: "mixed-mock",
+		spawnFn: func(_ context.Context, _ claudemux.SpawnOpts) (claudemux.AgentHandle, error) {
+			spawnMu.Lock()
+			idx := spawnCount
+			spawnCount++
+			spawnMu.Unlock()
+			if idx == 1 {
+				// Second task fails.
+				return &failingAgent{exitCode: 1}, nil
+			}
+			return newEchoAgent(), nil
+		},
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	stdout := &syncWriter{w: &stdoutBuf}
+	stderr := &syncWriter{w: &stderrBuf}
+	err := cmd.Execute([]string{"run", "good-task", "bad-task"}, stdout, stderr)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "1/2 tasks failed")
+
+	out := stdoutBuf.String()
+	assert.Contains(t, out, "succeeded=1")
+	assert.Contains(t, out, "failed=1")
+}
+
+func TestClaudeMux_Run_PoolDrainOnClose(t *testing.T) {
+	t.Parallel()
+	cfg := config.NewConfig()
+	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
+	cmd.poolSize = 1
+	cmd.providerOverride = &mockProvider{name: "mock"}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"run", "task-1"}, &stdout, &stderr)
+	assert.NoError(t, err)
+
+	// Verify pool was properly drained (all tasks completed cleanly).
+	assert.Contains(t, stdout.String(), "succeeded=1")
+	assert.Contains(t, stdout.String(), "failed=0")
 }

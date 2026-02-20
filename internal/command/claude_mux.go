@@ -142,7 +142,29 @@ func (c *ClaudeMuxCommand) status(_ []string, stdout, _ io.Writer) error {
 	_, _ = fmt.Fprintln(stdout, "")
 	_, _ = fmt.Fprintln(stdout, "Policy: fail-closed (deny by default)")
 
+	// If a control socket exists, query the running orchestrator.
+	sockPath := c.controlSockPath()
+	client := claudemux.NewControlClient(sockPath)
+	liveStatus, err := client.GetStatus()
+	if err == nil {
+		_, _ = fmt.Fprintln(stdout, "")
+		_, _ = fmt.Fprintln(stdout, "Live Orchestrator:")
+		_, _ = fmt.Fprintf(stdout, "  active-task:        %s\n", valueOrNone(liveStatus.ActiveTask))
+		_, _ = fmt.Fprintf(stdout, "  queue-depth:        %d\n", liveStatus.QueueDepth)
+		for i, q := range liveStatus.Queue {
+			_, _ = fmt.Fprintf(stdout, "  queue[%d]:           %s\n", i, q)
+		}
+	}
+
 	return nil
+}
+
+// valueOrNone returns the string or "(none)" if empty.
+func valueOrNone(s string) string {
+	if s == "" {
+		return "(none)"
+	}
+	return s
 }
 
 // start initializes the orchestration infrastructure — creates the instance
@@ -326,6 +348,17 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 		}
 	}()
 	defer signal.Stop(sigCh)
+
+	// Start control socket for external task submission (T116).
+	dynamicTaskCh := make(chan string, 64)
+	adapter := &controlAdapter{taskCh: dynamicTaskCh}
+	ctrlSrv := claudemux.NewControlServer(c.controlSockPath(), adapter)
+	if err := ctrlSrv.Start(); err != nil {
+		_, _ = fmt.Fprintf(stderr, "[warn] control socket: %v (external submit disabled)\n", err)
+	} else {
+		defer func() { _ = ctrlSrv.Close() }()
+		_, _ = fmt.Fprintf(stdout, "[audit] control socket: %s\n", ctrlSrv.SocketPath())
+	}
 
 	spawnOpts := claudemux.SpawnOpts{
 		Model: c.runModel,
@@ -688,15 +721,26 @@ func truncateTask(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-// stop shuts down all managed instances.
-func (c *ClaudeMuxCommand) stop(_ []string, stdout, _ io.Writer) error {
-	_, _ = fmt.Fprintln(stdout, "[info] claude-mux stop: no running instances to stop")
-	_, _ = fmt.Fprintln(stdout, "[info] agent lifecycle management requires 'osm mcp parent' (T037-T038)")
+// stop shuts down all managed instances. If a control socket is available,
+// sends InterruptCurrent to the running orchestrator.
+func (c *ClaudeMuxCommand) stop(_ []string, stdout, stderr io.Writer) error {
+	sockPath := c.controlSockPath()
+	client := claudemux.NewControlClient(sockPath)
+
+	if err := client.InterruptCurrent(); err != nil {
+		_, _ = fmt.Fprintf(stderr, "[warn] interrupt: %v\n", err)
+		_, _ = fmt.Fprintln(stdout, "[info] claude-mux stop: no running orchestrator to interrupt")
+	} else {
+		_, _ = fmt.Fprintln(stdout, "[info] claude-mux stop: interrupt sent to active task")
+	}
+
 	return nil
 }
 
-// submit validates and enqueues a task for processing.
-func (c *ClaudeMuxCommand) submit(args []string, stdout, _ io.Writer) error {
+// submit validates and enqueues a task for processing. If a running
+// orchestrator has a control socket open, the task is submitted to it
+// via ControlClient. Otherwise, an error is returned.
+func (c *ClaudeMuxCommand) submit(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return fmt.Errorf("claude-mux submit: task description required")
 	}
@@ -708,8 +752,78 @@ func (c *ClaudeMuxCommand) submit(args []string, stdout, _ io.Writer) error {
 		return fmt.Errorf("claude-mux submit: task description cannot be empty")
 	}
 
-	_, _ = fmt.Fprintf(stdout, "[audit] task received: %q\n", task)
-	_, _ = fmt.Fprintln(stdout, "[info] task queuing requires running orchestrator (use 'osm claude-mux start' first)")
+	sockPath := c.controlSockPath()
+	client := claudemux.NewControlClient(sockPath)
 
+	pos, err := client.EnqueueTask(task)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "[error] submit: %v\n", err)
+		return fmt.Errorf("claude-mux submit: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(stdout, "[audit] task enqueued: %q (position=%d)\n", task, pos)
 	return nil
+}
+
+// controlSockPath returns the path for the orchestrator's control socket.
+func (c *ClaudeMuxCommand) controlSockPath() string {
+	base := c.baseDir
+	if base == "" {
+		home, _ := os.UserHomeDir()
+		base = filepath.Join(home, ".osm", "claude-mux", "instances")
+	}
+	return filepath.Join(base, "control.sock")
+}
+
+// controlAdapter bridges the ControlHandler interface to the run loop's
+// task queue, allowing external clients to enqueue tasks dynamically.
+type controlAdapter struct {
+	mu         sync.Mutex
+	queue      []string
+	activeTask string
+	taskCh     chan<- string // signals the run loop of new tasks (unbuffered or small)
+	interruptFn func() error // optional: interrupt the active task
+}
+
+func (a *controlAdapter) EnqueueTask(task string) (int, error) {
+	a.mu.Lock()
+	a.queue = append(a.queue, task)
+	pos := len(a.queue) - 1
+	a.mu.Unlock()
+
+	// Non-blocking send to wake up the run loop.
+	select {
+	case a.taskCh <- task:
+	default:
+		// Channel full — run loop will poll the queue.
+	}
+
+	return pos, nil
+}
+
+func (a *controlAdapter) InterruptCurrent() error {
+	a.mu.Lock()
+	active := a.activeTask
+	fn := a.interruptFn
+	a.mu.Unlock()
+
+	if active == "" {
+		return fmt.Errorf("no active task")
+	}
+	if fn != nil {
+		return fn()
+	}
+	return nil
+}
+
+func (a *controlAdapter) GetStatus() claudemux.GetStatusResult {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	q := make([]string, len(a.queue))
+	copy(q, a.queue)
+	return claudemux.GetStatusResult{
+		ActiveTask: a.activeTask,
+		QueueDepth: len(q),
+		Queue:      q,
+	}
 }

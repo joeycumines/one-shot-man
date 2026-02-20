@@ -31,6 +31,28 @@ func (sw *syncWriter) Write(p []byte) (int, error) {
 	return sw.w.Write(p)
 }
 
+// --- submitTestHandler implements claudemux.ControlHandler for submit tests ---
+
+type submitTestHandler struct {
+	mu    sync.Mutex
+	tasks []string
+}
+
+func (h *submitTestHandler) EnqueueTask(task string) (int, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.tasks = append(h.tasks, task)
+	return len(h.tasks) - 1, nil
+}
+
+func (h *submitTestHandler) InterruptCurrent() error { return nil }
+
+func (h *submitTestHandler) GetStatus() claudemux.GetStatusResult {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return claudemux.GetStatusResult{QueueDepth: len(h.tasks), Queue: h.tasks}
+}
+
 // --- Mock provider for testing ---
 
 // mockProvider implements claudemux.Provider with configurable behavior.
@@ -222,23 +244,43 @@ func TestClaudeMux_Stop(t *testing.T) {
 	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = t.TempDir()
 
 	var stdout, stderr bytes.Buffer
 	err := cmd.Execute([]string{"stop"}, &stdout, &stderr)
 	assert.NoError(t, err)
-	assert.Contains(t, stdout.String(), "no running instances")
+	assert.Contains(t, stdout.String(), "no running orchestrator")
 }
 
 func TestClaudeMux_Submit(t *testing.T) {
 	t.Parallel()
+
+	// Use /tmp for short socket paths (macOS 104-char limit).
+	dir, err := os.MkdirTemp("", "cmux*")
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+
+	sockPath := filepath.Join(dir, "control.sock")
+	handler := &submitTestHandler{}
+	srv := claudemux.NewControlServer(sockPath, handler)
+	if err := srv.Start(); err != nil {
+		t.Fatalf("start control server: %v", err)
+	}
+	t.Cleanup(func() { _ = srv.Close() })
+
 	cfg := config.NewConfig()
 	cmd := NewClaudeMuxCommand(cfg)
+	cmd.baseDir = dir
 
 	var stdout, stderr bytes.Buffer
-	err := cmd.Execute([]string{"submit", "fix", "the", "bug"}, &stdout, &stderr)
+	err = cmd.Execute([]string{"submit", "fix", "the", "bug"}, &stdout, &stderr)
 	assert.NoError(t, err)
 	assert.Contains(t, stdout.String(), `"fix the bug"`)
-	assert.Contains(t, stdout.String(), "[audit] task received:")
+	assert.Contains(t, stdout.String(), "[audit] task enqueued:")
+
+	handler.mu.Lock()
+	defer handler.mu.Unlock()
+	assert.Equal(t, []string{"fix the bug"}, handler.tasks)
 }
 
 func TestClaudeMux_Submit_NoArgs(t *testing.T) {

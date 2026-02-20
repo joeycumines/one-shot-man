@@ -24,8 +24,10 @@
 - **T113**: Integration tests for claudemux run (8 tests, 2 mock agents, committed 588c5d6)
 - **T114**: Model auto-navigation (tryNavigateModel, sliding window, 5 tests, committed 81a7422)
 
-### Next task: T115
-Implement osm mcp make subcommand — port mcp-server-make functionality.
+- **T115**: mcp-make command (MCP-exposed Make tools, 12 tests, committed 779341b)
+
+### Next task: T116
+Agent steering — session control socket (Unix/TCP).
 
 ### Build state: GREEN (all packages pass)
 

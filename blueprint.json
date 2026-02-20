@@ -40,7 +40,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T101-T114 Done. Build GREEN. Proceeding to T115.",
+    "currentState": "T101-T115 Done. Build GREEN. Proceeding to T116.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
   },
@@ -161,13 +161,13 @@
       "status": "Done"
     },
     {
-      "task": "T115: Implement osm mcp make subcommand",
-      "description": "Port mcp-server-make functionality: implement 'osm mcp make' that provides MCP tools for running Make targets. Target caching, cross-platform make detection (make vs gmake), session integration. MCP tool: make_run with target and workdir params. Shell completion for make targets. Tests. Run make.",
-      "status": "Not Started"
+      "task": "T115: Implement osm mcp-make subcommand",
+      "description": "DONE: MCPMakeCommand exposes GNU Make as MCP tools over stdio. Two tools: make (execute target with workdir/file params) and make_help (display help with 5-min TTL cache). Cross-platform make detection (gmake on macOS, make elsewhere). Working directory resolution: per-request > command-level > cwd. 12 tests: unit (construction, flags, workdir, binary detection, Makefile execution) + 5 MCP transport-level integration tests via InMemoryTransport. Registered in main.go. Build GREEN.",
+      "status": "Done"
     },
     {
-      "task": "T116: Agent steering — session control socket (Unix/TCP)",
-      "description": "Session-tied Unix socket (gRPC), Windows TCP fallback. Proto definitions: EnqueueTask, InterruptCurrent, GetStatus. Socket path: ~/.osm/sessions/<id>/control.sock. Proper cleanup on session end. Tests with in-process gRPC server. Run make.",
+      "task": "T116: Agent steering — session control socket",
+      "description": "Implement ControlServer and ControlClient in claudemux package for inter-process orchestration control. Unix domain socket with JSON newline-delimited protocol (no gRPC — too heavy for internal IPC). Methods: EnqueueTask, InterruptCurrent, GetStatus. ControlServer listens on configurable socket path, handles concurrent connections. ControlClient connects and sends typed requests. Socket cleanup on Close. Tests with in-process server/client pairs. Run make.",
       "status": "Not Started"
     },
     {

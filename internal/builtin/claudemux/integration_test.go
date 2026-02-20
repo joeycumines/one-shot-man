@@ -650,7 +650,7 @@ func TestSimulated_ErrorRecoveryEscalation(t *testing.T) {
 
 	ctx := context.Background()
 	cfg := DefaultManagedSessionConfig()
-	cfg.Supervisor.MaxRetries = 2 // Allow 2 retries before escalation.
+	cfg.Supervisor.MaxRetries = 3 // Retry threshold=1, restart threshold=3.
 
 	var decisions []string
 	session := NewManagedSession(ctx, "escalation-test", cfg)
@@ -663,29 +663,43 @@ func TestSimulated_ErrorRecoveryEscalation(t *testing.T) {
 
 	// Use HandleError (supervisor-only path) to test retry exhaustion
 	// without the Guard's crash handler interfering.
+	//
+	// With MaxRetries=3, retryThreshold=1:
+	//   Error 1: retryCount=1 → Retry  (≤ threshold)
+	//   Error 2: retryCount=2 → Restart (> threshold, ≤ max)
+	//   Error 3: retryCount=3 → Restart (> threshold, ≤ max)
+	//   Error 4: retryCount=4 → Escalate (> max)
 
 	// Error 1: should retry.
 	d1 := session.HandleError("test error 1", ErrorClassMCPTimeout)
 	if d1.Action != RecoveryRetry {
-		t.Fatalf("error 1: got %s, want retry", RecoveryActionName(d1.Action))
+		t.Fatalf("error 1: got %s, want Retry", RecoveryActionName(d1.Action))
 	}
 	session.ConfirmRecovery()
 	t.Logf("Error 1: %s → recovered", RecoveryActionName(d1.Action))
 
-	// Error 2: should retry (2nd attempt).
+	// Error 2: should restart (past retry threshold).
 	d2 := session.HandleError("test error 2", ErrorClassMCPTimeout)
-	if d2.Action != RecoveryRetry {
-		t.Fatalf("error 2: got %s, want retry", RecoveryActionName(d2.Action))
+	if d2.Action != RecoveryRestart {
+		t.Fatalf("error 2: got %s, want Restart", RecoveryActionName(d2.Action))
 	}
 	session.ConfirmRecovery()
 	t.Logf("Error 2: %s → recovered", RecoveryActionName(d2.Action))
 
-	// Error 3: should escalate (retries exhausted).
+	// Error 3: still within max retries, should restart.
 	d3 := session.HandleError("test error 3", ErrorClassMCPTimeout)
-	if d3.Action == RecoveryRetry {
-		t.Fatalf("error 3: got retry, want escalate or abort")
+	if d3.Action != RecoveryRestart {
+		t.Fatalf("error 3: got %s, want Restart", RecoveryActionName(d3.Action))
 	}
-	t.Logf("Error 3: %s (retries exhausted)", RecoveryActionName(d3.Action))
+	session.ConfirmRecovery()
+	t.Logf("Error 3: %s → recovered", RecoveryActionName(d3.Action))
+
+	// Error 4: should escalate (retries exhausted).
+	d4 := session.HandleError("test error 4", ErrorClassMCPTimeout)
+	if d4.Action != RecoveryEscalate {
+		t.Fatalf("error 4: got %s, want Escalate", RecoveryActionName(d4.Action))
+	}
+	t.Logf("Error 4: %s (retries exhausted)", RecoveryActionName(d4.Action))
 
 	// Session should be Failed.
 	if session.State() != SessionFailed {

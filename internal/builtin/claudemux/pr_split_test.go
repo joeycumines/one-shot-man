@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
 	gojanodejsconsole "github.com/dop251/goja_nodejs/console"
@@ -593,8 +594,11 @@ func TestPRSplit_CreateWorkflowTree(t *testing.T) {
 
 func TestPRSplit_BTWorkflow_EndToEnd(t *testing.T) {
 	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
+	bridge, runJS := prSplitTestEnv(t)
 	sp := prSplitScriptPath(t)
+
+	// E2E test runs many git commands; increase timeout to avoid flakes under load.
+	bridge.SetTimeout(30 * time.Second)
 
 	dir := initTestGitRepo(t)
 	addFeatureFiles(t, dir)

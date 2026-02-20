@@ -1,11 +1,14 @@
 package command
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/config"
 )
 
 func TestParsePromptFile_BodyOnly(t *testing.T) {
@@ -377,7 +380,7 @@ func TestFindPromptFiles_Discovery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	candidates, err := FindPromptFiles(dir)
+	candidates, err := FindPromptFiles(dir, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -403,7 +406,7 @@ func TestFindPromptFiles_Discovery(t *testing.T) {
 }
 
 func TestFindPromptFiles_NonexistentDir(t *testing.T) {
-	candidates, err := FindPromptFiles("/nonexistent/dir")
+	candidates, err := FindPromptFiles("/nonexistent/dir", false)
 	if err != nil {
 		t.Fatalf("expected nil error for nonexistent dir, got: %v", err)
 	}
@@ -566,7 +569,7 @@ func TestFindPromptFiles_DeduplicatesSymlinks(t *testing.T) {
 		t.Fatalf("failed to create symlink: %v", err)
 	}
 
-	candidates, err := FindPromptFiles(dir)
+	candidates, err := FindPromptFiles(dir, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -601,7 +604,7 @@ func TestFindPromptFiles_SymlinkToRegularFile(t *testing.T) {
 		t.Fatalf("failed to create symlink: %v", err)
 	}
 
-	candidates, err := FindPromptFiles(dir)
+	candidates, err := FindPromptFiles(dir, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -616,5 +619,393 @@ func TestFindPromptFiles_SymlinkToRegularFile(t *testing.T) {
 		// This is somewhat implementation-dependent (readdir order),
 		// but we at least verify the count.
 		t.Logf("kept file: %s", filepath.Base(candidates[0].Path))
+	}
+}
+
+// --- T029: Prompt file enhancement tests ---
+
+func TestParsePromptFile_Mode(t *testing.T) {
+	t.Parallel()
+	content := `---
+name: ask-prompt
+mode: ask
+description: Ask mode prompt
+---
+Ask me anything.
+`
+	pf, err := ParsePromptFile([]byte(content))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pf.Mode != "ask" {
+		t.Errorf("expected mode %q, got %q", "ask", pf.Mode)
+	}
+	if pf.Name != "ask-prompt" {
+		t.Errorf("expected name %q, got %q", "ask-prompt", pf.Name)
+	}
+}
+
+func TestParsePromptFile_ModeQuoted(t *testing.T) {
+	t.Parallel()
+	content := `---
+mode: "edit"
+---
+Edit this.
+`
+	pf, err := ParsePromptFile([]byte(content))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pf.Mode != "edit" {
+		t.Errorf("expected mode %q, got %q", "edit", pf.Mode)
+	}
+}
+
+func TestPromptFileToGoal_WithMode(t *testing.T) {
+	t.Parallel()
+	pf := &PromptFile{
+		Name:       "mode-test",
+		Mode:       "agent",
+		Body:       "Agent instructions.",
+		SourcePath: "/tmp/mode-test.prompt.md",
+	}
+
+	goal := PromptFileToGoal(pf)
+
+	if goal.PromptOptions == nil {
+		t.Fatal("expected non-nil prompt options when mode is set")
+	}
+	if goal.PromptOptions["mode"] != "agent" {
+		t.Errorf("expected mode %q in prompt options, got %v", "agent", goal.PromptOptions["mode"])
+	}
+}
+
+func TestPromptFileToGoal_ModeOnly(t *testing.T) {
+	t.Parallel()
+	// Mode without model or tools should still produce PromptOptions.
+	pf := &PromptFile{
+		Name:       "mode-only",
+		Mode:       "ask",
+		Body:       "Ask.",
+		SourcePath: "/tmp/mode-only.prompt.md",
+	}
+
+	goal := PromptFileToGoal(pf)
+	if goal.PromptOptions == nil {
+		t.Fatal("expected non-nil prompt options for mode-only prompt")
+	}
+	if _, exists := goal.PromptOptions["model"]; exists {
+		t.Error("expected no model in prompt options")
+	}
+	if goal.PromptOptions["mode"] != "ask" {
+		t.Errorf("expected mode %q, got %v", "ask", goal.PromptOptions["mode"])
+	}
+}
+
+func TestFindPromptFiles_Recursive(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Create nested directory structure with .prompt.md files.
+	subDir1 := filepath.Join(dir, "frontend")
+	subDir2 := filepath.Join(dir, "backend", "api")
+	for _, d := range []string{subDir1, subDir2} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Create prompt files at various levels.
+	files := map[string]string{
+		filepath.Join(dir, "root.prompt.md"):              "root",
+		filepath.Join(subDir1, "frontend.prompt.md"):      "frontend",
+		filepath.Join(subDir2, "api-review.prompt.md"):    "api",
+		filepath.Join(dir, "not-a-prompt.txt"):            "ignored",
+		filepath.Join(subDir1, "also-not.json"):           "ignored",
+	}
+	for path, content := range files {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Non-recursive: should only find root-level file.
+	candidates, err := FindPromptFiles(dir, false)
+	if err != nil {
+		t.Fatalf("non-recursive scan: %v", err)
+	}
+	if len(candidates) != 1 {
+		t.Errorf("non-recursive: expected 1 candidate, got %d: %v", len(candidates), candidates)
+	}
+
+	// Recursive: should find all 3 .prompt.md files.
+	candidates, err = FindPromptFiles(dir, true)
+	if err != nil {
+		t.Fatalf("recursive scan: %v", err)
+	}
+	if len(candidates) != 3 {
+		t.Errorf("recursive: expected 3 candidates, got %d", len(candidates))
+		for _, c := range candidates {
+			t.Logf("  found: %s", c.Path)
+		}
+	}
+}
+
+func TestFindPromptFiles_RecursiveSkipsHiddenDirs(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Create a hidden directory with a prompt file — should be skipped.
+	hiddenDir := filepath.Join(dir, ".hidden")
+	if err := os.MkdirAll(hiddenDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hiddenDir, "secret.prompt.md"), []byte("hidden"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a visible prompt file.
+	if err := os.WriteFile(filepath.Join(dir, "visible.prompt.md"), []byte("visible"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	candidates, err := FindPromptFiles(dir, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(candidates) != 1 {
+		t.Errorf("expected 1 candidate (hidden dir skipped), got %d", len(candidates))
+		for _, c := range candidates {
+			t.Logf("  found: %s", c.Path)
+		}
+	}
+}
+
+func TestFindPromptFiles_RecursiveDepthLimit(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Create a directory tree deeper than maxPromptRecursionDepth (10).
+	current := dir
+	for i := 0; i < maxPromptRecursionDepth+3; i++ {
+		current = filepath.Join(current, "level")
+		if err := os.MkdirAll(current, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Place a prompt file at the deepest level.
+	deepFile := filepath.Join(current, "deep.prompt.md")
+	if err := os.WriteFile(deepFile, []byte("deep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Also place one within the limit.
+	withinLimit := dir
+	for i := 0; i < maxPromptRecursionDepth-1; i++ {
+		withinLimit = filepath.Join(withinLimit, "level")
+	}
+	shallowFile := filepath.Join(withinLimit, "shallow.prompt.md")
+	if err := os.WriteFile(shallowFile, []byte("shallow"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	candidates, err := FindPromptFiles(dir, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should find shallow but not deep (beyond depth limit).
+	if len(candidates) != 1 {
+		t.Errorf("expected 1 candidate (depth-limited), got %d", len(candidates))
+		for _, c := range candidates {
+			t.Logf("  found: %s", c.Path)
+		}
+	}
+}
+
+func TestFindPromptFiles_RecursiveSymlinkCycle(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink tests not reliable on Windows")
+	}
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Create a directory with a symlink cycle.
+	subDir := filepath.Join(dir, "sub")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// sub/loop -> parent dir (creates cycle)
+	if err := os.Symlink(dir, filepath.Join(subDir, "loop")); err != nil {
+		t.Fatalf("failed to create symlink: %v", err)
+	}
+
+	// Add a prompt file.
+	if err := os.WriteFile(filepath.Join(dir, "test.prompt.md"), []byte("body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should not hang — cycle detection kicks in.
+	candidates, err := FindPromptFiles(dir, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should find exactly 1 file (not duplicated from cycle).
+	if len(candidates) != 1 {
+		t.Errorf("expected 1 candidate with cycle protection, got %d", len(candidates))
+	}
+}
+
+func TestExpandPromptFileReferences_DirectoryTraversal(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Create a file outside the base directory.
+	parentFile := filepath.Join(filepath.Dir(dir), "secret.txt")
+	if err := os.WriteFile(parentFile, []byte("secret data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Remove(parentFile) })
+
+	// Try to include a file via directory traversal.
+	body := "[Secret](../secret.txt)"
+	result := expandPromptFileReferences(body, dir)
+
+	// The traversal should be blocked — link left as-is.
+	if strings.Contains(result, "secret data") {
+		t.Error("directory traversal was NOT blocked — secret content was expanded")
+	}
+	if !strings.Contains(result, "[Secret](../secret.txt)") {
+		t.Errorf("expected original link preserved, got:\n%s", result)
+	}
+}
+
+func TestExpandPromptFileReferences_MaxExpansions(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Create more referenced files than the expansion limit.
+	totalFiles := maxPromptFileExpansions + 10
+	for i := 0; i < totalFiles; i++ {
+		fname := filepath.Join(dir, fmt.Sprintf("ref-%04d.txt", i))
+		if err := os.WriteFile(fname, []byte("content"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Build a body with more references than the limit.
+	var body strings.Builder
+	for i := 0; i < totalFiles; i++ {
+		fmt.Fprintf(&body, "[ref](ref-%04d.txt)\n", i)
+	}
+
+	result := expandPromptFileReferences(body.String(), dir)
+
+	// Count expanded blocks (```\n markers).
+	expanded := strings.Count(result, "`):\n```\n")
+	if expanded > maxPromptFileExpansions {
+		t.Errorf("expected at most %d expansions, got %d", maxPromptFileExpansions, expanded)
+	}
+}
+
+func TestExpandPromptFileReferences_LargeFileSkipped(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Create a file larger than maxExpandedFileSize.
+	largePath := filepath.Join(dir, "large.bin")
+	data := make([]byte, maxExpandedFileSize+1)
+	if err := os.WriteFile(largePath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a normal-sized file.
+	normalPath := filepath.Join(dir, "normal.txt")
+	if err := os.WriteFile(normalPath, []byte("normal content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	body := "[Large](large.bin)\n[Normal](normal.txt)"
+	result := expandPromptFileReferences(body, dir)
+
+	// Large file should NOT be expanded.
+	if strings.Contains(result, string(data[:10])) {
+		t.Error("large file should not be expanded")
+	}
+	// Large link should be preserved as-is.
+	if !strings.Contains(result, "[Large](large.bin)") {
+		t.Error("expected large file link preserved")
+	}
+	// Normal file SHOULD be expanded.
+	if !strings.Contains(result, "normal content") {
+		t.Error("expected normal file to be expanded")
+	}
+}
+
+func TestExpandPromptFileReferences_DirectorySkipped(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Create a subdirectory with the same name pattern.
+	subDir := filepath.Join(dir, "subdir")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	body := "[Dir](subdir)"
+	result := expandPromptFileReferences(body, dir)
+
+	// Directory references should not be expanded.
+	if !strings.Contains(result, "[Dir](subdir)") {
+		t.Errorf("expected directory link preserved, got:\n%s", result)
+	}
+}
+
+func TestIsUnderDir(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		path string
+		dir  string
+		want bool
+	}{
+		{"/a/b/c", "/a/b", true},
+		{"/a/b", "/a/b", true},
+		{"/a/b/c", "/a/b/c", true},
+		{"/a/bc", "/a/b", false},      // not a prefix match
+		{"/a", "/a/b", false},          // parent is not "under"
+		{"/a/b/../c", "/a", true},      // after Clean
+		{"/x/y/z", "/a/b", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.path+"_under_"+tc.dir, func(t *testing.T) {
+			got := isUnderDir(tc.path, tc.dir)
+			if got != tc.want {
+				t.Errorf("isUnderDir(%q, %q) = %v, want %v", tc.path, tc.dir, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPromptRecursiveConfig(t *testing.T) {
+	t.Parallel()
+
+	// Default should be true.
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg.SetGlobalOption("goal.autodiscovery", "false")
+	gd := NewGoalDiscovery(cfg)
+	if !gd.config.PromptRecursive {
+		t.Error("expected PromptRecursive to default to true")
+	}
+
+	// Explicitly false.
+	cfg2 := config.NewConfig()
+	cfg2.SetGlobalOption("goal.disable-standard-paths", "true")
+	cfg2.SetGlobalOption("goal.autodiscovery", "false")
+	cfg2.SetGlobalOption("prompt.recursive", "false")
+	gd2 := NewGoalDiscovery(cfg2)
+	if gd2.config.PromptRecursive {
+		t.Error("expected PromptRecursive to be false when configured")
 	}
 }

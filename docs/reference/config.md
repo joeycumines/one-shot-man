@@ -259,8 +259,17 @@ quiet false
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `prompt.file-paths` | path-list | _(empty)_ | Additional directories to search for `.prompt.md` files |
+| `prompt.recursive` | bool | `true` | Scan prompt directories recursively for `.prompt.md` files |
 
 Accepts the platform list separator (`:` on Unix, `;` on Windows) or comma separation.
+
+When `prompt.recursive` is enabled (the default), dedicated prompt file directories
+(including `.github/prompts` and any paths from `prompt.file-paths`) are scanned
+recursively up to 10 levels deep. Hidden directories (starting with `.`) are skipped,
+and symlink cycles are detected and avoided. This matches VS Code's behavior of
+searching subdirectories under `.github/prompts`.
+
+Set `prompt.recursive false` to restrict scanning to top-level files only.
 
 ### Hot-snippet global option
 

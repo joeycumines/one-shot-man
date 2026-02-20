@@ -62,5 +62,7 @@
 
 - **T028**: Autodiscovery refinement (discovery_refinement_test.go: 19 tests — config key enforcement, symlink cycle via direct traverseForGoalDirs/traverseForScriptDirs calls, permission resilience, normalizePath edge cases, parsePositiveInt table, expandPath, debug log coverage; BenchmarkNormalizePath + BenchmarkAnnotatedPaths). Fixed symlink cycle tests — macOS os.Getwd() resolves symlinks. Build green.
 
-### Next task: T029
-Prompt file enhancement — .prompt.md discovery hardening, goal references, VS Code conventions.
+- **T029**: Prompt file enhancement (6 enhancements: mode frontmatter key, recursive FindPromptFiles with symlink cycle protection, prompt.recursive config key, file reference security hardening with traversal prevention + size limits + expansion count limits, directory reference skipping; 14 new tests; updated docs/reference/config.md + docs/reference/goal.md). Build green.
+
+### Next task: T030
+ReadableStream for Response.body streaming — fetch/ package enhancement.

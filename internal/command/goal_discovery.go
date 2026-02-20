@@ -34,6 +34,10 @@ type GoalDiscoveryConfig struct {
 	// (in addition to .github/prompts which is always searched).
 	PromptFilePaths []string
 
+	// PromptRecursive enables recursive scanning of prompt file directories
+	// for .prompt.md files (default: true, matching VS Code behavior).
+	PromptRecursive bool
+
 	// MaxTraversalDepth limits how many directories to traverse upward (default: 10)
 	MaxTraversalDepth int
 
@@ -105,6 +109,14 @@ func NewGoalDiscovery(cfg *config.Config) *GoalDiscovery {
 	if val, exists := cfg.GetGlobalOption("prompt.file-paths"); exists {
 		if paths := parsePathList(val); len(paths) > 0 {
 			discoveryConfig.PromptFilePaths = paths
+		}
+	}
+
+	// Prompt recursive scanning (default: true, matching VS Code behavior)
+	discoveryConfig.PromptRecursive = true
+	if val, exists := cfg.GetGlobalOption("prompt.recursive"); exists {
+		if parsed, err := strconv.ParseBool(val); err == nil {
+			discoveryConfig.PromptRecursive = parsed
 		}
 	}
 

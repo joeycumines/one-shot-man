@@ -20,6 +20,7 @@ type PromptFile struct {
 	Name        string   `json:"name,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Model       string   `json:"model,omitempty"`
+	Mode        string   `json:"mode,omitempty"`
 	Tools       []string `json:"tools,omitempty"`
 
 	// Body is the Markdown prompt text (everything after the frontmatter).
@@ -150,6 +151,8 @@ func parseSimpleYAML(raw string, pf *PromptFile) error {
 			pf.Description = unquoteYAMLString(value)
 		case "model":
 			pf.Model = unquoteYAMLString(value)
+		case "mode":
+			pf.Mode = unquoteYAMLString(value)
 		case "tools":
 			if value == "" {
 				// Multi-line list follows: subsequent "- item" lines.
@@ -288,10 +291,13 @@ func PromptFileToGoal(pf *PromptFile) *Goal {
 	}
 
 	// Carry over prompt options.
-	if pf.Model != "" || len(pf.Tools) > 0 {
+	if pf.Model != "" || pf.Mode != "" || len(pf.Tools) > 0 {
 		opts := make(map[string]interface{})
 		if pf.Model != "" {
 			opts["model"] = pf.Model
+		}
+		if pf.Mode != "" {
+			opts["mode"] = pf.Mode
 		}
 		if len(pf.Tools) > 0 {
 			opts["tools"] = pf.Tools
@@ -339,12 +345,30 @@ func promptFileNameFromPath(path string) string {
 	return result
 }
 
+// maxPromptFileExpansions is the maximum number of file references expanded per prompt.
+const maxPromptFileExpansions = 50
+
+// maxExpandedFileSize is the maximum size of a single expanded file reference (256 KiB).
+const maxExpandedFileSize = 256 << 10
+
 // expandPromptFileReferences resolves Markdown link file references in the
 // prompt body. Links of the form [text](relative/path.ext) where the target
 // file exists on disk are replaced with inline file content blocks.
+//
+// Security hardening:
+//   - Resolved file paths must be under baseDir (no directory traversal attacks)
+//   - Individual expanded files are limited to maxExpandedFileSize bytes
+//   - Total expansion count is limited to maxPromptFileExpansions
 func expandPromptFileReferences(body string, baseDir string) string {
+	// Resolve baseDir to an absolute path for security comparison.
+	absBaseDir, err := filepath.Abs(baseDir)
+	if err != nil {
+		absBaseDir = baseDir
+	}
+
 	// We use a simple scan rather than a regex for clarity and robustness.
 	var result strings.Builder
+	expansionCount := 0
 	i := 0
 	for i < len(body) {
 		// Look for Markdown link pattern: [text](path)
@@ -359,21 +383,38 @@ func expandPromptFileReferences(body string, baseDir string) string {
 					linkText := body[i+1 : closeTextAbs]
 
 					// Only expand local file references (no URLs).
-					if !strings.Contains(linkPath, "://") && linkPath != "" {
+					if !strings.Contains(linkPath, "://") && linkPath != "" && expansionCount < maxPromptFileExpansions {
 						absPath := filepath.Join(baseDir, linkPath)
-						if data, err := os.ReadFile(absPath); err == nil {
-							result.WriteString("**")
-							result.WriteString(linkText)
-							result.WriteString("** (`")
-							result.WriteString(linkPath)
-							result.WriteString("`):\n```\n")
-							result.Write(data)
-							if len(data) > 0 && data[len(data)-1] != '\n' {
-								result.WriteByte('\n')
-							}
-							result.WriteString("```\n")
-							i = closeParenAbs + 1
+
+						// Security: resolve to absolute and verify it's under baseDir.
+						resolvedPath, resolveErr := filepath.Abs(absPath)
+						if resolveErr != nil {
+							resolvedPath = absPath
+						}
+						if !isUnderDir(resolvedPath, absBaseDir) {
+							// Directory traversal attempt — leave link as-is.
+							result.WriteByte(body[i])
+							i++
 							continue
+						}
+
+						info, statErr := os.Stat(absPath)
+						if statErr == nil && !info.IsDir() && info.Size() <= maxExpandedFileSize {
+							if data, readErr := os.ReadFile(absPath); readErr == nil {
+								result.WriteString("**")
+								result.WriteString(linkText)
+								result.WriteString("** (`")
+								result.WriteString(linkPath)
+								result.WriteString("`):\n```\n")
+								result.Write(data)
+								if len(data) > 0 && data[len(data)-1] != '\n' {
+									result.WriteByte('\n')
+								}
+								result.WriteString("```\n")
+								expansionCount++
+								i = closeParenAbs + 1
+								continue
+							}
 						}
 					}
 				}
@@ -385,48 +426,31 @@ func expandPromptFileReferences(body string, baseDir string) string {
 	return result.String()
 }
 
-// FindPromptFiles scans a directory for .prompt.md files.
-// Permission errors on individual entries are skipped.
-func FindPromptFiles(dir string) ([]GoalFileCandidate, error) {
-	var candidates []GoalFileCandidate
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		if os.IsPermission(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to read prompt directory %q: %w", dir, err)
+// isUnderDir checks if path is under (or equal to) dir using cleaned absolute paths.
+func isUnderDir(path, dir string) bool {
+	cleanPath := filepath.Clean(path)
+	cleanDir := filepath.Clean(dir)
+	if cleanPath == cleanDir {
+		return true
 	}
+	// Ensure the dir has a trailing separator for prefix checking.
+	prefix := cleanDir + string(filepath.Separator)
+	return strings.HasPrefix(cleanPath, prefix)
+}
 
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		// Resolve symlinks.
-		if entry.Type()&os.ModeSymlink != 0 {
-			info, err := os.Stat(filepath.Join(dir, entry.Name()))
-			if err != nil {
-				continue
-			}
-			if info.IsDir() {
-				continue
-			}
-		}
+// maxPromptRecursionDepth is the max depth for recursive .prompt.md scanning.
+const maxPromptRecursionDepth = 10
 
-		name := entry.Name()
-		if !strings.HasSuffix(strings.ToLower(name), ".prompt.md") {
-			continue
-		}
+// FindPromptFiles scans a directory for .prompt.md files.
+// If recursive is true, subdirectories are scanned up to maxPromptRecursionDepth
+// levels deep, with symlink cycle protection.
+// Permission errors on individual entries are skipped.
+func FindPromptFiles(dir string, recursive bool) ([]GoalFileCandidate, error) {
+	var candidates []GoalFileCandidate
+	visitedDirs := make(map[string]bool) // symlink cycle detection for recursive mode
 
-		path := filepath.Join(dir, name)
-		goalName := promptFileNameFromPath(name)
-		candidates = append(candidates, GoalFileCandidate{
-			Path: path,
-			Name: goalName,
-		})
+	if err := findPromptFilesWalk(dir, recursive, 0, visitedDirs, &candidates); err != nil {
+		return nil, err
 	}
 
 	// Deduplicate by resolved absolute path to prevent loading the same
@@ -448,4 +472,72 @@ func FindPromptFiles(dir string) ([]GoalFileCandidate, error) {
 		}
 	}
 	return deduped, nil
+}
+
+// findPromptFilesWalk scans a single directory for .prompt.md files and optionally
+// recurses into subdirectories.
+func findPromptFilesWalk(dir string, recursive bool, depth int, visitedDirs map[string]bool, candidates *[]GoalFileCandidate) error {
+	// Symlink cycle protection: track real paths of visited directories.
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		realDir = dir
+	}
+	absReal, err := filepath.Abs(realDir)
+	if err != nil {
+		absReal = realDir
+	}
+	if visitedDirs[absReal] {
+		return nil // cycle detected
+	}
+	visitedDirs[absReal] = true
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if os.IsPermission(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to read prompt directory %q: %w", dir, err)
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		path := filepath.Join(dir, name)
+
+		// Resolve symlinks to determine real type.
+		isDir := entry.IsDir()
+		isSymlink := entry.Type()&os.ModeSymlink != 0
+		if isSymlink {
+			info, err := os.Stat(path)
+			if err != nil {
+				continue // broken symlink
+			}
+			isDir = info.IsDir()
+		}
+
+		// Recurse into subdirectories (skip hidden directories).
+		if isDir {
+			if recursive && depth < maxPromptRecursionDepth && !strings.HasPrefix(name, ".") {
+				if err := findPromptFilesWalk(path, recursive, depth+1, visitedDirs, candidates); err != nil {
+					// Log but don't fail — skip unreadable subdirs.
+					continue
+				}
+			}
+			continue
+		}
+
+		if !strings.HasSuffix(strings.ToLower(name), ".prompt.md") {
+			continue
+		}
+
+		goalName := promptFileNameFromPath(name)
+		*candidates = append(*candidates, GoalFileCandidate{
+			Path: path,
+			Name: goalName,
+		})
+	}
+
+	return nil
 }

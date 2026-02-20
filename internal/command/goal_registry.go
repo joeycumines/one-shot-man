@@ -93,7 +93,9 @@ func (r *DynamicGoalRegistry) Reload() error {
 		}
 
 		// Scan for .prompt.md files (VS Code prompt files).
-		promptCandidates, err := FindPromptFiles(path)
+		// Goal directories are not scanned recursively — they have their own
+		// traversal logic. Recursive scanning applies to dedicated prompt paths.
+		promptCandidates, err := FindPromptFiles(path, false)
 		if err != nil {
 			log.Printf("warning: failed to scan prompt files in %s: %v", path, err)
 			continue
@@ -112,9 +114,12 @@ func (r *DynamicGoalRegistry) Reload() error {
 	}
 
 	// Also scan dedicated prompt file paths (.github/prompts, configured paths).
+	// These are scanned recursively when prompt.recursive is enabled (default true),
+	// matching VS Code's behavior of searching subdirectories under .github/prompts.
+	promptRecursive := r.goalDiscovery.config.PromptRecursive
 	promptPaths := r.goalDiscovery.DiscoverPromptFilePaths()
 	for _, path := range promptPaths {
-		promptCandidates, err := FindPromptFiles(path)
+		promptCandidates, err := FindPromptFiles(path, promptRecursive)
 		if err != nil {
 			log.Printf("warning: failed to scan prompt files in %s: %v", path, err)
 			continue

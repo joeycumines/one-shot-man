@@ -533,7 +533,7 @@ func TestFindPromptFiles_PermissionDenied(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(unreadable, 0755) })
 
-	candidates, err := FindPromptFiles(unreadable)
+	candidates, err := FindPromptFiles(unreadable, false)
 	if err != nil {
 		t.Fatalf("expected nil error for permission denied, got: %v", err)
 	}

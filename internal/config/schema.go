@@ -516,6 +516,7 @@ func defaultGlobalOptions() []ConfigOption {
 
 		// Prompt file options
 		{Key: "prompt.file-paths", Type: TypePathList, Default: "", Description: "Additional directories to search for .prompt.md files"},
+		{Key: "prompt.recursive", Type: TypeBool, Default: "true", Description: "Scan prompt directories recursively for .prompt.md files"},
 
 		// Hot-snippet options
 		{Key: "hot-snippets.no-warning", Type: TypeBool, Default: "false", Description: "Suppress warning when using embedded (builtin) hot-snippets"},

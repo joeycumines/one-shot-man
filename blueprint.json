@@ -37,7 +37,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T001-T028 Done. T029 next. Commit T027-T028 changes pending.",
+    "currentState": "T001-T029 Done. T030 next.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "P001-P009 (baselines, timer, WIP, DS_Store, module resolution docs, architecture-claude-mux.md, orchestrator->claudemux rename). Plus all prior session work (see CHANGELOG.md)."
   },
@@ -184,8 +184,8 @@
     },
     {
       "task": "T029: Prompt file enhancement",
-      "description": "Harden .prompt.md discovery: goal references, VS Code conventions, composition, templating. Tests. Update docs/reference/config.md. Run make.",
-      "status": "Not Started"
+      "description": "Hardened .prompt.md discovery with 6 enhancements: (1) mode frontmatter key — parsed and forwarded to Goal.PromptOptions['mode'] (VS Code convention: ask/edit/agent). (2) Recursive FindPromptFiles — dedicated prompt paths (.github/prompts, configured paths) scanned recursively up to 10 levels deep with symlink cycle protection and hidden directory skipping, matching VS Code behavior. (3) prompt.recursive config key (bool, default true) in config schema + GoalDiscoveryConfig. (4) File reference security — expandPromptFileReferences hardened with directory traversal prevention (resolved path must be under baseDir via isUnderDir), max single file size (256 KiB), max expansion count (50). (5) Directory reference skipping — directories are no longer attempted for expansion. 14 new tests: ParsePromptFile_Mode, ParsePromptFile_ModeQuoted, PromptFileToGoal_WithMode, PromptFileToGoal_ModeOnly, FindPromptFiles_Recursive, FindPromptFiles_RecursiveSkipsHiddenDirs, FindPromptFiles_RecursiveDepthLimit, FindPromptFiles_RecursiveSymlinkCycle, ExpandPromptFileReferences_DirectoryTraversal, ExpandPromptFileReferences_MaxExpansions, ExpandPromptFileReferences_LargeFileSkipped, ExpandPromptFileReferences_DirectorySkipped, IsUnderDir, PromptRecursiveConfig. Updated docs: config.md prompt section with prompt.recursive docs, goal.md prompt file section with mode key, recursive scanning, security hardening details. Build green (lint/vet/staticcheck pass; pre-existing PTY flakeys only).",
+      "status": "Done"
     },
     {
       "task": "T030: ReadableStream for Response.body streaming",

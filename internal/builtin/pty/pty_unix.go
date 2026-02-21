@@ -49,6 +49,19 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 	}
 	cfg.applyDefaults()
 
+	// When Command contains spaces and Args is empty, split Command
+	// into binary + args using POSIX shell word-splitting rules.
+	// This allows callers to pass "ollama launch claude --config" as
+	// a single Command string without pre-splitting.
+	binary, args := cfg.Command, cfg.Args
+	if len(cfg.Args) == 0 {
+		var err error
+		binary, args, err = splitCommand(cfg.Command)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Create PTY pair manually so we can keep the slave fd alive.
 	// creack/pty.StartWithSize always closes the slave in the parent,
 	// which causes data loss on macOS for fast-exiting processes.
@@ -67,7 +80,7 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 		return nil, fmt.Errorf("pty: failed to set size: %w", err)
 	}
 
-	cmd := exec.CommandContext(ctx, cfg.Command, cfg.Args...)
+	cmd := exec.CommandContext(ctx, binary, args...)
 
 	// Set working directory.
 	if cfg.Dir != "" {

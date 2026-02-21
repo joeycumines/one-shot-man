@@ -43,7 +43,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "Blueprint rewritten 2026-02-21. Build GREEN. T101-T118 Done. Proceeding to T200 (fix TUI regex).",
+    "currentState": "T200 Done. Build GREEN. Proceeding to T201 (PTY word-splitting Unix).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T131 completed in prior sessions spanning multiple days. T101-T118 completed in most recent session. 322 commits ahead of main. 393 files changed, ~113K insertions."
   },
@@ -140,8 +140,8 @@
     },
     {
       "task": "T200: Fix TUI regex for Ollama model selection character",
-      "description": "In internal/builtin/claudemux/model_nav.go, reSelectedArrow regex only matches > and ❯. Ollama uses ▸ (U+25B8). Add ▸ to the character class: [❯>▸]. Also add → and ► for future-proofing. Update ParseModelMenu tests with Ollama-format test vectors. Verify unselected item parsing is not broken. Run make.",
-      "status": "Not Started"
+      "description": "Fixed reSelectedArrow regex in model_nav.go from [❯>] to [❯>▸►→]. Added 4 tests: OllamaTriangleArrow, RightwardsArrow, BlackPointer, OllamaTriangleArrow_NavigateToModel. Build GREEN.",
+      "status": "Done"
     },
     {
       "task": "T201: Fix PTY command word-splitting (Unix)",

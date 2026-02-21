@@ -156,12 +156,44 @@ The `require()` function resolves modules in this order:
 1. Check registered `osm:` native modules
 2. Check file paths relative to the requiring module
 3. Check configured module search paths (`WithModulePaths`)
+4. Walk parent directories for `node_modules/` folders
 
 Unknown prefixes (`go:`, `node:`, etc.) are rejected. The `shebangStrippingLoader`
 removes `#!` lines from loaded files for Unix compatibility.
 
 `__dirname` and `__filename` are set per-module by the CommonJS loader, not
 globally. They are not available in the top-level script scope.
+
+### Module Path Hardening
+
+When module search paths are configured (equivalent to `NODE_PATH`), a
+hardened resolution layer activates with three security mechanisms:
+
+| Mechanism | What It Prevents |
+|---|---|
+| **Path traversal blocking** | Bare module names with `../` components (e.g., `require('x/../../secret')`) cannot escape the module directory via either global folders or `node_modules` walk. |
+| **Symlink escape detection** | Symlinks within module directories that resolve outside the allowed paths are blocked at file-read time. The pre-symlink path must be within an allowed dir, AND the post-symlink resolved path must also stay within allowed dirs. |
+| **Circular dependency warning** | `require()` is wrapped with a cycle tracker that detects `a → b → a` loops and logs a warning. Execution continues (matching Node.js behavior of returning partial exports). |
+
+**Implementation:** `internal/scripting/module_hardening.go`
+
+The hardened path resolver applies two checks:
+
+1. **Check 1 (Global folder containment):** When the resolution base exactly
+   matches a configured global folder, the resolved path must stay within
+   the allowed directories.
+
+2. **Check 2 (Bare module traversal):** When a bare module name (not starting
+   with `.`, `..`, or `/`) contains `..` path components, the resolved path
+   must stay within the resolution base directory. This catches traversal via
+   the `node_modules` directory walk where goja constructs base paths that
+   don't match any configured global folder.
+
+Relative requires (`./foo`, `../bar`) are exempt from these checks — their
+`../` traversal from within a script is legitimate Node.js behavior.
+
+**Test coverage:** `internal/scripting/module_hardening_test.go` (12 tests)
++ `internal/security_sandbox_test.go` (4 path traversal test functions).
 
 ## Context Cancellation
 
@@ -176,8 +208,9 @@ Security properties are verified by three test files:
 | File | Focus | Tests |
 |---|---|---|
 | `internal/security_test.go` | Path traversal, command injection, env vars, TUI input | ~40 tests |
-| `internal/security_input_test.go` | Input validation across all entry points | 34 tests |
-| `internal/security_sandbox_test.go` | JS sandbox boundaries, VM isolation, module API surfaces | 18 tests |
+| `internal/security_input_test.go` | Input validation across all entry points (exec, readFile, config, fetch) | 35+ tests |
+| `internal/security_sandbox_test.go` | JS sandbox boundaries, VM isolation, module API surfaces, require() traversal | 23+ tests |
+| `internal/scripting/module_hardening_test.go` | Module path hardening: traversal, symlink escape, circular deps, validation | 12 tests |
 
 ## Known Intentional "Risks"
 

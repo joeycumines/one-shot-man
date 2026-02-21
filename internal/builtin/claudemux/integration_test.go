@@ -307,10 +307,50 @@ func TestIntegration_MenuNavigation(t *testing.T) {
 		t.Logf("  %s%s", marker, m)
 	}
 
-	// Phase 2: Navigate to target model.
+	// Phase 2: Navigate to target model. If the model is not visible in the
+	// initial view (Ollama shows "recommended" models first), scroll down
+	// through the list to find it. Models below the fold require arrow-key
+	// scrolling to become visible.
 	keys, err := NavigateToModel(parsedMenu, testModel)
 	if err != nil {
-		t.Fatalf("NavigateToModel(%q): %v (available: %v)", testModel, err, parsedMenu.Models)
+		// Model not in the initial view — try scrolling down to find it.
+		t.Logf("Model %q not in initial view, scrolling to find it...", testModel)
+
+		const maxScrollAttempts = 30
+		found := false
+
+		for attempt := 0; attempt < maxScrollAttempts; attempt++ {
+			// Send arrow down to scroll through the model list.
+			if sendErr := handle.Send(KeyArrowDown); sendErr != nil {
+				t.Fatalf("Send scroll keystrokes: %v", sendErr)
+			}
+
+			// Wait briefly for the TUI to update.
+			scrollOutput := collectUntil(t, handle, 2*time.Second, func(acc string) bool {
+				return len(acc) > 0
+			})
+
+			// Re-parse the entire output to see if the target appeared.
+			lines := splitTerminalLines(scrollOutput)
+			freshMenu := ParseModelMenu(lines)
+			if freshMenu != nil && len(freshMenu.Models) > 0 {
+				parsedMenu = freshMenu
+			}
+
+			// Check if target is now visible.
+			keys, err = NavigateToModel(parsedMenu, testModel)
+			if err == nil {
+				t.Logf("Found %q after %d scroll steps", testModel, attempt+1)
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			t.Logf("Available models after scrolling: %v", parsedMenu.Models)
+			t.Fatalf("NavigateToModel(%q): model not found after %d scroll attempts (available: %v)",
+				testModel, maxScrollAttempts, parsedMenu.Models)
+		}
 	}
 
 	t.Logf("Navigation keystrokes: %d bytes (steps=%d + enter)",

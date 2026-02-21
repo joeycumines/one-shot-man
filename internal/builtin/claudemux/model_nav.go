@@ -58,7 +58,9 @@ var (
 	reNumberedItem = regexp.MustCompile(`^\s*(\d+)[.)]\s+(\S.+?)\s*$`)
 	// reUnselectedItem matches indented model names without selection indicator.
 	// Only used when context confirms we are inside a model menu.
-	reUnselectedItem = regexp.MustCompile(`^\s{2,}(\S.+?)\s*$`)
+	// Requires exactly 2-3 leading spaces (not 4+) to exclude description
+	// lines that appear beneath each model in Ollama 0.16.2+ TUI output.
+	reUnselectedItem = regexp.MustCompile(`^\s{2,3}(\S.+?)\s*$`)
 )
 
 // ParseModelMenu extracts model menu state from a sequence of terminal output

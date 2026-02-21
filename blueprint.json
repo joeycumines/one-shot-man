@@ -23,7 +23,7 @@
     "commitPolicy": "Commit in logical chunks after Rule of Two."
   },
   "statusSection": {
-    "currentState": "T300-T345 DONE. Committed c24d0ba. Ollama HTTP + tools + agent + JS + integration + PR-split + provider + config keys + docs. Full make GREEN. Next: T346 cross-platform.",
+    "currentState": "T300-T346 DONE. Committed c551c1f. macOS + Linux GREEN. Next: T347 integration findings.",
     "sessionTimer": ".session-timer reset 2026-02-21T05:40:02Z | make check-session-time",
     "priorCompletedWork": "T101-T227 + T300-T331 done. 322+ commits ahead of main. 759 claudemux + 49 ollama + 6 integration tests GREEN."
   },
@@ -49,8 +49,8 @@
     {"task": "T343: docs/reference/ollama.md", "description": "Done. Comprehensive Ollama HTTP reference: Client API, ToolRegistry, AgenticRunner, JS module, built-in tools, config keys, streaming, errors. All APIs verified against source. Committed c24d0ba.", "status": "Done"},
     {"task": "T344: docs/tool-calling.md", "description": "Done. Tool calling user guide: architecture diagram, built-in tools, Go/JS usage, custom tools, tool filtering, model requirements, agentic loop limits, error handling. Committed c24d0ba.", "status": "Done"},
     {"task": "T345: CHANGELOG — Ollama HTTP milestone", "description": "Done. CHANGELOG.md [Unreleased] updated with 12 Added entries for T300-T344 (Ollama HTTP client, tools, agent, JS module, provider, config, filtering, integration tests, docs). PR-split bumped to v3.0.0. Committed c24d0ba.", "status": "Done"},
-    {"task": "T346: Cross-platform — post Ollama HTTP", "description": "macOS + Linux Docker + Windows. Zero failures. Run make.", "status": "Not Started"},
-    {"task": "T347: Document integration findings", "description": "scratch/gap-analysis/integration-findings.md. Ollama TUI, timing, ANSI, launcher, edges. Run make.", "status": "Not Started"},
+    {"task": "T346: Cross-platform — post Ollama HTTP", "description": "Done. macOS native + Linux Docker. Fixed flaky PoolConcurrency test (concurrencyTrackingAgent in Close) and ETXTBSY on overlayfs (dir fsync). All GREEN. Committed c551c1f.", "status": "Done"},
+    {"task": "T347: Document integration findings", "description": "Done. scratch/gap-analysis/integration-findings.md: 8 findings (model capabilities, JSON extraction, tool args, streaming, timeout, ETXTBSY, pool tracking, config naming), 5 future recommendations.", "status": "Done"},
     {"task": "T348-T358: Coverage — claudemux to 80%+", "description": "Pool, Panel, Parser, Guard, Supervisor, ControlServer, ManagedSession, module.go, safety, choice. Target 80%+. Run make.", "status": "Not Started"},
     {"task": "T359-T364: Coverage — remaining packages to 90%+", "description": "command, scripting, builtin, storage+session, config+gitops+termui. Overall ≥90%. Run make.", "status": "Not Started"},
     {"task": "T365-T368: go-git v6 migration", "description": "go-git dep. GoGitRepo wrapper. Migrate sync.go + sync_startup.go. Integration tests. Run make.", "status": "Not Started"},

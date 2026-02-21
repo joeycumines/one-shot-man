@@ -145,6 +145,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deprecated `ScrollWheel` and `ScrollWheelOnElement` string-based methods from mouseharness; use type-safe `ScrollWheelWithDirection` and `ScrollWheelOnElementWithDirection` instead
 
 ### Fixed
+- Flaky `TestClaudeMux_Run_Integration_PoolConcurrency` on Linux: concurrency counter was tracked via a goroutine watching `agent.done`, but goroutine scheduling races allowed the pool to spawn the next agent before the decrement ran — replaced with `concurrencyTrackingAgent` wrapper that decrements in `Close()`, the actual synchronization point used by the pool
+- `TestExecAndExecv` ETXTBSY on Docker overlayfs: added directory `fsync` after write-then-rename to flush metadata before `exec` — the canonical POSIX pattern for ensuring rename durability
 - TUI model selection regex (`reSelectedArrow`) only matched `>` (ASCII) and `❯` (U+276F) — added `▸` (U+25B8 Ollama), `►` (U+25BA), `→` (U+2192) for cross-provider compatibility; 4 new test cases
 - SafetyValidator `PolicyConfirm` assessment silently fell through in automated `dispatchTask` pipeline — now treated as block with distinct error message (`"safety blocked (would require confirmation)"`)
 - Cross-platform safety validator: `filepath.Clean` on Windows converts `/etc/hosts` to `\etc\hosts` — added `filepath.ToSlash` normalization so system path detection works correctly on all platforms

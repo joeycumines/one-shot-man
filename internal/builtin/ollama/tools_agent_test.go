@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -261,6 +262,216 @@ func TestBuiltinTools_Exec(t *testing.T) {
 	if !strings.Contains(result, "hello world") {
 		t.Errorf("result = %q", result)
 	}
+}
+
+func TestBuiltinTools_Grep(t *testing.T) {
+	dir := t.TempDir()
+	// Create files to search through.
+	if err := os.WriteFile(filepath.Join(dir, "haystack.txt"), []byte("needle in a haystack\nno match here\nneedle again"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub", "deep.txt"), []byte("deep needle"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := ollama.NewToolRegistry()
+	ollama.RegisterBuiltinTools(r, dir)
+
+	t.Run("BasicSearch", func(t *testing.T) {
+		result, err := r.Execute(context.Background(), "grep", map[string]interface{}{"pattern": "needle"})
+		if err != nil {
+			t.Fatalf("grep: %v", err)
+		}
+		if !strings.Contains(result, "needle") {
+			t.Errorf("expected needle matches, got %q", result)
+		}
+		if !strings.Contains(result, "haystack.txt") {
+			t.Errorf("expected filename in output, got %q", result)
+		}
+	})
+
+	t.Run("NoMatch", func(t *testing.T) {
+		result, err := r.Execute(context.Background(), "grep", map[string]interface{}{"pattern": "zzz_no_match_zzz"})
+		if err != nil {
+			t.Fatalf("grep: %v", err)
+		}
+		if result != "No matches found." {
+			t.Errorf("expected no matches, got %q", result)
+		}
+	})
+
+	t.Run("WithPath", func(t *testing.T) {
+		result, err := r.Execute(context.Background(), "grep", map[string]interface{}{"pattern": "needle", "path": "sub"})
+		if err != nil {
+			t.Fatalf("grep: %v", err)
+		}
+		if !strings.Contains(result, "deep needle") {
+			t.Errorf("expected deep needle, got %q", result)
+		}
+	})
+
+	t.Run("WithFlags", func(t *testing.T) {
+		result, err := r.Execute(context.Background(), "grep", map[string]interface{}{"pattern": "NEEDLE", "flags": "-i"})
+		if err != nil {
+			t.Fatalf("grep: %v", err)
+		}
+		if !strings.Contains(result, "needle") {
+			t.Errorf("expected case-insensitive match, got %q", result)
+		}
+	})
+
+	t.Run("EmptyPattern", func(t *testing.T) {
+		_, err := r.Execute(context.Background(), "grep", map[string]interface{}{})
+		if err == nil || !strings.Contains(err.Error(), "pattern is required") {
+			t.Errorf("expected pattern required error, got %v", err)
+		}
+	})
+
+	t.Run("PathTraversal", func(t *testing.T) {
+		_, err := r.Execute(context.Background(), "grep", map[string]interface{}{"pattern": "x", "path": "../../etc"})
+		if err == nil || !strings.Contains(err.Error(), "escapes work directory") {
+			t.Errorf("expected path traversal error, got %v", err)
+		}
+	})
+}
+
+func TestBuiltinTools_GitDiff(t *testing.T) {
+	dir := t.TempDir()
+
+	// Initialize a git repo with a commit.
+	commands := [][]string{
+		{"git", "init"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+	}
+	for _, args := range commands {
+		cmd := execCommand(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s %v", args, out, err)
+		}
+	}
+
+	// Create a file and commit.
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("initial"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"git", "add", "."},
+		{"git", "commit", "-m", "initial"},
+	} {
+		cmd := execCommand(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s %v", args, out, err)
+		}
+	}
+
+	r := ollama.NewToolRegistry()
+	ollama.RegisterBuiltinTools(r, dir)
+
+	t.Run("NoDifferences", func(t *testing.T) {
+		result, err := r.Execute(context.Background(), "git_diff", map[string]interface{}{})
+		if err != nil {
+			t.Fatalf("git_diff: %v", err)
+		}
+		if result != "No differences found." {
+			t.Errorf("expected no differences, got %q", result)
+		}
+	})
+
+	t.Run("UncommittedChanges", func(t *testing.T) {
+		if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("modified"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		defer os.WriteFile(filepath.Join(dir, "file.txt"), []byte("initial"), 0o644)
+
+		result, err := r.Execute(context.Background(), "git_diff", map[string]interface{}{})
+		if err != nil {
+			t.Fatalf("git_diff: %v", err)
+		}
+		if !strings.Contains(result, "file.txt") {
+			t.Errorf("expected file.txt in diff, got %q", result)
+		}
+		if !strings.Contains(result, "modified") {
+			t.Errorf("expected 'modified' in diff, got %q", result)
+		}
+	})
+
+	t.Run("WithArgs", func(t *testing.T) {
+		result, err := r.Execute(context.Background(), "git_diff", map[string]interface{}{"args": "--stat HEAD"})
+		if err != nil {
+			t.Fatalf("git_diff: %v", err)
+		}
+		// HEAD vs empty tree should show file.txt in stat output.
+		// If no stat output, at least verify it ran without error.
+		if strings.Contains(result, "Error:") {
+			t.Errorf("expected clean diff, got %q", result)
+		}
+	})
+}
+
+func TestBuiltinTools_GitLog(t *testing.T) {
+	dir := t.TempDir()
+
+	// Initialize a git repo with a commit.
+	commands := [][]string{
+		{"git", "init"},
+		{"git", "config", "user.email", "test@test.com"},
+		{"git", "config", "user.name", "Test"},
+	}
+	for _, args := range commands {
+		cmd := execCommand(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s %v", args, out, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"git", "add", "."},
+		{"git", "commit", "-m", "test commit message"},
+	} {
+		cmd := execCommand(args[0], args[1:]...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %s %v", args, out, err)
+		}
+	}
+
+	r := ollama.NewToolRegistry()
+	ollama.RegisterBuiltinTools(r, dir)
+
+	t.Run("Default", func(t *testing.T) {
+		result, err := r.Execute(context.Background(), "git_log", map[string]interface{}{})
+		if err != nil {
+			t.Fatalf("git_log: %v", err)
+		}
+		if !strings.Contains(result, "test commit message") {
+			t.Errorf("expected commit message, got %q", result)
+		}
+	})
+
+	t.Run("WithArgs", func(t *testing.T) {
+		result, err := r.Execute(context.Background(), "git_log", map[string]interface{}{"args": "-n 1 --format=%s"})
+		if err != nil {
+			t.Fatalf("git_log: %v", err)
+		}
+		if !strings.Contains(result, "test commit message") {
+			t.Errorf("expected commit message, got %q", result)
+		}
+	})
+}
+
+// execCommand is a test helper that creates an exec.Cmd. Avoids importing
+// os/exec directly in the test since the package under test already uses it.
+func execCommand(name string, args ...string) *osexec.Cmd {
+	return osexec.Command(name, args...)
 }
 
 func TestFormatToolCallSummary(t *testing.T) {

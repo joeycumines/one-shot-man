@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **OllamaProvider**: `Provider` implementation for Ollama LLM backend — `Name()="ollama"`, `Capabilities={MCP:false, Streaming:true, MultiTurn:true, ModelNav:true}`, model selection via TUI navigation (not `--model` flag); configurable `Command` and `SubArgs`; 12 unit tests in `provider_ollama_test.go`
+- `--safety` flag on `osm claude-mux run` wiring `SafetyValidator` into the `dispatchTask` output loop — PolicyBlock aborts task, PolicyConfirm treated as block (no interactive user in automated pipeline), PolicyWarn logs to stderr; default disabled
+- MCPInstanceConfig auto-injection in `dispatchTask`: after `registry.Create()`, generates per-instance `.claude.json` for providers with `Capabilities().MCP`; appends `SpawnArgs()` to a defensive copy of `SpawnOpts`; defers `Close()` for cleanup; graceful fallback if config creation fails
+- `ollama(opts?)` factory function in `osm:claudemux` JavaScript module with configurable `command` and `subArgs`
+- `ModelNav` field in `ProviderCapabilities` indicating providers that require TUI-based model navigation post-spawn
+- PTY command word-splitting: `splitCommand()` in `pty.go` with full POSIX shell quoting support (single quotes, double quotes, backslash escapes) — `Spawn()` automatically splits `cfg.Command` when `cfg.Args` is empty and the command contains spaces; 18+ unit tests
 - **Claude-mux orchestration system**: multi-instance Claude Code management framework with building blocks for PTY output parsing, guard rails, MCP monitoring, error recovery, concurrent instance pooling, TUI multiplexing, safety validation, and choice resolution
 - `osm claude-mux` command with `status`, `start`, `stop`, `submit` subcommands for lifecycle management, pool sizing (`-pool-size`), audit logging, and fail-closed security policy
 - PTY output parser (`parser.go`): pattern-based classifier for Claude Code output — rate limits, permission prompts, tool calls, errors, model selection, cost updates, and text; extensible via `Parser.Patterns()`
@@ -128,6 +134,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deprecated `ScrollWheel` and `ScrollWheelOnElement` string-based methods from mouseharness; use type-safe `ScrollWheelWithDirection` and `ScrollWheelOnElementWithDirection` instead
 
 ### Fixed
+- TUI model selection regex (`reSelectedArrow`) only matched `>` (ASCII) and `❯` (U+276F) — added `▸` (U+25B8 Ollama), `►` (U+25BA), `→` (U+2192) for cross-provider compatibility; 4 new test cases
+- SafetyValidator `PolicyConfirm` assessment silently fell through in automated `dispatchTask` pipeline — now treated as block with distinct error message (`"safety blocked (would require confirmation)"`)
 - Cross-platform safety validator: `filepath.Clean` on Windows converts `/etc/hosts` to `\etc\hosts` — added `filepath.ToSlash` normalization so system path detection works correctly on all platforms
 - Bash completion formatting: `;;` case terminators for `schema)` and `log)` were concatenated on the same line as the next case pattern — split to separate lines
 - Zsh completion `commands` array scoping: array was declared inside the `commands)` case branch, making it inaccessible to the `args)` branch where `help)` needs it — hoisted to function scope

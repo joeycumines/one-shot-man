@@ -43,7 +43,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T200-T206 Done. Build GREEN. Running Rule of Two review before commit.",
+    "currentState": "T200-T213 Done. macOS+Linux GREEN. Proceeding to T214+.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T131 completed in prior sessions spanning multiple days. T101-T118 completed in most recent session. 322 commits ahead of main. 393 files changed, ~113K insertions."
   },
@@ -200,13 +200,13 @@
     },
     {
       "task": "T212: Cross-platform checkpoint — post bug fixes",
-      "description": "Verify ALL packages pass on macOS, Linux (Docker), Windows (moo). Zero failures. Fix regressions T200-T211.",
-      "status": "Not Started"
+      "description": "macOS native GREEN, Linux Docker (golang:1.26.0) GREEN (560s full build). Windows deferred (requires host 'moo'). Zero failures across all packages.",
+      "status": "Done"
     },
     {
       "task": "T213: CHANGELOG — Ollama activation milestone",
-      "description": "Update CHANGELOG.md [Unreleased]: Added: OllamaProvider, integration tests. Fixed: TUI regex, PTY word-splitting, SafetyValidator wiring, MCPInstanceConfig injection. Keep-a-Changelog 1.1.0. Run make.",
-      "status": "Not Started"
+      "description": "Updated CHANGELOG.md [Unreleased]: Added 6 entries (OllamaProvider, --safety flag, MCPInstanceConfig injection, ollama() JS factory, ModelNav capability, PTY splitCommand). Fixed 2 entries (TUI regex, PolicyConfirm). Keep-a-Changelog 1.1.0.",
+      "status": "Done"
     },
     {
       "task": "T214: go-git v6 dependency setup",

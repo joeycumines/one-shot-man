@@ -13,4 +13,13 @@ generate-tapes-and-gifs: ## Generate all recording tapes and GIFs
 	@echo "Generating all recording tapes and GIFs..."
 	$(GO) -C $(PROJECT_ROOT)/internal/scripting test -v -count=1 -timeout=10m -run "^TestRecording_" -record -execute-vhs
 
+.PHONY: integration-test-claudemux
+integration-test-claudemux: ## Run claudemux integration tests (requires real agent infrastructure)
+integration-test-claudemux: PROVIDER ?= ollama
+integration-test-claudemux: MODEL ?= gpt-oss:20b-cloud
+integration-test-claudemux:
+	$(GO) test -race -v -count=1 -timeout=5m \
+		-integration -provider=$(PROVIDER) -model=$(MODEL) \
+		./internal/builtin/claudemux/...
+
 # ---

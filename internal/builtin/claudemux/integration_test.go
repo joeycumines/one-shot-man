@@ -64,71 +64,235 @@ func skipIfNotIntegration(t *testing.T) {
 }
 
 // ============================================================================
+// Integration test helpers
+// ============================================================================
+
+// resolveTestProvider creates a Provider based on the -provider flag.
+func resolveTestProvider(t *testing.T) Provider {
+	t.Helper()
+	switch testProvider {
+	case "ollama":
+		return &OllamaProvider{}
+	case "claude-code":
+		return &ClaudeCodeProvider{}
+	default:
+		t.Fatalf("unsupported -provider=%q (supported: ollama, claude-code)", testProvider)
+		return nil
+	}
+}
+
+// collectUntil reads from handle collecting output until done() returns true
+// or the deadline expires. Uses a concurrent reader goroutine since PTY
+// Read() is a blocking system call.
+func collectUntil(t *testing.T, handle AgentHandle, timeout time.Duration, done func(accumulated string) bool) string {
+	t.Helper()
+
+	type chunk struct {
+		data string
+		err  error
+	}
+
+	var buf strings.Builder
+	deadline := time.After(timeout)
+
+	for {
+		ch := make(chan chunk, 1)
+		go func() {
+			data, err := handle.Receive()
+			ch <- chunk{data, err}
+		}()
+
+		select {
+		case c := <-ch:
+			if c.data != "" {
+				buf.WriteString(c.data)
+				t.Logf("chunk (%d bytes): %q", len(c.data), truncateStr(c.data, 200))
+			}
+			if done(buf.String()) {
+				return buf.String()
+			}
+			if c.err != nil {
+				t.Logf("receive error: %v (accumulated %d bytes)", c.err, buf.Len())
+				return buf.String()
+			}
+		case <-deadline:
+			t.Logf("timeout after %v (accumulated %d bytes)", timeout, buf.Len())
+			return buf.String()
+		}
+	}
+}
+
+// truncateStr shortens s to max runes, appending "..." if truncated.
+func truncateStr(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
+}
+
+// splitTerminalLines converts raw terminal output into lines, normalizing
+// \r\n and bare \r (carriage return) to \n before splitting.
+func splitTerminalLines(raw string) []string {
+	s := strings.ReplaceAll(raw, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	return strings.Split(s, "\n")
+}
+
+// ============================================================================
 // Live agent tests (require -integration flag + real infrastructure)
 // ============================================================================
 
 // TestIntegration_ProviderSpawn verifies that the configured provider can
-// spawn an agent and receive initial output through the parser.
+// spawn an agent and produce initial output through the PTY.
 //
 // Prerequisites:
-//   - ollama: `ollama launch claude --config` accessible
-//   - claude-code: `claude` CLI configured with API key
+//   - ollama: `ollama` accessible on PATH
+//   - claude-code: `claude` CLI installed and configured
 func TestIntegration_ProviderSpawn(t *testing.T) {
 	skipIfNotIntegration(t)
 
-	t.Logf("Provider: %s, Model: %s", testProvider, testModel)
+	prov := resolveTestProvider(t)
+	t.Logf("Provider: %s (model=%s)", prov.Name(), testModel)
+	t.Logf("Capabilities: MCP=%v Streaming=%v MultiTurn=%v ModelNav=%v",
+		prov.Capabilities().MCP, prov.Capabilities().Streaming,
+		prov.Capabilities().MultiTurn, prov.Capabilities().ModelNav)
 
-	// Create instance registry for this test.
-	base := filepath.Join(t.TempDir(), "instances")
-	registry, err := NewInstanceRegistry(base)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	handle, err := prov.Spawn(ctx, SpawnOpts{
+		Model: testModel,
+		Rows:  24,
+		Cols:  80,
+	})
 	if err != nil {
-		t.Fatalf("NewInstanceRegistry: %v", err)
+		t.Fatalf("Spawn: %v", err)
 	}
-	defer func() { _ = registry.CloseAll() }()
+	defer handle.Close()
 
-	inst, err := registry.Create("integration-spawn")
-	if err != nil {
-		t.Fatalf("registry.Create: %v", err)
-	}
-
-	t.Logf("Instance state dir: %s", inst.StateDir)
-	t.Logf("Instance ID: %s", inst.ID)
-
-	// Real provider spawn goes here when providers are fully wired.
-	// For now, verify the infrastructure is ready.
-	if inst.StateDir == "" {
-		t.Fatal("instance StateDir is empty")
-	}
-	if _, err := os.Stat(inst.StateDir); err != nil {
-		t.Fatalf("StateDir does not exist: %v", err)
+	if !handle.IsAlive() {
+		t.Fatal("agent should be alive immediately after spawn")
 	}
 
-	t.Log("Infrastructure ready for agent spawn")
+	// Collect initial output (expect *something* within 15 seconds).
+	output := collectUntil(t, handle, 15*time.Second, func(acc string) bool {
+		return len(acc) > 0
+	})
+
+	if len(output) == 0 {
+		t.Fatal("no output received from spawned provider")
+	}
+
+	t.Logf("Initial output (%d bytes)", len(output))
+	t.Logf("Agent alive: %v", handle.IsAlive())
 }
 
 // TestIntegration_MenuNavigation verifies that model selection menu navigation
 // works correctly with the configured provider.
 //
-// For ollama: navigates `ollama launch claude --config` menu to select the
-// specified model (e.g., gpt-oss:20b-cloud).
+// For ollama: spawns the agent, waits for the model selection menu to appear,
+// parses it with ParseModelMenu, generates navigation keystrokes via
+// NavigateToModel, and sends them to the PTY.
+//
+// Skipped for providers that don't support ModelNav (e.g., claude-code, which
+// uses --model flag instead).
 func TestIntegration_MenuNavigation(t *testing.T) {
 	skipIfNotIntegration(t)
 
-	t.Logf("Testing menu navigation for provider=%s model=%s", testProvider, testModel)
-
-	// Create parser with model selection patterns.
-	p := NewParser()
-	patterns := p.Patterns()
-	if len(patterns) == 0 {
-		t.Fatal("parser has no patterns")
+	prov := resolveTestProvider(t)
+	if !prov.Capabilities().ModelNav {
+		t.Skipf("provider %q does not use model navigation (uses --model flag)", prov.Name())
 	}
 
-	// Verify parser can handle model selection output.
-	menuLine := fmt.Sprintf("? Select a model: %s", testModel)
-	ev := p.Parse(menuLine)
-	t.Logf("Parsed menu line: type=%s", EventTypeName(ev.Type))
+	t.Logf("Testing model navigation: provider=%s target=%s", prov.Name(), testModel)
 
-	t.Log("Menu navigation infrastructure ready")
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	handle, err := prov.Spawn(ctx, SpawnOpts{
+		Rows: 24,
+		Cols: 120,
+	})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	defer handle.Close()
+
+	// Phase 1: Collect output until we can detect a model menu.
+	const menuTimeout = 30 * time.Second
+	menuDetected := false
+	var parsedMenu *ModelMenu
+
+	output := collectUntil(t, handle, menuTimeout, func(acc string) bool {
+		lines := splitTerminalLines(acc)
+		menu := ParseModelMenu(lines)
+		if len(menu.Models) >= 2 {
+			// Require at least 2 models — single-model menus auto-select.
+			parsedMenu = menu
+			menuDetected = true
+			return true
+		}
+		return false
+	})
+
+	if !menuDetected {
+		lines := splitTerminalLines(output)
+		t.Logf("Raw output (%d lines, %d bytes):", len(lines), len(output))
+		for i, line := range lines {
+			if i < 30 {
+				t.Logf("  [%d] %q", i, line)
+			}
+		}
+		t.Fatalf("model selection menu not detected within %v", menuTimeout)
+	}
+
+	t.Logf("Menu detected: %d models, selected=%d", len(parsedMenu.Models), parsedMenu.SelectedIndex)
+	for i, m := range parsedMenu.Models {
+		marker := "  "
+		if i == parsedMenu.SelectedIndex {
+			marker = "→ "
+		}
+		t.Logf("  %s%s", marker, m)
+	}
+
+	// Phase 2: Navigate to target model.
+	keys, err := NavigateToModel(parsedMenu, testModel)
+	if err != nil {
+		t.Fatalf("NavigateToModel(%q): %v (available: %v)", testModel, err, parsedMenu.Models)
+	}
+
+	t.Logf("Navigation keystrokes: %d bytes (steps=%d + enter)",
+		len(keys), strings.Count(keys, KeyArrowDown)+strings.Count(keys, KeyArrowUp))
+
+	if err := handle.Send(keys); err != nil {
+		t.Fatalf("Send navigation keystrokes: %v", err)
+	}
+
+	// Phase 3: Wait for post-selection output (agent entrypoint or confirmation).
+	postNav := collectUntil(t, handle, 30*time.Second, func(acc string) bool {
+		// Look for indicators that model selection completed:
+		// - The menu disappeared (no more ❯/>/▸ indicators)
+		// - Agent initialization output appeared
+		lower := strings.ToLower(acc)
+		return strings.Contains(lower, "ready") ||
+			strings.Contains(lower, "initialized") ||
+			strings.Contains(lower, "welcome") ||
+			strings.Contains(lower, "tips") ||
+			strings.Contains(lower, "$") ||
+			len(acc) > 2000 // If we got lots of output, menu was likely accepted
+	})
+
+	t.Logf("Post-navigation output (%d bytes)", len(postNav))
+	if len(postNav) > 0 {
+		lines := splitTerminalLines(postNav)
+		for i, line := range lines {
+			if i < 20 && strings.TrimSpace(line) != "" {
+				t.Logf("  [%d] %q", i, line)
+			}
+		}
+	}
+
+	t.Log("Model navigation completed")
 }
 
 // TestIntegration_MCPStartup verifies MCP server initialization with real agent.

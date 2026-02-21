@@ -59,6 +59,25 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			return wrapProvider(runtime, p)
 		})
 
+		// ollama(opts?): creates an OllamaProvider.
+		_ = exports.Set("ollama", func(call goja.FunctionCall) goja.Value {
+			p := &OllamaProvider{}
+			if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+				opts := call.Argument(0).ToObject(runtime)
+				if v := opts.Get("command"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					p.Command = v.String()
+				}
+				if v := opts.Get("subArgs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					var subArgs []string
+					if err := runtime.ExportTo(v, &subArgs); err != nil {
+						panic(runtime.NewTypeError("ollama: subArgs must be an array of strings"))
+					}
+					p.SubArgs = subArgs
+				}
+			}
+			return wrapProvider(runtime, p)
+		})
+
 		// Keystroke constants for TUI navigation.
 		_ = exports.Set("KEY_ARROW_UP", KeyArrowUp)
 		_ = exports.Set("KEY_ARROW_DOWN", KeyArrowDown)

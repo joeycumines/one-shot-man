@@ -10,12 +10,12 @@
 - **T200**: Done. Regex fix + 4 tests. Build GREEN.
 
 ## Current Task
-- **T201**: Fix PTY command word-splitting (Unix)
-- **File**: internal/builtin/pty/pty_unix.go
-- **Issue**: When cfg.Command has spaces and cfg.Args is empty, need shlex-style splitting
+- **T202**: Fix PTY command word-splitting (Windows)
+- **File**: internal/builtin/pty/pty_windows.go
+- **Issue**: Windows Spawn returns ErrNotSupported — verify splitting doesn't break stub
 
-## Next Steps After T201
-1. T202: PTY command word-splitting (Windows)
+## Next Steps After T202
+1. T203: Implement OllamaProvider
 2. T203: Implement OllamaProvider
 3. T204: Wire into resolveProvider
 4. T205-T206: Wire SafetyValidator + MCPInstanceConfig

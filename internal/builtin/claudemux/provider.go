@@ -54,6 +54,7 @@ type ProviderCapabilities struct {
 	MCP       bool // Supports MCP tool calling
 	Streaming bool // Supports streaming output
 	MultiTurn bool // Supports multi-turn conversation
+	ModelNav  bool // Requires TUI model navigation after spawn
 }
 
 // Registry manages available providers.

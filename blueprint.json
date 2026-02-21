@@ -43,7 +43,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T200 Done. Build GREEN. Proceeding to T201 (PTY word-splitting Unix).",
+    "currentState": "T200-T202 Done. Build GREEN. Proceeding to T203 (OllamaProvider).",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T131 completed in prior sessions spanning multiple days. T101-T118 completed in most recent session. 322 commits ahead of main. 393 files changed, ~113K insertions."
   },
@@ -145,13 +145,13 @@
     },
     {
       "task": "T201: Fix PTY command word-splitting (Unix)",
-      "description": "In internal/builtin/pty/pty_unix.go, when cfg.Command contains spaces and cfg.Args is empty, implement shlex-style splitting. Split cfg.Command into binary + args using POSIX shell word rules (respecting single/double quotes, backslash escapes). Example: 'ollama launch claude --config' becomes binary='ollama', args=['launch','claude','--config']. Add unit tests: simple split, quoted args, escaped spaces, empty string, single word no-op. Run make.",
-      "status": "Not Started"
+      "description": "Added splitCommand() to pty.go with POSIX shell word-splitting (single/double quotes, backslash escapes). Wired into Spawn in pty_unix.go — splits cfg.Command when Args is empty. 16 unit tests for splitCommand + 2 integration tests (command-with-spaces, explicit-args-no-split). Build GREEN.",
+      "status": "Done"
     },
     {
       "task": "T202: Fix PTY command word-splitting (Windows)",
-      "description": "In internal/builtin/pty/pty_windows.go, implement analogous word-splitting for Windows (double-quote grouping, caret escapes). Ensure the ErrNotSupported stub path is not broken. Mirror T201 tests with Windows-specific edge cases. Run make.",
-      "status": "Not Started"
+      "description": "No-op: splitCommand is in shared pty.go (no build tags), compiles on Windows. TestSplitCommand runs on Windows. Windows Spawn is a stub returning ErrNotSupported — it doesn't use Command/Args. Windows-specific escaping (caret, CMD.exe rules) will be added when ConPTY support lands. Adding it now would be dead code.",
+      "status": "Done"
     },
     {
       "task": "T203: Implement OllamaProvider in claudemux",

@@ -725,8 +725,14 @@ func (c *ClaudeMuxCommand) resolveProvider() (claudemux.Provider, error) {
 			p.Command = c.runCommand
 		}
 		return p, nil
+	case "ollama":
+		p := &claudemux.OllamaProvider{}
+		if c.runCommand != "" {
+			p.Command = c.runCommand
+		}
+		return p, nil
 	default:
-		return nil, fmt.Errorf("unknown provider %q; available: claude-code", c.runProvider)
+		return nil, fmt.Errorf("unknown provider %q; available: claude-code, ollama", c.runProvider)
 	}
 }
 

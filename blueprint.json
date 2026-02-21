@@ -275,8 +275,8 @@
     },
     {
       "task": "T227: Test coverage gap analysis",
-      "description": "make cover. Per-package coverage %, functions below 80%, uncovered paths. Produce scratch/gap-analysis/coverage-gaps.md. Run make.",
-      "status": "Not Started"
+      "description": "DONE. Overall ~89-90%. 34/40 packages ≥80%. Key gaps: claudemux 56.6%, termui/scrollbar 72.6%, pty 79.4%. Report: scratch/gap-analysis/coverage-gaps.md. 3 packages at 0% are CLI utilities (excluded).",
+      "status": "Done"
     },
     {
       "task": "T228: Coverage remediation — internal/command",

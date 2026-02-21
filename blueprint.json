@@ -1,35 +1,32 @@
 {
   "meta": {
     "fileName": "blueprint.json",
-    "sourceRef": "DIRECTIVE.txt + docs/todo.md",
+    "sourceRef": "DIRECTIVE.txt + docs/todo.md + codebase analysis 2026-02-21",
     "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
     "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST. NEVER SPECIFY A PRIORITY OF ANY KIND.",
     "blueprintRefinement": "THIS BLUEPRINT MUST BE CONTINUALLY REFINED. After completing any task, before starting the next, re-read this file and assess whether it still accurately captures reality. If any task description is stale, wrong, unclear, or missing context — FIX IT NOW."
   },
   "globalAlerts": [
     {
-      "warning": "ABSOLUTE IMMEDIATE PRIORITY: Integration tests testing against REAL claude (via ollama) are critical. OLLAMA IS AVAILABLE IN THE HOST ENVIRONMENT. YOU MUST RUN THE INTEGRATION TESTS. The code MUST do something useful when tested end-to-end. Without real testing against models, the code is USELESS FUCKING SLOP."
+      "warning": "INTEGRATION TESTS: Ollama IS AVAILABLE in the host environment. Real integration tests MUST be run. The code MUST do something useful end-to-end."
     },
     {
-      "warning": "CRITICAL REPETITION: OLLAMA IS IN THE AVAILABLE HOST ENVIRONMENT. INTEGRATION TESTS STRICTLY MUST BE RUN. YOU MUST PROVE IT WORKS AGAINST RECORDED REAL-WORLD MODELS. THIS IS NON-NEGOTIABLE."
-    },
-    {
-      "warning": "ON TOOLS: Use config.mk custom targets. Limit output. Pipe through tail after tee to build.log. Use 'make find-test-failures'."
+      "warning": "TOOLS: Use config.mk custom targets (make via mcp-server-make). Pipe through tail after tee to build.log. Use 'make make-all-with-log'."
     },
     {
       "warning": "NAMING: 'orchestrator' is RETIRED. Use 'claudemux' (Go), 'claude-mux' (user-facing), 'osm:claudemux' (JS module)."
     },
     {
-      "warning": "CROSS-PLATFORM: ALL checks must pass on macOS, Linux (Docker), Windows (host 'moo'). Zero tolerance."
+      "warning": "CROSS-PLATFORM: ALL checks must pass on macOS, Linux (Docker via make-all-in-container), Windows (host 'moo' via make-all-run-windows). Zero tolerance."
     },
     {
-      "warning": "TIMING: Tests MUST NOT be timing-dependent. No long-running tests. Race detector must pass."
+      "warning": "TIMING: Tests MUST NOT be timing-dependent. No flaky tests. Race detector must pass."
     },
     {
-      "warning": "SESSION TIMER: Started 2026-02-20T08:21:58Z. 9h mandate. Verify: make check-session-time."
+      "warning": "SESSION TIMER: File .session-timer | make check-session-time. 9-hour mandate."
     },
     {
-      "warning": "RULE OF TWO: Two contiguous issue-free subagent reviews before any commit. Same diff. No exceptions."
+      "warning": "RULE OF TWO: Two contiguous issue-free subagent reviews of IDENTICAL diff before any commit. Reset on any code change."
     },
     {
       "warning": "DEADCODE: NEVER add ignores to .deadcodeignore. Wire up the code or delete it."
@@ -42,491 +39,451 @@
     "contextManagement": "One task at a time, in order. Do not attempt to solve all tasks in a single turn.",
     "subagentPolicy": "Use subagents for Rule of Two review gate ONLY. Work subagents do NOT self-review.",
     "blueprintRefinement": "Continual refinement required. After every task, re-read and fix stale descriptions.",
-    "runMakeAfterEveryChange": "Run 'make make-all-with-log' after EVERY code change. Zero failures before proceeding. OLLAMA IS AVAILABLE IN THE HOST ENVIRONMENT. RUN THE INTEGRATION TESTS!",
+    "runMakeAfterEveryChange": "Run 'make make-all-with-log' after EVERY code change. Zero failures before proceeding.",
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T101-T118 Done. Build GREEN. Proceeding to T119.",
+    "currentState": "Blueprint rewritten 2026-02-21. Build GREEN. T101-T118 Done. Proceeding to T200 (fix TUI regex).",
     "sessionTimer": ".session-timer | make check-session-time",
-    "priorCompletedWork": "T001-T029 completed in prior sessions. See CHANGELOG.md and WIP.md for details. Removed unwired readable_stream.go (will be re-created properly in T105)."
+    "priorCompletedWork": "T001-T131 completed in prior sessions spanning multiple days. T101-T118 completed in most recent session. 322 commits ahead of main. 393 files changed, ~113K insertions."
   },
   "sequentialTasks": [
     {
-      "task": "T090: Setup real Ollama Integration Test Foundation",
-      "description": "Establish a dedicated, aggressive integration-test pipeline designed specifically for `-provider=ollama` and `gpt-oss:20b-cloud`. Ensure it checks for actual usefulness and model interaction. RULE OF TWO BAKED IN: Execute strict-review-gate subagent #1 to assess the test rigor. Execute subagent #2 for identical review. Proceed only when both PASS.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T091: Fix TUI regex incompatibility (Ollama cursor)",
-      "description": "Update `internal/builtin/claudemux/model_nav.go:reSelectedArrow` to match `▸` used by Ollama. Parse unselected items cleanly. See `scratch/gap-analysis/investigation-model-nav.md` and `index.md`. RULE OF TWO BAKED IN: Subagent #1 validates the regex coverage against Ollama TUI output. Subagent #2 performs an independent blind review. No completion without two PASS verdicts.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T092: Implement native OllamaProvider in claudemux",
-      "description": "Create `provider_ollama.go` implementing `Provider`. Do not automatically inject `--model` flag into arguments, preventing TUI bypass/crash. See `scratch/gap-analysis/investigation-cli-args-vs-tui.md`. RULE OF TWO BAKED IN: Spawn strict-review-gate subagent #1 to analyze struct implementation. Subagent #2 corroborates. Both must PASS.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T093: Wire OllamaProvider into command registry",
-      "description": "Update `resolveProvider` in `internal/command/claude_mux.go` to support `\"ollama\"` switch case. Eliminate the rigid `claude-code` default enforcement. See `scratch/gap-analysis/investigation-provider-registry.md`. RULE OF TWO BAKED IN: Subagent #1 checks the switch branching logic. Subagent #2 does the same. Both must PASS.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T094: Command Parameter Shell Word-splitting (Unix)",
-      "description": "Update `internal/builtin/pty/pty_unix.go`. If `cfg.Command` contains spaces and `cfg.Args` is functionally empty, use `shlex`-style splitting so `-command=\"ollama launch claude --config\"` resolves the binary properly without crashing `exec.CommandContext`. See `scratch/gap-analysis/investigation-pty-command.md`. RULE OF TWO BAKED IN: Subagent #1 tests splitting edge cases. Subagent #2 validates robustness. PASS both.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T095: Command Parameter Shell Word-splitting (Windows)",
-      "description": "Implement analogous word-splitting logic for `internal/builtin/pty/pty_windows.go` to ensure cross-platform parity for custom shell commands. RULE OF TWO BAKED IN: Subagent #1 reviews Windows-specific argument formatting. Subagent #2 confirms parity. Both must PASS.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T096: Implement end-to-end integration test for TUI navigation",
-      "description": "Write a `TestIntegration_Ollama_TUI_Navigation` using the real agent. Assert it correctly navigates the menu with arrow keys and `Enter` via PTY boundaries. Assert it actually talks to `gpt-oss:20b-cloud`. RULE OF TWO BAKED IN: Subagent #1 executes test pipeline logic checks. Subagent #2 confirms. Both must PASS.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T097: Validate PR split goal end-to-end execution",
-      "description": "Load `goals/orchestrate-pr-split.json` and use the Muxer to actually run it end-to-end against `-provider=ollama`. The integration tests MUST PROVE the software is working, end-to-end, and actively useful. RULE OF TWO BAKED IN: Subagent #1 assesses functional utility of the output. Subagent #2 confirms it handles real code splitting. Both PASS.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T098: Document integration test framework findings",
-      "description": "Produce `scratch/gap-analysis/integration-findings.md` logging exactly how the system behaves when interacting with real models. Identify edge cases where the model unexpectedly deviates or streaming hangs. RULE OF TWO BAKED IN: Subagent #1 verifies findings map to reality. Subagent #2 double checks. Both PASS.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T099: Extend testing infrastructure permanently",
-      "description": "Embed the requirement for real integration tests into the `continuousVerification` mandate permanently. Add a make target explicitly for `make test-live-ollama` (define it in project.mk) that CI runs (conditionally) or devs run locally. RULE OF TWO BAKED IN: Subagent #1 reviews Makefile modifications. Subagent #2 validates test execution boundaries. Both PASS.",
-      "status": "Not Started"
-    },
-    {
       "task": "T101: Fix txtar context root formatting",
-      "description": "Fixed in ctxutil.go buildContext(): metadata lines (context root, common path, tracked directories) are now extracted and rendered OUTSIDE the code fence with paths in backticks. 3 new test cases (MetadataExtracted, NoMetadata, MetadataOnly). Build GREEN.",
+      "description": "Done. Metadata lines rendered outside code fence. 3 tests.",
       "status": "Done"
     },
     {
-      "task": "T102: Fix txtar path ambiguity in computeUniqueSuffixes",
-      "description": "VERIFIED: All 3 bug scenarios already fixed + tested in context_txtar_lca_test.go from prior sessions. (1) LCA computed and emitted in txtar Comment via computePathLCA — 7 test cases. (2) All-relative collision groups use full relative paths (allRelative check, false proximity fix) — 2 test cases. (3) Non-colliding basenames preserve full paths for relative entries — 2 test cases. Removed duplicate tests from state_coverage_gaps_test.go. Build GREEN.",
+      "task": "T102: Fix txtar path ambiguity",
+      "description": "Done. computePathLCA, allRelative collision fix, non-colliding basenames fix. 11 tests.",
       "status": "Done"
     },
     {
-      "task": "T103: Fix MCP auto-config to use command/stdio instead of URL/HTTP",
-      "description": "DONE: Rewrote MCPInstanceConfig to use command/args format (stdio transport) instead of URL/HTTP. Removed: ListenAndServe, Endpoint, ListenerAddr, ErrNotListening, ErrAlreadyListening, endpointType, HTTP server, Unix socket. Added: OsmBinary field (defaults to os.Executable()), command/args in mcpServerEntry. Updated JS bindings in module.go (removed HTTP methods, added osmBinary). Updated instance.go state writing. 15 tests covering new format. Build GREEN.",
+      "task": "T103: Fix MCP auto-config to command/stdio",
+      "description": "Done. MCPInstanceConfig rewritten to command/args format. HTTP removed. 15 tests.",
       "status": "Done"
     },
     {
-      "task": "FIX POTENTIALLY MULTIPLE TESTS: 'test commit'",
-      "description": "VERIFIED: No tests mutate the real repository. All 9 files with git operations use t.TempDir() for isolation. The 'test commit' strings in gitops_test.go and templates_test.go are commit messages for in-memory/temp repos. One test (TestCodeReviewCommand_ActualGitDiffExecution) reads from the real repo but is read-only (git diff). No fix needed.",
+      "task": "T104: osm mcp-instance subcommand",
+      "description": "Done. MCPInstanceCommand with --session flag. 4 tests.",
       "status": "Done"
     },
     {
-      "task": "T104: Implement osm mcp-instance subcommand (stdio MCP server)",
-      "description": "DONE: Created mcp_instance.go with MCPInstanceCommand (--session flag, validation, reuses newMCPServer from mcp.go). Registered in main.go. 4 tests in mcp_instance_test.go (NewMCPInstanceCommand, SetupFlags, Execute_MissingSession, Execute_UnexpectedArgs) with stubGoalRegistry. Shell completion auto-inherited from command registry. Build GREEN, all packages pass.",
+      "task": "T105: ReadableStream for fetch Response.body",
+      "description": "Done. ReadableStream + Reader with 64 KiB chunks, back-pressure. 15 tests.",
       "status": "Done"
     },
     {
-      "task": "T105: Implement ReadableStream type for fetch Response.body",
-      "description": "DONE: Created readable_stream.go with ReadableStream (io.ReadCloser source, bounded channel pump, 64 KiB chunks, back-pressure) and ReadableStreamDefaultReader (Read, ReleaseLock). JS wrappers: wrapReadableStreamJS (locked getter, getReader, cancel), wrapReaderJS (read sync {value,done}, releaseLock). Wired into fetch.go buildResponse as response.body backed by buffered bytes. 15 Go-level unit tests in readable_stream_test.go. Build GREEN.",
+      "task": "T106: reader.read() with Promise resolution",
+      "description": "Done. Promise via NewChainedPromise. 5 JS integration tests.",
       "status": "Done"
     },
     {
-      "task": "T106: Implement reader.read() with Promise resolution",
-      "description": "DONE: Upgraded reader.read() to return Promise<{value: string, done: boolean}> using adapter.JS().NewChainedPromise(). Blocking Read() runs in goroutine, resolves on event loop via adapter.Loop().Submit(). Added adapter parameter threading through wrapReadableStreamJS→wrapReaderJS→buildResponse→jsFetch. 5 JS integration tests: GetReader_ReadAll, Locked, Cancel, EmptyBody, TextAndBodyIndependent. Build GREEN.",
+      "task": "T107: SSE parser for ReadableStream",
+      "description": "Done. W3C SSE spec parser. 16 tests.",
       "status": "Done"
     },
     {
-      "task": "T107: Implement SSE parser for ReadableStream",
-      "description": "DONE: Created sse.go with SSEParser (W3C SSE spec: double-newline delimiters, colon field parsing, comment lines, \\r\\n and \\n, multi-line data, ID persistence, null byte rejection). JS wrapper wrapSSEParserJS with Promise-based read() returning {event, data, id}. Factory function sseReader(body) exposed on module exports using _goStream hidden property for Go↔JS bridge. 16 Go-level tests in sse_test.go. Build GREEN.",
+      "task": "T108: E2E Goja tests for ReadableStream + SSE",
+      "description": "Done. 7 E2E JS tests with httptest SSE servers.",
       "status": "Done"
     },
     {
-      "task": "T108: End-to-end Goja integration tests for ReadableStream + SSE",
-      "description": "DONE: 7 E2E JS tests added to fetch_test.go using httptest SSE servers: SSEReader_ParsesEvents (multi-event with custom types), SSEReader_MultiLineData, SSEReader_WithID, SSEReader_EmptyStream, ReadableStream_ChunkedBody (chunked encoding), ReadableStream_CancelMidStream. All use runAsync + testutil.TestEventLoopProvider. Build GREEN.",
+      "task": "T109: macOS session ID deep anchor (darwin)",
+      "description": "Done. sysctl-based process tree traversal. 30 tests.",
       "status": "Done"
     },
     {
-      "task": "T109: macOS process hierarchy fallback for session ID",
-      "description": "DONE: Created session_darwin.go (//go:build darwin) with Deep Anchor using sysctl via unix.SysctlKinfoProc for process tree traversal — DarwinProcInfo extraction, getBootSessionUUID, TTY via /dev/fd/N, findStableAnchorDarwin with skip/shell/root lists and terminal device boundary detection. Updated session_other.go+test build tag to !linux && !windows && !darwin. 30 tests in session_darwin_test.go. Updated docs (session.md hierarchy, sophisticated-auto-determination §3b). Build GREEN.",
-      "status": "Done"
-    },
-    {
-      "task": "T110: Implement osm claudemux run — PTY subprocess spawning",
-      "description": "DONE: Added 'run' subcommand to ClaudeMuxCommand. Per-task agent spawning via Provider interface (ClaudeCodeProvider wraps creack/pty). Pool used as concurrency limiter (worker slots). Task sources: positional args + --tasks-file (one per line, # comments). Signal handling (SIGINT/SIGTERM → context cancellation). Flags: --provider, --model, --dir, --command, --tasks-file. providerOverride field for test injection. dispatchTask creates fresh Instance+Agent per task. handleAgentExit for clean exit code reporting. 16 tests with mockProvider + echoAgent + failingAgent mocks. Build GREEN.",
+      "task": "T110: osm claudemux run — PTY subprocess spawning",
+      "description": "Done. Provider interface, Pool limiter, signal handling. 16 tests.",
       "status": "Done"
     },
     {
       "task": "T111: Wire Pool dispatch into claudemux run",
-      "description": "DONE: Wired ManagedSession health tracking into dispatchTask — each task gets Parser→Guard→Supervisor pipeline via ProcessLine(). Guard actions: escalate/timeout abort task, pause resumes. ProcessCrash() on non-zero exit. Guard event counting via *int pointer (avoids stale copy). Summary includes guard_events. Pool.Drain() in signal handler for graceful shutdown. Pool.WaitDrained() after task completion. CR-stripped line splitting for Windows PTY. 5 new tests + 2 updated (verboseAgent, crash reporting, mixed success/failure). Build GREEN.",
+      "description": "Done. ManagedSession health tracking, Guard actions, graceful shutdown. 7 tests.",
       "status": "Done"
-    },
-    {
-      "task": "Design orchestration IPC architecture",
-      "description": "Create schema and transport mechanism (Unix domain sockets or similar) to allow CLI `submit` to push commands to a running background orchestrator daemon. REMEMBER: Unix domain sockets ARE preferred, but Windows must also be supported.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Implement Orchestrator Daemon",
-      "description": "Update `claude_mux.go` `start` command to run an actual persistent event loop that binds the `Pool`, `Guard`, `MCPGuard`, and `Panel`. Ensure it does not exit prematurely.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Implement `submit` to queue tasks",
-      "description": "Rewrite `submit` subcommand to execute an RPC call to the daemon's socket, passing the task description. Block on acknowledgment of receipt.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Implement concrete `claude` execution bindings",
-      "description": "Integrate the logic into the Go binary to physically start `ollama launch claude` (or the local binary) via a PTY pipe. Connect local PTY stdout to `Parser` and local PTY stdin to orchestration signals.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Expose integrated TUI mode via CLI",
-      "description": "Provide a CLI flag or command (`osm claude-mux tui` or natively bind to `start`) that renders the built-in JS/Go `Panel` to the local terminal, enabling direct interaction.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Implement `mcp parent` or configure isolated MCP endpoints",
-      "description": "Implement the logic described in `T037-T038` to handle auto-configuration of `.claude.json` tool-servers mapping back to `osm mcp` for each isolated Claude Code session.",
-      "status": "Not Started"
-    },
-    {
-      "task": "End-to-End Verification of CLI functionality",
-      "description": "Run `osm claude-mux start` in background, `osm claude-mux submit \"task\"` from another terminal, and `osm claude-mux tui` from another, asserting all interact correctly. Verify via automated integration test.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Rule of Two Strict Review",
-      "description": "Validate the entire implementation using two contiguous issue-free subagent reviews per the `strict-review-gate` protocol.",
-      "status": "Not Started"
     },
     {
       "task": "T112: Wire Panel TUI into claudemux run",
-      "description": "DONE: Wired claudemux.Panel as multi-pane output tracker for run subcommand. Panel created in run() after pool setup, one pane per task (capped at 9 for Alt+1..9). dispatchTask routes output via AppendOutput, sets pane health running/stopped/error. OnGuardAction updates Panel health in real-time with cumulative ErrorCount. StatusBar printed in summary. Graceful degradation for >9 tasks. 5 new tests (StatusBarInOutput, PaneCountMatchesTasks, OutputRoutedToPanes, HealthErrorOnCrash, MixedHealthStates) + 2 updated. Build GREEN.",
+      "description": "Done. Multi-pane output, Alt+1..9 switching, health indicators. 7 tests.",
       "status": "Done"
     },
     {
-      "task": "T113: Integration tests for claudemux run end-to-end",
-      "description": "DONE: 8 integration tests + 2 new mock agent types (blockedAgent, sendErrorAgent). Tests: PoolConcurrency (max-concurrent respects pool-size), CRLFOutputHandling (Windows \\r\\n), SendError (broken pipe), ExceedMaxPanes (12 tasks caps at 9), ErrorOutputGuardEvent (error pattern through pipeline), LargeSequentialBatch (8 serial tasks), InstanceRegistryCreatesPerTask, AllSubsystems (capstone: verbose+crash+echo). Build GREEN.",
+      "task": "T113: Integration tests for claudemux run E2E",
+      "description": "Done. 8 integration tests + 2 mock agent types.",
       "status": "Done"
     },
     {
       "task": "T114: Auto-navigate model selection in claudemux run",
-      "description": "DONE: Added tryNavigateModel to dispatchTask output loop. Sliding window buffer (menuWindowSize=20) of recent PTY lines feeds ParseModelMenu. When target model appears in parsed menu, NavigateToModel generates keystrokes sent via agent.Send(). Once-per-task modelNavigated guard prevents repeats. Key safety: requires target model in parsed menu before navigating (prevents premature single-model auto-select on partial menus). 5 tests with modelMenuAgent mock: AutoSelectsModel, NoModelFlag_SkipsDetection, ModelNotFound_SkipsNavigation, SingleModelAutoSelects, NavigateOncePerTask. Build GREEN.",
+      "description": "Done. tryNavigateModel with sliding window + ParseModelMenu. 5 tests.",
       "status": "Done"
     },
     {
-      "task": "T115: Implement osm mcp-make subcommand",
-      "description": "DONE: MCPMakeCommand exposes GNU Make as MCP tools over stdio. Two tools: make (execute target with workdir/file params) and make_help (display help with 5-min TTL cache). Cross-platform make detection (gmake on macOS, make elsewhere). Working directory resolution: per-request > command-level > cwd. 12 tests: unit (construction, flags, workdir, binary detection, Makefile execution) + 5 MCP transport-level integration tests via InMemoryTransport. Registered in main.go. Build GREEN.",
+      "task": "T115: osm mcp-make subcommand",
+      "description": "Done. GNU Make as MCP tools over stdio. 12 tests.",
       "status": "Done"
     },
     {
-      "task": "T116: Agent steering — session control socket",
-      "description": "DONE: Implemented ControlServer and ControlClient in claudemux package (control.go, 314 lines). Unix domain socket with JSON newline-delimited protocol. Methods: EnqueueTask, InterruptCurrent, GetStatus. ControlHandler interface for orchestrator integration. Server: concurrent connection handling (WaitGroup lifecycle), stale socket cleanup, idempotent Close. Client: typed methods, connect-per-request. Wired into claude-mux: run (ControlServer via controlAdapter), submit (ControlClient.EnqueueTask), stop (InterruptCurrent), status (GetStatus). 17 tests. Commit dc51df5.",
+      "task": "T116: Agent steering — control socket",
+      "description": "Done. ControlServer/Client, Unix domain socket, JSON protocol. 17 tests.",
       "status": "Done"
     },
     {
-      "task": "T117: Agent steering — service handler wiring",
-      "description": "DONE: Wired dynamic task dispatch into claude-mux run loop. dynamicDispatchLoop reads from dynamicTaskCh, acquires pool workers, dispatches through dispatchTask pipeline. controlAdapter: setActive/clearActive/dequeue methods. dynamicTaskResults for concurrent tracking. Run loop restructured: initialWg for batch, cancel() after initialWg.Wait() to stop dynamic loop. Summary includes both initial and dynamic results. 3 new tests. Commit b8ffd13.",
+      "task": "T117: Agent steering — dynamic dispatch wiring",
+      "description": "Done. dynamicDispatchLoop, controlAdapter, dynamicTaskCh. 3 tests.",
       "status": "Done"
     },
     {
-      "task": "T118: Implement osm mcp-parent — MCP agent steering server",
-      "description": "DONE: Created osm mcp-parent command — stdio MCP server bridging claude-mux control socket (T116-T117) to MCP protocol. 3 tools: enqueue_task, interrupt_current, get_status. mcpParentClient interface for testability. Follows mcp_make.go MCP SDK patterns. 13 tests (5 unit + 8 MCP InMemoryTransport integration). Commit 9609a98.",
+      "task": "T118: osm mcp-parent — MCP agent steering server",
+      "description": "Done. 3 MCP tools bridging control socket. 13 tests.",
       "status": "Done"
     },
     {
-      "task": "T119: Implement osm mcp prompt — polymorphic terminal wrapper",
-      "description": "Create 'osm mcp prompt': Anthropic computer use research (document findings first). Dynamic tool availability based on context. BubbleTea UI for interactive prompting. Mode detection (interactive vs pipe). go-prompt REPL integration. Adaptive MCP schema generation. Tests. Run make.",
+      "task": "T200: Fix TUI regex for Ollama model selection character",
+      "description": "In internal/builtin/claudemux/model_nav.go, reSelectedArrow regex only matches > and ❯. Ollama uses ▸ (U+25B8). Add ▸ to the character class: [❯>▸]. Also add → and ► for future-proofing. Update ParseModelMenu tests with Ollama-format test vectors. Verify unselected item parsing is not broken. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T120: Cross-platform checkpoint — post MCP/claudemux activation",
-      "description": "Verify ALL packages pass on macOS + Linux (Docker via make-all-in-container) + Windows (host moo via make-all-run-windows). Zero failures. Fix any regressions from T101-T119. Run make on all platforms.",
+      "task": "T201: Fix PTY command word-splitting (Unix)",
+      "description": "In internal/builtin/pty/pty_unix.go, when cfg.Command contains spaces and cfg.Args is empty, implement shlex-style splitting. Split cfg.Command into binary + args using POSIX shell word rules (respecting single/double quotes, backslash escapes). Example: 'ollama launch claude --config' becomes binary='ollama', args=['launch','claude','--config']. Add unit tests: simple split, quoted args, escaped spaces, empty string, single word no-op. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T121: CHANGELOG — MCP and claudemux activation milestone",
-      "description": "Update CHANGELOG.md [Unreleased] with entries for T101-T119. Keep-a-Changelog 1.1.0 format. Added/Changed/Fixed sections. Verify format. Run make.",
+      "task": "T202: Fix PTY command word-splitting (Windows)",
+      "description": "In internal/builtin/pty/pty_windows.go, implement analogous word-splitting for Windows (double-quote grouping, caret escapes). Ensure the ErrNotSupported stub path is not broken. Mirror T201 tests with Windows-specific edge cases. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T122: go-git v6 dependency setup",
-      "description": "Add github.com/go-git/go-git/v6 to go.mod. Verify compatibility. Create internal/gitops/gogit.go with thin wrapper around go-git API for clone, add, commit, push, pull operations. Run make.",
+      "task": "T203: Implement OllamaProvider in claudemux",
+      "description": "Create internal/builtin/claudemux/provider_ollama.go implementing Provider interface. Key differences from ClaudeCodeProvider: (1) default command 'ollama' not 'claude', (2) do NOT inject --model flag (model selected via TUI navigation), (3) SpawnOpts.Command defaults to 'ollama launch claude' (or configurable), (4) ModelSelectionRequired() returns true. Comprehensive tests in provider_ollama_test.go. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T123: Migrate sync.go to go-git for clone/add/commit/push",
-      "description": "Replace exec.Command('git', ...) shell-outs in sync.go with go-git v6 calls for: clone, add, commit, push. Preserve: push commits with 'osm sync: <RFC3339>' message. Preserve sync.local-path config key. EXCEPTION: Keep shell-out for pull --rebase (go-git rebase support is limited). Tests. Run make.",
+      "task": "T204: Wire OllamaProvider into resolveProvider",
+      "description": "In internal/command/claude_mux.go, update resolveProvider() switch to handle 'ollama' case. Update error message to list all supported providers. Add tests: resolve ollama, resolve unknown (error lists providers). Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T124: Migrate sync_startup.go to go-git for auto-pull",
-      "description": "Replace exec.Command('git', 'pull', '--rebase') in sync_startup.go with go-git where feasible. Preserve: non-blocking auto-pull on startup, conflict detection from stderr. If go-git rebase is unreliable, keep as shell-out with documentation. Tests. Run make.",
+      "task": "T205: Wire SafetyValidator into claudemux run() pipeline",
+      "description": "SafetyValidator (safety.go) exists but is not called anywhere in dispatchTask or run(). Wire it: add --safety flag to claude-mux run, create SafetyValidator in run(), classify operations through Validate() in dispatchTask output loop, log/abort on deny. Default disabled. Tests: blocks destructive op, allows read-only, disabled by default. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T125: go-git migration — integration tests with real repos",
-      "description": "Write integration tests that clone to temp dirs, add files, commit, push to bare repos, pull with rebase. Verify conflict detection still works. Verify timestamp messages. Verify sync.local-path. Run make.",
+      "task": "T206: Wire MCPInstanceConfig auto-injection into dispatchTask",
+      "description": "MCPInstanceConfig generates per-instance .claude.json with osm mcp-instance as tool-server, but dispatchTask does not call it. Wire: after registry.Create(), call NewMCPInstanceConfig, WriteConfigFile, pass ConfigPath to SpawnOpts, defer Close for cleanup. Tests: config created per task, correct session ID, cleanup removes temp. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T126: Anthropic prompt library expansion — 3 new goals",
-      "description": "Add 3 new built-in goals to goal_builtin.go from Anthropic prompt library NOT already implemented (existing: morale-improver, bug-buster, code-optimizer, code-explainer, meeting-notes, pii-scrubber, prose-polisher, compare-options). Each goal needs: stateVars, hotSnippets, flagDefs, promptOptions. Integration tests for each. Run make.",
+      "task": "T207: Ollama integration test foundation",
+      "description": "Create internal/builtin/claudemux/ollama_integration_test.go. TestMain with -integration and -provider flags (disabled by default). Tests: OllamaProvider_Spawn, Ollama_ModelMenu, Ollama_NavigateModel. OLLAMA_AVAILABLE env var to enable. Add integration-test-ollama target to project.mk. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T127: Security audit — require() path traversal",
-      "description": "Audit require() in the Goja runtime for directory traversal attacks. Verify that require('../../etc/passwd') and similar paths are blocked. Add regression tests for all known traversal patterns (../, symlinks, null bytes). Fix any vulnerabilities. Run make.",
+      "task": "T208: TUI navigation integration test with real Ollama",
+      "description": "TestIntegration_Ollama_TUI_Navigation: spawn agent via OllamaProvider, send keys via PTY, assert model menu navigated and target model selected. Assert agent reaches entrypoint. Skip if not -integration. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T128: Security audit — exec injection",
-      "description": "Audit osm:exec and osm:pty modules for command injection. Verify that shell metacharacters in arguments are properly escaped. Test with payloads: semicolons, pipes, backticks, $(), etc. Fix any vulnerabilities. Run make.",
+      "task": "T209: End-to-end PR split execution test",
+      "description": "TestIntegration_PRSplit_EndToEnd: load orchestrate-pr-split.json, create test git repo, run PR split workflow. Verify: branches created, each compiles, final equivalent to original. Skip if not -integration. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T129: Security audit — fetch SSRF prevention",
-      "description": "Audit osm:fetch for SSRF vulnerabilities. Verify that localhost, 169.254.169.254 (AWS metadata), internal IPs, file:// URLs are blocked or configurable. Add tests. Fix vulnerabilities. Run make.",
+      "task": "T210: Document integration test findings",
+      "description": "Produce scratch/gap-analysis/integration-findings.md: Ollama TUI format, timing, edge cases, parsing failures. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T130: Security audit — environment variable secrets",
-      "description": "Audit all points where environment variables are exposed to JS scripts. Verify sensitive vars (API keys, tokens, passwords) are filtered. Check MCP privilege escalation vectors. Update docs/security.md with complete threat model. Run make.",
+      "task": "T211: Permanent make target for live Ollama tests",
+      "description": "Add integration-test-ollama target to project.mk. Verify target works with Ollama running. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T131: Security audit — os module write restrictions",
-      "description": "Audit osm:os module for unrestricted filesystem writes. Verify sandbox boundaries. Test symlink escape, /tmp races, write to sensitive paths. Fix vulnerabilities. Regression tests. Run make.",
+      "task": "T212: Cross-platform checkpoint — post bug fixes",
+      "description": "Verify ALL packages pass on macOS, Linux (Docker), Windows (moo). Zero failures. Fix regressions T200-T211.",
       "status": "Not Started"
     },
     {
-      "task": "T132: Module resolution refinement",
-      "description": "Review and refine the JS module resolution strategy (script.module-paths config key, require() in Goja). Ensure consistent behavior: relative paths resolve from script dir, absolute paths work, module-paths are searched in order. Document the resolution algorithm in docs/scripting.md. Add edge case tests. Run make.",
+      "task": "T213: CHANGELOG — Ollama activation milestone",
+      "description": "Update CHANGELOG.md [Unreleased]: Added: OllamaProvider, integration tests. Fixed: TUI regex, PTY word-splitting, SafetyValidator wiring, MCPInstanceConfig injection. Keep-a-Changelog 1.1.0. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T133: Configuration model audit and cleanup",
-      "description": "Audit all config keys in internal/config/schema.go. Verify each key is: (1) documented in docs/reference/config.md, (2) actually read and used in the codebase, (3) has correct default values, (4) has validation. Remove any dead config keys. Add missing documentation. Run make.",
+      "task": "T214: go-git v6 dependency setup",
+      "description": "go get github.com/go-git/go-git/v6. Create internal/gitops/gogit.go: GoGitRepo wrapper with Clone, Open, Add, Commit, Push. Adapter layer + unit tests. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T134: go-prompt integration enhancement",
-      "description": "Review and enhance the go-prompt integration in internal/scripting/. Verify feature parity between registerMode and createPrompt paths. Test dynamic completion, key bindings, color support. Ensure cross-platform terminal compatibility. Run make.",
+      "task": "T215: Migrate sync.go to go-git",
+      "description": "Replace exec.Command git shell-outs in sync.go with GoGitRepo. Preserve: commit msg, sync.local-path. Keep shell-out for pull --rebase. Update tests. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T135: Code review splitter refinement",
-      "description": "Review and refine the code review splitter in internal/command/diff_splitter.go. Ensure it handles all git diff formats correctly. Test with large diffs, binary files, renames, mode changes. Improve splitting heuristics. Run make.",
+      "task": "T216: Migrate sync_startup.go auto-pull",
+      "description": "Attempt go-git pull in sync_startup.go. If rebase unreliable, keep shell-out with doc comment. Preserve: non-blocking, conflict detection. Tests. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T136: Cross-platform checkpoint — post expansion",
-      "description": "Verify ALL packages pass on macOS + Linux (Docker) + Windows (moo). Zero failures. Fix regressions from T122-T135. Run make on all platforms.",
+      "task": "T217: go-git integration tests with real repos",
+      "description": "Tests: clone to TempDir, add/commit, push to bare repo, pull with rebase, conflict detection. Temp dirs, no network. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T137: Test coverage gap analysis",
-      "description": "Run 'make cover'. Generate coverage report. Identify ALL packages below 90%. List specific functions/methods with missing coverage. Produce coverage-gaps.md in scratch/ with actionable items. Run make.",
+      "task": "T218: Provider abstraction for multi-tool support",
+      "description": "ProviderConfig interface (Name, DefaultCommand, ModelSelectionRequired, InjectsModelFlag). Refactor providers. ProviderRegistry. Wire into resolveProvider. Tests. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T138: Coverage remediation — internal/command package",
-      "description": "Address coverage gaps in internal/command/. Focus on: error paths, edge cases, platform-specific code, concurrency scenarios. Add tests for every uncovered function. Target 100%. Run make.",
+      "task": "T219: Ollama HTTP client for local validation",
+      "description": "HTTP client for localhost:11434: ListModels, ChatCompletion, Health. Streaming. Expose as osm:ollama JS module. Tests with httptest. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T139: Coverage remediation — internal/scripting package",
-      "description": "Address coverage gaps in internal/scripting/. Focus on: TUI lifecycle, event loop edge cases, module loading errors, runtime panics. Add tests. Target 100%. Run make.",
+      "task": "T220: Environment variable management",
+      "description": "Three-tier env: inherit, script hooks (op plugin, aws-vault), profile config. Wire into SpawnOpts.Env. Tests. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T140: Coverage remediation — internal/builtin packages",
-      "description": "Address coverage gaps across ALL internal/builtin/ sub-packages (claudemux, fetch, exec, pty, bt, etc.). Focus on error paths, boundary conditions, nil inputs. Add tests. Target 100%. Run make.",
+      "task": "T221: Security audit — require() path traversal",
+      "description": "Attack tests: ../../etc/passwd, /etc/shadow, symlink escape, null bytes, URL-encoded. Fix vulnerabilities. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T141: Coverage remediation — internal/storage and internal/session",
-      "description": "Address coverage gaps in storage and session packages. Test file locking edge cases, concurrent access, cleanup race conditions, backend switching. Target 100%. Run make.",
+      "task": "T222: Security audit — exec injection",
+      "description": "Attack tests: semicolons, pipes, backticks, $(), &&, newlines, null bytes. Verify exec.Command not shell. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T142: Coverage remediation — remaining packages",
-      "description": "Address coverage gaps in: internal/config, internal/gitops, internal/argv, internal/termui, internal/testutil, cmd/osm. Target 100% across all packages. Run make.",
+      "task": "T223: Security audit — fetch SSRF",
+      "description": "Tests: localhost, 127.0.0.1, 169.254.169.254, [::1], file://, 0x7f000001. Implement filter if needed. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T143: Shell completion audit — all commands and subcommands",
-      "description": "Audit shell completion for ALL commands/subcommands in bash/zsh/fish/powershell. List every command and verify completion is registered. Fix gaps. Test output format for each shell. Run make.",
+      "task": "T224: Security audit — env var secrets",
+      "description": "Audit env exposure to JS. Check *_KEY, *_SECRET, *_TOKEN patterns. Check MCP escalation. Fix. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T144: Documentation — README.md comprehensive update",
-      "description": "Update root README.md: full feature set, claude-mux system, MCP server (both HTTP and stdio), JS modules list, goal system, sync, sessions, shell completion. Badges. Installation. Quick-start. Verify ALL links work. Run make.",
+      "task": "T225: Security audit — os module writes",
+      "description": "Tests: write /etc/passwd, ~/.ssh/authorized_keys, symlink escape, TOCTOU. Document boundaries. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T145: Documentation — docs/README.md index completeness",
-      "description": "Review docs/README.md: ensure every document in docs/ is indexed. Cross-references must be valid. docs/reference/ must be complete for ALL commands and ALL config keys. Add missing entries. Run make.",
+      "task": "T226: Security documentation consolidation",
+      "description": "Consolidate T221-T225 into docs/security.md. Threat model, sandbox boundaries, allowed/blocked, MCP model, recommendations. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T146: Documentation — docs/reference/ completeness",
-      "description": "Audit docs/reference/: verify reference docs exist for every command, every config key, every JS module (osm:fetch, osm:exec, osm:pty, osm:flag, osm:ctxutil, osm:claudemux, etc.). Add missing reference docs. Verify accuracy of existing ones. Run make.",
+      "task": "T227: Test coverage gap analysis",
+      "description": "make cover. Per-package coverage %, functions below 80%, uncovered paths. Produce scratch/gap-analysis/coverage-gaps.md. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T147: Documentation — docs/scripting.md update",
-      "description": "Update docs/scripting.md: complete JS module listing, module resolution algorithm, event loop behavior, Promise support, require() patterns, global objects (ctx, output, log, tui). Add examples for each module. Run make.",
+      "task": "T228: Coverage remediation — internal/command",
+      "description": "Address T227 gaps. Error paths, flag validation, platform branches, concurrency. Target 90%+. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T148: Documentation — docs/security.md comprehensive update",
-      "description": "Update docs/security.md with findings from T127-T131 security audit. Complete threat model. Document sandbox boundaries. Document allowed/blocked operations. Document MCP security model. Run make.",
+      "task": "T229: Coverage remediation — internal/scripting",
+      "description": "Address T227 gaps. TUI teardown, event loop errors, module loading, panic recovery. Target 90%+. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T149: Deadcode audit",
-      "description": "Run 'make lint' focusing on deadcode checker output. Fix ALL issues. Remove unused functions, types, variables. NO .deadcodeignore changes — wire up or delete. Run make.",
+      "task": "T230: Coverage remediation — internal/builtin",
+      "description": "Address T227 gaps across ALL builtin sub-packages. Error paths, nil inputs, boundaries. Target 90%+. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T150: Betteralign audit",
-      "description": "Run betteralign across ALL packages. Fix ALL struct field alignment issues. Verify no performance regressions. Run make.",
+      "task": "T231: Coverage remediation — storage + session",
+      "description": "Address T227 gaps. Lock contention, stale locks, concurrent access, backend switching. Target 90%+. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T151: Staticcheck audit — resolve all warnings",
-      "description": "Run staticcheck across ALL packages. Resolve every single warning (S1017, SA*, QF*, etc.). No suppressions. Run make.",
+      "task": "T232: Coverage remediation — remaining packages",
+      "description": "config, gitops, argv, termui, testutil, goroutineid, mouseharness, cmd/osm. Target 90%+. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T152: API surface cleanup — internal/builtin/claudemux",
-      "description": "Review all exported types and functions in claudemux package. Remove any that are unused or misdesigned. Consolidate overlapping APIs. Ensure JS bindings match Go API 1:1. Remove deprecated aliases. Run make.",
+      "task": "T233: Module resolution refinement",
+      "description": "Review require(): relative paths, absolute, module-paths, osm:*, circular. Document algorithm. Edge tests. Update docs/scripting.md. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T153: API surface cleanup — internal/command",
-      "description": "Review all exported types and functions in command package. Remove deprecated code. Consolidate command registration patterns. Ensure consistent error handling across all commands. Run make.",
+      "task": "T234: Configuration model audit",
+      "description": "Audit ALL keys in schema.go: documented? used? correct defaults? validated? Remove dead. Add missing docs. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T154: API surface cleanup — internal/scripting",
-      "description": "Review all exported types and functions in scripting package. Remove unused exports. Ensure TUI manager API is clean. Verify event loop integration points. Run make.",
+      "task": "T235: go-prompt integration enhancement",
+      "description": "Verify registerMode/createPrompt parity. Test: completion, key bindings, colors, cross-platform. Fix gaps. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T155: Error handling audit",
-      "description": "Audit ALL packages for: swallowed errors, missing error returns, panics instead of error returns, inconsistent error wrapping. Fix all issues. Ensure proper exit codes from CLI commands. Run make.",
+      "task": "T236: Code review splitter refinement",
+      "description": "Test: large diffs, binary files, renames, mode changes, submodules, no-newline-at-EOF. Improve heuristics. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T156: Performance benchmarks — expand coverage",
-      "description": "Review existing benchmarks in benchmark_test.go files. Add benchmarks for: fetch HTTP client, session locking, config parsing, goal loading, diff splitting, context building, txtar generation. Use ReportAllocs. Run make.",
+      "task": "T237: Anthropic prompt library — 3 new goals",
+      "description": "3 new goals not in codebase. stateVars, hotSnippets, flagDefs, promptOptions. Integration tests. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T157: Fuzz testing expansion",
-      "description": "Review existing fuzz tests. Add fuzz tests for: config parsing, goal JSON loading, txtar generation, diff splitting, shell completion, MCP message parsing, SSE parsing. Ensure all fuzz seeds pass. Run make.",
+      "task": "T238: PR split behavior tree refinement",
+      "description": "Verify BT nodes, failure recovery, equivalence verification (git diff). Unit tests for leaf nodes. Test with synthetic changeset. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T158: Race condition audit",
-      "description": "Run 'go test -race ./...' with focus on concurrent scenarios. Add race-condition-specific tests for: session locking, Pool dispatch, Panel concurrent updates, MCP session coordination, cleanup scheduler. Fix any races. Run make.",
+      "task": "T239: Session cleanup scheduler hardening",
+      "description": "Verify 5 SessionConfig fields. Edge tests: zero, negative, concurrent cleanup, during write. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T159: Memory and resource leak audit",
-      "description": "Audit all goroutine-spawning code for leaks. Verify all io.Closers are closed. Check for channel leaks. Add tests with runtime.NumGoroutine() assertions where appropriate. Fix leaks. Run make.",
+      "task": "T240: Shell completion audit",
+      "description": "Audit ALL commands in bash/zsh/fish/powershell. Verify each has completion. Check sub-subcommands. Fix gaps. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T160: Cross-platform checkpoint — post quality gates",
-      "description": "Verify ALL packages pass on macOS + Linux (Docker) + Windows (moo). Zero failures. Fix regressions from T137-T159. Run make on all platforms.",
+      "task": "T241: MCP prompt — scope assessment",
+      "description": "Assess osm mcp prompt: polymorphic MCP adapting to context. Research Anthropic computer use. Implement if bounded, defer if not. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T161: CHANGELOG — quality and expansion milestone",
-      "description": "Update CHANGELOG.md [Unreleased] with entries for T122-T159. Keep-a-Changelog 1.1.0 format. Added/Changed/Fixed/Security sections. Run make.",
+      "task": "T242: Deadcode audit",
+      "description": "make lint — deadcode output. Fix ALL. Wire up or delete. No .deadcodeignore changes. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T162: MacosUseSDK integration research",
-      "description": "Research github.com/joeycumines/MacosUseSDK. Document capabilities. Assess feasibility of integration via in-process gRPC channel. Write findings to docs/archive/notes/macos-use-sdk-integration.md. If feasible, outline implementation tasks and add to blueprint. Run make.",
+      "task": "T243: Betteralign audit",
+      "description": "betteralign all packages. Fix ALL alignment. Verify no regressions. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T163: PR split behavior tree refinement",
-      "description": "Review orchestrate-pr-split.js and orchestrate-pr-split.json. Verify BT nodes execute correctly. Test failure recovery paths. Ensure equivalence verification step works. Add tests for BT leaf nodes. Run make.",
+      "task": "T244: Staticcheck audit",
+      "description": "staticcheck all packages. Resolve every warning. No suppressions. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T164: Provider abstraction for multi-tool support",
-      "description": "Design and implement provider abstraction layer for claudemux to support multiple TUI tools (Claude Code, gh CLI, gemini CLI, codium CLI). Define ProviderConfig interface. Implement ClaudeCodeProvider. Tests. Run make.",
+      "task": "T245: API surface cleanup — claudemux",
+      "description": "Review exports. Remove unused. Consolidate. JS bindings match Go 1:1. No deprecated aliases. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T165: Ollama validation integration",
-      "description": "Implement Ollama HTTP client for local validation (osm:ollama module or similar). Connect to localhost:11434. Chat completion API. Streaming responses. Connection health checking. Use for safety validation in claudemux. Tests. Run make.",
+      "task": "T246: API surface cleanup — command",
+      "description": "Review exports. Remove deprecated. Consistent errors and flag naming. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T166: Environment variable management for subprocess spawning",
-      "description": "Implement three-tier env management: (1) inherit osm env, (2) script hooks for injection (op plugin, aws-vault), (3) profile-based config. Wire into claudemux spawn. Tests. Run make.",
+      "task": "T247: API surface cleanup — scripting",
+      "description": "Review exports. Remove unused. Clean TUI manager API. Thread-safety documented. Lifecycle validated. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T167: Session cleanup scheduler hardening",
-      "description": "Review CleanupScheduler implementation. Verify all 5 SessionConfig fields are properly respected (AutoCleanupEnabled, CleanupIntervalHours, MaxAgeDays, MaxCount, MaxSizeMB). Add edge case tests: zero values, negative values, concurrent cleanup. Run make.",
+      "task": "T248: Error handling audit",
+      "description": "ALL packages: swallowed errors, missing returns, panics, inconsistent wrapping. Fix all. Proper exit codes. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T168: docs/architecture.md refresh",
-      "description": "Update docs/architecture.md to reflect current codebase: claudemux system, MCP integration, session management, fetch module, go-git integration. Ensure diagrams are accurate. Run make.",
+      "task": "T249: Performance benchmarks expansion",
+      "description": "Add benchmarks: fetch, session locking, config parsing, goal loading, diff splitting, context building, txtar. ReportAllocs. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T169: docs/architecture-claude-mux.md refresh",
-      "description": "Update docs/architecture-claude-mux.md to reflect actual implementation state after T110-T114. Remove speculative content. Add concrete PTY spawn and Pool dispatch documentation. Run make.",
+      "task": "T250: Fuzz testing expansion",
+      "description": "Add fuzz: config, goal JSON, txtar, diff, completion, MCP, SSE, PTY parsing. Each 30s+. Fix crashes. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T170: Final cross-platform verification — macOS",
-      "description": "Run 'make make-all-with-log' on macOS. Zero failures. Document results.",
+      "task": "T251: Race condition audit",
+      "description": "go test -race. Add race tests: session locking, Pool, Panel, MCP, CleanupScheduler. Fix races. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T171: Final cross-platform verification — Linux",
-      "description": "Run 'make make-all-in-container' for Linux via Docker. Zero failures. Document results.",
+      "task": "T252: Memory and resource leak audit",
+      "description": "Audit go func, io.Closer, channels, contexts. NumGoroutine tests. Fix leaks. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T172: Final cross-platform verification — Windows",
-      "description": "Run 'make make-all-run-windows' on host moo. Zero failures. Document results.",
+      "task": "T253: Cross-platform checkpoint — post quality",
+      "description": "Verify macOS, Linux (Docker), Windows (moo). Zero failures. Fix regressions T214-T252.",
       "status": "Not Started"
     },
     {
-      "task": "T173: Final CHANGELOG update",
-      "description": "Final comprehensive CHANGELOG.md update covering ALL work since last release. Verify completeness — every added feature, every fix, every breaking change documented. Keep-a-Changelog 1.1.0 format. Run make.",
+      "task": "T254: CHANGELOG — quality milestone",
+      "description": "CHANGELOG.md [Unreleased] for T214-T252. Added/Changed/Fixed/Security. Keep-a-Changelog. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T174: Final Rule of Two commit gate",
-      "description": "Execute Rule of Two: subagent #1 reviews full diff vs main. If PASS: freeze scope, subagent #2 reviews same diff. Both PASS: commit with Kubernetes-style message. Either FAIL: fix, reset counter to 0, restart gate.",
+      "task": "T255: README.md overhaul",
+      "description": "Rewrite: description, features, install, quick-start, config, modules, badges. Verify links. Run make.",
       "status": "Not Started"
     },
     {
-      "task": "T175: Scope expansion — identify next improvement frontier",
-      "description": "After T174 passes, step back and identify the NEXT frontier of improvements. Add new tasks to blueprint. Areas to consider: performance optimization, new JS modules, additional goals, UI/UX refinements, new MCP tools, telemetry, plugin system. The blueprint must NEVER be empty.",
+      "task": "T256: docs/README.md index",
+      "description": "Index every .md. Add missing. Verify links. Alphabetize. Brief descriptions. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T257: docs/reference/ completeness",
+      "description": "Reference for every command, config key, JS module. Add missing. Verify accuracy. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T258: docs/scripting.md update",
+      "description": "Module listing, resolution algorithm, event loop, require, globals, examples. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T259: docs/architecture.md refresh",
+      "description": "Current state: claudemux, MCP, sessions, fetch/SSE, event loop. Diagrams. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T260: docs/architecture-claude-mux.md refresh",
+      "description": "Match T110-T118: PTY, Pool, Panel, ManagedSession, ControlServer, model nav. Remove speculative. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T261: MacosUseSDK integration research",
+      "description": "Research github.com/joeycumines/MacosUseSDK. Document in docs/archive/notes/. Assess gRPC integration. If feasible, add tasks. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T262: Final verification — macOS",
+      "description": "make on macOS. Zero failures. Document.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T263: Final verification — Linux",
+      "description": "make make-all-in-container. Zero failures. Document.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T264: Final verification — Windows",
+      "description": "make make-all-run-windows on moo. Zero failures. Document.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T265: Final CHANGELOG",
+      "description": "Comprehensive CHANGELOG covering all work. Verify all entries. Cross-reference blueprint. Run make.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T266: Final Rule of Two",
+      "description": "Subagent #1 reviews diff vs main. PASS: freeze, subagent #2 same diff. Both PASS: commit. FAIL: fix, reset, restart.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T267: Scope expansion",
+      "description": "Identify NEXT frontier: Windows ConPTY, WebSocket, LSP, plugins, telemetry, TUI themes, SSH keys, TypeScript, CI/CD from goals. Add 10+ tasks. Blueprint NEVER empty.",
       "status": "Not Started"
     }
   ],
   "continuousVerification": {
-    "task": "Run 'make make-all-with-log' after EVERY significant change, and run INTEGRATION TESTS with REAL claude (ollama target) CONSTANTLY. OLLAMA IS AVAILABLE IN THE HOST ENVIRONMENT. YOU MUST RUN IT.",
-    "failPolicy": "If ANY test fails, STOP and fix. Zero tolerance. If the software is not proven USEFUL end-to-end against a REAL model (e.g. gpt-oss:20b-cloud via ollama), YOU FAIL. OLLAMA IS AVAILABLE. INTEGRATION TESTS STRICTLY MUST BE RUN.",
-    "testCoverage": "Target 100%. Verify with go tool cover.",
-    "crossPlatform": "Checkpoints at T120, T136, T160, T170-T172."
+    "task": "Run 'make make-all-with-log' after EVERY change. Run integration tests with Ollama.",
+    "failPolicy": "ANY test failure: STOP and fix. Zero tolerance.",
+    "testCoverage": "Target 90%+ per package.",
+    "crossPlatform": "Checkpoints at T212, T253, T262-T264."
   },
   "finalEnforcementProtocol": [
     {
@@ -535,27 +492,27 @@
     },
     {
       "type": "TIMING",
-      "alert": "No timing-dependent tests. No long-running tests."
+      "alert": "No timing-dependent tests. Race detector must pass."
     },
     {
       "type": "NAMING",
-      "alert": "'orchestrator' is RETIRED. Use claudemux/claude-mux/osm:claudemux."
+      "alert": "orchestrator RETIRED. Use claudemux/claude-mux/osm:claudemux."
     },
     {
       "type": "REFINEMENT",
-      "alert": "Continually refine. After every task fix stale descriptions."
+      "alert": "Continually refine after every task."
     },
     {
       "type": "RULE_OF_TWO",
-      "alert": "Two contiguous reviews. Same diff. Reset on any code change."
+      "alert": "Two contiguous reviews. Same diff. Reset on code change."
     },
     {
       "type": "DEADCODE",
-      "alert": "NEVER add .deadcodeignore entries. Wire up or delete."
+      "alert": "NEVER add .deadcodeignore entries."
     },
     {
       "type": "BUILD",
-      "alert": "Run make after EVERY change. Zero failures before proceeding."
+      "alert": "make after EVERY change. Zero failures."
     }
   ]
 }

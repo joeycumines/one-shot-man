@@ -553,6 +553,96 @@ func TestParseModelMenu_NumberedListOutput(t *testing.T) {
 	}
 }
 
+func TestParseModelMenu_OllamaTriangleArrow(t *testing.T) {
+	t.Parallel()
+
+	// Ollama uses ▸ (U+25B8 BLACK RIGHT-POINTING SMALL TRIANGLE) as selection indicator.
+	lines := []string{
+		"? Which model would you like to use?",
+		"  llama3.2",
+		"▸ gpt-oss:20b-cloud",
+		"  codellama:7b",
+		"  mistral:latest",
+	}
+
+	menu := ParseModelMenu(lines)
+
+	if len(menu.Models) != 4 {
+		t.Fatalf("expected 4 models, got %d: %v", len(menu.Models), menu.Models)
+	}
+	if menu.SelectedIndex != 1 {
+		t.Errorf("expected SelectedIndex=1 (gpt-oss:20b-cloud), got %d", menu.SelectedIndex)
+	}
+	if menu.Models[1] != "gpt-oss:20b-cloud" {
+		t.Errorf("expected selected model 'gpt-oss:20b-cloud', got %q", menu.Models[1])
+	}
+}
+
+func TestParseModelMenu_RightwardsArrow(t *testing.T) {
+	t.Parallel()
+
+	// → (U+2192 RIGHTWARDS ARROW) as selection indicator.
+	lines := []string{
+		"→ model-alpha",
+		"  model-beta",
+	}
+
+	menu := ParseModelMenu(lines)
+
+	if len(menu.Models) != 2 {
+		t.Fatalf("expected 2 models, got %d: %v", len(menu.Models), menu.Models)
+	}
+	if menu.SelectedIndex != 0 {
+		t.Errorf("expected SelectedIndex=0, got %d", menu.SelectedIndex)
+	}
+}
+
+func TestParseModelMenu_BlackPointer(t *testing.T) {
+	t.Parallel()
+
+	// ► (U+25BA BLACK RIGHT-POINTING POINTER) as selection indicator.
+	lines := []string{
+		"  option-a",
+		"► option-b",
+		"  option-c",
+	}
+
+	menu := ParseModelMenu(lines)
+
+	if len(menu.Models) != 3 {
+		t.Fatalf("expected 3 models, got %d: %v", len(menu.Models), menu.Models)
+	}
+	if menu.SelectedIndex != 1 {
+		t.Errorf("expected SelectedIndex=1 (option-b), got %d", menu.SelectedIndex)
+	}
+}
+
+func TestParseModelMenu_OllamaTriangleArrow_NavigateToModel(t *testing.T) {
+	t.Parallel()
+
+	// Full end-to-end: Ollama ▸ indicator + navigate to specific model.
+	lines := []string{
+		"? Which model would you like to use?",
+		"▸ llama3.2",
+		"  gpt-oss:20b-cloud",
+		"  codellama:7b",
+	}
+
+	menu := ParseModelMenu(lines)
+	if len(menu.Models) != 3 {
+		t.Fatalf("expected 3 models, got %d: %v", len(menu.Models), menu.Models)
+	}
+
+	keys, err := NavigateToModel(menu, "gpt-oss:20b-cloud")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := KeyArrowDown + KeyEnter
+	if keys != expected {
+		t.Errorf("expected 1 down arrow + enter, got %q", keys)
+	}
+}
+
 // --- Keystroke constant tests ---
 
 func TestKeystrokeConstants(t *testing.T) {

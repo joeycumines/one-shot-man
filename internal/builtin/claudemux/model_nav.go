@@ -38,8 +38,11 @@ type ModelMenu struct {
 }
 
 var (
-	// reSelectedArrow matches lines like "> model-name" or "❯ model-name".
-	reSelectedArrow = regexp.MustCompile(`^\s*[❯>]\s+(\S.+?)\s*$`)
+	// reSelectedArrow matches lines like "> model-name", "❯ model-name",
+	// "▸ model-name", "→ model-name", or "► model-name".
+	// Supported indicators: > (ASCII), ❯ (U+276F), ▸ (U+25B8 Ollama),
+	// → (U+2192), ► (U+25BA).
+	reSelectedArrow = regexp.MustCompile(`^\s*[❯>▸→►]\s+(\S.+?)\s*$`)
 	// reNumberedItem matches "1) model" or "1. model" (numbered list entries).
 	reNumberedItem = regexp.MustCompile(`^\s*(\d+)[.)]\s+(\S.+?)\s*$`)
 	// reUnselectedItem matches indented model names without selection indicator.
@@ -75,7 +78,7 @@ func ParseModelMenu(lines []string) *ModelMenu {
 
 	// Second pass: parse all items.
 	for _, line := range lines {
-		// Check for selected arrow indicator (> or ❯).
+		// Check for selected arrow indicator (>, ❯, ▸, →, ►).
 		if m := reSelectedArrow.FindStringSubmatch(line); m != nil {
 			menu.SelectedIndex = len(menu.Models)
 			menu.Models = append(menu.Models, strings.TrimSpace(m[1]))

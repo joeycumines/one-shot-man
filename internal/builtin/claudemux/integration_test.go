@@ -190,9 +190,9 @@ func TestIntegration_ProviderSpawn(t *testing.T) {
 // TestIntegration_MenuNavigation verifies that model selection menu navigation
 // works correctly with the configured provider.
 //
-// For ollama: spawns the agent, waits for the model selection menu to appear,
-// parses it with ParseModelMenu, generates navigation keystrokes via
-// NavigateToModel, and sends them to the PTY.
+// For ollama 0.16.2+: the TUI shows a launcher menu first ("Run a model",
+// "Launch Claude Code", etc.). This test detects and dismisses the launcher,
+// waits for the model selection menu to appear, then navigates to the target.
 //
 // Skipped for providers that don't support ModelNav (e.g., claude-code, which
 // uses --model flag instead).
@@ -218,16 +218,24 @@ func TestIntegration_MenuNavigation(t *testing.T) {
 	}
 	defer handle.Close()
 
-	// Phase 1: Collect output until we can detect a model menu.
+	// Phase 1: Collect output until we detect EITHER a launcher menu or a
+	// model selection menu. Ollama 0.16.2+ shows a launcher first.
 	const menuTimeout = 30 * time.Second
 	menuDetected := false
+	launcherDetected := false
 	var parsedMenu *ModelMenu
 
 	output := collectUntil(t, handle, menuTimeout, func(acc string) bool {
 		lines := splitTerminalLines(acc)
 		menu := ParseModelMenu(lines)
 		if len(menu.Models) >= 2 {
-			// Require at least 2 models — single-model menus auto-select.
+			// Check if this is a launcher menu (has "Run a model").
+			if IsLauncherMenu(menu) {
+				parsedMenu = menu
+				launcherDetected = true
+				return true
+			}
+			// Real model selection menu.
 			parsedMenu = menu
 			menuDetected = true
 			return true
@@ -235,7 +243,7 @@ func TestIntegration_MenuNavigation(t *testing.T) {
 		return false
 	})
 
-	if !menuDetected {
+	if !menuDetected && !launcherDetected {
 		lines := splitTerminalLines(output)
 		t.Logf("Raw output (%d lines, %d bytes):", len(lines), len(output))
 		for i, line := range lines {
@@ -243,10 +251,54 @@ func TestIntegration_MenuNavigation(t *testing.T) {
 				t.Logf("  [%d] %q", i, line)
 			}
 		}
-		t.Fatalf("model selection menu not detected within %v", menuTimeout)
+		t.Fatalf("no menu (model or launcher) detected within %v", menuTimeout)
 	}
 
-	t.Logf("Menu detected: %d models, selected=%d", len(parsedMenu.Models), parsedMenu.SelectedIndex)
+	// Phase 1b: If launcher detected, dismiss it and wait for model menu.
+	if launcherDetected {
+		t.Logf("Launcher menu detected (%d items):", len(parsedMenu.Models))
+		for i, m := range parsedMenu.Models {
+			marker := "  "
+			if i == parsedMenu.SelectedIndex {
+				marker = "▸ "
+			}
+			t.Logf("  %s%s", marker, m)
+		}
+
+		dismissKeys := DismissLauncherKeys(parsedMenu)
+		t.Logf("Dismissing launcher with %d bytes of keystrokes", len(dismissKeys))
+		if err := handle.Send(dismissKeys); err != nil {
+			t.Fatalf("Send launcher dismiss keystrokes: %v", err)
+		}
+
+		// Wait for the actual model selection menu to appear.
+		parsedMenu = nil
+		menuDetected = false
+
+		output = collectUntil(t, handle, menuTimeout, func(acc string) bool {
+			lines := splitTerminalLines(acc)
+			menu := ParseModelMenu(lines)
+			if len(menu.Models) >= 2 && !IsLauncherMenu(menu) {
+				parsedMenu = menu
+				menuDetected = true
+				return true
+			}
+			return false
+		})
+
+		if !menuDetected {
+			lines := splitTerminalLines(output)
+			t.Logf("Post-launcher output (%d lines, %d bytes):", len(lines), len(output))
+			for i, line := range lines {
+				if i < 30 {
+					t.Logf("  [%d] %q", i, line)
+				}
+			}
+			t.Fatalf("model selection menu not detected after launcher dismiss (waited %v)", menuTimeout)
+		}
+	}
+
+	t.Logf("Model menu detected: %d models, selected=%d", len(parsedMenu.Models), parsedMenu.SelectedIndex)
 	for i, m := range parsedMenu.Models {
 		marker := "  "
 		if i == parsedMenu.SelectedIndex {

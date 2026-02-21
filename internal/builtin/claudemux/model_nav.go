@@ -161,6 +161,66 @@ func NavigateToModel(menu *ModelMenu, target string) (string, error) {
 	return keystrokes.String(), nil
 }
 
+// IsLauncherMenu returns true if the parsed menu appears to be an Ollama
+// 0.16.2+ launcher screen rather than a model selection list. The launcher
+// shows items like "Run a model", "Launch Claude Code", etc. which must be
+// dismissed (by pressing Enter on "Run a model") before the actual model
+// selection menu appears.
+//
+// Detection is conservative: any item containing "run a model"
+// (case-insensitive) triggers launcher identification.
+func IsLauncherMenu(menu *ModelMenu) bool {
+	for _, item := range menu.Models {
+		if strings.Contains(strings.ToLower(item), "run a model") {
+			return true
+		}
+	}
+	return false
+}
+
+// DismissLauncherKeys generates keystrokes to navigate to the "Run a model"
+// item in the Ollama launcher menu and press Enter. If the item is already
+// selected (typical default), only KeyEnter is returned.
+//
+// Returns "" if the menu is empty.
+func DismissLauncherKeys(menu *ModelMenu) string {
+	if len(menu.Models) == 0 {
+		return ""
+	}
+
+	// Find "Run a model" in the menu.
+	targetIdx := -1
+	for i, item := range menu.Models {
+		if strings.Contains(strings.ToLower(item), "run a model") {
+			targetIdx = i
+			break
+		}
+	}
+	if targetIdx < 0 {
+		// "Run a model" not found — press Enter on whatever is selected.
+		return KeyEnter
+	}
+
+	currentIdx := menu.SelectedIndex
+	if currentIdx < 0 {
+		currentIdx = 0
+	}
+
+	diff := targetIdx - currentIdx
+	var keys strings.Builder
+	if diff > 0 {
+		for i := 0; i < diff; i++ {
+			keys.WriteString(KeyArrowDown)
+		}
+	} else if diff < 0 {
+		for i := 0; i < -diff; i++ {
+			keys.WriteString(KeyArrowUp)
+		}
+	}
+	keys.WriteString(KeyEnter)
+	return keys.String()
+}
+
 // findModelIndex searches for a model name in a slice using progressively
 // looser matching: exact, case-insensitive, then substring.
 // Returns -1 if no match is found.

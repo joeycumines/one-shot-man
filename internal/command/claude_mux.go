@@ -568,10 +568,13 @@ func (c *ClaudeMuxCommand) dispatchTask(
 
 	// Model auto-navigation state: sliding window of recent lines for menu
 	// detection. Once navigated, the flag prevents repeat attempts.
+	// launcherDismissed tracks whether the Ollama 0.16.2+ launcher menu
+	// ("Run a model" / "Launch Claude Code" / ...) has been dismissed.
 	const menuWindowSize = 20
 	var (
-		menuBuffer     []string
-		modelNavigated bool
+		menuBuffer          []string
+		modelNavigated      bool
+		launcherDismissed   bool
 	)
 
 	// Monitor agent output through ManagedSession health pipeline.
@@ -614,6 +617,24 @@ func (c *ClaudeMuxCommand) dispatchTask(
 					if len(menuBuffer) > menuWindowSize {
 						menuBuffer = menuBuffer[len(menuBuffer)-menuWindowSize:]
 					}
+
+					// Detect Ollama 0.16.2+ launcher menu and dismiss it.
+					if !launcherDismissed {
+						launcherMenu := claudemux.ParseModelMenu(menuBuffer)
+						if claudemux.IsLauncherMenu(launcherMenu) {
+							launcherDismissed = true
+							dismissKeys := claudemux.DismissLauncherKeys(launcherMenu)
+							if dismissKeys != "" {
+								_, _ = fmt.Fprintf(stderr, "[task %d] dismissing Ollama launcher menu\n", taskIdx)
+								if sendErr := agent.Send(dismissKeys); sendErr != nil {
+									_, _ = fmt.Fprintf(stderr, "[task %d] launcher dismiss send: %v\n", taskIdx, sendErr)
+								}
+								menuBuffer = nil // Reset buffer for model selection screen.
+								continue
+							}
+						}
+					}
+
 					if keys := c.tryNavigateModel(menuBuffer, taskIdx, stderr); keys != "" {
 						modelNavigated = true
 						if sendErr := agent.Send(keys); sendErr != nil {

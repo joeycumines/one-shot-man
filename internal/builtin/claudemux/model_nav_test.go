@@ -678,3 +678,177 @@ func TestNavigateToModel_ExactMatchPrecedence(t *testing.T) {
 		t.Errorf("exact match should be preferred, expected %q, got %q", expected, keys)
 	}
 }
+
+// --- IsLauncherMenu tests ---
+
+func TestIsLauncherMenu_OllamaLauncher(t *testing.T) {
+	t.Parallel()
+
+	// Ollama 0.16.2 launcher menu output (ANSI stripped).
+	lines := []string{
+		"Ollama 0.16.2",
+		"",
+		"▸ Run a model",
+		"  Start an interactive chat with a model",
+		"",
+		"  Launch Claude Code",
+		"  Agentic coding across large codebases",
+		"",
+		"  Launch Codex (not installed)",
+		"  Launch OpenClaw (not installed)",
+		"  More...",
+	}
+
+	menu := ParseModelMenu(lines)
+	if !IsLauncherMenu(menu) {
+		t.Error("expected IsLauncherMenu=true for Ollama launcher, got false")
+		t.Logf("Parsed items: %v", menu.Models)
+	}
+}
+
+func TestIsLauncherMenu_RealModelMenu(t *testing.T) {
+	t.Parallel()
+
+	// Real model selection menu — should NOT be detected as launcher.
+	lines := []string{
+		"? Which model would you like to use?",
+		"▸ gpt-oss:20b-cloud",
+		"  glm-4.7-flash:latest",
+		"  codellama:7b",
+	}
+
+	menu := ParseModelMenu(lines)
+	if IsLauncherMenu(menu) {
+		t.Error("expected IsLauncherMenu=false for real model menu, got true")
+	}
+}
+
+func TestIsLauncherMenu_EmptyMenu(t *testing.T) {
+	t.Parallel()
+
+	menu := &ModelMenu{SelectedIndex: -1}
+	if IsLauncherMenu(menu) {
+		t.Error("expected IsLauncherMenu=false for empty menu, got true")
+	}
+}
+
+func TestIsLauncherMenu_CaseInsensitive(t *testing.T) {
+	t.Parallel()
+
+	menu := &ModelMenu{
+		Models:        []string{"RUN A MODEL", "Launch Claude Code"},
+		SelectedIndex: 0,
+	}
+	if !IsLauncherMenu(menu) {
+		t.Error("expected case-insensitive detection of launcher menu")
+	}
+}
+
+// --- DismissLauncherKeys tests ---
+
+func TestDismissLauncherKeys_AlreadySelected(t *testing.T) {
+	t.Parallel()
+
+	// "Run a model" is already selected (index 0).
+	menu := &ModelMenu{
+		Models:        []string{"Run a model", "Launch Claude Code", "More..."},
+		SelectedIndex: 0,
+	}
+
+	keys := DismissLauncherKeys(menu)
+	if keys != KeyEnter {
+		t.Errorf("expected just Enter when already on 'Run a model', got %q", keys)
+	}
+}
+
+func TestDismissLauncherKeys_NeedNavigate(t *testing.T) {
+	t.Parallel()
+
+	// "Launch Claude Code" is selected (index 1), need to go UP to "Run a model" (index 0).
+	menu := &ModelMenu{
+		Models:        []string{"Run a model", "Launch Claude Code", "More..."},
+		SelectedIndex: 1,
+	}
+
+	keys := DismissLauncherKeys(menu)
+	expected := KeyArrowUp + KeyEnter
+	if keys != expected {
+		t.Errorf("expected Up+Enter, got %q", keys)
+	}
+}
+
+func TestDismissLauncherKeys_EmptyMenu(t *testing.T) {
+	t.Parallel()
+
+	menu := &ModelMenu{SelectedIndex: -1}
+	keys := DismissLauncherKeys(menu)
+	if keys != "" {
+		t.Errorf("expected empty string for empty menu, got %q", keys)
+	}
+}
+
+func TestDismissLauncherKeys_NoRunItem(t *testing.T) {
+	t.Parallel()
+
+	// No "Run a model" item — should still return Enter as fallback.
+	menu := &ModelMenu{
+		Models:        []string{"Launch Claude Code", "More..."},
+		SelectedIndex: 0,
+	}
+
+	keys := DismissLauncherKeys(menu)
+	if keys != KeyEnter {
+		t.Errorf("expected Enter fallback when 'Run a model' not found, got %q", keys)
+	}
+}
+
+func TestParseModelMenu_OllamaLauncherOutput(t *testing.T) {
+	t.Parallel()
+
+	// Real Ollama 0.16.2 output (ANSI escape sequences stripped, as the
+	// pipeline would do before feeding to ParseModelMenu in production).
+	lines := []string{
+		"Ollama 0.16.2",
+		"",
+		"▸ Run a model",
+		"  Start an interactive chat with a model",
+		"",
+		"  Launch Claude Code",
+		"  Agentic coding across large codebases",
+		"",
+		"  Launch Codex (not installed)",
+		"  OpenAI's open-source coding agent",
+		"",
+		"  Launch OpenClaw (not installed)",
+		"  Personal AI with 100+ skills",
+		"",
+		"  More...",
+		"  Show additional integrations",
+	}
+
+	menu := ParseModelMenu(lines)
+
+	// Should detect menu items (those matching selection/indented patterns).
+	if len(menu.Models) == 0 {
+		t.Fatal("expected at least 1 model item from launcher output")
+	}
+
+	// First item should be "Run a model" (matched by ▸).
+	if menu.Models[0] != "Run a model" {
+		t.Errorf("expected first item 'Run a model', got %q", menu.Models[0])
+	}
+
+	// Should be detected as launcher.
+	if !IsLauncherMenu(menu) {
+		t.Error("expected IsLauncherMenu=true for parsed launcher output")
+	}
+
+	// DismissLauncherKeys should return Enter (already selected).
+	if menu.SelectedIndex != 0 {
+		t.Errorf("expected SelectedIndex=0, got %d", menu.SelectedIndex)
+	}
+	keys := DismissLauncherKeys(menu)
+	if keys != KeyEnter {
+		t.Errorf("expected just Enter to dismiss, got %q", keys)
+	}
+}

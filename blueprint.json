@@ -43,7 +43,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T200-T202 Done. Build GREEN. Proceeding to T203 (OllamaProvider).",
+    "currentState": "T200-T206 Done. Build GREEN. Running Rule of Two review before commit.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T131 completed in prior sessions spanning multiple days. T101-T118 completed in most recent session. 322 commits ahead of main. 393 files changed, ~113K insertions."
   },
@@ -155,23 +155,23 @@
     },
     {
       "task": "T203: Implement OllamaProvider in claudemux",
-      "description": "Create internal/builtin/claudemux/provider_ollama.go implementing Provider interface. Key differences from ClaudeCodeProvider: (1) default command 'ollama' not 'claude', (2) do NOT inject --model flag (model selected via TUI navigation), (3) SpawnOpts.Command defaults to 'ollama launch claude' (or configurable), (4) ModelSelectionRequired() returns true. Comprehensive tests in provider_ollama_test.go. Run make.",
-      "status": "Not Started"
+      "description": "Created provider_ollama.go with OllamaProvider: Name=ollama, Capabilities={MCP:false, Streaming:true, MultiTurn:true, ModelNav:true}. Spawn ignores opts.Model (TUI nav instead). Added ModelNav field to ProviderCapabilities. 12 tests in provider_ollama_test.go. Build GREEN.",
+      "status": "Done"
     },
     {
       "task": "T204: Wire OllamaProvider into resolveProvider",
-      "description": "In internal/command/claude_mux.go, update resolveProvider() switch to handle 'ollama' case. Update error message to list all supported providers. Add tests: resolve ollama, resolve unknown (error lists providers). Run make.",
-      "status": "Not Started"
+      "description": "Wired into resolveProvider() in claude_mux.go (handles 'ollama' case). Also added JS factory 'ollama(opts?)' in module.go with command/subArgs support. Error msg lists all providers. Build GREEN.",
+      "status": "Done"
     },
     {
       "task": "T205: Wire SafetyValidator into claudemux run() pipeline",
-      "description": "SafetyValidator (safety.go) exists but is not called anywhere in dispatchTask or run(). Wire it: add --safety flag to claude-mux run, create SafetyValidator in run(), classify operations through Validate() in dispatchTask output loop, log/abort on deny. Default disabled. Tests: blocks destructive op, allows read-only, disabled by default. Run make.",
-      "status": "Not Started"
+      "description": "Wired SafetyValidator into dispatchTask and dynamicDispatchLoop. Added --safety flag. When enabled, each agent output line passes through Validate(). PolicyBlock aborts task. PolicyWarn logs. Default disabled. Passed through run→dispatchTask→output loop. Build GREEN.",
+      "status": "Done"
     },
     {
       "task": "T206: Wire MCPInstanceConfig auto-injection into dispatchTask",
-      "description": "MCPInstanceConfig generates per-instance .claude.json with osm mcp-instance as tool-server, but dispatchTask does not call it. Wire: after registry.Create(), call NewMCPInstanceConfig, WriteConfigFile, pass ConfigPath to SpawnOpts, defer Close for cleanup. Tests: config created per task, correct session ID, cleanup removes temp. Run make.",
-      "status": "Not Started"
+      "description": "Wired MCPInstanceConfig into dispatchTask. After registry.Create(), creates per-instance MCP config if provider supports MCP (Capabilities().MCP). WriteConfigFile(), appends SpawnArgs() to taskSpawnOpts.Args, defers Close(). Graceful fallback if config fails. Build GREEN.",
+      "status": "Done"
     },
     {
       "task": "T207: Ollama integration test foundation",

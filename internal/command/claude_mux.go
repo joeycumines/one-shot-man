@@ -41,6 +41,7 @@ type ClaudeMuxCommand struct {
 	runDir      string // working directory for spawned processes
 	runCommand  string // override provider command path
 	tasksFile   string // file with one task per line
+	runSafety   bool   // enable safety validation on agent output
 
 	// baseDir overrides the default instance registry path.
 	// Empty means use the default (~/.osm/claude-mux/instances).
@@ -71,6 +72,7 @@ func (c *ClaudeMuxCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.runDir, "dir", "", "Working directory for spawned processes")
 	fs.StringVar(&c.runCommand, "command", "", "Override provider command path")
 	fs.StringVar(&c.tasksFile, "tasks-file", "", "File with one task per line (for 'run')")
+	fs.BoolVar(&c.runSafety, "safety", false, "Enable safety validation on agent output")
 }
 
 // Execute dispatches to the appropriate subcommand.
@@ -365,6 +367,13 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 		Dir:   c.runDir,
 	}
 
+	// Create safety validator if --safety is enabled.
+	var safetyValidator *claudemux.SafetyValidator
+	if c.runSafety {
+		safetyValidator = claudemux.NewSafetyValidator(claudemux.DefaultSafetyConfig())
+		_, _ = fmt.Fprintf(stdout, "[audit] safety validation: enabled\n")
+	}
+
 	// Dispatch tasks — each gets a fresh agent spawn + ManagedSession.
 	var initialWg sync.WaitGroup
 	taskResults := make([]taskResult, len(tasks))
@@ -389,7 +398,7 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 		go func() {
 			defer initialWg.Done()
 			adapter.setActive(taskText)
-			result := c.dispatchTask(ctx, prov, registry, spawnOpts, worker, taskText, idx, paneID, panel, stdout, stderr)
+			result := c.dispatchTask(ctx, prov, registry, spawnOpts, worker, taskText, idx, paneID, panel, safetyValidator, stdout, stderr)
 			adapter.clearActive()
 			taskResults[idx] = result
 			pool.Release(worker, result.err, time.Now())
@@ -411,7 +420,7 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 	// Dynamic task dispatch: process tasks submitted via control socket.
 	var dynamicResults dynamicTaskResults
 	go func() {
-		c.dynamicDispatchLoop(ctx, dynamicTaskCh, adapter, prov, registry, spawnOpts, pool, panel, &dynamicResults, stdout, stderr)
+		c.dynamicDispatchLoop(ctx, dynamicTaskCh, adapter, prov, registry, spawnOpts, pool, panel, safetyValidator, &dynamicResults, stdout, stderr)
 	}()
 
 	// Wait for initial batch to complete, then shut down.
@@ -471,6 +480,7 @@ func (c *ClaudeMuxCommand) dispatchTask(
 	taskIdx int,
 	paneID string,
 	panel *claudemux.Panel,
+	safetyValidator *claudemux.SafetyValidator,
 	stdout, stderr io.Writer,
 ) taskResult {
 	// Create instance for this task.
@@ -482,8 +492,26 @@ func (c *ClaudeMuxCommand) dispatchTask(
 	}
 	defer func() { _ = registry.Close(instanceID) }()
 
+	// Per-instance MCP config: generate a .claude.json with osm mcp-instance
+	// as the tool server, only for providers that support MCP.
+	taskSpawnOpts := spawnOpts // copy so we can add per-task args
+	if prov.Capabilities().MCP {
+		mcpCfg, mcpErr := claudemux.NewMCPInstanceConfig(instanceID)
+		if mcpErr != nil {
+			_, _ = fmt.Fprintf(stderr, "[task %d] mcp config: %v (continuing without MCP)\n", taskIdx, mcpErr)
+		} else {
+			defer func() { _ = mcpCfg.Close() }()
+			if writeErr := mcpCfg.WriteConfigFile(); writeErr != nil {
+				_, _ = fmt.Fprintf(stderr, "[task %d] mcp config write: %v (continuing without MCP)\n", taskIdx, writeErr)
+			} else {
+				taskSpawnOpts.Args = append(append([]string(nil), taskSpawnOpts.Args...), mcpCfg.SpawnArgs()...)
+				_, _ = fmt.Fprintf(stderr, "[task %d] mcp config: %s\n", taskIdx, mcpCfg.ConfigPath())
+			}
+		}
+	}
+
 	// Spawn fresh agent.
-	agent, err := prov.Spawn(ctx, spawnOpts)
+	agent, err := prov.Spawn(ctx, taskSpawnOpts)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "[task %d] spawn agent: %v\n", taskIdx, err)
 		return taskResult{dispatched: false, err: err}
@@ -591,6 +619,29 @@ func (c *ClaudeMuxCommand) dispatchTask(
 						if sendErr := agent.Send(keys); sendErr != nil {
 							_, _ = fmt.Fprintf(stderr, "[task %d] model nav send: %v\n", taskIdx, sendErr)
 						}
+					}
+				}
+
+				// Safety validation: check each line for dangerous operations.
+				if safetyValidator != nil {
+					assessment := safetyValidator.Validate(claudemux.SafetyAction{
+						Type: "agent_output",
+						Raw:  line,
+					})
+					switch assessment.Action {
+					case claudemux.PolicyBlock:
+						_, _ = fmt.Fprintf(stderr, "[task %d] safety BLOCKED: %s\n", taskIdx, assessment.Reason)
+						return taskResult{dispatched: true,
+							err:         fmt.Errorf("safety blocked: %s", assessment.Reason),
+							guardEvents: guardEvents}
+					case claudemux.PolicyConfirm:
+						// No interactive user in automated pipeline — treat as block.
+						_, _ = fmt.Fprintf(stderr, "[task %d] safety BLOCKED (confirm): %s\n", taskIdx, assessment.Reason)
+						return taskResult{dispatched: true,
+							err:         fmt.Errorf("safety blocked (would require confirmation): %s", assessment.Reason),
+							guardEvents: guardEvents}
+					case claudemux.PolicyWarn:
+						_, _ = fmt.Fprintf(stderr, "[task %d] safety WARN: %s\n", taskIdx, assessment.Reason)
 					}
 				}
 
@@ -914,6 +965,7 @@ func (c *ClaudeMuxCommand) dynamicDispatchLoop(
 	spawnOpts claudemux.SpawnOpts,
 	pool *claudemux.Pool,
 	panel *claudemux.Panel,
+	safetyValidator *claudemux.SafetyValidator,
 	results *dynamicTaskResults,
 	stdout, stderr io.Writer,
 ) {
@@ -953,7 +1005,7 @@ func (c *ClaudeMuxCommand) dynamicDispatchLoop(
 			go func() {
 				defer taskWg.Done()
 				adapter.setActive(taskText)
-				result := c.dispatchTask(ctx, prov, registry, spawnOpts, worker, taskText, idx, paneID, panel, stdout, stderr)
+				result := c.dispatchTask(ctx, prov, registry, spawnOpts, worker, taskText, idx, paneID, panel, safetyValidator, stdout, stderr)
 				adapter.clearActive()
 				results.add(result)
 				pool.Release(worker, result.err, time.Now())

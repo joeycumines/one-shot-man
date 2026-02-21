@@ -7,18 +7,19 @@
 - **Blueprint**: Rewritten 2026-02-21. T101-T118 Done. Proceeding to T200.
 
 ## Completed
-- **T200**: Done. Regex fix + 4 tests. Build GREEN.
+- **T200**: Done. Regex fix + 4 tests.
+- **T201**: Done. splitCommand + 18 tests.
+- **T202**: Done. No-op (shared code covers Windows).
+- **T203**: Done. OllamaProvider + ModelNav capability.
+- **T204**: Done. Wired into resolveProvider + JS module.
+- **T205**: Done. SafetyValidator in dispatchTask pipeline.
+- **T206**: Done. MCPInstanceConfig auto-injection.
 
 ## Current Task
-- **T202**: Fix PTY command word-splitting (Windows)
-- **File**: internal/builtin/pty/pty_windows.go
-- **Issue**: Windows Spawn returns ErrNotSupported — verify splitting doesn't break stub
+- **Rule of Two**: Review gate for T200-T206 before committing.
 
-## Next Steps After T202
-1. T203: Implement OllamaProvider
-2. T203: Implement OllamaProvider
-3. T204: Wire into resolveProvider
-4. T205-T206: Wire SafetyValidator + MCPInstanceConfig
+## Next
+- T207: Ollama integration test foundation
 
 ## Key Files
 - blueprint.json — exhaustive task list

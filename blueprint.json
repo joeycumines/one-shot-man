@@ -43,7 +43,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T200-T213, T221-T227, T209 +T228/T230 partial Done. 737 claudemux tests GREEN. module_bindings_test.go (35 tests) + pr_split compilation tests (2 tests) added. macOS GREEN. config.mk directive RESOLVED.",
+    "currentState": "T200-T213, T221-T227, T209, T209b Done. 759 claudemux tests GREEN + 6/6 integration tests GREEN with real Ollama gpt-oss:20b-cloud. Launcher detection, ANSI stripping, scroll-to-find all verified against Ollama 0.16.2. Full build (44 packages) GREEN. config.mk directive SATISFIED.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T131 completed in prior sessions spanning multiple days. T101-T118 completed in most recent session. 322 commits ahead of main. 393 files changed, ~113K insertions."
   },
@@ -140,7 +140,7 @@
     },
     {
       "task": "T200: Fix TUI regex for Ollama model selection character",
-      "description": "Fixed reSelectedArrow regex in model_nav.go from [❯>] to [❯>▸►→]. Added 4 tests: OllamaTriangleArrow, RightwardsArrow, BlackPointer, OllamaTriangleArrow_NavigateToModel. Build GREEN.",
+      "description": "Fixed reSelectedArrow regex in model_nav.go from [❯>] to [❯>▸►→]. Added 4 tests: OllamaTriangleArrow, RightwardsArrow, BlackPointer, OllamaTriangleArrow_NavigateToModel. Later extended with ANSI stripping + launcher detection in T209b.",
       "status": "Done"
     },
     {
@@ -186,6 +186,11 @@
     {
       "task": "T209: End-to-end PR split execution test",
       "description": "DONE. TestPRSplit_EndToEnd_WithCompilation + TestPRSplit_EndToEnd_BTWorkflow_WithCompilation: create test git repo with go.mod, run full PR split workflow (analyze→group→plan→execute→verify→equivalence), verify each stacked branch compiles with 'go build ./...', verify tree hash equivalence to source. BT workflow variant also tested. 2 new tests added to pr_split_test.go. Plus 26 existing PR split tests covering pure functions, git ops, conflict handling, strategy selection, cleanup.",
+      "status": "Done"
+    },
+    {
+      "task": "T209b: Real Ollama Integration Testing (INTERRUPTING)",
+      "description": "DONE. Hana's config.mk directive: RUN REAL INTEGRATION TESTS. Fixed Ollama 0.16.2 launcher menu handling: (1) Added IsLauncherMenu + DismissLauncherKeys to model_nav.go for two-step menu navigation. (2) Added StripANSI to handle ANSI escape sequences in PTY output — ParseModelMenu now strips ANSI before regex matching. (3) Tightened reUnselectedItem regex from 2+ to 2-3 leading spaces to exclude description lines. (4) Added launcherDismissed flag to claude_mux.go dispatchTask pipeline. (5) Updated TestIntegration_MenuNavigation with scroll-to-find loop for models below the fold. (6) Added 13 new unit tests: StripANSI, IsLauncherMenu, DismissLauncherKeys, ParseModelMenu_OllamaLauncherWithANSI. All 6 integration tests PASS with real Ollama + gpt-oss:20b-cloud. 759 claudemux unit tests PASS. Full build (44 packages) GREEN.",
       "status": "Done"
     },
     {

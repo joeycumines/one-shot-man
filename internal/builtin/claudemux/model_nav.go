@@ -7,6 +7,17 @@ import (
 	"strings"
 )
 
+// reANSIEscape matches ANSI escape sequences (CSI and OSC) commonly found
+// in terminal output. Used to strip formatting before menu parsing.
+var reANSIEscape = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x1b]*\x1b\\|\x1b\[[?][0-9;]*[a-zA-Z]`)
+
+// StripANSI removes ANSI escape sequences from a string, returning the
+// plain text content. This is essential for parsing PTY output that contains
+// color codes, cursor positioning, and other terminal control sequences.
+func StripANSI(s string) string {
+	return reANSIEscape.ReplaceAllString(s, "")
+}
+
 var (
 	// ErrNoModels is returned when a model menu has no detected models.
 	ErrNoModels = errors.New("claudemux: no models detected in menu")
@@ -67,9 +78,17 @@ var (
 func ParseModelMenu(lines []string) *ModelMenu {
 	menu := &ModelMenu{SelectedIndex: -1}
 
+	// Strip ANSI escape sequences from all lines before parsing.
+	// PTY output contains color codes, cursor positioning, and other
+	// terminal control sequences that interfere with regex matching.
+	cleaned := make([]string, len(lines))
+	for i, line := range lines {
+		cleaned[i] = StripANSI(line)
+	}
+
 	// First pass: check if any line has a selection indicator or numbered item.
 	hasIndicator := false
-	for _, line := range lines {
+	for _, line := range cleaned {
 		if reSelectedArrow.MatchString(line) || reNumberedItem.MatchString(line) {
 			hasIndicator = true
 			break
@@ -77,7 +96,7 @@ func ParseModelMenu(lines []string) *ModelMenu {
 	}
 
 	// Second pass: parse all items.
-	for _, line := range lines {
+	for _, line := range cleaned {
 		// Check for selected arrow indicator (>, ❯, ▸, →, ►).
 		if m := reSelectedArrow.FindStringSubmatch(line); m != nil {
 			menu.SelectedIndex = len(menu.Models)

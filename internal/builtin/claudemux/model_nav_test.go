@@ -852,3 +852,89 @@ func TestParseModelMenu_OllamaLauncherOutput(t *testing.T) {
 		t.Errorf("expected just Enter to dismiss, got %q", keys)
 	}
 }
+
+// --- StripANSI tests ---
+
+func TestStripANSI_Basic(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"plain text", "hello world", "hello world"},
+		{"color code", "\x1b[31mred\x1b[0m", "red"},
+		{"bold+bg", "\x1b[1;48;5;236m▸ Run a model\x1b[0m", "▸ Run a model"},
+		{"cursor hide", "\x1b[?25l", ""},
+		{"erase to end", "text\x1b[K", "text"},
+		{"256 color", "\x1b[38;5;246mgreyed out\x1b[0m", "greyed out"},
+		{"italic", "\x1b[3;38;5;246m(not installed)\x1b[0m", "(not installed)"},
+		{"multiple codes", "\x1b[1mOllama \x1b[38;5;250m0.16.2\x1b[0m\x1b[0m", "Ollama 0.16.2"},
+		{"empty", "", ""},
+		{"no ansi", "just text", "just text"},
+		{"bracketed paste", "\x1b[?2004h", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := StripANSI(tt.input)
+			if got != tt.want {
+				t.Errorf("StripANSI(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseModelMenu_OllamaLauncherWithANSI(t *testing.T) {
+	t.Parallel()
+
+	// Real Ollama 0.16.2 output WITH ANSI escape sequences (captured from PTY).
+	lines := []string{
+		"\x1b[?25l",
+		"\x1b[?2004h",
+		"\x1b[1mOllama \x1b[38;5;250m0.16.2\x1b[0m\x1b[0m                                          \x1b[K",
+		"                                                       \x1b[K",
+		"\x1b[1;48;5;236m▸ Run a model\x1b[0m                                          \x1b[K",
+		"    \x1b[38;5;246mStart an interactive chat with a model\x1b[0m             \x1b[K",
+		"                                                       \x1b[K",
+		"  Launch Claude Code                                   \x1b[K",
+		"    \x1b[38;5;246mAgentic coding across large codebases\x1b[0m              \x1b[K",
+		"                                                       \x1b[K",
+		"  \x1b[38;5;246mLaunch Codex \x1b[3;38;5;246m(not installed)\x1b[0m\x1b[0m                         \x1b[K",
+		"    \x1b[38;5;246mOpenAI's open-source coding agent\x1b[0m                  \x1b[K",
+		"                                                       \x1b[K",
+		"  \x1b[38;5;246mLaunch OpenClaw \x1b[3;38;5;246m(not installed)\x1b[0m\x1b[0m                      \x1b[K",
+		"    \x1b[38;5;246mPersonal AI with 100+ skills\x1b[0m                       \x1b[K",
+		"                                                       \x1b[K",
+		"  More...                                              \x1b[K",
+		"    \x1b[38;5;246mShow additional integrations\x1b[0m                       \x1b[K",
+		"                                                       \x1b[K",
+		"                                                       \x1b[K",
+		"\x1b[38;5;244m↑/↓ navigate • enter launch • → change model • esc quit\x1b[0m\x1b[K",
+	}
+
+	menu := ParseModelMenu(lines)
+
+	// With ANSI stripping in ParseModelMenu, this should now detect the launcher.
+	if len(menu.Models) == 0 {
+		t.Fatal("expected at least 1 model item from ANSI launcher output")
+	}
+
+	// First item should be "Run a model".
+	if menu.Models[0] != "Run a model" {
+		t.Errorf("expected first item 'Run a model', got %q", menu.Models[0])
+	}
+
+	// Should be detected as launcher.
+	if !IsLauncherMenu(menu) {
+		t.Error("expected IsLauncherMenu=true for ANSI launcher output")
+	}
+
+	// Should have more items parsed (the indented ones).
+	if len(menu.Models) < 3 {
+		t.Logf("Parsed models: %v", menu.Models)
+		t.Errorf("expected at least 3 items from launcher, got %d", len(menu.Models))
+	}
+}

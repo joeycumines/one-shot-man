@@ -572,9 +572,9 @@ func (c *ClaudeMuxCommand) dispatchTask(
 	// ("Run a model" / "Launch Claude Code" / ...) has been dismissed.
 	const menuWindowSize = 20
 	var (
-		menuBuffer          []string
-		modelNavigated      bool
-		launcherDismissed   bool
+		menuBuffer        []string
+		modelNavigated    bool
+		launcherDismissed bool
 	)
 
 	// Monitor agent output through ManagedSession health pipeline.

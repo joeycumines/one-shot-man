@@ -750,6 +750,218 @@ func TestPRSplit_VerifyEquivalenceDetailed_Equivalent(t *testing.T) {
 //  Conflict handling tests
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+//  T209: End-to-end PR split with real compilation verification
+// ---------------------------------------------------------------------------
+
+// initCompilableGitRepo creates a temporary git repo with go.mod and
+// compilable Go source files. Each split branch from this repo can be
+// verified with "go build ./..." independently.
+func initCompilableGitRepo(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+
+	runGit(t, dir, "init", "-b", "main")
+	runGit(t, dir, "config", "user.email", "test@test.com")
+	runGit(t, dir, "config", "user.name", "Test User")
+
+	for _, f := range []struct{ path, content string }{
+		{"go.mod", "module example.com/test-project\n\ngo 1.21\n"},
+		{"pkg/types.go", "package pkg\n\n// Foo is a basic type.\ntype Foo struct {\n\tName string\n}\n"},
+		{"cmd/app/main.go", "package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"hello\") }\n"},
+		{"README.md", "# Test Project\n"},
+	} {
+		fullPath := filepath.Join(dir, f.path)
+		require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
+		require.NoError(t, os.WriteFile(fullPath, []byte(f.content), 0o644))
+	}
+
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-m", "initial commit")
+
+	return dir
+}
+
+// addCompilableFeatureFiles creates a "feature" branch with new Go source
+// files across several directories. Each file uses only stdlib imports so
+// that "go build ./..." succeeds without network access.
+func addCompilableFeatureFiles(t *testing.T, dir string) {
+	t.Helper()
+
+	runGit(t, dir, "checkout", "-b", "feature")
+
+	for _, f := range []struct{ path, content string }{
+		{"pkg/bar.go", "package pkg\n\n// Bar returns a greeting string.\nfunc Bar() string { return \"bar\" }\n"},
+		{"cmd/app/run.go", "package main\n\n// run executes the application logic.\nfunc run() error { return nil }\n"},
+		{"docs/guide.md", "# Guide\n\nUsage instructions.\n"},
+	} {
+		fullPath := filepath.Join(dir, f.path)
+		require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
+		require.NoError(t, os.WriteFile(fullPath, []byte(f.content), 0o644))
+	}
+
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-m", "add feature implementation and docs")
+}
+
+// TestPRSplit_EndToEnd_WithCompilation verifies the FULL PR split workflow
+// end-to-end with real compilation verification on each stacked branch.
+//
+// This is T209: the most critical integration test proving that the PR
+// split script is a useful command line application that actually works.
+//
+// Workflow: analyze → group → plan → execute → verify (go build) → equivalence
+func TestPRSplit_EndToEnd_WithCompilation(t *testing.T) {
+	t.Parallel()
+	bridge, runJS := prSplitTestEnv(t)
+
+	// E2E test with real compilation; increase timeout to avoid flakes.
+	bridge.SetTimeout(60 * time.Second)
+
+	sp := prSplitScriptPath(t)
+
+	dir := initCompilableGitRepo(t)
+	addCompilableFeatureFiles(t, dir)
+
+	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
+	runJS(`var prSplit = require('` + sp + `');`)
+
+	// 1. Analyze what changed.
+	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
+
+	errVal := runJS(`analysis.error`)
+	assert.True(t, goja.IsNull(errVal) || goja.IsUndefined(errVal), "analysis error: %v", errVal)
+	assert.Equal(t, "feature", runJS(`analysis.currentBranch`).String())
+	assert.Equal(t, int64(3), runJS(`analysis.files.length`).ToInteger(),
+		"expected 3 changed files: pkg/bar.go, cmd/app/run.go, docs/guide.md")
+
+	// 2. Group by directory (depth=1).
+	runJS(`var groups = prSplit.groupByDirectory(analysis.files, 1);`)
+	groupKeys := runJS(`Object.keys(groups).sort().join(',')`)
+	assert.Equal(t, "cmd,docs,pkg", groupKeys.String())
+
+	// 3. Create split plan with "go build ./..." as verification command.
+	runJS(`var plan = prSplit.createSplitPlan(groups, {
+		baseBranch: 'main',
+		sourceBranch: 'feature',
+		dir: '` + escapedDir + `',
+		branchPrefix: 'split/',
+		verifyCommand: 'go build ./...'
+	});`)
+
+	// Validate plan.
+	valResult := runJS(`JSON.stringify(prSplit.validatePlan(plan))`)
+	assert.Contains(t, valResult.String(), `"valid":true`)
+
+	assert.Equal(t, int64(3), runJS(`plan.splits.length`).ToInteger())
+	t.Logf("Split plan: %d splits", 3)
+	for i := 0; i < 3; i++ {
+		name := runJS(fmt.Sprintf(`plan.splits[%d].name`, i)).String()
+		filesLen := runJS(fmt.Sprintf(`plan.splits[%d].files.length`, i)).ToInteger()
+		t.Logf("  %s (%d files)", name, filesLen)
+	}
+
+	// 4. Execute the split — creates stacked branches.
+	runJS(`var execResult = prSplit.executeSplit(plan);`)
+	execErr := runJS(`execResult.error`)
+	assert.True(t, goja.IsNull(execErr) || goja.IsUndefined(execErr),
+		"execute error: %v", execErr)
+
+	splitCount := runJS(`execResult.results.length`).ToInteger()
+	assert.Equal(t, int64(3), splitCount)
+	for i := int64(0); i < splitCount; i++ {
+		sha := runJS(fmt.Sprintf(`execResult.results[%d].sha`, i)).String()
+		name := runJS(fmt.Sprintf(`execResult.results[%d].name`, i)).String()
+		assert.NotEmpty(t, sha, "split %s should have a SHA", name)
+		t.Logf("  Created: %s (sha=%s)", name, sha[:8])
+	}
+
+	// Verify branches were created in git.
+	branches := runGit(t, dir, "branch")
+	assert.Contains(t, branches, "split/01-cmd")
+	assert.Contains(t, branches, "split/02-docs")
+	assert.Contains(t, branches, "split/03-pkg")
+
+	// 5. Verify each split compiles with "go build ./..."
+	runJS(`var verify = prSplit.verifySplits(plan);`)
+	allPassed := runJS(`verify.allPassed`).ToBoolean()
+
+	verifyLen := runJS(`verify.results.length`).ToInteger()
+	for i := int64(0); i < verifyLen; i++ {
+		name := runJS(fmt.Sprintf(`verify.results[%d].name`, i)).String()
+		passed := runJS(fmt.Sprintf(`verify.results[%d].passed`, i)).ToBoolean()
+		t.Logf("  Verify: %s compiled=%v", name, passed)
+		if !passed {
+			errStr := runJS(fmt.Sprintf(`verify.results[%d].error`, i)).String()
+			t.Logf("    Error: %s", errStr)
+		}
+		assert.True(t, passed, "split %s should compile with 'go build ./...'", name)
+	}
+	assert.True(t, allPassed, "all split branches must compile independently")
+
+	// 6. Verify tree equivalence — final split tree must match source.
+	runJS(`var equiv = prSplit.verifyEquivalence(plan);`)
+	equivalent := runJS(`equiv.equivalent`).ToBoolean()
+	assert.True(t, equivalent, "final split tree hash must equal source branch tree hash")
+	if !equivalent {
+		splitTree := runJS(`equiv.splitTree`).String()
+		sourceTree := runJS(`equiv.sourceTree`).String()
+		t.Fatalf("Tree mismatch: split=%s source=%s", splitTree, sourceTree)
+	}
+
+	// 7. Verify current branch was restored.
+	currentBranch := strings.TrimSpace(runGit(t, dir, "rev-parse", "--abbrev-ref", "HEAD"))
+	assert.Equal(t, "feature", currentBranch)
+
+	t.Log("T209 PASS: Full PR split workflow with real compilation verification")
+}
+
+// TestPRSplit_EndToEnd_BTWorkflow_WithCompilation runs the BT-based workflow
+// with real go build verification, proving the behavior tree integration
+// works end-to-end with compilable projects.
+func TestPRSplit_EndToEnd_BTWorkflow_WithCompilation(t *testing.T) {
+	t.Parallel()
+	bridge, runJS := prSplitTestEnv(t)
+
+	bridge.SetTimeout(60 * time.Second)
+
+	sp := prSplitScriptPath(t)
+
+	dir := initCompilableGitRepo(t)
+	addCompilableFeatureFiles(t, dir)
+
+	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
+	runJS(`var prSplit = require('` + sp + `');`)
+	runJS(`var bt = require('osm:bt');`)
+
+	// Build BT workflow tree with real compilation verification.
+	runJS(`var bb = new bt.Blackboard();`)
+	runJS(`var tree = prSplit.createWorkflowTree(bb, {
+		baseBranch: 'main',
+		dir: '` + escapedDir + `',
+		groupStrategy: 'directory',
+		branchPrefix: 'bt-compile/',
+		verifyCommand: 'go build ./...'
+	});`)
+
+	// Tick the tree — should succeed (all steps complete).
+	statusVal := runJS(`bt.tick(tree)`)
+	assert.Equal(t, "success", statusVal.String(), "BT workflow should succeed")
+
+	// Verify equivalence was stored on blackboard.
+	equivVal := runJS(`bb.get('equivalence').equivalent`)
+	assert.True(t, equivVal.ToBoolean(), "BT workflow tree equivalence should hold")
+
+	// Verify branches were created.
+	branches := runGit(t, dir, "branch")
+	assert.Contains(t, branches, "bt-compile/01-cmd")
+	assert.Contains(t, branches, "bt-compile/02-docs")
+	assert.Contains(t, branches, "bt-compile/03-pkg")
+
+	t.Log("T209 BT PASS: BT workflow with real compilation verification")
+}
+
 func TestPRSplit_ExecuteSplit_MissingFile(t *testing.T) {
 	t.Parallel()
 	_, runJS := prSplitTestEnv(t)

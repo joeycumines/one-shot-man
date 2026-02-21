@@ -1,4 +1,3 @@
-package ollama
 package ollama_test
 
 import (
@@ -30,800 +29,799 @@ func newTestServer(t *testing.T, routes map[string]http.HandlerFunc) (*httptest.
 		t.Fatalf("NewClient(%q): %v", srv.URL, err)
 	}
 	return srv, c
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-}	}		t.Errorf("writeJSON: %v", err)	if err := json.NewEncoder(w).Encode(v); err != nil {	w.Header().Set("Content-Type", "application/json")	t.Helper()func writeJSON(t *testing.T, w http.ResponseWriter, v interface{}) {// writeJSON is a test helper that writes a JSON response.}	}		t.Fatalf("Chat: %v", err)	if err != nil {	})		Options:  map[string]interface{}{"temperature": 0.7},		Messages: []ollama.Message{{Role: "user", Content: "hi"}},		Model:    "llama3.2",	_, err := c.Chat(context.Background(), ollama.ChatRequest{	})		},			})				Message: ollama.Message{Role: "assistant", Content: "ok"},				Done:    true,				Model:   "llama3.2",			writeJSON(t, w, ollama.ChatResponse{			}				t.Errorf("temperature = %v, want 0.7", temp)			if tempFloat, ok := temp.(float64); !ok || tempFloat != 0.7 {			}				t.Error("expected temperature in options")			if !ok {			temp, ok := req.Options["temperature"]			}				t.Error("expected options to be set")			if req.Options == nil {			}				t.Errorf("unmarshal: %v", err)			if err := json.Unmarshal(body, &req); err != nil {			var req ollama.ChatRequest			body, _ := io.ReadAll(r.Body)		"POST /api/chat": func(w http.ResponseWriter, r *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestChat_WithOptions(t *testing.T) {}	_ = c	}		t.Fatalf("NewClient: %v", err)	if err != nil {	c, err := ollama.NewClient("http://localhost:11434", ollama.WithTimeout(30*time.Second))func TestWithTimeout(t *testing.T) {}	_ = c	// We can't inspect the client directly, but at least verify no panic.	}		t.Fatalf("NewClient: %v", err)	if err != nil {	c, err := ollama.NewClient("http://localhost:11434", ollama.WithHTTPClient(custom))	custom := &http.Client{Timeout: 5 * time.Second}func TestWithHTTPClient(t *testing.T) {}	}		t.Error("empty capabilities should not support tools")	if m2.SupportsTools() {	m2 := ollama.ModelInfo{}	// Empty capabilities.	}		t.Error("expected HasCapability(nonexistent) == false")	if m.HasCapability("nonexistent") {	}		t.Error("expected HasCapability(vision) == true")	if !m.HasCapability("vision") {	}		t.Error("expected SupportsTools() == true")	if !m.SupportsTools() {	}		Capabilities: []string{"completion", "tools", "vision"},	m := ollama.ModelInfo{func TestModelInfo_Capabilities(t *testing.T) {}	}		t.Error("BoolPtr(false) should return *false")	if p2 == nil || *p2 {	p2 := ollama.BoolPtr(false)	}		t.Error("BoolPtr(true) should return *true")	if p == nil || !*p {	p := ollama.BoolPtr(true)func TestBoolPtr(t *testing.T) {}	}		})			}				t.Errorf("Error() = %q, want %q", got, tt.want)			if got != tt.want {			got := tt.err.Error()		t.Run(tt.name, func(t *testing.T) {	for _, tt := range tests {	}		},			want: "ollama: 500 Internal Server Error",			err:  ollama.OllamaError{Status: "500 Internal Server Error"},			name: "without_error_message",		{		},			want: "ollama: 404 Not Found: model not found",			err:  ollama.OllamaError{Status: "404 Not Found", ErrorMessage: "model not found"},			name: "with_error_message",		{	}{		want string		err  ollama.OllamaError		name string	tests := []struct {func TestOllamaError_Error(t *testing.T) {}	}		t.Fatal("expected error for cancelled context")	if err == nil {	})		Messages: []ollama.Message{{Role: "user", Content: "hi"}},		Model:    "llama3.2",	_, err := c.Chat(ctx, ollama.ChatRequest{	cancel() // Cancel immediately.	ctx, cancel := context.WithCancel(context.Background())	})		},			writeJSON(t, w, ollama.ChatResponse{})			time.Sleep(5 * time.Second)			// Delay to allow cancellation.		"POST /api/chat": func(w http.ResponseWriter, _ *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestChat_ContextCancelled(t *testing.T) {}	}		t.Errorf("expected io.EOF after done, got %v", err)	if err != io.EOF {	_, err = reader.Next()	// Next call should return EOF.	}		t.Error("expected Done=true")	if !chunk.Done {	}		t.Fatalf("Next: %v", err)	if err != nil {	chunk, err := reader.Next()	// Read the done message.	defer func() { _ = reader.Close() }()	}		t.Fatalf("ChatStream: %v", err)	if err != nil {	})		Messages: []ollama.Message{{Role: "user", Content: "Hi"}},		Model:    "llama3.2",	reader, err := c.ChatStream(context.Background(), ollama.ChatRequest{	})		},			_, _ = w.Write([]byte("\n"))			_, _ = w.Write(data)			})				Message: ollama.Message{Role: "assistant", Content: "done"},				Done:    true,				Model:   "llama3.2",			data, _ := json.Marshal(ollama.ChatResponse{			w.Header().Set("Content-Type", "application/x-ndjson")		"POST /api/chat": func(w http.ResponseWriter, _ *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestChatStream_ReaderAfterDone(t *testing.T) {}	}		t.Fatal("expected error reading after close")	if err == nil {	_, err = reader.Next()	// Reading after close.	}		}			t.Errorf("Close() #%d: %v", i+1, err)		if err := reader.Close(); err != nil {	for i := 0; i < 3; i++ {	// Close multiple times — should not panic.	}		t.Fatalf("ChatStream: %v", err)	if err != nil {	})		Messages: []ollama.Message{{Role: "user", Content: "Hi"}},		Model:    "llama3.2",	reader, err := c.ChatStream(context.Background(), ollama.ChatRequest{	})		},			_, _ = w.Write([]byte("\n"))			_, _ = w.Write(data)			})				Message: ollama.Message{Role: "assistant", Content: "done"},				Done:    true,				Model:   "llama3.2",			data, _ := json.Marshal(ollama.ChatResponse{			w.Header().Set("Content-Type", "application/x-ndjson")		"POST /api/chat": func(w http.ResponseWriter, _ *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestChatStream_CloseIdempotent(t *testing.T) {}	}		t.Fatal("expected error for bad request")	if err == nil {	})		Messages: []ollama.Message{{Role: "user", Content: "Hi"}},		Model:    "llama3.2",	_, err := c.ChatStream(context.Background(), ollama.ChatRequest{	})		},			writeJSON(t, w, map[string]string{"error": "bad request"})			w.WriteHeader(http.StatusBadRequest)		"POST /api/chat": func(w http.ResponseWriter, _ *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestChatStream_Error(t *testing.T) {}	}		t.Errorf("streamed content = %q, want %q", combined, "Hello world!")	if combined != "Hello world!" {	combined := strings.Join(parts, "")	}		}			}				t.Errorf("final EvalCount = %d, want 3", chunk.EvalCount)			if chunk.EvalCount != 3 {		if chunk.Done {		parts = append(parts, chunk.Message.Content)		}			t.Fatalf("Next: %v", err)		if err != nil {		}			break		if err == io.EOF {		chunk, err := reader.Next()	for {	var parts []string	defer func() { _ = reader.Close() }()	}		t.Fatalf("ChatStream: %v", err)	if err != nil {	})		Messages: []ollama.Message{{Role: "user", Content: "Hi"}},		Model:    "llama3.2",	reader, err := c.ChatStream(context.Background(), ollama.ChatRequest{	})		},			}				flusher.Flush()				_, _ = w.Write([]byte("\n"))				_, _ = w.Write(data)				data, _ := json.Marshal(chunk)			for _, chunk := range chunks {			}				{Model: "llama3.2", Message: ollama.Message{Role: "assistant", Content: "!"}, Done: true, DoneReason: "stop", EvalCount: 3},				{Model: "llama3.2", Message: ollama.Message{Role: "assistant", Content: " world"}, Done: false},				{Model: "llama3.2", Message: ollama.Message{Role: "assistant", Content: "Hello"}, Done: false},			chunks := []ollama.ChatResponse{			}				t.Fatal("expected Flusher")			if !ok {			flusher, ok := w.(http.Flusher)			w.Header().Set("Content-Type", "application/x-ndjson")			}				t.Error("expected stream=true for ChatStream")			if req.Stream == nil || !*req.Stream {			_ = json.Unmarshal(body, &req)			var req ollama.ChatRequest			body, _ := io.ReadAll(r.Body)		"POST /api/chat": func(w http.ResponseWriter, r *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestChatStream(t *testing.T) {}	}		t.Errorf("error = %q, want to contain 'not found'", ollamaErr.Error())	if !strings.Contains(ollamaErr.Error(), "not found") {	}		t.Errorf("StatusCode = %d, want 404", ollamaErr.StatusCode)	if ollamaErr.StatusCode != 404 {	}		t.Fatalf("expected *OllamaError, got %T: %v", err, err)	if !ok {	ollamaErr, ok := err.(*ollama.OllamaError)	}		t.Fatal("expected error for 404")	if err == nil {	})		Messages: []ollama.Message{{Role: "user", Content: "hi"}},		Model:    "nonexistent",	_, err := c.Chat(context.Background(), ollama.ChatRequest{	})		},			writeJSON(t, w, map[string]string{"error": "model 'nonexistent' not found"})			w.WriteHeader(http.StatusNotFound)		"POST /api/chat": func(w http.ResponseWriter, _ *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestChat_HTTPError(t *testing.T) {}	}		t.Errorf("Turn 2 content = %q", resp2.Message.Content)	if resp2.Message.Content != "The file contains: file contents here" {	}		t.Fatalf("Turn 2: %v", err)	if err != nil {	})		Messages: msgs,		Model:    "llama3.2",	resp2, err := c.Chat(context.Background(), ollama.ChatRequest{	}		{Role: "tool", Content: "file contents here"},		resp1.Message, // assistant with tool_calls		{Role: "user", Content: "Read /tmp/test.txt"},	msgs := []ollama.Message{	// Turn 2: send tool result	}		t.Fatalf("Turn 1: expected 1 tool call, got %d", len(resp1.Message.ToolCalls))	if len(resp1.Message.ToolCalls) != 1 {	}		t.Fatalf("Turn 1: %v", err)	if err != nil {	})		}},			},				Parameters:  json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`),				Description: "Read a file",				Name:        "read_file",			Function: ollama.ToolFunction{			Type: "function",		Tools: []ollama.Tool{{		Messages: []ollama.Message{{Role: "user", Content: "Read /tmp/test.txt"}},		Model:    "llama3.2",	resp1, err := c.Chat(context.Background(), ollama.ChatRequest{	// Turn 1: user message -> tool call	})		},			}				t.Errorf("unexpected call count: %d", n)			default:				})					},						Content: "The file contains: file contents here",						Role:    "assistant",					Message: ollama.Message{					Done:  true,					Model: "llama3.2",				writeJSON(t, w, ollama.ChatResponse{				}					t.Error("expected tool role message in second call")				if !foundToolMsg {				}					}						}							t.Errorf("tool content = %q, want 'file contents here'", msg.Content)						if msg.Content != "file contents here" {						foundToolMsg = true					if msg.Role == "tool" {				for _, msg := range req.Messages {				foundToolMsg := false				// Second call: verify tool result message is present			case 2:				})					},						},							}},								Arguments: map[string]interface{}{"path": "/tmp/test.txt"},								Name:      "read_file",							{Function: ollama.ToolCallFunction{						ToolCalls: []ollama.ToolCall{						Role: "assistant",					Message: ollama.Message{					Done:  true,					Model: "llama3.2",				writeJSON(t, w, ollama.ChatResponse{				// First call: return tool call			case 1:			switch n {			n := callCount.Add(1)			}				t.Errorf("unmarshal: %v", err)			if err := json.Unmarshal(body, &req); err != nil {			var req ollama.ChatRequest			body, _ := io.ReadAll(r.Body)		"POST /api/chat": func(w http.ResponseWriter, r *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{	var callCount atomic.Int32	// 2. User sends tool result -> model returns final answer	// 1. User asks -> model returns tool_call	// Simulate a multi-turn tool-calling conversation:func TestChat_ToolCallResponseRoundtrip(t *testing.T) {}	}		t.Errorf("location = %v, want Tokyo", tc.Function.Arguments["location"])	if !ok || loc != "Tokyo" {	loc, ok := tc.Function.Arguments["location"].(string)	}		t.Errorf("tool call name = %q, want get_weather", tc.Function.Name)	if tc.Function.Name != "get_weather" {	tc := resp.Message.ToolCalls[0]	}		t.Fatalf("len(ToolCalls) = %d, want 1", len(resp.Message.ToolCalls))	if len(resp.Message.ToolCalls) != 1 {	}		t.Fatalf("Chat with tools: %v", err)	if err != nil {	})		},			},				},					Parameters:  weatherSchema,					Description: "Get current weather for a location",					Name:        "get_weather",				Function: ollama.ToolFunction{				Type: "function",			{		Tools: []ollama.Tool{		},			{Role: "user", Content: "What's the weather in Tokyo?"},		Messages: []ollama.Message{		Model: "llama3.2",	resp, err := c.Chat(context.Background(), ollama.ChatRequest{	}`)		"required": ["location"]		},			"location": {"type": "string", "description": "City name"}		"properties": {		"type": "object",	weatherSchema := json.RawMessage(`{	})		},			writeJSON(t, w, resp)			}				},					},						},							},								Arguments: map[string]interface{}{"location": "Tokyo"},								Name:      "get_weather",							Function: ollama.ToolCallFunction{						{					ToolCalls: []ollama.ToolCall{					Content: "",					Role:    "assistant",				Message: ollama.Message{				Done:  true,				Model: "llama3.2",			resp := ollama.ChatResponse{			}				t.Errorf("tool name = %q, want get_weather", req.Tools[0].Function.Name)			if req.Tools[0].Function.Name != "get_weather" {			}				t.Errorf("len(tools) = %d, want 1", len(req.Tools))			if len(req.Tools) != 1 {			}				t.Errorf("unmarshal: %v", err)			if err := json.Unmarshal(body, &req); err != nil {			var req ollama.ChatRequest			body, _ := io.ReadAll(r.Body)		"POST /api/chat": func(w http.ResponseWriter, r *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestChat_WithTools(t *testing.T) {}	}		t.Errorf("EvalCount = %d, want 42", resp.EvalCount)	if resp.EvalCount != 42 {	}		t.Error("expected Done=true")	if !resp.Done {	}		t.Errorf("Content = %q, want %q", resp.Message.Content, "Hello, world!")	if resp.Message.Content != "Hello, world!" {	}		t.Fatalf("Chat: %v", err)	if err != nil {	})		},			{Role: "user", Content: "Say hello"},		Messages: []ollama.Message{		Model: "llama3.2",	resp, err := c.Chat(context.Background(), ollama.ChatRequest{	})		},			writeJSON(t, w, resp)			}				EvalCount:  42,				DoneReason: "stop",				},					Content: "Hello, world!",					Role:    "assistant",				Message: ollama.Message{				Done:  true,				Model: "llama3.2",			resp := ollama.ChatResponse{			}				t.Errorf("len(messages) = %d, want 1", len(req.Messages))			if len(req.Messages) != 1 {			}				t.Errorf("model = %q, want llama3.2", req.Model)			if req.Model != "llama3.2" {			}				t.Error("expected stream=false for non-streaming Chat")			if req.Stream == nil || *req.Stream {			}				t.Errorf("unmarshal chat: %v", err)			if err := json.Unmarshal(body, &req); err != nil {			var req ollama.ChatRequest			body, _ := io.ReadAll(r.Body)		"POST /api/chat": func(w http.ResponseWriter, r *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestChat_NonStreaming(t *testing.T) {}	}		t.Errorf("SizeVRAM = %d, want 2000000000", models[0].SizeVRAM)	if models[0].SizeVRAM != 2_000_000_000 {	}		t.Fatalf("len(models) = %d, want 1", len(models))	if len(models) != 1 {	}		t.Fatalf("ListRunning: %v", err)	if err != nil {	models, err := c.ListRunning(context.Background())	})		},			writeJSON(t, w, resp)			}				},					{Name: "llama3.2:latest", Size: 4_000_000_000, SizeVRAM: 2_000_000_000},				Models: []ollama.RunningModel{			resp := ollama.RunningModelResponse{		"GET /api/ps": func(w http.ResponseWriter, _ *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestListRunning(t *testing.T) {}	}		t.Error("expected HasCapability(vision) == false")	if info.HasCapability("vision") {	}		t.Error("expected HasCapability(completion) == true")	if !info.HasCapability("completion") {	}		t.Error("expected SupportsTools() == true")	if !info.SupportsTools() {	}		t.Errorf("License = %q, want %q", info.License, "MIT")	if info.License != "MIT" {	}		t.Fatalf("ShowModel: %v", err)	if err != nil {	info, err := c.ShowModel(context.Background(), "llama3.2")	})		},			writeJSON(t, w, info)			}				Capabilities: []string{"completion", "tools"},				License:      "MIT",			info := ollama.ModelInfo{			}				t.Errorf("show name = %q, want %q", req.Name, "llama3.2")			if req.Name != "llama3.2" {			}				t.Errorf("unmarshal show request: %v", err)			if err := json.Unmarshal(body, &req); err != nil {			}				Name string `json:"name"`			var req struct {			body, _ := io.ReadAll(r.Body)		"POST /api/show": func(w http.ResponseWriter, r *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestShowModel(t *testing.T) {}	}		t.Errorf("models[1].Name = %q, want %q", models[1].Name, "qwen2.5:7b")	if models[1].Name != "qwen2.5:7b" {	}		t.Errorf("models[0].Name = %q, want %q", models[0].Name, "llama3.2:latest")	if models[0].Name != "llama3.2:latest" {	}		t.Fatalf("len(models) = %d, want 2", len(models))	if len(models) != 2 {	}		t.Fatalf("ListModels: %v", err)	if err != nil {	models, err := c.ListModels(context.Background())	})		},			writeJSON(t, w, resp)			}				},					{Name: "qwen2.5:7b", Size: 7_000_000_000},					{Name: "llama3.2:latest", Size: 4_000_000_000},				Models: []ollama.Model{			resp := ollama.ModelListResponse{		"GET /api/tags": func(w http.ResponseWriter, _ *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestListModels(t *testing.T) {}	}		t.Errorf("ErrorMessage = %q, want %q", ollamaErr.ErrorMessage, "internal error")	if ollamaErr.ErrorMessage != "internal error" {	}		t.Errorf("StatusCode = %d, want 500", ollamaErr.StatusCode)	if ollamaErr.StatusCode != 500 {	}		t.Fatalf("expected *OllamaError, got %T", err)	if !ok {	ollamaErr, ok := err.(*ollama.OllamaError)	}		t.Fatal("expected error")	if err == nil {	_, err := c.Version(context.Background())	})		},			writeJSON(t, w, map[string]string{"error": "internal error"})			w.WriteHeader(http.StatusInternalServerError)		"GET /api/version": func(w http.ResponseWriter, _ *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestVersion_Error(t *testing.T) {}	}		t.Errorf("Version = %q, want %q", v.Version, "0.6.2")	if v.Version != "0.6.2" {	}		t.Fatalf("Version: %v", err)	if err != nil {	v, err := c.Version(context.Background())	})		},			writeJSON(t, w, ollama.VersionResponse{Version: "0.6.2"})		"GET /api/version": func(w http.ResponseWriter, _ *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestVersion(t *testing.T) {}	}		t.Fatal("expected healthy")	if !c.IsHealthy(context.Background()) {	})		},			_, _ = w.Write([]byte("Ollama is running"))		"GET /": func(w http.ResponseWriter, _ *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestIsHealthy(t *testing.T) {}	}		t.Fatal("expected error for 500")	if err := c.Health(context.Background()); err == nil {	})		},			w.WriteHeader(http.StatusInternalServerError)		"GET /": func(w http.ResponseWriter, _ *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestHealth_ServerError(t *testing.T) {}	}		t.Fatal("expected error for closed server")	if err := c.Health(context.Background()); err == nil {	}		t.Fatal(err)	if err != nil {	c, err := ollama.NewClient(url)	srv.Close()	url := srv.URL	srv := httptest.NewServer(http.NotFoundHandler())	// Create and immediately close the server.func TestHealth_ServerDown(t *testing.T) {}	}		t.Fatalf("Health: %v", err)	if err := c.Health(context.Background()); err != nil {	})		},			_, _ = w.Write([]byte("Ollama is running"))		"GET /": func(w http.ResponseWriter, _ *http.Request) {	_, c := newTestServer(t, map[string]http.HandlerFunc{func TestHealth_OK(t *testing.T) {}	}		t.Errorf("BaseURL = %q, want %q", c.BaseURL(), ollama.DefaultEndpoint)	if c.BaseURL() != ollama.DefaultEndpoint {	}		t.Fatal("DefaultClient returned nil")	if c == nil {	c := ollama.DefaultClient()func TestDefaultClient(t *testing.T) {}	}		t.Errorf("error = %q, want mention of http/https", err.Error())	if !strings.Contains(err.Error(), "http or https") {	}		t.Fatal("expected error for ftp scheme")	if err == nil {	_, err := ollama.NewClient("ftp://localhost:11434")func TestNewClient_BadScheme(t *testing.T) {}	}		t.Fatal("expected error for invalid URL")	if err == nil {	_, err := ollama.NewClient("://bad")func TestNewClient_InvalidURL(t *testing.T) {}	}		t.Errorf("BaseURL = %q, want %q", c.BaseURL(), "http://myhost:9999")	if c.BaseURL() != "http://myhost:9999" {	}		t.Fatalf("NewClient: %v", err)	if err != nil {	c, err := ollama.NewClient("http://myhost:9999/")func TestNewClient_TrailingSlash(t *testing.T) {}	}		t.Errorf("BaseURL = %q, want %q", c.BaseURL(), "http://myhost:9999")	if c.BaseURL() != "http://myhost:9999" {	}		t.Fatalf("NewClient: %v", err)	if err != nil {	c, err := ollama.NewClient("http://myhost:9999")func TestNewClient_CustomEndpoint(t *testing.T) {}	}		t.Errorf("BaseURL = %q, want %q", c.BaseURL(), ollama.DefaultEndpoint)	if c.BaseURL() != ollama.DefaultEndpoint {	}		t.Fatalf("NewClient empty: %v", err)	if err != nil {	c, err := ollama.NewClient("")func TestNewClient_DefaultEndpoint(t *testing.T) {}
+}
+
+func TestNewClient_DefaultEndpoint(t *testing.T) {
+	c, err := ollama.NewClient("")
+	if err != nil {
+		t.Fatalf("NewClient empty: %v", err)
+	}
+	if c.BaseURL() != ollama.DefaultEndpoint {
+		t.Errorf("BaseURL = %q, want %q", c.BaseURL(), ollama.DefaultEndpoint)
+	}
+}
+
+func TestNewClient_CustomEndpoint(t *testing.T) {
+	c, err := ollama.NewClient("http://myhost:9999")
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if c.BaseURL() != "http://myhost:9999" {
+		t.Errorf("BaseURL = %q, want %q", c.BaseURL(), "http://myhost:9999")
+	}
+}
+
+func TestNewClient_TrailingSlash(t *testing.T) {
+	c, err := ollama.NewClient("http://myhost:9999/")
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	if c.BaseURL() != "http://myhost:9999" {
+		t.Errorf("BaseURL = %q, want %q", c.BaseURL(), "http://myhost:9999")
+	}
+}
+
+func TestNewClient_InvalidURL(t *testing.T) {
+	_, err := ollama.NewClient("://bad")
+	if err == nil {
+		t.Fatal("expected error for invalid URL")
+	}
+}
+
+func TestNewClient_BadScheme(t *testing.T) {
+	_, err := ollama.NewClient("ftp://localhost:11434")
+	if err == nil {
+		t.Fatal("expected error for ftp scheme")
+	}
+	if !strings.Contains(err.Error(), "http or https") {
+		t.Errorf("error = %q, want mention of http/https", err.Error())
+	}
+}
+
+func TestDefaultClient(t *testing.T) {
+	c := ollama.DefaultClient()
+	if c == nil {
+		t.Fatal("DefaultClient returned nil")
+	}
+	if c.BaseURL() != ollama.DefaultEndpoint {
+		t.Errorf("BaseURL = %q, want %q", c.BaseURL(), ollama.DefaultEndpoint)
+	}
+}
+
+func TestHealth_OK(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"GET /": func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte("Ollama is running"))
+		},
+	})
+
+	if err := c.Health(context.Background()); err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+}
+
+func TestHealth_ServerDown(t *testing.T) {
+	// Create and immediately close the server.
+	srv := httptest.NewServer(http.NotFoundHandler())
+	url := srv.URL
+	srv.Close()
+
+	c, err := ollama.NewClient(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := c.Health(context.Background()); err == nil {
+		t.Fatal("expected error for closed server")
+	}
+}
+
+func TestHealth_ServerError(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"GET /": func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		},
+	})
+
+	if err := c.Health(context.Background()); err == nil {
+		t.Fatal("expected error for 500")
+	}
+}
+
+func TestIsHealthy(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"GET /": func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte("Ollama is running"))
+		},
+	})
+
+	if !c.IsHealthy(context.Background()) {
+		t.Fatal("expected healthy")
+	}
+}
+
+func TestVersion(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"GET /api/version": func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(t, w, ollama.VersionResponse{Version: "0.6.2"})
+		},
+	})
+
+	v, err := c.Version(context.Background())
+	if err != nil {
+		t.Fatalf("Version: %v", err)
+	}
+	if v.Version != "0.6.2" {
+		t.Errorf("Version = %q, want %q", v.Version, "0.6.2")
+	}
+}
+
+func TestVersion_Error(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"GET /api/version": func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			writeJSON(t, w, map[string]string{"error": "internal error"})
+		},
+	})
+
+	_, err := c.Version(context.Background())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	ollamaErr, ok := err.(*ollama.OllamaError)
+	if !ok {
+		t.Fatalf("expected *OllamaError, got %T", err)
+	}
+	if ollamaErr.StatusCode != 500 {
+		t.Errorf("StatusCode = %d, want 500", ollamaErr.StatusCode)
+	}
+	if ollamaErr.ErrorMessage != "internal error" {
+		t.Errorf("ErrorMessage = %q, want %q", ollamaErr.ErrorMessage, "internal error")
+	}
+}
+
+func TestListModels(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"GET /api/tags": func(w http.ResponseWriter, _ *http.Request) {
+			resp := ollama.ModelListResponse{
+				Models: []ollama.Model{
+					{Name: "llama3.2:latest", Size: 4_000_000_000},
+					{Name: "qwen2.5:7b", Size: 7_000_000_000},
+				},
+			}
+			writeJSON(t, w, resp)
+		},
+	})
+
+	models, err := c.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("len(models) = %d, want 2", len(models))
+	}
+	if models[0].Name != "llama3.2:latest" {
+		t.Errorf("models[0].Name = %q, want %q", models[0].Name, "llama3.2:latest")
+	}
+	if models[1].Name != "qwen2.5:7b" {
+		t.Errorf("models[1].Name = %q, want %q", models[1].Name, "qwen2.5:7b")
+	}
+}
+
+func TestShowModel(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"POST /api/show": func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			var req struct {
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal(body, &req); err != nil {
+				t.Errorf("unmarshal show request: %v", err)
+			}
+			if req.Name != "llama3.2" {
+				t.Errorf("show name = %q, want %q", req.Name, "llama3.2")
+			}
+
+			info := ollama.ModelInfo{
+				License:      "MIT",
+				Capabilities: []string{"completion", "tools"},
+			}
+			writeJSON(t, w, info)
+		},
+	})
+
+	info, err := c.ShowModel(context.Background(), "llama3.2")
+	if err != nil {
+		t.Fatalf("ShowModel: %v", err)
+	}
+	if info.License != "MIT" {
+		t.Errorf("License = %q, want %q", info.License, "MIT")
+	}
+	if !info.SupportsTools() {
+		t.Error("expected SupportsTools() == true")
+	}
+	if !info.HasCapability("completion") {
+		t.Error("expected HasCapability(completion) == true")
+	}
+	if info.HasCapability("vision") {
+		t.Error("expected HasCapability(vision) == false")
+	}
+}
+
+func TestListRunning(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"GET /api/ps": func(w http.ResponseWriter, _ *http.Request) {
+			resp := ollama.RunningModelResponse{
+				Models: []ollama.RunningModel{
+					{Name: "llama3.2:latest", Size: 4_000_000_000, SizeVRAM: 2_000_000_000},
+				},
+			}
+			writeJSON(t, w, resp)
+		},
+	})
+
+	models, err := c.ListRunning(context.Background())
+	if err != nil {
+		t.Fatalf("ListRunning: %v", err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(models))
+	}
+	if models[0].SizeVRAM != 2_000_000_000 {
+		t.Errorf("SizeVRAM = %d, want 2000000000", models[0].SizeVRAM)
+	}
+}
+
+func TestChat_NonStreaming(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"POST /api/chat": func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			var req ollama.ChatRequest
+			if err := json.Unmarshal(body, &req); err != nil {
+				t.Errorf("unmarshal chat: %v", err)
+			}
+			if req.Stream == nil || *req.Stream {
+				t.Error("expected stream=false for non-streaming Chat")
+			}
+			if req.Model != "llama3.2" {
+				t.Errorf("model = %q, want llama3.2", req.Model)
+			}
+			if len(req.Messages) != 1 {
+				t.Errorf("len(messages) = %d, want 1", len(req.Messages))
+			}
+
+			resp := ollama.ChatResponse{
+				Model: "llama3.2",
+				Done:  true,
+				Message: ollama.Message{
+					Role:    "assistant",
+					Content: "Hello, world!",
+				},
+				DoneReason: "stop",
+				EvalCount:  42,
+			}
+			writeJSON(t, w, resp)
+		},
+	})
+
+	resp, err := c.Chat(context.Background(), ollama.ChatRequest{
+		Model: "llama3.2",
+		Messages: []ollama.Message{
+			{Role: "user", Content: "Say hello"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if resp.Message.Content != "Hello, world!" {
+		t.Errorf("Content = %q, want %q", resp.Message.Content, "Hello, world!")
+	}
+	if !resp.Done {
+		t.Error("expected Done=true")
+	}
+	if resp.EvalCount != 42 {
+		t.Errorf("EvalCount = %d, want 42", resp.EvalCount)
+	}
+}
+
+func TestChat_WithTools(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"POST /api/chat": func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			var req ollama.ChatRequest
+			if err := json.Unmarshal(body, &req); err != nil {
+				t.Errorf("unmarshal: %v", err)
+			}
+			if len(req.Tools) != 1 {
+				t.Errorf("len(tools) = %d, want 1", len(req.Tools))
+			}
+			if req.Tools[0].Function.Name != "get_weather" {
+				t.Errorf("tool name = %q, want get_weather", req.Tools[0].Function.Name)
+			}
+
+			resp := ollama.ChatResponse{
+				Model: "llama3.2",
+				Done:  true,
+				Message: ollama.Message{
+					Role:    "assistant",
+					Content: "",
+					ToolCalls: []ollama.ToolCall{
+						{
+							Function: ollama.ToolCallFunction{
+								Name:      "get_weather",
+								Arguments: map[string]interface{}{"location": "Tokyo"},
+							},
+						},
+					},
+				},
+			}
+			writeJSON(t, w, resp)
+		},
+	})
+
+	weatherSchema := json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"location": {"type": "string", "description": "City name"}
+		},
+		"required": ["location"]
+	}`)
+
+	resp, err := c.Chat(context.Background(), ollama.ChatRequest{
+		Model: "llama3.2",
+		Messages: []ollama.Message{
+			{Role: "user", Content: "What's the weather in Tokyo?"},
+		},
+		Tools: []ollama.Tool{
+			{
+				Type: "function",
+				Function: ollama.ToolFunction{
+					Name:        "get_weather",
+					Description: "Get current weather for a location",
+					Parameters:  weatherSchema,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Chat with tools: %v", err)
+	}
+	if len(resp.Message.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(resp.Message.ToolCalls))
+	}
+	tc := resp.Message.ToolCalls[0]
+	if tc.Function.Name != "get_weather" {
+		t.Errorf("tool call name = %q, want get_weather", tc.Function.Name)
+	}
+	loc, ok := tc.Function.Arguments["location"].(string)
+	if !ok || loc != "Tokyo" {
+		t.Errorf("location = %v, want Tokyo", tc.Function.Arguments["location"])
+	}
+}
+
+func TestChat_ToolCallResponseRoundtrip(t *testing.T) {
+	// Simulate a multi-turn tool-calling conversation:
+	// 1. User asks -> model returns tool_call
+	// 2. User sends tool result -> model returns final answer
+	var callCount atomic.Int32
+
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"POST /api/chat": func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			var req ollama.ChatRequest
+			if err := json.Unmarshal(body, &req); err != nil {
+				t.Errorf("unmarshal: %v", err)
+			}
+
+			n := callCount.Add(1)
+			switch n {
+			case 1:
+				// First call: return tool call
+				writeJSON(t, w, ollama.ChatResponse{
+					Model: "llama3.2",
+					Done:  true,
+					Message: ollama.Message{
+						Role: "assistant",
+						ToolCalls: []ollama.ToolCall{
+							{Function: ollama.ToolCallFunction{
+								Name:      "read_file",
+								Arguments: map[string]interface{}{"path": "/tmp/test.txt"},
+							}},
+						},
+					},
+				})
+			case 2:
+				// Second call: verify tool result message is present
+				foundToolMsg := false
+				for _, msg := range req.Messages {
+					if msg.Role == "tool" {
+						foundToolMsg = true
+						if msg.Content != "file contents here" {
+							t.Errorf("tool content = %q, want 'file contents here'", msg.Content)
+						}
+					}
+				}
+				if !foundToolMsg {
+					t.Error("expected tool role message in second call")
+				}
+
+				writeJSON(t, w, ollama.ChatResponse{
+					Model: "llama3.2",
+					Done:  true,
+					Message: ollama.Message{
+						Role:    "assistant",
+						Content: "The file contains: file contents here",
+					},
+				})
+			default:
+				t.Errorf("unexpected call count: %d", n)
+			}
+		},
+	})
+
+	// Turn 1: user message -> tool call
+	resp1, err := c.Chat(context.Background(), ollama.ChatRequest{
+		Model:    "llama3.2",
+		Messages: []ollama.Message{{Role: "user", Content: "Read /tmp/test.txt"}},
+		Tools: []ollama.Tool{{
+			Type: "function",
+			Function: ollama.ToolFunction{
+				Name:        "read_file",
+				Description: "Read a file",
+				Parameters:  json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`),
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Turn 1: %v", err)
+	}
+	if len(resp1.Message.ToolCalls) != 1 {
+		t.Fatalf("Turn 1: expected 1 tool call, got %d", len(resp1.Message.ToolCalls))
+	}
+
+	// Turn 2: send tool result
+	msgs := []ollama.Message{
+		{Role: "user", Content: "Read /tmp/test.txt"},
+		resp1.Message, // assistant with tool_calls
+		{Role: "tool", Content: "file contents here"},
+	}
+	resp2, err := c.Chat(context.Background(), ollama.ChatRequest{
+		Model:    "llama3.2",
+		Messages: msgs,
+	})
+	if err != nil {
+		t.Fatalf("Turn 2: %v", err)
+	}
+	if resp2.Message.Content != "The file contains: file contents here" {
+		t.Errorf("Turn 2 content = %q", resp2.Message.Content)
+	}
+}
+
+func TestChat_HTTPError(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"POST /api/chat": func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			writeJSON(t, w, map[string]string{"error": "model 'nonexistent' not found"})
+		},
+	})
+
+	_, err := c.Chat(context.Background(), ollama.ChatRequest{
+		Model:    "nonexistent",
+		Messages: []ollama.Message{{Role: "user", Content: "hi"}},
+	})
+	if err == nil {
+		t.Fatal("expected error for 404")
+	}
+	ollamaErr, ok := err.(*ollama.OllamaError)
+	if !ok {
+		t.Fatalf("expected *OllamaError, got %T: %v", err, err)
+	}
+	if ollamaErr.StatusCode != 404 {
+		t.Errorf("StatusCode = %d, want 404", ollamaErr.StatusCode)
+	}
+	if !strings.Contains(ollamaErr.Error(), "not found") {
+		t.Errorf("error = %q, want to contain 'not found'", ollamaErr.Error())
+	}
+}
+
+func TestChatStream(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"POST /api/chat": func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			var req ollama.ChatRequest
+			_ = json.Unmarshal(body, &req)
+			if req.Stream == nil || !*req.Stream {
+				t.Error("expected stream=true for ChatStream")
+			}
+
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			flusher, ok := w.(http.Flusher)
+			if !ok {
+				t.Fatal("expected Flusher")
+			}
+
+			chunks := []ollama.ChatResponse{
+				{Model: "llama3.2", Message: ollama.Message{Role: "assistant", Content: "Hello"}, Done: false},
+				{Model: "llama3.2", Message: ollama.Message{Role: "assistant", Content: " world"}, Done: false},
+				{Model: "llama3.2", Message: ollama.Message{Role: "assistant", Content: "!"}, Done: true, DoneReason: "stop", EvalCount: 3},
+			}
+
+			for _, chunk := range chunks {
+				data, _ := json.Marshal(chunk)
+				_, _ = w.Write(data)
+				_, _ = w.Write([]byte("\n"))
+				flusher.Flush()
+			}
+		},
+	})
+
+	reader, err := c.ChatStream(context.Background(), ollama.ChatRequest{
+		Model:    "llama3.2",
+		Messages: []ollama.Message{{Role: "user", Content: "Hi"}},
+	})
+	if err != nil {
+		t.Fatalf("ChatStream: %v", err)
+	}
+	defer func() { _ = reader.Close() }()
+
+	var parts []string
+	for {
+		chunk, err := reader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Next: %v", err)
+		}
+		parts = append(parts, chunk.Message.Content)
+		if chunk.Done {
+			if chunk.EvalCount != 3 {
+				t.Errorf("final EvalCount = %d, want 3", chunk.EvalCount)
+			}
+		}
+	}
+
+	combined := strings.Join(parts, "")
+	if combined != "Hello world!" {
+		t.Errorf("streamed content = %q, want %q", combined, "Hello world!")
+	}
+}
+
+func TestChatStream_Error(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"POST /api/chat": func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusBadRequest)
+			writeJSON(t, w, map[string]string{"error": "bad request"})
+		},
+	})
+
+	_, err := c.ChatStream(context.Background(), ollama.ChatRequest{
+		Model:    "llama3.2",
+		Messages: []ollama.Message{{Role: "user", Content: "Hi"}},
+	})
+	if err == nil {
+		t.Fatal("expected error for bad request")
+	}
+}
+
+func TestChatStream_CloseIdempotent(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"POST /api/chat": func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			data, _ := json.Marshal(ollama.ChatResponse{
+				Model:   "llama3.2",
+				Done:    true,
+				Message: ollama.Message{Role: "assistant", Content: "done"},
+			})
+			_, _ = w.Write(data)
+			_, _ = w.Write([]byte("\n"))
+		},
+	})
+
+	reader, err := c.ChatStream(context.Background(), ollama.ChatRequest{
+		Model:    "llama3.2",
+		Messages: []ollama.Message{{Role: "user", Content: "Hi"}},
+	})
+	if err != nil {
+		t.Fatalf("ChatStream: %v", err)
+	}
+
+	// Close multiple times — should not panic.
+	for i := 0; i < 3; i++ {
+		if err := reader.Close(); err != nil {
+			t.Errorf("Close() #%d: %v", i+1, err)
+		}
+	}
+
+	// Reading after close.
+	_, err = reader.Next()
+	if err == nil {
+		t.Fatal("expected error reading after close")
+	}
+}
+
+func TestChatStream_ReaderAfterDone(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"POST /api/chat": func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			data, _ := json.Marshal(ollama.ChatResponse{
+				Model:   "llama3.2",
+				Done:    true,
+				Message: ollama.Message{Role: "assistant", Content: "done"},
+			})
+			_, _ = w.Write(data)
+			_, _ = w.Write([]byte("\n"))
+		},
+	})
+
+	reader, err := c.ChatStream(context.Background(), ollama.ChatRequest{
+		Model:    "llama3.2",
+		Messages: []ollama.Message{{Role: "user", Content: "Hi"}},
+	})
+	if err != nil {
+		t.Fatalf("ChatStream: %v", err)
+	}
+	defer func() { _ = reader.Close() }()
+
+	// Read the done message.
+	chunk, err := reader.Next()
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if !chunk.Done {
+		t.Error("expected Done=true")
+	}
+
+	// Next call should return EOF.
+	_, err = reader.Next()
+	if err != io.EOF {
+		t.Errorf("expected io.EOF after done, got %v", err)
+	}
+}
+
+func TestChat_ContextCancelled(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"POST /api/chat": func(w http.ResponseWriter, _ *http.Request) {
+			// Delay to allow cancellation.
+			time.Sleep(5 * time.Second)
+			writeJSON(t, w, ollama.ChatResponse{})
+		},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately.
+
+	_, err := c.Chat(ctx, ollama.ChatRequest{
+		Model:    "llama3.2",
+		Messages: []ollama.Message{{Role: "user", Content: "hi"}},
+	})
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
+	}
+}
+
+func TestOllamaError_Error(t *testing.T) {
+	tests := []struct {
+		name string
+		err  ollama.OllamaError
+		want string
+	}{
+		{
+			name: "with_error_message",
+			err:  ollama.OllamaError{Status: "404 Not Found", ErrorMessage: "model not found"},
+			want: "ollama: 404 Not Found: model not found",
+		},
+		{
+			name: "without_error_message",
+			err:  ollama.OllamaError{Status: "500 Internal Server Error"},
+			want: "ollama: 500 Internal Server Error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.err.Error()
+			if got != tt.want {
+				t.Errorf("Error() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBoolPtr(t *testing.T) {
+	p := ollama.BoolPtr(true)
+	if p == nil || !*p {
+		t.Error("BoolPtr(true) should return *true")
+	}
+	p2 := ollama.BoolPtr(false)
+	if p2 == nil || *p2 {
+		t.Error("BoolPtr(false) should return *false")
+	}
+}
+
+func TestModelInfo_Capabilities(t *testing.T) {
+	m := ollama.ModelInfo{
+		Capabilities: []string{"completion", "tools", "vision"},
+	}
+
+	if !m.SupportsTools() {
+		t.Error("expected SupportsTools() == true")
+	}
+	if !m.HasCapability("vision") {
+		t.Error("expected HasCapability(vision) == true")
+	}
+	if m.HasCapability("nonexistent") {
+		t.Error("expected HasCapability(nonexistent) == false")
+	}
+
+	// Empty capabilities.
+	m2 := ollama.ModelInfo{}
+	if m2.SupportsTools() {
+		t.Error("empty capabilities should not support tools")
+	}
+}
+
+func TestWithHTTPClient(t *testing.T) {
+	custom := &http.Client{Timeout: 5 * time.Second}
+	c, err := ollama.NewClient("http://localhost:11434", ollama.WithHTTPClient(custom))
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	// We can't inspect the client directly, but at least verify no panic.
+	_ = c
+}
+
+func TestWithTimeout(t *testing.T) {
+	c, err := ollama.NewClient("http://localhost:11434", ollama.WithTimeout(30*time.Second))
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	_ = c
+}
+
+func TestChat_WithOptions(t *testing.T) {
+	_, c := newTestServer(t, map[string]http.HandlerFunc{
+		"POST /api/chat": func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			var req ollama.ChatRequest
+			if err := json.Unmarshal(body, &req); err != nil {
+				t.Errorf("unmarshal: %v", err)
+			}
+			if req.Options == nil {
+				t.Error("expected options to be set")
+			}
+			temp, ok := req.Options["temperature"]
+			if !ok {
+				t.Error("expected temperature in options")
+			}
+			if tempFloat, ok := temp.(float64); !ok || tempFloat != 0.7 {
+				t.Errorf("temperature = %v, want 0.7", temp)
+			}
+
+			writeJSON(t, w, ollama.ChatResponse{
+				Model:   "llama3.2",
+				Done:    true,
+				Message: ollama.Message{Role: "assistant", Content: "ok"},
+			})
+		},
+	})
+
+	_, err := c.Chat(context.Background(), ollama.ChatRequest{
+		Model:    "llama3.2",
+		Messages: []ollama.Message{{Role: "user", Content: "hi"}},
+		Options:  map[string]interface{}{"temperature": 0.7},
+	})
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+}
+
+// writeJSON is a test helper that writes a JSON response.
+func writeJSON(t *testing.T, w http.ResponseWriter, v interface{}) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		t.Errorf("writeJSON: %v", err)
+	}
+}

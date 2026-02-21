@@ -18,6 +18,7 @@ import (
 	bubblezonemod "github.com/joeycumines/one-shot-man/internal/builtin/bubblezone"
 	claudemuxmod "github.com/joeycumines/one-shot-man/internal/builtin/claudemux"
 	cryptomod "github.com/joeycumines/one-shot-man/internal/builtin/crypto"
+	ollamamod "github.com/joeycumines/one-shot-man/internal/builtin/ollama"
 	ctxutils "github.com/joeycumines/one-shot-man/internal/builtin/ctxutil"
 	encodingmod "github.com/joeycumines/one-shot-man/internal/builtin/encoding"
 	execmod "github.com/joeycumines/one-shot-man/internal/builtin/exec"
@@ -121,6 +122,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"grpc", grpcmod.Require(ch, pbMod, eventLoopProvider.Adapter()))
 
 	registry.RegisterNativeModule(prefix+"claudemux", claudemuxmod.Require(ctx))
+	registry.RegisterNativeModule(prefix+"ollama", ollamamod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, tuiSink))
 	registry.RegisterNativeModule(prefix+"path", pathmod.Require)
 	registry.RegisterNativeModule(prefix+"pty", ptymod.Require(ctx))

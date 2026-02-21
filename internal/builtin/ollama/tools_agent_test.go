@@ -156,6 +156,37 @@ func TestToolRegistry_Execute_Unknown(t *testing.T) {
 	}
 }
 
+func TestToolRegistry_Remove(t *testing.T) {
+	t.Parallel()
+	r := ollama.NewToolRegistry()
+	handler := func(_ context.Context, _ map[string]interface{}) (string, error) { return "", nil }
+	r.MustRegister(ollama.ToolDef{Name: "a", Description: "a", Handler: handler})
+	r.MustRegister(ollama.ToolDef{Name: "b", Description: "b", Handler: handler})
+	r.MustRegister(ollama.ToolDef{Name: "c", Description: "c", Handler: handler})
+
+	if r.Len() != 3 {
+		t.Fatalf("Len = %d, want 3", r.Len())
+	}
+
+	r.Remove("b")
+	if r.Len() != 2 {
+		t.Fatalf("Len after remove = %d, want 2", r.Len())
+	}
+	if r.Has("b") {
+		t.Error("'b' should be removed")
+	}
+	names := r.Names()
+	if len(names) != 2 || names[0] != "a" || names[1] != "c" {
+		t.Errorf("Names = %v, want [a c]", names)
+	}
+
+	// Remove non-existent tool is a no-op.
+	r.Remove("nonexistent")
+	if r.Len() != 2 {
+		t.Errorf("Len after no-op remove = %d, want 2", r.Len())
+	}
+}
+
 func TestBuiltinTools_ReadFile(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "hello.txt"), []byte("world"), 0o644)

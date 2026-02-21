@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config represents the application configuration.
@@ -49,6 +50,10 @@ func NewConfig() *Config {
 			PTYRows:             24,
 			PTYCols:             80,
 			EnvVars:             make(map[string]string),
+			OllamaEndpoint:      "http://localhost:11434",
+			OllamaTimeout:       "60s",
+			OllamaMaxTurns:      10,
+			OllamaToolsEnabled:  true,
 		},
 		HotSnippets: make([]HotSnippet, 0),
 		Warnings:    make([]string, 0),
@@ -95,6 +100,23 @@ type ClaudeMuxConfig struct {
 	ProviderCommand string `json:"providerCommand"`
 	// MCPServers is a comma-separated list of MCP server commands to attach.
 	MCPServers string `json:"mcpServers"`
+
+	// Ollama HTTP provider settings
+	// OllamaEndpoint is the Ollama HTTP server URL.
+	OllamaEndpoint string `json:"ollamaEndpoint" default:"http://localhost:11434"`
+	// OllamaModel overrides the generic Model when using the ollama-http provider.
+	OllamaModel string `json:"ollamaModel"`
+	// OllamaTimeout is the HTTP request timeout for Ollama API calls.
+	OllamaTimeout string `json:"ollamaTimeout" default:"60s"`
+	// OllamaMaxTurns limits the agentic loop iterations for Ollama tool-calling.
+	OllamaMaxTurns int `json:"ollamaMaxTurns" default:"10"`
+	// OllamaSystemPrompt is a custom system prompt for the agentic loop.
+	OllamaSystemPrompt string `json:"ollamaSystemPrompt"`
+	// OllamaToolsEnabled controls whether built-in tools are registered.
+	OllamaToolsEnabled bool `json:"ollamaToolsEnabled" default:"true"`
+	// OllamaToolsAllowlist is a comma-separated list of tool names to register.
+	// Empty means all built-in tools are registered.
+	OllamaToolsAllowlist string `json:"ollamaToolsAllowlist"`
 }
 
 // SessionConfig controls session lifecycle and cleanup behavior.
@@ -416,6 +438,42 @@ func parseClaudeMuxOption(oc *ClaudeMuxConfig, name, value string) error {
 
 	case "mcp-servers":
 		oc.MCPServers = value
+
+	case "ollama-endpoint":
+		oc.OllamaEndpoint = value
+
+	case "ollama-model":
+		oc.OllamaModel = value
+
+	case "ollama-timeout":
+		// Validate it parses as a Go duration.
+		if _, err := time.ParseDuration(value); err != nil {
+			return fmt.Errorf("invalid duration value %q: %w", value, err)
+		}
+		oc.OllamaTimeout = value
+
+	case "ollama-max-turns":
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid integer value %q: %w", value, err)
+		}
+		if n < 1 {
+			return fmt.Errorf("ollama-max-turns must be at least 1: %d", n)
+		}
+		oc.OllamaMaxTurns = n
+
+	case "ollama-system-prompt":
+		oc.OllamaSystemPrompt = value
+
+	case "ollama-tools-enabled":
+		enabled, err := parseBool(value)
+		if err != nil {
+			return fmt.Errorf("invalid boolean value %q: %w", value, err)
+		}
+		oc.OllamaToolsEnabled = enabled
+
+	case "ollama-tools-allowlist":
+		oc.OllamaToolsAllowlist = value
 
 	default:
 		return fmt.Errorf("unknown claude-mux option: %s", name)

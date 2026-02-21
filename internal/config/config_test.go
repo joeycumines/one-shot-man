@@ -1362,7 +1362,14 @@ max-agents 8
 pty-rows 40
 pty-cols 120
 provider-command /usr/local/bin/claude
-mcp-servers mcp-server-github,mcp-server-filesystem`
+mcp-servers mcp-server-github,mcp-server-filesystem
+ollama-endpoint http://gpu-box:11434
+ollama-model gpt-oss:20b-cloud
+ollama-timeout 90s
+ollama-max-turns 15
+ollama-system-prompt You are an expert Go developer.
+ollama-tools-enabled true
+ollama-tools-allowlist read_file,exec`
 
 		cfg, err := LoadFromReader(strings.NewReader(configContent))
 		if err != nil {
@@ -1418,6 +1425,27 @@ mcp-servers mcp-server-github,mcp-server-filesystem`
 		if oc.MCPServers != "mcp-server-github,mcp-server-filesystem" {
 			t.Errorf("MCPServers = %q, want %q", oc.MCPServers, "mcp-server-github,mcp-server-filesystem")
 		}
+		if oc.OllamaEndpoint != "http://gpu-box:11434" {
+			t.Errorf("OllamaEndpoint = %q, want %q", oc.OllamaEndpoint, "http://gpu-box:11434")
+		}
+		if oc.OllamaModel != "gpt-oss:20b-cloud" {
+			t.Errorf("OllamaModel = %q, want %q", oc.OllamaModel, "gpt-oss:20b-cloud")
+		}
+		if oc.OllamaTimeout != "90s" {
+			t.Errorf("OllamaTimeout = %q, want %q", oc.OllamaTimeout, "90s")
+		}
+		if oc.OllamaMaxTurns != 15 {
+			t.Errorf("OllamaMaxTurns = %d, want 15", oc.OllamaMaxTurns)
+		}
+		if oc.OllamaSystemPrompt != "You are an expert Go developer." {
+			t.Errorf("OllamaSystemPrompt = %q, want %q", oc.OllamaSystemPrompt, "You are an expert Go developer.")
+		}
+		if oc.OllamaToolsEnabled != true {
+			t.Error("OllamaToolsEnabled should be true")
+		}
+		if oc.OllamaToolsAllowlist != "read_file,exec" {
+			t.Errorf("OllamaToolsAllowlist = %q, want %q", oc.OllamaToolsAllowlist, "read_file,exec")
+		}
 	})
 
 	t.Run("ClaudeMuxDefaults", func(t *testing.T) {
@@ -1469,6 +1497,15 @@ mcp-servers mcp-server-github,mcp-server-filesystem`
 		}
 		if oc.MCPServers != "" {
 			t.Errorf("default MCPServers = %q, want empty", oc.MCPServers)
+		}
+		if oc.OllamaEndpoint != "http://localhost:11434" {
+			t.Errorf("default OllamaEndpoint = %q, want %q", oc.OllamaEndpoint, "http://localhost:11434")
+		}
+		if oc.OllamaMaxTurns != 10 {
+			t.Errorf("default OllamaMaxTurns = %d, want 10", oc.OllamaMaxTurns)
+		}
+		if oc.OllamaToolsEnabled != true {
+			t.Error("default OllamaToolsEnabled should be true")
 		}
 	})
 
@@ -1700,6 +1737,114 @@ pager less`
 		_, err := LoadFromReader(strings.NewReader(configContent))
 		if err == nil {
 			t.Fatal("expected error for invalid boolean value")
+		}
+	})
+
+	t.Run("ClaudeMuxOllamaHTTPConfig", func(t *testing.T) {
+		t.Parallel()
+		configContent := `[claude-mux]
+ollama-endpoint http://192.168.1.100:11434
+ollama-model gpt-oss:20b-cloud
+ollama-timeout 120s
+ollama-max-turns 20
+ollama-system-prompt You are a refactoring assistant.
+ollama-tools-enabled false
+ollama-tools-allowlist read_file,grep,git_diff`
+
+		cfg, err := LoadFromReader(strings.NewReader(configContent))
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+
+		oc := cfg.ClaudeMux
+		if oc.OllamaEndpoint != "http://192.168.1.100:11434" {
+			t.Errorf("OllamaEndpoint = %q, want %q", oc.OllamaEndpoint, "http://192.168.1.100:11434")
+		}
+		if oc.OllamaModel != "gpt-oss:20b-cloud" {
+			t.Errorf("OllamaModel = %q, want %q", oc.OllamaModel, "gpt-oss:20b-cloud")
+		}
+		if oc.OllamaTimeout != "120s" {
+			t.Errorf("OllamaTimeout = %q, want %q", oc.OllamaTimeout, "120s")
+		}
+		if oc.OllamaMaxTurns != 20 {
+			t.Errorf("OllamaMaxTurns = %d, want 20", oc.OllamaMaxTurns)
+		}
+		if oc.OllamaSystemPrompt != "You are a refactoring assistant." {
+			t.Errorf("OllamaSystemPrompt = %q, want %q", oc.OllamaSystemPrompt, "You are a refactoring assistant.")
+		}
+		if oc.OllamaToolsEnabled != false {
+			t.Error("OllamaToolsEnabled should be false")
+		}
+		if oc.OllamaToolsAllowlist != "read_file,grep,git_diff" {
+			t.Errorf("OllamaToolsAllowlist = %q, want %q", oc.OllamaToolsAllowlist, "read_file,grep,git_diff")
+		}
+	})
+
+	t.Run("ClaudeMuxOllamaDefaults", func(t *testing.T) {
+		t.Parallel()
+		cfg := NewConfig()
+		oc := cfg.ClaudeMux
+
+		if oc.OllamaEndpoint != "http://localhost:11434" {
+			t.Errorf("default OllamaEndpoint = %q, want %q", oc.OllamaEndpoint, "http://localhost:11434")
+		}
+		if oc.OllamaModel != "" {
+			t.Errorf("default OllamaModel = %q, want empty", oc.OllamaModel)
+		}
+		if oc.OllamaTimeout != "60s" {
+			t.Errorf("default OllamaTimeout = %q, want %q", oc.OllamaTimeout, "60s")
+		}
+		if oc.OllamaMaxTurns != 10 {
+			t.Errorf("default OllamaMaxTurns = %d, want 10", oc.OllamaMaxTurns)
+		}
+		if oc.OllamaSystemPrompt != "" {
+			t.Errorf("default OllamaSystemPrompt = %q, want empty", oc.OllamaSystemPrompt)
+		}
+		if oc.OllamaToolsEnabled != true {
+			t.Error("default OllamaToolsEnabled should be true")
+		}
+		if oc.OllamaToolsAllowlist != "" {
+			t.Errorf("default OllamaToolsAllowlist = %q, want empty", oc.OllamaToolsAllowlist)
+		}
+	})
+
+	t.Run("ClaudeMuxOllamaInvalidTimeout", func(t *testing.T) {
+		t.Parallel()
+		configContent := "[claude-mux]\nollama-timeout not-a-duration"
+		_, err := LoadFromReader(strings.NewReader(configContent))
+		if err == nil {
+			t.Fatal("expected error for invalid duration")
+		}
+		if !strings.Contains(err.Error(), "invalid duration") {
+			t.Errorf("error = %q, want to contain 'invalid duration'", err.Error())
+		}
+	})
+
+	t.Run("ClaudeMuxOllamaInvalidMaxTurns", func(t *testing.T) {
+		t.Parallel()
+		configContent := "[claude-mux]\nollama-max-turns abc"
+		_, err := LoadFromReader(strings.NewReader(configContent))
+		if err == nil {
+			t.Fatal("expected error for invalid integer")
+		}
+
+		// Zero is also invalid
+		configContent = "[claude-mux]\nollama-max-turns 0"
+		_, err = LoadFromReader(strings.NewReader(configContent))
+		if err == nil {
+			t.Fatal("expected error for max-turns = 0")
+		}
+		if !strings.Contains(err.Error(), "at least 1") {
+			t.Errorf("error = %q, want to contain 'at least 1'", err.Error())
+		}
+	})
+
+	t.Run("ClaudeMuxOllamaInvalidToolsEnabled", func(t *testing.T) {
+		t.Parallel()
+		configContent := "[claude-mux]\nollama-tools-enabled maybe"
+		_, err := LoadFromReader(strings.NewReader(configContent))
+		if err == nil {
+			t.Fatal("expected error for invalid boolean")
 		}
 	})
 }

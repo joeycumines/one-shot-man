@@ -23,7 +23,7 @@
     "commitPolicy": "Commit in logical chunks after Rule of Two."
   },
   "statusSection": {
-    "currentState": "T300-T340 DONE. Ollama HTTP + tools + agent + JS module + integration + PR-split Ollama classification + OllamaHTTPProvider. Full make GREEN. Next: T341 config.",
+    "currentState": "T300-T340 DONE. Committed 4d8718f. Ollama HTTP + tools + agent + JS module + integration + PR-split Ollama + OllamaHTTPProvider. Full make GREEN. Next: T341 config keys.",
     "sessionTimer": ".session-timer reset 2026-02-21T05:40:02Z | make check-session-time",
     "priorCompletedWork": "T101-T227 + T300-T331 done. 322+ commits ahead of main. 759 claudemux + 49 ollama + 6 integration tests GREEN."
   },

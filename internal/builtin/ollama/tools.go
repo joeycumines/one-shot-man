@@ -114,6 +114,25 @@ func (r *ToolRegistry) Len() int {
 	return len(r.tools)
 }
 
+// Remove removes a tool from the registry by name.
+// If the tool does not exist, this is a no-op.
+func (r *ToolRegistry) Remove(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.tools[name]; !ok {
+		return
+	}
+	delete(r.tools, name)
+	// Remove from order slice.
+	for i, n := range r.order {
+		if n == name {
+			r.order = append(r.order[:i], r.order[i+1:]...)
+			break
+		}
+	}
+}
+
 // OllamaTools returns all registered tools in the Ollama API format.
 func (r *ToolRegistry) OllamaTools() []Tool {
 	r.mu.RLock()

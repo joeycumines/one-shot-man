@@ -298,3 +298,48 @@ func TestOllamaHTTPHandle_IsAlive_FalseAfterDone(t *testing.T) {
 
 	handle.Close()
 }
+
+func TestOllamaHTTPProvider_ToolsDisabled(t *testing.T) {
+	t.Parallel()
+	disabled := false
+	p := &OllamaHTTPProvider{
+		Model:        "test-model",
+		ToolsEnabled: &disabled,
+	}
+	// With tools disabled, Spawn should succeed but the runner has no tools.
+	handle, err := p.Spawn(context.Background(), SpawnOpts{})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	defer handle.Close()
+	if !handle.IsAlive() {
+		t.Error("handle should be alive after Spawn")
+	}
+}
+
+func TestOllamaHTTPProvider_ToolsAllowlist(t *testing.T) {
+	t.Parallel()
+	p := &OllamaHTTPProvider{
+		Model:          "test-model",
+		ToolsAllowlist: "read_file,grep",
+	}
+	// Should create handle OK — allowlist filtering happens in Spawn.
+	handle, err := p.Spawn(context.Background(), SpawnOpts{})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	defer handle.Close()
+}
+
+func TestOllamaHTTPProvider_Timeout(t *testing.T) {
+	t.Parallel()
+	p := &OllamaHTTPProvider{
+		Model:   "test-model",
+		Timeout: 5 * time.Second,
+	}
+	handle, err := p.Spawn(context.Background(), SpawnOpts{})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	defer handle.Close()
+}

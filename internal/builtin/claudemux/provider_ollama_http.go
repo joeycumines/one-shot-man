@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,13 @@ type OllamaHTTPProvider struct {
 	SystemPrompt string
 	// MaxTurns limits agentic loop iterations (default: 10).
 	MaxTurns int
+	// Timeout is the HTTP request timeout for Ollama API calls (default: 60s).
+	Timeout time.Duration
+	// ToolsEnabled controls whether built-in tools are registered (default: true).
+	ToolsEnabled *bool
+	// ToolsAllowlist is a comma-separated list of tool names to register.
+	// Empty means all built-in tools. Only effective when ToolsEnabled is true.
+	ToolsAllowlist string
 }
 
 // Name returns "ollama-http".
@@ -50,7 +58,11 @@ func (p *OllamaHTTPProvider) Spawn(ctx context.Context, opts SpawnOpts) (AgentHa
 		endpoint = "http://localhost:11434"
 	}
 
-	client, err := ollama.NewClient(endpoint)
+	var clientOpts []ollama.ClientOption
+	if p.Timeout > 0 {
+		clientOpts = append(clientOpts, ollama.WithTimeout(p.Timeout))
+	}
+	client, err := ollama.NewClient(endpoint, clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("ollama-http: create client: %w", err)
 	}
@@ -69,8 +81,27 @@ func (p *OllamaHTTPProvider) Spawn(ctx context.Context, opts SpawnOpts) (AgentHa
 	}
 
 	reg := ollama.NewToolRegistry()
-	if err := ollama.RegisterBuiltinTools(reg, dir); err != nil {
-		return nil, fmt.Errorf("ollama-http: register tools: %w", err)
+	toolsEnabled := p.ToolsEnabled == nil || *p.ToolsEnabled // default true
+	if toolsEnabled {
+		if err := ollama.RegisterBuiltinTools(reg, dir); err != nil {
+			return nil, fmt.Errorf("ollama-http: register tools: %w", err)
+		}
+		// Apply allowlist filter if specified.
+		if p.ToolsAllowlist != "" {
+			allowed := make(map[string]bool)
+			for _, name := range strings.Split(p.ToolsAllowlist, ",") {
+				name = strings.TrimSpace(name)
+				if name != "" {
+					allowed[name] = true
+				}
+			}
+			// Remove tools not in the allowlist.
+			for _, name := range reg.Names() {
+				if !allowed[name] {
+					reg.Remove(name)
+				}
+			}
+		}
 	}
 
 	maxTurns := p.MaxTurns

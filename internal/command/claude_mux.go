@@ -803,8 +803,14 @@ func (c *ClaudeMuxCommand) resolveProvider() (claudemux.Provider, error) {
 			p.Command = c.runCommand
 		}
 		return p, nil
+	case "ollama-http":
+		p := &claudemux.OllamaHTTPProvider{}
+		if c.runModel != "" {
+			p.Model = c.runModel
+		}
+		return p, nil
 	default:
-		return nil, fmt.Errorf("unknown provider %q; available: claude-code, ollama", c.runProvider)
+		return nil, fmt.Errorf("unknown provider %q; available: claude-code, ollama, ollama-http", c.runProvider)
 	}
 }
 

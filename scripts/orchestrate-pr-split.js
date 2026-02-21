@@ -50,6 +50,14 @@ try {
     claudemux = null;
 }
 
+// Optional: Ollama client for AI-powered file classification and planning.
+var ollamamod;
+try {
+    ollamamod = require('osm:ollama');
+} catch (e) {
+    ollamamod = null;
+}
+
 // ---------------------------------------------------------------------------
 //  Internal Helpers
 // ---------------------------------------------------------------------------
@@ -437,6 +445,282 @@ exports.selectStrategy = function(files, options) {
         needsConfirm: result.needsConfirm,
         scored: result.rankings
     };
+};
+
+// ---------------------------------------------------------------------------
+//  Ollama-Powered Classification & Planning
+// ---------------------------------------------------------------------------
+
+// extractJSON extracts the first JSON object or array from a string that may
+// contain markdown fences or preamble text.
+//
+// Returns the parsed object, or null on failure.
+function extractJSON(text) {
+    if (!text || text === '') return null;
+
+    // Try direct parse first.
+    try { return JSON.parse(text); } catch (e) { /* fall through */ }
+
+    // Try to extract JSON from markdown code fences.
+    var fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenceMatch) {
+        try { return JSON.parse(fenceMatch[1].trim()); } catch (e) { /* fall through */ }
+    }
+
+    // Try to find first { ... } or [ ... ] in the text.
+    var objMatch = text.match(/(\{[\s\S]*\})/);
+    if (objMatch) {
+        try { return JSON.parse(objMatch[1]); } catch (e) { /* fall through */ }
+    }
+    var arrMatch = text.match(/(\[[\s\S]*\])/);
+    if (arrMatch) {
+        try { return JSON.parse(arrMatch[1]); } catch (e) { /* fall through */ }
+    }
+
+    return null;
+}
+
+// classifyChangesWithOllama uses an Ollama agentic loop (with read_file and
+// git_diff tools) to classify changed files into semantically meaningful groups
+// based on content understanding.
+//
+// Parameters:
+//   files:  string[]  — changed file paths from analyzeDiff
+//   config: {
+//     dir:       string — working directory (default: '.')
+//     model:     string — Ollama model name (required)
+//     endpoint:  string — Ollama server URL (default: 'http://localhost:11434')
+//     maxTurns:  number — max agent turns (default: 5)
+//   }
+//
+// Returns: Promise<{ groups: object, reasoning: string, error: string|null }>
+//
+// Falls back to groupByDirectory(files, 1) if Ollama is unavailable.
+exports.classifyChangesWithOllama = function(files, config) {
+    config = config || {};
+    var dir = config.dir || '.';
+    var model = config.model;
+    var endpoint = config.endpoint || 'http://localhost:11434';
+    var maxTurns = config.maxTurns || 5;
+
+    // Fallback when Ollama module is not available.
+    if (!ollamamod) {
+        return {
+            groups: exports.groupByDirectory(files, 1),
+            reasoning: 'Ollama module not available, used directory grouping fallback',
+            error: null,
+            fallback: true
+        };
+    }
+
+    if (!model) {
+        return {
+            groups: exports.groupByDirectory(files, 1),
+            reasoning: 'No model specified, used directory grouping fallback',
+            error: 'config.model is required for Ollama classification',
+            fallback: true
+        };
+    }
+
+    var client = ollamamod.createClient(endpoint);
+    var tools = ollamamod.createToolRegistry();
+    ollamamod.registerBuiltinTools(tools, dir);
+
+    var agent = ollamamod.createAgent({
+        client: client,
+        model: model,
+        tools: tools,
+        systemPrompt: 'You are a code classification expert. Your task is to group ' +
+            'changed files into logical, semantically meaningful categories for a ' +
+            'PR splitting workflow.\n\n' +
+            'You have tools to read files and view git diffs to understand what each ' +
+            'file does and how it relates to others.\n\n' +
+            'RULES:\n' +
+            '1. Every file must be in exactly one group\n' +
+            '2. Group names should be short (1-3 words, lowercase, hyphens)\n' +
+            '3. Prefer groups like: types, client, tools, agent, module, tests, docs, config\n' +
+            '4. Keep related files together (implementation + its tests)\n' +
+            '5. Types/interfaces go in their own group when they define shared contracts\n\n' +
+            'RESPONSE FORMAT: Return ONLY a JSON object:\n' +
+            '{\n' +
+            '  "groups": { "group-name": ["file1.go", "file2.go"], ... },\n' +
+            '  "reasoning": "Brief explanation of why you grouped files this way"\n' +
+            '}',
+        maxTurns: maxTurns
+    });
+
+    var fileList = files.map(function(f) { return '- ' + f; }).join('\n');
+    var message = 'Classify these ' + files.length + ' changed files into logical groups ' +
+        'for PR splitting. Use the read_file and git_diff tools if you need to ' +
+        'understand what a file does.\n\nFiles:\n' + fileList;
+
+    return agent.run(message).then(function(result) {
+        var parsed = extractJSON(result.finalContent);
+        if (!parsed || !parsed.groups) {
+            // Parse failure — fallback.
+            return {
+                groups: exports.groupByDirectory(files, 1),
+                reasoning: 'Failed to parse Ollama response, used directory fallback. Raw: ' +
+                    (result.finalContent || '').substring(0, 200),
+                error: 'JSON parse failure',
+                fallback: true
+            };
+        }
+
+        // Validate: every input file must be in exactly one group.
+        var classified = {};
+        var groupNames = Object.keys(parsed.groups);
+        for (var i = 0; i < groupNames.length; i++) {
+            var gFiles = parsed.groups[groupNames[i]];
+            if (!Array.isArray(gFiles)) continue;
+            for (var j = 0; j < gFiles.length; j++) {
+                classified[gFiles[j]] = true;
+            }
+        }
+
+        // Add any missing files to an '(unclassified)' group.
+        var missing = [];
+        for (var k = 0; k < files.length; k++) {
+            if (!classified[files[k]]) {
+                missing.push(files[k]);
+            }
+        }
+        if (missing.length > 0) {
+            parsed.groups['(unclassified)'] = missing;
+        }
+
+        return {
+            groups: parsed.groups,
+            reasoning: parsed.reasoning || '',
+            error: null,
+            fallback: false
+        };
+    });
+};
+
+// suggestSplitPlanWithOllama uses Ollama to suggest optimal ordering, branch
+// names, and commit messages for file groups.
+//
+// Parameters:
+//   groups: object — { 'group-name': ['file1', ...], ... }
+//   config: {
+//     baseBranch:    string — base branch (default: 'main')
+//     branchPrefix:  string — prefix for branches (default: 'split/')
+//     dir:           string — working directory (default: '.')
+//     model:         string — Ollama model name (required)
+//     endpoint:      string — Ollama server URL (default: 'http://localhost:11434')
+//     maxTurns:      number — max agent turns (default: 5)
+//     verifyCommand: string — verification command (default: 'make test')
+//   }
+//
+// Returns: Promise<SplitPlan> — compatible with executeSplit()
+//
+// Falls back to createSplitPlan(groups, config) if Ollama is unavailable.
+exports.suggestSplitPlanWithOllama = function(groups, config) {
+    config = config || {};
+    var baseBranch = config.baseBranch || 'main';
+    var branchPrefix = config.branchPrefix || 'split/';
+    var dir = config.dir || '.';
+    var model = config.model;
+    var endpoint = config.endpoint || 'http://localhost:11434';
+    var maxTurns = config.maxTurns || 5;
+    var verifyCommand = config.verifyCommand || 'make test';
+
+    // Fallback when Ollama module is not available or no model specified.
+    if (!ollamamod || !model) {
+        var plan = exports.createSplitPlan(groups, config);
+        plan.reasoning = ollamamod
+            ? 'No model specified, used deterministic plan'
+            : 'Ollama module not available, used deterministic plan';
+        plan.fallback = true;
+        return plan;
+    }
+
+    // Auto-detect source branch.
+    var sourceBranch = config.sourceBranch;
+    if (!sourceBranch) {
+        var brResult = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+        sourceBranch = brResult.code === 0 ? brResult.stdout.trim() : 'HEAD';
+    }
+
+    var client = ollamamod.createClient(endpoint);
+    var tools = ollamamod.createToolRegistry();
+    ollamamod.registerBuiltinTools(tools, dir);
+
+    var agent = ollamamod.createAgent({
+        client: client,
+        model: model,
+        tools: tools,
+        systemPrompt: 'You are a PR split planning expert. Your task is to determine the ' +
+            'optimal ordering and commit messages for a series of stacked branches.\n\n' +
+            'Each branch builds on the previous one. The ordering should follow ' +
+            'dependency order:\n' +
+            '1. Types/interfaces/contracts first\n' +
+            '2. Core implementation next\n' +
+            '3. Higher-level features after their dependencies\n' +
+            '4. Tests alongside their implementation\n' +
+            '5. Documentation and configuration last\n\n' +
+            'You have tools to read files and check imports to verify dependencies.\n\n' +
+            'RESPONSE FORMAT: Return ONLY a JSON object:\n' +
+            '{\n' +
+            '  "splits": [\n' +
+            '    { "name": "short-name", "files": ["file1.go", ...], "message": "Imperative commit message" },\n' +
+            '    ...\n' +
+            '  ],\n' +
+            '  "reasoning": "Brief explanation of ordering choices"\n' +
+            '}',
+        maxTurns: maxTurns
+    });
+
+    // Build the prompt with group information.
+    var groupNames = Object.keys(groups);
+    var groupDesc = groupNames.map(function(name) {
+        return '## ' + name + '\n' + groups[name].map(function(f) { return '  - ' + f; }).join('\n');
+    }).join('\n\n');
+
+    var message = 'Plan the split order and commit messages for these ' +
+        groupNames.length + ' file groups. The branch prefix is "' + branchPrefix +
+        '" and the base branch is "' + baseBranch + '".\n\n' +
+        'Use read_file to check import dependencies if needed.\n\n' +
+        groupDesc;
+
+    return agent.run(message).then(function(result) {
+        var parsed = extractJSON(result.finalContent);
+        if (!parsed || !parsed.splits || !Array.isArray(parsed.splits)) {
+            // Parse failure — fall back to deterministic plan.
+            var fallbackPlan = exports.createSplitPlan(groups, config);
+            fallbackPlan.reasoning = 'Failed to parse Ollama response, used deterministic plan. Raw: ' +
+                (result.finalContent || '').substring(0, 200);
+            fallbackPlan.fallback = true;
+            return fallbackPlan;
+        }
+
+        // Build a proper SplitPlan from the Ollama suggestion.
+        var splits = [];
+        for (var i = 0; i < parsed.splits.length; i++) {
+            var s = parsed.splits[i];
+            var paddedIdx = String(i + 1);
+            while (paddedIdx.length < 2) {
+                paddedIdx = '0' + paddedIdx;
+            }
+            splits.push({
+                name: sanitizeBranchName(branchPrefix + paddedIdx + '-' + (s.name || 'group-' + (i + 1))),
+                files: Array.isArray(s.files) ? s.files.slice().sort() : [],
+                message: s.message || s.name || 'split ' + (i + 1),
+                order: i
+            });
+        }
+
+        return {
+            baseBranch: baseBranch,
+            sourceBranch: sourceBranch,
+            dir: dir,
+            verifyCommand: verifyCommand,
+            splits: splits,
+            reasoning: parsed.reasoning || '',
+            fallback: false
+        };
+    });
 };
 
 // ---------------------------------------------------------------------------
@@ -1059,7 +1343,108 @@ exports.createSelectStrategyNode = function(bb, options) {
     });
 };
 
+// createOllamaClassifyNode creates a BT leaf that classifies files using
+// the Ollama agentic loop. Falls back to directory grouping on failure.
+// Stores result on blackboard key 'fileGroups'.
+exports.createOllamaClassifyNode = function(bb, config) {
+    return bt.createBlockingLeafNode(function() {
+        var analysis = bb.get('analysisResult');
+        if (!analysis || !analysis.files || analysis.files.length === 0) {
+            bb.set('lastError', 'no analysis result available for Ollama classification');
+            return bt.failure;
+        }
+
+        var result = exports.classifyChangesWithOllama(analysis.files, config);
+
+        // Handle both sync (fallback) and async (Promise) results.
+        if (result && typeof result.then === 'function') {
+            // Async path — store a pending flag and return running.
+            // BT will need to be re-ticked after promise resolves.
+            result.then(function(classification) {
+                bb.set('ollamaClassification', classification);
+                bb.set('fileGroups', classification.groups);
+            });
+            // For synchronous BT, we cannot truly await. Store what we have.
+            bb.set('lastError', 'Ollama classification is async; use callback workflow');
+            return bt.failure;
+        }
+
+        // Sync fallback path.
+        bb.set('ollamaClassification', result);
+        bb.set('fileGroups', result.groups);
+        return bt.success;
+    });
+};
+
+// createOllamaPlanNode creates a BT leaf that generates a split plan using
+// the Ollama agentic loop. Falls back to deterministic planning on failure.
+// Stores result on blackboard key 'splitPlan'.
+exports.createOllamaPlanNode = function(bb, config) {
+    return bt.createBlockingLeafNode(function() {
+        var groups = bb.get('fileGroups');
+        if (!groups) {
+            bb.set('lastError', 'no file groups available for Ollama planning');
+            return bt.failure;
+        }
+
+        var result = exports.suggestSplitPlanWithOllama(groups, config);
+
+        // Handle both sync (fallback) and async (Promise) results.
+        if (result && typeof result.then === 'function') {
+            result.then(function(plan) {
+                bb.set('splitPlan', plan);
+            });
+            bb.set('lastError', 'Ollama planning is async; use callback workflow');
+            return bt.failure;
+        }
+
+        // Sync fallback path.
+        var validation = exports.validatePlan(result);
+        if (!validation.valid) {
+            bb.set('lastError', 'invalid Ollama plan: ' + validation.errors.join('; '));
+            return bt.failure;
+        }
+        bb.set('splitPlan', result);
+        return bt.success;
+    });
+};
+
+// createOllamaWorkflowTree creates a BT tree using Ollama for classification
+// and planning. Falls back to deterministic strategies when Ollama is unavailable.
+//
+// config: {
+//   baseBranch:    string  — default: 'main'
+//   dir:           string  — default: '.'
+//   model:         string  — Ollama model name
+//   endpoint:      string  — Ollama server URL
+//   branchPrefix:  string  — default: 'split/'
+//   verifyCommand: string  — default: 'make test'
+//   maxTurns:      number  — default: 5
+// }
+exports.createOllamaWorkflowTree = function(bb, config) {
+    config = config || {};
+
+    var analyzeConfig = {
+        baseBranch: config.baseBranch,
+        dir: config.dir
+    };
+
+    // Use Ollama nodes when available, fall back to deterministic when not.
+    if (ollamamod && config.model) {
+        return bt.node(bt.sequence,
+            exports.createAnalyzeNode(bb, analyzeConfig),
+            exports.createOllamaClassifyNode(bb, config),
+            exports.createOllamaPlanNode(bb, config),
+            exports.createSplitNode(bb),
+            exports.createEquivalenceNode(bb)
+        );
+    }
+
+    // Fallback: deterministic workflow
+    return exports.createWorkflowTree(bb, config);
+};
+
 // ---------------------------------------------------------------------------
 //  Module version
 // ---------------------------------------------------------------------------
-exports.VERSION = '2.0.0';
+exports.VERSION = '3.0.0';

@@ -129,6 +129,21 @@ When modifying **internal code**—meaning any code that isn't depended on by ex
 - Tests run with race detection
 - Coverage reports available via `make cover`
 - Platform-specific variations must be tested on all platforms
+- Tests must be isolated. Tests **must not mutate host system state** or depend on session/configuration state outside the test. This is a **zero-tolerance rule**. Tests that mutate host state cause flaky runs, order-dependent failures, and "works on my machine" issues in CI.
+  - Forbidden test behaviors include:
+    - Writing to files outside test-specific temporary directories
+    - Modifying environment variables that persist beyond the test
+    - Reading or depending on user-specific config files (`~/.gitconfig`, shell RC files, etc.)
+    - Mutating OS-level session state (ssh-agent, gpg-agent, systemd user sessions)
+    - Creating/modifying state in system directories
+    - Relying on host-specific paths or configuration
+  - Mitigations for these issues include:
+    - Use `t.TempDir()` for all file operations in tests
+    - Use `t.Setenv()` for environment variable isolation
+    - Mock external services and config sources
+    - Never assume a specific home directory or config location
+    - Tests must be **fully self-contained** and portable across machines
+    - Rare exceptions (e.g., `vhs` for recording) MUST use TestMain flags, documented Make targets, and skip gracefully when unavailable. See `generate-tapes-and-gifs` and `-execute-vhs` for the pattern.
 
 ## Important Conventions
 

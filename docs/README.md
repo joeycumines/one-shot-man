@@ -9,6 +9,7 @@ If you just want to try it, see the [root README](../README.md).
 - [Configuration](configuration.md)
 - [Sessions](session.md)
 - [Scripting](scripting.md)
+- [Tool calling](tool-calling.md)
 - [Shell completion](shell-completion.md)
 
 ## Reference
@@ -17,6 +18,7 @@ If you just want to try it, see the [root README](../README.md).
 - [Claude-Mux reference](reference/claude-mux.md)
 - [Goal reference](reference/goal.md)
 - [Configuration reference](reference/config.md)
+- [Ollama HTTP reference](reference/ollama.md)
 - [TUI API reference](reference/tui-api.md)
 - [TUI lifecycle](reference/tui-lifecycle.md)
 - [Sophisticated session-id auto-determination](reference/sophisticated-auto-determination-of-session-id.md)

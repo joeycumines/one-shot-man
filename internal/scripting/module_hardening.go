@@ -149,24 +149,57 @@ func newHardenedSourceLoader(
 // within the configured module directories.
 //
 // allowedDirs must contain pre-resolved (absolute, symlink-evaluated) paths.
-// This check only applies to bare module names resolved through global folders.
-// Relative requires (./foo, ../bar) are not subject to this check because
-// their base directory is the script's own directory, not a global folder.
+//
+// Two checks are applied:
+//
+// Check 1 (Global folder containment): When the resolution base is an exact
+// match for a configured global folder, the resolved path must stay within
+// the allowed directories. This catches direct traversal via global folders.
+//
+// Check 2 (Bare module traversal): When a bare module name (not starting with
+// ".", "..", or "/") contains ".." path components, the resolved path must stay
+// within the resolution base directory. This catches traversal via the
+// node_modules directory walk, where goja constructs base paths that don't
+// match any configured global folder (e.g., scriptDir/node_modules).
+//
+// Relative requires (./foo, ../bar) are not subject to these checks because
+// their base directory is the script's own directory, and "../" traversal
+// from within a script is legitimate behavior.
 func newHardenedPathResolver(
 	allowedDirs []string,
 ) require.PathResolver {
 	return func(base, modpath string) string {
 		resolved := require.DefaultPathResolver(base, modpath)
 
-		// Only enforce containment when the base is one of the allowed dirs.
-		// This means only bare module names resolved through global folders
-		// (where base == a global folder) are restricted. Relative requires
-		// from script directories pass through unchecked.
-		if len(allowedDirs) > 0 && isExactDir(base, allowedDirs) {
+		// Skip all checks when hardening is not configured.
+		if len(allowedDirs) == 0 {
+			return resolved
+		}
+
+		// Check 1: Global folder containment.
+		// When resolving through a global folder (where base == a global folder),
+		// the resolved path must stay within the configured allowed directories.
+		if isExactDir(base, allowedDirs) {
 			if !isContainedInDir(resolved, allowedDirs) {
 				// Return a path that will never exist, causing module resolution
 				// to fail with ModuleFileDoesNotExistError. We encode the reason
 				// in the path so it shows up in error messages.
+				return filepath.Join(base, ".osm-blocked-traversal")
+			}
+		}
+
+		// Check 2: Bare module name with ".." traversal.
+		// Bare module names (e.g., 'x/../../secret') are resolved through both
+		// global folders and node_modules directory walks. Check 1 catches the
+		// global folder case, but the node_modules walk uses dynamically
+		// constructed base paths that never match allowedDirs. This check
+		// catches the escape by verifying the resolved path stays within base.
+		if !isRelativeOrAbsolutePath(modpath) && containsTraversalComponent(modpath) && filepath.IsAbs(base) {
+			absBase := base
+			if rb, err := filepath.EvalSymlinks(base); err == nil {
+				absBase = rb
+			}
+			if !isContainedInDir(resolved, []string{absBase}) {
 				return filepath.Join(base, ".osm-blocked-traversal")
 			}
 		}
@@ -233,6 +266,42 @@ func isContainedInDir(filePath string, dirs []string) bool {
 	for _, dir := range dirs {
 		prefix := dir + string(filepath.Separator)
 		if strings.HasPrefix(filePath, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// isRelativeOrAbsolutePath returns true if modpath is a relative or absolute
+// path (starts with ".", "..", "/", or is a Windows absolute path). Matches
+// the classification used by goja_nodejs's require module to distinguish
+// file/directory paths from bare module names.
+func isRelativeOrAbsolutePath(modpath string) bool {
+	if modpath == "." || modpath == ".." {
+		return true
+	}
+	if strings.HasPrefix(modpath, "./") || strings.HasPrefix(modpath, "../") {
+		return true
+	}
+	// On Windows, also recognize backslash variants.
+	if filepath.Separator == '\\' {
+		if strings.HasPrefix(modpath, `.\`) || strings.HasPrefix(modpath, `..\`) {
+			return true
+		}
+	}
+	return filepath.IsAbs(modpath)
+}
+
+// containsTraversalComponent returns true if modpath contains ".." as a path
+// component (not just as a substring). For example:
+//   - "x/../../secret" → true (.. is a path component)
+//   - "module..name"   → false (.. is within a component, not a component)
+//   - "../foo"         → true (.. is a path component)
+func containsTraversalComponent(modpath string) bool {
+	// Normalize to forward slashes for consistent parsing.
+	normalized := filepath.ToSlash(modpath)
+	for _, part := range strings.Split(normalized, "/") {
+		if part == ".." {
 			return true
 		}
 	}

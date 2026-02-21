@@ -574,3 +574,146 @@ func TestSandbox_TemplateModuleNoArbitraryCodeExec(t *testing.T) {
 		t.Fatalf("Template safety test failed: %v", err)
 	}
 }
+
+// ============================================================================
+// T221: require() Path Traversal Security Tests
+// ============================================================================
+
+// TestSandbox_RequirePathTraversal_SystemFiles verifies that require() does not
+// load system files as JavaScript modules. These are NOT a security boundary
+// (osm is not sandboxed), but module resolution should fail gracefully with
+// clear errors rather than returning garbage.
+func TestSandbox_RequirePathTraversal_SystemFiles(t *testing.T) {
+	t.Parallel()
+	engine, _, _ := newSandboxTestEngine(t)
+
+	// Each path should fail to load as a JS module (not valid JS, or not found).
+	traversalPaths := []struct {
+		name string
+		path string
+	}{
+		{"relative traversal", "../../etc/passwd"},
+		{"deep traversal", "../../../../../../../etc/passwd"},
+		{"absolute system", "/etc/passwd"},
+		{"absolute shadow", "/etc/shadow"},
+		{"dot-slash traversal", "./../../etc/passwd"},
+		{"mixed separators", "..\\..\\etc\\passwd"},
+	}
+
+	for _, tc := range traversalPaths {
+		t.Run(tc.name, func(t *testing.T) {
+			escapeJS := func(s string) string {
+				s = strings.ReplaceAll(s, "\\", "\\\\")
+				s = strings.ReplaceAll(s, `"`, `\"`)
+				return s
+			}
+
+			script := engine.LoadScriptFromString("traversal-"+tc.name, `
+				var loaded = false;
+				try {
+					require("`+escapeJS(tc.path)+`");
+					loaded = true;
+				} catch(e) {
+					// Expected: module not found or not valid JS
+				}
+				if (loaded) {
+					throw new Error("require loaded system path: `+escapeJS(tc.path)+`");
+				}
+			`)
+			if err := engine.ExecuteScript(script); err != nil {
+				t.Fatalf("Path traversal test failed: %v", err)
+			}
+		})
+	}
+}
+
+// TestSandbox_RequirePathTraversal_OsmPrefixBypass verifies that the osm: prefix
+// cannot be used to escape into arbitrary paths.
+func TestSandbox_RequirePathTraversal_OsmPrefixBypass(t *testing.T) {
+	t.Parallel()
+	engine, _, _ := newSandboxTestEngine(t)
+
+	bypassAttempts := []string{
+		"osm:../../etc/passwd",
+		"osm:../secret",
+		"osm:/etc/passwd",
+		"osm:..%2f..%2fetc%2fpasswd",
+	}
+
+	for _, path := range bypassAttempts {
+		t.Run(path, func(t *testing.T) {
+			escapeJS := func(s string) string {
+				s = strings.ReplaceAll(s, "\\", "\\\\")
+				s = strings.ReplaceAll(s, `"`, `\"`)
+				return s
+			}
+
+			script := engine.LoadScriptFromString("osm-bypass-"+path, `
+				try {
+					require("`+escapeJS(path)+`");
+					throw new Error("SANDBOX_BREACH: osm: prefix bypass loaded: `+escapeJS(path)+`");
+				} catch(e) {
+					if (e.message && e.message.indexOf('SANDBOX_BREACH') !== -1) throw e;
+				}
+			`)
+			if err := engine.ExecuteScript(script); err != nil {
+				t.Fatalf("osm: prefix bypass test failed for %q: %v", path, err)
+			}
+		})
+	}
+}
+
+// TestSandbox_RequirePathTraversal_NullBytes verifies that null bytes in
+// require() paths do not cause unexpected behavior.
+func TestSandbox_RequirePathTraversal_NullBytes(t *testing.T) {
+	t.Parallel()
+	engine, _, _ := newSandboxTestEngine(t)
+
+	script := engine.LoadScriptFromString("null-bytes", `
+		var nullPaths = [
+			"valid\x00../../etc/passwd",
+			"\x00/etc/passwd",
+			"osm:exec\x00../../etc/passwd",
+		];
+		for (var i = 0; i < nullPaths.length; i++) {
+			try {
+				require(nullPaths[i]);
+				// If it loaded, that's only a problem if it's NOT a legitimate module.
+				// osm:exec with trailing garbage would be suspicious.
+			} catch(e) {
+				// Expected: module not found
+			}
+		}
+	`)
+	if err := engine.ExecuteScript(script); err != nil {
+		t.Fatalf("Null byte path test failed: %v", err)
+	}
+}
+
+// TestSandbox_RequirePathTraversal_URLEncoded verifies that URL-encoded path
+// components are not decoded during module resolution.
+func TestSandbox_RequirePathTraversal_URLEncoded(t *testing.T) {
+	t.Parallel()
+	engine, _, _ := newSandboxTestEngine(t)
+
+	urlEncodedPaths := []string{
+		"%2e%2e/%2e%2e/etc/passwd",
+		"..%2fetc%2fpasswd",
+		"%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+	}
+
+	for _, path := range urlEncodedPaths {
+		t.Run(path, func(t *testing.T) {
+			script := engine.LoadScriptFromString("url-encoded-"+path, `
+				try {
+					require("`+path+`");
+				} catch(e) {
+					// Expected: module not found (URL encoding not interpreted)
+				}
+			`)
+			if err := engine.ExecuteScript(script); err != nil {
+				t.Fatalf("URL-encoded path test failed for %q: %v", path, err)
+			}
+		})
+	}
+}

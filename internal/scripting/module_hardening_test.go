@@ -252,6 +252,67 @@ func TestModuleHardening_BareModuleTraversalBlocked(t *testing.T) {
 	}
 }
 
+// TestModuleHardening_BareModuleDotDotTraversal verifies that a bare module
+// name containing "../" components (e.g. require('evil/../../../secret'))
+// is blocked by the hardened path resolver. Goja treats module names NOT
+// starting with "." or "/" as bare names, resolved through global folders.
+// A crafted bare name like "x/../../secret" lets an attacker escape the
+// module directory via the default path resolver.
+func TestModuleHardening_BareModuleDotDotTraversal(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+
+	// lib/ is the only allowed global module directory
+	libDir := filepath.Join(tmpDir, "libs")
+	// Create nested dir so the "x" component can resolve
+	xDir := filepath.Join(libDir, "x")
+	if err := os.MkdirAll(xDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// secret.js lives OUTSIDE libDir — one level above
+	secretFile := filepath.Join(tmpDir, "secret.js")
+	if err := os.WriteFile(secretFile, []byte(`exports.data = "stolen";`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mainScript := filepath.Join(tmpDir, "main.js")
+	// "x/../../secret" starts with "x" (not "." or "/") → bare module name
+	// DefaultPathResolver: join(libDir, "x/../../secret") = join(libDir, "../../secret") → tmpDir/secret
+	// The hardened resolver must block this because the resolved path escapes libDir.
+	if err := os.WriteFile(mainScript, []byte(`
+		try {
+			var s = require('x/../../secret');
+			output.print("FAIL: " + s.data);
+		} catch(e) {
+			output.print("BLOCKED");
+		}
+	`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	ctx := context.Background()
+	engine := newTestEngineWithOpts(t, ctx, &stdout, &stderr,
+		WithModulePaths(libDir))
+
+	script, err := engine.LoadScript("main.js", mainScript)
+	if err != nil {
+		t.Fatalf("LoadScript failed: %v", err)
+	}
+	if err := engine.ExecuteScript(script); err != nil {
+		t.Fatalf("ExecuteScript failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	got := strings.TrimSpace(stdout.String())
+	if strings.Contains(got, "FAIL") {
+		t.Errorf("bare module name with ../ traversal should be blocked, got: %s", got)
+	}
+	if !strings.Contains(got, "BLOCKED") {
+		t.Errorf("expected BLOCKED output, got: %q", got)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Circular dependency warning detection
 // ---------------------------------------------------------------------------

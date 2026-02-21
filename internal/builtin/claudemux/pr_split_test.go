@@ -177,7 +177,6 @@ func TestPRSplit_ExportedFunctions(t *testing.T) {
 		"analyzeDiff", "analyzeDiffStats",
 		"groupByDirectory", "groupByExtension", "groupByPattern", "groupByChunks",
 		"selectStrategy",
-		"classifyChangesWithOllama", "suggestSplitPlanWithOllama",
 		"createSplitPlan", "validatePlan",
 		"executeSplit",
 		"verifySplit", "verifySplits", "verifyEquivalence", "verifyEquivalenceDetailed",
@@ -185,7 +184,6 @@ func TestPRSplit_ExportedFunctions(t *testing.T) {
 		"createAnalyzeNode", "createGroupNode", "createPlanNode",
 		"createSplitNode", "createVerifyNode", "createEquivalenceNode",
 		"createSelectStrategyNode",
-		"createOllamaClassifyNode", "createOllamaPlanNode", "createOllamaWorkflowTree",
 		"createWorkflowTree",
 	}
 	for _, fn := range fns {
@@ -996,147 +994,4 @@ func TestPRSplit_ExecuteSplit_MissingFile(t *testing.T) {
 	// Error type should be classified.
 	errType := runJS(`result.results[0].errorType`)
 	assert.Equal(t, "missing", errType.String())
-}
-
-// ---------------------------------------------------------------------------
-//  Ollama-powered classification and planning fallback tests (T339)
-// ---------------------------------------------------------------------------
-
-func TestPRSplit_ClassifyChangesWithOllama_NoModule(t *testing.T) {
-	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
-	sp := prSplitScriptPath(t)
-	runJS(`var prSplit = require('` + sp + `');`)
-
-	// Without osm:ollama registered, classifyChangesWithOllama should fall back
-	// to directory grouping (synchronous result, not a Promise).
-	runJS(`var result = prSplit.classifyChangesWithOllama(
-		['pkg/types.go', 'pkg/client.go', 'cmd/main.go', 'docs/readme.md'],
-		{ model: 'test-model' }
-	);`)
-
-	// Should have fallback=true.
-	fallbackVal := runJS(`result.fallback`)
-	assert.Equal(t, true, fallbackVal.ToBoolean())
-
-	// Should contain groups from directory grouping.
-	groupsJSON := runJS(`JSON.stringify(result.groups)`)
-	assert.Contains(t, groupsJSON.String(), `"pkg"`)
-	assert.Contains(t, groupsJSON.String(), `"cmd"`)
-	assert.Contains(t, groupsJSON.String(), `"docs"`)
-
-	// Reasoning should mention fallback.
-	reasonVal := runJS(`result.reasoning`)
-	assert.Contains(t, reasonVal.String(), "not available")
-}
-
-func TestPRSplit_ClassifyChangesWithOllama_NoModel(t *testing.T) {
-	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
-	sp := prSplitScriptPath(t)
-	runJS(`var prSplit = require('` + sp + `');`)
-
-	// Without model specified (and no osm:ollama module), falls back to
-	// directory grouping. The model check is only reached when the module
-	// is available, so this tests the same fallback path.
-	runJS(`var result = prSplit.classifyChangesWithOllama(
-		['pkg/a.go', 'cmd/b.go'],
-		{}
-	);`)
-
-	fallbackVal := runJS(`result.fallback`)
-	assert.Equal(t, true, fallbackVal.ToBoolean())
-
-	// Groups should be present from directory fallback.
-	groupsJSON := runJS(`JSON.stringify(result.groups)`)
-	assert.Contains(t, groupsJSON.String(), `"pkg"`)
-	assert.Contains(t, groupsJSON.String(), `"cmd"`)
-}
-
-func TestPRSplit_SuggestSplitPlanWithOllama_NoModule(t *testing.T) {
-	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
-	sp := prSplitScriptPath(t)
-	runJS(`var prSplit = require('` + sp + `');`)
-
-	// Without osm:ollama, suggestSplitPlanWithOllama returns deterministic plan.
-	runJS(`var groups = { 'pkg': ['pkg/a.go'], 'cmd': ['cmd/b.go'] };`)
-	runJS(`var result = prSplit.suggestSplitPlanWithOllama(groups, {
-		baseBranch: 'main',
-		model: 'test-model'
-	});`)
-
-	fallbackVal := runJS(`result.fallback`)
-	assert.Equal(t, true, fallbackVal.ToBoolean())
-
-	splitsLen := runJS(`result.splits.length`)
-	assert.Equal(t, int64(2), splitsLen.ToInteger())
-
-	// Should be sorted alphabetically: cmd, pkg.
-	name0 := runJS(`result.splits[0].name`)
-	assert.Contains(t, name0.String(), "cmd")
-	name1 := runJS(`result.splits[1].name`)
-	assert.Contains(t, name1.String(), "pkg")
-}
-
-func TestPRSplit_ExtractJSON_Helpers(t *testing.T) {
-	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
-	sp := prSplitScriptPath(t)
-	runJS(`var prSplit = require('` + sp + `');`)
-
-	// classifyChangesWithOllama uses extractJSON internally. Test the
-	// classification result format by verifying the groups structure.
-	runJS(`var result = prSplit.classifyChangesWithOllama(
-		['internal/foo.go', 'internal/bar.go', 'scripts/test.js'],
-		{}
-	);`)
-
-	// Should have groups (from directory fallback).
-	groupsJSON := runJS(`JSON.stringify(Object.keys(result.groups).sort())`)
-	assert.Contains(t, groupsJSON.String(), "internal")
-	assert.Contains(t, groupsJSON.String(), "scripts")
-}
-
-func TestPRSplit_OllamaWorkflowTree_FallbackToDeterministic(t *testing.T) {
-	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
-	sp := prSplitScriptPath(t)
-	runJS(`var prSplit = require('` + sp + `');`)
-	runJS(`var bt = require('osm:bt');`)
-
-	// Without osm:ollama or model, createOllamaWorkflowTree should fall back
-	// to the deterministic createWorkflowTree.
-	runJS(`var bb = new bt.Blackboard();`)
-	runJS(`var tree = prSplit.createOllamaWorkflowTree(bb, {baseBranch: 'main'});`)
-
-	treeType := runJS(`typeof tree`)
-	assert.Equal(t, "function", treeType.String())
-}
-
-func TestPRSplit_OllamaClassifyNode_FallbackSync(t *testing.T) {
-	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
-	sp := prSplitScriptPath(t)
-	runJS(`var prSplit = require('` + sp + `');`)
-	runJS(`var bt = require('osm:bt');`)
-
-	// Without osm:ollama, the classify node should fall back to directory
-	// grouping synchronously and succeed.
-	runJS(`var bb = new bt.Blackboard();`)
-	runJS(`bb.set('analysisResult', {
-		files: ['pkg/a.go', 'cmd/b.go', 'docs/readme.md'],
-		baseBranch: 'main',
-		currentBranch: 'feature'
-	});`)
-	runJS(`var node = prSplit.createOllamaClassifyNode(bb, {model: 'test-model'});`)
-
-	statusVal := runJS(`bt.tick(node)`)
-	assert.Equal(t, "success", statusVal.String())
-
-	// File groups should be set on blackboard.
-	groupsJSON := runJS(`JSON.stringify(bb.get('fileGroups'))`)
-	assert.Contains(t, groupsJSON.String(), `"pkg"`)
-	assert.Contains(t, groupsJSON.String(), `"cmd"`)
-	assert.Contains(t, groupsJSON.String(), `"docs"`)
 }

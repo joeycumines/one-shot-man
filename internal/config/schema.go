@@ -549,15 +549,6 @@ func defaultGlobalOptions() []ConfigOption {
 		{Key: "claude-mux.pty-cols", Type: TypeInt, Default: "80", Description: "Default PTY column count"},
 		{Key: "claude-mux.provider-command", Type: TypeString, Default: "", Description: "Override provider executable path"},
 		{Key: "claude-mux.mcp-servers", Type: TypeString, Default: "", Description: "Comma-separated MCP server commands for agents"},
-
-		// Claude-Mux Ollama HTTP options
-		{Key: "claude-mux.ollama-endpoint", Type: TypeString, Default: "http://localhost:11434", Description: "Ollama HTTP server URL", EnvVar: "OSM_OLLAMA_ENDPOINT"},
-		{Key: "claude-mux.ollama-model", Type: TypeString, Default: "", Description: "Ollama model name (overrides generic model for ollama-http provider)", EnvVar: "OSM_OLLAMA_MODEL"},
-		{Key: "claude-mux.ollama-timeout", Type: TypeDuration, Default: "60s", Description: "HTTP timeout for Ollama API calls"},
-		{Key: "claude-mux.ollama-max-turns", Type: TypeInt, Default: "10", Description: "Max agentic loop iterations for Ollama tool-calling"},
-		{Key: "claude-mux.ollama-system-prompt", Type: TypeString, Default: "", Description: "Custom system prompt for the Ollama agentic loop"},
-		{Key: "claude-mux.ollama-tools-enabled", Type: TypeBool, Default: "true", Description: "Register built-in tools for Ollama agentic loop"},
-		{Key: "claude-mux.ollama-tools-allowlist", Type: TypeString, Default: "", Description: "Comma-separated tool names to register (empty = all)"},
 	}
 }
 
@@ -609,12 +600,5 @@ func defaultCommandOptions() []ConfigOption {
 		{Key: "pty-cols", Section: "claude-mux", Type: TypeInt, Default: "80", Description: "PTY column count"},
 		{Key: "provider-command", Section: "claude-mux", Type: TypeString, Default: "", Description: "Override provider command"},
 		{Key: "mcp-servers", Section: "claude-mux", Type: TypeString, Default: "", Description: "MCP server commands"},
-		{Key: "ollama-endpoint", Section: "claude-mux", Type: TypeString, Default: "http://localhost:11434", Description: "Ollama HTTP server URL"},
-		{Key: "ollama-model", Section: "claude-mux", Type: TypeString, Default: "", Description: "Ollama model name"},
-		{Key: "ollama-timeout", Section: "claude-mux", Type: TypeDuration, Default: "60s", Description: "Ollama HTTP timeout"},
-		{Key: "ollama-max-turns", Section: "claude-mux", Type: TypeInt, Default: "10", Description: "Max Ollama agentic iterations"},
-		{Key: "ollama-system-prompt", Section: "claude-mux", Type: TypeString, Default: "", Description: "Ollama system prompt"},
-		{Key: "ollama-tools-enabled", Section: "claude-mux", Type: TypeBool, Default: "true", Description: "Enable Ollama built-in tools"},
-		{Key: "ollama-tools-allowlist", Section: "claude-mux", Type: TypeString, Default: "", Description: "Ollama tool allowlist"},
 	}
 }

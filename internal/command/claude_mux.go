@@ -803,40 +803,8 @@ func (c *ClaudeMuxCommand) resolveProvider() (claudemux.Provider, error) {
 			p.Command = c.runCommand
 		}
 		return p, nil
-	case "ollama-http":
-		p := &claudemux.OllamaHTTPProvider{}
-		// Model: CLI flag → Ollama-specific config → generic config.
-		if c.runModel != "" {
-			p.Model = c.runModel
-		} else if c.cfg != nil && c.cfg.ClaudeMux.OllamaModel != "" {
-			p.Model = c.cfg.ClaudeMux.OllamaModel
-		} else if c.cfg != nil && c.cfg.ClaudeMux.Model != "" {
-			p.Model = c.cfg.ClaudeMux.Model
-		}
-		// Endpoint: CLI command flag → config.
-		if c.runCommand != "" {
-			p.Endpoint = c.runCommand
-		} else if c.cfg != nil && c.cfg.ClaudeMux.OllamaEndpoint != "" {
-			p.Endpoint = c.cfg.ClaudeMux.OllamaEndpoint
-		}
-		// Config-only fields.
-		if c.cfg != nil {
-			p.MaxTurns = c.cfg.ClaudeMux.OllamaMaxTurns
-			p.SystemPrompt = c.cfg.ClaudeMux.OllamaSystemPrompt
-			// Timeout: parse duration from config string.
-			if c.cfg.ClaudeMux.OllamaTimeout != "" {
-				if d, err := time.ParseDuration(c.cfg.ClaudeMux.OllamaTimeout); err == nil {
-					p.Timeout = d
-				}
-			}
-			// Tools: wire enabled flag and allowlist.
-			enabled := c.cfg.ClaudeMux.OllamaToolsEnabled
-			p.ToolsEnabled = &enabled
-			p.ToolsAllowlist = c.cfg.ClaudeMux.OllamaToolsAllowlist
-		}
-		return p, nil
 	default:
-		return nil, fmt.Errorf("unknown provider %q; available: claude-code, ollama, ollama-http", c.runProvider)
+		return nil, fmt.Errorf("unknown provider %q; available: claude-code, ollama", c.runProvider)
 	}
 }
 

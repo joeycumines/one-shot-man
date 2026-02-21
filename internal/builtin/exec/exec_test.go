@@ -69,6 +69,13 @@ func writeScript(t *testing.T, contents string) string {
 	if err := os.Rename(tmp, path); err != nil {
 		t.Fatalf("failed to rename script: %v", err)
 	}
+	// Sync the directory to flush metadata. On some Docker overlayfs
+	// configurations, exec can still see ETXTBSY unless the rename's
+	// metadata has been flushed to the underlying filesystem.
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
 	return path
 }
 

@@ -23,7 +23,7 @@
     "commitPolicy": "Commit in logical chunks after Rule of Two."
   },
   "statusSection": {
-    "currentState": "T300-T342 DONE. Committed c513e01. Ollama HTTP + tools + agent + JS + integration + PR-split + provider + config keys. Full make GREEN. Next: T343 docs.",
+    "currentState": "T300-T345 DONE. Committed c24d0ba. Ollama HTTP + tools + agent + JS + integration + PR-split + provider + config keys + docs. Full make GREEN. Next: T346 cross-platform.",
     "sessionTimer": ".session-timer reset 2026-02-21T05:40:02Z | make check-session-time",
     "priorCompletedWork": "T101-T227 + T300-T331 done. 322+ commits ahead of main. 759 claudemux + 49 ollama + 6 integration tests GREEN."
   },
@@ -46,9 +46,9 @@
     {"task": "T340: claudemux + Ollama HTTP unified", "description": "Done. OllamaHTTPProvider (provider_ollama_http.go). Channel-based AgentHandle adapter. Wired into resolveProvider as 'ollama-http'. 13 tests.", "status": "Done"},
     {"task": "T341: Config — Ollama HTTP keys", "description": "Done. 7 fields in ClaudeMuxConfig: OllamaEndpoint/Model/Timeout/MaxTurns/SystemPrompt/ToolsEnabled/ToolsAllowlist. Parsing in parseClaudeMuxOption. Schema registration. Tests.", "status": "Done"},
     {"task": "T342: Config — tool calling keys", "description": "Done. ToolsEnabled (*bool, nil→true), ToolsAllowlist (comma-separated). ToolRegistry.Remove(). Allowlist filtering in Spawn(). Wire in resolveProvider(). Tests.", "status": "Done"},
-    {"task": "T343: docs/reference/ollama.md", "description": "Client API, ToolRegistry, AgenticRunner, built-in tools, config, streaming, errors, examples. Run make.", "status": "Not Started"},
-    {"task": "T344: docs/tool-calling.md", "description": "What tool calling is, Ollama impl, osm:ollama usage, custom tools, agentic loop, safety, examples. Run make.", "status": "Not Started"},
-    {"task": "T345: CHANGELOG — Ollama HTTP milestone", "description": "CHANGELOG.md [Unreleased] for T300-T344. Keep-a-Changelog. Run make.", "status": "Not Started"},
+    {"task": "T343: docs/reference/ollama.md", "description": "Done. Comprehensive Ollama HTTP reference: Client API, ToolRegistry, AgenticRunner, JS module, built-in tools, config keys, streaming, errors. All APIs verified against source. Committed c24d0ba.", "status": "Done"},
+    {"task": "T344: docs/tool-calling.md", "description": "Done. Tool calling user guide: architecture diagram, built-in tools, Go/JS usage, custom tools, tool filtering, model requirements, agentic loop limits, error handling. Committed c24d0ba.", "status": "Done"},
+    {"task": "T345: CHANGELOG — Ollama HTTP milestone", "description": "Done. CHANGELOG.md [Unreleased] updated with 12 Added entries for T300-T344 (Ollama HTTP client, tools, agent, JS module, provider, config, filtering, integration tests, docs). PR-split bumped to v3.0.0. Committed c24d0ba.", "status": "Done"},
     {"task": "T346: Cross-platform — post Ollama HTTP", "description": "macOS + Linux Docker + Windows. Zero failures. Run make.", "status": "Not Started"},
     {"task": "T347: Document integration findings", "description": "scratch/gap-analysis/integration-findings.md. Ollama TUI, timing, ANSI, launcher, edges. Run make.", "status": "Not Started"},
     {"task": "T348-T358: Coverage — claudemux to 80%+", "description": "Pool, Panel, Parser, Guard, Supervisor, ControlServer, ManagedSession, module.go, safety, choice. Target 80%+. Run make.", "status": "Not Started"},

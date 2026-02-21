@@ -1047,6 +1047,19 @@ func (a *blockedAgent) Wait() (int, error) {
 	return 0, nil
 }
 
+// concurrencyTrackingAgent wraps an AgentHandle with an onClose callback
+// for tracking concurrency in tests. The onClose is called exactly once.
+type concurrencyTrackingAgent struct {
+	claudemux.AgentHandle
+	onClose func()
+	once    sync.Once
+}
+
+func (a *concurrencyTrackingAgent) Close() error {
+	a.once.Do(a.onClose)
+	return a.AgentHandle.Close()
+}
+
 // sendErrorAgent always errors on Send, simulating a broken stdin pipe.
 type sendErrorAgent struct {
 	mu        sync.Mutex
@@ -1117,13 +1130,17 @@ func TestClaudeMux_Run_Integration_PoolConcurrency(t *testing.T) {
 			}
 			concurrencyMu.Unlock()
 			agent := newBlockedAgent(gate)
-			go func() {
-				<-agent.done
-				concurrencyMu.Lock()
-				concurrent--
-				concurrencyMu.Unlock()
-			}()
-			return agent, nil
+			// Wrap Close to track concurrency exit — the pool calls Close
+			// when releasing the slot, so this is the correct synchronization
+			// point (not a separate goroutine watching agent.done).
+			return &concurrencyTrackingAgent{
+				AgentHandle: agent,
+				onClose: func() {
+					concurrencyMu.Lock()
+					concurrent--
+					concurrencyMu.Unlock()
+				},
+			}, nil
 		},
 	}
 

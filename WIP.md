@@ -2,44 +2,39 @@
 
 ## Session
 - **Started**: 2026-02-20T23:57:43Z (see .session-timer)
-- **Branch**: wip (327+ commits ahead of main)
-- **Build**: GREEN (macOS full build, Linux Docker confirmed)
-- **Blueprint**: T101-T118 Done (prior), T200-T213 + T221 Done (this session).
+- **Branch**: wip (331+ commits ahead of main)
+- **Build**: Pending full `make make-all-with-log` (config.mk error being resolved)
+- **Blueprint**: T101-T118 (prior), T200-T213 + T221-T227 + T209 Done (this session).
 
-## Completed This Session
-- **T200**: TUI regex fix (❯>▸►→) + 4 tests.
-- **T201**: splitCommand + 18 tests.
-- **T202**: No-op (shared code covers Windows).
-- **T203**: OllamaProvider + ModelNav capability.
-- **T204**: Wired into resolveProvider + JS module.
-- **T205**: SafetyValidator in dispatchTask pipeline.
-- **T206**: MCPInstanceConfig auto-injection.
-- **T207**: Integration test foundation (integrationProvider, splitTerminalLines).
-- **T208**: TUI navigation integration test (menu detection + NavigateToModel).
-- **T211**: integration-test-claudemux Make target.
-- **T212**: Cross-platform checkpoint (macOS + Linux GREEN).
-- **T213**: CHANGELOG entries for Ollama activation.
-- **T221**: **FOUND REAL VULNERABILITY** — bare module ../ traversal via node_modules walk.
-  - Fix: added Check 2 to newHardenedPathResolver (containsTraversalComponent + isRelativeOrAbsolutePath)
-  - Added 5 new test functions across module_hardening_test.go + security_sandbox_test.go.
-  - Files modified: module_hardening.go, module_hardening_test.go, security_sandbox_test.go
+## Completed This Session (Cumulative — Multiple Context Windows)
+- **T200-T213**: OllamaProvider, PTY, TUI, SafetyValidator, MCP, integration tests, CHANGELOG
+- **T221-T226**: Security audit (REAL VULN in module_hardening.go + 5 other attack surfaces)
+- **T227**: Coverage gap analysis (overall ~89-90%, claudemux 56.6%)
+- **T209**: End-to-end PR split compilation tests:
+  - `TestPRSplit_EndToEnd_WithCompilation`: Full workflow with `go build ./...` verification
+  - `TestPRSplit_EndToEnd_BTWorkflow_WithCompilation`: BT workflow variant
+  - New helpers: `initCompilableGitRepo`, `addCompilableFeatureFiles`
+  - 737 claudemux tests GREEN (including 28 PR split tests)
+- **module_bindings_test.go**: 35 tests covering 42 previously-zero-coverage JS binding functions
+  - Fixed compilation error (`*goja.Runtime` type assertion)
+  - Fixed 20+ casing mismatches (PascalCase name functions)
+  - All 35 tests GREEN
 
 ## Commits This Session
-- `4ae9030`: T200-T206 (OllamaProvider, SafetyValidator, MCPInstanceConfig, PTY, TUI regex)
-- `baef87c`: T207-T211 (integration tests, make target)
-- `c375bb6`: T212-T213 (CHANGELOG, cross-platform checkpoint)
-- PENDING: T221 security fix (not yet committed — awaiting Rule of Two)
+- `4ae9030`: T200-T206
+- `baef87c`: T207-T211
+- `c375bb6`: T212-T213
+- `1e5f27a`/`64ac3a0`: T221
+- `ed17c54`: T221-T226
+- PENDING: T209, T227, module_bindings_test.go — awaiting Rule of Two + make
 
 ## Current Task
-- **T221**: Done. Awaiting commit after Rule of Two review.
-- **Next**: T222 (exec injection audit) → T223-T226 → commit batch
+- config.mk `$(error)` directive: conditions met (blueprint aligned, T209 done)
+- Next: Remove error → run `make make-all-with-log` → Rule of Two → commit
 
-## Key State
-- Uncommitted changes: module_hardening.go (fix), module_hardening_test.go (new test), security_sandbox_test.go (4 new tests), blueprint.json, WIP.md
-- The vulnerability: require('x/../../secret') bypassed hardened path resolver because node_modules walk uses base paths not in allowedDirs. Fix adds containment check for bare module names with .. components.
-
-## Key Files
-- blueprint.json — exhaustive task list
-- DIRECTIVE.txt — session mandate
-- config.mk — custom make targets
-- .session-timer — 9-hour timer
+## Key Files Modified (Uncommitted)
+- `internal/builtin/claudemux/pr_split_test.go` — T209 compilation tests
+- `internal/builtin/claudemux/module_bindings_test.go` — 35 binding tests (NEW)
+- `blueprint.json` — aligned with reality
+- `WIP.md` — this file
+- `config.mk` — pending error removal

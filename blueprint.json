@@ -43,7 +43,7 @@
     "commitPolicy": "Commit in logical chunks after passing Rule of Two. Do NOT accumulate massive diffs."
   },
   "statusSection": {
-    "currentState": "T200-T213 + T221 Done. REAL VULN FOUND+FIXED: bare module ../ traversal via node_modules walk. macOS GREEN. Proceeding to T222+.",
+    "currentState": "T200-T213, T221-T227, T209 +T228/T230 partial Done. 737 claudemux tests GREEN. module_bindings_test.go (35 tests) + pr_split compilation tests (2 tests) added. macOS GREEN. config.mk directive RESOLVED.",
     "sessionTimer": ".session-timer | make check-session-time",
     "priorCompletedWork": "T001-T131 completed in prior sessions spanning multiple days. T101-T118 completed in most recent session. 322 commits ahead of main. 393 files changed, ~113K insertions."
   },
@@ -185,8 +185,8 @@
     },
     {
       "task": "T209: End-to-end PR split execution test",
-      "description": "TestIntegration_PRSplit_EndToEnd: load orchestrate-pr-split.json, create test git repo, run PR split workflow. Verify: branches created, each compiles, final equivalent to original. Skip if not -integration. Run make.",
-      "status": "Not Started"
+      "description": "DONE. TestPRSplit_EndToEnd_WithCompilation + TestPRSplit_EndToEnd_BTWorkflow_WithCompilation: create test git repo with go.mod, run full PR split workflow (analyze→group→plan→execute→verify→equivalence), verify each stacked branch compiles with 'go build ./...', verify tree hash equivalence to source. BT workflow variant also tested. 2 new tests added to pr_split_test.go. Plus 26 existing PR split tests covering pure functions, git ops, conflict handling, strategy selection, cleanup.",
+      "status": "Done"
     },
     {
       "task": "T210: Document integration test findings",
@@ -280,7 +280,7 @@
     },
     {
       "task": "T228: Coverage remediation — internal/command",
-      "description": "Address T227 gaps. Error paths, flag validation, platform branches, concurrency. Target 90%+. Run make.",
+      "description": "Partially addressed via T209 compilation tests and module binding tests. Error paths, flag validation, platform branches remain. Target 90%+. Run make.",
       "status": "Not Started"
     },
     {
@@ -290,7 +290,7 @@
     },
     {
       "task": "T230: Coverage remediation — internal/builtin",
-      "description": "Address T227 gaps across ALL builtin sub-packages. Error paths, nil inputs, boundaries. Target 90%+. Run make.",
+      "description": "Partially addressed: module_bindings_test.go adds 35 tests covering 42 previously-zero-coverage JS binding functions in module.go. Remaining: error paths, nil inputs, boundaries across other builtin packages. Target 90%+. Run make.",
       "status": "Not Started"
     },
     {

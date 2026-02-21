@@ -16,10 +16,10 @@
 - **T206**: Done. MCPInstanceConfig auto-injection.
 
 ## Current Task
-- **Rule of Two**: Review gate for T200-T206 before committing.
+- **T207**: Ollama integration test foundation — Done. Fleshed out stubs.
 
 ## Next
-- T207: Ollama integration test foundation
+- T208: TUI navigation integration test with real Ollama
 
 ## Key Files
 - blueprint.json — exhaustive task list

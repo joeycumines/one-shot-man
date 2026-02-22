@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net"
 	"testing"
 	"time"
@@ -526,9 +525,6 @@ func TestGuard_ComputeBackoff_Overflow(t *testing.T) {
 	}
 	if delay > cfg.RateLimit.MaxDelay {
 		t.Errorf("delay = %v, want <= MaxDelay %v", delay, cfg.RateLimit.MaxDelay)
-	}
-	if math.IsInf(float64(delay), 0) || math.IsNaN(float64(delay)) {
-		t.Errorf("delay is Inf or NaN: %v", delay)
 	}
 }
 

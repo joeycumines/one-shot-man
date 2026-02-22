@@ -606,10 +606,10 @@ func TestGuard_Timeout_Triggered(t *testing.T) {
 		t.Errorf("Action = %v, want Timeout", GuardActionName(ge.Action))
 	}
 
-	// Check well past timeout.
+	// Check well past timeout — should NOT fire again (once-per-arm).
 	ge = g.CheckTimeout(now.Add(10 * time.Minute))
-	if ge == nil || ge.Action != GuardActionTimeout {
-		t.Error("expected timeout event at 10m")
+	if ge != nil {
+		t.Errorf("expected nil after timeout already fired, got %+v", ge)
 	}
 }
 

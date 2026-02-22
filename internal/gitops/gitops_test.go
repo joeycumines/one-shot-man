@@ -571,3 +571,95 @@ func TestPullRebase_CustomGitBin(t *testing.T) {
 		t.Fatal("expected error for nonexistent git binary")
 	}
 }
+
+// TestOpen_CorruptGitDir tests Open when .git exists but is not a valid repo.
+func TestOpen_CorruptGitDir(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	// Create an empty .git directory — IsRepo passes but PlainOpen fails.
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	_, err := Open(dir)
+	if err == nil {
+		t.Fatal("expected error for corrupt .git directory")
+	}
+	// Verify it's NOT an ErrNotRepo (since .git exists → IsRepo passes).
+	if errors.Is(err, ErrNotRepo) {
+		t.Fatalf("expected non-ErrNotRepo error, got: %v", err)
+	}
+}
+
+// TestPush_TransportError tests Push with an unreachable remote URL.
+func TestPush_TransportError(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	// Reconfigure origin to a nonexistent/unreachable path.
+	gitRepo := repo.repo
+	if _, err := gitRepo.CreateRemote(&gitconfig.RemoteConfig{
+		Name: "origin",
+		URLs: []string{"/nonexistent/path/to/repo"},
+	}); err != nil {
+		t.Fatalf("CreateRemote: %v", err)
+	}
+
+	err = repo.Push(context.Background())
+	if err == nil {
+		t.Fatal("expected push error with unreachable remote")
+	}
+	// Should be a push/transport error, not a no-op.
+	if findSubstring(err.Error(), "already up-to-date") {
+		t.Fatalf("expected transport error, not up-to-date: %v", err)
+	}
+}
+
+// TestAddAll_BareRepo tests AddAll on a bare repo (no worktree → error).
+func TestAddAll_BareRepo(t *testing.T) {
+	t.Parallel()
+	bareDir := filepath.Join(t.TempDir(), "bare.git")
+	bareGit := initBareRepo(t, bareDir)
+	r := &Repo{repo: bareGit}
+	err := r.AddAll()
+	if err == nil {
+		t.Fatal("expected error on bare repo AddAll")
+	}
+	if !findSubstring(err.Error(), "worktree") {
+		t.Fatalf("expected worktree error, got: %v", err)
+	}
+}
+
+// TestHasStagedChanges_BareRepo tests HasStagedChanges on a bare repo.
+func TestHasStagedChanges_BareRepo(t *testing.T) {
+	t.Parallel()
+	bareDir := filepath.Join(t.TempDir(), "bare.git")
+	bareGit := initBareRepo(t, bareDir)
+	r := &Repo{repo: bareGit}
+	_, err := r.HasStagedChanges()
+	if err == nil {
+		t.Fatal("expected error on bare repo HasStagedChanges")
+	}
+	if !findSubstring(err.Error(), "worktree") {
+		t.Fatalf("expected worktree error, got: %v", err)
+	}
+}
+
+// TestCommit_BareRepo tests Commit on a bare repo (no worktree → error).
+func TestCommit_BareRepo(t *testing.T) {
+	t.Parallel()
+	bareDir := filepath.Join(t.TempDir(), "bare.git")
+	bareGit := initBareRepo(t, bareDir)
+	r := &Repo{repo: bareGit}
+	_, err := r.Commit("test", time.Now())
+	if err == nil {
+		t.Fatal("expected error on bare repo Commit")
+	}
+	if !findSubstring(err.Error(), "worktree") {
+		t.Fatalf("expected worktree error, got: %v", err)
+	}
+}

@@ -605,6 +605,28 @@ func TestHashFunctionEdgeCases_CollisionResistance(t *testing.T) {
 	}
 }
 
+// TestFormatUUIDID tests the UUID session ID formatting function.
+func TestFormatUUIDID(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name     string
+		uuid     string
+		expected string
+	}{
+		{"standard UUID", "550e8400-e29b-41d4-a716-446655440000", "uuid--550e8400-e29b-41d4-a716-446655440000"},
+		{"short string", "abc", "uuid--abc"},
+		{"empty string", "", "uuid--"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := formatUUIDID(tc.uuid)
+			if result != tc.expected {
+				t.Errorf("formatUUIDID(%q) = %q, want %q", tc.uuid, result, tc.expected)
+			}
+		})
+	}
+}
+
 // TestHashFunctionEdgeCases_UnicodeInput tests hashing unicode strings.
 func TestHashFunctionEdgeCases_UnicodeInput(t *testing.T) {
 	inputs := []string{

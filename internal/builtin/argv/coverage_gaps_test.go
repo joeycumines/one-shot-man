@@ -325,3 +325,24 @@ func TestFormatArgv_ArrayWithObjects(t *testing.T) {
 		t.Errorf("expected output to contain '1', got %q", got)
 	}
 }
+
+// TestFormatArgv_NoArgs exercises formatArgv with zero arguments → empty string.
+func TestFormatArgv_NoArgs(t *testing.T) {
+	runtime, module := setupModule(t)
+	Require(runtime, module)
+
+	exports := module.Get("exports").(*goja.Object)
+	formatFn, ok := goja.AssertFunction(exports.Get("formatArgv"))
+	if !ok {
+		t.Fatalf("formatArgv export is not a function")
+	}
+
+	// Call with no arguments.
+	result, err := formatFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("formatArgv with no args returned error: %v", err)
+	}
+	if result.String() != "" {
+		t.Fatalf("expected empty string, got %q", result.String())
+	}
+}

@@ -1393,3 +1393,157 @@ func TestBlackboard_SnapshotCopied(t *testing.T) {
 	// Original should be unaffected
 	assert.Equal(t, "value", bb.Get("key"))
 }
+
+// ============================================================================
+// nodeUnwrap error path coverage (lines 66-101)
+// ============================================================================
+
+// TestNodeUnwrap_JSFunction_ThrowsError exercises the jsFn(goja.Undefined()) error path.
+func TestNodeUnwrap_JSFunction_ThrowsError(t *testing.T) {
+	t.Parallel()
+	bridge, _, _ := setupTestEnv(t)
+
+	var node bt.Node
+	err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		val, err := vm.RunString(`(function() { throw new Error("boom"); })`)
+		if err != nil {
+			return err
+		}
+		node, err = nodeUnwrap(bridge, vm, val)
+		return err
+	})
+	require.NoError(t, err)
+	require.NotNil(t, node)
+
+	// Calling the node invokes the JS function which throws
+	tick, children := node()
+	require.NotNil(t, tick)
+	assert.Nil(t, children)
+
+	status, tickErr := tick(nil)
+	assert.Equal(t, bt.Failure, status)
+	assert.Error(t, tickErr)
+	assert.Contains(t, tickErr.Error(), "JS node function error")
+}
+
+// TestNodeUnwrap_JSFunction_ReturnsNonArray exercises the path where the JS node
+// function returns an empty object — resultObj.Get("0") is nil.
+func TestNodeUnwrap_JSFunction_ReturnsNonArray(t *testing.T) {
+	t.Parallel()
+	bridge, _, _ := setupTestEnv(t)
+
+	var node bt.Node
+	err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		val, err := vm.RunString(`(function() { return {}; })`)
+		if err != nil {
+			return err
+		}
+		node, err = nodeUnwrap(bridge, vm, val)
+		return err
+	})
+	require.NoError(t, err)
+	require.NotNil(t, node)
+
+	tick, _ := node()
+	require.NotNil(t, tick)
+	status, tickErr := tick(nil)
+	assert.Equal(t, bt.Failure, status)
+	assert.Error(t, tickErr)
+	assert.Contains(t, tickErr.Error(), "must return tick as first element")
+}
+
+// TestNodeUnwrap_JSFunction_InvalidTickElement exercises the failed-to-unwrap-tick path.
+func TestNodeUnwrap_JSFunction_InvalidTickElement(t *testing.T) {
+	t.Parallel()
+	bridge, _, _ := setupTestEnv(t)
+
+	var node bt.Node
+	err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		// Returns [42, []] — 42 is not a valid tick
+		val, err := vm.RunString(`(function() { return [42, []]; })`)
+		if err != nil {
+			return err
+		}
+		node, err = nodeUnwrap(bridge, vm, val)
+		return err
+	})
+	require.NoError(t, err)
+	require.NotNil(t, node)
+
+	tick, _ := node()
+	require.NotNil(t, tick)
+	status, tickErr := tick(nil)
+	assert.Equal(t, bt.Failure, status)
+	assert.Error(t, tickErr)
+	assert.Contains(t, tickErr.Error(), "failed to unwrap tick")
+}
+
+// TestNodeUnwrap_JSFunction_InvalidChildElement exercises the failed-to-unwrap-child path.
+func TestNodeUnwrap_JSFunction_InvalidChildElement(t *testing.T) {
+	t.Parallel()
+	bridge, _, _ := setupTestEnv(t)
+
+	var node bt.Node
+	err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		// Returns [validTick, [42]] — 42 is not a valid child node
+		val, err := vm.RunString(`(function() { return [function(children) { return "success"; }, [42]]; })`)
+		if err != nil {
+			return err
+		}
+		node, err = nodeUnwrap(bridge, vm, val)
+		return err
+	})
+	require.NoError(t, err)
+	require.NotNil(t, node)
+
+	tick, _ := node()
+	require.NotNil(t, tick)
+	status, tickErr := tick(nil)
+	assert.Equal(t, bt.Failure, status)
+	assert.Error(t, tickErr)
+	assert.Contains(t, tickErr.Error(), "failed to unwrap child 0")
+}
+
+// TestNodeUnwrap_NonCallableNonNode exercises the path where value is not
+// a Node, not a func, and not a JS function.
+func TestNodeUnwrap_NonCallableNonNode(t *testing.T) {
+	t.Parallel()
+	bridge := testBridge(t)
+
+	err := bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
+		val := vm.ToValue(42) // plain number
+		_, err := nodeUnwrap(bridge, vm, val)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "value is not a Node")
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+// ============================================================================
+// Bridge.GetGlobal on stopped bridge
+// ============================================================================
+
+// TestBridge_GetGlobal_StoppedBridge exercises the error path in GetGlobal
+// where RunOnLoopSync returns an error because the bridge is stopped.
+func TestBridge_GetGlobal_StoppedBridge(t *testing.T) {
+	t.Parallel()
+	bridge := testBridge(t)
+
+	// Set a value first while bridge is running
+	err := bridge.SetGlobal("testVal", "hello")
+	require.NoError(t, err)
+
+	// Verify it exists
+	val, exists := bridge.GetGlobal("testVal")
+	require.True(t, exists)
+	require.Equal(t, "hello", val)
+
+	// Stop the bridge
+	bridge.Stop()
+
+	// GetGlobal should fail because RunOnLoopSync returns error
+	val, exists = bridge.GetGlobal("testVal")
+	assert.False(t, exists)
+	assert.Nil(t, val)
+}

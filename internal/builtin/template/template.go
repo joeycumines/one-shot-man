@@ -172,6 +172,10 @@ func newTemplateWrapper(runtime *goja.Runtime, name string) map[string]interface
 func (tw *templateWrapper) convertFuncMap(funcMapJS goja.Value) template.FuncMap {
 	funcMap := make(template.FuncMap)
 
+	if funcMapJS == nil || goja.IsUndefined(funcMapJS) || goja.IsNull(funcMapJS) {
+		return funcMap
+	}
+
 	obj := funcMapJS.ToObject(tw.runtime)
 	if obj == nil {
 		return funcMap

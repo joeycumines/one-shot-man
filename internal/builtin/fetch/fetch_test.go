@@ -1015,3 +1015,137 @@ func TestE2E_ReadableStream_CancelMidStream(t *testing.T) {
 		if (!threw) throw new Error('expected error after cancel');
 	`)
 }
+
+// ============================================================================
+// jsSSEReader input validation coverage
+// ============================================================================
+
+// TestSSEReader_NullArgument exercises the null check in jsSSEReader.
+func TestSSEReader_NullArgument(t *testing.T) {
+	t.Parallel()
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		vm := provider.Runtime()
+		_, err := vm.RunString(`
+			try {
+				fetchMod.sseReader(null);
+				throw new Error("expected error");
+			} catch(e) {
+				if (e.message === "expected error") throw e;
+				if (!e.message.includes("ReadableStream body argument")) {
+					throw new Error("wrong error: " + e.message);
+				}
+			}
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// TestSSEReader_UndefinedArgument exercises the undefined check in jsSSEReader.
+func TestSSEReader_UndefinedArgument(t *testing.T) {
+	t.Parallel()
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		vm := provider.Runtime()
+		_, err := vm.RunString(`
+			try {
+				fetchMod.sseReader(undefined);
+				throw new Error("expected error");
+			} catch(e) {
+				if (e.message === "expected error") throw e;
+				if (!e.message.includes("ReadableStream body argument")) {
+					throw new Error("wrong error: " + e.message);
+				}
+			}
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// TestSSEReader_NoArg exercises the zero-args check in jsSSEReader.
+func TestSSEReader_NoArg(t *testing.T) {
+	t.Parallel()
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		vm := provider.Runtime()
+		_, err := vm.RunString(`
+			try {
+				fetchMod.sseReader();
+				throw new Error("expected error");
+			} catch(e) {
+				if (e.message === "expected error") throw e;
+				if (!e.message.includes("ReadableStream body argument")) {
+					throw new Error("wrong error: " + e.message);
+				}
+			}
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// TestSSEReader_ObjectWithout_goStream exercises the missing _goStream check.
+func TestSSEReader_ObjectWithout_goStream(t *testing.T) {
+	t.Parallel()
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		vm := provider.Runtime()
+		_, err := vm.RunString(`
+			try {
+				fetchMod.sseReader({});
+				throw new Error("expected error");
+			} catch(e) {
+				if (e.message === "expected error") throw e;
+				if (!e.message.includes("Go ReadableStream")) {
+					throw new Error("wrong error: " + e.message);
+				}
+			}
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// TestSSEReader_goStreamWrongType exercises the wrong _goStream type check.
+func TestSSEReader_goStreamWrongType(t *testing.T) {
+	t.Parallel()
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		vm := provider.Runtime()
+		_, err := vm.RunString(`
+			try {
+				fetchMod.sseReader({_goStream: "not a stream"});
+				throw new Error("expected error");
+			} catch(e) {
+				if (e.message === "expected error") throw e;
+				if (!e.message.includes("not a *ReadableStream")) {
+					throw new Error("wrong error: " + e.message);
+				}
+			}
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}

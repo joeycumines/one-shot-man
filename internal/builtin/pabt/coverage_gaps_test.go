@@ -205,6 +205,14 @@ func TestJSCondition_Match_BridgeStopped(t *testing.T) {
 	assert.False(t, result, "should return false when bridge is stopped")
 }
 
+// TestJSCondition_Match_NilReceiver tests the nil receiver guard.
+func TestJSCondition_Match_NilReceiver(t *testing.T) {
+	t.Parallel()
+	var cond *JSCondition
+	result := cond.Match("anything")
+	assert.False(t, result, "should return false when receiver is nil")
+}
+
 // ========================================================================
 // evaluation.go NewExprCondition gap coverage
 // ========================================================================

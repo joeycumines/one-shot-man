@@ -773,4 +773,51 @@ func TestBuildContext_TxtarMetadataOutsideFence(t *testing.T) {
 			t.Fatalf("expected context root with backticked path, got:\n%s", text)
 		}
 	})
+
+	t.Run("MetadataWithoutColonSpace", func(t *testing.T) {
+		// Edge case: metadata-like line recognized by prefix but lacking ": " separator.
+		// E.g. "context root:/no/space" has prefix "context root:" but no ": " — hits else branch.
+		script := `
+			globalThis.__result = exports.buildContext([], {
+				toTxtar: () => "context root:/no/space\n-- file.go --\npackage main\n"
+			});
+		`
+		if _, err := runtime.RunString(script); err != nil {
+			t.Fatalf("failed: %v", err)
+		}
+
+		text := runtime.Get("__result").String()
+		// Without ": " separator, the raw line is emitted as-is (no backtick wrapping).
+		if !strings.Contains(text, "context root:/no/space") {
+			t.Fatalf("expected raw metadata line without backtick wrapping, got:\n%s", text)
+		}
+		// Ensure no backtick-wrapped value for this malformed line.
+		if strings.Contains(text, "context root: `") {
+			t.Fatalf("should NOT backtick-wrap when no ': ' separator, got:\n%s", text)
+		}
+	})
+}
+
+// TestRunGitDiff_NilContext verifies the nil ctx guard in runGitDiff.
+func TestRunGitDiff_NilContext(t *testing.T) {
+	t.Parallel()
+	// runGitDiff with nil context should NOT panic (nil → context.Background()).
+	// The actual git command may or may not succeed depending on environment,
+	// but what we're testing is that the nil guard prevents a nil-pointer panic.
+	// Use typed nil to avoid SA1012 (staticcheck: do not pass a nil Context).
+	var nilCtx context.Context
+	_, _, _ = runGitDiff(nilCtx, []string{"--stat", "HEAD"})
+	// If we reach here, the nil ctx guard worked.
+}
+
+// TestGetDefaultGitDiffArgs_NilContext verifies the nil ctx guard in getDefaultGitDiffArgs.
+func TestGetDefaultGitDiffArgs_NilContext(t *testing.T) {
+	t.Parallel()
+	// getDefaultGitDiffArgs with nil context should NOT panic (nil → context.Background()).
+	// Use typed nil to avoid SA1012.
+	var nilCtx context.Context
+	result := getDefaultGitDiffArgs(nilCtx)
+	if len(result) == 0 {
+		t.Fatal("expected non-empty default args")
+	}
 }

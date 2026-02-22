@@ -716,3 +716,223 @@ func TestSpawn_CommandWithSpacesAndExplicitArgs(t *testing.T) {
 		t.Fatalf("expected output to contain %q, got %q", "explicit_args", output.String())
 	}
 }
+
+// TestProcess_Pid_NilCmd exercises the nil-cmd guard in Pid().
+func TestProcess_Pid_NilCmd(t *testing.T) {
+	t.Parallel()
+	p := &Process{done: make(chan struct{})}
+	// cmd is nil → Pid() should return 0.
+	pid := p.Pid()
+	if pid != 0 {
+		t.Fatalf("expected 0 for nil cmd, got %d", pid)
+	}
+}
+
+// TestModule_ProcessAllMethods exercises the JS wrapProcess methods
+// (write, read, resize, signal, isAlive, pid) through the goja runtime.
+func TestModule_ProcessAllMethods(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	rt := goja.New()
+	mod := rt.NewObject()
+	exports := rt.NewObject()
+	_ = mod.Set("exports", exports)
+
+	loader := Require(context.Background())
+	loader(rt, mod)
+
+	exports = mod.Get("exports").(*goja.Object)
+	spawnFn, ok := goja.AssertFunction(exports.Get("spawn"))
+	if !ok {
+		t.Fatal("spawn export is not a function")
+	}
+
+	// Spawn cat so we can write/read interactively.
+	result, err := spawnFn(goja.Undefined(),
+		rt.ToValue("cat"),
+		rt.ToValue([]string{}),
+	)
+	if err != nil {
+		t.Fatalf("spawn returned error: %v", err)
+	}
+	procObj := result.ToObject(rt)
+
+	// Test isAlive()
+	isAliveFn, ok := goja.AssertFunction(procObj.Get("isAlive"))
+	if !ok {
+		t.Fatal("isAlive is not a function")
+	}
+	aliveResult, err := isAliveFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("isAlive error: %v", err)
+	}
+	if !aliveResult.ToBoolean() {
+		t.Fatal("expected process to be alive")
+	}
+
+	// Test pid()
+	pidFn, ok := goja.AssertFunction(procObj.Get("pid"))
+	if !ok {
+		t.Fatal("pid is not a function")
+	}
+	pidResult, err := pidFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("pid error: %v", err)
+	}
+	if pidResult.ToInteger() <= 0 {
+		t.Fatalf("expected positive PID, got %d", pidResult.ToInteger())
+	}
+
+	// Test write()
+	writeFn, ok := goja.AssertFunction(procObj.Get("write"))
+	if !ok {
+		t.Fatal("write is not a function")
+	}
+	if _, err := writeFn(goja.Undefined(), rt.ToValue("hello_pty\n")); err != nil {
+		t.Fatalf("write error: %v", err)
+	}
+
+	// Test read()
+	readFn, ok := goja.AssertFunction(procObj.Get("read"))
+	if !ok {
+		t.Fatal("read is not a function")
+	}
+	var output strings.Builder
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out reading, got: %q", output.String())
+		default:
+		}
+		readResult, _ := readFn(goja.Undefined())
+		if readResult != nil && readResult.String() != "" {
+			output.WriteString(readResult.String())
+		}
+		if strings.Contains(output.String(), "hello_pty") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Test resize()
+	resizeFn, ok := goja.AssertFunction(procObj.Get("resize"))
+	if !ok {
+		t.Fatal("resize is not a function")
+	}
+	if _, err := resizeFn(goja.Undefined(), rt.ToValue(48), rt.ToValue(120)); err != nil {
+		t.Fatalf("resize error: %v", err)
+	}
+
+	// Test signal() — send SIGTERM to cat
+	signalFn, ok := goja.AssertFunction(procObj.Get("signal"))
+	if !ok {
+		t.Fatal("signal is not a function")
+	}
+	if _, err := signalFn(goja.Undefined(), rt.ToValue("SIGTERM")); err != nil {
+		t.Fatalf("signal error: %v", err)
+	}
+
+	// Test wait()
+	waitFn, ok := goja.AssertFunction(procObj.Get("wait"))
+	if !ok {
+		t.Fatal("wait is not a function")
+	}
+	waitResult, err := waitFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("wait error: %v", err)
+	}
+	waitObj := waitResult.ToObject(rt)
+	code := waitObj.Get("code")
+	if code == nil {
+		t.Fatal("wait result missing code field")
+	}
+
+	// Test close()
+	closeFn, ok := goja.AssertFunction(procObj.Get("close"))
+	if !ok {
+		t.Fatal("close is not a function")
+	}
+	if _, err := closeFn(goja.Undefined()); err != nil {
+		t.Fatalf("close error: %v", err)
+	}
+}
+
+// TestModule_SpawnWithAllOptions exercises parseSpawnOptions with dir, term, env.
+func TestModule_SpawnWithAllOptions(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	rt := goja.New()
+	mod := rt.NewObject()
+	exports := rt.NewObject()
+	_ = mod.Set("exports", exports)
+
+	loader := Require(context.Background())
+	loader(rt, mod)
+
+	exports = mod.Get("exports").(*goja.Object)
+	spawnFn, ok := goja.AssertFunction(exports.Get("spawn"))
+	if !ok {
+		t.Fatal("spawn export is not a function")
+	}
+
+	dir := t.TempDir()
+	optsObj := rt.NewObject()
+	_ = optsObj.Set("rows", 30)
+	_ = optsObj.Set("cols", 100)
+	_ = optsObj.Set("dir", dir)
+	_ = optsObj.Set("term", "vt100")
+	envObj := rt.NewObject()
+	_ = envObj.Set("MY_PTY_VAR", "pty_value_77")
+	_ = optsObj.Set("env", envObj)
+
+	result, err := spawnFn(goja.Undefined(),
+		rt.ToValue("sh"),
+		rt.ToValue([]string{"-c", "echo $MY_PTY_VAR && echo $TERM"}),
+		optsObj,
+	)
+	if err != nil {
+		t.Fatalf("spawn with all options returned error: %v", err)
+	}
+
+	procObj := result.ToObject(rt)
+
+	// Read output to verify env and term were applied.
+	readFn, ok := goja.AssertFunction(procObj.Get("read"))
+	if !ok {
+		t.Fatal("read is not a function")
+	}
+
+	var output strings.Builder
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out, got: %q", output.String())
+		default:
+		}
+		readResult, readErr := readFn(goja.Undefined())
+		if readResult != nil && readResult.String() != "" {
+			output.WriteString(readResult.String())
+		}
+		if strings.Contains(output.String(), "pty_value_77") && strings.Contains(output.String(), "vt100") {
+			break
+		}
+		if readResult != nil && readResult.String() == "" && readErr != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if !strings.Contains(output.String(), "pty_value_77") {
+		t.Errorf("expected MY_PTY_VAR=pty_value_77 in output, got %q", output.String())
+	}
+	if !strings.Contains(output.String(), "vt100") {
+		t.Errorf("expected TERM=vt100 in output, got %q", output.String())
+	}
+
+	closeFn, _ := goja.AssertFunction(procObj.Get("close"))
+	closeFn(goja.Undefined())
+}

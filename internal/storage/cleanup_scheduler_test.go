@@ -349,3 +349,48 @@ func TestCleanupScheduler_TickerStopCalled(t *testing.T) {
 		t.Fatal("expected ticker stop function to be called on shutdown")
 	}
 }
+
+// TestDefaultNewTicker verifies the default ticker implementation.
+func TestDefaultNewTicker(t *testing.T) {
+	t.Parallel()
+	ch, stop := defaultNewTicker(10 * time.Millisecond)
+	defer stop()
+	select {
+	case <-ch:
+		// Success — received a tick.
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected tick within 2 seconds")
+	}
+}
+
+// TestCleanupScheduler_NilNewTicker verifies that nil NewTicker uses default.
+func TestCleanupScheduler_NilNewTicker(t *testing.T) {
+	dir := t.TempDir()
+	SetTestPaths(dir)
+	defer ResetPaths()
+
+	cleaner := &Cleaner{MaxAgeDays: 365}
+	scheduler := &CleanupScheduler{
+		Cleaner:   cleaner,
+		Interval:  10 * time.Millisecond,
+		NewTicker: nil, // should use defaultNewTicker
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		scheduler.Run(ctx)
+		close(done)
+	}()
+
+	// Let it run for a few ticks.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+		// Good.
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return after cancellation")
+	}
+}

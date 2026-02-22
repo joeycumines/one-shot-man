@@ -23,9 +23,9 @@
     "ollama CLI is the vehicle to run Claude Code. osm:ollama (the HTTP module) is what gets deleted. OllamaProvider (PTY-based) stays."
   ],
   "statusSection": {
-    "currentState": "EXECUTING — T001-T025 ollama HTTP deletion ~85% complete, preparing build verification",
+    "currentState": "EXECUTING — T001-T025 DONE (all platforms GREEN). Starting T026+ claudemux audit.",
     "branch": "wip (348+ commits ahead of main)",
-    "buildStatus": "UNTESTED since Ollama HTTP deletion — need make run",
+    "buildStatus": "ALL GREEN — macOS PASS, Linux Docker PASS, Windows PASS. splitCommand deadcode + Windows path fix applied.",
     "sessionTimer": ".session-timer (2026-02-21T21:02:36+1000)"
   },
   "sequentialTasks": [
@@ -147,12 +147,12 @@
     {
       "task": "T024: Run full build/lint/test cycle — Linux (Docker)",
       "description": "Execute `make make-all-in-container` and confirm ZERO failures on Linux.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T025: Run full build/lint/test cycle — Windows (moo)",
-      "description": "Execute `make make-all-run-windows` and confirm ZERO failures on Windows.",
-      "status": "Not Started"
+      "description": "Execute `make make-all-run-windows` and confirm ZERO failures on Windows. Fixed: splitCommand moved to pty_unix.go (deadcode), filepath.ToSlash for Windows JS string escaping.",
+      "status": "Done"
     },
     {
       "task": "T026: Audit claudemux API surface for fitness post-ollama removal",

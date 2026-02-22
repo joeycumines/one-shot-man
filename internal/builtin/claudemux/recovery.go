@@ -508,14 +508,12 @@ func (s *Supervisor) decideRetryOrRestart(class ErrorClass, errMsg string) Recov
 	}
 }
 
-// decideRetryOrEscalate retries once then escalates.
+// decideRetryOrEscalate retries exactly once, then escalates. Used for
+// severe error classes (e.g., MCP-Malformed) where extended retrying is
+// unlikely to help. This is intentionally more aggressive than
+// decideRetryOrRestart, which respects config.MaxRetries.
 func (s *Supervisor) decideRetryOrEscalate(class ErrorClass, errMsg string) RecoveryDecision {
 	s.retryCount++
-
-	maxRetries := s.config.MaxRetries
-	if maxRetries <= 0 {
-		maxRetries = 3
-	}
 
 	if s.retryCount > 1 {
 		s.state = SupervisorStopped

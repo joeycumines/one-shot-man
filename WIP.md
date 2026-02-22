@@ -3,50 +3,37 @@
 ## Session
 - **Started**: 2026-02-20T23:57:43Z (see .session-timer)
 - **Branch**: wip (348+ commits ahead of main)
-- **Build**: GREEN \u2014 build PASS, lint PASS (vet+staticcheck+deadcode), test PASS (44 packages, 0 failures)
-- **Blueprint**: T001-T023 DONE. Ollama HTTP deletion COMPLETE. Next: T024+ (cross-platform, claudemux audit)
+- **Build**: ALL GREEN — macOS PASS, Linux Docker PASS, Windows PASS
+- **Blueprint**: T001-T025 DONE. Next: T026+ (claudemux audit)
 
-## Current Phase: Ollama HTTP Deletion (T001-T025)
-Systematically removing the `osm:ollama` HTTP client module, `OllamaHTTPProvider`, and all traces.
-**KEEP**: `OllamaProvider` (PTY-based), `ollama()` JS factory in `osm:claudemux`, `model_nav.go`, all PTY tests.
+## Completed Phases
 
-### Files DELETED
-- `internal/builtin/ollama/` (entire directory — 10 files)
-- `internal/builtin/claudemux/provider_ollama_http.go`
-- `internal/builtin/claudemux/provider_ollama_http_test.go`
-- `docs/reference/ollama.md`
-- `docs/tool-calling.md`
+### Phase 1: Ollama HTTP Deletion (T001-T023) — DONE
+Deleted `osm:ollama` HTTP client module, `OllamaHTTPProvider`, all traces.
+KEPT: `OllamaProvider` (PTY-based), `ollama()` JS factory, `model_nav.go`.
 
-### Files EDITED (Ollama HTTP removed)
-- `internal/builtin/register.go` — removed ollamamod import + registration
-- `internal/config/config.go` — removed 8 Ollama HTTP struct fields, 4 defaults, 7 switch cases
-- `internal/config/schema.go` — removed 15 ollama schema entries
-- `internal/config/config_test.go` — removed test data, assertions, 5 subtests
-- `internal/command/claude_mux.go` — removed `case "ollama-http"` block
-- `internal/builtin/claudemux/pr_split_test.go` — removed 6 Ollama test functions
-- `scripts/orchestrate-pr-split.js` — removed ollama import, 5 functions, extractJSON, section header
-- `CHANGELOG.md` — removed 11 Ollama HTTP entries, trimmed PR split line
-- `docs/README.md` — removed ollama.md and tool-calling.md links
-- `docs/todo.md` — deleted 170-line stale "Ollama Safety Validation" brainstorming section
-- `internal/config/config.go` — also removed unused `time` import (post-deletion fix)
+### Phase 2: Cross-Platform Verification (T024-T025) — DONE
+- **T024**: Linux Docker via `make make-all-in-container` — GREEN
+- **T025**: Windows via `make make-all-run-windows` — GREEN after two fixes:
+  1. `splitCommand` deadcode: moved from `pty.go` to `pty_unix.go` (Windows never calls it)
+  2. Windows path escaping: `filepath.ToSlash(dir)` in `module_bindings_test.go` line 191
 
-### Files VERIFIED KEPT (PTY — correct)
-- `internal/builtin/claudemux/provider_ollama.go` (PTY-based OllamaProvider)
-- `internal/builtin/claudemux/provider_ollama_test.go` (12 unit tests)
-- `internal/builtin/claudemux/model_nav.go` (TUI navigation)
-- `internal/builtin/claudemux/model_nav_test.go` (7 Ollama-named tests — generic TUI)
-- `internal/builtin/claudemux/module.go` — ollama() factory creates PTY OllamaProvider
-- `internal/builtin/claudemux/module_bindings_test.go` — ollama factory tests KEPT
-- `internal/builtin/claudemux/integration_test.go` — all PTY provider refs
+### Cross-Platform Bug Fixes Applied
+- `internal/builtin/pty/pty.go` — removed `splitCommand` (moved to pty_unix.go)
+- `internal/builtin/pty/pty_unix.go` — received `splitCommand` + `"strings"` import
+- `internal/builtin/pty/pty_splitcmd_test.go` — NEW file (`//go:build !windows`) with 18 test cases
+- `internal/builtin/pty/pty_test.go` — removed `TestSplitCommand` (moved to pty_splitcmd_test.go)
+- `internal/builtin/claudemux/module_bindings_test.go` — added `"path/filepath"` import, `filepath.ToSlash(dir)`
+
+## Current Phase: Claudemux Audit (T026-T042) — STARTING
+Audit every exported type, interface, function in claudemux package.
 
 ## Immediate Next Steps
-1. Cross-platform verification: `make make-all-in-container` (Linux), `make make-all-run-windows` (Windows)
-2. T026-T042: Claudemux audit and refinement
-3. T043-T060: PR splitter agentic rewrite using claudemux
-4. T061-T077: Integration tests + coverage push to 100%
+1. **T026**: Audit claudemux API surface for fitness post-ollama removal
+2. **T027**: Review ClaudeCodeProvider implementation
+3. **T028**: Review parser.go for Claude Code patterns
+4. Continue through T042 (full claudemux package review)
 
 ## Known Issues
-- **create_file tool corruption**: Large files get corrupted with reversed content.
-  - **Workaround**: Write parts to scratch/, assemble via make target.
+- **create_file tool corruption**: Large files get corrupted — write to scratch/, assemble via make target.
 - **Auto-commit ghost**: Something creates "test commit" commits periodically.
-- **Env var advisory**: OSM_OLLAMA_ENDPOINT and OSM_OLLAMA_MODEL no longer in schema (deleted with HTTP config).

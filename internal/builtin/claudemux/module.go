@@ -1028,6 +1028,7 @@ func wrapGuard(runtime *goja.Runtime, g *Guard) goja.Value {
 		_ = obj.Set("currentDelayMs", st.CurrentDelay.Milliseconds())
 		_ = obj.Set("crashCount", st.CrashCount)
 		_ = obj.Set("started", st.Started)
+		_ = obj.Set("timeoutFired", st.TimeoutFired)
 		if !st.LastEventTime.IsZero() {
 			_ = obj.Set("lastEventTimeMs", st.LastEventTime.UnixMilli())
 		}
@@ -1189,6 +1190,7 @@ func wrapMCPGuard(runtime *goja.Runtime, g *MCPGuard) goja.Value {
 		_ = obj.Set("totalCalls", st.TotalCalls)
 		_ = obj.Set("recentCount", st.RecentCount)
 		_ = obj.Set("started", st.Started)
+		_ = obj.Set("noCallTimeoutFired", st.NoCallTimeoutFired)
 		if !st.LastCallTime.IsZero() {
 			_ = obj.Set("lastCallTimeMs", st.LastCallTime.UnixMilli())
 		}

@@ -139,6 +139,7 @@ type Guard struct {
 	// Timeout state.
 	lastEventTime time.Time
 	started       bool
+	timeoutFired  bool // prevents repeated timeout emission
 }
 
 // NewGuard creates a guard monitor with the given configuration.
@@ -155,6 +156,7 @@ func (g *Guard) ProcessEvent(ev OutputEvent, now time.Time) *GuardEvent {
 	// Track last event time for timeout detection.
 	g.lastEventTime = now
 	g.started = true
+	g.timeoutFired = false // new event received — re-arm timeout
 
 	switch ev.Type {
 	case EventRateLimit:
@@ -214,9 +216,13 @@ func (g *Guard) CheckTimeout(now time.Time) *GuardEvent {
 	if g.config.OutputTimeout.Timeout <= 0 {
 		return nil
 	}
+	if g.timeoutFired {
+		return nil // already emitted — wait for new event to re-arm
+	}
 
 	elapsed := now.Sub(g.lastEventTime)
 	if elapsed >= g.config.OutputTimeout.Timeout {
+		g.timeoutFired = true
 		return &GuardEvent{
 			Action: GuardActionTimeout,
 			Reason: fmt.Sprintf("no output for %s (timeout: %s)",
@@ -245,6 +251,7 @@ type GuardState struct {
 	CrashCount        int           `json:"crashCount"`
 	LastEventTime     time.Time     `json:"lastEventTime,omitempty"`
 	Started           bool          `json:"started"`
+	TimeoutFired      bool          `json:"timeoutFired"`
 }
 
 // State returns the current observable state of the guard for debugging.
@@ -256,6 +263,7 @@ func (g *Guard) State() GuardState {
 		CrashCount:        g.crashCount,
 		LastEventTime:     g.lastEventTime,
 		Started:           g.started,
+		TimeoutFired:      g.timeoutFired,
 	}
 }
 
@@ -315,7 +323,24 @@ func (g *Guard) computeBackoff() time.Duration {
 		mult = 2.0
 	}
 	factor := math.Pow(mult, float64(g.rateLimitCount-1))
+
+	// Guard against float64 overflow (factor becomes +Inf or excessively
+	// large). In those cases, clamp to MaxDelay directly.
+	if math.IsInf(factor, 0) || math.IsNaN(factor) || factor < 0 {
+		if cfg.MaxDelay > 0 {
+			return cfg.MaxDelay
+		}
+		return cfg.InitialDelay
+	}
+
 	delay := time.Duration(float64(cfg.InitialDelay) * factor)
+	// Negative result means float64→int64 overflow occurred.
+	if delay < 0 {
+		if cfg.MaxDelay > 0 {
+			return cfg.MaxDelay
+		}
+		return cfg.InitialDelay
+	}
 
 	// Cap at MaxDelay.
 	if cfg.MaxDelay > 0 && delay > cfg.MaxDelay {

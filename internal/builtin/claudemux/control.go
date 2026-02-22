@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 )
 
 // --- Protocol types ---
@@ -43,6 +44,15 @@ type GetStatusResult struct {
 }
 
 // --- Control handler interface ---
+
+// controlConnTimeout is the maximum time a single control connection may
+// remain open (both server-side accept→respond and client-side dial→read).
+// 30 seconds is extremely generous for local Unix socket IPC.
+const controlConnTimeout = 30 * time.Second
+
+// controlMaxRequestSize is the maximum size (in bytes) of a single control
+// request line. Prevents abuse via extremely large payloads.
+const controlMaxRequestSize = 1 << 20 // 1 MiB
 
 // ControlHandler processes control requests. Implementations are provided
 // by the orchestrator (e.g., claudemux run command) and called by
@@ -95,6 +105,11 @@ func (s *ControlServer) Start() error {
 		return fmt.Errorf("control server: listen %s: %w", s.sockPath, err)
 	}
 	s.listener = ln
+
+	// Restrict socket permissions to owner only (defense in depth for
+	// multi-user systems). Errors are non-fatal — some platforms or
+	// filesystem types may not support chmod on sockets.
+	_ = os.Chmod(s.sockPath, 0600)
 
 	s.connWg.Add(1)
 	go func() {
@@ -160,24 +175,34 @@ func (s *ControlServer) acceptLoop() {
 
 // handleConn processes a single client connection. One request per
 // connection (connect → send request → receive response → disconnect).
+//
+// A deadline is applied to prevent goroutine leaks from slow/stuck clients.
 func (s *ControlServer) handleConn(conn net.Conn) {
+	// Apply a deadline covering the entire read→dispatch→write cycle.
+	// This prevents goroutine leaks from clients that connect but never
+	// send data (or send data very slowly).
+	_ = conn.SetDeadline(time.Now().Add(controlConnTimeout))
+
 	scanner := bufio.NewScanner(conn)
+	scanner.Buffer(make([]byte, 0, 64*1024), controlMaxRequestSize)
 	if !scanner.Scan() {
-		return // client disconnected without sending
+		return // client disconnected without sending (or deadline expired)
 	}
 	line := scanner.Bytes()
 
 	var req ControlRequest
 	if err := json.Unmarshal(line, &req); err != nil {
 		resp := ControlResponse{OK: false, Error: fmt.Sprintf("invalid request: %v", err)}
-		data, _ := json.Marshal(resp)
-		_, _ = conn.Write(append(data, '\n'))
+		if data, merr := json.Marshal(resp); merr == nil {
+			_, _ = conn.Write(append(data, '\n'))
+		}
 		return
 	}
 
 	resp := s.dispatch(req)
-	data, _ := json.Marshal(resp)
-	_, _ = conn.Write(append(data, '\n'))
+	if data, merr := json.Marshal(resp); merr == nil {
+		_, _ = conn.Write(append(data, '\n'))
+	}
 }
 
 // dispatch routes a request to the appropriate handler method.
@@ -206,7 +231,10 @@ func (s *ControlServer) handleEnqueueTask(params json.RawMessage) ControlRespons
 	if err != nil {
 		return ControlResponse{OK: false, Error: err.Error()}
 	}
-	result, _ := json.Marshal(EnqueueTaskResult{Position: pos})
+	result, err := json.Marshal(EnqueueTaskResult{Position: pos})
+	if err != nil {
+		return ControlResponse{OK: false, Error: fmt.Sprintf("marshal result: %v", err)}
+	}
 	return ControlResponse{OK: true, Result: result}
 }
 
@@ -219,7 +247,10 @@ func (s *ControlServer) handleInterruptCurrent() ControlResponse {
 
 func (s *ControlServer) handleGetStatus() ControlResponse {
 	status := s.handler.GetStatus()
-	result, _ := json.Marshal(status)
+	result, err := json.Marshal(status)
+	if err != nil {
+		return ControlResponse{OK: false, Error: fmt.Sprintf("marshal status: %v", err)}
+	}
 	return ControlResponse{OK: true, Result: result}
 }
 
@@ -282,13 +313,16 @@ func (c *ControlClient) GetStatus() (*GetStatusResult, error) {
 }
 
 // send connects to the socket, sends a request, reads the response,
-// and disconnects.
+// and disconnects. Uses timeouts to prevent blocking on hung servers.
 func (c *ControlClient) send(req ControlRequest) (*ControlResponse, error) {
-	conn, err := net.Dial("unix", c.sockPath)
+	conn, err := net.DialTimeout("unix", c.sockPath, controlConnTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("connect %s: %w", c.sockPath, err)
 	}
 	defer conn.Close()
+
+	// Apply a deadline covering the entire write→read cycle.
+	_ = conn.SetDeadline(time.Now().Add(controlConnTimeout))
 
 	data, err := json.Marshal(req)
 	if err != nil {

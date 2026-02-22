@@ -91,9 +91,10 @@ type MCPGuard struct {
 	recentCalls []MCPToolCall
 
 	// Tracking state.
-	lastCallTime time.Time
-	totalCalls   int
-	started      bool // true after first ProcessToolCall
+	lastCallTime       time.Time
+	totalCalls         int
+	started            bool // true after first ProcessToolCall
+	noCallTimeoutFired bool // prevents repeated no-call timeout emission
 
 	// Allowlist lookup cache (built once from config).
 	allowedSet map[string]struct{}
@@ -124,6 +125,7 @@ func (g *MCPGuard) ProcessToolCall(call MCPToolCall) *GuardEvent {
 	g.started = true
 	g.lastCallTime = call.Timestamp
 	g.totalCalls++
+	g.noCallTimeoutFired = false // new call received — re-arm timeout
 
 	// Append to recent history.
 	g.recentCalls = append(g.recentCalls, call)
@@ -165,9 +167,13 @@ func (g *MCPGuard) CheckNoCallTimeout(now time.Time) *GuardEvent {
 	if g.config.NoCallTimeout.Timeout <= 0 {
 		return nil
 	}
+	if g.noCallTimeoutFired {
+		return nil // already emitted — wait for new call to re-arm
+	}
 
 	elapsed := now.Sub(g.lastCallTime)
 	if elapsed >= g.config.NoCallTimeout.Timeout {
+		g.noCallTimeoutFired = true
 		return &GuardEvent{
 			Action: GuardActionTimeout,
 			Reason: fmt.Sprintf("no MCP tool calls for %s (timeout: %s)",
@@ -185,19 +191,21 @@ func (g *MCPGuard) CheckNoCallTimeout(now time.Time) *GuardEvent {
 
 // MCPGuardState holds observable MCP guard state for debugging and metrics.
 type MCPGuardState struct {
-	TotalCalls   int       `json:"totalCalls"`
-	LastCallTime time.Time `json:"lastCallTime,omitempty"`
-	RecentCount  int       `json:"recentCount"`
-	Started      bool      `json:"started"`
+	TotalCalls         int       `json:"totalCalls"`
+	LastCallTime       time.Time `json:"lastCallTime,omitempty"`
+	RecentCount        int       `json:"recentCount"`
+	Started            bool      `json:"started"`
+	NoCallTimeoutFired bool      `json:"noCallTimeoutFired"`
 }
 
 // State returns the current observable state of the MCP guard.
 func (g *MCPGuard) State() MCPGuardState {
 	return MCPGuardState{
-		TotalCalls:   g.totalCalls,
-		LastCallTime: g.lastCallTime,
-		RecentCount:  len(g.recentCalls),
-		Started:      g.started,
+		TotalCalls:         g.totalCalls,
+		LastCallTime:       g.lastCallTime,
+		RecentCount:        len(g.recentCalls),
+		Started:            g.started,
+		NoCallTimeoutFired: g.noCallTimeoutFired,
 	}
 }
 

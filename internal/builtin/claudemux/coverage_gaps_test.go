@@ -454,14 +454,17 @@ func TestSupervisor_MaxRetriesEscalation(t *testing.T) {
 	s.Start()
 
 	// Send enough errors to exceed MaxRetries.
-	var lastDecision RecoveryDecision
+	// After escalation, state becomes Stopped. Subsequent errors return Abort.
+	sawEscalate := false
 	for i := 0; i < 5; i++ {
-		lastDecision = s.HandleError(fmt.Sprintf("error %d", i), ErrorClassMCPMalformed)
+		d := s.HandleError(fmt.Sprintf("error %d", i), ErrorClassMCPMalformed)
+		if d.Action == RecoveryEscalate {
+			sawEscalate = true
+		}
 	}
 
-	if lastDecision.Action != RecoveryEscalate {
-		t.Errorf("action = %s after max retries, want Escalate",
-			RecoveryActionName(lastDecision.Action))
+	if !sawEscalate {
+		t.Error("expected at least one Escalate decision after max retries")
 	}
 }
 
@@ -474,16 +477,27 @@ func TestSupervisor_ForceKillChain(t *testing.T) {
 	s := NewSupervisor(ctx, cfg)
 	s.Start()
 
-	// Send crash errors to trigger force-kill path.
-	var lastDecision RecoveryDecision
+	// Send crash errors to trigger force-kill / escalation.
+	// Track all unique actions seen.
+	sawForceKill := false
+	sawEscalateOrAbort := false
 	for i := 0; i < 15; i++ {
-		lastDecision = s.HandleError(fmt.Sprintf("crash %d", i), ErrorClassPTYCrash)
+		d := s.HandleError(fmt.Sprintf("crash %d", i), ErrorClassPTYCrash)
+		if d.Action == RecoveryForceKill {
+			sawForceKill = true
+			// After force-kill, confirm recovery to allow further retries.
+			s.ConfirmRecovery()
+		} else if d.Action == RecoveryEscalate || d.Action == RecoveryAbort {
+			sawEscalateOrAbort = true
+			break
+		}
 	}
 
-	// Should eventually escalate after exhausting retries.
-	if lastDecision.Action != RecoveryEscalate {
-		t.Errorf("action = %s after force-kill chain, want Escalate",
-			RecoveryActionName(lastDecision.Action))
+	if !sawForceKill {
+		t.Error("expected at least one ForceKill decision for PTYCrash")
+	}
+	if !sawEscalateOrAbort {
+		t.Error("expected eventual Escalate or Abort after force-kill chain")
 	}
 }
 

@@ -671,43 +671,43 @@
     },
     {
       "task": "T129: Command coverage — session delete + isExecutable + resolveProvider",
-      "description": "Push command package from 87.4% toward 90%. Target session.go:delete (54.2%), registry.go:isExecutable (42.9%), claude_mux.go:resolveProvider (58.3%). These are unit-testable with TempDir and mock structs.",
-      "status": "Not Started"
+      "description": "25 tests in coverage_gaps_batch10_test.go: session delete (dry-run, happy, nonexistent, locked), isExecutable Unix/Windows, resolveProvider 6 cases. Committed 7723a52.",
+      "status": "Done"
     },
     {
       "task": "T130: Command coverage — SetupFlags + traversal functions",
-      "description": "Cover base.go:SetupFlags (0%), sync.go:SetupFlags (0%), traverseForGitRepos (65%), autodiscoverPaths (70%), traverseForGoalDirs (74.4%). Filesystem traversal testing with TempDir.",
-      "status": "Not Started"
+      "description": "Included in batch 10: SetupFlags (base + sync), traverseForGitRepos (3 tests incl upward depth), traverseForGoalDirs (2 tests), DiscoverPromptFilePaths, NewDynamicGoalRegistry. Committed 7723a52.",
+      "status": "Done"
     },
     {
       "task": "T131: Storage coverage — AtomicWriteFile error paths",
-      "description": "Push AtomicWriteFile from 72.7% toward 95%. Test error paths: read-only dirs, write failures, chmod failures, Windows rename path. Use permission manipulation in TempDir.",
-      "status": "Not Started"
+      "description": "AtomicWriteFile read-only target + permissions tests. Also fixed fs_backend.go SessionDirectory→getSessionDirectory bypass bug. Committed 7723a52.",
+      "status": "Done"
     },
     {
       "task": "T132: Storage coverage — ArchiveSession + SaveSession + NewFSBackend",
-      "description": "Push ArchiveSession (76.0%), SaveSession (84.6%), NewFileSystemBackend (86.7%) error paths. Test dest-already-exists races, marshal errors, MkdirAll failures.",
-      "status": "Not Started"
+      "description": "SaveSession marshal error, NewFSBackend MkdirAll error, SaveSession AtomicWrite failure (chmod 0555, skips Windows). Committed 7723a52.",
+      "status": "Done"
     },
     {
       "task": "T133: Session coverage — GetSessionID Screen path + formatSessionID",
-      "description": "Cover GetSessionID Screen detection (set STY env var), formatSessionID constrained namespace truncation. Easy wins via t.Setenv.",
-      "status": "Not Started"
+      "description": "21 tests: formatSessionID constrained/extreme/very-long namespace, sanitized full suffix, truncated payload, formatScreenID (2), formatSSHID (3). Committed 7723a52.",
+      "status": "Done"
     },
     {
       "task": "T134: Audit fix — followFile context.Background shutdown",
-      "description": "followFile in log_tail.go uses context.Background() with no shutdown path. Add context propagation from the parent command or a cancellation mechanism.",
-      "status": "Not Started"
+      "description": "Replaced context.Background() with signal.NotifyContext for SIGINT/SIGTERM in tailFollow. Deferred cleanup now runs properly.",
+      "status": "Done"
     },
     {
       "task": "T135: Audit fix — module resolution cycle detection stack corruption",
-      "description": "Cycle detection in require() permanently pollutes the detection stack after cycles are found. Reset or scope the stack properly.",
-      "status": "Not Started"
+      "description": "Analyzed: NOT A BUG. enter() returns without pushing on cycle detection; leave() only registered in else branch. Stack stays balanced.",
+      "status": "Done"
     },
     {
       "task": "T136: Audit fix — fetch response body size limit",
-      "description": "osm:fetch has no response body size limit — large responses can OOM the process. Add configurable maxResponseSize with sensible default.",
-      "status": "Not Started"
+      "description": "Added maxResponseSize option (default 10MB) to osm:fetch using io.LimitReader. Two tests: exceeded and within-limit.",
+      "status": "Done"
     },
     {
       "task": "T137: Full fuzz revalidation — all 17 tests post-fixes",

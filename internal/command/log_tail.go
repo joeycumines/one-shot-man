@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -165,8 +167,10 @@ func (c *LogCommand) tailFollow(logPath string, stdout, stderr io.Writer) error 
 		return fmt.Errorf("failed to seek to end: %w", err)
 	}
 
-	// Follow loop: poll for new data.
-	ctx := context.Background()
+	// Follow loop: poll for new data. Use signal-based context so
+	// deferred cleanup (file close, ticker stop) runs on SIGINT/SIGTERM.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	return followFile(ctx, f, logPath, pos, stdout, stderr)
 }
 

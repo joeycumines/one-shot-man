@@ -1149,3 +1149,67 @@ func TestSSEReader_goStreamWrongType(t *testing.T) {
 		}
 	})
 }
+
+// ============================================================================
+// maxResponseSize option coverage
+// ============================================================================
+
+// TestFetch_MaxResponseSize_Exceeded verifies that a response exceeding
+// the maxResponseSize option is rejected.
+func TestFetch_MaxResponseSize_Exceeded(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return a body of 200 bytes.
+		w.WriteHeader(200)
+		for i := 0; i < 200; i++ {
+			_, _ = w.Write([]byte("x"))
+		}
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	// Set maxResponseSize to 100 bytes — response is 200 bytes → should reject.
+	runAsync(t, provider, `
+		try {
+			await fetchMod.fetch(url, { maxResponseSize: 100 });
+			throw new Error("expected rejection for oversized response");
+		} catch(e) {
+			if (!e.message.includes("exceeds maximum size")) {
+				throw new Error("wrong error: " + e.message);
+			}
+		}
+	`)
+}
+
+// TestFetch_MaxResponseSize_WithinLimit verifies that a response within
+// the maxResponseSize option is accepted normally.
+func TestFetch_MaxResponseSize_WithinLimit(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte("small"))
+	}))
+	defer server.Close()
+
+	provider := testutil.NewTestEventLoopProvider()
+	t.Cleanup(provider.Stop)
+	loadModule(t, provider)
+
+	runOnLoop(t, provider, func() {
+		_ = provider.Runtime().Set("url", server.URL)
+	})
+
+	runAsync(t, provider, `
+		var resp = await fetchMod.fetch(url, { maxResponseSize: 1024 });
+		if (resp.status !== 200) throw new Error("expected 200");
+		var body = await resp.text();
+		if (body !== "small") throw new Error("unexpected body: " + body);
+	`)
+}

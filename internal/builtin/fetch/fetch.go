@@ -23,6 +23,10 @@ import (
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
+// defaultMaxResponseSize is the maximum response body size (10 MiB).
+// Callers can override via the maxResponseSize option.
+const defaultMaxResponseSize int64 = 10 << 20
+
 // Require returns a module loader for osm:fetch backed by the event loop adapter.
 // The adapter is required for Promise-based async fetch operations.
 func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
@@ -57,7 +61,7 @@ func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
 func jsFetch(runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		url := call.Argument(0).String()
-		method, timeout, bodyReader, reqHeaders, signal := parseOptions(call)
+		method, timeout, bodyReader, reqHeaders, signal, maxBody := parseOptions(call)
 
 		req, err := http.NewRequest(method, url, bodyReader)
 		if err != nil {
@@ -97,10 +101,14 @@ func jsFetch(runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call go
 				return
 			}
 
-			body, readErr := io.ReadAll(resp.Body)
+			body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 			resp.Body.Close()
 			if readErr != nil {
 				reject(readErr)
+				return
+			}
+			if int64(len(body)) > maxBody {
+				reject(fmt.Errorf("response body exceeds maximum size of %d bytes", maxBody))
 				return
 			}
 
@@ -149,9 +157,10 @@ func jsSSEReader(runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(cal
 }
 
 // parseOptions extracts HTTP request parameters from the optional second argument.
-func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration, bodyReader io.Reader, reqHeaders map[string]interface{}, signal *goeventloop.AbortSignal) {
+func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration, bodyReader io.Reader, reqHeaders map[string]interface{}, signal *goeventloop.AbortSignal, maxResponseSize int64) {
 	method = "GET"
 	timeout = 30 * time.Second
+	maxResponseSize = defaultMaxResponseSize
 
 	if len(call.Arguments) <= 1 {
 		return
@@ -181,6 +190,14 @@ func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration,
 	if b, ok := opts["body"]; ok {
 		if s, ok := b.(string); ok {
 			bodyReader = strings.NewReader(s)
+		}
+	}
+	if m, ok := opts["maxResponseSize"]; ok {
+		switch v := m.(type) {
+		case int64:
+			maxResponseSize = v
+		case float64:
+			maxResponseSize = int64(v)
 		}
 	}
 	if h, ok := opts["headers"]; ok {

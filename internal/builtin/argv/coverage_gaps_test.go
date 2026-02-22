@@ -1,6 +1,7 @@
 package argv
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -344,5 +345,53 @@ func TestFormatArgv_NoArgs(t *testing.T) {
 	}
 	if result.String() != "" {
 		t.Fatalf("expected empty string, got %q", result.String())
+	}
+}
+
+// TestFormatArgv_GoIntSlice hits the []interface{} fallback path.
+// A Go []int passed to goja cannot be exported to []string, so ExportTo([]string)
+// fails, but ExportTo([]interface{}) succeeds → iterates and joins with fmt.Sprint.
+func TestFormatArgv_GoIntSlice(t *testing.T) {
+	runtime, module := setupModule(t)
+	Require(runtime, module)
+
+	exports := module.Get("exports").(*goja.Object)
+	formatFn, ok := goja.AssertFunction(exports.Get("formatArgv"))
+	if !ok {
+		t.Fatalf("formatArgv export is not a function")
+	}
+
+	// Pass a Go []int directly — cannot be exported to []string.
+	input := runtime.ToValue([]int{10, 20, 30})
+	result, err := formatFn(goja.Undefined(), input)
+	if err != nil {
+		t.Fatalf("formatArgv returned error: %v", err)
+	}
+	got := result.String()
+	if got != "10 20 30" {
+		t.Errorf("expected '10 20 30', got %q", got)
+	}
+}
+
+// TestParseArgv_NonStringArg triggers the parseArgv TypeError for non-string input.
+func TestParseArgv_NonStringArg(t *testing.T) {
+	runtime, module := setupModule(t)
+	Require(runtime, module)
+
+	exports := module.Get("exports").(*goja.Object)
+	parseFn, ok := goja.AssertFunction(exports.Get("parseArgv"))
+	if !ok {
+		t.Fatalf("parseArgv export is not a function")
+	}
+
+	// Pass a number instead of a string — should panic with TypeError.
+	_, err := parseFn(goja.Undefined(), runtime.ToValue(42))
+	if err == nil {
+		t.Fatal("expected error for non-string argument")
+	}
+	// Verify it's a TypeError from goja
+	var gojaErr *goja.Exception
+	if ok := errors.As(err, &gojaErr); !ok {
+		t.Fatalf("expected goja.Exception, got %T: %v", err, err)
 	}
 }

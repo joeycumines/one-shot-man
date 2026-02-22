@@ -69,21 +69,23 @@ Fixed production bug: `convertFuncMap` panicked on null/undefined input because
 - command/util_cmd_coverage_gaps_test.go: 3 tests (valueOrNone empty/non-empty, BaseCommand SetupFlags)
 
 ## Immediate Next Steps
-1. Continue coverage push — claudemux module bindings (biggest remaining gaps)
-2. Push bubbletea, session, nextintegerid higher
+1. Continue coverage push — remaining claudemux gaps (instance.Create 57.1%, control.go gaps)
+2. Push other packages: command, scripting, bubbletea
 3. Run Rule of Two before any commit
 4. Cross-platform verification (T078-T080)
 5. T044-T060: PR splitter rewrite
 
-## Latest Commit
+## Latest Commits (this session)
+- **8ca16e9**: Add claudemux coverage tests for wrapPool, wrapPoolWorker, wrapRegistry, wrapPanel, wrapGuard, wrapMCPGuard, wrapMCPInstance (1 file, +940 lines)
+- **cadba47**: Add claudemux module binding coverage tests for eventToJS, wrapMCPInstance, wrapInstance, wrapInstanceRegistry, wrapPool (2 files, +438 lines)
 - **7349c94**: Add coverage tests for claudemux, config, mouseharness, session, and nextintegerid (5 files, +718 lines)
 - **3abab67**: Fix template convertFuncMap null panic and add coverage tests (17 files, +1537/-13 lines)
 
-## Coverage Snapshot (post-7349c94)
+## Coverage Snapshot (post-8ca16e9)
 | Package | Coverage |
 |---------|----------|
-| claudemux | 93.0% (was 91.8%) |
-| config | 97.4% (was 97.2%) |
+| claudemux | **94.9%** (was 91.8% → 93.0% → 93.3% → 94.9%) |
+| config | 97.4% |
 | mouseharness | 80.0% |
 | session | 89.9% |
 | nextintegerid | 92.9% |

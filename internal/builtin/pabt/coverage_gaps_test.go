@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dop251/goja"
+	"github.com/expr-lang/expr"
 	bt "github.com/joeycumines/go-behaviortree"
 	"github.com/joeycumines/go-pabt"
 	btmod "github.com/joeycumines/one-shot-man/internal/builtin/bt"
@@ -1182,5 +1183,72 @@ func TestCoverageGaps_Smoke(t *testing.T) {
 		if !strings.Contains(fmt.Sprintf("Test%s", name), "Test") {
 			t.Errorf("Invalid test name pattern: %s", name)
 		}
+	}
+}
+
+// ========================================================================
+// evaluation.go:310 — JSCondition.Match with non-nil matcher but nil bridge
+// ========================================================================
+
+func TestJSCondition_Match_NilBridge_NonNilMatcher(t *testing.T) {
+	t.Parallel()
+	// Create a real goja.Callable so matcher is non-nil,
+	// but set bridge = nil to hit line 310-312.
+	vm := goja.New()
+	val, err := vm.RunString("(function(x) { return true; })")
+	if err != nil {
+		t.Fatalf("Failed to create JS function: %v", err)
+	}
+	fn, ok := goja.AssertFunction(val)
+	if !ok {
+		t.Fatal("Expected callable function")
+	}
+
+	c := &JSCondition{
+		key:     "bridge-nil-key",
+		matcher: fn,
+		bridge:  nil, // This is what we're testing
+	}
+	result := c.Match("any-value")
+	if result {
+		t.Error("JSCondition.Match with nil bridge should return false")
+	}
+}
+
+// ========================================================================
+// evaluation.go:480 — ExprCondition.Match with non-boolean result via
+// pre-compiled program (bypassing AsBool compilation check)
+// ========================================================================
+
+func TestExprCondition_Match_NonBooleanResult_Injected(t *testing.T) {
+	t.Parallel()
+	// Compile WITHOUT AsBool() so the expression "1 + 1" returns int(2).
+	// Then inject it into an ExprCondition to bypass the normal compilation
+	// path which uses AsBool(). This hits the defensive non-boolean check at
+	// evaluation.go:480-487.
+	program, err := expr.Compile("1 + 1",
+		expr.Env(ExprEnv{}),
+		expr.AllowUndefinedVariables(),
+	)
+	if err != nil {
+		t.Fatalf("expr.Compile: %v", err)
+	}
+
+	c := &ExprCondition{
+		key:        "injected-key",
+		expression: "1 + 1",
+		program:    program, // Pre-compiled without AsBool
+	}
+
+	result := c.Match(42)
+	if result {
+		t.Error("ExprCondition.Match with non-boolean result should return false")
+	}
+	lastErr := c.LastError()
+	if lastErr == nil {
+		t.Fatal("LastError should be non-nil after non-boolean result")
+	}
+	if !strings.Contains(lastErr.Error(), "non-boolean") {
+		t.Errorf("LastError should mention 'non-boolean', got: %v", lastErr)
 	}
 }

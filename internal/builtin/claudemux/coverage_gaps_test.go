@@ -258,7 +258,7 @@ func TestControlServer_InvalidParams(t *testing.T) {
 func TestManagedSession_StartFromNonIdle_Coverage(t *testing.T) {
 	t.Parallel()
 	cfg := DefaultManagedSessionConfig()
-	s := NewManagedSession(nil, "test", cfg)
+	s := NewManagedSession(context.Background(), "test", cfg)
 	if err := s.Start(); err != nil {
 		t.Fatalf("first Start: %v", err)
 	}
@@ -275,7 +275,7 @@ func TestManagedSession_CheckTimeout_GuardTimeout(t *testing.T) {
 	cfg.Guard.OutputTimeout.Timeout = 100 * time.Millisecond
 	cfg.MCPGuard.NoCallTimeout.Enabled = false // test only output guard
 
-	s := NewManagedSession(nil, "timeout-test", cfg)
+	s := NewManagedSession(context.Background(), "timeout-test", cfg)
 	if err := s.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestManagedSession_CheckTimeout_MCPTimeout(t *testing.T) {
 	cfg.MCPGuard.NoCallTimeout.Enabled = true
 	cfg.MCPGuard.NoCallTimeout.Timeout = 100 * time.Millisecond
 
-	s := NewManagedSession(nil, "mcp-timeout-test", cfg)
+	s := NewManagedSession(context.Background(), "mcp-timeout-test", cfg)
 	if err := s.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -337,7 +337,7 @@ func TestManagedSession_ProcessToolCall_FrequencyExceeded(t *testing.T) {
 	cfg.MCPGuard.FrequencyLimit.Window = 1 * time.Second
 	cfg.MCPGuard.FrequencyLimit.MaxCalls = 3
 
-	s := NewManagedSession(nil, "freq-test", cfg)
+	s := NewManagedSession(context.Background(), "freq-test", cfg)
 	if err := s.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -366,7 +366,7 @@ func TestManagedSession_ProcessToolCall_RepeatDetection(t *testing.T) {
 	cfg.MCPGuard.RepeatDetection.MatchTool = true
 	cfg.MCPGuard.RepeatDetection.MatchArgHash = true
 
-	s := NewManagedSession(nil, "repeat-test", cfg)
+	s := NewManagedSession(context.Background(), "repeat-test", cfg)
 	if err := s.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
 	}

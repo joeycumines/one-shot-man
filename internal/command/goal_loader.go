@@ -20,6 +20,10 @@ const maxGoalFileSize = 1 << 20
 // with a warning to prevent excessive scanning in pathological cases.
 const maxDirEntries = 10000
 
+// goalNameRE matches valid goal names: alphanumeric with hyphens, must
+// start with an alphanumeric character.
+var goalNameRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]*$`)
+
 // LoadGoalFromFile loads a goal definition from a JSON file.
 // It validates required fields and resolves script content from embedded or external files.
 func LoadGoalFromFile(path string) (*Goal, error) {
@@ -85,8 +89,7 @@ func validateGoal(goal *Goal) error {
 // isValidGoalName checks if a goal name is a valid identifier
 func isValidGoalName(name string) bool {
 	// Must contain only alphanumeric characters and hyphens, no spaces
-	matched, _ := regexp.MatchString(`^[a-zA-Z0-9][a-zA-Z0-9-]*$`, name)
-	return matched
+	return goalNameRE.MatchString(name)
 }
 
 // resolveGoalScript resolves the script content for a goal.

@@ -149,7 +149,10 @@ func (c *SyncCommand) executeSave(args []string, stdout, stderr io.Writer) error
 
 	// Deduplicate: if file already exists, append a numeric suffix.
 	entryPath := filepath.Join(yearMonth, filename)
-	entryPath = deduplicatePath(entryPath)
+	entryPath, err = deduplicatePath(entryPath)
+	if err != nil {
+		return fmt.Errorf("deduplicating entry path: %w", err)
+	}
 
 	// Build frontmatter.
 	var sb strings.Builder
@@ -495,27 +498,29 @@ func matchEntry(entries []notebookEntry, query string) *notebookEntry {
 	}
 
 	// Slug-only match (e.g., "my-review"). Returns most recent if ambiguous.
-	// Sort reverse chronological first.
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].path > entries[j].path
+	// Sort reverse chronological first. Copy to avoid mutating caller's slice.
+	sorted := make([]notebookEntry, len(entries))
+	copy(sorted, entries)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].path > sorted[j].path
 	})
-	for i := range entries {
-		if entries[i].slug == query {
-			return &entries[i]
+	for i := range sorted {
+		if sorted[i].slug == query {
+			return &sorted[i]
 		}
 	}
 
 	// Date prefix match (e.g., "2025-01-15"). Returns first match.
-	for i := range entries {
-		if entries[i].date == query {
-			return &entries[i]
+	for i := range sorted {
+		if sorted[i].date == query {
+			return &sorted[i]
 		}
 	}
 
 	// Partial slug match (e.g., "review" matches "my-code-review").
-	for i := range entries {
-		if strings.Contains(entries[i].slug, query) {
-			return &entries[i]
+	for i := range sorted {
+		if strings.Contains(sorted[i].slug, query) {
+			return &sorted[i]
 		}
 	}
 
@@ -602,18 +607,17 @@ func parseTags(tags string) []string {
 }
 
 // deduplicatePath appends a numeric suffix if the path already exists.
-func deduplicatePath(path string) string {
+func deduplicatePath(path string) (string, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return path
+		return path, nil
 	}
 	ext := filepath.Ext(path)
 	base := strings.TrimSuffix(path, ext)
 	for i := 2; i < 1000; i++ {
 		candidate := fmt.Sprintf("%s-%d%s", base, i, ext)
 		if _, err := os.Stat(candidate); os.IsNotExist(err) {
-			return candidate
+			return candidate, nil
 		}
 	}
-	// Extremely unlikely fallback.
-	return path
+	return "", fmt.Errorf("too many entries with base name %q", filepath.Base(path))
 }

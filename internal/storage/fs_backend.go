@@ -24,7 +24,7 @@ func NewFileSystemBackend(sessionID string) (*FileSystemBackend, error) {
 	}
 
 	// Ensure the session directory exists
-	sessionDir, err := SessionDirectory()
+	sessionDir, err := getSessionDirectory()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session directory: %w", err)
 	}
@@ -33,7 +33,7 @@ func NewFileSystemBackend(sessionID string) (*FileSystemBackend, error) {
 	}
 
 	// Acquire exclusive lock on the session
-	lockPath, err := SessionLockFilePath(sessionID)
+	lockPath, err := getSessionLockFilePath(sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get lock file path: %w", err)
 	}

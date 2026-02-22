@@ -666,7 +666,67 @@
     },
     {
       "task": "T128: Update blueprint.json with expansion scope",
-      "description": "After completing all above tasks, identify NEXT frontier of improvements. Add new tasks. The work is never done.",
+      "description": "Expansion scope T129-T140 added: coverage push (command, storage, session), audit fix backlog, fuzz revalidation, cross-platform check.",
+      "status": "Done"
+    },
+    {
+      "task": "T129: Command coverage — session delete + isExecutable + resolveProvider",
+      "description": "Push command package from 87.4% toward 90%. Target session.go:delete (54.2%), registry.go:isExecutable (42.9%), claude_mux.go:resolveProvider (58.3%). These are unit-testable with TempDir and mock structs.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T130: Command coverage — SetupFlags + traversal functions",
+      "description": "Cover base.go:SetupFlags (0%), sync.go:SetupFlags (0%), traverseForGitRepos (65%), autodiscoverPaths (70%), traverseForGoalDirs (74.4%). Filesystem traversal testing with TempDir.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T131: Storage coverage — AtomicWriteFile error paths",
+      "description": "Push AtomicWriteFile from 72.7% toward 95%. Test error paths: read-only dirs, write failures, chmod failures, Windows rename path. Use permission manipulation in TempDir.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T132: Storage coverage — ArchiveSession + SaveSession + NewFSBackend",
+      "description": "Push ArchiveSession (76.0%), SaveSession (84.6%), NewFileSystemBackend (86.7%) error paths. Test dest-already-exists races, marshal errors, MkdirAll failures.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T133: Session coverage — GetSessionID Screen path + formatSessionID",
+      "description": "Cover GetSessionID Screen detection (set STY env var), formatSessionID constrained namespace truncation. Easy wins via t.Setenv.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T134: Audit fix — followFile context.Background shutdown",
+      "description": "followFile in log_tail.go uses context.Background() with no shutdown path. Add context propagation from the parent command or a cancellation mechanism.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T135: Audit fix — module resolution cycle detection stack corruption",
+      "description": "Cycle detection in require() permanently pollutes the detection stack after cycles are found. Reset or scope the stack properly.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T136: Audit fix — fetch response body size limit",
+      "description": "osm:fetch has no response body size limit — large responses can OOM the process. Add configurable maxResponseSize with sensible default.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T137: Full fuzz revalidation — all 17 tests post-fixes",
+      "description": "Rerun all 17 fuzz tests for 30s each to confirm FuzzMCPSessionTools fix and validate no new regressions from coverage test additions.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T138: Cross-platform verification — Linux + Windows",
+      "description": "Run make-all-in-container (Linux Docker) and make-all-run-windows after all coverage + fix work. All platforms must be green.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T139: Update WIP.md with expansion state",
+      "description": "Checkpoint WIP.md for next Takumi: current coverage numbers, committed changes, remaining work.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T140: Scope expansion — identify next frontier",
+      "description": "After T129-T139, assess remaining gaps. Add T141+ for: script refinement (T096-T098), diff vs main (T101-T103), additional coverage, new features.",
       "status": "Not Started"
     }
   ],

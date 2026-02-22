@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -1528,5 +1529,944 @@ func TestWrapPool_StartDrainClose(t *testing.T) {
 	_, err = closeFn(goja.Undefined())
 	if err != nil {
 		t.Fatalf("close() threw: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// wrapPoolWorker — state, stateName, taskCount, errorCount getters
+// ---------------------------------------------------------------------------
+
+func TestWrapPoolWorker_Getters(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	w := &PoolWorker{
+		ID:         "w1",
+		State:      WorkerIdle,
+		TaskCount:  5,
+		ErrorCount: 2,
+	}
+	obj := wrapPoolWorker(rt, w).ToObject(rt)
+
+	// id is a property, not a function
+	if obj.Get("id").String() != "w1" {
+		t.Errorf("id = %q, want w1", obj.Get("id").String())
+	}
+
+	stateFn, _ := goja.AssertFunction(obj.Get("state"))
+	stateVal, _ := stateFn(goja.Undefined())
+	if stateVal.ToInteger() != int64(WorkerIdle) {
+		t.Errorf("state() = %d, want %d", stateVal.ToInteger(), WorkerIdle)
+	}
+
+	stateNameFn, _ := goja.AssertFunction(obj.Get("stateName"))
+	nameVal, _ := stateNameFn(goja.Undefined())
+	if nameVal.String() != WorkerStateName(WorkerIdle) {
+		t.Errorf("stateName() = %q, want %q", nameVal.String(), WorkerStateName(WorkerIdle))
+	}
+
+	taskFn, _ := goja.AssertFunction(obj.Get("taskCount"))
+	taskVal, _ := taskFn(goja.Undefined())
+	if taskVal.ToInteger() != 5 {
+		t.Errorf("taskCount() = %d, want 5", taskVal.ToInteger())
+	}
+
+	errFn, _ := goja.AssertFunction(obj.Get("errorCount"))
+	errVal, _ := errFn(goja.Undefined())
+	if errVal.ToInteger() != 2 {
+		t.Errorf("errorCount() = %d, want 2", errVal.ToInteger())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// wrapPool — addWorker, removeWorker, release, tryAcquire, waitDrained
+// ---------------------------------------------------------------------------
+
+func TestWrapPool_AddWorker_NoArgs(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	p := NewPool(PoolConfig{MaxSize: 2})
+	obj := wrapPool(rt, p).ToObject(rt)
+
+	addFn, _ := goja.AssertFunction(obj.Get("addWorker"))
+	_, err := addFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for addWorker with no args")
+	}
+	if !strings.Contains(err.Error(), "addWorker: id argument required") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestWrapPool_AddWorker_Success(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	p := NewPool(PoolConfig{MaxSize: 2})
+	_ = p.Start()
+	obj := wrapPool(rt, p).ToObject(rt)
+
+	addFn, _ := goja.AssertFunction(obj.Get("addWorker"))
+	workerVal, err := addFn(goja.Undefined(), rt.ToValue("worker-1"))
+	if err != nil {
+		t.Fatalf("addWorker threw: %v", err)
+	}
+	// Should return a wrapped PoolWorker object
+	wObj := workerVal.ToObject(rt)
+	if wObj.Get("id").String() != "worker-1" {
+		t.Errorf("worker.id = %q, want worker-1", wObj.Get("id").String())
+	}
+	p.Close()
+}
+
+func TestWrapPool_RemoveWorker_NoArgs(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	p := NewPool(PoolConfig{MaxSize: 2})
+	obj := wrapPool(rt, p).ToObject(rt)
+
+	rmFn, _ := goja.AssertFunction(obj.Get("removeWorker"))
+	_, err := rmFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for removeWorker with no args")
+	}
+	if !strings.Contains(err.Error(), "removeWorker: id argument required") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestWrapPool_RemoveWorker_Error(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	p := NewPool(PoolConfig{MaxSize: 2})
+	_ = p.Start()
+	obj := wrapPool(rt, p).ToObject(rt)
+
+	rmFn, _ := goja.AssertFunction(obj.Get("removeWorker"))
+	_, err := rmFn(goja.Undefined(), rt.ToValue("nonexistent"))
+	if err == nil {
+		t.Fatal("expected error for removing nonexistent worker")
+	}
+	p.Close()
+}
+
+func TestWrapPool_Release_NoArgs(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	p := NewPool(PoolConfig{MaxSize: 2})
+	obj := wrapPool(rt, p).ToObject(rt)
+
+	relFn, _ := goja.AssertFunction(obj.Get("release"))
+	_, err := relFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for release with no args")
+	}
+	if !strings.Contains(err.Error(), "release: worker argument required") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestWrapPool_Release_WorkerNotFound(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	p := NewPool(PoolConfig{MaxSize: 2})
+	_ = p.Start()
+	obj := wrapPool(rt, p).ToObject(rt)
+
+	relFn, _ := goja.AssertFunction(obj.Get("release"))
+	workerObj := rt.NewObject()
+	_ = workerObj.Set("id", "nonexistent")
+	_, err := relFn(goja.Undefined(), workerObj)
+	if err == nil {
+		t.Fatal("expected TypeError for releasing nonexistent worker")
+	}
+	if !strings.Contains(err.Error(), "release: worker not found in pool") {
+		t.Errorf("unexpected error: %v", err)
+	}
+	p.Close()
+}
+
+func TestWrapPool_Release_MissingID(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	p := NewPool(PoolConfig{MaxSize: 2})
+	obj := wrapPool(rt, p).ToObject(rt)
+
+	relFn, _ := goja.AssertFunction(obj.Get("release"))
+	workerObj := rt.NewObject()
+	_, err := relFn(goja.Undefined(), workerObj)
+	if err == nil {
+		t.Fatal("expected TypeError for release with worker missing id")
+	}
+	if !strings.Contains(err.Error(), "release: worker must have id property") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestWrapPool_TryAcquire_Success(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	p := NewPool(PoolConfig{MaxSize: 2})
+	_ = p.Start()
+	p.AddWorker("w1", nil)
+	obj := wrapPool(rt, p).ToObject(rt)
+
+	tryFn, _ := goja.AssertFunction(obj.Get("tryAcquire"))
+	val, err := tryFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("tryAcquire threw: %v", err)
+	}
+	// Should return a wrapped worker
+	wObj := val.ToObject(rt)
+	if wObj.Get("id").String() != "w1" {
+		t.Errorf("tryAcquire worker.id = %q, want w1", wObj.Get("id").String())
+	}
+	p.Close()
+}
+
+func TestWrapPool_WaitDrained(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	p := NewPool(PoolConfig{MaxSize: 2})
+	_ = p.Start()
+	p.Drain()
+	obj := wrapPool(rt, p).ToObject(rt)
+
+	waitFn, _ := goja.AssertFunction(obj.Get("waitDrained"))
+	_, err := waitFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("waitDrained threw: %v", err)
+	}
+	p.Close()
+}
+
+func TestWrapPool_ReleaseWithError(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	p := NewPool(PoolConfig{MaxSize: 2})
+	_ = p.Start()
+	p.AddWorker("w1", nil)
+	obj := wrapPool(rt, p).ToObject(rt)
+
+	// Acquire the worker first
+	tryFn, _ := goja.AssertFunction(obj.Get("tryAcquire"))
+	workerVal, _ := tryFn(goja.Undefined())
+
+	// Release with an error string
+	relFn, _ := goja.AssertFunction(obj.Get("release"))
+	_, err := relFn(goja.Undefined(), workerVal, rt.ToValue("task failed"))
+	if err != nil {
+		t.Fatalf("release with error threw: %v", err)
+	}
+	p.Close()
+}
+
+// ---------------------------------------------------------------------------
+// wrapRegistry — register, get, list, spawn
+// ---------------------------------------------------------------------------
+
+func TestWrapRegistry_RegisterAndList(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	r := NewRegistry()
+	obj := wrapRegistry(rt, r, context.Background()).ToObject(rt)
+
+	// list() should start empty
+	listFn, _ := goja.AssertFunction(obj.Get("list"))
+	listVal, _ := listFn(goja.Undefined())
+	arr := listVal.Export()
+	if arr != nil {
+		if items, ok := arr.([]interface{}); ok && len(items) != 0 {
+			t.Errorf("list() should be empty, got %d items", len(items))
+		}
+	}
+
+	// Register a provider via JS binding
+	regFn, _ := goja.AssertFunction(obj.Get("register"))
+	prov := wrapProvider(rt, &stubProvider{providerName: "test-provider"})
+	_, err := regFn(goja.Undefined(), prov)
+	if err != nil {
+		t.Fatalf("register threw: %v", err)
+	}
+
+	// list() should have 1 provider now
+	listVal2, _ := listFn(goja.Undefined())
+	exported := listVal2.Export()
+	switch items := exported.(type) {
+	case []interface{}:
+		if len(items) != 1 {
+			t.Errorf("list() after register: got %d items, want 1", len(items))
+		}
+	case []string:
+		if len(items) != 1 {
+			t.Errorf("list() after register: got %d items, want 1", len(items))
+		}
+	default:
+		t.Errorf("list() after register: unexpected type %T, value %v", exported, exported)
+	}
+}
+
+func TestWrapRegistry_RegisterNoArgs(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	r := NewRegistry()
+	obj := wrapRegistry(rt, r, context.Background()).ToObject(rt)
+
+	regFn, _ := goja.AssertFunction(obj.Get("register"))
+	_, err := regFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for register with no args")
+	}
+}
+
+func TestWrapRegistry_GetSuccess(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	r := NewRegistry()
+	_ = r.Register(&stubProvider{providerName: "my-prov"})
+	obj := wrapRegistry(rt, r, context.Background()).ToObject(rt)
+
+	getFn, _ := goja.AssertFunction(obj.Get("get"))
+	val, err := getFn(goja.Undefined(), rt.ToValue("my-prov"))
+	if err != nil {
+		t.Fatalf("get threw: %v", err)
+	}
+	pObj := val.ToObject(rt)
+	nameFn, _ := goja.AssertFunction(pObj.Get("name"))
+	nameVal, _ := nameFn(goja.Undefined())
+	if nameVal.String() != "my-prov" {
+		t.Errorf("get().name() = %q, want my-prov", nameVal.String())
+	}
+}
+
+func TestWrapRegistry_GetNotFound(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	r := NewRegistry()
+	obj := wrapRegistry(rt, r, context.Background()).ToObject(rt)
+
+	getFn, _ := goja.AssertFunction(obj.Get("get"))
+	_, err := getFn(goja.Undefined(), rt.ToValue("no-such"))
+	if err == nil {
+		t.Fatal("expected error for get with unknown name")
+	}
+}
+
+func TestWrapRegistry_GetNoArgs(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	r := NewRegistry()
+	obj := wrapRegistry(rt, r, context.Background()).ToObject(rt)
+
+	getFn, _ := goja.AssertFunction(obj.Get("get"))
+	_, err := getFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for get with no args")
+	}
+}
+
+func TestWrapRegistry_SpawnNoArgs(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	r := NewRegistry()
+	obj := wrapRegistry(rt, r, context.Background()).ToObject(rt)
+
+	spawnFn, _ := goja.AssertFunction(obj.Get("spawn"))
+	_, err := spawnFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for spawn with no args")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// wrapPanel — full lifecycle
+// ---------------------------------------------------------------------------
+
+func TestWrapPanel_FullLifecycle(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	panel := NewPanel(PanelConfig{MaxPanes: 4, ScrollbackSize: 50})
+	obj := wrapPanel(rt, panel).ToObject(rt)
+
+	// start()
+	startFn, _ := goja.AssertFunction(obj.Get("start"))
+	_, err := startFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("start() threw: %v", err)
+	}
+
+	// addPane(id, title)
+	addFn, _ := goja.AssertFunction(obj.Get("addPane"))
+	idxVal, err := addFn(goja.Undefined(), rt.ToValue("p1"), rt.ToValue("Pane 1"))
+	if err != nil {
+		t.Fatalf("addPane threw: %v", err)
+	}
+	if idxVal.ToInteger() != 0 {
+		t.Errorf("addPane returned index %d, want 0", idxVal.ToInteger())
+	}
+
+	// addPane second pane
+	_, err = addFn(goja.Undefined(), rt.ToValue("p2"), rt.ToValue("Pane 2"))
+	if err != nil {
+		t.Fatalf("addPane #2 threw: %v", err)
+	}
+
+	// paneCount()
+	countFn, _ := goja.AssertFunction(obj.Get("paneCount"))
+	countVal, _ := countFn(goja.Undefined())
+	if countVal.ToInteger() != 2 {
+		t.Errorf("paneCount() = %d, want 2", countVal.ToInteger())
+	}
+
+	// activeIndex()
+	actIdxFn, _ := goja.AssertFunction(obj.Get("activeIndex"))
+	actVal, _ := actIdxFn(goja.Undefined())
+	if actVal.ToInteger() != 0 {
+		t.Errorf("activeIndex() = %d, want 0", actVal.ToInteger())
+	}
+
+	// setActive(1)
+	setActFn, _ := goja.AssertFunction(obj.Get("setActive"))
+	_, err = setActFn(goja.Undefined(), rt.ToValue(1))
+	if err != nil {
+		t.Fatalf("setActive(1) threw: %v", err)
+	}
+
+	// activePane() — should be pane 2
+	actPaneFn, _ := goja.AssertFunction(obj.Get("activePane"))
+	paneVal, _ := actPaneFn(goja.Undefined())
+	paneObj := paneVal.ToObject(rt)
+	if paneObj.Get("id").String() != "p2" {
+		t.Errorf("activePane().id = %q, want p2", paneObj.Get("id").String())
+	}
+
+	// appendOutput(paneID, line)
+	appendFn, _ := goja.AssertFunction(obj.Get("appendOutput"))
+	_, err = appendFn(goja.Undefined(), rt.ToValue("p1"), rt.ToValue("hello world"))
+	if err != nil {
+		t.Fatalf("appendOutput threw: %v", err)
+	}
+
+	// updateHealth(paneID, health)
+	healthFn, _ := goja.AssertFunction(obj.Get("updateHealth"))
+	healthObj := rt.NewObject()
+	_ = healthObj.Set("state", "running")
+	_ = healthObj.Set("errorCount", 0)
+	_ = healthObj.Set("taskCount", 3)
+	_, err = healthFn(goja.Undefined(), rt.ToValue("p1"), healthObj)
+	if err != nil {
+		t.Fatalf("updateHealth threw: %v", err)
+	}
+
+	// routeInput(key)
+	routeFn, _ := goja.AssertFunction(obj.Get("routeInput"))
+	routeVal, err := routeFn(goja.Undefined(), rt.ToValue("a"))
+	if err != nil {
+		t.Fatalf("routeInput threw: %v", err)
+	}
+	routeObj := routeVal.ToObject(rt)
+	if routeObj.Get("consumed") == nil {
+		t.Error("routeInput result should have consumed field")
+	}
+
+	// getVisibleLines(paneID, height)
+	visFn, _ := goja.AssertFunction(obj.Get("getVisibleLines"))
+	visVal, err := visFn(goja.Undefined(), rt.ToValue("p1"), rt.ToValue(10))
+	if err != nil {
+		t.Fatalf("getVisibleLines threw: %v", err)
+	}
+	// Should be an array
+	if visVal == nil || goja.IsUndefined(visVal) {
+		t.Error("getVisibleLines returned nil/undefined")
+	}
+
+	// statusBar()
+	statusFn, _ := goja.AssertFunction(obj.Get("statusBar"))
+	_, err = statusFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("statusBar threw: %v", err)
+	}
+
+	// snapshot()
+	snapFn, _ := goja.AssertFunction(obj.Get("snapshot"))
+	snapVal, err := snapFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("snapshot threw: %v", err)
+	}
+	if snapVal == nil || goja.IsUndefined(snapVal) {
+		t.Error("snapshot returned nil/undefined")
+	}
+
+	// config()
+	cfgFn, _ := goja.AssertFunction(obj.Get("config"))
+	cfgVal, err := cfgFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("config() threw: %v", err)
+	}
+	cfgObj := cfgVal.ToObject(rt)
+	if cfgObj.Get("maxPanes").ToInteger() != 4 {
+		t.Errorf("config().maxPanes = %d, want 4", cfgObj.Get("maxPanes").ToInteger())
+	}
+
+	// removePane(id)
+	rmFn, _ := goja.AssertFunction(obj.Get("removePane"))
+	_, err = rmFn(goja.Undefined(), rt.ToValue("p2"))
+	if err != nil {
+		t.Fatalf("removePane threw: %v", err)
+	}
+
+	// close()
+	closeFn, _ := goja.AssertFunction(obj.Get("close"))
+	_, err = closeFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("close() threw: %v", err)
+	}
+}
+
+func TestWrapPanel_ErrorPaths(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	panel := NewPanel(PanelConfig{MaxPanes: 4, ScrollbackSize: 50})
+	obj := wrapPanel(rt, panel).ToObject(rt)
+
+	// addPane no args
+	addFn, _ := goja.AssertFunction(obj.Get("addPane"))
+	_, err := addFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for addPane with no args")
+	}
+
+	// removePane no args
+	rmFn, _ := goja.AssertFunction(obj.Get("removePane"))
+	_, err = rmFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for removePane with no args")
+	}
+
+	// routeInput no args
+	routeFn, _ := goja.AssertFunction(obj.Get("routeInput"))
+	_, err = routeFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for routeInput with no args")
+	}
+
+	// setActive no args
+	setFn, _ := goja.AssertFunction(obj.Get("setActive"))
+	_, err = setFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for setActive with no args")
+	}
+
+	// appendOutput no args
+	appendFn, _ := goja.AssertFunction(obj.Get("appendOutput"))
+	_, err = appendFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for appendOutput with no args")
+	}
+
+	// updateHealth no args
+	healthFn, _ := goja.AssertFunction(obj.Get("updateHealth"))
+	_, err = healthFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for updateHealth with no args")
+	}
+
+	// getVisibleLines no args
+	visFn, _ := goja.AssertFunction(obj.Get("getVisibleLines"))
+	_, err = visFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for getVisibleLines with no args")
+	}
+
+	// start() on already-started panel
+	_ = panel.Start()
+	startFn, _ := goja.AssertFunction(obj.Get("start"))
+	_, err = startFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected error for double start()")
+	}
+
+	// setActive out of bounds
+	_, err = setFn(goja.Undefined(), rt.ToValue(999))
+	if err == nil {
+		t.Fatal("expected error for setActive with invalid index")
+	}
+}
+
+func TestWrapPanel_ActivePaneEmpty(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	panel := NewPanel(DefaultPanelConfig())
+	obj := wrapPanel(rt, panel).ToObject(rt)
+
+	// activePane() on empty panel should return null
+	actPaneFn, _ := goja.AssertFunction(obj.Get("activePane"))
+	val, err := actPaneFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("activePane threw: %v", err)
+	}
+	if !goja.IsNull(val) {
+		t.Errorf("activePane() on empty panel should be null, got %v", val)
+	}
+}
+
+func TestWrapPanel_GetVisibleLinesError(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	panel := NewPanel(DefaultPanelConfig())
+	_ = panel.Start()
+	obj := wrapPanel(rt, panel).ToObject(rt)
+
+	visFn, _ := goja.AssertFunction(obj.Get("getVisibleLines"))
+	_, err := visFn(goja.Undefined(), rt.ToValue("nonexistent"), rt.ToValue(10))
+	if err == nil {
+		t.Fatal("expected error for getVisibleLines on nonexistent pane")
+	}
+}
+
+func TestWrapPanel_AppendOutputError(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	panel := NewPanel(DefaultPanelConfig())
+	_ = panel.Start()
+	obj := wrapPanel(rt, panel).ToObject(rt)
+
+	appendFn, _ := goja.AssertFunction(obj.Get("appendOutput"))
+	_, err := appendFn(goja.Undefined(), rt.ToValue("nonexistent"), rt.ToValue("line"))
+	if err == nil {
+		t.Fatal("expected error for appendOutput on nonexistent pane")
+	}
+}
+
+func TestWrapPanel_UpdateHealthError(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	panel := NewPanel(DefaultPanelConfig())
+	_ = panel.Start()
+	obj := wrapPanel(rt, panel).ToObject(rt)
+
+	healthFn, _ := goja.AssertFunction(obj.Get("updateHealth"))
+	healthObj := rt.NewObject()
+	_ = healthObj.Set("state", "ok")
+	_, err := healthFn(goja.Undefined(), rt.ToValue("nonexistent"), healthObj)
+	if err == nil {
+		t.Fatal("expected error for updateHealth on nonexistent pane")
+	}
+}
+
+func TestWrapPanel_RemovePaneError(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	panel := NewPanel(DefaultPanelConfig())
+	_ = panel.Start()
+	obj := wrapPanel(rt, panel).ToObject(rt)
+
+	rmFn, _ := goja.AssertFunction(obj.Get("removePane"))
+	_, err := rmFn(goja.Undefined(), rt.ToValue("nonexistent"))
+	if err == nil {
+		t.Fatal("expected error for removePane on nonexistent pane")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// wrapGuard — processEvent, processCrash, checkTimeout, state, config
+// ---------------------------------------------------------------------------
+
+func TestWrapGuard_FullLifecycle(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	g := NewGuard(GuardConfig{
+		OutputTimeout: OutputTimeoutGuardConfig{
+			Enabled: true,
+			Timeout: 100 * time.Millisecond,
+		},
+		Crash: CrashGuardConfig{
+			Enabled:     true,
+			MaxRestarts: 3,
+		},
+	})
+	obj := wrapGuard(rt, g).ToObject(rt)
+
+	now := time.Now()
+	nowMs := rt.ToValue(now.UnixMilli())
+
+	// processEvent(event, nowMs)
+	procFn, _ := goja.AssertFunction(obj.Get("processEvent"))
+	ev := rt.NewObject()
+	_ = ev.Set("type", int(EventText))
+	_ = ev.Set("line", "hello")
+	_, err := procFn(goja.Undefined(), ev, nowMs)
+	if err != nil {
+		t.Fatalf("processEvent threw: %v", err)
+	}
+
+	// processEvent no args
+	_, err = procFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for processEvent with no args")
+	}
+
+	// processCrash(exitCode, nowMs)
+	crashFn, _ := goja.AssertFunction(obj.Get("processCrash"))
+	crashVal, err := crashFn(goja.Undefined(), rt.ToValue(1), nowMs)
+	if err != nil {
+		t.Fatalf("processCrash threw: %v", err)
+	}
+	// Should return a guard event (crash event)
+	if crashVal == nil || goja.IsUndefined(crashVal) || goja.IsNull(crashVal) {
+		t.Logf("processCrash returned null/nil (acceptable if crash detection not triggered)")
+	}
+
+	// processCrash no args
+	_, err = crashFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for processCrash with no args")
+	}
+
+	// checkTimeout(nowMs)
+	checkFn, _ := goja.AssertFunction(obj.Get("checkTimeout"))
+	_, err = checkFn(goja.Undefined(), nowMs)
+	if err != nil {
+		t.Fatalf("checkTimeout threw: %v", err)
+	}
+
+	// resetCrashCount()
+	resetFn, _ := goja.AssertFunction(obj.Get("resetCrashCount"))
+	_, err = resetFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("resetCrashCount threw: %v", err)
+	}
+
+	// state()
+	stateFn, _ := goja.AssertFunction(obj.Get("state"))
+	stateVal, err := stateFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("state() threw: %v", err)
+	}
+	stateObj := stateVal.ToObject(rt)
+	if stateObj.Get("crashCount") == nil {
+		t.Error("state() should have crashCount field")
+	}
+	if stateObj.Get("started") == nil {
+		t.Error("state() should have started field")
+	}
+
+	// config()
+	cfgFn, _ := goja.AssertFunction(obj.Get("config"))
+	cfgVal, err := cfgFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("config() threw: %v", err)
+	}
+	cfgObj := cfgVal.ToObject(rt)
+	crashCfg := cfgObj.Get("crash").ToObject(rt)
+	if crashCfg.Get("maxRestarts").ToInteger() != 3 {
+		t.Errorf("config().crash.maxRestarts = %d, want 3", crashCfg.Get("maxRestarts").ToInteger())
+	}
+}
+
+func TestWrapGuard_ProcessEvent_WithFields(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	g := NewGuard(GuardConfig{
+		RateLimit: RateLimitGuardConfig{
+			Enabled:      true,
+			InitialDelay: 1 * time.Second,
+			MaxDelay:     10 * time.Second,
+			Multiplier:   2.0,
+			ResetAfter:   5 * time.Minute,
+		},
+	})
+	obj := wrapGuard(rt, g).ToObject(rt)
+	now := time.Now()
+
+	procFn, _ := goja.AssertFunction(obj.Get("processEvent"))
+	ev := rt.NewObject()
+	_ = ev.Set("type", int(EventRateLimit))
+	_ = ev.Set("line", "rate limit hit")
+	_ = ev.Set("pattern", "rate_limit")
+	fields := rt.NewObject()
+	_ = fields.Set("retry_after", "30")
+	_ = ev.Set("fields", fields)
+
+	val, err := procFn(goja.Undefined(), ev, rt.ToValue(now.UnixMilli()))
+	if err != nil {
+		t.Fatalf("processEvent with rate limit threw: %v", err)
+	}
+	// Rate limit event should produce a guard event with action
+	if val != nil && !goja.IsNull(val) && !goja.IsUndefined(val) {
+		geObj := val.ToObject(rt)
+		action := geObj.Get("action")
+		if action == nil {
+			t.Error("guard event should have action field")
+		}
+	}
+}
+
+func TestWrapGuard_CheckTimeout_Fires(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	g := NewGuard(GuardConfig{
+		OutputTimeout: OutputTimeoutGuardConfig{
+			Enabled: true,
+			Timeout: 50 * time.Millisecond,
+		},
+	})
+	obj := wrapGuard(rt, g).ToObject(rt)
+
+	// Send an event to start the timeout clock
+	procFn, _ := goja.AssertFunction(obj.Get("processEvent"))
+	now := time.Now()
+	ev := rt.NewObject()
+	_ = ev.Set("type", int(EventText))
+	_ = ev.Set("line", "start")
+	_, _ = procFn(goja.Undefined(), ev, rt.ToValue(now.UnixMilli()))
+
+	// Check timeout well after the window
+	checkFn, _ := goja.AssertFunction(obj.Get("checkTimeout"))
+	future := now.Add(200 * time.Millisecond)
+	val, err := checkFn(goja.Undefined(), rt.ToValue(future.UnixMilli()))
+	if err != nil {
+		t.Fatalf("checkTimeout threw: %v", err)
+	}
+	// Should fire timeout event
+	if val == nil || goja.IsNull(val) || goja.IsUndefined(val) {
+		t.Error("checkTimeout should have fired a timeout guard event")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// wrapMCPGuard — processToolCall, checkNoCallTimeout, state, config
+// ---------------------------------------------------------------------------
+
+func TestWrapMCPGuard_FullLifecycle(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	g := NewMCPGuard(MCPGuardConfig{
+		NoCallTimeout: MCPNoCallTimeoutConfig{
+			Enabled: true,
+			Timeout: 100 * time.Millisecond,
+		},
+		FrequencyLimit: MCPFrequencyLimitConfig{
+			Enabled:  true,
+			Window:   1 * time.Second,
+			MaxCalls: 10,
+		},
+	})
+	obj := wrapMCPGuard(rt, g).ToObject(rt)
+
+	now := time.Now()
+
+	// processToolCall(call)
+	procFn, _ := goja.AssertFunction(obj.Get("processToolCall"))
+	tc := rt.NewObject()
+	_ = tc.Set("toolName", "write_file")
+	_ = tc.Set("arguments", `{"path":"test.txt"}`)
+	_ = tc.Set("timestampMs", now.UnixMilli())
+	_, err := procFn(goja.Undefined(), tc)
+	if err != nil {
+		t.Fatalf("processToolCall threw: %v", err)
+	}
+
+	// processToolCall no args
+	_, err = procFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected TypeError for processToolCall with no args")
+	}
+
+	// checkNoCallTimeout(nowMs)
+	checkFn, _ := goja.AssertFunction(obj.Get("checkNoCallTimeout"))
+	_, err = checkFn(goja.Undefined(), rt.ToValue(now.UnixMilli()))
+	if err != nil {
+		t.Fatalf("checkNoCallTimeout threw: %v", err)
+	}
+
+	// state()
+	stateFn, _ := goja.AssertFunction(obj.Get("state"))
+	stateVal, err := stateFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("state() threw: %v", err)
+	}
+	stateObj := stateVal.ToObject(rt)
+	if stateObj.Get("totalCalls").ToInteger() != 1 {
+		t.Errorf("state().totalCalls = %d, want 1", stateObj.Get("totalCalls").ToInteger())
+	}
+
+	// config()
+	cfgFn, _ := goja.AssertFunction(obj.Get("config"))
+	cfgVal, err := cfgFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("config() threw: %v", err)
+	}
+	cfgObj := cfgVal.ToObject(rt)
+	nct := cfgObj.Get("noCallTimeout").ToObject(rt)
+	if !nct.Get("enabled").ToBoolean() {
+		t.Error("config().noCallTimeout.enabled should be true")
+	}
+}
+
+func TestWrapMCPGuard_CheckNoCallTimeout_Fires(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	g := NewMCPGuard(MCPGuardConfig{
+		NoCallTimeout: MCPNoCallTimeoutConfig{
+			Enabled: true,
+			Timeout: 50 * time.Millisecond,
+		},
+	})
+	obj := wrapMCPGuard(rt, g).ToObject(rt)
+
+	// Start the guard by calling processToolCall
+	procFn, _ := goja.AssertFunction(obj.Get("processToolCall"))
+	now := time.Now()
+	tc := rt.NewObject()
+	_ = tc.Set("toolName", "read_file")
+	_ = tc.Set("timestampMs", now.UnixMilli())
+	_, _ = procFn(goja.Undefined(), tc)
+
+	// Check timeout well after the window
+	checkFn, _ := goja.AssertFunction(obj.Get("checkNoCallTimeout"))
+	future := now.Add(200 * time.Millisecond)
+	val, err := checkFn(goja.Undefined(), rt.ToValue(future.UnixMilli()))
+	if err != nil {
+		t.Fatalf("checkNoCallTimeout threw: %v", err)
+	}
+	if val == nil || goja.IsNull(val) || goja.IsUndefined(val) {
+		t.Error("checkNoCallTimeout should have fired a guard event")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// wrapMCPInstance — writeConfigFile error, validate error
+// ---------------------------------------------------------------------------
+
+func TestWrapMCPInstance_WriteConfigFile(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	dir := t.TempDir()
+	cfg := &MCPInstanceConfig{
+		SessionID:  "validate-test",
+		OsmBinary:  "/usr/local/bin/osm",
+		configDir:  dir,
+		configPath: dir + "/mcp-config.json",
+	}
+	obj := wrapMCPInstance(rt, cfg).ToObject(rt)
+
+	// writeConfigFile() — should succeed (writes to tempdir)
+	writeFn, _ := goja.AssertFunction(obj.Get("writeConfigFile"))
+	_, err := writeFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("writeConfigFile threw: %v", err)
+	}
+}
+
+func TestWrapMCPInstance_ValidateError(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	// Empty config should fail validation
+	cfg := &MCPInstanceConfig{}
+	obj := wrapMCPInstance(rt, cfg).ToObject(rt)
+
+	validateFn, _ := goja.AssertFunction(obj.Get("validate"))
+	_, err := validateFn(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected error from validate() on empty config")
 	}
 }

@@ -22,43 +22,50 @@ import (
 
 // --- WithAttrs / WithGroup (0% → 100%) ---
 
-func TestTUILogHandler_WithAttrs_ReturnsSameHandler(t *testing.T) {
+func TestTUILogHandler_WithAttrs_ReturnsNewHandler(t *testing.T) {
 	t.Parallel()
-	handler := &tuiLogHandler{
+	handler := &tuiLogHandler{shared: &tuiLogHandlerShared{
 		entries: make([]logEntry, 0),
 		maxSize: 100,
 		level:   slog.LevelDebug,
-	}
+	}}
 
 	attrs := []slog.Attr{
 		slog.String("key1", "val1"),
 		slog.Int("key2", 42),
 	}
 	got := handler.WithAttrs(attrs)
-	assert.Same(t, handler, got, "WithAttrs should return the same handler")
+	assert.NotSame(t, handler, got, "WithAttrs should return a new handler")
+	// But they should share the same state
+	newH := got.(*tuiLogHandler)
+	assert.Same(t, handler.shared, newH.shared, "new handler should share state")
+	assert.Len(t, newH.preAttrs, 2)
 }
 
-func TestTUILogHandler_WithGroup_ReturnsSameHandler(t *testing.T) {
+func TestTUILogHandler_WithGroup_ReturnsNewHandler(t *testing.T) {
 	t.Parallel()
-	handler := &tuiLogHandler{
+	handler := &tuiLogHandler{shared: &tuiLogHandlerShared{
 		entries: make([]logEntry, 0),
 		maxSize: 100,
 		level:   slog.LevelDebug,
-	}
+	}}
 
 	got := handler.WithGroup("test-group")
-	assert.Same(t, handler, got, "WithGroup should return the same handler")
+	assert.NotSame(t, handler, got, "WithGroup should return a new handler")
+	newH := got.(*tuiLogHandler)
+	assert.Same(t, handler.shared, newH.shared, "new handler should share state")
+	assert.Equal(t, "test-group", newH.groupPrefix)
 }
 
 // --- Handle with non-zero PC (source extraction) ---
 
 func TestTUILogHandler_Handle_WithPC(t *testing.T) {
 	t.Parallel()
-	handler := &tuiLogHandler{
+	handler := &tuiLogHandler{shared: &tuiLogHandlerShared{
 		entries: make([]logEntry, 0),
 		maxSize: 100,
 		level:   slog.LevelDebug,
-	}
+	}}
 
 	// Get a real PC from the current call site
 	var pcs [1]uintptr
@@ -70,24 +77,24 @@ func TestTUILogHandler_Handle_WithPC(t *testing.T) {
 	err := handler.Handle(context.Background(), record)
 	require.NoError(t, err)
 
-	require.Len(t, handler.entries, 1)
-	assert.Equal(t, "scripting", handler.entries[0].Source, "non-zero PC should populate Source")
+	require.Len(t, handler.shared.entries, 1)
+	assert.Equal(t, "scripting", handler.shared.entries[0].Source, "non-zero PC should populate Source")
 }
 
 func TestTUILogHandler_Handle_WithZeroPC(t *testing.T) {
 	t.Parallel()
-	handler := &tuiLogHandler{
+	handler := &tuiLogHandler{shared: &tuiLogHandlerShared{
 		entries: make([]logEntry, 0),
 		maxSize: 100,
 		level:   slog.LevelDebug,
-	}
+	}}
 
 	record := slog.NewRecord(time.Now(), slog.LevelInfo, "test no PC", 0)
 	err := handler.Handle(context.Background(), record)
 	require.NoError(t, err)
 
-	require.Len(t, handler.entries, 1)
-	assert.Empty(t, handler.entries[0].Source, "zero PC should leave Source empty")
+	require.Len(t, handler.shared.entries, 1)
+	assert.Empty(t, handler.shared.entries[0].Source, "zero PC should leave Source empty")
 }
 
 // --- Handle with file handler ---
@@ -98,9 +105,11 @@ func TestTUILogHandler_Handle_ForwardsToFileHandler(t *testing.T) {
 	fileHandler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
 
 	handler := &tuiLogHandler{
-		entries:     make([]logEntry, 0),
-		maxSize:     100,
-		level:       slog.LevelDebug,
+		shared: &tuiLogHandlerShared{
+			entries: make([]logEntry, 0),
+			maxSize: 100,
+			level:   slog.LevelDebug,
+		},
 		fileHandler: fileHandler,
 	}
 
@@ -110,7 +119,7 @@ func TestTUILogHandler_Handle_ForwardsToFileHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	// Handler should store entry AND forward to file handler
-	require.Len(t, handler.entries, 1)
+	require.Len(t, handler.shared.entries, 1)
 	assert.Contains(t, buf.String(), "forwarded msg")
 }
 
@@ -118,11 +127,11 @@ func TestTUILogHandler_Handle_ForwardsToFileHandler(t *testing.T) {
 
 func TestTUILogHandler_Handle_EvictsOldest(t *testing.T) {
 	t.Parallel()
-	handler := &tuiLogHandler{
+	handler := &tuiLogHandler{shared: &tuiLogHandlerShared{
 		entries: make([]logEntry, 0, 2),
 		maxSize: 2,
 		level:   slog.LevelDebug,
-	}
+	}}
 
 	for i := range 3 {
 		record := slog.NewRecord(time.Now(), slog.LevelInfo, "", 0)
@@ -131,20 +140,20 @@ func TestTUILogHandler_Handle_EvictsOldest(t *testing.T) {
 	}
 
 	// Should have evicted entry 0, keeping entries 1 and 2
-	require.Len(t, handler.entries, 2)
-	assert.Equal(t, "1", handler.entries[0].Attrs["i"])
-	assert.Equal(t, "2", handler.entries[1].Attrs["i"])
+	require.Len(t, handler.shared.entries, 2)
+	assert.Equal(t, "1", handler.shared.entries[0].Attrs["i"])
+	assert.Equal(t, "2", handler.shared.entries[1].Attrs["i"])
 }
 
 // --- Handle with attrs ---
 
 func TestTUILogHandler_Handle_CapturesAttrs(t *testing.T) {
 	t.Parallel()
-	handler := &tuiLogHandler{
+	handler := &tuiLogHandler{shared: &tuiLogHandlerShared{
 		entries: make([]logEntry, 0),
 		maxSize: 100,
 		level:   slog.LevelDebug,
-	}
+	}}
 
 	record := slog.NewRecord(time.Now(), slog.LevelWarn, "with attrs", 0)
 	record.AddAttrs(
@@ -154,17 +163,17 @@ func TestTUILogHandler_Handle_CapturesAttrs(t *testing.T) {
 	)
 	require.NoError(t, handler.Handle(context.Background(), record))
 
-	require.Len(t, handler.entries, 1)
-	assert.Equal(t, "hello", handler.entries[0].Attrs["str"])
-	assert.Equal(t, "42", handler.entries[0].Attrs["num"])
-	assert.Equal(t, "true", handler.entries[0].Attrs["flag"])
+	require.Len(t, handler.shared.entries, 1)
+	assert.Equal(t, "hello", handler.shared.entries[0].Attrs["str"])
+	assert.Equal(t, "42", handler.shared.entries[0].Attrs["num"])
+	assert.Equal(t, "true", handler.shared.entries[0].Attrs["flag"])
 }
 
 // --- Enabled ---
 
 func TestTUILogHandler_Enabled(t *testing.T) {
 	t.Parallel()
-	handler := &tuiLogHandler{level: slog.LevelWarn}
+	handler := &tuiLogHandler{shared: &tuiLogHandlerShared{level: slog.LevelWarn}}
 
 	assert.False(t, handler.Enabled(context.Background(), slog.LevelDebug))
 	assert.False(t, handler.Enabled(context.Background(), slog.LevelInfo))
@@ -306,7 +315,7 @@ func TestNewTUILogger_ZeroMaxEntries(t *testing.T) {
 	assert.NotNil(t, logger)
 
 	// Should default to 1000
-	assert.Equal(t, 1000, logger.handler.maxSize)
+	assert.Equal(t, 1000, logger.handler.shared.maxSize)
 }
 
 func TestNewTUILogger_NegativeMaxEntries(t *testing.T) {
@@ -314,7 +323,7 @@ func TestNewTUILogger_NegativeMaxEntries(t *testing.T) {
 	logger := NewTUILogger(nil, nil, -5, slog.LevelDebug)
 	assert.NotNil(t, logger)
 
-	assert.Equal(t, 1000, logger.handler.maxSize)
+	assert.Equal(t, 1000, logger.handler.shared.maxSize)
 }
 
 // --- ClearLogs ---

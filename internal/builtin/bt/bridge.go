@@ -51,6 +51,10 @@ type Bridge struct {
 	// manager aggregates all Tickers created via newTicker.
 	// It is stopped when the Bridge is stopped.
 	manager bt.Manager
+
+	// stopParentCtx keeps the context.AfterFunc stop handle alive
+	// to prevent GC from collecting it before parent context cancellation.
+	stopParentCtx func() bool
 }
 
 // DefaultTimeout is the maximum duration to wait for RunOnLoopSync operations.
@@ -167,10 +171,9 @@ func newBridgeWithLoop(ctx context.Context, loop *goeventloop.Loop, vm *goja.Run
 	//   2. Stop() cancels childCtx (closes Done() channel)
 	// This maintains invariant: Done() closed ⇒ IsRunning() = false
 	if ctx.Done() != nil {
-		stop := context.AfterFunc(ctx, func() {
+		b.stopParentCtx = context.AfterFunc(ctx, func() {
 			b.Stop()
 		})
-		_ = stop // keep stop handle to prevent GC collection
 	}
 
 	return b

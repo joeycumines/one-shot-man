@@ -53,7 +53,7 @@ func LoadGoalFromFile(path string) (*Goal, error) {
 	goal.FileName = filepath.Base(path)
 
 	// Resolve script content
-	if err := resolveGoalScript(&goal, filepath.Dir(path)); err != nil {
+	if err := resolveGoalScript(&goal); err != nil {
 		return nil, fmt.Errorf("failed to resolve goal script for %q: %w", path, err)
 	}
 
@@ -91,21 +91,12 @@ func isValidGoalName(name string) bool {
 
 // resolveGoalScript resolves the script content for a goal.
 // If goal.Script is already set, it is used directly.
-// Otherwise, it loads goalScript (the default goal interpreter).
-func resolveGoalScript(goal *Goal, basePath string) error {
-	// If Script is already embedded in the JSON, use it
+// Otherwise, it uses the default goal interpreter.
+func resolveGoalScript(goal *Goal) error {
 	if goal.Script != "" {
 		return nil
 	}
-
-	// Check if there's a ScriptFile field in the raw JSON
-	// Since we can't unmarshal to a struct field that doesn't exist,
-	// we need to handle this separately if we want to support external script files.
-	// For now, default to the embedded goalScript if Script is empty.
-
-	// Default to the standard goal interpreter
 	goal.Script = goalScript
-
 	return nil
 }
 

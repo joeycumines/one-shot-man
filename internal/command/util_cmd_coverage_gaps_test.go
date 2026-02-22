@@ -619,7 +619,7 @@ func TestResolveGoalScript_PresetScript(t *testing.T) {
 		Description: "Test",
 		Script:      "// custom script",
 	}
-	if err := resolveGoalScript(goal, t.TempDir()); err != nil {
+	if err := resolveGoalScript(goal); err != nil {
 		t.Fatalf("resolveGoalScript: %v", err)
 	}
 	if goal.Script != "// custom script" {
@@ -633,7 +633,7 @@ func TestResolveGoalScript_DefaultFallback(t *testing.T) {
 		Name:        "test",
 		Description: "Test",
 	}
-	if err := resolveGoalScript(goal, t.TempDir()); err != nil {
+	if err := resolveGoalScript(goal); err != nil {
 		t.Fatalf("resolveGoalScript: %v", err)
 	}
 	if goal.Script != goalScript {

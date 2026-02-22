@@ -396,25 +396,6 @@ func TestGoalDiscovery_PathExpansion(t *testing.T) {
 		}
 	})
 
-	t.Run("environment variable expansion", func(t *testing.T) {
-		t.Parallel()
-
-		// Set a test environment variable
-		testVar := "TEST_GOAL_PATH_VAR"
-		testValue := "/test/value"
-		os.Setenv(testVar, testValue)
-		defer os.Unsetenv(testVar)
-
-		path := "$" + testVar + "/goals"
-		expanded := discovery.expandPath(path)
-
-		expected := testValue + "/goals"
-
-		if expanded != expected {
-			t.Errorf("Expected %s, got %s", expected, expanded)
-		}
-	})
-
 	t.Run("no expansion needed", func(t *testing.T) {
 		t.Parallel()
 		path := "/absolute/path/to/goals"
@@ -424,6 +405,27 @@ func TestGoalDiscovery_PathExpansion(t *testing.T) {
 			t.Errorf("Expected %s, got %s", path, expanded)
 		}
 	})
+}
+
+// TestGoalDiscovery_PathExpansion_EnvVar tests environment variable expansion
+// in goal paths. This is a standalone test (not a subtest of PathExpansion)
+// because t.Setenv cannot be used in parallel tests or subtests of parallel
+// tests (Go 1.24+ panics).
+func TestGoalDiscovery_PathExpansion_EnvVar(t *testing.T) {
+	testVar := "TEST_GOAL_PATH_VAR"
+	testValue := "/test/value"
+	t.Setenv(testVar, testValue)
+
+	cfg := config.NewConfig()
+	discovery := NewGoalDiscovery(cfg)
+
+	path := "$" + testVar + "/goals"
+	expanded := discovery.expandPath(path)
+
+	expected := testValue + "/goals"
+	if expanded != expected {
+		t.Errorf("Expected %s, got %s", expected, expanded)
+	}
 }
 
 func TestGoalDiscovery_DirectoryTraversal(t *testing.T) {

@@ -69,7 +69,21 @@ Fixed production bug: `convertFuncMap` panicked on null/undefined input because
 - command/util_cmd_coverage_gaps_test.go: 3 tests (valueOrNone empty/non-empty, BaseCommand SetupFlags)
 
 ## Immediate Next Steps
-1. Continue coverage push for remaining packages (session darwin, command deeper)
-2. Run Rule of Two before any commit
-3. Cross-platform verification (T078-T080)
-4. T044-T060: PR splitter rewrite
+1. Continue coverage push — claudemux module bindings (biggest remaining gaps)
+2. Push bubbletea, session, nextintegerid higher
+3. Run Rule of Two before any commit
+4. Cross-platform verification (T078-T080)
+5. T044-T060: PR splitter rewrite
+
+## Latest Commit
+- **7349c94**: Add coverage tests for claudemux, config, mouseharness, session, and nextintegerid (5 files, +718 lines)
+- **3abab67**: Fix template convertFuncMap null panic and add coverage tests (17 files, +1537/-13 lines)
+
+## Coverage Snapshot (post-7349c94)
+| Package | Coverage |
+|---------|----------|
+| claudemux | 93.0% (was 91.8%) |
+| config | 97.4% (was 97.2%) |
+| mouseharness | 80.0% |
+| session | 89.9% |
+| nextintegerid | 92.9% |

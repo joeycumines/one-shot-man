@@ -1110,3 +1110,423 @@ func (s *stubAgentHandle) IsAlive() bool {
 func (s *stubAgentHandle) Wait() (int, error) {
 	return s.waitCode, s.waitErr
 }
+
+// ============================================================================
+// eventToJS — OutputEvent to JS object conversion
+// ============================================================================
+
+func TestEventToJS_WithFields(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	ev := OutputEvent{
+		Type:    EventRateLimit,
+		Line:    "Rate limit exceeded",
+		Pattern: "rate_limit",
+		Fields:  map[string]string{"retry_after": "30", "code": "429"},
+	}
+
+	val := eventToJS(rt, ev)
+	obj := val.ToObject(rt)
+
+	if obj.Get("type").ToInteger() != int64(EventRateLimit) {
+		t.Errorf("type = %d, want %d", obj.Get("type").ToInteger(), EventRateLimit)
+	}
+	if obj.Get("line").String() != "Rate limit exceeded" {
+		t.Errorf("line = %q, want %q", obj.Get("line").String(), "Rate limit exceeded")
+	}
+	if obj.Get("pattern").String() != "rate_limit" {
+		t.Errorf("pattern = %q, want %q", obj.Get("pattern").String(), "rate_limit")
+	}
+	fields := obj.Get("fields").ToObject(rt)
+	if fields.Get("retry_after").String() != "30" {
+		t.Errorf("fields.retry_after = %q, want %q", fields.Get("retry_after").String(), "30")
+	}
+	if fields.Get("code").String() != "429" {
+		t.Errorf("fields.code = %q, want %q", fields.Get("code").String(), "429")
+	}
+}
+
+func TestEventToJS_NilFields(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	ev := OutputEvent{
+		Type:   EventText,
+		Line:   "Hello",
+		Fields: nil, // nil → empty object
+	}
+
+	val := eventToJS(rt, ev)
+	obj := val.ToObject(rt)
+
+	// Fields should be an empty object, not null.
+	fields := obj.Get("fields")
+	if goja.IsNull(fields) || goja.IsUndefined(fields) {
+		t.Error("fields should be a non-null object when Fields is nil")
+	}
+}
+
+// ============================================================================
+// wrapMCPInstance — JS wrapper for MCPInstanceConfig
+// ============================================================================
+
+func TestWrapMCPInstance_GettersAndClose(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	dir := t.TempDir()
+
+	cfg := &MCPInstanceConfig{
+		SessionID:  "test-session-123",
+		OsmBinary:  "/usr/local/bin/osm",
+		configDir:  dir,
+		configPath: dir + "/mcp-config.json",
+	}
+
+	jsVal := wrapMCPInstance(rt, cfg)
+	obj := jsVal.ToObject(rt)
+
+	// sessionId property
+	if obj.Get("sessionId").String() != "test-session-123" {
+		t.Errorf("sessionId = %q, want %q", obj.Get("sessionId").String(), "test-session-123")
+	}
+
+	// osmBinary() method
+	osmBin, _ := goja.AssertFunction(obj.Get("osmBinary"))
+	val, err := osmBin(goja.Undefined())
+	if err != nil {
+		t.Fatalf("osmBinary() threw: %v", err)
+	}
+	if val.String() != "/usr/local/bin/osm" {
+		t.Errorf("osmBinary() = %q, want %q", val.String(), "/usr/local/bin/osm")
+	}
+
+	// configPath() method
+	cfgPath, _ := goja.AssertFunction(obj.Get("configPath"))
+	val, err = cfgPath(goja.Undefined())
+	if err != nil {
+		t.Fatalf("configPath() threw: %v", err)
+	}
+	if val.String() != dir+"/mcp-config.json" {
+		t.Errorf("configPath() = %q, want %q", val.String(), dir+"/mcp-config.json")
+	}
+
+	// close() — should succeed on open config
+	closeFn, _ := goja.AssertFunction(obj.Get("close"))
+	_, err = closeFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("close() threw: %v", err)
+	}
+}
+
+func TestWrapMCPInstance_SpawnArgs(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	dir := t.TempDir()
+
+	cfg := &MCPInstanceConfig{
+		SessionID:  "test-sa",
+		OsmBinary:  "/usr/bin/osm",
+		configDir:  dir,
+		configPath: dir + "/mcp-config.json",
+	}
+
+	jsVal := wrapMCPInstance(rt, cfg)
+	obj := jsVal.ToObject(rt)
+
+	spawnArgs, _ := goja.AssertFunction(obj.Get("spawnArgs"))
+	val, err := spawnArgs(goja.Undefined())
+	if err != nil {
+		t.Fatalf("spawnArgs() threw: %v", err)
+	}
+	// SpawnArgs returns args including --mcp-config path.
+	var args []string
+	if err := rt.ExportTo(val, &args); err != nil {
+		t.Fatalf("ExportTo args: %v", err)
+	}
+	if len(args) == 0 {
+		t.Error("expected non-empty spawnArgs")
+	}
+}
+
+// ============================================================================
+// wrapInstance — JS wrapper for Instance
+// ============================================================================
+
+func TestWrapInstance_Properties(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	now := time.Now()
+
+	inst := &Instance{
+		ID:        "inst-abc",
+		StateDir:  "/tmp/state/inst-abc",
+		CreatedAt: now,
+	}
+
+	jsVal := wrapInstance(rt, inst)
+	obj := jsVal.ToObject(rt)
+
+	if obj.Get("id").String() != "inst-abc" {
+		t.Errorf("id = %q, want %q", obj.Get("id").String(), "inst-abc")
+	}
+	if obj.Get("stateDir").String() != "/tmp/state/inst-abc" {
+		t.Errorf("stateDir = %q, want %q", obj.Get("stateDir").String(), "/tmp/state/inst-abc")
+	}
+	// createdAt is a formatted string.
+	createdAt := obj.Get("createdAt").String()
+	if createdAt == "" {
+		t.Error("createdAt should be non-empty")
+	}
+}
+
+func TestWrapInstance_IsClosedAndClose(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+
+	inst := &Instance{
+		ID:        "inst-xyz",
+		StateDir:  t.TempDir(),
+		CreatedAt: time.Now(),
+	}
+
+	jsVal := wrapInstance(rt, inst)
+	obj := jsVal.ToObject(rt)
+
+	// isClosed() should be false initially.
+	isClosed, _ := goja.AssertFunction(obj.Get("isClosed"))
+	val, err := isClosed(goja.Undefined())
+	if err != nil {
+		t.Fatalf("isClosed() threw: %v", err)
+	}
+	if val.ToBoolean() {
+		t.Error("isClosed should be false initially")
+	}
+
+	// close() should succeed.
+	closeFn, _ := goja.AssertFunction(obj.Get("close"))
+	_, err = closeFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("close() threw: %v", err)
+	}
+
+	// isClosed() should be true after close.
+	val, err = isClosed(goja.Undefined())
+	if err != nil {
+		t.Fatalf("isClosed() after close threw: %v", err)
+	}
+	if !val.ToBoolean() {
+		t.Error("isClosed should be true after close")
+	}
+}
+
+// ============================================================================
+// wrapInstanceRegistry — JS wrapper for InstanceRegistry
+// ============================================================================
+
+func TestWrapInstanceRegistry_CreateGetCloseList(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	dir := t.TempDir()
+
+	reg, err := NewInstanceRegistry(dir)
+	if err != nil {
+		t.Fatalf("NewInstanceRegistry: %v", err)
+	}
+	defer reg.CloseAll()
+
+	jsVal := wrapInstanceRegistry(rt, reg)
+	obj := jsVal.ToObject(rt)
+
+	// len() should be 0 initially.
+	lenFn, _ := goja.AssertFunction(obj.Get("len"))
+	val, callErr := lenFn(goja.Undefined())
+	if callErr != nil {
+		t.Fatalf("len() threw: %v", callErr)
+	}
+	if val.ToInteger() != 0 {
+		t.Errorf("len() = %d, want 0", val.ToInteger())
+	}
+
+	// create() an instance.
+	createFn, _ := goja.AssertFunction(obj.Get("create"))
+	instVal, callErr := createFn(goja.Undefined(), rt.ToValue("sess-001"))
+	if callErr != nil {
+		t.Fatalf("create() threw: %v", callErr)
+	}
+	instObj := instVal.ToObject(rt)
+	if instObj.Get("id").String() != "sess-001" {
+		t.Errorf("created instance id = %q, want %q", instObj.Get("id").String(), "sess-001")
+	}
+
+	// len() should now be 1.
+	val, _ = lenFn(goja.Undefined())
+	if val.ToInteger() != 1 {
+		t.Errorf("len() = %d, want 1", val.ToInteger())
+	}
+
+	// get() the instance.
+	getFn, _ := goja.AssertFunction(obj.Get("get"))
+	gotVal, callErr := getFn(goja.Undefined(), rt.ToValue("sess-001"))
+	if callErr != nil {
+		t.Fatalf("get() threw: %v", callErr)
+	}
+	gotObj := gotVal.ToObject(rt)
+	if gotObj.Get("id").String() != "sess-001" {
+		t.Errorf("get() id = %q, want %q", gotObj.Get("id").String(), "sess-001")
+	}
+
+	// get() non-existent — should return null.
+	gotVal, callErr = getFn(goja.Undefined(), rt.ToValue("no-such"))
+	if callErr != nil {
+		t.Fatalf("get(no-such) threw: %v", callErr)
+	}
+	if !goja.IsNull(gotVal) {
+		t.Errorf("get(no-such) = %v, want null", gotVal)
+	}
+
+	// list() should contain sess-001.
+	listFn, _ := goja.AssertFunction(obj.Get("list"))
+	listVal, callErr := listFn(goja.Undefined())
+	if callErr != nil {
+		t.Fatalf("list() threw: %v", callErr)
+	}
+	var ids []string
+	if err := rt.ExportTo(listVal, &ids); err != nil {
+		t.Fatalf("ExportTo ids: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "sess-001" {
+		t.Errorf("list() = %v, want [sess-001]", ids)
+	}
+
+	// baseDir()
+	baseDirFn, _ := goja.AssertFunction(obj.Get("baseDir"))
+	bdVal, callErr := baseDirFn(goja.Undefined())
+	if callErr != nil {
+		t.Fatalf("baseDir() threw: %v", callErr)
+	}
+	if bdVal.String() != dir {
+		t.Errorf("baseDir() = %q, want %q", bdVal.String(), dir)
+	}
+
+	// close() specific instance.
+	closeFn, _ := goja.AssertFunction(obj.Get("close"))
+	_, callErr = closeFn(goja.Undefined(), rt.ToValue("sess-001"))
+	if callErr != nil {
+		t.Fatalf("close(sess-001) threw: %v", callErr)
+	}
+
+	// len() should be 0.
+	val, _ = lenFn(goja.Undefined())
+	if val.ToInteger() != 0 {
+		t.Errorf("len() after close = %d, want 0", val.ToInteger())
+	}
+}
+
+func TestWrapInstanceRegistry_CreateNoArgs(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	dir := t.TempDir()
+
+	reg, err := NewInstanceRegistry(dir)
+	if err != nil {
+		t.Fatalf("NewInstanceRegistry: %v", err)
+	}
+	defer reg.CloseAll()
+
+	jsVal := wrapInstanceRegistry(rt, reg)
+	obj := jsVal.ToObject(rt)
+
+	createFn, _ := goja.AssertFunction(obj.Get("create"))
+	_, callErr := createFn(goja.Undefined()) // no args
+	if callErr == nil {
+		t.Fatal("expected TypeError for create() with no args")
+	}
+}
+
+func TestWrapInstanceRegistry_CloseAll(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	dir := t.TempDir()
+
+	reg, err := NewInstanceRegistry(dir)
+	if err != nil {
+		t.Fatalf("NewInstanceRegistry: %v", err)
+	}
+
+	// Create 2 instances.
+	if _, err := reg.Create("s1"); err != nil {
+		t.Fatalf("Create s1: %v", err)
+	}
+	if _, err := reg.Create("s2"); err != nil {
+		t.Fatalf("Create s2: %v", err)
+	}
+
+	jsVal := wrapInstanceRegistry(rt, reg)
+	obj := jsVal.ToObject(rt)
+
+	// closeAll()
+	closeAllFn, _ := goja.AssertFunction(obj.Get("closeAll"))
+	_, callErr := closeAllFn(goja.Undefined())
+	if callErr != nil {
+		t.Fatalf("closeAll() threw: %v", callErr)
+	}
+
+	// len() should be 0.
+	lenFn, _ := goja.AssertFunction(obj.Get("len"))
+	val, _ := lenFn(goja.Undefined())
+	if val.ToInteger() != 0 {
+		t.Errorf("len() after closeAll = %d, want 0", val.ToInteger())
+	}
+}
+
+// ============================================================================
+// wrapPool — coverage for JS Pool binding
+// ============================================================================
+
+func TestWrapPool_StartDrainClose(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+
+	p := NewPool(DefaultPoolConfig())
+	jsVal := wrapPool(rt, p)
+	obj := jsVal.ToObject(rt)
+
+	// start()
+	startFn, _ := goja.AssertFunction(obj.Get("start"))
+	_, err := startFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("start() threw: %v", err)
+	}
+
+	// stats() — verifies pool is running
+	statsFn, _ := goja.AssertFunction(obj.Get("stats"))
+	statsVal, err := statsFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("stats() threw: %v", err)
+	}
+	statsObj := statsVal.ToObject(rt)
+	// stats.state should reflect running pool (PoolRunning = 1)
+	if statsObj.Get("state").ToInteger() != 1 {
+		t.Errorf("stats.state = %d, want 1 (running)", statsObj.Get("state").ToInteger())
+	}
+
+	// config()
+	cfgFn, _ := goja.AssertFunction(obj.Get("config"))
+	_, err = cfgFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("config() threw: %v", err)
+	}
+
+	// drain()
+	drainFn, _ := goja.AssertFunction(obj.Get("drain"))
+	_, err = drainFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("drain() threw: %v", err)
+	}
+
+	// close()
+	closeFn, _ := goja.AssertFunction(obj.Get("close"))
+	_, err = closeFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("close() threw: %v", err)
+	}
+}

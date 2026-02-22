@@ -145,7 +145,10 @@ func (c *ClaudeMuxCommand) status(_ []string, stdout, _ io.Writer) error {
 	_, _ = fmt.Fprintln(stdout, "Policy: fail-closed (deny by default)")
 
 	// If a control socket exists, query the running orchestrator.
-	sockPath := c.controlSockPath()
+	sockPath, err := c.controlSockPath()
+	if err != nil {
+		return err
+	}
 	client := claudemux.NewControlClient(sockPath)
 	liveStatus, err := client.GetStatus()
 	if err == nil {
@@ -354,7 +357,11 @@ func (c *ClaudeMuxCommand) run(args []string, stdout, stderr io.Writer) error {
 	// Start control socket for external task submission (T116).
 	dynamicTaskCh := make(chan string, 64)
 	adapter := &controlAdapter{taskCh: dynamicTaskCh}
-	ctrlSrv := claudemux.NewControlServer(c.controlSockPath(), adapter)
+	ctrlSockPath, err := c.controlSockPath()
+	if err != nil {
+		return fmt.Errorf("claude-mux run: %w", err)
+	}
+	ctrlSrv := claudemux.NewControlServer(ctrlSockPath, adapter)
 	if err := ctrlSrv.Start(); err != nil {
 		_, _ = fmt.Fprintf(stderr, "[warn] control socket: %v (external submit disabled)\n", err)
 	} else {
@@ -819,7 +826,10 @@ func truncateTask(s string, maxLen int) string {
 // stop shuts down all managed instances. If a control socket is available,
 // sends InterruptCurrent to the running orchestrator.
 func (c *ClaudeMuxCommand) stop(_ []string, stdout, stderr io.Writer) error {
-	sockPath := c.controlSockPath()
+	sockPath, err := c.controlSockPath()
+	if err != nil {
+		return fmt.Errorf("claude-mux stop: %w", err)
+	}
 	client := claudemux.NewControlClient(sockPath)
 
 	if err := client.InterruptCurrent(); err != nil {
@@ -847,7 +857,10 @@ func (c *ClaudeMuxCommand) submit(args []string, stdout, stderr io.Writer) error
 		return fmt.Errorf("claude-mux submit: task description cannot be empty")
 	}
 
-	sockPath := c.controlSockPath()
+	sockPath, err := c.controlSockPath()
+	if err != nil {
+		return fmt.Errorf("claude-mux submit: %w", err)
+	}
 	client := claudemux.NewControlClient(sockPath)
 
 	pos, err := client.EnqueueTask(task)
@@ -861,13 +874,16 @@ func (c *ClaudeMuxCommand) submit(args []string, stdout, stderr io.Writer) error
 }
 
 // controlSockPath returns the path for the orchestrator's control socket.
-func (c *ClaudeMuxCommand) controlSockPath() string {
+func (c *ClaudeMuxCommand) controlSockPath() (string, error) {
 	base := c.baseDir
 	if base == "" {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("cannot determine home directory: %w", err)
+		}
 		base = filepath.Join(home, ".osm", "claude-mux", "instances")
 	}
-	return filepath.Join(base, "control.sock")
+	return filepath.Join(base, "control.sock"), nil
 }
 
 // controlAdapter bridges the ControlHandler interface to the run loop's

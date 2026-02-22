@@ -417,7 +417,11 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 				if v == nil || goja.IsUndefined(v) {
 					panic(runtime.NewTypeError("newCompositeValidator: each element must be a validator"))
 				}
-				validators = append(validators, v.Export().(Validator))
+				val, ok := v.Export().(Validator)
+				if !ok {
+					panic(runtime.NewTypeError("newCompositeValidator: each element must be a validator"))
+				}
+				validators = append(validators, val)
 			}
 			cv := NewCompositeValidator(validators...)
 			return wrapCompositeValidator(runtime, cv)

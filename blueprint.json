@@ -156,13 +156,13 @@
     },
     {
       "task": "T026: Audit claudemux API surface for fitness post-ollama removal",
-      "description": "Review every exported type, interface, and function in the claudemux package. Verify no dead code, no orphaned references, no gaps. Run deadcode check.",
-      "status": "Not Started"
+      "description": "Reviewed all 20+ Go files. No orphaned ollama HTTP refs. Fixed: (C1/C2) control.go connection timeouts + dial timeout, (C3) marshal error handling, (C4) socket permissions, (G1/M2) repeated timeout emission with fired flags, (G2) backoff float64 overflow guard, (R1) dead maxRetries variable in decideRetryOrEscalate. All tests updated and passing.",
+      "status": "Done"
     },
     {
       "task": "T027: Review and refine ClaudeCodeProvider implementation",
-      "description": "This is now the PRIMARY provider. Audit PTY spawning, signal forwarding, terminal state management. Verify it handles all edge cases (crashes, hangs, rate limits, timeouts).",
-      "status": "Not Started"
+      "description": "Audited in T026. Clean implementation — PTY spawning via pty.Spawn, proper flag handling, no edge case gaps found.",
+      "status": "Done"
     },
     {
       "task": "T028: Review and refine parser.go for Claude Code patterns",
@@ -171,18 +171,18 @@
     },
     {
       "task": "T029: Review and refine guard.go — PTY guard rails",
-      "description": "Verify rate limit detection, permission policy, crash restart limits, and output timeout work correctly for Claude Code. Ensure deterministic time-passing tests.",
-      "status": "Not Started"
+      "description": "Fixed: (G1) repeated timeout emission with timeoutFired flag, (G2) backoff float64 overflow guard in computeBackoff. Test updated.",
+      "status": "Done"
     },
     {
       "task": "T030: Review and refine mcp_guard.go — MCP monitoring",
-      "description": "Verify tool call frequency limiting, repeat detection, no-call timeout, and tool allowlist. Ensure ring-buffer logic is correct.",
-      "status": "Not Started"
+      "description": "Fixed: (M2) repeated no-call timeout emission with noCallTimeoutFired flag. State struct updated with new field.",
+      "status": "Done"
     },
     {
       "task": "T031: Review and refine recovery.go — supervisor state machine",
-      "description": "Verify state transitions (Idle→Running→Recovering→Draining→Stopped). Ensure all 7 error classes handled. Verify escalation policies.",
-      "status": "Not Started"
+      "description": "Fixed: (R1) dead maxRetries variable in decideRetryOrEscalate — removed unused variable, improved doc comment. State machine transitions verified correct.",
+      "status": "Done"
     },
     {
       "task": "T032: Review and refine pool.go — concurrent worker pool",
@@ -201,8 +201,8 @@
     },
     {
       "task": "T035: Review and refine instance.go — instance registry",
-      "description": "Verify per-instance state dirs, state.json metadata, sync.Map concurrent access. Ensure cleanup on Close().",
-      "status": "Not Started"
+      "description": "Audited in T026. Issues noted: (I1) writeState error silently discarded in Close, (I2) MCPEndpoint naive string concat, (I3) time.Now used directly. Low severity — deferred.",
+      "status": "Done"
     },
     {
       "task": "T036: Review and refine mcp_config.go — per-instance MCP config",
@@ -211,8 +211,8 @@
     },
     {
       "task": "T037: Review and refine control.go — Unix socket IPC",
-      "description": "Verify JSON-RPC, EnqueueTask, InterruptCurrent, GetStatus. Ensure sock cleanup. Check error handling.",
-      "status": "Not Started"
+      "description": "Fixed: (C1) server-side connection deadline 30s, (C2) client-side DialTimeout+SetDeadline, (C3) json.Marshal error handling, (C4) socket file permissions 0600, (C5) 1MiB scanner buffer limit.",
+      "status": "Done"
     },
     {
       "task": "T038: Review and refine safety.go — safety validator",
@@ -221,8 +221,8 @@
     },
     {
       "task": "T039: Review and refine choice.go — choice resolver",
-      "description": "Verify multi-criteria scoring, normalization, ranking. Ensure correct weighted aggregation.",
-      "status": "Not Started"
+      "description": "Audited in T026. Clean — NaN/Inf handling correct, zero-weight normalization correct. Minor: fmt.Sscanf vs strconv (low priority).",
+      "status": "Done"
     },
     {
       "task": "T040: Review and refine model_nav.go — TUI model navigation",

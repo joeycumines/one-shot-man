@@ -251,6 +251,9 @@ func (s *ManagedSession) CheckTimeout(now time.Time) *GuardEvent {
 		return ge
 	}
 	ge = s.mcpGuard.CheckNoCallTimeout(now)
+	if ge != nil {
+		s.state = SessionFailed
+	}
 	s.mu.Unlock()
 
 	if ge != nil {

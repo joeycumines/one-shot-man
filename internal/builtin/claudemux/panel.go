@@ -247,6 +247,9 @@ func (p *Panel) SetActive(index int) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if len(p.panes) == 0 {
+		return fmt.Errorf("claudemux: no panes available")
+	}
 	if index < 0 || index >= len(p.panes) {
 		return fmt.Errorf("claudemux: pane index %d out of range (0-%d)",
 			index, len(p.panes)-1)

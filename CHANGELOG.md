@@ -167,6 +167,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sanitizeFilename` compiled 3 regexes (`regexp.MustCompile`) on every call — hoisted to package-level vars for single compilation at init time
 - Error message consistency: lowercased error string in `pabt/state.go` with `pabt:` prefix; added `gitops:` prefix to `ErrNotRepo`, `ErrNothingToCommit`, `ErrConflict` sentinel errors
 - 5 documentation inaccuracies: MCP tool count 8→14 in `docs/reference/command.md`; session config key format (kebab-case→camelCase) in `docs/session.md`; stale event loop reference in `docs/architecture.md`; wrong config path (`~/.config/osm`→`~/.osm`) in `docs/scripting.md`; stale TView reference in `AGENTS.md`
+- `slog.Handler` contract violation in `tuiLogHandler`: `WithAttrs`/`WithGroup` returned the same handler instead of a new instance — extracted shared state into `tuiLogHandlerShared` struct so each derived handler carries its own `preAttrs`/`groupPrefix` while sharing entries, mutex, and level
+- `context.AfterFunc` stop handle leak in `bt/bridge.go`: missing capture of stop function caused GC to collect the AfterFunc registration prematurely — stored `stopParentCtx` field in bridge struct
+- `deduplicatePath` in sync.go silently overwrote existing file on path name exhaustion — now returns `(string, error)` and propagates exhaustion as an explicit error to the caller
+- `matchEntry` in sync.go mutated the caller's `[]fs.DirEntry` slice during sorting — now copies the slice via `make`+`copy` before `slices.SortFunc`
+- `goalNameRE` regex recompiled on every `resolveGoalScript` call — hoisted to package-level `var` for single compilation at init time
+- Flaky `FuzzMCPSessionTools`: fuzz iterations had no per-iteration timeout and blocking server cleanup, causing hangs when the fuzz engine's `-fuzztime` expired mid-iteration — added 10s `context.WithTimeout` and non-blocking `select` on server shutdown channel
 
 ## [v0.1.0] - 2026-02-10
 

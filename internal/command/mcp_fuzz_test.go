@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -119,7 +120,9 @@ func FuzzMCPSessionTools(f *testing.F) {
 		}
 		server := newMCPServer(cm, &mcpTestGoalRegistry{}, "0.0.0-fuzz")
 
-		ctx, cancel := context.WithCancel(context.Background())
+		// Per-iteration timeout prevents the fuzz engine from blocking
+		// on cleanup when the fuzztime expires mid-iteration.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
 		serverTransport, clientTransport := mcp.NewInMemoryTransports()
@@ -137,7 +140,10 @@ func FuzzMCPSessionTools(f *testing.F) {
 		defer func() {
 			_ = sess.Close()
 			cancel()
-			<-serverDone
+			select {
+			case <-serverDone:
+			case <-time.After(3 * time.Second):
+			}
 		}()
 
 		// Ensure there's a session for tools that need one.

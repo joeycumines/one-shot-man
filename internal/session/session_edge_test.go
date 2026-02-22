@@ -650,3 +650,63 @@ func TestHashFunctionEdgeCases_UnicodeInput(t *testing.T) {
 		seen[hash] = true
 	}
 }
+
+// =============================================================================
+// formatSessionID — Constrained namespace edge cases
+// =============================================================================
+
+// TestFormatSessionID_ExtremelyConstrainedNamespace exercises the path where
+// namespace is so long that availForSanitized becomes negative, triggering
+// the "hash-only payload" fallback.
+func TestFormatSessionID_ExtremelyConstrainedNamespace(t *testing.T) {
+	t.Parallel()
+	// MaxSessionIDLength=80, NamespaceDelimiter="--" (len 2)
+	// Namespace len 70: maxPayload = 80 - 70 - 2 = 8
+	// fullSuffixLen = 1 + 16 = 17
+	// maxPayload (8) < fullSuffixLen (17) → triggers extremely constrained path
+	// allowedNS = 80 - 2 - 17 = 61, so ns truncated from 70 to 61
+	// new maxPayload = 80 - 61 - 2 = 17
+	// availForSanitized = 17 - 17 = 0 → still no room!
+	// Falls through to availForSanitized <= 0 → hash-only payload
+	longNS := strings.Repeat("n", 70)
+	id := formatSessionID(longNS, "some/payload/with/special")
+
+	if len(id) > MaxSessionIDLength {
+		t.Errorf("id exceeds max: %d > %d: %q", len(id), MaxSessionIDLength, id)
+	}
+	// Should still contain the namespace delimiter
+	if !strings.Contains(id, NamespaceDelimiter) {
+		t.Errorf("missing namespace delimiter in %q", id)
+	}
+}
+
+// TestFormatSessionID_MaxPayloadZero exercises the path where maxPayload
+// becomes zero or negative, triggering an empty finalPayload.
+func TestFormatSessionID_MaxPayloadZero(t *testing.T) {
+	t.Parallel()
+	// namespace len 78: maxPayload = 80 - 78 - 2 = 0
+	// This means maxPayload <= 0 → finalPayload = ""
+	longNS := strings.Repeat("x", 78)
+	id := formatSessionID(longNS, "payload")
+
+	if len(id) > MaxSessionIDLength {
+		t.Errorf("id exceeds max: %d > %d: %q", len(id), MaxSessionIDLength, id)
+	}
+}
+
+// TestFormatSessionID_NeedsOnlyTruncation exercises the path where sanitization
+// is NOT needed but payload is too long, requiring truncation + full suffix.
+func TestFormatSessionID_NeedsOnlyTruncation(t *testing.T) {
+	t.Parallel()
+	// Safe payload (no special chars) that's very long → needs truncation
+	longPayload := strings.Repeat("a", 100)
+	id := formatSessionID("test", longPayload)
+
+	if len(id) > MaxSessionIDLength {
+		t.Errorf("id exceeds max: %d > %d: %q", len(id), MaxSessionIDLength, id)
+	}
+	// Should contain full suffix (underscore + 16 hex chars)
+	if !strings.Contains(id, SuffixDelimiter) {
+		t.Errorf("expected suffix delimiter in %q", id)
+	}
+}

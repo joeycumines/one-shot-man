@@ -171,3 +171,35 @@ func TestNextID_LargeIDs(t *testing.T) {
 		t.Fatalf("expected 1000000, got %d", got)
 	}
 }
+
+func TestNextID_LengthNull(t *testing.T) {
+	t.Parallel()
+	runtime, nextFn := setupModule(t)
+
+	// Object where "length" is explicitly null — hits goja.IsNull(lengthVal).
+	val := mustRunValue(t, runtime, `({length: null})`)
+
+	result, err := nextFn(goja.Undefined(), val)
+	if err != nil {
+		t.Fatalf("call failed: %v", err)
+	}
+	if got := result.ToInteger(); got != 1 {
+		t.Fatalf("expected 1 for length:null, got %d", got)
+	}
+}
+
+func TestNextID_LengthUndefined(t *testing.T) {
+	t.Parallel()
+	runtime, nextFn := setupModule(t)
+
+	// Object where "length" is explicitly undefined — hits goja.IsUndefined(lengthVal).
+	val := mustRunValue(t, runtime, `({length: undefined})`)
+
+	result, err := nextFn(goja.Undefined(), val)
+	if err != nil {
+		t.Fatalf("call failed: %v", err)
+	}
+	if got := result.ToInteger(); got != 1 {
+		t.Fatalf("expected 1 for length:undefined, got %d", got)
+	}
+}

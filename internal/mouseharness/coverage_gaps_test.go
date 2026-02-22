@@ -270,6 +270,56 @@ func TestScrollDirection_String_All(t *testing.T) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// console.go: Simple getters (no PTY needed)
+// ─────────────────────────────────────────────────────────────────────
+
+func TestConsole_SimpleGetters(t *testing.T) {
+	t.Parallel()
+	c := &Console{cp: nil, tb: t, height: 30, width: 120}
+	assert.Equal(t, 30, c.Height())
+	assert.Equal(t, 120, c.Width())
+	assert.Nil(t, c.TermtestConsole())
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// element.go: FindElementInBuffer (pure function, no PTY)
+// ─────────────────────────────────────────────────────────────────────
+
+func TestFindElementInBuffer_Found(t *testing.T) {
+	t.Parallel()
+	c := &Console{cp: nil, tb: t, height: 24, width: 80}
+	loc := c.FindElementInBuffer("Hello World\nFoo Bar Baz", "Foo")
+	require.NotNil(t, loc)
+	assert.Equal(t, 2, loc.Row)
+	assert.Equal(t, 1, loc.Col)
+	assert.Equal(t, 3, loc.Width)
+	assert.Equal(t, "Foo", loc.Text)
+}
+
+func TestFindElementInBuffer_NotFound(t *testing.T) {
+	t.Parallel()
+	c := &Console{cp: nil, tb: t, height: 24, width: 80}
+	loc := c.FindElementInBuffer("Hello World\nOnly This", "Missing")
+	assert.Nil(t, loc)
+}
+
+func TestFindElementInBuffer_MidLine(t *testing.T) {
+	t.Parallel()
+	c := &Console{cp: nil, tb: t, height: 24, width: 80}
+	loc := c.FindElementInBuffer("abc def ghi", "def")
+	require.NotNil(t, loc)
+	assert.Equal(t, 1, loc.Row)
+	assert.Equal(t, 5, loc.Col) // 1-indexed: "abc " is 4 chars, "def" starts at 5
+}
+
+func TestFindElementInBuffer_EmptyBuffer(t *testing.T) {
+	t.Parallel()
+	c := &Console{cp: nil, tb: t, height: 24, width: 80}
+	loc := c.FindElementInBuffer("", "anything")
+	assert.Nil(t, loc)
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // terminal.go: getVisibleTop / bufferRowToViewportRow computation
 // ─────────────────────────────────────────────────────────────────────
 

@@ -104,9 +104,9 @@ func TestPool_FindWorker_NotFound(t *testing.T) {
 
 // mockControlHandler implements ControlHandler for testing.
 type mockControlHandler struct {
-	enqueueFn  func(string) (int, error)
+	enqueueFn   func(string) (int, error)
 	interruptFn func() error
-	statusFn   func() GetStatusResult
+	statusFn    func() GetStatusResult
 }
 
 func (m *mockControlHandler) EnqueueTask(task string) (int, error) {
@@ -227,7 +227,7 @@ func TestControlServer_InvalidParams(t *testing.T) {
 	defer conn.Close()
 
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
-	req := `{"command":"EnqueueTask","params":"not-an-object"}` + "\n"
+	req := `{"method":"EnqueueTask","params":"not-an-object"}` + "\n"
 	_, _ = conn.Write([]byte(req))
 
 	buf := make([]byte, 4096)
@@ -388,7 +388,7 @@ func TestManagedSession_ProcessToolCall_RepeatDetection(t *testing.T) {
 func TestSafetyValidator_BlockThreshold(t *testing.T) {
 	t.Parallel()
 	cfg := DefaultSafetyConfig()
-	cfg.BlockThreshold = 0.1  // Very low — trigger on sensitive patterns.
+	cfg.BlockThreshold = 0.1 // Very low — trigger on sensitive patterns.
 	cfg.SensitivePatterns = []string{`(?i)password`}
 
 	sv := NewSafetyValidator(cfg)

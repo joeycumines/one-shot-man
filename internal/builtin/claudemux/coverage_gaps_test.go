@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 	"net"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -134,8 +133,7 @@ func (m *mockControlHandler) GetStatus() GetStatusResult {
 
 func TestControlServer_InvalidJSON(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	sockPath := filepath.Join(dir, "test.sock")
+	sockPath := tempSockPath(t)
 
 	srv := NewControlServer(sockPath, &mockControlHandler{})
 	if err := srv.Start(); err != nil {
@@ -174,8 +172,7 @@ func TestControlServer_InvalidJSON(t *testing.T) {
 
 func TestControlServer_EmptyTask(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	sockPath := filepath.Join(dir, "test.sock")
+	sockPath := tempSockPath(t)
 
 	srv := NewControlServer(sockPath, &mockControlHandler{})
 	if err := srv.Start(); err != nil {
@@ -193,8 +190,7 @@ func TestControlServer_EmptyTask(t *testing.T) {
 
 func TestControlServer_HandlerError(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	sockPath := filepath.Join(dir, "test.sock")
+	sockPath := tempSockPath(t)
 
 	handler := &mockControlHandler{
 		enqueueFn: func(s string) (int, error) {
@@ -216,8 +212,7 @@ func TestControlServer_HandlerError(t *testing.T) {
 
 func TestControlServer_InvalidParams(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	sockPath := filepath.Join(dir, "test.sock")
+	sockPath := tempSockPath(t)
 
 	srv := NewControlServer(sockPath, &mockControlHandler{})
 	if err := srv.Start(); err != nil {

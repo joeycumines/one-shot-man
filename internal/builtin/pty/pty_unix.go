@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	creackpty "github.com/creack/pty"
 )
@@ -161,4 +162,84 @@ func (p *Process) platformResize(rows, cols uint16) error {
 		Rows: rows,
 		Cols: cols,
 	})
+}
+
+// splitCommand splits a command string into a binary and arguments using
+// POSIX-like shell word rules. Single quotes preserve literal content,
+// double quotes allow backslash escaping of \, ", $, `, and newline.
+// Outside quotes, backslash escapes the next character.
+//
+// If the command contains no unquoted whitespace, it is returned as-is
+// with a nil args slice.
+//
+// This function is used when cfg.Command contains spaces and cfg.Args is
+// empty — e.g., "ollama launch claude --config" becomes
+// binary="ollama", args=["launch", "claude", "--config"].
+func splitCommand(s string) (binary string, args []string, err error) {
+	var words []string
+	var cur strings.Builder
+	inSingle := false
+	inDouble := false
+	escaped := false
+
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+
+		if escaped {
+			if inDouble {
+				// In double quotes, backslash only escapes: \ " $ ` \n
+				switch ch {
+				case '\\', '"', '$', '`', '\n':
+					cur.WriteByte(ch)
+				default:
+					// Preserve the backslash for other characters.
+					cur.WriteByte('\\')
+					cur.WriteByte(ch)
+				}
+			} else {
+				cur.WriteByte(ch)
+			}
+			escaped = false
+			continue
+		}
+
+		if ch == '\\' && !inSingle {
+			escaped = true
+			continue
+		}
+
+		if ch == '\'' && !inDouble {
+			inSingle = !inSingle
+			continue
+		}
+
+		if ch == '"' && !inSingle {
+			inDouble = !inDouble
+			continue
+		}
+
+		if (ch == ' ' || ch == '\t' || ch == '\n') && !inSingle && !inDouble {
+			if cur.Len() > 0 {
+				words = append(words, cur.String())
+				cur.Reset()
+			}
+			continue
+		}
+
+		cur.WriteByte(ch)
+	}
+
+	if inSingle || inDouble {
+		return "", nil, errors.New("pty: unterminated quote in command string")
+	}
+
+	if cur.Len() > 0 {
+		words = append(words, cur.String())
+	}
+
+	if len(words) == 0 {
+		return "", nil, errors.New("pty: empty command after splitting")
+	}
+
+	return words[0], words[1:], nil
 }

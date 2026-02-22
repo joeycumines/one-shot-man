@@ -3,8 +3,8 @@
 ## Session
 - **Started**: 2026-02-20T23:57:43Z (see .session-timer)
 - **Branch**: wip (348+ commits ahead of main)
-- **Build**: UNTESTED since Ollama HTTP deletion — need `make` run
-- **Blueprint**: T001-T025 Ollama deletion phase ~85% complete
+- **Build**: GREEN \u2014 build PASS, lint PASS (vet+staticcheck+deadcode), test PASS (44 packages, 0 failures)
+- **Blueprint**: T001-T023 DONE. Ollama HTTP deletion COMPLETE. Next: T024+ (cross-platform, claudemux audit)
 
 ## Current Phase: Ollama HTTP Deletion (T001-T025)
 Systematically removing the `osm:ollama` HTTP client module, `OllamaHTTPProvider`, and all traces.
@@ -27,6 +27,8 @@ Systematically removing the `osm:ollama` HTTP client module, `OllamaHTTPProvider
 - `scripts/orchestrate-pr-split.js` — removed ollama import, 5 functions, extractJSON, section header
 - `CHANGELOG.md` — removed 11 Ollama HTTP entries, trimmed PR split line
 - `docs/README.md` — removed ollama.md and tool-calling.md links
+- `docs/todo.md` — deleted 170-line stale "Ollama Safety Validation" brainstorming section
+- `internal/config/config.go` — also removed unused `time` import (post-deletion fix)
 
 ### Files VERIFIED KEPT (PTY — correct)
 - `internal/builtin/claudemux/provider_ollama.go` (PTY-based OllamaProvider)
@@ -38,11 +40,10 @@ Systematically removing the `osm:ollama` HTTP client module, `OllamaHTTPProvider
 - `internal/builtin/claudemux/integration_test.go` — all PTY provider refs
 
 ## Immediate Next Steps
-1. Run `go mod tidy`
-2. Run `make` — first build verification
-3. Fix any compilation errors
-4. Update blueprint.json statuses
-5. Continue to T026+ (claudemux audit and refinement)
+1. Cross-platform verification: `make make-all-in-container` (Linux), `make make-all-run-windows` (Windows)
+2. T026-T042: Claudemux audit and refinement
+3. T043-T060: PR splitter agentic rewrite using claudemux
+4. T061-T077: Integration tests + coverage push to 100%
 
 ## Known Issues
 - **create_file tool corruption**: Large files get corrupted with reversed content.

@@ -1522,3 +1522,51 @@ func TestGetTmuxSessionID_InvalidPaneFormat(t *testing.T) {
 		})
 	}
 }
+
+// =============================================================================
+// Coverage Gap Tests
+// =============================================================================
+
+// TestContainsAnyNonDigit_Direct exercises the helper directly.
+func TestContainsAnyNonDigit_Direct(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"123", false},
+		{"", false},
+		{"0", false},
+		{"12a3", true},
+		{"abc", true},
+		{" ", true},
+		{"1 2", true},
+		{"1_2", true},
+		{"123\n", true},
+	}
+	for _, tt := range tests {
+		if got := containsAnyNonDigit(tt.input); got != tt.want {
+			t.Errorf("containsAnyNonDigit(%q) = %v, want %v", tt.input, got, tt.want)
+		}
+	}
+}
+
+// TestFormatSessionID_SanitizeAndTruncate exercises the case where both
+// sanitization (slashes) AND truncation are needed.
+func TestFormatSessionID_SanitizeAndTruncate(t *testing.T) {
+	t.Parallel()
+	// Build a long payload with slashes requiring sanitization.
+	payload := strings.Repeat("x/y", 50) // 150 chars, has slashes
+	id := formatSessionID(NamespaceExplicit, payload)
+
+	if len(id) > MaxSessionIDLength {
+		t.Errorf("id exceeds max length: %d > %d", len(id), MaxSessionIDLength)
+	}
+	if !strings.HasPrefix(id, NamespaceExplicit+NamespaceDelimiter) {
+		t.Errorf("id missing namespace prefix: %q", id)
+	}
+	// Should not contain any raw slashes.
+	if strings.Contains(id, "/") {
+		t.Errorf("id still contains slashes: %q", id)
+	}
+}

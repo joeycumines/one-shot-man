@@ -85,3 +85,25 @@ func TestFileLock_CannotOpenFile(t *testing.T) {
 		t.Fatal("Expected an error when trying to create a lock file at an invalid path, but got none")
 	}
 }
+
+func TestFileLock_ReleaseAfterFilePreDeleted(t *testing.T) {
+	// Acquire lock, then delete the lock file on disk before releasing.
+	// releaseFileLock should suppress the "file not found" error from os.Remove.
+	tempDir := t.TempDir()
+	lockPath := filepath.Join(tempDir, "predeleted.lock")
+
+	lockFile, err := acquireFileLock(lockPath)
+	if err != nil {
+		t.Fatalf("acquireFileLock: %v", err)
+	}
+
+	// Delete the file from under the lock handle.
+	if err := os.Remove(lockPath); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	// Release should succeed (suppress NotExist error).
+	if err := releaseFileLock(lockFile); err != nil {
+		t.Errorf("releaseFileLock after pre-delete: %v", err)
+	}
+}

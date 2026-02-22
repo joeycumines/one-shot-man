@@ -156,6 +156,7 @@ func TestSanitizeFilename(t *testing.T) {
 		{"reserved con with ext", "Con.Txt", "_Con.Txt"},
 		{"reserved nul dot", "NUL.", "_NUL"},
 		{"dot only", ".", "_"},
+		{"dot-dot", "..", "_"},
 		{"leading dot preserved", ".config", ".config"},
 		{"empty string", "", "_"},
 	}

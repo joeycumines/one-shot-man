@@ -83,6 +83,15 @@ func TestIsRepo(t *testing.T) {
 	if IsRepo(filepath.Join(t.TempDir(), "nope")) {
 		t.Fatal("expected false for nonexistent dir")
 	}
+
+	// .git as regular file (git worktree / submodule) → false.
+	dirFile := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dirFile, ".git"), []byte("gitdir: ../main/.git"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if IsRepo(dirFile) {
+		t.Fatal("expected false when .git is a regular file (not a directory)")
+	}
 }
 
 func TestClone(t *testing.T) {

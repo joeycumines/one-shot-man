@@ -3,6 +3,7 @@ package scripting
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -268,10 +269,6 @@ func TestIsRelativeOrAbsolutePath(t *testing.T) {
 		{"./", true},
 		{"../", true},
 
-		// Absolute path
-		{"/usr/bin", true},
-		{"/", true},
-
 		// Bare module names — not paths
 		{"express", false},
 		{"my-module", false},
@@ -281,6 +278,31 @@ func TestIsRelativeOrAbsolutePath(t *testing.T) {
 		// Edge cases
 		{".hidden", false}, // starts with "." but is not "./" or "."
 		{"..foo", false},   // starts with ".." but is not "../" or ".."
+	}
+
+	// Absolute paths depend on the platform.
+	if runtime.GOOS == "windows" {
+		tests = append(tests,
+			struct {
+				input string
+				want  bool
+			}{`C:\Windows`, true},
+			struct {
+				input string
+				want  bool
+			}{`C:\`, true},
+		)
+	} else {
+		tests = append(tests,
+			struct {
+				input string
+				want  bool
+			}{"/usr/bin", true},
+			struct {
+				input string
+				want  bool
+			}{"/", true},
+		)
 	}
 
 	for _, tc := range tests {

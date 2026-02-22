@@ -3,6 +3,7 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -87,6 +88,9 @@ func TestFileLock_CannotOpenFile(t *testing.T) {
 }
 
 func TestFileLock_ReleaseAfterFilePreDeleted(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not allow deleting a file that is still open")
+	}
 	// Acquire lock, then delete the lock file on disk before releasing.
 	// releaseFileLock should suppress the "file not found" error from os.Remove.
 	tempDir := t.TempDir()

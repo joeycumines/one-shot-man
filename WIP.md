@@ -2,9 +2,9 @@
 
 ## Session
 - **Started**: 2026-02-20T23:57:43Z (see .session-timer)
-- **Branch**: wip (348+ commits ahead of main)
-- **Build**: ALL GREEN — macOS PASS, lint PASS, all 44 packages PASS
-- **Blueprint**: T001-T042 DONE, T043 DONE, T081-T094 DONE, T095/T099/T100 DONE, T066/T067 in progress
+- **Branch**: wip (350+ commits ahead of main)
+- **Build**: ALL GREEN — macOS PASS (full `make all`), lint PASS, all 44 packages PASS
+- **Blueprint**: T001-T042 DONE, T043 DONE, T081-T094 DONE, T095/T099/T100 DONE, T066/T067 Done
 
 ## Completed Phases
 
@@ -25,10 +25,11 @@ All 14 docs checked — zero stale references.
 ### Phase 5: Lint/Deadcode (T095, T099-T100) — DONE
 .deadcodeignore clean, vet+staticcheck+deadcode all PASS.
 
-### Phase 6: Coverage Push — IN PROGRESS
+### Phase 6: Coverage Push — 8 BATCHES COMMITTED
 
 #### Packages at 100%
-crypto, exec, grpc, time, unicodetext, goroutineid, termui/scrollbar (builtin), regexp
+crypto, exec, grpc, time, unicodetext, goroutineid, termui/scrollbar, regexp,
+hot_snippets.go, parsePathList, matchesAncestorPattern (script), Adapter (engine_core)
 
 #### Coverage improvements (cumulative across all windows)
 | Package | Before | After | Delta |
@@ -40,57 +41,60 @@ crypto, exec, grpc, time, unicodetext, goroutineid, termui/scrollbar (builtin), 
 | gitops | 87.5% | **95.3%** | +7.8% |
 | template | 95.7% | **95.8%** | +0.1% |
 | fetch | 94.6% | **95.5%** | +0.9% |
+| claudemux | ~88% | **94.9%** | +6.9% |
+| pabt | ~90% | **94.7%** | +4.7% |
+| bubbletea | ~90% | **91.2%** | +1.2% |
+| bt | 91.2% | **91.9%** | +0.7% |
 | testutil | 81.3% | **90.7%** | +9.4% |
-| scripting | 89.6% | **90.0%** | +0.4% |
+| scripting | 89.6% | **91.5%** | +1.9% |
 | session | 89.4% | **89.9%** | +0.5% |
 | pty | 79.4% | **88.9%** | +9.5% |
-| bt | 91.2% | **91.8%** | +0.6% |
-| storage | 87.0% | **88.4%** | +1.4% |
+| storage | 87.0% | **88.9%** | +1.9% |
 | os | 83.6% | **87.0%** | +3.4% |
+| command | 87.1% | **87.4%** | +0.3% |
 | ctxutil | ~87% | **87.2%** | +0.2% |
-| command | 87.1% | **~87.5%** | ~+0.4% |
+| mouseharness | ~78% | **80.0%** | +2.0% |
 
 #### Bugfix: template convertFuncMap null guard
-Fixed production bug: `convertFuncMap` panicked on null/undefined input because
-`goja.Value.ToObject(runtime)` throws TypeError for null before the existing
-`obj == nil` guard could be reached. Added nil/null/undefined check before ToObject.
+Fixed production bug: `convertFuncMap` panicked on null/undefined input.
+Added nil/null/undefined check before `ToObject`.
 
-#### Tests Written This Session (current context window)
-- pabt/coverage_gaps_test.go: removed 2 duplicate tests (fix compile error)
-- ctxutil/ctxutil_test.go: 3 tests (nil ctx guards, metadata no colon-space)
-- session/session_edge_test.go: 2 tests (formatUUIDID, GetSessionID UUID fallback)
-- storage/fs_backend_archive_test.go: 6 tests (mismatch, empty dest, source gone, stat non-ENOENT, ReadFile err, stat dest non-ENOENT)
-- storage/cleanup_scheduler_test.go: 1 test (defaultNewTicker)
-- storage/atomic_write_unix_test.go: 1 test (atomicRenameWindows stub)
-- builtin/register_test.go: 1 test (with terminal provider)
-- gitops/gitops_test.go: 5 tests (corrupt .git, push transport, bare repo AddAll/HasStagedChanges/Commit)
-- template/template_test.go: 2 tests (null funcMap, throw from funcMap function)
-- pty/pty_test.go: 3 tests (nil cmd Pid, module ProcessAllMethods, module SpawnWithAllOptions)
-- command/util_cmd_coverage_gaps_test.go: 3 tests (valueOrNone empty/non-empty, BaseCommand SetupFlags)
+## Batches Committed This Session (8 total, ~4,325+ lines)
 
-## Immediate Next Steps
-1. Continue coverage push — bt (91.8%), scripting, bubbletea
-2. Target remaining command gaps: addPath (78.6%), Reload (84.6%), session delete (54.2%)
-3. Run Rule of Two before any commit
-4. Cross-platform verification (T078-T080)
-5. T044-T060: PR splitter rewrite
+1. **3abab67**: Fix template convertFuncMap null panic + coverage tests (17 files, +1537/-13)
+2. **7349c94**: claudemux, config, mouseharness, session, nextintegerid (5 files, +718)
+3. **cadba47**: claudemux eventToJS/wrapMCPInstance/wrapInstance/wrapInstanceRegistry/wrapPool (2 files, +438)
+4. **8ca16e9**: claudemux wrapPool/wrapPoolWorker/wrapRegistry/wrapPanel/wrapGuard/wrapMCPGuard/wrapMCPInstance (1 file, +940)
+5. **c786c0d**: pabt, scripting, argv coverage tests (5 files, +605)
+6. **facb732**: command + storage coverage tests (2 files, +563)
+7. **fbb0cb3**: scripting context/engine coverage tests (2 files, +264)
+8. **3c5e6c1**: bt bridge + scripting context batch8 tests (2 files, +260)
 
-## Latest Commits (this session)
-- **facb732**: Add coverage tests for command and storage packages (2 files, +563 lines)
-- **c786c0d**: Add coverage tests for pabt, scripting, and argv (5 files, +605 lines)
-- **8ca16e9**: Add claudemux coverage tests for wrapPool/wrapPoolWorker/wrapRegistry/wrapPanel/wrapGuard/wrapMCPGuard/wrapMCPInstance (1 file, +940 lines)
-- **cadba47**: Add claudemux module binding coverage tests for eventToJS/wrapMCPInstance/wrapInstance/wrapInstanceRegistry/wrapPool (2 files, +438 lines)
-- **7349c94**: Add coverage tests for claudemux, config, mouseharness, session, and nextintegerid (5 files, +718 lines)
-- **3abab67**: Fix template convertFuncMap null panic and add coverage tests (17 files, +1537/-13 lines)
+## Remaining Coverage Gaps (diminishing returns territory)
 
-## Coverage Snapshot (post-facb732)
-| Package | Coverage |
-|---------|----------|
-| command | **87.4%** (was 87.2%) |
-| storage | **88.9%** (was 88.4%) |
-| claudemux | **94.9%** |
-| config | 97.4% |
-| session | 89.9% |
-| hot_snippets.go | **100%** |
-| matchesAncestorPattern (script) | **100%** |
-| parsePathList | **100%** |
+### Achievable with effort:
+- command: session delete 54.2%, dynamicDispatchLoop 17.6%, sync SetupFlags 0%
+- scripting: NewContextManager 75%, walkDirectory 85.4%, Close 84.6%
+- bt: adapter.Tick 78.1%, dispatchJSWithGen 77.8%, newBridgeWithLoop 73.9%
+- bubbletea: runProgram 78.3%, Require 86.1%
+- ctxutil: exportGojaValue 77.8%, toArrayObject 83.3%, Require 84.7%
+- os: clipboardCopy 55.9% (platform-specific)
+
+### Hard/impossible to unit test:
+- debug_assertions_stub.go: 0% (empty stubs in non-debug builds)
+- tui_io.go VT100 methods: 0% (no-op stubs)
+- MCP commands: 20-33% (heavy integration dependencies)
+- gitops error paths: 3 lines need corrupted git repos
+
+## Immediate Next Steps for Next Takumi
+1. Cross-platform verification: `make make-all-in-container` (Linux), `make make-all-run-windows` (Windows)
+2. Continue coverage — command package has largest accessible gaps
+3. Fuzz testing (T104), benchmark testing (T105)
+4. T044-T060: PR splitter rewrite
+
+## Critical Notes
+- **Go 1.26**: `t.Parallel()` + `t.Setenv()` CANNOT be used together (panics)
+- **syscall.Mkfifo**: Unix-only — requires `//go:build unix` file constraint
+- **bt imports**: `github.com/joeycumines/goja-eventloop` (NOT nicholasgasior)
+- **"ollama" CLI vs "osm:ollama"**: PTY provider KEPT, HTTP module DELETED
+- **Rule of Two**: 2 contiguous PASS reviews required before any commit

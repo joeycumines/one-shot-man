@@ -3,6 +3,7 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -177,6 +178,9 @@ func containsSubstring(s, substr string) bool {
 // error path. This happens when os.Stat returns an error that is NOT os.ErrNotExist
 // (e.g., ENOTDIR when an intermediate path component is a regular file).
 func TestArchiveSession_StatSourceNonENOENT(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ENOTDIR path trick behaves differently on Windows")
+	}
 	dir := t.TempDir()
 	SetTestPaths(dir)
 	defer ResetPaths()

@@ -19,6 +19,36 @@ import (
 // base.go coverage gaps
 // ─────────────────────────────────────────────────────────────────────
 
+// writeExecScript writes content to path with 0755 using the
+// write-to-temp-then-rename pattern. On Linux, execve can race with
+// write-back and return ETXTBSY ("text file busy") even after f.Sync+
+// f.Close, because the kernel may still have the inode's page cache
+// marked as "open for write" for a brief window. Renaming from a temp
+// file to the final name avoids this because the final inode was never
+// opened for writing from the kernel's perspective.
+func writeExecScript(t *testing.T, path, content string) {
+	t.Helper()
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write([]byte(content)); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBaseCommand_SetupFlags_NoOp(t *testing.T) {
 	t.Parallel()
 	bc := NewBaseCommand("test", "A test command", "test [options]")
@@ -210,9 +240,7 @@ func TestScriptCommand_Execute_RunsScript(t *testing.T) {
 
 	dir := t.TempDir()
 	scriptPath := filepath.Join(dir, "hello")
-	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho \"hello world\"\n"), 0755); err != nil {
-		t.Fatal(err)
-	}
+	writeExecScript(t, scriptPath, "#!/bin/sh\necho \"hello world\"\n")
 
 	cmd := newScriptCommand("hello", scriptPath)
 	var stdout, stderr bytes.Buffer
@@ -232,9 +260,7 @@ func TestScriptCommand_Execute_PassesArgs(t *testing.T) {
 
 	dir := t.TempDir()
 	scriptPath := filepath.Join(dir, "echo-args")
-	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho \"$@\"\n"), 0755); err != nil {
-		t.Fatal(err)
-	}
+	writeExecScript(t, scriptPath, "#!/bin/sh\necho \"$@\"\n")
 
 	cmd := newScriptCommand("echo-args", scriptPath)
 	var stdout, stderr bytes.Buffer
@@ -254,9 +280,7 @@ func TestScriptCommand_Execute_CapturesStderr(t *testing.T) {
 
 	dir := t.TempDir()
 	scriptPath := filepath.Join(dir, "stderr-test")
-	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho err >&2\n"), 0755); err != nil {
-		t.Fatal(err)
-	}
+	writeExecScript(t, scriptPath, "#!/bin/sh\necho err >&2\n")
 
 	cmd := newScriptCommand("stderr-test", scriptPath)
 	var stdout, stderr bytes.Buffer
@@ -276,9 +300,7 @@ func TestScriptCommand_Execute_ExitCode(t *testing.T) {
 
 	dir := t.TempDir()
 	scriptPath := filepath.Join(dir, "fail")
-	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nexit 42\n"), 0755); err != nil {
-		t.Fatal(err)
-	}
+	writeExecScript(t, scriptPath, "#!/bin/sh\nexit 42\n")
 
 	cmd := newScriptCommand("fail", scriptPath)
 	var stdout, stderr bytes.Buffer
@@ -310,9 +332,7 @@ func TestScriptCommand_ExecuteWithContext_Cancellation(t *testing.T) {
 
 	dir := t.TempDir()
 	scriptPath := filepath.Join(dir, "sleeper")
-	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\nsleep 60\n"), 0755); err != nil {
-		t.Fatal(err)
-	}
+	writeExecScript(t, scriptPath, "#!/bin/sh\nsleep 60\n")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := newScriptCommand("sleeper", scriptPath)
@@ -345,9 +365,7 @@ func TestScriptCommand_ExecuteWithContext_NormalCompletion(t *testing.T) {
 
 	dir := t.TempDir()
 	scriptPath := filepath.Join(dir, "quick")
-	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho done\n"), 0755); err != nil {
-		t.Fatal(err)
-	}
+	writeExecScript(t, scriptPath, "#!/bin/sh\necho done\n")
 
 	ctx := context.Background()
 	cmd := newScriptCommand("quick", scriptPath)

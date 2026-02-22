@@ -46,6 +46,9 @@ func TestLoadFromPath_StatError_NotENOENT(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission-based stat errors differ on Windows")
 	}
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses permission checks")
+	}
 	dir := t.TempDir()
 
 	// Create an unreadable directory to trigger a non-ENOENT stat error.

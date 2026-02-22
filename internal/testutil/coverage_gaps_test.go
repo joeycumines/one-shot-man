@@ -181,3 +181,47 @@ func TestHeuristicConstants_Positive(t *testing.T) {
 	require.Greater(t, MouseClickSettleTime, time.Duration(0))
 	require.Greater(t, PollingInterval, time.Duration(0))
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Adapter() method coverage
+// ─────────────────────────────────────────────────────────────────────
+
+func TestTestEventLoopProvider_Adapter(t *testing.T) {
+	provider := NewTestEventLoopProvider()
+	defer provider.Stop()
+	require.NotNil(t, provider.Adapter())
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// platform.go coverage — synthetic Platform structs
+// ─────────────────────────────────────────────────────────────────────
+
+func TestSkipIfRoot_SyntheticRoot(t *testing.T) {
+	// Exercise the t.Skipf path with a synthetic root Platform
+	platform := Platform{IsUnix: true, IsRoot: true, UID: 0, GID: 0}
+	SkipIfRoot(t, platform, "synthetic root test")
+	// If we reach here, SkipIfRoot didn't skip (unexpected for IsRoot=true)
+	t.Fatal("SkipIfRoot should have skipped for IsRoot=true")
+}
+
+func TestSkipIfWindows_SyntheticWindows(t *testing.T) {
+	// Exercise the t.Skipf path with a synthetic Windows Platform
+	platform := Platform{IsWindows: true, IsUnix: false}
+	SkipIfWindows(t, platform, "synthetic windows test")
+	// If we reach here, SkipIfWindows didn't skip
+	t.Fatal("SkipIfWindows should have skipped for IsWindows=true")
+}
+
+func TestAssertCanBypassPermissions_SyntheticRoot(t *testing.T) {
+	// Exercise the root Unix early-return path
+	platform := Platform{IsUnix: true, IsRoot: true, UID: 0, GID: 0}
+	AssertCanBypassPermissions(t, platform) // should return silently
+}
+
+func TestAssertCanBypassPermissions_SyntheticWindows(t *testing.T) {
+	// Exercise the Windows skip path
+	platform := Platform{IsWindows: true, IsUnix: false}
+	AssertCanBypassPermissions(t, platform)
+	// This calls t.Skip, which means the test is marked as skipped
+	t.Fatal("AssertCanBypassPermissions should have skipped for Windows")
+}

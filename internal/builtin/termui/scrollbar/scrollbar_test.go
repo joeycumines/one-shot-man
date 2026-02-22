@@ -132,3 +132,106 @@ func TestNoArgsReturnUndefined(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, goja.IsUndefined(res))
 }
+
+// TestNoArgsReturnUndefined_AllSetters covers no-arg branches on every setter.
+func TestNoArgsReturnUndefined_AllSetters(t *testing.T) {
+	rt := goja.New()
+	m := termuisb.New()
+	obj := createScrollbarObject(rt, &m).ToObject(rt)
+
+	noArgMethods := []string{
+		"setContentHeight",
+		"setYOffset",
+		"setThumbBackground",
+		"setThumbForeground",
+		"setTrackBackground",
+		"setTrackForeground",
+	}
+
+	for _, name := range noArgMethods {
+		t.Run(name, func(t *testing.T) {
+			fn, ok := goja.AssertFunction(obj.Get(name))
+			require.True(t, ok, "method %s not found", name)
+			res, err := fn(goja.Undefined())
+			require.NoError(t, err)
+			require.True(t, goja.IsUndefined(res), "%s() with no args should return undefined", name)
+		})
+	}
+
+	// setChars with exactly 1 arg (< 2 guard).
+	setChars, _ := goja.AssertFunction(obj.Get("setChars"))
+	res, err := setChars(goja.Undefined(), rt.ToValue("X"))
+	require.NoError(t, err)
+	require.True(t, goja.IsUndefined(res), "setChars(1 arg) should return undefined")
+}
+
+// TestStyleSetters_WithArgs covers the style setters that were untested with args.
+func TestStyleSetters_WithArgs(t *testing.T) {
+	rt := goja.New()
+	orig := lipgloss.ColorProfile()
+	t.Cleanup(func() { lipgloss.SetColorProfile(orig) })
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
+	m := termuisb.New()
+	obj := createScrollbarObject(rt, &m).ToObject(rt)
+
+	// setThumbForeground.
+	fn, _ := goja.AssertFunction(obj.Get("setThumbForeground"))
+	res, err := fn(goja.Undefined(), rt.ToValue("#00FF00"))
+	require.NoError(t, err)
+	require.False(t, goja.IsUndefined(res), "setter should return obj (chainable)")
+
+	// setTrackBackground.
+	fn, _ = goja.AssertFunction(obj.Get("setTrackBackground"))
+	res, err = fn(goja.Undefined(), rt.ToValue("#0000FF"))
+	require.NoError(t, err)
+	require.False(t, goja.IsUndefined(res))
+
+	// setTrackForeground.
+	fn, _ = goja.AssertFunction(obj.Get("setTrackForeground"))
+	res, err = fn(goja.Undefined(), rt.ToValue("#FFFF00"))
+	require.NoError(t, err)
+	require.False(t, goja.IsUndefined(res))
+}
+
+// TestViewportHeightGetter covers the viewportHeight() getter.
+func TestViewportHeightGetter(t *testing.T) {
+	rt := goja.New()
+	m := termuisb.New()
+	m.ViewportHeight = 42
+	obj := createScrollbarObject(rt, &m).ToObject(rt)
+
+	fn, ok := goja.AssertFunction(obj.Get("viewportHeight"))
+	require.True(t, ok)
+	res, err := fn(goja.Undefined())
+	require.NoError(t, err)
+	require.Equal(t, int64(42), res.ToInteger())
+}
+
+// TestSetContentHeight_NegativeClamp covers negative clamping.
+func TestSetContentHeight_NegativeClamp(t *testing.T) {
+	rt := goja.New()
+	m := termuisb.New()
+	m.ContentHeight = 10
+	obj := createScrollbarObject(rt, &m).ToObject(rt)
+
+	fn, _ := goja.AssertFunction(obj.Get("setContentHeight"))
+	_, err := fn(goja.Undefined(), rt.ToValue(-5))
+	require.NoError(t, err)
+	require.Equal(t, 0, m.ContentHeight)
+}
+
+// TestNewWithNoArgs covers the new() factory with zero arguments.
+func TestNewWithNoArgs(t *testing.T) {
+	rt := setupRuntime(t)
+	script := `
+		const sb = require('osm:termui/scrollbar').new();
+		if (typeof sb !== 'object') throw new Error('expected object');
+		// viewportHeight should be zero (default).
+		if (sb.viewportHeight() !== 0) throw new Error('expected 0 viewportHeight');
+		'ok';
+	`
+	res, err := rt.RunString(script)
+	require.NoError(t, err)
+	require.Equal(t, "ok", res.Export())
+}

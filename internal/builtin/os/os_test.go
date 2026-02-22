@@ -889,3 +889,113 @@ func TestAppendFile_EmptyPath(t *testing.T) {
 		t.Fatalf("expected 'path is required', got: %v", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// coverage gap tests — resolvePath, appendFile error, createDirs failure
+// ---------------------------------------------------------------------------
+
+func TestWriteFile_RelativePath(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("chdir-based relative path test is Unix-only")
+	}
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	writeFile := requireCallable(t, exports, "writeFile")
+
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	_, err := writeFile(goja.Undefined(), runtime.ToValue("relative.txt"), runtime.ToValue("content"))
+	if err != nil {
+		t.Fatalf("writeFile with relative path failed: %v", err)
+	}
+	data, readErr := os.ReadFile(filepath.Join(dir, "relative.txt"))
+	if readErr != nil {
+		t.Fatalf("read file: %v", readErr)
+	}
+	if string(data) != "content" {
+		t.Fatalf("expected 'content', got %q", string(data))
+	}
+}
+
+func TestAppendFile_ReadOnlyDir(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("read-only directory behavior differs on Windows")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root can write to read-only directories")
+	}
+	t.Parallel()
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	appendFile := requireCallable(t, exports, "appendFile")
+
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
+
+	path := filepath.Join(dir, "nope.txt")
+	_, err := appendFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("fail"))
+	if err == nil {
+		t.Fatal("expected error appending to read-only directory")
+	}
+	if !strings.Contains(err.Error(), "appendFile:") {
+		t.Fatalf("expected appendFile error prefix, got: %v", err)
+	}
+}
+
+func TestWriteFile_CreateDirsFails(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("read-only directory behavior differs on Windows")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses chmod")
+	}
+	t.Parallel()
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	writeFile := requireCallable(t, exports, "writeFile")
+
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
+
+	path := filepath.Join(dir, "sub", "deep", "file.txt")
+	opts := runtime.NewObject()
+	_ = opts.Set("createDirs", true)
+	_, err := writeFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("fail"), opts)
+	if err == nil {
+		t.Fatal("expected error when createDirs can't mkdir")
+	}
+}
+
+func TestAppendFile_CreateDirsFails(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("read-only directory behavior differs on Windows")
+	}
+	if os.Getuid() == 0 {
+		t.Skip("root bypasses chmod")
+	}
+	t.Parallel()
+	runtime, exports := setupModuleAllPlatforms(t, nil)
+	appendFile := requireCallable(t, exports, "appendFile")
+
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
+
+	path := filepath.Join(dir, "sub", "deep", "file.txt")
+	opts := runtime.NewObject()
+	_ = opts.Set("createDirs", true)
+	_, err := appendFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue("fail"), opts)
+	if err == nil {
+		t.Fatal("expected error when createDirs can't mkdir")
+	}
+}

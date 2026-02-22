@@ -501,3 +501,108 @@ func TestMatch_NullString(t *testing.T) {
 		t.Fatal("expected true for ^$ matching null (empty string)")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// coverage gap tests — compiled object no-match paths
+// ---------------------------------------------------------------------------
+
+func TestCompile_Find_NoMatch(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	v, err := vm.RunString(`
+		var r = re.compile("\\d+");
+		r.find("no numbers here");
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !goja.IsNull(v) {
+		t.Fatalf("expected null for no match, got %v", v)
+	}
+}
+
+func TestCompile_FindAll_NoMatch(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	_, err := vm.RunString(`
+		var r = re.compile("\\d+");
+		var result = r.findAll("no numbers");
+		if (result.length !== 0) throw new Error("expected 0 matches, got " + result.length);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCompile_FindSubmatch_NoMatch(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	v, err := vm.RunString(`
+		var r = re.compile("(\\d+)-(\\d+)");
+		r.findSubmatch("no match");
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !goja.IsNull(v) {
+		t.Fatalf("expected null for no submatch, got %v", v)
+	}
+}
+
+func TestCompile_FindAllSubmatch_NoMatch(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	_, err := vm.RunString(`
+		var r = re.compile("(\\d+)-(\\d+)");
+		var m = r.findAllSubmatch("no match");
+		if (m.length !== 0) throw new Error("expected 0, got " + m.length);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCompile_Replace_NoMatch(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	v, err := vm.RunString(`
+		var r = re.compile("\\d+");
+		r.replace("no numbers", "X");
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.String() != "no numbers" {
+		t.Fatalf("expected 'no numbers', got %q", v.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// coverage gap tests — argString/argInt edge cases
+// ---------------------------------------------------------------------------
+
+func TestMatch_MissingString(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	// match with only pattern, no string → argString(call, 1) returns ""
+	v, err := vm.RunString(`re.match("^$")`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// ^$ matches empty string, argString missing → ""
+	if !v.ToBoolean() {
+		t.Fatal("expected true for ^$ matching missing string (empty)")
+	}
+}
+
+func TestFindAll_NullLimit(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	_, err := vm.RunString(`
+		var result = re.findAll("\\d+", "1 2 3", null);
+		if (result.length !== 3) throw new Error("expected 3, got " + result.length);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}

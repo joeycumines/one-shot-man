@@ -339,3 +339,47 @@ func TestHexDecode_NullInput(t *testing.T) {
 		t.Fatalf("expected empty string for null, got %q", v.String())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// coverage gap tests — toBytes ExportTo path, argString missing arg
+// ---------------------------------------------------------------------------
+
+func TestBase64Encode_GoByteSlice(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	// Set a Go []byte directly — ExportTo(v, &bs) succeeds for this
+	_ = vm.Set("data", []byte("Hello"))
+	v, err := vm.RunString(`enc.base64Encode(data)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.String() != "SGVsbG8=" {
+		t.Fatalf("expected 'SGVsbG8=', got %q", v.String())
+	}
+}
+
+func TestBase64Decode_NoArgs(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	// No args → argString returns "" → DecodeString("") → empty
+	v, err := vm.RunString(`enc.base64Decode()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.String() != "" {
+		t.Fatalf("expected empty string for no args, got %q", v.String())
+	}
+}
+
+func TestHexDecode_NoArgs(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	// No args → argString returns "" → hex.DecodeString("") → empty
+	v, err := vm.RunString(`enc.hexDecode()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.String() != "" {
+		t.Fatalf("expected empty string for no args, got %q", v.String())
+	}
+}

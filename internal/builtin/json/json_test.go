@@ -1197,3 +1197,183 @@ func TestParseUnflattenKey(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// coverage gap tests — resolveIndent edge cases
+// ---------------------------------------------------------------------------
+
+func TestStringifyNullIndent(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	v, err := vm.RunString(`jm.stringify({a: 1}, null)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// null indent → resolveIndent returns "" → MarshalIndent with no prefix (has newlines)
+	s := v.String()
+	if !strings.Contains(s, "\n") {
+		t.Fatalf("expected newlines in MarshalIndent output, got: %s", s)
+	}
+	if !strings.Contains(s, `"a"`) {
+		t.Fatalf("expected key \"a\" in output, got: %s", s)
+	}
+}
+
+func TestStringifyNegativeIntIndent(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	v, err := vm.RunString(`jm.stringify({a: 1}, -3)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// negative int → clamped to 0 → MarshalIndent with "" (has newlines, no indent)
+	s := v.String()
+	if !strings.Contains(s, "\n") {
+		t.Fatalf("expected newlines, got: %s", s)
+	}
+	if strings.Contains(s, "   ") {
+		t.Fatalf("expected no indentation for clamped-to-0, got: %s", s)
+	}
+}
+
+func TestStringifyFloatIndent(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	// 2.7 → truncated to int 2
+	v, err := vm.RunString(`jm.stringify({a: 1}, 2.7)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(v.String(), "  ") {
+		t.Fatalf("expected 2-space indent, got: %s", v.String())
+	}
+	// negative float → clamped to 0 → MarshalIndent with "" (newlines, no indent)
+	v2, err := vm.RunString(`jm.stringify({a: 1}, -1.5)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(v2.String(), "\n") {
+		t.Fatalf("expected newlines for negative float, got: %s", v2.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// coverage gap tests — parsePath / queryValue edge cases
+// ---------------------------------------------------------------------------
+
+func TestQueryMalformedBracket(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	_, err := vm.RunString(`
+		var obj = {};
+		obj["[malformed"] = 42;
+		var r = jm.query(obj, "[malformed");
+		if (r !== 42) throw new Error("got: " + r);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestQueryBracketStringKey(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	_, err := vm.RunString(`
+		var obj = {items: {}};
+		obj.items["special-key"] = 99;
+		var r = jm.query(obj, "items[special-key]");
+		if (r !== 99) throw new Error("got: " + r);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestQueryNegativeIndex(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	_, err := vm.RunString(`
+		var obj = {arr: [1, 2, 3]};
+		var r = jm.query(obj, "arr[-1]");
+		if (r !== undefined) throw new Error("expected undefined, got: " + r);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// coverage gap tests — unflatten edge cases
+// ---------------------------------------------------------------------------
+
+func TestUnflattenMalformedBracket(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	_, err := vm.RunString(`
+		var r = jm.unflatten({"a[bad": 42});
+		// parseUnflattenKey splits into segments: {key:"a"}, {key:"[bad"}
+		if (r.a["[bad"] !== 42) throw new Error("got: " + JSON.stringify(r));
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUnflattenNonNumericBracket(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	_, err := vm.RunString(`
+		var r = jm.unflatten({"a[x]": 42});
+		// non-numeric bracket → segments: {key:"a"}, {key:"[x]"}
+		if (r.a["[x]"] !== 42) throw new Error("got: " + JSON.stringify(r));
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUnflattenEmptySeparator(t *testing.T) {
+	t.Parallel()
+	vm := setup(t)
+	_, err := vm.RunString(`
+		var r = jm.unflatten({"a.b": 1}, "");
+		// empty separator → whole key is one segment → preserved as-is
+		if (r["a.b"] !== 1) throw new Error("got: " + JSON.stringify(r));
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// coverage gap tests — normalizeNumeric type coverage
+// ---------------------------------------------------------------------------
+
+func TestNormalizeNumericAllTypes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		input interface{}
+		want  float64
+	}{
+		{int(5), 5},
+		{int8(5), 5},
+		{int16(5), 5},
+		{int32(5), 5},
+		{float32(2.5), 2.5},
+	}
+	for _, tt := range tests {
+		got, ok := normalizeNumeric(tt.input).(float64)
+		if !ok {
+			t.Errorf("normalizeNumeric(%T(%v)) did not return float64", tt.input, tt.input)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("normalizeNumeric(%T(%v)) = %v, want %v", tt.input, tt.input, got, tt.want)
+		}
+	}
+	// Non-numeric passthrough
+	s := normalizeNumeric("hello")
+	if s != "hello" {
+		t.Errorf("normalizeNumeric(string) = %v, want \"hello\"", s)
+	}
+}

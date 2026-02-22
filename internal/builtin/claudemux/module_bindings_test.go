@@ -3,6 +3,7 @@ package claudemux
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/dop251/goja"
@@ -187,10 +188,11 @@ func TestBinding_WrapInstanceRegistry(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
 	dir := t.TempDir()
+	jsDir := filepath.ToSlash(dir) // Windows: backslashes break JS string literals
 
-	runJS(`var ireg = cm.newInstanceRegistry('` + dir + `');`)
+	runJS(`var ireg = cm.newInstanceRegistry('` + jsDir + `');`)
 	assert.Equal(t, int64(0), runJS(`ireg.len()`).ToInteger())
-	assert.Equal(t, dir, runJS(`ireg.baseDir()`).String())
+	assert.Equal(t, jsDir, runJS(`ireg.baseDir()`).String())
 
 	// Create an instance.
 	runJS(`var inst = ireg.create("sess-1");`)

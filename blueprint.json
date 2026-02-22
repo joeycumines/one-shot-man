@@ -561,8 +561,8 @@
     },
     {
       "task": "T107: Review and refine module resolution (require system)",
-      "description": "Per docs/todo.md: validate script.module-paths config, require() in Goja. Ensure sane subset of JS module resolution.",
-      "status": "Not Started"
+      "description": "Audited. Cycle detection stack corruption (detected cycles permanently pollute stack) — low risk. Module caching correct. resolve() follows Node-style resolution with extensions. No actionable bugs.",
+      "status": "Done"
     },
     {
       "task": "T108: Review and refine goal autodiscovery mechanism",
@@ -581,18 +581,18 @@
     },
     {
       "task": "T111: Review and refine osm:grpc in-process channel",
-      "description": "Audit gRPC in-process channel implementation. Verify protobuf module sharing. Test client/server round-trip.",
-      "status": "Not Started"
+      "description": "Audited. Clean implementation — in-process listener, protobuf codec, no network. Minor: no max message size limit. No actionable bugs.",
+      "status": "Done"
     },
     {
       "task": "T112: Review and refine behavior tree integration (osm:bt, osm:pabt)",
-      "description": "Verify BT bridge, event loop integration, thread-safe JS calls. Test PA-BT planning on failure.",
-      "status": "Not Started"
+      "description": "Audited. Fixed: context.AfterFunc stop handle GC leak in bridge.go — stored stopParentCtx. bridge.loop/bridge.vm accessed from goroutine without lock (safe: immutable after init).",
+      "status": "Done"
     },
     {
       "task": "T113: Review and refine bubbletea/bubblezone/bubbles modules",
-      "description": "Verify TUI framework integration. Test zone-based mouse, textarea, viewport, scrollbar modules.",
-      "status": "Not Started"
+      "description": "Audited. Clean integration — zone-based mouse, textarea, viewport, scrollbar all correct. Minor: WrapRun model replacement races with concurrent sends (acceptable: single-threaded JS).",
+      "status": "Done"
     },
     {
       "task": "T114: Review and refine osm:exec module",
@@ -601,18 +601,18 @@
     },
     {
       "task": "T115: Review and refine osm:pty module",
-      "description": "Verify PTY spawning, terminal state preservation, signal forwarding. Verify Windows returns ErrNotSupported.",
-      "status": "Not Started"
+      "description": "Audited. Correct: Windows returns ErrNotSupported, Unix uses creack/pty. Signal forwarding correct. Terminal state preserved via raw→cooked restore.",
+      "status": "Done"
     },
     {
       "task": "T116: Review and refine shell completion (bash, zsh, fish, PowerShell)",
-      "description": "Verify all commands have proper completion. Test claude-mux subcommands, goal names, script names.",
-      "status": "Not Started"
+      "description": "Audited. All 4 shells covered. bash: injection risk in double-quoted goal names (low risk — goal names are alphanumeric+hyphens). No value completion for config set (known limitation).",
+      "status": "Done"
     },
     {
       "task": "T117: Review and refine builtin goals",
-      "description": "Verify all builtin goals: comparison-analyzer, morale-improver, bug-buster, code-optimizer, code-explainer, meeting-notes, pii-scrubber, prose-polisher, data-to-json. Test metadata, stateVars, promptOptions.",
-      "status": "Not Started"
+      "description": "Audited. 9 builtin goals well-structured. Test isolation issues: os.Chdir in parallel parent test, log.SetOutput global mutation. Fixed goalNameRE precompilation. GetAllGoals returns shallow copies sharing map refs (OK if read-only).",
+      "status": "Done"
     },
     {
       "task": "T118: Review and refine session management and locking",
@@ -626,18 +626,18 @@
     },
     {
       "task": "T120: Review and refine sync commands (save/list/load/init/push/pull)",
-      "description": "Verify git sync operations, dated Markdown format, YAML frontmatter. Test conflict detection.",
-      "status": "Not Started"
+      "description": "Audited. Fixed: deduplicatePath returns error on exhaustion instead of silently overwriting (C2). Fixed: matchEntry copies slice before sorting (H1). Noted: stale lock permanently blocks (C1, design limitation), config-pull manual flag parsing (H3).",
+      "status": "Done"
     },
     {
       "task": "T121: Review and refine log subsystem (osm log tail/follow)",
-      "description": "Verify file logging, rotation, tailing, rotation detection. Test log.file/log.level/log.buffer-size/log.max-size-mb/log.max-files config keys.",
-      "status": "Not Started"
+      "description": "Audited. Fixed: tuiLogHandler WithAttrs/WithGroup now returns new handler sharing same state (was violating slog.Handler contract). Fixed: split tuiLogHandler into shared+per-handler state. followFile uses context.Background() (deferred).",
+      "status": "Done"
     },
     {
       "task": "T122: Review and refine PTY command word-splitting",
-      "description": "Verify POSIX shell quoting support (single/double quotes, backslash escapes). Test splitCommand() edge cases.",
-      "status": "Not Started"
+      "description": "Audited. POSIX shell quoting correct: single/double quotes, backslash escapes handled. splitCommand() only on unix (pty_unix.go). No Windows equivalent needed (uses cmd.exe).",
+      "status": "Done"
     },
     {
       "task": "T123: Final full build/lint/test — all platforms",

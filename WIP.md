@@ -4,7 +4,23 @@
 - **Started**: 2026-02-20T23:57:43Z (see .session-timer)
 - **Branch**: wip (350+ commits ahead of main)
 - **Build**: ALL GREEN — macOS PASS (full `make all`), lint PASS, all 44 packages PASS
-- **Blueprint**: T001-T042 DONE, T043 DONE, T081-T094 DONE, T095/T099/T100 DONE, T066/T067 Done
+- **Blueprint**: T001-T042 DONE, T043 DONE, T066/T067 Done, T078-T080 DONE, T081-T094 DONE, T095/T099/T100 DONE, T104-T122 DONE
+
+## Current Phase: Module Audits Complete — Ready to Commit
+
+### Bugs Fixed This Session (Uncommitted)
+1. **bt/bridge.go**: context.AfterFunc stop handle GC leak — stored stopParentCtx field
+2. **scripting/logging.go**: slog.Handler contract violation — WithAttrs/WithGroup now returns new handler with shared tuiLogHandlerShared
+3. **command/goal_discovery_test.go**: os.Setenv test isolation — extracted to standalone test with t.Setenv
+4. **command/goal_loader.go**: Dead basePath param removed + goalNameRE precompiled
+5. **command/sync.go**: deduplicatePath returns error on exhaustion (was silent overwrite)
+6. **command/sync.go**: matchEntry copies slice before sorting (was mutating caller's data)
+
+### Immediate Next Steps
+1. Rule of Two review on all uncommitted changes
+2. Commit all fixes
+3. Cross-platform verification (Linux Docker + Windows)
+4. Final tasks: T123-T127
 
 ## Completed Phases
 

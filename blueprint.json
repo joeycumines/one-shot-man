@@ -788,6 +788,16 @@
       "task": "T152: Cross-platform verification + commit documentation fixes",
       "description": "Committed as a223b27. 3-platform verified: macOS PASS, Linux Docker PASS (549s), Windows PASS (84s). 9 files, 0 failures.",
       "status": "Done"
+    },
+    {
+      "task": "T153: Documentation accuracy audit — architecture.md deep fixes",
+      "description": "Fixed: (1) MCP tool table: added heartbeat row, fourteen→fifteen. (2) Data flow: 25→28 native modules. (3) Data flow: added 4 missing Go commands (mcp-instance, mcp-make, mcp-parent, claude-mux). (4) Module tables: added osm:pty (core utils) and osm:claudemux (new 'Agent orchestration' section). (5) command.md: added full reference sections for mcp-instance, mcp-make, mcp-parent.",
+      "status": "Done"
+    },
+    {
+      "task": "T154: Rule of Two + cross-platform + commit — architecture deep fixes",
+      "description": "Two contiguous reviews, 3-platform verification, commit.",
+      "status": "In Progress"
     }
   ],
   "continuousVerification": {

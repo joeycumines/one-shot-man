@@ -781,13 +781,13 @@
     },
     {
       "task": "T151: Rule of Two verification — documentation + error message fixes",
-      "description": "Two contiguous, issue-free review cycles on the documentation accuracy + error message consistency diff.",
-      "status": "In Progress"
+      "description": "Two contiguous PASS reviews. Run 1: 8 verified claims, 4 hypotheses disproved. Run 2: 7 verified claims, 4 hypotheses disproved. Same diff, same prompt.",
+      "status": "Done"
     },
     {
       "task": "T152: Cross-platform verification + commit documentation fixes",
-      "description": "3-platform verification (macOS, Linux Docker, Windows) and commit.",  
-      "status": "Not Started"
+      "description": "Committed as a223b27. 3-platform verified: macOS PASS, Linux Docker PASS (549s), Windows PASS (84s). 9 files, 0 failures.",
+      "status": "Done"
     }
   ],
   "continuousVerification": {

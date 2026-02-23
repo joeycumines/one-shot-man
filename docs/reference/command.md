@@ -287,6 +287,50 @@ Response:
 `listSessions` (no input):
 Returns an array of session summaries with `sessionId`, `capabilities`, `status`, `progress`, `lastUpdate`, `lastHeartbeat`, and `eventCount`.
 
+### `osm mcp-instance`
+
+Start a per-instance MCP server over stdio, designed for use by individual Claude Code sessions. Provides the same tool set as `osm mcp`.
+
+- Usage: `osm mcp-instance --session <session-id>`
+- Flags:
+  - `--session`: Session identifier for this MCP instance (required)
+
+This command is typically invoked by the `claude-mux` orchestrator, not directly by users. Each spawned Claude Code instance gets its own `mcp-instance` server for isolated context management.
+
+### `osm mcp-make`
+
+Start an MCP server exposing GNU Make tools over stdio. Enables MCP clients to execute Makefile targets and query help.
+
+- Usage: `osm mcp-make [--workdir <dir>] [--file <path>]`
+- Flags:
+  - `--workdir`: Default working directory for make invocations
+  - `--file`: Path to Makefile (overrides auto-detection)
+
+Tools:
+
+| Tool | Description |
+|------|-------------|
+| `make` | Execute a make target with optional workdir and file overrides (5-minute timeout) |
+| `make_help` | Display help from the Makefile's `help` target (cached 5 minutes) |
+
+On macOS, prefers `gmake` (GNU Make via Homebrew) over the system `make`.
+
+### `osm mcp-parent`
+
+Start an MCP server for agent steering over stdio. Connects to a `claude-mux` orchestrator via a Unix domain socket and exposes task management tools.
+
+- Usage: `osm mcp-parent --socket <path>`
+- Flags:
+  - `--socket`: Path to orchestrator control socket (required)
+
+Tools:
+
+| Tool | Description |
+|------|-------------|
+| `enqueue_task` | Submit a task description to the orchestrator queue |
+| `interrupt_current` | Interrupt the currently active task |
+| `get_status` | Get orchestrator status (active task, queue depth, queue entries) |
+
 ### `osm log`
 
 View and tail log files.

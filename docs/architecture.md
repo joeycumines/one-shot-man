@@ -153,6 +153,7 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 | `osm:fetch` | HTTP client (GET, POST, etc.) |
 | `osm:grpc` | Promise-based gRPC client/server (via goja-grpc, in-process channel) |
 | `osm:protobuf` | Protocol Buffers descriptor loading (via goja-protobuf) |
+| `osm:pty` | PTY (pseudo-terminal) spawning and management |
 
 ### Text and templates
 
@@ -191,6 +192,12 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 |--------|-------------|
 | `osm:nextIntegerID` | Thread-safe monotonic integer ID generator |
 | `osm:sharedStateSymbols` | Shared state symbol constants for cross-module state |
+
+### Agent orchestration
+
+| Module | Description |
+|--------|-------------|
+| `osm:claudemux` | Claude Code multiplexer — PTY-based agent spawning, MCP integration, safety validation |
 
 ### Context management
 
@@ -387,7 +394,7 @@ The `mcp` command starts a Model Context Protocol server over stdio, enabling ex
 
 ### Architecture
 
-The server is implemented as a pure Go command (no scripting engine). It creates a `ContextManager` rooted at the working directory and exposes fourteen tools:
+The server is implemented as a pure Go command (no scripting engine). It creates a `ContextManager` rooted at the working directory and exposes fifteen tools:
 
 | Tool | Description |
 |------|-------------|
@@ -405,6 +412,7 @@ The server is implemented as a pure Go command (no scripting engine). It creates
 | `requestGuidance` | Request human guidance (question, options, context) from an agent session |
 | `getSession` | Get session info and drain queued events for a given session |
 | `listSessions` | List all registered agent sessions with summary info |
+| `heartbeat` | Update session heartbeat timestamp (keepalive) |
 
 ### Design
 
@@ -432,12 +440,15 @@ CLI args → main.go → Registry.Get(cmd)
      (config, session,      (script, prompt-flow,
       init, version,         code-review, goal,
       help, log, mcp,       super-document)
-      sync, completion)            ↓
+      mcp-instance,
+      mcp-make, mcp-parent,
+      sync, completion,
+      claude-mux)            ↓
                            PrepareEngine()
                                   ↓
                           Engine created with:
                           - Goja VM + event loop
-                          - 25 native modules
+                          - 28 native modules
                           - TUI manager + state
                           - Session persistence
                           - Context manager

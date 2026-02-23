@@ -371,40 +371,35 @@ func TestTemplates_VerifyAndCommit_WorkflowComposer(t *testing.T) {
 	_, runJS := templateTestEnv(t)
 	tp := templatePath(t)
 
-	// Create a temp git repo for the commit test
-	tmpDir := t.TempDir()
-	runJS(`
-		var exec = require('osm:exec');
-		exec.exec('git', 'init', '` + tmpDir + `');
-		exec.exec('git', '-C', '` + tmpDir + `', 'config', 'user.email', 'test@test.com');
-		exec.exec('git', '-C', '` + tmpDir + `', 'config', 'user.name', 'Test');
-	`)
-
-	// Create a file to commit
-	err := os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("hello"), 0o644)
-	require.NoError(t, err)
-
-	// verifyAndCommit with testCommand that runs in the temp dir
-	runJS(`
+	// Verify composition only — DO NOT tick the node.
+	// The commitChanges leaf runs `git add -A` + `git commit` in CWD, which
+	// would mutate the host repository if any working tree changes exist.
+	// That is a catastrophic test isolation violation.
+	nodeType := runJS(`
 		var bt = require('osm:bt');
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
 		var node = templates.verifyAndCommit(bb, {
-			testCommand: 'cd ` + tmpDir + ` && echo ok',
-			message: 'test commit'
+			testCommand: 'echo ok',
+			message: 'automated commit'
 		});
-		globalThis._status = bt.tick(node);
-		globalThis._bb = bb;
+		typeof node;
 	`)
+	assert.Equal(t, "function", nodeType.String(), "verifyAndCommit should return a BT node (function)")
 
-	// Note: git commit will fail because 'git add -A' and 'git commit' run
-	// in the test's CWD, not in tmpDir. This tests the compose pattern works;
-	// a real usage would set the working directory properly.
-	// The test verifies that the composer creates a valid sequence node.
-	status := runJS(`globalThis._status`)
-	// Tests pass but git commit may fail depending on CWD state — that's OK,
-	// we're testing the composition pattern, not git operations.
-	assert.Contains(t, []string{"success", "failure"}, status.String())
+	// Also verify with verifyCommand to test the 3-step branch.
+	nodeType2 := runJS(`
+		var bt2 = require('osm:bt');
+		var templates2 = require('` + tp + `');
+		var bb2 = new bt2.Blackboard();
+		var node2 = templates2.verifyAndCommit(bb2, {
+			testCommand: 'echo ok',
+			verifyCommand: 'echo verify',
+			message: 'automated commit'
+		});
+		typeof node2;
+	`)
+	assert.Equal(t, "function", nodeType2.String(), "verifyAndCommit with verifyCommand should return a BT node (function)")
 }
 
 // TestTemplates_CreatePlanningActions tests the PA-BT action factory.

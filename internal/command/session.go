@@ -3,6 +3,7 @@ package command
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -148,7 +149,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			br := bufio.NewReader(c.stdin)
 			_, _ = fmt.Fprint(stdout, "This will permanently remove sessions according to your configured policies. Proceed? (y/N): ")
 			t, err := br.ReadString('\n')
-			if err != nil && err != io.EOF {
+			if err != nil && !errors.Is(err, io.EOF) {
 				return fmt.Errorf("failed to read confirmation: %w", err)
 			}
 			t = strings.TrimSpace(t)
@@ -192,7 +193,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			br := bufio.NewReader(c.stdin)
 			_, _ = fmt.Fprint(stdout, "This will permanently purge sessions (ignoring retention). Proceed? (y/N): ")
 			t, err := br.ReadString('\n')
-			if err != nil && err != io.EOF {
+			if err != nil && !errors.Is(err, io.EOF) {
 				return fmt.Errorf("failed to read confirmation: %w", err)
 			}
 			t = strings.TrimSpace(t)
@@ -305,7 +306,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 				_, _ = fmt.Fprintf(stdout, "Are you sure you want to delete session '%s'? This is irreversible. (y/N): ", id)
 			}
 			t, err := br.ReadString('\n')
-			if err != nil && err != io.EOF {
+			if err != nil && !errors.Is(err, io.EOF) {
 				return fmt.Errorf("failed to read confirmation: %w", err)
 			}
 			t = strings.TrimSpace(t)

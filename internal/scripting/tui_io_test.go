@@ -2,6 +2,7 @@ package scripting
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"sync"
 	"testing"
@@ -146,7 +147,7 @@ func TestTUIReaderFromIO(t *testing.T) {
 
 	buf := make([]byte, 10)
 	n, err := r.Read(buf)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		t.Errorf("Read failed: %v", err)
 	}
 	if string(buf[:n]) != "test input" {
@@ -288,7 +289,7 @@ func TestNilReaderSafety(t *testing.T) {
 	// Read should return EOF
 	buf := make([]byte, 10)
 	_, err := r.Read(buf)
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Errorf("Read should return EOF, got: %v", err)
 	}
 
@@ -458,7 +459,7 @@ func TestTUIReader_GetSizeReturnsErrorForNonTerminal(t *testing.T) {
 	r := NewTUIReaderFromIO(bytes.NewReader(nil))
 	w, h, err := r.GetSize()
 
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Errorf("GetSize should return io.EOF for non-terminal, got: %v", err)
 	}
 	if w != 0 || h != 0 {
@@ -472,7 +473,7 @@ func TestTUIReader_MakeRawReturnsErrorForNonTerminal(t *testing.T) {
 	r := NewTUIReaderFromIO(bytes.NewReader(nil))
 	state, err := r.MakeRaw()
 
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Errorf("MakeRaw should return io.EOF for non-terminal, got: %v", err)
 	}
 	if state != nil {
@@ -537,7 +538,7 @@ func TestTerminalIO_ReadWriteDelegation(t *testing.T) {
 	// Test Read
 	buf := make([]byte, 10)
 	n, err = tio.Read(buf)
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		t.Errorf("Read failed: %v", err)
 	}
 	if string(buf[:n]) != "hello" {

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -43,7 +44,7 @@ func TestArchiveSession_DestAlreadyExists_DoesNotOverwrite(t *testing.T) {
 	// Attempt archive should return os.ErrExist and must not overwrite the preexisting file.
 	if err := b.ArchiveSession(sid, archivePath); err == nil {
 		t.Fatalf("expected ArchiveSession to return an error when dest exists")
-	} else if err != os.ErrExist {
+	} else if !errors.Is(err, os.ErrExist) {
 		t.Fatalf("expected os.ErrExist, got: %v", err)
 	}
 
@@ -156,7 +157,7 @@ func TestArchiveSession_SourceGoneButDestExists(t *testing.T) {
 	}
 
 	err = b.ArchiveSession(sid, dest)
-	if err != os.ErrExist {
+	if !errors.Is(err, os.ErrExist) {
 		t.Fatalf("expected os.ErrExist when source missing but dest exists, got: %v", err)
 	}
 }

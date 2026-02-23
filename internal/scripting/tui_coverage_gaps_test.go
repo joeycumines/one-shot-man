@@ -3,6 +3,7 @@ package scripting
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -835,7 +836,7 @@ func TestTerminalIO_MakeRaw_InvalidFd(t *testing.T) {
 	tio := NewTerminalIO(reader, writer)
 
 	state, err := tio.MakeRaw()
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Errorf("expected io.EOF, got %v", err)
 	}
 	if state != nil {
@@ -877,7 +878,7 @@ func TestTerminalIO_GetSize_InvalidFd(t *testing.T) {
 	tio := NewTerminalIO(reader, writer)
 
 	w, h, err := tio.GetSize()
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Errorf("expected io.EOF, got %v", err)
 	}
 	if w != 0 || h != 0 {

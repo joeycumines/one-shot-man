@@ -8,6 +8,7 @@
 package fetch
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -122,7 +123,7 @@ func (rs *ReadableStream) pump() {
 			rs.chunks <- readResult{data: chunk}
 		}
 		if err != nil {
-			if err != io.EOF {
+			if !errors.Is(err, io.EOF) {
 				rs.chunks <- readResult{err: err}
 			}
 			return

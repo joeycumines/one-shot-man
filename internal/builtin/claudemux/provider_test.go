@@ -168,7 +168,7 @@ func TestMockHandle_SendReceive(t *testing.T) {
 
 	// Second receive should be EOF
 	_, err = h.Receive()
-	if err != io.EOF {
+	if !errors.Is(err, io.EOF) {
 		t.Errorf("expected io.EOF, got %v", err)
 	}
 }

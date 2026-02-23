@@ -47,6 +47,12 @@ func writeExecScript(t *testing.T, path, content string) {
 	if err := os.Rename(tmp, path); err != nil {
 		t.Fatal(err)
 	}
+	// Sync the directory to flush metadata. On Docker overlayfs, exec can
+	// still see ETXTBSY unless the rename's directory entry is flushed.
+	if d, err := os.Open(filepath.Dir(path)); err == nil {
+		_ = d.Sync()
+		d.Close()
+	}
 }
 
 func TestBaseCommand_SetupFlags_NoOp(t *testing.T) {

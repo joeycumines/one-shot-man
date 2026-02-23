@@ -305,6 +305,7 @@ func setupTestRepo(t *testing.T, dir string) {
 }
 
 func runGitCommand(t *testing.T, dir string, args ...string) {
+	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	var stdout, stderr strings.Builder

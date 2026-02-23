@@ -79,16 +79,16 @@ func prSplitTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 }
 
 // prSplitScriptPath returns the absolute path to
-// scripts/orchestrate-pr-split.js relative to this package.
+// internal/command/pr_split_script.js relative to this package.
 func prSplitScriptPath(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()
 	require.NoError(t, err)
-	p := filepath.Join(wd, "..", "..", "..", "scripts", "orchestrate-pr-split.js")
+	p := filepath.Join(wd, "..", "..", "command", "pr_split_script.js")
 	absP, err := filepath.Abs(p)
 	require.NoError(t, err)
 	_, err = os.Stat(absP)
-	require.NoError(t, err, "orchestrate-pr-split.js not found at %s", absP)
+	require.NoError(t, err, "pr_split_script.js not found at %s", absP)
 	return absP
 }
 
@@ -164,7 +164,7 @@ func TestPRSplit_ModuleLoads(t *testing.T) {
 
 	runJS(`var prSplit = require('` + sp + `');`)
 	val := runJS(`prSplit.VERSION`)
-	assert.Equal(t, "4.0.0", val.String())
+	assert.Equal(t, "5.0.0", val.String())
 }
 
 func TestPRSplit_ExportedFunctions(t *testing.T) {

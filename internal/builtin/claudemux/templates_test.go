@@ -76,18 +76,18 @@ func templateTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	return bridge, runJS
 }
 
-// templatePath returns the absolute path to scripts/bt-templates/claude-mux.js
+// templatePath returns the absolute path to internal/command/pr_split_script.js
 // relative to this test file's package directory.
 func templatePath(t *testing.T) string {
 	t.Helper()
 	// Test CWD is internal/builtin/claudemux
 	wd, err := os.Getwd()
 	require.NoError(t, err)
-	p := filepath.Join(wd, "..", "..", "..", "scripts", "bt-templates", "claude-mux.js")
+	p := filepath.Join(wd, "..", "..", "..", "internal", "command", "pr_split_script.js")
 	absP, err := filepath.Abs(p)
 	require.NoError(t, err)
 	_, err = os.Stat(absP)
-	require.NoError(t, err, "claude-mux.js template not found at %s", absP)
+	require.NoError(t, err, "pr_split_script.js not found at %s", absP)
 	return absP
 }
 
@@ -99,7 +99,7 @@ func TestTemplates_ModuleLoads(t *testing.T) {
 
 	runJS(`var templates = require('` + tp + `');`)
 	val := runJS(`templates.VERSION`)
-	assert.Equal(t, "1.0.0", val.String())
+	assert.Equal(t, "5.0.0", val.String())
 }
 
 // TestTemplates_ExportedFunctions verifies all expected functions are exported.
@@ -110,8 +110,8 @@ func TestTemplates_ExportedFunctions(t *testing.T) {
 	runJS(`var templates = require('` + tp + `');`)
 
 	fns := []string{
-		"spawnClaude", "sendPrompt", "waitForResponse",
-		"verifyOutput", "runTests", "commitChanges", "splitBranch",
+		"btSpawnClaude", "btSendPrompt", "btWaitForResponse",
+		"btVerifyOutput", "btRunTests", "btCommitChanges", "btSplitBranch",
 		"spawnAndPrompt", "verifyAndCommit",
 		"createPlanningActions",
 	}
@@ -131,7 +131,7 @@ func TestTemplates_VerifyOutput_Success(t *testing.T) {
 		var bt = require('osm:bt');
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
-		var node = templates.verifyOutput(bb, 'echo hello');
+		var node = templates.btVerifyOutput(bb, 'echo hello');
 		var status = bt.tick(node);
 		globalThis._status = status;
 		globalThis._bb = bb;
@@ -160,7 +160,7 @@ func TestTemplates_VerifyOutput_Failure(t *testing.T) {
 		var bt = require('osm:bt');
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
-		var node = templates.verifyOutput(bb, 'false');
+		var node = templates.btVerifyOutput(bb, 'false');
 		var status = bt.tick(node);
 		globalThis._status = status;
 		globalThis._bb = bb;
@@ -186,7 +186,7 @@ func TestTemplates_RunTests_Success(t *testing.T) {
 		var bt = require('osm:bt');
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
-		var node = templates.runTests(bb, 'echo tests-passed');
+		var node = templates.btRunTests(bb, 'echo tests-passed');
 		globalThis._status = bt.tick(node);
 		globalThis._bb = bb;
 	`)
@@ -208,7 +208,7 @@ func TestTemplates_RunTests_Failure(t *testing.T) {
 		var bt = require('osm:bt');
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
-		var node = templates.runTests(bb, 'false');
+		var node = templates.btRunTests(bb, 'false');
 		globalThis._status = bt.tick(node);
 		globalThis._bb = bb;
 	`)
@@ -232,7 +232,7 @@ func TestTemplates_RunTests_DefaultCommand(t *testing.T) {
 		var bt = require('osm:bt');
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
-		var node = templates.runTests(bb);
+		var node = templates.btRunTests(bb);
 		globalThis._status = bt.tick(node);
 		globalThis._bb = bb;
 	`)
@@ -251,7 +251,7 @@ func TestTemplates_SendPrompt_NoAgent(t *testing.T) {
 		var bt = require('osm:bt');
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
-		var node = templates.sendPrompt(bb, 'hello');
+		var node = templates.btSendPrompt(bb, 'hello');
 		globalThis._status = bt.tick(node);
 		globalThis._bb = bb;
 	`)
@@ -273,7 +273,7 @@ func TestTemplates_WaitForResponse_NoAgent(t *testing.T) {
 		var bt = require('osm:bt');
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
-		var node = templates.waitForResponse(bb);
+		var node = templates.btWaitForResponse(bb);
 		globalThis._status = bt.tick(node);
 		globalThis._bb = bb;
 	`)
@@ -296,8 +296,8 @@ func TestTemplates_Sequence_VerifyThenRun(t *testing.T) {
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
 		var seq = bt.node(bt.sequence,
-			templates.verifyOutput(bb, 'echo step1'),
-			templates.runTests(bb, 'echo step2')
+			templates.btVerifyOutput(bb, 'echo step1'),
+			templates.btRunTests(bb, 'echo step2')
 		);
 		globalThis._status = bt.tick(seq);
 		globalThis._bb = bb;
@@ -324,8 +324,8 @@ func TestTemplates_Sequence_FailShortCircuits(t *testing.T) {
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
 		var seq = bt.node(bt.sequence,
-			templates.verifyOutput(bb, 'false'),
-			templates.runTests(bb, 'echo should-not-run')
+			templates.btVerifyOutput(bb, 'false'),
+			templates.btRunTests(bb, 'echo should-not-run')
 		);
 		globalThis._status = bt.tick(seq);
 		globalThis._bb = bb;
@@ -351,8 +351,8 @@ func TestTemplates_Fallback(t *testing.T) {
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
 		var tree = bt.node(bt.fallback,
-			templates.verifyOutput(bb, 'false'),
-			templates.runTests(bb, 'echo fallback-ok')
+			templates.btVerifyOutput(bb, 'false'),
+			templates.btRunTests(bb, 'echo fallback-ok')
 		);
 		globalThis._status = bt.tick(tree);
 		globalThis._bb = bb;
@@ -466,7 +466,7 @@ func TestTemplates_SpawnClaude_UnknownProvider(t *testing.T) {
 		var templates = require('` + tp + `');
 		var bb = new bt.Blackboard();
 		var registry = orc.newRegistry();
-		var node = templates.spawnClaude(bb, registry, 'nonexistent', {});
+		var node = templates.btSpawnClaude(bb, registry, 'nonexistent', {});
 		globalThis._status = bt.tick(node);
 		globalThis._bb = bb;
 	`)
@@ -497,7 +497,7 @@ func TestTemplates_SpawnClaude_WithEchoProvider(t *testing.T) {
 		// Register a claude-code provider with echo as the command
 		var provider = orc.claudeCode({command: '/bin/echo'});
 		registry.register(provider);
-		var node = templates.spawnClaude(bb, registry, 'claude-code', {});
+		var node = templates.btSpawnClaude(bb, registry, 'claude-code', {});
 		globalThis._status = bt.tick(node);
 		globalThis._bb = bb;
 	`)

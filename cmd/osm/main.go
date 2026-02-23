@@ -61,6 +61,7 @@ func run() error {
 	registry.Register(command.NewMCPMakeCommand())
 	registry.Register(command.NewMCPParentCommand())
 	registry.Register(command.NewClaudeMuxCommand(cfg))
+	registry.Register(command.NewPrSplitCommand(cfg))
 
 	// Parse global flags and command. Avoid manual inspection of args for
 	// help tokens; instead rely on the flag package so we consistently

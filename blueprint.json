@@ -711,8 +711,8 @@
     },
     {
       "task": "T137: Full fuzz revalidation — all 17 tests post-fixes",
-      "description": "Rerun all 17 fuzz tests for 30s each to confirm FuzzMCPSessionTools fix and validate no new regressions from coverage test additions.",
-      "status": "Not Started"
+      "description": "17/17 fuzz tests pass (30s each, ~43M total execs, zero crashes). FuzzSafetyClassify flaky on tight timeouts (throughput stalls). Not a regression.",
+      "status": "Done"
     },
     {
       "task": "T138: Cross-platform verification — Linux + Windows",

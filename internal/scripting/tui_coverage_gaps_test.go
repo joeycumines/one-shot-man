@@ -2591,8 +2591,8 @@ func TestNewTUIManagerWithConfig_RawReaderWriter(t *testing.T) {
 
 	// Pass raw io.Reader and io.Writer (not *TUIReader/*TUIWriter)
 	tm := NewTUIManagerWithConfig(ctx, eng,
-		strings.NewReader(""),  // raw io.Reader → should be wrapped
-		io.Discard,             // raw io.Writer → should be wrapped
+		strings.NewReader(""), // raw io.Reader → should be wrapped
+		io.Discard,            // raw io.Writer → should be wrapped
 		testutil.NewTestSessionID("raw-io", t.Name()),
 		"memory",
 	)

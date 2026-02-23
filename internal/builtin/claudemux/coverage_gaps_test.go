@@ -1073,9 +1073,9 @@ type stubProvider struct {
 	providerName string
 }
 
-func (s *stubProvider) Name() string                                                { return s.providerName }
-func (s *stubProvider) Spawn(_ context.Context, _ SpawnOpts) (AgentHandle, error)   { return nil, nil }
-func (s *stubProvider) Capabilities() ProviderCapabilities                          { return ProviderCapabilities{} }
+func (s *stubProvider) Name() string                                              { return s.providerName }
+func (s *stubProvider) Spawn(_ context.Context, _ SpawnOpts) (AgentHandle, error) { return nil, nil }
+func (s *stubProvider) Capabilities() ProviderCapabilities                        { return ProviderCapabilities{} }
 
 // stubAgentHandle implements AgentHandle for testing wrapAgentHandle.
 type stubAgentHandle struct {

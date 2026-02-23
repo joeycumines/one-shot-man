@@ -2,6 +2,7 @@ package fetch_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -54,7 +55,7 @@ func runAsync(t *testing.T, provider *testutil.TestEventLoopProvider, js string)
 			done <- nil
 		})
 		_ = vm.Set("__asyncFail", func(msg string) {
-			done <- fmt.Errorf("%s", msg)
+			done <- errors.New(msg)
 		})
 		wrapped := `(async function() { ` + js + ` })()
 			.then(function() { __asyncDone(); })

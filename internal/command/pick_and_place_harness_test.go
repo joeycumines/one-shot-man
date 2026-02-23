@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -1153,7 +1154,7 @@ func (h *PickAndPlaceHarness) parseDebugJSON(buffer string) (*PickAndPlaceDebugJ
 		if hasMarkers {
 			errMsg += " (markers found in full buffer but not in truncated portion)"
 		}
-		return nil, fmt.Errorf("%s", errMsg)
+		return nil, errors.New(errMsg)
 	}
 
 	// Strip any remaining ANSI codes and whitespace

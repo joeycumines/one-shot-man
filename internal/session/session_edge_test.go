@@ -40,7 +40,7 @@ func TestConcurrentSessionAccess_MultipleGoroutines(t *testing.T) {
 			for j := 0; j < 20; j++ {
 				id, source, err := GetSessionID("")
 				if err != nil {
-					errors <- fmt.Errorf("goroutine %d: error getting session ID: %v", goroutineID, err)
+					errors <- fmt.Errorf("goroutine %d: error getting session ID: %w", goroutineID, err)
 					return
 				}
 				if id == "" {

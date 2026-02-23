@@ -75,6 +75,7 @@
 package lipgloss
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -744,18 +745,18 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 // It returns an error if the object is not a valid style instance or contains an error state.
 func UnwrapStyle(rt *goja.Runtime, v goja.Value) (lipgloss.Style, error) {
 	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
-		return lipgloss.Style{}, fmt.Errorf("value is null or undefined")
+		return lipgloss.Style{}, errors.New("value is null or undefined")
 	}
 
 	obj := v.ToObject(rt)
 	val := obj.Get(internalStateKey)
 	if val == nil {
-		return lipgloss.Style{}, fmt.Errorf("object is not a lipgloss style")
+		return lipgloss.Style{}, errors.New("object is not a lipgloss style")
 	}
 
 	state, ok := val.Export().(*styleState)
 	if !ok {
-		return lipgloss.Style{}, fmt.Errorf("object has invalid internal state")
+		return lipgloss.Style{}, errors.New("object has invalid internal state")
 	}
 
 	if state.hasError {
@@ -801,7 +802,7 @@ func parseColor(runtime *goja.Runtime, val goja.Value) (lipgloss.TerminalColor, 
 	dark := obj.Get("dark")
 
 	if light == nil || dark == nil || goja.IsUndefined(light) || goja.IsUndefined(dark) {
-		return nil, fmt.Errorf("invalid color object: missing 'light' or 'dark' properties")
+		return nil, errors.New("invalid color object: missing 'light' or 'dark' properties")
 	}
 
 	// Recursive validation for inner colors

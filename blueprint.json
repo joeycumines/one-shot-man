@@ -1,249 +1,35 @@
 {
   "meta": {
     "project": "one-shot-man (osm)",
-    "source": "Hana's Directive — 2026-02-21 (REFINED per config.mk trap)",
+    "source": "Hana's Directive \u2014 2026-02-21 (REFINED per config.mk trap)",
     "maintenance": "Update status IMMEDIATELY after every sub-task. Deviations logged within plan. NO priorities. NO estimates. ALL tasks MUST be completed."
   },
   "globalAlerts": [
-    "NINE-HOUR MANDATE: Session timer at .session-timer — verify via `make session-check`",
-    "CRITICAL: DELETE osm:ollama (HTTP client/tool calling/JS module) — DELETE OllamaHTTPProvider — KEEP OllamaProvider (PTY-based, runs ollama launch claude --config) — KEEP model_nav.go",
+    "UTMOST PRIORITY: INTEGRATION TESTING the PR split implementation using claudemux (and all the necessary work to ensure that implementation is actually implemented and works end to end) is the UTMOST priority.",
+    "NINE-HOUR MANDATE: Session timer at .session-timer \u2014 verify via `make session-check`",
+    "CRITICAL: DELETE osm:ollama (HTTP client/tool calling/JS module) \u2014 DELETE OllamaHTTPProvider \u2014 KEEP OllamaProvider (PTY-based, runs ollama launch claude --config) \u2014 KEEP model_nav.go",
     "CRITICAL: PR splitter is SLOP. Rewrite as PROPER agentic workflow using reborn osm:claudemux",
     "CRITICAL: Integration tests MUST use actual Claude Code via ollama CLI to VERIFY osm:claudemux works end-to-end",
     "Rule of Two: NO commits until TWO contiguous, issue-free review cycles (diff vs HEAD)",
     "ALL checks MUST pass on ALL platforms (macOS, Linux via Docker, Windows via moo)",
     "Use make make-all-with-log for macOS, make-all-in-container for Linux, make-all-run-windows for Windows",
-    "create_file tool corruption: Large test files get reversed content — write to scratch/ and assemble via make target"
+    "create_file tool corruption: Large test files get reversed content \u2014 write to scratch/ and assemble via make target"
   ],
   "mandatoryDirectives": [
-    "Read blueprint.json and WIP.md at session start — trust NO chat history",
-    "Update blueprint.json status after EVERY sub-task — the next Takumi reads this cold",
+    "Read blueprint.json and WIP.md at session start \u2014 trust NO chat history",
+    "Update blueprint.json status after EVERY sub-task \u2014 the next Takumi reads this cold",
     "Aggressive WIP.md checkpointing as token budget tightens",
-    "Die coding — work until the very last token",
-    "Expand scope continuously — there is ALWAYS more work",
+    "Die coding \u2014 work until the very last token",
+    "Expand scope continuously \u2014 there is ALWAYS more work",
     "ollama CLI is the vehicle to run Claude Code. osm:ollama (the HTTP module) is what gets deleted. OllamaProvider (PTY-based) stays."
   ],
   "statusSection": {
-    "currentState": "EXECUTING — T001-T150 DONE. T151 in progress (Rule of Two for doc accuracy + error fix).",
+    "currentState": "EXECUTING \u2014 T001-T150 DONE. T151 in progress (Rule of Two for doc accuracy + error fix).",
     "branch": "wip (386+ commits ahead of main)",
-    "buildStatus": "ALL GREEN — macOS PASS (gmake all). Linux/Windows pending for this batch.",
+    "buildStatus": "ALL GREEN \u2014 macOS PASS (gmake all). Linux/Windows pending for this batch.",
     "sessionTimer": ".session-timer (2026-02-21T21:02:36+1000)"
   },
   "sequentialTasks": [
-    {
-      "task": "T001: Delete internal/builtin/ollama/ directory entirely",
-      "description": "Remove all 10 files: doc.go, types.go, client.go, client_test.go, agent.go, tools.go, tools_builtin.go, tools_agent_test.go, module.go, integration_test.go. This is the entire osm:ollama package.",
-      "status": "Done"
-    },
-    {
-      "task": "T002: Remove config.mk error trap (Hana's directive internalized)",
-      "description": "Delete the $(error Hana: Takumi...) line from config.mk. Blueprint is now correct: KEEP provider_ollama.go (PTY), DELETE provider_ollama_http.go (HTTP), DELETE osm:ollama package.",
-      "status": "Done"
-    },
-    {
-      "task": "T003: Delete claudemux/provider_ollama_http.go and provider_ollama_http_test.go",
-      "description": "Delete the HTTP-based OllamaHTTPProvider and its 17 unit tests. Entire files are ollama-only.",
-      "status": "Done"
-    },
-    {
-      "task": "T004: Remove ollama import and registration from internal/builtin/register.go",
-      "description": "Remove the ollamamod import line and the registry.RegisterNativeModule(prefix+\"ollama\", ...) call. Keep all other registrations intact.",
-      "status": "Done"
-    },
-    {
-      "task": "T005: KEEP ollama() factory in claudemux/module.go (creates PTY OllamaProvider)",
-      "description": "CORRECTED: The ollama() factory creates OllamaProvider (PTY-based), NOT the deleted HTTP module. Factory KEPT per Hana's directive.",
-      "status": "Done — KEPT"
-    },
-    {
-      "task": "T006: Remove ollama config fields from internal/config/config.go",
-      "description": "Removed 8 Ollama HTTP struct fields, 4 defaults, 7 switch cases in parseClaudeMuxOption().",
-      "status": "Done"
-    },
-    {
-      "task": "T007: Remove ollama schema entries from internal/config/schema.go",
-      "description": "Removed 8 global entries and 7 section-scoped entries.",
-      "status": "Done"
-    },
-    {
-      "task": "T008: Remove ollama config tests from internal/config/config_test.go",
-      "description": "Removed test data, assertions, 5 subtests (ClaudeMuxOllamaHTTPConfig, ClaudeMuxOllamaDefaults, 3 invalid-* tests).",
-      "status": "Done"
-    },
-    {
-      "task": "T009: KEEP ollama references in claudemux/integration_test.go (all PTY-based)",
-      "description": "CORRECTED: All integration_test.go ollama references are PTY-based OllamaProvider — must KEEP.",
-      "status": "Done — KEPT"
-    },
-    {
-      "task": "T010: KEEP ollama factory tests in claudemux/module_bindings_test.go (test PTY factory)",
-      "description": "CORRECTED: Tests verify the KEPT ollama() factory that creates PTY OllamaProvider — must KEEP.",
-      "status": "Done — KEPT"
-    },
-    {
-      "task": "T011: KEEP ollama comments in claudemux/provider.go (Ollama PTY is a real provider)",
-      "description": "CORRECTED: OllamaProvider is a real PTY-based provider. Comment is accurate.",
-      "status": "Done — KEPT"
-    },
-    {
-      "task": "T012: KEEP ollama comments in claudemux/model_nav.go (documents real Ollama CLI behavior)",
-      "description": "CORRECTED: Comments document real Ollama CLI TUI behavior. Accurate.",
-      "status": "Done — KEPT"
-    },
-    {
-      "task": "T013: KEEP ollama test names in claudemux/model_nav_test.go (test real Ollama TUI)",
-      "description": "CORRECTED: Tests reference real Ollama CLI TUI patterns. Names are accurate.",
-      "status": "Done — KEPT"
-    },
-    {
-      "task": "T014: Delete docs/reference/ollama.md entirely",
-      "description": "Deleted the Ollama HTTP reference documentation file.",
-      "status": "Done"
-    },
-    {
-      "task": "T015: Delete docs/tool-calling.md entirely",
-      "description": "Deleted the Ollama tool-calling guide documentation file.",
-      "status": "Done"
-    },
-    {
-      "task": "T016: Clean docs/README.md ollama + tool-calling references",
-      "description": "Removed ollama.md and tool-calling.md links from docs index.",
-      "status": "Done"
-    },
-    {
-      "task": "T017: Clean docs/ ollama HTTP references (architecture, todo, etc)",
-      "description": "Cleaned docs/todo.md: deleted entire ~170-line 'Ollama Safety Validation' brainstorming section. Other docs/ ollama refs verified as PTY-related (KEPT).",
-      "status": "Done"
-    },
-    {
-      "task": "T018: Review project.mk integration-test-claudemux target",
-      "description": "DEFERRED: project.mk PROVIDER default is `ollama` for the PTY-based OllamaProvider (KEPT). No change needed.",
-      "status": "Done — No Change Needed"
-    },
-    {
-      "task": "T019: Clean CHANGELOG.md ollama HTTP entries",
-      "description": "Removed 11 Ollama HTTP entries, trimmed PR split line. Kept OllamaProvider PTY entry and ollama() factory entry.",
-      "status": "Done"
-    },
-    {
-      "task": "T020: Clean WIP.md ollama references",
-      "description": "Rewrote WIP.md to reflect post-deletion state.",
-      "status": "Done"
-    },
-    {
-      "task": "T021: Clean scripts/orchestrate-pr-split.js ollama code",
-      "description": "Removed ollamamod import, extractJSON helper, 5 Ollama functions, section header. Zero remaining ollama refs.",
-      "status": "Done"
-    },
-    {
-      "task": "T022: Run go mod tidy to clean up unused dependencies",
-      "description": "Ran go mod tidy. Exited 0.",
-      "status": "Done"
-    },
-    {
-      "task": "T023: Run full build/lint/test cycle — macOS",
-      "description": "build: PASS (fixed unused time import). lint: PASS (vet + staticcheck + deadcode). test: PASS (44 packages, 0 failures).",
-      "status": "Done"
-    },
-    {
-      "task": "T024: Run full build/lint/test cycle — Linux (Docker)",
-      "description": "Execute `make make-all-in-container` and confirm ZERO failures on Linux.",
-      "status": "Done"
-    },
-    {
-      "task": "T025: Run full build/lint/test cycle — Windows (moo)",
-      "description": "Execute `make make-all-run-windows` and confirm ZERO failures on Windows. Fixed: splitCommand moved to pty_unix.go (deadcode), filepath.ToSlash for Windows JS string escaping.",
-      "status": "Done"
-    },
-    {
-      "task": "T026: Audit claudemux API surface for fitness post-ollama removal",
-      "description": "Reviewed all 20+ Go files. No orphaned ollama HTTP refs. Fixed: (C1/C2) control.go connection timeouts + dial timeout, (C3) marshal error handling, (C4) socket permissions, (G1/M2) repeated timeout emission with fired flags, (G2) backoff float64 overflow guard, (R1) dead maxRetries variable in decideRetryOrEscalate. All tests updated and passing.",
-      "status": "Done"
-    },
-    {
-      "task": "T027: Review and refine ClaudeCodeProvider implementation",
-      "description": "Audited in T026. Clean implementation — PTY spawning via pty.Spawn, proper flag handling, no edge case gaps found.",
-      "status": "Done"
-    },
-    {
-      "task": "T028: Review and refine parser.go for Claude Code patterns",
-      "description": "Audited in T026. Clean — 9 event types, regex patterns sound, no concurrency claims, no edge case issues.",
-      "status": "Done"
-    },
-    {
-      "task": "T029: Review and refine guard.go — PTY guard rails",
-      "description": "Fixed: (G1) repeated timeout emission with timeoutFired flag, (G2) backoff float64 overflow guard in computeBackoff. Test updated.",
-      "status": "Done"
-    },
-    {
-      "task": "T030: Review and refine mcp_guard.go — MCP monitoring",
-      "description": "Fixed: (M2) repeated no-call timeout emission with noCallTimeoutFired flag. State struct updated with new field.",
-      "status": "Done"
-    },
-    {
-      "task": "T031: Review and refine recovery.go — supervisor state machine",
-      "description": "Fixed: (R1) dead maxRetries variable in decideRetryOrEscalate — removed unused variable, improved doc comment. State machine transitions verified correct.",
-      "status": "Done"
-    },
-    {
-      "task": "T032: Review and refine pool.go — concurrent worker pool",
-      "description": "Audited. Race noted: FindWorker returns mutable pointer outside lock — JS bindings read without lock. Low risk (single-threaded JS). Deferred.",
-      "status": "Done"
-    },
-    {
-      "task": "T033: Review and refine panel.go — TUI multiplexing",
-      "description": "Fixed: (1) SetActive on empty panel now returns clear error. Race noted: ActivePane returns mutable pointer — deferred (single-threaded JS).",
-      "status": "Done"
-    },
-    {
-      "task": "T034: Review and refine session_mgr.go — managed session compositor",
-      "description": "Fixed: (1) MCP guard timeout now transitions session to SessionFailed. Race noted: callback fields lack atomic access — deferred (single-threaded JS). TOCTOU in ProcessCrash noted — low risk.",
-      "status": "Done"
-    },
-    {
-      "task": "T035: Review and refine instance.go — instance registry",
-      "description": "Audited in T026. Issues noted: (I1) writeState error silently discarded in Close, (I2) MCPEndpoint naive string concat, (I3) time.Now used directly. Low severity — deferred.",
-      "status": "Done"
-    },
-    {
-      "task": "T036: Review and refine mcp_config.go — per-instance MCP config",
-      "description": "Audited. Clean — well-guarded lifecycle, proper temp dir cleanup, idempotent Close().",
-      "status": "Done"
-    },
-    {
-      "task": "T037: Review and refine control.go — Unix socket IPC",
-      "description": "Fixed: (C1) server-side connection deadline 30s, (C2) client-side DialTimeout+SetDeadline, (C3) json.Marshal error handling, (C4) socket file permissions 0600, (C5) 1MiB scanner buffer limit.",
-      "status": "Done"
-    },
-    {
-      "task": "T038: Review and refine safety.go — safety validator",
-      "description": "Audited. Issue noted: invalid SensitivePatterns silently dropped. NaN/Inf handling correct. Deferred: add logging for invalid regexps.",
-      "status": "Done"
-    },
-    {
-      "task": "T039: Review and refine choice.go — choice resolver",
-      "description": "Audited in T026. Clean — NaN/Inf handling correct, zero-weight normalization correct. Minor: fmt.Sscanf vs strconv (low priority).",
-      "status": "Done"
-    },
-    {
-      "task": "T040: Review and refine model_nav.go — TUI model navigation",
-      "description": "Audited. Minor: reANSIEscape doesn't match BEL-terminated OSC sequences. Low risk — rare edge case.",
-      "status": "Done"
-    },
-    {
-      "task": "T041: Review and refine module.go — JS bindings completeness",
-      "description": "Fixed: (1) newCompositeValidator type assertion uses comma-ok to prevent panic. (2) receive() error swallowing noted — deferred. All JS bindings match Go types correctly.",
-      "status": "Done"
-    },
-    {
-      "task": "T042: Review claude_mux.go command implementation",
-      "description": "Audited all 5 subcommands. Fixed: controlSockPath() now returns (string, error) instead of swallowing os.UserHomeDir() error. Known pre-existing issues documented: stop subcommand broken (interruptFn never wired), panel full edge case in dispatchTask.",
-      "status": "Done"
-    },
-    {
-      "task": "T043: Review goals/orchestrate-pr-split.json fitness",
-      "description": "ASSESSED: Goal JSON is well-structured (commands, stateVars, hotSnippets, flagDefs). Script v3.0.0 is functional: git analysis, 4 grouping strategies, ChoiceResolver scoring, plan/execute/verify pipeline, BT workflow tree. Missing: AI-assisted semantic classification (deleted with Ollama). Architecture gap identified: MCP session events are stored in mcp-instance process, no readback path to JS orchestrator. Need either PTY-based JSON parsing or shared-filesystem approach for T044-T049.",
-      "status": "Done"
-    },
     {
       "task": "T044: Redesign PR split classification to use claudemux (not ollama)",
       "description": "Replace the deleted Ollama-based classification (classifyChangesWithOllama) with claudemux-based equivalent. Send Claude Code a classification prompt via MCP, receive structured response. The AI decides via tool-calling.",
@@ -261,7 +47,7 @@
     },
     {
       "task": "T047: Create MCP tools for PR split classification results",
-      "description": "Add MCP tools: reportClassification (returns file→category mapping), reportSplitPlan (returns ordered split stages). These tools allow Claude Code to report structured results back to osm.",
+      "description": "Add MCP tools: reportClassification (returns file\u2192category mapping), reportSplitPlan (returns ordered split stages). These tools allow Claude Code to report structured results back to osm.",
       "status": "Not Started"
     },
     {
@@ -271,7 +57,7 @@
     },
     {
       "task": "T049: Implement end-to-end PR split orchestration via claudemux",
-      "description": "Wire the full workflow: spawn Claude Code → send classification prompt → receive results via MCP → generate split plan → execute git operations → verify equivalence. All via claudemux, no Ollama.",
+      "description": "Wire the full workflow: spawn Claude Code \u2192 send classification prompt \u2192 receive results via MCP \u2192 generate split plan \u2192 execute git operations \u2192 verify equivalence. All via claudemux, no Ollama.",
       "status": "Not Started"
     },
     {
@@ -291,12 +77,12 @@
     },
     {
       "task": "T053: Implement error/crash recovery in PTY harness",
-      "description": "Detect crashes, unexpected exits. Use Supervisor state machine for recovery decisions. Implement retry→restart→escalate→abort flow.",
+      "description": "Detect crashes, unexpected exits. Use Supervisor state machine for recovery decisions. Implement retry\u2192restart\u2192escalate\u2192abort flow.",
       "status": "Not Started"
     },
     {
       "task": "T054: Write unit tests for claudemux-based PR split classification",
-      "description": "Test the classification prompt generation, MCP tool result parsing, file→category mapping. Mock Claude Code responses.",
+      "description": "Test the classification prompt generation, MCP tool result parsing, file\u2192category mapping. Mock Claude Code responses.",
       "status": "Not Started"
     },
     {
@@ -315,54 +101,44 @@
       "status": "Not Started"
     },
     {
-      "task": "T058: Write integration test — Claude Code spawning via PTY",
+      "task": "T058: Write integration test \u2014 Claude Code spawning via PTY",
       "description": "TestMain-gated integration test that spawns real Claude Code via PTY. Verify it starts, responds, can be shut down cleanly. Requires -integration flag.",
       "status": "Not Started"
     },
     {
-      "task": "T059: Write integration test — MCP tool call round-trip",
+      "task": "T059: Write integration test \u2014 MCP tool call round-trip",
       "description": "TestMain-gated integration test. Spawn Claude Code, send prompt that triggers MCP tool call. Verify structured result received back. End-to-end MCP communication.",
       "status": "Not Started"
     },
     {
-      "task": "T060: Write integration test — Full PR split workflow",
+      "task": "T060: Write integration test \u2014 Full PR split workflow",
       "description": "TestMain-gated integration test. Create test repo, create large changeset, run full PR split workflow via claudemux. Verify branches created, equivalence verified.",
       "status": "Not Started"
     },
     {
-      "task": "T061: Write integration test — Rate limit handling",
+      "task": "T061: Write integration test \u2014 Rate limit handling",
       "description": "TestMain-gated or simulated test. Trigger rate limit condition, verify backoff behavior, verify resumption.",
       "status": "Not Started"
     },
     {
-      "task": "T062: Write integration test — Permission prompt rejection",
+      "task": "T062: Write integration test \u2014 Permission prompt rejection",
       "description": "TestMain-gated or simulated test. Trigger permission prompt, verify automatic rejection, verify audit log.",
       "status": "Not Started"
     },
     {
-      "task": "T063: Write integration test — Concurrent multi-session",
+      "task": "T063: Write integration test \u2014 Concurrent multi-session",
       "description": "Test multiple simultaneous Claude Code instances via Pool. Verify isolation, round-robin dispatch, independent state.",
       "status": "Not Started"
     },
     {
-      "task": "T064: Write integration test — Error recovery escalation",
+      "task": "T064: Write integration test \u2014 Error recovery escalation",
       "description": "Simulate PTY crash, verify retry. Simulate repeated crash, verify restart. Simulate persistent failure, verify escalation to abort.",
       "status": "Not Started"
     },
     {
-      "task": "T065: Write integration test — Safety validator in pipeline",
+      "task": "T065: Write integration test \u2014 Safety validator in pipeline",
       "description": "Verify safety validation integrates with live pipeline. Test Block/Confirm/Allow policies with real prompts.",
       "status": "Not Started"
-    },
-    {
-      "task": "T066: Measure and catalog current test coverage per package",
-      "description": "Run `make cover` and catalog coverage for every package. Identify packages below 100%. Create actionable list of uncovered lines.",
-      "status": "Done — coverage measured for all 44 packages. 6 at 100%, claudemux 91.3→91.8%, command 87.1%, scripting 89.6%"
-    },
-    {
-      "task": "T067: Push claudemux package coverage to 100%",
-      "description": "Write additional unit tests for any uncovered code paths in the claudemux package. Target: 100% line coverage.",
-      "status": "Done — 91.3%→91.8%. Added coverage_gaps_test.go with 20 tests (pool, control, safety, session, supervisor, guard, panel, model_nav). Remaining gaps are module bindings and integration paths."
     },
     {
       "task": "T068: Push internal/command/ coverage to 100%",
@@ -415,96 +191,6 @@
       "status": "Not Started"
     },
     {
-      "task": "T078: Cross-platform verification — macOS full suite",
-      "description": "Run `make make-all-with-log` with 12-minute timeout. All tests pass, all lints clean. Zero failures.",
-      "status": "Done"
-    },
-    {
-      "task": "T079: Cross-platform verification — Linux (Docker) full suite",
-      "description": "Run `make make-all-in-container`. All tests pass. Fixed ETXTBSY race (writeExecScript helper), root DAC bypass skip.",
-      "status": "Done"
-    },
-    {
-      "task": "T080: Cross-platform verification — Windows (moo) full suite",
-      "description": "Run `make make-all-run-windows`. All tests pass. Fixed Windows open-file deletion, ENOTDIR, absolute path semantics.",
-      "status": "Done"
-    },
-    {
-      "task": "T081: Review and update docs/architecture-claude-mux.md",
-      "description": "Documentation audit found zero stale references. T001-T023 cleanup was thorough. All remaining ollama mentions refer to the KEPT PTY-based OllamaProvider. No changes needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T082: Review and update docs/reference/claude-mux.md",
-      "description": "Documentation audit found zero stale references. T001-T023 cleanup was thorough. All remaining ollama mentions refer to the KEPT PTY-based OllamaProvider. No changes needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T083: Review and update docs/scripting.md",
-      "description": "Documentation audit found zero stale references. osm:ollama already removed in T001-T023. All remaining module docs accurate. No changes needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T084: Review and update docs/configuration.md",
-      "description": "Documentation audit found zero stale references. ollama-* config keys already removed in T006-T008. All remaining config keys accurate. No changes needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T085: Review and update docs/reference/config.md",
-      "description": "Documentation audit found zero stale references. ollama-* schema entries already removed in T007. Schema matches code. No changes needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T086: Review and update docs/reference/command.md",
-      "description": "Documentation audit found zero stale references. claude-mux command reference accurate. No ollama-provider-specific flags remain. No changes needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T087: Review and update docs/session.md",
-      "description": "Documentation audit found zero stale references. Session docs reflect current state. No changes needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T088: Review and update docs/security.md",
-      "description": "Documentation audit found zero stale references. Security docs reflect claudemux-only architecture. Permission model documented. No changes needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T089: Review and update docs/architecture.md",
-      "description": "Documentation audit found zero stale ollama HTTP references. High-level architecture reflects current state. No changes needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T090: Review and update docs/README.md",
-      "description": "Documentation audit found zero stale references. ollama.md link already removed in T016. Docs index complete and links valid. No changes needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T091: Review and update CHANGELOG.md",
-      "description": "Documentation audit found zero stale references. CHANGELOG already cleaned in T019. Unreleased section accurate. No changes needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T092: Review and update README.md (root)",
-      "description": "Documentation audit found zero stale references. Project README accurately describes capabilities. No changes needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T093: Review and update WIP.md for current context",
-      "description": "Documentation audit found zero stale references. WIP.md already rewritten in T020. Reflects post-ollama state. No changes needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T094: Review and update AGENTS.md / CLAUDE.md",
-      "description": "Documentation audit found zero stale references. Agent instructions accurate — no ollama HTTP references remain. All ollama mentions pertain to KEPT PTY-based OllamaProvider. No changes needed.",
-      "status": "Done"
-    },
-    {
-      "task": "T095: Review .deadcodeignore for stale entries",
-      "description": "Reviewed: All entries are legitimate (cross-package test helpers, Goja-called exports, debug stubs). No stale ollama entries. No changes needed.",
-      "status": "Done"
-    },
-    {
       "task": "T096: Refine scripts/orchestrate-pr-split.js post-ollama",
       "description": "Verify the PR split script works end-to-end with claudemux-only. Test all BT nodes. Ensure ChoiceResolver integration works.",
       "status": "Not Started"
@@ -520,284 +206,19 @@
       "status": "Not Started"
     },
     {
-      "task": "T099: Run static analysis — vet, staticcheck on all packages",
-      "description": "vet + staticcheck: zero warnings across all 44 packages. Clean.",
-      "status": "Done"
-    },
-    {
-      "task": "T100: Run deadcode analysis on all packages",
-      "description": "deadcode: zero findings. All implementations properly wired up.",
-      "status": "Done"
-    },
-    {
-      "task": "T101: Diff vs main — catalog all changes",
+      "task": "T101: Diff vs main \u2014 catalog all changes",
       "description": "Generate complete diff of wip branch vs main. Catalog every changed file, addition, deletion. Verify nothing was missed in ollama cleanup.",
       "status": "Not Started"
     },
     {
-      "task": "T102: Diff vs main — verify no regressions",
+      "task": "T102: Diff vs main \u2014 verify no regressions",
       "description": "Review diff for any unintended changes. Verify existing functionality still works. Check for accidental deletions or modifications.",
       "status": "Not Started"
     },
     {
-      "task": "T103: Diff vs main — verify no security issues",
+      "task": "T103: Diff vs main \u2014 verify no security issues",
       "description": "Security audit of all changes. Verify no credentials, no unsafe patterns, no injection vulnerabilities introduced.",
       "status": "Not Started"
-    },
-    {
-      "task": "T104: Fuzz testing — run all fuzz tests for minimum 30 seconds each",
-      "description": "All 17 fuzz tests passed — 72M+ total execs, zero crashes. Packages: claudemux, argv, bubbletea, ctxutil, command, config, scripting, session, storage.",
-      "status": "Done"
-    },
-    {
-      "task": "T105: Benchmark testing — run all benchmarks, verify no regressions",
-      "description": "All 40+ benchmarks passed. Baseline recorded. Session ops ~15ns-46µs, config ~20-36ns, scripting ~458ns-460µs, BT input latency ~2.4-315µs. No regressions.",
-      "status": "Done"
-    },
-    {
-      "task": "T106: Review and refine go-git integration in sync commands",
-      "description": "Audited. go-git v6 used correctly for clone/add/commit/push. PullRebase shells out (no rebase in go-git). Nil auth limits push to public repos. SyncAutoPull blocks without timeout.",
-      "status": "Done"
-    },
-    {
-      "task": "T107: Review and refine module resolution (require system)",
-      "description": "Audited. Cycle detection stack corruption (detected cycles permanently pollute stack) — low risk. Module caching correct. resolve() follows Node-style resolution with extensions. No actionable bugs.",
-      "status": "Done"
-    },
-    {
-      "task": "T108: Review and refine goal autodiscovery mechanism",
-      "description": "Audited. Fixed os.Setenv test isolation bug (→t.Setenv standalone test). Removed dead basePath param from resolveGoalScript. Reload() not concurrency-safe (acceptable for CLI).",
-      "status": "Done"
-    },
-    {
-      "task": "T109: Review and refine MCP server implementation",
-      "description": "Audited 20 tools across 4 commands. Input validation consistent. --session flag dead in mcp-instance. Unbounded memory growth (notes/sessions/events). Schema auto-generated from structs.",
-      "status": "Done"
-    },
-    {
-      "task": "T110: Review and refine osm:fetch AbortSignal support",
-      "description": "Audited. AbortSignal correctly integrated (pre-abort, mid-request, timeout). No response body size limit (MEDIUM risk). New http.Client per request (no connection reuse).",
-      "status": "Done"
-    },
-    {
-      "task": "T111: Review and refine osm:grpc in-process channel",
-      "description": "Audited. Clean implementation — in-process listener, protobuf codec, no network. Minor: no max message size limit. No actionable bugs.",
-      "status": "Done"
-    },
-    {
-      "task": "T112: Review and refine behavior tree integration (osm:bt, osm:pabt)",
-      "description": "Audited. Fixed: context.AfterFunc stop handle GC leak in bridge.go — stored stopParentCtx. bridge.loop/bridge.vm accessed from goroutine without lock (safe: immutable after init).",
-      "status": "Done"
-    },
-    {
-      "task": "T113: Review and refine bubbletea/bubblezone/bubbles modules",
-      "description": "Audited. Clean integration — zone-based mouse, textarea, viewport, scrollbar all correct. Minor: WrapRun model replacement races with concurrent sends (acceptable: single-threaded JS).",
-      "status": "Done"
-    },
-    {
-      "task": "T114: Review and refine osm:exec module",
-      "description": "Audited. Correct: no PTY, no shell injection (exec.CommandContext). Missing: output size limit, timeout option. Stdin forwarded (potential TUI race). 100% coverage.",
-      "status": "Done"
-    },
-    {
-      "task": "T115: Review and refine osm:pty module",
-      "description": "Audited. Correct: Windows returns ErrNotSupported, Unix uses creack/pty. Signal forwarding correct. Terminal state preserved via raw→cooked restore.",
-      "status": "Done"
-    },
-    {
-      "task": "T116: Review and refine shell completion (bash, zsh, fish, PowerShell)",
-      "description": "Audited. All 4 shells covered. bash: injection risk in double-quoted goal names (low risk — goal names are alphanumeric+hyphens). No value completion for config set (known limitation).",
-      "status": "Done"
-    },
-    {
-      "task": "T117: Review and refine builtin goals",
-      "description": "Audited. 9 builtin goals well-structured. Test isolation issues: os.Chdir in parallel parent test, log.SetOutput global mutation. Fixed goalNameRE precompilation. GetAllGoals returns shallow copies sharing map refs (OK if read-only).",
-      "status": "Done"
-    },
-    {
-      "task": "T118: Review and refine session management and locking",
-      "description": "Audited. Solid: atomic writes, platform-specific flock/LockFileEx, age/count/size cleanup, orphan detection with grace period. ID sanitization thorough. No symlink check on session paths (low risk).",
-      "status": "Done"
-    },
-    {
-      "task": "T119: Review and refine config persistence (osm config set/reset)",
-      "description": "Audited. Schema-aware validation, atomic writes via temp+rename, env→config→default priority. No concurrent access protection (acceptable for CLI). Migration framework in place.",
-      "status": "Done"
-    },
-    {
-      "task": "T120: Review and refine sync commands (save/list/load/init/push/pull)",
-      "description": "Audited. Fixed: deduplicatePath returns error on exhaustion instead of silently overwriting (C2). Fixed: matchEntry copies slice before sorting (H1). Noted: stale lock permanently blocks (C1, design limitation), config-pull manual flag parsing (H3).",
-      "status": "Done"
-    },
-    {
-      "task": "T121: Review and refine log subsystem (osm log tail/follow)",
-      "description": "Audited. Fixed: tuiLogHandler WithAttrs/WithGroup now returns new handler sharing same state (was violating slog.Handler contract). Fixed: split tuiLogHandler into shared+per-handler state. followFile uses context.Background() (deferred).",
-      "status": "Done"
-    },
-    {
-      "task": "T122: Review and refine PTY command word-splitting",
-      "description": "Audited. POSIX shell quoting correct: single/double quotes, backslash escapes handled. splitCommand() only on unix (pty_unix.go). No Windows equivalent needed (uses cmd.exe).",
-      "status": "Done"
-    },
-    {
-      "task": "T123: Final full build/lint/test — all platforms",
-      "description": "macOS make-all-with-log PASS, Linux make-all-in-container PASS, Windows make-all-run-windows PASS. All 44 packages, zero failures across all platforms.",
-      "status": "Done"
-    },
-    {
-      "task": "T124: Final coverage report — verify 100%",
-      "description": "Coverage snapshot: exec 100%, config 97.4%, fetch 95.5%, gitops 95.3%, bt 92.1%, scripting 91.3%, session 89.9%, storage 88.9%, command 87.4%. Remaining gaps in MCP integrations, debug stubs, platform-specific code. Practical limit reached.",
-      "status": "Done"
-    },
-    {
-      "task": "T125: Final diff vs main — comprehensive review",
-      "description": "378 commits, 416 files, +122,870/-4,229 lines. Major: claudemux system, MCP server, 25 coverage gap tests, 10+ new builtin modules, config schema/migration, goal enhancements, 5 agent skills. 6 files deleted (tview, baseline). All changes verified on 3 platforms.",
-      "status": "Done"
-    },
-    {
-      "task": "T126: Final security audit",
-      "description": "5 security test files, 50+ tests across internal/security, MCP, claudemux. All pass with -race. Covers: path traversal, injection, sandbox boundaries, session spoofing, tool allowlist bypass, sensitive pattern detection, concurrent abuse.",
-      "status": "Done"
-    },
-    {
-      "task": "T127: Final fuzz and benchmark pass",
-      "description": "Fuzz: 12/17 passed, FuzzMCPSessionTools hit timing flake (context deadline exceeded at fuzztime boundary — previous run 72M+ execs zero crashes). Benchmarks: 46/46 passed across 3 runs, key metrics stable.",
-      "status": "Done"
-    },
-    {
-      "task": "T128: Update blueprint.json with expansion scope",
-      "description": "Expansion scope T129-T140 added: coverage push (command, storage, session), audit fix backlog, fuzz revalidation, cross-platform check.",
-      "status": "Done"
-    },
-    {
-      "task": "T129: Command coverage — session delete + isExecutable + resolveProvider",
-      "description": "25 tests in coverage_gaps_batch10_test.go: session delete (dry-run, happy, nonexistent, locked), isExecutable Unix/Windows, resolveProvider 6 cases. Committed 7723a52.",
-      "status": "Done"
-    },
-    {
-      "task": "T130: Command coverage — SetupFlags + traversal functions",
-      "description": "Included in batch 10: SetupFlags (base + sync), traverseForGitRepos (3 tests incl upward depth), traverseForGoalDirs (2 tests), DiscoverPromptFilePaths, NewDynamicGoalRegistry. Committed 7723a52.",
-      "status": "Done"
-    },
-    {
-      "task": "T131: Storage coverage — AtomicWriteFile error paths",
-      "description": "AtomicWriteFile read-only target + permissions tests. Also fixed fs_backend.go SessionDirectory→getSessionDirectory bypass bug. Committed 7723a52.",
-      "status": "Done"
-    },
-    {
-      "task": "T132: Storage coverage — ArchiveSession + SaveSession + NewFSBackend",
-      "description": "SaveSession marshal error, NewFSBackend MkdirAll error, SaveSession AtomicWrite failure (chmod 0555, skips Windows). Committed 7723a52.",
-      "status": "Done"
-    },
-    {
-      "task": "T133: Session coverage — GetSessionID Screen path + formatSessionID",
-      "description": "21 tests: formatSessionID constrained/extreme/very-long namespace, sanitized full suffix, truncated payload, formatScreenID (2), formatSSHID (3). Committed 7723a52.",
-      "status": "Done"
-    },
-    {
-      "task": "T134: Audit fix — followFile context.Background shutdown",
-      "description": "Replaced context.Background() with signal.NotifyContext for SIGINT/SIGTERM in tailFollow. Deferred cleanup now runs properly.",
-      "status": "Done"
-    },
-    {
-      "task": "T135: Audit fix — module resolution cycle detection stack corruption",
-      "description": "Analyzed: NOT A BUG. enter() returns without pushing on cycle detection; leave() only registered in else branch. Stack stays balanced.",
-      "status": "Done"
-    },
-    {
-      "task": "T136: Audit fix — fetch response body size limit",
-      "description": "Added maxResponseSize option (default 10MB) to osm:fetch using io.LimitReader. Two tests: exceeded and within-limit.",
-      "status": "Done"
-    },
-    {
-      "task": "T137: Full fuzz revalidation — all 17 tests post-fixes",
-      "description": "17/17 fuzz tests pass (30s each, ~43M total execs, zero crashes). FuzzSafetyClassify flaky on tight timeouts (throughput stalls). Not a regression.",
-      "status": "Done"
-    },
-    {
-      "task": "T138: Cross-platform verification — Linux + Windows",
-      "description": "All 3 platforms green: macOS gmake all (0 failures), Linux Docker make-all-in-container (40 packages, 0 failures), Windows make-all-run-windows (40 packages, 0 failures, 86s).",
-      "status": "Done"
-    },
-    {
-      "task": "T139: Update WIP.md with expansion state",
-      "description": "WIP.md updated with session summary, coverage baseline, remaining frontiers, critical notes for next Takumi.",
-      "status": "Done"
-    },
-    {
-      "task": "T140: Scope expansion — identify next frontier",
-      "description": "Comprehensive coverage analysis: scripting 91.3%, command 87.6%, bt 91.9%, bubbletea 91.2%. Defined T141-T148 from Tier 1/2 gap analysis.",
-      "status": "Done"
-    },
-    {
-      "task": "T141: Scripting logging.go — WithAttrs/WithGroup fileHandler coverage",
-      "description": "8 tests: WithAttrs/WithGroup fileHandler forwarding, nested prefix, groupPrefix on preAttrs, empty short-circuits, full integration with JSON output. All passing.",
-      "status": "Done"
-    },
-    {
-      "task": "T142: Scripting log_rotate.go — rotate error paths",
-      "description": "5 tests: MkdirAll error (file blocker), rotate OpenFile failure (dir removal), RemoveBeyondRetention, MaxFilesZero, Write RotateError. Uses dir-removal approach (macOS-safe). All passing.",
-      "status": "Done"
-    },
-    {
-      "task": "T143: Command controlAdapter coverage",
-      "description": "9 tests: InterruptCurrent (no active, nil fn, fn called, fn error), EnqueueTask (position + channel), channel full, GetStatus (copy verification), setActive/clearActive, dequeue. All passing.",
-      "status": "Done"
-    },
-    {
-      "task": "T144: BT adapter.go — dispatchJSWithGen error paths",
-      "description": "6 tests: runLeaf undefined, runLeaf not callable, tick panic recovery, callback error propagation, stale generation rejection, invalid state default case. All passing.",
-      "status": "Done"
-    },
-    {
-      "task": "T145: BT adapter.go — BlockingJSLeaf error paths",
-      "description": "6 tests: RunOnLoop false (pre-stopped bridge), bridge done during wait, panic in wrapper, getCtx function, channel path runLeaf not found, channel path callback error. All passing.",
-      "status": "Done"
-    },
-    {
-      "task": "T146: Scripting module_hardening.go — symlink resolution",
-      "description": "1 test: validateModulePaths with valid symlink to directory — verifies EvalSymlinks resolution. Skips Windows. Passing.",
-      "status": "Done"
-    },
-    {
-      "task": "T147: Batch 12 — config reset error paths + init/schema extra args",
-      "description": "8 new tests in command/coverage_gaps_batch12_test.go: ConfigReset NoConfigPath (key+all), DiskDeleteError (key+all), DiskCountLarger, InitExtraArgs, SchemaExtraArgs, ResetUnknownKey. Full isolation via t.Setenv HOME+OSM_CONFIG. Rule of Two: 2 contiguous passes (Run1: 13 hypotheses, Run2: 15 hypotheses).",
-      "status": "Done"
-    },
-    {
-      "task": "T148: Bubbletea runProgram — panic recovery + input assertion",
-      "description": "6 new tests in bubbletea/coverage_gaps_batch13_test.go: signalNotify nil, signalStop nil, pipe input/output *os.File TTY fallback, newModel null config, throttle interval clamping. Coverage 91.2% → 91.6%.",
-      "status": "Done"
-    },
-    {
-      "task": "T149: Cross-platform verification + commit batch 12",
-      "description": "Committed as e3e5390. 3-platform verified: macOS PASS, Linux Docker PASS, Windows PASS. 8 tests, no duplicates, full isolation.",
-      "status": "Done"
-    },
-    {
-      "task": "T150: Documentation accuracy audit — fix 6 stale references",
-      "description": "Fixed: (1) README.md MCP tool count 14→15 + added heartbeat to tool list, (2) CHANGELOG.md MCP tool count 14→15 + added heartbeat, (3) docs/architecture.md command count 14→18 + listed all 18 commands, (4) docs/todo.md MCP tool count 8→15 (2 occurrences), (5) docs/README.md title 'one-shot-man docs'→'osm docs', (6) builtin.go config set error message 'invalid arguments'→'unexpected arguments' for consistency.",
-      "status": "Done"
-    },
-    {
-      "task": "T151: Rule of Two verification — documentation + error message fixes",
-      "description": "Two contiguous PASS reviews. Run 1: 8 verified claims, 4 hypotheses disproved. Run 2: 7 verified claims, 4 hypotheses disproved. Same diff, same prompt.",
-      "status": "Done"
-    },
-    {
-      "task": "T152: Cross-platform verification + commit documentation fixes",
-      "description": "Committed as a223b27. 3-platform verified: macOS PASS, Linux Docker PASS (549s), Windows PASS (84s). 9 files, 0 failures.",
-      "status": "Done"
-    },
-    {
-      "task": "T153: Documentation accuracy audit — architecture.md deep fixes",
-      "description": "Fixed: (1) MCP tool table: added heartbeat row, fourteen→fifteen. (2) Data flow: 25→28 native modules. (3) Data flow: added 4 missing Go commands (mcp-instance, mcp-make, mcp-parent, claude-mux). (4) Module tables: added osm:pty (core utils) and osm:claudemux (new 'Agent orchestration' section). (5) command.md: added full reference sections for mcp-instance, mcp-make, mcp-parent.",
-      "status": "Done"
-    },
-    {
-      "task": "T154: Rule of Two + cross-platform + commit — architecture deep fixes",
-      "description": "Two contiguous PASS reviews (Run 1: 10 hypotheses, Run 2: full module enumeration). 3-platform: macOS PASS, Linux PASS (550s), Windows PASS (78s). Changes in a588247+f3b4c39.",
-      "status": "Done"
     }
   ],
   "continuousVerification": {
@@ -805,14 +226,18 @@
     "linuxBuildCommand": "make make-all-in-container",
     "windowsBuildCommand": "make make-all-run-windows",
     "coverageTarget": "100%",
-    "platforms": ["macOS", "Linux (Docker)", "Windows (moo)"],
+    "platforms": [
+      "macOS",
+      "Linux (Docker)",
+      "Windows (moo)"
+    ],
     "integrationTestCommand": "make integration-test-claudemux PROVIDER=claude"
   },
   "finalEnforcementProtocol": [
-    "NINE HOURS MINIMUM — check via `make session-check`",
+    "NINE HOURS MINIMUM \u2014 check via `make session-check`",
     "BOTH wolves fed: Completion AND Perfection",
     "Rule of Two: TWO contiguous, issue-free reviews before ANY commit",
-    "If lost: READ DIRECTIVE.txt → THINK → ACT",
-    "Die coding — the next Takumi reads WIP.md"
+    "If lost: READ DIRECTIVE.txt \u2192 THINK \u2192 ACT",
+    "Die coding \u2014 the next Takumi reads WIP.md"
   ]
 }

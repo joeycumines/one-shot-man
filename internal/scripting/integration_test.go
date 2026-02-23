@@ -874,13 +874,13 @@ func TestConcurrentAccess(t *testing.T) {
 			for j := 0; j < 100; j++ {
 				valueToSet := int64(id*100 + j)
 				if err := tuiManager.SetStateForTest("concurrent-test:counter", valueToSet); err != nil {
-					errors <- fmt.Errorf("goroutine %d: failed to set state at iteration %d: %v", id, j, err)
+					errors <- fmt.Errorf("goroutine %d: failed to set state at iteration %d: %w", id, j, err)
 					return
 				}
 
 				val, err := tuiManager.GetStateForTest("concurrent-test:counter")
 				if err != nil {
-					errors <- fmt.Errorf("goroutine %d: failed to get state at iteration %d: %v", id, j, err)
+					errors <- fmt.Errorf("goroutine %d: failed to get state at iteration %d: %w", id, j, err)
 					return
 				}
 

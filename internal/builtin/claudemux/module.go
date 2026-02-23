@@ -1477,7 +1477,7 @@ func wrapPool(runtime *goja.Runtime, p *Pool) goja.Value {
 
 		var taskErr error
 		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
-			taskErr = fmt.Errorf("%s", call.Argument(1).String())
+			taskErr = errors.New(call.Argument(1).String())
 		}
 		p.Release(target, taskErr, time.Now())
 		return goja.Undefined()

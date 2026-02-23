@@ -716,17 +716,62 @@
     },
     {
       "task": "T138: Cross-platform verification — Linux + Windows",
-      "description": "Run make-all-in-container (Linux Docker) and make-all-run-windows after all coverage + fix work. All platforms must be green.",
-      "status": "Not Started"
+      "description": "All 3 platforms green: macOS gmake all (0 failures), Linux Docker make-all-in-container (40 packages, 0 failures), Windows make-all-run-windows (40 packages, 0 failures, 86s).",
+      "status": "Done"
     },
     {
       "task": "T139: Update WIP.md with expansion state",
-      "description": "Checkpoint WIP.md for next Takumi: current coverage numbers, committed changes, remaining work.",
-      "status": "Not Started"
+      "description": "WIP.md updated with session summary, coverage baseline, remaining frontiers, critical notes for next Takumi.",
+      "status": "Done"
     },
     {
       "task": "T140: Scope expansion — identify next frontier",
-      "description": "After T129-T139, assess remaining gaps. Add T141+ for: script refinement (T096-T098), diff vs main (T101-T103), additional coverage, new features.",
+      "description": "Comprehensive coverage analysis: scripting 91.3%, command 87.6%, bt 91.9%, bubbletea 91.2%. Defined T141-T148 from Tier 1/2 gap analysis.",
+      "status": "Done"
+    },
+    {
+      "task": "T141: Scripting logging.go — WithAttrs/WithGroup fileHandler coverage",
+      "description": "8 tests: WithAttrs/WithGroup fileHandler forwarding, nested prefix, groupPrefix on preAttrs, empty short-circuits, full integration with JSON output. All passing.",
+      "status": "Done"
+    },
+    {
+      "task": "T142: Scripting log_rotate.go — rotate error paths",
+      "description": "5 tests: MkdirAll error (file blocker), rotate OpenFile failure (dir removal), RemoveBeyondRetention, MaxFilesZero, Write RotateError. Uses dir-removal approach (macOS-safe). All passing.",
+      "status": "Done"
+    },
+    {
+      "task": "T143: Command controlAdapter coverage",
+      "description": "9 tests: InterruptCurrent (no active, nil fn, fn called, fn error), EnqueueTask (position + channel), channel full, GetStatus (copy verification), setActive/clearActive, dequeue. All passing.",
+      "status": "Done"
+    },
+    {
+      "task": "T144: BT adapter.go — dispatchJSWithGen error paths",
+      "description": "6 tests: runLeaf undefined, runLeaf not callable, tick panic recovery, callback error propagation, stale generation rejection, invalid state default case. All passing.",
+      "status": "Done"
+    },
+    {
+      "task": "T145: BT adapter.go — BlockingJSLeaf error paths",
+      "description": "6 tests: RunOnLoop false (pre-stopped bridge), bridge done during wait, panic in wrapper, getCtx function, channel path runLeaf not found, channel path callback error. All passing.",
+      "status": "Done"
+    },
+    {
+      "task": "T146: Scripting module_hardening.go — symlink resolution",
+      "description": "1 test: validateModulePaths with valid symlink to directory — verifies EvalSymlinks resolution. Skips Windows. Passing.",
+      "status": "Done"
+    },
+    {
+      "task": "T147: Batch 12 — config reset error paths + init/schema extra args",
+      "description": "8 new tests in command/coverage_gaps_batch12_test.go: ConfigReset NoConfigPath (key+all), DiskDeleteError (key+all), DiskCountLarger, InitExtraArgs, SchemaExtraArgs, ResetUnknownKey. Full isolation via t.Setenv HOME+OSM_CONFIG. Rule of Two: 2 contiguous passes (Run1: 13 hypotheses, Run2: 15 hypotheses).",
+      "status": "Done"
+    },
+    {
+      "task": "T148: Bubbletea runProgram — panic recovery + input assertion",
+      "description": "Test signalNotify/signalStop nil checks, non-File reader input assertion, panic recovery in model, runErr != nil from p.Run(). TTY-dependent branches deferred.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T149: Cross-platform verification + commit batch 12",
+      "description": "Run 3-platform verification on T147 batch 12 changes.",
       "status": "Not Started"
     }
   ],

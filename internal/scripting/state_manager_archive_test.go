@@ -2,7 +2,6 @@ package scripting
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -104,6 +103,7 @@ func TestArchiveAndReset_RetriesOnCollision(t *testing.T) {
 
 // backendAlwaysExists simulates a backend that always returns os.ErrExist for ArchiveSession
 type backendAlwaysExists struct {
+	t         *testing.T
 	sessionID string
 	saved     *storage.Session
 }
@@ -120,7 +120,7 @@ func (b *backendAlwaysExists) SaveSession(session *storage.Session) error {
 }
 func (b *backendAlwaysExists) ArchiveSession(sessionID string, destPath string) error {
 	atomic.AddInt32(&backendAlwaysExistsCalls, 1)
-	fmt.Printf("backendAlwaysExists.ArchiveSession called #%d session=%s dest=%s\n", atomic.LoadInt32(&backendAlwaysExistsCalls), sessionID, destPath)
+	b.t.Logf("backendAlwaysExists.ArchiveSession called #%d session=%s dest=%s", atomic.LoadInt32(&backendAlwaysExistsCalls), sessionID, destPath)
 	return os.ErrExist
 }
 func (b *backendAlwaysExists) Close() error { return nil }
@@ -130,7 +130,7 @@ func TestArchiveAndReset_ExhaustsAndAborts(t *testing.T) {
 	storage.SetTestPaths(dir)
 	defer storage.ResetPaths()
 
-	fb := &backendAlwaysExists{sessionID: "sid"}
+	fb := &backendAlwaysExists{t: t, sessionID: "sid"}
 
 	// Create a real backend and state manager so internal ring-buffer state
 	// is initialized properly, then swap the backend for our failing stub.

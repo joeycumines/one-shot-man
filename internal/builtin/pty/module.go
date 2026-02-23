@@ -2,6 +2,7 @@ package pty
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"github.com/dop251/goja"
@@ -94,7 +95,7 @@ func wrapProcess(runtime *goja.Runtime, proc *Process) goja.Value {
 	_ = obj.Set("read", func(call goja.FunctionCall) goja.Value {
 		data, err := proc.Read()
 		if err != nil {
-			if err == io.EOF || err == ErrClosed {
+			if errors.Is(err, io.EOF) || errors.Is(err, ErrClosed) {
 				return runtime.ToValue("")
 			}
 			// PTY read errors after process exit are normal (EIO).

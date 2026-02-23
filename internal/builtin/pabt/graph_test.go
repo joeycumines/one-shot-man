@@ -44,6 +44,7 @@ type graphState struct {
 
 // newGraphState initializes the graph from Example 7.3 (Fig. 7.6)
 func newGraphState(t *testing.T) *graphState {
+	t.Helper()
 	state := new(graphState)
 	state.t = t
 

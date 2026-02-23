@@ -5,6 +5,7 @@ package session
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -116,7 +117,7 @@ func getProcessTree() (map[uint32]WinProcInfo, error) {
 
 	err = windows.Process32First(h, &entry)
 	if err != nil {
-		if err == windows.ERROR_NO_MORE_FILES {
+		if errors.Is(err, windows.ERROR_NO_MORE_FILES) {
 			return tree, nil
 		}
 		return nil, fmt.Errorf("Process32First failed: %w", err)

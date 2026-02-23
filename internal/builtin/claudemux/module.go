@@ -2,6 +2,7 @@ package claudemux
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -611,7 +612,7 @@ func wrapAgentHandle(runtime *goja.Runtime, h AgentHandle) goja.Value {
 	_ = obj.Set("receive", func(call goja.FunctionCall) goja.Value {
 		data, err := h.Receive()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return runtime.ToValue("")
 			}
 			if data != "" {

@@ -14,6 +14,7 @@ import (
 )
 
 func setupConsistencyTestPair(t *testing.T) (*goja.Runtime, *goja.Object, *goja.Runtime, *goja.Object, *goja.Object) {
+	t.Helper()
 	// Setup manual mode
 	ctxManual := context.Background()
 	vmManual := goja.New()
@@ -76,6 +77,7 @@ func setupConsistencyTestPair(t *testing.T) (*goja.Runtime, *goja.Object, *goja.
 }
 
 func setupTestVM(t *testing.T, vm *goja.Runtime, manager *bubbletea.Manager) {
+	t.Helper()
 	modules := make(map[string]goja.Value)
 
 	vm.Set("require", func(call goja.FunctionCall) goja.Value {
@@ -160,6 +162,7 @@ func setupTestVM(t *testing.T, vm *goja.Runtime, manager *bubbletea.Manager) {
 }
 
 func setupTestState(t *testing.T, vm *goja.Runtime, state *goja.Object) {
+	t.Helper()
 	blackboard := vm.NewObject()
 	_ = blackboard.Set("get", func(call goja.FunctionCall) goja.Value {
 		return vm.ToValue(-1)

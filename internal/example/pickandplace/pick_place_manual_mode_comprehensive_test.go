@@ -15,6 +15,7 @@ import (
 
 // Helper function to create a fresh test environment
 func setupPickAndPlaceTest(t *testing.T) (*context.Context, *goja.Runtime, *goja.Object, *goja.Object) {
+	t.Helper()
 	ctx := context.Background()
 	vm := goja.New()
 	manager := newTestManager(ctx, vm) // manager needed for Require setup

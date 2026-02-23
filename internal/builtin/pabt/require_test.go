@@ -55,6 +55,7 @@ func testBridge(t *testing.T) *btmod.Bridge {
 
 // setupTestEnv initializes a Bridge and a JS environment with both osm:bt and osm:pabt modules.
 func setupTestEnv(t *testing.T) (*btmod.Bridge, *goja.Runtime, *goja.Object) {
+	t.Helper()
 	b := testBridge(t)
 
 	var vm *goja.Runtime

@@ -796,8 +796,8 @@
     },
     {
       "task": "T154: Rule of Two + cross-platform + commit — architecture deep fixes",
-      "description": "Two contiguous reviews, 3-platform verification, commit.",
-      "status": "In Progress"
+      "description": "Two contiguous PASS reviews (Run 1: 10 hypotheses, Run 2: full module enumeration). 3-platform: macOS PASS, Linux PASS (550s), Windows PASS (78s). Changes in a588247+f3b4c39.",
+      "status": "Done"
     }
   ],
   "continuousVerification": {

@@ -35,6 +35,7 @@ func TestGetUnexportedXOffset(t *testing.T) {
 
 // setupTestRuntime initializes a Goja runtime with the viewport and lipgloss modules loaded.
 func setupTestRuntime(t *testing.T) *goja.Runtime {
+	t.Helper()
 	rt := goja.New()
 
 	// Create mock require function

@@ -273,6 +273,7 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 }
 
 func setupTestRepo(t *testing.T, dir string) {
+	t.Helper()
 	// Initialize git repo
 	runGitCommand(t, dir, "-c", "advice.defaultBranchName=false", "-c", "init.defaultBranch=main", "init", "-q")
 	runGitCommand(t, dir, "config", "user.name", "Test User")

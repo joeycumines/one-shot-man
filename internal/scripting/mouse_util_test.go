@@ -23,6 +23,7 @@ type MouseTestAPI struct {
 // NewMouseTestAPI creates a new MouseTestAPI for the given console.
 // Uses default terminal height of 24 rows.
 func NewMouseTestAPI(t *testing.T, cp *termtest.Console) *MouseTestAPI {
+	t.Helper()
 	console, err := mouseharness.New(
 		mouseharness.WithTermtestConsole(cp),
 		mouseharness.WithTestingTB(t),

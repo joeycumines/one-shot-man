@@ -12,6 +12,7 @@ import (
 )
 
 func setupRuntime(t *testing.T) *goja.Runtime {
+	t.Helper()
 	rt := goja.New()
 	rt.Set("require", func(call goja.FunctionCall) goja.Value {
 		arg := call.Argument(0).String()

@@ -19,6 +19,7 @@ import (
 // buildMockEditor compiles and returns the path to a cross-platform mock editor executable.
 // The editor appends the provided content to the target file, simulating user editing.
 func buildMockEditor(t *testing.T, tempDir string, content string) string {
+	t.Helper()
 	// Create a small Go program that writes content to the file passed as $1
 	editorSource := fmt.Sprintf(`package main
 

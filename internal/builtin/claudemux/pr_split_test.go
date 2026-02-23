@@ -164,7 +164,7 @@ func TestPRSplit_ModuleLoads(t *testing.T) {
 
 	runJS(`var prSplit = require('` + sp + `');`)
 	val := runJS(`prSplit.VERSION`)
-	assert.Equal(t, "3.0.0", val.String())
+	assert.Equal(t, "4.0.0", val.String())
 }
 
 func TestPRSplit_ExportedFunctions(t *testing.T) {
@@ -177,6 +177,7 @@ func TestPRSplit_ExportedFunctions(t *testing.T) {
 		"analyzeDiff", "analyzeDiffStats",
 		"groupByDirectory", "groupByExtension", "groupByPattern", "groupByChunks",
 		"selectStrategy",
+		"classifyChangesWithClaudeMux", "suggestSplitPlanWithClaudeMux",
 		"createSplitPlan", "validatePlan",
 		"executeSplit",
 		"verifySplit", "verifySplits", "verifyEquivalence", "verifyEquivalenceDetailed",
@@ -184,6 +185,8 @@ func TestPRSplit_ExportedFunctions(t *testing.T) {
 		"createAnalyzeNode", "createGroupNode", "createPlanNode",
 		"createSplitNode", "createVerifyNode", "createEquivalenceNode",
 		"createSelectStrategyNode",
+		"createClaudeMuxClassifyNode", "createClaudeMuxPlanNode",
+		"createClaudeMuxWorkflowTree",
 		"createWorkflowTree",
 	}
 	for _, fn := range fns {
@@ -994,4 +997,304 @@ func TestPRSplit_ExecuteSplit_MissingFile(t *testing.T) {
 	// Error type should be classified.
 	errType := runJS(`result.results[0].errorType`)
 	assert.Equal(t, "missing", errType.String())
+}
+
+// ---------------------------------------------------------------------------
+//  ClaudeMux AI function error-path tests (CI-safe, no real agent)
+// ---------------------------------------------------------------------------
+
+func TestPRSplit_ClassifyChangesWithClaudeMux_NoRegistry(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+
+	// Call without registry — should return error, not throw.
+	val := runJS(`JSON.stringify(prSplit.classifyChangesWithClaudeMux(
+		['a.go', 'b.go'],
+		{}
+	))`)
+	s := val.String()
+	assert.Contains(t, s, `"error"`)
+	assert.Contains(t, s, `registry is required`)
+}
+
+func TestPRSplit_ClassifyChangesWithClaudeMux_EmptyFiles(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+	runJS(`var cm = require('osm:claudemux');`)
+	runJS(`var reg = cm.newRegistry();`)
+
+	val := runJS(`JSON.stringify(prSplit.classifyChangesWithClaudeMux(
+		[],
+		{ registry: reg }
+	))`)
+	s := val.String()
+	assert.Contains(t, s, `"error"`)
+	assert.Contains(t, s, `no files to classify`)
+}
+
+func TestPRSplit_ClassifyChangesWithClaudeMux_NullFiles(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+	runJS(`var cm = require('osm:claudemux');`)
+	runJS(`var reg = cm.newRegistry();`)
+
+	val := runJS(`JSON.stringify(prSplit.classifyChangesWithClaudeMux(
+		null,
+		{ registry: reg }
+	))`)
+	s := val.String()
+	assert.Contains(t, s, `"error"`)
+	assert.Contains(t, s, `no files`)
+}
+
+func TestPRSplit_ClassifyChangesWithClaudeMux_NoOptions(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+
+	val := runJS(`JSON.stringify(prSplit.classifyChangesWithClaudeMux(
+		['a.go'], null
+	))`)
+	s := val.String()
+	assert.Contains(t, s, `"error"`)
+	assert.Contains(t, s, `registry is required`)
+}
+
+func TestPRSplit_ClassifyChangesWithClaudeMux_SpawnFailure(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+	runJS(`var cm = require('osm:claudemux');`)
+
+	// Registry with no providers registered — spawn should fail.
+	runJS(`var reg = cm.newRegistry();`)
+
+	val := runJS(`JSON.stringify(prSplit.classifyChangesWithClaudeMux(
+		['a.go', 'b.go'],
+		{ registry: reg, providerName: 'nonexistent-provider' }
+	))`)
+	s := val.String()
+	assert.Contains(t, s, `"error"`)
+	assert.Contains(t, s, `spawn failed`)
+}
+
+func TestPRSplit_SuggestSplitPlanWithClaudeMux_NoRegistry(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+
+	val := runJS(`JSON.stringify(prSplit.suggestSplitPlanWithClaudeMux(
+		['a.go'], {}, {}
+	))`)
+	s := val.String()
+	assert.Contains(t, s, `"error"`)
+	assert.Contains(t, s, `registry is required`)
+}
+
+func TestPRSplit_SuggestSplitPlanWithClaudeMux_EmptyFiles(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+	runJS(`var cm = require('osm:claudemux');`)
+	runJS(`var reg = cm.newRegistry();`)
+
+	val := runJS(`JSON.stringify(prSplit.suggestSplitPlanWithClaudeMux(
+		[], {}, { registry: reg }
+	))`)
+	s := val.String()
+	assert.Contains(t, s, `"error"`)
+	assert.Contains(t, s, `no files to plan`)
+}
+
+func TestPRSplit_SuggestSplitPlanWithClaudeMux_SpawnFailure(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+	runJS(`var cm = require('osm:claudemux');`)
+	runJS(`var reg = cm.newRegistry();`)
+
+	val := runJS(`JSON.stringify(prSplit.suggestSplitPlanWithClaudeMux(
+		['a.go', 'b.go'], {'a.go': 'impl', 'b.go': 'test'},
+		{ registry: reg, providerName: 'does-not-exist' }
+	))`)
+	s := val.String()
+	assert.Contains(t, s, `"error"`)
+	assert.Contains(t, s, `spawn failed`)
+}
+
+// ---------------------------------------------------------------------------
+//  ClaudeMux BT node error-path tests (CI-safe, no real agent)
+// ---------------------------------------------------------------------------
+
+func TestPRSplit_ClaudeMuxClassifyNode_NoAnalysis(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+	runJS(`var bt = require('osm:bt');`)
+
+	// Blackboard has no analysisResult — node should fail.
+	runJS(`var bb = new bt.Blackboard();`)
+	runJS(`var node = prSplit.createClaudeMuxClassifyNode(bb, {});`)
+
+	statusVal := runJS(`bt.tick(node)`)
+	assert.Equal(t, "failure", statusVal.String())
+
+	errVal := runJS(`bb.get('lastError')`)
+	assert.Contains(t, errVal.String(), "no analysis result")
+}
+
+func TestPRSplit_ClaudeMuxClassifyNode_NoRegistry(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+	runJS(`var bt = require('osm:bt');`)
+
+	// Blackboard has analysis but no registry.
+	runJS(`var bb = new bt.Blackboard();`)
+	runJS(`bb.set('analysisResult', { files: ['a.go', 'b.go'], currentBranch: 'feature' });`)
+	runJS(`var node = prSplit.createClaudeMuxClassifyNode(bb, {});`)
+
+	statusVal := runJS(`bt.tick(node)`)
+	assert.Equal(t, "failure", statusVal.String())
+
+	errVal := runJS(`bb.get('lastError')`)
+	assert.Contains(t, errVal.String(), "no claudemux registry")
+}
+
+func TestPRSplit_ClaudeMuxClassifyNode_SpawnFailure(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+	runJS(`var bt = require('osm:bt');`)
+	runJS(`var cm = require('osm:claudemux');`)
+
+	// Registry with no providers — spawn will fail.
+	runJS(`var bb = new bt.Blackboard();`)
+	runJS(`bb.set('analysisResult', { files: ['a.go'], currentBranch: 'feature' });`)
+	runJS(`bb.set('claudemuxRegistry', cm.newRegistry());`)
+	runJS(`var node = prSplit.createClaudeMuxClassifyNode(bb, { providerName: 'ghost' });`)
+
+	statusVal := runJS(`bt.tick(node)`)
+	assert.Equal(t, "failure", statusVal.String())
+
+	errVal := runJS(`bb.get('lastError')`)
+	assert.Contains(t, errVal.String(), "classification")
+}
+
+func TestPRSplit_ClaudeMuxPlanNode_NoAnalysis(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+	runJS(`var bt = require('osm:bt');`)
+
+	runJS(`var bb = new bt.Blackboard();`)
+	runJS(`var node = prSplit.createClaudeMuxPlanNode(bb, {});`)
+
+	statusVal := runJS(`bt.tick(node)`)
+	assert.Equal(t, "failure", statusVal.String())
+
+	errVal := runJS(`bb.get('lastError')`)
+	assert.Contains(t, errVal.String(), "no analysis result")
+}
+
+func TestPRSplit_ClaudeMuxPlanNode_NoRegistry(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+	runJS(`var bt = require('osm:bt');`)
+
+	runJS(`var bb = new bt.Blackboard();`)
+	runJS(`bb.set('analysisResult', { files: ['a.go'], currentBranch: 'feature' });`)
+	runJS(`var node = prSplit.createClaudeMuxPlanNode(bb, {});`)
+
+	statusVal := runJS(`bt.tick(node)`)
+	assert.Equal(t, "failure", statusVal.String())
+
+	errVal := runJS(`bb.get('lastError')`)
+	assert.Contains(t, errVal.String(), "no claudemux registry")
+}
+
+func TestPRSplit_ClaudeMuxPlanNode_SpawnFailure(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+	runJS(`var bt = require('osm:bt');`)
+	runJS(`var cm = require('osm:claudemux');`)
+
+	runJS(`var bb = new bt.Blackboard();`)
+	runJS(`bb.set('analysisResult', { files: ['a.go'], currentBranch: 'feature' });`)
+	runJS(`bb.set('claudemuxRegistry', cm.newRegistry());`)
+	runJS(`var node = prSplit.createClaudeMuxPlanNode(bb, { providerName: 'ghost' });`)
+
+	statusVal := runJS(`bt.tick(node)`)
+	assert.Equal(t, "failure", statusVal.String())
+
+	errVal := runJS(`bb.get('lastError')`)
+	assert.Contains(t, errVal.String(), "planning")
+}
+
+func TestPRSplit_ClaudeMuxWorkflowTree_Builds(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+	runJS(`var bt = require('osm:bt');`)
+
+	// Verify the workflow tree can be constructed (structural test).
+	runJS(`var bb = new bt.Blackboard();`)
+	runJS(`var tree = prSplit.createClaudeMuxWorkflowTree(bb, {
+		baseBranch: 'main',
+		dir: '/tmp/test',
+		branchPrefix: 'ai-split/',
+		verifyCommand: 'true'
+	});`)
+
+	treeType := runJS(`typeof tree`)
+	assert.Equal(t, "function", treeType.String())
+}
+
+func TestPRSplit_ClaudeMuxWorkflowTree_FailsWithoutRegistry(t *testing.T) {
+	t.Parallel()
+	bridge, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+
+	bridge.SetTimeout(10 * time.Second)
+
+	dir := initTestGitRepo(t)
+	addFeatureFiles(t, dir)
+	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
+
+	runJS(`var prSplit = require('` + sp + `');`)
+	runJS(`var bt = require('osm:bt');`)
+
+	// Build tree with real repo but no registry — should fail at classify step.
+	runJS(`var bb = new bt.Blackboard();`)
+	runJS(`var tree = prSplit.createClaudeMuxWorkflowTree(bb, {
+		baseBranch: 'main',
+		dir: '` + escapedDir + `'
+	});`)
+
+	statusVal := runJS(`bt.tick(tree)`)
+	assert.Equal(t, "failure", statusVal.String())
+
+	// lastError should mention missing registry.
+	errVal := runJS(`bb.get('lastError')`)
+	assert.Contains(t, errVal.String(), "registry")
 }

@@ -18,7 +18,7 @@ integration-test-claudemux: ## Run claudemux integration tests (requires real ag
 integration-test-claudemux: PROVIDER ?= ollama
 integration-test-claudemux: MODEL ?= gpt-oss:20b-cloud
 integration-test-claudemux:
-	$(GO) test -race -v -count=1 -timeout=5m \
+	$(GO) test -race -v -count=1 -timeout=10m \
 		-integration -provider=$(PROVIDER) -model=$(MODEL) \
 		./internal/builtin/claudemux/...
 

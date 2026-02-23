@@ -445,6 +445,52 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			cr := NewChoiceResolver(cfg)
 			return wrapChoiceResolver(runtime, cr)
 		})
+
+		// --- Result File Readers ---
+		// These read structured JSON result files written by MCP tools
+		// (reportClassification, reportSplitPlan) via the --result-dir channel.
+
+		// readClassificationResult(dir: string): object
+		// Returns a map of file paths to category names.
+		_ = exports.Set("readClassificationResult", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("readClassificationResult: dir argument is required"))
+			}
+			dir := call.Argument(0).String()
+			result, err := ReadClassificationResult(dir)
+			if err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			obj := runtime.NewObject()
+			for k, v := range result {
+				_ = obj.Set(k, v)
+			}
+			return obj
+		})
+
+		// readSplitPlanResult(dir: string): object[]
+		// Returns an array of split plan stages.
+		_ = exports.Set("readSplitPlanResult", func(call goja.FunctionCall) goja.Value {
+			dir := call.Argument(0).String()
+			result, err := ReadSplitPlanResult(dir)
+			if err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			arr := runtime.NewArray()
+			for i, stage := range result {
+				obj := runtime.NewObject()
+				_ = obj.Set("name", stage.Name)
+				files := runtime.NewArray()
+				for j, f := range stage.Files {
+					_ = files.Set(fmt.Sprintf("%d", j), f)
+				}
+				_ = obj.Set("files", files)
+				_ = obj.Set("message", stage.Message)
+				_ = obj.Set("order", stage.Order)
+				_ = arr.Set(fmt.Sprintf("%d", i), obj)
+			}
+			return arr
+		})
 	}
 }
 
@@ -720,9 +766,28 @@ func wrapMCPInstance(runtime *goja.Runtime, cfg *MCPInstanceConfig) goja.Value {
 		return runtime.ToValue(cfg.OsmBinary)
 	})
 
+	// configDir(): string — returns the temp directory path.
+	_ = obj.Set("configDir", func() goja.Value {
+		return runtime.ToValue(cfg.configDir)
+	})
+
 	// configPath(): string — returns the config file path.
 	_ = obj.Set("configPath", func() goja.Value {
 		return runtime.ToValue(cfg.ConfigPath())
+	})
+
+	// resultDir(): string — returns the result directory path (may be empty).
+	_ = obj.Set("resultDir", func() goja.Value {
+		return runtime.ToValue(cfg.ResultDir)
+	})
+
+	// setResultDir(dir: string): void — sets the result directory for MCP tools.
+	_ = obj.Set("setResultDir", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("setResultDir: dir argument is required"))
+		}
+		cfg.ResultDir = call.Argument(0).String()
+		return goja.Undefined()
 	})
 
 	// spawnArgs(): string[] — returns CLI args for Claude Code.

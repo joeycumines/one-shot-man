@@ -685,7 +685,7 @@ func setupMCPTestSession(t *testing.T) *mcpSecurityTestSession {
 	cm, err := scripting.NewContextManager(cwd)
 	require.NoError(t, err)
 
-	server := newMCPServer(cm, &mcpTestGoalRegistry{}, "0.0.0-security-test")
+	server := newMCPServer(cm, &mcpTestGoalRegistry{}, "0.0.0-security-test", "")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()

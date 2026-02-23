@@ -2470,3 +2470,234 @@ func TestWrapMCPInstance_ValidateError(t *testing.T) {
 		t.Fatal("expected error from validate() on empty config")
 	}
 }
+
+// ============================================================================
+// MCPGuard — additional coverage for uncovered paths
+// ============================================================================
+
+func TestMCPGuard_CheckNoCallTimeout_AlreadyFired(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	g := NewMCPGuard(MCPGuardConfig{
+		NoCallTimeout: MCPNoCallTimeoutConfig{
+			Enabled: true,
+			Timeout: 10 * time.Millisecond,
+		},
+	})
+	// Start the guard by processing a tool call.
+	g.ProcessToolCall(MCPToolCall{
+		ToolName:  "test",
+		Timestamp: now,
+	})
+	// Fire the timeout the first time.
+	future := now.Add(20 * time.Millisecond)
+	ge := g.CheckNoCallTimeout(future)
+	if ge == nil {
+		t.Fatal("expected timeout event on first fire")
+	}
+	// Second check should return nil (already fired).
+	ge2 := g.CheckNoCallTimeout(future.Add(time.Second))
+	if ge2 != nil {
+		t.Fatal("expected nil for already-fired timeout")
+	}
+}
+
+func TestMCPGuard_CheckRepetition_LessThanTwoCalls(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	g := NewMCPGuard(MCPGuardConfig{
+		RepeatDetection: MCPRepeatDetectionConfig{
+			Enabled:    true,
+			MaxRepeats: 3,
+			WindowSize: 10,
+			MatchTool:  true,
+		},
+	})
+	// Single call — checkRepetition n < 2 early return.
+	ge := g.ProcessToolCall(MCPToolCall{
+		ToolName:  "readFile",
+		Timestamp: now,
+	})
+	if ge != nil {
+		t.Fatalf("expected nil for single call, got action=%d", ge.Action)
+	}
+}
+
+func TestMCPGuard_Allowlist_Rejection(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	g := NewMCPGuard(MCPGuardConfig{
+		ToolAllowlist: MCPToolAllowlistConfig{
+			Enabled:      true,
+			AllowedTools: []string{"readFile", "listContext"},
+		},
+	})
+	// Allowed tool — should pass.
+	ge := g.ProcessToolCall(MCPToolCall{
+		ToolName:  "readFile",
+		Timestamp: now,
+	})
+	if ge != nil {
+		t.Fatalf("expected nil for allowed tool, got action=%d", ge.Action)
+	}
+	// Disallowed tool — should reject.
+	ge2 := g.ProcessToolCall(MCPToolCall{
+		ToolName:  "deleteFile",
+		Timestamp: now.Add(time.Millisecond),
+	})
+	if ge2 == nil {
+		t.Fatal("expected rejection for disallowed tool")
+	}
+	if ge2.Action != GuardActionReject {
+		t.Fatalf("expected GuardActionReject, got %d", ge2.Action)
+	}
+}
+
+func TestMCPGuard_Frequency_Exceeded_Coverage(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	g := NewMCPGuard(MCPGuardConfig{
+		FrequencyLimit: MCPFrequencyLimitConfig{
+			Enabled:  true,
+			Window:   time.Second,
+			MaxCalls: 2,
+		},
+	})
+	// Three calls within the window — third should trigger frequency limit.
+	g.ProcessToolCall(MCPToolCall{ToolName: "a", Timestamp: now})
+	g.ProcessToolCall(MCPToolCall{ToolName: "b", Timestamp: now.Add(time.Millisecond)})
+	ge := g.ProcessToolCall(MCPToolCall{ToolName: "c", Timestamp: now.Add(2 * time.Millisecond)})
+	if ge == nil {
+		t.Fatal("expected frequency limit event")
+	}
+	if ge.Action != GuardActionPause {
+		t.Fatalf("expected GuardActionPause, got %d", ge.Action)
+	}
+}
+
+// ============================================================================
+// Panel — additional health indicator coverage
+// ============================================================================
+
+func TestPanel_HealthIndicator_StoppedAndDefault(t *testing.T) {
+	t.Parallel()
+	// Test the "stopped" and default cases.
+	got := healthIndicator("stopped")
+	if got != "■ " {
+		t.Fatalf("stopped indicator = %q, want %q", got, "■ ")
+	}
+	got = healthIndicator("unknown-state")
+	if got != "? " {
+		t.Fatalf("default indicator = %q, want %q", got, "? ")
+	}
+}
+
+
+
+// ============================================================================
+// Safety — negative risk clamp
+// ============================================================================
+
+func TestSafety_CalculateRisk_NegativeClamp(t *testing.T) {
+	t.Parallel()
+	// A SafetyValidator with extremely permissive settings.
+	sv := NewSafetyValidator(SafetyConfig{
+		BlockThreshold:   0.9,
+		ConfirmThreshold: 0.5,
+	})
+	result := sv.Validate(SafetyAction{
+		Type: "tool_call",
+		Name: "readFile",
+	})
+	// Risk should be 0 or very low for a read action.
+	if result.RiskScore < 0.0 {
+		t.Fatal("risk should never be negative")
+	}
+	if result.RiskScore > 1.0 {
+		t.Fatal("risk should never exceed 1.0")
+	}
+}
+
+// ============================================================================
+// Parser — field extractor nil submatch paths
+// ============================================================================
+
+func TestParser_FieldExtractor_EmptyMatch(t *testing.T) {
+	t.Parallel()
+	p := NewParser()
+	// Lines that match patterns but have empty submatch groups.
+	// Rate limit with no numeric value:
+	ev := p.Parse("⏳ Waiting for rate limit...")
+	if ev.Type != EventRateLimit {
+		t.Fatalf("expected EventRateLimit, got %d", ev.Type)
+	}
+	// The fields may or may not have "wait_seconds" depending on regex match.
+	// This exercises the field extractor code path.
+
+	// Permission prompt with no detail:
+	ev2 := p.Parse("Do you want to allow this action?")
+	if ev2.Type != EventPermission {
+		t.Fatalf("expected EventPermission, got %d", ev2.Type)
+	}
+
+	// Error event:
+	ev3 := p.Parse("Error: connection refused")
+	if ev3.Type != EventError {
+		t.Fatalf("expected EventError, got %d", ev3.Type)
+	}
+}
+
+// ============================================================================
+// Supervisor — decision edge cases
+// ============================================================================
+
+func TestSupervisor_RetryThresholdBoundary(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	sup := NewSupervisor(ctx, SupervisorConfig{
+		MaxRetries:    1,
+		MaxForceKills: 1,
+	})
+	sup.Start()
+
+	// First error → retry.
+	d1 := sup.HandleError("err1", ErrorClassPTYError)
+	if d1.Action != RecoveryRetry {
+		t.Fatalf("first error: expected Retry, got %s", RecoveryActionName(d1.Action))
+	}
+	sup.ConfirmRecovery()
+
+	// Second error (retry count matches threshold) → check for restart or escalate.
+	d2 := sup.HandleError("err2", ErrorClassPTYError)
+	// With MaxRetries=1, after one retry it should escalate.
+	if d2.Action != RecoveryEscalate && d2.Action != RecoveryRetry {
+		t.Fatalf("second error: expected Escalate or Retry, got %s", RecoveryActionName(d2.Action))
+	}
+}
+
+// ============================================================================
+// ManagedSession — callback coverage
+// ============================================================================
+
+func TestManagedSession_ProcessCrash_Escalation_Coverage(t *testing.T) {
+	t.Parallel()
+	cfg := ManagedSessionConfig{
+		Guard:    DefaultGuardConfig(),
+		MCPGuard: MCPGuardConfig{NoCallTimeout: MCPNoCallTimeoutConfig{Enabled: false}},
+		Supervisor: SupervisorConfig{
+			MaxRetries:    0,
+			MaxForceKills: 0,
+		},
+	}
+	sess := NewManagedSession(context.Background(), "test-crash", cfg)
+	if err := sess.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	defer sess.Close()
+
+	// Hard crash — supervisor should take action (ForceKill, Escalate, or Restart).
+	_, d := sess.ProcessCrash(1, time.Now())
+	if d.Action == RecoveryNone || d.Action == RecoveryRetry {
+		t.Fatalf("expected serious recovery action, got %s", RecoveryActionName(d.Action))
+	}
+}

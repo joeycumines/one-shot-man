@@ -16,12 +16,13 @@ import (
 // Code spawns this command with the session ID, and osm provides MCP
 // tools over stdin/stdout.
 //
-// Usage: osm mcp-instance --session <session-id>
+// Usage: osm mcp-instance --session <session-id> [--result-dir <path>]
 type MCPInstanceCommand struct {
 	*BaseCommand
 	goalRegistry GoalRegistry
 	version      string
 	session      string
+	resultDir    string
 }
 
 // NewMCPInstanceCommand creates a new MCPInstanceCommand.
@@ -33,9 +34,10 @@ func NewMCPInstanceCommand(goalRegistry GoalRegistry, version string) *MCPInstan
 	}
 }
 
-// SetupFlags configures the --session flag.
+// SetupFlags configures the --session and --result-dir flags.
 func (c *MCPInstanceCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.session, "session", "", "Session identifier for this MCP instance")
+	fs.StringVar(&c.resultDir, "result-dir", "", "Directory for structured result files (classification.json, split-plan.json)")
 }
 
 // Execute starts a per-instance MCP server on stdio, blocking until the
@@ -57,7 +59,15 @@ func (c *MCPInstanceCommand) Execute(args []string, stdout, stderr io.Writer) er
 		return fmt.Errorf("mcp-instance: failed to create context manager: %w", err)
 	}
 
-	// Reuse the same MCP server factory as the main 'osm mcp' command.
-	server := newMCPServer(cm, c.goalRegistry, c.version)
+	// Ensure result-dir exists if specified.
+	if c.resultDir != "" {
+		if err := os.MkdirAll(c.resultDir, 0o755); err != nil {
+			return fmt.Errorf("mcp-instance: failed to create result-dir: %w", err)
+		}
+	}
+
+	// Reuse the same MCP server factory as the main 'osm mcp' command,
+	// with optional result directory for structured PR-split results.
+	server := newMCPServer(cm, c.goalRegistry, c.version, c.resultDir)
 	return server.Run(context.Background(), &mcp.StdioTransport{})
 }

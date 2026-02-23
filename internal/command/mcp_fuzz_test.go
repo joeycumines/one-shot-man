@@ -118,7 +118,7 @@ func FuzzMCPSessionTools(f *testing.F) {
 		if err != nil {
 			t.Skip("failed to create context manager:", err)
 		}
-		server := newMCPServer(cm, &mcpTestGoalRegistry{}, "0.0.0-fuzz")
+		server := newMCPServer(cm, &mcpTestGoalRegistry{}, "0.0.0-fuzz", "")
 
 		// Per-iteration timeout prevents the fuzz engine from blocking
 		// on cleanup when the fuzztime expires mid-iteration.

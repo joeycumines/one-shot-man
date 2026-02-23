@@ -10,6 +10,7 @@
 //   1. Leaf node factories — individual operations as bt.Node
 //   2. Workflow composers — sequence common patterns
 //   3. PA-BT action library — preconditions/effects for planning
+//   4. MCP result readers — read structured results from agent via file channel
 //
 // All leaf factories accept a bt.Blackboard as first argument for state sharing.
 // Templates use bt.createBlockingLeafNode for sequential workflow semantics.
@@ -223,6 +224,72 @@ exports.splitBranch = function(bb, branchName) {
     });
 };
 
+// readClassification creates a leaf that reads a classification result file
+// written by the MCP reportClassification tool.
+//
+// The MCP result channel works by having Claude Code call MCP tools that write
+// structured JSON to a result directory. This leaf reads that file after the
+// agent completes its response.
+//
+// Blackboard reads:  resultDir (path to MCP result directory)
+// Blackboard writes: classification (parsed object), classificationRead (true), lastError
+//
+// Parameters:
+//   bb — bt.Blackboard instance
+exports.readClassification = function(bb) {
+    return bt.createBlockingLeafNode(function() {
+        var dir = bb.get('resultDir');
+        if (!dir) {
+            bb.set('lastError', 'no resultDir set on blackboard');
+            return bt.failure;
+        }
+        try {
+            var result = orc.readClassificationResult(dir);
+            if (result.error) {
+                bb.set('lastError', 'classification read: ' + result.error);
+                return bt.failure;
+            }
+            bb.set('classification', result);
+            bb.set('classificationRead', true);
+            return bt.success;
+        } catch (e) {
+            bb.set('lastError', 'classification read: ' + String(e));
+            return bt.failure;
+        }
+    });
+};
+
+// readSplitPlan creates a leaf that reads a split plan result file written
+// by the MCP reportSplitPlan tool.
+//
+// Blackboard reads:  resultDir (path to MCP result directory)
+// Blackboard writes: splitPlan (parsed object), splitPlanRead (true), lastError
+//
+// Parameters:
+//   bb — bt.Blackboard instance
+exports.readSplitPlan = function(bb) {
+    return bt.createBlockingLeafNode(function() {
+        var dir = bb.get('resultDir');
+        if (!dir) {
+            bb.set('lastError', 'no resultDir set on blackboard');
+            return bt.failure;
+        }
+        try {
+            var result = orc.readSplitPlanResult(dir);
+            if (result.error) {
+                bb.set('lastError', 'split plan read: ' + result.error);
+                return bt.failure;
+            }
+            bb.set('splitPlan', result);
+            bb.set('splitPlanRead', true);
+            return bt.success;
+        } catch (e) {
+            bb.set('lastError', 'split plan read: ' + String(e));
+            return bt.failure;
+        }
+    });
+};
+
 // ---------------------------------------------------------------------------
 //  Workflow Composers
 // ---------------------------------------------------------------------------
@@ -268,6 +335,36 @@ exports.verifyAndCommit = function(bb, opts) {
     return bt.node(bt.sequence,
         exports.runTests(bb, testCmd),
         exports.commitChanges(bb, commitMsg)
+    );
+};
+
+// spawnPromptAndReadResult creates a sequence: spawn → prompt → wait → read result.
+// This is the canonical pattern for getting structured data from an agent via MCP.
+//
+// Before running, set on the blackboard:
+//   bb.set('resultDir', '/path/to/result/dir');
+//
+// Parameters:
+//   bb       — bt.Blackboard
+//   registry — provider Registry
+//   config   — {provider?, spawnOpts?, prompt, maxEmptyReads?, resultType?}
+//              resultType: 'classification' (default) or 'splitPlan'
+exports.spawnPromptAndReadResult = function(bb, registry, config) {
+    config = config || {};
+    var provName = config.provider || 'claude-code';
+    var spawnOpts = config.spawnOpts || {};
+    var prompt = config.prompt || '';
+    var resultType = config.resultType || 'classification';
+
+    var readNode = resultType === 'splitPlan'
+        ? exports.readSplitPlan(bb)
+        : exports.readClassification(bb);
+
+    return bt.node(bt.sequence,
+        exports.spawnClaude(bb, registry, provName, spawnOpts),
+        exports.sendPrompt(bb, prompt),
+        exports.waitForResponse(bb, config),
+        readNode
     );
 };
 

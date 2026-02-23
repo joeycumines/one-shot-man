@@ -64,7 +64,7 @@ func newMCPTestEnv(t *testing.T, goals []Goal) *mcpTestEnv {
 	}
 
 	goalRegistry := &mcpTestGoalRegistry{goals: goals}
-	server := newMCPServer(cm, goalRegistry, "test")
+	server := newMCPServer(cm, goalRegistry, "test", "")
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -77,6 +77,49 @@ func newMCPTestEnv(t *testing.T, goals []Goal) *mcpTestEnv {
 	}()
 
 	// Connect client
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		cancel()
+		t.Fatalf("client.Connect: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = session.Close()
+		cancel()
+		select {
+		case <-serverDone:
+		case <-time.After(5 * time.Second):
+			t.Error("server did not shut down within 5s")
+		}
+	})
+
+	return &mcpTestEnv{session: session, dir: dir, cancel: cancel}
+}
+
+// newMCPTestEnvWithResultDir is like newMCPTestEnv but also sets a result
+// directory for file-based result channel testing.
+func newMCPTestEnvWithResultDir(t *testing.T, goals []Goal, resultDir string) *mcpTestEnv {
+	t.Helper()
+	dir := t.TempDir()
+
+	cm, err := scripting.NewContextManager(dir)
+	if err != nil {
+		t.Fatalf("NewContextManager: %v", err)
+	}
+
+	goalRegistry := &mcpTestGoalRegistry{goals: goals}
+	server := newMCPServer(cm, goalRegistry, "test", resultDir)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- server.Run(ctx, serverTransport)
+	}()
+
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, nil)
 	session, err := client.Connect(ctx, clientTransport, nil)
 	if err != nil {
@@ -168,21 +211,23 @@ func TestMCPServer_ToolList(t *testing.T) {
 	}
 
 	expected := map[string]bool{
-		"addFile":         false,
-		"addDiff":         false,
-		"addNote":         false,
-		"removeFile":      false,
-		"listContext":     false,
-		"clearContext":    false,
-		"buildPrompt":     false,
-		"getGoals":        false,
-		"registerSession": false,
-		"reportProgress":  false,
-		"reportResult":    false,
-		"requestGuidance": false,
-		"getSession":      false,
-		"listSessions":    false,
-		"heartbeat":       false,
+		"addFile":              false,
+		"addDiff":              false,
+		"addNote":              false,
+		"removeFile":           false,
+		"listContext":          false,
+		"clearContext":         false,
+		"buildPrompt":          false,
+		"getGoals":             false,
+		"registerSession":      false,
+		"reportProgress":       false,
+		"reportResult":         false,
+		"requestGuidance":      false,
+		"getSession":           false,
+		"listSessions":         false,
+		"heartbeat":            false,
+		"reportClassification": false,
+		"reportSplitPlan":      false,
 	}
 	for _, tool := range result.Tools {
 		if _, ok := expected[tool.Name]; ok {
@@ -194,8 +239,8 @@ func TestMCPServer_ToolList(t *testing.T) {
 			t.Errorf("tool %q not registered", name)
 		}
 	}
-	if len(result.Tools) != 15 {
-		t.Errorf("got %d tools, want 15", len(result.Tools))
+	if len(result.Tools) != 17 {
+		t.Errorf("got %d tools, want 17", len(result.Tools))
 	}
 }
 
@@ -2020,5 +2065,475 @@ func TestMCPCheckSeq(t *testing.T) {
 	// seq=-1: always process (treated as no dedup)
 	if !mcpCheckSeq(sess, -1) {
 		t.Error("seq=-1 should return true (negative = no dedup)")
+	}
+}
+
+// --- reportClassification ---
+
+func TestMCPServer_ReportClassification(t *testing.T) {
+	t.Parallel()
+	resultDir := t.TempDir()
+	env := newMCPTestEnvWithResultDir(t, nil, resultDir)
+
+	// Register session first.
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "cls-1",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportClassification", map[string]any{
+		"sessionId": "cls-1",
+		"files": map[string]any{
+			"cmd/main.go":     "entry-point",
+			"internal/foo.go": "impl",
+			"docs/README.md":  "docs",
+		},
+	})
+	if r.IsError {
+		t.Fatalf("reportClassification returned error: %s", mcpResultText(t, r))
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "3 files") {
+		t.Errorf("text = %q, want to contain '3 files'", text)
+	}
+
+	// Verify result file was written.
+	data, err := os.ReadFile(filepath.Join(resultDir, "classification.json"))
+	if err != nil {
+		t.Fatalf("read result file: %v", err)
+	}
+	var files map[string]string
+	if err := json.Unmarshal(data, &files); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if files["cmd/main.go"] != "entry-point" {
+		t.Errorf("files[cmd/main.go] = %q, want entry-point", files["cmd/main.go"])
+	}
+	if len(files) != 3 {
+		t.Errorf("got %d files, want 3", len(files))
+	}
+
+	// Verify event was stored in session.
+	sr := env.callTool(t, "getSession", map[string]any{"sessionId": "cls-1"})
+	if sr.IsError {
+		t.Fatalf("getSession: %s", mcpResultText(t, sr))
+	}
+	sessionText := mcpResultText(t, sr)
+	if !strings.Contains(sessionText, "classification") {
+		t.Errorf("session events should contain classification, got: %s", sessionText)
+	}
+}
+
+func TestMCPServer_ReportClassification_EmptyFiles(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "cls-empty",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportClassification", map[string]any{
+		"sessionId": "cls-empty",
+		"files":     map[string]any{},
+	})
+	if !r.IsError {
+		t.Error("expected IsError for empty files map")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "files map is required") {
+		t.Errorf("error text = %q, want to contain 'files map is required'", text)
+	}
+}
+
+func TestMCPServer_ReportClassification_UnknownSession(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	r := env.callTool(t, "reportClassification", map[string]any{
+		"sessionId": "ghost",
+		"files":     map[string]any{"a.go": "impl"},
+	})
+	if !r.IsError {
+		t.Error("expected IsError for unknown session")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "session not found") {
+		t.Errorf("error text = %q, want to contain 'session not found'", text)
+	}
+}
+
+func TestMCPServer_ReportClassification_NoResultDir(t *testing.T) {
+	t.Parallel()
+	// Use env WITHOUT result-dir — should still succeed (no file written).
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "cls-nodir",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportClassification", map[string]any{
+		"sessionId": "cls-nodir",
+		"files":     map[string]any{"a.go": "impl"},
+	})
+	if r.IsError {
+		t.Fatalf("expected no error without result-dir: %s", mcpResultText(t, r))
+	}
+}
+
+func TestMCPServer_ReportClassification_Idempotent(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "cls-idem",
+		"capabilities": []string{},
+	})
+
+	// First call with seq=1.
+	r := env.callTool(t, "reportClassification", map[string]any{
+		"sessionId": "cls-idem",
+		"files":     map[string]any{"a.go": "impl"},
+		"seq":       1,
+	})
+	if r.IsError {
+		t.Fatalf("first call error: %s", mcpResultText(t, r))
+	}
+
+	// Duplicate seq=1 — should be idempotent skip.
+	r = env.callTool(t, "reportClassification", map[string]any{
+		"sessionId": "cls-idem",
+		"files":     map[string]any{"b.go": "test"},
+		"seq":       1,
+	})
+	if r.IsError {
+		t.Fatalf("dup call should not be error: %s", mcpResultText(t, r))
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "idempotent skip") {
+		t.Errorf("text = %q, want to contain 'idempotent skip'", text)
+	}
+}
+
+// --- reportSplitPlan ---
+
+func TestMCPServer_ReportSplitPlan(t *testing.T) {
+	t.Parallel()
+	resultDir := t.TempDir()
+	env := newMCPTestEnvWithResultDir(t, nil, resultDir)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "plan-1",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportSplitPlan", map[string]any{
+		"sessionId": "plan-1",
+		"stages": []any{
+			map[string]any{
+				"name":    "types",
+				"files":   []any{"types.go", "types_test.go"},
+				"message": "feat: add type definitions",
+				"order":   0,
+			},
+			map[string]any{
+				"name":    "impl",
+				"files":   []any{"impl.go"},
+				"message": "feat: add implementation",
+				"order":   1,
+			},
+		},
+	})
+	if r.IsError {
+		t.Fatalf("reportSplitPlan returned error: %s", mcpResultText(t, r))
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "2 stages") {
+		t.Errorf("text = %q, want to contain '2 stages'", text)
+	}
+
+	// Verify result file.
+	data, err := os.ReadFile(filepath.Join(resultDir, "split-plan.json"))
+	if err != nil {
+		t.Fatalf("read result file: %v", err)
+	}
+	var stages []mcpSplitStage
+	if err := json.Unmarshal(data, &stages); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if len(stages) != 2 {
+		t.Fatalf("got %d stages, want 2", len(stages))
+	}
+	if stages[0].Name != "types" {
+		t.Errorf("stage[0].Name = %q, want types", stages[0].Name)
+	}
+	if len(stages[0].Files) != 2 {
+		t.Errorf("stage[0] has %d files, want 2", len(stages[0].Files))
+	}
+	if stages[1].Name != "impl" {
+		t.Errorf("stage[1].Name = %q, want impl", stages[1].Name)
+	}
+}
+
+func TestMCPServer_ReportSplitPlan_EmptyStages(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "plan-empty",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportSplitPlan", map[string]any{
+		"sessionId": "plan-empty",
+		"stages":    []any{},
+	})
+	if !r.IsError {
+		t.Error("expected IsError for empty stages")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "stages array is required") {
+		t.Errorf("error text = %q, want to contain 'stages array is required'", text)
+	}
+}
+
+func TestMCPServer_ReportSplitPlan_NoName(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "plan-noname",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportSplitPlan", map[string]any{
+		"sessionId": "plan-noname",
+		"stages": []any{
+			map[string]any{
+				"name":    "",
+				"files":   []any{"a.go"},
+				"message": "fix",
+				"order":   0,
+			},
+		},
+	})
+	if !r.IsError {
+		t.Error("expected IsError for stage with empty name")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "has no name") {
+		t.Errorf("error text = %q, want to contain 'has no name'", text)
+	}
+}
+
+func TestMCPServer_ReportSplitPlan_NoFiles(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "plan-nofiles",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportSplitPlan", map[string]any{
+		"sessionId": "plan-nofiles",
+		"stages": []any{
+			map[string]any{
+				"name":    "types",
+				"files":   []any{},
+				"message": "fix",
+				"order":   0,
+			},
+		},
+	})
+	if !r.IsError {
+		t.Error("expected IsError for stage with no files")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "has no files") {
+		t.Errorf("error text = %q, want to contain 'has no files'", text)
+	}
+}
+
+func TestMCPServer_ReportSplitPlan_DuplicateFiles(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "plan-dup",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportSplitPlan", map[string]any{
+		"sessionId": "plan-dup",
+		"stages": []any{
+			map[string]any{
+				"name":    "types",
+				"files":   []any{"a.go"},
+				"message": "types",
+				"order":   0,
+			},
+			map[string]any{
+				"name":    "impl",
+				"files":   []any{"a.go"},
+				"message": "impl",
+				"order":   1,
+			},
+		},
+	})
+	if !r.IsError {
+		t.Error("expected IsError for duplicate file across stages")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "duplicate file") {
+		t.Errorf("error text = %q, want to contain 'duplicate file'", text)
+	}
+}
+
+func TestMCPServer_ReportSplitPlan_UnknownSession(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	r := env.callTool(t, "reportSplitPlan", map[string]any{
+		"sessionId": "ghost",
+		"stages": []any{
+			map[string]any{
+				"name":    "x",
+				"files":   []any{"a.go"},
+				"message": "msg",
+				"order":   0,
+			},
+		},
+	})
+	if !r.IsError {
+		t.Error("expected IsError for unknown session")
+	}
+}
+
+func TestMCPServer_ReportSplitPlan_Idempotent(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "plan-idem",
+		"capabilities": []string{},
+	})
+
+	stages := []any{
+		map[string]any{
+			"name":    "x",
+			"files":   []any{"a.go"},
+			"message": "msg",
+			"order":   0,
+		},
+	}
+	r := env.callTool(t, "reportSplitPlan", map[string]any{
+		"sessionId": "plan-idem",
+		"stages":    stages,
+		"seq":       1,
+	})
+	if r.IsError {
+		t.Fatalf("first call: %s", mcpResultText(t, r))
+	}
+
+	// Duplicate.
+	r = env.callTool(t, "reportSplitPlan", map[string]any{
+		"sessionId": "plan-idem",
+		"stages":    stages,
+		"seq":       1,
+	})
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "idempotent skip") {
+		t.Errorf("text = %q, want to contain 'idempotent skip'", text)
+	}
+}
+
+// --- mcpWriteResultFile ---
+
+func TestMCPWriteResultFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	files := map[string]string{"a.go": "impl", "b.go": "test"}
+	if err := mcpWriteResultFile(dir, "test.json", files); err != nil {
+		t.Fatalf("mcpWriteResultFile: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "test.json"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got["a.go"] != "impl" || got["b.go"] != "test" {
+		t.Errorf("content mismatch: %v", got)
+	}
+
+	// Temp file should not be left behind.
+	tmpPath := filepath.Join(dir, ".test.json.tmp")
+	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
+		t.Errorf("temp file %s should not exist after successful write", tmpPath)
+	}
+}
+
+func TestMCPWriteResultFile_EmptyDir(t *testing.T) {
+	t.Parallel()
+	// Empty dir = no-op.
+	if err := mcpWriteResultFile("", "test.json", "anything"); err != nil {
+		t.Fatalf("expected no error for empty dir: %v", err)
+	}
+}
+
+func TestMCPWriteResultFile_CreatesDir(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	nested := filepath.Join(base, "a", "b", "c")
+
+	if err := mcpWriteResultFile(nested, "out.json", []int{1, 2, 3}); err != nil {
+		t.Fatalf("mcpWriteResultFile: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(nested, "out.json"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	var got []int
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(got) != 3 || got[0] != 1 {
+		t.Errorf("content = %v, want [1 2 3]", got)
+	}
+}
+
+func TestMCPWriteResultFile_Overwrite(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Write initial.
+	if err := mcpWriteResultFile(dir, "data.json", map[string]int{"a": 1}); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	// Overwrite.
+	if err := mcpWriteResultFile(dir, "data.json", map[string]int{"b": 2}); err != nil {
+		t.Fatalf("second write: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "data.json"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	var got map[string]int
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got["b"] != 2 {
+		t.Errorf("got %v, want {b:2}", got)
+	}
+	if _, exists := got["a"]; exists {
+		t.Error("old key 'a' should not exist after overwrite")
 	}
 }

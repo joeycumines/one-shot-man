@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -48,7 +49,7 @@ func (c *MCPCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("mcp: failed to create context manager: %w", err)
 	}
-	server := newMCPServer(cm, c.goalRegistry, c.version)
+	server := newMCPServer(cm, c.goalRegistry, c.version, "")
 	return server.Run(context.Background(), &mcp.StdioTransport{})
 }
 
@@ -179,6 +180,28 @@ type mcpHeartbeatInput struct {
 	SessionID string `json:"sessionId" jsonschema:"Session identifier"`
 }
 
+// --- MCP PR-split tool input types ---
+
+type mcpReportClassificationInput struct {
+	SessionID string            `json:"sessionId" jsonschema:"Session identifier"`
+	Files     map[string]string `json:"files" jsonschema:"Map of file path to category name"`
+	Seq       int64             `json:"seq,omitempty" jsonschema:"Sequence number for idempotency (0 = no dedup)"`
+}
+
+type mcpReportSplitPlanInput struct {
+	SessionID string          `json:"sessionId" jsonschema:"Session identifier"`
+	Stages    []mcpSplitStage `json:"stages" jsonschema:"Ordered array of split stages"`
+	Seq       int64           `json:"seq,omitempty" jsonschema:"Sequence number for idempotency (0 = no dedup)"`
+}
+
+// mcpSplitStage describes one stage in a PR split plan.
+type mcpSplitStage struct {
+	Name    string   `json:"name" jsonschema:"Branch/stage name"`
+	Files   []string `json:"files" jsonschema:"Files in this stage"`
+	Message string   `json:"message" jsonschema:"Commit message for this stage"`
+	Order   int      `json:"order" jsonschema:"0-based ordering"`
+}
+
 // mcpValidProgressStatuses is the set of allowed status values for reportProgress.
 var mcpValidProgressStatuses = map[string]bool{
 	"working": true,
@@ -224,9 +247,11 @@ func mcpCheckSeq(sess *mcpSession, seq int64) bool {
 	return true
 }
 
-// newMCPServer creates a configured MCP server with all fifteen tools.
+// newMCPServer creates a configured MCP server with all tools.
 // It is unexported for testability via InMemoryTransport.
-func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, version string) *mcp.Server {
+// If resultDir is non-empty, PR-split tools (reportClassification,
+// reportSplitPlan) also write results atomically to files in that directory.
+func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, version string, resultDir string) *mcp.Server {
 	var mu sync.Mutex
 	var items []mcpContextItem
 	sessions := make(map[string]*mcpSession)
@@ -718,7 +743,145 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 		}, nil, nil
 	})
 
+	// --- reportClassification ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "reportClassification",
+		Description: "Report file classification results for PR splitting. Each file is mapped to a category (e.g., 'types', 'impl', 'docs'). Call this tool to send classification results back to the orchestrating osm process.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpReportClassificationInput) (*mcp.CallToolResult, any, error) {
+		if len(input.Files) == 0 {
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("files map is required and must not be empty"))
+			return result, nil, nil
+		}
+		mu.Lock()
+		sess, ok := sessions[input.SessionID]
+		if !ok {
+			mu.Unlock()
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			return result, nil, nil
+		}
+		if !mcpCheckSeq(sess, input.Seq) {
+			mu.Unlock()
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("duplicate seq %d (idempotent skip)", input.Seq)}},
+			}, nil, nil
+		}
+		now := time.Now()
+		sess.LastUpdate = now
+		sess.Events = append(sess.Events, mcpSessionEvent{
+			Type:      "classification",
+			Timestamp: now,
+			Data:      input.Files,
+		})
+		mu.Unlock()
+
+		// Write result file atomically if result-dir is set.
+		if resultDir != "" {
+			if err := mcpWriteResultFile(resultDir, "classification.json", input.Files); err != nil {
+				result := &mcp.CallToolResult{}
+				result.SetError(fmt.Errorf("failed to write result file: %w", err))
+				return result, nil, nil
+			}
+		}
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("classification reported: %d files", len(input.Files))}},
+		}, nil, nil
+	})
+
+	// --- reportSplitPlan ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "reportSplitPlan",
+		Description: "Report a suggested PR split plan with ordered stages. Each stage has a name, file list, commit message, and order. Call this tool to send the split plan back to the orchestrating osm process.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpReportSplitPlanInput) (*mcp.CallToolResult, any, error) {
+		if len(input.Stages) == 0 {
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("stages array is required and must not be empty"))
+			return result, nil, nil
+		}
+		// Validate stages: each must have name and files.
+		allFiles := make(map[string]string)
+		for i, stage := range input.Stages {
+			if stage.Name == "" {
+				result := &mcp.CallToolResult{}
+				result.SetError(fmt.Errorf("stage at index %d has no name", i))
+				return result, nil, nil
+			}
+			if len(stage.Files) == 0 {
+				result := &mcp.CallToolResult{}
+				result.SetError(fmt.Errorf("stage %q has no files", stage.Name))
+				return result, nil, nil
+			}
+			for _, f := range stage.Files {
+				if prev, dup := allFiles[f]; dup {
+					result := &mcp.CallToolResult{}
+					result.SetError(fmt.Errorf("duplicate file %q in stages %q and %q", f, prev, stage.Name))
+					return result, nil, nil
+				}
+				allFiles[f] = stage.Name
+			}
+		}
+
+		mu.Lock()
+		sess, ok := sessions[input.SessionID]
+		if !ok {
+			mu.Unlock()
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			return result, nil, nil
+		}
+		if !mcpCheckSeq(sess, input.Seq) {
+			mu.Unlock()
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("duplicate seq %d (idempotent skip)", input.Seq)}},
+			}, nil, nil
+		}
+		now := time.Now()
+		sess.LastUpdate = now
+		sess.Events = append(sess.Events, mcpSessionEvent{
+			Type:      "split-plan",
+			Timestamp: now,
+			Data:      input.Stages,
+		})
+		mu.Unlock()
+
+		// Write result file atomically if result-dir is set.
+		if resultDir != "" {
+			if err := mcpWriteResultFile(resultDir, "split-plan.json", input.Stages); err != nil {
+				result := &mcp.CallToolResult{}
+				result.SetError(fmt.Errorf("failed to write result file: %w", err))
+				return result, nil, nil
+			}
+		}
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("split plan reported: %d stages", len(input.Stages))}},
+		}, nil, nil
+	})
+
 	return server
+}
+
+// mcpWriteResultFile atomically writes v as indented JSON to dir/filename.
+// It writes to a temp file first, then renames for crash safety.
+// If dir is empty, it is a no-op (returns nil).
+func mcpWriteResultFile(dir, filename string, v any) error {
+	if dir == "" {
+		return nil
+	}
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("mkdir: %w", err)
+	}
+	tmp := filepath.Join(dir, "."+filename+".tmp")
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return fmt.Errorf("write tmp: %w", err)
+	}
+	return os.Rename(tmp, filepath.Join(dir, filename))
 }
 
 // mcpBacktickFence returns a backtick fence string that is safe

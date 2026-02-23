@@ -405,3 +405,80 @@ func TestMCPInstanceConfig_OsmBinaryOverride(t *testing.T) {
 		t.Errorf("command = %q, want /custom/path/to/osm-dev", cfg.MCPServers["osm"].Command)
 	}
 }
+
+func TestMCPInstanceConfig_WriteConfigFile_WithResultDir(t *testing.T) {
+	t.Parallel()
+
+	c, err := NewMCPInstanceConfig("rd-test")
+	if err != nil {
+		t.Fatalf("NewMCPInstanceConfig: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	c.OsmBinary = "osm"
+	c.ResultDir = "/tmp/results"
+
+	if err := c.WriteConfigFile(); err != nil {
+		t.Fatalf("WriteConfigFile: %v", err)
+	}
+
+	data, err := os.ReadFile(c.ConfigPath())
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	var cfg mcpConfigFile
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	osm := cfg.MCPServers["osm"]
+	wantArgs := []string{"mcp-instance", "--session", "rd-test", "--result-dir", "/tmp/results"}
+	if len(osm.Args) != len(wantArgs) {
+		t.Fatalf("Args = %v, want %v", osm.Args, wantArgs)
+	}
+	for i, arg := range wantArgs {
+		if osm.Args[i] != arg {
+			t.Errorf("Args[%d] = %q, want %q", i, osm.Args[i], arg)
+		}
+	}
+}
+
+func TestMCPInstanceConfig_WriteConfigFile_EmptyResultDir(t *testing.T) {
+	t.Parallel()
+
+	c, err := NewMCPInstanceConfig("no-rd")
+	if err != nil {
+		t.Fatalf("NewMCPInstanceConfig: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	c.OsmBinary = "osm"
+	// ResultDir deliberately empty.
+
+	if err := c.WriteConfigFile(); err != nil {
+		t.Fatalf("WriteConfigFile: %v", err)
+	}
+
+	data, err := os.ReadFile(c.ConfigPath())
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	var cfg mcpConfigFile
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	osm := cfg.MCPServers["osm"]
+	// Should NOT have --result-dir flag.
+	for _, arg := range osm.Args {
+		if arg == "--result-dir" {
+			t.Error("Args should not contain --result-dir when ResultDir is empty")
+		}
+	}
+	wantArgs := []string{"mcp-instance", "--session", "no-rd"}
+	if len(osm.Args) != len(wantArgs) {
+		t.Fatalf("Args = %v, want %v", osm.Args, wantArgs)
+	}
+}

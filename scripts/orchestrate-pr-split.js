@@ -26,9 +26,19 @@
 //   // 5. Verify equivalence (tree hashes match)
 //   var equiv = prSplit.verifyEquivalence(plan);
 //
-// BT Integration:
+// BT Integration (heuristic):
 //   var bb = new bt.Blackboard();
 //   var tree = prSplit.createWorkflowTree(bb, { baseBranch: 'main' });
+//   bt.tick(tree);
+//
+// BT Integration (AI-powered via ClaudeMux):
+//   var bb = new bt.Blackboard();
+//   bb.set('claudemuxRegistry', registry);
+//   var tree = prSplit.createClaudeMuxWorkflowTree(bb, {
+//       baseBranch: 'main',
+//       classifyOpts: { registry: registry, providerName: 'ollama' },
+//       planOpts:     { registry: registry, providerName: 'ollama' }
+//   });
 //   bt.tick(tree);
 //
 // Each split branch builds on the previous, creating a linear series:
@@ -437,6 +447,258 @@ exports.selectStrategy = function(files, options) {
         needsConfirm: result.needsConfirm,
         scored: result.rankings
     };
+};
+
+// ---------------------------------------------------------------------------
+//  ClaudeMux AI Integration
+// ---------------------------------------------------------------------------
+// These functions use Claude Code (via claudemux PTY harness + MCP tools)
+// to perform AI-powered classification and planning. They require:
+//   - claudemux module available
+//   - A provider registered in the registry (e.g., 'claude-code' or 'ollama')
+//   - The MCP result channel (--result-dir) for structured result passing
+
+// classifyChangesWithClaudeMux uses an AI provider to classify changed files
+// into logical categories (e.g., 'types', 'impl', 'docs', 'tests').
+//
+// Parameters:
+//   files:    string[]  — list of changed file paths from analyzeDiff
+//   options:  {
+//     registry:     object  — claudemux provider Registry (required)
+//     providerName: string  — provider name (default: 'claude-code')
+//     sessionId:    string  — MCP session ID (default: 'classify-' + Date.now())
+//     spawnOpts:    object  — provider spawn options {model, dir, rows, cols}
+//     maxWaitMs:    number  — max wait time in ms (default: 120000)
+//   }
+//
+// Returns: { files: object, error: string|null }
+//   files: map of filepath -> category name (e.g., { 'foo.go': 'impl' })
+exports.classifyChangesWithClaudeMux = function(files, options) {
+    if (!claudemux) {
+        return { files: {}, error: 'claudemux module not available' };
+    }
+    if (!options || !options.registry) {
+        return { files: {}, error: 'registry is required in options' };
+    }
+    if (!files || files.length === 0) {
+        return { files: {}, error: 'no files to classify' };
+    }
+
+    var sessionId = options.sessionId || ('classify-' + Date.now());
+    var providerName = options.providerName || 'claude-code';
+    var maxWaitMs = options.maxWaitMs || 120000;
+
+    // Create MCP instance with result directory.
+    var mcpInst = claudemux.newMCPInstance(sessionId);
+    var resultDir;
+    try {
+        resultDir = mcpInst.configDir();
+        mcpInst.setResultDir(resultDir);
+        mcpInst.writeConfigFile();
+    } catch (e) {
+        mcpInst.close();
+        return { files: {}, error: 'MCP setup failed: ' + e };
+    }
+
+    // Build the classification prompt.
+    var fileList = files.join('\n');
+    var prompt = 'You are a PR splitting assistant. Classify each of the following changed files into a logical category.\n' +
+        'Use the MCP tool "reportClassification" to report your results.\n' +
+        'Categories should be concise labels like: types, impl, tests, docs, config, deps, refactor.\n' +
+        'Each file must be assigned exactly one category.\n\n' +
+        'Changed files:\n' + fileList + '\n\n' +
+        'Call the reportClassification tool with sessionId "' + sessionId + '" and a files map.';
+
+    // Spawn Claude Code with MCP config.
+    var spawnOpts = options.spawnOpts || {};
+    spawnOpts.args = (spawnOpts.args || []).concat(mcpInst.spawnArgs());
+
+    var handle;
+    try {
+        handle = options.registry.spawn(providerName, spawnOpts);
+    } catch (e) {
+        mcpInst.close();
+        return { files: {}, error: 'spawn failed: ' + e };
+    }
+
+    // Send prompt and wait for completion.
+    var parser = claudemux.newParser();
+    try {
+        handle.send(prompt + '\n');
+
+        var startTime = Date.now();
+        var emptyCount = 0;
+        var maxEmpty = 200;
+
+        while (handle.isAlive() && emptyCount < maxEmpty) {
+            if (Date.now() - startTime > maxWaitMs) {
+                break;
+            }
+            var data = handle.receive();
+            if (data === '') {
+                emptyCount++;
+                continue;
+            }
+            emptyCount = 0;
+            var lines = data.split('\n');
+            for (var i = 0; i < lines.length; i++) {
+                if (lines[i] === '') continue;
+                var event = parser.parse(lines[i]);
+                if (event.type === claudemux.EVENT_COMPLETION) {
+                    // Claude finished — result should be in result dir.
+                    try {
+                        var result = claudemux.readClassificationResult(resultDir);
+                        mcpInst.close();
+                        return { files: result, error: null };
+                    } catch (readErr) {
+                        mcpInst.close();
+                        return { files: {}, error: 'result read failed: ' + readErr };
+                    }
+                }
+                if (event.type === claudemux.EVENT_PERMISSION) {
+                    try { handle.send('n\n'); } catch (e2) { /* ignore */ }
+                }
+            }
+        }
+
+        // Timeout or agent exit — try reading result anyway.
+        try {
+            var lateResult = claudemux.readClassificationResult(resultDir);
+            mcpInst.close();
+            return { files: lateResult, error: null };
+        } catch (e3) {
+            mcpInst.close();
+            return { files: {}, error: 'timeout or no result: ' + e3 };
+        }
+    } catch (e4) {
+        mcpInst.close();
+        return { files: {}, error: 'classification failed: ' + e4 };
+    }
+};
+
+// suggestSplitPlanWithClaudeMux uses an AI provider to suggest an ordered
+// split plan given a set of files and (optionally) their classifications.
+//
+// Parameters:
+//   files:          string[]  — list of changed file paths
+//   classification: object    — optional map of filepath -> category from classifyChangesWithClaudeMux
+//   options:  {
+//     registry:     object  — claudemux provider Registry (required)
+//     providerName: string  — provider name (default: 'claude-code')
+//     sessionId:    string  — MCP session ID (default: 'plan-' + Date.now())
+//     spawnOpts:    object  — provider spawn options
+//     maxWaitMs:    number  — max wait time in ms (default: 120000)
+//   }
+//
+// Returns: { stages: array, error: string|null }
+//   stages: [{ name, files, message, order }] from reportSplitPlan
+exports.suggestSplitPlanWithClaudeMux = function(files, classification, options) {
+    if (!claudemux) {
+        return { stages: [], error: 'claudemux module not available' };
+    }
+    if (!options || !options.registry) {
+        return { stages: [], error: 'registry is required in options' };
+    }
+    if (!files || files.length === 0) {
+        return { stages: [], error: 'no files to plan' };
+    }
+
+    var sessionId = options.sessionId || ('plan-' + Date.now());
+    var providerName = options.providerName || 'claude-code';
+    var maxWaitMs = options.maxWaitMs || 120000;
+
+    var mcpInst = claudemux.newMCPInstance(sessionId);
+    var resultDir;
+    try {
+        resultDir = mcpInst.configDir();
+        mcpInst.setResultDir(resultDir);
+        mcpInst.writeConfigFile();
+    } catch (e) {
+        mcpInst.close();
+        return { stages: [], error: 'MCP setup failed: ' + e };
+    }
+
+    // Build planning prompt.
+    var fileList = files.join('\n');
+    var classificationContext = '';
+    if (classification && Object.keys(classification).length > 0) {
+        classificationContext = '\nFile classifications:\n';
+        var keys = Object.keys(classification);
+        for (var ci = 0; ci < keys.length; ci++) {
+            classificationContext += '  ' + keys[ci] + ' -> ' + classification[keys[ci]] + '\n';
+        }
+    }
+
+    var prompt = 'You are a PR splitting assistant. Create an ordered plan to split the following changes into logical, independently-reviewable PRs.\n' +
+        'Use the MCP tool "reportSplitPlan" to report your plan.\n' +
+        'Each stage should have: name, files array, commit message, and order (0-based).\n' +
+        'Files should NOT overlap between stages. Every file must be assigned to exactly one stage.\n' +
+        'Order stages so that dependencies are respected (foundational changes first).\n\n' +
+        'Changed files:\n' + fileList + '\n' +
+        classificationContext + '\n' +
+        'Call the reportSplitPlan tool with sessionId "' + sessionId + '" and your stages array.';
+
+    var spawnOpts = options.spawnOpts || {};
+    spawnOpts.args = (spawnOpts.args || []).concat(mcpInst.spawnArgs());
+
+    var handle;
+    try {
+        handle = options.registry.spawn(providerName, spawnOpts);
+    } catch (e) {
+        mcpInst.close();
+        return { stages: [], error: 'spawn failed: ' + e };
+    }
+
+    var parser = claudemux.newParser();
+    try {
+        handle.send(prompt + '\n');
+
+        var startTime = Date.now();
+        var emptyCount = 0;
+        var maxEmpty = 200;
+
+        while (handle.isAlive() && emptyCount < maxEmpty) {
+            if (Date.now() - startTime > maxWaitMs) {
+                break;
+            }
+            var data = handle.receive();
+            if (data === '') {
+                emptyCount++;
+                continue;
+            }
+            emptyCount = 0;
+            var lines = data.split('\n');
+            for (var i = 0; i < lines.length; i++) {
+                if (lines[i] === '') continue;
+                var event = parser.parse(lines[i]);
+                if (event.type === claudemux.EVENT_COMPLETION) {
+                    try {
+                        var result = claudemux.readSplitPlanResult(resultDir);
+                        mcpInst.close();
+                        return { stages: result, error: null };
+                    } catch (readErr) {
+                        mcpInst.close();
+                        return { stages: [], error: 'result read failed: ' + readErr };
+                    }
+                }
+                if (event.type === claudemux.EVENT_PERMISSION) {
+                    try { handle.send('n\n'); } catch (e2) { /* ignore */ }
+                }
+            }
+        }
+
+        try {
+            var lateResult = claudemux.readSplitPlanResult(resultDir);
+            mcpInst.close();
+            return { stages: lateResult, error: null };
+        } catch (e3) {
+            mcpInst.close();
+            return { stages: [], error: 'timeout or no result: ' + e3 };
+        }
+    } catch (e4) {
+        mcpInst.close();
+        return { stages: [], error: 'planning failed: ' + e4 };
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -1060,6 +1322,145 @@ exports.createSelectStrategyNode = function(bb, options) {
 };
 
 // ---------------------------------------------------------------------------
+//  BT Integration — ClaudeMux AI Workflow Nodes
+// ---------------------------------------------------------------------------
+// These nodes use AI-powered classification and planning via claudemux.
+// They require: claudemux module, a provider registry on the blackboard.
+//
+// Additional blackboard keys:
+//   'claudemuxRegistry' — claudemux provider Registry (set before workflow)
+//   'providerName'      — provider name (default: 'claude-code')
+//   'classification'    — result from classifyChangesWithClaudeMux
+//   'aiSplitPlan'       — result from suggestSplitPlanWithClaudeMux
+
+// createClaudeMuxClassifyNode creates a BT leaf that classifies files using AI.
+//
+// Reads:  analysisResult, claudemuxRegistry, providerName
+// Writes: classification, lastError
+exports.createClaudeMuxClassifyNode = function(bb, options) {
+    return bt.createBlockingLeafNode(function() {
+        var analysis = bb.get('analysisResult');
+        if (!analysis || !analysis.files || analysis.files.length === 0) {
+            bb.set('lastError', 'no analysis result for classification');
+            return bt.failure;
+        }
+
+        var registry = bb.get('claudemuxRegistry');
+        if (!registry) {
+            bb.set('lastError', 'no claudemux registry on blackboard');
+            return bt.failure;
+        }
+
+        var opts = options || {};
+        opts.registry = registry;
+        opts.providerName = opts.providerName || bb.get('providerName') || 'claude-code';
+
+        var result = exports.classifyChangesWithClaudeMux(analysis.files, opts);
+        if (result.error) {
+            bb.set('lastError', 'classification: ' + result.error);
+            return bt.failure;
+        }
+        if (!result.files || Object.keys(result.files).length === 0) {
+            bb.set('lastError', 'classification returned empty result');
+            return bt.failure;
+        }
+
+        bb.set('classification', result.files);
+        return bt.success;
+    });
+};
+
+// createClaudeMuxPlanNode creates a BT leaf that suggests a split plan using AI.
+//
+// Reads:  analysisResult, classification, claudemuxRegistry, providerName
+// Writes: fileGroups (converted from stages), splitPlan, lastError
+exports.createClaudeMuxPlanNode = function(bb, options) {
+    return bt.createBlockingLeafNode(function() {
+        var analysis = bb.get('analysisResult');
+        if (!analysis || !analysis.files || analysis.files.length === 0) {
+            bb.set('lastError', 'no analysis result for planning');
+            return bt.failure;
+        }
+
+        var registry = bb.get('claudemuxRegistry');
+        if (!registry) {
+            bb.set('lastError', 'no claudemux registry on blackboard');
+            return bt.failure;
+        }
+
+        var classification = bb.get('classification') || {};
+
+        var opts = options || {};
+        opts.registry = registry;
+        opts.providerName = opts.providerName || bb.get('providerName') || 'claude-code';
+
+        var result = exports.suggestSplitPlanWithClaudeMux(analysis.files, classification, opts);
+        if (result.error) {
+            bb.set('lastError', 'planning: ' + result.error);
+            return bt.failure;
+        }
+        if (!result.stages || result.stages.length === 0) {
+            bb.set('lastError', 'planning returned no stages');
+            return bt.failure;
+        }
+
+        bb.set('aiSplitPlan', result.stages);
+
+        // Convert stages to groups format for compatibility with createPlanNode.
+        var groups = {};
+        for (var i = 0; i < result.stages.length; i++) {
+            var stage = result.stages[i];
+            groups[stage.name] = stage.files;
+        }
+        bb.set('fileGroups', groups);
+
+        return bt.success;
+    });
+};
+
+// createClaudeMuxWorkflowTree creates a complete AI-powered BT tree.
+//
+// The tree executes:
+//   analyze → claudemux-classify → claudemux-plan → plan → split → equivalence
+//
+// config: {
+//   baseBranch:     string  (default: 'main')
+//   dir:            string  (default: '.')
+//   branchPrefix:   string  (default: 'split/')
+//   verifyCommand:  string  (default: 'make test')
+//   classifyOpts:   object  (options for classifyChangesWithClaudeMux)
+//   planOpts:       object  (options for suggestSplitPlanWithClaudeMux)
+// }
+//
+// Before running, set on the blackboard:
+//   bb.set('claudemuxRegistry', registry);
+//   bb.set('providerName', 'ollama');  // optional
+exports.createClaudeMuxWorkflowTree = function(bb, config) {
+    config = config || {};
+
+    var analyzeConfig = {
+        baseBranch: config.baseBranch,
+        dir: config.dir
+    };
+
+    var planConfig = {
+        baseBranch: config.baseBranch,
+        dir: config.dir,
+        branchPrefix: config.branchPrefix,
+        verifyCommand: config.verifyCommand
+    };
+
+    return bt.node(bt.sequence,
+        exports.createAnalyzeNode(bb, analyzeConfig),
+        exports.createClaudeMuxClassifyNode(bb, config.classifyOpts),
+        exports.createClaudeMuxPlanNode(bb, config.planOpts),
+        exports.createPlanNode(bb, planConfig),
+        exports.createSplitNode(bb),
+        exports.createEquivalenceNode(bb)
+    );
+};
+
+// ---------------------------------------------------------------------------
 //  Module version
 // ---------------------------------------------------------------------------
-exports.VERSION = '3.0.0';
+exports.VERSION = '4.0.0';

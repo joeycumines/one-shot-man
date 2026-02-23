@@ -27,6 +27,11 @@ type MCPInstanceConfig struct {
 	// Can be overridden for testing or custom deployments.
 	OsmBinary string
 
+	// ResultDir is an optional directory where the MCP instance will write
+	// structured result files (e.g., classification.json, split-plan.json).
+	// When non-empty, the --result-dir flag is passed to the spawned process.
+	ResultDir string
+
 	// configDir is the temp directory holding the config.
 	configDir string
 
@@ -102,11 +107,16 @@ func (c *MCPInstanceConfig) WriteConfigFile() error {
 		return ErrInstanceClosed
 	}
 
+	args := []string{"mcp-instance", "--session", c.SessionID}
+	if c.ResultDir != "" {
+		args = append(args, "--result-dir", c.ResultDir)
+	}
+
 	cfg := mcpConfigFile{
 		MCPServers: map[string]mcpServerEntry{
 			"osm": {
 				Command: c.OsmBinary,
-				Args:    []string{"mcp-instance", "--session", c.SessionID},
+				Args:    args,
 			},
 		},
 	}

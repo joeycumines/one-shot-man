@@ -4,7 +4,8 @@
 //   osm script scripts/example-08-claude-mux-api.js
 //
 // This non-interactive script exercises all the public building blocks of the
-// claude-mux module:  parser, guard, MCP guard, supervisor, pool, and panel.
+// claude-mux module:  parser, guard, MCP guard, supervisor, pool, panel, and
+// MCP result channel.
 // It does NOT spawn real Claude Code instances — it exercises the APIs in
 // isolation so you can see how they compose.
 
@@ -15,7 +16,7 @@ var cm = require('osm:claudemux');
 // ---------------------------------------------------------------------------
 //  1. Parser — event classification and pattern listing
 // ---------------------------------------------------------------------------
-log.info('[1/6] Parser');
+log.info('[1/7] Parser');
 
 var parser = cm.newParser();
 
@@ -53,7 +54,7 @@ for (var s = 0; s < samples.length; s++) {
 // ---------------------------------------------------------------------------
 //  2. Guard — PTY output monitor with rate-limit backoff / crash detection
 // ---------------------------------------------------------------------------
-log.info('[2/6] Guard');
+log.info('[2/7] Guard');
 
 var guardCfg = cm.defaultGuardConfig();
 log.printf('  Default config: rateLimit.enabled=%v, crash.maxRestarts=%d',
@@ -81,7 +82,7 @@ log.printf('  State: rateLimitCount=%d, crashCount=%d', gs.rateLimitCount, gs.cr
 // ---------------------------------------------------------------------------
 //  3. MCP Guard — tool call frequency / repetition / allowlist monitor
 // ---------------------------------------------------------------------------
-log.info('[3/6] MCP Guard');
+log.info('[3/7] MCP Guard');
 
 var mcpGuard = cm.newMCPGuard({
     noCallTimeout:   { enabled: true, timeoutMs: 600000 },
@@ -104,7 +105,7 @@ log.printf('  State: totalCalls=%d, recentCount=%d', mcpState.totalCalls, mcpSta
 // ---------------------------------------------------------------------------
 //  4. Supervisor — error recovery state machine
 // ---------------------------------------------------------------------------
-log.info('[4/6] Supervisor');
+log.info('[4/7] Supervisor');
 
 var sup = cm.newSupervisor({ maxRetries: 3, maxForceKills: 1, retryDelayMs: 5000 });
 sup.start();
@@ -132,7 +133,7 @@ log.printf('  Final state: %s, cancelled=%v', sup.snapshot().stateName, sup.canc
 // ---------------------------------------------------------------------------
 //  5. Pool — concurrent worker management
 // ---------------------------------------------------------------------------
-log.info('[5/6] Pool');
+log.info('[5/7] Pool');
 
 var pool = cm.newPool({ maxSize: 3 });
 pool.start();
@@ -163,7 +164,7 @@ log.printf('  Closed pool, returned %d workers', closed.length);
 // ---------------------------------------------------------------------------
 //  6. Panel — multi-instance TUI coordination
 // ---------------------------------------------------------------------------
-log.info('[6/6] Panel');
+log.info('[6/7] Panel');
 
 var panel = cm.newPanel({ maxPanes: 4, scrollbackSize: 500 });
 panel.start();
@@ -202,6 +203,47 @@ log.printf('  Snapshot: state=%s, panes=%d, statusBar=%q',
 
 panel.close();
 log.printf('  Panel closed.');
+
+// ---------------------------------------------------------------------------
+//  7. MCP Result Channel — structured result passing via file I/O
+// ---------------------------------------------------------------------------
+log.info('[7/7] MCP Result Channel');
+
+// The MCP result channel allows Claude Code to pass structured data back to
+// the orchestrator. Tools like reportClassification and reportSplitPlan write
+// JSON files to a result directory; the orchestrator reads them after the
+// agent completes.
+
+// Create a temporary result directory.
+var resultDir = cm.configDir() + '/example-results';
+
+// MCPInstanceConfig manages config file + spawn args for Claude Code.
+var mcpInst = cm.newMCPInstance({
+    configDir: resultDir,
+    sessionId: 'example-08',
+});
+mcpInst.setResultDir(resultDir);
+
+log.printf('  MCPInstance configDir: %s', mcpInst.configDir());
+log.printf('  MCPInstance spawnArgs: %v', mcpInst.spawnArgs());
+
+// Demonstrate result readers (they return error when file not found — expected).
+var classResult = cm.readClassificationResult(resultDir);
+log.printf('  readClassificationResult → error=%q (expected: file not found)',
+    classResult.error || 'none');
+
+var planResult = cm.readSplitPlanResult(resultDir);
+log.printf('  readSplitPlanResult → error=%q (expected: file not found)',
+    planResult.error || 'none');
+
+// Show the validate method.
+var validResult = mcpInst.validate();
+log.printf('  MCPInstance validate → valid=%v, errors=%d',
+    validResult.valid, (validResult.errors || []).length);
+
+// Clean up.
+mcpInst.close();
+log.printf('  MCPInstance closed.');
 
 // ---------------------------------------------------------------------------
 //  Summary

@@ -1,4 +1,4 @@
-# one-shot-man docs
+# osm docs
 
 This is the canonical documentation for `osm`.
 

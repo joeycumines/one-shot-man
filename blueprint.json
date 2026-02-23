@@ -23,9 +23,9 @@
     "ollama CLI is the vehicle to run Claude Code. osm:ollama (the HTTP module) is what gets deleted. OllamaProvider (PTY-based) stays."
   ],
   "statusSection": {
-    "currentState": "EXECUTING — T001-T042 DONE (deletion + audit + all fixes). Starting T043+ (PR splitter, coverage, docs).",
-    "branch": "wip (348+ commits ahead of main)",
-    "buildStatus": "ALL GREEN — macOS PASS, Linux Docker PASS, Windows PASS.",
+    "currentState": "EXECUTING — T001-T150 DONE. T151 in progress (Rule of Two for doc accuracy + error fix).",
+    "branch": "wip (386+ commits ahead of main)",
+    "buildStatus": "ALL GREEN — macOS PASS (gmake all). Linux/Windows pending for this batch.",
     "sessionTimer": ".session-timer (2026-02-21T21:02:36+1000)"
   },
   "sequentialTasks": [
@@ -773,6 +773,21 @@
       "task": "T149: Cross-platform verification + commit batch 12",
       "description": "Committed as e3e5390. 3-platform verified: macOS PASS, Linux Docker PASS, Windows PASS. 8 tests, no duplicates, full isolation.",
       "status": "Done"
+    },
+    {
+      "task": "T150: Documentation accuracy audit — fix 6 stale references",
+      "description": "Fixed: (1) README.md MCP tool count 14→15 + added heartbeat to tool list, (2) CHANGELOG.md MCP tool count 14→15 + added heartbeat, (3) docs/architecture.md command count 14→18 + listed all 18 commands, (4) docs/todo.md MCP tool count 8→15 (2 occurrences), (5) docs/README.md title 'one-shot-man docs'→'osm docs', (6) builtin.go config set error message 'invalid arguments'→'unexpected arguments' for consistency.",
+      "status": "Done"
+    },
+    {
+      "task": "T151: Rule of Two verification — documentation + error message fixes",
+      "description": "Two contiguous, issue-free review cycles on the documentation accuracy + error message consistency diff.",
+      "status": "In Progress"
+    },
+    {
+      "task": "T152: Cross-platform verification + commit documentation fixes",
+      "description": "3-platform verification (macOS, Linux Docker, Windows) and commit.",  
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {

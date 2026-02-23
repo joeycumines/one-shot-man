@@ -216,10 +216,10 @@ func TestConfigCommandGetAndSet(t *testing.T) {
 	stderr.Reset()
 	err = cmd.Execute([]string{"too", "many", "args"}, &stdout, &stderr)
 	if err == nil {
-		t.Fatalf("expected error for invalid arguments")
+		t.Fatalf("expected error for unexpected arguments")
 	}
-	if !strings.Contains(stderr.String(), "Invalid number of arguments") {
-		t.Fatalf("expected invalid argument message, got %q", stderr.String())
+	if !strings.Contains(stderr.String(), "unexpected arguments") {
+		t.Fatalf("expected unexpected arguments message, got %q", stderr.String())
 	}
 }
 

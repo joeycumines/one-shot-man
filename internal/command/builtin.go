@@ -301,8 +301,8 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		return nil
 	}
 
-	_, _ = fmt.Fprintln(stderr, "Invalid number of arguments")
-	return fmt.Errorf("invalid arguments")
+	_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
+	return fmt.Errorf("unexpected arguments")
 }
 
 // executeValidate validates the current config against the schema.

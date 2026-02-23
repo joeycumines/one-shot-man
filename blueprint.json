@@ -7,9 +7,10 @@
   "globalAlerts": [
     "UTMOST PRIORITY: INTEGRATION TESTING the PR split implementation using claudemux (and all the necessary work to ensure that implementation is actually implemented and works end to end) is the UTMOST priority.",
     "NINE-HOUR MANDATE: Session timer at .session-timer \u2014 verify via `make session-check`",
-    "CRITICAL: DELETE osm:ollama (HTTP client/tool calling/JS module) \u2014 DELETE OllamaHTTPProvider \u2014 KEEP OllamaProvider (PTY-based, runs ollama launch claude --config) \u2014 KEEP model_nav.go",
+    "CRITICAL: DELETE osm:ollama (HTTP client/tool calling/JS module) \u2014 DELETE OllamaHTTPProvider \u2014 KEEP OllamaProvider (PTY-based, which MUST run `ollama launch claude --config` or `ollama launch claude --model <model>` to launch the Claude Code CLI configured for ollama) \u2014 KEEP model_nav.go",
     "CRITICAL: PR splitter is SLOP. Rewrite as PROPER agentic workflow using reborn osm:claudemux",
-    "CRITICAL: Integration tests MUST use actual Claude Code via ollama CLI to VERIFY osm:claudemux works end-to-end",
+    "CRITICAL: Integration tests MUST use actual Claude Code via the `ollama` CLI wrapper (specifically `ollama launch claude --model <model>` or interacting with the model picker TUI via `ollama launch claude --config`) to VERIFY osm:claudemux works end-to-end.",
+    "CRITICAL: Implement end-to-end PR split orchestration via claudemux with integration test and confirm directly via RELIABLY SUCCESSFUL END TO END TESTING VIA INTEGRATION TEST that the feature DOES INDEED WORK AS INTENDED. If no integration tests are run, or if some fail, or if any fail to meet the criteria of TRUE end to end integration-style tests, then the entire unit of work is deemed a failure. These are not separable pieces of work.",
     "Rule of Two: NO commits until TWO contiguous, issue-free review cycles (diff vs HEAD)",
     "ALL checks MUST pass on ALL platforms (macOS, Linux via Docker, Windows via moo)",
     "Use make make-all-with-log for macOS, make-all-in-container for Linux, make-all-run-windows for Windows",
@@ -21,7 +22,7 @@
     "Aggressive WIP.md checkpointing as token budget tightens",
     "Die coding \u2014 work until the very last token",
     "Expand scope continuously \u2014 there is ALWAYS more work",
-    "ollama CLI is the vehicle to run Claude Code. osm:ollama (the HTTP module) is what gets deleted. OllamaProvider (PTY-based) stays."
+    "The `ollama` CLI wrapper (`ollama launch claude`) is the vehicle to launch and run Claude Code. `osm:ollama` (the internal HTTP module) is what gets deleted. OllamaProvider (PTY-based wrapper around `ollama launch claude`) stays."
   ],
   "statusSection": {
     "currentState": "EXECUTING \u2014 T001-T150 DONE. T151 in progress (Rule of Two for doc accuracy + error fix).",
@@ -57,7 +58,7 @@
     },
     {
       "task": "T049: Implement end-to-end PR split orchestration via claudemux",
-      "description": "Wire the full workflow: spawn Claude Code \u2192 send classification prompt \u2192 receive results via MCP \u2192 generate split plan \u2192 execute git operations \u2192 verify equivalence. All via claudemux, no Ollama.",
+      "description": "Wire the full workflow: spawn Claude Code \u2192 send classification prompt \u2192 receive results via MCP \u2192 generate split plan \u2192 execute git operations \u2192 verify equivalence. All via claudemux (no osm:ollama HTTP module).",
       "status": "Not Started"
     },
     {
@@ -102,7 +103,7 @@
     },
     {
       "task": "T058: Write integration test \u2014 Claude Code spawning via PTY",
-      "description": "TestMain-gated integration test that spawns real Claude Code via PTY. Verify it starts, responds, can be shut down cleanly. Requires -integration flag.",
+      "description": "TestMain-gated integration test that spawns real Claude Code via PTY using `ollama launch claude --model <model>`. Verify it starts, responds, can be shut down cleanly. Requires -integration flag.",
       "status": "Not Started"
     },
     {
@@ -112,7 +113,7 @@
     },
     {
       "task": "T060: Write integration test \u2014 Full PR split workflow",
-      "description": "TestMain-gated integration test. Create test repo, create large changeset, run full PR split workflow via claudemux. Verify branches created, equivalence verified.",
+      "description": "TestMain-gated integration test. Create test repo, create large changeset, run full PR split workflow via claudemux. Verify branches created, equivalence verified. MUST confirm directly via RELIABLY SUCCESSFUL END TO END TESTING VIA INTEGRATION TEST that the feature DOES INDEED WORK AS INTENDED.",
       "status": "Not Started"
     },
     {

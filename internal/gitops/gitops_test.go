@@ -279,7 +279,7 @@ func TestCommit_NothingStaged(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nothing to commit")
 	}
-	if err != ErrNothingToCommit {
+	if !errors.Is(err, ErrNothingToCommit) {
 		t.Fatalf("expected ErrNothingToCommit, got %v", err)
 	}
 }

@@ -121,7 +121,8 @@ var runtime = {
     branchPrefix:  cfg.branchPrefix  || 'split/',
     verifyCommand: cfg.verifyCommand || 'make test',
     dryRun:        cfg.dryRun        || false,
-    jsonOutput:    cfg.jsonOutput    || false
+    jsonOutput:    cfg.jsonOutput    || false,
+    mode:          cfg.mode          || 'heuristic'   // 'auto' or 'heuristic'
 };
 
 // ---------------------------------------------------------------------------
@@ -1497,10 +1498,55 @@ ClaudeCodeExecutor.prototype.spawn = function(sessionId) {
 
     this.sessionId = sessionId || ('prsplit-' + Date.now());
 
-    log.info('Claude executor: resolved command=%s type=%s session=%s',
+    // Create MCP instance with result directory.
+    try {
+        this.mcpInstance = this.cm.newMCPInstance(this.sessionId);
+        this.mcpInstance.setResultDir(this.mcpInstance.configDir() + '/results');
+        // Create result directory.
+        exec.execv(['mkdir', '-p', this.mcpInstance.resultDir()]);
+        this.mcpInstance.writeConfigFile();
+    } catch (e) {
+        return { error: 'MCP instance creation failed: ' + (e.message || String(e)) };
+    }
+
+    // Spawn via provider registry.
+    try {
+        var registry = this.cm.newRegistry();
+        var provider;
+        var spawnOpts = {
+            model: this.model || undefined,
+            env: this.env || {},
+            args: (this.args || []).concat(['--mcp-config', this.mcpInstance.configPath()])
+        };
+
+        if (this.resolved.type === 'claude-code' || this.resolved.type === 'explicit') {
+            provider = this.cm.claudeCode({
+                command: this.resolved.command,
+                mcp: true
+            });
+        } else if (this.resolved.type === 'ollama') {
+            provider = this.cm.ollama({
+                command: this.resolved.command,
+                model: this.model || '',
+                mcp: true
+            });
+        } else {
+            return { error: 'unknown provider type: ' + this.resolved.type };
+        }
+
+        registry.register(provider);
+        this.handle = registry.spawn(provider.name(), spawnOpts);
+    } catch (e) {
+        // Clean up MCP instance on spawn failure.
+        try { this.mcpInstance.close(); } catch (e2) { /* best effort */ }
+        this.mcpInstance = null;
+        return { error: 'Claude spawn failed: ' + (e.message || String(e)) };
+    }
+
+    log.printf('Claude executor: spawned command=%s type=%s session=%s',
         this.resolved.command, this.resolved.type, this.sessionId);
 
-    return { error: null, sessionId: this.sessionId };
+    return { error: null, sessionId: this.sessionId, resultDir: this.mcpInstance.resultDir() };
 };
 
 // isAvailable returns true if a Claude-compatible binary can be resolved.
@@ -1514,14 +1560,794 @@ ClaudeCodeExecutor.prototype.close = function() {
     if (this.handle && typeof this.handle.close === 'function') {
         try { this.handle.close(); } catch (e) { /* best effort */ }
     }
+    if (this.mcpInstance && typeof this.mcpInstance.close === 'function') {
+        try { this.mcpInstance.close(); } catch (e) { /* best effort */ }
+    }
     this.handle = null;
+    this.mcpInstance = null;
     this.sessionId = null;
     this.resolved = null;
 };
 
 // ---------------------------------------------------------------------------
-//  BT Integration — Leaf Nodes
+//  Prompt Templates (Go text/template syntax)
 // ---------------------------------------------------------------------------
+
+// CLASSIFICATION_PROMPT_TEMPLATE is sent to Claude via PTY stdin.
+// It instructs Claude to use the reportClassification MCP tool.
+var CLASSIFICATION_PROMPT_TEMPLATE =
+    'You are a code reviewer helping split a large pull request into smaller, ' +
+    'reviewable stacked PRs.\n\n' +
+    'The repository is a {{.Language}} project' +
+    '{{if .ModulePath}} with module path `{{.ModulePath}}`{{end}}.\n' +
+    'The base branch is `{{.BaseBranch}}`.\n\n' +
+    '## Changed Files\n\n' +
+    'The following files have been modified (status: A=added, M=modified, D=deleted, R=renamed):\n\n' +
+    '{{range $path, $status := .FileStatuses}}' +
+    '- `{{$path}}` ({{$status}})\n' +
+    '{{end}}\n' +
+    '## Task\n\n' +
+    'Classify each file into a logical group for PR splitting. Group related changes together:\n' +
+    '- Files in the same package/module that are tightly coupled\n' +
+    '- Test files with the code they test\n' +
+    '- Documentation with the features they document\n' +
+    '- Refactoring changes separate from feature additions\n' +
+    '- Infrastructure/config changes separate from application code\n\n' +
+    '{{if gt .MaxGroups 0}}Use at most {{.MaxGroups}} groups.{{end}}\n\n' +
+    '## Output\n\n' +
+    'Use the `reportClassification` MCP tool to report your results. ' +
+    'The `files` parameter should be a JSON object mapping each file path to its category name.\n\n' +
+    'Use the session ID: `{{.SessionID}}`\n\n' +
+    'Also assess which groups are independent (can be merged in any order). ' +
+    'If any groups can merge independently, mention this in your response.\n';
+
+// SPLIT_PLAN_PROMPT_TEMPLATE asks Claude to propose an ordered split plan.
+var SPLIT_PLAN_PROMPT_TEMPLATE =
+    'Based on the file classification below, create an ordered split plan for stacked PRs.\n\n' +
+    '## Classification\n\n' +
+    '{{range $path, $category := .Classification}}' +
+    '- `{{$path}}` → {{$category}}\n' +
+    '{{end}}\n' +
+    '## Constraints\n\n' +
+    '- Branch prefix: `{{.BranchPrefix}}`\n' +
+    '{{if gt .MaxFilesPerSplit 0}}- Maximum {{.MaxFilesPerSplit}} files per split\n{{end}}' +
+    '{{if .PreferIndependent}}- Prefer independently mergeable splits when possible\n{{end}}\n' +
+    '## Task\n\n' +
+    'Create an ordered plan where:\n' +
+    '1. Each stage is a coherent, reviewable unit\n' +
+    '2. Earlier stages should be foundations that later stages build on\n' +
+    '3. Minimize cross-stage dependencies to reduce merge conflicts\n' +
+    '4. Each stage should build and pass tests independently (when stacked)\n\n' +
+    'Use the `reportSplitPlan` MCP tool with session ID `{{.SessionID}}`. ' +
+    'Each stage needs: name, files array, commit message, and order (0-based).\n';
+
+// CONFLICT_RESOLUTION_PROMPT_TEMPLATE asks Claude to fix a broken split.
+var CONFLICT_RESOLUTION_PROMPT_TEMPLATE =
+    'A split branch failed verification. Help fix it.\n\n' +
+    '## Branch: `{{.BranchName}}`\n\n' +
+    '### Files in this branch\n' +
+    '{{range .Files}}- `{{.}}`\n{{end}}\n' +
+    '### Verification Error (exit code {{.ExitCode}})\n\n' +
+    '```\n{{.ErrorOutput}}\n```\n\n' +
+    '{{if .GoModContent}}### go.mod content\n\n```\n{{.GoModContent}}\n```\n\n{{end}}' +
+    '## Task\n\n' +
+    'Analyze the error and propose a fix using the `reportResolution` MCP tool ' +
+    'with session ID `{{.SessionID}}` and branch `{{.BranchName}}`.\n\n' +
+    'You can suggest:\n' +
+    '- File patches (full file content replacements)\n' +
+    '- Commands to run (e.g., `go mod tidy`)\n' +
+    '- If the split is fundamentally broken, set `reSplitSuggested: true` ' +
+    'with a reason explaining which files conflict\n';
+
+// ---------------------------------------------------------------------------
+//  Prompt Rendering
+// ---------------------------------------------------------------------------
+
+// renderPrompt renders a Go text/template string with the given data.
+// Returns { text: string, error: string|null }.
+function renderPrompt(tmplStr, data) {
+    if (!template) {
+        return { text: '', error: 'osm:text/template module not available' };
+    }
+    try {
+        var text = template.execute(tmplStr, data);
+        return { text: text, error: null };
+    } catch (e) {
+        return { text: '', error: 'template render failed: ' + (e.message || String(e)) };
+    }
+}
+
+// renderClassificationPrompt renders the classification prompt template.
+function renderClassificationPrompt(analysis, config) {
+    config = config || {};
+    var modulePath = detectGoModulePath();
+    var language = modulePath ? 'Go' : detectLanguage(analysis.files);
+    return renderPrompt(CLASSIFICATION_PROMPT_TEMPLATE, {
+        Language: language,
+        ModulePath: modulePath,
+        BaseBranch: analysis.baseBranch || runtime.baseBranch,
+        FileStatuses: analysis.fileStatuses || {},
+        MaxGroups: config.maxGroups || 0,
+        SessionID: config.sessionId || ''
+    });
+}
+
+// renderSplitPlanPrompt renders the split-plan prompt template.
+function renderSplitPlanPrompt(classification, config) {
+    config = config || {};
+    return renderPrompt(SPLIT_PLAN_PROMPT_TEMPLATE, {
+        Classification: classification,
+        BranchPrefix: config.branchPrefix || runtime.branchPrefix || 'split/',
+        MaxFilesPerSplit: config.maxFilesPerSplit || runtime.maxFiles || 0,
+        PreferIndependent: config.preferIndependent || false,
+        SessionID: config.sessionId || ''
+    });
+}
+
+// renderConflictPrompt renders the conflict-resolution prompt template.
+function renderConflictPrompt(conflict) {
+    return renderPrompt(CONFLICT_RESOLUTION_PROMPT_TEMPLATE, {
+        BranchName: conflict.branchName || '',
+        Files: conflict.files || [],
+        ExitCode: conflict.exitCode || 1,
+        ErrorOutput: conflict.errorOutput || '',
+        GoModContent: conflict.goModContent || '',
+        SessionID: conflict.sessionId || ''
+    });
+}
+
+// detectLanguage guesses the primary language from file extensions.
+function detectLanguage(files) {
+    var counts = {};
+    var langMap = {
+        '.go': 'Go', '.js': 'JavaScript', '.ts': 'TypeScript',
+        '.py': 'Python', '.rb': 'Ruby', '.rs': 'Rust',
+        '.java': 'Java', '.c': 'C', '.cpp': 'C++',
+        '.cs': 'C#', '.swift': 'Swift', '.kt': 'Kotlin'
+    };
+    for (var i = 0; i < (files || []).length; i++) {
+        var ext = fileExtension(files[i]);
+        var lang = langMap[ext];
+        if (lang) {
+            counts[lang] = (counts[lang] || 0) + 1;
+        }
+    }
+    var best = 'unknown';
+    var bestCount = 0;
+    for (var k in counts) {
+        if (counts[k] > bestCount) {
+            best = k;
+            bestCount = counts[k];
+        }
+    }
+    return best;
+}
+
+// ---------------------------------------------------------------------------
+//  Automated Split Pipeline
+// ---------------------------------------------------------------------------
+
+// Default polling and timeout configuration.
+var AUTOMATED_DEFAULTS = {
+    classifyTimeoutMs: 120000,  // 2 minutes for classification
+    planTimeoutMs: 120000,      // 2 minutes for plan
+    resolveTimeoutMs: 180000,   // 3 minutes for conflict resolution
+    pollIntervalMs: 1000,       // Poll every 1 second
+    maxResolveRetries: 3,       // Retries per branch
+    maxReSplits: 1              // Maximum re-classification cycles
+};
+
+// pollForFile polls a result directory for a specific file.
+// Returns { data: object|null, error: string|null }.
+function pollForFile(resultDir, filename, timeoutMs, intervalMs) {
+    if (!osmod) {
+        return { data: null, error: 'osm:os module not available for file polling' };
+    }
+    var elapsed = 0;
+    while (elapsed < timeoutMs) {
+        var readResult = osmod.readFile(resultDir + '/' + filename);
+        if (!readResult.error) {
+            try {
+                var data = JSON.parse(readResult.content);
+                return { data: data, error: null };
+            } catch (e) {
+                return { data: null, error: 'failed to parse ' + filename + ': ' + e.message };
+            }
+        }
+        // Sleep by busy-waiting (Goja has no native sleep).
+        // The file doesn't exist yet; re-check after a short spin.
+        var start = Date.now();
+        while (Date.now() - start < intervalMs) {
+            // spin
+        }
+        elapsed += intervalMs;
+    }
+    return { data: null, error: 'timeout waiting for ' + filename + ' after ' + timeoutMs + 'ms' };
+}
+
+// automatedSplit orchestrates the full automated PR splitting pipeline.
+// Steps: analyze → spawn → classify → receive → validate → plan →
+//        execute → verify → resolve → report.
+// Returns { error: string|null, report: object }.
+function automatedSplit(config) {
+    config = config || {};
+    var timeouts = {
+        classify: config.classifyTimeoutMs || AUTOMATED_DEFAULTS.classifyTimeoutMs,
+        plan: config.planTimeoutMs || AUTOMATED_DEFAULTS.planTimeoutMs,
+        resolve: config.resolveTimeoutMs || AUTOMATED_DEFAULTS.resolveTimeoutMs
+    };
+    var pollInterval = config.pollIntervalMs || AUTOMATED_DEFAULTS.pollIntervalMs;
+    var maxRetries = config.maxResolveRetries || AUTOMATED_DEFAULTS.maxResolveRetries;
+    var maxReSplits = config.maxReSplits || AUTOMATED_DEFAULTS.maxReSplits;
+
+    var report = {
+        mode: 'automated',
+        steps: [],
+        classification: null,
+        plan: null,
+        splits: [],
+        conflicts: [],
+        resolutions: [],
+        independencePairs: [],
+        claudeInteractions: 0,
+        fallbackUsed: false,
+        error: null
+    };
+
+    function step(name, fn) {
+        var t0 = Date.now();
+        output.print('[auto-split] ' + name + '...');
+        log.printf('auto-split step: %s', name);
+        var result;
+        try {
+            result = fn();
+        } catch (e) {
+            result = { error: e.message || String(e) };
+        }
+        var elapsed = Date.now() - t0;
+        report.steps.push({ name: name, elapsedMs: elapsed, error: result.error || null });
+        if (result.error) {
+            output.print('[auto-split] ' + name + ' FAILED (' + elapsed + 'ms): ' + result.error);
+        } else {
+            output.print('[auto-split] ' + name + ' OK (' + elapsed + 'ms)');
+        }
+        return result;
+    }
+
+    // Step 1: Analyze diff.
+    var analysis = step('Analyze diff', function() {
+        return analyzeDiff(config);
+    });
+    if (analysis.error) {
+        report.error = analysis.error;
+        return { error: analysis.error, report: report };
+    }
+    if (analysis.files.length === 0) {
+        report.error = 'No changes detected';
+        return { error: report.error, report: report };
+    }
+
+    // Step 2: Spawn Claude (or fall back to heuristic).
+    var executor = step('Spawn Claude', function() {
+        if (!claudeExecutor) {
+            claudeExecutor = new ClaudeCodeExecutor(prSplitConfig);
+        }
+        var resolveResult = claudeExecutor.resolve();
+        if (resolveResult.error) {
+            return { error: resolveResult.error };
+        }
+        var spawnResult = claudeExecutor.spawn();
+        if (spawnResult.error) {
+            return { error: spawnResult.error };
+        }
+        return { error: null, sessionId: spawnResult.sessionId, resultDir: spawnResult.resultDir };
+    });
+
+    // If Claude is unavailable, fall back to heuristic mode.
+    if (executor.error) {
+        output.print('[auto-split] Claude unavailable — falling back to heuristic mode.');
+        report.fallbackUsed = true;
+        return heuristicFallback(analysis, config, report);
+    }
+
+    var sessionId = executor.sessionId;
+    var resultDir = executor.resultDir;
+
+    // Step 3: Send classification request.
+    var classifyResult = step('Send classification request', function() {
+        var renderResult = renderClassificationPrompt(analysis, {
+            sessionId: sessionId, maxGroups: config.maxGroups || 0
+        });
+        if (renderResult.error) {
+            return { error: renderResult.error };
+        }
+        // Write prompt to Claude's stdin via handle.
+        try {
+            claudeExecutor.handle.send(renderResult.text);
+            report.claudeInteractions++;
+        } catch (e) {
+            return { error: 'failed to send prompt to Claude: ' + (e.message || String(e)) };
+        }
+        return { error: null };
+    });
+    if (classifyResult.error) {
+        report.error = classifyResult.error;
+        cleanupExecutor();
+        return { error: classifyResult.error, report: report };
+    }
+
+    // Step 4: Receive classification.
+    var classification = step('Receive classification', function() {
+        var pollResult = pollForFile(resultDir, 'classification.json', timeouts.classify, pollInterval);
+        if (pollResult.error) {
+            return { error: pollResult.error };
+        }
+        // Validate: every file must be classified.
+        var classMap = pollResult.data;
+        var missing = [];
+        for (var i = 0; i < analysis.files.length; i++) {
+            if (!classMap[analysis.files[i]]) {
+                missing.push(analysis.files[i]);
+            }
+        }
+        if (missing.length > 0) {
+            log.printf('auto-split: %d files not classified: %s', missing.length, missing.join(', '));
+            // Assign missing files to an 'uncategorized' group.
+            for (var j = 0; j < missing.length; j++) {
+                classMap[missing[j]] = 'uncategorized';
+            }
+        }
+        report.classification = classMap;
+        return { error: null, classification: classMap };
+    });
+    if (classification.error) {
+        report.error = classification.error;
+        cleanupExecutor();
+        return { error: classification.error, report: report };
+    }
+
+    // Step 5: Generate plan (from Claude or locally).
+    var planResult = step('Generate split plan', function() {
+        // Check if Claude also provided a split plan.
+        var planPoll = pollForFile(resultDir, 'split-plan.json', 5000, 500);
+        if (!planPoll.error && planPoll.data) {
+            // Claude provided a plan — validate it.
+            var claudePlan = planPoll.data;
+            if (Array.isArray(claudePlan) && claudePlan.length > 0) {
+                report.claudeInteractions++;
+                var plan = {
+                    baseBranch: analysis.baseBranch,
+                    sourceBranch: analysis.currentBranch,
+                    dir: '.',
+                    verifyCommand: runtime.verifyCommand,
+                    fileStatuses: analysis.fileStatuses || {},
+                    splits: claudePlan.map(function(s, i) {
+                        return {
+                            name: s.name || (runtime.branchPrefix + padIndex(i, claudePlan.length)),
+                            files: s.files || [],
+                            message: s.message || ('Split ' + (i + 1)),
+                            order: typeof s.order === 'number' ? s.order : i
+                        };
+                    })
+                };
+                var validation = validatePlan(plan, analysis.files);
+                if (validation.valid) {
+                    report.plan = plan;
+                    return { error: null, plan: plan };
+                }
+                log.printf('auto-split: Claude plan invalid: %s — generating locally', validation.errors.join('; '));
+            }
+        }
+
+        // Generate plan locally from classification.
+        var groups = classificationToGroups(classification.classification);
+        var plan = createSplitPlan(groups, {
+            baseBranch: analysis.baseBranch,
+            sourceBranch: analysis.currentBranch,
+            branchPrefix: runtime.branchPrefix,
+            maxFiles: runtime.maxFiles,
+            fileStatuses: analysis.fileStatuses
+        });
+        report.plan = plan;
+        return { error: null, plan: plan };
+    });
+    if (planResult.error) {
+        report.error = planResult.error;
+        cleanupExecutor();
+        return { error: planResult.error, report: report };
+    }
+
+    var plan = planResult.plan;
+    planCache = plan;
+
+    // Step 6: Execute split.
+    var execResult = step('Execute split plan', function() {
+        if (runtime.dryRun) {
+            return { error: null, dryRun: true };
+        }
+        var result = executeSplit(plan);
+        if (result.error) {
+            return { error: result.error };
+        }
+        report.splits = result.results || [];
+        return { error: null };
+    });
+    if (execResult.error) {
+        report.error = execResult.error;
+        cleanupExecutor();
+        return { error: execResult.error, report: report };
+    }
+    if (runtime.dryRun) {
+        output.print('[auto-split] Dry run — skipping verification.');
+        cleanupExecutor();
+        return { error: null, report: report };
+    }
+
+    // Step 7: Verify splits.
+    var verifyResult = step('Verify splits', function() {
+        var verifyObj = verifySplits(plan);
+        var failures = [];
+        for (var i = 0; i < verifyObj.results.length; i++) {
+            if (!verifyObj.results[i].passed) {
+                failures.push(verifyObj.results[i]);
+            }
+        }
+        return { error: null, failures: failures, allPassed: verifyObj.allPassed };
+    });
+
+    // Step 8: Resolve conflicts (if any failures).
+    var reSplitCount = 0;
+    if (verifyResult.failures && verifyResult.failures.length > 0) {
+        var resolved = step('Resolve conflicts via Claude', function() {
+            return resolveConflictsWithClaude(
+                verifyResult.failures, sessionId, resultDir,
+                timeouts, pollInterval, maxRetries, report
+            );
+        });
+
+        // Step 9: Re-split fallback if needed.
+        if (resolved.reSplitNeeded && reSplitCount < maxReSplits) {
+            reSplitCount++;
+            output.print('[auto-split] Re-split requested — re-classifying...');
+            // Clean up old branches.
+            cleanupBranches(plan);
+            // Re-classify with constraint.
+            var reClassifyResult = step('Re-classify (retry ' + reSplitCount + ')', function() {
+                var constraintPrompt = 'Re-classify these files with the constraint: ' +
+                    resolved.reSplitReason + '\n\nUse reportClassification MCP tool ' +
+                    'with session ID ' + sessionId + '.\n';
+                try {
+                    claudeExecutor.handle.send(constraintPrompt);
+                    report.claudeInteractions++;
+                } catch (e) {
+                    return { error: 'failed to send re-classify prompt: ' + (e.message || String(e)) };
+                }
+                // Delete old classification file so we wait for the new one.
+                try { exec.execv(['rm', '-f', resultDir + '/classification.json']); } catch (e) { /* ignore */ }
+                var rePoll = pollForFile(resultDir, 'classification.json', timeouts.classify, pollInterval);
+                if (rePoll.error) {
+                    return { error: rePoll.error };
+                }
+                return { error: null, classification: rePoll.data };
+            });
+            if (!reClassifyResult.error) {
+                // Rebuild plan from new classification.
+                var newGroups = classificationToGroups(reClassifyResult.classification);
+                plan = createSplitPlan(newGroups, {
+                    baseBranch: analysis.baseBranch,
+                    sourceBranch: analysis.currentBranch,
+                    branchPrefix: runtime.branchPrefix,
+                    maxFiles: runtime.maxFiles,
+                    fileStatuses: analysis.fileStatuses
+                });
+                planCache = plan;
+                report.plan = plan;
+                var reExec = step('Re-execute split', function() {
+                    var result = executeSplit(plan);
+                    if (result.error) return { error: result.error };
+                    report.splits = result.results || [];
+                    return { error: null };
+                });
+                if (!reExec.error) {
+                    step('Re-verify splits', function() {
+                        return { error: null, results: verifySplits(plan) };
+                    });
+                }
+            }
+        }
+    }
+
+    // Step 10: Equivalence check and report.
+    var equivResult = step('Verify equivalence', function() {
+        var result = verifyEquivalence(plan);
+        return { error: result.equivalent ? null : 'tree hash mismatch', result: result };
+    });
+
+    // Assess independence.
+    report.independencePairs = assessIndependence(plan, classification.classification || {});
+
+    // Summary.
+    output.print('');
+    output.print('=== Auto-Split Complete ===');
+    output.print('Splits: ' + plan.splits.length);
+    output.print('Claude interactions: ' + report.claudeInteractions);
+    output.print('Equivalence: ' + (equivResult.result && equivResult.result.equivalent ? 'PASS' : 'FAIL'));
+    if (report.independencePairs.length > 0) {
+        output.print('Independent pairs: ' + report.independencePairs.map(function(p) {
+            return p[0] + ' + ' + p[1];
+        }).join(', '));
+    }
+    if (report.fallbackUsed) {
+        output.print('Mode: heuristic (Claude unavailable)');
+    }
+
+    cleanupExecutor();
+    return { error: report.error, report: report };
+}
+
+// heuristicFallback runs the standard heuristic split flow.
+function heuristicFallback(analysis, config, report) {
+    var strategy = config.strategy || runtime.strategy;
+    var groups = applyStrategy(analysis.files, strategy, {
+        fileStatuses: analysis.fileStatuses,
+        maxFiles: runtime.maxFiles,
+        baseBranch: analysis.baseBranch
+    });
+    groupsCache = groups;
+
+    var plan = createSplitPlan(groups, {
+        baseBranch: analysis.baseBranch,
+        sourceBranch: analysis.currentBranch,
+        branchPrefix: runtime.branchPrefix,
+        maxFiles: runtime.maxFiles,
+        fileStatuses: analysis.fileStatuses
+    });
+    planCache = plan;
+    report.plan = plan;
+
+    if (!runtime.dryRun) {
+        var execResult = executeSplit(plan);
+        if (execResult.error) {
+            report.error = execResult.error;
+            return { error: execResult.error, report: report };
+        }
+        report.splits = execResult.results || [];
+
+        var verifyObj = verifySplits(plan);
+        var failures = verifyObj.results.filter(function(r) { return !r.passed; });
+        if (failures.length > 0) {
+            resolveConflicts(plan);
+        }
+
+        var equiv = verifyEquivalence(plan);
+        if (!equiv.equivalent) {
+            report.error = 'tree hash mismatch after heuristic split';
+        }
+    }
+
+    output.print('=== Heuristic Split Complete ===');
+    output.print('Splits: ' + plan.splits.length);
+
+    return { error: report.error, report: report };
+}
+
+// classificationToGroups converts a classification map (file→category) to
+// groups map (category→[files]).
+function classificationToGroups(classification) {
+    var groups = {};
+    for (var path in classification) {
+        var cat = classification[path];
+        if (!groups[cat]) groups[cat] = [];
+        groups[cat].push(path);
+    }
+    return groups;
+}
+
+// resolveConflictsWithClaude attempts to fix failing splits using Claude.
+function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, pollInterval, maxRetries, report) {
+    var reSplitNeeded = false;
+    var reSplitReason = '';
+
+    for (var i = 0; i < failures.length; i++) {
+        var fail = failures[i];
+        var fixed = false;
+
+        for (var attempt = 0; attempt < maxRetries && !fixed; attempt++) {
+            report.conflicts.push({
+                branch: fail.branch || fail.name,
+                attempt: attempt + 1,
+                error: fail.error || fail.output || ''
+            });
+
+            // Send conflict prompt to Claude.
+            var promptResult = renderConflictPrompt({
+                branchName: fail.branch || fail.name,
+                files: fail.files || [],
+                exitCode: fail.exitCode || 1,
+                errorOutput: fail.error || fail.output || '',
+                goModContent: '',
+                sessionId: sessionId
+            });
+            if (promptResult.error) {
+                log.printf('auto-split: conflict prompt render failed: %s', promptResult.error);
+                break;
+            }
+
+            try {
+                claudeExecutor.handle.send(promptResult.text);
+                report.claudeInteractions++;
+            } catch (e) {
+                log.printf('auto-split: failed to send conflict prompt: %s', e.message || String(e));
+                break;
+            }
+
+            // Wait for resolution.
+            // Delete old resolution file first.
+            try { exec.execv(['rm', '-f', resultDir + '/resolution.json']); } catch (e) { /* ignore */ }
+            var resolutionPoll = pollForFile(resultDir, 'resolution.json', timeouts.resolve, pollInterval);
+            if (resolutionPoll.error) {
+                log.printf('auto-split: resolution timeout for %s (attempt %d)', fail.branch || fail.name, attempt + 1);
+                continue;
+            }
+
+            var resolution = resolutionPoll.data;
+            report.resolutions.push(resolution);
+
+            // Check if re-split is suggested.
+            if (resolution.reSplitSuggested) {
+                reSplitNeeded = true;
+                reSplitReason = resolution.reSplitReason || 'Claude suggested re-split';
+                break;
+            }
+
+            // Apply patches.
+            if (resolution.patches && resolution.patches.length > 0) {
+                for (var p = 0; p < resolution.patches.length; p++) {
+                    var patch = resolution.patches[p];
+                    if (osmod) {
+                        osmod.writeFile(patch.file, patch.content);
+                    }
+                }
+                // Commit changes.
+                gitExec('.', ['add', '-A']);
+                gitExec('.', ['commit', '--amend', '--no-edit']);
+            }
+
+            // Run suggested commands.
+            if (resolution.commands && resolution.commands.length > 0) {
+                for (var c = 0; c < resolution.commands.length; c++) {
+                    exec.execv(['sh', '-c', resolution.commands[c]]);
+                }
+                gitExec('.', ['add', '-A']);
+                gitExec('.', ['commit', '--amend', '--no-edit']);
+            }
+
+            // Re-verify this branch.
+            var reVerify = verifySplit(fail.branch || fail.name, { verifyCommand: runtime.verifyCommand });
+            if (reVerify.passed) {
+                fixed = true;
+                output.print('[auto-split] Fixed: ' + (fail.branch || fail.name));
+            }
+        }
+
+        if (!fixed && !reSplitNeeded) {
+            // Try local AUTO_FIX_STRATEGIES as last resort.
+            log.printf('auto-split: Claude resolution exhausted for %s, trying local strategies', fail.branch || fail.name);
+        }
+    }
+
+    return { reSplitNeeded: reSplitNeeded, reSplitReason: reSplitReason };
+}
+
+// cleanupExecutor closes the Claude executor and cleans up resources.
+function cleanupExecutor() {
+    if (claudeExecutor) {
+        try { claudeExecutor.close(); } catch (e) { /* best effort */ }
+    }
+}
+
+// ---------------------------------------------------------------------------
+//  Independence Detection
+// ---------------------------------------------------------------------------
+
+// assessIndependence determines which split pairs can merge independently.
+// Returns an array of [nameA, nameB] pairs.
+function assessIndependence(plan, classification) {
+    if (!plan || !plan.splits || plan.splits.length < 2) {
+        return [];
+    }
+
+    var pairs = [];
+    for (var i = 0; i < plan.splits.length; i++) {
+        for (var j = i + 1; j < plan.splits.length; j++) {
+            var a = plan.splits[i];
+            var b = plan.splits[j];
+            if (splitsAreIndependent(a, b, classification)) {
+                pairs.push([a.name, b.name]);
+            }
+        }
+    }
+    return pairs;
+}
+
+// splitsAreIndependent checks if two splits have no directory overlap
+// and no import dependency overlap (for Go files).
+function splitsAreIndependent(a, b, classification) {
+    var dirsA = extractDirs(a.files);
+    var dirsB = extractDirs(b.files);
+
+    // Check directory overlap.
+    for (var d in dirsA) {
+        if (dirsB[d]) return false;
+    }
+
+    // For Go files, check import overlap.
+    var importsA = extractGoImports(a.files);
+    var importsB = extractGoImports(b.files);
+    var pkgsA = extractGoPkgs(a.files);
+    var pkgsB = extractGoPkgs(b.files);
+
+    // If A imports a package that B modifies (or vice versa), they're dependent.
+    for (var imp in importsA) {
+        if (pkgsB[imp]) return false;
+    }
+    for (var imp2 in importsB) {
+        if (pkgsA[imp2]) return false;
+    }
+
+    return true;
+}
+
+// extractDirs returns a set of directory paths from a file list.
+function extractDirs(files) {
+    var dirs = {};
+    for (var i = 0; i < (files || []).length; i++) {
+        dirs[dirname(files[i])] = true;
+    }
+    return dirs;
+}
+
+// extractGoImports returns a set of imported package paths from Go files.
+function extractGoImports(files) {
+    var imports = {};
+    for (var i = 0; i < (files || []).length; i++) {
+        if (files[i].match(/\.go$/)) {
+            // Read file content before parsing imports.
+            var content = '';
+            try {
+                var cat = exec.execv(['cat', files[i]]);
+                if (cat.code === 0) {
+                    content = cat.stdout;
+                }
+            } catch (e) {
+                // File may not exist in working tree — skip.
+                continue;
+            }
+            if (!content) continue;
+            var fileImports = parseGoImports(content);
+            for (var j = 0; j < fileImports.length; j++) {
+                imports[fileImports[j]] = true;
+            }
+        }
+    }
+    return imports;
+}
+
+// extractGoPkgs returns a set of Go package directories from Go files.
+function extractGoPkgs(files) {
+    var pkgs = {};
+    var modulePath = detectGoModulePath();
+    for (var i = 0; i < (files || []).length; i++) {
+        if (files[i].match(/\.go$/)) {
+            var dir = dirname(files[i]);
+            if (modulePath && dir !== '.') {
+                pkgs[modulePath + '/' + dir] = true;
+            }
+            pkgs[dir] = true;
+        }
+    }
+    return pkgs;
+}
 
 function createAnalyzeNode(bb, config) {
     return bt.createBlockingLeafNode(function() {
@@ -1811,6 +2637,23 @@ globalThis.prSplit = {
 
     // Claude Code executor
     ClaudeCodeExecutor: ClaudeCodeExecutor,
+
+    // Automated pipeline
+    automatedSplit: automatedSplit,
+    heuristicFallback: heuristicFallback,
+    assessIndependence: assessIndependence,
+    classificationToGroups: classificationToGroups,
+
+    // Prompt rendering
+    renderClassificationPrompt: renderClassificationPrompt,
+    renderSplitPlanPrompt: renderSplitPlanPrompt,
+    renderConflictPrompt: renderConflictPrompt,
+    detectLanguage: detectLanguage,
+
+    // Prompt templates (constants)
+    CLASSIFICATION_PROMPT_TEMPLATE: CLASSIFICATION_PROMPT_TEMPLATE,
+    SPLIT_PLAN_PROMPT_TEMPLATE: SPLIT_PLAN_PROMPT_TEMPLATE,
+    CONFLICT_RESOLUTION_PROMPT_TEMPLATE: CONFLICT_RESOLUTION_PROMPT_TEMPLATE,
 
     // BT nodes
     createAnalyzeNode: createAnalyzeNode,
@@ -2452,7 +3295,7 @@ function buildCommands(stateArg) {
             handler: function(args) {
                 if (!args || args.length < 2) {
                     output.print('Usage: set <key> <value>');
-                    output.print('Keys: base, strategy, max, prefix, verify, dry-run');
+                    output.print('Keys: base, strategy, max, prefix, verify, dry-run, mode');
                     output.print('Current:');
                     output.print('  base:      ' + runtime.baseBranch);
                     output.print('  strategy:  ' + runtime.strategy);
@@ -2460,6 +3303,7 @@ function buildCommands(stateArg) {
                     output.print('  prefix:    ' + runtime.branchPrefix);
                     output.print('  verify:    ' + runtime.verifyCommand);
                     output.print('  dry-run:   ' + runtime.dryRun);
+                    output.print('  mode:      ' + runtime.mode);
                     return;
                 }
                 var key = args[0];
@@ -2483,6 +3327,13 @@ function buildCommands(stateArg) {
                     case 'dry-run':
                         runtime.dryRun = (value === 'true' || value === '1');
                         break;
+                    case 'mode':
+                        if (value !== 'auto' && value !== 'heuristic') {
+                            output.print('Invalid mode: ' + value + '. Use "auto" or "heuristic".');
+                            return;
+                        }
+                        runtime.mode = value;
+                        break;
                     default:
                         output.print('Unknown key: ' + key);
                         return;
@@ -2493,9 +3344,42 @@ function buildCommands(stateArg) {
 
         run: {
             description: 'Run full workflow: analyze → group → plan → execute',
-            usage: 'run',
+            usage: 'run [--mode auto|heuristic]',
             handler: function(args) {
                 try {
+                // Check if automated mode should be used.
+                var useAuto = runtime.mode === 'auto';
+                if (args && args.length > 0) {
+                    for (var a = 0; a < args.length; a++) {
+                        if (args[a] === '--mode' && a + 1 < args.length) {
+                            useAuto = args[a + 1] === 'auto';
+                            a++;
+                        }
+                    }
+                }
+
+                if (useAuto) {
+                    // Try automated mode — falls back to heuristic if Claude unavailable.
+                    if (!claudeExecutor) {
+                        claudeExecutor = new ClaudeCodeExecutor(prSplitConfig);
+                    }
+                    if (claudeExecutor.isAvailable()) {
+                        output.print(style.info('Mode: automated (Claude detected)'));
+                        var result = automatedSplit({
+                            baseBranch: runtime.baseBranch,
+                            strategy: runtime.strategy
+                        });
+                        if (result.error) {
+                            output.print(style.error('Auto-split error: ' + result.error));
+                        }
+                        if (runtime.jsonOutput && result.report) {
+                            output.print('');
+                            output.print(JSON.stringify(result.report, null, 2));
+                        }
+                        return;
+                    }
+                    output.print(style.warning('Claude not available — using heuristic mode.'));
+                }
                 var workflowStart = Date.now();
 
                 output.print(style.header('Running full PR split workflow...'));
@@ -2756,6 +3640,30 @@ function buildCommands(stateArg) {
             }
         },
 
+        'auto-split': {
+            description: 'Automated split via Claude Code (falls back to heuristic)',
+            usage: 'auto-split',
+            handler: function() {
+                try {
+                    var result = automatedSplit({
+                        baseBranch: runtime.baseBranch,
+                        strategy: runtime.strategy,
+                        maxGroups: 0
+                    });
+                    if (result.error) {
+                        output.print(style.error('Auto-split failed: ' + result.error));
+                    }
+                    if (runtime.jsonOutput && result.report) {
+                        output.print('');
+                        output.print(JSON.stringify(result.report, null, 2));
+                    }
+                } catch (e) {
+                    output.print('Error: ' + (e && e.message ? e.message : String(e)));
+                    if (e && e.stack) { log.error('auto-split error: ' + e.stack); }
+                }
+            }
+        },
+
         help: {
             description: 'Show available commands',
             usage: 'help',
@@ -2778,6 +3686,7 @@ function buildCommands(stateArg) {
                 output.print('  cleanup          Delete all split branches');
                 output.print('  create-prs       Push branches + create stacked GitHub PRs');
                 output.print('  run              Full workflow: analyze→group→plan→execute');
+                output.print('  auto-split       Automated split via Claude Code');
                 output.print('  set <key> <val>  Set runtime config (no args to show current)');
                 output.print('  copy             Copy plan to clipboard');
                 output.print('  report           Output current state as JSON');

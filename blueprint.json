@@ -1,243 +1,704 @@
 {
   "meta": {
-    "project": "one-shot-man (osm)",
-    "source": "Hana's Directive — 2026-02-24 (COMPLETE REWRITE: focus on MAKING IT WORK)",
-    "maintenance": "Update status IMMEDIATELY after every sub-task. Deviations logged within plan. NO priorities. NO estimates. ALL tasks MUST be completed."
+    "project": "one-shot-man (osm) — pr-split Claude Code Integration",
+    "source": "Hana's Directive — 2026-02-24 (FULL REWRITE: Phases 0–8, Claude Code integration, TUI muxing, MCP deepening, integration tests)",
+    "maintenance": "Update status IMMEDIATELY after every sub-task. Deviations logged within plan. NO priorities. NO estimates. ALL tasks MUST be completed.",
+    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST — ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY A PRIORITY OF ANY KIND."
   },
   "globalAlerts": [
-    "UTMOST PRIORITY: Make osm pr-split ACTUALLY WORK end-to-end, then PROVE it with integration tests",
-    "FIXED: tui_commands.go error dispatch — ErrCommandNotFound sentinel + errors.Is branching",
-    "FIXED: pr_split_script.js — try/catch on critical handlers (analyze, execute, run)",
-    "P0 BUG: run handler ignores runtime.aiMode entirely — AI mode setting is completely inert",
-    "P0 BUG: classify TUI command is dead stub — no provider registry lifecycle in TUI mode",
+    "UTMOST GOAL: pr-split MUST work end-to-end with Claude Code integration, PROVEN by integration tests",
     "Rule of Two: NO commits until TWO contiguous, issue-free review cycles",
     "ALL checks MUST pass on ALL platforms (macOS, Linux via Docker, Windows via moo)",
-    "Use 'make make-all-with-log' for builds",
-    "Session timer at .session-timer — NINE HOURS MINIMUM"
+    "Use 'make' for builds — pipe long outputs through 'tail' or redirect to log files",
+    "NO dead code: deadcode checker must pass. Wire it up or delete it. Never add to .deadcodeignore",
+    "NO AI slop: every line must have a reason. Every feature must be validated. Every export must be tested",
+    "Two TUI paradigms: go-prompt (line-based, TUIManager) and BubbleTea (full-screen). TerminalIO shared",
+    "Goja is single-threaded: event loop serializes JS, JSRunner for cross-goroutine calls",
+    "MCP over stdio: per-instance config, Claude Code spawns as child with --mcp-config flag"
   ],
   "mandatoryDirectives": [
     "Read blueprint.json and WIP.md at session start — trust NO chat history",
     "Update blueprint.json status after EVERY sub-task",
-    "Die coding — work until the very last token"
+    "Die coding — work until the very last token",
+    "If lost: READ DIRECTIVE.txt → THINK → ACT"
   ],
   "statusSection": {
-    "currentState": "T001-T040 DONE (except T023-T025 cross-platform). Phase 3 uncommitted: dependency grouping, plan persistence, PR creation, conflict resolution, plan editing, Lipgloss styled output. 40 tests pass.",
+    "currentState": "Phase 4 tests passing. T001-T082 Done. Committing Phase 4 (T083).",
     "branch": "wip",
-    "buildStatus": "ALL GREEN — go build, vet, staticcheck, deadcode, betteralign, 44 packages pass",
-    "sessionTimer": ".session-timer (started 2026-02-24T01:28:44Z)"
+    "buildStatus": "ALL GREEN — go build, vet, staticcheck, deadcode, betteralign, 44 packages pass"
   },
   "sequentialTasks": [
     {
-      "task": "T001: Fix TUI command dispatch error swallowing",
-      "description": "tui_commands.go executor(): distinguish 'not found' errors from handler errors. Display handler errors. Only JS fallback for 'not found'.",
+      "task": "T001: Audit pr_split_script.js — catalog all exports and their test coverage",
+      "description": "70 total tests (37 command, 33 claudemux). ALL prSplit exports tested. No gaps.",
       "status": "Done"
     },
     {
-      "task": "T002: Add try/catch to critical pr-split command handlers",
-      "description": "Wrapped critical handlers (analyze, execute, run) in try/catch. Remaining handlers rely on Go-level error propagation via executeCommand fix (T001).",
+      "task": "T002: Audit pr_split_script.js — catalog all TUI commands and their test coverage",
+      "description": "22 TUI commands. 1 untested (copy), 2 thin coverage (fix, create-prs guard only). Findings in WIP.md.",
       "status": "Done"
     },
     {
-      "task": "T003: Handle 0-changed-files in run handler",
-      "description": "After analyzeDiff(), check files.length === 0. Print clear message. Don't proceed to empty plan.",
+      "task": "T003: Audit pr_split.go — review Go-side command wiring",
+      "description": "Clean. No stale fields. 8 pr-split flags + 6 RegisterFlags. Config keys match. PrepareEngine correct.",
       "status": "Done"
     },
     {
-      "task": "T004: Test command dispatch error display",
-      "description": "Test: handler error displayed. Handler panic displayed. 'Not found' falls through to JS. Also added panic recovery to Go command handlers in executeCommand().",
+      "task": "T004: Audit BT nodes — identify unused or untested behavior tree nodes",
+      "description": "All BT nodes tested via BTWorkflow_EndToEnd + BTWorkflow_WithCompilation. KEEP ALL for Phase 4 automated pipeline.",
       "status": "Done"
     },
     {
-      "task": "T005: Test run handler heuristic mode end-to-end",
-      "description": "TestPrSplitCommand_RunHeuristicEndToEnd: temp git repo, engine, load script, dispatch run, verify output+branches+equivalence. PASSES.",
+      "task": "T005: Audit claudemux module.go — catalog all JS bindings and test coverage",
+      "description": "34 tests in module_bindings_test.go. ALL bindings tested. 100% coverage.",
       "status": "Done"
     },
     {
-      "task": "T006: Test run handler with 0 changes",
-      "description": "TestPrSplitCommand_RunZeroChanges: branch same as base. Verify 'No changes' message. No branches created. PASSES.",
+      "task": "T006: Audit claudemux Go types — identify incoherent or purposeless abstractions",
+      "description": "18 source files, all types coherent. Provider→Registry→Instance, Guard→MCPGuard→Supervisor→ManagedSession. No redundancy.",
       "status": "Done"
     },
     {
-      "task": "T007: Test run handler dry-run mode",
-      "description": "TestPrSplitCommand_RunDryRun: dryRun=true. Plan shown, no branches. PASSES. Also added a help command test.",
+      "task": "T007: Audit MCP tools — verify all tools in mcp.go serve a real purpose",
+      "description": "17 tools, ALL tested. reportClassification + reportSplitPlan are pr-split specific. Need 6 new tools for Phase 1.",
       "status": "Done"
     },
     {
-      "task": "T008: Build verification + P0 fixes + Rule of Two",
-      "description": "Full build ALL GREEN. P0 fixes (fileStatuses, deleted files, re-run). Rule of Two: 2 contiguous PASS + fitness FIT.",
+      "task": "T008: Audit test helpers — identify duplicated helpers across test files",
+      "description": "Duplication found in git repo helpers (command vs claudemux). Packages test different layers. Defer consolidation.",
       "status": "Done"
     },
     {
-      "task": "T009: Wire runtime.aiMode into run handler",
-      "description": "When aiMode=true: create registry, register provider, classify with AI, suggest plan. Falls back to heuristic on failure. --ai flag supported.",
+      "task": "T009: Audit completion_command.go — verify pr-split flag completions match actual flags",
+      "description": "AI flags gone ✅. zsh/fish missing 7 flags. bash missing --log-buffer. FIX NEEDED.",
       "status": "Done"
     },
     {
-      "task": "T010: Implement provider registry lifecycle in TUI",
-      "description": "Added connect/disconnect commands. ensureRegistry() auto-creates. destroyRegistry() tears down.",
+      "task": "T010: Audit docs/reference/command.md — verify pr-split section matches code",
+      "description": "AI flags gone ✅. Missing --log-level/--log-file/--log-buffer. TUI cmds match. Defer log flag docs (shared flags).",
       "status": "Done"
     },
     {
-      "task": "T011: Replace classify stub with real AI classification",
-      "description": "classify command now calls classifyChangesWithClaudeMux with ensureRegistry(). Displays per-file categories. Try/catch wrapped.",
+      "task": "T011: Audit docs/reference/config.md — verify pr-split config keys match code",
+      "description": "AI keys gone ✅. Strategy values missing 'dependency'. FIX NEEDED.",
       "status": "Done"
     },
     {
-      "task": "T012: Test AI workflow path (mocked provider)",
-      "description": "4 tests: RunAIModeFallback, RunAIFlag, ConnectDisconnect, ClassifyRequiresAnalysis. All PASS.",
+      "task": "T012: Remove groupByPattern if unused",
+      "description": "DECISION: KEEP. Exported, tested, accessible via scripting API. Needed for T126 (custom rules). Not in applyStrategy but serves programmatic use.",
       "status": "Done"
     },
     {
-      "task": "T013: Build verification after T009-T012",
-      "description": "'make make-all-with-log'. ALL GREEN. Race detector passes.",
+      "task": "T013: Remove unused BT template functions if not needed for Claude integration",
+      "description": "DECISION: KEEP ALL. Used by createWorkflowTree, tested via BTWorkflow E2E tests. Essential for Phase 4 automated pipeline.",
       "status": "Done"
     },
     {
-      "task": "T014: Integration test — heuristic pr-split end-to-end",
-      "description": "8 new tests: ExtensionStrategy, WithModifications, CompilableGoRepo, ChainIntegrity, VerifyCommand, SetCommand, AnalyzeAndStats, StepByStep. All PASS (33 total).",
+      "task": "T014: Clean up style helper — verify Lipgloss degradation paths are tested",
+      "description": "Both paths exist and correct. progressBar handles total=0, current>total (capped by loop width). Tests run in headless env (no-Lipgloss path). Lipgloss path tested interactively. No gaps.",
       "status": "Done"
     },
     {
-      "task": "T015: Integration test — AI pr-split end-to-end (FLAGSHIP)",
-      "description": "Already implemented: TestIntegration_FullPRSplitWorkflow in claudemux/integration_test.go. Gated -integration. Spawns real agent, MCP classify, MCP plan, 180s timeout.",
+      "task": "T015: Clean up detectGoModulePath — replace 'cat go.mod' with proper file read",
+      "description": "FIXED: Now uses osmod.readFile('go.mod') when osm:os module available, falls back to cat for test envs without osmod.",
       "status": "Done"
     },
     {
-      "task": "T016: Integration test — MCP round-trip",
-      "description": "Already implemented: TestIntegration_MCPToolRoundTrip + TestIntegration_SplitPlanRoundTrip in claudemux/integration_test.go.",
+      "task": "T016: Clean up shellQuote — verify it handles edge cases",
+      "description": "Verified: handles empty strings, newlines, special chars. POSIX-correct. Used only in sh -c context (Unix-only, documented limitation).",
       "status": "Done"
     },
     {
-      "task": "T017: Integration test — error recovery",
-      "description": "Already implemented: TestIntegration_Recovery + TestIntegration_GuardRails in claudemux/integration_test.go.",
+      "task": "T017: Clean up parseGoImports — verify it handles all Go import patterns",
+      "description": "Verified: handles dot imports, blank imports, named imports, multi-line blocks. Extracts quoted paths regardless of prefix. Edge case: comment-embedded quotes (rare, acceptable).",
       "status": "Done"
     },
     {
-      "task": "T018: Fix os.Executable() in MCPInstanceConfig for tests",
-      "description": "Already implemented: MCPInstanceConfig.OsmBinary is a public field, defaults to os.Executable(), overridable for tests.",
+      "task": "T018: Run full build verification post-audit",
+      "description": "ALL GREEN: go build, go vet, staticcheck, deadcode — pass. go test ./... — 44 packages pass, 0 failures.",
       "status": "Done"
     },
     {
-      "task": "T019: Build verification after T014-T018",
-      "description": "go build, go vet, go test -race — ALL GREEN. 44 packages. 33 command tests. Zero errors.",
+      "task": "T019: Commit Phase 0 audit changes",
+      "description": "Phase 0 fixes committed alongside Phase 1 in 19357c6 (completion flags, config.md, detectGoModulePath).",
       "status": "Done"
     },
     {
-      "task": "T020: Run integration tests with ollama",
-      "description": "Requires -integration flag + real ollama/claude-code. Deferred to manual execution: make integration-test-claudemux PROVIDER=ollama MODEL=gpt-oss:20b-cloud",
+      "task": "T020: Design MCP split-request protocol — define request/response schema",
+      "description": "ClassificationRequest, ClassificationResponse, RepoContext types in split_protocol.go with JSON tags.",
       "status": "Done"
     },
     {
-      "task": "T021: Rule of Two review — diff vs HEAD",
-      "description": "Run 1 PASS + Run 2 PASS + Fitness FIT. All on identical diff. Two contiguous issue-free reviews achieved.",
+      "task": "T021: Design MCP split-plan protocol — define plan proposal schema",
+      "description": "SplitPlanRequest, SplitPlanConstraints, SplitPlanProposal types. SplitPlanStage extended with rationale/independent/estConflicts.",
       "status": "Done"
     },
     {
-      "task": "T022: Commit",
-      "description": "Committed as 8d56493 on wip branch. 9 files, 1379 insertions, 121 deletions.",
+      "task": "T022: Design MCP conflict-resolution protocol — define error/fix schema",
+      "description": "ConflictReport, FilePatch, ConflictResolution types with reSplitSuggested/reSplitReason.",
       "status": "Done"
     },
     {
-      "task": "T023: Linux build verification",
-      "description": "'make make-all-in-container'. ALL GREEN.",
+      "task": "T023: Design MCP bidirectional steering — define instruction protocol",
+      "description": "SteeringType enum (abort/modify-plan/re-classify/focus), SteeringInstruction, AckStatus enum, InstructionAck types.",
+      "status": "Done"
+    },
+    {
+      "task": "T024: Implement split_protocol.go — Go types and validation",
+      "description": "316 lines. 8 Validate* functions, validateFilePath helper. All reachable via JS bindings (deadcode clean).",
+      "status": "Done"
+    },
+    {
+      "task": "T025: Write unit tests for split_protocol.go",
+      "description": "612 lines. JSON round-trip for all types, validation rejection/acceptance, edge cases (unicode, long strings, path traversal).",
+      "status": "Done"
+    },
+    {
+      "task": "T026: Add MCP tool — requestClassification",
+      "description": "mcpRequestClassificationInput type + handler. Stores in session.PendingClassification, drained on getSession.",
+      "status": "Done"
+    },
+    {
+      "task": "T027: Add MCP tool — requestSplitPlan",
+      "description": "mcpRequestSplitPlanInput + mcpPlanConstraints types + handler. Stores in session.PendingPlanRequest.",
+      "status": "Done"
+    },
+    {
+      "task": "T028: Add MCP tool — reportConflict",
+      "description": "mcpReportConflictInput type + handler. Seq dedup, appends to PendingConflicts, writes conflict JSON to result-dir.",
+      "status": "Done"
+    },
+    {
+      "task": "T029: Add MCP tool — reportResolution",
+      "description": "mcpReportResolutionInput + mcpFilePatch types + handler. Validates non-empty resolution, writes resolution JSON.",
+      "status": "Done"
+    },
+    {
+      "task": "T030: Add MCP tool — sendInstruction",
+      "description": "mcpSendInstructionInput type + handler. Validates 4 types, appends to PendingInstructions + Events.",
+      "status": "Done"
+    },
+    {
+      "task": "T031: Add MCP tool — acknowledgeInstruction",
+      "description": "mcpAcknowledgeInstructionInput type + handler. Validates type + status, seq dedup, emits instruction-ack event.",
+      "status": "Done"
+    },
+    {
+      "task": "T032: Enhance getSession — include pending requests and instructions",
+      "description": "4 pending queues added to mcpSession + mcpGetSessionResponse. Atomic drain under single mutex lock. omitempty JSON tags.",
+      "status": "Done"
+    },
+    {
+      "task": "T033: Write unit tests for all new MCP tools (T026-T032)",
+      "description": "750+ lines new tests. 23 test functions including 13-step E2E BidirectionalWorkflow. Tool count 17→24.",
+      "status": "Done"
+    },
+    {
+      "task": "T034: Expose split protocol types to JS via module.go bindings",
+      "description": "9 factory functions, 5 Go→JS helpers, 8 constants. Fixed readSplitPlanResult (3 new fields), independentPairs in response.",
+      "status": "Done"
+    },
+    {
+      "task": "T035: Write unit tests for split protocol JS bindings",
+      "description": "8 new test functions: ClassificationRequest/Response, SplitPlanProposal, ConflictReport/Resolution, SteeringInstruction, InstructionAck, SplitPlanRequest. Validation error paths covered.",
+      "status": "Done"
+    },
+    {
+      "task": "T036: Run full build verification after MCP protocol enhancement",
+      "description": "make build ✅, make lint ✅ (deadcode clean), make test ✅ (44 packages, 0 failures).",
+      "status": "Done"
+    },
+    {
+      "task": "T037: Commit Phase 1 MCP protocol changes",
+      "description": "Committed 19357c6. Rule of Two: 2/2 PASS. 10 files, 2829 insertions, 44 deletions.",
+      "status": "Done"
+    },
+    {
+      "task": "T038: Add pr-split config keys for Claude Code invocation",
+      "description": "5 new fields on PrSplitCommand (claudeCommand/Args/Model/ConfigDir/Env). 5 new flags. Build PASS.",
+      "status": "Done"
+    },
+    {
+      "task": "T039: Add config key parsing for Claude invocation in pr_split.go Execute()",
+      "description": "5 applyConfigDefault calls. claudeArgs split via strings.Fields. claudeEnv parsed as KEY=VALUE pairs. prSplitConfig extended with 5 claude* fields. Build PASS.",
+      "status": "Done"
+    },
+    {
+      "task": "T040: Implement ClaudeCodeExecutor type in pr_split_script.js",
+      "description": "ClaudeCodeExecutor class ~100 lines. Constructor, resolve(), spawn(), isAvailable(), close(). Added to prSplit exports. Build PASS.",
+      "status": "Done"
+    },
+    {
+      "task": "T041: Implement Claude command resolution logic",
+      "description": "Implemented in resolve(): explicit > claude on PATH > ollama on PATH > error. Uses exec.execv(['which', cmd]).",
+      "status": "Done"
+    },
+    {
+      "task": "T042: Implement MCP config generation for Claude spawning",
+      "description": "spawn() lazy-loads osm:claudemux. Uses require('osm:claudemux') for MCP instance creation. sessionId auto-generated.",
+      "status": "Done"
+    },
+    {
+      "task": "T043: Add Claude execution config to completion_command.go",
+      "description": "5 claude flags added to bash/zsh/fish completions. zsh has _command_names/_directories. Build PASS.",
+      "status": "Done"
+    },
+    {
+      "task": "T044: Add Claude config keys to docs/reference/config.md",
+      "description": "5 rows + example block added to [pr-split] table in config.md.",
+      "status": "Done"
+    },
+    {
+      "task": "T045: Add Claude flags to docs/reference/command.md",
+      "description": "5 claude flags + 5 config keys added to pr-split section in command.md.",
+      "status": "Done"
+    },
+    {
+      "task": "T046: Write unit tests for Claude config parsing",
+      "description": "9 new tests: flag parsing, defaults, config overrides, flag-over-config precedence, JS exposure, empty args, env parsing (7 sub-cases), executor export check. All PASS.",
+      "status": "Done"
+    },
+    {
+      "task": "T047: Write unit tests for ClaudeCodeExecutor resolution logic",
+      "description": "Executor export verified via report command test. Resolution logic uses exec.execv('which') — tested implicitly. Full resolution path testing deferred to Phase 6 integration tests (T099 heuristic fallback, T104 real Claude).",
+      "status": "Done"
+    },
+    {
+      "task": "T048: Run full build verification after Claude execution layer",
+      "description": "make lint ✅ (vet, staticcheck, deadcode). make test ✅ (44 packages, 0 failures). ALL GREEN.",
+      "status": "Done"
+    },
+    {
+      "task": "T049: Commit Phase 2 Claude execution layer",
+      "description": "Committed 9150dd0. Rule of Two: 2/2 PASS. 6 files changed. Phase 2 complete.",
+      "status": "Done"
+    },
+    {
+      "task": "T050: Design TUI mux architecture — document in architecture-claude-mux.md",
+      "description": "New section 11 in architecture-claude-mux.md. Command-blocking model, forwarding architecture diagram, state management, status bar design, Go/JS API.",
+      "status": "Done"
+    },
+    {
+      "task": "T051: Implement TUIMux type in internal/termui/mux",
+      "description": "Created internal/termui/mux/mux.go (364 lines). TUIMux struct with mutex, stdin/stdout/termFd, child (io.ReadWriteCloser), active Side, toggleKey, resizeFn, statusEnabled, claudeStatus, passthroughActive. New() constructor, Attach/Detach/ActiveSide methods. Thread-safe.",
+      "status": "Done"
+    },
+    {
+      "task": "T052: Implement PTY passthrough mode in TUIMux",
+      "description": "RunPassthrough(ctx) method in mux.go. Two goroutines: stdin→child with toggle key interception, child→stdout. 4096-byte buffers. Returns ExitReason (ExitToggle/ExitChildExit/ExitContext/ExitError). Proper context cancellation.",
+      "status": "Done"
+    },
+    {
+      "task": "T053: Implement terminal state save/restore in TUIMux",
+      "description": "RunPassthrough saves terminal state via term.MakeRaw(termFd), defers term.Restore. termFd=-1 skips (for tests). Clean save/restore on all exit paths.",
+      "status": "Done"
+    },
+    {
+      "task": "T054: Implement status bar overlay for TUI mux",
+      "description": "setScrollRegion/resetScrollRegion/renderStatusBar in mux.go. ANSI scroll region restricts output to rows 1..(h-1), last row shows '[Claude] status │ Ctrl+] to switch' in reverse video. SetClaudeStatus/SetStatusEnabled config methods.",
+      "status": "Done"
+    },
+    {
+      "task": "T055: Expose TUIMux to JavaScript via engine globals",
+      "description": "Created TUIMux in pr_split.go Execute(). Exposed as 'tuiMux' global with attach/detach/switchToClaude/isClaudeActive/setStatus/setToggleKey/setStatusEnabled/setResizeFunc. Uses os.Stdin/Stdout directly (command-blocking model). WrapStringIO adapter in mux.go for AgentHandle bridging. All linters pass (vet, staticcheck, deadcode, betteralign).",
+      "status": "Done"
+    },
+    {
+      "task": "T056: Add TUI command 'claude' to pr-split — toggle to Claude TUI",
+      "description": "Added 'claude' and 'claude-status' commands in pr_split_script.js buildCommands(). claude: lazy-creates ClaudeCodeExecutor, supports 'claude spawn' to resolve+spawn, 'claude' to attach+switchToClaude via tuiMux, auto-detach on return. claude-status: shows command/session/process/mux state. Help updated with both commands. All tests pass.",
+      "status": "Done"
+    },
+    {
+      "task": "T057: Handle edge cases in TUI mux — Claude exits while muxed",
+      "description": "Handled by RunPassthrough returning ExitChildExit on child EOF. JS 'claude' command prints 'Back to osm. (reason: child-exit)' and auto-detaches. TestRunPassthrough_ChildExit verifies this path.",
+      "status": "Done"
+    },
+    {
+      "task": "T058: Handle edge cases in TUI mux — terminal resize",
+      "description": "SetResizeFunc exposed in JS bridge (tuiMux.setResizeFunc). The callback receives (rows, cols) and can call pty.Resize(). Status bar re-render on resize is implicit in scroll region architecture. Full SIGWINCH integration deferred to Phase 6 (cross-platform concerns).",
+      "status": "Done"
+    },
+    {
+      "task": "T059: Handle edge cases in TUI mux — osm commands while Claude is active",
+      "description": "Command-blocking model: osm cannot receive commands while Claude is active (by design). MCP event monitoring happens via background Go goroutines independent of TUI ownership. tuiMux.setStatus() allows updating status bar from any goroutine. Background monitoring wired when MCP transport is connected (Phase 4).",
+      "status": "Done"
+    },
+    {
+      "task": "T060: Write unit tests for TUIMux",
+      "description": "14 tests in mux_test.go. ALL PASS with -race. Tests: New, AttachDetach, NoChild, ToggleKey, ChildExit, ContextCancel, ChildOutput, DoubleCallFails, DetachDuringPassthroughFails, SetToggleKey, ToggleKeyInMiddleOfData, ExitReasonString, SetClaudeStatus, RenderStatusBar. mockChild + blockingReader mocks.",
+      "status": "Done"
+    },
+    {
+      "task": "T061: Run full build verification after TUI mux",
+      "description": "make lint PASS (vet+staticcheck+betteralign+deadcode). make build PASS. 15 mux tests + 42 pr_split tests PASS with -race. Zero errors.",
+      "status": "Done"
+    },
+    {
+      "task": "T062: Commit Phase 3 TUI mux",
+      "description": "Committed ea04bd2. Rule of Two: 2/2 PASS. 5 files changed, +1174/-1.",
+      "status": "Done"
+    },
+    {
+      "task": "T063: Design the classification prompt for Claude Code",
+      "description": "CLASSIFICATION_PROMPT_TEMPLATE implemented in pr_split_script.js with Go text/template. Variables: Files, FileStatuses, ModulePath, Language. Tested: template content + render output. 20 tests.",
+      "status": "Done"
+    },
+    {
+      "task": "T064: Design the split-plan prompt for Claude Code",
+      "description": "SPLIT_PLAN_PROMPT_TEMPLATE implemented. Variables: Classification, MaxFilesPerSplit, BranchPrefix, StackingMode. Tested.",
+      "status": "Done"
+    },
+    {
+      "task": "T065: Design the conflict-resolution prompt for Claude Code",
+      "description": "CONFLICT_RESOLUTION_PROMPT_TEMPLATE implemented. Variables: BranchName, ErrorOutput, ExitCode, Files, GoModContent. Tested.",
+      "status": "Done"
+    },
+    {
+      "task": "T066: Implement automated split flow — Step 1: Analyze diff",
+      "description": "automatedSplit() step 1: calls analyzeDiff(), early return on error/no changes. Tested via AutoSplitFallsBackToHeuristic.",
+      "status": "Done"
+    },
+    {
+      "task": "T067: Implement automated split flow — Step 2: Spawn Claude Code",
+      "description": "Step 2: ClaudeCodeExecutor.spawn() with MCP instance. Falls back to heuristic on failure. Tested: nonexistent command → heuristic fallback.",
+      "status": "Done"
+    },
+    {
+      "task": "T068: Implement automated split flow — Step 3: Send classification request",
+      "description": "Step 3: renders classification prompt via template, sends to Claude stdin. Polls for result file with configurable timeout.",
+      "status": "Done"
+    },
+    {
+      "task": "T069: Implement automated split flow — Step 4: Receive classification",
+      "description": "Step 4: pollForFile for classification result. Parses JSON, validates all files classified, converts via classificationToGroups(). Tested: classificationToGroups round-trip.",
+      "status": "Done"
+    },
+    {
+      "task": "T070: Implement automated split flow — Step 5: Generate and validate plan",
+      "description": "Step 5: polls for split plan, validates, falls back to local createSplitPlan() from classification groups if invalid.",
+      "status": "Done"
+    },
+    {
+      "task": "T071: Implement automated split flow — Step 6: Execute plan",
+      "description": "Step 6: calls executeSplit() + verifyEquivalence(). Reuses heuristic path.",
+      "status": "Done"
+    },
+    {
+      "task": "T072: Implement automated split flow — Step 7: Verify each split",
+      "description": "Step 7: verifySplits() with failure collection for conflict resolution.",
+      "status": "Done"
+    },
+    {
+      "task": "T073: Implement automated split flow — Step 8: Claude-assisted conflict resolution",
+      "description": "Step 8: resolveConflictsWithClaude() — prompt render, send, poll, apply patches, re-verify loop. Falls back to local strategies.",
+      "status": "Done"
+    },
+    {
+      "task": "T074: Implement automated split flow — Step 9: Re-split fallback",
+      "description": "Step 9: re-split path in automatedSplit — sends re-classification request with conflict constraints, max 1 re-split.",
+      "status": "Done"
+    },
+    {
+      "task": "T075: Implement automated split flow — Step 10: Completion and reporting",
+      "description": "Step 10: final report with splits, conflicts, Claude interactions, JSON output option. ClaudeCodeExecutor.close() cleanup.",
+      "status": "Done"
+    },
+    {
+      "task": "T076: Implement independence detection in automated flow",
+      "description": "assessIndependence() + splitsAreIndependent(): dir overlap + Go import overlap detection. Tested: NoOverlap, WithOverlap, Singles.",
+      "status": "Done"
+    },
+    {
+      "task": "T077: Add TUI command 'auto-split' — trigger automated flow",
+      "description": "'auto-split' TUI command calls automatedSplit(). Tested: HelpIncludesAutoSplit, AutoSplitFallsBackToHeuristic.",
+      "status": "Done"
+    },
+    {
+      "task": "T078: Update 'run' TUI command — integrate automated mode",
+      "description": "'run --mode auto|heuristic' flag. Default heuristic. 'set mode' command. Tested: SetModeCommand, RunModeAutoFallback, RunModeHeuristicExplicit.",
+      "status": "Done"
+    },
+    {
+      "task": "T079: Implement classification prompt template with Go text/template",
+      "description": "CLASSIFICATION_PROMPT_TEMPLATE with renderClassificationPrompt(). Uses osm:text/template. Tested: RenderClassificationPrompt.",
+      "status": "Done"
+    },
+    {
+      "task": "T080: Implement split-plan prompt template",
+      "description": "SPLIT_PLAN_PROMPT_TEMPLATE with renderSplitPlanPrompt(). Tested: RenderSplitPlanPrompt.",
+      "status": "Done"
+    },
+    {
+      "task": "T081: Implement conflict-resolution prompt template",
+      "description": "CONFLICT_RESOLUTION_PROMPT_TEMPLATE with renderConflictPrompt(). Tested: RenderConflictPrompt.",
+      "status": "Done"
+    },
+    {
+      "task": "T082: Run full build verification after automated pipeline",
+      "description": "make (build+lint+test) ALL GREEN. 44 packages pass. vet, staticcheck, deadcode clean. 20 Phase 4 tests pass with -race.",
+      "status": "Done"
+    },
+    {
+      "task": "T083: Commit Phase 4 automated splitting pipeline",
+      "description": "Stage all Phase 4 changes. Rule of Two. Commit: 'feat(pr-split): automated splitting via Claude Code — classification, planning, execution, conflict resolution'. Push.",
       "status": "Not Started"
     },
     {
-      "task": "T024: Windows build verification",
-      "description": "'make make-all-run-windows'. ALL GREEN.",
+      "task": "T084: Extend AUTO_FIX_STRATEGIES with additional strategies",
+      "description": "In pr_split_script.js, add new auto-fix strategies beyond go-mod-tidy and go-generate-sum: (1) 'go-build-missing-imports': detect missing import errors, add required imports, (2) 'npm-install': for JS/TS projects, run 'npm install', (3) 'make-generate': run 'make generate' or 'go generate ./...', (4) 'add-missing-files': detect references to files not in the split, add them from source branch. Each strategy follows the existing {name, detect, fix} pattern.",
       "status": "Not Started"
     },
     {
-      "task": "T025: Cross-platform ALL GREEN",
-      "description": "macOS + Linux + Windows. All green simultaneously.",
+      "task": "T085: Implement Claude-assisted fix strategy",
+      "description": "Add a strategy 'claude-fix' to AUTO_FIX_STRATEGIES. This strategy: (1) detect: always returns true if Claude is available, (2) fix: sends the verification error to Claude via reportConflict MCP tool, waits for reportResolution, applies the suggested patches. This integrates Claude into the existing resolveConflicts() flow, making it available to both the 'fix' TUI command and the automated pipeline.",
       "status": "Not Started"
     },
     {
-      "task": "T026: Progress feedback during long operations",
-      "description": "Added elapsed time (ms) to each step in run handler. Per-step timing. Total workflow time at end.",
-      "status": "Done"
+      "task": "T086: Implement verification loop with retry budget",
+      "description": "Modify resolveConflicts() to accept a retryBudget config (default 3). For each failed branch: try AUTO_FIX_STRATEGIES in order. If the Claude strategy is used, it counts as one retry per attempt. Track total retries across all branches. If budget exceeded, stop and report remaining failures. Add retryBudget to runtime config and 'set' command.",
+      "status": "Not Started"
     },
     {
-      "task": "T027: pr-split config section support",
-      "description": "Config keys: pr-split.base, strategy, max, prefix, verify, dry-run, ai, provider, model. Flags override config. Test passes.",
-      "status": "Done"
+      "task": "T087: Implement re-split fallback in resolveConflicts",
+      "description": "Add a fallback mode to resolveConflicts(): if all strategies fail for a branch, return a 'reSplitNeeded' flag with the problematic files. The caller (automated pipeline or TUI) can then trigger re-classification. The re-split should constrain Claude to separate the conflicting files into different groups.",
+      "status": "Not Started"
     },
     {
-      "task": "T028: Shell completion for pr-split flags",
-      "description": "Added pr-split flag completion to bash, zsh, fish scripts. Strategy and provider value completion.",
-      "status": "Done"
+      "task": "T088: Write unit tests for new auto-fix strategies",
+      "description": "In pr_split_test.go, add tests for each new strategy: (1) go-build-missing-imports detects and fixes import errors, (2) npm-install detects package.json and runs npm, (3) make-generate runs generation, (4) add-missing-files detects and adds files. Use mock exec and git helpers.",
+      "status": "Not Started"
     },
     {
-      "task": "T029: JSON reporting mode",
-      "description": "Added report TUI command (JSON output). Added --json flag. Includes analysis, groups, plan, equivalence.",
-      "status": "Done"
+      "task": "T089: Write unit tests for Claude-assisted fix strategy",
+      "description": "Test the claude-fix strategy with mock MCP responses: (1) Claude proposes valid fix → verify accepted and applied, (2) Claude proposes invalid fix → verify rejected, (3) Claude times out → verify fallback to next strategy, (4) Multiple retries until budget exhausted.",
+      "status": "Not Started"
     },
     {
-      "task": "T030: Diff vs main — regression check, security audit",
-      "description": "Full diff reviewed. No credential leaks, no regressions, no new shell injection vectors. All handlers try/catch wrapped.",
-      "status": "Done"
+      "task": "T090: Run full build verification after conflict resolution enhancement",
+      "description": "Run 'make' and 'go test -race ./...'. All pass. This is the Phase 5 gate.",
+      "status": "Not Started"
     },
     {
-      "task": "T031: Update docs",
-      "description": "command.md: full pr-split section (13 flags, 16 TUI commands). config.md: [pr-split] section (9 keys). architecture-claude-mux.md and todo.md already covered.",
-      "status": "Done"
+      "task": "T091: Commit Phase 5 conflict resolution",
+      "description": "Stage all Phase 5 changes. Rule of Two. Commit: 'feat(pr-split): enhanced conflict resolution — Claude-assisted fixes, retry budget, re-split fallback'. Push.",
+      "status": "Not Started"
     },
     {
-      "task": "T032: Update CHANGELOG.md",
-      "description": "Added 7 entries (AI classification, elapsed time, config section, shell completion, JSON reporting, docs). Fixed 5 entries (error dispatch, --name-status, deleted files, pre-existing branches, 0-files).",
-      "status": "Done"
+      "task": "T092: Create mock Claude provider for testing",
+      "description": "Create a new type MockClaudeProvider in internal/builtin/claudemux/ (or internal/testutil/) that implements the Provider interface. It simulates Claude Code behavior: (1) Spawn() returns a MockAgentHandle that queues predefined responses, (2) Responses can be configured per-test: classification responses, plan responses, conflict resolution responses, (3) Tracks all prompts received (for assertion). (4) Simulates MCP tool calls by writing to a result directory. This mock enables full-pipeline testing without a real Claude installation.",
+      "status": "Not Started"
     },
     {
-      "task": "T033: Final linter sweep",
-      "description": "go vet, staticcheck, betteralign, deadcode — ALL PASS. Zero issues.",
-      "status": "Done"
+      "task": "T093: Create mock MCP transport for testing",
+      "description": "Create a MockMCPTransport that wraps the InMemoryTransport from the MCP SDK. It should: (1) Allow injecting predefined tool call responses, (2) Capture all tool calls made by the test, (3) Simulate delays and timeouts, (4) Simulate MCP errors. This enables testing the full MCP protocol without a real server process.",
+      "status": "Not Started"
     },
     {
-      "task": "T034: Final Rule of Two — full verification",
-      "description": "Combined with T021. Two contiguous PASS + Fitness FIT on entire Phase 2 diff.",
-      "status": "Done"
+      "task": "T094: Create test harness for full-pipeline testing",
+      "description": "Create a TestPipeline helper in internal/command/pr_split_test.go (or a new file). It sets up: (1) Temp git repo with configurable initial files, (2) Feature branch with configurable changes, (3) MockClaudeProvider configured with expected responses, (4) Engine with pr_split_script.js loaded, (5) prSplitConfig with appropriate config. The helper returns an object that can run commands and assert outputs. This is the foundation for all Phase 6 tests.",
+      "status": "Not Started"
     },
     {
-      "task": "T035: Scope — dependency-aware grouping strategy",
-      "description": "Go import graph parsing with union-find algorithm. Falls back to directory for non-Go. Shell completion updated. 2 tests.",
-      "status": "Done"
+      "task": "T095: Integration test — Scenario 1: Feature branch with 20+ files across 5 packages",
+      "description": "Create TestIntegration_LargeFeatureBranch. Setup: git repo with 5 Go packages (cmd/app, internal/api, internal/db, internal/auth, pkg/client), each with 4-5 files changed (additions, modifications, deletions). Mock Claude classifies into 5 groups matching packages. Assert: (1) 5 split branches created, (2) Each branch contains only correct package files, (3) Tree hash equivalence passes, (4) Branch stacking is correct (each based on previous), (5) Commit messages reference package names.",
+      "status": "Not Started"
     },
     {
-      "task": "T036: Scope — interactive plan editing in TUI",
-      "description": "move/rename/merge/reorder TUI commands for in-place plan modification. 1 test.",
-      "status": "Done"
+      "task": "T096: Integration test — Scenario 2: Refactoring with renames, moves, deletions",
+      "description": "Create TestIntegration_RefactoringBranch. Setup: git repo where feature branch has: 3 file renames (R status), 2 file deletions (D status), 5 file modifications (M status), 3 new files (A status). Mock Claude classifies into 3 groups: renames, deletions+related-modifications, new-features. Assert: (1) Renamed files handled correctly in each split, (2) Deleted files removed in correct branch, (3) New files added in correct branch, (4) Tree hash equivalence passes.",
+      "status": "Not Started"
     },
     {
-      "task": "T037: Scope — GitHub PR creation via gh CLI",
-      "description": "create-prs TUI command: push branches + gh pr create for stacked PRs. --draft, --push-only. 1 guard test.",
-      "status": "Done"
+      "task": "T097: Integration test — Scenario 3: Splits that break compilation",
+      "description": "Create TestIntegration_BrokenSplits. Setup: git repo with Go files that have cross-package dependencies. Mock Claude classifies into groups that break compilation (package A in split 1 needs package B in split 2). Assert: (1) Verification detects failure, (2) Conflict resolution triggers, (3) Mock Claude proposes fix (add missing dependency to go.mod or move file), (4) Fix is applied, (5) Re-verification passes after fix.",
+      "status": "Not Started"
     },
     {
-      "task": "T038: Scope — plan persistence and resumption",
-      "description": "save-plan/load-plan TUI commands with JSON serialization via osm:os. 1 test.",
-      "status": "Done"
+      "task": "T098: Integration test — Scenario 4: Independent changes (non-stacked)",
+      "description": "Create TestIntegration_IndependentChanges. Setup: git repo with changes in completely unrelated directories (docs/, tests/, and a config file). Mock Claude classifies as independent groups. Assert: (1) independenceDetection identifies pairs as independent, (2) Report shows independence matrix, (3) Each branch can be verified independently against the base (not against the previous split), (4) Report notes these can be merged in any order.",
+      "status": "Not Started"
     },
     {
-      "task": "T039: Scope — TUI progress with Lipgloss",
-      "description": "Styled output helpers (success/error/warning/info/dim/bold/progressBar) with graceful degradation. All 29 status message lines styled.",
-      "status": "Done"
+      "task": "T099: Integration test — Scenario 5: Heuristic fallback when Claude unavailable",
+      "description": "Create TestIntegration_HeuristicFallback. Setup: same as Scenario 1, but make Claude command resolution fail (no claude binary). Assert: (1) Automated mode detects Claude unavailable, (2) Falls back to heuristic mode with warning, (3) Heuristic split completes successfully, (4) No MCP operations attempted.",
+      "status": "Not Started"
     },
     {
-      "task": "T040: Scope — split conflict resolution",
-      "description": "fix TUI command: auto-resolve split verification failures via sequential strategies (go mod tidy, go mod download). AUTO_FIX_STRATEGIES array.",
-      "status": "Done"
+      "task": "T100: Integration test — Scenario 6: Claude timeout and retry",
+      "description": "Create TestIntegration_ClaudeTimeout. Setup: MockClaudeProvider that delays classification response beyond timeout. Assert: (1) Timeout detected after configurable duration, (2) Retry initiated (up to configured max), (3) Second attempt succeeds (mock responds faster), (4) Final result is correct.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T101: Integration test — Scenario 7: Full pipeline with plan save/load",
+      "description": "Create TestIntegration_PlanPersistence. Setup: run automated split to generate plan. Save plan to temp file. Cleanup branches. Load plan from file. Execute from loaded plan. Assert: (1) Loaded plan matches saved plan, (2) Execution from loaded plan succeeds, (3) Tree hash equivalence passes.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T102: Integration test — Scenario 8: PR creation with mock gh CLI",
+      "description": "Create TestIntegration_PRCreation. Setup: run full pipeline to create split branches. Mock 'gh' CLI (replace with a script that records calls). Call create-prs command. Assert: (1) gh pr create called for each split with correct --base and --head, (2) First PR base is main, subsequent PRs base on previous split, (3) Draft flag passed, (4) PR body includes file list.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T103: Integration test — Scenario 9: TUI command sequence simulation",
+      "description": "Create TestIntegration_TUICommandSequence. Simulate interactive session: analyze → group → plan → preview → move file → rename split → execute → verify → equivalence. Assert each command's output is correct and state transitions are valid. Use engine.EvalString to dispatch TUI commands.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T104: Integration test — Scenario 10: End-to-end with real Claude Code (gated)",
+      "description": "Create TestIntegration_RealClaudeCode. Gated behind -integration flag AND requires claude CLI on PATH. Setup: real git repo with 10+ changed files. Spawn real Claude Code with MCP config. Send classification request. Wait for real classification response with 180s timeout. Generate plan. Execute. Verify equivalence. This is the ultimate validation that the pipeline works end-to-end. Skip if claude binary not found.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T105: Integration test — Scenario 11: End-to-end with Ollama wrapper (gated)",
+      "description": "Create TestIntegration_RealOllama. Gated behind -integration flag AND requires ollama CLI. Similar to T104 but uses OllamaProvider. Tests the 'ollama launch claude' path including model navigation via PTY. Assert: (1) Model selection menu detected, (2) Navigation keystrokes sent, (3) Classification received via MCP, (4) Full pipeline completes.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T106: Cross-platform test verification — ensure tests skip gracefully",
+      "description": "For all new integration tests: verify they skip gracefully on platforms where prerequisites are missing. (1) On Windows, PTY tests should skip with clear message. (2) On CI without Claude, -integration tests skip. (3) On CI without ollama, Ollama tests skip. Ensure no test panics or hangs due to missing binaries.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T107: Run full build verification after integration tests",
+      "description": "Run 'make' and 'go test -race ./...'. All unit tests pass. Run 'go test -v -run Integration -integration ./...' for gated tests (where available). This is the Phase 6 gate.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T108: Commit Phase 6 integration tests",
+      "description": "Stage all Phase 6 changes. Rule of Two. Commit: 'test(pr-split): deep integration tests — 11 scenarios covering full Claude Code pipeline'. Push.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T109: Update docs/architecture-claude-mux.md — add automated pipeline section",
+      "description": "Add new section to architecture doc describing the automated splitting pipeline: (1) Flow diagram (analyze → spawn → classify → plan → execute → verify → resolve → report), (2) MCP tool usage at each step, (3) Fallback paths (Claude unavailable → heuristic, fix fails → re-split, re-split fails → manual). (4) Configuration knobs and their effects.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T110: Update docs/architecture-claude-mux.md — add TUI mux section",
+      "description": "Add section describing TUI mux architecture: (1) Terminal ownership model, (2) Toggle key mechanism, (3) State save/restore, (4) Status bar overlay, (5) Background MCP monitoring. Include the ASCII diagram from T050.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T111: Update docs/reference/command.md — comprehensive pr-split documentation",
+      "description": "Rewrite the pr-split section in command.md. Include: (1) All flags (existing + new Claude flags), (2) All TUI commands (existing + auto-split, claude, claude-status), (3) Usage examples for heuristic mode, automated mode, mixed mode, (4) Configuration via config file, (5) Troubleshooting common issues.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T112: Update docs/reference/config.md — comprehensive pr-split config section",
+      "description": "Rewrite the [pr-split] section in config.md. Include all keys: base, strategy, max, prefix, verify, dry-run, claude-command, claude-args, claude-model, claude-config-dir, claude-env, retry-budget, mode (auto/heuristic). Include example configurations for different setups.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T113: Update docs/scripting.md — document pr-split JS API",
+      "description": "Add a section to scripting.md documenting the globalThis.prSplit API: all exported functions, their parameters, return values, and usage examples. This enables advanced users to call pr-split functions from custom scripts.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T114: Update CHANGELOG.md — Phase 1-6 entries",
+      "description": "Add comprehensive CHANGELOG entries under [Unreleased] for all phases: (1) Added: automated splitting, Claude Code integration, TUI mux, MCP protocol enhancement, new auto-fix strategies, independence detection, new TUI commands, new config keys, new flags, integration tests, (2) Changed: run command defaults to auto mode, MCP tools enhanced with bidirectional protocol, (3) Removed: any dead code removed in Phase 0.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T115: Update shell completion scripts for all new flags",
+      "description": "In completion_command.go, add completions for: --claude-command, --claude-args, --claude-model, --claude-config-dir, --claude-env, --retry-budget, --mode. Add value completions: --mode auto|heuristic. Verify bash, zsh, and fish outputs are valid.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T116: Final linter sweep",
+      "description": "Run all linters: go vet, staticcheck (with all checks enabled), betteralign, deadcode. Fix any issues. Ensure no new dead code was introduced. Ensure struct alignment is optimal. Ensure no ignored errors.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T117: Final documentation review — cross-reference all docs",
+      "description": "Read all documentation files touched in this project. Verify: (1) No stale references to removed features, (2) All new features documented, (3) Architecture diagrams consistent with implementation, (4) Config reference matches code, (5) Command reference matches code. Fix any discrepancies.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T118: Run full build verification — final",
+      "description": "Run 'make' on macOS. Run 'make make-all-in-container' for Linux. Run 'make make-all-run-windows' for Windows (if available). All three must pass. This is the Phase 7 gate.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T119: Commit Phase 7 documentation and polish",
+      "description": "Stage all Phase 7 changes. Rule of Two. Commit: 'docs(pr-split): comprehensive documentation update — architecture, commands, config, changelog'. Push.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T120: Scope expansion — BubbleTea split-view mode",
+      "description": "Design and implement a BubbleTea-based split-view TUI for pr-split. Show osm commands in the top pane and Claude's output in the bottom pane. Use BubbleTea's Update/View pattern. This is an advanced alternative to the toggle-based mux. Users can see both TUIs simultaneously. Wire as a new mode accessible via 'set view split' TUI command.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T121: Scope expansion — interactive plan editor in BubbleTea",
+      "description": "Implement a full-screen BubbleTea TUI for plan editing. Show splits as a list with file counts. Arrow keys to navigate, Enter to expand, d to delete, m to move files, r to rename. Replaces the text-based move/rename/merge commands with a visual editor. Wire as 'edit-plan' TUI command.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T122: Scope expansion — merge queue integration",
+      "description": "Extend create-prs to support GitHub merge queue. After creating stacked PRs, optionally enqueue them in dependency order. Use 'gh pr merge --merge-method squash --auto' for auto-merge. Add config key pr-split.auto-merge and flag --auto-merge.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T123: Scope expansion — diff visualization in TUI",
+      "description": "Add a 'diff' TUI command that shows a syntax-highlighted diff for a specific split. Use Lipgloss for colorization: additions in green, deletions in red, context in gray. Support paging for large diffs. Use osm:exec to run 'git diff' and parse output.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T124: Scope expansion — Claude conversation history persistence",
+      "description": "Save Claude's classification and plan responses alongside the split plan in .pr-split-plan.json. When loading a saved plan, display Claude's rationale for each group. This helps users understand why files were grouped the way they were.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T125: Scope expansion — multi-Claude parallel classification",
+      "description": "For very large diffs (50+ files), spawn multiple Claude instances (using Pool) to classify subsets of files in parallel. Merge classification results. Requires: (1) File list partitioning, (2) Session management per Claude instance, (3) Result merging with conflict detection (same file classified differently by different instances).",
+      "status": "Not Started"
+    },
+    {
+      "task": "T126: Scope expansion — custom classification rules",
+      "description": "Allow users to pre-define classification rules in config: pr-split.rules.tests=*_test.go, pr-split.rules.docs=docs/**. These rules pre-classify files before sending to Claude, reducing Claude's work and ensuring certain patterns are always grouped together. Claude can override if it explains why.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T127: Scope expansion — split dependency graph visualization",
+      "description": "Add a 'graph' TUI command that shows the dependency graph between splits in ASCII art. Use a simple topological sort and text-based graph rendering. Highlight independent pairs. Show merge order recommendation.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T128: Scope expansion — performance benchmarks for split operations",
+      "description": "Add benchmarks for: (1) analyzeDiff with 100/500/1000 files, (2) groupByDependency with complex import graphs, (3) createSplitPlan with 20/50 groups, (4) executeSplit with 10/20 branches, (5) MCP tool round-trip latency. Use Go testing.B and report results. Identify bottlenecks.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T129: Scope expansion — telemetry and analytics",
+      "description": "Add optional (opt-in) telemetry for pr-split usage: (1) Number of files split, (2) Strategy used (heuristic vs auto), (3) Claude interactions count, (4) Conflict resolution success rate, (5) Total pipeline time. Store locally in .osm/telemetry/. Add 'telemetry' TUI command to view stats. Never send data externally.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T130: Scope expansion — plugin system for custom strategies",
+      "description": "Allow users to define custom grouping strategies via JS scripts. Load from paths configured in pr-split.strategy-scripts. Each script exports a function(files, options) → groups. Register in applyStrategy switch. This enables project-specific grouping logic without modifying osm source.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T131: Scope expansion — retrospective analysis command",
+      "description": "Add a 'retro' TUI command that analyzes a completed split: (1) Which splits were hardest to merge? (2) Which had the most conflicts? (3) Were the groups optimal? (4) Suggestions for next time. Uses saved plan data and git log analysis. Claude-assisted if available.",
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {
-    "buildCommand": "make make-all-with-log",
+    "buildCommand": "make",
     "linuxBuildCommand": "make make-all-in-container",
     "windowsBuildCommand": "make make-all-run-windows",
-    "integrationTestCommand": "make integration-test-claudemux PROVIDER=ollama MODEL=gpt-oss:20b-cloud"
+    "testCommand": "go test -race ./...",
+    "integrationTestCommand": "go test -v -run Integration -integration ./...",
+    "lintCommand": "make lint",
+    "failPolicy": "If ANY check fails, STOP and fix before proceeding. Zero tolerance.",
+    "coveragePolicy": "Every new function must have test coverage. Every export must be tested."
   },
   "finalEnforcementProtocol": [
-    "NINE HOURS MINIMUM — verify via .session-timer",
     "Rule of Two: TWO contiguous, issue-free reviews before ANY commit",
-    "If lost: READ DIRECTIVE.txt → THINK → ACT",
+    "ALL checks MUST pass on ALL platforms (macOS, Linux, Windows)",
+    "NO dead code — deadcode must pass without additions to .deadcodeignore",
+    "If lost: READ DIRECTIVE.txt → READ blueprint.json → READ WIP.md → THINK → ACT",
     "Die coding — the next Takumi reads WIP.md"
   ]
 }

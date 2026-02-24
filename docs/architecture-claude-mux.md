@@ -14,6 +14,7 @@
    - [osm:claudemux](#52-osmclaudemux)
    - [BT Templates](#53-bt-templates)
    - [PR Splitting Workflow](#54-pr-splitting-workflow)
+   - [Automated Splitting Pipeline](#55-automated-splitting-pipeline)
 6. [MCP Feedback Protocol](#6-mcp-feedback-protocol)
 7. [Security Model](#7-security-model)
 8. [Session Isolation](#8-session-isolation)
@@ -385,28 +386,24 @@ Each factory returns a `bt.Node` and communicates via a shared `bt.Blackboard`.
 
 | Factory | BB reads | BB writes | Purpose |
 |---------|----------|-----------|---------|
-| `spawnClaude(bb, registry, providerName, spawnOpts)` | — | `agent`, `parser`, `agentSpawned` | Spawn via provider registry |
-| `sendPrompt(bb, prompt)` | `agent` | `promptSent` | Write prompt to PTY stdin |
-| `waitForResponse(bb, opts)` | `agent`, `parser` | `response`, `responseReceived`, `rateLimited` | Read/parse until completion |
-| `verifyOutput(bb, command)` | — | `verifyCode`, `verified` | Run shell command, check exit |
-| `runTests(bb, command)` | — | `testCode`, `testsPassed` | Run test command |
-| `commitChanges(bb, message)` | — | `commitOutput`, `committed` | `git add -A && git commit` |
-| `splitBranch(bb, branchName)` | — | `currentBranch`, `branchCreated` | `git checkout -b` |
+| `btVerifyOutput(bb, command)` | — | `verifyCode`, `verified` | Run shell command, check exit |
+| `btRunTests(bb, command)` | — | `testCode`, `testsPassed` | Run test command |
+| `btCommitChanges(bb, message)` | — | `commitOutput`, `committed` | `git add -A && git commit` |
+| `btSplitBranch(bb, branchName)` | — | `currentBranch`, `branchCreated` | `git checkout -b` |
 
-**Permission auto-rejection:** `waitForResponse` automatically sends `"n\n"` upon
-detecting `EVENT_PERMISSION`. This is the JS-level safety net; the Go parser
-classification is the primary defense. See [Security Model](#7-security-model).
+Claude interaction (spawn, prompt, response) is handled by `ClaudeCodeExecutor`
+rather than individual BT leaf nodes. See [§5.5 Automated Splitting Pipeline](#55-automated-splitting-pipeline).
 
 #### Workflow Composers
 
 ```javascript
-var templates = require('internal/command/pr_split_script.js'); // or use globalThis.prSplit
+var ps = globalThis.prSplit;
 var bt = require('osm:bt');
 
 var bb = new bt.Blackboard();
 
 // Run tests → optional verify → commit
-templates.verifyAndCommit(bb, {
+ps.verifyAndCommit(bb, {
     testCommand: 'make test',
     verifyCommand: 'git diff --check',
     message: 'fix: resolve compilation error in parser'
@@ -429,7 +426,7 @@ Splits a large diff into a linear series of stacked, independently-reviewable br
 Analysis → Grouping → Planning → Execution → Verification
    │           │          │           │             │
 analyzeDiff  groupBy*  createSplit executeSplit  verifyEquivalence
-               (4        Plan       (linear         (git tree
+               (6        Plan       (linear         (git tree
              strategies)            stacking)       hash compare)
 ```
 
@@ -438,9 +435,12 @@ analyzeDiff  groupBy*  createSplit executeSplit  verifyEquivalence
 | Strategy | Function | Use case |
 |----------|----------|----------|
 | Directory | `groupByDirectory(files, depth)` | Group by top-level package |
+| Directory-deep | `groupByDirectory(files, 2)` | Group by two-level nesting |
 | Extension | `groupByExtension(files)` | Separate `.go` from `.md` |
 | Pattern | `groupByPattern(files, patterns)` | Named regex patterns |
 | Chunks | `groupByChunks(files, maxPerGroup)` | Fixed-size groups |
+| Dependency | `groupByDependency(files)` | Go import graph merge |
+| Auto | `selectStrategy(files)` | Auto-select best strategy |
 
 #### Linear branch stacking
 
@@ -455,6 +455,93 @@ reviewed and merged independently in order.
 
 `verifyEquivalence(plan)` compares git tree hashes: the last split branch must have
 an identical tree to the source branch (`splitTree === sourceTree`).
+
+### 5.5. Automated Splitting Pipeline
+
+When Claude Code is available, `automatedSplit(config)` orchestrates a 10-step
+pipeline that combines AI classification with deterministic execution:
+
+```
+┌─ Step  1: Analyze diff ──────────── analyzeDiff()
+│   │
+│   ▼
+│  Step  2: Spawn Claude ──────────── ClaudeCodeExecutor.resolve() + spawn()
+│   │                                  │
+│   ├── [Claude unavailable] ──────── heuristicFallback()  ← (exit pipeline)
+│   │
+│   ▼
+│  Step  3: Send classification ───── renderClassificationPrompt() → handle.send()
+│   │
+│   ▼
+│  Step  4: Receive classification ── pollForFile('classification.json')
+│   │                                  │
+│   │                                  └── assigns uncategorized if files missing
+│   ▼
+│  Step  5: Generate split plan ───── classificationToGroups() → createSplitPlan()
+│   │                                  │
+│   │                                  └── also checks for Claude-provided split-plan.json
+│   ▼
+│  Step  6: Execute split ─────────── executeSplit(plan)  [skipped in dry-run]
+│   │
+│   ▼
+│  Step  7: Verify splits ─────────── verifySplits(plan)
+│   │
+│   ├── [all pass] ───────────────── continue to Step 10
+│   │
+│   ▼
+│  Step  8: Resolve conflicts ─────── resolveConflictsWithClaude()
+│   │                                  ├── AUTO_FIX_STRATEGIES (local)
+│   │                                  └── claude-fix (sends to Claude)
+│   │
+│   ├── [reSplitNeeded = true] ────── Step 9
+│   │
+│   ▼
+│  Step  9: Re-split ──────────────── re-classify → re-plan → re-execute → re-verify
+│   │                                  (up to maxReSplits iterations)
+│   │
+│   ▼
+└─ Step 10: Equivalence + report ──── verifyEquivalence() + assessIndependence()
+```
+
+#### MCP tool usage
+
+| Step | Direction | MCP tool / File |
+|------|-----------|-----------------|
+| 3 | osm → Claude | PTY stdin (classification prompt) |
+| 4 | Claude → osm | `classification.json` in resultDir |
+| 5 | Claude → osm | `split-plan.json` (optional, validated if present) |
+| 8 | osm → Claude | PTY stdin (conflict resolution prompt) |
+| 8 | Claude → osm | `resolution.json` in resultDir |
+| 9 | osm → Claude | PTY stdin (re-classification prompt) |
+| 9 | Claude → osm | Updated `classification.json` |
+
+#### Fallback paths
+
+Three fallback scenarios are handled:
+
+1. **Claude unavailable** (Step 2 fails): Falls back to `heuristicFallback()`,
+   which uses the configured grouping strategy (default: `directory`) without
+   any Claude interaction. Report includes `fallbackUsed: true`.
+
+2. **Fix strategies exhausted** (Step 8): If `resolveConflicts` exhausts its
+   `retryBudget` and strategies still fail, sets `reSplitNeeded: true` to
+   trigger Step 9. Report includes `reSplitFiles` and `reSplitReason`.
+
+3. **Re-split exhausted** (Step 9 loops > `maxReSplits`): Pipeline exits with
+   current state. Equivalence may fail. User can intervene manually via TUI
+   commands (`move`, `fix`, `execute`).
+
+#### Configuration knobs
+
+| Config | Default | Effect |
+|--------|---------|--------|
+| `classifyTimeoutMs` | 120000 | Max wait for classification.json |
+| `planTimeoutMs` | 120000 | Max wait for split-plan.json |
+| `resolveTimeoutMs` | 180000 | Max wait per resolution attempt |
+| `pollIntervalMs` | 1000 | File polling interval |
+| `maxResolveRetries` | 3 | Max retries per failed split |
+| `maxReSplits` | 1 | Max full re-classification cycles |
+| `retryBudget` | 3 | TUI-settable resolve attempt budget |
 
 ---
 

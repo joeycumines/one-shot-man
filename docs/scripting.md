@@ -436,6 +436,144 @@ Building blocks for multi-instance Claude Code management. See [Claude-Mux Archi
 - The `scripts/` directory contains small demos and test drivers.
 - Built-in workflows are implemented as embedded scripts/templates under `internal/command/`.
 
+## PR-Split JS API (`globalThis.prSplit`)
+
+When the pr-split command is active, `globalThis.prSplit` exposes the full
+splitting pipeline as callable functions. Advanced users can invoke these from
+custom scripts. The API is also available via `require()` in the pr-split module
+context.
+
+### Analysis
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `analyzeDiff` | `(config?) → {files, fileStatuses, baseBranch, currentBranch}` | Analyze git diff against base branch |
+| `analyzeDiffStats` | `(config?) → {stats}` | Get per-file addition/deletion counts |
+
+### Grouping
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `groupByDirectory` | `(files, depth?) → [{name, files}]` | Group by top-level directory |
+| `groupByExtension` | `(files) → [{name, files}]` | Group by file extension |
+| `groupByPattern` | `(files, patterns) → [{name, files}]` | Group by named regex patterns |
+| `groupByChunks` | `(files, maxPerGroup) → [{name, files}]` | Fixed-size groups |
+| `groupByDependency` | `(files, opts?) → [{name, files}]` | Go import graph analysis |
+| `parseGoImports` | `(content) → [importPath]` | Parse Go import statements from file content |
+| `detectGoModulePath` | `() → string` | Detect Go module path from go.mod (empty string if not found) |
+| `applyStrategy` | `(files, strategy, options?) → [{name, files}]` | Apply named strategy |
+| `selectStrategy` | `(files, options?) → {strategy, groups, reason, needsConfirm, scored}` | Auto-select best strategy |
+
+### Planning
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `createSplitPlan` | `(groups, opts) → plan` | Create plan from groups |
+| `validatePlan` | `(plan) → {valid, errors}` | Validate plan completeness |
+| `savePlan` | `(path?) → {error?}` | Save current plan to JSON file (uses internal plan cache) |
+| `loadPlan` | `(path?) → plan` | Load plan from JSON file |
+
+### Execution & Verification
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `executeSplit` | `(plan) → {results, error?}` | Create stacked branches |
+| `verifySplit` | `(branchName, config) → {name, passed, output, error}` | Verify a single split branch |
+| `verifySplits` | `(plan) → {results, allPassed}` | Run verify command on each split |
+| `verifyEquivalence` | `(plan) → {equivalent, splitTree, sourceTree}` | Tree hash comparison |
+| `verifyEquivalenceDetailed` | `(plan) → {equivalent, details}` | Detailed tree comparison with file-level diff |
+| `cleanupBranches` | `(plan) → void` | Delete split branches |
+| `createPRs` | `(plan, opts?) → {results, error?}` | Push and create GitHub PRs |
+
+### Conflict Resolution
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `resolveConflicts` | `(plan, opts?) → {fixed, errors, totalRetries, reSplitNeeded}` | Apply auto-fix strategies |
+| `AUTO_FIX_STRATEGIES` | constant array | Available fix strategies with detect/fix functions |
+
+### Automated Pipeline
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `automatedSplit` | `(config?) → {report, error?}` | Full 10-step Claude-assisted pipeline |
+| `heuristicFallback` | `(analysis, config, report) → {error?, report}` | Local-only splitting fallback |
+| `assessIndependence` | `(plan, classification?) → [[name, name]]` | Detect independent split pairs |
+| `classificationToGroups` | `(classification) → [{name, files}]` | Convert file→group map to groups array |
+
+### Prompt Rendering
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `renderClassificationPrompt` | `(analysis, opts?) → {text, error?}` | Build Claude classification prompt |
+| `renderSplitPlanPrompt` | `(classification, config) → {text, error?}` | Build split plan prompt from classification |
+| `renderConflictPrompt` | `(conflict) → {text, error?}` | Build conflict resolution prompt |
+| `detectLanguage` | `(files) → string` | Detect primary language from file extensions |
+
+### Prompt Templates (Constants)
+
+| Symbol | Type | Description |
+|--------|------|-------------|
+| `CLASSIFICATION_PROMPT_TEMPLATE` | string | Template for classification prompts |
+| `SPLIT_PLAN_PROMPT_TEMPLATE` | string | Template for split plan prompts |
+| `CONFLICT_RESOLUTION_PROMPT_TEMPLATE` | string | Template for conflict resolution prompts |
+
+### Claude Executor
+
+| Symbol | Type | Description |
+|--------|------|-------------|
+| `ClaudeCodeExecutor` | constructor | `new ClaudeCodeExecutor(config)` — manages Claude Code lifecycle |
+
+### BT Node Factories
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `createAnalyzeNode` | `(bb, config) → bt.Node` | Analyze diff BT node |
+| `createGroupNode` | `(bb, strategy, options) → bt.Node` | Group files BT node |
+| `createPlanNode` | `(bb, config) → bt.Node` | Create plan BT node |
+| `createSplitNode` | `(bb) → bt.Node` | Execute split BT node |
+| `createVerifyNode` | `(bb) → bt.Node` | Verify splits BT node |
+| `createEquivalenceNode` | `(bb) → bt.Node` | Tree equivalence BT node |
+| `createSelectStrategyNode` | `(bb, options) → bt.Node` | Auto-select strategy BT node |
+| `createWorkflowTree` | `(bb, config) → bt.Node` | Full workflow tree (all nodes) |
+
+### BT Template Leaves
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `btVerifyOutput` | `(bb, command) → bt.Node` | Run command, check exit code |
+| `btRunTests` | `(bb, command) → bt.Node` | Run test command |
+| `btCommitChanges` | `(bb, message) → bt.Node` | `git add -A && git commit` |
+| `btSplitBranch` | `(bb, branchName) → bt.Node` | `git checkout -b` |
+| `verifyAndCommit` | `(bb, opts) → void` | Composite: tests → verify → commit |
+
+### Metadata
+
+| Symbol | Type | Description |
+|--------|------|-------------|
+| `VERSION` | string | Current API version (e.g., `'5.0.0'`) |
+| `runtime` | object | Runtime config access (`runtime.maxFiles`, `runtime.branchPrefix`, etc.) |
+
+### Example: Custom script using prSplit API
+
+```js
+// my-split.js — custom splitting with dependency grouping
+var ps = globalThis.prSplit;
+
+var analysis = ps.analyzeDiff({ base: 'develop' });
+var groups = ps.groupByDependency(analysis.files, { modulePath: 'github.com/my/repo' });
+var plan = ps.createSplitPlan(groups, {
+    baseBranch: 'develop',
+    sourceBranch: analysis.currentBranch,
+    branchPrefix: 'review/',
+    maxFiles: 15
+});
+
+ps.executeSplit(plan);
+var equiv = ps.verifyEquivalence(plan);
+log.printf('Equivalence: %s', equiv.equivalent ? 'PASS' : 'FAIL');
+```
+
 ## Module Resolution
 
 `osm` uses the [goja_nodejs](https://github.com/nicois/goja_nodejs) CommonJS module system.

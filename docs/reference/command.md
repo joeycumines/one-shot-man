@@ -149,6 +149,9 @@ Split a large PR into reviewable stacked branches. Supports heuristic grouping s
   - `-test`: enable test mode
   - `-session <id>`: override session id
   - `-store <fs|memory>`: select storage backend
+  - `-log-level <level>`: log level (`debug`, `info`, `warn`, `error`; default `info`)
+  - `-log-file <path>`: path to log file (JSON output)
+  - `-log-buffer <n>`: size of in-memory log buffer (default `1000`)
   - `-claude-command <path>`: Claude binary path (empty = auto-detect `claude` → `ollama`)
   - `-claude-args <args>`: additional Claude CLI arguments (space-separated)
   - `-claude-model <model>`: model name (provider-dependent)
@@ -185,6 +188,7 @@ Workflow commands:
   - `equivalence` — check tree hash equivalence
   - `cleanup` — delete all split branches
   - `run` — full workflow: analyze → group → plan → execute → verify
+  - `auto-split` — automated pipeline: spawn Claude → classify → plan → execute → verify → resolve (falls back to heuristic mode if Claude unavailable)
 
 Plan editing commands:
   - `move <file> <from-index> <to-index>` — move a file between splits (1-based indexes)
@@ -201,10 +205,42 @@ GitHub integration:
   - `fix` — auto-resolve common split conflicts (go mod tidy, go.sum regeneration)
 
 General:
-  - `set <key> <val>` — set runtime config
+  - `set <key> <val>` — set runtime config (keys: `base`, `strategy`, `max`, `prefix`, `verify`, `dry-run`, `retry-budget`, `mode`)
   - `copy` — copy plan to clipboard
   - `report` — output current state as JSON
   - `help` — show available commands
+
+#### Usage examples
+
+**Heuristic mode** (default, no Claude):
+```
+$ osm pr-split -i --base main --strategy directory
+> run
+```
+
+**Automated mode** (with Claude Code):
+```
+$ osm pr-split -i --base main --claude-command claude
+> auto-split
+```
+
+**Mixed mode** — start automated, then refine manually:
+```
+$ osm pr-split -i --base main --claude-command claude
+> auto-split
+> preview
+> move internal/util.go 3 1
+> execute
+```
+
+#### Troubleshooting
+
+- **"Claude unavailable"** — ensure `claude` (or `--claude-command`) is on PATH.
+  Auto-split falls back to heuristic mode automatically.
+- **Tree hash mismatch** — a file rename's old path wasn't deleted from the split
+  branch. Use `fix` to attempt auto-repair, or manually adjust with `move`.
+- **Retry budget exhausted** — increase with `set retry-budget 5` before `auto-split`,
+  or use `fix` on individual splits after execution.
 
 ### `osm mcp`
 

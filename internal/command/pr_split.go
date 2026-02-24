@@ -153,18 +153,18 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		}
 	}
 	engine.SetGlobal("prSplitConfig", map[string]interface{}{
-		"baseBranch":     c.baseBranch,
-		"strategy":       c.strategy,
-		"maxFiles":       c.maxFiles,
-		"branchPrefix":   c.branchPrefix,
-		"verifyCommand":  c.verifyCommand,
-		"dryRun":         c.dryRun,
-		"jsonOutput":     c.jsonOutput,
-		"claudeCommand":  c.claudeCommand,
-		"claudeArgs":     claudeArgsList,
-		"claudeModel":    c.claudeModel,
+		"baseBranch":      c.baseBranch,
+		"strategy":        c.strategy,
+		"maxFiles":        c.maxFiles,
+		"branchPrefix":    c.branchPrefix,
+		"verifyCommand":   c.verifyCommand,
+		"dryRun":          c.dryRun,
+		"jsonOutput":      c.jsonOutput,
+		"claudeCommand":   c.claudeCommand,
+		"claudeArgs":      claudeArgsList,
+		"claudeModel":     c.claudeModel,
 		"claudeConfigDir": c.claudeConfigDir,
-		"claudeEnv":      claudeEnvMap,
+		"claudeEnv":       claudeEnvMap,
 	})
 
 	// TUI Mux — terminal multiplexer between osm and child PTY (Claude Code).

@@ -84,7 +84,7 @@ func (r *blockingReader) Read(p []byte) (int, error) {
 	}
 }
 
-func (r *blockingReader) send(data []byte)  { r.ch <- data }
+func (r *blockingReader) send(data []byte) { r.ch <- data }
 
 func TestNew(t *testing.T) {
 	t.Parallel()

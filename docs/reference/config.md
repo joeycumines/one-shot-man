@@ -243,6 +243,16 @@ The `[pr-split]` section configures default options for `osm pr-split`. All keys
 | `claude-config-dir` | string | _(empty)_ | `--claude-config-dir` | Claude config directory override |
 | `claude-env` | string | _(empty)_ | `--claude-env` | Extra environment variables (`KEY=VALUE,KEY=VALUE`) |
 
+### Runtime-only settings
+
+These settings are available via the interactive TUI `set` command but are not
+persisted in the config file or exposed as CLI flags:
+
+| Key | Type | Default | TUI command | Description |
+|-----|------|---------|-------------|-------------|
+| `retry-budget` | int | `3` | `set retry-budget N` | Max resolve attempts per failed split during `fix` / `auto-split` |
+| `mode` | string | `heuristic` | `set mode <value>` | Splitting mode (`auto` or `heuristic`) |
+
 ### Example
 
 ```text

@@ -341,11 +341,11 @@ type TestPipelineFile struct {
 // temp git repo with configurable files, the Goja engine loaded with
 // pr_split_script.js, and a result directory for mock MCP responses.
 type TestPipeline struct {
-	Dir       string                                 // git repo directory
-	ResultDir string                                 // MCP result directory
-	Stdout    *bytes.Buffer                          // captured stdout
-	Dispatch  func(string, []string) error           // TUI command dispatch
-	EvalJS    func(string) (interface{}, error)       // evaluate JS in engine
+	Dir       string                            // git repo directory
+	ResultDir string                            // MCP result directory
+	Stdout    *bytes.Buffer                     // captured stdout
+	Dispatch  func(string, []string) error      // TUI command dispatch
+	EvalJS    func(string) (interface{}, error) // evaluate JS in engine
 }
 
 // setupTestPipeline creates a test pipeline with configurable initial files,
@@ -2232,11 +2232,11 @@ func TestPrSplitCommand_FlagOverridesConfig(t *testing.T) {
 func TestPrSplitCommand_ClaudeConfigJSExposure(t *testing.T) {
 	// Verify prSplitConfig in JS contains the correct claude values.
 	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
-		"claudeCommand":  "test-claude",
-		"claudeArgs":     []string{"--fast", "--quiet"},
-		"claudeModel":    "sonnet-4",
+		"claudeCommand":   "test-claude",
+		"claudeArgs":      []string{"--fast", "--quiet"},
+		"claudeModel":     "sonnet-4",
 		"claudeConfigDir": "/tmp/cfg",
-		"claudeEnv":      map[string]string{"API_KEY": "secret", "DEBUG": "1"},
+		"claudeEnv":       map[string]string{"API_KEY": "secret", "DEBUG": "1"},
 	})
 
 	// Use JS eval to dump the config values.
@@ -3152,9 +3152,9 @@ func TestPrSplitCommand_GoMissingImportsDetect(t *testing.T) {
 	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
-		name   string
-		js     string
-		want   bool
+		name string
+		js   string
+		want bool
 	}{
 		{
 			"undefined error",
@@ -4269,10 +4269,10 @@ func TestIntegration_BrokenSplitsResolution(t *testing.T) {
 		Error      *string `json:"error"`
 		SplitCount int     `json:"splitCount"`
 		Resolved   struct {
-			Fixed        []interface{} `json:"fixed"`
-			Errors       []interface{} `json:"errors"`
-			TotalRetries int           `json:"totalRetries"`
-			ReSplitNeeded bool         `json:"reSplitNeeded"`
+			Fixed         []interface{} `json:"fixed"`
+			Errors        []interface{} `json:"errors"`
+			TotalRetries  int           `json:"totalRetries"`
+			ReSplitNeeded bool          `json:"reSplitNeeded"`
 		} `json:"resolved"`
 	}
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
@@ -4379,8 +4379,8 @@ func TestIntegration_IndependentChanges(t *testing.T) {
 	}
 
 	var result struct {
-		Error    *string      `json:"error"`
-		SplitCount int        `json:"splitCount"`
+		Error            *string    `json:"error"`
+		SplitCount       int        `json:"splitCount"`
 		IndependentPairs [][]string `json:"independentPairs"`
 	}
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
@@ -4673,9 +4673,9 @@ func TestIntegration_PRCreationMockGh(t *testing.T) {
 	}
 
 	var prResult struct {
-		Error      *string `json:"error"`
-		ResultCount int    `json:"resultCount"`
-		FirstError *string `json:"firstError"`
+		Error       *string `json:"error"`
+		ResultCount int     `json:"resultCount"`
+		FirstError  *string `json:"firstError"`
 	}
 	if err := json.Unmarshal([]byte(val.(string)), &prResult); err != nil {
 		t.Fatal(err)

@@ -5,12 +5,14 @@
     "maintenance": "Update status IMMEDIATELY after every sub-task. Deviations logged within plan. NO priorities. NO estimates. ALL tasks MUST be completed."
   },
   "globalAlerts": [
-    "UTMOST PRIORITY: osm pr-split as BUILT-IN COMMAND with end-to-end integration tests",
+    "UTMOST PRIORITY: osm pr-split as BUILT-IN COMMAND with RIGOROUS end-to-end integration tests that ACTUALLY VERIFY functionality",
     "DELETE AFTER VERIFIED: scripts/orchestrate-pr-split.js, scripts/bt-templates/claude-mux.js, goals/orchestrate-pr-split.json",
     "ALL three files become a SINGLE embedded JS in internal/command/pr_split_script.js",
     "Rule of Two: NO commits until TWO contiguous, issue-free review cycles (diff vs HEAD)",
     "ALL checks MUST pass on ALL platforms (macOS, Linux via Docker, Windows via moo)",
-    "Integration tests MUST use REAL Claude Code via PTY (ollama launch claude)",
+    "CRITICAL AXIOM: 100% test coverage is useless if not testing valuable outcomes. The current PR split feature is not verified to work end-to-end properly using the OLLAMA variant. You MUST implement robust tests with explicit callbacks and stronger verification criteria!",
+    "PATHETIC VALIDATION DEMONSTRATION: See scratch/pr-split-execution-failure-demo.txt for a demonstration of why the previous attempts have been pathetic in terms of validation - why it straight up doesnt work / doesnt do anything useful, failing at the very first hurdle, and no doubt failing in NUMEROUS other ways, and makes it clear that zero meaningful validation was ever performed.",
+    "Integration tests MUST genuinely verify REAL Claude Code via PTY (ollama launch claude) is successfully executing the PR split end to end",
     "NINE-HOUR MANDATE: Session timer at .session-timer"
   ],
   "mandatoryDirectives": [
@@ -21,7 +23,7 @@
     "Expand scope continuously — there is ALWAYS more work"
   ],
   "statusSection": {
-    "currentState": "COVERAGE PUSH IN PROGRESS — T036 Phase 1 done (15 new tests, 94.2%→94.8%). Awaiting Rule of Two for commit.",
+    "currentState": "COVERAGE PUSH DISCOURAGED — T026 failed to implement rigorous end-to-end testing. Awaiting proper integration testing of PR split using OLLAMA with explicit pass/fail criteria and callbacks before any more 100% coverage attempts.",
     "branch": "wip",
     "buildStatus": "ALL GREEN — macOS PASS (all claudemux tests pass with -race)",
     "sessionTimer": ".session-timer (2026-02-24T00:00:00+1000)"
@@ -154,8 +156,8 @@
     },
     {
       "task": "T026: Integration test — AI pr-split end-to-end (FLAGSHIP)",
-      "description": "Gated. --ai --provider ollama --model gpt-oss:20b-cloud. Verify: PTY spawn, MCP tool calls, result parsing, stacked branches, equivalence. MOST CRITICAL TEST. IMPLEMENTED in TestIntegration_FullPRSplitWorkflow.",
-      "status": "Done"
+      "description": "Gated. --ai --provider ollama --model gpt-oss:20b-cloud. MUST rigorously verify: PTY spawn, MCP tool calls, result parsing, stacked branches, equivalence. MOST CRITICAL TEST. Previous testing was INSUFFICIENT with not enough callbacks or explicit criteria to verify correctness. You MUST ensure the PR split feature genuinely works end-to-end using the OLLAMA variant, and make the constraints stronger so it actually verifies that it works in all necessary ways.",
+      "status": "In Progress"
     },
     {
       "task": "T027: Integration test — MCP round-trip, dry-run, error recovery",
@@ -219,7 +221,7 @@
     },
     {
       "task": "T039: Comprehensive coverage report — verify 100%",
-      "description": "'make cover'. ALL packages 100% or justified. No package below 95%.",
+      "description": "'make cover'. ALL packages 100% or justified. No package below 95%. DISCOURAGED: Do not pursue 100% coverage blindly; 100% coverage is not useful if the coverage is not testing something valuable. Focus on end-to-end verification and useful functionality instead.",
       "status": "Not Started"
     },
     {
@@ -328,7 +330,11 @@
     "linuxBuildCommand": "make make-all-in-container",
     "windowsBuildCommand": "make make-all-run-windows",
     "coverageTarget": "100%",
-    "platforms": ["macOS", "Linux (Docker)", "Windows (moo)"],
+    "platforms": [
+      "macOS",
+      "Linux (Docker)",
+      "Windows (moo)"
+    ],
     "integrationTestCommand": "make integration-test-claudemux PROVIDER=ollama MODEL=gpt-oss:20b-cloud"
   },
   "finalEnforcementProtocol": [

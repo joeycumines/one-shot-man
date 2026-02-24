@@ -122,7 +122,8 @@ var runtime = {
     verifyCommand: cfg.verifyCommand || 'make test',
     dryRun:        cfg.dryRun        || false,
     jsonOutput:    cfg.jsonOutput    || false,
-    mode:          cfg.mode          || 'heuristic'   // 'auto' or 'heuristic'
+    mode:          cfg.mode          || 'heuristic',   // 'auto' or 'heuristic'
+    retryBudget:   typeof cfg.retryBudget === 'number' ? cfg.retryBudget : 3
 };
 
 // ---------------------------------------------------------------------------
@@ -1346,6 +1347,209 @@ var AUTO_FIX_STRATEGIES = [
             }
             return { fixed: true, error: null };
         }
+    },
+    {
+        name: 'go-build-missing-imports',
+        // Detect: a Go project with build errors mentioning undefined names.
+        detect: function(dir, verifyOutput) {
+            if (!verifyOutput) return false;
+            return verifyOutput.indexOf('undefined:') >= 0 ||
+                   verifyOutput.indexOf('imported and not used') >= 0 ||
+                   verifyOutput.indexOf('could not import') >= 0;
+        },
+        // Fix: run goimports to add missing imports and remove unused ones.
+        fix: function(dir) {
+            // Try goimports if available, fall back to go build attempt.
+            var which = exec.execv(['which', 'goimports']);
+            if (which.code === 0) {
+                var result = exec.execv(['sh', '-c',
+                    'cd ' + shellQuote(dir) + ' && find . -name "*.go" -exec goimports -w {} +']);
+                if (result.code !== 0) {
+                    return { fixed: false, error: 'goimports failed: ' + result.stderr.trim() };
+                }
+            } else {
+                // Without goimports, try go build to see if it's just missing go.sum.
+                return { fixed: false, error: 'goimports not available' };
+            }
+            var status = gitExec(dir, ['status', '--porcelain']);
+            if (status.stdout.trim() === '') {
+                return { fixed: false, error: 'goimports made no changes' };
+            }
+            gitExec(dir, ['add', '-A']);
+            var commit = gitExec(dir, ['commit', '-m', 'fix: goimports for split']);
+            if (commit.code !== 0) {
+                return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
+            }
+            return { fixed: true, error: null };
+        }
+    },
+    {
+        name: 'npm-install',
+        // Detect: package.json exists.
+        detect: function(dir) {
+            return exec.execv(['test', '-f', (dir !== '.' ? dir + '/' : '') + 'package.json']).code === 0;
+        },
+        // Fix: run `npm install` and commit changes to package lock.
+        fix: function(dir) {
+            var result = exec.execv(['sh', '-c',
+                'cd ' + shellQuote(dir) + ' && npm install --no-audit --no-fund 2>&1']);
+            if (result.code !== 0) {
+                return { fixed: false, error: 'npm install failed: ' + (result.stderr || result.stdout || '').trim() };
+            }
+            var status = gitExec(dir, ['status', '--porcelain']);
+            if (status.stdout.trim() === '') {
+                return { fixed: false, error: 'npm install made no changes' };
+            }
+            gitExec(dir, ['add', '-A']);
+            var commit = gitExec(dir, ['commit', '-m', 'fix: npm install for split']);
+            if (commit.code !== 0) {
+                return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
+            }
+            return { fixed: true, error: null };
+        }
+    },
+    {
+        name: 'make-generate',
+        // Detect: Makefile with 'generate' target or go generate files.
+        detect: function(dir) {
+            var hasMakefile = exec.execv(['test', '-f', (dir !== '.' ? dir + '/' : '') + 'Makefile']).code === 0;
+            if (hasMakefile) {
+                var grep = exec.execv(['sh', '-c',
+                    'cd ' + shellQuote(dir) + ' && grep -q "^generate:" Makefile']);
+                if (grep.code === 0) return true;
+            }
+            // Check for //go:generate directives.
+            var goGen = exec.execv(['sh', '-c',
+                'cd ' + shellQuote(dir) + ' && grep -rl "//go:generate" --include="*.go" . 2>/dev/null | head -1']);
+            return goGen.code === 0 && goGen.stdout.trim() !== '';
+        },
+        // Fix: run make generate or go generate.
+        fix: function(dir) {
+            var hasMakeTarget = exec.execv(['sh', '-c',
+                'cd ' + shellQuote(dir) + ' && grep -q "^generate:" Makefile 2>/dev/null']).code === 0;
+            var result;
+            if (hasMakeTarget) {
+                result = exec.execv(['sh', '-c', 'cd ' + shellQuote(dir) + ' && make generate']);
+            } else {
+                result = exec.execv(['sh', '-c', 'cd ' + shellQuote(dir) + ' && go generate ./...']);
+            }
+            if (result.code !== 0) {
+                return { fixed: false, error: 'generate failed: ' + result.stderr.trim() };
+            }
+            var status = gitExec(dir, ['status', '--porcelain']);
+            if (status.stdout.trim() === '') {
+                return { fixed: false, error: 'generate made no changes' };
+            }
+            gitExec(dir, ['add', '-A']);
+            var commit = gitExec(dir, ['commit', '-m', 'fix: run code generation for split']);
+            if (commit.code !== 0) {
+                return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
+            }
+            return { fixed: true, error: null };
+        }
+    },
+    {
+        name: 'add-missing-files',
+        // Detect: build/test output references files not in the split.
+        detect: function(dir, verifyOutput) {
+            if (!verifyOutput) return false;
+            // Look for 'no such file or directory' or 'cannot find' patterns.
+            return verifyOutput.indexOf('no such file or directory') >= 0 ||
+                   verifyOutput.indexOf('cannot find') >= 0 ||
+                   verifyOutput.indexOf('file not found') >= 0;
+        },
+        // Fix: check out missing files from the source branch.
+        fix: function(dir, failedBranch, plan) {
+            if (!plan || !plan.sourceBranch) {
+                return { fixed: false, error: 'no source branch to pull files from' };
+            }
+            // Get file list from source not in current branch.
+            var diffFiles = gitExec(dir, ['diff', '--name-only', failedBranch, plan.sourceBranch]);
+            if (diffFiles.code !== 0 || diffFiles.stdout.trim() === '') {
+                return { fixed: false, error: 'no candidate files to add' };
+            }
+            var candidates = diffFiles.stdout.trim().split('\n');
+            var added = 0;
+            for (var f = 0; f < candidates.length; f++) {
+                var co = gitExec(dir, ['checkout', plan.sourceBranch, '--', candidates[f]]);
+                if (co.code === 0) {
+                    added++;
+                }
+            }
+            if (added === 0) {
+                return { fixed: false, error: 'no files could be checked out from source' };
+            }
+            gitExec(dir, ['add', '-A']);
+            var commit = gitExec(dir, ['commit', '-m', 'fix: add missing files from source branch']);
+            if (commit.code !== 0) {
+                return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
+            }
+            return { fixed: true, error: null };
+        }
+    },
+    {
+        name: 'claude-fix',
+        // Detect: Claude executor is available and spawned.
+        detect: function() {
+            return !!(claudeExecutor && claudeExecutor.handle && claudeExecutor.isAvailable());
+        },
+        // Fix: send verification error to Claude for analysis and patching.
+        fix: function(dir, failedBranch, plan, verifyOutput) {
+            if (!claudeExecutor || !claudeExecutor.handle) {
+                return { fixed: false, error: 'Claude executor not available' };
+            }
+            var promptResult = renderConflictPrompt({
+                branchName: failedBranch,
+                files: plan ? plan.splits.filter(function(s) { return s.name === failedBranch; }).reduce(function(acc, s) { return acc.concat(s.files); }, []) : [],
+                exitCode: 1,
+                errorOutput: verifyOutput || '',
+                goModContent: '',
+                sessionId: claudeExecutor.sessionId || ''
+            });
+            if (promptResult.error) {
+                return { fixed: false, error: 'render conflict prompt failed: ' + promptResult.error };
+            }
+            try {
+                claudeExecutor.handle.send(promptResult.text);
+            } catch (e) {
+                return { fixed: false, error: 'failed to send to Claude: ' + (e.message || String(e)) };
+            }
+            // Poll for resolution.
+            var resultDir = claudeExecutor.mcpInstance ? claudeExecutor.mcpInstance.resultDir() : '';
+            if (!resultDir) {
+                return { fixed: false, error: 'no result directory for Claude response' };
+            }
+            // Delete old resolution file.
+            try { exec.execv(['rm', '-f', resultDir + '/resolution.json']); } catch (e) { /* ignore */ }
+            var resolutionPoll = pollForFile(resultDir, 'resolution.json',
+                AUTOMATED_DEFAULTS.resolveTimeoutMs, AUTOMATED_DEFAULTS.pollIntervalMs);
+            if (resolutionPoll.error) {
+                return { fixed: false, error: 'Claude resolution timeout: ' + resolutionPoll.error };
+            }
+            var resolution = resolutionPoll.data;
+            // Apply patches.
+            if (resolution.patches && resolution.patches.length > 0) {
+                for (var p = 0; p < resolution.patches.length; p++) {
+                    var patch = resolution.patches[p];
+                    if (osmod) {
+                        osmod.writeFile(patch.file, patch.content);
+                    }
+                }
+            }
+            // Run suggested commands.
+            if (resolution.commands && resolution.commands.length > 0) {
+                for (var c = 0; c < resolution.commands.length; c++) {
+                    exec.execv(['sh', '-c', resolution.commands[c]]);
+                }
+            }
+            // Commit changes.
+            var status = gitExec(dir, ['status', '--porcelain']);
+            if (status.stdout.trim() !== '') {
+                gitExec(dir, ['add', '-A']);
+                gitExec(dir, ['commit', '--amend', '--no-edit']);
+            }
+            return { fixed: true, error: null };
+        }
     }
 ];
 
@@ -1353,28 +1557,44 @@ var AUTO_FIX_STRATEGIES = [
 // For each split:
 //   1. Check out the branch.
 //   2. Run the verify command.
-//   3. If it fails, try auto-fix strategies in order.
+//   3. If it fails, try auto-fix strategies in order (with retry budget).
 //   4. After each fix, re-run verification.
-//   5. If still fails, mark as unresolved.
+//   5. If still fails and budget allows, continue trying.
+//   6. If all strategies exhausted, flag for re-split.
+//
+// Options:
+//   retryBudget: max total fix attempts across all branches (default: runtime.retryBudget || 3)
+//   verifyCommand: override verify command
+//   strategies: override strategy list (default: AUTO_FIX_STRATEGIES)
 function resolveConflicts(plan, options) {
     options = options || {};
     var dir = plan.dir || '.';
     var verifyCommand = options.verifyCommand || plan.verifyCommand || runtime.verifyCommand;
+    var retryBudget = typeof options.retryBudget === 'number' ? options.retryBudget : (typeof runtime.retryBudget === 'number' ? runtime.retryBudget : 3);
+    var strategies = options.strategies || AUTO_FIX_STRATEGIES;
+    var totalRetries = 0;
 
     if (!verifyCommand || verifyCommand === 'true') {
-        return { fixed: [], skipped: 'no verify command configured', errors: [] };
+        return { fixed: [], skipped: 'no verify command configured', errors: [], reSplitNeeded: false };
     }
 
     var savedBranch = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
     if (savedBranch.code !== 0) {
-        return { fixed: [], errors: [{ name: '(setup)', error: 'failed to get current branch' }] };
+        return { fixed: [], errors: [{ name: '(setup)', error: 'failed to get current branch' }], reSplitNeeded: false };
     }
     var restoreBranch = savedBranch.stdout.trim();
 
     var fixed = [];
     var errorsOut = [];
+    var reSplitNeeded = false;
+    var reSplitFiles = [];
 
     for (var i = 0; i < plan.splits.length; i++) {
+        if (totalRetries >= retryBudget) {
+            errorsOut.push({ name: plan.splits[i].name, error: 'retry budget exhausted (' + retryBudget + ')' });
+            continue;
+        }
+
         var split = plan.splits[i];
         var co = gitExec(dir, ['checkout', split.name]);
         if (co.code !== 0) {
@@ -1389,15 +1609,19 @@ function resolveConflicts(plan, options) {
             continue;
         }
 
+        var verifyOutput = (verifyResult.stdout || '') + '\n' + (verifyResult.stderr || '');
+
         // Verification failed — try auto-fix strategies.
         var resolved = false;
-        for (var s = 0; s < AUTO_FIX_STRATEGIES.length; s++) {
-            var strategy = AUTO_FIX_STRATEGIES[s];
-            if (!strategy.detect(dir)) {
+        for (var s = 0; s < strategies.length && totalRetries < retryBudget; s++) {
+            var strategy = strategies[s];
+            // Pass verifyOutput to detect for content-aware strategies.
+            if (!strategy.detect(dir, verifyOutput)) {
                 continue;
             }
 
-            var fixResult = strategy.fix(dir);
+            totalRetries++;
+            var fixResult = strategy.fix(dir, split.name, plan, verifyOutput);
             if (!fixResult.fixed) {
                 continue;
             }
@@ -1409,21 +1633,33 @@ function resolveConflicts(plan, options) {
                 resolved = true;
                 break;
             }
-            // Fix was applied but didn't resolve — continue trying.
+            // Fix was applied but didn't resolve — update verifyOutput and continue trying.
+            verifyOutput = (reVerify.stdout || '') + '\n' + (reVerify.stderr || '');
         }
 
         if (!resolved) {
             errorsOut.push({
                 name: split.name,
-                error: 'verification failed after all auto-fix strategies'
+                error: 'verification failed after all auto-fix strategies',
+                lastOutput: verifyOutput
             });
+            // Flag for re-split — collect problematic files.
+            reSplitNeeded = true;
+            reSplitFiles = reSplitFiles.concat(split.files || []);
         }
     }
 
     // Restore original branch.
     gitExec(dir, ['checkout', restoreBranch]);
 
-    return { fixed: fixed, errors: errorsOut };
+    return {
+        fixed: fixed,
+        errors: errorsOut,
+        totalRetries: totalRetries,
+        reSplitNeeded: reSplitNeeded,
+        reSplitFiles: reSplitFiles,
+        reSplitReason: reSplitNeeded ? 'Auto-fix strategies exhausted for: ' + errorsOut.map(function(e) { return e.name; }).join(', ') : ''
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -2634,6 +2870,7 @@ globalThis.prSplit = {
     cleanupBranches: cleanupBranches,
     createPRs: createPRs,
     resolveConflicts: resolveConflicts,
+    AUTO_FIX_STRATEGIES: AUTO_FIX_STRATEGIES,
 
     // Claude Code executor
     ClaudeCodeExecutor: ClaudeCodeExecutor,
@@ -3295,15 +3532,16 @@ function buildCommands(stateArg) {
             handler: function(args) {
                 if (!args || args.length < 2) {
                     output.print('Usage: set <key> <value>');
-                    output.print('Keys: base, strategy, max, prefix, verify, dry-run, mode');
+                    output.print('Keys: base, strategy, max, prefix, verify, dry-run, mode, retry-budget');
                     output.print('Current:');
-                    output.print('  base:      ' + runtime.baseBranch);
-                    output.print('  strategy:  ' + runtime.strategy);
-                    output.print('  max:       ' + runtime.maxFiles);
-                    output.print('  prefix:    ' + runtime.branchPrefix);
-                    output.print('  verify:    ' + runtime.verifyCommand);
-                    output.print('  dry-run:   ' + runtime.dryRun);
-                    output.print('  mode:      ' + runtime.mode);
+                    output.print('  base:         ' + runtime.baseBranch);
+                    output.print('  strategy:     ' + runtime.strategy);
+                    output.print('  max:          ' + runtime.maxFiles);
+                    output.print('  prefix:       ' + runtime.branchPrefix);
+                    output.print('  verify:       ' + runtime.verifyCommand);
+                    output.print('  dry-run:      ' + runtime.dryRun);
+                    output.print('  mode:         ' + runtime.mode);
+                    output.print('  retry-budget: ' + runtime.retryBudget);
                     return;
                 }
                 var key = args[0];
@@ -3333,6 +3571,15 @@ function buildCommands(stateArg) {
                             return;
                         }
                         runtime.mode = value;
+                        break;
+                    case 'retryBudget':
+                    case 'retry-budget':
+                        var budget = parseInt(value, 10);
+                        if (isNaN(budget) || budget < 0) {
+                            output.print('Invalid retry budget: ' + value + '. Must be a non-negative integer.');
+                            return;
+                        }
+                        runtime.retryBudget = budget;
                         break;
                     default:
                         output.print('Unknown key: ' + key);

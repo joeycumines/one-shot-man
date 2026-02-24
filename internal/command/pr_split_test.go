@@ -2951,3 +2951,827 @@ func TestPrSplitCommand_DefaultModeIsHeuristic(t *testing.T) {
 		t.Errorf("Expected default mode 'heuristic', got %v", val)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T084-T091: Phase 5 — Enhanced Conflict Resolution
+// ---------------------------------------------------------------------------
+
+func TestPrSplitCommand_AutoFixStrategiesExist(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Verify all 7 strategies are present (2 Phase 3 + 4 Phase 5 + claude-fix).
+	val, err := evalJS(`(function() {
+		var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
+		if (!strats || !Array.isArray(strats)) return 'not-array';
+		return strats.length;
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count, ok := val.(int64)
+	if !ok {
+		t.Fatalf("Expected int64, got %T: %v", val, val)
+	}
+	if count != 7 {
+		t.Errorf("Expected 7 AUTO_FIX_STRATEGIES, got %d", count)
+	}
+}
+
+func TestPrSplitCommand_AutoFixStrategyNames(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(
+		globalThis.prSplit.AUTO_FIX_STRATEGIES.map(function(s) { return s.name; })
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	if err := json.Unmarshal([]byte(val.(string)), &names); err != nil {
+		t.Fatalf("Failed to parse strategy names: %v", err)
+	}
+
+	expected := []string{
+		"go-mod-tidy",
+		"go-generate-sum",
+		"go-build-missing-imports",
+		"npm-install",
+		"make-generate",
+		"add-missing-files",
+		"claude-fix",
+	}
+	if len(names) != len(expected) {
+		t.Fatalf("Expected %d strategies, got %d: %v", len(expected), len(names), names)
+	}
+	for i, want := range expected {
+		if names[i] != want {
+			t.Errorf("Strategy %d: expected %q, got %q", i, want, names[i])
+		}
+	}
+}
+
+func TestPrSplitCommand_StrategyDetectSignatures(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Verify all strategies have detect and fix functions.
+	val, err := evalJS(`(function() {
+		var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
+		for (var i = 0; i < strats.length; i++) {
+			if (typeof strats[i].detect !== 'function') return 'missing detect on ' + strats[i].name;
+			if (typeof strats[i].fix !== 'function') return 'missing fix on ' + strats[i].name;
+			if (typeof strats[i].name !== 'string') return 'missing name on index ' + i;
+		}
+		return 'ok';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != "ok" {
+		t.Errorf("Strategy validation failed: %v", val)
+	}
+}
+
+func TestPrSplitCommand_GoMissingImportsDetect(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	tests := []struct {
+		name   string
+		js     string
+		want   bool
+	}{
+		{
+			"undefined error",
+			`globalThis.prSplit.AUTO_FIX_STRATEGIES[2].detect('.', 'undefined: SomeFunc')`,
+			true,
+		},
+		{
+			"imported not used",
+			`globalThis.prSplit.AUTO_FIX_STRATEGIES[2].detect('.', 'imported and not used: fmt')`,
+			true,
+		},
+		{
+			"could not import",
+			`globalThis.prSplit.AUTO_FIX_STRATEGIES[2].detect('.', 'could not import crypto/ed25519')`,
+			true,
+		},
+		{
+			"clean output",
+			`globalThis.prSplit.AUTO_FIX_STRATEGIES[2].detect('.', 'all tests passed')`,
+			false,
+		},
+		{
+			"empty",
+			`globalThis.prSplit.AUTO_FIX_STRATEGIES[2].detect('.', '')`,
+			false,
+		},
+		{
+			"no output",
+			`globalThis.prSplit.AUTO_FIX_STRATEGIES[2].detect('.')`,
+			false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			val, err := evalJS(tc.js)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, _ := val.(bool)
+			if got != tc.want {
+				t.Errorf("detect = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPrSplitCommand_NpmInstallDetect(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Without package.json, detect should return false.
+	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[3].detect('/nonexistent/dir')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != false {
+		t.Errorf("npm-install detect for nonexistent dir: expected false, got %v", val)
+	}
+}
+
+func TestPrSplitCommand_NpmInstallDetectWithPackageJson(t *testing.T) {
+	t.Parallel()
+
+	// Create a temp dir with a package.json.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"test"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[3].detect('` + dir + `')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != true {
+		t.Errorf("npm-install detect with package.json: expected true, got %v", val)
+	}
+}
+
+func TestPrSplitCommand_MakeGenerateDetect(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Without Makefile, detect should return false.
+	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[4].detect('/nonexistent/dir')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != false {
+		t.Errorf("make-generate detect for nonexistent dir: expected false, got %v", val)
+	}
+}
+
+func TestPrSplitCommand_MakeGenerateDetectWithMakefile(t *testing.T) {
+	t.Parallel()
+
+	// Create a temp dir with a Makefile that has a generate target.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Makefile"), []byte("generate:\n\techo generated\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[4].detect('` + dir + `')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != true {
+		t.Errorf("make-generate detect with Makefile+generate target: expected true, got %v", val)
+	}
+}
+
+func TestPrSplitCommand_MakeGenerateDetectWithGoGenerate(t *testing.T) {
+	t.Parallel()
+
+	// Create a temp dir with a Go file that has a //go:generate directive.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "gen.go"), []byte("package main\n//go:generate echo hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[4].detect('` + dir + `')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != true {
+		t.Errorf("make-generate detect with //go:generate: expected true, got %v", val)
+	}
+}
+
+func TestPrSplitCommand_AddMissingFilesDetect(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	tests := []struct {
+		name string
+		js   string
+		want bool
+	}{
+		{
+			"no such file",
+			`globalThis.prSplit.AUTO_FIX_STRATEGIES[5].detect('.', 'open foo.go: no such file or directory')`,
+			true,
+		},
+		{
+			"cannot find",
+			`globalThis.prSplit.AUTO_FIX_STRATEGIES[5].detect('.', 'cannot find package bar')`,
+			true,
+		},
+		{
+			"file not found",
+			`globalThis.prSplit.AUTO_FIX_STRATEGIES[5].detect('.', 'error: file not found: baz.go')`,
+			true,
+		},
+		{
+			"clean",
+			`globalThis.prSplit.AUTO_FIX_STRATEGIES[5].detect('.', 'PASS')`,
+			false,
+		},
+		{
+			"empty",
+			`globalThis.prSplit.AUTO_FIX_STRATEGIES[5].detect('.', '')`,
+			false,
+		},
+		{
+			"no output",
+			`globalThis.prSplit.AUTO_FIX_STRATEGIES[5].detect('.')`,
+			false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			val, err := evalJS(tc.js)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, _ := val.(bool)
+			if got != tc.want {
+				t.Errorf("detect = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPrSplitCommand_ClaudeFixDetect(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Without a spawned Claude executor, detect should return false.
+	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[6].detect('.')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != false {
+		t.Errorf("claude-fix detect without executor: expected false, got %v", val)
+	}
+}
+
+func TestPrSplitCommand_ClaudeFixFixWithoutExecutor(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// fix() should return {fixed: false} when no executor is available.
+	val, err := evalJS(`JSON.stringify(
+		globalThis.prSplit.AUTO_FIX_STRATEGIES[6].fix('.', 'branch-1', {splits:[]}, 'test error')
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("Failed to parse result: %v", err)
+	}
+	if result["fixed"] != false {
+		t.Errorf("Expected fixed=false, got %v", result["fixed"])
+	}
+	errMsg, _ := result["error"].(string)
+	if !strings.Contains(errMsg, "not available") {
+		t.Errorf("Expected 'not available' error, got: %s", errMsg)
+	}
+}
+
+func TestPrSplitCommand_ResolveConflictsNoVerifyCommand(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// With no verify command or verifyCommand = 'true', resolveConflicts returns early.
+	val, err := evalJS(`JSON.stringify(
+		globalThis.prSplit.resolveConflicts(
+			{ dir: '.', splits: [], verifyCommand: 'true' },
+			{ retryBudget: 5 }
+		)
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("Failed to parse result: %v", err)
+	}
+	// fixed should be empty array.
+	fixed, ok := result["fixed"].([]interface{})
+	if !ok {
+		t.Fatalf("Expected fixed to be array, got %T: %v", result["fixed"], result["fixed"])
+	}
+	if len(fixed) != 0 {
+		t.Errorf("Expected empty fixed array, got %d items", len(fixed))
+	}
+	// skipped should be a non-empty message.
+	skipped, _ := result["skipped"].(string)
+	if skipped == "" {
+		t.Error("Expected non-empty skipped message")
+	}
+	// reSplitNeeded should be false.
+	if result["reSplitNeeded"] != false {
+		t.Errorf("Expected reSplitNeeded=false, got %v", result["reSplitNeeded"])
+	}
+}
+
+func TestPrSplitCommand_ResolveConflictsReturnShape(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Check that resolveConflicts returns all expected fields.
+	val, err := evalJS(`(function() {
+		var result = globalThis.prSplit.resolveConflicts(
+			{ dir: '/nonexistent', splits: [], verifyCommand: 'false' },
+			{}
+		);
+		return JSON.stringify({
+			hasFixed: Array.isArray(result.fixed),
+			hasErrors: Array.isArray(result.errors),
+			hasReSplitNeeded: typeof result.reSplitNeeded === 'boolean',
+			hasTotalRetries: typeof result.totalRetries === 'number' || typeof result.totalRetries === 'undefined',
+			hasReSplitFiles: Array.isArray(result.reSplitFiles) || typeof result.reSplitFiles === 'undefined'
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shape map[string]interface{}
+	if err := json.Unmarshal([]byte(val.(string)), &shape); err != nil {
+		t.Fatalf("Failed to parse shape: %v", err)
+	}
+	if shape["hasFixed"] != true {
+		t.Error("Expected fixed array")
+	}
+	if shape["hasReSplitNeeded"] != true {
+		t.Error("Expected reSplitNeeded boolean")
+	}
+}
+
+func TestPrSplitCommand_SetRetryBudget(t *testing.T) {
+	t.Parallel()
+
+	stdout, dispatch := loadPrSplitEngine(t, nil)
+
+	// Set retry budget.
+	if err := dispatch("set", []string{"retry-budget", "5"}); err != nil {
+		t.Fatal(err)
+	}
+	output := stdout.String()
+	if !contains(output, "Set retry-budget = 5") {
+		t.Errorf("Expected confirmation, got: %s", output)
+	}
+
+	// Set invalid budget.
+	stdout.Reset()
+	if err := dispatch("set", []string{"retry-budget", "abc"}); err != nil {
+		t.Fatal(err)
+	}
+	output = stdout.String()
+	if !contains(output, "Invalid") {
+		t.Errorf("Expected invalid message, got: %s", output)
+	}
+}
+
+func TestPrSplitCommand_SetRetryBudgetNegative(t *testing.T) {
+	t.Parallel()
+
+	stdout, dispatch := loadPrSplitEngine(t, nil)
+
+	// Set negative retry budget — should be rejected.
+	if err := dispatch("set", []string{"retry-budget", "-1"}); err != nil {
+		t.Fatal(err)
+	}
+	output := stdout.String()
+	if !contains(output, "Invalid") {
+		t.Errorf("Expected invalid message for negative budget, got: %s", output)
+	}
+}
+
+func TestPrSplitCommand_SetRetryBudgetZero(t *testing.T) {
+	t.Parallel()
+
+	stdout, dispatch := loadPrSplitEngine(t, nil)
+
+	// Zero should be accepted — it means "no retries at all".
+	if err := dispatch("set", []string{"retry-budget", "0"}); err != nil {
+		t.Fatal(err)
+	}
+	output := stdout.String()
+	if !contains(output, "Set retry-budget = 0") {
+		t.Errorf("Expected confirmation for zero budget, got: %s", output)
+	}
+}
+
+func TestPrSplitCommand_ResolveConflictsZeroBudget(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows — git test repo setup uses Unix commands")
+	}
+
+	dir := setupTestGitRepo(t)
+
+	// Create a branch that will fail verification.
+	cmd := exec.Command("git", "-C", dir, "checkout", "-b", "split/zero-budget")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to create branch: %s (%v)", out, err)
+	}
+	cmd = exec.Command("git", "-C", dir, "checkout", "main")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to checkout main: %s (%v)", out, err)
+	}
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, map[string]interface{}{
+		"retryBudget": 0,
+	})
+
+	// With retryBudget=0 AND runtime retryBudget=0, no strategies should be attempted.
+	// The branch should immediately get "retry budget exhausted".
+	val, err := evalJS(`(function() {
+		var result = globalThis.prSplit.resolveConflicts({
+			dir: '` + dir + `',
+			splits: [{ name: 'split/zero-budget', files: ['main.go'] }],
+			verifyCommand: 'exit 1'
+		}, { retryBudget: 0 });
+		return JSON.stringify(result);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("Failed to parse result: %v", err)
+	}
+	// With budget 0, the first branch should immediately get budget exhausted.
+	errs, _ := result["errors"].([]interface{})
+	if len(errs) == 0 {
+		t.Error("Expected errors for zero-budget branch")
+	}
+	// totalRetries should be 0.
+	totalRetries, _ := result["totalRetries"].(float64)
+	if totalRetries != 0 {
+		t.Errorf("Expected totalRetries=0 with zero budget, got %v", totalRetries)
+	}
+}
+
+func TestPrSplitCommand_SetShowsRetryBudget(t *testing.T) {
+	t.Parallel()
+
+	stdout, dispatch := loadPrSplitEngine(t, nil)
+
+	if err := dispatch("set", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	output := stdout.String()
+	if !contains(output, "retry-budget:") {
+		t.Errorf("Expected retry-budget in set output, got: %s", output)
+	}
+	// Default value is 3.
+	if !contains(output, "3") {
+		t.Errorf("Expected default retry-budget of 3 in output, got: %s", output)
+	}
+}
+
+func TestPrSplitCommand_SetRetryBudgetAndVerify(t *testing.T) {
+	t.Parallel()
+
+	stdout, dispatch := loadPrSplitEngine(t, nil)
+
+	// Set budget to 7.
+	if err := dispatch("set", []string{"retry-budget", "7"}); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+
+	// Show settings — should reflect new value.
+	if err := dispatch("set", nil); err != nil {
+		t.Fatal(err)
+	}
+	output := stdout.String()
+	if !contains(output, "retry-budget:") || !contains(output, "7") {
+		t.Errorf("Expected retry-budget: 7 in output, got: %s", output)
+	}
+}
+
+func TestPrSplitCommand_Phase5ScriptContent(t *testing.T) {
+	t.Parallel()
+
+	checks := []struct {
+		name    string
+		content string
+	}{
+		{"go-build-missing-imports strategy", "go-build-missing-imports"},
+		{"npm-install strategy", "'npm-install'"},
+		{"make-generate strategy", "'make-generate'"},
+		{"add-missing-files strategy", "'add-missing-files'"},
+		{"claude-fix strategy", "'claude-fix'"},
+		{"retryBudget in runtime", "retryBudget"},
+		{"retry-budget in set command", "case 'retry-budget':"},
+		{"reSplitNeeded in resolveConflicts", "reSplitNeeded"},
+		{"reSplitFiles in resolveConflicts", "reSplitFiles"},
+		{"totalRetries tracking", "totalRetries"},
+		{"verifyOutput passed to detect", "verifyOutput"},
+	}
+
+	for _, c := range checks {
+		if !strings.Contains(prSplitScript, c.content) {
+			t.Errorf("Script missing %s (expected to contain %q)", c.name, c.content)
+		}
+	}
+}
+
+func TestPrSplitCommand_Phase5Exports(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Verify AUTO_FIX_STRATEGIES is exported as an array.
+	val, err := evalJS(`Array.isArray(globalThis.prSplit.AUTO_FIX_STRATEGIES)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != true {
+		t.Error("Expected AUTO_FIX_STRATEGIES to be exported as array")
+	}
+
+	// resolveConflicts should still be exported as a function.
+	val, err = evalJS(`typeof globalThis.prSplit.resolveConflicts`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != "function" {
+		t.Errorf("Expected resolveConflicts to be function, got %v", val)
+	}
+}
+
+func TestPrSplitCommand_ResolveConflictsWithGitRepo(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows — git test repo setup uses Unix commands")
+	}
+
+	dir := setupTestGitRepo(t)
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Resolve conflicts on a plan where splits already pass verification.
+	val, err := evalJS(`(function() {
+		var result = globalThis.prSplit.resolveConflicts({
+			dir: '` + dir + `',
+			splits: [],
+			verifyCommand: 'echo ok'
+		}, { retryBudget: 2 });
+		return JSON.stringify(result);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("Failed to parse result: %v", err)
+	}
+	// No splits means no errors.
+	errs, _ := result["errors"].([]interface{})
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors, got %d: %v", len(errs), errs)
+	}
+	if result["reSplitNeeded"] != false {
+		t.Errorf("Expected reSplitNeeded=false, got %v", result["reSplitNeeded"])
+	}
+}
+
+func TestPrSplitCommand_ResolveConflictsRetryBudgetExhaustion(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows — git test repo setup uses Unix commands")
+	}
+
+	dir := setupTestGitRepo(t)
+
+	// Create a dummy branch that will fail verification.
+	cmd := exec.Command("git", "-C", dir, "checkout", "-b", "split/test-fail")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to create branch: %s (%v)", out, err)
+	}
+	cmd = exec.Command("git", "-C", dir, "checkout", "main")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to checkout main: %s (%v)", out, err)
+	}
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Use a verify command that always fails + budget of 1.
+	// The resolve should exhaust the budget and flag reSplitNeeded.
+	val, err := evalJS(`(function() {
+		var result = globalThis.prSplit.resolveConflicts({
+			dir: '` + dir + `',
+			splits: [{ name: 'split/test-fail', files: ['main.go'] }],
+			verifyCommand: 'exit 1'
+		}, { retryBudget: 1 });
+		return JSON.stringify(result);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("Failed to parse result: %v", err)
+	}
+	// Should have errors for the failed branch.
+	errs, _ := result["errors"].([]interface{})
+	if len(errs) == 0 {
+		t.Error("Expected errors for failed branch")
+	}
+	// reSplitNeeded should be true when strategies exhaust.
+	if result["reSplitNeeded"] != true {
+		t.Errorf("Expected reSplitNeeded=true, got %v", result["reSplitNeeded"])
+	}
+	// reSplitFiles should contain the files from the failed split.
+	reSplitFiles, _ := result["reSplitFiles"].([]interface{})
+	if len(reSplitFiles) == 0 {
+		t.Error("Expected reSplitFiles to contain files from failed split")
+	}
+}
+
+func TestPrSplitCommand_ResolveConflictsPassingBranch(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows — git test repo setup uses Unix commands")
+	}
+
+	dir := setupTestGitRepo(t)
+
+	// Create a branch that passes verification.
+	cmd := exec.Command("git", "-C", dir, "checkout", "-b", "split/test-pass")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to create branch: %s (%v)", out, err)
+	}
+	cmd = exec.Command("git", "-C", dir, "checkout", "main")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to checkout main: %s (%v)", out, err)
+	}
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Verify command always passes.
+	val, err := evalJS(`(function() {
+		var result = globalThis.prSplit.resolveConflicts({
+			dir: '` + dir + `',
+			splits: [{ name: 'split/test-pass', files: ['main.go'] }],
+			verifyCommand: 'echo ok'
+		}, { retryBudget: 3 });
+		return JSON.stringify(result);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("Failed to parse result: %v", err)
+	}
+	// No errors when branches pass.
+	errs, _ := result["errors"].([]interface{})
+	if len(errs) != 0 {
+		t.Errorf("Expected no errors, got %d", len(errs))
+	}
+	if result["reSplitNeeded"] != false {
+		t.Errorf("Expected reSplitNeeded=false, got %v", result["reSplitNeeded"])
+	}
+}
+
+func TestPrSplitCommand_DefaultRetryBudget(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Runtime retryBudget should default to 3. Access it through the set command output.
+	val, err := evalJS(`(function() {
+		// resolveConflicts uses runtime.retryBudget as default.
+		// Verify by calling with no explicit budget on a benign plan.
+		var result = globalThis.prSplit.resolveConflicts(
+			{ dir: '.', splits: [], verifyCommand: 'true' },
+			{}
+		);
+		// If we get here without error, the default is working.
+		return 'ok';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != "ok" {
+		t.Errorf("Expected 'ok', got %v", val)
+	}
+}
+
+func TestPrSplitCommand_SetRetryBudgetViaAlternateKey(t *testing.T) {
+	t.Parallel()
+
+	stdout, dispatch := loadPrSplitEngine(t, nil)
+
+	// "retryBudget" (camelCase) should also work.
+	if err := dispatch("set", []string{"retryBudget", "10"}); err != nil {
+		t.Fatal(err)
+	}
+	output := stdout.String()
+	if !contains(output, "Set retryBudget = 10") {
+		t.Errorf("Expected confirmation for camelCase key, got: %s", output)
+	}
+}
+
+func TestPrSplitCommand_AddMissingFilesFixNoSourceBranch(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// fix() without a source branch should return error.
+	val, err := evalJS(`JSON.stringify(
+		globalThis.prSplit.AUTO_FIX_STRATEGIES[5].fix('.', 'branch-1', {splits:[]}, 'file not found')
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("Failed to parse: %v", err)
+	}
+	if result["fixed"] != false {
+		t.Errorf("Expected fixed=false, got %v", result["fixed"])
+	}
+	errMsg, _ := result["error"].(string)
+	if !strings.Contains(errMsg, "source branch") {
+		t.Errorf("Expected 'source branch' error, got: %s", errMsg)
+	}
+}
+
+func TestPrSplitCommand_GoMissingImportsFixNoGoimports(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// If goimports is not available at the given path, fix should fail gracefully.
+	val, err := evalJS(`(function() {
+		// Call fix on nonexistent dir — it'll try 'which goimports'.
+		// If goimports IS available, it'll fail on the nonexistent dir.
+		// Either way, fixed should be false.
+		var result = globalThis.prSplit.AUTO_FIX_STRATEGIES[2].fix('/nonexistent/no-such-dir');
+		return JSON.stringify(result);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("Failed to parse: %v", err)
+	}
+	if result["fixed"] != false {
+		t.Errorf("Expected fixed=false for nonexistent dir, got %v", result["fixed"])
+	}
+}

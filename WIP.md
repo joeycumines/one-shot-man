@@ -1,26 +1,27 @@
-# WIP — Ollama Rewrite + PR-Split AI Slop Removal
+# WIP — Phase 5: Enhanced Conflict Resolution (T084-T091)
 
-## Status: IN PROGRESS — Build verification needed
+## Status: RULE OF TWO — All tests pass, ready for commit review
 
-### What changed (UNCOMMITTED)
+### Session Context
+- Branch: wip
+- Git: Phase 0+1 (19357c6), Phase 2 (9150dd0), Phase 3 (ea04bd2), Phase 4 (8f42e0b)
+- Build: ALL GREEN (make build ✅, make lint ✅, all tests ✅)
+- Blueprint: T001-T090 Done. T091 (commit) pending Rule of Two.
 
-#### OllamaProvider Rewrite
-- `provider_ollama.go` — runs `ollama launch claude` with `--model` flag; ExtraArgs replaces SubArgs; MCP=true
-- `provider_ollama_test.go` — 12 tests updated for new behavior
-- `module.go` — `ollama(opts?)` factory: subArgs→extraArgs, added model option
-- `module_bindings_test.go` — subArgs→extraArgs, MCP assertion fix
-- `claude_mux.go` — resolveProvider sets Model on OllamaProvider
+### Phase 5 Summary
+- T084: 4 new AUTO_FIX_STRATEGIES (go-build-missing-imports, npm-install, make-generate, add-missing-files)
+- T085: claude-fix strategy (detect returns !! boolean, fix sends to Claude via MCP)
+- T086: resolveConflicts enhanced with retryBudget, totalRetries tracking
+- T087: reSplitNeeded + reSplitFiles for fallback when strategies exhaust
+- T088: 26 Phase 5 unit tests for strategies, detect, fix, set commands
+- T089: Tests for claude-fix detect/fix, resolveConflicts budget exhaustion, passing branches
+- T090: Full build + lint + all tests pass
 
-#### PR-Split AI Slop Removal
-- `pr_split.go` — removed aiMode/provider/model fields and flags
-- `pr_split_script.js` — removed claudemux require, registry, AI functions, BT nodes, AI exports
-- `pr_split_test.go` — deleted 4 AI tests, removed AI flag/field assertions
-- `completion_command.go` — stripped --ai/--provider/--model from completions
-- `docs/reference/command.md` — removed AI flags and ollama from pr-split
-- `docs/reference/config.md` — removed ai/provider/model keys
-- `CHANGELOG.md` — updated OllamaProvider, pr-split entries
+### Files Modified (Phase 5)
+- internal/command/pr_split_script.js (strategies, resolveConflicts, runtime, set, exports)
+- internal/command/pr_split_test.go (26 new tests)
 
 ### Next Steps
-1. Build verification
-2. Rule of Two
-3. Commit
+1. Rule of Two on Phase 5 diff
+2. Commit as T091
+3. Continue Phase 6 (T092+)

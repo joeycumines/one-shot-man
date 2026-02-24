@@ -23,7 +23,7 @@
     "If lost: READ DIRECTIVE.txt → THINK → ACT"
   ],
   "statusSection": {
-    "currentState": "Phase 4 tests passing. T001-T082 Done. Committing Phase 4 (T083).",
+    "currentState": "Phase 4 committed 8f42e0b. T001-T083 Done. Starting Phase 5 (T084-T091).",
     "branch": "wip",
     "buildStatus": "ALL GREEN — go build, vet, staticcheck, deadcode, betteralign, 44 packages pass"
   },
@@ -440,43 +440,43 @@
     },
     {
       "task": "T083: Commit Phase 4 automated splitting pipeline",
-      "description": "Stage all Phase 4 changes. Rule of Two. Commit: 'feat(pr-split): automated splitting via Claude Code — classification, planning, execution, conflict resolution'. Push.",
-      "status": "Not Started"
+      "description": "Committed 8f42e0b. Rule of Two: 2/2 PASS. 3 files changed, +2217/-108. Bug fixes: fileStatuses, .passed, .results, extractGoImports, log.printf.",
+      "status": "Done"
     },
     {
       "task": "T084: Extend AUTO_FIX_STRATEGIES with additional strategies",
       "description": "In pr_split_script.js, add new auto-fix strategies beyond go-mod-tidy and go-generate-sum: (1) 'go-build-missing-imports': detect missing import errors, add required imports, (2) 'npm-install': for JS/TS projects, run 'npm install', (3) 'make-generate': run 'make generate' or 'go generate ./...', (4) 'add-missing-files': detect references to files not in the split, add them from source branch. Each strategy follows the existing {name, detect, fix} pattern.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T085: Implement Claude-assisted fix strategy",
       "description": "Add a strategy 'claude-fix' to AUTO_FIX_STRATEGIES. This strategy: (1) detect: always returns true if Claude is available, (2) fix: sends the verification error to Claude via reportConflict MCP tool, waits for reportResolution, applies the suggested patches. This integrates Claude into the existing resolveConflicts() flow, making it available to both the 'fix' TUI command and the automated pipeline.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T086: Implement verification loop with retry budget",
       "description": "Modify resolveConflicts() to accept a retryBudget config (default 3). For each failed branch: try AUTO_FIX_STRATEGIES in order. If the Claude strategy is used, it counts as one retry per attempt. Track total retries across all branches. If budget exceeded, stop and report remaining failures. Add retryBudget to runtime config and 'set' command.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T087: Implement re-split fallback in resolveConflicts",
       "description": "Add a fallback mode to resolveConflicts(): if all strategies fail for a branch, return a 'reSplitNeeded' flag with the problematic files. The caller (automated pipeline or TUI) can then trigger re-classification. The re-split should constrain Claude to separate the conflicting files into different groups.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T088: Write unit tests for new auto-fix strategies",
       "description": "In pr_split_test.go, add tests for each new strategy: (1) go-build-missing-imports detects and fixes import errors, (2) npm-install detects package.json and runs npm, (3) make-generate runs generation, (4) add-missing-files detects and adds files. Use mock exec and git helpers.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T089: Write unit tests for Claude-assisted fix strategy",
       "description": "Test the claude-fix strategy with mock MCP responses: (1) Claude proposes valid fix → verify accepted and applied, (2) Claude proposes invalid fix → verify rejected, (3) Claude times out → verify fallback to next strategy, (4) Multiple retries until budget exhausted.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T090: Run full build verification after conflict resolution enhancement",
       "description": "Run 'make' and 'go test -race ./...'. All pass. This is the Phase 5 gate.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T091: Commit Phase 5 conflict resolution",

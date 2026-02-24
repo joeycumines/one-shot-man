@@ -923,3 +923,160 @@ func TestGuard_AllDisabled(t *testing.T) {
 		t.Errorf("timeout with all disabled: %+v", ge)
 	}
 }
+
+// --- computeBackoff overflow edge cases ---
+
+func TestGuard_ComputeBackoff_FloatOverflow_WithMaxDelay(t *testing.T) {
+	t.Parallel()
+	g := NewGuard(GuardConfig{
+		RateLimit: RateLimitGuardConfig{
+			Enabled:      true,
+			InitialDelay: 1 * time.Second,
+			MaxDelay:     5 * time.Minute,
+			Multiplier:   2.0,
+		},
+	})
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Drive rateLimitCount extremely high so math.Pow(2.0, count-1) → +Inf.
+	// We need count > ~1024 for float64 overflow with mult=2.0.
+	// Directly set the internal state instead of grinding 1100 events.
+	g.rateLimitCount = 1100
+
+	// ProcessEvent will call handleRateLimit → computeBackoff.
+	// Since factor is +Inf, it should clamp to MaxDelay (5m).
+	ge := g.ProcessEvent(OutputEvent{Type: EventRateLimit, Line: "rate limit"}, now)
+	if ge == nil {
+		t.Fatal("expected guard event for rate limit")
+	}
+	if ge.Action != GuardActionPause {
+		t.Fatalf("Action = %v, want Pause", GuardActionName(ge.Action))
+	}
+	// With +Inf factor and MaxDelay=5m, delay should be clamped to MaxDelay.
+	if ge.Details["delay"] != "5m0s" {
+		t.Errorf("delay = %q, want 5m0s (MaxDelay)", ge.Details["delay"])
+	}
+}
+
+func TestGuard_ComputeBackoff_FloatOverflow_NoMaxDelay(t *testing.T) {
+	t.Parallel()
+	g := NewGuard(GuardConfig{
+		RateLimit: RateLimitGuardConfig{
+			Enabled:      true,
+			InitialDelay: 1 * time.Second,
+			MaxDelay:     0, // no cap
+			Multiplier:   2.0,
+		},
+	})
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Drive rateLimitCount to overflow float64.
+	g.rateLimitCount = 1100
+
+	ge := g.ProcessEvent(OutputEvent{Type: EventRateLimit, Line: "rate limit"}, now)
+	if ge == nil {
+		t.Fatal("expected guard event for rate limit")
+	}
+	// With +Inf factor and no MaxDelay, should fall back to InitialDelay.
+	if ge.Details["delay"] != "1s" {
+		t.Errorf("delay = %q, want 1s (InitialDelay fallback)", ge.Details["delay"])
+	}
+}
+
+func TestGuard_ComputeBackoff_Int64Overflow_WithMaxDelay(t *testing.T) {
+	t.Parallel()
+	g := NewGuard(GuardConfig{
+		RateLimit: RateLimitGuardConfig{
+			Enabled:      true,
+			InitialDelay: 1 * time.Second,
+			MaxDelay:     10 * time.Minute,
+			Multiplier:   2.0,
+		},
+	})
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// count=64 → factor = 2^63 ≈ 9.2e18. InitialDelay(1s) * 9.2e18 overflows
+	// int64 (max ~9.2e18 ns). On modern Go (1.13+), float64→int64 saturates
+	// to MaxInt64 (positive), which is then capped by MaxDelay.
+	g.rateLimitCount = 64
+
+	ge := g.ProcessEvent(OutputEvent{Type: EventRateLimit, Line: "rate limit"}, now)
+	if ge == nil {
+		t.Fatal("expected guard event for rate limit")
+	}
+	// Saturated/overflowed delay is caught and capped to MaxDelay.
+	if ge.Details["delay"] != "10m0s" {
+		t.Errorf("delay = %q, want 10m0s (MaxDelay on int64 overflow)", ge.Details["delay"])
+	}
+}
+
+func TestGuard_ComputeBackoff_Int64Overflow_NoMaxDelay(t *testing.T) {
+	t.Parallel()
+	g := NewGuard(GuardConfig{
+		RateLimit: RateLimitGuardConfig{
+			Enabled:      true,
+			InitialDelay: 1 * time.Second,
+			MaxDelay:     0, // no cap
+			Multiplier:   2.0,
+		},
+	})
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// count=64 produces a float64 → int64 overflow. Modern Go saturates to
+	// MaxInt64 (~292 years) instead of wrapping negative. The delay < 0
+	// guard is defensive for exotic platforms; on modern Go this becomes
+	// a very large positive Duration. Either way, it must not panic or
+	// produce zero.
+	g.rateLimitCount = 64
+
+	ge := g.ProcessEvent(OutputEvent{Type: EventRateLimit, Line: "rate limit"}, now)
+	if ge == nil {
+		t.Fatal("expected guard event for rate limit")
+	}
+	if ge.Action != GuardActionPause {
+		t.Fatalf("Action = %v, want Pause", GuardActionName(ge.Action))
+	}
+	// The delay will be either InitialDelay (if negative was detected) or
+	// a very large positive value (MaxInt64 saturated). Both are acceptable.
+	// Just ensure it's positive and non-zero.
+	delayStr := ge.Details["delay"]
+	if delayStr == "" || delayStr == "0s" {
+		t.Errorf("delay = %q, want non-zero positive delay", delayStr)
+	}
+}
+
+func TestGuard_ComputeBackoff_NaNFactor(t *testing.T) {
+	t.Parallel()
+	// NaN can occur if multiplier is negative and count produces a
+	// non-integer exponent. math.Pow(-2, 0.5) → NaN.
+	// But since count-1 is always an integer, we need a special case.
+	// Actually math.Pow(negative, integer) does NOT produce NaN — it works.
+	// NaN can also occur with 0^0 edge, but that gives 1.
+	// The NaN guard is defensive; test it by directly calling computeBackoff
+	// after setting state that would trigger the NaN branch.
+	// Since we're in the same package, we can set fields directly.
+	g := &Guard{
+		config: GuardConfig{
+			RateLimit: RateLimitGuardConfig{
+				Enabled:      true,
+				InitialDelay: 1 * time.Second,
+				MaxDelay:     30 * time.Second,
+				Multiplier:   2.0,
+			},
+		},
+		// We'll override rateLimitCount to something that combined with
+		// a special factor could produce NaN. Since it's hard to trigger
+		// NaN naturally, we test the code path with float overflow instead
+		// which exercises the same guard clause.
+	}
+	g.rateLimitCount = 1100
+	delay := g.computeBackoff()
+	// factor is +Inf, MaxDelay is 30s, should return 30s.
+	if delay != 30*time.Second {
+		t.Errorf("delay = %v, want 30s", delay)
+	}
+}

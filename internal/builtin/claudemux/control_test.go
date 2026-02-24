@@ -3,7 +3,9 @@ package claudemux
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"os"
+	"runtime"
 	"sync"
 	"testing"
 )
@@ -409,5 +411,175 @@ func TestControl_SocketPath(t *testing.T) {
 	srv := NewControlServer(sockPath, &mockHandler{})
 	if got := srv.SocketPath(); got != sockPath {
 		t.Fatalf("SocketPath() = %q, want %q", got, sockPath)
+	}
+}
+
+// --- send / GetStatus error-path coverage ---
+
+func TestControl_Send_ServerClosesImmediately(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix sockets not available on Windows")
+	}
+
+	// Start a "server" that accepts a connection and immediately closes it
+	// without sending any response. This exercises the "server closed
+	// connection without response" path in send().
+	sockPath := tempSockPath(t)
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close(); _ = os.Remove(sockPath) })
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		// Close immediately without writing a response.
+		conn.Close()
+	}()
+
+	client := NewControlClient(sockPath)
+	_, err = client.GetStatus()
+	if err == nil {
+		t.Fatal("expected error when server closes without response")
+	}
+}
+
+func TestControl_Send_MalformedResponse(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix sockets not available on Windows")
+	}
+
+	// Start a "server" that sends garbage (non-JSON) as a response.
+	// This exercises the json.Unmarshal failure path in send().
+	sockPath := tempSockPath(t)
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close(); _ = os.Remove(sockPath) })
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		// Write garbage JSON followed by newline.
+		_, _ = conn.Write([]byte("this is not json\n"))
+	}()
+
+	client := NewControlClient(sockPath)
+	_, err = client.GetStatus()
+	if err == nil {
+		t.Fatal("expected error for malformed JSON response")
+	}
+}
+
+func TestControl_GetStatus_NonOKResponse(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix sockets not available on Windows")
+	}
+
+	// Start a "server" that returns a valid JSON response with ok=false.
+	sockPath := tempSockPath(t)
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close(); _ = os.Remove(sockPath) })
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		// Read the request (must consume it).
+		buf := make([]byte, 4096)
+		_, _ = conn.Read(buf)
+		// Write an error response.
+		resp := ControlResponse{OK: false, Error: "internal server error"}
+		data, _ := json.Marshal(resp)
+		_, _ = conn.Write(append(data, '\n'))
+	}()
+
+	client := NewControlClient(sockPath)
+	_, err = client.GetStatus()
+	if err == nil {
+		t.Fatal("expected error for non-OK response")
+	}
+	if err.Error() != "internal server error" {
+		t.Errorf("error = %q, want 'internal server error'", err)
+	}
+}
+
+func TestControl_GetStatus_InvalidResultJSON(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix sockets not available on Windows")
+	}
+
+	// Server returns ok=true but with garbage in the Result field.
+	// This exercises the json.Unmarshal(resp.Result) failure path in GetStatus.
+	sockPath := tempSockPath(t)
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close(); _ = os.Remove(sockPath) })
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		buf := make([]byte, 4096)
+		_, _ = conn.Read(buf)
+		// ok=true with garbage Result.
+		resp := `{"ok":true,"result":"not-a-json-object"}` + "\n"
+		_, _ = conn.Write([]byte(resp))
+	}()
+
+	client := NewControlClient(sockPath)
+	_, err = client.GetStatus()
+	if err == nil {
+		t.Fatal("expected error for invalid result JSON in GetStatus")
+	}
+}
+
+func TestControl_EnqueueTask_InvalidResultJSON(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix sockets not available on Windows")
+	}
+
+	// Server returns ok=true but with garbage in the Result field.
+	// This exercises the json.Unmarshal(resp.Result) failure path
+	// in EnqueueTask.
+	sockPath := tempSockPath(t)
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close(); _ = os.Remove(sockPath) })
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		buf := make([]byte, 4096)
+		_, _ = conn.Read(buf)
+		resp := `{"ok":true,"result":"garbage"}` + "\n"
+		_, _ = conn.Write([]byte(resp))
+	}()
+
+	client := NewControlClient(sockPath)
+	_, err = client.EnqueueTask("some task")
+	if err == nil {
+		t.Fatal("expected error for invalid result JSON in EnqueueTask")
 	}
 }

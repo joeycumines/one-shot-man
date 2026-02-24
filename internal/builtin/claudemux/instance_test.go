@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -418,5 +420,147 @@ func TestInstanceRegistry_SpecialCharSessionID(t *testing.T) {
 	}
 	if _, err := os.Stat(inst.StateDir); err != nil {
 		t.Errorf("StateDir should exist: %v", err)
+	}
+}
+
+// --- Create coverage: truncation and error paths ---
+
+func TestInstanceRegistry_Create_LongSessionID(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	r, err := NewInstanceRegistry(filepath.Join(dir, "sessions"))
+	if err != nil {
+		t.Fatalf("NewInstanceRegistry: %v", err)
+	}
+
+	// 80-char alphanumeric ID — should be truncated to 64 chars for the
+	// directory name, but the Instance.ID should retain the full original value.
+	longID := strings.Repeat("a", 80)
+	inst, err := r.Create(longID)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if inst.ID != longID {
+		t.Errorf("ID = %q (len %d), want %q (len %d)", inst.ID, len(inst.ID), longID, len(longID))
+	}
+
+	// StateDir basename should be exactly 64 chars.
+	base := filepath.Base(inst.StateDir)
+	if len(base) != 64 {
+		t.Errorf("StateDir basename len = %d, want 64 (truncated)", len(base))
+	}
+
+	// State dir must actually exist.
+	if _, err := os.Stat(inst.StateDir); err != nil {
+		t.Errorf("StateDir should exist: %v", err)
+	}
+}
+
+func TestInstanceRegistry_Create_StateDirFail(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("invalid path trick not reliable on Windows")
+	}
+
+	// Use /dev/null (a regular file, not a directory) as the base dir.
+	// MkdirAll under a file path will fail.
+	r := &InstanceRegistry{baseDir: "/dev/null/impossible"}
+
+	_, err := r.Create("test-session")
+	if err == nil {
+		t.Fatal("expected error when base dir is an invalid path")
+	}
+	if !strings.Contains(err.Error(), "state dir") {
+		t.Errorf("error = %q, expected to mention 'state dir'", err)
+	}
+
+	// Instance must NOT be registered on failure.
+	if r.Len() != 0 {
+		t.Errorf("Len = %d, want 0 (failed Create should not register)", r.Len())
+	}
+}
+
+func TestInstanceRegistry_Create_WriteStateFail(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod-based test not reliable on Windows")
+	}
+
+	dir := t.TempDir()
+	r, err := NewInstanceRegistry(filepath.Join(dir, "sessions"))
+	if err != nil {
+		t.Fatalf("NewInstanceRegistry: %v", err)
+	}
+
+	// Pre-create the state directory as read-only, so writeState (which
+	// tries to write state.json inside it) will fail.
+	sessionID := "readonly-session"
+	safe := "readonly-session" // no special chars
+	stateDir := filepath.Join(dir, "sessions", safe)
+	if err := os.MkdirAll(filepath.Join(stateDir, "logs"), 0700); err != nil {
+		t.Fatalf("pre-create stateDir: %v", err)
+	}
+	// Make stateDir read-only so os.WriteFile inside writeState fails.
+	if err := os.Chmod(stateDir, 0500); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() {
+		// Restore write permission for cleanup.
+		_ = os.Chmod(stateDir, 0700)
+	})
+
+	_, err = r.Create(sessionID)
+	if err == nil {
+		t.Fatal("expected error when state dir is read-only")
+	}
+	if !strings.Contains(err.Error(), "write initial state") {
+		t.Errorf("error = %q, expected to mention 'write initial state'", err)
+	}
+
+	// Instance must NOT be registered on failure.
+	if r.Len() != 0 {
+		t.Errorf("Len = %d, want 0 (failed Create should not register)", r.Len())
+	}
+}
+
+func TestInstanceRegistry_Create_LogsDirFail(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("file-as-dir trick not reliable on Windows")
+	}
+
+	dir := t.TempDir()
+	r, err := NewInstanceRegistry(filepath.Join(dir, "sessions"))
+	if err != nil {
+		t.Fatalf("NewInstanceRegistry: %v", err)
+	}
+
+	// Pre-create the state directory with "logs" as a regular file so that
+	// MkdirAll(stateDir + "/logs") fails.
+	sessionID := "logs-blocked"
+	stateDir := filepath.Join(dir, "sessions", sessionID)
+	if err := os.MkdirAll(stateDir, 0700); err != nil {
+		t.Fatalf("pre-create stateDir: %v", err)
+	}
+	// Create "logs" as a regular file (not a directory).
+	if err := os.WriteFile(filepath.Join(stateDir, "logs"), []byte("blocker"), 0600); err != nil {
+		t.Fatalf("create blocker file: %v", err)
+	}
+
+	_, err = r.Create(sessionID)
+	if err == nil {
+		t.Fatal("expected error when logs path is a regular file")
+	}
+	if !strings.Contains(err.Error(), "logs dir") {
+		t.Errorf("error = %q, expected to mention 'logs dir'", err)
+	}
+
+	// Instance must NOT be registered on failure.
+	if r.Len() != 0 {
+		t.Errorf("Len = %d, want 0 (failed Create should not register)", r.Len())
 	}
 }

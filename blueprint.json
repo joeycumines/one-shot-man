@@ -21,9 +21,9 @@
     "Expand scope continuously — there is ALWAYS more work"
   ],
   "statusSection": {
-    "currentState": "FIXES APPLIED — T001-T033, T044-T045 Done. Awaiting Rule of Two for commit. Then coverage push T034+.",
+    "currentState": "COVERAGE PUSH IN PROGRESS — T036 Phase 1 done (15 new tests, 94.2%→94.8%). Awaiting Rule of Two for commit.",
     "branch": "wip",
-    "buildStatus": "ALL GREEN — macOS PASS (verified, all 23 templates tests + 15 pr_split tests pass)",
+    "buildStatus": "ALL GREEN — macOS PASS (all claudemux tests pass with -race)",
     "sessionTimer": ".session-timer (2026-02-24T00:00:00+1000)"
   },
   "sequentialTasks": [
@@ -204,8 +204,8 @@
     },
     {
       "task": "T036: Push claudemux/ coverage to 100%",
-      "description": "All uncovered: provider spawn, parser, guard, pool, panel, safety, recovery, MCP config.",
-      "status": "Not Started"
+      "description": "All uncovered: provider spawn, parser, guard, pool, panel, safety, recovery, MCP config. PHASE 1 DONE: guard_test.go (+6 overflow tests), instance_test.go (+4 Create error-path tests), control_test.go (+5 send/GetStatus error-path tests). Package total: 94.2% → 94.8%.",
+      "status": "In Progress"
     },
     {
       "task": "T037: Push internal/command/ coverage to 100%",

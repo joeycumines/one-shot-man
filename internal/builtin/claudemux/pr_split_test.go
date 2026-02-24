@@ -692,7 +692,7 @@ func TestPRSplit_SelectStrategy(t *testing.T) {
 	stratVal := runJS(`prSplit.selectStrategy(
 		['pkg/a.go', 'pkg/b.go', 'cmd/main.go', 'docs/readme.md', 'Makefile']
 	).strategy`)
-	known := []string{"directory", "directory-deep", "extension", "chunks"}
+	known := []string{"directory", "directory-deep", "extension", "chunks", "dependency"}
 	assert.Contains(t, known, stratVal.String())
 }
 
@@ -712,7 +712,7 @@ func TestPRSplit_SelectStrategy_Scored(t *testing.T) {
 	]);`)
 
 	scoredLen := runJS(`result.scored.length`)
-	assert.Equal(t, int64(4), scoredLen.ToInteger(), "should score 4 strategies")
+	assert.Equal(t, int64(5), scoredLen.ToInteger(), "should score 5 strategies")
 }
 
 // ---------------------------------------------------------------------------

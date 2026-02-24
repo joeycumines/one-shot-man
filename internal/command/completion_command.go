@@ -145,7 +145,7 @@ _osm_completion() {
             return 0
             ;;
         --strategy)
-            COMPREPLY=($(compgen -W "directory directory-deep extension chunks auto" -- ${cur}))
+            COMPREPLY=($(compgen -W "directory directory-deep extension chunks dependency auto" -- ${cur}))
             return 0
             ;;
         --provider)
@@ -257,7 +257,7 @@ _osm() {
                 pr-split)
                     _arguments \
                         '--base[Base branch]:branch:' \
-                        '--strategy[Grouping strategy]:strategy:(directory directory-deep extension chunks auto)' \
+                        '--strategy[Grouping strategy]:strategy:(directory directory-deep extension chunks dependency auto)' \
                         '--max[Max files per split]:number:' \
                         '--prefix[Branch prefix]:prefix:' \
                         '--verify[Verify command]:command:' \
@@ -356,7 +356,7 @@ complete -c osm -n '__fish_seen_subcommand_from claude-mux' -a 'status start sto
 
 # Completion for 'pr-split' flags
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l base -d 'Base branch'
-complete -c osm -n '__fish_seen_subcommand_from pr-split' -l strategy -a 'directory directory-deep extension chunks auto' -d 'Grouping strategy'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l strategy -a 'directory directory-deep extension chunks dependency auto' -d 'Grouping strategy'
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l max -d 'Max files per split'
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l prefix -d 'Branch prefix'
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l verify -d 'Verify command'

@@ -21,9 +21,9 @@
     "Die coding — work until the very last token"
   ],
   "statusSection": {
-    "currentState": "T001-T008 DONE + P0 fixes DONE — Error dispatch, fleStatuses threading, deleted files, re-run support, 13 new tests, Rule of Two PASSED. Ready to commit.",
+    "currentState": "T001-T040 DONE (except T023-T025 cross-platform). Phase 3 uncommitted: dependency grouping, plan persistence, PR creation, conflict resolution, plan editing, Lipgloss styled output. 40 tests pass.",
     "branch": "wip",
-    "buildStatus": "ALL GREEN — all claudemux (~460+) and command (21) tests pass with -race",
+    "buildStatus": "ALL GREEN — go build, vet, staticcheck, deadcode, betteralign, 44 packages pass",
     "sessionTimer": ".session-timer (started 2026-02-24T01:28:44Z)"
   },
   "sequentialTasks": [
@@ -134,8 +134,8 @@
     },
     {
       "task": "T022: Commit",
-      "description": "Git add, commit, push to wip.",
-      "status": "Not Started"
+      "description": "Committed as 8d56493 on wip branch. 9 files, 1379 insertions, 121 deletions.",
+      "status": "Done"
     },
     {
       "task": "T023: Linux build verification",
@@ -199,33 +199,33 @@
     },
     {
       "task": "T035: Scope — dependency-aware grouping strategy",
-      "description": "Go import graph. Test↔impl pairing. Interface↔implementation detection.",
-      "status": "Not Started"
+      "description": "Go import graph parsing with union-find algorithm. Falls back to directory for non-Go. Shell completion updated. 2 tests.",
+      "status": "Done"
     },
     {
       "task": "T036: Scope — interactive plan editing in TUI",
-      "description": "Move files, rename splits, reorder, preview.",
-      "status": "Not Started"
+      "description": "move/rename/merge/reorder TUI commands for in-place plan modification. 1 test.",
+      "status": "Done"
     },
     {
       "task": "T037: Scope — GitHub PR creation via gh CLI",
-      "description": "--create-prs. PR title, body, base targeting, draft mode.",
-      "status": "Not Started"
+      "description": "create-prs TUI command: push branches + gh pr create for stacked PRs. --draft, --push-only. 1 guard test.",
+      "status": "Done"
     },
     {
       "task": "T038: Scope — plan persistence and resumption",
-      "description": "Serialize plan, resume, track executed vs pending.",
-      "status": "Not Started"
+      "description": "save-plan/load-plan TUI commands with JSON serialization via osm:os. 1 test.",
+      "status": "Done"
     },
     {
       "task": "T039: Scope — TUI progress with Lipgloss",
-      "description": "Real-time progress, styled output.",
-      "status": "Not Started"
+      "description": "Styled output helpers (success/error/warning/info/dim/bold/progressBar) with graceful degradation. All 29 status message lines styled.",
+      "status": "Done"
     },
     {
       "task": "T040: Scope — split conflict resolution",
-      "description": "Auto-resolve go.sum/mod, constants, imports. Manual fallback.",
-      "status": "Not Started"
+      "description": "fix TUI command: auto-resolve split verification failures via sequential strategies (go mod tidy, go mod download). AUTO_FIX_STRATEGIES array.",
+      "status": "Done"
     }
   ],
   "continuousVerification": {

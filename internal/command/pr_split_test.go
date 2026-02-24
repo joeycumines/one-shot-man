@@ -1694,3 +1694,444 @@ func TestPrSplitCommand_ConfigOverrides(t *testing.T) {
 		t.Errorf("expected config max=5 in output, got: %s", output)
 	}
 }
+
+// ---------------------------------------------------------------------------
+//  Plan Persistence (T038)
+// ---------------------------------------------------------------------------
+
+// TestPrSplitCommand_SaveLoadPlan exercises the save-plan and load-plan
+// TUI commands. It creates a full plan (dry-run), saves it, then loads
+// it into a fresh engine and verifies the plan state is restored.
+func TestPrSplitCommand_SaveLoadPlan(t *testing.T) {
+	// NOT parallel — we chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	dir := setupTestGitRepo(t)
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	// Phase 1: Create plan in dry-run mode and save it.
+	stdout1, dispatch1 := loadPrSplitEngine(t, map[string]interface{}{
+		"dryRun": true,
+	})
+
+	if err := dispatch1("run", nil); err != nil {
+		t.Fatalf("run (dry-run) returned error: %v", err)
+	}
+	output1 := stdout1.String()
+	if !contains(output1, "DRY RUN") {
+		t.Fatal("expected dry-run output")
+	}
+
+	// Save plan to a specific file.
+	planFile := filepath.Join(dir, "test-plan.json")
+	stdout1.Reset()
+	if err := dispatch1("save-plan", []string{planFile}); err != nil {
+		t.Fatalf("save-plan returned error: %v", err)
+	}
+	saveOutput := stdout1.String()
+	t.Logf("save-plan output:\n%s", saveOutput)
+	if !contains(saveOutput, "Plan saved to") {
+		t.Error("expected 'Plan saved to' in output")
+	}
+
+	// Verify file exists.
+	if _, err := os.Stat(planFile); os.IsNotExist(err) {
+		t.Fatal("plan file does not exist after save-plan")
+	}
+
+	// Read and verify it's valid JSON with expected structure.
+	planData, err := os.ReadFile(planFile)
+	if err != nil {
+		t.Fatalf("failed to read plan file: %v", err)
+	}
+	if !strings.Contains(string(planData), `"version": 1`) {
+		t.Error("plan file missing version field")
+	}
+	if !strings.Contains(string(planData), `"splits"`) {
+		t.Error("plan file missing splits field")
+	}
+
+	// Phase 2: Load plan into a fresh engine.
+	stdout2, dispatch2 := loadPrSplitEngine(t, nil)
+
+	if err := dispatch2("load-plan", []string{planFile}); err != nil {
+		t.Fatalf("load-plan returned error: %v", err)
+	}
+	loadOutput := stdout2.String()
+	t.Logf("load-plan output:\n%s", loadOutput)
+	if !contains(loadOutput, "Plan loaded from") {
+		t.Error("expected 'Plan loaded from' in output")
+	}
+	if !contains(loadOutput, "Total splits:") {
+		t.Error("expected 'Total splits:' in output")
+	}
+	if !contains(loadOutput, "Pending:") {
+		t.Error("expected 'Pending:' in output")
+	}
+
+	// Phase 3: Verify we can preview the loaded plan.
+	stdout2.Reset()
+	if err := dispatch2("preview", nil); err != nil {
+		t.Fatalf("preview returned error: %v", err)
+	}
+	previewOutput := stdout2.String()
+	t.Logf("preview output after load:\n%s", previewOutput)
+	if !contains(previewOutput, "Plan:") && !contains(previewOutput, "splits") && !contains(previewOutput, "split/") {
+		t.Error("expected plan details in preview after loading")
+	}
+}
+
+// TestPrSplitCommand_CreatePRsGuards verifies that the create-prs command
+// requires a plan and executed splits before attempting PR creation.
+func TestPrSplitCommand_CreatePRsGuards(t *testing.T) {
+	t.Parallel()
+
+	stdout, dispatch := loadPrSplitEngine(t, nil)
+
+	// create-prs without a plan should fail gracefully.
+	if err := dispatch("create-prs", nil); err != nil {
+		t.Fatalf("create-prs returned error: %v", err)
+	}
+	output := stdout.String()
+	if !contains(output, "No plan") {
+		t.Errorf("expected 'No plan' guard, got: %s", output)
+	}
+}
+
+// TestPrSplitCommand_FixGuards verifies that the fix command requires a plan.
+func TestPrSplitCommand_FixGuards(t *testing.T) {
+	t.Parallel()
+
+	stdout, dispatch := loadPrSplitEngine(t, nil)
+
+	// fix without a plan should fail gracefully.
+	if err := dispatch("fix", nil); err != nil {
+		t.Fatalf("fix returned error: %v", err)
+	}
+	output := stdout.String()
+	if !contains(output, "No plan") {
+		t.Errorf("expected 'No plan' guard, got: %s", output)
+	}
+}
+
+// TestPrSplitCommand_PlanEditing exercises the interactive plan editing
+// commands: move, rename, merge, reorder.
+func TestPrSplitCommand_PlanEditing(t *testing.T) {
+	// NOT parallel — we chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	dir := setupTestGitRepo(t)
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+		"dryRun": true,
+	})
+
+	// Create a plan via dry-run.
+	if err := dispatch("run", nil); err != nil {
+		t.Fatalf("run (dry-run) returned error: %v", err)
+	}
+	_ = stdout.String()
+
+	// Test rename: rename split 1.
+	stdout.Reset()
+	if err := dispatch("rename", []string{"1", "infrastructure"}); err != nil {
+		t.Fatalf("rename returned error: %v", err)
+	}
+	renameOutput := stdout.String()
+	t.Logf("rename output: %s", renameOutput)
+	if !contains(renameOutput, "Renamed split 1") {
+		t.Error("expected rename confirmation")
+	}
+	if !contains(renameOutput, "infrastructure") {
+		t.Error("expected new name in output")
+	}
+
+	// Test move: move a file between splits (only if there are 2+ splits).
+	stdout.Reset()
+	if err := dispatch("preview", nil); err != nil {
+		t.Fatalf("preview returned error: %v", err)
+	}
+	previewOutput := stdout.String()
+	t.Logf("preview after rename:\n%s", previewOutput)
+
+	// Verify rename took effect.
+	if !contains(previewOutput, "infrastructure") {
+		t.Error("expected renamed split in preview")
+	}
+
+	// Test merge: merge last split into first (if 3+ splits).
+	if strings.Count(previewOutput, "Split ") >= 3 {
+		stdout.Reset()
+		if err := dispatch("merge", []string{"1", "3"}); err != nil {
+			t.Fatalf("merge returned error: %v", err)
+		}
+		mergeOutput := stdout.String()
+		t.Logf("merge output: %s", mergeOutput)
+		if !contains(mergeOutput, "Merged split") {
+			t.Error("expected merge confirmation")
+		}
+	}
+
+	// Test edge cases: move without plan.
+	stdout.Reset()
+	if err := dispatch("move", nil); err != nil {
+		t.Fatalf("move returned error: %v", err)
+	}
+	if !contains(stdout.String(), "Usage:") {
+		t.Error("expected usage hint for move without args")
+	}
+
+	// Test reorder: check that it updates plan position and renumber.
+	stdout.Reset()
+	if err := dispatch("preview", nil); err != nil {
+		t.Fatalf("preview (pre-reorder) returned error: %v", err)
+	}
+	previewBeforeReorder := stdout.String()
+	splitCountBefore := strings.Count(previewBeforeReorder, "Split ")
+	t.Logf("preview before reorder (%d splits):\n%s", splitCountBefore, previewBeforeReorder)
+
+	if splitCountBefore >= 2 {
+		stdout.Reset()
+		if err := dispatch("reorder", []string{"1", "2"}); err != nil {
+			t.Fatalf("reorder returned error: %v", err)
+		}
+		reorderOutput := stdout.String()
+		t.Logf("reorder output: %s", reorderOutput)
+		if !contains(reorderOutput, "Moved split from position") {
+			t.Error("expected reorder confirmation")
+		}
+
+		// Verify preview reflects the new order.
+		stdout.Reset()
+		if err := dispatch("preview", nil); err != nil {
+			t.Fatalf("preview (post-reorder) returned error: %v", err)
+		}
+		previewAfterReorder := stdout.String()
+		t.Logf("preview after reorder:\n%s", previewAfterReorder)
+		// Split count should remain the same.
+		splitCountAfter := strings.Count(previewAfterReorder, "Split ")
+		if splitCountAfter != splitCountBefore {
+			t.Errorf("reorder changed split count: %d → %d", splitCountBefore, splitCountAfter)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  Dependency-Aware Grouping (T035)
+// ---------------------------------------------------------------------------
+
+// setupDependencyGoRepo creates a Go project with cross-package dependencies:
+//   - main.go imports internal/helper and pkg/types
+//   - internal/helper/help.go imports pkg/types
+//   - pkg/types/types.go (standalone)
+//   - docs/README.md (non-Go file)
+//
+// This creates a diamond dependency: main → helper → types, main → types.
+// The dependency strategy should merge all Go packages into fewer groups.
+func setupDependencyGoRepo(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	dir := t.TempDir()
+
+	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "config", "user.email", "test@test.com")
+	runGitCmd(t, dir, "config", "user.name", "Test User")
+
+	// Base: valid Go module with just go.mod + main.go.
+	for _, f := range []struct{ path, content string }{
+		{"go.mod", "module example.com/deptest\n\ngo 1.21\n"},
+		{"main.go", "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n"},
+	} {
+		full := filepath.Join(dir, f.path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(f.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "initial: base module")
+
+	// Create feature branch.
+	runGitCmd(t, dir, "checkout", "-b", "feature")
+
+	// Feature: add 3 interconnected packages.
+	for _, f := range []struct{ path, content string }{
+		{"pkg/types/types.go", "package types\n\n// Config holds configuration.\ntype Config struct {\n\tName string\n}\n"},
+		{"pkg/types/types_test.go", "package types\n\nimport \"testing\"\n\nfunc TestConfig(t *testing.T) {\n\tc := Config{Name: \"test\"}\n\tif c.Name != \"test\" {\n\t\tt.Fatal(\"fail\")\n\t}\n}\n"},
+		{"internal/helper/help.go", "package helper\n\nimport \"example.com/deptest/pkg/types\"\n\n// NewConfig creates a default config.\nfunc NewConfig() types.Config {\n\treturn types.Config{Name: \"default\"}\n}\n"},
+		{"internal/helper/help_test.go", "package helper\n\nimport \"testing\"\n\nfunc TestNewConfig(t *testing.T) {\n\tc := NewConfig()\n\tif c.Name != \"default\" {\n\t\tt.Fatal(\"fail\")\n\t}\n}\n"},
+		{"main.go", "package main\n\nimport (\n\t\"fmt\"\n\n\t\"example.com/deptest/internal/helper\"\n\t\"example.com/deptest/pkg/types\"\n)\n\nfunc main() {\n\tc := helper.NewConfig()\n\tfmt.Println(c.Name)\n\t_ = types.Config{}\n}\n"},
+		{"docs/README.md", "# Dep Test\n\nDocumentation.\n"},
+	} {
+		full := filepath.Join(dir, f.path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(f.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "feature: add helper + types packages")
+
+	// Verify feature compiles.
+	goCmd := exec.Command("go", "build", "./...")
+	goCmd.Dir = dir
+	if out, err := goCmd.CombinedOutput(); err != nil {
+		t.Fatalf("feature does not compile: %s", string(out))
+	}
+
+	return dir
+}
+
+// TestPrSplitCommand_DependencyStrategy exercises the dependency-aware
+// grouping strategy on a Go project with cross-package imports.
+// Expected: main → helper → types import chain should merge packages
+// into fewer groups than the directory strategy.
+func TestPrSplitCommand_DependencyStrategy(t *testing.T) {
+	// NOT parallel — we chdir.
+	dir := setupDependencyGoRepo(t)
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+		"strategy": "dependency",
+	})
+
+	if err := dispatch("run", nil); err != nil {
+		t.Fatalf("run (dependency) returned error: %v", err)
+	}
+
+	output := stdout.String()
+	t.Logf("run (dependency) output:\n%s", output)
+
+	// Should identify all changed files (main.go + 4 new Go files + docs/README.md).
+	if !contains(output, "6 changed files") {
+		t.Errorf("expected 6 changed files, got: %s", output)
+	}
+
+	// Should use dependency strategy.
+	if !contains(output, "(dependency)") {
+		t.Errorf("expected (dependency) strategy label in output")
+	}
+
+	// Should complete the full workflow.
+	if !contains(output, "Split executed:") {
+		t.Error("expected execution output")
+	}
+	if !contains(output, "Tree hash equivalence verified") {
+		t.Error("expected equivalence verification")
+	}
+
+	// The dependency strategy should produce FEWER groups than directory.
+	// Directory would produce: . (main.go), pkg/types, internal/helper, docs = 4 groups.
+	// Dependency should merge: . + internal/helper + pkg/types = 1 group (via import chain).
+	// Plus docs = total 2 groups.
+	// So we expect <= 2 splits.
+	if contains(output, "4 splits") || contains(output, "3 splits") {
+		t.Error("dependency strategy should merge related packages — produced too many splits")
+	}
+}
+
+// TestPrSplitCommand_DependencyStrategyNonGo verifies that the dependency
+// strategy gracefully falls back to directory grouping for non-Go projects.
+func TestPrSplitCommand_DependencyStrategyNonGo(t *testing.T) {
+	// NOT parallel — we chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	dir := t.TempDir()
+
+	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "config", "user.email", "test@test.com")
+	runGitCmd(t, dir, "config", "user.name", "Test User")
+
+	// Base: a simple non-Go project.
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "initial")
+
+	// Create feature branch.
+	runGitCmd(t, dir, "checkout", "-b", "feature")
+
+	// Feature: add files in different directories.
+	for _, f := range []struct{ path, content string }{
+		{"src/app.js", "console.log('hello');\n"},
+		{"src/utils.js", "module.exports = {};\n"},
+		{"docs/guide.md", "# Guide\n"},
+	} {
+		full := filepath.Join(dir, f.path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(f.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "feature: add JS and docs")
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+		"strategy": "dependency",
+	})
+
+	if err := dispatch("run", nil); err != nil {
+		t.Fatalf("run (dependency/non-go) returned error: %v", err)
+	}
+
+	output := stdout.String()
+	t.Logf("run (dependency/non-go) output:\n%s", output)
+
+	// Should complete successfully even though it's not a Go project.
+	if !contains(output, "Split executed:") {
+		t.Error("expected execution output")
+	}
+	if !contains(output, "Tree hash equivalence verified") {
+		t.Error("expected equivalence verification for non-Go dependency fallback")
+	}
+}

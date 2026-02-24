@@ -63,7 +63,7 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 
 	// Split configuration
 	fs.StringVar(&c.baseBranch, "base", "main", "Base branch to split against")
-	fs.StringVar(&c.strategy, "strategy", "directory", "Grouping strategy: directory, directory-deep, extension, chunks, auto")
+	fs.StringVar(&c.strategy, "strategy", "directory", "Grouping strategy: directory, directory-deep, extension, chunks, dependency, auto")
 	fs.IntVar(&c.maxFiles, "max", 10, "Maximum files per split")
 	fs.StringVar(&c.branchPrefix, "prefix", "split/", "Branch name prefix for splits")
 	fs.StringVar(&c.verifyCommand, "verify", "make test", "Command to verify each split")

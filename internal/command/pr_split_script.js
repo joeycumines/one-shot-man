@@ -37,6 +37,85 @@ try {
     claudemux = null;
 }
 
+// Optional: os module for file I/O (plan persistence).
+var osmod;
+try {
+    osmod = require('osm:os');
+} catch (e) {
+    osmod = null;
+}
+
+// Optional: lipgloss for styled terminal output.
+var lip;
+try {
+    lip = require('osm:lipgloss');
+} catch (e) {
+    lip = null;
+}
+
+// ---------------------------------------------------------------------------
+//  Styled Output Helpers
+// ---------------------------------------------------------------------------
+
+// style creates terminal-styled text using Lipgloss when available.
+// Degrades to plain text when Lipgloss is not loaded.
+var style = (function() {
+    if (!lip) {
+        // No-op styles: return text unchanged.
+        return {
+            success: function(s) { return s; },
+            error: function(s) { return s; },
+            warning: function(s) { return s; },
+            info: function(s) { return s; },
+            header: function(s) { return s; },
+            dim: function(s) { return s; },
+            bold: function(s) { return s; },
+            progressBar: function(current, total, width) {
+                width = width || 20;
+                var filled = total > 0 ? Math.round((current / total) * width) : 0;
+                var bar = '';
+                for (var i = 0; i < width; i++) {
+                    bar += i < filled ? '█' : '░';
+                }
+                return '[' + bar + '] ' + current + '/' + total;
+            }
+        };
+    }
+
+    var successStyle = lip.newStyle().foreground('#22c55e').bold();
+    var errorStyle = lip.newStyle().foreground('#ef4444').bold();
+    var warningStyle = lip.newStyle().foreground('#f59e0b');
+    var infoStyle = lip.newStyle().foreground('#3b82f6');
+    var headerStyle = lip.newStyle().foreground('#a78bfa').bold();
+    var dimStyle = lip.newStyle().foreground('#6b7280');
+    var boldStyle = lip.newStyle().bold();
+    var barFilledStyle = lip.newStyle().foreground('#22c55e');
+    var barEmptyStyle = lip.newStyle().foreground('#374151');
+
+    return {
+        success: function(s) { return successStyle.render(s); },
+        error: function(s) { return errorStyle.render(s); },
+        warning: function(s) { return warningStyle.render(s); },
+        info: function(s) { return infoStyle.render(s); },
+        header: function(s) { return headerStyle.render(s); },
+        dim: function(s) { return dimStyle.render(s); },
+        bold: function(s) { return boldStyle.render(s); },
+        progressBar: function(current, total, width) {
+            width = width || 20;
+            var filled = total > 0 ? Math.round((current / total) * width) : 0;
+            var bar = '';
+            for (var i = 0; i < width; i++) {
+                if (i < filled) {
+                    bar += barFilledStyle.render('█');
+                } else {
+                    bar += barEmptyStyle.render('░');
+                }
+            }
+            return '[' + bar + '] ' + current + '/' + total;
+        }
+    };
+})();
+
 // Read injected configuration with defaults.
 var cfg = (typeof prSplitConfig !== 'undefined') ? prSplitConfig : {};
 var COMMAND_NAME = (typeof config !== 'undefined' && config.name) ? config.name : 'pr-split';
@@ -331,6 +410,244 @@ function groupByChunks(files, maxPerGroup) {
     return groups;
 }
 
+// ---------------------------------------------------------------------------
+//  Dependency-Aware Grouping (Go)
+// ---------------------------------------------------------------------------
+
+// parseGoImports extracts import paths from Go source code.
+// Handles single-line (`import "path"`) and block (`import ( ... )`) forms.
+// Stops parsing at the first func/type/var/const declaration for efficiency.
+function parseGoImports(content) {
+    var imports = [];
+    var lines = content.split('\n');
+    var inBlock = false;
+
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+
+        // Single import: import "path"
+        if (!inBlock && line.indexOf('import ') === 0 && line.indexOf('(') === -1) {
+            var q1 = line.indexOf('"');
+            if (q1 >= 0) {
+                var q2 = line.indexOf('"', q1 + 1);
+                if (q2 > q1) {
+                    imports.push(line.substring(q1 + 1, q2));
+                }
+            }
+            continue;
+        }
+
+        // Block import start: `import (`  or  `import(`
+        if (!inBlock && line.indexOf('import') === 0 && line.indexOf('(') >= 0) {
+            inBlock = true;
+            // Check if there's also an import on the same line as the (
+            var qi = line.indexOf('"');
+            if (qi >= 0) {
+                var qi2 = line.indexOf('"', qi + 1);
+                if (qi2 > qi) {
+                    imports.push(line.substring(qi + 1, qi2));
+                }
+            }
+            continue;
+        }
+
+        // Block import end
+        if (inBlock && line.indexOf(')') >= 0) {
+            inBlock = false;
+            continue;
+        }
+
+        // Inside block import: `"path"` or `alias "path"`
+        if (inBlock) {
+            var qs = line.indexOf('"');
+            if (qs >= 0) {
+                var qe = line.indexOf('"', qs + 1);
+                if (qe > qs) {
+                    imports.push(line.substring(qs + 1, qe));
+                }
+            }
+            continue;
+        }
+
+        // Stop at first declaration (imports must precede declarations).
+        if (line.indexOf('func ') === 0 || line.indexOf('type ') === 0 ||
+            line.indexOf('var ') === 0 || line.indexOf('const ') === 0 ||
+            line.indexOf('var(') === 0 || line.indexOf('const(') === 0) {
+            break;
+        }
+    }
+
+    return imports;
+}
+
+// detectGoModulePath reads go.mod from the current directory and returns the
+// module path, or '' if not a Go module.
+function detectGoModulePath() {
+    var result = exec.execv(['cat', 'go.mod']);
+    if (result.code !== 0) {
+        return '';
+    }
+    var lines = result.stdout.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if (line.indexOf('module ') === 0) {
+            return line.substring(7).trim();
+        }
+    }
+    return '';
+}
+
+// groupByDependency groups changed files using dependency-aware heuristics:
+//   1. Go files are grouped by package directory (same dir = same package).
+//   2. If package A imports package B and both have changes in the
+//      changeset, they are merged into a single group (union-find).
+//   3. Test files (_test.go) naturally stay with their package.
+//   4. Non-Go files are placed into the nearest matching group or their
+//      own directory-based group.
+// Falls back to directory grouping for non-Go projects.
+function groupByDependency(files, options) {
+    options = options || {};
+
+    // Separate Go files from non-Go files.
+    var goFiles = [];
+    var otherFiles = [];
+    for (var i = 0; i < files.length; i++) {
+        if (files[i].length > 3 && files[i].substring(files[i].length - 3) === '.go') {
+            goFiles.push(files[i]);
+        } else {
+            otherFiles.push(files[i]);
+        }
+    }
+
+    // No Go files → fall back to directory grouping.
+    if (goFiles.length === 0) {
+        return groupByDirectory(files, 1);
+    }
+
+    // Group Go files by package directory.
+    var pkgFiles = {};
+    for (var i = 0; i < goFiles.length; i++) {
+        var parts = goFiles[i].split('/');
+        var pkg = parts.length > 1 ? parts.slice(0, -1).join('/') : '.';
+        if (!pkgFiles[pkg]) {
+            pkgFiles[pkg] = [];
+        }
+        pkgFiles[pkg].push(goFiles[i]);
+    }
+    var pkgDirs = Object.keys(pkgFiles);
+
+    // Detect Go module path from go.mod (for resolving intra-module imports).
+    var modulePath = detectGoModulePath();
+
+    // Union-Find: merge packages that have import relationships.
+    var parent = {};
+    for (var i = 0; i < pkgDirs.length; i++) {
+        parent[pkgDirs[i]] = pkgDirs[i];
+    }
+
+    function find(x) {
+        while (parent[x] !== x) {
+            parent[x] = parent[parent[x]]; // path halving
+            x = parent[x];
+        }
+        return x;
+    }
+
+    function union(a, b) {
+        var ra = find(a);
+        var rb = find(b);
+        if (ra !== rb) {
+            parent[ra] = rb;
+        }
+    }
+
+    // Parse imports from each changed Go file and merge related packages.
+    if (modulePath && pkgDirs.length > 1) {
+        for (var i = 0; i < goFiles.length; i++) {
+            // Skip test files for import analysis (they often import the
+            // package under test, which is in the same directory anyway).
+            if (goFiles[i].substring(goFiles[i].length - 8) === '_test.go') {
+                continue;
+            }
+
+            var filePkgParts = goFiles[i].split('/');
+            var filePkg = filePkgParts.length > 1
+                ? filePkgParts.slice(0, -1).join('/')
+                : '.';
+
+            // Read file and parse imports.
+            var catResult = exec.execv(['cat', goFiles[i]]);
+            if (catResult.code !== 0) {
+                continue;
+            }
+
+            var imports = parseGoImports(catResult.stdout);
+            for (var j = 0; j < imports.length; j++) {
+                var imp = imports[j];
+                // Only consider intra-module imports.
+                if (imp.indexOf(modulePath + '/') !== 0) {
+                    continue;
+                }
+                var relPath = imp.substring(modulePath.length + 1);
+
+                // If this imported package is in the changeset, merge them.
+                if (parent[relPath] !== undefined) {
+                    union(filePkg, relPath);
+                }
+            }
+        }
+    }
+
+    // Build groups from union-find roots.
+    var groups = {};
+    for (var i = 0; i < pkgDirs.length; i++) {
+        var root = find(pkgDirs[i]);
+        if (!groups[root]) {
+            groups[root] = [];
+        }
+        var fileList = pkgFiles[pkgDirs[i]];
+        for (var j = 0; j < fileList.length; j++) {
+            groups[root].push(fileList[j]);
+        }
+    }
+
+    // Place non-Go files into nearest matching group or separate group.
+    for (var i = 0; i < otherFiles.length; i++) {
+        var otherParts = otherFiles[i].split('/');
+        var otherDir = otherParts.length > 1
+            ? otherParts.slice(0, -1).join('/')
+            : '.';
+
+        var placed = false;
+
+        // Try exact directory match first.
+        if (groups[otherDir]) {
+            groups[otherDir].push(otherFiles[i]);
+            placed = true;
+        }
+
+        // Try to find a group whose root matches after find().
+        if (!placed && parent[otherDir] !== undefined) {
+            var resolved = find(otherDir);
+            if (groups[resolved]) {
+                groups[resolved].push(otherFiles[i]);
+                placed = true;
+            }
+        }
+
+        // Fall back: create a directory-based group.
+        if (!placed) {
+            var fallbackDir = dirname(otherFiles[i], 1);
+            if (!groups[fallbackDir]) {
+                groups[fallbackDir] = [];
+            }
+            groups[fallbackDir].push(otherFiles[i]);
+        }
+    }
+
+    return groups;
+}
+
 // applyStrategy selects and applies a grouping strategy.
 function applyStrategy(files, strategy, options) {
     options = options || {};
@@ -343,6 +660,8 @@ function applyStrategy(files, strategy, options) {
             return groupByExtension(files);
         case 'chunks':
             return groupByChunks(files, options.maxPerGroup || runtime.maxFiles);
+        case 'dependency':
+            return groupByDependency(files, options);
         case 'auto':
             return selectStrategy(files, options).groups;
         default:
@@ -362,7 +681,8 @@ function selectStrategy(files, options) {
         { name: 'directory', groups: groupByDirectory(files, 1) },
         { name: 'directory-deep', groups: groupByDirectory(files, 2) },
         { name: 'extension', groups: groupByExtension(files) },
-        { name: 'chunks', groups: groupByChunks(files, maxPerGroup) }
+        { name: 'chunks', groups: groupByChunks(files, maxPerGroup) },
+        { name: 'dependency', groups: groupByDependency(files, options) }
     ];
 
     if (!claudemux) {
@@ -745,6 +1065,110 @@ function validatePlan(plan) {
 }
 
 // ---------------------------------------------------------------------------
+//  Plan Persistence
+// ---------------------------------------------------------------------------
+
+var DEFAULT_PLAN_PATH = '.pr-split-plan.json';
+
+// savePlan serializes the current plan, analysis, and execution state to a
+// JSON file so a future session can resume where this one left off.
+function savePlan(path) {
+    path = path || DEFAULT_PLAN_PATH;
+    if (!osmod) {
+        return { error: 'osm:os module not available — cannot persist plan' };
+    }
+    if (!planCache) {
+        return { error: 'no plan to save — run "plan" or "run" first' };
+    }
+
+    var snapshot = {
+        version: 1,
+        savedAt: new Date().toISOString(),
+        runtime: {
+            baseBranch:    runtime.baseBranch,
+            strategy:      runtime.strategy,
+            maxFiles:      runtime.maxFiles,
+            branchPrefix:  runtime.branchPrefix,
+            verifyCommand: runtime.verifyCommand,
+            dryRun:        runtime.dryRun
+        },
+        analysis: analysisCache ? {
+            files: analysisCache.files,
+            fileStatuses: analysisCache.fileStatuses,
+            baseBranch: analysisCache.baseBranch,
+            currentBranch: analysisCache.currentBranch
+        } : null,
+        groups: groupsCache,
+        plan: planCache,
+        executed: executionResultCache || []
+    };
+
+    try {
+        osmod.writeFile(path, JSON.stringify(snapshot, null, 2));
+        return { path: path, error: null };
+    } catch (e) {
+        return { error: 'failed to write plan: ' + String(e) };
+    }
+}
+
+// loadPlan reads a previously-saved plan snapshot from disk and restores the
+// analysis, groups, plan, and execution state.
+function loadPlan(path) {
+    path = path || DEFAULT_PLAN_PATH;
+    if (!osmod) {
+        return { error: 'osm:os module not available — cannot load plan' };
+    }
+
+    var result = osmod.readFile(path);
+    if (result.error) {
+        return { error: 'failed to read plan: ' + result.error };
+    }
+
+    var snapshot;
+    try {
+        snapshot = JSON.parse(result.content);
+    } catch (e) {
+        return { error: 'invalid JSON in plan file: ' + String(e) };
+    }
+
+    if (!snapshot.version || snapshot.version < 1) {
+        return { error: 'unsupported plan version: ' + String(snapshot.version) };
+    }
+    if (!snapshot.plan || !snapshot.plan.splits) {
+        return { error: 'plan file missing splits' };
+    }
+
+    // Restore state.
+    if (snapshot.runtime) {
+        runtime.baseBranch    = snapshot.runtime.baseBranch    || runtime.baseBranch;
+        runtime.strategy      = snapshot.runtime.strategy      || runtime.strategy;
+        runtime.maxFiles      = snapshot.runtime.maxFiles      || runtime.maxFiles;
+        runtime.branchPrefix  = snapshot.runtime.branchPrefix  || runtime.branchPrefix;
+        runtime.verifyCommand = snapshot.runtime.verifyCommand || runtime.verifyCommand;
+        if (snapshot.runtime.dryRun !== undefined) {
+            runtime.dryRun = snapshot.runtime.dryRun;
+        }
+    }
+
+    if (snapshot.analysis) {
+        analysisCache = snapshot.analysis;
+    }
+    if (snapshot.groups) {
+        groupsCache = snapshot.groups;
+    }
+    planCache = snapshot.plan;
+    executionResultCache = snapshot.executed || [];
+
+    return {
+        path: path,
+        error: null,
+        totalSplits: planCache.splits.length,
+        executedSplits: executionResultCache.length,
+        pendingSplits: planCache.splits.length - executionResultCache.length
+    };
+}
+
+// ---------------------------------------------------------------------------
 //  Execution
 // ---------------------------------------------------------------------------
 
@@ -1011,6 +1435,237 @@ function cleanupBranches(plan) {
     }
 
     return { deleted: deleted, errors: errors };
+}
+
+// ---------------------------------------------------------------------------
+//  GitHub PR Creation
+// ---------------------------------------------------------------------------
+
+// createPRs pushes split branches and creates stacked GitHub PRs using gh CLI.
+// Options:
+//   draft:  bool  - Create as draft PRs (default: true)
+//   remote: string - Git remote to push to (default: 'origin')
+//   pushOnly: bool - Push branches but don't create PRs
+function createPRs(plan, options) {
+    options = options || {};
+    var dir = plan.dir || '.';
+    var draft = options.draft !== false;  // default true
+    var remote = options.remote || 'origin';
+    var pushOnly = options.pushOnly || false;
+
+    if (!plan.splits || plan.splits.length === 0) {
+        return { error: 'no splits in plan', results: [] };
+    }
+
+    // Verify gh CLI is available (unless push-only mode).
+    if (!pushOnly) {
+        var ghCheck = exec.execv(['gh', '--version']);
+        if (ghCheck.code !== 0) {
+            return { error: 'gh CLI not found — install GitHub CLI (https://cli.github.com) or use --push-only', results: [] };
+        }
+    }
+
+    var results = [];
+
+    // Step 1: Push all split branches.
+    for (var i = 0; i < plan.splits.length; i++) {
+        var split = plan.splits[i];
+        var pushResult = gitExec(dir, ['push', '-f', remote, split.name]);
+        if (pushResult.code !== 0) {
+            results.push({
+                name: split.name,
+                pushed: false,
+                prUrl: '',
+                error: 'push failed: ' + pushResult.stderr.trim()
+            });
+            return { error: 'push failed for ' + split.name + ': ' + pushResult.stderr.trim(), results: results };
+        }
+        results.push({
+            name: split.name,
+            pushed: true,
+            prUrl: '',
+            error: null
+        });
+    }
+
+    if (pushOnly) {
+        return { error: null, results: results };
+    }
+
+    // Step 2: Create PRs, stacked.
+    for (var i = 0; i < plan.splits.length; i++) {
+        var split = plan.splits[i];
+        var base = i === 0 ? plan.baseBranch : plan.splits[i - 1].name;
+        var title = '[' + padIndex(i + 1) + '/' + padIndex(plan.splits.length) + '] ' + split.message;
+        var body = 'Part ' + (i + 1) + ' of ' + plan.splits.length + ' — auto-generated by `osm pr-split`.\n\n';
+        body += '**Files:**\n';
+        for (var j = 0; j < split.files.length; j++) {
+            body += '- `' + split.files[j] + '`\n';
+        }
+
+        if (i < plan.splits.length - 1) {
+            body += '\n> ⚠️ **Stacked PR** — merge in order. Next: `' + plan.splits[i + 1].name + '`';
+        } else {
+            body += '\n> ✅ **Last PR in stack** — merging this completes the split.';
+        }
+
+        var ghArgs = ['gh', 'pr', 'create',
+            '--base', base,
+            '--head', split.name,
+            '--title', title,
+            '--body', body
+        ];
+        if (draft) {
+            ghArgs.push('--draft');
+        }
+
+        var ghResult = exec.execv(ghArgs);
+        if (ghResult.code !== 0) {
+            results[i].error = 'gh pr create failed: ' + ghResult.stderr.trim();
+            // Don't abort — continue creating remaining PRs.
+        } else {
+            results[i].prUrl = ghResult.stdout.trim();
+        }
+    }
+
+    return { error: null, results: results };
+}
+
+// ---------------------------------------------------------------------------
+//  Split Conflict Resolution
+// ---------------------------------------------------------------------------
+
+// AUTO_FIX_STRATEGIES defines sequential repair strategies to try when a
+// split branch fails verification. Each strategy is {name, detect, fix}.
+var AUTO_FIX_STRATEGIES = [
+    {
+        name: 'go-mod-tidy',
+        // Detect: check if go.mod exists in the repo.
+        detect: function(dir) {
+            return exec.execv(['test', '-f', (dir !== '.' ? dir + '/' : '') + 'go.mod']).code === 0;
+        },
+        // Fix: run `go mod tidy` and commit if changes were made.
+        fix: function(dir) {
+            var tidyResult = exec.execv(['sh', '-c',
+                'cd ' + shellQuote(dir) + ' && go mod tidy']);
+            if (tidyResult.code !== 0) {
+                return { fixed: false, error: 'go mod tidy failed: ' + tidyResult.stderr.trim() };
+            }
+            // Check if tidy changed anything.
+            var status = gitExec(dir, ['status', '--porcelain', 'go.mod', 'go.sum']);
+            if (status.stdout.trim() === '') {
+                return { fixed: false, error: 'go mod tidy made no changes' };
+            }
+            gitExec(dir, ['add', 'go.mod', 'go.sum']);
+            var commit = gitExec(dir, ['commit', '-m', 'fix: go mod tidy for split']);
+            if (commit.code !== 0) {
+                return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
+            }
+            return { fixed: true, error: null };
+        }
+    },
+    {
+        name: 'go-generate-sum',
+        // Detect: go.sum exists but might be incomplete.
+        detect: function(dir) {
+            return exec.execv(['test', '-f', (dir !== '.' ? dir + '/' : '') + 'go.sum']).code === 0;
+        },
+        // Fix: run `go mod download` to populate go.sum.
+        fix: function(dir) {
+            var dlResult = exec.execv(['sh', '-c',
+                'cd ' + shellQuote(dir) + ' && go mod download']);
+            if (dlResult.code !== 0) {
+                return { fixed: false, error: 'go mod download failed: ' + dlResult.stderr.trim() };
+            }
+            var status = gitExec(dir, ['status', '--porcelain', 'go.sum']);
+            if (status.stdout.trim() === '') {
+                return { fixed: false, error: 'go mod download made no changes' };
+            }
+            gitExec(dir, ['add', 'go.sum']);
+            var commit = gitExec(dir, ['commit', '-m', 'fix: update go.sum for split']);
+            if (commit.code !== 0) {
+                return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
+            }
+            return { fixed: true, error: null };
+        }
+    }
+];
+
+// resolveConflicts attempts to auto-fix split branches that fail verification.
+// For each split:
+//   1. Check out the branch.
+//   2. Run the verify command.
+//   3. If it fails, try auto-fix strategies in order.
+//   4. After each fix, re-run verification.
+//   5. If still fails, mark as unresolved.
+function resolveConflicts(plan, options) {
+    options = options || {};
+    var dir = plan.dir || '.';
+    var verifyCommand = options.verifyCommand || plan.verifyCommand || runtime.verifyCommand;
+
+    if (!verifyCommand || verifyCommand === 'true') {
+        return { fixed: [], skipped: 'no verify command configured', errors: [] };
+    }
+
+    var savedBranch = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    if (savedBranch.code !== 0) {
+        return { fixed: [], errors: [{ name: '(setup)', error: 'failed to get current branch' }] };
+    }
+    var restoreBranch = savedBranch.stdout.trim();
+
+    var fixed = [];
+    var errorsOut = [];
+
+    for (var i = 0; i < plan.splits.length; i++) {
+        var split = plan.splits[i];
+        var co = gitExec(dir, ['checkout', split.name]);
+        if (co.code !== 0) {
+            errorsOut.push({ name: split.name, error: 'checkout failed: ' + co.stderr.trim() });
+            continue;
+        }
+
+        // Run verify.
+        var verifyResult = exec.execv(['sh', '-c', 'cd ' + shellQuote(dir) + ' && ' + verifyCommand]);
+        if (verifyResult.code === 0) {
+            // Already passes — no fix needed.
+            continue;
+        }
+
+        // Verification failed — try auto-fix strategies.
+        var resolved = false;
+        for (var s = 0; s < AUTO_FIX_STRATEGIES.length; s++) {
+            var strategy = AUTO_FIX_STRATEGIES[s];
+            if (!strategy.detect(dir)) {
+                continue;
+            }
+
+            var fixResult = strategy.fix(dir);
+            if (!fixResult.fixed) {
+                continue;
+            }
+
+            // Re-run verification.
+            var reVerify = exec.execv(['sh', '-c', 'cd ' + shellQuote(dir) + ' && ' + verifyCommand]);
+            if (reVerify.code === 0) {
+                fixed.push({ name: split.name, strategy: strategy.name });
+                resolved = true;
+                break;
+            }
+            // Fix was applied but didn't resolve — continue trying.
+        }
+
+        if (!resolved) {
+            errorsOut.push({
+                name: split.name,
+                error: 'verification failed after all auto-fix strategies'
+            });
+        }
+    }
+
+    // Restore original branch.
+    gitExec(dir, ['checkout', restoreBranch]);
+
+    return { fixed: fixed, errors: errorsOut };
 }
 
 // ---------------------------------------------------------------------------
@@ -1540,6 +2195,9 @@ globalThis.prSplit = {
     groupByExtension: groupByExtension,
     groupByPattern: groupByPattern,
     groupByChunks: groupByChunks,
+    groupByDependency: groupByDependency,
+    parseGoImports: parseGoImports,
+    detectGoModulePath: detectGoModulePath,
     applyStrategy: applyStrategy,
     selectStrategy: selectStrategy,
 
@@ -1550,6 +2208,8 @@ globalThis.prSplit = {
     // Planning
     createSplitPlan: createSplitPlan,
     validatePlan: validatePlan,
+    savePlan: savePlan,
+    loadPlan: loadPlan,
 
     // Execution
     executeSplit: executeSplit,
@@ -1560,6 +2220,8 @@ globalThis.prSplit = {
     verifyEquivalence: verifyEquivalence,
     verifyEquivalenceDetailed: verifyEquivalenceDetailed,
     cleanupBranches: cleanupBranches,
+    createPRs: createPRs,
+    resolveConflicts: resolveConflicts,
 
     // BT nodes
     createAnalyzeNode: createAnalyzeNode,
@@ -1616,6 +2278,7 @@ var groupsCache = null;
 var planCache = null;
 var registryCache = null;
 var classificationCache = null;
+var executionResultCache = [];
 
 // ---------------------------------------------------------------------------
 //  Provider Registry Lifecycle
@@ -1845,6 +2508,209 @@ function buildCommands(stateArg) {
             }
         },
 
+        // --- Plan Editing Commands ---
+
+        move: {
+            description: 'Move a file from one split to another',
+            usage: 'move <file> <from-index> <to-index>',
+            handler: function(args) {
+                if (!planCache) {
+                    output.print('No plan — run "plan" first.');
+                    return;
+                }
+                if (!args || args.length < 3) {
+                    output.print('Usage: move <file-path> <from-split-index> <to-split-index>');
+                    output.print('Indexes are 1-based. Example: move cmd/main.go 1 2');
+                    return;
+                }
+                var file = args[0];
+                var fromIdx = parseInt(args[1], 10) - 1;
+                var toIdx = parseInt(args[2], 10) - 1;
+
+                if (fromIdx < 0 || fromIdx >= planCache.splits.length) {
+                    output.print('Invalid from-index: ' + args[1] + ' (range: 1-' + planCache.splits.length + ')');
+                    return;
+                }
+                if (toIdx < 0 || toIdx >= planCache.splits.length) {
+                    output.print('Invalid to-index: ' + args[2] + ' (range: 1-' + planCache.splits.length + ')');
+                    return;
+                }
+                if (fromIdx === toIdx) {
+                    output.print('From and to are the same split.');
+                    return;
+                }
+
+                // Find and remove file from source split.
+                var fromSplit = planCache.splits[fromIdx];
+                var fileIdx = -1;
+                for (var i = 0; i < fromSplit.files.length; i++) {
+                    if (fromSplit.files[i] === file) {
+                        fileIdx = i;
+                        break;
+                    }
+                }
+                if (fileIdx === -1) {
+                    output.print('File "' + file + '" not found in split ' + (fromIdx + 1) + ' (' + fromSplit.name + ')');
+                    return;
+                }
+                fromSplit.files.splice(fileIdx, 1);
+
+                // Add to destination split.
+                planCache.splits[toIdx].files.push(file);
+                planCache.splits[toIdx].files.sort();
+
+                output.print('Moved "' + file + '" from split ' + (fromIdx + 1) + ' to split ' + (toIdx + 1));
+
+                // Remove empty splits.
+                if (fromSplit.files.length === 0) {
+                    planCache.splits.splice(fromIdx, 1);
+                    output.print('Split ' + (fromIdx + 1) + ' is now empty — removed.');
+                    // Re-number remaining splits.
+                    for (var r = 0; r < planCache.splits.length; r++) {
+                        planCache.splits[r].order = r;
+                    }
+                }
+            }
+        },
+
+        rename: {
+            description: 'Rename a split branch',
+            usage: 'rename <split-index> <new-name>',
+            handler: function(args) {
+                if (!planCache) {
+                    output.print('No plan — run "plan" first.');
+                    return;
+                }
+                if (!args || args.length < 2) {
+                    output.print('Usage: rename <split-index> <new-name>');
+                    output.print('Index is 1-based. Example: rename 2 refactoring');
+                    return;
+                }
+                var idx = parseInt(args[0], 10) - 1;
+                if (idx < 0 || idx >= planCache.splits.length) {
+                    output.print('Invalid index: ' + args[0] + ' (range: 1-' + planCache.splits.length + ')');
+                    return;
+                }
+                var newName = args.slice(1).join('-');
+                var oldName = planCache.splits[idx].name;
+                planCache.splits[idx].name = sanitizeBranchName(
+                    runtime.branchPrefix + padIndex(idx + 1) + '-' + newName
+                );
+                planCache.splits[idx].message = newName;
+                output.print('Renamed split ' + (idx + 1) + ': ' + oldName + ' → ' + planCache.splits[idx].name);
+            }
+        },
+
+        merge: {
+            description: 'Merge two splits into one',
+            usage: 'merge <split-a> <split-b>',
+            handler: function(args) {
+                if (!planCache) {
+                    output.print('No plan — run "plan" first.');
+                    return;
+                }
+                if (!args || args.length < 2) {
+                    output.print('Usage: merge <split-index-a> <split-index-b>');
+                    output.print('Merges B into A. Index is 1-based.');
+                    return;
+                }
+                var idxA = parseInt(args[0], 10) - 1;
+                var idxB = parseInt(args[1], 10) - 1;
+                if (idxA < 0 || idxA >= planCache.splits.length) {
+                    output.print('Invalid index A: ' + args[0]);
+                    return;
+                }
+                if (idxB < 0 || idxB >= planCache.splits.length) {
+                    output.print('Invalid index B: ' + args[1]);
+                    return;
+                }
+                if (idxA === idxB) {
+                    output.print('Cannot merge a split with itself.');
+                    return;
+                }
+
+                var splitA = planCache.splits[idxA];
+                var splitB = planCache.splits[idxB];
+
+                // Merge B's files into A.
+                for (var i = 0; i < splitB.files.length; i++) {
+                    splitA.files.push(splitB.files[i]);
+                }
+                splitA.files.sort();
+
+                // Remove B (handle index shift).
+                var removeIdx = idxB;
+                planCache.splits.splice(removeIdx, 1);
+
+                // Re-number.
+                for (var r = 0; r < planCache.splits.length; r++) {
+                    planCache.splits[r].order = r;
+                }
+
+                output.print('Merged split ' + (idxB + 1) + ' (' + splitB.name + ') into split ' + (idxA + 1) +
+                    ' (' + splitA.name + ')');
+                output.print('Plan now has ' + planCache.splits.length + ' splits.');
+            }
+        },
+
+        reorder: {
+            description: 'Move a split to a different position',
+            usage: 'reorder <split-index> <new-position>',
+            handler: function(args) {
+                if (!planCache) {
+                    output.print('No plan — run "plan" first.');
+                    return;
+                }
+                if (!args || args.length < 2) {
+                    output.print('Usage: reorder <split-index> <new-position>');
+                    output.print('Both are 1-based. Example: reorder 3 1');
+                    return;
+                }
+                var fromIdx = parseInt(args[0], 10) - 1;
+                var toIdx = parseInt(args[1], 10) - 1;
+                if (fromIdx < 0 || fromIdx >= planCache.splits.length) {
+                    output.print('Invalid index: ' + args[0]);
+                    return;
+                }
+                if (toIdx < 0 || toIdx >= planCache.splits.length) {
+                    output.print('Invalid position: ' + args[1]);
+                    return;
+                }
+                if (fromIdx === toIdx) {
+                    output.print('Already at that position.');
+                    return;
+                }
+
+                // Remove and re-insert.
+                var split = planCache.splits.splice(fromIdx, 1)[0];
+                planCache.splits.splice(toIdx, 0, split);
+
+                // Re-number and rename to reflect new order.
+                for (var r = 0; r < planCache.splits.length; r++) {
+                    planCache.splits[r].order = r;
+                    // Update the numeric prefix in the branch name.
+                    var oldName = planCache.splits[r].name;
+                    var nameParts = oldName.split('/');
+                    if (nameParts.length > 1) {
+                        var lastPart = nameParts[nameParts.length - 1];
+                        var dashIdx = lastPart.indexOf('-');
+                        if (dashIdx >= 0) {
+                            var suffix = lastPart.substring(dashIdx + 1);
+                            nameParts[nameParts.length - 1] = padIndex(r + 1) + '-' + suffix;
+                            planCache.splits[r].name = nameParts.join('/');
+                        }
+                    }
+                }
+
+                output.print('Moved split from position ' + (fromIdx + 1) + ' to ' + (toIdx + 1));
+                output.print('Updated plan: ' + planCache.splits.length + ' splits');
+                for (var i = 0; i < planCache.splits.length; i++) {
+                    output.print('  ' + (i + 1) + '. ' + planCache.splits[i].name +
+                        ' (' + planCache.splits[i].files.length + ' files)');
+                }
+            }
+        },
+
         execute: {
             description: 'Execute the split plan (creates branches)',
             usage: 'execute',
@@ -1865,22 +2731,23 @@ function buildCommands(stateArg) {
                     output.print('Error: ' + result.error);
                     return;
                 }
-                output.print('Split completed successfully!');
+                executionResultCache = result.results;
+                output.print(style.success('Split completed successfully!'));
                 for (var i = 0; i < result.results.length; i++) {
                     var r = result.results[i];
-                    output.print('  ✓ ' + r.name + ' (' + r.files.length + ' files, SHA: ' + r.sha.substring(0, 8) + ')');
+                    output.print('  ' + style.success('✓') + ' ' + r.name + ' (' + r.files.length + ' files, SHA: ' + style.dim(r.sha.substring(0, 8)) + ')');
                 }
 
                 // Auto-verify equivalence
                 var equiv = verifyEquivalence(planCache);
                 if (equiv.equivalent) {
-                    output.print('✅ Tree hash equivalence verified');
+                    output.print(style.success('✅ Tree hash equivalence verified'));
                 } else if (equiv.error) {
-                    output.print('⚠️  Equivalence check error: ' + equiv.error);
+                    output.print(style.warning('⚠️  Equivalence check error: ' + equiv.error));
                 } else {
-                    output.print('❌ Tree hash mismatch!');
-                    output.print('   Split tree:  ' + equiv.splitTree);
-                    output.print('   Source tree:  ' + equiv.sourceTree);
+                    output.print(style.error('❌ Tree hash mismatch!'));
+                    output.print('   Split tree:  ' + style.dim(equiv.splitTree));
+                    output.print('   Source tree:  ' + style.dim(equiv.sourceTree));
                 }
                 } catch (e) {
                     output.print('Error in execute: ' + (e && e.message ? e.message : String(e)));
@@ -1901,10 +2768,10 @@ function buildCommands(stateArg) {
                 var result = verifySplits(planCache);
                 for (var i = 0; i < result.results.length; i++) {
                     var r = result.results[i];
-                    var icon = r.passed ? '✓' : '✗';
+                    var icon = r.passed ? style.success('✓') : style.error('✗');
                     output.print('  ' + icon + ' ' + r.name + (r.error ? ': ' + r.error : ''));
                 }
-                output.print(result.allPassed ? '✅ All splits pass verification' : '❌ Some splits failed');
+                output.print(result.allPassed ? style.success('✅ All splits pass verification') : style.error('❌ Some splits failed'));
             }
         },
 
@@ -1922,12 +2789,12 @@ function buildCommands(stateArg) {
                     return;
                 }
                 if (result.equivalent) {
-                    output.print('✅ Trees are equivalent');
-                    output.print('   Hash: ' + result.splitTree);
+                    output.print(style.success('✅ Trees are equivalent'));
+                    output.print('   Hash: ' + style.dim(result.splitTree));
                 } else {
-                    output.print('❌ Trees differ');
-                    output.print('   Split tree:  ' + result.splitTree);
-                    output.print('   Source tree:  ' + result.sourceTree);
+                    output.print(style.error('❌ Trees differ'));
+                    output.print('   Split tree:  ' + style.dim(result.splitTree));
+                    output.print('   Source tree:  ' + style.dim(result.sourceTree));
                     if (result.diffFiles && result.diffFiles.length > 0) {
                         output.print('   Differing files:');
                         for (var i = 0; i < result.diffFiles.length; i++) {
@@ -1957,6 +2824,87 @@ function buildCommands(stateArg) {
                     output.print('Errors:');
                     for (var i = 0; i < result.errors.length; i++) {
                         output.print('  ' + result.errors[i]);
+                    }
+                }
+            }
+        },
+
+        fix: {
+            description: 'Auto-fix split branches that fail verification',
+            usage: 'fix',
+            handler: function() {
+                if (!planCache) {
+                    output.print('No plan — run "plan" or "run" first.');
+                    return;
+                }
+                output.print('Checking splits for verification failures...');
+                var result = resolveConflicts(planCache);
+                if (result.skipped) {
+                    output.print('Skipped: ' + result.skipped);
+                    return;
+                }
+                if (result.fixed.length > 0) {
+                    output.print(style.success('Fixed:'));
+                    for (var i = 0; i < result.fixed.length; i++) {
+                        output.print('  ' + style.success('✓') + ' ' + result.fixed[i].name + ' (' + style.dim(result.fixed[i].strategy) + ')');
+                    }
+                }
+                if (result.errors.length > 0) {
+                    output.print(style.error('Unresolved:'));
+                    for (var i = 0; i < result.errors.length; i++) {
+                        output.print('  ' + style.error('❌') + ' ' + result.errors[i].name + ': ' + result.errors[i].error);
+                    }
+                }
+                if (result.fixed.length === 0 && result.errors.length === 0) {
+                    output.print('All splits pass verification — no fixes needed.');
+                }
+            }
+        },
+
+        'create-prs': {
+            description: 'Push branches and create stacked GitHub PRs',
+            usage: 'create-prs [--draft] [--push-only]',
+            handler: function(args) {
+                if (!planCache) {
+                    output.print('No plan — run "plan" or "run" first.');
+                    return;
+                }
+                if (executionResultCache.length === 0) {
+                    output.print('No splits executed — run "execute" or "run" first.');
+                    return;
+                }
+
+                var draft = true;
+                var pushOnly = false;
+                if (args) {
+                    for (var i = 0; i < args.length; i++) {
+                        if (args[i] === '--no-draft') draft = false;
+                        if (args[i] === '--push-only') pushOnly = true;
+                    }
+                }
+
+                output.print('Creating PRs for ' + planCache.splits.length + ' splits...');
+                if (draft) output.print('  Mode: draft');
+                if (pushOnly) output.print('  Mode: push-only (no PR creation)');
+
+                var result = createPRs(planCache, {
+                    draft: draft,
+                    pushOnly: pushOnly
+                });
+
+                if (result.error) {
+                    output.print('Error: ' + result.error);
+                    return;
+                }
+
+                for (var i = 0; i < result.results.length; i++) {
+                    var r = result.results[i];
+                    if (r.error) {
+                        output.print('  ' + style.error('❌') + ' ' + r.name + ': ' + r.error);
+                    } else if (r.prUrl) {
+                        output.print('  ' + style.success('✓') + ' ' + r.name + ' → ' + style.info(r.prUrl));
+                    } else {
+                        output.print('  ' + style.success('✓') + ' ' + r.name + ' (pushed)');
                     }
                 }
             }
@@ -2026,9 +2974,9 @@ function buildCommands(stateArg) {
                 try {
                 var registry = ensureRegistry();
                 if (registry) {
-                    output.print('✓ Connected to provider: ' + runtime.provider +
+                    output.print(style.success('✓ Connected to provider: ') + style.bold(runtime.provider) +
                         (runtime.model ? ' (' + runtime.model + ')' : ''));
-                    output.print('  Available providers: ' + registry.list().join(', '));
+                    output.print('  Available providers: ' + style.dim(registry.list().join(', ')));
                 }
                 } catch (e) {
                     output.print('Error in connect: ' + (e && e.message ? e.message : String(e)));
@@ -2042,7 +2990,7 @@ function buildCommands(stateArg) {
             usage: 'disconnect',
             handler: function() {
                 destroyRegistry();
-                output.print('✓ Provider registry disconnected.');
+                output.print(style.success('✓ Provider registry disconnected.'));
             }
         },
 
@@ -2077,7 +3025,7 @@ function buildCommands(stateArg) {
                 }
                 classificationCache = result.files;
                 var keys = Object.keys(classificationCache).sort();
-                output.print('✓ Classified ' + keys.length + ' files:');
+                output.print(style.success('✓ Classified ' + keys.length + ' files:'));
                 for (var i = 0; i < keys.length; i++) {
                     output.print('  [' + classificationCache[keys[i]] + '] ' + keys[i]);
                 }
@@ -2103,28 +3051,28 @@ function buildCommands(stateArg) {
 
                 var workflowStart = Date.now();
 
-                output.print('Running full PR split workflow...');
-                output.print('Base:     ' + runtime.baseBranch);
-                output.print('Mode:     ' + (useAI ? 'AI (' + runtime.provider + (runtime.model ? ':' + runtime.model : '') + ')' : 'heuristic'));
-                output.print('Strategy: ' + runtime.strategy);
-                output.print('Max:      ' + runtime.maxFiles);
+                output.print(style.header('Running full PR split workflow...'));
+                output.print('Base:     ' + style.bold(runtime.baseBranch));
+                output.print('Mode:     ' + style.bold(useAI ? 'AI (' + runtime.provider + (runtime.model ? ':' + runtime.model : '') + ')' : 'heuristic'));
+                output.print('Strategy: ' + style.bold(runtime.strategy));
+                output.print('Max:      ' + style.bold(String(runtime.maxFiles)));
                 output.print('');
 
                 // Step 1: Analyze
                 var stepStart = Date.now();
                 analysisCache = analyzeDiff({ baseBranch: runtime.baseBranch });
                 if (analysisCache.error) {
-                    output.print('Analysis failed: ' + analysisCache.error);
+                    output.print(style.error('Analysis failed: ' + analysisCache.error));
                     return;
                 }
                 if (!analysisCache.files || analysisCache.files.length === 0) {
-                    output.print('No changes found between ' + analysisCache.currentBranch +
-                        ' and ' + analysisCache.baseBranch + '.');
+                    output.print(style.warning('No changes found between ' + analysisCache.currentBranch +
+                        ' and ' + analysisCache.baseBranch + '.'));
                     output.print('Ensure you are on a feature branch with changes against the base.');
                     return;
                 }
-                output.print('✓ Analysis: ' + analysisCache.files.length + ' changed files (' +
-                    (Date.now() - stepStart) + 'ms)');
+                output.print(style.success('✓ Analysis: ') + analysisCache.files.length + ' changed files ' +
+                    style.dim('(' + (Date.now() - stepStart) + 'ms)'));
 
                 // Step 2: Group (AI or heuristic)
                 stepStart = Date.now();
@@ -2140,12 +3088,12 @@ function buildCommands(stateArg) {
                             maxWaitMs: 120000
                         });
                         if (classResult.error) {
-                            output.print('  ⚠️  AI classification failed: ' + classResult.error);
+                            output.print('  ' + style.warning('⚠️  AI classification failed: ' + classResult.error));
                             output.print('  Falling back to heuristic grouping...');
                             aiGroupingFailed = true;
                         } else {
                             classificationCache = classResult.files;
-                            output.print('  ✓ AI classified ' + Object.keys(classificationCache).length + ' files');
+                            output.print('  ' + style.success('✓ AI classified ' + Object.keys(classificationCache).length + ' files'));
 
                             // Step 2b: AI Plan Suggestion
                             output.print('  Requesting AI split plan...');
@@ -2155,11 +3103,11 @@ function buildCommands(stateArg) {
                                 maxWaitMs: 120000
                             });
                             if (planResult.error) {
-                                output.print('  ⚠️  AI plan suggestion failed: ' + planResult.error);
+                                output.print('  ' + style.warning('⚠️  AI plan suggestion failed: ' + planResult.error));
                                 output.print('  Falling back to heuristic grouping...');
                                 aiGroupingFailed = true;
                             } else if (!planResult.stages || planResult.stages.length === 0) {
-                                output.print('  ⚠️  AI returned empty plan.');
+                                output.print('  ' + style.warning('⚠️  AI returned empty plan.'));
                                 output.print('  Falling back to heuristic grouping...');
                                 aiGroupingFailed = true;
                             } else {
@@ -2169,11 +3117,11 @@ function buildCommands(stateArg) {
                                     var stage = planResult.stages[si];
                                     groupsCache[stage.name] = stage.files;
                                 }
-                                output.print('  ✓ AI suggested ' + planResult.stages.length + ' groups');
+                                output.print('  ' + style.success('✓ AI suggested ' + planResult.stages.length + ' groups'));
                             }
                         }
                     } else {
-                        output.print('  ⚠️  Could not create provider registry.');
+                        output.print('  ' + style.warning('⚠️  Could not create provider registry.'));
                         output.print('  Falling back to heuristic grouping...');
                         aiGroupingFailed = true;
                     }
@@ -2189,9 +3137,9 @@ function buildCommands(stateArg) {
                     output.print('No groups created — strategy "' + runtime.strategy + '" produced no groups.');
                     return;
                 }
-                output.print('✓ Grouped into ' + groupNames.length + ' groups' +
+                output.print(style.success('✓ Grouped into ' + groupNames.length + ' groups') +
                     ((!useAI || aiGroupingFailed) ? ' (' + runtime.strategy + ')' : ' (AI)') +
-                    ' (' + (Date.now() - stepStart) + 'ms)');
+                    ' ' + style.dim('(' + (Date.now() - stepStart) + 'ms)'));
 
                 // Step 3: Plan
                 stepStart = Date.now();
@@ -2207,13 +3155,13 @@ function buildCommands(stateArg) {
                     output.print('Plan invalid: ' + validation.errors.join('; '));
                     return;
                 }
-                output.print('✓ Plan created: ' + planCache.splits.length + ' splits (' +
-                    (Date.now() - stepStart) + 'ms)');
+                output.print(style.success('✓ Plan created: ' + planCache.splits.length + ' splits') +
+                    ' ' + style.dim('(' + (Date.now() - stepStart) + 'ms)'));
 
                 // Step 4: Execute (unless dry-run)
                 if (runtime.dryRun) {
                     output.print('');
-                    output.print('DRY RUN — plan preview:');
+                    output.print(style.warning('DRY RUN') + ' — plan preview:');
                     for (var i = 0; i < planCache.splits.length; i++) {
                         var s = planCache.splits[i];
                         output.print('  ' + padIndex(i + 1) + '. ' + s.name + ' (' + s.files.length + ' files)');
@@ -2226,35 +3174,36 @@ function buildCommands(stateArg) {
                     return;
                 }
 
-                output.print('Executing ' + planCache.splits.length + ' splits...');
+                output.print(style.info('Executing ' + planCache.splits.length + ' splits...'));
                 stepStart = Date.now();
                 var result = executeSplit(planCache);
                 if (result.error) {
-                    output.print('Execution failed: ' + result.error);
+                    output.print(style.error('Execution failed: ' + result.error));
                     return;
                 }
-                output.print('✓ Split executed: ' + result.results.length + ' branches created (' +
-                    (Date.now() - stepStart) + 'ms)');
+                executionResultCache = result.results;
+                output.print(style.success('✓ Split executed: ' + result.results.length + ' branches created') +
+                    ' ' + style.dim('(' + (Date.now() - stepStart) + 'ms)'));
                 for (var i = 0; i < result.results.length; i++) {
                     var r = result.results[i];
-                    output.print('  ✓ ' + r.name + ' (' + r.files.length + ' files, SHA: ' + r.sha.substring(0, 8) + ')');
+                    output.print('  ' + style.success('✓') + ' ' + r.name + ' (' + r.files.length + ' files, SHA: ' + style.dim(r.sha.substring(0, 8)) + ')');
                 }
 
                 // Step 5: Verify equivalence
                 var equiv = verifyEquivalence(planCache);
                 if (equiv.equivalent) {
-                    output.print('✅ Tree hash equivalence verified');
+                    output.print(style.success('✅ Tree hash equivalence verified'));
                 } else if (equiv.error) {
-                    output.print('⚠️  Equivalence check error: ' + equiv.error);
+                    output.print(style.warning('⚠️  Equivalence check error: ' + equiv.error));
                 } else {
-                    output.print('❌ Tree hash mismatch — content may be lost');
-                    output.print('   Split tree:  ' + equiv.splitTree);
-                    output.print('   Source tree:  ' + equiv.sourceTree);
+                    output.print(style.error('❌ Tree hash mismatch — content may be lost'));
+                    output.print('   Split tree:  ' + style.dim(equiv.splitTree));
+                    output.print('   Source tree:  ' + style.dim(equiv.sourceTree));
                 }
 
                 var totalMs = Date.now() - workflowStart;
                 output.print('');
-                output.print('Done in ' + (totalMs < 1000 ? totalMs + 'ms' :
+                output.print(style.success('Done') + ' in ' + style.bold(totalMs < 1000 ? totalMs + 'ms' :
                     (totalMs / 1000).toFixed(1) + 's') + '.');
 
                 // If --json flag is set, output the full report as JSON.
@@ -2310,6 +3259,43 @@ function buildCommands(stateArg) {
             }
         },
 
+        'save-plan': {
+            description: 'Save current plan to a JSON file',
+            usage: 'save-plan [path]',
+            handler: function(args) {
+                var path = (args && args.length > 0) ? args[0] : undefined;
+                var result = savePlan(path);
+                if (result.error) {
+                    output.print('Error: ' + result.error);
+                    return;
+                }
+                output.print('Plan saved to ' + result.path);
+                if (planCache && planCache.splits) {
+                    output.print('  Splits: ' + planCache.splits.length);
+                    output.print('  Executed: ' + executionResultCache.length);
+                }
+            }
+        },
+
+        'load-plan': {
+            description: 'Load a previously-saved plan from a JSON file',
+            usage: 'load-plan [path]',
+            handler: function(args) {
+                var path = (args && args.length > 0) ? args[0] : undefined;
+                var result = loadPlan(path);
+                if (result.error) {
+                    output.print('Error: ' + result.error);
+                    return;
+                }
+                output.print('Plan loaded from ' + result.path);
+                output.print('  Total splits:   ' + result.totalSplits);
+                output.print('  Executed:        ' + result.executedSplits);
+                output.print('  Pending:         ' + result.pendingSplits);
+                output.print('');
+                output.print('Use "preview" to inspect, "execute" to run pending splits.');
+            }
+        },
+
         report: {
             description: 'Output current state as JSON',
             usage: 'report',
@@ -2326,13 +3312,19 @@ function buildCommands(stateArg) {
                 output.print('');
                 output.print('  analyze [base]   Analyze diff against base branch');
                 output.print('  stats            Show file-level diff stats');
-                output.print('  group [strategy] Group files (directory/extension/chunks/auto)');
+                output.print('  group [strategy] Group files (directory/extension/chunks/dependency/auto)');
                 output.print('  plan             Create split plan from groups');
                 output.print('  preview          Show detailed plan preview');
+                output.print('  move             Move file between splits');
+                output.print('  rename           Rename a split');
+                output.print('  merge            Merge two splits');
+                output.print('  reorder          Reorder splits');
                 output.print('  execute          Execute the split (create branches)');
                 output.print('  verify           Verify each split branch');
                 output.print('  equivalence      Check tree hash equivalence');
+                output.print('  fix              Auto-fix splits that fail verification');
                 output.print('  cleanup          Delete all split branches');
+                output.print('  create-prs       Push branches + create stacked GitHub PRs');
                 output.print('  run              Full workflow: analyze→group→plan→execute');
                 output.print('  run --ai         Full workflow using AI classification');
                 output.print('  set <key> <val>  Set runtime config (no args to show current)');
@@ -2341,6 +3333,8 @@ function buildCommands(stateArg) {
                 output.print('  classify         Classify files with AI');
                 output.print('  copy             Copy plan to clipboard');
                 output.print('  report           Output current state as JSON');
+                output.print('  save-plan [path] Save plan to file (default: .pr-split-plan.json)');
+                output.print('  load-plan [path] Load plan from file');
                 output.print('  help             Show this help');
             }
         }

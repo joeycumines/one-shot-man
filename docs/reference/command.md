@@ -134,13 +134,13 @@ TUI for merging documents into a single internally consistent super-document.
 
 ### `osm pr-split`
 
-Split a large PR into reviewable stacked branches. Supports heuristic grouping strategies and AI-powered classification via Claude Code or Ollama.
+Split a large PR into reviewable stacked branches. Supports heuristic grouping strategies, dependency-aware grouping (Go import graph analysis), and AI-powered classification via Claude Code or Ollama. Output is styled with Lipgloss when available.
 
 - Usage: `osm pr-split [options]`
 - Flags:
   - `-i` / `-interactive`: start interactive TUI mode (default true)
   - `-base <branch>`: base branch to split against (default `main`)
-  - `-strategy <name>`: grouping strategy: `directory`, `directory-deep`, `extension`, `chunks`, `auto` (default `directory`)
+  - `-strategy <name>`: grouping strategy: `directory`, `directory-deep`, `extension`, `chunks`, `dependency`, `auto` (default `directory`)
   - `-max <n>`: maximum files per split (default `10`)
   - `-prefix <prefix>`: branch name prefix for splits (default `split/`)
   - `-verify <command>`: command to verify each split (default `make test`)
@@ -158,7 +158,20 @@ Config keys (in `[pr-split]` section or global):
   - `pr-split.verify`, `pr-split.dry-run`, `pr-split.ai`
   - `pr-split.provider`, `pr-split.model`
 
-Interactive TUI commands:
+#### Grouping strategies
+
+| Strategy | Description |
+|----------|-------------|
+| `directory` | Group by top-level directory (default) |
+| `directory-deep` | Group by full directory path |
+| `extension` | Group by file extension |
+| `chunks` | Split into equal-sized chunks |
+| `dependency` | Parse Go import graph and merge packages that import each other within the changeset. Falls back to `directory` for non-Go projects. |
+| `auto` | Automatically selects best strategy based on file count and project structure |
+
+#### Interactive TUI commands
+
+Workflow commands:
   - `analyze [base]` — analyze diff between current and base branch
   - `stats` — show addition/deletion counts per file
   - `group [strategy]` — group files by strategy
@@ -170,9 +183,27 @@ Interactive TUI commands:
   - `cleanup` — delete all split branches
   - `run` — full workflow: analyze → group → plan → execute → verify
   - `run --ai` — full workflow with AI classification
+
+Plan editing commands:
+  - `move <file> <from-index> <to-index>` — move a file between splits (1-based indexes)
+  - `rename <index> <new-name>` — rename a split (1-based index)
+  - `merge <index-a> <index-b>` — merge split B into split A (1-based indexes)
+  - `reorder <index> <new-position>` — change split execution order (1-based)
+
+Plan persistence:
+  - `save-plan [path]` — save current plan to JSON file (default `.pr-split-plan.json`)
+  - `load-plan [path]` — restore plan from saved JSON file
+
+GitHub integration:
+  - `create-prs [--draft] [--push-only]` — push branches and create stacked GitHub PRs via `gh` CLI
+  - `fix` — auto-resolve common split conflicts (go mod tidy, go.sum regeneration)
+
+AI commands:
   - `classify` — classify files with AI
   - `connect` — connect to AI provider registry
   - `disconnect` — disconnect from AI provider
+
+General:
   - `set <key> <val>` — set runtime config
   - `copy` — copy plan to clipboard
   - `report` — output current state as JSON

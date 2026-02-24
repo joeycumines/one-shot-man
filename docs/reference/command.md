@@ -134,7 +134,7 @@ TUI for merging documents into a single internally consistent super-document.
 
 ### `osm pr-split`
 
-Split a large PR into reviewable stacked branches. Supports heuristic grouping strategies, dependency-aware grouping (Go import graph analysis), and AI-powered classification via Claude Code or Ollama. Output is styled with Lipgloss when available.
+Split a large PR into reviewable stacked branches. Supports heuristic grouping strategies and dependency-aware grouping (Go import graph analysis). Output is styled with Lipgloss when available.
 
 - Usage: `osm pr-split [options]`
 - Flags:
@@ -145,9 +145,6 @@ Split a large PR into reviewable stacked branches. Supports heuristic grouping s
   - `-prefix <prefix>`: branch name prefix for splits (default `split/`)
   - `-verify <command>`: command to verify each split (default `make test`)
   - `-dry-run`: show plan without executing
-  - `-ai`: use AI-powered classification and planning (requires provider)
-  - `-provider <name>`: AI provider: `ollama`, `claude-code` (default `ollama`)
-  - `-model <id>`: model identifier for AI provider
   - `-json`: output results as JSON
   - `-test`: enable test mode
   - `-session <id>`: override session id
@@ -155,8 +152,7 @@ Split a large PR into reviewable stacked branches. Supports heuristic grouping s
 
 Config keys (in `[pr-split]` section or global):
   - `pr-split.base`, `pr-split.strategy`, `pr-split.max`, `pr-split.prefix`
-  - `pr-split.verify`, `pr-split.dry-run`, `pr-split.ai`
-  - `pr-split.provider`, `pr-split.model`
+  - `pr-split.verify`, `pr-split.dry-run`
 
 #### Grouping strategies
 
@@ -182,7 +178,6 @@ Workflow commands:
   - `equivalence` — check tree hash equivalence
   - `cleanup` — delete all split branches
   - `run` — full workflow: analyze → group → plan → execute → verify
-  - `run --ai` — full workflow with AI classification
 
 Plan editing commands:
   - `move <file> <from-index> <to-index>` — move a file between splits (1-based indexes)
@@ -197,11 +192,6 @@ Plan persistence:
 GitHub integration:
   - `create-prs [--draft] [--push-only]` — push branches and create stacked GitHub PRs via `gh` CLI
   - `fix` — auto-resolve common split conflicts (go mod tidy, go.sum regeneration)
-
-AI commands:
-  - `classify` — classify files with AI
-  - `connect` — connect to AI provider registry
-  - `disconnect` — disconnect from AI provider
 
 General:
   - `set <key> <val>` — set runtime config

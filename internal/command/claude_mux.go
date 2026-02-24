@@ -809,6 +809,8 @@ func (c *ClaudeMuxCommand) resolveProvider() (claudemux.Provider, error) {
 		if c.runCommand != "" {
 			p.Command = c.runCommand
 		}
+		// OllamaProvider.Spawn always prepends "launch claude" args.
+		// Model is passed via SpawnOpts.Model, not here.
 		return p, nil
 	default:
 		return nil, fmt.Errorf("unknown provider %q; available: claude-code, ollama", c.runProvider)

@@ -4,7 +4,7 @@
 //
 // This script is loaded by the Go command via //go:embed; it receives injected
 // globals from the Go side:
-//   prSplitConfig  — {baseBranch, strategy, maxFiles, branchPrefix, verifyCommand, dryRun, aiMode, provider, model}
+//   prSplitConfig  — {baseBranch, strategy, maxFiles, branchPrefix, verifyCommand, dryRun}
 //   prSplitTemplate — Markdown template for plan rendering
 //   config.name    — "pr-split"
 //   args           — CLI positional args
@@ -27,14 +27,6 @@ try {
 } catch (e) {
     template = null;
     shared = null;
-}
-
-// Optional: claudemux for AI-powered classification and planning.
-var claudemux;
-try {
-    claudemux = require('osm:claudemux');
-} catch (e) {
-    claudemux = null;
 }
 
 // Optional: os module for file I/O (plan persistence).
@@ -129,9 +121,6 @@ var runtime = {
     branchPrefix:  cfg.branchPrefix  || 'split/',
     verifyCommand: cfg.verifyCommand || 'make test',
     dryRun:        cfg.dryRun        || false,
-    aiMode:        cfg.aiMode        || false,
-    provider:      cfg.provider      || 'ollama',
-    model:         cfg.model         || '',
     jsonOutput:    cfg.jsonOutput    || false
 };
 
@@ -685,16 +674,7 @@ function selectStrategy(files, options) {
         { name: 'dependency', groups: groupByDependency(files, options) }
     ];
 
-    if (!claudemux) {
-        return {
-            strategy: 'directory',
-            groups: strategies[0].groups,
-            reason: 'claudemux not available, using default directory strategy',
-            needsConfirm: false,
-            scored: []
-        };
-    }
-
+    // Score strategies heuristically and pick the best one.
     var candidates = [];
     for (var i = 0; i < strategies.length; i++) {
         var s = strategies[i];
@@ -711,274 +691,40 @@ function selectStrategy(files, options) {
             ? 1 - Math.abs(maxGroupSize - avgGroupSize) / Math.max(maxGroupSize, 1)
             : 0;
 
+        // Compute a composite score inline.
+        var splitScore;
+        var n = groupNames.length;
+        if (n <= 0) splitScore = 0;
+        else if (n >= 3 && n <= 7) splitScore = 1.0;
+        else if (n < 3) splitScore = n / 3;
+        else splitScore = Math.max(0, 1.0 - (n - 7) * 0.1);
+
+        var maxSizeScore;
+        if (maxGroupSize <= maxPerGroup) maxSizeScore = 1.0;
+        else maxSizeScore = Math.max(0, 1.0 - (maxGroupSize - maxPerGroup) * 0.05);
+
+        var compositeScore = splitScore * 0.4 + balance * 0.3 + maxSizeScore * 0.3;
+
         candidates.push({
-            id: s.name,
             name: s.name,
-            description: groupNames.length + ' groups, max ' + maxGroupSize + ' files',
-            attributes: {
-                groupCount: String(groupNames.length),
-                maxGroupSize: String(maxGroupSize),
-                avgGroupSize: String(Math.round(avgGroupSize * 100) / 100),
-                balance: String(Math.round(balance * 100) / 100)
-            }
+            groups: s.groups,
+            score: compositeScore,
+            groupCount: groupNames.length,
+            maxGroupSize: maxGroupSize
         });
     }
 
-    var resolver = claudemux.newChoiceResolver({
-        minCandidates: 2,
-        confirmThreshold: 0.15
-    });
+    // Sort by composite score descending.
+    candidates.sort(function(a, b) { return b.score - a.score; });
 
-    var criteria = [
-        { name: 'splitCount', weight: 0.4 },
-        { name: 'groupBalance', weight: 0.3 },
-        { name: 'maxSize', weight: 0.3 }
-    ];
-
-    var result = resolver.analyze(candidates, criteria, function(cand, crit) {
-        switch (crit.name) {
-            case 'splitCount':
-                var n = parseInt(cand.attributes.groupCount, 10) || 0;
-                if (n <= 0) return 0;
-                if (n >= 3 && n <= 7) return 1.0;
-                if (n < 3) return n / 3;
-                return Math.max(0, 1.0 - (n - 7) * 0.1);
-            case 'groupBalance':
-                return parseFloat(cand.attributes.balance) || 0;
-            case 'maxSize':
-                var mx = parseInt(cand.attributes.maxGroupSize, 10) || 0;
-                if (mx <= maxPerGroup) return 1.0;
-                return Math.max(0, 1.0 - (mx - maxPerGroup) * 0.05);
-            default:
-                return 0.5;
-        }
-    });
-
-    var winnerName = result.rankings[0].name;
-    var winnerGroups = null;
-    for (var k = 0; k < strategies.length; k++) {
-        if (strategies[k].name === winnerName) {
-            winnerGroups = strategies[k].groups;
-            break;
-        }
-    }
-
+    var winner = candidates[0];
     return {
-        strategy: winnerName,
-        groups: winnerGroups,
-        reason: result.justification,
-        needsConfirm: result.needsConfirm,
-        scored: result.rankings
+        strategy: winner.name,
+        groups: winner.groups,
+        reason: winner.name + ': ' + winner.groupCount + ' groups, max ' + winner.maxGroupSize + ' files (score ' + Math.round(winner.score * 100) / 100 + ')',
+        needsConfirm: candidates.length > 1 && candidates[0].score - candidates[1].score < 0.15,
+        scored: candidates.map(function(c) { return { name: c.name, score: c.score }; })
     };
-}
-
-// ---------------------------------------------------------------------------
-//  ClaudeMux AI Integration
-// ---------------------------------------------------------------------------
-
-function classifyChangesWithClaudeMux(files, options) {
-    if (!claudemux) {
-        return { files: {}, error: 'claudemux module not available' };
-    }
-    if (!options || !options.registry) {
-        return { files: {}, error: 'registry is required in options' };
-    }
-    if (!files || files.length === 0) {
-        return { files: {}, error: 'no files to classify' };
-    }
-
-    var sessionId = options.sessionId || ('classify-' + Date.now());
-    var providerName = options.providerName || 'claude-code';
-    var maxWaitMs = options.maxWaitMs || 120000;
-
-    var mcpInst = claudemux.newMCPInstance(sessionId);
-    var resultDir;
-    try {
-        resultDir = mcpInst.configDir();
-        mcpInst.setResultDir(resultDir);
-        mcpInst.writeConfigFile();
-    } catch (e) {
-        mcpInst.close();
-        return { files: {}, error: 'MCP setup failed: ' + e };
-    }
-
-    var fileList = files.join('\n');
-    var prompt = 'You are a PR splitting assistant. Classify each of the following changed files into a logical category.\n' +
-        'Use the MCP tool "reportClassification" to report your results.\n' +
-        'Categories should be concise labels like: types, impl, tests, docs, config, deps, refactor.\n' +
-        'Each file must be assigned exactly one category.\n\n' +
-        'Changed files:\n' + fileList + '\n\n' +
-        'Call the reportClassification tool with sessionId "' + sessionId + '" and a files map.';
-
-    var spawnOpts = options.spawnOpts || {};
-    spawnOpts.args = (spawnOpts.args || []).concat(mcpInst.spawnArgs());
-
-    var handle;
-    try {
-        handle = options.registry.spawn(providerName, spawnOpts);
-    } catch (e) {
-        mcpInst.close();
-        return { files: {}, error: 'spawn failed: ' + e };
-    }
-
-    var parser = claudemux.newParser();
-    try {
-        handle.send(prompt + '\n');
-
-        var startTime = Date.now();
-        var emptyCount = 0;
-        var maxEmpty = 200;
-
-        while (handle.isAlive() && emptyCount < maxEmpty) {
-            if (Date.now() - startTime > maxWaitMs) {
-                break;
-            }
-            var data = handle.receive();
-            if (data === '') {
-                emptyCount++;
-                continue;
-            }
-            emptyCount = 0;
-            var lines = data.split('\n');
-            for (var i = 0; i < lines.length; i++) {
-                if (lines[i] === '') continue;
-                var event = parser.parse(lines[i]);
-                if (event.type === claudemux.EVENT_COMPLETION) {
-                    try {
-                        var result = claudemux.readClassificationResult(resultDir);
-                        mcpInst.close();
-                        return { files: result, error: null };
-                    } catch (readErr) {
-                        mcpInst.close();
-                        return { files: {}, error: 'result read failed: ' + readErr };
-                    }
-                }
-                if (event.type === claudemux.EVENT_PERMISSION) {
-                    try { handle.send('n\n'); } catch (e2) { /* ignore */ }
-                }
-            }
-        }
-
-        try {
-            var lateResult = claudemux.readClassificationResult(resultDir);
-            mcpInst.close();
-            return { files: lateResult, error: null };
-        } catch (e3) {
-            mcpInst.close();
-            return { files: {}, error: 'timeout or no result: ' + e3 };
-        }
-    } catch (e4) {
-        mcpInst.close();
-        return { files: {}, error: 'classification failed: ' + e4 };
-    }
-}
-
-function suggestSplitPlanWithClaudeMux(files, classification, options) {
-    if (!claudemux) {
-        return { stages: [], error: 'claudemux module not available' };
-    }
-    if (!options || !options.registry) {
-        return { stages: [], error: 'registry is required in options' };
-    }
-    if (!files || files.length === 0) {
-        return { stages: [], error: 'no files to plan' };
-    }
-
-    var sessionId = options.sessionId || ('plan-' + Date.now());
-    var providerName = options.providerName || 'claude-code';
-    var maxWaitMs = options.maxWaitMs || 120000;
-
-    var mcpInst = claudemux.newMCPInstance(sessionId);
-    var resultDir;
-    try {
-        resultDir = mcpInst.configDir();
-        mcpInst.setResultDir(resultDir);
-        mcpInst.writeConfigFile();
-    } catch (e) {
-        mcpInst.close();
-        return { stages: [], error: 'MCP setup failed: ' + e };
-    }
-
-    var fileList = files.join('\n');
-    var classificationContext = '';
-    if (classification && Object.keys(classification).length > 0) {
-        classificationContext = '\nFile classifications:\n';
-        var keys = Object.keys(classification);
-        for (var ci = 0; ci < keys.length; ci++) {
-            classificationContext += '  ' + keys[ci] + ' -> ' + classification[keys[ci]] + '\n';
-        }
-    }
-
-    var prompt = 'You are a PR splitting assistant. Create an ordered plan to split the following changes into logical, independently-reviewable PRs.\n' +
-        'Use the MCP tool "reportSplitPlan" to report your plan.\n' +
-        'Each stage should have: name, files array, commit message, and order (0-based).\n' +
-        'Files should NOT overlap between stages. Every file must be assigned to exactly one stage.\n' +
-        'Order stages so that dependencies are respected (foundational changes first).\n\n' +
-        'Changed files:\n' + fileList + '\n' +
-        classificationContext + '\n' +
-        'Call the reportSplitPlan tool with sessionId "' + sessionId + '" and your stages array.';
-
-    var spawnOpts = options.spawnOpts || {};
-    spawnOpts.args = (spawnOpts.args || []).concat(mcpInst.spawnArgs());
-
-    var handle;
-    try {
-        handle = options.registry.spawn(providerName, spawnOpts);
-    } catch (e) {
-        mcpInst.close();
-        return { stages: [], error: 'spawn failed: ' + e };
-    }
-
-    var parser = claudemux.newParser();
-    try {
-        handle.send(prompt + '\n');
-
-        var startTime = Date.now();
-        var emptyCount = 0;
-        var maxEmpty = 200;
-
-        while (handle.isAlive() && emptyCount < maxEmpty) {
-            if (Date.now() - startTime > maxWaitMs) {
-                break;
-            }
-            var data = handle.receive();
-            if (data === '') {
-                emptyCount++;
-                continue;
-            }
-            emptyCount = 0;
-            var lines = data.split('\n');
-            for (var i = 0; i < lines.length; i++) {
-                if (lines[i] === '') continue;
-                var event = parser.parse(lines[i]);
-                if (event.type === claudemux.EVENT_COMPLETION) {
-                    try {
-                        var result = claudemux.readSplitPlanResult(resultDir);
-                        mcpInst.close();
-                        return { stages: result, error: null };
-                    } catch (readErr) {
-                        mcpInst.close();
-                        return { stages: [], error: 'result read failed: ' + readErr };
-                    }
-                }
-                if (event.type === claudemux.EVENT_PERMISSION) {
-                    try { handle.send('n\n'); } catch (e2) { /* ignore */ }
-                }
-            }
-        }
-
-        try {
-            var lateResult = claudemux.readSplitPlanResult(resultDir);
-            mcpInst.close();
-            return { stages: lateResult, error: null };
-        } catch (e3) {
-            mcpInst.close();
-            return { stages: [], error: 'timeout or no result: ' + e3 };
-        }
-    } catch (e4) {
-        mcpInst.close();
-        return { stages: [], error: 'planning failed: ' + e4 };
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1794,7 +1540,7 @@ function createEquivalenceNode(bb) {
 }
 
 // createSelectStrategyNode creates a BT leaf that selects the best grouping
-// strategy using the claudemux ChoiceResolver.
+// strategy using heuristic scoring.
 function createSelectStrategyNode(bb, options) {
     return bt.createBlockingLeafNode(function() {
         var analysis = bb.get('analysisResult');
@@ -1829,188 +1575,8 @@ function createWorkflowTree(bb, config) {
 }
 
 // ---------------------------------------------------------------------------
-//  ClaudeMux BT Nodes (from bt-templates/claude-mux.js)
+//  Reusable BT Templates
 // ---------------------------------------------------------------------------
-
-function createClaudeMuxClassifyNode(bb, options) {
-    return bt.createBlockingLeafNode(function() {
-        var analysis = bb.get('analysisResult');
-        if (!analysis || !analysis.files || analysis.files.length === 0) {
-            bb.set('lastError', 'no analysis result for classification');
-            return bt.failure;
-        }
-        var registry = bb.get('claudemuxRegistry');
-        if (!registry) {
-            bb.set('lastError', 'no claudemux registry on blackboard');
-            return bt.failure;
-        }
-        var opts = options || {};
-        opts.registry = registry;
-        opts.providerName = opts.providerName || bb.get('providerName') || 'claude-code';
-
-        var result = classifyChangesWithClaudeMux(analysis.files, opts);
-        if (result.error) {
-            bb.set('lastError', 'classification: ' + result.error);
-            return bt.failure;
-        }
-        if (!result.files || Object.keys(result.files).length === 0) {
-            bb.set('lastError', 'classification returned empty result');
-            return bt.failure;
-        }
-        bb.set('classification', result.files);
-        return bt.success;
-    });
-}
-
-function createClaudeMuxPlanNode(bb, options) {
-    return bt.createBlockingLeafNode(function() {
-        var analysis = bb.get('analysisResult');
-        if (!analysis || !analysis.files || analysis.files.length === 0) {
-            bb.set('lastError', 'no analysis result for planning');
-            return bt.failure;
-        }
-        var registry = bb.get('claudemuxRegistry');
-        if (!registry) {
-            bb.set('lastError', 'no claudemux registry on blackboard');
-            return bt.failure;
-        }
-        var classification = bb.get('classification') || {};
-        var opts = options || {};
-        opts.registry = registry;
-        opts.providerName = opts.providerName || bb.get('providerName') || 'claude-code';
-
-        var result = suggestSplitPlanWithClaudeMux(analysis.files, classification, opts);
-        if (result.error) {
-            bb.set('lastError', 'planning: ' + result.error);
-            return bt.failure;
-        }
-        if (!result.stages || result.stages.length === 0) {
-            bb.set('lastError', 'planning returned no stages');
-            return bt.failure;
-        }
-        bb.set('aiSplitPlan', result.stages);
-
-        var groups = {};
-        for (var i = 0; i < result.stages.length; i++) {
-            var stage = result.stages[i];
-            groups[stage.name] = stage.files;
-        }
-        bb.set('fileGroups', groups);
-        return bt.success;
-    });
-}
-
-// createClaudeMuxWorkflowTree — AI-powered workflow.
-function createClaudeMuxWorkflowTree(bb, config) {
-    config = config || {};
-    var analyzeConfig = { baseBranch: config.baseBranch, dir: config.dir };
-    var planConfig = {
-        baseBranch: config.baseBranch,
-        dir: config.dir,
-        branchPrefix: config.branchPrefix,
-        verifyCommand: config.verifyCommand
-    };
-    return bt.node(bt.sequence,
-        createAnalyzeNode(bb, analyzeConfig),
-        createClaudeMuxClassifyNode(bb, config.classifyOpts),
-        createClaudeMuxPlanNode(bb, config.planOpts),
-        createPlanNode(bb, planConfig),
-        createSplitNode(bb),
-        createEquivalenceNode(bb)
-    );
-}
-
-// ---------------------------------------------------------------------------
-//  Reusable BT Templates (from bt-templates/claude-mux.js)
-// ---------------------------------------------------------------------------
-
-function btSpawnClaude(bb, registry, providerName, spawnOpts) {
-    return bt.createBlockingLeafNode(function() {
-        try {
-            var handle = registry.spawn(providerName || 'claude-code', spawnOpts || {});
-            bb.set('agent', handle);
-            bb.set('agentSpawned', true);
-            bb.set('parser', claudemux ? claudemux.newParser() : null);
-            return bt.success;
-        } catch (e) {
-            bb.set('lastError', String(e));
-            return bt.failure;
-        }
-    });
-}
-
-function btSendPrompt(bb, prompt) {
-    return bt.createBlockingLeafNode(function() {
-        var agent = bb.get('agent');
-        if (!agent) {
-            bb.set('lastError', 'no agent spawned');
-            return bt.failure;
-        }
-        try {
-            agent.send(prompt + '\n');
-            bb.set('promptSent', true);
-            return bt.success;
-        } catch (e) {
-            bb.set('lastError', String(e));
-            return bt.failure;
-        }
-    });
-}
-
-function btWaitForResponse(bb, opts) {
-    var maxEmptyReads = (opts && opts.maxEmptyReads) || 100;
-    return bt.createBlockingLeafNode(function() {
-        var agent = bb.get('agent');
-        var parser = bb.get('parser');
-        if (!agent || !parser) {
-            bb.set('lastError', 'no agent or parser available');
-            return bt.failure;
-        }
-
-        var output = [];
-        var emptyCount = 0;
-
-        while (agent.isAlive() && emptyCount < maxEmptyReads) {
-            var data = agent.receive();
-            if (data === '') {
-                emptyCount++;
-                continue;
-            }
-            emptyCount = 0;
-            var lines = data.split('\n');
-            for (var i = 0; i < lines.length; i++) {
-                if (lines[i] === '') continue;
-                output.push(lines[i]);
-                var event = parser.parse(lines[i]);
-                if (event.type === claudemux.EVENT_COMPLETION) {
-                    bb.set('response', output.join('\n'));
-                    bb.set('responseReceived', true);
-                    return bt.success;
-                }
-                if (event.type === claudemux.EVENT_RATE_LIMIT) {
-                    bb.set('rateLimited', true);
-                    bb.set('response', output.join('\n'));
-                    return bt.running;
-                }
-                if (event.type === claudemux.EVENT_PERMISSION) {
-                    try { agent.send('n\n'); } catch (e) { /* ignore */ }
-                    bb.set('permissionRejected', true);
-                }
-                if (event.type === claudemux.EVENT_ERROR) {
-                    bb.set('lastError', lines[i]);
-                }
-            }
-        }
-
-        if (output.length > 0) {
-            bb.set('response', output.join('\n'));
-            bb.set('responseReceived', true);
-            return bt.success;
-        }
-        bb.set('lastError', 'no output received from agent');
-        return bt.failure;
-    });
-}
 
 function btVerifyOutput(bb, command) {
     return bt.createBlockingLeafNode(function() {
@@ -2074,27 +1640,12 @@ function btSplitBranch(bb, branchName) {
 }
 
 // ---------------------------------------------------------------------------
-//  Composite BT Workflow Functions (from claude-mux.js templates)
+//  Composite BT Workflow Functions
 // ---------------------------------------------------------------------------
-
-// spawnAndPrompt creates a complete sequence: spawn agent → send prompt → wait
-// for response. This is the standard convenience for a full prompt–response
-// cycle. Signature mirrors the original claude-mux.js API.
-function spawnAndPrompt(bb, registry, config) {
-    config = config || {};
-    var provName = config.provider || 'claude-code';
-    var spawnOpts = config.spawnOpts || {};
-    var prompt = config.prompt || '';
-    return bt.node(bt.sequence,
-        btSpawnClaude(bb, registry, provName, spawnOpts),
-        btSendPrompt(bb, prompt),
-        btWaitForResponse(bb, config)
-    );
-}
 
 // verifyAndCommit creates a sequence: run tests → optionally verify → commit.
 // Order: tests FIRST (fast feedback), then optional heavy verification, then
-// commit. This matches the original claude-mux.js semantics exactly.
+// commit.
 function verifyAndCommit(bb, opts) {
     opts = opts || {};
     var testCmd = opts.testCommand || 'make test';
@@ -2112,72 +1663,6 @@ function verifyAndCommit(bb, opts) {
         btRunTests(bb, testCmd),
         btCommitChanges(bb, commitMsg)
     );
-}
-
-// spawnPromptAndReadResult creates a complete AI interaction sequence:
-// spawn agent → send prompt → wait for response. This is functionally
-// equivalent to spawnAndPrompt but uses the positional parameter style
-// (providerName as separate arg) rather than the config-object style.
-function spawnPromptAndReadResult(bb, registry, providerName, opts) {
-    return bt.node(bt.sequence,
-        btSpawnClaude(bb, registry, providerName, opts || {}),
-        btSendPrompt(bb, (opts && opts.prompt) || ''),
-        btWaitForResponse(bb, opts)
-    );
-}
-
-// createPlanningActions creates PA-BT actions for the 7 BT template operations.
-// Each action has proper preconditions and effects for PA-BT backchaining:
-//   SpawnClaude: [] → agentSpawned=true
-//   SendPrompt: agentSpawned=true → promptSent=true
-//   WaitForResponse: promptSent=true → responseReceived=true
-//   RunTests: responseReceived=true → testsPassed=true
-//   VerifyOutput: testsPassed=true → verified=true
-//   CommitChanges: testsPassed=true → committed=true
-//   SplitBranch: committed=true → branchCreated=true
-function createPlanningActions(pabt, bb, registry, opts) {
-    opts = opts || {};
-    var providerName = opts.provider || 'claude-code';
-    var testCommand = opts.testCommand || 'make test';
-    var prompt = opts.prompt || '';
-
-    return {
-        SpawnClaude: pabt.newAction('SpawnClaude',
-            [],
-            [{key: 'agentSpawned', value: true}],
-            btSpawnClaude(bb, registry, providerName, opts)
-        ),
-        SendPrompt: pabt.newAction('SendPrompt',
-            [{key: 'agentSpawned', match: function(v) { return v === true; }}],
-            [{key: 'promptSent', value: true}],
-            btSendPrompt(bb, prompt)
-        ),
-        WaitForResponse: pabt.newAction('WaitForResponse',
-            [{key: 'promptSent', match: function(v) { return v === true; }}],
-            [{key: 'responseReceived', value: true}],
-            btWaitForResponse(bb, opts)
-        ),
-        RunTests: pabt.newAction('RunTests',
-            [{key: 'responseReceived', match: function(v) { return v === true; }}],
-            [{key: 'testsPassed', value: true}],
-            btRunTests(bb, testCommand)
-        ),
-        VerifyOutput: pabt.newAction('VerifyOutput',
-            [{key: 'testsPassed', match: function(v) { return v === true; }}],
-            [{key: 'verified', value: true}],
-            btVerifyOutput(bb, opts.verifyCommand || testCommand)
-        ),
-        CommitChanges: pabt.newAction('CommitChanges',
-            [{key: 'testsPassed', match: function(v) { return v === true; }}],
-            [{key: 'committed', value: true}],
-            btCommitChanges(bb, opts.message || 'Automated commit')
-        ),
-        SplitBranch: pabt.newAction('SplitBranch',
-            [{key: 'committed', match: function(v) { return v === true; }}],
-            [{key: 'branchCreated', value: true}],
-            btSplitBranch(bb, opts.branchName || 'split-branch')
-        )
-    };
 }
 
 // ---------------------------------------------------------------------------
@@ -2200,10 +1685,6 @@ globalThis.prSplit = {
     detectGoModulePath: detectGoModulePath,
     applyStrategy: applyStrategy,
     selectStrategy: selectStrategy,
-
-    // AI
-    classifyChangesWithClaudeMux: classifyChangesWithClaudeMux,
-    suggestSplitPlanWithClaudeMux: suggestSplitPlanWithClaudeMux,
 
     // Planning
     createSplitPlan: createSplitPlan,
@@ -2232,24 +1713,15 @@ globalThis.prSplit = {
     createEquivalenceNode: createEquivalenceNode,
     createSelectStrategyNode: createSelectStrategyNode,
     createWorkflowTree: createWorkflowTree,
-    createClaudeMuxClassifyNode: createClaudeMuxClassifyNode,
-    createClaudeMuxPlanNode: createClaudeMuxPlanNode,
-    createClaudeMuxWorkflowTree: createClaudeMuxWorkflowTree,
 
-    // BT templates (from claude-mux.js)
-    btSpawnClaude: btSpawnClaude,
-    btSendPrompt: btSendPrompt,
-    btWaitForResponse: btWaitForResponse,
+    // BT templates
     btVerifyOutput: btVerifyOutput,
     btRunTests: btRunTests,
     btCommitChanges: btCommitChanges,
     btSplitBranch: btSplitBranch,
 
     // Composite BT workflow functions
-    spawnAndPrompt: spawnAndPrompt,
     verifyAndCommit: verifyAndCommit,
-    spawnPromptAndReadResult: spawnPromptAndReadResult,
-    createPlanningActions: createPlanningActions,
 
     // Internal helpers (exposed for testing)
     _gitExec: gitExec,
@@ -2276,51 +1748,7 @@ if (typeof tui !== 'undefined' && typeof ctx !== 'undefined' && typeof output !=
 var analysisCache = null;
 var groupsCache = null;
 var planCache = null;
-var registryCache = null;
-var classificationCache = null;
 var executionResultCache = [];
-
-// ---------------------------------------------------------------------------
-//  Provider Registry Lifecycle
-// ---------------------------------------------------------------------------
-
-// ensureRegistry creates and caches a provider registry with the configured
-// provider. Returns the registry or null on error (errors are printed).
-function ensureRegistry() {
-    if (registryCache) return registryCache;
-    if (!claudemux) {
-        output.print('Error: claudemux module not available.');
-        return null;
-    }
-
-    try {
-        var registry = claudemux.newRegistry();
-        var provider;
-        if (runtime.provider === 'ollama') {
-            var opts = {};
-            if (runtime.model) {
-                opts.subArgs = ['run', runtime.model];
-            }
-            provider = claudemux.ollama(opts);
-        } else {
-            // Default to claude-code.
-            provider = claudemux.claudeCode({});
-        }
-        registry.register(provider);
-        registryCache = registry;
-        return registry;
-    } catch (e) {
-        output.print('Error creating provider registry: ' + (e && e.message ? e.message : String(e)));
-        if (e && e.stack) { log.error('pr-split registry error: ' + e.stack); }
-        return null;
-    }
-}
-
-// destroyRegistry tears down the registry cache.
-function destroyRegistry() {
-    registryCache = null;
-    classificationCache = null;
-}
 
 var state = tui.createState(COMMAND_NAME, {
     [shared.contextItems]: {defaultValue: []}
@@ -2333,7 +1761,6 @@ function buildReport() {
         version: globalThis.prSplit ? globalThis.prSplit.VERSION : 'unknown',
         baseBranch: runtime.baseBranch,
         strategy: runtime.strategy,
-        aiMode: runtime.aiMode,
         dryRun: runtime.dryRun,
         analysis: null,
         groups: null,
@@ -2916,7 +2343,7 @@ function buildCommands(stateArg) {
             handler: function(args) {
                 if (!args || args.length < 2) {
                     output.print('Usage: set <key> <value>');
-                    output.print('Keys: base, strategy, max, prefix, verify, dry-run, ai, provider, model');
+                    output.print('Keys: base, strategy, max, prefix, verify, dry-run');
                     output.print('Current:');
                     output.print('  base:      ' + runtime.baseBranch);
                     output.print('  strategy:  ' + runtime.strategy);
@@ -2924,9 +2351,6 @@ function buildCommands(stateArg) {
                     output.print('  prefix:    ' + runtime.branchPrefix);
                     output.print('  verify:    ' + runtime.verifyCommand);
                     output.print('  dry-run:   ' + runtime.dryRun);
-                    output.print('  ai:        ' + runtime.aiMode);
-                    output.print('  provider:  ' + runtime.provider);
-                    output.print('  model:     ' + runtime.model);
                     return;
                 }
                 var key = args[0];
@@ -2950,15 +2374,6 @@ function buildCommands(stateArg) {
                     case 'dry-run':
                         runtime.dryRun = (value === 'true' || value === '1');
                         break;
-                    case 'ai':
-                        runtime.aiMode = (value === 'true' || value === '1');
-                        break;
-                    case 'provider':
-                        runtime.provider = value;
-                        break;
-                    case 'model':
-                        runtime.model = value;
-                        break;
                     default:
                         output.print('Unknown key: ' + key);
                         return;
@@ -2967,93 +2382,15 @@ function buildCommands(stateArg) {
             }
         },
 
-        connect: {
-            description: 'Connect to AI provider (creates registry)',
-            usage: 'connect',
-            handler: function() {
-                try {
-                var registry = ensureRegistry();
-                if (registry) {
-                    output.print(style.success('✓ Connected to provider: ') + style.bold(runtime.provider) +
-                        (runtime.model ? ' (' + runtime.model + ')' : ''));
-                    output.print('  Available providers: ' + style.dim(registry.list().join(', ')));
-                }
-                } catch (e) {
-                    output.print('Error in connect: ' + (e && e.message ? e.message : String(e)));
-                    if (e && e.stack) { log.error('pr-split connect error: ' + e.stack); }
-                }
-            }
-        },
-
-        disconnect: {
-            description: 'Disconnect from AI provider',
-            usage: 'disconnect',
-            handler: function() {
-                destroyRegistry();
-                output.print(style.success('✓ Provider registry disconnected.'));
-            }
-        },
-
-        classify: {
-            description: 'Classify files using AI (requires --ai)',
-            usage: 'classify',
-            handler: function() {
-                try {
-                if (!claudemux) {
-                    output.print('claudemux module not available. Install/enable AI provider.');
-                    return;
-                }
-                if (!analysisCache || !analysisCache.files || analysisCache.files.length === 0) {
-                    output.print('Run "analyze" first.');
-                    return;
-                }
-                var registry = ensureRegistry();
-                if (!registry) return;
-
-                output.print('Classifying ' + analysisCache.files.length + ' files with AI...');
-                output.print('Provider: ' + runtime.provider + (runtime.model ? ' (' + runtime.model + ')' : ''));
-                output.print('(This spawns an agent instance via PTY — may take a minute)');
-
-                var result = classifyChangesWithClaudeMux(analysisCache.files, {
-                    registry: registry,
-                    providerName: runtime.provider === 'ollama' ? 'ollama' : 'claude-code',
-                    maxWaitMs: 120000
-                });
-                if (result.error) {
-                    output.print('Classification failed: ' + result.error);
-                    return;
-                }
-                classificationCache = result.files;
-                var keys = Object.keys(classificationCache).sort();
-                output.print(style.success('✓ Classified ' + keys.length + ' files:'));
-                for (var i = 0; i < keys.length; i++) {
-                    output.print('  [' + classificationCache[keys[i]] + '] ' + keys[i]);
-                }
-                } catch (e) {
-                    output.print('Error in classify: ' + (e && e.message ? e.message : String(e)));
-                    if (e && e.stack) { log.error('pr-split classify error stack: ' + e.stack); }
-                }
-            }
-        },
-
         run: {
             description: 'Run full workflow: analyze → group → plan → execute',
-            usage: 'run [--ai]',
+            usage: 'run',
             handler: function(args) {
                 try {
-                // Check for --ai flag in args.
-                var useAI = runtime.aiMode;
-                if (args) {
-                    for (var ai = 0; ai < args.length; ai++) {
-                        if (args[ai] === '--ai') useAI = true;
-                    }
-                }
-
                 var workflowStart = Date.now();
 
                 output.print(style.header('Running full PR split workflow...'));
                 output.print('Base:     ' + style.bold(runtime.baseBranch));
-                output.print('Mode:     ' + style.bold(useAI ? 'AI (' + runtime.provider + (runtime.model ? ':' + runtime.model : '') + ')' : 'heuristic'));
                 output.print('Strategy: ' + style.bold(runtime.strategy));
                 output.print('Max:      ' + style.bold(String(runtime.maxFiles)));
                 output.print('');
@@ -3074,63 +2411,9 @@ function buildCommands(stateArg) {
                 output.print(style.success('✓ Analysis: ') + analysisCache.files.length + ' changed files ' +
                     style.dim('(' + (Date.now() - stepStart) + 'ms)'));
 
-                // Step 2: Group (AI or heuristic)
+                // Step 2: Group (heuristic)
                 stepStart = Date.now();
-                var aiGroupingFailed = false;
-                if (useAI && claudemux) {
-                    var registry = ensureRegistry();
-                    if (registry) {
-                        // Step 2a: AI Classification
-                        output.print('  Classifying files with AI...');
-                        var classResult = classifyChangesWithClaudeMux(analysisCache.files, {
-                            registry: registry,
-                            providerName: runtime.provider === 'ollama' ? 'ollama' : 'claude-code',
-                            maxWaitMs: 120000
-                        });
-                        if (classResult.error) {
-                            output.print('  ' + style.warning('⚠️  AI classification failed: ' + classResult.error));
-                            output.print('  Falling back to heuristic grouping...');
-                            aiGroupingFailed = true;
-                        } else {
-                            classificationCache = classResult.files;
-                            output.print('  ' + style.success('✓ AI classified ' + Object.keys(classificationCache).length + ' files'));
-
-                            // Step 2b: AI Plan Suggestion
-                            output.print('  Requesting AI split plan...');
-                            var planResult = suggestSplitPlanWithClaudeMux(analysisCache.files, classificationCache, {
-                                registry: registry,
-                                providerName: runtime.provider === 'ollama' ? 'ollama' : 'claude-code',
-                                maxWaitMs: 120000
-                            });
-                            if (planResult.error) {
-                                output.print('  ' + style.warning('⚠️  AI plan suggestion failed: ' + planResult.error));
-                                output.print('  Falling back to heuristic grouping...');
-                                aiGroupingFailed = true;
-                            } else if (!planResult.stages || planResult.stages.length === 0) {
-                                output.print('  ' + style.warning('⚠️  AI returned empty plan.'));
-                                output.print('  Falling back to heuristic grouping...');
-                                aiGroupingFailed = true;
-                            } else {
-                                // Convert AI stages into groups for createSplitPlan.
-                                groupsCache = {};
-                                for (var si = 0; si < planResult.stages.length; si++) {
-                                    var stage = planResult.stages[si];
-                                    groupsCache[stage.name] = stage.files;
-                                }
-                                output.print('  ' + style.success('✓ AI suggested ' + planResult.stages.length + ' groups'));
-                            }
-                        }
-                    } else {
-                        output.print('  ' + style.warning('⚠️  Could not create provider registry.'));
-                        output.print('  Falling back to heuristic grouping...');
-                        aiGroupingFailed = true;
-                    }
-                }
-
-                if (!useAI || !claudemux || aiGroupingFailed) {
-                    // Heuristic path.
-                    groupsCache = applyStrategy(analysisCache.files, runtime.strategy);
-                }
+                groupsCache = applyStrategy(analysisCache.files, runtime.strategy);
 
                 var groupNames = Object.keys(groupsCache).sort();
                 if (groupNames.length === 0) {
@@ -3138,7 +2421,7 @@ function buildCommands(stateArg) {
                     return;
                 }
                 output.print(style.success('✓ Grouped into ' + groupNames.length + ' groups') +
-                    ((!useAI || aiGroupingFailed) ? ' (' + runtime.strategy + ')' : ' (AI)') +
+                    ' (' + runtime.strategy + ')' +
                     ' ' + style.dim('(' + (Date.now() - stepStart) + 'ms)'));
 
                 // Step 3: Plan
@@ -3234,9 +2517,6 @@ function buildCommands(stateArg) {
                         currentBranch: planCache.sourceBranch,
                         fileCount: analysisCache ? analysisCache.files.length : 0,
                         strategy: runtime.strategy,
-                        aiMode: runtime.aiMode,
-                        provider: runtime.provider,
-                        model: runtime.model,
                         groupCount: Object.keys(groupsCache || {}).length,
                         groups: Object.keys(groupsCache || {}).sort().map(function(name) {
                             return { label: name, files: groupsCache[name] };
@@ -3326,11 +2606,7 @@ function buildCommands(stateArg) {
                 output.print('  cleanup          Delete all split branches');
                 output.print('  create-prs       Push branches + create stacked GitHub PRs');
                 output.print('  run              Full workflow: analyze→group→plan→execute');
-                output.print('  run --ai         Full workflow using AI classification');
                 output.print('  set <key> <val>  Set runtime config (no args to show current)');
-                output.print('  connect          Connect to AI provider');
-                output.print('  disconnect       Disconnect from AI provider');
-                output.print('  classify         Classify files with AI');
                 output.print('  copy             Copy plan to clipboard');
                 output.print('  report           Output current state as JSON');
                 output.print('  save-plan [path] Save plan to file (default: .pr-split-plan.json)');

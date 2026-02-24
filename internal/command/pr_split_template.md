@@ -10,18 +10,6 @@
 
 ### Split Strategy: {{strategy}}
 
-{{#if aiMode}}
-**AI Classification** ({{provider}}/{{model}}):
-The following file groups were identified by the AI model based on semantic
-analysis of the changes:
-
-{{#each groups}}
-#### Group {{@index}}: {{this.label}}
-{{#each this.files}}
-- `{{this}}`
-{{/each}}
-{{/each}}
-{{else}}
 **Heuristic Grouping** ({{strategy}}):
 Files grouped by {{strategy}} into {{groupCount}} splits.
 
@@ -31,7 +19,6 @@ Files grouped by {{strategy}} into {{groupCount}} splits.
 - `{{this}}`
 {{/each}}
 {{/each}}
-{{/if}}
 
 ### Execution Plan
 

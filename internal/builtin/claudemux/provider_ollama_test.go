@@ -19,8 +19,9 @@ func TestOllamaProvider_Capabilities(t *testing.T) {
 	t.Parallel()
 	p := &OllamaProvider{}
 	caps := p.Capabilities()
-	if caps.MCP {
-		t.Error("MCP should be false for Ollama")
+	// Once launched, this IS Claude Code — MCP must be true.
+	if !caps.MCP {
+		t.Error("MCP should be true (ollama launch claude = Claude Code)")
 	}
 	if !caps.Streaming {
 		t.Error("Streaming should be true")
@@ -29,11 +30,11 @@ func TestOllamaProvider_Capabilities(t *testing.T) {
 		t.Error("MultiTurn should be true")
 	}
 	if !caps.ModelNav {
-		t.Error("ModelNav should be true for Ollama")
+		t.Error("ModelNav should be true (launcher menu must be dismissed)")
 	}
 }
 
-func TestOllamaProvider_Capabilities_DiffersFromClaude(t *testing.T) {
+func TestOllamaProvider_Capabilities_VsClaude(t *testing.T) {
 	t.Parallel()
 	ollama := &OllamaProvider{}
 	claude := &ClaudeCodeProvider{}
@@ -41,7 +42,7 @@ func TestOllamaProvider_Capabilities_DiffersFromClaude(t *testing.T) {
 	ollamaCaps := ollama.Capabilities()
 	claudeCaps := claude.Capabilities()
 
-	// Ollama requires model navigation; Claude doesn't.
+	// Ollama requires launcher menu dismissal; Claude doesn't.
 	if !ollamaCaps.ModelNav {
 		t.Error("Ollama ModelNav should be true")
 	}
@@ -49,12 +50,12 @@ func TestOllamaProvider_Capabilities_DiffersFromClaude(t *testing.T) {
 		t.Error("Claude ModelNav should be false")
 	}
 
-	// Claude supports MCP; Ollama doesn't.
+	// Both support MCP — Ollama launches Claude Code.
 	if !claudeCaps.MCP {
 		t.Error("Claude MCP should be true")
 	}
-	if ollamaCaps.MCP {
-		t.Error("Ollama MCP should be false")
+	if !ollamaCaps.MCP {
+		t.Error("Ollama MCP should be true (launches Claude Code)")
 	}
 }
 
@@ -74,14 +75,14 @@ func TestOllamaProvider_CustomCommand(t *testing.T) {
 	}
 }
 
-func TestOllamaProvider_SpawnEcho(t *testing.T) {
+func TestOllamaProvider_SpawnEcho_LaunchClaude(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("PTY not supported on Windows")
 	}
 	t.Parallel()
 
-	// Use echo as a stand-in for ollama to verify args are passed.
-	p := &OllamaProvider{Command: "/bin/echo", SubArgs: []string{"run"}}
+	// Use echo to verify the args are: launch claude <extra>
+	p := &OllamaProvider{Command: "/bin/echo"}
 	handle, err := p.Spawn(context.Background(), SpawnOpts{
 		Args: []string{"--extra"},
 	})
@@ -102,25 +103,28 @@ func TestOllamaProvider_SpawnEcho(t *testing.T) {
 	}
 
 	out := output.String()
-	// echo should print: "run --extra"
-	if !strings.Contains(out, "run") {
-		t.Errorf("output = %q, want to contain %q", out, "run")
+	// echo should print: "launch claude --extra"
+	if !strings.Contains(out, "launch") {
+		t.Errorf("output = %q, want to contain %q", out, "launch")
+	}
+	if !strings.Contains(out, "claude") {
+		t.Errorf("output = %q, want to contain %q", out, "claude")
 	}
 	if !strings.Contains(out, "--extra") {
 		t.Errorf("output = %q, want to contain %q", out, "--extra")
 	}
 }
 
-func TestOllamaProvider_SpawnDoesNotInjectModel(t *testing.T) {
+func TestOllamaProvider_SpawnWithModel(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("PTY not supported on Windows")
 	}
 	t.Parallel()
 
-	// Even when Model is set, OllamaProvider should NOT pass --model.
-	p := &OllamaProvider{Command: "/bin/echo", SubArgs: []string{"run"}}
+	// When Model is set, it should be passed as --model.
+	p := &OllamaProvider{Command: "/bin/echo"}
 	handle, err := p.Spawn(context.Background(), SpawnOpts{
-		Model: "should-be-ignored",
+		Model: "gpt-oss:20b-cloud",
 	})
 	if err != nil {
 		t.Fatalf("Spawn: %v", err)
@@ -139,11 +143,55 @@ func TestOllamaProvider_SpawnDoesNotInjectModel(t *testing.T) {
 	}
 
 	out := output.String()
-	if strings.Contains(out, "--model") {
-		t.Errorf("output = %q, should NOT contain --model (Ollama uses TUI navigation)", out)
+	// echo should print: "launch claude --model gpt-oss:20b-cloud"
+	if !strings.Contains(out, "launch") {
+		t.Errorf("output = %q, want to contain %q", out, "launch")
 	}
-	if strings.Contains(out, "should-be-ignored") {
-		t.Errorf("output = %q, should NOT contain model name", out)
+	if !strings.Contains(out, "claude") {
+		t.Errorf("output = %q, want to contain %q", out, "claude")
+	}
+	if !strings.Contains(out, "--model") {
+		t.Errorf("output = %q, want to contain %q", out, "--model")
+	}
+	if !strings.Contains(out, "gpt-oss:20b-cloud") {
+		t.Errorf("output = %q, want to contain %q", out, "gpt-oss:20b-cloud")
+	}
+}
+
+func TestOllamaProvider_SpawnWithExtraArgs(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("PTY not supported on Windows")
+	}
+	t.Parallel()
+
+	// ExtraArgs appear after "launch claude".
+	p := &OllamaProvider{Command: "/bin/echo", ExtraArgs: []string{"--config", "/tmp/cfg"}}
+	handle, err := p.Spawn(context.Background(), SpawnOpts{})
+	if err != nil {
+		t.Fatalf("Spawn: %v", err)
+	}
+	defer handle.Close()
+
+	var output strings.Builder
+	for i := 0; i < 10; i++ {
+		data, err := handle.Receive()
+		if data != "" {
+			output.WriteString(data)
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	out := output.String()
+	if !strings.Contains(out, "launch") {
+		t.Errorf("output = %q, want to contain %q", out, "launch")
+	}
+	if !strings.Contains(out, "claude") {
+		t.Errorf("output = %q, want to contain %q", out, "claude")
+	}
+	if !strings.Contains(out, "--config") {
+		t.Errorf("output = %q, want to contain %q", out, "--config")
 	}
 }
 
@@ -153,7 +201,8 @@ func TestOllamaProvider_SpawnCat(t *testing.T) {
 	}
 	t.Parallel()
 
-	// Interactive test: cat acts as a simple interactive agent.
+	// Interactive test: cat echoes input. We verify the handle works.
+	// Note: cat ignores args so "launch claude" args don't matter.
 	p := &OllamaProvider{Command: "/bin/cat"}
 	handle, err := p.Spawn(context.Background(), SpawnOpts{})
 	if err != nil {
@@ -165,7 +214,7 @@ func TestOllamaProvider_SpawnCat(t *testing.T) {
 		t.Fatal("cat should be alive after spawn")
 	}
 
-	if err := handle.Send("ollama test\n"); err != nil {
+	if err := handle.Send("hello claude\n"); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 
@@ -175,7 +224,7 @@ func TestOllamaProvider_SpawnCat(t *testing.T) {
 		if data != "" {
 			output.WriteString(data)
 		}
-		if strings.Contains(output.String(), "ollama test") {
+		if strings.Contains(output.String(), "hello claude") {
 			break
 		}
 		if err != nil {
@@ -183,18 +232,18 @@ func TestOllamaProvider_SpawnCat(t *testing.T) {
 		}
 	}
 
-	if !strings.Contains(output.String(), "ollama test") {
-		t.Errorf("output = %q, want to contain %q", output.String(), "ollama test")
+	if !strings.Contains(output.String(), "hello claude") {
+		t.Errorf("output = %q, want to contain %q", output.String(), "hello claude")
 	}
 }
 
-func TestOllamaProvider_SpawnNoSubArgs(t *testing.T) {
+func TestOllamaProvider_SpawnNoModel(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("PTY not supported on Windows")
 	}
 	t.Parallel()
 
-	// When SubArgs is empty, only the base command runs.
+	// Without Model, no --model flag should appear.
 	p := &OllamaProvider{Command: "/bin/echo"}
 	handle, err := p.Spawn(context.Background(), SpawnOpts{})
 	if err != nil {
@@ -202,9 +251,27 @@ func TestOllamaProvider_SpawnNoSubArgs(t *testing.T) {
 	}
 	defer handle.Close()
 
-	code, _ := handle.Wait()
-	if code != 0 {
-		t.Errorf("exit code = %d, want 0", code)
+	var output strings.Builder
+	for i := 0; i < 10; i++ {
+		data, err := handle.Receive()
+		if data != "" {
+			output.WriteString(data)
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	out := output.String()
+	// Should print: "launch claude" (no --model)
+	if !strings.Contains(out, "launch") {
+		t.Errorf("output = %q, want to contain %q", out, "launch")
+	}
+	if !strings.Contains(out, "claude") {
+		t.Errorf("output = %q, want to contain %q", out, "claude")
+	}
+	if strings.Contains(out, "--model") {
+		t.Errorf("output = %q, should NOT contain --model when Model is empty", out)
 	}
 }
 

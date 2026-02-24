@@ -76,7 +76,7 @@ func TestPrSplitCommand_SetupFlags(t *testing.T) {
 	expectedFlags := []string{
 		"interactive", "i",
 		"base", "strategy", "max", "prefix", "verify", "dry-run",
-		"ai", "provider", "model", "json",
+		"json",
 		"test", "session", "store", "log-level", "log-file", "log-buffer",
 	}
 
@@ -100,9 +100,6 @@ func TestPrSplitCommand_FlagParsing(t *testing.T) {
 		"--prefix", "pr/",
 		"--verify", "go test ./...",
 		"--dry-run",
-		"--ai",
-		"--provider", "claude-code",
-		"--model", "opus",
 		"--test",
 	})
 	if err != nil {
@@ -126,15 +123,6 @@ func TestPrSplitCommand_FlagParsing(t *testing.T) {
 	}
 	if !cmd.dryRun {
 		t.Error("Expected dryRun to be true")
-	}
-	if !cmd.aiMode {
-		t.Error("Expected aiMode to be true")
-	}
-	if cmd.provider != "claude-code" {
-		t.Errorf("Expected provider 'claude-code', got: %s", cmd.provider)
-	}
-	if cmd.model != "opus" {
-		t.Errorf("Expected model 'opus', got: %s", cmd.model)
 	}
 	if !cmd.testMode {
 		t.Error("Expected testMode to be true after parsing --test flag")
@@ -181,15 +169,6 @@ func TestPrSplitCommand_FlagDefaults(t *testing.T) {
 	}
 	if cmd.dryRun {
 		t.Error("Expected default dryRun to be false")
-	}
-	if cmd.aiMode {
-		t.Error("Expected default aiMode to be false")
-	}
-	if cmd.provider != "ollama" {
-		t.Errorf("Expected default provider 'ollama', got: %s", cmd.provider)
-	}
-	if cmd.model != "" {
-		t.Errorf("Expected default model '', got: %s", cmd.model)
 	}
 }
 
@@ -377,9 +356,6 @@ func loadPrSplitEngine(t *testing.T, overrides map[string]interface{}) (*bytes.B
 		"branchPrefix":  "split/",
 		"verifyCommand": "true",
 		"dryRun":        false,
-		"aiMode":        false,
-		"provider":      "ollama",
-		"model":         "",
 		"jsonOutput":    false,
 	}
 	for k, v := range overrides {
@@ -596,7 +572,7 @@ func TestPrSplitCommand_HelpCommand(t *testing.T) {
 
 	expectedKeywords := []string{
 		"analyze", "stats", "group", "plan", "execute",
-		"verify", "equivalence", "run", "classify", "help",
+		"verify", "equivalence", "run", "help",
 	}
 	for _, kw := range expectedKeywords {
 		if !contains(output, kw) {
@@ -637,9 +613,6 @@ func TestPrSplitCommand_ScriptContent(t *testing.T) {
 	}
 	if !contains(prSplitScript, "function verifyEquivalence") {
 		t.Error("Expected script to contain verifyEquivalence function")
-	}
-	if !contains(prSplitScript, "classifyChangesWithClaudeMux") {
-		t.Error("Expected script to contain classifyChangesWithClaudeMux function")
 	}
 	if !contains(prSplitScript, "tui.registerMode") {
 		t.Error("Expected script to register TUI mode")
@@ -833,136 +806,6 @@ func TestPrSplitCommand_RunRerun(t *testing.T) {
 	}
 	if !contains(out2, "Tree hash equivalence verified") {
 		t.Error("second run should verify equivalence")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// T012: AI workflow path tests (mocked — no real agent)
-// ---------------------------------------------------------------------------
-
-// TestPrSplitCommand_RunAIModeFallback verifies that when aiMode is true,
-// the run handler attempts the AI path, fails (no real agent), and falls
-// back to heuristic grouping. The end result should still be a successful
-// split with tree hash equivalence.
-func TestPrSplitCommand_RunAIModeFallback(t *testing.T) {
-	// NOT parallel — we chdir.
-	dir := setupTestGitRepo(t)
-
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
-
-	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
-		"aiMode": true,
-	})
-
-	if err := dispatch("run", nil); err != nil {
-		t.Fatalf("run command returned error: %v", err)
-	}
-
-	output := stdout.String()
-	t.Logf("run (AI fallback) output:\n%s", output)
-
-	// Should show AI mode in header.
-	if !contains(output, "AI") {
-		t.Error("expected AI mode indicator in output")
-	}
-
-	// Should show fallback message (classification will fail without real agent).
-	if !contains(output, "Falling back") || !contains(output, "heuristic") {
-		t.Error("expected fallback to heuristic message")
-	}
-
-	// Despite AI failure, should still complete via heuristic.
-	if !contains(output, "Split executed:") {
-		t.Error("expected successful execution via heuristic fallback")
-	}
-	if !contains(output, "Tree hash equivalence verified") {
-		t.Error("expected equivalence verification after heuristic fallback")
-	}
-}
-
-// TestPrSplitCommand_RunAIFlag verifies that passing --ai to the run
-// command activates AI mode even when runtime.aiMode is false.
-func TestPrSplitCommand_RunAIFlag(t *testing.T) {
-	dir := setupTestGitRepo(t)
-
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
-
-	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
-		"aiMode": false, // Explicitly off.
-	})
-
-	// Pass --ai flag via args.
-	if err := dispatch("run", []string{"--ai"}); err != nil {
-		t.Fatalf("run --ai returned error: %v", err)
-	}
-
-	output := stdout.String()
-	t.Logf("run --ai output:\n%s", output)
-
-	// Should show AI mode despite runtime being false.
-	if !contains(output, "AI") {
-		t.Error("expected AI indicator when --ai flag is passed")
-	}
-
-	// Should still complete via fallback.
-	if !contains(output, "Split executed:") {
-		t.Error("expected successful execution")
-	}
-}
-
-// TestPrSplitCommand_ConnectDisconnect verifies the connect/disconnect
-// TUI commands create and tear down the provider registry.
-func TestPrSplitCommand_ConnectDisconnect(t *testing.T) {
-	t.Parallel()
-	stdout, dispatch := loadPrSplitEngine(t, nil)
-
-	// Connect should create registry.
-	if err := dispatch("connect", nil); err != nil {
-		t.Fatalf("connect returned error: %v", err)
-	}
-	output := stdout.String()
-	if !contains(output, "Connected") {
-		t.Errorf("expected 'Connected' message, got: %s", output)
-	}
-
-	// Disconnect should tear it down.
-	stdout.Reset()
-	if err := dispatch("disconnect", nil); err != nil {
-		t.Fatalf("disconnect returned error: %v", err)
-	}
-	output = stdout.String()
-	if !contains(output, "disconnected") {
-		t.Errorf("expected 'disconnected' message, got: %s", output)
-	}
-}
-
-// TestPrSplitCommand_ClassifyRequiresAnalysis verifies that the classify
-// command requires analyze to have been run first.
-func TestPrSplitCommand_ClassifyRequiresAnalysis(t *testing.T) {
-	t.Parallel()
-	stdout, dispatch := loadPrSplitEngine(t, nil)
-
-	if err := dispatch("classify", nil); err != nil {
-		t.Fatalf("classify returned error: %v", err)
-	}
-
-	output := stdout.String()
-	if !contains(output, "analyze") {
-		t.Errorf("expected hint to run analyze first, got: %s", output)
 	}
 }
 

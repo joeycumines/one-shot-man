@@ -402,16 +402,8 @@ classification is the primary defense. See [Security Model](#7-security-model).
 ```javascript
 var templates = require('internal/command/pr_split_script.js'); // or use globalThis.prSplit
 var bt = require('osm:bt');
-var claudemux = require('osm:claudemux');
 
 var bb = new bt.Blackboard();
-
-// Spawn → send prompt → wait for response
-templates.spawnAndPrompt(bb, registry, {
-    provider: 'claude-code',
-    prompt: 'Fix the compilation error in pkg/parser.go',
-    spawnOpts: { dir: '/project' }
-});
 
 // Run tests → optional verify → commit
 templates.verifyAndCommit(bb, {
@@ -421,20 +413,13 @@ templates.verifyAndCommit(bb, {
 });
 ```
 
-#### PA-BT Action Library
-
-`createPlanningActions(pabt, bb, registry, config)` returns 7 named actions with
-preconditions and effects for automatic plan synthesis via backchaining. The planner
-synthesizes the chain `SpawnClaude → SendPrompt → WaitForResponse → RunTests →
-CommitChanges` automatically based on the goal `committed=true`.
-
 ---
 
 ### 5.4. PR Splitting Workflow
 
 **Command:** `osm pr-split` (built-in, `internal/command/pr_split.go`)
 **Script:** `internal/command/pr_split_script.js` (embedded via `//go:embed`)
-**Dependencies:** `osm:bt`, `osm:exec`, `osm:claudemux`
+**Dependencies:** `osm:bt`, `osm:exec`
 
 Splits a large diff into a linear series of stacked, independently-reviewable branches.
 

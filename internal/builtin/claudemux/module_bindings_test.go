@@ -137,9 +137,9 @@ func TestBinding_WrapProvider(t *testing.T) {
 	assert.True(t, runJS(`p.capabilities().multiTurn`).ToBoolean())
 
 	// ollama() factory with options.
-	runJS(`var op = cm.ollama({ command: "/usr/bin/ollama", subArgs: ["--verbose"] });`)
+	runJS(`var op = cm.ollama({ command: "/usr/bin/ollama", extraArgs: ["--verbose"] });`)
 	assert.Equal(t, "ollama", runJS(`op.name()`).String())
-	assert.False(t, runJS(`op.capabilities().mcp`).ToBoolean())
+	assert.True(t, runJS(`op.capabilities().mcp`).ToBoolean())
 }
 
 // ---------------------------------------------------------------------------
@@ -1003,7 +1003,7 @@ func TestBinding_OllamaFactory_AllOptions(t *testing.T) {
 	t.Parallel()
 	runJS := moduleTestEnv(t)
 
-	runJS(`var p = cm.ollama({ command: "/custom/ollama", subArgs: ["--verbose", "--debug"] });`)
+	runJS(`var p = cm.ollama({ command: "/custom/ollama", extraArgs: ["--verbose", "--debug"] });`)
 	assert.Equal(t, "ollama", runJS(`p.name()`).String())
 }
 

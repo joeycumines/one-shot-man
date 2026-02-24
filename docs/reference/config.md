@@ -237,9 +237,6 @@ The `[pr-split]` section configures default options for `osm pr-split`. All keys
 | `prefix` | string | `split/` | `--prefix` | Branch name prefix |
 | `verify` | string | `make test` | `--verify` | Verification command run after each split |
 | `dry-run` | bool | `false` | `--dry-run` | Plan without creating branches |
-| `ai` | bool | `false` | `--ai` | Enable AI-assisted classification via claudemux |
-| `provider` | string | `ollama` | `--provider` | AI provider name (requires `--ai`) |
-| `model` | string | _(empty)_ | `--model` | AI model name (requires `--ai`) |
 
 ### Example
 
@@ -250,9 +247,6 @@ strategy extension
 max 8
 prefix feature-split/
 verify go test ./...
-ai true
-provider ollama
-model codellama:13b
 ```
 
 ## Global options

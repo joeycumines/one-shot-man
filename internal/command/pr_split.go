@@ -20,8 +20,8 @@ var prSplitTemplate string
 var prSplitScript string
 
 // PrSplitCommand splits a large PR into reviewable stacked branches.
-// Supports both heuristic grouping strategies and AI-powered classification
-// via claudemux (Claude Code / Ollama).
+// Supports heuristic grouping strategies including directory, extension,
+// chunks, dependency (Go import graph), and auto.
 type PrSplitCommand struct {
 	*BaseCommand
 	scriptCommandBase
@@ -34,11 +34,6 @@ type PrSplitCommand struct {
 	branchPrefix  string
 	verifyCommand string
 	dryRun        bool
-
-	// AI mode flags
-	aiMode   bool
-	provider string
-	model    string
 
 	// JSON output flag
 	jsonOutput bool
@@ -69,10 +64,6 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.verifyCommand, "verify", "make test", "Command to verify each split")
 	fs.BoolVar(&c.dryRun, "dry-run", false, "Show plan without executing")
 
-	// AI mode
-	fs.BoolVar(&c.aiMode, "ai", false, "Use Claude Code for intelligent classification and planning")
-	fs.StringVar(&c.provider, "provider", "ollama", "AI provider: ollama, claude-code")
-	fs.StringVar(&c.model, "model", "", "Model identifier for AI provider")
 	fs.BoolVar(&c.jsonOutput, "json", false, "Output results as JSON (combine with run or --dry-run)")
 
 	c.RegisterFlags(fs)
@@ -90,9 +81,6 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	//   pr-split.prefix=split/
 	//   pr-split.verify=make test
 	//   pr-split.dry-run=true
-	//   pr-split.ai=true
-	//   pr-split.provider=claude-code
-	//   pr-split.model=sonnet
 	if c.config != nil {
 		applyConfigDefault := func(key string, target *string, flagDefault string) {
 			if v, ok := c.config.GetCommandOption("pr-split", key); ok && (*target == flagDefault || *target == "") {
@@ -110,13 +98,6 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		applyConfigDefault("verify", &c.verifyCommand, "make test")
 		if v, ok := c.config.GetCommandOption("pr-split", "dry-run"); ok && !c.dryRun {
 			c.dryRun = v == "true" || v == "1" || v == "yes"
-		}
-		if v, ok := c.config.GetCommandOption("pr-split", "ai"); ok && !c.aiMode {
-			c.aiMode = v == "true" || v == "1" || v == "yes"
-		}
-		applyConfigDefault("provider", &c.provider, "ollama")
-		if v, ok := c.config.GetCommandOption("pr-split", "model"); ok && c.model == "" {
-			c.model = v
 		}
 	}
 
@@ -144,9 +125,6 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		"branchPrefix":  c.branchPrefix,
 		"verifyCommand": c.verifyCommand,
 		"dryRun":        c.dryRun,
-		"aiMode":        c.aiMode,
-		"provider":      c.provider,
-		"model":         c.model,
 		"jsonOutput":    c.jsonOutput,
 	})
 

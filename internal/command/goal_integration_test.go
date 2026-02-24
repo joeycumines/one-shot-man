@@ -604,15 +604,15 @@ func TestGoalScript_MoraleImprover_EmbeddedHotSnippets(t *testing.T) {
 	// Verify hot-snippet commands are registered with hot- prefix
 	for name := range expectedSnippets {
 		cmdName := "hot-" + name
-		stdout.Reset()
-		err := engine.GetTUIManager().ExecuteCommand(cmdName, []string{})
-		// The command may fail at clipboard copy (no clipboard in test),
-		// but the command should be recognized (not "unknown command")
-		if err != nil {
-			errStr := err.Error()
-			if strings.Contains(errStr, "unknown command") || strings.Contains(errStr, "not found") {
-				t.Errorf("expected hot-%s command to be registered, got error: %v", name, err)
+		found := false
+		for _, cmd := range engine.GetTUIManager().ListCommands() {
+			if cmd.Name == cmdName {
+				found = true
+				break
 			}
+		}
+		if !found {
+			t.Errorf("expected hot-%s command to be registered", name)
 		}
 	}
 

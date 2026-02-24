@@ -60,7 +60,7 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			return wrapProvider(runtime, p)
 		})
 
-		// ollama(opts?): creates an OllamaProvider.
+		// ollama(opts?): creates an OllamaProvider that runs `ollama launch claude`.
 		_ = exports.Set("ollama", func(call goja.FunctionCall) goja.Value {
 			p := &OllamaProvider{}
 			if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
@@ -68,12 +68,12 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 				if v := opts.Get("command"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
 					p.Command = v.String()
 				}
-				if v := opts.Get("subArgs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-					var subArgs []string
-					if err := runtime.ExportTo(v, &subArgs); err != nil {
-						panic(runtime.NewTypeError("ollama: subArgs must be an array of strings"))
+				if v := opts.Get("extraArgs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					var extraArgs []string
+					if err := runtime.ExportTo(v, &extraArgs); err != nil {
+						panic(runtime.NewTypeError("ollama: extraArgs must be an array of strings"))
 					}
-					p.SubArgs = subArgs
+					p.ExtraArgs = extraArgs
 				}
 			}
 			return wrapProvider(runtime, p)

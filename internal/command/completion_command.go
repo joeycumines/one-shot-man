@@ -141,15 +141,11 @@ _osm_completion() {
             return 0
             ;;
         pr-split)
-            COMPREPLY=($(compgen -W "--base --strategy --max --prefix --verify --dry-run --ai --provider --model --json --interactive --test --session --store --log-level --log-file" -- ${cur}))
+            COMPREPLY=($(compgen -W "--base --strategy --max --prefix --verify --dry-run --json --interactive --test --session --store --log-level --log-file" -- ${cur}))
             return 0
             ;;
         --strategy)
             COMPREPLY=($(compgen -W "directory directory-deep extension chunks dependency auto" -- ${cur}))
-            return 0
-            ;;
-        --provider)
-            COMPREPLY=($(compgen -W "ollama claude-code" -- ${cur}))
             return 0
             ;;
         help)
@@ -262,9 +258,6 @@ _osm() {
                         '--prefix[Branch prefix]:prefix:' \
                         '--verify[Verify command]:command:' \
                         '--dry-run[Show plan without executing]' \
-                        '--ai[Use AI classification]' \
-                        '--provider[AI provider]:provider:(ollama claude-code)' \
-                        '--model[Model identifier]:model:' \
                         '--json[Output results as JSON]'
                     ;;
                 help)
@@ -361,9 +354,6 @@ complete -c osm -n '__fish_seen_subcommand_from pr-split' -l max -d 'Max files p
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l prefix -d 'Branch prefix'
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l verify -d 'Verify command'
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l dry-run -d 'Show plan without executing'
-complete -c osm -n '__fish_seen_subcommand_from pr-split' -l ai -d 'Use AI classification'
-complete -c osm -n '__fish_seen_subcommand_from pr-split' -l provider -a 'ollama claude-code' -d 'AI provider'
-complete -c osm -n '__fish_seen_subcommand_from pr-split' -l model -d 'Model identifier'
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l json -d 'Output results as JSON'
 
 # Completion for 'help' subcommand (command names)

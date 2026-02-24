@@ -6,48 +6,58 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/builtin/pty"
 )
 
-// OllamaProvider implements Provider for Ollama-hosted models via PTY.
+// OllamaProvider launches Claude Code via `ollama launch claude`.
 //
-// Unlike ClaudeCodeProvider, Ollama selects models via an interactive TUI menu
-// after spawning. The model is NOT passed as a CLI flag — instead, the caller
-// navigates the TUI using keystroke sequences (see NavigateToModel).
+// This provider runs `ollama launch claude [--model MODEL] [extra flags]`.
+// Once past the Ollama launcher menu, the process IS Claude Code — it has
+// full MCP support, multi-turn, streaming, etc. The Ollama launcher menu
+// may appear first (see IsLauncherMenu / DismissLauncherKeys) and must be
+// dismissed before normal Claude Code interaction begins.
 type OllamaProvider struct {
-	// Command is the base Ollama executable path (default: "ollama").
+	// Command is the Ollama executable path (default: "ollama").
 	Command string
-	// SubArgs are additional arguments appended after the command
-	// (e.g., ["run"] for "ollama run"). If empty, Command is used as-is
-	// and the full command string may include subcommands via shell
-	// word-splitting (e.g., Command="ollama run" with empty SubArgs).
-	SubArgs []string
+	// ExtraArgs are additional CLI flags appended after "launch claude"
+	// (e.g., ["--config", "/path/to/cfg"]).
+	ExtraArgs []string
 }
 
 // Name returns "ollama".
 func (p *OllamaProvider) Name() string { return "ollama" }
 
-// Capabilities returns Ollama's capabilities.
+// Capabilities returns capabilities. Once the Ollama launcher menu is
+// dismissed, this IS Claude Code — full MCP, streaming, multi-turn.
+// ModelNav is true because the launcher menu must be dismissed first.
 func (p *OllamaProvider) Capabilities() ProviderCapabilities {
 	return ProviderCapabilities{
-		MCP:       false, // Ollama does not natively support MCP
+		MCP:       true, // Claude Code via Ollama supports MCP
 		Streaming: true,
 		MultiTurn: true,
-		ModelNav:  true, // Model selected via TUI navigation post-spawn
+		ModelNav:  true, // Ollama launcher menu must be dismissed
 	}
 }
 
-// Spawn starts an Ollama instance in a PTY.
+// Spawn starts `ollama launch claude` in a PTY.
 //
-// Model selection is NOT handled here — the caller is responsible for
-// navigating the TUI after spawn (see ParseModelMenu + NavigateToModel).
-// The opts.Model field is ignored; use TUI navigation instead.
+// The command is always `ollama launch claude`. If opts.Model is set, it is
+// passed as `--model MODEL`. ExtraArgs and opts.Args are appended after.
 func (p *OllamaProvider) Spawn(ctx context.Context, opts SpawnOpts) (AgentHandle, error) {
 	cmd := p.Command
 	if cmd == "" {
 		cmd = "ollama"
 	}
 
-	// Build args: SubArgs first, then any extra Args from opts.
-	args := make([]string, 0, len(p.SubArgs)+len(opts.Args))
-	args = append(args, p.SubArgs...)
+	// Base args: launch claude
+	args := []string{"launch", "claude"}
+
+	// Model via --model flag (not TUI navigation).
+	if opts.Model != "" {
+		args = append(args, "--model", opts.Model)
+	}
+
+	// ExtraArgs from provider config.
+	args = append(args, p.ExtraArgs...)
+
+	// Additional args from spawn opts.
 	args = append(args, opts.Args...)
 
 	cfg := pty.SpawnConfig{

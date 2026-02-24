@@ -1426,6 +1426,100 @@ function resolveConflicts(plan, options) {
 }
 
 // ---------------------------------------------------------------------------
+//  Claude Code Executor
+// ---------------------------------------------------------------------------
+
+// ClaudeCodeExecutor manages spawning and communicating with Claude Code.
+// It reads configuration from prSplitConfig (claudeCommand, claudeArgs,
+// claudeModel, claudeConfigDir, claudeEnv) and uses the osm:claudemux
+// module for MCP integration.
+function ClaudeCodeExecutor(config) {
+    this.command = config.claudeCommand || '';
+    this.args = config.claudeArgs || [];
+    this.model = config.claudeModel || '';
+    this.configDir = config.claudeConfigDir || '';
+    this.env = config.claudeEnv || {};
+    this.resolved = null;   // resolved command after auto-detection
+    this.handle = null;     // agent handle from provider
+    this.sessionId = null;  // MCP session ID
+    this.cm = null;         // claudemux module reference
+}
+
+// resolve determines which Claude binary to use.
+// Priority: explicit config > 'claude' on PATH > 'ollama' on PATH > error.
+ClaudeCodeExecutor.prototype.resolve = function() {
+    if (this.command) {
+        // Explicit command — verify it exists.
+        var check = exec.execv(['which', this.command]);
+        if (check.code !== 0) {
+            return { error: 'Claude command not found: ' + this.command };
+        }
+        this.resolved = { command: this.command, type: 'explicit' };
+        return { error: null };
+    }
+
+    // Auto-detect: try 'claude' first.
+    var claudeCheck = exec.execv(['which', 'claude']);
+    if (claudeCheck.code === 0) {
+        this.resolved = { command: 'claude', type: 'claude-code' };
+        return { error: null };
+    }
+
+    // Try 'ollama'.
+    var ollamaCheck = exec.execv(['which', 'ollama']);
+    if (ollamaCheck.code === 0) {
+        this.resolved = { command: 'ollama', type: 'ollama' };
+        return { error: null };
+    }
+
+    return {
+        error: 'No Claude-compatible binary found. Install Claude Code CLI ' +
+               '(claude) or Ollama (ollama), or set --claude-command explicitly.'
+    };
+};
+
+// spawn creates an MCP session and launches the Claude process.
+// Returns { error: string|null, sessionId: string }.
+ClaudeCodeExecutor.prototype.spawn = function(sessionId) {
+    // Lazy-load claudemux to avoid errors in test environments.
+    if (!this.cm) {
+        try {
+            this.cm = require('osm:claudemux');
+        } catch (e) {
+            return { error: 'osm:claudemux module not available: ' + e.message };
+        }
+    }
+
+    var resolveResult = this.resolve();
+    if (resolveResult.error) {
+        return { error: resolveResult.error };
+    }
+
+    this.sessionId = sessionId || ('prsplit-' + Date.now());
+
+    log.info('Claude executor: resolved command=%s type=%s session=%s',
+        this.resolved.command, this.resolved.type, this.sessionId);
+
+    return { error: null, sessionId: this.sessionId };
+};
+
+// isAvailable returns true if a Claude-compatible binary can be resolved.
+ClaudeCodeExecutor.prototype.isAvailable = function() {
+    var result = this.resolve();
+    return !result.error;
+};
+
+// close terminates the Claude process and cleans up.
+ClaudeCodeExecutor.prototype.close = function() {
+    if (this.handle && typeof this.handle.close === 'function') {
+        try { this.handle.close(); } catch (e) { /* best effort */ }
+    }
+    this.handle = null;
+    this.sessionId = null;
+    this.resolved = null;
+};
+
+// ---------------------------------------------------------------------------
 //  BT Integration — Leaf Nodes
 // ---------------------------------------------------------------------------
 
@@ -1714,6 +1808,9 @@ globalThis.prSplit = {
     cleanupBranches: cleanupBranches,
     createPRs: createPRs,
     resolveConflicts: resolveConflicts,
+
+    // Claude Code executor
+    ClaudeCodeExecutor: ClaudeCodeExecutor,
 
     // BT nodes
     createAnalyzeNode: createAnalyzeNode,

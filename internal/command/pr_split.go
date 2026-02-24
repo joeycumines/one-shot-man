@@ -37,6 +37,13 @@ type PrSplitCommand struct {
 
 	// JSON output flag
 	jsonOutput bool
+
+	// Claude Code execution configuration
+	claudeCommand   string // explicit path/name of Claude binary (empty = auto-detect)
+	claudeArgs      string // additional CLI arguments for Claude (space-separated)
+	claudeModel     string // model to use (provider-dependent)
+	claudeConfigDir string // config directory override
+	claudeEnv       string // extra environment variables (KEY=VALUE,KEY=VALUE)
 }
 
 // NewPrSplitCommand creates a new pr-split command.
@@ -65,6 +72,13 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.dryRun, "dry-run", false, "Show plan without executing")
 
 	fs.BoolVar(&c.jsonOutput, "json", false, "Output results as JSON (combine with run or --dry-run)")
+
+	// Claude Code execution
+	fs.StringVar(&c.claudeCommand, "claude-command", "", "Claude binary path (empty = auto-detect)")
+	fs.StringVar(&c.claudeArgs, "claude-args", "", "Additional Claude CLI arguments (space-separated)")
+	fs.StringVar(&c.claudeModel, "claude-model", "", "Model name (provider-dependent)")
+	fs.StringVar(&c.claudeConfigDir, "claude-config-dir", "", "Claude config directory override")
+	fs.StringVar(&c.claudeEnv, "claude-env", "", "Extra environment variables (KEY=VALUE,KEY=VALUE)")
 
 	c.RegisterFlags(fs)
 }
@@ -99,6 +113,11 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		if v, ok := c.config.GetCommandOption("pr-split", "dry-run"); ok && !c.dryRun {
 			c.dryRun = v == "true" || v == "1" || v == "yes"
 		}
+		applyConfigDefault("claude-command", &c.claudeCommand, "")
+		applyConfigDefault("claude-args", &c.claudeArgs, "")
+		applyConfigDefault("claude-model", &c.claudeModel, "")
+		applyConfigDefault("claude-config-dir", &c.claudeConfigDir, "")
+		applyConfigDefault("claude-env", &c.claudeEnv, "")
 	}
 
 	engine, cleanup, err := c.PrepareEngine(ctx, stdout, stderr)
@@ -118,14 +137,32 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	engine.SetGlobal("prSplitTemplate", prSplitTemplate)
 
 	// Expose split configuration to JS
+	claudeArgsList := []string{}
+	if c.claudeArgs != "" {
+		claudeArgsList = strings.Fields(c.claudeArgs)
+	}
+	claudeEnvMap := map[string]string{}
+	if c.claudeEnv != "" {
+		for _, pair := range strings.Split(c.claudeEnv, ",") {
+			pair = strings.TrimSpace(pair)
+			if k, v, ok := strings.Cut(pair, "="); ok && k != "" {
+				claudeEnvMap[k] = v
+			}
+		}
+	}
 	engine.SetGlobal("prSplitConfig", map[string]interface{}{
-		"baseBranch":    c.baseBranch,
-		"strategy":      c.strategy,
-		"maxFiles":      c.maxFiles,
-		"branchPrefix":  c.branchPrefix,
-		"verifyCommand": c.verifyCommand,
-		"dryRun":        c.dryRun,
-		"jsonOutput":    c.jsonOutput,
+		"baseBranch":     c.baseBranch,
+		"strategy":       c.strategy,
+		"maxFiles":       c.maxFiles,
+		"branchPrefix":   c.branchPrefix,
+		"verifyCommand":  c.verifyCommand,
+		"dryRun":         c.dryRun,
+		"jsonOutput":     c.jsonOutput,
+		"claudeCommand":  c.claudeCommand,
+		"claudeArgs":     claudeArgsList,
+		"claudeModel":    c.claudeModel,
+		"claudeConfigDir": c.claudeConfigDir,
+		"claudeEnv":      claudeEnvMap,
 	})
 
 	// Load the embedded script

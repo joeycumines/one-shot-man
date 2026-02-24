@@ -149,10 +149,17 @@ Split a large PR into reviewable stacked branches. Supports heuristic grouping s
   - `-test`: enable test mode
   - `-session <id>`: override session id
   - `-store <fs|memory>`: select storage backend
+  - `-claude-command <path>`: Claude binary path (empty = auto-detect `claude` → `ollama`)
+  - `-claude-args <args>`: additional Claude CLI arguments (space-separated)
+  - `-claude-model <model>`: model name (provider-dependent)
+  - `-claude-config-dir <dir>`: Claude config directory override
+  - `-claude-env <vars>`: extra environment variables (`KEY=VALUE,KEY=VALUE`)
 
 Config keys (in `[pr-split]` section or global):
   - `pr-split.base`, `pr-split.strategy`, `pr-split.max`, `pr-split.prefix`
   - `pr-split.verify`, `pr-split.dry-run`
+  - `pr-split.claude-command`, `pr-split.claude-args`, `pr-split.claude-model`
+  - `pr-split.claude-config-dir`, `pr-split.claude-env`
 
 #### Grouping strategies
 

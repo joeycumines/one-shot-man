@@ -237,6 +237,11 @@ The `[pr-split]` section configures default options for `osm pr-split`. All keys
 | `prefix` | string | `split/` | `--prefix` | Branch name prefix |
 | `verify` | string | `make test` | `--verify` | Verification command run after each split |
 | `dry-run` | bool | `false` | `--dry-run` | Plan without creating branches |
+| `claude-command` | string | _(auto-detect)_ | `--claude-command` | Claude binary path. Auto-detects `claude` or `ollama` if empty |
+| `claude-args` | string | _(empty)_ | `--claude-args` | Additional CLI arguments for Claude (space-separated) |
+| `claude-model` | string | _(empty)_ | `--claude-model` | Model name (provider-dependent) |
+| `claude-config-dir` | string | _(empty)_ | `--claude-config-dir` | Claude config directory override |
+| `claude-env` | string | _(empty)_ | `--claude-env` | Extra environment variables (`KEY=VALUE,KEY=VALUE`) |
 
 ### Example
 
@@ -247,6 +252,8 @@ strategy extension
 max 8
 prefix feature-split/
 verify go test ./...
+claude-command claude
+claude-model sonnet
 ```
 
 ## Global options

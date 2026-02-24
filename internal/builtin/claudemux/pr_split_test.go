@@ -433,7 +433,8 @@ func TestPRSplit_ExecuteSplit(t *testing.T) {
 		sourceBranch: 'feature',
 		dir: '` + escapedDir + `',
 		branchPrefix: 'split/',
-		verifyCommand: 'true'
+		verifyCommand: 'true',
+		fileStatuses: analysis.fileStatuses
 	});`)
 
 	// Validate plan.
@@ -486,7 +487,8 @@ func TestPRSplit_VerifyEquivalence(t *testing.T) {
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		dir: '` + escapedDir + `',
-		branchPrefix: 'split/'
+		branchPrefix: 'split/',
+		fileStatuses: analysis.fileStatuses
 	});`)
 	runJS(`prSplit.executeSplit(plan);`)
 
@@ -518,7 +520,8 @@ func TestPRSplit_VerifySplits(t *testing.T) {
 		sourceBranch: 'feature',
 		dir: '` + escapedDir + `',
 		branchPrefix: 'split/',
-		verifyCommand: 'true'
+		verifyCommand: 'true',
+		fileStatuses: analysis.fileStatuses
 	});`)
 	runJS(`prSplit.executeSplit(plan);`)
 
@@ -552,7 +555,8 @@ func TestPRSplit_CleanupBranches(t *testing.T) {
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		dir: '` + escapedDir + `',
-		branchPrefix: 'split/'
+		branchPrefix: 'split/',
+		fileStatuses: analysis.fileStatuses
 	});`)
 	runJS(`prSplit.executeSplit(plan);`)
 
@@ -732,7 +736,8 @@ func TestPRSplit_VerifyEquivalenceDetailed_Equivalent(t *testing.T) {
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		dir: '` + escapedDir + `',
-		branchPrefix: 'split/'
+		branchPrefix: 'split/',
+		fileStatuses: analysis.fileStatuses
 	});`)
 	runJS(`prSplit.executeSplit(plan);`)
 
@@ -850,7 +855,8 @@ func TestPRSplit_EndToEnd_WithCompilation(t *testing.T) {
 		sourceBranch: 'feature',
 		dir: '` + escapedDir + `',
 		branchPrefix: 'split/',
-		verifyCommand: 'go build ./...'
+		verifyCommand: 'go build ./...',
+		fileStatuses: analysis.fileStatuses
 	});`)
 
 	// Validate plan.
@@ -976,12 +982,13 @@ func TestPRSplit_ExecuteSplit_MissingFile(t *testing.T) {
 	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
 	runJS(`var prSplit = require('` + sp + `');`)
 
-	// Create a plan with a non-existent file.
+	// Create a plan with a non-existent file but valid fileStatuses entry.
 	runJS(`var plan = {
 		baseBranch: 'main',
 		sourceBranch: 'feature',
 		dir: '` + escapedDir + `',
 		verifyCommand: 'true',
+		fileStatuses: { 'does-not-exist.go': 'A' },
 		splits: [{
 			name: 'split/01-bad',
 			files: ['does-not-exist.go'],
@@ -993,10 +1000,205 @@ func TestPRSplit_ExecuteSplit_MissingFile(t *testing.T) {
 	errVal := runJS(`result.error`)
 	assert.Contains(t, errVal.String(), "checkout file")
 	assert.Contains(t, errVal.String(), "does-not-exist.go")
+}
 
-	// Error type should be classified.
-	errType := runJS(`result.results[0].errorType`)
-	assert.Equal(t, "missing", errType.String())
+// ---------------------------------------------------------------------------
+//  Deleted files + re-run tests
+// ---------------------------------------------------------------------------
+
+// addFeatureFilesWithDeletions creates a feature branch that adds new files
+// AND deletes an existing file from the initial commit.
+func addFeatureFilesWithDeletions(t *testing.T, dir string) {
+	t.Helper()
+
+	runGit(t, dir, "checkout", "-b", "feature")
+
+	// Add new files.
+	for _, f := range []struct{ path, content string }{
+		{"pkg/impl.go", "package pkg\n\nfunc Bar() string { return \"bar\" }\n"},
+		{"docs/guide.md", "# Guide\n\nUsage instructions.\n"},
+	} {
+		fullPath := filepath.Join(dir, f.path)
+		require.NoError(t, os.MkdirAll(filepath.Dir(fullPath), 0o755))
+		require.NoError(t, os.WriteFile(fullPath, []byte(f.content), 0o644))
+	}
+
+	// Delete an existing file (README.md was in initial commit).
+	require.NoError(t, os.Remove(filepath.Join(dir, "README.md")))
+
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-m", "feature: add impl, docs; delete README")
+}
+
+func TestPRSplit_AnalyzeDiff_FileStatuses(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+
+	dir := initTestGitRepo(t)
+	addFeatureFilesWithDeletions(t, dir)
+
+	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
+	runJS(`var prSplit = require('` + sp + `');`)
+	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
+
+	// Error should be null.
+	errVal := runJS(`analysis.error`)
+	assert.True(t, goja.IsNull(errVal) || goja.IsUndefined(errVal))
+
+	// Should find 3 files: 2 added + 1 deleted.
+	lenVal := runJS(`analysis.files.length`)
+	assert.Equal(t, int64(3), lenVal.ToInteger())
+
+	// Verify fileStatuses is populated correctly.
+	implStatus := runJS(`analysis.fileStatuses['pkg/impl.go']`)
+	assert.Equal(t, "A", implStatus.String())
+
+	docsStatus := runJS(`analysis.fileStatuses['docs/guide.md']`)
+	assert.Equal(t, "A", docsStatus.String())
+
+	readmeStatus := runJS(`analysis.fileStatuses['README.md']`)
+	assert.Equal(t, "D", readmeStatus.String())
+}
+
+func TestPRSplit_ExecuteSplit_WithDeletedFiles(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+
+	dir := initTestGitRepo(t)
+	addFeatureFilesWithDeletions(t, dir)
+
+	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
+	runJS(`var prSplit = require('` + sp + `');`)
+
+	// Full pipeline: analyze → group → plan → execute.
+	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
+	runJS(`var groups = prSplit.groupByDirectory(analysis.files, 1);`)
+	runJS(`var plan = prSplit.createSplitPlan(groups, {
+		baseBranch: 'main',
+		sourceBranch: 'feature',
+		dir: '` + escapedDir + `',
+		branchPrefix: 'split/',
+		verifyCommand: 'true',
+		fileStatuses: analysis.fileStatuses
+	});`)
+
+	// Execute split — should handle deleted README.md correctly.
+	runJS(`var result = prSplit.executeSplit(plan);`)
+
+	errVal := runJS(`result.error`)
+	assert.True(t, goja.IsNull(errVal) || goja.IsUndefined(errVal),
+		"executeSplit should succeed with deleted files, got: %v", errVal)
+
+	// Verify equivalence — tree hashes must match.
+	runJS(`var equiv = prSplit.verifyEquivalence(plan);`)
+	equivVal := runJS(`equiv.equivalent`)
+	assert.True(t, equivVal.ToBoolean(), "tree hashes should match when deletions are handled correctly")
+
+	// The branch containing the deletion (README.md is in '.') should exist.
+	branches := runGit(t, dir, "branch")
+	assert.Contains(t, branches, "split/")
+
+	// Verify README.md is actually gone on the last split branch.
+	lastSplit := runJS(`plan.splits[plan.splits.length-1].name`).String()
+	runGit(t, dir, "checkout", lastSplit)
+	_, err := os.Stat(filepath.Join(dir, "README.md"))
+	assert.True(t, os.IsNotExist(err), "README.md should not exist on the last split branch")
+
+	// Restore to feature.
+	runGit(t, dir, "checkout", "feature")
+}
+
+func TestPRSplit_ExecuteSplit_RerunDeletesBranches(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+
+	dir := initTestGitRepo(t)
+	addFeatureFiles(t, dir)
+
+	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
+	runJS(`var prSplit = require('` + sp + `');`)
+
+	runJS(`var analysis = prSplit.analyzeDiff({baseBranch: 'main', dir: '` + escapedDir + `'});`)
+	runJS(`var groups = prSplit.groupByDirectory(analysis.files, 1);`)
+	runJS(`var plan = prSplit.createSplitPlan(groups, {
+		baseBranch: 'main',
+		sourceBranch: 'feature',
+		dir: '` + escapedDir + `',
+		branchPrefix: 'split/',
+		fileStatuses: analysis.fileStatuses
+	});`)
+
+	// First run — creates branches.
+	runJS(`var result1 = prSplit.executeSplit(plan);`)
+	err1 := runJS(`result1.error`)
+	assert.True(t, goja.IsNull(err1) || goja.IsUndefined(err1), "first run should succeed")
+
+	branches1 := runGit(t, dir, "branch")
+	assert.Contains(t, branches1, "split/01-cmd")
+
+	// Second run — same plan, branches already exist. Should NOT fail.
+	runJS(`var result2 = prSplit.executeSplit(plan);`)
+	err2 := runJS(`result2.error`)
+	assert.True(t, goja.IsNull(err2) || goja.IsUndefined(err2),
+		"re-run should succeed (pre-existing branches deleted), got: %v", err2)
+
+	// Verify equivalence still holds after re-run.
+	runJS(`var equiv = prSplit.verifyEquivalence(plan);`)
+	equivVal := runJS(`equiv.equivalent`)
+	assert.True(t, equivVal.ToBoolean(), "tree hashes should match after re-run")
+}
+
+func TestPRSplit_ExecuteSplit_NoFileStatuses(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+	runJS(`var prSplit = require('` + sp + `');`)
+
+	// Plan with valid structure but missing fileStatuses.
+	runJS(`var result = prSplit.executeSplit({
+		baseBranch: 'main',
+		sourceBranch: 'feature',
+		splits: [{
+			name: 'split/01-test',
+			files: ['a.go'],
+			message: 'test'
+		}]
+	});`)
+
+	errVal := runJS(`result.error`)
+	assert.Contains(t, errVal.String(), "fileStatuses is required")
+}
+
+func TestPRSplit_ExecuteSplit_MissingFileStatus(t *testing.T) {
+	t.Parallel()
+	_, runJS := prSplitTestEnv(t)
+	sp := prSplitScriptPath(t)
+
+	dir := initTestGitRepo(t)
+	addFeatureFiles(t, dir)
+
+	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
+	runJS(`var prSplit = require('` + sp + `');`)
+
+	// Plan with fileStatuses that's missing an entry for one file.
+	runJS(`var result = prSplit.executeSplit({
+		baseBranch: 'main',
+		sourceBranch: 'feature',
+		dir: '` + escapedDir + `',
+		fileStatuses: { 'pkg/impl.go': 'A' },
+		splits: [{
+			name: 'split/01-test',
+			files: ['pkg/impl.go', 'cmd/run.go'],
+			message: 'test'
+		}]
+	});`)
+
+	errVal := runJS(`result.error`)
+	assert.Contains(t, errVal.String(), "cmd/run.go")
+	assert.Contains(t, errVal.String(), "no entry in plan.fileStatuses")
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -354,6 +355,109 @@ func TestExecutor_UnknownCommand_NoMode(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "Command not found: nosuchcommand") {
 		t.Errorf("expected 'Command not found' in output, got %q", buf.String())
+	}
+}
+
+// TestExecutor_HandlerError_DisplaysError verifies that when a found
+// command handler returns an error, the error is displayed to the user
+// instead of being silently swallowed. This was a P0 bug (pre-fix) where
+// ALL handler errors were treated as "command not found".
+func TestExecutor_HandlerError_DisplaysError(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	tm := &TUIManager{
+		writer:       NewTUIWriterFromIO(&buf),
+		commands:     make(map[string]Command),
+		commandOrder: make([]string, 0),
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	tm.RegisterCommand(Command{
+		Name:        "failcmd",
+		Description: "a command that fails",
+		IsGoCommand: true,
+		Handler: func(args []string) error {
+			return fmt.Errorf("something went wrong: %s", "kaboom")
+		},
+	})
+
+	result := tm.executor("failcmd")
+	if !result {
+		t.Errorf("expected true, got false")
+	}
+	output := buf.String()
+	if !strings.Contains(output, "Error:") {
+		t.Errorf("expected error prefix in output, got %q", output)
+	}
+	if !strings.Contains(output, "kaboom") {
+		t.Errorf("expected error message 'kaboom' in output, got %q", output)
+	}
+}
+
+// TestExecutor_HandlerPanic_DisplaysError verifies that when a found
+// command handler panics, the panic message is displayed to the user.
+func TestExecutor_HandlerPanic_DisplaysError(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	tm := &TUIManager{
+		writer:       NewTUIWriterFromIO(&buf),
+		commands:     make(map[string]Command),
+		commandOrder: make([]string, 0),
+		modes:        make(map[string]*ScriptMode),
+	}
+
+	tm.RegisterCommand(Command{
+		Name:        "paniccmd",
+		Description: "a command that panics",
+		IsGoCommand: true,
+		Handler: func(args []string) error {
+			panic("handler exploded")
+		},
+	})
+
+	result := tm.executor("paniccmd")
+	if !result {
+		t.Errorf("expected true, got false")
+	}
+	output := buf.String()
+	if !strings.Contains(output, "Error:") {
+		t.Errorf("expected error prefix in output, got %q", output)
+	}
+	if !strings.Contains(output, "handler exploded") {
+		t.Errorf("expected panic message in output, got %q", output)
+	}
+}
+
+// TestExecutor_UnknownCommand_WithMode_JSFallback verifies that unknown
+// commands in a mode still fall through to JS execution (not treated as errors).
+func TestExecutor_UnknownCommand_WithMode_JSFallback(t *testing.T) {
+	ctx := context.Background()
+	var buf bytes.Buffer
+	eng := mustNewEngine(t, ctx, &buf, &buf)
+	tm := eng.GetTUIManager()
+
+	script := eng.LoadScriptFromString("setup", `
+		tui.registerMode({
+			name: "fallback-mode",
+			tui: { prompt: "[fb]> " }
+		});
+	`)
+	if err := eng.ExecuteScript(script); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := tm.SwitchMode("fallback-mode"); err != nil {
+		t.Fatalf("switch: %v", err)
+	}
+
+	buf.Reset()
+	// "2 + 3" is not a command name, should be evaluated as JS
+	result := tm.executor("2 + 3")
+	if !result {
+		t.Errorf("expected true for JS fallback, got false")
+	}
+	// Should NOT contain "Error:" since it's a valid JS expression
+	if strings.Contains(buf.String(), "Error:") {
+		t.Errorf("did not expect error output for JS expression, got %q", buf.String())
 	}
 }
 

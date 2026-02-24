@@ -2,6 +2,7 @@ package scripting
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -297,8 +298,8 @@ func TestCommandExecution(t *testing.T) {
 		t.Fatal("Expected error for non-existent command")
 	}
 
-	if !strings.Contains(err.Error(), "command nonexistent not found") {
-		t.Fatalf("Expected 'command not found' error, got: %v", err)
+	if !errors.Is(err, ErrCommandNotFound) {
+		t.Fatalf("Expected ErrCommandNotFound, got: %v", err)
 	}
 }
 

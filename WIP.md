@@ -1,33 +1,53 @@
-# WIP — PR Split Consolidation
+# WIP — PR Split P0 Bug Fixes
 
-## Status: COVERAGE PUSH — Tests written, awaiting Rule of Two
+## Status: RULE OF TWO PASSED — Ready to commit
 
 ### Session Context
 - Branch: `wip`
-- Previous commit: `55ec7e6` (composite BT fixes + behavioral tests — committed and verified)
-- Current: Coverage tests added for claudemux package error paths
+- Previous commits: `7477aae`, `55ec7e6`
+- CURRENT: P0 bug fixes + 13 new tests. Rule of Two PASSED (2 contiguous + fitness FIT).
 
-### Commit history
-1. `7477aae` — Initial pr-split consolidation (had composite BT defects)
-2. `55ec7e6` — Fixed all 4 composite functions, added 7 behavioral tests, docs, CHANGELOG
+### What changed (UNCOMMITTED — ready to commit)
 
-### What changed since 55ec7e6 (UNCOMMITTED)
+#### Bug Fixes
 
-#### Coverage tests for claudemux package (15 new tests across 3 files)
+1. **TUI command dispatch error swallowing (tui_commands.go)**
+   - `ErrCommandNotFound` sentinel error
+   - `executor()` now distinguishes "not found" (JS fallback) from handler errors (display to user)
+   
+2. **Panic recovery (tui_manager.go)**
+   - `executeCommand()` uses named return + defer/recover for Go handlers
+   
+3. **fileStatuses threading (pr_split_script.js)**
+   - `analyzeDiff()` uses `--name-status` instead of `--name-only`
+   - Returns `fileStatuses` map (file → A/M/D/R/C/T)
+   - Rename/copy: only track new path
+   - Unmerged paths rejected with clear error
+   - Unknown status codes rejected with whitelist
+   
+4. **Deleted files (pr_split_script.js executeSplit)**
+   - `fileStatuses` is REQUIRED (no silent fallback)
+   - Status 'D' → `git rm --ignore-unmatch -f`
+   - Missing entries → explicit error naming the file
+   
+5. **Pre-existing branches (pr_split_script.js executeSplit)**
+   - Pre-flight loop: delete existing branches before recreation
+   - Enables re-running pr-split without manual cleanup
+   
+6. **Try/catch on critical handlers (pr_split_script.js)**
+   - `run`, `analyze`, `execute` handlers wrapped
 
-**guard_test.go** — 6 new tests for computeBackoff overflow edge cases:
-- `TestGuard_ComputeBackoff_FloatOverflow_WithMaxDelay` — factor=+Inf → clamps to MaxDelay
-- `TestGuard_ComputeBackoff_FloatOverflow_NoMaxDelay` — factor=+Inf → falls back to InitialDelay
-- `TestGuard_ComputeBackoff_Int64Overflow_WithMaxDelay` — Duration overflow → clamps to MaxDelay
-- `TestGuard_ComputeBackoff_Int64Overflow_NoMaxDelay` — Duration overflow → positive (saturated)
-- `TestGuard_ComputeBackoff_NaNFactor` — direct computeBackoff with +Inf factor
-- (No change to existing Overflow test which was already present)
+#### New Tests (13 total)
 
-**instance_test.go** — 4 new tests for Create error paths:
-- `TestInstanceRegistry_Create_LongSessionID` — 80-char ID → dir basename truncated to 64
-- `TestInstanceRegistry_Create_StateDirFail` — invalid baseDir → error, not registered
-- `TestInstanceRegistry_Create_WriteStateFail` — read-only stateDir → error, not registered
-- `TestInstanceRegistry_Create_LogsDirFail` — logs as regular file → error, not registered
+- `tui_coverage_gaps_test.go`: HandlerError, HandlerPanic, JSFallback (3)
+- `pr_split_test.go`: RunHeuristicEndToEnd, RunZeroChanges, RunDryRun, HelpCommand, RunWithDeletedFiles, RunRerun (6)
+- `claudemux/pr_split_test.go`: AnalyzeDiff_FileStatuses, WithDeletedFiles, RerunDeletesBranches, NoFileStatuses, MissingFileStatus + fixes to MissingFile (7)
+
+### Next Steps (T009+)
+- T009: Wire runtime.aiMode into run handler
+- T010: Implement provider registry lifecycle in TUI
+- T011-T012: AI classification + mocked tests
+- T014-T018: Integration tests with real OLLAMA
 
 **control_test.go** — 5 new tests for send/GetStatus error paths:
 - `TestControl_Send_ServerClosesImmediately` — empty response → error

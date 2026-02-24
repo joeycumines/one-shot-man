@@ -361,7 +361,8 @@ func (tm *TUIManager) RegisterCommand(cmd Command) {
 	tm.commands[cmd.Name] = cmd
 }
 
-// ExecuteCommand executes a command by name.
+// ExecuteCommand executes a command by name. Returns
+// [ErrCommandNotFound] when no command matches `name`.
 func (tm *TUIManager) ExecuteCommand(name string, args []string) error {
 	tm.mu.RLock()
 
@@ -381,7 +382,7 @@ func (tm *TUIManager) ExecuteCommand(name string, args []string) error {
 	tm.mu.RUnlock()
 
 	if !exists {
-		return fmt.Errorf("command %s not found", name)
+		return fmt.Errorf("%w: %s", ErrCommandNotFound, name)
 	}
 
 	return tm.executeCommand(cmd, args)
@@ -488,9 +489,14 @@ func (tm *TUIManager) buildModeCommands(mode *ScriptMode) error {
 }
 
 // executeCommand handles the actual command execution.
-func (tm *TUIManager) executeCommand(cmd Command, args []string) error {
+func (tm *TUIManager) executeCommand(cmd Command, args []string) (execErr error) {
 	if cmd.IsGoCommand {
-		// Handle Go function
+		// Handle Go function with panic protection.
+		defer func() {
+			if r := recover(); r != nil {
+				execErr = fmt.Errorf("command panicked: %v", r)
+			}
+		}()
 		if fn, ok := cmd.Handler.(func([]string) error); ok {
 			return fn(args)
 		} else if fn, ok := cmd.Handler.(func(*TUIManager, []string) error); ok {

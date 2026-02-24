@@ -116,44 +116,83 @@ function analyzeDiff(config) {
     var baseBranch = config.baseBranch || runtime.baseBranch;
     var dir = config.dir || '.';
 
-    var branchResult = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
-    if (branchResult.code !== 0) {
+    var emptyResult = function(error, currentBranch) {
         return {
             files: [],
-            error: 'failed to get current branch: ' + branchResult.stderr.trim(),
+            fileStatuses: {},
+            error: error,
             baseBranch: baseBranch,
-            currentBranch: ''
+            currentBranch: currentBranch || ''
         };
+    };
+
+    var branchResult = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    if (branchResult.code !== 0) {
+        return emptyResult('failed to get current branch: ' + branchResult.stderr.trim(), '');
     }
     var currentBranch = branchResult.stdout.trim();
 
     var mergeBase = gitExec(dir, ['merge-base', baseBranch, currentBranch]);
     if (mergeBase.code !== 0) {
-        return {
-            files: [],
-            error: 'merge-base failed: ' + mergeBase.stderr.trim(),
-            baseBranch: baseBranch,
-            currentBranch: currentBranch
-        };
+        return emptyResult('merge-base failed: ' + mergeBase.stderr.trim(), currentBranch);
     }
 
-    var diffResult = gitExec(dir, ['diff', '--name-only', mergeBase.stdout.trim(), currentBranch]);
+    // Use --name-status to capture diff status (A/M/D/R/C) per file.
+    var diffResult = gitExec(dir, ['diff', '--name-status', mergeBase.stdout.trim(), currentBranch]);
     if (diffResult.code !== 0) {
-        return {
-            files: [],
-            error: 'git diff failed: ' + diffResult.stderr.trim(),
-            baseBranch: baseBranch,
-            currentBranch: currentBranch
-        };
+        return emptyResult('git diff failed: ' + diffResult.stderr.trim(), currentBranch);
     }
 
     var raw = diffResult.stdout.trim();
-    var files = raw === '' ? [] : raw.split('\n').filter(function(f) {
-        return f !== '';
-    });
+    var files = [];
+    var fileStatuses = {};
+
+    // Valid status codes that executeSplit knows how to handle.
+    var KNOWN_STATUSES = { A: 1, M: 1, D: 1, R: 1, C: 1, T: 1 };
+
+    if (raw !== '') {
+        var lines = raw.split('\n');
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if (line === '') continue;
+            // Format: STATUS\tPATH (or STATUS\tOLD\tNEW for R/C)
+            var parts = line.split('\t');
+            if (parts.length < 2) continue;
+            var status = parts[0].charAt(0);
+
+            // Unmerged paths (U) mean unresolved conflicts — fail early.
+            if (status === 'U') {
+                return emptyResult(
+                    'unmerged path detected: ' + parts[1] +
+                    ' — resolve all merge conflicts before splitting',
+                    currentBranch
+                );
+            }
+
+            // Skip unknown status codes with a warning.
+            if (!KNOWN_STATUSES[status]) {
+                log.warn('pr-split: unknown git status "' + parts[0] + '" for ' + parts[1] + ' — skipping');
+                continue;
+            }
+
+            if (parts.length >= 3 && (status === 'R' || status === 'C')) {
+                // Rename/copy: track ONLY the new (destination) path.
+                // The old path is irrelevant — the source branch has the
+                // final state, and executeSplit operates on source branch content.
+                var newPath = parts[2];
+                files.push(newPath);
+                fileStatuses[newPath] = status;
+            } else {
+                var path = parts[1];
+                files.push(path);
+                fileStatuses[path] = status;
+            }
+        }
+    }
 
     return {
         files: files,
+        fileStatuses: fileStatuses,
         error: null,
         baseBranch: baseBranch,
         currentBranch: currentBranch
@@ -632,6 +671,7 @@ function createSplitPlan(groups, config) {
     var branchPrefix = config.branchPrefix || runtime.branchPrefix;
     var commitPrefix = config.commitPrefix || '';
     var verifyCommand = config.verifyCommand || runtime.verifyCommand;
+    var fileStatuses = config.fileStatuses || {};
 
     var sourceBranch = config.sourceBranch;
     if (!sourceBranch) {
@@ -657,6 +697,7 @@ function createSplitPlan(groups, config) {
         sourceBranch: sourceBranch,
         dir: dir,
         verifyCommand: verifyCommand,
+        fileStatuses: fileStatuses,
         splits: splits
     };
 }
@@ -715,11 +756,30 @@ function executeSplit(plan) {
         return { error: 'invalid plan: ' + validation.errors.join('; '), results: [] };
     }
 
+    // fileStatuses is REQUIRED — it determines whether each file
+    // should be checked out (A/M/R/C/T) or removed (D).
+    if (!plan.fileStatuses || typeof plan.fileStatuses !== 'object') {
+        return {
+            error: 'plan.fileStatuses is required — pass fileStatuses from analyzeDiff() to createSplitPlan()',
+            results: []
+        };
+    }
+    var fileStatuses = plan.fileStatuses;
+
     var savedBranch = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
     if (savedBranch.code !== 0) {
         return { error: 'failed to get current branch', results: [] };
     }
     var restoreBranch = savedBranch.stdout.trim();
+
+    // Pre-flight: delete any pre-existing split branches to allow re-runs.
+    for (var k = 0; k < plan.splits.length; k++) {
+        var existCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/heads/' + plan.splits[k].name]);
+        if (existCheck.code === 0) {
+            // Branch exists — delete it so we can recreate cleanly.
+            gitExec(dir, ['branch', '-D', plan.splits[k].name]);
+        }
+    }
 
     var currentBase = plan.baseBranch;
 
@@ -745,22 +805,34 @@ function executeSplit(plan) {
 
         for (var j = 0; j < split.files.length; j++) {
             var file = split.files[j];
-            var checkout = gitExec(dir, ['checkout', plan.sourceBranch, '--', file]);
-            if (checkout.code !== 0) {
-                var stderrLower = checkout.stderr.toLowerCase();
-                var errorType = 'checkout';
-                if (stderrLower.indexOf('did not match any') !== -1 ||
-                    stderrLower.indexOf('pathspec') !== -1) {
-                    errorType = 'missing';
-                } else if (stderrLower.indexOf('conflict') !== -1 ||
-                           stderrLower.indexOf('overwritten') !== -1) {
-                    errorType = 'conflict';
-                }
-                splitResult.error = 'checkout file ' + file + ': ' + checkout.stderr.trim();
-                splitResult.errorType = errorType;
+            var status = fileStatuses[file];
+
+            if (!status) {
+                splitResult.error = 'file "' + file + '" has no entry in plan.fileStatuses — '
+                    + 'ensure analyzeDiff() results are passed to createSplitPlan()';
                 results.push(splitResult);
                 gitExec(dir, ['checkout', restoreBranch]);
                 return { error: splitResult.error, results: results };
+            }
+
+            if (status === 'D') {
+                // File was deleted in the source branch — remove it from the split.
+                var rm = gitExec(dir, ['rm', '--ignore-unmatch', '-f', file]);
+                if (rm.code !== 0) {
+                    splitResult.error = 'git rm ' + file + ': ' + rm.stderr.trim();
+                    results.push(splitResult);
+                    gitExec(dir, ['checkout', restoreBranch]);
+                    return { error: splitResult.error, results: results };
+                }
+            } else {
+                // File was added, modified, renamed-to, etc. — checkout from source.
+                var checkout = gitExec(dir, ['checkout', plan.sourceBranch, '--', file]);
+                if (checkout.code !== 0) {
+                    splitResult.error = 'checkout file ' + file + ': ' + checkout.stderr.trim();
+                    results.push(splitResult);
+                    gitExec(dir, ['checkout', restoreBranch]);
+                    return { error: splitResult.error, results: results };
+                }
             }
         }
 
@@ -775,10 +847,16 @@ function executeSplit(plan) {
         var msg = split.message || 'split: ' + split.name;
         var commit = gitExec(dir, ['commit', '-m', msg]);
         if (commit.code !== 0) {
-            splitResult.error = 'git commit failed: ' + commit.stderr.trim();
-            results.push(splitResult);
-            gitExec(dir, ['checkout', restoreBranch]);
-            return { error: splitResult.error, results: results };
+            // It is possible that the split has no effective changes
+            // (e.g. all files in this group are deletions that don't exist
+            // on the base branch). Allow empty commits.
+            var commitAllow = gitExec(dir, ['commit', '--allow-empty', '-m', msg]);
+            if (commitAllow.code !== 0) {
+                splitResult.error = 'git commit failed: ' + commitAllow.stderr.trim();
+                results.push(splitResult);
+                gitExec(dir, ['checkout', restoreBranch]);
+                return { error: splitResult.error, results: results };
+            }
         }
 
         var sha = gitExec(dir, ['rev-parse', 'HEAD']);
@@ -987,6 +1065,7 @@ function createPlanNode(bb, config) {
         if (analysis) {
             if (!planConfig.sourceBranch) planConfig.sourceBranch = analysis.currentBranch;
             if (!planConfig.baseBranch) planConfig.baseBranch = analysis.baseBranch;
+            if (!planConfig.fileStatuses && analysis.fileStatuses) planConfig.fileStatuses = analysis.fileStatuses;
         }
 
         var plan = createSplitPlan(groups, planConfig);
@@ -1545,6 +1624,7 @@ function buildCommands(stateArg) {
             description: 'Analyze diff between current branch and base',
             usage: 'analyze [base-branch]',
             handler: function(args) {
+                try {
                 var base = (args && args.length > 0) ? args[0] : runtime.baseBranch;
                 output.print('Analyzing diff against ' + base + '...');
                 analysisCache = analyzeDiff({ baseBranch: base });
@@ -1555,7 +1635,12 @@ function buildCommands(stateArg) {
                 output.print('Branch: ' + analysisCache.currentBranch + ' → ' + analysisCache.baseBranch);
                 output.print('Changed files: ' + analysisCache.files.length);
                 for (var i = 0; i < analysisCache.files.length; i++) {
-                    output.print('  ' + analysisCache.files[i]);
+                    var st = (analysisCache.fileStatuses && analysisCache.fileStatuses[analysisCache.files[i]]) || '?';
+                    output.print('  [' + st + '] ' + analysisCache.files[i]);
+                }
+                } catch (e) {
+                    output.print('Error in analyze: ' + (e && e.message ? e.message : String(e)));
+                    if (e && e.stack) { log.error('pr-split analyze error stack: ' + e.stack); }
                 }
             }
         },
@@ -1614,6 +1699,7 @@ function buildCommands(stateArg) {
                 };
                 if (analysisCache) {
                     planConfig.sourceBranch = analysisCache.currentBranch;
+                    planConfig.fileStatuses = analysisCache.fileStatuses;
                 }
                 planCache = createSplitPlan(groupsCache, planConfig);
                 var validation = validatePlan(planCache);
@@ -1667,6 +1753,7 @@ function buildCommands(stateArg) {
             description: 'Execute the split plan (creates branches)',
             usage: 'execute',
             handler: function() {
+                try {
                 if (!planCache) {
                     output.print('Run "plan" first.');
                     return;
@@ -1698,6 +1785,10 @@ function buildCommands(stateArg) {
                     output.print('❌ Tree hash mismatch!');
                     output.print('   Split tree:  ' + equiv.splitTree);
                     output.print('   Source tree:  ' + equiv.sourceTree);
+                }
+                } catch (e) {
+                    output.print('Error in execute: ' + (e && e.message ? e.message : String(e)));
+                    if (e && e.stack) { log.error('pr-split execute error stack: ' + e.stack); }
                 }
             }
         },
@@ -1856,6 +1947,7 @@ function buildCommands(stateArg) {
             description: 'Run full workflow: analyze → group → plan → execute',
             usage: 'run',
             handler: function() {
+                try {
                 output.print('Running full PR split workflow...');
                 output.print('Base:     ' + runtime.baseBranch);
                 output.print('Strategy: ' + runtime.strategy);
@@ -1868,11 +1960,21 @@ function buildCommands(stateArg) {
                     output.print('Analysis failed: ' + analysisCache.error);
                     return;
                 }
+                if (!analysisCache.files || analysisCache.files.length === 0) {
+                    output.print('No changes found between ' + analysisCache.currentBranch +
+                        ' and ' + analysisCache.baseBranch + '.');
+                    output.print('Ensure you are on a feature branch with changes against the base.');
+                    return;
+                }
                 output.print('✓ Analysis: ' + analysisCache.files.length + ' changed files');
 
                 // Step 2: Group
                 groupsCache = applyStrategy(analysisCache.files, runtime.strategy);
                 var groupNames = Object.keys(groupsCache).sort();
+                if (groupNames.length === 0) {
+                    output.print('No groups created — strategy "' + runtime.strategy + '" produced no groups.');
+                    return;
+                }
                 output.print('✓ Grouped into ' + groupNames.length + ' groups (' + runtime.strategy + ')');
 
                 // Step 3: Plan
@@ -1880,7 +1982,8 @@ function buildCommands(stateArg) {
                     baseBranch: runtime.baseBranch,
                     sourceBranch: analysisCache.currentBranch,
                     branchPrefix: runtime.branchPrefix,
-                    verifyCommand: runtime.verifyCommand
+                    verifyCommand: runtime.verifyCommand,
+                    fileStatuses: analysisCache.fileStatuses
                 });
                 var validation = validatePlan(planCache);
                 if (!validation.valid) {
@@ -1892,7 +1995,16 @@ function buildCommands(stateArg) {
                 // Step 4: Execute (unless dry-run)
                 if (runtime.dryRun) {
                     output.print('');
-                    output.print('DRY RUN — not executing. Use "set dry-run false" then "execute".');
+                    output.print('DRY RUN — plan preview:');
+                    for (var i = 0; i < planCache.splits.length; i++) {
+                        var s = planCache.splits[i];
+                        output.print('  ' + padIndex(i + 1) + '. ' + s.name + ' (' + s.files.length + ' files)');
+                        for (var j = 0; j < s.files.length; j++) {
+                            output.print('      ' + s.files[j]);
+                        }
+                    }
+                    output.print('');
+                    output.print('Use "set dry-run false" then "run" or "execute" to create branches.');
                     return;
                 }
 
@@ -1902,6 +2014,10 @@ function buildCommands(stateArg) {
                     return;
                 }
                 output.print('✓ Split executed: ' + result.results.length + ' branches created');
+                for (var i = 0; i < result.results.length; i++) {
+                    var r = result.results[i];
+                    output.print('  ✓ ' + r.name + ' (' + r.files.length + ' files, SHA: ' + r.sha.substring(0, 8) + ')');
+                }
 
                 // Step 5: Verify equivalence
                 var equiv = verifyEquivalence(planCache);
@@ -1911,6 +2027,14 @@ function buildCommands(stateArg) {
                     output.print('⚠️  Equivalence check error: ' + equiv.error);
                 } else {
                     output.print('❌ Tree hash mismatch — content may be lost');
+                    output.print('   Split tree:  ' + equiv.splitTree);
+                    output.print('   Source tree:  ' + equiv.sourceTree);
+                }
+                } catch (e) {
+                    output.print('Error in run workflow: ' + (e && e.message ? e.message : String(e)));
+                    if (e && e.stack) {
+                        log.error('pr-split run error stack: ' + e.stack);
+                    }
                 }
             }
         },

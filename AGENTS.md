@@ -145,6 +145,20 @@ When modifying **internal code**—meaning any code that isn't depended on by ex
     - Tests must be **fully self-contained** and portable across machines
     - Rare exceptions (e.g., `vhs` for recording) MUST use TestMain flags, documented Make targets, and skip gracefully when unavailable. See `generate-tapes-and-gifs` and `-execute-vhs` for the pattern.
 
+### No "AI Slop"
+
+When instructed to "clean up AI slop," this **does NOT mean** removal of AI-related code or features. AI integrations, embeddings, LLM interfaces, and similar functionality are valid parts of this codebase.
+
+Instead, "AI slop" refers to code that meets ANY of these criteria:
+
+- **Incoherent**: Code that doesn't read as intentional—contradictory logic, vestigial comments, or structures that serve no discernible function
+- **Inconsistent**: Code that violates project conventions, naming patterns, or architectural patterns established elsewhere
+- **Purpose-less**: Functions, types, or modules that exist but serve no actual role in the system
+- **Untested**: Code paths that are never exercised by tests—either unit tests or integration tests
+- **Unvalidated**: Code that has not been demonstrated to work through actual execution paths
+
+The goal is a codebase where every line has a reason to exist, every feature is validated, and the overall system is coherent and maintainable.
+
 ## Important Conventions
 
 1. **Clipboard-First**: Outputs go to clipboard by design—works in locked-down environments

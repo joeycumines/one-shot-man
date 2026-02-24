@@ -109,6 +109,12 @@ type mcpSession struct {
 	LastHeartbeat time.Time         `json:"lastHeartbeat"`
 	LastSeq       int64             `json:"-"` // highest processed sequence number
 	Events        []mcpSessionEvent `json:"-"` // drained on getSession
+
+	// Pending queues: set by osm-facing tools, drained on getSession.
+	PendingClassification *mcpRequestClassificationInput `json:"-"`
+	PendingPlanRequest    *mcpRequestSplitPlanInput      `json:"-"`
+	PendingConflicts      []mcpReportConflictInput       `json:"-"`
+	PendingInstructions   []mcpSendInstructionInput      `json:"-"`
 }
 
 // mcpSessionEvent is a queued event from an agent session.
@@ -128,6 +134,12 @@ type mcpGetSessionResponse struct {
 	LastHeartbeat time.Time         `json:"lastHeartbeat"`
 	LastSeq       int64             `json:"lastSeq"`
 	Events        []mcpSessionEvent `json:"events"`
+
+	// Pending requests from the orchestrator (drained on read).
+	PendingClassification *mcpRequestClassificationInput `json:"pendingClassification,omitempty"`
+	PendingPlanRequest    *mcpRequestSplitPlanInput      `json:"pendingPlanRequest,omitempty"`
+	PendingConflicts      []mcpReportConflictInput       `json:"pendingConflicts,omitempty"`
+	PendingInstructions   []mcpSendInstructionInput      `json:"pendingInstructions,omitempty"`
 }
 
 // mcpSessionSummary is a JSON-serializable session summary for listSessions.
@@ -202,12 +214,97 @@ type mcpSplitStage struct {
 	Order   int      `json:"order" jsonschema:"0-based ordering"`
 }
 
+// --- MCP bidirectional split protocol input types ---
+
+// mcpRepoContext provides repository metadata for classification requests.
+type mcpRepoContext struct {
+	ModulePath string `json:"modulePath,omitempty" jsonschema:"Go module path from go.mod"`
+	Language   string `json:"language,omitempty" jsonschema:"Primary language (go, js, python, etc.)"`
+	BaseRef    string `json:"baseRef,omitempty" jsonschema:"Base branch or reference"`
+}
+
+type mcpRequestClassificationInput struct {
+	SessionID string            `json:"sessionId" jsonschema:"Session identifier"`
+	Files     map[string]string `json:"files" jsonschema:"Map of file path to git status (A, M, D, R)"`
+	Context   mcpRepoContext    `json:"context" jsonschema:"Repository context"`
+	MaxGroups int               `json:"maxGroups,omitempty" jsonschema:"Maximum groups (0 = no limit)"`
+}
+
+// mcpPlanConstraints constrains split plan generation.
+type mcpPlanConstraints struct {
+	MaxFilesPerSplit  int    `json:"maxFilesPerSplit,omitempty" jsonschema:"Max files per split (0 = no limit)"`
+	BranchPrefix      string `json:"branchPrefix,omitempty" jsonschema:"Branch name prefix"`
+	PreferIndependent bool   `json:"preferIndependent,omitempty" jsonschema:"Prefer independently mergeable splits"`
+}
+
+type mcpRequestSplitPlanInput struct {
+	SessionID      string             `json:"sessionId" jsonschema:"Session identifier"`
+	Classification map[string]string  `json:"classification" jsonschema:"Map of file path to category"`
+	Constraints    mcpPlanConstraints `json:"constraints" jsonschema:"Plan generation constraints"`
+}
+
+type mcpReportConflictInput struct {
+	SessionID    string   `json:"sessionId" jsonschema:"Session identifier"`
+	BranchName   string   `json:"branchName" jsonschema:"Branch that failed verification"`
+	VerifyOutput string   `json:"verifyOutput" jsonschema:"Verify command stdout+stderr"`
+	ExitCode     int      `json:"exitCode" jsonschema:"Verify command exit code"`
+	Files        []string `json:"files" jsonschema:"Files in the failing branch"`
+	GoModContent string   `json:"goModContent,omitempty" jsonschema:"go.mod content if applicable"`
+	Seq          int64    `json:"seq,omitempty" jsonschema:"Sequence number for idempotency (0 = no dedup)"`
+}
+
+// mcpFilePatch describes a file content replacement in a conflict resolution.
+type mcpFilePatch struct {
+	File    string `json:"file" jsonschema:"File path to patch"`
+	Content string `json:"content" jsonschema:"New file content (full replacement)"`
+}
+
+type mcpReportResolutionInput struct {
+	SessionID        string         `json:"sessionId" jsonschema:"Session identifier"`
+	BranchName       string         `json:"branchName" jsonschema:"Branch being fixed"`
+	Patches          []mcpFilePatch `json:"patches,omitempty" jsonschema:"File content replacements"`
+	Commands         []string       `json:"commands,omitempty" jsonschema:"Commands to run for fix"`
+	ReSplitSuggested bool           `json:"reSplitSuggested,omitempty" jsonschema:"Suggest re-classification"`
+	ReSplitReason    string         `json:"reSplitReason,omitempty" jsonschema:"Why re-split is needed"`
+	Seq              int64          `json:"seq,omitempty" jsonschema:"Sequence number for idempotency (0 = no dedup)"`
+}
+
+type mcpSendInstructionInput struct {
+	SessionID string `json:"sessionId" jsonschema:"Session identifier"`
+	Type      string `json:"type" jsonschema:"Instruction type: abort, modify-plan, re-classify, focus"`
+	Payload   any    `json:"payload,omitempty" jsonschema:"Type-dependent instruction payload"`
+}
+
+type mcpAcknowledgeInstructionInput struct {
+	SessionID       string `json:"sessionId" jsonschema:"Session identifier"`
+	InstructionType string `json:"instructionType" jsonschema:"Type of instruction being acknowledged"`
+	Status          string `json:"status" jsonschema:"Ack status: received, executing, completed, rejected"`
+	Message         string `json:"message,omitempty" jsonschema:"Optional status message"`
+	Seq             int64  `json:"seq,omitempty" jsonschema:"Sequence number for idempotency (0 = no dedup)"`
+}
+
 // mcpValidProgressStatuses is the set of allowed status values for reportProgress.
 var mcpValidProgressStatuses = map[string]bool{
 	"working": true,
 	"blocked": true,
 	"waiting": true,
 	"idle":    true,
+}
+
+// mcpValidInstructionTypes is the set of allowed steering instruction types.
+var mcpValidInstructionTypes = map[string]bool{
+	"abort":       true,
+	"modify-plan": true,
+	"re-classify": true,
+	"focus":       true,
+}
+
+// mcpValidAckStatuses is the set of allowed acknowledgement statuses.
+var mcpValidAckStatuses = map[string]bool{
+	"received":  true,
+	"executing": true,
+	"completed": true,
+	"rejected":  true,
 }
 
 // mcpMaxSessionIDLen is the maximum length for a session identifier.
@@ -653,7 +750,7 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 	// --- getSession ---
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "getSession",
-		Description: "Get session info and drain queued events",
+		Description: "Get session info, drain queued events, and retrieve pending requests (classification, plan, conflicts, instructions)",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpGetSessionInput) (*mcp.CallToolResult, any, error) {
 		mu.Lock()
 		sess, ok := sessions[input.SessionID]
@@ -667,16 +764,37 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 		if events == nil {
 			events = []mcpSessionEvent{}
 		}
-		sess.Events = nil // drain
+		sess.Events = nil // drain events
+
+		// Drain pending queues.
+		pendingClassification := sess.PendingClassification
+		sess.PendingClassification = nil
+		pendingPlanRequest := sess.PendingPlanRequest
+		sess.PendingPlanRequest = nil
+		var pendingConflicts []mcpReportConflictInput
+		if len(sess.PendingConflicts) > 0 {
+			pendingConflicts = sess.PendingConflicts
+			sess.PendingConflicts = nil
+		}
+		var pendingInstructions []mcpSendInstructionInput
+		if len(sess.PendingInstructions) > 0 {
+			pendingInstructions = sess.PendingInstructions
+			sess.PendingInstructions = nil
+		}
+
 		resp := mcpGetSessionResponse{
-			SessionID:     sess.SessionID,
-			Capabilities:  sess.Capabilities,
-			Status:        sess.Status,
-			Progress:      sess.Progress,
-			LastUpdate:    sess.LastUpdate,
-			LastHeartbeat: sess.LastHeartbeat,
-			LastSeq:       sess.LastSeq,
-			Events:        events,
+			SessionID:             sess.SessionID,
+			Capabilities:          sess.Capabilities,
+			Status:                sess.Status,
+			Progress:              sess.Progress,
+			LastUpdate:            sess.LastUpdate,
+			LastHeartbeat:         sess.LastHeartbeat,
+			LastSeq:               sess.LastSeq,
+			Events:                events,
+			PendingClassification: pendingClassification,
+			PendingPlanRequest:    pendingPlanRequest,
+			PendingConflicts:      pendingConflicts,
+			PendingInstructions:   pendingInstructions,
 		}
 		mu.Unlock()
 		data, err := json.Marshal(resp)
@@ -860,6 +978,257 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 		}, nil, nil
 	})
 
+	// --- requestClassification ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "requestClassification",
+		Description: "Request the agent to classify changed files into categories for PR splitting. The request is stored in the session and retrieved by the agent via getSession.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpRequestClassificationInput) (*mcp.CallToolResult, any, error) {
+		if len(input.Files) == 0 {
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("files map is required and must not be empty"))
+			return result, nil, nil
+		}
+		mu.Lock()
+		sess, ok := sessions[input.SessionID]
+		if !ok {
+			mu.Unlock()
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			return result, nil, nil
+		}
+		now := time.Now()
+		sess.LastUpdate = now
+		sess.PendingClassification = &input
+		mu.Unlock()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("classification requested: %d files", len(input.Files))}},
+		}, nil, nil
+	})
+
+	// --- requestSplitPlan ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "requestSplitPlan",
+		Description: "Request the agent to generate a split plan based on file classification. The request is stored in the session and retrieved by the agent via getSession.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpRequestSplitPlanInput) (*mcp.CallToolResult, any, error) {
+		if len(input.Classification) == 0 {
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("classification map is required and must not be empty"))
+			return result, nil, nil
+		}
+		mu.Lock()
+		sess, ok := sessions[input.SessionID]
+		if !ok {
+			mu.Unlock()
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			return result, nil, nil
+		}
+		now := time.Now()
+		sess.LastUpdate = now
+		sess.PendingPlanRequest = &input
+		mu.Unlock()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("split plan requested: %d classified files", len(input.Classification))}},
+		}, nil, nil
+	})
+
+	// --- reportConflict ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "reportConflict",
+		Description: "Report that a split branch failed verification. Stores the conflict in the session for the agent to read via getSession, and optionally writes to result-dir.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpReportConflictInput) (*mcp.CallToolResult, any, error) {
+		if strings.TrimSpace(input.BranchName) == "" {
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("branchName is required"))
+			return result, nil, nil
+		}
+		if len(input.Files) == 0 {
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("files must not be empty"))
+			return result, nil, nil
+		}
+		mu.Lock()
+		sess, ok := sessions[input.SessionID]
+		if !ok {
+			mu.Unlock()
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			return result, nil, nil
+		}
+		if !mcpCheckSeq(sess, input.Seq) {
+			mu.Unlock()
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("duplicate seq %d (idempotent skip)", input.Seq)}},
+			}, nil, nil
+		}
+		now := time.Now()
+		sess.LastUpdate = now
+		sess.PendingConflicts = append(sess.PendingConflicts, input)
+		sess.Events = append(sess.Events, mcpSessionEvent{
+			Type:      "conflict",
+			Timestamp: now,
+			Data: map[string]any{
+				"branchName": input.BranchName,
+				"exitCode":   input.ExitCode,
+				"fileCount":  len(input.Files),
+			},
+		})
+		mu.Unlock()
+
+		// Write conflict file atomically if result-dir is set.
+		if resultDir != "" {
+			filename := fmt.Sprintf("%s-conflict.json", input.BranchName)
+			if err := mcpWriteResultFile(resultDir, filename, input); err != nil {
+				result := &mcp.CallToolResult{}
+				result.SetError(fmt.Errorf("failed to write conflict file: %w", err))
+				return result, nil, nil
+			}
+		}
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("conflict reported: %s (exit %d)", input.BranchName, input.ExitCode)}},
+		}, nil, nil
+	})
+
+	// --- reportResolution ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "reportResolution",
+		Description: "Report a proposed resolution for a verification conflict. Called by the agent to suggest fixes (patches, commands, or re-split).",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpReportResolutionInput) (*mcp.CallToolResult, any, error) {
+		if strings.TrimSpace(input.BranchName) == "" {
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("branchName is required"))
+			return result, nil, nil
+		}
+		if len(input.Patches) == 0 && len(input.Commands) == 0 && !input.ReSplitSuggested {
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("resolution must include patches, commands, or re-split suggestion"))
+			return result, nil, nil
+		}
+		mu.Lock()
+		sess, ok := sessions[input.SessionID]
+		if !ok {
+			mu.Unlock()
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			return result, nil, nil
+		}
+		if !mcpCheckSeq(sess, input.Seq) {
+			mu.Unlock()
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("duplicate seq %d (idempotent skip)", input.Seq)}},
+			}, nil, nil
+		}
+		now := time.Now()
+		sess.LastUpdate = now
+		sess.Events = append(sess.Events, mcpSessionEvent{
+			Type:      "resolution",
+			Timestamp: now,
+			Data: map[string]any{
+				"branchName":       input.BranchName,
+				"patchCount":       len(input.Patches),
+				"commandCount":     len(input.Commands),
+				"reSplitSuggested": input.ReSplitSuggested,
+			},
+		})
+		mu.Unlock()
+
+		// Write resolution file atomically if result-dir is set.
+		if resultDir != "" {
+			filename := fmt.Sprintf("%s-resolution.json", input.BranchName)
+			if err := mcpWriteResultFile(resultDir, filename, input); err != nil {
+				result := &mcp.CallToolResult{}
+				result.SetError(fmt.Errorf("failed to write resolution file: %w", err))
+				return result, nil, nil
+			}
+		}
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("resolution reported: %s (%d patches, %d commands)", input.BranchName, len(input.Patches), len(input.Commands))}},
+		}, nil, nil
+	})
+
+	// --- sendInstruction ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "sendInstruction",
+		Description: "Send a steering instruction to the agent mid-task. The instruction is queued in the session and retrieved by the agent via getSession.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpSendInstructionInput) (*mcp.CallToolResult, any, error) {
+		if !mcpValidInstructionTypes[input.Type] {
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("invalid instruction type %q: must be one of abort, modify-plan, re-classify, focus", input.Type))
+			return result, nil, nil
+		}
+		mu.Lock()
+		sess, ok := sessions[input.SessionID]
+		if !ok {
+			mu.Unlock()
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			return result, nil, nil
+		}
+		now := time.Now()
+		sess.LastUpdate = now
+		sess.PendingInstructions = append(sess.PendingInstructions, input)
+		sess.Events = append(sess.Events, mcpSessionEvent{
+			Type:      "instruction",
+			Timestamp: now,
+			Data: map[string]any{
+				"type":    input.Type,
+				"payload": input.Payload,
+			},
+		})
+		mu.Unlock()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("instruction sent: %s", input.Type)}},
+		}, nil, nil
+	})
+
+	// --- acknowledgeInstruction ---
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "acknowledgeInstruction",
+		Description: "Acknowledge receipt of a steering instruction. Called by the agent to confirm it received and is processing an instruction.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpAcknowledgeInstructionInput) (*mcp.CallToolResult, any, error) {
+		if !mcpValidInstructionTypes[input.InstructionType] {
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("invalid instruction type %q: must be one of abort, modify-plan, re-classify, focus", input.InstructionType))
+			return result, nil, nil
+		}
+		if !mcpValidAckStatuses[input.Status] {
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("invalid ack status %q: must be one of received, executing, completed, rejected", input.Status))
+			return result, nil, nil
+		}
+		mu.Lock()
+		sess, ok := sessions[input.SessionID]
+		if !ok {
+			mu.Unlock()
+			result := &mcp.CallToolResult{}
+			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			return result, nil, nil
+		}
+		if !mcpCheckSeq(sess, input.Seq) {
+			mu.Unlock()
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("duplicate seq %d (idempotent skip)", input.Seq)}},
+			}, nil, nil
+		}
+		now := time.Now()
+		sess.LastUpdate = now
+		sess.Events = append(sess.Events, mcpSessionEvent{
+			Type:      "instruction-ack",
+			Timestamp: now,
+			Data: map[string]any{
+				"instructionType": input.InstructionType,
+				"status":          input.Status,
+				"message":         input.Message,
+			},
+		})
+		mu.Unlock()
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("instruction acknowledged: %s (%s)", input.InstructionType, input.Status)}},
+		}, nil, nil
+	})
+
 	return server
 }
 
@@ -874,14 +1243,16 @@ func mcpWriteResultFile(dir, filename string, v any) error {
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	target := filepath.Join(dir, filename)
+	parent := filepath.Dir(target)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
-	tmp := filepath.Join(dir, "."+filename+".tmp")
+	tmp := target + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
 		return fmt.Errorf("write tmp: %w", err)
 	}
-	return os.Rename(tmp, filepath.Join(dir, filename))
+	return os.Rename(tmp, target)
 }
 
 // mcpBacktickFence returns a backtick fence string that is safe

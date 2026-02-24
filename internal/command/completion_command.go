@@ -141,7 +141,7 @@ _osm_completion() {
             return 0
             ;;
         pr-split)
-            COMPREPLY=($(compgen -W "--base --strategy --max --prefix --verify --dry-run --json --interactive --test --session --store --log-level --log-file" -- ${cur}))
+            COMPREPLY=($(compgen -W "--base --strategy --max --prefix --verify --dry-run --json --interactive --test --session --store --log-level --log-file --log-buffer" -- ${cur}))
             return 0
             ;;
         --strategy)
@@ -258,7 +258,14 @@ _osm() {
                         '--prefix[Branch prefix]:prefix:' \
                         '--verify[Verify command]:command:' \
                         '--dry-run[Show plan without executing]' \
-                        '--json[Output results as JSON]'
+                        '--json[Output results as JSON]' \
+                        '--interactive[Start interactive mode]' \
+                        '--test[Skip interactive mode for testing]' \
+                        '--session[Session ID]:session:' \
+                        '--store[Storage backend]:store:(fs memory)' \
+                        '--log-level[Log level]:level:(debug info warn error)' \
+                        '--log-file[Log output file]:file:_files' \
+                        '--log-buffer[Log buffer size]:size:'
                     ;;
                 help)
                     _describe 'commands' commands
@@ -355,6 +362,13 @@ complete -c osm -n '__fish_seen_subcommand_from pr-split' -l prefix -d 'Branch p
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l verify -d 'Verify command'
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l dry-run -d 'Show plan without executing'
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l json -d 'Output results as JSON'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l interactive -d 'Start interactive mode'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l test -d 'Skip interactive mode for testing'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l session -d 'Session ID'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l store -a 'fs memory' -d 'Storage backend'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l log-level -a 'debug info warn error' -d 'Log level'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l log-file -d 'Log output file'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l log-buffer -d 'Log buffer size'
 
 # Completion for 'help' subcommand (command names)
 complete -c osm -n '__fish_seen_subcommand_from help' -a '%s' -d 'Command'

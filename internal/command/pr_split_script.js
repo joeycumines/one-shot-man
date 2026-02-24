@@ -472,11 +472,22 @@ function parseGoImports(content) {
 // detectGoModulePath reads go.mod from the current directory and returns the
 // module path, or '' if not a Go module.
 function detectGoModulePath() {
-    var result = exec.execv(['cat', 'go.mod']);
-    if (result.code !== 0) {
-        return '';
+    var content = '';
+    if (osmod) {
+        var result = osmod.readFile('go.mod');
+        if (result.error) {
+            return '';
+        }
+        content = result.content;
+    } else {
+        // Fallback for environments without osm:os module.
+        var result = exec.execv(['cat', 'go.mod']);
+        if (result.code !== 0) {
+            return '';
+        }
+        content = result.stdout;
     }
-    var lines = result.stdout.split('\n');
+    var lines = content.split('\n');
     for (var i = 0; i < lines.length; i++) {
         var line = lines[i].trim();
         if (line.indexOf('module ') === 0) {

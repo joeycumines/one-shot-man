@@ -1020,6 +1020,243 @@ func TestBinding_KeystrokeConstants(t *testing.T) {
 	assert.NotEmpty(t, runJS(`cm.KEY_ENTER`).String())
 }
 
+// ---------------------------------------------------------------------------
+// Split protocol factory bindings.
+// ---------------------------------------------------------------------------
+
+func TestBinding_NewClassificationRequest(t *testing.T) {
+	t.Parallel()
+	runJS := moduleTestEnv(t)
+
+	// Valid request — full round-trip.
+	runJS(`var req = cm.newClassificationRequest({
+		sessionId: "sess-1",
+		files: { "a.go": "M", "b.go": "A" },
+		context: { modulePath: "github.com/x/y", language: "go", baseRef: "main" },
+		maxGroups: 5
+	});`)
+	assert.Equal(t, "sess-1", runJS(`req.sessionId`).String())
+	assert.Equal(t, "M", runJS(`req.files["a.go"]`).String())
+	assert.Equal(t, "A", runJS(`req.files["b.go"]`).String())
+	assert.Equal(t, "github.com/x/y", runJS(`req.context.modulePath`).String())
+	assert.Equal(t, "go", runJS(`req.context.language`).String())
+	assert.Equal(t, "main", runJS(`req.context.baseRef`).String())
+	assert.Equal(t, int64(5), runJS(`req.maxGroups`).ToInteger())
+
+	// Validation error — empty sessionId.
+	val := runJS(`(function(){ try { cm.newClassificationRequest({ sessionId: "", files: {"a.go":"M"} }); return ""; } catch(e) { return e.message || String(e); } })()`)
+	assert.Contains(t, val.String(), "sessionId is required")
+
+	// Validation error — empty files.
+	val = runJS(`(function(){ try { cm.newClassificationRequest({ sessionId: "s1", files: {} }); return ""; } catch(e) { return e.message || String(e); } })()`)
+	assert.Contains(t, val.String(), "files must not be empty")
+}
+
+func TestBinding_NewClassificationResponse(t *testing.T) {
+	t.Parallel()
+	runJS := moduleTestEnv(t)
+
+	// Valid response — full fields.
+	runJS(`var resp = cm.newClassificationResponse({
+		files: { "a.go": "core", "b.go": "tests" },
+		confidence: { "a.go": 0.9, "b.go": 0.8 },
+		groupNames: ["core", "tests"],
+		independentPairs: [["core", "tests"]],
+		rationale: { "core": "main logic", "tests": "test files" }
+	});`)
+	assert.Equal(t, "core", runJS(`resp.files["a.go"]`).String())
+	assert.Equal(t, "tests", runJS(`resp.files["b.go"]`).String())
+	assert.InDelta(t, 0.9, runJS(`resp.confidence["a.go"]`).ToFloat(), 0.001)
+	assert.Equal(t, int64(2), runJS(`resp.groupNames.length`).ToInteger())
+	assert.Equal(t, int64(1), runJS(`resp.independentPairs.length`).ToInteger())
+	assert.Equal(t, "core", runJS(`resp.independentPairs[0][0]`).String())
+	assert.Equal(t, "tests", runJS(`resp.independentPairs[0][1]`).String())
+	assert.Equal(t, "main logic", runJS(`resp.rationale["core"]`).String())
+
+	// Validation error — empty files.
+	val := runJS(`(function(){ try { cm.newClassificationResponse({ files: {} }); return ""; } catch(e) { return e.message || String(e); } })()`)
+	assert.Contains(t, val.String(), "files must not be empty")
+
+	// Validation error — confidence out of range.
+	val = runJS(`(function(){ try { cm.newClassificationResponse({ files: {"a.go":"core"}, confidence: {"a.go": 1.5} }); return ""; } catch(e) { return e.message || String(e); } })()`)
+	assert.Contains(t, val.String(), "out of range")
+}
+
+func TestBinding_NewSplitPlanProposal(t *testing.T) {
+	t.Parallel()
+	runJS := moduleTestEnv(t)
+
+	// Valid proposal.
+	runJS(`var prop = cm.newSplitPlanProposal({
+		sessionId: "sess-2",
+		stages: [
+			{ name: "core", files: ["a.go", "b.go"], message: "core changes", order: 1, rationale: "core logic", independent: true, estConflicts: 0 },
+			{ name: "tests", files: ["c_test.go"], message: "test changes", order: 2 }
+		]
+	});`)
+	assert.Equal(t, "sess-2", runJS(`prop.sessionId`).String())
+	assert.Equal(t, int64(2), runJS(`prop.stages.length`).ToInteger())
+	assert.Equal(t, "core", runJS(`prop.stages[0].name`).String())
+	assert.Equal(t, int64(2), runJS(`prop.stages[0].files.length`).ToInteger())
+	assert.Equal(t, "a.go", runJS(`prop.stages[0].files[0]`).String())
+	assert.Equal(t, "core changes", runJS(`prop.stages[0].message`).String())
+	assert.Equal(t, int64(1), runJS(`prop.stages[0].order`).ToInteger())
+	assert.Equal(t, "core logic", runJS(`prop.stages[0].rationale`).String())
+	assert.Equal(t, true, runJS(`prop.stages[0].independent`).ToBoolean())
+	assert.Equal(t, int64(0), runJS(`prop.stages[0].estConflicts`).ToInteger())
+
+	// Validation error — empty stages.
+	val := runJS(`(function(){ try { cm.newSplitPlanProposal({ sessionId: "s", stages: [] }); return ""; } catch(e) { return e.message || String(e); } })()`)
+	assert.Contains(t, val.String(), "stages must not be empty")
+
+	// Validation error — duplicate files across stages.
+	val = runJS(`(function(){ try { cm.newSplitPlanProposal({
+		sessionId: "s",
+		stages: [
+			{ name: "a", files: ["x.go"], order: 1 },
+			{ name: "b", files: ["x.go"], order: 2 }
+		]
+	}); return ""; } catch(e) { return e.message || String(e); } })()`)
+	assert.Contains(t, val.String(), "duplicate file")
+}
+
+func TestBinding_NewConflictReport(t *testing.T) {
+	t.Parallel()
+	runJS := moduleTestEnv(t)
+
+	// Valid report.
+	runJS(`var report = cm.newConflictReport({
+		sessionId: "sess-3",
+		branchName: "split/core",
+		verifyOutput: "FAIL: something",
+		exitCode: 1,
+		files: ["a.go", "b.go"],
+		goModContent: "module example.com"
+	});`)
+	assert.Equal(t, "sess-3", runJS(`report.sessionId`).String())
+	assert.Equal(t, "split/core", runJS(`report.branchName`).String())
+	assert.Equal(t, "FAIL: something", runJS(`report.verifyOutput`).String())
+	assert.Equal(t, int64(1), runJS(`report.exitCode`).ToInteger())
+	assert.Equal(t, int64(2), runJS(`report.files.length`).ToInteger())
+	assert.Equal(t, "module example.com", runJS(`report.goModContent`).String())
+
+	// Validation error — empty branchName.
+	val := runJS(`(function(){ try { cm.newConflictReport({ sessionId: "s", branchName: "", verifyOutput: "x", exitCode: 1, files: ["a.go"] }); return ""; } catch(e) { return e.message || String(e); } })()`)
+	assert.Contains(t, val.String(), "branchName is required")
+
+	// Validation error — empty files.
+	val = runJS(`(function(){ try { cm.newConflictReport({ sessionId: "s", branchName: "b", verifyOutput: "x", exitCode: 1, files: [] }); return ""; } catch(e) { return e.message || String(e); } })()`)
+	assert.Contains(t, val.String(), "files must not be empty")
+}
+
+func TestBinding_NewConflictResolution(t *testing.T) {
+	t.Parallel()
+	runJS := moduleTestEnv(t)
+
+	// Valid resolution with patches.
+	runJS(`var res = cm.newConflictResolution({
+		sessionId: "sess-4",
+		branchName: "split/core",
+		patches: [{ file: "go.mod", content: "module fixed" }],
+		commands: ["go mod tidy"],
+		reSplitSuggested: false,
+		reSplitReason: ""
+	});`)
+	assert.Equal(t, "sess-4", runJS(`res.sessionId`).String())
+	assert.Equal(t, "split/core", runJS(`res.branchName`).String())
+	assert.Equal(t, int64(1), runJS(`res.patches.length`).ToInteger())
+	assert.Equal(t, "go.mod", runJS(`res.patches[0].file`).String())
+	assert.Equal(t, "module fixed", runJS(`res.patches[0].content`).String())
+	assert.Equal(t, int64(1), runJS(`res.commands.length`).ToInteger())
+	assert.Equal(t, "go mod tidy", runJS(`res.commands[0]`).String())
+
+	// Valid resolution with re-split suggestion only.
+	runJS(`var res2 = cm.newConflictResolution({
+		sessionId: "sess-5",
+		branchName: "split/core",
+		reSplitSuggested: true,
+		reSplitReason: "too many conflicts"
+	});`)
+	assert.Equal(t, true, runJS(`res2.reSplitSuggested`).ToBoolean())
+	assert.Equal(t, "too many conflicts", runJS(`res2.reSplitReason`).String())
+
+	// Validation error — no patches, commands, or re-split.
+	val := runJS(`(function(){ try { cm.newConflictResolution({ sessionId: "s", branchName: "b" }); return ""; } catch(e) { return e.message || String(e); } })()`)
+	assert.Contains(t, val.String(), "resolution must include")
+}
+
+func TestBinding_NewSteeringInstruction(t *testing.T) {
+	t.Parallel()
+	runJS := moduleTestEnv(t)
+
+	// Valid instruction.
+	runJS(`var inst = cm.newSteeringInstruction({
+		sessionId: "sess-6",
+		type: cm.STEERING_ABORT,
+		payload: { reason: "user cancelled" }
+	});`)
+	assert.Equal(t, "sess-6", runJS(`inst.sessionId`).String())
+	assert.Equal(t, "abort", runJS(`inst.type`).String())
+
+	// All steering type constants.
+	assert.Equal(t, "abort", runJS(`cm.STEERING_ABORT`).String())
+	assert.Equal(t, "modify-plan", runJS(`cm.STEERING_MODIFY_PLAN`).String())
+	assert.Equal(t, "re-classify", runJS(`cm.STEERING_RE_CLASSIFY`).String())
+	assert.Equal(t, "focus", runJS(`cm.STEERING_FOCUS`).String())
+
+	// Validation error — unknown type.
+	val := runJS(`(function(){ try { cm.newSteeringInstruction({ sessionId: "s", type: "invalid" }); return ""; } catch(e) { return e.message || String(e); } })()`)
+	assert.Contains(t, val.String(), "unknown steering type")
+}
+
+func TestBinding_NewInstructionAck(t *testing.T) {
+	t.Parallel()
+	runJS := moduleTestEnv(t)
+
+	// Valid ack.
+	runJS(`var ack = cm.newInstructionAck({
+		sessionId: "sess-7",
+		instructionType: cm.STEERING_FOCUS,
+		status: cm.ACK_COMPLETED,
+		message: "done"
+	});`)
+	assert.Equal(t, "sess-7", runJS(`ack.sessionId`).String())
+	assert.Equal(t, "focus", runJS(`ack.instructionType`).String())
+	assert.Equal(t, "completed", runJS(`ack.status`).String())
+	assert.Equal(t, "done", runJS(`ack.message`).String())
+
+	// All ack status constants.
+	assert.Equal(t, "received", runJS(`cm.ACK_RECEIVED`).String())
+	assert.Equal(t, "executing", runJS(`cm.ACK_EXECUTING`).String())
+	assert.Equal(t, "completed", runJS(`cm.ACK_COMPLETED`).String())
+	assert.Equal(t, "rejected", runJS(`cm.ACK_REJECTED`).String())
+
+	// Validation error — unknown status.
+	val := runJS(`(function(){ try { cm.newInstructionAck({ sessionId: "s", instructionType: "abort", status: "bogus" }); return ""; } catch(e) { return e.message || String(e); } })()`)
+	assert.Contains(t, val.String(), "unknown ack status")
+}
+
+func TestBinding_NewSplitPlanRequest(t *testing.T) {
+	t.Parallel()
+	runJS := moduleTestEnv(t)
+
+	// Valid request.
+	runJS(`var planReq = cm.newSplitPlanRequest({
+		sessionId: "sess-8",
+		classification: { "a.go": "core", "b_test.go": "tests" },
+		constraints: { maxFilesPerSplit: 10, branchPrefix: "split/", preferIndependent: true }
+	});`)
+	assert.Equal(t, "sess-8", runJS(`planReq.sessionId`).String())
+	assert.Equal(t, "core", runJS(`planReq.classification["a.go"]`).String())
+	assert.Equal(t, int64(10), runJS(`planReq.constraints.maxFilesPerSplit`).ToInteger())
+	assert.Equal(t, "split/", runJS(`planReq.constraints.branchPrefix`).String())
+	assert.Equal(t, true, runJS(`planReq.constraints.preferIndependent`).ToBoolean())
+
+	// Validation error — empty classification.
+	val := runJS(`(function(){ try { cm.newSplitPlanRequest({ sessionId: "s", classification: {} }); return ""; } catch(e) { return e.message || String(e); } })()`)
+	assert.Contains(t, val.String(), "classification must not be empty")
+}
+
 // itoa is a small helper for integer-to-string conversion in test scripts.
 func itoa(n int) string {
 	return fmt.Sprintf("%d", n)

@@ -14,10 +14,13 @@ type ClassificationResult map[string]string
 // SplitPlanStage describes one stage in a PR split plan, as written by the
 // MCP reportSplitPlan tool.
 type SplitPlanStage struct {
-	Name    string   `json:"name"`
-	Files   []string `json:"files"`
-	Message string   `json:"message"`
-	Order   int      `json:"order"`
+	Name         string   `json:"name"`
+	Files        []string `json:"files"`
+	Message      string   `json:"message"`
+	Order        int      `json:"order"`
+	Rationale    string   `json:"rationale,omitempty"`    // Why these files are grouped
+	Independent  bool     `json:"independent,omitempty"`  // Can merge independently
+	EstConflicts int      `json:"estConflicts,omitempty"` // Estimated merge conflicts (0 = none expected)
 }
 
 // SplitPlanResult is an ordered list of split plan stages.

@@ -232,7 +232,7 @@ The `[pr-split]` section configures default options for `osm pr-split`. All keys
 | Key | Type | Default | CLI flag | Description |
 |-----|------|---------|----------|-------------|
 | `base` | string | `main` | `--base` | Base branch to diff against |
-| `strategy` | string | `directory` | `--strategy` | Grouping strategy: `directory`, `directory-deep`, `extension`, `chunks`, `auto` |
+| `strategy` | string | `directory` | `--strategy` | Grouping strategy: `directory`, `directory-deep`, `extension`, `chunks`, `dependency`, `auto` |
 | `max` | int | `10` | `--max` | Maximum files per split branch |
 | `prefix` | string | `split/` | `--prefix` | Branch name prefix |
 | `verify` | string | `make test` | `--verify` | Verification command run after each split |

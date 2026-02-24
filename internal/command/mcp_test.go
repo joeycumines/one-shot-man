@@ -211,23 +211,29 @@ func TestMCPServer_ToolList(t *testing.T) {
 	}
 
 	expected := map[string]bool{
-		"addFile":              false,
-		"addDiff":              false,
-		"addNote":              false,
-		"removeFile":           false,
-		"listContext":          false,
-		"clearContext":         false,
-		"buildPrompt":          false,
-		"getGoals":             false,
-		"registerSession":      false,
-		"reportProgress":       false,
-		"reportResult":         false,
-		"requestGuidance":      false,
-		"getSession":           false,
-		"listSessions":         false,
-		"heartbeat":            false,
-		"reportClassification": false,
-		"reportSplitPlan":      false,
+		"addFile":                false,
+		"addDiff":                false,
+		"addNote":                false,
+		"removeFile":             false,
+		"listContext":            false,
+		"clearContext":           false,
+		"buildPrompt":            false,
+		"getGoals":               false,
+		"registerSession":        false,
+		"reportProgress":         false,
+		"reportResult":           false,
+		"requestGuidance":        false,
+		"getSession":             false,
+		"listSessions":           false,
+		"heartbeat":              false,
+		"reportClassification":   false,
+		"reportSplitPlan":        false,
+		"requestClassification":  false,
+		"requestSplitPlan":       false,
+		"reportConflict":         false,
+		"reportResolution":       false,
+		"sendInstruction":        false,
+		"acknowledgeInstruction": false,
 	}
 	for _, tool := range result.Tools {
 		if _, ok := expected[tool.Name]; ok {
@@ -239,8 +245,8 @@ func TestMCPServer_ToolList(t *testing.T) {
 			t.Errorf("tool %q not registered", name)
 		}
 	}
-	if len(result.Tools) != 17 {
-		t.Errorf("got %d tools, want 17", len(result.Tools))
+	if len(result.Tools) != len(expected) {
+		t.Errorf("got %d tools, want %d", len(result.Tools), len(expected))
 	}
 }
 
@@ -2473,7 +2479,7 @@ func TestMCPWriteResultFile(t *testing.T) {
 	}
 
 	// Temp file should not be left behind.
-	tmpPath := filepath.Join(dir, ".test.json.tmp")
+	tmpPath := filepath.Join(dir, "test.json.tmp")
 	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
 		t.Errorf("temp file %s should not exist after successful write", tmpPath)
 	}
@@ -2535,5 +2541,759 @@ func TestMCPWriteResultFile_Overwrite(t *testing.T) {
 	}
 	if _, exists := got["a"]; exists {
 		t.Error("old key 'a' should not exist after overwrite")
+	}
+}
+
+// --- requestClassification ---
+
+func TestMCPServer_RequestClassification(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "req-cls-1",
+		"capabilities": []string{"classify"},
+	})
+
+	r := env.callTool(t, "requestClassification", map[string]any{
+		"sessionId": "req-cls-1",
+		"files": map[string]any{
+			"cmd/main.go":     "M",
+			"internal/foo.go": "A",
+		},
+		"context": map[string]any{
+			"modulePath": "example.com/foo",
+			"language":   "go",
+			"baseRef":    "main",
+		},
+		"maxGroups": 5,
+	})
+	if r.IsError {
+		t.Fatalf("requestClassification: %s", mcpResultText(t, r))
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "2 files") {
+		t.Errorf("text = %q, want '2 files'", text)
+	}
+
+	// Verify pending request via getSession.
+	sr := env.callTool(t, "getSession", map[string]any{"sessionId": "req-cls-1"})
+	sessionText := mcpResultText(t, sr)
+	if !strings.Contains(sessionText, "pendingClassification") {
+		t.Errorf("getSession should contain pendingClassification, got: %s", sessionText)
+	}
+	if !strings.Contains(sessionText, "cmd/main.go") {
+		t.Errorf("getSession should contain file path, got: %s", sessionText)
+	}
+
+	// Second getSession should have drained the request.
+	sr2 := env.callTool(t, "getSession", map[string]any{"sessionId": "req-cls-1"})
+	sessionText2 := mcpResultText(t, sr2)
+	if strings.Contains(sessionText2, "pendingClassification") {
+		t.Errorf("second getSession should have drained pendingClassification, got: %s", sessionText2)
+	}
+}
+
+func TestMCPServer_RequestClassification_EmptyFiles(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "req-cls-empty",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "requestClassification", map[string]any{
+		"sessionId": "req-cls-empty",
+		"files":     map[string]any{},
+		"context":   map[string]any{},
+	})
+	if !r.IsError {
+		t.Error("expected error for empty files")
+	}
+}
+
+func TestMCPServer_RequestClassification_UnknownSession(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	r := env.callTool(t, "requestClassification", map[string]any{
+		"sessionId": "nonexistent",
+		"files":     map[string]any{"a.go": "M"},
+		"context":   map[string]any{},
+	})
+	if !r.IsError {
+		t.Error("expected error for unknown session")
+	}
+}
+
+// --- requestSplitPlan ---
+
+func TestMCPServer_RequestSplitPlan(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "req-plan-1",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "requestSplitPlan", map[string]any{
+		"sessionId": "req-plan-1",
+		"classification": map[string]any{
+			"cmd/main.go": "entry",
+			"pkg/util.go": "util",
+		},
+		"constraints": map[string]any{
+			"maxFilesPerSplit":  10,
+			"branchPrefix":      "split/",
+			"preferIndependent": true,
+		},
+	})
+	if r.IsError {
+		t.Fatalf("requestSplitPlan: %s", mcpResultText(t, r))
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "2 classified files") {
+		t.Errorf("text = %q, want '2 classified files'", text)
+	}
+
+	// Verify via getSession.
+	sr := env.callTool(t, "getSession", map[string]any{"sessionId": "req-plan-1"})
+	sessionText := mcpResultText(t, sr)
+	if !strings.Contains(sessionText, "pendingPlanRequest") {
+		t.Errorf("getSession should contain pendingPlanRequest, got: %s", sessionText)
+	}
+
+	// Drained on second call.
+	sr2 := env.callTool(t, "getSession", map[string]any{"sessionId": "req-plan-1"})
+	sessionText2 := mcpResultText(t, sr2)
+	if strings.Contains(sessionText2, "pendingPlanRequest") {
+		t.Errorf("second getSession should have drained pendingPlanRequest")
+	}
+}
+
+func TestMCPServer_RequestSplitPlan_EmptyClassification(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "req-plan-empty",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "requestSplitPlan", map[string]any{
+		"sessionId":      "req-plan-empty",
+		"classification": map[string]any{},
+		"constraints":    map[string]any{},
+	})
+	if !r.IsError {
+		t.Error("expected error for empty classification")
+	}
+}
+
+// --- reportConflict ---
+
+func TestMCPServer_ReportConflict(t *testing.T) {
+	t.Parallel()
+	resultDir := t.TempDir()
+	env := newMCPTestEnvWithResultDir(t, nil, resultDir)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "conflict-1",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportConflict", map[string]any{
+		"sessionId":    "conflict-1",
+		"branchName":   "split/types",
+		"verifyOutput": "FAIL: TestFoo\nexit status 1",
+		"exitCode":     1,
+		"files":        []any{"types.go", "types_test.go"},
+		"goModContent": "module example.com/foo\n\ngo 1.21",
+	})
+	if r.IsError {
+		t.Fatalf("reportConflict: %s", mcpResultText(t, r))
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "split/types") {
+		t.Errorf("text = %q, want branch name", text)
+	}
+	if !strings.Contains(text, "exit 1") {
+		t.Errorf("text = %q, want exit code", text)
+	}
+
+	// Verify result file.
+	data, err := os.ReadFile(filepath.Join(resultDir, "split/types-conflict.json"))
+	if err != nil {
+		t.Fatalf("read conflict file: %v", err)
+	}
+	var conflict map[string]any
+	if err := json.Unmarshal(data, &conflict); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if conflict["branchName"] != "split/types" {
+		t.Errorf("branchName = %v", conflict["branchName"])
+	}
+
+	// Verify pending conflict via getSession.
+	sr := env.callTool(t, "getSession", map[string]any{"sessionId": "conflict-1"})
+	sessionText := mcpResultText(t, sr)
+	if !strings.Contains(sessionText, "pendingConflicts") {
+		t.Errorf("getSession should contain pendingConflicts, got: %s", sessionText)
+	}
+
+	// Drained.
+	sr2 := env.callTool(t, "getSession", map[string]any{"sessionId": "conflict-1"})
+	sessionText2 := mcpResultText(t, sr2)
+	if strings.Contains(sessionText2, "pendingConflicts") {
+		t.Errorf("second getSession should have drained pendingConflicts")
+	}
+}
+
+func TestMCPServer_ReportConflict_MissingBranch(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "conflict-err",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportConflict", map[string]any{
+		"sessionId":    "conflict-err",
+		"branchName":   "",
+		"verifyOutput": "FAIL",
+		"exitCode":     1,
+		"files":        []any{"a.go"},
+	})
+	if !r.IsError {
+		t.Error("expected error for empty branchName")
+	}
+}
+
+func TestMCPServer_ReportConflict_EmptyFiles(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "conflict-err2",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportConflict", map[string]any{
+		"sessionId":    "conflict-err2",
+		"branchName":   "b",
+		"verifyOutput": "FAIL",
+		"exitCode":     1,
+		"files":        []any{},
+	})
+	if !r.IsError {
+		t.Error("expected error for empty files")
+	}
+}
+
+func TestMCPServer_ReportConflict_Idempotent(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "conflict-idem",
+		"capabilities": []string{},
+	})
+
+	args := map[string]any{
+		"sessionId":    "conflict-idem",
+		"branchName":   "b",
+		"verifyOutput": "FAIL",
+		"exitCode":     1,
+		"files":        []any{"a.go"},
+		"seq":          1,
+	}
+	r := env.callTool(t, "reportConflict", args)
+	if r.IsError {
+		t.Fatalf("first: %s", mcpResultText(t, r))
+	}
+
+	r2 := env.callTool(t, "reportConflict", args)
+	text := mcpResultText(t, r2)
+	if !strings.Contains(text, "idempotent skip") {
+		t.Errorf("text = %q, want 'idempotent skip'", text)
+	}
+}
+
+// --- reportResolution ---
+
+func TestMCPServer_ReportResolution(t *testing.T) {
+	t.Parallel()
+	resultDir := t.TempDir()
+	env := newMCPTestEnvWithResultDir(t, nil, resultDir)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "resolve-1",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportResolution", map[string]any{
+		"sessionId":  "resolve-1",
+		"branchName": "split/types",
+		"patches": []any{
+			map[string]any{"file": "types.go", "content": "package types\n"},
+		},
+		"commands": []any{"go mod tidy"},
+	})
+	if r.IsError {
+		t.Fatalf("reportResolution: %s", mcpResultText(t, r))
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "1 patches") {
+		t.Errorf("text = %q, want patch count", text)
+	}
+
+	// Verify result file.
+	data, err := os.ReadFile(filepath.Join(resultDir, "split/types-resolution.json"))
+	if err != nil {
+		t.Fatalf("read resolution file: %v", err)
+	}
+	var res map[string]any
+	if err := json.Unmarshal(data, &res); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if res["branchName"] != "split/types" {
+		t.Errorf("branchName = %v", res["branchName"])
+	}
+
+	// Verify event.
+	sr := env.callTool(t, "getSession", map[string]any{"sessionId": "resolve-1"})
+	sessionText := mcpResultText(t, sr)
+	if !strings.Contains(sessionText, "resolution") {
+		t.Errorf("getSession should contain resolution event, got: %s", sessionText)
+	}
+}
+
+func TestMCPServer_ReportResolution_EmptyResolution(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "resolve-err",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportResolution", map[string]any{
+		"sessionId":  "resolve-err",
+		"branchName": "b",
+	})
+	if !r.IsError {
+		t.Error("expected error for empty resolution")
+	}
+}
+
+func TestMCPServer_ReportResolution_ReSplitOnly(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "resolve-resplit",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportResolution", map[string]any{
+		"sessionId":        "resolve-resplit",
+		"branchName":       "b",
+		"reSplitSuggested": true,
+		"reSplitReason":    "files too coupled",
+	})
+	if r.IsError {
+		t.Fatalf("reportResolution: %s", mcpResultText(t, r))
+	}
+}
+
+func TestMCPServer_ReportResolution_MissingBranch(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "resolve-nobranch",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "reportResolution", map[string]any{
+		"sessionId":  "resolve-nobranch",
+		"branchName": "",
+		"patches":    []any{map[string]any{"file": "a.go", "content": "x"}},
+	})
+	if !r.IsError {
+		t.Error("expected error for empty branchName")
+	}
+}
+
+// --- sendInstruction ---
+
+func TestMCPServer_SendInstruction(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "steer-1",
+		"capabilities": []string{},
+	})
+
+	types := []string{"abort", "modify-plan", "re-classify", "focus"}
+	for _, typ := range types {
+		t.Run(typ, func(t *testing.T) {
+			r := env.callTool(t, "sendInstruction", map[string]any{
+				"sessionId": "steer-1",
+				"type":      typ,
+				"payload":   map[string]any{"key": "value"},
+			})
+			if r.IsError {
+				t.Fatalf("sendInstruction(%s): %s", typ, mcpResultText(t, r))
+			}
+			text := mcpResultText(t, r)
+			if !strings.Contains(text, typ) {
+				t.Errorf("text = %q, want to contain %q", text, typ)
+			}
+		})
+	}
+
+	// Verify all 4 instructions are pending.
+	sr := env.callTool(t, "getSession", map[string]any{"sessionId": "steer-1"})
+	sessionText := mcpResultText(t, sr)
+	if !strings.Contains(sessionText, "pendingInstructions") {
+		t.Errorf("getSession should contain pendingInstructions, got: %s", sessionText)
+	}
+
+	// Should contain all types in events.
+	for _, typ := range types {
+		if !strings.Contains(sessionText, typ) {
+			t.Errorf("getSession should contain %q event, got: %s", typ, sessionText)
+		}
+	}
+
+	// Drained.
+	sr2 := env.callTool(t, "getSession", map[string]any{"sessionId": "steer-1"})
+	sessionText2 := mcpResultText(t, sr2)
+	if strings.Contains(sessionText2, "pendingInstructions") {
+		t.Errorf("second getSession should have drained pendingInstructions")
+	}
+}
+
+func TestMCPServer_SendInstruction_InvalidType(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "steer-err",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "sendInstruction", map[string]any{
+		"sessionId": "steer-err",
+		"type":      "bad-type",
+	})
+	if !r.IsError {
+		t.Error("expected error for invalid instruction type")
+	}
+}
+
+func TestMCPServer_SendInstruction_UnknownSession(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	r := env.callTool(t, "sendInstruction", map[string]any{
+		"sessionId": "nonexistent",
+		"type":      "abort",
+	})
+	if !r.IsError {
+		t.Error("expected error for unknown session")
+	}
+}
+
+// --- acknowledgeInstruction ---
+
+func TestMCPServer_AcknowledgeInstruction(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "ack-1",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "acknowledgeInstruction", map[string]any{
+		"sessionId":       "ack-1",
+		"instructionType": "abort",
+		"status":          "received",
+		"message":         "stopping work",
+	})
+	if r.IsError {
+		t.Fatalf("acknowledgeInstruction: %s", mcpResultText(t, r))
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "abort") || !strings.Contains(text, "received") {
+		t.Errorf("text = %q, want type and status", text)
+	}
+
+	// Verify event.
+	sr := env.callTool(t, "getSession", map[string]any{"sessionId": "ack-1"})
+	sessionText := mcpResultText(t, sr)
+	if !strings.Contains(sessionText, "instruction-ack") {
+		t.Errorf("getSession should contain instruction-ack event, got: %s", sessionText)
+	}
+}
+
+func TestMCPServer_AcknowledgeInstruction_AllStatuses(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "ack-statuses",
+		"capabilities": []string{},
+	})
+
+	statuses := []string{"received", "executing", "completed", "rejected"}
+	for _, s := range statuses {
+		t.Run(s, func(t *testing.T) {
+			r := env.callTool(t, "acknowledgeInstruction", map[string]any{
+				"sessionId":       "ack-statuses",
+				"instructionType": "focus",
+				"status":          s,
+			})
+			if r.IsError {
+				t.Fatalf("acknowledgeInstruction(%s): %s", s, mcpResultText(t, r))
+			}
+		})
+	}
+}
+
+func TestMCPServer_AcknowledgeInstruction_InvalidType(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "ack-bad-type",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "acknowledgeInstruction", map[string]any{
+		"sessionId":       "ack-bad-type",
+		"instructionType": "invalid",
+		"status":          "received",
+	})
+	if !r.IsError {
+		t.Error("expected error for invalid instruction type")
+	}
+}
+
+func TestMCPServer_AcknowledgeInstruction_InvalidStatus(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "ack-bad-status",
+		"capabilities": []string{},
+	})
+
+	r := env.callTool(t, "acknowledgeInstruction", map[string]any{
+		"sessionId":       "ack-bad-status",
+		"instructionType": "abort",
+		"status":          "bad",
+	})
+	if !r.IsError {
+		t.Error("expected error for invalid ack status")
+	}
+}
+
+func TestMCPServer_AcknowledgeInstruction_Idempotent(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "ack-idem",
+		"capabilities": []string{},
+	})
+
+	args := map[string]any{
+		"sessionId":       "ack-idem",
+		"instructionType": "abort",
+		"status":          "received",
+		"seq":             1,
+	}
+	r := env.callTool(t, "acknowledgeInstruction", args)
+	if r.IsError {
+		t.Fatalf("first: %s", mcpResultText(t, r))
+	}
+
+	r2 := env.callTool(t, "acknowledgeInstruction", args)
+	text := mcpResultText(t, r2)
+	if !strings.Contains(text, "idempotent skip") {
+		t.Errorf("text = %q, want 'idempotent skip'", text)
+	}
+}
+
+// --- Enhanced getSession: pending queues ---
+
+func TestMCPServer_GetSession_PendingQueues(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "pending-all",
+		"capabilities": []string{},
+	})
+
+	// Queue all types of pending items.
+	env.callTool(t, "requestClassification", map[string]any{
+		"sessionId": "pending-all",
+		"files":     map[string]any{"a.go": "M"},
+		"context":   map[string]any{},
+	})
+	env.callTool(t, "requestSplitPlan", map[string]any{
+		"sessionId":      "pending-all",
+		"classification": map[string]any{"a.go": "impl"},
+		"constraints":    map[string]any{},
+	})
+	env.callTool(t, "reportConflict", map[string]any{
+		"sessionId":    "pending-all",
+		"branchName":   "b1",
+		"verifyOutput": "FAIL",
+		"exitCode":     1,
+		"files":        []any{"a.go"},
+	})
+	env.callTool(t, "sendInstruction", map[string]any{
+		"sessionId": "pending-all",
+		"type":      "abort",
+	})
+
+	// All pending items should be returned.
+	sr := env.callTool(t, "getSession", map[string]any{"sessionId": "pending-all"})
+	sessionText := mcpResultText(t, sr)
+	for _, field := range []string{"pendingClassification", "pendingPlanRequest", "pendingConflicts", "pendingInstructions"} {
+		if !strings.Contains(sessionText, field) {
+			t.Errorf("getSession should contain %s, got: %s", field, sessionText)
+		}
+	}
+
+	// All should be drained after first read.
+	sr2 := env.callTool(t, "getSession", map[string]any{"sessionId": "pending-all"})
+	sessionText2 := mcpResultText(t, sr2)
+	for _, field := range []string{"pendingClassification", "pendingPlanRequest", "pendingConflicts", "pendingInstructions"} {
+		if strings.Contains(sessionText2, field) {
+			t.Errorf("second getSession should have drained %s, got: %s", field, sessionText2)
+		}
+	}
+}
+
+// --- Full bidirectional workflow ---
+
+func TestMCPServer_BidirectionalWorkflow(t *testing.T) {
+	t.Parallel()
+	resultDir := t.TempDir()
+	env := newMCPTestEnvWithResultDir(t, nil, resultDir)
+
+	// 1. Register session.
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "workflow-1",
+		"capabilities": []string{"classify", "plan", "fix"},
+	})
+
+	// 2. osm requests classification.
+	env.callTool(t, "requestClassification", map[string]any{
+		"sessionId": "workflow-1",
+		"files":     map[string]any{"types.go": "A", "impl.go": "A", "test.go": "A"},
+		"context":   map[string]any{"language": "go"},
+	})
+
+	// 3. Agent polls via getSession — sees pending classification.
+	sr := env.callTool(t, "getSession", map[string]any{"sessionId": "workflow-1"})
+	if !strings.Contains(mcpResultText(t, sr), "pendingClassification") {
+		t.Error("expected pendingClassification in getSession")
+	}
+
+	// 4. Agent reports classification result.
+	env.callTool(t, "reportClassification", map[string]any{
+		"sessionId": "workflow-1",
+		"files": map[string]any{
+			"types.go": "types",
+			"impl.go":  "impl",
+			"test.go":  "test",
+		},
+	})
+
+	// 5. osm requests split plan.
+	env.callTool(t, "requestSplitPlan", map[string]any{
+		"sessionId":      "workflow-1",
+		"classification": map[string]any{"types.go": "types", "impl.go": "impl", "test.go": "test"},
+		"constraints":    map[string]any{"maxFilesPerSplit": 5},
+	})
+
+	// 6. Agent polls — sees pending plan request.
+	sr2 := env.callTool(t, "getSession", map[string]any{"sessionId": "workflow-1"})
+	if !strings.Contains(mcpResultText(t, sr2), "pendingPlanRequest") {
+		t.Error("expected pendingPlanRequest in getSession")
+	}
+
+	// 7. Agent reports split plan.
+	env.callTool(t, "reportSplitPlan", map[string]any{
+		"sessionId": "workflow-1",
+		"stages": []any{
+			map[string]any{"name": "types", "files": []any{"types.go"}, "message": "add types", "order": 0},
+			map[string]any{"name": "impl", "files": []any{"impl.go"}, "message": "add impl", "order": 1},
+			map[string]any{"name": "test", "files": []any{"test.go"}, "message": "add tests", "order": 2},
+		},
+	})
+
+	// 8. osm reports conflict.
+	env.callTool(t, "reportConflict", map[string]any{
+		"sessionId":    "workflow-1",
+		"branchName":   "split/impl",
+		"verifyOutput": "undefined: TypeFoo",
+		"exitCode":     2,
+		"files":        []any{"impl.go"},
+	})
+
+	// 9. Agent polls — sees pending conflict.
+	sr3 := env.callTool(t, "getSession", map[string]any{"sessionId": "workflow-1"})
+	if !strings.Contains(mcpResultText(t, sr3), "pendingConflicts") {
+		t.Error("expected pendingConflicts in getSession")
+	}
+
+	// 10. Agent reports resolution.
+	env.callTool(t, "reportResolution", map[string]any{
+		"sessionId":  "workflow-1",
+		"branchName": "split/impl",
+		"commands":   []any{"go mod tidy"},
+	})
+
+	// 11. osm sends steering instruction.
+	env.callTool(t, "sendInstruction", map[string]any{
+		"sessionId": "workflow-1",
+		"type":      "focus",
+		"payload":   map[string]any{"files": []any{"impl.go"}},
+	})
+
+	// 12. Agent acknowledges.
+	env.callTool(t, "acknowledgeInstruction", map[string]any{
+		"sessionId":       "workflow-1",
+		"instructionType": "focus",
+		"status":          "executing",
+		"message":         "focusing on impl.go",
+	})
+
+	// 13. Final getSession — everything should be drained, events captured.
+	sr4 := env.callTool(t, "getSession", map[string]any{"sessionId": "workflow-1"})
+	finalText := mcpResultText(t, sr4)
+	// Events should include instruction-ack.
+	if !strings.Contains(finalText, "instruction-ack") {
+		t.Errorf("final getSession should contain instruction-ack event, got: %s", finalText)
+	}
+
+	// Verify result files were written.
+	for _, f := range []string{"classification.json", "split-plan.json", "split/impl-conflict.json", "split/impl-resolution.json"} {
+		path := filepath.Join(resultDir, f)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("expected result file %s to exist", f)
+		}
 	}
 }

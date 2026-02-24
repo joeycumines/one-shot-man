@@ -487,11 +487,472 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 				_ = obj.Set("files", files)
 				_ = obj.Set("message", stage.Message)
 				_ = obj.Set("order", stage.Order)
+				_ = obj.Set("rationale", stage.Rationale)
+				_ = obj.Set("independent", stage.Independent)
+				_ = obj.Set("estConflicts", stage.EstConflicts)
 				_ = arr.Set(fmt.Sprintf("%d", i), obj)
 			}
 			return arr
 		})
+
+		// --- Split protocol factory functions ---
+
+		// newClassificationRequest(opts): creates a ClassificationRequest.
+		// opts: { sessionId, files: {path: status}, context?: {modulePath, language, baseRef}, maxGroups? }
+		_ = exports.Set("newClassificationRequest", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("newClassificationRequest: opts argument is required"))
+			}
+			opts := call.Argument(0).ToObject(runtime)
+			r := &ClassificationRequest{}
+			if v := opts.Get("sessionId"); v != nil && !goja.IsUndefined(v) {
+				r.SessionID = v.String()
+			}
+			if v := opts.Get("files"); v != nil && !goja.IsUndefined(v) {
+				r.Files = make(map[string]string)
+				if err := runtime.ExportTo(v, &r.Files); err != nil {
+					panic(runtime.NewTypeError("newClassificationRequest: files must be a map of string to string"))
+				}
+			}
+			if v := opts.Get("context"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				ctxObj := v.ToObject(runtime)
+				if mv := ctxObj.Get("modulePath"); mv != nil && !goja.IsUndefined(mv) {
+					r.Context.ModulePath = mv.String()
+				}
+				if lv := ctxObj.Get("language"); lv != nil && !goja.IsUndefined(lv) {
+					r.Context.Language = lv.String()
+				}
+				if bv := ctxObj.Get("baseRef"); bv != nil && !goja.IsUndefined(bv) {
+					r.Context.BaseRef = bv.String()
+				}
+			}
+			if v := opts.Get("maxGroups"); v != nil && !goja.IsUndefined(v) {
+				r.MaxGroups = int(v.ToInteger())
+			}
+			if err := ValidateClassificationRequest(r); err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return classificationRequestToJS(runtime, r)
+		})
+
+		// newClassificationResponse(opts): creates a ClassificationResponse.
+		// opts: { files: {path: category}, confidence?, groupNames?, independentPairs?, rationale? }
+		_ = exports.Set("newClassificationResponse", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("newClassificationResponse: opts argument is required"))
+			}
+			opts := call.Argument(0).ToObject(runtime)
+			r := &ClassificationResponse{}
+			if v := opts.Get("files"); v != nil && !goja.IsUndefined(v) {
+				r.Files = make(map[string]string)
+				if err := runtime.ExportTo(v, &r.Files); err != nil {
+					panic(runtime.NewTypeError("newClassificationResponse: files must be a map of string to string"))
+				}
+			}
+			if v := opts.Get("confidence"); v != nil && !goja.IsUndefined(v) {
+				r.Confidence = make(map[string]float64)
+				if err := runtime.ExportTo(v, &r.Confidence); err != nil {
+					panic(runtime.NewTypeError("newClassificationResponse: confidence must be a map of string to number"))
+				}
+			}
+			if v := opts.Get("groupNames"); v != nil && !goja.IsUndefined(v) {
+				if err := runtime.ExportTo(v, &r.GroupNames); err != nil {
+					panic(runtime.NewTypeError("newClassificationResponse: groupNames must be an array of strings"))
+				}
+			}
+			if v := opts.Get("independentPairs"); v != nil && !goja.IsUndefined(v) {
+				if err := runtime.ExportTo(v, &r.IndependentPairs); err != nil {
+					panic(runtime.NewTypeError("newClassificationResponse: independentPairs must be an array of string arrays"))
+				}
+			}
+			if v := opts.Get("rationale"); v != nil && !goja.IsUndefined(v) {
+				r.Rationale = make(map[string]string)
+				if err := runtime.ExportTo(v, &r.Rationale); err != nil {
+					panic(runtime.NewTypeError("newClassificationResponse: rationale must be a map of string to string"))
+				}
+			}
+			if err := ValidateClassificationResponse(r); err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return classificationResponseToJS(runtime, r)
+		})
+
+		// newSplitPlanProposal(opts): creates a SplitPlanProposal.
+		// opts: { sessionId, stages: [{name, files, message?, order, rationale?, independent?, estConflicts?}] }
+		_ = exports.Set("newSplitPlanProposal", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("newSplitPlanProposal: opts argument is required"))
+			}
+			opts := call.Argument(0).ToObject(runtime)
+			p := &SplitPlanProposal{}
+			if v := opts.Get("sessionId"); v != nil && !goja.IsUndefined(v) {
+				p.SessionID = v.String()
+			}
+			if v := opts.Get("stages"); v != nil && !goja.IsUndefined(v) {
+				stagesArr := v.ToObject(runtime)
+				length := int(stagesArr.Get("length").ToInteger())
+				p.Stages = make([]SplitPlanStage, length)
+				for i := 0; i < length; i++ {
+					so := stagesArr.Get(fmt.Sprintf("%d", i)).ToObject(runtime)
+					s := SplitPlanStage{}
+					if nv := so.Get("name"); nv != nil && !goja.IsUndefined(nv) {
+						s.Name = nv.String()
+					}
+					if fv := so.Get("files"); fv != nil && !goja.IsUndefined(fv) {
+						if err := runtime.ExportTo(fv, &s.Files); err != nil {
+							panic(runtime.NewTypeError(fmt.Sprintf("stage %d: files must be an array of strings", i)))
+						}
+					}
+					if mv := so.Get("message"); mv != nil && !goja.IsUndefined(mv) {
+						s.Message = mv.String()
+					}
+					if ov := so.Get("order"); ov != nil && !goja.IsUndefined(ov) {
+						s.Order = int(ov.ToInteger())
+					}
+					if rv := so.Get("rationale"); rv != nil && !goja.IsUndefined(rv) {
+						s.Rationale = rv.String()
+					}
+					if iv := so.Get("independent"); iv != nil && !goja.IsUndefined(iv) {
+						s.Independent = iv.ToBoolean()
+					}
+					if ev := so.Get("estConflicts"); ev != nil && !goja.IsUndefined(ev) {
+						s.EstConflicts = int(ev.ToInteger())
+					}
+					p.Stages[i] = s
+				}
+			}
+			if err := ValidateSplitPlanProposal(p); err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return splitPlanProposalToJS(runtime, p)
+		})
+
+		// newConflictReport(opts): creates a ConflictReport.
+		// opts: { sessionId, branchName, verifyOutput, exitCode, files, goModContent? }
+		_ = exports.Set("newConflictReport", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("newConflictReport: opts argument is required"))
+			}
+			opts := call.Argument(0).ToObject(runtime)
+			r := &ConflictReport{}
+			if v := opts.Get("sessionId"); v != nil && !goja.IsUndefined(v) {
+				r.SessionID = v.String()
+			}
+			if v := opts.Get("branchName"); v != nil && !goja.IsUndefined(v) {
+				r.BranchName = v.String()
+			}
+			if v := opts.Get("verifyOutput"); v != nil && !goja.IsUndefined(v) {
+				r.VerifyOutput = v.String()
+			}
+			if v := opts.Get("exitCode"); v != nil && !goja.IsUndefined(v) {
+				r.ExitCode = int(v.ToInteger())
+			}
+			if v := opts.Get("files"); v != nil && !goja.IsUndefined(v) {
+				if err := runtime.ExportTo(v, &r.Files); err != nil {
+					panic(runtime.NewTypeError("newConflictReport: files must be an array of strings"))
+				}
+			}
+			if v := opts.Get("goModContent"); v != nil && !goja.IsUndefined(v) {
+				r.GoModContent = v.String()
+			}
+			if err := ValidateConflictReport(r); err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return conflictReportToJS(runtime, r)
+		})
+
+		// newConflictResolution(opts): creates a ConflictResolution.
+		// opts: { sessionId, branchName, patches?: [{file, content}], commands?: [string], reSplitSuggested?, reSplitReason? }
+		_ = exports.Set("newConflictResolution", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("newConflictResolution: opts argument is required"))
+			}
+			opts := call.Argument(0).ToObject(runtime)
+			r := &ConflictResolution{}
+			if v := opts.Get("sessionId"); v != nil && !goja.IsUndefined(v) {
+				r.SessionID = v.String()
+			}
+			if v := opts.Get("branchName"); v != nil && !goja.IsUndefined(v) {
+				r.BranchName = v.String()
+			}
+			if v := opts.Get("patches"); v != nil && !goja.IsUndefined(v) {
+				patchArr := v.ToObject(runtime)
+				length := int(patchArr.Get("length").ToInteger())
+				r.Patches = make([]FilePatch, length)
+				for i := 0; i < length; i++ {
+					po := patchArr.Get(fmt.Sprintf("%d", i)).ToObject(runtime)
+					r.Patches[i] = FilePatch{
+						File:    po.Get("file").String(),
+						Content: po.Get("content").String(),
+					}
+				}
+			}
+			if v := opts.Get("commands"); v != nil && !goja.IsUndefined(v) {
+				if err := runtime.ExportTo(v, &r.Commands); err != nil {
+					panic(runtime.NewTypeError("newConflictResolution: commands must be an array of strings"))
+				}
+			}
+			if v := opts.Get("reSplitSuggested"); v != nil && !goja.IsUndefined(v) {
+				r.ReSplitSuggested = v.ToBoolean()
+			}
+			if v := opts.Get("reSplitReason"); v != nil && !goja.IsUndefined(v) {
+				r.ReSplitReason = v.String()
+			}
+			if err := ValidateConflictResolution(r); err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return conflictResolutionToJS(runtime, r)
+		})
+
+		// newSteeringInstruction(opts): creates a SteeringInstruction.
+		// opts: { sessionId, type: "abort"|"modify-plan"|"re-classify"|"focus", payload? }
+		_ = exports.Set("newSteeringInstruction", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("newSteeringInstruction: opts argument is required"))
+			}
+			opts := call.Argument(0).ToObject(runtime)
+			i := &SteeringInstruction{}
+			if v := opts.Get("sessionId"); v != nil && !goja.IsUndefined(v) {
+				i.SessionID = v.String()
+			}
+			if v := opts.Get("type"); v != nil && !goja.IsUndefined(v) {
+				i.Type = SteeringType(v.String())
+			}
+			if v := opts.Get("payload"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				i.Payload = v.Export()
+			}
+			if err := ValidateSteeringInstruction(i); err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			obj := runtime.NewObject()
+			_ = obj.Set("sessionId", i.SessionID)
+			_ = obj.Set("type", string(i.Type))
+			_ = obj.Set("payload", i.Payload)
+			return obj
+		})
+
+		// newInstructionAck(opts): creates an InstructionAck.
+		// opts: { sessionId, instructionType, status, message? }
+		_ = exports.Set("newInstructionAck", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("newInstructionAck: opts argument is required"))
+			}
+			opts := call.Argument(0).ToObject(runtime)
+			a := &InstructionAck{}
+			if v := opts.Get("sessionId"); v != nil && !goja.IsUndefined(v) {
+				a.SessionID = v.String()
+			}
+			if v := opts.Get("instructionType"); v != nil && !goja.IsUndefined(v) {
+				a.InstructionType = SteeringType(v.String())
+			}
+			if v := opts.Get("status"); v != nil && !goja.IsUndefined(v) {
+				a.Status = AckStatus(v.String())
+			}
+			if v := opts.Get("message"); v != nil && !goja.IsUndefined(v) {
+				a.Message = v.String()
+			}
+			if err := ValidateInstructionAck(a); err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			obj := runtime.NewObject()
+			_ = obj.Set("sessionId", a.SessionID)
+			_ = obj.Set("instructionType", string(a.InstructionType))
+			_ = obj.Set("status", string(a.Status))
+			_ = obj.Set("message", a.Message)
+			return obj
+		})
+
+		// newSplitPlanRequest(opts): creates a SplitPlanRequest.
+		// opts: { sessionId, classification: {path: category}, constraints?: {maxFilesPerSplit?, branchPrefix?, preferIndependent?} }
+		_ = exports.Set("newSplitPlanRequest", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("newSplitPlanRequest: opts argument is required"))
+			}
+			opts := call.Argument(0).ToObject(runtime)
+			r := &SplitPlanRequest{}
+			if v := opts.Get("sessionId"); v != nil && !goja.IsUndefined(v) {
+				r.SessionID = v.String()
+			}
+			if v := opts.Get("classification"); v != nil && !goja.IsUndefined(v) {
+				r.Classification = make(map[string]string)
+				if err := runtime.ExportTo(v, &r.Classification); err != nil {
+					panic(runtime.NewTypeError("newSplitPlanRequest: classification must be a map of string to string"))
+				}
+			}
+			if v := opts.Get("constraints"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				co := v.ToObject(runtime)
+				if mv := co.Get("maxFilesPerSplit"); mv != nil && !goja.IsUndefined(mv) {
+					r.Constraints.MaxFilesPerSplit = int(mv.ToInteger())
+				}
+				if bv := co.Get("branchPrefix"); bv != nil && !goja.IsUndefined(bv) {
+					r.Constraints.BranchPrefix = bv.String()
+				}
+				if pv := co.Get("preferIndependent"); pv != nil && !goja.IsUndefined(pv) {
+					r.Constraints.PreferIndependent = pv.ToBoolean()
+				}
+			}
+			if err := ValidateSplitPlanRequest(r); err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			obj := runtime.NewObject()
+			_ = obj.Set("sessionId", r.SessionID)
+			clsObj := runtime.NewObject()
+			for k, v := range r.Classification {
+				_ = clsObj.Set(k, v)
+			}
+			_ = obj.Set("classification", clsObj)
+			cObj := runtime.NewObject()
+			_ = cObj.Set("maxFilesPerSplit", r.Constraints.MaxFilesPerSplit)
+			_ = cObj.Set("branchPrefix", r.Constraints.BranchPrefix)
+			_ = cObj.Set("preferIndependent", r.Constraints.PreferIndependent)
+			_ = obj.Set("constraints", cObj)
+			return obj
+		})
+
+		// Steering type constants.
+		_ = exports.Set("STEERING_ABORT", string(SteeringAbort))
+		_ = exports.Set("STEERING_MODIFY_PLAN", string(SteeringModifyPlan))
+		_ = exports.Set("STEERING_RE_CLASSIFY", string(SteeringReClassify))
+		_ = exports.Set("STEERING_FOCUS", string(SteeringFocus))
+
+		// Ack status constants.
+		_ = exports.Set("ACK_RECEIVED", string(AckReceived))
+		_ = exports.Set("ACK_EXECUTING", string(AckExecuting))
+		_ = exports.Set("ACK_COMPLETED", string(AckCompleted))
+		_ = exports.Set("ACK_REJECTED", string(AckRejected))
 	}
+}
+
+// ---------------------------------------------------------------------------
+//  Split-protocol Go→JS conversion helpers
+// ---------------------------------------------------------------------------
+
+// classificationRequestToJS converts a ClassificationRequest to a JS object.
+func classificationRequestToJS(runtime *goja.Runtime, r *ClassificationRequest) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("sessionId", r.SessionID)
+	files := runtime.NewObject()
+	for k, v := range r.Files {
+		_ = files.Set(k, v)
+	}
+	_ = obj.Set("files", files)
+	ctxObj := runtime.NewObject()
+	_ = ctxObj.Set("modulePath", r.Context.ModulePath)
+	_ = ctxObj.Set("language", r.Context.Language)
+	_ = ctxObj.Set("baseRef", r.Context.BaseRef)
+	_ = obj.Set("context", ctxObj)
+	_ = obj.Set("maxGroups", r.MaxGroups)
+	return obj
+}
+
+// classificationResponseToJS converts a ClassificationResponse to a JS object.
+func classificationResponseToJS(runtime *goja.Runtime, r *ClassificationResponse) goja.Value {
+	obj := runtime.NewObject()
+	files := runtime.NewObject()
+	for k, v := range r.Files {
+		_ = files.Set(k, v)
+	}
+	_ = obj.Set("files", files)
+	if r.Confidence != nil {
+		conf := runtime.NewObject()
+		for k, v := range r.Confidence {
+			_ = conf.Set(k, v)
+		}
+		_ = obj.Set("confidence", conf)
+	}
+	if r.GroupNames != nil {
+		arr := runtime.NewArray()
+		for i, g := range r.GroupNames {
+			_ = arr.Set(fmt.Sprintf("%d", i), g)
+		}
+		_ = obj.Set("groupNames", arr)
+	}
+	if r.IndependentPairs != nil {
+		outer := runtime.NewArray()
+		for i, pair := range r.IndependentPairs {
+			inner := runtime.NewArray()
+			for j, s := range pair {
+				_ = inner.Set(fmt.Sprintf("%d", j), s)
+			}
+			_ = outer.Set(fmt.Sprintf("%d", i), inner)
+		}
+		_ = obj.Set("independentPairs", outer)
+	}
+	if r.Rationale != nil {
+		rat := runtime.NewObject()
+		for k, v := range r.Rationale {
+			_ = rat.Set(k, v)
+		}
+		_ = obj.Set("rationale", rat)
+	}
+	return obj
+}
+
+// splitPlanProposalToJS converts a SplitPlanProposal to a JS object.
+func splitPlanProposalToJS(runtime *goja.Runtime, p *SplitPlanProposal) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("sessionId", p.SessionID)
+	stages := runtime.NewArray()
+	for i, s := range p.Stages {
+		so := runtime.NewObject()
+		_ = so.Set("name", s.Name)
+		filesArr := runtime.NewArray()
+		for j, f := range s.Files {
+			_ = filesArr.Set(fmt.Sprintf("%d", j), f)
+		}
+		_ = so.Set("files", filesArr)
+		_ = so.Set("message", s.Message)
+		_ = so.Set("order", s.Order)
+		_ = so.Set("rationale", s.Rationale)
+		_ = so.Set("independent", s.Independent)
+		_ = so.Set("estConflicts", s.EstConflicts)
+		_ = stages.Set(fmt.Sprintf("%d", i), so)
+	}
+	_ = obj.Set("stages", stages)
+	return obj
+}
+
+// conflictReportToJS converts a ConflictReport to a JS object.
+func conflictReportToJS(runtime *goja.Runtime, r *ConflictReport) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("sessionId", r.SessionID)
+	_ = obj.Set("branchName", r.BranchName)
+	_ = obj.Set("verifyOutput", r.VerifyOutput)
+	_ = obj.Set("exitCode", r.ExitCode)
+	files := runtime.NewArray()
+	for i, f := range r.Files {
+		_ = files.Set(fmt.Sprintf("%d", i), f)
+	}
+	_ = obj.Set("files", files)
+	_ = obj.Set("goModContent", r.GoModContent)
+	return obj
+}
+
+// conflictResolutionToJS converts a ConflictResolution to a JS object.
+func conflictResolutionToJS(runtime *goja.Runtime, r *ConflictResolution) goja.Value {
+	obj := runtime.NewObject()
+	_ = obj.Set("sessionId", r.SessionID)
+	_ = obj.Set("branchName", r.BranchName)
+	if r.Patches != nil {
+		patches := runtime.NewArray()
+		for i, p := range r.Patches {
+			po := runtime.NewObject()
+			_ = po.Set("file", p.File)
+			_ = po.Set("content", p.Content)
+			_ = patches.Set(fmt.Sprintf("%d", i), po)
+		}
+		_ = obj.Set("patches", patches)
+	}
+	if r.Commands != nil {
+		cmds := runtime.NewArray()
+		for i, c := range r.Commands {
+			_ = cmds.Set(fmt.Sprintf("%d", i), c)
+		}
+		_ = obj.Set("commands", cmds)
+	}
+	_ = obj.Set("reSplitSuggested", r.ReSplitSuggested)
+	_ = obj.Set("reSplitReason", r.ReSplitReason)
+	return obj
 }
 
 // wrapParser creates a JS object wrapping a *Parser with methods.

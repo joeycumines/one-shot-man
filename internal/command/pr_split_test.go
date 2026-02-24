@@ -76,7 +76,7 @@ func TestPrSplitCommand_SetupFlags(t *testing.T) {
 	expectedFlags := []string{
 		"interactive", "i",
 		"base", "strategy", "max", "prefix", "verify", "dry-run",
-		"ai", "provider", "model",
+		"ai", "provider", "model", "json",
 		"test", "session", "store", "log-level", "log-file", "log-buffer",
 	}
 
@@ -380,6 +380,7 @@ func loadPrSplitEngine(t *testing.T, overrides map[string]interface{}) (*bytes.B
 		"aiMode":        false,
 		"provider":      "ollama",
 		"model":         "",
+		"jsonOutput":    false,
 	}
 	for k, v := range overrides {
 		jsConfig[k] = v
@@ -832,5 +833,864 @@ func TestPrSplitCommand_RunRerun(t *testing.T) {
 	}
 	if !contains(out2, "Tree hash equivalence verified") {
 		t.Error("second run should verify equivalence")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T012: AI workflow path tests (mocked — no real agent)
+// ---------------------------------------------------------------------------
+
+// TestPrSplitCommand_RunAIModeFallback verifies that when aiMode is true,
+// the run handler attempts the AI path, fails (no real agent), and falls
+// back to heuristic grouping. The end result should still be a successful
+// split with tree hash equivalence.
+func TestPrSplitCommand_RunAIModeFallback(t *testing.T) {
+	// NOT parallel — we chdir.
+	dir := setupTestGitRepo(t)
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+		"aiMode": true,
+	})
+
+	if err := dispatch("run", nil); err != nil {
+		t.Fatalf("run command returned error: %v", err)
+	}
+
+	output := stdout.String()
+	t.Logf("run (AI fallback) output:\n%s", output)
+
+	// Should show AI mode in header.
+	if !contains(output, "AI") {
+		t.Error("expected AI mode indicator in output")
+	}
+
+	// Should show fallback message (classification will fail without real agent).
+	if !contains(output, "Falling back") || !contains(output, "heuristic") {
+		t.Error("expected fallback to heuristic message")
+	}
+
+	// Despite AI failure, should still complete via heuristic.
+	if !contains(output, "Split executed:") {
+		t.Error("expected successful execution via heuristic fallback")
+	}
+	if !contains(output, "Tree hash equivalence verified") {
+		t.Error("expected equivalence verification after heuristic fallback")
+	}
+}
+
+// TestPrSplitCommand_RunAIFlag verifies that passing --ai to the run
+// command activates AI mode even when runtime.aiMode is false.
+func TestPrSplitCommand_RunAIFlag(t *testing.T) {
+	dir := setupTestGitRepo(t)
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+		"aiMode": false, // Explicitly off.
+	})
+
+	// Pass --ai flag via args.
+	if err := dispatch("run", []string{"--ai"}); err != nil {
+		t.Fatalf("run --ai returned error: %v", err)
+	}
+
+	output := stdout.String()
+	t.Logf("run --ai output:\n%s", output)
+
+	// Should show AI mode despite runtime being false.
+	if !contains(output, "AI") {
+		t.Error("expected AI indicator when --ai flag is passed")
+	}
+
+	// Should still complete via fallback.
+	if !contains(output, "Split executed:") {
+		t.Error("expected successful execution")
+	}
+}
+
+// TestPrSplitCommand_ConnectDisconnect verifies the connect/disconnect
+// TUI commands create and tear down the provider registry.
+func TestPrSplitCommand_ConnectDisconnect(t *testing.T) {
+	t.Parallel()
+	stdout, dispatch := loadPrSplitEngine(t, nil)
+
+	// Connect should create registry.
+	if err := dispatch("connect", nil); err != nil {
+		t.Fatalf("connect returned error: %v", err)
+	}
+	output := stdout.String()
+	if !contains(output, "Connected") {
+		t.Errorf("expected 'Connected' message, got: %s", output)
+	}
+
+	// Disconnect should tear it down.
+	stdout.Reset()
+	if err := dispatch("disconnect", nil); err != nil {
+		t.Fatalf("disconnect returned error: %v", err)
+	}
+	output = stdout.String()
+	if !contains(output, "disconnected") {
+		t.Errorf("expected 'disconnected' message, got: %s", output)
+	}
+}
+
+// TestPrSplitCommand_ClassifyRequiresAnalysis verifies that the classify
+// command requires analyze to have been run first.
+func TestPrSplitCommand_ClassifyRequiresAnalysis(t *testing.T) {
+	t.Parallel()
+	stdout, dispatch := loadPrSplitEngine(t, nil)
+
+	if err := dispatch("classify", nil); err != nil {
+		t.Fatalf("classify returned error: %v", err)
+	}
+
+	output := stdout.String()
+	if !contains(output, "analyze") {
+		t.Errorf("expected hint to run analyze first, got: %s", output)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T014: Integration tests — heuristic pr-split end-to-end
+// ---------------------------------------------------------------------------
+
+// setupTestGitRepoExtension creates a temp git repo where the feature
+// branch has files with diverse extensions to exercise the extension
+// grouping strategy.
+func setupTestGitRepoExtension(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	dir := t.TempDir()
+
+	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "config", "user.email", "test@test.com")
+	runGitCmd(t, dir, "config", "user.name", "Test User")
+
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Project\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "initial commit")
+
+	runGitCmd(t, dir, "checkout", "-b", "feature")
+	for _, f := range []struct{ path, content string }{
+		{"main.go", "package main\n\nfunc main() {}\n"},
+		{"util.go", "package main\n\nfunc util() string { return \"ok\" }\n"},
+		{"docs/guide.md", "# Guide\n"},
+		{"docs/api.md", "# API\n"},
+		{"config.yaml", "key: value\n"},
+		{"config.json", "{\"a\":1}\n"},
+	} {
+		full := filepath.Join(dir, f.path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(f.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "feature: mixed extensions")
+
+	return dir
+}
+
+// TestPrSplitCommand_RunExtensionStrategy tests the extension grouping
+// strategy end-to-end: analyze → group by extension → plan → execute → verify.
+func TestPrSplitCommand_RunExtensionStrategy(t *testing.T) {
+	dir := setupTestGitRepoExtension(t)
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+		"strategy": "extension",
+	})
+
+	if err := dispatch("run", nil); err != nil {
+		t.Fatalf("run (extension) returned error: %v", err)
+	}
+
+	output := stdout.String()
+	t.Logf("run (extension) output:\n%s", output)
+
+	// Should use extension strategy.
+	if !contains(output, "extension") {
+		t.Error("expected extension strategy name in output")
+	}
+
+	// Should produce groups based on extensions (.go, .md, .yaml, .json).
+	if !contains(output, "Grouped into") {
+		t.Error("expected grouping output")
+	}
+
+	// Should complete full workflow.
+	if !contains(output, "Split executed:") {
+		t.Error("expected execution output")
+	}
+	if !contains(output, "Tree hash equivalence verified") {
+		t.Error("expected equivalence verification")
+	}
+
+	// Verify that split branches exist.
+	branches := runGitCmd(t, dir, "branch")
+	if !strings.Contains(branches, "split/") {
+		t.Errorf("expected split branches, got:\n%s", branches)
+	}
+
+	// We're back on feature.
+	current := strings.TrimSpace(runGitCmd(t, dir, "rev-parse", "--abbrev-ref", "HEAD"))
+	if current != "feature" {
+		t.Errorf("expected to be on 'feature' branch, got %q", current)
+	}
+}
+
+// setupTestGitRepoWithModifications creates a repo where the feature branch
+// modifies existing files AND adds new files.
+func setupTestGitRepoWithModifications(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	dir := t.TempDir()
+
+	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "config", "user.email", "test@test.com")
+	runGitCmd(t, dir, "config", "user.name", "Test User")
+
+	// Seed initial files.
+	for _, f := range []struct{ path, content string }{
+		{"pkg/types.go", "package pkg\n\ntype Foo struct{}\n"},
+		{"cmd/main.go", "package main\n\nfunc main() {}\n"},
+		{"README.md", "# Test Project\n"},
+		{"Makefile", "build:\n\techo ok\n"},
+	} {
+		full := filepath.Join(dir, f.path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(f.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "initial commit")
+
+	// Feature branch: modify existing files + add new files.
+	runGitCmd(t, dir, "checkout", "-b", "feature")
+	for _, f := range []struct{ path, content string }{
+		// Modifications to existing files.
+		{"pkg/types.go", "package pkg\n\ntype Foo struct{ Name string }\n\ntype Bar struct{}\n"},
+		{"README.md", "# Test Project\n\nThis is updated.\n"},
+		// New files.
+		{"pkg/impl.go", "package pkg\n\nfunc NewFoo() Foo { return Foo{Name: \"default\"} }\n"},
+		{"docs/spec.md", "# Spec\n\nDesign document.\n"},
+	} {
+		full := filepath.Join(dir, f.path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(f.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "feature: modify types + add impl + update readme")
+
+	return dir
+}
+
+// TestPrSplitCommand_RunWithModifications verifies that modified files
+// (not just additions) are correctly handled through the split workflow.
+func TestPrSplitCommand_RunWithModifications(t *testing.T) {
+	dir := setupTestGitRepoWithModifications(t)
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	stdout, dispatch := loadPrSplitEngine(t, nil)
+
+	if err := dispatch("run", nil); err != nil {
+		t.Fatalf("run (modifications) returned error: %v", err)
+	}
+
+	output := stdout.String()
+	t.Logf("run (modifications) output:\n%s", output)
+
+	// Should show analysis with correct count.
+	if !contains(output, "4 changed files") {
+		t.Error("expected 4 changed files (2 modified + 2 new)")
+	}
+
+	// Should complete full workflow.
+	if !contains(output, "Split executed:") {
+		t.Error("expected execution output")
+	}
+	if !contains(output, "Tree hash equivalence verified") {
+		t.Error("expected equivalence verification — modifications must be handled correctly")
+	}
+
+	// Verify content on the last split branch matches the feature branch.
+	featureTree := strings.TrimSpace(runGitCmd(t, dir, "rev-parse", "feature^{tree}"))
+	// Find the last split branch.
+	branchesRaw := runGitCmd(t, dir, "branch")
+	var lastSplit string
+	for _, line := range strings.Split(branchesRaw, "\n") {
+		line = strings.TrimSpace(line)
+		line = strings.TrimPrefix(line, "* ")
+		if strings.HasPrefix(line, "split/") {
+			lastSplit = line
+		}
+	}
+	if lastSplit == "" {
+		t.Fatal("no split branches found")
+	}
+	splitTree := strings.TrimSpace(runGitCmd(t, dir, "rev-parse", lastSplit+"^{tree}"))
+	if featureTree != splitTree {
+		t.Errorf("tree mismatch: feature=%s split=%s", featureTree, splitTree)
+	}
+}
+
+// setupCompilableGoRepo creates a temp git repo with properly compilable Go
+// code. Both main and feature branch have valid Go modules.
+func setupCompilableGoRepo(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	dir := t.TempDir()
+
+	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "config", "user.email", "test@test.com")
+	runGitCmd(t, dir, "config", "user.name", "Test User")
+
+	// Create a valid Go module.
+	for _, f := range []struct{ path, content string }{
+		{"go.mod", "module example.com/testrepo\n\ngo 1.21\n"},
+		{"main.go", "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n"},
+		{"pkg/types.go", "package pkg\n\n// Config holds configuration.\ntype Config struct {\n\tName string\n}\n"},
+	} {
+		full := filepath.Join(dir, f.path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(f.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "initial: valid Go module")
+
+	// Verify base compiles.
+	goCmd := exec.Command("go", "build", "./...")
+	goCmd.Dir = dir
+	if out, err := goCmd.CombinedOutput(); err != nil {
+		t.Fatalf("base does not compile: %s", string(out))
+	}
+
+	// Create feature branch with new packages and modifications.
+	runGitCmd(t, dir, "checkout", "-b", "feature")
+	for _, f := range []struct{ path, content string }{
+		// New package.
+		{"internal/helper/help.go", "package helper\n\n// Greet returns a greeting.\nfunc Greet(name string) string {\n\treturn \"Hello, \" + name\n}\n"},
+		// Modify existing.
+		{"main.go", "package main\n\nimport (\n\t\"fmt\"\n\n\t\"example.com/testrepo/internal/helper\"\n)\n\nfunc main() {\n\tfmt.Println(helper.Greet(\"world\"))\n}\n"},
+		// New docs (non-Go).
+		{"docs/README.md", "# Documentation\n\nUsage guide.\n"},
+	} {
+		full := filepath.Join(dir, f.path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(f.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "feature: add helper package + update main")
+
+	// Verify feature compiles.
+	goCmd = exec.Command("go", "build", "./...")
+	goCmd.Dir = dir
+	if out, err := goCmd.CombinedOutput(); err != nil {
+		t.Fatalf("feature does not compile: %s", string(out))
+	}
+
+	return dir
+}
+
+// TestPrSplitCommand_RunCompilableGoRepo creates a real Go project with
+// cross-package dependencies and verifies that:
+// 1. The split completes successfully.
+// 2. Tree hash equivalence holds.
+// 3. The FINAL split branch actually compiles with `go build`.
+func TestPrSplitCommand_RunCompilableGoRepo(t *testing.T) {
+	dir := setupCompilableGoRepo(t)
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+		"verifyCommand": "go build ./...",
+	})
+
+	if err := dispatch("run", nil); err != nil {
+		t.Fatalf("run (compilable) returned error: %v", err)
+	}
+
+	output := stdout.String()
+	t.Logf("run (compilable) output:\n%s", output)
+
+	// Full workflow should complete.
+	if !contains(output, "Split executed:") {
+		t.Error("expected execution output")
+	}
+	if !contains(output, "Tree hash equivalence verified") {
+		t.Error("expected equivalence verification")
+	}
+
+	// Verify that the LAST split branch compiles.
+	branchesRaw := runGitCmd(t, dir, "branch")
+	var lastSplit string
+	for _, line := range strings.Split(branchesRaw, "\n") {
+		line = strings.TrimSpace(line)
+		line = strings.TrimPrefix(line, "* ")
+		if strings.HasPrefix(line, "split/") {
+			lastSplit = line
+		}
+	}
+	if lastSplit == "" {
+		t.Fatal("no split branches found")
+	}
+
+	// Checkout the last split branch and run `go build`.
+	runGitCmd(t, dir, "checkout", lastSplit)
+	goCmd := exec.Command("go", "build", "./...")
+	goCmd.Dir = dir
+	if out, err := goCmd.CombinedOutput(); err != nil {
+		t.Errorf("last split branch %q does not compile: %s", lastSplit, string(out))
+	}
+
+	// Return to feature branch.
+	runGitCmd(t, dir, "checkout", "feature")
+}
+
+// TestPrSplitCommand_RunChainIntegrity verifies that split branches form
+// a proper chain: each branch's parent commit is on the previous branch
+// in the sequence (starting from the base branch).
+func TestPrSplitCommand_RunChainIntegrity(t *testing.T) {
+	dir := setupTestGitRepo(t)
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	stdout, dispatch := loadPrSplitEngine(t, nil)
+
+	if err := dispatch("run", nil); err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+
+	output := stdout.String()
+	if !contains(output, "Tree hash equivalence verified") {
+		t.Fatalf("run did not complete successfully:\n%s", output)
+	}
+
+	// Collect split branches in order.
+	branchesRaw := runGitCmd(t, dir, "branch")
+	var splitBranches []string
+	for _, line := range strings.Split(branchesRaw, "\n") {
+		line = strings.TrimSpace(line)
+		line = strings.TrimPrefix(line, "* ")
+		if strings.HasPrefix(line, "split/") {
+			splitBranches = append(splitBranches, line)
+		}
+	}
+	if len(splitBranches) < 2 {
+		t.Skipf("only %d split branches — need ≥2 to verify chain", len(splitBranches))
+	}
+
+	// Verify chain: first branch's parent is on "main",
+	// subsequent branches' parents are on the previous branch.
+	expectedParent := "main"
+	for _, branch := range splitBranches {
+		// Get the parent commit of the branch tip.
+		parentSHA := strings.TrimSpace(runGitCmd(t, dir, "rev-parse", branch+"^"))
+		// Get the tip of the expected parent branch.
+		parentBranchSHA := strings.TrimSpace(runGitCmd(t, dir, "rev-parse", expectedParent))
+
+		if parentSHA != parentBranchSHA {
+			t.Errorf("chain broken: %s parent is %s, expected %s tip %s",
+				branch, parentSHA[:8], expectedParent, parentBranchSHA[:8])
+		}
+		expectedParent = branch
+	}
+	t.Logf("✓ chain integrity verified: main → %s", strings.Join(splitBranches, " → "))
+}
+
+// TestPrSplitCommand_VerifyCommand tests the verify TUI command which runs
+// the verify command on each split branch.
+func TestPrSplitCommand_VerifyCommand(t *testing.T) {
+	dir := setupTestGitRepo(t)
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+		"verifyCommand": "true", // Always succeed.
+	})
+
+	// First run the full workflow to create branches.
+	if err := dispatch("run", nil); err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+
+	runOutput := stdout.String()
+	if !contains(runOutput, "Split executed:") {
+		t.Fatalf("run did not complete:\n%s", runOutput)
+	}
+
+	// Now run verify.
+	stdout.Reset()
+	if err := dispatch("verify", nil); err != nil {
+		t.Fatalf("verify returned error: %v", err)
+	}
+
+	output := stdout.String()
+	t.Logf("verify output:\n%s", output)
+
+	if !contains(output, "Verifying") {
+		t.Error("expected 'Verifying' in output")
+	}
+	if !contains(output, "All splits pass verification") {
+		t.Errorf("expected all splits to pass verification, got:\n%s", output)
+	}
+}
+
+// TestPrSplitCommand_SetCommand tests the 'set' TUI command for changing
+// runtime configuration.
+func TestPrSplitCommand_SetCommand(t *testing.T) {
+	t.Parallel()
+	stdout, dispatch := loadPrSplitEngine(t, nil)
+
+	// Set base branch.
+	if err := dispatch("set", []string{"base", "develop"}); err != nil {
+		t.Fatalf("set base returned error: %v", err)
+	}
+	output := stdout.String()
+	if !contains(output, "develop") {
+		t.Errorf("expected 'develop' confirmation, got: %s", output)
+	}
+
+	// Set strategy.
+	stdout.Reset()
+	if err := dispatch("set", []string{"strategy", "extension"}); err != nil {
+		t.Fatalf("set strategy returned error: %v", err)
+	}
+	output = stdout.String()
+	if !contains(output, "extension") {
+		t.Errorf("expected 'extension' confirmation, got: %s", output)
+	}
+
+	// Set dry-run.
+	stdout.Reset()
+	if err := dispatch("set", []string{"dry-run", "true"}); err != nil {
+		t.Fatalf("set dry-run returned error: %v", err)
+	}
+	output = stdout.String()
+	if !contains(output, "true") {
+		t.Errorf("expected 'true' confirmation, got: %s", output)
+	}
+}
+
+// TestPrSplitCommand_AnalyzeAndStatsCommands tests the analyze and stats
+// TUI commands individually.
+func TestPrSplitCommand_AnalyzeAndStatsCommands(t *testing.T) {
+	dir := setupTestGitRepo(t)
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	stdout, dispatch := loadPrSplitEngine(t, nil)
+
+	// Test analyze.
+	if err := dispatch("analyze", nil); err != nil {
+		t.Fatalf("analyze returned error: %v", err)
+	}
+	output := stdout.String()
+	t.Logf("analyze output:\n%s", output)
+	if !contains(output, "Changed files: 4") {
+		t.Errorf("expected 4 changed files, got:\n%s", output)
+	}
+	if !contains(output, "feature") && !contains(output, "Branch:") {
+		t.Error("expected branch info in analyze output")
+	}
+
+	// Test stats.
+	stdout.Reset()
+	if err := dispatch("stats", nil); err != nil {
+		t.Fatalf("stats returned error: %v", err)
+	}
+	output = stdout.String()
+	t.Logf("stats output:\n%s", output)
+	if !contains(output, "File stats") {
+		t.Errorf("expected 'File stats' in output, got:\n%s", output)
+	}
+}
+
+// TestPrSplitCommand_StepByStep exercises each step individually:
+// analyze → group → plan → execute → verify → equivalence → cleanup.
+func TestPrSplitCommand_StepByStep(t *testing.T) {
+	dir := setupTestGitRepo(t)
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+		"verifyCommand": "true",
+	})
+
+	// Step 1: analyze
+	if err := dispatch("analyze", nil); err != nil {
+		t.Fatalf("analyze: %v", err)
+	}
+	if !contains(stdout.String(), "Changed files:") {
+		t.Error("analyze: expected changed files")
+	}
+
+	// Step 2: group
+	stdout.Reset()
+	if err := dispatch("group", nil); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if !contains(stdout.String(), "Groups") {
+		t.Error("group: expected Groups output")
+	}
+
+	// Step 3: plan
+	stdout.Reset()
+	if err := dispatch("plan", nil); err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	if !contains(stdout.String(), "Plan created:") {
+		t.Error("plan: expected Plan created output")
+	}
+
+	// Step 4: preview
+	stdout.Reset()
+	if err := dispatch("preview", nil); err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if !contains(stdout.String(), "Split Plan Preview") {
+		t.Error("preview: expected preview output")
+	}
+
+	// Step 5: execute
+	stdout.Reset()
+	if err := dispatch("execute", nil); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if !contains(stdout.String(), "Split completed successfully") {
+		t.Errorf("execute: expected success, got:\n%s", stdout.String())
+	}
+
+	// Step 6: verify
+	stdout.Reset()
+	if err := dispatch("verify", nil); err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if !contains(stdout.String(), "All splits pass verification") {
+		t.Errorf("verify: expected all pass, got:\n%s", stdout.String())
+	}
+
+	// Step 7: equivalence
+	stdout.Reset()
+	if err := dispatch("equivalence", nil); err != nil {
+		t.Fatalf("equivalence: %v", err)
+	}
+	if !contains(stdout.String(), "Trees are equivalent") {
+		t.Errorf("equivalence: expected equivalent, got:\n%s", stdout.String())
+	}
+
+	// Step 8: cleanup
+	stdout.Reset()
+	if err := dispatch("cleanup", nil); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	if !contains(stdout.String(), "Deleted branches") {
+		t.Errorf("cleanup: expected deletion, got:\n%s", stdout.String())
+	}
+
+	// After cleanup, no split branches should remain.
+	branches := runGitCmd(t, dir, "branch")
+	if strings.Contains(branches, "split/") {
+		t.Errorf("expected no split branches after cleanup, got:\n%s", branches)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T029: JSON reporting
+// ---------------------------------------------------------------------------
+
+// TestPrSplitCommand_ReportCommand tests the report TUI command that outputs
+// current state as JSON.
+func TestPrSplitCommand_ReportCommand(t *testing.T) {
+	dir := setupTestGitRepo(t)
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	stdout, dispatch := loadPrSplitEngine(t, nil)
+
+	// First run the full workflow.
+	if err := dispatch("run", nil); err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+	if !contains(stdout.String(), "Tree hash equivalence verified") {
+		t.Fatalf("run did not complete:\n%s", stdout.String())
+	}
+
+	// Now run report.
+	stdout.Reset()
+	if err := dispatch("report", nil); err != nil {
+		t.Fatalf("report returned error: %v", err)
+	}
+
+	output := stdout.String()
+	t.Logf("report output:\n%s", output)
+
+	// Should be valid JSON.
+	if !strings.HasPrefix(strings.TrimSpace(output), "{") {
+		t.Errorf("expected JSON output starting with '{', got:\n%s", output)
+	}
+
+	// Should contain key fields in JSON.
+	if !contains(output, "\"baseBranch\"") {
+		t.Error("expected baseBranch field in JSON report")
+	}
+	if !contains(output, "\"analysis\"") {
+		t.Error("expected analysis field in JSON report")
+	}
+	if !contains(output, "\"plan\"") {
+		t.Error("expected plan field in JSON report")
+	}
+	if !contains(output, "\"equivalence\"") {
+		t.Error("expected equivalence field in JSON report")
+	}
+	if !contains(output, "\"verified\"") {
+		t.Error("expected verified field in equivalence")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T027: Config section support
+// ---------------------------------------------------------------------------
+
+// TestPrSplitCommand_ConfigOverrides verifies that config file settings
+// are applied as defaults and flags override them.
+func TestPrSplitCommand_ConfigOverrides(t *testing.T) {
+	cfg := config.NewConfig()
+	cfg.Commands["pr-split"] = map[string]string{
+		"base":     "develop",
+		"strategy": "extension",
+		"max":      "5",
+		"prefix":   "pr/",
+		"verify":   "go test ./...",
+		"provider": "claude-code",
+		"model":    "sonnet",
+	}
+
+	cmd := NewPrSplitCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+
+	cmd.testMode = true
+	cmd.interactive = false
+	cmd.store = "memory"
+	cmd.session = t.Name()
+
+	err := cmd.Execute([]string{}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	output := stdout.String()
+	// Config should be applied — check the onEnter output.
+	if !contains(output, "base=develop") {
+		t.Errorf("expected config base=develop in output, got: %s", output)
+	}
+	if !contains(output, "strategy=extension") {
+		t.Errorf("expected config strategy=extension in output, got: %s", output)
+	}
+	if !contains(output, "max=5") {
+		t.Errorf("expected config max=5 in output, got: %s", output)
 	}
 }

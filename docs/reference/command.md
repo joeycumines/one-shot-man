@@ -132,6 +132,52 @@ TUI for merging documents into a single internally consistent super-document.
   - `-log-file <path>`: path to log file (JSON output)
   - `-log-buffer <n>`: size of in-memory log buffer (default `1000`)
 
+### `osm pr-split`
+
+Split a large PR into reviewable stacked branches. Supports heuristic grouping strategies and AI-powered classification via Claude Code or Ollama.
+
+- Usage: `osm pr-split [options]`
+- Flags:
+  - `-i` / `-interactive`: start interactive TUI mode (default true)
+  - `-base <branch>`: base branch to split against (default `main`)
+  - `-strategy <name>`: grouping strategy: `directory`, `directory-deep`, `extension`, `chunks`, `auto` (default `directory`)
+  - `-max <n>`: maximum files per split (default `10`)
+  - `-prefix <prefix>`: branch name prefix for splits (default `split/`)
+  - `-verify <command>`: command to verify each split (default `make test`)
+  - `-dry-run`: show plan without executing
+  - `-ai`: use AI-powered classification and planning (requires provider)
+  - `-provider <name>`: AI provider: `ollama`, `claude-code` (default `ollama`)
+  - `-model <id>`: model identifier for AI provider
+  - `-json`: output results as JSON
+  - `-test`: enable test mode
+  - `-session <id>`: override session id
+  - `-store <fs|memory>`: select storage backend
+
+Config keys (in `[pr-split]` section or global):
+  - `pr-split.base`, `pr-split.strategy`, `pr-split.max`, `pr-split.prefix`
+  - `pr-split.verify`, `pr-split.dry-run`, `pr-split.ai`
+  - `pr-split.provider`, `pr-split.model`
+
+Interactive TUI commands:
+  - `analyze [base]` — analyze diff between current and base branch
+  - `stats` — show addition/deletion counts per file
+  - `group [strategy]` — group files by strategy
+  - `plan` — create split plan from groups
+  - `preview` — show detailed plan preview
+  - `execute` — execute the split (create branches)
+  - `verify` — run verify command on each branch
+  - `equivalence` — check tree hash equivalence
+  - `cleanup` — delete all split branches
+  - `run` — full workflow: analyze → group → plan → execute → verify
+  - `run --ai` — full workflow with AI classification
+  - `classify` — classify files with AI
+  - `connect` — connect to AI provider registry
+  - `disconnect` — disconnect from AI provider
+  - `set <key> <val>` — set runtime config
+  - `copy` — copy plan to clipboard
+  - `report` — output current state as JSON
+  - `help` — show available commands
+
 ### `osm mcp`
 
 Start an MCP (Model Context Protocol) server over stdio. Exposes osm's context management and prompt building as MCP tools for integration with Claude Desktop, VS Code Copilot, and other MCP-compatible clients.

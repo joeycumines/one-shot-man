@@ -52,7 +52,8 @@ var runtime = {
     dryRun:        cfg.dryRun        || false,
     aiMode:        cfg.aiMode        || false,
     provider:      cfg.provider      || 'ollama',
-    model:         cfg.model         || ''
+    model:         cfg.model         || '',
+    jsonOutput:    cfg.jsonOutput    || false
 };
 
 // ---------------------------------------------------------------------------
@@ -1613,10 +1614,105 @@ if (typeof tui !== 'undefined' && typeof ctx !== 'undefined' && typeof output !=
 var analysisCache = null;
 var groupsCache = null;
 var planCache = null;
+var registryCache = null;
+var classificationCache = null;
+
+// ---------------------------------------------------------------------------
+//  Provider Registry Lifecycle
+// ---------------------------------------------------------------------------
+
+// ensureRegistry creates and caches a provider registry with the configured
+// provider. Returns the registry or null on error (errors are printed).
+function ensureRegistry() {
+    if (registryCache) return registryCache;
+    if (!claudemux) {
+        output.print('Error: claudemux module not available.');
+        return null;
+    }
+
+    try {
+        var registry = claudemux.newRegistry();
+        var provider;
+        if (runtime.provider === 'ollama') {
+            var opts = {};
+            if (runtime.model) {
+                opts.subArgs = ['run', runtime.model];
+            }
+            provider = claudemux.ollama(opts);
+        } else {
+            // Default to claude-code.
+            provider = claudemux.claudeCode({});
+        }
+        registry.register(provider);
+        registryCache = registry;
+        return registry;
+    } catch (e) {
+        output.print('Error creating provider registry: ' + (e && e.message ? e.message : String(e)));
+        if (e && e.stack) { log.error('pr-split registry error: ' + e.stack); }
+        return null;
+    }
+}
+
+// destroyRegistry tears down the registry cache.
+function destroyRegistry() {
+    registryCache = null;
+    classificationCache = null;
+}
 
 var state = tui.createState(COMMAND_NAME, {
     [shared.contextItems]: {defaultValue: []}
 });
+
+// buildReport creates a JSON-serializable report object from the current
+// analysis, groups, plan, and equivalence caches.
+function buildReport() {
+    var report = {
+        version: globalThis.prSplit ? globalThis.prSplit.VERSION : 'unknown',
+        baseBranch: runtime.baseBranch,
+        strategy: runtime.strategy,
+        aiMode: runtime.aiMode,
+        dryRun: runtime.dryRun,
+        analysis: null,
+        groups: null,
+        plan: null
+    };
+    if (analysisCache && !analysisCache.error) {
+        report.analysis = {
+            currentBranch: analysisCache.currentBranch,
+            baseBranch: analysisCache.baseBranch,
+            fileCount: analysisCache.files.length,
+            files: analysisCache.files,
+            fileStatuses: analysisCache.fileStatuses || {}
+        };
+    }
+    if (groupsCache) {
+        var gNames = Object.keys(groupsCache).sort();
+        report.groups = gNames.map(function(name) {
+            return { name: name, files: groupsCache[name] };
+        });
+    }
+    if (planCache) {
+        report.plan = {
+            splitCount: planCache.splits.length,
+            splits: planCache.splits.map(function(s) {
+                return {
+                    name: s.name,
+                    files: s.files,
+                    message: s.message,
+                    order: s.order
+                };
+            })
+        };
+        var equiv = verifyEquivalence(planCache);
+        report.equivalence = {
+            verified: equiv.equivalent,
+            splitTree: equiv.splitTree,
+            sourceTree: equiv.sourceTree,
+            error: equiv.error || null
+        };
+    }
+    return report;
+}
 
 function buildCommands(stateArg) {
     return {
@@ -1923,10 +2019,38 @@ function buildCommands(stateArg) {
             }
         },
 
+        connect: {
+            description: 'Connect to AI provider (creates registry)',
+            usage: 'connect',
+            handler: function() {
+                try {
+                var registry = ensureRegistry();
+                if (registry) {
+                    output.print('✓ Connected to provider: ' + runtime.provider +
+                        (runtime.model ? ' (' + runtime.model + ')' : ''));
+                    output.print('  Available providers: ' + registry.list().join(', '));
+                }
+                } catch (e) {
+                    output.print('Error in connect: ' + (e && e.message ? e.message : String(e)));
+                    if (e && e.stack) { log.error('pr-split connect error: ' + e.stack); }
+                }
+            }
+        },
+
+        disconnect: {
+            description: 'Disconnect from AI provider',
+            usage: 'disconnect',
+            handler: function() {
+                destroyRegistry();
+                output.print('✓ Provider registry disconnected.');
+            }
+        },
+
         classify: {
             description: 'Classify files using AI (requires --ai)',
             usage: 'classify',
             handler: function() {
+                try {
                 if (!claudemux) {
                     output.print('claudemux module not available. Install/enable AI provider.');
                     return;
@@ -1935,26 +2059,59 @@ function buildCommands(stateArg) {
                     output.print('Run "analyze" first.');
                     return;
                 }
+                var registry = ensureRegistry();
+                if (!registry) return;
+
                 output.print('Classifying ' + analysisCache.files.length + ' files with AI...');
-                output.print('(This spawns a Claude Code instance via PTY — may take a minute)');
-                // Note: actual registry would need to be configured
-                output.print('AI classification requires a configured provider registry.');
-                output.print('Use: set provider <name> && set model <name>');
+                output.print('Provider: ' + runtime.provider + (runtime.model ? ' (' + runtime.model + ')' : ''));
+                output.print('(This spawns an agent instance via PTY — may take a minute)');
+
+                var result = classifyChangesWithClaudeMux(analysisCache.files, {
+                    registry: registry,
+                    providerName: runtime.provider === 'ollama' ? 'ollama' : 'claude-code',
+                    maxWaitMs: 120000
+                });
+                if (result.error) {
+                    output.print('Classification failed: ' + result.error);
+                    return;
+                }
+                classificationCache = result.files;
+                var keys = Object.keys(classificationCache).sort();
+                output.print('✓ Classified ' + keys.length + ' files:');
+                for (var i = 0; i < keys.length; i++) {
+                    output.print('  [' + classificationCache[keys[i]] + '] ' + keys[i]);
+                }
+                } catch (e) {
+                    output.print('Error in classify: ' + (e && e.message ? e.message : String(e)));
+                    if (e && e.stack) { log.error('pr-split classify error stack: ' + e.stack); }
+                }
             }
         },
 
         run: {
             description: 'Run full workflow: analyze → group → plan → execute',
-            usage: 'run',
-            handler: function() {
+            usage: 'run [--ai]',
+            handler: function(args) {
                 try {
+                // Check for --ai flag in args.
+                var useAI = runtime.aiMode;
+                if (args) {
+                    for (var ai = 0; ai < args.length; ai++) {
+                        if (args[ai] === '--ai') useAI = true;
+                    }
+                }
+
+                var workflowStart = Date.now();
+
                 output.print('Running full PR split workflow...');
                 output.print('Base:     ' + runtime.baseBranch);
+                output.print('Mode:     ' + (useAI ? 'AI (' + runtime.provider + (runtime.model ? ':' + runtime.model : '') + ')' : 'heuristic'));
                 output.print('Strategy: ' + runtime.strategy);
                 output.print('Max:      ' + runtime.maxFiles);
                 output.print('');
 
                 // Step 1: Analyze
+                var stepStart = Date.now();
                 analysisCache = analyzeDiff({ baseBranch: runtime.baseBranch });
                 if (analysisCache.error) {
                     output.print('Analysis failed: ' + analysisCache.error);
@@ -1966,18 +2123,78 @@ function buildCommands(stateArg) {
                     output.print('Ensure you are on a feature branch with changes against the base.');
                     return;
                 }
-                output.print('✓ Analysis: ' + analysisCache.files.length + ' changed files');
+                output.print('✓ Analysis: ' + analysisCache.files.length + ' changed files (' +
+                    (Date.now() - stepStart) + 'ms)');
 
-                // Step 2: Group
-                groupsCache = applyStrategy(analysisCache.files, runtime.strategy);
+                // Step 2: Group (AI or heuristic)
+                stepStart = Date.now();
+                var aiGroupingFailed = false;
+                if (useAI && claudemux) {
+                    var registry = ensureRegistry();
+                    if (registry) {
+                        // Step 2a: AI Classification
+                        output.print('  Classifying files with AI...');
+                        var classResult = classifyChangesWithClaudeMux(analysisCache.files, {
+                            registry: registry,
+                            providerName: runtime.provider === 'ollama' ? 'ollama' : 'claude-code',
+                            maxWaitMs: 120000
+                        });
+                        if (classResult.error) {
+                            output.print('  ⚠️  AI classification failed: ' + classResult.error);
+                            output.print('  Falling back to heuristic grouping...');
+                            aiGroupingFailed = true;
+                        } else {
+                            classificationCache = classResult.files;
+                            output.print('  ✓ AI classified ' + Object.keys(classificationCache).length + ' files');
+
+                            // Step 2b: AI Plan Suggestion
+                            output.print('  Requesting AI split plan...');
+                            var planResult = suggestSplitPlanWithClaudeMux(analysisCache.files, classificationCache, {
+                                registry: registry,
+                                providerName: runtime.provider === 'ollama' ? 'ollama' : 'claude-code',
+                                maxWaitMs: 120000
+                            });
+                            if (planResult.error) {
+                                output.print('  ⚠️  AI plan suggestion failed: ' + planResult.error);
+                                output.print('  Falling back to heuristic grouping...');
+                                aiGroupingFailed = true;
+                            } else if (!planResult.stages || planResult.stages.length === 0) {
+                                output.print('  ⚠️  AI returned empty plan.');
+                                output.print('  Falling back to heuristic grouping...');
+                                aiGroupingFailed = true;
+                            } else {
+                                // Convert AI stages into groups for createSplitPlan.
+                                groupsCache = {};
+                                for (var si = 0; si < planResult.stages.length; si++) {
+                                    var stage = planResult.stages[si];
+                                    groupsCache[stage.name] = stage.files;
+                                }
+                                output.print('  ✓ AI suggested ' + planResult.stages.length + ' groups');
+                            }
+                        }
+                    } else {
+                        output.print('  ⚠️  Could not create provider registry.');
+                        output.print('  Falling back to heuristic grouping...');
+                        aiGroupingFailed = true;
+                    }
+                }
+
+                if (!useAI || !claudemux || aiGroupingFailed) {
+                    // Heuristic path.
+                    groupsCache = applyStrategy(analysisCache.files, runtime.strategy);
+                }
+
                 var groupNames = Object.keys(groupsCache).sort();
                 if (groupNames.length === 0) {
                     output.print('No groups created — strategy "' + runtime.strategy + '" produced no groups.');
                     return;
                 }
-                output.print('✓ Grouped into ' + groupNames.length + ' groups (' + runtime.strategy + ')');
+                output.print('✓ Grouped into ' + groupNames.length + ' groups' +
+                    ((!useAI || aiGroupingFailed) ? ' (' + runtime.strategy + ')' : ' (AI)') +
+                    ' (' + (Date.now() - stepStart) + 'ms)');
 
                 // Step 3: Plan
+                stepStart = Date.now();
                 planCache = createSplitPlan(groupsCache, {
                     baseBranch: runtime.baseBranch,
                     sourceBranch: analysisCache.currentBranch,
@@ -1990,7 +2207,8 @@ function buildCommands(stateArg) {
                     output.print('Plan invalid: ' + validation.errors.join('; '));
                     return;
                 }
-                output.print('✓ Plan created: ' + planCache.splits.length + ' splits');
+                output.print('✓ Plan created: ' + planCache.splits.length + ' splits (' +
+                    (Date.now() - stepStart) + 'ms)');
 
                 // Step 4: Execute (unless dry-run)
                 if (runtime.dryRun) {
@@ -2008,12 +2226,15 @@ function buildCommands(stateArg) {
                     return;
                 }
 
+                output.print('Executing ' + planCache.splits.length + ' splits...');
+                stepStart = Date.now();
                 var result = executeSplit(planCache);
                 if (result.error) {
                     output.print('Execution failed: ' + result.error);
                     return;
                 }
-                output.print('✓ Split executed: ' + result.results.length + ' branches created');
+                output.print('✓ Split executed: ' + result.results.length + ' branches created (' +
+                    (Date.now() - stepStart) + 'ms)');
                 for (var i = 0; i < result.results.length; i++) {
                     var r = result.results[i];
                     output.print('  ✓ ' + r.name + ' (' + r.files.length + ' files, SHA: ' + r.sha.substring(0, 8) + ')');
@@ -2029,6 +2250,17 @@ function buildCommands(stateArg) {
                     output.print('❌ Tree hash mismatch — content may be lost');
                     output.print('   Split tree:  ' + equiv.splitTree);
                     output.print('   Source tree:  ' + equiv.sourceTree);
+                }
+
+                var totalMs = Date.now() - workflowStart;
+                output.print('');
+                output.print('Done in ' + (totalMs < 1000 ? totalMs + 'ms' :
+                    (totalMs / 1000).toFixed(1) + 's') + '.');
+
+                // If --json flag is set, output the full report as JSON.
+                if (runtime.jsonOutput) {
+                    output.print('');
+                    output.print(JSON.stringify(buildReport(), null, 2));
                 }
                 } catch (e) {
                     output.print('Error in run workflow: ' + (e && e.message ? e.message : String(e)));
@@ -2078,6 +2310,14 @@ function buildCommands(stateArg) {
             }
         },
 
+        report: {
+            description: 'Output current state as JSON',
+            usage: 'report',
+            handler: function() {
+                output.print(JSON.stringify(buildReport(), null, 2));
+            }
+        },
+
         help: {
             description: 'Show available commands',
             usage: 'help',
@@ -2094,9 +2334,13 @@ function buildCommands(stateArg) {
                 output.print('  equivalence      Check tree hash equivalence');
                 output.print('  cleanup          Delete all split branches');
                 output.print('  run              Full workflow: analyze→group→plan→execute');
+                output.print('  run --ai         Full workflow using AI classification');
                 output.print('  set <key> <val>  Set runtime config (no args to show current)');
+                output.print('  connect          Connect to AI provider');
+                output.print('  disconnect       Disconnect from AI provider');
                 output.print('  classify         Classify files with AI');
                 output.print('  copy             Copy plan to clipboard');
+                output.print('  report           Output current state as JSON');
                 output.print('  help             Show this help');
             }
         }

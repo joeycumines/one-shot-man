@@ -1,82 +1,66 @@
-# WIP — PR Split P0 Bug Fixes
+# WIP — PR Split Phase 2
 
 ## Status: RULE OF TWO PASSED — Ready to commit
 
 ### Session Context
 - Branch: `wip`
-- Previous commits: `7477aae`, `55ec7e6`
-- CURRENT: P0 bug fixes + 13 new tests. Rule of Two PASSED (2 contiguous + fitness FIT).
+- Previous commits: `7d46c46` (Phase 1: T001-T008 + P0 fixes)
+- CURRENT: Phase 2 (T009-T034). Rule of Two PASSED.
 
 ### What changed (UNCOMMITTED — ready to commit)
 
-#### Bug Fixes
+#### Phase 2 Features (T009-T029)
 
-1. **TUI command dispatch error swallowing (tui_commands.go)**
-   - `ErrCommandNotFound` sentinel error
-   - `executor()` now distinguishes "not found" (JS fallback) from handler errors (display to user)
-   
-2. **Panic recovery (tui_manager.go)**
-   - `executeCommand()` uses named return + defer/recover for Go handlers
-   
-3. **fileStatuses threading (pr_split_script.js)**
-   - `analyzeDiff()` uses `--name-status` instead of `--name-only`
-   - Returns `fileStatuses` map (file → A/M/D/R/C/T)
-   - Rename/copy: only track new path
-   - Unmerged paths rejected with clear error
-   - Unknown status codes rejected with whitelist
-   
-4. **Deleted files (pr_split_script.js executeSplit)**
-   - `fileStatuses` is REQUIRED (no silent fallback)
-   - Status 'D' → `git rm --ignore-unmatch -f`
-   - Missing entries → explicit error naming the file
-   
-5. **Pre-existing branches (pr_split_script.js executeSplit)**
-   - Pre-flight loop: delete existing branches before recreation
-   - Enables re-running pr-split without manual cleanup
-   
-6. **Try/catch on critical handlers (pr_split_script.js)**
-   - `run`, `analyze`, `execute` handlers wrapped
+1. **AI-assisted classification** (T009-T012)
+   - `ensureRegistry()` / `destroyRegistry()` — provider lifecycle
+   - `connect` / `disconnect` TUI commands
+   - `classify` command calls `classifyChangesWithClaudeMux`
+   - `run` handler: AI path → classify → plan → fallback to heuristic
+   - 4 new AI tests (RunAIModeFallback, RunAIFlag, ConnectDisconnect, ClassifyRequiresAnalysis)
 
-#### New Tests (13 total)
+2. **Integration tests** (T014)
+   - 8 new tests: ExtensionStrategy, WithModifications, CompilableGoRepo, ChainIntegrity,
+     VerifyCommand, SetCommand, AnalyzeAndStats, StepByStep
+   - All 35 tests PASS
 
-- `tui_coverage_gaps_test.go`: HandlerError, HandlerPanic, JSFallback (3)
-- `pr_split_test.go`: RunHeuristicEndToEnd, RunZeroChanges, RunDryRun, HelpCommand, RunWithDeletedFiles, RunRerun (6)
-- `claudemux/pr_split_test.go`: AnalyzeDiff_FileStatuses, WithDeletedFiles, RerunDeletesBranches, NoFileStatuses, MissingFileStatus + fixes to MissingFile (7)
+3. **Elapsed time tracking** (T026)
+   - Per-step `(Xms)` timing in run handler
+   - Total workflow duration at end
 
-### Next Steps (T009+)
-- T009: Wire runtime.aiMode into run handler
-- T010: Implement provider registry lifecycle in TUI
-- T011-T012: AI classification + mocked tests
-- T014-T018: Integration tests with real OLLAMA
+4. **Config section support** (T027)
+   - `[pr-split]` config section with 9 keys
+   - Flags override config values
 
-**control_test.go** — 5 new tests for send/GetStatus error paths:
-- `TestControl_Send_ServerClosesImmediately` — empty response → error
-- `TestControl_Send_MalformedResponse` — garbage JSON → unmarshal error
-- `TestControl_GetStatus_NonOKResponse` — ok=false → error propagation
-- `TestControl_GetStatus_InvalidResultJSON` — ok=true but bad Result → decode error
-- `TestControl_EnqueueTask_InvalidResultJSON` — ok=true but bad Result → decode error
+5. **Shell completion** (T028)
+   - pr-split flags in bash, zsh, fish
+   - Strategy and provider value completion
+   - `--json` flag included
 
-#### Coverage improvements (before → after)
-| Function | Before | After | Δ |
-|----------|--------|-------|---|
-| instance.Create | 57.1% | ≥90% | +33%+ |
-| guard.computeBackoff | 68.4% | 84.2% | +15.8% |
-| control.GetStatus | 66.7% | 80.0% | +13.3% |
-| control.send | 68.4% | 78.9% | +10.5% |
-| **Total package** | **94.2%** | **94.8%** | **+0.6%** |
+6. **JSON reporting** (T029)
+   - `buildReport()` extracted function
+   - `report` TUI command outputs JSON
+   - `--json` flag auto-triggers report after run
 
-### Build status (last verified)
+#### Documentation (T031-T032)
+- `docs/reference/command.md`: full pr-split section (17 TUI commands)
+- `docs/reference/config.md`: `[pr-split]` section (9 keys)
+- `CHANGELOG.md`: 7 Added + 5 Fixed entries
+
+#### Quality (T030, T033, T021, T034)
+- All linters PASS (vet, staticcheck, betteralign, deadcode)
+- Security audit PASS (no credential leaks, no new attack vectors)
+- Rule of Two: Run 1 PASS + Run 2 PASS + Fitness FIT
+
+### Build Status
 - `go build ./...` PASS
-- All claudemux tests PASS with `-race` (6.0s)
-- All 15 new tests PASS
+- `go vet ./...` PASS
+- `staticcheck ./...` PASS
+- `go test ./...` ALL 44 packages PASS
 
-### Rule of Two (for this diff)
-- Not yet run — PENDING
-
-### Files touched (since 55ec7e6)
-- `internal/builtin/claudemux/guard_test.go` — 6 new overflow tests
-- `internal/builtin/claudemux/instance_test.go` — 4 new error-path tests + runtime/strings imports
-- `internal/builtin/claudemux/control_test.go` — 5 new error-path tests + fmt/net/runtime imports
+### Next Steps
+- T022: Commit
+- T023-T025: Cross-platform verification (Linux/Windows)
+- T035-T040: Scope features (stretch goals)
 
 ### Next steps
 1. Rule of Two review gate on diff vs HEAD

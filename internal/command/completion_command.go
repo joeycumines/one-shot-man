@@ -140,6 +140,18 @@ _osm_completion() {
             COMPREPLY=($(compgen -W "status start stop submit" -- ${cur}))
             return 0
             ;;
+        pr-split)
+            COMPREPLY=($(compgen -W "--base --strategy --max --prefix --verify --dry-run --ai --provider --model --json --interactive --test --session --store --log-level --log-file" -- ${cur}))
+            return 0
+            ;;
+        --strategy)
+            COMPREPLY=($(compgen -W "directory directory-deep extension chunks auto" -- ${cur}))
+            return 0
+            ;;
+        --provider)
+            COMPREPLY=($(compgen -W "ollama claude-code" -- ${cur}))
+            return 0
+            ;;
         help)
             COMPREPLY=($(compgen -W "${commands}" -- ${cur}))
             return 0
@@ -242,6 +254,19 @@ _osm() {
                 claude-mux)
                     _values 'claude-mux-subcommand' 'status' 'start' 'stop' 'submit'
                     ;;
+                pr-split)
+                    _arguments \
+                        '--base[Base branch]:branch:' \
+                        '--strategy[Grouping strategy]:strategy:(directory directory-deep extension chunks auto)' \
+                        '--max[Max files per split]:number:' \
+                        '--prefix[Branch prefix]:prefix:' \
+                        '--verify[Verify command]:command:' \
+                        '--dry-run[Show plan without executing]' \
+                        '--ai[Use AI classification]' \
+                        '--provider[AI provider]:provider:(ollama claude-code)' \
+                        '--model[Model identifier]:model:' \
+                        '--json[Output results as JSON]'
+                    ;;
                 help)
                     _describe 'commands' commands
                     ;;
@@ -328,6 +353,18 @@ complete -c osm -n '__fish_seen_subcommand_from log' -a 'tail follow' -d 'Log su
 
 # Completion for 'claude-mux' subcommand
 complete -c osm -n '__fish_seen_subcommand_from claude-mux' -a 'status start stop submit' -d 'Claude-mux subcommands'
+
+# Completion for 'pr-split' flags
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l base -d 'Base branch'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l strategy -a 'directory directory-deep extension chunks auto' -d 'Grouping strategy'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l max -d 'Max files per split'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l prefix -d 'Branch prefix'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l verify -d 'Verify command'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l dry-run -d 'Show plan without executing'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l ai -d 'Use AI classification'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l provider -a 'ollama claude-code' -d 'AI provider'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l model -d 'Model identifier'
+complete -c osm -n '__fish_seen_subcommand_from pr-split' -l json -d 'Output results as JSON'
 
 # Completion for 'help' subcommand (command names)
 complete -c osm -n '__fish_seen_subcommand_from help' -a '%s' -d 'Command'

@@ -223,6 +223,38 @@ autoCleanupEnabled true
 cleanupIntervalHours 12
 ```
 
+## PR splitting (`[pr-split]`)
+
+The `[pr-split]` section configures default options for `osm pr-split`. All keys can be overridden by CLI flags; flags always take precedence over config values.
+
+### Keys
+
+| Key | Type | Default | CLI flag | Description |
+|-----|------|---------|----------|-------------|
+| `base` | string | `main` | `--base` | Base branch to diff against |
+| `strategy` | string | `directory` | `--strategy` | Grouping strategy: `directory`, `directory-deep`, `extension`, `chunks`, `auto` |
+| `max` | int | `10` | `--max` | Maximum files per split branch |
+| `prefix` | string | `split/` | `--prefix` | Branch name prefix |
+| `verify` | string | `make test` | `--verify` | Verification command run after each split |
+| `dry-run` | bool | `false` | `--dry-run` | Plan without creating branches |
+| `ai` | bool | `false` | `--ai` | Enable AI-assisted classification via claudemux |
+| `provider` | string | `ollama` | `--provider` | AI provider name (requires `--ai`) |
+| `model` | string | _(empty)_ | `--model` | AI model name (requires `--ai`) |
+
+### Example
+
+```text
+[pr-split]
+base develop
+strategy extension
+max 8
+prefix feature-split/
+verify go test ./...
+ai true
+provider ollama
+model codellama:13b
+```
+
 ## Global options
 
 These keys can appear at the top level of the config file (outside any `[section]`).

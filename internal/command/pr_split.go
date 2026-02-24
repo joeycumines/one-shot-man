@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -38,6 +39,9 @@ type PrSplitCommand struct {
 	aiMode   bool
 	provider string
 	model    string
+
+	// JSON output flag
+	jsonOutput bool
 }
 
 // NewPrSplitCommand creates a new pr-split command.
@@ -59,7 +63,7 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 
 	// Split configuration
 	fs.StringVar(&c.baseBranch, "base", "main", "Base branch to split against")
-	fs.StringVar(&c.strategy, "strategy", "directory", "Grouping strategy: directory, extension, logical, minimal, auto")
+	fs.StringVar(&c.strategy, "strategy", "directory", "Grouping strategy: directory, directory-deep, extension, chunks, auto")
 	fs.IntVar(&c.maxFiles, "max", 10, "Maximum files per split")
 	fs.StringVar(&c.branchPrefix, "prefix", "split/", "Branch name prefix for splits")
 	fs.StringVar(&c.verifyCommand, "verify", "make test", "Command to verify each split")
@@ -69,6 +73,7 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.aiMode, "ai", false, "Use Claude Code for intelligent classification and planning")
 	fs.StringVar(&c.provider, "provider", "ollama", "AI provider: ollama, claude-code")
 	fs.StringVar(&c.model, "model", "", "Model identifier for AI provider")
+	fs.BoolVar(&c.jsonOutput, "json", false, "Output results as JSON (combine with run or --dry-run)")
 
 	c.RegisterFlags(fs)
 }
@@ -76,6 +81,44 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 // Execute runs the pr-split command.
 func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	ctx := context.Background()
+
+	// Apply config defaults — flags override config values. Config keys
+	// are namespaced under the "pr-split" command section or global:
+	//   pr-split.base=develop
+	//   pr-split.strategy=extension
+	//   pr-split.max=8
+	//   pr-split.prefix=split/
+	//   pr-split.verify=make test
+	//   pr-split.dry-run=true
+	//   pr-split.ai=true
+	//   pr-split.provider=claude-code
+	//   pr-split.model=sonnet
+	if c.config != nil {
+		applyConfigDefault := func(key string, target *string, flagDefault string) {
+			if v, ok := c.config.GetCommandOption("pr-split", key); ok && (*target == flagDefault || *target == "") {
+				*target = v
+			}
+		}
+		applyConfigDefault("base", &c.baseBranch, "main")
+		applyConfigDefault("strategy", &c.strategy, "directory")
+		if v, ok := c.config.GetCommandOption("pr-split", "max"); ok && (c.maxFiles == 10 || c.maxFiles == 0) {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				c.maxFiles = n
+			}
+		}
+		applyConfigDefault("prefix", &c.branchPrefix, "split/")
+		applyConfigDefault("verify", &c.verifyCommand, "make test")
+		if v, ok := c.config.GetCommandOption("pr-split", "dry-run"); ok && !c.dryRun {
+			c.dryRun = v == "true" || v == "1" || v == "yes"
+		}
+		if v, ok := c.config.GetCommandOption("pr-split", "ai"); ok && !c.aiMode {
+			c.aiMode = v == "true" || v == "1" || v == "yes"
+		}
+		applyConfigDefault("provider", &c.provider, "ollama")
+		if v, ok := c.config.GetCommandOption("pr-split", "model"); ok && c.model == "" {
+			c.model = v
+		}
+	}
 
 	engine, cleanup, err := c.PrepareEngine(ctx, stdout, stderr)
 	if err != nil {
@@ -104,6 +147,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		"aiMode":        c.aiMode,
 		"provider":      c.provider,
 		"model":         c.model,
+		"jsonOutput":    c.jsonOutput,
 	})
 
 	// Load the embedded script

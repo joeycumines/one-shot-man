@@ -1342,27 +1342,47 @@ function btSplitBranch(bb, branchName) {
 //  Composite BT Workflow Functions (from claude-mux.js templates)
 // ---------------------------------------------------------------------------
 
-// spawnAndPrompt creates a sequence: spawn agent then send prompt.
-function spawnAndPrompt(bb, registry, providerName, opts) {
+// spawnAndPrompt creates a complete sequence: spawn agent → send prompt → wait
+// for response. This is the standard convenience for a full prompt–response
+// cycle. Signature mirrors the original claude-mux.js API.
+function spawnAndPrompt(bb, registry, config) {
+    config = config || {};
+    var provName = config.provider || 'claude-code';
+    var spawnOpts = config.spawnOpts || {};
+    var prompt = config.prompt || '';
     return bt.node(bt.sequence,
-        btSpawnClaude(bb, registry, providerName, opts || {}),
-        btSendPrompt(bb, (opts && opts.prompt) || '')
+        btSpawnClaude(bb, registry, provName, spawnOpts),
+        btSendPrompt(bb, prompt),
+        btWaitForResponse(bb, config)
     );
 }
 
-// verifyAndCommit creates a sequence: optionally verify output, run tests, commit.
+// verifyAndCommit creates a sequence: run tests → optionally verify → commit.
+// Order: tests FIRST (fast feedback), then optional heavy verification, then
+// commit. This matches the original claude-mux.js semantics exactly.
 function verifyAndCommit(bb, opts) {
     opts = opts || {};
-    var children = [];
-    if (opts.verifyCommand) {
-        children.push(btVerifyOutput(bb, opts.verifyCommand));
+    var testCmd = opts.testCommand || 'make test';
+    var verifyCmd = opts.verifyCommand || null;
+    var commitMsg = opts.message || 'Automated commit';
+
+    if (verifyCmd) {
+        return bt.node(bt.sequence,
+            btRunTests(bb, testCmd),
+            btVerifyOutput(bb, verifyCmd),
+            btCommitChanges(bb, commitMsg)
+        );
     }
-    children.push(btRunTests(bb, opts.testCommand));
-    children.push(btCommitChanges(bb, opts.message || 'automated commit'));
-    return bt.node.apply(null, [bt.sequence].concat(children));
+    return bt.node(bt.sequence,
+        btRunTests(bb, testCmd),
+        btCommitChanges(bb, commitMsg)
+    );
 }
 
-// spawnPromptAndReadResult creates a sequence: spawn → prompt → wait → read.
+// spawnPromptAndReadResult creates a complete AI interaction sequence:
+// spawn agent → send prompt → wait for response. This is functionally
+// equivalent to spawnAndPrompt but uses the positional parameter style
+// (providerName as separate arg) rather than the config-object style.
 function spawnPromptAndReadResult(bb, registry, providerName, opts) {
     return bt.node(bt.sequence,
         btSpawnClaude(bb, registry, providerName, opts || {}),
@@ -1372,30 +1392,54 @@ function spawnPromptAndReadResult(bb, registry, providerName, opts) {
 }
 
 // createPlanningActions creates PA-BT actions for the 7 BT template operations.
-// Each action wraps the corresponding BT template as a pabt.newAction with
-// empty conditions/effects, suitable for registration via state.registerAction().
+// Each action has proper preconditions and effects for PA-BT backchaining:
+//   SpawnClaude: [] → agentSpawned=true
+//   SendPrompt: agentSpawned=true → promptSent=true
+//   WaitForResponse: promptSent=true → responseReceived=true
+//   RunTests: responseReceived=true → testsPassed=true
+//   VerifyOutput: testsPassed=true → verified=true
+//   CommitChanges: testsPassed=true → committed=true
+//   SplitBranch: committed=true → branchCreated=true
 function createPlanningActions(pabt, bb, registry, opts) {
     opts = opts || {};
+    var providerName = opts.provider || 'claude-code';
+    var testCommand = opts.testCommand || 'make test';
+    var prompt = opts.prompt || '';
+
     return {
-        SpawnClaude: pabt.newAction('SpawnClaude', [], [],
-            btSpawnClaude(bb, registry, opts.provider || 'claude-code', opts)
+        SpawnClaude: pabt.newAction('SpawnClaude',
+            [],
+            [{key: 'agentSpawned', value: true}],
+            btSpawnClaude(bb, registry, providerName, opts)
         ),
-        SendPrompt: pabt.newAction('SendPrompt', [], [],
-            btSendPrompt(bb, opts.prompt || '')
+        SendPrompt: pabt.newAction('SendPrompt',
+            [{key: 'agentSpawned', match: function(v) { return v === true; }}],
+            [{key: 'promptSent', value: true}],
+            btSendPrompt(bb, prompt)
         ),
-        WaitForResponse: pabt.newAction('WaitForResponse', [], [],
+        WaitForResponse: pabt.newAction('WaitForResponse',
+            [{key: 'promptSent', match: function(v) { return v === true; }}],
+            [{key: 'responseReceived', value: true}],
             btWaitForResponse(bb, opts)
         ),
-        VerifyOutput: pabt.newAction('VerifyOutput', [], [],
-            btVerifyOutput(bb, opts.verifyCommand || opts.testCommand || 'make test')
+        RunTests: pabt.newAction('RunTests',
+            [{key: 'responseReceived', match: function(v) { return v === true; }}],
+            [{key: 'testsPassed', value: true}],
+            btRunTests(bb, testCommand)
         ),
-        RunTests: pabt.newAction('RunTests', [], [],
-            btRunTests(bb, opts.testCommand || 'make test')
+        VerifyOutput: pabt.newAction('VerifyOutput',
+            [{key: 'testsPassed', match: function(v) { return v === true; }}],
+            [{key: 'verified', value: true}],
+            btVerifyOutput(bb, opts.verifyCommand || testCommand)
         ),
-        CommitChanges: pabt.newAction('CommitChanges', [], [],
-            btCommitChanges(bb, opts.message || 'automated commit')
+        CommitChanges: pabt.newAction('CommitChanges',
+            [{key: 'testsPassed', match: function(v) { return v === true; }}],
+            [{key: 'committed', value: true}],
+            btCommitChanges(bb, opts.message || 'Automated commit')
         ),
-        SplitBranch: pabt.newAction('SplitBranch', [], [],
+        SplitBranch: pabt.newAction('SplitBranch',
+            [{key: 'committed', match: function(v) { return v === true; }}],
+            [{key: 'branchCreated', value: true}],
             btSplitBranch(bb, opts.branchName || 'split-branch')
         )
     };

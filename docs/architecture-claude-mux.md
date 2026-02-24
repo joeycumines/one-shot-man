@@ -73,8 +73,8 @@ JavaScript, leveraging the existing BT engine.
 | Provider abstraction | Go (`Provider`, `AgentHandle` interfaces) | Type-safe contract for multiple backends |
 | Agent lifecycle monitoring | Go (goroutine + channel) | Process exit detection requires OS-level wait |
 | MCP feedback tools | Go (`internal/command/mcp.go`) | Schema validation, idempotency, sequence numbers |
-| BT tree composition | JS (`scripts/bt-templates/claude-mux.js`) | User-modifiable, leverages existing `osm:bt` |
-| Workflow scripts | JS (`scripts/orchestrate-*.js`) | User-facing, goal-discoverable, require()-able |
+| BT tree composition | JS (embedded in `internal/command/pr_split_script.js`) | Leverages existing `osm:bt`, part of `osm pr-split` command |
+| Workflow scripts | Go+JS (`internal/command/pr_split.go` + embedded JS) | Built-in command, no external scripts |
 | Prompt construction | JS (existing `context` / `output` globals) | Unchanged — same API as all osm scripts |
 
 ---
@@ -372,8 +372,8 @@ func (r *Registry) Spawn(ctx, name, opts) (AgentHandle, error)
 
 ### 5.3. BT Templates
 
-**File:** `scripts/bt-templates/claude-mux.js`
-**Status:** Implemented as `scripts/bt-templates/claude-mux.js`.
+**File:** `internal/command/pr_split_script.js` (embedded via `//go:embed`)
+**Status:** Consolidated into `osm pr-split` built-in command (v5.0.0).
 **Dependencies:** `osm:bt`, `osm:claudemux`, `osm:exec`
 
 Reusable behavior tree building blocks for Claude-Mux workflows.
@@ -400,7 +400,7 @@ classification is the primary defense. See [Security Model](#7-security-model).
 #### Workflow Composers
 
 ```javascript
-var templates = require('./bt-templates/claude-mux');
+var templates = require('internal/command/pr_split_script.js'); // or use globalThis.prSplit
 var bt = require('osm:bt');
 var claudemux = require('osm:claudemux');
 
@@ -432,9 +432,9 @@ CommitChanges` automatically based on the goal `committed=true`.
 
 ### 5.4. PR Splitting Workflow
 
-**Script:** `scripts/orchestrate-pr-split.js`
-**Goal:** `goals/orchestrate-pr-split.json`
-**Dependencies:** `osm:bt`, `osm:exec`
+**Command:** `osm pr-split` (built-in, `internal/command/pr_split.go`)
+**Script:** `internal/command/pr_split_script.js` (embedded via `//go:embed`)
+**Dependencies:** `osm:bt`, `osm:exec`, `osm:claudemux`
 
 Splits a large diff into a linear series of stacked, independently-reviewable branches.
 
@@ -650,7 +650,7 @@ Each Claude Code instance gets fully isolated state:
 | `osm:claudemux` parser | ✅ | ✅ | ✅ |
 | `osm:claudemux` provider/registry | ✅ | ✅ | ✅ |
 | `osm:claudemux` Claude Code provider | ✅ | ✅ | ⬜ (needs PTY) |
-| BT templates (`claude-mux.js`) | ✅ | ✅ | ✅ (spawn excluded) |
+| BT templates (embedded in `osm pr-split`) | ✅ | ✅ | ✅ (spawn excluded) |
 | PR splitting workflow | ✅ | ✅ | ✅ (pure `osm:exec` git) |
 | Goal discovery | ✅ | ✅ | ✅ |
 
@@ -680,7 +680,7 @@ backends. The `pty_windows.go` stub returns `ErrNotSupported` until ConPTY is wi
 - PTY: Spawn system echo/cat binaries, test read/write/close lifecycle.
 
 **Layer 2 — JS integration tests (workflow logic):**
-- BT templates: Load `claude-mux.js` in a Goja runtime, verify exports, execute nodes
+- BT templates: Load embedded `pr_split_script.js` in a Goja runtime, verify exports, execute nodes
   with mocked dependencies.
 - PR splitting: Create temporary git repos, execute full split workflows, verify tree
   hash equivalence.
@@ -702,8 +702,8 @@ backends. The `pty_windows.go` stub returns `ErrNotSupported` until ConPTY is wi
 | **T239** | PTY module — `internal/builtin/pty/` |
 | **T241** | PTY output parsing — `internal/builtin/claudemux/parser.go` |
 | **T243** | Provider abstraction — Provider/AgentHandle/Registry + ClaudeCodeProvider |
-| **T244** | BT orchestration templates — `scripts/bt-templates/claude-mux.js` |
-| **T245** | PR splitting workflow — `scripts/orchestrate-pr-split.js` + goal definition |
+| **T244** | BT orchestration templates — embedded in `internal/command/pr_split_script.js` |
+| **T245** | PR splitting workflow — `osm pr-split` built-in command |
 | **P008** | This document (architecture-claude-mux.md) |
 
 ### In progress / planned
@@ -711,7 +711,7 @@ backends. The `pty_windows.go` stub returns `ErrNotSupported` until ConPTY is wi
 | Task | Description |
 |------|-------------|
 | **P009** | Rename `orchestrator` package → `claudemux`, module `osm:orchestrator` → `osm:claudemux` |
-| **P010** | ~~Rename `scripts/bt-templates/orchestrator.js` → `claude-mux.js`~~ **Done** |
+| **P010** | ~~Rename `scripts/bt-templates/orchestrator.js` → `claude-mux.js`~~ **Done** → Consolidated into `osm pr-split` |
 | **P013** | MCP feedback protocol — `reportProgress`, `reportResult`, `requestGuidance`, `reportError` |
 | **P014** | Dynamic MCP config per Claude instance — startup sequencing, per-port config, cleanup |
 | **P015** | Session isolation — `~/.osm/claude-sessions/<id>/`, independent state dirs |

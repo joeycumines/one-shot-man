@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Managed session compositor (`session_mgr.go`): `ManagedSession` composing Parser+Guard+MCPGuard+Supervisor into a unified pipeline with callbacks (`OnEvent`, `OnGuardAction`, `OnRecoveryDecision`) and thread-safe `Snapshot()`
 - `osm:claudemux` JavaScript module: full JS bindings for all building blocks (parser, guard, MCP guard, supervisor, pool, panel, instance registry, safety, choice resolver, managed session) with `SESSION_IDLE`/`SESSION_ACTIVE`/`SESSION_PAUSED`/`SESSION_FAILED`/`SESSION_CLOSED` constants
 - PR split rewrite: `orchestrate-pr-split.js` v3.0.0 with claudemux integration (selectStrategy+ChoiceResolver, conflict classification, equivalence verification with diff, createSelectStrategyNode BT leaf)
+- **`osm pr-split` built-in command**: consolidated PR splitting from external scripts into a first-class embedded command (`internal/command/pr_split.go`) — 11 CLI flags (`--base`, `--strategy`, `--max`, `--prefix`, `--verify`, `--dry-run`, `--ai`, `--provider`, `--model`, `--interactive`, `--test`); embedded JS runtime (v5.0.0) with all heuristic grouping strategies, AI classification via claudemux, BT workflow trees, PA-BT planning integration with full backchaining preconditions/effects, stacked branch creation, tree-hash equivalence verification, and interactive TUI mode; replaces `scripts/orchestrate-pr-split.js`, `scripts/bt-templates/claude-mux.js`, and `goals/orchestrate-pr-split.json`
+- Composite BT workflow functions for pr-split: `spawnAndPrompt` (3-step: spawn→send→wait), `verifyAndCommit` (tests→verify→commit ordering), `spawnPromptAndReadResult` (positional API variant), `createPlanningActions` (7 PA-BT actions with preconditions and effects for planner backchaining)
+- Behavioral tests for composite BT functions: config-object API verification, step ordering tests, PA-BT backchaining with goal planning, default commit message verification
 - Shell completion for `claude-mux` subcommands (status/start/stop/submit) in bash, zsh, fish, and PowerShell
 - Claude-mux documentation: `docs/reference/claude-mux.md` (full API reference), `docs/architecture-claude-mux.md` (11-section architecture doc), updates to `command.md`, `scripting.md`, and `README.md`
 - Fuzz tests for claude-mux: `FuzzParseOutput`, `FuzzGuardRuleEval`, `FuzzMCPPayload`, `FuzzSafetyClassify` in `fuzz_test.go`
@@ -116,6 +119,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `osm:nextIntegerId` module name: use `osm:nextIntegerID` instead (old name still works as an alias)
 
 ### Removed
+- `scripts/orchestrate-pr-split.js` — consolidated into `osm pr-split` built-in command (`internal/command/pr_split_script.js`)
+- `scripts/bt-templates/claude-mux.js` — BT template functions merged into `osm pr-split` embedded script
+- `goals/orchestrate-pr-split.json` — goal definition replaced by `osm pr-split` CLI flags and embedded configuration
 - `fetchStream()` from `osm:fetch` module — replaced by Promise-based `fetch()` which reads the full response body; streaming use cases should use standard async patterns with `await resp.text()`
 - Old synchronous `osm:fetch` implementation — `fetch()` was synchronous (blocking the event loop), now runs HTTP requests in goroutines with Promise-based resolution
 - Old synchronous `osm:grpc` implementation using raw `google.golang.org/grpc` — replaced entirely by goja-grpc thin wrapper with Promise-based API

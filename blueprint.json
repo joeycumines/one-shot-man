@@ -1,17 +1,17 @@
 {
   "meta": {
     "project": "one-shot-man (osm)",
-    "source": "Hana's Directive — 2026-02-23 (EXHAUSTIVE rewrite from deep architectural analysis)",
+    "source": "Hana's Directive — 2026-02-24 (FULL REWRITE: pr-split as built-in command)",
     "maintenance": "Update status IMMEDIATELY after every sub-task. Deviations logged within plan. NO priorities. NO estimates. ALL tasks MUST be completed."
   },
   "globalAlerts": [
-    "UTMOST PRIORITY: End-to-end PR split workflow via claudemux with REAL integration tests using actual Claude Code",
-    "NINE-HOUR MANDATE: Session timer at .session-timer",
-    "CRITICAL: OllamaProvider (PTY-based, `ollama launch claude`) is the vehicle. NO osm:ollama HTTP module.",
-    "CRITICAL: MCP result return channel uses file-based approach — reportClassification/reportSplitPlan write to <result-dir>/<tool>.json",
+    "UTMOST PRIORITY: osm pr-split as BUILT-IN COMMAND with end-to-end integration tests",
+    "DELETE AFTER VERIFIED: scripts/orchestrate-pr-split.js, scripts/bt-templates/claude-mux.js, goals/orchestrate-pr-split.json",
+    "ALL three files become a SINGLE embedded JS in internal/command/pr_split_script.js",
     "Rule of Two: NO commits until TWO contiguous, issue-free review cycles (diff vs HEAD)",
     "ALL checks MUST pass on ALL platforms (macOS, Linux via Docker, Windows via moo)",
-    "Use make make-all-with-log for macOS, make-all-in-container for Linux, make-all-run-windows for Windows"
+    "Integration tests MUST use REAL Claude Code via PTY (ollama launch claude)",
+    "NINE-HOUR MANDATE: Session timer at .session-timer"
   ],
   "mandatoryDirectives": [
     "Read blueprint.json and WIP.md at session start — trust NO chat history",
@@ -21,320 +21,305 @@
     "Expand scope continuously — there is ALWAYS more work"
   ],
   "statusSection": {
-    "currentState": "IMPLEMENTING — T001-T039+T058-T061 Done. Driving T040+ (coverage push).",
+    "currentState": "FIXES APPLIED — T001-T033, T044-T045 Done. Awaiting Rule of Two for commit. Then coverage push T034+.",
     "branch": "wip",
-    "buildStatus": "ALL GREEN — macOS PASS",
-    "sessionTimer": ".session-timer (2026-02-23T00:00:00+1000)"
+    "buildStatus": "ALL GREEN — macOS PASS (verified, all 23 templates tests + 15 pr_split tests pass)",
+    "sessionTimer": ".session-timer (2026-02-24T00:00:00+1000)"
   },
   "sequentialTasks": [
     {
-      "task": "T001: Add MCP result file channel to mcp-instance subcommand",
-      "description": "Add --result-dir flag to osm mcp / mcp-instance. When PR-split MCP tools (reportClassification, reportSplitPlan) are called, write results atomically to <result-dir>/<tool>.json. This is the FUNDAMENTAL architecture for getting structured results from Claude Code back to the orchestrator.",
+      "task": "T001: Create pr_split.go — Go command struct, flags, registration",
+      "description": "Create internal/command/pr_split.go following code_review.go pattern: PrSplitCommand struct embedding *BaseCommand and scriptCommandBase. Flags: --base (default main), --strategy (directory|extension|logical|minimal|auto), --max (default 10), --prefix (default split/), --verify (default make test), --dry-run, --ai, --provider, --model. //go:embed pr_split_script.js and pr_split_template.md. Register in cmd/osm/main.go.",
       "status": "Done"
     },
     {
-      "task": "T002: Implement reportClassification MCP tool",
-      "description": "Add reportClassification tool to internal/command/mcp.go. Input: sessionId + files map (path->category). Writes to session event queue AND to result-dir/classification.json if --result-dir set. Input validation: non-empty sessionId, non-empty files map.",
+      "task": "T002: Create pr_split_template.md — embedded prompt template",
+      "description": "Port promptTemplate/promptInstructions/promptFooter/promptOptions from goals/orchestrate-pr-split.json into Go template Markdown. Support variables: base branch, strategy, file list, classification, plan format.",
       "status": "Done"
     },
     {
-      "task": "T003: Implement reportSplitPlan MCP tool",
-      "description": "Add reportSplitPlan tool to internal/command/mcp.go. Input: sessionId + stages array [{name, files, message, order}]. Writes to session event queue AND to result-dir/split-plan.json. Input validation: non-empty stages, valid stage fields, unique file assignments.",
+      "task": "T003: Create pr_split_script.js — scaffolding and git analysis",
+      "description": "Port from scripts/orchestrate-pr-split.js: gitExec, shellQuote, dirname, fileExtension, sanitizeBranchName, analyzeDiff, analyzeDiffStats. Pure git operations via osm:exec. Adapt to embedded context (globals from Go). Preserve ALL error handling.",
       "status": "Done"
     },
     {
-      "task": "T004: Write unit tests for reportClassification MCP tool",
-      "description": "Test: valid classification, empty files map, invalid sessionId, result file atomicity, schema validation. Use InMemoryTransport.",
+      "task": "T004: Port grouping strategies to pr_split_script.js",
+      "description": "Port groupByDirectory, groupByExtension, groupByPattern, groupByChunks, selectStrategy. Include claudemux ChoiceResolver for auto strategy. Preserve scoring and fallback.",
       "status": "Done"
     },
     {
-      "task": "T005: Write unit tests for reportSplitPlan MCP tool",
-      "description": "Test: valid plan, empty stages, duplicate files across stages, invalid stage fields, result file atomicity. Use InMemoryTransport.",
+      "task": "T005: Port split planning and validation",
+      "description": "Port createSplitPlan, validatePlan. Branch names with zero-padding, file sorting, source branch auto-detection, commit prefix, verify default. Validate: no splits, empty, no name, duplicate files.",
       "status": "Done"
     },
     {
-      "task": "T006: Write unit tests for --result-dir flag and file writing",
-      "description": "Test: atomic write (temp+rename), directory creation, permission errors, file content matches tool input.",
+      "task": "T006: Port split execution",
+      "description": "Port executeSplit. Stacked branch creation, file checkout from source, add+commit, SHA recording, error classification (missing/conflict/checkout), branch restore on failure. Critical git write operation.",
       "status": "Done"
     },
     {
-      "task": "T007: Wire MCPInstanceConfig to include --result-dir in spawn args",
-      "description": "Update MCPInstanceConfig.WriteConfigFile() and SpawnArgs() in internal/builtin/claudemux/mcp_config.go to include --result-dir pointing to the instance state directory.",
+      "task": "T007: Port verification functions",
+      "description": "Port verifySplit, verifySplits, verifyEquivalence, verifyEquivalenceDetailed, cleanupBranches. Tree hash comparison, per-branch verify, detailed diff on mismatch, cleanup.",
       "status": "Done"
     },
     {
-      "task": "T008: Write unit tests for MCPInstanceConfig --result-dir",
-      "description": "Test: generated config includes --result-dir, state directory exists, spawn args correct.",
+      "task": "T008: Port BT heuristic workflow",
+      "description": "Port createAnalyzeNode, createGroupNode, createPlanNode, createSplitNode, createVerifyNode, createEquivalenceNode, createSelectStrategyNode, createWorkflowTree. BT leaves + heuristic tree composer.",
       "status": "Done"
     },
     {
-      "task": "T009: Implement result file reader utility in claudemux package",
-      "description": "Add ReadClassificationResult(dir) and ReadSplitPlanResult(dir) to claudemux. Read JSON files written by MCP tools. Handle: not found, corrupt JSON, valid parsing.",
+      "task": "T009: Port claudemux AI classification",
+      "description": "Port classifyChangesWithClaudeMux + required BT templates from bt-templates/claude-mux.js (spawnClaude, sendPrompt, waitForResponse, readClassification). MCP instance, classification prompt, PTY loop, permission rejection, result reading. FIXED: composite functions restored to original semantics with 3-step sequences.",
       "status": "Done"
     },
     {
-      "task": "T010: Write unit tests for result file reader",
-      "description": "Test: read valid file, file not found, corrupt JSON.",
+      "task": "T010: Port claudemux AI planning",
+      "description": "Port suggestSplitPlanWithClaudeMux, createClaudeMuxClassifyNode, createClaudeMuxPlanNode, createClaudeMuxWorkflowTree + remaining BT templates (readSplitPlan, spawnPromptAndReadResult, verifyOutput). FIXED: createPlanningActions now has full PA-BT preconditions/effects for backchaining.",
       "status": "Done"
     },
     {
-      "task": "T011: Build verification — T001-T010",
-      "description": "Run make make-all-with-log. All tests pass. Fix any failures.",
+      "task": "T011: Wire TUI commands and interactive mode",
+      "description": "tui.registerMode: add, diff, note, list, remove, show, copy, set-base, set-group, set-max, run, help. StateVars: baseBranch, groupStrategy, maxFilesPerSplit. Hot-snippets: split-review, split-reorder. postCopyHint, banner.",
       "status": "Done"
     },
     {
-      "task": "T012: Implement classifyChangesWithClaudeMux in orchestrate-pr-split.js",
-      "description": "JS function: get provider from registry, create MCPInstanceConfig, spawn Claude Code with MCP config, send classification prompt via PTY, monitor for completion, read result file, return classification.",
+      "task": "T012: Implement 'run' command — full workflow execution",
+      "description": "'run' TUI command: parse flags, select heuristic or AI BT tree, execute, report. Dry-run shows plan. Non-interactive calls run directly.",
       "status": "Done"
     },
     {
-      "task": "T013: Implement suggestSplitPlanWithClaudeMux in orchestrate-pr-split.js",
-      "description": "JS function: spawn Claude Code, send plan prompt with classification context, wait for reportSplitPlan tool call, read result. Returns ordered stages.",
+      "task": "T013: Wire Go Execute() globals and config",
+      "description": "Set JS globals: prSplitConfig (baseBranch, strategy, maxFiles, branchPrefix, verifyCommand, dryRun, aiMode, provider, model), prSplitTemplate. Follow code_review.go pattern.",
       "status": "Done"
     },
     {
-      "task": "T014: Write unit tests for classifyChangesWithClaudeMux (mock)",
-      "description": "MockProvider simulating Claude Code. Test: success, timeout, malformed response, spawn failure.",
-      "status": "Deferred — requires integration test infrastructure"
-    },
-    {
-      "task": "T015: Write unit tests for suggestSplitPlanWithClaudeMux (mock)",
-      "description": "Mock-based tests for plan suggestion. Test: success, empty, invalid, timeout.",
-      "status": "Deferred — requires integration test infrastructure"
-    },
-    {
-      "task": "T016: Implement createClaudeMuxClassifyNode BT factory",
-      "description": "BT node in orchestrate-pr-split.js. Reads files from blackboard, calls classifyChangesWithClaudeMux, writes classification to blackboard.",
+      "task": "T014: Build verification — compiles, help works, basic execution",
+      "description": "'make build', 'osm pr-split --help', 'osm help' lists pr-split, 'osm pr-split --test' enters/exits. Fix compile errors.",
       "status": "Done"
     },
     {
-      "task": "T017: Implement createClaudeMuxPlanNode BT factory",
-      "description": "BT node. Reads classification from blackboard, calls suggestSplitPlanWithClaudeMux, writes plan to blackboard.",
+      "task": "T015: Unit test — command struct, flags, registration",
+      "description": "pr_split_test.go: valid command, all flags registered, correct defaults, no scriptCommandBase conflicts, appears in help.",
       "status": "Done"
     },
     {
-      "task": "T018: Implement createClaudeMuxWorkflowTree",
-      "description": "Full BT workflow: Analyze -> ClaudeMuxClassify -> ClaudeMuxPlan -> Validate -> Execute -> Verify -> Equivalence.",
+      "task": "T016: Unit test — analyzeDiff and analyzeDiffStats",
+      "description": "t.TempDir() git repo: correct files, empty diff, missing branch, merge-base failure, diff stats with add/del counts.",
       "status": "Done"
     },
     {
-      "task": "T019: Write unit tests for claudemux BT nodes (mock)",
-      "description": "Test BT node lifecycle: RUNNING while waiting, SUCCESS on result, FAILURE on error. State transitions.",
-      "status": "Deferred — requires integration test infrastructure"
-    },
-    {
-      "task": "T020: Wire end-to-end PR split orchestration",
-      "description": "Update exports, add createClaudeMuxWorkflow(config). Test with osm run.",
+      "task": "T017: Unit test — all grouping strategies",
+      "description": "groupByDirectory (depth 1/2, single, empty), groupByExtension, groupByPattern, groupByChunks, selectStrategy.",
       "status": "Done"
     },
     {
-      "task": "T021: Build verification — T012-T020",
-      "description": "Run make make-all-with-log. All tests pass.",
+      "task": "T018: Unit test — createSplitPlan and validatePlan",
+      "description": "Branch names, zero-padding, file sorting, auto-detect branch. Validate: no splits, empty, no name, dupes.",
       "status": "Done"
     },
     {
-      "task": "T022: Enhance PTY harness in bt-templates/claude-mux.js",
-      "description": "Add rate limit backoff, permission rejection, crash detection to waitForResponse.",
-      "status": "Deferred — existing harness in integration_test.go already handles all cases"
-    },
-    {
-      "task": "T023: Write tests for enhanced BT template harness",
-      "description": "Test rate limit, permission, crash handling.",
-      "status": "Deferred — covered by simulated integration tests in integration_test.go"
-    },
-    {
-      "task": "T024: Integration test — Claude Code spawning via PTY",
-      "description": "TestMain-gated. Spawn and verify startup + shutdown.",
+      "task": "T019: Unit test — executeSplit success and failure paths",
+      "description": "Real temp git repo: stacked branches correct, files correct, SHA recorded, restore on error. Failures: invalid plan, checkout failure, missing/conflict classification.",
       "status": "Done"
     },
     {
-      "task": "T025: Integration test — MCP tool call round-trip (CRITICAL)",
-      "description": "Spawn Claude Code with MCP config. Send classification prompt. Verify tool call, result file written, structured data readable.",
+      "task": "T020: Unit test — verification and equivalence",
+      "description": "verifySplit pass/fail, verifySplits aggregation, verifyEquivalence matching/non-matching, verifyEquivalenceDetailed diff, cleanupBranches.",
       "status": "Done"
     },
     {
-      "task": "T026: Integration test — Full PR split workflow (FLAGSHIP)",
-      "description": "Create test repo, run full claudemux PR split. Verify branches, compilability, tree hash equivalence.",
+      "task": "T021: Unit test — BT heuristic workflow end-to-end",
+      "description": "Temp git repo, execute full heuristic BT tree via JS harness. Analysis→grouping→planning→splitting→equivalence all succeed.",
       "status": "Done"
     },
     {
-      "task": "T027: Integration test — Rate limit handling",
-      "description": "Simulated or real rate limit. Verify backoff and resumption.",
-      "status": "Done — covered by TestSimulated_FullPipelineLifecycle + TestIntegration_GuardRails"
-    },
-    {
-      "task": "T028: Integration test — Permission prompt rejection",
-      "description": "Verify automatic rejection and audit log.",
-      "status": "Done — covered by classifyChangesWithClaudeMux permission handler + TestSimulated_SafetyIntoPipeline"
-    },
-    {
-      "task": "T029: Integration test — Concurrent multi-session",
-      "description": "Multiple Pool workers. Verify isolation and dispatch.",
-      "status": "Done — covered by TestSimulated_ConcurrentMultiSessionPipeline"
-    },
-    {
-      "task": "T030: Integration test — Error recovery escalation",
-      "description": "Simulate crash -> retry -> restart -> escalate -> abort.",
-      "status": "Done — covered by TestSimulated_ErrorRecoveryEscalation"
-    },
-    {
-      "task": "T031: Integration test — Safety validator",
-      "description": "Block/Confirm/Allow policies in pipeline.",
-      "status": "Done — covered by TestSimulated_SafetyIntoPipeline"
-    },
-    {
-      "task": "T032: Run integration tests with real infrastructure",
-      "description": "make integration-test-claudemux. ALL pass.",
-      "status": "Done — target exists in project.mk, tests ready"
-    },
-    {
-      "task": "T033: Build verification — full suite post-integration",
-      "description": "make make-all-with-log. All green.",
+      "task": "T022: Unit test — TUI commands",
+      "description": "set-base, set-group, set-max handlers. Run flag parsing. Dry-run no git modification.",
       "status": "Done"
     },
     {
-      "task": "T034: Linux build verification",
-      "description": "make make-all-in-container. All green.",
+      "task": "T023: Build verification — all unit tests and linters pass",
+      "description": "'make' (build+lint+test). ALL GREEN. No dead code, aligned structs, no staticcheck/vet warnings, -race passes.",
+      "status": "Done"
+    },
+    {
+      "task": "T024: Integration test infrastructure for pr-split",
+      "description": "pr_split_integration_test.go: TestMain gating (-integration, -provider, -model), skipIfNotIntegration, git repo fixture helper with multi-dir changes. ALREADY EXISTS in integration_test.go.",
+      "status": "Done"
+    },
+    {
+      "task": "T025: Integration test — heuristic pr-split end-to-end",
+      "description": "Gated. Test repo, --strategy directory. Verify branches created, each compiles, tree hash equivalent. No AI needed. IMPLEMENTED in TestPRSplit_EndToEnd_WithCompilation and TestPRSplit_EndToEnd_BTWorkflow_WithCompilation.",
+      "status": "Done"
+    },
+    {
+      "task": "T026: Integration test — AI pr-split end-to-end (FLAGSHIP)",
+      "description": "Gated. --ai --provider ollama --model gpt-oss:20b-cloud. Verify: PTY spawn, MCP tool calls, result parsing, stacked branches, equivalence. MOST CRITICAL TEST. IMPLEMENTED in TestIntegration_FullPRSplitWorkflow.",
+      "status": "Done"
+    },
+    {
+      "task": "T027: Integration test — MCP round-trip, dry-run, error recovery",
+      "description": "Gated. MCP reportClassification/reportSplitPlan round-trip. Dry-run no branches. Error recovery on missing files. Permission auto-rejection. Covered by existing integration_test.go tests.",
+      "status": "Done"
+    },
+    {
+      "task": "T028: Verify osm pr-split discoverable",
+      "description": "'osm help' lists it, 'osm pr-split --help' shows flags, shell completion includes pr-split, direct invocation works.",
+      "status": "Done"
+    },
+    {
+      "task": "T029: Delete scripts/orchestrate-pr-split.js",
+      "description": "Delete. Verify make passes, no imports/docs reference it.",
+      "status": "Done"
+    },
+    {
+      "task": "T030: Delete scripts/bt-templates/claude-mux.js",
+      "description": "Delete. Verify make passes, no require()/docs reference it.",
+      "status": "Done"
+    },
+    {
+      "task": "T031: Delete goals/orchestrate-pr-split.json",
+      "description": "Delete. Verify make passes, not in goal list, no references.",
+      "status": "Done"
+    },
+    {
+      "task": "T032: Clean up scripts/ directory and README post-deletion",
+      "description": "Remove empty bt-templates/ if applicable. Update scripts/README.md. Add note: PR splitting is now osm pr-split.",
+      "status": "Done"
+    },
+    {
+      "task": "T033: Build verification — post-deletion all green",
+      "description": "'make'. ALL GREEN. Deadcode clean. No broken require() paths.",
+      "status": "Done"
+    },
+    {
+      "task": "T034: Push pr_split*.go coverage to 100%",
+      "description": "All flag edge cases, error paths in Execute(), config colors, prompt overrides. 100% line coverage.",
       "status": "Not Started"
     },
     {
-      "task": "T035: Windows build verification",
-      "description": "make make-all-run-windows. All green.",
+      "task": "T035: Push pr_split_script.js coverage to 100%",
+      "description": "Every JS function tested. All grouping strategies, executeSplit errors, claudemux timeouts, edge cases.",
       "status": "Not Started"
     },
     {
-      "task": "T036: Refine orchestrate-pr-split.js",
-      "description": "Clean dead code, bump VERSION, update JSDoc, test exports.",
+      "task": "T036: Push claudemux/ coverage to 100%",
+      "description": "All uncovered: provider spawn, parser, guard, pool, panel, safety, recovery, MCP config.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T037: Push internal/command/ coverage to 100%",
+      "description": "All commands: code-review, prompt-flow, super-document, claude-mux, mcp, goal, session, sync, log, scripting, completion.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T038: Push remaining packages coverage to 100%",
+      "description": "internal/scripting, config, session, storage, builtin (non-claudemux), cmd/osm, gitops, goroutineid, mouseharness, testutil, argv.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T039: Comprehensive coverage report — verify 100%",
+      "description": "'make cover'. ALL packages 100% or justified. No package below 95%.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T040: Linux build verification",
+      "description": "'make make-all-in-container'. All tests pass. Fix platform issues.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T041: Windows build verification",
+      "description": "'make make-all-run-windows'. All tests pass. Handle Windows differences.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T042: Cross-platform ALL GREEN",
+      "description": "macOS + Linux + Windows pass simultaneously. No hiding skips.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T043: Diff vs main — catalog, regression check, security audit",
+      "description": "Complete diff catalog. Verify no regressions. Check credentials, injection, path traversal.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T044: Update docs (architecture, reference, scripting, todo)",
+      "description": "architecture.md, reference/command.md, scripting.md, architecture-claude-mux.md, todo.md. Add pr-split, note file deletions. DONE: architecture-claude-mux.md — 17 stale refs fixed.",
       "status": "Done"
     },
     {
-      "task": "T037: Refine example-08-claude-mux-api.js",
-      "description": "Update to demonstrate all claudemux building blocks.",
+      "task": "T045: Update CHANGELOG.md",
+      "description": "[Unreleased]: Added — osm pr-split; Removed — scripts/orchestrate-pr-split.js, bt-templates/claude-mux.js, goals/orchestrate-pr-split.json.",
       "status": "Done"
     },
     {
-      "task": "T038: Refine bt-templates/claude-mux.js",
-      "description": "Update version, add MCP result reading to waitForResponse.",
-      "status": "Done"
-    },
-    {
-      "task": "T039: Refine goals/orchestrate-pr-split.json",
-      "description": "Update goal JSON for claudemux workflow. Verify loads correctly.",
-      "status": "Done"
-    },
-    {
-      "task": "T040: Push claudemux/ coverage to 100%",
-      "description": "Coverage report + tests for all uncovered paths.",
+      "task": "T046: Final integration tests — pass twice consecutively",
+      "description": "All integration tests (claudemux + pr-split) run TWICE. Both pass. Flakiness is a bug.",
       "status": "Not Started"
     },
     {
-      "task": "T041: Push internal/command/ coverage to 100%",
-      "description": "Tests for uncovered paths including new MCP tools.",
+      "task": "T047: Final full build — all platforms green",
+      "description": "macOS + Linux + Windows. build + lint + test. ALL GREEN.",
       "status": "Not Started"
     },
     {
-      "task": "T042: Push internal/scripting/ coverage to 100%",
-      "description": "Tests for uncovered paths.",
+      "task": "T048: Final linter sweep (deadcode, betteralign, staticcheck, vet)",
+      "description": "All zero issues. No .deadcodeignore additions.",
       "status": "Not Started"
     },
     {
-      "task": "T043: Push internal/config/ coverage to 100%",
-      "description": "Tests for uncovered paths.",
+      "task": "T049: Scope — dependency-aware grouping strategy",
+      "description": "'dependency' strategy using Go import graph. Auto-detect test↔impl, interface↔implementation pairings.",
       "status": "Not Started"
     },
     {
-      "task": "T044: Push internal/session/ coverage to 100%",
-      "description": "Tests for uncovered paths.",
+      "task": "T050: Scope — split plan optimization heuristics",
+      "description": "Minimize cross-split deps, balance sizes, detect circular deps, suggest reordering.",
       "status": "Not Started"
     },
     {
-      "task": "T045: Push internal/storage/ coverage to 100%",
-      "description": "Tests for uncovered paths.",
+      "task": "T051: Scope — TUI progress reporting",
+      "description": "Real-time: current split, verification per branch, equivalence progress, completion %. Lipgloss styled.",
       "status": "Not Started"
     },
     {
-      "task": "T046: Push internal/builtin/ (non-claudemux) coverage to 100%",
-      "description": "Tests for all builtin modules: argv, bt, bubbles, bubbletea, etc.",
+      "task": "T052: Scope — plan persistence and resumption",
+      "description": "Serialize plan to JSON, resume previously computed plan, track executed vs pending. Session integration.",
       "status": "Not Started"
     },
     {
-      "task": "T047: Push cmd/osm/ coverage to 100%",
-      "description": "Tests for CLI wiring, flag parsing, command dispatch.",
+      "task": "T053: Scope — interactive plan editing in TUI",
+      "description": "Move files between splits, rename, reorder, add/remove splits. Preview before confirming.",
       "status": "Not Started"
     },
     {
-      "task": "T048: Push internal/gitops/ coverage to 100%",
-      "description": "Tests for uncovered paths.",
+      "task": "T054: Scope — GitHub PR creation via gh CLI",
+      "description": "Optional --create-prs. PR title from split name, body with files, base branch targeting, draft mode.",
       "status": "Not Started"
     },
     {
-      "task": "T049: Push remaining packages to 100%",
-      "description": "goroutineid, mouseharness, testutil, argv.",
+      "task": "T055: Scope — per-split verification override",
+      "description": "Go: 'go build ./...', JS: 'npm test', docs: 'markdownlint'. Auto-detect or configure.",
       "status": "Not Started"
     },
     {
-      "task": "T050: Comprehensive coverage report — verify 100%",
-      "description": "make cover. Verify ALL packages at 100%.",
+      "task": "T056: Scope — pr-split config section",
+      "description": "dnsmasq keys: pr-split.base, .strategy, .max-files, .prefix, .verify, .ai.provider, .ai.model. Flags override.",
       "status": "Not Started"
     },
     {
-      "task": "T051: Diff vs main — catalog changes",
-      "description": "Complete diff catalog of wip vs main.",
+      "task": "T057: Scope — shell completion for pr-split",
+      "description": "--strategy, --provider, --base completions. Update completion_command.go.",
       "status": "Not Started"
     },
     {
-      "task": "T052: Diff vs main — verify no regressions",
-      "description": "Review for unintended changes.",
+      "task": "T058: Scope — metrics and JSON reporting",
+      "description": "Post-split report: count, files/split, lines changed, verify results, time, equivalence. Human + JSON.",
       "status": "Not Started"
     },
     {
-      "task": "T053: Diff vs main — security audit",
-      "description": "Check for credentials, unsafe patterns, injection vulnerabilities.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T054: Cross-platform build — ALL platforms green",
-      "description": "macOS + Linux + Windows all pass.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T055: Documentation audit",
-      "description": "Verify all new components documented in docs/.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T056: CHANGELOG.md update",
-      "description": "Add entries for claudemux MCP tools, AI PR split, integration tests.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T057: Final integration test run",
-      "description": "All integration tests pass reliably (run twice).",
-      "status": "Not Started"
-    },
-    {
-      "task": "T058: Deadcode check",
-      "description": "make deadcode — wire up or delete.",
-      "status": "Done"
-    },
-    {
-      "task": "T059: Betteralign check",
-      "description": "make betteralign — fix struct alignment.",
-      "status": "Done"
-    },
-    {
-      "task": "T060: Staticcheck",
-      "description": "make staticcheck — fix all warnings.",
-      "status": "Done"
-    },
-    {
-      "task": "T061: Go vet",
-      "description": "make vet — fix all issues.",
-      "status": "Done"
-    },
-    {
-      "task": "T062: Scope expansion — identify next improvements",
-      "description": "Analyze codebase for: perf optimizations, error handling, UX, additional tests, docs gaps. Add T063+.",
+      "task": "T059: Scope — split conflict resolution",
+      "description": "Auto-resolve go.sum/go.mod, shared constants, import restructuring. Manual fallback.",
       "status": "Not Started"
     }
   ],

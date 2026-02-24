@@ -1857,6 +1857,7 @@ var analysisCache = null;
 var groupsCache = null;
 var planCache = null;
 var executionResultCache = [];
+var claudeExecutor = null; // Lazy-created ClaudeCodeExecutor instance
 
 var state = tui.createState(COMMAND_NAME, {
     [shared.contextItems]: {defaultValue: []}
@@ -2692,6 +2693,69 @@ function buildCommands(stateArg) {
             }
         },
 
+        claude: {
+            description: 'Switch to Claude Code TUI (Ctrl+] to return)',
+            usage: 'claude [spawn]',
+            handler: function(args) {
+                try {
+                    // Lazy-create executor.
+                    if (!claudeExecutor) {
+                        claudeExecutor = new ClaudeCodeExecutor(prSplitConfig);
+                    }
+                    // 'claude spawn' — resolve and spawn Claude.
+                    if (args && args.length > 0 && args[0] === 'spawn') {
+                        var resolveResult = claudeExecutor.resolve();
+                        if (resolveResult.error) {
+                            output.print('Error: ' + resolveResult.error);
+                            return;
+                        }
+                        var spawnResult = claudeExecutor.spawn();
+                        if (spawnResult.error) {
+                            output.print('Error: ' + spawnResult.error);
+                            return;
+                        }
+                        output.print('Claude spawned (session: ' + spawnResult.sessionId + ')');
+                        return;
+                    }
+                    // 'claude' — switch to Claude's TUI.
+                    if (!claudeExecutor.handle) {
+                        output.print('No Claude process running. Use "claude spawn" first.');
+                        return;
+                    }
+                    tuiMux.attach(claudeExecutor.handle);
+                    output.print('Switching to Claude TUI… (Ctrl+] to return)');
+                    var result = tuiMux.switchToClaude();
+                    output.print('Back to osm. (reason: ' + result.reason + ')');
+                    if (result.error) {
+                        output.print('Error: ' + result.error);
+                    }
+                    try { tuiMux.detach(); } catch (e) { /* best effort */ }
+                } catch (e) {
+                    output.print('Error: ' + (e && e.message ? e.message : String(e)));
+                    if (e && e.stack) { log.error('claude command error: ' + e.stack); }
+                }
+            }
+        },
+
+        'claude-status': {
+            description: 'Show Claude Code process status',
+            usage: 'claude-status',
+            handler: function() {
+                if (!claudeExecutor) {
+                    output.print('Claude: not initialized');
+                    return;
+                }
+                var resolved = claudeExecutor.resolved;
+                var handle = claudeExecutor.handle;
+                var sessionId = claudeExecutor.sessionId;
+                output.print('Claude Status:');
+                output.print('  Command:  ' + (resolved ? resolved.command + ' (' + resolved.type + ')' : 'not resolved'));
+                output.print('  Session:  ' + (sessionId || 'none'));
+                output.print('  Process:  ' + (handle ? (handle.isAlive ? (handle.isAlive() ? 'running' : 'exited') : 'unknown') : 'not spawned'));
+                output.print('  Mux:      ' + (tuiMux.isClaudeActive() ? 'Claude active' : 'osm active'));
+            }
+        },
+
         help: {
             description: 'Show available commands',
             usage: 'help',
@@ -2719,6 +2783,8 @@ function buildCommands(stateArg) {
                 output.print('  report           Output current state as JSON');
                 output.print('  save-plan [path] Save plan to file (default: .pr-split-plan.json)');
                 output.print('  load-plan [path] Load plan from file');
+                output.print('  claude [spawn]   Switch to Claude Code TUI (or spawn it)');
+                output.print('  claude-status    Show Claude process status');
                 output.print('  help             Show this help');
             }
         }

@@ -678,7 +678,180 @@ backends. The `pty_windows.go` stub returns `ErrNotSupported` until ConPTY is wi
 
 ---
 
-## 11. Roadmap
+## 11. TUI Multiplexing
+
+### Overview
+
+TUI multiplexing allows the user to switch between osm's TUI (go-prompt REPL) and
+Claude Code's TUI (running in a PTY) without leaving osm. This is implemented in
+`internal/termui/mux/` as the `TUIMux` type.
+
+### Design Rationale: Command-Blocking Model
+
+The TUI mux uses a **command-blocking model** rather than a reader-interception model.
+This is simpler and more robust:
+
+1. User types `claude` in osm's go-prompt REPL.
+2. The `claude` TUI command handler calls `TUIMux.RunPassthrough(ctx)`.
+3. `RunPassthrough` blocks, running a forwarding loop:
+   - Read raw bytes from stdin → write to Claude's PTY (except toggle key)
+   - Read bytes from Claude's PTY → write to stdout
+4. When user presses the toggle key (Ctrl+], `0x1D`), the loop exits.
+5. The command handler returns, go-prompt resumes.
+
+This avoids modifying `TerminalIO`, `TUIReader`, or any go-prompt internals.
+go-prompt is naturally paused because its command handler is still blocking.
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  Terminal (real stdin/stdout)                                         │
+│                                                                      │
+│  ┌────────────────────┐         ┌──────────────────────────────┐    │
+│  │  osm mode (normal) │         │  Claude mode (passthrough)   │    │
+│  │                    │         │                              │    │
+│  │  stdin → go-prompt │  Ctrl+] │  stdin → Claude PTY          │    │
+│  │  stdout ← go-prompt│ ◄─────► │  stdout ← Claude PTY         │    │
+│  │                    │         │                              │    │
+│  │  TUIReader/Writer  │         │  Raw byte forwarding         │    │
+│  │  (normal path)     │         │  (TUIMux.RunPassthrough)     │    │
+│  └────────────────────┘         └──────────────────────────────┘    │
+│                                                                      │
+│               ┌─────────────────────────────────┐                    │
+│               │  Status Bar (last terminal row)  │                    │
+│               │  [osm] or [Claude] | status     │                    │
+│               │  Ctrl+] to toggle               │                    │
+│               └─────────────────────────────────┘                    │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Terminal State Management
+
+When switching modes, terminal state must be cleanly managed:
+
+**Switch to Claude (enter passthrough):**
+1. Save osm's terminal state via `term.GetState(fd)`
+2. Put terminal in raw mode (for byte-level forwarding)
+3. Set scroll region to rows 1..(height-1) for status bar
+4. Start bidirectional forwarding goroutines
+5. Render status bar on last row
+
+**Switch to osm (exit passthrough):**
+1. Cancel forwarding goroutines
+2. Reset scroll region to full terminal
+3. Restore saved terminal state
+4. Clear status bar
+5. Return from RunPassthrough (go-prompt resumes)
+
+### Status Bar
+
+A single-line status bar on the bottom row shows:
+- Active mode: `[osm]` or `[Claude]`
+- Claude status: idle, thinking, tool-use, error
+- Toggle hint: `Ctrl+] to switch`
+
+The status bar uses ANSI escape sequences:
+- **Save/restore cursor:** `\033[s` / `\033[u`
+- **Scroll region:** `\033[1;Nr` (restrict to first N rows)
+- **Position:** `\033[N;1H` (move to row N)
+- **Styling:** Reverse video `\033[7m` for visibility
+
+### Forwarding Architecture
+
+Two goroutines handle bidirectional I/O:
+
+```go
+// stdin → Claude PTY (with toggle key interception)
+go func() {
+    buf := make([]byte, 4096)
+    for {
+        n, err := stdin.Read(buf)
+        if err != nil || ctx.Err() != nil { return }
+        // Scan for toggle key (0x1D = Ctrl+])
+        for i := 0; i < n; i++ {
+            if buf[i] == 0x1D {
+                cancel() // exit passthrough
+                return
+            }
+        }
+        child.Write(buf[:n])
+    }
+}()
+
+// Claude PTY → stdout
+go func() {
+    buf := make([]byte, 4096)
+    for {
+        n, err := child.Read(buf)
+        if err != nil { cancel(); return } // Claude exited
+        stdout.Write(buf[:n])
+    }
+}()
+```
+
+### Edge Cases
+
+1. **Claude exits while muxed:** The PTY read goroutine gets EOF, cancels the
+   context, `RunPassthrough` returns with a "Claude exited" status.
+
+2. **Terminal resize (SIGWINCH):** The mux propagates new dimensions to Claude's
+   PTY via `pty.Resize()` and updates the scroll region for the status bar.
+
+3. **Background MCP monitoring:** While Claude's TUI is active, osm's MCP server
+   continues running. MCP events are logged and can be queried after switching back.
+
+### Go API
+
+```go
+package mux
+
+type Side int
+const (
+    SideOsm    Side = iota
+    SideClaude
+)
+
+type TUIMux struct { /* ... */ }
+
+func New(stdin io.Reader, stdout io.Writer, termFd int) *TUIMux
+func (m *TUIMux) Attach(child io.ReadWriteCloser) error
+func (m *TUIMux) Detach() error
+func (m *TUIMux) RunPassthrough(ctx context.Context) (ExitReason, error)
+func (m *TUIMux) ActiveSide() Side
+func (m *TUIMux) SetToggleKey(key byte)
+func (m *TUIMux) SetResizeFunc(fn func(rows, cols uint16) error)
+
+type ExitReason int
+const (
+    ExitToggle     ExitReason = iota // user pressed toggle key
+    ExitChildExit                    // child process exited
+    ExitContext                      // context cancelled
+    ExitError                        // I/O error
+)
+```
+
+### JavaScript API
+
+Exposed via `tui.mux` global in pr-split:
+
+```javascript
+// Attach Claude's PTY
+tui.mux.attach(agentHandle);
+
+// Block until user toggles back (or Claude exits)
+var result = tui.mux.switchToClaude();
+// result.reason: 'toggle' | 'child-exit' | 'error'
+// result.exitCode: number (if child-exit)
+
+// Query state
+tui.mux.isClaudeActive(); // false (since switchToClaude returned)
+
+// Detach
+tui.mux.detach();
+```
+
+---
+
+## 12. Roadmap
 
 ### Completed
 

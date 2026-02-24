@@ -6,11 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
+	"github.com/joeycumines/one-shot-man/internal/termui/mux"
 )
 
 //go:embed pr_split_template.md
@@ -163,6 +165,56 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		"claudeModel":    c.claudeModel,
 		"claudeConfigDir": c.claudeConfigDir,
 		"claudeEnv":      claudeEnvMap,
+	})
+
+	// TUI Mux — terminal multiplexer between osm and child PTY (Claude Code).
+	// Uses os.Stdin/Stdout directly (not go-prompt's wrapped readers) because
+	// the command-blocking model ensures go-prompt is paused during passthrough.
+	termFd := int(os.Stdin.Fd())
+	tuiMux := mux.New(os.Stdin, os.Stdout, termFd)
+	engine.SetGlobal("tuiMux", map[string]interface{}{
+		"attach": func(handle interface{}) {
+			sio, ok := handle.(mux.StringIO)
+			if !ok {
+				panic("tuiMux.attach: argument must implement Send/Receive/Close")
+			}
+			if err := tuiMux.Attach(mux.WrapStringIO(sio)); err != nil {
+				panic(err.Error())
+			}
+		},
+		"detach": func() {
+			if err := tuiMux.Detach(); err != nil {
+				panic(err.Error())
+			}
+		},
+		"switchToClaude": func() map[string]interface{} {
+			reason, err := tuiMux.RunPassthrough(ctx)
+			result := map[string]interface{}{
+				"reason": reason.String(),
+			}
+			if err != nil {
+				result["error"] = err.Error()
+			}
+			return result
+		},
+		"isClaudeActive": func() bool {
+			return tuiMux.ActiveSide() == mux.SideClaude
+		},
+		"setStatus": func(status string) {
+			tuiMux.SetClaudeStatus(status)
+		},
+		"setToggleKey": func(key int) {
+			tuiMux.SetToggleKey(byte(key))
+		},
+		"setStatusEnabled": func(enabled bool) {
+			tuiMux.SetStatusEnabled(enabled)
+		},
+		"setResizeFunc": func(fn func(rows, cols int)) {
+			tuiMux.SetResizeFunc(func(rows, cols uint16) error {
+				fn(int(rows), int(cols))
+				return nil
+			})
+		},
 	})
 
 	// Load the embedded script

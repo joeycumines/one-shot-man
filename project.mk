@@ -22,4 +22,17 @@ integration-test-claudemux:
 		-integration -provider=$(PROVIDER) -model=$(MODEL) \
 		./internal/builtin/claudemux/...
 
+.PHONY: integration-test-prsplit
+integration-test-prsplit: ## Run pr-split integration tests with real Claude/AI (requires agent infrastructure)
+integration-test-prsplit: CLAUDE_COMMAND ?= claude
+integration-test-prsplit: CLAUDE_ARGS ?=
+integration-test-prsplit: INTEGRATION_MODEL ?= gpt-oss:20b-cloud
+integration-test-prsplit:
+	$(GO) test -race -v -count=1 -timeout=15m \
+		-integration \
+		-claude-command=$(CLAUDE_COMMAND) \
+		$(foreach arg,$(CLAUDE_ARGS),-claude-arg=$(arg)) \
+		-integration-model=$(INTEGRATION_MODEL) \
+		./internal/command/... -run 'TestIntegration_.*Claude'
+
 # ---

@@ -153,7 +153,7 @@ Split a large PR into reviewable stacked branches. Supports heuristic grouping s
   - `-log-file <path>`: path to log file (JSON output)
   - `-log-buffer <n>`: size of in-memory log buffer (default `1000`)
   - `-claude-command <path>`: Claude binary path (empty = auto-detect `claude` → `ollama`)
-  - `-claude-args <args>`: additional Claude CLI arguments (space-separated)
+  - `-claude-arg <arg>`: additional Claude CLI argument (repeatable, e.g. `-claude-arg --verbose -claude-arg --no-color`)
   - `-claude-model <model>`: model name (provider-dependent)
   - `-claude-config-dir <dir>`: Claude config directory override
   - `-claude-env <vars>`: extra environment variables (`KEY=VALUE,KEY=VALUE`)
@@ -161,7 +161,7 @@ Split a large PR into reviewable stacked branches. Supports heuristic grouping s
 Config keys (in `[pr-split]` section or global):
   - `pr-split.base`, `pr-split.strategy`, `pr-split.max`, `pr-split.prefix`
   - `pr-split.verify`, `pr-split.dry-run`
-  - `pr-split.claude-command`, `pr-split.claude-args`, `pr-split.claude-model`
+  - `pr-split.claude-command`, `pr-split.claude-arg`, `pr-split.claude-model`
   - `pr-split.claude-config-dir`, `pr-split.claude-env`
 
 #### Grouping strategies

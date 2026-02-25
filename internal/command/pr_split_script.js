@@ -2049,6 +2049,15 @@ function automatedSplit(config) {
     var maxRetries = config.maxResolveRetries || AUTOMATED_DEFAULTS.maxResolveRetries;
     var maxReSplits = config.maxReSplits || AUTOMATED_DEFAULTS.maxReSplits;
 
+    // Detect the auto-split BubbleTea TUI (injected from Go).
+    // When available, route progress through it; when absent (tests,
+    // non-interactive), fall back to text output.print.
+    var hasTUI = typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
+                 typeof autoSplitTUI.runAsync === 'function';
+    if (hasTUI && !config.disableTUI) {
+        autoSplitTUI.runAsync();
+    }
+
     var report = {
         mode: 'automated',
         steps: [],
@@ -2063,9 +2072,19 @@ function automatedSplit(config) {
         error: null
     };
 
+    function emitOutput(text) {
+        if (hasTUI && !config.disableTUI) {
+            autoSplitTUI.appendOutput(text);
+        }
+        output.print(text);
+    }
+
     function step(name, fn) {
         var t0 = Date.now();
-        output.print('[auto-split] ' + name + '...');
+        if (hasTUI && !config.disableTUI) {
+            autoSplitTUI.stepStart(name);
+        }
+        emitOutput('[auto-split] ' + name + '...');
         log.printf('auto-split step: %s', name);
         var result;
         try {
@@ -2076,9 +2095,27 @@ function automatedSplit(config) {
         var elapsed = Date.now() - t0;
         report.steps.push({ name: name, elapsedMs: elapsed, error: result.error || null });
         if (result.error) {
-            output.print('[auto-split] ' + name + ' FAILED (' + elapsed + 'ms): ' + result.error);
+            var errMsg = '[auto-split] ' + name + ' FAILED (' + elapsed + 'ms): ' + result.error;
+            emitOutput(errMsg);
+            if (hasTUI && !config.disableTUI) {
+                autoSplitTUI.stepDone(name, result.error, elapsed);
+            }
         } else {
-            output.print('[auto-split] ' + name + ' OK (' + elapsed + 'ms)');
+            emitOutput('[auto-split] ' + name + ' OK (' + elapsed + 'ms)');
+            if (hasTUI && !config.disableTUI) {
+                autoSplitTUI.stepDone(name, '', elapsed);
+            }
+        }
+        return result;
+    }
+
+    // finishTUI signals the auto-split TUI is done and waits for user
+    // dismissal. Must be called on every exit path.
+    function finishTUI(result) {
+        if (hasTUI && !config.disableTUI) {
+            var summary = result.error ? ('Error: ' + result.error) : 'Complete';
+            autoSplitTUI.done(summary);
+            autoSplitTUI.wait();
         }
         return result;
     }
@@ -2089,11 +2126,11 @@ function automatedSplit(config) {
     });
     if (analysis.error) {
         report.error = analysis.error;
-        return { error: analysis.error, report: report };
+        return finishTUI({ error: analysis.error, report: report });
     }
     if (analysis.files.length === 0) {
         report.error = 'No changes detected';
-        return { error: report.error, report: report };
+        return finishTUI({ error: report.error, report: report });
     }
     recordTelemetry('filesAnalyzed', analysis.files.length);
 
@@ -2115,9 +2152,9 @@ function automatedSplit(config) {
 
     // If Claude is unavailable, fall back to heuristic mode.
     if (executor.error) {
-        output.print('[auto-split] Claude unavailable — falling back to heuristic mode.');
+        emitOutput('[auto-split] Claude unavailable — falling back to heuristic mode.');
         report.fallbackUsed = true;
-        return heuristicFallback(analysis, config, report);
+        return finishTUI(heuristicFallback(analysis, config, report));
     }
 
     var sessionId = executor.sessionId;
@@ -2145,7 +2182,7 @@ function automatedSplit(config) {
     if (classifyResult.error) {
         report.error = classifyResult.error;
         cleanupExecutor();
-        return { error: classifyResult.error, report: report };
+        return finishTUI({ error: classifyResult.error, report: report });
     }
 
     // Step 4: Receive classification.
@@ -2176,7 +2213,7 @@ function automatedSplit(config) {
     if (classification.error) {
         report.error = classification.error;
         cleanupExecutor();
-        return { error: classification.error, report: report };
+        return finishTUI({ error: classification.error, report: report });
     }
 
     // Step 5: Generate plan (from Claude or locally).
@@ -2227,7 +2264,7 @@ function automatedSplit(config) {
     if (planResult.error) {
         report.error = planResult.error;
         cleanupExecutor();
-        return { error: planResult.error, report: report };
+        return finishTUI({ error: planResult.error, report: report });
     }
 
     var plan = planResult.plan;
@@ -2248,12 +2285,12 @@ function automatedSplit(config) {
     if (execResult.error) {
         report.error = execResult.error;
         cleanupExecutor();
-        return { error: execResult.error, report: report };
+        return finishTUI({ error: execResult.error, report: report });
     }
     if (runtime.dryRun) {
-        output.print('[auto-split] Dry run — skipping verification.');
+        emitOutput('[auto-split] Dry run — skipping verification.');
         cleanupExecutor();
-        return { error: null, report: report };
+        return finishTUI({ error: null, report: report });
     }
 
     // Step 7: Verify splits.
@@ -2341,22 +2378,22 @@ function automatedSplit(config) {
     report.independencePairs = assessIndependence(plan, classification.classification || {});
 
     // Summary.
-    output.print('');
-    output.print('=== Auto-Split Complete ===');
-    output.print('Splits: ' + plan.splits.length);
-    output.print('Claude interactions: ' + report.claudeInteractions);
-    output.print('Equivalence: ' + (equivResult.result && equivResult.result.equivalent ? 'PASS' : 'FAIL'));
+    emitOutput('');
+    emitOutput('=== Auto-Split Complete ===');
+    emitOutput('Splits: ' + plan.splits.length);
+    emitOutput('Claude interactions: ' + report.claudeInteractions);
+    emitOutput('Equivalence: ' + (equivResult.result && equivResult.result.equivalent ? 'PASS' : 'FAIL'));
     if (report.independencePairs.length > 0) {
-        output.print('Independent pairs: ' + report.independencePairs.map(function(p) {
+        emitOutput('Independent pairs: ' + report.independencePairs.map(function(p) {
             return p[0] + ' + ' + p[1];
         }).join(', '));
     }
     if (report.fallbackUsed) {
-        output.print('Mode: heuristic (Claude unavailable)');
+        emitOutput('Mode: heuristic (Claude unavailable)');
     }
 
     cleanupExecutor();
-    return { error: report.error, report: report };
+    return finishTUI({ error: report.error, report: report });
 }
 
 // heuristicFallback runs the standard heuristic split flow.

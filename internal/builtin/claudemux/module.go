@@ -1103,8 +1103,14 @@ func unwrapProvider(runtime *goja.Runtime, val goja.Value) Provider {
 }
 
 // wrapAgentHandle creates a JS object wrapping an AgentHandle with methods.
+// The original Go handle is stored as _goHandle so callers on the Go side
+// (e.g., tuiMux.attach) can extract it via Export and assert interface
+// compatibility without relying on Goja proxy objects.
 func wrapAgentHandle(runtime *goja.Runtime, h AgentHandle) goja.Value {
 	obj := runtime.NewObject()
+
+	// Store the original Go handle for extraction on the Go side.
+	_ = obj.Set("_goHandle", h)
 
 	_ = obj.Set("send", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) == 0 {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
@@ -41,11 +42,28 @@ type PrSplitCommand struct {
 	jsonOutput bool
 
 	// Claude Code execution configuration
-	claudeCommand   string // explicit path/name of Claude binary (empty = auto-detect)
-	claudeArgs      string // additional CLI arguments for Claude (space-separated)
-	claudeModel     string // model to use (provider-dependent)
-	claudeConfigDir string // config directory override
-	claudeEnv       string // extra environment variables (KEY=VALUE,KEY=VALUE)
+	claudeCommand   string          // explicit path/name of Claude binary (empty = auto-detect)
+	claudeArgs      stringSliceFlag // additional CLI arguments for Claude (repeatable --claude-arg flags)
+	claudeModel     string          // model to use (provider-dependent)
+	claudeConfigDir string          // config directory override
+	claudeEnv       string          // extra environment variables (KEY=VALUE,KEY=VALUE)
+}
+
+// stringSliceFlag implements [flag.Value] for repeatable string flags.
+// Each occurrence of the flag appends to the slice, avoiding fragile
+// string-splitting of shell arguments.
+type stringSliceFlag []string
+
+func (f *stringSliceFlag) String() string {
+	if f == nil {
+		return ""
+	}
+	return strings.Join(*f, ", ")
+}
+
+func (f *stringSliceFlag) Set(val string) error {
+	*f = append(*f, val)
+	return nil
 }
 
 // NewPrSplitCommand creates a new pr-split command.
@@ -77,7 +95,7 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 
 	// Claude Code execution
 	fs.StringVar(&c.claudeCommand, "claude-command", "", "Claude binary path (empty = auto-detect)")
-	fs.StringVar(&c.claudeArgs, "claude-args", "", "Additional Claude CLI arguments (space-separated)")
+	fs.Var(&c.claudeArgs, "claude-arg", "Additional Claude CLI argument (repeatable)")
 	fs.StringVar(&c.claudeModel, "claude-model", "", "Model name (provider-dependent)")
 	fs.StringVar(&c.claudeConfigDir, "claude-config-dir", "", "Claude config directory override")
 	fs.StringVar(&c.claudeEnv, "claude-env", "", "Extra environment variables (KEY=VALUE,KEY=VALUE)")
@@ -116,7 +134,9 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			c.dryRun = v == "true" || v == "1" || v == "yes"
 		}
 		applyConfigDefault("claude-command", &c.claudeCommand, "")
-		applyConfigDefault("claude-args", &c.claudeArgs, "")
+		if v, ok := c.config.GetCommandOption("pr-split", "claude-arg"); ok && len(c.claudeArgs) == 0 {
+			c.claudeArgs = append(c.claudeArgs, v)
+		}
 		applyConfigDefault("claude-model", &c.claudeModel, "")
 		applyConfigDefault("claude-config-dir", &c.claudeConfigDir, "")
 		applyConfigDefault("claude-env", &c.claudeEnv, "")
@@ -139,10 +159,8 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	engine.SetGlobal("prSplitTemplate", prSplitTemplate)
 
 	// Expose split configuration to JS
-	claudeArgsList := []string{}
-	if c.claudeArgs != "" {
-		claudeArgsList = strings.Fields(c.claudeArgs)
-	}
+	claudeArgsList := make([]string, len(c.claudeArgs))
+	copy(claudeArgsList, c.claudeArgs)
 	claudeEnvMap := map[string]string{}
 	if c.claudeEnv != "" {
 		for _, pair := range strings.Split(c.claudeEnv, ",") {
@@ -174,13 +192,33 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	tuiMux := mux.New(os.Stdin, os.Stdout, termFd)
 	engine.SetGlobal("tuiMux", map[string]interface{}{
 		"attach": func(handle interface{}) {
-			sio, ok := handle.(mux.StringIO)
-			if !ok {
-				panic("tuiMux.attach: argument must implement Send/Receive/Close")
+			// Case 1: Direct Go StringIO interface (non-Goja callers, tests).
+			if sio, ok := handle.(mux.StringIO); ok {
+				if err := tuiMux.Attach(mux.WrapStringIO(sio)); err != nil {
+					panic(err.Error())
+				}
+				return
 			}
-			if err := tuiMux.Attach(mux.WrapStringIO(sio)); err != nil {
-				panic(err.Error())
+			// Case 2: Goja-wrapped AgentHandle — exported as map[string]interface{}.
+			// wrapAgentHandle stores the original Go handle as _goHandle.
+			if m, ok := handle.(map[string]interface{}); ok {
+				if goHandle, exists := m["_goHandle"]; exists && goHandle != nil {
+					if sio, ok := goHandle.(mux.StringIO); ok {
+						if err := tuiMux.Attach(mux.WrapStringIO(sio)); err != nil {
+							panic(err.Error())
+						}
+						return
+					}
+					// AgentHandle satisfies StringIO structurally — try io.ReadWriteCloser.
+					if rwc, ok := goHandle.(io.ReadWriteCloser); ok {
+						if err := tuiMux.Attach(rwc); err != nil {
+							panic(err.Error())
+						}
+						return
+					}
+				}
 			}
+			panic("tuiMux.attach: argument must implement Send/Receive/Close (or be a wrapped AgentHandle with _goHandle)")
 		},
 		"detach": func() {
 			if err := tuiMux.Detach(); err != nil {
@@ -249,6 +287,47 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		},
 		"run": func() error {
 			return splitView.Run()
+		},
+	})
+
+	// Auto-split progress TUI — pipeline visualisation for automated splits.
+	// The model is created here and exposed to JS; the JS automatedSplit()
+	// function drives it by calling stepStart/stepDone/appendOutput/done.
+	//
+	// runAsync() starts the BubbleTea program in a background goroutine so
+	// JS can continue driving the pipeline synchronously while the TUI
+	// renders. wait() blocks until the TUI exits (user presses q / Ctrl+C).
+	autoSplitModel := mux.NewAutoSplitModel(mux.WithAutoSplitMaxLines(1000))
+	var autoSplitErr error
+	var autoSplitDone chan struct{}
+	engine.SetGlobal("autoSplitTUI", map[string]interface{}{
+		"runAsync": func() {
+			autoSplitDone = make(chan struct{})
+			go func() {
+				defer close(autoSplitDone)
+				autoSplitErr = autoSplitModel.Run()
+			}()
+		},
+		"wait": func() error {
+			if autoSplitDone != nil {
+				<-autoSplitDone
+			}
+			return autoSplitErr
+		},
+		"stepStart": func(name string) {
+			autoSplitModel.SendStepStart(name)
+		},
+		"stepDone": func(name string, errMsg string, elapsedMs int64) {
+			autoSplitModel.SendStepDone(name, errMsg, time.Duration(elapsedMs)*time.Millisecond)
+		},
+		"appendOutput": func(text string) {
+			autoSplitModel.SendOutput(text)
+		},
+		"appendError": func(text string) {
+			autoSplitModel.SendError(text)
+		},
+		"done": func(summary string) {
+			autoSplitModel.SendDone(summary)
 		},
 	})
 

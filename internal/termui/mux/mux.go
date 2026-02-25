@@ -103,6 +103,11 @@ type TUIMux struct {
 
 	// Passthrough state — guarded by mu.
 	passthroughActive bool
+
+	// First-swap flag: on the first transition to Claude mode, the
+	// terminal is cleared and a SIGWINCH is sent to the child so
+	// Claude's TUI renders on a clean canvas. guarded by mu.
+	swappedOnce bool
 }
 
 // New creates a TUIMux. stdin and stdout are the real terminal streams.
@@ -255,6 +260,24 @@ func (m *TUIMux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 			m.renderStatusBar(h)
 		} else {
 			statusEnabled = false
+		}
+	}
+
+	// On the very first swap to Claude mode, clear the screen so
+	// Claude's TUI renders from a clean state, and nudge the child
+	// with a resize so it redraws at the correct dimensions.
+	m.mu.Lock()
+	firstSwap := !m.swappedOnce
+	m.swappedOnce = true
+	resizeFn := m.resizeFn
+	m.mu.Unlock()
+	if firstSwap {
+		// ESC[2J = erase entire display, ESC[H = cursor to 1,1.
+		_, _ = m.stdout.Write([]byte("\x1b[2J\x1b[H"))
+		if resizeFn != nil && m.termFd >= 0 {
+			if w, h, err := term.GetSize(m.termFd); err == nil {
+				_ = resizeFn(uint16(h), uint16(w))
+			}
 		}
 	}
 

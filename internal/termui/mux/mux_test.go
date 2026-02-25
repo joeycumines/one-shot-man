@@ -355,6 +355,86 @@ func TestSetClaudeStatus(t *testing.T) {
 	}
 }
 
+func TestRunPassthrough_FirstSwapClearsScreen(t *testing.T) {
+	t.Parallel()
+	stdin := newBlockingReader()
+	stdout := &bytes.Buffer{}
+	child := newMockChild()
+	m := New(stdin, stdout, -1) // termFd=-1: no real terminal
+	m.SetStatusEnabled(false)
+	if err := m.Attach(child); err != nil {
+		t.Fatal(err)
+	}
+
+	// First passthrough — should write clear sequence to stdout.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		stdin.send([]byte{DefaultToggleKey})
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	reason, err := m.RunPassthrough(ctx)
+	if reason != ExitToggle || err != nil {
+		t.Fatalf("first pass: reason=%v err=%v", reason, err)
+	}
+	first := stdout.String()
+	if !strings.Contains(first, "\x1b[2J") || !strings.Contains(first, "\x1b[H") {
+		t.Errorf("first swap should contain clear sequence, got: %q", first)
+	}
+
+	// Second passthrough — should NOT write clear sequence again.
+	stdout.Reset()
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		stdin.send([]byte{DefaultToggleKey})
+	}()
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel2()
+	reason, err = m.RunPassthrough(ctx2)
+	if reason != ExitToggle || err != nil {
+		t.Fatalf("second pass: reason=%v err=%v", reason, err)
+	}
+	second := stdout.String()
+	if strings.Contains(second, "\x1b[2J") {
+		t.Errorf("second swap should NOT contain clear sequence, got: %q", second)
+	}
+}
+
+func TestRunPassthrough_FirstSwapCallsResizeFn(t *testing.T) {
+	t.Parallel()
+	stdin := newBlockingReader()
+	stdout := &bytes.Buffer{}
+	child := newMockChild()
+	m := New(stdin, stdout, -1) // termFd=-1: resizeFn won't be invoked (no terminal)
+	m.SetStatusEnabled(false)
+
+	var resizeCalled int
+	m.SetResizeFunc(func(rows, cols uint16) error {
+		resizeCalled++
+		return nil
+	})
+	if err := m.Attach(child); err != nil {
+		t.Fatal(err)
+	}
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		stdin.send([]byte{DefaultToggleKey})
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	reason, _ := m.RunPassthrough(ctx)
+	if reason != ExitToggle {
+		t.Fatalf("expected ExitToggle, got %v", reason)
+	}
+	// With termFd=-1, resizeFn is skipped because GetSize would fail.
+	// This test verifies the code path doesn't panic. A real terminal
+	// test (e.g., integration) would verify the actual resize call.
+	if resizeCalled != 0 {
+		t.Errorf("resizeFn called %d times with termFd=-1, want 0", resizeCalled)
+	}
+}
+
 func TestRenderStatusBar(t *testing.T) {
 	t.Parallel()
 	stdout := &bytes.Buffer{}

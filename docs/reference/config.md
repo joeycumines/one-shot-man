@@ -238,7 +238,7 @@ The `[pr-split]` section configures default options for `osm pr-split`. All keys
 | `verify` | string | `make test` | `--verify` | Verification command run after each split |
 | `dry-run` | bool | `false` | `--dry-run` | Plan without creating branches |
 | `claude-command` | string | _(auto-detect)_ | `--claude-command` | Claude binary path. Auto-detects `claude` or `ollama` if empty |
-| `claude-args` | string | _(empty)_ | `--claude-args` | Additional CLI arguments for Claude (space-separated) |
+| `claude-arg` | string (repeatable) | _(empty)_ | `--claude-arg` | Additional CLI argument for Claude (repeatable — one arg per entry) |
 | `claude-model` | string | _(empty)_ | `--claude-model` | Model name (provider-dependent) |
 | `claude-config-dir` | string | _(empty)_ | `--claude-config-dir` | Claude config directory override |
 | `claude-env` | string | _(empty)_ | `--claude-env` | Extra environment variables (`KEY=VALUE,KEY=VALUE`) |

@@ -1206,3 +1206,55 @@ func TestAutoSplitModel_View_HelpBar_RunningState(t *testing.T) {
 		}
 	}
 }
+
+func TestAutoSplitModel_ComputeLayout_Default(t *testing.T) {
+	// Default 80x24: topMax=9, topNeeded=min(0+1,9)=2 (clamped), bottom=24-2-2=20.
+	m := NewAutoSplitModel()
+	layout := m.computeLayout()
+	if layout.topHeight != 2 {
+		t.Errorf("topHeight with 0 steps = %d, want 2 (minimum)", layout.topHeight)
+	}
+	if layout.bottomHeight != 20 {
+		t.Errorf("bottomHeight = %d, want 20", layout.bottomHeight)
+	}
+}
+
+func TestAutoSplitModel_ComputeLayout_ManySteps(t *testing.T) {
+	// 20 steps at 80x24: topMax=9, topNeeded=min(21,9)=9, bottom=24-9-2=13.
+	m := NewAutoSplitModel()
+	for i := 0; i < 20; i++ {
+		m.steps = append(m.steps, AutoSplitStep{Name: "s"})
+	}
+	layout := m.computeLayout()
+	if layout.topHeight != 9 {
+		t.Errorf("topHeight with 20 steps = %d, want 9 (capped at 40%%)", layout.topHeight)
+	}
+	if layout.bottomHeight != 13 {
+		t.Errorf("bottomHeight = %d, want 13", layout.bottomHeight)
+	}
+}
+
+func TestAutoSplitModel_ComputeLayout_TinyTerminal(t *testing.T) {
+	// Height=3 → clamped to 5: topMax=2, topNeeded=2, bottom=5-2-2=1.
+	m := NewAutoSplitModel()
+	m.height = 3
+	layout := m.computeLayout()
+	if layout.topHeight != 2 {
+		t.Errorf("topHeight at height=3 = %d, want 2", layout.topHeight)
+	}
+	if layout.bottomHeight != 1 {
+		t.Errorf("bottomHeight at height=3 = %d, want 1 (minimum)", layout.bottomHeight)
+	}
+}
+
+func TestAutoSplitModel_ComputeLayout_ConsistentWithOutputPaneHeight(t *testing.T) {
+	// computeLayout().bottomHeight must always equal outputPaneHeight().
+	m := NewAutoSplitModel()
+	for i := 0; i < 15; i++ {
+		m.steps = append(m.steps, AutoSplitStep{Name: "s"})
+	}
+	m.height = 30
+	if m.computeLayout().bottomHeight != m.outputPaneHeight() {
+		t.Error("computeLayout().bottomHeight != outputPaneHeight()")
+	}
+}

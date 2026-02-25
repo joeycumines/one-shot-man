@@ -502,49 +502,27 @@ func (m *AutoSplitModel) View() string {
 		return ""
 	}
 
-	// Layout: top = step list, separator, bottom = live output, help bar.
-	// Reserve 1 line for separator, 1 for help bar.
-	availableHeight := m.height
-	if availableHeight < 5 {
-		availableHeight = 5
-	}
-
-	// Top pane: header line + one line per step, capped at 40% of terminal.
-	topMax := availableHeight * 2 / 5
-	stepCount := len(m.steps)
-	topNeeded := stepCount + 1 // +1 for header
-	if topNeeded > topMax {
-		topNeeded = topMax
-	}
-	if topNeeded < 2 {
-		topNeeded = 2
-	}
-
-	// Bottom pane: remaining height minus separator and help bar.
-	bottomHeight := availableHeight - topNeeded - 2 // -1 separator, -1 help bar
-	if bottomHeight < 1 {
-		bottomHeight = 1
-	}
+	layout := m.computeLayout()
 
 	// Render top pane (step list).
-	topContent := m.renderSteps(topNeeded, m.width)
+	topContent := m.renderSteps(layout.topHeight, m.width)
 
 	// Separator bar.
 	separator := m.renderSeparator(m.width)
 
 	// Render bottom pane (live output) with scroll offset.
 	viewLines := m.outputLines
-	if m.scrollOffset > 0 && len(viewLines) > bottomHeight {
+	if m.scrollOffset > 0 && len(viewLines) > layout.bottomHeight {
 		endIdx := len(viewLines) - m.scrollOffset
-		if endIdx < bottomHeight {
-			endIdx = bottomHeight
+		if endIdx < layout.bottomHeight {
+			endIdx = layout.bottomHeight
 		}
 		if endIdx > len(viewLines) {
 			endIdx = len(viewLines)
 		}
 		viewLines = viewLines[:endIdx]
 	}
-	bottomContent := renderPane(viewLines, bottomHeight, m.width)
+	bottomContent := renderPane(viewLines, layout.bottomHeight, m.width)
 
 	// Help bar.
 	helpBar := m.renderHelpBar(m.width)
@@ -575,15 +553,22 @@ func (m *AutoSplitModel) scrollDown(n int) {
 	}
 }
 
-// outputPaneHeight calculates the current height of the bottom (output) pane.
-func (m *AutoSplitModel) outputPaneHeight() int {
+// autoSplitLayout holds the computed pane dimensions for a single render.
+type autoSplitLayout struct {
+	topHeight    int // Height of the step list pane (including header).
+	bottomHeight int // Height of the output pane.
+}
+
+// computeLayout calculates the split between the step pane (top) and
+// the output pane (bottom), reserving 1 line each for the separator
+// and help bar. The top pane is capped at 40% of the terminal.
+func (m *AutoSplitModel) computeLayout() autoSplitLayout {
 	availableHeight := m.height
 	if availableHeight < 5 {
 		availableHeight = 5
 	}
 	topMax := availableHeight * 2 / 5
-	stepCount := len(m.steps)
-	topNeeded := stepCount + 1
+	topNeeded := len(m.steps) + 1 // +1 for header
 	if topNeeded > topMax {
 		topNeeded = topMax
 	}
@@ -594,7 +579,12 @@ func (m *AutoSplitModel) outputPaneHeight() int {
 	if bottomHeight < 1 {
 		bottomHeight = 1
 	}
-	return bottomHeight
+	return autoSplitLayout{topHeight: topNeeded, bottomHeight: bottomHeight}
+}
+
+// outputPaneHeight calculates the current height of the bottom (output) pane.
+func (m *AutoSplitModel) outputPaneHeight() int {
+	return m.computeLayout().bottomHeight
 }
 
 // ensureStep adds a step entry if it doesn't already exist.

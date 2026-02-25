@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
@@ -82,6 +83,7 @@ func TestPrSplitCommand_SetupFlags(t *testing.T) {
 		"json",
 		"test", "session", "store", "log-level", "log-file", "log-buffer",
 		"claude-command", "claude-arg", "claude-model", "claude-config-dir", "claude-env",
+		"timeout",
 	}
 
 	for _, name := range expectedFlags {
@@ -173,6 +175,99 @@ func TestPrSplitCommand_FlagDefaults(t *testing.T) {
 	}
 	if cmd.dryRun {
 		t.Error("Expected default dryRun to be false")
+	}
+}
+
+func TestPrSplitCommand_FlagValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func(cmd *PrSplitCommand)
+		wantErr string
+	}{
+		{
+			name: "invalid strategy",
+			setup: func(cmd *PrSplitCommand) {
+				cmd.strategy = "bogus"
+			},
+			wantErr: `invalid --strategy "bogus"`,
+		},
+		{
+			name: "max files zero",
+			setup: func(cmd *PrSplitCommand) {
+				cmd.maxFiles = 0
+			},
+			wantErr: "invalid --max 0: must be at least 1",
+		},
+		{
+			name: "max files negative",
+			setup: func(cmd *PrSplitCommand) {
+				cmd.maxFiles = -5
+			},
+			wantErr: "invalid --max -5: must be at least 1",
+		},
+		{
+			name: "negative timeout",
+			setup: func(cmd *PrSplitCommand) {
+				cmd.timeout = -1 * time.Second
+			},
+			wantErr: "invalid --timeout",
+		},
+		{
+			name: "valid defaults pass",
+			setup: func(cmd *PrSplitCommand) {
+				// defaults should be valid — no changes
+			},
+			wantErr: "",
+		},
+		{
+			name: "valid auto strategy",
+			setup: func(cmd *PrSplitCommand) {
+				cmd.strategy = "auto"
+			},
+			wantErr: "",
+		},
+		{
+			name: "valid dependency strategy",
+			setup: func(cmd *PrSplitCommand) {
+				cmd.strategy = "dependency"
+			},
+			wantErr: "",
+		},
+		{
+			name: "valid positive timeout",
+			setup: func(cmd *PrSplitCommand) {
+				cmd.timeout = 5 * time.Minute
+			},
+			wantErr: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.NewConfig()
+			cmd := NewPrSplitCommand(cfg)
+			cmd.testMode = true
+			cmd.interactive = false
+			cmd.store = "memory"
+			cmd.session = t.Name()
+			tt.setup(cmd)
+
+			var stdout, stderr bytes.Buffer
+			err := cmd.Execute(nil, &stdout, &stderr)
+
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected no error, got: %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("expected error containing %q, got: %v", tt.wantErr, err)
+				}
+			}
+		})
 	}
 }
 
@@ -2669,6 +2764,221 @@ func TestPrSplitCommand_AssessIndependence_Singles(t *testing.T) {
 	}
 	if len(pairs) != 0 {
 		t.Errorf("Expected 0 pairs for null plan, got %d", len(pairs))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T033: parseGoImports edge cases
+// ---------------------------------------------------------------------------
+
+func TestPrSplitCommand_ParseGoImports(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	tests := []struct {
+		name    string
+		content string
+		want    int // expected number of imports
+		check   string // optional: specific import to verify presence
+	}{
+		{
+			name:    "single import",
+			content: "package main\nimport \"fmt\"\nfunc main() {}",
+			want:    1,
+			check:   "fmt",
+		},
+		{
+			name:    "block import",
+			content: "package main\nimport (\n\t\"fmt\"\n\t\"os\"\n)\nfunc main() {}",
+			want:    2,
+		},
+		{
+			name:    "aliased import",
+			content: "package main\nimport (\n\tf \"fmt\"\n\t_ \"os\"\n)\n",
+			want:    2,
+		},
+		{
+			name:    "no imports",
+			content: "package main\nfunc main() {}",
+			want:    0,
+		},
+		{
+			name:    "empty file",
+			content: "",
+			want:    0,
+		},
+		{
+			name:    "import with comment lines",
+			content: "package main\nimport (\n\t// standard lib\n\t\"fmt\"\n\t// os stuff\n\t\"os\"\n)",
+			want:    2,
+		},
+		{
+			name:    "unclosed import block",
+			content: "package main\nimport (\n\t\"fmt\"\n\t\"os\"",
+			want:    2, // should still parse the imports found
+		},
+		{
+			name:    "mixed single and block",
+			content: "package main\nimport \"fmt\"\nimport (\n\t\"os\"\n\t\"io\"\n)",
+			want:    3,
+		},
+		{
+			name:    "import on same line as paren",
+			content: "package main\nimport (\"fmt\"\n\t\"os\"\n)",
+			want:    2,
+		},
+		{
+			name:    "stops at func declaration",
+			content: "package main\nimport \"fmt\"\nfunc init() {}\nimport \"os\"",
+			want:    1, // should stop at func
+		},
+		{
+			name:    "stops at type declaration",
+			content: "package main\nimport \"fmt\"\ntype Foo struct{}\nimport \"os\"",
+			want:    1,
+		},
+		{
+			name:    "dot import",
+			content: "package main\nimport . \"testing\"",
+			want:    1,
+			check:   "testing",
+		},
+		{
+			name:    "triple-path module import",
+			content: "package main\nimport \"github.com/user/repo/pkg\"",
+			want:    1,
+			check: "github.com/user/repo/pkg",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			js := fmt.Sprintf(
+				`JSON.stringify(globalThis.prSplit.parseGoImports(%q))`,
+				tt.content,
+			)
+			val, err := evalJS(js)
+			if err != nil {
+				t.Fatalf("evalJS error: %v", err)
+			}
+			var imports []string
+			if err := json.Unmarshal([]byte(val.(string)), &imports); err != nil {
+				t.Fatalf("Failed to parse result: %v", err)
+			}
+			if len(imports) != tt.want {
+				t.Errorf("expected %d imports, got %d: %v", tt.want, len(imports), imports)
+			}
+			if tt.check != "" {
+				found := false
+				for _, imp := range imports {
+					if imp == tt.check {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected to find import %q in %v", tt.check, imports)
+				}
+			}
+		})
+	}
+}
+
+func TestPrSplitCommand_GroupByDependency_NoGoFiles(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Non-Go files should fall back to directory grouping.
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency(
+		["docs/readme.md", "docs/api.md", "config/settings.yaml"],
+		{}
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var groups map[string][]string
+	if err := json.Unmarshal([]byte(val.(string)), &groups); err != nil {
+		t.Fatalf("Failed to parse result: %v", err)
+	}
+	// Should produce directory-based groups (docs, config).
+	if len(groups) < 1 {
+		t.Errorf("Expected at least 1 group, got %d: %v", len(groups), groups)
+	}
+	totalFiles := 0
+	for _, files := range groups {
+		totalFiles += len(files)
+	}
+	if totalFiles != 3 {
+		t.Errorf("Expected 3 total files across groups, got %d", totalFiles)
+	}
+}
+
+func TestPrSplitCommand_GroupByDependency_EmptyInput(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency([], {}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var groups map[string][]string
+	if err := json.Unmarshal([]byte(val.(string)), &groups); err != nil {
+		t.Fatalf("Failed to parse result: %v", err)
+	}
+	if len(groups) != 0 {
+		t.Errorf("Expected empty groups, got %v", groups)
+	}
+}
+
+func TestPrSplitCommand_GroupByDependency_MixedGoAndNonGo(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Mix of Go and non-Go files — non-Go should be placed in matching dir group.
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency(
+		["pkg/types.go", "pkg/README.md", "cmd/main.go"],
+		{}
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var groups map[string][]string
+	if err := json.Unmarshal([]byte(val.(string)), &groups); err != nil {
+		t.Fatalf("Failed to parse result: %v", err)
+	}
+	// Should have at least 2 groups (pkg and cmd) or merged if related.
+	totalFiles := 0
+	for _, files := range groups {
+		totalFiles += len(files)
+	}
+	if totalFiles != 3 {
+		t.Errorf("Expected 3 total files, got %d", totalFiles)
+	}
+}
+
+func TestPrSplitCommand_GroupByDependency_SingleGoFile(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency(
+		["main.go"],
+		{}
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var groups map[string][]string
+	if err := json.Unmarshal([]byte(val.(string)), &groups); err != nil {
+		t.Fatalf("Failed to parse result: %v", err)
+	}
+	// Single file should produce single group.
+	if len(groups) != 1 {
+		t.Errorf("Expected 1 group, got %d: %v", len(groups), groups)
 	}
 }
 

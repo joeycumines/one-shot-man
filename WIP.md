@@ -2,8 +2,8 @@
 
 ## Session State
 - **All checks pass**: build ✅ lint ✅ test ✅
-- **Blueprint**: T001-T013, T015-T030 Done. Pending commit for T025-T028.
-- **Commits**: f349929, d03e944, 505a57a, 5424f5b, 6f9aafd, 80ab683, **pending**
+- **Blueprint**: T001-T013, T015-T030 Done. All committed.
+- **Commits**: f349929, d03e944, 505a57a, 5424f5b, 6f9aafd, 80ab683, **8e54415**
 
 ## Commit Log
 1. `f349929` — Add cancellation, toggle, and scroll to auto-split TUI (507 ins, 17 del, 4 files)
@@ -12,10 +12,18 @@
 4. `5424f5b` — Add edge-case tests for auto-split TUI (125 ins, 1 file)
 5. `6f9aafd` — Rewrite auto-split cancel lifecycle and remove vaporware (244 ins, 298 del, 4 files)
 6. `80ab683` — Add mock-MCP integration test for auto-split pipeline (658 ins, 3 files)
-7. `pending` — Add timer, step counter, timeout flag, and Enter dismiss
+7. `8e54415` — Add timer, step counter, timeout flag, and Enter dismiss (206 ins, 20 del, 6 files)
 
-## Current Work — T030 (Commit T025-T028)
-T025-T028 implemented, Rule of Two passed, committing now.
+## Current Work — Scope Expansion Cycle 3
+Committing T031-T033, T035-T036.
+
+### What Changed (T031-T033)
+- **T031**: CHANGELOG entries for commits f349929-8e54415
+- **T032**: Flag validation (--strategy, --max, --timeout) + constructor defaults
+- **T033**: 13 parseGoImports tests + 4 groupByDependency tests
+- **T034**: Deferred (createPRs mock — heavy fixture needed)
+- **T035**: Full suite passes
+- **T036**: Rule of Two passed (2 contiguous PASS)
 
 ### What Changed (T025-T028)
 - **T025**: Enter key dismiss test + no-effect-when-running test

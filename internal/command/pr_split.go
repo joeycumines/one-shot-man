@@ -78,6 +78,14 @@ func NewPrSplitCommand(cfg *config.Config) *PrSplitCommand {
 			"pr-split [options]",
 		),
 		scriptCommandBase: scriptCommandBase{config: cfg},
+
+		// Defaults — mirrored in SetupFlags for flag-based parsing.
+		interactive:   true,
+		baseBranch:    "main",
+		strategy:      "directory",
+		maxFiles:      10,
+		branchPrefix:  "split/",
+		verifyCommand: "make test",
 	}
 }
 
@@ -150,6 +158,21 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 				c.timeout = d
 			}
 		}
+	}
+
+	// Validate flags after config defaults are applied.
+	validStrategies := map[string]bool{
+		"directory": true, "directory-deep": true, "extension": true,
+		"chunks": true, "dependency": true, "auto": true,
+	}
+	if !validStrategies[c.strategy] {
+		return fmt.Errorf("invalid --strategy %q: must be one of directory, directory-deep, extension, chunks, dependency, auto", c.strategy)
+	}
+	if c.maxFiles < 1 {
+		return fmt.Errorf("invalid --max %d: must be at least 1", c.maxFiles)
+	}
+	if c.timeout < 0 {
+		return fmt.Errorf("invalid --timeout %s: must be non-negative", c.timeout)
 	}
 
 	engine, cleanup, err := c.PrepareEngine(ctx, stdout, stderr)

@@ -33,7 +33,8 @@
 19. `f041474` — Add config parsing unit tests (parseBool, parseHotSnippetLine, parseSessionOption, parseClaudeMuxOption)
 20. `913c181` — Add parsing edge-case tests (stripBOM, unquoteYAMLString, parseInlineYAMLList, parseSimpleYAML, validateGoal)
 21. `01d35f7` — Add createPRs mock execution flow tests (T034)
-22. `pending` — Add grouping strategy and helper function tests
+22. `1a8de19` — Add grouping strategy and helper function tests
+23. `pending` — Add verification and analysis function direct tests
 
 ## Current Work — Scope Expansion Cycle 17
 All original 60 tasks Done. Continuing with pure-function grouping + helper tests.

@@ -20,7 +20,7 @@
     "No stopping — scope must expand towards True Perfection indefinitely"
   ],
   "statusSection": {
-    "currentState": "T001-T060 ALL Done + T061 (grouping tests) pending commit. 22 commits on wip branch.",
+    "currentState": "T001-T061 ALL Done + T062 verification tests pending commit. 23 commits on wip branch.",
     "goalState": "osm pr-split is production-quality: auto-split TUI is responsive with cancellation support, Claude TUI muxing works during operations, integration tests use real AI via TestMain flags and project.mk targets, all TUI commands are verified non-vaporware, no AI slop remains",
     "replanLog": [
       "2026-02-25 Replan: User reports auto-split TUI still hangs after q. Root cause: q sends tea.Quit immediately, exiting alt-screen while JS pipeline still runs. Go-prompt prompt is visible but command handler hasn't returned. Fix: don't exit BubbleTea on first q — set cancelled flag only. Pipeline detects cancellation and calls finishTUI which triggers actual quit. Also need intra-step cancellation and richer poll feedback."

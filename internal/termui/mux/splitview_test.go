@@ -477,3 +477,53 @@ func TestSplitView_ConcurrentAppend(t *testing.T) {
 		t.Errorf("claudeLines = %d, should be capped at 100", len(sv.claudeLines))
 	}
 }
+
+func TestSplitView_View_TinyDimensions(t *testing.T) {
+	t.Parallel()
+	sv := NewSplitView()
+	sv.width = 1
+	sv.height = 1
+	sv.AppendOsmOutput("hello")
+	sv.AppendClaudeOutput("world")
+	// Should not panic with minimal dimensions.
+	view := sv.View()
+	if len(view) == 0 {
+		t.Error("view should not be empty at tiny dimensions")
+	}
+}
+
+func TestSplitView_Update_UnknownMessage(t *testing.T) {
+	t.Parallel()
+	type unknownMsg struct{}
+	sv := NewSplitView()
+	m, cmd := sv.Update(unknownMsg{})
+	if cmd != nil {
+		t.Error("unknown message should produce nil command")
+	}
+	if m.(*SplitView) != sv {
+		t.Error("unknown message should return same model pointer")
+	}
+}
+
+func TestSplitView_Update_OutputMsg(t *testing.T) {
+	t.Parallel()
+	sv := NewSplitView()
+	m, cmd := sv.Update(splitViewOutputMsg{})
+	if cmd != nil {
+		t.Error("output msg should produce nil command")
+	}
+	if m.(*SplitView) != sv {
+		t.Error("output msg should return same model pointer")
+	}
+}
+
+func TestSplitView_ClaudeWriter_NilSafe(t *testing.T) {
+	t.Parallel()
+	sv := NewSplitView() // No claudeWriter set
+	sv.activePane = PaneClaude
+	// Sending a key with no writer should not panic.
+	m, _ := sv.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if m.(*SplitView) != sv {
+		t.Error("should return same model")
+	}
+}

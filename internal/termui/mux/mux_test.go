@@ -545,3 +545,48 @@ func TestWrapStringIO_ReadWrite(t *testing.T) {
 		t.Error("underlying StringIO not closed")
 	}
 }
+
+func TestWriteToChild_NoChild(t *testing.T) {
+	t.Parallel()
+	m := New(nil, nil, -1)
+	_, err := m.WriteToChild([]byte("hello"))
+	if !errors.Is(err, ErrNoChild) {
+		t.Errorf("WriteToChild with no child: err = %v, want ErrNoChild", err)
+	}
+}
+
+func TestWriteToChild_Success(t *testing.T) {
+	t.Parallel()
+	m := New(nil, nil, -1)
+	child := newMockChild()
+	if err := m.Attach(child); err != nil {
+		t.Fatal(err)
+	}
+	n, err := m.WriteToChild([]byte("data"))
+	if err != nil {
+		t.Fatalf("WriteToChild: %v", err)
+	}
+	if n != 4 {
+		t.Errorf("WriteToChild returned %d, want 4", n)
+	}
+	if child.getWritten() != "data" {
+		t.Errorf("child received %q, want %q", child.getWritten(), "data")
+	}
+}
+
+func TestSetStatusEnabled(t *testing.T) {
+	t.Parallel()
+	m := New(nil, nil, -1)
+	// Default is true.
+	if !m.statusEnabled {
+		t.Error("default statusEnabled should be true")
+	}
+	m.SetStatusEnabled(false)
+	if m.statusEnabled {
+		t.Error("statusEnabled should be false after SetStatusEnabled(false)")
+	}
+	m.SetStatusEnabled(true)
+	if !m.statusEnabled {
+		t.Error("statusEnabled should be true after SetStatusEnabled(true)")
+	}
+}

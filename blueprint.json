@@ -20,7 +20,7 @@
     "No stopping — scope must expand towards True Perfection indefinitely"
   ],
   "statusSection": {
-    "currentState": "T001-T013, T015-T033, T035-T048 Done. Commits: 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, 1f13b77, b996d07, pending. T034 deferred.",
+    "currentState": "T001-T013, T015-T033, T035-T050 Done. Commits: 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, 1f13b77, b996d07, 18ced3a, pending. T034 deferred.",
     "goalState": "osm pr-split is production-quality: auto-split TUI is responsive with cancellation support, Claude TUI muxing works during operations, integration tests use real AI via TestMain flags and project.mk targets, all TUI commands are verified non-vaporware, no AI slop remains",
     "replanLog": [
       "2026-02-25 Replan: User reports auto-split TUI still hangs after q. Root cause: q sends tea.Quit immediately, exiting alt-screen while JS pipeline still runs. Go-prompt prompt is visible but command handler hasn't returned. Fix: don't exit BubbleTea on first q — set cancelled flag only. Pipeline detects cancellation and calls finishTUI which triggers actual quit. Also need intra-step cancellation and richer poll feedback."
@@ -463,6 +463,20 @@
     {
       "task": "T048: Run full suite, Rule of Two, and commit T047",
       "description": "Run 'make', Rule of Two, and commit T047.",
+      "acceptance": "make passes. Two PASS verdicts. Clean commit.",
+      "status": "Done",
+      "context": { "files": ["Makefile"] }
+    },
+    {
+      "task": "T049: Add mux and splitview coverage gap tests",
+      "description": "7 new tests filling gaps identified by exploration: WriteToChild (no child returns ErrNoChild, success forwards data), SetStatusEnabled toggle, SplitView tiny dimensions, SplitView unknown/output messages, SplitView nil claudeWriter safety.",
+      "acceptance": "130+ mux tests pass with race detector. No production code changed.",
+      "status": "Done",
+      "context": { "files": ["internal/termui/mux/mux_test.go", "internal/termui/mux/splitview_test.go"] }
+    },
+    {
+      "task": "T050: Run full suite, Rule of Two, and commit T049",
+      "description": "Run 'make', Rule of Two, and commit T049.",
       "acceptance": "make passes. Two PASS verdicts. Clean commit.",
       "status": "Done",
       "context": { "files": ["Makefile"] }

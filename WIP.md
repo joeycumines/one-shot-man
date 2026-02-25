@@ -2,8 +2,8 @@
 
 ## Session State
 - **All checks pass**: build ✅ lint ✅ test ✅
-- **Blueprint**: T001-T013, T015-T033, T035-T048 Done. All committed.
-- **Commits**: f349929, d03e944, 505a57a, 5424f5b, 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, 1f13b77, b996d07, **pending**
+- **Blueprint**: T001-T013, T015-T033, T035-T050 Done. All committed.
+- **Commits**: f349929, d03e944, 505a57a, 5424f5b, 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, 1f13b77, b996d07, 18ced3a, **pending**
 
 ## Commit Log
 1. `f349929` — Add cancellation, toggle, and scroll to auto-split TUI (507 ins, 17 del, 4 files)
@@ -20,10 +20,12 @@
 12. `1f13b77` — Extract computeLayout to deduplicate pane dimension math
 13. `b996d07` — Add boundary and edge-case tests for scroll, layout, and separator
 
-14. `pending` — Extract send helper and extend SetClaudeStatus rendering test
+14. `18ced3a` — Extract send helper and extend SetClaudeStatus rendering test
 
-## Current Work — Scope Expansion Cycle 9
-Committing T047-T048. send helper extraction + SetClaudeStatus rendering test.
+15. `pending` — Add mux/splitview coverage gap tests (WriteToChild, SetStatusEnabled, SplitView edges)
+
+## Current Work — Scope Expansion Cycle 10
+Committing T049-T050. 7 new tests filling mux/splitview coverage gaps.
 After commit: continue exploring for more improvements.
 
 ### What Changed (T043-T044)

@@ -663,3 +663,161 @@ func TestCommit_BareRepo(t *testing.T) {
 		t.Fatalf("expected worktree error, got: %v", err)
 	}
 }
+
+// TestHasStagedChanges_StagedDeletion verifies that deleting a committed file
+// and staging the deletion is detected as a staged change.
+func TestHasStagedChanges_StagedDeletion(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	// Remove the committed file from the worktree.
+	if err := os.Remove(filepath.Join(dir, "README.md")); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	// Stage the deletion via AddAll.
+	if err := repo.AddAll(); err != nil {
+		t.Fatalf("AddAll: %v", err)
+	}
+
+	has, err := repo.HasStagedChanges()
+	if err != nil {
+		t.Fatalf("HasStagedChanges: %v", err)
+	}
+	if !has {
+		t.Fatal("expected staged changes after staging a file deletion")
+	}
+}
+
+// TestHasStagedChanges_MixedUntrackedAndStaged verifies correct behavior when
+// both staged changes and untracked files exist simultaneously.
+func TestHasStagedChanges_MixedUntrackedAndStaged(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	// Modify tracked file and stage it.
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("modified\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.AddAll(); err != nil {
+		t.Fatalf("AddAll: %v", err)
+	}
+
+	// Create an untracked file after AddAll — this file is NOT staged.
+	if err := os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("noise"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// README.md is staged (modified); untracked.txt exists but is untracked.
+	// Verify HasStagedChanges returns true despite the untracked file's presence.
+	has, err := repo.HasStagedChanges()
+	if err != nil {
+		t.Fatalf("HasStagedChanges: %v", err)
+	}
+	if !has {
+		// Fetch status for debug output.
+		wt, werr := repo.repo.Worktree()
+		if werr != nil {
+			t.Fatalf("Worktree: %v", werr)
+		}
+		status, serr := wt.Status()
+		if serr != nil {
+			t.Fatalf("Status: %v", serr)
+		}
+		t.Fatalf("expected staged changes; status: %v", status)
+	}
+}
+
+// TestHasStagedChanges_OnlyUntrackedFiles verifies that only having untracked
+// files (without staging them) does NOT count as staged changes.
+func TestHasStagedChanges_OnlyUntrackedFiles(t *testing.T) {
+	t.Parallel()
+
+	_, dir := initRepoWithCommit(t)
+	repo, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	// Create untracked file without staging.
+	if err := os.WriteFile(filepath.Join(dir, "untracked.txt"), []byte("noise"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	has, err := repo.HasStagedChanges()
+	if err != nil {
+		t.Fatalf("HasStagedChanges: %v", err)
+	}
+	if has {
+		t.Fatal("expected no staged changes with only untracked files")
+	}
+}
+
+// TestCommit_SpecialCharactersInMessage verifies that commit messages with
+// newlines, quotes, unicode, and other special characters succeed.
+func TestCommit_SpecialCharactersInMessage(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		msg  string
+	}{
+		{"embedded newlines", "line1\nline2\nline3"},
+		{"CRLF", "line1\r\nline2"},
+		{"double quotes", `say "hello"`},
+		{"single quotes", "it's a test"},
+		{"unicode emoji", "🚀 ship it"},
+		{"unicode CJK", "修正バグ"},
+		{"backticks", "run `go test`"},
+		{"mixed special", "fix: handle $VAR & \"edge\" 'cases' (100%)"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, dir := initRepoWithCommit(t)
+			repo, err := Open(dir)
+			if err != nil {
+				t.Fatalf("Open: %v", err)
+			}
+
+			// Stage a unique file for this sub-test.
+			fname := "special.txt"
+			if err := os.WriteFile(filepath.Join(dir, fname), []byte(tc.msg), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := repo.AddAll(); err != nil {
+				t.Fatalf("AddAll: %v", err)
+			}
+
+			when := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+			hash, err := repo.Commit(tc.msg, when)
+			if err != nil {
+				t.Fatalf("Commit: %v", err)
+			}
+			if hash == plumbing.ZeroHash {
+				t.Fatal("expected non-zero hash")
+			}
+
+			// Verify the message was stored correctly by reading the commit.
+			commit, err := repo.repo.CommitObject(hash)
+			if err != nil {
+				t.Fatalf("CommitObject: %v", err)
+			}
+			if commit.Message != tc.msg {
+				t.Fatalf("commit message mismatch:\n  got:  %q\n  want: %q", commit.Message, tc.msg)
+			}
+		})
+	}
+}

@@ -546,6 +546,45 @@ func TestShellQuote(t *testing.T) {
 	}
 }
 
+// TestShellQuote_ControlCharacters verifies that control characters (null byte,
+// ESC, BEL, etc.) are always quoted and roundtrip correctly through ParseSlice.
+func TestShellQuote_ControlCharacters(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"null byte", "\x00"},
+		{"escape", "\x1b"},
+		{"bell", "\x07"},
+		{"carriage return", "\r"},
+		{"formfeed", "\x0c"},
+		{"mixed control and text", "hello\x00world"},
+		{"ESC sequence", "\x1b[31m"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := ShellQuote(tc.in)
+
+			// Must be quoted (not returned bare).
+			if got == tc.in {
+				t.Fatalf("ShellQuote(%q) returned bare string; expected quoting", tc.in)
+			}
+
+			// Must roundtrip through ParseSlice.
+			parsed := ParseSlice(got)
+			if len(parsed) != 1 {
+				t.Fatalf("ParseSlice(%q) = %d args; want 1", got, len(parsed))
+			}
+			if parsed[0] != tc.in {
+				t.Fatalf("roundtrip failed:\n  input:  %q\n  quoted: %s\n  parsed: %q", tc.in, got, parsed[0])
+			}
+		})
+	}
+}
+
 func TestShellQuoteJoin(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

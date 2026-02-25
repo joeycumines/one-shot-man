@@ -1,0 +1,307 @@
+{
+  "meta": {
+    "purpose": "Refine osm pr-split: cull cruft, introduce sophisticated automated splitting with Claude Code integration, deep integration tests",
+    "source": "User directive — session 2026-02-25",
+    "maintainedBy": "Takumi (匠)",
+    "maintenance": "Update this file incrementally after every sub-task. Deviations are logged within the plan."
+  },
+  "globalAlerts": [
+    "ALL checks must pass: make (build + lint + test) on all platforms",
+    "Use GNU Make (gmake on macOS) for all operations",
+    "Do NOT modify .deadcodeignore — wire up code or delete it",
+    "Tests must be isolated — no host state mutation",
+    "Session timer: scratch/session-timer.txt — 9 hour mandate"
+  ],
+  "mandatoryDirectives": [
+    "Read blueprint.json and WIP.md at session start (Resurrection Routine)",
+    "Update blueprint.json status after EVERY sub-task — if it is not in the map you are not doing it",
+    "Aggressive checkpoint to WIP.md after every string of changes",
+    "Rule of Two: TWO contiguous issue-free subagent reviews before commit",
+    "No stopping — scope must expand towards True Perfection indefinitely"
+  ],
+  "statusSection": {
+    "currentState": "T001-T013, T015-T022 Done. Commit 6f9aafd. Proceeding to T023 (mock-MCP integration test) and T024 (scope expansion cycle 2).",
+    "goalState": "osm pr-split is production-quality: auto-split TUI is responsive with cancellation support, Claude TUI muxing works during operations, integration tests use real AI via TestMain flags and project.mk targets, all TUI commands are verified non-vaporware, no AI slop remains",
+    "replanLog": [
+      "2026-02-25 Replan: User reports auto-split TUI still hangs after q. Root cause: q sends tea.Quit immediately, exiting alt-screen while JS pipeline still runs. Go-prompt prompt is visible but command handler hasn't returned. Fix: don't exit BubbleTea on first q — set cancelled flag only. Pipeline detects cancellation and calls finishTUI which triggers actual quit. Also need intra-step cancellation and richer poll feedback."
+    ]
+  },
+  "sequentialTasks": [
+    {
+      "task": "T001: Fix AutoSplitModel cancellation — propagate quit signal to JS pipeline",
+      "description": "The AutoSplitModel sets m.quitting=true when q/Ctrl+C is pressed but there is NO mechanism to signal the JS automatedSplit() function to stop. The JS pollForFile() function busy-waits in a CPU-burning while loop and cannot be interrupted. Fix: (1) Add a Cancelled() bool method to AutoSplitModel that JS can poll. (2) Expose autoSplitTUI.cancelled() to JS. (3) Modify pollForFile() to check autoSplitTUI.cancelled() on each poll iteration. (4) Modify automatedSplit() step() wrapper to check cancelled before each step. (5) Ensure autoSplitTUI.wait() returns an error when cancelled.",
+      "acceptance": "When auto-split is running and user presses q, the pipeline stops within 2 seconds. The TUI exits cleanly. No zombie goroutines. Test: unit test that sends q keypress and verifies Cancelled() returns true and wait() returns promptly.",
+      "status": "Done",
+      "context": {
+        "files": [
+          "internal/termui/mux/autosplit.go — AutoSplitModel.Update() handles q/Ctrl+C",
+          "internal/termui/mux/autosplit_test.go — add cancellation tests",
+          "internal/command/pr_split.go — autoSplitTUI JS globals injection (line ~285)",
+          "internal/command/pr_split_script.js — pollForFile() (line ~2015), automatedSplit() step() (line ~2082)"
+        ]
+      }
+    },
+    {
+      "task": "T002: Replace pollForFile busy-wait with interruptible polling",
+      "description": "pollForFile() in pr_split_script.js uses `while (Date.now() - start < intervalMs) { /* spin */ }` which burns 100% CPU. Replace with exec.execv(['sleep', '0.1']) or equivalent that yields the thread. Also, integrate cancellation check from T001 so polling stops when TUI is cancelled. The Go-side autoSplitTUI must expose isCancelled function.",
+      "acceptance": "pollForFile no longer burns CPU during waits. Polling exits immediately when autoSplitTUI.cancelled() returns true. Verified by running auto-split in test with a 1-second timeout and confirming CPU usage is negligible during polling.",
+      "status": "Done",
+      "context": {
+        "files": [
+          "internal/command/pr_split_script.js — pollForFile() at line ~2015",
+          "internal/command/pr_split.go — autoSplitTUI globals"
+        ]
+      }
+    },
+    {
+      "task": "T003: Add Claude TUI mux support during auto-split pipeline",
+      "description": "During auto-split, the user must be able to press Ctrl+] to swap to the Claude TUI and back without interrupting the pipeline. Currently AutoSplitModel only handles q and Ctrl+C. Add: (1) Handle Ctrl+] (0x1D) in AutoSplitModel.Update() to trigger a toggle message. (2) Expose a channel or callback from AutoSplitModel that pr_split.go can use to call tuiMux.RunPassthrough(). (3) When Ctrl+] is pressed, switch terminal to Claude passthrough mode; when pressed again, return to auto-split TUI. The JS pipeline continues running in the background on its goroutine.",
+      "acceptance": "During a running auto-split pipeline, pressing Ctrl+] switches to Claude's terminal. The pipeline continues processing. Pressing Ctrl+] again returns to the auto-split progress TUI. Steps that completed during the switch are visible. Test: unit test that verifies Ctrl+] produces the toggle message.",
+      "status": "Done",
+      "context": {
+        "files": [
+          "internal/termui/mux/autosplit.go — Update() method, new toggle handling",
+          "internal/termui/mux/autosplit_test.go — toggle test",
+          "internal/command/pr_split.go — wire toggle callback between autoSplitModel and tuiMux"
+        ]
+      }
+    },
+    {
+      "task": "T004: Expose cancellation flag in autoSplitTUI JS globals",
+      "description": "In pr_split.go Execute(), the autoSplitTUI JS global map needs a new 'cancelled' function that returns autoSplitModel.Cancelled(). Also add 'quit' function to programmatically trigger quit. Wire these into the existing autoSplitTUI global.",
+      "acceptance": "JS code can call autoSplitTUI.cancelled() to check if user cancelled. autoSplitTUI.quit() triggers clean shutdown. Both functions are exposed in the global and accessible from pr_split_script.js.",
+      "status": "Done",
+      "context": {
+        "files": [
+          "internal/command/pr_split.go — autoSplitTUI globals (~line 285)",
+          "internal/termui/mux/autosplit.go — add Cancelled() and Quit() methods"
+        ]
+      }
+    },
+    {
+      "task": "T005: Integrate cancellation into automatedSplit() pipeline",
+      "description": "Modify the automatedSplit() function in pr_split_script.js to check for cancellation before each step and within long-running operations. The step() wrapper function should check autoSplitTUI.cancelled() before invoking the step function. If cancelled, return early with error 'cancelled by user'. Also modify pollForFile to accept a cancelFn parameter.",
+      "acceptance": "When auto-split is cancelled via TUI, the pipeline stops at the next step boundary. No further git operations are performed. The report includes cancellation status. Test: verify cancellation flow by examining return value.",
+      "status": "Done",
+      "context": {
+        "files": [
+          "internal/command/pr_split_script.js — automatedSplit(), step(), pollForFile()"
+        ]
+      }
+    },
+    {
+      "task": "T006: Verify integration tests have correct TestMain flag wiring",
+      "description": "Verify that internal/command/main_test.go TestMain properly parses -integration, -claude-command, -claude-arg, -integration-model flags. Verify skipIfNoClaude helper exists. Verify project.mk has integration-test-prsplit target with ?= Make variable definitions. Verify config.mk can override these variables.",
+      "acceptance": "Running 'make integration-test-prsplit CLAUDE_COMMAND=claude' executes the integration tests with real AI. The TestMain flags are correctly parsed and available to all TestIntegration_* functions. config.mk can set CLAUDE_COMMAND, CLAUDE_ARGS, INTEGRATION_MODEL to override defaults.",
+      "status": "Done",
+      "context": {
+        "files": [
+          "internal/command/main_test.go — TestMain",
+          "project.mk — integration-test-prsplit target",
+          "config.mk — local overrides"
+        ]
+      }
+    },
+    {
+      "task": "T007: Audit all TUI commands for vaporware — verify non-trivial functionality",
+      "description": "List every TUI command registered in pr_split_script.js. For each command, verify: (1) it has a command handler, (2) the handler performs real work (not just printing a placeholder message), (3) it has at least one test exercising the actual behavior. Commands to audit: analyze, stats, group, plan, preview, execute, verify, equivalence, run, auto-split, set, help, cleanup, save-plan, load-plan, create-prs, fix, rename, move, merge, reorder, report, diff, claude. Flag any that are vaporware (placeholder only).",
+      "acceptance": "Every registered TUI command either performs real work and has a test, or is removed. No command prints a placeholder message and returns. A summary table in WIP.md documents the audit results.",
+      "status": "Done",
+      "context": {
+        "files": [
+          "internal/command/pr_split_script.js — tui.registerMode block at end of file",
+          "internal/command/pr_split_test.go — TestPrSplitCommand_* for each command"
+        ]
+      }
+    },
+    {
+      "task": "T008: Fix or remove vaporware TUI commands identified in T007",
+      "description": "Based on the T007 audit, fix commands that are non-functional or remove them entirely. This is the anti-slop cleanup. Each command must either deliver real value or not exist.",
+      "acceptance": "Every remaining TUI command has been verified to work end-to-end in tests. No placeholder commands remain. Tests pass.",
+      "status": "Done",
+      "context": {
+        "files": [
+          "internal/command/pr_split_script.js",
+          "internal/command/pr_split_test.go"
+        ]
+      }
+    },
+    {
+      "task": "T009: Run full test suite and fix any failures",
+      "description": "Run 'make' (which runs build + lint + test) and fix any issues. This is the first checkpoint before committing any changes.",
+      "acceptance": "make passes cleanly with zero failures, zero lint warnings, zero race conditions.",
+      "status": "Done",
+      "context": {
+        "files": ["Makefile", "project.mk"]
+      }
+    },
+    {
+      "task": "T010: Rule of Two verification — first commit gate",
+      "description": "Spawn two contiguous subagent reviews of the diff vs HEAD. Both must pass. If either fails, fix issues and restart counter.",
+      "acceptance": "Two contiguous PASS verdicts from independent subagent reviews.",
+      "status": "Done",
+      "context": {
+        "files": [".claude/skills/strict-review-gate/SKILL.md"]
+      }
+    },
+    {
+      "task": "T011: Commit changes from T001-T010",
+      "description": "Git commit all changes with a descriptive Kubernetes-style commit message.",
+      "acceptance": "Clean commit with all changes from T001-T010. No uncommitted files.",
+      "status": "Done",
+      "context": {
+        "files": [".claude/skills/git-commit/SKILL.md"]
+      }
+    },
+    {
+      "task": "T012: Enhance auto-split progress display with richer step details",
+      "description": "The AutoSplitModel should show more information per step: file count being processed, current git operation, Claude interaction count, etc. Add new message types for progress sub-updates within a step.",
+      "acceptance": "Auto-split TUI shows rich progress: step names, elapsed time per step, sub-step progress (e.g. 'Classifying 15 files...'), error details with full context. Visual quality is intentional, not AI slop.",
+      "status": "Done",
+      "context": {
+        "files": [
+          "internal/termui/mux/autosplit.go",
+          "internal/command/pr_split_script.js — automatedSplit() emitOutput calls"
+        ]
+      }
+    },
+    {
+      "task": "T013: Add scroll support to auto-split output pane",
+      "description": "The bottom pane of AutoSplitModel shows live output but cannot be scrolled. Add PgUp/PgDn/Up/Down key handling to scroll through output history. Show scroll position indicator.",
+      "acceptance": "User can scroll through auto-split output using arrow keys and PgUp/PgDn. Scroll position indicator shows relative position. New output auto-scrolls to bottom unless user has scrolled up.",
+      "status": "Done",
+      "context": {
+        "files": [
+          "internal/termui/mux/autosplit.go — Update() and View()"
+        ]
+      }
+    },
+    {
+      "task": "T014: Verify and test real Claude integration end-to-end locally",
+      "description": "Run the integration-test-prsplit make target with local Claude/Ollama configuration. Verify: (1) Claude spawns correctly, (2) classification prompt is sent, (3) MCP response is received, (4) split plan is generated, (5) branches are created, (6) equivalence holds. Document results.",
+      "acceptance": "Integration test passes with real AI generating the split. All split branches are created. Tree hash equivalence verified. Test output logged and reviewed.",
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_test.go — TestIntegration_AutoSplitWithClaude",
+          "project.mk — integration-test-prsplit"
+        ]
+      }
+    },
+    {
+      "task": "T015: Scope expansion — identify and implement additional improvements",
+      "description": "After completing T001-T014, identify additional improvements: edge cases, error handling, documentation, performance, UX refinements. Add new tasks.",
+      "acceptance": "New tasks added to blueprint. Scope expanded towards True Perfection.",
+      "status": "Done",
+      "context": {
+        "files": ["blueprint.json"]
+      }
+    },
+    {
+      "task": "T016: Fix auto-split TUI cancel — don't exit alt-screen until pipeline finishes",
+      "description": "ROOT CAUSE: When user presses q during auto-split, BubbleTea exits alt-screen via tea.Quit immediately. The JS pipeline is still running (blocked in step() or pollForFile()). The go-prompt prompt becomes visible but unresponsive because the command handler hasn't returned. FIX: (1) Change q/Ctrl+C handler: first press sets cancelled=true but does NOT call tea.Quit. Shows 'Cancelling... (press q again to force quit)' in separator bar. (2) Second q/Ctrl+C: force tea.Quit (fallback for stuck pipelines). (3) When AutoSplitDoneMsg is received with cancelled=true, trigger tea.Quit automatically. (4) When AutoSplitDoneMsg received with cancelled=false, stay showing summary until user presses q/enter. (5) Add help text to View(): 'q=cancel  Ctrl+]=Claude  ↑↓=scroll'. (6) Update all autosplit_test.go tests that assert on q/Ctrl+C sending tea.Quit — they should now verify cancelled=true without immediate quit.",
+      "acceptance": "When auto-split is running, pressing q shows 'Cancelling...' in the TUI (not exiting alt-screen). Pipeline detects cancellation and exits. TUI exits only after pipeline signals done. Pressing q twice force-exits. Go-prompt only resumes after both TUI and pipeline return. Tests updated and passing.",
+      "status": "Done",
+      "context": {
+        "files": [
+          "internal/termui/mux/autosplit.go — Update() KeyMsg handler, View() help text, renderSeparator()",
+          "internal/termui/mux/autosplit_test.go — update q/Ctrl+C tests, add double-q test, add cancel→done→quit test"
+        ]
+      }
+    },
+    {
+      "task": "T017: Add intra-step cancellation to long-running JS pipeline operations",
+      "description": "The step() wrapper checks cancellation before each step but NOT during a step. Long-running steps like executeSplit() (creates multiple branches sequentially), verifySplits(), and resolveConflictsWithClaude() can take minutes. Add cancellation checks: (1) In executeSplit(): check autoSplitTUI.cancelled() between each branch creation. (2) In verifySplits(): check between each branch verification. (3) In resolveConflictsWithClaude(): check between each retry attempt. (4) In pollForFile(): reduce detail update interval from every 6s to every 2s for better progress visibility.",
+      "acceptance": "When auto-split is cancelled during executeSplit, it stops at the next branch boundary (within ~1 second). Same for verifySplits and resolveConflicts. pollForFile shows 'polling... Ns' every 2 seconds. Tests verify mid-step cancellation.",
+      "status": "Done",
+      "context": {
+        "files": [
+          "internal/command/pr_split_script.js — executeSplit(), verifySplits(), resolveConflictsWithClaude(), pollForFile()"
+        ]
+      }
+    },
+    {
+      "task": "T018: Improve pollForFile progress feedback and reduce intervals",
+      "description": "pollForFile currently shows progress every 6 seconds (intervalMs*6 threshold). This is too infrequent — user sees no progress for 6 seconds and thinks it's hung. Fix: (1) Show detail on EVERY poll iteration (every 1s). (2) Include timeout countdown: 'polling... 15s / 120s'. (3) Reduce default pollIntervalMs from 1000 to 500 for faster cancellation response. (4) Add spinner character rotation to show activity: ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏.",
+      "acceptance": "pollForFile updates detail every 500ms with spinner and countdown. User always sees evidence of activity. Cancellation response time is ≤500ms. Tests verify detail emission frequency.",
+      "status": "Done",
+      "context": {
+        "files": [
+          "internal/command/pr_split_script.js — pollForFile() function, AUTOMATED_DEFAULTS"
+        ]
+      }
+    },
+    {
+      "task": "T019: Add help bar and cancellation state to auto-split TUI View()",
+      "description": "The auto-split TUI lacks discoverability — users don't know about q, Ctrl+], or scroll keys. Add: (1) Bottom help bar: 'q Cancel  Ctrl+] Claude  ↑↓ Scroll  Home/End Jump'. (2) When cancelling: show '⏳ Cancelling... (q again to force)' in separator bar with amber color. (3) When done: show 'Complete — press q to dismiss' or 'Cancelled — press q to dismiss'. (4) Style the help bar with dim text to not distract from content.",
+      "acceptance": "Help bar is visible at the bottom of the TUI. Cancellation state is clearly communicated with visual distinction. Done state includes dismiss instructions. View renders correctly at various terminal sizes. Tests verify help bar content.",
+      "status": "Done",
+      "context": {
+        "files": [
+          "internal/termui/mux/autosplit.go — View() function, new renderHelpBar() helper, renderSeparator() updates"
+        ]
+      }
+    },
+    {
+      "task": "T020: Add comprehensive cancellation and TUI lifecycle tests",
+      "description": "Test the full lifecycle: (1) Test single-q sets cancelled but does NOT produce tea.Quit. (2) Test double-q produces tea.Quit (force exit). (3) Test that AutoSplitDoneMsg with cancelled=true produces tea.Quit. (4) Test that AutoSplitDoneMsg with cancelled=false shows summary (no tea.Quit). (5) Test View() content during cancellation state shows 'Cancelling...'. (6) Test View() content in done state shows dismiss hint. (7) Test help bar is visible in View().",
+      "acceptance": "All tests pass. Coverage of the new cancel/done lifecycle is complete. Each state transition is tested independently.",
+      "status": "Done",
+      "context": {
+        "files": [
+          "internal/termui/mux/autosplit_test.go — new lifecycle tests"
+        ]
+      }
+    },
+    {
+      "task": "T021: Run full test suite and fix regressions from T016-T020",
+      "description": "Run 'make' and fix any failures. Existing tests that checked for immediate tea.Quit on q/Ctrl+C will need updating to match the new behavior.",
+      "acceptance": "make passes cleanly. Zero failures. Zero lint warnings.",
+      "status": "Done",
+      "context": {
+        "files": ["Makefile"]
+      }
+    },
+    {
+      "task": "T022: Rule of Two verification and commit T016-T021",
+      "description": "Spawn two contiguous subagent reviews. Both must pass. Commit if clean.",
+      "acceptance": "Two contiguous PASS verdicts. Clean commit.",
+      "status": "Done",
+      "context": {
+        "files": [".claude/skills/strict-review-gate/SKILL.md"]
+      }
+    },
+    {
+      "task": "T023: Add mock-MCP integration test for full auto-split pipeline",
+      "description": "Create a comprehensive integration test that exercises the full automatedSplit() pipeline with mock MCP responses. The test should: (1) Set up a realistic git repo with Go files across multiple packages — additions, deletions, edits, moved files. (2) Mock the MCP response mechanism by pre-populating classification.json and split-plan.json in the result directory. (3) Run automatedSplit() with the mock. (4) Verify: branches created, each branch contains correct files, tree hash equivalence passes, independence pairs detected for non-overlapping splits. (5) Test error paths: invalid classification (missing files), invalid plan (duplicate files), verification failure triggering local fix strategies. (6) Test cancellation mid-pipeline. This test runs without any AI — purely mock-driven.",
+      "acceptance": "Test creates realistic repo, runs full pipeline with mocked MCP responses, verifies all branches and equivalence. Error paths tested. Runs in under 30 seconds. No flakiness.",
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_test.go — new TestPrSplitCommand_AutoSplitMockMCP test"
+        ]
+      }
+    },
+    {
+      "task": "T024: Scope expansion cycle 2 — continued improvements post-commit",
+      "description": "After T022 commit, identify next improvements. Candidates: (1) Add Claude output streaming to auto-split output pane during classification. (2) Add elapsed wall-clock time display in auto-split TUI header. (3) Improve error recovery when Claude process dies mid-pipeline. (4) Add --timeout flag to configure auto-split timeouts from CLI. (5) Add progress percentage estimation based on step count.",
+      "acceptance": "New tasks added to blueprint. Implementation continues.",
+      "status": "Not Started",
+      "context": {
+        "files": ["blueprint.json"]
+      }
+    }
+  ],
+  "continuousVerification": {
+    "buildCommand": "make",
+    "testCommand": "go test -race -count=1 -timeout=5m ./internal/command/... ./internal/termui/mux/... ./internal/builtin/claudemux/...",
+    "lintCommand": "make lint",
+    "coverageRequirement": "100% of new code"
+  },
+  "finalEnforcementProtocol": [
+    "ALL checks must pass before marking anything Done",
+    "Rule of Two before every commit",
+    "Update blueprint.json after EVERY sub-task",
+    "Never stop — scope must expand indefinitely"
+  ]
+}

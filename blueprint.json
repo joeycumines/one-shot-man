@@ -20,7 +20,7 @@
     "No stopping — scope must expand towards True Perfection indefinitely"
   ],
   "statusSection": {
-    "currentState": "T001-T013, T015-T033, T035-T052 Done. Commits: 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, 1f13b77, b996d07, 18ced3a, 5f2666e, pending. T034 deferred.",
+    "currentState": "T001-T013, T015-T033, T035-T054 Done. Commits: ..., 640e790, pending. T034 deferred.",
     "goalState": "osm pr-split is production-quality: auto-split TUI is responsive with cancellation support, Claude TUI muxing works during operations, integration tests use real AI via TestMain flags and project.mk targets, all TUI commands are verified non-vaporware, no AI slop remains",
     "replanLog": [
       "2026-02-25 Replan: User reports auto-split TUI still hangs after q. Root cause: q sends tea.Quit immediately, exiting alt-screen while JS pipeline still runs. Go-prompt prompt is visible but command handler hasn't returned. Fix: don't exit BubbleTea on first q — set cancelled flag only. Pipeline detects cancellation and calls finishTUI which triggers actual quit. Also need intra-step cancellation and richer poll feedback."
@@ -491,6 +491,20 @@
     {
       "task": "T052: Run full suite, Rule of Two, and commit T051",
       "description": "Run 'make', Rule of Two, and commit T051.",
+      "acceptance": "make passes. Two PASS verdicts. Clean commit.",
+      "status": "Done",
+      "context": { "files": ["Makefile"] }
+    },
+    {
+      "task": "T053: Add autosplit edge-case tests for formatDuration, truncate, ensureStep, renderSteps",
+      "description": "6 tests: formatDuration boundaries (0ms, 1s exact, 59.999s rounding, 60s, 61m), truncate edge cases (empty, negative width, width 1, exact), ensureStep idempotency and unique accumulation, failed step without error text, step counter in view.",
+      "acceptance": "All mux tests pass with race detector. No production code changed.",
+      "status": "Done",
+      "context": { "files": ["internal/termui/mux/autosplit_test.go"] }
+    },
+    {
+      "task": "T054: Run full suite, Rule of Two, and commit T053",
+      "description": "Run 'make', Rule of Two, and commit T053.",
       "acceptance": "make passes. Two PASS verdicts. Clean commit.",
       "status": "Done",
       "context": { "files": ["Makefile"] }

@@ -1367,3 +1367,107 @@ func TestAutoSplitModel_ScrollDown_ClampsToZero(t *testing.T) {
 		t.Errorf("scrollDown below 0 = %d, want 0", m.scrollOffset)
 	}
 }
+
+func TestFormatDuration_EdgeCases(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		d    time.Duration
+		want string
+	}{
+		{0, "0ms"},
+		{time.Second, "1.0s"},
+		{59*time.Second + 999*time.Millisecond, "60.0s"},
+		{60 * time.Second, "1m00s"},
+		{61*time.Minute + time.Second, "61m01s"},
+		{1 * time.Millisecond, "1ms"},
+		{999 * time.Millisecond, "999ms"},
+	}
+	for _, tt := range tests {
+		got := formatDuration(tt.d)
+		if got != tt.want {
+			t.Errorf("formatDuration(%v) = %q, want %q", tt.d, got, tt.want)
+		}
+	}
+}
+
+func TestTruncate_EdgeCases(t *testing.T) {
+	t.Parallel()
+	// Empty string — always returns empty regardless of width.
+	if truncate("", 10) != "" {
+		t.Error("empty string should return empty")
+	}
+	if truncate("", 0) != "" {
+		t.Error("empty string width=0 should return empty")
+	}
+	// Negative width — returns empty.
+	if truncate("hello", -1) != "" {
+		t.Error("negative width should return empty")
+	}
+	// Width=1 — single character.
+	if truncate("hello", 1) != "h" {
+		t.Errorf("width=1 = %q, want %q", truncate("hello", 1), "h")
+	}
+	// Exact length — no truncation.
+	if truncate("abc", 3) != "abc" {
+		t.Error("exact length should not truncate")
+	}
+}
+
+func TestAutoSplitModel_EnsureStep_MultipleDuplicates(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.ensureStep("Classify")
+	m.ensureStep("Classify")
+	m.ensureStep("Classify")
+	if len(m.steps) != 1 {
+		t.Errorf("ensureStep should be idempotent, got %d steps", len(m.steps))
+	}
+	if m.steps[0].Name != "Classify" {
+		t.Errorf("step name = %q, want Classify", m.steps[0].Name)
+	}
+}
+
+func TestAutoSplitModel_EnsureStep_MultipleUnique(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.ensureStep("A")
+	m.ensureStep("B")
+	m.ensureStep("C")
+	m.ensureStep("A") // duplicate
+	if len(m.steps) != 3 {
+		t.Errorf("expected 3 unique steps, got %d", len(m.steps))
+	}
+}
+
+func TestAutoSplitModel_View_FailedStepWithoutError(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width, m.height = 80, 24
+	m.Update(AutoSplitStepStartMsg{Name: "Build"})
+	m.Update(AutoSplitStepDoneMsg{Name: "Build", Err: ""})
+	// Mark it failed manually (no error text).
+	m.steps[0].Status = StepFailed
+	m.steps[0].Error = ""
+	view := m.View()
+	// Should render without panic, showing ✗ icon.
+	if !strings.Contains(view, "✗") {
+		t.Error("failed step should show ✗ icon")
+	}
+}
+
+func TestAutoSplitModel_RenderSteps_WithStepCounter(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width, m.height = 80, 24
+	m.Update(AutoSplitStepStartMsg{Name: "Step A"})
+	m.Update(AutoSplitStepDoneMsg{Name: "Step A", Elapsed: time.Second})
+	m.Update(AutoSplitStepStartMsg{Name: "Step B"})
+	view := m.View()
+	// Step counter is i+1/len(steps), so "1/2" and "2/2".
+	if !strings.Contains(view, "1/2") {
+		t.Error("view should show step counter 1/2")
+	}
+	if !strings.Contains(view, "2/2") {
+		t.Error("view should show step counter 2/2")
+	}
+}

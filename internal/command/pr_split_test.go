@@ -5278,22 +5278,6 @@ func BenchmarkAssessIndependence(b *testing.B) {
 	}
 }
 
-// BenchmarkMatchGlobPattern benchmarks glob pattern matching.
-func BenchmarkMatchGlobPattern(b *testing.B) {
-	_, _, evalJS := loadPrSplitEngineWithEval(b, nil)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := evalJS(`
-			prSplit.matchGlobPattern('internal/command/pr_split_test.go', '**/*_test.go');
-			prSplit.matchGlobPattern('docs/README.md', 'docs/**');
-			prSplit.matchGlobPattern('cmd/osm/main.go', '*.go');
-		`)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
 // ---------------------------------------------------------------------------
 // T120-T131: Phase 8 Scope Expansion Feature Tests
 // ---------------------------------------------------------------------------
@@ -5307,17 +5291,11 @@ func TestScopeExpansion_NewExportsExist(t *testing.T) {
 		"getSplitDiff",
 		"recordConversation",
 		"getConversationHistory",
-		"partitionFiles",
-		"mergeClassifications",
-		"applyClassificationRules",
-		"matchGlobPattern",
-		"parseConfigRules",
 		"buildDependencyGraph",
 		"renderAsciiGraph",
 		"recordTelemetry",
 		"getTelemetrySummary",
 		"saveTelemetry",
-		"loadStrategyPlugin",
 		"analyzeRetrospective",
 	}
 	for _, name := range exports {
@@ -5328,128 +5306,6 @@ func TestScopeExpansion_NewExportsExist(t *testing.T) {
 		}
 		if val != "function" {
 			t.Errorf("Expected prSplit.%s to be a function, got %v", name, val)
-		}
-	}
-}
-
-// TestPartitionFiles verifies file partitioning.
-func TestPartitionFiles(t *testing.T) {
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
-
-	val, err := evalJS(`JSON.stringify(prSplit.partitionFiles(['a','b','c','d','e'], 3))`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, ok := val.(string)
-	if !ok {
-		t.Fatalf("expected string, got %T", val)
-	}
-	var chunks [][]string
-	if err := json.Unmarshal([]byte(s), &chunks); err != nil {
-		t.Fatal(err)
-	}
-	if len(chunks) != 3 {
-		t.Errorf("expected 3 chunks, got %d", len(chunks))
-	}
-	total := 0
-	for _, c := range chunks {
-		total += len(c)
-	}
-	if total != 5 {
-		t.Errorf("expected 5 total files, got %d", total)
-	}
-}
-
-// TestMergeClassifications verifies classification merging with conflicts.
-func TestMergeClassifications(t *testing.T) {
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
-
-	val, err := evalJS(`JSON.stringify(prSplit.mergeClassifications([
-		{groups: [{name: 'api', files: ['a.go', 'b.go']}]},
-		{groups: [{name: 'db', files: ['c.go', 'b.go']}]}
-	]))`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, ok := val.(string)
-	if !ok {
-		t.Fatalf("expected string, got %T", val)
-	}
-	var result struct {
-		Groups []struct {
-			Name  string
-			Files []string
-		}
-		Conflicts []struct{ File, Group1, Group2 string }
-	}
-	if err := json.Unmarshal([]byte(s), &result); err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Conflicts) != 1 {
-		t.Errorf("expected 1 conflict (b.go), got %d", len(result.Conflicts))
-	}
-}
-
-// TestApplyClassificationRules verifies rule-based pre-classification.
-func TestApplyClassificationRules(t *testing.T) {
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
-
-	val, err := evalJS(`JSON.stringify(prSplit.applyClassificationRules(
-		['api/handler.go', 'api/handler_test.go', 'docs/README.md', 'cmd/main.go'],
-		[{name: 'tests', pattern: '**/*_test.go'}, {name: 'docs', pattern: 'docs/**'}]
-	))`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, ok := val.(string)
-	if !ok {
-		t.Fatalf("expected string, got %T", val)
-	}
-	var result struct {
-		Classified []struct {
-			Name  string
-			Files []string
-		}
-		Remaining []string
-	}
-	if err := json.Unmarshal([]byte(s), &result); err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Classified) != 2 {
-		t.Errorf("expected 2 classified groups, got %d", len(result.Classified))
-	}
-	if len(result.Remaining) != 2 {
-		t.Errorf("expected 2 remaining files, got %d", len(result.Remaining))
-	}
-}
-
-// TestMatchGlobPattern verifies glob matching.
-func TestMatchGlobPattern(t *testing.T) {
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
-
-	tests := []struct {
-		path, pattern string
-		want          bool
-	}{
-		{"internal/cmd/main.go", "**/*.go", true},
-		{"docs/README.md", "docs/**", true},
-		{"api/handler_test.go", "**/*_test.go", true},
-		{"main.go", "**/*.go", true},
-		{"docs/README.md", "**/*.go", false},
-	}
-	for _, tt := range tests {
-		val, err := evalJS("prSplit.matchGlobPattern('" + tt.path + "', '" + tt.pattern + "')")
-		if err != nil {
-			t.Errorf("matchGlobPattern(%q, %q): %v", tt.path, tt.pattern, err)
-			continue
-		}
-		got, ok := val.(bool)
-		if !ok {
-			t.Errorf("matchGlobPattern(%q, %q): expected bool, got %T (%v)", tt.path, tt.pattern, val, val)
-			continue
-		}
-		if got != tt.want {
-			t.Errorf("matchGlobPattern(%q, %q) = %v, want %v", tt.path, tt.pattern, got, tt.want)
 		}
 	}
 }

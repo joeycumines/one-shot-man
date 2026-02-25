@@ -987,6 +987,12 @@ function executeSplit(plan) {
     var currentBase = plan.baseBranch;
 
     for (var i = 0; i < plan.splits.length; i++) {
+        // Intra-step cancellation: check between each branch creation.
+        if (isCancelled()) {
+            gitExec(dir, ['checkout', restoreBranch]);
+            return { error: 'cancelled by user after ' + i + ' of ' + plan.splits.length + ' branches', results: results };
+        }
+
         var split = plan.splits[i];
         var splitResult = { name: split.name, files: split.files, sha: '', error: null };
 
@@ -1111,6 +1117,12 @@ function verifySplits(plan) {
     var restoreBranch = saved.code === 0 ? saved.stdout.trim() : plan.sourceBranch;
 
     for (var i = 0; i < plan.splits.length; i++) {
+        // Intra-step cancellation: check between each branch verification.
+        if (isCancelled()) {
+            gitExec(dir, ['checkout', restoreBranch]);
+            return { allPassed: false, results: results };
+        }
+
         var result = verifySplit(plan.splits[i].name, {
             dir: dir,
             verifyCommand: plan.verifyCommand
@@ -2009,24 +2021,43 @@ var AUTOMATED_DEFAULTS = {
     classifyTimeoutMs: 120000,  // 2 minutes for classification
     planTimeoutMs: 120000,      // 2 minutes for plan
     resolveTimeoutMs: 180000,   // 3 minutes for conflict resolution
-    pollIntervalMs: 1000,       // Poll every 1 second
+    pollIntervalMs: 500,        // Poll every 500ms for fast cancellation response
     maxResolveRetries: 3,       // Retries per branch
     maxReSplits: 1              // Maximum re-classification cycles
 };
 
+// Spinner characters for progress display.
+var SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+// isCancelled checks cooperative cancellation from the auto-split TUI.
+// Returns true when the user has pressed q/Ctrl+C.
+function isCancelled() {
+    return typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
+           typeof autoSplitTUI.cancelled === 'function' && autoSplitTUI.cancelled();
+}
+
 // pollForFile polls a result directory for a specific file.
 // Returns { data: object|null, error: string|null }.
-function pollForFile(resultDir, filename, timeoutMs, intervalMs) {
+function pollForFile(resultDir, filename, timeoutMs, intervalMs, stepName) {
     if (!osmod) {
         return { data: null, error: 'osm:os module not available for file polling' };
     }
-    var hasCancelCheck = typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
-                         typeof autoSplitTUI.cancelled === 'function';
+    var hasDetailUpdate = stepName && typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
+                          typeof autoSplitTUI.stepDetail === 'function';
     var elapsed = 0;
+    var spinnerIdx = 0;
     while (elapsed < timeoutMs) {
         // Check cancellation before each poll iteration.
-        if (hasCancelCheck && autoSplitTUI.cancelled()) {
+        if (isCancelled()) {
             return { data: null, error: 'cancelled by user' };
+        }
+        // Emit progress on every iteration so the TUI shows activity.
+        if (hasDetailUpdate) {
+            var spinner = SPINNER_FRAMES[spinnerIdx % SPINNER_FRAMES.length];
+            var elapsedSec = Math.round(elapsed / 1000);
+            var timeoutSec = Math.round(timeoutMs / 1000);
+            autoSplitTUI.stepDetail(stepName, spinner + ' polling… ' + elapsedSec + 's / ' + timeoutSec + 's');
+            spinnerIdx++;
         }
         var readResult = osmod.readFile(resultDir + '/' + filename);
         if (!readResult.error) {
@@ -2055,6 +2086,26 @@ function pollForFile(resultDir, filename, timeoutMs, intervalMs) {
 // Returns { error: string|null, report: object }.
 function automatedSplit(config) {
     config = config || {};
+
+    // Reset module-level state to prevent leakage across multiple runs
+    // within the same JS VM (e.g., running auto-split twice in one session).
+    conversationHistory = [];
+    telemetryData = {
+        filesAnalyzed: 0,
+        splitCount: 0,
+        strategy: '',
+        claudeInteractions: 0,
+        conflictsResolved: 0,
+        conflictsFailed: 0,
+        startTime: new Date().toISOString(),
+        endTime: null
+    };
+    claudeExecutor = null;
+    analysisCache = null;
+    groupsCache = null;
+    planCache = null;
+    executionResultCache = [];
+
     var timeouts = {
         classify: config.classifyTimeoutMs || AUTOMATED_DEFAULTS.classifyTimeoutMs,
         plan: config.planTimeoutMs || AUTOMATED_DEFAULTS.planTimeoutMs,
@@ -2222,7 +2273,7 @@ function automatedSplit(config) {
     // Step 4: Receive classification.
     var classification = step('Receive classification', function() {
         updateDetail('Receive classification', 'Polling for response...');
-        var pollResult = pollForFile(resultDir, 'classification.json', timeouts.classify, pollInterval);
+        var pollResult = pollForFile(resultDir, 'classification.json', timeouts.classify, pollInterval, 'Receive classification');
         if (pollResult.error) {
             return { error: pollResult.error };
         }
@@ -2256,7 +2307,7 @@ function automatedSplit(config) {
     var planResult = step('Generate split plan', function() {
         updateDetail('Generate split plan', 'Checking for Claude-generated plan...');
         // Check if Claude also provided a split plan.
-        var planPoll = pollForFile(resultDir, 'split-plan.json', 5000, 500);
+        var planPoll = pollForFile(resultDir, 'split-plan.json', 5000, 500, 'Generate split plan');
         if (!planPoll.error && planPoll.data) {
             // Claude provided a plan — validate it.
             var claudePlan = planPoll.data;
@@ -2375,7 +2426,7 @@ function automatedSplit(config) {
                 }
                 // Delete old classification file so we wait for the new one.
                 try { exec.execv(['rm', '-f', resultDir + '/classification.json']); } catch (e) { /* ignore */ }
-                var rePoll = pollForFile(resultDir, 'classification.json', timeouts.classify, pollInterval);
+                var rePoll = pollForFile(resultDir, 'classification.json', timeouts.classify, pollInterval, 'Re-classify (retry ' + reSplitCount + ')');
                 if (rePoll.error) {
                     return { error: rePoll.error };
                 }
@@ -2500,10 +2551,19 @@ function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, po
     var reSplitReason = '';
 
     for (var i = 0; i < failures.length; i++) {
+        // Intra-step cancellation: check between each failure resolution.
+        if (isCancelled()) {
+            return { reSplitNeeded: false, reSplitReason: 'cancelled by user' };
+        }
+
         var fail = failures[i];
         var fixed = false;
 
         for (var attempt = 0; attempt < maxRetries && !fixed; attempt++) {
+            // Check cancellation between retry attempts.
+            if (isCancelled()) {
+                return { reSplitNeeded: false, reSplitReason: 'cancelled by user' };
+            }
             report.conflicts.push({
                 branch: fail.branch || fail.name,
                 attempt: attempt + 1,
@@ -2536,7 +2596,7 @@ function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, po
             // Wait for resolution.
             // Delete old resolution file first.
             try { exec.execv(['rm', '-f', resultDir + '/resolution.json']); } catch (e) { /* ignore */ }
-            var resolutionPoll = pollForFile(resultDir, 'resolution.json', timeouts.resolve, pollInterval);
+            var resolutionPoll = pollForFile(resultDir, 'resolution.json', timeouts.resolve, pollInterval, 'Resolve conflicts');
             if (resolutionPoll.error) {
                 log.printf('auto-split: resolution timeout for %s (attempt %d)', fail.branch || fail.name, attempt + 1);
                 continue;
@@ -3031,119 +3091,6 @@ function getConversationHistory() {
 }
 
 // ---------------------------------------------------------------------------
-//  Multi-Claude Parallel Classification (T125)
-// ---------------------------------------------------------------------------
-
-// partitionFiles splits a file list into N roughly equal chunks.
-function partitionFiles(files, n) {
-    if (n < 1) n = 1;
-    var chunks = [];
-    var chunkSize = Math.ceil(files.length / n);
-    for (var i = 0; i < files.length; i += chunkSize) {
-        chunks.push(files.slice(i, Math.min(i + chunkSize, files.length)));
-    }
-    return chunks;
-}
-
-// mergeClassifications combines classification results from parallel workers.
-// Detects conflicts: same file classified differently by different workers.
-function mergeClassifications(results) {
-    var merged = {};
-    var conflicts = [];
-    for (var i = 0; i < results.length; i++) {
-        var classification = results[i];
-        if (!classification || !classification.groups) continue;
-        for (var g = 0; g < classification.groups.length; g++) {
-            var group = classification.groups[g];
-            var groupName = group.name || ('group-' + g);
-            for (var f = 0; f < (group.files || []).length; f++) {
-                var file = group.files[f];
-                if (merged[file] && merged[file] !== groupName) {
-                    conflicts.push({ file: file, group1: merged[file], group2: groupName });
-                }
-                merged[file] = groupName;
-            }
-        }
-    }
-    // Convert merged map to groups array.
-    var groupMap = {};
-    for (var file2 in merged) {
-        var gName = merged[file2];
-        if (!groupMap[gName]) groupMap[gName] = [];
-        groupMap[gName].push(file2);
-    }
-    var groups = [];
-    for (var name in groupMap) {
-        groups.push({ name: name, files: groupMap[name] });
-    }
-    return { groups: groups, conflicts: conflicts };
-}
-
-// ---------------------------------------------------------------------------
-//  Custom Classification Rules (T126)
-// ---------------------------------------------------------------------------
-
-// applyClassificationRules pre-classifies files using user-defined rules.
-// Rules are objects like { name: 'tests', pattern: '*_test.go' }.
-// Returns { classified: [{name, files}], remaining: [files] }.
-function applyClassificationRules(files, rules) {
-    if (!rules || rules.length === 0) {
-        return { classified: [], remaining: files.slice() };
-    }
-    var classified = {};
-    var remaining = [];
-    for (var i = 0; i < files.length; i++) {
-        var file = files[i];
-        var matched = false;
-        for (var r = 0; r < rules.length; r++) {
-            if (matchGlobPattern(file, rules[r].pattern)) {
-                if (!classified[rules[r].name]) classified[rules[r].name] = [];
-                classified[rules[r].name].push(file);
-                matched = true;
-                break;
-            }
-        }
-        if (!matched) remaining.push(file);
-    }
-    var groups = [];
-    for (var name in classified) {
-        groups.push({ name: name, files: classified[name] });
-    }
-    return { classified: groups, remaining: remaining };
-}
-
-// matchGlobPattern provides simple glob matching: * matches any sequence,
-// ** matches any path segment sequence (including zero segments).
-function matchGlobPattern(filepath, pattern) {
-    // Convert glob to regex:
-    //   '**/' → '(.+/)?' (zero or more path segments)
-    //   '**'  → '.*'     (any characters)
-    //   '*'   → '[^/]*'  (single segment wildcard)
-    var escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-    var regex = escaped.replace(/\*\*\//g, '§GLOBSLASH§')
-                       .replace(/\*\*/g, '§GLOBSTAR§')
-                       .replace(/\*/g, '[^/]*')
-                       .replace(/§GLOBSLASH§/g, '(.+/)?')
-                       .replace(/§GLOBSTAR§/g, '.*');
-    return new RegExp('^' + regex + '$').test(filepath);
-}
-
-// parseConfigRules reads classification rules from config.
-// Config format: pr-split.rules.tests=*_test.go
-function parseConfigRules(cfgObj) {
-    var rules = [];
-    if (!cfgObj) return rules;
-    // Look for keys matching pr-split.rules.*
-    for (var key in cfgObj) {
-        if (key.indexOf('rules.') === 0) {
-            var ruleName = key.substring(6);
-            rules.push({ name: ruleName, pattern: cfgObj[key] });
-        }
-    }
-    return rules;
-}
-
-// ---------------------------------------------------------------------------
 //  Split Dependency Graph (T127)
 // ---------------------------------------------------------------------------
 
@@ -3482,15 +3429,6 @@ globalThis.prSplit = {
     // Conversation history
     recordConversation: recordConversation,
     getConversationHistory: getConversationHistory,
-
-    // Multi-Claude parallel classification
-    partitionFiles: partitionFiles,
-    mergeClassifications: mergeClassifications,
-
-    // Custom classification rules
-    applyClassificationRules: applyClassificationRules,
-    matchGlobPattern: matchGlobPattern,
-    parseConfigRules: parseConfigRules,
 
     // Dependency graph
     buildDependencyGraph: buildDependencyGraph,

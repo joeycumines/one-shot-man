@@ -336,12 +336,42 @@ func (m *AutoSplitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// Quit / cancel.
+		// Cancel / quit.
+		//
+		// First press: set cancelled flag so the JS pipeline can detect
+		// it via cooperative polling. The TUI stays visible showing a
+		// "Cancelling…" state. This prevents the alt-screen from
+		// being torn down while the pipeline is still running (which
+		// would expose the go-prompt beneath in an unresponsive state).
+		//
+		// Second press: force-quit the BubbleTea program. This is the
+		// fallback for pipelines that are truly stuck (e.g. blocked on
+		// an unresponsive child process).
+		//
+		// When the pipeline finishes, it sends AutoSplitDoneMsg which
+		// triggers the actual tea.Quit.
 		if msg.Type == tea.KeyCtrlC || msg.String() == "q" {
-			m.quitting = true
+			if m.done {
+				// Pipeline has finished — dismiss the TUI.
+				m.quitting = true
+				return m, tea.Quit
+			}
 			m.mu.Lock()
+			alreadyCancelled := m.cancelled
 			m.cancelled = true
 			m.mu.Unlock()
+			if alreadyCancelled {
+				// Second press: force quit.
+				m.quitting = true
+				return m, tea.Quit
+			}
+			// First press: stay visible, show "Cancelling…"
+			return m, nil
+		}
+
+		// Enter key on done screen: dismiss the TUI.
+		if msg.Type == tea.KeyEnter && m.done {
+			m.quitting = true
 			return m, tea.Quit
 		}
 
@@ -433,6 +463,16 @@ func (m *AutoSplitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AutoSplitDoneMsg:
 		m.done = true
 		m.doneSummary = msg.Summary
+		// If the user already pressed cancel, exit immediately now that
+		// the pipeline has cleaned up. Otherwise, stay visible and show
+		// the summary until the user dismisses with q or Enter.
+		m.mu.Lock()
+		wasCancelled := m.cancelled
+		m.mu.Unlock()
+		if wasCancelled {
+			m.quitting = true
+			return m, tea.Quit
+		}
 		return m, nil
 
 	case AutoSplitToggleMsg:
@@ -456,11 +496,11 @@ func (m *AutoSplitModel) View() string {
 		return ""
 	}
 
-	// Layout: top = step list, separator, bottom = live output.
-	// Reserve 1 line for separator, 1 for header.
+	// Layout: top = step list, separator, bottom = live output, help bar.
+	// Reserve 1 line for separator, 1 for help bar.
 	availableHeight := m.height
-	if availableHeight < 4 {
-		availableHeight = 4
+	if availableHeight < 5 {
+		availableHeight = 5
 	}
 
 	// Top pane: header line + one line per step, capped at 40% of terminal.
@@ -474,8 +514,8 @@ func (m *AutoSplitModel) View() string {
 		topNeeded = 2
 	}
 
-	// Bottom pane: remaining height minus separator.
-	bottomHeight := availableHeight - topNeeded - 1
+	// Bottom pane: remaining height minus separator and help bar.
+	bottomHeight := availableHeight - topNeeded - 2 // -1 separator, -1 help bar
 	if bottomHeight < 1 {
 		bottomHeight = 1
 	}
@@ -500,7 +540,10 @@ func (m *AutoSplitModel) View() string {
 	}
 	bottomContent := renderPane(viewLines, bottomHeight, m.width)
 
-	return lipgloss.JoinVertical(lipgloss.Left, topContent, separator, bottomContent)
+	// Help bar.
+	helpBar := m.renderHelpBar(m.width)
+
+	return lipgloss.JoinVertical(lipgloss.Left, topContent, separator, bottomContent, helpBar)
 }
 
 // --- Internal helpers ---
@@ -529,8 +572,8 @@ func (m *AutoSplitModel) scrollDown(n int) {
 // outputPaneHeight calculates the current height of the bottom (output) pane.
 func (m *AutoSplitModel) outputPaneHeight() int {
 	availableHeight := m.height
-	if availableHeight < 4 {
-		availableHeight = 4
+	if availableHeight < 5 {
+		availableHeight = 5
 	}
 	topMax := availableHeight * 2 / 5
 	stepCount := len(m.steps)
@@ -541,7 +584,7 @@ func (m *AutoSplitModel) outputPaneHeight() int {
 	if topNeeded < 2 {
 		topNeeded = 2
 	}
-	bottomHeight := availableHeight - topNeeded - 1
+	bottomHeight := availableHeight - topNeeded - 2 // -1 separator, -1 help bar
 	if bottomHeight < 1 {
 		bottomHeight = 1
 	}
@@ -617,9 +660,7 @@ func (m *AutoSplitModel) renderSteps(height, width int) string {
 	}
 
 	// Pad remaining lines.
-	rendered := startIdx
 	for j := len(steps) - startIdx; j < slotsForSteps; j++ {
-		_ = rendered // suppress unused
 		b.WriteByte('\n')
 	}
 
@@ -643,12 +684,23 @@ func (m *AutoSplitModel) renderSeparator(width int) string {
 		}
 	}
 
-	left := " Auto-Split"
-	if currentStep != "" {
+	// Left side: status message.
+	m.mu.Lock()
+	isCancelled := m.cancelled
+	m.mu.Unlock()
+
+	var left string
+	switch {
+	case m.done && isCancelled:
+		left = " ⏹ Cancelled"
+	case m.done:
+		left = " ✓ Complete — press q to dismiss"
+	case isCancelled:
+		left = " ⏳ Cancelling… (q again to force)"
+	case currentStep != "":
 		left = fmt.Sprintf(" ◉ %s", currentStep)
-	}
-	if m.done {
-		left = " ✓ Complete"
+	default:
+		left = " Auto-Split"
 	}
 
 	var right string
@@ -669,7 +721,51 @@ func (m *AutoSplitModel) renderSeparator(width int) string {
 		padding = 0
 	}
 	bar := left + strings.Repeat("─", padding) + right
+
+	// Use a warning style for the separator when cancelling.
+	if isCancelled && !m.done {
+		cancelStyle := lipgloss.NewStyle().
+			Background(lipgloss.Color("208")).
+			Foreground(lipgloss.Color("0")).
+			Bold(true)
+		return cancelStyle.Width(width).Render(bar)
+	}
+
 	return m.separatorStyle.Width(width).Render(bar)
+}
+
+// renderHelpBar builds the contextual help bar at the bottom.
+func (m *AutoSplitModel) renderHelpBar(width int) string {
+	helpStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240"))
+	keyStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252")).
+		Bold(true)
+
+	m.mu.Lock()
+	isCancelled := m.cancelled
+	m.mu.Unlock()
+
+	var help string
+	switch {
+	case m.done:
+		help = keyStyle.Render("q") + helpStyle.Render("/") +
+			keyStyle.Render("enter") + helpStyle.Render(" dismiss")
+	case isCancelled:
+		help = keyStyle.Render("q") + helpStyle.Render(" force quit")
+	default:
+		help = keyStyle.Render("q") + helpStyle.Render(" cancel  ") +
+			keyStyle.Render("ctrl+]") + helpStyle.Render(" claude  ") +
+			keyStyle.Render("↑↓") + helpStyle.Render(" scroll  ") +
+			keyStyle.Render("home/end") + helpStyle.Render(" jump")
+	}
+
+	// Pad to width.
+	padding := width - lipgloss.Width(help) - 1
+	if padding < 0 {
+		padding = 0
+	}
+	return " " + help + strings.Repeat(" ", padding)
 }
 
 // formatDuration formats a duration in a human-friendly short form.

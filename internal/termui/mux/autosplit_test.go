@@ -155,24 +155,80 @@ func TestAutoSplitModel_WindowSizeMsg(t *testing.T) {
 }
 
 func TestAutoSplitModel_CtrlC_Quit(t *testing.T) {
+	// First Ctrl+C sets cancelled but does NOT quit (stays visible showing "Cancelling…").
 	m := NewAutoSplitModel()
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd != nil {
+		t.Fatal("first Ctrl+C should NOT return a command (TUI stays visible)")
+	}
+	if !m.Cancelled() {
+		t.Error("cancelled should be true after first Ctrl+C")
+	}
+	if m.quitting {
+		t.Error("quitting should be false after first Ctrl+C")
+	}
+
+	// Second Ctrl+C force-quits.
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
-		t.Fatal("Ctrl+C should return tea.Quit command")
+		t.Fatal("second Ctrl+C should return tea.Quit command")
 	}
 	if !m.quitting {
-		t.Error("quitting should be true after Ctrl+C")
+		t.Error("quitting should be true after second Ctrl+C")
 	}
 }
 
 func TestAutoSplitModel_Q_Quit(t *testing.T) {
+	// First 'q' sets cancelled but does NOT quit.
 	m := NewAutoSplitModel()
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if cmd != nil {
+		t.Fatal("first 'q' should NOT return a command (TUI stays visible)")
+	}
+	if !m.Cancelled() {
+		t.Error("cancelled should be true after first 'q'")
+	}
+	if m.quitting {
+		t.Error("quitting should be false after first 'q'")
+	}
+
+	// Second 'q' force-quits.
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	if cmd == nil {
-		t.Fatal("'q' should return tea.Quit command")
+		t.Fatal("second 'q' should return tea.Quit command")
 	}
 	if !m.quitting {
-		t.Error("quitting should be true after 'q'")
+		t.Error("quitting should be true after second 'q'")
+	}
+}
+
+func TestAutoSplitModel_Q_Quit_WhenDone(t *testing.T) {
+	// When pipeline is done, first q/Ctrl+C should dismiss immediately.
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitDoneMsg{})
+	if !m.done {
+		t.Fatal("done should be true after AutoSplitDoneMsg")
+	}
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if cmd == nil {
+		t.Fatal("'q' on done model should return tea.Quit")
+	}
+	if !m.quitting {
+		t.Error("quitting should be true")
+	}
+}
+
+func TestAutoSplitModel_CtrlC_Quit_WhenDone(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitDoneMsg{})
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd == nil {
+		t.Fatal("Ctrl+C on done model should return tea.Quit")
+	}
+	if !m.quitting {
+		t.Error("quitting should be true")
 	}
 }
 

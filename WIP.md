@@ -36,11 +36,11 @@
 22. `1a8de19` — Add grouping strategy and helper function tests
 23. `4c446a2` — Add verification and analysis function direct tests
 24. `260bf0c` — Add pipeline function tests (validatePlan, resolveConflicts, pollForFile, ClaudeCodeExecutor.resolve, shellQuote)
+25. `736cfa2` — Add planning and dependency analysis function tests (parseGoImports, groupByDependency, selectStrategy, createSplitPlan, savePlan, loadPlan)
+26. `pending` — Add analysis and classification function tests (detectLanguage, detectGoModulePath, classificationToGroups, analyzeDiff, assessIndependence)
 
-## Current Work — Scope Expansion Cycle 18
-All original 60 tasks Done. Continuing with pipeline function tests.
-New test file: pr_split_grouping_test.go covering dirname, fileExtension, sanitizeBranchName,
-padIndex, groupByDirectory, groupByExtension, groupByPattern, groupByChunks, analyzeDiffStats.
+## Current Work — Scope Expansion Cycle 20
+All original 60 tasks Done. T061-T065 completed. Exploring next test gaps.
 
 ### What Changed (T043-T044)
 - **T043**: Extracted shared layout arithmetic from View() and outputPaneHeight() into computeLayout() returning autoSplitLayout struct. 4 unit tests: Default, ManySteps, TinyTerminal, ConsistentWithOutputPaneHeight.

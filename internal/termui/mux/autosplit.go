@@ -125,6 +125,9 @@ type AutoSplitModel struct {
 	quitting    bool
 	cancelled   bool // set atomically when user cancels; polled by JS
 
+	// Pipeline timer — set on first StepStartMsg.
+	pipelineStartedAt time.Time
+
 	// Toggle key (default Ctrl+]) for switching to Claude TUI.
 	toggleKey byte
 	// Toggle callback — invoked (outside BubbleTea) when toggle is pressed.
@@ -410,6 +413,9 @@ func (m *AutoSplitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case AutoSplitStepStartMsg:
+		if m.pipelineStartedAt.IsZero() {
+			m.pipelineStartedAt = time.Now()
+		}
 		m.ensureStep(msg.Name)
 		for i := range m.steps {
 			if m.steps[i].Name == msg.Name {
@@ -608,7 +614,27 @@ func (m *AutoSplitModel) ensureStep(name string) {
 func (m *AutoSplitModel) renderSteps(height, width int) string {
 	var b strings.Builder
 
-	header := m.headerStyle.Render("  Auto-Split Pipeline")
+	headerText := "  Auto-Split Pipeline"
+	if !m.pipelineStartedAt.IsZero() {
+		elapsed := time.Since(m.pipelineStartedAt)
+		// If done, freeze the timer at the last step's end time.
+		if m.done && len(m.steps) > 0 {
+			var lastEnd time.Duration
+			for _, s := range m.steps {
+				if s.StartedAt.IsZero() {
+					continue // Skip steps that were never started.
+				}
+				if e := s.StartedAt.Sub(m.pipelineStartedAt) + s.Elapsed; e > lastEnd {
+					lastEnd = e
+				}
+			}
+			if lastEnd > 0 {
+				elapsed = lastEnd
+			}
+		}
+		headerText += fmt.Sprintf("  ⏱ %s", formatDuration(elapsed))
+	}
+	header := m.headerStyle.Render(headerText)
 	b.WriteString(truncate(header, width))
 	b.WriteByte('\n')
 
@@ -644,7 +670,9 @@ func (m *AutoSplitModel) renderSteps(height, width int) string {
 			elapsed = fmt.Sprintf(" (%s)", formatDuration(s.Elapsed))
 		}
 
-		line := style.Render(fmt.Sprintf("  %s %s%s", icon, s.Name, elapsed))
+		// Show step counter (1-indexed).
+		counter := fmt.Sprintf("%d/%d", i+1, len(steps))
+		line := style.Render(fmt.Sprintf("  %s %s %s%s", icon, counter, s.Name, elapsed))
 		if s.Status == StepFailed && s.Error != "" {
 			line += m.failedStyle.Render(fmt.Sprintf(" — %s", s.Error))
 		}

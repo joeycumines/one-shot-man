@@ -47,6 +47,9 @@ type PrSplitCommand struct {
 	claudeModel     string          // model to use (provider-dependent)
 	claudeConfigDir string          // config directory override
 	claudeEnv       string          // extra environment variables (KEY=VALUE,KEY=VALUE)
+
+	// Timeout for Claude communication steps (classify, plan, resolve).
+	timeout time.Duration
 }
 
 // stringSliceFlag implements [flag.Value] for repeatable string flags.
@@ -100,6 +103,8 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.claudeConfigDir, "claude-config-dir", "", "Claude config directory override")
 	fs.StringVar(&c.claudeEnv, "claude-env", "", "Extra environment variables (KEY=VALUE,KEY=VALUE)")
 
+	fs.DurationVar(&c.timeout, "timeout", 0, "Timeout for Claude communication steps (e.g. 5m); 0 = defaults")
+
 	c.RegisterFlags(fs)
 }
 
@@ -140,6 +145,11 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		applyConfigDefault("claude-model", &c.claudeModel, "")
 		applyConfigDefault("claude-config-dir", &c.claudeConfigDir, "")
 		applyConfigDefault("claude-env", &c.claudeEnv, "")
+		if v, ok := c.config.GetCommandOption("pr-split", "timeout"); ok && c.timeout == 0 {
+			if d, err := time.ParseDuration(v); err == nil && d > 0 {
+				c.timeout = d
+			}
+		}
 	}
 
 	engine, cleanup, err := c.PrepareEngine(ctx, stdout, stderr)
@@ -183,6 +193,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		"claudeModel":     c.claudeModel,
 		"claudeConfigDir": c.claudeConfigDir,
 		"claudeEnv":       claudeEnvMap,
+		"timeoutMs":       int64(c.timeout / time.Millisecond),
 	})
 
 	// TUI Mux — terminal multiplexer between osm and child PTY (Claude Code).

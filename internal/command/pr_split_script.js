@@ -4175,10 +4175,17 @@ function buildCommands(stateArg) {
                     }
                     if (claudeExecutor.isAvailable()) {
                         output.print(style.info('Mode: automated (Claude detected)'));
-                        var result = automatedSplit({
+                        var autoConfig = {
                             baseBranch: runtime.baseBranch,
                             strategy: runtime.strategy
-                        });
+                        };
+                        // If --timeout was specified, apply to all Claude timeouts.
+                        if (prSplitConfig.timeoutMs > 0) {
+                            autoConfig.classifyTimeoutMs = prSplitConfig.timeoutMs;
+                            autoConfig.planTimeoutMs = prSplitConfig.timeoutMs;
+                            autoConfig.resolveTimeoutMs = prSplitConfig.timeoutMs;
+                        }
+                        var result = automatedSplit(autoConfig);
                         if (result.error) {
                             output.print(style.error('Auto-split error: ' + result.error));
                         }
@@ -4455,11 +4462,18 @@ function buildCommands(stateArg) {
             usage: 'auto-split',
             handler: function() {
                 try {
-                    var result = automatedSplit({
+                    var autoConfig = {
                         baseBranch: runtime.baseBranch,
                         strategy: runtime.strategy,
                         maxGroups: 0
-                    });
+                    };
+                    // If --timeout was specified, apply to all Claude timeouts.
+                    if (prSplitConfig.timeoutMs > 0) {
+                        autoConfig.classifyTimeoutMs = prSplitConfig.timeoutMs;
+                        autoConfig.planTimeoutMs = prSplitConfig.timeoutMs;
+                        autoConfig.resolveTimeoutMs = prSplitConfig.timeoutMs;
+                    }
+                    var result = automatedSplit(autoConfig);
                     if (result.error) {
                         output.print(style.error('Auto-split failed: ' + result.error));
                     }

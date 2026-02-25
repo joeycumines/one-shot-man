@@ -232,11 +232,78 @@ func TestAutoSplitModel_CtrlC_Quit_WhenDone(t *testing.T) {
 	}
 }
 
+func TestAutoSplitModel_Enter_Dismiss_WhenDone(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitDoneMsg{})
+	if !m.done {
+		t.Fatal("done should be true after AutoSplitDoneMsg")
+	}
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Enter on done model should return tea.Quit")
+	}
+	if !m.quitting {
+		t.Error("quitting should be true")
+	}
+}
+
+func TestAutoSplitModel_Enter_NoEffect_WhenRunning(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitStepStartMsg{Name: "some step"})
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Error("Enter on running model should NOT produce a command")
+	}
+	if m.quitting {
+		t.Error("Enter on running model should NOT set quitting")
+	}
+}
+
 func TestAutoSplitModel_View_Empty(t *testing.T) {
 	m := NewAutoSplitModel()
 	view := m.View()
 	if !strings.Contains(view, "Auto-Split Pipeline") {
 		t.Errorf("empty view should contain header, got:\n%s", view)
+	}
+	// No timer should be shown before any step starts.
+	if strings.Contains(view, "⏱") {
+		t.Errorf("empty view should NOT contain timer, got:\n%s", view)
+	}
+}
+
+func TestAutoSplitModel_View_HeaderTimer(t *testing.T) {
+	m := NewAutoSplitModel()
+	// Start a step to trigger the pipeline timer.
+	m.Update(AutoSplitStepStartMsg{Name: "Analyze diff"})
+
+	view := m.View()
+	if !strings.Contains(view, "⏱") {
+		t.Errorf("view after step start should contain timer icon, got:\n%s", view)
+	}
+	if !strings.Contains(view, "Auto-Split Pipeline") {
+		t.Errorf("view after step start should still contain header, got:\n%s", view)
+	}
+}
+
+func TestAutoSplitModel_View_TimerFreezesWhenDone(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitStepStartMsg{Name: "Step 1"})
+	m.Update(AutoSplitStepDoneMsg{Name: "Step 1", Elapsed: 500 * time.Millisecond})
+	m.Update(AutoSplitDoneMsg{})
+
+	view1 := m.View()
+	time.Sleep(50 * time.Millisecond)
+	view2 := m.View()
+
+	// Timer should be identical between renderings when done —
+	// it freezes at the last step's end time.
+	if view1 != view2 {
+		t.Errorf("timer should not change between renders when done:\n--- view1 ---\n%s\n--- view2 ---\n%s", view1, view2)
+	}
+	if !strings.Contains(view1, "⏱") {
+		t.Errorf("done view should contain timer icon, got:\n%s", view1)
 	}
 }
 
@@ -262,6 +329,13 @@ func TestAutoSplitModel_View_WithSteps(t *testing.T) {
 	// Running icon.
 	if !strings.Contains(view, "◉") {
 		t.Errorf("view should contain ◉ icon for running step, got:\n%s", view)
+	}
+	// Should contain step counters (1/2, 2/2).
+	if !strings.Contains(view, "1/2") {
+		t.Errorf("view should contain step counter '1/2', got:\n%s", view)
+	}
+	if !strings.Contains(view, "2/2") {
+		t.Errorf("view should contain step counter '2/2', got:\n%s", view)
 	}
 }
 

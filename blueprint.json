@@ -20,7 +20,7 @@
     "No stopping — scope must expand towards True Perfection indefinitely"
   ],
   "statusSection": {
-    "currentState": "T001-T013, T015-T022 Done. Commit 6f9aafd. Proceeding to T023 (mock-MCP integration test) and T024 (scope expansion cycle 2).",
+    "currentState": "T001-T013, T015-T030 Done. Commits: 6f9aafd, 80ab683, pending. T025-T028 implemented: Enter dismiss, elapsed timer, step counter, timeout flag.",
     "goalState": "osm pr-split is production-quality: auto-split TUI is responsive with cancellation support, Claude TUI muxing works during operations, integration tests use real AI via TestMain flags and project.mk targets, all TUI commands are verified non-vaporware, no AI slop remains",
     "replanLog": [
       "2026-02-25 Replan: User reports auto-split TUI still hangs after q. Root cause: q sends tea.Quit immediately, exiting alt-screen while JS pipeline still runs. Go-prompt prompt is visible but command handler hasn't returned. Fix: don't exit BubbleTea on first q — set cancelled flag only. Pipeline detects cancellation and calls finishTUI which triggers actual quit. Also need intra-step cancellation and richer poll feedback."
@@ -275,7 +275,7 @@
       "task": "T023: Add mock-MCP integration test for full auto-split pipeline",
       "description": "Create a comprehensive integration test that exercises the full automatedSplit() pipeline with mock MCP responses. The test should: (1) Set up a realistic git repo with Go files across multiple packages — additions, deletions, edits, moved files. (2) Mock the MCP response mechanism by pre-populating classification.json and split-plan.json in the result directory. (3) Run automatedSplit() with the mock. (4) Verify: branches created, each branch contains correct files, tree hash equivalence passes, independence pairs detected for non-overlapping splits. (5) Test error paths: invalid classification (missing files), invalid plan (duplicate files), verification failure triggering local fix strategies. (6) Test cancellation mid-pipeline. This test runs without any AI — purely mock-driven.",
       "acceptance": "Test creates realistic repo, runs full pipeline with mocked MCP responses, verifies all branches and equivalence. Error paths tested. Runs in under 30 seconds. No flakiness.",
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": [
           "internal/command/pr_split_test.go — new TestPrSplitCommand_AutoSplitMockMCP test"
@@ -284,12 +284,62 @@
     },
     {
       "task": "T024: Scope expansion cycle 2 — continued improvements post-commit",
-      "description": "After T022 commit, identify next improvements. Candidates: (1) Add Claude output streaming to auto-split output pane during classification. (2) Add elapsed wall-clock time display in auto-split TUI header. (3) Improve error recovery when Claude process dies mid-pipeline. (4) Add --timeout flag to configure auto-split timeouts from CLI. (5) Add progress percentage estimation based on step count.",
+      "description": "After T023 commit, identify next improvements based on codebase exploration. New tasks T025-T030 added below.",
       "acceptance": "New tasks added to blueprint. Implementation continues.",
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": ["blueprint.json"]
       }
+    },
+    {
+      "task": "T025: Add Enter key dismiss test for done state",
+      "description": "The autosplit.go View() handles Enter key to dismiss the done screen (line ~360-363: if msg.Type == tea.KeyEnter && m.done), but there is no test for this code path. Add TestAutoSplitModel_Enter_Dismiss_WhenDone that: (1) Creates model, sends steps, sends DoneMsg. (2) Sends Enter key. (3) Verifies tea.Quit is returned.",
+      "acceptance": "Test passes. Enter key dismissal code path is covered.",
+      "status": "Done",
+      "context": {
+        "files": ["internal/termui/mux/autosplit_test.go"]
+      }
+    },
+    {
+      "task": "T026: Add elapsed wall-clock time to auto-split TUI header",
+      "description": "The auto-split TUI header currently shows fixed text 'Auto-Split Pipeline'. Add a live elapsed timer that starts when the first step begins and updates on each tick. Display format: 'Auto-Split Pipeline  ⏱ 1m23s'. When done, freeze the timer at final elapsed time. Implementation: (1) Add pipelineStartedAt time.Time to AutoSplitModel. (2) Set it on first AutoSplitStepStartMsg. (3) In renderSteps(), compute elapsed and append to header. (4) Tick updates cause re-render to show live time.",
+      "acceptance": "Header shows live elapsed time during pipeline execution. Timer freezes when done. Tests verify header content includes timer text.",
+      "status": "Done",
+      "context": {
+        "files": ["internal/termui/mux/autosplit.go — renderSteps() line ~611, AutoSplitModel struct"]
+      }
+    },
+    {
+      "task": "T027: Add --timeout flag to configure auto-split timeouts from CLI",
+      "description": "Add --timeout flag (duration format, e.g. '3m') to pr_split.go that sets the timeout for all Claude communication steps. Map to classifyTimeoutMs, planTimeoutMs, resolveTimeoutMs in JS. Default: 2m classify/plan, 3m resolve. Implementation: (1) Add flag in SetupFlags(). (2) Pass to JS prSplitConfig. (3) In automatedSplit(), use config value if provided, else defaults.",
+      "acceptance": "osm pr-split auto --timeout=5m overrides all Claude timeouts. Tests verify flag parsing and propagation.",
+      "status": "Done",
+      "context": {
+        "files": ["internal/command/pr_split.go — SetupFlags()", "internal/command/pr_split_script.js — automatedSplit() defaults"]
+      }
+    },
+    {
+      "task": "T028: Add step progress counter to auto-split output",
+      "description": "Show 'Step N/M' in the step detail line during pipeline execution. For the non-retry case, M=8 (fixed). During retries, adjust M dynamically. Implementation: (1) In automatedSplit(), track stepIndex (increment before each step() call). (2) Pass stepIndex to autoSplitTUI.stepStart(). (3) In AutoSplitModel, display 'Step N/M' alongside the step name.",
+      "acceptance": "Auto-split TUI shows 'Step 3/8 — Generate split plan' during execution. Count updates correctly. Tests verify step counter in rendered output.",
+      "status": "Done",
+      "context": {
+        "files": ["internal/termui/mux/autosplit.go — renderSteps()", "internal/command/pr_split_script.js — automatedSplit()"]
+      }
+    },
+    {
+      "task": "T029: Run full test suite and fix regressions from T025-T028",
+      "description": "Run 'make' and fix any failures.",
+      "acceptance": "make passes cleanly.",
+      "status": "Done",
+      "context": { "files": ["Makefile"] }
+    },
+    {
+      "task": "T030: Rule of Two and commit T025-T028",
+      "description": "Spawn two contiguous subagent reviews. Both must pass. Commit if clean.",
+      "acceptance": "Two contiguous PASS verdicts. Clean commit.",
+      "status": "Done",
+      "context": { "files": [".claude/skills/strict-review-gate/SKILL.md"] }
     }
   ],
   "continuousVerification": {

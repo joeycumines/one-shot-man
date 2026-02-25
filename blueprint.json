@@ -20,7 +20,7 @@
     "No stopping — scope must expand towards True Perfection indefinitely"
   ],
   "statusSection": {
-    "currentState": "T001-T013, T015-T033, T035-T044 Done. Commits: 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, pending. T034 deferred.",
+    "currentState": "T001-T013, T015-T033, T035-T046 Done. Commits: 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, 1f13b77, pending. T034 deferred.",
     "goalState": "osm pr-split is production-quality: auto-split TUI is responsive with cancellation support, Claude TUI muxing works during operations, integration tests use real AI via TestMain flags and project.mk targets, all TUI commands are verified non-vaporware, no AI slop remains",
     "replanLog": [
       "2026-02-25 Replan: User reports auto-split TUI still hangs after q. Root cause: q sends tea.Quit immediately, exiting alt-screen while JS pipeline still runs. Go-prompt prompt is visible but command handler hasn't returned. Fix: don't exit BubbleTea on first q — set cancelled flag only. Pipeline detects cancellation and calls finishTUI which triggers actual quit. Also need intra-step cancellation and richer poll feedback."
@@ -435,6 +435,20 @@
     {
       "task": "T044: Run full suite, Rule of Two, and commit T043",
       "description": "Run 'make', Rule of Two, and commit T043.",
+      "acceptance": "make passes. Two PASS verdicts. Clean commit.",
+      "status": "Done",
+      "context": { "files": ["Makefile"] }
+    },
+    {
+      "task": "T045: Add boundary and edge-case tests for scroll, layout, separator",
+      "description": "8 new tests: computeLayout at minimum height, View with extreme scrollOffset, Update unknown msg, renderSeparator zero-width/done-failures/cancelled-done, scrollUp/scrollDown clamping.",
+      "acceptance": "128+ mux tests pass. No production code changed.",
+      "status": "Done",
+      "context": { "files": ["internal/termui/mux/autosplit_test.go"] }
+    },
+    {
+      "task": "T046: Run full suite, Rule of Two, and commit T045",
+      "description": "Run 'make', Rule of Two, and commit T045.",
       "acceptance": "make passes. Two PASS verdicts. Clean commit.",
       "status": "Done",
       "context": { "files": ["Makefile"] }

@@ -2,8 +2,8 @@
 
 ## Session State
 - **All checks pass**: build ✅ lint ✅ test ✅
-- **Blueprint**: T001-T013, T015-T033, T035-T044 Done. All committed.
-- **Commits**: f349929, d03e944, 505a57a, 5424f5b, 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, **pending**
+- **Blueprint**: T001-T013, T015-T033, T035-T046 Done. All committed.
+- **Commits**: f349929, d03e944, 505a57a, 5424f5b, 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, 1f13b77, **pending**
 
 ## Commit Log
 1. `f349929` — Add cancellation, toggle, and scroll to auto-split TUI (507 ins, 17 del, 4 files)
@@ -17,10 +17,11 @@
 9. `7762bef` — Add View() edge case tests for auto-split TUI (157 ins, 4 del, 3 files)
 10. `55fbe1d` — Add help bar, fast-exit, and cancelled-done path tests (77 ins, 4 del, 3 files)
 11. `1bf2986` — Replace renderPane and appendCapped tests with thorough edge cases (105 ins, 31 del, 3 files)
-12. `pending` — Extract computeLayout to deduplicate pane dimension math
+12. `1f13b77` — Extract computeLayout to deduplicate pane dimension math
+13. `pending` — Add boundary and edge-case tests for scroll, layout, and separator
 
-## Current Work — Scope Expansion Cycle 7
-Committing T043-T044. computeLayout refactor + 4 tests.
+## Current Work — Scope Expansion Cycle 8
+Committing T045-T046. Boundary/edge-case tests for scroll, layout, separator.
 After commit: continue exploring for more improvements.
 
 ### What Changed (T043-T044)

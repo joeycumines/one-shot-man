@@ -1,6 +1,7 @@
 package mux
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -1256,5 +1257,113 @@ func TestAutoSplitModel_ComputeLayout_ConsistentWithOutputPaneHeight(t *testing.
 	m.height = 30
 	if m.computeLayout().bottomHeight != m.outputPaneHeight() {
 		t.Error("computeLayout().bottomHeight != outputPaneHeight()")
+	}
+}
+
+func TestAutoSplitModel_ComputeLayout_ExactMinimumHeight(t *testing.T) {
+	// Height exactly 5 (the enforced minimum). No clamping needed.
+	// topMax = 5*2/5 = 2. 0 steps → topNeeded = 1 → clamped to 2.
+	// bottom = 5 - 2 - 2 = 1.
+	m := NewAutoSplitModel()
+	m.height = 5
+	layout := m.computeLayout()
+	if layout.topHeight != 2 {
+		t.Errorf("topHeight at height=5 = %d, want 2", layout.topHeight)
+	}
+	if layout.bottomHeight != 1 {
+		t.Errorf("bottomHeight at height=5 = %d, want 1", layout.bottomHeight)
+	}
+}
+
+func TestAutoSplitModel_View_ScrollOffset_ExceedsBounds(t *testing.T) {
+	// Manually set scrollOffset beyond what scrollUp would allow.
+	// View() must clamp gracefully — no panic, shows earliest lines.
+	m := NewAutoSplitModel()
+	m.width = 80
+	m.height = 24
+	for i := 0; i < 30; i++ {
+		m.outputLines = append(m.outputLines, fmt.Sprintf("LINE-%02d", i))
+	}
+
+	// Set scrollOffset way beyond max. scrollUp clamps, but View()
+	// must handle a stale/incorrect offset defensively.
+	m.scrollOffset = 999
+	view := m.View()
+	// Should not panic and should contain the first line (scrolled to top).
+	if !strings.Contains(view, "LINE-00") {
+		t.Errorf("extreme scrollOffset should show earliest lines, got:\n%s", view)
+	}
+}
+
+func TestAutoSplitModel_Update_UnknownMessageType(t *testing.T) {
+	// The default case in Update() should return (m, nil) for unknown msgs.
+	type unknownMsg struct{}
+	m := NewAutoSplitModel()
+	updated, cmd := m.Update(unknownMsg{})
+	if cmd != nil {
+		t.Error("unknown message should produce nil command")
+	}
+	um := updated.(*AutoSplitModel)
+	if um != m {
+		t.Error("unknown message should return same model pointer")
+	}
+}
+
+func TestAutoSplitModel_RenderSeparator_ZeroWidth(t *testing.T) {
+	m := NewAutoSplitModel()
+	// Zero width should not panic.
+	sep := m.renderSeparator(0)
+	if sep == "" {
+		t.Error("separator at zero width should produce non-empty styled output")
+	}
+}
+
+func TestAutoSplitModel_RenderSeparator_DoneWithFailures(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.steps = []AutoSplitStep{
+		{Name: "classify", Status: StepDone},
+		{Name: "plan", Status: StepFailed, Error: "bad"},
+		{Name: "resolve", Status: StepDone},
+	}
+	m.done = true
+	sep := m.renderSeparator(80)
+	// Should show complete message and failure count.
+	if !strings.Contains(sep, "Complete") {
+		t.Errorf("done separator should say Complete, got: %s", sep)
+	}
+	if !strings.Contains(sep, "1 failed") {
+		t.Errorf("separator should show failure count, got: %s", sep)
+	}
+}
+
+func TestAutoSplitModel_RenderSeparator_CancelledDone(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.done = true
+	m.mu.Lock()
+	m.cancelled = true
+	m.mu.Unlock()
+	sep := m.renderSeparator(80)
+	if !strings.Contains(sep, "Cancelled") {
+		t.Errorf("cancelled+done separator should show Cancelled, got: %s", sep)
+	}
+}
+
+func TestAutoSplitModel_ScrollUp_ClampsToMax(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.height = 24
+	// Add fewer lines than pane height — max offset should be 0.
+	m.outputLines = []string{"a", "b"}
+	m.scrollUp(100)
+	if m.scrollOffset != 0 {
+		t.Errorf("scrollUp with fewer lines than pane = %d, want 0", m.scrollOffset)
+	}
+}
+
+func TestAutoSplitModel_ScrollDown_ClampsToZero(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.scrollOffset = 0
+	m.scrollDown(10)
+	if m.scrollOffset != 0 {
+		t.Errorf("scrollDown below 0 = %d, want 0", m.scrollOffset)
 	}
 }

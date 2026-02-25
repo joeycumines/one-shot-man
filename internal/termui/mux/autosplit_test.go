@@ -754,3 +754,128 @@ func TestAutoSplitModel_SendStepDetail_NilProgram(t *testing.T) {
 	m := NewAutoSplitModel()
 	m.SendStepDetail("test", "detail") // should not panic
 }
+
+func TestAutoSplitModel_CustomToggleKey_Runes(t *testing.T) {
+	// Custom toggle key (e.g. 'T') should trigger on matching rune.
+	var called bool
+	m := NewAutoSplitModel(
+		WithAutoSplitToggleKey('T'),
+		WithAutoSplitOnToggle(func() { called = true }),
+	)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'T'}})
+	if cmd == nil {
+		t.Fatal("custom toggle key 'T' should produce a command")
+	}
+	cmd()
+	if !called {
+		t.Error("callback should have been invoked")
+	}
+}
+
+func TestAutoSplitModel_CustomToggleKey_CtrlBracketIgnored(t *testing.T) {
+	// When toggleKey is custom, Ctrl+] should NOT trigger toggle.
+	var called bool
+	m := NewAutoSplitModel(
+		WithAutoSplitToggleKey('X'),
+		WithAutoSplitOnToggle(func() { called = true }),
+	)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	if cmd != nil {
+		t.Error("Ctrl+] should not trigger when toggleKey is custom ('X')")
+	}
+	if called {
+		t.Error("callback should not have been invoked")
+	}
+}
+
+func TestAutoSplitModel_StepDetail_PendingStepHidden(t *testing.T) {
+	// Detail on a Pending step should not render (only Running steps show detail).
+	m := NewAutoSplitModel()
+	m.width = 120
+	m.height = 24
+	// ensureStep creates a Pending step.
+	m.Update(AutoSplitStepDetailMsg{Name: "Pending Step", Detail: "invisible"})
+	view := m.View()
+	if strings.Contains(view, "invisible") {
+		t.Error("detail on Pending step should not be visible in View()")
+	}
+}
+
+func TestAutoSplitModel_MixedStepStatuses(t *testing.T) {
+	// Render with realistic mixed statuses: Done, Failed, Running, Pending.
+	m := NewAutoSplitModel()
+	m.width = 120
+	m.height = 24
+
+	m.Update(AutoSplitStepStartMsg{Name: "Analyze"})
+	m.Update(AutoSplitStepDoneMsg{Name: "Analyze", Elapsed: 500})
+
+	m.Update(AutoSplitStepStartMsg{Name: "Classify"})
+	m.Update(AutoSplitStepDoneMsg{Name: "Classify", Err: "timeout", Elapsed: 3000})
+
+	m.Update(AutoSplitStepStartMsg{Name: "Execute"})
+	m.Update(AutoSplitStepDetailMsg{Name: "Execute", Detail: "3 branches"})
+
+	m.steps = append(m.steps, AutoSplitStep{Name: "Verify", Status: StepPending})
+
+	view := m.View()
+	if !strings.Contains(view, "✓") {
+		t.Error("view should contain done icon")
+	}
+	if !strings.Contains(view, "✗") {
+		t.Error("view should contain failed icon")
+	}
+	if !strings.Contains(view, "◉") {
+		t.Error("view should contain running icon")
+	}
+	if !strings.Contains(view, "○") {
+		t.Error("view should contain pending icon")
+	}
+	if !strings.Contains(view, "3 branches") {
+		t.Error("view should contain detail for running step")
+	}
+	if !strings.Contains(view, "timeout") {
+		t.Error("view should contain error message for failed step")
+	}
+}
+
+func TestAutoSplitModel_NarrowTerminal(t *testing.T) {
+	// View should not panic with very narrow terminal.
+	m := NewAutoSplitModel()
+	m.width = 10
+	m.height = 6
+	m.Update(AutoSplitStepStartMsg{Name: "Test"})
+	m.Update(AutoSplitOutputMsg{Text: "some output"})
+	// Should not panic.
+	view := m.View()
+	if view == "" {
+		t.Error("view should not be empty")
+	}
+}
+
+func TestAutoSplitModel_StepOverflow(t *testing.T) {
+	// When more steps than fit in the top pane, renderSteps should show
+	// only the most recent ones (windowing).
+	m := NewAutoSplitModel()
+	m.width = 80
+	m.height = 12 // small terminal
+
+	// Add many steps.
+	for i := 0; i < 15; i++ {
+		name := "Step-" + string(rune('A'+i))
+		m.Update(AutoSplitStepStartMsg{Name: name})
+		m.Update(AutoSplitStepDoneMsg{Name: name, Elapsed: 100})
+	}
+
+	view := m.View()
+	// The last step should be visible.
+	if !strings.Contains(view, "Step-O") { // 'A'+14 = 'O'
+		t.Errorf("last step 'Step-O' should be visible, view:\n%s", view)
+	}
+	// The first step may be scrolled out of view (depends on topMax).
+	// With height=12, topMax = 12*2/5 = 4, slotsForSteps = 3.
+	// So only the last 3 steps should be visible.
+	if strings.Contains(view, "Step-A") {
+		t.Error("first step should be scrolled out of view")
+	}
+}

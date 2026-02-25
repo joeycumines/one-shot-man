@@ -342,6 +342,9 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		"done": func(summary string) {
 			autoSplitModel.SendDone(summary)
 		},
+		"stepDetail": func(name, detail string) {
+			autoSplitModel.SendStepDetail(name, detail)
+		},
 		"cancelled": func() bool {
 			return autoSplitModel.Cancelled()
 		},

@@ -15,6 +15,7 @@ type AutoSplitStep struct {
 	Name      string
 	Status    StepStatus
 	Error     string
+	Detail    string // Sub-step progress detail (e.g. "Classifying 15/42 files...")
 	StartedAt time.Time
 	Elapsed   time.Duration
 }
@@ -61,6 +62,13 @@ type AutoSplitStepDoneMsg struct {
 	Name    string
 	Err     string
 	Elapsed time.Duration
+}
+
+// AutoSplitStepDetailMsg updates the sub-step progress detail for a
+// running step (e.g. "Classifying 15/42 files...").
+type AutoSplitStepDetailMsg struct {
+	Name   string
+	Detail string
 }
 
 // AutoSplitOutputMsg appends text to the live output pane.
@@ -133,6 +141,7 @@ type AutoSplitModel struct {
 	runningStyle   lipgloss.Style
 	doneStyle      lipgloss.Style
 	failedStyle    lipgloss.Style
+	detailStyle    lipgloss.Style
 	separatorStyle lipgloss.Style
 	outputStyle    lipgloss.Style
 	errorStyle     lipgloss.Style
@@ -188,6 +197,9 @@ func NewAutoSplitModel(opts ...AutoSplitOption) *AutoSplitModel {
 		failedStyle: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("196")),
+		detailStyle: lipgloss.NewStyle().
+			Foreground(lipgloss.Color("245")).
+			Italic(true),
 		separatorStyle: lipgloss.NewStyle().
 			Background(lipgloss.Color("240")).
 			Foreground(lipgloss.Color("255")).
@@ -254,6 +266,18 @@ func (m *AutoSplitModel) SendDone(summary string) {
 	m.mu.Unlock()
 	if p != nil {
 		p.Send(AutoSplitDoneMsg{Summary: summary})
+	}
+}
+
+// SendStepDetail updates the sub-step progress detail for a running
+// step (e.g. "Classifying 15/42 files..."). The detail is displayed
+// inline after the step name in the progress view.
+func (m *AutoSplitModel) SendStepDetail(name, detail string) {
+	m.mu.Lock()
+	p := m.program
+	m.mu.Unlock()
+	if p != nil {
+		p.Send(AutoSplitStepDetailMsg{Name: name, Detail: detail})
 	}
 }
 
@@ -379,6 +403,17 @@ func (m *AutoSplitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.steps[i].Status = StepDone
 				}
 				m.steps[i].Elapsed = msg.Elapsed
+				m.steps[i].Detail = "" // Clear detail on completion.
+				break
+			}
+		}
+		return m, nil
+
+	case AutoSplitStepDetailMsg:
+		m.ensureStep(msg.Name)
+		for i := range m.steps {
+			if m.steps[i].Name == msg.Name {
+				m.steps[i].Detail = msg.Detail
 				break
 			}
 		}
@@ -571,6 +606,10 @@ func (m *AutoSplitModel) renderSteps(height, width int) string {
 		line := style.Render(fmt.Sprintf("  %s %s%s", icon, s.Name, elapsed))
 		if s.Status == StepFailed && s.Error != "" {
 			line += m.failedStyle.Render(fmt.Sprintf(" — %s", s.Error))
+		}
+		// Show sub-step detail for running steps (e.g. "Classifying 15/42 files...").
+		if s.Detail != "" && s.Status == StepRunning {
+			line += m.detailStyle.Render(fmt.Sprintf(" · %s", s.Detail))
 		}
 
 		b.WriteString(truncate(line, width))

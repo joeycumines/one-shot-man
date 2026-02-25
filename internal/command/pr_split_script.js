@@ -2094,6 +2094,13 @@ function automatedSplit(config) {
         output.print(text);
     }
 
+    // Update sub-step detail shown in the progress bar (inline).
+    function updateDetail(stepName, detail) {
+        if (hasTUI && !config.disableTUI && typeof autoSplitTUI.stepDetail === 'function') {
+            autoSplitTUI.stepDetail(stepName, detail);
+        }
+    }
+
     function step(name, fn) {
         // Check cancellation before each step — cooperative cancellation.
         if (hasTUI && !config.disableTUI && typeof autoSplitTUI.cancelled === 'function' && autoSplitTUI.cancelled()) {
@@ -2141,7 +2148,12 @@ function automatedSplit(config) {
 
     // Step 1: Analyze diff.
     var analysis = step('Analyze diff', function() {
-        return analyzeDiff(config);
+        updateDetail('Analyze diff', 'Reading git diff...');
+        var result = analyzeDiff(config);
+        if (!result.error && result.files) {
+            updateDetail('Analyze diff', result.files.length + ' files found');
+        }
+        return result;
     });
     if (analysis.error) {
         report.error = analysis.error;
@@ -2155,6 +2167,7 @@ function automatedSplit(config) {
 
     // Step 2: Spawn Claude (or fall back to heuristic).
     var executor = step('Spawn Claude', function() {
+        updateDetail('Spawn Claude', 'Resolving Claude executable...');
         if (!claudeExecutor) {
             claudeExecutor = new ClaudeCodeExecutor(prSplitConfig);
         }
@@ -2162,6 +2175,7 @@ function automatedSplit(config) {
         if (resolveResult.error) {
             return { error: resolveResult.error };
         }
+        updateDetail('Spawn Claude', 'Starting Claude process...');
         var spawnResult = claudeExecutor.spawn();
         if (spawnResult.error) {
             return { error: spawnResult.error };
@@ -2181,6 +2195,7 @@ function automatedSplit(config) {
 
     // Step 3: Send classification request.
     var classifyResult = step('Send classification request', function() {
+        updateDetail('Send classification request', 'Rendering prompt for ' + analysis.files.length + ' files...');
         var renderResult = renderClassificationPrompt(analysis, {
             sessionId: sessionId, maxGroups: config.maxGroups || 0
         });
@@ -2206,12 +2221,14 @@ function automatedSplit(config) {
 
     // Step 4: Receive classification.
     var classification = step('Receive classification', function() {
+        updateDetail('Receive classification', 'Polling for response...');
         var pollResult = pollForFile(resultDir, 'classification.json', timeouts.classify, pollInterval);
         if (pollResult.error) {
             return { error: pollResult.error };
         }
         // Validate: every file must be classified.
         var classMap = pollResult.data;
+        updateDetail('Receive classification', 'Validating ' + analysis.files.length + ' file classifications...');
         var missing = [];
         for (var i = 0; i < analysis.files.length; i++) {
             if (!classMap[analysis.files[i]]) {
@@ -2237,6 +2254,7 @@ function automatedSplit(config) {
 
     // Step 5: Generate plan (from Claude or locally).
     var planResult = step('Generate split plan', function() {
+        updateDetail('Generate split plan', 'Checking for Claude-generated plan...');
         // Check if Claude also provided a split plan.
         var planPoll = pollForFile(resultDir, 'split-plan.json', 5000, 500);
         if (!planPoll.error && planPoll.data) {
@@ -2294,11 +2312,13 @@ function automatedSplit(config) {
         if (runtime.dryRun) {
             return { error: null, dryRun: true };
         }
+        updateDetail('Execute split plan', plan.splits.length + ' branches to create...');
         var result = executeSplit(plan);
         if (result.error) {
             return { error: result.error };
         }
         report.splits = result.results || [];
+        updateDetail('Execute split plan', report.splits.length + ' branches created');
         return { error: null };
     });
     if (execResult.error) {
@@ -2314,6 +2334,7 @@ function automatedSplit(config) {
 
     // Step 7: Verify splits.
     var verifyResult = step('Verify splits', function() {
+        updateDetail('Verify splits', 'Running tree hash verification...');
         var verifyObj = verifySplits(plan);
         var failures = [];
         for (var i = 0; i < verifyObj.results.length; i++) {

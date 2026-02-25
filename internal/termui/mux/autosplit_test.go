@@ -696,3 +696,61 @@ func TestAutoSplitModel_OutputPaneHeight(t *testing.T) {
 		t.Errorf("outputPaneHeight at tiny size should be at least 1, got %d", h)
 	}
 }
+
+func TestAutoSplitModel_StepDetailMsg(t *testing.T) {
+	m := NewAutoSplitModel()
+	// Start a step.
+	m.Update(AutoSplitStepStartMsg{Name: "Classify"})
+	// Send detail update.
+	m.Update(AutoSplitStepDetailMsg{Name: "Classify", Detail: "15/42 files"})
+	// Verify detail is stored.
+	if len(m.steps) != 1 {
+		t.Fatalf("expected 1 step, got %d", len(m.steps))
+	}
+	if m.steps[0].Detail != "15/42 files" {
+		t.Errorf("step detail = %q, want %q", m.steps[0].Detail, "15/42 files")
+	}
+}
+
+func TestAutoSplitModel_StepDetailMsg_ClearedOnDone(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitStepStartMsg{Name: "Build"})
+	m.Update(AutoSplitStepDetailMsg{Name: "Build", Detail: "compiling..."})
+	if m.steps[0].Detail != "compiling..." {
+		t.Fatalf("detail not set")
+	}
+	m.Update(AutoSplitStepDoneMsg{Name: "Build", Elapsed: 100})
+	if m.steps[0].Detail != "" {
+		t.Errorf("detail should be cleared after done, got %q", m.steps[0].Detail)
+	}
+}
+
+func TestAutoSplitModel_StepDetail_VisibleInView(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.width = 120
+	m.height = 24
+	m.Update(AutoSplitStepStartMsg{Name: "Analyze"})
+	m.Update(AutoSplitStepDetailMsg{Name: "Analyze", Detail: "42 files found"})
+	view := m.View()
+	if !strings.Contains(view, "42 files found") {
+		t.Errorf("view should contain detail '42 files found', got:\n%s", view)
+	}
+}
+
+func TestAutoSplitModel_StepDetail_HiddenWhenNotRunning(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.width = 120
+	m.height = 24
+	m.Update(AutoSplitStepStartMsg{Name: "Done Step"})
+	m.Update(AutoSplitStepDetailMsg{Name: "Done Step", Detail: "should hide"})
+	m.Update(AutoSplitStepDoneMsg{Name: "Done Step", Elapsed: 50})
+	view := m.View()
+	if strings.Contains(view, "should hide") {
+		t.Errorf("completed step should not show detail, got:\n%s", view)
+	}
+}
+
+func TestAutoSplitModel_SendStepDetail_NilProgram(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.SendStepDetail("test", "detail") // should not panic
+}

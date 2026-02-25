@@ -1009,3 +1009,141 @@ func TestAutoSplitModel_StepOverflow(t *testing.T) {
 		t.Error("first step should be scrolled out of view")
 	}
 }
+
+// --- Edge case tests (T037) ---
+
+func TestAutoSplitModel_View_TinyTerminalManySteps(t *testing.T) {
+	// A very small terminal (height=6, width=20) with many steps and
+	// output lines must not panic. The layout math must clamp correctly.
+	m := NewAutoSplitModel()
+	m.width = 20
+	m.height = 6
+
+	// Add 10 steps — way more than can fit.
+	for i := 0; i < 10; i++ {
+		name := "step-" + string(rune('a'+i))
+		m.Update(AutoSplitStepStartMsg{Name: name})
+		m.Update(AutoSplitStepDoneMsg{Name: name, Elapsed: 50 * time.Millisecond})
+	}
+	// Start one more that's still running.
+	m.Update(AutoSplitStepStartMsg{Name: "final"})
+
+	// Add output lines.
+	for i := 0; i < 20; i++ {
+		m.Update(AutoSplitOutputMsg{Text: "output line"})
+	}
+
+	// Must not panic.
+	view := m.View()
+	if view == "" {
+		t.Error("view should not be empty at tiny terminal size")
+	}
+	// The running step should be visible (it's the most recent).
+	if !strings.Contains(view, "final") {
+		t.Errorf("running step 'final' should be visible even at tiny size, got:\n%s", view)
+	}
+	// Earliest steps should be scrolled out.
+	if strings.Contains(view, "step-a") {
+		t.Error("early step 'step-a' should be hidden at tiny terminal size")
+	}
+}
+
+func TestAutoSplitModel_View_FiftyPlusStepsTruncation(t *testing.T) {
+	// With 60 steps, the step list windowing should show only the last N
+	// that fit in the top pane, and not panic.
+	m := NewAutoSplitModel()
+	m.width = 80
+	m.height = 24 // default
+
+	for i := 0; i < 60; i++ {
+		name := "step-" + string(rune('A'+i/26)) + string(rune('A'+i%26))
+		m.Update(AutoSplitStepStartMsg{Name: name})
+		m.Update(AutoSplitStepDoneMsg{Name: name, Elapsed: 10 * time.Millisecond})
+	}
+	m.Update(AutoSplitDoneMsg{Summary: "60 steps done"})
+
+	view := m.View()
+	if view == "" {
+		t.Fatal("view should not be empty")
+	}
+	// The very last step should be visible.
+	lastName := "step-" + string(rune('A'+59/26)) + string(rune('A'+59%26))
+	if !strings.Contains(view, lastName) {
+		t.Errorf("last step %q should be visible, view:\n%s", lastName, view)
+	}
+	// With height=24, topMax = 24*2/5 = 9, slotsForSteps = 8.
+	// The first step should definitely be hidden.
+	firstName := "step-AA"
+	if strings.Contains(view, firstName) {
+		t.Error("first step 'step-AA' should be hidden with 60 steps at height=24")
+	}
+	// Step counter of last step should show "60/60".
+	if !strings.Contains(view, "60/60") {
+		t.Errorf("view should contain step counter '60/60', got:\n%s", view)
+	}
+}
+
+func TestAutoSplitModel_ScrollKeysOnEmptyOutput(t *testing.T) {
+	// All scroll-related keys on a model with zero output lines must
+	// not panic and scrollOffset must remain 0.
+	m := NewAutoSplitModel()
+	// Confirm no output.
+	if len(m.outputLines) != 0 {
+		t.Fatalf("expected no output lines, got %d", len(m.outputLines))
+	}
+
+	keys := []tea.KeyType{
+		tea.KeyUp, tea.KeyDown,
+		tea.KeyPgUp, tea.KeyPgDown,
+		tea.KeyHome, tea.KeyEnd,
+	}
+	for _, k := range keys {
+		m.Update(tea.KeyMsg{Type: k})
+		if m.scrollOffset != 0 {
+			t.Errorf("after key %v on empty output, scrollOffset = %d, want 0", k, m.scrollOffset)
+		}
+	}
+
+	// Also ensure View() renders without panic.
+	view := m.View()
+	if view == "" {
+		t.Error("view should not be empty after scroll keys on empty model")
+	}
+}
+
+func TestAutoSplitModel_View_CancelledWhileRunning(t *testing.T) {
+	// When the pipeline is running and the user presses cancel once,
+	// the separator should show "Cancelling" and the help bar should
+	// show "force quit".
+	m := NewAutoSplitModel()
+	m.width = 80
+	m.height = 24
+
+	// Start a step.
+	m.Update(AutoSplitStepStartMsg{Name: "Build"})
+	// First cancel: sets cancelled, stays visible.
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if !m.Cancelled() {
+		t.Fatal("should be cancelled after Ctrl+C")
+	}
+	if m.done {
+		t.Fatal("should NOT be done — pipeline is still running")
+	}
+	if m.quitting {
+		t.Fatal("should NOT be quitting — first cancel just marks")
+	}
+
+	view := m.View()
+	// Separator should show "Cancelling".
+	if !strings.Contains(view, "Cancelling") {
+		t.Errorf("cancelled-while-running view should contain 'Cancelling', got:\n%s", view)
+	}
+	// Help bar should show "force quit".
+	if !strings.Contains(view, "force quit") {
+		t.Errorf("cancelled-while-running view should contain 'force quit', got:\n%s", view)
+	}
+	// Should NOT show "Complete" or "dismiss".
+	if strings.Contains(view, "Complete") {
+		t.Errorf("cancelled-while-running view should NOT contain 'Complete', got:\n%s", view)
+	}
+}

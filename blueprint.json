@@ -382,6 +382,20 @@
       "acceptance": "Two contiguous PASS verdicts. Clean commit.",
       "status": "Done",
       "context": { "files": [".claude/skills/strict-review-gate/SKILL.md"] }
+    },
+    {
+      "task": "T037: Add View() rendering edge case tests for autosplit TUI",
+      "description": "Add tests for: (1) Very small terminal (height=6, width=20) with steps — verify no panic. (2) 50+ steps — verify truncation renders only last N steps. (3) Scroll on empty output — verify no panic. (4) Cancelled-while-running state — verify separator shows cancellation status.",
+      "acceptance": "All 4 edge case tests pass. No panics at edge dimensions.",
+      "status": "Done",
+      "context": { "files": ["internal/termui/mux/autosplit_test.go"] }
+    },
+    {
+      "task": "T038: Run full test suite and commit",
+      "description": "Run 'make', Rule of Two, and commit T037.",
+      "acceptance": "make passes. Two PASS verdicts. Clean commit.",
+      "status": "Done",
+      "context": { "files": ["Makefile"] }
     }
   ],
   "continuousVerification": {

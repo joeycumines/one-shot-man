@@ -2,8 +2,8 @@
 
 ## Session State
 - **All checks pass**: build ✅ lint ✅ test ✅
-- **Blueprint**: T001-T013, T015-T033, T035-T050 Done. All committed.
-- **Commits**: f349929, d03e944, 505a57a, 5424f5b, 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, 1f13b77, b996d07, 18ced3a, **pending**
+- **Blueprint**: T001-T013, T015-T033, T035-T052 Done. All committed.
+- **Commits**: f349929, d03e944, 505a57a, 5424f5b, 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, 1f13b77, b996d07, 18ced3a, 5f2666e, **pending**
 
 ## Commit Log
 1. `f349929` — Add cancellation, toggle, and scroll to auto-split TUI (507 ins, 17 del, 4 files)
@@ -22,10 +22,12 @@
 
 14. `18ced3a` — Extract send helper and extend SetClaudeStatus rendering test
 
-15. `pending` — Add mux/splitview coverage gap tests (WriteToChild, SetStatusEnabled, SplitView edges)
+15. `5f2666e` — Add mux/splitview coverage gap tests (WriteToChild, SetStatusEnabled, SplitView edges)
 
-## Current Work — Scope Expansion Cycle 10
-Committing T049-T050. 7 new tests filling mux/splitview coverage gaps.
+16. `pending` — Add PlanEditor edge-case tests (delete bounds, rename empty, move edge cases)
+
+## Current Work — Scope Expansion Cycle 11
+Committing T051-T052. 9 new PlanEditor edge-case tests.
 After commit: continue exploring for more improvements.
 
 ### What Changed (T043-T044)

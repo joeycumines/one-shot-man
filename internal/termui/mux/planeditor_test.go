@@ -465,3 +465,182 @@ func TestPlanEditor_CtrlPCtrlN(t *testing.T) {
 		t.Errorf("cursor = %d after Ctrl+P, want 0", pe.cursor)
 	}
 }
+
+func TestPlanEditor_DeleteConsecutive_CursorBounds(t *testing.T) {
+	t.Parallel()
+	pe := NewPlanEditor(testItems()) // 3 items
+	pe.cursor = 2                    // Last item
+
+	// Delete last item — cursor should adjust to 1.
+	pe.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if pe.cursor != 1 {
+		t.Errorf("cursor = %d after first delete, want 1", pe.cursor)
+	}
+	if len(pe.items) != 2 {
+		t.Fatalf("items = %d, want 2", len(pe.items))
+	}
+
+	// Delete again at position 1 — cursor should adjust to 0.
+	pe.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if pe.cursor != 0 {
+		t.Errorf("cursor = %d after second delete, want 0", pe.cursor)
+	}
+	if len(pe.items) != 1 {
+		t.Fatalf("items = %d, want 1", len(pe.items))
+	}
+
+	// Third delete — single item, noop.
+	pe.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if len(pe.items) != 1 {
+		t.Errorf("single item delete should be noop, items = %d", len(pe.items))
+	}
+}
+
+func TestPlanEditor_RenameEmptyBuffer_NoChange(t *testing.T) {
+	t.Parallel()
+	pe := NewPlanEditor(testItems())
+	original := pe.items[0].Name
+
+	// Start rename.
+	pe.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if !pe.renaming {
+		t.Fatal("should be in rename mode")
+	}
+
+	// Clear buffer completely with backspace.
+	for range pe.renameBuffer {
+		pe.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	if pe.renameBuffer != "" {
+		t.Fatalf("buffer should be empty, got %q", pe.renameBuffer)
+	}
+
+	// Confirm — should NOT apply empty name.
+	pe.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if pe.renaming {
+		t.Error("should have exited rename mode")
+	}
+	if pe.items[0].Name != original {
+		t.Errorf("name changed to %q, should remain %q", pe.items[0].Name, original)
+	}
+}
+
+func TestPlanEditor_MoveToSameSplit_Noop(t *testing.T) {
+	t.Parallel()
+	pe := NewPlanEditor(testItems())
+	pe.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Expand split 0.
+	pe.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	if !pe.moveMode {
+		t.Fatal("should be in move mode")
+	}
+
+	origLen := len(pe.items[0].Files)
+	// Press '1' — that's split 0 (expanded), idx==expanded → noop.
+	pe.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}})
+	if len(pe.items[0].Files) != origLen {
+		t.Errorf("move to same split should be noop, files = %d", len(pe.items[0].Files))
+	}
+	// Should still be in move mode since destination was invalid.
+	if !pe.moveMode {
+		t.Error("should still be in move mode after invalid destination")
+	}
+}
+
+func TestPlanEditor_MoveFile_SourceBecomesEmpty(t *testing.T) {
+	t.Parallel()
+	items := []PlanEditorItem{
+		{Name: "single", Files: []string{"only.go"}},
+		{Name: "target", Files: []string{"other.go"}},
+	}
+	pe := NewPlanEditor(items)
+	pe.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Expand "single".
+	pe.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	pe.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}}) // Move to "target".
+
+	if len(pe.items[0].Files) != 0 {
+		t.Errorf("source should be empty, got %d files", len(pe.items[0].Files))
+	}
+	if len(pe.items[1].Files) != 2 {
+		t.Errorf("target should have 2 files, got %d", len(pe.items[1].Files))
+	}
+	// View should not panic with empty expanded split.
+	_ = pe.View()
+}
+
+func TestPlanEditor_MoveInvalidDestination(t *testing.T) {
+	t.Parallel()
+	pe := NewPlanEditor(testItems()) // 3 items
+	pe.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	pe.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+
+	origFiles := len(pe.items[0].Files)
+	// Press '9' — out of range.
+	pe.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'9'}})
+	if len(pe.items[0].Files) != origFiles {
+		t.Error("invalid destination should not move files")
+	}
+	if !pe.moveMode {
+		t.Error("should still be in move mode")
+	}
+}
+
+func TestPlanEditor_Update_UnknownMsg(t *testing.T) {
+	t.Parallel()
+	type unknownMsg struct{}
+	pe := NewPlanEditor(testItems())
+	m, cmd := pe.Update(unknownMsg{})
+	if cmd != nil {
+		t.Error("unknown msg should return nil cmd")
+	}
+	if m.(*PlanEditor) != pe {
+		t.Error("unknown msg should return same model")
+	}
+}
+
+func TestPlanEditor_BackspaceEmptyRenameBuffer(t *testing.T) {
+	t.Parallel()
+	pe := NewPlanEditor(testItems())
+	pe.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+
+	// Clear buffer.
+	for range pe.renameBuffer {
+		pe.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	// One more backspace on empty — should not panic.
+	pe.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	if pe.renameBuffer != "" {
+		t.Error("buffer should still be empty")
+	}
+}
+
+func TestPlanEditor_DeleteResetsExpanded(t *testing.T) {
+	t.Parallel()
+	pe := NewPlanEditor(testItems()) // 3 items
+	pe.cursor = 2
+	pe.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Expand item 2.
+	if pe.expanded != 2 {
+		t.Fatalf("expanded = %d, want 2", pe.expanded)
+	}
+
+	// Delete item 2 — expanded should reset since index is gone.
+	pe.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if pe.expanded != -1 {
+		t.Errorf("expanded = %d after deleting expanded item, want -1", pe.expanded)
+	}
+}
+
+func TestPlanEditor_MoveNoFiles_Noop(t *testing.T) {
+	t.Parallel()
+	items := []PlanEditorItem{
+		{Name: "empty", Files: []string{}},
+		{Name: "other", Files: []string{"a.go"}},
+	}
+	pe := NewPlanEditor(items)
+	pe.Update(tea.KeyMsg{Type: tea.KeyEnter}) // Expand "empty".
+	pe.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+
+	// Move mode should NOT activate since expanded split has no files.
+	if pe.moveMode {
+		t.Error("move mode should not activate on empty split")
+	}
+}

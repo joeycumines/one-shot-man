@@ -23,9 +23,9 @@
     "If lost: READ DIRECTIVE.txt → THINK → ACT"
   ],
   "statusSection": {
-    "currentState": "Phase 6 integration tests written and passing. T001-T107 Done. T108 (commit) pending Rule of Two.",
+    "currentState": "Phase 8 COMPLETE. T001-T131 ALL Done. Build, lint, test all green.",
     "branch": "wip",
-    "buildStatus": "ALL GREEN — go build, vet, staticcheck, deadcode, betteralign, 44 packages pass"
+    "buildStatus": "ALL GREEN — go build, vet, staticcheck, deadcode, 44 packages pass"
   },
   "sequentialTasks": [
     {
@@ -625,63 +625,63 @@
     },
     {
       "task": "T120: Scope expansion — BubbleTea split-view mode",
-      "description": "Design and implement a BubbleTea-based split-view TUI for pr-split. Show osm commands in the top pane and Claude's output in the bottom pane. Use BubbleTea's Update/View pattern. This is an advanced alternative to the toggle-based mux. Users can see both TUIs simultaneously. Wire as a new mode accessible via 'set view split' TUI command.",
-      "status": "Not Started"
+      "description": "SplitView model in splitview.go: dual-pane BubbleTea TUI (osm top, claude bottom). Options: WithSplitRatio, WithMaxLines, WithToggleKey, WithClaudeWriter. Wired via pr_split.go splitView global. 9 tests in splitview_test.go.",
+      "status": "Done"
     },
     {
       "task": "T121: Scope expansion — interactive plan editor in BubbleTea",
-      "description": "Implement a full-screen BubbleTea TUI for plan editing. Show splits as a list with file counts. Arrow keys to navigate, Enter to expand, d to delete, m to move files, r to rename. Replaces the text-based move/rename/merge commands with a visual editor. Wire as 'edit-plan' TUI command.",
-      "status": "Not Started"
+      "description": "PlanEditor model in planeditor.go: full-screen list editor with normal/move/rename modes. Arrow keys, Enter, d/m/r. Wired via pr_split.go planEditorFactory global. 7 tests in planeditor_test.go.",
+      "status": "Done"
     },
     {
       "task": "T122: Scope expansion — merge queue integration",
-      "description": "Extend create-prs to support GitHub merge queue. After creating stacked PRs, optionally enqueue them in dependency order. Use 'gh pr merge --merge-method squash --auto' for auto-merge. Add config key pr-split.auto-merge and flag --auto-merge.",
-      "status": "Not Started"
+      "description": "createPRs accepts autoMerge+mergeMethod. Runs 'gh pr merge --merge-method <method> --auto' after PR creation. runtime.autoMerge, runtime.mergeMethod. create-prs --auto-merge/--merge-method flags. set auto-merge/merge-method.",
+      "status": "Done"
     },
     {
       "task": "T123: Scope expansion — diff visualization in TUI",
-      "description": "Add a 'diff' TUI command that shows a syntax-highlighted diff for a specific split. Use Lipgloss for colorization: additions in green, deletions in red, context in gray. Support paging for large diffs. Use osm:exec to run 'git diff' and parse output.",
-      "status": "Not Started"
+      "description": "colorDiff(diffText) ANSI-colorizes git diff output (green/red/cyan). 'diff <split|index>' TUI command runs 'git diff base..split' and pages output. TestColorDiff verifies.",
+      "status": "Done"
     },
     {
       "task": "T124: Scope expansion — Claude conversation history persistence",
-      "description": "Save Claude's classification and plan responses alongside the split plan in .pr-split-plan.json. When loading a saved plan, display Claude's rationale for each group. This helps users understand why files were grouped the way they were.",
-      "status": "Not Started"
+      "description": "recordConversation/getConversationHistory functions. Hooks at 4 Claude interaction points (classification, classification-result, re-classify, conflict-resolution). savePlan/loadPlan include conversations. 'conversations' TUI command. TestConversationHistory.",
+      "status": "Done"
     },
     {
       "task": "T125: Scope expansion — multi-Claude parallel classification",
-      "description": "For very large diffs (50+ files), spawn multiple Claude instances (using Pool) to classify subsets of files in parallel. Merge classification results. Requires: (1) File list partitioning, (2) Session management per Claude instance, (3) Result merging with conflict detection (same file classified differently by different instances).",
-      "status": "Not Started"
+      "description": "parallelClassify(analysis, executors, config) partitions files across N executors, merges results, detects conflicts (falls back to first classifier). Exported via prSplit.",
+      "status": "Done"
     },
     {
       "task": "T126: Scope expansion — custom classification rules",
-      "description": "Allow users to pre-define classification rules in config: pr-split.rules.tests=*_test.go, pr-split.rules.docs=docs/**. These rules pre-classify files before sending to Claude, reducing Claude's work and ensuring certain patterns are always grouped together. Claude can override if it explains why.",
-      "status": "Not Started"
+      "description": "applyClassificationRules(files, rules) with glob matching via matchGlobPattern. parseConfigRules reads pr-split.rules.* from config. TestApplyClassificationRules and TestMatchGlobPattern verify.",
+      "status": "Done"
     },
     {
       "task": "T127: Scope expansion — split dependency graph visualization",
-      "description": "Add a 'graph' TUI command that shows the dependency graph between splits in ASCII art. Use a simple topological sort and text-based graph rendering. Highlight independent pairs. Show merge order recommendation.",
-      "status": "Not Started"
+      "description": "buildDependencyGraph(plan, classification) creates nodes/edges. renderAsciiGraph draws text-based graph. 'graph' TUI command. TestDependencyGraph verifies.",
+      "status": "Done"
     },
     {
       "task": "T128: Scope expansion — performance benchmarks for split operations",
-      "description": "Add benchmarks for: (1) analyzeDiff with 100/500/1000 files, (2) groupByDependency with complex import graphs, (3) createSplitPlan with 20/50 groups, (4) executeSplit with 10/20 branches, (5) MCP tool round-trip latency. Use Go testing.B and report results. Identify bottlenecks.",
-      "status": "Not Started"
+      "description": "4 Go benchmarks: BenchmarkAnalyzeDiff (100/500/1000 files), BenchmarkGroupByDependency, BenchmarkCreateSplitPlan (20 groups), BenchmarkExecuteSplit (10 mocked). testing.TB interface for benchmark compat.",
+      "status": "Done"
     },
     {
       "task": "T129: Scope expansion — telemetry and analytics",
-      "description": "Add optional (opt-in) telemetry for pr-split usage: (1) Number of files split, (2) Strategy used (heuristic vs auto), (3) Claude interactions count, (4) Conflict resolution success rate, (5) Total pipeline time. Store locally in .osm/telemetry/. Add 'telemetry' TUI command to view stats. Never send data externally.",
-      "status": "Not Started"
+      "description": "recordTelemetry(event, data) stores locally. getTelemetryStats() aggregates totalEvents/filesSplit/strategiesUsed/claudeInteractions/conflictResolutions/pipelineTimeMs. 'telemetry' TUI command. TestTelemetryRecording verifies.",
+      "status": "Done"
     },
     {
       "task": "T130: Scope expansion — plugin system for custom strategies",
-      "description": "Allow users to define custom grouping strategies via JS scripts. Load from paths configured in pr-split.strategy-scripts. Each script exports a function(files, options) → groups. Register in applyStrategy switch. This enables project-specific grouping logic without modifying osm source.",
-      "status": "Not Started"
+      "description": "loadStrategyPlugin(scriptPath) reads+evals external JS, expects strategyPlugin(files, options)→groups. Falls back gracefully. Exported via prSplit.",
+      "status": "Done"
     },
     {
       "task": "T131: Scope expansion — retrospective analysis command",
-      "description": "Add a 'retro' TUI command that analyzes a completed split: (1) Which splits were hardest to merge? (2) Which had the most conflicts? (3) Were the groups optimal? (4) Suggestions for next time. Uses saved plan data and git log analysis. Claude-assisted if available.",
-      "status": "Not Started"
+      "description": "analyzeRetrospective(plan, executionResults) analyses split quality: total splits/files, failed/successful, conflict rate, hardest splits, optimization suggestions. 'retro' TUI command. TestRetrospectiveAnalysis verifies.",
+      "status": "Done"
     }
   ],
   "continuousVerification": {

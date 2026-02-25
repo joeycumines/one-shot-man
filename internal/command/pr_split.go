@@ -217,6 +217,107 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		},
 	})
 
+	// Split-view TUI — dual-pane BubbleTea model.
+	splitView := mux.NewSplitView(
+		mux.WithSplitRatio(0.5),
+		mux.WithMaxLines(1000),
+		mux.WithToggleKey(mux.DefaultToggleKey),
+		mux.WithClaudeWriter(func(data []byte) error {
+			// Forward to child PTY if attached.
+			_, err := tuiMux.WriteToChild(data)
+			return err
+		}),
+	)
+	engine.SetGlobal("splitView", map[string]interface{}{
+		"appendOsm": func(text string) {
+			splitView.AppendOsmOutput(text)
+		},
+		"appendClaude": func(text string) {
+			splitView.AppendClaudeOutput(text)
+		},
+		"setClaudeStatus": func(status string) {
+			splitView.SetClaudeStatus(status)
+		},
+		"setRatio": func(ratio float64) {
+			splitView.SetSplitRatio(ratio)
+		},
+		"activePane": func() string {
+			if splitView.ActivePane() == mux.PaneClaude {
+				return "claude"
+			}
+			return "osm"
+		},
+		"run": func() error {
+			return splitView.Run()
+		},
+	})
+
+	// Plan editor — expose factory so JS can create editor instances.
+	engine.SetGlobal("planEditorFactory", map[string]interface{}{
+		"create": func(items []interface{}) map[string]interface{} {
+			editorItems := make([]mux.PlanEditorItem, 0, len(items))
+			for _, raw := range items {
+				m, ok := raw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				item := mux.PlanEditorItem{}
+				if name, ok := m["name"].(string); ok {
+					item.Name = name
+				}
+				if branch, ok := m["branchName"].(string); ok {
+					item.BranchName = branch
+				}
+				if desc, ok := m["description"].(string); ok {
+					item.Description = desc
+				}
+				if files, ok := m["files"].([]interface{}); ok {
+					for _, f := range files {
+						if s, ok := f.(string); ok {
+							item.Files = append(item.Files, s)
+						}
+					}
+				}
+				editorItems = append(editorItems, item)
+			}
+			editor := mux.NewPlanEditor(editorItems, mux.WithOnChange(func(updated []mux.PlanEditorItem) {
+				// Silently accept changes — JS can query items after run.
+			}))
+			return map[string]interface{}{
+				"run": func() ([]interface{}, error) {
+					result, err := editor.Run()
+					if err != nil {
+						return nil, err
+					}
+					// Convert back to JS-friendly maps.
+					out := make([]interface{}, len(result))
+					for i, item := range result {
+						out[i] = map[string]interface{}{
+							"name":        item.Name,
+							"files":       item.Files,
+							"branchName":  item.BranchName,
+							"description": item.Description,
+						}
+					}
+					return out, nil
+				},
+				"items": func() []interface{} {
+					result := editor.Items()
+					out := make([]interface{}, len(result))
+					for i, item := range result {
+						out[i] = map[string]interface{}{
+							"name":        item.Name,
+							"files":       item.Files,
+							"branchName":  item.BranchName,
+							"description": item.Description,
+						}
+					}
+					return out
+				},
+			}
+		},
+	})
+
 	// Load the embedded script
 	script := engine.LoadScriptFromString("pr-split", prSplitScript)
 	if err := engine.ExecuteScript(script); err != nil {

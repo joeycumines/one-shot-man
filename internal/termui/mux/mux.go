@@ -185,6 +185,18 @@ func (m *TUIMux) SetClaudeStatus(status string) {
 	m.claudeStatus = status
 }
 
+// WriteToChild sends data to the attached child PTY. Returns ErrNoChild
+// if no child is attached. Safe for concurrent use.
+func (m *TUIMux) WriteToChild(data []byte) (int, error) {
+	m.mu.Lock()
+	child := m.child
+	m.mu.Unlock()
+	if child == nil {
+		return 0, ErrNoChild
+	}
+	return child.Write(data)
+}
+
 // RunPassthrough enters Claude mode: raw byte forwarding between
 // stdin/stdout and the child PTY. This method blocks until:
 //   - The user presses the toggle key (ExitToggle)

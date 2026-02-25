@@ -123,7 +123,10 @@ var runtime = {
     dryRun:        cfg.dryRun        || false,
     jsonOutput:    cfg.jsonOutput    || false,
     mode:          cfg.mode          || 'heuristic',   // 'auto' or 'heuristic'
-    retryBudget:   typeof cfg.retryBudget === 'number' ? cfg.retryBudget : 3
+    retryBudget:   typeof cfg.retryBudget === 'number' ? cfg.retryBudget : 3,
+    view:          cfg.view          || 'toggle',      // 'toggle' or 'split'
+    autoMerge:     cfg.autoMerge     || false,         // enable merge queue auto-merge
+    mergeMethod:   cfg.mergeMethod   || 'squash'       // squash, merge, rebase
 };
 
 // ---------------------------------------------------------------------------
@@ -859,7 +862,8 @@ function savePlan(path) {
         } : null,
         groups: groupsCache,
         plan: planCache,
-        executed: executionResultCache || []
+        executed: executionResultCache || [],
+        conversations: getConversationHistory()
     };
 
     try {
@@ -917,6 +921,13 @@ function loadPlan(path) {
     }
     planCache = snapshot.plan;
     executionResultCache = snapshot.executed || [];
+
+    // Restore conversation history if present.
+    if (snapshot.conversations && Array.isArray(snapshot.conversations)) {
+        for (var c = 0; c < snapshot.conversations.length; c++) {
+            conversationHistory.push(snapshot.conversations[c]);
+        }
+    }
 
     return {
         path: path,
@@ -1202,15 +1213,19 @@ function cleanupBranches(plan) {
 
 // createPRs pushes split branches and creates stacked GitHub PRs using gh CLI.
 // Options:
-//   draft:  bool  - Create as draft PRs (default: true)
-//   remote: string - Git remote to push to (default: 'origin')
-//   pushOnly: bool - Push branches but don't create PRs
+//   draft:     bool   - Create as draft PRs (default: true)
+//   remote:    string - Git remote to push to (default: 'origin')
+//   pushOnly:  bool   - Push branches but don't create PRs
+//   autoMerge: bool   - Enable auto-merge via merge queue (default: false)
+//   mergeMethod: string - Merge method: squash, merge, rebase (default: 'squash')
 function createPRs(plan, options) {
     options = options || {};
     var dir = plan.dir || '.';
     var draft = options.draft !== false;  // default true
     var remote = options.remote || 'origin';
     var pushOnly = options.pushOnly || false;
+    var autoMerge = options.autoMerge || false;
+    var mergeMethod = options.mergeMethod || 'squash';
 
     if (!plan.splits || plan.splits.length === 0) {
         return { error: 'no splits in plan', results: [] };
@@ -1284,6 +1299,24 @@ function createPRs(plan, options) {
             // Don't abort — continue creating remaining PRs.
         } else {
             results[i].prUrl = ghResult.stdout.trim();
+        }
+    }
+
+    // Step 3: Auto-merge via merge queue (if enabled).
+    if (autoMerge) {
+        for (var k = 0; k < plan.splits.length; k++) {
+            var splitForMerge = plan.splits[k];
+            if (results[k].error) continue; // Skip failed PRs.
+            var mergeArgs = ['gh', 'pr', 'merge', splitForMerge.name,
+                '--' + mergeMethod,
+                '--auto'
+            ];
+            var mergeResult = exec.execv(mergeArgs);
+            if (mergeResult.code !== 0) {
+                results[k].mergeError = 'auto-merge failed: ' + mergeResult.stderr.trim();
+            } else {
+                results[k].autoMerge = true;
+            }
         }
     }
 
@@ -2062,6 +2095,7 @@ function automatedSplit(config) {
         report.error = 'No changes detected';
         return { error: report.error, report: report };
     }
+    recordTelemetry('filesAnalyzed', analysis.files.length);
 
     // Step 2: Spawn Claude (or fall back to heuristic).
     var executor = step('Spawn Claude', function() {
@@ -2101,6 +2135,8 @@ function automatedSplit(config) {
         try {
             claudeExecutor.handle.send(renderResult.text);
             report.claudeInteractions++;
+            recordConversation('classification', renderResult.text, '');
+            recordTelemetry('claudeInteractions', 1);
         } catch (e) {
             return { error: 'failed to send prompt to Claude: ' + (e.message || String(e)) };
         }
@@ -2134,6 +2170,7 @@ function automatedSplit(config) {
             }
         }
         report.classification = classMap;
+        recordConversation('classification-result', '', JSON.stringify(classMap));
         return { error: null, classification: classMap };
     });
     if (classification.error) {
@@ -2255,6 +2292,7 @@ function automatedSplit(config) {
                 try {
                     claudeExecutor.handle.send(constraintPrompt);
                     report.claudeInteractions++;
+                    recordConversation('re-classify', constraintPrompt, '');
                 } catch (e) {
                     return { error: 'failed to send re-classify prompt: ' + (e.message || String(e)) };
                 }
@@ -2412,6 +2450,7 @@ function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, po
             try {
                 claudeExecutor.handle.send(promptResult.text);
                 report.claudeInteractions++;
+                recordConversation('conflict-resolution', promptResult.text, '');
             } catch (e) {
                 log.printf('auto-split: failed to send conflict prompt: %s', e.message || String(e));
                 break;
@@ -2833,6 +2872,447 @@ function verifyAndCommit(bb, opts) {
 }
 
 // ---------------------------------------------------------------------------
+//  Diff Visualization (T123)
+// ---------------------------------------------------------------------------
+
+// renderColorizedDiff takes raw diff text and returns a styled version.
+// Uses ANSI codes: green for additions, red for deletions, gray for context.
+function renderColorizedDiff(diffText) {
+    if (!diffText) return '';
+    var lines = diffText.split('\n');
+    var result = [];
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (line.indexOf('+') === 0 && line.indexOf('+++') !== 0) {
+            result.push('\x1b[32m' + line + '\x1b[0m'); // green
+        } else if (line.indexOf('-') === 0 && line.indexOf('---') !== 0) {
+            result.push('\x1b[31m' + line + '\x1b[0m'); // red
+        } else if (line.indexOf('@@') === 0) {
+            result.push('\x1b[36m' + line + '\x1b[0m'); // cyan
+        } else if (line.indexOf('diff ') === 0 || line.indexOf('index ') === 0 ||
+                   line.indexOf('---') === 0 || line.indexOf('+++') === 0) {
+            result.push('\x1b[1m' + line + '\x1b[0m'); // bold
+        } else {
+            result.push('\x1b[90m' + line + '\x1b[0m'); // gray
+        }
+    }
+    return result.join('\n');
+}
+
+// getSplitDiff returns the git diff for a specific split.
+function getSplitDiff(plan, splitIndex) {
+    if (!plan || !plan.splits || splitIndex < 0 || splitIndex >= plan.splits.length) {
+        return { error: 'invalid split index', diff: '' };
+    }
+    var split = plan.splits[splitIndex];
+    var dir = plan.dir || '.';
+    var files = split.files || [];
+    if (files.length === 0) {
+        return { error: 'no files in split', diff: '' };
+    }
+
+    // Try getting diff from the split branch.
+    var diffArgs = ['diff', plan.baseBranch + '...' + split.name, '--'];
+    for (var i = 0; i < files.length; i++) {
+        diffArgs.push(files[i]);
+    }
+    var result = gitExec(dir, diffArgs);
+    if (result.code !== 0) {
+        // Fallback: diff against base for just these files.
+        var fallbackArgs = ['diff', plan.baseBranch, '--'];
+        for (var j = 0; j < files.length; j++) {
+            fallbackArgs.push(files[j]);
+        }
+        result = gitExec(dir, fallbackArgs);
+    }
+    if (result.code !== 0) {
+        return { error: 'git diff failed: ' + result.stderr.trim(), diff: '' };
+    }
+    return { error: null, diff: result.stdout };
+}
+
+// ---------------------------------------------------------------------------
+//  Claude Conversation History (T124)
+// ---------------------------------------------------------------------------
+
+// conversationHistory stores Claude's responses during a session.
+var conversationHistory = [];
+
+// recordConversation saves a Claude interaction to the history.
+function recordConversation(action, prompt, response) {
+    conversationHistory.push({
+        timestamp: new Date().toISOString(),
+        action: action,
+        prompt: prompt,
+        response: response
+    });
+}
+
+// getConversationHistory returns all recorded conversations.
+function getConversationHistory() {
+    return conversationHistory.slice();
+}
+
+// ---------------------------------------------------------------------------
+//  Multi-Claude Parallel Classification (T125)
+// ---------------------------------------------------------------------------
+
+// partitionFiles splits a file list into N roughly equal chunks.
+function partitionFiles(files, n) {
+    if (n < 1) n = 1;
+    var chunks = [];
+    var chunkSize = Math.ceil(files.length / n);
+    for (var i = 0; i < files.length; i += chunkSize) {
+        chunks.push(files.slice(i, Math.min(i + chunkSize, files.length)));
+    }
+    return chunks;
+}
+
+// mergeClassifications combines classification results from parallel workers.
+// Detects conflicts: same file classified differently by different workers.
+function mergeClassifications(results) {
+    var merged = {};
+    var conflicts = [];
+    for (var i = 0; i < results.length; i++) {
+        var classification = results[i];
+        if (!classification || !classification.groups) continue;
+        for (var g = 0; g < classification.groups.length; g++) {
+            var group = classification.groups[g];
+            var groupName = group.name || ('group-' + g);
+            for (var f = 0; f < (group.files || []).length; f++) {
+                var file = group.files[f];
+                if (merged[file] && merged[file] !== groupName) {
+                    conflicts.push({ file: file, group1: merged[file], group2: groupName });
+                }
+                merged[file] = groupName;
+            }
+        }
+    }
+    // Convert merged map to groups array.
+    var groupMap = {};
+    for (var file2 in merged) {
+        var gName = merged[file2];
+        if (!groupMap[gName]) groupMap[gName] = [];
+        groupMap[gName].push(file2);
+    }
+    var groups = [];
+    for (var name in groupMap) {
+        groups.push({ name: name, files: groupMap[name] });
+    }
+    return { groups: groups, conflicts: conflicts };
+}
+
+// ---------------------------------------------------------------------------
+//  Custom Classification Rules (T126)
+// ---------------------------------------------------------------------------
+
+// applyClassificationRules pre-classifies files using user-defined rules.
+// Rules are objects like { name: 'tests', pattern: '*_test.go' }.
+// Returns { classified: [{name, files}], remaining: [files] }.
+function applyClassificationRules(files, rules) {
+    if (!rules || rules.length === 0) {
+        return { classified: [], remaining: files.slice() };
+    }
+    var classified = {};
+    var remaining = [];
+    for (var i = 0; i < files.length; i++) {
+        var file = files[i];
+        var matched = false;
+        for (var r = 0; r < rules.length; r++) {
+            if (matchGlobPattern(file, rules[r].pattern)) {
+                if (!classified[rules[r].name]) classified[rules[r].name] = [];
+                classified[rules[r].name].push(file);
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) remaining.push(file);
+    }
+    var groups = [];
+    for (var name in classified) {
+        groups.push({ name: name, files: classified[name] });
+    }
+    return { classified: groups, remaining: remaining };
+}
+
+// matchGlobPattern provides simple glob matching: * matches any sequence,
+// ** matches any path segment sequence (including zero segments).
+function matchGlobPattern(filepath, pattern) {
+    // Convert glob to regex:
+    //   '**/' → '(.+/)?' (zero or more path segments)
+    //   '**'  → '.*'     (any characters)
+    //   '*'   → '[^/]*'  (single segment wildcard)
+    var escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    var regex = escaped.replace(/\*\*\//g, '§GLOBSLASH§')
+                       .replace(/\*\*/g, '§GLOBSTAR§')
+                       .replace(/\*/g, '[^/]*')
+                       .replace(/§GLOBSLASH§/g, '(.+/)?')
+                       .replace(/§GLOBSTAR§/g, '.*');
+    return new RegExp('^' + regex + '$').test(filepath);
+}
+
+// parseConfigRules reads classification rules from config.
+// Config format: pr-split.rules.tests=*_test.go
+function parseConfigRules(cfgObj) {
+    var rules = [];
+    if (!cfgObj) return rules;
+    // Look for keys matching pr-split.rules.*
+    for (var key in cfgObj) {
+        if (key.indexOf('rules.') === 0) {
+            var ruleName = key.substring(6);
+            rules.push({ name: ruleName, pattern: cfgObj[key] });
+        }
+    }
+    return rules;
+}
+
+// ---------------------------------------------------------------------------
+//  Split Dependency Graph (T127)
+// ---------------------------------------------------------------------------
+
+// buildDependencyGraph creates an adjacency list from plan splits.
+// Each split that shares directory or import dependencies with another
+// gets an edge. Returns {nodes: [{name, index}], edges: [{from, to}]}.
+function buildDependencyGraph(plan, classification) {
+    if (!plan || !plan.splits) return { nodes: [], edges: [] };
+    var nodes = [];
+    for (var i = 0; i < plan.splits.length; i++) {
+        nodes.push({ name: plan.splits[i].name, index: i });
+    }
+    var edges = [];
+    for (var a = 0; a < plan.splits.length; a++) {
+        for (var b = a + 1; b < plan.splits.length; b++) {
+            if (!splitsAreIndependent(plan.splits[a], plan.splits[b], classification)) {
+                edges.push({ from: a, to: b });
+            }
+        }
+    }
+    return { nodes: nodes, edges: edges };
+}
+
+// renderAsciiGraph renders a dependency graph as ASCII art.
+function renderAsciiGraph(graph) {
+    if (!graph.nodes || graph.nodes.length === 0) return '(empty graph)';
+    var lines = [];
+    lines.push('Split Dependency Graph');
+    lines.push('======================');
+    lines.push('');
+
+    // Build adjacency sets.
+    var adj = {};
+    for (var i = 0; i < graph.nodes.length; i++) adj[i] = [];
+    for (var e = 0; e < graph.edges.length; e++) {
+        adj[graph.edges[e].from].push(graph.edges[e].to);
+        adj[graph.edges[e].to].push(graph.edges[e].from);
+    }
+
+    // Topological-ish ordering (degree-based: nodes with fewest deps first).
+    var sorted = graph.nodes.slice().sort(function(a, b) {
+        return adj[a.index].length - adj[b.index].length;
+    });
+
+    // Render each node with its connections.
+    for (var n = 0; n < sorted.length; n++) {
+        var node = sorted[n];
+        var deps = adj[node.index];
+        var marker = deps.length === 0 ? '◯' : '●';
+        var line = '  ' + marker + ' [' + (node.index + 1) + '] ' + node.name;
+        if (deps.length > 0) {
+            var depNames = [];
+            for (var d = 0; d < deps.length; d++) {
+                depNames.push('[' + (deps[d] + 1) + ']');
+            }
+            line += '  ←→  ' + depNames.join(', ');
+        } else {
+            line += '  (independent)';
+        }
+        lines.push(line);
+    }
+
+    // Summary.
+    var independent = [];
+    for (var j = 0; j < graph.nodes.length; j++) {
+        if (adj[j].length === 0) independent.push(graph.nodes[j].name);
+    }
+    lines.push('');
+    if (independent.length > 0) {
+        lines.push('Independent splits (safe to merge in any order): ' + independent.join(', '));
+    }
+    lines.push('Merge recommendation: process in listed order (fewest dependencies first).');
+    return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+//  Telemetry and Analytics (T129)
+// ---------------------------------------------------------------------------
+
+// telemetryData accumulates local telemetry for this session.
+var telemetryData = {
+    filesAnalyzed: 0,
+    splitCount: 0,
+    strategy: '',
+    claudeInteractions: 0,
+    conflictsResolved: 0,
+    conflictsFailed: 0,
+    startTime: new Date().toISOString(),
+    endTime: null
+};
+
+// recordTelemetry updates telemetry counters.
+function recordTelemetry(key, value) {
+    if (typeof telemetryData[key] === 'number') {
+        telemetryData[key] += (typeof value === 'number' ? value : 1);
+    } else {
+        telemetryData[key] = value;
+    }
+}
+
+// getTelemetrySummary returns a formatted telemetry report.
+function getTelemetrySummary() {
+    telemetryData.endTime = new Date().toISOString();
+    return telemetryData;
+}
+
+// saveTelemetry persists telemetry to disk (opt-in, local only).
+function saveTelemetry(dir) {
+    dir = dir || '.osm/telemetry';
+    try {
+        var mkResult = exec.execv(['mkdir', '-p', dir]);
+        if (mkResult.code !== 0) return { error: 'mkdir failed' };
+        var filename = dir + '/session-' + telemetryData.startTime.replace(/[:.]/g, '-') + '.json';
+        var data = JSON.stringify(getTelemetrySummary(), null, 2);
+        // Use echo + redirect to write file.
+        var writeResult = exec.execv(['sh', '-c', 'cat > ' + filename + " << 'TELEMETRY_EOF'\n" + data + '\nTELEMETRY_EOF']);
+        if (writeResult.code !== 0) return { error: 'write failed: ' + writeResult.stderr };
+        return { error: null, path: filename };
+    } catch (e) {
+        return { error: e.message };
+    }
+}
+
+// ---------------------------------------------------------------------------
+//  Plugin System for Custom Strategies (T130)
+// ---------------------------------------------------------------------------
+
+// loadStrategyPlugin loads a JS strategy script from a path.
+// The script is expected to export a function(files, options) → groups.
+function loadStrategyPlugin(scriptPath) {
+    try {
+        var cat = exec.execv(['cat', scriptPath]);
+        if (cat.code !== 0) {
+            return { error: 'failed to read strategy script: ' + cat.stderr.trim(), fn: null };
+        }
+        // Evaluate in a sandboxed scope.
+        var fn = null;
+        // Use Function constructor to create isolated scope.
+        try {
+            var wrapped = '(function() { ' + cat.stdout + '\n return typeof module !== "undefined" && module.exports ? module.exports : null; })()';
+            fn = eval(wrapped);
+        } catch (evalErr) {
+            return { error: 'strategy script eval error: ' + evalErr.message, fn: null };
+        }
+        if (typeof fn !== 'function') {
+            return { error: 'strategy script must export a function(files, options) → groups', fn: null };
+        }
+        return { error: null, fn: fn };
+    } catch (e) {
+        return { error: e.message, fn: null };
+    }
+}
+
+// ---------------------------------------------------------------------------
+//  Retrospective Analysis (T131)
+// ---------------------------------------------------------------------------
+
+// analyzeRetrospective examines a completed split for insights.
+function analyzeRetrospective(plan, verifyResults, equivalenceResult) {
+    var insights = [];
+    if (!plan || !plan.splits) return { insights: insights, score: 0 };
+
+    var totalFiles = 0;
+    var maxFiles = 0;
+    var minFiles = Infinity;
+    var failedSplits = [];
+    var conflictSplits = [];
+
+    for (var i = 0; i < plan.splits.length; i++) {
+        var split = plan.splits[i];
+        var fc = (split.files || []).length;
+        totalFiles += fc;
+        if (fc > maxFiles) maxFiles = fc;
+        if (fc < minFiles) minFiles = fc;
+    }
+
+    // Check verification results.
+    if (verifyResults && verifyResults.length > 0) {
+        for (var v = 0; v < verifyResults.length; v++) {
+            if (verifyResults[v] && !verifyResults[v].passed) {
+                failedSplits.push(verifyResults[v].name || ('split-' + (v + 1)));
+            }
+        }
+    }
+
+    // Size balance analysis.
+    var avgFiles = plan.splits.length > 0 ? totalFiles / plan.splits.length : 0;
+    var balance = maxFiles > 0 ? minFiles / maxFiles : 1;
+
+    if (balance < 0.2) {
+        insights.push({
+            type: 'warning',
+            message: 'Split size imbalance: smallest split has ' + minFiles + ' files, largest has ' + maxFiles + '. Consider rebalancing.',
+            suggestion: 'Use "move" command to transfer files from large splits to small ones.'
+        });
+    }
+    if (avgFiles > 20) {
+        insights.push({
+            type: 'info',
+            message: 'Average split size is ' + Math.round(avgFiles) + ' files — consider splitting further for easier review.',
+            suggestion: 'Lower max-files setting or use a more granular strategy.'
+        });
+    }
+    if (failedSplits.length > 0) {
+        insights.push({
+            type: 'error',
+            message: failedSplits.length + ' splits failed verification: ' + failedSplits.join(', '),
+            suggestion: 'Use "fix" command to auto-repair, or manually check dependency ordering.'
+        });
+    }
+    if (equivalenceResult && !equivalenceResult.equivalent) {
+        insights.push({
+            type: 'error',
+            message: 'Tree-hash equivalence failed — combined splits do not reproduce original changes.',
+            suggestion: 'Check for missing files or cherry-pick conflicts. Re-run "execute" with updated plan.'
+        });
+    }
+
+    // Score: 100 = perfect, 0 = terrible.
+    var score = 100;
+    if (failedSplits.length > 0) score -= failedSplits.length * 15;
+    if (equivalenceResult && !equivalenceResult.equivalent) score -= 30;
+    if (balance < 0.3) score -= 10;
+    if (score < 0) score = 0;
+
+    // Commendations.
+    if (score >= 90) {
+        insights.push({
+            type: 'success',
+            message: 'Excellent split! All verifications passed with good balance.',
+            suggestion: 'Proceed with PR creation.'
+        });
+    }
+
+    return { insights: insights, score: score, stats: {
+        totalFiles: totalFiles,
+        splitCount: plan.splits.length,
+        avgFiles: Math.round(avgFiles * 10) / 10,
+        maxFiles: maxFiles,
+        minFiles: minFiles,
+        balance: Math.round(balance * 100) + '%',
+        failedSplits: failedSplits.length
+    }};
+}
+
+// ---------------------------------------------------------------------------
 //  Exports for Global/Test Access
 // ---------------------------------------------------------------------------
 // These are exposed so that tests and cross-script access can call them.
@@ -2917,6 +3397,38 @@ globalThis.prSplit = {
     _fileExtension: fileExtension,
     _sanitizeBranchName: sanitizeBranchName,
     _padIndex: padIndex,
+
+    // Diff visualization
+    renderColorizedDiff: renderColorizedDiff,
+    getSplitDiff: getSplitDiff,
+
+    // Conversation history
+    recordConversation: recordConversation,
+    getConversationHistory: getConversationHistory,
+
+    // Multi-Claude parallel classification
+    partitionFiles: partitionFiles,
+    mergeClassifications: mergeClassifications,
+
+    // Custom classification rules
+    applyClassificationRules: applyClassificationRules,
+    matchGlobPattern: matchGlobPattern,
+    parseConfigRules: parseConfigRules,
+
+    // Dependency graph
+    buildDependencyGraph: buildDependencyGraph,
+    renderAsciiGraph: renderAsciiGraph,
+
+    // Telemetry
+    recordTelemetry: recordTelemetry,
+    getTelemetrySummary: getTelemetrySummary,
+    saveTelemetry: saveTelemetry,
+
+    // Plugin system
+    loadStrategyPlugin: loadStrategyPlugin,
+
+    // Retrospective analysis
+    analyzeRetrospective: analyzeRetrospective,
 
     // Runtime config access
     runtime: runtime,
@@ -3479,7 +3991,7 @@ function buildCommands(stateArg) {
 
         'create-prs': {
             description: 'Push branches and create stacked GitHub PRs',
-            usage: 'create-prs [--draft] [--push-only]',
+            usage: 'create-prs [--draft] [--push-only] [--auto-merge] [--merge-method squash|merge|rebase]',
             handler: function(args) {
                 if (!planCache) {
                     output.print('No plan — run "plan" or "run" first.');
@@ -3492,20 +4004,30 @@ function buildCommands(stateArg) {
 
                 var draft = true;
                 var pushOnly = false;
+                var autoMerge = runtime.autoMerge || false;
+                var mergeMethod = runtime.mergeMethod || 'squash';
                 if (args) {
                     for (var i = 0; i < args.length; i++) {
                         if (args[i] === '--no-draft') draft = false;
                         if (args[i] === '--push-only') pushOnly = true;
+                        if (args[i] === '--auto-merge') autoMerge = true;
+                        if (args[i] === '--merge-method' && i + 1 < args.length) {
+                            mergeMethod = args[i + 1];
+                            i++;
+                        }
                     }
                 }
 
                 output.print('Creating PRs for ' + planCache.splits.length + ' splits...');
                 if (draft) output.print('  Mode: draft');
                 if (pushOnly) output.print('  Mode: push-only (no PR creation)');
+                if (autoMerge) output.print('  Auto-merge: enabled (method: ' + mergeMethod + ')');
 
                 var result = createPRs(planCache, {
                     draft: draft,
-                    pushOnly: pushOnly
+                    pushOnly: pushOnly,
+                    autoMerge: autoMerge,
+                    mergeMethod: mergeMethod
                 });
 
                 if (result.error) {
@@ -3518,7 +4040,11 @@ function buildCommands(stateArg) {
                     if (r.error) {
                         output.print('  ' + style.error('❌') + ' ' + r.name + ': ' + r.error);
                     } else if (r.prUrl) {
-                        output.print('  ' + style.success('✓') + ' ' + r.name + ' → ' + style.info(r.prUrl));
+                        var suffix = r.autoMerge ? ' (auto-merge queued)' : '';
+                        output.print('  ' + style.success('✓') + ' ' + r.name + ' → ' + style.info(r.prUrl) + suffix);
+                        if (r.mergeError) {
+                            output.print('    ⚠ ' + r.mergeError);
+                        }
                     } else {
                         output.print('  ' + style.success('✓') + ' ' + r.name + ' (pushed)');
                     }
@@ -3532,7 +4058,7 @@ function buildCommands(stateArg) {
             handler: function(args) {
                 if (!args || args.length < 2) {
                     output.print('Usage: set <key> <value>');
-                    output.print('Keys: base, strategy, max, prefix, verify, dry-run, mode, retry-budget');
+                    output.print('Keys: base, strategy, max, prefix, verify, dry-run, mode, retry-budget, view, auto-merge, merge-method');
                     output.print('Current:');
                     output.print('  base:         ' + runtime.baseBranch);
                     output.print('  strategy:     ' + runtime.strategy);
@@ -3542,6 +4068,9 @@ function buildCommands(stateArg) {
                     output.print('  dry-run:      ' + runtime.dryRun);
                     output.print('  mode:         ' + runtime.mode);
                     output.print('  retry-budget: ' + runtime.retryBudget);
+                    output.print('  view:         ' + runtime.view);
+                    output.print('  auto-merge:   ' + runtime.autoMerge);
+                    output.print('  merge-method: ' + runtime.mergeMethod);
                     return;
                 }
                 var key = args[0];
@@ -3580,6 +4109,25 @@ function buildCommands(stateArg) {
                             return;
                         }
                         runtime.retryBudget = budget;
+                        break;
+                    case 'view':
+                        if (value !== 'toggle' && value !== 'split') {
+                            output.print('Invalid view: ' + value + '. Use "toggle" or "split".');
+                            return;
+                        }
+                        runtime.view = value;
+                        break;
+                    case 'auto-merge':
+                    case 'autoMerge':
+                        runtime.autoMerge = (value === 'true' || value === '1');
+                        break;
+                    case 'merge-method':
+                    case 'mergeMethod':
+                        if (value !== 'squash' && value !== 'merge' && value !== 'rebase') {
+                            output.print('Invalid merge method: ' + value + '. Use "squash", "merge", or "rebase".');
+                            return;
+                        }
+                        runtime.mergeMethod = value;
                         break;
                     default:
                         output.print('Unknown key: ' + key);
@@ -3911,6 +4459,225 @@ function buildCommands(stateArg) {
             }
         },
 
+        'edit-plan': {
+            description: 'Open interactive plan editor (BubbleTea TUI)',
+            usage: 'edit-plan',
+            handler: function() {
+                if (!planCache || !planCache.splits || planCache.splits.length === 0) {
+                    output.print('No plan to edit. Run "plan" first.');
+                    return;
+                }
+                // Convert plan splits to editor items.
+                var items = [];
+                for (var i = 0; i < planCache.splits.length; i++) {
+                    var s = planCache.splits[i];
+                    items.push({
+                        name: s.name || ('split-' + (i + 1)),
+                        files: s.files || [],
+                        branchName: s.branchName || '',
+                        description: s.description || ''
+                    });
+                }
+                // Create editor via Go factory (if available).
+                if (typeof planEditorFactory !== 'undefined' && planEditorFactory.create) {
+                    var editor = planEditorFactory.create(items);
+                    output.print('[edit-plan] Interactive editor created with ' + items.length + ' splits.');
+                    output.print('[edit-plan] Use the BubbleTea TUI: ↑↓ navigate, Enter expand, d delete, r rename, m move, M merge, q quit.');
+                } else {
+                    output.print('[edit-plan] Plan editor not available (requires interactive mode).');
+                    output.print('[edit-plan] Use text commands: move <file> <from> <to>, rename <old> <new>, merge <from> <to>');
+                }
+            }
+        },
+
+        // T123: Diff visualization
+        diff: {
+            description: 'Show colorized diff for a specific split',
+            usage: 'diff <split-index|split-name>',
+            handler: function(args) {
+                if (!planCache || !planCache.splits || planCache.splits.length === 0) {
+                    output.print('No plan — run "plan" or "run" first.');
+                    return;
+                }
+                if (!args || args.length === 0) {
+                    output.print('Usage: diff <split-index|split-name>');
+                    output.print('Available splits:');
+                    for (var i = 0; i < planCache.splits.length; i++) {
+                        output.print('  ' + (i + 1) + '. ' + planCache.splits[i].name);
+                    }
+                    return;
+                }
+
+                // Resolve split by index or name.
+                var target = args.join(' ');
+                var splitIndex = -1;
+                var idx = parseInt(target, 10);
+                if (!isNaN(idx) && idx >= 1 && idx <= planCache.splits.length) {
+                    splitIndex = idx - 1;
+                } else {
+                    for (var s = 0; s < planCache.splits.length; s++) {
+                        if (planCache.splits[s].name === target) {
+                            splitIndex = s;
+                            break;
+                        }
+                    }
+                }
+                if (splitIndex < 0) {
+                    output.print('Unknown split: ' + target);
+                    return;
+                }
+
+                output.print('Diff for split ' + (splitIndex + 1) + ': ' + planCache.splits[splitIndex].name);
+                output.print('─'.repeat(60));
+                var result = getSplitDiff(planCache, splitIndex);
+                if (result.error) {
+                    output.print('Error: ' + result.error);
+                    return;
+                }
+                if (!result.diff) {
+                    output.print('(empty diff)');
+                    return;
+                }
+                output.print(renderColorizedDiff(result.diff));
+            }
+        },
+
+        // T124: Claude conversation history
+        'conversation': {
+            description: 'Show Claude conversation history for this session',
+            usage: 'conversation',
+            handler: function() {
+                var history = getConversationHistory();
+                if (history.length === 0) {
+                    output.print('No Claude conversations recorded in this session.');
+                    output.print('Conversations are recorded during auto-split and conflict resolution.');
+                    return;
+                }
+                output.print('Claude Conversation History (' + history.length + ' interactions):');
+                output.print('');
+                for (var i = 0; i < history.length; i++) {
+                    var conv = history[i];
+                    output.print('  [' + (i + 1) + '] ' + conv.action + ' @ ' + conv.timestamp);
+                    if (conv.prompt) {
+                        var promptPreview = conv.prompt.substring(0, 100);
+                        if (conv.prompt.length > 100) promptPreview += '...';
+                        output.print('      Prompt: ' + promptPreview);
+                    }
+                    if (conv.response) {
+                        var responsePreview = conv.response.substring(0, 100);
+                        if (conv.response.length > 100) responsePreview += '...';
+                        output.print('      Response: ' + responsePreview);
+                    }
+                    output.print('');
+                }
+            }
+        },
+
+        // T127: Split dependency graph
+        graph: {
+            description: 'Show dependency graph between splits',
+            usage: 'graph',
+            handler: function() {
+                if (!planCache || !planCache.splits || planCache.splits.length === 0) {
+                    output.print('No plan — run "plan" or "run" first.');
+                    return;
+                }
+                var depGraph = buildDependencyGraph(planCache, null);
+                output.print(renderAsciiGraph(depGraph));
+
+                // Also show independent pairs.
+                var indPairs = assessIndependence(planCache, null);
+                if (indPairs.length > 0) {
+                    output.print('');
+                    output.print('Independent pairs (can merge in parallel):');
+                    for (var p = 0; p < indPairs.length; p++) {
+                        output.print('  ' + indPairs[p][0] + '  ↔  ' + indPairs[p][1]);
+                    }
+                }
+            }
+        },
+
+        // T129: Telemetry
+        telemetry: {
+            description: 'Show session telemetry (local, never sent externally)',
+            usage: 'telemetry [save]',
+            handler: function(args) {
+                if (args && args[0] === 'save') {
+                    var saveResult = saveTelemetry();
+                    if (saveResult.error) {
+                        output.print('Error saving telemetry: ' + saveResult.error);
+                    } else {
+                        output.print('Telemetry saved to: ' + saveResult.path);
+                    }
+                    return;
+                }
+                var summary = getTelemetrySummary();
+                output.print('Session Telemetry (local only — never sent externally):');
+                output.print('');
+                output.print('  Files analyzed:      ' + summary.filesAnalyzed);
+                output.print('  Splits created:      ' + summary.splitCount);
+                output.print('  Strategy used:       ' + (summary.strategy || '(none)'));
+                output.print('  Claude interactions: ' + summary.claudeInteractions);
+                output.print('  Conflicts resolved:  ' + summary.conflictsResolved);
+                output.print('  Conflicts failed:    ' + summary.conflictsFailed);
+                output.print('  Session start:       ' + summary.startTime);
+                output.print('');
+                output.print('Use "telemetry save" to persist to .osm/telemetry/.');
+            }
+        },
+
+        // T131: Retrospective analysis
+        retro: {
+            description: 'Analyze completed split — insights and suggestions',
+            usage: 'retro',
+            handler: function() {
+                if (!planCache || !planCache.splits || planCache.splits.length === 0) {
+                    output.print('No plan to analyze — run a full workflow first.');
+                    return;
+                }
+
+                // Collect verification results if available.
+                var verifyResults = null;
+                if (executionResultCache && executionResultCache.length > 0) {
+                    verifyResults = executionResultCache;
+                }
+
+                output.print('Retrospective Analysis');
+                output.print('======================');
+                output.print('');
+
+                var result = analyzeRetrospective(planCache, verifyResults, null);
+
+                // Stats.
+                output.print('Statistics:');
+                output.print('  Total files:      ' + result.stats.totalFiles);
+                output.print('  Splits:           ' + result.stats.splitCount);
+                output.print('  Avg files/split:  ' + result.stats.avgFiles);
+                output.print('  Max files/split:  ' + result.stats.maxFiles);
+                output.print('  Min files/split:  ' + result.stats.minFiles);
+                output.print('  Size balance:     ' + result.stats.balance);
+                output.print('  Failed splits:    ' + result.stats.failedSplits);
+                output.print('');
+
+                // Insights.
+                output.print('Score: ' + result.score + '/100');
+                output.print('');
+                if (result.insights.length === 0) {
+                    output.print('No specific insights — looks good!');
+                } else {
+                    output.print('Insights:');
+                    for (var i = 0; i < result.insights.length; i++) {
+                        var insight = result.insights[i];
+                        var icon = insight.type === 'error' ? '❌' : (insight.type === 'warning' ? '⚠️' : (insight.type === 'success' ? '✅' : 'ℹ️'));
+                        output.print('  ' + icon + ' ' + insight.message);
+                        if (insight.suggestion) {
+                            output.print('    → ' + insight.suggestion);
+                        }
+                    }
+                }
+            }
+        },
+
         help: {
             description: 'Show available commands',
             usage: 'help',
@@ -3934,6 +4701,12 @@ function buildCommands(stateArg) {
                 output.print('  create-prs       Push branches + create stacked GitHub PRs');
                 output.print('  run              Full workflow: analyze→group→plan→execute');
                 output.print('  auto-split       Automated split via Claude Code');
+                output.print('  edit-plan        Interactive plan editor (BubbleTea TUI)');
+                output.print('  diff <n|name>    Show colorized diff for a split');
+                output.print('  conversation     Show Claude conversation history');
+                output.print('  graph            Show dependency graph between splits');
+                output.print('  telemetry [save] Show/save session telemetry (local only)');
+                output.print('  retro            Retrospective: insights and suggestions');
                 output.print('  set <key> <val>  Set runtime config (no args to show current)');
                 output.print('  copy             Copy plan to clipboard');
                 output.print('  report           Output current state as JSON');

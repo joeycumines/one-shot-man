@@ -439,7 +439,7 @@ type TestPipelineOpts struct {
 // loadPrSplitEngine creates a scripting engine with the pr_split_script.js
 // loaded and ready to dispatch commands. It configures all the global
 // variables that PrSplitCommand.Execute would set.
-func loadPrSplitEngine(t *testing.T, overrides map[string]interface{}) (*bytes.Buffer, func(name string, args []string) error) {
+func loadPrSplitEngine(t testing.TB, overrides map[string]interface{}) (*bytes.Buffer, func(name string, args []string) error) {
 	t.Helper()
 
 	var stdout, stderr bytes.Buffer
@@ -2331,7 +2331,7 @@ func TestPrSplitCommand_ClaudeCodeExecutorExported(t *testing.T) {
 // loadPrSplitEngineWithEval creates a scripting engine and returns an
 // evalJS function for evaluating arbitrary JS expressions directly.
 // This enables testing pure JS functions exported on globalThis.prSplit.
-func loadPrSplitEngineWithEval(t *testing.T, overrides map[string]interface{}) (*bytes.Buffer, func(string, []string) error, func(string) (interface{}, error)) {
+func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]interface{}) (*bytes.Buffer, func(string, []string) error, func(string) (interface{}, error)) {
 	t.Helper()
 
 	var stdout, stderr bytes.Buffer
@@ -4940,5 +4940,436 @@ func TestIntegration_RealOllama(t *testing.T) {
 	// Likely falls back to heuristic since Ollama probably can't handle MCP.
 	if !contains(output, "Complete") && !contains(output, "complete") && !contains(output, "fallback") {
 		t.Error("expected completion or fallback message")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T128: Performance Benchmarks for Split Operations
+// ---------------------------------------------------------------------------
+
+// BenchmarkGroupByDirectory benchmarks groupByDirectory with varying file counts.
+func BenchmarkGroupByDirectory(b *testing.B) {
+	_, _, evalJS := loadPrSplitEngineWithEval(b, nil)
+
+	setup := `
+		var benchFiles = [];
+		for (var i = 0; i < 500; i++) {
+			benchFiles.push('pkg' + String.fromCharCode(97 + (i % 26)) + '/file' + i + '.go');
+		}
+	`
+	if _, err := evalJS(setup); err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := evalJS(`prSplit.groupByDirectory(benchFiles)`)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkCreateSplitPlan benchmarks plan creation from grouped files.
+func BenchmarkCreateSplitPlan(b *testing.B) {
+	_, _, evalJS := loadPrSplitEngineWithEval(b, nil)
+
+	setup := `
+		var benchGroups = [];
+		for (var g = 0; g < 20; g++) {
+			var files = [];
+			for (var f = 0; f < 15; f++) {
+				files.push('pkg' + g + '/file' + f + '.go');
+			}
+			benchGroups.push({ name: 'group-' + g, files: files });
+		}
+	`
+	if _, err := evalJS(setup); err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := evalJS(`prSplit.createSplitPlan(benchGroups, {
+			baseBranch: 'main', sourceBranch: 'feature',
+			branchPrefix: 'split/', maxFiles: 20
+		})`)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkAssessIndependence benchmarks independence assessment.
+func BenchmarkAssessIndependence(b *testing.B) {
+	_, _, evalJS := loadPrSplitEngineWithEval(b, nil)
+
+	setup := `
+		var benchPlan = {
+			baseBranch: 'main',
+			splits: []
+		};
+		for (var s = 0; s < 10; s++) {
+			var files = [];
+			for (var f = 0; f < 10; f++) {
+				files.push('dir' + s + '/file' + f + '.go');
+			}
+			benchPlan.splits.push({ name: 'split-' + s, files: files });
+		}
+	`
+	if _, err := evalJS(setup); err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := evalJS(`prSplit.assessIndependence(benchPlan, null)`)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkMatchGlobPattern benchmarks glob pattern matching.
+func BenchmarkMatchGlobPattern(b *testing.B) {
+	_, _, evalJS := loadPrSplitEngineWithEval(b, nil)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := evalJS(`
+			prSplit.matchGlobPattern('internal/command/pr_split_test.go', '**/*_test.go');
+			prSplit.matchGlobPattern('docs/README.md', 'docs/**');
+			prSplit.matchGlobPattern('cmd/osm/main.go', '*.go');
+		`)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T120-T131: Phase 8 Scope Expansion Feature Tests
+// ---------------------------------------------------------------------------
+
+// TestScopeExpansion_NewExportsExist verifies all Phase 8 exports are wired.
+func TestScopeExpansion_NewExportsExist(t *testing.T) {
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	exports := []string{
+		"renderColorizedDiff",
+		"getSplitDiff",
+		"recordConversation",
+		"getConversationHistory",
+		"partitionFiles",
+		"mergeClassifications",
+		"applyClassificationRules",
+		"matchGlobPattern",
+		"parseConfigRules",
+		"buildDependencyGraph",
+		"renderAsciiGraph",
+		"recordTelemetry",
+		"getTelemetrySummary",
+		"saveTelemetry",
+		"loadStrategyPlugin",
+		"analyzeRetrospective",
+	}
+	for _, name := range exports {
+		val, err := evalJS("typeof prSplit." + name)
+		if err != nil {
+			t.Errorf("Failed to check export %s: %v", name, err)
+			continue
+		}
+		if val != "function" {
+			t.Errorf("Expected prSplit.%s to be a function, got %v", name, val)
+		}
+	}
+}
+
+// TestPartitionFiles verifies file partitioning.
+func TestPartitionFiles(t *testing.T) {
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(prSplit.partitionFiles(['a','b','c','d','e'], 3))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := val.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T", val)
+	}
+	var chunks [][]string
+	if err := json.Unmarshal([]byte(s), &chunks); err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) != 3 {
+		t.Errorf("expected 3 chunks, got %d", len(chunks))
+	}
+	total := 0
+	for _, c := range chunks {
+		total += len(c)
+	}
+	if total != 5 {
+		t.Errorf("expected 5 total files, got %d", total)
+	}
+}
+
+// TestMergeClassifications verifies classification merging with conflicts.
+func TestMergeClassifications(t *testing.T) {
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(prSplit.mergeClassifications([
+		{groups: [{name: 'api', files: ['a.go', 'b.go']}]},
+		{groups: [{name: 'db', files: ['c.go', 'b.go']}]}
+	]))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := val.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T", val)
+	}
+	var result struct {
+		Groups    []struct{ Name string; Files []string }
+		Conflicts []struct{ File, Group1, Group2 string }
+	}
+	if err := json.Unmarshal([]byte(s), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Conflicts) != 1 {
+		t.Errorf("expected 1 conflict (b.go), got %d", len(result.Conflicts))
+	}
+}
+
+// TestApplyClassificationRules verifies rule-based pre-classification.
+func TestApplyClassificationRules(t *testing.T) {
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(prSplit.applyClassificationRules(
+		['api/handler.go', 'api/handler_test.go', 'docs/README.md', 'cmd/main.go'],
+		[{name: 'tests', pattern: '**/*_test.go'}, {name: 'docs', pattern: 'docs/**'}]
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := val.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T", val)
+	}
+	var result struct {
+		Classified []struct{ Name string; Files []string }
+		Remaining  []string
+	}
+	if err := json.Unmarshal([]byte(s), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Classified) != 2 {
+		t.Errorf("expected 2 classified groups, got %d", len(result.Classified))
+	}
+	if len(result.Remaining) != 2 {
+		t.Errorf("expected 2 remaining files, got %d", len(result.Remaining))
+	}
+}
+
+// TestMatchGlobPattern verifies glob matching.
+func TestMatchGlobPattern(t *testing.T) {
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	tests := []struct {
+		path, pattern string
+		want          bool
+	}{
+		{"internal/cmd/main.go", "**/*.go", true},
+		{"docs/README.md", "docs/**", true},
+		{"api/handler_test.go", "**/*_test.go", true},
+		{"main.go", "**/*.go", true},
+		{"docs/README.md", "**/*.go", false},
+	}
+	for _, tt := range tests {
+		val, err := evalJS("prSplit.matchGlobPattern('" + tt.path + "', '" + tt.pattern + "')")
+		if err != nil {
+			t.Errorf("matchGlobPattern(%q, %q): %v", tt.path, tt.pattern, err)
+			continue
+		}
+		got, ok := val.(bool)
+		if !ok {
+			t.Errorf("matchGlobPattern(%q, %q): expected bool, got %T (%v)", tt.path, tt.pattern, val, val)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("matchGlobPattern(%q, %q) = %v, want %v", tt.path, tt.pattern, got, tt.want)
+		}
+	}
+}
+
+// TestBuildDependencyGraph verifies dependency graph construction.
+func TestBuildDependencyGraph(t *testing.T) {
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(prSplit.buildDependencyGraph({
+		splits: [
+			{name: 'api', files: ['api/handler.go']},
+			{name: 'db', files: ['db/store.go']},
+			{name: 'api-tests', files: ['api/handler_test.go']}
+		]
+	}, null))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := val.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T", val)
+	}
+	var graph struct {
+		Nodes []struct{ Name string; Index int }
+		Edges []struct{ From, To int }
+	}
+	if err := json.Unmarshal([]byte(s), &graph); err != nil {
+		t.Fatal(err)
+	}
+	if len(graph.Nodes) != 3 {
+		t.Errorf("expected 3 nodes, got %d", len(graph.Nodes))
+	}
+	if len(graph.Edges) < 1 {
+		t.Errorf("expected at least 1 edge (api↔api-tests dependency), got %d", len(graph.Edges))
+	}
+}
+
+// TestRenderAsciiGraph verifies graph rendering.
+func TestRenderAsciiGraph(t *testing.T) {
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`prSplit.renderAsciiGraph({
+		nodes: [{name: 'split-1', index: 0}, {name: 'split-2', index: 1}],
+		edges: [{from: 0, to: 1}]
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := val.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T", val)
+	}
+	if !strings.Contains(s, "Dependency Graph") {
+		t.Error("expected graph header")
+	}
+	if !strings.Contains(s, "split-1") || !strings.Contains(s, "split-2") {
+		t.Error("expected both split names in output")
+	}
+}
+
+// TestAnalyzeRetrospective verifies retrospective analysis.
+func TestAnalyzeRetrospective(t *testing.T) {
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(prSplit.analyzeRetrospective({
+		splits: [
+			{name: 'api', files: ['a.go', 'b.go']},
+			{name: 'db', files: ['c.go', 'd.go', 'e.go', 'f.go', 'g.go', 'h.go', 'i.go', 'j.go', 'k.go', 'l.go',
+				'm.go', 'n.go', 'o.go', 'p.go', 'q.go', 'r.go', 's.go', 't.go', 'u.go', 'v.go', 'w.go']}
+		]
+	}, null, null))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := val.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T", val)
+	}
+	var result struct {
+		Score    int
+		Insights []struct{ Type, Message string }
+		Stats    struct{ TotalFiles, SplitCount int }
+	}
+	if err := json.Unmarshal([]byte(s), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Stats.TotalFiles != 23 {
+		t.Errorf("expected 23 total files, got %d", result.Stats.TotalFiles)
+	}
+	if result.Stats.SplitCount != 2 {
+		t.Errorf("expected 2 splits, got %d", result.Stats.SplitCount)
+	}
+	hasWarning := false
+	for _, ins := range result.Insights {
+		if ins.Type == "warning" {
+			hasWarning = true
+		}
+	}
+	if !hasWarning {
+		t.Error("expected imbalance warning")
+	}
+}
+
+// TestConversationHistory verifies recording and retrieval.
+func TestConversationHistory(t *testing.T) {
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	_, err := evalJS(`prSplit.recordConversation('test-action', 'test prompt', 'test response')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	val, err := evalJS(`JSON.stringify(prSplit.getConversationHistory())`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := val.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T", val)
+	}
+	var history []struct {
+		Action, Prompt, Response string
+	}
+	if err := json.Unmarshal([]byte(s), &history); err != nil {
+		t.Fatal(err)
+	}
+	if len(history) < 1 {
+		t.Error("expected at least 1 conversation entry")
+	}
+}
+
+// TestTelemetry verifies telemetry recording.
+func TestTelemetry(t *testing.T) {
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	_, err := evalJS(`prSplit.recordTelemetry('filesAnalyzed', 42)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	val, err := evalJS(`JSON.stringify(prSplit.getTelemetrySummary())`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := val.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T", val)
+	}
+	var telem struct {
+		FilesAnalyzed int
+		StartTime     string
+	}
+	if err := json.Unmarshal([]byte(s), &telem); err != nil {
+		t.Fatal(err)
+	}
+	if telem.FilesAnalyzed < 42 {
+		t.Errorf("expected filesAnalyzed >= 42, got %d", telem.FilesAnalyzed)
+	}
+	if telem.StartTime == "" {
+		t.Error("expected non-empty startTime")
+	}
+}
+
+// TestAutoMergeOptions verifies createPRs accepts auto-merge options.
+func TestAutoMergeOptions(t *testing.T) {
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`prSplit.runtime.autoMerge`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != false {
+		t.Errorf("expected autoMerge default false, got %v", val)
+	}
+	val, err = evalJS(`prSplit.runtime.mergeMethod`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != "squash" {
+		t.Errorf("expected mergeMethod default 'squash', got %v", val)
 	}
 }

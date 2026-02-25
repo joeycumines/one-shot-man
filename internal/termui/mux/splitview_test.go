@@ -110,6 +110,11 @@ func TestSplitView_SetClaudeStatus(t *testing.T) {
 	if sv.claudeStatus != "thinking" {
 		t.Errorf("claudeStatus = %q, want thinking", sv.claudeStatus)
 	}
+	// Verify the status appears in the rendered separator bar.
+	sep := sv.renderSeparator(80)
+	if !strings.Contains(sep, "thinking") {
+		t.Errorf("separator should contain status 'thinking', got: %s", sep)
+	}
 }
 
 func TestSplitView_SetSplitRatio(t *testing.T) {

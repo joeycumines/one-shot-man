@@ -220,68 +220,49 @@ func NewAutoSplitModel(opts ...AutoSplitOption) *AutoSplitModel {
 
 // --- Public API (goroutine-safe, deliver via tea.Program.Send) ---
 
-// SendStepStart notifies the TUI that a pipeline step has started.
-// Safe for concurrent use from any goroutine.
-func (m *AutoSplitModel) SendStepStart(name string) {
+// send delivers a message to the running BubbleTea program.
+// Safe for concurrent use; no-op if the program has not started.
+func (m *AutoSplitModel) send(msg tea.Msg) {
 	m.mu.Lock()
 	p := m.program
 	m.mu.Unlock()
 	if p != nil {
-		p.Send(AutoSplitStepStartMsg{Name: name})
+		p.Send(msg)
 	}
+}
+
+// SendStepStart notifies the TUI that a pipeline step has started.
+// Safe for concurrent use from any goroutine.
+func (m *AutoSplitModel) SendStepStart(name string) {
+	m.send(AutoSplitStepStartMsg{Name: name})
 }
 
 // SendStepDone notifies the TUI that a pipeline step has finished.
 // Pass an empty errMsg for success.
 func (m *AutoSplitModel) SendStepDone(name, errMsg string, elapsed time.Duration) {
-	m.mu.Lock()
-	p := m.program
-	m.mu.Unlock()
-	if p != nil {
-		p.Send(AutoSplitStepDoneMsg{Name: name, Err: errMsg, Elapsed: elapsed})
-	}
+	m.send(AutoSplitStepDoneMsg{Name: name, Err: errMsg, Elapsed: elapsed})
 }
 
 // SendOutput appends text to the live output pane.
 func (m *AutoSplitModel) SendOutput(text string) {
-	m.mu.Lock()
-	p := m.program
-	m.mu.Unlock()
-	if p != nil {
-		p.Send(AutoSplitOutputMsg{Text: text})
-	}
+	m.send(AutoSplitOutputMsg{Text: text})
 }
 
 // SendError appends an error line to the output pane.
 func (m *AutoSplitModel) SendError(text string) {
-	m.mu.Lock()
-	p := m.program
-	m.mu.Unlock()
-	if p != nil {
-		p.Send(AutoSplitErrorMsg{Text: text})
-	}
+	m.send(AutoSplitErrorMsg{Text: text})
 }
 
 // SendDone signals that the pipeline is complete.
 func (m *AutoSplitModel) SendDone(summary string) {
-	m.mu.Lock()
-	p := m.program
-	m.mu.Unlock()
-	if p != nil {
-		p.Send(AutoSplitDoneMsg{Summary: summary})
-	}
+	m.send(AutoSplitDoneMsg{Summary: summary})
 }
 
 // SendStepDetail updates the sub-step progress detail for a running
 // step (e.g. "Classifying 15/42 files..."). The detail is displayed
 // inline after the step name in the progress view.
 func (m *AutoSplitModel) SendStepDetail(name, detail string) {
-	m.mu.Lock()
-	p := m.program
-	m.mu.Unlock()
-	if p != nil {
-		p.Send(AutoSplitStepDetailMsg{Name: name, Detail: detail})
-	}
+	m.send(AutoSplitStepDetailMsg{Name: name, Detail: detail})
 }
 
 // Cancelled returns true if the user has pressed q/Ctrl+C to cancel
@@ -298,11 +279,8 @@ func (m *AutoSplitModel) Cancelled() bool {
 func (m *AutoSplitModel) Quit() {
 	m.mu.Lock()
 	m.cancelled = true
-	p := m.program
 	m.mu.Unlock()
-	if p != nil {
-		p.Send(tea.Quit())
-	}
+	m.send(tea.Quit())
 }
 
 // Run starts the BubbleTea program (alt-screen) and blocks until quit.

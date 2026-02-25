@@ -5125,7 +5125,10 @@ func TestMergeClassifications(t *testing.T) {
 		t.Fatalf("expected string, got %T", val)
 	}
 	var result struct {
-		Groups    []struct{ Name string; Files []string }
+		Groups []struct {
+			Name  string
+			Files []string
+		}
 		Conflicts []struct{ File, Group1, Group2 string }
 	}
 	if err := json.Unmarshal([]byte(s), &result); err != nil {
@@ -5152,8 +5155,11 @@ func TestApplyClassificationRules(t *testing.T) {
 		t.Fatalf("expected string, got %T", val)
 	}
 	var result struct {
-		Classified []struct{ Name string; Files []string }
-		Remaining  []string
+		Classified []struct {
+			Name  string
+			Files []string
+		}
+		Remaining []string
 	}
 	if err := json.Unmarshal([]byte(s), &result); err != nil {
 		t.Fatal(err)
@@ -5216,7 +5222,10 @@ func TestBuildDependencyGraph(t *testing.T) {
 		t.Fatalf("expected string, got %T", val)
 	}
 	var graph struct {
-		Nodes []struct{ Name string; Index int }
+		Nodes []struct {
+			Name  string
+			Index int
+		}
 		Edges []struct{ From, To int }
 	}
 	if err := json.Unmarshal([]byte(s), &graph); err != nil {

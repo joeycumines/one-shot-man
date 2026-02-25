@@ -20,7 +20,7 @@
     "No stopping — scope must expand towards True Perfection indefinitely"
   ],
   "statusSection": {
-    "currentState": "T001-T013, T015-T033, T035-T060 Done. Commits: ..., f041474, pending. T034 deferred.",
+    "currentState": "T001-T013, T015-T033, T034-T060 ALL Done. Commits: ..., 913c181, pending. ZERO tasks remaining.",
     "goalState": "osm pr-split is production-quality: auto-split TUI is responsive with cancellation support, Claude TUI muxing works during operations, integration tests use real AI via TestMain flags and project.mk targets, all TUI commands are verified non-vaporware, no AI slop remains",
     "replanLog": [
       "2026-02-25 Replan: User reports auto-split TUI still hangs after q. Root cause: q sends tea.Quit immediately, exiting alt-screen while JS pipeline still runs. Go-prompt prompt is visible but command handler hasn't returned. Fix: don't exit BubbleTea on first q — set cancelled flag only. Pipeline detects cancellation and calls finishTUI which triggers actual quit. Also need intra-step cancellation and richer poll feedback."
@@ -366,8 +366,8 @@
       "task": "T034: Add tests for createPRs mock execution flow",
       "description": "Add test that mocks gh CLI (via exec override) and verifies createPRs: (1) Checks gh is available. (2) Pushes branches to remote. (3) Creates stacked PRs with correct base targeting. (4) Handles --draft and --push-only flags. (5) Handles errors from gh gracefully.",
       "acceptance": "Tests verify PR creation workflow end-to-end with mocked gh. Error paths tested. All pass.",
-      "status": "Not Started",
-      "context": { "files": ["internal/command/pr_split_test.go", "internal/command/pr_split_script.js"] }
+      "status": "Done",
+      "context": { "files": ["internal/command/pr_split_createprs_test.go", "internal/command/pr_split_script.js"] }
     },
     {
       "task": "T035: Run full test suite and fix regressions",

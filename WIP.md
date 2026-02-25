@@ -2,8 +2,8 @@
 
 ## Session State
 - **All checks pass**: build ✅ lint ✅ test ✅
-- **Blueprint**: T001-T013, T015-T033, T035-T058 Done. All committed.
-- **Commits**: f349929, d03e944, 505a57a, 5424f5b, 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, 1f13b77, b996d07, 18ced3a, 5f2666e, 640e790, f9b87db, c20c816, f041474, **pending**
+- **Blueprint**: T001-T013, T015-T033, T034-T060 ALL Done. Zero deferred.
+- **Commits**: f349929, d03e944, 505a57a, 5424f5b, 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, 1f13b77, b996d07, 18ced3a, 5f2666e, 640e790, f9b87db, c20c816, f041474, 913c181, **pending**
 
 ## Commit Log
 1. `f349929` — Add cancellation, toggle, and scroll to auto-split TUI (507 ins, 17 del, 4 files)
@@ -31,11 +31,15 @@
 18. `c20c816` — Add cross-package edge-case tests (gitops, argv, storage)
 
 19. `f041474` — Add config parsing unit tests (parseBool, parseHotSnippetLine, parseSessionOption, parseClaudeMuxOption)
-20. `pending` — Add parsing edge-case tests (stripBOM, unquoteYAMLString, parseInlineYAMLList, parseSimpleYAML, validateGoal)
+20. `913c181` — Add parsing edge-case tests (stripBOM, unquoteYAMLString, parseInlineYAMLList, parseSimpleYAML, validateGoal)
+21. `pending` — Add createPRs mock execution flow tests (T034)
 
-## Current Work — Scope Expansion Cycle 14
-Committing T057-T058. 25 new config parsing tests.
-After commit: continue exploring for more improvements.
+## Current Work — T034 COMPLETE
+All 60 tasks Done. Zero deferred. createPRs function fully tested with 16 test cases covering:
+- Empty/nil splits, gh CLI not found, push-only mode, normal stacked PR flow
+- Non-draft mode, custom remote, push failure, gh pr create failure (continues)
+- Auto-merge (default squash, custom method, skips failed PRs, merge failure)
+- Single split, options defaults, force push flag
 
 ### What Changed (T043-T044)
 - **T043**: Extracted shared layout arithmetic from View() and outputPaneHeight() into computeLayout() returning autoSplitLayout struct. 4 unit tests: Default, ManySteps, TinyTerminal, ConsistentWithOutputPaneHeight.

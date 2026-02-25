@@ -299,50 +299,110 @@ func TestSplitView_SeparatorShowsActivePane(t *testing.T) {
 	}
 }
 
-func TestRenderPane_Empty(t *testing.T) {
+// --- Direct unit tests for renderPane and appendCapped ---
+
+func TestRenderPane_EmptyLines(t *testing.T) {
 	t.Parallel()
-	result := renderPane(nil, 5, 40)
-	if !strings.Contains(result, "\n") {
-		t.Error("empty pane should have newlines for padding")
+	// Empty lines with height=3 → should return 2 newlines (height-1 padding).
+	result := renderPane(nil, 3, 80)
+	if result != "\n\n" {
+		t.Errorf("renderPane(nil, 3, 80) = %q, want %q", result, "\n\n")
+	}
+}
+
+func TestRenderPane_SingleLine(t *testing.T) {
+	t.Parallel()
+	// One line, height=1 → just the line, no newlines.
+	result := renderPane([]string{"hello"}, 1, 80)
+	if result != "hello" {
+		t.Errorf("renderPane 1 line, height 1 = %q, want %q", result, "hello")
+	}
+}
+
+func TestRenderPane_FewerLinesThanHeight(t *testing.T) {
+	t.Parallel()
+	// 2 lines but height=5 → the 2 lines joined with newline, then 3 padding newlines.
+	result := renderPane([]string{"A", "B"}, 5, 80)
+	// Expected: "A\nB" + "\n\n\n" = "A\nB\n\n\n"
+	expected := "A\nB\n\n\n"
+	if result != expected {
+		t.Errorf("renderPane(2 lines, height 5) = %q, want %q", result, expected)
+	}
+}
+
+func TestRenderPane_MoreLinesThanHeight(t *testing.T) {
+	t.Parallel()
+	// 5 lines, height=2 → should show only last 2.
+	lines := []string{"A", "B", "C", "D", "E"}
+	result := renderPane(lines, 2, 80)
+	expected := "D\nE"
+	if result != expected {
+		t.Errorf("renderPane(5 lines, height 2) = %q, want %q", result, expected)
 	}
 }
 
 func TestRenderPane_TruncatesWidth(t *testing.T) {
 	t.Parallel()
-	lines := []string{"abcdefghij"} // 10 chars
-	result := renderPane(lines, 3, 5)
-	// First line should be truncated to 5 chars.
-	first := strings.Split(result, "\n")[0]
-	if len(first) > 5 {
-		t.Errorf("first line length = %d, want <= 5", len(first))
+	lines := []string{"hello world this is long"}
+	result := renderPane(lines, 1, 5)
+	if result != "hello" {
+		t.Errorf("renderPane truncate = %q, want %q", result, "hello")
 	}
 }
 
-func TestRenderPane_ShowsLastLines(t *testing.T) {
+func TestRenderPane_ZeroWidth(t *testing.T) {
 	t.Parallel()
-	lines := []string{"a", "b", "c", "d", "e"}
-	result := renderPane(lines, 3, 40)
-	// Should show last 3 lines: c, d, e
-	if !strings.Contains(result, "c") {
-		t.Error("should contain 'c'")
-	}
-	if !strings.Contains(result, "e") {
-		t.Error("should contain 'e'")
-	}
-	// Should NOT contain 'a' (scrolled out)
-	if strings.Contains(result, "a") {
-		t.Error("should NOT contain 'a' (scrolled out)")
+	// Width=0: lines shorter than 0 never truncate (len("x") > 0 → true),
+	// but line[:0] = "". Should not panic.
+	lines := []string{"abc"}
+	result := renderPane(lines, 1, 0)
+	if result != "" {
+		t.Errorf("renderPane width=0 = %q, want empty", result)
 	}
 }
 
-func TestAppendCapped(t *testing.T) {
+func TestRenderPane_EmptyStringLines(t *testing.T) {
 	t.Parallel()
-	lines := appendCapped(nil, []string{"a", "b", "c"}, 2)
-	if len(lines) != 2 {
-		t.Errorf("len = %d, want 2", len(lines))
+	lines := []string{"", "content", ""}
+	result := renderPane(lines, 3, 80)
+	expected := "\ncontent\n"
+	if result != expected {
+		t.Errorf("renderPane with empty strings = %q, want %q", result, expected)
 	}
-	if lines[0] != "b" || lines[1] != "c" {
-		t.Errorf("lines = %v, want [b, c]", lines)
+}
+
+func TestAppendCapped_UnderCap(t *testing.T) {
+	t.Parallel()
+	result := appendCapped([]string{"a"}, []string{"b"}, 10)
+	if len(result) != 2 || result[0] != "a" || result[1] != "b" {
+		t.Errorf("appendCapped under cap = %v, want [a b]", result)
+	}
+}
+
+func TestAppendCapped_OverCap(t *testing.T) {
+	t.Parallel()
+	existing := []string{"a", "b", "c"}
+	result := appendCapped(existing, []string{"d", "e"}, 3)
+	// Total 5, capped to 3 → [c, d, e]
+	if len(result) != 3 || result[0] != "c" || result[1] != "d" || result[2] != "e" {
+		t.Errorf("appendCapped over cap = %v, want [c d e]", result)
+	}
+}
+
+func TestAppendCapped_ExactlyCap(t *testing.T) {
+	t.Parallel()
+	result := appendCapped([]string{"a", "b"}, []string{"c"}, 3)
+	if len(result) != 3 {
+		t.Errorf("appendCapped at cap = %v, want 3 items", result)
+	}
+}
+
+func TestAppendCapped_NewLinesLargerThanMax(t *testing.T) {
+	t.Parallel()
+	// Append more new lines than max — should keep only last max.
+	result := appendCapped(nil, []string{"a", "b", "c", "d", "e"}, 2)
+	if len(result) != 2 || result[0] != "d" || result[1] != "e" {
+		t.Errorf("appendCapped newLines > max = %v, want [d e]", result)
 	}
 }
 

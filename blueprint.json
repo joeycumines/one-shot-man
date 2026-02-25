@@ -410,6 +410,20 @@
       "acceptance": "make passes. Two PASS verdicts. Clean commit.",
       "status": "Done",
       "context": { "files": ["Makefile"] }
+    },
+    {
+      "task": "T041: Add renderPane and appendCapped unit tests",
+      "description": "Replace weak existing tests with thorough edge case coverage: empty, single line, fewer/more lines than height, width truncation, zero width, empty strings, capping under/over/exact/large.",
+      "acceptance": "11 tests pass. Old duplicate tests removed.",
+      "status": "Done",
+      "context": { "files": ["internal/termui/mux/splitview_test.go"] }
+    },
+    {
+      "task": "T042: Run full suite, Rule of Two, and commit T041",
+      "description": "Run 'make', Rule of Two, and commit T041.",
+      "acceptance": "make passes. Two PASS verdicts. Clean commit.",
+      "status": "Done",
+      "context": { "files": ["Makefile"] }
     }
   ],
   "continuousVerification": {

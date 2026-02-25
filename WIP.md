@@ -3,7 +3,7 @@
 ## Session State
 - **All checks pass**: build ✅ lint ✅ test ✅
 - **Blueprint**: T001-T013, T015-T033, T035-T058 Done. All committed.
-- **Commits**: f349929, d03e944, 505a57a, 5424f5b, 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, 1f13b77, b996d07, 18ced3a, 5f2666e, 640e790, f9b87db, c20c816, **pending**
+- **Commits**: f349929, d03e944, 505a57a, 5424f5b, 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, 1f13b77, b996d07, 18ced3a, 5f2666e, 640e790, f9b87db, c20c816, f041474, **pending**
 
 ## Commit Log
 1. `f349929` — Add cancellation, toggle, and scroll to auto-split TUI (507 ins, 17 del, 4 files)
@@ -30,7 +30,8 @@
 
 18. `c20c816` — Add cross-package edge-case tests (gitops, argv, storage)
 
-19. `pending` — Add config parsing unit tests (parseBool, parseHotSnippetLine, parseSessionOption, parseClaudeMuxOption)
+19. `f041474` — Add config parsing unit tests (parseBool, parseHotSnippetLine, parseSessionOption, parseClaudeMuxOption)
+20. `pending` — Add parsing edge-case tests (stripBOM, unquoteYAMLString, parseInlineYAMLList, parseSimpleYAML, validateGoal)
 
 ## Current Work — Scope Expansion Cycle 14
 Committing T057-T058. 25 new config parsing tests.

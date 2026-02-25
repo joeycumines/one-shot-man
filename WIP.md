@@ -34,10 +34,11 @@
 20. `913c181` — Add parsing edge-case tests (stripBOM, unquoteYAMLString, parseInlineYAMLList, parseSimpleYAML, validateGoal)
 21. `01d35f7` — Add createPRs mock execution flow tests (T034)
 22. `1a8de19` — Add grouping strategy and helper function tests
-23. `pending` — Add verification and analysis function direct tests
+23. `4c446a2` — Add verification and analysis function direct tests
+24. `pending` — Add pipeline function tests (validatePlan, resolveConflicts, pollForFile, ClaudeCodeExecutor.resolve, shellQuote)
 
-## Current Work — Scope Expansion Cycle 17
-All original 60 tasks Done. Continuing with pure-function grouping + helper tests.
+## Current Work — Scope Expansion Cycle 18
+All original 60 tasks Done. Continuing with pipeline function tests.
 New test file: pr_split_grouping_test.go covering dirname, fileExtension, sanitizeBranchName,
 padIndex, groupByDirectory, groupByExtension, groupByPattern, groupByChunks, analyzeDiffStats.
 

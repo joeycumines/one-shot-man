@@ -2,8 +2,8 @@
 
 ## Session State
 - **All checks pass**: build ✅ lint ✅ test ✅
-- **Blueprint**: T001-T013, T015-T033, T035-T038 Done. All committed.
-- **Commits**: f349929, d03e944, 505a57a, 5424f5b, 6f9aafd, 80ab683, 8e54415, f4b7325, **PENDING**
+- **Blueprint**: T001-T013, T015-T033, T035-T040 Done. All committed.
+- **Commits**: f349929, d03e944, 505a57a, 5424f5b, 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, **PENDING**
 
 ## Commit Log
 1. `f349929` — Add cancellation, toggle, and scroll to auto-split TUI (507 ins, 17 del, 4 files)
@@ -15,8 +15,8 @@
 7. `8e54415` — Add timer, step counter, timeout flag, and Enter dismiss (206 ins, 20 del, 6 files)
 8. `f4b7325` — Add flag validation, import parser tests, and changelog entries (396 ins, 6 del, 5 files)
 
-## Current Work — Scope Expansion Cycle 4
-Committing T037-T038. View() edge case tests.
+## Current Work — Scope Expansion Cycle 5
+Committing T039-T040. Help bar, fast-exit, and cancelled-done path tests.
 
 ### What Changed (T031-T033)
 - **T031**: CHANGELOG entries for commits f349929-8e54415

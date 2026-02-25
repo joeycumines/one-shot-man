@@ -396,6 +396,20 @@
       "acceptance": "make passes. Two PASS verdicts. Clean commit.",
       "status": "Done",
       "context": { "files": ["Makefile"] }
+    },
+    {
+      "task": "T039: Add help bar, fast-exit, and cancelled-done path tests",
+      "description": "Test DoneMsg-when-cancelled fast exit, help bar content in done/running states.",
+      "acceptance": "All 3 tests pass. Coverage of previously untested code paths.",
+      "status": "Done",
+      "context": { "files": ["internal/termui/mux/autosplit_test.go"] }
+    },
+    {
+      "task": "T040: Run full suite, Rule of Two, and commit T039",
+      "description": "Run 'make', Rule of Two, and commit T039.",
+      "acceptance": "make passes. Two PASS verdicts. Clean commit.",
+      "status": "Done",
+      "context": { "files": ["Makefile"] }
     }
   ],
   "continuousVerification": {

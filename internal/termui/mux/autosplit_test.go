@@ -1147,3 +1147,62 @@ func TestAutoSplitModel_View_CancelledWhileRunning(t *testing.T) {
 		t.Errorf("cancelled-while-running view should NOT contain 'Complete', got:\n%s", view)
 	}
 }
+
+func TestAutoSplitModel_DoneMsg_WhenAlreadyCancelled(t *testing.T) {
+	// When the pipeline completes while the user has already pressed
+	// cancel, the DoneMsg handler should set quitting=true and return
+	// tea.Quit so the TUI exits immediately.
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitStepStartMsg{Name: "Build"})
+
+	// Cancel first.
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if !m.Cancelled() {
+		t.Fatal("should be cancelled")
+	}
+
+	// Pipeline finishes.
+	_, cmd := m.Update(AutoSplitDoneMsg{Summary: "cancelled"})
+	if !m.done {
+		t.Error("done should be true")
+	}
+	if !m.quitting {
+		t.Error("quitting should be true when DoneMsg arrives while cancelled")
+	}
+	if cmd == nil {
+		t.Fatal("should return tea.Quit command")
+	}
+}
+
+func TestAutoSplitModel_View_HelpBar_DoneState(t *testing.T) {
+	// When the pipeline is done, the help bar should show dismiss keys.
+	m := NewAutoSplitModel()
+	m.width = 80
+	m.height = 24
+	m.Update(AutoSplitDoneMsg{Summary: "all done"})
+
+	view := m.View()
+	if !strings.Contains(view, "dismiss") {
+		t.Errorf("done help bar should contain 'dismiss', got:\n%s", view)
+	}
+	if !strings.Contains(view, "enter") {
+		t.Errorf("done help bar should contain 'enter', got:\n%s", view)
+	}
+}
+
+func TestAutoSplitModel_View_HelpBar_RunningState(t *testing.T) {
+	// While the pipeline is running, the help bar should show all key
+	// bindings: cancel, claude toggle, scroll, jump.
+	m := NewAutoSplitModel()
+	m.width = 120 // wide enough to fit all help text
+	m.height = 24
+	m.Update(AutoSplitStepStartMsg{Name: "Build"})
+
+	view := m.View()
+	expected := []string{"cancel", "claude", "scroll", "jump"}
+	for _, word := range expected {
+		if !strings.Contains(view, word) {
+			t.Errorf("running help bar should contain %q, got:\n%s", word, view)
+		}
+	}
+}

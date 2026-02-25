@@ -144,8 +144,8 @@ func parseCreatePRsResult(t *testing.T, raw interface{}) createPRsResult {
 }
 
 type createPRsResult struct {
-	Error   *string           `json:"error"`
-	Results []createPREntry   `json:"results"`
+	Error   *string         `json:"error"`
+	Results []createPREntry `json:"results"`
 }
 
 type createPREntry struct {

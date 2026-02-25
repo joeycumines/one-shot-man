@@ -132,9 +132,9 @@ func TestDetectGoModulePath(t *testing.T) {
 	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
-		name   string
-		setup  string
-		want   string
+		name  string
+		setup string
+		want  string
 	}{
 		{
 			name: "reads module path from go.mod",
@@ -269,7 +269,7 @@ func TestClassificationToGroups(t *testing.T) {
 			},
 		},
 		{
-			name: "empty classification",
+			name:   "empty classification",
 			invoke: `JSON.stringify(globalThis.prSplit.classificationToGroups({}))`,
 			check: func(t *testing.T, r classGroupResult) {
 				if len(r) != 0 {
@@ -617,8 +617,8 @@ func TestAssessIndependence(t *testing.T) {
 		check  func(t *testing.T, pairs []independencePair)
 	}{
 		{
-			name:  "nil plan returns empty",
-			setup: ``,
+			name:   "nil plan returns empty",
+			setup:  ``,
 			invoke: `JSON.stringify(globalThis.prSplit.assessIndependence(null, {}))`,
 			check: func(t *testing.T, pairs []independencePair) {
 				if len(pairs) != 0 {
@@ -678,7 +678,7 @@ func TestAssessIndependence(t *testing.T) {
 			},
 		},
 		{
-			name: "dependent splits share directory",
+			name:  "dependent splits share directory",
 			setup: ``,
 			invoke: `JSON.stringify(globalThis.prSplit.assessIndependence({
 				splits: [
@@ -733,7 +733,7 @@ func TestAssessIndependence(t *testing.T) {
 			},
 		},
 		{
-			name: "non-Go files — directory-only independence",
+			name:  "non-Go files — directory-only independence",
 			setup: ``,
 			invoke: `JSON.stringify(globalThis.prSplit.assessIndependence({
 				splits: [

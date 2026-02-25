@@ -1192,13 +1192,13 @@ func TestLoadPlan(t *testing.T) {
 					t.Fatalf("expected string, got %T", raw)
 				}
 				var wrapper struct {
-					LoadResult   loadPlanResult `json:"loadResult"`
-					BaseBranch   string         `json:"baseBranch"`
-					Strategy     string         `json:"strategy"`
-					MaxFiles     int            `json:"maxFiles"`
-					BranchPrefix string         `json:"branchPrefix"`
-					VerifyCommand string        `json:"verifyCommand"`
-					DryRun       bool           `json:"dryRun"`
+					LoadResult    loadPlanResult `json:"loadResult"`
+					BaseBranch    string         `json:"baseBranch"`
+					Strategy      string         `json:"strategy"`
+					MaxFiles      int            `json:"maxFiles"`
+					BranchPrefix  string         `json:"branchPrefix"`
+					VerifyCommand string         `json:"verifyCommand"`
+					DryRun        bool           `json:"dryRun"`
 				}
 				if err := json.Unmarshal([]byte(s), &wrapper); err != nil {
 					t.Fatalf("failed to parse wrapper: %v", err)

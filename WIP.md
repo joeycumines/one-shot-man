@@ -37,10 +37,11 @@
 23. `4c446a2` — Add verification and analysis function direct tests
 24. `260bf0c` — Add pipeline function tests (validatePlan, resolveConflicts, pollForFile, ClaudeCodeExecutor.resolve, shellQuote)
 25. `736cfa2` — Add planning and dependency analysis function tests (parseGoImports, groupByDependency, selectStrategy, createSplitPlan, savePlan, loadPlan)
-26. `pending` — Add analysis and classification function tests (detectLanguage, detectGoModulePath, classificationToGroups, analyzeDiff, assessIndependence)
+26. `fee2e2b` — Add analysis and classification function tests (detectLanguage, detectGoModulePath, classificationToGroups, analyzeDiff, assessIndependence)
+27. `pending` — Add execution and verification function tests (executeSplit, verifySplit, verifyEquivalence, verifyEquivalenceDetailed, cleanupBranches)
 
-## Current Work — Scope Expansion Cycle 20
-All original 60 tasks Done. T061-T065 completed. Exploring next test gaps.
+## Current Work — Scope Expansion Cycle 21
+All original 60 tasks Done. T061-T066 completed. Exploring next test gaps.
 
 ### What Changed (T043-T044)
 - **T043**: Extracted shared layout arithmetic from View() and outputPaneHeight() into computeLayout() returning autoSplitLayout struct. 4 unit tests: Default, ManySteps, TinyTerminal, ConsistentWithOutputPaneHeight.

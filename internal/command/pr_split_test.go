@@ -2779,7 +2779,7 @@ func TestPrSplitCommand_ParseGoImports(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
-		want    int // expected number of imports
+		want    int    // expected number of imports
 		check   string // optional: specific import to verify presence
 	}{
 		{
@@ -2848,7 +2848,7 @@ func TestPrSplitCommand_ParseGoImports(t *testing.T) {
 			name:    "triple-path module import",
 			content: "package main\nimport \"github.com/user/repo/pkg\"",
 			want:    1,
-			check: "github.com/user/repo/pkg",
+			check:   "github.com/user/repo/pkg",
 		},
 	}
 
@@ -6353,7 +6353,7 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
 		ConfigOverrides: map[string]interface{}{
-			"branchPrefix": "split/",
+			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
 		},
@@ -6370,14 +6370,14 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 
 	// Pre-write classification.json — Claude's classification of changed files.
 	classification := map[string]string{
-		"pkg/handler.go":      "api",
-		"pkg/types.go":        "api",
-		"cmd/serve.go":        "cli",
-		"cmd/main.go":         "cli",
+		"pkg/handler.go":         "api",
+		"pkg/types.go":           "api",
+		"cmd/serve.go":           "cli",
+		"cmd/main.go":            "cli",
 		"internal/db/migrate.go": "database",
 		"internal/db/conn.go":    "database",
-		"docs/README.md":      "documentation",
-		"docs/api.md":         "documentation",
+		"docs/README.md":         "documentation",
+		"docs/api.md":            "documentation",
 	}
 	classJSON, err := json.Marshal(classification)
 	if err != nil {

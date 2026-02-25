@@ -138,10 +138,10 @@ func parseVerifyEquivResult(t *testing.T, raw interface{}) verifyEquivResult {
 type executeSplitResult struct {
 	Error   *string `json:"error"`
 	Results []struct {
-		Name  string  `json:"name"`
+		Name  string   `json:"name"`
 		Files []string `json:"files"`
-		SHA   string  `json:"sha"`
-		Error *string `json:"error"`
+		SHA   string   `json:"sha"`
+		Error *string  `json:"error"`
 	} `json:"results"`
 }
 

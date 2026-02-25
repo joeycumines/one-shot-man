@@ -40,7 +40,7 @@ func parseValidatePlanResult(t *testing.T, raw interface{}) validatePlanResult {
 }
 
 type resolveConflictsResult struct {
-	Fixed        []struct {
+	Fixed []struct {
 		Name     string `json:"name"`
 		Strategy string `json:"strategy"`
 	} `json:"fixed"`
@@ -113,10 +113,10 @@ func TestValidatePlan(t *testing.T) {
 	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
-		name        string
-		planJS      string
-		wantValid   bool
-		wantErrors  []string // substrings expected in error messages
+		name       string
+		planJS     string
+		wantValid  bool
+		wantErrors []string // substrings expected in error messages
 	}{
 		{
 			name:       "null plan",
@@ -167,9 +167,9 @@ func TestValidatePlan(t *testing.T) {
 			wantErrors: nil,
 		},
 		{
-			name:   "multiple valid splits",
-			planJS: `{splits: [{name: "s1", files: ["a.go"]}, {name: "s2", files: ["b.go"]}]}`,
-			wantValid: true,
+			name:       "multiple valid splits",
+			planJS:     `{splits: [{name: "s1", files: ["a.go"]}, {name: "s2", files: ["b.go"]}]}`,
+			wantValid:  true,
 			wantErrors: nil,
 		},
 		{
@@ -472,11 +472,11 @@ func TestPollForFile(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	tests := []struct {
-		name     string
-		setup    func(t *testing.T)               // create files etc.
-		setupJS  string                            // JS setup code
-		invoke   string                            // JS expression; uses tmpDir injected
-		check    func(t *testing.T, r pollForFileResult)
+		name    string
+		setup   func(t *testing.T) // create files etc.
+		setupJS string             // JS setup code
+		invoke  string             // JS expression; uses tmpDir injected
+		check   func(t *testing.T, r pollForFileResult)
 	}{
 		{
 			name: "file found immediately",
@@ -504,8 +504,8 @@ func TestPollForFile(t *testing.T) {
 			},
 		},
 		{
-			name: "timeout when file never appears",
-			setup: func(t *testing.T) {}, // no file created
+			name:   "timeout when file never appears",
+			setup:  func(t *testing.T) {}, // no file created
 			invoke: `JSON.stringify(pollForFile(_tmpDir, 'never.json', 100, 20, ''))`,
 			check: func(t *testing.T, r pollForFileResult) {
 				if r.Error == nil {
@@ -534,7 +534,7 @@ func TestPollForFile(t *testing.T) {
 			},
 		},
 		{
-			name: "cancellation detected",
+			name:  "cancellation detected",
 			setup: func(t *testing.T) {}, // no file — polls until cancelled
 			setupJS: `
 				// Set up a mock autoSplitTUI with cancelled() returning true
@@ -637,10 +637,10 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 	// We mock 'which' via the '!sh' fallback and add logic keyed on argv.
 
 	tests := []struct {
-		name    string
-		setup   string
-		invoke  string
-		check   func(t *testing.T, r claudeResolveResult)
+		name      string
+		setup     string
+		invoke    string
+		check     func(t *testing.T, r claudeResolveResult)
 		postCheck string // optional secondary JS eval to check executor state
 	}{
 		{

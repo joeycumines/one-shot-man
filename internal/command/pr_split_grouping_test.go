@@ -37,9 +37,9 @@ func TestPrSplit_Dirname(t *testing.T) {
 	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
-		name  string
-		expr  string
-		want  string
+		name string
+		expr string
+		want string
 	}{
 		{"simple_path", `globalThis.prSplit._dirname('internal/command/foo.go')`, "internal"},
 		{"depth_2", `globalThis.prSplit._dirname('internal/command/foo.go', 2)`, "internal/command"},
@@ -47,7 +47,7 @@ func TestPrSplit_Dirname(t *testing.T) {
 		{"root_file", `globalThis.prSplit._dirname('main.go')`, "."},
 		{"depth_1_default", `globalThis.prSplit._dirname('a/b/c/d.go')`, "a"},
 		{"single_dir", `globalThis.prSplit._dirname('src/app.js')`, "src"},
-		{"deep_path_depth_0", `globalThis.prSplit._dirname('a/b/c/d.go', 0)`, "a"},  // 0 is falsy → defaults to 1
+		{"deep_path_depth_0", `globalThis.prSplit._dirname('a/b/c/d.go', 0)`, "a"}, // 0 is falsy → defaults to 1
 		{"empty_string", `globalThis.prSplit._dirname('')`, "."},
 	}
 
@@ -271,7 +271,7 @@ func TestPrSplit_GroupByExtension(t *testing.T) {
 			t.Fatal(err)
 		}
 		g := parseGroups(t, val)
-		if len(g["." + "go"]) != 2 {
+		if len(g["."+"go"]) != 2 {
 			t.Errorf("'.go' group should have 2, got %d", len(g[".go"]))
 		}
 		if len(g[".js"]) != 1 {

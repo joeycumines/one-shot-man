@@ -97,7 +97,7 @@ func TestUnquoteYAMLString(t *testing.T) {
 func TestParseInlineYAMLList(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name string
+		name  string
 		input string
 		want  []string
 	}{

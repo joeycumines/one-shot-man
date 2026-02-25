@@ -20,7 +20,7 @@
     "No stopping — scope must expand towards True Perfection indefinitely"
   ],
   "statusSection": {
-    "currentState": "T001-T013, T015-T033, T035-T056 Done. Commits: ..., f9b87db, pending. T034 deferred.",
+    "currentState": "T001-T013, T015-T033, T035-T058 Done. Commits: ..., c20c816, pending. T034 deferred.",
     "goalState": "osm pr-split is production-quality: auto-split TUI is responsive with cancellation support, Claude TUI muxing works during operations, integration tests use real AI via TestMain flags and project.mk targets, all TUI commands are verified non-vaporware, no AI slop remains",
     "replanLog": [
       "2026-02-25 Replan: User reports auto-split TUI still hangs after q. Root cause: q sends tea.Quit immediately, exiting alt-screen while JS pipeline still runs. Go-prompt prompt is visible but command handler hasn't returned. Fix: don't exit BubbleTea on first q — set cancelled flag only. Pipeline detects cancellation and calls finishTUI which triggers actual quit. Also need intra-step cancellation and richer poll feedback."
@@ -519,6 +519,20 @@
     {
       "task": "T056: Run full suite, Rule of Two, and commit T055",
       "description": "Run 'make', Rule of Two, and commit T055.",
+      "acceptance": "make passes. Two PASS verdicts. Clean commit.",
+      "status": "Done",
+      "context": { "files": ["Makefile"] }
+    },
+    {
+      "task": "T057: Add config parsing unit tests (parseBool, parseHotSnippetLine, parseSessionOption, parseClaudeMuxOption)",
+      "description": "25 test functions covering all branches of 4 previously untested internal config parsing functions. Includes truthy/falsy/invalid bools, snippet lifecycle, session option validation, and claude-mux option parsing.",
+      "acceptance": "All config tests pass with race detector. No production code changed.",
+      "status": "Done",
+      "context": { "files": ["internal/config/parsing_test.go"] }
+    },
+    {
+      "task": "T058: Run full suite, Rule of Two, and commit T057",
+      "description": "Run 'make', Rule of Two, and commit T057.",
       "acceptance": "make passes. Two PASS verdicts. Clean commit.",
       "status": "Done",
       "context": { "files": ["Makefile"] }

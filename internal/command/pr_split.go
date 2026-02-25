@@ -297,7 +297,20 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	// runAsync() starts the BubbleTea program in a background goroutine so
 	// JS can continue driving the pipeline synchronously while the TUI
 	// renders. wait() blocks until the TUI exits (user presses q / Ctrl+C).
-	autoSplitModel := mux.NewAutoSplitModel(mux.WithAutoSplitMaxLines(1000))
+	//
+	// The toggle key (Ctrl+]) switches to Claude's terminal mid-pipeline.
+	// The onToggle callback blocks (via tuiMux.RunPassthrough) until the
+	// user toggles back.
+	autoSplitModel := mux.NewAutoSplitModel(
+		mux.WithAutoSplitMaxLines(1000),
+		mux.WithAutoSplitToggleKey(mux.DefaultToggleKey),
+		mux.WithAutoSplitOnToggle(func() {
+			// Switch to Claude's terminal. This blocks until
+			// the user presses the toggle key again or the
+			// child process exits.
+			_, _ = tuiMux.RunPassthrough(ctx)
+		}),
+	)
 	var autoSplitErr error
 	var autoSplitDone chan struct{}
 	engine.SetGlobal("autoSplitTUI", map[string]interface{}{
@@ -328,6 +341,12 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		},
 		"done": func(summary string) {
 			autoSplitModel.SendDone(summary)
+		},
+		"cancelled": func() bool {
+			return autoSplitModel.Cancelled()
+		},
+		"quit": func() {
+			autoSplitModel.Quit()
 		},
 	})
 

@@ -37,6 +37,14 @@ try {
     osmod = null;
 }
 
+// Optional: time module for non-busy sleep.
+var timemod;
+try {
+    timemod = require('osm:time');
+} catch (e) {
+    timemod = null;
+}
+
 // Optional: lipgloss for styled terminal output.
 var lip;
 try {
@@ -2012,8 +2020,14 @@ function pollForFile(resultDir, filename, timeoutMs, intervalMs) {
     if (!osmod) {
         return { data: null, error: 'osm:os module not available for file polling' };
     }
+    var hasCancelCheck = typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
+                         typeof autoSplitTUI.cancelled === 'function';
     var elapsed = 0;
     while (elapsed < timeoutMs) {
+        // Check cancellation before each poll iteration.
+        if (hasCancelCheck && autoSplitTUI.cancelled()) {
+            return { data: null, error: 'cancelled by user' };
+        }
         var readResult = osmod.readFile(resultDir + '/' + filename);
         if (!readResult.error) {
             try {
@@ -2023,11 +2037,12 @@ function pollForFile(resultDir, filename, timeoutMs, intervalMs) {
                 return { data: null, error: 'failed to parse ' + filename + ': ' + e.message };
             }
         }
-        // Sleep by busy-waiting (Goja has no native sleep).
-        // The file doesn't exist yet; re-check after a short spin.
-        var start = Date.now();
-        while (Date.now() - start < intervalMs) {
-            // spin
+        // Sleep without burning CPU. Prefer osm:time.sleep (Go time.Sleep)
+        // but fall back to exec.execv(['sleep', ...]) if unavailable.
+        if (timemod && typeof timemod.sleep === 'function') {
+            timemod.sleep(intervalMs);
+        } else {
+            exec.execv(['sleep', String(intervalMs / 1000)]);
         }
         elapsed += intervalMs;
     }
@@ -2080,6 +2095,10 @@ function automatedSplit(config) {
     }
 
     function step(name, fn) {
+        // Check cancellation before each step — cooperative cancellation.
+        if (hasTUI && !config.disableTUI && typeof autoSplitTUI.cancelled === 'function' && autoSplitTUI.cancelled()) {
+            return { error: 'cancelled by user' };
+        }
         var t0 = Date.now();
         if (hasTUI && !config.disableTUI) {
             autoSplitTUI.stepStart(name);
@@ -4511,18 +4530,43 @@ function buildCommands(stateArg) {
                     items.push({
                         name: s.name || ('split-' + (i + 1)),
                         files: s.files || [],
-                        branchName: s.branchName || '',
-                        description: s.description || ''
+                        branchName: s.branchName || s.name || '',
+                        description: s.message || ''
                     });
                 }
-                // Create editor via Go factory (if available).
+                // Create and run editor via Go factory (if available).
                 if (typeof planEditorFactory !== 'undefined' && planEditorFactory.create) {
                     var editor = planEditorFactory.create(items);
-                    output.print('[edit-plan] Interactive editor created with ' + items.length + ' splits.');
-                    output.print('[edit-plan] Use the BubbleTea TUI: ↑↓ navigate, Enter expand, d delete, r rename, m move, M merge, q quit.');
+                    output.print('[edit-plan] Opening interactive plan editor with ' + items.length + ' splits...');
+                    var updatedItems;
+                    try {
+                        updatedItems = editor.run();
+                    } catch (e) {
+                        output.print('[edit-plan] Editor error: ' + (e && e.message ? e.message : String(e)));
+                        return;
+                    }
+                    if (!updatedItems || updatedItems.length === 0) {
+                        output.print('[edit-plan] No changes — editor returned empty result.');
+                        return;
+                    }
+                    // Update planCache with edited items.
+                    planCache.splits = [];
+                    for (var u = 0; u < updatedItems.length; u++) {
+                        var item = updatedItems[u];
+                        planCache.splits.push({
+                            name: item.name || item.branchName || ('split-' + (u + 1)),
+                            files: item.files || [],
+                            message: item.description || item.name || ('Split ' + (u + 1)),
+                            order: u
+                        });
+                    }
+                    output.print('[edit-plan] Plan updated: ' + planCache.splits.length + ' splits.');
+                    for (var p = 0; p < planCache.splits.length; p++) {
+                        output.print('  ' + (p + 1) + '. ' + planCache.splits[p].name + ' (' + planCache.splits[p].files.length + ' files)');
+                    }
                 } else {
                     output.print('[edit-plan] Plan editor not available (requires interactive mode).');
-                    output.print('[edit-plan] Use text commands: move <file> <from> <to>, rename <old> <new>, merge <from> <to>');
+                    output.print('[edit-plan] Use text commands: move <file> <from> <to>, rename <idx> <name>, merge <a> <b>');
                 }
             }
         },

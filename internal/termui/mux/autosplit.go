@@ -83,6 +83,10 @@ type autoSplitTickMsg time.Time
 
 // --- Model ---
 
+// AutoSplitToggleMsg is sent when the user presses the toggle key (Ctrl+])
+// to switch between the auto-split TUI and Claude's terminal.
+type AutoSplitToggleMsg struct{}
+
 // AutoSplitModel is a BubbleTea model that visualises the auto-split
 // pipeline progress. The top pane shows steps with status icons and
 // elapsed times. The bottom pane shows live output from the pipeline
@@ -103,10 +107,21 @@ type AutoSplitModel struct {
 	outputLines []string
 	maxLines    int
 
+	// Output scroll offset — 0 means "at bottom" (auto-scroll),
+	// positive means scrolled up by N lines.
+	scrollOffset int
+
 	// Pipeline state.
 	done        bool
 	doneSummary string
 	quitting    bool
+	cancelled   bool // set atomically when user cancels; polled by JS
+
+	// Toggle key (default Ctrl+]) for switching to Claude TUI.
+	toggleKey byte
+	// Toggle callback — invoked (outside BubbleTea) when toggle is pressed.
+	// The callback should block until the user toggles back.
+	onToggle func()
 
 	// Internal: the running tea.Program, set after Run() is called.
 	// Used by Send* methods to deliver messages from other goroutines.
@@ -138,12 +153,28 @@ func WithAutoSplitMaxLines(n int) AutoSplitOption {
 	}
 }
 
+// WithAutoSplitToggleKey sets the key used to switch to Claude TUI.
+func WithAutoSplitToggleKey(key byte) AutoSplitOption {
+	return func(m *AutoSplitModel) {
+		m.toggleKey = key
+	}
+}
+
+// WithAutoSplitOnToggle sets the callback invoked when the toggle key
+// is pressed. The callback should block until the user toggles back.
+func WithAutoSplitOnToggle(fn func()) AutoSplitOption {
+	return func(m *AutoSplitModel) {
+		m.onToggle = fn
+	}
+}
+
 // NewAutoSplitModel creates a new auto-split progress TUI.
 func NewAutoSplitModel(opts ...AutoSplitOption) *AutoSplitModel {
 	m := &AutoSplitModel{
-		width:    80,
-		height:   24,
-		maxLines: 500,
+		width:     80,
+		height:    24,
+		maxLines:  500,
+		toggleKey: DefaultToggleKey,
 		headerStyle: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("86")),
@@ -226,6 +257,27 @@ func (m *AutoSplitModel) SendDone(summary string) {
 	}
 }
 
+// Cancelled returns true if the user has pressed q/Ctrl+C to cancel
+// the pipeline. This is goroutine-safe and designed to be polled by
+// the JS pipeline to implement cooperative cancellation.
+func (m *AutoSplitModel) Cancelled() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cancelled
+}
+
+// Quit programmatically triggers a clean shutdown of the TUI. The
+// cancelled flag is set so that the JS pipeline can detect it.
+func (m *AutoSplitModel) Quit() {
+	m.mu.Lock()
+	m.cancelled = true
+	p := m.program
+	m.mu.Unlock()
+	if p != nil {
+		p.Send(tea.Quit())
+	}
+}
+
 // Run starts the BubbleTea program (alt-screen) and blocks until quit.
 func (m *AutoSplitModel) Run() error {
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -260,9 +312,48 @@ func (m *AutoSplitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Quit / cancel.
 		if msg.Type == tea.KeyCtrlC || msg.String() == "q" {
 			m.quitting = true
+			m.mu.Lock()
+			m.cancelled = true
+			m.mu.Unlock()
 			return m, tea.Quit
+		}
+
+		// Toggle key (default Ctrl+]) — switch to Claude TUI.
+		if len(msg.Runes) == 0 && msg.Type == tea.KeyRunes {
+			// Not a rune key — skip.
+		} else if (len(msg.Runes) == 1 && byte(msg.Runes[0]) == m.toggleKey) ||
+			(msg.Type == tea.KeyCtrlCloseBracket && m.toggleKey == DefaultToggleKey) {
+			if m.onToggle != nil {
+				// Temporarily release alt-screen so Claude can use the terminal.
+				// The onToggle callback blocks until the user toggles back.
+				return m, func() tea.Msg {
+					m.onToggle()
+					return AutoSplitToggleMsg{}
+				}
+			}
+		}
+
+		// Output pane scrolling.
+		switch msg.Type {
+		case tea.KeyUp:
+			m.scrollUp(1)
+		case tea.KeyDown:
+			m.scrollDown(1)
+		case tea.KeyPgUp:
+			m.scrollUp(m.outputPaneHeight() / 2)
+		case tea.KeyPgDown:
+			m.scrollDown(m.outputPaneHeight() / 2)
+		case tea.KeyHome:
+			maxOffset := len(m.outputLines) - m.outputPaneHeight()
+			if maxOffset < 0 {
+				maxOffset = 0
+			}
+			m.scrollOffset = maxOffset
+		case tea.KeyEnd:
+			m.scrollOffset = 0
 		}
 		return m, nil
 
@@ -296,6 +387,9 @@ func (m *AutoSplitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AutoSplitOutputMsg:
 		lines := strings.Split(msg.Text, "\n")
 		m.outputLines = appendCapped(m.outputLines, lines, m.maxLines)
+		// scrollOffset == 0 means "follow the tail" — no adjustment needed.
+		// If the user has scrolled up (scrollOffset > 0) the viewport stays
+		// where it is; the new content appends below the visible region.
 		return m, nil
 
 	case AutoSplitErrorMsg:
@@ -306,6 +400,10 @@ func (m *AutoSplitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case AutoSplitDoneMsg:
 		m.done = true
 		m.doneSummary = msg.Summary
+		return m, nil
+
+	case AutoSplitToggleMsg:
+		// Returned from Claude TUI — refresh display.
 		return m, nil
 
 	case autoSplitTickMsg:
@@ -355,13 +453,67 @@ func (m *AutoSplitModel) View() string {
 	// Separator bar.
 	separator := m.renderSeparator(m.width)
 
-	// Render bottom pane (live output).
-	bottomContent := renderPane(m.outputLines, bottomHeight, m.width)
+	// Render bottom pane (live output) with scroll offset.
+	viewLines := m.outputLines
+	if m.scrollOffset > 0 && len(viewLines) > bottomHeight {
+		endIdx := len(viewLines) - m.scrollOffset
+		if endIdx < bottomHeight {
+			endIdx = bottomHeight
+		}
+		if endIdx > len(viewLines) {
+			endIdx = len(viewLines)
+		}
+		viewLines = viewLines[:endIdx]
+	}
+	bottomContent := renderPane(viewLines, bottomHeight, m.width)
 
 	return lipgloss.JoinVertical(lipgloss.Left, topContent, separator, bottomContent)
 }
 
 // --- Internal helpers ---
+
+// scrollUp scrolls the output pane up (into history) by n lines.
+func (m *AutoSplitModel) scrollUp(n int) {
+	maxOffset := len(m.outputLines) - m.outputPaneHeight()
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	m.scrollOffset += n
+	if m.scrollOffset > maxOffset {
+		m.scrollOffset = maxOffset
+	}
+}
+
+// scrollDown scrolls the output pane towards the bottom by n lines.
+// An offset of 0 means "follow the tail" (auto-scroll).
+func (m *AutoSplitModel) scrollDown(n int) {
+	m.scrollOffset -= n
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+}
+
+// outputPaneHeight calculates the current height of the bottom (output) pane.
+func (m *AutoSplitModel) outputPaneHeight() int {
+	availableHeight := m.height
+	if availableHeight < 4 {
+		availableHeight = 4
+	}
+	topMax := availableHeight * 2 / 5
+	stepCount := len(m.steps)
+	topNeeded := stepCount + 1
+	if topNeeded > topMax {
+		topNeeded = topMax
+	}
+	if topNeeded < 2 {
+		topNeeded = 2
+	}
+	bottomHeight := availableHeight - topNeeded - 1
+	if bottomHeight < 1 {
+		bottomHeight = 1
+	}
+	return bottomHeight
+}
 
 // ensureStep adds a step entry if it doesn't already exist.
 func (m *AutoSplitModel) ensureStep(name string) {
@@ -468,6 +620,11 @@ func (m *AutoSplitModel) renderSeparator(width int) string {
 		if failCount > 0 {
 			right = fmt.Sprintf(" %d/%d (%d failed) ", doneCount+failCount, total, failCount)
 		}
+	}
+
+	// Show scroll indicator when user has scrolled up.
+	if m.scrollOffset > 0 {
+		right += fmt.Sprintf("▲%d ", m.scrollOffset)
 	}
 
 	padding := width - lipgloss.Width(left) - lipgloss.Width(right)

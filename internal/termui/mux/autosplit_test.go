@@ -426,3 +426,273 @@ func TestAutoSplitModel_SeparatorProgress(t *testing.T) {
 		t.Errorf("separator should show running step 'D', got: %s", sep)
 	}
 }
+
+// --- New feature tests: cancellation, scroll, toggle ---
+
+func TestAutoSplitModel_Cancelled_InitiallyFalse(t *testing.T) {
+	m := NewAutoSplitModel()
+	if m.Cancelled() {
+		t.Error("Cancelled() should be false initially")
+	}
+}
+
+func TestAutoSplitModel_Cancelled_TrueAfterCtrlC(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if !m.Cancelled() {
+		t.Error("Cancelled() should be true after Ctrl+C")
+	}
+}
+
+func TestAutoSplitModel_Cancelled_TrueAfterQ(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if !m.Cancelled() {
+		t.Error("Cancelled() should be true after 'q'")
+	}
+}
+
+func TestAutoSplitModel_Quit_SetsCancelled(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.Quit()
+	if !m.Cancelled() {
+		t.Error("Cancelled() should be true after Quit()")
+	}
+}
+
+func TestAutoSplitModel_Quit_NilProgram(t *testing.T) {
+	// Quit should not panic when program is nil.
+	m := NewAutoSplitModel()
+	m.Quit() // no panic
+}
+
+func TestAutoSplitModel_WithToggleKey(t *testing.T) {
+	m := NewAutoSplitModel(WithAutoSplitToggleKey(0x1E))
+	if m.toggleKey != 0x1E {
+		t.Errorf("toggleKey = 0x%02X, want 0x1E", m.toggleKey)
+	}
+}
+
+func TestAutoSplitModel_DefaultToggleKey(t *testing.T) {
+	m := NewAutoSplitModel()
+	if m.toggleKey != DefaultToggleKey {
+		t.Errorf("toggleKey = 0x%02X, want DefaultToggleKey (0x%02X)", m.toggleKey, DefaultToggleKey)
+	}
+}
+
+func TestAutoSplitModel_ToggleKey_InvokesCallback(t *testing.T) {
+	var called bool
+	m := NewAutoSplitModel(WithAutoSplitOnToggle(func() {
+		called = true
+	}))
+	// Send Ctrl+] key.
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	if cmd == nil {
+		t.Fatal("toggle key should produce a command")
+	}
+	// Execute the command to invoke the callback.
+	msg := cmd()
+	if !called {
+		t.Error("toggle callback should have been invoked")
+	}
+	if _, ok := msg.(AutoSplitToggleMsg); !ok {
+		t.Errorf("command should return AutoSplitToggleMsg, got %T", msg)
+	}
+}
+
+func TestAutoSplitModel_ToggleKey_NilCallback(t *testing.T) {
+	// No callback set — toggle key should be silently ignored.
+	m := NewAutoSplitModel()
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	if cmd != nil {
+		t.Error("toggle without callback should not produce a command")
+	}
+}
+
+func TestAutoSplitModel_ToggleMsg_RefreshesDisplay(t *testing.T) {
+	m := NewAutoSplitModel()
+	_, cmd := m.Update(AutoSplitToggleMsg{})
+	if cmd != nil {
+		t.Error("AutoSplitToggleMsg should return nil cmd (just refresh)")
+	}
+}
+
+func TestAutoSplitModel_ScrollUp_Basic(t *testing.T) {
+	m := NewAutoSplitModel()
+	// Add 50 lines to output.
+	for i := 0; i < 50; i++ {
+		m.Update(AutoSplitOutputMsg{Text: "line"})
+	}
+	if m.scrollOffset != 0 {
+		t.Fatalf("initial scrollOffset = %d, want 0", m.scrollOffset)
+	}
+	m.scrollUp(5)
+	if m.scrollOffset != 5 {
+		t.Errorf("scrollOffset after scrollUp(5) = %d, want 5", m.scrollOffset)
+	}
+}
+
+func TestAutoSplitModel_ScrollDown_Basic(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.scrollOffset = 10
+	m.scrollDown(3)
+	if m.scrollOffset != 7 {
+		t.Errorf("scrollOffset after scrollDown(3) = %d, want 7", m.scrollOffset)
+	}
+}
+
+func TestAutoSplitModel_ScrollDown_ClampsAtZero(t *testing.T) {
+	m := NewAutoSplitModel()
+	m.scrollOffset = 2
+	m.scrollDown(5)
+	if m.scrollOffset != 0 {
+		t.Errorf("scrollOffset should clamp at 0, got %d", m.scrollOffset)
+	}
+}
+
+func TestAutoSplitModel_ScrollUp_ClampsAtMax(t *testing.T) {
+	m := NewAutoSplitModel()
+	// With default height=24, outputPaneHeight is around 13.
+	// Add 20 lines — maxOffset = 20 - paneHeight.
+	for i := 0; i < 20; i++ {
+		m.Update(AutoSplitOutputMsg{Text: "line"})
+	}
+	paneHeight := m.outputPaneHeight()
+	expectedMax := 20 - paneHeight
+	if expectedMax < 0 {
+		expectedMax = 0
+	}
+	m.scrollUp(999) // way over the limit
+	if m.scrollOffset != expectedMax {
+		t.Errorf("scrollOffset clamped = %d, want %d", m.scrollOffset, expectedMax)
+	}
+}
+
+func TestAutoSplitModel_ScrollUp_NoContent(t *testing.T) {
+	// With zero lines, scrollUp should stay at 0.
+	m := NewAutoSplitModel()
+	m.scrollUp(10)
+	if m.scrollOffset != 0 {
+		t.Errorf("scrollOffset with no content = %d, want 0", m.scrollOffset)
+	}
+}
+
+func TestAutoSplitModel_ScrollKeys(t *testing.T) {
+	m := NewAutoSplitModel()
+	for i := 0; i < 50; i++ {
+		m.Update(AutoSplitOutputMsg{Text: "line"})
+	}
+
+	// Up arrow.
+	m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if m.scrollOffset != 1 {
+		t.Errorf("after Up: scrollOffset = %d, want 1", m.scrollOffset)
+	}
+
+	// Down arrow.
+	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if m.scrollOffset != 0 {
+		t.Errorf("after Down: scrollOffset = %d, want 0", m.scrollOffset)
+	}
+
+	// PgUp.
+	m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	expected := m.outputPaneHeight() / 2
+	if m.scrollOffset != expected {
+		t.Errorf("after PgUp: scrollOffset = %d, want %d", m.scrollOffset, expected)
+	}
+
+	// Home — scroll to top.
+	m.Update(tea.KeyMsg{Type: tea.KeyHome})
+	maxOffset := len(m.outputLines) - m.outputPaneHeight()
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	if m.scrollOffset != maxOffset {
+		t.Errorf("after Home: scrollOffset = %d, want %d (maxOffset)", m.scrollOffset, maxOffset)
+	}
+
+	// End — scroll to bottom.
+	m.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	if m.scrollOffset != 0 {
+		t.Errorf("after End: scrollOffset = %d, want 0", m.scrollOffset)
+	}
+}
+
+func TestAutoSplitModel_View_WithScrollOffset(t *testing.T) {
+	// Prove that scroll offset shows the correct window of lines.
+	// Create a model with known dimensions and content.
+	m := NewAutoSplitModel()
+	m.width = 80
+	m.height = 24
+
+	// Add 50 numbered lines so we can identify them.
+	for i := 0; i < 50; i++ {
+		m.outputLines = append(m.outputLines, "LINE-"+strings.Repeat("0", 3-len(string(rune('0'+i%10))))+string(rune('0'+i/10))+string(rune('0'+i%10)))
+	}
+
+	// Compute pane height to know the visible window size.
+	paneHeight := m.outputPaneHeight()
+
+	// At scrollOffset = 0 (tail), last line should be visible.
+	view0 := m.View()
+	lastLine := m.outputLines[len(m.outputLines)-1]
+	if !strings.Contains(view0, lastLine) {
+		t.Errorf("at scrollOffset=0, view should contain last line %q", lastLine)
+	}
+
+	// Scroll up by 1 — the last line should no longer be visible.
+	m.scrollOffset = 1
+	view1 := m.View()
+	if strings.Contains(view1, lastLine) {
+		t.Error("at scrollOffset=1, the absolute last line should not be visible")
+	}
+	// But the second-to-last line should be visible.
+	secondToLast := m.outputLines[len(m.outputLines)-2]
+	if !strings.Contains(view1, secondToLast) {
+		t.Errorf("at scrollOffset=1, second-to-last line should be visible, view:\n%s", view1)
+	}
+
+	// Scroll to top — the first lines should be visible.
+	maxOffset := len(m.outputLines) - paneHeight
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	m.scrollOffset = maxOffset
+	viewTop := m.View()
+	firstLine := m.outputLines[0]
+	if !strings.Contains(viewTop, firstLine) {
+		t.Errorf("at max scroll, first line %q should be visible, view:\n%s", firstLine, viewTop)
+	}
+}
+
+func TestAutoSplitModel_SeparatorScrollIndicator(t *testing.T) {
+	m := NewAutoSplitModel()
+	// No scroll — no indicator.
+	sep0 := m.renderSeparator(80)
+	if strings.Contains(sep0, "▲") {
+		t.Error("separator should not show scroll indicator when scrollOffset=0")
+	}
+
+	// With scroll — indicator.
+	m.scrollOffset = 5
+	sep5 := m.renderSeparator(80)
+	if !strings.Contains(sep5, "▲5") {
+		t.Errorf("separator should show ▲5, got: %s", sep5)
+	}
+}
+
+func TestAutoSplitModel_OutputPaneHeight(t *testing.T) {
+	m := NewAutoSplitModel()
+	// Default: 80x24.
+	h := m.outputPaneHeight()
+	if h < 1 {
+		t.Errorf("outputPaneHeight should be at least 1, got %d", h)
+	}
+	// Tiny terminal.
+	m.height = 4
+	h = m.outputPaneHeight()
+	if h < 1 {
+		t.Errorf("outputPaneHeight at tiny size should be at least 1, got %d", h)
+	}
+}

@@ -346,9 +346,7 @@ func (m *AutoSplitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Toggle key (default Ctrl+]) — switch to Claude TUI.
-		if len(msg.Runes) == 0 && msg.Type == tea.KeyRunes {
-			// Not a rune key — skip.
-		} else if (len(msg.Runes) == 1 && byte(msg.Runes[0]) == m.toggleKey) ||
+		if (len(msg.Runes) == 1 && byte(msg.Runes[0]) == m.toggleKey) ||
 			(msg.Type == tea.KeyCtrlCloseBracket && m.toggleKey == DefaultToggleKey) {
 			if m.onToggle != nil {
 				// Temporarily release alt-screen so Claude can use the terminal.

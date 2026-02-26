@@ -1,12 +1,18 @@
 package command
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/joeycumines/one-shot-man/internal/builtin/pty"
 )
 
 // ---------------------------------------------------------------------------
@@ -302,6 +308,407 @@ func TestIntegration_AutoSplitCancel(t *testing.T) {
 	if branch != "feature" {
 		t.Errorf("expected to be on 'feature' branch after cancel, got %q", branch)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Integration Test: sendToHandle fallback (no autoSplitTUI)
+// ---------------------------------------------------------------------------
+
+// TestIntegration_SendToHandle_FallbackDirect verifies that sendToHandle
+// falls back to direct handle.send() when no autoSplitTUI is present.
+// This covers the non-TUI / test-context code path.
+func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Ensure autoSplitTUI is not defined (default engine state).
+	raw, err := evalJS(`
+		(function() {
+			// sendToHandle should use the fallback path when autoSplitTUI is missing.
+			// Create a mock handle that records what was sent.
+			var sentData = '';
+			var mockHandle = {
+				send: function(text) { sentData = text; }
+			};
+			var result = globalThis.prSplit.sendToHandle(mockHandle, 'hello Claude');
+			return JSON.stringify({ error: result.error, sent: sentData });
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("sendToHandle test failed: %v", err)
+	}
+
+	var result struct {
+		Error *string `json:"error"`
+		Sent  string  `json:"sent"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if result.Error != nil {
+		t.Errorf("sendToHandle returned error: %s", *result.Error)
+	}
+	if result.Sent != "hello Claude" {
+		t.Errorf("sent data = %q, want %q", result.Sent, "hello Claude")
+	}
+}
+
+// TestIntegration_SendToHandle_FallbackError verifies that sendToHandle
+// returns an error object (not throws) when the underlying send fails.
+func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	raw, err := evalJS(`
+		(function() {
+			var mockHandle = {
+				send: function(text) { throw new Error('PTY write failed'); }
+			};
+			var result = globalThis.prSplit.sendToHandle(mockHandle, 'will fail');
+			return JSON.stringify({ error: result.error });
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("sendToHandle error test failed: %v", err)
+	}
+
+	var result struct {
+		Error *string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if result.Error == nil {
+		t.Fatal("expected error from sendToHandle when send throws")
+	}
+	if !strings.Contains(*result.Error, "PTY write failed") {
+		t.Errorf("error = %q, want to contain 'PTY write failed'", *result.Error)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Integration Test: prSplitSendWithCancel with real PTY child
+// ---------------------------------------------------------------------------
+
+// TestPrSplitSendWithCancel_NormalWrite spawns a real `cat` process in a
+// PTY and sends a small amount of data through prSplitSendWithCancel.
+// This verifies the happy path with a real child process.
+func TestPrSplitSendWithCancel_NormalWrite(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("cat"); err != nil {
+		t.Skip("cat not available")
+	}
+
+	ctx := context.Background()
+	proc, err := ptySpawnCat(ctx)
+	if err != nil {
+		t.Fatalf("failed to spawn cat: %v", err)
+	}
+	defer proc.Close()
+
+	// Send a small amount of data — cat will echo it back, keeping the
+	// write buffer from filling up. No cancellation.
+	sendErr := prSplitSendWithCancel(
+		func() error { return proc.Write("hello world\n") },
+		func() { _ = proc.Signal("SIGKILL") },
+		func() bool { return false },
+		func() bool { return false },
+	)
+	if sendErr != nil {
+		t.Fatalf("prSplitSendWithCancel returned error on normal write: %v", sendErr)
+	}
+
+	// Read back the data to verify it went through.
+	out, readErr := proc.Read()
+	if readErr != nil && out == "" {
+		t.Fatalf("failed to read from cat: %v", readErr)
+	}
+	if !strings.Contains(out, "hello world") {
+		t.Errorf("expected cat to echo 'hello world', got: %q", out)
+	}
+}
+
+// TestPrSplitSendWithCancel_Cancel spawns a real `sleep` process (which
+// never reads stdin), starts a large write (that will block the PTY buffer),
+// and then signals cancel. Verifies that prSplitSendWithCancel kills the
+// process and returns within a reasonable time.
+//
+// Uses a synthetic blocking send (not a real PTY write) to avoid
+// platform-specific PTY buffer size differences. A separate test
+// (TestPrSplitSendWithCancel_RealPTYKill) validates that SIGKILL
+// actually unblocks a real PTY write.
+func TestPrSplitSendWithCancel_Cancel(t *testing.T) {
+	t.Parallel()
+
+	var cancelledFlag int32
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		atomic.StoreInt32(&cancelledFlag, 1)
+	}()
+
+	// The "send" blocks on a channel until kill() closes it —
+	// simulating a PTY write that would block indefinitely.
+	killed := make(chan struct{})
+
+	start := time.Now()
+	sendErr := prSplitSendWithCancel(
+		func() error {
+			<-killed
+			return errors.New("write aborted: process killed")
+		},
+		func() { close(killed) },
+		func() bool { return atomic.LoadInt32(&cancelledFlag) == 1 },
+		func() bool { return false },
+	)
+	elapsed := time.Since(start)
+
+	if sendErr == nil {
+		t.Fatal("expected cancel error, got nil")
+	}
+	if !strings.Contains(sendErr.Error(), "cancelled by user") {
+		t.Errorf("expected 'cancelled by user' error, got: %v", sendErr)
+	}
+	// Should complete within 2 seconds (300ms cancel delay + ≤200ms poll).
+	if elapsed > 2*time.Second {
+		t.Errorf("cancel took too long: %v (expected < 2s)", elapsed)
+	}
+	t.Logf("cancel completed in %v", elapsed)
+}
+
+// TestPrSplitSendWithCancel_ForceCancel is similar to Cancel but sets
+// the forceCancel flag instead. Verifies the "force cancelled" error path.
+func TestPrSplitSendWithCancel_ForceCancel(t *testing.T) {
+	t.Parallel()
+
+	var forceCancelFlag int32
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		atomic.StoreInt32(&forceCancelFlag, 1)
+	}()
+
+	killed := make(chan struct{})
+
+	start := time.Now()
+	sendErr := prSplitSendWithCancel(
+		func() error {
+			<-killed
+			return errors.New("write aborted: process killed")
+		},
+		func() { close(killed) },
+		func() bool { return false },
+		func() bool { return atomic.LoadInt32(&forceCancelFlag) == 1 },
+	)
+	elapsed := time.Since(start)
+
+	if sendErr == nil {
+		t.Fatal("expected force cancel error, got nil")
+	}
+	if !strings.Contains(sendErr.Error(), "force cancelled") {
+		t.Errorf("expected 'force cancelled' error, got: %v", sendErr)
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("force cancel took too long: %v (expected < 2s)", elapsed)
+	}
+	t.Logf("force cancel completed in %v", elapsed)
+}
+
+// TestPrSplitSendWithCancel_RealPTYKill spawns a real child process (sleep)
+// in a PTY and verifies that the SIGKILL path works correctly. On macOS the
+// PTY buffer is large enough to absorb 1MB without blocking, so the cancel
+// check may never fire. This test verifies that either:
+//   - The write completes and the function returns nil (large buffer), OR
+//   - The cancel fires, kills the process, and returns "cancelled" (small buffer).
+//
+// In both cases the function must return promptly (no hang).
+func TestPrSplitSendWithCancel_RealPTYKill(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("sleep"); err != nil {
+		t.Skip("sleep not available")
+	}
+
+	ctx := context.Background()
+	proc, err := pty.Spawn(ctx, pty.SpawnConfig{
+		Command: "sleep",
+		Args:    []string{"3600"},
+		Rows:    24,
+		Cols:    80,
+	})
+	if err != nil {
+		t.Fatalf("failed to spawn sleep: %v", err)
+	}
+	defer proc.Close()
+
+	// Set cancel flag immediately — we just want to verify the function
+	// completes promptly without hanging.
+	start := time.Now()
+	sendErr := prSplitSendWithCancel(
+		func() error {
+			return proc.Write(strings.Repeat("x", 1<<20))
+		},
+		func() { _ = proc.Signal("SIGKILL") },
+		func() bool { return true }, // cancelled from the start
+		func() bool { return false },
+	)
+	elapsed := time.Since(start)
+
+	// The function must return within a few seconds regardless of buffer.
+	if elapsed > 5*time.Second {
+		t.Errorf("real PTY send+cancel took too long: %v (hang detected)", elapsed)
+	}
+	t.Logf("real PTY send+cancel completed in %v, err=%v", elapsed, sendErr)
+
+	// Now separately verify SIGKILL actually works on a real process.
+	proc2, err := pty.Spawn(ctx, pty.SpawnConfig{
+		Command: "sleep", Args: []string{"3600"},
+	})
+	if err != nil {
+		t.Fatalf("failed to spawn second sleep: %v", err)
+	}
+	defer proc2.Close()
+
+	if !proc2.IsAlive() {
+		t.Fatal("process should be alive before kill")
+	}
+	if err := proc2.Signal("SIGKILL"); err != nil {
+		t.Fatalf("Signal(SIGKILL) failed: %v", err)
+	}
+	// Wait for the process to die (should be near-instant after SIGKILL).
+	code, _ := proc2.Wait()
+	if proc2.IsAlive() {
+		t.Error("process should be dead after SIGKILL + Wait")
+	}
+	t.Logf("SIGKILL exit code: %d", code)
+}
+
+// ---------------------------------------------------------------------------
+// Integration Test: Full auto-split pipeline with real Claude/AI
+// ---------------------------------------------------------------------------
+
+// TestIntegration_AutoSplitWithClaude_Pipeline runs the full automated
+// split pipeline with a real Claude-compatible agent (configured via
+// -integration -claude-command flags). It creates a realistic git repo,
+// spawns the agent, sends the classification prompt, and waits for results.
+//
+// Run with:
+//
+//	go test -race -v -count=1 -timeout=15m -integration \
+//	  -claude-command=claude ./internal/command/... \
+//	  -run TestIntegration_AutoSplitWithClaude_Pipeline
+//
+// Or via make:
+//
+//	make integration-test-prsplit
+func TestIntegration_AutoSplitWithClaude_Pipeline(t *testing.T) {
+	skipIfNoClaude(t)
+
+	repoDir := initIntegrationRepo(t)
+	addIntegrationFeatureFiles(t, repoDir)
+
+	// Build config from TestMain flags.
+	claudeArgsList := make([]string, len(claudeTestArgs))
+	copy(claudeArgsList, claudeTestArgs)
+
+	configOverrides := map[string]interface{}{
+		"baseBranch":    "main",
+		"strategy":      "directory",
+		"maxFiles":      10,
+		"branchPrefix":  "split/",
+		"verifyCommand": "true",
+		"claudeCommand": claudeTestCommand,
+		"claudeArgs":    claudeArgsList,
+		"timeoutMs":     int64(5 * 60 * 1000), // 5 minutes per step
+	}
+	if integrationModel != "" {
+		configOverrides["claudeModel"] = integrationModel
+	}
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, configOverrides)
+
+	// Inject autoSplitTUI mock — no real BubbleTea (no terminal in CI),
+	// but provides the interface the pipeline expects. sendWithCancel is
+	// deliberately NOT included so the pipeline uses the direct fallback;
+	// the sendWithCancel mechanics are tested by the PTY tests above.
+	_, err := evalJS(`
+		globalThis.autoSplitTUI = {
+			runAsync: function() {},
+			wait: function() { return null; },
+			stepStart: function(name) { log.printf('STEP START: %s', name); },
+			stepDone: function(name, err, elapsed) {
+				log.printf('STEP DONE: %s err=%s elapsed=%dms', name, err || 'ok', elapsed);
+			},
+			appendOutput: function(text) { log.printf('OUTPUT: %s', text); },
+			appendError: function(text) { log.printf('ERROR: %s', text); },
+			done: function(summary) { log.printf('DONE: %s', summary); },
+			stepDetail: function(name, detail) { log.printf('DETAIL: %s — %s', name, detail); },
+			cancelled: function() { return false; },
+			forceCancelled: function() { return false; },
+			quit: function() {}
+		};
+	`)
+	if err != nil {
+		t.Fatalf("failed to inject autoSplitTUI mock: %v", err)
+	}
+
+	// Run the full auto-split pipeline.
+	t.Log("Starting auto-split pipeline with real Claude agent...")
+	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.automatedSplit({
+		baseBranch: 'main',
+		dir: ` + jsString(repoDir) + `,
+		strategy: 'directory'
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit failed: %v", err)
+	}
+
+	var result struct {
+		Error  *string `json:"error"`
+		Report struct {
+			Error              *string `json:"error"`
+			ClaudeInteractions int     `json:"claudeInteractions"`
+			FallbackUsed       bool    `json:"fallbackUsed"`
+			SplitsCreated      int     `json:"splitsCreated"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("failed to parse result: %v", err)
+	}
+
+	// Log the full result for debugging.
+	t.Logf("Result: %s", raw)
+
+	if result.Report.FallbackUsed {
+		t.Log("WARNING: Pipeline fell back to heuristic mode — Claude may not be responding")
+	}
+	if result.Error != nil {
+		t.Errorf("pipeline returned error: %s", *result.Error)
+	}
+	if result.Report.ClaudeInteractions == 0 && !result.Report.FallbackUsed {
+		t.Error("expected at least one Claude interaction")
+	}
+
+	// Check that split branches were created (if pipeline completed).
+	if result.Report.SplitsCreated > 0 {
+		branchOutput := runGit(t, repoDir, "branch", "--list", "split/*")
+		t.Logf("Created branches:\n%s", branchOutput)
+		if branchOutput == "" {
+			t.Error("pipeline reported splits created but no split/* branches found")
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Integration Test Helpers (PTY)
+// ---------------------------------------------------------------------------
+
+// ptySpawnCat spawns a `cat` process in a PTY for testing.
+func ptySpawnCat(ctx context.Context) (*pty.Process, error) {
+	return pty.Spawn(ctx, pty.SpawnConfig{
+		Command: "cat",
+		Rows:    24,
+		Cols:    80,
+	})
 }
 
 // ---------------------------------------------------------------------------

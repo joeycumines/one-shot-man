@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -344,6 +345,13 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		mux.WithAutoSplitMaxLines(1000),
 		mux.WithAutoSplitToggleKey(mux.DefaultToggleKey),
 		mux.WithAutoSplitOnToggle(func() {
+			// Check if a child is attached before switching — if not,
+			// there's nothing to show and we'd just blank the screen.
+			if !tuiMux.HasChild() {
+				autoSplitModel.SendError("No Claude process attached — cannot toggle (Ctrl+])")
+				return
+			}
+
 			// Release BubbleTea's terminal control (alt-screen, raw
 			// mode, input listener) so RunPassthrough gets exclusive
 			// access to stdin/stdout.
@@ -352,7 +360,11 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			}
 			// Switch to Claude's terminal. This blocks until the
 			// user presses the toggle key again or the child exits.
-			_, _ = tuiMux.RunPassthrough(ctx)
+			reason, err := tuiMux.RunPassthrough(ctx)
+			if err != nil {
+				autoSplitModel.SendError("Toggle failed: " + err.Error())
+			}
+			_ = reason
 			// Restore BubbleTea's terminal control so the auto-split
 			// TUI resumes rendering.
 			if p := autoSplitModel.Program(); p != nil {
@@ -362,6 +374,18 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	)
 	var autoSplitErr error
 	var autoSplitDone chan struct{}
+
+	// extractGoHandle extracts the original Go handle from a Goja-wrapped
+	// AgentHandle JS object (the _goHandle field set by wrapAgentHandle).
+	extractGoHandle := func(handleObj interface{}) interface{} {
+		if m, ok := handleObj.(map[string]interface{}); ok {
+			if gh, exists := m["_goHandle"]; exists {
+				return gh
+			}
+		}
+		return nil
+	}
+
 	engine.SetGlobal("autoSplitTUI", map[string]interface{}{
 		"runAsync": func() {
 			autoSplitDone = make(chan struct{})
@@ -403,9 +427,46 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		"quit": func() {
 			autoSplitModel.Quit()
 		},
+		// sendWithCancel writes text to a Claude handle's PTY stdin
+		// in a background goroutine, polling for cancellation every
+		// 200ms. Delegates to prSplitSendWithCancel for testability.
+		//
+		// Returns { error: null } on success, { error: "message" } on failure.
+		"sendWithCancel": func(handleObj interface{}, text string) map[string]interface{} {
+			goHandle := extractGoHandle(handleObj)
+			if goHandle == nil {
+				return map[string]interface{}{"error": "invalid handle: no _goHandle"}
+			}
+
+			type sender interface{ Send(string) error }
+			s, ok := goHandle.(sender)
+			if !ok {
+				return map[string]interface{}{"error": "handle does not support Send"}
+			}
+
+			var kill func()
+			type signaler interface{ Signal(string) error }
+			if sig, ok := goHandle.(signaler); ok {
+				kill = func() { _ = sig.Signal("SIGKILL") }
+			} else {
+				kill = func() {} // no-op if signaling unsupported
+			}
+
+			err := prSplitSendWithCancel(
+				func() error { return s.Send(text) },
+				kill,
+				autoSplitModel.Cancelled,
+				autoSplitModel.ForceCancelled,
+			)
+			if err != nil {
+				return map[string]interface{}{"error": err.Error()}
+			}
+			return map[string]interface{}{"error": nil}
+		},
 	})
 
 	// Plan editor — expose factory so JS can create editor instances.
+
 	engine.SetGlobal("planEditorFactory", map[string]interface{}{
 		"create": func(items []interface{}) map[string]interface{} {
 			editorItems := make([]mux.PlanEditorItem, 0, len(items))
@@ -499,4 +560,41 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	}
 
 	return nil
+}
+
+// prSplitSendWithCancel runs send() in a background goroutine, polling
+// cancelled/forceCancelled every 200ms. During a long PTY write (e.g. a
+// 293-file classification prompt), the child process may not read fast
+// enough and the write blocks. This function unblocks by killing the
+// child (via kill()) when the user cancels.
+//
+// On cancel or forceCancel, kill() is called to SIGKILL the child and
+// unblock the write goroutine, then the cancel error is returned.
+func prSplitSendWithCancel(
+	send func() error,
+	kill func(),
+	cancelled, forceCancelled func() bool,
+) error {
+	done := make(chan error, 1)
+	go func() { done <- send() }()
+
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case err := <-done:
+			return err
+		case <-ticker.C:
+			if forceCancelled() {
+				kill()
+				<-done
+				return errors.New("force cancelled by user")
+			}
+			if cancelled() {
+				kill()
+				<-done
+				return errors.New("cancelled by user")
+			}
+		}
+	}
 }

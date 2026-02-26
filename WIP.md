@@ -1,35 +1,29 @@
 # WIP.md — Takumi's Desperate Diary
 
 ## Current State (Post-Commit)
-- **All commits landed.** Working tree clean.
+- **All T021-T025 committed.** Working tree clean (after this commit).
 - `make` passes: 43/43 packages, zero lint errors.
-- Commits this session:
-  - **bee4909** — Null guards + edge case tests
-  - **4e21bf7** — Wire force-cancel SIGKILL through JS-to-Go bridge
+- Prior commits: bee4909, 4e21bf7
+- This session commit: sendWithCancel + HasChild + sendToHandle + cleanupExecutor + tests
 
-## Committed Changes (4e21bf7)
-1. **internal/termui/mux/autosplit.go** — forceCancel field, ForceCancelled() method
-2. **internal/termui/mux/autosplit_test.go** — 4 tests updated for force-quit behavior
-3. **internal/command/pr_split.go** — forceCancelled exposed to JS
-4. **internal/command/pr_split_script.js** — isForceCancelled(), cleanupExecutor SIGKILL
-5. **internal/command/pr_split_integration_test.go** — NEW: 2 integration tests + helpers
-6. **internal/builtin/claudemux/claude_code.go** — Signal() on ptyAgentHandle
-7. **internal/builtin/claudemux/module.go** — signaler interface + conditional signal exposure
+## What Was Fixed
+1. **Hang on send**: `handle.send()` blocking PTY write → `prSplitSendWithCancel` (goroutine + 200ms ticker poll)
+2. **Force-cancel stuck**: JS blocked in Go, never checks flag → Go-side poll + SIGKILL
+3. **Ctrl+] blank**: No child attached → `HasChild()` guard + `SendError()`
+4. **Slow cleanup**: SIGTERM→5s wait → SIGKILL before close on forceCancel
 
-## Force-Cancel Signal Chain
-```
-User presses q/q → AutoSplitModel.forceCancel=true
-  → JS: isForceCancelled() returns true
-  → cleanupExecutor() sends SIGKILL via handle.signal('SIGKILL')
-  → ptyAgentHandle.Signal() → pty.Process.Signal()
-  → close() then runs (fast, process already dead)
-```
+## Files Changed (This Commit)
+1. `internal/command/pr_split.go` — prSplitSendWithCancel, extractGoHandle, ctrl+] guard
+2. `internal/termui/mux/mux.go` — HasChild()
+3. `internal/command/pr_split_script.js` — sendToHandle, 4 call sites, cleanupExecutor
+4. `internal/termui/mux/mux_test.go` — TestHasChild
+5. `internal/command/pr_split_integration_test.go` — 7 new tests
 
 ## Blueprint Status
 - T001-T020: All Done except T018 (complex Go project AI integration test)
-- T011: Done — TestIntegration_AutoSplitCancel committed in 4e21bf7
+- T021-T025: Done (this commit)
 
 ## Next Steps
-1. ~~Run `make` — PASSED~~
-2. Run integration tests with actual AI (T018 or manual `make integration-test-prsplit`)
-3. Commit tracking file updates (blueprint.json, WIP.md, config.mk)
+1. Run integration tests with actual AI: `make integration-test-prsplit`
+2. T018: Complex Go project AI integration test (Not Started)
+3. Continue expanding scope per blueprint

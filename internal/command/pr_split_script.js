@@ -1583,10 +1583,9 @@ var AUTO_FIX_STRATEGIES = [
             if (promptResult.error) {
                 return { fixed: false, error: 'render conflict prompt failed: ' + promptResult.error };
             }
-            try {
-                claudeExecutor.handle.send(promptResult.text);
-            } catch (e) {
-                return { fixed: false, error: 'failed to send to Claude: ' + (e.message || String(e)) };
+            var sendResult = sendToHandle(claudeExecutor.handle, promptResult.text);
+            if (sendResult.error) {
+                return { fixed: false, error: 'failed to send to Claude: ' + sendResult.error };
             }
             // Poll for resolution.
             var resultDir = claudeExecutor.mcpInstance ? claudeExecutor.mcpInstance.resultDir() : '';
@@ -2077,6 +2076,25 @@ function isForceCancelled() {
            typeof autoSplitTUI.forceCancelled === 'function' && autoSplitTUI.forceCancelled();
 }
 
+// sendToHandle writes text to a Claude handle, using the cancellation-aware
+// sendWithCancel when available (auto-split TUI mode) or falling back to the
+// direct handle.send() for non-TUI / test contexts.
+//
+// Returns { error: null } on success, { error: "message" } on failure.
+function sendToHandle(handle, text) {
+    if (typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
+        typeof autoSplitTUI.sendWithCancel === 'function') {
+        return autoSplitTUI.sendWithCancel(handle, text);
+    }
+    // Fallback: direct synchronous send.
+    try {
+        handle.send(text);
+        return { error: null };
+    } catch (e) {
+        return { error: e.message || String(e) };
+    }
+}
+
 // pollForFile polls a result directory for a specific file.
 // Returns { data: object|null, error: string|null }.
 function pollForFile(resultDir, filename, timeoutMs, intervalMs, stepName) {
@@ -2305,26 +2323,22 @@ function automatedSplit(config) {
 
     // Step 3: Send classification request.
     var classifyResult = step('Send classification request', function() {
-        updateDetail('Send classification request', 'Rendering prompt for ' + analysis.files.length + ' files...');
+        updateDetail('Send classification request', 'Rendering prompt (' + analysis.files.length + ' files)...');
         var renderResult = renderClassificationPrompt(analysis, {
             sessionId: sessionId, maxGroups: config.maxGroups || 0
         });
         if (renderResult.error) {
             return { error: renderResult.error };
         }
-        // Write prompt to Claude's stdin via handle.
-        try {
-            claudeExecutor.handle.send(renderResult.text);
-            report.claudeInteractions++;
-            recordConversation('classification', renderResult.text, '');
-            recordTelemetry('claudeInteractions', 1);
-        } catch (e) {
-            return { error: 'failed to send prompt to Claude: ' + (e.message || String(e)) };
+        // Write prompt to Claude's stdin via handle — cancellation-aware.
+        updateDetail('Send classification request', 'Sending prompt to Claude...');
+        var sendResult = sendToHandle(claudeExecutor.handle, renderResult.text);
+        if (sendResult.error) {
+            return { error: 'failed to send prompt to Claude: ' + sendResult.error };
         }
-        // Check cancellation immediately after the blocking send() call.
-        if (isCancelled()) {
-            return { error: 'cancelled by user' };
-        }
+        report.claudeInteractions++;
+        recordConversation('classification', renderResult.text, '');
+        recordTelemetry('claudeInteractions', 1);
         return { error: null };
     });
     if (classifyResult.error) {
@@ -2480,13 +2494,12 @@ function automatedSplit(config) {
                 var constraintPrompt = 'Re-classify these files with the constraint: ' +
                     resolved.reSplitReason + '\n\nUse reportClassification MCP tool ' +
                     'with session ID ' + sessionId + '.\n';
-                try {
-                    claudeExecutor.handle.send(constraintPrompt);
-                    report.claudeInteractions++;
-                    recordConversation('re-classify', constraintPrompt, '');
-                } catch (e) {
-                    return { error: 'failed to send re-classify prompt: ' + (e.message || String(e)) };
+                var sendResult = sendToHandle(claudeExecutor.handle, constraintPrompt);
+                if (sendResult.error) {
+                    return { error: 'failed to send re-classify prompt: ' + sendResult.error };
                 }
+                report.claudeInteractions++;
+                recordConversation('re-classify', constraintPrompt, '');
                 // Delete old classification file so we wait for the new one.
                 try { exec.execv(['rm', '-f', resultDir + '/classification.json']); } catch (e) { /* ignore */ }
                 var rePoll = pollForFile(resultDir, 'classification.json', timeouts.classify, pollInterval, 'Re-classify (retry ' + reSplitCount + ')');
@@ -2654,14 +2667,13 @@ function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, po
                 break;
             }
 
-            try {
-                claudeExecutor.handle.send(promptResult.text);
-                report.claudeInteractions++;
-                recordConversation('conflict-resolution', promptResult.text, '');
-            } catch (e) {
-                log.printf('auto-split: failed to send conflict prompt: %s', e.message || String(e));
+            var sendResult = sendToHandle(claudeExecutor.handle, promptResult.text);
+            if (sendResult.error) {
+                log.printf('auto-split: failed to send conflict prompt: %s', sendResult.error);
                 break;
             }
+            report.claudeInteractions++;
+            recordConversation('conflict-resolution', promptResult.text, '');
 
             // Wait for resolution.
             // Delete old resolution file first.
@@ -2722,12 +2734,15 @@ function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, po
 }
 
 // cleanupExecutor closes the Claude executor and cleans up resources.
-// Detaches from tuiMux first so ctrl+] stops trying to forward to a
-// dead child process. When force-cancelled, sends SIGKILL to skip
-// the graceful SIGTERM→wait→SIGKILL shutdown of close().
+// Detaches from tuiMux so ctrl+] stops trying to forward to a dead
+// child process. When force-cancelled, sends SIGKILL to skip the
+// graceful SIGTERM→wait→SIGKILL shutdown of close(). If detach fails
+// initially (e.g. passthrough is active), we close the process first
+// (which kills it, causing passthrough to exit), then retry detach.
 function cleanupExecutor() {
+    var detached = false;
     if (typeof tuiMux !== 'undefined' && tuiMux) {
-        try { tuiMux.detach(); } catch (e) { /* best effort — may already be detached */ }
+        try { tuiMux.detach(); detached = true; } catch (e) { /* retry after close */ }
     }
     if (claudeExecutor) {
         if (isForceCancelled() && claudeExecutor.handle &&
@@ -2736,6 +2751,11 @@ function cleanupExecutor() {
             try { claudeExecutor.handle.signal('SIGKILL'); } catch (e) { /* best effort */ }
         }
         try { claudeExecutor.close(); } catch (e) { /* best effort */ }
+    }
+    // Retry detach after close — passthrough should have exited now
+    // that the child process is dead (EOF on the PTY).
+    if (!detached && typeof tuiMux !== 'undefined' && tuiMux) {
+        try { tuiMux.detach(); } catch (e) { /* best effort */ }
     }
 }
 
@@ -3436,6 +3456,7 @@ globalThis.prSplit = {
     assessIndependence: assessIndependence,
     classificationToGroups: classificationToGroups,
     isCancelled: isCancelled,
+    sendToHandle: sendToHandle,
 
     // Prompt rendering
     renderClassificationPrompt: renderClassificationPrompt,

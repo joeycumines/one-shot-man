@@ -182,6 +182,13 @@ func (m *TUIMux) SetStatusEnabled(enabled bool) {
 	m.statusEnabled = enabled
 }
 
+// HasChild returns true if a child process is currently attached.
+func (m *TUIMux) HasChild() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.child != nil
+}
+
 // SetClaudeStatus updates the Claude status shown in the status bar.
 // Valid values: "idle", "thinking", "tool-use", "error".
 func (m *TUIMux) SetClaudeStatus(status string) {

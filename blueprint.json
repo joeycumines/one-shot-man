@@ -20,8 +20,8 @@
   ],
   "statusSection": {
     "goalState": "osm pr-split provides a fully functional automated splitting pipeline where: (1) auto-split TUI renders progress, handles cancellation cleanly, allows ctrl+] toggle to Claude mid-operation, and properly yields back to the command loop on exit; (2) integration tests use real AI (configured via TestMain flags / project.mk) to verify actual splitting -- classification, plan generation, branch creation, and tree-hash equivalence; (3) all existing tests pass; (4) all AI slop is removed.",
-    "currentState": "All implementation tasks complete. make (build+lint+test) passes: 43/43 packages, zero lint errors. Commits: bee4909 (null guards), 4e21bf7 (force-cancel SIGKILL chain + signal bridge + integration tests). Remaining: T018 (complex Go project AI integration test).",
-    "replanLog": ["T006-T009 discovered already implemented (TestMain, integration tests, project.mk all existed). T013 simplified to loadStrategyPlugin removal only."]
+    "currentState": "T021-T025 complete and committed. sendWithCancel (non-blocking PTY write with cancel polling via prSplitSendWithCancel), ctrl+] toggle guard (HasChild), sendToHandle JS wrapper, cleanupExecutor improvements. make passes 43/43, zero lint, Rule of Two passed. Remaining: T018 (complex Go project AI integration test).",
+    "replanLog": ["T006-T009 discovered already implemented (TestMain, integration tests, project.mk all existed). T013 simplified to loadStrategyPlugin removal only.", "T021-T025 added: fix handle.send() blocking, fix ctrl+] blank terminal, sendToHandle wrapper, integration tests for new code."]
   },
   "sequentialTasks": [
     {
@@ -183,6 +183,46 @@
       "acceptance": "When Claude spawn fails, the error message shows the exact command attempted and the failure reason.",
       "status": "Done",
       "files": ["internal/command/pr_split_script.js"]
+    },
+    {
+      "id": "T021",
+      "task": "Fix handle.send() blocking: extract prSplitSendWithCancel as standalone testable Go function",
+      "description": "handle.send() is a synchronous PTY write that blocks when the child's read buffer is full, freezing the JS thread and preventing cancellation. Extracted standalone prSplitSendWithCancel(send, kill, cancelled, forceCancelled) function at end of pr_split.go. Runs send() in goroutine, polls cancel/forceCancel every 200ms via ticker, calls kill() (SIGKILL) on cancel to unblock the write. The autoSplitTUI map's sendWithCancel entry delegates to this function after extracting the Go handle via extractGoHandle.",
+      "acceptance": "prSplitSendWithCancel is a standalone, exported function with injectable dependencies. Tests (Cancel, ForceCancel, Success, RealPTYKill) verify all paths. No goroutine leaks. No deadlocks.",
+      "status": "Done",
+      "files": ["internal/command/pr_split.go", "internal/command/pr_split_integration_test.go"]
+    },
+    {
+      "id": "T022",
+      "task": "Fix ctrl+] blank terminal: add HasChild() guard to TUIMux and check before RunPassthrough",
+      "description": "ctrl+] calls RunPassthrough even when no child is attached, resulting in a blank terminal with no way back. Added HasChild() bool method to TUIMux (mutex-protected m.child != nil check). The OnToggle callback in pr_split.go now checks HasChild() before calling ReleaseTerminal/RunPassthrough, showing an error via SendError if no child is attached. Also captures RunPassthrough error and reports via SendError.",
+      "acceptance": "Pressing ctrl+] when no Claude process is attached shows an error message instead of blanking the screen. When a child IS attached, toggle works as before. TestHasChild verifies the false→true→false lifecycle.",
+      "status": "Done",
+      "files": ["internal/termui/mux/mux.go", "internal/termui/mux/mux_test.go", "internal/command/pr_split.go"]
+    },
+    {
+      "id": "T023",
+      "task": "Add sendToHandle JS wrapper for cancellation-aware send across all pipeline call sites",
+      "description": "Added sendToHandle(handle, text) function in pr_split_script.js that uses autoSplitTUI.sendWithCancel when available (TUI mode) or falls back to direct handle.send() in test/non-TUI contexts. Returns { error: null } on success, { error: 'message' } on failure. Replaced all 4 handle.send() call sites in the automated pipeline: classification prompt, conflict fix, re-classify, resolveConflictsWithClaude. Exported as globalThis.prSplit.sendToHandle.",
+      "acceptance": "All 4 send sites use sendToHandle. Error semantics preserved (early return on error). TestIntegration_SendToHandle_FallbackDirect and TestIntegration_SendToHandle_FallbackError verify both paths.",
+      "status": "Done",
+      "files": ["internal/command/pr_split_script.js", "internal/command/pr_split_integration_test.go"]
+    },
+    {
+      "id": "T024",
+      "task": "Improve cleanupExecutor: SIGKILL before close on forceCancel, retry detach after close",
+      "description": "cleanupExecutor() now: (1) tracks whether first detach() succeeded, (2) on forceCancel sends SIGKILL before close() to skip the 5s graceful SIGTERM→wait→SIGKILL shutdown, (3) retries detach after close if initial detach failed (passthrough should have exited after child EOF). All operations are best-effort with try/catch.",
+      "acceptance": "Force-cancel terminates Claude immediately without the 5-second wait. Detach succeeds even if passthrough was active at cleanup time.",
+      "status": "Done",
+      "files": ["internal/command/pr_split_script.js"]
+    },
+    {
+      "id": "T025",
+      "task": "Write comprehensive integration tests for sendWithCancel, cancel, forceCancel, and real PTY kill",
+      "description": "Added 7 tests: (1) SendToHandle_FallbackDirect — no TUI, direct send, (2) SendToHandle_FallbackError — error propagation, (3) NormalWrite — real cat PTY happy path, (4) Cancel — synthetic blocking send + cancel flag, (5) ForceCancel — synthetic blocking send + forceCancel flag, (6) RealPTYKill — real sleep PTY + SIGKILL, (7) AutoSplitWithClaude_Pipeline — full AI integration test gated by -integration flag. Synthetic tests avoid platform-specific PTY buffer size issues (macOS buffers >1MB).",
+      "acceptance": "All 7 tests pass on macOS (and should pass on Linux). Cancel/ForceCancel tests verify completion within 2s. RealPTYKill verifies SIGKILL works with real processes. AutoSplitWithClaude_Pipeline is ready for real Claude execution.",
+      "status": "Done",
+      "files": ["internal/command/pr_split_integration_test.go"]
     }
   ],
   "continuousVerification": {

@@ -590,3 +590,27 @@ func TestSetStatusEnabled(t *testing.T) {
 		t.Error("statusEnabled should be true after SetStatusEnabled(true)")
 	}
 }
+
+func TestHasChild(t *testing.T) {
+	t.Parallel()
+	m := New(nil, nil, -1)
+
+	if m.HasChild() {
+		t.Error("HasChild should be false when no child is attached")
+	}
+
+	child := newMockChild()
+	if err := m.Attach(child); err != nil {
+		t.Fatalf("Attach failed: %v", err)
+	}
+	if !m.HasChild() {
+		t.Error("HasChild should be true after Attach")
+	}
+
+	if err := m.Detach(); err != nil {
+		t.Fatalf("Detach failed: %v", err)
+	}
+	if m.HasChild() {
+		t.Error("HasChild should be false after Detach")
+	}
+}

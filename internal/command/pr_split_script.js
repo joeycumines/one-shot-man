@@ -3398,6 +3398,7 @@ globalThis.prSplit = {
     heuristicFallback: heuristicFallback,
     assessIndependence: assessIndependence,
     classificationToGroups: classificationToGroups,
+    isCancelled: isCancelled,
 
     // Prompt rendering
     renderClassificationPrompt: renderClassificationPrompt,

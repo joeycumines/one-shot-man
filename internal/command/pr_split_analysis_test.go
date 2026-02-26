@@ -2,6 +2,7 @@ package command
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -772,5 +773,636 @@ func TestAssessIndependence(t *testing.T) {
 			}
 			tt.check(t, pairs)
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// buildDependencyGraph
+// ---------------------------------------------------------------------------
+
+func TestBuildDependencyGraph_IndependentSplits(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.buildDependencyGraph({
+		splits: [
+			{name: 'split/01-cmd', files: ['cmd/main.go']},
+			{name: 'split/02-docs', files: ['docs/README.md']}
+		]
+	}, null))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	var graph struct {
+		Nodes []struct {
+			Name  string `json:"name"`
+			Index int    `json:"index"`
+		} `json:"nodes"`
+		Edges []struct {
+			From int `json:"from"`
+			To   int `json:"to"`
+		} `json:"edges"`
+	}
+	if err := json.Unmarshal([]byte(s), &graph); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(graph.Nodes) != 2 {
+		t.Fatalf("expected 2 nodes, got %d", len(graph.Nodes))
+	}
+	if len(graph.Edges) != 0 {
+		t.Fatalf("expected 0 edges (independent), got %d", len(graph.Edges))
+	}
+}
+
+func TestBuildDependencyGraph_DependentSplits(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.buildDependencyGraph({
+		splits: [
+			{name: 'split/01-a', files: ['pkg/a.go']},
+			{name: 'split/02-b', files: ['pkg/b.go']},
+			{name: 'split/03-c', files: ['other/c.go']}
+		]
+	}, null))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	var graph struct {
+		Nodes []struct {
+			Name  string `json:"name"`
+			Index int    `json:"index"`
+		} `json:"nodes"`
+		Edges []struct {
+			From int `json:"from"`
+			To   int `json:"to"`
+		} `json:"edges"`
+	}
+	if err := json.Unmarshal([]byte(s), &graph); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(graph.Nodes) != 3 {
+		t.Fatalf("expected 3 nodes, got %d", len(graph.Nodes))
+	}
+	// Splits 01 and 02 share dir "pkg", so 1 edge.
+	if len(graph.Edges) != 1 {
+		t.Fatalf("expected 1 edge, got %d: %v", len(graph.Edges), graph.Edges)
+	}
+	if graph.Edges[0].From != 0 || graph.Edges[0].To != 1 {
+		t.Errorf("expected edge 0↔1, got %d↔%d", graph.Edges[0].From, graph.Edges[0].To)
+	}
+}
+
+func TestBuildDependencyGraph_NilPlan(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.buildDependencyGraph(null, null))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	var graph struct {
+		Nodes []interface{} `json:"nodes"`
+		Edges []interface{} `json:"edges"`
+	}
+	if err := json.Unmarshal([]byte(s), &graph); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(graph.Nodes) != 0 || len(graph.Edges) != 0 {
+		t.Fatalf("expected empty graph, got nodes=%d edges=%d", len(graph.Nodes), len(graph.Edges))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// renderAsciiGraph — pure function on graph structure
+// ---------------------------------------------------------------------------
+
+func TestRenderAsciiGraph_EmptyGraph(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`globalThis.prSplit.renderAsciiGraph({nodes: [], edges: []})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	if s != "(empty graph)" {
+		t.Fatalf("expected '(empty graph)', got %q", s)
+	}
+}
+
+func TestRenderAsciiGraph_AllIndependent(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`globalThis.prSplit.renderAsciiGraph({
+		nodes: [{name: 'split/01-cmd', index: 0}, {name: 'split/02-docs', index: 1}],
+		edges: []
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	if !strings.Contains(s, "(independent)") {
+		t.Errorf("expected '(independent)' marker, got:\n%s", s)
+	}
+	if !strings.Contains(s, "◯") {
+		t.Errorf("expected '◯' marker for no-dep nodes, got:\n%s", s)
+	}
+	if !strings.Contains(s, "split/01-cmd") {
+		t.Errorf("missing split/01-cmd in:\n%s", s)
+	}
+	if !strings.Contains(s, "safe to merge in any order") {
+		t.Errorf("missing merge advice for independent splits in:\n%s", s)
+	}
+}
+
+func TestRenderAsciiGraph_WithDeps(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`globalThis.prSplit.renderAsciiGraph({
+		nodes: [
+			{name: 'split/01-a', index: 0},
+			{name: 'split/02-b', index: 1},
+			{name: 'split/03-c', index: 2}
+		],
+		edges: [{from: 0, to: 1}]
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	// Node 2 (index=2) is independent → ◯
+	if !strings.Contains(s, "◯") {
+		t.Errorf("expected '◯' for independent node, got:\n%s", s)
+	}
+	// Nodes 0 and 1 are dependent → ●
+	if !strings.Contains(s, "●") {
+		t.Errorf("expected '●' for dependent nodes, got:\n%s", s)
+	}
+	// Should show edge notation
+	if !strings.Contains(s, "←→") {
+		t.Errorf("expected '←→' edge notation, got:\n%s", s)
+	}
+	// Independent splits summary should mention split/03-c
+	if !strings.Contains(s, "split/03-c") {
+		t.Errorf("expected split/03-c in output:\n%s", s)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// analyzeRetrospective
+// ---------------------------------------------------------------------------
+
+func TestAnalyzeRetrospective_BalancedPlan(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeRetrospective(
+		{splits: [
+			{name: 's1', files: ['a.go', 'b.go']},
+			{name: 's2', files: ['c.go', 'd.go']}
+		]},
+		[{passed: true, name: 's1'}, {passed: true, name: 's2'}],
+		{equivalent: true}
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	var result struct {
+		Insights []interface{} `json:"insights"`
+		Score    float64       `json:"score"`
+	}
+	if err := json.Unmarshal([]byte(s), &result); err != nil {
+		t.Fatalf("parse error: %v\nraw: %s", err, s)
+	}
+	if result.Score <= 0 {
+		t.Errorf("expected positive score for balanced+passing plan, got %f", result.Score)
+	}
+}
+
+func TestAnalyzeRetrospective_Imbalanced(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeRetrospective(
+		{splits: [
+			{name: 's1', files: ['a.go']},
+			{name: 's2', files: ['b.go', 'c.go', 'd.go', 'e.go', 'f.go', 'g.go', 'h.go', 'i.go', 'j.go', 'k.go']}
+		]},
+		[],
+		null
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	var result struct {
+		Insights []struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"insights"`
+		Score float64 `json:"score"`
+	}
+	if err := json.Unmarshal([]byte(s), &result); err != nil {
+		t.Fatalf("parse error: %v\nraw: %s", err, s)
+	}
+	// 1 file vs 10 files → ratio 0.1 < 0.2 → warning.
+	hasWarning := false
+	for _, in := range result.Insights {
+		if in.Type == "warning" && strings.Contains(in.Message, "imbalance") {
+			hasWarning = true
+		}
+	}
+	if !hasWarning {
+		t.Errorf("expected imbalance warning, got insights: %v", result.Insights)
+	}
+}
+
+func TestAnalyzeRetrospective_FailedSplits(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeRetrospective(
+		{splits: [
+			{name: 's1', files: ['a.go']},
+			{name: 's2', files: ['b.go']}
+		]},
+		[{passed: true, name: 's1'}, {passed: false, name: 's2'}],
+		{equivalent: true}
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	var result struct {
+		Insights []struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"insights"`
+		Score float64 `json:"score"`
+	}
+	if err := json.Unmarshal([]byte(s), &result); err != nil {
+		t.Fatalf("parse error: %v\nraw: %s", err, s)
+	}
+	hasError := false
+	for _, in := range result.Insights {
+		if in.Type == "error" && strings.Contains(in.Message, "s2") {
+			hasError = true
+		}
+	}
+	if !hasError {
+		t.Errorf("expected error insight about failed split s2, got: %v", result.Insights)
+	}
+}
+
+func TestAnalyzeRetrospective_NilPlan(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeRetrospective(null, null, null))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	var result struct {
+		Insights []interface{} `json:"insights"`
+		Score    float64       `json:"score"`
+	}
+	if err := json.Unmarshal([]byte(s), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(result.Insights) != 0 {
+		t.Errorf("expected 0 insights for nil plan, got %d", len(result.Insights))
+	}
+	if result.Score != 0 {
+		t.Errorf("expected score 0 for nil plan, got %f", result.Score)
+	}
+}
+
+func TestAnalyzeRetrospective_NotEquivalent(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeRetrospective(
+		{splits: [
+			{name: 's1', files: ['a.go', 'b.go']},
+			{name: 's2', files: ['c.go', 'd.go']}
+		]},
+		[{passed: true, name: 's1'}, {passed: true, name: 's2'}],
+		{equivalent: false}
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	var result struct {
+		Insights []struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"insights"`
+		Score float64 `json:"score"`
+	}
+	if err := json.Unmarshal([]byte(s), &result); err != nil {
+		t.Fatalf("parse error: %v\nraw: %s", err, s)
+	}
+	if len(result.Insights) == 0 {
+		t.Fatal("expected at least one insight about equivalence failure")
+	}
+	found := false
+	for _, in := range result.Insights {
+		t.Logf("insight: type=%q message=%q", in.Type, in.Message)
+		if in.Type == "error" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error-type insight about equivalence, got: %v", result.Insights)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Telemetry
+// ---------------------------------------------------------------------------
+
+func TestRecordTelemetry_Increment(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(`
+		globalThis.prSplit.recordTelemetry('filesAnalyzed', 10);
+		globalThis.prSplit.recordTelemetry('filesAnalyzed', 5);
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.getTelemetrySummary())`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	var summary map[string]interface{}
+	if err := json.Unmarshal([]byte(s), &summary); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	count, ok := summary["filesAnalyzed"].(float64)
+	if !ok {
+		t.Fatalf("filesAnalyzed not a number: %v", summary["filesAnalyzed"])
+	}
+	if count != 15 {
+		t.Errorf("expected filesAnalyzed=15 (10+5), got %f", count)
+	}
+}
+
+func TestRecordTelemetry_SetString(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(`
+		globalThis.prSplit.recordTelemetry('strategy', 'directory');
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.getTelemetrySummary())`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	var summary map[string]interface{}
+	if err := json.Unmarshal([]byte(s), &summary); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if summary["strategy"] != "directory" {
+		t.Errorf("expected strategy='directory', got %v", summary["strategy"])
+	}
+}
+
+func TestGetTelemetrySummary_HasEndTime(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.getTelemetrySummary())`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	var summary map[string]interface{}
+	if err := json.Unmarshal([]byte(s), &summary); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if _, ok := summary["endTime"]; !ok {
+		t.Error("getTelemetrySummary should set endTime")
+	}
+	if _, ok := summary["startTime"]; !ok {
+		t.Error("getTelemetrySummary should have startTime")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Conversation history
+// ---------------------------------------------------------------------------
+
+func TestConversationHistory_RecordAndRetrieve(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(`
+		globalThis.prSplit.recordConversation('classification', 'classify these', 'group A');
+		globalThis.prSplit.recordConversation('planning', 'plan splits', '2 splits');
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.getConversationHistory())`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	var history []struct {
+		Action   string `json:"action"`
+		Prompt   string `json:"prompt"`
+		Response string `json:"response"`
+	}
+	if err := json.Unmarshal([]byte(s), &history); err != nil {
+		t.Fatalf("parse error: %v\nraw: %s", err, s)
+	}
+	if len(history) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(history))
+	}
+	if history[0].Action != "classification" {
+		t.Errorf("entry 0 action = %q, want 'classification'", history[0].Action)
+	}
+	if history[0].Prompt != "classify these" {
+		t.Errorf("entry 0 prompt = %q, want 'classify these'", history[0].Prompt)
+	}
+	if history[1].Action != "planning" {
+		t.Errorf("entry 1 action = %q, want 'planning'", history[1].Action)
+	}
+}
+
+func TestConversationHistory_EmptyByDefault(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.getConversationHistory())`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	if s != "[]" {
+		t.Fatalf("expected empty array, got %s", s)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// extractDirs — pure function on file paths
+// ---------------------------------------------------------------------------
+
+func TestExtractDirs_Basic(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractDirs([
+		'internal/command/foo.go',
+		'internal/command/bar.go',
+		'cmd/main.go',
+		'README.md'
+	]))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	var dirs map[string]bool
+	if err := json.Unmarshal([]byte(s), &dirs); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	// dirname uses depth=1 by default.
+	want := map[string]bool{
+		"internal": true,
+		"cmd":      true,
+		".":        true, // README.md is root-level
+	}
+	if len(dirs) != len(want) {
+		t.Fatalf("got %d dirs, want %d: %v", len(dirs), len(want), dirs)
+	}
+	for k := range want {
+		if !dirs[k] {
+			t.Errorf("missing dir %q", k)
+		}
+	}
+}
+
+func TestExtractDirs_NilInput(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractDirs(null))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val.(string) != "{}" {
+		t.Fatalf("expected empty object, got %s", val)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// saveTelemetry
+// ---------------------------------------------------------------------------
+
+func TestSaveTelemetry_Success(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Install exec mock and osmod.writeFile mock.
+	if _, err := evalJS(execMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(`
+		globalThis._writtenFiles = {};
+		osmod.writeFile = function(path, content) {
+			globalThis._writtenFiles[path] = content;
+		};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.saveTelemetry('/tmp/test-telemetry'))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	var result struct {
+		Error *string `json:"error"`
+		Path  string  `json:"path"`
+	}
+	if err := json.Unmarshal([]byte(s), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("expected no error, got %q", *result.Error)
+	}
+	if result.Path == "" {
+		t.Fatal("expected non-empty path")
+	}
+	if !strings.HasPrefix(result.Path, "/tmp/test-telemetry/session-") {
+		t.Errorf("path %q doesn't start with expected prefix", result.Path)
+	}
+	if !strings.HasSuffix(result.Path, ".json") {
+		t.Errorf("path %q doesn't end with .json", result.Path)
+	}
+
+	// Verify file was written with valid JSON.
+	written, err := evalJS(`globalThis._writtenFiles['` + result.Path + `']`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, ok := written.(string)
+	if !ok || ws == "" {
+		t.Fatalf("expected written file content, got %T: %v", written, written)
+	}
+	var telemetry map[string]interface{}
+	if err := json.Unmarshal([]byte(ws), &telemetry); err != nil {
+		t.Fatalf("written content is not valid JSON: %v\ncontent: %s", err, ws)
+	}
+	if _, ok := telemetry["startTime"]; !ok {
+		t.Error("written telemetry missing startTime")
+	}
+}
+
+func TestSaveTelemetry_MkdirFails(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(execMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Override mkdir to fail.
+	if _, err := evalJS(`
+		var execModTel = require('osm:exec');
+		var _origExecvTel = execModTel.execv;
+		execModTel.execv = function(argv) {
+			if (argv[0] === 'mkdir') {
+				return {stdout: '', stderr: 'Permission denied', code: 1, error: true, message: 'Permission denied'};
+			}
+			return _origExecvTel(argv);
+		};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.saveTelemetry('/bad/path'))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	if !strings.Contains(s, "mkdir failed") {
+		t.Errorf("expected mkdir failed error, got: %s", s)
 	}
 }

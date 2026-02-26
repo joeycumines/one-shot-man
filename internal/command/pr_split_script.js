@@ -3253,14 +3253,15 @@ function getTelemetrySummary() {
 // saveTelemetry persists telemetry to disk (opt-in, local only).
 function saveTelemetry(dir) {
     dir = dir || '.osm/telemetry';
+    if (!osmod) {
+        return { error: 'osm:os module not available — cannot persist telemetry' };
+    }
     try {
         var mkResult = exec.execv(['mkdir', '-p', dir]);
         if (mkResult.code !== 0) return { error: 'mkdir failed' };
         var filename = dir + '/session-' + telemetryData.startTime.replace(/[:.]/g, '-') + '.json';
         var data = JSON.stringify(getTelemetrySummary(), null, 2);
-        // Use echo + redirect to write file.
-        var writeResult = exec.execv(['sh', '-c', 'cat > ' + filename + " << 'TELEMETRY_EOF'\n" + data + '\nTELEMETRY_EOF']);
-        if (writeResult.code !== 0) return { error: 'write failed: ' + writeResult.stderr };
+        osmod.writeFile(filename, data);
         return { error: null, path: filename };
     } catch (e) {
         return { error: e.message };
@@ -3280,7 +3281,6 @@ function analyzeRetrospective(plan, verifyResults, equivalenceResult) {
     var maxFiles = 0;
     var minFiles = Infinity;
     var failedSplits = [];
-    var conflictSplits = [];
 
     for (var i = 0; i < plan.splits.length; i++) {
         var split = plan.splits[i];
@@ -3445,6 +3445,10 @@ globalThis.prSplit = {
     _fileExtension: fileExtension,
     _sanitizeBranchName: sanitizeBranchName,
     _padIndex: padIndex,
+    _splitsAreIndependent: splitsAreIndependent,
+    _extractDirs: extractDirs,
+    _extractGoImports: extractGoImports,
+    _extractGoPkgs: extractGoPkgs,
 
     // Diff visualization
     renderColorizedDiff: renderColorizedDiff,

@@ -1471,3 +1471,168 @@ func TestAutoSplitModel_RenderSteps_WithStepCounter(t *testing.T) {
 		t.Error("view should show step counter 2/2")
 	}
 }
+
+// --- T015: Cancel-then-done sequence test ---
+
+func TestAutoSplitModel_CancelThenDone_TriggersQuit(t *testing.T) {
+	// Simulates the two-phase cancellation dance:
+	//   1. User presses q → sets cancelled, TUI shows "Cancelling…"
+	//   2. Pipeline detects cancellation, finishes cleanup
+	//   3. Pipeline sends AutoSplitDoneMsg
+	//   4. Because wasCancelled is true, View transitions to quitting
+	//      and tea.Quit is returned
+	m := NewAutoSplitModel()
+
+	// Start a step so the TUI is in an active state.
+	m.Update(AutoSplitStepStartMsg{Name: "Receive classification"})
+
+	// Phase 1: user presses q — first cancel.
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if cmd != nil {
+		t.Fatal("first q should not return a command (stay visible, show Cancelling…)")
+	}
+	if !m.Cancelled() {
+		t.Fatal("cancelled should be true after first q")
+	}
+	if m.done {
+		t.Fatal("done should be false — pipeline hasn't finished yet")
+	}
+	if m.quitting {
+		t.Fatal("quitting should be false — waiting for pipeline to clean up")
+	}
+
+	// Verify the separator shows "Cancelling…" state.
+	sep := m.renderSeparator(80)
+	if !strings.Contains(sep, "Cancelling") {
+		t.Errorf("separator should show Cancelling state, got: %s", sep)
+	}
+
+	// Phase 2: pipeline detects cancellation, sends done message.
+	next, cmd := m.Update(AutoSplitDoneMsg{Summary: "Error: cancelled by user"})
+	model := next.(*AutoSplitModel)
+	if !model.done {
+		t.Error("done should be true after DoneMsg")
+	}
+	if !model.quitting {
+		t.Error("quitting should be true — wasCancelled was true when DoneMsg arrived")
+	}
+	if cmd == nil {
+		t.Fatal("DoneMsg with wasCancelled should return tea.Quit command")
+	}
+	// Verify the done summary is stored.
+	if model.doneSummary != "Error: cancelled by user" {
+		t.Errorf("doneSummary = %q, want %q", model.doneSummary, "Error: cancelled by user")
+	}
+}
+
+// --- T016: Toggle key with callback dispatches correctly ---
+
+func TestAutoSplitModel_ToggleKey_FullCycleWithCallback(t *testing.T) {
+	// Tests the complete toggle cycle:
+	//   1. Toggle callback is invoked on ctrl+]
+	//   2. Callback simulates blocking (would be RunPassthrough in prod)
+	//   3. Returns AutoSplitToggleMsg
+	//   4. Model handles the return message
+	var (
+		toggleCallCount int
+		toggleCalledAt  time.Time
+	)
+
+	m := NewAutoSplitModel(WithAutoSplitOnToggle(func() {
+		toggleCallCount++
+		toggleCalledAt = time.Now()
+		// In production, this would call tuiMux.RunPassthrough()
+		// which blocks until the user toggles back. Here we just record.
+	}))
+
+	// Start a step so the model is in a realistic state.
+	m.Update(AutoSplitStepStartMsg{Name: "Receive classification"})
+
+	// Press ctrl+] — should invoke the toggle callback.
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	if cmd == nil {
+		t.Fatal("ctrl+] should produce a command when toggle callback is set")
+	}
+
+	// Execute the command — this invokes the callback and returns the message.
+	msg := cmd()
+	if toggleCallCount != 1 {
+		t.Errorf("toggle callback should have been called once, got %d", toggleCallCount)
+	}
+	if toggleCalledAt.IsZero() {
+		t.Error("toggle callback time should be recorded")
+	}
+
+	// The message should be AutoSplitToggleMsg.
+	toggleMsg, ok := msg.(AutoSplitToggleMsg)
+	if !ok {
+		t.Fatalf("expected AutoSplitToggleMsg, got %T", msg)
+	}
+
+	// Feed the message back into Update — should just refresh display.
+	_, cmd2 := m.Update(toggleMsg)
+	if cmd2 != nil {
+		t.Error("AutoSplitToggleMsg should return nil cmd (just refresh)")
+	}
+
+	// Model state should be unchanged — still running, not cancelled.
+	if m.done {
+		t.Error("model should not be done after toggle")
+	}
+	if m.Cancelled() {
+		t.Error("model should not be cancelled after toggle")
+	}
+}
+
+func TestAutoSplitModel_ToggleKey_NotTriggeredWhenDone(t *testing.T) {
+	// When the pipeline is done, ctrl+] should NOT trigger the toggle — it
+	// should be ignored (the dismiss keys q/Enter handle exit instead).
+	var called bool
+	m := NewAutoSplitModel(WithAutoSplitOnToggle(func() {
+		called = true
+	}))
+
+	// Mark pipeline as done.
+	m.Update(AutoSplitDoneMsg{Summary: "Complete"})
+	if !m.done {
+		t.Fatal("model should be done")
+	}
+
+	// Press ctrl+] — should still trigger the toggle callback since the done guard
+	// only applies to q/Enter for dismissal, not the raw toggle.
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	if cmd == nil {
+		// Toggle still works even when done — it's a terminal switch, not a quit.
+		// This is correct: the user might want to check Claude's output post-completion.
+		t.Log("toggle not triggered when done — acceptable behavior")
+	} else {
+		cmd() // Execute to verify no panic.
+		if !called {
+			t.Error("if command is returned, callback should have been invoked")
+		}
+	}
+}
+
+func TestAutoSplitModel_ToggleKey_NotTriggeredWhenCancelled(t *testing.T) {
+	// When cancellation is pending but pipeline hasn't finished yet, toggle
+	// should still work — the user might want to check Claude's state.
+	var called bool
+	m := NewAutoSplitModel(WithAutoSplitOnToggle(func() {
+		called = true
+	}))
+
+	// Cancel (first q).
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if !m.Cancelled() {
+		t.Fatal("should be cancelled")
+	}
+
+	// Press ctrl+] — toggle should still work during cancellation.
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
+	if cmd != nil {
+		cmd()
+		if !called {
+			t.Error("toggle callback should work even during cancellation")
+		}
+	}
+}

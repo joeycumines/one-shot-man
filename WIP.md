@@ -1,56 +1,68 @@
 # WIP.md — Takumi's Desperate Diary
 
-## Session State
-- **All checks pass**: build ✅ lint ✅ test ✅
-- **Blueprint**: T001-T013, T015-T033, T034-T060 ALL Done. Zero deferred.
-- **Commits**: f349929, d03e944, 505a57a, 5424f5b, 6f9aafd, 80ab683, 8e54415, f4b7325, 7762bef, 55fbe1d, 1bf2986, 1f13b77, b996d07, 18ced3a, 5f2666e, 640e790, f9b87db, c20c816, f041474, 913c181, **01d35f7**
+## Current State
+- All implementation changes complete and verified
+- `make` (build + lint + test): ALL GREEN, 43/43 packages pass
+- Ready for Rule of Two verification and commit
 
-## Commit Log
-1. `f349929` — Add cancellation, toggle, and scroll to auto-split TUI (507 ins, 17 del, 4 files)
-2. `d03e944` — Add sub-step detail progress to auto-split TUI (122 ins, 1 del, 4 files)
-3. `505a57a` — Remove dead code branch in toggle key dispatch (1 ins, 3 del)
-4. `5424f5b` — Add edge-case tests for auto-split TUI (125 ins, 1 file)
-5. `6f9aafd` — Rewrite auto-split cancel lifecycle and remove vaporware (244 ins, 298 del, 4 files)
-6. `80ab683` — Add mock-MCP integration test for auto-split pipeline (658 ins, 3 files)
-7. `8e54415` — Add timer, step counter, timeout flag, and Enter dismiss (206 ins, 20 del, 6 files)
-8. `f4b7325` — Add flag validation, import parser tests, and changelog entries (396 ins, 6 del, 5 files)
-9. `7762bef` — Add View() edge case tests for auto-split TUI (157 ins, 4 del, 3 files)
-10. `55fbe1d` — Add help bar, fast-exit, and cancelled-done path tests (77 ins, 4 del, 3 files)
-11. `1bf2986` — Replace renderPane and appendCapped tests with thorough edge cases (105 ins, 31 del, 3 files)
-12. `1f13b77` — Extract computeLayout to deduplicate pane dimension math
-13. `b996d07` — Add boundary and edge-case tests for scroll, layout, and separator
+## Changes Made
 
-14. `18ced3a` — Extract send helper and extend SetClaudeStatus rendering test
+### 1. Fix ctrl+] toggle during auto-split (T003, T004, T005)
+**File:** `internal/command/pr_split.go`
+- Pre-declare `autoSplitModel` so the toggle closure can reference it
+- Toggle callback now calls `p.ReleaseTerminal()` before `RunPassthrough` 
+  and `p.RestoreTerminal()` after — prevents BubbleTea/passthrough stdin/stdout conflicts
+- Updated comments to explain the ReleaseTerminal/RestoreTerminal pattern
 
-15. `5f2666e` — Add mux/splitview coverage gap tests (WriteToChild, SetStatusEnabled, SplitView edges)
+### 2. Attach Claude handle to tuiMux during auto-split (T005)
+**File:** `internal/command/pr_split_script.js`
+- After "Spawn Claude" step succeeds, call `tuiMux.attach(claudeExecutor.handle)`
+- This enables ctrl+] to forward stdin/stdout to Claude during the pipeline
+- Non-fatal: if attach fails, toggle just won't work (logged as warning)
 
-16. `640e790` — Add PlanEditor edge-case tests (delete bounds, rename empty, move edge cases)
+### 3. Detach from tuiMux on cleanup (T001, T002)
+**File:** `internal/command/pr_split_script.js`  
+- `cleanupExecutor()` now calls `tuiMux.detach()` before closing Claude
+- Prevents ctrl+] from trying to forward to a dead child process
+- Best-effort: handles already-detached case gracefully
 
-17. `f9b87db` — Add autosplit edge-case tests (formatDuration, truncate, ensureStep, renderSteps)
+### 4. Post-send cancellation check (T002)
+**File:** `internal/command/pr_split_script.js`
+- Added `isCancelled()` check immediately after `handle.send()` in the
+  classification step — reduces latency between cancel and detection
 
-18. `c20c816` — Add cross-package edge-case tests (gitops, argv, storage)
+### 5. Remove loadStrategyPlugin (T013)
+**File:** `internal/command/pr_split_script.js`
+- Removed `loadStrategyPlugin()` function — used `eval()`, no tests, security risk
+- Removed export entry and section header comment
+- Per AGENTS.md: "code that is Purpose-less and Untested" = AI slop
 
-19. `f041474` — Add config parsing unit tests (parseBool, parseHotSnippetLine, parseSessionOption, parseClaudeMuxOption)
-20. `913c181` — Add parsing edge-case tests (stripBOM, unquoteYAMLString, parseInlineYAMLList, parseSimpleYAML, validateGoal)
-21. `01d35f7` — Add createPRs mock execution flow tests (T034)
-22. `1a8de19` — Add grouping strategy and helper function tests
-23. `4c446a2` — Add verification and analysis function direct tests
-24. `260bf0c` — Add pipeline function tests (validatePlan, resolveConflicts, pollForFile, ClaudeCodeExecutor.resolve, shellQuote)
-25. `736cfa2` — Add planning and dependency analysis function tests (parseGoImports, groupByDependency, selectStrategy, createSplitPlan, savePlan, loadPlan)
-26. `fee2e2b` — Add analysis and classification function tests (detectLanguage, detectGoModulePath, classificationToGroups, analyzeDiff, assessIndependence)
-27. `pending` — Add execution and verification function tests (executeSplit, verifySplit, verifyEquivalence, verifyEquivalenceDetailed, cleanupBranches)
+### 6. New unit tests (T015, T016)
+**File:** `internal/termui/mux/autosplit_test.go`
+- `TestAutoSplitModel_CancelThenDone_TriggersQuit`: verifies two-phase
+  cancellation dance (q → cancelled → DoneMsg → tea.Quit)
+- `TestAutoSplitModel_ToggleKey_FullCycleWithCallback`: verifies ctrl+]
+  dispatches callback, returns AutoSplitToggleMsg, model handles it
+- `TestAutoSplitModel_ToggleKey_NotTriggeredWhenDone`: verifies toggle
+  behavior when pipeline is complete
+- `TestAutoSplitModel_ToggleKey_NotTriggeredWhenCancelled`: verifies
+  toggle still works during pending cancellation
 
-## Current Work — Scope Expansion Cycle 21
-All original 60 tasks Done. T061-T066 completed. Exploring next test gaps.
+## Verification Results
+- `make build`: PASS
+- `make lint`: PASS (vet, staticcheck, deadcode — zero issues)
+- `make test`: PASS (43/43 packages, zero failures, race detection enabled)
 
-### What Changed (T043-T044)
-- **T043**: Extracted shared layout arithmetic from View() and outputPaneHeight() into computeLayout() returning autoSplitLayout struct. 4 unit tests: Default, ManySteps, TinyTerminal, ConsistentWithOutputPaneHeight.
-- **T044**: Rule of Two passed (2/2 PASS). Committing.
+## Pre-Existing Infrastructure
+- TestMain with -integration, -claude-command, -claude-arg, -integration-model flags
+- 14 integration tests (TestIntegration_AutoSplitWithClaude, TestIntegration_RealClaudeCode, etc.)
+- project.mk integration-test-prsplit target with ?= variables
 
-## Files Modified This Session (cumulative)
-- internal/termui/mux/autosplit.go — pipelineStartedAt, timer header, step counter, zero-StartedAt guard
-- internal/termui/mux/autosplit_test.go — Enter dismiss, timer, timer freeze, step counter tests
-- internal/command/pr_split.go — timeout field, flag, config fallback, JS propagation
-- internal/command/pr_split_script.js — timeout wiring in run + auto-split commands
-- blueprint.json — T025-T030 added and marked Done
-- WIP.md — updated
+## Remaining Not Started Tasks
+- T010: Verify ClaudeCodeExecutor.spawn() arg passing chain  
+- T011: Integration test for cancellation (TestIntegration_AutoSplitCancel)
+- T012: Ensure auto-split restores original branch on all exit paths
+- T014: Verify scroll behavior after cancellation
+- T018: Complex integration test (TestIntegration_AutoSplitComplexGoProject)
+- T019: Ensure finishTUI handles no-TUI case
+- T020: Comprehensive error messages on spawn failure

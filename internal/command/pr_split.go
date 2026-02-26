@@ -333,16 +333,31 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	// renders. wait() blocks until the TUI exits (user presses q / Ctrl+C).
 	//
 	// The toggle key (Ctrl+]) switches to Claude's terminal mid-pipeline.
-	// The onToggle callback blocks (via tuiMux.RunPassthrough) until the
-	// user toggles back.
-	autoSplitModel := mux.NewAutoSplitModel(
+	// The onToggle callback releases BubbleTea's terminal control, runs
+	// passthrough (forwarding stdin/stdout to the child PTY), then restores
+	// the BubbleTea terminal when the user toggles back.
+	//
+	// Pre-declare so the closure can reference autoSplitModel (the variable
+	// is assigned on the very next line, before the closure is ever called).
+	var autoSplitModel *mux.AutoSplitModel
+	autoSplitModel = mux.NewAutoSplitModel(
 		mux.WithAutoSplitMaxLines(1000),
 		mux.WithAutoSplitToggleKey(mux.DefaultToggleKey),
 		mux.WithAutoSplitOnToggle(func() {
-			// Switch to Claude's terminal. This blocks until
-			// the user presses the toggle key again or the
-			// child process exits.
+			// Release BubbleTea's terminal control (alt-screen, raw
+			// mode, input listener) so RunPassthrough gets exclusive
+			// access to stdin/stdout.
+			if p := autoSplitModel.Program(); p != nil {
+				p.ReleaseTerminal()
+			}
+			// Switch to Claude's terminal. This blocks until the
+			// user presses the toggle key again or the child exits.
 			_, _ = tuiMux.RunPassthrough(ctx)
+			// Restore BubbleTea's terminal control so the auto-split
+			// TUI resumes rendering.
+			if p := autoSplitModel.Program(); p != nil {
+				p.RestoreTerminal()
+			}
 		}),
 	)
 	var autoSplitErr error

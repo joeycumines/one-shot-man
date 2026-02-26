@@ -2244,6 +2244,18 @@ function automatedSplit(config) {
     var sessionId = executor.sessionId;
     var resultDir = executor.resultDir;
 
+    // Attach Claude's PTY handle to tuiMux so ctrl+] can forward
+    // stdin/stdout to Claude during the pipeline.
+    if (claudeExecutor && claudeExecutor.handle && typeof tuiMux !== 'undefined' && tuiMux) {
+        try {
+            tuiMux.attach(claudeExecutor.handle);
+            log.printf('auto-split: attached Claude handle to tuiMux for ctrl+] toggle');
+        } catch (e) {
+            // Non-fatal — toggle just won't work.
+            log.printf('auto-split: tuiMux attach warning: %s', e.message || String(e));
+        }
+    }
+
     // Step 3: Send classification request.
     var classifyResult = step('Send classification request', function() {
         updateDetail('Send classification request', 'Rendering prompt for ' + analysis.files.length + ' files...');
@@ -2261,6 +2273,10 @@ function automatedSplit(config) {
             recordTelemetry('claudeInteractions', 1);
         } catch (e) {
             return { error: 'failed to send prompt to Claude: ' + (e.message || String(e)) };
+        }
+        // Check cancellation immediately after the blocking send() call.
+        if (isCancelled()) {
+            return { error: 'cancelled by user' };
         }
         return { error: null };
     });
@@ -2652,7 +2668,12 @@ function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, po
 }
 
 // cleanupExecutor closes the Claude executor and cleans up resources.
+// Detaches from tuiMux first so ctrl+] stops trying to forward to a
+// dead child process.
 function cleanupExecutor() {
+    if (typeof tuiMux !== 'undefined' && tuiMux) {
+        try { tuiMux.detach(); } catch (e) { /* best effort — may already be detached */ }
+    }
     if (claudeExecutor) {
         try { claudeExecutor.close(); } catch (e) { /* best effort */ }
     }
@@ -3215,36 +3236,6 @@ function saveTelemetry(dir) {
 }
 
 // ---------------------------------------------------------------------------
-//  Plugin System for Custom Strategies (T130)
-// ---------------------------------------------------------------------------
-
-// loadStrategyPlugin loads a JS strategy script from a path.
-// The script is expected to export a function(files, options) → groups.
-function loadStrategyPlugin(scriptPath) {
-    try {
-        var cat = exec.execv(['cat', scriptPath]);
-        if (cat.code !== 0) {
-            return { error: 'failed to read strategy script: ' + cat.stderr.trim(), fn: null };
-        }
-        // Evaluate in a sandboxed scope.
-        var fn = null;
-        // Use Function constructor to create isolated scope.
-        try {
-            var wrapped = '(function() { ' + cat.stdout + '\n return typeof module !== "undefined" && module.exports ? module.exports : null; })()';
-            fn = eval(wrapped);
-        } catch (evalErr) {
-            return { error: 'strategy script eval error: ' + evalErr.message, fn: null };
-        }
-        if (typeof fn !== 'function') {
-            return { error: 'strategy script must export a function(files, options) → groups', fn: null };
-        }
-        return { error: null, fn: fn };
-    } catch (e) {
-        return { error: e.message, fn: null };
-    }
-}
-
-// ---------------------------------------------------------------------------
 //  Retrospective Analysis (T131)
 // ---------------------------------------------------------------------------
 
@@ -3438,9 +3429,6 @@ globalThis.prSplit = {
     recordTelemetry: recordTelemetry,
     getTelemetrySummary: getTelemetrySummary,
     saveTelemetry: saveTelemetry,
-
-    // Plugin system
-    loadStrategyPlugin: loadStrategyPlugin,
 
     // Retrospective analysis
     analyzeRetrospective: analyzeRetrospective,

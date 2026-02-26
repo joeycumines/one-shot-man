@@ -36,7 +36,7 @@ func TestExecuteSplit(t *testing.T) {
 		check  func(t *testing.T, r executeSplitResult)
 	}{
 		{
-			name: "invalid plan returns error",
+			name:  "invalid plan returns error",
 			setup: ``,
 			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
 				baseBranch: 'main',
@@ -53,7 +53,7 @@ func TestExecuteSplit(t *testing.T) {
 			},
 		},
 		{
-			name: "missing fileStatuses returns error",
+			name:  "missing fileStatuses returns error",
 			setup: ``,
 			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
 				baseBranch: 'main',
@@ -644,7 +644,7 @@ func TestVerifyEquivalenceDetailed(t *testing.T) {
 			},
 		},
 		{
-			name: "error from base verification propagates",
+			name:  "error from base verification propagates",
 			setup: ``,
 			invoke: `JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed({
 				sourceBranch: 'feat',

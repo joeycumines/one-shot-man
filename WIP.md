@@ -1,29 +1,37 @@
-# WIP.md — Takumi's Desperate Diary
+# WIP: Fix auto-split claude integration
 
-## Current State (Post-Commit)
-- **All T021-T025 committed.** Working tree clean (after this commit).
-- `make` passes: 43/43 packages, zero lint errors.
-- Prior commits: bee4909, 4e21bf7
-- This session commit: sendWithCancel + HasChild + sendToHandle + cleanupExecutor + tests
+## Root Cause Identified
 
-## What Was Fixed
-1. **Hang on send**: `handle.send()` blocking PTY write → `prSplitSendWithCancel` (goroutine + 200ms ticker poll)
-2. **Force-cancel stuck**: JS blocked in Go, never checks flag → Go-side poll + SIGKILL
-3. **Ctrl+] blank**: No child attached → `HasChild()` guard + `SendError()`
-4. **Slow cleanup**: SIGTERM→5s wait → SIGKILL before close on forceCancel
+**MUTEX DEADLOCK in `internal/builtin/pty/pty.go`**
 
-## Files Changed (This Commit)
-1. `internal/command/pr_split.go` — prSplitSendWithCancel, extractGoHandle, ctrl+] guard
-2. `internal/termui/mux/mux.go` — HasChild()
-3. `internal/command/pr_split_script.js` — sendToHandle, 4 call sites, cleanupExecutor
-4. `internal/termui/mux/mux_test.go` — TestHasChild
-5. `internal/command/pr_split_integration_test.go` — 7 new tests
+`Process.Write()` holds `p.mu` (mutex) during a blocking `p.ptyFile.Write()` kernel call.
+When the PTY buffer fills (Claude hasn't started reading stdin yet), the write blocks WHILE HOLDING THE LOCK.
 
-## Blueprint Status
-- T001-T020: All Done except T018 (complex Go project AI integration test)
-- T021-T025: Done (this commit)
+Then `Process.Signal()` tries to acquire the same lock → DEADLOCK.
+`Process.Close()` also tries to acquire the same lock → DEADLOCK.
 
-## Next Steps
-1. Run integration tests with actual AI: `make integration-test-prsplit`
-2. T018: Complex Go project AI integration test (Not Started)
-3. Continue expanding scope per blueprint
+This cascades through:
+- `prSplitSendWithCancel` calls `kill()` → `Signal("SIGKILL")` → deadlock
+- Cancel flag is detected but signal can't be delivered
+- Force cancel same issue
+- `cleanupExecutor()` calls `handle.close()` → `proc.Close()` → deadlock
+- Process becomes unkillable from within (external SIGKILL still works)
+
+## Fix Plan
+
+1. **Fix `pty.Process.Write()`** — Release mutex before blocking I/O (same pattern as Read())
+2. **Add timeout guard to `prSplitSendWithCancel`** — Don't block on `<-done` forever after kill
+3. **Write deadlock reproduction test** — `TestPTY_WriteSignalDeadlock`
+4. **Write termtest PTY integration test** — Full auto-split with mock Claude
+5. **Fix other issues** — double help, signal forwarding, cleanupExecutor robustness
+
+## Files to Modify
+
+- `internal/builtin/pty/pty.go` — Fix Write() mutex pattern
+- `internal/command/pr_split.go` — Add timeout to sendWithCancel
+- `internal/builtin/pty/pty_test.go` — Add deadlock regression test
+- `internal/command/pr_split_integration_test.go` — Add termtest integration tests
+
+## Current Step
+
+Writing deadlock reproduction test + fix.

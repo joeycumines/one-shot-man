@@ -88,13 +88,19 @@ func (c *SpawnConfig) applyDefaults() {
 }
 
 // Write sends data to the PTY (the child process's stdin).
+// The lock is released before the kernel write to avoid deadlocking
+// with Signal, Close, or Resize (which also acquire the lock).
 func (p *Process) Write(data string) error {
+	// Don't hold lock during blocking write — just check closed state.
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	if p.closed {
+		p.mu.Unlock()
 		return ErrClosed
 	}
-	_, err := p.ptyFile.Write([]byte(data))
+	f := p.ptyFile
+	p.mu.Unlock()
+
+	_, err := f.Write([]byte(data))
 	return err
 }
 

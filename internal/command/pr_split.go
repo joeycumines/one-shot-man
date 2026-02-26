@@ -587,12 +587,21 @@ func prSplitSendWithCancel(
 		case <-ticker.C:
 			if forceCancelled() {
 				kill()
-				<-done
+				// Wait for the send goroutine to finish, but don't
+				// block forever — the kill might not unblock the
+				// write immediately on all platforms.
+				select {
+				case <-done:
+				case <-time.After(2 * time.Second):
+				}
 				return errors.New("force cancelled by user")
 			}
 			if cancelled() {
 				kill()
-				<-done
+				select {
+				case <-done:
+				case <-time.After(2 * time.Second):
+				}
 				return errors.New("cancelled by user")
 			}
 		}

@@ -728,6 +728,117 @@ func TestProcess_Pid_NilCmd(t *testing.T) {
 	}
 }
 
+// TestProcess_WriteSignalDeadlock verifies that Signal can be called while
+// Write is blocked on a full PTY buffer. Before the fix, Write held p.mu
+// for the entire duration of the blocking kernel write, causing Signal
+// (which also needs p.mu) to deadlock.
+//
+// Regression test for: auto-split hang when Claude doesn't read stdin fast
+// enough — cancel (SIGKILL) could never be delivered.
+func TestProcess_WriteSignalDeadlock(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	// Spawn `sleep 3600` — it never reads stdin, so a large write will
+	// eventually block when the kernel PTY buffer fills.
+	proc, err := Spawn(context.Background(), SpawnConfig{
+		Command: "sleep",
+		Args:    []string{"3600"},
+		Rows:    24,
+		Cols:    80,
+	})
+	if err != nil {
+		t.Fatalf("Spawn failed: %v", err)
+	}
+	defer proc.Close()
+
+	// Start a large write in a goroutine. On most systems the PTY
+	// buffer is 4–64 KiB; 1 MiB should reliably fill it.
+	writeDone := make(chan error, 1)
+	go func() {
+		writeDone <- proc.Write(strings.Repeat("x", 1<<20))
+	}()
+
+	// Give the write time to start blocking.
+	time.Sleep(200 * time.Millisecond)
+
+	// Try to send SIGKILL from another goroutine. If there's a mutex
+	// deadlock, this will block forever.
+	sigDone := make(chan error, 1)
+	go func() {
+		sigDone <- proc.Signal("SIGKILL")
+	}()
+
+	select {
+	case err := <-sigDone:
+		if err != nil {
+			t.Logf("Signal returned error (acceptable): %v", err)
+		}
+		t.Log("Signal completed without deadlock")
+	case <-time.After(5 * time.Second):
+		t.Fatal("DEADLOCK: Signal blocked while Write is in progress — " +
+			"Write must release the mutex before blocking I/O")
+	}
+
+	// The write goroutine should also complete (with error) now that
+	// the child is dead.
+	select {
+	case err := <-writeDone:
+		t.Logf("Write completed after SIGKILL, err=%v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Write goroutine did not unblock after SIGKILL")
+	}
+}
+
+// TestProcess_CloseWhileWriteBlocked verifies that Close can proceed
+// while Write is blocked on a full PTY buffer.
+func TestProcess_CloseWhileWriteBlocked(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	proc, err := Spawn(context.Background(), SpawnConfig{
+		Command: "sleep",
+		Args:    []string{"3600"},
+		Rows:    24,
+		Cols:    80,
+	})
+	if err != nil {
+		t.Fatalf("Spawn failed: %v", err)
+	}
+
+	// Start a large write that will block.
+	writeDone := make(chan error, 1)
+	go func() {
+		writeDone <- proc.Write(strings.Repeat("x", 1<<20))
+	}()
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Close should not deadlock even if Write is blocking.
+	closeDone := make(chan error, 1)
+	go func() {
+		closeDone <- proc.Close()
+	}()
+
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Logf("Close returned error (acceptable): %v", err)
+		}
+		t.Log("Close completed without deadlock")
+	case <-time.After(10 * time.Second):
+		t.Fatal("DEADLOCK: Close blocked while Write is in progress")
+	}
+
+	// Write should also complete (with error).
+	select {
+	case err := <-writeDone:
+		t.Logf("Write completed after Close, err=%v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Write goroutine did not unblock after Close")
+	}
+}
+
 // TestModule_ProcessAllMethods exercises the JS wrapProcess methods
 // (write, read, resize, signal, isAlive, pid) through the goja runtime.
 func TestModule_ProcessAllMethods(t *testing.T) {

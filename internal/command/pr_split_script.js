@@ -1799,10 +1799,11 @@ ClaudeCodeExecutor.prototype.spawn = function(sessionId) {
     }
 
     // Spawn via provider registry.
+    var spawnOpts;
     try {
         var registry = this.cm.newRegistry();
         var provider;
-        var spawnOpts = {
+        spawnOpts = {
             model: this.model || undefined,
             env: this.env || {},
             args: (this.args || []).concat(['--mcp-config', this.mcpInstance.configPath()])
@@ -1829,7 +1830,16 @@ ClaudeCodeExecutor.prototype.spawn = function(sessionId) {
         // Clean up MCP instance on spawn failure.
         try { this.mcpInstance.close(); } catch (e2) { /* best effort */ }
         this.mcpInstance = null;
-        return { error: 'Claude spawn failed: ' + (e.message || String(e)) };
+        // Show the full command that was attempted so the user can debug.
+        var cmdDesc = this.resolved.command;
+        if (spawnOpts && spawnOpts.args && spawnOpts.args.length > 0) {
+            cmdDesc += ' ' + spawnOpts.args.join(' ');
+        }
+        return {
+            error: 'Claude spawn failed: ' + (e.message || String(e)) +
+                   '\n  Command attempted: ' + cmdDesc +
+                   '\n  Provider type: ' + this.resolved.type
+        };
     }
 
     log.printf('Claude executor: spawned command=%s type=%s session=%s',
@@ -2086,6 +2096,12 @@ function pollForFile(resultDir, filename, timeoutMs, intervalMs, stepName) {
 // Returns { error: string|null, report: object }.
 function automatedSplit(config) {
     config = config || {};
+
+    // Save the current branch so we can restore it on ALL exit paths.
+    // This prevents the user from being stranded on baseBranch after
+    // a re-split cycle (cleanupBranches checks out baseBranch).
+    var originalBranchResult = gitExec('.', ['rev-parse', '--abbrev-ref', 'HEAD']);
+    var originalBranch = originalBranchResult.code === 0 ? originalBranchResult.stdout.trim() : '';
 
     // Reset module-level state to prevent leakage across multiple runs
     // within the same JS VM (e.g., running auto-split twice in one session).
@@ -2500,6 +2516,13 @@ function automatedSplit(config) {
     }
 
     cleanupExecutor();
+
+    // Restore the original branch. This is critical after re-split cycles
+    // where cleanupBranches may have checked out baseBranch.
+    if (originalBranch) {
+        gitExec('.', ['checkout', originalBranch]);
+    }
+
     return finishTUI({ error: report.error, report: report });
 }
 

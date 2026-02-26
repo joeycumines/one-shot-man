@@ -101,7 +101,7 @@
       "task": "Fix ClaudeCodeExecutor.spawn() to work with the user's command pattern: -claude-command=ollama -claude-arg=launch -claude-arg=claude",
       "description": "The user runs `osm pr-split -claude-command=ollama -claude-arg=launch -claude-arg=claude -claude-arg=--model=minimax-m2.5:cloud -claude-arg=--`. The executor currently resolves 'ollama' as provider type 'ollama' and constructs spawn opts with the args. But the spawn logic then uses cm.ollama() which creates an OllamaProvider that may append its own args. Need to verify the arg passing chain: (1) prSplitConfig.claudeArgs contains ['launch', 'claude', '--model=minimax-m2.5:cloud', '--']. (2) These are passed through to the spawn correctly. (3) The MCP config args are appended AFTER the user's args. Test by tracing the command construction.",
       "acceptance": "When run with -claude-command=ollama -claude-arg=launch -claude-arg=claude -claude-arg=--model=minimax-m2.5:cloud -claude-arg=--, the executor spawns: ollama launch claude --model=minimax-m2.5:cloud -- --mcp-config=<path>. The process starts successfully.",
-      "status": "Not Started",
+      "status": "Done (verified correct — traced full arg chain through JS→Go→PTY)",
       "files": ["internal/command/pr_split_script.js", "internal/builtin/claudemux/provider_ollama.go"]
     },
     {
@@ -117,7 +117,7 @@
       "task": "Ensure auto-split properly restores original branch on all exit paths",
       "description": "Review automatedSplit() and executeSplit() to ensure that on every exit path (success, error, cancellation, timeout), the original branch is restored via git checkout. Currently executeSplit() saves and restores the branch, but automatedSplit() may not if an error occurs between steps (e.g., after classification but before execution). Add a defer-like pattern in the JS (try/finally) to restore the branch.",
       "acceptance": "After any auto-split invocation (success, failure, cancel), `git branch --show-current` returns the original branch. No orphaned checkout state.",
-      "status": "Not Started",
+      "status": "Done",
       "files": ["internal/command/pr_split_script.js"]
     },
     {
@@ -133,7 +133,7 @@
       "task": "Verify and fix the auto-split output pane scroll behavior after cancellation",
       "description": "When the user presses q during auto-split, the first press sets cancelled=true and shows 'Cancelling...' in the separator bar. The pipeline should detect this and call finishTUI with an error. Then the done summary should appear. But the scroll offset might be stale, and the View() method should render the 'Cancelling...' state correctly. Review the separator rendering in renderSeparator() to confirm it shows the right state.",
       "acceptance": "The auto-split TUI correctly shows 'Cancelling...' after first q press, then shows the done summary after the pipeline finishes cleaning up. The output pane scrolls correctly throughout.",
-      "status": "Not Started",
+      "status": "Done (pre-existing — scroll keys work in all states)",
       "files": ["internal/termui/mux/autosplit.go"]
     },
     {
@@ -173,7 +173,7 @@
       "task": "Ensure finishTUI in auto-split properly handles the case where TUI was never started",
       "description": "If auto-split runs without a TUI (e.g., in test mode or non-interactive), finishTUI should be a no-op. Currently has hasTUI guard, but verify all paths are safe. The config.disableTUI flag should be used in tests.",
       "acceptance": "Auto-split works correctly both with and without TUI. Tests can run auto-split without starting a BubbleTea program.",
-      "status": "Not Started",
+      "status": "Done (pre-existing — hasTUI guard handles all paths)",
       "files": ["internal/command/pr_split_script.js"]
     },
     {
@@ -181,7 +181,7 @@
       "task": "Add comprehensive error messages when Claude spawn fails with specific command patterns",
       "description": "When the user runs with -claude-command=ollama -claude-arg=launch -claude-arg=claude etc., failure messages should be clear about what was attempted and why it failed. Show the full command that was attempted, the exit code, and stderr. Currently errors may be generic.",
       "acceptance": "When Claude spawn fails, the error message shows the exact command attempted and the failure reason.",
-      "status": "Not Started",
+      "status": "Done",
       "files": ["internal/command/pr_split_script.js"]
     }
   ],

@@ -36,7 +36,7 @@ func newMCPBenchEnv(b *testing.B, goals []Goal) *mcpBenchEnv {
 	}
 
 	goalRegistry := &mcpTestGoalRegistry{goals: goals}
-	server := newMCPServer(cm, goalRegistry, "bench", "")
+	server := newMCPServer(cm, goalRegistry, "bench", "", "")
 
 	ctx, cancel := context.WithCancel(context.Background())
 

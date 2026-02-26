@@ -49,7 +49,7 @@ func (c *MCPCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("mcp: failed to create context manager: %w", err)
 	}
-	server := newMCPServer(cm, c.goalRegistry, c.version, "")
+	server := newMCPServer(cm, c.goalRegistry, c.version, "", "")
 	return server.Run(context.Background(), &mcp.StdioTransport{})
 }
 
@@ -348,10 +348,26 @@ func mcpCheckSeq(sess *mcpSession, seq int64) bool {
 // It is unexported for testability via InMemoryTransport.
 // If resultDir is non-empty, PR-split tools (reportClassification,
 // reportSplitPlan) also write results atomically to files in that directory.
-func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, version string, resultDir string) *mcp.Server {
+// If initialSessionID is non-empty, a session is pre-registered in the
+// sessions map so that tools like reportClassification can be called
+// immediately without a prior registerSession call.
+func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, version string, resultDir string, initialSessionID string) *mcp.Server {
 	var mu sync.Mutex
 	var items []mcpContextItem
 	sessions := make(map[string]*mcpSession)
+
+	// Pre-register session when launched as mcp-instance with --session.
+	if initialSessionID != "" {
+		now := time.Now()
+		sessions[initialSessionID] = &mcpSession{
+			SessionID:     initialSessionID,
+			Capabilities:  []string{"classify", "plan", "resolve"},
+			Status:        "idle",
+			Progress:      0,
+			LastUpdate:    now,
+			LastHeartbeat: now,
+		}
+	}
 
 	server := mcp.NewServer(
 		&mcp.Implementation{

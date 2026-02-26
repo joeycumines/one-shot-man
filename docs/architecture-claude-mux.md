@@ -535,9 +535,9 @@ Three fallback scenarios are handled:
 
 | Config | Default | Effect |
 |--------|---------|--------|
-| `classifyTimeoutMs` | 120000 | Max wait for classification.json |
-| `planTimeoutMs` | 120000 | Max wait for split-plan.json |
-| `resolveTimeoutMs` | 180000 | Max wait per resolution attempt |
+| `classifyTimeoutMs` | 1200000 | Max wait for classification.json (20 min) |
+| `planTimeoutMs` | 1200000 | Max wait for split-plan.json (20 min) |
+| `resolveTimeoutMs` | 1800000 | Max wait per resolution attempt (30 min) |
 | `pollIntervalMs` | 1000 | File polling interval |
 | `maxResolveRetries` | 3 | Max retries per failed split |
 | `maxReSplits` | 1 | Max full re-classification cycles |

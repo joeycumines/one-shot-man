@@ -20,8 +20,8 @@
   ],
   "statusSection": {
     "goalState": "osm pr-split provides a fully functional automated splitting pipeline where: (1) auto-split TUI renders progress, handles cancellation cleanly, allows ctrl+] toggle to Claude mid-operation, and properly yields back to the command loop on exit; (2) integration tests use real AI (configured via TestMain flags / project.mk) to verify actual splitting -- classification, plan generation, branch creation, and tree-hash equivalence; (3) all existing tests pass; (4) all AI slop is removed.",
-    "currentState": "ALL TASKS COMPLETE. T018 done: pr_split_complex_project_test.go creates a realistic multi-package Go project (cmd/server → internal/api → internal/db → internal/models, plus internal/auth and internal/config), runs directory-deep split producing 7 branches, verifies each Go-bearing branch builds and tests pass independently, and confirms tree-hash equivalence. AI variant gated by skipIfNoClaude. Full make passes.",
-    "replanLog": ["T006-T009 discovered already implemented (TestMain, integration tests, project.mk all existed). T013 simplified to loadStrategyPlugin removal only.", "T021-T025 added: fix handle.send() blocking, fix ctrl+] blank terminal, sendToHandle wrapper, integration tests for new code.", "T026-T028 added: fix PTY deadlock root cause (Write mutex), add timeout guard to sendWithCancel, termtest PTY integration tests."]
+    "currentState": "T029-T037 COMPLETE. All three auto-split blockers fixed: (1) MCP session pre-registration via initialSessionID, (2) two-write pattern for Enter key (\\r), (3) --dangerously-skip-permissions for claude-code types. All tests pass. make clean exit.",
+    "replanLog": ["T006-T009 discovered already implemented (TestMain, integration tests, project.mk all existed). T013 simplified to loadStrategyPlugin removal only.", "T021-T025 added: fix handle.send() blocking, fix ctrl+] blank terminal, sendToHandle wrapper, integration tests for new code.", "T026-T028 added: fix PTY deadlock root cause (Write mutex), add timeout guard to sendWithCancel, termtest PTY integration tests.", "T029-T042 added: fix MCP session pre-registration (BLOCKER), fix Enter key two-write pattern (BLOCKER), add --dangerously-skip-permissions (BLOCKER), update all affected tests, end-to-end validation."]
   },
   "sequentialTasks": [
     {
@@ -247,6 +247,78 @@
       "acceptance": "All 3 tests pass on macOS/Linux. CancelDuringBlockedSend specifically validates the deadlock fix in a realistic scenario with a real PTY, BubbleTea TUI, and send cancellation.",
       "status": "Done",
       "files": ["internal/command/pr_split_pty_unix_test.go", "config.mk"]
+    },
+    {
+      "id": "T029",
+      "task": "Add initialSessionID parameter to newMCPServer for session pre-registration",
+      "description": "In mcp.go, newMCPServer (line 351) creates empty sessions map. reportClassification (line 878) fails with 'session not found'. Fix: add initialSessionID string param; if non-empty, pre-populate sessions map with idle session.",
+      "acceptance": "When osm mcp-instance --session prsplit-123 starts, the sessions map contains prsplit-123. Claude can immediately call reportClassification without registerSession.",
+      "status": "Done",
+      "files": ["internal/command/mcp.go"]
+    },
+    {
+      "id": "T030",
+      "task": "Wire mcp_instance.go to pass c.session as initialSessionID to newMCPServer",
+      "description": "mcp_instance.go Execute (line 71) calls newMCPServer without session. After T029, pass c.session. Also update standalone MCPCommand caller to pass empty string.",
+      "acceptance": "mcp_instance.go passes c.session through. Standalone osm mcp passes empty string. Both compile.",
+      "status": "Done",
+      "files": ["internal/command/mcp_instance.go", "internal/command/mcp.go"]
+    },
+    {
+      "id": "T031",
+      "task": "Fix sendToHandle: two-write pattern — prompt text first, then \\r separately",
+      "description": "sendToHandle (line 2084) currently appends \\n inline. Claude Code in raw mode expects \\r as Enter. Fix: do TWO writes — first text, then \\r. Both autoSplitTUI.sendWithCancel and handle.send() fallback paths.",
+      "acceptance": "After sendToHandle, PTY receives two writes: prompt text then \\r. Claude Code submits the prompt.",
+      "status": "Done",
+      "files": ["internal/command/pr_split_script.js"]
+    },
+    {
+      "id": "T032",
+      "task": "Add --dangerously-skip-permissions to auto-split Claude spawn args",
+      "description": "ClaudeCodeExecutor.spawn (line 1838) constructs args. Prepend --dangerously-skip-permissions before user args and --mcp-config. Only for claude-code/explicit types, not ollama.",
+      "acceptance": "Auto-split Claude spawn includes --dangerously-skip-permissions. No permission popups block the pipeline. Ollama spawn is unaffected.",
+      "status": "Done",
+      "files": ["internal/command/pr_split_script.js"]
+    },
+    {
+      "id": "T033",
+      "task": "Update SendToHandle tests for two-write pattern and \\r Enter key",
+      "description": "TestIntegration_SendToHandle_FallbackDirect and FallbackError must be updated. Mock handle records array of sends. Assert two writes: text then \\r. Error test covers first-send and second-send failure paths.",
+      "acceptance": "Both tests pass verifying two-write pattern with \\r Enter key.",
+      "status": "Done",
+      "files": ["internal/command/pr_split_integration_test.go"]
+    },
+    {
+      "id": "T034",
+      "task": "Update MCP test helpers to pass initialSessionID parameter",
+      "description": "mcp_test.go helpers (newMCPTestEnv, newMCPTestEnvWithResultDir) call newMCPServer. Update to pass empty string for backward compat.",
+      "acceptance": "All existing MCP tests compile and pass unchanged.",
+      "status": "Done",
+      "files": ["internal/command/mcp_test.go"]
+    },
+    {
+      "id": "T035",
+      "task": "Add MCP test: pre-registered session allows reportClassification without registerSession",
+      "description": "New test creates MCP server with initialSessionID, calls reportClassification directly, asserts success. Also asserts different sessionId still fails.",
+      "acceptance": "Pre-registered sessions work immediately. Non-pre-registered sessions still require registerSession.",
+      "status": "Done",
+      "files": ["internal/command/mcp_test.go"]
+    },
+    {
+      "id": "T036",
+      "task": "Add unit test for --dangerously-skip-permissions in spawn args",
+      "description": "Test that ClaudeCodeExecutor.spawn constructs args with --dangerously-skip-permissions first, before user args and --mcp-config.",
+      "acceptance": "Test proves --dangerously-skip-permissions is first arg in spawn args array.",
+      "status": "Done",
+      "files": ["internal/command/pr_split_integration_test.go"]
+    },
+    {
+      "id": "T037",
+      "task": "Run full make and fix any compilation or test failures from T029-T036",
+      "description": "Run make (build + lint + test). Fix all errors. Ensure all new code is wired up (no deadcode). All existing tests pass.",
+      "acceptance": "make completes with zero errors. All tests pass. No lint warnings.",
+      "status": "Done",
+      "files": []
     }
   ],
   "continuousVerification": {

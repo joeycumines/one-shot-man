@@ -68,6 +68,6 @@ func (c *MCPInstanceCommand) Execute(args []string, stdout, stderr io.Writer) er
 
 	// Reuse the same MCP server factory as the main 'osm mcp' command,
 	// with optional result directory for structured PR-split results.
-	server := newMCPServer(cm, c.goalRegistry, c.version, c.resultDir)
+	server := newMCPServer(cm, c.goalRegistry, c.version, c.resultDir, c.session)
 	return server.Run(context.Background(), &mcp.StdioTransport{})
 }

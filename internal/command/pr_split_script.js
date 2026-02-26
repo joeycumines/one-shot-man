@@ -1826,13 +1826,12 @@ ClaudeCodeExecutor.prototype.spawn = function(sessionId) {
     try {
         var registry = this.cm.newRegistry();
         var provider;
-        spawnOpts = {
-            model: this.model || undefined,
-            env: this.env || {},
-            args: (this.args || []).concat(['--mcp-config', this.mcpInstance.configPath()])
-        };
+        var baseArgs = (this.args || []).concat(['--mcp-config', this.mcpInstance.configPath()]);
 
         if (this.resolved.type === 'claude-code' || this.resolved.type === 'explicit') {
+            // Claude Code: prepend --dangerously-skip-permissions so MCP
+            // tool calls are auto-approved without blocking permission popups.
+            baseArgs = ['--dangerously-skip-permissions'].concat(baseArgs);
             provider = this.cm.claudeCode({
                 command: this.resolved.command,
                 mcp: true
@@ -1846,6 +1845,12 @@ ClaudeCodeExecutor.prototype.spawn = function(sessionId) {
         } else {
             return { error: 'unknown provider type: ' + this.resolved.type };
         }
+
+        spawnOpts = {
+            model: this.model || undefined,
+            env: this.env || {},
+            args: baseArgs
+        };
 
         registry.register(provider);
         this.handle = registry.spawn(provider.name(), spawnOpts);
@@ -2051,9 +2056,9 @@ function detectLanguage(files) {
 
 // Default polling and timeout configuration.
 var AUTOMATED_DEFAULTS = {
-    classifyTimeoutMs: 120000,  // 2 minutes for classification
-    planTimeoutMs: 120000,      // 2 minutes for plan
-    resolveTimeoutMs: 180000,   // 3 minutes for conflict resolution
+    classifyTimeoutMs: 1200000, // 20 minutes for classification (user needs 10-20min)
+    planTimeoutMs: 1200000,     // 20 minutes for plan generation
+    resolveTimeoutMs: 1800000,  // 30 minutes for conflict resolution
     pollIntervalMs: 500,        // Poll every 500ms for fast cancellation response
     maxResolveRetries: 3,       // Retries per branch
     maxReSplits: 1              // Maximum re-classification cycles
@@ -2080,19 +2085,36 @@ function isForceCancelled() {
 // sendWithCancel when available (auto-split TUI mode) or falling back to the
 // direct handle.send() for non-TUI / test contexts.
 //
+// Two-write pattern: sends the prompt text first, then sends \r (Enter key)
+// as a separate write. Claude Code runs its TUI in raw PTY mode where \r is
+// the Enter keypress. Sending \r inline with the text would be treated as
+// part of the pasted content, not a keypress to submit.
+//
 // Returns { error: null } on success, { error: "message" } on failure.
 function sendToHandle(handle, text) {
+    var ENTER_KEY = '\r';
+
     if (typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
         typeof autoSplitTUI.sendWithCancel === 'function') {
-        return autoSplitTUI.sendWithCancel(handle, text);
+        // TUI path: cancellation-aware two-write.
+        var result1 = autoSplitTUI.sendWithCancel(handle, text);
+        if (result1.error) {
+            return result1;
+        }
+        return autoSplitTUI.sendWithCancel(handle, ENTER_KEY);
     }
-    // Fallback: direct synchronous send.
+    // Fallback: direct synchronous two-write.
     try {
         handle.send(text);
-        return { error: null };
     } catch (e) {
         return { error: e.message || String(e) };
     }
+    try {
+        handle.send(ENTER_KEY);
+    } catch (e) {
+        return { error: e.message || String(e) };
+    }
+    return { error: null };
 }
 
 // pollForFile polls a result directory for a specific file.

@@ -64,7 +64,7 @@ func newMCPTestEnv(t *testing.T, goals []Goal) *mcpTestEnv {
 	}
 
 	goalRegistry := &mcpTestGoalRegistry{goals: goals}
-	server := newMCPServer(cm, goalRegistry, "test", "")
+	server := newMCPServer(cm, goalRegistry, "test", "", "")
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -109,7 +109,7 @@ func newMCPTestEnvWithResultDir(t *testing.T, goals []Goal, resultDir string) *m
 	}
 
 	goalRegistry := &mcpTestGoalRegistry{goals: goals}
-	server := newMCPServer(cm, goalRegistry, "test", resultDir)
+	server := newMCPServer(cm, goalRegistry, "test", resultDir, "")
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -2219,6 +2219,134 @@ func TestMCPServer_ReportClassification_Idempotent(t *testing.T) {
 	text := mcpResultText(t, r)
 	if !strings.Contains(text, "idempotent skip") {
 		t.Errorf("text = %q, want to contain 'idempotent skip'", text)
+	}
+}
+
+// --- Pre-registered session (initialSessionID) ---
+
+// newMCPTestEnvWithSession is like newMCPTestEnvWithResultDir but also
+// pre-registers a session via the initialSessionID parameter. This mirrors
+// the mcp-instance path where --session is passed on the command line.
+func newMCPTestEnvWithSession(t *testing.T, goals []Goal, resultDir, sessionID string) *mcpTestEnv {
+	t.Helper()
+	dir := t.TempDir()
+
+	cm, err := scripting.NewContextManager(dir)
+	if err != nil {
+		t.Fatalf("NewContextManager: %v", err)
+	}
+
+	goalRegistry := &mcpTestGoalRegistry{goals: goals}
+	server := newMCPServer(cm, goalRegistry, "test", resultDir, sessionID)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+
+	serverDone := make(chan error, 1)
+	go func() {
+		serverDone <- server.Run(ctx, serverTransport)
+	}()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		cancel()
+		t.Fatalf("client.Connect: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = session.Close()
+		cancel()
+		select {
+		case <-serverDone:
+		case <-time.After(5 * time.Second):
+			t.Error("server did not shut down within 5s")
+		}
+	})
+
+	return &mcpTestEnv{session: session, dir: dir, cancel: cancel}
+}
+
+// TestMCPServer_PreRegisteredSession_ReportClassification verifies that a
+// session pre-registered via initialSessionID can call reportClassification
+// immediately without a separate registerSession call.
+func TestMCPServer_PreRegisteredSession_ReportClassification(t *testing.T) {
+	t.Parallel()
+	resultDir := t.TempDir()
+	env := newMCPTestEnvWithSession(t, nil, resultDir, "preregistered-1")
+
+	// No registerSession call — session was pre-registered.
+	r := env.callTool(t, "reportClassification", map[string]any{
+		"sessionId": "preregistered-1",
+		"files": map[string]any{
+			"cmd/main.go":    "entry-point",
+			"internal/db.go": "impl",
+		},
+	})
+	if r.IsError {
+		t.Fatalf("reportClassification with pre-registered session failed: %s", mcpResultText(t, r))
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "2 files") {
+		t.Errorf("text = %q, want to contain '2 files'", text)
+	}
+
+	// Verify result file.
+	data, err := os.ReadFile(filepath.Join(resultDir, "classification.json"))
+	if err != nil {
+		t.Fatalf("read result file: %v", err)
+	}
+	var files map[string]string
+	if err := json.Unmarshal(data, &files); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if len(files) != 2 {
+		t.Errorf("got %d files, want 2", len(files))
+	}
+}
+
+// TestMCPServer_PreRegisteredSession_UnknownStillFails verifies that a
+// non-pre-registered session ID still fails, even when another session
+// was pre-registered.
+func TestMCPServer_PreRegisteredSession_UnknownStillFails(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnvWithSession(t, nil, "", "known-session")
+
+	// Calling with a different session ID should fail.
+	r := env.callTool(t, "reportClassification", map[string]any{
+		"sessionId": "unknown-session",
+		"files":     map[string]any{"a.go": "impl"},
+	})
+	if !r.IsError {
+		t.Error("expected IsError for unknown session, even with pre-registered session")
+	}
+	text := mcpResultText(t, r)
+	if !strings.Contains(text, "session not found") {
+		t.Errorf("error text = %q, want to contain 'session not found'", text)
+	}
+}
+
+// TestMCPServer_PreRegisteredSession_ReportSplitPlan verifies that a
+// pre-registered session can also call reportSplitPlan without registerSession.
+func TestMCPServer_PreRegisteredSession_ReportSplitPlan(t *testing.T) {
+	t.Parallel()
+	resultDir := t.TempDir()
+	env := newMCPTestEnvWithSession(t, nil, resultDir, "plan-pre-1")
+
+	r := env.callTool(t, "reportSplitPlan", map[string]any{
+		"sessionId": "plan-pre-1",
+		"stages": []any{
+			map[string]any{
+				"name":    "Stage 1",
+				"files":   []any{"a.go", "b.go"},
+				"message": "feat: first batch",
+				"order":   0,
+			},
+		},
+	})
+	if r.IsError {
+		t.Fatalf("reportSplitPlan with pre-registered session failed: %s", mcpResultText(t, r))
 	}
 }
 

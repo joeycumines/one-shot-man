@@ -326,13 +326,14 @@ func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
 	raw, err := evalJS(`
 		(function() {
 			// sendToHandle should use the fallback path when autoSplitTUI is missing.
-			// Create a mock handle that records what was sent.
-			var sentData = '';
+			// Two-write pattern: first write is the prompt text,
+			// second write is \r (Enter key for PTY).
+			var sends = [];
 			var mockHandle = {
-				send: function(text) { sentData = text; }
+				send: function(text) { sends.push(text); }
 			};
 			var result = globalThis.prSplit.sendToHandle(mockHandle, 'hello Claude');
-			return JSON.stringify({ error: result.error, sent: sentData });
+			return JSON.stringify({ error: result.error, sends: sends });
 		})()
 	`)
 	if err != nil {
@@ -340,8 +341,8 @@ func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
 	}
 
 	var result struct {
-		Error *string `json:"error"`
-		Sent  string  `json:"sent"`
+		Error *string  `json:"error"`
+		Sends []string `json:"sends"`
 	}
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
 		t.Fatalf("parse error: %v", err)
@@ -349,8 +350,14 @@ func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
 	if result.Error != nil {
 		t.Errorf("sendToHandle returned error: %s", *result.Error)
 	}
-	if result.Sent != "hello Claude" {
-		t.Errorf("sent data = %q, want %q", result.Sent, "hello Claude")
+	if len(result.Sends) != 2 {
+		t.Fatalf("expected 2 sends, got %d: %q", len(result.Sends), result.Sends)
+	}
+	if result.Sends[0] != "hello Claude" {
+		t.Errorf("sends[0] = %q, want %q", result.Sends[0], "hello Claude")
+	}
+	if result.Sends[1] != "\r" {
+		t.Errorf("sends[1] = %q, want %q", result.Sends[1], "\r")
 	}
 }
 
@@ -361,13 +368,19 @@ func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
 
 	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
 
+	// Two-write pattern: test that error on FIRST send (text) returns
+	// immediately without attempting the second send (Enter key).
 	raw, err := evalJS(`
 		(function() {
+			var sendCount = 0;
 			var mockHandle = {
-				send: function(text) { throw new Error('PTY write failed'); }
+				send: function(text) {
+					sendCount++;
+					if (sendCount === 1) { throw new Error('PTY write failed'); }
+				}
 			};
 			var result = globalThis.prSplit.sendToHandle(mockHandle, 'will fail');
-			return JSON.stringify({ error: result.error });
+			return JSON.stringify({ error: result.error, sendCount: sendCount });
 		})()
 	`)
 	if err != nil {
@@ -375,7 +388,8 @@ func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
 	}
 
 	var result struct {
-		Error *string `json:"error"`
+		Error     *string `json:"error"`
+		SendCount int     `json:"sendCount"`
 	}
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
 		t.Fatalf("parse error: %v", err)
@@ -385,6 +399,201 @@ func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
 	}
 	if !strings.Contains(*result.Error, "PTY write failed") {
 		t.Errorf("error = %q, want to contain 'PTY write failed'", *result.Error)
+	}
+	if result.SendCount != 1 {
+		t.Errorf("sendCount = %d, want 1 (should not attempt second send on first failure)", result.SendCount)
+	}
+}
+
+// TestIntegration_SpawnArgs_DangerouslySkipPermissions verifies that
+// ClaudeCodeExecutor.spawn prepends --dangerously-skip-permissions for
+// claude-code type providers but NOT for ollama type providers.
+func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Use t.TempDir() for mock paths to avoid host state mutation.
+	tmpDir := t.TempDir()
+	escapedTmpDir := strings.ReplaceAll(tmpDir, `\`, `\\`)
+	escapedTmpDir = strings.ReplaceAll(escapedTmpDir, `'`, `\'`)
+
+	// Test: claude-code type should have --dangerously-skip-permissions
+	// We mock the cm object including newMCPInstance to capture spawn args.
+	raw, err := evalJS(`
+		(function() {
+			var tmpDir = '` + escapedTmpDir + `';
+
+			// Create a ClaudeCodeExecutor with claude-code type.
+			var executor = new ClaudeCodeExecutor({
+				claudeCommand: '',
+				claudeArgs: ['--user-arg'],
+				model: 'test-model'
+			});
+
+			// Mock resolve so spawn() doesn't need real claude/ollama on PATH.
+			executor.resolved = { command: 'mock-claude', type: 'claude-code' };
+			executor.resolve = function() { return { error: null }; };
+			executor.sessionId = 'test-session';
+
+			// Override cm methods to capture spawn args.
+			var capturedArgs = null;
+			var mockRegistry = {
+				register: function() {},
+				spawn: function(name, opts) {
+					capturedArgs = opts.args;
+					return { send: function() {} };
+				}
+			};
+			executor.cm = {
+				claudeCode: function() { return { name: function() { return 'mock'; } }; },
+				ollama: function() { return { name: function() { return 'mock'; } }; },
+				newRegistry: function() { return mockRegistry; },
+				newMCPInstance: function() {
+					return {
+						configPath: function() { return tmpDir + '/mcp-config.json'; },
+						resultDir: function() { return tmpDir + '/results'; },
+						configDir: function() { return tmpDir; },
+						setResultDir: function() {},
+						writeConfigFile: function() {},
+						close: function() {}
+					};
+				}
+			};
+
+			// Call spawn — it creates MCP instance via cm, then spawns provider.
+			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
+			originalSpawn.call(executor);
+
+			if (!capturedArgs) {
+				return JSON.stringify({ error: 'spawn did not capture args' });
+			}
+
+			// Verify --dangerously-skip-permissions is first.
+			var dspIdx = capturedArgs.indexOf('--dangerously-skip-permissions');
+			var mcpIdx = capturedArgs.indexOf('--mcp-config');
+			var userIdx = capturedArgs.indexOf('--user-arg');
+
+			return JSON.stringify({
+				error: null,
+				args: capturedArgs,
+				dspIndex: dspIdx,
+				mcpIndex: mcpIdx,
+				userArgIndex: userIdx
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("spawn args test failed: %v", err)
+	}
+
+	var result struct {
+		Error        *string  `json:"error"`
+		Args         []string `json:"args"`
+		DSPIndex     int      `json:"dspIndex"`
+		MCPIndex     int      `json:"mcpIndex"`
+		UserArgIndex int      `json:"userArgIndex"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("spawn args test returned error: %s", *result.Error)
+	}
+	if result.DSPIndex == -1 {
+		t.Fatal("--dangerously-skip-permissions not found in args")
+	}
+	if result.DSPIndex != 0 {
+		t.Errorf("--dangerously-skip-permissions index = %d, want 0 (should be first arg)", result.DSPIndex)
+	}
+	if result.UserArgIndex == -1 {
+		t.Error("--user-arg not found in args")
+	}
+	if result.MCPIndex == -1 {
+		t.Error("--mcp-config not found in args")
+	}
+	// Order: --dangerously-skip-permissions, --user-arg, --mcp-config, <path>
+	if result.DSPIndex >= result.UserArgIndex {
+		t.Errorf("--dangerously-skip-permissions (idx %d) should come before --user-arg (idx %d)",
+			result.DSPIndex, result.UserArgIndex)
+	}
+	if result.UserArgIndex >= result.MCPIndex {
+		t.Errorf("--user-arg (idx %d) should come before --mcp-config (idx %d)",
+			result.UserArgIndex, result.MCPIndex)
+	}
+
+	// Negative case: ollama type should NOT have --dangerously-skip-permissions.
+	rawOllama, err := evalJS(`
+		(function() {
+			var tmpDir = '` + escapedTmpDir + `';
+
+			var executor = new ClaudeCodeExecutor({
+				claudeCommand: '',
+				claudeArgs: ['--user-arg'],
+				model: 'test-model'
+			});
+
+			executor.resolved = { command: 'mock-ollama', type: 'ollama' };
+			executor.resolve = function() { return { error: null }; };
+			executor.sessionId = 'test-session-ollama';
+
+			var capturedArgs = null;
+			var mockRegistry = {
+				register: function() {},
+				spawn: function(name, opts) {
+					capturedArgs = opts.args;
+					return { send: function() {} };
+				}
+			};
+			executor.cm = {
+				claudeCode: function() { return { name: function() { return 'mock'; } }; },
+				ollama: function() { return { name: function() { return 'mock'; } }; },
+				newRegistry: function() { return mockRegistry; },
+				newMCPInstance: function() {
+					return {
+						configPath: function() { return tmpDir + '/mcp-config.json'; },
+						resultDir: function() { return tmpDir + '/results'; },
+						configDir: function() { return tmpDir; },
+						setResultDir: function() {},
+						writeConfigFile: function() {},
+						close: function() {}
+					};
+				}
+			};
+
+			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
+			originalSpawn.call(executor);
+
+			if (!capturedArgs) {
+				return JSON.stringify({ error: 'ollama spawn did not capture args' });
+			}
+
+			var dspIdx = capturedArgs.indexOf('--dangerously-skip-permissions');
+			return JSON.stringify({
+				error: null,
+				args: capturedArgs,
+				dspIndex: dspIdx
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("ollama spawn args test failed: %v", err)
+	}
+
+	var ollamaResult struct {
+		Error    *string  `json:"error"`
+		Args     []string `json:"args"`
+		DSPIndex int      `json:"dspIndex"`
+	}
+	if err := json.Unmarshal([]byte(rawOllama.(string)), &ollamaResult); err != nil {
+		t.Fatalf("ollama parse error: %v", err)
+	}
+	if ollamaResult.Error != nil {
+		t.Fatalf("ollama spawn args returned error: %s", *ollamaResult.Error)
+	}
+	if ollamaResult.DSPIndex != -1 {
+		t.Errorf("ollama args should NOT contain --dangerously-skip-permissions, but found at index %d; args: %v",
+			ollamaResult.DSPIndex, ollamaResult.Args)
 	}
 }
 

@@ -20,8 +20,8 @@
   ],
   "statusSection": {
     "goalState": "osm pr-split provides a fully functional automated splitting pipeline where: (1) auto-split TUI renders progress, handles cancellation cleanly, allows ctrl+] toggle to Claude mid-operation, and properly yields back to the command loop on exit; (2) integration tests use real AI (configured via TestMain flags / project.mk) to verify actual splitting -- classification, plan generation, branch creation, and tree-hash equivalence; (3) all existing tests pass; (4) all AI slop is removed.",
-    "currentState": "T021-T025 complete and committed. sendWithCancel (non-blocking PTY write with cancel polling via prSplitSendWithCancel), ctrl+] toggle guard (HasChild), sendToHandle JS wrapper, cleanupExecutor improvements. make passes 43/43, zero lint, Rule of Two passed. Remaining: T018 (complex Go project AI integration test).",
-    "replanLog": ["T006-T009 discovered already implemented (TestMain, integration tests, project.mk all existed). T013 simplified to loadStrategyPlugin removal only.", "T021-T025 added: fix handle.send() blocking, fix ctrl+] blank terminal, sendToHandle wrapper, integration tests for new code."]
+    "currentState": "T026-T028 complete. PTY deadlock root cause: Write() held mutex during blocking kernel I/O, preventing Signal/Close. Fix: release mutex before I/O (matching Read() pattern). Added timeout guard to prSplitSendWithCancel. Termtest integration tests verify cancel during blocked send and end-to-end auto-split flow. All tests pass (make all). Remaining: T018 (complex Go project AI integration test).",
+    "replanLog": ["T006-T009 discovered already implemented (TestMain, integration tests, project.mk all existed). T013 simplified to loadStrategyPlugin removal only.", "T021-T025 added: fix handle.send() blocking, fix ctrl+] blank terminal, sendToHandle wrapper, integration tests for new code.", "T026-T028 added: fix PTY deadlock root cause (Write mutex), add timeout guard to sendWithCancel, termtest PTY integration tests."]
   },
   "sequentialTasks": [
     {
@@ -223,6 +223,30 @@
       "acceptance": "All 7 tests pass on macOS (and should pass on Linux). Cancel/ForceCancel tests verify completion within 2s. RealPTYKill verifies SIGKILL works with real processes. AutoSplitWithClaude_Pipeline is ready for real Claude execution.",
       "status": "Done",
       "files": ["internal/command/pr_split_integration_test.go"]
+    },
+    {
+      "id": "T026",
+      "task": "Fix PTY deadlock: Process.Write() must release mutex before blocking kernel I/O",
+      "description": "ROOT CAUSE of all auto-split hanging/cancellation bugs. Process.Write() held p.mu during p.ptyFile.Write() — a blocking kernel call. When the PTY buffer fills (Claude hasn't started reading stdin), Write blocks WHILE HOLDING THE LOCK. Then Signal/Close try to acquire the same mutex → deadlock. Fix: save p.ptyFile under lock, release lock, then do I/O — matching the pattern already used by Read(). Also added fallback direct syscall.Kill(pid, SIGKILL) in Close() for zombie-state processes.",
+      "acceptance": "TestProcess_WriteSignalDeadlock proves Signal completes while Write is blocked. TestProcess_CloseWhileWriteBlocked proves Close completes. No mutex held during blocking I/O in Write().",
+      "status": "Done",
+      "files": ["internal/builtin/pty/pty.go", "internal/builtin/pty/pty_test.go"]
+    },
+    {
+      "id": "T027",
+      "task": "Add timeout guard to prSplitSendWithCancel after kill()",
+      "description": "Defense in depth: after calling kill() (SIGKILL), prSplitSendWithCancel now has a 10-second timeout on <-done instead of blocking forever. If the send goroutine doesn't return within 10s post-kill, the function returns with an error instead of hanging.",
+      "acceptance": "prSplitSendWithCancel never blocks indefinitely after kill(). Timeout fires after 10s as fallback.",
+      "status": "Done",
+      "files": ["internal/command/pr_split.go"]
+    },
+    {
+      "id": "T028",
+      "task": "Write termtest PTY integration tests for auto-split cancel during blocked send and end-to-end flow",
+      "description": "Created pr_split_pty_unix_test.go with three termtest-based tests: (1) TestPTY_AutoSplit_SendBlockedCancelWorks — tests prSplitSendWithCancel directly with a blocked PTY write to sleep(3600), verifies cancel terminates within 10s. (2) TestPTY_AutoSplit_EndToEnd — spawns real osm binary with mock Claude script, triggers auto-split, verifies TUI renders, sends q to cancel, verifies prompt returns. (3) TestPTY_AutoSplit_CancelDuringBlockedSend — spawns osm with sleep-only mock Claude (never reads stdin), triggers auto-split, waits for Send classification step, sends q to cancel blocked send, verifies the deadlock fix allows clean cancellation. Uses WriteString for raw character sending, not Send (which is for named keys only). Added test-pr-split-pty make target in config.mk.",
+      "acceptance": "All 3 tests pass on macOS/Linux. CancelDuringBlockedSend specifically validates the deadlock fix in a realistic scenario with a real PTY, BubbleTea TUI, and send cancellation.",
+      "status": "Done",
+      "files": ["internal/command/pr_split_pty_unix_test.go", "config.mk"]
     }
   ],
   "continuousVerification": {

@@ -286,7 +286,7 @@ sleep 3600
 	if strings.Contains(output, "Complete") || strings.Contains(output, "Error") {
 		// Pipeline finished (success or error) — verify we can dismiss.
 		t.Log("Pipeline completed, pressing q to dismiss")
-		if err := console.Send("q"); err != nil {
+		if _, err := console.WriteString("q"); err != nil {
 			t.Fatalf("failed to send q: %v", err)
 		}
 
@@ -299,7 +299,7 @@ sleep 3600
 	} else {
 		// Pipeline is still running — test cancellation.
 		t.Log("Pipeline still running, pressing q to cancel")
-		if err := console.Send("q"); err != nil {
+		if _, err := console.WriteString("q"); err != nil {
 			t.Fatalf("failed to send q: %v", err)
 		}
 
@@ -321,7 +321,7 @@ sleep 3600
 
 			// Force cancel with second q press.
 			t.Log("Force cancelling with second q press")
-			if err := console.Send("q"); err != nil {
+			if _, err := console.WriteString("q"); err != nil {
 				t.Logf("Failed to send second q: %v", err)
 			}
 		}
@@ -427,7 +427,7 @@ sleep 3600
 	time.Sleep(2 * time.Second)
 
 	t.Log("Pressing q to cancel blocked send")
-	if err := console.Send("q"); err != nil {
+	if _, err := console.WriteString("q"); err != nil {
 		t.Fatalf("failed to send q: %v", err)
 	}
 
@@ -450,7 +450,7 @@ sleep 3600
 
 		// Try force cancel.
 		t.Log("Attempting force cancel with second q")
-		_ = console.Send("q")
+		_, _ = console.WriteString("q")
 		time.Sleep(5 * time.Second)
 	}
 

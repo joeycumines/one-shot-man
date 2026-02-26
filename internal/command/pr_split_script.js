@@ -2070,6 +2070,13 @@ function isCancelled() {
            typeof autoSplitTUI.cancelled === 'function' && autoSplitTUI.cancelled();
 }
 
+// isForceCancelled checks whether the user has pressed q/Ctrl+C twice,
+// signalling that child processes should be killed immediately.
+function isForceCancelled() {
+    return typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
+           typeof autoSplitTUI.forceCancelled === 'function' && autoSplitTUI.forceCancelled();
+}
+
 // pollForFile polls a result directory for a specific file.
 // Returns { data: object|null, error: string|null }.
 function pollForFile(resultDir, filename, timeoutMs, intervalMs, stepName) {
@@ -2716,12 +2723,18 @@ function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, po
 
 // cleanupExecutor closes the Claude executor and cleans up resources.
 // Detaches from tuiMux first so ctrl+] stops trying to forward to a
-// dead child process.
+// dead child process. When force-cancelled, sends SIGKILL to skip
+// the graceful SIGTERM→wait→SIGKILL shutdown of close().
 function cleanupExecutor() {
     if (typeof tuiMux !== 'undefined' && tuiMux) {
         try { tuiMux.detach(); } catch (e) { /* best effort — may already be detached */ }
     }
     if (claudeExecutor) {
+        if (isForceCancelled() && claudeExecutor.handle &&
+            typeof claudeExecutor.handle.signal === 'function') {
+            // Force-cancel: SIGKILL immediately, skip graceful shutdown.
+            try { claudeExecutor.handle.signal('SIGKILL'); } catch (e) { /* best effort */ }
+        }
         try { claudeExecutor.close(); } catch (e) { /* best effort */ }
     }
 }

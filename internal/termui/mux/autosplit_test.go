@@ -169,13 +169,17 @@ func TestAutoSplitModel_CtrlC_Quit(t *testing.T) {
 		t.Error("quitting should be false after first Ctrl+C")
 	}
 
-	// Second Ctrl+C force-quits.
+	// Second Ctrl+C sets forceCancel but does NOT quit (TUI stays
+	// visible until the pipeline sends DoneMsg).
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	if cmd == nil {
-		t.Fatal("second Ctrl+C should return tea.Quit command")
+	if cmd != nil {
+		t.Fatal("second Ctrl+C should NOT return a command (TUI stays visible)")
 	}
-	if !m.quitting {
-		t.Error("quitting should be true after second Ctrl+C")
+	if !m.ForceCancelled() {
+		t.Error("forceCancel should be true after second Ctrl+C")
+	}
+	if m.quitting {
+		t.Error("quitting should be false — TUI waits for pipeline DoneMsg")
 	}
 }
 
@@ -193,13 +197,16 @@ func TestAutoSplitModel_Q_Quit(t *testing.T) {
 		t.Error("quitting should be false after first 'q'")
 	}
 
-	// Second 'q' force-quits.
+	// Second 'q' sets forceCancel but does NOT quit.
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
-	if cmd == nil {
-		t.Fatal("second 'q' should return tea.Quit command")
+	if cmd != nil {
+		t.Fatal("second 'q' should NOT return a command (TUI stays visible)")
 	}
-	if !m.quitting {
-		t.Error("quitting should be true after second 'q'")
+	if !m.ForceCancelled() {
+		t.Error("forceCancel should be true after second 'q'")
+	}
+	if m.quitting {
+		t.Error("quitting should be false — TUI waits for pipeline DoneMsg")
 	}
 }
 
@@ -1115,7 +1122,7 @@ func TestAutoSplitModel_ScrollKeysOnEmptyOutput(t *testing.T) {
 func TestAutoSplitModel_View_CancelledWhileRunning(t *testing.T) {
 	// When the pipeline is running and the user presses cancel once,
 	// the separator should show "Cancelling" and the help bar should
-	// show "force quit".
+	// show "force kill".
 	m := NewAutoSplitModel()
 	m.width = 80
 	m.height = 24
@@ -1139,9 +1146,9 @@ func TestAutoSplitModel_View_CancelledWhileRunning(t *testing.T) {
 	if !strings.Contains(view, "Cancelling") {
 		t.Errorf("cancelled-while-running view should contain 'Cancelling', got:\n%s", view)
 	}
-	// Help bar should show "force quit".
-	if !strings.Contains(view, "force quit") {
-		t.Errorf("cancelled-while-running view should contain 'force quit', got:\n%s", view)
+	// Help bar should show "force kill".
+	if !strings.Contains(view, "force kill") {
+		t.Errorf("cancelled-while-running view should contain 'force kill', got:\n%s", view)
 	}
 	// Should NOT show "Complete" or "dismiss".
 	if strings.Contains(view, "Complete") {

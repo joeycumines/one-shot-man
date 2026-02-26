@@ -397,6 +397,9 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		"cancelled": func() bool {
 			return autoSplitModel.Cancelled()
 		},
+		"forceCancelled": func() bool {
+			return autoSplitModel.ForceCancelled()
+		},
 		"quit": func() {
 			autoSplitModel.Quit()
 		},

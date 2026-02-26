@@ -1156,6 +1156,23 @@ func wrapAgentHandle(runtime *goja.Runtime, h AgentHandle) goja.Value {
 		return runtime.ToValue(result)
 	})
 
+	// Optionally expose signal() for handles that support it (e.g., PTY-based).
+	// This allows JS to send signals (SIGINT, SIGTERM, SIGKILL) to the child process.
+	type signaler interface {
+		Signal(sig string) error
+	}
+	if s, ok := h.(signaler); ok {
+		_ = obj.Set("signal", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("signal: signal name argument is required"))
+			}
+			if err := s.Signal(call.Argument(0).String()); err != nil {
+				panic(runtime.NewGoError(err))
+			}
+			return goja.Undefined()
+		})
+	}
+
 	return obj
 }
 

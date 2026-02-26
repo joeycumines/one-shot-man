@@ -79,3 +79,7 @@ func (h *ptyAgentHandle) IsAlive() bool {
 func (h *ptyAgentHandle) Wait() (int, error) {
 	return h.proc.Wait()
 }
+
+func (h *ptyAgentHandle) Signal(sig string) error {
+	return h.proc.Signal(sig)
+}

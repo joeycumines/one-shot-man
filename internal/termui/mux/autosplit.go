@@ -123,7 +123,8 @@ type AutoSplitModel struct {
 	done        bool
 	doneSummary string
 	quitting    bool
-	cancelled   bool // set atomically when user cancels; polled by JS
+	cancelled   bool // set on first q/Ctrl+C; polled by JS
+	forceCancel bool // set on second q/Ctrl+C; signals JS to kill children immediately
 
 	// Pipeline timer — set on first StepStartMsg.
 	pipelineStartedAt time.Time
@@ -274,6 +275,15 @@ func (m *AutoSplitModel) Cancelled() bool {
 	return m.cancelled
 }
 
+// ForceCancelled returns true if the user has pressed q/Ctrl+C twice,
+// signalling that child processes should be killed immediately rather
+// than waiting for graceful shutdown.
+func (m *AutoSplitModel) ForceCancelled() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.forceCancel
+}
+
 // Quit programmatically triggers a clean shutdown of the TUI. The
 // cancelled flag is set so that the JS pipeline can detect it.
 func (m *AutoSplitModel) Quit() {
@@ -321,16 +331,16 @@ func (m *AutoSplitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		//
 		// First press: set cancelled flag so the JS pipeline can detect
 		// it via cooperative polling. The TUI stays visible showing a
-		// "Cancelling…" state. This prevents the alt-screen from
-		// being torn down while the pipeline is still running (which
-		// would expose the go-prompt beneath in an unresponsive state).
+		// "Cancelling…" state.
 		//
-		// Second press: force-quit the BubbleTea program. This is the
-		// fallback for pipelines that are truly stuck (e.g. blocked on
-		// an unresponsive child process).
+		// Second press: set forceCancel flag so the JS pipeline kills
+		// child processes immediately. The TUI still stays visible —
+		// tearing down the alt-screen while the pipeline goroutine is
+		// still running would expose the go-prompt in an unresponsive
+		// state (the command handler is blocked on automatedSplit).
 		//
-		// When the pipeline finishes, it sends AutoSplitDoneMsg which
-		// triggers the actual tea.Quit.
+		// The TUI only exits when the pipeline sends AutoSplitDoneMsg
+		// (cooperative completion) or when the pipeline is truly done.
 		if msg.Type == tea.KeyCtrlC || msg.String() == "q" {
 			if m.done {
 				// Pipeline has finished — dismiss the TUI.
@@ -340,13 +350,11 @@ func (m *AutoSplitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mu.Lock()
 			alreadyCancelled := m.cancelled
 			m.cancelled = true
-			m.mu.Unlock()
 			if alreadyCancelled {
-				// Second press: force quit.
-				m.quitting = true
-				return m, tea.Quit
+				m.forceCancel = true
 			}
-			// First press: stay visible, show "Cancelling…"
+			m.mu.Unlock()
+			// Stay visible regardless — don't tear down alt-screen.
 			return m, nil
 		}
 
@@ -691,8 +699,10 @@ func (m *AutoSplitModel) renderSeparator(width int) string {
 		left = " ⏹ Cancelled"
 	case m.done:
 		left = " ✓ Complete — press q to dismiss"
+	case isCancelled && m.forceCancel:
+		left = " ⚡ Force cancelling… killing processes"
 	case isCancelled:
-		left = " ⏳ Cancelling… (q again to force)"
+		left = " ⏳ Cancelling… (q again to force kill)"
 	case currentStep != "":
 		left = fmt.Sprintf(" ◉ %s", currentStep)
 	default:
@@ -718,10 +728,14 @@ func (m *AutoSplitModel) renderSeparator(width int) string {
 	}
 	bar := left + strings.Repeat("─", padding) + right
 
-	// Use a warning style for the separator when cancelling.
+	// Use a warning/danger style for the separator when cancelling.
 	if isCancelled && !m.done {
+		bg := lipgloss.Color("208") // orange for normal cancel
+		if m.forceCancel {
+			bg = lipgloss.Color("196") // red for force cancel
+		}
 		cancelStyle := lipgloss.NewStyle().
-			Background(lipgloss.Color("208")).
+			Background(bg).
 			Foreground(lipgloss.Color("0")).
 			Bold(true)
 		return cancelStyle.Width(width).Render(bar)
@@ -747,8 +761,10 @@ func (m *AutoSplitModel) renderHelpBar(width int) string {
 	case m.done:
 		help = keyStyle.Render("q") + helpStyle.Render("/") +
 			keyStyle.Render("enter") + helpStyle.Render(" dismiss")
+	case isCancelled && m.forceCancel:
+		help = helpStyle.Render("⚡ force killing child processes…")
 	case isCancelled:
-		help = keyStyle.Render("q") + helpStyle.Render(" force quit")
+		help = keyStyle.Render("q") + helpStyle.Render(" force kill")
 	default:
 		help = keyStyle.Render("q") + helpStyle.Render(" cancel  ") +
 			keyStyle.Render("ctrl+]") + helpStyle.Render(" claude  ") +

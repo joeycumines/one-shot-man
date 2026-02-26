@@ -383,7 +383,10 @@ func TestRunPassthrough_FirstSwapClearsScreen(t *testing.T) {
 		t.Errorf("first swap should contain clear sequence, got: %q", first)
 	}
 
-	// Second passthrough — should NOT write clear sequence again.
+	// Second passthrough — should write VTerm restoration (clear + render).
+	// Since T049, the second swap restores Claude's screen from the VTerm
+	// buffer, which starts with a clear sequence followed by the rendered
+	// screen contents.
 	stdout.Reset()
 	go func() {
 		time.Sleep(50 * time.Millisecond)
@@ -396,8 +399,9 @@ func TestRunPassthrough_FirstSwapClearsScreen(t *testing.T) {
 		t.Fatalf("second pass: reason=%v err=%v", reason, err)
 	}
 	second := stdout.String()
-	if strings.Contains(second, "\x1b[2J") {
-		t.Errorf("second swap should NOT contain clear sequence, got: %q", second)
+	// VTerm restoration starts with clear + home.
+	if !strings.Contains(second, "\x1b[2J\x1b[H") {
+		t.Errorf("second swap should contain VTerm restoration (clear+home), got: %q", second)
 	}
 }
 

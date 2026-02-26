@@ -110,6 +110,17 @@ type TUIMux struct {
 	// terminal is cleared and a SIGWINCH is sent to the child so
 	// Claude's TUI renders on a clean canvas. guarded by mu.
 	swappedOnce bool
+
+	// childVterm captures the child PTY's output in an in-memory
+	// VT100 virtual terminal buffer. When the user toggles back to
+	// Claude mode, the buffer is re-rendered to restore Claude's
+	// screen state. Created on Attach, nilled on Detach.
+	childVterm *VTerm
+
+	// termRows and termCols track the last known terminal dimensions
+	// for VTerm sizing. Updated on Attach and in RunPassthrough.
+	termRows int
+	termCols int
 }
 
 // New creates a TUIMux. stdin and stdout are the real terminal streams.
@@ -137,6 +148,17 @@ func (m *TUIMux) Attach(child io.ReadWriteCloser) error {
 		return ErrAlreadyAttached
 	}
 	m.child = child
+	// Create VTerm to capture child output for toggle-back restoration.
+	// Default to 24x80 if terminal dimensions aren't known yet;
+	// RunPassthrough will resize when it reads the actual terminal size.
+	rows, cols := m.termRows, m.termCols
+	if rows <= 0 {
+		rows = 24
+	}
+	if cols <= 0 {
+		cols = 80
+	}
+	m.childVterm = NewVTerm(rows, cols)
 	return nil
 }
 
@@ -149,6 +171,7 @@ func (m *TUIMux) Detach() error {
 		return ErrPassthroughActive
 	}
 	m.child = nil
+	m.childVterm = nil
 	m.active = SideOsm
 	return nil
 }
@@ -271,7 +294,7 @@ func (m *TUIMux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 		// loop in the stdin goroutine provides defense-in-depth.
 	}
 
-	// Get terminal dimensions for scroll region.
+	// Get terminal dimensions for scroll region and VTerm sizing.
 	if statusEnabled && m.termFd >= 0 {
 		_, h, err := term.GetSize(m.termFd)
 		if err == nil && h > 1 {
@@ -280,6 +303,18 @@ func (m *TUIMux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 			m.renderStatusBar(h)
 		} else {
 			statusEnabled = false
+		}
+	}
+	// Update terminal dimensions and resize VTerm if needed.
+	if m.termFd >= 0 {
+		if w, h, err := term.GetSize(m.termFd); err == nil {
+			m.mu.Lock()
+			m.termRows = h
+			m.termCols = w
+			if m.childVterm != nil {
+				m.childVterm.Resize(h, w)
+			}
+			m.mu.Unlock()
 		}
 	}
 
@@ -299,7 +334,25 @@ func (m *TUIMux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 				_ = resizeFn(uint16(h), uint16(w))
 			}
 		}
+	} else {
+		// Not first swap — restore Claude's screen from VTerm buffer.
+		// This re-renders the terminal content that was captured during
+		// the previous passthrough session, so the user sees Claude's
+		// output restored instead of a blank screen.
+		m.mu.Lock()
+		vt := m.childVterm
+		m.mu.Unlock()
+		if vt != nil {
+			_, _ = m.stdout.Write([]byte("\x1b[2J\x1b[H"))
+			_, _ = m.stdout.Write([]byte(vt.Render()))
+		}
 	}
+
+	// Capture VTerm reference outside goroutines so the child→stdout
+	// goroutine can tee output without holding the mutex per-write.
+	m.mu.Lock()
+	childVterm := m.childVterm
+	m.mu.Unlock()
 
 	// Create cancellable context for goroutines.
 	fwdCtx, cancel := context.WithCancel(ctx)
@@ -358,7 +411,7 @@ func (m *TUIMux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 		}
 	}()
 
-	// Goroutine 2: child PTY → stdout.
+	// Goroutine 2: child PTY → stdout (+ VTerm tee).
 	go func() {
 		buf := make([]byte, 4096)
 		for {
@@ -375,6 +428,11 @@ func (m *TUIMux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 					}
 					resultCh <- fwdResult{ExitError, werr}
 					return
+				}
+				// Mirror output into the virtual terminal buffer so
+				// we can restore Claude's screen on the next toggle.
+				if childVterm != nil {
+					_, _ = childVterm.Write(buf[:n])
 				}
 			}
 			if err != nil {

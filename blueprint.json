@@ -405,7 +405,7 @@
       "task": "Implement VT100 virtual terminal buffer in internal/termui/mux/vterm.go",
       "description": "Create a VT100-compatible virtual terminal buffer that maintains an in-memory screen state. Core capabilities: (1) 2D grid of cells, each with character + foreground color + background color + bold/underline/inverse attributes. (2) Cursor tracking (row, col). (3) ANSI CSI sequence parsing: cursor movement (CUU/CUD/CUF/CUB/CUP/HVP), erase (ED/EL/ECH), insert/delete line (IL/DL), scroll region (DECSTBM), character attributes (SGR including 256-color and truecolor). (4) Alt-screen support (DECSET 1049 / DECRST 1049). (5) Line wrapping. (6) Render() method that produces a string with ANSI codes to reproduce the current screen state. (7) Write(p []byte) (n int, err error) io.Writer interface. (8) Resize(rows, cols int). Keep it focused on what Claude Code actually uses — don't over-engineer a full xterm. Use byte-at-a-time state machine parsing.",
       "acceptance": "VTerm correctly parses and renders: plain text, colored text (SGR), cursor movement sequences, screen clearing (ED), line erasing (EL), scroll regions. VTerm.Render() produces output that, when written to a real terminal, looks identical to the original stream. Unit tests verify each capability independently.",
-      "status": "Not Started",
+      "status": "Done",
       "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go"]
     },
     {
@@ -413,7 +413,7 @@
       "task": "Integrate VTerm into TUIMux for child output capture and re-render on toggle",
       "description": "In mux.go: (1) Add childVterm *VTerm field to TUIMux (created on Attach with current terminal dimensions). (2) In RunPassthrough's child→stdout goroutine: tee output to childVterm.Write(buf[:n]) alongside m.stdout.Write(buf[:n]). (3) On toggle BACK from Claude (ExitToggle in RunPassthrough): after restoring terminal state, call childVterm.Render() to nothing (the vterm state is preserved for next toggle). (4) On toggle TO Claude: if childVterm has content, write childVterm.Render() to m.stdout before starting byte forwarding. This ensures Claude's screen is restored when toggling back to it. (5) On Detach: nil out childVterm.",
       "acceptance": "Toggling to Claude (Ctrl+]) shows Claude's last screen state if Claude has previously rendered output. Toggling away and back preserves Claude's display. No screen artifacts from stale content. Unit test with mock child writes to vterm, verifies Render() produces expected output after simulated toggle cycle.",
-      "status": "Not Started",
+      "status": "Done",
       "files": ["internal/termui/mux/mux.go"]
     },
     {
@@ -421,7 +421,7 @@
       "task": "Fix ReleaseTerminal/RestoreTerminal race: add synchronization channel for alt-screen lifecycle",
       "description": "In pr_split.go's onToggle callback: ReleaseTerminal() is called but it's async (returns a tea.Cmd). RunPassthrough may start before alt-screen is fully released. Fix: (1) After calling p.ReleaseTerminal(), add a small deterministic wait (50ms) to allow BubbleTea's event loop to process the release. Better: use p.DisableInput() + direct escape sequences to exit alt-screen synchronously (write \\x1b[?1049l to stdout). (2) Before calling p.RestoreTerminal(), write \\x1b[?1049h to stdout to enter alt-screen synchronously, then call RestoreTerminal to let BubbleTea know. (3) Add \\x1b[2J\\x1b[H (clear + home) after RestoreTerminal to ensure clean re-render.",
       "acceptance": "Toggling from auto-split to Claude and back produces no screen artifacts. The alt-screen is fully exited before RunPassthrough starts. The auto-split TUI re-renders cleanly on return. No overlapping content from Claude's output on the auto-split screen.",
-      "status": "Not Started",
+      "status": "Done",
       "files": ["internal/command/pr_split.go"]
     },
     {
@@ -429,7 +429,7 @@
       "task": "Run full make (build + lint + test) and fix all compilation and test failures from T038-T050",
       "description": "Run `make` to verify all changes compile, lint cleanly, and all tests pass. Fix any issues found. Ensure no deadcode warnings for new functions. Verify all new files have correct build tags.",
       "acceptance": "`make` completes with zero errors. All tests pass. No lint warnings. No deadcode findings.",
-      "status": "Not Started",
+      "status": "Done",
       "files": []
     },
     {

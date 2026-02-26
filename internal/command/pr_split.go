@@ -358,6 +358,13 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			if p := autoSplitModel.Program(); p != nil {
 				p.ReleaseTerminal()
 			}
+			// Synchronously exit alt-screen. BubbleTea's ReleaseTerminal
+			// is async (processed via event loop), so we write the escape
+			// sequence directly to ensure the terminal has exited alt-screen
+			// before RunPassthrough starts. Idempotent if BubbleTea already
+			// processed it.
+			_, _ = os.Stdout.WriteString("\x1b[?1049l")
+
 			// Switch to Claude's terminal. This blocks until the
 			// user presses the toggle key again or the child exits.
 			reason, err := tuiMux.RunPassthrough(ctx)
@@ -365,6 +372,12 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 				autoSplitModel.SendError("Toggle failed: " + err.Error())
 			}
 			_ = reason
+
+			// Synchronously re-enter alt-screen and clear before
+			// RestoreTerminal. This ensures BubbleTea inherits a
+			// clean alt-screen regardless of event loop timing.
+			_, _ = os.Stdout.WriteString("\x1b[?1049h\x1b[2J\x1b[H")
+
 			// Restore BubbleTea's terminal control so the auto-split
 			// TUI resumes rendering.
 			if p := autoSplitModel.Program(); p != nil {

@@ -20,7 +20,7 @@
   ],
   "statusSection": {
     "goalState": "osm pr-split provides a fully functional automated splitting pipeline where: (1) auto-split TUI renders progress, handles cancellation cleanly, allows ctrl+] toggle to Claude mid-operation, and properly yields back to the command loop on exit; (2) integration tests use real AI (configured via TestMain flags / project.mk) to verify actual splitting -- classification, plan generation, branch creation, and tree-hash equivalence; (3) all existing tests pass; (4) all AI slop is removed.",
-    "currentState": "T026-T028 complete. PTY deadlock root cause: Write() held mutex during blocking kernel I/O, preventing Signal/Close. Fix: release mutex before I/O (matching Read() pattern). Added timeout guard to prSplitSendWithCancel. Termtest integration tests verify cancel during blocked send and end-to-end auto-split flow. All tests pass (make all). Remaining: T018 (complex Go project AI integration test).",
+    "currentState": "ALL TASKS COMPLETE. T018 done: pr_split_complex_project_test.go creates a realistic multi-package Go project (cmd/server → internal/api → internal/db → internal/models, plus internal/auth and internal/config), runs directory-deep split producing 7 branches, verifies each Go-bearing branch builds and tests pass independently, and confirms tree-hash equivalence. AI variant gated by skipIfNoClaude. Full make passes.",
     "replanLog": ["T006-T009 discovered already implemented (TestMain, integration tests, project.mk all existed). T013 simplified to loadStrategyPlugin removal only.", "T021-T025 added: fix handle.send() blocking, fix ctrl+] blank terminal, sendToHandle wrapper, integration tests for new code.", "T026-T028 added: fix PTY deadlock root cause (Write mutex), add timeout guard to sendWithCancel, termtest PTY integration tests."]
   },
   "sequentialTasks": [
@@ -165,8 +165,8 @@
       "task": "Create complex integration test scenario: TestIntegration_AutoSplitComplexGoProject",
       "description": "Create an integration test that mimics a real-world Go project PR split scenario: (1) Temp repo with 3+ Go packages (internal/foo, internal/bar, internal/baz), (2) Go module with inter-package imports, (3) Feature branch adds new package + modifies 2 existing + adds tests + updates docs, (4) Run auto-split with AI, (5) Verify: each split branch builds independently (`go build ./...`), tests pass on each branch, splits are logically grouped (config changes separate from feature code), tree-hash equivalence confirmed.",
       "acceptance": "Test creates a realistic Go project, splits it with AI into coherent groups, and verifies each split branch independently builds and tests pass. Documents the classification and plan in test output.",
-      "status": "Not Started",
-      "files": ["internal/command/pr_split_integration_test.go"]
+      "status": "Done",
+      "files": ["internal/command/pr_split_complex_project_test.go"]
     },
     {
       "id": "T019",

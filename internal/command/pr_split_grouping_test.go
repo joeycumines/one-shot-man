@@ -723,3 +723,380 @@ func TestPrSplit_AnalyzeDiffStats_BinaryFiles(t *testing.T) {
 		t.Errorf("normal file = %+v, want {normal.go, 5, 2}", r.Files[1])
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Null-safety guards — validate that null/undefined inputs don't crash
+// ---------------------------------------------------------------------------
+
+func TestPrSplit_NullSafety_GroupByDirectory(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	for _, input := range []string{"null", "undefined"} {
+		val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDirectory(` + input + `, 1))`)
+		if err != nil {
+			t.Fatalf("groupByDirectory(%s) threw: %v", input, err)
+		}
+		g := parseGroups(t, val)
+		if len(g) != 0 {
+			t.Errorf("groupByDirectory(%s) = %v, want empty", input, g)
+		}
+	}
+}
+
+func TestPrSplit_NullSafety_GroupByExtension(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	for _, input := range []string{"null", "undefined"} {
+		val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByExtension(` + input + `))`)
+		if err != nil {
+			t.Fatalf("groupByExtension(%s) threw: %v", input, err)
+		}
+		g := parseGroups(t, val)
+		if len(g) != 0 {
+			t.Errorf("groupByExtension(%s) = %v, want empty", input, g)
+		}
+	}
+}
+
+func TestPrSplit_NullSafety_GroupByChunks(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	for _, input := range []string{"null", "undefined"} {
+		val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByChunks(` + input + `, 3))`)
+		if err != nil {
+			t.Fatalf("groupByChunks(%s) threw: %v", input, err)
+		}
+		g := parseGroups(t, val)
+		if len(g) != 0 {
+			t.Errorf("groupByChunks(%s) = %v, want empty", input, g)
+		}
+	}
+}
+
+func TestPrSplit_NullSafety_GroupByPattern(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// null files → empty
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByPattern(null, {}))`)
+	if err != nil {
+		t.Fatalf("groupByPattern(null, {}) threw: %v", err)
+	}
+	g := parseGroups(t, val)
+	if len(g) != 0 {
+		t.Errorf("groupByPattern(null, {}) = %v, want empty", g)
+	}
+
+	// null patterns → all files to (other)
+	val, err = evalJS(`JSON.stringify(globalThis.prSplit.groupByPattern(['a.go'], null))`)
+	if err != nil {
+		t.Fatalf("groupByPattern(['a.go'], null) threw: %v", err)
+	}
+	g = parseGroups(t, val)
+	if len(g["(other)"]) != 1 {
+		t.Errorf("groupByPattern(files, null) should put files in (other), got %v", g)
+	}
+}
+
+func TestPrSplit_NullSafety_GroupByDependency(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	for _, input := range []string{"null", "undefined"} {
+		val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency(` + input + `, {}))`)
+		if err != nil {
+			t.Fatalf("groupByDependency(%s) threw: %v", input, err)
+		}
+		g := parseGroups(t, val)
+		if len(g) != 0 {
+			t.Errorf("groupByDependency(%s) = %v, want empty", input, g)
+		}
+	}
+}
+
+func TestPrSplit_NullSafety_ApplyStrategy(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	for _, input := range []string{"null", "undefined", "[]"} {
+		val, err := evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(` + input + `, 'directory', {}))`)
+		if err != nil {
+			t.Fatalf("applyStrategy(%s) threw: %v", input, err)
+		}
+		g := parseGroups(t, val)
+		if len(g) != 0 {
+			t.Errorf("applyStrategy(%s) = %v, want empty", input, g)
+		}
+	}
+}
+
+func TestPrSplit_NullSafety_ParseGoImports(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	for _, input := range []string{"null", "undefined", "''"} {
+		val, err := evalJS(`JSON.stringify(globalThis.prSplit.parseGoImports(` + input + `))`)
+		if err != nil {
+			t.Fatalf("parseGoImports(%s) threw: %v", input, err)
+		}
+		var imports []string
+		if err := json.Unmarshal([]byte(val.(string)), &imports); err != nil {
+			t.Fatal(err)
+		}
+		if len(imports) != 0 {
+			t.Errorf("parseGoImports(%s) = %v, want empty", input, imports)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// applyStrategy — strategy dispatch
+// ---------------------------------------------------------------------------
+
+func TestPrSplit_ApplyStrategy_Directory(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(
+		['cmd/main.go', 'internal/foo.go'], 'directory', {}
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := parseGroups(t, val)
+	if _, ok := g["cmd"]; !ok {
+		t.Error("expected 'cmd' group")
+	}
+	if _, ok := g["internal"]; !ok {
+		t.Error("expected 'internal' group")
+	}
+}
+
+func TestPrSplit_ApplyStrategy_DirectoryDeep(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(
+		['internal/foo/a.go', 'internal/bar/b.go'], 'directory-deep', {}
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := parseGroups(t, val)
+	if _, ok := g["internal/foo"]; !ok {
+		t.Error("expected 'internal/foo' group at depth 2")
+	}
+	if _, ok := g["internal/bar"]; !ok {
+		t.Error("expected 'internal/bar' group at depth 2")
+	}
+}
+
+func TestPrSplit_ApplyStrategy_Extension(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(
+		['a.go', 'b.md'], 'extension', {}
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := parseGroups(t, val)
+	if _, ok := g[".go"]; !ok {
+		t.Error("expected '.go' group")
+	}
+	if _, ok := g[".md"]; !ok {
+		t.Error("expected '.md' group")
+	}
+}
+
+func TestPrSplit_ApplyStrategy_Chunks(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(
+		['a', 'b', 'c', 'd'], 'chunks', { maxPerGroup: 2 }
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := parseGroups(t, val)
+	if len(g) != 2 {
+		t.Errorf("expected 2 chunks, got %d", len(g))
+	}
+}
+
+func TestPrSplit_ApplyStrategy_UnknownDefaultsToDirectory(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(
+		['cmd/main.go', 'internal/foo.go'], 'nonexistent-strategy', {}
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := parseGroups(t, val)
+	if _, ok := g["cmd"]; !ok {
+		t.Error("unknown strategy should fall back to directory grouping")
+	}
+}
+
+func TestPrSplit_ApplyStrategy_Auto(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`
+		(function() {
+			var result = globalThis.prSplit.applyStrategy(
+				['cmd/main.go', 'internal/foo/a.go', 'internal/bar/b.go', 'docs/README.md'],
+				'auto', {}
+			);
+			return JSON.stringify({ groupCount: Object.keys(result).length });
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		GroupCount int `json:"groupCount"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.GroupCount < 1 {
+		t.Error("auto strategy should produce at least 1 group")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// parseGoImports — Go import extraction
+// ---------------------------------------------------------------------------
+
+func TestPrSplit_ParseGoImports_SingleImport(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.parseGoImports(
+		'package main\n\nimport "fmt"\n\nfunc main() {}\n'
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var imports []string
+	if err := json.Unmarshal([]byte(val.(string)), &imports); err != nil {
+		t.Fatal(err)
+	}
+	if len(imports) != 1 || imports[0] != "fmt" {
+		t.Errorf("expected [fmt], got %v", imports)
+	}
+}
+
+func TestPrSplit_ParseGoImports_BlockImport(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.parseGoImports(
+		'package main\n\nimport (\n\t"fmt"\n\t"os"\n\tlog "log"\n)\n\nfunc main() {}\n'
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var imports []string
+	if err := json.Unmarshal([]byte(val.(string)), &imports); err != nil {
+		t.Fatal(err)
+	}
+	if len(imports) != 3 {
+		t.Errorf("expected 3 imports, got %d: %v", len(imports), imports)
+	}
+}
+
+func TestPrSplit_ParseGoImports_StopsAtFunc(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Import-like string inside a func body should NOT be parsed.
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.parseGoImports(
+		'package main\n\nimport "fmt"\n\nfunc main() {\n\t_ = "import \\"os\\""\n}\n'
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var imports []string
+	if err := json.Unmarshal([]byte(val.(string)), &imports); err != nil {
+		t.Fatal(err)
+	}
+	if len(imports) != 1 {
+		t.Errorf("expected 1 import (stops at func), got %v", imports)
+	}
+}
+
+func TestPrSplit_ParseGoImports_NoImports(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.parseGoImports(
+		'package main\n\nfunc main() {}\n'
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var imports []string
+	if err := json.Unmarshal([]byte(val.(string)), &imports); err != nil {
+		t.Fatal(err)
+	}
+	if len(imports) != 0 {
+		t.Errorf("expected 0 imports, got %v", imports)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// groupByDependency — dependency-aware Go grouping
+// ---------------------------------------------------------------------------
+
+func TestPrSplit_GroupByDependency_GoPackageGrouping(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency(
+		['internal/foo/foo.go', 'internal/foo/foo_test.go', 'internal/bar/bar.go'],
+		{}
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := parseGroups(t, val)
+
+	// At minimum, foo.go and foo_test.go should be together.
+	total := 0
+	for _, files := range g {
+		total += len(files)
+	}
+	if total != 3 {
+		t.Errorf("expected all 3 files accounted for, got %d", total)
+	}
+}
+
+func TestPrSplit_GroupByDependency_NonGoFallback(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// No .go files → falls back to groupByDirectory.
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency(
+		['docs/README.md', 'config/app.yaml'],
+		{}
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := parseGroups(t, val)
+	if _, ok := g["docs"]; !ok {
+		t.Error("expected 'docs' group for non-Go fallback")
+	}
+	if _, ok := g["config"]; !ok {
+		t.Error("expected 'config' group for non-Go fallback")
+	}
+}

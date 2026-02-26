@@ -347,6 +347,7 @@ function analyzeDiffStats(config) {
 // ---------------------------------------------------------------------------
 
 function groupByDirectory(files, depth) {
+    if (!files || !files.length) return {};
     depth = depth || 1;
     var groups = {};
     for (var i = 0; i < files.length; i++) {
@@ -360,6 +361,7 @@ function groupByDirectory(files, depth) {
 }
 
 function groupByExtension(files) {
+    if (!files || !files.length) return {};
     var groups = {};
     for (var i = 0; i < files.length; i++) {
         var ext = fileExtension(files[i]) || '(none)';
@@ -372,6 +374,8 @@ function groupByExtension(files) {
 }
 
 function groupByPattern(files, patterns) {
+    if (!files || !files.length) return {};
+    if (!patterns || typeof patterns !== 'object') return { '(other)': (files || []).slice() };
     var groups = {};
     var patternNames = Object.keys(patterns);
 
@@ -399,6 +403,7 @@ function groupByPattern(files, patterns) {
 }
 
 function groupByChunks(files, maxPerGroup) {
+    if (!files || !files.length) return {};
     maxPerGroup = maxPerGroup || 5;
     var groups = {};
     for (var i = 0; i < files.length; i++) {
@@ -420,6 +425,7 @@ function groupByChunks(files, maxPerGroup) {
 // Handles single-line (`import "path"`) and block (`import ( ... )`) forms.
 // Stops parsing at the first func/type/var/const declaration for efficiency.
 function parseGoImports(content) {
+    if (!content || typeof content !== 'string') return [];
     var imports = [];
     var lines = content.split('\n');
     var inBlock = false;
@@ -519,6 +525,7 @@ function detectGoModulePath() {
 //      own directory-based group.
 // Falls back to directory grouping for non-Go projects.
 function groupByDependency(files, options) {
+    if (!files || !files.length) return {};
     options = options || {};
 
     // Separate Go files from non-Go files.
@@ -663,6 +670,7 @@ function groupByDependency(files, options) {
 
 // applyStrategy selects and applies a grouping strategy.
 function applyStrategy(files, strategy, options) {
+    if (!files || !files.length) return {};
     options = options || {};
     switch (strategy) {
         case 'directory':
@@ -756,6 +764,7 @@ function selectStrategy(files, options) {
 // ---------------------------------------------------------------------------
 
 function createSplitPlan(groups, config) {
+    if (!groups || typeof groups !== 'object') groups = {};
     config = config || {};
     var dir = config.dir || '.';
     var baseBranch = config.baseBranch || runtime.baseBranch;

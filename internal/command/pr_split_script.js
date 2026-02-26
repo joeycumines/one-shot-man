@@ -2093,6 +2093,10 @@ function isForceCancelled() {
 // Returns { error: null } on success, { error: "message" } on failure.
 function sendToHandle(handle, text) {
     var ENTER_KEY = '\r';
+    // Small delay between text and Enter to let the PTY process the paste
+    // before seeing the CR. Without this, terminals may treat \r as part of
+    // the pasted text block rather than an independent keypress.
+    var ENTER_DELAY_MS = 50;
 
     if (typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
         typeof autoSplitTUI.sendWithCancel === 'function') {
@@ -2101,6 +2105,9 @@ function sendToHandle(handle, text) {
         if (result1.error) {
             return result1;
         }
+        if (timemod && typeof timemod.sleep === 'function') {
+            timemod.sleep(ENTER_DELAY_MS);
+        }
         return autoSplitTUI.sendWithCancel(handle, ENTER_KEY);
     }
     // Fallback: direct synchronous two-write.
@@ -2108,6 +2115,9 @@ function sendToHandle(handle, text) {
         handle.send(text);
     } catch (e) {
         return { error: e.message || String(e) };
+    }
+    if (timemod && typeof timemod.sleep === 'function') {
+        timemod.sleep(ENTER_DELAY_MS);
     }
     try {
         handle.send(ENTER_KEY);

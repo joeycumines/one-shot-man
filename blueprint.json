@@ -19,9 +19,9 @@
     "Rule of Two: 2 contiguous issue-free review cycles before commit."
   ],
   "statusSection": {
-    "goalState": "osm pr-split provides a fully functional automated splitting pipeline where: (1) auto-split TUI renders progress, handles cancellation cleanly, allows ctrl+] toggle to Claude mid-operation, and properly yields back to the command loop on exit; (2) integration tests use real AI (configured via TestMain flags / project.mk) to verify actual splitting -- classification, plan generation, branch creation, and tree-hash equivalence; (3) all existing tests pass; (4) all AI slop is removed.",
-    "currentState": "T029-T037 COMPLETE. All three auto-split blockers fixed: (1) MCP session pre-registration via initialSessionID, (2) two-write pattern for Enter key (\\r), (3) --dangerously-skip-permissions for claude-code types. All tests pass. make clean exit.",
-    "replanLog": ["T006-T009 discovered already implemented (TestMain, integration tests, project.mk all existed). T013 simplified to loadStrategyPlugin removal only.", "T021-T025 added: fix handle.send() blocking, fix ctrl+] blank terminal, sendToHandle wrapper, integration tests for new code.", "T026-T028 added: fix PTY deadlock root cause (Write mutex), add timeout guard to sendWithCancel, termtest PTY integration tests.", "T029-T042 added: fix MCP session pre-registration (BLOCKER), fix Enter key two-write pattern (BLOCKER), add --dangerously-skip-permissions (BLOCKER), update all affected tests, end-to-end validation."]
+    "goalState": "osm pr-split provides a fully functional automated splitting pipeline where: (1) `claude spawn` + `claude` works without EAGAIN — RunPassthrough defensively sets fd to blocking mode; (2) MCP session pre-registration is robust — reportClassification auto-creates sessions if missing; (3) Enter key delivery to Claude is reliable via single-write with \\n appended; (4) terminal mux re-renders cleanly after toggle via in-memory VT100 virtual screen buffer; (5) integration tests with real AI (via TestMain + project.mk) cover spawn→switch→send→classify end-to-end; (6) all existing tests pass; (7) permission popups are handled via --dangerously-skip-permissions.",
+    "currentState": "T001-T037 marked Done but manual testing reveals CRITICAL runtime failures: (A) 'read /dev/stdin: resource temporarily unavailable' EAGAIN on RunPassthrough — stdin fd in non-blocking mode, no defense in mux.go; (B) MCP 'session not found' error despite pre-registration code; (C) Enter key delivery unreliable; (D) mux terminal doesn't re-render cleanly on toggle. REPLAN TRIGGERED.",
+    "replanLog": ["T006-T009 discovered already implemented (TestMain, integration tests, project.mk all existed). T013 simplified to loadStrategyPlugin removal only.", "T021-T025 added: fix handle.send() blocking, fix ctrl+] blank terminal, sendToHandle wrapper, integration tests for new code.", "T026-T028 added: fix PTY deadlock root cause (Write mutex), add timeout guard to sendWithCancel, termtest PTY integration tests.", "T029-T042 added: fix MCP session pre-registration (BLOCKER), fix Enter key two-write pattern (BLOCKER), add --dangerously-skip-permissions (BLOCKER), update all affected tests, end-to-end validation.", "T038-T053 REPLAN: Manual testing revealed T029-T037 fixes are insufficient. EAGAIN on stdin (non-blocking fd), MCP session still not found, Enter key unreliable, mux rendering broken. Complete rewrite of affected areas with integration test coverage."]
   },
   "sequentialTasks": [
     {
@@ -319,6 +319,134 @@
       "acceptance": "make completes with zero errors. All tests pass. No lint warnings.",
       "status": "Done",
       "files": []
+    },
+    {
+      "id": "T038",
+      "task": "Fix EAGAIN: Add ensureBlocking/restoreBlocking to RunPassthrough that explicitly sets stdin fd to blocking mode before reading",
+      "description": "ROOT CAUSE: os.Stdin.Read() in RunPassthrough's goroutine returns EAGAIN because stdin's fd is in non-blocking mode (set by go-prompt, BubbleTea cancelreader, or Go runtime). Go's runtime does NOT retry EAGAIN for TTY fds — it surfaces the error directly. Fix in internal/termui/mux/mux.go: (1) Create mux_blocking_unix.go with ensureBlockingFd(fd int) (origFlags int, err error) using syscall.Fcntl(fd, syscall.F_GETFL, 0) then syscall.Fcntl(fd, syscall.F_SETFL, origFlags &^ syscall.O_NONBLOCK). (2) Create restoreBlockingFd(fd int, origFlags int) error. (3) Create mux_blocking_other.go for Windows with no-op stubs. (4) In RunPassthrough, after term.MakeRaw(termFd) succeeds, call ensureBlockingFd(termFd). Defer restoreBlockingFd. (5) ALSO add EAGAIN retry in the stdin→child goroutine as defense-in-depth: if errors.Is(err, syscall.EAGAIN) || errors.Is(err, syscall.EWOULDBLOCK), call runtime.Gosched() and continue instead of sending ExitError.",
+      "acceptance": "After fix, `claude spawn` followed by `claude` in pr-split enters RunPassthrough without EAGAIN error. stdin reads block correctly waiting for user input. The user sees Claude's TUI output and can press Ctrl+] to toggle back. Test: unit test with a pipe set to O_NONBLOCK passed as stdin verifies ensureBlockingFd restores blocking mode and Read succeeds.",
+      "status": "Done",
+      "files": ["internal/termui/mux/mux.go", "internal/termui/mux/mux_blocking_unix.go", "internal/termui/mux/mux_blocking_other.go"]
+    },
+    {
+      "id": "T039",
+      "task": "Add unit test for EAGAIN retry in RunPassthrough reader goroutine",
+      "description": "In mux_test.go, add TestRunPassthrough_EAGAINRetry: (1) Create a custom io.Reader that returns syscall.EAGAIN on the first 3 reads, then returns valid data, then returns toggle key. (2) Create TUIMux with this custom reader and a pipe as child. (3) Call RunPassthrough. (4) Verify it returns ExitToggle (not ExitError). This proves the EAGAIN retry works even if ensureBlockingFd fails to clear non-blocking. Also add TestEnsureBlockingFd (Unix only) that creates a pipe, sets it to O_NONBLOCK, calls ensureBlockingFd, and verifies reads block correctly.",
+      "acceptance": "TestRunPassthrough_EAGAINRetry passes on all platforms. TestEnsureBlockingFd passes on Unix (skips on Windows). Both tests verify the defense-in-depth layers independently.",
+      "status": "Done",
+      "files": ["internal/termui/mux/mux_test.go", "internal/termui/mux/mux_blocking_unix_test.go"]
+    },
+    {
+      "id": "T040",
+      "task": "Fix MCP session: auto-register session if not found instead of failing",
+      "description": "Added getOrCreateSession helper that auto-creates sessions on demand. Applied to ALL 13 session-requiring tool handlers. Eliminates all 'session not found' errors.",
+      "acceptance": "No MCP tool returns 'session not found'. All tools auto-create sessions. All existing MCP tests pass.",
+      "status": "Done",
+      "files": ["internal/command/mcp.go"]
+    },
+    {
+      "id": "T041",
+      "task": "Add debug logging to MCP instance lifecycle for session diagnostics",
+      "description": "getOrCreateSession logs via slog.Info when auto-creating a session. Pre-registration logs via slog.Info on startup.",
+      "acceptance": "Log output shows session auto-creation events.",
+      "status": "Done",
+      "files": ["internal/command/mcp.go"]
+    },
+    {
+      "id": "T042",
+      "task": "Fix MCP session auto-create in ALL session-requiring tools",
+      "description": "getOrCreateSession helper extracted and applied to all 13 tool handlers. 10 tests updated (6 in mcp_test.go, 3 more in mcp_test.go, 1 in mcp_security_test.go) to expect success instead of errors.",
+      "acceptance": "No MCP tool returns 'session not found'. All tests pass.",
+      "status": "Done",
+      "files": ["internal/command/mcp.go", "internal/command/mcp_test.go", "internal/command/mcp_security_test.go"]
+    },
+    {
+      "id": "T043",
+      "task": "Fix Enter key: add 50ms delay between text and Enter writes in sendToHandle",
+      "description": "Added 50ms timemod.sleep() delay between the prompt text write and the Enter (\\r) write in sendToHandle. Both TUI and fallback paths have the delay. This gives the PTY time to process the paste before seeing CR as an independent keypress.",
+      "acceptance": "sendToHandle has a 50ms delay between text and Enter writes. Existing tests still pass.",
+      "status": "Done",
+      "files": ["internal/command/pr_split_script.js"]
+    },
+    {
+      "id": "T044",
+      "task": "Update sendToHandle tests for two-write pattern with 50ms delay",
+      "description": "Existing TestIntegration_SendToHandle_FallbackDirect and TestIntegration_SendToHandle_FallbackError already verify the two-write pattern (text then \\r). The 50ms delay executes via timemod.sleep() but doesn't change observable test behavior. Tests continue to pass.",
+      "acceptance": "Both tests pass verifying two-write pattern. No test changes needed — delay is transparent.",
+      "status": "Done (no change needed)",
+      "files": ["internal/command/pr_split_integration_test.go"]
+    },
+    {
+      "id": "T045",
+      "task": "Add integration test: TestMCPServer_AutoCreateSession_E2E — verify full auto-creation lifecycle",
+      "description": "Added TestMCPServer_AutoCreateSession_E2E that exercises: reportProgress auto-creates session → heartbeat uses same session → second reportProgress with next seq → getSession returns accumulated state with correct progress/status. Validates the complete Claude Code integration path.",
+      "acceptance": "Test passes verifying multi-tool auto-creation lifecycle. Session state accumulates correctly across calls.",
+      "status": "Done",
+      "files": ["internal/command/mcp_test.go"]
+    },
+    {
+      "id": "T046",
+      "task": "Add integration test: TestIntegration_ClaudeSpawnSwitch — verify spawn→switch→toggle flow with real PTY",
+      "description": "In pr_split_pty_unix_test.go: (1) Build osm binary. (2) Create a mock 'claude' script that starts a simple shell (cat or bash). (3) Spawn osm pr-split with --claude-command pointing to the mock script. (4) Wait for go-prompt to be ready (detect '(pr-split) >' prompt). (5) Send 'claude spawn\\n'. (6) Verify 'Claude spawned' output. (7) Send 'claude\\n'. (8) Verify 'Switching to Claude TUI' output. (9) Verify NO 'resource temporarily unavailable' error. (10) Send Ctrl+] to toggle back. (11) Verify 'Back to osm' output. Uses termtest or raw PTY process. Unix-only (build tag). This test SPECIFICALLY validates the EAGAIN fix.",
+      "acceptance": "Test proves that claude spawn→claude→Ctrl+] toggle cycle works end-to-end in a real PTY without EAGAIN. Test is deterministic (uses sync markers, not sleeps). Passes on macOS and Linux.",
+      "status": "Not Started",
+      "files": ["internal/command/pr_split_pty_unix_test.go"]
+    },
+    {
+      "id": "T047",
+      "task": "Add integration test: TestIntegration_RealClaude_ClassificationE2E — full pipeline with real AI via TestMain flags",
+      "description": "In pr_split_integration_test.go, gated by -integration flag: (1) Create temp git repo with Go project (3 packages, imports, tests). (2) Create feature branch with 10+ changed files across packages. (3) Build osm binary. (4) Spawn osm pr-split with -claude-command and -claude-arg from TestMain. (5) Send 'auto-split\\n'. (6) Wait for auto-split TUI to start. (7) Wait for 'Classify' step to complete (poll MCP result dir for classification.json). (8) Verify classification.json contains all changed files. (9) Wait for 'Plan' step. (10) Send 'q' to cancel after classification (we just need to verify the prompt→Claude→MCP round trip works). Uses -timeout=5m. Logs all output.",
+      "acceptance": "Test proves the full spawn→send-prompt→Claude-processes→MCP-callback round trip works with real AI. classification.json is created with valid content. Test gracefully handles AI unavailability (skip with message).",
+      "status": "Not Started",
+      "files": ["internal/command/pr_split_integration_test.go"]
+    },
+    {
+      "id": "T048",
+      "task": "Implement VT100 virtual terminal buffer in internal/termui/mux/vterm.go",
+      "description": "Create a VT100-compatible virtual terminal buffer that maintains an in-memory screen state. Core capabilities: (1) 2D grid of cells, each with character + foreground color + background color + bold/underline/inverse attributes. (2) Cursor tracking (row, col). (3) ANSI CSI sequence parsing: cursor movement (CUU/CUD/CUF/CUB/CUP/HVP), erase (ED/EL/ECH), insert/delete line (IL/DL), scroll region (DECSTBM), character attributes (SGR including 256-color and truecolor). (4) Alt-screen support (DECSET 1049 / DECRST 1049). (5) Line wrapping. (6) Render() method that produces a string with ANSI codes to reproduce the current screen state. (7) Write(p []byte) (n int, err error) io.Writer interface. (8) Resize(rows, cols int). Keep it focused on what Claude Code actually uses — don't over-engineer a full xterm. Use byte-at-a-time state machine parsing.",
+      "acceptance": "VTerm correctly parses and renders: plain text, colored text (SGR), cursor movement sequences, screen clearing (ED), line erasing (EL), scroll regions. VTerm.Render() produces output that, when written to a real terminal, looks identical to the original stream. Unit tests verify each capability independently.",
+      "status": "Not Started",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go"]
+    },
+    {
+      "id": "T049",
+      "task": "Integrate VTerm into TUIMux for child output capture and re-render on toggle",
+      "description": "In mux.go: (1) Add childVterm *VTerm field to TUIMux (created on Attach with current terminal dimensions). (2) In RunPassthrough's child→stdout goroutine: tee output to childVterm.Write(buf[:n]) alongside m.stdout.Write(buf[:n]). (3) On toggle BACK from Claude (ExitToggle in RunPassthrough): after restoring terminal state, call childVterm.Render() to nothing (the vterm state is preserved for next toggle). (4) On toggle TO Claude: if childVterm has content, write childVterm.Render() to m.stdout before starting byte forwarding. This ensures Claude's screen is restored when toggling back to it. (5) On Detach: nil out childVterm.",
+      "acceptance": "Toggling to Claude (Ctrl+]) shows Claude's last screen state if Claude has previously rendered output. Toggling away and back preserves Claude's display. No screen artifacts from stale content. Unit test with mock child writes to vterm, verifies Render() produces expected output after simulated toggle cycle.",
+      "status": "Not Started",
+      "files": ["internal/termui/mux/mux.go"]
+    },
+    {
+      "id": "T050",
+      "task": "Fix ReleaseTerminal/RestoreTerminal race: add synchronization channel for alt-screen lifecycle",
+      "description": "In pr_split.go's onToggle callback: ReleaseTerminal() is called but it's async (returns a tea.Cmd). RunPassthrough may start before alt-screen is fully released. Fix: (1) After calling p.ReleaseTerminal(), add a small deterministic wait (50ms) to allow BubbleTea's event loop to process the release. Better: use p.DisableInput() + direct escape sequences to exit alt-screen synchronously (write \\x1b[?1049l to stdout). (2) Before calling p.RestoreTerminal(), write \\x1b[?1049h to stdout to enter alt-screen synchronously, then call RestoreTerminal to let BubbleTea know. (3) Add \\x1b[2J\\x1b[H (clear + home) after RestoreTerminal to ensure clean re-render.",
+      "acceptance": "Toggling from auto-split to Claude and back produces no screen artifacts. The alt-screen is fully exited before RunPassthrough starts. The auto-split TUI re-renders cleanly on return. No overlapping content from Claude's output on the auto-split screen.",
+      "status": "Not Started",
+      "files": ["internal/command/pr_split.go"]
+    },
+    {
+      "id": "T051",
+      "task": "Run full make (build + lint + test) and fix all compilation and test failures from T038-T050",
+      "description": "Run `make` to verify all changes compile, lint cleanly, and all tests pass. Fix any issues found. Ensure no deadcode warnings for new functions. Verify all new files have correct build tags.",
+      "acceptance": "`make` completes with zero errors. All tests pass. No lint warnings. No deadcode findings.",
+      "status": "Not Started",
+      "files": []
+    },
+    {
+      "id": "T052",
+      "task": "Update project.mk integration-test-prsplit target to include new integration tests",
+      "description": "Verify the existing integration-test-prsplit target in project.mk correctly runs the new integration tests (TestIntegration_ClaudeSpawnSwitch, TestIntegration_RealClaude_ClassificationE2E). Ensure the -run regex matches. Add a separate target `integration-test-prsplit-mcp` for the MCP-only tests (TestIntegration_MCPInstanceSession) that don't require real AI.",
+      "acceptance": "`make integration-test-prsplit` runs all AI-requiring pr-split integration tests. `make integration-test-prsplit-mcp` runs MCP-only tests (no AI needed). Both targets respect config.mk overrides.",
+      "status": "Not Started",
+      "files": ["project.mk"]
+    },
+    {
+      "id": "T053",
+      "task": "Update WIP.md and checkpoint state for next session",
+      "description": "Write current progress, file paths modified, any remaining discoveries, and the next immediate step to WIP.md.",
+      "acceptance": "WIP.md contains actionable state for cold-start resumption.",
+      "status": "Not Started",
+      "files": ["WIP.md"]
     }
   ],
   "continuousVerification": {

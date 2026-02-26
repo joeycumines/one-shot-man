@@ -185,7 +185,7 @@ func TestMCPSecurity_CrossSessionAccess(t *testing.T) {
 }
 
 // TestMCPSecurity_NonexistentSessionAccess verifies that accessing
-// a non-registered session returns an error.
+// a non-registered session auto-creates the session (graceful degradation).
 func TestMCPSecurity_NonexistentSessionAccess(t *testing.T) {
 	t.Parallel()
 	sess := setupMCPTestSession(t)
@@ -203,21 +203,21 @@ func TestMCPSecurity_NonexistentSessionAccess(t *testing.T) {
 			"seq":       1,
 		}},
 		{"reportResult", map[string]any{
-			"sessionId": "ghost",
+			"sessionId": "ghost2",
 			"success":   true,
 			"output":    "done",
 			"seq":       1,
 		}},
 		{"requestGuidance", map[string]any{
-			"sessionId": "ghost",
+			"sessionId": "ghost3",
 			"question":  "help?",
 			"seq":       1,
 		}},
 		{"heartbeat", map[string]any{
-			"sessionId": "ghost",
+			"sessionId": "ghost4",
 		}},
 		{"getSession", map[string]any{
-			"sessionId": "ghost",
+			"sessionId": "ghost5",
 		}},
 	}
 
@@ -228,8 +228,8 @@ func TestMCPSecurity_NonexistentSessionAccess(t *testing.T) {
 				Arguments: tc.args,
 			})
 			require.NoError(t, err)
-			assert.True(t, result.IsError,
-				"%s with nonexistent session should return error", tc.name)
+			assert.False(t, result.IsError,
+				"%s with nonexistent session should auto-create and succeed", tc.name)
 		})
 	}
 }

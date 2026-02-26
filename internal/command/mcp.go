@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -367,6 +368,32 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 			LastUpdate:    now,
 			LastHeartbeat: now,
 		}
+		slog.Info("MCP: pre-registered session", "sessionID", initialSessionID)
+	}
+
+	// getOrCreateSession returns an existing session or auto-creates one.
+	// This makes session management robust against race conditions where
+	// Claude calls a tool before registerSession or --session initialization.
+	// The caller MUST hold mu. Returns an error for invalid session IDs.
+	getOrCreateSession := func(sessionID string) (*mcpSession, error) {
+		if err := mcpValidateSessionID(sessionID); err != nil {
+			return nil, err
+		}
+		if sess, ok := sessions[sessionID]; ok {
+			return sess, nil
+		}
+		now := time.Now()
+		sess := &mcpSession{
+			SessionID:     sessionID,
+			Capabilities:  []string{"classify", "plan", "resolve"},
+			Status:        "idle",
+			Progress:      0,
+			LastUpdate:    now,
+			LastHeartbeat: now,
+		}
+		sessions[sessionID] = sess
+		slog.Info("MCP: auto-created session", "sessionID", sessionID)
+		return sess, nil
 	}
 
 	server := mcp.NewServer(
@@ -639,11 +666,11 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 			progress = 100
 		}
 		mu.Lock()
-		sess, ok := sessions[input.SessionID]
-		if !ok {
+		sess, err := getOrCreateSession(input.SessionID)
+		if err != nil {
 			mu.Unlock()
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			result.SetError(err)
 			return result, nil, nil
 		}
 		if !mcpCheckSeq(sess, input.Seq) {
@@ -677,11 +704,11 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 		Description: "Report task completion from an agent session",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpReportResultInput) (*mcp.CallToolResult, any, error) {
 		mu.Lock()
-		sess, ok := sessions[input.SessionID]
-		if !ok {
+		sess, err := getOrCreateSession(input.SessionID)
+		if err != nil {
 			mu.Unlock()
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			result.SetError(err)
 			return result, nil, nil
 		}
 		if !mcpCheckSeq(sess, input.Seq) {
@@ -729,11 +756,11 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 			return result, nil, nil
 		}
 		mu.Lock()
-		sess, ok := sessions[input.SessionID]
-		if !ok {
+		sess, err := getOrCreateSession(input.SessionID)
+		if err != nil {
 			mu.Unlock()
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			result.SetError(err)
 			return result, nil, nil
 		}
 		if !mcpCheckSeq(sess, input.Seq) {
@@ -769,11 +796,11 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 		Description: "Get session info, drain queued events, and retrieve pending requests (classification, plan, conflicts, instructions)",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpGetSessionInput) (*mcp.CallToolResult, any, error) {
 		mu.Lock()
-		sess, ok := sessions[input.SessionID]
-		if !ok {
+		sess, err := getOrCreateSession(input.SessionID)
+		if err != nil {
 			mu.Unlock()
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			result.SetError(err)
 			return result, nil, nil
 		}
 		events := sess.Events
@@ -855,17 +882,12 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 		Name:        "heartbeat",
 		Description: "Update session heartbeat timestamp to indicate the agent is still alive",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpHeartbeatInput) (*mcp.CallToolResult, any, error) {
-		if err := mcpValidateSessionID(input.SessionID); err != nil {
-			result := &mcp.CallToolResult{}
-			result.SetError(err)
-			return result, nil, nil
-		}
 		mu.Lock()
-		sess, ok := sessions[input.SessionID]
-		if !ok {
+		sess, err := getOrCreateSession(input.SessionID)
+		if err != nil {
 			mu.Unlock()
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			result.SetError(err)
 			return result, nil, nil
 		}
 		now := time.Now()
@@ -888,11 +910,11 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 			return result, nil, nil
 		}
 		mu.Lock()
-		sess, ok := sessions[input.SessionID]
-		if !ok {
+		sess, err := getOrCreateSession(input.SessionID)
+		if err != nil {
 			mu.Unlock()
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			result.SetError(err)
 			return result, nil, nil
 		}
 		if !mcpCheckSeq(sess, input.Seq) {
@@ -958,11 +980,11 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 		}
 
 		mu.Lock()
-		sess, ok := sessions[input.SessionID]
-		if !ok {
+		sess, err := getOrCreateSession(input.SessionID)
+		if err != nil {
 			mu.Unlock()
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			result.SetError(err)
 			return result, nil, nil
 		}
 		if !mcpCheckSeq(sess, input.Seq) {
@@ -1005,11 +1027,11 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 			return result, nil, nil
 		}
 		mu.Lock()
-		sess, ok := sessions[input.SessionID]
-		if !ok {
+		sess, err := getOrCreateSession(input.SessionID)
+		if err != nil {
 			mu.Unlock()
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			result.SetError(err)
 			return result, nil, nil
 		}
 		now := time.Now()
@@ -1032,11 +1054,11 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 			return result, nil, nil
 		}
 		mu.Lock()
-		sess, ok := sessions[input.SessionID]
-		if !ok {
+		sess, err := getOrCreateSession(input.SessionID)
+		if err != nil {
 			mu.Unlock()
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			result.SetError(err)
 			return result, nil, nil
 		}
 		now := time.Now()
@@ -1064,11 +1086,11 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 			return result, nil, nil
 		}
 		mu.Lock()
-		sess, ok := sessions[input.SessionID]
-		if !ok {
+		sess, err := getOrCreateSession(input.SessionID)
+		if err != nil {
 			mu.Unlock()
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			result.SetError(err)
 			return result, nil, nil
 		}
 		if !mcpCheckSeq(sess, input.Seq) {
@@ -1122,11 +1144,11 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 			return result, nil, nil
 		}
 		mu.Lock()
-		sess, ok := sessions[input.SessionID]
-		if !ok {
+		sess, err := getOrCreateSession(input.SessionID)
+		if err != nil {
 			mu.Unlock()
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			result.SetError(err)
 			return result, nil, nil
 		}
 		if !mcpCheckSeq(sess, input.Seq) {
@@ -1175,11 +1197,11 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 			return result, nil, nil
 		}
 		mu.Lock()
-		sess, ok := sessions[input.SessionID]
-		if !ok {
+		sess, err := getOrCreateSession(input.SessionID)
+		if err != nil {
 			mu.Unlock()
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			result.SetError(err)
 			return result, nil, nil
 		}
 		now := time.Now()
@@ -1215,11 +1237,11 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 			return result, nil, nil
 		}
 		mu.Lock()
-		sess, ok := sessions[input.SessionID]
-		if !ok {
+		sess, err := getOrCreateSession(input.SessionID)
+		if err != nil {
 			mu.Unlock()
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("session not found: %s", input.SessionID))
+			result.SetError(err)
 			return result, nil, nil
 		}
 		if !mcpCheckSeq(sess, input.Seq) {

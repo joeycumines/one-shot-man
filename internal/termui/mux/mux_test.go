@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -612,5 +613,63 @@ func TestHasChild(t *testing.T) {
 	}
 	if m.HasChild() {
 		t.Error("HasChild should be false after Detach")
+	}
+}
+
+// eagainReader returns EAGAIN for the first N reads, then data, then the toggle key.
+type eagainReader struct {
+	mu          sync.Mutex
+	eagainCount int
+	read        int
+	data        string
+	dataSent    bool
+	toggleSent  bool
+}
+
+func newEAGAINReader(eagainCount int, data string) *eagainReader {
+	return &eagainReader{eagainCount: eagainCount, data: data}
+}
+
+func (r *eagainReader) Read(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.read++
+	if r.read <= r.eagainCount {
+		return 0, syscall.EAGAIN
+	}
+	if !r.dataSent {
+		r.dataSent = true
+		return copy(p, []byte(r.data)), nil
+	}
+	if !r.toggleSent {
+		r.toggleSent = true
+		p[0] = DefaultToggleKey
+		return 1, nil
+	}
+	return 0, io.EOF
+}
+
+func TestRunPassthrough_EAGAINRetry(t *testing.T) {
+	t.Parallel()
+	// Reader returns EAGAIN 5 times, then "hello", then toggle key.
+	stdin := newEAGAINReader(5, "hello")
+	child := newMockChild()
+	stdout := &bytes.Buffer{}
+	m := New(stdin, stdout, -1)
+	m.SetStatusEnabled(false)
+	if err := m.Attach(child); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	reason, err := m.RunPassthrough(ctx)
+	if reason != ExitToggle {
+		t.Errorf("reason: got %v, want ExitToggle (err=%v)", reason, err)
+	}
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !strings.Contains(child.getWritten(), "hello") {
+		t.Errorf("child should have received 'hello', got: %q", child.getWritten())
 	}
 }

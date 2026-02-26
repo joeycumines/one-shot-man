@@ -19,7 +19,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime"
 	"sync"
+	"syscall"
 
 	"golang.org/x/term"
 )
@@ -256,6 +258,17 @@ func (m *TUIMux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 		defer func() {
 			_ = term.Restore(m.termFd, savedState)
 		}()
+
+		// Ensure stdin fd is in blocking mode. Libraries like go-prompt and
+		// BubbleTea's cancelreader may leave the fd with O_NONBLOCK set.
+		// Go's os.File.Read() does NOT handle EAGAIN for TTY fds — it
+		// surfaces the error directly — so we must clear it here.
+		origFlags, flagErr := ensureBlockingFd(m.termFd)
+		if flagErr == nil {
+			defer restoreBlockingFd(m.termFd, origFlags)
+		}
+		// If ensureBlockingFd fails, proceed anyway — the EAGAIN retry
+		// loop in the stdin goroutine provides defense-in-depth.
 	}
 
 	// Get terminal dimensions for scroll region.
@@ -312,6 +325,13 @@ func (m *TUIMux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 			if err != nil {
 				if fwdCtx.Err() != nil {
 					return
+				}
+				// Defense-in-depth: if stdin is in non-blocking mode
+				// despite ensureBlockingFd, retry on EAGAIN instead of
+				// surfacing the error and killing the passthrough.
+				if errors.Is(err, syscall.EAGAIN) || errors.Is(err, syscall.EWOULDBLOCK) {
+					runtime.Gosched()
+					continue
 				}
 				resultCh <- fwdResult{ExitError, err}
 				return

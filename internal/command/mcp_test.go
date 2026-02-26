@@ -1004,18 +1004,15 @@ func TestMCPServer_ReportProgress_UnknownSession(t *testing.T) {
 	t.Parallel()
 	env := newMCPTestEnv(t, nil)
 
+	// Unknown sessions are auto-created on demand.
 	r := env.callTool(t, "reportProgress", map[string]any{
 		"sessionId": "nonexistent",
 		"status":    "working",
 		"progress":  50,
 		"message":   "test",
 	})
-	if !r.IsError {
-		t.Error("expected IsError for unknown session")
-	}
-	text := mcpResultText(t, r)
-	if !strings.Contains(text, "session not found") {
-		t.Errorf("error text = %q, want to contain 'session not found'", text)
+	if r.IsError {
+		t.Errorf("unexpected error for auto-created session: %s", mcpResultText(t, r))
 	}
 }
 
@@ -1128,17 +1125,14 @@ func TestMCPServer_ReportResult_UnknownSession(t *testing.T) {
 	t.Parallel()
 	env := newMCPTestEnv(t, nil)
 
+	// Unknown sessions are auto-created on demand.
 	r := env.callTool(t, "reportResult", map[string]any{
 		"sessionId": "nonexistent",
 		"success":   true,
 		"output":    "done",
 	})
-	if !r.IsError {
-		t.Error("expected IsError for unknown session")
-	}
-	text := mcpResultText(t, r)
-	if !strings.Contains(text, "session not found") {
-		t.Errorf("error text = %q, want to contain 'session not found'", text)
+	if r.IsError {
+		t.Errorf("unexpected error for auto-created session: %s", mcpResultText(t, r))
 	}
 }
 
@@ -1265,13 +1259,14 @@ func TestMCPServer_GetSession_Unknown(t *testing.T) {
 	t.Parallel()
 	env := newMCPTestEnv(t, nil)
 
+	// Unknown sessions are auto-created on demand.
 	r := env.callTool(t, "getSession", map[string]any{"sessionId": "ghost"})
-	if !r.IsError {
-		t.Error("expected IsError for unknown session")
+	if r.IsError {
+		t.Errorf("unexpected error for auto-created session: %s", mcpResultText(t, r))
 	}
 	text := mcpResultText(t, r)
-	if !strings.Contains(text, "session not found") {
-		t.Errorf("error text = %q, want to contain 'session not found'", text)
+	if !strings.Contains(text, "ghost") {
+		t.Errorf("result text = %q, want to contain auto-created session ID 'ghost'", text)
 	}
 }
 
@@ -1763,13 +1758,10 @@ func TestMCPServer_Heartbeat_UnknownSession(t *testing.T) {
 	t.Parallel()
 	env := newMCPTestEnv(t, nil)
 
+	// Unknown sessions are auto-created on demand.
 	r := env.callTool(t, "heartbeat", map[string]any{"sessionId": "ghost"})
-	if !r.IsError {
-		t.Error("expected IsError for unknown session")
-	}
-	text := mcpResultText(t, r)
-	if !strings.Contains(text, "session not found") {
-		t.Errorf("error text = %q, want to contain 'session not found'", text)
+	if r.IsError {
+		t.Errorf("unexpected error for auto-created session: %s", mcpResultText(t, r))
 	}
 }
 
@@ -2156,16 +2148,13 @@ func TestMCPServer_ReportClassification_UnknownSession(t *testing.T) {
 	t.Parallel()
 	env := newMCPTestEnv(t, nil)
 
+	// Unknown sessions are auto-created on demand.
 	r := env.callTool(t, "reportClassification", map[string]any{
 		"sessionId": "ghost",
 		"files":     map[string]any{"a.go": "impl"},
 	})
-	if !r.IsError {
-		t.Error("expected IsError for unknown session")
-	}
-	text := mcpResultText(t, r)
-	if !strings.Contains(text, "session not found") {
-		t.Errorf("error text = %q, want to contain 'session not found'", text)
+	if r.IsError {
+		t.Errorf("unexpected error for auto-created session: %s", mcpResultText(t, r))
 	}
 }
 
@@ -2306,24 +2295,91 @@ func TestMCPServer_PreRegisteredSession_ReportClassification(t *testing.T) {
 	}
 }
 
-// TestMCPServer_PreRegisteredSession_UnknownStillFails verifies that a
-// non-pre-registered session ID still fails, even when another session
-// was pre-registered.
-func TestMCPServer_PreRegisteredSession_UnknownStillFails(t *testing.T) {
+// TestMCPServer_PreRegisteredSession_UnknownAutoCreated verifies that
+// sessions are auto-created on demand, even when another session is
+// pre-registered.
+func TestMCPServer_PreRegisteredSession_UnknownAutoCreated(t *testing.T) {
 	t.Parallel()
 	env := newMCPTestEnvWithSession(t, nil, "", "known-session")
 
-	// Calling with a different session ID should fail.
+	// Calling with a different session ID should auto-create.
 	r := env.callTool(t, "reportClassification", map[string]any{
 		"sessionId": "unknown-session",
 		"files":     map[string]any{"a.go": "impl"},
 	})
-	if !r.IsError {
-		t.Error("expected IsError for unknown session, even with pre-registered session")
+	if r.IsError {
+		t.Errorf("unexpected error for auto-created session: %s", mcpResultText(t, r))
 	}
-	text := mcpResultText(t, r)
-	if !strings.Contains(text, "session not found") {
-		t.Errorf("error text = %q, want to contain 'session not found'", text)
+}
+
+// TestMCPServer_AutoCreateSession_E2E verifies the full lifecycle of an
+// auto-created session: tool call auto-creates → subsequent calls use the
+// same session → getSession returns accumulated state. This is the critical
+// path for Claude Code integration where registerSession may not be called
+// before other tool calls arrive.
+func TestMCPServer_AutoCreateSession_E2E(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	sessionID := "auto-e2e-session"
+
+	// Step 1: reportProgress with unknown session → auto-creates.
+	r1 := env.callTool(t, "reportProgress", map[string]any{
+		"sessionId": sessionID,
+		"status":    "working",
+		"progress":  25,
+		"message":   "classifying files",
+		"seq":       1,
+	})
+	if r1.IsError {
+		t.Fatalf("reportProgress on auto-created session failed: %s", mcpResultText(t, r1))
+	}
+
+	// Step 2: heartbeat with same session → session exists, no error.
+	r2 := env.callTool(t, "heartbeat", map[string]any{
+		"sessionId": sessionID,
+	})
+	if r2.IsError {
+		t.Fatalf("heartbeat on auto-created session failed: %s", mcpResultText(t, r2))
+	}
+
+	// Step 3: reportProgress again with seq=2 → accepted (not duplicate).
+	r3 := env.callTool(t, "reportProgress", map[string]any{
+		"sessionId": sessionID,
+		"status":    "working",
+		"progress":  75,
+		"message":   "planning split",
+		"seq":       2,
+	})
+	if r3.IsError {
+		t.Fatalf("second reportProgress failed: %s", mcpResultText(t, r3))
+	}
+
+	// Step 4: getSession → returns accumulated events and state.
+	r4 := env.callTool(t, "getSession", map[string]any{
+		"sessionId": sessionID,
+	})
+	if r4.IsError {
+		t.Fatalf("getSession failed: %s", mcpResultText(t, r4))
+	}
+
+	text := mcpResultText(t, r4)
+	var sess struct {
+		SessionID string  `json:"sessionId"`
+		Status    string  `json:"status"`
+		Progress  float64 `json:"progress"`
+	}
+	if err := json.Unmarshal([]byte(text), &sess); err != nil {
+		t.Fatalf("unmarshal getSession result: %v (text: %s)", err, text)
+	}
+	if sess.SessionID != sessionID {
+		t.Errorf("sessionId = %q, want %q", sess.SessionID, sessionID)
+	}
+	if sess.Status != "working" {
+		t.Errorf("status = %q, want working", sess.Status)
+	}
+	if sess.Progress != 75 {
+		t.Errorf("progress = %f, want 75", sess.Progress)
 	}
 }
 
@@ -2540,8 +2596,9 @@ func TestMCPServer_ReportSplitPlan_UnknownSession(t *testing.T) {
 			},
 		},
 	})
-	if !r.IsError {
-		t.Error("expected IsError for unknown session")
+	// Unknown sessions are auto-created on demand.
+	if r.IsError {
+		t.Errorf("unexpected error for auto-created session: %s", mcpResultText(t, r))
 	}
 }
 
@@ -2745,13 +2802,14 @@ func TestMCPServer_RequestClassification_UnknownSession(t *testing.T) {
 	t.Parallel()
 	env := newMCPTestEnv(t, nil)
 
+	// Unknown sessions are auto-created on demand.
 	r := env.callTool(t, "requestClassification", map[string]any{
 		"sessionId": "nonexistent",
 		"files":     map[string]any{"a.go": "M"},
 		"context":   map[string]any{},
 	})
-	if !r.IsError {
-		t.Error("expected error for unknown session")
+	if r.IsError {
+		t.Errorf("unexpected error for auto-created session: %s", mcpResultText(t, r))
 	}
 }
 
@@ -3129,12 +3187,13 @@ func TestMCPServer_SendInstruction_UnknownSession(t *testing.T) {
 	t.Parallel()
 	env := newMCPTestEnv(t, nil)
 
+	// Unknown sessions are auto-created on demand.
 	r := env.callTool(t, "sendInstruction", map[string]any{
 		"sessionId": "nonexistent",
 		"type":      "abort",
 	})
-	if !r.IsError {
-		t.Error("expected error for unknown session")
+	if r.IsError {
+		t.Errorf("unexpected error for auto-created session: %s", mcpResultText(t, r))
 	}
 }
 

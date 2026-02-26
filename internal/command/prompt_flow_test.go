@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -603,6 +604,14 @@ func TestPromptFlowCommand_NoFooter(t *testing.T) {
 // Returns the engine and stdout/stderr buffers.
 func newPromptFlowTestEngine(t *testing.T) (*scripting.Engine, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
+	// Stub clipboard to prevent tests from writing to system clipboard
+	// Use platform-appropriate command that discards input
+	clipboardCmd := "cat > /dev/null"
+	if runtime.GOOS == "windows" {
+		clipboardCmd = "type nul > NUL"
+	}
+	t.Setenv("OSM_CLIPBOARD", clipboardCmd)
+
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
@@ -630,7 +639,6 @@ func newPromptFlowTestEngine(t *testing.T) (*scripting.Engine, *bytes.Buffer, *b
 // copy (default target) auto-generates the meta-prompt when a goal is set
 // and no explicit generate has been called.
 func TestPromptFlowCommand_AutoGenerateOnFirstCopy(t *testing.T) {
-	t.Parallel()
 	engine, stdout, _ := newPromptFlowTestEngine(t)
 	defer engine.Close()
 
@@ -673,7 +681,6 @@ func TestPromptFlowCommand_AutoGenerateOnFirstCopy(t *testing.T) {
 // TestPromptFlowCommand_AutoGenerateNotOnSecondCopy verifies that only
 // the first copy triggers auto-generate, not subsequent copies.
 func TestPromptFlowCommand_AutoGenerateNotOnSecondCopy(t *testing.T) {
-	t.Parallel()
 	engine, stdout, _ := newPromptFlowTestEngine(t)
 	defer engine.Close()
 
@@ -706,7 +713,6 @@ func TestPromptFlowCommand_AutoGenerateNotOnSecondCopy(t *testing.T) {
 // calling generate explicitly clears the auto-generate flag, so subsequent
 // copy does NOT auto-generate.
 func TestPromptFlowCommand_ExplicitGenerateClearsAutoGenerate(t *testing.T) {
-	t.Parallel()
 	engine, stdout, _ := newPromptFlowTestEngine(t)
 	defer engine.Close()
 
@@ -736,7 +742,6 @@ func TestPromptFlowCommand_ExplicitGenerateClearsAutoGenerate(t *testing.T) {
 // TestPromptFlowCommand_AutoGenerateRequiresGoal verifies that auto-generate
 // does NOT fire when no goal has been set.
 func TestPromptFlowCommand_AutoGenerateRequiresGoal(t *testing.T) {
-	t.Parallel()
 	engine, stdout, _ := newPromptFlowTestEngine(t)
 	defer engine.Close()
 
@@ -763,7 +768,6 @@ func TestPromptFlowCommand_AutoGenerateRequiresGoal(t *testing.T) {
 // TestPromptFlowCommand_CopyMetaAutoGenerate verifies that 'copy meta'
 // also triggers auto-generate on first invocation.
 func TestPromptFlowCommand_CopyMetaAutoGenerate(t *testing.T) {
-	t.Parallel()
 	engine, stdout, _ := newPromptFlowTestEngine(t)
 	defer engine.Close()
 
@@ -795,7 +799,6 @@ func TestPromptFlowCommand_CopyMetaAutoGenerate(t *testing.T) {
 // TestPromptFlowCommand_CopyPromptNoAutoGenerate verifies that 'copy prompt'
 // does NOT trigger auto-generate (it copies task prompt, not meta).
 func TestPromptFlowCommand_CopyPromptNoAutoGenerate(t *testing.T) {
-	t.Parallel()
 	engine, stdout, _ := newPromptFlowTestEngine(t)
 	defer engine.Close()
 
@@ -829,7 +832,6 @@ func TestPromptFlowCommand_CopyPromptNoAutoGenerate(t *testing.T) {
 // auto-generate does not overwrite an existing meta-prompt (handles
 // backward compatibility with sessions saved before this feature).
 func TestPromptFlowCommand_AutoGenerateSkipsNonEmptyMeta(t *testing.T) {
-	t.Parallel()
 	engine, stdout, _ := newPromptFlowTestEngine(t)
 	defer engine.Close()
 
@@ -865,7 +867,6 @@ func TestPromptFlowCommand_AutoGenerateSkipsNonEmptyMeta(t *testing.T) {
 // copy in TASK_PROMPT_SET phase does NOT auto-generate (it copies the
 // final assembled output, not meta-prompt).
 func TestPromptFlowCommand_TaskPromptSetPhaseNoAutoGenerate(t *testing.T) {
-	t.Parallel()
 	engine, stdout, _ := newPromptFlowTestEngine(t)
 	defer engine.Close()
 
@@ -892,7 +893,6 @@ func TestPromptFlowCommand_TaskPromptSetPhaseNoAutoGenerate(t *testing.T) {
 // TestPromptFlowCommand_OneStepCopyRawContext verifies that copy without
 // a goal outputs raw context (txtar) instead of empty meta-prompt.
 func TestPromptFlowCommand_OneStepCopyRawContext(t *testing.T) {
-	t.Parallel()
 	engine, stdout, _ := newPromptFlowTestEngine(t)
 	defer engine.Close()
 
@@ -928,7 +928,6 @@ func TestPromptFlowCommand_OneStepCopyRawContext(t *testing.T) {
 // TestPromptFlowCommand_OneStepShowRawContext verifies that show without
 // a goal outputs raw context (txtar) instead of empty meta-prompt.
 func TestPromptFlowCommand_OneStepShowRawContext(t *testing.T) {
-	t.Parallel()
 	engine, stdout, _ := newPromptFlowTestEngine(t)
 	defer engine.Close()
 
@@ -952,7 +951,6 @@ func TestPromptFlowCommand_OneStepShowRawContext(t *testing.T) {
 // TestPromptFlowCommand_OneStepBackwardCompat verifies that one-step mode
 // doesn't break existing goal-based workflow (backward compatibility).
 func TestPromptFlowCommand_OneStepBackwardCompat(t *testing.T) {
-	t.Parallel()
 	engine, stdout, _ := newPromptFlowTestEngine(t)
 	defer engine.Close()
 
@@ -979,7 +977,6 @@ func TestPromptFlowCommand_OneStepBackwardCompat(t *testing.T) {
 // TestPromptFlowCommand_OneStepEmptyContext verifies that copy with
 // no items and no goal outputs gracefully (empty context).
 func TestPromptFlowCommand_OneStepEmptyContext(t *testing.T) {
-	t.Parallel()
 	engine, stdout, _ := newPromptFlowTestEngine(t)
 	defer engine.Close()
 

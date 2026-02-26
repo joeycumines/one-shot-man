@@ -520,8 +520,8 @@ func (v *VTerm) scrollRegion() (top, bot int) {
 	top = 0
 	bot = v.rows
 	if sb.scrollTop > 0 && sb.scrollBot > 0 {
-		top = sb.scrollTop - 1  // 1-indexed to 0-indexed
-		bot = sb.scrollBot      // scrollBot is inclusive, but we want exclusive
+		top = sb.scrollTop - 1 // 1-indexed to 0-indexed
+		bot = sb.scrollBot     // scrollBot is inclusive, but we want exclusive
 	}
 	if top < 0 {
 		top = 0

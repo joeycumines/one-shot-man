@@ -20,7 +20,7 @@
   ],
   "statusSection": {
     "goalState": "osm pr-split provides a fully functional automated splitting pipeline where: (1) auto-split TUI renders progress, handles cancellation cleanly, allows ctrl+] toggle to Claude mid-operation, and properly yields back to the command loop on exit; (2) integration tests use real AI (configured via TestMain flags / project.mk) to verify actual splitting -- classification, plan generation, branch creation, and tree-hash equivalence; (3) all existing tests pass; (4) all AI slop is removed.",
-    "currentState": "All implementation tasks complete. make (build+lint+test) passes: 43/43 packages, zero lint errors. Ready for commit.",
+    "currentState": "All implementation tasks complete. make (build+lint+test) passes: 43/43 packages, zero lint errors. Commits: bee4909 (null guards), 4e21bf7 (force-cancel SIGKILL chain + signal bridge + integration tests). Remaining: T018 (complex Go project AI integration test).",
     "replanLog": ["T006-T009 discovered already implemented (TestMain, integration tests, project.mk all existed). T013 simplified to loadStrategyPlugin removal only."]
   },
   "sequentialTasks": [
@@ -109,7 +109,7 @@
       "task": "Add integration test for cancellation: TestIntegration_AutoSplitCancel",
       "description": "Test that the auto-split pipeline can be cancelled mid-operation. (1) Create a temp git repo. (2) Start auto-split in a goroutine. (3) After the 'Analyze diff' step completes, trigger cancellation via autoSplitTUI.quit(). (4) Verify the pipeline returns with a cancellation error within 2 seconds. (5) Verify the original branch is restored. This tests the cooperative cancellation flow end-to-end.",
       "acceptance": "Test demonstrates that cancellation during auto-split terminates the pipeline, restores the git state, and returns control within a reasonable timeout.",
-      "status": "Not Started",
+      "status": "Done (committed 4e21bf7 — TestIntegration_AutoSplitCancel in pr_split_integration_test.go)",
       "files": ["internal/command/pr_split_integration_test.go"]
     },
     {

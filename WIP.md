@@ -1,32 +1,20 @@
 # WIP.md — Takumi's Desperate Diary
 
-## Current State
-- Force-quit fix: COMPLETE AND WIRED END-TO-END
-- Integration test file: FIXED (removed duplicate, added runGit, cleaned dead code)
-- All compilation errors: ZERO
-- Pending: Rule of Two review (counter at 0 — diff just changed)
+## Current State (Post-Commit)
+- **All commits landed.** Working tree clean.
+- `make` passes: 43/43 packages, zero lint errors.
+- Commits this session:
+  - **bee4909** — Null guards + edge case tests
+  - **4e21bf7** — Wire force-cancel SIGKILL through JS-to-Go bridge
 
-## Files Modified This Session
-
-### Already Committed (prior sessions)
-- internal/termui/mux/autosplit.go — forceCancel field, ForceCancelled() method
-- internal/termui/mux/autosplit_test.go — 4 tests updated for force-quit behavior
-- internal/command/pr_split.go — forceCancelled exposed to JS
-- internal/command/pr_split_integration_test.go — base version committed
-
-### Uncommitted Changes
-1. **internal/command/pr_split_script.js**
-   - Added `isForceCancelled()` function
-   - Updated `cleanupExecutor()` to SIGKILL on force-cancel before calling close()
-2. **internal/command/pr_split_integration_test.go**
-   - Added missing `runGit` helper function
-   - Removed duplicate `TestIntegration_AutoSplitWithClaude` (exists in pr_split_test.go)
-   - Removed 4 unused helper functions (runGitSafe, listGitBranches, etc.)
-   - Removed unused `fmt` import
-3. **internal/builtin/claudemux/claude_code.go**
-   - Added `Signal(sig string) error` to `ptyAgentHandle`
-4. **internal/builtin/claudemux/module.go**
-   - Added optional `signal` method exposure in `wrapAgentHandle` via `signaler` interface
+## Committed Changes (4e21bf7)
+1. **internal/termui/mux/autosplit.go** — forceCancel field, ForceCancelled() method
+2. **internal/termui/mux/autosplit_test.go** — 4 tests updated for force-quit behavior
+3. **internal/command/pr_split.go** — forceCancelled exposed to JS
+4. **internal/command/pr_split_script.js** — isForceCancelled(), cleanupExecutor SIGKILL
+5. **internal/command/pr_split_integration_test.go** — NEW: 2 integration tests + helpers
+6. **internal/builtin/claudemux/claude_code.go** — Signal() on ptyAgentHandle
+7. **internal/builtin/claudemux/module.go** — signaler interface + conditional signal exposure
 
 ## Force-Cancel Signal Chain
 ```
@@ -37,8 +25,11 @@ User presses q/q → AutoSplitModel.forceCancel=true
   → close() then runs (fast, process already dead)
 ```
 
+## Blueprint Status
+- T001-T020: All Done except T018 (complex Go project AI integration test)
+- T011: Done — TestIntegration_AutoSplitCancel committed in 4e21bf7
+
 ## Next Steps
-1. Rule of Two: Pass 1 review (fresh — diff changed)
-2. Rule of Two: Pass 2 review
-3. Commit all changes
-4. Update blueprint.json
+1. ~~Run `make` — PASSED~~
+2. Run integration tests with actual AI (T018 or manual `make integration-test-prsplit`)
+3. Commit tracking file updates (blueprint.json, WIP.md, config.mk)

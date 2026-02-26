@@ -166,6 +166,7 @@ type verifySplitsResult struct {
 		Output string  `json:"output"`
 		Error  *string `json:"error"`
 	} `json:"results"`
+	Error *string `json:"error"`
 }
 
 func parseVerifySplitsResult(t *testing.T, raw interface{}) verifySplitsResult {
@@ -1028,4 +1029,100 @@ func TestVerifySplits_MockExec(t *testing.T) {
 			t.Errorf("error should mention checkout, got %q", *r.Results[0].Error)
 		}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// Null plan guard tests
+// ---------------------------------------------------------------------------
+
+func TestVerifySplits_NullPlan(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	tests := []struct {
+		name string
+		expr string
+	}{
+		{"null", "null"},
+		{"undefined", "undefined"},
+		{"empty_object", "{}"},
+		{"missing_splits", "{dir: '.', sourceBranch: 'main'}"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits(` + tt.expr + `))`)
+			if err != nil {
+				t.Fatalf("evalJS failed: %v", err)
+			}
+			r := parseVerifySplitsResult(t, raw)
+			if r.AllPassed {
+				t.Error("should not pass with invalid plan")
+			}
+			if r.Error == nil || !strings.Contains(*r.Error, "invalid plan") {
+				t.Errorf("expected error containing 'invalid plan', got %v", r.Error)
+			}
+		})
+	}
+}
+
+func TestVerifyEquivalence_NullPlan(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	tests := []struct {
+		name string
+		expr string
+	}{
+		{"null", "null"},
+		{"undefined", "undefined"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence(` + tt.expr + `))`)
+			if err != nil {
+				t.Fatalf("evalJS failed: %v", err)
+			}
+			r := parseVerifyEquivResult(t, raw)
+			if r.Equivalent {
+				t.Error("should not be equivalent with null plan")
+			}
+			if r.Error == nil || !strings.Contains(*r.Error, "invalid plan") {
+				t.Errorf("expected error containing 'invalid plan', got %v", r.Error)
+			}
+		})
+	}
+}
+
+func TestVerifyEquivalenceDetailed_NullPlan(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	tests := []struct {
+		name string
+		expr string
+	}{
+		{"null", "null"},
+		{"undefined", "undefined"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed(` + tt.expr + `))`)
+			if err != nil {
+				t.Fatalf("evalJS failed: %v", err)
+			}
+			r := parseVerifyEquivResult(t, raw)
+			if r.Equivalent {
+				t.Error("should not be equivalent with null plan")
+			}
+			if r.Error == nil || !strings.Contains(*r.Error, "invalid plan") {
+				t.Errorf("expected error containing 'invalid plan', got %v", r.Error)
+			}
+			if r.DiffFiles == nil {
+				t.Error("diffFiles should be empty array, not nil")
+			}
+		})
+	}
 }

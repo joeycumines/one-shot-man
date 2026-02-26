@@ -796,3 +796,46 @@ func TestCleanupBranches(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Null plan guard tests
+// ---------------------------------------------------------------------------
+
+func TestCleanupBranches_NullPlan(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	tests := []struct {
+		name string
+		expr string
+	}{
+		{"null", "null"},
+		{"undefined", "undefined"},
+		{"missing_splits", "{baseBranch: 'main'}"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.cleanupBranches(` + tt.expr + `))`)
+			if err != nil {
+				t.Fatalf("evalJS failed: %v", err)
+			}
+			r := parseCleanupResult(t, raw)
+			if len(r.Deleted) != 0 {
+				t.Errorf("expected 0 deleted, got %d", len(r.Deleted))
+			}
+			if len(r.Errors) == 0 {
+				t.Error("expected error for invalid plan")
+			}
+			found := false
+			for _, e := range r.Errors {
+				if strings.Contains(e, "invalid plan") {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("expected error containing 'invalid plan', got: %v", r.Errors)
+			}
+		})
+	}
+}

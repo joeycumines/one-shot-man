@@ -815,6 +815,79 @@ func TestCreateSplitPlan(t *testing.T) {
 	}
 }
 
+func TestCreateSplitPlan_EmptyAndNullGroups(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name   string
+		setup  string
+		invoke string
+		check  func(t *testing.T, r createSplitPlanResult)
+	}{
+		{
+			name:  "empty_groups_object",
+			setup: `globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');`,
+			invoke: `JSON.stringify(globalThis.prSplit.createSplitPlan(
+				{},
+				{baseBranch: 'main', branchPrefix: 'split/'}
+			))`,
+			check: func(t *testing.T, r createSplitPlanResult) {
+				if len(r.Splits) != 0 {
+					t.Errorf("expected 0 splits for empty groups, got %d", len(r.Splits))
+				}
+			},
+		},
+		{
+			name:  "null_groups",
+			setup: `globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');`,
+			invoke: `JSON.stringify(globalThis.prSplit.createSplitPlan(
+				null,
+				{baseBranch: 'main', branchPrefix: 'split/'}
+			))`,
+			check: func(t *testing.T, r createSplitPlanResult) {
+				if len(r.Splits) != 0 {
+					t.Errorf("expected 0 splits for null groups, got %d", len(r.Splits))
+				}
+			},
+		},
+		{
+			name:  "undefined_groups",
+			setup: `globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');`,
+			invoke: `JSON.stringify(globalThis.prSplit.createSplitPlan(
+				undefined,
+				{baseBranch: 'main', branchPrefix: 'split/'}
+			))`,
+			check: func(t *testing.T, r createSplitPlanResult) {
+				if len(r.Splits) != 0 {
+					t.Errorf("expected 0 splits for undefined groups, got %d", len(r.Splits))
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := evalJS(resetGitMockJS); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := evalJS(tt.setup); err != nil {
+				t.Fatalf("setup failed: %v", err)
+			}
+			raw, err := evalJS(tt.invoke)
+			if err != nil {
+				t.Fatalf("invoke failed: %v", err)
+			}
+			r := parseCreateSplitPlanResult(t, raw)
+			tt.check(t, r)
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // TestSavePlan — tests plan persistence with mock osmod
 // ---------------------------------------------------------------------------

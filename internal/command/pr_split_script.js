@@ -1118,6 +1118,9 @@ function verifySplit(branchName, config) {
 }
 
 function verifySplits(plan) {
+    if (!plan || !plan.splits) {
+        return { allPassed: false, results: [], error: 'invalid plan: missing splits' };
+    }
     var dir = plan.dir || '.';
     var results = [];
     var allPassed = true;
@@ -1143,10 +1146,13 @@ function verifySplits(plan) {
     }
 
     gitExec(dir, ['checkout', restoreBranch]);
-    return { allPassed: allPassed, results: results };
+    return { allPassed: allPassed, results: results, error: null };
 }
 
 function verifyEquivalence(plan) {
+    if (!plan) {
+        return { equivalent: false, splitTree: '', sourceTree: '', error: 'invalid plan' };
+    }
     var dir = plan.dir || '.';
 
     if (!plan.splits || plan.splits.length === 0) {
@@ -1191,6 +1197,9 @@ function verifyEquivalence(plan) {
 }
 
 function verifyEquivalenceDetailed(plan) {
+    if (!plan) {
+        return { equivalent: false, splitTree: '', sourceTree: '', error: 'invalid plan', diffFiles: [], diffSummary: '' };
+    }
     var dir = plan.dir || '.';
     var base = verifyEquivalence(plan);
 
@@ -1217,6 +1226,9 @@ function verifyEquivalenceDetailed(plan) {
 }
 
 function cleanupBranches(plan) {
+    if (!plan || !plan.splits) {
+        return { deleted: [], errors: ['invalid plan: missing splits'] };
+    }
     var dir = plan.dir || '.';
     var deleted = [];
     var errors = [];
@@ -1629,6 +1641,9 @@ var AUTO_FIX_STRATEGIES = [
 //   verifyCommand: override verify command
 //   strategies: override strategy list (default: AUTO_FIX_STRATEGIES)
 function resolveConflicts(plan, options) {
+    if (!plan || !plan.splits) {
+        return { fixed: [], errors: [{ name: '(plan)', error: 'invalid plan: missing splits' }], reSplitNeeded: false, totalRetries: 0, reSplitFiles: [], reSplitReason: '' };
+    }
     options = options || {};
     var dir = plan.dir || '.';
     var verifyCommand = options.verifyCommand || plan.verifyCommand || runtime.verifyCommand;

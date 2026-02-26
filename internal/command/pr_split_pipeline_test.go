@@ -847,3 +847,49 @@ func TestShellQuote(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Null plan guard tests
+// ---------------------------------------------------------------------------
+
+func TestResolveConflicts_NullPlan(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	tests := []struct {
+		name string
+		expr string
+	}{
+		{"null", "null"},
+		{"undefined", "undefined"},
+		{"missing_splits", "{dir: '.'}"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.resolveConflicts(` + tt.expr + `, {verifyCommand: 'make test'}))`)
+			if err != nil {
+				t.Fatalf("evalJS failed: %v", err)
+			}
+			r := parseResolveConflictsResult(t, raw)
+			if len(r.Fixed) != 0 {
+				t.Errorf("expected 0 fixed, got %d", len(r.Fixed))
+			}
+			if len(r.Errors) == 0 {
+				t.Error("expected error for invalid plan")
+			}
+			if r.ReSplitNeeded {
+				t.Error("should not need re-split for invalid plan")
+			}
+			found := false
+			for _, e := range r.Errors {
+				if strings.Contains(e.Error, "invalid plan") {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("expected error containing 'invalid plan', got: %+v", r.Errors)
+			}
+		})
+	}
+}

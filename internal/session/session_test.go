@@ -1570,3 +1570,87 @@ func TestFormatSessionID_SanitizeAndTruncate(t *testing.T) {
 		t.Errorf("id still contains slashes: %q", id)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// formatExplicitID and formatTerminalID — direct unit tests
+// ---------------------------------------------------------------------------
+
+func TestFormatExplicitID_PlainString(t *testing.T) {
+	t.Parallel()
+	id := formatExplicitID("my-session")
+	if !strings.HasPrefix(id, NamespaceExplicit+NamespaceDelimiter) {
+		t.Errorf("expected 'explicit--' prefix, got %q", id)
+	}
+	if !strings.Contains(id, "my-session") {
+		t.Errorf("expected payload 'my-session' in id, got %q", id)
+	}
+}
+
+func TestFormatExplicitID_AlreadyNamespaced(t *testing.T) {
+	t.Parallel()
+	// When the explicit ID already contains "--", the function should
+	// extract namespace and payload.
+	id := formatExplicitID("custom--payload123")
+	if !strings.HasPrefix(id, "custom"+NamespaceDelimiter) {
+		t.Errorf("expected 'custom--' prefix for pre-namespaced input, got %q", id)
+	}
+	if !strings.Contains(id, "payload123") {
+		t.Errorf("expected 'payload123' in id, got %q", id)
+	}
+}
+
+func TestFormatExplicitID_Deterministic(t *testing.T) {
+	t.Parallel()
+	id1 := formatExplicitID("test-session")
+	id2 := formatExplicitID("test-session")
+	if id1 != id2 {
+		t.Errorf("formatExplicitID is not deterministic: %q != %q", id1, id2)
+	}
+}
+
+func TestFormatExplicitID_DifferentInputsDifferentOutput(t *testing.T) {
+	t.Parallel()
+	id1 := formatExplicitID("session-a")
+	id2 := formatExplicitID("session-b")
+	if id1 == id2 {
+		t.Errorf("different inputs produced same id: %q", id1)
+	}
+}
+
+func TestFormatTerminalID_Deterministic(t *testing.T) {
+	t.Parallel()
+	id1 := formatTerminalID("ABCDEF-1234-5678")
+	id2 := formatTerminalID("ABCDEF-1234-5678")
+	if id1 != id2 {
+		t.Errorf("formatTerminalID is not deterministic: %q != %q", id1, id2)
+	}
+}
+
+func TestFormatTerminalID_DifferentInputsDifferentOutput(t *testing.T) {
+	t.Parallel()
+	id1 := formatTerminalID("session-A")
+	id2 := formatTerminalID("session-B")
+	if id1 == id2 {
+		t.Errorf("different terminal IDs produced same session id: %q", id1)
+	}
+}
+
+func TestFormatTerminalID_HasCorrectNamespace(t *testing.T) {
+	t.Parallel()
+	id := formatTerminalID("some-term-id")
+	if !strings.HasPrefix(id, NamespaceTerminal+NamespaceDelimiter) {
+		t.Errorf("expected 'terminal--' prefix, got %q", id)
+	}
+}
+
+func TestFormatTerminalID_OutputIsShortHash(t *testing.T) {
+	t.Parallel()
+	id := formatTerminalID("some-term-id")
+	// After "terminal--" prefix, the payload should be a 16-character hex hash.
+	prefix := NamespaceTerminal + NamespaceDelimiter
+	payload := strings.TrimPrefix(id, prefix)
+	if len(payload) != ShortHashLength {
+		t.Errorf("terminal payload length = %d, want %d (ShortHashLength); full id = %q",
+			len(payload), ShortHashLength, id)
+	}
+}

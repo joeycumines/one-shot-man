@@ -245,7 +245,35 @@
     {
       "id": "T032",
       "task": "Commit coverage gap tests",
-      "description": "Commit all new tests and update WIP.md for next session continuation.",
+      "description": "Committed as 02cb61a. 4 files, 386 insertions, 6 deletions.",
+      "acceptance": "git log shows new commit. Working tree clean.",
+      "status": "Done"
+    },
+    {
+      "id": "T033",
+      "task": "Add path traversal security unit tests",
+      "description": "Added TestIsExactDir (7 subtests), TestIsContainedInDir (6 subtests), TestContainsTraversalComponent (11 subtests) to module_hardening_test.go.",
+      "acceptance": "23 subtests pass with -race. Security-relevant functions now have isolated coverage.",
+      "status": "Done"
+    },
+    {
+      "id": "T034",
+      "task": "Add session ID formatting tests",
+      "description": "Added TestFormatExplicitID (4 tests) and TestFormatTerminalID (4 tests) to session_test.go.",
+      "acceptance": "8 tests pass. Both formatExplicitID and formatTerminalID have direct unit tests.",
+      "status": "Done"
+    },
+    {
+      "id": "T035",
+      "task": "Rule of Two for batch 3",
+      "description": "Run 1h: PASS. Run 2h: PASS. Both on same diff. Previous run 1g FAIL caught Windows separator bug, fixed.",
+      "acceptance": "Two PASS verdicts.",
+      "status": "Done"
+    },
+    {
+      "id": "T036",
+      "task": "Commit batch 3",
+      "description": "Commit path traversal + session formatting tests.",
       "acceptance": "git log shows new commit. Working tree clean.",
       "status": "Not Started"
     }

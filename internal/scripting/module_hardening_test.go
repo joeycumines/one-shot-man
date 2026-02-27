@@ -520,3 +520,96 @@ func TestModuleHardening_InvalidPathsLogWarning(t *testing.T) {
 		t.Errorf("expected warning about invalid path in stderr, got: %s", stderr.String())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests: isExactDir, isContainedInDir, containsTraversalComponent
+// ---------------------------------------------------------------------------
+
+func TestIsExactDir(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		base string
+		dirs []string
+		want bool
+	}{
+		{"match_single", "/usr/local", []string{"/usr/local"}, true},
+		{"match_in_list", "/b", []string{"/a", "/b", "/c"}, true},
+		{"no_match", "/x", []string{"/a", "/b"}, false},
+		{"empty_dirs", "/a", nil, false},
+		{"empty_base", "", []string{"/a"}, false},
+		{"prefix_not_exact", "/usr", []string{"/usr/local"}, false},
+		{"suffix_not_exact", "/usr/local/bin", []string{"/usr/local"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isExactDir(tt.base, tt.dirs); got != tt.want {
+				t.Errorf("isExactDir(%q, %v) = %v, want %v", tt.base, tt.dirs, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsContainedInDir(t *testing.T) {
+	t.Parallel()
+
+	sep := string(filepath.Separator)
+	tests := []struct {
+		name     string
+		filePath string
+		dirs     []string
+		want     bool
+	}{
+		{"contained", "/usr/local" + sep + "bin" + sep + "foo", []string{"/usr/local"}, true},
+		{"not_contained", "/etc" + sep + "config", []string{"/usr/local"}, false},
+		{"exact_dir_not_contained", "/usr/local", []string{"/usr/local"}, false},
+		{"empty_dirs", "/usr/local" + sep + "bin", nil, false},
+		{"prefix_attack", "/usr/local-evil" + sep + "bin", []string{"/usr/local"}, false},
+		{"multiple_dirs", "/opt" + sep + "bin" + sep + "x", []string{"/usr", "/opt"}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := isContainedInDir(tt.filePath, tt.dirs); got != tt.want {
+				t.Errorf("isContainedInDir(%q, %v) = %v, want %v", tt.filePath, tt.dirs, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestContainsTraversalComponent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		modpath string
+		want    bool
+	}{
+		{"double_dot_component", "x/../../secret", true},
+		{"leading_double_dot", "../foo", true},
+		{"dot_in_name", "module..name", false},
+		{"no_traversal", "foo/bar/baz", false},
+		{"just_double_dot", "..", true},
+		{"empty_string", "", false},
+		{"single_dot", ".", false},
+		{"triple_dot", "...", false},
+		{"dot_dot_at_end", "foo/..", true},
+		{"nested_traversal", "a/b/../../../etc/passwd", true},
+		// On Windows, backslash IS a path separator so filepath.ToSlash
+		// normalizes it. On Unix, backslash is a valid filename char.
+		{"backslash_traversal", "foo\\..\\bar", filepath.Separator == '\\'},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := containsTraversalComponent(tt.modpath); got != tt.want {
+				t.Errorf("containsTraversalComponent(%q) = %v, want %v", tt.modpath, got, tt.want)
+			}
+		})
+	}
+}

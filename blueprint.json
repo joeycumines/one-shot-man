@@ -17,7 +17,7 @@
     "contextManagement": "Tasks are flat and sequential. Execute in order. On session resume, read blueprint.json and WIP.md, find the first non-Done task, and continue."
   },
   "statusSection": {
-    "currentState": "T001-T042 Done. 8 commits on wip branch: 10f7d91, 25632c6, 8d14711, d71b999, 02cb61a, 585f903, 990c6a1, 7ad17ca. Expanding scope for next coverage targets.",
+    "currentState": "T001-T045 Done. 9 commits on wip branch: 10f7d91, 25632c6, 8d14711, d71b999, 02cb61a, 585f903, 990c6a1, 7ad17ca, 89a0809. Expanding scope for next coverage targets.",
     "goalState": "osm pr-split works correctly with -claude-command=ollama (and all other providers). The spawn-switch-send-classify pipeline is robust: dead child detected before passthrough entry, diagnostic output surfaced, re-attach is safe (no goroutine leaks), the VTerm captures error output. Integration tests cover the full spawn-to-exit lifecycle. Zero goroutine leaks. Zero EAGAIN errors. Zero data loss on re-attach.",
     "replanLog": [
       "2026-02-28: Previous session blueprint (T001-T131, termmux rewrite) was 100% Done. This new blueprint covers the pr-split spawn/toggle failures discovered in production.",
@@ -317,6 +317,27 @@
       "task": "Commit batch 5",
       "description": "Committed as 7ad17ca. 3 files, 209 insertions, 12 deletions.",
       "acceptance": "git log shows new commit. Working tree clean.",
+      "status": "Done"
+    },
+    {
+      "id": "T043",
+      "task": "Add JS bridge wrapper tests (batch 6)",
+      "description": "15 Go-level unit tests for previously untested JS bridge functions: context API (7), output API (2), logging API (6). Fixed dead type assertion ([]interface{} → []logEntry), strengthened output assertions, added content verification to RefreshPath.",
+      "acceptance": "15 tests pass with -race. Context/output/logging bridge wrappers all have direct unit test coverage.",
+      "status": "Done"
+    },
+    {
+      "id": "T044",
+      "task": "Rule of Two for batch 6",
+      "description": "Initial review found dead assertion in TestJsGetLogs_WithCount ([]interface{} never matches []logEntry). Fixed, re-reviewed. Pass 1k: PASS. Pass 2k: PASS.",
+      "acceptance": "Two PASS verdicts on same diff.",
+      "status": "Done"
+    },
+    {
+      "id": "T045",
+      "task": "Commit batch 6",
+      "description": "Committed as 89a0809. 3 files, 388 insertions, 11 deletions.",
+      "acceptance": "git log shows new commit with correct message.",
       "status": "Done"
     }
   ],

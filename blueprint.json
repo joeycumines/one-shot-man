@@ -17,7 +17,7 @@
     "contextManagement": "Tasks are flat and sequential. Execute in order. On session resume, read blueprint.json and WIP.md, find the first non-Done task, and continue."
   },
   "statusSection": {
-    "currentState": "T001-T031 Done. Coverage gap tests: mcp_instance flags, concurrent statusbar, cleanupExecutor ordering. Commits: 10f7d91 (9 fixes), 25632c6 (14 unit tests), 8d14711 (spawn+health tests), d71b999 (isAlive+sendToHandle). Pending commit for T026-T031.",
+    "currentState": "T001-T039 Done. All coverage gap batches committed. Commits: 10f7d91 (9 fixes), 25632c6 (14 unit tests), 8d14711 (spawn+health), d71b999 (isAlive+sendToHandle), 02cb61a (mcp/statusbar/cleanup), 585f903 (security+session), 990c6a1 (sync utils). 7 commits on wip branch. Expanding scope for next coverage targets.",
     "goalState": "osm pr-split works correctly with -claude-command=ollama (and all other providers). The spawn-switch-send-classify pipeline is robust: dead child detected before passthrough entry, diagnostic output surfaced, re-attach is safe (no goroutine leaks), the VTerm captures error output. Integration tests cover the full spawn-to-exit lifecycle. Zero goroutine leaks. Zero EAGAIN errors. Zero data loss on re-attach.",
     "replanLog": [
       "2026-02-28: Previous session blueprint (T001-T131, termmux rewrite) was 100% Done. This new blueprint covers the pr-split spawn/toggle failures discovered in production.",
@@ -274,6 +274,27 @@
       "id": "T036",
       "task": "Commit batch 3",
       "description": "Committed as 585f903. 3 files, 206 insertions, 1 deletion.",
+      "acceptance": "git log shows new commit. Working tree clean.",
+      "status": "Done"
+    },
+    {
+      "id": "T037",
+      "task": "Add sync utility function unit tests",
+      "description": "Added direct unit tests for 4 previously untested functions: matchEntry (9 subtests + empty-entries), deduplicatePath (3 tests), discoverEntries (4 tests), printConfigDiffSummary (3 tests). Added test-sync-utils make target.",
+      "acceptance": "17 new tests pass with -race. matchEntry, deduplicatePath, discoverEntries, printConfigDiffSummary all have isolated unit test coverage.",
+      "status": "Done"
+    },
+    {
+      "id": "T038",
+      "task": "Rule of Two for batch 4",
+      "description": "Pass 1i: PASS. Pass 2i: PASS. Both on identical 4-file, +338/-34 diff.",
+      "acceptance": "Two PASS verdicts on same diff.",
+      "status": "Done"
+    },
+    {
+      "id": "T039",
+      "task": "Commit batch 4",
+      "description": "Committed as 990c6a1. 4 files, 338 insertions, 34 deletions.",
       "acceptance": "git log shows new commit. Working tree clean.",
       "status": "Done"
     }

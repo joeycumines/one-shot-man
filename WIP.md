@@ -2,40 +2,20 @@
 
 ## Session
 - Branch: `wip` (tracking origin/wip)
-- Last commit: `10f7d91` — "Replace internal/termui/mux with internal/termmux" (includes 9 pr-split fixes)
-- Session timer: scratch/.session-start (2026-02-28 02:10:13)
+- Commits: 10f7d91 (9 fixes), 25632c6 (14 unit tests), 8d14711 (spawn+health), d71b999 (isAlive+sendToHandle), 02cb61a (mcp/statusbar/cleanup), 585f903 (security+session)
 
 ## Blueprint State
-- T001-T010: Done (9 fixes implemented, committed, Rule of Two verified)
-- T011-T014: Done (VTerm.String, ChildExitOutput, Detach context, attachChild tests added)
-- T015: In Progress (this file update)
-- T016: Not Started (full make pipeline)
+- T001-T036: All Done
+- Next: Expand scope — JS bridge wrappers, more edge cases
 
-## Current Diff vs HEAD
-- `internal/termmux/vt/vt_test.go` — 8 new TestVTerm_String_* tests
-- `internal/termmux/termmux_test.go` — 6 new tests: ChildExitOutput (3), Detach context (2), Attach retry (1)
-- `blueprint.json` — status updates for T008-T015
-- `WIP.md` — this file
-
-## Key Files
-- `internal/termmux/termmux.go` — Core Mux (Attach/Detach/ChildExitOutput/teeLoop)
-- `internal/termmux/vt/vt.go` — VTerm (String, Render, Write)
-- `internal/command/pr_split.go` — Go bindings (attachChild, detach, switchToClaude)
-- `internal/command/pr_split_script.js` — JS logic (spawn, health check, isAlive guards)
+## Key Files Modified This Session
+- `internal/command/mcp_instance_test.go` — +2 tests (ResultDir, DefaultValues)
+- `internal/command/pr_split_integration_test.go` — +3 cleanupExecutor tests
+- `internal/termmux/statusbar/statusbar_test.go` — +2 tests (ConcurrentAccess, SetHeight_Clamp)
+- `internal/scripting/module_hardening_test.go` — +3 table-driven tests (24 subtests)
+- `internal/session/session_test.go` — +8 tests (formatExplicitID, formatTerminalID)
 
 ## Immediate Next Steps
-1. Complete T015 (done now)
-2. T016: Run `make` (full pipeline) to verify all tests pass
-3. Rule of Two verification on the test additions
-4. Commit the test additions
-5. Expand scope: ideate new improvements, add tasks to blueprint
-6. Continue indefinite cycling per DIRECTIVE.txt
-
-## Key Design Decisions
-- VTerm \n is LF only (no CR); tests use \r\n for newline+carriage-return
-- ReadLoop context cancel only takes effect on next send, not during blocked Read()
-- teeLoop takes teeDone/childEOF as params to prevent channel-reference races
-- Detach waits up to detachTimeout for teeLoop, then continues regardless
-
-## Status
-Ready for full pipeline verification and commit.
+1. Identify remaining JS bridge wrapper gaps (jsOutputPrint/Printf, jsContextAddPath)
+2. Or test other untested areas from audit
+3. Continue indefinite cycling per DIRECTIVE.txt

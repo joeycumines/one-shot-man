@@ -1194,3 +1194,79 @@ func TestSyncCommand_ConfigPullDryRunDoesNotUpdateSHA(t *testing.T) {
 		t.Fatal("expected goal.autodiscovery to NOT be set after dry-run")
 	}
 }
+
+// --- printConfigDiffSummary unit tests ---
+
+func TestPrintConfigDiffSummary(t *testing.T) {
+	t.Parallel()
+
+	t.Run("all_categories", func(t *testing.T) {
+		t.Parallel()
+		summary := configDiffSummary{
+			added: []configKeyValue{
+				{key: "new.key", value: "newval"},
+			},
+			updated: []configKeyValue{
+				{key: "changed.key", value: "updatedval"},
+			},
+			unchanged: []string{"same.key"},
+		}
+		var buf bytes.Buffer
+		printConfigDiffSummary(&buf, summary)
+		out := buf.String()
+
+		if !strings.Contains(out, "1 added") {
+			t.Errorf("expected '1 added' in output, got %q", out)
+		}
+		if !strings.Contains(out, "1 updated") {
+			t.Errorf("expected '1 updated' in output, got %q", out)
+		}
+		if !strings.Contains(out, "1 unchanged") {
+			t.Errorf("expected '1 unchanged' in output, got %q", out)
+		}
+		if !strings.Contains(out, "+ new.key = newval") {
+			t.Errorf("expected '+ new.key = newval' in output, got %q", out)
+		}
+		if !strings.Contains(out, "~ changed.key = updatedval") {
+			t.Errorf("expected '~ changed.key = updatedval' in output, got %q", out)
+		}
+		if !strings.Contains(out, "= same.key") {
+			t.Errorf("expected '= same.key' in output, got %q", out)
+		}
+	})
+
+	t.Run("empty_summary", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		printConfigDiffSummary(&buf, configDiffSummary{})
+		out := buf.String()
+		if !strings.Contains(out, "0 added, 0 updated, 0 unchanged") {
+			t.Errorf("expected zero counts in output, got %q", out)
+		}
+	})
+
+	t.Run("multiple_entries", func(t *testing.T) {
+		t.Parallel()
+		summary := configDiffSummary{
+			added: []configKeyValue{
+				{key: "a", value: "1"},
+				{key: "b", value: "2"},
+			},
+			updated: []configKeyValue{
+				{key: "c", value: "3"},
+			},
+			unchanged: []string{"d", "e", "f"},
+		}
+		var buf bytes.Buffer
+		printConfigDiffSummary(&buf, summary)
+		out := buf.String()
+
+		if !strings.Contains(out, "2 added, 1 updated, 3 unchanged") {
+			t.Errorf("expected '2 added, 1 updated, 3 unchanged', got %q", out)
+		}
+		// Verify all added entries present.
+		if !strings.Contains(out, "+ a = 1") || !strings.Contains(out, "+ b = 2") {
+			t.Errorf("missing added entries in output: %q", out)
+		}
+	})
+}

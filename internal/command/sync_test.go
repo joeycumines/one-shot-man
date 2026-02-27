@@ -1055,3 +1055,251 @@ func TestStripFrontmatter(t *testing.T) {
 		})
 	}
 }
+
+// --- matchEntry unit tests ---
+
+func TestMatchEntry(t *testing.T) {
+	t.Parallel()
+
+	entries := []notebookEntry{
+		{path: "2025/01/2025-01-10-alpha.md", date: "2025-01-10", slug: "alpha"},
+		{path: "2025/01/2025-01-15-beta.md", date: "2025-01-15", slug: "beta"},
+		{path: "2025/02/2025-02-01-beta.md", date: "2025-02-01", slug: "beta"},
+		{path: "2025/02/2025-02-10-my-code-review.md", date: "2025-02-10", slug: "my-code-review"},
+	}
+
+	tests := []struct {
+		name     string
+		query    string
+		wantPath string // empty means expect nil
+	}{
+		{
+			name:     "empty_query",
+			query:    "",
+			wantPath: "",
+		},
+		{
+			name:     "exact_date_slug",
+			query:    "2025-01-10-alpha",
+			wantPath: "2025/01/2025-01-10-alpha.md",
+		},
+		{
+			name:     "exact_date_slug_second",
+			query:    "2025-02-10-my-code-review",
+			wantPath: "2025/02/2025-02-10-my-code-review.md",
+		},
+		{
+			name:     "slug_only_unique",
+			query:    "alpha",
+			wantPath: "2025/01/2025-01-10-alpha.md",
+		},
+		{
+			name: "slug_only_ambiguous_returns_most_recent",
+			// Two entries with slug "beta": 2025-01-15 and 2025-02-01.
+			// matchEntry sorts reverse chronological → returns 2025-02-01.
+			query:    "beta",
+			wantPath: "2025/02/2025-02-01-beta.md",
+		},
+		{
+			name:     "date_prefix_match",
+			query:    "2025-01-15",
+			wantPath: "2025/01/2025-01-15-beta.md",
+		},
+		{
+			name:     "partial_slug_match",
+			query:    "code-review",
+			wantPath: "2025/02/2025-02-10-my-code-review.md",
+		},
+		{
+			name:     "partial_slug_substring",
+			query:    "review",
+			wantPath: "2025/02/2025-02-10-my-code-review.md",
+		},
+		{
+			name:     "no_match",
+			query:    "nonexistent",
+			wantPath: "",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := matchEntry(entries, tc.query)
+			if tc.wantPath == "" {
+				if got != nil {
+					t.Fatalf("matchEntry(%q) = %+v, want nil", tc.query, got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("matchEntry(%q) = nil, want path=%q", tc.query, tc.wantPath)
+			}
+			if got.path != tc.wantPath {
+				t.Fatalf("matchEntry(%q).path = %q, want %q", tc.query, got.path, tc.wantPath)
+			}
+		})
+	}
+}
+
+func TestMatchEntry_EmptyEntries(t *testing.T) {
+	t.Parallel()
+	got := matchEntry(nil, "anything")
+	if got != nil {
+		t.Fatalf("matchEntry(nil, %q) = %+v, want nil", "anything", got)
+	}
+}
+
+// --- deduplicatePath unit tests ---
+
+func TestDeduplicatePath_NoCollision(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "entry.md")
+
+	got, err := deduplicatePath(p)
+	if err != nil {
+		t.Fatalf("deduplicatePath: %v", err)
+	}
+	if got != p {
+		t.Fatalf("deduplicatePath = %q, want %q (unchanged)", got, p)
+	}
+}
+
+func TestDeduplicatePath_FirstCollision(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "entry.md")
+
+	// Create the original file to trigger dedup.
+	if err := os.WriteFile(p, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := deduplicatePath(p)
+	if err != nil {
+		t.Fatalf("deduplicatePath: %v", err)
+	}
+	want := filepath.Join(dir, "entry-2.md")
+	if got != want {
+		t.Fatalf("deduplicatePath = %q, want %q", got, want)
+	}
+}
+
+func TestDeduplicatePath_MultipleCollisions(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "entry.md")
+
+	// Create original + -2 + -3 to force suffix -4.
+	for _, name := range []string{"entry.md", "entry-2.md", "entry-3.md"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := deduplicatePath(p)
+	if err != nil {
+		t.Fatalf("deduplicatePath: %v", err)
+	}
+	want := filepath.Join(dir, "entry-4.md")
+	if got != want {
+		t.Fatalf("deduplicatePath = %q, want %q", got, want)
+	}
+}
+
+// --- discoverEntries unit tests ---
+
+func TestDiscoverEntries_Basic(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Create valid entries.
+	sub := filepath.Join(dir, "2025", "01")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{
+		"2025-01-10-alpha.md",
+		"2025-01-15-beta.md",
+	} {
+		if err := os.WriteFile(filepath.Join(sub, name), []byte("# test\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	entries, err := discoverEntries(dir)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+
+	// Verify dates and slugs.
+	found := map[string]bool{}
+	for _, e := range entries {
+		found[e.slug] = true
+		if e.date != "2025-01-10" && e.date != "2025-01-15" {
+			t.Errorf("unexpected date: %q", e.date)
+		}
+	}
+	if !found["alpha"] || !found["beta"] {
+		t.Errorf("expected alpha and beta slugs, got %v", found)
+	}
+}
+
+func TestDiscoverEntries_SkipsNonMD(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// Create a .txt file and a .md file without date prefix.
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "no-date.md"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Create a .md file with invalid date prefix.
+	if err := os.WriteFile(filepath.Join(dir, "20xx-99-99-bad.md"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := discoverEntries(dir)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected 0 entries (all should be skipped), got %d: %+v", len(entries), entries)
+	}
+}
+
+func TestDiscoverEntries_EmptySlug(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	// A file with just a date and hyphen (minimal slug case).
+	if err := os.WriteFile(filepath.Join(dir, "2025-03-01-.md"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := discoverEntries(dir)
+	if err != nil {
+		t.Fatalf("discoverEntries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].date != "2025-03-01" {
+		t.Errorf("date = %q, want %q", entries[0].date, "2025-03-01")
+	}
+}
+
+func TestDiscoverEntries_NonexistentDir(t *testing.T) {
+	t.Parallel()
+	_, err := discoverEntries(filepath.Join(t.TempDir(), "nonexistent"))
+	if err == nil {
+		t.Fatal("expected error for nonexistent directory")
+	}
+}

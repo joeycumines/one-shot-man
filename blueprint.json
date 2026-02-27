@@ -273,9 +273,9 @@
     {
       "id": "T036",
       "task": "Commit batch 3",
-      "description": "Commit path traversal + session formatting tests.",
+      "description": "Committed as 585f903. 3 files, 206 insertions, 1 deletion.",
       "acceptance": "git log shows new commit. Working tree clean.",
-      "status": "Not Started"
+      "status": "Done"
     }
   ],
   "continuousVerification": {

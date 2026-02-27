@@ -17,7 +17,7 @@
     "contextManagement": "Tasks are flat and sequential. Execute in order. On session resume, read blueprint.json and WIP.md, find the first non-Done task, and continue."
   },
   "statusSection": {
-    "currentState": "T001-T039 Done. All coverage gap batches committed. Commits: 10f7d91 (9 fixes), 25632c6 (14 unit tests), 8d14711 (spawn+health), d71b999 (isAlive+sendToHandle), 02cb61a (mcp/statusbar/cleanup), 585f903 (security+session), 990c6a1 (sync utils). 7 commits on wip branch. Expanding scope for next coverage targets.",
+    "currentState": "T001-T042 Done. 8 commits on wip branch: 10f7d91, 25632c6, 8d14711, d71b999, 02cb61a, 585f903, 990c6a1, 7ad17ca. Expanding scope for next coverage targets.",
     "goalState": "osm pr-split works correctly with -claude-command=ollama (and all other providers). The spawn-switch-send-classify pipeline is robust: dead child detected before passthrough entry, diagnostic output surfaced, re-attach is safe (no goroutine leaks), the VTerm captures error output. Integration tests cover the full spawn-to-exit lifecycle. Zero goroutine leaks. Zero EAGAIN errors. Zero data loss on re-attach.",
     "replanLog": [
       "2026-02-28: Previous session blueprint (T001-T131, termmux rewrite) was 100% Done. This new blueprint covers the pr-split spawn/toggle failures discovered in production.",
@@ -295,6 +295,27 @@
       "id": "T039",
       "task": "Commit batch 4",
       "description": "Committed as 990c6a1. 4 files, 338 insertions, 34 deletions.",
+      "acceptance": "git log shows new commit. Working tree clean.",
+      "status": "Done"
+    },
+    {
+      "id": "T040",
+      "task": "Add containsGlobMeta, configKeys, session abort tests",
+      "description": "12 subtests for containsGlobMeta, 3 tests for configKeys isolation, 4 tests for session clean/purge confirm-abort (user types N, no, or EOF). Removed unnecessary SetTestPaths from abort tests per review feedback.",
+      "acceptance": "19 subtests pass with -race. containsGlobMeta, configKeys, session abort paths all have direct unit test coverage.",
+      "status": "Done"
+    },
+    {
+      "id": "T041",
+      "task": "Rule of Two for batch 5",
+      "description": "Pass 1j: PASS. Pass 2j: PASS. Both on identical 3-file, +222/-12 diff. Both flagged unnecessary SetTestPaths in abort tests — fixed before commit.",
+      "acceptance": "Two PASS verdicts on same diff.",
+      "status": "Done"
+    },
+    {
+      "id": "T042",
+      "task": "Commit batch 5",
+      "description": "Committed as 7ad17ca. 3 files, 209 insertions, 12 deletions.",
       "acceptance": "git log shows new commit. Working tree clean.",
       "status": "Done"
     }

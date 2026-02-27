@@ -595,6 +595,315 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 		t.Errorf("ollama args should NOT contain --dangerously-skip-permissions, but found at index %d; args: %v",
 			ollamaResult.DSPIndex, ollamaResult.Args)
 	}
+
+	// Third case: explicit type with command name containing 'claude'
+	// should have --dangerously-skip-permissions (basename detection).
+	rawExplicitClaude, err := evalJS(`
+		(function() {
+			var tmpDir = '` + escapedTmpDir + `';
+
+			var executor = new ClaudeCodeExecutor({
+				claudeCommand: '',
+				claudeArgs: ['--user-arg'],
+				model: 'test-model'
+			});
+
+			executor.resolved = { command: '/usr/local/bin/claude-code', type: 'explicit' };
+			executor.resolve = function() { return { error: null }; };
+			executor.sessionId = 'test-session-explicit-claude';
+
+			var capturedArgs = null;
+			var mockRegistry = {
+				register: function() {},
+				spawn: function(name, opts) {
+					capturedArgs = opts.args;
+					return { send: function() {} };
+				}
+			};
+			executor.cm = {
+				claudeCode: function() { return { name: function() { return 'mock'; } }; },
+				ollama: function() { return { name: function() { return 'mock'; } }; },
+				newRegistry: function() { return mockRegistry; },
+				newMCPInstance: function() {
+					return {
+						configPath: function() { return tmpDir + '/mcp-config.json'; },
+						resultDir: function() { return tmpDir + '/results'; },
+						configDir: function() { return tmpDir; },
+						setResultDir: function() {},
+						writeConfigFile: function() {},
+						close: function() {}
+					};
+				}
+			};
+
+			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
+			originalSpawn.call(executor);
+
+			if (!capturedArgs) {
+				return JSON.stringify({ error: 'explicit-claude spawn did not capture args' });
+			}
+
+			var dspIdx = capturedArgs.indexOf('--dangerously-skip-permissions');
+			return JSON.stringify({
+				error: null,
+				args: capturedArgs,
+				dspIndex: dspIdx
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("explicit-claude spawn args test failed: %v", err)
+	}
+
+	var explicitClaudeResult struct {
+		Error    *string  `json:"error"`
+		Args     []string `json:"args"`
+		DSPIndex int      `json:"dspIndex"`
+	}
+	if err := json.Unmarshal([]byte(rawExplicitClaude.(string)), &explicitClaudeResult); err != nil {
+		t.Fatalf("explicit-claude parse error: %v", err)
+	}
+	if explicitClaudeResult.Error != nil {
+		t.Fatalf("explicit-claude spawn args returned error: %s", *explicitClaudeResult.Error)
+	}
+	if explicitClaudeResult.DSPIndex == -1 {
+		t.Error("explicit type with 'claude' in command name should contain --dangerously-skip-permissions")
+	}
+
+	// Fourth case: explicit type with non-claude command name should NOT
+	// have --dangerously-skip-permissions.
+	rawExplicitOther, err := evalJS(`
+		(function() {
+			var tmpDir = '` + escapedTmpDir + `';
+
+			var executor = new ClaudeCodeExecutor({
+				claudeCommand: '',
+				claudeArgs: ['--user-arg'],
+				model: 'test-model'
+			});
+
+			executor.resolved = { command: '/opt/bin/my-custom-tool', type: 'explicit' };
+			executor.resolve = function() { return { error: null }; };
+			executor.sessionId = 'test-session-explicit-other';
+
+			var capturedArgs = null;
+			var mockRegistry = {
+				register: function() {},
+				spawn: function(name, opts) {
+					capturedArgs = opts.args;
+					return { send: function() {} };
+				}
+			};
+			executor.cm = {
+				claudeCode: function() { return { name: function() { return 'mock'; } }; },
+				ollama: function() { return { name: function() { return 'mock'; } }; },
+				newRegistry: function() { return mockRegistry; },
+				newMCPInstance: function() {
+					return {
+						configPath: function() { return tmpDir + '/mcp-config.json'; },
+						resultDir: function() { return tmpDir + '/results'; },
+						configDir: function() { return tmpDir; },
+						setResultDir: function() {},
+						writeConfigFile: function() {},
+						close: function() {}
+					};
+				}
+			};
+
+			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
+			originalSpawn.call(executor);
+
+			if (!capturedArgs) {
+				return JSON.stringify({ error: 'explicit-other spawn did not capture args' });
+			}
+
+			var dspIdx = capturedArgs.indexOf('--dangerously-skip-permissions');
+			return JSON.stringify({
+				error: null,
+				args: capturedArgs,
+				dspIndex: dspIdx
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("explicit-other spawn args test failed: %v", err)
+	}
+
+	var explicitOtherResult struct {
+		Error    *string  `json:"error"`
+		Args     []string `json:"args"`
+		DSPIndex int      `json:"dspIndex"`
+	}
+	if err := json.Unmarshal([]byte(rawExplicitOther.(string)), &explicitOtherResult); err != nil {
+		t.Fatalf("explicit-other parse error: %v", err)
+	}
+	if explicitOtherResult.Error != nil {
+		t.Fatalf("explicit-other spawn args returned error: %s", *explicitOtherResult.Error)
+	}
+	if explicitOtherResult.DSPIndex != -1 {
+		t.Errorf("explicit type with non-claude command should NOT contain --dangerously-skip-permissions, but found at index %d; args: %v",
+			explicitOtherResult.DSPIndex, explicitOtherResult.Args)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Integration Test: post-spawn health check (T002 verification)
+// ---------------------------------------------------------------------------
+
+func TestIntegration_SpawnHealthCheck_DeadProcess(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	tmpDir := t.TempDir()
+	escapedTmpDir := strings.ReplaceAll(tmpDir, `\`, `\\`)
+	escapedTmpDir = strings.ReplaceAll(escapedTmpDir, `'`, `\'`)
+
+	// Simulate a spawn where the handle is immediately dead.
+	// The health check (sleep 0.3 + isAlive()) should detect this
+	// and return a diagnostic error.
+	raw, err := evalJS(`
+		(function() {
+			var tmpDir = '` + escapedTmpDir + `';
+
+			var executor = new ClaudeCodeExecutor({
+				claudeCommand: '',
+				claudeArgs: [],
+				model: 'test-model'
+			});
+
+			executor.resolved = { command: 'fake-claude', type: 'claude-code' };
+			executor.resolve = function() { return { error: null }; };
+			executor.sessionId = 'test-session-health';
+
+			var mockRegistry = {
+				register: function() {},
+				spawn: function(name, opts) {
+					return {
+						isAlive: function() { return false; },
+						receive: function() { return 'Error: invalid API key'; },
+						close: function() {},
+						send: function() {}
+					};
+				}
+			};
+			executor.cm = {
+				claudeCode: function() { return { name: function() { return 'mock'; } }; },
+				ollama: function() { return { name: function() { return 'mock'; } }; },
+				newRegistry: function() { return mockRegistry; },
+				newMCPInstance: function() {
+					return {
+						configPath: function() { return tmpDir + '/mcp-config.json'; },
+						resultDir: function() { return tmpDir + '/results'; },
+						configDir: function() { return tmpDir; },
+						setResultDir: function() {},
+						writeConfigFile: function() {},
+						close: function() {}
+					};
+				}
+			};
+
+			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
+			var result = originalSpawn.call(executor);
+			return JSON.stringify(result);
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("health check test failed: %v", err)
+	}
+
+	var result struct {
+		Error     *string `json:"error"`
+		SessionID string  `json:"sessionId"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if result.Error == nil {
+		t.Fatal("expected error for dead process, got nil")
+	}
+	errMsg := *result.Error
+	if !strings.Contains(errMsg, "exited immediately") {
+		t.Errorf("error should mention 'exited immediately'; got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "invalid API key") {
+		t.Errorf("error should contain process output 'invalid API key'; got: %s", errMsg)
+	}
+}
+
+func TestIntegration_SpawnHealthCheck_AliveProcess(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	tmpDir := t.TempDir()
+	escapedTmpDir := strings.ReplaceAll(tmpDir, `\`, `\\`)
+	escapedTmpDir = strings.ReplaceAll(escapedTmpDir, `'`, `\'`)
+
+	// Simulate a spawn where the handle is alive after the health check.
+	// Should return success (error: null).
+	raw, err := evalJS(`
+		(function() {
+			var tmpDir = '` + escapedTmpDir + `';
+
+			var executor = new ClaudeCodeExecutor({
+				claudeCommand: '',
+				claudeArgs: [],
+				model: 'test-model'
+			});
+
+			executor.resolved = { command: 'fake-claude', type: 'claude-code' };
+			executor.resolve = function() { return { error: null }; };
+			executor.sessionId = 'test-session-healthy';
+
+			var mockRegistry = {
+				register: function() {},
+				spawn: function(name, opts) {
+					return {
+						isAlive: function() { return true; },
+						receive: function() { return ''; },
+						close: function() {},
+						send: function() {}
+					};
+				}
+			};
+			executor.cm = {
+				claudeCode: function() { return { name: function() { return 'mock'; } }; },
+				ollama: function() { return { name: function() { return 'mock'; } }; },
+				newRegistry: function() { return mockRegistry; },
+				newMCPInstance: function() {
+					return {
+						configPath: function() { return tmpDir + '/mcp-config.json'; },
+						resultDir: function() { return tmpDir + '/results'; },
+						configDir: function() { return tmpDir; },
+						setResultDir: function() {},
+						writeConfigFile: function() {},
+						close: function() {}
+					};
+				}
+			};
+
+			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
+			var result = originalSpawn.call(executor);
+			return JSON.stringify(result);
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("healthy spawn test failed: %v", err)
+	}
+
+	var result struct {
+		Error     *string `json:"error"`
+		SessionID string  `json:"sessionId"`
+		ResultDir string  `json:"resultDir"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("expected no error for alive process, got: %s", *result.Error)
+	}
+	if result.SessionID == "" {
+		t.Error("expected non-empty sessionId")
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -17,7 +17,7 @@
     "contextManagement": "Tasks are flat and sequential. Execute in order. On session resume, read blueprint.json and WIP.md, find the first non-Done task, and continue."
   },
   "statusSection": {
-    "currentState": "Fixes T001-T007 committed as 10f7d91. Rule of Two passed (T008-T009 Done). Now expanding: adding unit tests for VTerm.String(), ChildExitOutput(), Detach context, and attachChild.",
+    "currentState": "T001-T018 Done. Test expansion commit pending Rule of Two (T019). Next: isAlive guards test (T021), EAGAIN handling (T022), Enter reliability (T023), toggle re-render (T024), diff vs main (T025).",
     "goalState": "osm pr-split works correctly with -claude-command=ollama (and all other providers). The spawn-switch-send-classify pipeline is robust: dead child detected before passthrough entry, diagnostic output surfaced, re-attach is safe (no goroutine leaks), the VTerm captures error output. Integration tests cover the full spawn-to-exit lifecycle. Zero goroutine leaks. Zero EAGAIN errors. Zero data loss on re-attach.",
     "replanLog": [
       "2026-02-28: Previous session blueprint (T001-T131, termmux rewrite) was 100% Done. This new blueprint covers the pr-split spawn/toggle failures discovered in production.",
@@ -128,13 +128,76 @@
       "task": "Update WIP.md with current session state",
       "description": "Rewrite WIP.md reflecting fixes done, expansion tasks ahead, file paths, branch.",
       "acceptance": "Cold-start agent can resume immediately from WIP.md.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "id": "T016",
       "task": "Run full make pipeline after all tests added",
-      "description": "Execute make or make-all-with-log. Verify zero failures across all packages.",
+      "description": "Committed as 25632c6. make test 47 packages, 0 failures.",
       "acceptance": "Exit code 0. All packages pass.",
+      "status": "Done"
+    },
+    {
+      "id": "T017",
+      "task": "Add explicit type basename detection spawn args tests",
+      "description": "In pr_split_integration_test.go: Two new cases added to TestIntegration_SpawnArgs_DangerouslySkipPermissions: explicit type with 'claude' in path (should have --dangerously-skip-permissions), explicit type with non-claude command (should NOT have it).",
+      "acceptance": "Both cases pass. Explicit basename detection is verified for both positive and negative cases.",
+      "status": "Done"
+    },
+    {
+      "id": "T018",
+      "task": "Add post-spawn health check tests",
+      "description": "In pr_split_integration_test.go: TestIntegration_SpawnHealthCheck_DeadProcess (mock handle where isAlive() returns false, verify diagnostic error includes process output) and TestIntegration_SpawnHealthCheck_AliveProcess (mock handle where isAlive() returns true, verify success).",
+      "acceptance": "Both tests pass with -race. Dead process is detected with diagnostic output. Alive process returns success.",
+      "status": "Done"
+    },
+    {
+      "id": "T019",
+      "task": "Rule of Two for test expansion commit",
+      "description": "Two contiguous subagent reviews on identical diff (T017-T018 additions). Both must pass.",
+      "acceptance": "Two PASS verdicts on same diff.",
+      "status": "In Progress"
+    },
+    {
+      "id": "T020",
+      "task": "Commit test expansion as coherent changeset",
+      "description": "Stage and commit pr_split_integration_test.go, config.mk, blueprint.json, WIP.md.",
+      "acceptance": "git log shows new commit. Working tree is clean.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T021",
+      "task": "Add isAlive guard test in JS engine context",
+      "description": "In pr_split_integration_test.go: Test that the claude command handler and auto-split path check isAlive() before entering passthrough. Mock a dead handle and verify error is returned instead of attempting passthrough.",
+      "acceptance": "Test passes. Dead handle before passthrough returns informative error.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T022",
+      "task": "Add EAGAIN handling test for PTY writes",
+      "description": "In pr_split_integration_test.go or ptyio/reader_test.go: Verify that prSplitSendWithCancel handles EAGAIN (resource temporarily unavailable) gracefully when writing to a PTY with a full buffer.",
+      "acceptance": "EAGAIN is retried or handled without error propagation to user.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T023",
+      "task": "Verify Enter key delivery reliability",
+      "description": "In termmux integration tests: write '\\n' to child via WriteToChild and verify the child receives it as a single write. No lazy non-deterministic sleeps between key press and delivery.",
+      "acceptance": "Enter key is delivered reliably in <50ms with no dropped characters.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T024",
+      "task": "Verify terminal re-render after toggle",
+      "description": "Existing TestRunPassthrough_VTermRestore covers this. Verify the VTerm screen buffer is correctly restored after a toggle-back from passthrough.",
+      "acceptance": "After toggle-back, the VTerm content is visible in the output. No corruption or missing content.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T025",
+      "task": "Expand scope: diff vs main analysis",
+      "description": "After all current tasks done, diff the wip branch against main. Identify all changes and verify correctness of each.",
+      "acceptance": "Every change in the diff is justified and tested.",
       "status": "Not Started"
     }
   ],

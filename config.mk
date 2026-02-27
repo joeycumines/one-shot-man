@@ -42,17 +42,6 @@ exit $${PIPESTATUS[0]}
 test-pr-split-pty: ## Run only PTY-related pr-split tests (deadlock regression + integration)
 	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestPTY_AutoSplit|TestProcess_Write' ./internal/command/... ./internal/builtin/pty/...
 
-.PHONY: git-stage-and-commit
-git-stage-and-commit: ## Stage specific files, show stats, commit with msg file, show log
-	cd $(PROJECT_ROOT) && \
-	git add internal/termmux/vt/dispatch_coverage_test.go config.mk blueprint.json WIP.md && \
-	echo "=== DIFF STAT ===" && \
-	git diff --staged --stat && \
-	echo "=== COMMITTING ===" && \
-	git commit -F scratch/commit-msg.txt && \
-	echo "=== RECENT LOG ===" && \
-	git log --oneline -3
-
 .PHONY: commit-staged
 commit-staged: ## Commit staged changes using scratch/commit-msg.txt
 	cd $(PROJECT_ROOT) && git add -A && git commit -F scratch/commit-msg.txt
@@ -60,6 +49,10 @@ commit-staged: ## Commit staged changes using scratch/commit-msg.txt
 .PHONY: amend-commit
 amend-commit: ## Amend the last commit message using scratch/commit-msg.txt
 	cd $(PROJECT_ROOT) && git commit --amend -F scratch/commit-msg.txt
+
+.PHONY: commit-edge-case-tests
+commit-edge-case-tests: ## Stage and commit edge-case VTerm tests
+	cd $(PROJECT_ROOT) && git add internal/termmux/vt/edge_cases_test.go config.mk && git commit -F scratch/edge-case-commit-msg.txt && git log --oneline -1
 
 .PHONY: test-complex-project
 test-complex-project: ## Run complex Go project heuristic split integration test
@@ -138,6 +131,10 @@ test-batch7: ## Run batch 7 tui completion/parsing coverage tests
 .PHONY: test-batch8
 test-batch8: ## Run batch 8 VTerm CSI/ESC dispatch coverage tests
 	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestCSI_CUD|TestCSI_CNL|TestCSI_CPL|TestCSI_EL_|TestCSI_IL_|TestCSI_DL_|TestCSI_SU_|TestCSI_SD_|TestCSI_CUP_AliasF|TestCSI_SM_RM_NonPrivate|TestCSI_DECRST_Cursor|TestCSI_DECRST_Alt|TestESC_IND|TestESC_NEL|TestScreen_EraseLine_Mode|TestScreen_EraseDisplay_Mode' ./internal/termmux/vt/... 2>&1 | tail -100
+
+.PHONY: test-batch9
+test-batch9: ## Run batch 9 edge case tests (SGRDiff, Parser, Screen boundaries)
+	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestSGRDiff_NoOp|TestSGRDiff_DimRemoved|TestSGRDiff_UnderRemoved|TestSGRDiff_BlinkRemoved|TestSGRDiff_InverseRemoved|TestSGRDiff_HiddenRemoved|TestSGRDiff_StrikeRemoved|TestSGRDiff_FGRevert|TestSGRDiff_BGRevert|TestSGRDiff_AllFlags|TestSGRDiff_Kind8_Bright|TestSGRDiff_256_BG|TestSGRDiff_RGB_BG|TestSGRDiff_ColorKind|TestParseSGR_Extended|TestParseSGR_Truncated|TestParseSGR_AllClear|TestParseSGR_Code2|TestParser_DEL|TestParser_HighByte|TestParser_ESC_Inside|TestParser_CSI_Intermediate|TestParser_OSC_ESC|TestParser_OSC_Max|TestParser_DCS_ESC|TestParser_Escape_Unrec|TestParser_Escape_High|TestScreen_EraseLine_OutOf|TestScreen_EraseChars_Zero|TestScreen_InsertChars_Huge|TestScreen_DeleteChars_Huge|TestScreen_LineFeed_Mid|TestScreen_LineFeed_Bottom|TestScreen_ReverseIndex_Mid|TestScreen_ReverseIndex_Top|TestScreen_Resize_Saved' ./internal/termmux/vt/... 2>&1 | tail -150
 
 .PHONY: git-status-short
 git-status-short: ## Show git status (short format, no staging)

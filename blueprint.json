@@ -17,7 +17,7 @@
     "contextManagement": "Tasks are flat and sequential. Execute in order. On session resume, read blueprint.json and WIP.md, find the first non-Done task, and continue."
   },
   "statusSection": {
-    "currentState": "T001-T051 Done. 11 commits on wip branch: 10f7d91, 25632c6, 8d14711, d71b999, 02cb61a, 585f903, 990c6a1, 7ad17ca, 89a0809, 5089b59, (pending). Expanding scope for next coverage targets.",
+    "currentState": "T001-T051 Done. 11 commits on wip branch: 10f7d91, 25632c6, 8d14711, d71b999, 02cb61a, 585f903, 990c6a1, 7ad17ca, 89a0809, 5089b59, e15dac9. Expanding scope for next coverage targets.",
     "goalState": "osm pr-split works correctly with -claude-command=ollama (and all other providers). The spawn-switch-send-classify pipeline is robust: dead child detected before passthrough entry, diagnostic output surfaced, re-attach is safe (no goroutine leaks), the VTerm captures error output. Integration tests cover the full spawn-to-exit lifecycle. Zero goroutine leaks. Zero EAGAIN errors. Zero data loss on re-attach.",
     "replanLog": [
       "2026-02-28: Previous session blueprint (T001-T131, termmux rewrite) was 100% Done. This new blueprint covers the pr-split spawn/toggle failures discovered in production.",
@@ -378,7 +378,7 @@
     {
       "id": "T051",
       "task": "Commit batch 8",
-      "description": "Pending commit. dispatch_coverage_test.go + config.mk.",
+      "description": "Committed as e15dac9. 4 files, 675 insertions, 16 deletions.",
       "acceptance": "git log shows new commit.",
       "status": "Done"
     }

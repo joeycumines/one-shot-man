@@ -74,6 +74,53 @@ func TestMCPInstanceCommand_SetupFlags(t *testing.T) {
 	}
 }
 
+func TestMCPInstanceCommand_SetupFlags_ResultDir(t *testing.T) {
+	t.Parallel()
+
+	goals := &stubGoalRegistry{}
+	cmd := NewMCPInstanceCommand(goals, "0.1.0-test")
+
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetupFlags(fs)
+
+	// Parse with both --session and --result-dir flags.
+	if err := fs.Parse([]string{
+		"--session", "sess-456",
+		"--result-dir", "/tmp/mcp-results",
+	}); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if cmd.session != "sess-456" {
+		t.Errorf("session = %q, want %q", cmd.session, "sess-456")
+	}
+	if cmd.resultDir != "/tmp/mcp-results" {
+		t.Errorf("resultDir = %q, want %q", cmd.resultDir, "/tmp/mcp-results")
+	}
+}
+
+func TestMCPInstanceCommand_SetupFlags_DefaultValues(t *testing.T) {
+	t.Parallel()
+
+	goals := &stubGoalRegistry{}
+	cmd := NewMCPInstanceCommand(goals, "0.1.0-test")
+
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetupFlags(fs)
+
+	// Parse with no flags — both should be empty strings.
+	if err := fs.Parse(nil); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if cmd.session != "" {
+		t.Errorf("session should default to empty, got %q", cmd.session)
+	}
+	if cmd.resultDir != "" {
+		t.Errorf("resultDir should default to empty, got %q", cmd.resultDir)
+	}
+}
+
 func TestMCPInstanceCommand_Execute_MissingSession(t *testing.T) {
 	t.Parallel()
 

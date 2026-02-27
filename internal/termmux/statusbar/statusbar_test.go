@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -271,4 +272,107 @@ func TestStatusBar_MultipleReRenders_Consistent(t *testing.T) {
 			t.Errorf("render with status %q: missing CUP to row 30", s)
 		}
 	}
+}
+
+// TestStatusBar_ConcurrentAccess exercises the mutex by running SetStatus,
+// SetHeight, SetToggleKey, and Render concurrently. With -race this verifies
+// no data races exist.
+func TestStatusBar_ConcurrentAccess(t *testing.T) {
+	var buf safeBuffer
+	sb := New(&buf)
+
+	const goroutines = 8
+	const iterations = 100
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+
+	// Concurrent SetStatus writers.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			sb.SetStatus(fmt.Sprintf("status-%d", i))
+		}
+	}()
+
+	// Concurrent SetHeight writers.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			sb.SetHeight(20 + (i % 20))
+		}
+	}()
+
+	// Concurrent SetToggleKey writers.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			sb.SetToggleKey(byte(1 + (i % 26))) // Ctrl+A through Ctrl+Z
+		}
+	}()
+
+	// Concurrent Render calls.
+	for g := 0; g < goroutines-3; g++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				sb.Render()
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	// Sanity check: at least some output was produced.
+	if buf.Len() == 0 {
+		t.Error("expected non-zero output from concurrent renders")
+	}
+}
+
+// TestStatusBar_SetHeight_Clamp verifies that heights below 2 are clamped.
+func TestStatusBar_SetHeight_Clamp(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+
+	sb.SetHeight(1)
+	sb.Render()
+	got := buf.String()
+	// With height clamped to 2, CUP should target row 2.
+	if !strings.Contains(got, "\x1b[2;1H") {
+		t.Errorf("SetHeight(1) should clamp to 2, CUP should be row 2; got %q", got)
+	}
+
+	buf.Reset()
+	sb.SetHeight(0)
+	sb.Render()
+	got = buf.String()
+	if !strings.Contains(got, "\x1b[2;1H") {
+		t.Errorf("SetHeight(0) should clamp to 2, CUP should be row 2; got %q", got)
+	}
+
+	buf.Reset()
+	sb.SetHeight(-1)
+	sb.Render()
+	got = buf.String()
+	if !strings.Contains(got, "\x1b[2;1H") {
+		t.Errorf("SetHeight(-1) should clamp to 2, CUP should be row 2; got %q", got)
+	}
+}
+
+// safeBuffer wraps bytes.Buffer with a mutex for concurrent write safety.
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuffer) Len() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Len()
 }

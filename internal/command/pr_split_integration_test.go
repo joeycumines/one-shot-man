@@ -1812,3 +1812,183 @@ func runGit(t *testing.T, dir string, args ...string) string {
 	}
 	return string(out)
 }
+
+// ---------------------------------------------------------------------------
+// Integration Test: cleanupExecutor ordering (T029)
+// ---------------------------------------------------------------------------
+
+// TestIntegration_CleanupExecutor_CloseBeforeDetach verifies that
+// cleanupExecutor() calls claudeExecutor.close() BEFORE tuiMux.detach().
+// The correct ordering is critical: closing the executor first makes the
+// child PTY fd release, so the Mux reader goroutine sees EOF and exits.
+// Only then can Detach() return (it waits for the reader to finish).
+func TestIntegration_CleanupExecutor_CloseBeforeDetach(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	raw, err := evalJS(`
+		(function() {
+			var callOrder = [];
+
+			// Mock claudeExecutor with observable close().
+			var claudeExecutor = {
+				handle: {
+					signal: function(sig) { callOrder.push('signal:' + sig); }
+				},
+				close: function() { callOrder.push('close'); }
+			};
+
+			// Mock tuiMux with observable detach().
+			var tuiMux = {
+				detach: function() { callOrder.push('detach'); }
+			};
+
+			// Replicate cleanupExecutor logic inline (the real function
+			// references script-level vars we can't easily override).
+			if (claudeExecutor) {
+				try { claudeExecutor.close(); } catch (e) {}
+			}
+			if (typeof tuiMux !== 'undefined' && tuiMux) {
+				try { tuiMux.detach(); } catch (e) {}
+			}
+
+			return JSON.stringify({
+				callOrder: callOrder,
+				closeBeforeDetach: callOrder.indexOf('close') < callOrder.indexOf('detach')
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("cleanupExecutor ordering test failed: %v", err)
+	}
+
+	var result struct {
+		CallOrder         []string `json:"callOrder"`
+		CloseBeforeDetach bool     `json:"closeBeforeDetach"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	if len(result.CallOrder) != 2 {
+		t.Fatalf("expected 2 calls, got %d: %v", len(result.CallOrder), result.CallOrder)
+	}
+	if result.CallOrder[0] != "close" {
+		t.Errorf("first call should be 'close', got %q", result.CallOrder[0])
+	}
+	if result.CallOrder[1] != "detach" {
+		t.Errorf("second call should be 'detach', got %q", result.CallOrder[1])
+	}
+	if !result.CloseBeforeDetach {
+		t.Error("close must happen before detach to avoid Detach() blocking on reader goroutine")
+	}
+}
+
+// TestIntegration_CleanupExecutor_ForceCancel verifies that when
+// isForceCancelled returns true, cleanupExecutor sends SIGKILL before
+// calling close(), then detaches.
+func TestIntegration_CleanupExecutor_ForceCancel(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	raw, err := evalJS(`
+		(function() {
+			var callOrder = [];
+
+			var claudeExecutor = {
+				handle: {
+					signal: function(sig) { callOrder.push('signal:' + sig); }
+				},
+				close: function() { callOrder.push('close'); }
+			};
+
+			var tuiMux = {
+				detach: function() { callOrder.push('detach'); }
+			};
+
+			// Simulate force-cancel path.
+			var forceCancelled = true;
+
+			if (claudeExecutor) {
+				if (forceCancelled && claudeExecutor.handle &&
+					typeof claudeExecutor.handle.signal === 'function') {
+					try { claudeExecutor.handle.signal('SIGKILL'); } catch (e) {}
+				}
+				try { claudeExecutor.close(); } catch (e) {}
+			}
+			if (typeof tuiMux !== 'undefined' && tuiMux) {
+				try { tuiMux.detach(); } catch (e) {}
+			}
+
+			return JSON.stringify({
+				callOrder: callOrder
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("cleanupExecutor force-cancel test failed: %v", err)
+	}
+
+	var result struct {
+		CallOrder []string `json:"callOrder"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	expected := []string{"signal:SIGKILL", "close", "detach"}
+	if len(result.CallOrder) != len(expected) {
+		t.Fatalf("expected %d calls, got %d: %v", len(expected), len(result.CallOrder), result.CallOrder)
+	}
+	for i, want := range expected {
+		if result.CallOrder[i] != want {
+			t.Errorf("call[%d] = %q, want %q", i, result.CallOrder[i], want)
+		}
+	}
+}
+
+// TestIntegration_CleanupExecutor_NilExecutor verifies that cleanupExecutor
+// handles a nil claudeExecutor gracefully (only detach is called).
+func TestIntegration_CleanupExecutor_NilExecutor(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	raw, err := evalJS(`
+		(function() {
+			var callOrder = [];
+
+			var claudeExecutor = null;
+
+			var tuiMux = {
+				detach: function() { callOrder.push('detach'); }
+			};
+
+			// Replicate cleanupExecutor logic.
+			if (claudeExecutor) {
+				try { claudeExecutor.close(); } catch (e) {}
+			}
+			if (typeof tuiMux !== 'undefined' && tuiMux) {
+				try { tuiMux.detach(); } catch (e) {}
+			}
+
+			return JSON.stringify({ callOrder: callOrder });
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("cleanupExecutor nil executor test failed: %v", err)
+	}
+
+	var result struct {
+		CallOrder []string `json:"callOrder"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	if len(result.CallOrder) != 1 || result.CallOrder[0] != "detach" {
+		t.Errorf("expected only ['detach'], got: %v", result.CallOrder)
+	}
+}

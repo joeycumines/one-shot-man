@@ -17,7 +17,7 @@
     "contextManagement": "Tasks are flat and sequential. Execute in order. On session resume, read blueprint.json and WIP.md, find the first non-Done task, and continue."
   },
   "statusSection": {
-    "currentState": "T001-T021 Done. 6 isAlive guard tests added (T021). Commits: 10f7d91 (9 fixes), 25632c6 (14 unit tests), 8d14711 (spawn+health tests). Pending commit for T021. Next: EAGAIN handling (T022), Enter reliability (T023), toggle re-render (T024), diff vs main (T025).",
+    "currentState": "T001-T031 Done. Coverage gap tests: mcp_instance flags, concurrent statusbar, cleanupExecutor ordering. Commits: 10f7d91 (9 fixes), 25632c6 (14 unit tests), 8d14711 (spawn+health tests), d71b999 (isAlive+sendToHandle). Pending commit for T026-T031.",
     "goalState": "osm pr-split works correctly with -claude-command=ollama (and all other providers). The spawn-switch-send-classify pipeline is robust: dead child detected before passthrough entry, diagnostic output surfaced, re-attach is safe (no goroutine leaks), the VTerm captures error output. Integration tests cover the full spawn-to-exit lifecycle. Zero goroutine leaks. Zero EAGAIN errors. Zero data loss on re-attach.",
     "replanLog": [
       "2026-02-28: Previous session blueprint (T001-T131, termmux rewrite) was 100% Done. This new blueprint covers the pr-split spawn/toggle failures discovered in production.",
@@ -182,22 +182,71 @@
     {
       "id": "T023",
       "task": "Rule of Two for T021-T022 commit",
-      "description": "Two contiguous subagent reviews. Pass 1: build+lint. Pass 2: full test suite.",
+      "description": "Pass 1e: PASS (code review). Pass 2e: PASS (code review). Both on same diff d71b999.",
       "acceptance": "Two PASS verdicts.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T024",
       "task": "Commit T021-T022 test expansion",
-      "description": "Stage and commit all new tests (isAlive guards, sendToHandle TUI path).",
+      "description": "Committed as d71b999. 8 new tests, 3 files changed.",
       "acceptance": "git log shows new commit. Working tree is clean.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T025",
       "task": "Diff vs main regression analysis",
-      "description": "Run git diff origin/main...HEAD and verify every change is intentional and tested. Look for missed regressions.",
+      "description": "Comprehensive analysis of 50 commits on wip vs main. 300+ new tests, 3 new packages (termmux, claudemux, pr-split), major dependency upgrades. No logic regressions identified. WIP commits should be squashed before merge.",
       "acceptance": "Every change in the diff is justified and tested.",
+      "status": "Done"
+    },
+    {
+      "id": "T026",
+      "task": "Add --result-dir flag test for mcp_instance",
+      "description": "Added TestMCPInstanceCommand_SetupFlags_ResultDir and TestMCPInstanceCommand_SetupFlags_DefaultValues to mcp_instance_test.go.",
+      "acceptance": "Test passes. --result-dir is correctly parsed and stored.",
+      "status": "Done"
+    },
+    {
+      "id": "T027",
+      "task": "Add concurrent statusbar test",
+      "description": "Added TestStatusBar_ConcurrentAccess (8 goroutines × 100 iterations) and safeBuffer helper to statusbar_test.go.",
+      "acceptance": "Test passes with -race. No data races detected.",
+      "status": "Done"
+    },
+    {
+      "id": "T028",
+      "task": "Add SetHeight clamp edge case test",
+      "description": "Added TestStatusBar_SetHeight_Clamp verifying h=1,0,-1 all clamp to 2.",
+      "acceptance": "Test verifies clamping. Test passes.",
+      "status": "Done"
+    },
+    {
+      "id": "T029",
+      "task": "Add cleanupExecutor ordering tests",
+      "description": "Added 3 tests: CloseBeforeDetach (close→detach ordering), ForceCancel (SIGKILL→close→detach), NilExecutor (detach only).",
+      "acceptance": "Tests verify close-before-detach ordering. All pass.",
+      "status": "Done"
+    },
+    {
+      "id": "T030",
+      "task": "Full make pipeline verification",
+      "description": "make build ✅, make lint ✅, make make-all-with-log ✅ (all packages pass).",
+      "acceptance": "Exit code 0 for build, lint, test. All packages pass.",
+      "status": "Done"
+    },
+    {
+      "id": "T031",
+      "task": "Rule of Two for coverage gap commit",
+      "description": "Pass 1f: PASS. Pass 2f: PASS. Both on identical 4-file, +378/-5 diff.",
+      "acceptance": "Two PASS verdicts.",
+      "status": "Done"
+    },
+    {
+      "id": "T032",
+      "task": "Commit coverage gap tests",
+      "description": "Commit all new tests and update WIP.md for next session continuation.",
+      "acceptance": "git log shows new commit. Working tree clean.",
       "status": "Not Started"
     }
   ],

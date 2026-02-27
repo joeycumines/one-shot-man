@@ -1,17 +1,17 @@
 {
   "meta": {
     "project": "osm pr-split refinement",
-    "source": "Hana-san directive: refine pr-split, automated splitting with Claude Code integration, deep integration tests, cull AI slop. Incorporating ALL 19 issues from scratch/issues.md in logical order AFTER the integration test.",
+    "source": "Hana-san directive: refine pr-split, VTerm terminal multiplexer, deep integration tests, fix all 19 issues from scratch/issues.md, expand scope towards true perfection.",
     "maintenance": "Update incrementally after every sub-task. Deviations logged within the plan.",
-    "CRITICAL_SEQUENCE_RULE": "THE INTEGRATION TEST (T052) MUST ALWAYS REMAIN FIRST IN SEQUENTIAL TASKS. THIS IS NON-NEGOTIABLE. THE IDIOT AI THAT WAS SUPPOSED TO IMPLEMENT THE INTEGRATION TEST FIRST ALREADY FAILED BY BEING A LAZY DOG. DO NOT REORDER THIS SEQUENCE UNDER ANY CIRCUMSTANCES. ANY ATTEMPT TO MOVE THE INTEGRATION TEST AWAY FROM POSITION 1 IS A TERMINABLE OFFENSE."
+    "sequenceRule": "T052 (integration test target) is always the first not-started task. All tasks are sequential and mandatory."
   },
   "globalAlerts": [
     "ALL checks must pass: make (build + lint + test). No exceptions.",
     "Platform compat: Linux, macOS, Windows. Tests use t.TempDir(), t.Setenv().",
     "Integration test config via TestMain flags, project.mk targets with ?= variables.",
     "No estimates, no priorities — 100% completion required.",
-    "DO NOT modify unrelated code. DO NOT remove existing comments/documentation.",
-    "Auto-split TUI must not hang. Cancellation must propagate immediately."
+    "Auto-split TUI must not hang. Cancellation must propagate immediately.",
+    "VTerm must handle arbitrary PTY output without panic, OOM, or mojibake."
   ],
   "mandatoryDirectives": [
     "Read blueprint.json and WIP.md at session start.",
@@ -20,229 +20,237 @@
     "Rule of Two: 2 contiguous issue-free review cycles before commit."
   ],
   "statusSection": {
-    "goalState": "osm pr-split provides a fully functional automated splitting pipeline where: (1) `claude spawn` + `claude` works without EAGAIN — RunPassthrough defensively sets fd to blocking mode; (2) MCP session pre-registration is robust — reportClassification auto-creates sessions if missing; (3) Enter key delivery to Claude is reliable via single-write with \\n appended; (4) terminal mux re-renders cleanly after toggle via in-memory VT100 virtual screen buffer; (5) integration tests with real AI (via TestMain + project.mk) cover spawn→switch→send→classify end-to-end; (6) all existing tests pass; (7) permission popups are handled via --dangerously-skip-permissions. ALL 19 ISSUES FROM issues.md ARE NOW ADDRESSED IN SEQUENTIAL TASKS T053-T071.",
-    "currentState": "T051 completed (make passes). T052 integration test target is next (MUST REMAIN FIRST - NON-NEGOTIABLE). T053-T071 contain all 19 issues from scratch/issues.md: UTF-8 handling, OSC terminator, SGR parsing, unbounded memory, ESC in CSI, PTY goroutine leak, VTerm data race, BubbleTea race, background starvation, erase rendition, status bar wipe, scroll region, cursor visibility, render inefficiency, swappedOnce reset, DECSET 1049 semantics, alt-screen variants, saved cursor bounds, dependency injection bypass.",
+    "goalState": "osm pr-split with a production-grade terminal multiplexer: VTerm correctly handles UTF-8 (stateful decoding, wide chars), all ANSI escape sequences (CSI, OSC with ST, DCS, SGR truecolor/256, DECSET/DECRST all modes), concurrent access is fully synchronized, PTY goroutine lifecycle is leak-free, background reader prevents child starvation, toggle restores screen perfectly including status bar and cursor visibility, erase operations preserve rendition, and the entire pipeline is covered by unit tests, fuzz tests, property-based tests, benchmarks, and architecture documentation.",
+    "currentState": "Session started 2026-02-27 09:18. T051 (make passes) is Done. Deep architectural planning phase complete. Blueprint refined with 27 tasks (T052-T078). Executing T052 next.",
     "replanLog": [
-      "T006-T009 discovered already implemented (TestMain, integration tests, project.mk all existed). T013 simplified to loadStrategyPlugin removal only.",
-      "T021-T025 added: fix handle.send() blocking, fix ctrl+] blank terminal, sendToHandle wrapper, integration tests for new code.",
-      "T026-T028 added: fix PTY deadlock root cause (Write mutex), add timeout guard to sendWithCancel, termtest PTY integration tests.",
-      "T029-T042 added: fix MCP session pre-registration (BLOCKER), fix Enter key two-write pattern (BLOCKER), add --dangerously-skip-permissions (BLOCKER), update all affected tests, end-to-end validation.",
-      "T038-T053 REPLAN: Manual testing revealed T029-T037 fixes are insufficient. EAGAIN on stdin (non-blocking fd), MCP session still not found, Enter key unreliable, mux rendering broken. Complete rewrite of affected areas with integration test coverage.",
-      "T054-T072 ADDED: ALL 19 issues from scratch/issues.md incorporated as T053-T071 in logical order after T052 integration test. Sequence is NON-NEGOTIABLE - integration test MUST be first."
+      "Prior replans: T006-T009 already implemented; T021-T028 hot-fixes; T029-T042 EAGAIN/MCP/Enter blockers; T038-T053 complete rewrite; T054-T072 all 19 issues.",
+      "2026-02-27 REPLAN: Exhaustive blueprint refinement. Pruned all completed tasks before T051. Refined all descriptions with file/function references. Removed all priority/estimate fields. Added T072(fuzz), T073(UTF8 roundtrip), T074(benchmarks), T075(tab stops), T076(DCS), T077(architecture docs), T078(final verification)."
     ]
   },
   "sequentialTasks": [
     {
       "id": "T051",
-      "task": "Run full make (build + lint + test) and fix all compilation and test failures from T038-T050",
-      "description": "Run `make` to verify all changes compile, lint cleanly, and all tests pass. Fix any issues found. Ensure no deadcode warnings for new functions. Verify all new files have correct build tags.",
-      "acceptance": "`make` completes with zero errors. All tests pass. No lint warnings. No deadcode findings.",
+      "task": "Run full make (build + lint + test) — baseline verification",
+      "description": "Previous session verified all changes compile, lint cleanly, and all tests pass.",
+      "acceptance": "`make` completes with zero errors.",
       "status": "Done",
       "files": []
     },
     {
       "id": "T052",
-      "task": "Update project.mk integration-test-prsplit target to include new integration tests",
-      "description": "Verify the existing integration-test-prsplit target in project.mk correctly runs the new integration tests (TestIntegration_ClaudeSpawnSwitch, TestIntegration_RealClaude_ClassificationE2E). Ensure the -run regex matches. Add a separate target `integration-test-prsplit-mcp` for the MCP-only tests (TestIntegration_MCPInstanceSession) that don't require real AI.",
-      "acceptance": "`make integration-test-prsplit` runs all AI-requiring pr-split integration tests. `make integration-test-prsplit-mcp` runs MCP-only tests (no AI needed). Both targets respect config.mk overrides.",
-      "status": "Not Started",
-      "files": [
-        "project.mk"
-      ],
-      "PRIORITY_NOTE": "THIS TASK MUST REMAIN FIRST. THIS IS NON-NEGOTIABLE. DO NOT MOVE IT."
+      "task": "Update project.mk integration-test-prsplit target to include MCP-only tests",
+      "description": "In project.mk, the existing integration-test-prsplit target runs AI-requiring tests. Add a new integration-test-prsplit-mcp target that runs MCP-only integration tests (TestIntegration_MCPInstanceSession) that don't require a real AI agent. Both targets must use ?= for configurable variables (CLAUDE_COMMAND, INTEGRATION_MODEL, etc.) and respect config.mk overrides. Verify the -run regex on integration-test-prsplit matches TestIntegration_ClaudeSpawnSwitch and TestIntegration_RealClaude_ClassificationE2E.",
+      "acceptance": "`make integration-test-prsplit` runs all AI-requiring pr-split integration tests with output showing matched test names. `make integration-test-prsplit-mcp` runs MCP-only tests independently. Both targets appear in `make help` output. Both targets respect config.mk variable overrides.",
+      "status": "Done",
+      "files": ["project.mk"]
     },
     {
       "id": "T053",
-      "task": "Implement proper UTF-8 decoding in VTerm with carry buffer and wide character support",
-      "description": "Fix VTerm.Write() to implement UTF-8 decoding stateful across calls using utf8.DecodeRune / utf8.FullRune with a carry buffer. Handle multi-byte UTF-8 characters (1-4 bytes) as single runes with correct column width. Handle wide characters (CJK, emojis) that occupy 2 columns. Update putChar() to accept rune instead of byte, track column position correctly for wide chars, and fix Render() to use string encoding instead of buf.WriteRune() to avoid mojibake.",
-      "acceptance": "VTerm correctly processes multi-byte UTF-8 characters as single display units. Emoji (🤖) occupies 1 column (or 2 for wide chars), not 4. Cursor positioning remains correct after UTF-8 content. No mojibake on Render(). Wide character handling produces correct column advancement.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/vterm.go"
-      ]
+      "task": "Implement stateful UTF-8 decoding in VTerm.Write() with carry buffer and wide character support",
+      "description": "VTerm.Write() iterates `for _, b := range p` and calls processByte(b), which treats each byte of a multi-byte UTF-8 character as a separate rune via `v.putChar(rune(b))`, corrupting cursor positioning and producing mojibake. Fix: (1) Add utf8Buf [4]byte and utf8Len int fields to VTerm. (2) In Write(), when state==stateGround and byte >= 0x80, accumulate bytes in utf8Buf. Use utf8.FullRune to detect complete runes. When complete, call utf8.DecodeRune and pass to putChar(). Invalid sequences produce U+FFFD. (3) Handle carry across Write() calls. (4) For wide characters (CJK, emoji), use runewidth to determine display width. putChar() must advance curCol by the rune's display width, and for width-2 chars, fill the next cell with a zero-width placeholder. (5) Update Render() to skip zero-width placeholder cells.",
+      "acceptance": "Writing []byte(\"\\u1f916\") produces 1 rune with curCol advancing by 2. Writing []byte(\"cafe\\u0301\") produces correct display with e-acute as single rune. A Write() splitting a multi-byte char across two calls correctly reassembles. Render() outputs valid UTF-8. No mojibake.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go"]
     },
     {
       "id": "T054",
-      "task": "Fix OSC String Terminator handling in VTerm parser",
-      "description": "Fix processOSC() to transition to stateEscape (not stateGround) when ESC (0x1B) is encountered inside an OSC sequence. This ensures the ST (String Terminator) byte (backslash) is consumed properly and not printed as a spurious character. Handle both BEL (0x07) and ESC\\ (0x1B 0x5C) terminators correctly.",
-      "acceptance": "OSC sequences using ST termination (OSC 52/clipboard, OSC 8/hyperlinks, iTerm2 sequences) no longer leave visible backslash characters on screen. The ESC byte properly transitions to escape state, not ground state.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/vterm.go"
-      ]
+      "task": "Fix OSC String Terminator: processOSC must transition to stateEscape on ESC, not stateGround",
+      "description": "In processOSC(), the `b == 0x1b` branch sets v.state = stateGround. This is wrong — OSC ST termination is ESC followed by backslash (0x5C). By going to stateGround, the backslash is treated as printable. Fix: Change to v.state = stateEscape. In processEscape(), consume the backslash as ST and return to stateGround. Either use a flag (e.g., oscEscPending) or a stateOSC_ESC sub-state.",
+      "acceptance": "Writing \\x1b]0;My Title\\x1b\\\\ produces no visible characters. BEL terminator still works. OSC 52/8/iTerm2 sequences with ST are correctly consumed.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go"]
     },
     {
       "id": "T055",
-      "task": "Fix SGR parsing to prevent attribute bleed on malformed sequences",
-      "description": "Fix extended color handling (case p == 38 for truecolor) to properly fast-forward or abort when truncated sequences are detected. When i+3 >= len(params) for truecolor, do not allow parameter bleeding - either skip the malformed portion or abort the sequence entirely.",
-      "acceptance": "Truncated truecolor sequences like \\x1b[38;2;1m do not cause the final parameter to be incorrectly evaluated as a separate SGR attribute. Malformed sequences are handled gracefully without attribute pollution.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/vterm.go"
-      ]
+      "task": "Fix SGR parameter bleed on truncated truecolor sequences",
+      "description": "In handleSGR(), the truecolor case (p==38, sub-case 2) checks i+3 < len(params). If check fails (truncated like \\x1b[38;2;1m), i is NOT incremented, and trailing parameter 1 is evaluated as SGR bold. Fix: When i+3 >= len(params) in both fg and bg truecolor branches, fast-forward i to len(params). Apply same for 256-color (case 5).",
+      "acceptance": "\\x1b[38;2;1m does NOT activate bold. \\x1b[48;2;255;128mHello does NOT apply partial color. Valid truecolor still works. Valid 256-color still works.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go"]
     },
     {
       "id": "T056",
-      "task": "Add bounds to paramBuf to prevent unbounded memory allocation",
-      "description": "In the CSI/ESC parameter parsing, add a cap to len(v.paramBuf) (e.g., 256 bytes). If the buffer exceeds this limit, drop the malformed sequence and reset state to ground. This prevents potential OOM from unbounded buffer growth on malformed output without valid terminating bytes.",
-      "acceptance": "Malformed CSI sequences without valid terminators cannot cause unbounded paramBuf growth. Memory usage remains bounded even with adversarial input.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/vterm.go"
-      ]
+      "task": "Cap paramBuf length to prevent unbounded memory growth in CSI/OSC parsing",
+      "description": "In processCSI(), v.paramBuf = append(v.paramBuf, b) grows without limit for malformed sequences. Fix: Add maxParamBufLen = 256 constant. Before appending, check length; if exceeded, reset state to stateGround and clear paramBuf. Apply same cap to intermBuf.",
+      "acceptance": "1000 bytes of parameter chars without CSI terminator does NOT grow paramBuf past 256. Malformed sequence dropped. Normal CSI unaffected.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go"]
     },
     {
       "id": "T057",
-      "task": "Fix ESC handling in CSI state to properly transition to escape state",
-      "description": "Fix processCSI() to transition to stateEscape (not stateGround) when ESC (0x1B) is encountered. This ensures aborted CSI sequences are properly handled and subsequent sequences are parsed correctly instead of being printed as literal characters.",
-      "acceptance": "Input like \\x1b[3\\x1b[1m (aborted CSI then new SGR) correctly parses [1m as bold instead of printing it as literal characters.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/vterm.go"
-      ]
+      "task": "Fix ESC handling in processCSI to transition to stateEscape instead of stateGround",
+      "description": "In processCSI(), default case sets v.state = stateGround for unrecognized bytes. ESC (0x1B) hits default, aborting CSI and going to ground. Fix: Add explicit check for b == 0x1b before default. Set v.state = stateEscape, clear paramBuf/intermBuf.",
+      "acceptance": "Input \\x1b[3\\x1b[1mX results in 'X' with bold attribute. Aborted \\x1b[3 discarded. \\x1b[1m parsed as SGR bold.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go"]
     },
     {
       "id": "T058",
-      "task": "Fix PTY read goroutine lifecycle to prevent leaks and concurrent read contention",
-      "description": "Fix RunPassthrough to prevent goroutine leaks. The current implementation uses os.File.Read which is a blocking syscall that ignores context cancellation. Either: (1) Implement a permanent background goroutine that starts on Attach and stops on Detach, with proper synchronization; (2) Set PTY FD non-blocking and poll with select/unix.Poll to respect context cancellation; (3) Close the PTY master on toggle (if acceptable). The solution must prevent multiple goroutines from competing to read from the same PTY fd.",
-      "acceptance": "Toggle cycles (attach->detach->attach) do not accumulate goroutines. Only one goroutine ever reads from the PTY at any time. Output is not fragmented or lost due to concurrent read contention.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/mux.go"
-      ]
+      "task": "Redesign PTY read goroutine lifecycle to prevent leaks and concurrent read contention",
+      "description": "RunPassthrough spawns a goroutine with child.Read(buf) that blocks on a syscall ignoring context cancellation. On toggle-out, the goroutine persists. Next toggle-in spawns a second goroutine competing for the same fd. Fix: Implement permanent background reader goroutine. Add readerStop/readerDone channels. Attach() starts background goroutine: read child → VTerm, forward to stdout only when passthroughActive. Detach() closes readerStop, waits readerDone. RunPassthrough removes Goroutine 2, keeps only stdin→child.",
+      "acceptance": "10 toggle cycles do not accumulate goroutines. NumGoroutine() after detach returns to baseline. Output never fragmented. Race detector clean.",
+      "status": "Done",
+      "files": ["internal/termui/mux/mux.go", "internal/termui/mux/mux_test.go"]
     },
     {
       "id": "T059",
-      "task": "Add mutex synchronization to VTerm to prevent data races and slice corruption panics",
-      "description": "VTerm has zero internal synchronization. Add a mutex to VTerm or hold m.mu during entire Render() call. Resize() reallocates sb.cells while Write() and Render() access these slices concurrently. Also handle the race where RunPassthrough returns but goroutine may complete one more Read+Write cycle while next RunPassthrough calls Render() on the same VTerm.",
-      "acceptance": "No data races detected by -race flag. No panic: runtime error: index out of range when resize runs concurrently with writes/renders. Concurrent access to VTerm state is properly serialized.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/vterm.go",
-        "internal/termui/mux/mux.go"
-      ]
+      "task": "Add sync.Mutex to VTerm to prevent data races between Write(), Render(), and Resize()",
+      "description": "VTerm has zero internal synchronization. Resize() reallocates sb.cells while Write() and Render() access them concurrently (background reader writes, main thread renders/resizes). Fix: Add sync.Mutex to VTerm. Lock in Write(), Render(), Resize(). Method-level granularity, no I/O under lock.",
+      "acceptance": "go test -race passes. Concurrent Resize()+Write()+Render() stress test (10k iterations) no panic. No index out of range.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go", "internal/termui/mux/mux.go"]
     },
     {
       "id": "T060",
-      "task": "Fix BubbleTea async race condition with manual alt-screen management",
-      "description": "Document and test the interaction between BubbleTea's async ReleaseTerminal() and the synchronous manual \\x1b[?1049l escape sequence. Ensure that BubbleTea's delayed command does not fire during passthrough and corrupt terminal state. Consider the risk of RestoreTerminal overwriting passthrough's term.MakeRaw state with cooked mode, breaking toggle key interception.",
-      "acceptance": "Manual alt-screen sequences and BubbleTea async operations work correctly together. Toggle key interception remains functional. Terminal state is not corrupted by delayed BubbleTea commands.",
-      "status": "Not Started",
-      "files": [
-        "internal/command/pr_split.go",
-        "internal/termui/mux/mux.go"
-      ]
+      "task": "Document and test BubbleTea async race with manual alt-screen management",
+      "description": "pr_split.go synchronously exits alt-screen before RunPassthrough. BubbleTea's ReleaseTerminal() is async. Risk: delayed RestoreTerminal during passthrough corrupts state. Fix: Add sync mechanism, stress test 20 rapid toggles, code comment documenting timing contract.",
+      "acceptance": "20-cycle rapid toggle shows no terminal corruption. Toggle key interception functional. BubbleTea TUI resumes correctly after every toggle-back.",
+      "status": "Done",
+      "files": ["internal/command/pr_split.go", "internal/termui/mux/mux.go"]
     },
     {
       "id": "T061",
-      "task": "Fix background process starvation when mux is in SideOsm state",
-      "description": "When mux is in SideOsm (auto-split UI), nothing reads from m.child, causing the OS pipe buffer to fill and the child process to block on write(). Implement a permanent background goroutine that constantly reads from PTY, updates VTerm, and flushes to stdout only when passthrough is active.",
-      "acceptance": "Child processes do not freeze when mux is in SideOsm state. Background output is captured in VTerm, so toggle-back screen state is not stale.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/mux.go"
-      ]
+      "task": "Validate background PTY reader prevents child process starvation in SideOsm",
+      "description": "When mux is in SideOsm, nothing reads from m.child, causing pipe buffer fill and child block. T058's background reader must prevent this. Test: attach child writing 1MB, keep in SideOsm, toggle to SideClaude — VTerm has full output.",
+      "acceptance": "Child writing 1MB in SideOsm does NOT block. After toggle, Render() shows tail of output. Child exit not delayed by pipe pressure.",
+      "status": "Done",
+      "files": ["internal/termui/mux/mux.go", "internal/termui/mux/mux_test.go"]
     },
     {
       "id": "T062",
-      "task": "Fix erase operations to preserve current rendition (background color) instead of using default attributes",
-      "description": "Throughout eraseDisplay, eraseLine, deleteChars, insertChars, and scrolling new lines, use attr: sb.curAttr for blank cells instead of default/zero attributes. ECMA-48 specifies that erased/inserted blank cells should be filled with the current rendition including background color.",
-      "acceptance": "TUIs that paint backgrounds by setting a background color and then clearing regions show correct colors on restoration. Erased regions preserve background color, not default attributes.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/vterm.go"
-      ]
+      "task": "Fix erase/scroll operations to fill blank cells with current rendition instead of default",
+      "description": "Erase/scroll ops create blank cells with default attrs instead of current SGR rendition (ECMA-48 violation). Affected: eraseDisplay, eraseLine, eraseChars, deleteChars, insertChars, scrollRegionUp/Down, insertLines, deleteLines. Fix: Add makeAttrLine helper. Replace cell{ch: ' '} with cell{ch: ' ', attr: sb.curAttr} in erase contexts. Replace makeLine() in scroll contexts with makeAttrLine(v.cols, sb.curAttr).",
+      "acceptance": "After \\x1b[44m + \\x1b[2J, all cells have bg=blue. After scroll-up with blue bg, new lines have bg=blue. After \\x1b[0m\\x1b[2J, default attrs. Render() emits SGR for colored blank regions.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go"]
     },
     {
       "id": "T063",
-      "task": "Fix status bar wiped on restore after first toggle",
-      "description": "The status bar is written via renderStatusBar(h) but those bytes are not mirrored into childVterm (only child output is tee'd). After vt.Render() clears and re-renders, the status bar disappears. After rendering VTerm, explicitly re-render the status bar (if enabled) to restore it.",
-      "acceptance": "Status bar remains visible on second and subsequent toggles, not just the first.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/mux.go"
-      ]
+      "task": "Re-render status bar after VTerm Render() on toggle-back",
+      "description": "RunPassthrough 'not first swap' branch writes vt.Render() but status bar bytes are NOT in childVterm. After clear+render, status bar disappears. Fix: After vt.Render() in 'not first swap', call renderStatusBar(h) if statusEnabled.",
+      "acceptance": "Toggle to Claude → see status bar → toggle osm → toggle back: status bar visible. 5 repeats: status bar persists every toggle-back.",
+      "status": "Done",
+      "files": ["internal/termui/mux/mux.go", "internal/termui/mux/mux_test.go"]
     },
     {
       "id": "T064",
-      "task": "Fix VTerm scroll region mismatch when status bar is enabled",
-      "description": "When status bar is enabled, the real terminal scrolls within rows 1..h-1 (set via setScrollRegion), but VTerm's default scroll region is full-screen. Either: (1) Size VTerm to rows = h-1 when status bar enabled, paint status bar separately; (2) Explicitly set VTerm's scroll region to match the real terminal's scroll region.",
-      "acceptance": "VTerm scroll behavior matches real terminal when status bar is enabled. Captured buffer accurately reflects what user saw, including scroll behavior at bottom of scroll region.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/vterm.go",
-        "internal/termui/mux/mux.go"
-      ]
+      "task": "Synchronize VTerm scroll region with real terminal when status bar enabled",
+      "description": "Status bar sets real terminal scroll region to 1..h-1, but VTerm default is full-screen. Scrolling diverges. Fix: Size childVterm to rows=h-1 when status bar enabled. Paint status bar separately.",
+      "acceptance": "With status bar: child writes 100 lines, toggle out/back, VTerm matches bottom h-1 rows. Status bar not in scrollable content. No off-by-one.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/mux.go", "internal/termui/mux/mux_test.go"]
     },
     {
       "id": "T065",
-      "task": "Restore cursor visibility state in Render()",
-      "description": "Render() currently positions the cursor correctly but does not restore cursor visibility state (DECTCEM). If an application hid the cursor, restoration should reflect that. Add cursor visibility tracking and restore it in Render().",
-      "acceptance": "Applications that hide cursor (DECTCEM) have their visibility state correctly restored when toggling back to host TUI.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/vterm.go"
-      ]
+      "task": "Track and restore cursor visibility (DECTCEM) in VTerm Render()",
+      "description": "DECSET/DECRST 25 are no-ops. If child hides cursor, toggle-back shows it because Render() doesn't emit visibility. Fix: Add cursorVisible bool to screenBuffer. Handle DECSET/DECRST 25. Render() emits visibility state. Save/restore in DECSC/DECRC.",
+      "acceptance": "After \\x1b[?25l, Render() contains \\x1b[?25l. After \\x1b[?25h, contains \\x1b[?25h. Apps hiding cursor display correctly on toggle-back.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go"]
     },
     {
       "id": "T066",
-      "task": "Optimize VTerm Render() to avoid generating CUP for empty lines",
-      "description": "Render() currently generates CUP (cursor position) sequence for every row including empty ones. For large terminals, this is inefficient and may cause flicker. Add optimization to skip empty lines or trailing spaces, reducing output size and improving performance.",
-      "acceptance": "Render() output is smaller for terminals with empty lines. Performance improves for large terminals. No visual changes for non-empty content.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/vterm.go"
-      ]
+      "task": "Optimize VTerm Render() to skip unchanged/empty trailing content",
+      "description": "Render() generates CUP + row for every row including empty ones. For 200-row terminal with 20 lines, 180 unnecessary sequences. Fix: Skip entirely-default rows. Trim trailing default cells in non-empty rows.",
+      "acceptance": "Render() for 200x80 with 'Hello' on row 0 significantly smaller. Benchmark ≥50% reduction for sparse. Dense screens no regression.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go"]
     },
     {
       "id": "T067",
-      "task": "Reset swappedOnce flag in Detach() to ensure resize signal on new child",
-      "description": "The swappedOnce flag ensures screen is cleared and child is resized only on first entry to passthrough mode. It is set in RunPassthrough but never reset in Detach(). When attaching a new child after detaching, the resize signal (SIGWINCH) is incorrectly skipped because swappedOnce is still true. Reset swappedOnce = false in Detach().",
-      "acceptance": "New child processes receive resize signal on first toggle after attach. Terminal size is correctly initialized for new children.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/mux.go"
-      ]
+      "task": "Reset swappedOnce to false in TUIMux.Detach()",
+      "description": "swappedOnce set true in RunPassthrough, never reset. New child after detach skips screen clear and SIGWINCH. Fix: Add m.swappedOnce = false in Detach().",
+      "acceptance": "Attach A → toggle → Detach A → Attach B → toggle: firstSwap true, SIGWINCH sent. Test asserts resizeFn called each first-toggle-after-attach.",
+      "status": "Done",
+      "files": ["internal/termui/mux/mux.go", "internal/termui/mux/mux_test.go"]
     },
     {
       "id": "T068",
-      "task": "Fix VTerm DECSET 1049 to save/restore alternate screen cursor correctly",
-      "description": "When DECSET 1049 is invoked while already in alternate screen, it should save the alternate's cursor to the alternate's saved slot, not the primary's. Implementation currently always saves primary. Fix to track which screen (primary/alternate) is active and save/restore the correct cursor position.",
-      "acceptance": "Cursor position is correctly saved/restored when toggling between apps using DECSET 1049 multiple times or when 1049 is sent while already in alternate screen.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/vterm.go"
-      ]
+      "task": "Fix DECSET 1049 cursor save/restore based on active screen",
+      "description": "handleDECSET 1049 always saves to v.primary regardless of active screen. Fix: DECSET 1049 on primary → save cursor, switch to alternate, clear. On alternate → no-op or save alternate. DECRST 1049 → switch to primary, restore. Guard double-set/reset.",
+      "acceptance": "Text at (5,10) → DECSET 1049 → text at (2,3) → DECRST 1049 → cursor at (5,10). Double-set → DECRST → correct restore. No panic.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go"]
     },
     {
       "id": "T069",
-      "task": "Add support for alt-screen mode variants (?47, ?1047) in addition to ?1049",
-      "description": "Only DEC private mode ?1049 is currently implemented. Some programs use ?47 or ?1047 instead of (or in addition to) ?1049 for alternate screen. Add support for all common alt-screen variants in both set and reset modes.",
-      "acceptance": "Applications using ?47 or ?1047 for alternate screen work correctly with passthrough mode.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/vterm.go"
-      ]
+      "task": "Add alt-screen mode variant support for ?47 and ?1047",
+      "description": "Only 1049 implemented. ?47 switches without cursor save/clear. ?1047 switches + clears, no cursor save. Fix: Add cases 47 and 1047 to handleDECSET/handleDECRST with correct semantics.",
+      "acceptance": "DECSET ?47 switches without clearing/saving. DECRST ?47 switches back without restoring. DECSET ?1047 switches and clears. Combined works.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go"]
     },
     {
       "id": "T070",
-      "task": "Fix index out-of-bounds panic on saved cursor restore after resize",
-      "description": "Resize() clamps curRow/curCol but neglects savedRow/savedCol. If child saves cursor (DECSC) at row 40, then terminal resizes to 24 rows, then child restores cursor (DECRC): curRow is blindly set to 40, causing panic: index out of range when Erase is called. Fix by clamping savedRow/savedCol in resize(), or clamping during DECRC/1049l restore.",
-      "acceptance": "No panic when cursor is saved, terminal resized smaller, then cursor restored. Saved cursor position is properly clamped to new dimensions.",
-      "status": "Not Started",
-      "files": [
-        "internal/termui/mux/vterm.go"
-      ]
+      "task": "Clamp savedRow/savedCol on resize to prevent index-out-of-bounds panic",
+      "description": "resize() clamps curRow/curCol but NOT savedRow/savedCol. Cursor restore after resize to smaller terminal causes panic. Fix: Clamp savedRow/savedCol in resize(). Also clamp in DECRC and DECRST 1049 as defense-in-depth.",
+      "acceptance": "Cursor at (40,100), DECSC, resize 24×80, DECRC → (23,79), no panic. DECSET 1049 at (40,100), resize, DECRST → clamped, no panic.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go"]
     },
     {
       "id": "T071",
-      "task": "Fix dependency injection bypass in PrSplitCommand - use injected stdout instead of os.Stdout",
-      "description": "Execute() takes stdout io.Writer for testability, but the toggle callback directly addresses os.Stdout for the \\x1b[?1049l escape sequence. This causes integration tests capturing stdout to silently fail to register alt-screen transitions. Use the injected stdout parameter instead of os.Stdout.",
-      "acceptance": "All escape sequences for alt-screen toggle use the injected stdout writer. Integration tests that capture stdout correctly observe alt-screen transitions.",
+      "task": "Replace os.Stdout with injected stdout in pr_split.go toggle callback and mux constructor",
+      "description": "Execute() receives stdout but toggle callback uses os.Stdout.WriteString() and mux.New() uses os.Stdout. Fix: Use stdout.Write([]byte(...)) for alt-screen sequences. Change mux.New to use injected stdout.",
+      "acceptance": "No os.Stdout in toggle callback. Integration tests capturing stdout see alt-screen sequences. Existing tests pass.",
+      "status": "Done",
+      "files": ["internal/command/pr_split.go"]
+    },
+    {
+      "id": "T072",
+      "task": "Add comprehensive fuzz testing for VTerm ANSI parser",
+      "description": "Create vterm_fuzz_test.go: FuzzVTermWrite (seeds: CSI, OSC, UTF-8, SGR, DECSET, scroll), FuzzVTermResize (interleaved Write+Resize), FuzzVTermRoundtrip (Write→Render→fresh VTerm→compare). All assert no panic.",
+      "acceptance": "go test -fuzz=FuzzVTermWrite -fuzztime=30s passes. FuzzVTermResize 30s no panic. Seed corpus committed. make test runs seeds.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm_fuzz_test.go"]
+    },
+    {
+      "id": "T073",
+      "task": "Add property-based tests for UTF-8 roundtrip in VTerm",
+      "description": "Verify UTF-8 roundtrip: random valid UTF-8 → Write → cell read-back matches runes and positions. Test cross-Write-call boundaries for all multi-byte sequences. Invalid UTF-8 → U+FFFD.",
+      "acceptance": "1000 random UTF-8 strings round-trip with zero mismatches. Split-boundary passes for all multi-byte. Invalid → U+FFFD.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm_test.go"]
+    },
+    {
+      "id": "T074",
+      "task": "Add VTerm and mux benchmarks for performance regression tracking",
+      "description": "Create vterm_bench_test.go: Write_ASCII, Write_UTF8, Render_Sparse, Render_Dense, Render_WithSGR, Resize, MuxPassthrough. Add bench target to project.mk.",
+      "acceptance": "go test -bench=. passes. Write ≥10MB/s ASCII. Render ≤5ms 200×80 dense. bench target in project.mk.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm_bench_test.go", "project.mk"]
+    },
+    {
+      "id": "T075",
+      "task": "Add tab stop handling (HTS, TBC, CHT, CBT) to VTerm",
+      "description": "Tab uses fixed 8-column. Implement: tabStops []bool (default 8-col). ESC H (HTS). CSI g (TBC). CSI I (CHT). CSI Z (CBT). On resize extend/truncate.",
+      "acceptance": "Default tabs at 0,8,16,24. HTS at 5 → tab from 0 stops at 5. TBC 3g clears all. CHT 2 advances by 2. Resize preserves tabs.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go"]
+    },
+    {
+      "id": "T076",
+      "task": "Add DCS (Device Control String) sequence consumption to VTerm parser",
+      "description": "No DCS handling. ESC P → stateDCS. Consume until ST. Bounded buffer (4KB max).",
+      "acceptance": "DCS consumed without printing. Subsequent text correct. No memory growth from long DCS.",
+      "status": "Done",
+      "files": ["internal/termui/mux/vterm.go", "internal/termui/mux/vterm_test.go"]
+    },
+    {
+      "id": "T077",
+      "task": "Write architecture documentation for terminal mux subsystem",
+      "description": "Create docs/reference/mux-architecture.md: goroutine model, state machine, VTerm lifecycle, synchronization, toggle sequence, known limitations. ASCII diagrams. Link from docs/README.md.",
+      "acceptance": "Doc exists, linked from README. Developer can understand goroutine model and toggle sequence from doc alone.",
+      "status": "Done",
+      "files": ["docs/reference/mux-architecture.md", "docs/README.md"]
+    },
+    {
+      "id": "T078",
+      "task": "Final full verification: make passes clean on all platforms",
+      "description": "Run make for all T052-T077 changes. Run make-all-in-container for Linux. Verify zero deadcode, zero races, all fuzz seeds pass.",
+      "acceptance": "make passes. make-all-in-container passes. Zero failures. Zero warnings. Zero deadcode.",
       "status": "Not Started",
-      "files": [
-        "internal/command/pr_split.go"
-      ]
+      "files": []
     }
   ],
   "continuousVerification": {
@@ -256,6 +264,7 @@
     "ALL make targets must pass before any commit.",
     "Rule of Two: 2 contiguous subagent reviews required.",
     "Integration tests must be verified with actual AI execution.",
-    "No hanging, no blocking, no screen artifacts in TUI."
+    "No hanging, no blocking, no screen artifacts in TUI.",
+    "VTerm must handle arbitrary byte sequences without panic or OOM."
   ]
 }

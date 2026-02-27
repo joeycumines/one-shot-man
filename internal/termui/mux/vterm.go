@@ -4,6 +4,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
+	"unicode/utf8"
+
+	"github.com/mattn/go-runewidth"
 )
 
 // VTerm is a VT100-compatible virtual terminal buffer. It maintains an
@@ -14,6 +18,8 @@ import (
 // screen can be re-rendered after toggling between osm's auto-split TUI
 // and the Claude passthrough view.
 type VTerm struct {
+	mu sync.Mutex
+
 	rows, cols int
 
 	// Primary and alternate screen buffers.
@@ -29,6 +35,13 @@ type VTerm struct {
 	paramBuf []byte
 	// Intermediate bytes (e.g., '?' in CSI ? sequences).
 	intermBuf []byte
+
+	// UTF-8 carry buffer for multi-byte characters split across Write() calls.
+	utf8Buf [utf8.UTFMax]byte
+	utf8Len int
+
+	// DCS payload counter for bounded consumption (no storage needed).
+	dcsLen int
 }
 
 // screenBuffer holds the 2D grid and cursor state for one buffer.
@@ -54,6 +67,15 @@ type screenBuffer struct {
 	// is written. Control characters (LF, CR, etc.) clear this flag
 	// without wrapping. This matches xterm/VT100 DECAWM behavior.
 	pendingWrap bool
+
+	// cursorVisible tracks DECTCEM (cursor show/hide). Default is visible.
+	cursorVisible bool
+
+	// tabStops tracks configurable tab stop positions. Each index
+	// corresponds to a column; true means a tab stop is set.
+	// Default: every 8 columns (0, 8, 16, 24, ...).
+	// Modified by HTS (set), TBC (clear), and resize (extend/truncate).
+	tabStops []bool
 
 	// Terminal dimensions (same as parent VTerm).
 	rows, cols int
@@ -103,6 +125,7 @@ const (
 	stateEscape            // saw \x1b
 	stateCSI               // saw \x1b[
 	stateOSC               // saw \x1b]  (operating system command — consumed and dropped)
+	stateDCS               // saw \x1b P (device control string — consumed and dropped)
 )
 
 // NewVTerm creates a new virtual terminal buffer with the given dimensions.
@@ -125,14 +148,25 @@ func NewVTerm(rows, cols int) *VTerm {
 
 func newScreenBuffer(rows, cols int) *screenBuffer {
 	sb := &screenBuffer{
-		rows: rows,
-		cols: cols,
+		rows:          rows,
+		cols:          cols,
+		cursorVisible: true,
 	}
 	sb.cells = make([][]cell, rows)
 	for i := range sb.cells {
 		sb.cells[i] = makeLine(cols)
 	}
+	sb.tabStops = makeDefaultTabStops(cols)
 	return sb
+}
+
+// makeDefaultTabStops creates a tab stop array with stops every 8 columns.
+func makeDefaultTabStops(cols int) []bool {
+	ts := make([]bool, cols)
+	for i := 0; i < cols; i += 8 {
+		ts[i] = true
+	}
+	return ts
 }
 
 func makeLine(cols int) []cell {
@@ -143,9 +177,22 @@ func makeLine(cols int) []cell {
 	return line
 }
 
+// makeAttrLine creates a blank line where each cell carries the given rendition.
+// Per ECMA-48, erase-class operations fill erased positions with the current
+// graphic rendition, not the default one.
+func makeAttrLine(cols int, a attr) []cell {
+	line := make([]cell, cols)
+	for i := range line {
+		line[i] = cell{ch: ' ', attr: a}
+	}
+	return line
+}
+
 // Resize changes the terminal dimensions. Content is preserved up to the
 // intersection of old and new sizes.
 func (v *VTerm) Resize(rows, cols int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
 	if rows < 1 {
 		rows = 1
 	}
@@ -185,16 +232,100 @@ func (sb *screenBuffer) resize(rows, cols int) {
 	if sb.curCol >= cols {
 		sb.curCol = cols - 1
 	}
+	// Clamp saved cursor to prevent index-out-of-bounds on restore.
+	if sb.savedRow >= rows {
+		sb.savedRow = rows - 1
+	}
+	if sb.savedCol >= cols {
+		sb.savedCol = cols - 1
+	}
 	// Reset scroll region on resize.
 	sb.scrollTop = 0
 	sb.scrollBot = 0
+
+	// Extend or truncate tab stops for new column count.
+	if cols > len(sb.tabStops) {
+		prev := len(sb.tabStops)
+		ext := make([]bool, cols-prev)
+		// New columns get default 8-column tab stops.
+		for i := range ext {
+			col := prev + i
+			if col%8 == 0 {
+				ext[i] = true
+			}
+		}
+		sb.tabStops = append(sb.tabStops, ext...)
+	} else if cols < len(sb.tabStops) {
+		sb.tabStops = sb.tabStops[:cols]
+	}
 }
 
 // Write implements io.Writer. It processes bytes through the ANSI state
 // machine and updates the virtual terminal state.
+//
+// UTF-8 multi-byte characters that are split across calls are correctly
+// reassembled via an internal carry buffer.
 func (v *VTerm) Write(p []byte) (int, error) {
-	for _, b := range p {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	for i := 0; i < len(p); {
+		b := p[i]
+
+		// If we have a partial UTF-8 sequence, try to complete it.
+		if v.utf8Len > 0 {
+			// A valid UTF-8 continuation byte is 10xxxxxx (0x80–0xBF).
+			// If the incoming byte is NOT a continuation byte, the carry
+			// buffer holds an invalid/truncated sequence. Flush it as
+			// U+FFFD and reprocess the current byte normally.
+			if b < 0x80 || b >= 0xC0 {
+				v.putChar('\uFFFD')
+				v.utf8Len = 0
+				// Don't increment i — let the byte fall through to
+				// ground-state or escape-sequence processing below.
+			} else {
+				v.utf8Buf[v.utf8Len] = b
+				v.utf8Len++
+				i++
+				if utf8.FullRune(v.utf8Buf[:v.utf8Len]) {
+					r, size := utf8.DecodeRune(v.utf8Buf[:v.utf8Len])
+					if r == utf8.RuneError && size <= 1 {
+						// Invalid sequence — emit replacement character.
+						v.putChar('\uFFFD')
+					} else {
+						v.putChar(r)
+					}
+					v.utf8Len = 0
+				} else if v.utf8Len >= utf8.UTFMax {
+					// Overlong/invalid — emit replacement and reset.
+					v.putChar('\uFFFD')
+					v.utf8Len = 0
+				}
+				continue
+			}
+		}
+
+		// In ground state, high bytes (>= 0x80) begin UTF-8 sequences.
+		if v.state == stateGround && b >= 0x80 {
+			v.utf8Buf[0] = b
+			v.utf8Len = 1
+			i++
+			if utf8.FullRune(v.utf8Buf[:v.utf8Len]) {
+				// Single-byte high char (shouldn't happen for valid
+				// UTF-8, but handle gracefully).
+				r, size := utf8.DecodeRune(v.utf8Buf[:v.utf8Len])
+				if r == utf8.RuneError && size <= 1 {
+					v.putChar('\uFFFD')
+				} else {
+					v.putChar(r)
+				}
+				v.utf8Len = 0
+			}
+			continue
+		}
+
+		// Normal byte-by-byte processing for ASCII and escape sequences.
 		v.processByte(b)
+		i++
 	}
 	return len(p), nil
 }
@@ -209,6 +340,8 @@ func (v *VTerm) processByte(b byte) {
 		v.processCSI(b)
 	case stateOSC:
 		v.processOSC(b)
+	case stateDCS:
+		v.processDCS(b)
 	}
 }
 
@@ -226,18 +359,26 @@ func (v *VTerm) processGround(b byte) {
 		v.active.curCol = 0
 	case b == '\t': // Tab
 		v.active.pendingWrap = false
-		// Move to next tab stop (every 8 columns).
-		v.active.curCol = ((v.active.curCol / 8) + 1) * 8
-		if v.active.curCol >= v.cols {
-			v.active.curCol = v.cols - 1
+		// Advance to the next tab stop.
+		sb := v.active
+		col := sb.curCol + 1
+		for col < v.cols {
+			if sb.tabStops[col] {
+				break
+			}
+			col++
 		}
+		if col >= v.cols {
+			col = v.cols - 1
+		}
+		sb.curCol = col
 	case b == '\b': // Backspace
 		v.active.pendingWrap = false
 		if v.active.curCol > 0 {
 			v.active.curCol--
 		}
 	case b == 0x07: // BEL — ignore
-	case b >= 0x20: // Printable character (or high byte)
+	case b >= 0x20 && b < 0x80: // Printable ASCII character
 		v.putChar(rune(b))
 	}
 }
@@ -250,6 +391,9 @@ func (v *VTerm) processEscape(b byte) {
 		v.intermBuf = v.intermBuf[:0]
 	case ']': // OSC
 		v.state = stateOSC
+	case 'P': // DCS — Device Control String
+		v.state = stateDCS
+		v.dcsLen = 0
 	case '7': // DECSC — save cursor
 		sb := v.active
 		sb.savedRow = sb.curRow
@@ -280,6 +424,12 @@ func (v *VTerm) processEscape(b byte) {
 		v.alternate = newScreenBuffer(v.rows, v.cols)
 		v.active = v.primary
 		v.state = stateGround
+	case 'H': // HTS — Horizontal Tab Set (set tab stop at current column)
+		sb := v.active
+		if sb.curCol < len(sb.tabStops) {
+			sb.tabStops[sb.curCol] = true
+		}
+		v.state = stateGround
 	default:
 		// Unknown escape — return to ground.
 		v.state = stateGround
@@ -289,11 +439,17 @@ func (v *VTerm) processEscape(b byte) {
 func (v *VTerm) processCSI(b byte) {
 	switch {
 	case b >= '0' && b <= '9', b == ';':
-		// Parameter byte — accumulate.
-		v.paramBuf = append(v.paramBuf, b)
+		// Parameter byte — accumulate with a safety cap.
+		if len(v.paramBuf) < 128 {
+			v.paramBuf = append(v.paramBuf, b)
+		}
+		// If over 128 bytes, silently drop — sequence is malformed.
 	case b == '?' || b == '>' || b == '!':
 		// Intermediate byte.
 		v.intermBuf = append(v.intermBuf, b)
+	case b == 0x1b:
+		// ESC inside CSI — abort CSI, start new escape sequence.
+		v.state = stateEscape
 	case b >= 0x40 && b <= 0x7e:
 		// Final byte — dispatch.
 		v.dispatchCSI(b)
@@ -310,8 +466,34 @@ func (v *VTerm) processOSC(b byte) {
 	if b == 0x07 {
 		v.state = stateGround
 	} else if b == 0x1b {
-		// Might be start of ST (\x1b\\) — we'll handle the \\ in escape
-		// state, but let's just go back to ground for simplicity.
+		// Start of ST (\x1b\\) — transition to stateEscape so the
+		// backslash is consumed as the ST terminator rather than
+		// being treated as a printable character.
+		v.state = stateEscape
+	}
+}
+
+// maxDCSLen caps DCS payload consumption to prevent unbounded memory/CPU
+// usage from malformed sequences. 4KB is generous; real DCS payloads
+// (DECRQSS, Sixel, etc.) rarely approach this.
+const maxDCSLen = 4096
+
+func (v *VTerm) processDCS(b byte) {
+	// DCS sequences end with ST (ESC \) or BEL (0x07).
+	// We consume and discard the entire payload.
+	if b == 0x07 {
+		v.state = stateGround
+		return
+	}
+	if b == 0x1b {
+		// Start of ST (ESC \) — transition to stateEscape so the
+		// backslash is consumed as the ST terminator.
+		v.state = stateEscape
+		return
+	}
+	v.dcsLen++
+	if v.dcsLen > maxDCSLen {
+		// Payload too long — abort to ground.
 		v.state = stateGround
 	}
 }
@@ -389,6 +571,24 @@ func (v *VTerm) dispatchCSI(final byte) {
 		}
 		v.active.curRow = row
 		v.active.curCol = col
+	case 'I': // CHT — Cursor Forward Tabulation (advance N tab stops)
+		n := paramDefault(params, 0, 1)
+		sb := v.active
+		col := sb.curCol
+		for i := 0; i < n; i++ {
+			col++
+			for col < v.cols {
+				if sb.tabStops[col] {
+					break
+				}
+				col++
+			}
+			if col >= v.cols {
+				col = v.cols - 1
+				break
+			}
+		}
+		sb.curCol = col
 	case 'J': // ED — Erase in Display
 		v.eraseDisplay(paramDefault(params, 0, 0))
 	case 'K': // EL — Erase in Line
@@ -405,6 +605,24 @@ func (v *VTerm) dispatchCSI(final byte) {
 	case 'X': // ECH — Erase Characters
 		n := paramDefault(params, 0, 1)
 		v.eraseChars(n)
+	case 'Z': // CBT — Cursor Backward Tabulation (move back N tab stops)
+		n := paramDefault(params, 0, 1)
+		sb := v.active
+		col := sb.curCol
+		for i := 0; i < n; i++ {
+			col--
+			for col > 0 {
+				if sb.tabStops[col] {
+					break
+				}
+				col--
+			}
+			if col <= 0 {
+				col = 0
+				break
+			}
+		}
+		sb.curCol = col
 	case '@': // ICH — Insert Characters
 		n := paramDefault(params, 0, 1)
 		v.insertChars(n)
@@ -423,6 +641,19 @@ func (v *VTerm) dispatchCSI(final byte) {
 			row = v.rows - 1
 		}
 		v.active.curRow = row
+	case 'g': // TBC — Tabulation Clear
+		sb := v.active
+		p := paramDefault(params, 0, 0)
+		switch p {
+		case 0: // Clear tab stop at current column.
+			if sb.curCol < len(sb.tabStops) {
+				sb.tabStops[sb.curCol] = false
+			}
+		case 3: // Clear all tab stops.
+			for i := range sb.tabStops {
+				sb.tabStops[i] = false
+			}
+		}
 	case 'm': // SGR — Select Graphic Rendition
 		v.handleSGR(params)
 	case 'r': // DECSTBM — Set Scrolling Region
@@ -471,22 +702,57 @@ func (v *VTerm) dispatchCSI(final byte) {
 // putChar writes a character at the current cursor position and advances.
 // Uses deferred autowrap: if pendingWrap is set (cursor was at right
 // margin), the wrap (CR+LF) happens now before writing the character.
+//
+// Wide characters (CJK, emoji) occupy 2 columns. The second column is
+// filled with a zero-width placeholder (rune 0) to prevent rendering
+// artifacts.
 func (v *VTerm) putChar(ch rune) {
 	sb := v.active
+	width := runewidth.RuneWidth(ch)
+	if width <= 0 {
+		width = 1 // control chars and zero-width: treat as 1 column
+	}
+
 	if sb.pendingWrap {
 		sb.curCol = 0
 		v.lineFeed()
 		sb.pendingWrap = false
 	}
+
+	// For wide characters, if we're at cols-1 (only 1 column left),
+	// we need to wrap first since the char needs 2 columns.
+	if width == 2 && sb.curCol == v.cols-1 {
+		// Pad with space at the margin and wrap.
+		if sb.curRow >= 0 && sb.curRow < v.rows {
+			sb.cells[sb.curRow][sb.curCol] = cell{ch: ' ', attr: sb.curAttr}
+		}
+		sb.curCol = 0
+		v.lineFeed()
+	}
+
+	// Write the character.
 	if sb.curRow >= 0 && sb.curRow < v.rows &&
 		sb.curCol >= 0 && sb.curCol < v.cols {
 		sb.cells[sb.curRow][sb.curCol] = cell{ch: ch, attr: sb.curAttr}
 	}
-	if sb.curCol >= v.cols-1 {
-		// At right margin — set deferred wrap instead of advancing.
+
+	// For wide characters, write placeholder in the next column.
+	if width == 2 && sb.curCol+1 < v.cols {
+		if sb.curRow >= 0 && sb.curRow < v.rows {
+			sb.cells[sb.curRow][sb.curCol+1] = cell{ch: 0, attr: sb.curAttr}
+		}
+	}
+
+	// Advance cursor by the character's display width.
+	newCol := sb.curCol + width
+	if newCol >= v.cols {
 		sb.pendingWrap = true
+		// Keep curCol at the last column the char occupies.
+		if width == 2 {
+			sb.curCol = v.cols - 1
+		}
 	} else {
-		sb.curCol++
+		sb.curCol = newCol
 	}
 }
 
@@ -547,7 +813,7 @@ func (v *VTerm) scrollRegionUp(top, bot, n int) {
 	}
 	copy(v.active.cells[top:], v.active.cells[top+n:bot])
 	for i := bot - n; i < bot; i++ {
-		v.active.cells[i] = makeLine(v.cols)
+		v.active.cells[i] = makeAttrLine(v.cols, v.active.curAttr)
 	}
 }
 
@@ -561,7 +827,7 @@ func (v *VTerm) scrollRegionDown(top, bot, n int) {
 	}
 	copy(v.active.cells[top+n:bot], v.active.cells[top:])
 	for i := top; i < top+n; i++ {
-		v.active.cells[i] = makeLine(v.cols)
+		v.active.cells[i] = makeAttrLine(v.cols, v.active.curAttr)
 	}
 }
 
@@ -579,32 +845,33 @@ func (v *VTerm) scrollDown(n int) {
 
 func (v *VTerm) eraseDisplay(mode int) {
 	sb := v.active
+	blank := cell{ch: ' ', attr: sb.curAttr}
 	switch mode {
 	case 0: // Erase from cursor to end of display.
 		// Clear rest of current line.
 		for c := sb.curCol; c < v.cols; c++ {
-			sb.cells[sb.curRow][c] = cell{ch: ' '}
+			sb.cells[sb.curRow][c] = blank
 		}
 		// Clear all lines below.
 		for r := sb.curRow + 1; r < v.rows; r++ {
-			sb.cells[r] = makeLine(v.cols)
+			sb.cells[r] = makeAttrLine(v.cols, sb.curAttr)
 		}
 	case 1: // Erase from start of display to cursor.
 		// Clear all lines above.
 		for r := 0; r < sb.curRow; r++ {
-			sb.cells[r] = makeLine(v.cols)
+			sb.cells[r] = makeAttrLine(v.cols, sb.curAttr)
 		}
 		// Clear current line up to and including cursor.
 		for c := 0; c <= sb.curCol && c < v.cols; c++ {
-			sb.cells[sb.curRow][c] = cell{ch: ' '}
+			sb.cells[sb.curRow][c] = blank
 		}
 	case 2: // Erase entire display.
 		for r := 0; r < v.rows; r++ {
-			sb.cells[r] = makeLine(v.cols)
+			sb.cells[r] = makeAttrLine(v.cols, sb.curAttr)
 		}
 	case 3: // Erase scrollback buffer (xterm extension) — just clear display.
 		for r := 0; r < v.rows; r++ {
-			sb.cells[r] = makeLine(v.cols)
+			sb.cells[r] = makeAttrLine(v.cols, sb.curAttr)
 		}
 	}
 }
@@ -614,17 +881,18 @@ func (v *VTerm) eraseLine(mode int) {
 	if sb.curRow < 0 || sb.curRow >= v.rows {
 		return
 	}
+	blank := cell{ch: ' ', attr: sb.curAttr}
 	switch mode {
 	case 0: // Erase from cursor to end of line.
 		for c := sb.curCol; c < v.cols; c++ {
-			sb.cells[sb.curRow][c] = cell{ch: ' '}
+			sb.cells[sb.curRow][c] = blank
 		}
 	case 1: // Erase from start of line to cursor.
 		for c := 0; c <= sb.curCol && c < v.cols; c++ {
-			sb.cells[sb.curRow][c] = cell{ch: ' '}
+			sb.cells[sb.curRow][c] = blank
 		}
 	case 2: // Erase entire line.
-		sb.cells[sb.curRow] = makeLine(v.cols)
+		sb.cells[sb.curRow] = makeAttrLine(v.cols, sb.curAttr)
 	}
 }
 
@@ -640,7 +908,7 @@ func (v *VTerm) insertLines(n int) {
 	// Shift lines down.
 	copy(v.active.cells[sb.curRow+n:bot], v.active.cells[sb.curRow:bot-n])
 	for i := sb.curRow; i < sb.curRow+n; i++ {
-		v.active.cells[i] = makeLine(v.cols)
+		v.active.cells[i] = makeAttrLine(v.cols, sb.curAttr)
 	}
 	sb.curCol = 0
 }
@@ -657,7 +925,7 @@ func (v *VTerm) deleteLines(n int) {
 	// Shift lines up.
 	copy(v.active.cells[sb.curRow:], v.active.cells[sb.curRow+n:bot])
 	for i := bot - n; i < bot; i++ {
-		v.active.cells[i] = makeLine(v.cols)
+		v.active.cells[i] = makeAttrLine(v.cols, sb.curAttr)
 	}
 	sb.curCol = 0
 }
@@ -675,8 +943,9 @@ func (v *VTerm) deleteChars(n int) {
 		n = v.cols - sb.curCol
 	}
 	copy(row[sb.curCol:], row[sb.curCol+n:])
+	blank := cell{ch: ' ', attr: sb.curAttr}
 	for i := v.cols - n; i < v.cols; i++ {
-		row[i] = cell{ch: ' '}
+		row[i] = blank
 	}
 }
 
@@ -685,8 +954,9 @@ func (v *VTerm) eraseChars(n int) {
 	if sb.curRow < 0 || sb.curRow >= v.rows {
 		return
 	}
+	blank := cell{ch: ' ', attr: sb.curAttr}
 	for i := 0; i < n && sb.curCol+i < v.cols; i++ {
-		sb.cells[sb.curRow][sb.curCol+i] = cell{ch: ' '}
+		sb.cells[sb.curRow][sb.curCol+i] = blank
 	}
 }
 
@@ -704,8 +974,9 @@ func (v *VTerm) insertChars(n int) {
 	}
 	// Shift right.
 	copy(row[sb.curCol+n:], row[sb.curCol:v.cols-n])
+	blank := cell{ch: ' ', attr: sb.curAttr}
 	for i := sb.curCol; i < sb.curCol+n; i++ {
-		row[i] = cell{ch: ' '}
+		row[i] = blank
 	}
 }
 
@@ -714,6 +985,11 @@ func (v *VTerm) handleDECSET(params []int) {
 	for _, p := range params {
 		switch p {
 		case 1049: // Alt-screen: save cursor, switch to alternate buffer, clear.
+			// Guard: only switch if currently on primary screen.
+			// Double-set would corrupt saved cursor state.
+			if v.active != v.primary {
+				break
+			}
 			sb := v.primary
 			sb.savedRow = sb.curRow
 			sb.savedCol = sb.curCol
@@ -722,7 +998,21 @@ func (v *VTerm) handleDECSET(params []int) {
 			v.eraseDisplay(2)
 			v.active.curRow = 0
 			v.active.curCol = 0
-		case 25: // DECTCEM — show cursor (no-op in VTerm)
+		case 1047: // Alt-screen: switch to alternate buffer and clear. No cursor save.
+			if v.active != v.primary {
+				break
+			}
+			v.active = v.alternate
+			v.eraseDisplay(2)
+			v.active.curRow = 0
+			v.active.curCol = 0
+		case 47: // Alt-screen: switch to alternate buffer. No cursor save, no clear.
+			if v.active != v.primary {
+				break
+			}
+			v.active = v.alternate
+		case 25: // DECTCEM — show cursor.
+			v.active.cursorVisible = true
 		case 1: // DECCKM — cursor keys mode (no-op)
 		case 7: // DECAWM — auto-wrap mode (no-op, always on)
 		case 1000, 1002, 1003, 1006: // Mouse tracking modes (no-op)
@@ -736,12 +1026,28 @@ func (v *VTerm) handleDECRST(params []int) {
 	for _, p := range params {
 		switch p {
 		case 1049: // Alt-screen: restore primary buffer, restore cursor.
+			// Guard: only switch if currently on alternate screen.
+			// Double-reset would corrupt primary cursor position.
+			if v.active != v.alternate {
+				break
+			}
 			v.active = v.primary
 			sb := v.primary
 			sb.curRow = sb.savedRow
 			sb.curCol = sb.savedCol
 			sb.curAttr = sb.savedAttr
-		case 25: // DECTCEM — hide cursor (no-op)
+		case 1047: // Alt-screen: switch back to primary buffer. No cursor restore.
+			if v.active != v.alternate {
+				break
+			}
+			v.active = v.primary
+		case 47: // Alt-screen: switch back to primary buffer. No cursor restore.
+			if v.active != v.alternate {
+				break
+			}
+			v.active = v.primary
+		case 25: // DECTCEM — hide cursor.
+			v.active.cursorVisible = false
 		case 1: // DECCKM (no-op)
 		case 7: // DECAWM (no-op)
 		case 1000, 1002, 1003, 1006: // Mouse tracking (no-op)
@@ -814,6 +1120,10 @@ func (v *VTerm) handleSGR(params []int) {
 						r, g, b := params[i+1], params[i+2], params[i+3]
 						sb.curAttr.fg = color{kind: kindRGB, value: uint32(r)<<16 | uint32(g)<<8 | uint32(b)}
 						i += 3
+					} else {
+						// Truncated truecolor — skip remaining params to
+						// prevent trailing values from being misinterpreted.
+						i = len(params) - 1
 					}
 				}
 			}
@@ -836,6 +1146,10 @@ func (v *VTerm) handleSGR(params []int) {
 						r, g, b := params[i+1], params[i+2], params[i+3]
 						sb.curAttr.bg = color{kind: kindRGB, value: uint32(r)<<16 | uint32(g)<<8 | uint32(b)}
 						i += 3
+					} else {
+						// Truncated truecolor — skip remaining params to
+						// prevent trailing values from being misinterpreted.
+						i = len(params) - 1
 					}
 				}
 			}
@@ -886,6 +1200,8 @@ func paramDefault(params []int, idx, def int) int {
 //   - Character content
 //   - A final CUP to position the cursor at the correct location
 func (v *VTerm) Render() string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
 	sb := v.active
 	var buf strings.Builder
 
@@ -893,28 +1209,53 @@ func (v *VTerm) Render() string {
 	buf.WriteString("\x1b[0m")
 
 	prevAttr := attr{}
+	defaultCell := cell{ch: ' '}
 
 	for r := 0; r < v.rows; r++ {
-		// Move cursor to start of each line.
+		row := sb.cells[r]
+
+		// Find the last non-default cell in this row. Default is
+		// {ch: ' ', attr: {}} (space with zero-value attrs). Skip
+		// entirely-default rows to reduce output for sparse screens.
+		lastNonDefault := -1
+		for c := len(row) - 1; c >= 0; c-- {
+			if row[c] != defaultCell && row[c].ch != 0 {
+				lastNonDefault = c
+				break
+			}
+		}
+		if lastNonDefault < 0 {
+			// Entirely default row — skip it entirely.
+			continue
+		}
+
+		// Move cursor to start of this row.
 		fmt.Fprintf(&buf, "\x1b[%d;1H", r+1)
 
-		for c := 0; c < v.cols; c++ {
-			cell := sb.cells[r][c]
+		for c := 0; c <= lastNonDefault; c++ {
+			cell := row[c]
+			// Skip zero-width placeholder cells (second column of wide chars).
+			if cell.ch == 0 {
+				continue
+			}
 			if cell.attr != prevAttr {
 				buf.WriteString(sgrDiff(prevAttr, cell.attr))
 				prevAttr = cell.attr
 			}
-			if cell.ch == 0 {
-				buf.WriteByte(' ')
-			} else {
-				buf.WriteRune(cell.ch)
-			}
+			buf.WriteRune(cell.ch)
 		}
 	}
 
 	// Reset attributes and position cursor.
 	buf.WriteString("\x1b[0m")
 	fmt.Fprintf(&buf, "\x1b[%d;%dH", sb.curRow+1, sb.curCol+1)
+
+	// Emit cursor visibility state.
+	if sb.cursorVisible {
+		buf.WriteString("\x1b[?25h")
+	} else {
+		buf.WriteString("\x1b[?25l")
+	}
 
 	return buf.String()
 }

@@ -221,10 +221,11 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	})
 
 	// TUI Mux — terminal multiplexer between osm and child PTY (Claude Code).
-	// Uses os.Stdin/Stdout directly (not go-prompt's wrapped readers) because
+	// Uses os.Stdin directly (not go-prompt's wrapped readers) because
 	// the command-blocking model ensures go-prompt is paused during passthrough.
+	// stdout is injected for testability; in production it's os.Stdout.
 	termFd := int(os.Stdin.Fd())
-	tuiMux := mux.New(os.Stdin, os.Stdout, termFd)
+	tuiMux := mux.New(os.Stdin, stdout, termFd)
 	engine.SetGlobal("tuiMux", map[string]interface{}{
 		"attach": func(handle interface{}) {
 			// Case 1: Direct Go StringIO interface (non-Goja callers, tests).
@@ -338,6 +339,33 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	// passthrough (forwarding stdin/stdout to the child PTY), then restores
 	// the BubbleTea terminal when the user toggles back.
 	//
+	// TIMING CONTRACT (BubbleTea async race mitigation):
+	//
+	// BubbleTea's ReleaseTerminal() and RestoreTerminal() are async — they
+	// send messages through the event loop, so their effects (exit/enter
+	// alt-screen, release/acquire raw mode) are NOT immediate. Without
+	// mitigation, there's a race window where RunPassthrough starts before
+	// BubbleTea has actually exited alt-screen, or the user toggles again
+	// before RestoreTerminal has taken effect.
+	//
+	// The synchronous escape writes bracket RunPassthrough to guarantee
+	// correct terminal state regardless of BubbleTea's event loop timing:
+	//
+	//   1. BEFORE RunPassthrough: Write \x1b[?1049l synchronously to exit
+	//      alt-screen. This is idempotent — harmless if BubbleTea already
+	//      processed ReleaseTerminal. Guarantees terminal is in normal
+	//      screen mode before the child PTY output becomes visible.
+	//
+	//   2. AFTER RunPassthrough: Write \x1b[?1049h\x1b[2J\x1b[H to enter
+	//      alt-screen and clear. Idempotent — harmless if BubbleTea then
+	//      processes RestoreTerminal (which would re-enter alt-screen,
+	//      a no-op since we're already there).
+	//
+	// This "belt and suspenders" approach means rapid toggling (even 20+
+	// cycles) cannot corrupt terminal state. The synchronous writes are the
+	// "belt"; BubbleTea's async processing is the "suspenders" — either
+	// one alone is sufficient, and having both is safely idempotent.
+	//
 	// Pre-declare so the closure can reference autoSplitModel (the variable
 	// is assigned on the very next line, before the closure is ever called).
 	var autoSplitModel *mux.AutoSplitModel
@@ -363,7 +391,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			// sequence directly to ensure the terminal has exited alt-screen
 			// before RunPassthrough starts. Idempotent if BubbleTea already
 			// processed it.
-			_, _ = os.Stdout.WriteString("\x1b[?1049l")
+			_, _ = stdout.Write([]byte("\x1b[?1049l"))
 
 			// Switch to Claude's terminal. This blocks until the
 			// user presses the toggle key again or the child exits.
@@ -376,7 +404,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			// Synchronously re-enter alt-screen and clear before
 			// RestoreTerminal. This ensures BubbleTea inherits a
 			// clean alt-screen regardless of event loop timing.
-			_, _ = os.Stdout.WriteString("\x1b[?1049h\x1b[2J\x1b[H")
+			_, _ = stdout.Write([]byte("\x1b[?1049h\x1b[2J\x1b[H"))
 
 			// Restore BubbleTea's terminal control so the auto-split
 			// TUI resumes rendering.

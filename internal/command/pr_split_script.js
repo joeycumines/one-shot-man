@@ -2772,10 +2772,9 @@ function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, po
 // initially (e.g. passthrough is active), we close the process first
 // (which kills it, causing passthrough to exit), then retry detach.
 function cleanupExecutor() {
-    var detached = false;
-    if (typeof tuiMux !== 'undefined' && tuiMux) {
-        try { tuiMux.detach(); detached = true; } catch (e) { /* retry after close */ }
-    }
+    // Close the executor FIRST so the child PTY fd is released. This
+    // ensures the background reader goroutine in tuiMux sees EOF and
+    // exits promptly — Detach() waits for the reader to finish.
     if (claudeExecutor) {
         if (isForceCancelled() && claudeExecutor.handle &&
             typeof claudeExecutor.handle.signal === 'function') {
@@ -2784,9 +2783,10 @@ function cleanupExecutor() {
         }
         try { claudeExecutor.close(); } catch (e) { /* best effort */ }
     }
-    // Retry detach after close — passthrough should have exited now
-    // that the child process is dead (EOF on the PTY).
-    if (!detached && typeof tuiMux !== 'undefined' && tuiMux) {
+    // Detach after close — the background reader should have exited
+    // (or will exit within the Detach timeout) now that the child fd
+    // is closed.
+    if (typeof tuiMux !== 'undefined' && tuiMux) {
         try { tuiMux.detach(); } catch (e) { /* best effort */ }
     }
 }

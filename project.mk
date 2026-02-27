@@ -33,6 +33,15 @@ integration-test-prsplit:
 		-claude-command=$(CLAUDE_COMMAND) \
 		$(foreach arg,$(CLAUDE_ARGS),-claude-arg=$(arg)) \
 		-integration-model=$(INTEGRATION_MODEL) \
-		./internal/command/... -run 'TestIntegration_.*Claude'
+		./internal/command/... -run 'TestIntegration_(.*Claude|AutoSplitComplex)'
+
+.PHONY: integration-test-prsplit-mcp
+integration-test-prsplit-mcp: ## Run pr-split MCP mock integration tests (no real AI required)
+	$(GO) test -race -v -count=1 -timeout=10m \
+		./internal/command/... -run 'TestIntegration_AutoSplitMockMCP'
 
 # ---
+
+.PHONY: bench-vterm
+bench-vterm: ## Run VTerm benchmarks
+	$(GO) test -bench=. -benchmem -run='^$$' ./internal/termui/mux/...

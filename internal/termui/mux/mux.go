@@ -22,6 +22,7 @@ import (
 	"runtime"
 	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -121,6 +122,12 @@ type TUIMux struct {
 	// for VTerm sizing. Updated on Attach and in RunPassthrough.
 	termRows int
 	termCols int
+
+	// Background reader goroutine lifecycle.
+	// bgReaderDone is closed when the background reader goroutine exits.
+	// bgChildEOF is closed when the child sends EOF (process exited).
+	bgReaderDone chan struct{}
+	bgChildEOF   chan struct{}
 }
 
 // New creates a TUIMux. stdin and stdout are the real terminal streams.
@@ -159,21 +166,111 @@ func (m *TUIMux) Attach(child io.ReadWriteCloser) error {
 		cols = 80
 	}
 	m.childVterm = NewVTerm(rows, cols)
+
+	// Start background reader goroutine. This runs for the lifetime of
+	// the attachment, continuously reading from the child PTY and teeing
+	// output to the VTerm buffer. When passthrough is active, it also
+	// forwards to stdout. This prevents child process starvation (pipe
+	// buffer full → child blocks) when in osm mode, and avoids spawning
+	// a new read goroutine on every toggle cycle.
+	m.bgReaderDone = make(chan struct{})
+	m.bgChildEOF = make(chan struct{})
+	go m.backgroundReader(child, m.bgReaderDone, m.bgChildEOF)
+
 	return nil
 }
 
 // Detach disconnects the child PTY. Returns ErrPassthroughActive if
 // passthrough is currently running.
+//
+// For immediate cleanup, close the child PTY before calling Detach so
+// the background reader goroutine receives EOF and exits promptly. If
+// the child is not closed before Detach, the method waits up to 3
+// seconds for the reader to exit, then returns anyway — the reader
+// will eventually exit when the child is closed later.
 func (m *TUIMux) Detach() error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if m.passthroughActive {
+		m.mu.Unlock()
 		return ErrPassthroughActive
 	}
+	bgDone := m.bgReaderDone
 	m.child = nil
 	m.childVterm = nil
 	m.active = SideOsm
+	m.swappedOnce = false // Reset so next Attach gets fresh first-swap behavior.
+	m.bgReaderDone = nil
+	m.bgChildEOF = nil
+	m.mu.Unlock()
+
+	// Best-effort wait for the background reader goroutine to finish.
+	// The reader exits when child.Read() returns an error (EOF after
+	// Close, or pipe broken). If the caller closed the child before
+	// calling Detach, this returns immediately. Otherwise, we time out
+	// after 3 seconds to avoid blocking indefinitely when the caller
+	// closes the child after Detach (e.g. cleanupExecutor pattern).
+	if bgDone != nil {
+		select {
+		case <-bgDone:
+		case <-time.After(3 * time.Second):
+		}
+	}
 	return nil
+}
+
+// backgroundReader is the persistent goroutine that reads from the child
+// PTY for the lifetime of the attachment. It tees output to the VTerm
+// buffer always, and forwards to stdout only when passthrough is active.
+//
+// This design prevents:
+//   - Goroutine leaks: one goroutine per Attach, not per toggle cycle
+//   - Child starvation: output is consumed even when in osm mode
+//   - Read contention: only one goroutine ever reads from the child fd
+func (m *TUIMux) backgroundReader(child io.ReadWriteCloser, bgDone, bgEOF chan struct{}) {
+	defer close(bgDone)
+	buf := make([]byte, 4096)
+	for {
+		n, err := child.Read(buf)
+		if n > 0 {
+			m.mu.Lock()
+			vt := m.childVterm
+			active := m.passthroughActive
+			m.mu.Unlock()
+
+			// If Detach() was called (childVterm is nil), stop
+			// processing output. The reader will exit on the next
+			// Read error (when the child fd is eventually closed)
+			// or we can bail out early here.
+			if vt == nil {
+				// Detached — drain remaining data but don't forward.
+				if err != nil {
+					close(bgEOF)
+					return
+				}
+				continue
+			}
+
+			// Always tee to VTerm for screen restoration.
+			_, _ = vt.Write(buf[:n])
+
+			// Forward to stdout only during passthrough.
+			// The lock is held across the write so that when
+			// RunPassthrough sets passthroughActive=false under the
+			// same lock, any in-flight write is guaranteed to have
+			// completed before the caller reads from stdout.
+			if active {
+				m.mu.Lock()
+				if m.passthroughActive {
+					_, _ = m.stdout.Write(buf[:n])
+				}
+				m.mu.Unlock()
+			}
+		}
+		if err != nil {
+			close(bgEOF)
+			return
+		}
+	}
 }
 
 // ActiveSide returns which side currently owns the terminal.
@@ -295,24 +392,43 @@ func (m *TUIMux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 	}
 
 	// Get terminal dimensions for scroll region and VTerm sizing.
+	var statusBarHeight int // non-zero when status bar is active
+	// statusBarLines is 1 when status bar is rendered (reserving the
+	// last terminal row), 0 otherwise. Subtracted from terminal height
+	// for VTerm sizing and child PTY resize so the child's scroll
+	// behavior matches the real terminal's constrained scroll region.
+	var statusBarLines int
 	if statusEnabled && m.termFd >= 0 {
 		_, h, err := term.GetSize(m.termFd)
 		if err == nil && h > 1 {
+			statusBarHeight = h
+			statusBarLines = 1
+			m.mu.Lock()
 			m.setScrollRegion(h)
-			defer m.resetScrollRegion()
+			m.mu.Unlock()
+			defer func() {
+				m.mu.Lock()
+				m.resetScrollRegion()
+				m.mu.Unlock()
+			}()
+			m.mu.Lock()
 			m.renderStatusBar(h)
+			m.mu.Unlock()
 		} else {
 			statusEnabled = false
 		}
 	}
 	// Update terminal dimensions and resize VTerm if needed.
+	// When status bar is active, VTerm is sized to h - statusBarLines
+	// so its scroll region matches the real terminal (rows 1..h-1).
 	if m.termFd >= 0 {
 		if w, h, err := term.GetSize(m.termFd); err == nil {
+			childRows := h - statusBarLines
 			m.mu.Lock()
 			m.termRows = h
 			m.termCols = w
 			if m.childVterm != nil {
-				m.childVterm.Resize(h, w)
+				m.childVterm.Resize(childRows, w)
 			}
 			m.mu.Unlock()
 		}
@@ -328,10 +444,17 @@ func (m *TUIMux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 	m.mu.Unlock()
 	if firstSwap {
 		// ESC[2J = erase entire display, ESC[H = cursor to 1,1.
+		// Hold m.mu during stdout writes to serialize with
+		// backgroundReader's forwarding writes.
+		m.mu.Lock()
 		_, _ = m.stdout.Write([]byte("\x1b[2J\x1b[H"))
+		m.mu.Unlock()
 		if resizeFn != nil && m.termFd >= 0 {
 			if w, h, err := term.GetSize(m.termFd); err == nil {
-				_ = resizeFn(uint16(h), uint16(w))
+				// Tell child PTY about the usable rows (excluding
+				// status bar). This ensures the child's layout
+				// matches the scroll region on the real terminal.
+				_ = resizeFn(uint16(h-statusBarLines), uint16(w))
 			}
 		}
 	} else {
@@ -343,29 +466,44 @@ func (m *TUIMux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 		vt := m.childVterm
 		m.mu.Unlock()
 		if vt != nil {
+			// Render outside m.mu (VTerm has its own lock), then
+			// write to stdout under m.mu to avoid racing with
+			// backgroundReader's forwarding writes.
+			rendered := vt.Render()
+			m.mu.Lock()
 			_, _ = m.stdout.Write([]byte("\x1b[2J\x1b[H"))
-			_, _ = m.stdout.Write([]byte(vt.Render()))
+			_, _ = m.stdout.Write([]byte(rendered))
+			m.mu.Unlock()
+		}
+		// Re-render status bar after VTerm restore. The screen clear
+		// above erases the status bar, and VTerm content doesn't
+		// include status bar bytes. Re-paint it on the last row.
+		if statusBarHeight > 0 {
+			m.mu.Lock()
+			m.renderStatusBar(statusBarHeight)
+			m.mu.Unlock()
 		}
 	}
 
-	// Capture VTerm reference outside goroutines so the child→stdout
-	// goroutine can tee output without holding the mutex per-write.
+	// Capture bgChildEOF channel for detecting child exit.
 	m.mu.Lock()
-	childVterm := m.childVterm
+	bgChildEOF := m.bgChildEOF
 	m.mu.Unlock()
 
 	// Create cancellable context for goroutines.
 	fwdCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Result channel — first goroutine to finish sends the exit reason.
+	// Result channel — stdin goroutine sends the exit reason.
 	type fwdResult struct {
 		reason ExitReason
 		err    error
 	}
-	resultCh := make(chan fwdResult, 2)
+	resultCh := make(chan fwdResult, 1)
 
-	// Goroutine 1: stdin → child PTY (with toggle key interception).
+	// Goroutine: stdin → child PTY (with toggle key interception).
+	// The background reader goroutine (started by Attach) handles
+	// child → stdout forwarding, so we don't need a second goroutine here.
 	go func() {
 		buf := make([]byte, 4096)
 		for {
@@ -411,49 +549,14 @@ func (m *TUIMux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 		}
 	}()
 
-	// Goroutine 2: child PTY → stdout (+ VTerm tee).
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			select {
-			case <-fwdCtx.Done():
-				return
-			default:
-			}
-			n, err := child.Read(buf)
-			if n > 0 {
-				if _, werr := m.stdout.Write(buf[:n]); werr != nil {
-					if fwdCtx.Err() != nil {
-						return
-					}
-					resultCh <- fwdResult{ExitError, werr}
-					return
-				}
-				// Mirror output into the virtual terminal buffer so
-				// we can restore Claude's screen on the next toggle.
-				if childVterm != nil {
-					_, _ = childVterm.Write(buf[:n])
-				}
-			}
-			if err != nil {
-				if fwdCtx.Err() != nil {
-					return
-				}
-				if errors.Is(err, io.EOF) {
-					resultCh <- fwdResult{ExitChildExit, nil}
-				} else {
-					resultCh <- fwdResult{ExitError, err}
-				}
-				return
-			}
-		}
-	}()
-
-	// Wait for first exit signal or context cancellation.
+	// Wait for first exit signal, child EOF, or context cancellation.
 	select {
 	case r := <-resultCh:
 		cancel()
 		return r.reason, r.err
+	case <-bgChildEOF:
+		cancel()
+		return ExitChildExit, nil
 	case <-ctx.Done():
 		cancel()
 		return ExitContext, ctx.Err()

@@ -6032,6 +6032,125 @@ func TestPrSplitCommand_ClaudeCommand(t *testing.T) {
 			t.Errorf("expected error about missing binary, got: %s", out)
 		}
 	})
+
+	// T021: Verify the isAlive guard in the 'claude' command handler.
+	// When the handle exists but the process has died (e.g., bad API key,
+	// immediate crash), the guard should surface diagnostics and clean up.
+	t.Run("dead_handle_surfaces_diagnostics", func(t *testing.T) {
+		tp := chdirTestPipeline(t, TestPipelineOpts{})
+
+		// Inject a mock claudeExecutor with a dead handle via evalJS.
+		// This simulates a process that was spawned but died immediately.
+		_, err := tp.EvalJS(`
+			(function() {
+				claudeExecutor = new ClaudeCodeExecutor(prSplitConfig);
+				claudeExecutor.handle = {
+					isAlive: function() { return false; },
+					receive: function() { return 'Error: invalid API key for model'; },
+					close:   function() {},
+					send:    function() {}
+				};
+				claudeExecutor.sessionId = 'dead-test-session';
+				claudeExecutor.close = function() { this.handle = null; };
+			})()
+		`)
+		if err != nil {
+			t.Fatalf("inject mock executor: %v", err)
+		}
+
+		// Clear any prior stdout before dispatching.
+		tp.Stdout.Reset()
+
+		if err := tp.Dispatch("claude", nil); err != nil {
+			t.Fatalf("claude: %v", err)
+		}
+		out := tp.Stdout.String()
+
+		// Should detect dead process and print diagnostic message.
+		if !contains(out, "Claude process has exited") {
+			t.Errorf("expected 'Claude process has exited', got: %s", out)
+		}
+		// Should surface the last output from the dead process.
+		if !contains(out, "invalid API key") {
+			t.Errorf("expected last output to contain 'invalid API key', got: %s", out)
+		}
+		// Should suggest respawn.
+		if !contains(out, "claude spawn") {
+			t.Errorf("expected restart suggestion mentioning 'claude spawn', got: %s", out)
+		}
+	})
+
+	// T021: Verify dead handle with empty receive() output still works.
+	// The guard should NOT crash when receive returns empty string.
+	t.Run("dead_handle_empty_output", func(t *testing.T) {
+		tp := chdirTestPipeline(t, TestPipelineOpts{})
+
+		_, err := tp.EvalJS(`
+			(function() {
+				claudeExecutor = new ClaudeCodeExecutor(prSplitConfig);
+				claudeExecutor.handle = {
+					isAlive: function() { return false; },
+					receive: function() { return ''; },
+					close:   function() {},
+					send:    function() {}
+				};
+				claudeExecutor.sessionId = 'dead-empty-session';
+				claudeExecutor.close = function() { this.handle = null; };
+			})()
+		`)
+		if err != nil {
+			t.Fatalf("inject mock executor: %v", err)
+		}
+
+		tp.Stdout.Reset()
+		if err := tp.Dispatch("claude", nil); err != nil {
+			t.Fatalf("claude: %v", err)
+		}
+		out := tp.Stdout.String()
+
+		// Should still print the exit message even with no output.
+		if !contains(out, "Claude process has exited") {
+			t.Errorf("expected 'Claude process has exited', got: %s", out)
+		}
+		// Should NOT print "Last output:" when there's nothing.
+		if contains(out, "Last output:") {
+			t.Errorf("should not show 'Last output:' when receive returns empty, got: %s", out)
+		}
+	})
+
+	// T021: Verify dead handle where receive() throws an error.
+	// This can happen when the PTY is fully closed.
+	t.Run("dead_handle_receive_throws", func(t *testing.T) {
+		tp := chdirTestPipeline(t, TestPipelineOpts{})
+
+		_, err := tp.EvalJS(`
+			(function() {
+				claudeExecutor = new ClaudeCodeExecutor(prSplitConfig);
+				claudeExecutor.handle = {
+					isAlive: function() { return false; },
+					receive: function() { throw new Error('EOF'); },
+					close:   function() {},
+					send:    function() {}
+				};
+				claudeExecutor.sessionId = 'dead-throw-session';
+				claudeExecutor.close = function() { this.handle = null; };
+			})()
+		`)
+		if err != nil {
+			t.Fatalf("inject mock executor: %v", err)
+		}
+
+		tp.Stdout.Reset()
+		if err := tp.Dispatch("claude", nil); err != nil {
+			t.Fatalf("claude: %v", err)
+		}
+		out := tp.Stdout.String()
+
+		// Should still print exit message — receive throwing is caught.
+		if !contains(out, "Claude process has exited") {
+			t.Errorf("expected 'Claude process has exited', got: %s", out)
+		}
+	})
 }
 
 func TestPrSplitCommand_ClaudeStatusCommand(t *testing.T) {

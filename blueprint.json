@@ -17,7 +17,7 @@
     "contextManagement": "Tasks are flat and sequential. Execute in order. On session resume, read blueprint.json and WIP.md, find the first non-Done task, and continue."
   },
   "statusSection": {
-    "currentState": "T001-T045 Done. 9 commits on wip branch: 10f7d91, 25632c6, 8d14711, d71b999, 02cb61a, 585f903, 990c6a1, 7ad17ca, 89a0809. Expanding scope for next coverage targets.",
+    "currentState": "T001-T051 Done. 11 commits on wip branch: 10f7d91, 25632c6, 8d14711, d71b999, 02cb61a, 585f903, 990c6a1, 7ad17ca, 89a0809, 5089b59, (pending). Expanding scope for next coverage targets.",
     "goalState": "osm pr-split works correctly with -claude-command=ollama (and all other providers). The spawn-switch-send-classify pipeline is robust: dead child detected before passthrough entry, diagnostic output surfaced, re-attach is safe (no goroutine leaks), the VTerm captures error output. Integration tests cover the full spawn-to-exit lifecycle. Zero goroutine leaks. Zero EAGAIN errors. Zero data loss on re-attach.",
     "replanLog": [
       "2026-02-28: Previous session blueprint (T001-T131, termmux rewrite) was 100% Done. This new blueprint covers the pr-split spawn/toggle failures discovered in production.",
@@ -338,6 +338,48 @@
       "task": "Commit batch 6",
       "description": "Committed as 89a0809. 3 files, 388 insertions, 11 deletions.",
       "acceptance": "git log shows new commit with correct message.",
+      "status": "Done"
+    },
+    {
+      "id": "T046",
+      "task": "Add TUI completion/parsing tests (batch 7)",
+      "description": "21 tests: getFilepathSuggestions (5), getExecutableSuggestions (4 with Windows skip), isUndefined (6), currentWord (3), tokenizeCommandLine (3). Fixed Windows issue per review.",
+      "acceptance": "21 tests pass with -race. TUI completion and parsing functions all have direct unit test coverage.",
+      "status": "Done"
+    },
+    {
+      "id": "T047",
+      "task": "Rule of Two for batch 7",
+      "description": "Initial review found missing Windows skip on WithPrefix test. Fixed, re-reviewed. Pass 1l: PASS. Pass 2l: PASS.",
+      "acceptance": "Two PASS verdicts on same diff.",
+      "status": "Done"
+    },
+    {
+      "id": "T048",
+      "task": "Commit batch 7",
+      "description": "Committed as 5089b59. 3 files, 312 insertions, 14 deletions.",
+      "acceptance": "git log shows new commit.",
+      "status": "Done"
+    },
+    {
+      "id": "T049",
+      "task": "Add VTerm CSI/ESC dispatch coverage tests",
+      "description": "27 tests covering untested dispatch branches: CSI B/E/F/K/L/M/S/T/f plus non-private SM/RM, explicit DECRST. ESC D (IND), E (NEL). Screen EraseLine modes 0/1, EraseDisplay modes 1/2/3.",
+      "acceptance": "All 27 tests pass. make all clean.",
+      "status": "Done"
+    },
+    {
+      "id": "T050",
+      "task": "Rule of Two for batch 8",
+      "description": "Pass 1m: PASS. Pass 2m: PASS. Two contiguous issue-free reviews.",
+      "acceptance": "Two PASS verdicts on same diff.",
+      "status": "Done"
+    },
+    {
+      "id": "T051",
+      "task": "Commit batch 8",
+      "description": "Pending commit. dispatch_coverage_test.go + config.mk.",
+      "acceptance": "git log shows new commit.",
       "status": "Done"
     }
   ],

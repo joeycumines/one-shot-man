@@ -1,0 +1,19 @@
+# Benchmark Baseline — termmux package
+# Machine: Apple M2 Pro, darwin/arm64
+# Date: session 3 (termmux rewrite)
+# Command: make bench-termmux
+
+goos: darwin
+goarch: arm64
+cpu: Apple M2 Pro
+
+## ptyio
+BenchmarkBufferedReader-10           164374       7464 ns/op   4390.13 MB/s    65536 B/op    2 allocs/op
+
+## vt
+BenchmarkVTermWrite_ANSI-10            7646     146354 ns/op     34.16 MB/s   468797 B/op  700 allocs/op
+BenchmarkVTermWrite_ASCII-10          13244      90639 ns/op     45.68 MB/s   207356 B/op   90 allocs/op
+BenchmarkVTermWrite_UTF8-10           10000     111109 ns/op     37.17 MB/s   161275 B/op   70 allocs/op
+BenchmarkVTermRender-10               80556      15005 ns/op                    3969 B/op  108 allocs/op
+BenchmarkParseSGR-10                3641839        330.5 ns/op   84.72 MB/s      256 B/op    3 allocs/op
+BenchmarkParseSGR_Simple-10        11376118        106.3 ns/op   65.83 MB/s       52 B/op    3 allocs/op

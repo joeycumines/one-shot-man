@@ -1,0 +1,8 @@
+total 24
+drwxr-xr-x  5 user staff  160 Jan  1 12:00 .
+drwxr-xr-x 10 user staff  320 Jan  1 12:00 ..
+-rw-r--r--  1 user staff  100 Jan  1 12:00 README.md
+-rw-r--r--  1 user staff  200 Jan  1 12:00 main.go
+drwxr-xr-x  3 user staff   96 Jan  1 12:00 internal
+-rwxr-xr-x  1 user staff 1024 Jan  1 12:00 run.sh
+-rw-r--r--  1 user staff   50 Jan  1 12:00 go.mod

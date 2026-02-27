@@ -42,6 +42,18 @@ integration-test-prsplit-mcp: ## Run pr-split MCP mock integration tests (no rea
 
 # ---
 
-.PHONY: bench-vterm
-bench-vterm: ## Run VTerm benchmarks
-	$(GO) test -bench=. -benchmem -run='^$$' ./internal/termui/mux/...
+.PHONY: integration-test-termmux
+integration-test-termmux: ## Run termmux integration tests with real PTY processes
+	$(GO) test -race -v -count=1 -timeout=5m -tags=integration ./internal/termmux/...
+
+.PHONY: bench-termmux
+bench-termmux: ## Run termmux benchmarks
+	$(GO) test -bench=. -benchmem -run='^$$' ./internal/termmux/...
+
+.PHONY: fuzz-termmux
+fuzz-termmux: ## Run termmux fuzz tests (30s each, sequential)
+fuzz-termmux: FUZZTIME ?= 30s
+fuzz-termmux:
+	$(GO) test -fuzz=FuzzParser -fuzztime=$(FUZZTIME) ./internal/termmux/vt/...
+	$(GO) test -fuzz=FuzzVTermWrite -fuzztime=$(FUZZTIME) ./internal/termmux/vt/...
+	$(GO) test -fuzz=FuzzUTF8Accum -fuzztime=$(FUZZTIME) ./internal/termmux/vt/...

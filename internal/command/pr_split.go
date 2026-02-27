@@ -14,7 +14,8 @@ import (
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
-	"github.com/joeycumines/one-shot-man/internal/termui/mux"
+	"github.com/joeycumines/one-shot-man/internal/termmux"
+	"github.com/joeycumines/one-shot-man/internal/termmux/ui"
 )
 
 //go:embed pr_split_template.md
@@ -225,12 +226,12 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	// the command-blocking model ensures go-prompt is paused during passthrough.
 	// stdout is injected for testability; in production it's os.Stdout.
 	termFd := int(os.Stdin.Fd())
-	tuiMux := mux.New(os.Stdin, stdout, termFd)
+	tuiMux := termmux.New(os.Stdin, stdout, termFd)
 	engine.SetGlobal("tuiMux", map[string]interface{}{
 		"attach": func(handle interface{}) {
 			// Case 1: Direct Go StringIO interface (non-Goja callers, tests).
-			if sio, ok := handle.(mux.StringIO); ok {
-				if err := tuiMux.Attach(mux.WrapStringIO(sio)); err != nil {
+			if sio, ok := handle.(termmux.StringIO); ok {
+				if err := tuiMux.Attach(termmux.WrapStringIO(sio)); err != nil {
 					panic(err.Error())
 				}
 				return
@@ -239,8 +240,8 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			// wrapAgentHandle stores the original Go handle as _goHandle.
 			if m, ok := handle.(map[string]interface{}); ok {
 				if goHandle, exists := m["_goHandle"]; exists && goHandle != nil {
-					if sio, ok := goHandle.(mux.StringIO); ok {
-						if err := tuiMux.Attach(mux.WrapStringIO(sio)); err != nil {
+					if sio, ok := goHandle.(termmux.StringIO); ok {
+						if err := tuiMux.Attach(termmux.WrapStringIO(sio)); err != nil {
 							panic(err.Error())
 						}
 						return
@@ -272,7 +273,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			return result
 		},
 		"isClaudeActive": func() bool {
-			return tuiMux.ActiveSide() == mux.SideClaude
+			return tuiMux.ActiveSide() == termmux.SideClaude
 		},
 		"setStatus": func(status string) {
 			tuiMux.SetClaudeStatus(status)
@@ -292,11 +293,11 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	})
 
 	// Split-view TUI — dual-pane BubbleTea model.
-	splitView := mux.NewSplitView(
-		mux.WithSplitRatio(0.5),
-		mux.WithMaxLines(1000),
-		mux.WithToggleKey(mux.DefaultToggleKey),
-		mux.WithClaudeWriter(func(data []byte) error {
+	splitView := ui.NewSplitView(
+		ui.WithSplitRatio(0.5),
+		ui.WithMaxLines(1000),
+		ui.WithToggleKey(termmux.DefaultToggleKey),
+		ui.WithClaudeWriter(func(data []byte) error {
 			// Forward to child PTY if attached.
 			_, err := tuiMux.WriteToChild(data)
 			return err
@@ -316,7 +317,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			splitView.SetSplitRatio(ratio)
 		},
 		"activePane": func() string {
-			if splitView.ActivePane() == mux.PaneClaude {
+			if splitView.ActivePane() == ui.PaneClaude {
 				return "claude"
 			}
 			return "osm"
@@ -368,11 +369,11 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	//
 	// Pre-declare so the closure can reference autoSplitModel (the variable
 	// is assigned on the very next line, before the closure is ever called).
-	var autoSplitModel *mux.AutoSplitModel
-	autoSplitModel = mux.NewAutoSplitModel(
-		mux.WithAutoSplitMaxLines(1000),
-		mux.WithAutoSplitToggleKey(mux.DefaultToggleKey),
-		mux.WithAutoSplitOnToggle(func() {
+	var autoSplitModel *ui.AutoSplitModel
+	autoSplitModel = ui.NewAutoSplitModel(
+		ui.WithAutoSplitMaxLines(1000),
+		ui.WithAutoSplitToggleKey(termmux.DefaultToggleKey),
+		ui.WithAutoSplitOnToggle(func() {
 			// Check if a child is attached before switching — if not,
 			// there's nothing to show and we'd just blank the screen.
 			if !tuiMux.HasChild() {
@@ -510,13 +511,13 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 
 	engine.SetGlobal("planEditorFactory", map[string]interface{}{
 		"create": func(items []interface{}) map[string]interface{} {
-			editorItems := make([]mux.PlanEditorItem, 0, len(items))
+			editorItems := make([]ui.PlanEditorItem, 0, len(items))
 			for _, raw := range items {
 				m, ok := raw.(map[string]interface{})
 				if !ok {
 					continue
 				}
-				item := mux.PlanEditorItem{}
+				item := ui.PlanEditorItem{}
 				if name, ok := m["name"].(string); ok {
 					item.Name = name
 				}
@@ -535,7 +536,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 				}
 				editorItems = append(editorItems, item)
 			}
-			editor := mux.NewPlanEditor(editorItems, mux.WithOnChange(func(updated []mux.PlanEditorItem) {
+			editor := ui.NewPlanEditor(editorItems, ui.WithOnChange(func(updated []ui.PlanEditorItem) {
 				// Silently accept changes — JS can query items after run.
 			}))
 			return map[string]interface{}{

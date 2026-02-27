@@ -448,9 +448,9 @@ func TestVTerm_InterleavedCSI_UTF8(t *testing.T) {
 func TestVTerm_DECSC_DECRC(t *testing.T) {
 	v := NewVTerm(10, 40)
 	// Move cursor and set attrs
-	v.Write([]byte("\x1b[5;10H"))  // CUP to 5,10
-	v.Write([]byte("\x1b[1;31m"))  // Bold + red
-	v.Write([]byte("\x1b7"))       // DECSC - save cursor
+	v.Write([]byte("\x1b[5;10H")) // CUP to 5,10
+	v.Write([]byte("\x1b[1;31m")) // Bold + red
+	v.Write([]byte("\x1b7"))      // DECSC - save cursor
 
 	// Move somewhere else and change attrs
 	v.Write([]byte("\x1b[1;1H"))
@@ -515,11 +515,11 @@ func TestVTerm_TabStops_Default8Column(t *testing.T) {
 func TestVTerm_TabStops_HTS_SetCustomStop(t *testing.T) {
 	v := NewVTerm(24, 80)
 	// Move to col 5, set tab stop via ESC H (HTS).
-	v.Write([]byte("\x1b[6G"))   // CHA col 6 (1-indexed) = col 5 (0-indexed)
-	v.Write([]byte("\x1bH"))     // HTS: set tab stop at current col
+	v.Write([]byte("\x1b[6G")) // CHA col 6 (1-indexed) = col 5 (0-indexed)
+	v.Write([]byte("\x1bH"))   // HTS: set tab stop at current col
 	// Return to col 0 and tab forward.
-	v.Write([]byte("\r"))        // CR to col 0
-	v.Write([]byte("\t"))        // Tab should now jump to col 5
+	v.Write([]byte("\r")) // CR to col 0
+	v.Write([]byte("\t")) // Tab should now jump to col 5
 
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -533,8 +533,8 @@ func TestVTerm_TabStops_TBC_ClearSingleStop(t *testing.T) {
 	// Set custom stop at 5.
 	v.Write([]byte("\x1b[6G\x1bH"))
 	// Move to col 5, clear the stop with TBC mode 0.
-	v.Write([]byte("\x1b[6G"))        // CHA to col 5
-	v.Write([]byte("\x1b[0g"))        // TBC mode 0: clear stop at cursor
+	v.Write([]byte("\x1b[6G")) // CHA to col 5
+	v.Write([]byte("\x1b[0g")) // TBC mode 0: clear stop at cursor
 	// Return to col 0 and tab forward — should skip to default col 8.
 	v.Write([]byte("\r\t"))
 

@@ -9,16 +9,16 @@ import (
 
 func FuzzParser(f *testing.F) {
 	// Seed with known ANSI sequences.
-	f.Add([]byte("\x1b[1;31mRED\x1b[0m"))                     // SGR color
-	f.Add([]byte("\x1b[2J\x1b[H"))                             // Clear screen + home
-	f.Add([]byte("\x1b[?25h\x1b[?25l"))                        // Cursor show/hide
+	f.Add([]byte("\x1b[1;31mRED\x1b[0m"))                       // SGR color
+	f.Add([]byte("\x1b[2J\x1b[H"))                              // Clear screen + home
+	f.Add([]byte("\x1b[?25h\x1b[?25l"))                         // Cursor show/hide
 	f.Add([]byte("\x1b]0;Window Title\x07"))                    // OSC title BEL
 	f.Add([]byte("\x1b]0;Window Title\x1b\\"))                  // OSC title ST
-	f.Add([]byte("\x1bP+q544e\x1b\\"))                         // DCS
-	f.Add([]byte("\x1b[1;38;2;255;100;0;48;5;232m"))           // 24-bit + 256 color
+	f.Add([]byte("\x1bP+q544e\x1b\\"))                          // DCS
+	f.Add([]byte("\x1b[1;38;2;255;100;0;48;5;232m"))            // 24-bit + 256 color
 	f.Add([]byte("Hello, World!\r\n"))                          // Plain text
 	f.Add([]byte("\x1b[10;20H\x1b[K\x1b[1m\x1b[4mtext\x1b[0m")) // Move + erase + SGR
-	f.Add([]byte{0xFF, 0xFE, 0x00, 0x1B, 0x5B, 0x41})         // Garbage + valid CSI
+	f.Add([]byte{0xFF, 0xFE, 0x00, 0x1B, 0x5B, 0x41})           // Garbage + valid CSI
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		p := NewParser()
@@ -76,13 +76,13 @@ func FuzzVTermWrite(f *testing.F) {
 
 func FuzzUTF8Accum(f *testing.F) {
 	f.Add([]byte("abc"))
-	f.Add([]byte{0xC3, 0xA9})         // é
-	f.Add([]byte{0xE6, 0xBC, 0xA2})   // 漢
+	f.Add([]byte{0xC3, 0xA9})             // é
+	f.Add([]byte{0xE6, 0xBC, 0xA2})       // 漢
 	f.Add([]byte{0xF0, 0x9F, 0x98, 0x80}) // 😀
-	f.Add([]byte{0xFF, 0xFE})          // Invalid
-	f.Add([]byte{0xC3})               // Truncated 2-byte
-	f.Add([]byte{0xE6, 0xBC})         // Truncated 3-byte
-	f.Add([]byte{0x80, 0x80, 0x80})   // Stray continuations
+	f.Add([]byte{0xFF, 0xFE})             // Invalid
+	f.Add([]byte{0xC3})                   // Truncated 2-byte
+	f.Add([]byte{0xE6, 0xBC})             // Truncated 3-byte
+	f.Add([]byte{0x80, 0x80, 0x80})       // Stray continuations
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		var a UTF8Accum

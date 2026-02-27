@@ -771,7 +771,12 @@ backends. The `pty_windows.go` stub returns `ErrNotSupported` until ConPTY is wi
 
 TUI multiplexing allows the user to switch between osm's TUI (go-prompt REPL) and
 Claude Code's TUI (running in a PTY) without leaving osm. This is implemented in
-`internal/termui/mux/` as the `TUIMux` type.
+`internal/termmux/` as the `Mux` type, with supporting sub-packages:
+
+- **`termmux/vt/`** — ANSI/VT terminal parser and screen buffer
+- **`termmux/ptyio/`** — Buffered PTY I/O
+- **`termmux/statusbar/`** — Status bar rendering
+- **`termmux/ui/`** — BubbleTea UI models (SplitView, AutoSplit, PlanEditor)
 
 ### Design Rationale: Command-Blocking Model
 
@@ -779,7 +784,7 @@ The TUI mux uses a **command-blocking model** rather than a reader-interception 
 This is simpler and more robust:
 
 1. User types `claude` in osm's go-prompt REPL.
-2. The `claude` TUI command handler calls `TUIMux.RunPassthrough(ctx)`.
+2. The `claude` TUI command handler calls `Mux.RunPassthrough(ctx)`.
 3. `RunPassthrough` blocks, running a forwarding loop:
    - Read raw bytes from stdin → write to Claude's PTY (except toggle key)
    - Read bytes from Claude's PTY → write to stdout
@@ -800,7 +805,7 @@ go-prompt is naturally paused because its command handler is still blocking.
 │  │  stdout ← go-prompt│ ◄─────► │  stdout ← Claude PTY         │    │
 │  │                    │         │                              │    │
 │  │  TUIReader/Writer  │         │  Raw byte forwarding         │    │
-│  │  (normal path)     │         │  (TUIMux.RunPassthrough)     │    │
+│  │  (normal path)     │         │  (Mux.RunPassthrough)        │    │
 │  └────────────────────┘         └──────────────────────────────┘    │
 │                                                                      │
 │               ┌─────────────────────────────────┐                    │
@@ -889,7 +894,7 @@ go func() {
 ### Go API
 
 ```go
-package mux
+package termmux
 
 type Side int
 const (
@@ -897,15 +902,13 @@ const (
     SideClaude
 )
 
-type TUIMux struct { /* ... */ }
+type Mux struct { /* ... */ }
 
-func New(stdin io.Reader, stdout io.Writer, termFd int) *TUIMux
-func (m *TUIMux) Attach(child io.ReadWriteCloser) error
-func (m *TUIMux) Detach() error
-func (m *TUIMux) RunPassthrough(ctx context.Context) (ExitReason, error)
-func (m *TUIMux) ActiveSide() Side
-func (m *TUIMux) SetToggleKey(key byte)
-func (m *TUIMux) SetResizeFunc(fn func(rows, cols uint16) error)
+func New(stdin io.Reader, stdout io.Writer, termFd int, opts ...Option) *Mux
+func (m *Mux) Attach(child io.ReadWriteCloser) error
+func (m *Mux) Detach() error
+func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error)
+func (m *Mux) ActiveSide() Side
 
 type ExitReason int
 const (

@@ -221,14 +221,14 @@ func (p *pipeMockChild) Close() error {
 
 // ── Mock TermState ─────────────────────────────────────────────────
 type mockTermState struct {
-	mu              sync.Mutex
-	makeRawCalls    int
-	restoreCalls    int
-	getSizeCalls    int
-	width, height   int
-	makeRawErr      error
-	getSizeErr      error
-	restoreErr      error
+	mu            sync.Mutex
+	makeRawCalls  int
+	restoreCalls  int
+	getSizeCalls  int
+	width, height int
+	makeRawErr    error
+	getSizeErr    error
+	restoreErr    error
 }
 
 func newMockTermState(w, h int) *mockTermState {
@@ -258,9 +258,9 @@ func (ts *mockTermState) GetSize(_ int) (int, int, error) {
 
 // ── Mock BlockingGuard ─────────────────────────────────────────────
 type mockBlockingGuard struct {
-	mu               sync.Mutex
-	ensureCalls      int
-	restoreCalls     int
+	mu                sync.Mutex
+	ensureCalls       int
+	restoreCalls      int
 	ensureBlockingErr error
 }
 
@@ -950,4 +950,3 @@ func TestHandleResize_StatusDisabled(t *testing.T) {
 		t.Fatal("teeLoop did not exit in time")
 	}
 }
-

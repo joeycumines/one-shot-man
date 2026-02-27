@@ -32,12 +32,12 @@ const (
 // Parser is a table-driven ANSI escape sequence parser inspired by the
 // Paul Williams VT500 state machine and tmux input.c.
 type Parser struct {
-	cur      State
-	paramBuf []byte
+	cur       State
+	paramBuf  []byte
 	intermBuf []byte
-	oscBuf   []byte
+	oscBuf    []byte
 	maxOSCLen int
-	lastByte byte // for two-byte terminators (ESC \)
+	lastByte  byte // for two-byte terminators (ESC \)
 }
 
 // NewParser returns a parser in the ground state.

@@ -15,7 +15,7 @@ type VTerm struct {
 	parser *Parser
 	utf8   UTF8Accum
 	csi    CSIHandler
-	esc        ESCHandler
+	esc    ESCHandler
 
 	rows, cols int
 	mu         sync.Mutex
@@ -30,11 +30,11 @@ func NewVTerm(rows, cols int) *VTerm {
 		cols = 1
 	}
 	v := &VTerm{
-		primary:    NewScreen(rows, cols),
-		alternate:  NewScreen(rows, cols),
-		parser: NewParser(),
-		rows:   rows,
-		cols:       cols,
+		primary:   NewScreen(rows, cols),
+		alternate: NewScreen(rows, cols),
+		parser:    NewParser(),
+		rows:      rows,
+		cols:      cols,
 	}
 	v.active = v.primary
 	// Wire CSI alt-screen callback.

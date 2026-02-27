@@ -187,12 +187,12 @@ func TestParamDefault(t *testing.T) {
 		def    int
 		want   int
 	}{
-		{nil, 0, 1, 1},            // nil slice → default
-		{[]int{}, 0, 1, 1},        // empty → default
-		{[]int{0}, 0, 1, 1},       // explicit 0 → default
-		{[]int{5}, 0, 1, 5},       // explicit value
-		{[]int{5, 10}, 1, 1, 10},  // second param
-		{[]int{5}, 3, 99, 99},     // index out of range → default
+		{nil, 0, 1, 1},           // nil slice → default
+		{[]int{}, 0, 1, 1},       // empty → default
+		{[]int{0}, 0, 1, 1},      // explicit 0 → default
+		{[]int{5}, 0, 1, 5},      // explicit value
+		{[]int{5, 10}, 1, 1, 10}, // second param
+		{[]int{5}, 3, 99, 99},    // index out of range → default
 	}
 	for _, tc := range tests {
 		got := paramDefault(tc.params, tc.idx, tc.def)

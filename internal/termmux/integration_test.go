@@ -505,4 +505,3 @@ func (r *eagainReader) Read(p []byte) (int, error) {
 	// Block forever after delivering data.
 	select {}
 }
-

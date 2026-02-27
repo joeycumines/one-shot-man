@@ -13,19 +13,19 @@ var DefaultCell = Cell{Ch: ' '}
 
 // Screen represents a terminal screen buffer.
 type Screen struct {
-	Cells         [][]Cell
-	Dirty         []bool // per-row dirty flag for incremental rendering
+	Cells          [][]Cell
+	Dirty          []bool // per-row dirty flag for incremental rendering
 	CurRow, CurCol int
-	CurAttr       Attr
-	ScrollTop     int // 1-indexed, inclusive; 0 = default
-	ScrollBot     int // 1-indexed, inclusive; 0 = default
-	SavedRow      int
-	SavedCol      int
-	SavedAttr     Attr
-	PendingWrap   bool
-	CursorVisible bool
-	TabStops      []bool
-	Rows, Cols    int
+	CurAttr        Attr
+	ScrollTop      int // 1-indexed, inclusive; 0 = default
+	ScrollBot      int // 1-indexed, inclusive; 0 = default
+	SavedRow       int
+	SavedCol       int
+	SavedAttr      Attr
+	PendingWrap    bool
+	CursorVisible  bool
+	TabStops       []bool
+	Rows, Cols     int
 }
 
 // NewScreen creates a new screen buffer with the given dimensions.

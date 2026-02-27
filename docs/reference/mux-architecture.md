@@ -1,46 +1,69 @@
 # Terminal Multiplexer Architecture
 
-> Internal documentation for the `internal/termui/mux` package.
+> Internal documentation for the `internal/termmux/` package and its sub-packages.
 
 ## Overview
 
-The terminal multiplexer (TUIMux) manages switching between two views of a terminal session:
+The terminal multiplexer (`Mux`) manages switching between two views of a terminal session:
 
 1. **SideOsm** — osm's BubbleTea TUI (auto-split planner, progress display)
 2. **SideClaude** — direct passthrough to a child PTY (e.g., Claude Code)
 
-The user toggles between views with a configurable key (default: `Ctrl+\`). The multiplexer captures the child's terminal output in a virtual terminal buffer (VTerm) so the screen can be faithfully restored when toggling back.
+The user toggles between views with a configurable key (default: `Ctrl+]`). The multiplexer captures the child's terminal output in a virtual terminal buffer (VTerm) so the screen can be faithfully restored when toggling back.
+
+### Package Structure
+
+```
+internal/termmux/
+├── termmux.go          # Mux struct: New, Attach, Detach, RunPassthrough, teeLoop
+├── config.go           # Option pattern, DefaultToggleKey constant
+├── side.go             # Side, ExitReason types
+├── stringio.go         # StringIO interface + WrapStringIO adapter
+├── vt/                 # ANSI/VT terminal parser and screen buffer
+│   ├── vt.go           # VTerm: Write, Render, Resize
+│   ├── parser.go       # Table-driven state machine (VT100/xterm subset)
+│   ├── screen.go       # Screen buffer: cells, cursor, scroll region, SGR
+│   ├── render.go       # Render() — ANSI escape sequence generation
+│   └── utf8.go         # UTF-8 accumulator for multi-byte sequences
+├── ptyio/              # Buffered PTY I/O
+│   └── reader.go       # BufferedReader: async PTY read loop → channel
+├── statusbar/          # Status bar rendering
+│   └── statusbar.go    # StatusBar: ANSI status line on bottom row
+└── ui/                 # BubbleTea UI models
+    ├── autosplit.go     # AutoSplitModel: orchestrates split workflow
+    ├── splitview.go     # SplitView: side-by-side terminal panes
+    └── planeditor.go    # PlanEditor: checkbox list editor
+```
 
 ## Component Diagram
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                    TUIMux                        │
+│                      Mux                         │
 │                                                  │
 │  ┌──────────┐    ┌─────────┐    ┌────────────┐  │
-│  │  stdin   │───>│ Toggle  │    │  Status    │  │
-│  │ (user)   │    │ Detect  │    │  Bar       │  │
-│  └──────────┘    └────┬────┘    └────────────┘  │
-│                       │                          │
+│  │  stdin   │───>│ Toggle  │    │ StatusBar  │  │
+│  │ (user)   │    │ Detect  │    │ (statusbar/│  │
+│  └──────────┘    └────┬────┘    │  pkg)      │  │
+│                       │         └────────────┘  │
 │           ┌───────────┼───────────┐              │
 │           │           │           │              │
 │     ┌─────▼─────┐  ┌─▼───────┐   │              │
 │     │  SideOsm  │  │ Side    │   │              │
 │     │ (BubbleTea│  │ Claude  │   │              │
-│     │  TUI)     │  │ (Pass   │   │              │
+│     │  UI: ui/) │  │ (Pass   │   │              │
 │     └───────────┘  │ through)│   │              │
 │                     └───┬─────┘   │              │
 │                         │         │              │
 │      ┌──────────────────▼─────────▼──────────┐   │
-│      │         Background Reader              │   │
-│      │  (permanent goroutine: child → VTerm)  │   │
+│      │        Background Reader (teeLoop)     │   │
+│      │ (permanent goroutine: child → VTerm)   │   │
 │      └──────────────────┬────────────────────┘   │
 │                         │                        │
 │                    ┌────▼────┐                   │
 │                    │  VTerm  │                   │
-│                    │ (VT100  │                   │
-│                    │ virtual │                   │
-│                    │ buffer) │                   │
+│                    │ (vt/    │                   │
+│                    │  pkg)   │                   │
 │                    └─────────┘                   │
 │                         │                        │
 │                    ┌────▼────┐                   │
@@ -57,12 +80,13 @@ The user toggles between views with a configurable key (default: `Ctrl+\`). The 
 | Goroutine | Lifetime | Role |
 |-----------|----------|------|
 | **Main** | Full session | Runs TUI event loop or calls RunPassthrough |
-| **Background Reader** | Attach → Detach | Reads child PTY → writes to VTerm, conditionally forwards to stdout |
+| **Background Reader (teeLoop)** | Attach → Detach | Reads child PTY → writes to VTerm, conditionally forwards to stdout |
 | **Stdin Forwarder** | Each RunPassthrough call | Reads user stdin → writes to child PTY |
 
-### Background Reader (permanent during attach)
+### Background Reader — teeLoop (permanent during attach)
 
-The background reader is started by `Attach()` and runs until `Detach()`:
+The background reader is started by `Attach()` and runs until `Detach()`. It is
+implemented as `Mux.teeLoop()` in `termmux.go`:
 
 ```
 backgroundReader goroutine:
@@ -175,7 +199,7 @@ The VTerm has a `sync.Mutex` protecting all state access:
 - `Render()` — locks for the entire render
 - `Resize()` — locks for the entire resize
 
-The TUIMux holds its own mutex (`m.mu`) for stdout writes during passthrough:
+The Mux holds its own mutex (`m.mu`) for stdout writes during passthrough:
 
 - Background reader holds `m.mu` when forwarding to stdout
 - Status bar rendering holds `m.mu`
@@ -183,7 +207,7 @@ The TUIMux holds its own mutex (`m.mu`) for stdout writes during passthrough:
 
 ### No I/O Under Lock
 
-The VTerm mutex protects only in-memory state (cells, cursor, parser state). No syscalls or I/O occur while the VTerm lock is held. The TUIMux mutex similarly only covers stdout.Write operations.
+The VTerm mutex protects only in-memory state (cells, cursor, parser state). No syscalls or I/O occur while the VTerm lock is held. The Mux mutex similarly only covers stdout.Write operations.
 
 ## Render Optimization
 

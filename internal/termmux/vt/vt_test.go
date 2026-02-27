@@ -665,3 +665,113 @@ func TestVTerm_TestDataFixtures_NoPanic(t *testing.T) {
 		})
 	}
 }
+
+// ── VTerm.String() plain-text rendering ────────────────────────────
+
+func TestVTerm_String_Empty(t *testing.T) {
+	v := NewVTerm(5, 10)
+	if got := v.String(); got != "" {
+		t.Errorf("String() on empty VTerm = %q; want empty", got)
+	}
+}
+
+func TestVTerm_String_ASCII(t *testing.T) {
+	v := NewVTerm(5, 20)
+	v.Write([]byte("Hello"))
+	got := v.String()
+	if got != "Hello" {
+		t.Errorf("String() = %q; want %q", got, "Hello")
+	}
+}
+
+func TestVTerm_String_MultipleLines(t *testing.T) {
+	v := NewVTerm(5, 20)
+	// VTerm treats \n as LF only (no carriage return). Use \r\n for
+	// CR+LF to position each line at column 0, matching real terminal
+	// behavior where the PTY's line discipline adds CR.
+	v.Write([]byte("Line 1\r\nLine 2\r\nLine 3"))
+	got := v.String()
+	want := "Line 1\nLine 2\nLine 3"
+	if got != want {
+		t.Errorf("String() = %q; want %q", got, want)
+	}
+}
+
+func TestVTerm_String_TrailingEmptyLines(t *testing.T) {
+	v := NewVTerm(10, 20)
+	v.Write([]byte("Data"))
+	// VTerm has 10 rows, only row 0 has content. String() should
+	// not include trailing empty lines.
+	got := v.String()
+	if got != "Data" {
+		t.Errorf("String() = %q; want %q", got, "Data")
+	}
+}
+
+func TestVTerm_String_TrailingSpaces(t *testing.T) {
+	v := NewVTerm(5, 20)
+	// Write "Hi" then move to col 10 and write "There" — columns 2-9
+	// are filled with spaces. String() should strip trailing blanks per row.
+	v.Write([]byte("Hi\x1b[1;11HThere"))
+	got := v.String()
+	// Row 0 should be "Hi        There" with trailing spaces stripped,
+	// but the spaces between "Hi" and "There" should be preserved.
+	if !strings.Contains(got, "Hi") || !strings.Contains(got, "There") {
+		t.Errorf("String() = %q; want to contain 'Hi' and 'There'", got)
+	}
+	// Should not end with spaces.
+	lines := strings.Split(got, "\n")
+	for i, line := range lines {
+		if len(line) > 0 && line[len(line)-1] == ' ' {
+			t.Errorf("line %d has trailing spaces: %q", i, line)
+		}
+	}
+}
+
+func TestVTerm_String_ANSI_Stripped(t *testing.T) {
+	v := NewVTerm(5, 40)
+	// Write with bold/red SGR — String() returns plain text only.
+	v.Write([]byte("\x1b[1;31mBold Red\x1b[0m Normal"))
+	got := v.String()
+	if !strings.Contains(got, "Bold Red") {
+		t.Errorf("String() = %q; want to contain %q", got, "Bold Red")
+	}
+	if !strings.Contains(got, "Normal") {
+		t.Errorf("String() = %q; want to contain %q", got, "Normal")
+	}
+	// Should NOT contain ESC sequences.
+	if strings.Contains(got, "\x1b") {
+		t.Errorf("String() contains ESC sequences: %q", got)
+	}
+}
+
+func TestVTerm_String_WideChars(t *testing.T) {
+	v := NewVTerm(5, 20)
+	v.Write([]byte("漢字OK"))
+	got := v.String()
+	if !strings.Contains(got, "漢字OK") {
+		t.Errorf("String() = %q; want to contain %q", got, "漢字OK")
+	}
+}
+
+func TestVTerm_String_Concurrent(t *testing.T) {
+	v := NewVTerm(24, 80)
+	v.Write([]byte("initial"))
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			v.Write([]byte("abc"))
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			_ = v.String()
+		}
+	}()
+	wg.Wait()
+	// Race detector validates thread safety.
+}

@@ -201,3 +201,41 @@ func (v *VTerm) Render() string {
 	defer v.mu.Unlock()
 	return Render(v.active)
 }
+
+// String returns a plain-text representation of the active screen for
+// diagnostics and test assertions. Each row is the sequence of non-NUL
+// runes (trailing spaces stripped), joined by newlines. Thread-safe.
+func (v *VTerm) String() string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	var b []byte
+	for r := 0; r < v.active.Rows; r++ {
+		row := v.active.Cells[r]
+		// Find last non-blank cell.
+		last := -1
+		for c := len(row) - 1; c >= 0; c-- {
+			if row[c].Ch != ' ' && row[c].Ch != 0 {
+				last = c
+				break
+			}
+		}
+		for c := 0; c <= last; c++ {
+			ch := row[c].Ch
+			if ch == 0 {
+				continue // skip NUL placeholders (wide char second cell)
+			}
+			b = utf8.AppendRune(b, ch)
+		}
+		if r < v.active.Rows-1 {
+			b = append(b, '\n')
+		}
+	}
+	// Trim trailing empty lines.
+	for len(b) > 0 && b[len(b)-1] == '\n' {
+		b = b[:len(b)-1]
+	}
+	return string(b)
+}
+
+

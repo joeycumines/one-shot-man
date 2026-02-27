@@ -950,3 +950,198 @@ func TestHandleResize_StatusDisabled(t *testing.T) {
 		t.Fatal("teeLoop did not exit in time")
 	}
 }
+
+// ── T012 Tests: ChildExitOutput lifecycle ──────────────────────────
+
+func TestChildExitOutput_EmptyBeforeAttach(t *testing.T) {
+	var stdin, stdout bytes.Buffer
+	m := New(&stdin, &stdout, -1)
+	if got := m.ChildExitOutput(); got != "" {
+		t.Errorf("ChildExitOutput() before Attach = %q; want empty", got)
+	}
+}
+
+func TestChildExitOutput_CapturesChildOutput(t *testing.T) {
+	childR, childW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: io.Discard}
+
+	var stdout bytes.Buffer
+	m := New(bytes.NewReader(nil), &stdout, -1)
+	if err := m.Attach(mc); err != nil {
+		t.Fatalf("Attach error: %v", err)
+	}
+
+	// Child writes some output.
+	childW.Write([]byte("Error: permission denied\r\nUsage: claude [options]"))
+	time.Sleep(150 * time.Millisecond) // let teeLoop process
+
+	got := m.ChildExitOutput()
+	if !strings.Contains(got, "Error: permission denied") {
+		t.Errorf("ChildExitOutput() = %q; want to contain %q", got, "Error: permission denied")
+	}
+	if !strings.Contains(got, "Usage: claude [options]") {
+		t.Errorf("ChildExitOutput() = %q; want to contain %q", got, "Usage: claude [options]")
+	}
+
+	childW.Close()
+	<-m.teeDone
+}
+
+func TestChildExitOutput_EmptyAfterDetach(t *testing.T) {
+	childR, childW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: io.Discard}
+
+	var stdout bytes.Buffer
+	m := New(bytes.NewReader(nil), &stdout, -1)
+	if err := m.Attach(mc); err != nil {
+		t.Fatalf("Attach error: %v", err)
+	}
+
+	childW.Write([]byte("some output"))
+	time.Sleep(100 * time.Millisecond)
+
+	childW.Close()
+	<-m.teeDone
+
+	if err := m.Detach(); err != nil {
+		t.Fatalf("Detach error: %v", err)
+	}
+
+	// After Detach, vterm is nil → ChildExitOutput returns empty.
+	if got := m.ChildExitOutput(); got != "" {
+		t.Errorf("ChildExitOutput() after Detach = %q; want empty", got)
+	}
+}
+
+// ── T013 Tests: Detach cancels ReadLoop context ────────────────────
+
+func TestDetach_CancelsReaderContext(t *testing.T) {
+	// Verify that after Detach, a ReadLoop whose reader eventually
+	// produces data will exit promptly rather than continuing to send.
+	// The context cancel takes effect on the next send attempt.
+	childR, childW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: io.Discard}
+
+	var stdout bytes.Buffer
+	m := New(bytes.NewReader(nil), &stdout, -1)
+	m.detachTimeout = 3 * time.Second
+	if err := m.Attach(mc); err != nil {
+		t.Fatalf("Attach error: %v", err)
+	}
+
+	// Start Detach in a goroutine — it will cancel the ReadLoop context
+	// then wait for teeDone (up to detachTimeout).
+	detachDone := make(chan error, 1)
+	go func() {
+		detachDone <- m.Detach()
+	}()
+
+	// Give Detach time to cancel the context.
+	time.Sleep(100 * time.Millisecond)
+
+	// Now write to the child — ReadLoop reads it, but ctx is cancelled,
+	// so it exits on the send attempt, closing output channel, closing teeDone.
+	childW.Write([]byte("wake up"))
+	childW.Close()
+
+	select {
+	case err := <-detachDone:
+		if err != nil {
+			t.Fatalf("Detach error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Detach did not complete after child produced data (context cancel not working)")
+	}
+}
+
+func TestDetach_ReattachSingleReadLoop(t *testing.T) {
+	// Verify that after Detach+re-Attach, only one ReadLoop is active.
+	// We attach, detach, then re-attach and verify the new child's
+	// output is captured without interference from the old ReadLoop.
+	child1R, child1W := io.Pipe()
+	mc1 := &pipeMockChild{r: child1R, w: io.Discard}
+
+	var stdout bytes.Buffer
+	m := New(bytes.NewReader(nil), &stdout, -1)
+	if err := m.Attach(mc1); err != nil {
+		t.Fatalf("Attach child1 error: %v", err)
+	}
+
+	child1W.Write([]byte("child1-content"))
+	time.Sleep(100 * time.Millisecond)
+
+	child1W.Close()
+	<-m.teeDone
+
+	if err := m.Detach(); err != nil {
+		t.Fatalf("Detach error: %v", err)
+	}
+
+	// Re-attach with a new child.
+	child2R, child2W := io.Pipe()
+	mc2 := &pipeMockChild{r: child2R, w: io.Discard}
+	if err := m.Attach(mc2); err != nil {
+		t.Fatalf("Attach child2 error: %v", err)
+	}
+
+	child2W.Write([]byte("child2-content"))
+	time.Sleep(100 * time.Millisecond)
+
+	got := m.ChildExitOutput()
+	if !strings.Contains(got, "child2-content") {
+		t.Errorf("ChildExitOutput after re-attach = %q; want to contain %q", got, "child2-content")
+	}
+	// Should NOT contain child1 content (VTerm was recreated).
+	if strings.Contains(got, "child1-content") {
+		t.Errorf("ChildExitOutput after re-attach should not contain child1 output; got %q", got)
+	}
+
+	child2W.Close()
+	<-m.teeDone
+}
+
+// ── T014 Test: ErrAlreadyAttached retry pattern ────────────────────
+
+func TestAttach_AfterDetach_Succeeds(t *testing.T) {
+	// The pr_split.go attachChild pattern: if Attach returns
+	// ErrAlreadyAttached, detach first then retry.
+	var stdout bytes.Buffer
+	m := New(bytes.NewReader(nil), &stdout, -1)
+
+	child1R, child1W := io.Pipe()
+	mc1 := &pipeMockChild{r: child1R, w: io.Discard}
+	if err := m.Attach(mc1); err != nil {
+		t.Fatalf("Attach child1: %v", err)
+	}
+
+	// Attempt to attach second child while first still attached.
+	child2R, child2W := io.Pipe()
+	mc2 := &pipeMockChild{r: child2R, w: io.Discard}
+	err := m.Attach(mc2)
+	if err != ErrAlreadyAttached {
+		t.Fatalf("second Attach: got %v; want ErrAlreadyAttached", err)
+	}
+
+	// Close child1, wait for teeLoop, then Detach.
+	child1W.Close()
+	<-m.teeDone
+	if err := m.Detach(); err != nil {
+		t.Fatalf("Detach: %v", err)
+	}
+
+	// Now Attach child2 should succeed.
+	if err := m.Attach(mc2); err != nil {
+		t.Fatalf("Attach child2 after Detach: %v", err)
+	}
+
+	child2W.Write([]byte("child2 is alive"))
+	time.Sleep(100 * time.Millisecond)
+
+	got := m.ChildExitOutput()
+	if !strings.Contains(got, "child2 is alive") {
+		t.Errorf("ChildExitOutput = %q; want to contain %q", got, "child2 is alive")
+	}
+
+	child2W.Close()
+	<-m.teeDone
+}

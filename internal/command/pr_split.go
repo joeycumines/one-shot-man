@@ -227,11 +227,23 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	// stdout is injected for testability; in production it's os.Stdout.
 	termFd := int(os.Stdin.Fd())
 	tuiMux := termmux.New(os.Stdin, stdout, termFd)
+	// attachChild is a helper that handles ErrAlreadyAttached by
+	// detaching first, then retrying the attach. This prevents panics
+	// when the JS handler calls attach without a prior detach.
+	attachChild := func(child io.ReadWriteCloser) error {
+		err := tuiMux.Attach(child)
+		if err != nil && errors.Is(err, termmux.ErrAlreadyAttached) {
+			_ = tuiMux.Detach()
+			err = tuiMux.Attach(child)
+		}
+		return err
+	}
+
 	engine.SetGlobal("tuiMux", map[string]interface{}{
 		"attach": func(handle interface{}) {
 			// Case 1: Direct Go StringIO interface (non-Goja callers, tests).
 			if sio, ok := handle.(termmux.StringIO); ok {
-				if err := tuiMux.Attach(termmux.WrapStringIO(sio)); err != nil {
+				if err := attachChild(termmux.WrapStringIO(sio)); err != nil {
 					panic(err.Error())
 				}
 				return
@@ -241,14 +253,14 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			if m, ok := handle.(map[string]interface{}); ok {
 				if goHandle, exists := m["_goHandle"]; exists && goHandle != nil {
 					if sio, ok := goHandle.(termmux.StringIO); ok {
-						if err := tuiMux.Attach(termmux.WrapStringIO(sio)); err != nil {
+						if err := attachChild(termmux.WrapStringIO(sio)); err != nil {
 							panic(err.Error())
 						}
 						return
 					}
 					// AgentHandle satisfies StringIO structurally — try io.ReadWriteCloser.
 					if rwc, ok := goHandle.(io.ReadWriteCloser); ok {
-						if err := tuiMux.Attach(rwc); err != nil {
+						if err := attachChild(rwc); err != nil {
 							panic(err.Error())
 						}
 						return
@@ -258,7 +270,10 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			panic("tuiMux.attach: argument must implement Send/Receive/Close (or be a wrapped AgentHandle with _goHandle)")
 		},
 		"detach": func() {
-			if err := tuiMux.Detach(); err != nil {
+			err := tuiMux.Detach()
+			// Detach returns nil when no child is attached (idempotent).
+			// Only panic on real errors like ErrPassthroughActive (logic bug).
+			if err != nil {
 				panic(err.Error())
 			}
 		},
@@ -269,6 +284,14 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			}
 			if err != nil {
 				result["error"] = err.Error()
+			}
+			// When the child process exits, capture its last output for
+			// diagnostics. This surfaces error messages (e.g., "unknown flag",
+			// "API key not found") that would otherwise be lost.
+			if reason == termmux.ExitChildExit {
+				if output := tuiMux.ChildExitOutput(); output != "" {
+					result["childOutput"] = output
+				}
 			}
 			return result
 		},

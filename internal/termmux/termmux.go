@@ -38,9 +38,10 @@ type Mux struct {
 	termCols int
 
 	// Background reader / tee goroutine.
-	reader   *ptyio.BufferedReader
-	teeDone  chan struct{}
-	childEOF chan struct{}
+	reader       *ptyio.BufferedReader
+	readerCancel context.CancelFunc // cancels ReadLoop on Detach
+	teeDone      chan struct{}
+	childEOF     chan struct{}
 
 	// Abstracted platform operations.
 	statusBar     *statusbar.StatusBar
@@ -88,14 +89,21 @@ func (m *Mux) Attach(child io.ReadWriteCloser) error {
 	m.childEOF = make(chan struct{})
 	m.teeDone = make(chan struct{})
 
-	// Start buffered reader.
+	// Start buffered reader with a cancellable context so Detach()
+	// can signal the ReadLoop to stop after its next successful read.
 	m.reader = ptyio.NewBufferedReader(child, 16)
-	go m.reader.ReadLoop(context.Background())
+	readerCtx, readerCancel := context.WithCancel(context.Background())
+	m.readerCancel = readerCancel
+	go m.reader.ReadLoop(readerCtx)
 
-	// Start tee goroutine. Capture reader locally so Detach can nil
-	// m.reader without racing with the goroutine startup.
+	// Start tee goroutine. Capture reader, teeDone, and childEOF locally
+	// so Detach can nil m.reader without racing, and so the goroutine
+	// closes its own teeDone/childEOF channels (not any future ones
+	// created by a subsequent Attach after a Detach timeout).
 	reader := m.reader
-	go m.teeLoop(reader)
+	teeDone := m.teeDone
+	childEOF := m.childEOF
+	go m.teeLoop(reader, teeDone, childEOF)
 
 	return nil
 }
@@ -107,8 +115,8 @@ func (m *Mux) HasChild() bool {
 	return m.child != nil
 }
 
-func (m *Mux) teeLoop(reader *ptyio.BufferedReader) {
-	defer close(m.teeDone)
+func (m *Mux) teeLoop(reader *ptyio.BufferedReader, teeDone, childEOF chan struct{}) {
+	defer close(teeDone)
 	for chunk := range reader.Output() {
 		m.mu.Lock()
 		vtm := m.vterm
@@ -135,9 +143,9 @@ func (m *Mux) teeLoop(reader *ptyio.BufferedReader) {
 
 	// Reader output channel closed → child EOF.
 	select {
-	case <-m.childEOF:
+	case <-childEOF:
 	default:
-		close(m.childEOF)
+		close(childEOF)
 	}
 }
 
@@ -149,12 +157,22 @@ func (m *Mux) Detach() error {
 		return ErrPassthroughActive
 	}
 	teeDone := m.teeDone
+	readerCancel := m.readerCancel
 	m.child = nil
 	m.vterm = nil
 	m.reader = nil
+	m.readerCancel = nil
 	m.active = SideOsm
 	m.swappedOnce = false
 	m.mu.Unlock()
+
+	// Cancel the ReadLoop context so it exits after its next read.
+	// This prevents goroutine accumulation when re-attaching the same
+	// child handle (without this, each Attach creates a new ReadLoop
+	// goroutine on the same fd, and old ones persist indefinitely).
+	if readerCancel != nil {
+		readerCancel()
+	}
 
 	if teeDone != nil {
 		select {
@@ -210,6 +228,21 @@ func (m *Mux) WriteToChild(data []byte) (int, error) {
 		return 0, ErrNoChild
 	}
 	return child.Write(data)
+}
+
+// ChildExitOutput returns the content captured in the VTerm buffer as
+// plain text. This is useful for diagnostics when the child process
+// exits unexpectedly — the buffer contains whatever the process wrote
+// to stdout/stderr before dying (e.g., error messages, usage text).
+// Returns an empty string if no VTerm is allocated or if there is no content.
+func (m *Mux) ChildExitOutput() string {
+	m.mu.Lock()
+	vtm := m.vterm
+	m.mu.Unlock()
+	if vtm == nil {
+		return ""
+	}
+	return vtm.String()
 }
 
 // handleResize is called when the terminal is resized (SIGWINCH).

@@ -1828,15 +1828,32 @@ ClaudeCodeExecutor.prototype.spawn = function(sessionId) {
         var provider;
         var baseArgs = (this.args || []).concat(['--mcp-config', this.mcpInstance.configPath()]);
 
-        if (this.resolved.type === 'claude-code' || this.resolved.type === 'explicit') {
-            // Claude Code: prepend --dangerously-skip-permissions so MCP
-            // tool calls are auto-approved without blocking permission popups.
+        if (this.resolved.type === 'claude-code') {
+            // Auto-detected Claude Code: prepend --dangerously-skip-permissions
+            // so MCP tool calls are auto-approved without blocking permission popups.
             baseArgs = ['--dangerously-skip-permissions'].concat(baseArgs);
             provider = this.cm.claudeCode({
                 command: this.resolved.command,
                 mcp: true
             });
+        } else if (this.resolved.type === 'explicit') {
+            // Explicit command: detect provider type from the command name.
+            // If the basename looks like Claude Code (contains 'claude'),
+            // prepend --dangerously-skip-permissions. Otherwise, treat as a
+            // generic command — the user must add provider-specific flags
+            // themselves via --claude-arg.
+            var basename = this.resolved.command.replace(/^.*[\/\\]/, '');
+            if (basename.indexOf('claude') !== -1) {
+                baseArgs = ['--dangerously-skip-permissions'].concat(baseArgs);
+            }
+            // Use claudeCode provider for explicit commands (generic PTY spawn).
+            provider = this.cm.claudeCode({
+                command: this.resolved.command,
+                mcp: true
+            });
         } else if (this.resolved.type === 'ollama') {
+            // Ollama: spawns via 'ollama launch claude [--model MODEL] [extra args]'.
+            // No --dangerously-skip-permissions — Ollama handles its own permissions.
             provider = this.cm.ollama({
                 command: this.resolved.command,
                 model: this.model || '',
@@ -1872,6 +1889,44 @@ ClaudeCodeExecutor.prototype.spawn = function(sessionId) {
 
     log.printf('Claude executor: spawned command=%s type=%s session=%s',
         this.resolved.command, this.resolved.type, this.sessionId);
+
+    // Post-spawn health check: wait briefly and verify the process is
+    // still alive. If it died immediately (e.g., unknown flags, missing
+    // API key, invalid model), capture the error output from the PTY
+    // and surface it to the user instead of silently returning success.
+    if (this.handle && typeof this.handle.isAlive === 'function') {
+        // Give the process a moment to start (or fail).
+        exec.execv(['sleep', '0.3']);
+        if (!this.handle.isAlive()) {
+            // Process died — try to read its last output for diagnostics.
+            var lastOutput = '';
+            if (typeof this.handle.receive === 'function') {
+                try {
+                    var chunk = this.handle.receive();
+                    if (chunk) { lastOutput = chunk; }
+                } catch (readErr) {
+                    // EOF or error — expected for dead process.
+                }
+            }
+            // Clean up the dead handle.
+            try { this.handle.close(); } catch (closeErr) { /* best effort */ }
+            this.handle = null;
+            try { this.mcpInstance.close(); } catch (mcpErr) { /* best effort */ }
+            this.mcpInstance = null;
+
+            var cmdDesc = this.resolved.command;
+            if (spawnOpts && spawnOpts.args && spawnOpts.args.length > 0) {
+                cmdDesc += ' ' + spawnOpts.args.join(' ');
+            }
+            var diagnostic = 'Claude process exited immediately after spawn.';
+            if (lastOutput) {
+                diagnostic += '\n  Process output: ' + lastOutput.trim().substring(0, 500);
+            }
+            diagnostic += '\n  Command: ' + cmdDesc;
+            diagnostic += '\n  Provider: ' + this.resolved.type;
+            return { error: diagnostic };
+        }
+    }
 
     return { error: null, sessionId: this.sessionId, resultDir: this.mcpInstance.resultDir() };
 };
@@ -2344,12 +2399,22 @@ function automatedSplit(config) {
     // Attach Claude's PTY handle to tuiMux so ctrl+] can forward
     // stdin/stdout to Claude during the pipeline.
     if (claudeExecutor && claudeExecutor.handle && typeof tuiMux !== 'undefined' && tuiMux) {
-        try {
-            tuiMux.attach(claudeExecutor.handle);
-            log.printf('auto-split: attached Claude handle to tuiMux for ctrl+] toggle');
-        } catch (e) {
-            // Non-fatal — toggle just won't work.
-            log.printf('auto-split: tuiMux attach warning: %s', e.message || String(e));
+        // Verify Claude is still alive before attaching. The spawn health
+        // check catches immediate deaths, but a process could die between
+        // spawn and this point (e.g., during step() telemetry overhead).
+        if (typeof claudeExecutor.handle.isAlive === 'function' && !claudeExecutor.handle.isAlive()) {
+            log.printf('auto-split: Claude process died between spawn and attach — ctrl+] will not work');
+            emitOutput('[auto-split] Warning: Claude process exited unexpectedly. Toggle (Ctrl+]) unavailable.');
+        } else {
+            try {
+                // Detach any previous session (idempotent).
+                try { tuiMux.detach(); } catch (e) { /* ok if nothing attached */ }
+                tuiMux.attach(claudeExecutor.handle);
+                log.printf('auto-split: attached Claude handle to tuiMux for ctrl+] toggle');
+            } catch (e) {
+                // Non-fatal — toggle just won't work.
+                log.printf('auto-split: tuiMux attach warning: %s', e.message || String(e));
+            }
         }
     }
 
@@ -4529,12 +4594,34 @@ function buildCommands(stateArg) {
                         output.print('No Claude process running. Use "claude spawn" first.');
                         return;
                     }
+                    // Guard: verify Claude is still alive before entering passthrough.
+                    // If it died after spawn (bad flags, API error, etc.), report diagnostics.
+                    if (typeof claudeExecutor.handle.isAlive === 'function' && !claudeExecutor.handle.isAlive()) {
+                        var lastOutput = '';
+                        if (typeof claudeExecutor.handle.receive === 'function') {
+                            try { lastOutput = claudeExecutor.handle.receive() || ''; } catch (e) { /* EOF */ }
+                        }
+                        output.print('Claude process has exited. Use "claude spawn" to restart.');
+                        if (lastOutput) {
+                            output.print('  Last output: ' + lastOutput.trim().substring(0, 300));
+                        }
+                        // Clean up the dead handle.
+                        try { claudeExecutor.close(); } catch (e) { /* best effort */ }
+                        return;
+                    }
+                    // Detach any previous session before re-attaching.
+                    try { tuiMux.detach(); } catch (e) { /* ok if nothing attached */ }
                     tuiMux.attach(claudeExecutor.handle);
                     output.print('Switching to Claude TUI… (Ctrl+] to return)');
                     var result = tuiMux.switchToClaude();
                     output.print('Back to osm. (reason: ' + result.reason + ')');
                     if (result.error) {
                         output.print('Error: ' + result.error);
+                    }
+                    // Surface Claude's last output when it exited unexpectedly.
+                    if (result.reason === 'child-exit' && result.childOutput) {
+                        output.print('Claude output before exit:');
+                        output.print(result.childOutput.substring(0, 500));
                     }
                     try { tuiMux.detach(); } catch (e) { /* best effort */ }
                 } catch (e) {

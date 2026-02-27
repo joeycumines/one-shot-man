@@ -1,985 +1,148 @@
 {
   "meta": {
     "fileName": "blueprint.json",
-    "project": "osm termmux rewrite",
-    "scope": "Complete replacement of internal/termui/mux/ with internal/termmux/ — new terminal multiplexer modeled after tmux architecture for osm pr-split command",
+    "project": "osm pr-split — fix spawn/toggle/exit failures + expand robustness",
+    "scope": "Fix the osm pr-split command that exits immediately when using -claude-command=ollama. Harden the spawn-attach-toggle-detach lifecycle. Expand integration tests. Iterate indefinitely toward TRUE PERFECTION.",
     "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
-    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST — ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY A PRIORITY OF ANY KIND."
+    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST. NEVER SPECIFY A PRIORITY OF ANY KIND."
   },
   "globalAlerts": [
-    {
-      "warning": "ALL build/test commands must be run via GNU Make (`make` or `gmake` on macOS). The Makefile auto-discovers modules. Use `make test`, `make lint`, `make build`. NEVER run `go test` ad-hoc without -race flag."
-    },
-    {
-      "warning": "Pipe long output through `| tail -200` or `| head -200` to prevent context window flooding. `make test 2>&1 | tail -50` is your friend."
-    },
-    {
-      "warning": "NEVER add entries to .deadcodeignore. If deadcode fails, wire up the code in main.go / command registry or delete it. See AGENTS.md."
-    },
-    {
-      "warning": "Tests MUST NOT mutate host state. Use t.TempDir(), t.Setenv(). No reading ~/.gitconfig or other user-specific state. See AGENTS.md testing rules."
-    },
-    {
-      "warning": "Cross-platform: ALL code must work on linux, macos, windows. Build tags for platform-specific code. CI runs on ubuntu-latest, macos-latest, windows-latest."
-    },
-    {
-      "warning": "The old package is `internal/termui/mux/`. The new package is `internal/termmux/` (top-level) with sub-packages `vt/`, `ptyio/`, `statusbar/`, `ui/`. These are DIFFERENT import paths."
-    },
-    {
-      "warning": "github.com/mattn/go-runewidth is BANNED. Use github.com/rivo/uniseg ONLY for rune/grapheme width calculations. Use uniseg.StringWidth for string widths and a single-rune string wrapper for rune widths."
-    }
+    {"warning": "ALL build/test commands must be run via GNU Make. NEVER run go test ad-hoc without -race flag."},
+    {"warning": "NEVER add entries to .deadcodeignore. If deadcode fails, wire up the code or delete it."},
+    {"warning": "Tests MUST NOT mutate host state. Use t.TempDir(), t.Setenv()."},
+    {"warning": "Cross-platform: ALL code must work on linux, macos, windows."},
+    {"warning": "github.com/mattn/go-runewidth is BANNED. Use github.com/rivo/uniseg ONLY."}
   ],
   "mandatoryDirectives": {
-    "contextManagement": "Tasks are flat and sequential. Execute in order. Each task specifies the exact files and functions. On session resume, read blueprint.json and WIP.md, find the first non-Done task, and continue."
+    "contextManagement": "Tasks are flat and sequential. Execute in order. On session resume, read blueprint.json and WIP.md, find the first non-Done task, and continue."
   },
   "statusSection": {
-    "currentState": "100% COMPLETE. All tasks Done: T001-T131 (T073, T115, T116: N/A). termmux rewrite fully verified: go mod tidy clean, integration tests pass, fuzz tests pass (3 targets × 30s, zero crashes), benchmarks baselined, full make pipeline green.",
-    "goalState": "The internal/termmux/ package fully replaces internal/termui/mux/. pr_split.go imports termmux instead of termui/mux. All integration tests pass with real PTY processes. The old internal/termui/mux/ package is deleted. Zero goroutine leaks. Zero EAGAIN errors. Zero UTF-8 corruption. VTerm screen restore works correctly after toggle. Status bar scroll region management is correct. Benchmarks exist and are baselined. Fuzz tests exist for ANSI parser and UTF-8. The package is structured for eventual extraction into its own Go module.",
+    "currentState": "Fixes T001-T007 committed as 10f7d91. Rule of Two passed (T008-T009 Done). Now expanding: adding unit tests for VTerm.String(), ChildExitOutput(), Detach context, and attachChild.",
+    "goalState": "osm pr-split works correctly with -claude-command=ollama (and all other providers). The spawn-switch-send-classify pipeline is robust: dead child detected before passthrough entry, diagnostic output surfaced, re-attach is safe (no goroutine leaks), the VTerm captures error output. Integration tests cover the full spawn-to-exit lifecycle. Zero goroutine leaks. Zero EAGAIN errors. Zero data loss on re-attach.",
     "replanLog": [
-      "Session: Pulled T100 (delete old package) ahead of T069-T070 (docs) because deadcode was failing with old package still present. This triggered 4 rounds of cascading dead code removal from termmux packages (vt, ptyio, config, side, parser). Many ported-but-unwired functions were deleted per AGENTS.md 'delete boldly' rule. All tests pass after cleanup."
+      "2026-02-28: Previous session blueprint (T001-T131, termmux rewrite) was 100% Done. This new blueprint covers the pr-split spawn/toggle failures discovered in production.",
+      "2026-02-28: Added T006 (ReadLoop context cancellation) after discovering goroutine leak during re-attach of same Claude handle."
     ]
   },
   "sequentialTasks": [
     {
       "id": "T001",
-      "task": "Add integration-test-termmux Make target in project.mk",
-      "description": "Add a new Make target `integration-test-termmux` in project.mk (after the existing `bench-vterm` target at line ~47). This target runs `$(GO) test -race -v -count=1 -timeout=5m -tags=integration ./internal/termmux/...`. Also add a `bench-termmux` target replacing `bench-vterm`: `$(GO) test -bench=. -benchmem -run='^$$' ./internal/termmux/...`. Add a `fuzz-termmux` target: `$(GO) test -fuzz=. -fuzztime=30s ./internal/termmux/vt/...`. These targets are the validation infrastructure for everything that follows.",
-      "acceptance": "`make integration-test-termmux` is a valid target (even though it will fail initially due to missing package). `make bench-termmux` and `make fuzz-termmux` are valid targets. Running `make help` shows all three targets with descriptions.",
+      "task": "Fix explicit provider type flag handling in spawn",
+      "description": "In pr_split_script.js spawn(), the explicit type path was unconditionally prepending --dangerously-skip-permissions. Changed to detect provider type from command basename: only prepend if basename contains claude.",
+      "acceptance": "When -claude-command=ollama is used, --dangerously-skip-permissions is NOT prepended. When -claude-command=claude is used, it IS prepended.",
       "status": "Done"
     },
     {
       "id": "T002",
-      "task": "Scaffold internal/termmux/ package directory structure",
-      "description": "Create the directory tree: internal/termmux/, internal/termmux/vt/, internal/termmux/ptyio/, internal/termmux/statusbar/, internal/termmux/ui/. In each directory, create a minimal Go file with only the package declaration and a doc comment: termmux/doc.go (package termmux), vt/doc.go (package vt), ptyio/doc.go (package ptyio), statusbar/doc.go (package statusbar), ui/doc.go (package ui). Each doc.go should have a descriptive package-level comment explaining the sub-package's role.",
-      "acceptance": "`go build ./internal/termmux/...` succeeds. All five packages compile. `go vet ./internal/termmux/...` passes.",
+      "task": "Add post-spawn health check in ClaudeCodeExecutor",
+      "description": "After registry.spawn() returns a handle, wait 0.3s then check handle.isAlive(). If dead, capture output via handle.receive() and return diagnostic error.",
+      "acceptance": "A process that exits within 0.3s of spawn is detected with descriptive error including process output.",
       "status": "Done"
     },
     {
       "id": "T003",
-      "task": "Define Side and ExitReason enums in termmux/side.go",
-      "description": "Create internal/termmux/side.go. Define `type Side int` with constants SideOsm=0, SideClaude=1. Define `type ExitReason int` with constants ExitToggle=0, ExitChildExit=1, ExitContext=2, ExitError=3. Add String() methods for both types matching the existing behavior in internal/termui/mux/mux.go lines 44-69. These are the public enums consumed by pr_split.go and claudemux.",
-      "acceptance": "The types compile. String() returns 'toggle', 'child-exit', 'context', 'error', 'unknown' for ExitReason values 0-4. String() returns 'osm', 'claude', 'unknown' for Side values 0-2. A test file termmux/side_test.go exercises all enum String() values including out-of-range.",
+      "task": "Add isAlive() guards before attach/switchToClaude",
+      "description": "The claude command handler and auto-split attach path now check isAlive() before proceeding. If dead, surface diagnostics.",
+      "acceptance": "No panic or hang when entering passthrough with a dead child. User sees Claude process has exited message.",
       "status": "Done"
     },
     {
       "id": "T004",
-      "task": "Define sentinel errors in termmux/errors.go",
-      "description": "Create internal/termmux/errors.go. Define package-level sentinel errors: ErrNoChild (\"termmux: no child process attached\"), ErrAlreadyAttached (\"termmux: child already attached\"), ErrPassthroughActive (\"termmux: passthrough is active\"), ErrDetached (\"termmux: mux is detached\"). Use errors.New(). These replace the corresponding errors in internal/termui/mux/mux.go lines 82-87.",
-      "acceptance": "All four errors are distinct sentinel values. errors.Is() works correctly. A test file termmux/errors_test.go verifies each error's message string and that they are not equal to each other.",
+      "task": "Surface child exit output in switchToClaude response",
+      "description": "switchToClaude binding calls tuiMux.ChildExitOutput() on ExitChildExit, includes childOutput in response. Requires Mux.ChildExitOutput() and VTerm.String().",
+      "acceptance": "When Claude exits during passthrough, user sees process last terminal output. VTerm.String() returns clean plain text.",
       "status": "Done"
     },
     {
       "id": "T005",
-      "task": "Define configuration types with functional options in termmux/config.go",
-      "description": "Create internal/termmux/config.go. Define `type Config struct` with fields: ToggleKey byte (default 0x1D = Ctrl+]), StatusEnabled bool (default true), InitialStatus string (default 'idle'), ResizeFn func(rows, cols uint16) error. Define `type Option func(*Config)`. Create WithToggleKey(byte) Option, WithStatusEnabled(bool) Option, WithInitialStatus(string) Option, WithResizeFunc(func(rows, cols uint16) error) Option. Create defaultConfig() Config returning the defaults. Reference the skill-database-go skill for the interface-based functional options pattern if needed.",
-      "acceptance": "Config struct is well-documented. Each With* function modifies only its target field. defaultConfig() returns ToggleKey=0x1D, StatusEnabled=true, InitialStatus='idle', ResizeFn=nil. A test file termmux/config_test.go verifies defaults and each option override independently and in combination.",
+      "task": "Handle re-attach gracefully via attachChild helper",
+      "description": "attachChild helper catches ErrAlreadyAttached, detaches first, retries. Detach binding tolerates ErrDetached.",
+      "acceptance": "Attach after Attach does not panic. Detach when nothing attached does not panic.",
       "status": "Done"
     },
     {
       "id": "T006",
-      "task": "Define the color type and colorKind enum in vt/sgr.go",
-      "description": "Create internal/termmux/vt/sgr.go. Port the color/colorKind/attr types from internal/termui/mux/vterm.go lines 88-118. Types: `type colorKind uint8` with kindDefault=0, kind8=1, kind256=2, kindRGB=3. `type color struct { kind colorKind; value uint32 }`. `type Attr struct { FG, BG color; Bold, Dim, Italic, Under, Blink, Inverse, Hidden, Strike bool }`. Make Attr exported since vt/render.go needs it for sgrDiff(). Add an IsZero() method on Attr.",
-      "acceptance": "The types compile. Attr{} represents the default terminal attributes (no color, no flags). IsZero() returns true for Attr{} and false for Attr{Bold: true}. A test vt/sgr_test.go validates these properties.",
+      "task": "Fix goroutine leak on Detach: cancel ReadLoop context",
+      "description": "Attach() creates cancellable context for ReadLoop. Detach() calls cancel before waiting for teeDone.",
+      "acceptance": "After Detach, ReadLoop context is cancelled. No goroutine accumulation on re-attach cycles. All tests pass with -race.",
       "status": "Done"
     },
     {
       "id": "T007",
-      "task": "Implement SGR parameter parsing in vt/sgr.go",
-      "description": "Add func ParseSGR(params []int, current Attr) Attr to vt/sgr.go. This replaces handleSGR() from internal/termui/mux/vterm.go lines ~780-900. The function processes a slice of CSI 'm' parameters and returns the updated Attr. Handle: 0=reset, 1=bold, 2=dim, 3=italic, 4=underline, 5=blink, 7=inverse, 8=hidden, 9=strikethrough, 22=normal intensity, 23=not italic, 24=not underline, 25=not blink, 27=not inverse, 28=not hidden, 29=not strikethrough, 30-37=fg 8-color, 38;5;N=fg 256-color, 38;2;R;G;B=fg truecolor, 39=default fg, 40-47=bg 8-color, 48;5;N=bg 256-color, 48;2;R;G;B=bg truecolor, 49=default bg, 90-97=bright fg, 100-107=bright bg.",
-      "acceptance": "Comprehensive table-driven test in vt/sgr_test.go covering: reset clears all attrs, each flag set/clear pair, 8-color foreground/background, bright colors (90-97, 100-107), 256-color sequences, truecolor sequences, combined parameters in one sequence (e.g. '1;31;42m'), unknown parameters are silently ignored, empty params treated as reset.",
+      "task": "Delete unused VTerm.CursorPos() (deadcode)",
+      "description": "CursorPos() had no consumer. Deleted per AGENTS.md deadcode policy.",
+      "acceptance": "make lint passes. CursorPos() no longer exists.",
       "status": "Done"
     },
     {
       "id": "T008",
-      "task": "Implement SGR diff rendering in vt/sgr.go",
-      "description": "Add func SGRDiff(prev, next Attr) string to vt/sgr.go. This replaces sgrDiff() from internal/termui/mux/vterm.go lines 1265-1345. Generates the minimal ANSI escape sequence to transition from prev to next. If next is zero-value and prev is too, returns empty string. If next is zero-value, returns '\\x1b[0m'. Otherwise builds parameter list: reset if any flags turned off, then add active flags and colors. Also add func ColorSGR(c color, isBg bool) []string (replaces colorSGR from vterm.go lines 1348-1383).",
-      "acceptance": "Test in vt/sgr_test.go: identical attrs produce empty string, default-to-bold produces '\\x1b[0;1m', bold-to-default produces '\\x1b[0m', color transitions produce correct 256/truecolor sequences, compound transitions (bold+red to dim+blue) produce valid SGR sequence.",
+      "task": "Rule of Two verification (Pass 1: lint + targeted tests)",
+      "description": "Subagent verifies: make build, make lint, make integration-test-termmux, make test-pr-split-pty.",
+      "acceptance": "All four make targets pass with exit code 0.",
       "status": "Done"
     },
     {
       "id": "T009",
-      "task": "Define Cell type in vt/screen.go",
-      "description": "Create internal/termmux/vt/screen.go. Define `type Cell struct { Ch rune; Attr Attr }`. Define a package-level var DefaultCell = Cell{Ch: ' '} representing a blank cell with default attributes. Add func (c Cell) IsDefault() bool that returns true when the cell equals DefaultCell (space with zero Attr).",
-      "acceptance": "Cell{Ch: 'A'}.IsDefault() is false. Cell{Ch: ' '}.IsDefault() is true. Cell{Ch: ' ', Attr: Attr{Bold: true}}.IsDefault() is false. Test in vt/screen_test.go.",
+      "task": "Rule of Two verification (Pass 2: full test suite)",
+      "description": "Second subagent runs make test. Confirms zero failures across all packages.",
+      "acceptance": "make test passes with exit code 0. All packages ok.",
       "status": "Done"
     },
     {
       "id": "T010",
-      "task": "Implement Screen buffer type in vt/screen.go",
-      "description": "Add `type Screen struct` to vt/screen.go. Fields: Cells [][]Cell, CurRow/CurCol int, CurAttr Attr, ScrollTop/ScrollBot int, SavedRow/SavedCol int, SavedAttr Attr, PendingWrap bool, CursorVisible bool, TabStops []bool, Rows/Cols int. Add NewScreen(rows, cols int) *Screen (replaces newScreenBuffer from vterm.go lines 153-166). Initialize cells as rows×cols grid of DefaultCell. Set CursorVisible=true. Initialize TabStops with stops every 8 columns (makeDefaultTabStops pattern from vterm.go line 169).",
-      "acceptance": "NewScreen(24,80) produces a 24×80 grid. All cells are DefaultCell. CursorVisible is true. TabStops has true at indices 0,8,16,24,...,72. CurRow=0, CurCol=0. Test in vt/screen_test.go.",
+      "task": "Commit the fixes as a coherent changeset",
+      "description": "Committed as 10f7d91. 5 files, 282 insertions, 938 deletions.",
+      "acceptance": "git log shows new commit on wip branch. git diff HEAD is empty.",
       "status": "Done"
     },
     {
       "id": "T011",
-      "task": "Implement Screen.Resize() in vt/screen.go",
-      "description": "Add Resize(rows, cols int) method to Screen. Port the resize logic from internal/termui/mux/vterm.go screenBuffer.resize() at lines 207-257. Handle: grow/shrink rows (new rows are DefaultCell), grow/shrink columns per row, clamp CurRow/CurCol/SavedRow/SavedCol to new bounds, reset ScrollTop/ScrollBot to 0, extend/truncate TabStops with 8-column default stops for new columns.",
-      "acceptance": "Test in vt/screen_test.go: shrink 24×80 to 12×40 clamps cursor if needed and truncates grid. Grow 12×40 to 24×80 adds blank rows/cols. Tab stops extend correctly on grow. Saved cursor position is clamped. Scroll region resets.",
+      "task": "Add unit test for VTerm.String() plain-text rendering",
+      "description": "In vt_test.go: empty VTerm, ASCII text, wide chars, ANSI stripped, trailing spaces stripped, trailing empty lines trimmed.",
+      "acceptance": "TestVTerm_String passes with -race. All 6 scenarios covered.",
       "status": "Done"
     },
     {
       "id": "T012",
-      "task": "Implement Screen scroll operations in vt/screen.go",
-      "description": "Add methods to Screen: ScrollUp(n int), ScrollDown(n int), LineFeed(), ReverseIndex(). These replace scrollUp/scrollDown/lineFeed/reverseIndex from vterm.go. ScrollUp shifts rows upward within the scroll region [ScrollTop..ScrollBot], filling vacated bottom rows with CurrentAttr-colored blank lines (makeAttrLine pattern). ScrollDown shifts rows downward. LineFeed moves cursor down, scrolling if at bottom of scroll region. ReverseIndex moves cursor up, scrolling down if at top of scroll region. Use 1-indexed scroll region internally (0 = default = full screen).",
-      "acceptance": "Test in vt/screen_test.go: ScrollUp(1) on a 5-row screen moves row 1 content to row 0, row 4 becomes blank. ScrollDown(1) does the reverse. LineFeed at bottom of scroll region triggers ScrollUp. ReverseIndex at top of scroll region triggers ScrollDown. Operations respect non-default scroll regions (e.g., ScrollTop=2, ScrollBot=4 on a 5-row screen). Blank lines carry current Attr.",
+      "task": "Add test for Mux.ChildExitOutput() lifecycle",
+      "description": "In termmux_test.go: TestChildExitOutput_EmptyBeforeAttach, TestChildExitOutput_CapturesChildOutput, TestChildExitOutput_EmptyAfterDetach. All 3 scenarios covered.",
+      "acceptance": "TestChildExitOutput passes with -race.",
       "status": "Done"
     },
     {
       "id": "T013",
-      "task": "Implement Screen erase operations in vt/screen.go",
-      "description": "Add methods to Screen: EraseDisplay(mode int), EraseLine(mode int), EraseChars(n int). These replace eraseDisplay/eraseLine/eraseChars from vterm.go lines ~825-910. EraseDisplay: mode 0=cursor to end, 1=start to cursor, 2=entire display, 3=entire display+scrollback (treated as 2). EraseLine: mode 0=cursor to end, 1=start to cursor, 2=entire line. EraseChars: erase N chars from cursor position. All erase operations fill with CurAttr-colored blank cells per ECMA-48.",
-      "acceptance": "Test in vt/screen_test.go: EraseDisplay(0) clears from cursor to end of screen. EraseDisplay(2) clears entire screen. EraseLine(1) clears from start of line to cursor. EraseChars(3) clears 3 cells at cursor. All erased cells have current Attr, not default. Boundary: EraseChars(999) doesn't panic on a small screen.",
+      "task": "Add test for Detach ReadLoop context cancellation",
+      "description": "In termmux_test.go: TestDetach_CancelsReaderContext verifies context cancel takes effect when child produces data. TestDetach_ReattachSingleReadLoop verifies re-attach captures only new child output.",
+      "acceptance": "TestDetach_CancelsReaderContext and TestDetach_ReattachSingleReadLoop pass with -race.",
       "status": "Done"
     },
     {
       "id": "T014",
-      "task": "Implement Screen line insert/delete in vt/screen.go",
-      "description": "Add methods to Screen: InsertLines(n int), DeleteLines(n int), InsertChars(n int), DeleteChars(n int). These replace insertLines/deleteLines/insertChars/deleteChars from vterm.go. InsertLines pushes lines down from cursor within scroll region. DeleteLines removes lines at cursor, pulling up. InsertChars shifts chars right at cursor. DeleteChars removes chars at cursor, pulling left. All new cells carry CurAttr.",
-      "acceptance": "Test in vt/screen_test.go: InsertLines(1) at row 2 of a 5-row screen pushes rows 2-3 down, row 2 becomes blank. DeleteLines(1) at row 2 pulls rows 3-4 up, last row becomes blank. InsertChars(2) at col 3 shifts existing chars right. DeleteChars(2) at col 3 pulls chars left. Operations respect scroll region. Out-of-bounds N values are clamped silently.",
+      "task": "Add test for attachChild ErrAlreadyAttached retry",
+      "description": "In termmux_test.go: TestAttach_AfterDetach_Succeeds verifies the Attach→ErrAlreadyAttached→Detach→Attach pattern works correctly.",
+      "acceptance": "Test passes. Second child connected without panic.",
       "status": "Done"
     },
     {
       "id": "T015",
-      "task": "Implement Screen.PutChar() for printable character placement in vt/screen.go",
-      "description": "Add PutChar(r rune) method to Screen. This replaces putChar from vterm.go lines ~920-975. Handle pending wrap (if PendingWrap is true, advance to next line first). Place the rune at CurRow,CurCol with CurAttr. For wide characters (use uniseg.StringWidth(string(r)) == 2): place rune at current col, place zero-width placeholder (rune 0) at col+1. If at right margin (CurCol == Cols-1), set PendingWrap=true instead of advancing. Otherwise advance CurCol. Use github.com/rivo/uniseg for width calculation (go-runewidth is BANNED).",
-      "acceptance": "Test in vt/screen_test.go: ASCII 'A' placed at cursor, cursor advances. Wide char '漢' occupies two cells (rune at col N, 0 at col N+1). PendingWrap set when cursor reaches right margin. Wrap triggers line feed on next printable char. Wide char at last column wraps gracefully (doesn't write half a char off-screen).",
-      "status": "Done"
+      "task": "Update WIP.md with current session state",
+      "description": "Rewrite WIP.md reflecting fixes done, expansion tasks ahead, file paths, branch.",
+      "acceptance": "Cold-start agent can resume immediately from WIP.md.",
+      "status": "In Progress"
     },
     {
       "id": "T016",
-      "task": "Define ANSI parser state machine types in vt/parser.go",
-      "description": "Create internal/termmux/vt/parser.go. Define `type State uint8` with constants: StateGround=0, StateEscape=1, StateCSI=2, StateOSC=3, StateDCS=4. Define `type Action uint8` with constants: ActionNone=0, ActionPrint=1, ActionExecute=2, ActionCSIDispatch=3, ActionEscDispatch=4, ActionOSCEnd=5, ActionDCSEnd=6. Define `type Parser struct` with fields: state State, paramBuf []byte (capacity 128), intermBuf []byte, dcsLen int, maxDCSLen int (default 4096). Add NewParser() *Parser.",
-      "acceptance": "NewParser() returns a parser in StateGround with empty buffers and maxDCSLen=4096. All state and action constants have correct values. Test in vt/parser_test.go.",
-      "status": "Done"
-    },
-    {
-      "id": "T017",
-      "task": "Implement table-driven ANSI parser state transitions in vt/parser.go",
-      "description": "Add func (p *Parser) Feed(b byte) (Action, byte) to vt/parser.go. This is a table-driven replacement for processByte/processGround/processEscape/processCSI/processOSC/processDCS from vterm.go. Rather than switch/case nesting, define a transition table: [stateCount][256]struct{action Action; nextState State}. Feed() looks up the table entry for (currentState, inputByte), performs the action, transitions state, and returns (action, finalByte). For CSI: accumulate param bytes (0x30-0x3F) and intermediate bytes (0x20-0x2F) into buffers. For ground state: bytes 0x20-0x7F return ActionPrint. Control chars (0x00-0x1F) in ground return ActionExecute. ESC transitions to StateEscape. This replaces the ad-hoc state machine in vterm.go.",
-      "acceptance": "Test in vt/parser_test.go: Feed ESC byte transitions to StateEscape. Feed '[' after ESC transitions to StateCSI. CSI parameter bytes accumulate. CSI final byte (0x40-0x7E) returns ActionCSIDispatch with the final byte. OSC terminated by BEL returns ActionOSCEnd. DCS terminated by ESC+backslash returns. Printable ASCII in ground returns ActionPrint. Control chars return ActionExecute. Table lookup is O(1) per byte.",
-      "status": "Done"
-    },
-    {
-      "id": "T018",
-      "task": "Add parser parameter extraction in vt/parser.go",
-      "description": "Add func (p *Parser) Params() []int to vt/parser.go. Parses p.paramBuf as semicolon-separated decimal integers. Empty string returns empty slice. Missing params return 0 (e.g., ';5' → [0, 5]). This replaces parseParams from vterm.go lines ~715-745. Add func (p *Parser) Intermediates() []byte returning a copy of p.intermBuf. Add func (p *Parser) HasIntermediate(b byte) bool checking if an intermediate byte is present (replaces the isPrivate checks in dispatchCSI). Add func (p *Parser) Reset() clearing state back to StateGround.",
-      "acceptance": "Test in vt/parser_test.go: Params() on '1;2;3' returns [1,2,3]. Params() on '' returns []. Params() on '5' returns [5]. Params() on ';5' returns [0,5]. Params() on '1;;3' returns [1,0,3]. HasIntermediate('?') after CSI ? sequence returns true. Reset() puts parser back in StateGround with empty buffers.",
-      "status": "Done"
-    },
-    {
-      "id": "T019",
-      "task": "Implement UTF-8 byte accumulation in vt/utf8.go",
-      "description": "Create internal/termmux/vt/utf8.go. Define `type UTF8Accum struct` with fields: buf [utf8.UTFMax]byte, len int. Add func (u *UTF8Accum) Feed(b byte) (rune, bool). Feed processes one byte: if byte starts a new multi-byte sequence (>= 0x80), begin accumulating. If byte is a continuation byte (0x80-0xBF), append to buffer. When utf8.FullRune, decode and return (rune, true). On invalid continuation (byte < 0x80 or >= 0xC0 when accumulating), return (utf8.RuneError, true) and do NOT consume the byte (caller must re-feed). Add func (u *UTF8Accum) Pending() bool returning whether a partial sequence is buffered. Add func (u *UTF8Accum) Flush() rune returning RuneError if bytes remain, clearing the buffer.",
-      "acceptance": "Test in vt/utf8_test.go: Single ASCII byte returns immediately. 2-byte UTF-8 (é = 0xC3 0xA9) accumulates then returns. 3-byte UTF-8 (漢 = 0xE6 0xBC 0xA2) accumulates then returns. 4-byte UTF-8 (𝕊 = 0xF0 0x9D 0x95 0x8A) accumulates then returns. Truncated sequence followed by ASCII emits RuneError then the ASCII is re-feedable. Overlong sequences emit RuneError. Flush on partial returns RuneError. Pending() is true during accumulation.",
-      "status": "Done"
-    },
-    {
-      "id": "T020",
-      "task": "Implement rune width cache in vt/utf8.go",
-      "description": "Add a width cache to vt/utf8.go. Define `type WidthCache struct { cache map[rune]int }`. Add func NewWidthCache() *WidthCache. Add func (w *WidthCache) Width(r rune) int that caches uniseg.StringWidth(string(r)) lookups. The cache is not shared across goroutines (VTerm has its own). This is a performance optimization — uniseg.StringWidth involves Unicode table lookups on every call. Use github.com/rivo/uniseg ONLY (go-runewidth is BANNED).",
-      "acceptance": "Test in vt/utf8_test.go: Width('A')=1, Width('漢')=2, Width(0)=0. Second call for same rune returns from cache (verify via benchmark showing cache is faster than uncached). Width of control chars returns 0 per uniseg behavior.",
-      "status": "Done"
-    },
-    {
-      "id": "T021",
-      "task": "Implement CSI sequence dispatch in vt/csi.go",
-      "description": "Create internal/termmux/vt/csi.go. Define func DispatchCSI(scr *Screen, final byte, params []int, isPrivate bool). This is a table-driven replacement for dispatchCSI in vterm.go lines ~530-710. Create a dispatch table: map[byte]func(*Screen, []int, bool). Register handlers for: A=CUU, B=CUD, C=CUF, D=CUB, E=CNL, F=CPL, G=CHA, H/f=CUP/HVP, I=CHT, J=ED, K=EL, L=IL, M=DL, P=DCH, X=ECH, Z=CBT, @=ICH, S=SU, T=SD, d=VPA, g=TBC, m=SGR, r=DECSTBM, h=DECSET, l=DECRST, s=SCP, u=RCP. Add paramDefault(params []int, idx, def int) int helper.",
-      "acceptance": "Test in vt/csi_test.go: Each CSI sequence modifies the Screen correctly. CUP moves cursor. ED erases display. SGR changes attributes. DECSTBM sets scroll region and homes cursor. DECSET/DECRST toggle cursor visibility and alt screen. Unknown final bytes are silently ignored. Table-driven dispatch has no switch/case on final byte.",
-      "status": "Done"
-    },
-    {
-      "id": "T022",
-      "task": "Implement DECSET/DECRST handler in vt/csi.go",
-      "description": "Add handleDECSET(scr *Screen, params []int) and handleDECRST(scr *Screen, params []int) to vt/csi.go. These replace handleDECSET/handleDECRST from vterm.go. Handle mode 25 (DECTCEM: cursor visibility — set CursorVisible). Handle mode 1049 (alt screen buffer — swap to alternate/primary screen). Handle mode 47 and 1047 as aliases for 1049. For alt screen switch, define a callback mechanism: DispatchCSI takes an optional AltScreenSwitch func(toAlt bool) so the parent VTerm can manage primary/alternate buffer swapping.",
-      "acceptance": "Test in vt/csi_test.go: CSI ?25l hides cursor, CSI ?25h shows cursor. CSI ?1049h triggers alt screen callback with toAlt=true. CSI ?1049l triggers callback with toAlt=false. Modes 47 and 1047 also trigger the callback. Unknown private modes are silently ignored.",
-      "status": "Done"
-    },
-    {
-      "id": "T023",
-      "task": "Implement ESC sequence dispatch in vt/esc.go",
-      "description": "Create internal/termmux/vt/esc.go. Define func DispatchESC(scr *Screen, final byte) with optional callback for sequences that need VTerm-level state (RIS=full reset, alt screen). Handle: 7=DECSC (save cursor+attr), 8=DECRC (restore cursor+attr), M=RI (reverse index), D=IND (index/line feed), E=NEL (next line), c=RIS (reset — callback), H=HTS (set tab stop). Unknown escape bytes are silently ignored.",
-      "acceptance": "Test in vt/esc_test.go: DECSC saves cursor position and attr, DECRC restores them. RI at top of screen scrolls down. IND at bottom scrolls up. NEL moves to column 0 of next line. HTS sets a tab stop at current column. RIS triggers reset callback.",
-      "status": "Done"
-    },
-    {
-      "id": "T024",
-      "task": "Implement OSC sequence consumption in vt/osc.go",
-      "description": "Create internal/termmux/vt/osc.go. Define func ConsumeOSC(p *Parser, b byte) bool — returns true when the OSC is terminated (BEL or ST). OSC sequences are consumed and discarded (we don't need window title, etc.). The parser already handles the state transition; this function exists to document the behavior and provide a hook for future OSC handling if needed.",
-      "acceptance": "Test in vt/osc_test.go: Feeding 'OSC 0;title BEL' (\\x1b]0;title\\x07) consumes all bytes and returns to ground state. ST-terminated OSC (\\x1b]0;title\\x1b\\\\) also terminates correctly. Partial OSC across multiple Feed calls works.",
-      "status": "Done"
-    },
-    {
-      "id": "T025",
-      "task": "Implement DCS sequence consumption in vt/osc.go",
-      "description": "Add DCS consumption to vt/osc.go (or a separate vt/dcs.go if cleaner). DCS sequences are consumed and discarded like OSC. Enforce a max payload length (4096 bytes, matching maxDCSLen from vterm.go line 483). If payload exceeds max, abort to ground state. The parser handles state; this provides the length guard.",
-      "acceptance": "Test in vt/osc_test.go (or vt/dcs_test.go): DCS terminated by ST is consumed. DCS terminated by BEL is consumed. DCS exceeding 4096 bytes aborts to ground state. Parser state is clean after termination.",
-      "status": "Done"
-    },
-    {
-      "id": "T026",
-      "task": "Implement VTerm composite type in vt/vt.go",
-      "description": "Create internal/termmux/vt/vt.go. Define `type VTerm struct` composing: primary *Screen, alternate *Screen, active *Screen (pointer to primary or alternate), parser *Parser, utf8 UTF8Accum, widthCache *WidthCache, rows/cols int, mu sync.Mutex. Add NewVTerm(rows, cols int) *VTerm. Add Resize(rows, cols int). Add Rows()/Cols() int accessors. The VTerm owns the concurrency lock; Screen/Parser are not themselves thread-safe.",
-      "acceptance": "Test in vt/vt_test.go: NewVTerm(24,80) has 24 rows, 80 cols, primary==active, parser in ground state. Resize(12,40) updates rows/cols and resizes both screens. Rows() and Cols() return current dimensions. Concurrent Write() and Resize() do not race (run with -race).",
-      "status": "Done"
-    },
-    {
-      "id": "T027",
-      "task": "Implement VTerm.Write() byte processing loop in vt/vt.go",
-      "description": "Add Write(p []byte) (int, error) to VTerm implementing io.Writer. Port the logic from internal/termui/mux/vterm.go Write() at lines 271-340. For each byte: (1) if UTF-8 accumulation is active, feed to utf8 accumulator — on complete rune, call active.PutChar(r). (2) If ground state and byte >= 0x80, start UTF-8 accumulation. (3) Otherwise feed to parser: check returned Action — ActionPrint calls PutChar, ActionExecute handles control chars (LF calls LineFeed, CR resets col, TAB advances to tab stop, BS decrements col, BEL ignored), ActionCSIDispatch calls DispatchCSI, ActionEscDispatch calls DispatchESC. (4) Always return len(p), nil.",
-      "acceptance": "Test in vt/vt_test.go: Writing 'Hello' places 5 ASCII chars. Writing 'Hello\\nWorld' places on two lines. Writing CSI sequence '\\x1b[2J' clears display. Writing UTF-8 multi-byte char places correctly. Writing bytes split across two Write calls (e.g., first byte of UTF-8 in call 1, remaining in call 2) reassembles correctly. All this verifiable by inspecting active screen's Cells.",
-      "status": "Done"
-    },
-    {
-      "id": "T028",
-      "task": "Implement control character dispatch in VTerm.Write()",
-      "description": "Within the Write() method's ActionExecute path, handle all control characters: 0x07=BEL (ignore), 0x08=BS (decrement CurCol if >0, clear PendingWrap), 0x09=TAB (advance to next tab stop, clear PendingWrap), 0x0A=LF (clear PendingWrap, call LineFeed), 0x0D=CR (clear PendingWrap, set CurCol=0). All other control chars (0x00-0x06, 0x0B-0x0C, 0x0E-0x1A, 0x1C-0x1F) are silently ignored. This matches processGround from vterm.go.",
-      "acceptance": "Test in vt/vt_test.go: Tab advances to next 8-column stop. Backspace decrements column. CR returns to column 0. LF advances line. BEL does nothing. Null byte does nothing. Vertical tab (0x0B) does nothing.",
-      "status": "Done"
-    },
-    {
-      "id": "T029",
-      "task": "Implement alt screen buffer switching in VTerm",
-      "description": "Add methods to VTerm: SwitchToAlt() and SwitchToPrimary(). SwitchToAlt sets active=alternate. SwitchToPrimary sets active=primary. Wire into the DECSET/DECRST callback mechanism from T022: when CSI ?1049h is dispatched, VTerm.SwitchToAlt() is called; when CSI ?1049l, VTerm.SwitchToPrimary(). Also handle 1049's save/restore cursor behavior: 1049h saves cursor on primary before switch, 1049l restores cursor on primary after switch.",
-      "acceptance": "Test in vt/vt_test.go: Write text, switch to alt, write different text — alt screen has second text, primary preserved. Switch back — primary text restored. Cursor position is saved/restored across 1049h/1049l. Both mode 47 and 1047 also work.",
-      "status": "Done"
-    },
-    {
-      "id": "T030",
-      "task": "Implement RIS (full reset) in VTerm",
-      "description": "Add Reset() method to VTerm. Called when ESC c is dispatched. Creates fresh primary and alternate screens (NewScreen), sets active=primary, resets parser to ground state, clears UTF-8 accumulator. Wire into DispatchESC callback for 'c'.",
-      "acceptance": "Test in vt/vt_test.go: Write colored text, set alt screen, move cursor — then Write ESC c. After reset: primary is blank, alternate is blank, active is primary, cursor at 0,0, attrs are default.",
-      "status": "Done"
-    },
-    {
-      "id": "T031",
-      "task": "Implement screen rendering in vt/render.go",
-      "description": "Create internal/termmux/vt/render.go. Define func Render(scr *Screen) string. Port the Render() logic from vterm.go lines 1202-1262. For each row: find last non-default cell. Skip entirely blank rows. Emit CUP to position cursor at row start. For each cell up to last non-default: skip zero-width placeholders (Ch==0). Emit SGRDiff(prevAttr, cell.Attr) on attr change. Emit the rune. After all rows: emit \\x1b[0m reset, emit CUP to cursor position, emit cursor visibility (\\x1b[?25h or \\x1b[?25l).",
-      "acceptance": "Test in vt/render_test.go: Empty 3×5 screen renders only the reset+cursor position. Screen with 'AB' at row 0 renders CUP(1,1)+A+B+reset+cursor. Bold text includes SGR sequence. Wide character renders correctly (no double-rendering). Render is idempotent: Render(same_screen) produces same output.",
-      "status": "Done"
-    },
-    {
-      "id": "T032",
-      "task": "Add Render() method to VTerm delegating to vt.Render()",
-      "description": "Add func (v *VTerm) Render() string to vt/vt.go. Acquires v.mu, calls Render(v.active), returns the result. This is the public API for screen restoration.",
-      "acceptance": "Test in vt/vt_test.go: Write known ANSI output to VTerm, call Render(), verify the output contains expected CUP sequences and character content. Render() under concurrent Write() does not race.",
-      "status": "Done"
-    },
-    {
-      "id": "T033",
-      "task": "Add dirty tracking to Screen for incremental rendering",
-      "description": "Add a dirty tracking mechanism to Screen in vt/screen.go. Add field `dirty []bool` (one per row, true if row changed since last render). Set dirty[row]=true in PutChar, all erase operations, all scroll operations, all line insert/delete operations. Add func (s *Screen) DirtyRows() []int returning indices of dirty rows. Add func (s *Screen) ClearDirty(). Add func RenderDirty(scr *Screen) string in vt/render.go that only renders dirty rows (optimization for status bar updates and partial redraws).",
-      "acceptance": "Test in vt/screen_test.go: NewScreen has no dirty rows. PutChar marks current row dirty. EraseDisplay marks all rows dirty. ClearDirty resets. ScrollUp marks scroll region rows dirty. Test in vt/render_test.go: RenderDirty produces output only for changed rows.",
-      "status": "Done"
-    },
-    {
-      "id": "T034",
-      "task": "Add String() debug dump to VTerm",
-      "description": "Add func (v *VTerm) String() string to vt/vt.go. Returns a plain-text representation of the active screen (no ANSI, just characters) for debugging and test assertions. Each row is a string of runes, trailing spaces stripped, rows joined by newline. This is simpler than Render() and useful for test assertions. Also add func (v *VTerm) CursorPos() (row, col int) accessor.",
-      "acceptance": "Test in vt/vt_test.go: Write 'Hello\\nWorld', String() returns 'Hello\\nWorld'. Write '\\x1b[2J', String() returns empty-ish (just newlines or empty string). CursorPos() returns expected position after writes.",
-      "status": "Done"
-    },
-    {
-      "id": "T035",
-      "task": "Create ptyio interfaces and types in ptyio/ptyio.go",
-      "description": "Create internal/termmux/ptyio/ptyio.go. Define interfaces: `type PTY interface { io.ReadWriteCloser; Fd() uintptr; Resize(rows, cols uint16) error }`. Define `type BlockingGuard interface { EnsureBlocking(fd int) (origFlags int, err error); Restore(fd int, origFlags int) }`. Define `type TermState interface { MakeRaw(fd int) (*term.State, error); Restore(fd int, state *term.State) error; GetSize(fd int) (width, height int, err error) }`. These interfaces abstract platform-specific operations for testability.",
-      "acceptance": "Interfaces compile. They match the operations used in mux.go RunPassthrough: MakeRaw, Restore, GetSize, EnsureBlocking. A mock implementation for tests can be written implementing these interfaces.",
-      "status": "Done"
-    },
-    {
-      "id": "T036",
-      "task": "Implement real TermState adapter in ptyio/ptyio.go",
-      "description": "Add `type RealTermState struct{}` implementing TermState. MakeRaw delegates to golang.org/x/term.MakeRaw. Restore delegates to term.Restore. GetSize delegates to term.GetSize. This is the production implementation; tests use a mock.",
-      "acceptance": "RealTermState{} satisfies the TermState interface (compile-time check: var _ TermState = RealTermState{}). These methods are thin wrappers with no logic to test beyond the compile check.",
-      "status": "Done"
-    },
-    {
-      "id": "T037",
-      "task": "Implement blocking guard for Unix in ptyio/blocking_unix.go",
-      "description": "Create internal/termmux/ptyio/blocking_unix.go with build tag `//go:build !windows`. Define `type UnixBlockingGuard struct{}` implementing BlockingGuard. EnsureBlocking uses fcntl F_GETFL/F_SETFL to clear O_NONBLOCK (port from mux_blocking_unix.go). Restore re-sets the original flags. Extract the fcntlGetFlags/fcntlSetFlags helpers from mux_blocking_unix.go.",
-      "acceptance": "Compile-time interface check passes on Unix. The fcntl operations are the same as the existing code. Unit test in ptyio/blocking_unix_test.go (build-tagged) creates a pipe, sets O_NONBLOCK, calls EnsureBlocking, verifies O_NONBLOCK is cleared, calls Restore, verifies O_NONBLOCK is restored.",
-      "status": "Done"
-    },
-    {
-      "id": "T038",
-      "task": "Implement blocking guard no-op for Windows in ptyio/blocking_windows.go",
-      "description": "Create internal/termmux/ptyio/blocking_windows.go with build tag `//go:build windows`. Define `type WindowsBlockingGuard struct{}` implementing BlockingGuard. Both methods are no-ops (EnsureBlocking returns 0, nil; Restore returns immediately). Port from mux_blocking_other.go.",
-      "acceptance": "Compile-time interface check passes on Windows. Both methods do nothing and return no error.",
-      "status": "Done"
-    },
-    {
-      "id": "T039",
-      "task": "Implement buffered PTY reader in ptyio/reader.go",
-      "description": "Create internal/termmux/ptyio/reader.go. Define `type BufferedReader struct` wrapping an io.Reader with a configurable buffer size (default 32KB), a channel-based output mechanism, and backpressure awareness. ReadLoop(ctx context.Context) runs the blocking read loop, sending []byte chunks on an output channel. If the output channel is full (consumer paused), the reader blocks — providing backpressure to the child process. Add a Done() <-chan struct{} for lifecycle tracking. This replaces the ad-hoc backgroundReader goroutine in mux.go lines 235-275 with a structured, testable component.",
-      "acceptance": "Test in ptyio/reader_test.go: (1) Reader reads from a pipe, sends chunks on output channel. (2) Closing the pipe causes Done() to close. (3) When output channel is full, reader blocks (backpressure). (4) Context cancellation stops the reader. (5) Run with -race, no races. (6) After Done(), no goroutine leak (use runtime.NumGoroutine before/after).",
-      "status": "Done"
-    },
-    {
-      "id": "T040",
-      "task": "Implement buffered PTY writer with retry logic in ptyio/writer.go",
-      "description": "Create internal/termmux/ptyio/writer.go. Define `type BufferedWriter struct` wrapping an io.Writer. Implement Write(p []byte) (int, error) that handles partial writes: if the underlying Write returns n < len(p) and err==nil, retry with remaining bytes. If err is EAGAIN/EWOULDBLOCK, retry after runtime.Gosched(). Track total bytes written. This replaces the unsafe child.Write(buf[:n]) in mux.go's stdin forwarding that assumes atomic writes.",
-      "acceptance": "Test in ptyio/writer_test.go: (1) Normal write passes through. (2) Writer that returns partial write (n < len) triggers retry for remaining bytes. (3) Writer that returns EAGAIN triggers retry. (4) Writer that returns a real error propagates it. (5) Total bytes written is correct after partial retries.",
-      "status": "Done"
-    },
-    {
-      "id": "T041",
-      "task": "Implement PTY resize for Unix in ptyio/resize_unix.go",
-      "description": "Create internal/termmux/ptyio/resize_unix.go with build tag `//go:build !windows`. Define func ResizePTY(fd uintptr, rows, cols uint16) error using TIOCSWINSZ ioctl (syscall.Syscall with SYS_IOCTL). Define the winsize struct matching the C struct. This is not currently in the old code (it used the resizeFn callback), but a native implementation is needed for the ptyio package to be self-contained.",
-      "acceptance": "Test in ptyio/resize_unix_test.go: Create a real PTY pair (os/exec + pty library or creack/pty), call ResizePTY, verify the child sees the new size (or at minimum, the ioctl doesn't return an error). If no PTY library is available, test that it compiles and the ioctl call structure is correct.",
-      "status": "Done"
-    },
-    {
-      "id": "T042",
-      "task": "Implement PTY resize for Windows in ptyio/resize_windows.go",
-      "description": "Create internal/termmux/ptyio/resize_windows.go with build tag `//go:build windows`. Define func ResizePTY(fd uintptr, rows, cols uint16) error. On Windows, ConPTY resize uses ResizePseudoConsole. For now, implement as a no-op that returns nil (Windows PTY support can be refined later). Document the TODO.",
-      "acceptance": "Compiles on Windows. Returns nil. Has a TODO comment referencing ResizePseudoConsole for future implementation.",
-      "status": "Done"
-    },
-    {
-      "id": "T043",
-      "task": "Implement status bar renderer in statusbar/statusbar.go",
-      "description": "Create internal/termmux/statusbar/statusbar.go. Define `type StatusBar struct` with fields: status string, toggleKeyName string, writer io.Writer, height int (total terminal height), mu sync.Mutex. Add New(w io.Writer) *StatusBar. Add SetHeight(h int). Add SetStatus(s string). Add SetToggleKey(key byte) (converts to readable name like 'Ctrl+]'). Add Render() that writes the status bar to the last terminal row: save cursor, move to row=height, clear line, write reverse-video '[Claude] status │ Ctrl+] to switch', restore cursor. Port from renderStatusBar in mux.go lines 413-420.",
-      "acceptance": "Test in statusbar/statusbar_test.go: Render to a bytes.Buffer. Verify output contains save cursor (ESC 7 or CSI s), CUP to last row, clear line (CSI 2K), reverse video (SGR 7), status text, toggle key hint, restore cursor. SetStatus changes the rendered text. SetToggleKey(0x1D) renders 'Ctrl+]'. SetToggleKey(0x01) renders 'Ctrl+A'.",
-      "status": "Done"
-    },
-    {
-      "id": "T044",
-      "task": "Implement scroll region management in statusbar/statusbar.go",
-      "description": "Add SetScrollRegion() and ResetScrollRegion() methods to StatusBar. SetScrollRegion writes CSI 1;(height-1)r CSI 1;1H — restricting scrolling to rows 1..height-1, reserving the last row for the status bar. ResetScrollRegion writes CSI r CSI 999;1H — restoring full scroll and positioning cursor at bottom. Port from setScrollRegion/resetScrollRegion in mux.go lines 401-410.",
-      "acceptance": "Test in statusbar/statusbar_test.go: SetScrollRegion writes the expected ANSI sequences. ResetScrollRegion writes the expected ANSI sequences. Verify exact byte sequences match the old implementation. Setting height=24 and calling SetScrollRegion produces CSI 1;23r.",
-      "status": "Done"
-    },
-    {
-      "id": "T045",
-      "task": "Define Mux public API type in termmux/termmux.go",
-      "description": "Create internal/termmux/termmux.go. Define `type Mux struct` with fields: cfg Config, stdin io.Reader, stdout io.Writer, termFd int, mu sync.Mutex, child io.ReadWriteCloser, active Side, passthroughActive bool, swappedOnce bool, vterm *vt.VTerm, termRows/termCols int, reader *ptyio.BufferedReader, statusBar *statusbar.StatusBar, termState ptyio.TermState, blockingGuard ptyio.BlockingGuard. Add `func New(stdin io.Reader, stdout io.Writer, termFd int, opts ...Option) *Mux`. Apply defaults, create StatusBar, assign platform-appropriate BlockingGuard and TermState.",
-      "acceptance": "New() creates a Mux with default config. ToggleKey is 0x1D. StatusEnabled is true. Active side is SideOsm. Child is nil. VTerm is nil. Test in termmux/termmux_test.go.",
-      "status": "Done"
-    },
-    {
-      "id": "T046",
-      "task": "Implement Mux.Attach() in termmux/termmux.go",
-      "description": "Add Attach(child io.ReadWriteCloser) error to Mux. Port from mux.go Attach() lines 157-188. If child already attached, return ErrAlreadyAttached. Set m.child. Create VTerm with current termRows/termCols (default 24×80). Start BufferedReader goroutine reading from child. The reader's output channel is consumed by a tee goroutine that writes to VTerm always and to stdout only when passthroughActive.",
-      "acceptance": "Test in termmux/termmux_test.go: Attach succeeds. Double Attach returns ErrAlreadyAttached. After Attach, HasChild() returns true. VTerm is allocated. BufferedReader is started.",
-      "status": "Done"
-    },
-    {
-      "id": "T047",
-      "task": "Implement Mux tee goroutine for child output routing",
-      "description": "Internal to Attach(): start a goroutine that reads from BufferedReader's output channel and (1) always writes to VTerm for screen capture, (2) writes to stdout only when m.passthroughActive is true. This replaces backgroundReader in mux.go lines 235-275. The goroutine exits when the reader's Done() channel closes. Use a separate done channel (m.teeDone) for Detach() to wait on.",
-      "acceptance": "Test in termmux/termmux_test.go: Attach a mock child that writes 'Hello'. In non-passthrough mode, VTerm captures 'Hello' but stdout does NOT receive it. Set passthroughActive=true, child writes 'World' — stdout receives 'World' AND VTerm captures it. Run with -race.",
-      "status": "Done"
-    },
-    {
-      "id": "T048",
-      "task": "Implement Mux.Detach() in termmux/termmux.go",
-      "description": "Add Detach() error to Mux. Port from mux.go Detach() lines 190-225. If passthroughActive, return ErrPassthroughActive. Nil out child and VTerm. Wait for tee goroutine to finish (with timeout). Reset swappedOnce. The key difference from old code: BufferedReader has a proper Done() channel, so we wait on that instead of a bare channel with a 3-second timeout. Use a configurable detach timeout (default 5s) instead of hardcoded 3s.",
-      "acceptance": "Test in termmux/termmux_test.go: Detach after Attach succeeds. HasChild() returns false after Detach. Detach during passthrough returns ErrPassthroughActive. Detach with child already closed returns immediately (no timeout). Detach with child still open waits up to timeout. No goroutine leak after Detach (verify with runtime.NumGoroutine).",
-      "status": "Done"
-    },
-    {
-      "id": "T049",
-      "task": "Implement Mux accessor methods",
-      "description": "Add to termmux.go: ActiveSide() Side, HasChild() bool, SetToggleKey(byte), SetResizeFunc(fn), SetStatusEnabled(bool), SetClaudeStatus(string), WriteToChild([]byte)(int,error). Direct ports from mux.go lines 278-345. All are mutex-guarded.",
-      "acceptance": "Test in termmux/termmux_test.go: Each accessor sets/gets the expected value. WriteToChild with no child returns ErrNoChild. WriteToChild with child delegates to child.Write(). SetClaudeStatus updates the statusBar.",
-      "status": "Done"
-    },
-    {
-      "id": "T050",
-      "task": "Implement RunPassthrough terminal state save/restore",
-      "description": "Begin implementing RunPassthrough(ctx context.Context) (ExitReason, error) in termmux.go. First section: precondition checks (no child → ErrNoChild, already active → ErrPassthroughActive). Set passthroughActive=true, active=SideClaude. Save terminal state via m.termState.MakeRaw(). Ensure blocking via m.blockingGuard.EnsureBlocking(). Set up defer to restore: term state, blocking flags, passthroughActive=false, active=SideOsm. Port from mux.go RunPassthrough lines 350-400.",
-      "acceptance": "Test in termmux/termmux_test.go with mock TermState and BlockingGuard: RunPassthrough calls MakeRaw, EnsureBlocking on entry. After return (via toggle key), Restore and blocking Restore are called. ActiveSide is SideClaude during passthrough and SideOsm after.",
-      "status": "Done"
-    },
-    {
-      "id": "T051",
-      "task": "Implement RunPassthrough status bar setup",
-      "description": "In RunPassthrough, after terminal state save: if StatusEnabled, get terminal size, set status bar height, call statusBar.SetScrollRegion(), statusBar.Render(). Defer statusBar.ResetScrollRegion(). Calculate childRows = height - statusBarLines for VTerm sizing. Resize VTerm to childRows×width. Update termRows/termCols. Port from mux.go RunPassthrough lines 400-440.",
-      "acceptance": "Test in termmux/termmux_test.go: When StatusEnabled=true and mock termState returns 80×24, scroll region is set to 1..23. StatusBar is rendered. VTerm is resized to 23×80. When StatusEnabled=false, no scroll region is set.",
-      "status": "Done"
-    },
-    {
-      "id": "T052",
-      "task": "Implement RunPassthrough first-swap screen clear",
-      "description": "In RunPassthrough, after status bar setup: if this is the first passthrough (!swappedOnce), clear screen (ESC[2J ESC[H), call resizeFn to propagate dimensions to child PTY. Set swappedOnce=true. Port from mux.go lines 440-460.",
-      "acceptance": "Test in termmux/termmux_test.go: First call to RunPassthrough (after Attach) writes ESC[2J ESC[H to stdout and calls resizeFn with correct dimensions. Second call does NOT clear screen.",
-      "status": "Done"
-    },
-    {
-      "id": "T053",
-      "task": "Implement RunPassthrough VTerm screen restore on toggle-back",
-      "description": "In RunPassthrough, if NOT first swap: restore Claude's screen from VTerm.Render(). Write ESC[2J ESC[H to clear, then write rendered output. Re-render status bar after VTerm restore. Port from mux.go lines 462-485. The key fix vs old code: hold m.mu during the clear+render+statusbar sequence to prevent interleaving with tee goroutine writes.",
-      "acceptance": "Test in termmux/termmux_test.go: Attach child that writes colored output. First RunPassthrough (clear screen). Toggle out. Second RunPassthrough restores VTerm content — stdout receives the Render() output. Status bar is rendered after VTerm content. No interleaving of tee writes during restore (verify with a slow mock child writing during restore).",
-      "status": "Done"
-    },
-    {
-      "id": "T054",
-      "task": "Implement RunPassthrough stdin forwarding with toggle key detection",
-      "description": "In RunPassthrough, start stdin→child goroutine. Read from m.stdin, scan for toggleKey. If found: forward bytes before the toggle key, send ExitToggle on result channel. Otherwise, forward all bytes to child via BufferedWriter. Handle EAGAIN with retry (defense-in-depth even after EnsureBlocking). Port from mux.go lines 500-545. Key difference: use ptyio.BufferedWriter for child writes instead of raw child.Write.",
-      "acceptance": "Test in termmux/termmux_test.go: Write normal bytes to stdin — child receives them. Write toggle key — RunPassthrough returns ExitToggle. Write 'abc' + toggleKey + 'def' — child receives 'abc', RunPassthrough returns ExitToggle, 'def' is not forwarded. EAGAIN on stdin.Read triggers retry, not error exit.",
-      "status": "Done"
-    },
-    {
-      "id": "T055",
-      "task": "Implement RunPassthrough child exit and context cancellation handling",
-      "description": "In RunPassthrough, after starting stdin goroutine: select on result channel (from stdin goroutine), BufferedReader's Done channel (child EOF), and ctx.Done(). Child EOF → ExitChildExit. Context cancel → ExitContext. Port from mux.go lines 547-560. Cancel the forwarding context on exit to clean up the stdin goroutine.",
-      "acceptance": "Test in termmux/termmux_test.go: Close child PTY during passthrough → returns ExitChildExit. Cancel context during passthrough → returns ExitContext. Stdin goroutine is cleaned up after each exit (no goroutine leak).",
-      "status": "Done"
-    },
-    {
-      "id": "T056",
-      "task": "Implement StringIO adapter in termmux/stringio.go",
-      "description": "Create internal/termmux/stringio.go. Port the StringIO interface and WrapStringIO adapter from mux.go lines 424-end. StringIO has Send(string) error, Receive() (string, error), Close() error. WrapStringIO returns an io.ReadWriteCloser that adapts string-based I/O (used by claudemux AgentHandle) to byte-based I/O (used by Mux.Attach). The Read side calls Receive() and buffers the result. The Write side calls Send().",
-      "acceptance": "Test in termmux/stringio_test.go: Port and adapt TestWrapStringIO_ReadWrite from mux_test.go. Verify: Write('hello') calls Send('hello'). Read fills buffer from Receive(). EOF from Receive propagates as io.EOF. Close calls underlying Close. Concurrent Read/Write is safe.",
-      "status": "Done"
-    },
-    {
-      "id": "T057",
-      "task": "Move AutoSplitModel to termmux/ui/autosplit.go",
-      "description": "Copy internal/termui/mux/autosplit.go to internal/termmux/ui/autosplit.go. Change package declaration from `mux` to `ui`. Update all type references: AutoSplitStep, StepStatus, StepPending/Running/Done/Failed, all BubbleTea message types (AutoSplitStepStartMsg, etc.), AutoSplitModel. Keep the same public API. Update imports — BubbleTea and Lipgloss imports stay the same. No behavioral changes, just package relocation.",
-      "acceptance": "`go build ./internal/termmux/ui/...` succeeds. All types and their methods compile. The AutoSplitModel satisfies tea.Model interface (compile-time check).",
-      "status": "Done"
-    },
-    {
-      "id": "T058",
-      "task": "Move SplitView to termmux/ui/splitview.go",
-      "description": "Copy internal/termui/mux/splitview.go to internal/termmux/ui/splitview.go. Change package to `ui`. Update all type references and adjust import paths. SplitView, SplitViewOption, SplitPane, PaneOsm, PaneClaude, With* options all move. No behavioral changes.",
-      "acceptance": "`go build ./internal/termmux/ui/...` succeeds. SplitView satisfies tea.Model. All option functions compile.",
-      "status": "Done"
-    },
-    {
-      "id": "T059",
-      "task": "Move PlanEditor to termmux/ui/planeditor.go",
-      "description": "Copy internal/termui/mux/planeditor.go to internal/termmux/ui/planeditor.go. Change package to `ui`. Update all type references. PlanEditor, PlanEditorItem, PlanEditorOption, WithOnChange all move. No behavioral changes.",
-      "acceptance": "`go build ./internal/termmux/ui/...` succeeds. PlanEditor satisfies tea.Model. All option functions compile.",
-      "status": "Done"
-    },
-    {
-      "id": "T060",
-      "task": "Move AutoSplitModel tests to termmux/ui/",
-      "description": "Copy internal/termui/mux/autosplit_test.go to internal/termmux/ui/autosplit_test.go. Update package declaration. Fix any import path changes. Verify all tests pass.",
-      "acceptance": "`go test ./internal/termmux/ui/... -run AutoSplit` passes. No test modifications beyond package/import changes.",
-      "status": "Done"
-    },
-    {
-      "id": "T061",
-      "task": "Move SplitView tests to termmux/ui/",
-      "description": "Copy internal/termui/mux/splitview_test.go to internal/termmux/ui/splitview_test.go. Update package declaration. Fix imports. Verify all tests pass.",
-      "acceptance": "`go test ./internal/termmux/ui/... -run SplitView` passes.",
-      "status": "Done"
-    },
-    {
-      "id": "T062",
-      "task": "Move PlanEditor tests to termmux/ui/",
-      "description": "Copy internal/termui/mux/planeditor_test.go to internal/termmux/ui/planeditor_test.go. Update package declaration. Fix imports. Verify all tests pass.",
-      "acceptance": "`go test ./internal/termmux/ui/... -run PlanEditor` passes.",
-      "status": "Done"
-    },
-    {
-      "id": "T063",
-      "task": "Rewire pr_split.go import from termui/mux to termmux",
-      "description": "In internal/command/pr_split.go, change the import from `github.com/joeycumines/one-shot-man/internal/termui/mux` to `github.com/joeycumines/one-shot-man/internal/termmux`. Update all references: mux.New → termmux.New, mux.SideClaude → termmux.SideClaude, mux.WrapStringIO → termmux.WrapStringIO, mux.StringIO → termmux.StringIO, mux.DefaultToggleKey → termmux.DefaultToggleKey (define this constant in config.go). Also update splitView references: mux.NewSplitView → ui.NewSplitView (add import for internal/termmux/ui). Update all With* option references.",
-      "acceptance": "`go build ./internal/command/...` succeeds. `go vet ./internal/command/...` passes. The pr_split command works with the new termmux package. No references to internal/termui/mux remain in pr_split.go.",
-      "status": "Done"
-    },
-    {
-      "id": "T064",
-      "task": "Rewire pr_split.go tuiMux JS bindings to termmux API",
-      "description": "In internal/command/pr_split.go, update the tuiMux global exposed to JS (lines ~228-310). The attach/detach/switchToClaude/isClaudeActive/setStatus/setToggleKey/setStatusEnabled/setResizeFunc bindings must call termmux.Mux methods instead of mux.TUIMux methods. The API shape is the same (Attach, Detach, RunPassthrough, ActiveSide, SetClaudeStatus, SetToggleKey, SetStatusEnabled, SetResizeFunc) but the import path and type names differ.",
-      "acceptance": "The JS bindings compile and work. `tuiMux.attach(handle)` calls termmux.Mux.Attach(). `tuiMux.switchToClaude()` calls termmux.Mux.RunPassthrough(). All 8 bindings (attach, detach, switchToClaude, isClaudeActive, setStatus, setToggleKey, setStatusEnabled, setResizeFunc) are wired correctly. `go build ./cmd/osm/...` succeeds.",
-      "status": "Done"
-    },
-    {
-      "id": "T065",
-      "task": "Rewire pr_split.go splitView bindings to termmux/ui",
-      "description": "In internal/command/pr_split.go, update the splitView global (lines ~300-350). Import internal/termmux/ui. Change mux.NewSplitView to ui.NewSplitView. Change mux.WithSplitRatio to ui.WithSplitRatio. Change mux.WithMaxLines to ui.WithMaxLines. Change mux.WithToggleKey to ui.WithToggleKey. Change mux.WithClaudeWriter to ui.WithClaudeWriter. Change mux.DefaultToggleKey to the constant from termmux. Update all appendOsm/appendClaude/run bindings.",
-      "acceptance": "`go build ./internal/command/...` succeeds. The splitView bindings reference ui.SplitView, not mux.SplitView. All 4 option functions compile with the new import.",
-      "status": "Done"
-    },
-    {
-      "id": "T066",
-      "task": "Rewire pr_split.go planEditor bindings to termmux/ui",
-      "description": "In internal/command/pr_split.go (or wherever planEditor is bound to JS), update references from mux.PlanEditor to ui.PlanEditor, mux.PlanEditorItem to ui.PlanEditorItem, mux.NewPlanEditor to ui.NewPlanEditor, mux.WithOnChange to ui.WithOnChange.",
-      "acceptance": "`go build ./internal/command/...` succeeds. No references to mux.PlanEditor* remain.",
-      "status": "Done"
-    },
-    {
-      "id": "T067",
-      "task": "Rewire pr_split.go autoSplit bindings to termmux/ui",
-      "description": "In internal/command/pr_split.go (or wherever autoSplit is bound to JS), update references from mux.AutoSplit* types to ui.AutoSplit* types. This includes message types used in BubbleTea Update methods and the AutoSplitModel constructor.",
-      "acceptance": "`go build ./internal/command/...` succeeds. No references to mux.AutoSplit* remain in pr_split.go.",
-      "status": "Done"
-    },
-    {
-      "id": "T068",
-      "task": "Update claudemux module to use termmux types",
-      "description": "In internal/builtin/claudemux/module.go and related files: if any code references internal/termui/mux types (StringIO, Side, etc.), update to use internal/termmux equivalents. Grep for 'termui/mux' across the entire claudemux package. The claudemux module wrapping (AgentHandle → StringIO) should now reference termmux.StringIO.",
-      "acceptance": "`go build ./internal/builtin/claudemux/...` succeeds. `grep -r 'termui/mux' internal/builtin/claudemux/` returns no matches.",
-      "status": "Done"
-    },
-    {
-      "id": "T069",
-      "task": "Update docs/architecture-claude-mux.md references",
-      "description": "In docs/architecture-claude-mux.md (which references `internal/termui/mux/` at line 774), update all package path references to `internal/termmux/`. Update type names if they changed. Update the architecture description to reflect the new sub-package structure (vt/, ptyio/, statusbar/, ui/).",
-      "acceptance": "No references to `internal/termui/mux` remain in docs/architecture-claude-mux.md. The new package structure is documented.",
-      "status": "Done"
-    },
-    {
-      "id": "T070",
-      "task": "Update docs/reference/mux-architecture.md to new package",
-      "description": "In docs/reference/mux-architecture.md (which says 'Internal documentation for the internal/termui/mux package' at line 3), rewrite to document `internal/termmux/` and its sub-packages. Describe the tmux-inspired architecture: event loop (goroutine + channel), buffered I/O (ptyio), table-driven parser (vt), screen buffer with dirty tracking, platform abstraction.",
-      "acceptance": "The document accurately describes the new architecture. No references to the old package remain. Architecture patterns (event loop, buffered I/O, table-driven parser) are explained with code references to specific files.",
-      "status": "Done"
-    },
-    {
-      "id": "T071",
-      "task": "Verify full build with termmux wiring",
-      "description": "Run `make build` to verify that cmd/osm builds successfully with all the rewiring from T063-T068. If there are compile errors, fix them. This is a gate — nothing after this can proceed until the build is green.",
-      "acceptance": "`make build` succeeds. `make lint` passes (vet, staticcheck). No references to internal/termui/mux remain in any .go file outside the old package directory.",
-      "status": "Done"
-    },
-    {
-      "id": "T072",
-      "task": "Write integration test: real PTY spawn and read in ptyio",
-      "description": "Create internal/termmux/ptyio/integration_test.go with build tag `//go:build integration`. Spawn a real process (e.g., `echo hello`) via os/exec with a PTY (use creack/pty or golang.org/x/term/pty). Wrap the PTY fd in BufferedReader. Verify that 'hello\\n' is received on the output channel within 5 seconds. Verify the reader's Done() channel closes after the process exits. This is the FIRST real-PTY test — it validates that BufferedReader works with actual kernel PTY semantics.",
-      "acceptance": "The test passes on macOS and Linux with `go test -tags=integration -race ./internal/termmux/ptyio/...`. The spawned process is cleaned up. No goroutine leak. No EAGAIN errors.",
-      "status": "Done (3 tests: basic echo, large output via seq, process exit closes done channel. Also fixed pre-existing data race in TestTeeLoop_PassthroughForwarding)"
-    },
-    {
-      "id": "T073",
-      "task": "Write integration test: real PTY write and backpressure",
-      "description": "Create a test in ptyio/integration_test.go that spawns `cat` (or a script that reads slowly). Write a large buffer (~1MB) to the PTY via BufferedWriter. Verify all bytes are eventually read back from the PTY. This tests POSIX PTY semantics: partial writes, pipe buffer limits, and BufferedWriter's retry logic.",
-      "acceptance": "1MB round-trips through cat via PTY without data loss. BufferedWriter handles any partial writes transparently. Test passes with -race on macOS and Linux.",
-      "status": "Done (N/A — BufferedWriter was deleted as dead code. PTY write tested indirectly via teeLoop tests. Will be re-added when wired)"
-    },
-    {
-      "id": "T074",
-      "task": "Write integration test: toggle key round-trip with real PTY",
-      "description": "Create internal/termmux/integration_test.go with build tag `//go:build integration`. Spawn `cat` with a real PTY. Create a Mux with the PTY as stdin/stdout and the cat process as child. Call RunPassthrough in a goroutine. From the test, write 'hello' to the PTY's master side (simulating user typing). Verify 'hello' appears on the child's stdin (cat echoes it back). Then write the toggle key byte (0x1D). Verify RunPassthrough returns ExitToggle. Verify no goroutine leaks.",
-      "acceptance": "Full round-trip: user types → mux → child PTY → child echoes → mux → stdout. Toggle key exits cleanly. Terminal state restored. No goroutine leak. Test passes with -race.",
-      "status": "Done"
-    },
-    {
-      "id": "T075",
-      "task": "Write integration test: VTerm screen capture and restore with real PTY",
-      "description": "Create a test in termmux/integration_test.go. Spawn a process that outputs colored text with cursor movement (a small bash script: `echo -e '\\033[1;31mRED\\033[0m\\n\\033[2;5HMOVED'`). Attach to Mux, RunPassthrough. Verify VTerm captures the output. Toggle out. Call Render() on the VTerm. Verify the rendered output contains the red text at row 1 and 'MOVED' at row 2, col 5. Then RunPassthrough again (second toggle-in). Verify screen restore writes the Render() output to stdout.",
-      "acceptance": "VTerm correctly parses real ANSI output from a shell process. Render() produces output that would visually restore the screen. Screen restore on second toggle-in writes the rendered content. Bold and color attributes are preserved in the render.",
-      "status": "Done"
-    },
-    {
-      "id": "T076",
-      "task": "Write integration test: goroutine leak detection after Attach/Detach cycles",
-      "description": "Create a test in termmux/integration_test.go. Perform 10 cycles of: Attach a mock child, RunPassthrough (toggle immediately), Detach. After the 10 cycles, sleep 100ms, then check runtime.NumGoroutine(). It should be within 2 of the initial count. This catches the goroutine leak that plagued the old implementation (backgroundReader blocking on child.Read after Detach).",
-      "acceptance": "After 10 attach/detach cycles, goroutine count is stable (within 2 of baseline). No timeout-based goroutine cleanup. Each cycle completes cleanly.",
-      "status": "Done"
-    },
-    {
-      "id": "T077",
-      "task": "Write integration test: EAGAIN resilience",
-      "description": "Create a test in termmux/integration_test.go. Set stdin fd to O_NONBLOCK (simulating what BubbleTea's cancelreader does). Create a Mux. Call RunPassthrough. Verify that the EAGAIN retry logic in the stdin goroutine keeps the passthrough alive (not crashing with an error). Write toggle key to stdin. Verify clean exit.",
-      "acceptance": "RunPassthrough does not return ExitError when stdin has O_NONBLOCK set. The EAGAIN is retried silently. Toggle key still works. Test only runs on Unix (build tag).",
-      "status": "Done"
-    },
-    {
-      "id": "T078",
-      "task": "Write integration test: UTF-8 split across PTY read boundaries",
-      "description": "Create a test in termmux/integration_test.go. Spawn a process that outputs a known UTF-8 string containing multi-byte characters: '漢字テスト' (5 chars, 15 bytes). Attach to Mux. Collect all VTerm output. Verify the VTerm's screen contains the correct characters at expected positions (漢 is wide, occupies 2 columns). This tests real-world UTF-8 splitting that can happen at PTY read boundaries.",
-      "acceptance": "The 5 CJK characters are correctly captured in VTerm. '漢' occupies columns 0-1, '字' occupies columns 2-3, etc. No RuneError replacement characters appear. VTerm.String() contains the correct text.",
-      "status": "Done"
-    },
-    {
-      "id": "T079",
-      "task": "Write integration test: child process exit during passthrough",
-      "description": "Create a test in termmux/integration_test.go. Spawn a process that exits after 500ms (`sleep 0.5`). Attach to Mux, call RunPassthrough. Verify it returns ExitChildExit within 2 seconds. Verify no panic or goroutine leak. Verify terminal state is restored.",
-      "acceptance": "RunPassthrough returns ExitChildExit. No goroutine leak after. Terminal state restored (mock verifies Restore was called). Clean cleanup of BufferedReader.",
-      "status": "Done"
-    },
-    {
-      "id": "T080",
-      "task": "Write integration test: context cancellation during passthrough",
-      "description": "Create a test in termmux/integration_test.go. Spawn `cat` (long-running). Attach to Mux. Start RunPassthrough with a context that is cancelled after 500ms. Verify it returns ExitContext. Verify the stdin goroutine is cleaned up. Verify no goroutine leak.",
-      "acceptance": "RunPassthrough returns ExitContext. Stdin forwarding goroutine exits. No goroutine leak. Terminal state restored.",
-      "status": "Done"
-    },
-    {
-      "id": "T081",
-      "task": "Write integration test: status bar coexistence with child output",
-      "description": "Create a test in termmux/integration_test.go. Spawn a process that outputs lines filling the screen. Attach to Mux with StatusEnabled=true. RunPassthrough. Verify the scroll region is set (row 1..height-1). Verify the status bar renders on the last row. Verify child output scrolls within the constrained region, not overwriting the status bar.",
-      "acceptance": "Status bar content appears on last row. Child output is confined to scroll region. VTerm is sized to (height-1)×width. After toggle-out, scroll region is reset.",
-      "status": "Done"
-    },
-    {
-      "id": "T082",
-      "task": "Write integration test: rapid toggle cycling stress test",
-      "description": "Create a test in termmux/integration_test.go. Spawn a process that continuously outputs data. Attach to Mux. Perform 50 rapid toggle cycles (RunPassthrough + immediate toggle key, < 10ms between cycles). Verify: no panic, no deadlock, no goroutine leak, VTerm state is consistent (Render() doesn't panic), terminal state is restored correctly each time.",
-      "acceptance": "50 toggle cycles complete without error within 30 seconds. Final goroutine count is within 5 of baseline. VTerm.Render() produces valid output after the final cycle. No mutex deadlocks detected by -race.",
-      "status": "Done"
-    },
-    {
-      "id": "T083",
-      "task": "Write fuzz test for ANSI parser",
-      "description": "Create internal/termmux/vt/fuzz_test.go. Define FuzzParser(f *testing.F) that seeds with known ANSI sequences (CSI, OSC, DCS, SGR, cursor movement) and random byte streams. The fuzz function feeds bytes to a Parser one at a time and verifies: (1) no panic, (2) state is always one of the defined states, (3) Params() doesn't panic after any CSI dispatch, (4) Reset() works after any sequence. Seed corpus includes: real Claude Code output samples, vim startup output, ls --color output.",
-      "acceptance": "`go test -fuzz=FuzzParser -fuzztime=60s ./internal/termmux/vt/...` runs for 60 seconds without finding crashes. Corpus includes at least 5 diverse seed inputs.",
-      "status": "Done (12.6M execs in 30s, 128 interesting inputs, 0 crashes)"
-    },
-    {
-      "id": "T084",
-      "task": "Write fuzz test for VTerm.Write()",
-      "description": "Create FuzzVTermWrite(f *testing.F) in vt/fuzz_test.go. Seeds with real terminal output. The fuzz function creates a small VTerm (4×10), writes fuzzed bytes, then calls Render() and String(). Verifies: no panic, no index out of bounds, Render() produces valid UTF-8, cursor position is within bounds after any write.",
-      "acceptance": "`go test -fuzz=FuzzVTermWrite -fuzztime=60s ./internal/termmux/vt/...` runs for 60 seconds without crashes. VTerm is resilient to arbitrary byte sequences.",
-      "status": "Done (3.2M execs in 30s, 214 interesting inputs, 0 crashes)"
-    },
-    {
-      "id": "T085",
-      "task": "Write fuzz test for UTF-8 accumulation",
-      "description": "Create FuzzUTF8Accum(f *testing.F) in vt/fuzz_test.go. Seeds with valid and invalid UTF-8 sequences. The fuzz function feeds random bytes one at a time to UTF8Accum.Feed(). Verifies: no panic, returned runes are valid (not 0, except for RuneError), Pending() is consistent with Feed() return values, Flush() after partial sequence returns RuneError.",
-      "acceptance": "60 seconds of fuzzing with no crashes. All invariants hold for arbitrary byte sequences.",
-      "status": "Done (14.7M execs in 30s, 69 interesting inputs, 0 crashes)"
-    },
-    {
-      "id": "T086",
-      "task": "Write benchmark for VTerm.Write() throughput",
-      "description": "Create internal/termmux/vt/bench_test.go. Define BenchmarkVTermWrite(b *testing.B) that writes 4KB chunks of realistic terminal output (mixed text + ANSI sequences) to a 24×80 VTerm. Measure bytes/sec throughput. Also define BenchmarkVTermWriteUTF8 writing CJK text. Also define BenchmarkVTermRender rendering after write. These replace the benchmarks in vterm_bench_test.go.",
-      "acceptance": "Benchmarks produce stable results. BenchmarkVTermWrite processes >100MB/s on modern hardware (sanity check). BenchmarkVTermRender completes in <1ms for a 24×80 screen. Results are printed with `go test -bench=. -benchmem`.",
-      "status": "Done (ANSI: 34 MB/s, ASCII: 46 MB/s, UTF8: 39 MB/s, Render: 14.6µs)"
-    },
-    {
-      "id": "T087",
-      "task": "Write benchmark for SGR parsing throughput",
-      "description": "Create BenchmarkParseSGR in vt/bench_test.go. Feed sequences with complex SGR (e.g., '\\x1b[1;38;2;255;100;0;48;5;232m') to measure SGR parameter parsing performance. Measure allocs/op — SGR parsing should be zero-alloc in the steady state.",
-      "acceptance": "Benchmark runs. SGR parsing is < 100ns/op for typical sequences. Allocs are 0 or 1 per SGR sequence.",
-      "status": "Done (complex: 343 ns/op 3 allocs, simple: 108 ns/op 3 allocs)"
-    },
-    {
-      "id": "T088",
-      "task": "Write benchmark for BufferedReader throughput",
-      "description": "Create internal/termmux/ptyio/bench_test.go. Define BenchmarkBufferedReader that creates a pipe, writes 1MB of data, reads through BufferedReader. Measure throughput and allocs. BufferedReader should sustain >500MB/s with the default buffer size.",
-      "acceptance": "Benchmark runs. Throughput is >500MB/s. Allocs per read are 0 (buffer is reused).",
-      "status": "Done (3965 MB/s, 2 allocs/op)"
-    },
-    {
-      "id": "T089",
-      "task": "Write property-based test: VTerm Render round-trip",
-      "description": "In vt/vt_test.go, write a property-based test. Generate random Screen states (random cells, random cursor positions). Render the screen to ANSI. Create a new VTerm and Write the rendered output. Compare the resulting Screen to the original. They should match for all cells that were rendered. Use testing/quick or a similar approach for property generation.",
-      "acceptance": "Property holds for 1000 random screen states: Render→VTerm.Write produces equivalent visible cells. Cursor position is restored. Non-default attributes are preserved. Wide characters are handled.",
-      "status": "Done (6 cases: ascii, multiline, bold_color, cursor_move, wide_chars, mixed — all pass round-trip)"
-    },
-    {
-      "id": "T090",
-      "task": "Write property-based test: all CSI sequences leave parser in ground state",
-      "description": "In vt/parser_test.go, write a property test. Generate random CSI sequences (ESC [ params final). Feed to Parser. Verify that after the final byte, parser state is StateGround. params can be any bytes in 0x30-0x3F range. final is any byte in 0x40-0x7E range.",
-      "acceptance": "Property holds for all generated CSI sequences: parser returns to ground state after dispatch. No sequence leaves the parser stuck in StateCSI.",
-      "status": "Done (all bytes 0x40-0x7E tested + all private prefixes ?<=>)"
-    },
-    {
-      "id": "T091",
-      "task": "Write unit tests for Screen.ScrollUp edge cases",
-      "description": "In vt/screen_test.go, add tests for: ScrollUp(0) is no-op. ScrollUp(999) on a 5-row screen clears all rows in scroll region. ScrollUp in a 1-row scroll region is no-op. ScrollUp with non-default scroll region only affects region rows. ScrollUp with current Attr fills new rows with that attr's colors.",
-      "acceptance": "All edge cases pass. No panics on extreme inputs.",
-      "status": "Done (ScrollUp zero, huge N, 1-row region, non-default region, CurAttr propagation, EraseChars huge, ReverseIndex at region top)"
-    },
-    {
-      "id": "T092",
-      "task": "Write unit tests for Screen.PutChar wide character edge cases",
-      "description": "In vt/screen_test.go, add tests for: Wide char at last column doesn't write off-screen. Wide char that replaces a previous wide char clears both cells of the old char. Wide char at column 0 is normal. Sequence of wide chars fills screen correctly. Overwriting the second cell of a wide char with a narrow char clears the first cell too.",
-      "acceptance": "All wide char edge cases pass. Grid is consistent after each operation — no 'orphaned' zero-width placeholders.",
-      "status": "Done (overwrite 2nd cell of wide char, consecutive wide chars)"
-    },
-    {
-      "id": "T093",
-      "task": "Write unit tests for DECSTBM (scroll region) interaction with cursor movement",
-      "description": "In vt/csi_test.go, add tests for: DECSTBM homes cursor. CUP with scroll region set still addresses full screen. LineFeed at bottom of scroll region scrolls only within region. ReverseIndex at top of scroll region scrolls only within region. Resizing resets scroll region.",
-      "acceptance": "All scroll region + cursor interaction cases pass. Scroll region is enforced only for scroll operations, not absolute cursor positioning.",
-      "status": "Done (DECSTBM homes cursor, CUP addresses full screen, LF scrolls only within region)"
-    },
-    {
-      "id": "T094",
-      "task": "Write unit tests for parser recovery from malformed sequences",
-      "description": "In vt/parser_test.go, add tests for: ESC inside CSI aborts CSI and starts new escape. Invalid byte in CSI (e.g., 0xFF) aborts to ground. OSC without terminator (truncated input) — parser stays in OSC state. DCS exceeding maxDCSLen aborts to ground. Starting a new ESC while in OSC terminates the OSC.",
-      "acceptance": "Parser recovers from all malformed inputs. No infinite loops. State is always valid after processing.",
-      "status": "Done (ESC inside CSI, high byte in CSI, ESC in OSC, unterminated OSC)"
-    },
-    {
-      "id": "T095",
-      "task": "Write unit test for concurrent Mux.WriteToChild under load",
-      "description": "In termmux/termmux_test.go, add a test that calls WriteToChild from 10 goroutines simultaneously, each writing 1000 messages. Verify: no panic, no race (run with -race), all messages eventually reach the child, no data corruption (child receives well-formed messages).",
-      "acceptance": "10×1000 concurrent writes complete without error. -race detects no races. Child receives all data (total byte count matches).",
-      "status": "Done (10 workers × 100 iters, total byte count verified, passes with -race)"
-    },
-    {
-      "id": "T096",
-      "task": "Write unit test for Mux status bar update during passthrough",
-      "description": "In termmux/termmux_test.go, add a test: during RunPassthrough, call SetClaudeStatus('thinking'). Verify the status bar is re-rendered with the new status. Then call SetClaudeStatus('tool-use'). Verify again. This tests the real-time status update path used by claudemux to show thinking/tool-use indicators.",
-      "acceptance": "Status bar output in the stdout buffer contains 'thinking' after first update and 'tool-use' after second. Updates don't interfere with child output forwarding.",
-      "status": "Done (status updates visible in stdout during passthrough)"
-    },
-    {
-      "id": "T097",
-      "task": "Add compile-time interface checks for all public interfaces",
-      "description": "In each package's doc.go or a dedicated check_test.go file, add compile-time interface satisfaction checks: `var _ io.Writer = (*vt.VTerm)(nil)`, `var _ ptyio.TermState = ptyio.RealTermState{}`, `var _ ptyio.BlockingGuard = (*ptyio.UnixBlockingGuard)(nil)`, `var _ tea.Model = (*ui.AutoSplitModel)(nil)`, etc. These prevent accidental interface breakage.",
-      "acceptance": "All interface checks compile. If any method signature changes, the compile check catches it immediately.",
-      "status": "Done (VTerm→io.Writer, AutoSplitModel/SplitView/PlanEditor→tea.Model, RealTermState→TermState, UnixBlockingGuard→BlockingGuard)"
-    },
-    {
-      "id": "T098",
-      "task": "Run full test suite with race detector",
-      "description": "Execute `make test` (which runs go test -race on all packages). Fix any race conditions detected. This is a gate task — the full suite must pass before proceeding to cleanup.",
-      "acceptance": "`make test` exits 0. No race conditions detected. All tests in all packages pass. Output piped through `tail -100` for evidence.",
-      "status": "Done"
-    },
-    {
-      "id": "T099",
-      "task": "Run full lint suite",
-      "description": "Execute `make lint`. Fix any vet/staticcheck/betteralign/deadcode issues in the new termmux packages. Existing packages must also pass — the rewiring should not introduce lint failures in other packages.",
-      "acceptance": "`make lint` exits 0. No new lint issues in any package. Deadcode doesn't flag any termmux code as unused (everything is wired).",
-      "status": "Done"
-    },
-    {
-      "id": "T100",
-      "task": "Delete old internal/termui/mux/ package",
-      "description": "Remove the entire internal/termui/mux/ directory: mux.go, vterm.go, mux_blocking_unix.go, mux_blocking_other.go, autosplit.go, splitview.go, planeditor.go, and ALL test files (mux_test.go, vterm_test.go, vterm_bench_test.go, vterm_fuzz_test.go, splitview_test.go, autosplit_test.go, planeditor_test.go, mux_blocking_unix_test.go). This is 15 files. Verify no remaining imports reference this package.",
-      "acceptance": "The directory internal/termui/mux/ no longer exists. `grep -r 'termui/mux' internal/ cmd/ docs/` returns no matches. `make build` succeeds. `make test` succeeds.",
-      "status": "Done"
-    },
-    {
-      "id": "T101",
-      "task": "Update project.mk bench-vterm target to bench-termmux",
-      "description": "In project.mk, replace the `bench-vterm` target (line ~46-47: `$(GO) test -bench=. -benchmem -run='^$$' ./internal/termui/mux/...`) with `bench-termmux: $(GO) test -bench=. -benchmem -run='^$$' ./internal/termmux/...`. Update the help text. Remove any other references to internal/termui/mux/ in project.mk.",
-      "acceptance": "`make bench-termmux` runs benchmarks in the new package. `make help` shows bench-termmux. No references to internal/termui/mux remain in project.mk.",
-      "status": "Done"
-    },
-    {
-      "id": "T102",
-      "task": "Clean up internal/termui/ if empty",
-      "description": "After deleting internal/termui/mux/, check if internal/termui/ still has other content. If it's empty or only contains the mux/ subdirectory (now deleted), remove the entire internal/termui/ directory tree. If other packages exist under termui/, leave them.",
-      "acceptance": "No empty directories remain. If internal/termui/ had only mux/, the entire termui/ tree is gone. `find internal/termui -type f` returns nothing (or the directory doesn't exist).",
-      "status": "Done (scrollbar/ still present — no action needed)"
-    },
-    {
-      "id": "T103",
-      "task": "Verify existing pr-split integration tests still pass",
-      "description": "Run `make integration-test-prsplit-mcp` (the mock MCP tests that don't require real AI). These tests exercise the full pr-split flow including the JS-to-Go wiring. If they fail, the rewiring from T063-T067 has a bug — fix it.",
-      "acceptance": "`make integration-test-prsplit-mcp` exits 0. All TestIntegration_AutoSplitMockMCP tests pass. The mux toggle, attach, detach flows work through the JS layer.",
-      "status": "Done"
-    },
-    {
-      "id": "T104",
-      "task": "Verify deadcode checker passes with new package",
-      "description": "Run `make lint` specifically focusing on deadcode output. All public functions in termmux must be reachable from cmd/osm (via pr_split.go → termmux). All public functions in termmux/ui must be reachable via pr_split.go. All public functions in termmux/vt must be reachable via termmux. If deadcode flags anything, wire it up or delete it — do NOT add to .deadcodeignore.",
-      "acceptance": "Deadcode check passes. Every exported function in termmux, termmux/vt, termmux/ptyio, termmux/statusbar, termmux/ui is reachable from main.",
-      "status": "Done"
-    },
-    {
-      "id": "T105",
-      "task": "Run final full pipeline: build + lint + test",
-      "description": "Execute `make` (the default target, which runs build + lint + test). This is the final gate. Everything must pass.",
-      "acceptance": "`make` exits 0. Build, vet, staticcheck, betteralign, deadcode, and all tests pass. Zero failures. Zero warnings.",
-      "status": "Done"
-    },
-    {
-      "id": "T106",
-      "task": "Add DefaultToggleKey constant to termmux package",
-      "description": "In internal/termmux/config.go, add `const DefaultToggleKey byte = 0x1D` matching the old mux.DefaultToggleKey. This constant is referenced by pr_split.go when creating the SplitView with WithToggleKey. Also add `const DefaultToggleKeyName = \"Ctrl+]\"` for display purposes.",
-      "acceptance": "termmux.DefaultToggleKey == 0x1D. termmux.DefaultToggleKeyName == 'Ctrl+]'. Both are used in pr_split.go and statusbar constructor.",
-      "status": "Done"
-    },
-    {
-      "id": "T107",
-      "task": "Add ToggleKeyName(key byte) string helper to termmux",
-      "description": "In internal/termmux/config.go, add func ToggleKeyName(key byte) string that converts a byte to a readable string: 0x01='Ctrl+A', 0x1A='Ctrl+Z', 0x1B='Ctrl+[', 0x1D='Ctrl+]'. For printable ASCII (0x20-0x7E), return the character as a string. For others, return 'Ctrl+<char>' where <char> is key+0x40 (standard control key mapping). Used by statusbar.",
-      "acceptance": "Test in termmux/config_test.go: ToggleKeyName(0x01)='Ctrl+A', ToggleKeyName(0x1D)='Ctrl+]', ToggleKeyName(0x1B)='Ctrl+['. Covers all 32 control characters.",
-      "status": "Done"
-    },
-    {
-      "id": "T108",
-      "task": "Add testutil helpers for PTY creation in tests",
-      "description": "Create internal/termmux/testutil_test.go (test-only file). Add helper functions: newPipePair() (io.ReadWriteCloser, io.ReadWriteCloser) for creating bidirectional pipe pairs, mockChild(input string, delay time.Duration) io.ReadWriteCloser that writes input after delay then closes, waitTimeout(ch <-chan struct{}, timeout time.Duration) bool for waiting on channels. These helpers are used across termmux test files to reduce boilerplate.",
-      "acceptance": "Helper functions compile in test context. They are used by at least 3 different test files. newPipePair creates working bidirectional communication. mockChild writes data and closes on schedule.",
-      "status": "Done (waitTimeout in testutil_test.go, bidirPipe/mockChild/newTestMux/mockTermState/mockBlockingGuard in termmux_test.go — shared across termmux_test.go, integration_test.go)"
-    },
-    {
-      "id": "T109",
-      "task": "Write unit test: Mux.Attach with various ReadWriteCloser implementations",
-      "description": "In termmux/termmux_test.go, test Attach with: (1) os.Pipe pair, (2) WrapStringIO adapter, (3) a type that implements ReadWriteCloser but has slow Read (simulating PTY behavior). Verify all three work correctly with the BufferedReader.",
-      "acceptance": "All three ReadWriteCloser types work with Attach. BufferedReader reads from each. Detach cleans up each. No type assertion failures.",
-      "status": "Done (simple mockChild attach/detach cycle, also fixed teeLoop race with Detach)"
-    },
-    {
-      "id": "T110",
-      "task": "Write unit test: VTerm handles real Claude Code output samples",
-      "description": "In vt/vt_test.go, add a test that feeds captured real-world Claude Code output (save a representative sample as a test fixture in vt/testdata/claude_output.txt). This includes: ANSI colors, cursor movement, screen clears, status line updates, thinking indicators, tool-use progress bars. Verify VTerm doesn't panic and String() produces readable text.",
-      "acceptance": "VTerm processes the real Claude Code output without panic. String() output contains recognizable text fragments from the sample. Render() produces valid ANSI output. The test serves as a regression guard against future parser issues.",
-      "status": "Done"
-    },
-    {
-      "id": "T111",
-      "task": "Create vt/testdata/ directory with ANSI test fixtures",
-      "description": "Create internal/termmux/vt/testdata/ directory. Add files: claude_output.txt (captured Claude Code session output), vim_startup.txt (vim opening a file — heavy alternate screen and cursor movement usage), ls_color.txt (ls --color output with SGR sequences), htop_frame.txt (complex TUI with wide chars and colors). These are byte-for-byte terminal output captures used as test fixtures and fuzz seeds.",
-      "acceptance": "Directory exists with at least 3 test fixture files. Each file contains real terminal output (raw bytes, not sanitized). Files are used by T110 and T083 (fuzz seeds).",
-      "status": "Done"
-    },
-    {
-      "id": "T112",
-      "task": "Write unit test: Parser handles malicious/huge parameter buffers",
-      "description": "In vt/parser_test.go, test that CSI sequences with >128 bytes of parameters are handled safely (old code silently drops excess). Test CSI with 1000 semicolons. Test CSI with params='99999999999999'. Verify no panic, no allocation explosion, parser returns to ground state.",
-      "acceptance": "Parser processes adversarial input without panic or excessive memory allocation. paramBuf is capped at 128 bytes. Params() returns sane values (not overflowed int).",
-      "status": "Done (1000 semicolons, huge numeric params — no panic)"
-    },
-    {
-      "id": "T113",
-      "task": "Write unit test: VTerm.Write concurrent safety",
-      "description": "In vt/vt_test.go, write a test that calls VTerm.Write from 5 goroutines simultaneously, each writing 100 times. Run with -race. Verify no race condition. This validates that VTerm's internal mutex protects all state correctly.",
-      "acceptance": "5×100 concurrent writes complete. -race flag detects no races. VTerm state is consistent afterward (no corrupted cells, cursor within bounds).",
-      "status": "Done (5 workers × 100 iters with ANSI sequences, cursor bounds verified)"
-    },
-    {
-      "id": "T114",
-      "task": "Write unit test: StatusBar re-render during passthrough",
-      "description": "In statusbar/statusbar_test.go, simulate the passthrough flow: call SetScrollRegion, call Render, then mutate status with SetStatus, call Render again. Verify the second render only updates the status bar content (last row), not the scroll region. Verify the cursor is saved and restored around each Render.",
-      "acceptance": "Render produces correct output with updated status. Scroll region is not re-set on subsequent renders. Cursor position is preserved via save/restore sequences.",
-      "status": "Done"
-    },
-    {
-      "id": "T115",
-      "task": "Write unit test: BufferedWriter with io.Writer that always returns EAGAIN",
-      "description": "In ptyio/writer_test.go, create a mock Writer that returns EAGAIN for the first 5 calls then succeeds. Verify BufferedWriter retries and eventually succeeds. Also test a Writer that ALWAYS returns EAGAIN (should eventually return error after max retries, or the test can use a context with timeout).",
-      "acceptance": "BufferedWriter retries on EAGAIN. After the mock starts succeeding, the full payload is written. For permanent EAGAIN, BufferedWriter doesn't spin forever (has bounded retry or respects context cancellation).",
-      "status": "N/A — BufferedWriter was deleted as dead code (ptyio/writer.go no longer exists)"
-    },
-    {
-      "id": "T116",
-      "task": "Add max retry / deadline to BufferedWriter for permanent EAGAIN",
-      "description": "In ptyio/writer.go, add a deadline or max retry count to prevent infinite spinning on permanent EAGAIN. Add WriterOption functional options: WithMaxRetries(n int), WithRetryDelay(d time.Duration). Default: max 1000 retries with 1ms backoff. After max retries, return the last EAGAIN error wrapped with context.",
-      "acceptance": "BufferedWriter with a permanently-erroring writer returns error after max retries. Error message includes retry count. Default behavior (1000 retries × 1ms = ~1s max) is sane for real PTY scenarios.",
-      "status": "N/A — BufferedWriter was deleted as dead code (ptyio/writer.go no longer exists)"
-    },
-    {
-      "id": "T117",
-      "task": "Implement Mux.SetResizeFunc re-render on SIGWINCH",
-      "description": "In termmux/termmux.go, when the terminal is resized during passthrough (SIGWINCH), the Mux should: update termRows/termCols, resize VTerm, call resizeFn to propagate to child, re-render status bar. Add handleResize(rows, cols int) method. For SIGWINCH detection, use signal.Notify in RunPassthrough (Unix only). On Windows, this is a no-op.",
-      "acceptance": "Test in termmux/termmux_test.go: Simulate resize by calling handleResize directly. Verify VTerm is resized, resizeFn is called, status bar is re-rendered with new height. Integration test with real terminal resize (if possible) or manual verification.",
-      "status": "Done (handleResize method + TestHandleResize + TestHandleResize_StatusDisabled)"
-    },
-    {
-      "id": "T118",
-      "task": "Add SIGWINCH handling for Unix in termmux/resize_unix.go",
-      "description": "Create internal/termmux/resize_unix.go with build tag `//go:build !windows`. Implement func watchResize(ctx context.Context, termFd int, fn func(rows, cols int)) that sets up signal.Notify for syscall.SIGWINCH. When received, gets terminal size via term.GetSize and calls fn. Exits cleanly when ctx is cancelled. Create internal/termmux/resize_windows.go as no-op.",
-      "acceptance": "watchResize exits when context is cancelled (no goroutine leak). On SIGWINCH, fn is called with current terminal dimensions. Build-tagged correctly for Unix/Windows.",
-      "status": "Done (resize_unix.go with signal.Notify/SIGWINCH, resize_windows.go no-op)"
-    },
-    {
-      "id": "T119",
-      "task": "Wire SIGWINCH handler into RunPassthrough",
-      "description": "In termmux/termmux.go RunPassthrough, after terminal state setup, start watchResize goroutine. On resize callback: re-acquire terminal size, resize VTerm to (newRows - statusBarLines) × newCols, call resizeFn, re-render status bar. Cancel the resize watcher on RunPassthrough exit.",
-      "acceptance": "During passthrough, terminal resize triggers VTerm resize, child PTY resize (via resizeFn), and status bar re-render. After RunPassthrough exits, the resize watcher goroutine is cleaned up.",
-      "status": "Done (watchResize goroutine started in RunPassthrough with resizeCtx, cancelled on exit)"
-    },
-    {
-      "id": "T120",
-      "task": "Write unit tests for ToggleKeyName edge cases",
-      "description": "In termmux/config_test.go: ToggleKeyName for all 32 control chars (0x00-0x1F). ToggleKeyName for DEL (0x7F). ToggleKeyName for printable chars ('a', 'A', '1'). ToggleKeyName for high bytes (0x80-0xFF) returns hex representation.",
-      "acceptance": "Complete coverage of ToggleKeyName. 0x00='Ctrl+@', 0x01='Ctrl+A', ..., 0x1A='Ctrl+Z', 0x1B='Ctrl+[', 0x1C='Ctrl+\\\\', 0x1D='Ctrl+]', 0x1E='Ctrl+^', 0x1F='Ctrl+_'. 0x7F='Del' or 'Ctrl+?'. Printable chars return themselves.",
-      "status": "Done"
-    },
-    {
-      "id": "T121",
-      "task": "Write test: VTerm handles interleaved CSI and UTF-8",
-      "description": "In vt/vt_test.go: Write a sequence that mixes CSI cursor movement with UTF-8 characters: '\\x1b[5;10H漢字\\x1b[1;1HABC'. Verify '漢字' appears at row 5, col 10 (occupying cols 10-13) and 'ABC' at row 1, col 1. This tests that the parser correctly distinguishes between UTF-8 lead bytes (>= 0x80) and escape sequences, even when interleaved.",
-      "acceptance": "Mixed CSI + UTF-8 output produces correct screen state. UTF-8 bytes are not misinterpreted as CSI parameters. CSI sequences are not corrupted by adjacent UTF-8 bytes.",
-      "status": "Done (漢字 at row 5 col 10, ABC at row 1 col 1 — all verified)"
-    },
-    {
-      "id": "T122",
-      "task": "Write test: consecutive Render() calls are idempotent",
-      "description": "In vt/render_test.go: Write output to VTerm. Call Render() twice. Verify the second render produces the same bytes as the first. Also test: Write more output, Render() produces updated output. This tests that Render() doesn't mutate screen state.",
-      "acceptance": "Two consecutive Render() calls produce identical output (byte-for-byte equal). Render() is side-effect-free on the Screen.",
-      "status": "Done (3 consecutive calls identical, after-modification different, hidden cursor)"
-    },
-    {
-      "id": "T123",
-      "task": "Write test: VTerm handles DECSC/DECRC (cursor save/restore)",
-      "description": "In vt/vt_test.go: Write ESC 7 (save cursor). Move cursor to different position. Change attributes (bold, color). Write ESC 8 (restore cursor). Verify cursor position AND attributes are restored to the saved state.",
-      "acceptance": "Cursor position restored to saved coordinates. Attr restored to saved attrs (bold, color, etc.). PendingWrap is NOT saved/restored (per VT100 spec). DECRC after DECSC with no intervening save restores initial position.",
-      "status": "Done (cursor position AND attrs saved/restored via ESC 7/8)"
-    },
-    {
-      "id": "T124",
-      "task": "Write test: Screen.TabStops custom set/clear",
-      "description": "In vt/screen_test.go: Start with default tab stops (every 8). Use HTS (ESC H via vterm Write) to set a custom stop at col 5. Verify Tab jumps to col 5. Use TBC (CSI 0g) to clear the stop at col 5. Verify Tab now skips to col 8. Use TBC (CSI 3g) to clear all stops. Verify Tab goes to last column.",
-      "acceptance": "Custom tab stops work correctly. HTS sets, TBC clears. Tab navigation respects custom stops. Resize extends tab stops with 8-column defaults for new columns.",
-      "status": "Done"
-    },
-    {
-      "id": "T125",
-      "task": "Move DefaultToggleKey definition before config.go if T106 was placed late",
-      "description": "Ensure that DefaultToggleKey from T106 is defined before it's referenced in T005 (config.go defaultConfig). If T106 was sequenced after T005, the config.go default for ToggleKey should reference DefaultToggleKey. Verify the dependency is correct: config.go imports the constant, not a hardcoded 0x1D.",
-      "acceptance": "defaultConfig().ToggleKey == DefaultToggleKey. No hardcoded 0x1D in config.go.",
-      "status": "Done"
-    },
-    {
-      "id": "T126",
-      "task": "Add godoc comments to all exported symbols in termmux package",
-      "description": "Review all exported types, functions, constants, and methods in internal/termmux/*.go, internal/termmux/vt/*.go, internal/termmux/ptyio/*.go, internal/termmux/statusbar/*.go, internal/termmux/ui/*.go. Every exported symbol must have a godoc comment starting with the symbol name. Run `go doc ./internal/termmux/...` and verify all symbols have documentation.",
-      "acceptance": "`go vet ./internal/termmux/...` has no 'exported X should have comment' warnings. Every exported type has a package-level comment in doc.go and per-symbol comments. Documentation is accurate and references related types/functions.",
-      "status": "Done"
-    },
-    {
-      "id": "T127",
-      "task": "Verify go.mod has all required dependencies",
-      "description": "Run `go mod tidy`. If termmux introduces new dependencies (e.g., creack/pty for integration tests), they should be properly added to go.mod and go.sum. Verify no unnecessary dependencies were added. Verify github.com/mattn/go-runewidth is NOT imported by any termmux code (BANNED — use github.com/rivo/uniseg ONLY).",
-      "acceptance": "`go mod tidy` produces no diff. All imports resolve. No new dependencies unless explicitly needed (creack/pty is acceptable for integration tests).",
-      "status": "Done"
-    },
-    {
-      "id": "T128",
-      "task": "Run integration-test-termmux Make target",
-      "description": "Execute `make integration-test-termmux`. All integration tests from T072-T082 must pass. This is the final validation that the new termmux package works with real PTY processes.",
-      "acceptance": "`make integration-test-termmux` exits 0. All integration tests pass with -race. No goroutine leaks. No EAGAIN errors. UTF-8 round-trips correctly. Toggle key works.",
-      "status": "Done"
-    },
-    {
-      "id": "T129",
-      "task": "Run fuzz-termmux Make target for extended fuzzing",
-      "description": "Execute `make fuzz-termmux` (30 seconds default). All fuzz tests from T083-T085 must run without finding crashes. If crashes are found, fix the underlying issue and add the crashing input to the test corpus.",
-      "acceptance": "`make fuzz-termmux` completes with no crashes. Fuzz corpus is seeded with diverse inputs. Parser, VTerm, and UTF8Accum are resilient to arbitrary input.",
-      "status": "Done"
-    },
-    {
-      "id": "T130",
-      "task": "Run bench-termmux and baseline benchmark results",
-      "description": "Execute `make bench-termmux`. Record baseline benchmark results in a file (e.g., internal/termmux/testdata/bench_baseline.txt). This establishes performance expectations for future regressions. Key metrics: VTerm write throughput, Render latency, SGR parse latency, BufferedReader throughput.",
-      "acceptance": "Baseline results are recorded. VTerm write > 50MB/s. Render < 2ms for 24×80. SGR parse < 200ns/op. BufferedReader > 500MB/s. Results saved for future comparison.",
-      "status": "Done"
-    },
-    {
-      "id": "T131",
-      "task": "Final verification: make (default target) passes clean",
-      "description": "Run `make` which triggers the full pipeline: build, vet, staticcheck, betteralign, deadcode, test with race detector. This is the absolute final gate before the rewrite is considered complete.",
-      "acceptance": "`make` exits 0. Zero errors, zero warnings, zero test failures. The old termui/mux package is gone. The new termmux package is fully wired and tested.",
-      "status": "Done"
+      "task": "Run full make pipeline after all tests added",
+      "description": "Execute make or make-all-with-log. Verify zero failures across all packages.",
+      "acceptance": "Exit code 0. All packages pass.",
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {
-    "task": "Run `make` after EVERY significant change",
-    "description": "After each code change, test addition, or bug fix, run `make 2>&1 | tail -50` to verify the full pipeline (build + lint + test). For faster iteration on a single package, use `go test -race ./internal/termmux/vt/...` but ALWAYS run full `make` before marking a task Done.",
-    "failPolicy": "If ANY test fails, STOP IMMEDIATELY and fix the issue. Zero tolerance for test failures, race conditions, or 'works on my machine' excuses. Fix the test or fix the code — never skip.",
-    "testCoverage": "Aim for >90% coverage in vt/, ptyio/, statusbar/ packages. Verify with `go test -coverprofile=cover.out ./internal/termmux/... && go tool cover -func=cover.out | tail -20`."
+    "mandate": "Every change must pass: make build, make lint, make test.",
+    "frequency": "After every task completion, before marking Done."
   },
-  "finalEnforcementProtocol": [
-    {
-      "type": "POST_EXECUTION_WARNING",
-      "alert": "NEVER add entries to .deadcodeignore. If deadcode flags termmux functions, they must be wired into the call graph from cmd/osm or deleted."
-    },
-    {
-      "type": "POST_EXECUTION_WARNING",
-      "alert": "ALL tests must pass on ALL platforms: ubuntu-latest, windows-latest, macos-latest. Build-tag platform-specific code. Never accept 'it passes on my machine' as sufficient."
-    },
-    {
-      "type": "POST_EXECUTION_WARNING",
-      "alert": "Pipe long output through tail/head to prevent context flooding. `make test 2>&1 | tail -50`."
-    },
-    {
-      "type": "POST_EXECUTION_WARNING",
-      "alert": "The old internal/termui/mux/ must be DELETED (T100), not left as dead code. Verify with grep that no imports reference it."
-    }
-  ]
+  "finalEnforcementProtocol": {
+    "reminder": "You are NOT done until blueprint.json is 100%. Scope must expand. Feed both wolves."
+  }
 }

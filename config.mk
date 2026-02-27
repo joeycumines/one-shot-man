@@ -50,10 +50,6 @@ commit-staged: ## Commit staged changes using scratch/commit-msg.txt
 amend-commit: ## Amend the last commit message using scratch/commit-msg.txt
 	cd $(PROJECT_ROOT) && git commit --amend -F scratch/commit-msg.txt
 
-.PHONY: commit-edge-case-tests
-commit-edge-case-tests: ## Stage and commit edge-case VTerm tests
-	cd $(PROJECT_ROOT) && git add internal/termmux/vt/edge_cases_test.go config.mk && git commit -F scratch/edge-case-commit-msg.txt && git log --oneline -1
-
 .PHONY: test-complex-project
 test-complex-project: ## Run complex Go project heuristic split integration test
 	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=300s -run 'TestIntegration_ComplexGoProject_HeuristicSplit' ./internal/command/...
@@ -136,6 +132,11 @@ test-batch8: ## Run batch 8 VTerm CSI/ESC dispatch coverage tests
 test-batch9: ## Run batch 9 edge case tests (SGRDiff, Parser, Screen boundaries)
 	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestSGRDiff_NoOp|TestSGRDiff_DimRemoved|TestSGRDiff_UnderRemoved|TestSGRDiff_BlinkRemoved|TestSGRDiff_InverseRemoved|TestSGRDiff_HiddenRemoved|TestSGRDiff_StrikeRemoved|TestSGRDiff_FGRevert|TestSGRDiff_BGRevert|TestSGRDiff_AllFlags|TestSGRDiff_Kind8_Bright|TestSGRDiff_256_BG|TestSGRDiff_RGB_BG|TestSGRDiff_ColorKind|TestParseSGR_Extended|TestParseSGR_Truncated|TestParseSGR_AllClear|TestParseSGR_Code2|TestParser_DEL|TestParser_HighByte|TestParser_ESC_Inside|TestParser_CSI_Intermediate|TestParser_OSC_ESC|TestParser_OSC_Max|TestParser_DCS_ESC|TestParser_Escape_Unrec|TestParser_Escape_High|TestScreen_EraseLine_OutOf|TestScreen_EraseChars_Zero|TestScreen_InsertChars_Huge|TestScreen_DeleteChars_Huge|TestScreen_LineFeed_Mid|TestScreen_LineFeed_Bottom|TestScreen_ReverseIndex_Mid|TestScreen_ReverseIndex_Top|TestScreen_Resize_Saved' ./internal/termmux/vt/... 2>&1 | tail -150
 
+.PHONY: test-batch10
+test-batch10: ## Run batch 10 tests (handleControl, scroll, diff splitter, countRelSegments)
+	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestHandleControl_|TestScrollRegion|TestMakeDefaultTabStops|TestSwitchToAlt|TestSwitchToPrimary' ./internal/termmux/vt/... 2>&1 | tail -80
+	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestSplitIntoFileDiffs|TestSplitFileAtHunks|TestCountRelSegments|TestExtractFileName|TestCountLines' ./internal/command/... 2>&1 | tail -80
+
 .PHONY: git-status-short
 git-status-short: ## Show git status (short format, no staging)
 	cd $(PROJECT_ROOT) && git status --short
@@ -147,6 +148,10 @@ git-stage-vt-dispatch: ## Stage vt dispatch_coverage_test.go and config.mk
 .PHONY: git-staged-stat
 git-staged-stat: ## Show staged diff stat
 	cd $(PROJECT_ROOT) && git diff --staged --stat
+
+.PHONY: commit-batch10
+commit-batch10: ## Stage and commit batch10 test files
+	cd $(PROJECT_ROOT) && git add internal/termmux/vt/control_scroll_test.go internal/command/coverage_gaps_batch10_splitter_test.go config.mk && git commit -F scratch/commit-msg-batch10.txt && git log --oneline -1
 
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif
